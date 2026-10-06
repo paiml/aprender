@@ -1147,18 +1147,19 @@ jobs:
       # never as "no growth", so the mistake would have been loud rather than
       # silent. It is still a mistake. One fetch, before all of them.
       #
-      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
-      # ratchets fall back to the origin/main TIP. That is the STRICTER
-      # comparand, and it means the CI path is the tip path: a local run that
-      # passes on the merge-base can still red here, and CI is authoritative.
+      # The comparand is the commit THIS run was built on, never main's tip when the
+      # section happens to start (#4861): pull_request pins the merge commit's first
+      # parent, merge_group pins merge_group.base_sha (as the refinement gate does,
+      # #4502), and push / dispatch keep the tip. The tip judged #4813 against a main
+      # three merges later and reported a baseline it never touched as GREW. Re-adding
+      # what main deleted is still refused, by the merge_group run built on main.
+      # Case table: bash scripts/ci/pin_build_base.sh --self-test.
       - id: guard-setup
-        name: Fetch origin/main as the comparand for every ratchet in this job
-        run: |
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
-          # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
-          # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
-          # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
-          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+        name: Pin origin/main to this run's build base as the comparand for every ratchet in this job
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: bash scripts/ci/pin_build_base.sh
       # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-tree-steps
       # below, keeps going past a red one, and reports every failure. GitHub would
       # stop this job at its first red step, and the others would never be seen.
@@ -1425,6 +1426,11 @@ jobs:
       # does that; these two rows keep its case table live and assert the tree is
       # version-consistent right now (which check_facade_compat.sh R3/R5 also
       # backstop from the compat side).
+      # #4861: the comparand pin's case table. It builds #4813's shape in temp repos and runs
+      # the real baseline ratchet: RED against main's later tip, green against the build base,
+      # still RED on real growth. Mutation-verified: pinning pull_request to the tip reds 3 rows.
+      - name: "Comparand pin case table (#4861)"
+        run: bash scripts/ci/pin_build_base.sh --self-test
       - name: Version-bump case table (reaches the excluded workspace)
         run: bash scripts/bump-version.sh --self-test
       - name: Every workspace is at a consistent version
@@ -1777,17 +1783,18 @@ jobs:
       # never as "no growth", so the mistake would have been loud rather than
       # silent. It is still a mistake. One fetch, before all of them.
       #
-      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
-      # ratchets fall back to the origin/main TIP. That is the STRICTER
-      # comparand, and it means the CI path is the tip path: a local run that
-      # passes on the merge-base can still red here, and CI is authoritative.
-      - name: Fetch origin/main as the comparand for every ratchet in this job
-        run: |
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
-          # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
-          # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
-          # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
-          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+      # The comparand is the commit THIS run was built on, never main's tip when the
+      # section happens to start (#4861): pull_request pins the merge commit's first
+      # parent, merge_group pins merge_group.base_sha (as the refinement gate does,
+      # #4502), and push / dispatch keep the tip. The tip judged #4813 against a main
+      # three merges later and reported a baseline it never touched as GREW. Re-adding
+      # what main deleted is still refused, by the merge_group run built on main.
+      # Case table: bash scripts/ci/pin_build_base.sh --self-test.
+      - name: Pin origin/main to this run's build base as the comparand for every ratchet in this job
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: bash scripts/ci/pin_build_base.sh
       # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
       # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
       # container that mounts it and drops to the runner's uid cannot write

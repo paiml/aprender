@@ -1,0 +1,21 @@
+- id: PMAT-4861
+  github_issue: 4861
+  item_type: task
+  title: 'ci: pin guard ratchet comparand to the run''s build base'
+  status: in-progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-06T08:06:13Z
+  updated: 2026-10-06T08:06:13Z
+  spec: null
+  acceptance_criteria:
+  - guard-tree and guard-cargo pin origin/main to the merge commit's first parent on pull_request and to merge_group.base_sha on merge_group; push and dispatch keep the tip
+  - '#4813 shape (base 62, main since shrank to 60, PR does not touch the baseline) is RED under the old step and green pinned; real growth stays RED (scripts/ci/pin_build_base.sh --self-test)'
+  - a pull_request HEAD that is not a merge commit, or a merge_group without base_sha, is refused (exit 1), never pinned to the tip
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
