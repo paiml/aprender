@@ -127,6 +127,21 @@ idle_child() {
   wait_pidfile "$ready" || { echo "  idle_child: the child never signalled ready" >&2; return 2; }
 }
 
+# race_fresh <idle_child-body> <tries> <blocks> <until-hit 1|0> -> total extra runs over up
+# to <blocks> FRESH bash processes. One process can sit in a phase where the race never
+# fires (0/20 blocks read 0 in up to 17% of them, aprender-a3 review 2), so a must-red
+# plant retries in a new process until one loses (until-hit=1) and the must-green row
+# gets every block (until-hit=0): the same trials on both sides.
+race_fresh() {
+  local body="$1" tries="$2" blocks="$3" until_hit="$4" b n total=0
+  for b in $(seq 1 "$blocks"); do
+    n=$(TMP="$TMP" bash -c "$(declare -f wait_pidfile race_extra_runs); race_extra_runs \"\$1\" \"\$2\"" _ "$body" "$tries" 2>/dev/null | tail -n 1)
+    total=$((total + ${n:-0}))
+    [ "$until_hit" -eq 1 ] && [ "$total" -gt 0 ] && break
+  done
+  echo "$total"
+}
+
 # race_extra_runs <idle_child-body> <tries> -> prints how many tries ran the EXIT trap in
 # the forked child as well as in the parent (one line per run in the log; two = the bug).
 race_extra_runs() {
@@ -261,17 +276,17 @@ if [ "$SELF_TEST" -eq 1 ]; then
   ibody=$(declare -f idle_child)
   bare=$(printf '%s\n' "$ibody" | sed -e 's/^ *bash -c .*$/    sleep 30 \& IDLE_PID=$!  # PLANTED: bare fork/' -e 's/^ *wait_pidfile "$ready" ||/    true ||/')
   grep -q 'PLANTED' <<< "$bare" || { echo "  self-test: could not plant the bare fork — the anchor moved" >&2; exit 2; }
-  if [ "$(race_extra_runs "$bare" 1000)" -eq 0 ]; then
-    echo "SELF-TEST FAIL: a bare fork TERMed at once never ran the EXIT trap in 1000 tries — the race row cannot see the defect"; exit 1
+  if [ "$(race_fresh "$bare" 300 12 1)" -eq 0 ]; then
+    echo "SELF-TEST FAIL: a bare fork TERMed at once never ran the EXIT trap in 12 fresh blocks of 300 tries — the race row cannot see the defect"; exit 1
   fi
   echo "SELF-TEST OK: all three planted regressions turned this RED"; exit 0
 fi
 
 rc=0
 # race: TERM a just-started idle child 100 times; the EXIT trap must run only in this shell
-race_bad=$(race_extra_runs "$(declare -f idle_child)" 100)
-if [ "$race_bad" -ne 0 ]; then echo "  FAIL race: idle_child let a forked copy run the EXIT trap in $race_bad/100 tries"; rc=1
-else echo "  ok   race: 100 TERMs of a just-started idle child, the EXIT trap ran once each"; fi
+race_bad=$(race_fresh "$(declare -f idle_child)" 100 4 0)
+if [ "$race_bad" -ne 0 ]; then echo "  FAIL race: idle_child let a forked copy run the EXIT trap in $race_bad/400 tries"; rc=1
+else echo "  ok   race: 400 TERMs (4 fresh blocks) of a just-started idle child, the EXIT trap ran once each"; fi
 run_cases "$body" || rc=1
 run_wait_cases "$wbody" || rc=1
 if [ "$rc" -eq 0 ]; then echo "PASS: teardown never reports clean while a launched process lives; the health wait ends on the server's state, not a clock"; exit 0; fi
