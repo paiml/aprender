@@ -1,5 +1,5 @@
 metadata:
-  version: "1.13.0"
+  version: "1.14.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -18,10 +18,11 @@ metadata:
     - "0.72 R15a cell C7 (la-0.72): the CUDA trainer pre-warms the AdamW step kernel at every parameter count its NF4 LoRA optimizer step asks for, by the selected targets (crates/aprender-train/src/train/transformer_trainer/lora_init.rs lora_adamw_sizes, autograd/cuda_optim.rs pre_warm_adamw_sizes); 1.11.0 adds lora_adamw_prewarm and FALSIFY-LORA_TARGET_SELECTION_V1_013"
     - "0.72 R15a cell C8 (la-0.72): InstructPipeline::from_pretrained loads a trained adapter only when it fills every LoRA slot, A and B (crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs inject_adapter_weights); 1.12.0 adds adapter_load_complete and FALSIFY-LORA_TARGET_SELECTION_V1_014"
     - "0.72 R15a cell C9 (la-0.72): InstructPipeline::from_pretrained refuses an adapter it cannot read and an adapter whose adapter_config.json declares targets other than lora_targets, instead of warning and serving fresh LoRA weights (crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs load_trained_adapter, check_adapter_targets); 1.13.0 adds adapter_targets_declared and FALSIFY-LORA_TARGET_SELECTION_V1_015"
+    - "0.72 R15a cell C10 (la-0.72): apr finetune --lora-targets parses its list with LoraTargets::parse before anything loads and carries the set into InstructConfig.lora_targets on the LoRA training path, and every other finetune mode refuses the flag instead of ignoring it (crates/apr-cli/src/commands/finetune.rs parse_lora_targets_flag, lora_targets_unhonoured_by, build_instruct_config); 1.14.0 adds cli_targets_reach_config and FALSIFY-LORA_TARGET_SELECTION_V1_016"
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.13.0"
+version: "1.14.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -88,6 +89,9 @@ equations:
   adapter_targets_declared:
     description: "A trained adapter loads only into the targets it was trained on, and an adapter that is present but unreadable refuses the load"
     formula: "Let D be target_modules of adapter_config.json, parsed by LoraTargets::parse, and T = InstructConfig.lora_targets. If adapter_model.safetensors is absent, nothing loads and the LoRA layers keep their init. If it is present and load_adapter_peft fails, from_pretrained returns ConfigError naming the path and the cause. If D is non-empty and D ≠ T as sets, it returns ConfigError naming D and T, before any tensor is placed. An empty D declares nothing, and adapter_load_complete decides. No LoRA layer changes on a refusal."
+  cli_targets_reach_config:
+    description: "apr finetune --lora-targets selects T for the run it starts, or refuses; it is never silently dropped"
+    formula: "Let F be the --lora-targets value, split on commas with each name trimmed. With F absent, T = LoraTargets::default() = {q_proj, v_proj}, as before. With F present, T = LoraTargets::parse(F); an unknown name or an empty list returns an error naming it before any model, corpus or GPU is touched. On the LoRA training path (execute_training), build_instruct_config sets InstructConfig.lora_targets = T, and row 004 still bounds T to {q_proj, v_proj} until it is lifted. A mode that does not build that InstructConfig (--merge, --task classify, --task instruct, --adapters, the wgpu backend, a build without training) returns an error naming the mode when F is present."
 
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
@@ -161,3 +165,8 @@ falsification:
     description: "InstructPipeline::from_pretrained refuses an adapter that is present but unreadable, and an adapter trained on other targets (0.72 R15a C9). At 4a1fbb1fb0 a failed load_adapter_peft only printed a warning, and from_pretrained went on with fresh LoRA weights (A random, B zero): a corrupt or half-written adapter silently served an untrained model. The PEFT config was discarded, so a target mismatch surfaced only indirectly, as an unplaced tensor (row 003) or an unfilled place (row 014), never naming the targets. Now an unreadable adapter refuses with its path and cause, and a declared set D ≠ lora_targets refuses with both sets before any tensor is placed. Falsified if an unreadable adapter loads or warns and goes on, if a superset, subset or disjoint D loads, if the error does not name both sets, if any layer changes on a refusal, or if a matching or undeclared adapter, or no adapter at all, stops loading as before."
     test: "crates/aprender-train/src/finetune/instruct_pipeline/constructors_adapter_tests.rs::falsify_lora_target_selection_v1_015_declared_targets_must_match (with the other falsify_lora_target_selection_v1_015 tests there)"
     evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_015"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_016
+    description: "apr finetune --lora-targets reaches InstructConfig.lora_targets or refuses (0.72 R15a C10). At 4384351118 apr finetune had no way to select targets: build_instruct_config took ..InstructConfig::default(), so every run trained q_proj and v_proj, and no flag existed to say otherwise. Now the flag is parsed before anything loads, its set reaches lora_targets on the training path, and every mode that would not train with it refuses it. Falsified if an absent flag changes the default, if a parsed set differs from LoraTargets::parse of the same names, if an unknown or empty name list is accepted, if build_instruct_config drops the set, or if --merge, --task classify, --task instruct, --adapters, the wgpu backend or a build without training accepts the flag."
+    test: "crates/apr-cli/src/commands/finetune_tests.rs::falsify_lora_target_selection_v1_016_flag_reaches_instruct_config (with the other falsify_lora_target_selection_v1_016 tests there)"
+    evidence: "cargo test -p apr-cli --lib falsify_lora_target_selection_v1_016"
