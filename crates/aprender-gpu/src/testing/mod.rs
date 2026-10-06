@@ -23,6 +23,7 @@
 //! - `stress-test`: Enable randomized frame-by-frame stress testing
 //! - `tui-monitor`: Enable TUI monitoring mode via presentar
 
+pub mod require_gpu;
 pub mod stress;
 pub mod tui;
 

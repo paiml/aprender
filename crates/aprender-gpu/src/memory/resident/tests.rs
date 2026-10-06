@@ -18,7 +18,7 @@ fn test_gpu_resident_tensor_lifecycle() {
     let ctx = match CudaContext::new(0) {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("Skipping CUDA lifecycle test: {:?}", e);
+            crate::testing::require_gpu::skip_or_panic("CUDA lifecycle test", &e);
             return;
         }
     };
@@ -63,7 +63,7 @@ fn test_gpu_resident_tensor_uninit() {
     let ctx = match CudaContext::new(0) {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("Skipping CUDA uninit test: {:?}", e);
+            crate::testing::require_gpu::skip_or_panic("CUDA uninit test", &e);
             return;
         }
     };
@@ -95,7 +95,7 @@ fn test_gpu_resident_tensor_peek() {
     let ctx = match CudaContext::new(0) {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("Skipping CUDA peek test: {:?}", e);
+            crate::testing::require_gpu::skip_or_panic("CUDA peek test", &e);
             return;
         }
     };
@@ -129,7 +129,7 @@ fn test_gpu_resident_tensor_buffer_access() {
     let ctx = match CudaContext::new(0) {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("Skipping CUDA buffer access test: {:?}", e);
+            crate::testing::require_gpu::skip_or_panic("CUDA buffer access test", &e);
             return;
         }
     };
@@ -225,7 +225,7 @@ fn test_gpu_allocation_under_pressure() {
     let ctx = match CudaContext::new(0) {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("Skipping GPU pressure test: {:?}", e);
+            crate::testing::require_gpu::skip_or_panic("GPU pressure test", &e);
             return;
         }
     };

@@ -9,7 +9,7 @@ macro_rules! cuda_ctx {
         match CudaContext::new(0) {
             Ok(ctx) => ctx,
             Err(e) => {
-                eprintln!("Skipping CUDA test: {:?}", e);
+                $crate::testing::require_gpu::skip_or_panic("CUDA test", &e);
                 return;
             }
         }
