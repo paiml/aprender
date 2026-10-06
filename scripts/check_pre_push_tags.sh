@@ -22,7 +22,7 @@ set -euo pipefail
 
 SELF="$(cd "$(dirname "$0")" && pwd)/${0##*/}"
 HOOK_DIR="$(dirname "$SELF")/hooks"
-WANT_ROWS=43
+WANT_ROWS=44
 ROWS=0
 FAILS=0
 HOOK=''
@@ -248,6 +248,24 @@ step_verify_overwritten() {
     [ "$rc" -eq 1 ]
 }
 # the same clone reinstalled (the rewritten pre-push is chained), then the guard removed
+# a seventh clone whose linked work tree, with a worktree-scoped core.hooksPath, was moved without
+# git: --all-worktrees still judges it from its admin dir and is RED (1), not "skipped" and 0.
+# An admin dir git cannot read is then added: --all-worktrees exits 2, never 0
+step_verify_moved_worktree() {
+    local moved=0 junk=0
+    git clone -q "$TP/remote.git" "$TP/w7" || return 1
+    cd "$TP/w7" || return 1
+    bash "$HOOK" --install > /dev/null || return 1
+    git config extensions.worktreeConfig true && git worktree add -q "$TP/w7b" 2> /dev/null || return 1
+    git -C "$TP/w7b" config --worktree core.hooksPath "$TP/elsewhere"
+    (cd "$TP" && mv -- w7b w7moved) || return 1
+    bash "$HOOK" --verify --all-worktrees > /dev/null || moved=$?
+    git -C "$TP/w7moved" config --worktree --unset core.hooksPath
+    mkdir -p .git/worktrees/junk || return 1
+    bash "$HOOK" --verify --all-worktrees > /dev/null || junk=$?
+    cd "$TP/w" || return 1
+    [ "$moved" -eq 1 ] && [ "$junk" -eq 2 ]
+}
 step_verify_no_guard() {
     local rc=0
     cd "$TP/w3" || return 1
@@ -341,6 +359,7 @@ self_test() {
     check_row verify_is_red_when_another_installer_rewrote_pre_push "--verify did not exit 1 after pre-push was rewritten" step_verify_overwritten
     check_row verify_is_red_when_the_guard_is_gone "--verify did not exit 1 with pre-push-tags removed" step_verify_no_guard
     check_row verify_judges_the_hooks_path_of_each_worktree "--verify missed a worktree-scoped core.hooksPath, or --all-worktrees did not exit 1" step_verify_worktree_hookspath
+    check_row verify_judges_a_moved_worktree_from_its_admin_dir "--all-worktrees skipped a moved work tree, or passed with an admin dir it could not read" step_verify_moved_worktree
     check_row uninstall_restores_the_old_pre_push_byte_for_byte "uninstall failed, or pre-push differs from the one before install" step_uninstall_restores
     check_row uninstall_refuses_a_chained_hook_changed_since_install "uninstall did not exit 1, or changed something" step_uninstall_refuses_a_changed_chain
     check_row uninstall_never_touches_a_rewritten_pre_push "uninstall did not exit 2, or changed the rewritten pre-push" step_uninstall_keeps_a_rewritten_pre_push
@@ -412,7 +431,9 @@ m19_install_records_no_sha256	pre-push-tags.sh	s/^        (set -C .. printf .*$/
 m20_the_ttl_cap_is_not_rechecked	pre-push-tags.sh	s/^        if . "\$mexp" .gt .*$/        if false; then/
 m21_verify_ignores_the_effective_hooks_path	pre-push-tags.sh	s/^    if . "\$eff" != "\$dir" .; then$/    if false; then/
 m22_the_ttl_is_read_from_the_environment	pre-push-tags.sh	s/ttl="\${2:-\$TTL_DEFAULT}"/ttl="\${2:-\${PRE_PUSH_TAGS_TTL:-\$TTL_DEFAULT}}"/
-m23_the_ttl_cap_is_read_from_the_environment	pre-push-tags.sh	s/^TTL_MAX=3600$/TTL_MAX="\${TTL_MAX:-3600}"/'
+m23_the_ttl_cap_is_read_from_the_environment	pre-push-tags.sh	s/^TTL_MAX=3600$/TTL_MAX="\${TTL_MAX:-3600}"/
+m24_verify_walks_only_the_main_admin_dir	pre-push-tags.sh	s/^    for gd in "\$common" "\$common".worktrees...; do$/    for gd in "$common"; do/
+m25_an_unreadable_admin_dir_is_not_counted	pre-push-tags.sh	s/elif . "\$rc" .ne 0 .; then unjudged/elif false; then unjudged/'
 
 mutants() {
     local name file expr rc killed=0 total=0 t

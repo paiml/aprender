@@ -26,7 +26,9 @@
 #   pre-push-tags.sh --uninstall                     undo --install; the chained pre-push goes back only
 #                                                    if its sha256 matches the one recorded at install
 #   pre-push-tags.sh --verify [--all-worktrees]      RED unless git, in this work tree (or in every
-#                                                    one), runs the dispatcher and this guard first
+#                                                    one, judged from its admin dir), runs the
+#                                                    dispatcher and this guard first; exit 2 if any
+#                                                    admin dir cannot be judged
 # exit: 0 allowed (or verified), 1 refused (or RED), 2 usage or environment error.
 set -euo pipefail
 
@@ -200,16 +202,23 @@ uninstall_hook() {
     rm -f -- "${dir:?}/pre-push-tags" "${dir:?}/pre-push.chained.sha256"
 }
 
-# verify_in WT [quiet]: RED when git, run in work tree WT, would not run this guard on the next push.
-# It judges the hooks dir git itself resolves there (--git-path hooks), so core.hooksPath at any
-# scope, a worktree-scoped one included, turns it RED; so does a pre-push that is not the
-# dispatcher (a pmat or any reinstall rewrote it) and a guard that is missing or not this file
+# verify_in GITDIR [quiet]: RED when git, in the work tree whose admin dir is GITDIR, would not run
+# this guard on the next push. It asks git for the hooks dir it resolves from GITDIR (--git-dir,
+# --git-path hooks), which reads config and config.worktree there, so core.hooksPath at any
+# scope turns it RED, and the work tree's own directory is never needed: a moved or deleted one
+# is judged all the same. A pre-push that is not the dispatcher (a pmat or any reinstall rewrote
+# it) and a guard that is missing or not this file are RED too. GITDIR git cannot read: rc 2
 verify_in() {
-    local wt="$1" dir eff red=0
-    dir="$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir)/hooks"
-    eff="$(git -C "$wt" rev-parse --path-format=absolute --git-path hooks)"
+    local gd="$1" dir eff red=0
+    dir="$(git --git-dir="$gd" rev-parse --path-format=absolute --git-common-dir 2> /dev/null)" || dir=""
+    eff="$(git --git-dir="$gd" rev-parse --path-format=absolute --git-path hooks 2> /dev/null)" || eff=""
+    if [ -z "$dir" ] || [ -z "$eff" ]; then
+        printf 'pre-push-tags: verify not_measured: git cannot open the admin dir %s\n' "$gd"
+        return 2
+    fi
+    dir="$dir/hooks"
     if [ "$eff" != "$dir" ]; then
-        printf 'pre-push-tags: verify RED: %s: git runs hooks from %s (core.hooksPath), not %s\n' "$wt" "$eff" "$dir"
+        printf 'pre-push-tags: verify RED: %s: git runs hooks from %s (core.hooksPath), not %s\n' "$gd" "$eff" "$dir"
         red=1
     fi
     if [ ! -x "$dir/pre-push" ] || ! cmp -s "$HERE/pre-push-dispatch.sh" "$dir/pre-push"; then
@@ -221,30 +230,37 @@ verify_in() {
         red=1
     fi
     if [ "$red" -ne 0 ]; then return 1; fi
-    [ -n "${2:-}" ] || printf 'pre-push-tags: verified: %s runs this guard first\n' "$wt"
+    [ -n "${2:-}" ] || printf 'pre-push-tags: verified: %s runs this guard first\n' "$gd"
 }
 
 # verify_hook [--all-worktrees]: verify_in this work tree, or in every work tree of the clone.
 # Run it from the tracked scripts/hooks/, whose pre-push-dispatch.sh is what --install wrote.
-# A listed work tree whose directory is gone cannot push and is counted as skipped
+# --all-worktrees walks the admin dirs (the common dir, and each one under its worktrees/), not
+# the directories git worktree list prints: a work tree moved without git still pushes through
+# its admin dir. Exit 0 only when every admin dir was judged and none is RED; 1 when one is RED;
+# 2 when any could not be judged, or none was found
 verify_hook() {
-    local wt red=0 n=0 skipped=0
+    local gd common red=0 n=0 unjudged=0 rc
     if [ ! -f "$HERE/pre-push-dispatch.sh" ]; then
         printf 'not_measured: run --verify from the tracked scripts/hooks/, not from %s\n' "$HERE" >&2
         return 2
     fi
     case "${1:-}" in
-        '') verify_in "$(git rev-parse --show-toplevel)"; return ;;
+        '') verify_in "$(git rev-parse --absolute-git-dir)"; return ;;
         --all-worktrees) ;;
         *) printf 'pre-push-tags: --verify takes nothing or --all-worktrees, not [%s]\n' "$1" >&2; return 2 ;;
     esac
-    while read -r wt; do
-        if [ ! -d "$wt" ]; then skipped=$((skipped + 1)); continue; fi
+    common="$(git rev-parse --path-format=absolute --git-common-dir)" || return 2
+    for gd in "$common" "$common"/worktrees/*/; do
+        [ -e "$gd" ] || continue
+        gd="${gd%/}"
         n=$((n + 1))
-        verify_in "$wt" quiet || red=$((red + 1))
-    done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
-    printf 'pre-push-tags: verify --all-worktrees: %s checked, %s RED, %s skipped (directory gone)\n' "$n" "$red" "$skipped"
-    if [ "$n" -eq 0 ]; then return 2; fi
+        rc=0
+        verify_in "$gd" quiet || rc=$?
+        if [ "$rc" -eq 1 ]; then red=$((red + 1)); elif [ "$rc" -ne 0 ]; then unjudged=$((unjudged + 1)); fi
+    done
+    printf 'pre-push-tags: verify --all-worktrees: %s admin dirs, %s RED, %s not judged\n' "$n" "$red" "$unjudged"
+    if [ "$n" -eq 0 ] || [ "$unjudged" -ne 0 ]; then return 2; fi
     if [ "$red" -ne 0 ]; then return 1; fi
 }
 
@@ -253,7 +269,7 @@ case "${1:-}" in
     --install) install_hook ;;
     --uninstall) uninstall_hook ;;
     --verify) verify_hook "${2:-}" ;;
-    --help | -h) sed -n '2,30p' "$0" ;;
-    -*) sed -n '20,30p' "$0" >&2; exit 2 ;;
+    --help | -h) sed -n '2,32p' "$0" ;;
+    -*) sed -n '20,32p' "$0" >&2; exit 2 ;;
     *) hook "$@" ;;
 esac
