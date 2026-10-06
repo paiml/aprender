@@ -15,7 +15,10 @@ not the head.
 ## How c310's rule carries to J
 - A plain (schedule, push) run stands for the commit it ran on: it counts for J when its head_sha is J.
 - A chained (`workflow_run`) run's tree is the pick of its night, never its head_sha, so it stands for that pick only:
-  it counts for J when `nightc(created_at)` == J, and for a run created 12:00Z-17:59Z also `prevc` == J. The J search
+  it counts for J when `chainc(created_at)` == J: the night of the newest Nightly pick run created at or before it (a
+  rerun keeps its created_at, so a rerun the next evening is the old night), not_measured when an older pick run was
+  updated after that one, no pick run was seen, or the list is full (100 runs) and reaches back less than 30 days, the
+  rerun limit (a rerun of an older run would be unseen); for a run created 12:00Z-17:59Z also `prevc` == J. The J search
   applies the same rule when it asks whether a commit has a measured run on every lane.
 - Candidates are main's head (rank 0) and its history from the SAME GraphQL query (`history(first: 7)`), written to
   `RAW/rank.tsv`; lag is the rank of J (exact). One J for all lanes, never a per-lane mix. A rank list whose rank 0 is
