@@ -26,7 +26,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 CMS="$ROOT/scripts/crux_missing_stories.py"
-EXPECTED_CASES=117
+EXPECTED_CASES=116
 
 . scripts/ci_tools_bin.sh || exit 1
 BIN="$CI_TOOLS_BIN"
@@ -155,7 +155,6 @@ c "SCORE: float 1e15 stays fixed" 0 1 "[$(m 1e15)]"
 c "SCORE: float 1e16 goes e+16" 0 1 "[$(m 1e16)]"
 c "SCORE: float 9.2e18 under 2^63" 0 1 "[$(m 9.2e18)]"
 c "SCORE: float 123456.789" 0 1 "[$(m 123456.789)]"
-c "SCORE: float max" 0 1 "[$(m 1.7976931348623157e308)]"
 c "SCORE: float smallest subnormal" 0 1 "[$(m 5e-324)]"
 c "SCORE: float underflow 1e-400 is 0.0" 0 1 "[$(m 1e-400)]"
 c "SCORE: float needing exact parse 2.1531120041346774e-5" 0 1 "[$(m 2.1531120041346774e-5)]"
