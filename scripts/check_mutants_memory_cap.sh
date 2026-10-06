@@ -25,7 +25,7 @@ runs() {
     function flush() { if (start && mut) { if (kind == "scope") ok = (m != "" && mc == 1 && sc == 1 && s == "0" && m + 0 >= 1 && m + 0 <= 16)
                                            else ok = (m != "" && mc == 1 && sc == 1 && s == m && m + 0 >= 1 && m + 0 <= 16)
                                            print start, (ok ? "ok" : "BAD"), kind " memory=" m "g swap=" s (kind == "scope" ? "" : "g") }
-                       start = 0; mut = 0; m = ""; s = ""; mc = 0; sc = 0; kind = "" }
+                       start = 0; mut = 0; m = ""; s = ""; mc = 0; sc = 0; kind = ""; inq = 0 }
     /^[[:space:]]*#/ { next }
     /docker run/ { flush(); start = NR; inhdr = 1; kind = "docker" }
     /systemd-run .*--scope/ { flush(); start = NR; inhdr = 0; kind = "scope"; r = $0
@@ -39,6 +39,10 @@ runs() {
                      if ($0 ~ /IMAGE/) inhdr = 0 }
     ($0 ~ /cargo mutants / && $0 !~ /--version/ || $0 ~ /mutants_(diff_gate|table_shard)\.sh/ && $0 !~ /mutants_[a-z_]+\.sh --(exempt-ref|self-test)/) {
                      if (start) mut = 1; else print NR, "BAD", "native: no capped docker run or systemd-run scope" }
+    # A scope caps only its own command: it ends at the first line outside a single-quoted span that has no
+    # trailing backslash. A mutation run on a later line of the step is then native, not capped by it.
+    start && kind == "scope" { r = $0; inq = (inq + gsub("\047", "", r)) % 2
+                     if (!inq && $0 !~ /\\[[:space:]]*$/) flush() }
     /^ *- name:/ { flush() }
     END { flush() }' "$1"
 }
@@ -116,7 +120,11 @@ if [ "${1:-}" = "--self-test" ]; then
     sc scopebig  'systemd-run --user --scope -q -p MemoryMax=64G -p MemorySwapMax=0';       mrow 1 scopebig  "$d/scopebig.yml"
     sc scopezero 'systemd-run --user --scope -q -p MemoryMax=0G -p MemorySwapMax=0';        mrow 1 scopezero "$d/scopezero.yml"
     sc scopedup  'systemd-run --user --scope -q -p MemoryMax=8G -p MemoryMax=16G -p MemorySwapMax=0'; mrow 1 scopedup "$d/scopedup.yml"
+    sc scopeswnz 'systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=8';       mrow 1 scopeswnz "$d/scopeswnz.yml"
     sc native    'nice -n 19';                                                              mrow 1 native    "$d/native.yml"
+    # A capped scope around another command does not cap a mutation run on a later line of the same step.
+    printf '    steps:\n      - name: o\n        run: |\n          systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0 echo hi\n          bash scripts/mutants_diff_gate.sh pr.diff --jobs 1\n' > "$d/scopeother.yml"
+    mrow 1 scopeother  "$d/scopeother.yml"
     # Query modes and comments are not mutation runs: a file holding only them has no run to judge.
     printf '    steps:\n      - name: q\n        run: |\n          # bash scripts/mutants_diff_gate.sh pr.diff\n          bash scripts/mutants_diff_gate.sh --exempt-ref "$R" a b\n' > "$d/query.yml"
     mrow 2 queryonly   "$d/query.yml"
