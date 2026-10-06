@@ -1,0 +1,422 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_build_increase",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity over the head copies of the 10 changed .rs files against the base copies: build() in gguf/cuda/mod.rs is cyclomatic 8 / cognitive 13 at head against 6 / 11 on base; apr serve run() in apr-cli serve/mod.rs is 7 / 8 against 6 / 7; for_serving is 1 / 0 and serving_kv_len 1 / 1. The one function the new head commit touches, the K1 test helper served(), is 2 / 1 (it was a nested Option match before). All under the repo threshold of 10 cyclomatic. pmat tdg of gguf/cuda/mod.rs is A 90.0 against A 94.76 on base; session_kv.rs is A 92.86 (new file). pmat analyze satd: 0 violations over head and base copies."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "<copy of the 10 changed .rs files at head>",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "dc25a6b2685516523840d0a367069f2932795c091c0f7791b2a4ea66cbe091c2",
+            "failure_scenario": "build() keeps absorbing sizing logic; the next branch added to it crosses cyclomatic 10 and lands in the hotspot list.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "union_property_chat_side",
+          "level": "note",
+          "message": {
+            "text": "Union property, chat side: git diff --numstat of merge parent 56ad4d4a43 (the pre-fold #4623 head) against HEAD over the 5 non-evidence files that parent changed against the merge base shows 0 deleted lines in all of them (gguf/cuda/mod.rs +50/-0, session_kv.rs +77/-0, the other three identical). Every non-evidence line #4623 changed against main is present in HEAD. Identical output to the previous receipt, as expected: the head commit since then touches only the K1 test."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--numstat",
+              "56ad4d4a43",
+              "07a58772fd02828ce742452f8f0b18d0019ae55c",
+              "--",
+              "<the 5 non-evidence files that parent changed vs the merge base>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9460c87ceede6f97d271303984c459b80cb372603612035e1a3a99154ceee13b",
+            "failure_scenario": "A line #4623 added or edited that the fold dropped would show as a deletion here and put chat back on a fixed 2048 KV; none does.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "union_property_serve_side",
+          "level": "note",
+          "message": {
+            "text": "Union property, serve side: the same numstat against merge parent da4f4f9c62 (the #4630 K1 head) over the 10 non-evidence files that parent changed shows 0 deletions in 8 files, 2 in gguf/cuda/mod.rs (+63/-2) and, new since the previous receipt, +9/-12 in api/tests/serve_kv_limit_k1.rs. The 2 mod.rs lines are main text where #4623 and #4630 conflict (the BATCHED_PREFILL argument of the disable_fp8_for_qk_norm call and the #3413 eprintln text). The K1 test delta is the head commit under review: the skip path (SKIP line, Option return) became a panic."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--numstat",
+              "da4f4f9c62",
+              "07a58772fd02828ce742452f8f0b18d0019ae55c",
+              "--",
+              "<the 10 non-evidence files that parent changed vs the merge base>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "647dc75562e534a144087efa006268206c441a67a59b6be39dc935de94669ee9",
+            "failure_scenario": "If the 2 mod.rs lines were K1 additions serve would lose a K1 change; git shows they are conflict text where taking #4623 is the only consistent resolution. The K1 test delta is the intended change and is reviewed in k1_device_less_run_fails_not_skips.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "nothing_else_changed",
+          "level": "note",
+          "message": {
+            "text": "HEAD against the merge base changes 18 paths: 12 non-evidence files whose sorted name list equals the union of the two parents file sets (diff empty), and 6 evidence files, the three earlier receipts (#4623 twice, #4630 once). No third file was touched by the fold or by the head commit."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--name-only",
+              "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+              "07a58772fd02828ce742452f8f0b18d0019ae55c"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "5e44a9e75f74576e6e27b4af18ac6d96c925403d7d4c9ed1cf86b99da09c4080",
+            "failure_scenario": "A conflict hunk resolved by touching a third file would appear as a name outside the union; none does.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "only_k1_test_changed_since_last_receipt",
+          "level": "note",
+          "message": {
+            "text": "Against the previously receipted head 3cc3d7a71b, the head under review changes exactly one non-evidence file, crates/aprender-serve/src/api/tests/serve_kv_limit_k1.rs (9 insertions, 12 deletions). Every other result of the previous receipt that depends on non-test source (the fit check, the constructors, the sizing) is therefore carried by an unchanged file; the ones that are commands were re-run above."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "--name-only",
+              "3cc3d7a71b720d29b21fa3beb4fdf11c837700ea",
+              "07a58772fd02828ce742452f8f0b18d0019ae55c",
+              "--",
+              ".",
+              ":(exclude)evidence"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3fe46445a8d4b427a40b7e0f5f0acae5c782db70b1b258fed7c1966a07c644c8",
+            "failure_scenario": "A second changed file would extend the review boundary past the K1 test; the command lists one.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "callers_reach_intended_constructor",
+          "level": "note",
+          "message": {
+            "text": "apr chat (chat_load_tokenizers.rs:270 and :352) calls for_session; apr serve (serve/handler_gpu_completion.rs:609) calls for_serving and keeps with_max_seq_len for an explicit --context-length (:605); the K1 test (serve_kv_limit_k1.rs:122) calls for_serving, the same constructor serve uses. disable_fp8_for_qk_norm is the 2-argument form at gpu_profile.rs:1193 with one call site (gguf/cuda/mod.rs:792) and 5 tests, so no stale 3-argument caller remains."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "grep",
+              "-nE",
+              "for_session\\(|for_serving\\(",
+              "07a58772fd02828ce742452f8f0b18d0019ae55c",
+              "--",
+              "crates/apr-cli",
+              "crates/aprender-serve/src/api"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "443e28017d015be946a824f15a9a8cccfab6e21b5c2729a85b91da11aba50af3",
+            "failure_scenario": "A swapped constructor would give serve a context-sized KV with no batched-slot budget, or chat serve a 4096 floor; each caller reaches its own and the test reaches serve constructor.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "k1_device_less_run_fails_not_skips",
+          "level": "note",
+          "message": {
+            "text": "The head commit turns the K1 no-device path from a SKIP line plus early return into a panic. The author log of a run of cargo test -p aprender-serve --features cuda --lib for this test on an x86_64 host with no usable CUDA driver ends: panicked at serve_kv_limit_k1.rs:124:19, K1 not measured: CUDA model init failed ... cuInit failed during CUDA driver initialization; test result: FAILED. 0 passed; 1 failed; 0 ignored. Line 124 is the panic at head (the previous head printed SKIP at line 123). This review READ that log (tail 14) over ssh and recorded the read; it did not run the test, cargo being barred on the review host, so what is measured is the log content, not a fresh run."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "timeout",
+              "-k",
+              "5",
+              "20",
+              "ssh",
+              "-o",
+              "BatchMode=yes",
+              "<author build host>",
+              "tail -n 14 <author k1 log file>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1e3b1f8169857930bc9c95b65dc7e3c222b3af2062e639aabee72c0fb29835cd",
+            "failure_scenario": "If a device-less run still reported the test as passed or skipped, K1 would claim a 400-at-the-limit proof it never measured; the log shows a FAILED result with 0 passed, so it cannot.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "k1_has_no_skip_or_ignore_path",
+          "level": "note",
+          "message": {
+            "text": "At head the K1 test file has no SKIP print, no return None, no bare return and no #[ignore] attribute: the only match of the pattern is the module doc comment that says the test is not #[ignore]d (line 14). served() has two exits, the model it returns and the panic, and the test body asserts kv == CONTEXT, an at-limit 200 and 400 for CONTEXT and CONTEXT+1, all of which need a live executor (max_kv_len, completions). mod.rs registers it behind cfg(feature = \"cuda\") only, so a default build neither compiles nor runs it. There is no route to pass without a device."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "grep",
+              "-nE",
+              "SKIP|return None|return;|#\\[ignore",
+              "07a58772fd02828ce742452f8f0b18d0019ae55c",
+              "--",
+              "crates/aprender-serve/src/api/tests/serve_kv_limit_k1.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "84c41a3dc650745c7bff565746ecb0511c968f9d36be6acfd4253e17e81d1d84",
+            "failure_scenario": "A surviving early return or #[ignore] would let a device-less run pass; the one match is a doc-comment line, not code.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ci_cuda_unit_derives_and_runs_k1_by_name",
+          "level": "note",
+          "message": {
+            "text": "cuda-unit (ci/sections.yml, the job that runs on the yoga runner with a device) derives the cuda-only test set as the cuda --list minus the default --list (comm -23, line 3298), runs that set by name with --exact and no --ignored (line 3311), requires passed + ignored to equal the derived count (3317), and fails on any line matching a device-skip pattern that includes CUDA model init failed (3323). K1 is in the cuda-only set (its module is cfg(feature = \"cuda\")), so cuda-unit still runs it, on a device, and the panic text is caught twice: by cargo exiting non-zero first, and by the device-skip grep if it ever reached it. mutants-cuda derives its set the same way (line 3420), so a mutant that breaks CUDA init now fails K1 instead of surviving it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "grep",
+              "-nE",
+              "comm -23 \"$t/serve-cuda-list.txt\"|--exact --test-threads 1 --nocapture|passed \\+ ignored|CUDA model init failed|no CUDA device",
+              "07a58772fd02828ce742452f8f0b18d0019ae55c",
+              "--",
+              "ci/sections.yml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "589480b9ca72a4c394623ef03e5c1cd098503f0287ae56bae6a020535d84af9c",
+            "failure_scenario": "If cuda-unit filtered K1 out or ran it with --ignored, a green job would not have executed it; the derived set includes it and the run is by name.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ci_no_job_runs_serve_cuda_lib_on_device_less_runner",
+          "level": "note",
+          "message": {
+            "text": "Every cargo test line that builds aprender-serve with --features cuda in .github, ci, scripts and the Makefile is either a --list (ci/sections.yml:3296, 3420), a run by exact test name (cuda-nightly.yml 295, 328, 350, 714, 720) or the cuda-unit by-name run. The jobs they sit in are labelled cuda and run on the ARM64 or X64 cuda runners (ci.yml:209, 238; cuda-nightly.yml:118, 791), which have devices. The Makefile all-features targets (test-full, coverage-full, mutants, mutants-file) and scripts/ci.sh (run-ci) do run the whole serve lib with cuda, but no workflow or ci section calls them (nocall grep: no match). So no CI job runs the serve cuda lib on a device-less runner and none turns red from the new panic."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "grep",
+              "-nE",
+              "(cargo (test|nextest run|llvm-cov)|mutants)[^#|]*(--all-features|--features[ =][^ ]*cuda)",
+              "07a58772fd02828ce742452f8f0b18d0019ae55c",
+              "--",
+              ".github",
+              "ci",
+              "scripts",
+              "Makefile"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "32e921a6194e0808b7cb2d941af2dde493fafb2d5d2f4d1774a0a5bb9f8be1fe",
+            "failure_scenario": "A job that runs cargo test -p aprender-serve --features cuda --lib unfiltered on a runner with no driver would go red on K1; the grep finds no such site, and the runner labels (grep over runs-on lines, stdout sha256 9f3623250b9b9c758e19be7893a2db101613291865176ffc7edd46ebf7015f16) put the named runs on cuda hosts.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "manual_all_features_targets_now_red_on_device_less_host",
+          "level": "warning",
+          "message": {
+            "text": "make test-full, make coverage-full, make run-ci (scripts/ci.sh) and make mutants all build the workspace with --all-features, which turns on aprender-serve/cuda. On a developer host with no CUDA driver they now fail on K1 (intended by L25), while the other cuda tests in the same run still pass by printing a skip line. The failure is correct, but the red is one among silent skips, so it is easy to read as noise and to re-add a skip."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of Makefile lines 112-114, 806, 992, 1145, 1161 and scripts/ci.sh:70 at head against the all-features measurement above; not run, because cargo is barred on the review host and these targets are not wired in CI.",
+            "failure_scenario": "A contributor on a laptop with no GPU runs make test-full, sees K1 red, and re-adds an early return to get green, undoing L25; or CI ever wires one of these targets on a device-less runner and goes red on K1 alone.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fit_check_need_ignores_serve_batched_slots",
+          "level": "warning",
+          "message": {
+            "text": "Carried from the previous receipt, source unchanged at head (gguf/cuda/mod.rs is byte-identical to the previously receipted head; the only file the new commit touches is the K1 test). The QK-norm fit check in build() computes need = weights + cache + reserve + kv_per_pos * max_seq_len for both modes; for FitServing the KV length was sized against 1 + SERVE_BATCH_SLOTS slots, so need counts one slot. fit_batched_kv_alloc shrinks the batched slots to what fits rather than failing."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of build() and session_kv::serving_kv_len at head, carried from the previous receipt where it was raised independently by the primary and by the antigravity reviewer; not measured on a device. The antigravity reviewer did not raise it again this run (its two findings are about the K1 change).",
+            "failure_scenario": "A QK-norm model on a card where serving_kv_len hits its 4096 floor keeps the FP16 batched prefill cache, and the later batched-KV allocation gets fewer than SERVE_BATCH_SLOTS slots (a throughput loss logged as X1-KVALLOC), or in the worst case a CUDA OOM at batched init.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "cuda_init_failure_is_fatal_in_the_driver_sample",
+          "level": "note",
+          "message": {
+            "text": "The one device-behaviour claim in the head commit is that a failed CUDA driver initialisation means there is no device to measure on, so K1 must fail rather than skip. The NVIDIA corpus returns the driver-API init sample, where cuInit(0) is followed by cuDeviceGetCount and a count of 0 or a failed init ends the program with exit(EXIT_FAILURE): the reference code treats it as fatal, not as a reason to go on. This supports the direction of the change; it does not say what a test harness should do."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs MCP search_cuda_docs, query: cuInit returns CUDA_ERROR_NO_DEVICE when no CUDA-capable device is present; driver API initialization (cudaDeviceInit sample, cuda.h)",
+            "excerpt": "CUresult err = cuInit(0); int deviceCount = 0; if (CUDA_SUCCESS == err) checkCudaErrors(cuDeviceGetCount(&deviceCount)); if (deviceCount == 0) { fprintf(stderr, \"cudaDeviceInit error: no devices supporting CUDA\\n\"); exit(EXIT_FAILURE); }",
+            "excerpt_sha256": "a150549e4fc18a8277805fdce2108f090e39940daca462e05443782f319ca844",
+            "failure_scenario": "If an init failure were an expected, recoverable state in the driver contract, a skip could be the right reading of it; the sample treats it as fatal.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux_surface_covered",
+          "level": "note",
+          "message": {
+            "text": "The head commit changes no apr serve behaviour: only a test helper moves from skip to panic. The surfaces the fold carries (apr serve --context-length GPU KV sizing; the HTTP status of an over-limit prompt) are covered by contracts/crux-C-07-v1.yaml and contracts/crux-C-32-v1.yaml, both present at head. gap_effect none."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "ls",
+              "contracts/crux-C-07-v1.yaml",
+              "contracts/crux-C-32-v1.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e0cb196defeb650a646a7e7a5dd444b849cef9ea7c07804bcf9f43c5f7adf536",
+            "failure_scenario": "A surface with no covering contract would be crux_coverage none; both contracts are present.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo mutants was not run: the standing instruction for this review forbids running cargo on the review host, and the diff changes 10 .rs files so the in-diff mutation scope is triggered. Mutation is unreachable, not clean."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "git",
+                  "diff",
+                  "--name-only",
+                  "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+                  "07a58772fd02828ce742452f8f0b18d0019ae55c",
+                  "--",
+                  "*.rs"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "ac2499f83ad86c879b72e8140653ce7ad2f4f6a688b2473386ac5a5eba73af92"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy_serve_kv_limit_k1_no_device_panic",
+          "level": "note",
+          "message": {
+            "text": "The test serve_kv_limit_k1.rs intentionally panics if the CUDA device cannot be initialised, preventing a silent pass on a device-less runner (served(), lines 122-125)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Raised by the antigravity reviewer as cited (crates/aprender-serve/src/api/tests/serve_kv_limit_k1.rs L122-L125); the primary did not re-run the reviewer, and reached the same subject independently (k1_device_less_run_fails_not_skips, k1_has_no_skip_or_ignore_path) from the author log and a grep of the file. Agreed in direction and in the line range.",
+            "failure_scenario": "A developer or a CI job running cargo test -p aprender-serve --features cuda on a machine without a CUDA device gets a failing test rather than a silent skip: CudaExecutor::new fails, for_serving bubbles the Err and served() panics.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy_ci_device_less_runner_impact",
+          "level": "note",
+          "message": {
+            "text": "No current CI job turns red on a device-less runner from this panic: the jobs that run the test (cuda-unit, mutants-cuda, cuda-nightly) are on GPU runners, and the device-less sections only list the cuda tests."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Raised by the antigravity reviewer as cited (ci/sections.yml); not re-run by the primary, who reached the same conclusion from a git grep over every cargo test site (ci_no_job_runs_serve_cuda_lib_on_device_less_runner). The primary also records the manual all-features targets the reviewer did not name.",
+            "failure_scenario": "If a future CI job runs cargo test --features cuda on a non-GPU runner it will turn red on this test; today none does, so the jobs stay green.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
