@@ -18,6 +18,8 @@
 #   llama-fit-verdict       vs scripts/lib/llama_fit_verdict.py (kept: model_ladder.sh's
 #                           certification path still calls it), exact exit code too, run
 #                           under CPython 3.12/3.13 (LFV_PYTHON=) whose Unicode it follows.
+#   complexity-rows         vs scripts/lib/complexity_rows.py (kept: check_complexity_ratchet.sh
+#                           still calls it, N-1), exact exit code too.
 #
 # coverage_report_scope.py runs `cargo metadata` itself, so its fixture cases put a
 # fake `cargo` first on PATH that prints the fixture; both sides then read the same
@@ -36,7 +38,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=201
+EXPECTED_CASES=251
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -670,6 +672,103 @@ lfv "eight args (raises)" 1 "$PIN" 0 1 "$g/ver" "$g/fits" - extra
 lfv "--help alone (raises)" --help
 lfv "-h among seven" 1 "$PIN" 0 1 "$g/ver" "$g/fits" -h
 lfv "--version alone (raises)" --version
+
+
+# --- 8. complexity-rows (scripts/lib/complexity_rows.py, kept: check_complexity_ratchet.sh
+# still calls it under N-1). Exact exit code too: the original's 2 (bad threshold, no
+# document) and 1 (it raised) are different refusals.
+CXR_PY=scripts/lib/complexity_rows.py
+c="$tmp/cxr"
+mkdir -p "$c"
+cx() { printf '%s' "$2" >"$c/$1.json"; }
+# cxr NAME CYC COG ARGS... -- a threshold of "-" leaves that variable unset on both sides
+cxr() {
+    local name="$1" cyc="$2" cog="$3" prc rrc
+    shift 3
+    local envs=(env -u CX_MAX_CYCLOMATIC -u CX_MAX_COGNITIVE)
+    [[ "$cyc" == "-" ]] || envs+=("CX_MAX_CYCLOMATIC=$cyc")
+    [[ "$cog" == "-" ]] || envs+=("CX_MAX_COGNITIVE=$cog")
+    "${envs[@]}" "$PY" "$CXR_PY" "$@" </dev/null >/dev/null 2>&1 && prc=0 || prc=$?
+    "${envs[@]}" "$BIN" complexity-rows "$@" </dev/null >/dev/null 2>&1 && rrc=0 || rrc=$?
+    if [[ "$prc" -ne "$rrc" ]]; then
+        fail=$((fail + 1))
+        echo "MISMATCH: complexity-rows $name exit code (py $prc, rust $rrc)" >&2
+        return
+    fi
+    check "complexity-rows $name" "$tmp/empty" \
+        "${envs[@]}" "$PY" "$CXR_PY" "$@" -- "${envs[@]}" "$BIN" complexity-rows "$@"
+}
+fn() { printf '{"name":%s,"metrics":{"cyclomatic":%s,"cognitive":%s}}' "$1" "$2" "$3"; }
+cx main "{\"files_analyzed\":4,\"files\":[
+ {\"path\":\"./crates/b/src/x.rs\",\"functions\":[$(fn '"fit"' 12 3),$(fn '"fit"' 4 31),$(fn '"ok"' 10 15)]},
+ {\"path\":\"././a.rs\",\"functions\":[$(fn '"z"' 11 0),$(fn '"Z"' 11 0),$(fn '"é"' 11 0),$(fn '"_"' 0 16)]},
+ {\"path\":\"tool.py\",\"functions\":[$(fn '"big"' 99 99)]},
+ {\"path\":\"x.rs.bak\",\"functions\":[$(fn '"big"' 99 99)]}]}"
+cx names "{\"files\":[{\"path\":\"n.rs\",\"functions\":[$(fn 5 20 0),$(fn true 20 0),$(fn '["a",1]' 20 0),$(fn '{"k":null,"f":1e16}' 20 0),$(fn 1e16 20 0),$(fn 0.5 20 0),$(fn 0 20 0),$(fn '""' 20 0),$(fn null 20 0),{\"metrics\":{\"cyclomatic\":20}},$(fn '"a b"' 20 0)]}]}"
+cx coerce "{\"files\":[{\"path\":\"c.rs\",\"functions\":[$(fn '"s"' '"12"' '" 1_6 "'),$(fn '"f"' 11.9 -0.5),$(fn '"b"' true false),$(fn '"n"' null null),$(fn '"e"' 1e20 2),{\"name\":\"nometrics\"},{\"name\":\"nullm\",\"metrics\":null},{\"name\":\"emptym\",\"metrics\":{}},$(fn '"neg"' -40 -2)]}]}"
+cx falsy '{"files_analyzed":"7","files":[{"path":null,"functions":{"a":1}},{"path":"","functions":"abc"},{"path":"p.py","functions":{"k":[]}},{"path":"e.rs","functions":[]},{"path":"f.rs"},{"functions":[{"name":"q"}]}]}'
+cx nofiles1 '{"files":null}'
+cx nofiles2 '{"files":0,"files_analyzed":0}'
+cx nofiles3 '{"files":""}'
+cx dupkeys '{"files":[{"path":"d.rs","functions":[{"name":"first","name":"last","metrics":{"cyclomatic":1,"cyclomatic":50}}]}],"files":[{"path":"d2.rs","functions":[{"name":"w","metrics":{"cognitive":40}}]}]}'
+cx second "{\"files\":[{\"path\":\"crates/b/src/x.rs\",\"functions\":[$(fn '"fit"' 30 1)]},{\"path\":\"new.rs\",\"functions\":[$(fn '"n"' 11 0)]}]}"
+cx bad_list '[]'
+cx bad_files_dict '{"files":{"a.rs":[]}}'
+cx bad_files_str '{"files":"a.rs"}'
+cx bad_files_num '{"files":3}'
+cx bad_entry '{"files":["a.rs"]}'
+cx bad_path_num '{"files":[{"path":5,"functions":[]}]}'
+cx bad_path_list '{"files":[{"path":["a.rs"]}]}'
+cx bad_funcs_num '{"files":[{"path":"a.py","functions":7}]}'
+cx bad_funcs_dict_rs '{"files":[{"path":"a.rs","functions":{"f":1}}]}'
+cx bad_funcs_str_rs '{"files":[{"path":"a.rs","functions":"f"}]}'
+cx bad_func '{"files":[{"path":"a.rs","functions":[3]}]}'
+cx bad_metrics_list '{"files":[{"path":"a.rs","functions":[{"metrics":[1]}]}]}'
+cx bad_metrics_str '{"files":[{"path":"a.rs","functions":[{"metrics":"m"}]}]}'
+cx bad_metric_str '{"files":[{"path":"a.rs","functions":[{"metrics":{"cognitive":"x"}}]}]}'
+cx bad_metric_us '{"files":[{"path":"a.rs","functions":[{"metrics":{"cyclomatic":"1__2"}}]}]}'
+cx bad_metric_hex '{"files":[{"path":"a.rs","functions":[{"metrics":{"cyclomatic":"0x10"}}]}]}'
+cx bad_metric_list '{"files":[{"path":"a.rs","functions":[{"metrics":{"cyclomatic":[1]}}]}]}'
+cx bad_analyzed '{"files":[],"files_analyzed":"many"}'
+cx bad_json '{"files":['
+printf '\xef\xbb\xbf{"files":[]}' >"$c/bom.json"
+printf '{"files":[{"path":"\xff.rs"}]}' >"$c/badutf8.json"
+: >"$c/empty.json"
+
+cxr "rows: sort, max on collision, ./ once, .rs only" 10 15 "$c/main.json"
+cxr "names: str() of every JSON type, falsy -> ?" 10 15 "$c/names.json"
+cxr "metrics: int() of str, float, bool, null, missing" 10 15 "$c/coerce.json"
+cxr "falsy path/functions, len() of dict and str" 10 15 "$c/falsy.json"
+cxr "files null" 10 15 "$c/nofiles1.json"
+cxr "files 0" 10 15 "$c/nofiles2.json"
+cxr "files empty string" 10 15 "$c/nofiles3.json"
+cxr "duplicate keys: last value wins" 10 15 "$c/dupkeys.json"
+cxr "two documents: a key collides across them" 10 15 "$c/main.json" "$c/second.json"
+cxr "same document twice" 10 15 "$c/main.json" "$c/main.json"
+cxr "negative thresholds" -3 -1 "$c/coerce.json"
+cxr "zero thresholds" 0 0 "$c/main.json"
+cxr "thresholds with whitespace" " 10 " "	15
+" "$c/main.json"
+cxr "high thresholds: no rows" 1000 1000 "$c/main.json"
+for b in bad_list bad_files_dict bad_files_str bad_files_num bad_entry bad_path_num bad_path_list \
+    bad_funcs_num bad_funcs_dict_rs bad_funcs_str_rs bad_func bad_metrics_list bad_metrics_str \
+    bad_metric_str bad_metric_us bad_metric_hex bad_metric_list bad_analyzed bad_json bom badutf8 empty; do
+    cxr "raises: $b, nothing printed" 10 15 "$c/main.json" "$c/$b.json"
+done
+cxr "missing document" 10 15 "$c/main.json" "$c/no-such.json"
+cxr "document is a directory" 10 15 "$c"
+cxr "no document" 10 15
+cxr "CX_MAX_CYCLOMATIC unset" - 15 "$c/main.json"
+cxr "CX_MAX_COGNITIVE unset" 10 - "$c/main.json"
+cxr "both unset, no document" - -
+cxr "threshold empty" "" 15 "$c/main.json"
+cxr "threshold +1" 10 "+1" "$c/main.json"
+cxr "threshold 1_0" "1_0" 15 "$c/main.json"
+cxr "threshold 1.5" "1.5" 15 "$c/main.json"
+cxr "threshold --5 (int() raises)" "--5" 15 "$c/main.json"
+cxr "threshold abc beats a missing document" abc 15 "$c/no-such.json"
+cxr "--help is a path" 10 15 --help
+cxr "-- is a path" 10 15 -- "$c/main.json"
 
 ran=$((pass + fail))
 echo "ci_tools_py_parity: $pass/$ran identical (declared $EXPECTED_CASES)"

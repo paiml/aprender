@@ -81,7 +81,7 @@ impl<'de> Deserialize<'de> for Py {
 }
 
 impl Py {
-    fn get(&self, key: &str) -> Option<&Py> {
+    pub(crate) fn get(&self, key: &str) -> Option<&Py> {
         match self {
             Py::Dict(kv) => kv.iter().find(|(k, _)| k == key).map(|(_, v)| v),
             _ => None,
@@ -149,7 +149,7 @@ fn py_float_repr(f: f64) -> String {
 }
 
 /// Python truthiness.
-fn truthy(v: &Py) -> bool {
+pub(crate) fn truthy(v: &Py) -> bool {
     match v {
         Py::None => false,
         Py::Bool(b) => *b,

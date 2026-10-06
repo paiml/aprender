@@ -1,8 +1,9 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, llama_fit_verdict, package_include_diff,
-    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    complexity_rows, coverage_report_scope, dag_status, git_patch_id, llama_fit_verdict,
+    package_include_diff, publishable_crates, tarball_build_errors, tarball_shrink_report,
+    tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -94,6 +95,18 @@ enum Cmd {
         /// empty path reads as empty. Any other count exits 1, as the original's unpacking did.
         #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
+    },
+    /// `<path>::<function> <cyclomatic> <cognitive>` for every Rust function over either
+    /// threshold in the pmat complexity JSON documents named (was
+    /// scripts/lib/complexity_rows.py). Thresholds come from CX_MAX_CYCLOMATIC and
+    /// CX_MAX_COGNITIVE. Exit 2 for a bad threshold or no document, 1 for a bad document.
+    /// Every argument is a path, `--help` included, as it was there; use
+    /// `aprender-ci-tools help complexity-rows`.
+    #[command(disable_help_flag = true)]
+    ComplexityRows {
+        /// The pmat JSON documents, in order.
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        paths: Vec<PathBuf>,
     },
 }
 
@@ -194,6 +207,20 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             dag_status::run(&root, &rows).map_err(nothing_printed)
         }
         Cmd::LlamaFitVerdict { args } => llama_fit_verdict::run(&args).map_err(nothing_printed),
+        Cmd::ComplexityRows { paths } => {
+            let env = |k| std::env::var(k).ok();
+            let o = complexity_rows::run(
+                &paths,
+                env("CX_MAX_CYCLOMATIC").as_deref(),
+                env("CX_MAX_COGNITIVE").as_deref(),
+            );
+            if o.code == 0 {
+                eprintln!("{}", o.stderr);
+                Ok(o.stdout)
+            } else {
+                Err((o.stdout, o.code, o.stderr))
+            }
+        }
     }
 }
 
