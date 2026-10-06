@@ -28,7 +28,7 @@ runs() {
                        start = 0; mut = 0; m = ""; s = ""; mc = 0; sc = 0; kind = ""; inq = 0 }
     /^[[:space:]]*#/ { next }
     /docker run/ { flush(); start = NR; inhdr = 1; kind = "docker" }
-    /systemd-run .*--scope/ { flush(); start = NR; inhdr = 0; kind = "scope"; r = $0
+    /systemd-run .*--scope/ && !/docker run/ { flush(); start = NR; inhdr = 0; kind = "scope"; r = $0
                      while (match(r, /-p MemoryMax=[0-9]+G/)) { m = substr(r, RSTART + 13, RLENGTH - 14); mc++; r = substr(r, RSTART + RLENGTH) }
                      r = $0
                      while (match(r, /-p MemorySwapMax=[0-9]+/)) { s = substr(r, RSTART + 17, RLENGTH - 17); sc++; r = substr(r, RSTART + RLENGTH) } }
@@ -37,7 +37,9 @@ runs() {
                      r = $0
                      while (match(r, /--memory-swap=[0-9]+g/)) { s = substr(r, RSTART + 14, RLENGTH - 15); sc++; r = substr(r, RSTART + RLENGTH) }
                      if ($0 ~ /IMAGE/) inhdr = 0 }
-    ($0 ~ /cargo mutants / && $0 !~ /--version/ || $0 ~ /mutants_(diff_gate|table_shard)\.sh/ && $0 !~ /mutants_[a-z_]+\.sh --(exempt-ref|self-test)/) {
+    # A query call (--version, --exempt-ref, --self-test) is removed, not the whole line: a real run beside it still counts.
+    { q = $0; gsub(/cargo mutants --version|mutants_[a-z_]+\.sh --(exempt-ref|self-test)/, "", q) }
+    (q ~ /cargo mutants / || q ~ /mutants_(diff_gate|table_shard)\.sh/) {
                      if (start) mut = 1; else print NR, "BAD", "native: no capped docker run or systemd-run scope" }
     # A scope caps only its own command: it ends at the first line outside a single-quoted span that has no
     # trailing backslash. A mutation run on a later line of the step is then native, not capped by it.
@@ -128,6 +130,11 @@ if [ "${1:-}" = "--self-test" ]; then
     mrow 1 scopeother  "$d/scopeother.yml"
     printf '    steps:\n      - name: a\n        run: |\n          systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0 echo "it%ss capped"\n          bash scripts/mutants_diff_gate.sh pr.diff --jobs 1\n' "'" > "$d/scopeapos.yml"
     mrow 1 scopeapos   "$d/scopeapos.yml"
+    # A query call on the same line must not hide a real run; a scope around docker caps only the CLI (wcensus).
+    printf '    steps:\n      - name: l\n        run: |\n          docker run --rm "$IMAGE" bash -c "bash scripts/mutants_diff_gate.sh pr.diff && bash scripts/mutants_table_shard.sh --self-test"\n' > "$d/shareline.yml"
+    mrow 1 shareline   "$d/shareline.yml"
+    printf '    steps:\n      - name: k\n        run: |\n          systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 docker run --rm "$IMAGE" cargo mutants --in-diff x\n' > "$d/scopedocker.yml"
+    mrow 1 scopedocker "$d/scopedocker.yml"
     # Query modes and comments are not mutation runs: a file holding only them has no run to judge.
     printf '    steps:\n      - name: q\n        run: |\n          # bash scripts/mutants_diff_gate.sh pr.diff\n          bash scripts/mutants_diff_gate.sh --exempt-ref "$R" a b\n' > "$d/query.yml"
     mrow 2 queryonly   "$d/query.yml"
