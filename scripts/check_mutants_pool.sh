@@ -24,7 +24,8 @@ has() { # has <runs-on text> <label> -> 0 iff the label is one of the request's 
 # pool -- gpu is one of infra's census pools, ARM64 + docker selects the gx10 docker runner. Never a
 # request that can land on intel: clean-room, intel, or perf-solo (its runner carries intel).
 pool_ok() { # 0 iff it names an accepted pool and none that reaches intel
-    has "$1" clean-room && return 1; has "$1" intel && return 1; has "$1" perf-solo && return 1
+    # Deny by case-insensitive substring, as on main (clean-room-2 and intel-x64 are refused); accept only by whole label.
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in *clean-room*|*intel*|*perf-solo*) return 1 ;; esac
     has "$1" mutants && return 0
     has "$1" gpu && has "$1" arm64 && has "$1" docker && return 0
     return 1
@@ -54,6 +55,9 @@ table() { # table <workflow>
 0|[self-hosted, Linux, ARM64, GPU, Docker]
 1|[self-hosted, Linux, X64, not-mutants]
 1|[self-hosted, Linux, ARM64, gpu-less, docker]
+1|[self-hosted, Linux, ARM64, gpu, docker, clean-room-2]
+1|[self-hosted, Linux, ARM64, gpu, docker, intel-x64]
+1|[self-hosted, Linux, ARM64, gpu, docker, Perf-Solo-2]
 1|[self-hosted, Linux, X64, mutants-intel]
 1|
 POOLS
