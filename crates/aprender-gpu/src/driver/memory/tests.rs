@@ -478,41 +478,83 @@ mod cuda_tests {
         use super::*;
         use crate::driver::memory::buffer::{classify_device_memory, DeviceMemoryClass};
 
+        /// Is this compute capability an integrated part, one that shares the
+        /// host's RAM and so classifies as `UnifiedMemory`? Grace-class (10.0 and
+        /// later: GB200, GB10) and the Jetson Tegra SoCs (5.3 Nano/TX1, 6.2 TX2,
+        /// 7.2 Xavier, 8.7 Orin). No discrete card has one of those four Tegra
+        /// capabilities.
+        ///
+        /// The two classification tests below used `major >= 10` for this, which
+        /// files a Jetson Orin (8.7, integrated) under "discrete dGPU": the test
+        /// that asserts `ClassicDevice` then ran on it, against a device that
+        /// `classify_device_memory` documents as integrated ("Grace, Tegra").
+        fn is_integrated_cc(major: i32, minor: i32) -> bool {
+            major >= 10 || matches!((major, minor), (5, 3) | (6, 2) | (7, 2) | (8, 7))
+        }
+
+        // The partition both tests below stand on, pinned without a GPU.
+        #[test]
+        fn integrated_compute_capabilities_are_told_apart_from_discrete_ones() {
+            for (major, minor) in [(10, 0), (12, 1), (5, 3), (6, 2), (7, 2), (8, 7)] {
+                assert!(
+                    is_integrated_cc(major, minor),
+                    "cc {major}.{minor} is an integrated part"
+                );
+            }
+            // Pascal, Volta, Turing, Ampere (A100, GA10x), Ada (RTX 4090), Hopper
+            for (major, minor) in [
+                (6, 0),
+                (6, 1),
+                (7, 0),
+                (7, 5),
+                (8, 0),
+                (8, 6),
+                (8, 9),
+                (9, 0),
+            ] {
+                assert!(
+                    !is_integrated_cc(major, minor),
+                    "cc {major}.{minor} is a discrete card"
+                );
+            }
+        }
+
         // FT-ALLOC-AUTODETECT-001: classify_device_memory must return
-        // UnifiedMemory on Grace Blackwell GB10 (compute_cap=121, integrated=1).
-        // Skips silently on non-GB10 hardware.
+        // UnifiedMemory on an integrated device: Grace Blackwell GB10
+        // (compute_cap=121, integrated=1) or a Jetson Orin (8.7, integrated=1).
+        // Skips on discrete hardware.
         #[test]
         fn classify_gb10_unified() {
             let ctx = cuda_ctx!();
-            let (major, _minor) = ctx.compute_capability().expect("compute_capability");
-            if major < 10 {
-                eprintln!("skip: not a Grace-class device (compute_cap major < 10)");
+            let (major, minor) = ctx.compute_capability().expect("compute_capability");
+            if !is_integrated_cc(major, minor) {
+                eprintln!("skip: not an integrated device (compute_cap {major}.{minor})");
                 return;
             }
             let class = classify_device_memory(&ctx).expect("classify_device_memory");
             assert_eq!(
                 class,
                 DeviceMemoryClass::UnifiedMemory,
-                "Grace-class device (cc >= 100) must classify as UnifiedMemory"
+                "integrated device (Grace-class or Tegra) must classify as UnifiedMemory"
             );
         }
 
         // FT-ALLOC-AUTODETECT-002: classify_device_memory must return
         // ClassicDevice on discrete GPUs (Ada / Hopper / Ampere).
-        // Skips silently on integrated devices.
+        // Skips on integrated devices.
         #[test]
         fn classify_rtx4090_classic() {
             let ctx = cuda_ctx!();
-            let (major, _minor) = ctx.compute_capability().expect("compute_capability");
-            if major >= 10 {
-                eprintln!("skip: not a discrete dGPU (compute_cap major >= 10)");
+            let (major, minor) = ctx.compute_capability().expect("compute_capability");
+            if is_integrated_cc(major, minor) {
+                eprintln!("skip: not a discrete dGPU (compute_cap {major}.{minor} is integrated)");
                 return;
             }
             let class = classify_device_memory(&ctx).expect("classify_device_memory");
             assert_eq!(
                 class,
                 DeviceMemoryClass::ClassicDevice,
-                "discrete dGPU (cc < 100) must classify as ClassicDevice"
+                "discrete dGPU must classify as ClassicDevice"
             );
         }
 
