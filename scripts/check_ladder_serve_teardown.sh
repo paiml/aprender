@@ -116,6 +116,34 @@ wait_health() { local port="$1" i; for i in $(seq 1 50); do curl -fsS --max-time
 wait_pidfile() { local f="$1" i; for i in $(seq 1 50); do [ -s "$f" ] && return 0; sleep 0.1; done; return 1; }
 alive() { kill -0 "$1" 2>/dev/null; }
 
+# idle_child: start a `sleep 30` the teardown may TERM at once, and return only after it
+# is a separate process that has run (#4798 follow-up, FLAKE-0 M12). A bare `sleep 30 &`
+# is a fork of THIS shell until it execs, so a TERM that lands in that window kills a
+# copy that still carries the EXIT trap `cleanup`, which rm -rf the shared $TMP and
+# fails every later row. The child is a fresh bash that touches a ready file, then execs.
+idle_child() {
+  local ready="$TMP/idle.$RANDOM.$RANDOM"
+  bash -c 'echo ready > "$1"; exec sleep 30' _ "$ready" & IDLE_PID=$!
+  wait_pidfile "$ready" || { echo "  idle_child: the child never signalled ready" >&2; return 2; }
+}
+
+# race_extra_runs <idle_child-body> <tries> -> prints how many tries ran the EXIT trap in
+# the forked child as well as in the parent (one line per run in the log; two = the bug).
+race_extra_runs() {
+  local body="$1" tries="$2" i bad=0 log
+  for i in $(seq 1 "$tries"); do
+    log="$TMP/race.$i.log"; : > "$log"
+    {
+      printf 'set -uo pipefail\nTMP=%q\nLOG=%q\ntrap %s EXIT\n' "$TMP" "$log" "'echo ran >> \"\$LOG\"'"
+      declare -f wait_pidfile; printf '%s\n' "$body"
+      printf 'f() { idle_child; td=$( kill -TERM "$IDLE_PID"; echo x ); }\nf\n'
+    } > "$TMP/race.sh"
+    bash "$TMP/race.sh" 2>/dev/null || true
+    if [ "$(wc -l < "$log")" -gt 1 ]; then bad=$((bad + 1)); [ "$tries" -gt 100 ] && break; fi
+  done
+  echo "$bad"
+}
+
 run_cases() { # <teardown-function-body> -> 0 if every case lands, 1 otherwise
   local body="$1" fails=0 port pid spid td fpid
   # bashrs SEC001: evals a function body extracted by awk from this repo's own scripts/model_ladder.sh, so the real function is under test; no external input.
@@ -157,7 +185,8 @@ run_cases() { # <teardown-function-body> -> 0 if every case lands, 1 otherwise
   port=$(( 20000 + (RANDOM % 20000) ))
   (cd /tmp && exec python3 "$TMP/fake_server.py" "$port" 0 "$TMP/foreign.pid") & fpid=$!
   wait_health "$port" || { echo "  foreign: listener never answered" >&2; return 2; }
-  sleep 30 & pid=$!
+  idle_child || return 2
+  pid=$IDLE_PID
   td=$(ladder_serve_teardown "$pid" "$port") || true
   if [ "$td" != "failed" ] || ! alive "$fpid"; then
     echo "  FAIL foreign: teardown='$td', foreign alive=$(alive "$fpid" && echo yes || echo no) — want 'failed' and the foreign listener untouched"; fails=1
@@ -226,10 +255,23 @@ if [ "$SELF_TEST" -eq 1 ]; then
   if ! grep -q "FAIL slow-cpu" <<< "$wout" || [ "$(grep -c '^  FAIL' <<< "$wout")" -ne 1 ]; then
     echo "SELF-TEST FAIL: the log-only plant must turn EXACTLY slow-cpu red — anything else means the check is not measuring the CPU leg"; exit 1
   fi
-  echo "SELF-TEST OK: both planted regressions turned this RED"; exit 0
+  # Third plant: the bare `sleep 30 &` this check used to start. The probe must see the
+  # forked child run the EXIT trap (it did 7/60 on an idle host, more under load); if it
+  # never does, the row below proves nothing about the handshake.
+  ibody=$(declare -f idle_child)
+  bare=$(printf '%s\n' "$ibody" | sed -e 's/^ *bash -c .*$/    sleep 30 \& IDLE_PID=$!  # PLANTED: bare fork/' -e 's/^ *wait_pidfile "$ready" ||/    true ||/')
+  grep -q 'PLANTED' <<< "$bare" || { echo "  self-test: could not plant the bare fork — the anchor moved" >&2; exit 2; }
+  if [ "$(race_extra_runs "$bare" 1000)" -eq 0 ]; then
+    echo "SELF-TEST FAIL: a bare fork TERMed at once never ran the EXIT trap in 1000 tries — the race row cannot see the defect"; exit 1
+  fi
+  echo "SELF-TEST OK: all three planted regressions turned this RED"; exit 0
 fi
 
 rc=0
+# race: TERM a just-started idle child 100 times; the EXIT trap must run only in this shell
+race_bad=$(race_extra_runs "$(declare -f idle_child)" 100)
+if [ "$race_bad" -ne 0 ]; then echo "  FAIL race: idle_child let a forked copy run the EXIT trap in $race_bad/100 tries"; rc=1
+else echo "  ok   race: 100 TERMs of a just-started idle child, the EXIT trap ran once each"; fi
 run_cases "$body" || rc=1
 run_wait_cases "$wbody" || rc=1
 if [ "$rc" -eq 0 ]; then echo "PASS: teardown never reports clean while a launched process lives; the health wait ends on the server's state, not a clock"; exit 0; fi
