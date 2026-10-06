@@ -1,0 +1,45 @@
+name: Nightly Train
+
+on:
+  schedule:
+    - cron: '45 4 * * *'   # 04:45Z, after the last producer (mutants 01:00Z)
+  workflow_dispatch: {}    # drills only; a dispatched run never counts toward the streak
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+concurrency:
+  group: nightly-train
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: The judge's case table and mutants (a red table prints no verdict)
+        run: |
+          bash scripts/release/nightly_train.sh --self-test
+          bash scripts/release/nightly_train.sh --mutants
+          bash scripts/tests/models_lane_row_test.sh
+          bash scripts/tests/models_lane_row_test.sh --mutants
+      - name: RELEASABLE or NOT RELEASABLE for main's head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          bash scripts/release/nightly_train.sh --out "$RUNNER_TEMP/nt" --exit-verdict | tee "$RUNNER_TEMP/line"
+      - name: Summary
+        if: always()
+        run: |
+          { cat "$RUNNER_TEMP/line" 2>/dev/null || echo "no line printed"
+            echo; echo '```'; cat "$RUNNER_TEMP"/nt/*/reds.tsv 2>/dev/null | head -n 40; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nightly-train
+          path: ${{ runner.temp }}/nt
+          retention-days: 30

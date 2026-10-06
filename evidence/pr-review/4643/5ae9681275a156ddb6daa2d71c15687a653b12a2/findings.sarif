@@ -1,0 +1,130 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "delta_selftest_green",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_mutants_memory_cap.sh --self-test at this head: 16 ok rows including the seven new rows (missing, missingonly, onerunless, twocapped, shardnocap, shardcapped, no-run ENV), SELF-TEST PASSED."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_memory_cap.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "eba7f30b9ed538cb68649a52d475437b8781f6086c55749c1ff1c24cafda77fa",
+            "failure_scenario": "A self-test that did not run the new shard and per-file rows would leave the fail-closed rule unexercised.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "delta_bare_guard_green",
+          "level": "note",
+          "message": {
+            "text": "The guard run bare on the repo files judges three files, each with one capped mutation run: .github/workflows/mutants-nightly.yml, ci/sections.yml and .github/workflows/ci.yml (the per-PR shard, now carrying --memory=16g --memory-swap=16g)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_memory_cap.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "91c09256c399adc553eb9a83897ac262794c992267b57dab8dad4241adb40a20",
+            "failure_scenario": "If the ci.yml shard docker run lost its cap, the per-PR mutants job could take the whole runner and the bare run would turn rc 1.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fail_closed_per_file",
+          "level": "note",
+          "message": {
+            "text": "The delta makes each listed file judged on its own: a missing or unreadable file returns rc 2, so a good file no longer carries a bad one. Read in full at the head; no defect found in the awk matcher change (mutants_(diff_gate|table_shard)) or the here-string loop (an empty runs output yields one skipped empty line, then n is 0, then rc 2)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_mutants_memory_cap.sh:38",
+            "excerpt": "[ -f \"$f\" ] && [ -r \"$f\" ] || { printf 'ENV   %s is missing or unreadable -- cannot judge, not a pass\\n' \"$f\" >&2; return 2; }",
+            "excerpt_sha256": "e94ac7ccdcd6bb03b99026931e807dabbdec335d46f7732c6f60e692368911cd",
+            "failure_scenario": "Before the delta a deleted or renamed workflow file was skipped silently while another file supplied the one required run, so the missing surface read as a pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "delta_mutation_survivors",
+          "level": "note",
+          "message": {
+            "text": "Delta mutation sweep, 8 mutants of scripts/check_mutants_memory_cap.sh, 5 killed by --self-test. Survivors: (1) dropping the -r readability test, no row makes a file that exists but is unreadable; (2) dropping the -f test while keeping -r, equivalent for a missing path, since -r is false there; (3) removing ci.yml from the default file list, because the self-test never runs the default list. Survivor 3 is the only one that loses a real rejection: the bare run would stop judging the per-PR shard while staying green."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "mutation-sweep: copy the guard, apply one sed edit, run --self-test, killed iff non-zero"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "A later edit that drops ci.yml from the default list passes the self-test, and the per-PR shard cap is no longer checked by the bare CI invocation.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "Lexical scan of every origin ref for scripts/check_mutants_memory_cap.sh: 4 hits, all earlier or sibling versions of the same guard for ticket #4644 (a7n/mutcap-followup, ec/c108-nightly-mutants-pool, ec/c137-mutants-memory-cap, pr/4644). No second implementation under another name; a git grep of --memory-swap at the head finds only the three workflow cap lines and one unrelated book page."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "the ls-tree listing of all origin refs and the head git grep, each hit read",
+            "failure_scenario": "A parallel guard of another name would escape the scan; none was found by filename or by the memory-swap needle.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "patch_id_binds",
+          "level": "note",
+          "message": {
+            "text": "The subject diff 316dee2cd4b3..5ae9681275a1 has patch-id 03b73c4a2bba95c6bf6caa4ee941e635fee90b21 under prpid_compute, the value this receipt records. The merge-base was computed against the local origin/main ref; this lane may not fetch."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "prpid_compute run under bash -c on the review worktree at head",
+            "failure_scenario": "A stale local origin/main would bind the receipt to a different base than CI computes; the merge-base equals the base of the previous receipt.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

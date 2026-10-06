@@ -1,0 +1,19 @@
+- id: PMAT-4769
+  github_issue: 4769
+  item_type: task
+  title: 'FLAKE-0: StreamingKVCache memory-bound tests commit up to 34 GB and are OOM-killed on smaller runners'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wmainred
+  created: 2026-10-04T23:34:00Z
+  updated: 2026-10-04T23:50:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Step 1: the three long-context memory-bound tests (ultra, super, mega) carry #[ignore = "FLAKE-0 #4769"] and nothing else changes; every other aprender-serve lib test passes'
+  - 'Step 2: StreamingKVCache and StreamingKVCacheFp16 allocate each layer as its own zeroed buffer, the three tests are un-ignored and pass under a 24 GB memory cap, and decode throughput shows no regression beyond noise'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cause: vec![vec![0; n]; layers] clones layer 0 into every layer, writing every byte, so construction commits 8.6 / 17.2 / 34.4 GB; nextest KILLed the tests on a 30 GB runner (run 37241931271, workspace-test shard 1).'
