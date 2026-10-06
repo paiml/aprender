@@ -27,7 +27,7 @@
 # 2 = the autopilot has none of the step bodies this table runs, or jq is absent.
 set -uo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-AUTOPILOT="${1:-$HERE/autopilot.sh}"
+AUTOPILOT="${1:-$HERE/release/autopilot.sh}"
 command -v jq > /dev/null || { printf 'ENV   jq is not on PATH: the stub cannot apply --jq filters\n' >&2; exit 2; }
 T=$(mktemp -d) || exit 2
 trap 'rm -rf "${T:?}"' EXIT

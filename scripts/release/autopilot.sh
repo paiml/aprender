@@ -344,7 +344,7 @@ fi
 #   (c) assets: check_release_assets.sh <tag> exits 0 on the draft -- 1 (missing) and 2 (could not
 #       read) both refuse; Unknown is not a pass;
 #   (d) the release is still a draft: one made public outside the train is a STOP, not a no-op.
-# scripts/release/check_release_draft_gated.sh runs the tag..publish steps against a stub gh that
+# scripts/check_release_draft_gated.sh runs the tag..publish steps against a stub gh that
 # records the call order, plus a mutant per refusal.
 publish_release() {
     local t=$1 mc=$2 crun="" jc d rc=0
