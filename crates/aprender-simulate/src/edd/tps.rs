@@ -280,14 +280,13 @@ pub fn validate_littles_law(
             result.summary = format!(
                 "Little's Law validated: WIP={observed_wip:.2}, TH={observed_throughput:.2}, CT={observed_cycle_time:.2}"
             );
-            Ok(result)
         }
         Err(msg) => {
             result.h0_rejected = false;
             result.summary = msg;
-            Ok(result)
         }
     }
+    Ok(result)
 }
 
 /// Validates Kingman's hockey stick curve.

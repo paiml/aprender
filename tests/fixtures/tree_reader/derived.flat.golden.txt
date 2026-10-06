@@ -1,4 +1,5 @@
 reader_mods	--lib	<root>
+reader_mods	--lib	child
 reader_mods	--lib	deep
 reader_mods	--lib	deep::bolted
 reader_mods	--lib	inc
