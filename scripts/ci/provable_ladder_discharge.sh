@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # provable_ladder_discharge.sh — the provable-ladder `discharge` and `summary-fresh` steps
-# (ci/sections.yml), split by event per operator ruling C312 (#4578, 2026-10-04):
+# (ci/sections.yml), split by event per operator ruling C312 (#4578, 2026-10-04), amended
+# 2026-10-06 (item 5: the leanchecker leaves the push path; a push runs the same mode as a PR):
 #
-#   pull_request, merge_group  -> mode pr:   build.sh, then `pv discharge check --strict
+#   pull_request, merge_group, push
+#                              -> mode pr:   build.sh, then `pv discharge check --strict
 #                                 --comparator`. Lake elaboration and the comparator run;
-#                                 the leanchecker re-check (~75 min under load) does NOT.
-#   anything else (push to main, workflow_dispatch, schedule, unknown)
+#                                 the leanchecker re-check (up to 3,600 s) does NOT.
+#   anything else (schedule, workflow_dispatch, unknown)
 #                              -> mode full: `pv discharge run` — build, check --strict,
 #                                 comparator AND leanchecker, and it rewrites the summary.
+#                                 The schedule is provable-ladder-nightly.yml: once a night
+#                                 on main's head, an info lane until it is green three nights.
 #
 # An unknown or empty event is `full`: a mistake here can only add the slow check, never
 # drop it. Planted rows: scripts/ci/ladder_pr_skips_leanchecker.sh.
@@ -23,7 +27,7 @@ set -uo pipefail
 
 mode() {
     case "${EVENT:-}" in
-        pull_request | merge_group) echo pr ;;
+        pull_request | merge_group | push) echo pr ;;
         *) echo full ;;
     esac
 }
@@ -63,11 +67,11 @@ summary_fresh() {
     fi
     # pr mode wrote no summary (`check` never does), so a `git diff` would pass vacuously.
     # What a PR CAN be held to: the committed summary was generated for the Lean tree it
-    # ships. Its leanchecker verdict is re-derived on the push to main.
+    # ships. Its leanchecker verdict is re-derived by the nightly full run.
     want="$(git rev-parse "HEAD:$LEAN" 2>/dev/null)"
     got="$(committed_tree_sha)"
     if [ -n "$want" ] && [ "$want" = "$got" ]; then
-        echo "ok    $SUMMARY tree_sha = HEAD:$LEAN ($want); the leanchecker's verdict comes from the push to main"
+        echo "ok    $SUMMARY tree_sha = HEAD:$LEAN ($want); the leanchecker's verdict comes from the nightly full run"
         return 0
     fi
     echo "FAIL  $SUMMARY tree_sha '${got:-<none>}' != HEAD:$LEAN '${want:-<none>}': regenerate it with pv discharge run"
