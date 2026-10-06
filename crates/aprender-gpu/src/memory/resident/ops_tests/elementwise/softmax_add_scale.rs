@@ -145,20 +145,28 @@ fn test_ops_scale() {
 }
 
 // ============================================================================
-// Kernel cache vs context lifetime
+// Primary-context pin (test builds)
 // ============================================================================
 
-/// A cached kernel must still launch after every `CudaContext` that existed when
-/// it was compiled has been dropped.
+/// A kernel cached by one test must still launch after every `CudaContext` that
+/// existed when it was compiled has been dropped.
 ///
-/// The module cache is process-global and the primary context is destroyed when
-/// its last handle goes. Without `pin_primary_context` the second launch below
-/// used a module of a dead context (`CUDA_ERROR_INVALID_HANDLE`, or a SIGSEGV)
-/// whenever no other test happened to hold a context: every time at one test
-/// thread. Run it alone to see the difference:
-/// `cargo test -p aprender-gpu --features cuda --lib a_cached_kernel_outlives -- --test-threads 1`.
+/// This guards `pin_primary_context`, the `cfg(test)` shim in `CudaContext::new`,
+/// and not the production cache. The module cache is process-global and keyed by
+/// kernel name and config only; the primary context is destroyed when its last
+/// handle goes. The pin keeps it alive, so the second launch below finds a module
+/// that is still valid. Without the pin that launch used a module of a dead
+/// context (`CUDA_ERROR_INVALID_HANDLE`, or a SIGSEGV), every time this test runs
+/// alone and whenever no other test happens to hold a context.
+///
+/// With the pin in place this test cannot fail on the production defect, only on
+/// the loss of the pin: it exists so that the lane's low test-thread counts cannot
+/// lose the pin silently. It is not a regression test of a fix, because there is
+/// none. To see the defect, remove the call to `pin_primary_context` in
+/// `CudaContext::new` and run
+/// `cargo test -p aprender-gpu --features cuda --lib test_context_pin -- --test-threads 1`.
 #[test]
-fn a_cached_kernel_outlives_the_context_that_compiled_it() {
+fn test_context_pin_keeps_a_cached_kernel_launchable() {
     // Row size 24 is used by no other test, so this test compiles the kernel itself.
     let (seq_len, row_size) = (3u32, 24u32);
     let data: Vec<f32> = (0..seq_len * row_size)

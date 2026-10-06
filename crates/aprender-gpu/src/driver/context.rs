@@ -348,17 +348,29 @@ impl CudaContext {
 
 /// Keep a device's primary context alive for the rest of the test process.
 ///
-/// `memory::resident::cache` is process-global and every module in it belongs to
-/// the primary context that loaded it. The driver destroys a primary context the
-/// moment its retain count reaches zero. In a test process that happens between
-/// two tests whenever no other test holds a `CudaContext`: always at one test
-/// thread, by chance at two. A later test that finds its kernel in the cache then
-/// launches a module of a dead context and gets `CUDA_ERROR_INVALID_HANDLE` or a
-/// SIGSEGV, depending only on which tests happened to run before it. One extra
-/// retain that is never released keeps the count above zero for the life of the
-/// process, so a cached module outlives the test that compiled it.
+/// This works around a defect it does not fix. `memory::resident::cache` is
+/// process-global, keys a compiled module by kernel name and config only, and
+/// every module in it belongs to the primary context that loaded it. The driver
+/// destroys a primary context the moment its retain count reaches zero. In a
+/// test process that happens between two tests whenever no other test holds a
+/// `CudaContext`: always at one test thread, by chance at two. A later test that
+/// finds its kernel in the cache then launches a module of a dead context and
+/// gets `CUDA_ERROR_INVALID_HANDLE` or a SIGSEGV, depending only on which tests
+/// happened to run before it. One extra retain that is never released keeps the
+/// count above zero for the life of the process.
 ///
-/// Test builds only: production code owns its context for as long as it needs it.
+/// Test builds only, and only a mask. The same sequence outside a test (drop the
+/// last `CudaContext`, create another, reach a cached kernel) is not made safe by
+/// it, and while the pin is in place the lib tests cannot show the defect (the
+/// notice below says so once per test process, in the log of a run with
+/// `--nocapture`, as every stage of the Jetson lane runs). A fixed-string search
+/// of the tracked files outside this crate for `GpuResidentTensor`,
+/// `get_or_compile_kernel` and `clear_kernel_cache` finds no source file, so the
+/// exposure is this crate's resident-tensor API; callers outside this repository
+/// were not measured. The fix changes the lifetime rules of the cache and is not
+/// made here. To see the defect, remove the call to this function in
+/// `CudaContext::new` and run
+/// `cargo test -p aprender-gpu --features cuda --lib test_context_pin -- --test-threads 1`.
 #[cfg(test)]
 fn pin_primary_context(driver: &CudaDriver, device: CUdevice) {
     use std::sync::{Mutex, PoisonError};
@@ -374,6 +386,11 @@ fn pin_primary_context(driver: &CudaDriver, device: CUdevice) {
     let result = unsafe { (driver.cuDevicePrimaryCtxRetain)(&mut context, device) };
     if result == CUDA_SUCCESS {
         pinned.push(device);
+        eprintln!(
+            "[test-harness] primary context of device {device} is pinned for the life of this \
+             process (PMAT-4879): a kernel module cached by an earlier test stays valid. The \
+             cache outliving its context is masked here, not fixed."
+        );
     }
 }
 
