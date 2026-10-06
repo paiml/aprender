@@ -768,7 +768,7 @@ cxr "threshold 1.5" "1.5" 15 "$c/main.json"
 cxr "threshold --5 (int() raises)" "--5" 15 "$c/main.json"
 cxr "threshold abc beats a missing document" abc 15 "$c/no-such.json"
 cxr "--help is a path" 10 15 --help
-cxr "-- is a path" 10 15 -- "$c/main.json"
+cxr "-x is a path" 10 15 -x "$c/main.json"
 
 ran=$((pass + fail))
 echo "ci_tools_py_parity: $pass/$ran identical (declared $EXPECTED_CASES)"
