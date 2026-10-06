@@ -370,9 +370,9 @@ fn test_rms_norm_backward_large_hidden() {
     let n = num_rows as usize * hidden_size;
 
     // Deterministic pseudo-random data
-    let input_data: Vec<f32> = (0..n).map(|i| ((i as f32 * 0.37).sin() * 2.0)).collect();
+    let input_data: Vec<f32> = (0..n).map(|i| (i as f32 * 0.37).sin() * 2.0).collect();
     let gamma_data: Vec<f32> = (0..hidden_size).map(|i| 0.5 + (i as f32 * 0.13).cos()).collect();
-    let grad_output_data: Vec<f32> = (0..n).map(|i| ((i as f32 * 0.71).cos())).collect();
+    let grad_output_data: Vec<f32> = (0..n).map(|i| (i as f32 * 0.71).cos()).collect();
 
     // GPU backward
     let input_gpu = GpuBuffer::from_host(&ctx, &input_data).expect("upload");
@@ -461,7 +461,7 @@ fn test_batched_softmax_backward_finite_difference() {
         }
     }
 
-    let grad_output_data: Vec<f32> = (0..n).map(|i| ((i as f32 * 0.47).cos())).collect();
+    let grad_output_data: Vec<f32> = (0..n).map(|i| (i as f32 * 0.47).cos()).collect();
 
     let softmax_gpu = GpuBuffer::from_host(&ctx, &softmax_data).expect("upload");
     let grad_out_gpu = GpuBuffer::from_host(&ctx, &grad_output_data).expect("upload");

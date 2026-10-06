@@ -180,9 +180,9 @@ fn parity_probe_layer0_per_op() {
     let w_gate = g(&layer.ffn.w_gate);
     let w_up = g(&layer.ffn.w_up);
     let w_down = g(&layer.ffn.w_down);
-    let b_q = layer.self_attn.b_q.as_ref().map(|t| g(t));
-    let b_k = layer.self_attn.b_k.as_ref().map(|t| g(t));
-    let b_v = layer.self_attn.b_v.as_ref().map(|t| g(t));
+    let b_q = layer.self_attn.b_q.as_ref().map(g);
+    let b_k = layer.self_attn.b_k.as_ref().map(g);
+    let b_v = layer.self_attn.b_v.as_ref().map(g);
 
     let block = CudaNf4TransformerBlock::new(
         &config,

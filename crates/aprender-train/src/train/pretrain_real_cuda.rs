@@ -327,19 +327,13 @@ mod tests {
         let cfg = TransformerConfig::qwen2_0_5b();
         let result_arch_only =
             build_shared_cuda_trainer_with_init(1.0e-4, 128, 42, Some(&cfg), None);
-        assert!(
-            matches!(result_arch_only, Err(_)),
-            "(Some(arch), None) MUST Err — caller-bug guard"
-        );
+        assert!(result_arch_only.is_err(), "(Some(arch), None) MUST Err — caller-bug guard");
 
         // Path without arch — Err.
         let dummy = PathBuf::from("/tmp/does-not-exist.apr");
         let result_path_only =
             build_shared_cuda_trainer_with_init(1.0e-4, 128, 42, None, Some(&dummy));
-        assert!(
-            matches!(result_path_only, Err(_)),
-            "(None, Some(path)) MUST Err — caller-bug guard"
-        );
+        assert!(result_path_only.is_err(), "(None, Some(path)) MUST Err — caller-bug guard");
 
         // Both Err messages name the function so callers can grep
         // back to the offending invocation. We extract the message
@@ -381,7 +375,7 @@ mod tests {
         let dummy = PathBuf::from("/tmp/does-not-exist.apr");
         let result =
             build_shared_cuda_trainer_with_init(1.0e-4, 128, 42, Some(&encoder_cfg), Some(&dummy));
-        assert!(matches!(result, Err(_)), "Encoder-family init MUST Err under §50.4 step 5f.1");
+        assert!(result.is_err(), "Encoder-family init MUST Err under §50.4 step 5f.1");
     }
 
     /// FALSIFY-APR-PRETRAIN-EVAL-METHODOLOGY-001 (H1 sanity bound):
@@ -448,7 +442,7 @@ mod tests {
         let mut sequences = Vec::with_capacity(batch_size);
         for _ in 0..batch_size {
             let mut seq = Vec::with_capacity(seq_len + 1);
-            for _ in 0..(seq_len + 1) {
+            for _ in 0..=seq_len {
                 seq.push(lcg(&mut state));
             }
             sequences.push(seq);
@@ -532,7 +526,7 @@ mod tests {
             let mut sequences = Vec::with_capacity(batch_size);
             for _ in 0..batch_size {
                 let mut seq = Vec::with_capacity(seq_len + 1);
-                for _ in 0..(seq_len + 1) {
+                for _ in 0..=seq_len {
                     seq.push(lcg(state));
                 }
                 sequences.push(seq);
