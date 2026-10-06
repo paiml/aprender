@@ -1,0 +1,127 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "duplication_scan_no_hits",
+          "level": "note",
+          "message": {
+            "text": "The lexical duplication scan over head, all 1501 unmerged sibling branches and the merge-base-to-main range found 0 hits for the 3 symbols the diff touches; pmat query for the same intent returned other self-test functions, none a verdict-with-not-measured mechanism."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "358e9d4d1188040ea48d036e94ea6694a9e5ce78",
+              "--head",
+              "d34371b4a25443044435fb06edaa0d590e00bc39"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "12c1c2677e8595485d1908e3cedc1ba999ed92ff256af68494ae9237f3dcd072",
+            "failure_scenario": "A re-implementation under a different name is invisible to a name match; that residual is not covered.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "return3_mutant_killed",
+          "level": "note",
+          "message": {
+            "text": "A copy of the guard with the q>0 branch of selftest_verdict changed from return 3 to return 0 turns the self-test RED (rc 1): the verdict_rows table reports rows (0,5,1) and (0,5,7) as rc=0 (wanted 3)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<mutant copy>/check_guard_steps_run_all.sh",
+              "--self-test"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "1cb4046288fd78dae2bc008c68e5bd08c2f8a916b9cbaf056c9bf01153bbb5ee",
+            "failure_scenario": "Without the case rows, a regression back to the old silent-green q>0 path would pass its own self-test.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "selftest_at_head",
+          "level": "note",
+          "message": {
+            "text": "The unmutated self-test at this head: rc 0, 46/46 cases pass, 0 not measured, 1 quarantined (#4759)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_guard_steps_run_all.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8c00a4279a1936eb176ee3aecedaaef1ef775c50a24861c4dcf1af5fe7421160",
+            "failure_scenario": "If the self-test were red at head, the CI guard-tree step would fail on this PR.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The cross-vendor (antigravity) reviewer was not consulted: the local budget probe for the gemini bucket failed (rc 126, jq argument list too long inside the probe). No agy call was made."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  ". ~/.claude/skills/quorum-review/agy-bucket.sh && ab_state gemini 1"
+                ],
+                "exit_code": 126,
+                "stdout_sha256": "cac5d651d59bc48ed117d295078ee3e07a7cf0c7c2ce9645e4227467651fe8f4"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
