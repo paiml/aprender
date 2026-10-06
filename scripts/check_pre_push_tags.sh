@@ -22,7 +22,7 @@ set -euo pipefail
 
 SELF="$(cd "$(dirname "$0")" && pwd)/${0##*/}"
 HOOK_DIR="$(dirname "$SELF")/hooks"
-WANT_ROWS=30
+WANT_ROWS=31
 ROWS=0
 FAILS=0
 HOOK=''
@@ -101,6 +101,21 @@ step_install_under_hookspath() {
     GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/nonexistent-hooks \
         bash "$HOOK" --install || rc=$?
     [ "$rc" -eq 2 ]
+}
+# a second clone that already has both pre-push and pre-push.chained: install exits 2 and
+# leaves both byte-identical, with no guard copied in
+step_install_both_exist() {
+    local rc=0 h="$TP/w2/.git/hooks"
+    git clone -q "$TP/remote.git" "$TP/w2" || return 1
+    printf '#!/bin/sh\n# one\n' > "$TP/one"
+    printf '#!/bin/sh\n# two\n' > "$TP/two"
+    printf '#!/bin/sh\n# one\n' > "$h/pre-push"
+    printf '#!/bin/sh\n# two\n' > "$h/pre-push.chained"
+    cd "$TP/w2" || return 1
+    bash "$HOOK" --install 2> /dev/null || rc=$?
+    cd "$TP/w" || return 1
+    [ "$rc" -eq 2 ] && cmp -s "$TP/one" "$h/pre-push" && cmp -s "$TP/two" "$h/pre-push.chained" \
+        && [ ! -e "$h/pre-push-tags" ]
 }
 step_branch() { git branch feat && git push -q origin feat; }
 step_chained_saw_stdin() { grep -q '^refs/heads/feat [0-9a-f]* refs/heads/feat 0*$' "$TP/chained.log"; }
@@ -198,6 +213,7 @@ self_test() {
     check_row install_chains_the_existing_pre_push "install failed or the old hook is not pre-push.chained" step_install
     check_row a_second_install_keeps_the_chain "a reinstall chained the dispatcher to itself" step_install
     check_row install_refuses_under_core_hookspath "install did not exit 2 with core.hooksPath set" step_install_under_hookspath
+    check_row install_never_replaces_an_existing_chain "install did not exit 2, or changed pre-push or pre-push.chained" step_install_both_exist
 
     push_row a_branch_push_is_untouched allowed refs/heads/feat step_branch
     check_row the_chained_pre_push_saw_the_same_stdin "chained.log lacks the refs/heads/feat line" step_chained_saw_stdin
@@ -249,7 +265,8 @@ m07_main_is_not_checked	pre-push-tags.sh	s/^        if ! on_main "\$lsha" "\$url
 m08_the_marker_sha_is_not_compared	pre-push-tags.sh	s/^        if . "\$marker" != "\$rref \$lsha" .; then$/        if ! test "${marker%% *}" = "$rref"; then/
 m09_the_release_name_is_not_checked	pre-push-tags.sh	s/^        if ! is_release_name "\${rref#refs\/tags\/}"; then$/        if false; then/
 m10_the_dispatcher_ignores_the_guard	pre-push-dispatch.sh	s/^printf .%s. "\$in" | bash "\$d\/pre-push-tags" .*$/& || true/
-m11_a_foreign_pre_push_is_overwritten	pre-push-tags.sh	s/^        (c. "\${dir:?}" .. mv -- pre-push pre-push.chained)$/        true/'
+m11_a_foreign_pre_push_is_overwritten	pre-push-tags.sh	s/^        (c. "\${dir:?}" .. mv -- pre-push pre-push.chained)$/        true/
+m12_an_existing_chain_is_overwritten	pre-push-tags.sh	s/^            return 2$/            :/'
 
 mutants() {
     local name file expr rc killed=0 total=0 t
