@@ -39,9 +39,10 @@ KNOB_RE='FLEET_BUILD_(PRIO|SLOT_DIR|SLOTS_FILE|LEDGER|SLOT_POLL_S)'
 # matrix pins stripped (`determinism[X64]` -> determinism, `ws?1?3?` -> ws).
 pool_sections() {
     awk '
+        /^[ \t]*#/ { next }
         /^  [a-z0-9-]+:$/ { pool = 0 }
         /^    runs-on:/ { pool = ($0 ~ /X64/ && $0 ~ /clean-room/ && $0 !~ /cuda/) }
-        pool && /--sections / {
+        pool && /--sections +\047/ {
             s = $0; sub(/.*--sections +\047/, "", s); sub(/\047.*/, "", s)
             n = split(s, a, ",")
             for (i = 1; i <= n; i++) { x = a[i]; sub(/[\[?].*/, "", x); print x }
@@ -67,7 +68,7 @@ steps_of() {
 
 # check ROOT -> prints findings, sets FINDINGS and GAPS; rc 2 when not measured.
 check() {
-    local root="$1" ci="$1/.github/workflows/ci.yml" sec="$1/ci/sections.yml" secs want f line
+    local root="$1" ci="$1/.github/workflows/ci.yml" sec="$1/ci/sections.yml" secs want f line seen="" judged=0
     FINDINGS=0 GAPS=0
     [ -r "$ci" ] && [ -r "$sec" ] || { printf 'NOT MEASURED: cannot read %s or %s\n' "$ci" "$sec"; return 2; }
     secs=$(pool_sections "$ci")
@@ -78,6 +79,7 @@ check() {
         GAPS=$((GAPS + 1))
     done
     while IFS=$'\t' read -r job line heavy sh; do
+        judged=$((judged + 1)); case " $seen " in *" $job "*) ;; *) seen="$seen $job" ;; esac
         if [ "$heavy" = 1 ] && ! printf '%s\n' "$sh" | grep -Eq "$SHELL_OK_RE"; then
             printf 'R1 %s:%s %s: heavy cargo step without a build slot (shell: %s)\n' "ci/sections.yml" "$line" "$job" "${sh:-none}"
             FINDINGS=$((FINDINGS + 1))
@@ -86,6 +88,12 @@ check() {
             FINDINGS=$((FINDINGS + 1))
         fi
     done < <(steps_of "$sec" "$want")
+    # A wanted section with no job here (renamed, typo) or nothing judged at all
+    # is not a pass: the steps it names were never read.
+    for f in $want; do
+        case " $seen " in *" $f "*) ;; *) printf "NOT MEASURED: ci.yml names section %s and ci/sections.yml has no job by that name\n" "$f"; return 2 ;; esac
+    done
+    [ "$judged" -gt 0 ] || { printf "NOT MEASURED: 0 steps judged (every pool section is a gap)\n"; return 2; }
     while IFS= read -r line; do
         printf 'R3 %s: test-only knob in a workflow\n' "${line%%:*}:$(printf '%s' "$line" | cut -d: -f2)"
         FINDINGS=$((FINDINGS + 1))
@@ -100,7 +108,7 @@ self_test() {
     fixture() { # fixture DIR STEP_SHELL STEP_RUN [EXTRA_CI_LINE]
         mkdir -p "$1/.github/workflows" "$1/ci/vendor"
         printf 'jobs:\n  x86-main:\n    runs-on: [self-hosted, Linux, X64, clean-room]\n    steps:\n      - run: >\n          fat --sections %ssov.*,build[X64],light%s\n%s\n  gx10:\n    runs-on: [self-hosted, Linux, ARM64, cuda]\n    steps:\n      - run: fat --sections %sarmonly%s\n' "'" "'" "${4:-}" "'" "'" > "$1/.github/workflows/ci.yml"
-        printf 'jobs:\n  build:\n    steps:\n      - name: heavy\n%s        run: %s\n      - name: light\n        run: echo hi\n  armonly:\n    steps:\n      - name: arm\n        run: cargo build --release\n' "${2:+        shell: $2
+        printf 'jobs:\n  build:\n    steps:\n      - name: heavy\n%s        run: %s\n  light:\n    steps:\n      - name: light\n        run: echo hi\n  armonly:\n    steps:\n      - name: arm\n        run: cargo build --release\n' "${2:+        shell: $2
 }" "$3" > "$1/ci/sections.yml"
         : > "$1/ci/vendor/sovereign-ci.yml"
     }
@@ -135,10 +143,16 @@ self_test() {
     run_case "$tmp/12"; row "missing files: not measured (2), never a pass" "$rc" 2
     fixture "$tmp/13" "" "cargo test"; sed -i 's/X64, clean-room/ARM64, clean-room/' "$tmp/13/.github/workflows/ci.yml"
     run_case "$tmp/13"; row "no X64 pool section list: not measured (2)" "$rc" 2
+    fixture "$tmp/14" "" "cargo test"; sed -i 's/^  build:$/  build-x64:/' "$tmp/14/ci/sections.yml"
+    run_case "$tmp/14"; row "pool section with no job of that name: not measured (2)" "$rc" 2
+    fixture "$tmp/15" "" "cargo test"; sed -i "s/sov\.\*,build\[X64\],light/sov.*/" "$tmp/15/.github/workflows/ci.yml"
+    run_case "$tmp/15"; row "every pool section a gap, 0 judged: not measured (2)" "$rc" 2
+    fixture "$tmp/16" "bash scripts/ci/build_slot.sh run -- bash -e {0}" "cargo test" "      # fat --sections 'ghost'"
+    run_case "$tmp/16"; row "a --sections list in a comment names no section: green" "$rc" 0
 
     rm -rf "${tmp:?}"
     printf 'check_build_slot_call_sites self-test: %s rows, %s failed\n' "$rows" "$fails"
-    [ "$rows" -ge 15 ] || { printf 'only %s rows ran (want 15): NOT MEASURED\n' "$rows"; return 2; }
+    [ "$rows" -ge 18 ] || { printf 'only %s rows ran (want 18): NOT MEASURED\n' "$rows"; return 2; }
     [ "$fails" = 0 ]
 }
 

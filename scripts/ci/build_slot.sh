@@ -86,10 +86,18 @@ bs_is_ancestor() {
     return 1
 }
 
+# Lock files are opened READ-ONLY once they exist (flock needs no write access).
+# An O_CREAT open of a file another uid created in a sticky world-writable dir
+# is refused under fs.protected_regular=2; a read-only open never is. Sets BS_O.
+bs_open() {
+    if [ -e "$1" ]; then exec {BS_O}< "$1"; else exec {BS_O}<> "$1"; fi
+}
+
 # 0 when slot $1 under $2 is locked by someone (probe takes and drops it at once).
 bs_locked() {
     local fd rc=0
-    exec {fd}<> "$2/slot.$1" || return 1
+    [ -e "$2/slot.$1" ] || return 1
+    exec {fd}< "$2/slot.$1" || return 1
     if flock -n "$fd"; then rc=1; fi
     exec {fd}>&-
     return "$rc"
@@ -116,26 +124,30 @@ bs_acquire() {
         if [ "$tier" = 0 ]; then poll=1; else poll=3; fi
     fi
     t0=$(date +%s)
-    last=$t0
+    last=$((t0 - 60))
     if [ "$tier" = 0 ]; then
-        exec {pfd}<> "$dir/prio" || return 1
+        bs_open "$dir/prio" || return 1
+        pfd=$BS_O
         flock -s "$pfd" || return 1
     fi
     while :; do
         try=1
         held=""
         if [ "$tier" != 0 ]; then
-            exec {q}<> "$dir/prio" || return 1
+            bs_open "$dir/prio" || return 1
+            q=$BS_O
             flock -n -x "$q" || try=0
             exec {q}>&-
         fi
         if [ "$try" = 1 ]; then
             i=0
             while [ "$i" -lt "$n" ]; do
-                exec {fd}<> "$dir/slot.$i" || return 1
+                bs_open "$dir/slot.$i" || return 1
+                fd=$BS_O
                 if flock -n "$fd"; then
                     now=$(date +%s)
-                    printf '%s %s %s %s\n' "$BASHPID" "$label" "$tier" "$now" > "$dir/slot.$i.owner"
+                    printf '%s %s %s %s\n' "$BASHPID" "$label" "$tier" "$now" > "$dir/slot.$i.owner" 2> /dev/null ||
+                        printf "build-slot: cannot write %s (pre-create it root-owned, see protocol); nested calls under this slot will queue\n" "$dir/slot.$i.owner" >&2
                     [ -z "$pfd" ] || exec {pfd}>&-
                     BS_FD=$fd BS_SLOT=$i BS_T0=$now BS_WAIT_S=$((now - t0))
                     return 0
@@ -225,12 +237,20 @@ bs_self_test() {
         rows=$((rows + 1))
         if [ "$2" = "$3" ]; then printf '  ok    %s\n' "$1"; else printf '  FAIL  %s: got [%s] want [%s]\n' "$1" "$2" "$3"; fails=$((fails + 1)); fi
     }
+    until_held() { # until_held <k>: status shows at least k holders (20 s cap)
+        local j=0
+        while [ "$(bash "$me" status | grep -c " held: ")" -lt "$1" ] && [ "$j" -lt 100 ]; do sleep 0.2; j=$((j + 1)); done
+    }
+    until_waiting() { # until_waiting <stderr file>: that run printed its first wait line
+        local j=0
+        until grep -q "^build-slot: waiting" "$1" 2> /dev/null || [ "$j" -ge 100 ]; do sleep 0.2; j=$((j + 1)); done
+    }
 
     # (a) N+1-th waits; admitted after a release; wait recorded.
     echo 2 > "$tmp/slots"
     setsid bash "$me" run --label h1 -- sleep 2 & p1=$!
     setsid bash "$me" run --label h2 -- sleep 2 & p2=$!
-    sleep 0.5
+    until_held 2
     out=$(bash "$me" status | grep -c ' held: ')
     row "a: two holders on N=2" "$out" 2
     out=$(bash "$me" run --label w -- sh -c 'echo "$FLEET_BUILD_SLOT_WAIT_S"' 2> /dev/null)
@@ -240,37 +260,49 @@ bs_self_test() {
     # (b) a killed holder frees its slot; its stale owner line is not a holder.
     echo 1 > "$tmp/slots"
     setsid bash "$me" run --label dead -- sleep 30 & p1=$!
-    sleep 0.5
+    until_held 1
     kill -KILL -- "-$p1" 2> /dev/null; wait "$p1" 2> /dev/null
     row "b: stale owner file kept" "$(cut -d' ' -f2 "$tmp/v1/slot.0.owner")" dead
     row "b: status lists no holder" "$(bash "$me" status | grep -c ' held: ')" 0
     out=$(timeout 5 bash "$me" run -- sh -c 'echo "$FLEET_BUILD_SLOT_WAIT_S"' 2> /dev/null)
     row "b: next run admitted at once" "$out" 0
 
-    # (c) tier 0 arriving after a tier 1 waiter is admitted first.
+    # (c) tier 0 arriving after a tier 1 waiter is admitted first. The holder
+    # keeps its slot until both are seen waiting; the PR waiter polls 4x faster,
+    # so a tool without the priority check hands it the slot.
     : > "$tmp/order"
-    setsid bash "$me" run --label h -- sleep 1.5 & p1=$!
-    sleep 0.3
-    FLEET_BUILD_PRIO=1 bash "$me" run --label pr -- sh -c "echo pr >> '$tmp/order'" & p2=$!
-    sleep 0.5
-    GITHUB_EVENT_NAME=merge_group bash "$me" run --label q -- sh -c "echo queue >> '$tmp/order'" & p3=$!
+    setsid bash "$me" run --label h -- sh -c "until [ -e '$tmp/go' ]; do sleep 0.1; done" & p1=$!
+    until_held 1
+    FLEET_BUILD_PRIO=1 FLEET_BUILD_SLOT_POLL_S=0.05 bash "$me" run --label pr -- sh -c "echo pr >> '$tmp/order'" 2> "$tmp/pr.err" & p2=$!
+    until_waiting "$tmp/pr.err"
+    GITHUB_EVENT_NAME=merge_group bash "$me" run --label q -- sh -c "echo queue >> '$tmp/order'" 2> "$tmp/q.err" & p3=$!
+    until_waiting "$tmp/q.err"
+    touch "$tmp/go"
     wait "$p1" "$p2" "$p3"
     row "c: queue admitted before the earlier PR waiter" "$(head -1 "$tmp/order")" queue
 
     # (d) nested run under a held slot passes through; an env var alone does not.
     out=$(timeout 5 bash "$me" run --label outer -- bash "$me" run --label inner -- echo nested 2> /dev/null)
     row "d: nested run passes through on N=1" "$out" nested
-    setsid bash "$me" run --label other -- sleep 4 & p1=$!
-    sleep 0.3
+    setsid bash "$me" run --label other -- sh -c "until [ -e '$tmp/go2' ]; do sleep 0.1; done" & p1=$!
+    until_held 1
     FLEET_BUILD_SLOT=0 FLEET_BUILD_SLOT_PID=$$ timeout 1 bash "$me" run -- echo leaked > /dev/null 2>&1; rc=$?
     row "d: env naming an ancestor that is not the holder waits" "$rc" 124
     FLEET_BUILD_SLOT=0 FLEET_BUILD_SLOT_PID=1 timeout 1 bash "$me" run -- echo leaked > /dev/null 2>&1; rc=$?
     row "d: env naming pid 1 waits" "$rc" 124
+    # the env names the real holder, but this caller is not its descendant (a leak).
+    FLEET_BUILD_SLOT=0 FLEET_BUILD_SLOT_PID=$(cut -d' ' -f1 "$tmp/v1/slot.0.owner") timeout 1 bash "$me" run -- echo leaked > /dev/null 2>&1; rc=$?
+    row "d: env naming the holder from outside its tree waits" "$rc" 124
+    # a stale owner line naming an ancestor, on a slot nobody holds, admits nothing.
+    printf '%s stale 1 0\n' "$$" > "$tmp/v1/slot.1.owner"
+    FLEET_BUILD_SLOT=1 FLEET_BUILD_SLOT_PID=$$ timeout 1 bash "$me" run -- echo leaked > /dev/null 2>&1; rc=$?
+    row "d: owner line on an unlocked slot admits nothing" "$rc" 124
+    touch "$tmp/go2"
     wait "$p1"
 
     # (d2) the command runs with the slot fd closed: a daemon cannot keep the slot.
-    setsid bash "$me" run --label d -- sh -c 'setsid sleep 3 < /dev/null > /dev/null 2>&1 &'
-    sleep 0.3
+    # run has returned, so no wait is needed; the daemon outlives the check.
+    setsid bash "$me" run --label d -- sh -c 'setsid sleep 8 < /dev/null > /dev/null 2>&1 &'
     row "d2: a daemon left behind holds no slot" "$(bash "$me" status | grep -c ' held: ')" 0
 
     # (e) no pool.
@@ -296,9 +328,15 @@ bs_self_test() {
     echo x > "$tmp/slots"; t=$(( $(nproc) / 8 )); [ "$t" -ge 1 ] || t=1
     row "h: junk N falls back to nproc/8" "$(bs_n)" "$t"
 
+    # (i) lock files this uid cannot write still admit: they are opened read-only.
+    echo 1 > "$tmp/slots"; chmod 0444 "$tmp/v1/slot.0" "$tmp/v1/prio"
+    out=$(timeout 5 bash "$me" run -- echo admitted 2> /dev/null)
+    row "i: read-only slot and prio files admit" "$out" admitted
+    chmod 0644 "$tmp/v1/slot.0" "$tmp/v1/prio"
+
     rm -rf "${tmp:?}"
     printf 'build_slot self-test: %s rows, %s failed\n' "$rows" "$fails"
-    if [ "$rows" -lt 17 ]; then printf 'build_slot self-test: only %s rows ran (want 19): NOT MEASURED\n' "$rows"; return 1; fi
+    if [ "$rows" -ne 22 ]; then printf 'build_slot self-test: %s rows ran (want 22): NOT MEASURED\n' "$rows"; return 1; fi
     [ "$fails" = 0 ]
 }
 
