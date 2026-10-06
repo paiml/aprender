@@ -2,7 +2,7 @@
 
 Read at origin/main 11f844a772 by `git show` and `git grep`. No build, no GPU.
 Paths are under `crates/`. Kind: R = refused, F = falls back to the CPU,
-H = runs on wgpu with part of the step on the host.
+H = runs on wgpu with part of the step on the host. S = silent: the whole run is on the CPU while it reports wgpu.
 
 E4 says the refusals are removed. This sheet lists them so that E4 can be checked:
 each TARGET row names the bundle that strikes it and the falsifier that proves it is
@@ -33,6 +33,7 @@ an open question (RQ-10 below).
 | T10 | R | the wgpu MoE forward is a stub | `aprender-serve/src/gguf/wgpu_backend/mod.rs:197-206` | P5 | as T9; the stub's UnsupportedOperation is unreachable |
 | T11 | R | the MoE guard in `run_gguf_generate` | `gguf_gpu_generate.rs:474-490` | P5 | as T9 |
 | T12 | F, R if forced | qwen35: the GPU forward is CUDA only | `aprender-serve/src/infer/inference_result.rs:365-385`; `apr-cli/src/commands/chat_load_tokenizers.rs:201` | row 6 (RQ-8: stays at 6) | a forced wgpu run of Qwen3.5-4B exits 0 with used_gpu=true |
+| T13 | S | no working GPU driver: `GpuDevice::new()` takes a software Vulkan adapter (`DeviceType::Cpu`) that the registry probe refuses | `aprender-compute/src/backends/gpu/device/mod.rs:125-129`; probe `registry/wgpu_probe.rs:58-70` | row 13 (`R13-intel-amd-wgpu.md`, R13-1) | a lavapipe-only run exits non-zero naming the adapter |
 
 ## Guards: they stay, and their falsifier proves they fire
 | id | what | where @11f844a772 | falsifier |
