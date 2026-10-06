@@ -116,6 +116,41 @@ pub fn py_repr(s: &str) -> String {
     out
 }
 
+/// `repr()` (and `str()`) of a finite `float`: the shortest digits that round-trip, written
+/// in fixed notation when the decimal point falls within 16 digits of the first one
+/// (`0.0001`, `1000000000000000.0`), else as `d.ddde±XX` (`1e-05`, `1e+16`).
+pub fn py_float_repr(f: f64) -> String {
+    // `{:e}` gives the same shortest round-trip digits, as `d.ddde<exp>`.
+    let sci = format!("{:e}", f.abs());
+    let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    let digits = mantissa.replace('.', "");
+    let sign = if f.is_sign_negative() { "-" } else { "" };
+    let point = exp + 1; // digits before the decimal point
+    let body = if (-3..=16).contains(&point) {
+        if point <= 0 {
+            format!("0.{}{digits}", "0".repeat(point.unsigned_abs() as usize))
+        } else {
+            let point = point.unsigned_abs() as usize;
+            if point >= digits.len() {
+                format!("{digits}{}.0", "0".repeat(point - digits.len()))
+            } else {
+                format!("{}.{}", &digits[..point], &digits[point..])
+            }
+        }
+    } else {
+        let (first, rest) = digits.split_at(1);
+        let rest = if rest.is_empty() {
+            String::new()
+        } else {
+            format!(".{rest}")
+        };
+        let esign = if exp < 0 { '-' } else { '+' };
+        format!("{first}{rest}e{esign}{:02}", exp.unsigned_abs())
+    };
+    format!("{sign}{body}")
+}
+
 /// `repr()` of a `list[str]`.
 pub fn py_list_repr<S: AsRef<str>>(items: &[S]) -> String {
     let inner: Vec<String> = items.iter().map(|s| py_repr(s.as_ref())).collect();
@@ -157,6 +192,32 @@ mod tests {
         assert_eq!(py_text_lines(b"a\r\nb\rc\nd"), ["a\n", "b\n", "c\n", "d"]);
         assert_eq!(py_text_lines(b""), Vec::<String>::new());
         assert_eq!(py_text_lines(b"\xffz\n"), ["\u{fffd}z\n"]);
+    }
+
+    #[test]
+    fn float_repr_matches_cpython() {
+        // Each `want` is CPython 3.13's repr() of the same literal.
+        for (f, want) in [
+            (0.0, "0.0"),
+            (-0.0, "-0.0"),
+            (1.0, "1.0"),
+            (-2.5, "-2.5"),
+            (0.1, "0.1"),
+            (0.0001, "0.0001"),
+            (0.00001, "1e-05"),
+            (0.000_123_4, "0.0001234"),
+            (1.5e-7, "1.5e-07"),
+            (1e15, "1000000000000000.0"),
+            (1e16, "1e+16"),
+            (1.234_567_890_123_456_7e16, "1.2345678901234568e+16"),
+            (123_456.789, "123456.789"),
+            (1e300, "1e+300"),
+            (5e-324, "5e-324"),
+            (f64::MAX, "1.7976931348623157e+308"),
+            (2.153_112_004_134_677_4e-5, "2.1531120041346774e-05"),
+        ] {
+            assert_eq!(py_float_repr(f), want, "{f:e}");
+        }
     }
 
     #[test]

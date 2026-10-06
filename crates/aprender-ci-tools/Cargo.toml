@@ -14,7 +14,7 @@ publish = false
 clap = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["float_roundtrip"] }  # Python parses floats exactly
 sha1 = { workspace = true }
 toml = { workspace = true }
 

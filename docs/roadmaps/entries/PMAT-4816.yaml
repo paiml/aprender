@@ -1,0 +1,18 @@
+- id: PMAT-4816
+  github_issue: 4816
+  item_type: task
+  title: 'PY-PORT: crux_missing_stories.py -> aprender-ci-tools crux-missing-stories'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T16:16:00Z
+  updated: 2026-10-05T16:16:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741

@@ -1,9 +1,9 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    annotate_book_examples, coverage_report_scope, dag_status, extract_book_examples, git_patch_id,
-    llama_fit_verdict, package_include_diff, perf041_report, publishable_crates,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    annotate_book_examples, coverage_report_scope, crux_missing_stories, dag_status,
+    extract_book_examples, git_patch_id, llama_fit_verdict, package_include_diff, perf041_report,
+    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -119,6 +119,11 @@ enum Cmd {
         #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// `id, title, demand_score, competitor` (TSV) for each story whose `status` is `"missing"`,
+    /// from the JSON stories on stdin (was scripts/crux_missing_stories.py). Exit 1 where the
+    /// original raised, after the rows it printed; 2 on input it took and this refuses. Like
+    /// the original it reads no argument: `parse` hands it none, so clap never sees one.
+    CruxMissingStories,
 }
 
 fn cargo_metadata() -> Result<String, String> {
@@ -150,6 +155,13 @@ fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
 /// The output, or a refusal.
 fn run(cmd: Cmd) -> Result<String, Refusal> {
     match cmd {
+        Cmd::CruxMissingStories => {
+            let mut stories = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut stories)
+                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
+            crux_missing_stories::run(&stories)
+        }
         Cmd::GitPatchId { mode } => {
             let mode = git_patch_id::Mode::parse(mode.as_deref()).ok_or_else(|| {
                 (
@@ -235,17 +247,31 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
     }
 }
 
-fn main() -> ExitCode {
-    let cli = match Cli::try_parse() {
-        Ok(cli) => cli,
+/// The command to run, or the exit code clap's own output ended with.
+///
+/// `crux-missing-stories` is taken past clap: the original never read `sys.argv`, so any
+/// argument, `--help` included, is ignored where clap would print help or refuse it.
+fn parse() -> Result<Cmd, ExitCode> {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("crux-missing-stories")) {
+        return Ok(Cmd::CruxMissingStories);
+    }
+    match Cli::try_parse() {
+        Ok(cli) => Ok(cli.cmd),
         // --help/--version exit 0; a usage error exits 1, as the originals' did.
         Err(e) => {
             let code = u8::from(e.use_stderr());
             let _ = e.print();
-            return ExitCode::from(code);
+            Err(ExitCode::from(code))
         }
+    }
+}
+
+fn main() -> ExitCode {
+    let cmd = match parse() {
+        Ok(cmd) => cmd,
+        Err(code) => return code,
     };
-    let (out, refusal) = match run(cli.cmd) {
+    let (out, refusal) = match run(cmd) {
         Ok(out) => (out, None),
         Err((printed, code, reason)) => (printed, Some((code, reason))),
     };

@@ -5,6 +5,7 @@
 
 pub mod annotate_book_examples;
 pub mod coverage_report_scope;
+pub mod crux_missing_stories;
 pub mod dag_status;
 pub mod extract_book_examples;
 pub mod git_patch_id;
