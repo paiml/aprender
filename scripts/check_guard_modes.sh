@@ -14,14 +14,18 @@
 # -----------
 # A run prints one FLAG line per guard whose mode is not 100755, then a count, and exits 0
 # whatever it finds (30 guards were 100644 when this landed). It exits 2 when the guard list
-# could not be read or is empty: that is not_measured, never a pass.
+# could not be read or is empty: that is not_measured, never a pass. The count line's first
+# token is SUMMARY because guard_tree.sh surfaces only UNMEASURED and SUMMARY lines under a
+# PASS row; any other line of a passing guard never reaches the CI log.
 #
 # The list is `git ls-files -s 'scripts/check_*.sh'`, the same pathspec as guard_tree.sh's
 # guard_universe, so the two cover the same guards.
 #
 # Usage: check_guard_modes.sh [--self-test | --mutants | --help]
 #   --self-test  run the case table (must-flag 100644 and 120000, must-pass 100755, and a
-#                throwaway repository whose modes come from chmod); exit 1 on any failed row
+#                throwaway repository whose modes come from chmod); exit 1 on any failed row.
+#                It ignores an exported GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE (a git hook
+#                exports GIT_DIR), which would otherwise point every row at the caller's repo
 #   --mutants    plant each mutant in a copy and require its self-test to fail
 set -euo pipefail
 
@@ -45,7 +49,7 @@ report() {
     fi
     f="$(printf '%s\n' "$list" | flag_modes)"
     [ -z "$f" ] || printf '%s\n' "$f"
-    printf 'REPORT %s of %s guards are not mode 100755 (report-only)\n' "$(printf '%s' "$f" | grep -c . || true)" "$n"
+    printf 'SUMMARY %s of %s guards are not mode 100755 (report-only)\n' "$(printf '%s' "$f" | grep -c . || true)" "$n"
 }
 
 # case NAME WANT INPUT: WANT is flag or pass, INPUT one `git ls-files -s` line
@@ -83,7 +87,8 @@ repo_row() {
 }
 
 self_test() {
-    local t
+    local t last rc
+    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
     t="$(printf '\t')"
     case_row a_644_guard_is_flagged flag "100644 0123456789abcdef0123456789abcdef01234567 0${t}scripts/check_a.sh"
     case_row a_755_guard_passes pass "100755 0123456789abcdef0123456789abcdef01234567 0${t}scripts/check_a.sh"
@@ -102,10 +107,33 @@ self_test() {
     chmod 755 "$TMP_ST/r/scripts/check_y.sh"
     git -C "$TMP_ST/r" add scripts/check_x.sh scripts/check_y.sh
     repo_row a_chmod_minus_x_guard_is_flagged 0 "FLAG 100644 scripts/check_x.sh" "check_y.sh"
-    repo_row the_count_names_both_numbers 0 "REPORT 1 of 2 guards" ""
+    repo_row the_count_names_both_numbers 0 "SUMMARY 1 of 2 guards" ""
     repo_row a_non_guard_is_not_listed 0 "of 2 guards" "other.sh"
     git -C "$TMP_ST/r" update-index --chmod=+x scripts/check_x.sh
-    repo_row an_executable_tree_flags_nothing 0 "REPORT 0 of 2 guards" "FLAG"
+    repo_row an_executable_tree_flags_nothing 0 "SUMMARY 0 of 2 guards" "FLAG"
+    # guard_tree.sh surfaces a passing guard's line only when its FIRST token is SUMMARY
+    ROWS=$((ROWS + 1))
+    last="$(report "$TMP_ST/r" | tail -n 1)"
+    case "$last" in
+        "SUMMARY "*) printf '  ok    the_count_line_starts_with_summary\n' ;;
+        *) printf '  FAIL  the_count_line_starts_with_summary: got [%s]\n' "$last"; FAILS=$((FAILS + 1)) ;;
+    esac
+    # a pre-commit hook exports GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE; the rows must still
+    # read their own throwaway repository.
+    # The nested run skips this row (GUARD_MODES_NESTED), so it recurses exactly once.
+    if [ -z "${GUARD_MODES_NESTED:-}" ]; then
+        ROWS=$((ROWS + 1))
+        git init -q "$TMP_ST/decoy"
+        rc=0
+        GUARD_MODES_NESTED=1 GIT_DIR="$TMP_ST/decoy/.git" GIT_WORK_TREE="$TMP_ST/decoy" GIT_INDEX_FILE="$TMP_ST/decoy/.git/index" \
+            bash "$0" --self-test > "$TMP_ST/nested.log" 2>&1 || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            printf '  ok    an_exported_git_dir_is_ignored\n'
+        else
+            printf '  FAIL  an_exported_git_dir_is_ignored: rc=%s\n' "$rc"
+            FAILS=$((FAILS + 1))
+        fi
+    fi
     printf -- '--- %s/%s rows ---\n' "$((ROWS - FAILS))" "$ROWS"
     [ "$FAILS" -eq 0 ]
 }
@@ -113,7 +141,9 @@ self_test() {
 # one mutant per line: NAME<TAB>sed expression
 MUTANTS='m01_755_is_flagged_too	s/if (m\[1\] != "100755")/if (m[1] != "100644")/
 m02_an_empty_list_passes	s/if \[ "\$n" -eq 0 \]; then/if false; then/
-m03_only_the_first_field_is_the_path	s/print "FLAG " m\[1\] " " \$2/print "FLAG " m[1] " " m[2]/'
+m03_only_the_first_field_is_the_path	s/print "FLAG " m\[1\] " " \$2/print "FLAG " m[1] " " m[2]/
+m04_an_exported_git_dir_is_followed	s/^    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE$/    true/
+m05_the_count_line_has_another_first_token	s/^\(    printf .\)SUMMARY %s of/\1guards: SUMMARY %s of/'
 
 mutants() {
     local name expr copy killed=0 total=0 rc
@@ -142,7 +172,7 @@ mutants() {
 case "${1:-}" in
     --self-test) self_test ;;
     --mutants) mutants ;;
-    --help | -h) sed -n '2,25p' "$0" ;;
+    --help | -h) sed -n '2,29p' "$0" ;;
     '') report "$(git rev-parse --show-toplevel)" ;;
     *) printf 'usage: %s [--self-test | --mutants | --help]\n' "${0##*/}" >&2; exit 2 ;;
 esac
