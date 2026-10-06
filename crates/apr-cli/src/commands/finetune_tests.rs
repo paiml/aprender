@@ -79,6 +79,7 @@ fn test_run_no_model() {
         false,
         false,
         0,
+        None,
     );
     assert!(result.is_err());
 }
@@ -116,6 +117,7 @@ fn test_run_plan_with_model_size() {
         false,
         false,
         0,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -153,6 +155,7 @@ fn test_run_plan_json() {
         true,
         false,
         0,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -192,6 +195,7 @@ fn test_run_with_model_file() {
         false,
         false,
         0,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -322,6 +326,7 @@ fn test_run_training_creates_adapter() {
         true,
         false,
         0,
+        None,
     );
     // Training fails with a minimal model (missing norm weights, etc.)
     // but the pipeline should get past config resolution and data parsing.
@@ -1205,7 +1210,7 @@ fn build_instruct_config_threads_max_seq_len() {
     // instruct/LoRA path, NOT be silently dropped to the old hardcoded 512.
     let mut config = plan(1_000_000_000, 24.0, Method::LoRA).expect("plan lora");
     config.method = Method::LoRA;
-    let cfg = build_instruct_config(&config, 1e-4, 3, Some(384));
+    let cfg = build_instruct_config(&config, 1e-4, 3, Some(384), None);
     assert_eq!(
         cfg.max_seq_len, 384,
         "--max-seq-len 384 must be honored, not dropped to 512"
@@ -1219,7 +1224,7 @@ fn build_instruct_config_defaults_max_seq_len_to_512_when_absent() {
     use entrenar::finetune::instruct_pipeline::InstructConfig;
     let mut config = plan(1_000_000_000, 24.0, Method::QLoRA).expect("plan qlora");
     config.method = Method::QLoRA;
-    let cfg = build_instruct_config(&config, 5e-5, 1, None);
+    let cfg = build_instruct_config(&config, 5e-5, 1, None, None);
     assert_eq!(cfg.max_seq_len, InstructConfig::default().max_seq_len);
     assert_eq!(cfg.max_seq_len, 512);
     assert!(cfg.quantize_nf4, "QLoRA method → NF4 on");
@@ -1313,6 +1318,7 @@ fn run_with_missing_model_file_errors() {
         true,          // json_output
         false,         // experimental_mps
         0,             // gpu_share
+        None,
     );
     assert!(result.is_err());
 }
@@ -1817,5 +1823,180 @@ fn classify_load_still_accepts_a_directory_of_safetensors() {
     assert!(
         msg.contains("Failed to load pretrained model"),
         "a directory must still go down the from_pretrained path: {msg}"
+    );
+}
+
+// ── --lora-targets (FALSIFY-LORA_TARGET_SELECTION_V1_016) ───────────────────
+
+fn parsed(names: &[&str]) -> entrenar::lora::LoraTargets {
+    entrenar::lora::LoraTargets::parse(names).expect("valid target names")
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_016_flag_reaches_instruct_config() {
+    let mut config = plan(1_000_000_000, 24.0, Method::LoRA).expect("plan lora");
+    config.method = Method::LoRA;
+    let qkv = parsed(&["q_proj", "k_proj", "v_proj"]);
+    let cfg = build_instruct_config(&config, 1e-4, 3, None, Some(qkv.clone()));
+    assert_eq!(
+        cfg.lora_targets, qkv,
+        "the parsed set must reach InstructConfig"
+    );
+    let cfg = build_instruct_config(&config, 1e-4, 3, None, None);
+    assert_eq!(
+        cfg.lora_targets,
+        entrenar::lora::LoraTargets::default(),
+        "an absent flag keeps the default"
+    );
+    assert_eq!(cfg.lora_targets, parsed(&["q_proj", "v_proj"]));
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_016_parse_matches_lora_targets_parse() {
+    assert_eq!(parse_lora_targets_flag(None).expect("absent"), None);
+    let cases: [(&str, &[&str]); 5] = [
+        ("q_proj,v_proj", &["q_proj", "v_proj"]),
+        (" k_proj , o_proj ", &["k_proj", "o_proj"]),
+        (
+            "gate_proj,up_proj,down_proj",
+            &["gate_proj", "up_proj", "down_proj"],
+        ),
+        ("all_linear", &["all_linear"]),
+        ("q_proj,,v_proj,", &["q_proj", "v_proj"]),
+    ];
+    for (flag, names) in cases {
+        let got = parse_lora_targets_flag(Some(flag)).expect("valid flag");
+        assert_eq!(got, Some(parsed(names)), "--lora-targets {flag:?}");
+    }
+    assert_ne!(
+        parse_lora_targets_flag(Some("q_proj,k_proj")).expect("valid"),
+        Some(entrenar::lora::LoraTargets::default()),
+        "a non-default set must not collapse to the default"
+    );
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_016_unknown_or_empty_refused() {
+    for flag in ["w_proj", "q_proj,bogus", "", ",", " , "] {
+        let err = parse_lora_targets_flag(Some(flag)).expect_err(flag);
+        let msg = err.to_string();
+        assert!(
+            matches!(err, CliError::ValidationFailed(_)) && msg.contains("--lora-targets"),
+            "{flag:?}: {msg}"
+        );
+    }
+    let msg = parse_lora_targets_flag(Some("q_proj,bogus"))
+        .expect_err("unknown")
+        .to_string();
+    assert!(
+        msg.contains("bogus"),
+        "the error must name the module: {msg}"
+    );
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_016_modes_without_lora_training_refuse() {
+    let adapters = ["data.jsonl:ckpt".to_string()];
+    // (plan_only, merge_mode, task, adapters, gpu_backend, the mode named)
+    let modes: [(bool, bool, Option<&str>, &[String], &str, &str); 6] = [
+        (false, true, None, &[], "auto", "--merge"),
+        (
+            false,
+            false,
+            Some("classify"),
+            &[],
+            "auto",
+            "--task classify",
+        ),
+        (false, false, None, &adapters, "auto", "--adapters"),
+        (
+            false,
+            false,
+            Some("instruct"),
+            &[],
+            "auto",
+            "--task instruct",
+        ),
+        (true, false, None, &[], "auto", "--plan"),
+        (false, false, None, &[], "wgpu", "--gpu-backend wgpu"),
+    ];
+    for (plan_only, merge, task, ads, backend, mode) in modes {
+        let err = lora_targets_for_run(Some("q_proj,v_proj"), plan_only, merge, task, ads, backend)
+            .expect_err(mode);
+        let msg = err.to_string();
+        assert!(
+            msg.contains(mode) && msg.contains("--lora-targets"),
+            "{mode}: {msg}"
+        );
+        let absent = lora_targets_for_run(None, plan_only, merge, task, ads, backend);
+        assert_eq!(
+            absent.expect(mode),
+            None,
+            "{mode} without the flag runs as before"
+        );
+    }
+    for backend in ["auto", "cuda"] {
+        let got = lora_targets_for_run(Some("q_proj,k_proj"), false, false, None, &[], backend);
+        assert_eq!(
+            got.expect(backend),
+            Some(parsed(&["q_proj", "k_proj"])),
+            "the LoRA training path keeps the set ({backend})"
+        );
+    }
+    // Parsing comes first: an unknown name is reported even under a refusing mode.
+    let msg = lora_targets_for_run(Some("bogus"), false, true, None, &[], "auto")
+        .expect_err("unknown")
+        .to_string();
+    assert!(msg.contains("bogus"), "{msg}");
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_016_run_refuses_before_loading() {
+    let run_with = |merge: bool, targets: &str| {
+        run(
+            None,
+            "auto",
+            None,
+            16.0,
+            false,
+            None,
+            None,
+            None,
+            merge,
+            3,
+            Some(2e-4),
+            None,
+            None,
+            5,
+            "apr,safetensors",
+            false,
+            None,
+            false,
+            None,
+            "cuda",
+            None,
+            None,
+            None,
+            None,
+            0,
+            &[],
+            None,
+            false,
+            false,
+            0,
+            Some(targets),
+        )
+        .expect_err("refused")
+        .to_string()
+    };
+    let msg = run_with(true, "q_proj,v_proj");
+    assert!(
+        msg.contains("--merge") && msg.contains("--lora-targets"),
+        "{msg}"
+    );
+    let msg = run_with(false, "w_proj");
+    assert!(
+        msg.contains("--lora-targets") && msg.contains("w_proj"),
+        "{msg}"
     );
 }

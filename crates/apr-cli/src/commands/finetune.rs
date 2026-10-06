@@ -318,12 +318,17 @@ fn gpu_backend_notice(
 /// instruct path (only the `classify`/multi-adapter paths honored it). This
 /// threads the flag through, falling back to entrenar's default (512) when the
 /// flag is absent.
+///
+/// `lora_targets` is the parsed `--lora-targets` ([`parse_lora_targets_flag`]);
+/// without it the run keeps `LoraTargets::default()`
+/// (`FALSIFY-LORA_TARGET_SELECTION_V1_016`).
 #[cfg(feature = "training")]
 fn build_instruct_config(
     config: &OptimalConfig,
     learning_rate: f64,
     epochs: u32,
     max_seq_len: Option<usize>,
+    lora_targets: Option<entrenar::lora::LoraTargets>,
 ) -> entrenar::finetune::instruct_pipeline::InstructConfig {
     use entrenar::finetune::instruct_pipeline::InstructConfig;
     InstructConfig {
@@ -334,8 +339,99 @@ fn build_instruct_config(
         max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
         gradient_clip_norm: Some(1.0),
         quantize_nf4: matches!(config.method, Method::QLoRA),
+        lora_targets: lora_targets.unwrap_or_default(),
         ..InstructConfig::default()
     }
+}
+
+/// Parse `apr finetune --lora-targets` (`FALSIFY-LORA_TARGET_SELECTION_V1_016`).
+///
+/// The value is a comma-separated list of module names, each trimmed, or one of
+/// the shorthands `all_linear`, `attention`, `qv`, `mlp` alone, read by
+/// `LoraTargets::parse`. An absent flag selects nothing here, so the run keeps
+/// `LoraTargets::default()` (`q_proj`, `v_proj`).
+///
+/// # Errors
+/// `CliError::ValidationFailed` naming an unknown module, or an empty list.
+pub(crate) fn parse_lora_targets_flag(
+    flag: Option<&str>,
+) -> Result<Option<entrenar::lora::LoraTargets>> {
+    let Some(flag) = flag else {
+        return Ok(None);
+    };
+    let names: Vec<&str> = flag
+        .split(',')
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .collect();
+    entrenar::lora::LoraTargets::parse(&names)
+        .map(Some)
+        .map_err(|e| CliError::ValidationFailed(format!("--lora-targets {flag:?}: {e}")))
+}
+
+/// The mode `dispatch_finetune_mode` takes instead of LoRA training, in its
+/// order, then `--plan`, then an explicit `--gpu-backend wgpu`, or `None` when the
+/// run reaches the LoRA training path of `execute_training`. Only that path builds
+/// an `InstructConfig` from `--lora-targets`; `execute_training` refuses an auto
+/// choice of wgpu itself, once the method is known.
+fn lora_targets_unhonoured_by(
+    plan_only: bool,
+    merge_mode: bool,
+    task: Option<&str>,
+    adapters: &[String],
+    gpu_backend: &str,
+) -> Option<&'static str> {
+    if merge_mode {
+        return Some("--merge");
+    }
+    if task == Some("classify") {
+        return Some("--task classify");
+    }
+    if !adapters.is_empty() {
+        return Some("--adapters");
+    }
+    if task == Some("instruct") {
+        return Some("--task instruct");
+    }
+    if plan_only {
+        return Some("--plan");
+    }
+    if gpu_backend == "wgpu" {
+        return Some("--gpu-backend wgpu");
+    }
+    None
+}
+
+/// The error for a `--lora-targets` that `mode` would not train with.
+fn lora_targets_refusal(mode: &str) -> CliError {
+    CliError::ValidationFailed(format!(
+        "--lora-targets selects the targets of LoRA training, and {mode} does not train \
+         with them; drop the flag or the mode"
+    ))
+}
+
+/// Parse `--lora-targets` and refuse it for a mode that would ignore it, before
+/// anything loads (`FALSIFY-LORA_TARGET_SELECTION_V1_016`).
+///
+/// # Errors
+/// As [`parse_lora_targets_flag`], or the refusal naming the mode.
+fn lora_targets_for_run(
+    flag: Option<&str>,
+    plan_only: bool,
+    merge_mode: bool,
+    task: Option<&str>,
+    adapters: &[String],
+    gpu_backend: &str,
+) -> Result<Option<entrenar::lora::LoraTargets>> {
+    let targets = parse_lora_targets_flag(flag)?;
+    if targets.is_some() {
+        if let Some(mode) =
+            lora_targets_unhonoured_by(plan_only, merge_mode, task, adapters, gpu_backend)
+        {
+            return Err(lora_targets_refusal(mode));
+        }
+    }
+    Ok(targets)
 }
 
 /// Execute LoRA adapter creation from model tensors.
@@ -380,6 +476,7 @@ fn execute_training(
     model_size: Option<&str>,
     gpu_backend: &str,
     max_seq_len: Option<usize>,
+    lora_targets: Option<entrenar::lora::LoraTargets>,
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
@@ -416,7 +513,9 @@ fn execute_training(
 
     // 3. Create InstructPipeline from APR model.
     // Defect 2 fix: thread the CLI --max-seq-len through instead of hardcoding 512.
-    let instruct_config = build_instruct_config(config, learning_rate, epochs, max_seq_len);
+    let lora_targets_given = lora_targets.is_some();
+    let instruct_config =
+        build_instruct_config(config, learning_rate, epochs, max_seq_len, lora_targets);
 
     if !json_output {
         output::pipeline_stage("Training", output::StageStatus::Running);
@@ -437,6 +536,9 @@ fn execute_training(
     );
     eprintln!("{}", backend_plan.notice);
     let use_wgpu = backend_plan.use_wgpu;
+    if use_wgpu && lora_targets_given {
+        return Err(lora_targets_refusal("the wgpu backend"));
+    }
 
     #[cfg(feature = "wgpu")]
     if use_wgpu {
@@ -1309,6 +1411,7 @@ pub(crate) fn run(
     json_output: bool,
     experimental_mps: bool,
     gpu_share: u32,
+    lora_targets: Option<&str>,
 ) -> Result<()> {
     contract_pre_rank_bounds_safety!();
     contract_pre_alpha_rank_ratio!();
@@ -1319,6 +1422,14 @@ pub(crate) fn run(
 
     let all_adapters = merge_adapters_config(adapters, adapters_config, json_output)?;
     let adapters = &all_adapters;
+    let lora_targets = lora_targets_for_run(
+        lora_targets,
+        plan_only,
+        merge_mode,
+        task,
+        adapters,
+        gpu_backend,
+    )?;
 
     if wait_gpu > 0 {
         wait_for_gpu_vram(wait_gpu, vram_gb, task)?;
@@ -1422,6 +1533,7 @@ pub(crate) fn run(
         model_size,
         gpu_backend,
         max_seq_len,
+        lora_targets,
     )
 }
 
@@ -1438,6 +1550,7 @@ fn run_finetune_training(
     model_size: Option<&str>,
     gpu_backend: &str,
     max_seq_len: Option<usize>,
+    lora_targets: Option<entrenar::lora::LoraTargets>,
 ) -> Result<()> {
     let data = match data_path {
         Some(d) if d.exists() => d,
@@ -1475,6 +1588,7 @@ fn run_finetune_training(
         model_size,
         gpu_backend,
         max_seq_len,
+        lora_targets,
     )
 }
 

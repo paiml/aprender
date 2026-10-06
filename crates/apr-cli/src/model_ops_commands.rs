@@ -58,6 +58,10 @@ pub enum ModelOpsCommands {
         /// Maximum sequence length for GPU buffer allocation (lower = less VRAM)
         #[arg(long, value_name = "LEN")]
         max_seq_len: Option<usize>,
+        /// LoRA target modules, comma-separated (e.g. "q_proj,v_proj"), or one of
+        /// all_linear, attention, qv, mlp. Default: q_proj,v_proj
+        #[arg(long, value_name = "TARGETS")]
+        lora_targets: Option<FreeText>,
         /// Quantize frozen weights to NF4 (4-bit) for QLoRA training (~8x VRAM savings)
         #[arg(long)]
         quantize_nf4: bool,

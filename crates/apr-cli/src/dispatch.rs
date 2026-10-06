@@ -1083,6 +1083,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             checkpoint_format,
             oversample,
             max_seq_len,
+            lora_targets,
             quantize_nf4,
             gpus,
             gpu_backend,
@@ -1131,6 +1132,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 cli.json,
                 *experimental_mps,
                 *gpu_share,
+                lora_targets.as_deref(),
             )
         }
         Commands::ModelOps(ModelOpsCommands::Prune {
