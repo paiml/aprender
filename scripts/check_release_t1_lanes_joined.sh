@@ -20,7 +20,11 @@
 # that scripts/check_model_parity.sh runs every apr parity under the ladder's GPU lock (dogfood's C14
 # parity and the ladder now share the GPU).
 # Then it re-runs everything against mutants and requires each to turn it RED.
-# Exit 0 = PASS, 1 = FAIL, 2 = could not run.
+# MODE. guard_tree runs every scripts/check_*.sh, this one included. REPORT by default (L31: a new
+# check blocks only after three green nights; the red, overlap and interrupt cases also read the wall
+# clock): a wrong case or a surviving mutant prints a REPORT line and exits 0.
+# RELEASE_T1_LANES_ENFORCE=1 makes it exit 1. ENV (rc 2) is rc 2 in both modes.
+# Exit 0 = PASS (or report mode), 1 = FAIL under ENFORCE, 2 = could not run.
 set -uo pipefail
 
 ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null) || { echo "ENV: not in a git checkout"; exit 2; }
@@ -30,6 +34,14 @@ PARITY=$ROOT/scripts/check_model_parity.sh
 [ -f "$PARITY" ] || { echo "ENV: no $PARITY"; exit 2; }
 TMP=$(mktemp -d) || { echo "ENV: mktemp failed"; exit 2; }
 trap 'rm -rf -- "${TMP:?}"' EXIT
+
+# finish BAD: the verdict in the current mode (see MODE above).
+finish() {
+    [ "$1" = 0 ] && exit 0
+    [ "${RELEASE_T1_LANES_ENFORCE:-0}" = 1 ] && exit 1
+    echo "REPORT: a case or a mutant landed wrong -- report mode (L31: blocks only after three green nights; RELEASE_T1_LANES_ENFORCE=1 enforces)"
+    exit 0
+}
 
 # The harness: say/die as the autopilot defines them, run_step from $SEL, and lanes that sleep then
 # go red or green. deep holds a child (as a lane holds cargo) so a kill that reaches only the lane
@@ -130,7 +142,7 @@ check() {
 }
 
 if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (8 cases), the target dirs are split, parity takes the GPU lock"
-else echo "FAIL  the autopilot's T-1 lanes: $why"; exit 1; fi
+else echo "FAIL  the autopilot's T-1 lanes: $why"; finish 1; fi
 
 fails=0; nm=0
 mutant() { # mutant NAME SED-EXPR
@@ -155,5 +167,5 @@ sed -e 's/flock -E 75 -w "\${MODEL_LADDER_LOCK_WAIT:-1800}" "\${MODEL_LADDER_GPU
 if cmp -s "$PARITY" "$TMP/m-parity.sh"; then echo "FAIL  mutant parity-unlocked did not apply (anchor moved)"; fails=$((fails + 1))
 elif why=$(check "$AUTOPILOT" m-parity "$TMP/m-parity.sh"); then echo "FAIL  mutant parity-unlocked survived"; fails=$((fails + 1))
 else echo "ok    mutant parity-unlocked killed ($why)"; fi
-[ "$fails" -eq 0 ] || { echo "FAIL  $fails of $nm mutant(s)"; exit 1; }
+[ "$fails" -eq 0 ] || { echo "FAIL  $fails of $nm mutant(s)"; finish 1; }
 echo "PASS  8 case(s) + target dirs + parity lock, $nm mutant(s) killed: deep, dogfood and models start together, join before readiness, and a red in any stops the pass"
