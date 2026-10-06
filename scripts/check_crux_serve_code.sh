@@ -366,12 +366,30 @@ EOF
   } > "$TMP/h1/child.sh"
   H1_DIR="$TMP/h1" bash "$TMP/h1/child.sh" "$1" "$2" 2> /dev/null
 }
-h1_idle=$(h1_lost idle 20)
-h1_bare=$(h1_lost bare 20)
-if [ "$h1_idle" = 0 ]; then ok "H1 a server TERMed as soon as idle() publishes it leaves the temp dir intact (0/20 lost)"
-else bad "H1 a server TERMed as soon as idle() publishes it leaves the temp dir intact (lost: '$h1_idle'/20)"; fi
-if [ -n "$h1_bare" ] && [ "$h1_bare" -gt 0 ] 2> /dev/null; then ok "H1b MUST-RED a bare \`sleep &\` TERMed at once runs the EXIT trap and loses it ($h1_bare/20)"
-else bad "H1b not_measured: a bare \`sleep &\` lost nothing ('$h1_bare'/20), so H1 could not fail on this host"; fi
+# One child loses nothing in ~6-17% of fresh processes even with a bare launcher (review of
+# e9d434a303: 17/100 intel, 6/62 lambda), so both rows run up to H1_K fresh children. H1b stops
+# at the first child that loses (miss ~0.17^10 = 2e-8); H1 runs all H1_K and must lose none.
+H1_K=10
+h1_idle=0 h1_kids=0
+while [ "$h1_kids" -lt "$H1_K" ]; do
+  n=$(h1_lost idle 20)
+  h1_kids=$((h1_kids + 1))
+  case "$n" in ''|*[!0-9]*) h1_idle="?$n"; break ;; esac
+  h1_idle=$((h1_idle + n))
+done
+h1_bare=0 h1_bkids=0
+while [ "$h1_bkids" -lt "$H1_K" ] && [ "$h1_bare" = 0 ]; do
+  n=$(h1_lost bare 20)
+  h1_bkids=$((h1_bkids + 1))
+  case "$n" in ''|*[!0-9]*) h1_bare="?$n"; break ;; esac
+  h1_bare=$n
+done
+if [ "$h1_idle" = 0 ] && [ "$h1_kids" = "$H1_K" ]; then ok "H1 a server TERMed as soon as idle() publishes it leaves the temp dir intact (0/$((H1_K * 20)) lost, $H1_K children)"
+else bad "H1 a server TERMed as soon as idle() publishes it leaves the temp dir intact (lost: '$h1_idle' in $h1_kids children of 20)"; fi
+case "$h1_bare" in
+  ''|0|\?*) bad "H1b not_measured: a bare \`sleep &\` lost nothing ('$h1_bare') in $h1_bkids children of 20, so H1 could not fail on this host" ;;
+  *) ok "H1b MUST-RED a bare \`sleep &\` TERMed at once runs the EXIT trap and loses it ($h1_bare/20 in child $h1_bkids of $H1_K)" ;;
+esac
 
 printf -- '--- %s: chat pty reply extraction (#3962 B3) ---\n' "$PROG"
 PTY_PY="$ROOT/scripts/lib/crux_pty_chat.py"
