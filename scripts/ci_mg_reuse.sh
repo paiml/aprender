@@ -34,6 +34,10 @@
 #                          --runs FILE --jobs FILE [--repo-root DIR]
 #   ci_mg_reuse.sh resolve --event E --ref QUEUE_REF --queue-head M --base B
 #                          --repo OWNER/NAME [--repo-root DIR]   (3 gh api calls)
+#   ci_mg_reuse.sh decide-push  --event E --ref REF --sha S --before P
+#                          --runs FILE --jobs FILE [--repo-root DIR]
+#   ci_mg_reuse.sh resolve-push --event E --ref REF --sha S --before P
+#                          --repo OWNER/NAME [--repo-root DIR]   (2 gh api calls)
 #   ci_mg_reuse.sh --self-test [--workflow FILE]
 # decide/resolve print x86= det= mac= cite= pr_head= reason= and exit 0; 2 is usage.
 # Each refusal line carries `# R:<id>`: the mutation harness drops it, and the
@@ -45,7 +49,7 @@ PRH=""
 
 emit() { printf 'x86=%s\ndet=%s\nmac=%s\ncite=%s\npr_head=%s\nreason=%s\n' "$1" "$2" "$3" "$4" "$5" "$6"; }
 refuse() { emit 0 0 0 "" "$PRH" "$1"; }
-usage() { echo "usage: ci_mg_reuse.sh decide|resolve [opts] | --self-test [--workflow FILE]" >&2; exit 2; }
+usage() { echo "usage: ci_mg_reuse.sh decide|resolve|decide-push|resolve-push [opts] | --self-test [--workflow FILE]" >&2; exit 2; }
 
 # The newest ci.yml pull_request run on $2 in runs file $1: "id<TAB>status<TAB>attempt".
 pick_run() {
@@ -144,6 +148,106 @@ resolve() {
     refuse "lookup failed: the jobs of run '${rid:-none}'"; rm -rf "${w:?}"; return 0
   fi
   decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" \
+    --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root"
+  rm -rf "${w:?}"
+}
+
+# ---------------------------------------------------------------- the push arm
+# The merge queue tests a commit S, then fast-forwards main to S, and the push run on main used to
+# re-run x86-main and determinism on S in full. decide-push lets the push run reuse the queue run's
+# result instead, the same way workspace-test already does (T36), and only when that queue run was
+# a REAL run of both jobs, never itself a reuse. Every key is READ from git or the API:
+#   P1  the event is a push to refs/heads/main
+#   P2  S has exactly one parent B, and the push moved main from B (before = B): one squash commit
+#   P3  the run and job lists are complete; the newest ci.yml merge_group run on S is completed, its
+#       queue branch names B as its base, and every job is that run's, on S
+#   P4  that run's x86-main, determinism, gate and `ci / gate` each succeeded (one job of that
+#       name), and its x86-main-advisories was skipped: the queue's own mg-reuse said "run", so
+#       x86-main and determinism ran there for real. A queue run that reused them cites nothing.
+# mac-check is never reused on a push. Anything not proven answers 0 and the jobs run (L25).
+# Each refusal ends in a `# R-<NAME>` marker: scripts/check_ci_push_reuse.sh --self-test deletes
+# it, and that table must then go RED.
+
+# The newest ci.yml merge_group run on $2 in runs file $1: "id<TAB>status<TAB>attempt<TAB>branch".
+pick_mg_run() {
+  jq -r --arg h "$2" --arg p "$CI_WORKFLOW_PATH" '
+    [.workflow_runs[]? | select(.path == $p and .event == "merge_group" and .head_sha == $h)]
+    | sort_by([.created_at, .id]) | last // empty
+    | "\(.id)\t\(.status)\t\(.run_attempt // 1)\t\(.head_branch // "")"' "$1" 2> /dev/null
+}
+
+decide_push() {
+  local ev="" ref="" s="" before="" runs="" jobs="" root="."
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --event) ev="${2-}" ;;
+      --ref) ref="${2-}" ;;
+      --sha) s="${2-}" ;;
+      --before) before="${2-}" ;;
+      --runs) runs="${2-}" ;;
+      --jobs) jobs="${2-}" ;;
+      --repo-root) root="${2-}" ;;
+      *) echo "ci_mg_reuse: unknown argument '$1'" >&2; return 2 ;;
+    esac
+    shift 2 || return 2
+  done
+  PRH=""
+  [ "$ev" = push ] && [ "$ref" = refs/heads/main ] || { refuse "P1: event '$ev' on '$ref' is not a push to main"; return 0; } # R-PUSHMAIN
+  local S sp spa B P
+  S=$(git -C "$root" rev-parse --verify --quiet "$s^{commit}" 2> /dev/null)
+  [ -n "$S" ] || { refuse "P2: the pushed commit '${s:0:10}' is not in this clone"; return 0; }  # unmarked: an absent commit also fails R-PUSHPARENT
+  sp=$(git -C "$root" rev-list --parents -n 1 "$S" 2> /dev/null)
+  read -r -a spa <<< "$sp"
+  [ "${#spa[@]}" -eq 2 ] || { refuse "P2: the pushed commit ${S:0:10} is not a single-parent (squash) commit"; return 0; } # R-PUSHPARENT
+  B="${spa[1]}"
+  P=$(git -C "$root" rev-parse --verify --quiet "$before^{commit}" 2> /dev/null)
+  [ -n "$P" ] && [ "$P" = "$B" ] || { refuse "P2: the push moved main from '${before:0:10}', not from ${S:0:10}'s parent ${B:0:10}"; return 0; } # R-PUSHBEFORE
+  jq -e '(.total_count // -1) == ([.workflow_runs[]?] | length)' "$runs" > /dev/null 2>&1 || { refuse "P3: the merge_group run list for ${S:0:10} is unreadable or has an unread page"; return 0; } # R-PUSHRUNS
+  local rid st att br
+  IFS=$'\t' read -r rid st att br <<< "$(pick_mg_run "$runs" "$S")"
+  [ "$st" = completed ] || { refuse "P3: the newest ci.yml merge_group run on ${S:0:10} is '${st:-absent}' (run ${rid:-none})"; return 0; } # R-PUSHDONE
+  case "$br" in gh-readonly-queue/main/pr-[0-9]*-"$B") ;; *) refuse "P3: merge_group run $rid's queue branch '$br' does not name base ${B:0:10}"; return 0 ;; esac # R-PUSHQBASE
+  jq -e '(.total_count // -1) == ([.jobs[]?] | length)' "$jobs" > /dev/null 2>&1 || { refuse "P3: the job list of run $rid is unreadable or has an unread page"; return 0; } # R-PUSHJOBS
+  jq -e --arg id "$rid" --arg h "$S" '([.jobs[]?] | length) > 0 and all(.jobs[]; (.run_id | tostring) == $id and .head_sha == $h)' "$jobs" > /dev/null 2>&1 || { refuse "P3: the job list is not run $rid's on ${S:0:10}"; return 0; } # R-PUSHJOBRUN
+  local why=""
+  [ "$(concl "$jobs" x86-main)" = success ] || why="${why:+$why; }x86-main is $(concl "$jobs" x86-main)" # R-PUSHX
+  [ "$(concl "$jobs" determinism)" = success ] || why="${why:+$why; }determinism is $(concl "$jobs" determinism)" # R-PUSHDET
+  [ "$(concl "$jobs" gate)" = success ] || why="${why:+$why; }gate is $(concl "$jobs" gate)" # R-PUSHGATE
+  [ "$(concl "$jobs" 'ci / gate')" = success ] || why="${why:+$why; }ci / gate is $(concl "$jobs" 'ci / gate')" # R-PUSHCIGATE
+  [ "$(concl "$jobs" x86-main-advisories)" = skipped ] || why="${why:+$why; }x86-main-advisories is $(concl "$jobs" x86-main-advisories), so the queue run reused rather than ran" # R-PUSHREAL
+  [ -z "$why" ] || { refuse "P4: merge_group run $rid on ${S:0:10}: $why"; return 0; }
+  emit 1 1 0 "merge_group run $rid attempt $att on ${S:0:10}" "" \
+    "P1-P4 hold: merge_group run $rid ran x86-main + determinism on this very commit and both passed; mac-check: run (never reused on a push)"
+}
+
+resolve_push() {
+  local ev="" ref="" s="" before="" repo="" root="."
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --event) ev="${2-}" ;;
+      --ref) ref="${2-}" ;;
+      --sha) s="${2-}" ;;
+      --before) before="${2-}" ;;
+      --repo) repo="${2-}" ;;
+      --repo-root) root="${2-}" ;;
+      *) echo "ci_mg_reuse: unknown argument '$1'" >&2; return 2 ;;
+    esac
+    shift 2 || return 2
+  done
+  PRH=""
+  [ "$ev" = push ] && [ "$ref" = refs/heads/main ] || { decide_push --event "$ev" --ref "$ref"; return; }
+  [[ $s =~ ^[0-9a-f]{40}$ ]] || { refuse "lookup failed: '$s' is not a 40-hex sha"; return 0; } # R-PUSHSHAFORM
+  # Two API calls. Every lookup that fails answers "run it": decide-push re-reads what it gets.
+  # A failing call can still print a body, so only its exit status says it failed.
+  local w rid rc
+  w=$(mktemp -d "${TMPDIR:-/tmp}/mg-reuse.XXXXXX") || { refuse "lookup failed: no temp dir"; return 0; }
+  gh api "repos/$repo/actions/runs?head_sha=$s&event=merge_group&per_page=100" > "$w/runs.json" 2> /dev/null; rc=$?
+  [ "$rc" -eq 0 ] || { refuse "lookup failed: the merge_group runs on ${s:0:10}"; rm -rf "${w:?}"; return 0; } # R-PUSHRUNSAPI
+  IFS=$'\t' read -r rid _ _ _ <<< "$(pick_mg_run "$w/runs.json" "$s")"
+  [ -n "$rid" ] || { refuse "lookup failed: no ci.yml merge_group run on ${s:0:10}"; rm -rf "${w:?}"; return 0; }
+  gh api "repos/$repo/actions/runs/$rid/jobs?filter=latest&per_page=100" > "$w/jobs.json" 2> /dev/null; rc=$?
+  [ "$rc" -eq 0 ] || { refuse "lookup failed: the jobs of merge_group run $rid"; rm -rf "${w:?}"; return 0; } # R-PUSHJOBSAPI
+  decide_push --event "$ev" --ref "$ref" --sha "$s" --before "$before" \
     --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root"
   rm -rf "${w:?}"
 }
@@ -327,6 +431,14 @@ STUB
   vrow red-flag-off-event   red pull_request success 1 1 success
   vrow red-mg-failed-flag1  red merge_group failure 1 1 success
   vrow red-advisories-ran-live red merge_group success 0 0 success
+  vrow reuse-push-ok        1   push success 1 1 success
+  vrow live-push-said-run   0   push success 0 0 skipped
+  vrow live-push-mg-failed  0   push failure "" "" skipped
+  vrow live-push-pre-t43    0   push skipped "" "" skipped
+  vrow red-push-adv-fail    red push success 1 1 failure
+  vrow red-push-adv-skip    red push success 1 1 skipped
+  vrow red-push-split       red push success 1 0 success
+  vrow red-flag-workflow-dispatch red workflow_dispatch success 1 1 success
 
   # The wiring: each skip and each refusal is where ci.yml decides it.
   job() { awk -v j="  $1:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$wf" 2> /dev/null; }
@@ -338,9 +450,11 @@ STUB
     if grep -qF -- "$2" <<<"$t"; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL wiring: job '$1' lacks: $2"; fi
   }
-  wire mg-reuse "if: github.event_name == 'merge_group'"
+  wire mg-reuse "if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')"
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh --self-test'
-  wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve'
+  wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF"'
+  wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE"'
+  wire mg-reuse 'PBEFORE: ${{ github.event.before }}'
   wire mg-reuse-self-test 'bash scripts/ci_mg_reuse.sh --self-test'
   wire x86-main 'needs: [mg-reuse]'
   wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}"
@@ -377,6 +491,8 @@ STUB
 case "${1-}" in
   decide) shift; decide "$@" ;;
   resolve) shift; resolve "$@" ;;
+  decide-push) shift; decide_push "$@" ;;
+  resolve-push) shift; resolve_push "$@" ;;
   --self-test) shift; self_test "$@" ;;
   *) usage ;;
 esac

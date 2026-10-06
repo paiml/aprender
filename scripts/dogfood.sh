@@ -171,6 +171,18 @@ RECEIPT_PARTIAL="$RECEIPT.partial"
 # ── gate bookkeeping ─────────────────────────────────────────────────────────
 declare -a NAMES=() RESULTS=() NOTES=()
 FAILED=0
+# ROW ORDER AND ROW TIME (#4672). In 0.70.1 the coverage row ran for about 3.5 h
+# before the bashrs row (about 1 min) was reached, and that row was RED: a one-minute
+# finding surfaced hours late. So the LONG rows run LAST, after every other row, and
+# each row records how long it took. The order changes nothing else: every row still
+# runs, none is removed, no threshold moves, and the verdict is still the AND of all
+# rows -- a red cheap row does not stop the long rows (scripts/check_dogfood_row_order.sh
+# holds both properties). DOGFOOD_LONG_ROWS is the one place the long set is named.
+DOGFOOD_LONG_ROWS="test coverage"
+declare -a DURS=() ENDS=()
+ROW_T0="$SECONDS"
+# row_time — the seconds since the previous row closed, and when this one closed
+row_time() { DURS+=("$((SECONDS - ROW_T0))"); ENDS+=("$SECONDS"); ROW_T0="$SECONDS"; }
 # Statuses:
 #   PASS   — the gate ran and its subject held.
 #   FAIL   — the gate ran and its subject did not hold  → NO-GO.
@@ -212,7 +224,7 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   # a worse note than a real diagnostic but it cannot be a dependency's name.
   [ -z "$note" ] && note=$(printf '%s' "$out" | tail -1)
   [ "$rc" -ne 0 ] && note="$note  [log: $log]"
-  NAMES+=("$name")
+  NAMES+=("$name"); row_time
   if [ $rc -eq 0 ]; then RESULTS+=("PASS"); else RESULTS+=("FAIL"); FAILED=1; fi
   NOTES+=("${note:0:120}")
   printf '  [%s] %-26s %s\n' "$([ $rc -eq 0 ] && echo ' OK ' || echo 'FAIL')" "$name" "${note:0:80}"
@@ -235,7 +247,7 @@ mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
   elif [ "$st" = OPEN ]; then
     case " $POST_PUBLISH_OBLIGATIONS " in *" $1 "*) ;; *) st=FAIL; note="only [$POST_PUBLISH_OBLIGATIONS] may be OPEN; '$1' is not a post-publish obligation: $note" ;; esac
   fi
-  NAMES+=("$1"); RESULTS+=("$st"); NOTES+=("${note:0:200}")
+  NAMES+=("$1"); RESULTS+=("$st"); NOTES+=("${note:0:200}"); row_time
   [ "$st" = FAIL ] && FAILED=1
   printf '  [%s] %-26s %s\n' "$([ "$st" = PASS ] && echo ' OK ' || echo "$st")" "$1" "${note:0:96}"
 }
@@ -652,51 +664,6 @@ mark feature-scope INFO "clippy/test run with: ${FEAT_NOTE}"
 gate fmt              cargo fmt --all -- --check
 # shellcheck disable=SC2086
 gate clippy           cargo clippy --all-targets $FEATS -- -D warnings
-# shellcheck disable=SC2086
-gate test             cargo test $FEATS
-MAKEFILE_PATH=$(find_up Makefile)
-if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/dev/null; then
-  # #3839 made coverage DEFERRABLE in pre-publish (operator 2026-09-22). SUPERSEDED by #3957
-  # F1b (operator 2026-09-23: "no defer", and "fold in 88% coverage" blocks 0.69.1): a miss is
-  # RED in every phase. The pre-publish branch below keeps the measured percentage in its note,
-  # because a FAIL that does not say what it measured is harder to act on.
-  #
-  # WHY. 87.82% (824853/939270) against COV_FLOOR 88, red in the nightly for 8
-  # consecutive runs back to 2026-09-15 and independent of any one release. The
-  # measurement itself is known wrong in both directions: COVERAGE_EXCLUDE_REGEX was
-  # last touched 2026-02-08 and APR-MONO moved realizar/entrenar/trueno in April, so
-  # `entrenar/` matches nothing at all and `trueno` matches 73 files in aprender-zram
-  # instead of 580 in aprender-compute. Repairing that moves a release gate's
-  # denominator in the direction that helps whoever moves it, so it is NOT done here.
-  #
-  cov_out=$(make -C "$(dirname "$MAKEFILE_PATH")" coverage-check 2>&1); cov_rc=$?
-  # KEEP THE LOG (#3844, aprender-45). `gate()` rows now write $WORKLOG/<name>.log,
-  # but coverage is a `mark` row with its own command substitution, so it was still
-  # discarding everything but one grep'd line. This is the row whose deferral is being
-  # asked for, which makes it the row whose evidence matters most.
-  printf '%s\n' "$cov_out" > "${WORKLOG:-${TMPDIR:-/tmp}}/coverage.log" 2>/dev/null || :
-  # ANCHOR the percentage to the line that ONLY EXISTS when LCOV was parsed.
-  # A bare `grep -oE '[0-9.]+%' | tail -1` scraped the Makefile's own BANNER --
-  # `@echo "Running coverage ($(COV_THRESHOLD)%+ threshold)..."`, COV_THRESHOLD := 95
-  # (Makefile:495,610) -- so an aborted run reported `measured 95% against floor 88`:
-  # a FABRICATED number, ABOVE the floor, for a gate that never ran. The
-  # `NO PERCENTAGE` fallback below was dead code, because the banner guarantees a
-  # match on every run. Found by aprender-45 on the yoga rehearsal.
-  # Measured: banner-only output -> new extractor yields "" (fallback fires);
-  #           `TOTAL: 824853/939270 lines covered (87.82%)` -> yields 87.82%.
-  cov_pct=$(printf '%s' "$cov_out" | grep -oE 'lines covered \([0-9]+(\.[0-9]+)?%\)' \
-            | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1)
-  cov_why=$(printf '%s' "$cov_out" | grep -iE 'REGRESSION|below the enforced floor|coverage [0-9]' | head -1)
-  if [ "$cov_rc" -eq 0 ]; then
-    mark coverage PASS "${cov_pct:+$cov_pct, }floor met"
-  elif [ "$DOGFOOD_PHASE" = pre-publish ]; then
-    # #3957 F1b: coverage is deferred WORK, not an unmeasurable row -- it is RED (operator
-    # rulings 2026-09-23: "no defer", and "fold in 88% coverage" blocks 0.69.1).
-    mark coverage FAIL "measured ${cov_pct:-NO PERCENTAGE (the run died before parsing LCOV)} against floor ${COV_FLOOR:-88}; owed by #3839 (stale COVERAGE_EXCLUDE_REGEX + the real gap). ${cov_why:0:60}"
-  else
-    mark coverage FAIL "${cov_why:-coverage-check failed (rc $cov_rc)}"
-  fi
-else mark coverage FAIL "no coverage-check make target in ${MAKEFILE_PATH:-$PWD/Makefile} — the >=95% floor is UNVERIFIED, which is not the same as met (was a WARN, contradicting this skill's own rule that a missing capability is a NO-GO)"; fi
 if command -v cargo-deny >/dev/null 2>&1; then gate security cargo deny check advisories
 else mark security FAIL "cargo-deny not installed — the advisory scan did not run, and a scan that did not run is not a clean scan"; fi
 
@@ -1795,6 +1762,56 @@ else
   mark model-parity FAIL "scripts/check_model_parity.sh is missing — claim 2 (GPU = CPU per manifest model) is unmeasured"
 fi
 
+# ── 12. the LONG rows, LAST (#4672) ─────────────────────────────────────────
+# test and coverage ($DOGFOOD_LONG_ROWS) take hours; every row above takes minutes. They
+# run here so a red cheap row is known before the long wait, not after it. Moved
+# from section 4-8 unchanged but for one note's wording; their verdicts count exactly as before.
+# shellcheck disable=SC2086
+gate test             cargo test $FEATS
+MAKEFILE_PATH=$(find_up Makefile)
+if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/dev/null; then
+  # #3839 made coverage DEFERRABLE in pre-publish (operator 2026-09-22). SUPERSEDED by #3957
+  # F1b (operator 2026-09-23: "no defer", and "fold in 88% coverage" blocks 0.69.1): a miss is
+  # RED in every phase. The pre-publish branch below keeps the measured percentage in its note,
+  # because a FAIL that does not say what it measured is harder to act on.
+  #
+  # WHY. 87.82% (824853/939270) against COV_FLOOR 88, red in the nightly for 8
+  # consecutive runs back to 2026-09-15 and independent of any one release. The
+  # measurement itself is known wrong in both directions: COVERAGE_EXCLUDE_REGEX was
+  # last touched 2026-02-08 and APR-MONO moved realizar/entrenar/trueno in April, so
+  # `entrenar/` matches nothing at all and `trueno` matches 73 files in aprender-zram
+  # instead of 580 in aprender-compute. Repairing that moves a release gate's
+  # denominator in the direction that helps whoever moves it, so it is NOT done here.
+  #
+  cov_out=$(make -C "$(dirname "$MAKEFILE_PATH")" coverage-check 2>&1); cov_rc=$?
+  # KEEP THE LOG (#3844). `gate()` rows now write $WORKLOG/<name>.log,
+  # but coverage is a `mark` row with its own command substitution, so it was still
+  # discarding everything but one grep'd line. This is the row whose deferral is being
+  # asked for, which makes it the row whose evidence matters most.
+  printf '%s\n' "$cov_out" > "${WORKLOG:-${TMPDIR:-/tmp}}/coverage.log" 2>/dev/null || :
+  # ANCHOR the percentage to the line that ONLY EXISTS when LCOV was parsed.
+  # A bare `grep -oE '[0-9.]+%' | tail -1` scraped the Makefile's own BANNER --
+  # `@echo "Running coverage ($(COV_THRESHOLD)%+ threshold)..."`, COV_THRESHOLD := 95
+  # (Makefile:495,610) -- so an aborted run reported `measured 95% against floor 88`:
+  # a FABRICATED number, ABOVE the floor, for a gate that never ran. The
+  # `NO PERCENTAGE` fallback below was dead code, because the banner guarantees a
+  # match on every run. Found on a release rehearsal.
+  # Measured: banner-only output -> new extractor yields "" (fallback fires);
+  #           `TOTAL: 824853/939270 lines covered (87.82%)` -> yields 87.82%.
+  cov_pct=$(printf '%s' "$cov_out" | grep -oE 'lines covered \([0-9]+(\.[0-9]+)?%\)' \
+            | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1)
+  cov_why=$(printf '%s' "$cov_out" | grep -iE 'REGRESSION|below the enforced floor|coverage [0-9]' | head -1)
+  if [ "$cov_rc" -eq 0 ]; then
+    mark coverage PASS "${cov_pct:+$cov_pct, }floor met"
+  elif [ "$DOGFOOD_PHASE" = pre-publish ]; then
+    # #3957 F1b: coverage is deferred WORK, not an unmeasurable row -- it is RED (operator
+    # rulings 2026-09-23: "no defer", and "fold in 88% coverage" blocks 0.69.1).
+    mark coverage FAIL "measured ${cov_pct:-NO PERCENTAGE (the run died before parsing LCOV)} against floor ${COV_FLOOR:-88}; owed by #3839 (stale COVERAGE_EXCLUDE_REGEX + the real gap). ${cov_why:0:60}"
+  else
+    mark coverage FAIL "${cov_why:-coverage-check failed (rc $cov_rc)}"
+  fi
+else mark coverage FAIL "no coverage-check make target in ${MAKEFILE_PATH:-$PWD/Makefile} — the >=95% floor is UNVERIFIED, which is not the same as met (was a WARN, contradicting the rule of this skill that a missing capability is a NO-GO)"; fi
+
 # ── clean-room reminder (heavy, runs on the CI box; not automated here) ─────
 mark clean-room MANUAL "run \`make -C ../infra/machines/clean-room clean-room-$CRATE\` (MANDATORY release gate)"
 
@@ -1848,9 +1865,32 @@ if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$RECEIPT_PARTIA
 fi
 # Atomic completion: the receipt EXISTS only once it is whole and parseable.
 mv "$RECEIPT_PARTIAL" "$RECEIPT"
+# ROW TIME (#4672) goes in a sidecar beside the receipt, one line per receipt row in run
+# order, so the receipt's schema -- which the release preflight reads -- does not change.
+# dur_s is the time since the previous row closed; closed_at_s is time since the run began.
+TIMING="${RECEIPT%.json}.timing.tsv"
+if ! { printf 'idx\tgate\tresult\tdur_s\tclosed_at_s\n'
+       for i in "${!NAMES[@]}"; do
+         printf '%s\t%s\t%s\t%s\t%s\n' "$i" "${NAMES[$i]}" "${RESULTS[$i]}" "${DURS[$i]:-}" "${ENDS[$i]:-}"
+       done; } > "$TIMING"; then
+  echo "row times: not_measured -- the timing sidecar could not be written ($TIMING)" >&2
+fi
+# The CHEAP tier is every row that is neither long nor the clean-room reminder.
+CHEAP_N=0 CHEAP_END=0 CHEAP_RED=""
+for i in "${!NAMES[@]}"; do
+  case " $DOGFOOD_LONG_ROWS clean-room " in *" ${NAMES[$i]} "*) continue ;; esac
+  CHEAP_N=$((CHEAP_N+1)); CHEAP_END="${ENDS[$i]:-$CHEAP_END}"
+  [ "${RESULTS[$i]}" = FAIL ] && CHEAP_RED="$CHEAP_RED ${NAMES[$i]}"
+done
 
 echo "────────────────────────────────────────────────"
 echo "receipt: $RECEIPT"
+echo "row times: $TIMING"
+if [ -n "$CHEAP_RED" ]; then
+  echo "CHEAP TIER: RED ($CHEAP_N rows; red:$CHEAP_RED) closed at +${CHEAP_END}s of +${SECONDS}s -- the long rows ($DOGFOOD_LONG_ROWS) still ran after it"
+else
+  echo "CHEAP TIER: GREEN ($CHEAP_N rows) closed at +${CHEAP_END}s of +${SECONDS}s"
+fi
 if [ $FAILED -eq 0 ]; then
   for i in "${!NAMES[@]}"; do
     [ "${RESULTS[$i]}" = OPEN ] || continue

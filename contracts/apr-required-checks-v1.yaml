@@ -66,7 +66,7 @@
 #          Kani harness to inflate the level would be theater.
 # ─────────────────────────────────────────────────────────────────────────────
 name: apr-required-checks
-version: "1.2.0"
+version: "1.3.0"
 scope: >
   The workflow that invokes scripts/check_pr_review_arm4.sh without
   --self-test (today: .github/workflows/pr-review-quorum.yml, job `present`),
@@ -86,6 +86,9 @@ scope: >
   x86-main, determinism and mac-check (scripts/ci_mg_reuse.sh, job mg-reuse),
   the x86-main-advisories job that keeps the RustSec steps running when
   x86-main is reused, and the shared verdict block in gate and `ci / gate`.
+  Also (v1.3.0, #4748): on a push to main, the same key reads the merge_group
+  run on the pushed commit and reuses x86-main and determinism only when that
+  run ran them for real (t43_push_reuse_key, scripts/check_ci_push_reuse.sh).
 status: active
 
 metadata:
@@ -94,7 +97,7 @@ metadata:
                     # validate`'s `kernel` default never silently applies.
   version: "1.0.0"
   created: '2026-09-05'
-  last_modified: '2026-10-04'
+  last_modified: '2026-10-06'
   author: PAIML Engineering
   references:
     - 'scripts/check_receipt_gate_base_owned.sh — the resolver (B1..B4, 17-row self-test)'
@@ -105,6 +108,7 @@ metadata:
     - 'PP-066 §1 F-28 class — the phantom-required-check-deadlock twin: not a check nothing runs, but one whose verdict the subject controls'
     - 'PP-066 DAG row C0-5, epic #2873, issue #2982'
     - 'scripts/ci_mg_reuse.sh — T43 merge_group reuse key (decide, resolve, 67-row --self-test), Refs #4678'
+    - 'scripts/check_ci_push_reuse.sh — the push arm (decide-push, resolve-push) case table and its R-PUSH mutation self-test, Refs #4748'
   description: >
     A check that judges a pull request's own review receipt, and any check
     the required `gate` job waits on, must be DEFINED BY THE BASE branch — a
@@ -337,6 +341,45 @@ equations:
     postconditions:
     - 'a reused job is skipped with a cite line naming the head run and sha; a refused key runs the job exactly as before this rule'
 
+  t43_push_reuse_key:
+    formula: |
+      let S = the pushed sha (GITHUB_SHA), P = github.event.before
+      let Q = newest ci.yml merge_group run with head_sha = S (by created_at, id)
+      P1  event = push and ref = refs/heads/main
+      P2  parents(S) = [B] (exactly one) and P = B
+      P3  run and job lists complete (total_count = length); Q.status = completed;
+          Q.head_branch = gh-readonly-queue/main/pr-<N>-B; every job is Q's, on S
+      P4  Q's x86-main, determinism, gate and `ci / gate` each = success
+          (one job of that name) and Q's x86-main-advisories = skipped
+      x86 = det = 1  iff  P1..P4;  mac = 0 always
+      reuse flag = 0 on any other input and on any failed lookup
+    domain: 'a push event to main (S, before) and the GitHub run/job lists of the merge_group run on S'
+    codomain: 'the same three flags, cite and reason as t43_merge_group_reuse_key; mac is never 1'
+    invariants:
+    - >-
+      ONE FULL RUN PER MERGED COMMIT. The queue tests S, then main
+      fast-forwards to S, so a push run on S re-tests a commit the queue
+      run already tested. P2 ties the push to exactly that fast-forward: S
+      is a single-parent commit whose parent is both the queue branch's
+      base and the commit main moved from.
+    - >-
+      ONLY A REAL RUN IS CITED. x86-main-advisories runs exactly when the
+      queue's own mg-reuse reused x86-main, so P4 requires it skipped: a
+      queue run that itself reused x86-main and determinism never licenses
+      a second reuse, and the chain of citations is at most one long.
+    - >-
+      A FAILED LOOKUP NEVER REUSES (L25). An API call that exits non-zero
+      refuses even if it printed a body; an absent queue run, an
+      incomplete list or a job name matching zero or two jobs refuses.
+    - >-
+      THE RUSTSEC STEPS STILL RUN. On a push reuse x86-main-advisories runs
+      in the push run, and both verdict copies fail unless it succeeded,
+      exactly as on merge_group.
+    preconditions:
+    - 'decide-push reads only git objects and the two JSON lists; resolve-push makes exactly 2 API calls'
+    postconditions:
+    - 'a reused job is skipped with a cite line naming the merge_group run, its attempt and S; a refused key runs the job exactly as before'
+
 proof_obligations:
   - id: RC-OB-001
     statement: "Exactly one workflow job invokes check_pr_review_arm4.sh without --self-test."
@@ -370,11 +413,14 @@ proof_obligations:
     statement: "Each of K1..K6 failing alone, any non-merge_group event, and any failed or incomplete GitHub lookup gives the affected flags 0 (the job runs)."
     discharged_by: falsification_tests[9]
   - id: RC-OB-011
-    statement: "gate and ci / gate share one MG-REUSE-VERDICT block that reuses only on x86=det=1 with mg-reuse and x86-main-advisories success, and fails on a split, flags set off merge_group or by a failed mg-reuse, or a reused x86-main whose advisory job did not succeed."
+    statement: "gate and ci / gate share one MG-REUSE-VERDICT block that reuses only on x86=det=1 with mg-reuse and x86-main-advisories success on merge_group or on a push to main (#4748), and fails on a split, flags set on any other event or by a failed mg-reuse, or a reused x86-main whose advisory job did not succeed."
     discharged_by: falsification_tests[10]
   - id: RC-OB-012
-    statement: "ci.yml wires the rule: mg-reuse runs only on merge_group; x86-main, determinism and mac-check need it and skip only on their own flag; x86-main-advisories runs exactly when x86 = 1; gate needs mg-reuse, x86-main-advisories and mg-reuse-self-test."
+    statement: "ci.yml wires the rule: mg-reuse runs only on merge_group and on a push to main; x86-main, determinism and mac-check need it and skip only on their own flag; x86-main-advisories runs exactly when x86 = 1; gate needs mg-reuse, x86-main-advisories and mg-reuse-self-test."
     discharged_by: falsification_tests[11]
+  - id: RC-OB-013
+    statement: "On a push to main, x86=det=1 only when the merge_group run on the pushed single-parent commit S (queue base = S's parent = before) completed, RAN x86-main and determinism (x86-main-advisories skipped) and passed them, gate and ci / gate; mac is never reused on a push; every other input and every failed lookup gives 0."
+    discharged_by: falsification_tests[12]
 
 falsification_tests:
 
@@ -583,11 +629,13 @@ falsification_tests:
     prediction: >-
       The self-test extracts the MG-REUSE-VERDICT block from ci.yml, fails
       unless exactly two identical copies exist, and runs it over the
-      verdict rows: merge_group:success:1:1:success reuses; 0:0 with the
-      advisory job skipped, a pull_request run, and a failed mg-reuse with
-      no flags run the jobs; a reused x86-main whose advisory job failed
-      or was skipped, 1:0, 0:1, flags set on pull_request, a failed
-      mg-reuse with flags set, and the advisory job running on 0:0 all fail.
+      verdict rows: merge_group:success:1:1:success and
+      push:success:1:1:success reuse; 0:0 with the advisory job skipped, a
+      pull_request run, and a failed or skipped mg-reuse with no flags (on
+      merge_group or push) run the jobs; a reused x86-main whose advisory
+      job failed or was skipped (on merge_group or push), 1:0, 0:1, flags
+      set on pull_request, a failed mg-reuse with flags set, and the
+      advisory job running on 0:0 all fail.
     test: 'bash scripts/ci_mg_reuse.sh --self-test'
     if_fails: >-
       gate could pass with x86-main skipped and no RustSec advisory check,
@@ -611,6 +659,30 @@ falsification_tests:
     mutation: >-
       remove `mg-reuse-self-test` from gate's needs in a copy of ci.yml and
       run the self-test with --workflow on the copy; it must turn RED.
+
+  - id: RC-F-013
+    rule: "a push to main reuses x86-main + determinism only from a REAL queue run on the same commit (#4748)"
+    prediction: >-
+      On a throwaway repository with S single-parent over B: a completed
+      merge_group run on S on queue branch pr-N-B whose x86-main,
+      determinism, gate and ci / gate succeeded and whose
+      x86-main-advisories was skipped gives x86=1 det=1 mac=0 (P1). Each of
+      these refuses with 000: a non-push event, a push to another branch,
+      before not S's parent, a merge commit S, a queue branch naming another
+      base, an absent S, an unread run or job page, a newer in-progress
+      queue run, no merge_group run, jobs of another run or sha, each of the
+      four jobs failed, x86-main-advisories success, a queue run that itself
+      reused (x86-main and determinism skipped), a missing determinism job,
+      either API call failing while still printing a body, and a malformed
+      sha (with zero API calls).
+    test: 'bash scripts/check_ci_push_reuse.sh'
+    if_fails: >-
+      a push run could skip x86-main on a commit no x86-main ever ran on,
+      by citing a queue run that had itself reused a PR head's result
+    mutation: >-
+      bash scripts/check_ci_push_reuse.sh --self-test deletes each
+      `# R-PUSH*` refusal line in a copy of scripts/ci_mg_reuse.sh; every
+      deletion must turn the table RED (and an unmutated copy must not).
 
 non_goals:
   - "Verifying the CONTENT of scripts/check_pr_review_arm4.sh's receipt judgement (Arm 4 itself) — that is pr-review-skill-v2's subject; this contract governs only WHERE and UNDER WHICH TRIGGER that judgement is invoked."

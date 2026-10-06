@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-08-23'
   author: PAIML Engineering
   references:
@@ -8,6 +8,7 @@ metadata:
   - 'scripts/verifier_pin.sh — THE verifier-pinning rule, stated once, plus the two pins'
   - 'scripts/check_verifier_pinning.sh — the gate: static scan + behavioural probe of both pins'
   - 'scripts/check_dogfood_shim.sh — the gate: one runner, one prose, and the user-scope copy stays a gated shim'
+  - 'scripts/check_dogfood_row_order.sh — the guard (report mode until three green nights): long rows last, no early stop, a red cheap row keeps the verdict red, row times (aprender#4672)'
   - 'scripts/.dogfood-shim-reference.sh — the reviewed text of the user-scope shim'
   - '.claude/skills/dogfood/SKILL.md — the one canonical prose, with an explicit `name:` (#2332)'
   - 'aprender#2361 — a user-scope skill shadowed the repo one; hardening it edited a file that never ran'
@@ -150,6 +151,28 @@ equations:
     invariants:
     - 'A user-scope skill WINS over a repo one. Without the explicit name: the repo skill is named after its directory, collides, and never appears in the session listing (#2332).'
     - 'Duplication moved from executable to prose is HARDER to detect, because nothing runs it and no diff surfaces it.'
+
+  cheap_rows_first:
+    formula: |
+      R    = the gate/mark rows of scripts/dogfood.sh, in source order
+      L    = DOGFOOD_LONG_ROWS (= {test, coverage}), declared once in the runner
+      i0   = min { i : R[i] in L }
+      O1:  forall i > i0 : R[i] in L UNION {clean-room}
+      O2:  forall l in L : l in R
+      O3:  no `set -e`; no exit, `kill $$` or top-level return between the first
+           row and the verdict, and no read of FAILED there
+           (the DOGFOOD_GATES_ONLY partial exit excepted)
+      O4:  run(red cheap row; long rows) => every long row RAN AND VERDICT = NO-GO
+           run(all green)                => VERDICT = GO
+      VERDICT = GO  <=>  FAILED = 0     -- the AND over every row, unchanged
+    domain: shell source of the release runner and its receipt timing sidecar
+    codomain: bool per obligation; row times per row
+    invariants:
+    - 'The reorder removes no row, changes no threshold, and keeps the AND verdict. In 0.70.1 coverage ran about 3.5 h before the bashrs row (about 1 min), and that row was red: the red was known only after the wait (#4672).'
+    - 'Cheap first is NOT stop early. A red cheap row still lets the long rows run, so the receipt carries every row and the verdict stays NO-GO (O4).'
+    - 'The guard is a lint against an ACCIDENTAL reorder or early stop, not a proof against an adversarial author: a row reached through a computed name inside a helper, or a signal sent to the runner by a child process, is out of scope. Each spelling it does catch has a planted mutant.'
+    - 'A runner without the long-row declaration cannot be judged: not_measured (rc 2), never a pass (L25).'
+    - 'The order guard and the row times are REPORT mode (L31): they block nothing until three green nights. Nothing new is on the release path.'
 
 falsification_tests:
 - id: F-DOG1-001
@@ -387,6 +410,39 @@ falsification_tests:
   if_fails: 'a documented gap silently widens, or is closed and left undocumented — the TODO-as-gate shape'
   mutation: 'inject a partial VP-01 fix (strip leading redirections before tokenising); the VP-01 row must turn RED naming promotion (observed 2026-08-23, engagement proven: mutated scan rc=1 vs pristine rc=0 on the same probe)'
 
+- id: F-DOG1-029
+  rule: the long rows run last and every cheap row runs before them
+  prediction: >
+    In scripts/dogfood.sh every row other than test, coverage and clean-room
+    comes before the first long row (a row is any gate/mark call or a call to a
+    function that records one, whatever its first word), both long rows exist,
+    the main flow never reads FAILED before the verdict, and nothing stops the
+    run between the first row and the verdict.
+  test: 'bash scripts/check_dogfood_row_order.sh   # O1-O3'
+  if_fails: 'a cheap row is known red only after hours of coverage, or a long row was renamed away, or the run stops early and the receipt loses rows'
+  mutation: 'plant a cheap row after the long block (late), a variable-named row there (dynrow), a wrapper call there (wrapcall), `[ "$FAILED" -eq 0 ] &&` before `gate test` (guarded), a `kill $$` before the long block (killself), a row in a case arm there (casearm), `trap "exit 1" ERR` (errtrap), a quoted `kill -9 "$$"` (qkill), a helper with `exit` defined before the first row (bail), `(( FAILED == 0 )) &&` before `gate test` (arith), `exec true` (exectrue), a quoted `${RESULTS[*]}` read guarding `gate test` (arrread), `set -o errtrace -o errexit` (errlong), `trap ''exit 3'' DEBUG` (dbgtrap), `kill -TERM $PPID` (ppid), rename `gate test` to `gate tests` (renamed), add `[ "$FAILED" -eq 0 ] || exit 1` before the long block (early), or add `set -e` (errexit); each must turn RED, and deleting the DOGFOOD_LONG_ROWS declaration must give not_measured rc 2 (nolong). All nineteen observed 2026-10-04 in --self-test'
+- id: F-DOG1-030
+  rule: a red row never stops the run, and the verdict stays red
+  prediction: >
+    The runner's own gate/mark functions, lifted and driven with a red cheap gate
+    row and a red cheap mark row followed by the long rows, record every long row
+    as run and the AND verdict as NO-GO; the all-green control gives GO. This
+    proves the row functions never stop the run; that the main flow reaches the
+    long rows unconditionally is O3 of F-DOG1-029, which together give the claim.
+  test: 'bash scripts/check_dogfood_row_order.sh   # O4'
+  if_fails: 'cheap-first became stop-early (the receipt loses the long rows), or the verdict stopped being the AND over every row'
+  mutation: 'make gate() or mark() exit on a red row (gateexit, markexit), or replace the verdict with `VERDICT="$(echo GO)"` (orverdict), or redefine `gate() { :; }` before the long rows so the lifted copy is not the live one (redef); each must turn RED (observed 2026-10-04 in --self-test)'
+- id: F-DOG1-031
+  rule: row times are measured or not_measured, and an over-budget cheap tier fails its own timing row
+  prediction: >
+    The receipt carries a timing sidecar (idx, gate, result, dur_s, closed_at_s).
+    The guard reads it: a cheap tier that closes after --cheap-budget-s is OVER
+    (rc 1), at the budget is ok, and a bad header, a non-numeric time or a
+    missing file, or a budget that is not whole seconds, is not_measured (rc 2),
+    never a pass.
+  test: 'bash scripts/check_dogfood_row_order.sh --self-test   # the five timing rows'
+  if_fails: 'a release-day check over its budget passes its own timing row, or a missing measurement reads as on time'
+  mutation: 'the six planted timing rows (ok, over, at budget, hole, absent, a budget of 15m) must give rc 0, 1, 0, 2, 2, 2 (observed 2026-10-04)'
 proof_obligations:
 - id: DRU-INV-001
   type: invariant
@@ -497,6 +553,18 @@ proof_obligations:
   type: invariant
   property: 'Every known tokeniser gap is an executable fixture asserting current behaviour exactly, so it can neither widen nor close silently (F-DOG1-028)'
   formal: 'forall g in known_gaps: assert(behaviour(g) = recorded(g)); change(g) => RED'
+- id: DRU-INV-028
+  type: invariant
+  property: 'Every cheap row runs before the first long row; both long rows exist; no early stop between the first row and the verdict, and no read of FAILED there (F-DOG1-029)'
+  formal: '∀ i > i0: R[i] ∈ L ∪ {clean-room}; L ⊆ R; ∀ s ∈ stops(first_row, verdict): s ∈ gates_only'
+- id: DRU-SND-029
+  type: soundness
+  property: 'gate() and mark() never stop the run on a red row, so with DRU-INV-028 a red cheap row leaves every long row run and the verdict NO-GO; all green gives GO (F-DOG1-030)'
+  formal: 'red(cheap) ⇒ ran(L) ∧ VERDICT = NO-GO; FAILED = 0 ⟺ VERDICT = GO'
+- id: DRU-BND-030
+  type: bound
+  property: 'The cheap tier closes within its budget or its timing row fails; an absent or malformed timing is not_measured (F-DOG1-031)'
+  formal: 'closed_at(cheap) > budget ⇒ rc = 1; malformed(T) ∨ absent(T) ⇒ rc = 2'
 kani_harnesses:
 # Declared, NOT written. These are shell guards over shell source; there is no
 # Rust surface for Kani to model-check, and inventing one would be theatre. The
@@ -539,6 +607,7 @@ qa_gate:
   - shim_shape
   - shim_fails_closed
   - single_prose
+  - cheap_rows_first
   pass_criteria: >
     scripts/check_verifier_pinning.sh exits 0 AND scripts/check_dogfood_shim.sh exits 0
     AND `DOGFOOD_GATES_ONLY=1 scripts/dogfood.sh` gives every declared gate its own
@@ -546,9 +615,9 @@ qa_gate:
     release verified by an unknown binary is an unverified release that says GO.
 
 verification_summary:
-  total_obligations: 27
+  total_obligations: 30
   proven: 0
-  tested: 27
+  tested: 30
   status: proposed
   notes: >
     Every obligation above is TESTED (none PROVEN in the L4/L5 sense — shell
@@ -560,9 +629,10 @@ verification_summary:
     schema can derive them, any edit to the obligation lists must re-measure
     these two numbers in the same commit.
 
-    All obligations are TESTED by two committed guards, both wired into CI and
-    both declared in [package.metadata.dogfood] so the release runner itself runs
-    them. Each carries a named mutation that was OBSERVED turning it RED on
+    All obligations are TESTED by committed guards wired into CI (DRU-INV-028..DRU-BND-030 by
+    scripts/check_dogfood_row_order.sh, report mode until three green nights). The first two
+    guards are also declared in [package.metadata.dogfood] so the release runner itself runs
+    them; the row-order guard is deliberately NOT (nothing new on the release path). Each carries a named mutation that was OBSERVED turning it RED on
     2026-08-23, with the unmutated tree observed GREEN first (discrimination).
 
     Nothing here is PROVEN in the L4/L5 sense and the count says so. These are shell
