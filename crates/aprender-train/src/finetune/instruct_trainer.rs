@@ -430,8 +430,9 @@ impl InstructTrainer {
     /// Save a checkpoint with LoRA adapter weights and training metadata.
     ///
     /// Creates a directory at `path` containing:
-    /// - `metadata.json`: training metrics for this checkpoint
-    /// - `model.safetensors`: LoRA adapter weights (Q/V projections per layer)
+    /// - `metadata.json`: training metrics for this checkpoint, and `lora_targets`
+    /// - `model.safetensors`: LoRA adapter weights, `lora.{layer}.{module}.lora_{a,b}` for
+    ///   each layer and selected target (`FALSIFY-LORA_TARGET_SELECTION_V1_017`)
     pub fn save_checkpoint(
         &mut self,
         path: &std::path::Path,
@@ -460,6 +461,14 @@ impl InstructTrainer {
             "samples_per_sec": metrics.samples_per_sec,
             "lora_rank": self.pipeline.config.lora_rank,
             "lora_alpha": self.pipeline.config.lora_alpha,
+            "lora_targets": self
+                .pipeline
+                .config
+                .lora_targets
+                .as_slice()
+                .iter()
+                .map(|t| t.module_name())
+                .collect::<Vec<_>>(),
             "data_hash": self.data_hash,
         });
 
@@ -471,23 +480,27 @@ impl InstructTrainer {
         // Save LoRA adapter weights as SafeTensors
         let mut tensor_data: Vec<(String, Vec<u8>, Vec<usize>)> = Vec::new();
 
+        // Slot |T|·layer + position holds that layer's adapter of T[position]; each is saved
+        // under its own layer and target, as the CUDA trainer names them
+        // (lora-target-selection-v1, instruct_checkpoint_names). T is never empty.
+        let targets = self.pipeline.config.lora_targets.as_slice();
         for (idx, lora) in self.pipeline.lora_layers.iter().enumerate() {
-            let layer = idx / 2;
-            let proj = if idx % 2 == 0 { "q" } else { "v" };
+            let (layer, target) = (idx / targets.len(), targets[idx % targets.len()]);
+            let (name_a, name_b) = target.apr_tensor_names(layer);
 
             // LoRA A: [rank, d_in]
             let a_data = lora.lora_a().data();
             let a_bytes: Vec<u8> =
                 bytemuck::cast_slice(a_data.as_slice().expect("contiguous lora_a")).to_vec();
             let a_shape = vec![lora.rank(), lora.d_in()];
-            tensor_data.push((format!("lora.{layer}.{proj}_proj.lora_a"), a_bytes, a_shape));
+            tensor_data.push((name_a, a_bytes, a_shape));
 
             // LoRA B: [d_out, rank]
             let b_data = lora.lora_b().data();
             let b_bytes: Vec<u8> =
                 bytemuck::cast_slice(b_data.as_slice().expect("contiguous lora_b")).to_vec();
             let b_shape = vec![lora.d_out(), lora.rank()];
-            tensor_data.push((format!("lora.{layer}.{proj}_proj.lora_b"), b_bytes, b_shape));
+            tensor_data.push((name_b, b_bytes, b_shape));
         }
 
         let views: Vec<(&str, safetensors::tensor::TensorView<'_>)> = tensor_data
@@ -598,3 +611,7 @@ mod tests {
         assert!(!val.is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "instruct_trainer_checkpoint_tests.rs"]
+mod checkpoint_tests;

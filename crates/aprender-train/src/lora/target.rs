@@ -45,6 +45,15 @@ impl LoraTarget {
         Self::ALL.into_iter().find(|t| t.module_name() == name)
     }
 
+    /// The APR checkpoint names of this target's A and B in block `layer`,
+    /// `lora.{layer}.{module}.lora_a` and `lora.{layer}.{module}.lora_b`, as the
+    /// CUDA trainer and the instruct trainer save them
+    /// (`lora-target-selection-v1`, checkpoint_names and instruct_checkpoint_names).
+    pub fn apr_tensor_names(self, layer: usize) -> (String, String) {
+        let module = self.module_name();
+        (format!("lora.{layer}.{module}.lora_a"), format!("lora.{layer}.{module}.lora_b"))
+    }
+
     /// The `(d_out, d_in)` of this projection in a layer of `config`: q is (q, h), k and v
     /// (kv, h), o (h, q), gate and up (i, h), down (h, i), with q = heads·head_dim and
     /// kv = kv_heads·head_dim (`lora-target-selection-v1`, target_slots). An adapter's A

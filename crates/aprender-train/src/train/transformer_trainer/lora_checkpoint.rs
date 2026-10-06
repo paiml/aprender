@@ -19,8 +19,7 @@ pub(crate) type DeviceAdapters = Vec<(LoraTarget, Vec<f32>, Vec<f32>)>;
 
 /// The APR tensor names of `target`'s A and B in block `layer`.
 pub(crate) fn apr_tensor_names(layer: usize, target: LoraTarget) -> (String, String) {
-    let module = target.module_name();
-    (format!("lora.{layer}.{module}.lora_a"), format!("lora.{layer}.{module}.lora_b"))
+    target.apr_tensor_names(layer)
 }
 
 /// The PEFT module path of `target` in block `layer`, as `TransformerTrainer::save_lora_adapter`
