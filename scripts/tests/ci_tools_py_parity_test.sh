@@ -319,9 +319,9 @@ cu "package without version (raises)" "$c/noversion.json" "$c/fac.json"
 cu "package is a string (raises)" "$c/strpkg.json" "$c/fac.json"
 cu "facades fixture missing (2)" "$c/root.json" "$c/no-such.json"
 if ! cu_out=$(env PATH="$tmp/cubin:$PATH" FAKE_ROOT="$c/root.json" FAKE_FAC="$c/fac.json" "$BIN" cascade-universe) ||
-    [[ "$(grep -c . <<<"$cu_out")" -ne 74 ]] || ! grep -q "^fa	0.4.0	/r/crates/facades/fa/Cargo.toml	$ROOT/crates/facades\$" <<<"$cu_out" ||
+    [[ "$(grep -c . <<<"$cu_out")" -ne 75 ]] || ! grep -q "^fa	0.4.0	/r/crates/facades/fa/Cargo.toml	$ROOT/crates/facades\$" <<<"$cu_out" ||
     grep -q 'zz-private\|fpriv' <<<"$cu_out"; then
-    echo "FAIL: cascade-universe fixture did not print the 74 planted rows (vacuous)" >&2
+    echo "FAIL: cascade-universe fixture did not print the 75 planted rows (vacuous)" >&2
     fail=$((fail + 1))
 fi
 check "cascade-universe LIVE" "$tmp/empty" "$PY" "$CU_PY" "$ROOT" -- "$BIN" cascade-universe "$ROOT"

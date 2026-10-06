@@ -210,7 +210,9 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             if o.code == 0 {
                 Ok(o.stdout)
             } else {
-                Err((o.stdout, o.code, o.stderr))
+                // The original writes its own final newline; the reason is printed with one.
+                let reason = o.stderr.strip_suffix('\n').unwrap_or(&o.stderr).to_owned();
+                Err((o.stdout, o.code, reason))
             }
         }
     }
