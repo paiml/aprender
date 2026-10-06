@@ -695,7 +695,7 @@ cov_mark() { # cov_mark -- PASS only when tag_coverage_gate.sh --resolve exits 0
   local out rc
   if [ -n "$CI_READ_ERR" ]; then mark coverage FAIL "pre-publish reads the coverage receipt for HEAD, and $CI_READ_ERR"; return; fi
   out=$(GIT_DIR=$(git -C "$REPO_ROOT" rev-parse --absolute-git-dir 2>/dev/null) bash "$SKILL_DIR/release/tag_coverage_gate.sh" --resolve "$CI_SHA" 2>&1); rc=$?
-  printf '%s\n' "$out" > "${WORKLOG:-${TMPDIR:-/tmp}}/coverage-receipt.log" 2>/dev/null || :
+  printf '%s\n' "$out" > "${WORKLOG:-${TMPDIR:-/tmp}}/coverage-gate.log" 2>/dev/null || :
   if [ "$rc" -eq 0 ]; then mark coverage PASS "read, not re-run: coverage-nightly receipt for ${CI_SHA:0:10} holds COV_FLOOR"
   else mark coverage FAIL "no coverage receipt at or above COV_FLOOR for ${CI_SHA:0:10} (tag_coverage_gate.sh --resolve rc $rc): $(printf '%s' "$out" | tail -n 1 | cut -c1-160)"; fi
 }
