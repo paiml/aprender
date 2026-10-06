@@ -79,9 +79,10 @@ relations:
   depends_on: [ont-shapes-v1, ont-relations-v1, ont-sigma-v1, parity-receipt-v1]
 
 shapes:
-  # Every receipt, whatever its comparator. `closed` with an EMPTY ignoredProperties is a statement about
-  # `parity_receipt.rs::emit`: it writes these properties and no others. An ignoredProperties list is a place
-  # for drift to hide, and after the migration there is one layout, so it is not needed.
+  # Every receipt, whatever its comparator. `closed` with ignoredProperties [rdf:type] alone is a statement about
+  # `parity_receipt.rs::emit`: it writes these properties and no others. A longer ignoredProperties list is a place
+  # for drift to hide, and after the migration there is one layout, so it is not needed. rdf:type is listed because
+  # SHACL gives it no pass of its own on a closed shape (#4837).
   - id: parity-receipt-complete
     targetClass: parity:ParityReceipt
     closed: true
