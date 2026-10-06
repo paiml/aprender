@@ -8,7 +8,7 @@ name: Mutants Nightly
 
 on:
   schedule:
-    - cron: '0 1 * * *'   # 01:00 UTC
+    - cron: '0 3 * * *'   # 03:00 UTC: the quietest PR hours (03-05Z, 10 of 300 PR CI runs 2026-09-29..10-06), so the PR gpu job on the same runner waits least (infra#1468)
   workflow_dispatch: {}
 
 permissions:
@@ -21,8 +21,11 @@ concurrency:
 
 jobs:
   mutants:
-    runs-on: [self-hosted, Linux, X64, mutants] # C100: off the intel pool (clean-room); guard: scripts/check_mutants_pool.sh
-    timeout-minutes: 360
+    runs-on: [self-hosted, Linux, ARM64, gpu, docker] # infra#1468: no runner carries `mutants` yet; the ARM64 GPU docker pool, off the main CI pool (C100). Back to `mutants` when infra builds that pool. Guard: scripts/check_mutants_pool.sh
+    concurrency: # PP-19: the gpu runner is a perf host; serialise against every other consumer of it (check_perf_concurrency_groups.sh)
+      group: perf-gx10
+      cancel-in-progress: false
+    timeout-minutes: 180   # ends by 06:00Z, before PR traffic rises; a run cut off is red and the next night re-judges from the last success
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       MUTANTS_JOBS: ${{ vars.MUTANTS_NIGHTLY_JOBS || '8' }}
