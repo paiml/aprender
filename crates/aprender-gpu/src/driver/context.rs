@@ -142,6 +142,9 @@ impl CudaContext {
             )));
         }
 
+        #[cfg(test)]
+        pin_primary_context(driver, device);
+
         Ok(Self { device, context })
     }
 
@@ -340,6 +343,37 @@ impl CudaContext {
         CudaDriver::check(result)?;
 
         Ok(bytes)
+    }
+}
+
+/// Keep a device's primary context alive for the rest of the test process.
+///
+/// `memory::resident::cache` is process-global and every module in it belongs to
+/// the primary context that loaded it. The driver destroys a primary context the
+/// moment its retain count reaches zero. In a test process that happens between
+/// two tests whenever no other test holds a `CudaContext`: always at one test
+/// thread, by chance at two. A later test that finds its kernel in the cache then
+/// launches a module of a dead context and gets `CUDA_ERROR_INVALID_HANDLE` or a
+/// SIGSEGV, depending only on which tests happened to run before it. One extra
+/// retain that is never released keeps the count above zero for the life of the
+/// process, so a cached module outlives the test that compiled it.
+///
+/// Test builds only: production code owns its context for as long as it needs it.
+#[cfg(test)]
+fn pin_primary_context(driver: &CudaDriver, device: CUdevice) {
+    use std::sync::{Mutex, PoisonError};
+
+    static PINNED: Mutex<Vec<CUdevice>> = Mutex::new(Vec::new());
+    let mut pinned = PINNED.lock().unwrap_or_else(PoisonError::into_inner);
+    if pinned.contains(&device) {
+        return;
+    }
+    let mut context: CUcontext = ptr::null_mut();
+    // SAFETY: `device` is a valid handle from cuDeviceGet and `context` a valid
+    // out-pointer. The matching release is deliberately never made.
+    let result = unsafe { (driver.cuDevicePrimaryCtxRetain)(&mut context, device) };
+    if result == CUDA_SUCCESS {
+        pinned.push(device);
     }
 }
 

@@ -143,3 +143,39 @@ fn test_ops_scale() {
 
     assert_eq!(result, vec![2.0, 4.0, 6.0, 8.0]);
 }
+
+// ============================================================================
+// Kernel cache vs context lifetime
+// ============================================================================
+
+/// A cached kernel must still launch after every `CudaContext` that existed when
+/// it was compiled has been dropped.
+///
+/// The module cache is process-global and the primary context is destroyed when
+/// its last handle goes. Without `pin_primary_context` the second launch below
+/// used a module of a dead context (`CUDA_ERROR_INVALID_HANDLE`, or a SIGSEGV)
+/// whenever no other test happened to hold a context: every time at one test
+/// thread. Run it alone to see the difference:
+/// `cargo test -p aprender-gpu --features cuda --lib a_cached_kernel_outlives -- --test-threads 1`.
+#[test]
+fn a_cached_kernel_outlives_the_context_that_compiled_it() {
+    // Row size 24 is used by no other test, so this test compiles the kernel itself.
+    let (seq_len, row_size) = (3u32, 24u32);
+    let data: Vec<f32> = (0..seq_len * row_size)
+        .map(|i| (i % row_size) as f32 * 0.1)
+        .collect();
+
+    {
+        let ctx = cuda_ctx!();
+        let tensor = GpuResidentTensor::from_host(&ctx, &data).unwrap();
+        tensor.softmax(&ctx, seq_len).unwrap();
+    } // the only context handle is dropped here
+
+    let ctx = cuda_ctx!();
+    let tensor = GpuResidentTensor::from_host(&ctx, &data).unwrap();
+    let mut out = tensor
+        .softmax(&ctx, seq_len)
+        .expect("a kernel cached by an earlier context must still launch");
+    let host = out.to_host().unwrap();
+    assert!(host.iter().all(|v| (0.0..=1.0 + 1e-5).contains(v)));
+}
