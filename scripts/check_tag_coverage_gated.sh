@@ -65,6 +65,7 @@ any path rides on a bump|else return 1; fi|else :; fi
 any version's receipt dir rides on a bump|${v//./\\.}|[^/]+
 Cargo diff not compared|    bump_in_place <<< "$d"|    true
 Cargo lines compared as a set, not pairwise in place (#4819)|if (m[i] != p[i]) bad = 1|if (0) bad = 1
+Cargo lines compared in any order, so a reordered block passes (#4819)|if (m[i] != p[i]) bad = 1|{ f = 0; for (j = 1; j <= np; j++) if (m[i] == p[j]) f = 1; if (!f) bad = 1 }
 a hunk may add more lines than it removes (#4819)|if (nm != np) bad = 1|if (0) bad = 1
 Cargo diff read with context, so a move inside one hunk pairs (#4819)|d=$("$GIT" diff -U0 "$h"|d=$("$GIT" diff "$h"
 --resolve takes any ref, not a 40-hex sha (#4819)|[[ $2 =~ ^[0-9a-f]{40}$ ]] \|\| { echo "usage: $0 --resolve|true \|\| { echo "usage: $0 --resolve

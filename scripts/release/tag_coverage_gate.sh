@@ -212,7 +212,7 @@ STUB
     # #4735, each B + one more change: EA adds a model-ladder receipt for the version cut (0.1.1),
     # EM modifies one C already held, EO adds one for another version, EN adds a file off the surface,
     # ED deletes CHANGELOG.md.
-    local g="$d/repo" C B X D N A EA EM EO EN ED MV MX AD IH
+    local g="$d/repo" C B X D N A EA EM EO EN ED MV MX AD IH RB RP RO
     git init -q "$g" && git -C "$g" config user.email t@t && git -C "$g" config user.name t \
         && git -C "$g" config core.hooksPath /dev/null || return 1
     printf 'COV_FLOOR := 89\n' > "$g/Makefile"; mkdir -p "$g/crates/a" "$g/evidence/dogfood/models/0.1.1"
@@ -242,6 +242,14 @@ STUB
     # IH moves the c line up into [dependencies]: one hunk, the -c and +c separated by context lines
     IH=$(git -C "$g" checkout -q "$B" && sed -i -e '/^c = /d' -e '/^b = /a c = { path = "../c", version = "0.1.1" }' "$g/crates/a/Cargo.toml" \
         && git -C "$g" commit -qam IH && git -C "$g" rev-parse HEAD)
+    # RB adds a d line to C's [dependencies] (its own covered base); RP bumps RB in place, RO bumps it
+    # and swaps the b and d lines inside that one block: one -U0 hunk, -b -d +d +b
+    RB=$(git -C "$g" checkout -q "$C" && sed -i '/^b = /a d = { path = "../d", version = "0.1.0" }' "$g/crates/a/Cargo.toml" \
+        && git -C "$g" commit -qam RB && git -C "$g" rev-parse HEAD)
+    RP=$(sed -i 's/0\.1\.0/0.1.1/' "$g/Cargo.toml" "$g/crates/a/Cargo.toml" "$g/Cargo.lock" && printf '# log\n## 0.1.1\n' > "$g/CHANGELOG.md" \
+        && git -C "$g" commit -qam RP && git -C "$g" rev-parse HEAD)
+    RO=$(git -C "$g" checkout -q "$RP" && sed -i -e '/^b = /{h;d}' -e '/^d = /G' "$g/crates/a/Cargo.toml" \
+        && git -C "$g" commit -qam RO && git -C "$g" rev-parse HEAD)
     git -C "$g" checkout -q "$B"
     printf 'fn f() { g() }\n' > "$g/lib.rs"; git -C "$g" commit -qam X && X=$(git -C "$g" rev-parse HEAD)
     git -C "$g" checkout -q "$C" && sed -i -e 's|path = "../b"|path = "../evil"|' -e 's/0\.1\.0/0.1.1/g' "$g/crates/a/Cargo.toml"
@@ -305,6 +313,8 @@ STUB
     e2e 1 "e2e: a dependency line MOVED to another Cargo file is not a bump" "$MX" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a line ADDED in a version line's hunk is not a bump" "$AD" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a dependency line MOVED across a section header inside one hunk is not a bump" "$IH" "7:$C:$T1" "7:$C:$OK"
+    e2e 0 "e2e: a version bump of a two-line [dependencies] block is a bump (control for the reorder row)" "$RP" "7:$RB:$T1" "7:$RB:$(rec "$RB" 90.00 87772 9 10)"
+    e2e 1 "e2e: a REORDERED [dependencies] block beside a version bump is not a bump" "$RO" "7:$RB:$T1" "7:$RB:$(rec "$RB" 90.00 87772 9 10)"
     echo "$PROG self-test: --resolve SHA, before the tag (#4691)"
     mode="--resolve"
     e2e 0 "e2e: --resolve passes on a release commit whose receipt holds the floor" "$B" "7:$C:$T1" "7:$C:$OK"

@@ -773,13 +773,13 @@ falsification_tests:
       and again in the preflight on the tag (#4691).
     prediction: >
       scripts/release/tag_coverage_gate.sh --self-test passes 12 judge rows,
-      18 end-to-end rows, 6 version-surface rows, 4 in-place-bump rows, 4
+      18 end-to-end rows, 6 version-surface rows, 6 in-place-bump rows, 4
       --resolve rows and 6 40-hex-sha rows over a
       real git history and a stubbed gh, including the plants: a missing
       receipt, a receipt for another sha, one with no %, one with 0 tests and
       gh failing refuse; a receipt for C and for a version-only bump of C
       accept. scripts/check_tag_coverage_gated.sh holds the preflight call
-      before the dryrun and cascade steps with a dying rc, and each of its 22
+      before the dryrun and cascade steps with a dying rc, and each of its 23
       mutants of the gate turns the gate's self-test red.
       scripts/check_tag_step_gated.sh holds the --resolve call before the tag
       is created, with a dying rc.
@@ -798,8 +798,8 @@ falsification_tests:
     ship_blocking: true  # autopilot dies on its rc before the tag and before T-4
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     evidence_discharged_by:
-      - 'scripts/release/tag_coverage_gate.sh (50 self-test rows)'
-      - 'scripts/check_tag_coverage_gated.sh (wiring rows; 22 mutants)'
+      - 'scripts/release/tag_coverage_gate.sh (52 self-test rows)'
+      - 'scripts/check_tag_coverage_gated.sh (wiring rows; 23 mutants)'
       - 'scripts/check_tag_step_gated.sh (--resolve before the tag)'
       - 'scripts/release/autopilot.sh (tag step and preflight calls)'
     full_discharge_blocks_on: >
