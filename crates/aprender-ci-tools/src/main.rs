@@ -1,8 +1,9 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, llama_fit_verdict, package_include_diff,
-    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    cascade_universe, coverage_report_scope, dag_status, git_patch_id, llama_fit_verdict,
+    package_include_diff, publishable_crates, tarball_build_errors, tarball_shrink_report,
+    tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -92,6 +93,16 @@ enum Cmd {
     LlamaFitVerdict {
         /// tool_found(0/1) pin rc free_mib version_file stdout_file model_path. `-` or an
         /// empty path reads as empty. Any other count exits 1, as the original's unpacking did.
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
+    /// The crates a release cascade must ship, from every workspace: TSV `name version
+    /// manifest workspace-root`, or `--names` (was scripts/lib/cascade_universe.py). Runs
+    /// `cargo metadata` from PATH. `--help` is an argument here, as it was there.
+    #[command(disable_help_flag = true)]
+    CascadeUniverse {
+        /// `[--names] [repo-root]`. Any argument starting with `--` is a flag (only
+        /// `--names` means anything); the first other one is the repo root, default `.`.
         #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
@@ -194,6 +205,14 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             dag_status::run(&root, &rows).map_err(nothing_printed)
         }
         Cmd::LlamaFitVerdict { args } => llama_fit_verdict::run(&args).map_err(nothing_printed),
+        Cmd::CascadeUniverse { args } => {
+            let o = cascade_universe::run(&args);
+            if o.code == 0 {
+                Ok(o.stdout)
+            } else {
+                Err((o.stdout, o.code, o.stderr))
+            }
+        }
     }
 }
 

@@ -81,7 +81,7 @@ impl<'de> Deserialize<'de> for Py {
 }
 
 impl Py {
-    fn get(&self, key: &str) -> Option<&Py> {
+    pub(crate) fn get(&self, key: &str) -> Option<&Py> {
         match self {
             Py::Dict(kv) => kv.iter().find(|(k, _)| k == key).map(|(_, v)| v),
             _ => None,

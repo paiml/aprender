@@ -10,6 +10,8 @@
 #   package-include-diff    vs its frozen golden outputs (the .py is deleted, callers switched)
 #   coverage-report-scope   vs scripts/coverage_report_scope.py (deleted from the tree once its
 #                           callers moved to the bin; read back from git by its pinned blob)
+#   cascade-universe        vs scripts/lib/cascade_universe.py (kept: N-1), exact exit code and
+#                           stderr too; a fake `cargo` serves one fixture per workspace
 #   tarball-shrink-report   vs scripts/lib/tarball_shrink_report.py
 #   tarball-workspace       vs scripts/lib/tarball_workspace.py, read from git (the file is
 #                           deleted; its callers are switched). Its written Cargo.toml is
@@ -36,7 +38,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=201
+EXPECTED_CASES=231
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -223,6 +225,111 @@ check "coverage-report-scope cargo fails" "$tmp/empty" \
 check "coverage-report-scope LIVE" "$tmp/empty" "$PY" "$CRS_PY" -- "$BIN" coverage-report-scope
 check "coverage-report-scope LIVE exclude gpu" "$tmp/empty" \
     "$PY" "$CRS_PY" --exclude aprender-gpu -- "$BIN" coverage-report-scope --exclude aprender-gpu
+
+# --- 3b. cascade-universe (fake cargo serves a fixture per --manifest-path) ---------
+# The original's exit 2 (a refusal) and exit 1 (a raise) mean different things to its
+# callers, so these cases compare the exact code, and stderr too unless it raised.
+mkdir -p "$tmp/cubin" "$tmp/cu"
+cat >"$tmp/cubin/cargo" <<'STUB'
+#!/usr/bin/env bash
+m=""
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == --manifest-path ]]; then m="${2:-}"; fi
+    shift
+done
+case "$m" in
+    */crates/facades/Cargo.toml | crates/facades/Cargo.toml) f="$FAKE_FAC" ;;
+    *) f="$FAKE_ROOT" ;;
+esac
+if [[ "$f" == FAIL ]]; then printf 'error: no manifest at %s\n' "$m" >&2; exit 101; fi
+cat "$f"
+STUB
+chmod +x "$tmp/cubin/cargo"
+cupkgs() { # N [EXTRA_JSON]: N publishable crates c00.., then EXTRA, as one metadata doc
+    local i sep="" out='{"packages":['
+    for ((i = 0; i < $1; i++)); do
+        out+="$sep$(printf '{"name":"c%02d","version":"0.%d.0","manifest_path":"/r/c%02d/Cargo.toml","publish":null}' "$i" "$i" "$i")"
+        sep=","
+    done
+    if [[ -n "${2:-}" ]]; then out+="$sep$2"; fi
+    printf '%s]}' "$out"
+}
+cupkgs 70 '{"name":"zz-private","version":"1.0.0","manifest_path":"/r/zz/Cargo.toml","publish":[]},{"name":"Zed","version":7,"manifest_path":"/r/Zed/Cargo.toml","publish":["crates-io"]},{"name":"ñame","version":true,"manifest_path":"/r/n/Cargo.toml"},{"name":"a-null","version":null,"manifest_path":"/r/a/Cargo.toml"}' >"$tmp/cu/root.json"
+printf '{"packages":[{"name":"fa","version":"0.4.0","manifest_path":"/r/crates/facades/fa/Cargo.toml","publish":null},{"name":"fb","version":"0.4.1","manifest_path":"/r/crates/facades/fb/Cargo.toml","publish":["crates-io"]},{"name":"fpriv","version":"0.4.0","manifest_path":"/r/f/Cargo.toml","publish":[]}],"workspace_root":"/r/crates/facades"}' >"$tmp/cu/fac.json"
+printf '{"packages":[{"name":"c00","version":"9.9.9","manifest_path":"/r/c00/Cargo.toml"}]}' >"$tmp/cu/fac-dup-same.json"
+printf '{"packages":[{"name":"c00","version":"0.4.0","manifest_path":"/r/crates/facades/c00/Cargo.toml"}]}' >"$tmp/cu/fac-dup-diff.json"
+printf '{"packages":[{"name":"c01","version":"0.4.0","manifest_path":"/r/c01/Cargo.toml","publish":[]}]}' >"$tmp/cu/fac-dup-private.json"
+printf '{"packages":{}}' >"$tmp/cu/fac-dict.json"
+printf '{"packages":[]}' >"$tmp/cu/fac-empty.json"
+cupkgs 69 >"$tmp/cu/root69.json"
+cupkgs 69 '{"name":"c00","version":"0.0.0","manifest_path":"/r/c00/Cargo.toml"}' >"$tmp/cu/root69dup.json"
+cupkgs 70 '{"name":"nov","manifest_path":"/r/nov/Cargo.toml"}' >"$tmp/cu/noversion.json"
+cupkgs 70 '"c99"' >"$tmp/cu/strpkg.json"
+printf ' \t\n' >"$tmp/cu/blank.json"
+printf '{"packages":[' >"$tmp/cu/bad.json"
+printf '{"workspace_root":"/r"}' >"$tmp/cu/nopkgs.json"
+CU_PY=scripts/lib/cascade_universe.py
+cu() { # NAME ROOT_FIXTURE FACADES_FIXTURE ARGS... (a fixture may be FAIL)
+    local name="$1" prc rrc
+    local e=(env PATH="$tmp/cubin:$PATH" FAKE_ROOT="$2" FAKE_FAC="$3")
+    shift 3
+    "${e[@]}" "$PY" "$CU_PY" "$@" </dev/null >/dev/null 2>"$tmp/cu.py.err" && prc=0 || prc=$?
+    "${e[@]}" "$BIN" cascade-universe "$@" </dev/null >/dev/null 2>"$tmp/cu.rs.err" && rrc=0 || rrc=$?
+    if [[ "$prc" -ne "$rrc" ]]; then
+        fail=$((fail + 1))
+        echo "MISMATCH: cascade-universe $name exit code (py $prc, rust $rrc)" >&2
+        return
+    fi
+    if [[ "$prc" -ne 1 ]] && ! cmp -s "$tmp/cu.py.err" "$tmp/cu.rs.err"; then
+        fail=$((fail + 1))
+        echo "MISMATCH: cascade-universe $name stderr" >&2
+        diff "$tmp/cu.py.err" "$tmp/cu.rs.err" | head -6 >&2 || true
+        return
+    fi
+    check "cascade-universe $name" "$tmp/empty" \
+        "${e[@]}" "$PY" "$CU_PY" "$@" -- "${e[@]}" "$BIN" cascade-universe "$@"
+}
+c="$tmp/cu"
+cu "default" "$c/root.json" "$c/fac.json"
+cu "names" "$c/root.json" "$c/fac.json" --names
+cu "names after the root" "$c/root.json" "$c/fac.json" . --names
+cu "relative root, normalised" "$c/root.json" "$c/fac.json" "x/../y//./"
+cu "absolute root, normalised" "$c/root.json" "$c/fac.json" "/tmp/../a//b/"
+cu "double-slash root" "$c/root.json" "$c/fac.json" "//srv/r"
+cu "root above cwd" "$c/root.json" "$c/fac.json" "../../.."
+cu "empty-string root" "$c/root.json" "$c/fac.json" ""
+cu "single-dash arg is the root" "$c/root.json" "$c/fac.json" -x
+cu "unknown flags ignored" "$c/root.json" "$c/fac.json" --frob --names=1 r
+cu "extra positionals ignored" "$c/root.json" "$c/fac.json" r1 r2 r3
+cu "--help is not help" "$c/root.json" "$c/fac.json" --help
+cu "facades empty dict" "$c/root.json" "$c/fac-dict.json"
+cu "facades empty list" "$c/root.json" "$c/fac-empty.json"
+cu "same crate, same manifest: facades row wins" "$c/root.json" "$c/fac-dup-same.json"
+cu "same crate, two manifests (2)" "$c/root.json" "$c/fac-dup-diff.json"
+cu "a private duplicate is skipped" "$c/root.json" "$c/fac-dup-private.json"
+cu "69 crates (2)" "$c/root69.json" "$c/fac-empty.json"
+cu "69 plus facades clears the floor" "$c/root69.json" "$c/fac.json" --names
+cu "duplicate within one workspace counts once (2)" "$c/root69dup.json" "$c/fac-empty.json"
+cu "root cargo fails (2)" FAIL "$c/fac.json"
+cu "facades cargo fails (2)" "$c/root.json" FAIL
+cu "blank stdout (2)" "$c/blank.json" "$c/fac.json"
+cu "bad json (raises)" "$c/bad.json" "$c/fac.json"
+cu "no packages key (raises)" "$c/nopkgs.json" "$c/fac.json"
+cu "package without version (raises)" "$c/noversion.json" "$c/fac.json"
+cu "package is a string (raises)" "$c/strpkg.json" "$c/fac.json"
+cu "facades fixture missing (2)" "$c/root.json" "$c/no-such.json"
+if ! cu_out=$(env PATH="$tmp/cubin:$PATH" FAKE_ROOT="$c/root.json" FAKE_FAC="$c/fac.json" "$BIN" cascade-universe) ||
+    [[ "$(grep -c . <<<"$cu_out")" -ne 74 ]] || ! grep -q "^fa	0.4.0	/r/crates/facades/fa/Cargo.toml	$ROOT/crates/facades\$" <<<"$cu_out" ||
+    grep -q 'zz-private\|fpriv' <<<"$cu_out"; then
+    echo "FAIL: cascade-universe fixture did not print the 74 planted rows (vacuous)" >&2
+    fail=$((fail + 1))
+fi
+check "cascade-universe LIVE" "$tmp/empty" "$PY" "$CU_PY" "$ROOT" -- "$BIN" cascade-universe "$ROOT"
+check "cascade-universe LIVE names" "$tmp/empty" "$PY" "$CU_PY" --names -- "$BIN" cascade-universe --names
+if ! cu_live=$("$BIN" cascade-universe --names) || [[ "$(grep -c . <<<"$cu_live")" -lt 70 ]]; then
+    echo "FAIL: live cascade-universe enumerated fewer than 70 crates" >&2
+    fail=$((fail + 1))
+fi
 
 # --- 4. tarball-shrink-report ---
 # The original refuses a missing input with exit 2, not 1, and the script documents it,
