@@ -1,3 +1,7 @@
+| `complexity-rows -- JSON` | `--` is a path: cannot open, exit 1 | clap's end-of-options marker, dropped (`check_complexity_ratchet.sh` passes pmat outputs only; `-x` and `--help` are paths on both, parity cases) |
+| `complexity-rows`, a JSON integer beyond 64 bits or a float metric whose integer part is beyond `i128`, the `NaN` / `Infinity` literals or a lone surrogate escape | read by `json.load` | a refusal, exit 1 (pmat writes none of them) |
+| `complexity-rows`, non-ASCII decimal digits in a threshold or a string metric | `int()` accepts them | refused (exit 2 for a threshold, 1 for a metric) |
+| `complexity-rows [JSON]...` (thresholds from `CX_MAX_CYCLOMATIC` / `CX_MAX_COGNITIVE`) | `scripts/lib/complexity_rows.py` (kept: its caller `scripts/check_complexity_ratchet.sh` is a gate, N-1) |
 # aprender-ci-tools
 
 CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).

@@ -1,9 +1,10 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    annotate_book_examples, coverage_report_scope, crux_missing_stories, dag_status,
-    extract_book_examples, git_patch_id, llama_fit_verdict, package_include_diff, perf041_report,
-    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    annotate_book_examples, complexity_rows, coverage_report_scope, crux_missing_stories,
+    dag_status, extract_book_examples, git_patch_id, llama_fit_verdict, package_include_diff,
+    perf041_report, publishable_crates, tarball_build_errors, tarball_shrink_report,
+    tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -124,6 +125,18 @@ enum Cmd {
     /// original raised, after the rows it printed; 2 on input it took and this refuses. Like
     /// the original it reads no argument: `parse` hands it none, so clap never sees one.
     CruxMissingStories,
+    /// `<path>::<function> <cyclomatic> <cognitive>` for every Rust function over either
+    /// threshold in the pmat complexity JSON documents named (was
+    /// scripts/lib/complexity_rows.py). Thresholds come from CX_MAX_CYCLOMATIC and
+    /// CX_MAX_COGNITIVE. Exit 2 for a bad threshold or no document, 1 for a bad document.
+    /// Every argument is a path, `--help` included, as it was there; use
+    /// `aprender-ci-tools help complexity-rows`.
+    #[command(disable_help_flag = true)]
+    ComplexityRows {
+        /// The pmat JSON documents, in order.
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        paths: Vec<PathBuf>,
+    },
 }
 
 fn cargo_metadata() -> Result<String, String> {
@@ -152,37 +165,64 @@ fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// All of stdin, or a refusal that printed nothing.
+fn stdin_bytes() -> Result<Vec<u8>, Refusal> {
+    let mut buf = Vec::new();
+    std::io::stdin()
+        .read_to_end(&mut buf)
+        .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
+    Ok(buf)
+}
+
+/// All of stdin as text, or a refusal that printed nothing.
+fn stdin_string() -> Result<String, Refusal> {
+    let mut buf = String::new();
+    std::io::stdin()
+        .read_to_string(&mut buf)
+        .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
+    Ok(buf)
+}
+
+/// A port's `(stdout, code, stderr)` as the output (code 0) or a refusal.
+fn outcome(stdout: String, code: u8, stderr: String) -> Result<String, Refusal> {
+    if code == 0 {
+        Ok(stdout)
+    } else {
+        Err((stdout, code, stderr))
+    }
+}
+
+fn git_patch_id_cmd(mode: Option<&str>) -> Result<String, Refusal> {
+    let mode = git_patch_id::Mode::parse(mode).ok_or_else(|| {
+        (
+            String::new(),
+            2,
+            "usage: git_patch_id.py --stable|--verbatim|--unstable".to_owned(),
+        )
+    })?;
+    Ok(git_patch_id::run(&stdin_bytes()?, mode))
+}
+
+fn complexity_rows_cmd(paths: &[PathBuf]) -> Result<String, Refusal> {
+    let env = |k| std::env::var(k).ok();
+    let o = complexity_rows::run(
+        paths,
+        env("CX_MAX_CYCLOMATIC").as_deref(),
+        env("CX_MAX_COGNITIVE").as_deref(),
+    );
+    if o.code == 0 {
+        eprintln!("{}", o.stderr);
+    }
+    outcome(o.stdout, o.code, o.stderr)
+}
+
 /// The output, or a refusal.
 fn run(cmd: Cmd) -> Result<String, Refusal> {
     match cmd {
-        Cmd::CruxMissingStories => {
-            let mut stories = Vec::new();
-            std::io::stdin()
-                .read_to_end(&mut stories)
-                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
-            crux_missing_stories::run(&stories)
-        }
-        Cmd::GitPatchId { mode } => {
-            let mode = git_patch_id::Mode::parse(mode.as_deref()).ok_or_else(|| {
-                (
-                    String::new(),
-                    2,
-                    "usage: git_patch_id.py --stable|--verbatim|--unstable".to_owned(),
-                )
-            })?;
-            let mut diff = Vec::new();
-            std::io::stdin()
-                .read_to_end(&mut diff)
-                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
-            Ok(git_patch_id::run(&diff, mode))
-        }
-        Cmd::PublishableCrates => {
-            let mut meta = String::new();
-            std::io::stdin()
-                .read_to_string(&mut meta)
-                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
-            publishable_crates::run(&meta).map_err(|(printed, reason)| (printed, 1, reason))
-        }
+        Cmd::CruxMissingStories => crux_missing_stories::run(&stdin_bytes()?),
+        Cmd::GitPatchId { mode } => git_patch_id_cmd(mode.as_deref()),
+        Cmd::PublishableCrates => publishable_crates::run(&stdin_string()?)
+            .map_err(|(printed, reason)| (printed, 1, reason)),
         Cmd::PackageIncludeDiff { listing, includes } => {
             let listing = read(&listing).map_err(nothing_printed)?;
             let includes = read(&includes).map_err(nothing_printed)?;
@@ -199,13 +239,7 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             .map_err(|(code, reason)| (String::new(), code, reason)),
         Cmd::TarballWorkspace {
             target_dir: true, ..
-        } => {
-            let mut meta = Vec::new();
-            std::io::stdin()
-                .read_to_end(&mut meta)
-                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
-            tarball_workspace::target_dir(&meta).map_err(nothing_printed)
-        }
+        } => tarball_workspace::target_dir(&stdin_bytes()?).map_err(nothing_printed),
         Cmd::TarballWorkspace {
             name: Some(dir), ..
         } => tarball_workspace::package_name(&dir).map_err(nothing_printed),
@@ -216,26 +250,14 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
         }
         Cmd::TarballBuildErrors { log } => {
             let o = tarball_build_errors::run(&log);
-            if o.code == 0 {
-                Ok(o.stdout)
-            } else {
-                Err((o.stdout, o.code, o.stderr))
-            }
+            outcome(o.stdout, o.code, o.stderr)
         }
         Cmd::DagStatus { root } => {
-            let mut rows = String::new();
-            std::io::stdin()
-                .read_to_string(&mut rows)
-                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
-            dag_status::run(&root, &rows).map_err(nothing_printed)
+            dag_status::run(&root, &stdin_string()?).map_err(nothing_printed)
         }
         Cmd::Perf041Report { out_dir } => {
             let o = perf041_report::run(out_dir.first().map(String::as_str));
-            if o.code == 0 {
-                Ok(o.stdout)
-            } else {
-                Err((o.stdout, o.code, o.stderr))
-            }
+            outcome(o.stdout, o.code, o.stderr)
         }
         Cmd::AnnotateBookExamples { root } => {
             annotate_book_examples::run(&root).map_err(|(printed, reason)| (printed, 1, reason))
@@ -244,6 +266,7 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             extract_book_examples::run(&root).map_err(|(printed, reason)| (printed, 1, reason))
         }
         Cmd::LlamaFitVerdict { args } => llama_fit_verdict::run(&args).map_err(nothing_printed),
+        Cmd::ComplexityRows { paths } => complexity_rows_cmd(&paths),
     }
 }
 
