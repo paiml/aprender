@@ -201,3 +201,16 @@ inverse-only, so CASES goes from 36 to 37.
   properties by predicate alone, and `Graph::subjects` is a full scan.
 - **The receipt checks:** the shapes-gate JSON must be byte-identical to slice 5's (durations aside). Mutants 9 to 15
   cover each of the parts above and must each turn their test RED.
+
+## Slice 6 receipt (intel, dbbda70b17, 2026-10-06 12:39Z)
+
+The cli step was stopped three times before it finished: twice by intel load alarms (11:15Z and 12:05Z), and once
+by my own guard, which re-read a replayed alarm line. The steps before it come from the first run at the same commit.
+- `cargo test -p aprender-contracts --tests`: 2543 passed, 0 failed, in 16 binaries (slice 5 had 2538).
+- pv builds, and the shapes gate exits 0. Its JSON differs from slice 5's only in `w3c_cases_passed`, 36 to 37.
+  Everything else is byte-identical, so the gate accepts and prints what it did.
+- Mutants 9-15 each turn their test RED (rc 101, 1 failed).
+- `aprender-contracts-cli --tests`: 592 passed, 0 failed, in 39 binaries. pv sha256 `ee9c9261…71216cf`.
+- The pinned oracle (shacl 0.3.21) agrees on 37/37 W3C cases, `path-inverse-001` included. The only disagreement
+  is still the corpus, 736 vs 730, which is #4837.
+- No contract changes its verdict.
