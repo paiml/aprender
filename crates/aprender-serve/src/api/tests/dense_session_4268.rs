@@ -50,7 +50,7 @@ fn prompt_ids(state: &AppState, body: &serde_json::Value) -> Vec<u32> {
         serde_json::from_value(body.clone()).expect("a chat request");
     let tokenizer = require_tokenizer(state).unwrap_or_else(|_| panic!("tokenizer"));
     let arch = state.model_architecture();
-    tokenize_chat_prompt(&tokenizer, &request.messages, arch.as_deref(), None, state)
+    tokenize_chat_prompt(&tokenizer, &request.messages, arch.as_deref(), None, None, state)
         .unwrap_or_else(|_| panic!("prompt ids"))
 }
 

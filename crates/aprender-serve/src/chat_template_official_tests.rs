@@ -216,3 +216,95 @@ mod official_chat_template_3990 {
         );
     }
 }
+
+// #4650: a request's OpenAI `tools` must reach the model's own template. The context used
+// to carry no `tools` key; `{% if tools %}` on an UNDEFINED variable is false with no error,
+// so the whole `# Tools` block was skipped and tool calling was dead, silently. Yokoten:
+// Qwen2.5 and Qwen3 gate their tools block the same way, so all three are checked.
+#[cfg(test)]
+mod tools_reach_the_template_4650 {
+    use super::*;
+
+    const QWEN25: &str = include_str!("fixtures/chat_template_3990/qwen25.jinja");
+    const QWEN3: &str = include_str!("fixtures/chat_template_3990/qwen3.jinja");
+    const QWEN35: &str = include_str!("fixtures/chat_template_3990/qwen35.jinja");
+
+    fn tools() -> serde_json::Value {
+        serde_json::json!([{
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Weather for a city, when a < b & c > d",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"]
+                }
+            }
+        }])
+    }
+
+    fn render(tpl: &str, tools: Option<&serde_json::Value>) -> String {
+        let msgs = vec![ChatMessage::user("What is the weather in Paris?")];
+        render_official_with_tools(tpl, None, None, &msgs, true, Some(false), tools)
+            .expect("renders")
+    }
+
+    /// The tool, as `json.dumps(tool, ensure_ascii=False)` writes it (HuggingFace's `tojson`):
+    /// `", "` / `": "` separators and no HTML escaping. Keys are in serde_json's order.
+    const TOOL_JSON: &str = r#"{"function": {"description": "Weather for a city, when a < b & c > d", "name": "get_weather", "parameters": {"properties": {"city": {"type": "string"}}, "required": ["city"], "type": "object"}}, "type": "function"}"#;
+
+    /// must-RED on the pre-#4650 renderer: the tools block is absent.
+    #[test]
+    fn every_qwen_template_renders_the_tools_block_4650() {
+        for (name, tpl) in [("qwen25", QWEN25), ("qwen3", QWEN3), ("qwen35", QWEN35)] {
+            let got = render(tpl, Some(&tools()));
+            let block = format!("<tools>\n{TOOL_JSON}\n</tools>");
+            assert!(
+                got.contains(&block),
+                "{name}: no tools block {block:?} in:\n{got}"
+            );
+            assert!(
+                got.contains("<tool_call>"),
+                "{name}: no call format in:\n{got}"
+            );
+            assert!(
+                got.contains("What is the weather in Paris?"),
+                "{name}: the user turn is gone:\n{got}"
+            );
+        }
+    }
+
+    /// Qwen3.5 is told to call in XML -- the format the response parser must read.
+    #[test]
+    fn qwen35_instructs_the_xml_call_format_4650() {
+        let got = render(QWEN35, Some(&tools()));
+        assert!(
+            got.contains("<function=example_function_name>\n<parameter=example_parameter_1>"),
+            "{got}"
+        );
+    }
+
+    /// No tools is byte-identical to the renderer without the parameter: the #3990 cells
+    /// (which carry no tools) cannot move.
+    #[test]
+    fn no_tools_renders_exactly_what_render_official_renders_4650() {
+        let msgs = vec![ChatMessage::user("What is the weather in Paris?")];
+        for tpl in [QWEN25, QWEN3, QWEN35] {
+            let plain =
+                render_official(tpl, None, None, &msgs, true, Some(false)).expect("renders");
+            assert_eq!(render(tpl, None), plain);
+            assert!(!plain.contains("<tools>"));
+        }
+    }
+
+    /// `tojson` is `json.dumps`: no `<` escapes, Python separators. minijinja's own
+    /// filter fails both.
+    #[test]
+    fn tojson_writes_what_json_dumps_writes_4650() {
+        let v =
+            minijinja::Value::from_serialize(serde_json::json!({"a": [1, "x<y&z>'"], "b": null}));
+        let got = py_tojson(&v).expect("serializes");
+        assert_eq!(got.as_str(), Some(r#"{"a": [1, "x<y&z>'"], "b": null}"#));
+    }
+}

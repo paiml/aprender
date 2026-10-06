@@ -123,6 +123,63 @@ fn str_split(s: &str, args: &[minijinja::Value]) -> Result<minijinja::Value, min
     Ok(Value::from(parts))
 }
 
+/// `json.dumps` separators -- `", "` and `": "` -- for [`py_tojson`] (#4650).
+struct PyJsonFormatter;
+
+impl serde_json::ser::Formatter for PyJsonFormatter {
+    fn begin_array_value<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+        first: bool,
+    ) -> std::io::Result<()> {
+        if first {
+            Ok(())
+        } else {
+            writer.write_all(b", ")
+        }
+    }
+
+    fn begin_object_key<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+        first: bool,
+    ) -> std::io::Result<()> {
+        if first {
+            Ok(())
+        } else {
+            writer.write_all(b", ")
+        }
+    }
+
+    fn begin_object_value<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+    ) -> std::io::Result<()> {
+        writer.write_all(b": ")
+    }
+}
+
+/// The `tojson` filter as HuggingFace defines it for chat templates (#4650):
+/// `json.dumps(x, ensure_ascii=False)`. minijinja's own `tojson` writes compact separators
+/// and HTML-escapes `<`, `>`, `&` and `'` to `<`-style escapes, so a tool schema that
+/// says "a < b" reached the model as text it was never trained on. The `tools` block and
+/// replayed tool-call arguments are the only places the Qwen templates call it.
+fn py_tojson(value: &minijinja::Value) -> Result<minijinja::Value, minijinja::Error> {
+    use serde::Serialize;
+    let mut out = Vec::new();
+    let mut ser = serde_json::Serializer::with_formatter(&mut out, PyJsonFormatter);
+    value.serialize(&mut ser).map_err(|e| {
+        minijinja::Error::new(
+            minijinja::ErrorKind::BadSerialization,
+            format!("tojson: {e}"),
+        )
+    })?;
+    let s = String::from_utf8(out).map_err(|e| {
+        minijinja::Error::new(minijinja::ErrorKind::BadSerialization, e.to_string())
+    })?;
+    Ok(minijinja::Value::from_safe_string(s))
+}
+
 /// Render a model's own jinja chat template, with llama.cpp/HuggingFace semantics (#3990).
 ///
 /// # Errors
@@ -135,11 +192,43 @@ pub fn render_official(
     add_generation_prompt: bool,
     enable_thinking: Option<bool>,
 ) -> Result<String, RealizarError> {
+    render_official_with_tools(
+        chat_template,
+        bos_token,
+        eos_token,
+        messages,
+        add_generation_prompt,
+        enable_thinking,
+        None,
+    )
+}
+
+/// [`render_official`] with the request's OpenAI `tools` array (#4650).
+///
+/// Qwen2.5, Qwen3 and Qwen3.5 templates gate their whole `# Tools` system block on
+/// `{% if tools %}`. The context used to carry no `tools` key, and minijinja renders an
+/// UNDEFINED variable as false with no error -- so every tool a client sent was dropped
+/// from the prompt, silently, and the model was never told a tool existed. `tools` is the
+/// array as the client sent it (`[{"type":"function","function":{...}}]`), the shape
+/// HuggingFace's `apply_chat_template(tools=...)` passes; `None` leaves it undefined.
+///
+/// # Errors
+/// See [`render_official`].
+pub fn render_official_with_tools(
+    chat_template: &str,
+    bos_token: Option<&str>,
+    eos_token: Option<&str>,
+    messages: &[ChatMessage],
+    add_generation_prompt: bool,
+    enable_thinking: Option<bool>,
+    tools: Option<&serde_json::Value>,
+) -> Result<String, RealizarError> {
     let mut env = Environment::new();
     env.set_recursion_limit(MAX_RECURSION_DEPTH);
     env.set_trim_blocks(true);
     env.set_lstrip_blocks(true);
     env.set_unknown_method_callback(official_template_str_method);
+    env.add_filter("tojson", py_tojson);
     env.add_function(
         "raise_exception",
         |msg: String| -> Result<minijinja::Value, minijinja::Error> {
@@ -173,6 +262,9 @@ pub fn render_official(
     if let Some(t) = enable_thinking {
         ctx.insert("enable_thinking", minijinja::Value::from(t));
     }
+    if let Some(t) = tools {
+        ctx.insert("tools", minijinja::Value::from_serialize(t));
+    }
     tmpl.render(minijinja::Value::from(ctx))
         .map_err(|e| RealizarError::FormatError {
             reason: format!("model chat_template failed to render: {e}"),
@@ -190,6 +282,20 @@ pub fn render_official_for_model(
     messages: &[ChatMessage],
     enable_thinking: Option<bool>,
 ) -> Result<String, RealizarError> {
+    render_official_for_model_with_tools(gguf, messages, enable_thinking, None)
+}
+
+/// [`render_official_for_model`] with the request's `tools` (#4650); see
+/// [`render_official_with_tools`].
+///
+/// # Errors
+/// See [`render_official_for_model`].
+pub fn render_official_for_model_with_tools(
+    gguf: &crate::gguf::GGUFModel,
+    messages: &[ChatMessage],
+    enable_thinking: Option<bool>,
+    tools: Option<&serde_json::Value>,
+) -> Result<String, RealizarError> {
     let Some(crate::gguf::GGUFValue::String(tpl)) = gguf.metadata.get("tokenizer.chat_template")
     else {
         return Err(RealizarError::FormatError {
@@ -202,13 +308,14 @@ pub fn render_official_for_model(
         v.get(usize::try_from(i).ok()?).cloned()
     };
     let (bos, eos) = (piece(gguf.bos_token_id()), piece(gguf.eos_token_id()));
-    render_official(
+    render_official_with_tools(
         tpl,
         bos.as_deref(),
         eos.as_deref(),
         messages,
         true,
         enable_thinking,
+        tools,
     )
 }
 

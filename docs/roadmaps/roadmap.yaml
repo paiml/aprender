@@ -24075,6 +24075,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Operator C187(a)/C188(a), 2026-10-01: ratchet, not a waiver.'
+- id: PMAT-4650
+  github_issue: 4650
+  item_type: task
+  title: 'apr serve: pass request tools into the GGUF chat template and parse Qwen3.5 XML tool calls (tool calling was silently dead)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-w4650
+  created: 2026-10-04T00:00:00Z
+  updated: 2026-10-04T00:00:00Z
+  acceptance_criteria:
+  - With request `tools`, the Qwen2.5, Qwen3 and Qwen3.5 templates render their `<tools>` block, and the tool JSON is written as HF tojson writes it (json.dumps with Python separators and no HTML escaping)
+  - With no tools, the rendered prompt is byte-identical to before, so the 16 #3990 oracle cells do not move
+  - A Qwen3.5 XML call (`<function=NAME><parameter=P>V</parameter></function>`) to a declared tool returns tool_calls with schema-typed arguments and finish_reason "tool_calls". A call to an undeclared tool stays content
+  - The Qwen3.5, CUDA and dense chat paths all pass request.tools to the renderer
+  - 'Out of scope, follow-ups: streaming tool_calls; replaying assistant tool_calls and tool-role messages into the template; tools on the legacy template path (it warns)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:bug
+  notes: 'Filed by alfredodeza. Operator: must hit 0.70.2.'
 - id: PMAT-4651
   github_issue: 4651
   item_type: task
