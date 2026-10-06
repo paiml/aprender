@@ -136,9 +136,14 @@ controls() {
     rm -rf -- "${CACHE:?}/controls"; mkdir -p "$d" || notverdict "cannot create $d"
     printf 'axiom escape_ax : False\ntheorem uses_escape : False := escape_ax\n' > "$d/Neg.lean"
     printf 'theorem ok_thm : True := trivial\n' > "$d/Pos.lean"
+    # Both steps run FROM this directory: the exporter calls `lean --print-prefix` through elan's shim, which reads
+    # the lean-toolchain of its cwd. The job's elan has no default toolchain (--default-toolchain none), so with no
+    # file here every control died with "no default toolchain configured" and the run was NOT A VERDICT (an export
+    # run from the workspace root failed the same way). The tree's own export (cd "$HERE") reads the tree's file.
+    printf '%s\n' "$TC" > "$d/lean-toolchain"
     for m in Neg Pos; do
-        (cd "$d" && elan run "$TC" lean -o "$m.olean" "$m.lean") || notverdict "control $m did not compile"
-        LEAN_PATH="$d:$sr/lib/lean" "$EXPORTER" "$m" > "$d/$m.ndjson" || notverdict "control $m did not export"
+        (cd "$d" && capped elan run "$TC" lean -o "$m.olean" "$m.lean") || notverdict "control $m did not compile"
+        (cd "$d" && LEAN_PATH="$d:$sr/lib/lean" capped "$EXPORTER" "$m" > "$d/$m.ndjson") || notverdict "control $m did not export"
     done
     # The negative control must fail for the PLANTED reason: exit 2 naming escape_ax. A crash (exit 1) or any other
     # RED would also judge 1, and then the control would pass without con-leche ever having seen the axiom.
