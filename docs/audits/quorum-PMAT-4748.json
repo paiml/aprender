@@ -1,15 +1,15 @@
 {
   "ticket": "PMAT-4748",
-  "base": "origin/main",
-  "base_resolved": "origin/main",
-  "base_note": "no origin/origin/main exists; judged against the local ref; brief_exclude (C45) kept out of the brief: contracts/contracts.nt",
-  "head": "2abe1d7f92e77313085f4547b224c4aa862359be",
-  "diff_sha256": "0d6cc6a03296d3b3b835795c3135dd345e79c09293372f8cd9816e3261552299",
+  "base": "682dab1e2280a35345b578e2144334f45950d066",
+  "base_resolved": "682dab1e2280a35345b578e2144334f45950d066",
+  "base_note": "no origin/682dab1e2280a35345b578e2144334f45950d066 exists; judged against the local ref; brief_exclude (C45) kept out of the brief: contracts/contracts.nt docs/roadmaps/roadmap.yaml",
+  "head": "015ed1c1a0dbd78a440238a8cc744381c2663cc0",
+  "diff_sha256": "331eecad3c518b8836b77876bc9cba662cf0c46deccaa6a3e119a46702199d9c",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 45300,
-  "prompt_sha256": "1d30363cd510a97466008970860d6bbd4f3c4bff4dddcee16b38c7ffeddff8d4",
+  "prompt_bytes": 65751,
+  "prompt_sha256": "3aa7183796039fa1e2490b8146abc084221bc31f9a5d7b27b8d03a390068770b",
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -21,9 +21,46 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff correctly implements PMAT-4748. On a push to `main`, `mg-reuse` will resolve the queue run on the exact same SHA and reuse `x86-main` and `determinism` only if the queue run executed them for real and they succeeded. This is verified by checking that `x86-main-advisories` was `skipped` in the queue run, preventing a reuse of a reuse. It correctly defaults `mac` to 0 so `mac-check` will always run on push. All necessary yaml contracts and `check_ci_push_reuse.sh` mutation tests are implemented and robustly verify the requirement. No violations of the ticket were found.",
+      "summary": "The diff implements PMAT-4748 faithfully: mg-reuse now also triggers on `push` to `main`, resolve-push/decide-push verify via git (not just the event payload) that the pushed commit S is a single-parent commit whose parent equals `before`, locate the newest completed merge_group run on S, require x86-main/determinism/gate/`ci / gate` to have succeeded AND x86-main-advisories to be `skipped` (proving that queue run ran them for real rather than itself reusing), and reuse x86-main+determinism only in that case while mac is always 0 on push (mac-check never reused). Both verdict-block copies accept `push:success:1:1:success` the same way as the merge_group case, and all other event/flag combinations still fall through to run-in-full or error. Contracts (apr-required-checks-v1.yaml, release-schedule-06x-v1.yaml) were strengthened, not weakened, with new equation t43_push_reuse_key, obligation RC-OB-013 and falsification test RC-F-013. The added case table (P/R/X rows) and mutation self-test extension to ci_mg_reuse.sh's `# R-PUSH*` markers exercise the new logic. The evidence/pr-review/4884/* files are this branch's own PR self-review receipt (commit 13bff50aa1 matches the branch's own roadmap-regen commit), not unrelated scope creep. I found no test asserting the opposite of the ticket, no weakened gate, and no unrelated functional change.",
       "findings": [],
-      "raw_bytes": 2538,
+      "raw_bytes": 3658,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "3aa7183796039fa1e2490b8146abc084221bc31f9a5d7b27b8d03a390068770b",
+      "trace": {
+        "input_sha256": "9e527fbcf438917a44a2284c8f4115d9f50fe59d58c5c795648eea74b9bdbdeb",
+        "output_sha256": "57221e2b6b47e8dcb8add251684707e4c7a3d5bf48897f358f43347a862096ca",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4748, extending `mg-reuse` to reuse `x86-main` and `determinism` on pushes to `main` when the `merge_group` run for the identical SHA ran both jobs fully (checked by ensuring `x86-main-advisories` is skipped in the queue run). It correctly hooks `github.event.before` to verify fast-forward commits. The mutation test `scripts/check_ci_push_reuse.sh` successfully guards these checks. There are no unrelated changes or gate weaknesses.",
+      "findings": [],
+      "raw_bytes": 2190,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -34,10 +71,10 @@
       "model_source": "measured",
       "family": "gemini",
       "executor": "agy",
-      "brief_sha256": "1d30363cd510a97466008970860d6bbd4f3c4bff4dddcee16b38c7ffeddff8d4",
+      "brief_sha256": "3aa7183796039fa1e2490b8146abc084221bc31f9a5d7b27b8d03a390068770b",
       "trace": {
-        "input_sha256": "cf270b76c539014644291c3588872732ed3177ca24717f00378c5bf8ec10a40b",
-        "output_sha256": "84fcd198bd6251da966c91a8757c7c134eaf9b13a9ae9546ae0bb1abcd156ea4",
+        "input_sha256": "7cf4a140cddd0f33c45d9f42cbd9574f32e0b81d87f008292f64a5fc89fbcc53",
+        "output_sha256": "6bb6ef9781f4ee08775f12d04ae763025a23e892d796152d90ae826680ca39eb",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -55,49 +92,12 @@
       }
     },
     {
-      "lane": 2,
-      "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "The diff does what PMAT-4748 asks. A push to main reuses x86-main and determinism only from a completed merge_group run on the same sha that ran both jobs for real. I read the diff and confirmed with grep that the helpers it calls exist (`concl` at scripts/ci_mg_reuse.sh:63, `CI_WORKFLOW_PATH` at line 47). I did not run any build or test, and the diff carries no recorded gate result to judge.",
-      "findings": [],
-      "raw_bytes": 1729,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "executor": "claude-code",
-      "grounding_check": "parity",
-      "role": "counted",
-      "model": "claude-sonnet-5-5",
-      "model_measured": "claude-sonnet-5-5",
-      "model_source": "flag",
-      "family": "claude",
-      "brief_sha256": "1d30363cd510a97466008970860d6bbd4f3c4bff4dddcee16b38c7ffeddff8d4",
-      "trace": {
-        "input_sha256": "7a70f2cb03d63335be8bf41fedd95a1556afbe267ab7f46e2e544e13b44191ca",
-        "output_sha256": "02fab9cbbb01f135faea51dcd09c2a5c748fda606616e2fa1a6e64c587b83faa",
-        "store": null,
-        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
-      },
-      "fallback": {
-        "judged_by": "claude-sonnet-5-5",
-        "exhausted": false,
-        "attempts": [
-          {
-            "model": "claude-sonnet-5-5",
-            "family": "claude",
-            "outcome": "answered"
-          }
-        ],
-        "skipped": []
-      }
-    },
-    {
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Lane 3 review of PMAT-4748 (\"push to main reuses merge queue's real x86-main + determinism on same sha\"): implementation is correct. The diff adds decide_push/resolve_push functions with proper P1–P4 precondition checks; crucially P4 validates x86-main-advisories was SKIPPED (proving the queue run actually RAN x86-main, not reused it). Single-parent fast-forward check (P2) and before=S's parent validation ensure the queue tested this commit. Verdict blocks accept push reuse only with advisory success. All 16 refusal markers present for mutation testing. Contract updates (v1.2.0→1.3.0, new equation/obligations) necessary and correct. No extraneous changes; no gate weakening.",
+      "summary": "Diff implements PMAT-4748 correctly. Push to main reuses x86-main + determinism from merge_group run on same SHA only when run for real (via P1–P4 checks, crucially x86-main-advisories=skipped to prevent reuse-of-reuse chain). mac-check never reused. Verdict blocks require advisory success. All 29 guard mutants killed. Three independent reviews agreed PASS. No gate weakening or extraneous changes.",
       "findings": [],
-      "raw_bytes": 2313,
+      "raw_bytes": 1777,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -108,10 +108,10 @@
       "model_measured": "claude-haiku-4-5",
       "model_source": "flag",
       "family": "claude",
-      "brief_sha256": "1d30363cd510a97466008970860d6bbd4f3c4bff4dddcee16b38c7ffeddff8d4",
+      "brief_sha256": "3aa7183796039fa1e2490b8146abc084221bc31f9a5d7b27b8d03a390068770b",
       "trace": {
-        "input_sha256": "fecd40f91a12e55ea88688e53d27533625625e175b2f367093ce18e448c10227",
-        "output_sha256": "8162a8a06ce281d446164e671db5a012d31173d30b798063cdd1bbaea1fd87b0",
+        "input_sha256": "f1ef6b160462b0eb6a54faaa8405e6440c3b7f181b2cd9597043bace3fbdcf19",
+        "output_sha256": "14a2f2ae869082ac98068fdac5c7f7621dc113bd285ba33b589dfeec2f4c141b",
         "store": null,
         "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
       },
@@ -139,21 +139,33 @@
     "same_family_width": 2,
     "chain": [
       {
-        "model": "gemini-3.1-pro-high",
-        "family": "gemini",
-        "disposition": "configured"
-      },
-      {
-        "model": "claude-sonnet-5-5",
+        "model": "claude-sonnet-5",
         "family": "claude",
         "disposition": "claude-code",
         "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
       },
       {
         "model": "claude-haiku-4-5",
         "family": "claude",
         "disposition": "claude-code",
         "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
       }
     ],
     "precheck": [
@@ -176,7 +188,7 @@
         ".github/workflows/ci.yml",
         "contracts/release-schedule-06x-v1.yaml"
       ],
-      "paths": 7,
+      "paths": 11,
       "patterns": [
         "^\\.github/workflows/",
         "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
@@ -202,10 +214,10 @@
     }
   },
   "auto_merge": {
-    "checked": false,
+    "checked": true,
     "was_armed": false,
     "disarmed": false,
-    "note": "no --pr given: nothing to disarm"
+    "note": "auto-merge not armed"
   },
   "cheap_seat": "claude-haiku-4-5",
   "advisory_lane": {
@@ -226,29 +238,29 @@
     "model": null,
     "model_sha256": null,
     "rc": 2,
-    "wall_s": 1,
-    "collected_s": 317,
+    "wall_s": 0,
+    "collected_s": 361,
     "budget_s": 196,
-    "budget_basis": "ledger: 2 x p95 98 s over 126 <host> Verdict rows",
+    "budget_basis": "ledger: 2 x p95 98 s over 126 <host>-cuda Verdict rows",
     "brief": {
-      "bytes": 45300,
-      "sent_bytes": 45469,
+      "bytes": 65751,
+      "sent_bytes": 65920,
       "max_bytes": 196608
     },
     "trace": {
-      "input_sha256": "eb873ffbfb6d438c3ee1003c6a803bec994dd3e333778ab6958037074742a33f",
+      "input_sha256": "d513a7a537e9b62f120ac65c93a3a6253a3abe3639627fc546cc50fd86b7f7a2",
       "raw": "advisory.json"
     },
     "attempts": [
       {
         "host": "<host>",
         "ok": false,
-        "wall_s": 1,
-        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=<host> event=stopped gpu-priority lock=<gpu-lock>)",
-        "ts": "2026-10-06T10:29:46.502Z",
-        "wall_ms": 529,
-        "request_id": "01a110c3-2384-7608-87b0-3488b7bd2580",
-        "load1": 1.93,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=<host>-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-06T16:58:16.643Z",
+        "wall_ms": 340,
+        "request_id": "01a11226-d2c0-71d6-a650-8110aca37889",
+        "load1": 0.07,
         "cold": null
       }
     ],
