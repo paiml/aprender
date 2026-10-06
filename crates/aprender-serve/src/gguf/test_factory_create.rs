@@ -189,6 +189,27 @@ pub fn build_minimal_llama_gguf(
     num_heads: usize,
     num_kv_heads: usize,
 ) -> Vec<u8> {
+    build_minimal_llama_gguf_output_norm_width(
+        vocab_size,
+        hidden_dim,
+        intermediate_dim,
+        num_heads,
+        num_kv_heads,
+        hidden_dim,
+    )
+}
+
+/// [`build_minimal_llama_gguf`] with an `output_norm.weight` of `output_norm_len`
+/// elements instead of `hidden_dim`: the malformed file of #2378 finding 4.
+#[must_use]
+pub fn build_minimal_llama_gguf_output_norm_width(
+    vocab_size: usize,
+    hidden_dim: usize,
+    intermediate_dim: usize,
+    num_heads: usize,
+    num_kv_heads: usize,
+    output_norm_len: usize,
+) -> Vec<u8> {
     let head_dim = hidden_dim / num_heads;
     let kv_dim = num_kv_heads * head_dim;
 
@@ -262,7 +283,11 @@ pub fn build_minimal_llama_gguf(
             &ffn_gate_data,
         )
         // Output norm and head
-        .add_f32_tensor("output_norm.weight", &[hidden_dim as u64], &norm_data)
+        .add_f32_tensor(
+            "output_norm.weight",
+            &[output_norm_len as u64],
+            &create_f32_norm_weights(output_norm_len),
+        )
         // Note: LM head often tied to token_embd, so we don't add output.weight
         // The loader will fallback to token_embd.weight
         .build()

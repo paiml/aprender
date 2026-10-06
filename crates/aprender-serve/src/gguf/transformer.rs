@@ -314,6 +314,7 @@ impl<'a> QuantizedGGUFTransformer<'a> {
 
         // Output norm - small, keep as f32
         let output_norm_weight = model.get_tensor_f32("output_norm.weight", data)?;
+        gguf_check_norm_width("output_norm.weight", &output_norm_weight, config.hidden_dim)?;
         // GH-278: Output norm bias — standard + aprender fallback
         let output_norm_bias = model
             .get_tensor_f32("output_norm.bias", data)
@@ -418,6 +419,7 @@ impl<'a> QuantizedGGUFTransformer<'a> {
         }
 
         let output_norm_weight = model.get_tensor_f32("output_norm.weight", data)?;
+        gguf_check_norm_width("output_norm.weight", &output_norm_weight, config.hidden_dim)?;
         let output_norm_bias = model
             .get_tensor_f32("output_norm.bias", data)
             .or_else(|_| model.get_tensor_f32("model.norm.bias", data))
@@ -798,6 +800,70 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             post_attn_norm_weight,
             post_ffw_norm_weight,
         })
+    }
+}
+
+/// Refuse a final norm whose width is not `hidden_dim` (#2378 finding 4).
+///
+/// `rms_norm` takes its width from `weight.len()`, so a GGUF whose
+/// `output_norm.weight` holds half of `hidden_dim` loaded, ran, exited 0 and
+/// normalised only the first half of every hidden state. The APR loaders have
+/// refused this since #2453 (`apr_check_norm_width`); the GGUF loaders did not.
+pub(crate) fn gguf_check_norm_width(name: &str, weight: &[f32], hidden_dim: usize) -> Result<()> {
+    if weight.len() == hidden_dim {
+        return Ok(());
+    }
+    Err(RealizarError::FormatError {
+        reason: format!(
+            "GGUF: norm weight {name} has {} elements but hidden_dim is {hidden_dim}; \
+             refusing to load (a wrong-width norm silently re-slices every activation \
+             instead of failing)",
+            weight.len()
+        ),
+    })
+}
+
+#[cfg(test)]
+mod norm_width_tests {
+    use super::*;
+    use crate::gguf::test_factory::{
+        build_minimal_llama_gguf, build_minimal_llama_gguf_output_norm_width,
+    };
+    use crate::gguf::GGUFModel;
+
+    #[test]
+    fn a_matching_norm_width_is_accepted() {
+        assert!(gguf_check_norm_width("output_norm.weight", &[1.0; 64], 64).is_ok());
+    }
+
+    #[test]
+    fn a_half_width_norm_is_refused_and_named() {
+        let err = gguf_check_norm_width("output_norm.weight", &[1.0; 32], 64)
+            .expect_err("half-width norm must be refused");
+        let msg = err.to_string();
+        assert!(msg.contains("output_norm.weight"), "{msg}");
+        assert!(msg.contains("32") && msg.contains("64"), "{msg}");
+    }
+
+    /// The control: the well-formed fixture loads, so the refusal below is
+    /// caused by the norm width and nothing else in the file.
+    #[test]
+    fn the_minimal_llama_fixture_loads() {
+        let data = build_minimal_llama_gguf(100, 64, 256, 4, 4);
+        let model = GGUFModel::from_bytes(&data).expect("parse");
+        QuantizedGGUFTransformer::from_gguf(&model, &data).expect("well-formed fixture loads");
+        crate::gguf::GGUFTransformer::from_gguf(&model, &data).expect("well-formed fixture loads");
+    }
+
+    #[test]
+    fn a_gguf_with_a_half_width_output_norm_is_refused_by_both_loaders() {
+        // hidden_dim 64, output_norm 32: the half-width norm the audit loaded.
+        let data = build_minimal_llama_gguf_output_norm_width(100, 64, 256, 4, 4, 32);
+        let model = GGUFModel::from_bytes(&data).expect("parse");
+        let q = QuantizedGGUFTransformer::from_gguf(&model, &data).err();
+        assert!(q.is_some_and(|e| e.to_string().contains("output_norm.weight")));
+        let f = crate::gguf::GGUFTransformer::from_gguf(&model, &data).err();
+        assert!(f.is_some_and(|e| e.to_string().contains("output_norm.weight")));
     }
 }
 

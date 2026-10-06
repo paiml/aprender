@@ -52,6 +52,11 @@ impl GGUFTransformer {
 
         // Load output norm (raw gamma values - no delta transformation needed)
         let output_norm_weight = model.get_tensor_f32("output_norm.weight", file_data)?;
+        crate::gguf::transformer::gguf_check_norm_width(
+            "output_norm.weight",
+            &output_norm_weight,
+            config.hidden_dim,
+        )?;
         // GH-278: Output norm bias — standard + aprender fallback
         let output_norm_bias = model
             .get_tensor_f32("output_norm.bias", file_data)
