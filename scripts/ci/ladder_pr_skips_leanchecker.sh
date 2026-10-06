@@ -43,11 +43,11 @@ pv_argv() {
 
 table() { # table <sut> <label> — the event rows
     local s="$1" l="$2"
-    row "$l pull_request: check --strict --comparator, no leanchecker" \
+    row "$l pull_request: check --strict --comparator, no --leanchecker" \
         "$(pv_argv "$s" pull_request)" "0|discharge check lean --strict --comparator|locked"
     row "$l merge_group: same as a PR" \
         "$(pv_argv "$s" merge_group)" "0|discharge check lean --strict --comparator|locked"
-    row "$l push: discharge run (leanchecker included)" "$(pv_argv "$s" push)" "0|discharge run lean|locked"
+    row "$l push: discharge run (with the leanchecker's replay)" "$(pv_argv "$s" push)" "0|discharge run lean|locked"
     row "$l schedule (nightly): discharge run" "$(pv_argv "$s" schedule)" "0|discharge run lean|locked"
     row "$l workflow_dispatch: discharge run" "$(pv_argv "$s" workflow_dispatch)" "0|discharge run lean|locked"
     row "$l empty event fails safe to the full run" "$(pv_argv "$s" '')" "0|discharge run lean|locked"

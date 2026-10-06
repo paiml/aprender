@@ -1,0 +1,99 @@
+{
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "informationUri": "https://github.com/paiml/pmat",
+     "rules": [
+      {
+       "id": "pmat.duplication-scan"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true
+    }
+   ],
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "informationUri": "https://mutants.rs",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": false,
+     "toolExecutionNotifications": [
+      {
+       "level": "error",
+       "message": {
+        "text": "guard-scope mutation was not attempted (attempted=0): scripts/check_mutants_memory_cap.sh is new and has no committed mutation set. Its --self-test table (9 rows: 2 GREEN, 6 RED, 1 ENV) passed, which is kill evidence for the rows it names and not a mutation score."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "bash",
+         "scripts/check_mutants_memory_cap.sh",
+         "--self-test"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "a410487438abf244614907fd8b3e578c724a6c144c4e400834f4c1175254a925"
+       }
+      }
+     ]
+    }
+   ],
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "informationUri": "internal:agy",
+     "rules": [
+      {
+       "id": "antigravity.unwired-guard"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "antigravity.unwired-guard",
+     "level": "warning",
+     "message": {
+      "text": "The new guard scripts/check_mutants_memory_cap.sh was not named by any workflow: check_guards_are_wired.sh reported unwired guards 3 -> 4 (guard_tree --no-cargo skips any guard whose source holds a bare \"cargo \" token, and this one names \"cargo mutants\"). Fixed in 3d976a1f6b by a per-PR step in ci/sections.yml."
+     },
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "reverified_by_primary": true,
+      "outcome": "fixed",
+      "fix_commit": "3d976a1f6b",
+      "command": [
+       "bash",
+       "scripts/check_guards_are_wired.sh"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "af8303b66b75e52d18e046eab0b10a8eabeeff53f24209529f4db18f62a56604",
+      "failure_scenario": "A later PR drops --memory from a cargo-mutants docker run and nothing runs the guard, so the uncapped mutant OOMs a host again (realizar test hit 35.7G on fw16, 2026-09-30)."
+     }
+    }
+   ]
+  }
+ ]
+}

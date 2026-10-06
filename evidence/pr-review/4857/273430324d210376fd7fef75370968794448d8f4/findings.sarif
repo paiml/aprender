@@ -1,0 +1,151 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pp19_job_level_group_added",
+          "level": "note",
+          "message": {
+            "text": "Delta since b9ff70e5e9 is one workflow edit: job mutants of mutants-nightly.yml gains a job-level concurrency block (the shared perf-host group, cancel-in-progress false), then a merge of main. scripts/check_mutants_pool.sh and scripts/check_perf_concurrency_groups.sh are byte-identical to the previous head. The group is declared at job level, as PP-19 requires, and cancel-in-progress is false so a queued run never kills a running measurement. The group string equals the one qwen-story-daily and silicon-nightly use, so the nightly mutation job now serialises against every other consumer of the ARM64 GPU host across workflows. A cost, not a defect: the 180-minute mutation job can queue behind a GPU job and vice versa; timeout-minutes counts from job start, not from queueing."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": ".github/workflows/mutants-nightly.yml:26",
+            "excerpt": "group: perf-gx10",
+            "excerpt_sha256": "85a1b44a2f6bedd5db3e54499523323aed2e4abbf6f25e9daeb1f0a238f907b2",
+            "failure_scenario": "Without the group the mutation job could overlap a perf measurement on the shared GPU host and corrupt it; with it the jobs queue instead.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pp19_guard_green",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_perf_concurrency_groups.sh at head: 86 jobs scanned, 10 perf-sensitive, 0 findings, PASS. The row mutants-nightly.yml:mutants (gpu runs-on) is ok with the perf host group and cancel-in-progress false."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_perf_concurrency_groups.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "12bcc0ccb9b560f2066b7ff12f78d7b151092dd8376ce832d529300215e006fb",
+            "failure_scenario": "A perf-sensitive job without a job-level group turns the guard RED.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pp19_mutation_killed",
+          "level": "note",
+          "message": {
+            "text": "Mutation: a copy of the workflows directory with the new concurrency block deleted from mutants-nightly.yml, run through check_perf_concurrency_groups.sh --dir, goes RED with: mutants-nightly.yml:mutants (gpu runs-on) declares no job-level concurrency.group, exit 1. The edit is pinned by a gate that can fail."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_perf_concurrency_groups.sh",
+              "--dir",
+              "<copy with block removed>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "12bcc0ccb9b560f2066b7ff12f78d7b151092dd8376ce832d529300215e006fb",
+            "failure_scenario": "A revert of the added block would pass unnoticed if the guard could not fail; it does fail.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pool_guard_unchanged_green",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_mutants_pool.sh bare run judges the real runs-on [self-hosted, Linux, ARM64, gpu, docker] as ok; the guard is byte-identical to b9ff70e5e9, so the earlier 6-of-6 mutation sweep stands."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_pool.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c5917044916753769d769930a39e997e8cc7c4ed4c0a4c36a87feec5ea65f3f3",
+            "failure_scenario": "A runs-on that cannot be parsed gives rc 2, never a pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pool_self_test",
+          "level": "note",
+          "message": {
+            "text": "check_mutants_pool.sh --self-test passes, every table row as expected."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_pool.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fe105a5030229f1068fe0ef3ee3ab6c4ac4f241c6bca4ea793ae74d851b7076",
+            "failure_scenario": "A change that loosens the pool test turns a table row red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh at head: 5 needles, 4 hits across 1507 of 1507 sibling branches, all unrelated: two Rust example functions in performance_parity.rs and two earlier #4643 evidence files quoting the needle. No second pool or concurrency guard exists."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json hits read one by one; paths and lines checked",
+            "failure_scenario": "A parallel guard under another name would escape a lexical scan; none was seen.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "patch_id_binds",
+          "level": "note",
+          "message": {
+            "text": "Subject diff ece9e563bdb9..273430324d21 (three-dot) has patch-id b01555aacb43f0d68e6f2b9b89b9a8035995c54f under prpid_compute, matching the value CI asks for."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "prpid_compute run under bash -c on the review worktree at head",
+            "failure_scenario": "A stale local origin/main would bind the receipt to a different base than CI computes.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

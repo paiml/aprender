@@ -1,0 +1,181 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_existing_module_resolver",
+          "level": "note",
+          "message": {
+            "text": "pmat query at head (index built at 1b41777320) returns 5 results, none of which resolves a file's module path from mod declarations."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "resolve rust module path of a source file from mod declarations",
+              "--limit",
+              "5"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "5f151b239374b711c41346a00ccdbea04d13a7e0d2bd073b084852069917dc13",
+            "rationale": "No Rust helper derives a module path from mod declarations for the guard to reuse; the guard stays a cargo-free shell derivation.",
+            "failure_scenario": "If a shared resolver existed, a second derivation in the guard would drift from it; none was found at head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "sibling_branch_parallel_fix",
+          "level": "note",
+          "message": {
+            "text": "Duplication scan: 4 needles over 1403/1403 sibling branches, 1 hit: build-kaizen/b2-red-guards-nightly-a7n has tests/fixtures/tree_reader/crates/reader_mods/src/flat.rs with a different blob; it is not an ancestor of this PR."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "11f844a772",
+              "--head",
+              "1b41777320",
+              "--json",
+              "dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4dbb2e8b44541e98d4e1abdeb231ca8d0b75dc470dcaa6cfed614cc7962873a1",
+            "rationale": "One sibling branch with no PR carries its own 2018-layout fixture; this PR supersedes it, and it was flagged to its owner.",
+            "failure_scenario": "If both landed, two fixtures would pin the same resolver rule twice and could disagree; the sibling has no PR, so it cannot land without review.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "planted_question_rejected",
+          "level": "note",
+          "message": {
+            "text": "Planted contrary question (R8 WARN now exits 0) rejected by both lanes, quoting the head lines that return 1 on a WARN R8 row."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_publish_preflight.sh:389-391 at 1b41777320",
+            "excerpt": "    if grep -qE '^WARN +R8 ' <<< \"$out\"; then\n        echo \"FAIL  R8 the release-readiness wrapper printed a WARN R8 row: report-only is a waiver, not a pass\"\n        return 1",
+            "excerpt_sha256": "993ddb72e809470f35756660921ab051768064a6e2f46d23bc97e18119adad68",
+            "rationale": "Both lanes rejected the planted claim that R8 became report-only, each quoting these lines.",
+            "failure_scenario": "Had a lane accepted it, the round would not count; neither did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_r3_lane1_sonnet",
+          "level": "note",
+          "message": {
+            "text": "Lane 1, claude-sonnet-5-5: SHIP."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "quorum round 3 lane 1 (claude-sonnet-5-5) output at 1b41777320",
+            "excerpt": "VERDICT: SHIP",
+            "excerpt_sha256": "a3c77339a218d8d34cca8f7d0bd226060bba5a75904cecf7f555856b066e1ae9",
+            "rationale": "Lane 1 verdict recorded on its own, with exact model id.",
+            "failure_scenario": "A lane that returned FIX-FIRST would make the same-family round non-unanimous and void.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_r3_lane2_haiku",
+          "level": "note",
+          "message": {
+            "text": "Lane 2, claude-haiku-4-5-20251001: SHIP."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "quorum round 3 lane 2 (claude-haiku-4-5-20251001) output at 1b41777320",
+            "excerpt": "VERDICT: SHIP",
+            "excerpt_sha256": "a3c77339a218d8d34cca8f7d0bd226060bba5a75904cecf7f555856b066e1ae9",
+            "rationale": "Lane 2 verdict recorded on its own, with exact model id.",
+            "failure_scenario": "A lane that returned FIX-FIRST would make the same-family round non-unanimous and void.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ratchet_baseline_banked",
+          "level": "note",
+          "message": {
+            "text": "pipe-into-grep -q ratchet: baseline 60, measured 60, PASS."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/pipe_grep_q_baseline.txt:4 at 1b41777320",
+            "excerpt": "60",
+            "excerpt_sha256": "39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9",
+            "rationale": "The two removed pipe-into-grep -q sites are banked: the ceiling equals the measured count, written by the guard's --update.",
+            "failure_scenario": "With the ceiling left at 62, two new pipe-into-grep -q sites could return unnoticed.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "tree_reader_mutants_killed",
+          "level": "note",
+          "message": {
+            "text": "tree-reader self-test at head: 41 checks, 0 failed; 3/3 MUTATION rows killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_tree_reader_tests.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4e522f719dcaf933e7d47246de6fa480a7bca11228d301a404467015366c2e52",
+            "rationale": "All three resolver mutants (include-resolver hidden, module path flattened, 2018 sibling ignored) make the golden differ.",
+            "failure_scenario": "A surviving mutant would mean the fixture cannot tell the 2018-layout rule from its absence.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

@@ -67,7 +67,7 @@ summary_fresh() {
     want="$(git rev-parse "HEAD:$LEAN" 2>/dev/null)"
     got="$(committed_tree_sha)"
     if [ -n "$want" ] && [ "$want" = "$got" ]; then
-        echo "ok    $SUMMARY tree_sha = HEAD:$LEAN ($want); leanchecker runs on the push to main"
+        echo "ok    $SUMMARY tree_sha = HEAD:$LEAN ($want); the leanchecker's verdict comes from the push to main"
         return 0
     fi
     echo "FAIL  $SUMMARY tree_sha '${got:-<none>}' != HEAD:$LEAN '${want:-<none>}': regenerate it with pv discharge run"
