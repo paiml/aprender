@@ -1839,3 +1839,40 @@ mod thinking_on_refusal_3723 {
         );
     }
 }
+
+/// #4711: `tokenize_chat_prompt` returns the encoding of the prompt it rendered. The only other
+/// callers hash its output against itself, so a body returning a constant id list passed them
+/// all. This one needs no model file: the demo state renders and encodes on any host.
+#[cfg(test)]
+mod tokenize_chat_prompt_4711 {
+    use super::*;
+
+    fn user(content: &str) -> ChatMessage {
+        ChatMessage {
+            role: "user".to_string(),
+            content: content.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn returns_the_encoding_of_the_rendered_prompt_4711() {
+        let state = AppState::demo().expect("demo state");
+        let tokenizer = require_tokenizer(&state).unwrap_or_else(|_| panic!("demo tokenizer"));
+        let msgs = [user("Hello there, how are you?")];
+        let text = format_chat_messages_for_state_thinking_tools(&state, &msgs, None, None, None)
+            .expect("renders");
+        let want = tokenizer.encode(&text);
+        // A one-id oracle could not tell the real body from `Ok(vec![0])` or `Ok(vec![1])`.
+        assert!(
+            want.len() >= 2,
+            "the probe must encode to more than one id, got {want:?}"
+        );
+        let got = tokenize_chat_prompt(&tokenizer, &msgs, None, None, None, &state)
+            .unwrap_or_else(|_| panic!("tokenizes"));
+        assert_eq!(
+            got, want,
+            "the ids are not the encoding of the rendered prompt"
+        );
+    }
+}
