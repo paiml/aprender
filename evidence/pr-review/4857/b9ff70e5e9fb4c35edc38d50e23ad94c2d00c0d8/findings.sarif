@@ -1,0 +1,131 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "deny_substring_accept_whole_label_in_limit",
+          "level": "note",
+          "message": {
+            "text": "Delta since d3a225a79a is two lines of mutants-nightly.yml only: cron 0 1 becomes 0 3 and timeout-minutes 360 becomes 180 (cop ruling: quietest PR window, ends by 06:00Z). scripts/ is byte-identical to the previous head, so the pool guard, its table and its mutation sweep are unchanged. No other 360, 01:00 or 6h figure remains in the workflow, and no script or ci fragment names the workflow file. A run cut off at 180 minutes is red, which the workflow comment states; the next night re-judges. No new gap."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": ".github/workflows/mutants-nightly.yml:25",
+            "excerpt": "timeout-minutes: 180",
+            "excerpt_sha256": "dfed6ebc650d93561e57701386db34b449592313ee32affd5484f3d72d720e45",
+            "failure_scenario": "If a nightly needs more than 180 minutes it is cancelled red rather than passing partial; that is a stated cost, not a false pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "earlier_rounds_still_fixed",
+          "level": "note",
+          "message": {
+            "text": "Earlier rounds stay fixed: gpu-without-docker and docker-without-gpu rows RED, mixed-case labels of the main CI box, CLEAN-ROOM and Perf-Solo RED, mixed-case ARM64 GPU Docker GREEN, not-mutants and gpu-less RED. The runner image is multi-arch: .github/workflows/mini-probe.yml:34 records a linux amd64+arm64 image. --self-test passes and the memory-cap guard is still green."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_pool.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fe105a5030229f1068fe0ef3ee3ab6c4ac4f241c6bca4ea793ae74d851b7076",
+            "failure_scenario": "A change that loosens the pool test turns a table row red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mutation_sweep_deny_substring",
+          "level": "note",
+          "message": {
+            "text": "Sweep of 6 edits of check_mutants_pool.sh (guard bytes identical to the d3a225a79a head, re-run there): dropping the clean-room, main-CI-box or perf-solo deny alternative, dropping the lowercase of the request text, dropping the docker requirement, and dropping the gpu requirement each turn --self-test red (6 of 6 killed)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "mutation-sweep: sed one edit into a copy of the guard under a temp ROOT, run --self-test, killed iff non-zero"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1fe105a5030229f1068fe0ef3ee3ab6c4ac4f241c6bca4ea793ae74d851b7076",
+            "failure_scenario": "A revert of the substring deny would go unseen if no row pinned it; the suffix rows pin it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "real_workflow_judged",
+          "level": "note",
+          "message": {
+            "text": "The bare run judges the real mutants-nightly.yml runs-on [self-hosted, Linux, ARM64, gpu, docker] as ok."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_pool.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c5917044916753769d769930a39e997e8cc7c4ed4c0a4c36a87feec5ea65f3f3",
+            "failure_scenario": "A runs-on that cannot be parsed gives rc 2, never a pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh at head: 5 needles, 4 hits across 1492 of 1492 sibling branches, all unrelated: two Rust example functions in performance_parity.rs and the two earlier #4643 evidence files that quote the needle. No second runs-on pool guard exists."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json hits read one by one; paths and lines checked",
+            "failure_scenario": "A parallel pool guard under another name would escape a lexical scan; none was seen.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "patch_id_binds",
+          "level": "note",
+          "message": {
+            "text": "Subject diff 358e9d4d1188..b9ff70e5e9fb (three-dot) has patch-id faeb2732298067518ff84d9aa4b2802050d794ff under prpid_compute; the local origin/main ref was used without a fetch."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "prpid_compute run under bash -c on the review worktree at head",
+            "failure_scenario": "A stale local origin/main would bind the receipt to a different base than CI computes.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
