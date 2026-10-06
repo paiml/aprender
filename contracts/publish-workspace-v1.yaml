@@ -41,6 +41,7 @@ metadata:
     - "Potvin & Levenberg, Why Google Stores Billions of Lines of Code in a Single Repository, CACM 2016"
     - "scripts/cascade-publish.sh (the 13-tier publish order this contract describes)"
     - "scripts/check_gate5_stage.sh (the guard that enforces FALSIFY-PUB-005/006/007)"
+    - "scripts/check_publish_strict_cleanroom.sh (the guard that enforces FALSIFY-PUB-008, #4687)"
     - ".claude/skills/pre-release/SKILL.md (Gate 5 and Gate 11)"
   depends_on: []
 
@@ -106,6 +107,12 @@ proof_obligations:
     type: completeness
     property: "The stage classifier can distinguish the stages it names; a classifier collapsing to one verdict is a failure"
     formal: "|{ classify(C, R) : (C,R) in fixture_states }| >= 3"
+    applies_to: all
+
+  - id: PW-DOOR-005
+    type: precondition
+    property: "publish_strict.sh uploads only after the recorded clean-room run is read back and found green on exactly the tag's commit"
+    formal: "upload(T) => let r = recorded_run(T) in r != none and conclusion(r) = success and tested_sha(r) = commit(T)"
     applies_to: all
 
 falsification_tests:
@@ -215,6 +222,24 @@ falsification_tests:
       the skill), or apr-cli lost all of them (delete the precondition rather than
       leaving it as folklore), or the classifier has collapsed to a constant.
 
+  - id: FALSIFY-PUB-008
+    rule: |
+      The one door to crates.io (#4687): publish_strict.sh refuses a recorded
+      clean-room run id that is missing, not a run id, unreadable, red, or a run
+      that tested another commit. A non-empty file is not proof; the run is read
+      back and judged by clean_room_gate pinned to that one run.
+    prediction: |
+      Run the case table against the v0.70.1 publish_strict.sh (which checks only
+      that the file is non-empty) and it FAILS four rows (non-numeric, red, other
+      commit, unreadable) with "the clean-room door let this run through".
+    test: |
+      bash scripts/check_publish_strict_cleanroom.sh
+    test_harness: |
+      bash scripts/check_cascade_clean_room_gate.sh
+    if_fails: |
+      publish_strict.sh no longer reads the recorded run back, or clean_room_gate
+      lost its pinned mode and judges a run other than the one recorded.
+
 kani_harnesses:
   - id: KANI-PUB-001
     obligation: "gate_stage_dependence"
@@ -235,7 +260,7 @@ qa_gate:
   checks:
     - topological_order
     - gate_stage_dependence
-  pass_criteria: "All 7 falsification tests pass"
+  pass_criteria: "All 8 falsification tests pass"
   falsification: |
     A pre-release gate is red for a reason that is expected at the current stage and
     nothing says so, or a stage declaration contradicts cargo metadata.
