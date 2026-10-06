@@ -76,13 +76,13 @@ jobs:
       matrix:
         shard: [1, 2, 3]
         shards: [3]
-    # PMAT-3138 (#3138): arch-neutral -- intel, yoga OR gx10. Measured 2026-09-12 on
-    # gx10 with this image and env, --no-fail-fast: step 1 (59k tests) 10.6 min vs
-    # 34.5 on intel, step 2 (102 tree readers) 6.7 vs 27.4, the over-the-cap
-    # cargo check 84 s; test EXECUTION runs 3-4x faster on the idle 20-core box.
-    # The four aarch64-only reds that pin found are fixed in the same PR (an x86
-    # example, a shared-B GEMM defect, a wall-clock ratio moved to bench-gates, a
-    # lane-count tolerance). pr-review-receipt keeps X64 until #3132.
+    # PMAT-3138 (#3138): the section builds on aarch64 too. Measured 2026-09-12 as ONE job on
+    # the idle 20-core ARM64 box: 59k tests 10.6 min vs 34.5 on an X64 box, tree readers 6.7
+    # vs 27.4, test execution 3-4x faster. The four aarch64-only reds it found are fixed (an
+    # x86 example, a shared-B GEMM defect, a wall-clock ratio, a lane-count tolerance).
+    # ci.yml pins the 3 SHARDS to X64: the Σ fan-in compares their union with the
+    # universe shard 1 listed, which depends on arch. Mixed arch is RED; all-ARM drops the
+    # x86-only tests unseen. pr-review-receipt keeps X64 until #3132.
     runs-on: [self-hosted, Linux, clean-room]
     # 100, not 85. The step below sets `timeout-minutes: 75`, but "Set up runner"
     # (image pull) has measured at 20 minutes, so 20 + 75 = 95 > 85 and the JOB
