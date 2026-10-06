@@ -413,7 +413,7 @@ proof_obligations:
     statement: "Each of K1..K6 failing alone, any non-merge_group event, and any failed or incomplete GitHub lookup gives the affected flags 0 (the job runs)."
     discharged_by: falsification_tests[9]
   - id: RC-OB-011
-    statement: "gate and ci / gate share one MG-REUSE-VERDICT block that reuses only on x86=det=1 with mg-reuse and x86-main-advisories success, and fails on a split, flags set off merge_group or by a failed mg-reuse, or a reused x86-main whose advisory job did not succeed."
+    statement: "gate and ci / gate share one MG-REUSE-VERDICT block that reuses only on x86=det=1 with mg-reuse and x86-main-advisories success on merge_group or on a push to main (#4748), and fails on a split, flags set on any other event or by a failed mg-reuse, or a reused x86-main whose advisory job did not succeed."
     discharged_by: falsification_tests[10]
   - id: RC-OB-012
     statement: "ci.yml wires the rule: mg-reuse runs only on merge_group and on a push to main; x86-main, determinism and mac-check need it and skip only on their own flag; x86-main-advisories runs exactly when x86 = 1; gate needs mg-reuse, x86-main-advisories and mg-reuse-self-test."
@@ -629,11 +629,13 @@ falsification_tests:
     prediction: >-
       The self-test extracts the MG-REUSE-VERDICT block from ci.yml, fails
       unless exactly two identical copies exist, and runs it over the
-      verdict rows: merge_group:success:1:1:success reuses; 0:0 with the
-      advisory job skipped, a pull_request run, and a failed mg-reuse with
-      no flags run the jobs; a reused x86-main whose advisory job failed
-      or was skipped, 1:0, 0:1, flags set on pull_request, a failed
-      mg-reuse with flags set, and the advisory job running on 0:0 all fail.
+      verdict rows: merge_group:success:1:1:success and
+      push:success:1:1:success reuse; 0:0 with the advisory job skipped, a
+      pull_request run, and a failed or skipped mg-reuse with no flags (on
+      merge_group or push) run the jobs; a reused x86-main whose advisory
+      job failed or was skipped (on merge_group or push), 1:0, 0:1, flags
+      set on pull_request, a failed mg-reuse with flags set, and the
+      advisory job running on 0:0 all fail.
     test: 'bash scripts/ci_mg_reuse.sh --self-test'
     if_fails: >-
       gate could pass with x86-main skipped and no RustSec advisory check,
