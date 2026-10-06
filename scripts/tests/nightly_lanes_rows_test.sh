@@ -111,7 +111,7 @@ producer() {
     n="$(names "$f" | grep -c -x -F -e "$JOB")"
     [ "$n" = 1 ] || { printf '%s jobs report the name %s in %s:\n' "$n" "$JOB" "$WF"; names "$f"; return 1; }
     if [ "$SIB" != "-" ]; then
-        names "$f" | grep -q -x -F -e "$SIB" || { printf 'no sibling job %s in %s\n' "$SIB" "$WF"; return 1; }
+        grep -q -x -F -e "$SIB" <<< "$(names "$f")" || { printf 'no sibling job %s in %s\n' "$SIB" "$WF"; return 1; }
     fi
     printf 'producer ok: %s %s\n' "$WF" "$JOB"
 }
