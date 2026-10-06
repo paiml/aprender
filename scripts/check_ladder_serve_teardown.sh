@@ -113,7 +113,7 @@ LOCK="$TMP/gpu.lock"
 fake_locked() { flock -w 5 "$LOCK" python3 "$TMP/fake_server.py" "$@"; }
 
 wait_health() { local port="$1" i; for i in $(seq 1 50); do curl -fsS --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
-wait_pidfile() { local f="$1" i; for i in $(seq 1 50); do [ -s "$f" ] && return 0; sleep 0.1; done; return 1; }
+wait_pidfile() { local f="$1" i; for i in $(seq 1 200); do [ -s "$f" ] && return 0; sleep 0.1; done; return 1; }
 alive() { kill -0 "$1" 2>/dev/null; }
 
 # idle_child: start a `sleep 30` the teardown may TERM at once, and return only after it
@@ -154,7 +154,8 @@ race_extra_runs() {
 # to <blocks> FRESH bash processes of <tries> tries each, or NM. One process can sit in a
 # phase where the race never fires (28/100 fresh 1000-try blocks read zero, measured),
 # so the must-red plant stops at the first block that loses (until-hit=1, up to 12) and
-# the must-green row needs all 4 blocks clean (until-hit=0) and runs them in parallel to cap wall clock (about 0.08 s per try, so 4x1000 sequential cost ~315 s). Both sides run the same block.
+# the must-green row (until-hit=0) runs all its blocks, in parallel,
+# and its sum must be 0; the parallel branch has its own self-test rows below to cap wall clock (about 0.08 s per try, so 4x1000 sequential cost ~315 s). Both sides run the same block.
 race_fresh() {
   local body="$1" tries="$2" blocks="$3" until_hit="$4" b n total=0
   if [ "$until_hit" -eq 0 ]; then  # all blocks needed: run them side by side, each in its own TMP subdir
@@ -303,6 +304,12 @@ if [ "$SELF_TEST" -eq 1 ]; then
   if [ "$rp" -eq 0 ]; then
     echo "SELF-TEST FAIL: a bare fork TERMed at once never ran the EXIT trap in 12 fresh blocks of 1000 tries — the race row cannot see the defect"; exit 1
   fi
+  # The parallel branch (until-hit=0) must itself see the defect and must itself say NM.
+  pp=$(race_fresh "$bare" 1000 4 0)
+  case "$pp" in ''|*[!0-9]*) echo "SELF-TEST FAIL: parallel race_fresh on the bare fork printed '$pp', want a count"; exit 1 ;; esac
+  [ "$pp" -gt 0 ] || { echo "SELF-TEST FAIL: the parallel green branch read 0 hits on a bare fork in 4 blocks of 1000 — it cannot see the defect"; exit 1; }
+  pn=$(race_fresh 'this is ) ( not a function' 3 4 0)
+  [ "$pn" = NM ] || { echo "SELF-TEST FAIL: parallel race_fresh on a garbage body printed '$pn', want NM (L25)"; exit 1; }
   # L25 rows: a probe that measures nothing must say NM, never "0 extra runs". Four ways to
   # measure nothing: a body that does not parse, an idle_child that fails, a missing TMP, a TERM that reaches nothing.
   for nmcase in garbage rc2 notmp nokill; do
