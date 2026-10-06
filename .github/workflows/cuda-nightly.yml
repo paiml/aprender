@@ -144,20 +144,40 @@ jobs:
           # `procs` (compute contexts) is the primary, portable signal — it
           # works on both sm_89 and GB10. `memory.used` is a secondary signal
           # and is [N/A] on GB10's unified memory. GitHub runs `run:` as
-          # `bash -e -o pipefail`, so use `tr -cd` (never non-zero) to strip to
-          # digits — a `grep -oE` that finds no digit exits 1 and, under -e,
-          # would kill this step on GB10 (which is exactly what happened first).
-          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -cd '0-9')
-          used=${used:-0}
-          procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c . || true)
-          procs=${procs:-0}
+          # `bash -e -o pipefail`, so the probe below parses in-shell instead
+          # of through a `grep -oE` that finds no digit and exits 1 — under -e
+          # that would kill this step on GB10 (which is exactly what happened
+          # first). A reading counts only when it is a bare integer: a Jetson
+          # Orin prints [N/A] for BOTH queries, and counting that one row as a
+          # busy process would skip every leg and go green. "Cannot measure"
+          # is neither busy nor idle. This block is pinned, byte for byte,
+          # against its twin in ci/sections.yml (gpu-quick) and run against a
+          # fake nvidia-smi by scripts/check_gpu_yield_probe.sh.
+          who="${{ matrix.name }}"
+          # BEGIN yield-probe
+          used=n/a; procs=0; apps_ok=1
+          mem_out=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null)
+          apps_out=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null) || apps_ok=0
+          mem_row=${mem_out%%$'\n'*}; mem_row=${mem_row//[[:space:]]/}
+          case $mem_row in ''|*[!0-9]*) ;; *) used=$mem_row ;; esac
+          while IFS= read -r row; do
+            row=${row//[[:space:]]/}
+            case $row in '') ;; *[!0-9]*) apps_ok=0 ;; *) procs=$((procs + 1)) ;; esac
+          done <<< "$apps_out"
+          busy=0
+          if [ "$used" != "n/a" ] && [ "$used" -gt 2000 ]; then busy=1; fi
+          if [ "$procs" -gt 0 ]; then busy=1; fi
+          if [ "$busy" -eq 0 ] && [ "$used" = "n/a" ] && [ "$apps_ok" -eq 0 ]; then
+            echo "::notice::${who}: cannot measure GPU busy-ness (nvidia-smi gave no number) — NOT yielding, running the GPU leg"
+          fi
+          # END yield-probe
           echo "${{ matrix.name }}: GPU memory.used=${used} MiB, existing compute procs=${procs}"
           if [ "$force" = "true" ]; then
             echo "::notice::${{ matrix.name }}: force=true — running regardless of GPU load"
             echo "proceed=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
-            echo "::notice::${{ matrix.name }}: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping falsifiers tonight"
+          if [ "$busy" -eq 1 ]; then
+            echo "::notice::${{ matrix.name }}: GPU busy (${used} MiB, ${procs} procs) — yielding to training, skipping falsifiers tonight"
             # A YIELDED NIGHT MUST BE VISIBLE. Every later step is skipped and
             # the job goes GREEN, so without this line "the witness did not run"
             # and "the witness passed" look identical from outside. The marker

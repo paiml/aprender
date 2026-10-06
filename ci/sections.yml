@@ -3183,23 +3183,43 @@ jobs:
       # deliberately absent and neither changes the decision: the silicon
       # matrix filter (this job has no matrix) and the PERF041 NOT_RUN marker
       # (that is PP-26's release ledger, and a PR job writes no release
-      # evidence). The probe, the thresholds and the `::notice::` are verbatim.
+      # evidence). The thresholds and the `::notice::` are verbatim.
       # `procs` (compute contexts) is the primary, portable signal — it works
       # on both sm_89 and GB10. `memory.used` is secondary and is [N/A] on
-      # GB10's unified memory. `tr -cd` (never non-zero) rather than a
-      # `grep -oE` that exits 1 when it finds no digit and, under -e, would
-      # kill this step on GB10.
+      # GB10's unified memory.
+      # A reading counts only when it is a bare integer. A Jetson Orin prints
+      # [N/A] for BOTH queries; the old probe counted that one row as a busy
+      # process and skipped every GPU leg with success. "Cannot measure" is
+      # neither busy nor idle: it never yields, it is never shown as 0, and
+      # when nothing at all could be read the step says so. The block between
+      # the BEGIN/END markers is pinned, byte for byte, against its twin in
+      # cuda-nightly.yml and run against a fake nvidia-smi by
+      # scripts/check_gpu_yield_probe.sh.
       - name: Decide whether to run (yield-to-training)
         id: yield
         run: |
           set -uo pipefail
-          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -cd '0-9')
-          used=${used:-0}
-          procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c . || true)
-          procs=${procs:-0}
+          who=gpu-quick
+          # BEGIN yield-probe
+          used=n/a; procs=0; apps_ok=1
+          mem_out=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null)
+          apps_out=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null) || apps_ok=0
+          mem_row=${mem_out%%$'\n'*}; mem_row=${mem_row//[[:space:]]/}
+          case $mem_row in ''|*[!0-9]*) ;; *) used=$mem_row ;; esac
+          while IFS= read -r row; do
+            row=${row//[[:space:]]/}
+            case $row in '') ;; *[!0-9]*) apps_ok=0 ;; *) procs=$((procs + 1)) ;; esac
+          done <<< "$apps_out"
+          busy=0
+          if [ "$used" != "n/a" ] && [ "$used" -gt 2000 ]; then busy=1; fi
+          if [ "$procs" -gt 0 ]; then busy=1; fi
+          if [ "$busy" -eq 0 ] && [ "$used" = "n/a" ] && [ "$apps_ok" -eq 0 ]; then
+            echo "::notice::${who}: cannot measure GPU busy-ness (nvidia-smi gave no number) — NOT yielding, running the GPU leg"
+          fi
+          # END yield-probe
           echo "gx10: GPU memory.used=${used} MiB, existing compute procs=${procs}"
-          if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
-            echo "::notice::gpu-quick: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping the GPU leg on this PR"
+          if [ "$busy" -eq 1 ]; then
+            echo "::notice::gpu-quick: GPU busy (${used} MiB, ${procs} procs) — yielding to training, skipping the GPU leg on this PR"
             echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo "proceed=true" >> "$GITHUB_OUTPUT"
