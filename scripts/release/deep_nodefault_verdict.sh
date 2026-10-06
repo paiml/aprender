@@ -42,6 +42,7 @@
 set -uo pipefail
 
 SELF="${BASH_SOURCE[0]}"
+CARGO_COMPILE_FAILED=101   # cargo's exit status when compilation fails (an exit code, not a count)
 IMPL=new   # m:old-impl   (only `--self-test --impl old` changes it; no environment override)
 
 # count LOG -> prints "<errors_total> <errors_outside>"
@@ -87,7 +88,7 @@ verdict() {
     if [ "$IMPL" != old ] && [ "$rc" != 0 ] && [ "$tot" = 0 ]; then k=1; fi   # m:zero-errors-rule
     # cargo exits 101 when compilation fails; any other non-zero (137 killed, 143 terminated, ...) means the
     # run did not finish, so its log cannot explain the failure, whatever errors it holds.
-    if [ "$IMPL" != old ] && [ "$rc" != 0 ] && [ "$rc" != 101 ]; then k=1; fi   # m:abnormal-rc
+    if [ "$IMPL" != old ] && [ "$rc" != 0 ] && [ "$rc" != "$CARGO_COMPILE_FAILED" ]; then k=1; fi   # m:abnormal-rc
     printf 'DEEP --no-default-features rc=%s errors_total=%s errors_outside_aprender-distribute=%s unexplained=%s\n' \
         "$rc" "$tot" "$out" "$k"
     if [ "$out" = 0 ] && [ "$k" = 0 ]; then return 0; fi
