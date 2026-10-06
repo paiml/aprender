@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # ladder_pr_skips_leanchecker.sh — planted rows for operator ruling C312 (#4578): a PR run of
-# the provable-ladder skips the leanchecker re-check; a push to main runs it in full.
+# the provable-ladder skips the leanchecker re-check, and so does a push to main (amended 2026-10-06,
+# item 5); the full run is the nightly schedule (provable-ladder-nightly.yml).
 #
 # Drives the real scripts/ci/provable_ladder_discharge.sh with a stub pv that records its argv
 # and a stub build.sh, per event, and checks which pv command ran. Then the summary-fresh rows
-# on a throwaway git repo. Then plants the mutant (every event mapped to `pr`) and requires
-# the full-run rows to catch it — so the table is proven able to see the defect.
+# on a throwaway git repo. Then plants two mutants — every event mapped to `pr` (the nightly
+# never runs the leanchecker) and push mapped back to `full` (the leanchecker returns to the
+# push path) — and requires a row to catch each, so the table is proven able to see both.
 #
 # EXIT 0 every row holds and the mutant is caught · 1 otherwise
 #
@@ -47,7 +49,8 @@ table() { # table <sut> <label> — the event rows
         "$(pv_argv "$s" pull_request)" "0|discharge check lean --strict --comparator|locked"
     row "$l merge_group: same as a PR" \
         "$(pv_argv "$s" merge_group)" "0|discharge check lean --strict --comparator|locked"
-    row "$l push: discharge run (with the leanchecker's replay)" "$(pv_argv "$s" push)" "0|discharge run lean|locked"
+    row "$l push: same as a PR (the push path skips the re-check)" \
+        "$(pv_argv "$s" push)" "0|discharge check lean --strict --comparator|locked"
     row "$l schedule (nightly): discharge run" "$(pv_argv "$s" schedule)" "0|discharge run lean|locked"
     row "$l workflow_dispatch: discharge run" "$(pv_argv "$s" workflow_dispatch)" "0|discharge run lean|locked"
     row "$l empty event fails safe to the full run" "$(pv_argv "$s" '')" "0|discharge run lean|locked"
@@ -94,22 +97,44 @@ git -C "$G" rm -q summary.json
 git -C "$G" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm drop
 row "PR summary-fresh: no committed summary -> 1" "$(fresh pull_request)" 1
 commit_summary "$sha"
-row "push summary-fresh: unchanged after run -> 0" "$(fresh push)" 0
+row "push summary-fresh: same as a PR, tree_sha = HEAD:lean -> 0" "$(fresh push)" 0
+row "schedule summary-fresh: unchanged after run -> 0" "$(fresh schedule)" 0
 echo '{}' > "$G/summary.json"
-row "push summary-fresh: run rewrote it -> 1" "$(fresh push)" 1
+row "schedule summary-fresh: run rewrote it -> 1" "$(fresh schedule)" 1
 git -C "$G" checkout -q -- summary.json
 
-# The mutant: every event takes the PR path, so leanchecker never runs anywhere.
-sed 's/^        pull_request | merge_group) echo pr ;;$/        *) echo pr ;;/' "$SUT" > "$TD/mutant.sh"
-if cmp -s "$SUT" "$TD/mutant.sh"; then
-    echo "FAIL  mutant: the sed did not change the script (pattern drifted)"; fail=1
-else
-    m="$(pv_argv "$TD/mutant.sh" push)"
-    if [ "$m" = "0|discharge run lean|locked" ]; then
-        echo "FAIL  mutant (all events -> pr) survived the push row"; fail=1
-    else
-        echo "ok    mutant (all events -> pr) caught by the push row ($m)"
+# The nightly is the only place the leanchecker now runs, so check it is wired: a schedule
+# trigger, the provable-ladder section, and a verdict read from results.json (fat_driver skips a
+# continue-on-error section, so the job's own status would be green on a RED ladder).
+NW="$ROOT/.github/workflows/provable-ladder-nightly.yml"
+row "nightly: provable-ladder-nightly.yml has a schedule trigger" \
+    "$(grep -cE "^    - cron: '[0-9]+ [0-9]+ \* \* \*'" "$NW" 2> /dev/null || echo 0)" 1
+sections_arg="--sections 'provable-ladder'"
+row "nightly: it runs the provable-ladder section through fat_driver" \
+    "$(grep -cF -- "$sections_arg" "$NW" 2> /dev/null || echo 0)" 1
+row "nightly: its verdict reads the section's result, not the job status" \
+    "$(grep -cF '[env.SEC].result' "$NW" 2> /dev/null || echo 0)" 1
+
+# mutant <name> <sed expr> <event> <the row's passing output>: the planted defect must change the
+# script, and the named event's row must no longer pass on it.
+mutant() {
+    local m
+    sed "$2" "$SUT" > "$TD/mutant.sh"
+    if cmp -s "$SUT" "$TD/mutant.sh"; then
+        echo "FAIL  mutant ($1): the sed did not change the script (pattern drifted)"; fail=1; return
     fi
-fi
+    m="$(pv_argv "$TD/mutant.sh" "$3")"
+    if [ "$m" = "$4" ]; then
+        echo "FAIL  mutant ($1) survived the $3 row"; fail=1
+    else
+        echo "ok    mutant ($1) caught by the $3 row ($m)"
+    fi
+}
+# Every event takes the PR path, so the leanchecker never runs anywhere, the nightly included.
+all_pr='s/^        pull_request | merge_group | push) echo pr ;;$/        *) echo pr ;;/'
+mutant "all events -> pr" "$all_pr" schedule "0|discharge run lean|locked"
+# The amendment undone: push falls back to the full run and the leanchecker is on the push path.
+push_full='s/^        pull_request | merge_group | push) echo pr ;;$/        pull_request | merge_group) echo pr ;;/'
+mutant "push -> full" "$push_full" push "0|discharge check lean --strict --comparator|locked"
 
 exit "$fail"

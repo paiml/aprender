@@ -1,0 +1,82 @@
+# provable-ladder-nightly.yml -- the provable-ladder's full run (`pv discharge run`, the
+# leanchecker included) once a night on main's head (#4578).
+#
+# WHY IT MOVED HERE. Operator ruling C312 (2026-10-04) took the leanchecker re-check off pull
+# requests and merge groups; from #4643 every push to main still ran it in full (cap 3,600 s,
+# advisory). Amendment, 2026-10-06 (item 5): a push runs the same mode as a PR, and the full
+# check runs once a night on the night's commit. The event split lives in
+# scripts/ci/provable_ladder_discharge.sh (`schedule` and `workflow_dispatch` are mode full);
+# scripts/ci/ladder_pr_skips_leanchecker.sh is its case table and checks this file's wiring.
+#
+# INFO LANE. Nothing requires this workflow and no release script reads it. It stays information
+# until it has been green three nights in a row; making it a gate after that is a separate change.
+#
+# THE SAME SECTION. fat_driver runs the provable-ladder job definition from ci/sections.yml
+# verbatim, so the nightly and the PR run cannot drift apart. That section is continue-on-error
+# and fat_driver's verdict skips such a section, so the job's own status would be green on a
+# RED ladder: the last step reads the section's result from results.json and fails on anything
+# but success. A skipped ladder is RED inside the section already (step "No verdict is not a pass").
+name: provable-ladder-nightly
+
+on:
+  schedule:
+    # 20:07 UTC: an off-minute no other workflow holds. GitHub dispatches schedule events
+    # ~4-7 h late on this account (#3292), so this lands around 00:00-03:00 UTC, before
+    # guards-nightly (21:47 -> ~02:47) reaches the same pool. The run is 6-63 min measured
+    # (merge_group ladder runs, 2026-10-05..06).
+    - cron: '7 20 * * *'
+  workflow_dispatch:
+
+# One at a time: two runs would queue on the same lean cache lock anyway.
+concurrency:
+  group: provable-ladder-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  provable-ladder-nightly:
+    # The section's own pool (ci/sections.yml provable-ladder: clean-room, X64).
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # The section's 90 min plus checkout and the jq pin.
+    timeout-minutes: 100
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      # The same pin as ci.yml's x86-main: fail closed on a checksum, version or behaviour mismatch.
+      - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        env:
+          JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+          JQ_SHA256: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          v=$("$d/jq" --version)
+          [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The event split's case table (stubs, seconds)
+        run: bash scripts/ci/ladder_pr_skips_leanchecker.sh
+      - name: provable-ladder, full run (the leanchecker's replay included)
+        id: run
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'provable-ladder'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - name: The ladder's verdict is the section's result, not the job status
+        if: ${{ !cancelled() }}
+        env:
+          SEC: provable-ladder
+        run: |
+          set -euo pipefail
+          r=$(jq -r '(. // {})[env.SEC].result // "missing"' "$RUNNER_TEMP/fat/results.json" 2>/dev/null || echo unreadable)
+          echo "### provable-ladder-nightly: $SEC = $r (info lane, #4578)" >> "$GITHUB_STEP_SUMMARY"
+          [ "$r" = success ] || { echo "::error::provable-ladder: $r"; exit 1; }
