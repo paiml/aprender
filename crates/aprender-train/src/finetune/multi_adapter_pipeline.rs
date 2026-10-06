@@ -204,7 +204,15 @@ impl MultiAdapterPipeline {
     /// The `base_pipeline` should be a fully initialized InstructPipeline
     /// (with CUDA blocks uploaded if GPU training is desired). Adapter slots
     /// are initially empty — call `add_adapter()` to register each one.
+    ///
+    /// # Panics
+    /// If `base_pipeline.config.lora_targets` is not `q_proj`, `v_proj`
+    /// ([`InstructPipeline::check_lora_targets`]): a slot trains under the
+    /// base's targets, and every slot is `q_proj`, `v_proj`.
     pub fn new(base_pipeline: InstructPipeline, schedule: AdapterSchedule) -> Self {
+        if let Err(e) = InstructPipeline::check_lora_targets(&base_pipeline.config) {
+            panic!("{e}");
+        }
         Self { base_pipeline, adapters: Vec::new(), schedule, global_step: 0 }
     }
 

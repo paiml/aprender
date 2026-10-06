@@ -1,16 +1,14 @@
 //! FALSIFY-LORA_TARGET_SELECTION_V1_004: `InstructConfig.lora_targets` selects
 //! the adapters `build_lora_layers` builds and the slots `inject_adapter_weights`
-//! routes into, and every constructor refuses a target set the forward does not
-//! train (0.72 R15a C2b).
+//! routes into (0.72 R15a C2b). FALSIFY-LORA_TARGET_SELECTION_V1_018: every
+//! `InstructPipeline` constructor takes any target set, and the multi-adapter
+//! pipeline refuses a base or an adapter it does not train (C11b).
 
 use super::adapter_tests::filled;
 use super::*;
 use crate::finetune::multi_adapter_pipeline::{
     AdapterConfig, AdapterSchedule, MultiAdapterPipeline,
 };
-
-/// How `all_linear` is refused: every target outside `q_proj`, `v_proj`.
-const UNTRAINED_ALL: &str = "would not train: k_proj, o_proj, gate_proj, up_proj, down_proj";
 
 fn targets(names: &[&str]) -> LoraTargets {
     LoraTargets::parse(names).expect("known targets must parse")
@@ -154,52 +152,52 @@ fn falsify_lora_target_selection_v1_004_routes_every_selected_target_by_name() {
     }
 }
 
-/// Each constructor that returns a `Result` refuses before it loads anything:
-/// a model path that does not load yields the target error, not a load error.
-fn assert_refuses_before_loading(load: &dyn Fn(InstructConfig) -> crate::Result<InstructPipeline>) {
-    let cases: [(&[&str], &str); 3] = [
-        (&["all_linear"], UNTRAINED_ALL),
-        (&["q_proj"], "missing: v_proj"),
-        (&["k_proj", "v_proj"], "would not train: k_proj; missing: q_proj"),
-    ];
-    for (names, want) in cases {
+/// FALSIFY-LORA_TARGET_SELECTION_V1_018: each constructor that returns a
+/// `Result` takes any target set past the check: a model path that does not
+/// load yields a load error, never the target error.
+fn assert_gets_past_the_targets(load: &dyn Fn(InstructConfig) -> crate::Result<InstructPipeline>) {
+    for names in [&["all_linear"][..], &["q_proj"], &["k_proj", "v_proj"], &["qv"]] {
         let Err(err) = load(with_targets(names)) else {
-            panic!("{names:?} must be refused");
+            panic!("{names:?}: a model path that does not load must fail");
         };
-        let err = err.to_string();
-        assert!(err.contains("LoRA targets") && err.contains(want), "{names:?}: {err}");
+        assert!(!err.to_string().contains("LoRA targets"), "{names:?} must pass: {err}");
     }
-    // Control: the default targets get past the check and fail on the model.
-    let Err(err) = load(InstructConfig { lora_rank: 4, ..InstructConfig::default() }) else {
-        panic!("a model path that does not load must fail");
-    };
-    assert!(!err.to_string().contains("LoRA targets"), "the default must pass the check: {err}");
 }
 
 #[test]
-fn falsify_lora_target_selection_v1_004_from_pretrained_refuses_before_loading() {
+fn falsify_lora_target_selection_v1_018_from_pretrained_accepts_any_targets() {
     let dir = tempfile::tempdir().expect("tempdir");
     let model_config = TransformerConfig::tiny();
-    assert_refuses_before_loading(&|config| {
+    assert_gets_past_the_targets(&|config| {
         InstructPipeline::from_pretrained(dir.path(), &model_config, config)
     });
 }
 
 #[test]
-fn falsify_lora_target_selection_v1_004_from_apr_refuses_before_loading() {
+fn falsify_lora_target_selection_v1_018_from_apr_accepts_any_targets() {
     // `from_apr` requires the path to exist; its bytes are not an APR file.
     let file = tempfile::NamedTempFile::new().expect("tempfile");
     std::fs::write(file.path(), b"not an APR file\n".repeat(16)).expect("write");
     let model_config = TransformerConfig::tiny();
-    assert_refuses_before_loading(&|config| {
+    assert_gets_past_the_targets(&|config| {
         InstructPipeline::from_apr(file.path(), &model_config, config)
     });
 }
 
 #[test]
+fn falsify_lora_target_selection_v1_018_new_builds_all_linear() {
+    let model_config = TransformerConfig::tiny();
+    let pipeline = InstructPipeline::new(&model_config, with_targets(&["all_linear"]));
+    let all = targets(&["all_linear"]);
+    assert_eq!(pipeline.config.lora_targets, all);
+    assert_eq!(pipeline.lora_layers.len(), all.per_layer() * model_config.num_hidden_layers);
+}
+
+#[test]
 #[should_panic(expected = "would not train: k_proj, o_proj, gate_proj, up_proj, down_proj")]
-fn falsify_lora_target_selection_v1_004_new_refuses() {
-    let _ = InstructPipeline::new(&TransformerConfig::tiny(), with_targets(&["all_linear"]));
+fn falsify_lora_target_selection_v1_018_multi_adapter_new_refuses_all_linear_base() {
+    let base = InstructPipeline::new(&TransformerConfig::tiny(), with_targets(&["all_linear"]));
+    let _ = MultiAdapterPipeline::new(base, AdapterSchedule::RoundRobin);
 }
 
 #[test]

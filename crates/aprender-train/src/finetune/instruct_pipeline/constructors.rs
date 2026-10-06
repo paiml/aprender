@@ -7,15 +7,9 @@ use crate::lora::LoraTarget;
 use provable_contracts_macros::{ensures, requires};
 
 impl InstructPipeline {
-    /// Create a new pipeline with random weights.
-    ///
-    /// # Panics
-    /// If `instruct_config.lora_targets` is not `q_proj`, `v_proj`
-    /// ([`InstructPipeline::check_lora_targets`]).
+    /// Create a new pipeline with random weights, one adapter per layer and
+    /// selected target.
     pub fn new(model_config: &TransformerConfig, instruct_config: InstructConfig) -> Self {
-        if let Err(e) = Self::check_lora_targets(&instruct_config) {
-            panic!("{e}");
-        }
         let model = Transformer::new(model_config);
         let mut lora_layers = Self::build_lora_layers(&model, model_config, &instruct_config);
 
@@ -86,15 +80,12 @@ impl InstructPipeline {
     /// Loads transformer from SafeTensors and optionally a BPE tokenizer.
     ///
     /// # Errors
-    /// Returns error if `instruct_config.lora_targets` is not `q_proj`, `v_proj`
-    /// ([`InstructPipeline::check_lora_targets`]), before anything is loaded,
-    /// or if model files cannot be loaded.
+    /// Returns error if model files cannot be loaded.
     pub fn from_pretrained(
         model_dir: &Path,
         model_config: &TransformerConfig,
         instruct_config: InstructConfig,
     ) -> crate::Result<Self> {
-        Self::check_lora_targets(&instruct_config)?;
         let model = Transformer::from_safetensors(model_dir, model_config)?;
         let mut lora_layers = Self::build_lora_layers(&model, model_config, &instruct_config);
 
@@ -181,9 +172,7 @@ impl InstructPipeline {
     /// (e.g., `model.tokenizer.json` next to `model.apr`).
     ///
     /// # Errors
-    /// Returns error if `instruct_config.lora_targets` is not `q_proj`, `v_proj`
-    /// ([`InstructPipeline::check_lora_targets`]), before anything is loaded,
-    /// or if APR file cannot be loaded or weights are invalid.
+    /// Returns error if APR file cannot be loaded or weights are invalid.
     /// CONTRACT L5: apr_tokenizer_embedding (model-format-conversion-v1.yaml)
     /// APR files are self-contained — tokenizer is extracted from embedded metadata.
     /// Sibling .tokenizer.json is a legacy fallback only.
@@ -193,7 +182,6 @@ impl InstructPipeline {
         model_config: &TransformerConfig,
         instruct_config: InstructConfig,
     ) -> crate::Result<Self> {
-        Self::check_lora_targets(&instruct_config)?;
         let model = Transformer::from_apr(apr_path, model_config)?;
         let mut lora_layers = Self::build_lora_layers(&model, model_config, &instruct_config);
 
@@ -399,17 +387,14 @@ impl InstructPipeline {
         lora_layers
     }
 
-    /// Refuse a target set the instruct pipeline does not train
-    /// (`FALSIFY-LORA_TARGET_SELECTION_V1_004`).
+    /// Refuse a target set the multi-adapter pipeline does not train
+    /// (`FALSIFY-LORA_TARGET_SELECTION_V1_004`, `_018`).
     ///
-    /// `build_lora_layers` and `inject_adapter_weights` place any target set,
-    /// and the CUDA blocks and their sync back to the CPU move every target
-    /// (`FALSIFY-LORA_TARGET_SELECTION_V1_007`), but the CPU forward
-    /// (`forward_hidden_with_lora`) reads slot `2·layer` as `q_proj` and
-    /// `2·layer + 1` as `v_proj`, and the checkpoint names follow the same
-    /// rule. Under any other set they would apply an adapter to the wrong
-    /// projection or leave one untrained, so every constructor calls this
-    /// before it loads a weight.
+    /// The instruct pipeline itself places and names every adapter by its target
+    /// (C4a, C4b, C11a), so its constructors take any set. `MultiAdapterPipeline`
+    /// does not: `save_adapter_lora_weights` names a slot's adapters by parity,
+    /// and a slot trains under the base pipeline's targets, so
+    /// `MultiAdapterPipeline::new` and `add_adapter` call this.
     ///
     /// # Errors
     /// `Error::ConfigError` naming every selected target that would not be
@@ -430,8 +415,9 @@ impl InstructPipeline {
                 .collect();
             names.join(", ")
         };
-        let mut parts =
-            vec![format!("LoRA targets {targets}: the instruct pipeline trains exactly {trained}")];
+        let mut parts = vec![format!(
+            "LoRA targets {targets}: the multi-adapter pipeline trains exactly {trained}"
+        )];
         let untrained = outside(targets, &trained);
         if !untrained.is_empty() {
             parts.push(format!("would not train: {untrained}"));
