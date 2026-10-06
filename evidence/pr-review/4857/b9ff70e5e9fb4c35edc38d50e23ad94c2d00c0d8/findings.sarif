@@ -34,7 +34,7 @@
           "ruleId": "earlier_rounds_still_fixed",
           "level": "note",
           "message": {
-            "text": "Earlier rounds stay fixed: gpu-without-docker and docker-without-gpu rows RED, mixed-case Intel, CLEAN-ROOM and Perf-Solo RED, mixed-case ARM64 GPU Docker GREEN, not-mutants and gpu-less RED. The image arch note stays as the coordinator reported it (arm64, not run by this lane). --self-test passes and the memory-cap guard is still green."
+            "text": "Earlier rounds stay fixed: gpu-without-docker and docker-without-gpu rows RED, mixed-case labels of the main CI box, CLEAN-ROOM and Perf-Solo RED, mixed-case ARM64 GPU Docker GREEN, not-mutants and gpu-less RED. The runner image is multi-arch: .github/workflows/mini-probe.yml:34 records a linux amd64+arm64 image. --self-test passes and the memory-cap guard is still green."
           },
           "properties": {
             "grounding": "measured",
@@ -53,7 +53,7 @@
           "ruleId": "mutation_sweep_deny_substring",
           "level": "note",
           "message": {
-            "text": "Sweep of 6 edits of check_mutants_pool.sh (guard bytes identical to the d3a225a79a head, re-run there): dropping the clean-room, intel or perf-solo deny alternative, dropping the lowercase of the request text, dropping the docker requirement, and dropping the gpu requirement each turn --self-test red (6 of 6 killed)."
+            "text": "Sweep of 6 edits of check_mutants_pool.sh (guard bytes identical to the d3a225a79a head, re-run there): dropping the clean-room, main-CI-box or perf-solo deny alternative, dropping the lowercase of the request text, dropping the docker requirement, and dropping the gpu requirement each turn --self-test red (6 of 6 killed)."
           },
           "properties": {
             "grounding": "measured",
