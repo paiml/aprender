@@ -665,8 +665,9 @@ else mark changelog WARN "no CHANGELOG.md (looked in $PWD and $REPO_ROOT)"; fi
 # (same `cargo fmt --all -- --check`), test reads `workspace-test` (nextest --lib over the whole
 # workspace; the root facade's doctests and bin tests are not in it). No green receipt for that
 # sha is RED, never a skip: a red, pending or missing check, a green check on another commit, a
-# failed GitHub read, and a tree with uncommitted tracked changes. clippy stays measured and
-# pre-publish has no coverage row; both are explained where they sit (C314 design round, #4886).
+# failed GitHub read, and a tree with uncommitted tracked changes. Coverage reads the receipt
+# cut_tag already requires: `tag_coverage_gate.sh --resolve SHA` (the coverage-nightly receipt,
+# #4734), PASS only on its rc 0. clippy stays measured; see where it sits (C314 design round, #4886).
 # One GraphQL call (GH-1); scripts/release/sha_checks.sh --self-test plants the reds.
 CI_READ="" CI_READ_ERR="" CI_SHA=""
 CI_SPEC_GATE="CI:ci / gate" CI_SPEC_TEST="CI:workspace-test"
@@ -689,6 +690,14 @@ ci_mark() { # ci_mark <row> <spec> -- PASS only on sha_checks' "ok" line for <sp
     "bad "*) mark "$1" FAIL "no green receipt: ${line#bad "$2" -- }" ;;
     *)       mark "$1" FAIL "no receipt for '$2' on ${CI_SHA:0:10}: ${CI_READ:0:100}" ;;
   esac
+}
+cov_mark() { # cov_mark -- PASS only when tag_coverage_gate.sh --resolve exits 0 for HEAD's sha
+  local out rc
+  if [ -n "$CI_READ_ERR" ]; then mark coverage FAIL "pre-publish reads the coverage receipt for HEAD, and $CI_READ_ERR"; return; fi
+  out=$(GIT_DIR=$(git -C "$REPO_ROOT" rev-parse --absolute-git-dir 2>/dev/null) bash "$SKILL_DIR/release/tag_coverage_gate.sh" --resolve "$CI_SHA" 2>&1); rc=$?
+  printf '%s\n' "$out" > "${WORKLOG:-${TMPDIR:-/tmp}}/coverage-receipt.log" 2>/dev/null || :
+  if [ "$rc" -eq 0 ]; then mark coverage PASS "read, not re-run: coverage-nightly receipt for ${CI_SHA:0:10} holds COV_FLOOR"
+  else mark coverage FAIL "no coverage receipt at or above COV_FLOOR for ${CI_SHA:0:10} (tag_coverage_gate.sh --resolve rc $rc): $(printf '%s' "$out" | tail -n 1 | cut -c1-160)"; fi
 }
 
 # ── 4-8. quality gates ──────────────────────────────────────────────────────
@@ -1806,10 +1815,7 @@ fi
 # from section 4-8 unchanged but for one note's wording; their verdicts count exactly as before.
 if [ "$DOGFOOD_PHASE" = pre-publish ]; then
   ci_mark test     "$CI_SPEC_TEST"
-  # No coverage row in pre-publish (C314 design round 2/3 on #4886): it runs before the tag, and
-  # the release reads coverage at its own gate: tag_coverage_gate.sh judges the tag's COV_FLOOR
-  # `ci / coverage` before crates.io preflight and stops the release on red or missing.
-  echo "coverage: not re-run here; scripts/release/tag_coverage_gate.sh judges the tag's own ci / coverage (COV_FLOOR) before publish"
+  cov_mark
 else
 # shellcheck disable=SC2086
 gate test             cargo test $FEATS
