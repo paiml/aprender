@@ -332,11 +332,23 @@ mod tests {
         ] {
             assert_eq!(r(input), "rc=2", "{input}");
         }
-        assert_eq!(r(r#"["NaN"]"#), "", "NaN inside a string is only text");
+        assert_eq!(
+            r(r#"[{"status":"NaN"}]"#),
+            "",
+            "NaN inside a string is only text"
+        );
         let int4300 = "1".repeat(4300);
         assert_eq!(r(&format!(r#"[{{"x":{int4300}}}]"#)), "rc=2", "4300 digits");
         assert_eq!(r(&format!(r#"[{{"x":-{int4300}1.5}}]"#)), "rc=2", "a float");
-        for score in ["[1]", "{}", "-0", "-0.0", "1e19", "-9223372036854775809"] {
+        for score in [
+            "[1]",
+            "{}",
+            "-0",
+            "-0.0",
+            "1e19",
+            "1.7976931348623157e308",
+            "-9223372036854775809",
+        ] {
             assert_eq!(
                 r(&format!(r#"[{{{M},"demand_score":{score}}}]"#)),
                 "rc=2",
