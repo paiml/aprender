@@ -650,6 +650,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm \
+            --memory=16g --memory-swap=16g \
             -e CI -e GITHUB_ACTIONS -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT -e SHARDS -e MUTANTS_TABLE_JOBS \
             -e SHARD=${{ matrix.shard }} \
             -v "${GITHUB_WORKSPACE}:/workspace" -w /workspace "$IMAGE" \
