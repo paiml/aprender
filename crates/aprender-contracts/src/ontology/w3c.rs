@@ -176,6 +176,22 @@ pub const CASES: &[(&str, &str)] = &[
         "path/path-inverse-001",
         include_str!("../../w3c/path-path-inverse-001.yaml"),
     ),
+    (
+        "path/path-sequence-001",
+        include_str!("../../w3c/path-path-sequence-001.yaml"),
+    ),
+    (
+        "path/path-sequence-002",
+        include_str!("../../w3c/path-path-sequence-002.yaml"),
+    ),
+    (
+        "path/path-sequence-duplicate-001",
+        include_str!("../../w3c/path-path-sequence-duplicate-001.yaml"),
+    ),
+    (
+        "path/path-complex-002",
+        include_str!("../../w3c/path-path-complex-002.yaml"),
+    ),
 ];
 
 /// Every case id of the W3C SHACL Core suite, as vendored in `w3c/core-suite.txt` (the header says how it was
@@ -232,13 +248,9 @@ pub const NOT_VENDORED: &[(&str, &str)] = &[
     ("node/qualified-001", "sh:qualifiedValueShape on the node shape itself (slice 9)"),
     ("path/path-alternative-001", "sh:alternativePath (slice 7)"),
     ("path/path-complex-001", "sh:zeroOrMorePath and sh:hasValue (slices 3, 7)"),
-    ("path/path-complex-002", "a sequence of two inverse paths; its results' path is the sequence (slice 7)"),
     ("path/path-oneOrMore-001", "sh:oneOrMorePath (slice 7)"),
-    ("path/path-sequence-001", "a sequence path (slice 7)"),
-    ("path/path-sequence-002", "a sequence path (slice 7)"),
-    ("path/path-sequence-duplicate-001", "a sequence path (slice 7)"),
-    ("path/path-strange-001", "a path node that is both a list and an sh:inversePath; W3C reads it as the sequence (slice 7)"),
-    ("path/path-strange-002", "a path node that is both a list and an ill-formed sh:inversePath; W3C reads it as the sequence (slice 7)"),
+    ("path/path-strange-001", "a path node that is both a list and an sh:inversePath, which SHACL §2.3.1 calls ill-formed; W3C reads it as the sequence. The YAML path form cannot write such a node, and written as the sequence it is path-sequence-001 again"),
+    ("path/path-strange-002", "a path node that is both a list and an ill-formed sh:inversePath; W3C reads it as the sequence. The YAML path form cannot write such a node, and written as the sequence it is path-sequence-001 again"),
     ("path/path-zeroOrMore-001", "sh:zeroOrMorePath (slice 7)"),
     ("path/path-zeroOrOne-001", "sh:zeroOrOnePath (slice 7)"),
     ("path/path-unused-001", "expects an ill-formed path in an unused shape to be ignored; pv refuses every ill-formed path at parse, by design (fail closed) — permanent"),
@@ -454,6 +466,25 @@ fn expected_focus(v: Option<&serde_yaml::Value>, prefix: &str) -> String {
     }
 }
 
+/// An expected result path, written as the validator names it: `ex:p`, an inverse `^ex:p` (#4814 slice 6), or a
+/// sequence `(ex:p ^ex:q)` (slice 7), each name expanded.
+fn expected_path(p: &str, prefix: &str) -> String {
+    let step = |s: &str| match s.strip_prefix('^') {
+        Some(inv) => format!("^{}", expand_term(inv, prefix)),
+        None => expand_term(s, prefix),
+    };
+    match p.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+        Some(seq) => format!(
+            "({})",
+            seq.split_whitespace()
+                .map(step)
+                .collect::<Vec<_>>()
+                .join(" ")
+        ),
+        None => step(p),
+    }
+}
+
 /// Parse one embedded case.
 pub fn parse_case(id: &str, yaml: &str) -> Result<Case, CaseError> {
     let doc: serde_yaml::Value =
@@ -502,11 +533,7 @@ pub fn parse_case(id: &str, yaml: &str) -> Result<Case, CaseError> {
                 .unwrap_or_default();
             expected.push(Expected {
                 focus,
-                // an inverse path is written `^ex:p` (#4814 slice 6), as the validator names its result path
-                path: path.map(|p| match p.strip_prefix('^') {
-                    Some(inv) => format!("^{}", expand_term(inv, &prefix)),
-                    None => expand_term(p, &prefix),
-                }),
+                path: path.map(|p| expected_path(p, &prefix)),
                 component: component.to_string(),
             });
         }
@@ -671,8 +698,8 @@ mod tests {
         }
         // the ratchet (#4814 plan step 4): the vendored count only grows from its measured value
         assert!(
-            CASES.len() >= 37,
-            "vendored W3C cases dropped below 37: the #4814 baseline 19, slice 1's four value-range cases, slice 2's equals and disjoint, slice 3's hasValue, slice 4's three targets, slice 5's seven node-shape cases, slice 6's inverse path"
+            CASES.len() >= 41,
+            "vendored W3C cases dropped below 41: the #4814 baseline 19, slice 1's four value-range cases, slice 2's equals and disjoint, slice 3's hasValue, slice 4's three targets, slice 5's seven node-shape cases, slice 6's inverse path, slice 7's four sequence paths"
         );
     }
 

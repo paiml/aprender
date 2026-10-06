@@ -1,0 +1,25 @@
+# vendored: tests/core/path/path-complex-002.ttl (+ -data.ttl, -shapes.ttl)
+id: path/path-complex-002
+label: "Test of complex path validation results"
+prefix: "http://example.org/shacl/tests/"
+targeting: "two top-level sh:PropertyShapes ex:s1, ex:s2 with sh:targetNode ex:i → two node shapes targeting ex:i; both paths, ( _:pinv _:pinv ) through one shared blank node and ( [ sh:inversePath ex:p ] [ sh:inversePath ex:p ] ), are written {sequence: [{inverse: ex:p}, {inverse: ex:p}]} (#4814 slice 7)"
+shapes:
+  - id: s1
+    targetNode: [ex:i]
+    properties:
+      - {path: {sequence: [{inverse: ex:p}, {inverse: ex:p}]}, class: ex:C}
+  - id: s2
+    targetNode: [ex:i]
+    properties:
+      - {path: {sequence: [{inverse: ex:p}, {inverse: ex:p}]}, class: ex:C}
+data: |
+  ex:j ex:p ex:i .
+  ex:k ex:p ex:j .
+  ex:l ex:p ex:j .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:i, path: "(^ex:p ^ex:p)", component: class}
+    - {focus: ex:i, path: "(^ex:p ^ex:p)", component: class}
+    - {focus: ex:i, path: "(^ex:p ^ex:p)", component: class}
+    - {focus: ex:i, path: "(^ex:p ^ex:p)", component: class}

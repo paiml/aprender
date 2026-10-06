@@ -1,0 +1,23 @@
+# vendored: tests/core/path/path-sequence-002.ttl
+id: path/path-sequence-002
+label: "Test of path sequence 002"
+prefix: "http://datashapes.org/sh/tests/core/path/path-sequence-002.test#"
+targeting: "a top-level sh:PropertyShape with sh:targetNode ex:InvalidResource1, ex:InvalidResource2, ex:ValidResource1, ex:ValidResource2 → a node shape targeting those nodes; the path ( ex:property1 ex:property2 ex:property3 ) is written {sequence: [ex:property1, ex:property2, ex:property3]} (#4814 slice 7)"
+shapes:
+  - id: TestShape
+    targetNode: [ex:InvalidResource1, ex:InvalidResource2, ex:ValidResource1, ex:ValidResource2]
+    properties:
+      - {path: {sequence: [ex:property1, ex:property2, ex:property3]}, minCount: 1}
+data: |
+  ex:InvalidResource1 ex:property1 ex:Node3 .
+  ex:InvalidResource1 ex:property2 ex:Node4 .
+  ex:Node1 ex:property2 ex:Node2 .
+  ex:Node2 ex:property3 "Value" .
+  ex:ValidResource1 ex:property1 ex:Node1 .
+  ex:ValidResource2 ex:property1 ex:Node1 .
+  ex:ValidResource2 ex:property1 ex:Node2 .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: "(ex:property1 ex:property2 ex:property3)", component: minCount}
+    - {focus: ex:InvalidResource2, path: "(ex:property1 ex:property2 ex:property3)", component: minCount}

@@ -252,6 +252,7 @@ mod tests {
         PropertyShape {
             path: path.into(),
             inverse: false,
+            then: Vec::new(),
             min_count: None,
             max_count: None,
             datatype: None,

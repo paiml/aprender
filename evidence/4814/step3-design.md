@@ -214,3 +214,34 @@ by my own guard, which re-read a replayed alarm line. The steps before it come f
 - The pinned oracle (shacl 0.3.21) agrees on 37/37 W3C cases, `path-inverse-001` included. The only disagreement
   is still the corpus, 736 vs 730, which is #4837.
 - No contract changes its verdict.
+
+## Slice 7 as built: sequence path (written 2026-10-06 14:40Z, before compiling; the receipt follows)
+
+Read from the six slice-7 case files at 976ed12ad3 (fetched from the suite's raw URL; `path-inverse-001` from the
+same URL is byte-identical to the vendored copy, so the source is the one slice 6 used):
+- `path-sequence-001`, `-002` and `path-sequence-duplicate-001` are plain forward sequences.
+- `path-complex-002` is the sequence `( [ sh:inversePath ex:p ] [ sh:inversePath ex:p ] )`, written once through
+  a shared blank node and once inline. Both shapes read the same path.
+- **Finding F14: `path-strange-001` and `-002` stay out.** Their path node is both an RDF list and an
+  `sh:inversePath`, which SHACL §2.3.1 calls ill-formed. W3C grades them as the sequence `( ex:p ex:q )`. The YAML
+  form cannot write such a node, and writing it as the sequence would be `path-sequence-001` again under another
+  name. Their `NOT_VENDORED` reasons now say this. CASES goes from 37 to 41, and NOT_VENDORED drops by 4.
+
+- **Form:** `path: {sequence: [<step>, <step>, …]}`, at least two steps. Each step is a predicate or
+  `{inverse: <predicate>}`. A step that is itself a path expression (`ont:b/ont:c`) is refused as a lone path is.
+  A nested sequence, an alternative, a one-step or empty sequence, or a non-string step keeps the parser's
+  pre-slice-6 error word for word ("a property has no `path`").
+- **Model:** `PropertyShape` keeps `(path, inverse)` as the first step and adds `then: Vec<PathStep>` for the rest.
+  `is_predicate()` (forward, one step) is what a closed shape, the gate and R-19 read.
+- **Values:** a walk from `{focus}` over a `BTreeSet<Term>`. A forward step maps an IRI node to its objects and a
+  literal to nothing; an inverse step maps any node to its subjects. The set is what makes
+  `path-sequence-duplicate-001` one value (SHACL §2.3.1: a path's value nodes are a set).
+- **Result path:** `^<p>` for one inverse step, as in slice 6; `(<s1> <s2> …)` for a sequence, with full IRIs and `^`
+  on an inverse step. The W3C harness reads an expected `(ex:p ^ex:q)` the same way.
+- **Closed shapes:** a sequence adds no predicate to the allowed set, not even its first step (SHACL §4.8.1).
+- **Export:** Turtle writes `sh:path ( <p1> [ sh:inversePath <p2> ] )`.
+- **Gate:** `refuse_inverse_path` now refuses any path that is not one forward predicate, nested `node` shapes
+  included, with the same pre-slice-6 text. The gate accepts and prints exactly what it did.
+- **The receipt checks:** the shapes-gate JSON must differ from slice 6's only in `w3c_cases_passed`, 37 to 41.
+  Slice 6's mutants 9-15 were written against lines this slice rewrote, so mutants 16-28 cover slice 6's parts
+  again in the new code, plus slice 7's. Each must turn its test RED.

@@ -14,7 +14,7 @@
 //! | `closed`, `ignoredProperties` | — |
 //! | `hasValue` (a YAML scalar, #4814) | an IRI value |
 //! | `lessThan`, `lessThanOrEquals`, `equals`, `disjoint` (property pairs) | a language-tagged value (F9: the tag is not kept) |
-//! | a single predicate `path`; an inverse path `{inverse: p}` (#4814 slice 6; not in a CONTRACT shape) | sequence, alternative, `*`/`+` paths |
+//! | a single predicate `path`; an inverse path `{inverse: p}` (#4814 slice 6) and a sequence `{sequence: [p, {inverse: q}, …]}` (slice 7), neither in a CONTRACT shape | alternative, `*`/`+`/`?` paths, a nested sequence |
 //! | — | `and`/`or`/`not`/`xone`, `sparql`, and every component not in this table |
 //!
 //! A key the table does not name is REFUSED, not ignored: an ignored constraint is a shape that reports "conforms"
@@ -119,6 +119,9 @@ pub struct PropertyShape {
     pub path: String,
     /// `path: {inverse: p}` (#4814 slice 6): the values are the subjects `s` of `s p focus`, and a result's path is `^p`.
     pub inverse: bool,
+    /// `path: {sequence: [p1, {inverse: p2}, …]}` (#4814 slice 7): the steps after the first, which is `(path, inverse)`.
+    /// Empty for a one-step path. The values are the nodes reached by walking every step, as a set (SHACL §2.3.1.1).
+    pub then: Vec<PathStep>,
     pub min_count: Option<usize>,
     pub max_count: Option<usize>,
     pub datatype: Option<String>,
@@ -148,6 +151,38 @@ pub struct PropertyShape {
     pub max_inclusive: Option<InEntry>,
     pub resolves: Option<String>,
     pub severity: Severity,
+}
+
+/// One step of a sequence path after its first (#4814 slice 7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathStep {
+    pub predicate: String,
+    pub inverse: bool,
+}
+
+impl PropertyShape {
+    /// The path is one predicate, walked forward: the only path a closed shape allows, a contract shape may use, and
+    /// R-19 subsumption matches on.
+    #[must_use]
+    pub fn is_predicate(&self) -> bool {
+        !self.inverse && self.then.is_empty()
+    }
+
+    /// Every step, the first included, as `(predicate, inverse)`.
+    fn steps(&self) -> impl Iterator<Item = (&str, bool)> {
+        std::iter::once((self.path.as_str(), self.inverse))
+            .chain(self.then.iter().map(|s| (s.predicate.as_str(), s.inverse)))
+    }
+
+    /// A result's path as shown: `^p` for an inverse step, and `(s1 s2 …)` for a sequence, with full IRIs.
+    fn shown_path(&self) -> String {
+        let step = |(p, inv): (&str, bool)| if inv { format!("^{p}") } else { p.to_string() };
+        if self.then.is_empty() {
+            step((self.path.as_str(), self.inverse))
+        } else {
+            format!("({})", self.steps().map(step).collect::<Vec<_>>().join(" "))
+        }
+    }
 }
 
 /// A node shape: a target class, an open/closed switch, and its property shapes.
@@ -648,9 +683,18 @@ fn parse_property(
     depth: usize,
 ) -> Result<PropertyShape, ShapeError> {
     check_property_keys(shape, pm)?;
-    let (path, inverse) = parse_path(shape, pm)?;
+    let mut steps = parse_path(shape, pm)?.into_iter();
+    let (path, inverse) = steps
+        .next()
+        .ok_or_else(|| malformed_in(shape, "a property has no `path`".into()))?;
     let mut p = parse_constraints(shape, pm, depth, expand(path))?;
     p.inverse = inverse;
+    p.then = steps
+        .map(|(predicate, inverse)| PathStep {
+            predicate: expand(predicate),
+            inverse,
+        })
+        .collect();
     Ok(p)
 }
 
@@ -690,6 +734,7 @@ fn parse_constraints(
     Ok(PropertyShape {
         path,
         inverse: false,
+        then: Vec::new(),
         min_count: count("minCount")?,
         max_count: count("maxCount")?,
         datatype: iri_opt("datatype")?,
@@ -752,28 +797,52 @@ fn check_property_keys(shape: &str, pm: &serde_yaml::Mapping) -> Result<(), Shap
     Ok(())
 }
 
-/// `path`: a single predicate, or `{inverse: <predicate>}` (#4814 slice 6), as `(predicate, inverse)`. Every other
-/// SHACL property path is outside the subset. A path structure is only ever a YAML mapping, never a string (F8).
-fn parse_path<'a>(shape: &str, pm: &'a serde_yaml::Mapping) -> Result<(&'a str, bool), ShapeError> {
+/// `path`: a single predicate, `{inverse: <predicate>}` (#4814 slice 6), or `{sequence: [<step>, <step>, …]}` with at
+/// least two steps, each a predicate or `{inverse: <predicate>}` (#4814 slice 7). Returned as its steps,
+/// `(predicate, inverse)`. Every other SHACL property path is outside the subset. A path structure is only ever a
+/// YAML mapping, never a string (F8).
+fn parse_path<'a>(
+    shape: &str,
+    pm: &'a serde_yaml::Mapping,
+) -> Result<Vec<(&'a str, bool)>, ShapeError> {
     let no_path = || malformed_in(shape, "a property has no `path`".into());
-    // Any mapping but `{inverse: <string>}` keeps the error it had before slice 6, word for word.
-    let (path, inverse) = match pm.get("path") {
-        Some(serde_yaml::Value::Mapping(m)) if m.len() == 1 => (
-            m.get("inverse")
-                .and_then(serde_yaml::Value::as_str)
-                .ok_or_else(no_path)?,
-            true,
-        ),
-        other => (
-            other
-                .and_then(serde_yaml::Value::as_str)
-                .ok_or_else(no_path)?,
-            false,
-        ),
+    // Any other mapping keeps the error it had before slice 6, word for word.
+    let steps = match pm.get("path") {
+        Some(serde_yaml::Value::Mapping(m)) if m.len() == 1 && m.contains_key("sequence") => {
+            let members = m
+                .get("sequence")
+                .and_then(serde_yaml::Value::as_sequence)
+                .filter(|s| s.len() >= 2)
+                .ok_or_else(no_path)?;
+            members
+                .iter()
+                .map(|v| path_step(v).ok_or_else(no_path))
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        Some(v) => vec![path_step(v).ok_or_else(no_path)?],
+        None => return Err(no_path()),
     };
-    // A full IRI keeps its `/`, `*` and `+`, but it can never hold whitespace or `|^<>"{}\` (RFC 3987): such a
-    // string is a path expression or a list written with full IRIs, and reading it as one predicate checks a
-    // property no data carries (#4814). A prefixed name with whitespace is the same thing.
+    for (path, _) in &steps {
+        refuse_path_expression(shape, path)?;
+    }
+    Ok(steps)
+}
+
+/// One step: a predicate, or `{inverse: <predicate>}`. A sequence is not a step, so sequences do not nest.
+fn path_step(v: &serde_yaml::Value) -> Option<(&str, bool)> {
+    match v {
+        serde_yaml::Value::Mapping(m) if m.len() == 1 => m
+            .get("inverse")
+            .and_then(serde_yaml::Value::as_str)
+            .map(|p| (p, true)),
+        other => other.as_str().map(|p| (p, false)),
+    }
+}
+
+/// A full IRI keeps its `/`, `*` and `+`, but it can never hold whitespace or `|^<>"{}\` (RFC 3987): such a string
+/// is a path expression or a list written with full IRIs, and reading it as one predicate checks a property no data
+/// carries (#4814). A prefixed name with whitespace is the same thing.
+fn refuse_path_expression(shape: &str, path: &str) -> Result<(), ShapeError> {
     let iri = path.starts_with("http");
     let expression = if iri {
         path.contains(|c: char| c.is_whitespace() || "|^<>\"{}\\`".contains(c))
@@ -786,7 +855,7 @@ fn parse_path<'a>(shape: &str, pm: &'a serde_yaml::Mapping) -> Result<(&'a str, 
             component: format!("path `{path}` (only a single predicate is a path here)"),
         });
     }
-    Ok((path, inverse))
+    Ok(())
 }
 
 // `sh:in` is TERM equality (SHACL §4.5.1), and a term carries its datatype. The YAML scalar's own type is
@@ -1056,34 +1125,27 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &Term, out: &mut Vec<
         check_has_value(p, &values, &mut no_path);
     }
     for p in &shape.properties {
-        // an inverse path's values are the subjects of `s p focus` (SHACL §2.3.1.4), and its results' path is `^p`
-        let inverse: Vec<Term> = if p.inverse {
-            graph
-                .subjects(&p.path, focus)
-                .into_iter()
-                .map(|s| Term::Iri(s.to_string()))
-                .collect()
-        } else {
+        // a predicate path reads the objects of `focus p ?o`; any other path is walked step by step (SHACL §2.3.1):
+        // an inverse step reads subjects (§2.3.1.4), and its results' path is `^p` or the sequence `(s1 s2 …)`
+        let walked: Vec<Term> = if p.is_predicate() {
             Vec::new()
+        } else {
+            path_values(graph, p, focus)
         };
         let focus = focus_s;
-        let values = if p.inverse {
-            inverse.iter().collect()
-        } else {
+        let values = if p.is_predicate() {
             graph.objects(focus, &p.path)
-        };
-        let shown = if p.inverse {
-            format!("^{}", p.path)
         } else {
-            String::new()
+            walked.iter().collect()
         };
+        let shown = p.shown_path();
         let mut push = |s: Severity, path: Option<&str>, c: &'static str, m: String| {
             push(
                 s,
-                if p.inverse {
-                    Some(shown.as_str())
-                } else {
+                if p.is_predicate() {
                     path
+                } else {
+                    Some(shown.as_str())
                 },
                 c,
                 m,
@@ -1100,6 +1162,30 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &Term, out: &mut Vec<
     if shape.closed {
         check_closed(graph, shape, focus_s, &mut push);
     }
+}
+
+/// The value set of a path that is not one forward predicate: from `{focus}`, each step maps every node to its objects
+/// (a forward step; a literal has none) or its subjects (an inverse step). A set, so a node reached twice is one value
+/// (SHACL §2.3.1, the `path-sequence-duplicate-001` case).
+fn path_values(graph: &Graph, p: &PropertyShape, focus: &Term) -> Vec<Term> {
+    let mut nodes = BTreeSet::from([focus.clone()]);
+    for (pred, inverse) in p.steps() {
+        let mut next = BTreeSet::new();
+        for n in &nodes {
+            if inverse {
+                next.extend(
+                    graph
+                        .subjects(pred, n)
+                        .into_iter()
+                        .map(|s| Term::Iri(s.to_string())),
+                );
+            } else if let Term::Iri(s) = n {
+                next.extend(graph.objects(s, pred).into_iter().cloned());
+            }
+        }
+        nodes = next;
+    }
+    nodes.into_iter().collect()
 }
 
 /// `sh:minCount` / `sh:maxCount` on one property of one focus node.
@@ -1279,8 +1365,9 @@ fn check_closed(
     let allowed: BTreeSet<&str> = shape
         .properties
         .iter()
-        // only a property whose path is a predicate is allowed (SHACL §4.8.1); an inverse path names no predicate of the focus
-        .filter(|p| !p.inverse)
+        // only a property whose path is a predicate is allowed (SHACL §4.8.1); an inverse or sequence path names no
+        // predicate of the focus
+        .filter(|p| p.is_predicate())
         .map(|p| p.path.as_str())
         .chain(shape.ignored_properties.iter().map(String::as_str))
         .chain(std::iter::once(RDF_TYPE))
@@ -1800,13 +1887,22 @@ fn turtle_entry(v: &InEntry) -> String {
 /// One `sh:property [ … ] ;` block. Every implemented component has a line; nothing else is emitted.
 fn turtle_property(p: &PropertyShape) -> String {
     let mut o = String::from("    sh:property [\n");
-    if p.inverse {
+    let step = |(path, inverse): (&str, bool)| {
+        if inverse {
+            format!("[ sh:inversePath <{path}> ]")
+        } else {
+            format!("<{path}>")
+        }
+    };
+    if p.then.is_empty() {
         o.push_str(&format!(
-            "        sh:path [ sh:inversePath <{}> ] ;\n",
-            p.path
+            "        sh:path {} ;\n",
+            step((&p.path, p.inverse))
         ));
     } else {
-        o.push_str(&format!("        sh:path <{}> ;\n", p.path));
+        // a sequence path is an RDF list of its steps (SHACL §2.3.1.1)
+        let steps: Vec<String> = p.steps().map(step).collect();
+        o.push_str(&format!("        sh:path ( {} ) ;\n", steps.join(" ")));
     }
     for l in constraint_lines(p) {
         o.push_str(&format!("        {l} ;\n"));
@@ -2029,6 +2125,114 @@ mod tests {
         let t = to_turtle(std::slice::from_ref(&s));
         assert!(
             t.contains(&format!("sh:path [ sh:inversePath <{}> ] ;", ont("dep"))),
+            "{t}"
+        );
+    }
+
+    #[test]
+    fn a_sequence_path_walks_every_step_and_its_values_are_a_set() {
+        // #4814 slice 7, the shape of W3C path-sequence-duplicate-001: a reaches "v" twice, through b1 and b2. One
+        // value, so maxCount 1 holds and nodeKind IRI fires once, on the path (ont:x ont:y).
+        let mut g = graph_with("a", None);
+        for b in ["b1", "b2"] {
+            g.insert(
+                iri("contract", "a"),
+                ont("x"),
+                Term::iri(iri("contract", b)),
+            );
+            g.insert(iri("contract", b), ont("y"), Term::string("v"));
+        }
+        let s = shape("entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: {sequence: [ont:x, ont:y]}, maxCount: 1, nodeKind: IRI}\n");
+        assert_eq!(s.properties[0].then.len(), 1);
+        assert!(!s.properties[0].is_predicate());
+        let r = validate(&g, &[s]);
+        assert_eq!(r.violations(), 1, "{:?}", r.results);
+        assert_eq!(r.results[0].component, "nodeKind");
+        assert_eq!(
+            r.results[0].path.as_deref(),
+            Some(format!("({} {})", ont("x"), ont("y")).as_str())
+        );
+    }
+
+    #[test]
+    fn a_sequence_step_may_be_inverse_and_a_literal_ends_the_walk() {
+        // b points at a by ont:dep and carries ont:id "b", so a's (^ont:dep ont:id) is {"b"}
+        let mut g = graph_with("a", None);
+        g.insert(
+            iri("contract", "b"),
+            ont("dep"),
+            Term::iri(iri("contract", "a")),
+        );
+        g.insert(iri("contract", "b"), ont("id"), Term::string("b"));
+        let s = shape("entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: {sequence: [{inverse: ont:dep}, ont:id]}, minCount: 2}\n");
+        let r = validate(&g, &[s]);
+        assert_eq!(r.violations(), 1, "{:?}", r.results);
+        assert_eq!(r.results[0].component, "minCount");
+        assert_eq!(
+            r.results[0].path.as_deref(),
+            Some(format!("(^{} {})", ont("dep"), ont("id")).as_str())
+        );
+        let one = shape("entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: {sequence: [{inverse: ont:dep}, ont:id]}, minCount: 1, maxCount: 1, in: [b]}\n");
+        assert_eq!(validate(&g, &[one]).violations(), 0);
+        // ont:id of a is the literal "a": a forward step from a literal reaches nothing, so minCount 1 fires
+        let lit = shape("entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: {sequence: [ont:id, ont:id]}, minCount: 1}\n");
+        assert_eq!(validate(&g, &[lit]).violations(), 1);
+    }
+
+    #[test]
+    fn a_sequence_other_than_two_or_more_steps_keeps_the_path_error() {
+        for p in [
+            "{sequence: [ont:a]}",
+            "{sequence: ont:a}",
+            "{sequence: []}",
+            "{sequence: [ont:a, {sequence: [ont:b, ont:c]}]}",
+            "{sequence: [ont:a, {alternative: [ont:b, ont:c]}]}",
+            "{sequence: [ont:a, 5]}",
+            "{sequence: [ont:a, ont:b], inverse: ont:c}",
+        ] {
+            let y = format!("entity: {{type: pv-contract}}\nshape:\n  properties:\n    - {{path: {p}, minCount: 1}}\n");
+            let doc: serde_yaml::Value = serde_yaml::from_str(&y).unwrap();
+            match parse_shape_with("t", &doc, &pv_map()) {
+                Err(ShapeError::Malformed { what, .. }) => {
+                    assert_eq!(what, "a property has no `path`", "{p}")
+                }
+                other => panic!("{p}: expected the pre-slice-6 Malformed, got {other:?}"),
+            }
+        }
+        // a step that is itself a path expression is refused as one, as a lone path is
+        let y = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: {sequence: [ont:a, 'ont:b/ont:c']}, minCount: 1}\n";
+        let doc: serde_yaml::Value = serde_yaml::from_str(y).unwrap();
+        assert!(matches!(
+            parse_shape_with("t", &doc, &pv_map()),
+            Err(ShapeError::Unsupported { .. })
+        ));
+    }
+
+    #[test]
+    fn a_closed_shape_does_not_allow_the_first_predicate_of_a_sequence() {
+        let mut g = graph_with("a", None);
+        g.insert(
+            iri("contract", "a"),
+            ont("x"),
+            Term::iri(iri("contract", "b")),
+        );
+        let s = shape("entity: {type: pv-contract}\nshape:\n  closed: true\n  ignoredProperties: [rdf:type]\n  properties:\n    - {path: ont:id}\n    - {path: {sequence: [ont:x, ont:y]}}\n");
+        let r = validate(&g, &[s]);
+        assert_eq!(r.violations(), 1, "{:?}", r.results);
+        assert_eq!(r.results[0].component, "closed");
+        assert_eq!(r.results[0].path.as_deref(), Some(ont("x").as_str()));
+    }
+
+    #[test]
+    fn a_sequence_path_exports_as_an_rdf_list_of_its_steps() {
+        let s = shape("entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: {sequence: [ont:x, {inverse: ont:dep}]}, minCount: 1}\n");
+        let t = to_turtle(std::slice::from_ref(&s));
+        assert!(
+            t.contains(&format!(
+                "sh:path ( <{}> [ sh:inversePath <{}> ] ) ;",
+                ont("x"),
+                ont("dep")
+            )),
             "{t}"
         );
     }

@@ -195,12 +195,12 @@ fn refuse_node_level(shape: &NodeShape) -> Result<(), ShapeError> {
         .try_for_each(refuse_node_level)
 }
 
-/// #4814 slice 6: a contract shape, or a `node` shape nested in one, may not use an inverse path yet. R-19's
+/// #4814 slices 6-7: a contract shape, or a `node` shape nested in one, may not use an inverse or sequence path yet. R-19's
 /// subsumption (`lint::subsumption`) matches a sub-shape's property to its parent's by predicate alone, so `^p` and
 /// `p` would read as one property, and `Graph::subjects` is a pass over the whole graph per focus node. Refused with
 /// the parser's own text from before slice 6, when `path: {inverse: …}` was not a string: the same exit 3 and words.
 fn refuse_inverse_path(shape: &NodeShape) -> Result<(), ShapeError> {
-    if shape.properties.iter().any(|p| p.inverse) {
+    if shape.properties.iter().any(|p| !p.is_predicate()) {
         return Err(ShapeError::Malformed {
             shape: shape.id.clone(),
             what: "a property has no `path`".into(),
@@ -1551,6 +1551,9 @@ mod tests {
         for y in [
             "shape:\n  targetClass: ont:A\n  properties: [{path: {inverse: ont:p}, minCount: 1}]\n",
             "shape:\n  targetClass: ont:A\n  properties: [{path: ont:p, node: {properties: [{path: {inverse: ont:q}}]}}]\n",
+            // slice 7: a sequence, forward steps only, is refused the same way
+            "shape:\n  targetClass: ont:A\n  properties: [{path: {sequence: [ont:p, ont:q]}, minCount: 1}]\n",
+            "shape:\n  targetClass: ont:A\n  properties: [{path: ont:p, node: {properties: [{path: {sequence: [ont:p, ont:q]}}]}}]\n",
         ] {
             match refuse_inverse_path(&parse(y)) {
                 Err(ShapeError::Malformed { what, .. }) => assert_eq!(what, "a property has no `path`", "{y}"),

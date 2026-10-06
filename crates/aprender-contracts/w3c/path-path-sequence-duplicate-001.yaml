@@ -1,0 +1,19 @@
+# vendored: tests/core/path/path-sequence-duplicate-001.ttl
+id: path/path-sequence-duplicate-001
+label: "Test of path sequence with duplicate 001"
+prefix: "http://datashapes.org/sh/tests/core/path/path-sequence-duplicate-001.test#"
+targeting: "sh:targetNode ex:A as written; the property shape ex:SP's path ( ex:p1 ex:p2 ) is written {sequence: [ex:p1, ex:p2]} (#4814 slice 7); the two data blank nodes are skolemized as ex:A-b1 / -b2, and both reach \"value\", which is one value"
+shapes:
+  - id: S
+    targetNode: [ex:A]
+    properties:
+      - {path: {sequence: [ex:p1, ex:p2]}, maxCount: 1, nodeKind: IRI}
+data: |
+  ex:A ex:p1 ex:A-b1 .
+  ex:A ex:p1 ex:A-b2 .
+  ex:A-b1 ex:p2 "value" .
+  ex:A-b2 ex:p2 "value" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:A, path: "(ex:p1 ex:p2)", component: nodeKind}
