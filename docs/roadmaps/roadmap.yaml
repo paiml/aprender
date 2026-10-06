@@ -24213,3 +24213,28 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: the test writes a script then execs it while sibling test threads fork; a child forked in that window holds the write fd, so exec fails with ETXTBSY (run 37403017673, workspace-test shard 3). Passed on the same PR head in run 37408602581.'
+- id: PMAT-4879
+  github_issue: 4879
+  item_type: task
+  title: 'CI: fail-fast GPU lane on the Jetson Orin runner; a GPU test must not pass without a GPU'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-10-06T10:46:55Z
+  updated: 2026-10-06T14:42:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Lane: scripts/ci_jetson_gpu.sh runs four stages on the Jetson Orin runner and judges each from its log, not its exit code: S0 preflight (GPU name, MemAvailable, disk, a persistent CARGO_TARGET_DIR, the resident 1.1 GB q4_k_m GGUF, ptxas), S1 the aprender-gpu cuda lib tests under driver::, S2 the rest of that lib on the same build, S3 FALSIFY-CB-008 on the GGUF plus the aprender-serve gguf::cuda:: lib tests; a stage is red on no test result line, any failed test, a count under its floor, a skip line, a SIGKILL or a crash; its --self-test carries 114 cases'
+  - 'Jobs: ci.yml gpu-failfast-jetson (S0-S2, 15 min) and gpu-e2e-jetson (S0 and S3 after the first is green, 25 min) run on [self-hosted, Linux, ARM64, jetson] for a same-repo pull_request that gpu-touched selects or a workflow_dispatch; neither is in gate.needs or a required check; jetson-gpu-nightly.yml runs S0-S3 nightly and on workflow_dispatch (45 min); every job takes contents: read, no secrets and a checkout that does not persist its token'
+  - 'Shape guard: scripts/check_jetson_gpu_jobs.sh (R1-R13, 90-case self-test) is red when a jetson job is gate-needed, loses its label or timeout, carries a clean-room, cuda or gpu label, raises CARGO_BUILD_JOBS above 4 or RUST_TEST_THREADS above 2, drops APR_REQUIRE_GPU or persists the token; actionlint.yaml and check_runner_labels.sh know the jetson label'
+  - 'Yield step: the yield-to-training probe in ci/sections.yml and cuda-nightly.yml reads an nvidia-smi [N/A] as nothing measured, not as a busy process, and scripts/check_gpu_yield_probe.sh pins the two copies byte-identical and is red when the [N/A] handling is removed'
+  - 'Silent pass: with APR_REQUIRE_GPU set, the CUDA skip paths of the aprender-gpu lib tests (the cuda_ctx! macros and the driver memory tests) panic through the new test-support module testing::require_gpu instead of printing a skip and passing, and unset they behave as before; every lane stage forces the variable and fails on any skip line that remains'
+  - 'Memory: the lane pins CARGO_BUILD_JOBS=4 and RUST_TEST_THREADS=2 and S0 refuses a box under 5 GiB MemAvailable; three aprender-gpu test fixes the lane needed on a 7.4 GB integrated device: a cfg(test) pin of the primary context so a cached kernel module outlives the test that compiled it (regression test added), the allocation-pressure test takes at most a quarter of the free pool on a unified-memory device, and the two allocator classification tests treat a Tegra Orin as integrated'
+  - 'No production behaviour changes: pin_primary_context is cfg(test), the other crate edits sit in test modules, and the one new public item is the test-support module testing::require_gpu'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Not in this change: the silicon-coverage ledger line for aarch64-cuda-sm87 stays pending until a nightly dispatch on the Orin is green; the pull_request selector has no push-to-main trigger for these jobs; the F2 validation outcome test is not run by the lane. Measured on an RTX 4090, never on the Orin: see the pull request.'
+  epic: 3863
