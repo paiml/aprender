@@ -6,7 +6,8 @@
 # one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
 #   autopilot.sh <version> <bump-pr> [from-step] [to-step]
-#   steps: wait deep dogfood models readiness tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close
+#   steps: wait deep dogfood models readiness tag cleanroom assets preflight publish dryrun cascade install hosts postpub ledger close
+#   The publish dry run (rc_publish_gate.sh --verify) runs in `tag`, ahead of the tag; `dryrun` reads its receipt.
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
 #   T-1 'ci / deep' has no workflow on main, so `deep` runs the equivalent locally on the release commit.
@@ -40,7 +41,7 @@ fi
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
-STEPS=(wait deep dogfood models readiness tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close)
+STEPS=(wait deep dogfood models readiness tag cleanroom assets preflight publish dryrun cascade install hosts postpub ledger close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
@@ -180,7 +181,13 @@ if run_step readiness; then
     || die "T-1 release-readiness-v1 printed a WARN R8 row (report-only = waiver = stop): nothing is tagged ($AP/readiness-t1.log)"
   say "READINESS ok at $MC"
 fi
-# 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)
+# 3. tag + a DRAFT release, and the asset build dispatched on the tag (#4690). The release is not
+#    public until the `publish` step: binary-release.yml used to fire on `release: published`, so the
+#    assets could only be built by publishing first, and a public release stood with no assets, no
+#    clean-room and no preflight behind it. Now the build is dispatched (workflow_dispatch, input tag,
+#    from the TAG's workflow file) and uploads to the draft; every upload step finds the release by
+#    listing, which returns drafts. Publishing later fires `release: published` once more, and that
+#    run finds every asset present and rebuilds nothing (#4286).
 # cut_tag <version> <tag> <commit> -- PMAT-3459. The milestone gate lives INSIDE the
 # function that tags, ahead of `git tag`, so the tag cannot be cut without it: there is
 # no path through cut_tag() that reaches `git tag` with the gate unsatisfied. v0.68.1
@@ -237,10 +244,22 @@ cut_tag() {
 if run_step tag; then
   git rev-parse -q --verify "refs/tags/$T" > /dev/null && die "tag $T already exists locally"
   [ -f "$AP/release_notes.md" ] || die "no $AP/release_notes.md (prepare_bump.sh writes it from CHANGELOG [$V])"
+  # The publish dry run runs AHEAD of the tag. `--verify` builds every publishable crate's tarball
+  # against the local overlay (= `cargo publish --dry-run` for the whole cascade). The worktree is the
+  # release commit the tag will name, so this is the tarball the cascade uploads. A red here stops the
+  # train before anything irreversible: no carry, no tag, no draft (#4287 follow-up, #4690).
+  rm -f -- "${AP:?}/publish-dryrun-commit"
+  bash scripts/release/rc_publish_gate.sh --verify "$WT" > "$AP/publish-dryrun.log" 2>&1; rc=$?
+  tail -2 "$AP/publish-dryrun.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "publish dry-run refused rc=$rc (1 = a tarball defect, 2 = could not measure; $AP/publish-dryrun.log) -- no tag"
+  printf '%s\n' "$MC" > "$AP/publish-dryrun-commit"
+  say "PUBLISH-DRYRUN green on $MC, ahead of the tag ($AP/publish-dryrun.log)"
   cut_tag "$V" "$T" "$MC"
   say "TAGGED $T at $MC"
-  gh release create "$T" --repo $REPO --verify-tag --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create failed"
-  say "RELEASED $(gh release view "$T" --repo $REPO --json url -q .url)"
+  gh release create "$T" --repo "$REPO" --verify-tag --draft --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create --draft failed"
+  say "DRAFTED $T (not public until the publish step)"
+  gh workflow run binary-release.yml --repo "$REPO" --ref "$T" -f tag="$T" >> "$LOG" 2>&1 || die "binary-release.yml dispatch on $T failed -- the draft has no asset build"
+  say "ASSET BUILD dispatched on $T"
 fi
 
 
@@ -277,7 +296,7 @@ if run_step cleanroom; then
   fi
   # the JOB conclusion, not the run status: a sibling job that can never start must not hold the verdict hostage
   jc=""; for _ in $(seq 1 240); do
-    jc=$(gh run view "$crun" --repo $INFRA --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
+    jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
     [ -n "$jc" ] && break; sleep 60
   done
   [ "$jc" = success ] || die "clean-room (aprender) on $T concluded '${jc:-absent}' (run $crun)"
@@ -294,7 +313,7 @@ fi
 # 4. assets: the release run completes and all sixteen assets are on the release, checked by command
 if run_step assets; then
   run=""; for _ in $(seq 1 40); do
-    run=$(gh run list --repo $REPO --workflow binary-release.yml --event release --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)
+    run=$(gh run list --repo $REPO --workflow binary-release.yml --event workflow_dispatch --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)
     [ -n "$run" ] && break; sleep 30
   done
   [ -n "$run" ] || die "no binary-release run for $T after 20 min"
@@ -315,6 +334,7 @@ fi
 
 # 5. preflight (R1-R6; R5 reads the pre-publish receipt in this worktree)
 if run_step preflight; then
+  : > "$AP/preflight-pass"   # the publish step reads this; a stale PASS from an earlier run must not survive
   # #3690: the tag's own `ci / coverage` (COV_FLOOR, #3676) must be green before T-4. It was
   # recorded and never consulted, so a floor breach on the tag still reached the cascade.
   bash scripts/release/tag_coverage_gate.sh "$T" "$MC" > "$AP/tag-coverage.log" 2>&1; rc=$?
@@ -323,7 +343,36 @@ if run_step preflight; then
   bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
   tail -3 "$AP/preflight.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "publish preflight refused rc=$rc"
+  printf 'PASS %s %s\n' "$T" "$MC" > "$AP/preflight-pass"
   say "PREFLIGHT PASS"
+fi
+
+# 5a. publish the GitHub release (#4690). publish_release <tag> <commit>: the draft made at the tag
+# step goes public here and nowhere else, and only when this function has re-read each fact itself
+# rather than trusting that an earlier step ran (a run started at `publish` skipped them all):
+#   (a) clean-room: the recorded infra run's `clean-room (aprender)` job concluded success;
+#   (b) preflight: the preflight step's PASS names exactly this tag and commit;
+#   (c) assets: check_release_assets.sh <tag> exits 0 on the draft -- 1 (missing) and 2 (could not
+#       read) both refuse; Unknown is not a pass;
+#   (d) the release is still a draft: one made public outside the train is a STOP, not a no-op.
+# scripts/check_release_draft_gated.sh runs the tag..publish steps against a stub gh that
+# records the call order, plus a mutant per refusal.
+publish_release() {
+    local t=$1 mc=$2 crun="" jc d rc=0
+    IFS= read -r crun < "$AP/cleanroom-run-id" 2>/dev/null || crun=""
+    [ -n "$crun" ] || die "no clean-room run id recorded for $t -- the release stays a draft"
+    jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | .conclusion' | head -n 1) || jc=""
+    [ "$jc" = success ] || die "clean-room (aprender) run $crun reads '${jc:-unreadable}' -- the release stays a draft"
+    grep -qxF "PASS $t $mc" "$AP/preflight-pass" 2>/dev/null || die "no preflight PASS for $t at $mc -- the release stays a draft"
+    bash scripts/check_release_assets.sh "$t" > "$AP/assets-publish.log" 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] || die "check_release_assets.sh $t rc=$rc at publish (1 = missing, 2 = could not read) -- the release stays a draft"
+    d=$(gh release view "$t" --repo "$REPO" --json isDraft -q .isDraft) || d=""
+    [ "$d" = true ] || die "release $t reads isDraft='${d:-unreadable}' at publish: it is not the train's draft"
+    gh release edit "$t" --repo "$REPO" --draft=false >> "$LOG" 2>&1 || die "publishing the draft $t failed"
+}
+if run_step publish; then
+  publish_release "$T" "$MC"
+  say "RELEASED $(gh release view "$T" --repo "$REPO" --json url -q .url) (clean-room, assets and preflight green before it went public)"
 fi
 
 
@@ -335,12 +384,10 @@ fi
 #     (TO=close), but the line read as a park and cost a minute of reading -- so it now says what it is.
 if run_step dryrun; then
   # The receipt above is about not WAITING for the operator; a tarball that does not compile is a
-  # defect, not a park. `--verify` builds every publishable crate's tarball against the local
-  # overlay (= `cargo publish --dry-run` for the whole cascade), so a red here would have been a
-  # half-uploaded cascade (#4287 follow-up, operator publish word for 0.70.0, 2026-09-24).
-  bash scripts/release/rc_publish_gate.sh --verify "$WT" > "$AP/publish-dryrun.log" 2>&1; rc=$?
-  tail -2 "$AP/publish-dryrun.log" >> "$STATUS"
-  [ $rc -eq 0 ] || die "publish dry-run refused rc=$rc (1 = a tarball defect, 2 = could not measure; $AP/publish-dryrun.log)"
+  # defect, not a park. The `--verify` dry run ran in the tag step, ahead of the tag, on this same
+  # commit. Its receipt must name exactly $MC: missing or another commit is red, never a skip.
+  [ "$(cat "$AP/publish-dryrun-commit" 2>/dev/null)" = "$MC" ] \
+    || die "no green publish dry-run receipt for $MC in $AP/publish-dryrun-commit (the tag step runs it ahead of the tag)"
   bash scripts/cascade-publish.sh --check > "$AP/cascade-check.log" 2>&1; rc=$?
   behind=$(grep -cE "\(want ${V//./\\.}\)" "$AP/cascade-check.log" || true)
   tail -3 "$AP/cascade-check.log" >> "$STATUS"

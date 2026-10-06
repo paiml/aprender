@@ -41,6 +41,10 @@
 #     cascade-publish's top-level `if [ … ]` refusals are read: RR-P35..P36; and the executor
 #     is a claim. HEAD: unlisted=0 orphaned=0 contradictions=1, the one being publish.executor:
 #     autopilot's `cascade` step runs cascade-drain.sh, the spec's T-4 row names publish_strict.sh.
+#   #4690 (no public release before its gates): the asset build is dispatched in `tag`
+#     (RR-T17), the assets are re-verified in `publish` (RR-P37), and the publish dry run
+#     moved ahead of the tag (RR-P07 -> RR-T16). HEAD: unlisted=0 orphaned=0 contradictions=1,
+#     the same publish.executor claim origin/main 682dab1e22 carries.
 #
 # REPORT-ONLY TODAY. No gate calls the checker. It becomes blocking only as a
 # ratchet after three green nights (L31), and only by an operator sign-off.
@@ -210,13 +214,14 @@ requirements:
   - {id: RR-T13, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/check_milestone_cut.sh", checker: "scripts/check_milestone_cut.sh", provenance: "milestone cut (#3715 tag gating in cut_tag)", producer: "milestone"}
   - {id: RR-T14, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/carry_milestone_items.sh", checker: "scripts/release/carry_milestone_items.sh", provenance: "milestone carry before the cut", producer: "milestone"}
   - {id: RR-T15, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/tag_coverage_gate.sh --resolve", checker: "scripts/release/tag_coverage_gate.sh", provenance: "#4691 #4734 #4738 (coverage receipt >= COV_FLOOR before the tag)", producer: "coverage"}
+  - {id: RR-T16, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/rc_publish_gate.sh --verify", checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball), moved ahead of the tag (#4690, was RR-P07)", producer: "publish-dryrun"}
+  - {id: RR-T17, applies_to: [tag], anchor: "tag:autopilot/tag/gh-workflow binary-release.yml", checker: ".github/workflows/binary-release.yml", provenance: "#4690 the asset build is dispatched on the draft tag", producer: "assets"}
   - {id: RR-P01, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow clean-room.yml", checker: "scripts/release/autopilot.sh#clean-room.yml", provenance: "APR-RELEASE-001 T-3 (infra#621)", producer: "cleanroom-cpu"}
   - {id: RR-P02, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow b2-gpu.yml", checker: ".github/workflows/b2-gpu.yml", provenance: "APR-RELEASE-001 T-3 GPU-host ladder legs", producer: "cleanroom-gpu"}
   - {id: RR-P03, applies_to: [publish], anchor: "publish:autopilot/assets/gh-workflow binary-release.yml", checker: ".github/workflows/binary-release.yml", provenance: "#4657 #4659 release binaries", producer: "assets"}
   - {id: RR-P04, applies_to: [publish], anchor: "publish:autopilot/assets/bash scripts/check_release_assets.sh", checker: "scripts/check_release_assets.sh", provenance: "APR-RELEASE-001 release assets verified", producer: "assets"}
   - {id: RR-P05, applies_to: [publish], anchor: "publish:autopilot/preflight/bash scripts/release/tag_coverage_gate.sh", checker: "scripts/release/tag_coverage_gate.sh", provenance: "R13 #4691 (open: it judges a ci / coverage job that ci.yml no longer defines)", producer: "preflight"}
   - {id: RR-P06, applies_to: [publish], anchor: "publish:autopilot/preflight/bash scripts/check_publish_preflight.sh", checker: "scripts/check_publish_preflight.sh", provenance: "PMAT-745 publish preflight", producer: "preflight"}
-  - {id: RR-P07, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/release/rc_publish_gate.sh --verify", checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball, T-4)", producer: "publish-dryrun"}
   - {id: RR-P08, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check", checker: "scripts/cascade-publish.sh#--check", provenance: "APR-RELEASE-001 T-4 dry-run receipt (operator ruling 2026-09-17)", producer: "publish-dryrun"}
   - {id: RR-P09, applies_to: [publish], anchor: "publish:preflight/R1", checker: "scripts/check_publish_preflight.sh#FAIL  R1 ", provenance: "PMAT-745 R1 clean tree", producer: "preflight"}
   - {id: RR-P10, applies_to: [publish], anchor: "publish:preflight/R2", checker: "scripts/check_publish_preflight.sh#FAIL  R2 ", provenance: "PMAT-745 R2 version from cargo metadata", producer: "preflight"}
@@ -246,3 +251,4 @@ requirements:
   - {id: RR-P34, applies_to: [publish], anchor: "publish:strict/publish-order-is-not-a-dependency-order", checker: "scripts/release/publish_strict.sh#publish order is not a dependency order", provenance: "#3462 APR-RELEASE-001 T-4: order derived from cargo metadata at the tag, acyclic, re-checked", producer: "publish-dryrun"}
   - {id: RR-P35, applies_to: [publish], anchor: "publish:cascade/if [ $UNIVERSE_N -lt 70 ]", checker: "scripts/cascade-publish.sh#Refusing to publish against an unknown universe", provenance: "cascade-publish vacuity: an enumeration under 70 crates is refused", producer: "publish-dryrun"}
   - {id: RR-P36, applies_to: [publish], anchor: "publish:cascade/if [ -f .cargo/config.toml ]", checker: "scripts/cascade-publish.sh#could not create a backup of .cargo/config.toml", provenance: "#2859 the config backup must be creatable outside the tree, or nothing is published", producer: "publish-dryrun"}
+  - {id: RR-P37, applies_to: [publish], anchor: "publish:autopilot/publish/bash scripts/check_release_assets.sh", checker: "scripts/check_release_assets.sh", provenance: "#4690 the draft goes public only with its assets verified", producer: "assets"}
