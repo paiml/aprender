@@ -4,12 +4,11 @@
 #   bash scripts/release/sha_checks.sh SHA SPEC [SPEC...]   # one verdict line per SPEC
 #   bash scripts/release/sha_checks.sh --self-test          # planted rows must stay red
 #
-# WHY. `dogfood --phase pre-publish` re-ran fmt, clippy, the whole test suite and coverage on
-# the release commit, hours of work CI had already done for that same commit. The release
-# commit reaches main through the merge queue, so `ci / gate` and `workspace-test` have
-# already run on it, and coverage runs on it as `Coverage Nightly / coverage` (COV_FLOOR)
-# and on its tag as `CI / ci / coverage`. This script reads those results instead of
-# re-measuring them. It reads; it never re-runs and never waits.
+# WHY. `dogfood --phase pre-publish` re-ran fmt and the test suite on the release commit, work CI
+# had already done for that same commit: the release commit reaches main through the merge queue,
+# so `ci / gate` and `workspace-test` have already run on it. This script reads those results
+# instead of re-measuring them. It reads; it never re-runs and never waits. Alternatives (below)
+# serve any caller that accepts one of several checks.
 #
 # SPEC  "<workflow>:<check name>", e.g. "CI:ci / gate". Alternatives joined by "|" are
 #       satisfied by any one of them: "CI:ci / coverage|Coverage Nightly:coverage".
@@ -38,12 +37,18 @@ fetch() {
 }
 
 # decide SHA ALT < TSV -> "ok <detail>" or "bad <why>" for ONE alternative "<wf>:<check>".
+# The newest start time decides. A run with no start time yet (queued) counts as newest, and
+# runs that disagree at that same newest time are red: a tie is not a green.
 decide() {
     local sha=$1 wf=${2%%:*} name=${2#*:} row
-    row=$(awk -F'\t' -v s="$sha" -v w="$wf" -v n="$name" \
-        '$1 == s && $2 == w && $3 == n { print $6 "\t" $4 "\t" $5 }' | LC_ALL=C sort | tail -n 1)
+    row=$(awk -F'\t' -v s="$sha" -v w="$wf" -v n="$name" '
+        $1 == s && $2 == w && $3 == n {
+            ts = ($6 == "") ? "~" : $6; v = $4 "\t" $5
+            if (!seen || ts "" > m "") { m = ts; best = v; tie = 0; seen = 1 }
+            else if (ts "" == m "" && v != best) tie = 1 }
+        END { if (seen) print (tie ? "TIE\tdisagreeing runs at one start time" : best) }')
     [ -n "$row" ] || { echo "bad no '$name' run of workflow '$wf' on ${sha:0:10}"; return; }
-    local st cc; st=$(cut -f2 <<<"$row"); cc=$(cut -f3 <<<"$row")
+    local st cc; st=$(cut -f1 <<<"$row"); cc=$(cut -f2 <<<"$row")
     if [ "$st" = COMPLETED ] && [ "$cc" = SUCCESS ]; then echo "ok $wf / $name SUCCESS on ${sha:0:10}"
     else echo "bad newest '$name' ($wf) on ${sha:0:10} is ${st}${cc:+ $cc}"; fi
 }
@@ -103,6 +108,10 @@ self_test() {
                                          "$A | CI | ci / gate | COMPLETED | FAILURE | 2026-10-06T11:00:00Z"
     t newer_green_rerun_wins     0 "$G" "$A | CI | ci / gate | COMPLETED | FAILURE | 2026-10-06T10:00:00Z" \
                                          "$A | CI | ci / gate | COMPLETED | SUCCESS | 2026-10-06T11:00:00Z"
+    t same_second_tie_is_red     1 "$G" "$A | CI | ci / gate | COMPLETED | FAILURE | 2026-10-06T10:00:00Z" \
+                                         "$A | CI | ci / gate | COMPLETED | SUCCESS | 2026-10-06T10:00:00Z"
+    t queued_rerun_after_green   1 "$G" "$A | CI | ci / gate | COMPLETED | SUCCESS | 2026-10-06T10:00:00Z" \
+                                         "$A | CI | ci / gate | QUEUED |  | "
     local C="CI:ci / coverage|Coverage Nightly:coverage"
     t coverage_nightly_green     0 "$C" "$A | Coverage Nightly | coverage | COMPLETED | SUCCESS | 2026-10-06T10:00:00Z"
     t coverage_tag_green         0 "$C" "$A | CI | ci / coverage | COMPLETED | SUCCESS | 2026-10-06T10:00:00Z"

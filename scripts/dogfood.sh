@@ -660,24 +660,23 @@ elif [ -n "$CHANGELOG_PATH" ]; then mark changelog WARN "$CHANGELOG_PATH has no 
 else mark changelog WARN "no CHANGELOG.md (looked in $PWD and $REPO_ROOT)"; fi
 
 # ── C316 item 2c (#4672): pre-publish READS what the commit already has ─────
-# fmt, clippy, test and coverage re-ran, on the release commit, hours of work CI had already
-# done for that same commit. In --phase pre-publish they now read it instead: fmt and clippy
-# read `ci / gate`, test reads `workspace-test`, and coverage reads a COV_FLOOR coverage job
-# (`ci / coverage` on the tag push, or `Coverage Nightly / coverage`; both run `make coverage`)
-# -- each for exactly HEAD's sha. No green receipt for that sha is RED, never a skip: a red,
-# pending or missing check, a green check on another commit, a failed GitHub read, and a tree
-# with uncommitted tracked changes (no CI result describes it). Every other phase still runs them.
-# One GraphQL call for all four (GH-1); scripts/release/sha_checks.sh --self-test plants the reds.
+# fmt and test re-ran, on the release commit, work CI had already done for that same commit. In
+# --phase pre-publish they now read it instead, for exactly HEAD's sha: fmt reads `ci / gate`
+# (same `cargo fmt --all -- --check`), test reads `workspace-test` (nextest --lib over the whole
+# workspace; the root facade's doctests and bin tests are not in it). No green receipt for that
+# sha is RED, never a skip: a red, pending or missing check, a green check on another commit, a
+# failed GitHub read, and a tree with uncommitted tracked changes. clippy stays measured and
+# pre-publish has no coverage row; both are explained where they sit (C314 design round, #4886).
+# One GraphQL call (GH-1); scripts/release/sha_checks.sh --self-test plants the reds.
 CI_READ="" CI_READ_ERR="" CI_SHA=""
 CI_SPEC_GATE="CI:ci / gate" CI_SPEC_TEST="CI:workspace-test"
-CI_SPEC_COV="CI:ci / coverage|Coverage Nightly:coverage"
 if [ "$DOGFOOD_PHASE" = pre-publish ]; then
   CI_SHA=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null)
   if [ -z "$CI_SHA" ]; then CI_READ_ERR="there is no git HEAD to read CI for"
   elif [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
     CI_READ_ERR="the tree has uncommitted tracked changes, so no CI result for ${CI_SHA:0:10} describes it"
   else
-    CI_READ=$(bash "$SKILL_DIR/release/sha_checks.sh" "$CI_SHA" "$CI_SPEC_GATE" "$CI_SPEC_TEST" "$CI_SPEC_COV" 2>&1)
+    CI_READ=$(bash "$SKILL_DIR/release/sha_checks.sh" "$CI_SHA" "$CI_SPEC_GATE" "$CI_SPEC_TEST" 2>&1)
     printf '%s\n' "$CI_READ" > "${WORKLOG:-${TMPDIR:-/tmp}}/ci-read.log" 2>/dev/null || :
   fi
 fi
@@ -696,12 +695,13 @@ ci_mark() { # ci_mark <row> <spec> -- PASS only on sha_checks' "ok" line for <sp
 mark feature-scope INFO "clippy/test run with: ${FEAT_NOTE}"
 if [ "$DOGFOOD_PHASE" = pre-publish ]; then
   ci_mark fmt    "$CI_SPEC_GATE"
-  ci_mark clippy "$CI_SPEC_GATE"
 else
   gate fmt              cargo fmt --all -- --check
-  # shellcheck disable=SC2086
-  gate clippy           cargo clippy --all-targets $FEATS -- -D warnings
 fi
+# clippy stays MEASURED in every phase (C314 design round on #4886): `ci / gate` lints default
+# features only, allows unused-variables and falls back to lib-only, which is narrower than this row.
+# shellcheck disable=SC2086
+gate clippy           cargo clippy --all-targets $FEATS -- -D warnings
 if command -v cargo-deny >/dev/null 2>&1; then gate security cargo deny check advisories
 else mark security FAIL "cargo-deny not installed — the advisory scan did not run, and a scan that did not run is not a clean scan"; fi
 
@@ -1806,7 +1806,10 @@ fi
 # from section 4-8 unchanged but for one note's wording; their verdicts count exactly as before.
 if [ "$DOGFOOD_PHASE" = pre-publish ]; then
   ci_mark test     "$CI_SPEC_TEST"
-  ci_mark coverage "$CI_SPEC_COV"
+  # No coverage row in pre-publish (C314 design round 2/3 on #4886): it runs before the tag, and
+  # the release reads coverage at its own gate: tag_coverage_gate.sh judges the tag's COV_FLOOR
+  # `ci / coverage` before crates.io preflight and stops the release on red or missing.
+  echo "coverage: not re-run here; scripts/release/tag_coverage_gate.sh judges the tag's own ci / coverage (COV_FLOOR) before publish"
 else
 # shellcheck disable=SC2086
 gate test             cargo test $FEATS
