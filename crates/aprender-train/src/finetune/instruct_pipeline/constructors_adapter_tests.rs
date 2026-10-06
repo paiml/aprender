@@ -211,3 +211,126 @@ fn falsify_lora_target_selection_v1_014_names_exactly_the_unfilled_places() {
         .expect_err("an empty adapter must refuse");
     assert!(err.to_string().contains("8 of 8 LoRA places have no tensor"), "{err}");
 }
+
+/// Write `full_adapter`'s tensors to `dir` as `PeftAdapterBundle::save_peft` does,
+/// with `declared` as the `target_modules` of `adapter_config.json`.
+fn save_adapter(dir: &Path, declared: &[&str], num_layers: usize, layers: &[LoRALayer]) {
+    let mut bundle = crate::lora::PeftAdapterBundle::new(
+        crate::lora::LoRAConfig::new(4, 8.0).target_modules(declared),
+    );
+    for layer in 0..num_layers {
+        for (proj, proj_name) in PROJECTIONS.iter().enumerate() {
+            let slot = layer * PROJECTIONS.len() + proj;
+            let l = &layers[slot];
+            bundle.add_raw_adapter(
+                format!("model.layers.{layer}.self_attn.{proj_name}"),
+                filled(len_of(layers, slot, 0), 1 + 2 * slot),
+                filled(len_of(layers, slot, 1), 2 + 2 * slot),
+                l.rank(),
+                l.d_in(),
+                l.d_out(),
+            );
+        }
+    }
+    bundle.save_peft(dir).expect("the test adapter must save");
+}
+
+/// `load_trained_adapter` into fresh layers must refuse, with every one of
+/// `needles` in the message, and change no layer.
+fn assert_refuses(dir: &Path, needles: &[&str]) {
+    let (_, mut layers) = tiny_layers();
+    let before = snapshot(&layers);
+    let err = InstructPipeline::load_trained_adapter(dir, &mut layers, &LoraTargets::default())
+        .expect_err("the adapter must refuse")
+        .to_string();
+    for needle in needles {
+        assert!(err.contains(needle), "{needle:?} not in: {err}");
+    }
+    assert_eq!(snapshot(&layers), before, "a refused load changed a layer: {err}");
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_015_declared_targets_must_match() {
+    let (num_layers, fresh) = tiny_layers();
+    // Each adapter holds complete q_proj/v_proj tensors, so only the declaration differs.
+    for (declared, named) in [
+        (&["q_proj", "k_proj", "v_proj"][..], "q_proj, k_proj, v_proj"),
+        (&["q_proj"][..], "trained on targets q_proj,"),
+        (&["k_proj", "o_proj"][..], "k_proj, o_proj"),
+        (&["all_linear"][..], "gate_proj"),
+    ] {
+        let dir = tempfile::tempdir().expect("tempdir");
+        save_adapter(dir.path(), declared, num_layers, &fresh);
+        assert_refuses(dir.path(), &[named, "selects q_proj, v_proj"]);
+    }
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_015_unreadable_adapter_refuses() {
+    let (num_layers, fresh) = tiny_layers();
+    let garbage = tempfile::tempdir().expect("tempdir");
+    save_adapter(garbage.path(), &["q_proj", "v_proj"], num_layers, &fresh);
+    std::fs::write(garbage.path().join("adapter_model.safetensors"), b"not safetensors")
+        .expect("write");
+    assert_refuses(garbage.path(), &["adapter_model.safetensors", "failed to load"]);
+
+    let no_config = tempfile::tempdir().expect("tempdir");
+    save_adapter(no_config.path(), &["q_proj", "v_proj"], num_layers, &fresh);
+    std::fs::remove_file(no_config.path().join("adapter_config.json")).expect("remove");
+    assert_refuses(no_config.path(), &["failed to load"]);
+
+    let unknown = tempfile::tempdir().expect("tempdir");
+    save_adapter(unknown.path(), &["q_proj", "w_proj"], num_layers, &fresh);
+    assert_refuses(unknown.path(), &["target_modules", "\"w_proj\""]);
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_015_matching_or_undeclared_adapter_loads() {
+    let (num_layers, fresh) = tiny_layers();
+    for declared in [&["v_proj", "q_proj"][..], &["qv"][..], &[][..]] {
+        let dir = tempfile::tempdir().expect("tempdir");
+        save_adapter(dir.path(), declared, num_layers, &fresh);
+        let (_, mut layers) = tiny_layers();
+        let loaded = InstructPipeline::load_trained_adapter(
+            dir.path(),
+            &mut layers,
+            &LoraTargets::default(),
+        )
+        .expect("a matching or undeclared adapter must load");
+        assert_eq!(loaded, Some(num_layers * PROJECTIONS.len() * KINDS.len()), "{declared:?}");
+        for (slot, layer) in layers.iter().enumerate() {
+            assert_eq!(
+                layer.lora_a().data().to_vec(),
+                filled(len_of(&fresh, slot, 0), 1 + 2 * slot)
+            );
+            assert_eq!(
+                layer.lora_b().data().to_vec(),
+                filled(len_of(&fresh, slot, 1), 2 + 2 * slot)
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_015_no_adapter_keeps_init() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (_, mut layers) = tiny_layers();
+    let before = snapshot(&layers);
+    let loaded =
+        InstructPipeline::load_trained_adapter(dir.path(), &mut layers, &LoraTargets::default())
+            .expect("no adapter is not an error");
+    assert_eq!(loaded, None);
+    assert_eq!(snapshot(&layers), before);
+}
+
+#[test]
+fn falsify_lora_target_selection_v1_015_compares_against_the_selected_targets() {
+    let qkv = LoraTargets::parse(&["v_proj", "k_proj", "q_proj"]).expect("qkv");
+    let declared = |names: &[&str]| names.iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert!(check_adapter_targets(&declared(&["q_proj", "k_proj", "v_proj"]), &qkv).is_ok());
+    let err = check_adapter_targets(&declared(&["q_proj", "v_proj"]), &qkv)
+        .expect_err("q/v against q/k/v must refuse")
+        .to_string();
+    assert!(err.contains("trained on targets q_proj, v_proj"), "{err}");
+    assert!(err.contains("selects q_proj, k_proj, v_proj"), "{err}");
+}

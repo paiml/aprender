@@ -99,27 +99,13 @@ impl InstructPipeline {
         let mut lora_layers = Self::build_lora_layers(&model, model_config, &instruct_config);
 
         // ENT-269: Auto-load trained LoRA adapter if present in model directory.
-        let adapter_path = model_dir.join("adapter_model.safetensors");
-        if adapter_path.exists() {
-            match crate::lora::load_adapter_peft(model_dir) {
-                Ok((_config, weights)) => {
-                    Self::inject_adapter_weights(
-                        &mut lora_layers,
-                        &weights,
-                        &instruct_config.lora_targets,
-                    )?;
-                    eprintln!(
-                        "[adapter] Loaded trained LoRA adapter ({} tensors) from {}",
-                        weights.len(),
-                        model_dir.display()
-                    );
-                }
-                Err(e) => {
-                    eprintln!(
-                        "[adapter] Warning: adapter_model.safetensors found but failed to load: {e}"
-                    );
-                }
-            }
+        if let Some(tensors) =
+            Self::load_trained_adapter(model_dir, &mut lora_layers, &instruct_config.lora_targets)?
+        {
+            eprintln!(
+                "[adapter] Loaded trained LoRA adapter ({tensors} tensors) from {}",
+                model_dir.display()
+            );
         }
 
         for lora in &mut lora_layers {
@@ -457,6 +443,37 @@ impl InstructPipeline {
         Err(crate::Error::ConfigError(parts.join("; ")))
     }
 
+    /// Load the trained adapter in `model_dir`, if there is one, into `lora_layers`.
+    ///
+    /// Returns `Ok(None)` when `adapter_model.safetensors` is absent; the layers keep
+    /// their init. An adapter that is present must load: one that cannot be read, or
+    /// whose `adapter_config.json` declares targets other than `targets`, refuses the
+    /// load instead of serving fresh LoRA weights, and no layer changes
+    /// (`FALSIFY-LORA_TARGET_SELECTION_V1_015`). Returns the number of tensors loaded.
+    ///
+    /// # Errors
+    /// Returns `Error::ConfigError` naming the path and cause of a failed read, both
+    /// target sets on a mismatch, or the tensors [`Self::inject_adapter_weights`] refuses.
+    pub(crate) fn load_trained_adapter(
+        model_dir: &Path,
+        lora_layers: &mut [LoRALayer],
+        targets: &LoraTargets,
+    ) -> crate::Result<Option<usize>> {
+        let adapter_path = model_dir.join("adapter_model.safetensors");
+        if !adapter_path.exists() {
+            return Ok(None);
+        }
+        let (peft, weights) = crate::lora::load_adapter_peft(model_dir).map_err(|e| {
+            crate::Error::ConfigError(format!(
+                "adapter: {} found but failed to load: {e}",
+                adapter_path.display()
+            ))
+        })?;
+        check_adapter_targets(&peft.target_modules, targets)?;
+        Self::inject_adapter_weights(lora_layers, &weights, targets)?;
+        Ok(Some(weights.len()))
+    }
+
     /// Inject trained adapter weights from PEFT format into LoRA layers (ENT-269).
     ///
     /// Maps PEFT tensor names (e.g., `base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight`)
@@ -475,7 +492,7 @@ impl InstructPipeline {
     /// (`FALSIFY-LORA_TARGET_SELECTION_V1_014`).
     ///
     /// # Errors
-    /// Returns `Error::ConfigError` naming every tensor that could not be placed. and every place left unfilled.
+    /// Returns `Error::ConfigError` naming every tensor that could not be placed and every place left unfilled.
     fn inject_adapter_weights(
         lora_layers: &mut [LoRALayer],
         weights: &[(String, Vec<f32>)],
@@ -577,6 +594,25 @@ fn unfilled_places(
 fn slot_len(lora_layers: &[LoRALayer], idx: usize, is_a: bool) -> Option<usize> {
     let layer = lora_layers.get(idx)?;
     Some(if is_a { layer.lora_a().len() } else { layer.lora_b().len() })
+}
+
+/// Refuse an adapter whose `adapter_config.json` declares targets other than `targets`
+/// (`FALSIFY-LORA_TARGET_SELECTION_V1_015`). An empty declaration names no targets, so
+/// tensor placement alone decides (rows 003 and 014).
+fn check_adapter_targets(declared: &[String], targets: &LoraTargets) -> crate::Result<()> {
+    if declared.is_empty() {
+        return Ok(());
+    }
+    let declared = LoraTargets::parse(declared).map_err(|e| {
+        crate::Error::ConfigError(format!("adapter: adapter_config.json target_modules: {e}"))
+    })?;
+    if declared != *targets {
+        return Err(crate::Error::ConfigError(format!(
+            "adapter: trained on targets {declared}, but this pipeline selects {targets}; \
+             load it with lora_targets {declared}"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
