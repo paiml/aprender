@@ -98,9 +98,9 @@ if run_step deep; then
   say "DEEP doctests rc=$rc: $(grep -E '^test result' "$AP/deep-doctests.log" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
   [ $rc -eq 0 ] || die "T-1 doctests RED ($AP/deep-doctests.log)"
   cargo check --workspace --no-default-features > "$AP/deep-nodefault.log" 2>&1; rc=$?
-  other=$(grep -E '^error' -A3 "$AP/deep-nodefault.log" | grep -E '^\s+--> ' | grep -vc 'crates/aprender-distribute/' || true)
-  say "DEEP --no-default-features rc=$rc errors_outside_aprender-distribute=$other (standing #3176 class is inside it)"
-  [ "$other" = 0 ] || die "T-1 --no-default-features RED outside the #3176 class ($AP/deep-nodefault.log)"
+  verdict=$(bash "$REPO_ROOT/scripts/release/deep_nodefault_verdict.sh" "$AP/deep-nodefault.log" "$rc"); vrc=$?
+  say "$verdict (standing #3176 class is inside it)"
+  [ "$vrc" = 0 ] || die "T-1 --no-default-features RED outside the #3176 class ($AP/deep-nodefault.log)"
   cargo build --workspace --examples > "$AP/deep-examples.log" 2>&1; rc=$?
   say "DEEP examples build rc=$rc"
   [ $rc -eq 0 ] || die "T-1 examples RED ($AP/deep-examples.log)"
