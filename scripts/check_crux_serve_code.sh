@@ -286,6 +286,24 @@ stubborn() { # a server that ignores SIGTERM; its pid goes to $1
   fi
   printf '%s\n' "$!" > "$1"
 }
+idle() { # <pid file> <seconds>: a plain server; its pid goes to $1 only once it runs in a fresh bash
+  # A `sleep N &` TERMed before it has exec'd is still a fork of THIS script, and bash runs
+  # our EXIT trap in it: _cleanup's rm -rf took $TMP mid-run and failed M12/M13 with
+  # FileNotFoundError on a loaded runner (merge-queue run 37381514104; 299/300 bare, 0/300
+  # behind this handshake). A BASHPID test in _cleanup does not help (298/300).
+  local ready="$1.ready" i=0
+  rm -f "$ready"
+  READY="$ready" bash -c ': > "$READY"; exec sleep "$1"' _ "$2" > /dev/null 2>&1 &
+  while [ ! -e "$ready" ] && [ "$i" -lt 100 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  if [ ! -e "$ready" ]; then
+    printf 'idle: server never started\n' >&2
+    return 1
+  fi
+  printf '%s\n' "$!" > "$1"
+}
 : > "$TMP/smi-pids"
 stubborn "$TMP/srv1.pid"
 tdrow "T1 a server that ignores TERM is KILLed, then proven gone" 0 clean "$TD" "$TMP/srv1.pid" "$TMP/absent.pid"
@@ -297,8 +315,7 @@ tdrow "T1 a server that ignores TERM is KILLed, then proven gone" 0 clean "$TD" 
 FAKE_KILL="$TMP/fake-kill"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$TMP/kill.log" > "$FAKE_KILL"
 chmod +x "$FAKE_KILL"
-sleep 60 > /dev/null 2>&1 &
-printf '%s\n' "$!" > "$TMP/srv2.pid"
+idle "$TMP/srv2.pid" 60
 CRUX_TEARDOWN_KILL="$FAKE_KILL" tdrow "T2 MUST-RED a server that survives TERM and KILL fails the cell" 1 "FAILED: server" "$TD" "$TMP/srv2.pid"
 kill "$(cat "$TMP/srv2.pid")" 2> /dev/null
 # T2b (#4120) MUST-RED: a pid file naming 1 is REFUSED -- the cell fails and no signal is
@@ -312,8 +329,7 @@ m_t2b() { # <teardown script>
 }
 if m_t2b "$TD"; then ok "T2b MUST-RED a pid file naming pid 1 (init; the runner in CI) is refused and never signalled"
 else bad "T2b MUST-RED a pid file naming pid 1 is refused and never signalled (state: $(cat "$TMP/td.state" 2> /dev/null); signals: $(tr '\n' ';' < "$TMP/kill.log"))"; fi
-sleep 30 > /dev/null 2>&1 &
-printf '%s\n' "$!" > "$TMP/srv3.pid"
+idle "$TMP/srv3.pid" 30
 printf '%s\n' "$(cat "$TMP/srv3.pid")" > "$TMP/smi-pids"
 tdrow "T3 MUST-RED a pid still in nvidia-smi compute-apps fails the cell" 1 "FAILED: pid" "$TD" "$TMP/srv3.pid"
 : > "$TMP/smi-pids"
@@ -323,6 +339,39 @@ python3 "$ROUTES_PY" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --
   --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: server pid(s) 42 survived" > /dev/null 2>&1
 manifest_assert "T4 MUST-RED a failed teardown makes EVERY row of the cell RED" tdrows \
   'len(gen) == 11 and all(r["refused"].startswith("cell teardown FAILED") and r["rc"] is None for r in gen)'
+
+# H1 (M12 FLAKE-0): a server TERMed the moment its pid is published must not take the
+# caller's temp dir with it. A child script with the same EXIT-trap rm -rf as this one runs
+# 20 trials with each launcher: THIS file's idle() must lose nothing, and a bare `sleep &`
+# must lose something, which proves the row can go RED on this host.
+h1_lost() { # <launcher: idle|bare> <trials>: prints how many trials lost the child's temp dir
+  mkdir -p "$TMP/h1"
+  { printf '#!/usr/bin/env bash\n'
+    declare -f idle
+    cat << 'EOF'
+bare() { sleep "$2" > /dev/null 2>&1 & printf '%s\n' "$!" > "$1"; }
+T=$(mktemp -d "$H1_DIR/t.XXXXXX") || exit 2
+trap 'rm -rf -- "${T:?}"' EXIT
+lost=0
+for _ in $(seq 1 "$2"); do
+  mkdir -p "$T" && : > "$T/marker"
+  "$1" "$T/s.pid" 1 || exit 3  # 1 s: a pre-exec fork may run the trap and still exec the sleep
+  read -r p < "$T/s.pid"
+  kill -TERM "$p" 2> /dev/null
+  wait "$p" 2> /dev/null
+  [ -e "$T/marker" ] || lost=$((lost + 1))
+done
+printf '%s\n' "$lost"
+EOF
+  } > "$TMP/h1/child.sh"
+  H1_DIR="$TMP/h1" bash "$TMP/h1/child.sh" "$1" "$2" 2> /dev/null
+}
+h1_idle=$(h1_lost idle 20)
+h1_bare=$(h1_lost bare 20)
+if [ "$h1_idle" = 0 ]; then ok "H1 a server TERMed as soon as idle() publishes it leaves the temp dir intact (0/20 lost)"
+else bad "H1 a server TERMed as soon as idle() publishes it leaves the temp dir intact (lost: '$h1_idle'/20)"; fi
+if [ -n "$h1_bare" ] && [ "$h1_bare" -gt 0 ] 2> /dev/null; then ok "H1b MUST-RED a bare \`sleep &\` TERMed at once runs the EXIT trap and loses it ($h1_bare/20)"
+else bad "H1b not_measured: a bare \`sleep &\` lost nothing ('$h1_bare'/20), so H1 could not fail on this host"; fi
 
 printf -- '--- %s: chat pty reply extraction (#3962 B3) ---\n' "$PROG"
 PTY_PY="$ROOT/scripts/lib/crux_pty_chat.py"
@@ -394,7 +443,7 @@ mutant "M9 C7 vs the cpu lane run on an apr code that cannot honour it" "$CODE_P
 m_t1() { stubborn "$TMP/srv1.pid"; td_case x 0 clean "$1" "$TMP/srv1.pid"; }
 mutant "M10 T1 vs no KILL escalation" "$TD" '    sig -KILL $left 2> /dev/null' '    :' m_t1
 mutant "M17 T2b vs pid 1 not refused" "$TD" '    case "$p" in 1) refused="$refused$f "; continue ;; esac' '' m_t2b
-m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid"; }
+m_t3() { idle "$TMP/srv3.pid" 30; cp "$TMP/srv3.pid" "$TMP/smi-pids"; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid"; }
 mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
 m_t4() { : > "$TMP/tdrows/manifest.jsonl"; python3 "$1" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: x" > /dev/null 2>&1; python3 -c 'import json,sys; g=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; g=[r for r in g if r["kind"]=="gen"]; assert g and all(r["refused"] for r in g)' "$TMP/tdrows/manifest.jsonl" 2> /dev/null; }
 mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" '        if a.cell_fault:' '        if False:' m_t4
