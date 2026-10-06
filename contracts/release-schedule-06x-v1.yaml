@@ -125,8 +125,8 @@ proof_obligations:
     applies_to: milestone_settled_at_cut
   - id: RS0-INV-008
     type: invariant
-    property: "A push to main reuses workspace-test only from a merge-queue success on the same sha (T36)"
-    formal: "bash scripts/check_ci_push_reuse.sh exit 0, and its --self-test kills every `# R-*` refusal in ci_mg_workspace_result.sh and ci_test_tier.sh"
+    property: "A push to main reuses workspace-test only from a merge-queue success on the same sha (T36), and x86-main + determinism only from a merge-queue run on that sha that ran them for real (#4748)"
+    formal: "bash scripts/check_ci_push_reuse.sh exit 0, and its --self-test kills every `# R-*` refusal in ci_mg_workspace_result.sh, ci_test_tier.sh and ci_mg_reuse.sh"
     applies_to: push_reuses_merge_group_result
 
 falsification_tests:

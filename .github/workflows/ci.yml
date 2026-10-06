@@ -79,8 +79,13 @@ jobs:
   # An output is 1 only when every condition was read and held; skipped, failed or
   # 0 runs the job in full. The RustSec advisory steps are never reused:
   # x86-main-advisories runs them whenever x86-main is skipped.
+  # #4748: a push to main then re-ran x86-main and determinism in full on the very
+  # commit the queue had just passed. On that push, mg-reuse reads the merge_group
+  # run on the same sha instead (P1-P4 in scripts/ci_mg_reuse.sh), and reuses only
+  # when that run RAN both jobs and they passed -- never a queue run that itself
+  # reused. mac-check is never reused on a push.
   mg-reuse:
-    if: github.event_name == 'merge_group'
+    if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     permissions:
@@ -100,7 +105,7 @@ jobs:
           fetch-depth: 0
       - name: The reuse key's case table (hermetic)
         run: bash scripts/ci_mg_reuse.sh --self-test
-      - name: Read the reuse key for this queue entry (3 API calls)
+      - name: Read the reuse key for this queue entry or push (3 or 2 API calls)
         id: key
         env:
           GH_TOKEN: ${{ github.token }}
@@ -108,10 +113,14 @@ jobs:
           QREF: ${{ github.event.merge_group.head_ref }}
           QHEAD: ${{ github.event.merge_group.head_sha }}
           QBASE: ${{ github.event.merge_group.base_sha }}
+          PBEFORE: ${{ github.event.before }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          out=$(bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF" --queue-head "$QHEAD" --base "$QBASE" --repo "$REPO")
+          case "$EVT" in
+            push) out=$(bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE" --repo "$REPO") ;;
+            *) out=$(bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF" --queue-head "$QHEAD" --base "$QBASE" --repo "$REPO") ;;
+          esac
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -E '^(x86|det|mac|cite|pr_head)=' >> "$GITHUB_OUTPUT"
 
@@ -753,17 +762,19 @@ jobs:
           set -euo pipefail
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
-          # head's same-named jobs and its gate passed on this exact tree; then the RustSec advisory job
-          # must have passed. A split, a flag off merge_group, or a flag from a failed mg-reuse is RED.
+          # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
+          # them when the merge_group run on this very commit RAN both and they passed (#4748). Either
+          # way the RustSec advisory job must have passed. A split, a flag on any other event, or a flag
+          # from a failed mg-reuse is RED.
           REUSE=0
           case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
-            merge_group:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
-            merge_group:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            merge_group:success:1:1:success | push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            merge_group:success:1:1:* | push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
             *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
-            *) echo "::error::reuse flags split, off merge_group or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
+            *) echo "::error::reuse flags split, off merge_group/push or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
           esac
           # --- MG-REUSE-VERDICT-END ---
-          if [ "$REUSE" = 1 ]; then echo "ci / gate: the PR head run's ci / gate passed on this tree (${MG_CITE:-})"; exit 0; fi
+          if [ "$REUSE" = 1 ]; then echo "ci / gate: the cited run's ci / gate passed on this tree (${MG_CITE:-})"; exit 0; fi
           r=$(printf '%s' "${RESULTS:-null}" | jq -r '(. // {})."sov.gate".result // "missing"')
           echo "sovereign-ci gate section: $r"
           [ "$r" = success ] || { echo "::error::ci / gate: section result is '$r'"; exit 1; }
@@ -802,17 +813,19 @@ jobs:
           [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
-          # head's same-named jobs and its gate passed on this exact tree; then the RustSec advisory job
-          # must have passed. A split, a flag off merge_group, or a flag from a failed mg-reuse is RED.
+          # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
+          # them when the merge_group run on this very commit RAN both and they passed (#4748). Either
+          # way the RustSec advisory job must have passed. A split, a flag on any other event, or a flag
+          # from a failed mg-reuse is RED.
           REUSE=0
           case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
-            merge_group:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
-            merge_group:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            merge_group:success:1:1:success | push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            merge_group:success:1:1:* | push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
             *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
-            *) echo "::error::reuse flags split, off merge_group or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
+            *) echo "::error::reuse flags split, off merge_group/push or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
           esac
           # --- MG-REUSE-VERDICT-END ---
-          # x86-main and determinism were skipped when REUSE=1: the PR head run's gate passed these on this tree.
+          # x86-main and determinism were skipped when REUSE=1: the cited run's gate passed these on this tree (PR head run on merge_group, merge_group run on push).
           if [ "$REUSE" = 0 ]; then
             for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
               job="${pair%%:*}" sec="${pair#*:}"

@@ -24175,6 +24175,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 4678
+- id: PMAT-4748
+  github_issue: 4748
+  item_type: task
+  title: 'T43: push to main reuses the merge queue''s real x86-main + determinism on the same sha'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-06T09:28:27Z
+  updated: 2026-10-06T09:28:27Z
+  spec: null
+  acceptance_criteria:
+  - 'Refs #4748. A push run on main reuses x86-main and determinism from the merge_group run on that sha, only when that run ran them for real (not itself a reuse). Guard: scripts/check_ci_push_reuse.sh.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
 - id: PMAT-4769
   github_issue: 4769
   item_type: task
