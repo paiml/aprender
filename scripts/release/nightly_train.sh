@@ -90,7 +90,7 @@ deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github
 deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^workflow_run$;-unknown-linux-gnu on 
 deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;-;-;-
 dogfood;verdict;dogfood.sh --phase pre-publish + preflight R5;-;-;-
-models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;-;-;-
+models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^schedule$;^models$
 readiness;verdict;release_readiness.sh, preflight R8;-;-;-
 milestone;verdict;check_milestone_cut.sh --must-carry;-;-;-
 cleanroom-cpu;verdict;clean-room (aprender) on the tag;-;-;-
