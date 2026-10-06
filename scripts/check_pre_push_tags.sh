@@ -1,0 +1,286 @@
+#!/usr/bin/env bash
+# check_pre_push_tags.sh: proves scripts/hooks/pre-push-tags.sh refuses every tag push except
+# an armed release tag, with real `git push`es from a throwaway clone to a throwaway bare remote.
+#
+# REPORT-ONLY in a bare run: it prints one SUMMARY line, saying whether this clone has the
+# guard installed, and exits 0 either way (2 = not_measured outside a work tree). The local
+# hook itself refuses from the day it is installed.
+#
+# usage:
+#   check_pre_push_tags.sh                    SUMMARY of this clone's install state
+#   check_pre_push_tags.sh --self-test [HOOK] the case table against HOOK (default: the
+#                                             tracked hook; pre-push-dispatch.sh beside it).
+#                                             Every push row is real `git push`es; a refused
+#                                             row needs a non-zero push, the hook's REFUSED
+#                                             line with the row's reason, and an unchanged
+#                                             remote ref. Unsets every `git rev-parse
+#                                             --local-env-vars` variable and reads no global
+#                                             or system git config. A fixed row count; fewer
+#                                             rows is UNMEASURED and fails.
+#   check_pre_push_tags.sh --mutants          each mutant of the hooks must turn --self-test RED
+set -euo pipefail
+
+SELF="$(cd "$(dirname "$0")" && pwd)/${0##*/}"
+HOOK_DIR="$(dirname "$SELF")/hooks"
+WANT_ROWS=30
+ROWS=0
+FAILS=0
+HOOK=''
+TP=''
+C1=''
+SIDE=''
+WORK=''
+
+bare() {
+    local top dir
+    if ! top="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+        printf 'not_measured: not inside a git work tree\n'
+        return 2
+    fi
+    dir="$(git -C "$top" rev-parse --path-format=absolute --git-common-dir)/hooks"
+    if [ -f "$dir/pre-push-tags" ] && grep -qxF '# written by pre-push-tags.sh --install' "$dir/pre-push" 2>/dev/null; then
+        printf 'SUMMARY the pre-push tag guard is installed in this clone (report-only)\n'
+    else
+        printf 'SUMMARY the pre-push tag guard is not installed in this clone (report-only)\n'
+    fi
+}
+
+ok() {
+    printf '  ok    %s\n' "$1"
+}
+
+fail() {
+    printf '  FAIL  %s: %s\n' "$1" "$2"
+    FAILS=$((FAILS + 1))
+}
+
+remote_sha() {
+    git -C "$TP/remote.git" rev-parse -q --verify "$1" || printf 'absent\n'
+}
+
+# push_row NAME WANT REF STEP: run STEP in the clone. WANT is "allowed" or the reason the
+# hook must print after REFUSED; REF is the remote ref STEP targets
+push_row() {
+    local name="$1" want="$2" ref="$3" step="$4" before after rc=0 out local_sha
+    ROWS=$((ROWS + 1))
+    before="$(remote_sha "$ref")"
+    "$step" > "$TP/row.log" 2>&1 || rc=$?
+    out="$(< "$TP/row.log")"
+    after="$(remote_sha "$ref")"
+    if [ "$want" != allowed ]; then
+        if [ "$rc" -eq 0 ]; then fail "$name" "the push exited 0"; return 0; fi
+        case "$out" in
+            *"pre-push-tags: REFUSED $want"*) ;;
+            *) fail "$name" "rc $rc without [REFUSED $want]"; return 0 ;;
+        esac
+        if [ "$before" != "$after" ]; then fail "$name" "$ref moved on the remote ($before to $after)"; return 0; fi
+    else
+        local_sha="$(git rev-parse -q --verify "$ref" || printf 'absent\n')"
+        if [ "$rc" -ne 0 ]; then fail "$name" "rc $rc: ${out//$'\n'/ }"; return 0; fi
+        case "$out" in *'pre-push-tags: REFUSED'*) fail "$name" "the hook printed REFUSED"; return 0 ;; esac
+        if [ "$after" != "$local_sha" ]; then fail "$name" "$ref is $after on the remote, $local_sha here"; return 0; fi
+    fi
+    ok "$name"
+}
+
+# check_row NAME WHAT STEP: a non-push assertion; STEP must exit 0
+check_row() {
+    local name="$1" what="$2" step="$3"
+    ROWS=$((ROWS + 1))
+    if "$step" > "$TP/row.log" 2>&1; then ok "$name"; else fail "$name" "$what"; fi
+}
+
+write_marker() {
+    printf '%s %s\n' "$1" "$2" > .git/pre-push-release-tag
+}
+
+# the steps, each run from the throwaway clone
+step_install() { bash "$HOOK" --install && grep -q chained.log .git/hooks/pre-push.chained; }
+step_install_under_hookspath() {
+    local rc=0
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/nonexistent-hooks \
+        bash "$HOOK" --install || rc=$?
+    [ "$rc" -eq 2 ]
+}
+step_branch() { git branch feat && git push -q origin feat; }
+step_chained_saw_stdin() { grep -q '^refs/heads/feat [0-9a-f]* refs/heads/feat 0*$' "$TP/chained.log"; }
+step_same_sha() { git push origin keep/old; }
+step_tags_clean() { git push --tags origin; }
+step_release() { git tag -a -m r v0.1.0 && bash "$HOOK" --arm-release v0.1.0 && git push origin v0.1.0; }
+step_release_rc() { git tag v0.1.1-rc.1 && bash "$HOOK" --arm-release v0.1.1-rc.1 && git push origin v0.1.1-rc.1; }
+step_keep() { git tag keep/new && git push origin keep/new; }
+step_keep_annotated() { git tag -a -m n keep/new-ann && git push origin keep/new-ann; }
+step_raw() { git push origin HEAD:refs/tags/keep/raw; }
+step_no_marker() { git tag -a -m r v0.2.0 && git push origin v0.2.0; }
+step_env_marker() {
+    PRE_PUSH_RELEASE_TAG="refs/tags/v0.2.0 $(git rev-parse v0.2.0)" git push origin v0.2.0
+}
+step_other_sha() { write_marker refs/tags/v0.2.0 "$(git rev-parse main)" && git push origin v0.2.0; }
+step_not_a_release_name() {
+    git tag vnext && write_marker refs/tags/vnext "$(git rev-parse vnext)" && git push origin vnext
+}
+step_off_main() { git tag v0.3.0 side && bash "$HOOK" --arm-release v0.3.0 && git push origin v0.3.0; }
+step_spent() {
+    bash "$HOOK" --arm-release v0.2.0 && git push -q origin HEAD:refs/heads/spend && git push origin v0.2.0
+}
+step_one_bad_line() { bash "$HOOK" --arm-release v0.2.0 && git push origin v0.2.0 keep/new; }
+step_move() { git tag -f keep/old main > /dev/null && git push origin keep/old; }
+step_move_forced() { git push -f origin keep/old; }
+step_move_unrelated() { git tag -f keep/old "$SIDE" > /dev/null && git push -f origin keep/old; }
+step_move_annotated() { git tag -f -a -m moved keep/old-ann main > /dev/null && git push -f origin keep/old-ann; }
+step_delete() { git tag -f keep/old "$C1" > /dev/null && git push origin :refs/tags/keep/old; }
+step_delete_flag() { git push --delete origin keep/old-ann; }
+step_delete_release() { bash "$HOOK" --arm-release v0.1.0 && git push origin :refs/tags/v0.1.0; }
+step_push_tags() { git push --tags origin; }
+step_tags_refspec() { git push origin 'refs/tags/*:refs/tags/*'; }
+step_mirror() { git push --mirror origin; }
+step_arm_keep() {
+    local rc=0
+    bash "$HOOK" --arm-release keep/new || rc=$?
+    [ "$rc" -eq 2 ] && [ ! -e .git/pre-push-release-tag ]
+}
+
+# fixture: a bare remote with main and two tags it already has; a clone with a foreign pre-push
+# that logs its stdin. Leaves the cwd in the clone.
+fixture() {
+    git init -q --bare -b main "$TP/remote.git"
+    git init -q -b main "$TP/w"
+    cd "$TP/w" || return 1
+    git config user.name t
+    git config user.email t@t
+    git config commit.gpgsign false
+    git config tag.gpgsign false
+    git commit -q --allow-empty -m c1
+    git remote add origin "$TP/remote.git"
+    git push -q origin main
+    git tag keep/old
+    git tag -a -m old keep/old-ann
+    git push -q origin keep/old keep/old-ann
+    git checkout -q -b side
+    git commit -q --allow-empty -m side
+    git checkout -q main
+    git commit -q --allow-empty -m c2
+    git push -q origin main
+    C1="$(git rev-parse main~1)"
+    SIDE="$(git rev-parse side)"
+    printf '#!/usr/bin/env bash\ncat >> "%s/chained.log"\n' "$TP" > .git/hooks/pre-push
+    chmod 0755 .git/hooks/pre-push
+}
+
+self_test() {
+    local v has_dir=0 has_common=0
+    local -a gv
+    HOOK="${1:-$HOOK_DIR/pre-push-tags.sh}"
+    HOOK="$(cd "$(dirname "$HOOK")" || exit 1; pwd)/${HOOK##*/}"
+    if [ ! -f "$HOOK" ]; then
+        printf 'UNMEASURED no hook at %s\n' "$HOOK"
+        return 1
+    fi
+    mapfile -t gv < <(git rev-parse --local-env-vars)
+    for v in "${gv[@]}"; do
+        [ "$v" != GIT_DIR ] || has_dir=1
+        [ "$v" != GIT_COMMON_DIR ] || has_common=1
+    done
+    if [ "$has_dir" -ne 1 ] || [ "$has_common" -ne 1 ]; then
+        printf 'UNMEASURED git rev-parse --local-env-vars did not list GIT_DIR and GIT_COMMON_DIR\n'
+        return 1
+    fi
+    unset "${gv[@]}" PRE_PUSH_RELEASE_TAG
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
+    TP="$(mktemp -d)"
+    trap 'rm -rf -- "${TP:?}"' EXIT
+    fixture > "$TP/fixture.log" 2>&1 || {
+        printf 'UNMEASURED the fixture failed: %s\n' "$(tail -n 1 "$TP/fixture.log")"
+        return 1
+    }
+    cd "$TP/w" || return 1
+
+    check_row install_chains_the_existing_pre_push "install failed or the old hook is not pre-push.chained" step_install
+    check_row a_second_install_keeps_the_chain "a reinstall chained the dispatcher to itself" step_install
+    check_row install_refuses_under_core_hookspath "install did not exit 2 with core.hooksPath set" step_install_under_hookspath
+
+    push_row a_branch_push_is_untouched allowed refs/heads/feat step_branch
+    check_row the_chained_pre_push_saw_the_same_stdin "chained.log lacks the refs/heads/feat line" step_chained_saw_stdin
+    push_row an_existing_tag_at_the_same_sha_is_a_no_op allowed refs/tags/keep/old step_same_sha
+    push_row tags_the_remote_already_has_push_clean allowed refs/tags/keep/old-ann step_tags_clean
+    push_row an_armed_release_tag_on_main_is_pushed allowed refs/tags/v0.1.0 step_release
+    push_row an_armed_lightweight_rc_tag_is_pushed allowed refs/tags/v0.1.1-rc.1 step_release_rc
+
+    push_row a_keep_tag_create_is_refused 'create of refs/tags/keep/new,' refs/tags/keep/new step_keep
+    push_row an_annotated_keep_tag_create_is_refused 'create of refs/tags/keep/new-ann,' refs/tags/keep/new-ann step_keep_annotated
+    push_row a_commit_pushed_to_a_tag_ref_is_refused 'create of refs/tags/keep/raw,' refs/tags/keep/raw step_raw
+    push_row a_release_tag_without_a_marker_is_refused 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_no_marker
+    push_row a_marker_in_the_environment_arms_nothing 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_env_marker
+    push_row a_marker_for_another_sha_is_refused 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_other_sha
+    push_row a_marked_v_tag_that_is_not_a_release_name_is_refused 'create of refs/tags/vnext, which is not vX' refs/tags/vnext step_not_a_release_name
+    push_row an_armed_release_tag_off_main_is_refused 'create of refs/tags/v0.3.0:' refs/tags/v0.3.0 step_off_main
+    push_row the_marker_is_spent_by_one_push 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_spent
+    push_row one_bad_line_refuses_an_armed_release_too 'create of refs/tags/keep/new,' refs/tags/v0.2.0 step_one_bad_line
+
+    push_row a_plain_tag_move_is_refused 'move of refs/tags/keep/old' refs/tags/keep/old step_move
+    push_row a_forced_fast_forward_tag_move_is_refused 'move of refs/tags/keep/old' refs/tags/keep/old step_move_forced
+    push_row a_forced_move_to_an_unrelated_commit_is_refused 'move of refs/tags/keep/old' refs/tags/keep/old step_move_unrelated
+    push_row a_forced_annotated_tag_move_is_refused 'move of refs/tags/keep/old-ann' refs/tags/keep/old-ann step_move_annotated
+    push_row a_tag_delete_is_refused 'delete of refs/tags/keep/old' refs/tags/keep/old step_delete
+    push_row a_delete_flag_is_refused 'delete of refs/tags/keep/old-ann' refs/tags/keep/old-ann step_delete_flag
+    push_row an_armed_release_tag_delete_is_refused 'delete of refs/tags/v0.1.0' refs/tags/v0.1.0 step_delete_release
+
+    push_row push_tags_is_refused 'create of refs/tags/keep/new,' refs/tags/keep/new step_push_tags
+    push_row a_tags_refspec_is_refused 'create of refs/tags/keep/new,' refs/tags/keep/new step_tags_refspec
+    push_row mirror_is_refused 'create of refs/tags/keep/new,' refs/tags/keep/new step_mirror
+    check_row arm_release_refuses_a_keep_name "--arm-release keep/new did not exit 2, or left a marker" step_arm_keep
+
+    printf -- '--- %s/%s rows ---\n' "$((ROWS - FAILS))" "$ROWS"
+    if [ "$ROWS" -ne "$WANT_ROWS" ]; then
+        printf 'UNMEASURED %s of %s rows ran\n' "$ROWS" "$WANT_ROWS"
+        return 1
+    fi
+    [ "$FAILS" -eq 0 ]
+}
+
+# NAME<TAB>FILE<TAB>sed expression; FILE is under scripts/hooks/
+MUTANTS='m01_the_delete_arm_is_dropped	pre-push-tags.sh	s/^        if is_zero "\$lsha"; then refuse .*$/        :/
+m02_the_move_arm_is_dropped	pre-push-tags.sh	s/^\(            . "\$rsha" = "\$lsha" .\) || refuse /\1 || true /
+m03_keep_tags_are_accepted	pre-push-tags.sh	s/^            refs\/tags\/v\*) ;;$/&\n            refs\/tags\/keep\/*) continue ;;/
+m04_a_forced_fast_forward_move_is_accepted	pre-push-tags.sh	s/^\(            . "\$rsha" = "\$lsha" .\) || refuse /\1 || git merge-base --is-ancestor "$rsha" "$lsha" || refuse /
+m05_the_marker_is_read_from_the_environment	pre-push-tags.sh	s/^        . -L "\$mfile" . || marker=.*$/        marker="${PRE_PUSH_RELEASE_TAG:-}"/
+m06_the_marker_is_not_spent	pre-push-tags.sh	s/^        rm -f -- "\${mfile:?}"$/        true/
+m07_main_is_not_checked	pre-push-tags.sh	s/^        if ! on_main "\$lsha" "\$url"; then$/        if false; then/
+m08_the_marker_sha_is_not_compared	pre-push-tags.sh	s/^        if . "\$marker" != "\$rref \$lsha" .; then$/        if ! test "${marker%% *}" = "$rref"; then/
+m09_the_release_name_is_not_checked	pre-push-tags.sh	s/^        if ! is_release_name "\${rref#refs\/tags\/}"; then$/        if false; then/
+m10_the_dispatcher_ignores_the_guard	pre-push-dispatch.sh	s/^printf .%s. "\$in" | bash "\$d\/pre-push-tags" .*$/& || true/
+m11_a_foreign_pre_push_is_overwritten	pre-push-tags.sh	s/^        (c. "\${dir:?}" .. mv -- pre-push pre-push.chained)$/        true/'
+
+mutants() {
+    local name file expr rc killed=0 total=0 t
+    t="$(printf '\t')"
+    WORK="$(mktemp -d)"
+    trap 'rm -rf -- "${WORK:?}"' EXIT
+    while IFS="$t" read -r name file expr; do
+        total=$((total + 1))
+        cp -- "$HOOK_DIR/pre-push-tags.sh" "$HOOK_DIR/pre-push-dispatch.sh" "$WORK/"
+        sed -e "$expr" "$HOOK_DIR/$file" > "$WORK/$file"
+        if cmp -s "$HOOK_DIR/$file" "$WORK/$file" || ! bash -n "$WORK/$file"; then
+            printf '  FAIL  %s did not apply or does not parse\n' "$name"
+            continue
+        fi
+        rc=0
+        bash "$SELF" --self-test "$WORK/pre-push-tags.sh" > /dev/null 2>&1 || rc=$?
+        if [ "$rc" -ne 0 ]; then
+            printf '  ok    %s killed\n' "$name"
+            killed=$((killed + 1))
+        else
+            printf '  FAIL  %s survived\n' "$name"
+        fi
+    done <<< "$MUTANTS"
+    printf -- '--- %s/%s mutants killed ---\n' "$killed" "$total"
+    [ "$killed" -eq "$total" ]
+}
+
+case "${1:-}" in
+    --self-test) self_test "${2:-}" ;;
+    --mutants) mutants ;;
+    --help | -h) sed -n '2,20p' "$SELF" ;;
+    '') bare ;;
+    *) sed -n '9,20p' "$SELF" >&2; exit 2 ;;
+esac
