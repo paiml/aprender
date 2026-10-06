@@ -18,6 +18,11 @@
 #       on a non-comment line: a value with no `$` in it. `MS=$V`, `T="v$V"` and
 #       `AP="${RELEASE_AP:-...}"` are derivations; `V=0.69.0` and `EPIC=3477` are not.
 #       scripts/release/lib_release_params.sh is where the identity is derived.
+#   R2+ (#4853, REPORT-ONLY) the same rule where R2's pattern was blind: a literal inside a
+#       subshell, $(...) or backticks (`(V=0.69.0 cmd)`, `x=$(EPIC=3477 cmd)`), and a value
+#       whose only `$` is escaped (`V=\$x`, `V="\${{ .. }}"`), which is literal text. Prints
+#       `REPORT R2+` and does not fail until three nightly runs are green with it; then it
+#       joins R2 (the ratchet). A line R2 already refuses is not reported twice.
 #   R3  no numeric test against an integer literal of two or more digits, on a non-comment
 #       line (#3657): `[ "${#ORDER[@]}" -eq 74 ]`, `[ 74 -eq "$n" ]`, `(( n == 74 ))`. A crate
 #       count belongs to the universe (cascade_universe.py), not to the script. 0.68.2's 74
@@ -33,6 +38,9 @@ DIR="${RELEASE_SCRIPTS_DIR:-$ROOT/scripts/release}"
 
 R1_RE='(^|[^A-Za-z0-9_.$}-])/(mnt|home|Users|opt|srv|media|root)/'
 R2_RE='(^|[;&|[:space:]])(V|T|MS|EPIC|LAST_TAG|AP)=[^[:space:];$]*([[:space:];]|$)'
+# R2+ (#4853): `(` and a backtick open a command too; `\\.` takes an escaped char as literal.
+# Read through ENVIRON, never awk -v, which would eat the backslashes.
+R2X_RE='(^|[;&|[:space:](`])(V|T|MS|EPIC|LAST_TAG|AP)=([^[:space:];$\\]|\\.)*([[:space:];]|$)'
 R3_RE='(-(eq|ne|lt|le|gt|ge)|==|!=)[[:space:]]*["'"'"']?[0-9][0-9]+([^0-9.]|$)|(^|[^0-9.$#{])[0-9][0-9]+["'"'"']?[[:space:]]*(-(eq|ne|lt|le|gt|ge)|==|!=)[[:space:]]'
 
 # judge <dir> -> 0 clean, 1 a finding (each printed), 2 ENV
@@ -52,6 +60,12 @@ judge() {
         if [ -n "$hits" ]; then
             bad=1
             printf 'FAIL  R2 %s: a release identity assigned a literal (derive it: lib_release_params.sh):\n' "${f#"$ROOT/"}"
+            printf '%s\n' "$hits" | sed 's/^/        /'
+        fi
+        # R2+ report-only (#4853): lines the wider pattern finds and R2 does not
+        hits=$(R2=$R2_RE R2X=$R2X_RE awk 'BEGIN { r = ENVIRON["R2"]; x = ENVIRON["R2X"] } !/^[[:space:]]*#/ && $0 ~ x && $0 !~ r { printf "%d:%s\n", NR, $0 }' "$f")
+        if [ -n "$hits" ]; then
+            printf 'REPORT R2+ %s: a release identity assigned a literal R2 cannot see yet (report-only, #4853):\n' "${f#"$ROOT/"}"
             printf '%s\n' "$hits" | sed 's/^/        /'
         fi
         hits=$(awk -v re="$R3_RE" '!/^[[:space:]]*#/ && $0 ~ re { printf "%d:%s\n", NR, $0 }' "$f")
@@ -84,6 +98,15 @@ if [ "${1:-}" = "--self-test" ]; then
         if [ "$rc" = "$want" ]; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
         else printf 'FAIL  row %-2s rc=%s (wanted %s)  %s\n' "$n" "$rc" "$want" "$label" >&2; bad=1; fi
     }
+    rowr() { # rowr WANT_RC WANT_REPORT(1 = a REPORT R2+ line, 0 = none) LABEL FILE-BODY  (#4853)
+        local want=$1 wrep=$2 label=$3 body=$4 rc=0 out rep=0; n=$((n + 1))
+        rmtree "$d/r"; mkdir -p "$d/r"
+        printf '%s' "$body" > "$d/r/x.sh"
+        out=$(judge "$d/r" 2>&1) || rc=$?
+        case "$out" in *"REPORT R2+ "*) rep=1 ;; esac
+        if [ "$rc" = "$want" ] && [ "$rep" = "$wrep" ]; then printf 'ok    row %-2s rc=%s report=%s  %s\n' "$n" "$rc" "$rep" "$label"
+        else printf 'FAIL  row %-2s rc=%s report=%s (wanted %s %s)  %s\n' "$n" "$rc" "$rep" "$want" "$wrep" "$label" >&2; bad=1; fi
+    }
     M=/mnt; H=/home   # built, so this file itself carries no literal for R1 to find
     row 0 "derivations only -> clean" \
         $'REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"\nrelease_params "$1" "$REPO_ROOT"\nMS=$V\nT="v$V"\nAP="${RELEASE_AP:-$ROOT/target/release-train/$T}"\nexport PATH="$HOME/.cargo/bin:$PATH"\ncmd > /dev/null 2>&1\n'
@@ -96,6 +119,16 @@ if [ "${1:-}" = "--self-test" ]; then
     row 1 "a quoted literal V=\"0.69.0\" -> RED"                         $'V="0.69.0"\n'
     row 0 "an assignment in a COMMENT is documentation -> clean (R2 skips comments)" $'# V=0.68.2 was the old literal\n'
     row 0 "lowercase locals and names that merely end in V/T -> clean"  $'local v=$1 t=$2\nENV=prod\nPLOT=1\n'
+    # R2+ (#4853), report-only: must-match rows report and stay rc 0; must-not rows stay silent
+    rowr 0 1 "R2+ a literal in a subshell (V=0.69.0 cmd) -> REPORT"          $'(V=0.69.0 cmd)\n'
+    rowr 0 1 "R2+ a literal in \$(EPIC=3477 cmd) -> REPORT"                 $'x=$(EPIC=3477 cmd)\n'
+    rowr 0 1 "R2+ a literal in backticks -> REPORT"                          $'y=`T=v1 cmd`\n'
+    rowr 0 1 "R2+ an escaped dollar V=\\\$x is literal text -> REPORT"     $'V=\\$x cmd\n'
+    rowr 0 1 "R2+ an escaped expression V=\"\\\${{ x }}\" -> REPORT"     $'V="\\${{ x }}" cmd\n'
+    rowr 0 0 "R2+ derivations in a subshell or \$(..) -> silent"             $'(V="$X" cmd)\nz=$(T="v$V" cmd)\n'
+    rowr 0 0 "R2+ other names, a comment, a bare \$(cmd) -> silent"          $'(PV=1 cmd)\nMYV=1\n# (V=1 cmd)\nprintf "%s" "$(cmd)"\n'
+    rowr 1 0 "R2+ a line R2 refuses is RED and not reported twice"          $'V=0.69.0\n'
+    rowr 1 1 "R2+ next to an R2 hit: R2 stays RED, the hidden one reports"  $'MS=12\n(V=0.69.0 cmd)\n'
     row 0 "/dev/null, /tmp and \$HOME paths are not operator-box literals -> clean" $'x > /dev/null\nmktemp -p /tmp\nls "$HOME/.cargo/bin"\n'
     # R3 (#3657): the planted literal is 0.68.2's own line from publish_strict.sh, verbatim
     row 1 "PLANTED: publish_strict.sh's 0.68.2 universe-size assertion -> RED (R3)" \
