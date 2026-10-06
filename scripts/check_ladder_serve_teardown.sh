@@ -154,9 +154,22 @@ race_extra_runs() {
 # to <blocks> FRESH bash processes of <tries> tries each, or NM. One process can sit in a
 # phase where the race never fires (28/100 fresh 1000-try blocks read zero, measured),
 # so the must-red plant stops at the first block that loses (until-hit=1, up to 12) and
-# the must-green row needs all 4 blocks clean (until-hit=0). Both sides run the same block.
+# the must-green row needs all 4 blocks clean (until-hit=0) and runs them in parallel to cap wall clock (about 0.08 s per try, so 4x1000 sequential cost ~315 s). Both sides run the same block.
 race_fresh() {
   local body="$1" tries="$2" blocks="$3" until_hit="$4" b n total=0
+  if [ "$until_hit" -eq 0 ]; then  # all blocks needed: run them side by side, each in its own TMP subdir
+    for b in $(seq 1 "$blocks"); do
+      mkdir -p "$TMP/blk.$b" 2>/dev/null || { echo NM; return 0; }
+      TMP="$TMP/blk.$b" bash -c "$(declare -f wait_pidfile race_extra_runs); race_extra_runs \"\$1\" \"\$2\"" _ "$body" "$tries" 2>/dev/null | tail -n 1 > "$TMP/blk.$b.out" &
+    done
+    wait
+    for b in $(seq 1 "$blocks"); do
+      n=$(cat "$TMP/blk.$b.out" 2>/dev/null)
+      case "$n" in ''|*[!0-9]*) echo NM; return 0 ;; esac
+      total=$((total + n))
+    done
+    echo "$total"; return 0
+  fi
   for b in $(seq 1 "$blocks"); do
     n=$(TMP="$TMP" bash -c "$(declare -f wait_pidfile race_extra_runs); race_extra_runs \"\$1\" \"\$2\"" _ "$body" "$tries" 2>/dev/null | tail -n 1)
     case "$n" in ''|*[!0-9]*) echo NM; return 0 ;; esac
@@ -305,7 +318,7 @@ if [ "$SELF_TEST" -eq 1 ]; then
 fi
 
 rc=0; nm=0
-# race: TERM a just-started idle child 100 times; the EXIT trap must run only in this shell
+# race: TERM a just-started idle child 4000 times (4 parallel fresh blocks of 1000); the EXIT trap must run only in this shell
 race_bad=$(race_fresh "$(declare -f idle_child)" 1000 4 0)
 if [ "$race_bad" = NM ]; then echo "  NOT_MEASURED race: a try sent no TERM or logged no trap run, so nothing here is evidence"; nm=1
 elif [ "$race_bad" -ne 0 ]; then echo "  FAIL race: idle_child let a forked copy run the EXIT trap in $race_bad/4000 tries"; rc=1
