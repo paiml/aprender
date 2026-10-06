@@ -12,6 +12,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `publishable-crates` (reads `cargo metadata` JSON on stdin) | `scripts/lib/publishable_crates.py` |
 | `package-include-diff <LISTING> <INCLUDES>` | `scripts/lib/package_include_diff.py` (kept: its caller `scripts/check_package_includes.sh` is a gate, so it switches once a released `aprender-ci-tools` carries the port, N-1) |
 | `coverage-report-scope [--exclude NAME]...` | `scripts/coverage_report_scope.py` (kept: its callers, the Makefile coverage targets, `ci.sh` and `prepare-release.sh`, are gate paths, N-1; the parity harness reads it from git blob 106561a2) |
+| `cascade-universe [--names] [REPO_ROOT]` (runs `cargo metadata` from PATH, once per workspace) | `scripts/lib/cascade_universe.py` (kept: its callers, the Makefile, `ci.yml` and the `cascade-*`/`check_cascade_*`/`check_publish_safety.sh` scripts, are on the publish gate path, N-1) |
 | `tarball-shrink-report <PACKAGE_LOG> <WS_DIR>` | `scripts/lib/tarball_shrink_report.py` (kept: its caller runs on a gate path, so it switches once a released `aprender-ci-tools` carries the port) |
 | `tarball-workspace DIR` · `--name DIR` · `--target-dir` (reads `cargo metadata` JSON on stdin) | `scripts/lib/tarball_workspace.py` (kept: its caller `scripts/package_tarball_build.sh` is on the publish gate path, N-1; the parity test reads it from a pinned git blob) |
 | `tarball-build-errors LOG` | `scripts/lib/tarball_build_errors.py` (kept: its caller `scripts/package_tarball_build.sh` is on the publish gate path, N-1) |
@@ -59,6 +60,9 @@ none of the callers uses these forms:
 | `tarball-shrink-report`, a Unicode `Other_Alphabetic` character that is not a letter or digit (a combining mark, a circled letter such as `Ⓐ`) before `_or_skip(` or `fn` | not a word character | a word character |
 | `tarball-workspace --name` alone | `--name` taken as DIR | usage error, exit 1 |
 | `tarball-build-errors --help` / `-h` | read as the LOG path: cannot read, exit 2 | help, exit 0 (every other argv, `--` and `-x` included, matches: parity cases) |
+| `cascade-universe` with JSON that `json.loads` takes and serde refuses (`NaN`, `Infinity`, a lone surrogate, UTF-16/32, a BOM) | parsed | exit 1 (cargo never prints these) |
+| `cascade-universe`, a non-string package `name` | hashed: `1`, `1.0` and `true` are one key | exit 1 (cargo names are strings) |
+| `cascade-universe`, invalid UTF-8 on cargo's stderr in the exit-2 message | Python `replace` decoding | Rust lossy decoding (both print U+FFFD; the count per bad sequence may differ) |
 
 ## Where `perf041-report` differs (by design, not parity-checked)
 

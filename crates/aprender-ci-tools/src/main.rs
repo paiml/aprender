@@ -1,10 +1,10 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    annotate_book_examples, complexity_rows, coverage_report_scope, crux_missing_stories,
-    dag_status, extract_book_examples, git_patch_id, llama_fit_verdict, package_include_diff,
-    perf041_report, publishable_crates, tarball_build_errors, tarball_shrink_report,
-    tarball_workspace,
+    annotate_book_examples, cascade_universe, complexity_rows, coverage_report_scope,
+    crux_missing_stories, dag_status, extract_book_examples, git_patch_id, llama_fit_verdict,
+    package_include_diff, perf041_report, publishable_crates, tarball_build_errors,
+    tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -137,6 +137,16 @@ enum Cmd {
         #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
         paths: Vec<PathBuf>,
     },
+    /// The crates a release cascade must ship, from every workspace: TSV `name version
+    /// manifest workspace-root`, or `--names` (was scripts/lib/cascade_universe.py). Runs
+    /// `cargo metadata` from PATH. `--help` is an argument here, as it was there.
+    #[command(disable_help_flag = true)]
+    CascadeUniverse {
+        /// `[--names] [repo-root]`. Any argument starting with `--` is a flag (only
+        /// `--names` means anything); the first other one is the repo root, default `.`.
+        #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
 }
 
 fn cargo_metadata() -> Result<String, String> {
@@ -216,6 +226,13 @@ fn complexity_rows_cmd(paths: &[PathBuf]) -> Result<String, Refusal> {
     outcome(o.stdout, o.code, o.stderr)
 }
 
+fn cascade_universe_cmd(args: &[String]) -> Result<String, Refusal> {
+    let o = cascade_universe::run(args);
+    // The original writes its own final newline; the reason is printed with one.
+    let reason = o.stderr.strip_suffix('\n').unwrap_or(&o.stderr).to_owned();
+    outcome(o.stdout, o.code, reason)
+}
+
 /// The output, or a refusal.
 fn run(cmd: Cmd) -> Result<String, Refusal> {
     match cmd {
@@ -267,6 +284,7 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
         }
         Cmd::LlamaFitVerdict { args } => llama_fit_verdict::run(&args).map_err(nothing_printed),
         Cmd::ComplexityRows { paths } => complexity_rows_cmd(&paths),
+        Cmd::CascadeUniverse { args } => cascade_universe_cmd(&args),
     }
 }
 

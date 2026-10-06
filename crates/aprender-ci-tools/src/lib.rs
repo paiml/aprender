@@ -4,6 +4,7 @@
 //! runs the same cases through both, with the `.py` original as the external validator.
 
 pub mod annotate_book_examples;
+pub mod cascade_universe;
 pub mod complexity_rows;
 pub mod coverage_report_scope;
 pub mod crux_missing_stories;
