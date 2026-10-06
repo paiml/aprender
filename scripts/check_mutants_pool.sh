@@ -45,6 +45,8 @@ table() { # table <workflow>
 1|[self-hosted, Linux, ARM64, gpu, docker, intel]
 1|[self-hosted, Linux, ARM64, gpu, docker, perf-solo]
 1|[self-hosted, Linux, X64, gpu, docker]
+1|[self-hosted, Linux, ARM64, gpu]
+1|[self-hosted, Linux, ARM64, docker]
 1|[self-hosted, Linux, X64, mutants-intel]
 1|
 POOLS
