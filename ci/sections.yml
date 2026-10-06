@@ -3734,7 +3734,7 @@ jobs:
           echo "$ELAN_HOME/bin" >> "$GITHUB_PATH"
           echo "cache=$cache" >> "$GITHUB_OUTPUT"
 
-      - name: Planted rows -- a PR run skips leanchecker, a push runs it in full (C312)
+      - name: Planted rows -- a PR or push run skips leanchecker, the nightly runs it in full (C312)
         # Seconds, no pv or Lean: stubs only. Runs even on a skipped ladder, so the event
         # split below is checked on every run of this section.
         shell: bash
@@ -3749,20 +3749,20 @@ jobs:
           cargo build --locked -p aprender-contracts-cli --bin pv
           test -x "$PV"
 
-      - name: pv discharge (PR - build + check --strict + comparator; push - run, adding leanchecker)
+      - name: pv discharge (PR, push - build + check --strict + comparator; nightly - run, adding leanchecker)
         id: discharge
         if: ${{ steps.pre.outputs.skip != 'true' }}
         shell: bash
-        # Operator ruling C312 (#4578): pull_request and merge_group skip the leanchecker
-        # re-check (~75 min under load); a push to main runs `pv discharge run` in full. The
-        # split and its planted rows: scripts/ci/provable_ladder_discharge.sh and
+        # Operator ruling C312 (#4578): pull_request, merge_group and (amended 2026-10-06) push
+        # skip the leanchecker re-check (cap 3,600 s); the full `pv discharge run` is the nightly
+        # schedule, .github/workflows/provable-ladder-nightly.yml. The split and its planted rows: scripts/ci/provable_ladder_discharge.sh and
         # scripts/ci/ladder_pr_skips_leanchecker.sh.
         # One run at a time per cache: two runs unpacking into the same .lake would race.
         # set +e: Actions runs `bash -e`, which would abort at a failing run before its rc and
         # its log tail are recorded.
         # The runner service starts without a login session, so XDG_RUNTIME_DIR is unset and
         # `systemd-run --user` cannot reach the user bus: pv declined the leanchecker arm on
-        # every main run (#4578). Point it at the lingering user's runtime dir when one exists;
+        # every full run (#4578). Point it at the lingering user's runtime dir when one exists;
         # where none exists the variable stays unset and pv still declines (rc 2).
         env:
           EVENT: ${{ github.event_name }}
