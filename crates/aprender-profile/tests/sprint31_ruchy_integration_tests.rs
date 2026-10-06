@@ -13,6 +13,13 @@ use assert_cmd::Command;
 use std::fs;
 use tempfile::TempDir;
 
+// Every test runs its script as `/bin/bash <script>`, never by exec of the
+// script itself (#4862). Tests run on parallel threads: a sibling that forks
+// while this thread still holds the freshly written script open hands the
+// child a copy of the write fd, and an exec of the script in that window
+// fails with ETXTBSY ("Text file busy"). bash only opens the script to read
+// it, which a writer never blocks.
+
 #[test]
 fn test_otlp_with_decision_traces() {
     // RED Phase: Test that --otlp-endpoint and --trace-transpiler-decisions work together
@@ -42,6 +49,7 @@ echo "[RESULT] type_inference: inferred i32" >&2
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
         .arg("--")
+        .arg("/bin/bash")
         .arg(&test_program);
 
     // Should succeed and export both syscalls and decisions to OTLP
@@ -76,6 +84,7 @@ echo "[RESULT] optimization: inlined" >&2
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
         .arg("--")
+        .arg("/bin/bash")
         .arg(&test_program);
 
     // Should not crash with OTLP + decision traces
@@ -110,6 +119,7 @@ echo "[RESULT] type_check: type is valid" >&2
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
         .arg("--")
+        .arg("/bin/bash")
         .arg(&test_program);
 
     // Should succeed and correlate decisions with write(2) syscalls
@@ -160,6 +170,7 @@ echo "[RESULT] pattern_compile: compiled" >&2
         .arg("--transpiler-map")
         .arg(&source_map)
         .arg("--")
+        .arg("/bin/bash")
         .arg(&test_program);
 
     // Should succeed with all three features enabled
@@ -167,7 +178,6 @@ echo "[RESULT] pattern_compile: compiled" >&2
 }
 
 #[test]
-#[ignore = "FLAKE-0 #4862"]
 fn test_decision_span_event_attributes() {
     // RED Phase: Test that decision span events have correct attributes
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -195,6 +205,7 @@ echo "[RESULT] trait_solve: bound satisfied" >&2
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
         .arg("--")
+        .arg("/bin/bash")
         .arg(&test_program);
 
     // Attributes should include: decision.category, decision.name, decision.result
@@ -218,7 +229,11 @@ fn test_backward_compatibility_otlp_without_decisions() {
     }
 
     let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
-    cmd.arg("--otlp-endpoint").arg("http://localhost:4317").arg("--").arg(&test_program);
+    cmd.arg("--otlp-endpoint")
+        .arg("http://localhost:4317")
+        .arg("--")
+        .arg("/bin/bash")
+        .arg(&test_program);
 
     // Should work fine - OTLP without decisions
     cmd.assert().success();
@@ -248,7 +263,7 @@ echo "[RESULT] const_eval: evaluated to 42" >&2
     }
 
     let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
-    cmd.arg("--trace-transpiler-decisions").arg("--").arg(&test_program);
+    cmd.arg("--trace-transpiler-decisions").arg("--").arg("/bin/bash").arg(&test_program);
 
     // Should work fine - decisions without OTLP
     cmd.assert().success();
@@ -286,6 +301,7 @@ echo "Done"
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
         .arg("--")
+        .arg("/bin/bash")
         .arg(&test_program);
 
     // Should export all 3 decisions as span events
@@ -322,6 +338,7 @@ echo "Result"
         .arg("--trace-transpiler-decisions")
         .arg("-T") // Enable timing
         .arg("--")
+        .arg("/bin/bash")
         .arg(&test_program);
 
     // Should capture decision timing in span events
@@ -358,6 +375,7 @@ echo "Output"
         .arg("ruchy-integrated-app")
         .arg("--trace-transpiler-decisions")
         .arg("--")
+        .arg("/bin/bash")
         .arg(&test_program);
 
     // Should use custom service name with decisions
@@ -394,8 +412,41 @@ echo "Output"
         .arg("-e")
         .arg("trace=write") // Filter to only write syscalls
         .arg("--")
+        .arg("/bin/bash")
         .arg(&test_program);
 
     // Decision events should still be exported even if syscalls are filtered
+    cmd.assert().success();
+}
+
+#[test]
+fn test_script_runs_while_a_writer_holds_it_open() {
+    // #4862: the race made deterministic. A held write fd is what a sibling
+    // thread's forked child carries; a direct exec of the script fails with
+    // ETXTBSY while it is open, `/bin/bash <script>` does not.
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let test_program = temp_dir.path().join("held_open_test");
+
+    fs::write(
+        &test_program,
+        "#!/bin/bash\necho \"[DECISION] trait_solve: held open\" >&2\necho \"Output\"\n",
+    )
+    .expect("Failed to write test program");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&test_program, fs::Permissions::from_mode(0o755))
+            .expect("Failed to set permissions");
+    }
+
+    let _writer = fs::OpenOptions::new()
+        .append(true)
+        .open(&test_program)
+        .expect("Failed to hold the script open for writing");
+
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
+    cmd.arg("--trace-transpiler-decisions").arg("--").arg("/bin/bash").arg(&test_program);
+
     cmd.assert().success();
 }
