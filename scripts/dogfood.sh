@@ -659,11 +659,49 @@ if [ -n "$CHANGELOG_PATH" ] && grep -qF "$VERSION" "$CHANGELOG_PATH"; then mark 
 elif [ -n "$CHANGELOG_PATH" ]; then mark changelog WARN "$CHANGELOG_PATH has no entry for $VERSION"
 else mark changelog WARN "no CHANGELOG.md (looked in $PWD and $REPO_ROOT)"; fi
 
+# ── C316 item 2c (#4672): pre-publish READS what the commit already has ─────
+# fmt, clippy, test and coverage re-ran, on the release commit, hours of work CI had already
+# done for that same commit. In --phase pre-publish they now read it instead: fmt and clippy
+# read `ci / gate`, test reads `workspace-test`, and coverage reads a COV_FLOOR coverage job
+# (`ci / coverage` on the tag push, or `Coverage Nightly / coverage`; both run `make coverage`)
+# -- each for exactly HEAD's sha. No green receipt for that sha is RED, never a skip: a red,
+# pending or missing check, a green check on another commit, a failed GitHub read, and a tree
+# with uncommitted tracked changes (no CI result describes it). Every other phase still runs them.
+# One GraphQL call for all four (GH-1); scripts/release/sha_checks.sh --self-test plants the reds.
+CI_READ="" CI_READ_ERR="" CI_SHA=""
+CI_SPEC_GATE="CI:ci / gate" CI_SPEC_TEST="CI:workspace-test"
+CI_SPEC_COV="CI:ci / coverage|Coverage Nightly:coverage"
+if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  CI_SHA=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null)
+  if [ -z "$CI_SHA" ]; then CI_READ_ERR="there is no git HEAD to read CI for"
+  elif [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    CI_READ_ERR="the tree has uncommitted tracked changes, so no CI result for ${CI_SHA:0:10} describes it"
+  else
+    CI_READ=$(bash "$SKILL_DIR/release/sha_checks.sh" "$CI_SHA" "$CI_SPEC_GATE" "$CI_SPEC_TEST" "$CI_SPEC_COV" 2>&1)
+    printf '%s\n' "$CI_READ" > "${WORKLOG:-${TMPDIR:-/tmp}}/ci-read.log" 2>/dev/null || :
+  fi
+fi
+ci_mark() { # ci_mark <row> <spec> -- PASS only on sha_checks' "ok" line for <spec>
+  local line
+  if [ -n "$CI_READ_ERR" ]; then mark "$1" FAIL "pre-publish reads CI for HEAD, and $CI_READ_ERR"; return; fi
+  line=$(printf '%s\n' "$CI_READ" | grep -F -- " $2 -- " | head -1)
+  case "$line" in
+    "ok "*)  mark "$1" PASS "read, not re-run: ${line#ok "$2" -- }" ;;
+    "bad "*) mark "$1" FAIL "no green receipt: ${line#bad "$2" -- }" ;;
+    *)       mark "$1" FAIL "no receipt for '$2' on ${CI_SHA:0:10}: ${CI_READ:0:100}" ;;
+  esac
+}
+
 # ── 4-8. quality gates ──────────────────────────────────────────────────────
 mark feature-scope INFO "clippy/test run with: ${FEAT_NOTE}"
-gate fmt              cargo fmt --all -- --check
-# shellcheck disable=SC2086
-gate clippy           cargo clippy --all-targets $FEATS -- -D warnings
+if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  ci_mark fmt    "$CI_SPEC_GATE"
+  ci_mark clippy "$CI_SPEC_GATE"
+else
+  gate fmt              cargo fmt --all -- --check
+  # shellcheck disable=SC2086
+  gate clippy           cargo clippy --all-targets $FEATS -- -D warnings
+fi
 if command -v cargo-deny >/dev/null 2>&1; then gate security cargo deny check advisories
 else mark security FAIL "cargo-deny not installed — the advisory scan did not run, and a scan that did not run is not a clean scan"; fi
 
@@ -1766,6 +1804,10 @@ fi
 # test and coverage ($DOGFOOD_LONG_ROWS) take hours; every row above takes minutes. They
 # run here so a red cheap row is known before the long wait, not after it. Moved
 # from section 4-8 unchanged but for one note's wording; their verdicts count exactly as before.
+if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  ci_mark test     "$CI_SPEC_TEST"
+  ci_mark coverage "$CI_SPEC_COV"
+else
 # shellcheck disable=SC2086
 gate test             cargo test $FEATS
 MAKEFILE_PATH=$(find_up Makefile)
@@ -1811,6 +1853,7 @@ if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/de
     mark coverage FAIL "${cov_why:-coverage-check failed (rc $cov_rc)}"
   fi
 else mark coverage FAIL "no coverage-check make target in ${MAKEFILE_PATH:-$PWD/Makefile} — the >=95% floor is UNVERIFIED, which is not the same as met (was a WARN, contradicting the rule of this skill that a missing capability is a NO-GO)"; fi
+fi # end: pre-publish reads CI (C316 2c), every other phase measures
 
 # ── clean-room reminder (heavy, runs on the CI box; not automated here) ─────
 mark clean-room MANUAL "run \`make -C ../infra/machines/clean-room clean-room-$CRATE\` (MANDATORY release gate)"

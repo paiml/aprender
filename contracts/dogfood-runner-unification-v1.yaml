@@ -9,6 +9,7 @@ metadata:
   - 'scripts/check_verifier_pinning.sh — the gate: static scan + behavioural probe of both pins'
   - 'scripts/check_dogfood_shim.sh — the gate: one runner, one prose, and the user-scope copy stays a gated shim'
   - 'scripts/check_dogfood_row_order.sh — the guard (report mode until three green nights): long rows last, no early stop, a red cheap row keeps the verdict red, row times (aprender#4672)'
+  - 'scripts/check_dogfood_reads_ci.sh + scripts/release/sha_checks.sh — pre-publish reads fmt, clippy, test and coverage from the CI of the same commit; no green receipt for that sha is red (aprender#4672)'
   - 'scripts/.dogfood-shim-reference.sh — the reviewed text of the user-scope shim'
   - '.claude/skills/dogfood/SKILL.md — the one canonical prose, with an explicit `name:` (#2332)'
   - 'aprender#2361 — a user-scope skill shadowed the repo one; hardening it edited a file that never ran'
@@ -443,6 +444,30 @@ falsification_tests:
   test: 'bash scripts/check_dogfood_row_order.sh --self-test   # the five timing rows'
   if_fails: 'a release-day check over its budget passes its own timing row, or a missing measurement reads as on time'
   mutation: 'the six planted timing rows (ok, over, at budget, hole, absent, a budget of 15m) must give rc 0, 1, 0, 2, 2, 2 (observed 2026-10-04)'
+- id: F-DOG1-032
+  rule: in --phase pre-publish, fmt, clippy, test and coverage read the commit's CI and never re-run it
+  prediction: >
+    In scripts/dogfood.sh the fmt, clippy, test and coverage rows are ci_mark calls
+    inside the pre-publish branch (fmt and clippy read `ci / gate`, test reads
+    `workspace-test`, coverage reads `ci / coverage` or `Coverage Nightly / coverage`),
+    and their measuring commands sit only in that branch's else, so every other phase
+    still measures them.
+  test: 'bash scripts/check_dogfood_reads_ci.sh   # R2'
+  if_fails: 'the release dogfood re-runs hours of work CI already did for the same commit, or a row reads the wrong check'
+  mutation: 'put `gate fmt` back in the pre-publish branch (rerun), or point the test row at `ci / gate` (wrongspec); each must turn RED (observed 2026-10-06 in --self-test)'
+- id: F-DOG1-033
+  rule: no green receipt for the exact sha is RED, never a skip
+  prediction: >
+    The runner's own CI-read block and ci_mark(), lifted and driven against planted
+    check rows for a real commit, give PASS for all four rows only when each check is
+    green on THAT sha, and FAIL for all four on a red check for the sha, a missing check,
+    a green check on a different sha, a failed GitHub read, a missing reader and a tree
+    with uncommitted tracked changes. scripts/release/sha_checks.sh holds the same
+    rule on its own (newest run wins, pending, cancelled and skipped are red, a
+    same-named check in another workflow does not count).
+  test: 'bash scripts/check_dogfood_reads_ci.sh --self-test; bash scripts/release/sha_checks.sh --self-test'
+  if_fails: 'a check that is red, absent, or green for another commit lets the release dogfood say GO'
+  mutation: 'let a dirty tree read HEAD (nodirty), or make the no-receipt fallback a PASS (skipread); each must turn RED; sha_checks.sh plants 19 rows (observed 2026-10-06)'
 proof_obligations:
 - id: DRU-INV-001
   type: invariant
