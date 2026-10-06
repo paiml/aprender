@@ -141,9 +141,11 @@ check() {
     dirs "$1" && locked "${3:-$PARITY}" && table "$TMP/$2.join" "$2"
 }
 
+bad=0
 if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (8 cases), the target dirs are split, parity takes the GPU lock"
-else echo "FAIL  the autopilot's T-1 lanes: $why"; finish 1; fi
+else echo "FAIL  the autopilot's T-1 lanes: $why"; bad=1; fi
 
+# The mutants run whatever the real tree did, so report mode prints every line before its verdict.
 fails=0; nm=0
 mutant() { # mutant NAME SED-EXPR
     nm=$((nm + 1))
@@ -168,4 +170,6 @@ if cmp -s "$PARITY" "$TMP/m-parity.sh"; then echo "FAIL  mutant parity-unlocked 
 elif why=$(check "$AUTOPILOT" m-parity "$TMP/m-parity.sh"); then echo "FAIL  mutant parity-unlocked survived"; fails=$((fails + 1))
 else echo "ok    mutant parity-unlocked killed ($why)"; fi
 [ "$fails" -eq 0 ] || { echo "FAIL  $fails of $nm mutant(s)"; finish 1; }
+[ "$bad" = 0 ] || finish 1
 echo "PASS  8 case(s) + target dirs + parity lock, $nm mutant(s) killed: deep, dogfood and models start together, join before readiness, and a red in any stops the pass"
+finish 0
