@@ -1,5 +1,5 @@
 metadata:
-  version: "1.12.0"
+  version: "1.13.0"
   created: "2026-04-13"
   author: PAIML Engineering
   registry: true
@@ -17,10 +17,11 @@ metadata:
     - "0.72 R15a cell C6 (la-0.72): the backward GEMM cache key and the dims its kernel is built with come from one function the runtime and the pre-warm both call, and the CUDA trainer pre-warms the LoRA backward GEMMs of every selected target (crates/aprender-train/src/autograd/cuda_backward_keys.rs); 1.10.0 adds lora_backward_prewarm and FALSIFY-LORA_TARGET_SELECTION_V1_012"
     - "0.72 R15a cell C7 (la-0.72): the CUDA trainer pre-warms the AdamW step kernel at every parameter count its NF4 LoRA optimizer step asks for, by the selected targets (crates/aprender-train/src/train/transformer_trainer/lora_init.rs lora_adamw_sizes, autograd/cuda_optim.rs pre_warm_adamw_sizes); 1.11.0 adds lora_adamw_prewarm and FALSIFY-LORA_TARGET_SELECTION_V1_013"
     - "0.72 R15a cell C8 (la-0.72): InstructPipeline::from_pretrained loads a trained adapter only when it fills every LoRA slot, A and B (crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs inject_adapter_weights); 1.12.0 adds adapter_load_complete and FALSIFY-LORA_TARGET_SELECTION_V1_014"
+    - "0.72 R15a cell C9 (la-0.72): InstructPipeline::from_pretrained refuses an adapter it cannot read and an adapter whose adapter_config.json declares targets other than lora_targets, instead of warning and serving fresh LoRA weights (crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs load_trained_adapter, check_adapter_targets); 1.13.0 adds adapter_targets_declared and FALSIFY-LORA_TARGET_SELECTION_V1_015"
   description: "LoRA target module selection"
 
 name: lora-target-selection
-version: "1.12.0"
+version: "1.13.0"
 scope: "crates/aprender-train/src/finetune/"
 
 description: |
@@ -84,6 +85,9 @@ equations:
   adapter_load_complete:
     description: "A trained adapter loads only whole: every LoRA slot of the selected targets gets its A and its B from the adapter, or nothing loads"
     formula: "Let W be the tensors of adapter_model.safetensors and P ⊆ slots × {A, B} the places they fill (adapter_slot, lengths equal, no place twice). inject_adapter_weights writes W iff every tensor of W has a place and P = {0..|lora_layers|} × {A, B}. Otherwise it returns ConfigError naming every unplaced tensor and every unfilled place as layers.{l}.{target}.lora_{A|B}, l = idx / |T| and target = T[idx mod |T|], and no LoRA layer changes."
+  adapter_targets_declared:
+    description: "A trained adapter loads only into the targets it was trained on, and an adapter that is present but unreadable refuses the load"
+    formula: "Let D be target_modules of adapter_config.json, parsed by LoraTargets::parse, and T = InstructConfig.lora_targets. If adapter_model.safetensors is absent, nothing loads and the LoRA layers keep their init. If it is present and load_adapter_peft fails, from_pretrained returns ConfigError naming the path and the cause. If D is non-empty and D ≠ T as sets, it returns ConfigError naming D and T, before any tensor is placed. An empty D declares nothing, and adapter_load_complete decides. No LoRA layer changes on a refusal."
 
 falsification:
   - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
@@ -152,3 +156,8 @@ falsification:
     description: "InstructPipeline::from_pretrained loads a trained adapter only when the adapter fills every LoRA slot, A and B (0.72 R15a C8). At f022ec643b inject_adapter_weights refused a tensor it could not place, but it never checked that every slot was filled: an adapter with no v_proj tensors, with fewer layers than the model, or with only lora_A loaded without error, and every slot it left kept its fresh init (A random, B zero), so the model served and trained on was not the adapter that was trained. Now a place left unfilled refuses the whole load and names it, and no LoRA layer changes. Falsified if an adapter missing a target, a layer, or the B of one slot loads, if the error does not name the unfilled place, if any layer changes on a refusal, or if a full adapter (q/v, or all seven targets) no longer loads."
     test: "crates/aprender-train/src/finetune/instruct_pipeline/constructors_adapter_tests.rs::falsify_lora_target_selection_v1_014_partial_adapter_refuses_and_changes_nothing (with the other falsify_lora_target_selection_v1_014 tests there)"
     evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_014"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_015
+    description: "InstructPipeline::from_pretrained refuses an adapter that is present but unreadable, and an adapter trained on other targets (0.72 R15a C9). At 4a1fbb1fb0 a failed load_adapter_peft only printed a warning, and from_pretrained went on with fresh LoRA weights (A random, B zero): a corrupt or half-written adapter silently served an untrained model. The PEFT config was discarded, so a target mismatch surfaced only indirectly, as an unplaced tensor (row 003) or an unfilled place (row 014), never naming the targets. Now an unreadable adapter refuses with its path and cause, and a declared set D ≠ lora_targets refuses with both sets before any tensor is placed. Falsified if an unreadable adapter loads or warns and goes on, if a superset, subset or disjoint D loads, if the error does not name both sets, if any layer changes on a refusal, or if a matching or undeclared adapter, or no adapter at all, stops loading as before."
+    test: "crates/aprender-train/src/finetune/instruct_pipeline/constructors_adapter_tests.rs::falsify_lora_target_selection_v1_015_declared_targets_must_match (with the other falsify_lora_target_selection_v1_015 tests there)"
+    evidence: "cargo test -p aprender-train --lib falsify_lora_target_selection_v1_015"
