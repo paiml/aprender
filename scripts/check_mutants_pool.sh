@@ -15,9 +15,10 @@ JOB="${MUTANTS_POOL_JOB:-mutants}"
 job_runs_on() { # job_runs_on <workflow> -> the runs-on text of the job
     awk -v job="$JOB" '$0 == "  " job ":"{f=1; next} f && /^  [A-Za-z0-9_-]+:/{f=0} f && /^    runs-on:/{sub(/^    runs-on:[ ]*/, ""); sub(/[ ]+#.*$/, ""); print; exit}' "$1"
 }
-has() { # has <runs-on text> <label> -> 0 iff the label is one of the request's labels
-    local t=" $(printf '%s' "$1" | tr '[],"' '    ') "
-    case "$t" in *" $2 "*) return 0 ;; *) return 1 ;; esac
+has() { # has <runs-on text> <label> -> 0 iff the label is one of the request's labels (GitHub matches labels case-insensitively)
+    local t l
+    t=" $(printf '%s' "$1" | tr '[],"' '    ' | tr '[:upper:]' '[:lower:]') "; l=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
+    case "$t" in *" $l "*) return 0 ;; *) return 1 ;; esac
 }
 # Accepted pools: `mutants` (C100's own pool), and until infra builds it (infra#1468) the gx10 gpu docker
 # pool -- gpu is one of infra's census pools, ARM64 + docker selects the gx10 docker runner. Never a
@@ -25,7 +26,7 @@ has() { # has <runs-on text> <label> -> 0 iff the label is one of the request's 
 pool_ok() { # 0 iff it names an accepted pool and none that reaches intel
     has "$1" clean-room && return 1; has "$1" intel && return 1; has "$1" perf-solo && return 1
     has "$1" mutants && return 0
-    has "$1" gpu && has "$1" ARM64 && has "$1" docker && return 0
+    has "$1" gpu && has "$1" arm64 && has "$1" docker && return 0
     return 1
 }
 table() { # table <workflow>
@@ -47,6 +48,12 @@ table() { # table <workflow>
 1|[self-hosted, Linux, X64, gpu, docker]
 1|[self-hosted, Linux, ARM64, gpu]
 1|[self-hosted, Linux, ARM64, docker]
+1|[self-hosted, Linux, ARM64, gpu, docker, Intel]
+1|[self-hosted, Linux, ARM64, gpu, docker, CLEAN-ROOM]
+1|[self-hosted, Linux, ARM64, gpu, docker, Perf-Solo]
+0|[self-hosted, Linux, ARM64, GPU, Docker]
+1|[self-hosted, Linux, X64, not-mutants]
+1|[self-hosted, Linux, ARM64, gpu-less, docker]
 1|[self-hosted, Linux, X64, mutants-intel]
 1|
 POOLS
