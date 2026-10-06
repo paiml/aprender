@@ -154,7 +154,7 @@ impl InstructTrainer {
 
     /// Run the full training loop.
     pub fn train(&mut self) -> InstructTrainResult {
-        use crate::optim::{LRScheduler, WarmupCosineDecayLR};
+        use crate::optim::WarmupCosineDecayLR;
 
         let total_start = std::time::Instant::now();
         let base_lr = self.pipeline.learning_rate();
@@ -191,39 +191,8 @@ impl InstructTrainer {
             let train_prepared = self.prepare_samples(&self.train_data);
 
             // ── Train ──
-            let mut epoch_loss = 0.0f32;
-            let mut epoch_tokens = 0usize;
-            let n_steps = train_prepared.len();
-
-            // Per-step progress so a slow CPU epoch does not look like a frozen
-            // hang. Low-noise: emit on every 10th step, on the final step, and
-            // at least once every ~10s. Pure stderr logging — the training math
-            // (loss/token accumulation, scheduler) is unchanged.
-            let mut last_step_log = std::time::Instant::now();
-
-            for (step, sample) in train_prepared.iter().enumerate() {
-                let lr = scheduler.get_lr();
-                self.pipeline.set_learning_rate(lr);
-
-                let result = self.pipeline.train_step(&sample.prompt_ids, &sample.response_ids);
-                epoch_loss += result.loss * result.num_response_tokens as f32;
-                epoch_tokens += result.num_response_tokens;
-                scheduler.step();
-
-                let is_last_step = step + 1 == n_steps;
-                if (step + 1) % 10 == 0 || is_last_step || last_step_log.elapsed().as_secs() >= 10 {
-                    eprintln!(
-                        "  Epoch {}/{} step {}/{}: loss={:.4} lr={:.2e}",
-                        epoch + 1,
-                        self.config.epochs,
-                        step + 1,
-                        n_steps,
-                        result.loss,
-                        lr,
-                    );
-                    last_step_log = std::time::Instant::now();
-                }
-            }
+            let (epoch_loss, epoch_tokens) =
+                self.train_epoch_steps(&train_prepared, &mut scheduler, epoch);
 
             let train_loss = if epoch_tokens > 0 { epoch_loss / epoch_tokens as f32 } else { 0.0 };
 
@@ -322,6 +291,52 @@ impl InstructTrainer {
     }
 
     /// Prepare samples by tokenizing prompt and response.
+    /// One epoch's training steps over `train_prepared`, stepping `scheduler` once
+    /// per sample. Returns the token-weighted loss sum and the response-token count.
+    fn train_epoch_steps(
+        &mut self,
+        train_prepared: &[PreparedSample],
+        scheduler: &mut crate::optim::WarmupCosineDecayLR,
+        epoch: usize,
+    ) -> (f32, usize) {
+        use crate::optim::LRScheduler;
+
+        let mut epoch_loss = 0.0f32;
+        let mut epoch_tokens = 0usize;
+        let n_steps = train_prepared.len();
+
+        // Per-step progress so a slow CPU epoch does not look like a frozen
+        // hang. Low-noise: emit on every 10th step, on the final step, and
+        // at least once every ~10s. Pure stderr logging — the training math
+        // (loss/token accumulation, scheduler) is unchanged.
+        let mut last_step_log = std::time::Instant::now();
+
+        for (step, sample) in train_prepared.iter().enumerate() {
+            let lr = scheduler.get_lr();
+            self.pipeline.set_learning_rate(lr);
+
+            let result = self.pipeline.train_step(&sample.prompt_ids, &sample.response_ids);
+            epoch_loss += result.loss * result.num_response_tokens as f32;
+            epoch_tokens += result.num_response_tokens;
+            scheduler.step();
+
+            let is_last_step = step + 1 == n_steps;
+            if (step + 1) % 10 == 0 || is_last_step || last_step_log.elapsed().as_secs() >= 10 {
+                eprintln!(
+                    "  Epoch {}/{} step {}/{}: loss={:.4} lr={:.2e}",
+                    epoch + 1,
+                    self.config.epochs,
+                    step + 1,
+                    n_steps,
+                    result.loss,
+                    lr,
+                );
+                last_step_log = std::time::Instant::now();
+            }
+        }
+        (epoch_loss, epoch_tokens)
+    }
+
     fn prepare_samples(&self, samples: &[InstructSample]) -> Vec<PreparedSample> {
         samples
             .iter()
