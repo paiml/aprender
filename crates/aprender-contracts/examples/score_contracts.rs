@@ -241,11 +241,7 @@ fn print_grade_distribution(scores: &[ContractScore]) {
     println!("  Grade Distribution ({} contracts):\n", scores.len());
     for grade in &["A", "B", "C", "D", "F"] {
         let count = grade_counts.get(grade).copied().unwrap_or(0);
-        let bar_len = if max_count > 0 {
-            (count * bar_width) / max_count
-        } else {
-            0
-        };
+        let bar_len = (count * bar_width).checked_div(max_count).unwrap_or(0);
         let bar: String = "#".repeat(bar_len);
         let pct = (count as f64 / scores.len() as f64) * 100.0;
         println!(
