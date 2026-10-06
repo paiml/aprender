@@ -32,8 +32,10 @@ cd "$(dirname "$0")/.." || exit 1
 LIB="scripts/lib_story_pmat.sh"
 STORY="scripts/qwen-story.sh"
 # The awk FALSIFY-QWEN-STORY-004 runs: prints how many of beats 1-8 end with their
-# own story_hunt N, or 0 when any story_hunt call is elsewhere, re-indented or repeated.
-STORY_HUNT_BINDING='/^beat[1-8]_[a-z_]+[(][)] *[{]/ { b = substr($0, 5, 1); last = ""; next }
+# own story_hunt N, or 0 when any story_hunt call is elsewhere, re-indented or repeated,
+# or when a beatN_ function is defined twice or in another form (bash runs the last definition).
+STORY_HUNT_BINDING='/^beat[1-8]_[a-z_]+[(][)] *[{]/ { b = substr($0, 5, 1); if (def[b]++) bad = 1; last = ""; next }
+/^[[:space:]]*[^#[:space:]]/ && /(^|[^[:alnum:]_])(function[[:space:]]+beat[1-8]_|beat[1-8]_[[:alnum:]_]*[[:space:]]*[(][[:space:]]*[)])/ { bad = 1 }
 /^}/ { if (b != "" && last == "  story_hunt " b) ok[b] = 1; b = ""; next }
 $1 == "story_hunt" && ($0 != "  story_hunt " b || seen[b]++) { bad = 1 }
 /^[[:space:]]*[^#[:space:]]/ { last = $0 }
@@ -292,6 +294,12 @@ want "qwen-story.sh calls story_hunt 1..8 once each, in beat order" "1 2 3 4 5 6
 # runs the same awk.
 want "each beatN_*() ends with story_hunt N, and no hunt sits elsewhere" "8" \
   "$(awk "$STORY_HUNT_BINDING" "$STORY")"
+# Bash runs the LAST definition of a name, so a second beatN_ function, in any
+# form and anywhere in the file, is a beat whose hunt may never run: each must read 0.
+for c in 'beat3_explore() {|  :|}' 'function beat3_explore {|  :|}' 'beat3_explore () {|  :|}' 'beat3_other() {|  :|}' '  beat3_explore() { :; }'; do
+  { printf '%s\n' "$c" | tr '|' '\n'; cat "$STORY"; } > "$TMP/story-dup"
+  want "a second beat3 definition ($c) reads 0" "0" "$(awk "$STORY_HUNT_BINDING" "$TMP/story-dup")"
+done
 want "qwen-story.sh names no hunt path itself" "" "$(grep -n -E '^[[:space:]]*pmat_hunt ' "$STORY")"
 : > "$FAILLOG"
 story_hunt 9 >/dev/null 2>&1; rc=$?

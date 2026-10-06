@@ -108,7 +108,7 @@ falsification_tests:
   - id: FALSIFY-QWEN-STORY-004
     rule: "PMAT audit is wired per beat"
     prediction: "Each beatN_*() function ends with story_hunt N, its line of the shared STORY_HUNTS table (#4875), and no story_hunt sits in another function"
-    test: "[ \"$(awk '/^beat[1-8]_[a-z_]+[(][)] *[{]/ { b = substr($0, 5, 1); last = \"\"; next } /^}/ { if (b != \"\" && last == \"  story_hunt \" b) ok[b] = 1; b = \"\"; next } $1 == \"story_hunt\" && ($0 != \"  story_hunt \" b || seen[b]++) { bad = 1 } /^[[:space:]]*[^#[:space:]]/ { last = $0 } END { for (i = 1; i <= 8; i++) n += ok[i]; print (bad ? 0 : n) }' scripts/qwen-story.sh)\" = '8' ]"
+    test: "[ \"$(awk '/^beat[1-8]_[a-z_]+[(][)] *[{]/ { b = substr($0, 5, 1); if (def[b]++) bad = 1; last = \"\"; next } /^[[:space:]]*[^#[:space:]]/ && /(^|[^[:alnum:]_])(function[[:space:]]+beat[1-8]_|beat[1-8]_[[:alnum:]_]*[[:space:]]*[(][[:space:]]*[)])/ { bad = 1 } /^}/ { if (b != \"\" && last == \"  story_hunt \" b) ok[b] = 1; b = \"\"; next } $1 == \"story_hunt\" && ($0 != \"  story_hunt \" b || seen[b]++) { bad = 1 } /^[[:space:]]*[^#[:space:]]/ { last = $0 } END { for (i = 1; i <= 8; i++) n += ok[i]; print (bad ? 0 : n) }' scripts/qwen-story.sh)\" = '8' ]"
     if_fails: "Bug-hunting layer disconnected from the story"
 
   - id: FALSIFY-QWEN-STORY-005

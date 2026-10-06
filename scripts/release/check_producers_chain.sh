@@ -136,9 +136,11 @@ judge_file() {
         }
         { L = $0 }
         # on: block
-        /^["\047]?on["\047]?[[:space:]]*:/ && !inon { if (bare(nc(L)) == "") { inon = 1; next }   # an inline on: naming workflow_run is unreadable
+        /^["\047]?on["\047]?[[:space:]]*:/ && !inon { if (bare(nc(L)) == "") { inon = 1; oi = -1; next }   # an inline on: naming workflow_run is unreadable
             if (L ~ /workflow_run/) wseen = 1 }   # no entry follows, so it is unreadable
         inon && live(L) && ind(L) == 0 { inon = 0; wr = 0 }
+        inon && live(L) && oi < 0 { oi = ind(L) }   # the indent of the keys under on:
+        inon && live(L) && oi != 2 { if (L ~ /workflow_run/) wseen = 1; if (L ~ /schedule/) sched = 1; next }   # keys at another indent: GitHub reads them, this file does not (no entry, so unreadable)
         inon && live(L) {
             if (L ~ /^  ["\047]?schedule["\047]?[[:space:]]*:/) sched = 1   # "schedule": is the same key to GitHub
             if (inwf && L ~ /^    +- /) { x = L; sub(/^ *- */, "", x); W[++nw] = ent(x); next }   # a block list item
@@ -321,6 +323,8 @@ m_pick_no_at()    { changed nightly-pick.yml '/^ *at="\$(gh api /d'; }
 m_pick_at_cmt()   { changed nightly-pick.yml 's/^\( *\)at="\$(gh api /\1# at="$(gh api /'; }
 m_pick_2nd_call() { changed nightly-pick.yml 's/^\( *\)rc=0$/\1n2="$(bash scripts\/release\/nightly_pick.sh night)"\n\1rc=0/'; }
 m_pick_cmt_ok()   { changed nightly-pick.yml 's/^\( *\)rc=0$/\1# was: night="$(bash scripts\/release\/nightly_pick.sh night)"\n\1rc=0/'; }
+m_pick_night_cmt() { changed nightly-pick.yml 's/^\( *\)night="\$(bash /\1# night="$(bash /'; }
+m_pick_night_in_line() { changed nightly-pick.yml 's/^\( *\)rc=0$/\1: \&\& night="$(bash scripts\/release\/nightly_pick.sh night --at "$at")"\n\1rc=0/'; }
 m_pick_2nd_big()  { # a second live night call ahead of 1.4 MB of exact ones: a pipe into grep -q loses it under pipefail (in live code, check_no_pipe_into_grep_q.sh catches that form)
     awk -v l="          $P7_NIGHT" 'BEGIN { for (i = 0; i < 20000; i++) print l }' > "$TMP_ST/p7fill"
     m_pick_2nd_call && changed nightly-pick.yml '/^ *rc=0$/r '"$TMP_ST/p7fill"
@@ -354,6 +358,8 @@ m_hop_unl_two()   { { printf 'name: Extra\non:\n  workflow_run:\n    workflows: 
 wr_extra()        { printf 'name: Extra\non:\n  workflow_run:\n    workflows:%s\n    types: [completed]\n    branches: [main]\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n' "$1" > extra.yml; }
 m_unl_raw()       { printf 'name: Extra\non:%s\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n' "$1" > extra.yml; }
 m_hop_block()     { changed qwen-hunt-nightly.yml 's/^    workflows: \["Coverage Nightly"\]$/    workflows:\n      - "Coverage Nightly"   # the upstream/'; }
+m_on_indent4()    { changed nightly.yml '/^on:/,/^[a-z]/{/^  /s/^/  /}'; }
+m_sched_indent4() { m_on_indent4 && changed nightly.yml 's/^on:$/on:\n    schedule:\n      - cron: "0 1 * * *"/'; }
 m_two_in_block()  { changed nightly.yml 's/^    workflows: \["Nightly pick"\]$/    workflows:\n      - "Nightly pick"\n      - CI/'; }
 m_no_cstep()      { changed toolchain-ceiling.yml '/- name: Measure the night.s C, not main.s head (T44)/,/nightly_c_checkout.sh/d'; }
 m_cstep_or()      { changed install-script.yml "0,/if: github.event_name == 'workflow_run'\$/s//if: github.event_name == 'workflow_run' || true/"; }
@@ -413,6 +419,8 @@ self_test() {
     row p7_pick_created_at_comment  1 'nightly-pick.yml: P7'                   -- m_pick_at_cmt
     row p7_pick_second_night_call   1 'nightly-pick.yml: P7'                   -- m_pick_2nd_call
     row p7_pick_second_call_big     1 'nightly-pick.yml: P7'                   -- m_pick_2nd_big
+    row p7_pick_night_commented     1 'nightly-pick.yml: P7'                   -- m_pick_night_cmt
+    row p7_pick_night_inside_line   1 'nightly-pick.yml: P7'                   -- m_pick_night_in_line
     row p7_pick_old_call_in_comment 0 'PASS'                                   -- m_pick_cmt_ok
     row p2_other_workflow           1 'book.yml: P2'                           -- m_chain_other
     row p2_two_workflows            1 'book.yml: P2'                           -- m_chain_two
@@ -494,6 +502,9 @@ self_test() {
     row p2_unlisted_folded_scalar   1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- wr_extra $' >\n      Nightly pick'
     row p2_unlisted_nested_list     1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- wr_extra ' [["Nightly pick"]]'
     row p2_unlisted_block_continued 1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- wr_extra $'\n      - Nightly\n        pick'
+    row p2_unlisted_on_indent4      1 'extra.yml: P2 a workflow_run whose workflows: entries cannot be read' -- m_unl_raw $'\n    workflow_run:\n      workflows: ["Nightly pick"]\n      types: [completed]\n      branches: [main]'
+    row p2_listed_on_indent4        1 'nightly.yml: P2 a workflow_run whose workflows: entries cannot be read' -- m_on_indent4
+    row p1_schedule_on_indent4      1 'nightly.yml: P1 still has a schedule'   -- m_sched_indent4
     row unlisted_other_chain_ok     0 'PASS' -- wr_extra ' [CI, "Release readiness"]'
     row hop_block_single_chained    0 'ok    qwen-hunt-nightly.yml: chained from "Coverage Nightly"' -- m_hop_block
     row p2_listed_block_two_entries 1 'nightly.yml: P2 no workflow_run on ["Nightly pick"]' -- m_two_in_block
@@ -570,7 +581,11 @@ m65_inline_on_ok	s/if (L ~ \/workflow_run\/) wseen = 1 }/if (0) wseen = 1 }/
 m67_block_non_item_ok	s/if (inwf \&\& ind(L) > 4) { wbad = 1; next }/if (0) { }/
 m68_bad_entry_ok	s/) wbad = 1; return s }/) ; return s }/
 m69_multi_entry_chains	s/cw = (nw == 1 \&\& /cw = (nw >= 1 \&\& /
-m70_scalar_form_read	/a form this does not read adds no entry/s/if (v ~ [^)]*)/if (0)/'
+m70_scalar_form_read	/a form this does not read adds no entry/s/if (v ~ [^)]*)/if (0)/
+m71_on_indent_any_ok	s/inon \&\& live(L) \&\& oi != 2 {/inon \&\& 0 {/
+m72_on_indent_first_line_unread	s/oi < 0 { oi = ind(L) }/oi < 0 { oi = 2 }/
+m74_on_indent_schedule_unseen	s/; if (L ~ \/schedule\/) sched = 1; next }/; next }/
+m76_p7_calls_not_exact	s/! hasl "\$calls" -v -x -F -e/! hasl "$calls" -v -F -e/'
 mutants() {
     local tmp name expr killed=0 total=0 errors=0 out cut reds
     cut="$(grep -n -m1 -e "^# -* the case table" "$SCRIPT_PATH" | cut -d: -f1)"
