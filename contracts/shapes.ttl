@@ -1247,6 +1247,7 @@
 <https://ont.paiml.dev/v1alpha1/shape/claude-md> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/llm/LlmContext> ;
     sh:closed true ;
+    sh:ignoredProperties ( <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ) ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/llm/section> ;
         sh:minCount 0 ;
@@ -1286,6 +1287,7 @@
 <https://ont.paiml.dev/v1alpha1/shape/csv-train> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/csv/Dataset> ;
     sh:closed true ;
+    sh:ignoredProperties ( <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ) ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/csv/column> ;
         sh:minCount 3 ;
@@ -1477,7 +1479,7 @@
 <https://ont.paiml.dev/v1alpha1/shape/model-setfit-slice> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/model/AprModel> ;
     sh:closed true ;
-    sh:ignoredProperties ( <https://ont.paiml.dev/v1alpha1/model/file> <https://ont.paiml.dev/v1alpha1/model/contract> ) ;
+    sh:ignoredProperties ( <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/file> <https://ont.paiml.dev/v1alpha1/model/contract> ) ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/model/format> ;
         sh:in ( "apr" ) ;
@@ -1718,6 +1720,7 @@
 <https://ont.paiml.dev/v1alpha1/shape/parity-receipt-complete> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/parity/ParityReceipt> ;
     sh:closed true ;
+    sh:ignoredProperties ( <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ) ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/parity/file> ;
         sh:minCount 1 ;
@@ -1824,6 +1827,7 @@
 <https://ont.paiml.dev/v1alpha1/shape/readme-root> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/readme/Readme> ;
     sh:closed true ;
+    sh:ignoredProperties ( <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ) ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/readme/schemaVersion> ;
         sh:minCount 1 ;
@@ -1855,6 +1859,7 @@
 <https://ont.paiml.dev/v1alpha1/shape/refusal-receipt-v1> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/refusal/Refusal> ;
     sh:closed true ;
+    sh:ignoredProperties ( <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ) ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/refusal/verb> ;
         sh:minCount 1 ;
