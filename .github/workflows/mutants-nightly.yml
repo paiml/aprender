@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   mutants:
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: [self-hosted, Linux, X64, mutants] # C100: off the intel pool (clean-room); guard: scripts/check_mutants_pool.sh
     timeout-minutes: 360
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
@@ -87,6 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm \
+            --memory=16g --memory-swap=16g \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
             -e MUTANTS_JOBS \

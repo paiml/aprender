@@ -1,0 +1,170 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_not_measurable",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity finds no source file with an analyzable extension in the changed shell guards, so complexity_delta is empty because nothing was measured, not because it is zero."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "scripts/check_mutants_memory_cap.sh"
+            ],
+            "exit_code": 5,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "A reader could take an empty complexity_delta as a measured zero; for a shell diff it is unmeasured.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "memcap_survivors",
+          "level": "note",
+          "message": {
+            "text": "Guard mutation sweep: 4 of 9 mutants of scripts/check_mutants_memory_cap.sh survive its self-test (mc == 1, sc == 1, m != \"\" relaxed, and the step-boundary flush removed). Each is a redundant check on the current self-test rows, not a lost rejection of a real uncapped run, but no row pins it. Carried by #4644; the fold does not edit it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "mutation-sweep: copy the guard, apply one edit, run --self-test, killed iff non-zero"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "A duplicated --memory=16g flag, or two docker runs in one step, would be judged by rules no self-test row exercises.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "dup_hits_explained",
+          "level": "note",
+          "message": {
+            "text": "Duplication scan: 4 hits. Two are a Rust identifier pool_ok in an unrelated example (crates/aprender-serve/examples/performance_parity.rs), a lexical name collision. Two are the same two ladder scripts on the sibling branch origin/PMAT-4578-ev9-ladder-required, the same ticket as #4710."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "the four duplication_hits records read in full",
+            "failure_scenario": "A real copy of the guard elsewhere would be missed if the hits were waved through unread; each was opened and attributed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "quorum_rounds_ship",
+          "level": "note",
+          "message": {
+            "text": "Quorum (degraded: same-family) on the three-dot fold diff, four rounds. Rounds 1 and 2: both lanes SHIP-TO-BRANCH. Round 3: sonnet SHIP-TO-BRANCH, haiku FIX-FIRST because scripts/check_mutants_pool.sh was run by no CI step; fixed in 6e8e7af11c. Round 4 at this head: both lanes SHIP-TO-BRANCH. Planted contrary question in every round (does the fold drop the memory cap because #4643 edits runs-on in the same hunk?): every lane answered false, citing .github/workflows/mutants-nightly.yml runs-on and --memory on separate lines."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "the two Claude Code lane outputs (claude-sonnet-5-5, claude-haiku-4-5-20251001) of each round, read in full by the author",
+            "failure_scenario": "A finding left unfixed would ship; the one FIX-FIRST finding was fixed and re-reviewed before this head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fold_wiring_fixes",
+          "level": "note",
+          "message": {
+            "text": "Two folder commits that are not merges. 0d76a4d8a8 moves the memory-cap guard (#4644) from a bare step of the mutants job into guard-tree-steps with setsid --wait and its --self-test: check_guard_steps_isolated and check_guard_steps_run_all were RED (rc 1) on the fold before it and GREEN (rc 0) after. 6e8e7af11c wires the mutants-pool guard (#4643) the same way: live GREEN on this tree, RED (rc 1) with the nightly runs-on reverted to the clean-room pool."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_guard_steps_isolated.sh"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "Without these commits the fold turns guard-tree red, and a revert of the nightly pool would pass CI.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ladder_pr_skip_is_ruling",
+          "level": "note",
+          "message": {
+            "text": "Sonnet lane round 4: #4710 skips the leanchecker re-check on pull_request and merge_group runs (ruling C312); a push to main still runs it in full. A deliberate scope change carried by #4710, not a fold defect."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "sonnet lane round 4 finding 5, checked against the ladder steps of ci/sections.yml",
+            "failure_scenario": "A Lean regression introduced by a PR is caught at the push to main instead of on the PR.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "real_run_red_green",
+          "level": "note",
+          "message": {
+            "text": "Real cargo-mutants run with CI=1 on a 2-mutant three-dot diff in aprender-contracts, private target dir: without the flag the unmutated baseline FAILED (no BASE to compare with) and the gate went RED tested 0 of 2; with the flag the baseline is ok, 2 tested (1 caught, 1 unviable), missed=0 timeout=0, rc 0."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "the two gate runs recorded in the PR body, base script and head script on the same diff and host",
+            "failure_scenario": "If the flag did not reach the run call, the baseline would still fail and the gate would keep reporting 0 tested on any contracts-crate diff.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutant_rows_killed",
+          "level": "note",
+          "message": {
+            "text": "Not cargo-mutants: the self-test case table runs 33 mutants of the gate, including the new copy-vcs-dropped-on-run, and all 33 are killed. Dropping the flag from the run call turns 19 rows FAIL."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "bash scripts/mutants_diff_gate.sh --self-test at this head: 33 ok mutant lines, 0 FAIL, PASS; and the flag-drop run recorded in the PR body",
+            "failure_scenario": "If no row could fail when the flag is dropped, a later edit removing it would pass the self-test.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
