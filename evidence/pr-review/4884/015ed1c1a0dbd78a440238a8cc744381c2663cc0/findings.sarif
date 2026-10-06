@@ -1,0 +1,184 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "selftest_timeout_cannot_read_as_kill",
+          "level": "note",
+          "message": {
+            "text": "The PUSH_REUSE_RUN_TIMEOUT change cannot make a mutant read as killed or a control pass vacuously: a control copy that exits 124 stops the self-test with exit 1 (not_measured), a mutant that exits 124 is printed ERROR and skipped before the kill count so killed < total and the final test fails, and a timeout is never rc 0. The cap only ever converts a hang into a refusal."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_ci_push_reuse.sh:65",
+            "excerpt": "      if [ \"$rc\" -eq 124 ]; then echo \"  ERROR    ${subj##*/} $m (timed out after ${RUN_TIMEOUT}s)\"; continue; fi",
+            "excerpt_sha256": "63b843e2a6e793de469da00dbfe5fc5c801d5eb6d99bfd2a7aea76261af4d489",
+            "failure_scenario": "A mutant whose table hangs would count as killed if rc 124 fell through to the nonzero branch; it does not, because the 124 test precedes it and continues.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "nonnumeric_timeout_rc_counts_as_kill_but_control_catches",
+          "level": "note",
+          "message": {
+            "text": "If PUSH_REUSE_RUN_TIMEOUT were non-numeric, timeout itself exits 125 and every run would be nonzero, which the mutant branch counts as killed. The unmutated-copy control runs first with the same value, sees rc 125 and stops the self-test with exit 1 (not_measured), so no mutant is reached. Syntax-broken mutants reading as kills (rc 1-2) is a pre-existing property, not introduced here."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_ci_push_reuse.sh:57",
+            "excerpt": "    [ \"$rc\" -ne 124 ] || { echo \"check_ci_push_reuse: the table timed out after ${RUN_TIMEOUT}s on an unmutated copy of ${subj##*/} - mutants not_measured\"; rm -rf \"${work:?}\"; exit 1; }",
+            "excerpt_sha256": "ffcc5a7f3d4b2c17c7b5af85029edc16b7536ec7a2d847f482f83d21a43585f5",
+            "failure_scenario": "A bad timeout value turns every control red before any mutant runs; no mutant can be counted killed under it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "push_reuse_drops_x86_main_side_effects",
+          "level": "note",
+          "message": {
+            "text": "x86-main also uploads coverage and generates SLSA provenance for the commit it ran on. When a push to main reuses the queue run, x86-main is skipped, so the commit on main gets neither from its own push run; they exist only on the PR head run and the queue run."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": ".github/workflows/ci.yml:264",
+            "excerpt": "      - name: Generate SLSA provenance",
+            "excerpt_sha256": "56e851700712df5d2900e4fec6467d1426036fe69231f34e398e8c96384edf19",
+            "failure_scenario": "A consumer that looks for the SLSA attestation or the codecov upload keyed to a main commit by its push run finds none after a reuse, while ci / gate is green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "two_refusals_not_mutation_covered",
+          "level": "note",
+          "message": {
+            "text": "Two refusal branches in scripts/ci_mg_reuse.sh carry no R-PUSH marker (the absent-commit refusal in decide_push and the no-merge_group-run refusal in resolve_push), so the self-test does not mutate them; each is shadowed by a later refusal."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from scripts/ci_mg_reuse.sh in the diff: two refuse lines end without a # R-PUSH marker and a downstream refusal still catches each.",
+            "failure_scenario": "Deleting either refusal leaves the 29-mutant table green; the effect is a weaker table, not a wrong reuse.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_selftest_29_of_29",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_ci_push_reuse.sh --self-test at the default cap: mutants 29/29 killed, no ERROR and no SURVIVED line, controls green."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_ci_push_reuse.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a7b17513f144a09021171c2b2433b59ca4b9c1d1b4083c90b65fa0a4043e5ca0",
+            "failure_scenario": "A surviving or timed-out mutant would print SURVIVED or ERROR and fail the run; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_selftest_timeout_refuses",
+          "level": "note",
+          "message": {
+            "text": "PUSH_REUSE_RUN_TIMEOUT=5 scripts/check_ci_push_reuse.sh --self-test exits 1 and prints that the table timed out after 5s on an unmutated copy, mutants not_measured. The nonzero exit_code 1 is the expected result."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "PUSH_REUSE_RUN_TIMEOUT=5",
+              "bash",
+              "scripts/check_ci_push_reuse.sh",
+              "--self-test"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "b09ef693805e0750d4d0ba0a64e735e677a21038054098a5f3ee4271e326e49f",
+            "failure_scenario": "A 5 s cap reading as 29/29 killed would mean timeouts count as kills; it refused instead.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ci_mg_reuse_selftest",
+          "level": "note",
+          "message": {
+            "text": "scripts/ci_mg_reuse.sh --self-test: 78 passed, 0 failed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/ci_mg_reuse.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0e8429bcc9ac23e0bac43cf867d8cb8ddc133849aa00cf7727370cb9d574f42a",
+            "failure_scenario": "A red row would mean the verdict block accepts a push reuse it should refuse; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "push_reuse_case_table",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_ci_push_reuse.sh case table is green."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_ci_push_reuse.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c4063ed2246068cc3f179b66283aeefcb624ded420a8a24b4692c3ef3763d2ab",
+            "failure_scenario": "A red P or R row would mean decide-push reuses on an unproven key; none did.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

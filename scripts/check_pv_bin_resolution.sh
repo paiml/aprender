@@ -734,6 +734,132 @@ row_build_engaged() {
 }
 row_build_engaged
 
+printf '\n--- a build on the same target dir, mid-resolution (#4768) ---\n'
+
+# The guard sections of one CI job share a target dir, and cargo relinks pv
+# whenever another section's build asks for it. Two shapes of that race, both
+# run with cargo's own build lock (`<profile>/.cargo-lock`, flock(2)) the way
+# cargo holds it. On the resolver before #4768 each one failed a GOOD binary,
+# rc=1: 4r as the CI text "STALE pv BINARY ... reports : (empty)", 4s as
+# "no pv binary". Fixed, both resolve a snapshot taken under that lock.
+#
+# 4r: the binary is rewritten NON-ATOMICALLY right after the resolver's first
+#     probe -- unlinked, recreated empty, filled two seconds later. An empty
+#     executable runs as an empty shell script: rc 0, no output.
+# 4s: the uplift is already under way when the resolver looks: the lock is
+#     held, the name is absent, and it comes back two seconds later.
+row_race() {
+    rr_name="$1"
+    rr_when="$2"
+    if ! command -v flock >/dev/null 2>&1; then
+        bad "$rr_name -> flock(1) is missing, so this race is NOT MEASURED (a skip is not a pass)"
+        return 0
+    fi
+    rr_dir=$(safe_tmpdir) || {
+        bad "mktemp -d gave an unusable path"
+        return 0
+    }
+    make_fixture "$rr_dir" good none self none
+    rr_pv="$rr_dir/target/debug/pv"
+    rr_lock="$rr_dir/target/debug/.cargo-lock"
+    : > "$rr_lock"
+    stage_pv "$rr_dir/stash/pv" good none "$rr_dir"
+    case "$rr_when" in
+        probe)
+            # The binary does the rewrite itself on its first run, so the
+            # window opens between the resolver's probes, never by timing.
+            {
+                printf '#!/usr/bin/env bash\n'
+                printf 'if [ ! -e "%s/raced" ]; then\n' "$rr_dir"
+                printf '    : > "%s/raced"\n' "$rr_dir"
+                printf '    exec 9< "%s"\n' "$rr_lock"
+                printf '    flock -x 9\n'
+                printf '    unlink "%s"\n' "$rr_pv"
+                printf '    : > "%s"\n' "$rr_pv"
+                printf '    chmod +x "%s"\n' "$rr_pv"
+                printf '    ( sleep 2; cat "%s/stash/pv" > "%s" ) < /dev/null > /dev/null 2>&1 &\n' "$rr_dir" "$rr_pv"
+                printf 'fi\n'
+                printf 'printf "pv %s %%s\\n" "$(cat "%s/stash/ident")"\n' "$FIXTURE_VERSION" "$rr_dir"
+            } > "$rr_dir/racer"
+            printf '%s\n' "$PV_IDENTITY" > "$rr_dir/stash/ident"
+            chmod +x "$rr_dir/racer"
+            cat "$rr_dir/racer" > "$rr_pv"
+            ;;
+        held)
+            # Taken here, synchronously, and inherited by the background
+            # child: the lock is held before the resolver starts.
+            {
+                flock -x 9
+                unlink "$rr_pv"
+                ( sleep 2; cp -p "$rr_dir/stash/pv" "$rr_pv.new"; mv -f "$rr_pv.new" "$rr_pv" ) < /dev/null > /dev/null 2>&1 &
+            } 9< "$rr_lock"
+            ;;
+    esac
+    rr_rc=0
+    rr_got=$(resolve_in "$rr_dir" "$rr_dir/stderr.log") || rr_rc=$?
+    check_outcome "$rr_name" debug '' "$rr_got" "$rr_rc" "$rr_dir/stderr.log"
+    case "$rr_got" in
+        "$rr_dir/target/.pv-snapshot/"*/debug/pv)
+            if [ "$rr_when" = probe ] && [ -e "$rr_dir/raced" ] && [ ! "$rr_got" -ef "$rr_pv" ]; then
+                note "$rr_name -> the gate ran the snapshot, not the name the build rewrote"
+            elif [ "$rr_when" = held ]; then
+                note "$rr_name -> resolved only after the build let go of the lock"
+            else
+                bad "$rr_name -> the race never opened ($rr_got); this row proved nothing"
+            fi
+            ;;
+        *) bad "$rr_name -> [$rr_got] is not a snapshot under the target dir's .pv-snapshot/" ;;
+    esac
+    # The build's lock, taken exclusively, is free only once the background
+    # writer has finished, so nothing is left writing into the dir we delete.
+    flock -x "$rr_lock" true
+    rm -rf "${rr_dir:?refusing to rm an empty path}"
+}
+row_race '4r pv rewritten non-atomically between two probes' probe
+row_race '4s pv mid-uplift, build lock held, when resolution starts' held
+
+# 4t: pv and pv-sat are separate bins, and a change to pv-sat alone relinks
+#     pv-sat and leaves pv's inode where it was. The gate finds pv-sat beside
+#     pv, so a snapshot reused on pv's inode alone would hand it the OLD
+#     pv-sat. Resolve, relink pv-sat only, resolve again: the second pv-sat
+#     must be the new one.
+row_sat_relinked() {
+    rs_name='4t pv-sat relinked alone, pv unchanged'
+    if ! command -v flock >/dev/null 2>&1; then
+        bad "$rs_name -> flock(1) is missing, so this row is NOT MEASURED (a skip is not a pass)"
+        return 0
+    fi
+    rs_dir=$(safe_tmpdir) || {
+        bad "mktemp -d gave an unusable path"
+        return 0
+    }
+    make_fixture "$rs_dir" good none self none
+    rs_prof="$rs_dir/target/debug"
+    : > "$rs_prof/.cargo-lock"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$rs_prof/pv-sat"
+    chmod +x "$rs_prof/pv-sat"
+    rs_rc=0
+    rs_got1=$(resolve_in "$rs_dir" "$rs_dir/stderr.log") || rs_rc=$?
+    # The relink: a new inode under the same name, the way cargo does it.
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$rs_prof/pv-sat.new"
+    chmod +x "$rs_prof/pv-sat.new"
+    mv -f "$rs_prof/pv-sat.new" "$rs_prof/pv-sat"
+    rs_got2=$(resolve_in "$rs_dir" "$rs_dir/stderr2.log") || rs_rc=$?
+    if [ "$rs_rc" -ne 0 ] || [ -z "$rs_got1" ] || [ -z "$rs_got2" ]; then
+        bad "$rs_name -> did not resolve (rc=$rs_rc)"
+        sed 's/^/      /' "$rs_dir/stderr.log" "$rs_dir/stderr2.log" >&2
+    elif [ "${rs_got1%/pv}/pv-sat" -ef "$rs_prof/pv-sat" ]; then
+        bad "$rs_name -> the relink never happened; this row proved nothing"
+    elif [ "${rs_got2%/pv}/pv-sat" -ef "$rs_prof/pv-sat" ]; then
+        note "$rs_name -> the pv-sat beside the resolved pv is the relinked one"
+    else
+        bad "$rs_name -> [$rs_got2] sits beside a stale pv-sat"
+    fi
+    rm -rf "${rs_dir:?refusing to rm an empty path}"
+}
+row_sat_relinked
+
+
 
 printf '\n'
 if [ "$fails" -gt 0 ]; then

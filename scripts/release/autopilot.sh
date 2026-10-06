@@ -6,7 +6,7 @@
 # one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
 #   autopilot.sh <version> <bump-pr> [from-step] [to-step]
-#   steps: wait deep dogfood models tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close
+#   steps: wait deep dogfood models readiness tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
 #   T-1 'ci / deep' has no workflow on main, so `deep` runs the equivalent locally on the release commit.
@@ -30,7 +30,9 @@ if [ "${1:-}" = "--visited" ]; then
   printf '%s\n' "$ASSET_HOSTS" | tr '|' '\n' | while read -r h _; do printf 'VISITED %s release-asset\n' "$h"; done
   printf '%s\n' "$INSTALLER_HOSTS" | tr '|' '\n' | while read -r h _; do printf 'VISITED %s installer\n' "$h"; done
   mh=$(matrix_hosts); [ -n "$mh" ] || { echo "autopilot --visited: cannot read HOSTS from scripts/check_multiplatform_dogfood.sh" >&2; exit 2; }
-  for h in $mh; do if [ "$h" = "$TRAIN_HOST" ]; then printf 'VISITED %s host-receipt-local\n' "$h"; else printf 'VISITED %s host-receipt-ssh\n' "$h"; fi; done
+  for h in $mh; do
+    if [ "$h" = "$TRAIN_HOST" ]; then printf 'VISITED %s host-receipt-local\n' "$h"; else printf 'VISITED %s host-receipt-ssh\n' "$h"; fi
+  done
   exit 0
 fi
 # shellcheck source=scripts/release/lib_release_params.sh
@@ -206,6 +208,12 @@ cut_tag() {
     awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null \
         || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
+    # #4691 + #4734: coverage-nightly's receipt for $mc (or for the commit $mc is a version-only bump of)
+    # must hold COV_FLOOR BEFORE the tag. Missing, stale, unmeasured, below floor or gh failing -> no tag,
+    # nothing carried (on v0.70.1 the coverage refusal came 25 min after the tag was public).
+    bash "$REPO_ROOT/scripts/release/tag_coverage_gate.sh" --resolve "$mc" >> "$LOG" 2>&1 \
+        || die "no coverage receipt at or above COV_FLOOR for $mc (tag_coverage_gate.sh --resolve) -- no tag, nothing carried"
+    say "COVERAGE-RECEIPT $(grep -E '^ok    coverage ' "$LOG" | tail -n 1)"
     bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1 || rc=$?
     case "$rc" in
         0) say "MUST-CARRY $v: no open must-carry issue (check_milestone_cut.sh --must-carry rc=0)" ;;

@@ -398,6 +398,19 @@ jobs:
                 args+=(--pr-head "$head" --pr-head-conclusion "${concl:-none}")
               fi
               ;;
+            push)
+              # T36: the merge queue already tested this very sha. Hand its
+              # workspace-test result to the tier script, which reuses it only
+              # on a success for HEAD itself. A failed lookup is the push's own
+              # tier, as before -- never a reuse, never a red step.
+              mg=$(bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}") || mg=""
+              if [ -n "$mg" ]; then
+                mapfile -t mgargs <<<"$mg"
+                args+=("${mgargs[@]}")
+              else
+                printf 'no merge_group workspace-test result for %s: the tier is decided from the push diff\n' "${GITHUB_SHA}"
+              fi
+              ;;
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
           grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
@@ -960,11 +973,16 @@ jobs:
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the
       # check-run's conclusion read from GitHub); this step records the citation.
-      - name: "Reuse: this tree already passed workspace-test on the PR head (BSE-17)"
+      # T36: on a push the citation is instead the merge_group run that tested
+      # this very sha, so the label names what is cited for each event.
+      - name: "Reuse: this tree already passed workspace-test (BSE-17 PR head / T36 merge queue)"
         if: steps.tier.outputs.tier == 'reuse'
         run: |
           printf 'workspace-test REUSED: %s\n' "${{ steps.tier.outputs.reason }}"
-          printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}"
+          case "${{ github.event_name }}" in
+            push) printf 'cited merge_group run: %s\n' "${{ steps.tier.outputs.cite }}" ;;
+            *) printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}" ;;
+          esac
       # #3658 NONE: the tier step proved the change gives workspace-test nothing
       # to measure -- every touched path is under docs/roadmaps/ or docs/audits/
       # and present at HEAD (no Rust source, test or tree reader reads them), or
@@ -1329,6 +1347,13 @@ jobs:
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh
       - name: gate mutants rule can still go RED (#3676)
         run: setsid --wait bash scripts/check_ci_gate_mutants_rule.sh --self-test
+      # The coverage receipt's guard, for the same reason: guard_tree.sh files it
+      # as a cargo guard (a comment names `cargo llvm-cov`), but it runs the
+      # receipt producer on fixture logs and reads coverage-nightly.yml and the
+      # tracked tree, invoking no build tool. One run is its whole case table:
+      # behaviour rows, structure rows and every mutant (#4672, #4734).
+      - name: coverage receipt is sha-keyed and read only by the release gate (#4672)
+        run: setsid --wait bash scripts/check_coverage_receipt.sh
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
       # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED
@@ -1369,6 +1394,7 @@ jobs:
           bash scripts/ci_resolve_dirty.sh --selftest
           python3 scripts/lib/roadmap_merge.py --selftest
           python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
+          bash scripts/nightly_prune_release.sh --self-test   # nightly publish overflowed page one (422)
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
@@ -1403,6 +1429,20 @@ jobs:
         run: bash scripts/bump-version.sh --self-test
       - name: Every workspace is at a consistent version
         run: bash scripts/bump-version.sh --check
+      # Every cargo-mutants container is memory-capped (C137). The guard reads
+      # only workflow and section text and invokes no build tool, so it runs
+      # here, on every PR, and not as an unisolated step inside the mutants job,
+      # which `make guards-local` cannot reach.
+      - name: Every mutation container is memory-capped (C137)
+        run: setsid --wait bash scripts/check_mutants_memory_cap.sh
+      - name: memory-cap guard can still go RED (C137)
+        run: setsid --wait bash scripts/check_mutants_memory_cap.sh --self-test
+      # The nightly full mutation job runs on the mutants pool, never the
+      # clean-room pool (C108). Same reason, same place: text only.
+      - name: The nightly mutation job runs on the mutants pool (C108)
+        run: setsid --wait bash scripts/check_mutants_pool.sh
+      - name: mutants-pool guard can still go RED (C108)
+        run: setsid --wait bash scripts/check_mutants_pool.sh --self-test
       - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
         run: setsid --wait bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
       # APR-PERF-GATE-001's PRIMARY gate — Arms A/B1/B2/C/D/E and
@@ -3427,8 +3467,19 @@ jobs:
           EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" ci/sections.yml \
             | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
           [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
-          # shellcheck disable=SC2086
-          nice -n 19 bash scripts/mutants_diff_gate.sh pr.diff --features aprender-serve/cuda --gated-only \
+          # C137: this run is native (no container), so it gets the containers' cap as a user scope: 16G, no
+          # swap. A mutant's test binary reached 12.3 GB on this host. The runner service has no login
+          # session, so point systemd-run at the lingering user's runtime dir. The scope proves its own cap
+          # before running: an uncapped run fails the step, it is never measured as a pass.
+          if [ -z "${XDG_RUNTIME_DIR:-}" ] && [ -O "/run/user/$(id -u)" ]; then
+            export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          fi
+          # shellcheck disable=SC2016,SC2086
+          nice -n 19 systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0 bash -c '
+            c=$(sed -n "s/^0:://p" /proc/self/cgroup); m=$(cat "/sys/fs/cgroup$c/memory.max"); s=$(cat "/sys/fs/cgroup$c/memory.swap.max")
+            [ "$m" = 17179869184 ] && [ "$s" = 0 ] || { echo "::error::mutation scope not capped: memory.max=$m swap.max=$s"; exit 1; }
+            echo "mutation scope $c: memory.max=$m swap.max=$s"; exec "$@"' cap \
+            bash scripts/mutants_diff_gate.sh pr.diff --features aprender-serve/cuda --gated-only \
             --test-names "$t/cuda-only.txt" --cap "$MUTANTS_CAP" --jobs 1 --timeout 900 \
             --max-missed "$MUTANTS_MAX_MISSED" --out mutants-cuda-gate $EXCL
       - name: The measured set -- the gate job compares its sha with the CPU section's deferred set
@@ -3526,7 +3577,7 @@ jobs:
       - name: No font stack may be compiled into the raster path
         run: bash scripts/ci/raster-fontdb-ban.sh
 
-      # One artifact per arch carries both receipts, so the compare job's `determinism-*`
+      # One artifact per arch carries both receipts, so the compare job's
       # download sees them together. With two paths, `if-no-files-found` only fires when BOTH
       # are missing; a missing raster receipt is caught by raster-compare.sh's count instead.
       - name: Upload this host's receipts
@@ -3553,9 +3604,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # Exactly the two host receipts, determinism-X64 and determinism-ARM64. Not `determinism-*`:
+      # that also matches this job's own determinism-receipt, which an earlier attempt of the run
+      # left behind, and a re-run then compares 3 receipts and goes RED.
       - uses: actions/download-artifact@v4
         with:
-          pattern: determinism-*
+          pattern: determinism-[AX]*64
           path: receipts
           merge-multiple: true
 
@@ -3680,6 +3734,12 @@ jobs:
           echo "$ELAN_HOME/bin" >> "$GITHUB_PATH"
           echo "cache=$cache" >> "$GITHUB_OUTPUT"
 
+      - name: Planted rows -- a PR or push run skips leanchecker, the nightly runs it in full (C312)
+        # Seconds, no pv or Lean: stubs only. Runs even on a skipped ladder, so the event
+        # split below is checked on every run of this section.
+        shell: bash
+        run: bash scripts/ci/ladder_pr_skips_leanchecker.sh
+
       - name: Build the in-tree pv
         id: build
         if: ${{ steps.pre.outputs.skip != 'true' }}
@@ -3689,27 +3749,44 @@ jobs:
           cargo build --locked -p aprender-contracts-cli --bin pv
           test -x "$PV"
 
-      - name: pv discharge run (build.sh, then check --strict + comparator + leanchecker)
+      - name: pv discharge (PR, push - build + check --strict + comparator; nightly - run, adding leanchecker)
         id: discharge
         if: ${{ steps.pre.outputs.skip != 'true' }}
         shell: bash
+        # Operator ruling C312 (#4578): pull_request, merge_group and (amended 2026-10-06) push
+        # skip the leanchecker re-check (cap 3,600 s); the full `pv discharge run` is the nightly
+        # schedule, .github/workflows/provable-ladder-nightly.yml. The split and its planted rows: scripts/ci/provable_ladder_discharge.sh and
+        # scripts/ci/ladder_pr_skips_leanchecker.sh.
         # One run at a time per cache: two runs unpacking into the same .lake would race.
         # set +e: Actions runs `bash -e`, which would abort at a failing run before its rc and
         # its log tail are recorded.
+        # The runner service starts without a login session, so XDG_RUNTIME_DIR is unset and
+        # `systemd-run --user` cannot reach the user bus: pv declined the leanchecker arm on
+        # every full run (#4578). Point it at the lingering user's runtime dir when one exists;
+        # where none exists the variable stays unset and pv still declines (rc 2).
+        env:
+          EVENT: ${{ github.event_name }}
+          LOCK: ${{ steps.pre.outputs.cache }}.lock
         run: |
           set +e
-          flock "${{ steps.pre.outputs.cache }}.lock" "$PV" discharge run "$LEAN" > "$RUNNER_TEMP/discharge-run.log" 2>&1
+          if [ -z "${XDG_RUNTIME_DIR:-}" ] && [ -O "/run/user/$(id -u)" ]; then
+            export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          fi
+          echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-<unset>}"
+          LOG="$RUNNER_TEMP/discharge-run.log" bash scripts/ci/provable_ladder_discharge.sh discharge
           rc=$?
-          tail -n 40 "$RUNNER_TEMP/discharge-run.log"
-          echo "pv discharge run: rc=$rc" >> "$GITHUB_STEP_SUMMARY"
+          echo "pv discharge ($(bash scripts/ci/provable_ladder_discharge.sh mode)): rc=$rc" >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
 
       - name: summary-fresh -- the committed discharge-summary.json is what the run wrote
         # Only when the run RAN (it writes the summary on failure too). Skipped means nothing
-        # was regenerated, and a diff of an unregenerated file would pass vacuously.
+        # was regenerated, and a diff of an unregenerated file would pass vacuously. On a PR
+        # (no summary written) it checks the committed summary's tree_sha is this Lean tree.
         if: ${{ !cancelled() && (steps.discharge.outcome == 'success' || steps.discharge.outcome == 'failure') }}
         shell: bash
-        run: git diff --exit-code -- "$SUMMARY"
+        env:
+          EVENT: ${{ github.event_name }}
+        run: bash scripts/ci/provable_ladder_discharge.sh summary-fresh
 
       - name: pv lint contracts/
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
@@ -3908,6 +3985,7 @@ jobs:
             exit 0
           fi
           docker run --rm \
+            --memory=16g --memory-swap=16g \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
