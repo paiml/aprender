@@ -2286,11 +2286,10 @@ mod tests {
             Term::string("lit").to_string(),
         ];
         want.sort();
-        assert_eq!(
-            focus_nodes(&g, &s),
-            want,
-            "a once; ghost though absent; c and e never"
-        );
+        // Order is the focus enumeration's own (IRIs before literals since slice 5); the test pins the set and no repeats.
+        let mut got = focus_nodes(&g, &s);
+        got.sort();
+        assert_eq!(got, want, "a once; ghost though absent; c and e never");
         // a targetNode absent from the graph is still checked, so its minCount fires
         let m = shape("entity: {type: pv-contract}\nshape:\n  targetNode: ont:ghost\n  properties: [{path: ont:x, minCount: 1}]\n");
         let r = validate(&g, std::slice::from_ref(&m));
