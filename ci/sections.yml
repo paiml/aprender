@@ -1258,28 +1258,6 @@ jobs:
             --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
           setsid --wait bash scripts/check_pr_ont_delta.sh \
             --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt"
-      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
-      # and takes its own final probe first -- without that, a failure at
-      # step K leaves the last recorded boundary BEFORE K and the table
-      # reads clean, which is the whole failure mode being investigated.
-      #
-      # It also pulls the host journal for the job's window into the job
-      # log. That is the decisive evidence and the only evidence that
-      # expires: `_work/*/target` is deleted by HOST automation (a sibling
-      # runner's job-started hook, a systemd timer) which logs under its own
-      # tag and appears in NO GitHub log. See
-      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
-      # this exact signature.
-      #
-      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
-      # here asserts anything. The gate that can fail is the case table
-      # wired above.
-      - name: "target-watch: report (aprender#2822)"
-        if: always()
-        continue-on-error: true
-        run: |
-          bash scripts/ci_target_watch.sh probe post-job
-          bash scripts/ci_target_watch.sh report
 
   guard-tree-steps:
     # MANIFEST, never run by GitHub (`if: false`). These are guard-tree's guard steps,
@@ -1291,21 +1269,6 @@ jobs:
     if: false
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     steps:
-      # aprender#2822. Case table FIRST, per the convention above: the probe
-      # below is only worth its 0.15s if the classifier it feeds can still turn
-      # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
-      # Mutation-verified: deleting the sentinel rule, deleting the inode rule,
-      # or restoring the read-after-plant ordering bug each takes it RED.
-      #
-      # This step IS a gate and may fail the job. The probe and report steps are
-      # not and never can - a recorder that can red a required check is a
-      # liability, and #2822 is already red.
-      - name: "target-watch case table (aprender#2822)"
-        run: bash scripts/ci_target_watch.sh --self-test
-      - name: "target-watch: post-checkout"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "post-checkout"
       # ── ONE STEP, EVERY CARGO-FREE GUARD, EVERY FAILURE REPORTED ──────────
       #
       # This step replaces 53 separate `bash scripts/check_X.sh` steps. GitHub
@@ -1385,30 +1348,10 @@ jobs:
           python3 scripts/lib/roadmap_merge.py --selftest
           python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
           bash scripts/nightly_prune_release.sh --self-test   # nightly publish overflowed page one (422)
-      - name: "target-watch: before-cargo-install-bashrs"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-cargo-install-bashrs"
       # The baseline printer holds its OWN output to the same pairing rule and
       # re-derives every number the contract quotes.
       - name: Dogfood baselines must re-derive from the ledger
         run: python3 scripts/dogfood_baseline.py --check
-      - name: "target-watch: before-pv-build"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-pv-build"
-      - name: "target-watch: before-contracts-tests"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-contracts-tests"
-      - name: "target-watch: before-wasm32-build"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-wasm32-build"
-      - name: "target-watch: before-facade-compat"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-facade-compat"
       # The bump half of the same defect. `cargo set-version --workspace` cannot
       # reach an `exclude`d workspace and does not warn, so three files in
       # crates/facades/ have to ride in every bump commit. scripts/bump-version.sh
@@ -1551,27 +1494,7 @@ jobs:
       # the UNMEASURED bucket BY NAME rather than a schema error.
       - name: Receipt converter round-trips into a gate verdict
         run: python3 scripts/lib/perf_receipt.py --selftest
-      - name: "target-watch: before-profile-tests"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-profile-tests"
-      - name: "target-watch: before-model-tests-docker"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-model-tests-docker"
-      - name: "target-watch: before-book-examples"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-book-examples"
-      - name: "target-watch: before-cargo-package"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-cargo-package"
 
-      - name: "target-watch: before-cargo-deny-install"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-cargo-deny-install"
       - name: Tests must not gate on paths outside the workspace
         run: setsid --wait bash scripts/check_test_fixture_paths.sh
       - name: Fixture-path guard case table
@@ -1583,10 +1506,6 @@ jobs:
         run: setsid --wait bash scripts/check_ci_reusable_workflow_pinned.sh --self-test
       - name: ci.yml must pin sovereign-ci.yml by commit sha, not @main
         run: setsid --wait bash scripts/check_ci_reusable_workflow_pinned.sh
-      - name: "target-watch: after-last-cargo-step"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "after-last-cargo-step"
       # #2532: the guard above has a universe of crates/**/tests?/**/*.rs, which
       # structurally excludes 100% of the 324 machine-specific paths pmat found
       # in SHIPPED code -- 46 of them inside contracts/ itself. Seventeen crux
