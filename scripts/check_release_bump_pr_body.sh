@@ -183,7 +183,7 @@ run_ship() {
     mkdir -p "$d/seed/scripts/lib"
     cp -- "$LADDER_JUDGE" "$d/seed/scripts/check_model_ladder.sh"
     cp -- "$LADDER_PRODUCER" "$d/seed/scripts/model_ladder.sh"
-    for m in "$LADDER_LIB"/*.py; do [ -f "$m" ] && cp -- "$m" "$d/seed/scripts/lib/"; done
+    for m in "$LADDER_LIB"/*.py "$LADDER_LIB"/release_policy*; do [ -f "$m" ] && cp -- "$m" "$d/seed/scripts/lib/"; done
     python3 - "$LADDER_CONTRACT" "$d/seed/contracts/model-capability-ladder-v1.yaml" <<'PY' || return 2
 import sys, yaml
 inv = yaml.safe_load(open(sys.argv[1]))["ladder"]["inventory"]
@@ -356,6 +356,10 @@ cmp -s "$SUBJECT" "$TMP/mutant-drop-ignored.sh" && env_die "drop-ignored mutant 
 msg=$(row_ladder ladder-ignored-mutant "$TMP/mutant-drop-ignored.sh" ignored "are gitignored"); mrc=$?
 [ "$mrc" = 2 ] && env_die "drop-ignored mutant could not build its fixture"
 [ "$mrc" != 0 ]; row "mutant drop-ignored is killed by ladder-ignored (${msg:-survived})" "$?" "the mutant PASSED ladder-ignored -- the row does not discriminate"
+
+# prepare_bump.sh's own case table (splice + CRUX certification carry-forward). Nothing else runs it.
+bash "$SUBJECT" --self-test > "$TMP/pb-self-test.log" 2>&1; mrc=$?; msg=$(tail -n 1 "$TMP/pb-self-test.log")
+[ "$mrc" = 0 ]; row "prepare_bump.sh --self-test passes ($msg)" "$?" "prepare_bump.sh --self-test exited $mrc"
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
 [ "$rows" -ge 12 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 12 declared\n' "$rows" >&2; exit 1; }
