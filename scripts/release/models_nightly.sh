@@ -35,6 +35,7 @@
 #   models_nightly.sh --run --repo DIR --work DIR [--commit SHA] [--timeout SECONDS]
 #   models_nightly.sh --publish --repo DIR --work DIR
 #   models_nightly.sh --relay --commit SHA --out DIR [--evidence DIR] [--plant-red]   (cwd: a checkout)
+#   models_nightly.sh --tickets --commit SHA --evidence BUNDLE --out FILE   open/update the issue of each red row (gh)
 #   models_nightly.sh --self-test   the case table (fixture repos, no network, no GPU)
 #   models_nightly.sh --mutants     each planted mutant must turn the case table RED
 # exit: 0 done (a bundle written, published or relayed, whatever its state) · 2 failed · 3 refused
@@ -167,6 +168,56 @@ relay() { # relay COMMIT OUT EVIDENCE PLANT
     reason=$(printf '%s' "$reason" | tr -d '\r\n')
     if [ -n "${GITHUB_OUTPUT:-}" ]; then printf 'state=%s\nreason=%s\nbundle=%s\n' "$state" "$reason" "$bundle" >> "$GITHUB_OUTPUT" || die "cannot write GITHUB_OUTPUT"; fi
     say "RELAY $state at ${c:0:9}: $reason"
+}
+
+# red_rows BUNDLE -> "host<TAB>row<TAB>why", one line per red row of a red bundle: each rung a receipt
+# marks green:false; a red with no rung to name (a build failure, a binary that is not C, no receipt)
+# is one "lane" row, so a red never goes unticketed.
+red_rows() {
+    local b=$1 h rows=""
+    for h in lambda gx10; do
+        [ -f "$b/$h.json" ] || continue
+        rows+=$(jq -r --arg h "$h" '(.rungs // [])[] | select(.green == false)
+            | [$h, (.id // .file // "unnamed-rung"), ("rung not green (" + (.file // "no file") + ")")] | @tsv' -- "$b/$h.json" 2> /dev/null)$'\n'
+    done
+    rows=$(printf '%s' "$rows" | awk 'NF' | head -n "$TICKETS_MAX")
+    if [ -n "$rows" ]; then printf '%s\n' "$rows"
+    else printf 'all\tlane\t%s\n' "$(vget reason < "$b/verdict" 2> /dev/null | tr -d '\t')"; fi
+}
+
+# tickets BUNDLE COMMIT OUT: the standing release policy sends every red nightly row to a ticket. For
+# a verified red bundle, each red row opens the open issue titled "models-nightly red: <row> on <host>"
+# or comments on it, once per commit (the marker models-nightly@<C>: both cron slots relay the same C).
+# OUT gets "host<TAB>row<TAB>#N" per row, the list a release's known failures name. A nightly row never
+# stops a release; a read or write that fails is a FAILED run of this step, never a ticket.
+TICKETS_MAX=20
+tickets() {
+    local b=$1 c=$2 out=$3 gh=${MODELS_NIGHTLY_GH:-gh} host row why title n j body mark st=0
+    : > "$out" || die "cannot write $out"
+    if [ "$(vget state < "$b/verdict" 2> /dev/null)" != red ]; then say "TICKETS none: the bundle at ${c:0:9} is not red"; return 0; fi
+    mark="models-nightly@$c"
+    while IFS=$'\t' read -r host row why; do
+        title="models-nightly red: $row on $host"
+        if ! j=$("$gh" issue list --state open --limit 50 --search "\"$title\" in:title" --json number,title); then
+            say "NOT-MEASURED: the issue search for '$title' failed"; st=1; continue
+        fi
+        n=$(printf '%s' "$j" | jq -r --arg t "$title" '[.[] | select(.title == $t) | .number] | min // empty' 2> /dev/null)
+        body="Red in the models nightly at ${c:0:9}: $why. Under the standing release policy this row cannot stop a release; the release notes list it as a known failure with this ticket until it is green. $mark"
+        if [ -n "$n" ]; then
+            if ! j=$("$gh" issue view "$n" --json body,comments); then say "NOT-MEASURED: reading #$n failed"; st=1; continue; fi
+            if printf '%s' "$j" | grep -qF -- "$mark"; then say "TICKET kept #$n: $title (already names ${c:0:9})"
+            elif "$gh" issue comment "$n" --body "$body" > /dev/null; then say "TICKET updated #$n: $title"
+            else say "NOT-MEASURED: commenting on #$n failed"; st=1; continue; fi
+        else
+            if ! n=$("$gh" issue create --title "$title" --body "$body"); then say "NOT-MEASURED: opening '$title' failed"; st=1; continue; fi
+            n=${n##*/}
+            [[ $n =~ ^[0-9]+$ ]] || { say "NOT-MEASURED: opening '$title' printed no issue url"; st=1; continue; }
+            say "TICKET opened #$n: $title"
+        fi
+        printf '%s\t%s\t#%s\n' "$host" "$row" "$n" >> "$out"
+    done < <(red_rows "$b")
+    [ "$st" = 0 ] || die "a ticket read or write failed; the rows above without TICKET have none"
+    say "TICKETS $(wc -l < "$out") row(s) at ${c:0:9} -> $out"
 }
 
 # already_measured REPO COMMIT WORK -> 0 when a green or red verdict for COMMIT is pending or published
@@ -461,6 +512,46 @@ STUB
     mkb rc1 1
     row verify_recorded_not_measured_stays 0 "RELAY not_measured" "RELAY green" -- rl "$c1" "$tmp/v/rc1"
 
+    # -- tickets: every red nightly row opens or updates its ticket, through a gh stub that logs each call
+    cat > "$tmp/gh" <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FXGH_LOG"
+case "$1 $2" in
+    "issue list") [ "${FXGH_FAIL:-}" != list ] || exit 1; cat -- "$FXGH_LIST" ;;
+    "issue view") cat -- "$FXGH_VIEW" ;;
+    "issue comment") [ "${FXGH_FAIL:-}" != comment ] || exit 1 ;;
+    "issue create") echo "https://github.invalid/o/r/issues/77" ;;
+    *) exit 9 ;;
+esac
+GH
+    chmod +x "$tmp/gh"
+    tkb() { # tkb NAME STATE LAMBDA-RUNGS-JSON -> a bundle dir
+        local d="$tmp/tk/$1"; mkdir -p -- "$d"
+        printf 'state=%s\nreason=fixture %s\n' "$2" "$2" > "$d/verdict"
+        [ -z "$3" ] || printf '{"red":1,"rungs":%s}\n' "$3" > "$d/lambda.json"
+    }
+    tk() { # tk BUNDLE LIST-JSON VIEW-JSON [FAIL] -> tickets' output, then the out file and the gh calls
+        printf '%s\n' "$2" > "$tmp/tk-list"; printf '%s\n' "$3" > "$tmp/tk-view"; : > "$tmp/tk-log"
+        ( export MODELS_NIGHTLY_GH="$tmp/gh" FXGH_LOG="$tmp/tk-log" FXGH_LIST="$tmp/tk-list" FXGH_VIEW="$tmp/tk-view" FXGH_FAIL="${4:-}"
+          tickets "$1" "$c1" "$tmp/tk-out" ); local rc=$?
+        printf 'OUT %s\n' "$(tr '\t\n' '| ' < "$tmp/tk-out")"; printf 'GH %s\n' "$(tr '\n' ';' < "$tmp/tk-log")"
+        return "$rc"
+    }
+    R1='[{"id":"fx-1","file":"a.gguf","green":false},{"id":"fx-2","file":"b.gguf","green":true}]'
+    tkb green green "$R1"
+    row tickets_green_bundle_touches_no_issue 0 "TICKETS none" "issue" -- tk "$tmp/tk/green" '[]' '{}'
+    tkb red red "$R1"
+    row tickets_red_rung_opens_its_issue 0 "OUT lambda|fx-1|#77 " "fx-2" -- tk "$tmp/tk/red" '[]' '{}'
+    row tickets_open_issue_gets_a_comment 0 "TICKET updated #5" "issue create" -- tk "$tmp/tk/red" \
+        '[{"number":4,"title":"models-nightly red: fx-10 on lambda"},{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}'
+    row tickets_same_commit_is_not_commented_twice 0 "TICKET kept #5" "issue comment" -- tk "$tmp/tk/red" \
+        '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' "{\"body\":\"x\",\"comments\":[{\"body\":\"models-nightly@$c1\"}]}"
+    tkb lane red ""
+    row tickets_red_with_no_rung_is_a_lane_row 0 "models-nightly red: lane on all" "" -- tk "$tmp/tk/lane" '[]' '{}'
+    row tickets_failed_search_fails_the_step 2 "NOT-MEASURED: the issue search" "TICKET opened" -- tk "$tmp/tk/red" '[]' '{}' list
+    row tickets_failed_comment_fails_the_step 2 "NOT-MEASURED: commenting on #5" "OUT lambda" -- tk "$tmp/tk/red" \
+        '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}' comment
+
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     rm -rf -- "${tmp:?}"
     [ "$fail" -eq 0 ]
@@ -489,7 +580,11 @@ m19_prune_kept_everything	s/^        tail -n "\$KEEP" -- "\$idx"/        cat -- 
 m20_real_ps_never_read	s/else ps -eo pgid=,args=; fi/else :; fi/
 m21_plant_feeds_readiness	s/\[ -n "\$4" \] [|][|] bundle=\$ev/bundle=$ev/
 m22_unmeasured_feeds_readiness	s/case \$state in green[|]red[)] \[/case $state in *) [/
-m23_nightly_judges_a_scope	s/ MODELS_T1_SCOPE=none \&\&/ \&\&/'
+m23_nightly_judges_a_scope	s/ MODELS_T1_SCOPE=none \&\&/ \&\&/
+m24_green_rungs_ticketed	s/select\(.green == false\)/select(.green != null)/
+m25_existing_issue_ignored	s/^        if \[ -n "\$n" \]; then$/        if false; then/
+m26_commented_every_slot	s/grep -qF -- "\$mark"; then say/false; then say/
+m27_ticket_failure_passes	s/^    \[ "\$st" = 0 \] [|][|] die "a ticket/    true || die "a ticket/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
@@ -517,8 +612,8 @@ MODE=${1:-}; [ $# -eq 0 ] || shift
 case $MODE in
     --self-test) self_test; exit $? ;;
     --mutants) mutants; exit $? ;;
-    --run|--publish|--relay) ;;
-    *) echo "usage: models_nightly.sh --run|--publish|--relay|--self-test|--mutants (see the header)" >&2; exit 2 ;;
+    --run|--publish|--relay|--tickets) ;;
+    *) echo "usage: models_nightly.sh --run|--publish|--relay|--tickets|--self-test|--mutants (see the header)" >&2; exit 2 ;;
 esac
 REPO=""; WORK=""; COMMIT=""; OUT=""; EVIDENCE=""; PLANT=""
 while [ $# -gt 0 ]; do
@@ -544,4 +639,7 @@ case $MODE in
     --relay)
         [[ $COMMIT =~ ^[0-9a-f]{40}$ ]] && [ -n "$OUT" ] || { echo "models_nightly: --relay needs --commit <40-hex sha> and --out" >&2; exit 2; }
         relay "$COMMIT" "$OUT" "$EVIDENCE" "$PLANT" ;;
+    --tickets)
+        [[ $COMMIT =~ ^[0-9a-f]{40}$ ]] && [ -n "$OUT" ] && [ -d "$EVIDENCE" ] || { echo "models_nightly: --tickets needs --commit <40-hex sha>, --evidence <bundle dir> and --out <file>" >&2; exit 2; }
+        tickets "$EVIDENCE" "$COMMIT" "$OUT" ;;
 esac
