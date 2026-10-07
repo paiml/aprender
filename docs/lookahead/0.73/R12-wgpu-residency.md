@@ -80,6 +80,6 @@ for a Llama-config model. Whether `gguf_gpu_generate` (T5) reaches W:970 is [U].
 | F12-5 | RQ-4: a cell reports GPU only when steps 3-5 have landed for its route | E6 join reads the residency field |
 
 ## Open
-- Which routes (T5 generate, T6 serve, T7 batch) share `forward_layer`: serve and batch
-  do (cited above); T5 is [U].
+- Which routes (T5 generate, T6 serve, T7 batch) share `forward_layer`: all three. T5
+  reaches it from both generate routes and both probes (R10-4: gguf_gpu_generate.rs:282, :337, :780, :840).
 - `init_kv_cache` (W:621): what it allocates and whether any route uses it [U].
