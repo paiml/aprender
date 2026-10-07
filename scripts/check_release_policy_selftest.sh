@@ -29,7 +29,7 @@ row() {
             printf 'FAIL %s: effective ladder %s has no line /%s/\n' "$name" "$out" "$pat"
             fail=$((fail + 1)); return 0
         fi
-    elif ! printf '%s\n' "$RP_WHY" | grep -qE -- "$pat"; then
+    elif ! grep -qE -- "$pat" <<< "$RP_WHY"; then
         printf 'FAIL %s: reason "%s" is not /%s/\n' "$name" "$RP_WHY" "$pat"
         fail=$((fail + 1)); return 0
     fi
@@ -95,7 +95,7 @@ kf() {
     local out rc
     n=$((n + 1))
     out=$(RP_GH="$tmp/gh" KF_JSON="$4" KF_FAIL="$5" rp_known_failures "$3" o/r 2>&1) && rc=0 || rc=$?
-    if [ "$rc" != "$2" ] || ! printf '%s\n' "$out" | grep -qE -- "$6" || { [ -n "${7:-}" ] && printf '%s\n' "$out" | grep -qE -- "$7"; }; then
+    if [ "$rc" != "$2" ] || ! grep -qE -- "$6" <<< "$out" || { [ -n "${7:-}" ] && grep -qE -- "$7" <<< "$out"; }; then
         printf 'FAIL %s: rc %s (want %s), output:\n%s\n' "$1" "$rc" "$2" "$out"; fail=$((fail + 1)); return 0
     fi
     printf 'ok   %s (rc %s)\n' "$1" "$rc"
@@ -118,11 +118,11 @@ kf kf-999-rows-listed       0 "$ladder" "$(jq -nc '[range(999) | {number: (. + 1
 # rp_ticket_owner: the one owner every nightly red-row ticket names. No owner, no ticket.
 # own NAME WANT_RC LADDER PATTERN  (rc 0: PATTERN matches stdout; rc 2: PATTERN matches RP_WHY)
 own() {
-    local out rc
+    local out rc got
     n=$((n + 1))
     out=$(rp_ticket_owner "$3" 2>&1) && rc=0 || rc=$?
     rp_ticket_owner "$3" > /dev/null 2>&1 || true # this shell gets RP_WHY
-    if [ "$rc" != "$2" ] || ! { [ "$rc" = 0 ] && printf '%s\n' "$out" || printf '%s\n' "$RP_WHY"; } | grep -qE -- "$4"; then
+    if [ "$rc" != "$2" ] || { [ "$rc" = 0 ] && got="$out" || got="$RP_WHY"; ! grep -qE -- "$4" <<< "$got"; }; then
         printf 'FAIL %s: rc %s (want %s), out "%s", why "%s"\n' "$1" "$rc" "$2" "$out" "$RP_WHY"; fail=$((fail + 1)); return 0
     fi
     printf 'ok   %s (rc %s%s)\n' "$1" "$rc" "${RP_WHY:+: $RP_WHY}"

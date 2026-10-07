@@ -217,7 +217,7 @@ tickets() {
         body="Red in the models nightly at ${c:0:9}: $why. Under the standing release policy this row cannot stop a release; the release notes list it as a known failure with this ticket until it is green. Owner: $owner. $mark"
         if [ -n "$n" ]; then
             if ! j=$("$gh" issue view "$n" --json body,comments); then say "NOT-MEASURED: reading #$n failed"; st=1; continue; fi
-            if printf '%s' "$j" | grep -qF -- "$mark"; then say "TICKET kept #$n: $title (already names ${c:0:9})"
+            if grep -qF -- "$mark" <<< "$j"; then say "TICKET kept #$n: $title (already names ${c:0:9})"
             elif "$gh" issue comment "$n" --body "$body" > /dev/null; then say "TICKET updated #$n: $title"
             else say "NOT-MEASURED: commenting on #$n failed"; st=1; continue; fi
         else
@@ -618,7 +618,7 @@ m22_unmeasured_feeds_readiness	s/case \$state in green[|]red[)] \[/case $state i
 m23_nightly_judges_a_scope	s/ MODELS_T1_SCOPE=none \&\&/ \&\&/
 m24_green_rungs_ticketed	s/select\(.green == false\)/select(.green != null)/
 m25_existing_issue_ignored	s/^        if \[ -n "\$n" \]; then$/        if false; then/
-m26_commented_every_slot	s/grep -qF -- "\$mark"; then say/false; then say/
+m26_commented_every_slot	s/grep -qF -- "\$mark" <<< "\$j"; then say/false; then say/
 m27_ticket_failure_passes	s/^    \[ "\$st" = 0 \] [|][|] die "a ticket/    true || die "a ticket/
 m28_ticket_names_no_owner	s/ Owner: \$owner\.//
 m29_ownerless_ticket_opened	s/owner=\$\(rp_ticket_owner "\$ladder"\) [|][|] \{/owner=$(rp_ticket_owner "$ladder") || true || {/'

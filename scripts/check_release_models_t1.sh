@@ -134,8 +134,8 @@ C_CHOOM_R='crux) choom -n 1000 -- bash scripts/crux_sweep_shards.sh'
 C_SUBDIR='        local lrc cdir="$out/$LOCAL_HOST-crux"'
 C_JCRUX='CRUX_CERT="$CERT" bash scripts/check_model_ladder.sh --version "$ver" --crux "$out"'
 C_CUT='--crux "$out" --cut-commit "$sha"'
-C_NAME='    RSUF=-gpu; MEASURER=crux_sweep_shards.sh'
-C_RRCPT='if [ -f "\$dir/out/$REMOTE_HOST$RSUF.json" ]; then'
+C_NAME='    MEASURER=crux_sweep_shards.sh'
+C_RRCPT='if [ -f "\$dir/out/$RREC" ]; then'
 
 env_die() { printf 'ENV   %s -- the table judged nothing, not a pass\n' "$*" >&2; exit 2; }
 for f in "$AUTOPILOT" "$MODELS" "$PARAMS" "$PREFLIGHT"; do [ -r "$f" ] || env_die "no $f"; done
@@ -641,7 +641,7 @@ mutant crux-no-choom        "$MODELS" "$C_CHOOM_R" 'crux) bash scripts/crux_swee
 mutant crux-sweep-into-out  "$MODELS" "$C_SUBDIR" '        local lrc cdir="$out"' crux_green
 mutant crux-judge-ladder    "$MODELS" "$C_JCRUX" 'CRUX_CERT="$CERT" bash scripts/check_model_ladder.sh --version "$ver" --receipts "$out"' crux_green
 mutant crux-no-cut-commit   "$MODELS" "$C_CUT" '--crux "$out"' crux_green
-mutant crux-ladder-wording  "$MODELS" "$C_NAME" '    RSUF=-gpu; MEASURER=model_ladder.sh' crux_missing
+mutant crux-ladder-wording  "$MODELS" "$C_NAME" '    MEASURER=model_ladder.sh' crux_missing
 mutant crux-remote-rcpt-name "$MODELS" "$C_RRCPT" 'if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then' crux_green
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
