@@ -69,6 +69,7 @@ row per-release-rc-entry  1 0 "$(plant duprc 's/^      release: "0\.70\.1"$/    
 row since-not-xyz         2 0 "$(plant since 's/^    since: "0\.71\.0"$/    since: "0.71"/')" 0.71.0 "since '0\.71' is not X\.Y\.Z"
 row unknown-key           2 0 "$(plant unk 's/^    larger_rows: nightly$/    larger_rowz: nightly/')" 0.71.0 'unknown key in release_policy: larger_rowz'
 row missing-key           2 0 "$(plant miss '/^    red_row_needs: ticket$/d')" 0.71.0 'release_policy has no red_row_needs'
+row missing-owner         2 0 "$(plant miso '/^    ticket_owner: /d')" 0.71.0 'release_policy has no ticket_owner'
 row duplicate-key         2 0 "$(plant dkey 's/^    larger_rows: nightly$/    larger_rows: nightly\n    larger_rows: release/')" 0.71.0 'duplicate key in release_policy: larger_rows'
 row empty-value           2 0 "$(plant empty 's/^    hosts: .*$/    hosts: /')" 0.71.0 'empty value for release_policy\.hosts'
 row unreadable-line       2 0 "$(plant unread 's/^    hosts: .*$/    - hosts: [lambda]/')" 0.71.0 'unreadable line in release_policy'
@@ -79,6 +80,8 @@ row key-after-blank-line  2 0 "$(plant bl 's/^    larger_rows: nightly$/\n    la
 row no-emergency-list     2 0 "$(plant noel 's/^  emergency_scopes:$/  emergency_scopez:/')" 0.71.0 "no top-level 'emergency_scopes:' list"
 row hosts-carried         0 1 "$(plant h 's/^    hosts: .*$/    hosts: [gx10]/')" 0.71.0 '^      hosts: \[gx10\]$'
 row backslash-kept        0 1 "$(plant bs 's/^    quote: .*$/    quote: "a\\\\nb"/')" 0.71.0 '^      quote: "a\\\\nb"$'
+# A synthesized copy that cannot be written is rc 2, never the uncovered ladder.
+TMPDIR="$tmp/no-such-dir" row mktemp-failed 2 0 "$ladder" 0.71.0 'mktemp failed'
 
 # rp_known_failures: the release notes' known-failures list. A gh stub answers the nightly issue search.
 cat > "$tmp/gh" <<'GH'
@@ -106,6 +109,31 @@ kf kf-other-issue-not-listed 0 "$ladder" '[{"number":3,"title":"something about 
 kf kf-unread-said           0 "$ladder" '[]' 1 'could not be read when this release was cut \(not measured\)' '^- none$'
 kf kf-none                  0 "$(plant nokr '/^  known_red:$/,/^      ruling:/d')" '[]' "" '^- none$' 'known red'
 kf kf-ladder-missing        2 "$tmp/none.yaml" '[]' "" '^$|.*' 'Known failures'
+# A search that fills gh's 1000-row ceiling may have been cut: not measured, never a short list.
+kf kf-full-search-unread    0 "$ladder" "$(jq -nc '[range(1000) | {number: (. + 1), title: "models-nightly red: r\(.) on gx10"}]')" "" \
+    'could not be read when this release was cut \(not measured\)' 'red in the models nightly'
+kf kf-999-rows-listed       0 "$ladder" "$(jq -nc '[range(999) | {number: (. + 1), title: "models-nightly red: r\(.) on gx10"}]')" "" \
+    '^- r998 on gx10: red in the models nightly, #999$' 'not measured'
+
+# rp_ticket_owner: the one owner every nightly red-row ticket names. No owner, no ticket.
+# own NAME WANT_RC LADDER PATTERN  (rc 0: PATTERN matches stdout; rc 2: PATTERN matches RP_WHY)
+own() {
+    local out rc
+    n=$((n + 1))
+    out=$(rp_ticket_owner "$3" 2>&1) && rc=0 || rc=$?
+    rp_ticket_owner "$3" > /dev/null 2>&1 || true # this shell gets RP_WHY
+    if [ "$rc" != "$2" ] || ! { [ "$rc" = 0 ] && printf '%s\n' "$out" || printf '%s\n' "$RP_WHY"; } | grep -qE -- "$4"; then
+        printf 'FAIL %s: rc %s (want %s), out "%s", why "%s"\n' "$1" "$rc" "$2" "$out" "$RP_WHY"; fail=$((fail + 1)); return 0
+    fi
+    printf 'ok   %s (rc %s%s)\n' "$1" "$rc" "${RP_WHY:+: $RP_WHY}"
+}
+own owner-real            0 "$ladder" '^#3598$'
+own owner-name            0 "$(plant oname 's/^    ticket_owner: .*$/    ticket_owner: models-team/')" '^models-team$'
+own owner-missing         2 "$(plant omiss '/^    ticket_owner: /d')" 'release_policy has no ticket_owner'
+own owner-empty-issue     2 "$(plant ozero 's/^    ticket_owner: .*$/    ticket_owner: "#0"/')" "ticket_owner '#0' is neither"
+own owner-two-words       2 "$(plant otwo 's/^    ticket_owner: .*$/    ticket_owner: "Some One"/')" "ticket_owner 'Some One' is neither"
+own owner-no-block        2 "$(plant onopol '/^  release_policy:/,/^    release_notes:/d')" 'no release_policy block, so no ticket owner'
+own owner-ladder-missing  2 "$tmp/none.yaml" 'cannot read the ladder'
 
 echo "release_policy self-test: $n rows, $fail failed"
 [ "$fail" = 0 ]

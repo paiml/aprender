@@ -194,12 +194,19 @@ red_rows() {
 # tickets BUNDLE COMMIT OUT: the standing release policy sends every red nightly row to a ticket. For
 # a verified red bundle, each red row opens the open issue titled "models-nightly red: <row> on <host>"
 # or comments on it, once per commit (the marker models-nightly@<C>: both cron slots relay the same C).
+# Every ticket names the ONE owner the standing policy records (release_policy.ticket_owner); with no
+# readable owner no ticket is opened and the step fails. MODELS_NIGHTLY_LADDER / MODELS_NIGHTLY_POLICY_LIB
+# point at another ladder / library (the case table and the mutant runs only).
 # OUT gets "host<TAB>row<TAB>#N" per row, the list a release's known failures name. A nightly row never
 # stops a release; a read or write that fails is a FAILED run of this step, never a ticket.
 tickets() {
-    local b=$1 c=$2 out=$3 gh=${MODELS_NIGHTLY_GH:-gh} host row why title n j body mark st=0
+    local b=$1 c=$2 out=$3 gh=${MODELS_NIGHTLY_GH:-gh} host row why title n j body mark owner st=0
+    local lib=${MODELS_NIGHTLY_POLICY_LIB:-$(dirname -- "$SCRIPT_PATH")/../lib/release_policy.sh}
+    local ladder=${MODELS_NIGHTLY_LADDER:-$(dirname -- "$SCRIPT_PATH")/../../contracts/model-capability-ladder-v1.yaml}
     : > "$out" || die "cannot write $out"
     if [ "$(vget state < "$b/verdict" 2> /dev/null)" != red ]; then say "TICKETS none: the bundle at ${c:0:9} is not red"; return 0; fi
+    . "$lib" || die "cannot load the release policy library $lib"
+    owner=$(rp_ticket_owner "$ladder") || { rp_ticket_owner "$ladder" > /dev/null; die "no ticket owner, so no ticket is opened: $RP_WHY"; }
     mark="models-nightly@$c"
     while IFS=$'\t' read -r host row why; do
         title="models-nightly red: $row on $host"
@@ -207,7 +214,7 @@ tickets() {
             say "NOT-MEASURED: the issue search for '$title' failed"; st=1; continue
         fi
         n=$(printf '%s' "$j" | jq -r --arg t "$title" '[.[] | select(.title == $t) | .number] | min // empty' 2> /dev/null)
-        body="Red in the models nightly at ${c:0:9}: $why. Under the standing release policy this row cannot stop a release; the release notes list it as a known failure with this ticket until it is green. $mark"
+        body="Red in the models nightly at ${c:0:9}: $why. Under the standing release policy this row cannot stop a release; the release notes list it as a known failure with this ticket until it is green. Owner: $owner. $mark"
         if [ -n "$n" ]; then
             if ! j=$("$gh" issue view "$n" --json body,comments); then say "NOT-MEASURED: reading #$n failed"; st=1; continue; fi
             if printf '%s' "$j" | grep -qF -- "$mark"; then say "TICKET kept #$n: $title (already names ${c:0:9})"
@@ -539,16 +546,30 @@ GH
     }
     tk() { # tk BUNDLE LIST-JSON VIEW-JSON [FAIL] -> tickets' output, then the out file and the gh calls
         printf '%s\n' "$2" > "$tmp/tk-list"; printf '%s\n' "$3" > "$tmp/tk-view"; : > "$tmp/tk-log"
-        ( export MODELS_NIGHTLY_GH="$tmp/gh" FXGH_LOG="$tmp/tk-log" FXGH_LIST="$tmp/tk-list" FXGH_VIEW="$tmp/tk-view" FXGH_FAIL="${4:-}"
+        ( export MODELS_NIGHTLY_GH="$tmp/gh" FXGH_LOG="$tmp/tk-log" FXGH_LIST="$tmp/tk-list" FXGH_VIEW="$tmp/tk-view" FXGH_FAIL="${4:-}" \
+              MODELS_NIGHTLY_LADDER="${TK_LADDER:-$tmp/tk-ladder.yaml}"
           tickets "$1" "$c1" "$tmp/tk-out" ); local rc=$?
         printf 'OUT %s\n' "$(tr '\t\n' '| ' < "$tmp/tk-out")"; printf 'GH %s\n' "$(tr '\n' ';' < "$tmp/tk-log")"
         return "$rc"
     }
+    tkl() { # tkl NAME OWNER-LINE -> a ladder whose standing policy carries OWNER-LINE (- for none)
+        { printf 'ladder:\n  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n'
+          printf '    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n'
+          [ "$2" = - ] || printf '    %s\n' "$2"
+          printf '    release_notes: known_failures\n  emergency_scopes:\n'; } > "$tmp/$1"
+    }
+    tkl tk-ladder.yaml 'ticket_owner: "#42"'; tkl tk-noowner.yaml -; tkl tk-badowner.yaml 'ticket_owner: "Some One"'
+    tko() { local TK_LADDER="$1"; shift; tk "$@"; } # tko LADDER BUNDLE ... -> tk against another ladder
     R1='[{"id":"fx-1","file":"a.gguf","green":false},{"id":"fx-2","file":"b.gguf","green":true}]'
     tkb green green "$R1"
     row tickets_green_bundle_touches_no_issue 0 "TICKETS none" "issue" -- tk "$tmp/tk/green" '[]' '{}'
     tkb red red "$R1"
     row tickets_red_rung_opens_its_issue 0 "OUT lambda|fx-1|#77 " "fx-2" -- tk "$tmp/tk/red" '[]' '{}'
+    row tickets_name_the_policy_owner 0 "Owner: #42. models-nightly@" "" -- tk "$tmp/tk/red" '[]' '{}'
+    row tickets_no_owner_opens_nothing 2 "no ticket owner, so no ticket is opened: release_policy has no ticket_owner" "issue" -- \
+        tko "$tmp/tk-noowner.yaml" "$tmp/tk/red" '[]' '{}'
+    row tickets_bad_owner_opens_nothing 2 "ticket_owner 'Some One' is neither" "issue" -- tko "$tmp/tk-badowner.yaml" "$tmp/tk/red" '[]' '{}'
+    row tickets_no_ladder_opens_nothing 2 "cannot read the ladder" "issue" -- tko "$tmp/none.yaml" "$tmp/tk/red" '[]' '{}'
     row tickets_open_issue_gets_a_comment 0 "TICKET updated #5" "issue create" -- tk "$tmp/tk/red" \
         '[{"number":4,"title":"models-nightly red: fx-10 on lambda"},{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}'
     row tickets_same_commit_is_not_commented_twice 0 "TICKET kept #5" "issue comment" -- tk "$tmp/tk/red" \
@@ -598,11 +619,15 @@ m23_nightly_judges_a_scope	s/ MODELS_T1_SCOPE=none \&\&/ \&\&/
 m24_green_rungs_ticketed	s/select\(.green == false\)/select(.green != null)/
 m25_existing_issue_ignored	s/^        if \[ -n "\$n" \]; then$/        if false; then/
 m26_commented_every_slot	s/grep -qF -- "\$mark"; then say/false; then say/
-m27_ticket_failure_passes	s/^    \[ "\$st" = 0 \] [|][|] die "a ticket/    true || die "a ticket/'
+m27_ticket_failure_passes	s/^    \[ "\$st" = 0 \] [|][|] die "a ticket/    true || die "a ticket/
+m28_ticket_names_no_owner	s/ Owner: \$owner\.//
+m29_ownerless_ticket_opened	s/owner=\$\(rp_ticket_owner "\$ladder"\) [|][|] \{/owner=$(rp_ticket_owner "$ladder") || true || {/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
     cp -- "$SCRIPT_PATH" "$tmp/models_nightly.sh"
+    # the mutant copy lives outside the tree, so it is pointed at the real policy library
+    export MODELS_NIGHTLY_POLICY_LIB="${MODELS_NIGHTLY_POLICY_LIB:-$(dirname -- "$SCRIPT_PATH")/../lib/release_policy.sh}"
     if ! bash "$tmp/models_nightly.sh" --self-test > /dev/null 2>&1; then printf '  BROKE %-44s the unmutated script is not green in the mutant dir\n' baseline; rm -rf -- "${tmp:?}"; return 1; fi
     while IFS=$'\t' read -r name expr; do
         [ -n "$name" ] || continue

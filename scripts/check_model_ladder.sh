@@ -1228,7 +1228,7 @@ E2E
           print "  release_policy:"
           print "    name: crux-smoke"; print "    since: \"" since "\""; print "    date: \"2026-10-07\""
           print "    quote: \"q\""; print "    hosts: [lambda, gx10]"; print "    thinking: [\"off\"]"
-          print "    larger_rows: nightly"; print "    red_row_needs: ticket"; print "    release_notes: known_failures"
+          print "    larger_rows: nightly"; print "    red_row_needs: ticket"; print "    ticket_owner: \"#1\""; print "    release_notes: known_failures"
           if (extra != "-") print "    " extra
           print "  emergency_scopes:"
           if (rel != "-") {

@@ -278,7 +278,7 @@ fixture() {
     {   printf 'ladder:\n'
         case " ${*:4} " in *" FX_POLICY=covers "*|*" FX_POLICY=bad "*)
             printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n'
-            printf '    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n'
+            printf '    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: "#1"\n'
             case " ${*:4} " in *" FX_POLICY=bad "*) ;; *) printf '    release_notes: known_failures\n' ;; esac ;;
         esac
         printf '  emergency_scopes:\n'

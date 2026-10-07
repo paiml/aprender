@@ -348,7 +348,7 @@ STUB
     # the standing release policy, one row per state. pol dir since [extra-ladder-lines]
     pol() {
         local l
-        printf -v l 'ladder:\n  release_policy:\n    name: crux-smoke\n    since: "%s"\n    date: "2026-10-07"\n    quote: '"'"'"q"'"'"'\n    hosts: [lambda, gx10]\n    thinking: ["off", "on"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    release_notes: known_failures\n%s  emergency_scopes:\n%s' \
+        printf -v l 'ladder:\n  release_policy:\n    name: crux-smoke\n    since: "%s"\n    date: "2026-10-07"\n    quote: '"'"'"q"'"'"'\n    hosts: [lambda, gx10]\n    thinking: ["off", "on"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: "#1"\n    release_notes: known_failures\n%s  emergency_scopes:\n%s' \
             "$2" "${4:-}" "${3:-}"
         MK_LADDER="$l" mk "$1"
     }

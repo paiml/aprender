@@ -51,7 +51,7 @@ run_cut_tag() {
     {   printf 'ladder:\n'
         case "$pol" in
             covers|bad) printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n'
-                printf '    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n'
+                printf '    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: "#1"\n'
                 [ "$pol" = bad ] || printf '    release_notes: known_failures\n' ;;
         esac
         printf '  emergency_scopes:\n'

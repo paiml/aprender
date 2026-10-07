@@ -114,7 +114,7 @@ pb_self_test() {
         mkdir -p "$t/scripts/lib" "$t/contracts" && cp -- "$lib/release_policy.sh" "$lib"/release_policy_*.awk "$t/scripts/lib/" || return 2
         printf 'P1\n' > "$t/prompts.json"
         {   printf 'ladder:\n'
-            [ "$pol" = none ] || printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n'
+            [ "$pol" = none ] || printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: "#1"\n'
             [ "$pol" != covers ] || printf '    release_notes: known_failures\n'
             printf '  emergency_scopes:\n'
         } > "$t/contracts/model-capability-ladder-v1.yaml"

@@ -26,7 +26,7 @@
 # The nightly must judge the FULL ladder: callers that run nightly pass --scope none
 # and never call this.
 
-RP_KEYS="name since date quote hosts thinking larger_rows red_row_needs release_notes"
+RP_KEYS="name since date quote hosts thinking larger_rows red_row_needs ticket_owner release_notes"
 # RP_AWK_DIR: where the .awk programs live. Overridable only so a mutation run can point a
 # mutated copy of this file at the real programs.
 RP_AWK_DIR="${RP_AWK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
@@ -67,6 +67,21 @@ rp_ge() {
 
 # rp_get KEY -> the raw value of KEY in the block release_policy_ladder read ($blk, dynamic scope)
 rp_get() { printf '%s\n' "$blk" | awk -F '\t' -v k="$1" '$1 == k { print $2; exit }'; }
+
+# rp_ticket_owner LADDER -> stdout: the one owner a nightly red-row ticket names (release_policy.ticket_owner,
+# quotes removed): an issue "#N" or a lower-case name. rc 2 + RP_WHY when the ladder or its block cannot be
+# read, there is no policy block, or the value is neither form. A ticket with no owner is never opened.
+rp_ticket_owner() {
+    local blk owner
+    RP_WHY=""
+    [ -r "$1" ] || { RP_WHY="cannot read the ladder $1"; return 2; }
+    rp_block "$1" || return 2
+    blk="$RP_BLK"
+    [ -n "$blk" ] || { RP_WHY="the ladder $1 has no release_policy block, so no ticket owner"; return 2; }
+    owner=$(rp_get ticket_owner); owner="${owner#\"}"; owner="${owner%\"}"
+    [[ "$owner" =~ ^(#[1-9][0-9]*|[a-z][a-z0-9.-]*)$ ]] || { RP_WHY="release_policy.ticket_owner '$owner' is neither #N nor a name"; return 2; }
+    printf '%s\n' "$owner"
+}
 
 release_policy_ladder() {
     local ladder="$1" version="$2" blk since core copy
@@ -114,7 +129,9 @@ rp_known_failures() {
               f && /^      ticket:/ { t = $2; gsub(/"/, "", t); if (r != "") printf "- %s: known red (ladder), %s\n", r, t; r = "" }' "$ladder")
     printf '## Known failures\n\nThese rows are not release gates under the standing release policy (CRUX smoke on lambda and gx10 is the gate). Each has a ticket.\n\n'
     [ -z "$kr" ] || printf '%s\n' "$kr"
-    if nightly=$("${RP_GH:-gh}" issue list --repo "$repo" --state open --limit 100 --search '"models-nightly red:" in:title' --json number,title 2> /dev/null) \
+    # --limit 1000 is gh's ceiling; a search that fills it may have been cut, so it is not measured.
+    if nightly=$("${RP_GH:-gh}" issue list --repo "$repo" --state open --limit 1000 --search '"models-nightly red:" in:title' --json number,title 2> /dev/null) \
+        && [ "$(printf '%s' "$nightly" | jq 'length' 2> /dev/null)" -lt 1000 ] 2> /dev/null \
         && nightly=$(printf '%s' "$nightly" | jq -r '[.[] | select(.title | startswith("models-nightly red: "))] | sort_by(.number)[] | "- \(.title | ltrimstr("models-nightly red: ")): red in the models nightly, #\(.number)"' 2> /dev/null); then
         [ -n "$nightly" ] || [ -n "$kr" ] || printf -- '- none\n'
         [ -z "$nightly" ] || printf '%s\n' "$nightly"

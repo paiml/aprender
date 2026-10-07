@@ -945,7 +945,7 @@ FXREADY
         fi
         { printf 'ladder:\n  release_policy:\n    name: crux-smoke\n    since: "%s"\n    date: "2026-10-07"\n' "$2"
           printf '    quote: "q"\n    hosts: [lambda, gx10]\n    thinking: ["off", "on"]\n    larger_rows: nightly\n'
-          printf '    red_row_needs: ticket\n    release_notes: known_failures\n  emergency_scopes:\n'
+          printf '    red_row_needs: ticket\n    ticket_owner: "#1"\n    release_notes: known_failures\n  emergency_scopes:\n'
           case "${3:-}" in ''|nolib) : ;; *) printf '    - name: crux-smoke\n      release: "%s"\n' "$3" ;; esac
         } > "$d/contracts/model-capability-ladder-v1.yaml"
         git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'policy' >/dev/null

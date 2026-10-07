@@ -199,7 +199,7 @@ yaml.safe_dump({"ladder": {
 PY
     # policy, policy-nocert: the standing release policy covers 9.9.9 (CRUX smoke at T-1, no receipts on the bump)
     case "$ladder" in policy*)
-        printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    release_notes: known_failures\n  emergency_scopes:\n' \
+        printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: "#1"\n    release_notes: known_failures\n  emergency_scopes:\n' \
             >> "$d/seed/contracts/model-capability-ladder-v1.yaml" ;;
     esac
     git init -q --bare -b main "$d/origin.git" \
