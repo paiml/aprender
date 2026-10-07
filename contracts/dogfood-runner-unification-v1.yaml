@@ -9,6 +9,7 @@ metadata:
   - 'scripts/check_verifier_pinning.sh — the gate: static scan + behavioural probe of both pins'
   - 'scripts/check_dogfood_shim.sh — the gate: one runner, one prose, and the user-scope copy stays a gated shim'
   - 'scripts/check_dogfood_row_order.sh — the guard (report mode until three green nights): long rows last, no early stop, a red cheap row keeps the verdict red, row times (aprender#4672)'
+  - 'scripts/check_dogfood_reads_ci.sh + scripts/release/sha_checks.sh — pre-publish reads fmt and test from the CI of the same commit and coverage from the receipt cut_tag requires (tag_coverage_gate.sh --resolve); no green receipt for that sha is red; clippy stays measured (aprender#4672)'
   - 'scripts/.dogfood-shim-reference.sh — the reviewed text of the user-scope shim'
   - '.claude/skills/dogfood/SKILL.md — the one canonical prose, with an explicit `name:` (#2332)'
   - 'aprender#2361 — a user-scope skill shadowed the repo one; hardening it edited a file that never ran'
@@ -443,6 +444,37 @@ falsification_tests:
   test: 'bash scripts/check_dogfood_row_order.sh --self-test   # the five timing rows'
   if_fails: 'a release-day check over its budget passes its own timing row, or a missing measurement reads as on time'
   mutation: 'the six planted timing rows (ok, over, at budget, hole, absent, a budget of 15m) must give rc 0, 1, 0, 2, 2, 2 (observed 2026-10-04)'
+- id: F-DOG1-032
+  rule: in --phase pre-publish, fmt and test read the commit's CI and coverage reads the receipt cut_tag requires; none re-runs; clippy stays measured
+  prediction: >
+    In scripts/dogfood.sh the fmt and test rows are ci_mark calls inside the pre-publish
+    branch (fmt reads `ci / gate`, test reads `workspace-test`), and the coverage row is
+    cov_mark, which PASSes only when `tag_coverage_gate.sh --resolve HEAD` exits 0: the
+    coverage-nightly receipt (#4734) that autopilot cut_tag already requires before the tag.
+    Their measuring commands sit only in that branch's else, so every other phase still
+    measures them. clippy is measured in every phase, because the `ci / gate` lint is
+    narrower (default features, unused-variables allowed, a lib-only fallback).
+    `workspace-test` is nextest --lib over the workspace; the root facade's doctests and
+    bin tests are not in it. Reviews and a C314 round on aprender#4886 settled these.
+  test: 'bash scripts/check_dogfood_reads_ci.sh   # R2'
+  if_fails: 'the release dogfood re-runs work CI already did for the same commit, a row reads the wrong check, clippy reads a narrower lint, or pre-publish passes a coverage row it never read'
+  mutation: 'put `gate fmt` back in pre-publish (rerun), point test at `ci / gate` (wrongspec), read clippy from CI (clippyread), pass coverage unread (covpass), drop the coverage row (covmissing); each must turn RED (observed 2026-10-06 in --self-test)'
+- id: F-DOG1-033
+  rule: no green receipt for the exact sha is RED, never a skip
+  prediction: >
+    The runner's own CI-read block, ci_mark() and cov_mark(), lifted and driven against
+    planted check rows and a planted coverage reader for a real commit, give PASS only
+    when each check, or the coverage receipt, is green for THAT sha, and FAIL on a red
+    check for the sha, a missing check, a green check on a different sha, a refused or
+    other-sha coverage receipt, a failed GitHub read, missing readers and a tree with
+    uncommitted tracked changes. scripts/release/sha_checks.sh holds the same rule on its
+    own (newest run wins, a queued rerun counts as newest, runs that disagree at one start
+    time are red, pending, cancelled and skipped are red, a same-named check in another
+    workflow does not count); tag_coverage_gate.sh --self-test holds it for coverage (no
+    receipt, other sha, below COV_FLOOR, gh failing).
+  test: 'bash scripts/check_dogfood_reads_ci.sh --self-test; bash scripts/release/sha_checks.sh --self-test; bash scripts/release/tag_coverage_gate.sh --self-test'
+  if_fails: 'a check or receipt that is red, absent, or for another commit lets the release dogfood say GO'
+  mutation: 'let a dirty tree read HEAD (nodirty), make the no-receipt fallback a PASS (skipread), pass a refused coverage receipt (covskip), resolve another sha (covwrongsha); each must turn RED; sha_checks.sh plants 21 rows (observed 2026-10-06)'
 proof_obligations:
 - id: DRU-INV-001
   type: invariant
