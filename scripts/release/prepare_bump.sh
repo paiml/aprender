@@ -47,6 +47,18 @@ pb_splice() {
     printf '%s' "${s%%"$anchor"*}$anchor"$'\n'"$sec"$'\n'"$rest" > "$1"
 }
 
+# pb_policy_covers ROOT VERSION -> rc 0 the standing release policy (ladder.release_policy) covers VERSION,
+# 1 it does not, 2 the policy could not be read (never "not covered").
+pb_policy_covers() {
+    local root=$1 v=$2
+    ( . "$root/scripts/lib/release_policy.sh" || exit 2
+      t=$(mktemp) || exit 2
+      release_policy_ladder "$root/contracts/model-capability-ladder-v1.yaml" "$v" > "$t"; r=$?
+      lad=$(cat "$t"); rm -f "${t:?}"
+      [ -z "$lad" ] || [ "$lad" = "$root/contracts/model-capability-ladder-v1.yaml" ] || rm -f "${lad:?}"
+      [ "$r" = 0 ] || { echo "release policy: $RP_WHY" >&2; exit 2; }
+      [ "$RP_APPLIES" = 1 ] )
+}
 # pb_carry_cert ROOT VERSION BASE -> under the standing release policy, ROOT/evidence/crux/VERSION/ holds the CRUX
 # prompt certification the models lane requires at the release commit (models_t1.sh crux mode). 0.70.1 carried it
 # by hand: the newest earlier version's certification, apr_commit set to the tree it was cut from, the inventory
@@ -55,13 +67,7 @@ pb_splice() {
 # 2 the policy or a file could not be read.
 pb_carry_cert() {
     local root=$1 v=$2 base=$3 dst src prev p pv vc lad got want
-    ( . "$root/scripts/lib/release_policy.sh" || exit 2
-      t=$(mktemp) || exit 2
-      release_policy_ladder "$root/contracts/model-capability-ladder-v1.yaml" "$v" > "$t"; r=$?
-      lad=$(cat "$t"); rm -f "${t:?}"
-      [ -z "$lad" ] || [ "$lad" = "$root/contracts/model-capability-ladder-v1.yaml" ] || rm -f "${lad:?}"
-      [ "$r" = 0 ] || { echo "release policy: $RP_WHY" >&2; exit 2; }
-      [ "$RP_APPLIES" = 1 ] ) || { [ $? = 1 ] && { echo "CERT not carried: the standing release policy does not cover $v"; return 0; }; return 2; }
+    pb_policy_covers "$root" "$v" || { [ $? = 1 ] && { echo "CERT not carried: the standing release policy does not cover $v"; return 0; }; return 2; }
     dst="$root/evidence/crux/$v"
     if [ -f "$dst/prompt-certification.json" ]; then echo "CERT present: $dst/prompt-certification.json"; return 0; fi
     . "$root/scripts/lib/release_policy.sh" || return 2
@@ -209,10 +215,20 @@ bash "$CLOSES_GUARD" --body "$AP/pr_body.md" > "$AP/r2.log" 2>&1 || die "the bum
 # measured until after the tag. This script does not PRODUCE them (scripts/model_ladder.sh, on each
 # required host, with an apr built from this tree): it refuses without them, judged by the SAME
 # judge the dogfood runs. `git add -A` below commits whatever the judge read, unless it is ignored.
-bash scripts/check_model_ladder.sh --version "$V" > "$AP/ladder.log" 2>&1 || {
-  grep -E '^(FAIL|decline)' "$AP/ladder.log" >&2
-  die "model-ladder receipts for $V are not green in the bump tree; nothing committed, pushed or opened ($AP/ladder.log)"
-}
+# Under the standing release policy the bump carries no smoke receipts: CRUX smoke is measured at T-1
+# on the merged release commit (autopilot.sh t1_models), and the tag step and preflight R7 judge those
+# receipts. A receipt committed here would be from a pre-bump binary. The certification still rides.
+pb_policy_covers "$PWD" "$V"; prc=$?
+case $prc in
+  0) [ -f "evidence/crux/$V/prompt-certification.json" ] \
+       || die "the standing release policy covers $V but the bump tree has no evidence/crux/$V/prompt-certification.json"
+     echo "LADDER not judged at the bump: the standing release policy covers $V -- CRUX smoke is measured at T-1 on the release commit" | tee "$AP/ladder.log" ;;
+  1) bash scripts/check_model_ladder.sh --version "$V" > "$AP/ladder.log" 2>&1 || {
+       grep -E '^(FAIL|decline)' "$AP/ladder.log" >&2
+       die "model-ladder receipts for $V are not green in the bump tree; nothing committed, pushed or opened ($AP/ladder.log)"
+     } ;;
+  *) die "the standing release policy cannot be judged for $V; nothing committed, pushed or opened" ;;
+esac
 ignored=$(git ls-files --others --ignored --exclude-standard -- "evidence/dogfood/models/$V" "evidence/crux/$V")
 [ -z "$ignored" ] || die "model-ladder receipts for $V are gitignored, so the bump would not commit them: $ignored"
 cargo_bin() { "${CARGO_HOME:-$HOME/.cargo}"/bin/cargo "$@"; }

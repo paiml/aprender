@@ -645,6 +645,10 @@ open(p, "w").write(s)
 PY
     fi
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
+    # the autopilot judges the standing release policy first (unreadable = STOP): the real reader and a
+    # ladder with no policy block, so 9.9.9 runs the pre-policy train these rows were written for
+    mkdir -p "$r/scripts/lib" "$r/contracts" && cp -- "$ROOT/scripts/lib/release_policy.sh" "$ROOT"/scripts/lib/release_policy_*.awk "$r/scripts/lib/" \
+        && printf 'ladder:\n  emergency_scopes:\n' > "$r/contracts/model-capability-ladder-v1.yaml" || return 2
     # the post-publish dogfood: runs the REAL gate over the receipts it is pointed at, then writes the
     # receipt a real run writes, with the verdict/deferred the row picks
     cat > "$r/scripts/dogfood.sh" <<'STUB'

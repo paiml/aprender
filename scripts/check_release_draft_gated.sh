@@ -157,7 +157,7 @@ run() {
   mkdir -p "$W/state" "$W/ap" "$W/scripts/release"
   : > "$W/calls"
   printf 'notes\n' > "$W/ap/release_notes.md"
-  local FX_ASSETS=0 FX_CLEANROOM=success FX_PREFLIGHT=0 FX_EDIT=ok FX_PRE=none FX_CRUN=1 FX_PASS=ok kv
+  local FX_ASSETS=0 FX_CLEANROOM=success FX_PREFLIGHT=0 FX_EDIT=ok FX_PRE=none FX_CRUN=1 FX_PASS=ok FX_POLICY=0 kv
   shift 2; for kv in "$@"; do local "${kv?}"; done
   case "$FX_PRE" in
     draft-built)  echo draft > "$W/state/release"; echo 1 > "$W/state/built"; echo 1 > "$W/state/dispatched" ;;
@@ -173,12 +173,15 @@ run() {
   esac
   printf '#!/usr/bin/env bash\nif [ -s %q ]; then rc=%s; else rc=1; fi\necho "ASSETS-CHECK rc=$rc" >> %q\nexit $rc\n' \
     "$W/state/built" "$FX_ASSETS" "$W/calls" > "$W/scripts/check_release_assets.sh"
-  printf '#!/usr/bin/env bash\necho "PREFLIGHT rc=%s" >> %q\nexit %s\n' "$FX_PREFLIGHT" "$W/calls" "$FX_PREFLIGHT" > "$W/scripts/check_publish_preflight.sh"
+  # the preflight stub goes red unless it is handed the T-1 CRUX receipts and the bump's certification
+  # exactly when the standing release policy covers the release (FX_POLICY), and nothing otherwise
+  printf '#!/usr/bin/env bash\nrc=%s\nif [ %q = 1 ]; then [ "${MODEL_LADDER_CRUX_DIR:-}" = %q ] && [ "${CRUX_CERT:-}" = %q ] || rc=1\nelse [ -z "${MODEL_LADDER_CRUX_DIR:-}${CRUX_CERT:-}" ] || rc=1; fi\necho "PREFLIGHT rc=$rc" >> %q\nexit $rc\n' \
+    "$FX_PREFLIGHT" "$FX_POLICY" "$W/ap/models-t1" "$W/evidence/crux/0.0.0/prompt-certification.json" "$W/calls" > "$W/scripts/check_publish_preflight.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$W/scripts/release/tag_coverage_gate.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$W/scripts/release/rc_publish_gate.sh"
   {
     printf 'set -uo pipefail\ncd %q || exit 2\n' "$W"
-    printf 'REPO=paiml/aprender INFRA=paiml/infra V=0.0.0 T=v0.0.0 MC=deadbeef AP_POLICY=0\n'
+    printf 'REPO=paiml/aprender INFRA=paiml/infra V=0.0.0 T=v0.0.0 MC=deadbeef AP_POLICY=%s\n' "$FX_POLICY"
     printf 'AP=%q LOG=%q STATUS=%q WT=%q\n' "$W/ap" "$W/log" "$W/status" "$W"
     printf 'say() { printf "SAY %%s\\n" "$*" >> "$LOG"; }\n'
     printf 'die() { printf "STOP %%s\\n" "$*" >> %q; exit 1; }\n' "$W/calls"
@@ -220,7 +223,8 @@ publish_alone_refuses_no_preflight_pass|publish|FX_PRE=draft-built FX_PASS=none|
 publish_alone_refuses_another_commits_pass|publish|FX_PRE=draft-built FX_PASS=stale|draft stop
 publish_alone_refuses_a_release_already_public|publish|FX_PRE=public-built|draft stop
 publish_alone_refuses_a_missing_release|publish|FX_PRE=gone|draft stop
-a_failed_publishing_edit_stops|publish|FX_PRE=draft-built FX_EDIT=fail|draft stop"
+a_failed_publishing_edit_stops|publish|FX_PRE=draft-built FX_EDIT=fail|draft stop
+policy_preflight_judges_the_t1_crux_receipts|preflight|FX_POLICY=1|draft ran"
 
 table() { # table <autopilot> -> number of WRONG rows; prints each row
   local ap=$1 wrong=0 name on fx want got
@@ -240,7 +244,7 @@ grep -q '^if run_step tag; then$' "$AUTOPILOT" \
 bad=0
 table "$AUTOPILOT" || bad=1
 rows=$(grep -c '|' <<< "$CASES")
-[ "$rows" -ge 20 ] || { printf 'VACUOUS %s row(s), fewer than the 20 declared\n' "$rows"; bad=1; }
+[ "$rows" -ge 21 ] || { printf 'VACUOUS %s row(s), fewer than the 21 declared\n' "$rows"; bad=1; }
 [ "${1:-}" = "" ] || finish "$bad"   # an explicit autopilot (e.g. origin/main's) runs the table only
 
 # mutant <name> <sed expression>: applied to a copy of the autopilot, the table must go WRONG
@@ -278,6 +282,9 @@ mutant publish-by-variable '/^if run_step dryrun; then$/a\  PRF=publish_release;
 mutant api-field-variable  '/^if run_step cascade; then$/a\  gh api "repos/$REPO/releases/$RID" -F draft=$F > /dev/null'
 mutant api-input-body      '/^if run_step cascade; then$/a\  gh api --method PATCH "repos/$REPO/releases/$RID" --input "$AP/body.json" > /dev/null'
 mutant cleanroom-not-failure 's/^    \[ "\$jc" = success \] || die/    [ "$jc" != failure ] || die/'
+mutant policy-crux-dir-dropped 's/^    MODEL_LADDER_CRUX_DIR="\$AP\/models-t1" CRUX_CERT=/    CRUX_CERT=/'
+mutant policy-cert-not-the-bumps 's/CRUX_CERT="\$WT\/evidence\/crux\/\$V\/prompt-certification.json"/CRUX_CERT="\$AP\/models-t1\/prompt-certification.json"/'
+mutant policy-env-always 's/^  if \[ "\$AP_POLICY" = 1 \]; then$/  if true; then/'
 
 printf 'mutants: %s/%s killed\n' "$killed" "$total"
 [ "$bad" = 0 ] && printf 'PASS  %s row(s) + 4 structural and every mutant killed: the GitHub release is a draft until clean-room, assets and preflight are green (#4690)\n' "$rows"

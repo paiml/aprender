@@ -189,7 +189,8 @@ t1_dogfood() {
 #     before any tag -- lambda here, gx10 over the operator-authorized lambda->gx10 SSH, each with an
 #     apr built from $MC and proved to be it. One red cell, an unreachable host, a failed build, a
 #     missing receipt or a judge decline is a STOP here, with no tag cut. The same judge re-reads the
-#     receipts committed in the bump at T-4 (check_publish_preflight.sh R7).
+#     receipts committed in the bump at T-4 (check_publish_preflight.sh R7); under the standing release
+#     policy R7 reads the CRUX receipts this step writes to $AP/models-t1 instead (the preflight step).
 t1_models() {
   local measure=ladder; [ "$AP_POLICY" != 1 ] || measure=crux
   MODELS_T1_MEASURE=$measure bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
@@ -439,7 +440,15 @@ if run_step preflight; then
   bash scripts/release/tag_coverage_gate.sh "$T" "$MC" > "$AP/tag-coverage.log" 2>&1; rc=$?
   tail -1 "$AP/tag-coverage.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "tag coverage on $T refused rc=$rc ($AP/tag-coverage.log)"
-  bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
+  # Under the standing release policy R7 judges CRUX smoke at the cut: the receipts the T-1 models step
+  # measured at $MC (the tagged commit), with the certification committed in the bump. Nothing is
+  # committed by hand after the bump to feed it.
+  if [ "$AP_POLICY" = 1 ]; then
+    MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json" \
+      bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
+  else
+    bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
+  fi
   tail -3 "$AP/preflight.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "publish preflight refused rc=$rc"
   printf 'PASS %s %s\n' "$T" "$MC" > "$AP/preflight-pass"
