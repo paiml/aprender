@@ -56,12 +56,15 @@ commands:
     category: inference
     description: "Run model directly (auto-download, cache, execute)"
     requires_model: true
+    kinds: {generative: receipt, embedding: refuse}
+    use_instead: {embedding: embed}
     side_effects: [network, filesystem]
 
   - name: serve
     category: inference
     description: "Inference server (plan/run)"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [network, filesystem]
     subcommands: [plan, run]
 
@@ -69,12 +72,16 @@ commands:
     category: inference
     description: "Interactive chat with language model"
     requires_model: true
+    kinds: {generative: receipt, embedding: refuse}
+    use_instead: {embedding: embed}
     side_effects: [network, filesystem]
 
   - name: code
     category: inference
     description: "Sovereign AI coding assistant"
     requires_model: true
+    kinds: {generative: receipt, embedding: refuse}
+    use_instead: {embedding: embed}
     side_effects: [network, filesystem]
 
   # ── Model Inspection (read-only, no side effects) ──
@@ -82,12 +89,14 @@ commands:
     category: inspection
     description: "Inspect model metadata, vocab, and structure"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: debug
     category: inspection
     description: "Simple debugging output"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
     subcommands: [embed-viz]
 
@@ -95,42 +104,49 @@ commands:
     category: inspection
     description: "Validate model integrity and quality"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: validate-manifest
     category: inspection
     description: "Verify publish manifest (F-PUBLISH-MANIFEST-001): FALSIFY-PM-001..006"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: lint
     category: inspection
     description: "Check for best practices and conventions"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: beat-run
     category: inspection
     description: "Evaluate a BeatBenchmark contract against a measured value (PMAT-741)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: manifest
     category: model_ops
     description: "Emit SHA-256 manifest of input files (CRUX-G-05)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem]
 
   - name: explain
     category: inspection
     description: "Explain errors, architecture, tensors, and kernel dispatch"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: tensors
     category: inspection
     description: "List tensor names and shapes"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   # aprender#2377 finding 3: the producers `*-lint` help documents.
@@ -139,6 +155,7 @@ commands:
     category: inspection
     description: "Dataset inspection tools (audio-inspect)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
     subcommands: [audio-inspect]
 
@@ -146,6 +163,7 @@ commands:
     category: analysis
     description: "Kernel-level parity measurements (parity)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
     subcommands: [parity]
 
@@ -153,30 +171,35 @@ commands:
     category: inspection
     description: "Layer-by-layer trace analysis"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: diff
     category: inspection
     description: "Compare two models; --quant-roundtrip surfaces per-tensor quant error (CRUX-B-20)"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: hex
     category: inspection
     description: "Format-aware binary forensics"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: tree
     category: inspection
     description: "Model architecture tree view"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: flow
     category: inspection
     description: "Data flow visualization"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   # ── Model Operations (transforms, creates files) ──
@@ -184,48 +207,56 @@ commands:
     category: model_ops
     description: "Export model to other formats"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: import
     category: model_ops
     description: "Import from external formats"
     requires_model: false
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [network, filesystem]
 
   - name: convert
     category: model_ops
     description: "Convert/optimize model"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: stamp
     category: model_ops
     description: "Stamp provenance fields (license, data_source, data_license) onto an existing .apr file"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: compile
     category: model_ops
     description: "Compile model into standalone executable"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: merge
     category: model_ops
     description: "Merge multiple models"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: quantize
     category: model_ops
     description: "Quantize model weights"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: rosetta
     category: model_ops
     description: "Rosetta Stone - Universal model format converter"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   # ── Model Registry ──
@@ -235,24 +266,28 @@ commands:
     category: registry
     description: "Download and cache model from HuggingFace"
     requires_model: false
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [network, filesystem]
 
   - name: list
     category: registry
     description: "List cached models"
     requires_model: false
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: rm
     category: registry
     description: "Remove model from cache"
     requires_model: false
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: registry
     category: registry
     description: "Registry operations (CRUX-A-01): inspect alias map, etc."
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
     subcommands: [aliases]
 
@@ -260,6 +295,7 @@ commands:
     category: registry
     description: "Publish model to HuggingFace Hub"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [network]
 
   # ── Training ──
@@ -267,24 +303,28 @@ commands:
     category: training
     description: "Fine-tune model with LoRA/QLoRA"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem, gpu]
 
   - name: prune
     category: training
     description: "Prune model (structured/unstructured)"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: distill
     category: training
     description: "Knowledge distillation (teacher -> student)"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem, gpu]
 
   - name: train
     category: training
     description: "Training pipeline (plan/apply)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem, gpu]
     subcommands: [apply, archive, cluster-status, halving, plan, submit, sweep, watch]
 
@@ -292,12 +332,14 @@ commands:
     category: training
     description: "Pretrain small language models from scratch (MODEL-2 loop)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem, gpu]
 
   - name: tokenize
     category: training
     description: "Tokenizer training pipeline (plan/apply)"
     requires_model: false
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
     subcommands: [apply, encode, encode-corpus, import-hf, plan, repair-manifest, train]
 
@@ -305,6 +347,7 @@ commands:
     category: training
     description: "ML tuning: LoRA/QLoRA configuration, memory planning"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   # ── Evaluation & QA ──
@@ -312,36 +355,42 @@ commands:
     category: evaluation
     description: "Benchmark throughput"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: eval
     category: evaluation
     description: "Evaluate model perplexity or classification metrics"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: check
     category: evaluation
     description: "Model self-test: 10-stage pipeline integrity check"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: qa
     category: evaluation
     description: "Falsifiable QA checklist for model releases"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: qualify
     category: evaluation
     description: "Cross-subcommand smoke test"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: canary
     category: evaluation
     description: "Manage canary tests for regression"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem]
     subcommands: [check, create]
 
@@ -349,12 +398,14 @@ commands:
     category: evaluation
     description: "Compare APR model against HuggingFace source"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [network]
 
   - name: parity
     category: evaluation
     description: "GPU/CPU parity check"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [gpu]
 
   # ── GPU & Profiling ──
@@ -362,35 +413,41 @@ commands:
     category: hardware
     description: "GPU status and VRAM reservation management"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [gpu]
 
   - name: capability
     category: inspection
     description: What this build can and cannot do, and why (from apr-model-capability-v1)
     requires_model: false
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
   - name: devices
     category: hardware
     description: "Backend discovery: probe, enumerate, print (PP-066 R-0)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: profile
     category: hardware
     description: "Deep profiling with Roofline analysis"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: ptx
     category: hardware
     description: "PTX analysis and bug detection"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: ptx-debug
     category: hardware
     description: "PTX falsification analysis and FKR test generation (was the aprender-ptx-debug binary)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem]
     subcommands: [analyze, gen-fkr, version]
 
@@ -398,12 +455,14 @@ commands:
     category: hardware
     description: "Model-to-PTX source mapping"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: cbtop
     category: hardware
     description: "ComputeBrick pipeline monitor"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   # ── Data & Pipeline ──
@@ -411,6 +470,7 @@ commands:
     category: data
     description: "Data quality pipeline"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem]
     subcommands: [audit, balance, decontaminate, dedup, split, x]
 
@@ -418,6 +478,7 @@ commands:
     category: data
     description: "Pipeline orchestration (plan/apply/status)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem]
 
   # ── TUI & Monitoring ──
@@ -427,18 +488,21 @@ commands:
     category: ui
     description: "Interactive terminal UI"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: monitor
     category: ui
     description: "Attach live TUI to a running training session"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: runs
     category: ui
     description: "List, show, and compare training experiment runs"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
     subcommands: [diff, ls, show]
 
@@ -446,6 +510,7 @@ commands:
     category: ui
     description: "Interactive experiment browser"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   # ── Miscellaneous ──
@@ -455,6 +520,8 @@ commands:
     category: misc
     description: "Qwen2.5-Coder showcase demo"
     requires_model: true
+    kinds: {generative: receipt, embedding: refuse}
+    use_instead: {embedding: embed}
     side_effects: [network, filesystem]
 
   - name: modelfile
@@ -462,6 +529,7 @@ commands:
     description: |
       CRUX-K-11: parse Ollama-style Modelfile DSL into apr config JSON.
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
     # parse — parse a Modelfile and emit config as JSON or human-readable text
     subcommands: [parse]
@@ -489,6 +557,7 @@ commands:
       (GH-876 Milestone 2). The rest land as they are delegated to the probador
       library.
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem, network]
     # tensor — export tensor activations for visual regression testing (PMAT-481)
     # llm    — benchmark an OpenAI-compatible endpoint (GH-876 Milestone 2);
@@ -500,258 +569,303 @@ commands:
     category: misc
     description: "Automated Five Whys diagnosis on a training checkpoint"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: []
 
   - name: ollama-chat-lint
     category: inspection
     description: "Lint a captured Ollama /api/chat response (CRUX-C-04)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: ollama-tools-lint
     category: inspection
     description: "Lint a captured Ollama /api/chat function-calling response (CRUX-I-04)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: dry-sampling-lint
     category: inspection
     description: "Lint a captured DRY-sampling observation (CRUX-C-23)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: awq-lint
     category: inspection
     description: "Lint a captured AWQ quality/compression/flags observation (CRUX-B-08)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: fp8-lint
     category: inspection
     description: "Lint a captured FP8 round-trip + SM-capability observation (CRUX-B-11)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: nf4-lint
     category: inspection
     description: "Lint a captured NF4 codebook/roundtrip/storage/parity observation (CRUX-B-10)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: oom-lint
     category: inspection
     description: "Lint a captured CUDA OOM postmortem report (CRUX-F-13)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: tool-use-lint
     category: inspection
     description: "Lint a captured OpenAI tool-use response (CRUX-C-11)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: gbnf-lint
     category: inspection
     description: "Lint a GBNF grammar-constrained observation (CRUX-C-10)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: typical-p-lint
     category: inspection
     description: "Lint a captured typical-p sampling observation (CRUX-C-22)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: registry-quota-lint
     category: inspection
     description: "Lint a captured registry byte-quota observation (CRUX-A-22)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: imatrix-lint
     category: inspection
     description: "Lint a captured imatrix calibration observation (CRUX-B-07)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: gptq-lint
     category: inspection
     description: "Lint a captured GPTQ compression/cosine/flags observation (CRUX-B-09)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: embeddings-lint
     category: inspection
     description: "Lint a captured /v1/embeddings observation (CRUX-C-13)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: unified-search-lint
     category: inspection
     description: "Lint a captured Hub+local unified-search merge observation (CRUX-A-23)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: rm-gc-lint
     category: inspection
     description: "Lint a captured `apr rm` / externally captured gc blob-GC observation (CRUX-A-25)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: shared-cache-lint
     category: inspection
     description: "Lint a captured APR_MODELS shared-cache observation (CRUX-A-21)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: ppl
     category: inspection
     description: "Perplexity classifier (CRUX-E-02): PPL = exp(-mean(log p))"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: quant-preservation-lint
     category: inspection
     description: "Validate dequant→requant metadata preservation (CRUX-B-19): general.* + tokenizer.* must be byte-equal modulo {quantization_version, file_type}"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: prometheus-lint
     category: inspection
     description: "Validate captured Prometheus /metrics body (CRUX-K-07): 0.0.4 text-format parse + optional Content-Type + optional K-07 required-metric set"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: otlp-lint
     category: inspection
     description: "Validate captured OTLP/JSON ExportTraceServiceRequest (CRUX-K-08): apr.inference span present + gen_ai.*/apr.tokens.* attributes + W3C trace-context propagation"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: kv-timeline-lint
     category: inspection
     description: "Validate captured KV-cache utilization timeline (CRUX-F-06): schema + block conservation + used_pct arithmetic + peak consistency + preemption-threshold trigger"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: gpu-memtrace-lint
     category: inspection
     description: "Validate captured GPU memory Chrome Trace JSON (CRUX-F-07): schema + alloc/free pairing by addr + per-(pid,tid) monotonic timestamps"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: explain-token-lint
     category: inspection
     description: "Validate an externally captured token-selection JSONL sampler-chain trace (CRUX-F-19; no apr producer yet): schema + Σ post_prob ≈ 1 + sampled_id present in candidates + optional greedy=argmax assertion"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: check-finite-lint
     category: inspection
     description: "Validate externally captured check-finite outputs (CRUX-F-11; no apr producer yet): error JSON shape (6 keys + value ∈ {nan,+inf,-inf}) + layer-coverage list (min_layers + transformer-op prefixes)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: attn-viz-lint
     category: inspection
     description: "Validate an externally captured attention dump (CRUX-F-17; no apr producer yet): 4-D attention dump row-softmax normalization + causal-mask zero + HTML heatmap count"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: embed-viz-lint
     category: inspection
     description: "Validate an externally captured embedding-projection CSV (CRUX-F-18; no apr producer yet): schema (4 columns + finite coords + non-negative token_id) + optional row-count=vocab_size + optional byte-identical determinism check"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: nccl-diag-lint
     category: inspection
     description: "Validate captured NCCL failure-diagnostics JSON (CRUX-F-15): 6 required keys (host, rank, nccl_version, last_op, code, suggest) + optional exit-code >= 128 + optional nvidia.com doc-link in suggest"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: react-trace-lint
     category: inspection
     description: "Validate an externally captured ReAct loop trace (CRUX-I-06; no apr producer yet): termination reason matches exit-code (final_answer=0, max_iterations|timeout=2, tool_error=3, parse_fail=4) + iteration bound + scratchpad grammar (Thought/Action/Observation/Final Answer)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: hang-trace-lint
     category: inspection
     description: "Validate captured `$APR_TRACE_DIR` after a hang/timeout (CRUX-F-14): per-rank rank{N}.py.txt files (world_size + non-empty) OR empty-on-success + exit-code 124/1/0 distinction"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: ddp-metrics-lint
     category: inspection
     description: "Validate two externally captured DDP metrics JSONs, N=1 and N=k (CRUX-D-11; no apr producer yet): scaling efficiency T_N/(N*T_1) >= 0.85 + loss parity |L_N - L_1|/L_1 <= 0.01 + per-step allreduce bandwidth > 0"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: audio-inspect-lint
     category: inspection
     description: "Validate an externally captured audio-inspect JSON body (CRUX-H-13; no apr producer yet): amplitude bounds (finite + [-1,1]) + sample_rate (canonical set or expected) + channel_shape (positive + optional channel-count match)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: attn-parity-lint
     category: inspection
     description: "Validate captured flash-attn2 parity + provenance JSON outputs (CRUX-L-02): max_abs_diff <= 5e-3, cosine_sim >= 0.9999, kernel_source matches hf-kernels-community:flash-attn2@<40-hex>, fallback reason present when not flash2, head_dim error names the rejection"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: rerank
     category: inference
     description: "Score a (query, passage) pair with a BERT cross-encoder loaded from an APR file (GH-326 Phase 3 + 3b). Two input modes: (1) pre-tokenised `--input-ids` + `--token-type-ids` u32 lists; (2) Phase 3b text mode — `--query` + `--passage` + `--vocab <vocab.txt>` invokes in-process WordPiece tokenisation that builds `[CLS] query [SEP] passage [SEP]` with `token_type_ids = 0` for the query side and `1` for the passage side. Emits sigmoid-mapped relevance ∈ [0,1] by default or `--raw-logit` for the raw classifier logit. Supports `--json` output."
     requires_model: true
+    kinds: {generative: refuse, embedding: refuse}
+    use_instead: {generative: run, embedding: embed}
     side_effects: []
 
   - name: embed
     category: inference
     description: "Produce sentence embeddings from a BERT bi-encoder loaded from an APR file (GH-326 Phase 6). Loads encoder-only `BertModel` checkpoints (e.g. `sentence-transformers/all-MiniLM-L6-v2`), tokenises text with WordPiece, runs the encoder forward, then pools hidden states with `--pool cls` ([CLS] hidden state) or `--pool mean` (mean of token positions; sentence-transformers default). Optionally L2-normalises (`--normalize`, default true). Repeatable `--text` for batch encoding. Outputs `{ text, embedding: [f32; hidden_dim], dim }` per input."
     requires_model: true
+    kinds: {generative: refuse, embedding: receipt}
+    use_instead: {generative: run}
     side_effects: []
 
   - name: shard
     category: model_ops
     description: "Split safetensors file into shards + weight-map index (CRUX-B-05)"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: unshard
     category: model_ops
     description: "Reconstruct single safetensors file from sharded directory (CRUX-B-05)"
     requires_model: false
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: oracle
     category: misc
     description: "RAG oracle — search Sovereign AI Stack documentation"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: grad-norm
     category: inspection
     description: "Gradient-norm telemetry classifier (CRUX-F-09)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: []
 
   - name: encrypt
     category: model_ops
     description: "Encrypt .apr model file (AES-256-GCM)"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: decrypt
     category: model_ops
     description: "Decrypt .apr model file"
     requires_model: true
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
 
   - name: mcp
     category: misc
     description: "Run MCP (Model Context Protocol) server over stdio"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [stdio]
 
   # ── Consolidated sibling CLIs (APR-MONO) ──
@@ -762,6 +876,7 @@ commands:
     category: pipeline
     description: "RAG pipeline: index, query, transcribe (was the trueno-rag binary)"
     requires_model: false
+    kinds: {generative: receipt, embedding: receipt}
     side_effects: [filesystem]
     subcommands: [demo, extract-frames, index, info, query, transcribe]
 
@@ -769,6 +884,7 @@ commands:
     category: tools
     description: "zram device management (was the trueno-zram binary)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem]
     subcommands: [benchmark, create, remove, status]
 
@@ -776,6 +892,7 @@ commands:
     category: tools
     description: "Discrete-event simulation (was the simular binary)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem]
     # `version` comes from #2527's simular clap conversion, which the batch
     # takes over #2493's. FALSIFY-CLI-006 caught the omission.
@@ -785,6 +902,7 @@ commands:
     category: tools
     description: "Compute-graph profiling (was the aprender-cgp binary)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem]
     subcommands: [baseline, bench, compete, contract, diff, doctor, explain, profile, roofline, trace, tui]
 
@@ -792,6 +910,7 @@ commands:
     category: tools
     description: "Provable-contracts CLI (also ships as the standalone pv binary)"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [filesystem]
     subcommands: [audit, book, census, certify, challenge, check-parity, codegen, coq, coverage, diff, discharge, equations, explain, extract, extract-pytorch, flux, fuzz, generate, graph, infer, invariants, kaizen, kani, lean, lean-status, lint, migrate, mirai, obligations, ontology, pipeline, probar, proof-status, query, roofline, scaffold, score, status, tla, unlock, validate, verify-bindings, verify-pipeline, verify-structure]
 
@@ -801,6 +920,7 @@ commands:
     category: tools
     description: "Print apr's own command surface as JSON (apr-cli-surface/v1, #3745); hidden gate input"
     requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
     side_effects: [stdio]
 
 # ── Falsification Conditions ──

@@ -15,6 +15,8 @@ TIMEOUT_S="${APR_EMBED_PROBE_TIMEOUT:-120}"
 
 . scripts/apr_bin.sh || exit 1
 
+LOGS="${OUT%.tsv}.logs"
+mkdir -p "${LOGS}"
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "${SCRATCH}"' EXIT
 
@@ -29,12 +31,13 @@ while IFS=$'\t' read -r verb args; do
     mkdir -p "${o}"
     args="${args//\{M\}/${MODEL}}"
     args="${args//\{B\}/${BF16}}"
+    args="${args//\{D\}/$(dirname "${MODEL}")}"
     args="${args//\{O\}/${o}}"
     # Word-splitting of the substituted args is intended: the table holds argv.
     # shellcheck disable=SC2086
     rc=0
-    timeout "${TIMEOUT_S}" "${APR}" "${verb}" ${args} < /dev/null > "${o}.log" 2>&1 || rc=$?
-    first="$(grep -m1 -vE '^[[:space:]]*$|^[━─╭╰│]+$' "${o}.log" | tr '\t' ' ' | cut -c1-200 || true)"
+    timeout "${TIMEOUT_S}" "${APR}" "${verb}" ${args} < /dev/null > "${LOGS}/${verb}.log" 2>&1 || rc=$?
+    first="$(grep -m1 -vE '^[[:space:]]*$|^[━─╭╰│]+$' "${LOGS}/${verb}.log" | tr '\t' ' ' | cut -c1-200 || true)"
     printf '%s\t%s\t%s\n' "${verb}" "${rc}" "${first}" >> "${OUT}"
     n=$((n + 1))
 done < "${TABLE}"

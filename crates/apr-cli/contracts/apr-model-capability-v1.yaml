@@ -127,6 +127,7 @@ spec: >
 # from `gpu_supported_ops()`: the eight `ops.insert(...)` lines are `true`, and
 # the five named in the trailing comment are `false` WITH the comment's own
 # reason and citation, which is the point — a negative fact stops being prose.
+# The eight APR-EMBED-001 rows below them are `false` for the same reason.
 ops:
   - op: RoPE
     gpu_supported: true
@@ -166,6 +167,56 @@ ops:
       CUDA forward applies only the two LLaMA-style norms, not the
       four-per-block Gemma2/Gemma3 norms, so those fall back to CPU
     citation: PMAT-824
+  # APR-EMBED-001 EG-0 (e): the embedding kind's ops, read from the
+  # EmbeddingGemma 2 files (tensor names and metadata in
+  # docs/audits/APR-EMBED-001/EG-0/b/). No backend implements any of them yet,
+  # so none is GPU-supported and no derivation in Rust produces them (EG-1/EG-2).
+  - op: BidirectionalMask
+    gpu_supported: false
+    reason: >
+      attention.causal = false. The CUDA attention kernels fold in a causal
+      mask; no symmetric-mask path exists
+    citation: APR-EMBED-001
+  - op: SlidingWindowAttn
+    gpu_supported: false
+    reason: >
+      local layers attend within attention.sliding_window (1024) with their own
+      RoPE base (rope.freq_base_swa); no windowed attention path exists
+    citation: APR-EMBED-001
+  - op: GatedGeluMlp
+    gpu_supported: false
+    reason: >
+      gate GELU_tanh(W_gate h) * (W_up h) -> W_down. The gated GPU path is
+      SwiGLU (SiLU); mapping a gated MLP to SwiGLU is the wrong answer
+    citation: APR-EMBED-001
+  - op: PerLayerInput
+    gpu_supported: false
+    reason: >
+      per-layer input gating (blk.N.inp_gate, blk.N.proj, per_layer_model_proj,
+      per_layer_proj_norm, blk.N.post_norm); no backend implements it
+    citation: APR-EMBED-001
+  - op: LayerOutputScale
+    gpu_supported: false
+    reason: >
+      blk.N.layer_output_scale multiplies each block's output; no backend
+      implements it
+    citation: APR-EMBED-001
+  - op: MeanPool
+    gpu_supported: false
+    reason: >
+      pooling_type = 1 (mean over real tokens); no pooling kernel exists
+    citation: APR-EMBED-001
+  - op: DenseProjection
+    gpu_supported: false
+    reason: >
+      output.weight projects the pooled embedding_length (512) to
+      embedding_length_out (768); no pooled-projection path exists
+    citation: APR-EMBED-001
+  - op: L2Normalize
+    gpu_supported: false
+    reason: >
+      the response is unit-norm; no normalise kernel exists on the response path
+    citation: APR-EMBED-001
 
 # ── op → implementing symbol, and whether anything calls it ──────────────────
 # Three states, because they are three different facts and only the first can be
@@ -449,8 +500,16 @@ quant_types:
     reason: not named by the GPU whitelist
 
 # ── how an architecture's required ops are derived ───────────────────────────
-# Transcribed from `required_ops()` / `required_ops_for_model()`. Declared so a
-# consumer can compute the same set without re-reading Rust.
+# The generative rows are transcribed from `required_ops()` /
+# `required_ops_for_model()`. Declared so a consumer can compute the same set
+# without re-reading Rust.
+#
+# APR-EMBED-001: the mask is a property of the model KIND, not of every
+# transformer. "always CausalMask" stated one kind's truth as universal, so an
+# embedding model would have passed the contract with the wrong mask. The
+# embedding rows are declared AHEAD of Rust: no loader admits the embedding kind
+# yet (EG-1), so `required_ops()` still inserts CausalMask unconditionally, which
+# is correct for the only kind it can see.
 op_derivation:
   positional_encoding:
     Rope: [RoPE]
@@ -468,7 +527,17 @@ op_derivation:
   conditional:
     has_bias: [BiasAdd]
     has_qk_norm: [QkNorm]
-  always: [CausalMask]
+  always: []
+  by_kind:
+    generative: [CausalMask]
+    embedding: [BidirectionalMask, MeanPool, DenseProjection, L2Normalize]
+  # Read from the file (APR-EMBED-001 I-9), never from an architecture name.
+  per_file:
+    sliding_window: [SlidingWindowAttn]         # attention.sliding_window > 0
+    gated_gelu_ffn: [GatedGeluMlp]              # ffn_gate present and the activation is GELU
+    inp_gate: [PerLayerInput]                   # blk.N.inp_gate present
+    layer_output_scale: [LayerOutputScale]      # blk.N.layer_output_scale present
+    post_attention_norm: [PostAttnFfnNorm]      # blk.N.post_attention_norm present
   per_architecture:
     softcap_postnorm: [AttnFinalSoftcap, PostAttnFfnNorm]
 

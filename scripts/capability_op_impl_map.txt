@@ -36,3 +36,11 @@ LayerNorm	layer_norm_gpu	UNSUPPORTED, but crates/aprender-serve/src/cuda/executo
 AbsolutePos	-	UNSUPPORTED and unimplemented; GPU uses RoPE
 AttnFinalSoftcap	-	UNSUPPORTED and unimplemented; PMAT-824
 PostAttnFfnNorm	-	UNSUPPORTED and unimplemented; PMAT-824
+BidirectionalMask	-	UNSUPPORTED and unimplemented; APR-EMBED-001 (embedding kind)
+SlidingWindowAttn	-	UNSUPPORTED and unimplemented; APR-EMBED-001
+GatedGeluMlp	-	UNSUPPORTED and unimplemented; APR-EMBED-001. Not gelu_gpu (activation kernel) and not fused_swiglu_gpu (SiLU gate)
+PerLayerInput	-	UNSUPPORTED and unimplemented; APR-EMBED-001
+LayerOutputScale	-	UNSUPPORTED and unimplemented; APR-EMBED-001
+MeanPool	-	UNSUPPORTED and unimplemented; APR-EMBED-001
+DenseProjection	-	UNSUPPORTED and unimplemented; APR-EMBED-001
+L2Normalize	-	UNSUPPORTED and unimplemented; APR-EMBED-001

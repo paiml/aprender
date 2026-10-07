@@ -1114,3 +1114,269 @@ fn falsify_2607_piped_prompt_is_not_refused_as_a_bare_invocation() {
          model resolution and stop at NO_MODEL — proof the guard let it through. stderr:\n{stderr}"
     );
 }
+
+// ── APR-EMBED-001 I-2: kind totality ─────────────────────────────────────────
+//
+// Every registry command declares exactly one verdict per model kind, and the
+// verdict is one of three states. There is no fourth state: a typo, an
+// "advisory" or a missing kind is a violation, never a pass.
+
+const MODEL_KINDS: [&str; 2] = ["generative", "embedding"];
+const VERDICTS: [&str; 3] = ["receipt", "refuse", "no-model"];
+
+fn name_of(cmd: &serde_yaml::Value) -> &str {
+    cmd.get("name")
+        .and_then(|n| n.as_str())
+        .unwrap_or("<unnamed>")
+}
+
+fn verdict_of(cmd: &serde_yaml::Value, kind: &str) -> Option<String> {
+    cmd.get("kinds")?.get(kind)?.as_str().map(str::to_string)
+}
+
+/// The registry's `commands:` list, or the violation that stops the scan.
+fn registry_commands(yaml: &str) -> Result<Vec<serde_yaml::Value>, String> {
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(yaml).map_err(|e| format!("registry does not parse: {e}"))?;
+    let commands = doc
+        .get("commands")
+        .and_then(|c| c.as_sequence())
+        .ok_or_else(|| "registry has no `commands:` list".to_string())?;
+    if commands.is_empty() {
+        return Err("0 commands scanned".to_string());
+    }
+    Ok(commands.clone())
+}
+
+/// A refusal must name a registered verb that takes the kind; any other verdict
+/// must name none.
+fn use_instead_violation(
+    cmd: &serde_yaml::Value,
+    kind: &str,
+    verdict: &str,
+    commands: &[serde_yaml::Value],
+) -> Option<String> {
+    let name = name_of(cmd);
+    let instead = cmd
+        .get("use_instead")
+        .and_then(|u| u.get(kind))
+        .and_then(|u| u.as_str());
+    match (verdict, instead) {
+        ("refuse", None) => Some(format!(
+            "{name}: refuses kind `{kind}` without naming the verb to use (use_instead)"
+        )),
+        ("refuse", Some(other)) => match commands.iter().find(|c| name_of(c) == other) {
+            None => Some(format!(
+                "{name}: use_instead.{kind} names `{other}`, which is not a registered command"
+            )),
+            Some(t) if verdict_of(t, kind).as_deref() != Some("receipt") => Some(format!(
+                "{name}: use_instead.{kind} names `{other}`, which does not take kind `{kind}`"
+            )),
+            Some(_) => None,
+        },
+        (_, Some(other)) => Some(format!(
+            "{name}: use_instead.{kind} = `{other}` on a `{verdict}` verdict"
+        )),
+        (_, None) => None,
+    }
+}
+
+/// Violations for one kind of one command. Returns the verdict when it is valid.
+fn kind_violations(
+    cmd: &serde_yaml::Value,
+    kind: &str,
+    commands: &[serde_yaml::Value],
+    bad: &mut Vec<String>,
+) -> Option<String> {
+    let name = name_of(cmd);
+    let Some(v) = verdict_of(cmd, kind) else {
+        bad.push(format!("{name}: no verdict for kind `{kind}`"));
+        return None;
+    };
+    if !VERDICTS.contains(&v.as_str()) {
+        bad.push(format!(
+            "{name}: kind `{kind}` has verdict `{v}`, not one of {VERDICTS:?}"
+        ));
+        return None;
+    }
+    let requires_model = cmd.get("requires_model").and_then(|r| r.as_bool()) == Some(true);
+    if v == "no-model" && requires_model {
+        bad.push(format!(
+            "{name}: requires_model is true but kind `{kind}` says no-model"
+        ));
+    }
+    bad.extend(use_instead_violation(cmd, kind, &v, commands));
+    Some(v)
+}
+
+/// Violations for one command across every kind.
+fn command_violations(
+    cmd: &serde_yaml::Value,
+    commands: &[serde_yaml::Value],
+    bad: &mut Vec<String>,
+) {
+    let name = name_of(cmd);
+    let Some(kinds) = cmd.get("kinds").and_then(|k| k.as_mapping()) else {
+        bad.push(format!("{name}: no `kinds:` map"));
+        return;
+    };
+    for key in kinds.keys() {
+        let key = key.as_str().unwrap_or("<non-string>");
+        if !MODEL_KINDS.contains(&key) {
+            bad.push(format!("{name}: unknown model kind `{key}`"));
+        }
+    }
+    let verdicts: Vec<String> = MODEL_KINDS
+        .iter()
+        .filter_map(|kind| kind_violations(cmd, kind, commands, bad))
+        .collect();
+    let no_model = verdicts.iter().filter(|v| *v == "no-model").count();
+    if verdicts.len() == MODEL_KINDS.len() && no_model > 0 && no_model < verdicts.len() {
+        bad.push(format!("{name}: no-model for one kind but not the other"));
+    }
+}
+
+/// All kind-totality violations in a registry document. Returns the violations
+/// and the names of the commands scanned; a scan of zero commands is a violation.
+fn kind_totality_violations(yaml: &str) -> (Vec<String>, Vec<String>) {
+    let commands = match registry_commands(yaml) {
+        Ok(c) => c,
+        Err(e) => return (vec![e], Vec::new()),
+    };
+    let mut bad = Vec::new();
+    for cmd in &commands {
+        command_violations(cmd, &commands, &mut bad);
+    }
+    let names: std::collections::BTreeSet<String> =
+        commands.iter().map(|c| name_of(c).to_string()).collect();
+    (bad, names.into_iter().collect())
+}
+
+#[test]
+fn every_command_declares_one_verdict_per_model_kind() {
+    let Some(text) = provable_contracts::workspace_file_or_skip!(
+        "every_command_declares_one_verdict_per_model_kind",
+        "contracts/apr-cli-commands-v1.yaml"
+    ) else {
+        return;
+    };
+    let (bad, scanned) = kind_totality_violations(&text);
+    assert!(
+        bad.is_empty(),
+        "APR-EMBED-001 I-2 kind totality:\n  {}",
+        bad.join("\n  ")
+    );
+    let missed: Vec<&str> = registered_commands()
+        .into_iter()
+        .filter(|c| !scanned.iter().any(|s| s == c))
+        .collect();
+    assert!(
+        missed.is_empty(),
+        "the totality scan must cover every registered command; not scanned: {missed:?}"
+    );
+}
+
+#[test]
+fn kind_totality_guard_case_table() {
+    const OK: &str = "commands:
+  - name: run
+    requires_model: true
+    kinds: {generative: receipt, embedding: refuse}
+    use_instead: {embedding: embed}
+  - name: embed
+    requires_model: true
+    kinds: {generative: refuse, embedding: receipt}
+    use_instead: {generative: run}
+  - name: pull
+    requires_model: false
+    kinds: {generative: receipt, embedding: receipt}
+  - name: explain
+    requires_model: false
+    kinds: {generative: no-model, embedding: no-model}
+";
+    let (bad, scanned) = kind_totality_violations(OK);
+    assert!(bad.is_empty(), "must-pass case flagged: {bad:?}");
+    assert_eq!(scanned.len(), 4);
+
+    // (case, mutation applied to OK, substring the violation must contain)
+    let must_fail: &[(&str, &str, &str, &str)] = &[
+        ("zero commands", "", "commands: []\n", "0 commands"),
+        ("no commands list", "", "binary: apr\n", "no `commands:`"),
+        (
+            "kinds missing",
+            "    kinds: {generative: no-model, embedding: no-model}\n",
+            "",
+            "no `kinds:`",
+        ),
+        (
+            "kind missing",
+            "{generative: no-model, embedding: no-model}",
+            "{generative: no-model}",
+            "no verdict for kind `embedding`",
+        ),
+        (
+            "fourth state",
+            "{generative: no-model, embedding: no-model}",
+            "{generative: no-model, embedding: advisory}",
+            "advisory",
+        ),
+        (
+            "third kind",
+            "{generative: no-model, embedding: no-model}",
+            "{generative: no-model, embedding: no-model, classifier: refuse}",
+            "unknown model kind",
+        ),
+        (
+            "model verb says no-model",
+            "{generative: receipt, embedding: refuse}",
+            "{generative: no-model, embedding: refuse}",
+            "requires_model is true",
+        ),
+        (
+            "refuse names nothing",
+            "    use_instead: {embedding: embed}\n",
+            "",
+            "without naming",
+        ),
+        (
+            "refuse names unknown verb",
+            "use_instead: {embedding: embed}",
+            "use_instead: {embedding: embedx}",
+            "not a registered command",
+        ),
+        (
+            "refuse names a refusing verb",
+            "use_instead: {generative: run}",
+            "use_instead: {generative: embed}",
+            "does not take kind",
+        ),
+        (
+            "use_instead on a receipt",
+            "kinds: {generative: receipt, embedding: receipt}\n",
+            "kinds: {generative: receipt, embedding: receipt}\n    use_instead: {embedding: run}\n",
+            "on a `receipt` verdict",
+        ),
+        (
+            "mixed no-model",
+            "{generative: receipt, embedding: receipt}",
+            "{generative: receipt, embedding: no-model}",
+            "no-model for one kind",
+        ),
+    ];
+    for (case, from, to, expect) in must_fail {
+        let doc = if from.is_empty() {
+            (*to).to_string()
+        } else {
+            assert!(
+                OK.contains(from),
+                "case `{case}`: mutation anchor not in OK"
+            );
+            OK.replacen(from, to, 1)
+        };
+        let (bad, _) = kind_totality_violations(&doc);
+        assert!(
+            bad.iter().any(|b| b.contains(expect)),
+            "case `{case}` must be RED with `{expect}`; got {bad:?}"
+        );
+    }
+}

@@ -1,5 +1,5 @@
 # APR-EMBED-001 EG-0(a): one probe per verb. Columns: verb<TAB>args.
-# {M}=model under test {B}=BF16 sibling {O}=fresh scratch dir. Every probe runs with
+# {M}=model under test {B}=BF16 sibling {D}=the model's directory {O}=fresh scratch dir. Every probe runs with
 # stdin </dev/null under a timeout; exit 124 means the timeout fired.
 run	{M} hello --max-tokens 4
 serve	plan {M}
@@ -16,13 +16,13 @@ hex	{M}
 tree	{M}
 flow	{M}
 export	{M} --format safetensors -o {O}/export.safetensors
-convert	{M} --output {O}/convert.apr
-stamp	{M} --output {O}/stamp.gguf
+convert	{M} --quantize int8 --output {O}/convert.gguf
+stamp	{M} --license apache-2.0 --output {O}/stamp.gguf
 compile	{M} -o {O}/compiled
 merge	{M} {M} --plan
 quantize	{M} --plan
 rosetta	inspect {M}
-publish	{O} example/embeddinggemma-2 --dry-run
+publish	{D} example/embeddinggemma-2 --dry-run
 finetune	{M} --plan
 prune	{M} --plan
 distill	{M} --student {M} --plan
@@ -37,8 +37,8 @@ parity	{M}
 profile	{M}
 ptx-map	{M}
 showcase	--model-dir {O}
-diagnose	{O}
-rerank	{M} --query hello --passage world
+diagnose	{D}
+rerank	{M} --query hello --passage world --vocab {O}/vocab.txt
 embed	{M} --text hello --vocab {O}/vocab.txt
 shard	{M} --output {O}/shards
 encrypt	{M} --output {O}/enc.bin
@@ -48,6 +48,6 @@ import	{M} -o {O}/import.apr
 list	
 rm	embeddinggemma-2-nonexistent
 unshard	{O}/shards --output {O}/unshard.gguf
-tokenize	encode {M} hello
+tokenize	encode {M} -p hello
 capability	
 rag	info
