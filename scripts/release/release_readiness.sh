@@ -25,6 +25,14 @@
 # `git diff X <release-commit>` is empty outside evidence/. Otherwise the flag is withheld, pv grades the
 # receipts against the release commit, and a stale receipt is a violation — the row says which.
 #
+# STANDING RELEASE POLICY (`ladder.release_policy` in contracts/model-capability-ladder-v1.yaml, read by
+#   scripts/lib/release_policy.sh). For a version it covers, CRUX smoke on lambda and gx10 is the release gate
+#   and every row this shape grades above it is nightly-only: no release step runs this script for that
+#   version (autopilot skips its readiness step, preflight R8 is not run), so the grade is the nightly's.
+#   The verdict lines say so ("nightly-only"); the exit code is unchanged, so a red row is still red and
+#   opens or updates its ticket. There is no third state. A policy that cannot be read is exit 2 (not
+#   judged), and a per-release emergency_scopes entry for a covered version is exit 1 (one release, one ruling).
+#
 # EXIT  0 Pass · 1 Fail ·
 #       2 pv declined / could not judge / is missing ·
 #       3 caller error. Every non-zero STOPs the caller.
@@ -117,6 +125,7 @@ PY
 
 judge() { # judge mode root version commit receipts dogfood out
     local mode="$1" root="$2" version="$3" commit="$4" receipts="$5" dogfood="$6" out="$7" surface="${8:-}"
+    local scope="${9:-}"
     local pv pvv rc rx sum label crux cf e
     local -a args
     pv="${RELEASE_READINESS_PV:-}"
@@ -151,7 +160,7 @@ judge() { # judge mode root version commit receipts dogfood out
     cat -- "$out"
     pvv="$("$pv" --version 2>/dev/null | head -n 1 | tr -s ' \t' '_')"
     ( cd "$root" && "$pv" "${args[@]}" ) > "$out" 2>&1; rc=$?
-    label="$SHAPE for $version at ${commit:0:12}"
+    label="$SHAPE for $version at ${commit:0:12}${scope}"
     case "$rc" in
         0) echo "ok    R8 $label: Pass"
            # #3715 B1 (operator 2026-09-28): the ONE line autopilot cut_tag() requires before `git tag`.
@@ -172,8 +181,30 @@ judge() { # judge mode root version commit receipts dogfood out
     esac
 }
 
+# policy_scope root version -> rc 0 and RR_SCOPE (the verdict-line suffix; empty when the policy does not
+# cover version), rc 1 a per-release entry for a covered version, rc 2 not measured. RP_WHY says why.
+# Called in the current shell (not in $( )) so RR_SCOPE and RP_WHY survive.
+policy_scope() {
+    local root="$1" version="$2" lib pf eff prc
+    RR_SCOPE="" RP_WHY=""
+    lib="$(dirname -- "$SCRIPT_PATH")/../lib/release_policy.sh"
+    # shellcheck source=scripts/lib/release_policy.sh
+    . "$lib" || { RP_WHY="cannot load $lib"; return 2; }
+    pf="$(mktemp "${TMPDIR:-/tmp}/release-readiness-policy.XXXXXX")" || { RP_WHY="mktemp failed"; return 2; }
+    release_policy_ladder "$root/contracts/model-capability-ladder-v1.yaml" "$version" > "$pf"; prc=$?
+    eff="$(head -n 1 "$pf")"; rm -f -- "${pf:?}"
+    [ "$prc" = 0 ] || return "$prc"
+    if [ "$RP_APPLIES" = 1 ]; then
+        # the synthesized ladder copy is the CRUX judge's input at the cut, not this script's
+        case "$eff" in "${TMPDIR:-/tmp}"/ladder-policy.*) rm -f -- "${eff:?}" ;; esac
+        RR_SCOPE=" (nightly-only: the standing release policy covers $version; CRUX smoke is its release gate, every row above it is graded here at night, and a red row is a ticket)"
+        echo "      R8 nightly-only: the standing release policy covers $version; the rows above CRUX smoke are not release gates"
+    fi
+    return 0
+}
+
 main() {
-    local root="" version="" commit="" receipts="" dogfood="" surface="" out="" mode tmpout rc
+    local root="" version="" commit="" receipts="" dogfood="" surface="" out="" mode tmpout rc prc
     while [ $# -gt 0 ]; do
         case "$1" in
             --root|--version|--commit|--receipts|--dogfood-receipt|--surface|--out)
@@ -196,6 +227,13 @@ main() {
         || caller_error "RELEASE_READINESS_MODE='${RELEASE_READINESS_MODE:-}' / DEFAULT_MODE='$DEFAULT_MODE': the only mode is enforce; there is no report mode (may only strengthen)"
     [ -n "$root" ] || root="$(cd -- "$(dirname -- "$SCRIPT_PATH")/../.." && pwd)"
     git -C "$root" rev-parse --verify --quiet HEAD >/dev/null || { echo "FAIL  R8 $root is not a git repository"; exit 2; }
+    # The standing release policy: read before pv, so an unreadable policy is never graded as "no policy".
+    policy_scope "$root" "$version"; prc=$?
+    case "$prc" in
+        0) ;;
+        1) echo "FAIL  R8 the standing release policy refuses $version: $RP_WHY"; exit 1 ;;
+        *) echo "FAIL  R8 the standing release policy cannot be judged for $version (not measured): $RP_WHY"; exit 2 ;;
+    esac
     [ -z "$dogfood" ] || [ -f "$dogfood" ] || caller_error "--dogfood-receipt $dogfood does not exist"
     # #3745: pv derives the release cells from the candidate's `apr surface --json` -- no surface, no cells,
     # no pass. T-1 passes the one it just took from the release-built apr; T-4 reads the committed copy.
@@ -203,7 +241,7 @@ main() {
     [ -n "$surface" ] || surface="$root/evidence/release/surface/$version.json"
     [ -f "$surface" ] || surface=""
     if [ -n "$out" ]; then tmpout="$out"; else tmpout="$(mktemp)"; fi
-    judge "$mode" "$root" "$version" "$commit" "$receipts" "$dogfood" "$tmpout" "$surface"; rc=$?
+    judge "$mode" "$root" "$version" "$commit" "$receipts" "$dogfood" "$tmpout" "$surface" "$RR_SCOPE"; rc=$?
     [ -n "$out" ] || rm -f -- "$tmpout"
     exit "$rc"
 }
@@ -231,8 +269,10 @@ exit "${FX_PV_RC:-1}"
 STUB
     chmod +x "$tmp/pv"
     g() { git -C "$1" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t -c commit.gpgsign=false "${@:2}"; }
-    mk() { # dir [subdir]: a repo with src/ (and an empty subdir) at commit A, receipts naming A committed on top (HEAD = B)
-        mkdir -p "$1/src" "$1/evidence/dogfood/models/1.2.3" "$1/${2:-src}"; printf 'a\n' > "$1/src/f"
+    mk() { # dir [subdir]: a repo with src/, the ladder ($MK_LADDER; default: no policy) (and an empty subdir) at
+           # commit A, receipts naming A committed on top (HEAD = B)
+        mkdir -p "$1/src" "$1/contracts" "$1/evidence/dogfood/models/1.2.3" "$1/${2:-src}"; printf 'a\n' > "$1/src/f"
+        printf '%s' "${MK_LADDER:-$'ladder:\n  emergency_scopes:\n'}" > "$1/contracts/model-capability-ladder-v1.yaml"
         git init -q -b main "$1"; g "$1" add -A; g "$1" commit -qm A
         local a; a="$(git -C "$1" rev-parse HEAD)"
         printf '{"apr_sha":"%s"}\n' "$a" > "$1/evidence/dogfood/models/1.2.3/lambda.json"
@@ -241,8 +281,15 @@ STUB
     }
     row() { # name expect-rc needle dir [env...] -- runs main in a subshell
         local name="$1" expect="$2" needle="$3" dir="$4" o rc=0; shift 4
-        o="$( env FX_ARGS="$tmp/args" RELEASE_READINESS_PV="$tmp/pv" "$@" bash "$SCRIPT_PATH" --root "$dir" --version 1.2.3 --commit "$(git -C "$dir" rev-parse HEAD)" 2>&1 )" || rc=$?
+        o="$( env TMPDIR="$tmp" FX_ARGS="$tmp/args" RELEASE_READINESS_PV="$tmp/pv" "$@" bash "$SCRIPT_PATH" --root "$dir" --version 1.2.3 --commit "$(git -C "$dir" rev-parse HEAD)" 2>&1 )" || rc=$?
         if [ "$rc" != "$expect" ]; then printf '  BROKE %-44s expected exit %s got %s\n%s\n' "$name" "$expect" "$rc" "$o"; fail=$((fail + 1)); return 0; fi
+        case "$needle" in
+            !*) case "$o" in
+                    *"${needle#!}"*) printf '  BROKE %-44s exit %s but said %s\n%s\n' "$name" "$rc" "${needle#!}" "$o"; fail=$((fail + 1)) ;;
+                    *) printf '  ok    %-44s exit=%s never said %s\n' "$name" "$rc" "${needle#!}"; pass=$((pass + 1)) ;;
+                esac
+                return 0 ;;
+        esac
         case "$o" in
             *"$needle"*) printf '  ok    %-44s exit=%s said %s\n' "$name" "$rc" "$needle"; pass=$((pass + 1)) ;;
             *) printf '  BROKE %-44s exit %s but never said %s\n%s\n' "$name" "$rc" "$needle" "$o"; fail=$((fail + 1)) ;;
@@ -298,6 +345,40 @@ STUB
     d="$tmp/m"; mk "$d"; printf '{"apr_sha":"%s"}\n' "$(printf '0%.0s' $(seq 40))" > "$d/evidence/dogfood/models/1.2.3/gx10.json"; g "$d" commit -qam split
     row split_apr_sha_withholds                  0 "different apr_sha values" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     argrow split_apr_sha_not_passed              "!--receipts-commit"
+    # the standing release policy, one row per state. pol dir since [extra-ladder-lines]
+    pol() {
+        local l
+        printf -v l 'ladder:\n  release_policy:\n    name: crux-smoke\n    since: "%s"\n    date: "2026-10-07"\n    quote: '"'"'"q"'"'"'\n    hosts: [lambda, gx10]\n    thinking: ["off", "on"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    release_notes: known_failures\n%s  emergency_scopes:\n%s' \
+            "$2" "${4:-}" "${3:-}"
+        MK_LADDER="$l" mk "$1"
+    }
+    d="$tmp/pc"; pol "$d" 1.0.0
+    row policy_covered_pass_is_nightly_only      0 "Pass" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    row policy_covered_marks_the_rows            0 "(nightly-only: the standing release policy covers 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    row policy_covered_keeps_the_enforce_line    0 "ok    R8 #3715 ENFORCE PASS version=1.2.3 commit=$(git -C "$d" rev-parse HEAD) pv=" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    row policy_covered_fail_stays_red            1 "3 violation(s): cell=3" "$d" FX_PV_RC=1
+    row policy_covered_fail_is_marked            1 "(nightly-only: the standing release policy covers 1.2.3" "$d" FX_PV_RC=1
+    row policy_covered_decline_stays_a_stop      2 "pv DECLINED" "$d" FX_PV_RC=2 FX_PV_BODY=junk
+    row policy_covered_never_warns               0 "!WARN" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    if compgen -G "$tmp/ladder-policy.*" > /dev/null; then
+        printf '  BROKE %-44s %s\n' policy_copy_is_removed "$(ls "$tmp"/ladder-policy.* | tr '\n' ' ')"; fail=$((fail + 1))
+    else
+        printf '  ok    %-44s no synthesized ladder left behind\n' policy_copy_is_removed; pass=$((pass + 1))
+    fi
+    d="$tmp/pn"; pol "$d" 2.0.0
+    row policy_not_covering_is_not_marked        0 "!nightly-only" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    row policy_not_covering_fail_is_unmarked     1 "!nightly-only" "$d" FX_PV_RC=1
+    d="$tmp/r"
+    row no_policy_block_is_not_marked            0 "!nightly-only" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    d="$tmp/pe"; pol "$d" 1.0.0 '    - name: crux-smoke
+      release: "1.2.3"
+'
+    row policy_per_release_entry_refuses         1 "the standing release policy refuses 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    d="$tmp/pu"; pol "$d" 1.0.0 '' '    bogus_key: x
+'
+    row policy_unreadable_is_not_measured        2 "cannot be judged for 1.2.3 (not measured)" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    d="$tmp/pl"; mk "$d"; g "$d" rm -q contracts/model-capability-ladder-v1.yaml; g "$d" commit -qm noladder
+    row policy_without_a_ladder_is_not_measured  2 "cannot read the ladder" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     # the committed default is what a bare run uses; flipping it is a reviewed commit
     if [ "$DEFAULT_MODE" = enforce ]; then
         printf '  ok    %-44s DEFAULT_MODE=enforce\n' committed_default_is_enforce; pass=$((pass + 1))
@@ -316,6 +397,6 @@ STUB
 
 case "${1:-}" in
     --selftest) selftest ;;
-    -h|--help) sed -n '2,37p' "$0" ;;
+    -h|--help) sed -n '2,45p' "$0" ;;
     *) main "$@" ;;
 esac
