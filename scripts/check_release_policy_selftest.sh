@@ -77,5 +77,32 @@ row no-emergency-list     2 0 "$(plant noel 's/^  emergency_scopes:$/  emergency
 row hosts-carried         0 1 "$(plant h 's/^    hosts: .*$/    hosts: [gx10]/')" 0.71.0 '^      hosts: \[gx10\]$'
 row backslash-kept        0 1 "$(plant bs 's/^    quote: .*$/    quote: "a\\\\nb"/')" 0.71.0 '^      quote: "a\\\\nb"$'
 
+# rp_known_failures: the release notes' known-failures list. A gh stub answers the nightly issue search.
+cat > "$tmp/gh" <<'GH'
+#!/usr/bin/env bash
+[ "${KF_FAIL:-}" != 1 ] || exit 1
+printf '%s\n' "$KF_JSON"
+GH
+chmod +x "$tmp/gh"
+# kf NAME WANT_RC LADDER ISSUES-JSON FAIL PATTERN [FORBID]
+kf() {
+    local out rc
+    n=$((n + 1))
+    out=$(RP_GH="$tmp/gh" KF_JSON="$4" KF_FAIL="$5" rp_known_failures "$3" o/r 2>&1) && rc=0 || rc=$?
+    if [ "$rc" != "$2" ] || ! printf '%s\n' "$out" | grep -qE -- "$6" || { [ -n "${7:-}" ] && printf '%s\n' "$out" | grep -qE -- "$7"; }; then
+        printf 'FAIL %s: rc %s (want %s), output:\n%s\n' "$1" "$rc" "$2" "$out"; fail=$((fail + 1)); return 0
+    fi
+    printf 'ok   %s (rc %s)\n' "$1" "$rc"
+}
+kf kf-known-red-listed      0 "$ladder" '[]' "" '^- qwen35-0\.8b-q4km: known red \(ladder\), #4030$' 'not measured'
+kf kf-nightly-rows-listed   0 "$ladder" '[{"number":12,"title":"models-nightly red: fx-1 on gx10"},{"number":9,"title":"models-nightly red: lane on all"}]' "" \
+    '^- lane on all: red in the models nightly, #9$'
+kf kf-nightly-sorted        0 "$ladder" '[{"number":12,"title":"models-nightly red: fx-1 on gx10"},{"number":9,"title":"models-nightly red: lane on all"}]' "" \
+    '^- fx-1 on gx10: red in the models nightly, #12$'
+kf kf-other-issue-not-listed 0 "$ladder" '[{"number":3,"title":"something about models-nightly red: x"}]' "" '^- qwen35' '#3$'
+kf kf-unread-said           0 "$ladder" '[]' 1 'could not be read when this release was cut \(not measured\)' '^- none$'
+kf kf-none                  0 "$(plant nokr '/^  known_red:$/,/^      ruling:/d')" '[]' "" '^- none$' 'known red'
+kf kf-ladder-missing        2 "$tmp/none.yaml" '[]' "" '^$|.*' 'Known failures'
+
 echo "release_policy self-test: $n rows, $fail failed"
 [ "$fail" = 0 ]

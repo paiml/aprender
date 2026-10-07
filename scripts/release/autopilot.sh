@@ -68,6 +68,16 @@ ap_policy_applies() {
       [ "$r" = 0 ] || { printf '%s\n' "$RP_WHY" >&2; exit "$r"; }
       printf '%s\n' "$RP_APPLIES" )
 }
+# ap_known_failures NOTES: under the standing release policy the release notes list every known failure
+# with its ticket (ladder.known_red, then the models nightly's open red-row issues), appended once. It
+# lists; it never stops the release. rc 2 only when the release commit's ladder cannot be read.
+ap_known_failures() {
+    grep -qF '## Known failures' -- "$1" && return 0
+    ( . scripts/lib/release_policy.sh || exit 2
+      rp_known_failures contracts/model-capability-ladder-v1.yaml "$REPO" ) > "$1.kf" || return 2
+    { printf '\n'; cat -- "$1.kf"; } >> "$1" || return 2
+    rm -f -- "${1:?}.kf"
+}
 # D1: pure-bash membership. `producer | grep -q` returns 141 on SIGPIPE under pipefail,
 # so the old form could fail step-name validation for a reason unrelated to the step name.
 case " ${STEPS[*]} " in *" $FROM "*) ;; *) die "unknown step '$FROM' (${STEPS[*]})" ;; esac
@@ -329,6 +339,10 @@ cut_tag() {
 if run_step tag; then
   git rev-parse -q --verify "refs/tags/$T" > /dev/null && die "tag $T already exists locally"
   [ -f "$AP/release_notes.md" ] || die "no $AP/release_notes.md (prepare_bump.sh writes it from CHANGELOG [$V])"
+  if [ "$AP_POLICY" = 1 ]; then
+    ap_known_failures "$AP/release_notes.md" || die "the known-failures list for the release notes could not be built (the ladder is unreadable) -- no tag"
+    say "NOTES: known failures listed in $AP/release_notes.md under the standing release policy"
+  fi
   # The publish dry run runs AHEAD of the tag. `--verify` builds every publishable crate's tarball
   # against the local overlay (= `cargo publish --dry-run` for the whole cascade). The worktree is the
   # release commit the tag will name, so this is the tarball the cascade uploads. A red here stops the

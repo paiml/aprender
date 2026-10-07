@@ -99,3 +99,26 @@ release_policy_ladder() {
     RP_APPLIES=1
     printf '%s\n' "$copy"
 }
+
+# rp_known_failures LADDER REPO -> stdout: the release notes' "Known failures" section for a release the
+# policy covers: every ladder.known_red rung with its ticket, then every open issue the models nightly
+# opened for a red row ("models-nightly red: <row> on <host>"). Lists; it never judges and never stops a
+# release. A nightly list it cannot read is said in the section (not measured), never left out silently.
+# rc 2 only when LADDER cannot be read. gh is ${RP_GH:-gh}.
+rp_known_failures() {
+    local ladder="$1" repo="$2" kr nightly
+    [ -r "$ladder" ] || { RP_WHY="cannot read the ladder $ladder"; return 2; }
+    kr=$(awk '/^  known_red:[[:space:]]*$/ { f = 1; next }
+              f && /^  [^ ]/ { f = 0 }
+              f && /^    - rung:/ { r = $3 }
+              f && /^      ticket:/ { t = $2; gsub(/"/, "", t); if (r != "") printf "- %s: known red (ladder), %s\n", r, t; r = "" }' "$ladder")
+    printf '## Known failures\n\nThese rows are not release gates under the standing release policy (CRUX smoke on lambda and gx10 is the gate). Each has a ticket.\n\n'
+    [ -z "$kr" ] || printf '%s\n' "$kr"
+    if nightly=$("${RP_GH:-gh}" issue list --repo "$repo" --state open --limit 100 --search '"models-nightly red:" in:title' --json number,title 2> /dev/null) \
+        && nightly=$(printf '%s' "$nightly" | jq -r '[.[] | select(.title | startswith("models-nightly red: "))] | sort_by(.number)[] | "- \(.title | ltrimstr("models-nightly red: ")): red in the models nightly, #\(.number)"' 2> /dev/null); then
+        [ -n "$nightly" ] || [ -n "$kr" ] || printf -- '- none\n'
+        [ -z "$nightly" ] || printf '%s\n' "$nightly"
+    else
+        printf -- '- the models nightly'"'"'s red rows could not be read when this release was cut (not measured): see the open issues titled "models-nightly red:"\n'
+    fi
+}
