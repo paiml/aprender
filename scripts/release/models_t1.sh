@@ -144,18 +144,24 @@ sha=$(git rev-parse --verify --quiet "$2^{commit}") || { echo "models_t1: '$2' i
     || { echo "models_t1: $(pwd) is at $(git rev-parse --short=9 HEAD), not the release commit ${sha:0:9}" >&2; exit 2; }
 sha9=$(git rev-parse --short=9 "$sha")
 want="apr $ver ($sha9)"
-# crux mode: the receipt name (<host><RSUF>.json), the measurer leg_reason names, the certification
-RSUF=""; MEASURER=model_ladder.sh; CERT="evidence/crux/$ver/prompt-certification.json"
+# crux mode: the receipt names (<host><RSUF>.json: LREC, RREC, each set from one variable), the measurer leg_reason names, the certification
+RSUF=""
+LREC="$LOCAL_HOST.json"
+RREC="$REMOTE_HOST.json"
+MEASURER=model_ladder.sh; CERT="evidence/crux/$ver/prompt-certification.json"
 if [ "$MEASURE" = crux ]; then
-    RSUF=-gpu; MEASURER=crux_sweep_shards.sh
+    RSUF=-gpu
+    LREC="$LOCAL_HOST-gpu.json"
+    RREC="$REMOTE_HOST-gpu.json"
+    MEASURER=crux_sweep_shards.sh
     git cat-file -e "$sha:$CERT" 2>/dev/null \
         || { echo "MODELS NO-GO: no prompt certification for $ver at $CERT -- CRUX smoke cannot be planned"; exit 2; }
 fi
 mkdir -p "$out" || exit 2
 if [ "$MEASURE" = crux ]; then
     # the judge globs every *.json in $out: a ladder receipt left by an earlier pass would read as a bad CRUX one
-    rm -f -- "${out:?}/$LOCAL_HOST.json" "${out:?}/$REMOTE_HOST.json" "${out:?}/$LOCAL_HOST$RSUF.json" \
-        "${out:?}/$REMOTE_HOST$RSUF.json" "${out:?}/$REMOTE_HOST$RSUF.json.part"
+    rm -f -- "${out:?}/$LOCAL_HOST.json" "${out:?}/$REMOTE_HOST.json" "${out:?}/$LREC" \
+        "${out:?}/$RREC" "${out:?}/$RREC.part"
     rm -rf -- "${out:?}/$LOCAL_HOST-crux"
 else
 rm -f -- "$out/$LOCAL_HOST.json" "$out/$REMOTE_HOST.json" "$out/$REMOTE_HOST.json.part"
@@ -171,7 +177,7 @@ local_leg() {
     if [ "$MEASURE" = crux ]; then
         local lrc cdir="$out/$LOCAL_HOST-crux"
         choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host "$LOCAL_HOST" --apr "$tdir/release/apr" --out "$cdir" --backend gpu --certification "$CERT"; lrc=$?
-        [ ! -f "$cdir/$LOCAL_HOST$RSUF.json" ] || cp -- "$cdir/$LOCAL_HOST$RSUF.json" "$out/$LOCAL_HOST$RSUF.json"
+        [ ! -f "$cdir/$LREC" ] || cp -- "$cdir/$LREC" "$out/$LREC"
         return "$lrc"
     fi
     choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --cells --out "$out"
@@ -209,8 +215,8 @@ case $MEASURE in
 crux) choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host $REMOTE_HOST --apr "\$CARGO_TARGET_DIR/release/apr" --out "\$dir/out" --backend gpu --certification "$CERT" ;;
 *) choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out "\$dir/out" ;;
 esac; lrc=\$?
-if [ -f "\$dir/out/$REMOTE_HOST$RSUF.json" ]; then
-  echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$REMOTE_HOST$RSUF.json"; echo "---END RECEIPT---"
+if [ -f "\$dir/out/$RREC" ]; then
+  echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$RREC"; echo "---END RECEIPT---"
 fi
 git -C "\$repo" worktree remove --force "\$dir/wt" > /dev/null 2>&1
 exit \$lrc
@@ -230,9 +236,9 @@ local_leg > "$out/$LOCAL_HOST.log" 2>&1 & lpid=$!
 remote_leg > "$out/$REMOTE_HOST.log" 2>&1 & rpid=$!
 wait "$lpid"; lrc=$?
 wait "$rpid"; rrc=$?
-sed -n "/^---RECEIPT $REMOTE_HOST---\$/,/^---END RECEIPT---\$/p" "$out/$REMOTE_HOST.log" | sed '1d;$d' > "$out/$REMOTE_HOST$RSUF.json.part"
-if [ -s "$out/$REMOTE_HOST$RSUF.json.part" ]; then mv -- "$out/$REMOTE_HOST$RSUF.json.part" "$out/$REMOTE_HOST$RSUF.json"
-else rm -f -- "$out/$REMOTE_HOST$RSUF.json.part"; fi
+sed -n "/^---RECEIPT $REMOTE_HOST---\$/,/^---END RECEIPT---\$/p" "$out/$REMOTE_HOST.log" | sed '1d;$d' > "$out/$RREC.part"
+if [ -s "$out/$RREC.part" ]; then mv -- "$out/$RREC.part" "$out/$RREC"
+else rm -f -- "$out/$RREC.part"; fi
 
 nogo=0; env=0
 for h in "$LOCAL_HOST" "$REMOTE_HOST"; do
