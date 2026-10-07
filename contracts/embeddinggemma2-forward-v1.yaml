@@ -1,0 +1,237 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-07'
+  author: PAIML Engineering
+  description: EmbeddingGemma 2 forward pass -- tokens to a unit-norm, projected, optionally truncated embedding (APR-EMBED-001 EG-0 f)
+  references:
+  - docs/specifications/APR-EMBED-001-embeddinggemma-2-support.md (I-4, I-5, I-6, I-9, I-10)
+  - 'Kusupati et al. (2022) Matryoshka Representation Learning'
+  - 'Beltagy et al. (2020) Longformer: The Long-Document Transformer (sliding-window attention)'
+  depends_on:
+  - bidirectional-attention-v1
+  - sliding-window-attention-v1
+  - gelu-kernel-v1
+  - embedding-lookup-v1
+equations:
+  layer_attention_kind:
+    formula: kind(l) = global if shape(attn_q[l]) equals the widest q projection in the file, else local
+    domain: l in [0, block_count), tensor shapes and metadata read from the GGUF
+    codomain: '{local, global}'
+    invariants:
+    - The kind of every layer is read from tensor shapes or metadata, never from layer-index arithmetic or an architecture constant (I-9)
+    - At least one layer is global and at least one is local
+    preconditions:
+    - block_count > 0
+    - every block has an attn_q tensor
+    lean_theorem: Theorems.EmbeddingGemma2_Layer_Kind
+    postconditions:
+    - 'every layer has exactly one kind and the kind set is {local, global}'
+  local_attention:
+    formula: A_local(x)_i = softmax_j( q_i . k_j / sqrt(d_head) + M_ij ) v_j with M_ij = 0 if |i - j| < W else -inf
+    domain: x in R^{n x d_model}, W = sliding_window read from metadata
+    codomain: R^{n x d_model}
+    invariants:
+    - The mask is symmetric (bidirectional); no causal term (attention.causal = false)
+    - Positions with |i - j| >= W receive exactly zero weight
+    preconditions:
+    - W > 0
+    - n > 0
+    lean_theorem: Theorems.EmbeddingGemma2_Local_Attention
+    postconditions:
+    - 'output.shape == input.shape and all output values are finite'
+  global_attention:
+    formula: A_global(x)_i = softmax_j( q_i . k_j / sqrt(d_head) + P_ij ) v_j with P_ij = 0 for real tokens, -inf for padding
+    domain: x in R^{n x d_model}
+    codomain: R^{n x d_model}
+    invariants:
+    - Every real token attends to every real token in both directions
+    - Padding positions receive zero weight
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.EmbeddingGemma2_Global_Attention
+    postconditions:
+    - 'output.shape == input.shape and all output values are finite'
+  gated_gelu_ffn:
+    formula: FFN(h) = W_down( GELU_tanh(W_gate h) * (W_up h) )
+    domain: h in R^{n x d_model}
+    codomain: R^{n x d_model}
+    invariants:
+    - The activation is GELU (tanh approximation), never SiLU; a gated MLP does not imply SwiGLU
+    preconditions:
+    - ffn_gate, ffn_up and ffn_down are present in every block
+    lean_theorem: Theorems.EmbeddingGemma2_Gated_Gelu_Ffn
+    postconditions:
+    - 'output.shape == input.shape and all output values are finite'
+  mean_pool:
+    formula: p = (1 / |R|) * sum_{i in R} H_i, R = indices of real (non-padding) tokens
+    domain: H in R^{n x d_model}, |R| >= 1
+    codomain: R^{d_model}
+    invariants:
+    - Padding rows never contribute
+    - The result does not depend on batch size or on the text's batch position (I-6)
+    preconditions:
+    - pooling_type read from metadata is mean
+    - '|R| >= 1'
+    lean_theorem: Theorems.EmbeddingGemma2_Mean_Pool
+    postconditions:
+    - 'output.len() == d_model'
+  projection:
+    formula: e = W_out p, W_out = output.weight read from the file
+    domain: p in R^{d_model}
+    codomain: R^{d_out}, d_out = embedding_length_out read from metadata
+    invariants:
+    - The returned vector is the projected vector, never the pooled trunk state (I-4)
+    - A file without the projection tensor is refused by name, never served at trunk width
+    preconditions:
+    - output.weight exists with shape [d_model, d_out]
+    lean_theorem: Theorems.EmbeddingGemma2_Projection
+    postconditions:
+    - 'output.len() == embedding_length_out'
+  l2_normalise:
+    formula: u = e / ||e||_2
+    domain: e in R^{d}, ||e||_2 > 0
+    codomain: R^{d}, ||u||_2 = 1
+    invariants:
+    - '| ||u||_2 - 1 | <= 1e-5'
+    - Every component is finite (I-5)
+    preconditions:
+    - '||e||_2 > 0 and finite'
+    lean_theorem: Theorems.EmbeddingGemma2_L2_Normalise
+    postconditions:
+    - 'output.len() == embedding_length_out'
+  truncation:
+    formula: t_k = u[0..k] / ||u[0..k]||_2, k in {768, 512, 256, 128}
+    domain: u in R^{d_out}, k <= d_out
+    codomain: R^{k}, ||t_k||_2 = 1
+    invariants:
+    - t_k equals the leading k components of the full projected vector, re-normalised (I-4)
+    - t_k for k = d_model (512) is not the pooled trunk state
+    preconditions:
+    - k is one of the declared Matryoshka dimensions
+    lean_theorem: Theorems.EmbeddingGemma2_Truncation
+    postconditions:
+    - 'output.len() == k and abs(norm(output) - 1) <= 1e-5'
+proof_obligations:
+- id: EG2-INV-001
+  type: invariant
+  property: Layer kind from the file
+  formal: kind(l) is a function of tensor shapes and metadata only; renumbering layers in a synthetic file moves the kinds with the tensors
+  applies_to: all
+- id: EG2-INV-002
+  type: invariant
+  property: Local attention window
+  formal: weight(i, j) == 0 for |i - j| >= W in every local layer
+  applies_to: all
+- id: EG2-INV-003
+  type: invariant
+  property: Bidirectional global attention
+  formal: for real tokens i, j in a global layer, weight(i, j) > 0 and weight(j, i) > 0
+  applies_to: all
+- id: EG2-INV-004
+  type: invariant
+  property: Gated GELU activation
+  formal: FFN uses GELU_tanh on the gate branch; substituting SiLU changes the output beyond tolerance
+  applies_to: all
+- id: EG2-INV-005
+  type: invariant
+  property: Mean pool over real tokens only
+  formal: appending padding to a sequence leaves p unchanged within 1e-6
+  applies_to: all
+- id: EG2-INV-006
+  type: invariant
+  property: Projected output
+  formal: len(e) == embedding_length_out and e == W_out p
+  applies_to: all
+- id: EG2-BND-007
+  type: bound
+  property: Unit norm and finite
+  formal: '| ||u||_2 - 1 | <= 1e-5 and is_finite(u[i]) for all i'
+  applies_to: all
+- id: EG2-INV-008
+  type: invariant
+  property: Truncation re-normalises the leading dims
+  formal: t_k == normalise(u_full[0..k]) for each k in {768, 512, 256, 128}
+  applies_to: all
+- id: EG2-INV-009
+  type: invariant
+  property: Batch and order invariance
+  formal: embed(x) == embed_batch([.., x, ..])[pos] within 1e-5 for every batch size and position
+  applies_to: all
+- id: EG2-EQ-010
+  type: equivalence
+  property: Oracle parity
+  formal: cosine(apr(x), oracle(x)) >= threshold for every corpus item, threshold from the thresholds file's known-good and known-bad method
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-EG2-001
+  rule: Layer kind from the file
+  prediction: A synthetic file whose global and local blocks are swapped yields swapped layer kinds
+  test: unit test over a synthetic tensor-shape table, no layer-index arithmetic in the classifier
+  if_fails: Layer kind derived from an index pattern or an architecture constant (I-9)
+- id: FALSIFY-EG2-002
+  rule: Local attention window
+  prediction: Attention weights beyond the window are exactly zero in local layers
+  test: proptest over n in [1, 3W] with random q, k; inspect the weight matrix
+  if_fails: Window off by one, or a causal mask applied instead of a symmetric one
+- id: FALSIFY-EG2-003
+  rule: Bidirectional global attention
+  prediction: Reversing token order permutes, but does not change the set of, attention weights in global layers
+  test: proptest with random input, compare weight matrices under reversal
+  if_fails: A causal mask leaked into an embedding-kind model
+- id: FALSIFY-EG2-004
+  rule: Gated GELU activation
+  prediction: The FFN output matches the GELU_tanh reference and differs from a SiLU substitute
+  test: unit test against fixed vectors for both activations
+  if_fails: Gated MLP mapped to SwiGLU
+- id: FALSIFY-EG2-005
+  rule: Mean pool over real tokens only
+  prediction: Padding a text to batch length leaves its pooled vector unchanged
+  test: proptest with random hidden states and random padding lengths
+  if_fails: Padding rows counted in the mean
+- id: FALSIFY-EG2-006
+  rule: Projected output
+  prediction: Default response is embedding_length_out (768) long and not equal to the pooled trunk state
+  test: corpus item through the forward path; compare length and compare with the unprojected pool
+  if_fails: Projection skipped (the 512-long trunk vector is unit norm and passes a length check at 512)
+- id: FALSIFY-EG2-007
+  rule: Unit norm and finite
+  prediction: Every output vector has norm 1 within 1e-5 and no NaN or Inf
+  test: every corpus item at every declared dimension
+  if_fails: Missing normalisation, or a float16 activation overflow (I-5)
+- id: FALSIFY-EG2-008
+  rule: Truncation re-normalises the leading dims
+  prediction: The 256 response equals the leading 256 of the 768 response, re-normalised
+  test: compare responses at 768, 512, 256 and 128 for every corpus item
+  if_fails: Truncation without re-normalisation, or the 512 response taken from the trunk
+- id: FALSIFY-EG2-009
+  rule: Batch and order invariance
+  prediction: The batch-invariance corpus set embeds identically alone and at every batch position
+  test: corpus batch-invariance set at batch 1, 8 and 32, every position
+  if_fails: Cross-row leakage through padding, pooling or attention masks
+- id: FALSIFY-EG2-010
+  rule: Oracle parity
+  prediction: Cosine with the oracle's golden vectors meets the threshold on every corpus item
+  test: compare with goldens written by the oracle build on the same file
+  if_fails: Weight loading, tokenizer or architecture mismatch
+kani_harnesses:
+- id: KANI-EG2-001
+  obligation: Unit norm and finite
+  property: L2 normalisation of a finite non-zero vector has norm 1 within tolerance
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_l2_unit_norm
+- id: KANI-EG2-002
+  obligation: Truncation re-normalises the leading dims
+  property: Truncated output equals the re-normalised prefix of the full vector
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_truncation_prefix
+qa_gate:
+  id: F-EG2F-001
+  name: embeddinggemma2-forward-v1 Contract
+  description: Quality gate for the EmbeddingGemma 2 forward pass
+  checks:
+  - validation
+  - falsification

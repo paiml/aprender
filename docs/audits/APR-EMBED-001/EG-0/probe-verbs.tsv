@@ -1,0 +1,53 @@
+# APR-EMBED-001 EG-0(a): one probe per verb. Columns: verb<TAB>args.
+# {M}=model under test {B}=BF16 sibling {O}=fresh scratch dir. Every probe runs with
+# stdin </dev/null under a timeout; exit 124 means the timeout fired.
+run	{M} hello --max-tokens 4
+serve	plan {M}
+chat	{M}
+code	--model {M} -p hello
+inspect	{M}
+debug	{M}
+validate	{M}
+lint	{M}
+tensors	{M}
+trace	{M}
+diff	{M} {B}
+hex	{M}
+tree	{M}
+flow	{M}
+export	{M} --format safetensors -o {O}/export.safetensors
+convert	{M} --output {O}/convert.apr
+stamp	{M} --output {O}/stamp.gguf
+compile	{M} -o {O}/compiled
+merge	{M} {M} --plan
+quantize	{M} --plan
+rosetta	inspect {M}
+publish	{O} example/embeddinggemma-2 --dry-run
+finetune	{M} --plan
+prune	{M} --plan
+distill	{M} --student {M} --plan
+tune	{M} --plan
+bench	{M}
+eval	{M} --dataset custom --text hello
+check	{M}
+qa	{M}
+qualify	{M}
+compare-hf	{M} --hf google/embeddinggemma-2
+parity	{M}
+profile	{M}
+ptx-map	{M}
+showcase	--model-dir {O}
+diagnose	{O}
+rerank	{M} --query hello --passage world
+embed	{M} --text hello --vocab {O}/vocab.txt
+shard	{M} --output {O}/shards
+encrypt	{M} --output {O}/enc.bin
+decrypt	{M} --output {O}/dec.gguf
+pull	unsloth/embeddinggemma-2-GGUF --dry-run
+import	{M} -o {O}/import.apr
+list	
+rm	embeddinggemma-2-nonexistent
+unshard	{O}/shards --output {O}/unshard.gguf
+tokenize	encode {M} hello
+capability	
+rag	info
