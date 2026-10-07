@@ -31,6 +31,19 @@
 #                    `choom -n 1000`, and this wrapper takes NO flock -- the GPU lock is the
 #                    ladder's own, per apr call, and a second one here would deadlock it. No build
 #                    runs under a flock.
+# CRUX MEASURE MODE (MODELS_T1_MEASURE=crux): the fixture's release commit also carries
+# evidence/crux/9.9.9/prompt-certification.json and a committed scripts/crux_sweep_shards.sh stub (writes
+# <out>/<host>-gpu.json naming the apr it was handed, plus a meta .json); the judge stub's --crux branch
+# prints "POLICY: " and, like crux_smoke_scope.py, reads every *.json in the dir.
+#   ladder-explicit  MODELS_T1_MEASURE=ladder is green-pair exactly.
+#   measure-bogus    MODELS_T1_MEASURE=bogus: exit 2 naming the value, nothing built.
+#   crux-green-pair  "MODELS GO (CRUX smoke)"; both <host>-gpu.json name the release apr; both sweeps under
+#                    choom -n 1000 with the certification; no ladder; judge got --crux <out> --cut-commit <mc>.
+#   crux-no-certification  no committed certification: exit 2 "no prompt certification", nothing built.
+#   crux-wrong-binary      gx10's receipt names another apr: "the receipt was measured by".
+#   crux-missing-gx10-receipt  "no receipt -- crux_sweep_shards.sh wrote no receipt".
+#   crux-red-receipt       a RED receipt: "the judge found red".
+#   crux-judge-no-policy   judge rc 0 with no POLICY:/SCOPED: line: "the judge judged no CRUX scope".
 # T-4, R7: rule_r7() is EXTRACTED from scripts/check_publish_preflight.sh and run on a tagged tree
 # with the judge stub and committed receipts -- cargo-free, so every decision can be mutated here.
 # (That the full gate CALLS rule_r7 is proved by that script's own --selftest rows r7_*, which need
@@ -57,6 +70,17 @@
 #   r7-no-fail-lines the judge's FAIL lines dropped from the refusal         -> r7-missing
 #   r7-decline-is-go the judge's rc 2 read as ok                             -> r7-decline
 #   r7-no-judge-ok   a missing judge no longer refuses by itself             -> r7-no-judge
+#   crux-bogus-ok         an unknown MODELS_T1_MEASURE falls back to ladder  -> measure-bogus
+#   crux-no-cert-check    the certification precondition deleted             -> crux-no-certification
+#   crux-any-binary       the receipt's version_line check deleted           -> crux-wrong-binary
+#   crux-no-policy-ok     judge rc 0 counts without POLICY:/SCOPED:          -> crux-judge-no-policy
+#   crux-local-ladder     lambda's crux leg runs the ladder                  -> crux-green-pair
+#   crux-no-choom         gx10's sweep runs without choom -n 1000            -> crux-green-pair
+#   crux-sweep-into-out   lambda sweeps straight into <out> (meta .json judged) -> crux-green-pair
+#   crux-judge-ladder     the judge gets --receipts, not --crux              -> crux-green-pair
+#   crux-no-cut-commit    the judge is not told the cut commit               -> crux-green-pair
+#   crux-ladder-wording   leg_reason names model_ladder.sh in crux mode      -> crux-missing-gx10-receipt
+#   crux-remote-rcpt-name gx10 prints <host>.json, not <host>-gpu.json       -> crux-green-pair
 #
 # Exit 0 = every row green and every mutant killed. 1 = a row RED or a mutant survived.
 # 2 = ENV: a subject or a mutation anchor is missing -- the table judged nothing.
@@ -90,11 +114,24 @@ R_LINES_HEAD='        *) printf '"'"'FAIL  R7 model matrix NOT green for %s (rc 
 R_LINES="$R_LINES_HEAD"$'\n''               "$(grep -E '"'"'^FAIL'"'"' <<< "$out" | head -n 10 | sed '"'"'s/^/        /'"'"')" ;;'
 R_DECLINE='        2) echo "FAIL  R7 the model-matrix judge DECLINED'
 R_NOJUDGE='    if [ ! -f "$judge" ]; then'
+# crux measure mode anchors, in models_t1.sh
+C_BOGUS='    *) echo "models_t1: MODELS_T1_MEASURE='"'"'$MEASURE'"'"' is neither ladder nor crux" >&2; echo "$USAGE" >&2; exit 2 ;;'
+C_CERT='    git cat-file -e "$sha:$CERT" 2>/dev/null \'
+C_VER='            echo "MODELS $h NO-GO: the receipt was measured by '"'"'$av'"'"', not '"'"'$want'"'"'"; nogo=1; continue'
+C_POLICY='       if [ "$MEASURE" = crux ] && ! grep -qE '"'"'^(POLICY|SCOPED): '"'"' "$out/judge.log"; then'
+C_LOCAL='        choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host "$LOCAL_HOST"'
+C_CHOOM_R='crux) choom -n 1000 -- bash scripts/crux_sweep_shards.sh'
+C_SUBDIR='        local lrc cdir="$out/$LOCAL_HOST-crux"'
+C_JCRUX='CRUX_CERT="$CERT" bash scripts/check_model_ladder.sh --version "$ver" --crux "$out"'
+C_CUT='--crux "$out" --cut-commit "$sha"'
+C_NAME='    RSUF=-gpu; MEASURER=crux_sweep_shards.sh'
+C_RRCPT='if [ -f "\$dir/out/$REMOTE_HOST$RSUF.json" ]; then'
 
 env_die() { printf 'ENV   %s -- the table judged nothing, not a pass\n' "$*" >&2; exit 2; }
 for f in "$AUTOPILOT" "$MODELS" "$PARAMS" "$PREFLIGHT"; do [ -r "$f" ] || env_die "no $f"; done
 for t in git python3; do command -v "$t" > /dev/null 2>&1 || env_die "no $t"; done
-for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_CHOOM_R" "$A_CHOOM_L" "$A_CELLS_R" "$A_CELLS_L"; do
+for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_CHOOM_R" "$A_CHOOM_L" "$A_CELLS_R" "$A_CELLS_L" \
+         "$C_BOGUS" "$C_CERT" "$C_VER" "$C_POLICY" "$C_LOCAL" "$C_CHOOM_R" "$C_SUBDIR" "$C_JCRUX" "$C_CUT" "$C_NAME" "$C_RRCPT"; do
     grep -qF -- "$a" "$MODELS" || env_die "models_t1.sh has no '$a' line -- the subject moved"
 done
 for a in "$A_DIE" "$A_RDIE" "$A_RNODR"; do
@@ -176,9 +213,31 @@ chmod +x "$TMP/bin/gh" "$TMP/bin/ssh" "$TMP/bin/cargo" "$TMP/bin/choom" "$TMP/bi
 # green and for this version -> 0; otherwise 1 with a FAIL line each; FX_JUDGE_DECLINE=1 -> 2
 cat > "$TMP/judge-stub.sh" <<'STUB'
 #!/usr/bin/env bash
-v=""; d=""
-while [ $# -gt 0 ]; do case "$1" in --version) v=$2; shift 2 ;; --receipts) d=$2; shift 2 ;; *) shift ;; esac; done
+printf 'judge %s\n' "$*" >> "${FX_LOG:-/dev/null}"
+v=""; d=""; x=""
+while [ $# -gt 0 ]; do case "$1" in --version) v=$2; shift 2 ;; --receipts) d=$2; shift 2 ;; --crux) x=$2; shift 2 ;;
+    --cut-commit|--scope) shift 2 ;; *) shift ;; esac; done
 [ -n "$v" ] || { echo "decline: no --version given"; exit 2; }
+# --crux: the standing CRUX-smoke policy covers $v -> "POLICY: " (FX_JUDGE_NO_POLICY=1: none, as when
+# --scope none or no policy covers it). Like crux_smoke_scope.py it reads EVERY *.json in the dir, so a file
+# that is not a crux-inference-receipt/v1 there is a FAIL; each host's <host>-gpu.json must be RED 0.
+if [ -n "$x" ]; then
+    [ "${FX_JUDGE_DECLINE:-0}" = 1 ] && { echo "decline: fixture CRUX receipts unreadable"; exit 2; }
+    [ -n "${CRUX_CERT:-}" ] && [ -f "$CRUX_CERT" ] || { echo "FAIL  no certification at '${CRUX_CERT:-}'"; exit 1; }
+    [ "${FX_JUDGE_NO_POLICY:-0}" = 1 ] || echo "POLICY: crux-smoke -- the fixture release policy covers $v"
+    rc=0
+    for f in "$x"/*.json; do
+        [ -e "$f" ] || continue
+        case ${f##*/} in prompt-certification*) continue ;; esac
+        jq -e '.schema == "crux-inference-receipt/v1"' "$f" > /dev/null 2>&1 || { echo "FAIL  ${f##*/} is not a crux-inference-receipt/v1"; rc=1; }
+    done
+    for h in lambda gx10; do
+        f="$x/$h-gpu.json"
+        [ -f "$f" ] || { echo "FAIL  $h no CRUX receipt at $f"; rc=1; continue; }
+        jq -e '.summary.RED == 0' "$f" > /dev/null 2>&1 || { echo "FAIL  $h CRUX smoke red"; rc=1; }
+    done
+    exit "$rc"
+fi
 [ -n "$d" ] || d="evidence/dogfood/models/$v"
 [ "${FX_JUDGE_DECLINE:-0}" = 1 ] && { echo "decline: fixture ladder unreadable"; exit 2; }
 python3 - "$d" "$v" <<'PY'
@@ -216,6 +275,29 @@ mkdir -p "$o"
 printf '{"host":"%s","version":"%s","apr_version":"%s","executed":2,"red":%s}\n' "$h" "$v" "$("$apr" --version)" "$red" > "$o/$h.json"
 [ "$red" = 0 ]
 STUB
+    # crux_sweep_shards.sh stub (crux mode): measures by the apr it is HANDED (--apr) and writes
+    # <out>/<host>-gpu.json, a crux-inference-receipt/v1, plus a meta .json beside it as the real sweep does.
+    # FX_NO_RECEIPT_HOST / FX_RED_HOST as above; FX_CRUX_LINE_HOST: the receipt names another binary
+    cat > "$r/scripts/crux_sweep_shards.sh" <<'STUB'
+#!/usr/bin/env bash
+v=""; h=""; a=""; o=""; b=""; c=""
+while [ $# -gt 0 ]; do case "$1" in --host) h=$2; shift 2 ;; --apr) a=$2; shift 2 ;; --out) o=$2; shift 2 ;;
+    --backend) b=$2; shift 2 ;; --certification) c=$2; shift 2 ;; -*) echo "fixture: unknown argument '$1'"; exit 2 ;; *) v=$1; shift ;; esac; done
+[ -n "$v" ] && [ -n "$h" ] && [ -n "$a" ] && [ -n "$o" ] || { echo "fixture: usage"; exit 2; }
+[ "$b" = gpu ] || { echo "fixture: --backend '$b', not gpu"; exit 2; }
+[ -n "$c" ] && [ -f "$c" ] || { echo "fixture: certification '$c' not found"; exit 2; }
+[ -x "$a" ] || { echo "fixture: --apr $a is not executable"; exit 2; }
+printf 'crux host=%s v=%s oom=%s flock=%s cert=%s\n' "$h" "$v" "${FX_OOM:-none}" "${FX_FLOCK:-0}" "$c" >> "$FX_LOG"
+[ "${FX_NO_RECEIPT_HOST:-}" = "$h" ] && { echo "fixture: measured nothing on $h"; exit 2; }
+line=$("$a" --version); [ "${FX_CRUX_LINE_HOST:-}" = "$h" ] && line="apr $v (0badc0de0)"
+red=0; [ "${FX_RED_HOST:-}" = "$h" ] && red=1
+mkdir -p "$o"
+jq -n --arg h "$h" --arg l "$line" --argjson r "$red" \
+    '{schema: "crux-inference-receipt/v1", host: $h, apr: {version_line: $l},
+      summary: {cells: 4, RED: $r, verdict: (if $r == 0 then "GREEN" else "RED" end)}}' > "$o/$h-gpu.json"
+printf '{"models":[]}\n' > "$o/$h-gpu.meta.json"
+[ "$red" = 0 ]
+STUB
     cp -- "$TMP/judge-stub.sh" "$r/scripts/check_model_ladder.sh" || return 2
     # release_readiness.sh stub (#3715): records its argv; a missing or empty --dogfood-receipt is a
     # caller error (3); otherwise prints FX_RR_LINE (default an ok R8 row) and exits FX_RR_RC
@@ -231,8 +313,12 @@ STUB
     printf '[package]\nname = "fx"\nversion = "9.9.8"\nedition = "2021"\n' > "$r/Cargo.toml"
     git init -q --bare -b main "$d/origin.git" && git -C "$r" init -q -b main \
         && git -C "$r" add -A && git -C "$r" commit -q -m parent \
-        && sed -i 's/^version = "9.9.8"$/version = "9.9.9"/' "$r/Cargo.toml" \
-        && git -C "$r" commit -q -am 'release: 9.9.9' \
+        && sed -i 's/^version = "9.9.8"$/version = "9.9.9"/' "$r/Cargo.toml" || return 2
+    # the release commit carries its CRUX prompt certification (prepare_bump's carry-forward); FX_NO_CERT=1: not
+    case " ${*:4} " in *" FX_NO_CERT=1 "*) ;; *)
+        mkdir -p "$r/evidence/crux/9.9.9" && printf '{"fixture":"certification"}\n' > "$r/evidence/crux/9.9.9/prompt-certification.json" || return 2 ;;
+    esac
+    git -C "$r" add -A && git -C "$r" commit -q -m 'release: 9.9.9' \
         && git -C "$r" remote add origin "$d/origin.git" && git -C "$r" push -q origin main \
         && git -C "$r" fetch -q origin || return 2
     git -C "$r" rev-parse HEAD > "$d/mc"
@@ -244,7 +330,7 @@ STUB
 # models NAME AUTOPILOT MODELS_T1 [ENV=VAL ...] -> runs `autopilot.sh 9.9.9 99 models models`
 models() {
     local n=$1 d="$TMP/$1"; shift
-    fixture "$n" "$1" "$2" || return 2
+    fixture "$n" "$1" "$2" "${@:3}" || return 2
     : > "$d/wrap.log"
     shift 2
     ( export RELEASE_AP="$d/ap" RELEASE_EPIC=9002 CARGO_HOME="$TMP/cargo-home" PATH="$TMP/bin:$PATH" \
@@ -293,7 +379,7 @@ row() { # row NAME RC MESSAGE
 # ---- row bodies: TAG AUTOPILOT MODELS_T1 -> 0 green, 1 red (prints why), 2 fixture --------------
 green_pair() {
     local n="green-$1" d; d="$TMP/green-$1"
-    models "$n" "$2" "$3" || return 2
+    models "$n" "$2" "$3" "${@:4}" || return 2
     [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(tail -n 1 "$d/ap/STATUS" 2>/dev/null)"; return 1; }
     grep -qF "MODELS GO at $(cat "$d/mc") on lambda and gx10" "$d/ap/STATUS" || { printf 'no "MODELS GO" line\n'; return 1; }
     grep -qF "apr 9.9.9 ($(cut -c1-9 "$d/mc"))" "$d/ap/models-t1/gx10.json" 2>/dev/null \
@@ -340,6 +426,48 @@ oom_victim() {
     return 0
 }
 
+# ---- crux measure mode: MODELS_T1_MEASURE=crux -------------------------------------------
+ladder_explicit() { green_pair "ladder-$1" "$2" "$3" MODELS_T1_MEASURE=ladder; }
+crux_green() {
+    local n="crux-green-$1" d mc h; d="$TMP/crux-green-$1"
+    models "$n" "$2" "$3" MODELS_T1_MEASURE=crux || return 2
+    mc=$(cat "$d/mc")
+    [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(grep 'MODELS' "$d/ap/STATUS" | tail -n 2 | tr '\n' ' ')"; return 1; }
+    grep -qF "MODELS GO (CRUX smoke) on lambda and gx10 at ${mc:0:9}: the judge passed both receipts (apr 9.9.9 (${mc:0:9}))" "$d/ap/STATUS" \
+        || { printf 'no "MODELS GO (CRUX smoke)" line\n'; return 1; }
+    for h in lambda gx10; do
+        [ "$(jq -r .apr.version_line "$d/ap/models-t1/$h-gpu.json" 2>/dev/null)" = "apr 9.9.9 (${mc:0:9})" ] \
+            || { printf '%s-gpu.json was not measured by the release binary\n' "$h"; return 1; }
+        grep -qx "crux host=$h v=9.9.9 oom=1000 flock=0 cert=evidence/crux/9.9.9/prompt-certification.json" "$d/wrap.log" \
+            || { printf '%s crux sweep did not run under choom -n 1000 with the certification: %s\n' "$h" "$(grep "^crux host=$h" "$d/wrap.log" | tr '\n' ' ')"; return 1; }
+    done
+    ! grep -q '^ladder ' "$d/wrap.log" || { printf 'crux mode ran the ladder\n'; return 1; }
+    grep -qF -- "--version 9.9.9 --crux $d/ap/models-t1 --cut-commit $mc" "$d/wrap.log" \
+        || { printf 'the judge was not asked about the CRUX receipts at the cut: %s\n' "$(grep '^judge' "$d/wrap.log" | tr '\n' ' ')"; return 1; }
+    [ -f "$d/gx10/.cache/aprender-release/rel-9.9.9/target/BUILT_FROM" ] || { printf 'gx10 did not build into the per-release dir\n'; return 1; }
+    return 0
+}
+crux_nocert() {
+    local rc; stops "crux-nocert-$1" "$2" "$3" "MODELS NO-GO: no prompt certification for 9.9.9 at evidence/crux/9.9.9/prompt-certification.json -- CRUX smoke cannot be planned" MODELS_T1_MEASURE=crux FX_NO_CERT=1; rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    grep -q 'rc=2' "$TMP/crux-nocert-$1/ap/STATUS" || { printf 'models_t1.sh did not exit 2\n'; return 1; }
+    ! grep -q '^build ' "$TMP/crux-nocert-$1/wrap.log" || { printf 'a leg built before the precondition\n'; return 1; }
+    return 0
+}
+crux_wrongbin()  { stops "crux-wrongbin-$1" "$2" "$3" "MODELS gx10 NO-GO: the receipt was measured by 'apr 9.9.9 (0badc0de0)', not 'apr 9.9.9 (" MODELS_T1_MEASURE=crux FX_CRUX_LINE_HOST=gx10; }
+crux_missing()   { stops "crux-missing-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- crux_sweep_shards.sh wrote no receipt" MODELS_T1_MEASURE=crux FX_NO_RECEIPT_HOST=gx10; }
+crux_red()       { stops "crux-red-$1" "$2" "$3" "MODELS NO-GO: the judge found red" MODELS_T1_MEASURE=crux FX_RED_HOST=gx10; }
+crux_nopolicy()  { stops "crux-nopol-$1" "$2" "$3" "MODELS NO-GO: the judge judged no CRUX scope for 9.9.9 (no POLICY:/SCOPED: line)" MODELS_T1_MEASURE=crux FX_JUDGE_NO_POLICY=1; }
+measure_bogus() {
+    local d="$TMP/bogus-$1"
+    models "bogus-$1" "$2" "$3" MODELS_T1_MEASURE=bogus || return 2
+    [ "$(cat "$d/rc")" != 0 ] || { printf 'autopilot exited 0\n'; return 1; }
+    grep -q 'T-1 model matrix NO-GO rc=2' "$d/ap/STATUS" || { printf 'no rc=2 STOP: %s\n' "$(tail -n 1 "$d/ap/STATUS")"; return 1; }
+    grep -qF "MODELS_T1_MEASURE='bogus' is neither ladder nor crux" "$d/ap/models-t1.log" || { printf 'the usage refusal never named the value\n'; return 1; }
+    ! grep -q '^build ' "$d/wrap.log" || { printf 'a leg built on a bad mode\n'; return 1; }
+    return 0
+}
+
 # ---- readiness (#3715): release-readiness-v1 at T-1, its own step after models -------------------
 r_goes() { # TAG AUTOPILOT MODELS_T1 WORD LINE ENV... -> 0 when the step continued and said READINESS WORD
     local n="$1" d="$TMP/$1" word=$4 line=$5 a=$2 m=$3 mc; shift 5
@@ -375,7 +503,10 @@ r_stale()   { # an apr built from another commit: its surface would derive anoth
 # ---- the rows ---------------------------------------------------------------------------------
 for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
-            "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim"; do
+            "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim" \
+            "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "crux-green-pair crux_green" \
+            "crux-no-certification crux_nocert" "crux-wrong-binary crux_wrongbin" \
+            "crux-missing-gx10-receipt crux_missing" "crux-red-receipt crux_red" "crux-judge-no-policy crux_nopolicy"; do
     set -- $spec
     msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
 done
@@ -463,8 +594,19 @@ mutant r7-red-is-go     "$PREFLIGHT" "$R_RED" '        *) return 0; printf '"'"'
 mutant r7-no-fail-lines "$PREFLIGHT" "$R_LINES" "$R_LINES_HEAD"$'\n''               "" ;;' r7_missing preflight
 mutant r7-decline-is-go "$PREFLIGHT" "$R_DECLINE" '        2) return 0; echo "FAIL  R7 the model-matrix judge DECLINED' r7_decline preflight
 mutant r7-no-judge-ok   "$PREFLIGHT" "$R_NOJUDGE" '    if false; then' r7_nojudge preflight
+mutant crux-bogus-ok        "$MODELS" "$C_BOGUS" '    *) MEASURE=ladder ;;' measure_bogus
+mutant crux-no-cert-check   "$MODELS" "$C_CERT" '    true \' crux_nocert
+mutant crux-any-binary      "$MODELS" "$C_VER" '            :' crux_wrongbin
+mutant crux-no-policy-ok    "$MODELS" "$C_POLICY" '       if false; then' crux_nopolicy
+mutant crux-local-ladder    "$MODELS" "$C_LOCAL" '        choom -n 1000 -- bash scripts/model_ladder.sh --cells --host "$LOCAL_HOST"' crux_green
+mutant crux-no-choom        "$MODELS" "$C_CHOOM_R" 'crux) bash scripts/crux_sweep_shards.sh' crux_green
+mutant crux-sweep-into-out  "$MODELS" "$C_SUBDIR" '        local lrc cdir="$out"' crux_green
+mutant crux-judge-ladder    "$MODELS" "$C_JCRUX" 'CRUX_CERT="$CERT" bash scripts/check_model_ladder.sh --version "$ver" --receipts "$out"' crux_green
+mutant crux-no-cut-commit   "$MODELS" "$C_CUT" '--crux "$out"' crux_green
+mutant crux-ladder-wording  "$MODELS" "$C_NAME" '    RSUF=-gpu; MEASURER=model_ladder.sh' crux_missing
+mutant crux-remote-rcpt-name "$MODELS" "$C_RRCPT" 'if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then' crux_green
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 41 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 41 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 60 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 60 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the model matrix runs at T-1 on both hosts, every failure to prove the release STOPs before the tag, and R7 refuses the same failures at T-4 (#3717)\n' "$rows"
