@@ -65,6 +65,10 @@ row no-policy-block       0 0 "$(plant nopol '/^  release_policy:/,/^    release
 # One release, one ruling.
 row per-release-entry     1 0 "$(plant dup 's/^      release: "0\.70\.1"$/      release: "0.71.0"/')" 0.71.0 'one release takes one ruling'
 row per-release-rc-entry  1 0 "$(plant duprc 's/^      release: "0\.70\.1"$/      release: "0.72.0-rc.1"/')" 0.72.0-rc.1 'one release takes one ruling'
+row per-release-single    1 0 "$(plant dupsq "s/^      release: \"0\\.70\\.1\"\$/      release: '0.71.0'/")" 0.71.0 'one release takes one ruling'
+row per-release-bare      1 0 "$(plant dupbare 's/^      release: "0\.70\.1"$/      release: 0.71.0/')" 0.71.0 'one release takes one ruling'
+row per-release-comment   1 0 "$(plant dupcm 's/^      release: "0\.70\.1"$/      release: "0.71.0"  # planted/')" 0.71.0 'one release takes one ruling'
+row per-release-key-first 1 0 "$(plant dupkf 's/^      release: "0\.70\.1"$/    - release: "0.71.0"/')" 0.71.0 'one release takes one ruling'
 # A block the strict reader cannot read is rc 2 with its reason.
 row since-not-xyz         2 0 "$(plant since 's/^    since: "0\.71\.0"$/    since: "0.71"/')" 0.71.0 "since '0\.71' is not X\.Y\.Z"
 row since-single-quoted   0 1 "$(plant ssq "s/^    since: \"0\\.71\\.0\"\$/    since: '0.71.0'/")" 0.71.0 '^      release: "0\.71\.0"$'
