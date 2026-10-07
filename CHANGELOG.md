@@ -40,6 +40,8 @@ carrying it, are in `evidence/release/0.70.2/RELEASE-NOTES-0.70.2.md`.
 ### Fixed
 - `apr serve`: tools in a chat request reach the chat template, and Qwen3.5 XML tool calls are parsed (#4650).
 - `apr serve`: KV caches no longer commit every byte when they are built (#4769).
+- `apr train` / `apr finetune` on CPU: an intermittent crash (SIGSEGV) in the AVX2 matrix-multiply kernel
+  is fixed (#4891).
 
 ### Release
 - The PP-26 witness marker is re-measured on this release's base, so its release-phase check judges fresh

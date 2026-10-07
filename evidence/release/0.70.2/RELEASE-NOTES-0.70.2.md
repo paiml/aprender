@@ -36,6 +36,8 @@ the tagged commit.
 - `apr serve`: tools in a chat request now reach the chat template, and Qwen3.5 XML tool calls are parsed
   (#4650).
 - `apr serve`: KV caches no longer commit every byte when they are built (#4769).
+- `apr train` / `apr finetune` on CPU: an intermittent crash (SIGSEGV) in the AVX2 matrix-multiply kernel,
+  which read past the end of its input, is fixed (#4891).
 - The PP-26 witness marker under `evidence/perf041/` is re-measured on the base of this release,
   so the release-phase check `scripts/check_perf041_marker.sh` judges fresh evidence (#4888).
 - Release, CI and guard fixes on main since 0.70.1, among them: the coverage gate reads the nightly's
