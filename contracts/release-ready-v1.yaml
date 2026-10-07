@@ -59,8 +59,8 @@
 # A ROW (`parent: <id>`) is part of the GATE it names: checked like any entry, printed
 # under that GATE by `--gates`, and never counted in its total.
 #
-# THE CHECKER IS LAB TODAY. No gate calls it. It becomes a GATE only
-# after three green nights on main and by an operator sign-off.
+# THE CHECKER IS LAB. No gate calls it. It becomes a GATE only with an operator
+# yes, after three green nights on main, and with one gate retired for the one added.
 # ─────────────────────────────────────────────────────────────────────────────
 name: release-ready
 version: "1.0.0"
@@ -185,7 +185,7 @@ falsification_tests:
 non_goals:
   - "Running any checker. The list says what is required and where it is checked; each checker proves itself."
   - "Changing GitHub's required status checks or rulesets. The probe reads them; the operator changes them."
-  - "Blocking any merge, tag or publish today. Wiring is a proposal (three green nights first, L31)."
+  - "Blocking any merge, tag or publish. The checker is LAB; it becomes a GATE only with an operator yes, after three green nights on main, and with one gate retired for the one added."
   - "Resolving producer names. Each publish entry must name a producer (checked non-empty); the names are lanes of the nightly release train, which is not on main yet. Resolving them against that lane table is follow-up work, not done here."
   - "Known extractor limits (a requirement written in these forms is not seen, so it cannot be flagged unlisted): a checker invoked across a backslash line continuation; a cascade refusal not written as `if ! <fn|bash script>` nor as a top-level `if [ … ]` block before the upload loop; a publish_strict.sh refusal that is not a `die` (a bare `exit`); a needle that survives only in a comment still counts as present; a function name inside an echo string counts as a call."
 

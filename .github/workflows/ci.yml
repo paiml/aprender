@@ -247,14 +247,15 @@ jobs:
           retention-days: 90
           if-no-files-found: ignore
       # The two actions that need the Actions runtime run here, on the section's
-      # own files; both were continue-on-error in the reusable workflow.
+      # own files. Neither can block a merge, so neither runs on a PR or in the
+      # merge queue: they run only on a push to main, outside the merge path.
       - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
-        if: always() && contains(steps.wait.outputs.deferred, 'codecov')
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(steps.wait.outputs.deferred, 'codecov')
         continue-on-error: true
         with:
           files: ${{ runner.temp }}/fat/sov.coverage/ws/${{ github.event.repository.name }}/lcov.info
       - name: Generate SLSA provenance
-        if: always() && contains(steps.wait.outputs.deferred, 'attest')
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(steps.wait.outputs.deferred, 'attest')
         uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v2
         continue-on-error: true
         with:
