@@ -44,11 +44,12 @@
 #
 # EXIT  0 zero findings (probe: sets equal) · 1 a finding (probe: sets differ) · 2 not_measured (a surface is
 #       missing or unreadable; the probe read failed) · 3 caller error (bad arguments, a malformed list line)
-# Report-only today: no gate calls this script (wiring is a proposal; L31: three green nights first).
+# LAB today: no gate calls this script (it becomes a GATE only after three green nights and an operator yes).
 #
 # USAGE
 #   release_ready.sh [--root DIR] [--list FILE]     the verdict on a tree (default: this repo, its list)
 #   release_ready.sh --found [--root DIR]           the anchors the surfaces state (the in-repo inventory)
+#   release_ready.sh --gates [--root DIR] [--list FILE]   the GATE list: every requirement, one row each
 #   release_ready.sh --probe [--root DIR] [--list FILE]   GH (default gh) · RR_REPO (default paiml/aprender)
 #   release_ready.sh --selftest                     the case table (fixture trees, no network)
 #   release_ready.sh --mutants                      each planted mutant must turn the case table RED
@@ -375,6 +376,18 @@ verdict() {
     return "$rc"
 }
 
+# ---------------------------------------------------------------- the GATE list ------------------------------------
+# gates LIST: print the list as the GATE list, one row per requirement. A check is a GATE when it can block a merge
+# or a release; a check not on this list is LAB. A list that is absent, malformed or empty prints nothing to trust.
+gates() {
+    local list=$1 out
+    [ -f "$list" ] || nm "no list $list"
+    out=$(parse_list "$list") || caller_error "malformed list $list"
+    [ -n "$out" ] || nm "the list $list names no requirement"
+    printf 'GATE list from %s. A check is a GATE when it can block a merge or a release; anything not listed is LAB.\n' "${list##*/}"
+    printf '%s\n' "$out" | awk -F'\t' '{ printf "%-8s %-15s %-62s %s\n", $1, $2, $3, $4; n++ } END { printf "gates=%d\n", n }'
+}
+
 # ---------------------------------------------------------------- the probe (two GitHub reads) --------------------
 probe() {
     local root=$1 list=$2 gh=${GH:-gh} repo=${RR_REPO:-paiml/aprender} got bp want lo go
@@ -656,6 +669,14 @@ STUB
         if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
         else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
     done
+    # --gates: the fixture's list prints its rows; an empty list and an absent one are not_measured, never a list.
+    mkdir -p "$tmp/empty/contracts"; printf 'requirements:\n' > "$tmp/empty/$LIST_REL"
+    for line in "gates-list 0 FX-M1 $tmp/base" "gates-empty 2 names no requirement $tmp/empty" "gates-absent 2 no list $tmp/none"; do
+        c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line% *}; n=$((n + 1))
+        out=$(bash "$SCRIPT_PATH" --gates --root "$tmp/base" --list "${line##* }/$LIST_REL" 2>&1); rc=$?
+        if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
+        else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
+    done
     rm -rf -- "${tmp:?}"
     printf 'release-ready selftest: %d/%d rows pass\n' "$pass" "$n"
     [ "$fail" = 0 ] && [ "$pass" -gt 0 ]
@@ -692,7 +713,8 @@ M25 executor claim side optional@@ publish.executor:$AUTO_REL publish.executor:$
 M26 variable-only refusal named@@if (t !~ /[A-Za-z]/)@@if (0)
 M27 refusal named twice passes@@dup = 1; next }@@next }
 M28 no upload loop passes@@if (k == 0 || !loop || inb || unc) exit 2@@if (k == 0 || inb || unc) exit 2
-M29 if-block spanning the loop passes@@{ if (inb) unc = 1; loop = 1 }@@{ loop = 1 }'
+M29 if-block spanning the loop passes@@{ if (inb) unc = 1; loop = 1 }@@{ loop = 1 }
+M30 empty GATE list printed@@[ -n "$out" ] || nm "the list $list names no requirement"@@true'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0
@@ -722,6 +744,7 @@ main() {
             --list) [ $# -ge 2 ] || caller_error "--list needs FILE"; list=$2; shift 2 ;;
             --found) mode=found; shift ;;
             --claims) mode=claims; shift ;;
+            --gates) mode=gates; shift ;;
             --probe) mode=probe; shift ;;
             --selftest) mode=selftest; shift ;;
             --mutants) mode=mutants; shift ;;
@@ -734,6 +757,7 @@ main() {
     case "$mode" in
         found) found "$root" ;;
         claims) claims "$root" ;;
+        gates) gates "$list" ;;
         probe) probe "$root" "$list" ;;
         selftest) selftest ;;
         mutants) mutants ;;

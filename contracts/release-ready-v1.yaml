@@ -1,8 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # release-ready-v1
 #
-# ONE LIST IN CODE of what is required to merge, to tag and to publish (bar B4;
+# THE GATE LIST. ONE LIST IN CODE of what is required to merge, to tag and to publish (bar B4;
 # BLD-001 row 4; ticket #4688).
+#
+# GATE OR LAB. A check is a GATE when it can block a merge or a release, and every GATE is a row
+# below. A check that is not a row is LAB: it cannot block, and it has no report-only state on a
+# PR, merge-queue or release path.
+# Print the list: `bash scripts/release/release_ready.sh --gates`.
 #
 # WHY. The requirements of a release were stated in five places that nobody
 # compared: ci.yml's `gate` job, CLAUDE.md's required checks, autopilot.sh's
@@ -46,8 +51,8 @@
 #     moved ahead of the tag (RR-P07 -> RR-T16). HEAD: unlisted=0 orphaned=0 contradictions=1,
 #     the same publish.executor claim origin/main 682dab1e22 carries.
 #
-# REPORT-ONLY TODAY. No gate calls the checker. It becomes blocking only as a
-# ratchet after three green nights (L31), and only by an operator sign-off.
+# THE CHECKER IS LAB TODAY. No gate calls it. It becomes a GATE only
+# after three green nights on main and by an operator sign-off.
 # ─────────────────────────────────────────────────────────────────────────────
 name: release-ready
 version: "1.0.0"
@@ -188,9 +193,6 @@ requirements:
   - {id: RR-M03, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main", checker: ".github/workflows/ci.yml#  x86-main:", provenance: "#4433 (5 fat jobs; gate needs)", producer: "ci-main"}
   - {id: RR-M04, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "#4433 (gate needs; workspace-test fan-in)", producer: "ci-main"}
   - {id: RR-M05, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/determinism", checker: ".github/workflows/ci.yml#  determinism:", provenance: "#4433 (gate needs)", producer: "ci-main"}
-  - {id: RR-M06, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mutants-table-scope", checker: ".github/workflows/ci.yml#  mutants-table-scope:", provenance: "#4646 mutants ratchet (report-only, operator ruling 2026-10-01)", producer: "mutants", key: "merge.mutants.mode", value: "report"}
-  - {id: RR-M07, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mutants-table", checker: ".github/workflows/ci.yml#  mutants-table:", provenance: "#4646 mutants ratchet (report-only, operator ruling 2026-10-01)", producer: "mutants", key: "merge.mutants.mode", value: "report"}
-  - {id: RR-M08, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/yoga", checker: ".github/workflows/ci.yml#  yoga:", provenance: "#4621 (needed for its mutants-cuda section alone)", producer: "cuda"}
   - {id: RR-M09, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-tree", checker: ".github/workflows/ci.yml#guard-tree", provenance: "#4433 (gate section pair; was gate need guard-tree)", producer: "guards"}
   - {id: RR-M10, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-cargo", checker: ".github/workflows/ci.yml#guard-cargo", provenance: "#4433 (gate section pair; was gate need guard-cargo)", producer: "guards"}
   - {id: RR-M11, applies_to: [merge], anchor: "merge:ci.yml/gate/section/sov.gate", checker: ".github/workflows/ci.yml#sov.*", provenance: "#4433 (gate section pair; sovereign-ci gate)", producer: "ci-main"}

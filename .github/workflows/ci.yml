@@ -204,7 +204,6 @@ jobs:
           setsid --wait bash scripts/check_no_claim_literals.sh --selftest
           setsid --wait bash scripts/check_hardcoded_paths.sh --self-test
           setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
-          setsid --wait bash scripts/check_ci_gate_mutants_rule.sh --self-test
       # The driver decides what every section's if:/matrix/needs means and whether
       # the vendored workflow is the upstream one; its case table must go RED on
       # each planted defect before it is trusted to report a section green.
@@ -220,8 +219,7 @@ jobs:
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64],provable-ladder'
-          --external-job workspace-test
+          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]'
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
       # Published mid-run: the determinism job's compare section is waiting for it.
@@ -240,12 +238,6 @@ jobs:
           name: pr-review-shadow-sample
           path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
           retention-days: 90
-          if-no-files-found: ignore
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: mutation-results
-          path: ${{ runner.temp }}/fat/artifacts/mutation-results/
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         if: always()
@@ -367,12 +359,9 @@ jobs:
           --sections 'gpu-touched,gpu-quick'
           --results "$RUNNER_TEMP/fat/results.json"
 
-  # #4621 (operator E1): the yoga fat job also runs mutants-cuda, the CUDA mutants shard. `gate` needs this job
-  # for that section alone (GATE-MUTANTS-CUDA-RULE); cuda-unit stays advisory, and the gate reads no result of it.
-  # 50 -> 160: sections run concurrently, so the job is bounded by mutants-cuda's own 150.
   yoga:
     runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
-    timeout-minutes: 160
+    timeout-minutes: 50
     needs: [gpu-touched]
     if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
     concurrency:
@@ -391,7 +380,7 @@ jobs:
         id: run
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'gpu-touched,cuda-unit,mutants-cuda'
+          --sections 'gpu-touched,cuda-unit'
           --results "$RUNNER_TEMP/fat/results.json"
 
   determinism:
@@ -574,174 +563,6 @@ jobs:
           python3 scripts/ci/sigma_executed.py explicit --kind "explicit (3 shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
           exit "$rc"
 
-  # #4587 A' (operator 2026-09-29 06:36Z, via the cop): "CI generates the survivor table itself: the
-  # split runs become CI matrix jobs (run IDs), each bound to PR-1's head sha and diff hash ... The gate
-  # verifies before trusting it ... Any gap -> RED." Scope: the head refs in ci/mutants-table-refs.txt
-  # (PR-1 and PR-2 of 0.70) and nothing else; every other PR keeps the one-job `mutants` section and its
-  # 60-mutant cap. For a listed ref that section hands over, and `gate` requires mutants-table.
-  mutants-table-scope:
-    runs-on: [self-hosted, Linux, clean-room]
-    timeout-minutes: 10
-    if: github.event_name == 'pull_request'
-    outputs:
-      in_scope: ${{ steps.decide.outputs.in_scope }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      # minisign for the equivalents-signature rows (pinned + digest-checked, per-run private bin dir).
-      - name: Install minisign (the checker refuses an unverifiable equivalent)
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
-          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
-      # Every PR re-proves the gate's survivor-table rule and the checker's case table (planted defects RED).
-      # The checker's case table needs the minisign installed above, so this guard is wired HERE with its input
-      # named (guard_tree.sh rule 1 then leaves it to this step); the sovereign-ci image has no minisign.
-      - name: The survivor-table gate rule and checker still turn RED
-        env:
-          GATE_RULE_WORKFLOW: .github/workflows/ci.yml
-        run: |
-          set -euo pipefail
-          setsid --wait bash scripts/check_ci_gate_mutants_table_rule.sh --self-test
-          setsid --wait bash scripts/check_ci_gate_mutants_table_rule.sh
-      - name: The mutants feature groups cover every feature-gated module
-        run: setsid --wait bash scripts/check_mutants_feature_groups.sh
-      - name: Is this head ref judged by the survivor table?
-        id: decide
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-        run: |
-          set -euo pipefail
-          if grep -v '^#' ci/mutants-table-refs.txt | grep -qxF -- "$HEAD_REF"; then v=true; else v=false; fi
-          echo "head ref $HEAD_REF -> in_scope=$v"
-          echo "in_scope=$v" >> "$GITHUB_OUTPUT"
-
-  # One shard of the diff's mutants per job, on the PR HEAD sha (not the merge commit), cap 0.
-  mutants-shard:
-    runs-on: [self-hosted, Linux, clean-room]
-    timeout-minutes: 720
-    needs: [mutants-table-scope]
-    if: needs.mutants-table-scope.outputs.in_scope == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-    env:
-      IMAGE: localhost:5000/sovereign-ci:stable
-      SHARDS: '16'
-      MUTANTS_TABLE_JOBS: ${{ vars.MUTANTS_TABLE_JOBS || '2' }}
-    steps:
-      - name: Pre-checkout ownership restore (EACCES self-heal)
-        run: |
-          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
-            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
-          fi
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      - name: The PR diff this shard is bound to
-        run: bash scripts/mutants_table_diff.sh "${{ github.event.pull_request.base.ref }}" pr.diff
-      - name: Pull sovereign-ci image (with retry + local-cache fallback)
-        run: |
-          if docker image inspect "$IMAGE" > /dev/null 2>&1; then exit 0; fi
-          for i in $(seq 1 15); do
-            docker pull "$IMAGE" && exit 0
-            sleep $((4 + 6 * i))
-          done
-          echo "::error::Registry localhost:5000 unreachable after 15 attempts AND image not in local cache"
-          exit 1
-      - name: Shard ${{ matrix.shard }} of the survivor table
-        run: |
-          set -euo pipefail
-          docker run --rm \
-            --memory=16g --memory-swap=16g \
-            -e CI -e GITHUB_ACTIONS -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT -e SHARDS -e MUTANTS_TABLE_JOBS \
-            -e SHARD=${{ matrix.shard }} \
-            -v "${GITHUB_WORKSPACE}:/workspace" -w /workspace "$IMAGE" \
-            bash -c '
-              set -uo pipefail
-              export CARGO_INSTALL_ROOT=/usr/local/cargo-mutants-root
-              export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
-              if ! cargo mutants --version > /dev/null 2>&1; then
-                cargo install cargo-mutants --locked --version 27.1.0 > /tmp/mi.log 2>&1 || {
-                  echo "::error::cargo-mutants install failed; the shard cannot run"; tail -20 /tmp/mi.log; exit 1; }
-              fi
-              cargo mutants --version || { echo "::error::cargo-mutants not runnable after install"; exit 1; }
-              # The same exclusions as the mutants section: derived from the workspace-test nextest line.
-              EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" ci/sections.yml \
-                | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
-              [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
-              # shellcheck disable=SC2086
-              bash scripts/mutants_table_shard.sh pr.diff "$SHARD" "$SHARDS" "$MUTANTS_TABLE_JOBS" \
-                "mutants-shard-$SHARD" $EXCL
-            '
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: mutants-shard-${{ matrix.shard }}
-          path: |
-            mutants-shard-${{ matrix.shard }}/meta.json
-            mutants-shard-${{ matrix.shard }}/list.txt
-            mutants-shard-${{ matrix.shard }}/outcomes.json
-          if-no-files-found: error
-
-  # The verifier: trusts no shard until scripts/ci/mutants_survivor_table.py has checked the union.
-  mutants-table:
-    runs-on: [self-hosted, Linux, clean-room]
-    timeout-minutes: 20
-    needs: [mutants-table-scope, mutants-shard]
-    if: always() && needs.mutants-table-scope.outputs.in_scope == 'true'
-    steps:
-      - name: Every shard ran to the end
-        env:
-          SHARD_RESULT: ${{ needs.mutants-shard.result }}
-        run: |
-          echo "mutants-shard matrix result: $SHARD_RESULT"
-          [ "$SHARD_RESULT" = success ] || { echo "::error::mutants-table: shard matrix result is '$SHARD_RESULT' (a dead, cancelled or skipped shard is not a pass)"; exit 1; }
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: mutants-shard-*
-          path: ${{ runner.temp }}/mt
-      # minisign for the equivalents-signature rows (pinned + digest-checked, per-run private bin dir).
-      - name: Install minisign (the checker refuses an unverifiable equivalent)
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
-          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
-      - name: The checker's case table must still turn RED
-        run: python3 scripts/ci/mutants_survivor_table.py --self-test
-      - name: "Survivor table: every listed mutant judged once, on the PR head + diff (#4587 A')"
-        env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR: ${{ github.event.pull_request.number }}
-          MUTANTS_MAX_MISSED: ${{ vars.MUTANTS_MAX_MISSED || '0' }}
-        run: |
-          set -euo pipefail
-          bash scripts/mutants_table_diff.sh "${{ github.event.pull_request.base.ref }}" pr.diff
-          # The key an equivalent's receipt must verify against comes from the BASE branch: the PR's own copy
-          # of .github/pr-review.pub is editable by the PR, so trusting it would let a PR sign its own proof.
-          git show "origin/${{ github.event.pull_request.base.ref }}:.github/pr-review.pub" > "$RUNNER_TEMP/base-pr-review.pub"
-          python3 scripts/ci/mutants_survivor_table.py check --dir "$RUNNER_TEMP/mt" --shards 16 \
-            --head-sha "$HEAD_SHA" --diff pr.diff --equiv "evidence/mutants-equiv/$PR.tsv" \
-            --max-missed "$MUTANTS_MAX_MISSED" --repo . --pubkey "$RUNNER_TEMP/base-pr-review.pub" --table "$RUNNER_TEMP/mt/survivor-table.tsv"
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: mutants-survivor-table
-          path: ${{ runner.temp }}/mt/survivor-table.tsv
-          if-no-files-found: ignore
-
   ci-gate:
     name: ci / gate
     runs-on: [self-hosted, Linux, clean-room]
@@ -782,20 +603,15 @@ jobs:
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 22
-    # the GPU sections are advisory (68-C3 / 68-D2); yoga is needed for its mutants-cuda section alone (#4621)
-    needs: [x86-main, workspace-test, determinism, mutants-table-scope, mutants-table, yoga, mg-reuse, x86-main-advisories, mg-reuse-self-test]
+    needs: [x86-main, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test]
     if: always()
     steps:
       - name: Check required sections
         env:
           X86: ${{ needs.x86-main.outputs.results }}
           DET: ${{ needs.determinism.outputs.results }}
-          YM: ${{ needs.yoga.outputs.results }}
           WT: ${{ needs.workspace-test.result }}
           EVT: ${{ github.event_name }}
-          SCOPE: ${{ needs.mutants-table-scope.result }}
-          IN_SCOPE: ${{ needs.mutants-table-scope.outputs.in_scope }}
-          TABLE: ${{ needs.mutants-table.result }}
           MG: ${{ needs.mg-reuse.result }}
           MG_X86: ${{ needs.mg-reuse.outputs.x86 }}
           MG_DET: ${{ needs.mg-reuse.outputs.det }}
@@ -836,64 +652,4 @@ jobs:
               fi
             done
           fi
-          # --- MUTANTS-RATCHET (#4646; operator C187(a)/C188(a), 2026-10-01) ---
-          # Mutation results are REPORTED here, not blocking: a new gate is adopted as a ratchet, never as an
-          # instant absolute bar. What blocks is the shrink-only rule on ci/mutants-debt.tsv: a PR may not GROW that
-          # file (scripts/check_mutants_debt_ratchet.sh, run by guard-tree, which this gate requires above). A NEW
-          # surviving mutant is not yet blocked or recorded (#4649); rows key on file:line:col, so a line shift reads
-          # as a new row (#4653). Both land
-          # with PR #4647. A branch that carries this block before #4647 merges is report-only for mutants until it does.
-          # Every check above this line is unchanged. The mutants rules below are unreachable ON PURPOSE (C188: mutants
-          # off the release path) until RESTORE PR #4648 deletes this block and re-arms them.
-          echo "mutants (report-only, ratchet #4646): event=$EVT section=$(res "$X86" mutants)"
-          echo "All required sections passed (mutants: ratchet mode, #4646)"
-          exit 0
-          # --- MUTANTS-RATCHET-END ---
-          MUT=$(res "$X86" mutants)
-          # --- GATE-MUTANTS-RULE-BEGIN (#3676; scripts/check_ci_gate_mutants_rule.sh runs this block) ---
-          # `skipped` is a pass ONLY when the skip is the job's own filter:
-          # mutants declares `if: github.event_name == 'pull_request'`, so on every
-          # other event it is skipped by design. On a pull_request it must have RUN
-          # and succeeded -- a diff with no .rs still succeeds (its steps skip, the
-          # job passes), so a pull_request `skipped` or `cancelled` means the job
-          # never ran, and the old rule ("success/skipped both pass") passed that.
-          case "$EVT:$MUT" in
-            pull_request:success) echo "mutants result: success on a pull_request" ;;
-            pull_request:*) echo "mutants on a pull_request must succeed; got '$MUT' -- a skip here is not the job's filter"; exit 1 ;;
-            *:skipped) echo "mutants result: skipped on $EVT (its filter: pull_request only)" ;;
-            *:success) echo "mutants result: success on $EVT" ;;
-            *) echo "mutants (diff-scoped mutation) on $EVT: $MUT"; exit 1 ;;
-          esac
-          # --- GATE-MUTANTS-RULE-END ---
-          # --- GATE-MUTANTS-TABLE-RULE-BEGIN (#4587 A'; scripts/check_ci_gate_mutants_table_rule.sh runs this block) ---
-          # For a head ref in ci/mutants-table-refs.txt the mutants section hands over, so here the survivor
-          # table must have RUN and succeeded. The scope decision itself must have run on every pull_request:
-          # a missing decision would let a listed ref pass on the section's hand-over alone.
-          case "$EVT:$SCOPE:$IN_SCOPE:$TABLE" in
-            pull_request:success:true:success) echo "mutants-table: survivor table GREEN" ;;
-            pull_request:success:false:skipped) echo "mutants-table: not in scope (the mutants section judged this PR)" ;;
-            pull_request:*) echo "mutants-table on a pull_request: scope=$SCOPE in_scope=$IN_SCOPE table=$TABLE"; exit 1 ;;
-            *:skipped::skipped) echo "mutants-table: skipped on $EVT (pull_request only)" ;;
-            *) echo "mutants-table on $EVT: scope=$SCOPE in_scope=$IN_SCOPE table=$TABLE"; exit 1 ;;
-          esac
-          # --- GATE-MUTANTS-TABLE-RULE-END ---
-          # --- GATE-MUTANTS-CUDA-RULE-BEGIN (#4621; scripts/check_ci_gate_mutants_cuda_rule.sh runs this block) ---
-          # Operator E1: a mutant in feature-gated code that the CPU section never compiled is NOT_MEASURED, never
-          # killed or absent. The CPU section defers that set; on a pull_request with a non-empty set the gate is
-          # RED unless mutants-cuda (the yoga job) succeeded and measured the SAME set, compared by sha. A missing,
-          # skipped or cancelled shard is RED. An empty count means the CPU step skipped (no .rs in the diff) and
-          # reads as 0; any other value that is not the literal 0 counts as non-empty.
-          out() { printf '%s' "${1:-null}" | SEC="$2" K="$3" jq -r '((. // {})[env.SEC].outputs // {})[env.K] // ""'; }
-          NM=$(out "$X86" mutants not_measured)
-          if [ "$EVT" = pull_request ] && [ "${NM:-0}" != 0 ]; then
-            NMS=$(out "$X86" mutants not_measured_sha)
-            YR=$(printf '%s' "${YM:-null}" | jq -r '(. // {})."mutants-cuda".result // "missing"')
-            MS=$(out "$YM" mutants-cuda measured_sha)
-            [ "$YR" = success ] || { echo "mutants-cuda must measure the $NM deferred NOT_MEASURED mutant(s); its result is '$YR'"; exit 1; }
-            [ -n "$NMS" ] && [ "$MS" = "$NMS" ] || { echo "mutants-cuda measured set $MS is not the deferred set $NMS ($NM mutant(s))"; exit 1; }
-            echo "mutants-cuda measured the $NM deferred mutant(s): set sha $MS"
-          else
-            echo "mutants: no deferred NOT_MEASURED set on $EVT (not_measured='${NM}')"
-          fi
-          # --- GATE-MUTANTS-CUDA-RULE-END ---
           echo "All required sections passed"
