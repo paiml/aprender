@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t1-interrupt-still-kills-models",
+          "level": "note",
+          "message": {
+            "text": "INT/TERM to the autopilot still sends TERM to every lane's process group including models. The comment now says so and calls it the operator's choice. Judged deliberate and acceptable: an operator who interrupts the pass has stopped it. The consequence is real and unchanged: models' remote leg is an ssh with no pty, so the remote build and ladder may run on in the release dir, and the next pass starts against it. The guard's interrupt case still asserts only that deep's child is gone, so nothing pins either the kill or a cleanup of the remote leg."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 186
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "t1_int_probe.sh",
+              "<scratch>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "94c67307c91994555bbcab3b3547265f3d64e899a10451b628dc24d2e23b7f25",
+            "failure_scenario": "TERM to the autopilot while models runs: the stub models child is gone (models-child-alive=no). In the real lane the group holds the local ssh and the remote leg is left running.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-lane-red-recorded-correctly",
+          "level": "note",
+          "message": {
+            "text": "Fix verified, not a defect: two lanes that exit 1 by themselves inside the same second are now both RED and both named. STOPPED needs the lane to be marked and to have exited 128+TERM. Probe output: deep RED, dogfood RED, models GO, rc 1."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 196
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "t1_join_race_probe.sh",
+              "<scratch>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "40ac0c0c06854ae8bdf1c8fe3f8f7b7282c6f763444ee374d1c0ec17d1a6f010",
+            "failure_scenario": "none: this is the previous finding closed. Residual: a lane that was marked, then fails by itself with exactly 143 in the same window, is still recorded STOPPED; that needs a lane to exit 143 on its own.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-lock-timeout-has-a-reason",
+          "level": "note",
+          "message": {
+            "text": "Fix verified: a lock timeout (flock exit 75) now appends a line to the parity stderr, so classify_parity_exit prints FAIL with the reason 'the fleet GPU lock was not free in 1s; nothing was measured' instead of an empty parenthesis. It is still a FAIL, never a pass."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_model_parity.sh"
+                },
+                "region": {
+                  "startLine": 280
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "lock_busy_probe",
+              "<scratch>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "55d2b58edc6f59d50fbaae3ff6c0e171703a4ab0f5ad831553d7d33106c0de16",
+            "failure_scenario": "none: previous finding closed. choom -n 1000 -- true exits 0 on this host, so the wrapped command runs.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-launch-window-race",
+          "level": "note",
+          "message": {
+            "text": "An interrupt between a lane being launched and being recorded leaves that lane out of the trap's kill loop."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 188
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The primary read autopilot.sh:188. The INT/TERM trap is installed before the launch loop, but an interrupt between a lane's '&' and 'T1_STEP[$!]=$s' leaves that lane unrecorded, so the trap's kill loop skips its group. The window is a few microseconds. Judged deliberate and acceptable as the author documented; a lane left alone would run to its own end. Unchanged from the earlier round.",
+            "failure_scenario": "INT arrives in the microseconds after a lane starts and before it is recorded; that lane keeps running after the autopilot stops.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t1-parity-choom-and-reason-unguarded",
+          "level": "warning",
+          "message": {
+            "text": "Two of the fix's three parts have no test. The new guard pins the flock only: its locked() check looks at the line that holds the flock. Deleting 'choom -n 1000 --' from the parity line, and deleting the exit-75 reason line, each leave the guard at PASS 8 cases and 11 of 11 mutants killed. Only the flock is pinned; the choom (the OOM-victim rule the ladder keeps) and the reason are honour-system. Fix: extend locked() to require choom on the parity call and add a lock-busy case, or accept the gap."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 138
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_t1_lanes_joined.sh",
+              "<mutated check_model_parity.sh>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "04fabb4c2ff209643b3365c267c6355cac8ea51597e2aec28d16c2faafa99732",
+            "failure_scenario": "A later edit drops choom or the reason; the guard stays green and the release runs parity as an OOM candidate for the host, or a lock timeout reads as an empty-reason FAIL.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-guard_blind_spot_target_dir",
+          "level": "note",
+          "message": {
+            "text": "The `dirs()` check in the guard script extracts the target dir via `awk` as a full line string. It performs a strict string comparison without normalizing whitespace or ignoring comments, meaning lines that differ syntactically but resolve to the same path will bypass the collision check."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 114
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy (gemini-3.1-pro-high) mark measured. Re-marked asserted: agy supplied no command or stdout digest. The primary read dirs(): it compares the two export lines as text, so a path-identical line that differs by trailing space would pass. Real but cosmetic: the autopilot has one export per lane and the guard kills the shared-dir mutants.",
+            "failure_scenario": "A developer alters `t1_dogfood` to add a trailing space, or leaves a commented-out `export CARGO_TARGET_DIR` above the active one. The `awk` guard captures the differing full line strings, causing `[ \"$d\" != \"$g\" ]` to pass. Both lanes then build into the same shared target directory under the hood, causing Cargo to race on target artifacts and crash.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-orphaned_processes_guard_termination",
+          "level": "note",
+          "message": {
+            "text": "The `check_release_t1_lanes_joined.sh` guard script spawns background processes via `case_run() ... &` but lacks a trap for `INT` and `TERM` signals to terminate them upon premature exit."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 32
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark asserted. The primary read the guard: it traps only EXIT, so an INT to the guard leaves the stub sleeps running until they end (at most 20 s). Harmless to a release; a test-hygiene note.",
+            "failure_scenario": "An operator or CI timeout sends `SIGINT`/`SIGTERM` to the guard script (`check_release_t1_lanes_joined.sh`). The script exits and its `EXIT` trap cleans up `$TMP`, but the background processes spawned by `case_run` (running `harness.sh` and `sleep`) do not receive the signal and are left running as orphaned processes.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-gpu_lock_timeout_ambiguity",
+          "level": "note",
+          "message": {
+            "text": "In `check_model_parity.sh`, `flock` uses `-E 75` to indicate a lock timeout. If the `choom` wrapped command natively exits with code 75, the script will falsely attribute the failure to GPU lock contention."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_model_parity.sh"
+                },
+                "region": {
+                  "startLine": 278
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark asserted. The primary read the line: exit 75 is read as a lock timeout whatever its source, so an apr parity that itself exits 75 would be reported with the lock message. apr parity has no documented exit 75; the message is a diagnostic on a FAIL, never a pass.",
+            "failure_scenario": "The GPU lock is acquired successfully, but the underlying `$APR_BIN parity` payload fails internally and exits with `75` (e.g. `EX_TEMPFAIL`). The wrapper script misinterprets this as a lock timeout, appends the lock timeout error message to `$j.err`, and masks the actual model parity failure from the release operator.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

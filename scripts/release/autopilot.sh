@@ -91,12 +91,21 @@ v=$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import
 bash scripts/bump-version.sh --check >> "$LOG" 2>&1 || die "bump-version.sh --check: the workspaces disagree on the version"
 export CARGO_TARGET_DIR="$REPO_ROOT/target"
 
+# T-1 LANES (C316 item 2d): deep, dogfood and models are three independent measurements of the same
+# commit, so they start together and join before readiness. Each is a function below, run as its own
+# background job; the join is after the models function. The step bodies are unchanged.
+#   TARGET DIRS. All three build `release/apr`, each with different features (deep: every workspace
+#   [[bin]]; dogfood: $FEATS; models: --features cuda). In series the last writer was models, and
+#   readiness reads that binary from $CARGO_TARGET_DIR. In parallel one shared dir would be a race over
+#   which apr each lane measures, so deep and dogfood build into their own dirs under it and models
+#   keeps $CARGO_TARGET_DIR: readiness still reads the apr models built, exactly as before.
 
 # 1b. deep (T-1): no `ci / deep` workflow exists on main, so the local equivalent runs on THIS commit.
 #     doctests + examples must be rc=0. `--no-default-features` carries the standing #3176 class
 #     (every error inside aprender-distribute, identical at v0.66/v0.67): recorded, not blocking;
 #     any error OUTSIDE that crate is RED and stops the train.
-if run_step deep; then
+t1_deep() {
+  export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-deep"
   cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute > "$AP/deep-doctests.log" 2>&1; rc=$?
   say "DEEP doctests rc=$rc: $(grep -E '^test result' "$AP/deep-doctests.log" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
   [ $rc -eq 0 ] || die "T-1 doctests RED ($AP/deep-doctests.log)"
@@ -123,7 +132,7 @@ if run_step deep; then
   say "DEEP all-bins smoke rc=$rc"
   [ $rc -eq 0 ] || die "T-1 all-bins smoke RED ($AP/deep-bins-smoke.json)"
   say "DEEP GO at $MC (doctests, examples, all bins green; --no-default-features within #3176)"
-fi
+}
 
 # 2. dogfood: the R5 receipt, pre-publish, FULL, on THIS commit -- never inherited (#3708)
 #    The T-2 inheritance (operator 2026-09-17) was withdrawn by the cop's ruling on #3708 (2026-09-21).
@@ -134,7 +143,8 @@ fi
 #    Now the real dogfood runs here, and R5 is judged HERE by the same function T-4 uses
 #    (check_publish_preflight.sh --receipt-only), on the same receipt file in this worktree, so a
 #    receipt T-4 would refuse stops the train before any tag exists.
-if run_step dogfood; then
+t1_dogfood() {
+  export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-dogfood"
   bash scripts/dogfood.sh --phase pre-publish > "$AP/dogfood-pre-publish.log" 2>&1; rc=$?
   grep -E 'VERDICT' "$AP/dogfood-pre-publish.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "dogfood pre-publish NO-GO rc=$rc ($AP/dogfood-pre-publish.log)"
@@ -143,7 +153,7 @@ if run_step dogfood; then
   tail -2 "$AP/dogfood-r5.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 R5 refused the dogfood receipt rc=$rc: the T-4 publish gate would refuse it too, so nothing is tagged ($AP/dogfood-r5.log)"
   say "DOGFOOD GO at $MC (R5 holds at T-1)"
-fi
+}
 
 
 # 2b. models (#3717, #3712 done_when 3): the model matrix, measured AT THIS COMMIT on BOTH hosts
@@ -151,11 +161,54 @@ fi
 #     apr built from $MC and proved to be it. One red cell, an unreachable host, a failed build, a
 #     missing receipt or a judge decline is a STOP here, with no tag cut. The same judge re-reads the
 #     receipts committed in the bump at T-4 (check_publish_preflight.sh R7).
-if run_step models; then
+t1_models() {
   bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
   grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 model matrix NO-GO rc=$rc: nothing is tagged ($AP/models-t1.log)"
   say "MODELS GO at $MC on lambda and gx10"
+}
+
+# The join. Every selected lane starts now, each in its own process group (set -m), so a lane can be
+# stopped with everything it started. A red in any lane stops the pass (item 4): nothing after this
+# point runs. Each lane gets one row in $AP/t1-steps.tsv (step, start, end, seconds, verdict;
+# start and end are seconds after the launch, which STATUS stamps) and one STEP line in STATUS,
+# with its own log as before. GO = the lane exited 0; RED = it exited non-zero
+# by itself; STOPPED = it died of the TERM sent because another lane was red; a lane that failed
+# by itself in the same second is still RED.
+#   WHICH LANES A RED STOPS. deep and dogfood run only here, so the first red stops them. models is
+#   never stopped: its remote leg is an ssh with no pty, so killing the local ssh would leave the remote
+#   build and ladder running in the release dir the next pass reuses. models runs to its own verdict.
+#   An INT or TERM to the autopilot stops every lane (the lanes no longer share its process group),
+#   models included: the operator chose to stop, and the remote leg may run on to its own end.
+# scripts/check_release_t1_lanes_joined.sh runs this block against stub lanes, and its mutants.
+T1_LANES=(); for s in deep dogfood models; do run_step "$s" && T1_LANES+=("$s"); done
+if [ "${#T1_LANES[@]}" -gt 0 ]; then
+  declare -A T1_STEP=() T1_T0=() T1_STOPPED=()
+  trap 'for p in "${!T1_STEP[@]}"; do kill -TERM -- "-$p" 2> /dev/null; done; die "T-1 lanes interrupted"' INT TERM
+  t1_launch=$SECONDS; set -m
+  for s in "${T1_LANES[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
+  set +m
+  say "T-1 LANES started together: ${T1_LANES[*]}"
+  [ -f "$AP/t1-steps.tsv" ] || printf 'step\tstart\tend\tseconds\tverdict\n' > "$AP/t1-steps.tsv"
+  t1_red=''; t1_term_rc=$((128 + $(kill -l TERM)))
+  while [ "${#T1_STEP[@]}" -gt 0 ]; do
+    t1_pid=''; wait -n -p t1_pid "${!T1_STEP[@]}"; rc=$?
+    [ -n "$t1_pid" ] || die "T-1 join: wait returned no lane (rc=$rc) with ${#T1_STEP[@]} still recorded"
+    s=${T1_STEP[$t1_pid]}; unset "T1_STEP[$t1_pid]"; t1=$SECONDS
+    if [ "$rc" -eq 0 ]; then v=GO; elif [ -n "${T1_STOPPED[$s]:-}" ] && [ "$rc" -eq "$t1_term_rc" ]; then v=STOPPED; else v=RED; t1_red="${t1_red:+$t1_red }$s"; fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$((T1_T0[$s] - t1_launch))" "$((t1 - t1_launch))" \
+      "$((t1 - T1_T0[$s]))" "$v" >> "$AP/t1-steps.tsv"
+    say "STEP $s $v rc=$rc seconds=$((t1 - T1_T0[$s]))"
+    if [ "$v" = RED ]; then
+      for p in "${!T1_STEP[@]}"; do
+        [ "${T1_STEP[$p]}" = models ] && continue
+        T1_STOPPED[${T1_STEP[$p]}]=1; kill -TERM -- "-$p" 2> /dev/null
+      done
+    fi
+  done
+  trap - INT TERM
+  [ -z "$t1_red" ] || die "T-1 lane(s) $t1_red RED: deep and dogfood were stopped, models ran to its verdict, nothing is tagged ($AP/t1-steps.tsv)"
+  say "T-1 LANES joined GO: ${T1_LANES[*]}"
 fi
 # 2c. readiness (#3715 done_when 4): the same receipts, graded by pv's release-readiness-v1 SHACL shape,
 #     with the dogfood receipt R5 just judged. The T-4 preflight (R8) asks the same wrapper about the

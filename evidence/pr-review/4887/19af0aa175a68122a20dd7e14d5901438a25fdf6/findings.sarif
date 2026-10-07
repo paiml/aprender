@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t1-interrupt-kills-models",
+          "level": "warning",
+          "message": {
+            "text": "The INT/TERM trap sends TERM to every lane's process group including models. The autopilot's own comment (autopilot.sh lines 231-233) says models is never stopped because its remote leg is an ssh with no pty, so killing the local ssh leaves the remote build and ladder running. A red stops deep and dogfood only; an operator Ctrl-C or a TERM still stops models. The guard's interrupt case asserts only that deep's child is gone, so nothing tests this. Fix: leave models out of the trap's kill loop, or have the trap wait for it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 184
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "t1_int_probe.sh",
+              "<scratch>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "94c67307c91994555bbcab3b3547265f3d64e899a10451b628dc24d2e23b7f25",
+            "failure_scenario": "TERM to the autopilot while models runs: the stub models child is gone (models-child-alive=no) because the trap killed its group. In the real lane that group holds the local ssh, the remote build and ladder keep running in the release dir, and the next pass starts a second ladder against the same GPU lock and release dir.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-genuine-red-recorded-stopped",
+          "level": "warning",
+          "message": {
+            "text": "When two lanes go red inside the same second the second one is already dead when the first is reaped, but the red handler still marks it T1_STOPPED and sends it a TERM that lands on a zombie, so its verdict is written as STOPPED. In the probe deep and dogfood both exit 1 by themselves; t1-steps.tsv says deep RED, dogfood STOPPED, and the STOP line names only deep. The pass still dies, but the table that item 4 reports from is wrong about which lane failed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 202
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "t1_join_race_probe.sh",
+              "<scratch>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f19e6c29ca505636b519a15acffc14123cf0afa048ed4b51597284ddcea6fa2e",
+            "failure_scenario": "dogfood (or deep) fails on its own at the same moment as another lane; the release log reports it as STOPPED, a verdict that reads as collateral damage, and the final STOP line omits it from the named RED lanes, so the operator fixes only one red and the next pass finds the second.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-parity-lock-timeout-reads-as-model-fail",
+          "level": "warning",
+          "message": {
+            "text": "The new flock in check_model_parity.sh exits 75 when the GPU lock is not free within MODEL_LADDER_LOCK_WAIT (1800 s default). classify_parity_exit has no branch for 75, so it prints 'FAIL <model>: apr parity exited non-zero ()' with an empty reason (the lock failure writes nothing to the err file). C14 then goes FAIL and dogfood pre-publish is NO-GO, which stops deep. The ladder prints 'decline: ENV the GPU lock ... Not a model verdict' for the same condition; this reads as a model defect, the class dogfood.sh:1765 documents as a tool defect read as a model defect."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_model_parity.sh"
+                },
+                "region": {
+                  "startLine": 161
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "parity_lock_busy_probe.sh",
+              "<scratch>",
+              "."
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8279f78ea28f03591ad4a6465f0b09849f6d035b65a83f459bb5aa5cab3b27b8",
+            "failure_scenario": "A ladder cell holds the lock for a long serve run beyond the 1800 s wait; parity gets exit 75, C14 reports FAIL for a model that was never measured, dogfood NO-GO stops the whole T-1 pass, and the log shows no reason.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t1-parity-flock-untested",
+          "level": "warning",
+          "message": {
+            "text": "Replacing the flock in check_model_parity.sh with env leaves check_model_parity.sh --self-test at 26/26 rows and no other guard names it. The GPU lock, the second of the three prior findings this commit answers, has no test: removing it reopens the contention silently. The T-1 guard's nine mutants cover the join and the target dirs only."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_model_parity.sh"
+                },
+                "region": {
+                  "startLine": 277
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "check_model_parity_noflock_mutant.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "aa72708b8b8291726ab0744455e8bd9ea3b7f368e49b35b4d8580f531640bb90",
+            "failure_scenario": "A later edit drops or reorders the flock; dogfood C14 parity and the model ladder use the GPU together again, the failure the commit set out to fix, with every guard green.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-race_condition_lane_launch",
+          "level": "note",
+          "message": {
+            "text": "Race condition on lane launch leaves unrecorded lanes orphaned on interrupt"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 188
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy (gemini-3.1-pro-high) finding race_condition_lane_launch, agy mark measured. Re-marked asserted: agy supplied no command or stdout digest. The primary did not re-verify it; the window between the background launch and T1_STEP[$!] is a few statements wide.",
+            "failure_scenario": "If the user sends an interrupt (e.g. Ctrl-C) exactly after the background lane (`\"t1_$s\" &`) is spawned but before its PID is recorded into `T1_STEP` (`T1_STEP[$!]=$s`), the trap handler will not iterate over the newly spawned job's PID. Because the job runs in its own process group (`set -m`), it does not receive the script's `TERM` signal and is left running as an orphaned process.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-orphaned_remote_process_on_interrupt",
+          "level": "warning",
+          "message": {
+            "text": "INT/TERM trap kills models lane's local ssh, leaving the remote leg orphaned and corrupting the next run"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 184
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark cited. Re-marked asserted: agy supplied no excerpt digest. The primary measured the same defect independently (see rule t1-interrupt-kills-models, measured).",
+            "failure_scenario": "When the user interrupts the autopilot (e.g. via Ctrl-C), the trap sends `TERM` to every lane's process group, including `models`. This kills the local `ssh` process. Because the ssh session lacks a PTY, the remote `bash -s` and its `model_ladder.sh` / builds continue running. A subsequent run will execute concurrently in the same `$dir`, contending for the remote GPU lock and corrupting the shared `receipt.json` and build logs.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-guard_blind_spot_models_interrupt",
+          "level": "note",
+          "message": {
+            "text": "The guard's interrupt test asserts deep's cleanup but is blind to models' behavior"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 89
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark cited. Re-marked asserted: no excerpt digest. The primary read the case: child_gone is only asserted for deep's stub child.",
+            "failure_scenario": "The guard's interrupt test (`t-int`) asserts `child_gone \"$t-int\"`, which only verifies that `deep`'s child process is cleaned up. It makes no assertion about the `models` lane process under interrupt conditions. This blind spot allowed the autopilot's interrupt trap to erroneously kill the `models` leg without failing the guard, directly masking the remote-orphaning regression.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-missing_choom_oom_risk",
+          "level": "note",
+          "message": {
+            "text": "check_model_parity.sh takes the GPU lock but omits choom, risking CI container OOM deaths"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_model_parity.sh"
+                },
+                "region": {
+                  "startLine": 277
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark cited. Re-marked asserted: no excerpt digest. The primary read scripts/model_ladder.sh:90 (choom 1000 so the measurement is the OOM victim) and found no choom in autopilot.sh, dogfood.sh or check_model_parity.sh, but did not reproduce an OOM; the cited line numbers in agy's source field were wrong, the text is at line 90.",
+            "failure_scenario": "If `apr parity` causes a global OOM event on the host, the kernel's OOM killer will target the CI containers (which have `oom_score_adj 500`) instead of the `apr parity` process (which has 0). This is exactly the catastrophic pool-death incident documented in #3712. The `check_model_parity.sh` patch copied the GPU lock from `apr_locked` but erroneously dropped `choom -n 1000`, leaving the CI pool completely vulnerable.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
