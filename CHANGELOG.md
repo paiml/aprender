@@ -29,6 +29,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host still owes every Qwen3 cell. Planned for 0.70.1: native sm_121 SASS, then a re-test of batched
   prefill on GB10.
 
+## [0.70.2] - 2026-10-07
+
+0.70.2 ships under a recorded operator emergency scope, `crux-smoke`, as 0.70.1 did: "0.70.2 ships on
+CRUX smoke on lambda and gx10 GPU. Everything bigger is nightly." The record is the 0.70.2 entry under
+`emergency_scopes` in `contracts/model-capability-ladder-v1.yaml`. The prompt certification is carried
+from 0.70.1 unchanged (same models, prompts and oracle engines). The full notes, with the reason for
+carrying it, are in `evidence/release/0.70.2/RELEASE-NOTES-0.70.2.md`.
+
+### Fixed
+- `apr serve`: tools in a chat request reach the chat template, and Qwen3.5 XML tool calls are parsed (#4650).
+- `apr serve`: KV caches no longer commit every byte when they are built (#4769).
+
+### Release
+- The PP-26 witness marker is re-measured on this release's base, so its release-phase check judges fresh
+  evidence (#4888).
+- The coverage gate reads the nightly's sha-keyed receipt and is checked before the tag (#4734); merge, tag
+  and publish requirements are one list in code (#4688); no public GitHub release before its assets,
+  clean-room and preflight (#4690).
+
+### Known issues (moved to 0.71.0)
+- Six models still fail and ship as known failures, each tracked on its ticket: #4661 and #4662 (cuda serve
+  /api/chat gibberish), #4663 (no measured thinking budget for an IQ4_XS quant), #4664 (an IQ2_XXS GPU forward
+  falls back to CPU), #4665 (no CUDA forward for qwen35moe), #4666 (think block unclosed within 2048 tokens).
+- One unattended autopilot pass: the autopilot's readiness step and tag cut do not read a recorded scope.
+
 ## [0.69.3] - 2026-09-24
 
 0.69.3 is an emergency early release, authorized by the operator: "we need near parity apr serve
