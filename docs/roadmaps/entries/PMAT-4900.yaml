@@ -1,0 +1,18 @@
+- id: PMAT-4900
+  github_issue: 4900
+  item_type: task
+  title: 'EG-1: Load — GGUF, tokenizer, kind'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:53:58Z
+  updated: 2026-10-07T17:53:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898

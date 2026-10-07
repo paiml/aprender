@@ -1,0 +1,18 @@
+- id: PMAT-4903
+  github_issue: 4903
+  item_type: task
+  title: 'EG-4: CUDA on sm_89 and sm_121'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:14Z
+  updated: 2026-10-07T17:54:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
