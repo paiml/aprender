@@ -203,8 +203,11 @@ run() { # run REPO WORK COMMIT TIMEOUT
     sha9=$(git -C "$wt" rev-parse --short=9 HEAD)
     rm -rf -- "${out:?}"; mkdir -p -- "$out" "$work/target" || die "cannot create $out"
     : > "$work/foreign.log"
+    # MODELS_T1_SCOPE=none: the nightly judges the FULL ladder, never a release scope or the standing
+    # CRUX-smoke release policy. Its red rows are what the policy sends to tickets; a scoped nightly
+    # would hide them.
     say "RUN models_t1.sh $ver at $sha9 (timeout ${tmo}s)"
-    (cd "$wt" && export CARGO_TARGET_DIR="$work/target" && exec timeout --kill-after=60 "$tmo" bash scripts/release/models_t1.sh "$ver" "$c" "$out") \
+    (cd "$wt" && export CARGO_TARGET_DIR="$work/target" MODELS_T1_SCOPE=none && exec timeout --kill-after=60 "$tmo" bash scripts/release/models_t1.sh "$ver" "$c" "$out") \
         > "$work/models-t1.log" 2>&1 9>&- &
     tpid=$!
     # timeout leads its own process group: any other models_t1.sh seen while it runs is foreign
@@ -374,6 +377,7 @@ self_test() {
 #!/usr/bin/env bash
 ver=$1; out=$3; sha9=$(git rev-parse --short=9 HEAD); want="apr $ver ($sha9)"
 [ -z "${STUB_MARK:-}" ] || : > "$STUB_MARK"
+echo "MODELS_T1_SCOPE=${MODELS_T1_SCOPE-unset}"
 red=0; [ "${STUB_MODE:-green}" != red ] || red=2
 [ "${STUB_MODE:-green}" != slow ] || exec sleep 30
 for h in lambda gx10; do printf '{"apr_version":"%s","executed":3,"red":%s}\n' "$want" "$red" > "$out/$h.json"; echo "leg $h" > "$out/$h.log"; done
@@ -386,6 +390,7 @@ STUB
     : > "$tmp/ps.none"; export MODELS_NIGHTLY_PS_TABLE="$tmp/ps.none"   # hermetic: see ps_table
     nightly() { bash "$SCRIPT_PATH" "$@"; }
     row e2e_run_green 0 "RUN green at ${c1:0:9}" "" -- nightly --run --repo "$repo" --work "$work"
+    row e2e_run_judges_the_full_ladder 0 "MODELS_T1_SCOPE=none" "" -- cat "$work/models-t1.log"
     row e2e_bundle_is_sealed 0 "OK" "FAILED" -- bash -c "cd '$work/pending/$c1' && sha256sum -c SHA256SUMS"
     row e2e_second_run_on_c_skips_pending 0 "SKIP: ${c1:0:9} is already measured green" "RUN " -- env STUB_MARK="$tmp/mark" bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
     row e2e_skip_ran_no_measurer 1 "" "" -- test -e "$tmp/mark"
@@ -483,7 +488,8 @@ m18_token_guard_dropped_from_run	0,/^    no_token [|][|] refuse/s/^    no_token 
 m19_prune_kept_everything	s/^        tail -n "\$KEEP" -- "\$idx"/        cat -- "$idx"/
 m20_real_ps_never_read	s/else ps -eo pgid=,args=; fi/else :; fi/
 m21_plant_feeds_readiness	s/\[ -n "\$4" \] [|][|] bundle=\$ev/bundle=$ev/
-m22_unmeasured_feeds_readiness	s/case \$state in green[|]red[)] \[/case $state in *) [/'
+m22_unmeasured_feeds_readiness	s/case \$state in green[|]red[)] \[/case $state in *) [/
+m23_nightly_judges_a_scope	s/ MODELS_T1_SCOPE=none \&\&/ \&\&/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3

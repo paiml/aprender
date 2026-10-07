@@ -176,7 +176,9 @@ for hr in "$LOCAL_HOST $lrc" "$REMOTE_HOST $rrc"; do
     echo "MODELS $h measured by $want: executed=$executed red=$red (model_ladder rc $rc)"
 done
 
-bash scripts/check_model_ladder.sh --version "$ver" --receipts "$out" > "$out/judge.log" 2>&1; jrc=$?
+# MODELS_T1_SCOPE (optional) is passed to the judge as --scope. The nightly sets it to `none`: it judges
+# the full ladder even where a release scope or the standing CRUX-smoke release policy covers $ver.
+bash scripts/check_model_ladder.sh --version "$ver" ${MODELS_T1_SCOPE:+--scope "$MODELS_T1_SCOPE"} --receipts "$out" > "$out/judge.log" 2>&1; jrc=$?
 case $jrc in
     0) ;;
     2) echo "MODELS NO-GO: the judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 "$out/judge.log")"; nogo=1 ;;
