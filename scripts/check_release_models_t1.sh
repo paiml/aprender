@@ -31,12 +31,13 @@
 #                    `choom -n 1000`, and this wrapper takes NO flock -- the GPU lock is the
 #                    ladder's own, per apr call, and a second one here would deadlock it. No build
 #                    runs under a flock.
-# CRUX MEASURE MODE (MODELS_T1_MEASURE=crux): the fixture's release commit also carries
+# CRUX MEASURE MODE (FX_POLICY=covers: the fixture ladder's release_policy covers 9.9.9, so autopilot picks
+# MODELS_T1_MEASURE=crux itself): the fixture's release commit also carries
 # evidence/crux/9.9.9/prompt-certification.json and a committed scripts/crux_sweep_shards.sh stub (writes
 # <out>/<host>-gpu.json naming the apr it was handed, plus a meta .json); the judge stub's --crux branch
 # prints "POLICY: " and, like crux_smoke_scope.py, reads every *.json in the dir.
 #   ladder-explicit  MODELS_T1_MEASURE=ladder is green-pair exactly.
-#   measure-bogus    MODELS_T1_MEASURE=bogus: exit 2 naming the value, nothing built.
+#   measure-bogus    models_t1.sh called directly with MODELS_T1_MEASURE=bogus: exit 2 naming the value, nothing built.
 #   crux-green-pair  "MODELS GO (CRUX smoke)"; both <host>-gpu.json name the release apr; both sweeps under
 #                    choom -n 1000 with the certification; no ladder; judge got --crux <out> --cut-commit <mc>.
 #   crux-no-certification  no committed certification: exit 2 "no prompt certification", nothing built.
@@ -44,6 +45,8 @@
 #   crux-missing-gx10-receipt  "no receipt -- crux_sweep_shards.sh wrote no receipt".
 #   crux-red-receipt       a RED receipt: "the judge found red".
 #   crux-judge-no-policy   judge rc 0 with no POLICY:/SCOPED: line: "the judge judged no CRUX scope".
+#   crux-env-cannot-override  the policy covers 9.9.9 and the caller exports MODELS_T1_MEASURE=ladder: still CRUX smoke.
+#   policy-unreadable-stops   a policy block the reader refuses: autopilot STOPs, nothing built or measured.
 # T-4, R7: rule_r7() is EXTRACTED from scripts/check_publish_preflight.sh and run on a tagged tree
 # with the judge stub and committed receipts -- cargo-free, so every decision can be mutated here.
 # (That the full gate CALLS rule_r7 is proved by that script's own --selftest rows r7_*, which need
@@ -81,6 +84,9 @@
 #   crux-no-cut-commit    the judge is not told the cut commit               -> crux-green-pair
 #   crux-ladder-wording   leg_reason names model_ladder.sh in crux mode      -> crux-missing-gx10-receipt
 #   crux-remote-rcpt-name gx10 prints <host>.json, not <host>-gpu.json       -> crux-green-pair
+#   ap-ignores-policy     autopilot measures the ladder whatever the policy says -> crux-green-pair
+#   ap-env-overrides      a caller's MODELS_T1_MEASURE overrides the policy    -> crux-env-cannot-override
+#   ap-policy-no-die      an unreadable policy reads as "no policy"           -> policy-unreadable-stops
 #
 # Exit 0 = every row green and every mutant killed. 1 = a row RED or a mutant survived.
 # 2 = ENV: a subject or a mutation anchor is missing -- the table judged nothing.
@@ -89,6 +95,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 AUTOPILOT="$ROOT/scripts/release/autopilot.sh"
 MODELS="$ROOT/scripts/release/models_t1.sh"
 PARAMS="$ROOT/scripts/release/lib_release_params.sh"
+LIBDIR="$ROOT/scripts/lib"
 PREFLIGHT="$ROOT/scripts/check_publish_preflight.sh"
 A_SHARED='export CARGO_TARGET_DIR="\$dir/target"'
 A_255='elif [ "$1" = "$REMOTE_HOST" ] && [ "$2" = 255 ]; then'
@@ -102,6 +109,9 @@ A_DIE='  [ $rc -eq 0 ] || die "T-1 model matrix NO-GO'
 A_RDIE='  [ $rc -eq 0 ] || die "T-1 release-readiness-v1'
 A_RNODR='  [ -n "$DR" ] || die "T-1 readiness: no dogfood receipt'
 A_RAPR='    || die "T-1 readiness: $TD/release/apr is not built from'
+A_POLM='  local measure=ladder; [ "$AP_POLICY" != 1 ] || measure=crux'
+A_POLENV='  MODELS_T1_MEASURE=$measure bash scripts/release/models_t1.sh'
+A_POLDIE='AP_POLICY=$(ap_policy_applies "$V" 2>> "$LOG") || die'
 A_CHOOM_R='choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST'
 A_CHOOM_L='    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"'
 A_CELLS_R='bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out'
@@ -261,6 +271,18 @@ fixture() {
     cp -- "$2" "$r/scripts/release/autopilot.sh" && cp -- "$3" "$r/scripts/release/models_t1.sh" \
         && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" || return 2
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
+    # the standing release policy autopilot reads: this checkout's reader, and a ladder with no
+    # policy (default), one covering every version (FX_POLICY=covers) or one the reader refuses (FX_POLICY=bad)
+    mkdir -p "$r/scripts/lib" "$r/contracts" \
+        && cp -- "$LIBDIR/release_policy.sh" "$LIBDIR"/release_policy_*.awk "$r/scripts/lib/" || return 2
+    {   printf 'ladder:\n'
+        case " ${*:4} " in *" FX_POLICY=covers "*|*" FX_POLICY=bad "*)
+            printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n'
+            printf '    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n'
+            case " ${*:4} " in *" FX_POLICY=bad "*) ;; *) printf '    release_notes: known_failures\n' ;; esac ;;
+        esac
+        printf '  emergency_scopes:\n'
+    } > "$r/contracts/model-capability-ladder-v1.yaml" || return 2
     # model_ladder.sh stub: measures by the apr in the target dir; FX_NO_RECEIPT_HOST / FX_RED_HOST
     cat > "$r/scripts/model_ladder.sh" <<'STUB'
 #!/usr/bin/env bash
@@ -430,7 +452,7 @@ oom_victim() {
 ladder_explicit() { green_pair "ladder-$1" "$2" "$3" MODELS_T1_MEASURE=ladder; }
 crux_green() {
     local n="crux-green-$1" d mc h; d="$TMP/crux-green-$1"
-    models "$n" "$2" "$3" MODELS_T1_MEASURE=crux || return 2
+    models "$n" "$2" "$3" FX_POLICY=covers "${@:4}" || return 2
     mc=$(cat "$d/mc")
     [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(grep 'MODELS' "$d/ap/STATUS" | tail -n 2 | tr '\n' ' ')"; return 1; }
     grep -qF "MODELS GO (CRUX smoke) on lambda and gx10 at ${mc:0:9}: the judge passed both receipts (apr 9.9.9 (${mc:0:9}))" "$d/ap/STATUS" \
@@ -448,23 +470,35 @@ crux_green() {
     return 0
 }
 crux_nocert() {
-    local rc; stops "crux-nocert-$1" "$2" "$3" "MODELS NO-GO: no prompt certification for 9.9.9 at evidence/crux/9.9.9/prompt-certification.json -- CRUX smoke cannot be planned" MODELS_T1_MEASURE=crux FX_NO_CERT=1; rc=$?
+    local rc; stops "crux-nocert-$1" "$2" "$3" "MODELS NO-GO: no prompt certification for 9.9.9 at evidence/crux/9.9.9/prompt-certification.json -- CRUX smoke cannot be planned" FX_POLICY=covers FX_NO_CERT=1; rc=$?
     [ "$rc" = 0 ] || return "$rc"
     grep -q 'rc=2' "$TMP/crux-nocert-$1/ap/STATUS" || { printf 'models_t1.sh did not exit 2\n'; return 1; }
     ! grep -q '^build ' "$TMP/crux-nocert-$1/wrap.log" || { printf 'a leg built before the precondition\n'; return 1; }
     return 0
 }
-crux_wrongbin()  { stops "crux-wrongbin-$1" "$2" "$3" "MODELS gx10 NO-GO: the receipt was measured by 'apr 9.9.9 (0badc0de0)', not 'apr 9.9.9 (" MODELS_T1_MEASURE=crux FX_CRUX_LINE_HOST=gx10; }
-crux_missing()   { stops "crux-missing-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- crux_sweep_shards.sh wrote no receipt" MODELS_T1_MEASURE=crux FX_NO_RECEIPT_HOST=gx10; }
-crux_red()       { stops "crux-red-$1" "$2" "$3" "MODELS NO-GO: the judge found red" MODELS_T1_MEASURE=crux FX_RED_HOST=gx10; }
-crux_nopolicy()  { stops "crux-nopol-$1" "$2" "$3" "MODELS NO-GO: the judge judged no CRUX scope for 9.9.9 (no POLICY:/SCOPED: line)" MODELS_T1_MEASURE=crux FX_JUDGE_NO_POLICY=1; }
-measure_bogus() {
-    local d="$TMP/bogus-$1"
-    models "bogus-$1" "$2" "$3" MODELS_T1_MEASURE=bogus || return 2
-    [ "$(cat "$d/rc")" != 0 ] || { printf 'autopilot exited 0\n'; return 1; }
-    grep -q 'T-1 model matrix NO-GO rc=2' "$d/ap/STATUS" || { printf 'no rc=2 STOP: %s\n' "$(tail -n 1 "$d/ap/STATUS")"; return 1; }
+crux_wrongbin()  { stops "crux-wrongbin-$1" "$2" "$3" "MODELS gx10 NO-GO: the receipt was measured by 'apr 9.9.9 (0badc0de0)', not 'apr 9.9.9 (" FX_POLICY=covers FX_CRUX_LINE_HOST=gx10; }
+crux_missing()   { stops "crux-missing-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- crux_sweep_shards.sh wrote no receipt" FX_POLICY=covers FX_NO_RECEIPT_HOST=gx10; }
+crux_red()       { stops "crux-red-$1" "$2" "$3" "MODELS NO-GO: the judge found red" FX_POLICY=covers FX_RED_HOST=gx10; }
+crux_nopolicy()  { stops "crux-nopol-$1" "$2" "$3" "MODELS NO-GO: the judge judged no CRUX scope for 9.9.9 (no POLICY:/SCOPED: line)" FX_POLICY=covers FX_JUDGE_NO_POLICY=1; }
+measure_bogus() { # models_t1.sh's own refusal: autopilot never hands it a mode the policy did not pick, so call it
+    local d="$TMP/bogus-$1" mc rc
+    fixture "bogus-$1" "$2" "$3" || return 2
+    : > "$d/wrap.log"; mc=$(cat "$d/mc")
+    ( cd "$d/repo" && export CARGO_HOME="$TMP/cargo-home" PATH="$TMP/bin:$PATH" FX_MC="$mc" FX_GX10_HOME="$d/gx10" \
+          MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_MEASURE=bogus
+      bash scripts/release/models_t1.sh 9.9.9 "$mc" "$d/ap/models-t1" ) > "$d/ap/models-t1.log" 2>&1; rc=$?
+    [ "$rc" = 2 ] || { printf 'models_t1.sh exited %s, not 2\n' "$rc"; return 1; }
     grep -qF "MODELS_T1_MEASURE='bogus' is neither ladder nor crux" "$d/ap/models-t1.log" || { printf 'the usage refusal never named the value\n'; return 1; }
     ! grep -q '^build ' "$d/wrap.log" || { printf 'a leg built on a bad mode\n'; return 1; }
+    return 0
+}
+crux_env() { crux_green "$1-env" "$2" "$3" MODELS_T1_MEASURE=ladder; } # the policy picks the mode, not the caller's env
+policy_bad() { # a policy block the reader refuses: STOP before anything is built or measured
+    local d="$TMP/polbad-$1"
+    models "polbad-$1" "$2" "$3" FX_POLICY=bad || return 2
+    [ "$(cat "$d/rc")" != 0 ] || { printf 'autopilot exited 0\n'; return 1; }
+    grep -qF 'STOP the standing release policy cannot be judged for 9.9.9' "$d/ap/STATUS" || { printf 'no policy STOP: %s\n' "$(tail -n 1 "$d/ap/STATUS")"; return 1; }
+    ! grep -qE '^(build|ladder|crux) ' "$d/wrap.log" || { printf 'something was built or measured under an unreadable policy\n'; return 1; }
     return 0
 }
 
@@ -506,7 +540,8 @@ for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails 
             "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim" \
             "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "crux-green-pair crux_green" \
             "crux-no-certification crux_nocert" "crux-wrong-binary crux_wrongbin" \
-            "crux-missing-gx10-receipt crux_missing" "crux-red-receipt crux_red" "crux-judge-no-policy crux_nopolicy"; do
+            "crux-missing-gx10-receipt crux_missing" "crux-red-receipt crux_red" "crux-judge-no-policy crux_nopolicy" \
+            "crux-env-cannot-override crux_env" "policy-unreadable-stops policy_bad"; do
     set -- $spec
     msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
 done
@@ -585,6 +620,9 @@ mutant autopilot-no-die "$AUTOPILOT" "$A_DIE" '  [ $rc -eq $rc ] || die "T-1 mod
 mutant readiness-no-die  "$AUTOPILOT" "$A_RDIE" '  [ $rc -eq $rc ] || die "T-1 release-readiness-v1' r_fail autopilot
 mutant readiness-no-dr   "$AUTOPILOT" "$A_RNODR" '  true || die "T-1 readiness: no dogfood receipt' r_no_dr autopilot
 mutant readiness-any-apr "$AUTOPILOT" "$A_RAPR" '    || true || die "T-1 readiness: $TD/release/apr is not built from' r_stale autopilot
+mutant ap-ignores-policy "$AUTOPILOT" "$A_POLM" '  local measure=ladder' crux_green autopilot
+mutant ap-env-overrides  "$AUTOPILOT" "$A_POLENV" '  MODELS_T1_MEASURE=${MODELS_T1_MEASURE:-$measure} bash scripts/release/models_t1.sh' crux_env autopilot
+mutant ap-policy-no-die  "$AUTOPILOT" "$A_POLDIE" 'AP_POLICY=$(ap_policy_applies "$V" 2>> "$LOG") || true; : ' policy_bad autopilot
 mutant no-choom         "$MODELS" "$A_CHOOM_R" 'bash scripts/model_ladder.sh --host $REMOTE_HOST' oom_victim
 mutant wrapper-flock    "$MODELS" "$A_CHOOM_L" '    flock /tmp/apr-gpu.lock choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"' oom_victim
 mutant no-cells-remote   "$MODELS" "$A_CELLS_R" 'bash scripts/model_ladder.sh --host $REMOTE_HOST --out' green_pair

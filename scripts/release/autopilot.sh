@@ -53,6 +53,21 @@ run_step() { # run_step <name>: true when <name> is at or after FROM and at or b
     done
     return 1
 }
+# ap_policy_applies <version> -> prints 1 when the STANDING RELEASE POLICY (`ladder.release_policy` in the
+# release commit's contracts/model-capability-ladder-v1.yaml, read by its own scripts/lib/release_policy.sh)
+# covers <version>, else 0. Run from the release worktree. Non-zero (reason on stderr) when it cannot be
+# judged, or when a per-release emergency scope also names a covered version: never "no policy".
+# Under the policy the release ships on CRUX smoke on lambda and gx10 (the models lane, crux mode);
+# release-readiness is not run, and the larger ladder rows are the nightly's, ticketed on red.
+ap_policy_applies() {
+    ( . scripts/lib/release_policy.sh || exit 2
+      t=$(mktemp) || exit 2
+      release_policy_ladder contracts/model-capability-ladder-v1.yaml "$1" > "$t"; r=$?
+      l=$(cat "$t"); rm -f "${t:?}"
+      [ -z "$l" ] || [ "$l" = contracts/model-capability-ladder-v1.yaml ] || rm -f "${l:?}"
+      [ "$r" = 0 ] || { printf '%s\n' "$RP_WHY" >&2; exit "$r"; }
+      printf '%s\n' "$RP_APPLIES" )
+}
 # D1: pure-bash membership. `producer | grep -q` returns 141 on SIGPIPE under pipefail,
 # so the old form could fail step-name validation for a reason unrelated to the step name.
 case " ${STEPS[*]} " in *" $FROM "*) ;; *) die "unknown step '$FROM' (${STEPS[*]})" ;; esac
@@ -90,6 +105,10 @@ v=$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import
 [ "$v" = "$V" ] || die "release commit carries version $v, not $V"
 bash scripts/bump-version.sh --check >> "$LOG" 2>&1 || die "bump-version.sh --check: the workspaces disagree on the version"
 export CARGO_TARGET_DIR="$REPO_ROOT/target"
+# The standing release policy, judged ONCE from the release commit: it picks the models lane mode and
+# whether readiness runs. cut_tag re-judges it itself (a log is not the gate).
+AP_POLICY=$(ap_policy_applies "$V" 2>> "$LOG") || die "the standing release policy cannot be judged for $V (see $LOG): nothing is measured"
+[ "$AP_POLICY" != 1 ] || say "POLICY: the standing release policy covers $V -- CRUX smoke on lambda and gx10 is the release gate, readiness (R8) is not run, the larger ladder rows are nightly"
 
 # T-1 LANES (C316 item 2d): deep, dogfood and models are three independent measurements of the same
 # commit, so they start together and join before readiness. Each is a function below, run as its own
@@ -162,10 +181,11 @@ t1_dogfood() {
 #     missing receipt or a judge decline is a STOP here, with no tag cut. The same judge re-reads the
 #     receipts committed in the bump at T-4 (check_publish_preflight.sh R7).
 t1_models() {
-  bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
+  local measure=ladder; [ "$AP_POLICY" != 1 ] || measure=crux
+  MODELS_T1_MEASURE=$measure bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
   grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 model matrix NO-GO rc=$rc: nothing is tagged ($AP/models-t1.log)"
-  say "MODELS GO at $MC on lambda and gx10"
+  say "MODELS GO at $MC on lambda and gx10 (measured: $measure)"
 }
 
 # The join. Every selected lane starts now, each in its own process group (set -m), so a lane can be
@@ -215,7 +235,8 @@ fi
 #     committed receipts. Its committed mode is `enforce` (#3715 B1): a Fail verdict, a decline, a caller
 #     error or a missing pv each stops here, before any tag exists.
 #     Its own step, so a models-only rerun never re-grades.
-if run_step readiness; then
+! run_step readiness || [ "$AP_POLICY" != 1 ] || say "READINESS not run: the standing release policy covers $V (R8 is not run; CRUX smoke at T-1 is the gate)"
+if run_step readiness && [ "$AP_POLICY" != 1 ]; then
   DR=$(find .dogfood -maxdepth 1 -name 'receipt-*.json' -type f 2>/dev/null | LC_ALL=C sort | tail -n 1)
   [ -n "$DR" ] || die "T-1 readiness: no dogfood receipt in $WT/.dogfood to grade"
   # #3745: the cells are derived from the candidate's own surface, taken from the apr models_t1 built from
@@ -260,14 +281,25 @@ fi
 #       missed, or one that reappeared, is RED here: a tagged milestone is never left with an
 #       open item.
 cut_tag() {
-    local v=$1 t=$2 mc=$3 rc=0
+    local v=$1 t=$2 mc=$3 rc=0 pol need
+    # The STANDING RELEASE POLICY, re-judged here from the release worktree (never from AP_POLICY or a log).
+    # Covered: release-readiness is not run, and the gate is the models lane's CRUX-smoke GO for exactly
+    # this commit on both hosts. Unjudgeable -> no tag.
+    pol=$(ap_policy_applies "$v") || die "the standing release policy cannot be judged for $v -- no tag"
+    if [ "$pol" = 1 ]; then
+        need="MODELS GO (CRUX smoke) on lambda and gx10 at ${mc:0:9}:"
+        grep -qF -- "$need" "${AP:-/nonexistent}/models-t1.log" 2>/dev/null \
+            || die "the standing release policy covers $v but ${AP:-<unset AP>}/models-t1.log has no CRUX-smoke GO at ${mc:0:9} -- no tag"
+        say "POLICY-GATE $(grep -F -- "$need" "$AP/models-t1.log" | tail -n 1) (readiness not run: the standing release policy covers $v)"
+    else
     # #3715 B1 (operator 2026-09-28: "missing or skipped step -> release refused"). FIRST, ahead of the
     # carry and of `git tag`: the readiness step's log must hold an ENFORCED Pass for exactly this version
     # and commit. A run started past `readiness`, a report-mode Pass, a Fail, or no log -> no tag.
-    local need="ok    R8 #3715 ENFORCE PASS version=$v commit=$mc pv="
+    need="ok    R8 #3715 ENFORCE PASS version=$v commit=$mc pv="
     awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null \
         || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
+    fi
     # #4691 + #4734: coverage-nightly's receipt for $mc (or for the commit $mc is a version-only bump of)
     # must hold COV_FLOOR BEFORE the tag. Missing, stale, unmeasured, below floor or gh failing -> no tag,
     # nothing carried (on v0.70.1 the coverage refusal came 25 min after the tag was public).
