@@ -3,6 +3,9 @@
 # Prints "key<TAB>raw value" per key. On anything it cannot read it prints "ERR<TAB>reason" and
 # exits 2. No block at all: no output, exit 0.
 BEGIN { n = split(keys, k, " "); for (i = 1; i <= n; i++) ok[k[i]] = 1 }
+# A key line naming release_policy at any other indent, or with anything after the colon, is not
+# "no policy": it is a block this reader cannot read.
+/^[ \t]*release_policy[ \t]*:/ && !/^  release_policy:[ ]*$/ { print "ERR\tunreadable release_policy header: " $0; bad = 1; exit }
 /^  release_policy:[ ]*$/ {
     if (++blocks > 1) { print "ERR\t" blocks " release_policy blocks: one ladder takes one standing policy"; bad = 1; exit }
     inb = 1; next
@@ -16,6 +19,7 @@ inb && /^    [^ ]/ {
     if (val == "") { print "ERR\tempty value for release_policy." key; bad = 1; exit }
     seen[key] = 1; print key "\t" val; next
 }
+inb && /^[ \t]*$/ { next }  # a blank line does not end the block: a key after it is still read
 inb { inb = 0 }
 END {
     if (bad) exit 2

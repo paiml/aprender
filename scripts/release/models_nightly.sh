@@ -172,15 +172,21 @@ relay() { # relay COMMIT OUT EVIDENCE PLANT
 
 # red_rows BUNDLE -> "host<TAB>row<TAB>why", one line per red row of a red bundle: each rung a receipt
 # marks green:false; a red with no rung to name (a build failure, a binary that is not C, no receipt)
-# is one "lane" row, so a red never goes unticketed.
+# is one "lane" row, so a red never goes unticketed. A host with no readable receipt while the other
+# host has one is its own "lane" row (a gx10 build or ssh failure must not hide behind a lambda rung);
+# no readable receipt on either host is the one "all" lane row. Every row is listed: no cap.
 red_rows() {
-    local b=$1 h rows=""
+    local b=$1 h r rows="" missing="" seen=0
     for h in lambda gx10; do
-        [ -f "$b/$h.json" ] || continue
-        rows+=$(jq -r --arg h "$h" '(.rungs // [])[] | select(.green == false)
-            | [$h, (.id // .file // "unnamed-rung"), ("rung not green (" + (.file // "no file") + ")")] | @tsv' -- "$b/$h.json" 2> /dev/null)$'\n'
+        if [ -f "$b/$h.json" ] && r=$(jq -r --arg h "$h" '(.rungs // [])[] | select(.green == false)
+            | [$h, (.id // .file // "unnamed-rung"), ("rung not green (" + (.file // "no file") + ")")] | @tsv' -- "$b/$h.json" 2> /dev/null); then
+            seen=1; rows+=$r$'\n'
+        else
+            missing+=$h$'\t'lane$'\t'"no readable receipt from $h"$'\n'
+        fi
     done
-    rows=$(printf '%s' "$rows" | awk 'NF' | head -n "$TICKETS_MAX")
+    [ "$seen" = 0 ] || rows+=$missing
+    rows=$(printf '%s' "$rows" | awk 'NF')
     if [ -n "$rows" ]; then printf '%s\n' "$rows"
     else printf 'all\tlane\t%s\n' "$(vget reason < "$b/verdict" 2> /dev/null | tr -d '\t')"; fi
 }
@@ -190,7 +196,6 @@ red_rows() {
 # or comments on it, once per commit (the marker models-nightly@<C>: both cron slots relay the same C).
 # OUT gets "host<TAB>row<TAB>#N" per row, the list a release's known failures name. A nightly row never
 # stops a release; a read or write that fails is a FAILED run of this step, never a ticket.
-TICKETS_MAX=20
 tickets() {
     local b=$1 c=$2 out=$3 gh=${MODELS_NIGHTLY_GH:-gh} host row why title n j body mark st=0
     : > "$out" || die "cannot write $out"
@@ -529,6 +534,8 @@ GH
         local d="$tmp/tk/$1"; mkdir -p -- "$d"
         printf 'state=%s\nreason=fixture %s\n' "$2" "$2" > "$d/verdict"
         [ -z "$3" ] || printf '{"red":1,"rungs":%s}\n' "$3" > "$d/lambda.json"
+        [ -z "$3" ] || [ "${4:-}" = no-gx10 ] || printf '{"red":0,"rungs":[]}\n' > "$d/gx10.json"
+        [ "${4:-}" != bad-gx10 ] || printf 'not json\n' > "$d/gx10.json"
     }
     tk() { # tk BUNDLE LIST-JSON VIEW-JSON [FAIL] -> tickets' output, then the out file and the gh calls
         printf '%s\n' "$2" > "$tmp/tk-list"; printf '%s\n' "$3" > "$tmp/tk-view"; : > "$tmp/tk-log"
@@ -548,6 +555,13 @@ GH
         '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' "{\"body\":\"x\",\"comments\":[{\"body\":\"models-nightly@$c1\"}]}"
     tkb lane red ""
     row tickets_red_with_no_rung_is_a_lane_row 0 "models-nightly red: lane on all" "" -- tk "$tmp/tk/lane" '[]' '{}'
+    tkb nogx red "$R1" no-gx10
+    row tickets_missing_host_is_its_own_row 0 "OUT lambda|fx-1|#77 gx10|lane|#77 " "lane on all" -- tk "$tmp/tk/nogx" '[]' '{}'
+    tkb badgx red "$R1" bad-gx10
+    row tickets_unreadable_host_is_its_own_row 0 "OUT lambda|fx-1|#77 gx10|lane|#77 " "lane on all" -- tk "$tmp/tk/badgx" '[]' '{}'
+    R25=$(for i in $(seq 1 25); do printf '{"id":"fx-%s","file":"f%s.gguf","green":false}\n' "$i" "$i"; done | jq -sc .)
+    tkb many red "$R25"
+    row tickets_every_red_row_no_cap 0 "lambda|fx-25|#77" "" -- tk "$tmp/tk/many" '[]' '{}'
     row tickets_failed_search_fails_the_step 2 "NOT-MEASURED: the issue search" "TICKET opened" -- tk "$tmp/tk/red" '[]' '{}' list
     row tickets_failed_comment_fails_the_step 2 "NOT-MEASURED: commenting on #5" "OUT lambda" -- tk "$tmp/tk/red" \
         '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}' comment

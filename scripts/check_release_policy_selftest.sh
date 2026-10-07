@@ -73,6 +73,9 @@ row duplicate-key         2 0 "$(plant dkey 's/^    larger_rows: nightly$/    la
 row empty-value           2 0 "$(plant empty 's/^    hosts: .*$/    hosts: /')" 0.71.0 'empty value for release_policy\.hosts'
 row unreadable-line       2 0 "$(plant unread 's/^    hosts: .*$/    - hosts: [lambda]/')" 0.71.0 'unreadable line in release_policy'
 row two-blocks            2 0 "$two" 0.71.0 '2 release_policy blocks'
+row header-comment        2 0 "$(plant hc 's/^  release_policy:$/  release_policy: # note/')" 0.71.0 'unreadable release_policy header'
+row header-indent         2 0 "$(plant hi 's/^  release_policy:$/    release_policy:/')" 0.71.0 'unreadable release_policy header'
+row key-after-blank-line  2 0 "$(plant bl 's/^    larger_rows: nightly$/\n    larger_rowz: nightly/')" 0.71.0 'unknown key in release_policy: larger_rowz'
 row no-emergency-list     2 0 "$(plant noel 's/^  emergency_scopes:$/  emergency_scopez:/')" 0.71.0 "no top-level 'emergency_scopes:' list"
 row hosts-carried         0 1 "$(plant h 's/^    hosts: .*$/    hosts: [gx10]/')" 0.71.0 '^      hosts: \[gx10\]$'
 row backslash-kept        0 1 "$(plant bs 's/^    quote: .*$/    quote: "a\\\\nb"/')" 0.71.0 '^      quote: "a\\\\nb"$'
