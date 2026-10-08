@@ -218,7 +218,7 @@ tickets() {
         # A search that fills its page may have cut the matching issue off, and output that is not a JSON
         # list proves nothing: either way a missing title is not "no issue", so nothing is opened.
         if [ -z "$n" ]; then
-            len=$(jq 'length' <<< "$j" 2> /dev/null) || len=""
+            len=$(jq 'if type == "array" then length else error end' <<< "$j" 2> /dev/null) || len=""
             if ! [[ "$len" =~ ^[0-9]+$ ]] || [ "$len" -ge 50 ]; then
                 say "NOT-MEASURED: the issue search for '$title' returned a full page or no readable list"; st=1; continue
             fi
@@ -599,6 +599,7 @@ GH
     row tickets_full_search_page_opens_nothing 2 "NOT-MEASURED: the issue search for 'models-nightly red: fx-1 on lambda' returned a full page" "issue create" -- \
         tk "$tmp/tk/red" "$P50" '{}'
     row tickets_unreadable_search_opens_nothing 2 "returned a full page or no readable list" "issue create" -- tk "$tmp/tk/red" 'not json' '{}'
+    row tickets_non_list_search_opens_nothing 2 "returned a full page or no readable list" "issue create" -- tk "$tmp/tk/red" '{}' '{}'
     row tickets_failed_search_fails_the_step 2 "NOT-MEASURED: the issue search" "TICKET opened" -- tk "$tmp/tk/red" '[]' '{}' list
     tkb unset red '[{"id":"fx-n","file":"n.gguf"},{"id":"fx-z","file":"z.gguf","green":null},{"id":"fx-g","file":"g.gguf","green":true}]'
     row tickets_unset_green_rung_is_red 0 "OUT lambda|fx-n|#77 lambda|fx-z|#77 " "fx-g" -- tk "$tmp/tk/unset" '[]' '{}'
@@ -641,7 +642,8 @@ m27_ticket_failure_passes	s/^    \[ "\$st" = 0 \] [|][|] die "a ticket/    true 
 m28_ticket_names_no_owner	s/ Owner: \$owner\.//
 m29_ownerless_ticket_opened	s/owner=\$\(rp_ticket_owner "\$ladder"\) [|][|] \{/owner=$(rp_ticket_owner "$ladder") || true || {/
 m30_rung_without_green_unticketed	s/select\(.green != true\)/select(.green == false)/
-m31_full_search_page_trusted	s/\[ "\$len" -ge 50 \]/false/'
+m31_full_search_page_trusted	s/\[ "\$len" -ge 50 \]/false/
+m32_non_list_search_trusted	s/if type == "array" then length else error end/length/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3

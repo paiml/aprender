@@ -8,7 +8,7 @@
 /^  emergency_scopes:[ ]*$/ { ins = 1; next }
 ins && /^  [^ ]/ { ins = 0 }
 ins && match($0, /^    (- |  )release:[ ]/) {
-    r = substr($0, RLENGTH + 1); sub(/[ \t]+#.*$/, "", r); sub(/[ \t]+$/, "", r)
+    r = substr($0, RLENGTH + 1); sub(/^[ \t]+/, "", r); sub(/[ \t]+#.*$/, "", r); sub(/[ \t]+$/, "", r)
     if (r ~ /^".*"$/ || r ~ /^'.*'$/) r = substr(r, 2, length(r) - 2)
     sub(/[-+].*$/, "", r); c = v; sub(/[-+].*$/, "", c)
     if (r == c) found = 1
