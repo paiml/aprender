@@ -554,8 +554,8 @@ gate() {
 }
 
 # --graph-only (#4287): R2 + R6 on PUBLISH_PREFLIGHT_ROOT, the rc cut's end of the
-# publish graph. R1/R3/R4/R5/R7 describe the upload (a tag, the release branch, receipts) and are
-# judged at T-4 as before.
+# publish graph. R1/R3/R4/R5/R7 describe the upload (a tag, main or the release branch,
+# receipts) and are judged at T-4 as before.
 graph_gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" version
     for t in cargo python3; do
