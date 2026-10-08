@@ -96,10 +96,14 @@ verdict() {
 }
 
 # ---------------------------------------------------------------- case table
-PASS=0; FAIL=0
+PASS=0; FAIL=0; RAN=" "
+# The rows the table must hold, named here and not counted from the table: a row deleted from the
+# table is MISSING (red), and a row added there without a name here is UNLISTED (red).
+ROW_IDS="C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 C11 C12 C13 C14 C15 C16 C17 C18"
 # row NAME WANT_RC LOGFILE RC DESCRIPTION
 row() {
     local name=$1 want=$2 log=$3 rc=$4 desc=$5 got line
+    RAN="$RAN$name "
     line=$(verdict "$log" "$rc"); got=$?
     if [ "$got" = "$want" ]; then PASS=$((PASS + 1)); printf 'ok     %-4s want=%s got=%s  %s\n' "$name" "$want" "$got" "$desc"
     else FAIL=$((FAIL + 1)); printf 'BROKE  %-4s want=%s got=%s  %s\n         %s\n' "$name" "$want" "$got" "$desc" "$line"; fi
@@ -202,13 +206,18 @@ LOG
     row C15 1 "$d/dist-only.log"         137 "rc 137 (killed) with only #3176 errors: an unfinished run is red"
     row C16 1 "$d/dist-panic.log"        101 "rc 101, only #3176 errors plus a panicked thread: a panic is outside"
     row C17 1 "$d/stop-warn.log"         101 "an unlocated error followed by a warning into distribute: the warning does not explain it"
-    row C18 1 "$d/stop-error.log"        101 "an unlocated error followed by a distribute error: the next error does not explain it"
+    row C18 1 "$d/stop-error.log"        101 "an unlocated error followed by a distribute error: the next error does not explain it"   # m:drop-row
 
     printf 'deep_nodefault_verdict.sh --self-test (impl=%s): %s/%s rows pass\n' "$IMPL" "$PASS" "$((PASS + FAIL))"
-    # Every row in the table must have run and passed, and an empty table proves nothing: the
-    # expected count is the table's own `row C<n>` lines, read from this file, never a literal.
-    local want; want=$(grep -c '^    row C[0-9]' "$SELF")
-    [ "$FAIL" = 0 ] && [ "$want" -gt 0 ] && [ "$PASS" = "$want" ] && return 0
+    # Every named row ran, and every row that ran is named (ROW_IDS above).
+    local id ids_ok=1
+    for id in $ROW_IDS; do
+        case "$RAN" in *" $id "*) ;; *) printf 'MISSING %s: named in ROW_IDS, not run by the table\n' "$id"; ids_ok=0 ;; esac
+    done
+    for id in $RAN; do
+        case " $ROW_IDS " in *" $id "*) ;; *) printf 'UNLISTED %s: run by the table, not named in ROW_IDS\n' "$id"; ids_ok=0 ;; esac
+    done
+    [ "$FAIL" = 0 ] && [ "$ids_ok" = 1 ] && [ -n "$ROW_IDS" ] && return 0
     return 1
 }
 
@@ -228,6 +237,7 @@ LOG
 #   abnormal-rc            a killed or terminated cargo (rc not 0 or 101) whose log holds only #3176 errors is green
 #   panic-ignored          a panicked thread (rustc ICE, cargo panic) next to only #3176 errors is green
 #   lookahead-no-stop      the --> look-ahead runs past the next error/warning line and borrows its location
+#   drop-row               a row deleted from the table (C18) is no longer missed
 mutants() {
     local name expr killed=0 total=0 first
     d=$(mktemp -d) || return 2
@@ -240,7 +250,7 @@ mutants() {
         bash "$d/$name.sh" --self-test > "$d/$name.out" 2>&1
         if [ $? != 0 ]; then
             killed=$((killed + 1))
-            first=$(grep '^BROKE' "$d/$name.out" | awk '{printf "%s%s", sep, $2; sep=","}')
+            first=$(grep -E '^(BROKE|MISSING|UNLISTED)' "$d/$name.out" | awk '{printf "%s%s", sep, $2; sep=","}')
             printf 'killed    %-22s broken rows: %s\n' "$name" "${first:-<none>}"
         else
             printf 'SURVIVED  %s\n' "$name"
@@ -257,6 +267,7 @@ missing-log           s#^( +)if \[ ! -f.*$#\1[ -r "$log" ] || log=/dev/null; if 
 abnormal-rc           s/then k=1; fi/then k=0; fi/
 panic-ignored         s/.*//
 lookahead-no-stop     s/.*//
+drop-row              s/.*//
 MUTANTS
     printf 'deep_nodefault_verdict.sh --mutants: %s/%s killed\n' "$killed" "$total"
     [ "$killed" = "$total" ] && [ "$total" -ge 5 ]
