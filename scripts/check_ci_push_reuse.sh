@@ -58,13 +58,39 @@ if [ "${1:-}" = "--self-test" ]; then
     [ "$rc" -eq 0 ] || { echo "check_ci_push_reuse: an unmutated copy of ${subj##*/} turns the table red (rc $rc) - mutants not_measured"; rm -rf "${work:?}"; exit 1; }
     for m in "${markers[@]}"; do
       total=$((total+1))
-      grep -v "# $m\$" "$subj" >"$work/subject.sh"
-      # A mutation that changes nothing is an error, never a survivor and never a kill.
-      if cmp -s "$subj" "$work/subject.sh"; then echo "  ERROR    ${subj##*/} $m (the mutation changed nothing)"; continue; fi
-      rc="$(run_as "$subj" "$work/subject.sh")"
-      if [ "$rc" -eq 124 ]; then echo "  ERROR    ${subj##*/} $m (timed out after ${RUN_TIMEOUT}s)"; continue; fi
-      if [ "$rc" -eq 0 ]; then echo "  SURVIVED ${subj##*/} $m"; else killed=$((killed+1)); echo "  killed   ${subj##*/} $m"; fi
+      grep -v "# $m\$" "$subj" >"$work/m$total.sh"
+      printf '%s\t%s\n' "$subj" "$m" >"$work/m$total.what"
     done
+  done
+  # #4919: the 29 mutant tables ran one after another, 1157-2330 s of the guard-tree budget. They
+  # are independent (each its own mutated copy and its own mktemp table), so they run
+  # PUSH_REUSE_JOBS at a time, and a mutant table stops at its first failed row
+  # (PUSH_REUSE_FAIL_FAST): a kill needs only rc != 0, and a SURVIVOR still runs every row.
+  # Verdicts are printed in marker order after all have finished. No case is dropped.
+  JOBS="${PUSH_REUSE_JOBS:-4}"
+  case "$JOBS" in ''|*[!0-9]*|0) echo "check_ci_push_reuse: PUSH_REUSE_JOBS='$JOBS' is not a positive count"; rm -rf "${work:?}"; exit 1 ;; esac
+  i=0
+  while [ "$i" -lt "$total" ]; do
+    i=$((i+1))
+    IFS=$'\t' read -r subj m <"$work/m$i.what"
+    # A mutation that changes nothing is an error, never a survivor and never a kill.
+    if cmp -s "$subj" "$work/m$i.sh"; then echo nochange >"$work/m$i.rc"; continue; fi
+    while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n; done
+    ( export PUSH_REUSE_FAIL_FAST=1; run_as "$subj" "$work/m$i.sh" >"$work/m$i.rc" ) &
+  done
+  wait
+  i=0
+  while [ "$i" -lt "$total" ]; do
+    i=$((i+1))
+    IFS=$'\t' read -r subj m <"$work/m$i.what"
+    rc="$(cat "$work/m$i.rc" 2>/dev/null)"
+    case "$rc" in
+      nochange) echo "  ERROR    ${subj##*/} $m (the mutation changed nothing)" ;;
+      124) echo "  ERROR    ${subj##*/} $m (timed out after ${RUN_TIMEOUT}s)" ;;
+      0) echo "  SURVIVED ${subj##*/} $m" ;;
+      ''|*[!0-9]*) echo "  ERROR    ${subj##*/} $m (no verdict was written)" ;;
+      *) killed=$((killed+1)); echo "  killed   ${subj##*/} $m" ;;
+    esac
   done
   rm -rf "${work:?}"
   echo "check_ci_push_reuse: mutants $killed/$total killed"
@@ -77,7 +103,7 @@ T="$(mktemp -d)"
 trap 'rm -rf "${T:?}"' EXIT
 fails=0
 ok()    { printf '  ok    %s\n' "$1"; }
-bad()   { fails=$((fails+1)); printf '  FAIL  %s\n     expected: %s\n     actual:   %s\n' "$1" "$2" "$3"; }
+bad()   { fails=$((fails+1)); printf '  FAIL  %s\n     expected: %s\n     actual:   %s\n' "$1" "$2" "$3"; [ "${PUSH_REUSE_FAIL_FAST:-0}" != 1 ] || exit 1; }
 want()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "$2" "$3"; fi; }
 has()   { case "$3" in *"$2"*) ok "$1";; *) bad "$1" "output containing '$2'" "$3";; esac; }
 hasnt() { case "$3" in *"$2"*) bad "$1" "no '$2'" "$3";; *) ok "$1";; esac; }
