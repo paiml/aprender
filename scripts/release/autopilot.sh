@@ -40,6 +40,8 @@ fi
 . "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
 # shellcheck source=scripts/release/lib_gh_read.sh
 . "$REPO_ROOT/scripts/release/lib_gh_read.sh" || exit 2
+# shellcheck source=scripts/release/lib_notes_only.sh
+. "$REPO_ROOT/scripts/release/lib_notes_only.sh" || exit 2
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
@@ -108,11 +110,32 @@ say "RELEASE COMMIT $MC (#$PR)"
 cd "$REPO_ROOT" || die "no repo"
 git fetch -q origin main >> "$LOG" 2>&1 || die "fetch failed"
 git merge-base --is-ancestor "$MC" origin/main || die "merge commit $MC not on origin/main"
+# NOTES-ONLY (#4939): when the worktree holds a commit that $MC only adds a CHANGELOG.md edit to
+# (lib_notes_only.sh), the worktree MOVES to $MC instead of being rebuilt, so the saved results of
+# that commit (the .dogfood receipts, the models and readiness logs) stay. The lanes are not rerun:
+# the pass goes on at the tag step, and every tag-step gate re-judges reuse with the same predicate.
+# The release notes are the one thing that changed, so they are re-read from $MC's CHANGELOG.
+NOTES_BASE=""
 if [ ! -d "$WT" ] || [ "$(git -C "$WT" rev-parse HEAD 2>/dev/null)" != "$MC" ]; then
-  [ -d "$WT" ] && git worktree remove --force "$WT" >> "$LOG" 2>&1
-  git worktree add --detach "$WT" "$MC" >> "$LOG" 2>&1 || die "worktree add failed"
+  old=$(git -C "$WT" rev-parse HEAD 2>/dev/null) || old=""
+  if [ -n "$old" ] && notes_only "$old" "$MC" && [ -z "$(git -C "$WT" status --porcelain --untracked-files=no 2>/dev/null)" ] \
+     && git -C "$WT" checkout -q --detach "$MC" >> "$LOG" 2>&1; then
+    NOTES_BASE=$old
+    say "NOTES-ONLY $MC is $old plus a CHANGELOG.md edit and nothing else: the worktree moved, its saved results stand"
+  else
+    [ -d "$WT" ] && git worktree remove --force "$WT" >> "$LOG" 2>&1
+    git worktree add --detach "$WT" "$MC" >> "$LOG" 2>&1 || die "worktree add failed"
+  fi
 fi
 cd "$WT" || die "cd $WT"
+if [ -n "$NOTES_BASE" ]; then
+  awk -v h="## [$V]" 'index($0, h) == 1 {f = 1; next} f && /^## \[/ {exit} f' CHANGELOG.md > "$AP/release_notes.md"
+  [ -s "$AP/release_notes.md" ] || die "NOTES-ONLY: the CHANGELOG [$V] section at $MC is empty"
+  say "NOTES-ONLY release notes re-read from CHANGELOG [$V] at $MC ($AP/release_notes.md)"
+  case " wait deep dogfood models readiness " in
+    *" $FROM "*) say "NOTES-ONLY lanes not rerun: $FROM..readiness measured $NOTES_BASE; resuming at tag"; FROM=tag ;;
+  esac
+fi
 v=$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
 [ "$v" = "$V" ] || die "release commit carries version $v, not $V"
 bash scripts/bump-version.sh --check >> "$LOG" 2>&1 || die "bump-version.sh --check: the workspaces disagree on the version"
@@ -294,23 +317,31 @@ fi
 #       missed, or one that reappeared, is RED here: a tagged milestone is never left with an
 #       open item.
 cut_tag() {
-    local v=$1 t=$2 mc=$3 rc=0 pol need
+    local v=$1 t=$2 mc=$3 rc=0 pol need base
     # The STANDING RELEASE POLICY, re-judged here from the release worktree (never from AP_POLICY or a log).
     # Covered: release-readiness is not run, and the gate is the models lane's CRUX-smoke GO for exactly
     # this commit on both hosts. Unjudgeable -> no tag.
     pol=$(ap_policy_applies "$v") || die "the standing release policy cannot be judged for $v -- no tag"
     if [ "$pol" = 1 ]; then
-        need="MODELS GO (CRUX smoke) on lambda and gx10 at ${mc:0:9}:"
-        grep -qF -- "$need" "${AP:-/nonexistent}/models-t1.log" 2>/dev/null \
+        # #4939: the GO may name a commit that $mc is a notes-only successor of (lib_notes_only.sh).
+        # Every GO in the log is a candidate; the predicate, not the log, decides. None -> no tag.
+        base=$(notes_only_base "$mc" $(grep -oE 'MODELS GO \(CRUX smoke\) on lambda and gx10 at [0-9a-f]{7,40}:' \
+            "${AP:-/nonexistent}/models-t1.log" 2>/dev/null | sed -E 's/.* at ([0-9a-f]{7,40}):$/\1/' | LC_ALL=C sort -u)) \
             || die "the standing release policy covers $v but ${AP:-<unset AP>}/models-t1.log has no CRUX-smoke GO at ${mc:0:9} -- no tag"
+        [ "$base" = "$mc" ] || say "NOTES-ONLY the CRUX-smoke GO at ${base:0:9} stands for ${mc:0:9}: they differ only in CHANGELOG.md"
+        need="MODELS GO (CRUX smoke) on lambda and gx10 at ${base:0:9}:"
         say "POLICY-GATE $(grep -F -- "$need" "$AP/models-t1.log" | tail -n 1) (readiness not run: the standing release policy covers $v)"
     else
     # #3715 B1 (operator 2026-09-28: "missing or skipped step -> release refused"). FIRST, ahead of the
     # carry and of `git tag`: the readiness step's log must hold an ENFORCED Pass for exactly this version
     # and commit. A run started past `readiness`, a report-mode Pass, a Fail, or no log -> no tag.
-    need="ok    R8 #3715 ENFORCE PASS version=$v commit=$mc pv="
-    awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null \
+    # #4939: as above, the Pass may name a commit that $mc is a notes-only successor of.
+    need="ok    R8 #3715 ENFORCE PASS version=$v commit="
+    base=$(notes_only_base "$mc" $(awk -v n="$need" 'index($0, n) == 1 { s = substr($0, length(n) + 1); if (s ~ /^[0-9a-f]+ pv=/) { sub(/ .*/, "", s); print s } }' \
+        "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null | LC_ALL=C sort -u)) \
         || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
+    [ "$base" = "$mc" ] || say "NOTES-ONLY the readiness Pass at ${base:0:9} stands for ${mc:0:9}: they differ only in CHANGELOG.md"
+    need="ok    R8 #3715 ENFORCE PASS version=$v commit=$base pv="
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
     fi
     # #4691 + #4734: coverage-nightly's receipt for $mc (or for the commit $mc is a version-only bump of)

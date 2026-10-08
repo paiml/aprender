@@ -129,7 +129,7 @@ fixture() {
     local d="$TMP/$1" subject=$2 preflight=${3:-$PREFLIGHT} r
     r="$d/repo"
     mkdir -p "$r/scripts/release" "$d/ap" "$d/state" || return 2
-    cp -- "$subject" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" && cp -- "${PARAMS%/*}/lib_gh_read.sh" "$r/scripts/release/lib_gh_read.sh" \
+    cp -- "$subject" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" && cp -- "${PARAMS%/*}/lib_gh_read.sh" "$r/scripts/release/lib_gh_read.sh" && cp -- "${PARAMS%/*}/lib_notes_only.sh" "$r/scripts/release/lib_notes_only.sh" \
         && cp -- "$preflight" "$r/scripts/check_publish_preflight.sh" || return 2
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
     # the autopilot judges the standing release policy first (unreadable = STOP): the real reader and a

@@ -80,6 +80,10 @@ run_cut_tag() {
         printf 'say() { printf "SAY %%s\\n" "$*"; }\n'
         printf 'die() { printf "DIE %%s\\n" "$*"; exit 1; }\n'
         printf 'git() { printf "GIT-%%s %%s\\n" "$(printf %%s "$1" | tr "a-z" "A-Z")" "$*"; }\n'
+        # git is a stub here, so the notes-only predicate is too: a candidate stands only when it
+        # names this commit (the pre-#4939 rule). The predicate itself, on a real repository, is
+        # judged by scripts/check_release_notes_only.sh.
+        printf 'notes_only_base() { local n=$1 s; shift; for s in "$@"; do case "$n" in "$s"*) printf "%%s\\n" "$n"; return 0 ;; esac; done; return 1; }\n'
         printf '%s\n' "$pfn"
         printf '%s\n' "$fn"
         printf 'cut_tag 0.0.0 v0.0.0 deadbeef\n'

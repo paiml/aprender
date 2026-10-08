@@ -85,6 +85,9 @@ set -uo pipefail
 PROG=${0##*/}
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+# The notes-only predicate (#4939). Missing lib -> no reuse at all: R5 stays strict, never looser.
+. "$SCRIPT_DIR/release/lib_notes_only.sh" 2>/dev/null || notes_only() { return 1; }
+
 die_env() { printf '%s: ENV %s\n' "$PROG" "$*" >&2; exit 2; }
 
 # #3957 F1b, operator ruling (a) 2026-09-23: DEFER is ABOLISHED. A receipt with ANY deferred
@@ -179,6 +182,11 @@ print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
             return 1
         elif [ "$verdict" = GO ] && [ "$rcommit" = "$head" ] && [ "$rversion" = "$version" ]; then
             echo "ok    R5 dogfood receipt $(basename "$receipt"): GO for ${head:0:9} at $version (phase $rphase$([ "$ropen" = - ] || printf ', OPEN post-publish obligations: %s' "$ropen"))"
+        elif [ "$verdict" = GO ] && [ "$rversion" = "$version" ] && [ -n "$rcommit" ] && [ "$rcommit" != - ] \
+             && notes_only "$rcommit" "$head" "$root"; then
+            # #4939: HEAD is the receipt's commit plus a CHANGELOG.md edit and nothing else (lib_notes_only.sh),
+            # same version by construction. The measurement stands; the notes are re-read where they are used.
+            echo "ok    R5 dogfood receipt $(basename "$receipt"): GO for ${rcommit:0:9} at $version, reused for ${head:0:9} (notes-only: HEAD differs only in CHANGELOG.md) (phase $rphase$([ "$ropen" = - ] || printf ', OPEN post-publish obligations: %s' "$ropen"))"
         else
             printf 'FAIL  R5 dogfood receipt %s: verdict=%s commit=%s version=%s (need GO, %s, %s)\n' \
                 "$(basename "$receipt")" "$verdict" "${rcommit:0:9}" "$rversion" "${head:0:9}" "${version:-?}"
