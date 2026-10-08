@@ -137,8 +137,10 @@ EOF
     # mt_fetch_commit against a local origin: a commit on main or on release/VER is found, one on
     # another branch or on the release branch of another version is not
     local o="$d/origin" c n=0 which sha s_main s_rel s_other
-    # hermetic: no global or system git config (a template hook or a url rewrite would change the cases)
-    local -x GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1
+    # hermetic: no global or system git config and no template (GIT_TEMPLATE_DIR, init.templateDir):
+    # a template hook or a url rewrite would change the cases
+    local -x GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TEMPLATE_DIR="$d/no-template"
+    mkdir -p "$GIT_TEMPLATE_DIR" || return 2
     local -a g=(git -c user.name=t -c user.email=t@t -c init.defaultBranch=main -c init.templateDir=)
     if "${g[@]}" init -q "$o" && "${g[@]}" -C "$o" commit -q --allow-empty -m m && s_main=$(git -C "$o" rev-parse HEAD) \
         && "${g[@]}" -C "$o" checkout -q -b release/9.9.9 && "${g[@]}" -C "$o" commit -q --allow-empty -m r \
