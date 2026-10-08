@@ -58,7 +58,7 @@
     "result": "scope A; keep 14 open under E1 (count differs from 10: 4 rule-6/ISSUE-TREE-protected beyond rank 10, reported); collapse 6; park 19; nothing deleted",
     "degraded": "same-family",
     "time": "2026-10-08T11:39Z",
-    "non_claude": "not_measured: agy was not probed before this round, so the same-family degradation is recorded, not proven"
+    "non_claude": "r1 ran Claude-only lanes with agy not probed. An agy probe at 12:04Z (conversation d08890aa-bf3c-47b5-960d-581f63a8ecc2) found agy AVAILABLE, so r1 was not a valid same-family degradation. A non-Claude lane was then run (r2 below)."
   },
   "ops": [
     {
@@ -70,7 +70,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-a7k",
-        "branches": "98/4526-gen001-readme-counts@10d7589a4c"
+        "branches": "98/4526-gen001-readme-counts@10d7589a4c",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -82,7 +83,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-78",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -94,7 +96,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-a7r9",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -106,7 +109,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-a7",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -118,7 +122,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-cd",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -130,7 +135,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-a7r9",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -142,7 +148,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-a7r8",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -154,7 +161,8 @@
       "milestone": "0.71.0 (rule 3)",
       "evidence": {
         "owner": "owner:aprender-wprodmodels",
-        "branches": "build-kaizen/4701-ladder-nightly@cc12cb446c build-kaizen/4701-release-reader@10727f159f"
+        "branches": "build-kaizen/4701-ladder-nightly@cc12cb446c build-kaizen/4701-release-reader@10727f159f",
+        "milestone_before": "backlog"
       }
     },
     {
@@ -166,7 +174,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-a7",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -178,7 +187,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:la-0.71",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -190,7 +200,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-a7r9",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -202,7 +213,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-w4650",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -214,7 +226,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-w4472",
-        "branches": ""
+        "branches": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -226,7 +239,8 @@
       "milestone": null,
       "evidence": {
         "owner": "owner:aprender-ont244",
-        "branches": "build-kaizen/4696-sampled-think-on@f63b14ff5c"
+        "branches": "build-kaizen/4696-sampled-think-on@f63b14ff5c",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -235,12 +249,13 @@
       "into": 4684,
       "row": 4377,
       "rank": null,
-      "sub_of": "4695",
-      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "sub_of": 4695,
+      "reason": "rule 20: P0 on backlog at plan time, so not a P0 on 0.71/0.72 (r1 reading; see r2); author noahgift (not an external reporter); no open closing PR (re-checked 11:58Z against the 10 open PRs; the plan-time check was not recorded)",
       "evidence": {
         "owner": "owner:aprender-a7",
         "branches": "",
-        "last_comment": ""
+        "last_comment": "",
+        "milestone_before": "backlog"
       }
     },
     {
@@ -250,11 +265,12 @@
       "row": 4693,
       "rank": 16,
       "sub_of": null,
-      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "reason": "rule 20: P1 on 0.71.0 at plan time, so not a P0 on 0.71/0.72 (r1 reading; see r2); author noahgift (not an external reporter); no open closing PR (re-checked 11:58Z against the 10 open PRs; the plan-time check was not recorded)",
       "evidence": {
         "owner": "owner:aprender-a7",
         "branches": "",
-        "last_comment": ""
+        "last_comment": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -264,11 +280,12 @@
       "row": 4694,
       "rank": 17,
       "sub_of": null,
-      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "reason": "rule 20: P1 on 0.71.0 at plan time, so not a P0 on 0.71/0.72 (r1 reading; see r2); author noahgift (not an external reporter); no open closing PR (re-checked 11:58Z against the 10 open PRs; the plan-time check was not recorded)",
       "evidence": {
         "owner": "owner:aprender-a7",
         "branches": "",
-        "last_comment": ""
+        "last_comment": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -278,11 +295,12 @@
       "row": 4695,
       "rank": 18,
       "sub_of": null,
-      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "reason": "rule 20: P1 on 0.71.0 at plan time, so not a P0 on 0.71/0.72 (r1 reading; see r2); author noahgift (not an external reporter); no open closing PR (re-checked 11:58Z against the 10 open PRs; the plan-time check was not recorded)",
       "evidence": {
         "owner": "owner:aprender-a7",
         "branches": "",
-        "last_comment": ""
+        "last_comment": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -292,11 +310,12 @@
       "row": 4754,
       "rank": 29,
       "sub_of": null,
-      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "reason": "rule 20: P2 on 0.71.0 at plan time, so not a P0 on 0.71/0.72 (r1 reading; see r2); author noahgift (not an external reporter); no open closing PR (re-checked 11:58Z against the 10 open PRs; the plan-time check was not recorded)",
       "evidence": {
         "owner": "owner:aprender-a7r9",
         "branches": "build-kaizen/4754-python-runcount-files@bffb0337f7",
-        "last_comment": ""
+        "last_comment": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
@@ -306,18 +325,19 @@
       "row": 4805,
       "rank": 34,
       "sub_of": null,
-      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "reason": "rule 20: none on 0.71.0 at plan time, so not a P0 on 0.71/0.72 (r1 reading; see r2); author noahgift (not an external reporter); no open closing PR (re-checked 11:58Z against the 10 open PRs; the plan-time check was not recorded)",
       "evidence": {
         "owner": "owner:aprender-cd",
         "branches": "",
-        "last_comment": ""
+        "last_comment": "",
+        "milestone_before": "0.71.0"
       }
     },
     {
       "issue": 4350,
       "action": "park",
       "rank": null,
-      "sub_of": "4352",
+      "sub_of": 4352,
       "reason": "rule 5/21: over E1 budget, not rule-6 protected",
       "evidence": {
         "owner": "",
@@ -543,7 +563,7 @@
     }
   ],
   "time": "2026-10-08T11:41:12Z",
-  "time_src": "plan written before the first write (11:41:48Z); this committed copy was made at 11:52Z",
+  "time_src": "plan written 11:41:12Z, before the first write at 11:41:48Z; committed copy made 11:52Z and revised after review (r2 at 12:10Z)",
   "n_direct": 37,
   "nested": [
     {
@@ -557,5 +577,156 @@
   ],
   "n_ops": 39,
   "n_note": "37 direct children of #4678 ranked by rule 8; 2 nested subs (#4377 under #4695, #4350 under #4352) follow their parent and carry rank null; 14+6+19 = 39 ops",
-  "writes_note": "90 issue writes (reparent, milestone, comment, label, close) + 5 issue-body writes (3 parent checklists, E1 body, E1 receipt-path fix)"
+  "writes_note": "90 issue writes (reparent, milestone, comment, label, close) + 5 issue-body writes (3 parent checklists, E1 body, E1 receipt-path fix)",
+  "r2": {
+    "quorum": {
+      "receipt": "quorum-c334-e1-r2",
+      "time": "2026-10-08T12:10:24Z",
+      "author": "aprender-49 (claude-opus-5-5)",
+      "question": "C334 item 2, r2: are P0 children of #4678 whose milestone was backlog (#4715; nested #4350 under #4352; nested #4377 under #4695) rule-6/rule-20 protected once re-parented to E1 (train 0.71)? Readings: AS_IT_STANDS vs EPIC_TRAIN.",
+      "trigger": "r1 quorum ran Claude-only lanes with agy not measured; agy probe 12:04Z (conversation d08890aa-bf3c-47b5-960d-581f63a8ecc2) showed agy AVAILABLE, so a non-Claude lane was owed. It objected on #4715.",
+      "planted_control": {
+        "q": "Under APR-EPIC-001 rule 5, is a parked issue closed as not planned?",
+        "expected": "YES"
+      },
+      "lanes": [
+        {
+          "model": "gemini-3.1-pro-high (agy, plan mode)",
+          "conversation": "8a01f02f-d28a-4e73-b55d-78fced11c552",
+          "status": "SUCCESS",
+          "control": "YES",
+          "q1": "B",
+          "q2": "KEEP_PROTECTED",
+          "q3": "OBJECT",
+          "objection": "#4715 is a P0 re-parented to E1 -> train 0.71 (rule 3) -> rule 6 protects it"
+        },
+        {
+          "model": "gemini-3.8-flash-high (agy, plan mode)",
+          "conversation": "8714dd27-80d7-42e2-945f-53fbefbee64f",
+          "status": "ERROR (output limit, retried)",
+          "counted": false,
+          "control": "YES",
+          "i4715": "PROTECTED",
+          "i4350": "NOT_PROTECTED",
+          "i4377": "PROTECTED"
+        },
+        {
+          "model": "gemini-3.1-pro-low (agy, plan mode)",
+          "conversation": "04c8572b-c5ef-41bf-ad33-e8a1c0af460e",
+          "status": "SUCCESS",
+          "control": "YES",
+          "reading": "EPIC_TRAIN",
+          "i4715": "PROTECTED",
+          "i4350": "PROTECTED",
+          "i4377": "PROTECTED",
+          "i4352": "MUST_STAY_OPEN",
+          "i4695": "MUST_STAY_OPEN"
+        },
+        {
+          "model": "claude-sonnet-5-5 (Agent alias sonnet)",
+          "agent": "a771780db9755391a",
+          "status": "SUCCESS",
+          "control": "YES",
+          "reading": "EPIC_TRAIN",
+          "i4715": "PROTECTED",
+          "i4350": "PROTECTED",
+          "i4377": "PROTECTED",
+          "i4352": "MUST_STAY_OPEN",
+          "i4695": "MUST_STAY_OPEN"
+        }
+      ],
+      "agreed": true,
+      "agreed_on": "EPIC_TRAIN: reopen #4715 #4352 #4695 (re-parent to E1, milestone 0.71.0) and nested #4350 #4377 (milestone 0.71.0); r1 Q1 scope stays A (3 of 4 counted r1+r2 lanes)",
+      "degraded": false,
+      "families": [
+        "gemini",
+        "claude"
+      ],
+      "actions": [
+        {
+          "issue": 4715,
+          "op": "reopen+unlabel parked+milestone 0.71.0+reparent 3998+comment",
+          "why": "P0 on E1 train 0.71, rule 6"
+        },
+        {
+          "issue": 4352,
+          "op": "reopen+unlabel parked+milestone 0.71.0+reparent 3998+comment",
+          "why": "parent of protected P0 #4350, ISSUE-TREE-001"
+        },
+        {
+          "issue": 4695,
+          "op": "reopen+unlabel collapsed+reparent 3998+comment",
+          "why": "parent of protected P0 #4377, ISSUE-TREE-001 (milestone already 0.71.0)"
+        },
+        {
+          "issue": 4350,
+          "op": "reopen+unlabel parked+milestone 0.71.0+comment",
+          "why": "P0 on 0.71 (nested under #4352), rule 6"
+        },
+        {
+          "issue": 4377,
+          "op": "reopen+unlabel collapsed+milestone 0.71.0+comment",
+          "why": "P0 on 0.71 (nested under #4695), rule 20"
+        },
+        {
+          "issue": 3998,
+          "op": "body: annotate Parked lines 4715/4352/4350 REOPENED; update From-#4678 counts"
+        },
+        {
+          "issue": 4684,
+          "op": "body: annotate collapsed rows 4377/4695 REOPENED"
+        }
+      ],
+      "writes_planned": 24
+    },
+    "writes": 20,
+    "writes_note": "24 planned; reopen and milestone go in one PATCH, and #4695 was already on 0.71.0",
+    "ops": [
+      {
+        "issue": 4715,
+        "action": "reopen+reparent",
+        "to": 3998,
+        "milestone_before": "backlog",
+        "milestone_after": "0.71.0"
+      },
+      {
+        "issue": 4352,
+        "action": "reopen+reparent",
+        "to": 3998,
+        "milestone_before": "backlog",
+        "milestone_after": "0.71.0"
+      },
+      {
+        "issue": 4695,
+        "action": "reopen+reparent",
+        "to": 3998,
+        "milestone_before": "0.71.0",
+        "milestone_after": "0.71.0"
+      },
+      {
+        "issue": 4350,
+        "action": "reopen",
+        "sub_of": 4352,
+        "milestone_before": "backlog",
+        "milestone_after": "0.71.0"
+      },
+      {
+        "issue": 4377,
+        "action": "reopen",
+        "sub_of": 4695,
+        "milestone_before": "backlog",
+        "milestone_after": "0.71.0"
+      }
+    ]
+  },
+  "counts_after_r2": {
+    "kept_direct": 17,
+    "kept_nested": 2,
+    "collapse": 4,
+    "park": 16,
+    "e1_open_children": 28,
+    "e1_budget": 10,
+    "rule6_floor_note": "22 of the 28 open direct children are P0 on 0.71/0.72 (rule 6); #4696, #4352 and #4695 are held open by open P0 subs (ISSUE-TREE-001); floor 25. The other 3 (#4527 P1, #4514 P2, #4540 P2) are E1 children from before C334, outside item 2"
+  },
+  "writes_total": 115
 }

@@ -382,5 +382,105 @@
   {
     "t": "11:54:34Z",
     "w": "body 3998 receipt path fix"
+  },
+  {
+    "t": "12:10:39Z",
+    "w": "reopen 4715 milestone 0.71.0",
+    "round": "r2"
+  },
+  {
+    "t": "12:10:42Z",
+    "w": "unlabel 4715 parked",
+    "round": "r2"
+  },
+  {
+    "t": "12:10:45Z",
+    "w": "reparent 4715 from 4678 to 3998",
+    "round": "r2"
+  },
+  {
+    "t": "12:10:48Z",
+    "w": "comment 4715 reopen",
+    "round": "r2"
+  },
+  {
+    "t": "12:10:52Z",
+    "w": "reopen 4352 milestone 0.71.0",
+    "round": "r2"
+  },
+  {
+    "t": "12:10:54Z",
+    "w": "unlabel 4352 parked",
+    "round": "r2"
+  },
+  {
+    "t": "12:10:58Z",
+    "w": "reparent 4352 from 4678 to 3998",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:00Z",
+    "w": "comment 4352 reopen",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:04Z",
+    "w": "reopen 4695",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:06Z",
+    "w": "unlabel 4695 collapsed",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:10Z",
+    "w": "reparent 4695 from 4678 to 3998",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:13Z",
+    "w": "comment 4695 reopen",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:16Z",
+    "w": "reopen 4350 milestone 0.71.0",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:19Z",
+    "w": "unlabel 4350 parked",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:22Z",
+    "w": "comment 4350 reopen",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:25Z",
+    "w": "reopen 4377 milestone 0.71.0",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:28Z",
+    "w": "unlabel 4377 collapsed",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:31Z",
+    "w": "comment 4377 reopen",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:53Z",
+    "w": "body 3998 r2: 3 parked lines REOPENED + r2 summary",
+    "round": "r2"
+  },
+  {
+    "t": "12:11:55Z",
+    "w": "body 4684 r2: rows 4377 4695 REOPENED",
+    "round": "r2"
   }
 ]
