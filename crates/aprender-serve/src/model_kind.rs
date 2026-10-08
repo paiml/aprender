@@ -50,6 +50,23 @@ pub fn model_kind(arch: &str, causal: Option<bool>) -> Result<ModelKind, String>
     }
 }
 
+/// The kind of a parsed GGUF file, from `general.architecture` and `<arch>.attention.causal`.
+///
+/// A file with no architecture string is generative: the generative loaders keep their own refusals for it.
+///
+/// # Errors
+/// Returns the reason when the architecture and the causal flag disagree (see [`model_kind`]).
+pub fn gguf_model_kind(model: &GGUFModel) -> Result<ModelKind, String> {
+    let Some(arch) = model.architecture() else {
+        return Ok(ModelKind::Generative);
+    };
+    let causal = match model.metadata.get(&format!("{arch}.attention.causal")) {
+        Some(GGUFValue::Bool(b)) => Some(*b),
+        _ => None,
+    };
+    model_kind(arch, causal)
+}
+
 /// The KV-head count of every layer, from the `attention.head_count_kv` value.
 ///
 /// A scalar applies to every layer. An array gives one count per layer and must be exactly `block_count` long.

@@ -85,6 +85,11 @@ proof_obligations:
   property: Generative config reads KV heads per layer
   formal: "∀ f: (∀ l: kv(l) = kv(0)) ⇒ config_kv(f) = kv(0) ∧ ((∃ l: kv(l) ≠ kv(0)) ⇒ refused(f))"
   applies_to: all
+- id: EG2L-INV-007
+  type: invariant
+  property: Generative verbs refuse by kind on every host
+  formal: "∀ f, v ∈ {chat, serve}: kind(f) = embedding ⇒ exit(apr v f) = 6 ∧ names(apr embed)"
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-EG2L-001
   rule: Exact architecture match
@@ -116,6 +121,11 @@ falsification_tests:
   prediction: A uniform head_count_kv array gives its value (not num_heads); a non-uniform or wrong-length array is refused naming per-layer; a scalar and an absent key behave as before
   test: model_kind::tests::falsify_eg2l_006_*
   if_fails: The array collapsed to num_heads or to its first entry in GGUFConfig::from_gguf
+- id: FALSIFY-EG2L-007
+  rule: Generative verbs refuse by kind on every host
+  prediction: apr chat and apr serve on a gemma-embedding2 GGUF fail with ModelLoadFailed (exit 6) naming apr embed, before a tokenizer or backend is built and with no GPU; generative and unparsed files pass through to the loaders
+  test: falsify_eg2l_007_*
+  if_fails: The refusal ran only inside the CUDA preload, so the CPU chat path ended an empty session with exit 0
 qa_gate:
   id: F-EG2L-001
   name: embeddinggemma2-load-v1 Contract

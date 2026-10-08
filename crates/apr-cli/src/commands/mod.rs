@@ -107,6 +107,7 @@ pub(crate) mod mcp;
 pub(crate) mod merge;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;
+pub(crate) mod model_kind_gate;
 // #3661: a model parse failure names the format its magic bytes identify.
 #[cfg(test)]
 mod model_file_error_tests_3661;
