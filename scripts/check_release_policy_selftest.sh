@@ -79,6 +79,7 @@ row per-release-bare      1 0 "$(plant dupbare 's/^      release: "0\.70\.1"$/  
 row per-release-comment   1 0 "$(plant dupcm 's/^      release: "0\.70\.1"$/      release: "0.71.0"  # planted/')" 0.71.0 'one release takes one ruling'
 row per-release-key-first 1 0 "$(plant dupkf 's/^      release: "0\.70\.1"$/    - release: "0.71.0"/')" 0.71.0 'one release takes one ruling'
 row per-release-two-blanks 1 0 "$(plant dup2b 's/^      release: "0\.70\.1"$/      release:  "0.71.0"/')" 0.71.0 'one release takes one ruling'
+row per-release-tab 1 0 "$(plant dup2t 's/^      release: "0\.70\.1"$/      release:\t"0.71.0"/')" 0.71.0 'one release takes one ruling'
 row per-release-final-vs-rc 1 0 "$(plant duprcf 's/^      release: "0\.70\.1"$/      release: "0.71.0"/')" 0.71.0-rc.1 'one release takes one ruling'
 row per-release-rc-vs-final 1 0 "$(plant dupfrc 's/^      release: "0\.70\.1"$/      release: "0.72.0-rc.1"/')" 0.72.0 'one release takes one ruling'
 row per-release-other-patch 0 1 "$(plant dupop 's/^      release: "0\.70\.1"$/      release: "0.71.1-rc.1"/')" 0.71.0 '^      release: "0\.71\.0"$'

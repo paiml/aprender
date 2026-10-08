@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "rp-unq-and-known-red-ignore-inline-comments",
+          "level": "note",
+          "message": {
+            "text": "rp_unq strips only an exact enclosing pair, and rp_get returns the raw value including any trailing comment. `ticket_owner: '#123' # comment` therefore reaches the owner regex with its quotes and comment and the reader refuses it with rc 2. It fails closed (no ticket is opened, the step dies with the reason), so this is a usability gap, not a pass-through; the comment-free forms the delta targets (double, single, bare) are all handled and have rows. rp_known_failures has the neighbouring gap: awk takes $2, so a ticket quoted with an interior blank (`\"#42 \"`) is cut at the blank and the leading quote is printed into the release notes. Both reproduced."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 74
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "rp_ticket_owner on a ladder whose release_policy.ticket_owner is '#123' # comment; echo RC=$? WHY=$RP_WHY"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "df695b469f6978a31eab362ccd291641b2eef76920d3a5543e27400e6d24c93e",
+            "failure_scenario": "A maintainer comments the owner line; the nightly refuses with rc 2 and opens no ticket until the comment is removed. With a blank inside the quoted known_red ticket the release notes print `known red (ladder), \"#42`.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mktemp-check-row-verified",
+          "level": "note",
+          "message": {
+            "text": "The previous advisory (no row plants a failing mktemp) is addressed. The new row policy_mktemp_failed_refuses runs the pre-flight with TMPDIR pointing at a missing directory and expects exit 1 and the reason text. Measured: --selftest prints 99/99 at this head. With the `|| { ... return 2; }` on the mktemp line deleted in place (file restored afterwards, byte-identical), --selftest prints 98/99 and exits 1, so the row bites. One caveat: the row proves the refusal for a mktemp that fails by a bad TMPDIR; it does not distinguish the return 2 path from any other refusal text, which is what the reason string match is for."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_publish_preflight.sh"
+                },
+                "region": {
+                  "startLine": 959
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_publish_preflight.sh",
+              "--selftest"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "962dad4fdda28fa05cbbce9603d15e17203c6fdd49c02d9c82da55c1fd59bec2",
+            "failure_scenario": "none: the row is red when the check is removed (98/99, rc 1).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "delta-04f3e83a8d-verified",
+          "level": "note",
+          "message": {
+            "text": "Each delta item the task listed was checked rather than repeated. (1) red_rows selects green != true: a rung with no green key is now named, row tickets_rung_without_green_is_red proves it, and m30 reverts it. (2) A full (50) or unreadable search page with no title match is NOT-MEASURED (rc 2, no issue create): rows tickets_full_search_page_opens_nothing and tickets_unreadable_search_opens_nothing; the array-type gap is the advisory above. (3) rp_unq strips one matching pair of single or double quotes; a mismatched pair is left alone; rows since-single-quoted and owner-single-quoted. (4) known_red tickets strip a matching pair only. (5) has_entry matches the key in either position, any quoting, a trailing comment, and compares X.Y.Z cores; the extra-blank gap is the advisory above. (6) mktemp is checked and now has a row, policy_mktemp_failed_refuses. The head 20c9fbd5b4 differs from the previously reviewed e79344669c only by that row (and the earlier receipt). Measured at this head: policy self-test 56 rows 0 failed, pre-flight 99/99, models_nightly 83/83. Commit deccc49e62 fixes two earlier advisories, both verified: has_entry now strips leading blanks (row per-release-two-blanks; with the sub deleted by hand the policy self-test is 56 rows 1 failed, rc 1, and the file was restored byte-identical) and the search check requires an array (`if type == \"array\" then length else error end`; a {}, null or string reply is NOT-MEASURED, row tickets_non_list_search_opens_nothing, mutant m32, 32/32 killed). The GH-4915 roadmap entry is identical in roadmap.yaml and entries/GH-4915.yaml. The bash mutant sets of the touched guards were run at this head: 110 of 110 killed again at this head. Commit 04f3e83a8d then fixes the tab advisory (below): line 10 of release_policy_has_entry.awk now matches `release:[ \\t]`, the policy self-test has 57 rows 0 failed, and with the class put back to `[ ]` by hand it is 57 rows 1 failed (FAIL per-release-tab); the file was restored byte-identical."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/models_nightly.sh"
+                },
+                "region": {
+                  "startLine": 182
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/models_nightly.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "bc1b1e25d8f9a02c1e25f9930bac895e25828e92225f6b6fbabca58ecc867c69",
+            "failure_scenario": "none: the claimed behaviour holds; had the page check or the green test regressed, the named rows would be red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "has-entry-awk-tab-after-colon-fixed",
+          "level": "note",
+          "message": {
+            "text": "FIXED at 04f3e83a8d and verified. The has_entry key regex used to require a plain space after `release:`, so a tab-separated value was missed (rc 1). The same reproduction now exits 0. Row per-release-tab covers it and goes red with `[ ]`."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_has_entry.awk"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "printf '  emergency_scopes:\\n    - id: x\\n      release:\\t\"0.71.0\"\\n' | awk -v v=0.71.0 -f scripts/lib/release_policy_has_entry.awk; echo rc=$?"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "93ff7811a209e2a8479230bbb9b6bc19f7f311d3af383ec350c1db2a7e7d5494",
+            "failure_scenario": "An emergency_scopes entry written with a tab after the colon is missed, so a per-release entry could ride beside the standing policy.",
+            "precision_class": "note"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "rp-unq-fails-on-spaces-and-comments",
+          "level": "note",
+          "message": {
+            "text": "rp_unq quote stripping fails if the YAML value contains leading/trailing alignment spaces or inline comments, because release_policy_block.awk preserves them."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 74
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "cat > test_ladder_spaces.yaml <<'EOF'\\n  release_policy:\\n    name: crux-smoke\\n    since: \"0.0.0\"\\n    date: \"2026-10-07\"\\n    quote: \"q\"\\n    hosts: [lambda, gx10]\\n    thinking: [\"off\", \"on\"]\\n    larger_rows: nightly\\n    red_row_needs: ticket\\n    ticket_owner: '#123' # comment\\n    release_notes: known_failures\\nEOF\\nsource scripts/lib/release_policy.sh\\nrp_ticket_owner test_ladder_spaces.yaml\\necho \"RC=$? WHY=$RP_WHY\""
+            ],
+            "source": "scripts/lib/release_policy.sh",
+            "failure_scenario": "A maintainer adds an inline comment (e.g., `ticket_owner: '#42' # comment`) or uses multiple spaces for alignment (`since:   '0.71.0'`). Because `release_policy_block.awk` preserves these spaces and comments, the extracted string does not start or end with a quote character. `rp_unq`'s strict anchor regexes (`^\"(.*)\"$`) then fail to strip the quotes. The subsequent validations fail, and the nightly job either fails closed with no tickets opened, or the release policy is erroneously rejected.",
+            "precision_class": "advisory",
+            "rationale_for_class": "The antigravity arm is advisory until it has 30 measured samples; the primary reproduced the comment case on the reviewed head (rc 2, fails closed)."
+          }
+        },
+        {
+          "ruleId": "has-entry-awk-fails-on-leading-spaces",
+          "level": "warning",
+          "message": {
+            "text": "release_policy_has_entry.awk fails to parse version strings with multiple leading alignment spaces due to single-space consumption in the regex."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_has_entry.awk"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "cat > test_has_entry_spaces.yaml <<'EOF'\\n  emergency_scopes:\\n    - name: test\\n      release:   '1.2.3'\\nEOF\\nawk -v v=\"1.2.3\" -f scripts/lib/release_policy_has_entry.awk test_has_entry_spaces.yaml\\necho \"RC=$?\""
+            ],
+            "source": "scripts/lib/release_policy_has_entry.awk",
+            "failure_scenario": "If an emergency scope entry is formatted with multiple alignment spaces (e.g., `- release:   \"1.2.3\"`), the regex `/^    (- |  )release:[ ]/` consumes exactly one space. The extra spaces are retained in the extracted string `r` (e.g., `  \"1.2.3\"`). The subsequent quote stripping condition `r ~ /^\".*\"$/` fails because the string starts with a space. The version match fails, and the script falsely reports no entry, allowing a duplicate entry to be appended which violates the one-ruling-per-release rule.",
+            "precision_class": "advisory",
+            "rationale_for_class": "Advisory until the arm has 30 measured samples; the primary reproduced it on the real awk (rc 1, expected 0)."
+          }
+        },
+        {
+          "ruleId": "known-failures-ticket-truncated-at-blank",
+          "level": "note",
+          "message": {
+            "text": "rp_known_failures incorrectly truncates ticket values containing spaces inside quotes (due to t = $2), preventing the new quote stripping logic from matching."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 136
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "cat > test_kf_space.yaml <<'EOF'\\n  known_red:\\n    - rung: test-rung\\n      ticket: \"#42 \"\\nEOF\\nsource scripts/lib/release_policy.sh\\nrp_known_failures test_kf_space.yaml repo"
+            ],
+            "source": "scripts/lib/release_policy.sh",
+            "failure_scenario": "A maintainer accidentally includes a trailing space inside the quotes of a ticket (e.g., `ticket: \"#123 \"`). The awk script uses `t = $2`, which truncates the string at the space (yielding `\"#123`). The new quote stripping logic `t ~ /^\".*\"$/` fails to match because the truncated string no longer ends with a quote. The leading quote is retained and incorrectly emitted, resulting in malformed release notes like `known red (ladder), \"#123`.",
+            "precision_class": "advisory",
+            "rationale_for_class": "Advisory until the arm has 30 measured samples; the primary reproduced it (the release note prints the leading quote)."
+          }
+        }
+      ]
+    }
+  ]
+}

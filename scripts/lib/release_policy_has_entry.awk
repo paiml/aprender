@@ -7,7 +7,7 @@
 # comment or blanks. A missed shape would let a per-release entry ride beside the standing policy.
 /^  emergency_scopes:[ ]*$/ { ins = 1; next }
 ins && /^  [^ ]/ { ins = 0 }
-ins && match($0, /^    (- |  )release:[ ]/) {
+ins && match($0, /^    (- |  )release:[ \t]/) {
     r = substr($0, RLENGTH + 1); sub(/^[ \t]+/, "", r); sub(/[ \t]+#.*$/, "", r); sub(/[ \t]+$/, "", r)
     if (r ~ /^".*"$/ || r ~ /^'.*'$/) r = substr(r, 2, length(r) - 2)
     sub(/[-+].*$/, "", r); c = v; sub(/[-+].*$/, "", c)
