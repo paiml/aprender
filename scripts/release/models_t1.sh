@@ -88,6 +88,16 @@ mt_crux_fields() {
             | join("\t") end end' -- "$1" 2>/dev/null; } || printf 'UNREADABLE\t-\t-\n'
 }
 
+# mt_fetch_commit REPO VER SHA -> rc 0 when SHA is in REPO after fetching origin main and, when it
+# exists, origin release/VER. A patch release's commit is on its release branch, not on main, so a
+# fetch of main alone left the remote leg FETCH-FAILED on every release cut from a release branch.
+# Defined here and sent ahead of the remote leg with `declare -f`, so the self-test runs the same code.
+mt_fetch_commit() {
+    git -C "$1" fetch -q origin main || return 1
+    git -C "$1" fetch -q origin "+refs/heads/release/$2:refs/remotes/origin/release/$2" 2> /dev/null || true
+    git -C "$1" cat-file -e "$3^{commit}" 2> /dev/null
+}
+
 mt_self_test() {
     local d fail=0 want got
     d=$(mktemp -d) || return 2
@@ -124,6 +134,31 @@ EOF
     printf '\xef\xbb\xbf{"apr":{"version_line":"apr 1.0.0 (abc)"}}' > "$d/c.json"
     got=$(mt_crux_fields "$d/c.json" | tr '\t' '|')
     if [ "$got" = "UNREADABLE|-|-" ]; then echo "  ok   a BOM-prefixed crux receipt is UNREADABLE"; else echo "  FAIL BOM crux receipt gave '$got'"; fail=1; fi
+    # mt_fetch_commit against a local origin: a commit on main or on release/VER is found, one on
+    # another branch or on the release branch of another version is not
+    local o="$d/origin" c n=0 which sha s_main s_rel s_other
+    local -a g=(git -c user.name=t -c user.email=t@t -c init.defaultBranch=main)
+    if "${g[@]}" init -q "$o" && "${g[@]}" -C "$o" commit -q --allow-empty -m m && s_main=$(git -C "$o" rev-parse HEAD) \
+        && "${g[@]}" -C "$o" checkout -q -b release/9.9.9 && "${g[@]}" -C "$o" commit -q --allow-empty -m r \
+        && s_rel=$(git -C "$o" rev-parse HEAD) && "${g[@]}" -C "$o" checkout -q -b other main \
+        && "${g[@]}" -C "$o" commit -q --allow-empty -m x && s_other=$(git -C "$o" rev-parse HEAD) \
+        && "${g[@]}" -C "$o" checkout -q main; then
+        while IFS='~' read -r want ver which what; do
+            case "$which" in main) sha="$s_main" ;; rel) sha="$s_rel" ;; *) sha="$s_other" ;; esac
+            # a fresh clone of main per case, so a fetch in one case cannot satisfy the next
+            n=$((n + 1)); c="$d/clone-$n"
+            git clone -q --single-branch -b main "file://$o" "$c" 2> /dev/null || { echo "  FAIL fetch: clone"; fail=1; continue; }
+            if mt_fetch_commit "$c" "$ver" "$sha"; then got=found; else got=refused; fi
+            if [ "$got" = "$want" ]; then echo "  ok   fetch: $what -> $want"; else echo "  FAIL fetch: $what wanted $want, got $got"; fail=1; fi
+        done <<'FETCH'
+found~9.9.9~main~a commit on main
+found~9.9.9~rel~a commit on release/9.9.9
+refused~9.9.8~rel~a commit on the release branch of another version
+refused~9.9.9~other~a commit on neither
+FETCH
+    else
+        echo "  FAIL fetch: could not build the local origin"; fail=1
+    fi
     rm -rf -- "${d:?}"
     if [ "$fail" -eq 0 ]; then echo "models_t1 self-test: PASS"; else echo "models_t1 self-test: FAIL"; fi
     return "$fail"
@@ -184,7 +219,8 @@ local_leg() {
 }
 
 remote_leg() {
-    ssh -o BatchMode=yes -o ConnectTimeout=10 "$REMOTE_HOST" "bash -s" <<HOST
+    # mt_fetch_commit goes first on the stream, so the remote leg runs the code the self-test ran
+    { declare -f mt_fetch_commit; cat <<HOST
 set -u
 repo="\$HOME/src/aprender"; base="\$HOME/.cache/aprender-release"; dir="\$base/rel-$ver"
 mkdir -p "\$base" || exit 3
@@ -199,8 +235,8 @@ if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ]; then
   echo "MODELS-LEG $REMOTE_HOST ENV: \$(( (free_kib + have_kib) / 1048576 )) GiB usable under \$base, a fresh cuda release target needs \$(( $NEED_KIB / 1048576 )) GiB -- refused before building"
   exit 4
 fi
-git -C "\$repo" fetch -q origin main && git -C "\$repo" cat-file -e "$sha^{commit}" \
-  || { echo "MODELS-LEG $REMOTE_HOST FETCH-FAILED: $sha9 is not reachable from origin/main there"; exit 3; }
+mt_fetch_commit "\$repo" "$ver" "$sha" \
+  || { echo "MODELS-LEG $REMOTE_HOST FETCH-FAILED: $sha9 is not reachable from origin/main or origin/release/$ver there"; exit 3; }
 git -C "\$repo" worktree remove --force "\$dir/wt" > /dev/null 2>&1
 git -C "\$repo" worktree prune
 git -C "\$repo" worktree add -q --detach "\$dir/wt" "$sha" || { echo "MODELS-LEG $REMOTE_HOST WORKTREE-FAILED"; exit 3; }
@@ -221,6 +257,7 @@ fi
 git -C "\$repo" worktree remove --force "\$dir/wt" > /dev/null 2>&1
 exit \$lrc
 HOST
+    } | ssh -o BatchMode=yes -o ConnectTimeout=10 "$REMOTE_HOST" "bash -s"
 }
 
 # leg_reason HOST RC -> why a leg produced no usable receipt, from its own log
