@@ -1,0 +1,298 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "manifest-rederive-exact",
+          "level": "note",
+          "message": {
+            "text": "evidence/models/supported.yaml equals its derivation at this head: derive_model_manifest.sh --check prints PASS for 25 models. The two cited_by_count moves (38 to 42, 104 to 136) are what the script produces once the 0.70.2 receipts exist."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "evidence/models/supported.yaml"
+                },
+                "region": {
+                  "startLine": 92
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/derive_model_manifest.sh",
+              "--check"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "98d909ed3c5932c6fcf265d25ed200c27c103db8722bfffaad08a212baf26ee8",
+            "failure_scenario": "none: a hand-edited count would make --check exit 1.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "evidence-json-parses",
+          "level": "note",
+          "message": {
+            "text": "All five added JSON files parse (jq -e type exits 0 over the four host receipts and the train record)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "jq",
+              "-e",
+              "type",
+              "evidence/dogfood/0.70.2/gx10.json",
+              "evidence/dogfood/0.70.2/intel.json",
+              "evidence/dogfood/0.70.2/lambda.json",
+              "evidence/dogfood/0.70.2/mini.json",
+              "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "39ba1b1e37dc793d5f1383970f5772d571a0bd4ee1415db276671544979731af",
+            "failure_scenario": "none: a truncated receipt would make jq exit non-zero.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "host-receipts-name-the-tag",
+          "level": "note",
+          "message": {
+            "text": "Each of the four host receipts records binary_version_output apr 0.70.2 (89e261cda), and the train record carries sha 89e261cda1042ad14dba50034da9a9090abcdecb with tag v0.70.2, which is the commit the local v0.70.2 tag resolves to."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "evidence/dogfood/0.70.2/intel.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "jq",
+              "-r",
+              ".binary_version_output",
+              "evidence/dogfood/0.70.2/gx10.json",
+              "evidence/dogfood/0.70.2/intel.json",
+              "evidence/dogfood/0.70.2/lambda.json",
+              "evidence/dogfood/0.70.2/mini.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9787844445bb72e5bcc0f391fe4602173eb699af570ae1ef94a92954cc356bdf",
+            "failure_scenario": "none: a receipt from another build would print a different version or sha.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pp26-witness-host-placeholder",
+          "level": "note",
+          "message": {
+            "text": "The train record pp26_witness.host is the literal string <host>. The rest of the witness is filled (cc 89, commit, status PASS, sha256), and nightly_producer says the witness was taken on lambda sm_89, but the host field does not name it. Whether this is a redaction or an unfilled template, a reader cannot get the witness host from the field. No earlier docs/build-ledger record on main carries this placeholder."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "jq",
+              "-r",
+              ".sha, .tag, .pp26_witness.host",
+              "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "fb74ca7287043a49e31637058a80cb37bcd14dbfa4f3d348215bed51b91638f2",
+            "failure_scenario": "A later audit that joins witnesses to hosts by this field finds no host for the 0.70.2 PP-26 witness.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-missing-yoga-receipt",
+          "level": "note",
+          "message": {
+            "text": "The train ledger steps include 'HOST yoga: true', but there is no yoga.json receipt in evidence/dogfood/0.70.2/."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "The release train ledger claims a successful dogfood run for the 'yoga' host, but no corresponding receipt exists in the evidence directory, meaning an untested step is falsely credited.",
+            "command": [
+              "ls",
+              "evidence/dogfood/0.70.2/"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-orphaned-lambda-mini-receipts",
+          "level": "note",
+          "message": {
+            "text": "Dogfood receipts for 'lambda' and 'mini' exist in evidence/dogfood/0.70.2/, but are not tracked in the train ledger's steps ('HOST lambda' and 'HOST mini' are missing)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "Dogfood receipts for 'lambda' and 'mini' were generated by the release train but left unrecorded in the ledger's steps, causing them to be orphaned and ignored.",
+            "command": [
+              "jq",
+              "-r",
+              ".steps",
+              "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-incomplete-installer-receipts",
+          "level": "note",
+          "message": {
+            "text": "The train ledger's 'installer_receipts' dictionary lists only 'intel' and 'gx10', omitting 'lambda' and 'mini' despite their receipts showing install_rc: 0."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "The installer_receipts dictionary fails to track successful installation passes on 'lambda' and 'mini', underreporting the extent of installer validation.",
+            "command": [
+              "jq",
+              "-r",
+              ".installer_receipts",
+              "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-missing-host-intel-flag",
+          "level": "note",
+          "message": {
+            "text": "The intel.json receipt recorded full success (bench and parity), yet the train ledger omits 'HOST intel: true' and only flags 'INSTALLER intel'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/build-ledger/2026-10-08/89e261cda-lambda-vector-train.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A fully successful dogfood run on the 'intel' host is not properly flagged as a HOST step in the ledger, meaning the release train's self-reported validation state is artificially degraded.",
+            "command": [
+              "jq",
+              "-r",
+              "{install: .install_rc, bench: (if .bench_attempt then .bench_attempt.status else \"present\" end)}",
+              "evidence/dogfood/0.70.2/intel.json"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        }
+      ]
+    }
+  ]
+}
