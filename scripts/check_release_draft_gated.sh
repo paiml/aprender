@@ -380,7 +380,7 @@ mutant cascade cascade-wraps-bash '1a\bash() { env -u CRUX_CERT bash "$@"; }'
 nearmiss drain drain-reads-the-receipts '1a\: "${MODEL_LADDER_CRUX_DIR:-}" "${CRUX_CERT:-}"'
 nearmiss drain drain-touches-other-vars '1a\unset CARGO_TOKEN_OLD; export CARGO_TERM_COLOR=never'
 nearmiss cascade cascade-env-without-reset '1a\env PATH="$PATH" true'
-nearmiss cascade cascade-echoes-the-cert '1a\[ -z "${CRUX_CERT:-}" ] || echo "crux cert: $CRUX_CERT=$(printenv CRUX_CERT)"'
+nearmiss cascade cascade-echoes-the-cert '1a\[ -z "${CRUX_CERT:-}" ] || echo "crux cert: $CRUX_CERT, env: $(printenv CRUX_CERT)"'
 nearmiss cascade cascade-comment-names-them '1a\# a hand run: MODEL_LADDER_CRUX_DIR=x CRUX_CERT=y bash scripts/cascade-publish.sh, never env -i'
 
 printf 'mutants: %s/%s killed, near-misses: %s/%s held\n' "$killed" "$total" "$held" "$near"
