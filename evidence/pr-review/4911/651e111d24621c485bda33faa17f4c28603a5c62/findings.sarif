@@ -1,0 +1,304 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "from-pretrained-refuses-where-it-used-to-warn",
+          "level": "warning",
+          "message": {
+            "text": "from_pretrained now returns Err when any adapter tensor fits no q_proj/v_proj slot (line 95, the new ?). A third-party PEFT adapter trained with more target modules (k_proj, o_proj, MLP; all-linear is a common PEFT default) now aborts the whole pipeline load, where at the base it loaded with V slots overwritten. That refusal is what the contract asks for. But the Err arm of load_adapter_peft one branch down still prints a warning and continues with the base model, so an unreadable adapter loads and an unplaceable one does not. The two failure modes of one adapter file now behave in opposite ways, and neither the PR text nor the contract says which is intended."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs"
+                },
+                "region": {
+                  "startLine": 95
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "grep",
+              "-n",
+              "-e",
+              "failed to load: {e}",
+              "--",
+              "crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "678a7bc185975b43f7bf45fb8d03e2f6a32d8d08fd77a552e788900c0ed569a7",
+            "failure_scenario": "examples/ssc_eval.rs (expect on from_pretrained) panics on a model dir holding an all-linear PEFT adapter, while the same dir with a truncated adapter file loads the base model silently and reports scores for it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "lora-rank-zero-with-adapter-now-refuses",
+          "level": "note",
+          "message": {
+            "text": "With lora_rank 0, build_lora_layers returns no slots, so slot_len is None for every tensor and any adapter_model.safetensors in the model dir makes from_pretrained fail. At the base the loop skipped every tensor and the base model loaded. No in-tree path reaches this today: the lora_rank 0 configs are InstructPipeline::new in a test and the wgpu trainer, neither of which calls from_pretrained. Latent, so a note."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs"
+                },
+                "region": {
+                  "startLine": 360
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "grep",
+              "-n",
+              "-e",
+              "lora_rank: 0",
+              "--",
+              "crates/aprender-train",
+              "crates/apr-cli"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1b6ac98de222137b6035ec2406b314b5a0815558b460cd4f3c07db8719989da5",
+            "failure_scenario": "A future base-model eval that sets lora_rank 0 on a fine-tuned model dir fails with an adapter error instead of evaluating the base.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "error-propagation-untested-at-from-pretrained",
+          "level": "note",
+          "message": {
+            "text": "The three new tests call inject_adapter_weights directly. No test in instruct_pipeline writes an adapter_model.safetensors and calls from_pretrained: the only matches for adapter_model there are the two lines of from_pretrained itself. So replacing the new ? on line 95 with .ok() or let _ = compiles and passes every test, and the refusal the contract describes stops reaching the caller."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs"
+                },
+                "region": {
+                  "startLine": 95
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "grep",
+              "-n",
+              "-e",
+              "adapter_model",
+              "--",
+              "crates/aprender-train/src/finetune/instruct_pipeline/*.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "36de40dcd70bbc9228d420518dd13a40f569412868b01c48c05ba80e5453186d",
+            "failure_scenario": "A later edit swallows the inject error (for example to restore the warn-and-continue shape of the sibling arm), and the pipeline again loads a misrouted adapter with every test green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "contract-validates",
+          "level": "note",
+          "message": {
+            "text": "pv validate contracts/lora-target-selection-v1.yaml: 0 errors, 0 warnings, valid. The new equation adapter_routing matches the code as read: slot 2*layer + [v_proj], A or B by whole-component lora_A/lora_B, length equal to the slot, unique slot, and every tensor placed before any is written. contracts.nt changes only the version literal 1.0.0 to 1.1.0."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/lora-target-selection-v1.yaml"
+                },
+                "region": {
+                  "startLine": 27
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pv",
+              "validate",
+              "contracts/lora-target-selection-v1.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0ce30b6f47aa39b8ed84623e7568e873151a4384f7b5d16470a0c76f0ff4dc85",
+            "failure_scenario": "none: a schema error in the bumped contract would make pv exit non-zero.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Not run. The trigger fires on constructors.rs, its new test file and the contract, but cargo is not run on this reviewer's host (no cargo by fleet rule). Since #4912, mutants are off the PR path, as LAB under C324. The new tests were not run by this reviewer either; CI runs them."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "hostname"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "a65f80c35370780d01d4c996561e081ddbe7be99d3fbd3a8e7816834e5312407"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-routing-and-refusal-correctness",
+          "level": "note",
+          "message": {
+            "text": "The routing correctly uses 'adapter_slot' to map q_proj to 2*layer and v_proj to 2*layer+1 by checking the name string. The all-or-nothing refusal correctly validates all tensors, buffers valid ones in a 'placed' Vec, and strictly checks if 'unplaced.is_empty()' before mutating 'lora_layers'. Length mismatch correctly rejects placement because of 'slot_len(...) == Some(data.len())'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "If tensors were written sequentially as parsed, an invalid tensor (e.g., wrong length or unknown projection) later in the file would leave the adapter partially applied, resulting in corrupted model weights and inconsistent states.",
+            "rationale": "agy judgement. agy marked this cited, but returned no excerpt digest or exit code, so the primary records it as asserted; reverified_by_primary is false."
+          }
+        },
+        {
+          "ruleId": "agy-tests-falsify-defects",
+          "level": "note",
+          "message": {
+            "text": "The test suite successfully runs and verifies the planted defects. The tests assert both that an explicit Err is returned and that the layers snapshot remains entirely unchanged. Consequently, any defect dropping the length check, routing using the old rule, or writing tensors eagerly would turn the tests RED."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "If the test didn't assert that 'snapshot(&layers) == before', a defect that failed to completely revert or prevent partial layer writes would incorrectly pass.",
+            "rationale": "agy judgement. agy marked this measured, but returned no excerpt digest or exit code, so the primary records it as asserted; reverified_by_primary is false."
+          }
+        },
+        {
+          "ruleId": "agy-behavior-change-from-pretrained",
+          "level": "note",
+          "message": {
+            "text": "The new error path propagated by the '?' operator in 'from_pretrained' alters the behavior for callers. Specifically, adapters with extra target modules (like 'k_proj' or 'mlp') will now hard-fail instead of silently overwriting 'v_proj'. Additionally, if 'lora_rank=0', the empty 'lora_layers' means any existing adapter tensors are unplaceable, causing a refusal error where it previously skipped them silently."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-train/src/finetune/instruct_pipeline/constructors.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "A caller requesting 'lora_rank=0' in a directory that happens to contain an adapter file will now encounter a fatal error instead of gracefully loading the base model, because the adapter tensors cannot be placed in the zero-length 'lora_layers' array.",
+            "rationale": "agy judgement. agy marked this asserted, but returned no excerpt digest or exit code, so the primary records it as asserted; reverified_by_primary is false."
+          }
+        },
+        {
+          "ruleId": "agy-contract-matches-code",
+          "level": "note",
+          "message": {
+            "text": "The updated contract text perfectly captures the new logic, declaring the formula 'with slot(t) = 2·layer(t) + [proj(t) = v_proj]; otherwise load → Err and ∀ slot: unchanged'. This is mathematically identical to the implemented validation and error-handling steps."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/lora-target-selection-v1.yaml"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "If the contract did not explicitly state 'otherwise load -> Err and ∀ slot: unchanged', the implementation might have permissively skipped unplaceable tensors (like 'k_proj'), leading to an incomplete adapter load passing silently.",
+            "rationale": "agy judgement. agy marked this cited, but returned no excerpt digest or exit code, so the primary records it as asserted; reverified_by_primary is false."
+          }
+        }
+      ]
+    }
+  ]
+}
