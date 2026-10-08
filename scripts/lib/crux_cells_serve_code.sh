@@ -143,6 +143,12 @@ serve_routes_cell() {
   pa=$(free_port)
   printf '#!/usr/bin/env bash\n# one CRUX serve cell (#3962): every route apr mounts x every mode x every serve prompt\n' > "$cell"
   crux_teardown_trap "$cell" "$d/teardown.state" "$d/apr-serve.pid" "$d/llama-serve.pid"
+  # The ground-truth comparators (hf, vllm) run FIRST, alone on the device: they start their own
+  # servers and need no apr or llama port. Run after apr serve + llama-server were resident, a 4B
+  # model on one 24 GB card left hf OOM and vllm short of its 0.5 utilization, so every serve cell
+  # went RED with "no ground-truth control" while apr and llama.cpp both answered.
+  [ "${#pids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d" "serve run" "${pids[@]}"
+  [ "${#spids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d/stream" "serve stream" "${spids[@]}"
   { printf '%q ' "$APR" serve run "$M" --port "$pa" "$APR_BE"; printf '> %q 2>&1 < /dev/null &\necho $! > %q\n' "$d/apr-serve.log" "$d/apr-serve.pid"; } >> "$cell"
   serve_wait_line "$cell" "$pa" /health "$d/apr-serve.pid"
   local render=()
@@ -170,8 +176,6 @@ serve_routes_cell() {
       --out-dir "$d/ollama" --device "$OL_DEVICE" "${common[@]}"
   fi
   [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-serve" "$OL_NAME"
-  [ "${#pids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d" "serve run" "${pids[@]}"
-  [ "${#spids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d/stream" "serve stream" "${spids[@]}"
   printf 'exit 0\n' >> "$cell"
 
   for pid in "${pids[@]}"; do for eng in $(crux_plugin_engines); do before[$eng-$pid]=$(VERB_KEY="serve run" rows_for "$eng" "$pid"); done; done

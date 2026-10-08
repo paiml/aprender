@@ -985,7 +985,7 @@ scan() {
             # A wall-clock stamp on an operational log line is the point of the
             # line -- it says WHEN the sweep ran. bashrs disable-line is the
             # suppression bashrs itself names for this, and the idiom this repo
-            # already uses (check_llama_pin.sh:248, ci_target_watch.sh:158).
+            # already uses (check_llama_pin.sh:248).
             printf '%s UNWEDGE looked=%s freed=%s deadref_refused=%s dry_run=%s\n' \
                 "$(date -u +%FT%TZ)" "$looked" "$freed" "$dead" "$dry"  # bashrs disable-line=DET002
             return 2 ;;

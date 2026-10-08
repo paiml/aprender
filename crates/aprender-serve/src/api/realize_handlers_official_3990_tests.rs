@@ -45,6 +45,41 @@ mod serve_official_chat_template_3990 {
         assert_eq!(got, "<BOS><system>be terse<EOS><user>hi<EOS><GO>");
     }
 
+    /// #4650 mutant kill (`!t.is_empty()` at realize_handlers.rs:275): the request's tools
+    /// reach the model's own template, and an empty array is no tools.
+    #[test]
+    fn request_tools_reach_the_ggufs_own_template_4650() {
+        use crate::api::{OpenAiFunctionDef, OpenAiTool};
+        let g = gguf_with(Some(
+            "{% if tools %}T:{{ tools[0]['function']['name'] }}{% else %}NOTOOLS{% endif %}|{% for m in messages %}{{ m['content'] }}{% endfor %}",
+        ));
+        let tool = OpenAiTool {
+            tool_type: "function".to_string(),
+            function: OpenAiFunctionDef {
+                name: "get_weather".to_string(),
+                description: "Get the weather".to_string(),
+                parameters: None,
+            },
+        };
+        let msgs = [msg("user", "hi")];
+        let render = |tools: Option<&[OpenAiTool]>| {
+            super::format_chat_messages_official_thinking_tools(
+                Some(&g),
+                &msgs,
+                Some("qwen2"),
+                Some(false),
+                tools,
+            )
+            .expect("renders")
+        };
+        assert_eq!(
+            render(Some(std::slice::from_ref(&tool))),
+            "T:get_weather|hi"
+        );
+        assert_eq!(render(Some(&[])), "NOTOOLS|hi");
+        assert_eq!(render(None), "NOTOOLS|hi");
+    }
+
     #[test]
     fn no_gguf_or_no_template_keeps_the_legacy_formatter_3990() {
         let msgs = [msg("user", "hi")];
