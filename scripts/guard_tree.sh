@@ -148,6 +148,24 @@ default_jobs() {
 GUARD_TREE_JOBS="${GUARD_TREE_JOBS:-$(default_jobs)}"
 case "$GUARD_TREE_JOBS" in ''|*[!0-9]*|0) GUARD_TREE_JOBS=1 ;; esac
 
+# A HUNG GUARD IS NAMED, NOT WAITED OUT (0.71 row 25). Rows are printed only
+# after the whole pool finishes, so one guard that never returned held the step
+# silent until the job's own deadline killed it -- 3469 s on one runner, 3572 s
+# on another -- and the log could not say which guard it was. Two mechanisms:
+#   * every check (a guard's --self-test and its run, separately) gets
+#     GUARD_TREE_GUARD_TIMEOUT seconds, then is killed and reported as
+#     `FAIL  <guard> [<row>]` with a TIMEOUT line. A timeout is a FAILURE,
+#     never a skip. Default 2400: above the slowest green guard measured
+#     (1862 s for both rows of check_ci_push_reuse.sh, x86-main, 2026-10-08),
+#     below the 3600 s the fat driver gives this section;
+#   * every GUARD_TREE_HEARTBEAT seconds (default 300) a `still running:` line
+#     on stderr names each check that has not returned, so a job killed from
+#     outside still leaves the name in the log.
+GUARD_TREE_GUARD_TIMEOUT="${GUARD_TREE_GUARD_TIMEOUT:-2400}"
+case "$GUARD_TREE_GUARD_TIMEOUT" in ''|*[!0-9]*|0) GUARD_TREE_GUARD_TIMEOUT=2400 ;; esac
+GUARD_TREE_HEARTBEAT="${GUARD_TREE_HEARTBEAT:-300}"
+case "$GUARD_TREE_HEARTBEAT" in ''|*[!0-9]*|0) GUARD_TREE_HEARTBEAT=300 ;; esac
+
 # A bare `cargo ` token: not preceded by a lowercase letter, underscore or
 # hyphen (so `sccache`, `rustc-sccache`, `cargo-ci` in a path do not count),
 # and followed by a space (so `cargo` alone, e.g. a comment fragment, does
@@ -289,12 +307,25 @@ worker_run_one() {
         label="$1"
         shift
         w_total=$((w_total + 1))
-        if "$@" >"$w_cap" 2>&1; then
+        # What is running, for the heartbeat; removed when the check returns.
+        w_t0=$SECONDS
+        printf '%s\t%s\n' "$(date +%s)" "$label" > "$GUARD_TREE_RUN_DIR/$w_idx.running"
+        # -k: a guard that ignores TERM is KILLed 30 s later. GNU timeout
+        # signals the guard's whole process group, so its children go too.
+        timeout -k 30 "$GUARD_TREE_GUARD_TIMEOUT" "$@" >"$w_cap" 2>&1
+        w_rc=$?
+        rm -f "$GUARD_TREE_RUN_DIR/$w_idx.running"
+        if [ "$w_rc" -eq 0 ]; then
             printf 'PASS  %s\n' "$label" >> "$w_rows"
             surface_pass_summary "$w_cap" >> "$w_rows"
         else
             w_failed=$((w_failed + 1))
             printf 'FAIL  %s\n' "$label" >> "$w_rows"
+            if { [ "$w_rc" -eq 124 ] || [ "$w_rc" -eq 137 ]; } && [ $((SECONDS - w_t0)) -ge "$GUARD_TREE_GUARD_TIMEOUT" ]; then
+                printf '      | guard_tree: TIMEOUT -- %s was still running after %ss (GUARD_TREE_GUARD_TIMEOUT) and was killed; its output so far:\n' \
+                    "$label" "$GUARD_TREE_GUARD_TIMEOUT" >> "$w_rows"
+                printf 'guard_tree: TIMEOUT %s after %ss -- killed\n' "$label" "$GUARD_TREE_GUARD_TIMEOUT" >&2
+            fi
             sed 's/^/      | /' "$w_cap" >> "$w_rows"
             printf '%s\n' "$label" >> "$w_labels"
         fi
@@ -644,6 +675,32 @@ while IFS="$TAB" read -r kind g reason; do
     fi
 done < "$PLAN"
 
+# THE HEARTBEAT (row 25): names every check still running, every
+# GUARD_TREE_HEARTBEAT seconds, live on stderr. It stops when the `done` file
+# appears and is waited for, never signalled: a forked subshell TERMed early
+# would run this script's EXIT trap and remove $RUN_DIR under the pool.
+# It also stops when $RUN_DIR is gone or this script is (#4108's lost scratch
+# dir): with no `done` file possible it would otherwise loop forever and hold
+# the caller's captured stdout open.
+(
+    trap - EXIT
+    parent=$$
+    last=$SECONDS
+    while [ ! -e "$RUN_DIR/done" ] && [ -d "$RUN_DIR" ] && kill -0 "$parent" 2>/dev/null; do
+        sleep 1
+        [ $((SECONDS - last)) -ge "$GUARD_TREE_HEARTBEAT" ] || continue
+        last=$SECONDS
+        now="$(date +%s)"
+        for f in "$RUN_DIR"/*.running; do
+            [ -f "$f" ] || continue
+            IFS="$TAB" read -r t0 lbl < "$f" 2>/dev/null || continue
+            case "${t0:-}" in ''|*[!0-9]*) continue ;; esac
+            printf 'guard_tree: still running: %s (%ss)\n' "$lbl" "$((now - t0))" >&2
+        done
+    done
+) &
+heartbeat_pid=$!
+
 if [ -s "$WORKLIST" ]; then
     # `-I{}` makes xargs split on newlines only (a guard path never contains
     # one) and pass exactly one spec per process. The pool's own exit status is
@@ -658,6 +715,8 @@ while IFS= read -r spec; do
     [ -n "$spec" ] || continue
     GUARD_TREE_RUN_DIR="$RUN_DIR" bash "$SELF" "--internal-run-one=$spec" || true
 done < "$SERIAL_LIST"
+: > "$RUN_DIR/done"
+wait "$heartbeat_pid" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # 3. THE OUTPUT -- plan order, one guard's rows at a time, never interleaved.
