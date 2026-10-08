@@ -189,7 +189,7 @@
               "reviewer-scratch/dup.json"
             ],
             "exit_code": 0,
-            "stdout_sha256": "b3b629080f1ec2197eba9406a62392fb4c271dcb0ae11a3714050fbada5d0b3a",
+            "stdout_sha256": "b4e612a800bdb9fc02f5b02b6cb81330ddd54dd51cc1da2cc749925b55c84484",
             "failure_scenario": "An exact-name scan cannot see a re-implementation under another name, so 0 hits is not proof that no timeout or heartbeat helper exists elsewhere.",
             "precision_class": "advisory"
           }
