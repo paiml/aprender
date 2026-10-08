@@ -61,18 +61,25 @@ fenced() {
   return "$rc"
 }
 
-# live_commands <log> -> how many annotation commands the runner would act on:
-# ::error/::warning/::notice lines outside every stop..resume region. It errs
-# on the high side only: an indented command and a property value with a colon
-# count, an indented resume line ends a region, and an indented stop line does
-# not start one. Each can make the count larger than what the runner acts on,
-# never smaller.
+# live_commands <log> -> how many annotation commands the runner would act on,
+# outside every stop..resume region. Each rule errs on the high side, so a 0
+# here is a 0 on the runner and a 1 is at most 1:
+#  - An annotation is ::error, ::warning or ::notice, or the legacy ##[error,
+#    ##[warning or ##[notice, anywhere in a line and in any case. The runner
+#    wants it first after any whitespace, and it also splits lines on a \r.
+#  - A region starts only at the fence's own stop line: column 0, lower case,
+#    a 32-hex token and nothing after it. Any other stop line starts none, so
+#    the lines after it count.
+#  - A region ends at the first line holding ::<token> in any case, and that
+#    line is counted too.
+# Problem matchers are not workflow commands: the fence does not stop them,
+# and this does not count them.
 live_commands() {
-  awk '
-    { line = $0; sub(/^[ \t]+/, "", line) }
-    stop != "" { if (line == "::" stop "::") stop = ""; next }
-    /^::stop-commands::/ { stop = substr($0, 18); next }
-    line ~ /^::(error|warning|notice)( .*)?::/ { n++ }
+  LC_ALL=C awk '
+    { lc = tolower($0) }
+    stop != "" { if (index(lc, "::" stop) == 0) next; stop = "" }
+    /^::stop-commands::/ { t = substr($0, 18); if (length(t) == 32 && t !~ /[^0-9a-f]/) { stop = t; next } }
+    lc ~ /(::|##[[])(error|warning|notice)/ { n++ }
     END { print n + 0 }' "$1"
 }
 
@@ -103,7 +110,7 @@ check_wiring() {
 
 self_test() {
   printf '=== case table: fence_workflow_commands.sh ===\n'
-  local tmp fails=0 rc t1 t2 good
+  local tmp fails=0 rc t1 t2 t3 tk got i f good
   tmp="$(mktemp -d)"
   trap 'rm -rf "${tmp:?}"' RETURN
   row() {  # row <label> <want> <got>
@@ -135,8 +142,11 @@ self_test() {
   fenced bash "$tmp/table.sh" 3 > "$tmp/fail.out"; rc=$?
   row 'a failing table still fails: its rc is the step rc' 3 "$rc"
   row 'a failing table: exactly 1 live annotation, after the fence' 1 "$(live_commands "$tmp/fail.out")"
-  row 'a failing table: the live annotation names it' 1 \
-    "$(tail -n 1 "$tmp/fail.out" | grep -cF "::error::case table failed (rc=3): bash $tmp/table.sh 3")"
+  # The counter can only say "at most 1". The exact resume line just before the
+  # last line is what makes the failure annotation live.
+  t3="$(sed -n '1s/^::stop-commands:://p' "$tmp/fail.out")"
+  row 'a failing table: the last line names it, after the exact resume line' '1 1' \
+    "$(tail -n 2 "$tmp/fail.out" | head -n 1 | grep -cxF "::$t3::") $(tail -n 1 "$tmp/fail.out" | grep -cF "::error::case table failed (rc=3): bash $tmp/table.sh 3")"
 
   fenced sh -c 'printf "::error::planted\nno newline at the end"; exit 3' > "$tmp/partial.out"; rc=$?
   t2="$(sed -n '1s/^::stop-commands:://p' "$tmp/partial.out")"
@@ -149,8 +159,24 @@ self_test() {
   row 'stderr is fenced too: none on its own pipe, 1 inside the fence, 0 live' '0 1 0' \
     "$(wc -l < "$tmp/stderr.err" | tr -d ' ') $(sed '1d;$d' "$tmp/stderr.out" | grep -cxF '::error::from stderr') $(live_commands "$tmp/stderr.out")"
 
-  printf '%s\n' '  ::error::indented' '::warning file=a.rs:1,line=2::a colon in a property' '::notice::plain' > "$tmp/forms.log"
-  row 'the live counter counts an indented command and a colon in a property' 3 "$(live_commands "$tmp/forms.log")"
+  # The counter is the oracle for every "0 live" row above, so each form the
+  # runner acts on must count, one file each.
+  got=""; i=0
+  for f in '  ::error::indented' '\f::error::after a form feed' '\0302\0240::notice::after a no-break space' \
+    '::Error::mixed case' '::WARNING file=a.rs:1,line=2::upper case, a colon in a property' \
+    '##[notice]the legacy form' 'progress 40%\r::error::after a carriage return'; do
+    i=$((i + 1)); printf '%b\n' "$f" > "$tmp/form$i.log"; got="$got $(live_commands "$tmp/form$i.log")"
+  done
+  row 'the live counter counts each of 7 forms the runner acts on' ' 1 1 1 1 1 1 1' "$got"
+  tk=0123456789abcdef0123456789abcdef
+  printf '%b\n' "::stop-commands::$tk" 'inside' '  ::0123456789ABCDEF0123456789ABCDEF:: trailing' '::error::after it' > "$tmp/end1.log"
+  printf '%b\n' "::stop-commands::$tk" "x\r::$tk::\r::error::on the resume line" > "$tmp/end2.log"
+  row 'a region ends at ::<token> in any case and place, and that line counts' '1 1' \
+    "$(live_commands "$tmp/end1.log") $(live_commands "$tmp/end2.log")"
+  printf '%b\n' "  ::stop-commands::$tk" '::error::after an indented stop' "::$tk::" > "$tmp/start1.log"
+  printf '%b\n' '::stop-commands::short' '::error::after a short token' '::short::' > "$tmp/start2.log"
+  row 'a region starts only at the fence form of the stop line' '1 1' \
+    "$(live_commands "$tmp/start1.log") $(live_commands "$tmp/start2.log")"
 
   fenced sh -c 'printf "::0123456789abcdef0123456789abcdef::\n::error::after a guessed resume\n"' > "$tmp/guess.out"
   row 'a resume line with another token does not end the fence' 0 "$(live_commands "$tmp/guess.out")"
