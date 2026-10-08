@@ -1,0 +1,16 @@
+# Look-ahead slots (APR-LOOKAHEAD-002 row LA-0): one worker per train, three slots.
+# Rotation and edits: spec section 6. Epics are those whose owner: label names
+# the slot's worker (spec G16, verified 2026-10-08).
+slots:
+  - slot: 1
+    train: "0.71"
+    worker: la-0.71
+    epics: [3598, 3994]
+  - slot: 2
+    train: "0.72"
+    worker: la-0.72
+    epics: [4000]
+  - slot: 3
+    train: "0.73"
+    worker: la-0.73
+    epics: [3999]
