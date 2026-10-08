@@ -72,6 +72,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The verdict proves itself before it judges: its case table, then its mutants. They
+      # run here, in the nightly job that uses the verdict, and not on the PR path.
+      - name: deep_nodefault_verdict.sh case table and mutants (#4871)
+        run: |
+          set -uo pipefail
+          bash scripts/release/deep_nodefault_verdict.sh --self-test
+          bash scripts/release/deep_nodefault_verdict.sh --mutants
+
       - name: cargo check --workspace --no-default-features (0 errors outside the #3176 class)
         run: |
           set -uo pipefail
