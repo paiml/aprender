@@ -1846,8 +1846,12 @@ jobs:
           # 'https://github.com'"), so the container's git carries the job token
           # the way actions/checkout does. GIT_CONFIG_* is per-process: nothing
           # is written into the image or the workspace.
+          # PINNED_RUSTUP_MOUNT (x86-main's "Pinned toolchain" step, row 23): the 1.93.0
+          # rustup home installed once per job, read-only. Unset off x86-main: the
+          # image syncs the pin itself, as before. Same mount on every cargo run below.
           B64=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
           docker run --rm \
+            ${PINNED_RUSTUP_MOUNT:+-v "$PINNED_RUSTUP_MOUNT"} \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
             -e GIT_TERMINAL_PROMPT=0 \
@@ -2332,6 +2336,7 @@ jobs:
               [ -d "$d" ] && [ -w "$d" ] || { echo "FAIL: $d is missing or not writable and could not be repaired"; return 1; }
             done
             docker run --rm \
+              ${PINNED_RUSTUP_MOUNT:+-v "$PINNED_RUSTUP_MOUNT"} \
               --user "$(id -u):$(id -g)" \
               -v "${ws}:/workspace" \
               -v "${GUARD_CARGO_HOME}:/cargo-home" \
@@ -2560,6 +2565,7 @@ jobs:
         # CARGO_NET_OFFLINE=1 is safe and no registry mount is needed.
         run: |
           docker run --rm --init \
+            ${PINNED_RUSTUP_MOUNT:+-v "$PINNED_RUSTUP_MOUNT"} \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "${GUARD_CARGO_HOME}:/cargo-home" \
             -e CARGO_HOME=/cargo-home \
@@ -2570,6 +2576,7 @@ jobs:
       - name: "nextest-key guard must still turn RED (case table)"
         run: |
           docker run --rm --init \
+            ${PINNED_RUSTUP_MOUNT:+-v "$PINNED_RUSTUP_MOUNT"} \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "${GUARD_CARGO_HOME}:/cargo-home" \
             -e CARGO_HOME=/cargo-home \
