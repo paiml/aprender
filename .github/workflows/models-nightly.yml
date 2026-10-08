@@ -95,6 +95,7 @@ jobs:
     outputs:
       state: ${{ steps.relay.outputs.state }}
       reason: ${{ steps.relay.outputs.reason }}
+      bundle: ${{ steps.relay.outputs.bundle }}
     steps:
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Verbatim from ci.yml's guard-cargo. A hard-killed docker job leaves
@@ -151,3 +152,34 @@ jobs:
         run: |
           echo "models lane: $STATE -- $REASON"
           [ "$STATE" = green ]
+
+  # The standing release policy (contracts/model-capability-ladder-v1.yaml,
+  # ladder.release_policy): a red nightly row cannot stop a release. Each red
+  # row opens or updates its own issue here, and the release notes list it
+  # with that issue. Only a verified, unplanted red reaches this job (bundle
+  # is set for nothing else), and its failure never touches the models column.
+  models-tickets:
+    name: models-tickets
+    needs: models-evidence
+    if: needs.models-evidence.outputs.state == 'red' && needs.models-evidence.outputs.bundle != ''
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      issues: write   # open or comment on one issue per red row
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: models-t1
+          path: ${{ runner.temp }}/models-t1
+      - name: Open or update the issue of each red row
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          setsid --wait bash scripts/release/models_nightly.sh --tickets --commit "$GITHUB_SHA" \
+            --evidence "$RUNNER_TEMP/models-t1" --out "$RUNNER_TEMP/models-tickets.tsv"
+          cat -- "$RUNNER_TEMP/models-tickets.tsv"

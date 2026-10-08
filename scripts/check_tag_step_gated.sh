@@ -35,15 +35,34 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
 SUBJECT="$ROOT/scripts/release/autopilot.sh"
 
-# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc> [<readiness> [<covjob-rc>]]]] -- extract cut_tag(), run
+# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc> [<readiness> [<covjob-rc> [<policy> [<models>]]]]]] -- extract cut_tag(), run
 # it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
 # Returns 2 if the function is missing.
 run_cut_tag() {
-    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} jrc=${6:-0} d fn
+    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} jrc=${6:-0} pol=${7:-none} mdl=${8:-crux} d fn pfn
     d=$(mktemp -d) || return 2
     fn=$(awk '/^cut_tag\(\) \{/,/^\}/' "$ap")
     [ -n "$fn" ] || { rmtree "$d"; return 2; }
-    mkdir -p "$d/scripts/release" "$d/ap"
+    mkdir -p "$d/scripts/release" "$d/ap" "$d/scripts/lib" "$d/contracts"
+    pfn=$(awk '/^ap_policy_applies\(\) \{/,/^\}/' "$ap")
+    # the standing release policy: the release worktree's own reader (this checkout's copy) and a ladder
+    # with no policy (none), one covering 0.0.0 (covers) or one the reader refuses (bad)
+    cp -- "$ROOT/scripts/lib/release_policy.sh" "$ROOT"/scripts/lib/release_policy_*.awk "$d/scripts/lib/" || { rmtree "$d"; return 2; }
+    {   printf 'ladder:\n'
+        case "$pol" in
+            covers|bad) printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n'
+                printf '    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: "#1"\n'
+                [ "$pol" = bad ] || printf '    release_notes: known_failures\n' ;;
+        esac
+        printf '  emergency_scopes:\n'
+    } > "$d/contracts/model-capability-ladder-v1.yaml"
+    # the models lane's log: a CRUX-smoke GO for this commit (crux), for another (stale), or none
+    case "$mdl" in
+        crux)  printf 'MODELS GO (CRUX smoke) on lambda and gx10 at deadbeef: the judge passed both receipts (apr 0.0.0 (deadbeef))\n' > "$d/ap/models-t1.log" ;;
+        stale) printf 'MODELS GO (CRUX smoke) on lambda and gx10 at cafef00d: the judge passed both receipts (apr 0.0.0 (cafef00d))\n' > "$d/ap/models-t1.log" ;;
+        ladder) printf 'MODELS GO on lambda and gx10 at deadbeef: the judge passed both receipts (apr 0.0.0 (deadbeef))\n' > "$d/ap/models-t1.log" ;;
+        absent) : ;;
+    esac
     # #3715 B1: the readiness step's log, as the T-1 `readiness` step leaves it (or does not)
     case "$rdy" in
         pass)   printf 'ok    R8 release-readiness-v1 for 0.0.0: Pass\nok    R8 #3715 ENFORCE PASS version=0.0.0 commit=deadbeef pv=pv_x out_sha256=0\n' > "$d/ap/readiness-t1.log" ;;
@@ -61,10 +80,11 @@ run_cut_tag() {
         printf 'say() { printf "SAY %%s\\n" "$*"; }\n'
         printf 'die() { printf "DIE %%s\\n" "$*"; exit 1; }\n'
         printf 'git() { printf "GIT-%%s %%s\\n" "$(printf %%s "$1" | tr "a-z" "A-Z")" "$*"; }\n'
+        printf '%s\n' "$pfn"
         printf '%s\n' "$fn"
         printf 'cut_tag 0.0.0 v0.0.0 deadbeef\n'
     } > "$d/harness.sh"
-    bash "$d/harness.sh" 2>&1
+    (cd "$d" && bash "$d/harness.sh" 2>&1)
     cat "$d/log" 2>/dev/null
     printf 'ORDER %s\n' "$(tr '\n' ' ' 2>/dev/null < "$d/calls")"
     rmtree "$d"
@@ -119,6 +139,22 @@ judge() {
             printf 'FAIL  coverage-job resolve rc=%s -> a tag was cut or the milestone was touched\n%s\n' "$j" "$out" >&2; bad=1
         else printf 'ok    coverage-job resolve rc=%s -> no tag, nothing carried\n' "$j"; fi
     done
+    # the standing release policy (contracts/model-capability-ladder-v1.yaml `ladder.release_policy`):
+    # a covered version tags on the models lane's CRUX-smoke GO for exactly this commit, with no readiness run
+    out=$(run_cut_tag "$ap" 0 0 0 absent 0 covers crux) || true
+    if grep -q 'GIT-TAG' <<< "$out" && grep -q '^SAY POLICY-GATE ' <<< "$out"; then
+        printf 'ok    policy covers, CRUX-smoke GO at this commit, readiness not run -> the tag is cut\n'
+    else printf 'FAIL  policy covers + CRUX-smoke GO -> NO tag (or no POLICY-GATE line)\n%s\n' "$out" >&2; bad=1; fi
+    for m in stale ladder absent; do
+        out=$(run_cut_tag "$ap" 0 0 0 pass 0 covers "$m") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out"; then
+            printf 'FAIL  policy covers, models log %s -> a tag was cut or the milestone was touched without a CRUX-smoke GO\n%s\n' "$m" "$out" >&2; bad=1
+        else printf 'ok    policy covers, models log %s -> no tag, nothing carried (a readiness Pass does not stand in)\n' "$m"; fi
+    done
+    out=$(run_cut_tag "$ap" 0 0 0 pass 0 bad crux) || true
+    if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out" || ! grep -q '^DIE the standing release policy cannot be judged' <<< "$out"; then
+        printf 'FAIL  unreadable policy block -> a tag was cut, the milestone was touched, or the refusal named another cause\n%s\n' "$out" >&2; bad=1
+    else printf 'ok    unreadable policy block -> no tag, nothing carried (not measured is not a pass)\n'; fi
     return "$bad"
 }
 
@@ -199,6 +235,33 @@ if [ "${1:-}" = "--self-test" ]; then
         nok "MUTANT 8 (coverage-job verdict discarded) PASSED"
     else
         ok "mutant 8: coverage-job verdict discarded -> RED"
+    fi
+    # M9: under the policy, the CRUX-smoke GO requirement discarded -> a stale or absent models GO tags.
+    sed 's/|| die "the standing release policy covers \$v but/|| true; : "/' "$SUBJECT" > "$d/m9.sh"
+    if cmp -s "$SUBJECT" "$d/m9.sh"; then
+        nok "MUTANT 9 could not be built -- the CRUX-smoke GO die line did not match; vacuous"
+    elif judge "$d/m9.sh" > "$d/m9.out" 2>&1; then
+        nok "MUTANT 9 (CRUX-smoke GO requirement discarded) PASSED"
+    else
+        ok "mutant 9: CRUX-smoke GO requirement discarded -> RED"
+    fi
+    # M10: the policy verdict discarded -> an unreadable policy block reads as "no policy".
+    sed 's/|| die "the standing release policy cannot be judged/|| true; : "/' "$SUBJECT" > "$d/m10.sh"
+    if cmp -s "$SUBJECT" "$d/m10.sh"; then
+        nok "MUTANT 10 could not be built -- the policy-judge die line did not match; vacuous"
+    elif judge "$d/m10.sh" > "$d/m10.out" 2>&1; then
+        nok "MUTANT 10 (policy verdict discarded) PASSED"
+    else
+        ok "mutant 10: policy verdict discarded -> RED"
+    fi
+    # M11: the policy branch never taken -> a covered release still demands the readiness run it replaced.
+    sed 's/^    if \[ "\$pol" = 1 \]; then$/    if false; then/' "$SUBJECT" > "$d/m11.sh"
+    if cmp -s "$SUBJECT" "$d/m11.sh"; then
+        nok "MUTANT 11 could not be built -- the policy branch line did not match; vacuous"
+    elif judge "$d/m11.sh" > "$d/m11.out" 2>&1; then
+        nok "MUTANT 11 (policy branch never taken) PASSED"
+    else
+        ok "mutant 11: policy branch never taken -> RED"
     fi
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
     if bash "$ROOT/scripts/release/carry_milestone_items.sh" --self-test > "$d/carry.out" 2>&1; then
