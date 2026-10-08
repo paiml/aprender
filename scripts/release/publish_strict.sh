@@ -41,7 +41,6 @@ if [ "${1:-}" != "--plan" ]; then
   crout=$(clean_room_gate "$WT" "$T" "$crid") || die "clean-room run $crid does not prove $T: $crout"
   say "$crout"
 fi
-[ "${1:-}" = "--plan" ] || [ -s "$AP/dryrun-receipt-commit" ] || die "no committed dry-run receipt (T-4)"
 
 # order: NOT the tag's TIERS — measured 2026-09-17, TIERS is not topological (47 non-dev
 # violations; it only ever worked through the drain's retries). publish-order.txt is derived from

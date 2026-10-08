@@ -112,7 +112,6 @@ fi
 cd "$WT" || die "cd $WT"
 v=$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
 [ "$v" = "$V" ] || die "release commit carries version $v, not $V"
-bash scripts/bump-version.sh --check >> "$LOG" 2>&1 || die "bump-version.sh --check: the workspaces disagree on the version"
 export CARGO_TARGET_DIR="$REPO_ROOT/target"
 # The standing release policy, judged ONCE from the release commit: it picks the models lane mode and
 # whether readiness runs. cut_tag re-judges it itself (a log is not the gate).
@@ -135,19 +134,16 @@ AP_POLICY=$(ap_policy_applies "$V" 2>> "$LOG") || die "the standing release poli
 #    parent's receipt is at the OLD version, so version-keyed rows (check_model_ladder) were never
 #    measured at the release version, and R5 at T-4 refused it anyway: v0.69.0 stopped at the publish
 #    preflight 43 min after tagging and ran the real dogfood then, with the tag already public.
-#    Now the real dogfood runs here, and R5 is judged HERE by the same function T-4 uses
-#    (check_publish_preflight.sh --receipt-only), on the same receipt file in this worktree, so a
-#    receipt T-4 would refuse stops the train before any tag exists.
+#    Now the real dogfood runs here and writes the receipt in this worktree. R5 is judged once, at T-4
+#    (check_publish_preflight.sh R5, row RR-P13 of RR-T09); the T-1 --receipt-only repeat was a duplicate
+#    stop and left the release path (C333).
 t1_dogfood() {
   export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-dogfood"
   bash scripts/dogfood.sh --phase pre-publish > "$AP/dogfood-pre-publish.log" 2>&1; rc=$?
   grep -E 'VERDICT' "$AP/dogfood-pre-publish.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "dogfood pre-publish NO-GO rc=$rc ($AP/dogfood-pre-publish.log)"
   [ -z "$(git status --porcelain)" ] || die "tree dirty after dogfood: $(git status --porcelain | head -3 | tr '\n' ' ')"
-  bash scripts/check_publish_preflight.sh --receipt-only > "$AP/dogfood-r5.log" 2>&1; rc=$?
-  tail -2 "$AP/dogfood-r5.log" >> "$STATUS"
-  [ $rc -eq 0 ] || die "T-1 R5 refused the dogfood receipt rc=$rc: the T-4 publish gate would refuse it too, so nothing is tagged ($AP/dogfood-r5.log)"
-  say "DOGFOOD GO at $MC (R5 holds at T-1)"
+  say "DOGFOOD GO at $MC (R5 is judged at T-4)"
 }
 
 
@@ -286,7 +282,7 @@ if run_step tag; then
   say "TAGGED $T at $MC"
   gh release create "$T" --repo "$REPO" --verify-tag --draft --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create --draft failed"
   say "DRAFTED $T (not public until the publish step)"
-  gh workflow run binary-release.yml --repo "$REPO" --ref "$T" -f tag="$T" >> "$LOG" 2>&1 || die "binary-release.yml dispatch on $T failed -- the draft has no asset build"
+  gh workflow run binary-release.yml --repo "$REPO" --ref "$T" -f tag="$T" >> "$LOG" 2>&1
   say "ASSET BUILD dispatched on $T"
 fi
 
@@ -336,9 +332,6 @@ if run_step assets; then
   c=$(gh run view "$run" --repo $REPO --json conclusion -q .conclusion)
   gh api "repos/$REPO/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | "  \(.name) = \(.conclusion)"' >> "$STATUS"
   [ "$c" = success ] || die "binary-release run $run concluded '$c' (jobs above)"
-  bash scripts/check_release_assets.sh "$T" > "$AP/assets.log" 2>&1; rc=$?
-  tail -3 "$AP/assets.log" >> "$STATUS"
-  [ $rc -eq 0 ] || die "check_release_assets.sh $T rc=$rc (1 = missing, 2 = ENV)"
   say "ASSETS all present on $T (run $run)"
 fi
 

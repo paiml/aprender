@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check_release_autopilot_dogfood_close.sh -- the release autopilot never inherits a dogfood GO,
-# judges R5 at T-1 with the function T-4 uses, and closes the epic before the milestone (#3708).
+# leaves R5 to the T-4 gate (C333: the T-1 repeat left the release path), and closes the epic before the milestone (#3708).
 #
 # THE DEFECT, measured 2026-09-21 on the v0.69.0 train. autopilot's dogfood step INHERITED the
 # parent's T-2 GO ("bump diff = version surface only") and wrote a receipt of its own shape.
@@ -20,24 +20,20 @@
 #
 # THE ROWS
 #   never-inherits     parent GO + version-only diff: dogfood.sh still RUNS, no inherited receipt,
-#                      "DOGFOOD GO at <MC> (R5 holds at T-1)".
+#                      "DOGFOOD GO at <MC> (R5 is judged at T-4)".
 #   t4-agrees-go       that receipt, after tagging, is accepted by the FULL T-4 gate's R5 -- the
 #                      same file, the same function.
 #   nogo-stops         a NO-GO dogfood STOPs at T-1.
-#   t1-r5-version      the dogfood exits 0 but its receipt names another version: STOPs at T-1
-#                      ("T-1 R5 refused") -- and the T-4 gate's R5 refuses the same receipt.
-#   t1-r5-commit       the receipt names the parent commit: STOPs at T-1.
-#   t1-r5-absent       the dogfood exits 0 and writes NO receipt: STOPs at T-1.
+#   t4-r5-version      the dogfood exits 0 but its receipt names another version: T-1 passes (its
+#                      --receipt-only repeat left the release path, C333) and the T-4 gate's R5 refuses it.
+#   t4-r5-commit       the receipt names the parent commit: the T-4 gate's R5 refuses it.
+#   t4-r5-absent       the dogfood exits 0 and writes NO receipt: the T-4 gate's R5 refuses it.
 #   close-epic-last    the epic is the milestone's only open item: the epic is closed, then the
 #                      milestone.
 #   close-other-open   another item is open: STOP naming it; neither the epic nor the milestone closes.
 # THE MUTANTS -- one per claim (#3708 done_when 2, "A mutant for each"); each must turn its row RED
 #   inherit               the pre-#3708 dogfood step, verbatim            -> never-inherits
 #   drop-nogo-stop        the NO-GO `die` line deleted                    -> nogo-stops
-#   drop-t1-r5 (x3)       the --receipt-only line deleted                 -> t1-r5-version, -commit, -absent
-#   t1-reads-another-file check_publish_preflight.sh --receipt-only reads
-#                         a receipt dir T-4 does not                      -> never-inherits
-#   t1-skips-rule-r5      --receipt-only no longer calls rule_r5()        -> t1-r5-version
 #   drop-epic-close       the `gh issue close "$EPIC"` line deleted       -> close-epic-last
 #   drop-others-check     the "besides epic" refusal deleted              -> close-other-open
 #
@@ -49,21 +45,15 @@ SUBJECT="$ROOT/scripts/release/autopilot.sh"
 PARAMS="$ROOT/scripts/release/lib_release_params.sh"
 PREFLIGHT="$ROOT/scripts/check_publish_preflight.sh"
 DOGFOOD_BLOCK_START='# 2. dogfood: the R5 receipt'
-T1_ANCHOR='bash scripts/check_publish_preflight.sh --receipt-only'
 CLOSE_ANCHOR='gh issue close "$EPIC"'
 OTHERS_ANCHOR='[ -z "${others// /}" ] ||'
 NOGO_ANCHOR='|| die "dogfood pre-publish NO-GO'
-RO_R5_ANCHOR='    if ! rule_r5 "$root" "$head" "$version"; then'
-RO_DIR_ANCHOR='rdir="${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}"'
 
 env_die() { printf 'ENV   %s -- the table judged nothing, not a pass\n' "$*" >&2; exit 2; }
 for f in "$SUBJECT" "$PARAMS" "$PREFLIGHT"; do [ -r "$f" ] || env_die "no $f"; done
 for t in git python3; do command -v "$t" > /dev/null 2>&1 || env_die "no $t"; done
-for a in "$DOGFOOD_BLOCK_START" "$T1_ANCHOR" "$CLOSE_ANCHOR" "$OTHERS_ANCHOR" "$NOGO_ANCHOR"; do
+for a in "$DOGFOOD_BLOCK_START" "$CLOSE_ANCHOR" "$OTHERS_ANCHOR" "$NOGO_ANCHOR"; do
     grep -qF -- "$a" "$SUBJECT" || env_die "autopilot.sh has no '$a' line -- the subject moved"
-done
-for a in "$RO_R5_ANCHOR" "$RO_DIR_ANCHOR"; do
-    grep -qF -- "$a" "$PREFLIGHT" || env_die "check_publish_preflight.sh has no '$a' line -- the subject moved"
 done
 
 TMP=$(mktemp -d) || exit 2
@@ -199,7 +189,7 @@ never_inherits() { # TAG AUTOPILOT [PREFLIGHT] -> 0 green
     [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(tail -1 "$d/ap/STATUS" 2>/dev/null)"; return 1; }
     grep -q '^ran --phase pre-publish' "$d/state/dogfood.log" || { printf 'dogfood.sh never ran: the parent GO was inherited\n'; return 1; }
     [ ! -e "$d/ap/dogfood-inherited.receipt" ] || { printf 'an inherited receipt was written\n'; return 1; }
-    grep -qF "DOGFOOD GO at $(cat "$d/mc") (R5 holds at T-1)" "$d/ap/STATUS" || { printf 'no "DOGFOOD GO … (R5 holds at T-1)" line\n'; return 1; }
+    grep -qF "DOGFOOD GO at $(cat "$d/mc") (R5 is judged at T-4)" "$d/ap/STATUS" || { printf 'no "DOGFOOD GO … (R5 is judged at T-4)" line\n'; return 1; }
     return 0
 }
 nogo_stops() { # TAG AUTOPILOT
@@ -210,7 +200,7 @@ nogo_stops() { # TAG AUTOPILOT
     grep -q 'STOP dogfood pre-publish NO-GO' "$d/ap/STATUS" || { printf 'it stopped, but not on the NO-GO: %s\n' "$(tail -1 "$d/ap/STATUS")"; return 1; }
     return 0
 }
-t1_r5() { # TAG VARIANT(version|commit|absent) AUTOPILOT [PREFLIGHT] -> 0 when autopilot STOPs at T-1 on R5
+t4_r5() { # TAG VARIANT(version|commit|absent) AUTOPILOT [PREFLIGHT] -> 0 when T-1 passes and the T-4 R5 refuses
     local n="r5$2-$1" d kv; d="$TMP/r5$2-$1"
     fixture "$n" "$3" "${4:-}" || return 2
     case "$2" in
@@ -219,8 +209,8 @@ t1_r5() { # TAG VARIANT(version|commit|absent) AUTOPILOT [PREFLIGHT] -> 0 when a
         absent)  kv=FX_NO_RECEIPT=1 ;;
     esac
     autopilot "$n" dogfood dogfood "$kv"
-    [ "$(cat "$d/rc")" != 0 ] || { printf 'autopilot passed T-1 with a receipt R5 refuses (%s)\n' "$2"; return 1; }
-    grep -q 'STOP T-1 R5 refused' "$d/ap/STATUS" || { printf 'it stopped, but not on T-1 R5: %s\n' "$(tail -1 "$d/ap/STATUS")"; return 1; }
+    [ "$(cat "$d/rc")" = 0 ] || { printf 'T-1 stopped (%s): %s\n' "$2" "$(tail -1 "$d/ap/STATUS")"; return 1; }
+    grep -q '^FAIL  R5 ' <<< "$(t4_gate "$n")" || { printf 'the T-4 gate'"'"'s R5 accepted a receipt it must refuse (%s)\n' "$2"; return 1; }
     return 0
 }
 close_epic_last() { # TAG AUTOPILOT
@@ -257,14 +247,9 @@ fi
 
 msg=$(nogo_stops real "$SUBJECT"); row nogo-stops "$?" "$msg"
 
-msg=$(t1_r5 real version "$SUBJECT"); rc=$?
-if [ "$rc" = 0 ]; then
-    out=$(t4_gate r5version-real)
-    grep -q '^FAIL  R5 dogfood receipt' <<< "$out" || { rc=1; msg="T-1 refused but the T-4 gate's R5 did not: $(grep 'R5' <<< "$out" | head -1)"; }
-fi
-row t1-r5-version "$rc" "$msg"
-msg=$(t1_r5 real commit "$SUBJECT"); row t1-r5-commit "$?" "$msg"
-msg=$(t1_r5 real absent "$SUBJECT"); row t1-r5-absent "$?" "$msg"
+for v in version commit absent; do
+    msg=$(t4_r5 real "$v" "$SUBJECT"); row "t4-r5-$v" "$?" "$msg"
+done
 
 msg=$(close_epic_last real "$SUBJECT"); row close-epic-last "$?" "$msg"
 msg=$(close_other_open real "$SUBJECT"); row close-other-open "$?" "$msg"
@@ -316,35 +301,6 @@ msg=$(never_inherits m-inherit "$TMP/m-inherit.sh"); killed "inherit is killed b
 grep -vF -- "$NOGO_ANCHOR" "$SUBJECT" > "$TMP/m-nogo.sh"; mut "$SUBJECT" "$TMP/m-nogo.sh"
 msg=$(nogo_stops m-nogo "$TMP/m-nogo.sh"); killed "drop-nogo-stop is killed by nogo-stops" "$?" "$msg"
 
-grep -vF -- "$T1_ANCHOR" "$SUBJECT" > "$TMP/m-t1.sh"; mut "$SUBJECT" "$TMP/m-t1.sh"
-for v in version commit absent; do
-    msg=$(t1_r5 "m-t1" "$v" "$TMP/m-t1.sh"); killed "drop-t1-r5 is killed by t1-r5-$v" "$?" "$msg"
-done
-
-# the T-1 end of R5 reading a receipt dir the T-4 end does not: "the same file" is load-bearing
-python3 - "$PREFLIGHT" "$TMP/m-dir.sh" "$RO_DIR_ANCHOR" <<'PY' || env_die "t1-reads-another-file mutant"
-import sys
-src, dst, anchor = sys.argv[1:4]
-s = open(src).read()
-# only receipt_gate's reads are redirected: rule_r5 takes an optional 4th arg (the dir) in the mutant
-s = s.replace(anchor, 'rdir="${4:-${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}}"', 1)
-s = s.replace('    if ! rule_r5 "$root" "$head" "$version"; then', '    if ! rule_r5 "$root" "$head" "$version" "$root/.dogfood-t1"; then', 1)
-open(dst, "w").write(s)
-PY
-mut "$PREFLIGHT" "$TMP/m-dir.sh"
-msg=$(never_inherits m-dir "$SUBJECT" "$TMP/m-dir.sh"); killed "t1-reads-another-file is killed by never-inherits" "$?" "$msg"
-
-# --receipt-only without rule_r5(): "the same function" is load-bearing
-python3 - "$PREFLIGHT" "$TMP/m-ro.sh" "$RO_R5_ANCHOR" <<'PY' || env_die "t1-skips-rule-r5 mutant"
-import sys
-src, dst, anchor = sys.argv[1:4]
-s = open(src).read()
-assert s.count(anchor) == 1
-open(dst, "w").write(s.replace(anchor, "    if ! true; then", 1))
-PY
-mut "$PREFLIGHT" "$TMP/m-ro.sh"
-msg=$(t1_r5 m-ro version "$SUBJECT" "$TMP/m-ro.sh"); killed "t1-skips-rule-r5 is killed by t1-r5-version" "$?" "$msg"
-
 grep -vF -- "$CLOSE_ANCHOR" "$SUBJECT" > "$TMP/m-close.sh"; mut "$SUBJECT" "$TMP/m-close.sh"
 msg=$(close_epic_last m-close "$TMP/m-close.sh"); killed "drop-epic-close is killed by close-epic-last" "$?" "$msg"
 
@@ -352,6 +308,6 @@ grep -vF -- "$OTHERS_ANCHOR" "$SUBJECT" > "$TMP/m-others.sh"; mut "$SUBJECT" "$T
 msg=$(close_other_open m-others "$TMP/m-others.sh"); killed "drop-others-check is killed by close-other-open" "$?" "$msg"
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 17 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 17 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 12 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 12 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
-printf 'PASS  %s row(s): autopilot never inherits a dogfood GO, judges R5 at T-1 with the T-4 function, and closes the epic before the milestone (#3708)\n' "$rows"
+printf 'PASS  %s row(s): autopilot never inherits a dogfood GO, leaves R5 to the T-4 gate, and closes the epic before the milestone (#3708)\n' "$rows"
