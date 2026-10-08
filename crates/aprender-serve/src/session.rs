@@ -38,9 +38,7 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 
 use crate::error::{RealizarError, Result};
-use crate::gguf::{
-    logsumexp_full, top_k_logprobs, OwnedQuantizedModel, QuantizedGenerateConfig, StepLogprobs,
-};
+use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
 
 /// One architecture's forward on one backend: the only per-arch code a verb
 /// reaches, and only through a [`Session`].
@@ -81,6 +79,33 @@ pub trait ArchForward {
         Ok(())
     }
 
+    /// Where to keep a copy of the state while prefilling `prompt` (#4214):
+    /// the state after `prompt[..k]` is what a later prompt most likely
+    /// repeats — a chat's history before its generation header. `None` (the
+    /// default): this forward keeps no copies, and a prompt that does not
+    /// extend what the state holds is prefilled from 0.
+    fn checkpoint_at(&self, _prompt: &[u32]) -> Option<usize> {
+        None
+    }
+
+    /// Keep a copy of the state as it holds now, replacing any earlier copy.
+    ///
+    /// # Errors
+    /// The copy could not be made; the session then keeps none.
+    fn save_checkpoint(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Return the state to the copy [`ArchForward::save_checkpoint`] kept.
+    /// `false` when there is none to return to (never saved, or dropped by a
+    /// reallocation or a fallback): the state is then unchanged.
+    ///
+    /// # Errors
+    /// The copy could not be put back; what the state holds is then unknown.
+    fn restore_checkpoint(&mut self) -> Result<bool> {
+        Ok(false)
+    }
+
     /// The state holds `tokens[..start]` (`start == 0`: reset it). Advance it
     /// to hold all of `tokens` and return the logits after the last one.
     ///
@@ -104,7 +129,7 @@ pub trait ArchForward {
 }
 
 /// What one [`Session::generate`] call did.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Turn {
     /// The prompt followed by the generated tokens.
     pub tokens: Vec<u32>,
@@ -117,24 +142,6 @@ pub struct Turn {
     /// `max_tokens` and before a stop token. It is the one reason a reply is
     /// shorter than asked for that the caller did not choose.
     pub context_capped: bool,
-    /// One record per generated token when `config.logprobs_top_k` > 0
-    /// (#4026), else empty.
-    pub steps: Vec<StepLogprobs>,
-}
-
-// #4026: the steps of the last turn a session generated on this thread, for
-// `apr run`, whose dispatch drops the `Turn` inside per-backend helpers. Same
-// idiom as `infer`'s generation-start mark: cleared before a dispatch, taken
-// after it. `None` after a dispatch means the engine did not serve it.
-std::thread_local! {
-    static LAST_TURN_STEPS: std::cell::RefCell<Option<Vec<StepLogprobs>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Take the steps [`Session::generate`] last recorded on this thread (#4026).
-/// `None` when no turn with `logprobs_top_k` > 0 ran since the last take.
-pub fn take_last_turn_steps() -> Option<Vec<StepLogprobs>> {
-    LAST_TURN_STEPS.with(std::cell::RefCell::take)
 }
 
 /// A loaded model plus its decode state: the one engine (#4263).
@@ -149,6 +156,9 @@ pub struct Session<F: ArchForward> {
     /// call entered, so a guard can ask "did THIS verb's session serve it?"
     /// without re-deriving the verb's prompt tokens.
     id: u64,
+    /// The tokens whose forward the forward's saved copy holds (#4214), or
+    /// `None` when it keeps no copy the session trusts.
+    checkpoint: Option<Vec<u32>>,
 }
 
 static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -160,6 +170,7 @@ impl<F: ArchForward> Session<F> {
             forward,
             processed: Vec::new(),
             id: NEXT_SESSION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            checkpoint: None,
         }
     }
 
@@ -216,6 +227,24 @@ impl<F: ArchForward> Session<F> {
         self.processed.len()
     }
 
+    /// Drop every prefix the session could resume from — the held positions
+    /// (and, where the session has one, the #4214 checkpoint) — so the next turn prefills its whole prompt
+    /// (`Turn::reused == 0`). `apr bench` needs this: it times the same prompt
+    /// repeatedly, and a resumed prefix would report decode as prefill (#4445).
+    pub fn forget_prefix(&mut self) {
+        // Exhaustive on purpose: a field added to Session (the car's #4214
+        // `checkpoint` is one) fails to compile here until it is reset too, so
+        // no merge can leave a resumable prefix behind silently.
+        let Self {
+            forward: _,
+            processed,
+            id: _,
+            checkpoint,
+        } = self;
+        processed.clear();
+        *checkpoint = None;
+    }
+
     /// `tokens` strictly extends what the state holds.
     fn extends(&self, tokens: &[u32]) -> bool {
         !self.processed.is_empty()
@@ -231,15 +260,75 @@ impl<F: ArchForward> Session<F> {
         } else {
             0
         };
+        Ok((self.step(tokens, start)?, start))
+    }
+
+    /// Bring the state up to a strict prefix of `prompt` that
+    /// [`Self::advance_and_choose`] then extends with the rest: resume from the
+    /// checkpoint an earlier turn left when `prompt` does not extend the state
+    /// but repeats what the checkpoint holds (#4214: the same prompt again;
+    /// #4274: a chat history re-rendered with the last reply changed), and
+    /// prefill up to a new checkpoint where [`ArchForward::checkpoint_at`] says.
+    /// Returns how many leading tokens of `prompt` were already held.
+    fn prepare_prompt(&mut self, prompt: &[u32]) -> Result<usize> {
+        let mut start = if self.extends(prompt) {
+            self.processed.len()
+        } else {
+            0
+        };
+        if start == 0 {
+            if let Some(held) = self.checkpoint.take() {
+                if prompt.len() > held.len() && prompt.starts_with(&held) {
+                    match self.forward.restore_checkpoint() {
+                        Ok(true) => {
+                            start = held.len();
+                            self.processed.clone_from(&held);
+                            self.checkpoint = Some(held);
+                        },
+                        Ok(false) => {},
+                        Err(e) => {
+                            self.processed.clear();
+                            return Err(e);
+                        },
+                    }
+                } else {
+                    self.checkpoint = Some(held);
+                }
+            }
+        }
+        let reused = start;
+        if let Some(k) = self
+            .forward
+            .checkpoint_at(prompt)
+            .filter(|&k| k > start && k < prompt.len())
+        {
+            self.step(&prompt[..k], start)?;
+            self.checkpoint = match self.forward.save_checkpoint() {
+                Ok(()) => Some(prompt[..k].to_vec()),
+                Err(_) => None,
+            };
+        }
+        Ok(reused)
+    }
+
+    /// Forward `tokens` from `start` (the state holds `tokens[..start]`) and
+    /// record what the state then holds.
+    fn step(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
+        // Positions under the checkpoint are about to be rewritten: the copy
+        // no longer matches the attention rows it would resume on.
+        if self.checkpoint.as_ref().is_some_and(|c| start < c.len()) {
+            self.checkpoint = None;
+        }
         match self.forward.forward(tokens, start) {
             Ok(logits) => {
                 self.processed.truncate(start);
                 self.processed.extend_from_slice(&tokens[start..]);
-                Ok((logits, start))
+                Ok(logits)
             },
             Err(e) => {
                 // What the state holds after a failed forward is unknown.
                 self.processed.clear();
+                self.checkpoint = None;
                 Err(e)
             },
         }
@@ -249,26 +338,21 @@ impl<F: ArchForward> Session<F> {
     /// return it and how many leading tokens were already held. A greedy
     /// choice with no repetition penalty goes through
     /// [`ArchForward::forward_greedy`] when the backend has it.
-    ///
-    /// With `config.logprobs_top_k` > 0 the choice always comes from host
-    /// logits (the device argmax never shows them), and one [`StepLogprobs`]
-    /// is pushed to `steps`, ranked on the logits the FORWARD produced —
-    /// before the repetition penalty — so it records what the model said,
-    /// not what the sampler was handed (#4026).
     fn advance_and_choose(
         &mut self,
         tokens: &[u32],
         config: &QuantizedGenerateConfig,
         rng: &mut rand::rngs::StdRng,
-        steps: &mut Vec<StepLogprobs>,
     ) -> Result<(u32, usize)> {
-        let recording = config.logprobs_top_k > 0;
-        if !recording && is_greedy(config) && !penalty_active(config) {
+        if is_greedy(config) && !penalty_active(config) {
             let start = if self.extends(tokens) {
                 self.processed.len()
             } else {
                 0
             };
+            if self.checkpoint.as_ref().is_some_and(|c| start < c.len()) {
+                self.checkpoint = None;
+            }
             match self.forward.forward_greedy(tokens, start) {
                 Ok(Some(next)) => {
                     self.processed.truncate(start);
@@ -278,37 +362,25 @@ impl<F: ArchForward> Session<F> {
                 Ok(None) => {},
                 Err(e) => {
                     self.processed.clear();
+                    self.checkpoint = None;
                     return Err(e);
                 },
             }
         }
         let (mut logits, reused) = self.advance_to(tokens)?;
-        // The forward's logits, before the penalty edits them in place: the
-        // chosen token's logprob is read from these, not the penalised row.
-        let raw = recording.then(|| logits.clone());
         OwnedQuantizedModel::apply_repeat_penalty(
             &mut logits,
             tokens,
             config.repeat_penalty,
             config.repeat_last_n,
         );
-        let chosen = choose_token(&logits, config, rng);
-        if let Some(raw) = raw {
-            let lse = logsumexp_full(&raw);
-            steps.push(StepLogprobs {
-                step: steps.len(),
-                chosen,
-                top: top_k_logprobs(&raw, config.logprobs_top_k),
-                chosen_logprob: raw.get(chosen as usize).map_or(f32::NAN, |&x| x - lse),
-                logsumexp_full: lse,
-            });
-        }
-        Ok((chosen, reused))
+        Ok((choose_token(&logits, config, rng), reused))
     }
 
     fn reserve(&mut self, positions: usize) -> Result<()> {
         if self.forward.reserve(positions)? {
             self.processed.clear();
+            self.checkpoint = None;
         }
         Ok(())
     }
@@ -340,8 +412,52 @@ impl<F: ArchForward> Session<F> {
             digest: prompt_digest(prompt),
             on_gpu: self.on_gpu(),
         });
-        let arch = self.arch();
         let context_length = self.context_length();
+        self.admit_prompt(prompt, context_length)?;
+        // Every position the turn can reach, reserved up front so the state
+        // never grows (and never re-prefills) mid-generation.
+        let (budget, context_limited) =
+            turn_budget(prompt.len(), config.max_tokens, context_length);
+        self.reserve(prompt.len() + budget)?;
+
+        let reused = self.prepare_prompt(prompt)?;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
+        let (mut next, _) = self.advance_and_choose(prompt, config, &mut rng)?;
+        let mut tokens = prompt.to_vec();
+        let mut context_capped = false;
+        for generated in 1..=budget {
+            if config.cancel.is_cancelled() {
+                break;
+            }
+            // The first token is the prefill's; every later one costs a decode
+            // forward, run only once the poll has passed, so a cancelled turn
+            // never computes a token it throws away (#4325).
+            if generated > 1 {
+                next = self.advance_and_choose(&tokens, config, &mut rng)?.0;
+            }
+            tokens.push(next);
+            let keep_going = on_token(next);
+            if !keep_going || config.stop_tokens.contains(&next) {
+                break;
+            }
+            if generated == budget {
+                context_capped = context_limited;
+                break;
+            }
+        }
+        Ok(Turn {
+            tokens,
+            reused,
+            used_gpu: self.on_gpu(),
+            context_capped,
+        })
+    }
+
+    /// Refuse a prompt `generate` cannot serve: an empty one, or one the
+    /// declared context cannot hold with room to answer (refused whole, never
+    /// truncated).
+    fn admit_prompt(&self, prompt: &[u32], context_length: usize) -> Result<()> {
+        let arch = self.arch();
         if prompt.is_empty() {
             return Err(RealizarError::InvalidShape {
                 reason: format!("{arch} session: the prompt is empty"),
@@ -357,47 +473,7 @@ impl<F: ArchForward> Session<F> {
                 ),
             });
         }
-        // Every position the turn can reach, reserved up front so the state
-        // never grows (and never re-prefills) mid-generation.
-        let (budget, context_limited) =
-            turn_budget(prompt.len(), config.max_tokens, context_length);
-        self.reserve(prompt.len() + budget)?;
-
-        let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
-        let mut steps = Vec::new();
-        let (mut next, reused) = self.advance_and_choose(prompt, config, &mut rng, &mut steps)?;
-        let mut tokens = prompt.to_vec();
-        let mut context_capped = false;
-        for generated in 1..=budget {
-            if config.cancel.is_cancelled() {
-                break;
-            }
-            tokens.push(next);
-            let keep_going = on_token(next);
-            if !keep_going || config.stop_tokens.contains(&next) {
-                break;
-            }
-            if generated == budget {
-                context_capped = context_limited;
-                break;
-            }
-            next = self
-                .advance_and_choose(&tokens, config, &mut rng, &mut steps)?
-                .0;
-        }
-        // A step past the last kept token (a cancel before it was pushed) is
-        // not part of the turn.
-        steps.truncate(tokens.len() - prompt.len());
-        if config.logprobs_top_k > 0 {
-            LAST_TURN_STEPS.with(|c| c.replace(Some(steps.clone())));
-        }
-        Ok(Turn {
-            tokens,
-            reused,
-            used_gpu: self.on_gpu(),
-            context_capped,
-            steps,
-        })
+        Ok(())
     }
 
     /// Teacher-forced scoring, for perplexity: forward `tokens` one position

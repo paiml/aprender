@@ -217,7 +217,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -228,7 +228,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -248,9 +248,10 @@ dependencies = [
 
 [[package]]
 name = "apr-cli"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-cgp",
  "aprender-common",
  "aprender-compute",
@@ -265,6 +266,7 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-profile",
+ "aprender-ptx-debug",
  "aprender-quant",
  "aprender-rag-cli",
  "aprender-registry",
@@ -323,7 +325,7 @@ dependencies = [
 
 [[package]]
 name = "apr-format"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "bincode",
  "cargo_metadata",
@@ -341,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "apr-cli",
  "aprender-core",
@@ -349,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-compute"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-core",
  "criterion 0.7.0",
@@ -358,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-tokenizer"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-core",
  "criterion 0.7.0",
@@ -366,10 +368,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-build-sha"
+version = "0.70.2"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "aprender-cbtop"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
  "aprender-gpu",
@@ -392,9 +402,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-cgp"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-gpu",
  "chrono",
  "clap",
@@ -412,17 +423,19 @@ dependencies = [
 
 [[package]]
 name = "aprender-common"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "clap",
  "lz4_flex 0.11.6",
  "zstd",
 ]
 
 [[package]]
 name = "aprender-compute"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
+ "aprender-contracts",
  "aprender-contracts-macros",
  "aprender-core",
  "aprender-cuda-edge",
@@ -469,9 +482,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-compute-xtask"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "bashrs",
  "clap",
  "colored 2.2.0",
@@ -483,11 +497,13 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-contracts-macros",
+ "blake3",
  "criterion 0.5.1",
  "half",
+ "proc-macro2",
  "proptest",
  "regex",
  "serde",
@@ -501,8 +517,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-cli"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
+ "aprender-common",
  "aprender-contracts",
  "aprender-update",
  "clap",
@@ -515,7 +533,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-macros"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -525,7 +543,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contrastive-data"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-contracts-macros",
  "aprender-rand",
@@ -540,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-core"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aes-gcm",
  "alsa",
@@ -594,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cuda-edge"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-gpu",
  "proptest",
@@ -605,7 +623,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cupti"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "bindgen",
  "bitflags 2.13.0",
@@ -615,9 +633,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-data"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aes-gcm",
+ "aprender-build-sha",
  "aprender-test-lib",
  "argon2",
  "arrow 59.2.0",
@@ -667,11 +686,13 @@ dependencies = [
 
 [[package]]
 name = "aprender-db"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
+ "aprender-contracts",
  "arrow 59.2.0",
  "axum 0.7.9",
  "bytemuck",
@@ -712,7 +733,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-distribute"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-compute",
  "aprender-db",
@@ -742,8 +763,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-explain"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-gpu",
  "aprender-present-core",
  "aprender-present-terminal",
@@ -760,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-fft"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -769,7 +791,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-gemm-codegen"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -778,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-gpu"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-common",
  "aprender-simulate",
@@ -796,7 +818,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-graph"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
  "aprender-compute",
@@ -817,7 +839,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-image"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -826,7 +848,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-mcp"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "inventory",
  "jsonschema",
@@ -839,7 +861,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-monte-carlo"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender",
  "assert_cmd",
@@ -858,9 +880,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-orchestrate"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
  "aprender-contracts",
@@ -928,8 +951,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-cli"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
+ "aprender-contracts",
  "aprender-present-yaml",
  "clap",
  "notify",
@@ -941,8 +966,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-core"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-contracts",
  "aprender-contracts-macros",
  "criterion 0.7.0",
  "proptest",
@@ -953,7 +979,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-layout"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-present-core",
  "criterion 0.7.0",
@@ -964,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-lib"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-contracts",
  "aprender-present-core",
@@ -993,8 +1019,10 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-terminal"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
+ "aprender-contracts",
  "aprender-present-core",
  "bitvec",
  "clap",
@@ -1013,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-test"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-present-core",
  "aprender-present-test-macros",
@@ -1024,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-test-macros"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1033,7 +1061,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-widgets"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-present-core",
  "aprender-present-yaml",
@@ -1045,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-yaml"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-present-core",
  "proptest",
@@ -1055,10 +1083,11 @@ dependencies = [
 
 [[package]]
 name = "aprender-profile"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "addr2line 0.25.1",
  "anyhow",
+ "aprender-build-sha",
  "aprender-compute",
  "aprender-core",
  "aprender-db",
@@ -1107,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-profile-core"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "hex",
  "serde",
@@ -1117,8 +1146,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-ptx-debug"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "clap",
  "proptest",
  "thiserror 2.0.18",
@@ -1126,8 +1156,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-certify"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "chrono",
  "clap",
  "proptest",
@@ -1137,8 +1168,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-cli"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-qa-certify",
  "aprender-qa-gen",
  "aprender-qa-report",
@@ -1156,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-gen"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1173,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-report"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
  "aprender-qa-gen",
@@ -1191,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-runner"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
  "aprender-qa-gen",
@@ -1216,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-quant"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "half",
  "serde_json",
@@ -1224,10 +1256,11 @@ dependencies = [
 
 [[package]]
 name = "aprender-rag"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-common",
  "aprender-compute",
+ "aprender-contracts",
  "aprender-serve",
  "async-trait",
  "bincode",
@@ -1252,9 +1285,11 @@ dependencies = [
 
 [[package]]
 name = "aprender-rag-cli"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
+ "aprender-build-sha",
+ "aprender-common",
  "aprender-rag",
  "assert_cmd",
  "blake3",
@@ -1270,7 +1305,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-rand"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1279,7 +1314,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-registry"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
  "aprender-core",
@@ -1309,21 +1344,17 @@ dependencies = [
 
 [[package]]
 name = "aprender-review-experiment"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
- "half",
- "regex",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "toml 0.8.23",
  "ureq 2.12.1",
- "zstd",
 ]
 
 [[package]]
 name = "aprender-serve"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "anyhow",
  "approx",
@@ -1394,7 +1425,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-shell"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-core",
  "clap",
@@ -1409,8 +1440,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-simulate"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-contracts",
  "aprender-contracts-macros",
  "aprender-present-core",
@@ -1432,6 +1464,7 @@ dependencies = [
  "proptest",
  "rand 0.9.4",
  "rand_pcg",
+ "regex",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -1449,7 +1482,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-solve"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "criterion 0.7.0",
  "half",
@@ -1459,7 +1492,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-sparse"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1468,7 +1501,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-tensor"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1477,8 +1510,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-cli"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-test-lib",
  "assert_cmd",
  "atty",
@@ -1505,7 +1539,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-derive"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1515,7 +1549,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-js-gen"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "blake3",
  "chrono",
@@ -1531,7 +1565,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-lib"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-compute",
  "aprender-present-core",
@@ -1577,7 +1611,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-showcase"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-present-terminal",
  "aprender-test-lib",
@@ -1594,7 +1628,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "approx",
  "aprender-common",
@@ -1663,8 +1697,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-bench"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "assert_cmd",
@@ -1680,7 +1715,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-common"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-viz",
  "clap",
@@ -1692,8 +1727,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-distill"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "assert_cmd",
@@ -1713,8 +1749,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-inspect"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "assert_cmd",
@@ -1729,8 +1766,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-lora"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "assert_cmd",
@@ -1745,8 +1783,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-shell"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-train",
  "aprender-train-common",
  "clap",
@@ -1761,7 +1800,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-wasm"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "proptest",
  "serde",
@@ -1772,7 +1811,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-tsp"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender",
  "assert_cmd",
@@ -1787,7 +1826,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-update"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "flate2",
  "semver",
@@ -1801,7 +1840,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "chrono",
  "criterion 0.5.1",
@@ -1813,8 +1852,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify-ml"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-compute",
  "aprender-core",
  "aprender-profile",
@@ -1843,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-viz"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "approx",
  "aprender-common",
@@ -1872,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-zram-adaptive",
  "aprender-zram-core",
@@ -1882,7 +1922,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-adaptive"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-zram-core",
  "proptest",
@@ -1891,8 +1931,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-cli"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-zram-adaptive",
  "aprender-zram-core",
  "clap",
@@ -1905,7 +1946,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-core"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
  "aprender-gpu",
  "criterion 0.7.0",
@@ -1917,8 +1958,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-generator"
-version = "0.69.3"
+version = "0.70.2"
 dependencies = [
+ "aprender-build-sha",
  "aprender-zram-core",
  "clap",
  "serde",
@@ -2444,13 +2486,13 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.89"
+version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
+checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.118",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -3817,9 +3859,9 @@ dependencies = [
 
 [[package]]
 name = "chacha20"
-version = "0.10.0"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
+checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if 1.0.4",
  "cpufeatures 0.3.0",
@@ -4106,7 +4148,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4437,27 +4479,27 @@ dependencies = [
 
 [[package]]
 name = "cranelift-assembler-x64"
-version = "0.134.4"
+version = "0.135.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16c273ba1bfc3a1cb27cb4f83df27134f3cb638a61f5ed79ab22cf86eb13da0d"
+checksum = "3bfbb8f30b72ef5cedf2dbd85ee2f167a33c888d492a40e999250187138663c9"
 dependencies = [
  "cranelift-assembler-x64-meta",
 ]
 
 [[package]]
 name = "cranelift-assembler-x64-meta"
-version = "0.134.4"
+version = "0.135.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbf8909326a466739e83ffe11e74c0c8c6b4bfa911b612aece915daa746cff58"
+checksum = "5715fdd9d897798ba2bb834df5d6c1129319d51e82ddcf81812c23231e9b852b"
 dependencies = [
  "cranelift-srcgen",
 ]
 
 [[package]]
 name = "cranelift-bforest"
-version = "0.134.4"
+version = "0.135.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cb26b06b54d8b2f8cdf4d440a32fc3b3b91c71c162333a69a70a66fa265fc45"
+checksum = "2d8833598ae8644a2ee2aaee2adc0a28d9a8e1339ce1256531da1c8836a84373"
 dependencies = [
  "cranelift-entity",
  "wasmtime-internal-core",
@@ -4465,9 +4507,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-bitset"
-version = "0.134.4"
+version = "0.135.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ce4e57dbb7f73d08011808a19787c3a03c3e7854b2a479ed0b788915fb671be"
+checksum = "2400b60e450c2f5ec81a1392740201a03e2c230931ff44e19dc9167906614d24"
 dependencies = [
  "serde",
  "serde_derive",
@@ -4476,9 +4518,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-codegen"
-version = "0.134.4"
+version = "0.135.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74b0a8968f33d0bc13bc86fe70dd3947e93acc9f358ed9848e9988448972a9be"
+checksum = "c6c748bbddd79f8f2d3f35008698c3070259757f3300b465288afacce74b0882"
 dependencies = [
  "bumpalo",
  "cranelift-assembler-x64",
@@ -4507,9 +4549,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-codegen-meta"
-version = "0.134.4"
+version = "0.135.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f69e8e2fe9deb48ef7b8d0c61612f8c1e2277d0421c201e30a4c844a4ebac698"
+checksum = "39753c3a509e0f21ca912697a421b6f00256922b58ce45d7c3fa1bd9b567c620"
 dependencies = [
  "cranelift-assembler-x64-meta",
  "cranelift-codegen-shared",
@@ -4520,24 +4562,24 @@ dependencies = [
 
 [[package]]
 name = "cranelift-codegen-shared"
-version = "0.134.4"
+version = "0.135.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad4db1e87a65e9c5a832e3ede160830d4e34df938ac38b5604819f8825687e73"
+checksum = "de19c4fc55ac3cdeb8e153f35ef9f51db197da91a64c9811d0ddd21ed1b9d18d"
 
 [[package]]
 name = "cranelift-control"
-version = "0.134.4"
+version = "0.135.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9248cd37bb6ec460981f57ead368e32b1eca7a207ad50e3e9c7adc3b161f20e9"
+checksum = "9bbd919579d74a7212e6e849dc24ff015cb823e70051d01559eea828efaf773f"
 dependencies = [
  "arbitrary",
 ]
 
 [[package]]
 name = "cranelift-entity"
-version = "0.134.4"
+version = "0.135.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26b8bc91c0a3530d132acbf118965dabe9a084029eb0fa74b64760360dec3316"
+checksum = "c965e78d484108c59ac4270f43ce26cb70de789cd4df0ee0d9756bfbd5089464"
 dependencies = [
  "cranelift-bitset",
  "serde",
@@ -4547,9 +4589,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-frontend"
-version = "0.134.4"
+version = "0.135.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5086f2ebc084a98b387e522680f62ef65a512444d8382151e03088716d3a1714"
+checksum = "dec5d1896373de90819857157a3548b59a086eebe08bd0a54ed3fe464d9fc4f3"
 dependencies = [
  "cranelift-codegen",
  "hashbrown 0.17.1",
@@ -4560,15 +4602,15 @@ dependencies = [
 
 [[package]]
 name = "cranelift-isle"
-version = "0.134.4"
+version = "0.135.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6a658670f779afc2df083be201ebe54805f69b7b9ffa8dab04142b72ed751c9"
+checksum = "460bd4ddaa4f9f586ec82d066ea2c5a0a7166f1a2186e17b31b410ca76a2d503"
 
 [[package]]
 name = "cranelift-native"
-version = "0.134.4"
+version = "0.135.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16a41083b1fd953debd6f32d21fcda765b258f323ce907fdd6b4715f2769c478"
+checksum = "8d8d69e33b8e3a41c6bae61429b5541ac554a7d9007d34aaf3c0f5067e5fea81"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -4577,9 +4619,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-srcgen"
-version = "0.134.4"
+version = "0.135.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "244d9cd0759b0a3ccdd587cafb13434f9ea43b5c9d07701d277daf5cd0f7b7c1"
+checksum = "2b73d7e686f3518831f88ffe88be02c6c92be09930fc5ab90a3dfd9a4de3815e"
 
 [[package]]
 name = "crc"
@@ -5327,7 +5369,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5658,7 +5700,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6365,7 +6407,7 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
+ "windows-link 0.1.3",
  "windows-result 0.4.1",
 ]
 
@@ -7648,7 +7690,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8965,7 +9007,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9438,7 +9480,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -10142,7 +10184,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -10155,7 +10197,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -10183,9 +10225,9 @@ dependencies = [
 
 [[package]]
 name = "pulley-interpreter"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed2bd641cb6a3ec5bffe60405568933163e0ea619da0943e9d2a417ceaa7fe82"
+checksum = "073ae675620c561237c9d48c35f176b3a45e06faa5f70c4b0ad54ae01b417a39"
 dependencies = [
  "cranelift-bitset",
  "log",
@@ -10195,9 +10237,9 @@ dependencies = [
 
 [[package]]
 name = "pulley-macros"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3fd4024d1e559eaf5579bc8ad84a2b5915f34b47acc13a06ffba7dac401b166"
+checksum = "ba388ebb9564a2065d81add580ce0d377c160875c3b8316a96b8abd17c06711f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -10439,7 +10481,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
 dependencies = [
- "chacha20 0.10.0",
+ "chacha20 0.10.2",
  "getrandom 0.4.3",
  "rand_core 0.10.1",
 ]
@@ -10736,9 +10778,9 @@ dependencies = [
 
 [[package]]
 name = "regalloc2"
-version = "0.15.1"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de2c52737737f8609e94f975dee22854a2d5c125772d4b1cf292120f4d45c186"
+checksum = "757712e8e61590d6d4f5d563483755538b5aa13467837a3b41cd9832509a7f85"
 dependencies = [
  "allocator-api2",
  "bumpalo",
@@ -11170,7 +11212,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11250,7 +11292,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12029,7 +12071,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -12310,6 +12352,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8593e8e72159ed2257d083c7a454a85cbf854f37a0966d8d483aff8c8a3ebcee"
 dependencies = [
  "proc-macro2",
+ "quote",
  "unicode-ident",
 ]
 
@@ -12519,7 +12562,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12538,7 +12581,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -14051,9 +14094,9 @@ checksum = "3746ad029217960123cf2ebf939dda51eb931ba9f8f09c117e39c820b96aa794"
 
 [[package]]
 name = "wasm-compose"
-version = "0.252.0"
+version = "0.254.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d59b710751a35d54732a63851cdfacbfb2266b7160ce174faf269d3f4e84e31b"
+checksum = "4c0c1033c10d23d96f40e761ae66cc30c70cea3323a8edfe9159dac42108873f"
 dependencies = [
  "anyhow",
  "heck 0.5.0",
@@ -14061,19 +14104,41 @@ dependencies = [
  "log",
  "petgraph",
  "smallvec",
- "wasm-encoder",
- "wasmparser",
+ "wasm-encoder 0.254.2",
+ "wasmparser 0.254.2",
  "wat",
 ]
 
 [[package]]
 name = "wasm-encoder"
-version = "0.252.0"
+version = "0.254.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8185ae345fa5687c054626ff9a50e7089797a343d9904d1dc9820eb4c4d3196f"
+checksum = "ebaca0b540bdb15d195ff34fb23074255948708b8916a11a339ba4513dc61906"
 dependencies = [
  "leb128fmt",
- "wasmparser",
+ "wasmparser 0.254.2",
+]
+
+[[package]]
+name = "wasm-encoder"
+version = "0.259.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1d0246511d901aacf25d2dc9111f0054947de5e093fe662099e709ff7530dc3"
+dependencies = [
+ "leb128fmt",
+ "wasmparser 0.259.0",
+]
+
+[[package]]
+name = "wasm-metadata"
+version = "0.254.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d1880dd9a848aa68f387966256c34ad49abb4607e3cfa35720d2723d0591cd3"
+dependencies = [
+ "anyhow",
+ "indexmap 2.14.0",
+ "wasm-encoder 0.254.2",
+ "wasmparser 0.254.2",
 ]
 
 [[package]]
@@ -14104,9 +14169,9 @@ dependencies = [
 
 [[package]]
 name = "wasmparser"
-version = "0.252.0"
+version = "0.254.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3eb099dcadcde5be9eef55e3a337128efd4e44b4c93122487e4d2e4e1c6627c"
+checksum = "c5ff8685b587722894b6f25958fc608d315b93b8d23647bfb567664e7006d757"
 dependencies = [
  "bitflags 2.13.0",
  "hashbrown 0.17.1",
@@ -14116,28 +14181,38 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasmprinter"
-version = "0.252.0"
+name = "wasmparser"
+version = "0.259.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7142797de29b35ab8dbf15c00f55fda75d409da4c423a8ab8bd6b667a785824b"
+checksum = "0f7c12eac7bb587801590f6a67ff0bc84d0748513864b71108e4b311cc3df694"
+dependencies = [
+ "bitflags 2.13.0",
+ "indexmap 2.14.0",
+ "semver",
+]
+
+[[package]]
+name = "wasmprinter"
+version = "0.254.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b03c8f270f3f384f70f42869b5ff7f6253fe4f0aa8590f7edd332c1943e5f51"
 dependencies = [
  "anyhow",
  "termcolor",
- "wasmparser",
+ "wasmparser 0.254.2",
 ]
 
 [[package]]
 name = "wasmtime"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cdaf5b8af5713146e3a62d940c71e3eb2ad1ebacfa6b55f0c8509a5b4b87718"
+checksum = "10d804b62a332e9221b1441ed56f4da4309494423958efe42c7b0d67a2334ca4"
 dependencies = [
  "addr2line 0.26.1",
  "async-trait",
  "bitflags 2.13.0",
  "bumpalo",
  "cc",
- "cfg-if 1.0.4",
  "encoding_rs",
  "futures",
  "fxprof-processed-profile",
@@ -14161,8 +14236,8 @@ dependencies = [
  "target-lexicon",
  "tempfile",
  "wasm-compose",
- "wasm-encoder",
- "wasmparser",
+ "wasm-encoder 0.254.2",
+ "wasmparser 0.254.2",
  "wasmtime-environ",
  "wasmtime-internal-cache",
  "wasmtime-internal-component-macro",
@@ -14181,9 +14256,9 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-environ"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58793271eab7ec26bab99ca497131f8b37702e7dc39e2f2d18293e3e915b4964"
+checksum = "e0c2ac967bc75bf01e8619f446d75c8276df784917fda6afe922ee68cd642fa9"
 dependencies = [
  "anyhow",
  "cpp_demangle",
@@ -14203,8 +14278,8 @@ dependencies = [
  "sha2 0.10.9",
  "smallvec",
  "target-lexicon",
- "wasm-encoder",
- "wasmparser",
+ "wasm-encoder 0.254.2",
+ "wasmparser 0.254.2",
  "wasmprinter",
  "wasmtime-internal-component-util",
  "wasmtime-internal-core",
@@ -14212,9 +14287,9 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-cache"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ede02ba77442cab88a2ddd5d16373e8bc450b55e05de8be039b024987a53d5a7"
+checksum = "4fb5c6d2871ba6302a742e7309e383af6d0d690bcdb0271aaf510141e3baee21"
 dependencies = [
  "base64 0.22.1",
  "directories-next",
@@ -14232,9 +14307,9 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-component-macro"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5bba4eff4804620bae04d7793308d97a0c5a8a97ea19e635452518f84560f84"
+checksum = "952610009717d51d264ffdbeba778f2f58420963fb783151d729ab8afcddf776"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -14247,15 +14322,15 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-component-util"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d7032ff6b4d7a45e05be1cb32ec1756df5f2669f08296dbe2c61c3789dead2c"
+checksum = "26cd24b2c71deaec06728852016d5a3c6b22ca03e50e8fbff96b997841ad882d"
 
 [[package]]
 name = "wasmtime-internal-core"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f41d3b2cb9c3de7b696690af070d408b5e357011832f8b8bb7fbb315dbb620ed"
+checksum = "693ca3f8e8b1718acd843710efebc2689b0c2156caf83bdd577d31689f839c83"
 dependencies = [
  "anyhow",
  "hashbrown 0.17.1",
@@ -14265,11 +14340,10 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-cranelift"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d5cda5b90247978dd2ba6ca4e309508da19e9244445671d2d0e6a34e5c3b847"
+checksum = "28dfbf19adfcab5861d954a05610bc3edce3c01800355576db9f78ed24cf95f7"
 dependencies = [
- "cfg-if 1.0.4",
  "cranelift-codegen",
  "cranelift-control",
  "cranelift-entity",
@@ -14283,7 +14357,7 @@ dependencies = [
  "smallvec",
  "target-lexicon",
  "thiserror 2.0.18",
- "wasmparser",
+ "wasmparser 0.254.2",
  "wasmtime-environ",
  "wasmtime-internal-core",
  "wasmtime-internal-unwinder",
@@ -14292,12 +14366,11 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-fiber"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d126366176553e8f304e8ac2078a4cc37134fe8f19d4d4695a09c5a2f577f10"
+checksum = "8dc11ef6c20f96019887809768f5bb54ba4f628217ef2830dacaa71539ce1a6b"
 dependencies = [
  "cc",
- "cfg-if 1.0.4",
  "libc",
  "rustix 1.1.4",
  "wasmtime-environ",
@@ -14307,9 +14380,9 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-jit-debug"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1d28ff131bc40e11d84bc3a9fa0d264506439ffbbc89f3562fbb529d1caa617"
+checksum = "809836723228f05c0b0ac117e04b5cb0fa49e93beb84d9ccdba2202b38907bf7"
 dependencies = [
  "cc",
  "object 0.39.1",
@@ -14319,11 +14392,10 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-jit-icache-coherence"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a52de8b6afbfcd618073f592c1450cb661574e7061f3f4a44f1f7ec0c7f7909"
+checksum = "01e13da6770d2e0d2459506332054111fec0c0a66a264c47952ee0abc5f7f7fc"
 dependencies = [
- "cfg-if 1.0.4",
  "libc",
  "wasmtime-internal-core",
  "windows-sys 0.61.2",
@@ -14331,11 +14403,10 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-unwinder"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5524fbaaf3d2134dd6229164d7fc81e443cce06d1e0576524d5f4e86e747cb13"
+checksum = "0bbcdc3e8f2054b6ab68a64b64e3ecc9b08daa9a665973dbfd9d5ec7ec25fac3"
 dependencies = [
- "cfg-if 1.0.4",
  "cranelift-codegen",
  "log",
  "object 0.39.1",
@@ -14344,9 +14415,9 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-versioned-export-macros"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e93bb9ae112a80618510f938275a5d88637b656e7d0a021fc906f52206c708ad"
+checksum = "636a804fd398911934779b0da36bf037b404c1a5a9ea7a29fa89611d9c0165f0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -14355,35 +14426,36 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-wit-bindgen"
-version = "47.0.4"
+version = "48.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfdbdd9d6fab1ecb67a7dc189e32c9e341444945fb709437bf8aab25d9a88459"
+checksum = "c0237fd2a28d0604a5db63d2945a295573686d878461b5606381324426af54f2"
 dependencies = [
  "anyhow",
  "bitflags 2.13.0",
  "heck 0.5.0",
  "indexmap 2.14.0",
+ "wit-component",
  "wit-parser",
 ]
 
 [[package]]
 name = "wast"
-version = "252.0.0"
+version = "259.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "942a3449d6a593fccc111a6241c8df52bda168af30e40bf9580d4394d7374c65"
+checksum = "c69beba8d9da07af9a0971b559149a2ac4729895b55144de4fddbf5a02660648"
 dependencies = [
  "bumpalo",
  "leb128fmt",
  "memchr",
  "unicode-width 0.2.0",
- "wasm-encoder",
+ "wasm-encoder 0.259.0",
 ]
 
 [[package]]
 name = "wat"
-version = "1.252.0"
+version = "1.259.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c72a4ba7088f7bac94cf516e49882bdf97068904a563768cf249efc839ec42cb"
+checksum = "c6eec44b0c80391b20fb7ad9ea440c72c5d382385bdf74444bb18321c425017e"
 dependencies = [
  "wast",
 ]
@@ -15008,7 +15080,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -15628,10 +15700,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
-name = "wit-parser"
-version = "0.252.0"
+name = "wit-component"
+version = "0.254.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4266bea110371c620ccf3201c5023676046bc4556e5c7cfb5d500bda5ebc162d"
+checksum = "1c96b3cea6838dbea55173baa56991fcb087896c321b0a770db201e5a0bd3506"
+dependencies = [
+ "anyhow",
+ "bitflags 2.13.0",
+ "indexmap 2.14.0",
+ "log",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "wasm-encoder 0.254.2",
+ "wasm-metadata",
+ "wasmparser 0.254.2",
+ "wit-parser",
+]
+
+[[package]]
+name = "wit-parser"
+version = "0.254.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22672d61bfb9df46a16b46ce38522293aee1cc4749fc84a3464ce4083b3d5fd6"
 dependencies = [
  "anyhow",
  "hashbrown 0.17.1",
@@ -15643,7 +15734,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "unicode-ident",
- "wasmparser",
+ "wasmparser 0.254.2",
 ]
 
 [[package]]

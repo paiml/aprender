@@ -13,12 +13,25 @@ use tower::ServiceExt;
 /// The real hybrid file the rest of the Qwen3.5 tests are specified against.
 const MODEL_PATH: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
 
+/// #4251: a runner that keeps the file elsewhere names it here (the PERF-053 `APR_*_MODEL`
+/// override pattern). cuda-nightly resolves the file itself and fails on a `SKIP:` line, so an
+/// absent model is RED there and a skip only on a dev box.
+const MODEL_ENV: &str = "APR_QWEN35_MODEL";
+
+fn model_path() -> String {
+    std::env::var(MODEL_ENV)
+        .ok()
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| MODEL_PATH.to_string())
+}
+
 fn state_or_skip(no_gpu: bool) -> Option<(AppState, Arc<MappedGGUFModel>)> {
-    if !std::path::Path::new(MODEL_PATH).exists() {
-        eprintln!("SKIP: {MODEL_PATH} is absent");
+    let path = model_path();
+    if !std::path::Path::new(&path).exists() {
+        eprintln!("SKIP: {path} is absent");
         return None;
     }
-    let mapped = Arc::new(MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF"));
+    let mapped = Arc::new(MappedGGUFModel::from_path(&path).expect("map the GGUF"));
     let vocab = mapped
         .model
         .vocabulary()
@@ -57,7 +70,7 @@ fn one_shot_answer(mapped: &MappedGGUFModel, max_tokens: usize, no_gpu: bool) ->
     // #4263: `apr run`'s load — the host once per file, a device state sized
     // to the one call.
     let qwen = crate::gguf::qwen35_session::Qwen35Forward::cached_host(
-        std::path::Path::new(MODEL_PATH),
+        std::path::Path::new(&model_path()),
         mapped,
     )
     .expect("host");
@@ -195,12 +208,20 @@ fn the_degeneracy_check_catches_the_defect_it_is_named_for() {
     // #3571's exact output. If this line ever goes green, the test below has been
     // replaced by one that cannot see the defect it is named for -- which is worse
     // than the 503 it used to assert, because it would look like coverage.
-    assert!(is_degenerate_completion(&"\n".repeat(1024)), "1024 newlines");
+    assert!(
+        is_degenerate_completion(&"\n".repeat(1024)),
+        "1024 newlines"
+    );
     assert!(is_degenerate_completion(""), "empty");
     assert!(is_degenerate_completion("   \t  "), "whitespace only");
-    assert!(is_degenerate_completion("aaaaaaaa"), "one character repeated");
+    assert!(
+        is_degenerate_completion("aaaaaaaa"),
+        "one character repeated"
+    );
     // And it must NOT fire on a real answer, or it would fail every green run.
-    assert!(!is_degenerate_completion(" Lima, and the capital of Haiti is"));
+    assert!(!is_degenerate_completion(
+        " Lima, and the capital of Haiti is"
+    ));
     assert!(!is_degenerate_completion(" Paris"));
 }
 
@@ -393,8 +414,16 @@ async fn gpu_a_chat_request_answers_from_the_gpu_session() {
 /// every gate stayed green because none of them sent a prompt through the
 /// router. The counter is `Qwen35Session::batched_prefills`, which moves only
 /// when `Qwen35CudaModel::prefill` returned logits — the F2 probe, the
-/// per-token fallback and decode steps never move it. Each request below
-/// starts a prompt the session does not hold, so each must add exactly one.
+/// per-token fallback and decode steps never move it.
+///
+/// Since #4214 a prompt prefills in up to two batched spans, split where
+/// `checkpoint_at` puts the checkpoint: before a chat's last `<|im_start|>`
+/// (the generation header), else before a raw prompt's last token. So the
+/// expected count follows the split, not "one per request": a fresh chat is
+/// 2, the same chat again resumes from its checkpoint and adds 1, and a raw
+/// prompt adds 1 batched span plus a one-token step the counter never sees.
+/// A per-token serve adds 0 on every route, so each assertion still catches
+/// #3596.
 ///
 /// RED under `APR_QWEN35_SESSION_PREFILL=per-token` (the session's own
 /// switch back to the one-token loop), and with the batched branch deleted
@@ -434,13 +463,15 @@ async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
     );
     assert_eq!(
         prefills(),
-        1,
-        "/v1/chat/completions prefilled its prompt one token at a time (#3596)"
+        2,
+        "/v1/chat/completions prefilled its prompt one token at a time (#3596) — \
+         want two batched spans, history then generation header (#4214)"
     );
 
     // 2. /v1/chat/completions, streamed — the SSE path spawns its own generate.
     // The session holds prompt + reply, so the same prompt again does not
-    // extend it: a fresh prefill from position 0.
+    // extend it; it restores request 1's checkpoint (#4214) and prefills only
+    // the generation header, one batched span.
     let (status, body) = post(
         create_router(state.clone()),
         "/v1/chat/completions",
@@ -450,8 +481,9 @@ async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         prefills(),
-        2,
-        "streamed /v1/chat/completions prefilled one token at a time (#3596)"
+        3,
+        "streamed /v1/chat/completions prefilled one token at a time (#3596) — \
+         want one batched span from request 1's checkpoint (#4214)"
     );
 
     // 3. /v1/completions — a raw prompt of several tokens.
@@ -462,10 +494,13 @@ async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // No `<|im_start|>`: the checkpoint goes before the last token, so the
+    // prompt is one batched span and a one-token step.
     assert_eq!(
         prefills(),
-        3,
-        "/v1/completions prefilled its prompt one token at a time (#3596)"
+        4,
+        "/v1/completions prefilled its prompt one token at a time (#3596) — \
+         want one batched span up to the last token (#4214)"
     );
 
     assert!(
@@ -643,8 +678,12 @@ async fn every_raw_route_answers_from_the_hybrid() {
         assert_eq!(status, StatusCode::OK, "{route}: {text}");
         let answer = if route.contains("batch") {
             let v: serde_json::Value = serde_json::from_str(&text).expect("json");
-            v["results"][0]["text"].as_str().expect("results[0].text").to_string()
-        } else if text.starts_with("event:") || text.contains("\nevent:") || text.contains("data:") {
+            v["results"][0]["text"]
+                .as_str()
+                .expect("results[0].text")
+                .to_string()
+        } else if text.starts_with("event:") || text.contains("\nevent:") || text.contains("data:")
+        {
             text.lines()
                 .filter_map(|l| l.strip_prefix("data: "))
                 .filter_map(|d| serde_json::from_str::<serde_json::Value>(d).ok())
@@ -654,7 +693,10 @@ async fn every_raw_route_answers_from_the_hybrid() {
             let v: serde_json::Value = serde_json::from_str(&text).expect("json");
             v["text"].as_str().expect("text").to_string()
         };
-        assert!(!answer.contains(QUESTION), "{route} echoed the prompt: {answer:?}");
+        assert!(
+            !answer.contains(QUESTION),
+            "{route} echoed the prompt: {answer:?}"
+        );
         assert_eq!(
             clean_chat_output(&answer),
             expected,
@@ -675,11 +717,15 @@ async fn a_thinking_on_request_is_served_the_official_on_prompt_3723() {
     };
     let msgs = [crate::chat_template::ChatMessage::new("user", QUESTION)];
     let render = |t: Option<bool>| {
-        let p = crate::chat_template::render_official_for_model(&mapped.model, &msgs, t).expect("renders");
+        let p = crate::chat_template::render_official_for_model(&mapped.model, &msgs, t)
+            .expect("renders");
         mapped.model.encode(&p).expect("encodes").len()
     };
     let (on_len, off_len) = (render(Some(true)), render(Some(false)));
-    assert_ne!(on_len, off_len, "the probe must distinguish the ON and OFF prompts");
+    assert_ne!(
+        on_len, off_len,
+        "the probe must distinguish the ON and OFF prompts"
+    );
     let app = create_router(state);
 
     let openai = |extra: serde_json::Value| {
@@ -690,15 +736,27 @@ async fn a_thinking_on_request_is_served_the_official_on_prompt_3723() {
         b
     };
     for (label, extra, want) in [
-        ("chat_template_kwargs ON", serde_json::json!({"chat_template_kwargs": {"enable_thinking": true}}), on_len),
+        (
+            "chat_template_kwargs ON",
+            serde_json::json!({"chat_template_kwargs": {"enable_thinking": true}}),
+            on_len,
+        ),
         ("think ON", serde_json::json!({"think": true}), on_len),
-        ("chat_template_kwargs OFF", serde_json::json!({"chat_template_kwargs": {"enable_thinking": false}}), off_len),
+        (
+            "chat_template_kwargs OFF",
+            serde_json::json!({"chat_template_kwargs": {"enable_thinking": false}}),
+            off_len,
+        ),
         ("absent = OFF", serde_json::json!({}), off_len),
     ] {
         let (status, body) = post(app.clone(), "/v1/chat/completions", openai(extra)).await;
         assert_eq!(status, StatusCode::OK, "{label}: {body}");
         let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
-        assert_eq!(json["usage"]["prompt_tokens"].as_u64(), Some(want as u64), "{label}: {body}");
+        assert_eq!(
+            json["usage"]["prompt_tokens"].as_u64(),
+            Some(want as u64),
+            "{label}: {body}"
+        );
     }
 
     let (status, body) = post(
@@ -715,13 +773,19 @@ async fn a_thinking_on_request_is_served_the_official_on_prompt_3723() {
     .await;
     assert_eq!(status, StatusCode::OK, "/api/chat think: {body}");
     let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
-    assert_eq!(json["prompt_eval_count"].as_u64(), Some(on_len as u64), "/api/chat think: {body}");
+    assert_eq!(
+        json["prompt_eval_count"].as_u64(),
+        Some(on_len as u64),
+        "/api/chat think: {body}"
+    );
 
     // Two spellings that disagree are refused, not picked between.
     let (status, body) = post(
         app,
         "/v1/chat/completions",
-        openai(serde_json::json!({"think": false, "chat_template_kwargs": {"enable_thinking": true}})),
+        openai(
+            serde_json::json!({"think": false, "chat_template_kwargs": {"enable_thinking": true}}),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -740,9 +804,29 @@ fn chat_template_kwargs_parse_and_refuse_unknown_keys_3723() {
         b
     };
     assert_eq!(parse(base.clone()).expect("parses").thinking(), None);
-    assert_eq!(parse(with("chat_template_kwargs", serde_json::json!({"enable_thinking": true}))).expect("parses").thinking(), Some(true));
-    assert_eq!(parse(with("think", serde_json::json!(false))).expect("parses").thinking(), Some(false));
-    assert!(parse(with("chat_template_kwargs", serde_json::json!({"reasoning_effort": "high"}))).is_err(), "an unknown kwarg is refused");
+    assert_eq!(
+        parse(with(
+            "chat_template_kwargs",
+            serde_json::json!({"enable_thinking": true})
+        ))
+        .expect("parses")
+        .thinking(),
+        Some(true)
+    );
+    assert_eq!(
+        parse(with("think", serde_json::json!(false)))
+            .expect("parses")
+            .thinking(),
+        Some(false)
+    );
+    assert!(
+        parse(with(
+            "chat_template_kwargs",
+            serde_json::json!({"reasoning_effort": "high"})
+        ))
+        .is_err(),
+        "an unknown kwarg is refused"
+    );
 }
 
 /// #4272: the stream's release rule. Nothing is sent while the decode ends in
@@ -752,13 +836,23 @@ fn a_stream_delta_holds_back_half_characters_and_possible_stops() {
     use crate::api::realize_handlers::qwen35_stream_delta;
     assert_eq!(qwen35_stream_delta("Lima", 0, &[]).as_deref(), Some("Lima"));
     assert_eq!(qwen35_stream_delta("Lima", 4, &[]), None, "nothing new");
-    assert_eq!(qwen35_stream_delta("Lim\u{FFFD}", 0, &[]), None, "half a char");
+    assert_eq!(
+        qwen35_stream_delta("Lim\u{FFFD}", 0, &[]),
+        None,
+        "half a char"
+    );
     let stops = ["END".to_string()];
     // "EN" could still become "END": two bytes are held.
-    assert_eq!(qwen35_stream_delta("LimaEN", 0, &stops).as_deref(), Some("Lima"));
+    assert_eq!(
+        qwen35_stream_delta("LimaEN", 0, &stops).as_deref(),
+        Some("Lima")
+    );
     assert_eq!(qwen35_stream_delta("LimaEN", 4, &stops), None);
     // The hold never splits a character.
-    assert_eq!(qwen35_stream_delta("aé", 0, &["xy".to_string()]).as_deref(), Some("a"));
+    assert_eq!(
+        qwen35_stream_delta("aé", 0, &["xy".to_string()]).as_deref(),
+        Some("a")
+    );
 }
 
 /// #4272: `stream: true` on `/v1/completions` was BUFFERED — the whole completion
@@ -780,7 +874,10 @@ async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
     let (status, plain) = post(create_router(state.clone()), "/v1/completions", body(false)).await;
     assert_eq!(status, StatusCode::OK, "{plain}");
     let plain: serde_json::Value = serde_json::from_str(&plain).expect("JSON");
-    let plain_text = plain["choices"][0]["text"].as_str().expect("text").to_string();
+    let plain_text = plain["choices"][0]["text"]
+        .as_str()
+        .expect("text")
+        .to_string();
 
     let t0 = std::time::Instant::now();
     let response = create_router(state)
@@ -837,46 +934,91 @@ async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
     assert_eq!(usage, plain["usage"], "the stream's usage is the body's");
 }
 
-/// PRM-S1 v2 (#4354): `POST /v1/chat/prompt-ids` reports the ids the chat path
-/// prefills — the same count the chat reply bills as `prompt_tokens`, and the same
-/// ids as rendering and encoding directly — in both thinking modes.
-#[tokio::test(flavor = "multi_thread")]
-async fn prompt_ids_are_the_ids_the_chat_path_prefills_4354() {
-    let Some((state, mapped)) = state_or_skip(true) else {
-        return;
-    };
-    let msgs = [crate::chat_template::ChatMessage::new("user", QUESTION)];
-    let app = create_router(state);
-    let mut seen = Vec::new();
-    for thinking in [false, true] {
-        let mut body = chat_body(false, 1);
-        body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": thinking });
-        let (status, reply) = post(app.clone(), "/v1/chat/prompt-ids", body.clone()).await;
-        assert_eq!(status, StatusCode::OK, "{reply}");
-        let json: serde_json::Value = serde_json::from_str(&reply).expect("JSON");
-        let ids: Vec<u32> = serde_json::from_value(json["prompt_ids"].clone()).expect("ids");
-        let direct = crate::chat_template::render_official_for_model(&mapped.model, &msgs, Some(thinking))
-            .expect("renders");
-        assert_eq!(json["prompt"].as_str(), Some(direct.as_str()), "thinking={thinking}");
-        assert_eq!(Some(ids.clone()), mapped.model.encode(&direct), "thinking={thinking}");
+// #4274: a chat's second turn, re-rendered through the official template (which
+// drops turn 1's think block), resumed from the checkpoint turn 1 left, and
+// answered exactly what a full re-prefill answers.
 
-        let (status, chat) = post(app.clone(), "/v1/chat/completions", body).await;
-        assert_eq!(status, StatusCode::OK, "{chat}");
-        let chat: serde_json::Value = serde_json::from_str(&chat).expect("JSON");
-        assert_eq!(chat["usage"]["prompt_tokens"].as_u64(), Some(ids.len() as u64));
-        seen.push(ids);
+fn msg_4274(role: &str, content: &str) -> ChatMessage {
+    ChatMessage {
+        role: role.to_string(),
+        content: content.to_string(),
+        ..Default::default()
     }
-    assert_ne!(seen[0], seen[1], "the probe must distinguish the ON and OFF prompts");
 }
 
-/// #3991 applied to the new route: it is mounted and listed only where a Qwen3.5
-/// session can answer it.
+/// The rendered and encoded prompt for `messages`, and the greedy turn.
+fn turn_4274(
+    session: &mut Qwen35Session,
+    mapped: &MappedGGUFModel,
+    messages: &[ChatMessage],
+    thinking: Option<bool>,
+) -> (Vec<u32>, crate::session::Turn) {
+    let m = &mapped.model;
+    let text = crate::api::realize_handlers::format_chat_messages_official_thinking(
+        Some(m),
+        messages,
+        Some("qwen35"),
+        thinking,
+    )
+    .expect("render");
+    let ids = m.encode(&text).expect("encode");
+    let config = QuantizedGenerateConfig {
+        max_tokens: 24,
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: m.eos_token_id().into_iter().collect(),
+        ..QuantizedGenerateConfig::default()
+    };
+    let turn = session
+        .generate(&ids, &config, &mut |_| true)
+        .expect("generate");
+    (ids, turn)
+}
+
 #[test]
-fn prompt_ids_route_is_listed_only_with_a_qwen35_session_4354() {
-    let config = crate::api::RouterConfig::default();
-    let mut caps = crate::api::RouteCapabilities::all();
-    let listed = |c| crate::api::advertised_routes_for(&config, c);
-    assert!(listed(caps).iter().any(|r| r == "POST /v1/chat/prompt-ids"));
-    caps.qwen35_prompt_ids = false;
-    assert!(!listed(caps).iter().any(|r| r.contains("/v1/chat/prompt-ids")));
+fn second_chat_turn_resumes_from_the_first_turns_checkpoint_4274() {
+    if !std::path::Path::new(MODEL_PATH).exists() {
+        eprintln!("SKIP: {MODEL_PATH} is absent");
+        return;
+    }
+    let mapped = MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let m = &mapped.model;
+    for thinking in [Some(false), Some(true)] {
+        let mut session = Qwen35Session::load(&mapped, true).expect("load the hybrid");
+        let first = [msg_4274("user", "Name three colors.")];
+        let (ids1, turn1) = turn_4274(&mut session, &mapped, &first, thinking);
+
+        let mut reply = turn1.tokens[ids1.len()..].to_vec();
+        if reply.last().is_some_and(|t| m.eos_token_id() == Some(*t)) {
+            reply.pop();
+        }
+        let reply = crate::api::realize_handlers::clean_chat_output(&m.decode(&reply));
+        let second = [
+            first[0].clone(),
+            msg_4274("assistant", &reply),
+            msg_4274("user", "Two more."),
+        ];
+        let (ids2, turn2) = turn_4274(&mut session, &mapped, &second, thinking);
+        let shared = ids1.iter().zip(&ids2).take_while(|(a, b)| a == b).count();
+        assert!(
+            shared < ids1.len(),
+            "thinking {thinking:?}: turn 2 must NOT extend turn 1 (else this is not #4274)"
+        );
+        // The #4274 body: turn 2 re-prefilled from 0 (reused 0).
+        assert!(
+            turn2.reused > 0 && turn2.reused <= shared,
+            "thinking {thinking:?}: turn 2 must resume from turn 1's checkpoint \
+             (reused {}, shared prefix {shared})",
+            turn2.reused
+        );
+
+        let mut fresh = Qwen35Session::load(&mapped, true).expect("load the hybrid");
+        let (_, full) = turn_4274(&mut fresh, &mapped, &second, thinking);
+        assert_eq!(full.reused, 0);
+        assert_eq!(
+            m.decode(&turn2.tokens[ids2.len()..]),
+            m.decode(&full.tokens[ids2.len()..]),
+            "thinking {thinking:?}: the resumed turn must answer what a full re-prefill answers"
+        );
+    }
 }

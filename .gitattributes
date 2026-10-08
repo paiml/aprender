@@ -23,15 +23,8 @@
 #
 # scripts/check_append_only_ledgers.sh holds that distinction as a case table.
 docs/audits/*.jsonl merge=union
-# rex/001 (#4354): the admission files are appended one row per cell, so they are
-# ledgers.
-docs/audits/rex-001/*.jsonl merge=union
-# The corpus (written whole by `rex corpus`) and the #4026 oracle captures (written
-# whole by c4026_live.sh) are single-writer goldens, not ledgers: a union merge of
-# two regenerations would interleave both versions' rows. Declared `audit-golden`,
-# so a two-sided change conflicts and check_append_only_ledgers.sh accepts them.
-docs/audits/review-corpus/*.jsonl audit-golden
-docs/audits/prm-001/c11-4026-live/*.jsonl audit-golden
-# PRM-S1 v2 (#4447): the frozen set and each build's replay rows are written whole
-# by `replay build` / `replay run`, so they are single-writer goldens, not ledgers.
-docs/audits/prm-001/s1-v2/**/*.jsonl audit-golden
+# Append-only ledgers one level down. `docs/audits/*.jsonl` does not cross a `/`,
+# so these two resolved no merge driver (check_append_only_ledgers, after the
+# main merge into #4431). Named file by file: the scope rule above still holds.
+docs/audits/review-corpus/corpus-v1.jsonl merge=union
+docs/audits/rex-001/rex-04-admission.jsonl merge=union

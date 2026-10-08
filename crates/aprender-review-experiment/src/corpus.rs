@@ -396,14 +396,16 @@ pub fn pick_balanced(mut cands: Vec<Item>, n: usize, seed: u64) -> Vec<Item> {
         per[cands[i].stratum as usize].push(i);
     }
     let mut chosen = Vec::new();
-    let mut round = 0;
-    while chosen.len() < n && per.iter().any(|p| p.len() > round) {
+    let rounds = per.iter().map(Vec::len).max().unwrap_or(0);
+    'take: for round in 0..rounds {
         for p in &per {
-            if chosen.len() < n && round < p.len() {
-                chosen.push(p[round]);
+            if chosen.len() == n {
+                break 'take;
+            }
+            if let Some(&i) = p.get(round) {
+                chosen.push(i);
             }
         }
-        round += 1;
     }
     chosen.sort_unstable();
     chosen.into_iter().map(|i| cands[i].clone()).collect()
