@@ -99,11 +99,13 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+# STUB_FLAT_PR gives every record ONE pagerank, the shape seen once in #4715.
+pr() { if [ -n "${STUB_FLAT_PR:-}" ]; then printf '0.5'; else printf '%s' "$1"; fi; }
 records() { # file_path name-prefix
-  printf '{"function_name":"%scache_path","file_path":"%s","impact_score":42,"commit_count":7,"churn_score":0.5,"fault_annotations":["CLONE","UNWRAP"]},\n' "$2" "$1"
-  printf '{"function_name":"%sparse","file_path":"%s","impact_score":9,"commit_count":3,"churn_score":0.1,"fault_annotations":null},\n' "$2" "$1"
-  printf '{"function_name":"%sModelSource","file_path":"%s","impact_score":0,"commit_count":3,"churn_score":0.1,"fault_annotations":["PANIC"]},\n' "$2" "$1"
-  printf '{"function_name":"%slate_panic","file_path":"%s","impact_score":0,"commit_count":1,"churn_score":0.0,"fault_annotations":["PANIC"]},\n' "$2" "$1"
+  printf '{"function_name":"%scache_path","file_path":"%s","impact_score":42,"commit_count":7,"churn_score":0.5,"pagerank":%s,"fault_annotations":["CLONE","UNWRAP"]},\n' "$2" "$1" "$(pr 0.4)"
+  printf '{"function_name":"%sparse","file_path":"%s","impact_score":9,"commit_count":3,"churn_score":0.1,"pagerank":%s,"fault_annotations":null},\n' "$2" "$1" "$(pr 0.3)"
+  printf '{"function_name":"%sModelSource","file_path":"%s","impact_score":0,"commit_count":3,"churn_score":0.1,"pagerank":%s,"fault_annotations":["PANIC"]},\n' "$2" "$1" "$(pr 0.2)"
+  printf '{"function_name":"%slate_panic","file_path":"%s","impact_score":0,"commit_count":1,"churn_score":0.0,"pagerank":%s,"fault_annotations":["PANIC"]},\n' "$2" "$1" "$(pr 0.1)"
 }
 {
   printf '[\n'
@@ -320,6 +322,13 @@ want "cached: no failure tallied" "" "$(cat "$FAILLOG")"
 out=$(PMAT_HUNT_DIR_LIMIT=2 STUB_ARGS_LOG="$ARGS" PMAT_HUNT_CACHE_DIR="$TMP/cache-limit" STORY_COVERAGE_FILE="$COVFILE" STORY_COVERAGE_SHA="$HEAD_SHA" PMAT_HUNT=1 pmat_hunt "limit" "$LIB")
 want "truncated: the path is asked on its own" "1" "$(grep -c -- "^query --path $LIB --churn --max-complexity 30 --limit 3" "$ARGS")"
 want "truncated: the per-path rows are printed" "3" "$(printf '%s\n' "$out" | grep -cE '^        churn (cache_path|parse|ModelSource) ')"
+
+# A directory answer with ONE pagerank on every record has no order to cut
+# from (seen once, #4715), so the path is asked on its own.
+: > "$ARGS"
+out=$(STUB_FLAT_PR=1 STUB_ARGS_LOG="$ARGS" PMAT_HUNT_CACHE_DIR="$TMP/cache-flat" STORY_COVERAGE_FILE="$COVFILE" STORY_COVERAGE_SHA="$HEAD_SHA" PMAT_HUNT=1 pmat_hunt "flat" "$LIB")
+want "flat pagerank: the path is asked on its own" "1" "$(grep -c -- "^query --path $LIB --churn --max-complexity 30 --limit 3" "$ARGS")"
+want "flat pagerank: the per-path rows are printed" "3" "$(printf '%s\n' "$out" | grep -cE '^        churn (cache_path|parse|ModelSource) ')"
 
 # A failed directory query is cached as failed: no rows for any path under
 # it, one query, and the zero-row andon fails the beat.

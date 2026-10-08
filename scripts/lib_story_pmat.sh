@@ -197,10 +197,22 @@ pmat_rows_cached() {
     "${PMAT_BIN:-pmat}" query --path "$dir" "$@" --limit "$PMAT_HUNT_DIR_LIMIT" --format json >"$cache.json" 2>/dev/null
     printf '%s\n' "$?" >"$cache.ec"
     jq 'if type == "array" then length else 0 end' "$cache.json" >"$cache.n" 2>/dev/null || : >"$cache.n"
+    jq 'if type == "array" then ([.[].pagerank] | unique | length) else 0 end' "$cache.json" >"$cache.pr" 2>/dev/null || : >"$cache.pr"
   fi
   [ "$(cat "$cache.ec")" = "0" ] || return 0
   n=$(cat "$cache.n")
   [ -n "$n" ] || return 0
+  # A directory answer of more than 3 records that all carry ONE pagerank has
+  # no order to cut from. Seen once (#4715): a 10 s answer for
+  # crates/apr-cli/src/commands with a flat pagerank, whose cut disagreed with
+  # the per-path query. Three full rebuilds since (about 95 s each, 2,717 to
+  # 2,721 distinct pageranks over 6,363 records) cut to exactly the per-path
+  # rows for all 10 hunted files there, so the cause is unknown. Such an
+  # answer is not trusted, and the path is asked on its own.
+  if [ "$n" -gt 3 ] && [ "$(cat "$cache.pr")" != "" ] && [ "$(cat "$cache.pr")" -le 1 ]; then
+    pmat_rows "$filter" --path "$q" "$@" --limit 3
+    return
+  fi
   if [ "$n" -ge "$PMAT_HUNT_DIR_LIMIT" ]; then
     pmat_rows "$filter" --path "$q" "$@" --limit 3
     return
