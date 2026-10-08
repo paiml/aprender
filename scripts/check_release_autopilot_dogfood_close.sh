@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check_release_autopilot_dogfood_close.sh -- the release autopilot never inherits a dogfood GO,
-# leaves R5 to the T-4 gate (C333: the T-1 repeat left the release path), and closes the epic before the milestone (#3708).
+# leaves R5 to the T-4 gate (#4688: the T-1 repeat left the release path), and closes the epic before the milestone (#3708).
 #
 # THE DEFECT, measured 2026-09-21 on the v0.69.0 train. autopilot's dogfood step INHERITED the
 # parent's T-2 GO ("bump diff = version surface only") and wrote a receipt of its own shape.
@@ -25,7 +25,7 @@
 #                      same file, the same function.
 #   nogo-stops         a NO-GO dogfood STOPs at T-1.
 #   t4-r5-version      the dogfood exits 0 but its receipt names another version: T-1 passes (its
-#                      --receipt-only repeat left the release path, C333) and the T-4 gate's R5 refuses it.
+#                      --receipt-only repeat left the release path, #4688) and the T-4 gate's R5 refuses it.
 #   t4-r5-commit       the receipt names the parent commit: the T-4 gate's R5 refuses it.
 #   t4-r5-absent       the dogfood exits 0 and writes NO receipt: the T-4 gate's R5 refuses it.
 #   close-epic-last    the epic is the milestone's only open item: the epic is closed, then the

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check_tag_step_gated.sh -- the release train's tag step must not be reachable without its
 # gate (PMAT-3459, which first placed the milestone gate inside cut_tag).
-# C333: the milestone cut and the coverage receipt (#4691) left the release path; what this guard
+# #4688: the milestone cut and the coverage receipt (#4691) left the release path; what this guard
 # still runs is cut_tag's release-policy / #3715 readiness gate ahead of `git tag`.
 #
 # THE DEFECT, measured 2026-09-17. v0.68.1 was tagged at 15:06:29Z by a per-train

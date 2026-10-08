@@ -25,7 +25,7 @@
 # 10; "-" never satisfies it).
 #
 # THE CHECKER is scripts/release/release_ready.sh (bash + awk, no Python). It
-# extracts every requirement the seven surfaces state, and FAILS on:
+# extracts every requirement the six surfaces state, and FAILS on:
 #   UNLISTED       a surface states a requirement the list lacks
 #   ORPHANED       a list entry whose checker is absent or lacks its needle, or
 #                  whose anchor no surface states any more
@@ -55,9 +55,19 @@
 #     `cargo metadata` calls. dogfood.sh is a surface: the 50 rows its pre-publish run can
 #     FAIL are RR-D01..D50, each `parent: RR-T09` (the dogfood step). HEAD: unlisted=0
 #     orphaned=0 contradictions=1 (publish.executor, as above); `--gates` prints gates=69.
+#   #4688 (child rows held at 50): publish_strict.sh is
+#     deleted (no step ran it; the cascade publishes), so RR-P20..P26 and P29..P34 go with it
+#     and the surfaces are six. RR-M03 M04 M12 T17 T19 T20 P08..P13 P15..P18 P35..P37 leave
+#     the list as rows; every stop they listed stays in the code and is listed by an `also`
+#     anchor on the GATE it belonged to. RR-P03 now checks check_release_assets.sh in
+#     `publish` (was RR-P37); the `assets` wait on the binary-release run is its `also`.
+#     Child rows 82 -> 50 (RR-D01..D50); GATEs unchanged at 19 (merge 10, tag 5, publish 5).
 #
 # A ROW (`parent: <id>`) is part of the GATE it names: checked like any entry, printed
 # under that GATE by `--gates`, and never counted in its total.
+# `also: ["<anchor>", …]` on a GATE names more stops a surface states that this GATE covers
+# without a row of their own. Each lists its stop like `anchor` does, and one no surface
+# states any more is ORPHANED. A row carries no `also`.
 #
 # THE CHECKER IS LAB. No gate calls it. It becomes a GATE only with an operator
 # yes, after three green nights on main, and with one gate retired for the one added.
@@ -70,12 +80,10 @@ scope: >
   scripts/release/autopilot.sh (steps wait..dryrun and the top-level lines
   between them), scripts/check_publish_preflight.sh (RULES R1..R8),
   scripts/cascade-publish.sh (`if !` refusals, and top-level `if [ … ]`
-  blocks before its upload loop that exit 1..9) and
-  scripts/release/publish_strict.sh (the `die` refusals before its first
-  `cargo publish`; the T-4 executor of APR-RELEASE-001); plus the facts two of
+  blocks before its upload loop that exit 1..9); plus the facts two of
   those places can disagree on (R8 mode, autopilot's step list, the coverage
   floor, and the publish executor: autopilot's `cascade` step vs the spec's
-  T-4 row). Both executors are read, so a gate either one drops is seen.
+  T-4 row).
   Out of scope: requirements stated outside the repository; the CONTENT of
   each checker (each has its own contract); and a verdict that runs after an
   upload (a final verification, autopilot's `cascade incomplete`), which is an
@@ -102,8 +110,8 @@ metadata:
 equations:
   rr_listed_equals_stated:
     formula: |
-      let S = anchors stated by the seven surfaces (release_ready.sh --found)
-      let A = { e.anchor : e in requirements }
+      let S = anchors stated by the six surfaces (release_ready.sh --found)
+      let A = { e.anchor : e in requirements } ∪ { a : e in requirements, a in e.also }
       UNLISTED = S \ A,  ORPHANED_STALE = A \ S
       |UNLISTED| = 0  and  |ORPHANED_STALE| = 0
     domain: 'the tree the checker runs on (HEAD or origin/main, printed as tree=)'
@@ -187,7 +195,7 @@ non_goals:
   - "Changing GitHub's required status checks or rulesets. The probe reads them; the operator changes them."
   - "Blocking any merge, tag or publish. The checker is LAB; it becomes a GATE only with an operator yes, after three green nights on main, and with one gate retired for the one added."
   - "Resolving producer names. Each publish entry must name a producer (checked non-empty); the names are lanes of the nightly release train, which is not on main yet. Resolving them against that lane table is follow-up work, not done here."
-  - "Known extractor limits (a requirement written in these forms is not seen, so it cannot be flagged unlisted): a checker invoked across a backslash line continuation; a cascade refusal not written as `if ! <fn|bash script>` nor as a top-level `if [ … ]` block before the upload loop; a publish_strict.sh refusal that is not a `die` (a bare `exit`); a needle that survives only in a comment still counts as present; a function name inside an echo string counts as a call."
+  - "Known extractor limits (a requirement written in these forms is not seen, so it cannot be flagged unlisted): a checker invoked across a backslash line continuation; a cascade refusal not written as `if ! <fn|bash script>` nor as a top-level `if [ … ]` block before the upload loop; a needle that survives only in a comment still counts as present; a function name inside an echo string counts as a call."
 
 binding_registry:
   checker: scripts/release/release_ready.sh
@@ -197,26 +205,20 @@ binding_registry:
 # THE LIST. One requirement per line (the checker parses this block; keep one flow map per line).
 requirements:
   - {id: RR-M01, applies_to: [merge], anchor: "merge:required-context/ci / gate", checker: ".github/workflows/ci.yml#    name: ci / gate", provenance: "CLAUDE.md Git Workflow; classic branch protection on main", producer: "ci-main"}
-  - {id: RR-M02, applies_to: [merge], seven: workspace-tests, anchor: "merge:required-context/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "CLAUDE.md Git Workflow; branch protection on main", producer: "ci-main"}
-  - {id: RR-M03, applies_to: [merge], parent: RR-M09, anchor: "merge:ci.yml/gate/needs/x86-main", checker: ".github/workflows/ci.yml#  x86-main:", provenance: "#4433 (5 fat jobs; gate needs)", producer: "ci-main"}
-  - {id: RR-M04, applies_to: [merge], parent: RR-M02, anchor: "merge:ci.yml/gate/needs/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "#4433 (gate needs; workspace-test fan-in)", producer: "ci-main"}
-  - {id: RR-M05, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/determinism", checker: ".github/workflows/ci.yml#  determinism:", provenance: "#4433 (gate needs)", producer: "ci-main"}
-  - {id: RR-M09, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-tree", checker: ".github/workflows/ci.yml#guard-tree", provenance: "#4433 (gate section pair; was gate need guard-tree)", producer: "guards"}
+  - {id: RR-M02, applies_to: [merge], seven: workspace-tests, anchor: "merge:required-context/workspace-test", also: ["merge:ci.yml/gate/needs/workspace-test"], checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "CLAUDE.md Git Workflow; branch protection on main", producer: "ci-main"}
+  - {id: RR-M05, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/determinism", also: ["merge:ci.yml/gate/section/determinism-compare"], checker: ".github/workflows/ci.yml#  determinism:", provenance: "#4433 (gate needs)", producer: "ci-main"}
+  - {id: RR-M09, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-tree", also: ["merge:ci.yml/gate/needs/x86-main"], checker: ".github/workflows/ci.yml#guard-tree", provenance: "#4433 (gate section pair; was gate need guard-tree)", producer: "guards"}
   - {id: RR-M10, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-cargo", checker: ".github/workflows/ci.yml#guard-cargo", provenance: "#4433 (gate section pair; was gate need guard-cargo)", producer: "guards"}
   - {id: RR-M11, applies_to: [merge], anchor: "merge:ci.yml/gate/section/sov.gate", checker: ".github/workflows/ci.yml#sov.*", provenance: "#4433 (gate section pair; sovereign-ci gate)", producer: "ci-main"}
-  - {id: RR-M12, applies_to: [merge], parent: RR-M05, anchor: "merge:ci.yml/gate/section/determinism-compare", checker: ".github/workflows/ci.yml#determinism-compare", provenance: "#4433 (gate section pair; was gate need determinism-compare)", producer: "ci-main"}
   - {id: RR-M13, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mg-reuse", checker: ".github/workflows/ci.yml#  mg-reuse:", provenance: "#4753 T43 (merge_group reuses the head run on the same tree)", producer: "ci-main"}
   - {id: RR-M14, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mg-reuse-self-test", checker: ".github/workflows/ci.yml#  mg-reuse-self-test:", provenance: "#4753 T43 (the reuse reader's own case table)", producer: "ci-main"}
   - {id: RR-M15, applies_to: [merge], seven: supply-chain, anchor: "merge:ci.yml/gate/needs/x86-main-advisories", checker: ".github/workflows/ci.yml#  x86-main-advisories:", provenance: "#4753 T43 (advisories run whenever mg-reuse skips x86-main)", producer: "ci-main"}
   - {id: RR-M16, applies_to: [merge], anchor: "merge:required-context/gate", checker: ".github/workflows/ci.yml#  gate:", provenance: "CLAUDE.md Git Workflow; org ruleset on main (ci/sections.yml: rulesets need the exact name gate)", producer: "ci-main"}
-  - {id: RR-T01, applies_to: [tag, publish], seven: provenance, anchor: "tag:autopilot/commit/git merge-base --is-ancestor", checker: "scripts/release/autopilot.sh#git merge-base --is-ancestor", provenance: "APR-RELEASE-001 T-0, #3599 (release commit on origin/main)", producer: "ci-main"}
-  - {id: RR-T09, applies_to: [tag], anchor: "tag:autopilot/dogfood/bash scripts/dogfood.sh --phase", checker: "scripts/dogfood.sh", provenance: "APR-RELEASE-001 T-1 dogfood GO (#3957)", producer: "dogfood"}
-  - {id: RR-T11, applies_to: [tag], seven: crux-smoke, anchor: "tag:autopilot/models/bash scripts/release/models_t1.sh", checker: "scripts/release/models_t1.sh", provenance: "#3717 #3712 model matrix", producer: "models"}
-  - {id: RR-T12, applies_to: [tag], anchor: "tag:autopilot/readiness/bash scripts/release/release_readiness.sh --root", checker: "scripts/release/release_readiness.sh#DEFAULT_MODE=enforce", provenance: "#3715 B1, operator ruling 2026-09-28", producer: "readiness", key: "publish.R8.mode", value: "enforce"}
-  - {id: RR-T16, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/rc_publish_gate.sh --verify", checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball), moved ahead of the tag (#4690, was RR-P07)", producer: "publish-dryrun"}
-  - {id: RR-T17, applies_to: [tag], parent: RR-P03, anchor: "tag:autopilot/tag/gh-workflow binary-release.yml", checker: ".github/workflows/binary-release.yml", provenance: "#4690 the asset build is dispatched on the draft tag", producer: "assets"}
-  - {id: RR-T19, applies_to: [tag], parent: RR-T01, anchor: "tag:autopilot/commit/cargo metadata --no-deps --format-version", checker: "scripts/release/autopilot.sh#release commit carries version", provenance: "#3618 (the release commit carries the version being released)", producer: "ci-main"}
-  - {id: RR-T20, applies_to: [tag], parent: RR-T12, anchor: "tag:autopilot/readiness/cargo metadata --no-deps --format-version", checker: "scripts/release/autopilot.sh#is not built from", provenance: "#3745 (readiness reads the apr built from the release commit)", producer: "readiness"}
+  - {id: RR-T01, applies_to: [tag, publish], seven: provenance, anchor: "tag:autopilot/commit/git merge-base --is-ancestor", also: ["tag:autopilot/commit/cargo metadata --no-deps --format-version", "publish:preflight/R1", "publish:preflight/R2", "publish:preflight/R3", "publish:preflight/R4"], checker: "scripts/release/autopilot.sh#git merge-base --is-ancestor", provenance: "APR-RELEASE-001 T-0, #3599 (release commit on origin/main)", producer: "ci-main"}
+  - {id: RR-T09, applies_to: [tag], anchor: "tag:autopilot/dogfood/bash scripts/dogfood.sh --phase", also: ["publish:preflight/R5"], checker: "scripts/dogfood.sh", provenance: "APR-RELEASE-001 T-1 dogfood GO (#3957)", producer: "dogfood"}
+  - {id: RR-T11, applies_to: [tag], seven: crux-smoke, anchor: "tag:autopilot/models/bash scripts/release/models_t1.sh", also: ["publish:preflight/R7"], checker: "scripts/release/models_t1.sh", provenance: "#3717 #3712 model matrix", producer: "models"}
+  - {id: RR-T12, applies_to: [tag], anchor: "tag:autopilot/readiness/bash scripts/release/release_readiness.sh --root", also: ["tag:autopilot/readiness/cargo metadata --no-deps --format-version", "publish:preflight/R8"], checker: "scripts/release/release_readiness.sh#DEFAULT_MODE=enforce", provenance: "#3715 B1, operator ruling 2026-09-28", producer: "readiness", key: "publish.R8.mode", value: "enforce"}
+  - {id: RR-T16, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/rc_publish_gate.sh --verify", also: ["publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check"], checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball), moved ahead of the tag (#4690, was RR-P07)", producer: "publish-dryrun"}
   - {id: RR-D01, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_multiplatform_dogfood", checker: "Cargo.toml#scripts/check_multiplatform_dogfood.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
   - {id: RR-D02, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_model_ladder", checker: "Cargo.toml#scripts/check_model_ladder.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
   - {id: RR-D03, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_ladder_provenance", checker: "Cargo.toml#scripts/check_ladder_provenance.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
@@ -267,33 +269,7 @@ requirements:
   - {id: RR-D48, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/model-parity-falsifier", checker: "scripts/dogfood.sh#mark model-parity-falsifier FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
   - {id: RR-D49, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/model-parity", checker: "scripts/dogfood.sh#mark model-parity FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
   - {id: RR-D50, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/test", checker: "scripts/dogfood.sh#ci_mark test ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-P01, applies_to: [publish], seven: cleanroom-tag-commit, anchor: "publish:autopilot/cleanroom/gh-workflow clean-room.yml", checker: "scripts/release/autopilot.sh#clean-room.yml", provenance: "APR-RELEASE-001 T-3 (infra#621)", producer: "cleanroom-cpu"}
-  - {id: RR-P03, applies_to: [publish], seven: binaries-before-public, anchor: "publish:autopilot/assets/gh-workflow binary-release.yml", checker: ".github/workflows/binary-release.yml", provenance: "#4657 #4659 release binaries", producer: "assets"}
-  - {id: RR-P06, applies_to: [publish], kind: mechanics, anchor: "publish:autopilot/preflight/bash scripts/check_publish_preflight.sh", checker: "scripts/check_publish_preflight.sh", provenance: "PMAT-745 publish preflight", producer: "preflight"}
-  - {id: RR-P08, applies_to: [publish], parent: RR-T16, anchor: "publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check", checker: "scripts/cascade-publish.sh#--check", provenance: "APR-RELEASE-001 T-4 dry-run receipt (operator ruling 2026-09-17)", producer: "publish-dryrun"}
-  - {id: RR-P09, applies_to: [publish], parent: RR-T01, anchor: "publish:preflight/R1", checker: "scripts/check_publish_preflight.sh#FAIL  R1 ", provenance: "PMAT-745 R1 clean tree", producer: "preflight"}
-  - {id: RR-P10, applies_to: [publish], parent: RR-T01, anchor: "publish:preflight/R2", checker: "scripts/check_publish_preflight.sh#FAIL  R2 ", provenance: "PMAT-745 R2 version from cargo metadata", producer: "preflight"}
-  - {id: RR-P11, applies_to: [publish], parent: RR-T01, anchor: "publish:preflight/R3", checker: "scripts/check_publish_preflight.sh#FAIL  R3 ", provenance: "PMAT-745 R3 tag at HEAD", producer: "preflight"}
-  - {id: RR-P12, applies_to: [publish], parent: RR-T01, anchor: "publish:preflight/R4", checker: "scripts/check_publish_preflight.sh#FAIL  R4 ", provenance: "#4286 #4224 R4 release-branch ancestry", producer: "preflight"}
-  - {id: RR-P13, applies_to: [publish], parent: RR-T09, anchor: "publish:preflight/R5", checker: "scripts/check_publish_preflight.sh#FAIL  R5 ", provenance: "#3957 R5 dogfood receipt GO", producer: "dogfood"}
-  - {id: RR-P14, applies_to: [publish], anchor: "publish:preflight/R6", checker: "scripts/check_publish_preflight.sh#FAIL  R6 ", provenance: "PMAT-955 #3468 R6 no dev-dependency cycle", producer: "preflight"}
-  - {id: RR-P15, applies_to: [publish], parent: RR-T11, anchor: "publish:preflight/R7", checker: "scripts/check_publish_preflight.sh#FAIL  R7 ", provenance: "#3717 #3712 R7 model matrix", producer: "models"}
-  - {id: RR-P16, applies_to: [publish], parent: RR-T12, anchor: "publish:preflight/R8", checker: "scripts/check_publish_preflight.sh#FAIL  R8 ", provenance: "#3715 R8 readiness, operator ruling 2026-09-28", producer: "readiness", key: "publish.R8.mode", value: "enforce"}
-  - {id: RR-P17, applies_to: [publish], parent: RR-P14, anchor: "publish:cascade/facade_upstream_ready", checker: "scripts/cascade-publish.sh#facade_upstream_ready() {", provenance: "cascade-publish facade waits for its upstream crates", producer: "publish-dryrun"}
-  - {id: RR-P18, applies_to: [publish], parent: RR-P01, anchor: "publish:cascade/clean_room_gate", checker: "scripts/cascade-publish.sh#clean_room_gate() {", provenance: "infra#621 clean-room green on exactly the tag commit; operator ruling 2026-09-28", producer: "cleanroom-cpu"}
-  - {id: RR-P20, applies_to: [publish], parent: RR-T01, anchor: "publish:strict/no-wt", checker: "scripts/release/publish_strict.sh#no $WT", provenance: "APR-RELEASE-001 T-4: publish_strict.sh runs only in the train worktree", producer: "publish-dryrun"}
-  - {id: RR-P21, applies_to: [publish], parent: RR-T01, anchor: "publish:strict/head-is-not-t", checker: "scripts/release/publish_strict.sh#HEAD is not $T", provenance: "APR-RELEASE-001 T-4: HEAD == tag asserted", producer: "publish-dryrun"}
-  - {id: RR-P22, applies_to: [publish], parent: RR-T01, anchor: "publish:strict/checkout-is-not-detached", checker: "scripts/release/publish_strict.sh#checkout is not detached", provenance: "APR-RELEASE-001 rule 7 and T-4: a detached checkout of the tag", producer: "publish-dryrun"}
-  - {id: RR-P23, applies_to: [publish], parent: RR-T01, anchor: "publish:strict/tree-dirty", checker: "scripts/release/publish_strict.sh#tree dirty: ", provenance: "APR-RELEASE-001 T-4: clean tree, never --allow-dirty", producer: "publish-dryrun"}
-  - {id: RR-P24, applies_to: [publish], parent: RR-T01, anchor: "publish:strict/cargo-config-toml-present-in-the-publish-tree", checker: "scripts/release/publish_strict.sh#.cargo/config.toml present in the publish tree", provenance: "APR-RELEASE-001 T-4: no [patch] config in the publish tree", producer: "publish-dryrun"}
-  - {id: RR-P25, applies_to: [publish], parent: RR-P06, anchor: "publish:strict/no-publish-token-on-this-host-precondition-5", checker: "scripts/release/publish_strict.sh#no publish token on this host", provenance: "APR-RELEASE-001 T-4 precondition 5: a publish token on the host", producer: "publish-dryrun"}
-  - {id: RR-P26, applies_to: [publish], parent: RR-P01, anchor: "publish:strict/no-green-clean-room-run-id-recorded-for", checker: "scripts/release/publish_strict.sh#no green clean-room run id recorded", provenance: "APR-RELEASE-001 rule 7, #3335: a green clean-room run on the tag, recorded", producer: "cleanroom-cpu"}
-  - {id: RR-P29, applies_to: [publish], parent: RR-P14, anchor: "publish:strict/blank-line-blank-in-publish-order-txt", checker: "scripts/release/publish_strict.sh#in publish-order.txt: an empty crate name", provenance: "#3696: an empty crate name in the order is refused by line", producer: "publish-dryrun"}
-  - {id: RR-P30, applies_to: [publish], parent: RR-P14, anchor: "publish:strict/the-universe-is-empty", checker: "scripts/release/publish_strict.sh#the universe is empty", provenance: "#3657: the publish universe is never empty", producer: "publish-dryrun"}
-  - {id: RR-P31, applies_to: [publish], parent: RR-P14, anchor: "publish:strict/crate-s-twice-in-the-publish-order", checker: "scripts/release/publish_strict.sh#crate(s) twice in the publish order", provenance: "#3657: the order equals the universe as a set (no crate twice)", producer: "publish-dryrun"}
-  - {id: RR-P32, applies_to: [publish], parent: RR-P14, anchor: "publish:strict/in-the-publish-order-but-not-in-the", checker: "scripts/release/publish_strict.sh#in the publish order but not in the universe", provenance: "#3657: the order equals the universe as a set (none extra)", producer: "publish-dryrun"}
-  - {id: RR-P33, applies_to: [publish], parent: RR-P14, anchor: "publish:strict/in-the-universe-but-not-in-the-publish", checker: "scripts/release/publish_strict.sh#in the universe but not in the publish order", provenance: "#3657: the order equals the universe as a set (none missing)", producer: "publish-dryrun"}
-  - {id: RR-P34, applies_to: [publish], parent: RR-P14, anchor: "publish:strict/publish-order-is-not-a-dependency-order", checker: "scripts/release/publish_strict.sh#publish order is not a dependency order", provenance: "#3462 APR-RELEASE-001 T-4: order derived from cargo metadata at the tag, acyclic, re-checked", producer: "publish-dryrun"}
-  - {id: RR-P35, applies_to: [publish], parent: RR-P14, anchor: "publish:cascade/if [ $UNIVERSE_N -lt 70 ]", checker: "scripts/cascade-publish.sh#Refusing to publish against an unknown universe", provenance: "cascade-publish vacuity: an enumeration under 70 crates is refused", producer: "publish-dryrun"}
-  - {id: RR-P36, applies_to: [publish], parent: RR-P06, anchor: "publish:cascade/if [ -f .cargo/config.toml ]", checker: "scripts/cascade-publish.sh#could not create a backup of .cargo/config.toml", provenance: "#2859 the config backup must be creatable outside the tree, or nothing is published", producer: "publish-dryrun"}
-  - {id: RR-P37, applies_to: [publish], parent: RR-P03, anchor: "publish:autopilot/publish/bash scripts/check_release_assets.sh", checker: "scripts/check_release_assets.sh", provenance: "#4690 the draft goes public only with its assets verified", producer: "assets"}
+  - {id: RR-P01, applies_to: [publish], seven: cleanroom-tag-commit, anchor: "publish:autopilot/cleanroom/gh-workflow clean-room.yml", also: ["publish:cascade/clean_room_gate"], checker: "scripts/release/autopilot.sh#clean-room.yml", provenance: "APR-RELEASE-001 T-3 (infra#621)", producer: "cleanroom-cpu"}
+  - {id: RR-P03, applies_to: [publish], seven: binaries-before-public, anchor: "publish:autopilot/publish/bash scripts/check_release_assets.sh", also: ["publish:autopilot/assets/gh-workflow binary-release.yml", "tag:autopilot/tag/gh-workflow binary-release.yml"], checker: "scripts/check_release_assets.sh", provenance: "#4657 #4659 release binaries; #4690 the draft goes public only with its assets verified (#4688: was RR-P37)", producer: "assets"}
+  - {id: RR-P06, applies_to: [publish], kind: mechanics, anchor: "publish:autopilot/preflight/bash scripts/check_publish_preflight.sh", also: ["publish:cascade/if [ -f .cargo/config.toml ]"], checker: "scripts/check_publish_preflight.sh", provenance: "PMAT-745 publish preflight", producer: "preflight"}
+  - {id: RR-P14, applies_to: [publish], anchor: "publish:preflight/R6", also: ["publish:cascade/facade_upstream_ready", "publish:cascade/if [ $UNIVERSE_N -lt 70 ]"], checker: "scripts/check_publish_preflight.sh#FAIL  R6 ", provenance: "PMAT-955 #3468 R6 no dev-dependency cycle", producer: "preflight"}

@@ -7,7 +7,7 @@
 # #3676 moved COV_FLOOR off the PR path; nothing on the release path read it, so a floor breach
 # still reached the crates.io cascade. #4734: the tag push's coverage section was vacuous on
 # v0.70.1 (0 tests, no %), so the gate now judges coverage-nightly's sha-keyed receipt instead.
-# C333 took the gate off the release path (autopilot preflight and cut_tag --resolve no longer call it),
+# #4688 took the gate off the release path (autopilot preflight and cut_tag --resolve no longer call it),
 # so the wiring facts left with it. This guard holds two:
 #   1. the gate's own case table passes (it stubs gh over a real git history; no network);
 #   2. every mutant of the gate below turns its case table RED. A table that a deleted check
@@ -20,7 +20,7 @@ GATE="$ROOT/scripts/release/tag_coverage_gate.sh"
 
 judge() {
     bash "$GATE" --self-test > /dev/null 2>&1 || { echo "FAIL  tag_coverage_gate.sh --self-test is red"; return 1; }
-    echo "PASS  tag_coverage_gate.sh judges coverage-nightly's receipt (#3690, #4734); off the release path (C333)"
+    echo "PASS  tag_coverage_gate.sh judges coverage-nightly's receipt (#3690, #4734); off the release path (#4688)"
 }
 
 # Each row: NAME, then a fixed string in the gate, then what replaces its first occurrence. A row

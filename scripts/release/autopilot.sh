@@ -135,8 +135,8 @@ AP_POLICY=$(ap_policy_applies "$V" 2>> "$LOG") || die "the standing release poli
 #    measured at the release version, and R5 at T-4 refused it anyway: v0.69.0 stopped at the publish
 #    preflight 43 min after tagging and ran the real dogfood then, with the tag already public.
 #    Now the real dogfood runs here and writes the receipt in this worktree. R5 is judged once, at T-4
-#    (check_publish_preflight.sh R5, row RR-P13 of RR-T09); the T-1 --receipt-only repeat was a duplicate
-#    stop and left the release path (C333).
+#    (check_publish_preflight.sh R5, an `also` anchor of RR-T09); the T-1 --receipt-only repeat was a duplicate
+#    stop and left the release path (#4688).
 t1_dogfood() {
   export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-dogfood"
   bash scripts/dogfood.sh --phase pre-publish > "$AP/dogfood-pre-publish.log" 2>&1; rc=$?
@@ -236,7 +236,7 @@ fi
 #    listing, which returns drafts. Publishing later fires `release: published` once more, and that
 #    run finds every asset present and rebuilds nothing (#4286).
 # cut_tag <version> <tag> <commit>: the release-policy or readiness gate, then `git tag`. The milestone
-# cut (PMAT-3459) and the coverage receipt (#4691) left the release path under C333.
+# cut (PMAT-3459) and the coverage receipt (#4691) left the release path under #4688.
 # scripts/check_tag_step_gated.sh runs this function against stubs.
 cut_tag() {
     local v=$1 t=$2 mc=$3 pol need
