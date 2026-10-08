@@ -1,0 +1,629 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pinned-self-test",
+          "level": "note",
+          "message": {
+            "text": "scripts/ci/pinned_rustup_home.sh --self-test: SELF-TEST PASSED (27 rows). Rows include: 8 that drive seed() end to end against a stub docker (mount written to GITHUB_ENV and GITHUB_OUTPUT; refusals before any docker call; bounded install retries; the image-default and sync-line probes RED; no probe dir left on failure), 1 that checks the ci.yml wiring of the seed output into the fmt step, and, new at this head, a pin with a suffix (1.93.0-beta.1) refused and literal dots in the rustc check (1x93x0 is not 1.93.0). The seed dispatch now runs this table itself and seeds nothing unless it prints the exact pass line (lines 240-242)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/ci/pinned_rustup_home.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a435aa77fb30130dc3d80564f774639080b1afc340e01cfb1d73bbc77172f917",
+            "failure_scenario": "none at this head: 16 of the 19 mutants below turn this table red or change its pass line.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "workflow-env-defined",
+          "level": "note",
+          "message": {
+            "text": "check_workflow_env_defined.sh: OK, 32 workflows. The fmt step's PINNED_RUSTUP_MOUNT is defined at step level from steps.pinned.outputs.mount (ci.yml line 212)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 212
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_workflow_env_defined.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "83c75d372043b55055c12d00cd95a124d9a8f57351bb8be4dcd89560a69113c5",
+            "failure_scenario": "none at this head: the env line is also pinned by the self-test's wiring row (mutant C6 and the author's C3 and C4).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "bashrs-pinned",
+          "level": "note",
+          "message": {
+            "text": "bashrs 7.4.2 lint scripts/ci/pinned_rustup_home.sh: 0 errors, 46 warnings, 69 infos; bashrs exits 1 when warnings are present."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bashrs",
+              "lint",
+              "scripts/ci/pinned_rustup_home.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "0fe64d993950f7f607c5a8b3da5d20897a640b2e2957187a6fd7184a55b7e6ca",
+            "failure_scenario": "none blocking: no bashrs error. Warnings were not compared base against head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication-scan-clean",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh: 10 needles, 0 hits, 1564/1564 sibling branches and the 13 files between the merge base and the main tip swept lexically. The digest covers the scan's combined stdout and stderr, as captured."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "828ccb845fd8f1ac272bc34ef0b346a90a3a2eb9",
+              "--head",
+              "8204d1e672b24193223ef54ed3e25e9902bcfd41",
+              "--json",
+              "reviewer-scratch/dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8c17db6e8de54fea356f19acf6f862d1f4e0d7caca06dac38e4aef052a54acf6",
+            "failure_scenario": "An exact-name scan cannot see a re-implementation under another name, so 0 hits is not proof that no other toolchain seeding helper exists.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat-query-no-prior-art",
+          "level": "note",
+          "message": {
+            "text": "pmat query 'rustup toolchain install retry' (--no-docs) returns 5 Rust functions (a perf-trace retry tracker, a test clock install and a with_retry helper), none a rustup seeding or bounded-retry shell helper. The semantic index is Rust-only and this diff is shell and YAML, so the lexical scan above is the half that covers it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "rustup toolchain install retry",
+              "--limit",
+              "5",
+              "--no-docs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "29b544302c346ef3465c583f3238519346ce9d63c3e1a5772417487f056d5f4c",
+            "failure_scenario": "A shell retry helper elsewhere in the tree is invisible to the Rust-only index.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "nightly-pin-version-check",
+          "level": "warning",
+          "message": {
+            "text": "assert_pinned_no_sync greps for '^rustc <channel> ' (line 70), but read_pin accepts a dated nightly channel (self-test row 'dated nightly is a pin'), and a nightly rustc prints 'rustc 1.95.0-nightly (hash date)', never 'rustc nightly-2026-01-02'. Reproduced with the function from lines 63-72: given a nightly-2026-01-02 pin and nightly rustc output it returns 1 with 'rustc is not nightly-2026-01-02 in the seeded home'. Agrees with the antigravity finding nightly-assert-fail."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 70
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "eval \"$(sed -n 63,72p scripts/ci/pinned_rustup_home.sh)\"; assert_pinned_no_sync nightly-2026-01-02 \"rustc 1.95.0-nightly (574b64a97 2026-01-01)\"; echo \"rc=$?\""
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "2350f2bd43ece4444ab83c09fbc044bacfae2ca83b065293a8ee373541122d2b",
+            "failure_scenario": "The repo pin today is 1.93.0, so main is unaffected. A branch that pins a dated nightly gets a seed step that is RED on every run although the seeded home is correct, and the self-test cannot see it: its nosync rows use only 1.93.0.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "n/a - hand-built shell and YAML mutation set; the diff adds no Rust",
+          "informationUri": "https://github.com/paiml/aprender"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D1 KILLED: seed's non-empty DIR check disabled. Row 'non-empty DIR refused' goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "88eb2958943fc785d5a1a60fd76c0baa557789654e569d37ef80069dce0e3b56"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D2 KILLED: an empty RUSTUP_HOME from the image accepted. Row 'image with no RUSTUP_HOME refused' goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "1fa1c72f6b3b9336ca7c65a14c3fd26f5394b421ed0c0376a25a9841893eb257"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D3 KILLED: the install run with retry bound 1 instead of RETRY_MAX. Row 'install failing every attempt stops at RETRY_MAX' goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "590f54b415b5cc596d8319f0c011a259558267eb77b46a741f40701e4da29073"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D4 KILLED: install failure ignored (|| true). The RETRY_MAX row goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "9de956fb2a60b3df3e2366f51cfc15d6bd063d80ba9dbbea854db8d3bee8ee63"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D5 KILLED: the probe mounts the seeded home read-write. The stub refuses a probe without the :ro mount."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "2902cbc59673e5aa2c43a5681cf69a8b02b07b2fbd26714a560576da65be8689"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D6 KILLED: the toolchain file not copied into the probe dir. The stub refuses a probe with no toolchain file."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "2902cbc59673e5aa2c43a5681cf69a8b02b07b2fbd26714a560576da65be8689"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D7 KILLED: the no-sync assertion after the probe dropped. The image-default and sync-line probe rows go red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "872cbcf3a3c56899babb2fb3f21a733a3b36e61fdcc4b2c12b0caa3ca585ff61"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D7b KILLED: the mount= line to GITHUB_OUTPUT dropped (line 105). Row 'mount written to GITHUB_ENV and GITHUB_OUTPUT' goes red; this was K5, a survivor at f8939270de."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "195cb08cf389255f6f727e8f4125cb8e88a72666c26cdf49289c4e641b8379a7"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D7c KILLED: the PINNED_RUSTUP_MOUNT line to GITHUB_ENV dropped. The same row goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "195cb08cf389255f6f727e8f4125cb8e88a72666c26cdf49289c4e641b8379a7"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D7d KILLED: the probe dir no longer removed on the failure path (line 99). Row 'probe failure is RED and leaves no probe dir' goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "2b282ef7cd64aabe92e4e43b8385b193c05cb4ca13d4d8ba2311a2929c171a03"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant D8 KILLED: --self-test dispatches to a bare echo of the old 16-row pass line. The self-test exits 0, but the line is not the exact 'SELF-TEST PASSED (27 rows)' that the ci.yml seed step requires (line 202), so the step fails."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "daad5594fd0b6abad549aef28f8ab12c3e5a8c80bea02432045d5f01a8c00baa"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant P4 KILLED: the $ anchor dropped from read_pin's version regex. Row 'pin with a suffix refused' (1.93.0-beta.1) goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "875e5590fecc83512837e8526732af5e13358728404501c48b1e8e28aa241f21"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant A4 KILLED: the dots in the rustc check left unescaped (line 70). Row 'dots are literal: 1x93x0 is not 1.93.0' goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "733d234bf3b156b6ab7b4c9099393f87cd997e36a5785fbef2024159356c902a"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant C3 KILLED: ci.yml: the fmt docker run drops -v \"$PINNED_RUSTUP_MOUNT\". The wiring row goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "e401d8b97a5f6f25bac531d5d44195752d7fb89d9f5ce51e2e55db7c17b1f0d8"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant C4 KILLED: ci.yml: the mount made fail-open with ${PINNED_RUSTUP_MOUNT:+...}. The wiring row goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "dd2cdba6fe47548ac763e7df78ef2918e10f74141802afea7fdc2e42a6ce0f31"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant C6 KILLED: ci.yml: the seed step's id: pinned removed. The wiring row goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "145bd31afc076e7f729f27c725f79e2ef4dbd1e0064d1153ac60aec5a62b09a2"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "mutant-survived-probe-visibility",
+          "level": "warning",
+          "message": {
+            "text": "Mutant R1 SURVIVED: deleting the probe's in-container 'test -f rust-toolchain.toml || ... exit 3' (line 98) leaves the self-test green, output byte-identical to the unmutated run. The docker stub checks the toolchain file on the host side but never runs the container's sh -c, so the in-container check has no row."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 98
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a435aa77fb30130dc3d80564f774639080b1afc340e01cfb1d73bbc77172f917",
+            "failure_scenario": "If the probe dir is again not visible inside the container, rustc answers with the image default and assert_pinned_no_sync still fails the seed, so the gate stays closed. Only the diagnostic is lost: the red names a version mismatch instead of 'rust-toolchain.toml is not visible in the container'.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mutant-survived-ci-pass-line",
+          "level": "warning",
+          "message": {
+            "text": "Mutant R2 SURVIVED: deleting the ci.yml seed step's grep -qx 'SELF-TEST PASSED (27 rows)' (line 202) leaves the self-test green, output byte-identical to the unmutated run. At this head the seed dispatch runs the table itself and checks the same line (pinned_rustup_home.sh lines 240-242), so R2 alone leaves the step guarded."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 202
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a435aa77fb30130dc3d80564f774639080b1afc340e01cfb1d73bbc77172f917",
+            "failure_scenario": "R2 and R3 each survive because the other check remains; no row pins either. Drop both and a self_test that runs no rows, or a --self-test dispatch that only echoes a pass line (mutant D8's shape), no longer stops the seed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mutant-survived-seed-dispatch-check",
+          "level": "warning",
+          "message": {
+            "text": "Mutant R3 SURVIVED: deleting the seed dispatch's grep -qx 'SELF-TEST PASSED (27 rows)' and its refusal (lines 241-242) leaves the self-test green, output byte-identical to the unmutated run. The table drives seed() directly and never runs the script's seed dispatch, so this new check (the fix for round-2 survivor C1) has no row."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 241
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "<mutant applied with sed>; bash scripts/ci/pinned_rustup_home.sh --self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a435aa77fb30130dc3d80564f774639080b1afc340e01cfb1d73bbc77172f917",
+            "failure_scenario": "With R3, a caller that drops the ci.yml --self-test call (C1) seeds without any table run, the exact gap the commit closes; with R3 and R2 together nothing ties the seed to a passing table.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-nightly-assert-fail",
+          "level": "note",
+          "message": {
+            "text": "The `assert_pinned_no_sync` proof fails when the pinned channel is a dated nightly because it checks if `rustc --version` starts with `rustc $ch ` (e.g. `rustc nightly-2026-01-02 `) but rustc actually outputs `rustc 1.X.X-nightly `."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 157
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If a developer updates `rust-toolchain.toml` to pin a dated nightly (which `read_pin` explicitly allows via `^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}$`), the `seed` step will successfully install it but then immediately fail the job during the proof step because the regex fails to match the real output of `rustc +nightly --version`.",
+            "measured_by": "agy",
+            "command": [
+              "bash",
+              "-c",
+              "out=\"rustc 1.97.0-nightly (0febdbab2 2026-04-18)\"; ch=\"nightly-2026-01-02\"; grep -q \"^rustc ${ch//./\\.} \" <<< \"$out\" || echo FAIL"
+            ],
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        }
+      ]
+    }
+  ]
+}
