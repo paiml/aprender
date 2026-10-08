@@ -6,7 +6,9 @@ cap: {open_issues: 100, andon: 95, steady_state: 90}
 epics:
   - {id: E0, issue: 3269, name: "Ontology (ONT-001)", train: "0.70", budget: 13, successor: S2,
      absorbs: [4071, 4072, 4073, 3847, 4069, 3972, 4047, 4070, 4075, 4330, 4074, 4077, 4078, 4079, 3715, 3856, 3559, 3560, 4319, 4379, 4420, 3610, 3611, 3624, 4100]}
-  - {id: E1, issue: 3998, name: "Fast Train", train: "0.70", budget: 10, successor: S1, absorbs: [4033, 4288, 4232, 3081, 3058]}
+  - {id: E1, issue: 3998, name: "Fast Train", train: "0.71", budget: 10, successor: S1, absorbs: [4033, 4288, 4232, 3081, 3058, 4678],
+     done_when: "C332 a (nightly rehearsal, 3 green nights), b (one unattended autopilot.sh pass), c (planted read/notes-only receipts); C333 release-stopping checks <= 20; freeze to publish <= 4 h",
+     intake: "every build ticket from C334 on"}  # C334 2026-10-08: train 0.70 -> 0.71; #4678's open children re-parented (receipt docs/audits/apr-epic-001/plan-C334-E1.json)
   - {id: E2, issue: 3598, name: "Verbs Are Fast", train: "0.71", budget: 7, successor: E6, absorbs: [4249]}  # #4249 children re-parent after 0.69.5 ships
   - {id: E3, issue: 3994, name: "Don't Leave Behind", train: "0.71", budget: 9, successor: E7, absorbs: [3062, 3597]}
   - {id: E4, issue: 4381, name: "Dogfood Model Lifecycle", train: "0.71", budget: 9, successor: E8, absorbs: [4354, 4252]}  # #4354 stays a one-level sub-epic

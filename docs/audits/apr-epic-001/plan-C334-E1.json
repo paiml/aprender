@@ -1,0 +1,545 @@
+{
+  "row": "C334-E1",
+  "spec": "APR-EPIC-001 rules 3/5/6/8/12/20/21; ISSUE-TREE-001",
+  "ticket": "aprender#3998",
+  "ruling": "C334 item 2 (2026-10-08 10:45Z)",
+  "epic": 3998,
+  "from_epic": 4678,
+  "n_ranked": 37,
+  "counts": {
+    "keep": 14,
+    "collapse": 6,
+    "park": 19
+  },
+  "writes": 90,
+  "quorum": {
+    "question": "C334 item 2: #4678's open children re-parent to E1 (#3998). Q1 scope (A = #4678's 37 only / B = union with E1's own 11). Q2 do rules 6/20 keep the P0s on 0.71 ranked below 10 open. Q3 plan check: keep 14 (ranks 1-10 + #4742 #4743 #4751 + #4696 for its open P0 sub #4666; #4701 to milestone 0.71.0 per rule 3), collapse 6 (#4693 #4694 #4695 #4377 -> #4684; #4754 -> #4742; #4805 -> #4687), park 19 (#4715 #4352 #4350 #4745 #4746 #4749 #4819 #4820 #4821 #4744 #4750 #4752 #4757 #4732 #4786 #4798 #4851 #4817 #4829).",
+    "author": "claude-opus-5-5",
+    "executor": "claude-code subagents (Agent tool)",
+    "planted_control": {
+      "q": "Under APR-EPIC-001 rule 5, is a parked issue closed as not planned?",
+      "expected": "YES"
+    },
+    "lanes": [
+      {
+        "model": "claude-sonnet-5-5 (alias sonnet)",
+        "agent": "ac23a3b724a4f0a8f",
+        "control": "YES",
+        "q1": "A",
+        "q2": "KEEP_PROTECTED",
+        "q3": "OK"
+      },
+      {
+        "model": "haiku (Agent alias)",
+        "agent": "a3a4e3cc1126a420f",
+        "control": "YES",
+        "q1": "A",
+        "q2": "KEEP_PROTECTED",
+        "q3": "OBJECT",
+        "q3_objection": "#4701: rule 6a park-to-floor because floor 13 > budget 10; re-milestone not in ruling"
+      }
+    ],
+    "tiebreak": {
+      "planted_control": {
+        "q": "Under rule 3, does an open issue's milestone equal its epic's train?",
+        "expected": "YES"
+      },
+      "lane": {
+        "model": "claude-sonnet-5-5 (alias sonnet), fresh agent",
+        "agent": "a3798d573e4686802",
+        "control": "YES",
+        "verdict": "KEEP_4701",
+        "milestone_0710_ok": "YES",
+        "reason": "rule 6a is the repo-wide 100 cap, not E1's budget; #4701 is rank 8 in the literal top 10; rule 3 sets an E1 child's milestone to 0.71.0"
+      }
+    },
+    "agreed": true,
+    "agreed_on": "Q1 A 2/2, Q2 KEEP_PROTECTED 2/2, Q3 OK 2/3 after tie-break",
+    "result": "scope A; keep 14 open under E1 (count differs from 10: 4 rule-6/ISSUE-TREE-protected beyond rank 10, reported); collapse 6; park 19; nothing deleted",
+    "degraded": "same-family",
+    "time": "2026-10-08T11:39Z"
+  },
+  "ops": [
+    {
+      "issue": 4526,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 1,
+      "reason": "rule-8 top 10",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-a7k",
+        "branches": "98/4526-gen001-readme-counts@10d7589a4c"
+      }
+    },
+    {
+      "issue": 4680,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 2,
+      "reason": "rule-8 top 10",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-78",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4684,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 3,
+      "reason": "rule-8 top 10",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-a7r9",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4685,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 4,
+      "reason": "rule-8 top 10",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-a7",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4687,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 5,
+      "reason": "rule-8 top 10",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-cd",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4688,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 6,
+      "reason": "rule-8 top 10",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-a7r9",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4689,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 7,
+      "reason": "rule-8 top 10",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-a7r8",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4701,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 8,
+      "reason": "rule-8 top 10",
+      "milestone": "0.71.0 (rule 3)",
+      "evidence": {
+        "owner": "owner:aprender-wprodmodels",
+        "branches": "build-kaizen/4701-ladder-nightly@cc12cb446c build-kaizen/4701-release-reader@10727f159f"
+      }
+    },
+    {
+      "issue": 4704,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 9,
+      "reason": "rule-8 top 10",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-a7",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4709,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 10,
+      "reason": "rule-8 top 10",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:la-0.71",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4742,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 12,
+      "reason": "rule 6: P0 on current train 0.71",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-a7r9",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4743,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 13,
+      "reason": "rule 6: P0 on current train 0.71",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-w4650",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4751,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 14,
+      "reason": "rule 6: P0 on current train 0.71",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-w4472",
+        "branches": ""
+      }
+    },
+    {
+      "issue": 4696,
+      "action": "reparent",
+      "to": 3998,
+      "rank": 19,
+      "reason": "ISSUE-TREE-001: open sub #4666 is P0 on 0.71",
+      "milestone": null,
+      "evidence": {
+        "owner": "owner:aprender-ont244",
+        "branches": "build-kaizen/4696-sampled-think-on@f63b14ff5c"
+      }
+    },
+    {
+      "issue": 4377,
+      "action": "collapse",
+      "into": 4684,
+      "row": 4377,
+      "rank": null,
+      "sub_of": "4695",
+      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "evidence": {
+        "owner": "owner:aprender-a7",
+        "branches": "",
+        "last_comment": ""
+      }
+    },
+    {
+      "issue": 4693,
+      "action": "collapse",
+      "into": 4684,
+      "row": 4693,
+      "rank": 16,
+      "sub_of": null,
+      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "evidence": {
+        "owner": "owner:aprender-a7",
+        "branches": "",
+        "last_comment": ""
+      }
+    },
+    {
+      "issue": 4694,
+      "action": "collapse",
+      "into": 4684,
+      "row": 4694,
+      "rank": 17,
+      "sub_of": null,
+      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "evidence": {
+        "owner": "owner:aprender-a7",
+        "branches": "",
+        "last_comment": ""
+      }
+    },
+    {
+      "issue": 4695,
+      "action": "collapse",
+      "into": 4684,
+      "row": 4695,
+      "rank": 18,
+      "sub_of": null,
+      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "evidence": {
+        "owner": "owner:aprender-a7",
+        "branches": "",
+        "last_comment": ""
+      }
+    },
+    {
+      "issue": 4754,
+      "action": "collapse",
+      "into": 4742,
+      "row": 4754,
+      "rank": 29,
+      "sub_of": null,
+      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "evidence": {
+        "owner": "owner:aprender-a7r9",
+        "branches": "build-kaizen/4754-python-runcount-files@bffb0337f7",
+        "last_comment": ""
+      }
+    },
+    {
+      "issue": 4805,
+      "action": "collapse",
+      "into": 4687,
+      "row": 4805,
+      "rank": 34,
+      "sub_of": null,
+      "reason": "rule 20: same spec/owner as parent, not a P0 on 0.71/0.72, no open closing PR, owner-authored",
+      "evidence": {
+        "owner": "owner:aprender-cd",
+        "branches": "",
+        "last_comment": ""
+      }
+    },
+    {
+      "issue": 4350,
+      "action": "park",
+      "rank": null,
+      "sub_of": "4352",
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "",
+        "branches": "",
+        "milestone_before": "backlog"
+      }
+    },
+    {
+      "issue": 4352,
+      "action": "park",
+      "rank": 15,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-df",
+        "branches": "wip/4352-release-no-python@bffaa957aa",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4715,
+      "action": "park",
+      "rank": 11,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-a7n",
+        "branches": "build-kaizen/4715-perf-baseline@2b449d864e build-kaizen/4739-k1-4715@8961c0b101",
+        "milestone_before": "backlog"
+      }
+    },
+    {
+      "issue": 4745,
+      "action": "park",
+      "rank": 20,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-a7r9",
+        "branches": "",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4746,
+      "action": "park",
+      "rank": 21,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-wprodcleanroom",
+        "branches": "ci/4746-guard-cargo-sections@db4f2eee52",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4749,
+      "action": "park",
+      "rank": 22,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-a7w",
+        "branches": "a7w/4749-c310@270e91e472 a7w/4749-c310-train@07d5f6c868 a7w/4749-night-created-at@5a7e4594f5",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4819,
+      "action": "park",
+      "rank": 23,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-3e",
+        "branches": "fix/q9-4819-clerk@d60d72c5e3",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4820,
+      "action": "park",
+      "rank": 24,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-3e",
+        "branches": "fix/q9-4820-clerk@33061b440e",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4821,
+      "action": "park",
+      "rank": 25,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-3e",
+        "branches": "fix/q9-4821-clerk@bf0a4da83a",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4744,
+      "action": "park",
+      "rank": 26,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-a7r8",
+        "branches": "",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4750,
+      "action": "park",
+      "rank": 27,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-a7w",
+        "branches": "",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4752,
+      "action": "park",
+      "rank": 28,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-w4472",
+        "branches": "",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4757,
+      "action": "park",
+      "rank": 30,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-a7r9",
+        "branches": "build-kaizen/4757-coverage-chain-redesign@cfcbe911f1",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4732,
+      "action": "park",
+      "rank": 31,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-wprodcleanroom",
+        "branches": "",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4786,
+      "action": "park",
+      "rank": 32,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-a7w",
+        "branches": "",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4798,
+      "action": "park",
+      "rank": 33,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-w4798",
+        "branches": "batch/0702/4798-common-commit@ed2a73d10b w4798/b1-common-commit@b0cebd1010 w4798/b1-on-c310@186ed5841a w4798/flake0-ladder-m12@110837fa88 w4798/pin-on-common-commit@57998914cd",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4851,
+      "action": "park",
+      "rank": 35,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "owner:aprender-wprodcleanroom",
+        "branches": "",
+        "milestone_before": "0.71.0"
+      }
+    },
+    {
+      "issue": 4817,
+      "action": "park",
+      "rank": 36,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "",
+        "branches": "",
+        "milestone_before": "backlog"
+      }
+    },
+    {
+      "issue": 4829,
+      "action": "park",
+      "rank": 37,
+      "sub_of": null,
+      "reason": "rule 5/21: over E1 budget, not rule-6 protected",
+      "evidence": {
+        "owner": "",
+        "branches": "",
+        "milestone_before": "backlog"
+      }
+    }
+  ],
+  "time": "2026-10-08T11:52Z"
+}
