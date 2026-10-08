@@ -89,7 +89,7 @@ models:
 - name: qwen2.5-coder-1.5b
   family: qwen2.5
   size: 1.5b
-  cited_by_count: 38
+  cited_by_count: 42
   cited_by:
   - README.md:165
   - docs/BEATS.md:131
@@ -103,11 +103,11 @@ models:
   - book/src/cli/tokenize.md:17
   - book/src/cli/tokenize.md:19
   - book/src/examples/ptx-parity-validation.md:136
-  # … and 26 more
+  # … and 30 more
 - name: qwen2.5-coder-1.5b-instruct
   family: qwen2.5
   size: 1.5b
-  cited_by_count: 104
+  cited_by_count: 136
   cited_by:
   - README.md:149
   - README.md:150
@@ -121,7 +121,7 @@ models:
   - README.md:251
   - README.md:252
   - README.md:253
-  # … and 92 more
+  # … and 124 more
 - name: qwen2.5-coder-32b
   family: qwen2.5
   size: 32b
