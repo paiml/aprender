@@ -17,9 +17,16 @@ inb && /^    [^ ]/ {
     if (!(key in ok)) { print "ERR\tunknown key in release_policy: " key; bad = 1; exit }
     if (key in seen) { print "ERR\tduplicate key in release_policy: " key; bad = 1; exit }
     if (val == "") { print "ERR\tempty value for release_policy." key; bad = 1; exit }
-    # A YAML parser reads an unquoted # as the start of a comment; this reader would not. Refuse it,
-    # so the two can never disagree on a value.
-    if (substr(val, 1, 1) == "#" || (substr(val, 1, 1) != "\"" && index(val, " #") > 0)) {
+    # A YAML parser reads a # after whitespace as the start of a comment; this reader would not.
+    # Refuse every such shape, so the two can never disagree on a value: a quoted value must close
+    # at the end of its line (nothing, not even a comment, after it), and an unquoted one may not
+    # carry a # at its start or after a space or tab.
+    sub(/[ \t]+$/, "", val); q = substr(val, 1, 1)
+    if (q == "\"" || q == "'") {
+        if (length(val) < 2 || substr(val, length(val), 1) != q || index(substr(val, 2, length(val) - 2), q) > 0) {
+            print "ERR\tquoted release_policy." key " does not close at the end of the line: nothing may follow its closing quote"; bad = 1; exit
+        }
+    } else if (q == "#" || val ~ /[ \t]#/) {
         print "ERR\tunquoted # in release_policy." key ", which YAML reads as a comment: quote the value"; bad = 1; exit
     }
     seen[key] = 1; print key "\t" val; next
