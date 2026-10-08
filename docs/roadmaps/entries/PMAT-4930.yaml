@@ -1,0 +1,21 @@
+- id: PMAT-4930
+  github_issue: 4930
+  item_type: task
+  title: 'D2: T-1 dogfood ladder gate waits for the models lane''s CRUX receipts'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-clerk
+  created: 2026-10-08T13:38:42Z
+  updated: 2026-10-08T13:38:42Z
+  spec: null
+  acceptance_criteria:
+  - 'under the standing release policy the T-1 dogfood lane starts only after the models lane exits GO, with MODEL_LADDER_CRUX_DIR and CRUX_CERT set to the receipts it wrote'
+  - 'a red in models, or in any lane before models ends, leaves dogfood NOT-RUN'
+  - 'scripts/check_release_t1_lanes_joined.sh policy cases are red on main and green with the fix; every mutant is killed'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998

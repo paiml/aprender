@@ -15,7 +15,13 @@
 #   overlap    three 2 s lanes    -> rc 0 in under 5 s (in series they need 6)
 #   interrupt  TERM to the run    -> rc 1 within seconds, nothing after the join, deep's child gone
 #   self-red   deep red; dogfood, signalled, exits 1 by itself -> dogfood RED (not STOPPED), both named
-# and, on the autopilot text itself, that deep and dogfood build into their own target dirs under
+# and under the standing release policy (D2, #4930), where dogfood's ladder gate reads models' receipts:
+#   policy-order       all green   -> dogfood starts no earlier than models ends; deep starts at once
+#   policy-models-red  models red  -> rc 1, dogfood NOT-RUN and never started
+#   policy-deep-red    deep red, models GO -> rc 1, dogfood NOT-RUN (a red before models ends starts nothing)
+#   policy-solo        dogfood alone -> not held, rc 0
+# and, on the autopilot text itself, that t1_dogfood exports MODEL_LADDER_CRUX_DIR and CRUX_CERT under
+# the policy (the pair the T-4 preflight reads), that deep and dogfood build into their own target dirs under
 # $REPO_ROOT/target while models keeps CARGO_TARGET_DIR (readiness reads the apr models built), and
 # that scripts/check_model_parity.sh runs every apr parity under the ladder's GPU lock (dogfood's C14
 # parity and the ladder now share the GPU).
@@ -55,6 +61,7 @@ run_step() { case " $SEL " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 lane() { sleep "$2"; [ "$3" = 0 ] || die "$1 red"; say "$1 GO"; }
 t1_deep() { sleep "$DD" & echo "$!" > "$AP/deep-child"; wait; lane deep 0 "$DR"; }
 t1_dogfood() {
+    : > "$AP/dogfood-ran"
     if [ "${DT:-0}" = 1 ]; then trap 'exit 1' TERM; sleep 5 & wait; exit 1; fi
     lane dogfood "$GD" "$GR"
 }
@@ -69,13 +76,15 @@ case_run() {
     local j=$1 n=$2 t0 pid
     mkdir -p "$TMP/$n" || return 2
     t0=$SECONDS
-    ( export APD="$TMP/$n" JOIN="$j" SEL="$3" DD=$4 DR=$5 GD=$6 GR=$7 MD=$8 MR=$9 DT="${DT:-0}"
+    ( export APD="$TMP/$n" JOIN="$j" SEL="$3" DD=$4 DR=$5 GD=$6 GR=$7 MD=$8 MR=$9 DT="${DT:-0}" AP_POLICY="${AP_POLICY:-0}"
       exec bash "$TMP/harness.sh" ) > "$TMP/$n/out.log" 2>&1 &
     pid=$!
     if [ -n "${10:-}" ]; then sleep "${10}"; kill -TERM "$pid" 2>/dev/null; fi
     wait "$pid"; C_RC=$?; C_SECS=$((SECONDS - t0))
 }
 verdict() { awk -F'\t' -v s="$2" '$1==s {print $5}' "$TMP/$1/t1-steps.tsv" 2>/dev/null; }
+col() { awk -F'\t' -v s="$2" -v c="$3" '$1==s {print $c}' "$TMP/$1/t1-steps.tsv" 2>/dev/null; }
+ran() { [ -f "$TMP/$1/dogfood-ran" ]; }
 rows() { tail -n +2 "$TMP/$1/t1-steps.tsv" 2>/dev/null | wc -l; }
 after() { grep -q 'AFTER-JOIN' "$TMP/$1/STATUS" 2>/dev/null; }
 child_gone() { local c; c=$(cat "$TMP/$1/deep-child" 2>/dev/null); [ -n "$c" ] && ! kill -0 "$c" 2>/dev/null; }
@@ -111,6 +120,24 @@ table() {
     DT=1 case_run "$j" "$t-self" "deep dogfood" 1 1 0 0 0 0
     [ "$C_RC" = 1 ] && [ "$(verdict "$t-self" dogfood)" = RED ] && grep -q 'STOP .*deep dogfood RED' "$TMP/$t-self/STATUS" \
         || { echo "self-red: rc=$C_RC dogfood=$(verdict "$t-self" dogfood) (want dogfood RED: it exited 1 by itself, not by the signal)"; return 1; }
+    # D2 (P7 WIRE): under the standing release policy the dogfood's ladder gate reads the CRUX receipts
+    # the models lane writes, so dogfood starts only once models is GO; deep still starts at once.
+    AP_POLICY=1 case_run "$j" "$t-p-order" "deep dogfood models" 1 0 1 0 2 0
+    [ "$C_RC" = 0 ] && after "$t-p-order" \
+        && [ "$(verdict "$t-p-order" deep)$(verdict "$t-p-order" dogfood)$(verdict "$t-p-order" models)" = GOGOGO ] \
+        && [ "$(col "$t-p-order" dogfood 2)" -ge "$(col "$t-p-order" models 3)" ] && [ "$(col "$t-p-order" deep 2)" = 0 ] \
+        || { echo "policy-order: rc=$C_RC dogfood start=$(col "$t-p-order" dogfood 2) models end=$(col "$t-p-order" models 3) deep start=$(col "$t-p-order" deep 2) (want rc 0, 3 GO, dogfood started after models ended, deep at 0)"; return 1; }
+    AP_POLICY=1 case_run "$j" "$t-p-mred" "deep dogfood models" 1 0 1 0 1 1
+    [ "$C_RC" = 1 ] && ! after "$t-p-mred" && ! ran "$t-p-mred" && [ "$(verdict "$t-p-mred" dogfood)" = NOT-RUN ] \
+        && [ "$(verdict "$t-p-mred" models)" = RED ] \
+        || { echo "policy-models-red: rc=$C_RC dogfood=$(verdict "$t-p-mred" dogfood) (want rc 1, models RED, dogfood NOT-RUN and never started)"; return 1; }
+    AP_POLICY=1 case_run "$j" "$t-p-dred" "deep dogfood models" 1 1 1 0 2 0
+    [ "$C_RC" = 1 ] && ! ran "$t-p-dred" && [ "$(verdict "$t-p-dred" dogfood)" = NOT-RUN ] \
+        && [ "$(verdict "$t-p-dred" models)" = GO ] \
+        || { echo "policy-deep-red: rc=$C_RC dogfood=$(verdict "$t-p-dred" dogfood) (want rc 1, models GO, dogfood NOT-RUN: a red before models ends starts nothing)"; return 1; }
+    AP_POLICY=1 case_run "$j" "$t-p-solo" "dogfood" 0 0 1 0 0 0
+    [ "$C_RC" = 0 ] && ran "$t-p-solo" && [ "$(rows "$t-p-solo")" = 1 ] \
+        || { echo "policy-solo: rc=$C_RC rows=$(rows "$t-p-solo") (want rc 0: dogfood alone is not held)"; return 1; }
     return 0
 }
 
@@ -134,15 +161,25 @@ dirs() {
     [ -z "$m" ] || { echo "models moved off CARGO_TARGET_DIR, which readiness reads: $m"; return 1; }
 }
 
+# crux AUTOPILOT -> 0 when t1_dogfood points the ladder gate at models' receipts under the policy
+crux() {
+    local e
+    e=$(awk '/^t1_dogfood\(\) \{/{p=1} p&&/MODEL_LADDER_CRUX_DIR=/{print; exit} p&&/^\}/{exit}' "$1")
+    case "$e" in
+        *'[ "$AP_POLICY" != 1 ] || export MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json"'*) ;;
+        *) echo "t1_dogfood does not export the models lane's CRUX receipts under the policy: '$e'"; return 1 ;;
+    esac
+}
+
 # check AUTOPILOT TAG -> 0 when the join and the dirs hold
 check() {
     awk '/^# The join\./{p=1} p{print} p&&/^fi$/{exit}' "$1" > "$TMP/$2.join"
     grep -q 'wait -n' "$TMP/$2.join" || { echo "no join block (\"# The join.\" .. fi with wait -n)"; return 1; }
-    dirs "$1" && locked "${3:-$PARITY}" && table "$TMP/$2.join" "$2"
+    dirs "$1" && crux "$1" && locked "${3:-$PARITY}" && table "$TMP/$2.join" "$2"
 }
 
 bad=0
-if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (8 cases), the target dirs are split, parity takes the GPU lock"
+if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (12 cases), dogfood reads models' CRUX receipts under the policy, the target dirs are split, parity takes the GPU lock"
 else echo "FAIL  the autopilot's T-1 lanes: $why"; bad=1; fi
 
 # The mutants run whatever the real tree did, so report mode prints every line before its verdict.
@@ -164,6 +201,9 @@ mutant no-trap     "/^  trap 'for p in/d"
 mutant shared-deep '/^  export CARGO_TARGET_DIR="\$REPO_ROOT\/target\/t1-deep"$/d'
 mutant shared-dogfood 's/target\/t1-dogfood"$/target\/t1-deep"/'
 mutant stopped-any-rc 's/ \&\& \[ "\$rc" -eq "\$t1_term_rc" \]; then v=STOPPED/; then v=STOPPED/'
+mutant no-hold     's/ || t1_held=dogfood ;; esac$/ || : ;; esac/'
+mutant held-after-red 's/^      if \[ -z "\$t1_red" \]; then$/      if :; then/'
+mutant no-crux-env '/export MODEL_LADDER_CRUX_DIR="\$AP\/models-t1"/d'
 nm=$((nm + 1))
 sed -e 's/flock -E 75 -w "\${MODEL_LADDER_LOCK_WAIT:-1800}" "\${MODEL_LADDER_GPU_LOCK:-\/tmp\/apr-gpu.lock}"/env/' "$PARITY" > "$TMP/m-parity.sh"
 if cmp -s "$PARITY" "$TMP/m-parity.sh"; then echo "FAIL  mutant parity-unlocked did not apply (anchor moved)"; fails=$((fails + 1))
@@ -171,5 +211,5 @@ elif why=$(check "$AUTOPILOT" m-parity "$TMP/m-parity.sh"); then echo "FAIL  mut
 else echo "ok    mutant parity-unlocked killed ($why)"; fi
 [ "$fails" -eq 0 ] || { echo "FAIL  $fails of $nm mutant(s)"; finish 1; }
 [ "$bad" = 0 ] || finish 1
-echo "PASS  8 case(s) + target dirs + parity lock, $nm mutant(s) killed: deep, dogfood and models start together, join before readiness, and a red in any stops the pass"
+echo "PASS  12 case(s) + CRUX env + target dirs + parity lock, $nm mutant(s) killed: deep, dogfood and models start together, join before readiness, and a red in any stops the pass"
 finish 0
