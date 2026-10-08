@@ -38,6 +38,8 @@ if [ "${1:-}" = "--visited" ]; then
 fi
 # shellcheck source=scripts/release/lib_release_params.sh
 . "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
+# shellcheck source=scripts/release/lib_gh_read.sh
+. "$REPO_ROOT/scripts/release/lib_gh_read.sh" || exit 2
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
@@ -95,12 +97,12 @@ say "START autopilot pid=$$ pr=#$PR from=$FROM to=$TO"
 # 1. wait: the bump PR merges; its merge commit is the release commit
 if run_step wait; then
   while :; do
-    s=$(gh pr view "$PR" --repo $REPO --json state -q .state) || s=unknown
+    s=$(gh_read pr view "$PR" --repo $REPO --json state -q .state) || s=unknown
     [ "$s" = MERGED ] && break; [ "$s" = CLOSED ] && die "#$PR closed unmerged"
     sleep 300
   done
 fi
-MC=$(gh pr view "$PR" --repo $REPO --json mergeCommit -q .mergeCommit.oid)
+MC=$(gh_read pr view "$PR" --repo $REPO --json mergeCommit -q .mergeCommit.oid)
 [ -n "$MC" ] || die "#$PR has no merge commit"
 say "RELEASE COMMIT $MC (#$PR)"
 cd "$REPO_ROOT" || die "no repo"
@@ -375,7 +377,7 @@ if run_step cleanroom; then
     gh workflow run clean-room.yml --repo $INFRA -f repos=aprender -f ref="$T" >> "$LOG" 2>&1 || die "clean-room.yml dispatch on $T failed"
     say "CLEANROOM dispatched on $T"
     crun=""; for _ in $(seq 1 30); do
-      crun=$(gh run list --repo $INFRA --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t0 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
+      crun=$(gh_read run list --repo $INFRA --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t0 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
       [ -n "$crun" ] && break; sleep 20
     done
     [ -n "$crun" ] || die "no clean-room.yml workflow_dispatch run appeared after the dispatch"
@@ -388,7 +390,7 @@ if run_step cleanroom; then
     t1=$(date -u +%s)  # bashrs disable-line=DET002
     gh workflow run b2-gpu.yml --repo $REPO --ref main -f ref="$T" >> "$LOG" 2>&1 || die "b2-gpu.yml dispatch on $T failed (is aprender#3467 merged?)"
     grun=""; for _ in $(seq 1 30); do
-      grun=$(gh run list --repo $REPO --workflow b2-gpu.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t1 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
+      grun=$(gh_read run list --repo $REPO --workflow b2-gpu.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t1 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
       [ -n "$grun" ] && break; sleep 20
     done
     [ -n "$grun" ] || die "no b2-gpu.yml run appeared after the dispatch"
@@ -396,13 +398,13 @@ if run_step cleanroom; then
   fi
   # the JOB conclusion, not the run status: a sibling job that can never start must not hold the verdict hostage
   jc=""; for _ in $(seq 1 240); do
-    jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
+    jc=$(gh_read run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
     [ -n "$jc" ] && break; sleep 60
   done
   [ "$jc" = success ] || die "clean-room (aprender) on $T concluded '${jc:-absent}' (run $crun)"
   say "B2-CPU GREEN on $T (infra run $crun)"
   gc=""; for _ in $(seq 1 120); do
-    gs=$(gh run view "$grun" --repo $REPO --json status,conclusion,headSha --jq '"\(.status) \(.conclusion)"'); case "$gs" in completed*) gc=${gs#completed }; break;; esac; sleep 60
+    gs=$(gh_read run view "$grun" --repo $REPO --json status,conclusion,headSha --jq '"\(.status) \(.conclusion)"'); case "$gs" in completed*) gc=${gs#completed }; break;; esac; sleep 60
   done
   [ "$gc" = success ] || die "b2-gpu on $T concluded '${gc:-absent}' (aprender run $grun)"
   ok=0; for _ in 1 2 3 4 5 6; do gh run view "$grun" --repo $REPO --log > "$AP/b2gpu-run.log" 2>/dev/null; grep -q "tested-sha: $MC" "$AP/b2gpu-run.log" && { ok=1; break; }; sleep 30; done; [ $ok = 1 ] || die "b2-gpu run $grun did not test $MC"
@@ -413,18 +415,18 @@ fi
 # 4. assets: the release run completes and all sixteen assets are on the release, checked by command
 if run_step assets; then
   run=""; for _ in $(seq 1 40); do
-    run=$(gh run list --repo $REPO --workflow binary-release.yml --event workflow_dispatch --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)
+    run=$(gh_read run list --repo $REPO --workflow binary-release.yml --event workflow_dispatch --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)
     [ -n "$run" ] && break; sleep 30
   done
   [ -n "$run" ] || die "no binary-release run for $T after 20 min"
   say "ASSET RUN $run"
   for _ in $(seq 1 240); do
-    s=$(gh run view "$run" --repo $REPO --json status -q .status)
+    s=$(gh_read run view "$run" --repo $REPO --json status -q .status)
     [ "$s" = completed ] && break
     sleep 60
   done
-  c=$(gh run view "$run" --repo $REPO --json conclusion -q .conclusion)
-  gh api "repos/$REPO/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | "  \(.name) = \(.conclusion)"' >> "$STATUS"
+  c=$(gh_read run view "$run" --repo $REPO --json conclusion -q .conclusion)
+  gh_read api "repos/$REPO/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | "  \(.name) = \(.conclusion)"' >> "$STATUS"
   [ "$c" = success ] || die "binary-release run $run concluded '$c' (jobs above)"
   bash scripts/check_release_assets.sh "$T" > "$AP/assets.log" 2>&1; rc=$?
   tail -3 "$AP/assets.log" >> "$STATUS"
@@ -469,18 +471,18 @@ publish_release() {
     local t=$1 mc=$2 crun="" jc d rc=0
     IFS= read -r crun < "$AP/cleanroom-run-id" 2>/dev/null || crun=""
     [ -n "$crun" ] || die "no clean-room run id recorded for $t -- the release stays a draft"
-    jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | .conclusion' | head -n 1) || jc=""
+    jc=$(gh_read run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | .conclusion' | head -n 1) || jc=""
     [ "$jc" = success ] || die "clean-room (aprender) run $crun reads '${jc:-unreadable}' -- the release stays a draft"
     grep -qxF "PASS $t $mc" "$AP/preflight-pass" 2>/dev/null || die "no preflight PASS for $t at $mc -- the release stays a draft"
     bash scripts/check_release_assets.sh "$t" > "$AP/assets-publish.log" 2>&1 || rc=$?
     [ "$rc" -eq 0 ] || die "check_release_assets.sh $t rc=$rc at publish (1 = missing, 2 = could not read) -- the release stays a draft"
-    d=$(gh release view "$t" --repo "$REPO" --json isDraft -q .isDraft) || d=""
+    d=$(gh_read release view "$t" --repo "$REPO" --json isDraft -q .isDraft) || d=""
     [ "$d" = true ] || die "release $t reads isDraft='${d:-unreadable}' at publish: it is not the train's draft"
     gh release edit "$t" --repo "$REPO" --draft=false >> "$LOG" 2>&1 || die "publishing the draft $t failed"
 }
 if run_step publish; then
   publish_release "$T" "$MC"
-  say "RELEASED $(gh release view "$T" --repo "$REPO" --json url -q .url) (clean-room, assets and preflight green before it went public)"
+  say "RELEASED $(gh_read release view "$T" --repo "$REPO" --json url -q .url) (clean-room, assets and preflight green before it went public)"
 fi
 
 
@@ -676,7 +678,7 @@ PY
   DOGFOOD_RECEIPTS_DIR="$AP/receipts/dogfood" bash scripts/check_multiplatform_dogfood.sh > "$AP/multiplatform.log" 2>&1
   grep -E '^REPORT ' "$AP/multiplatform.log" > "$AP/multiplatform-report.txt" || true
   if [ -s "$AP/multiplatform-report.txt" ]; then
-    gh release view "$T" --repo $REPO --json body -q .body > "$AP/release-notes.md" \
+    gh_read release view "$T" --repo $REPO --json body -q .body > "$AP/release-notes.md" \
       || die "cannot read the $T release notes to name its REPORT rows ($AP/multiplatform-report.txt)"
     if ! grep -qF '## Post-publish host receipts' "$AP/release-notes.md"; then
       { printf '\n## Post-publish host receipts: rows that ran as REPORT\n\n'; sed 's/^REPORT */- /' "$AP/multiplatform-report.txt"; } >> "$AP/release-notes.md"
@@ -715,7 +717,7 @@ if run_step ledger; then
     git -C "$lw" commit -q -m "ledger: $V release train -- $nrec host receipt(s) + the train record (#3731)" >> "$LOG" 2>&1 || die "the ledger commit failed in $lw"
   fi
   git -C "$lw" push -q origin "$lb" >> "$LOG" 2>&1 || die "cannot push $lb: the receipts exist only in $AP"
-  lpr=$(gh pr list --repo $REPO --head "$lb" --state open --json number -q '.[0].number') || die "cannot list the PRs of $lb"
+  lpr=$(gh_read pr list --repo $REPO --head "$lb" --state open --json number -q '.[0].number') || die "cannot list the PRs of $lb"
   if [ -z "$lpr" ]; then
     lpr=$(gh pr create --repo $REPO --base main --head "$lb" --title "ledger: $V release train receipts" \
       --body "The $T release train's ledger, opened by scripts/release/autopilot.sh (#3731): evidence/dogfood/$V/ holds the $nrec post-publish host receipt(s) the train produced and judged, and docs/build-ledger/$day/ holds the train record. Opened UNARMED; the cop folds and arms it. Refs #$EPIC") \
@@ -729,19 +731,19 @@ if run_step close; then
   # SEC010 (bashrs-gate): read the run id with the read builtin, not $(cat "$AP/…") -- AP is derived
   # now (#3655), so a cat over it inside the message is flagged as a path-traversal risk.
   cleanroom_run_id=unknown; IFS= read -r cleanroom_run_id < "$AP/cleanroom-run-id" 2>/dev/null || cleanroom_run_id=unknown
-  gh issue comment "$EPIC" --repo $REPO --body "$T released: $(gh release view "$T" --repo $REPO --json url -q .url). Receipts: pre-publish dogfood GO at \`$MC\`, all release assets verified by \`scripts/check_release_assets.sh $T\`, crates.io cascade complete, the CUDA asset downloaded, verified and run on gx10 and yoga. clean-room (aprender) green on the tag (run ${cleanroom_run_id}), install.sh receipts on intel and gx10, post-publish dogfood GO over the host receipts of every host in the multi-platform matrix. Logs: $AP on $(hostname)." >> "$LOG" 2>&1 || say "WARN epic comment failed"
+  gh issue comment "$EPIC" --repo $REPO --body "$T released: $(gh_read release view "$T" --repo $REPO --json url -q .url). Receipts: pre-publish dogfood GO at \`$MC\`, all release assets verified by \`scripts/check_release_assets.sh $T\`, crates.io cascade complete, the CUDA asset downloaded, verified and run on gx10 and yoga. clean-room (aprender) green on the tag (run ${cleanroom_run_id}), install.sh receipts on intel and gx10, post-publish dogfood GO over the host receipts of every host in the multi-platform matrix. Logs: $AP on $(hostname)." >> "$LOG" 2>&1 || say "WARN epic comment failed"
   # The epic is IN the milestone, so "0 open items" could never hold while it was open, and nothing
   # here closed it: 0.68.2's #3477 was closed by hand (#3708). Every OTHER item must be closed first;
   # then the epic, then the milestone. Any other open item refuses both.
-  others=$(gh api "repos/$REPO/issues?milestone=$MS&state=open&per_page=100" --paginate --jq ".[] | select(.number != $EPIC) | .number" | tr '\n' ' ') \
+  others=$(gh_read api "repos/$REPO/issues?milestone=$MS&state=open&per_page=100" --paginate --jq ".[] | select(.number != $EPIC) | .number" | tr '\n' ' ') \
     || die "cannot read milestone $V's open items; closing neither the epic nor the milestone"
   [ -z "${others// /}" ] || die "milestone $V still has open item(s) besides epic #$EPIC: $others; closing neither"
-  estate=$(gh issue view "$EPIC" --repo $REPO --json state -q .state) || die "cannot read epic #$EPIC's state"
+  estate=$(gh_read issue view "$EPIC" --repo $REPO --json state -q .state) || die "cannot read epic #$EPIC's state"
   if [ "$estate" = OPEN ]; then
     gh issue close "$EPIC" --repo $REPO --reason completed >> "$LOG" 2>&1 || die "closing epic #$EPIC failed"
     say "EPIC #$EPIC closed"
   fi
-  open=$(gh api "repos/$REPO/milestones/$MS" --jq .open_issues); [ "$open" = 0 ] || die "milestone $V still has $open open item(s) after the epic; not closing"
+  open=$(gh_read api "repos/$REPO/milestones/$MS" --jq .open_issues); [ "$open" = 0 ] || die "milestone $V still has $open open item(s) after the epic; not closing"
   gh api -X PATCH "repos/$REPO/milestones/$MS" -f state=closed >> "$LOG" 2>&1 && say "MILESTONE $V closed"
   # the ledger record and the host receipts were committed and opened as a PR by the `ledger` step (#3731)
   say "DONE $V released, published, installed, receipts taken"

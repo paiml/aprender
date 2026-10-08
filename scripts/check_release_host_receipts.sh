@@ -632,7 +632,7 @@ fixture() {
     local d="$TMP/$1" r; r="$TMP/$1/repo"
     mkdir -p "$d/ap" "$d/state" "$d/pkg/bin" || return 2
     kit_files "$r" "$3" || return 2
-    cp -- "$2" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" \
+    cp -- "$2" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" && cp -- "${PARAMS%/*}/lib_gh_read.sh" "$r/scripts/release/lib_gh_read.sh" \
         && cp -- "$GATE" "$r/scripts/check_multiplatform_dogfood.sh" && cp -- "$TMP/cargo-stub" "$d/pkg/bin/cargo" \
         && cp -- "$LEDGER" "$r/scripts/release/ledger.py" || return 2
     if [ -n "${4:-}" ]; then

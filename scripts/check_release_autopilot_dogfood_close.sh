@@ -95,7 +95,7 @@ case "${1:-}" in
       *'issues?milestone=7'*)
         excl=$(printf '%s' "$jqarg" | sed -n 's/.*select(.number != \([0-9]*\)).*/\1/p')
         open_items | while IFS= read -r n; do [ -n "$excl" ] && [ "$n" = "$excl" ] && continue; printf '%s\n' "$n"; done ;;
-      */milestones/7) open_items | grep -c . ;;
+      */milestones/7) open_items | grep -c . || true ;;  # gh exits 0 on a 0 count; grep -c does not
       *) exit 1 ;;
     esac ;;
   pr) printf '%s\n' "$FX_MC" ;;
@@ -129,7 +129,7 @@ fixture() {
     local d="$TMP/$1" subject=$2 preflight=${3:-$PREFLIGHT} r
     r="$d/repo"
     mkdir -p "$r/scripts/release" "$d/ap" "$d/state" || return 2
-    cp -- "$subject" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" \
+    cp -- "$subject" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" && cp -- "${PARAMS%/*}/lib_gh_read.sh" "$r/scripts/release/lib_gh_read.sh" \
         && cp -- "$preflight" "$r/scripts/check_publish_preflight.sh" || return 2
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
     # the autopilot judges the standing release policy first (unreadable = STOP): the real reader and a

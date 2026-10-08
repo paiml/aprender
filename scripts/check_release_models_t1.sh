@@ -269,7 +269,7 @@ fixture() {
     r="$d/repo"
     mkdir -p "$r/scripts/release" "$d/ap" || return 2
     cp -- "$2" "$r/scripts/release/autopilot.sh" && cp -- "$3" "$r/scripts/release/models_t1.sh" \
-        && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" || return 2
+        && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" && cp -- "${PARAMS%/*}/lib_gh_read.sh" "$r/scripts/release/lib_gh_read.sh" || return 2
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
     # the standing release policy autopilot reads: this checkout's reader, and a ladder with no
     # policy (default), one covering every version (FX_POLICY=covers) or one the reader refuses (FX_POLICY=bad)
