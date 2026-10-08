@@ -750,8 +750,15 @@ impl GGUFConfig {
         // The contract default is architecture-specific (e.g., 1e-5 for LLaMA, 1e-6 for Qwen2).
         let eps = model.rms_epsilon().unwrap_or(constraints.default_eps);
 
-        // num_kv_heads (for GQA - e.g., Qwen uses fewer KV heads than Q heads)
-        let num_kv_heads = model.num_kv_heads().unwrap_or(num_heads);
+        // num_kv_heads (for GQA - e.g., Qwen uses fewer KV heads than Q heads). Read per layer, scalar or
+        // array (APR-EMBED-001 I-9): an array is never collapsed to num_heads, and one whose counts differ
+        // across layers is refused because this config holds a single count.
+        let num_kv_heads = match crate::model_kind::num_kv_heads_per_layer(model) {
+            None => num_heads,
+            Some(per_layer) => per_layer
+                .and_then(|v| crate::model_kind::uniform_kv_heads(&v))
+                .map_err(|reason| RealizarError::InvalidShape { reason })?,
+        };
 
         // GH-305: Infer head_dim from GGUF metadata or tensor shapes.
         let explicit_head_dim = Self::infer_explicit_head_dim(model, hidden_dim, num_heads);

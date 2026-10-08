@@ -141,3 +141,77 @@ fn falsify_eg2l_003_layer_kind_refusals() {
     assert!(err.contains("no local/global split"), "{err}");
     assert!(layer_attention_kinds(&[0, 1024]).is_err(), "zero width");
 }
+
+// FALSIFY-EG2L-006: the config loader reads head_count_kv through the per-layer reader. A uniform
+// array gives its value; a non-uniform array is refused by name, never collapsed to num_heads.
+fn kv_fixture(kv: Option<&[i32]>, scalar: Option<u32>, layers: u32) -> Vec<u8> {
+    use crate::gguf::test_factory::GGUFBuilder;
+    let mut b = GGUFBuilder::new()
+        .architecture("llama")
+        .hidden_dim("llama", 64)
+        .num_layers("llama", layers)
+        .num_heads("llama", 4)
+        .add_f32_tensor("token_embd.weight", &[8, 64], &[0.0f32; 512]);
+    if let Some(arr) = kv {
+        b = b.add_i32_array("llama.attention.head_count_kv", arr);
+    }
+    if let Some(k) = scalar {
+        b = b.num_kv_heads("llama", k);
+    }
+    b.build()
+}
+
+fn config_of(data: &[u8]) -> crate::error::Result<crate::gguf::GGUFConfig> {
+    let model = crate::gguf::GGUFModel::from_bytes(data).expect("fixture parses");
+    crate::gguf::GGUFConfig::from_gguf(&model)
+}
+
+#[test]
+fn falsify_eg2l_006_scalar_kv_heads_unchanged() {
+    let cfg = config_of(&kv_fixture(None, Some(2), 3)).expect("scalar loads");
+    assert_eq!(cfg.num_kv_heads, 2);
+    let cfg = config_of(&kv_fixture(None, None, 3)).expect("absent loads");
+    assert_eq!(
+        cfg.num_kv_heads, 4,
+        "absent key keeps the num_heads default"
+    );
+}
+
+#[test]
+fn falsify_eg2l_006_uniform_kv_array_gives_its_value() {
+    let cfg = config_of(&kv_fixture(Some(&[2, 2, 2]), None, 3)).expect("uniform array loads");
+    assert_eq!(
+        cfg.num_kv_heads, 2,
+        "a uniform array must not collapse to num_heads (4)"
+    );
+}
+
+#[test]
+fn falsify_eg2l_006_non_uniform_kv_array_refused() {
+    let err =
+        config_of(&kv_fixture(Some(&[2, 1, 2]), None, 3)).expect_err("non-uniform must be refused");
+    let msg = err.to_string();
+    assert!(msg.contains("per-layer"), "{msg}");
+    let err =
+        config_of(&kv_fixture(Some(&[2, 2]), None, 3)).expect_err("wrong length must be refused");
+    assert!(err.to_string().contains("2 entries for 3 blocks"), "{err}");
+}
+
+#[test]
+fn falsify_eg2l_006_metadata_exposes_per_layer_values() {
+    let data = kv_fixture(Some(&[2, 1, 2]), None, 3);
+    let model = crate::gguf::GGUFModel::from_bytes(&data).expect("fixture parses");
+    assert_eq!(num_kv_heads_per_layer(&model), Some(Ok(vec![2, 1, 2])));
+    let data = kv_fixture(None, None, 3);
+    let model = crate::gguf::GGUFModel::from_bytes(&data).expect("fixture parses");
+    assert_eq!(num_kv_heads_per_layer(&model), None);
+}
+
+#[test]
+fn uniform_kv_heads_cases() {
+    assert_eq!(uniform_kv_heads(&[3, 3]), Ok(3));
+    assert!(uniform_kv_heads(&[3, 1])
+        .expect_err("mixed")
+        .contains("per-layer"));
+    assert!(uniform_kv_heads(&[]).is_err());
+}

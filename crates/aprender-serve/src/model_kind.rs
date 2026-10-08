@@ -10,7 +10,7 @@
 //!
 //! Contract: `contracts/embeddinggemma2-load-v1.yaml`.
 
-use crate::gguf::GGUFValue;
+use crate::gguf::{GGUFModel, GGUFValue};
 
 /// The GGUF `general.architecture` string of EmbeddingGemma 2, as the files carry it.
 pub const EMBEDDING_GEMMA2_ARCH: &str = "gemma-embedding2";
@@ -91,6 +91,43 @@ fn kv_count(value: &GGUFValue) -> Result<usize, String> {
         Ok(k) => Ok(k),
         Err(_) => Err(format!("KV-head count {n} does not fit usize")),
     }
+}
+
+/// Per-layer KV-head counts of a GGUF file, from `attention.head_count_kv`, scalar or array (I-9).
+///
+/// `None` when the key is absent. `Some(Err)` when the value cannot be read per layer: an array of the
+/// wrong length, a zero or non-integer count, or a missing `block_count`.
+#[must_use]
+pub fn num_kv_heads_per_layer(model: &GGUFModel) -> Option<Result<Vec<usize>, String>> {
+    let arch = model.architecture()?;
+    let key = crate::gguf::keys::arch_key(arch, crate::gguf::keys::ATTENTION_HEAD_COUNT_KV);
+    let value = model.metadata.get(&key)?;
+    let Some(block_count) = model.num_layers() else {
+        return Some(Err(
+            "block_count missing: cannot read per-layer KV heads".to_string()
+        ));
+    };
+    Some(per_layer_kv_heads(value, block_count))
+}
+
+/// The single KV-head count of a model whose layers all share one, from the per-layer counts.
+///
+/// A generative config carries one KV-head count. Per-layer counts that differ cannot be represented there
+/// and are refused by name, never collapsed to the first entry or to the query head count (I-9).
+///
+/// # Errors
+/// Returns the reason when the list is empty or its counts differ.
+pub fn uniform_kv_heads(per_layer: &[usize]) -> Result<usize, String> {
+    let Some(&first) = per_layer.first() else {
+        return Err("no layers: cannot read the KV-head count".to_string());
+    };
+    if per_layer.iter().any(|&k| k != first) {
+        return Err(format!(
+            "per-layer attention.head_count_kv differs across layers ({per_layer:?}); a config with one \
+             KV-head count cannot represent it (I-9)"
+        ));
+    }
+    Ok(first)
 }
 
 /// The attention kind of one layer.
