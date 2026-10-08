@@ -64,11 +64,15 @@ fi
 pass=0
 fail=0
 
-# run_side OUT STDIN -- CMD...: stdout to OUT, return the command's status class (0/1).
+# run_side OUT STDIN -- CMD...: stdout to OUT, return the command's status class (0/1),
+# or its exact exit code when EXACT_RC=1 (a tool whose original documents its codes).
 run_side() {
-    local out="$1" in="$2"
+    local out="$1" in="$2" rc
     shift 3
-    if "$@" <"$in" >"$out" 2>/dev/null; then
+    "$@" <"$in" >"$out" 2>/dev/null && rc=0 || rc=$?
+    if [[ "${EXACT_RC:-0}" == 1 ]]; then
+        echo "$rc"
+    elif [[ "$rc" -eq 0 ]]; then
         echo 0
     else
         echo 1
@@ -276,7 +280,7 @@ check_rc "log is a directory" "$w/full" "$w/full"
 check_rc "missing pkgs" "$w/full.log" "$w/elsewhere"
 check_rc "unnormalised paths in the refusal" "$w//./nope.log" "$w/./elsewhere/"
 check_rc "bad input: a directory named x.rs" "$w/full.log" "$w/bad"
-check "tarball-shrink-report one argument" "$tmp/empty" \
+EXACT_RC=1 check "tarball-shrink-report one argument" "$tmp/empty" \
     "$PY" scripts/lib/tarball_shrink_report.py "$w/full.log" -- "$BIN" tarball-shrink-report "$w/full.log"
 if ! tsr_out=$("$BIN" tarball-shrink-report "$w/full.log" "$w/full") || ! grep -q '^SHRINK: 11 integration' <<<"$tsr_out"; then
     echo "FAIL: the planted not-shipped targets were not counted" >&2
@@ -332,7 +336,8 @@ tw_case() { # NAME STDIN FIXTURE ARGS... (ARGS may name $tmp/ws, the per-side co
     local name="$1" in="$2" fix="$3"
     shift 3
     local before="$pass"
-    check "tarball-workspace $name" "$in" \
+    # The original exits 2 on every refusal and on usage, so the exact code is compared.
+    EXACT_RC=1 check "tarball-workspace $name" "$in" \
         "$tmp/tw-side.sh" "$tmp/ws" "$fix" "$tmp/tw-py.toml" "$TW_CWD" "${TW_PY[@]}" "$@" -- \
         "$tmp/tw-side.sh" "$tmp/ws" "$fix" "$tmp/tw-rs.toml" "$TW_CWD" "${TW_RS[@]}" "$@"
     # The written Cargo.toml is output too: identical but for the one documented header line.

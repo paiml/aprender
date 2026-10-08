@@ -119,6 +119,11 @@ fn nothing_printed(reason: String) -> Refusal {
     (String::new(), 1, reason)
 }
 
+/// tarball_workspace.py exits 2 on the errors it catches.
+fn cannot_write(reason: String) -> Refusal {
+    (String::new(), 2, reason)
+}
+
 fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
 }
@@ -167,16 +172,18 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             let mut meta = Vec::new();
             std::io::stdin()
                 .read_to_end(&mut meta)
-                .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
-            tarball_workspace::target_dir(&meta).map_err(nothing_printed)
+                .map_err(|e| cannot_write(format!("stdin: {e}")))?;
+            tarball_workspace::target_dir(&meta).map_err(cannot_write)
         }
         Cmd::TarballWorkspace {
             name: Some(dir), ..
-        } => tarball_workspace::package_name(&dir).map_err(nothing_printed),
+        } => tarball_workspace::package_name(&dir)
+            .map_err(|(code, reason)| (String::new(), code, reason)),
         Cmd::TarballWorkspace { dir, .. } => {
             // The required `mode` group leaves DIR as the only other way in.
-            let dir = dir.ok_or_else(|| nothing_printed("tarball-workspace: no DIR".to_owned()))?;
-            tarball_workspace::write_workspace(&dir).map_err(nothing_printed)
+            let dir = dir.ok_or_else(|| cannot_write("tarball-workspace: no DIR".to_owned()))?;
+            tarball_workspace::write_workspace(&dir)
+                .map_err(|(code, reason)| (String::new(), code, reason))
         }
         Cmd::TarballBuildErrors { log } => {
             let o = tarball_build_errors::run(&log);
@@ -200,9 +207,14 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
 fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
-        // --help/--version exit 0; a usage error exits 1, as the originals' did.
+        // --help/--version exit 0. A usage error exits as its original did: 2 for the two
+        // tarball tools (their argv-length checks return 2), 1 for the rest.
         Err(e) => {
-            let code = u8::from(e.use_stderr());
+            let usage = match std::env::args().nth(1).as_deref() {
+                Some("tarball-shrink-report" | "tarball-workspace") => 2,
+                _ => 1,
+            };
+            let code = if e.use_stderr() { usage } else { 0 };
             let _ = e.print();
             return ExitCode::from(code);
         }
