@@ -13,8 +13,10 @@
 #
 # WHAT IT READS
 #   --ledger DIR    the nightly train's --out: DIR/<UTC day>/bundle.tsv, one per night. Its lane table
-#                   (lane, kind, state, producer, run id, run head, conclusion, attempt, ...) and its
-#                   "# C" line, the commit that night measured.
+#                   (lane, kind, state, producer, run id, run head, conclusion, attempt, ...), its
+#                   "# C" line, the commit that night measured, and its "# read" line, ok when the
+#                   train's read of GitHub succeeded. Columns are found by the header's names, never by
+#                   position. Every dir under DIR is a UTC day or the train's fetch cache, "cache".
 #   --artifact DIR  artifact models-t1 of the run the ledger names. models-nightly.yml uploads it only for
 #                   a verified, unplanted green or red: verdict, SHA256SUMS, models-t1.log, one <host>.json
 #                   receipt per GPU-host leg, judge.log and log tails. It must be the artifact of the run
@@ -24,10 +26,13 @@
 #
 # THE READ. GO only when all of these hold. Anything else is NO-GO, and release day runs no ladder to
 # make up for it:
+#   0. every dir under the ledger is a UTC day or the train's cache, and awk reads every night's bundle;
 #   1. some night's C is H;
 #   2. every night of H read models green, not_measured, or had no models row. A red, a second models
-#      row, or any other state is never outvoted by a later green on the same commit;
-#   3. the newest night of H that read models green did so from a run on H, at attempt 1;
+#      row, a header that lacks a column the read needs (lane, state, run_id, run_head, attempt), or any
+#      other state is never outvoted by a later green on the same commit;
+#   3. the newest night of H that read models green, on a night whose "# read" line is ok, did so from a
+#      run on H, at attempt 1. A green from a failed read is passed over, like not_measured;
 #   4. the artifact passes its own SHA256SUMS and holds nothing those sums do not list;
 #   5. its verdict says commit=H and state=green;
 #   6. its models-t1.log has models_t1.sh's GO line at H's sha9 and no NO-GO line, and it holds the receipt of each host
@@ -41,8 +46,9 @@
 #
 # THE STREAK (--streak). The switch to this read needs 3 green nights in a row, then sign-off. The newest
 # nights are counted, one per UTC day with no day missing, while each read models green from a run on
-# that night's C at attempt 1. The newest night must be --today or the day before, so an old streak
-# counts nothing, and each night's directory must be a calendar day. Exit 0 at 3 or more.
+# that night's C at attempt 1, and its "# read" line is ok. The newest night must be --today or the day
+# before, so an old streak counts nothing, and each night's directory must be a calendar day. A dir under
+# the ledger that is neither a UTC day nor the cache counts nothing. Exit 0 at 3 or more.
 #
 # NOT WIRED. No release script calls this file. Putting it into autopilot.sh in place of models_t1.sh
 # changes what release day accepts; that is the switch, and it waits for the streak and sign-off.
@@ -72,22 +78,45 @@ nights() {
     done | LC_ALL=C sort -r
 }
 
-# night BUNDLE -> "C state run_id run_head attempt" (tab-separated, "-" for empty) from the night's models
-#   row; state "absent" when there is no models row and "ambiguous" when there is more than one
+# strays LEDGER -> the first dir under LEDGER that is neither a UTC day nor the train's fetch cache (the
+#   train writes only those two). Whose night such a dir holds, the reader cannot tell
+strays() {
+    local d
+    for d in "$1"/*/; do
+        [ -d "$d" ] || continue
+        d=${d%/}; d=${d##*/}
+        [ "$d" = cache ] || [[ $d =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { printf '%s\n' "$d"; return; }
+    done
+}
+
+# night BUNDLE -> "C state run_id run_head attempt read" (tab-separated, "-" for empty) from the night's
+#   models row and its "# C" and "# read" lines. Columns are found by the header's names, never by
+#   position. State "absent" when there is no models row, "ambiguous" when there is more than one, and
+#   "unreadable: <why>" when its header lacks a column the read needs: a lost lane column would read a red
+#   night as one with no models row. An empty bundle has no "# C" and no models row: absent, and no C
 night() {
     awk -F '\t' -v OFS='\t' '
         function f(x) { return x == "" ? "-" : x }
+        NR == 1 {
+            for (i = 1; i <= NF; i++) col[$i] = i
+            k = split("lane state run_id run_head attempt", need, " ")
+            for (i = 1; i <= k; i++) if (!(need[i] in col)) { bad = "the header has no " need[i] " column"; break }
+            next
+        }
         $1 == "# C" { c = $2 }
-        $1 == "models" { s = $3; r = $5; h = $6; a = $8; n++ }
+        $1 == "# read" { rd = $2 }
+        /^#/ || bad != "" { next }
+        $col["lane"] == "models" { s = $col["state"]; r = $col["run_id"]; h = $col["run_head"]; a = $col["attempt"]; n++ }
         END {
-            if (n != 1) { s = (n ? "ambiguous" : "absent"); r = h = a = "" }
-            print f(c), f(s), f(r), f(h), f(a)
+            if (bad != "") { s = "unreadable: " bad; r = h = a = "" }
+            else if (n != 1) { s = (n ? "ambiguous" : "absent"); r = h = a = "" }
+            print f(c), f(s), f(r), f(h), f(a), f(rd)
         }' "$1"
 }
 
 # read_night LEDGER H ARTIFACT OUT -> GO (exit 0) or one NO-GO line (exit 1)
 read_night() {
-    local ledger=$1 h=$2 art=$3 out=$4 d c s r rh a seen=0 go_d="" go_r="" hist="" listed have go x
+    local ledger=$1 h=$2 art=$3 out=$4 d c s r rh a rd o seen=0 go_d="" go_r="" hist="" listed have go x
     local -a w
     [[ $h =~ ^[0-9a-f]{40}$ ]] || caller_error "--head '$h' is not a full 40-hex sha"
     [ -n "$ledger" ] || caller_error "--ledger is required"
@@ -97,8 +126,11 @@ read_night() {
         caller_error "--out '$out' exists and is not empty: stale receipts would mix with the night's"
     fi
     [ -d "$ledger" ] || nogo "no ledger at '$ledger': release day runs no ladder to make one"
+    x=$(strays "$ledger")
+    [ -z "$x" ] || nogo "'$x' under the ledger is not a UTC day dir, nor the train's cache: whose night it holds is unknown"
     while IFS= read -r d; do
-        IFS=$'\t' read -r c s r rh a < <(night "$ledger/$d/bundle.tsv")
+        o=$(night "$ledger/$d/bundle.tsv") || nogo "the bundle of night $d could not be read: it may be H's"
+        IFS=$'\t' read -r c s r rh a rd <<< "$o"
         if ! [[ $c =~ ^[0-9a-f]{40}$ ]]; then  # no readable C: the train writes its "# C" line last
             [ "$rh" != "$h" ] || nogo "night $d has no readable C, and its models run (run $r) was on H ${h:0:10}"
             [ "$s" = not_measured ] || [[ $rh =~ ^[0-9a-f]{40}$ ]] \
@@ -106,6 +138,7 @@ read_night() {
             continue
         fi
         [ "$c" = "$h" ] || continue
+        [ "$s" != green ] || [ "$rd" = ok ] || s=unread  # a green from a failed read of GitHub is no green
         seen=1; printf -v hist '%s %s=%s' "$hist" "$d" "$s"
         case $s in
             green)
@@ -114,7 +147,8 @@ read_night() {
                     [ "$a" = 1 ] || nogo "night $d read models green at attempt $a: a retried green is not a green"
                     go_d=$d; go_r=$r
                 fi ;;
-            not_measured|absent) ;;
+            not_measured|absent|unread) ;;
+            unreadable:*) nogo "night $d of H ${h:0:10} is unreadable: ${s#unreadable: }; a red could hide in it" ;;
             *) nogo "night $d read models $s on H ${h:0:10} (run $r): a later green never outvotes it" ;;
         esac
     done < <(nights "$ledger")
@@ -159,11 +193,14 @@ day() { date -u -d "$1" +%F 2> /dev/null; } # bashrs disable-line=DET002 (calend
 # streak LEDGER TODAY -> one MODELS-NIGHT STREAK line; exit 0 when NEED or more green nights end the
 #   ledger and the newest is TODAY or the day before
 streak() {
-    local ledger=$1 today=$2 d c s r rh a n=0 prev="" want seen="" why=""
+    local ledger=$1 today=$2 d c s r rh a rd o x n=0 prev="" want seen="" why=""
     [ -n "$ledger" ] || caller_error "--ledger is required"
     [[ $today =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [ "$(day "$today")" = "$today" ] \
         || caller_error "--streak needs --today YYYY-MM-DD, a calendar day (got '$today')"
-    if [ -d "$ledger" ]; then
+    x=$(strays "$ledger")
+    if [ -n "$x" ]; then
+        why="'$x' under the ledger is not a UTC day dir, nor the train's cache"
+    elif [ -d "$ledger" ]; then
         while IFS= read -r d; do
             if [ "$(day "$d")" != "$d" ]; then why="$d is not a calendar day"; break; fi
             if [ -z "$prev" ]; then
@@ -175,11 +212,13 @@ streak() {
                 want=$(day "$prev -1 day")
                 if [ "$d" != "$want" ]; then why="no night on $want"; break; fi
             fi
-            IFS=$'\t' read -r c s r rh a < <(night "$ledger/$d/bundle.tsv")
+            o=$(night "$ledger/$d/bundle.tsv") || { why="the bundle of night $d could not be read"; break; }
+            IFS=$'\t' read -r c s r rh a rd <<< "$o"
             if [ "$s" != green ] || ! [[ $c =~ ^[0-9a-f]{40}$ ]] || [ "$rh" != "$c" ] || [ "$a" != 1 ]; then
                 why="$d read models $s from run $r on ${rh:0:10} at attempt $a"
                 break
             fi
+            if [ "$rd" != ok ]; then why="$d was not read ($rd)"; break; fi
             n=$((n + 1)); seen="$seen $d"; prev=$d
         done < <(nights "$ledger")
     else
@@ -197,7 +236,9 @@ X=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 #   night measured X, not H; head: the models row's run is on X; att2: the models row is at attempt 2;
 #   att1: the models row is at attempt 1 (a red row carries no attempt; this one does); dup: a second,
 #   red, models row; odd: the models row's state is void, which the train never writes; noc: no "# C"
-#   line, as when the train's write was cut short; trunc: no "# C" line and no models row; nocx: x, then noc
+#   line, as when the train's write was cut short; trunc: no "# C" line and no models row; nocx: x, then noc;
+#   unread: the "# read" line is a failed read; renamed: the header calls run_head "head"; nolane: the
+#   header calls lane "name"; reorder: the state and producer columns swap places, header and rows alike
 ledger() {
     local dir=$1 spec day kase mod b; shift
     mkdir -p -- "$dir" || return 1
@@ -217,6 +258,10 @@ ledger() {
             noc) awk -F '\t' '$1 != "# C"' "$CASES/$kase/bundle.tsv" > "$b" ;;
             trunc) awk -F '\t' '$1 != "# C" && $1 != "models"' "$CASES/$kase/bundle.tsv" > "$b" ;;
             nocx) sed "s/$H/$X/g" "$CASES/$kase/bundle.tsv" | awk -F '\t' '$1 != "# C"' > "$b" ;;
+            unread) awk -F '\t' -v OFS='\t' '$1 == "# read" { $2 = "failed: call budget" } 1' "$CASES/$kase/bundle.tsv" > "$b" ;;
+            renamed) awk -F '\t' -v OFS='\t' 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "run_head") $i = "head" } 1' "$CASES/$kase/bundle.tsv" > "$b" ;;
+            nolane) awk -F '\t' -v OFS='\t' 'NR == 1 { $1 = "name" } 1' "$CASES/$kase/bundle.tsv" > "$b" ;;
+            reorder) awk -F '\t' -v OFS='\t' '!/^#/ { x = $3; $3 = $4; $4 = x } 1' "$CASES/$kase/bundle.tsv" > "$b" ;;
             *) return 1 ;;
         esac || return 1
     done
@@ -250,6 +295,10 @@ artifact() {
         nosums) rm -f -- "$a/SHA256SUMS" ;;
     esac
 }
+
+# noawk DIR -> DIR/awk, an awk that fails on every call: the subject run with DIR first on PATH cannot read
+#   a bundle, as on an I/O error or a bundle it may not open
+noawk() { mkdir -p -- "$1" && printf '#!/bin/sh\nexit 2\n' > "$1/awk" && chmod +x -- "$1/awk"; }
 
 # files OUT SUBJECT ARGS... -> the subject's output, then the files it left in OUT
 files() {
@@ -355,6 +404,30 @@ cases() {
     setup ledger "$t/l-nocnm" 2026-10-06:green 2026-10-05:not_measured:noc
     row "a night with no C that measured nothing" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-06" "" \
         -- bash "$s" --ledger "$t/l-nocnm" --head "$H" --artifact "$t/a-ok" --out "$t/o39"
+    setup ledger "$t/l-stray" 2026-10-06:green; setup mkdir -p -- "$t/l-stray/notes"
+    row "a dir under the ledger that is not a UTC day" 1 "'notes' under the ledger is not a UTC day dir" "MODELS-NIGHT GO" \
+        -- bash "$s" --ledger "$t/l-stray" --head "$H" --artifact "$t/a-ok" --out "$t/o40"
+    setup ledger "$t/l-cache" 2026-10-06:green; setup mkdir -p -- "$t/l-cache/cache"
+    row "the train's fetch cache under the ledger is passed over" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-06" "" \
+        -- bash "$s" --ledger "$t/l-cache" --head "$H" --artifact "$t/a-ok" --out "$t/o41"
+    setup ledger "$t/l-unread" 2026-10-06:green:unread
+    row "a green on a night of H the train did not read is not counted" 1 "no night of H 4701470147 read models green: 2026-10-06=unread" "MODELS-NIGHT GO" \
+        -- bash "$s" --ledger "$t/l-unread" --head "$H" --artifact "$t/a-ok" --out "$t/o42"
+    setup ledger "$t/l-unread2" 2026-10-06:green:unread 2026-10-05:green
+    row "an unread night does not hide H's read green one" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-05" "" \
+        -- bash "$s" --ledger "$t/l-unread2" --head "$H" --artifact "$t/a-ok" --out "$t/o43"
+    setup ledger "$t/l-renamed" 2026-10-06:green:renamed
+    row "a renamed column on a night of H" 1 "night 2026-10-06 of H 4701470147 is unreadable: the header has no run_head column" "MODELS-NIGHT GO" \
+        -- bash "$s" --ledger "$t/l-renamed" --head "$H" --artifact "$t/a-ok" --out "$t/o44"
+    setup ledger "$t/l-nolane" 2026-10-06:green 2026-10-05:red:nolane
+    row "no lane column cannot hide a red night of H" 1 "night 2026-10-05 of H 4701470147 is unreadable: the header has no lane column" "MODELS-NIGHT GO" \
+        -- bash "$s" --ledger "$t/l-nolane" --head "$H" --artifact "$t/a-ok" --out "$t/o45"
+    setup ledger "$t/l-reorder" 2026-10-06:green:reorder
+    row "columns are read by name: a reordered table still reads" 0 "MODELS-NIGHT GO H=4701470147 night=2026-10-06" "" \
+        -- bash "$s" --ledger "$t/l-reorder" --head "$H" --artifact "$t/a-ok" --out "$t/o46"
+    setup noawk "$t/noawk"
+    row "a bundle awk cannot read" 1 "the bundle of night 2026-10-06 could not be read" "MODELS-NIGHT GO" \
+        -- env PATH="$t/noawk:$PATH" bash "$s" --ledger "$t/l-go" --head "$H" --artifact "$t/a-ok" --out "$t/o47"
 
     setup ledger "$t/s3" 2026-10-06:green 2026-10-05:green 2026-10-04:green
     row "streak: 3 green nights" 0 "MODELS-NIGHT STREAK 3 of 3: 2026-10-06 2026-10-05 2026-10-04" "" -- bash "$s" --streak --ledger "$t/s3" --today 2026-10-06
@@ -392,13 +465,21 @@ cases() {
     setup ledger "$t/scal" 2026-03-02:green 2026-03-01:green 2026-02-30:green 2026-02-28:green
     row "streak: a night that is not a calendar day ends it" 1 "STREAK 2 of 3: 2026-03-02 2026-03-01; stopped: 2026-02-30 is not a calendar day" "" \
         -- bash "$s" --streak --ledger "$t/scal" --today 2026-03-02
+    setup ledger "$t/sunread" 2026-10-06:green 2026-10-05:green:unread 2026-10-04:green
+    row "streak: a night the train did not read ends it" 1 "STREAK 1 of 3: 2026-10-06; stopped: 2026-10-05 was not read (failed: call budget)" "" \
+        -- bash "$s" --streak --ledger "$t/sunread" --today 2026-10-06
+    setup ledger "$t/sstray" 2026-10-06:green 2026-10-05:green 2026-10-04:green; setup mkdir -p -- "$t/sstray/notes"
+    row "streak: a dir that is not a UTC day counts nothing" 1 "STREAK 0 of 3: none; stopped: 'notes' under the ledger is not a UTC day dir" "" \
+        -- bash "$s" --streak --ledger "$t/sstray" --today 2026-10-06
+    row "streak: a bundle awk cannot read ends it" 1 "STREAK 0 of 3: none; stopped: the bundle of night 2026-10-06 could not be read" "" \
+        -- env PATH="$t/noawk:$PATH" bash "$s" --streak --ledger "$t/s3" --today 2026-10-06
     rm -rf -- "${t:?}"
 }
 
 # the planted mutants: each must change the file, still parse, and break at least one row
 MUTANTS=(
     's/\*) nogo "night \$d read models/*) : nogo "night $d read models/'
-    's/not_measured|absent) ;;/not_measured|absent|ambiguous) ;;/'
+    's/not_measured|absent|unread) ;;/not_measured|absent|unread|ambiguous) ;;/'
     's/^            \*) nogo "night/            red|ambiguous) nogo "night/'
     's/\[ "\$rh" != "\$h" \] || nogo/true || nogo/'
     's/\[ "\$s" = not_measured \] || \[\[/true || [[/'
@@ -420,6 +501,16 @@ MUTANTS=(
     's/^NEED=3$/NEED=2/'
     's/if \[ "\$s" != green \] || /if false || /'
     's/\[ "\$rh" != "\$c" \] || \[ "\$a" != 1 \]/false/'
+    's/i <= k; i++) if/i <= 0; i++) if/'
+    's/s = \$col\["state"\]/s = $3/'
+    's/\[ "\$d" = cache \] || //'
+    's/\[ -z "\$x" \] || nogo/true || nogo/'
+    's/|| \[ "\$rd" = ok \] || s=unread/|| true/'
+    's/|| nogo "the bundle of night/|| : "the bundle of night/'
+    's/unreadable:\*) nogo/unreadable:*) : nogo/'
+    's/if \[ "\$rd" != ok \]; then why/if false; then why/'
+    's/if \[ -n "\$x" \]; then/if false; then/'
+    's/|| { why="the bundle of night/|| { : "the bundle of night/'
 )
 
 selftest() {
