@@ -55,372 +55,51 @@ impl GGUFModel {
             })?;
         let offset = self.tensor_data_start + tensor_offset;
 
-        // Extract and dequantize based on qtype
+        // Extract and dequantize based on qtype. A block type reads whole blocks and trims the
+        // padding the last block carries; every type checks its byte range against the file first.
+        use crate::quantize::{
+            dequantize_f16, dequantize_q2_k, dequantize_q3_k, dequantize_q4_0, dequantize_q4_1,
+            dequantize_q4_k_simd, dequantize_q5_0, dequantize_q5_1, dequantize_q5_k,
+            dequantize_q6_k, dequantize_q8_0_simd, QK_K,
+        };
+        type Dequant = fn(&[u8]) -> Result<Vec<f32>>;
+        // (elements per block, bytes per block, dequantizer)
+        let blocked: Option<(usize, usize, Dequant)> = match tensor.qtype {
+            GGUF_TYPE_Q4_0 => Some((32, 18, dequantize_q4_0)),
+            GGUF_TYPE_Q8_0 => Some((32, 34, dequantize_q8_0_simd)),
+            GGUF_TYPE_Q2_K => Some((QK_K, 84, dequantize_q2_k)),
+            GGUF_TYPE_Q3_K => Some((QK_K, 110, dequantize_q3_k)),
+            GGUF_TYPE_Q4_K => Some((QK_K, 144, dequantize_q4_k_simd)),
+            GGUF_TYPE_Q5_K => Some((QK_K, 176, dequantize_q5_k)),
+            GGUF_TYPE_Q6_K => Some((QK_K, 210, dequantize_q6_k)),
+            GGUF_TYPE_Q4_1 => Some((32, 20, dequantize_q4_1)),
+            GGUF_TYPE_Q5_0 => Some((32, 22, dequantize_q5_0)),
+            GGUF_TYPE_Q5_1 => Some((32, 24, dequantize_q5_1)),
+            _ => None,
+        };
+        if let Some((block_elems, block_bytes, dequant)) = blocked {
+            let bytes = tensor_byte_range(file_data, offset, size.div_ceil(block_elems) * block_bytes)?;
+            let mut values = dequant(bytes)?;
+            values.truncate(size);
+            return Ok(values);
+        }
         match tensor.qtype {
-            GGUF_TYPE_F32 => {
-                // Unquantized F32 data
-                let byte_size = size * 4; // 4 bytes per f32
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let values = bytes
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                    .collect();
-                Ok(values)
-            },
-            GGUF_TYPE_Q4_0 => {
-                // Q4_0 quantized data
-                use crate::quantize::dequantize_q4_0;
-
-                // Q4_0 block: 32 elements
-                // Layout: 1×f16 scale (2 bytes) + 16 bytes (32×4-bit values) = 18 bytes
-                const BLOCK_BYTES: usize = 18;
-                const BLOCK_SIZE: usize = 32;
-
-                let num_blocks = size.div_ceil(BLOCK_SIZE);
-                let byte_size = num_blocks * BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q4_0(bytes)?;
-
-                // Trim to exact size (dequantization pads to block boundaries)
-                values.truncate(size);
-                Ok(values)
-            },
-            GGUF_TYPE_Q8_0 => {
-                // Q8_0 quantized data - use SIMD-parallel for faster loading
-                use crate::quantize::dequantize_q8_0_simd;
-
-                // Q8_0 block size: 34 bytes (2 for f16 scale + 32 for quants)
-                const BLOCK_BYTES: usize = 34;
-                const BLOCK_SIZE: usize = 32;
-
-                let num_blocks = size.div_ceil(BLOCK_SIZE);
-                let byte_size = num_blocks * BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q8_0_simd(bytes)?;
-
-                // Trim to exact size
-                values.truncate(size);
-                Ok(values)
-            },
-            GGUF_TYPE_Q2_K => {
-                // Q2_K quantized data (K-quantization) - 2 bits per weight
-                use crate::quantize::{dequantize_q2_k, QK_K};
-
-                // Q2_K super-block size: 84 bytes for 256 values
-                const SUPER_BLOCK_BYTES: usize = 84;
-
-                let num_super_blocks = size.div_ceil(QK_K);
-                let byte_size = num_super_blocks * SUPER_BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q2_k(bytes)?;
-
-                // Trim to exact size
-                values.truncate(size);
-                Ok(values)
-            },
-            GGUF_TYPE_Q3_K => {
-                // Q3_K quantized data (K-quantization) - 3 bits per weight
-                use crate::quantize::{dequantize_q3_k, QK_K};
-
-                // Q3_K super-block size: 110 bytes for 256 values
-                const SUPER_BLOCK_BYTES: usize = 110;
-
-                let num_super_blocks = size.div_ceil(QK_K);
-                let byte_size = num_super_blocks * SUPER_BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q3_k(bytes)?;
-
-                // Trim to exact size
-                values.truncate(size);
-                Ok(values)
-            },
-            GGUF_TYPE_Q4_K => {
-                // Q4_K quantized data (K-quantization) - use SIMD-parallel for faster loading
-                use crate::quantize::{dequantize_q4_k_simd, QK_K};
-
-                // Q4_K super-block size: 144 bytes for 256 values
-                const SUPER_BLOCK_BYTES: usize = 144;
-
-                let num_super_blocks = size.div_ceil(QK_K);
-                let byte_size = num_super_blocks * SUPER_BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q4_k_simd(bytes)?;
-
-                // Trim to exact size
-                values.truncate(size);
-                Ok(values)
-            },
-            GGUF_TYPE_Q5_K => {
-                // Q5_K quantized data (K-quantization)
-                use crate::quantize::{dequantize_q5_k, QK_K};
-
-                // Q5_K super-block size: 176 bytes for 256 values
-                const SUPER_BLOCK_BYTES: usize = 176;
-
-                let num_super_blocks = size.div_ceil(QK_K);
-                let byte_size = num_super_blocks * SUPER_BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q5_k(bytes)?;
-
-                // Trim to exact size
-                values.truncate(size);
-                Ok(values)
-            },
-            GGUF_TYPE_Q6_K => {
-                // Q6_K quantized data (K-quantization)
-                use crate::quantize::{dequantize_q6_k, QK_K};
-
-                // Q6_K super-block size: 210 bytes for 256 values
-                const SUPER_BLOCK_BYTES: usize = 210;
-
-                let num_super_blocks = size.div_ceil(QK_K);
-                let byte_size = num_super_blocks * SUPER_BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q6_k(bytes)?;
-
-                // Trim to exact size
-                values.truncate(size);
-                Ok(values)
-            },
-            GGUF_TYPE_F16 => {
-                // F16 (half-precision float) data
-                use crate::quantize::dequantize_f16;
-
-                let byte_size = size * 2; // 2 bytes per f16
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let values = dequantize_f16(bytes)?;
-                Ok(values)
-            },
-            GGUF_TYPE_BF16 => {
-                // BF16 (bfloat16): 2 bytes/elem, no block structure. Reuses the
-                // existing SIMD converter (y = from_bits((bits as u32) << 16))
-                // already used by the safetensors loaders + gguf/embedding.rs.
-                // #1893-class fix: without this arm a BF16 GGUF's
-                // embeddings/norms/lm_head hit the catch-all "Unsupported
-                // quantization type: 30".
-                let byte_size = size * 2;
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-                Ok(crate::inference::simd_bf16_to_f32(
-                    &file_data[offset..offset + byte_size],
-                ))
-            },
-            GGUF_TYPE_Q4_1 => {
-                // Q4_1 quantized data
-                use crate::quantize::dequantize_q4_1;
-
-                // Q4_1 block size: 20 bytes (2 for scale + 2 for min + 16 for quants)
-                const BLOCK_BYTES: usize = 20;
-                const BLOCK_SIZE: usize = 32;
-
-                let num_blocks = size.div_ceil(BLOCK_SIZE);
-                let byte_size = num_blocks * BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q4_1(bytes)?;
-
-                // Trim to exact size
-                values.truncate(size);
-                Ok(values)
-            },
-            GGUF_TYPE_Q5_0 => {
-                // Q5_0 quantized data
-                use crate::quantize::dequantize_q5_0;
-
-                // Q5_0 block size: 22 bytes (2 for scale + 4 for high bits + 16 for quants)
-                const BLOCK_BYTES: usize = 22;
-                const BLOCK_SIZE: usize = 32;
-
-                let num_blocks = size.div_ceil(BLOCK_SIZE);
-                let byte_size = num_blocks * BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q5_0(bytes)?;
-
-                // Trim to exact size
-                values.truncate(size);
-                Ok(values)
-            },
-            GGUF_TYPE_Q5_1 => {
-                // Q5_1 quantized data
-                use crate::quantize::dequantize_q5_1;
-
-                // Q5_1 block size: 24 bytes (2 for scale + 2 for min + 4 for high bits + 16 for quants)
-                const BLOCK_BYTES: usize = 24;
-                const BLOCK_SIZE: usize = 32;
-
-                let num_blocks = size.div_ceil(BLOCK_SIZE);
-                let byte_size = num_blocks * BLOCK_BYTES;
-
-                if offset + byte_size > file_data.len() {
-                    return Err(RealizarError::UnsupportedOperation {
-                        operation: "get_tensor_f32".to_string(),
-                        reason: format!(
-                            "Data range [{}, {}) exceeds file size {}",
-                            offset,
-                            offset + byte_size,
-                            file_data.len()
-                        ),
-                    });
-                }
-
-                let bytes = &file_data[offset..offset + byte_size];
-                let mut values = dequantize_q5_1(bytes)?;
-
-                // Trim to exact size
-                values.truncate(size);
-                Ok(values)
-            },
+            GGUF_TYPE_F32 => Ok(tensor_byte_range(file_data, offset, size * 4)?
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|chunk| f32::from_le_bytes(*chunk))
+                .collect()),
+            GGUF_TYPE_F16 => dequantize_f16(tensor_byte_range(file_data, offset, size * 2)?),
+            // BF16 (bfloat16): 2 bytes/elem, no block structure. Reuses the existing SIMD
+            // converter (y = from_bits((bits as u32) << 16)) already used by the safetensors
+            // loaders + gguf/embedding.rs. #1893-class fix: without this arm a BF16 GGUF's
+            // embeddings/norms/lm_head hit the catch-all "Unsupported quantization type: 30".
+            GGUF_TYPE_BF16 => Ok(crate::inference::simd_bf16_to_f32(tensor_byte_range(
+                file_data,
+                offset,
+                size * 2,
+            )?)),
             _ => Err(RealizarError::UnsupportedOperation {
                 operation: "get_tensor_f32".to_string(),
                 reason: format!("Unsupported quantization type: {}", tensor.qtype),
@@ -611,4 +290,21 @@ impl GGUFModel {
             None
         }
     }
+}
+
+/// `file_data[offset..offset + byte_size]`, or the `get_tensor_f32` refusal naming the range when
+/// it runs past the end of the file.
+fn tensor_byte_range(file_data: &[u8], offset: usize, byte_size: usize) -> Result<&[u8]> {
+    if offset + byte_size > file_data.len() {
+        return Err(RealizarError::UnsupportedOperation {
+            operation: "get_tensor_f32".to_string(),
+            reason: format!(
+                "Data range [{}, {}) exceeds file size {}",
+                offset,
+                offset + byte_size,
+                file_data.len()
+            ),
+        });
+    }
+    Ok(&file_data[offset..offset + byte_size])
 }

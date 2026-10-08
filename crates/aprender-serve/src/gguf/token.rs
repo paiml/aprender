@@ -171,7 +171,20 @@ impl GGUFModel {
             return None;
         }
         crate::gguf::byte_level_bpe::ByteLevelBpe::from_gguf(&self.metadata, vocab)
-            .map_err(|refusal| warn_greedy_tokenizer_fallback_once(&refusal))
+            .map_err(|refusal| warn_greedy_tokenizer_fallback_once("byte-level BPE", &refusal))
+            .ok()
+            .map(|bpe| bpe.encode(text))
+    }
+
+    /// APR-EMBED-001 EG-1: the canonical encoding of an SPM-style BPE (`gemma4`) vocabulary, or
+    /// `None` when the file is not one. A `gemma4` file without merges is refused by llama.cpp;
+    /// here it says so once on stderr and takes the greedy fallback.
+    fn encode_spm_bpe(&self, text: &str, vocab: &[String]) -> Option<Vec<u32>> {
+        if !crate::gguf::spm_bpe::is_spm_bpe(&self.metadata) {
+            return None;
+        }
+        crate::gguf::spm_bpe::SpmBpe::from_gguf(&self.metadata, vocab)
+            .map_err(|refusal| warn_greedy_tokenizer_fallback_once("SPM-style BPE", &refusal))
             .ok()
             .map(|bpe| bpe.encode(text))
     }
@@ -192,10 +205,16 @@ impl GGUFModel {
     pub fn encode(&self, text: &str) -> Option<Vec<u32>> {
         let vocab = self.vocabulary()?;
 
-        if let Some(ids) = self.encode_byte_level(text, &vocab) {
-            return Some(ids);
-        }
+        let ids = self
+            .encode_spm_bpe(text, &vocab)
+            .or_else(|| self.encode_byte_level(text, &vocab))
+            .unwrap_or_else(|| self.encode_greedy(text, &vocab));
+        Some(ids)
+    }
 
+    /// The greedy longest-match fallback of [`Self::encode`], for a vocabulary no canonical
+    /// path covers. NOT the model's tokenization.
+    fn encode_greedy(&self, text: &str, vocab: &[String]) -> Vec<u32> {
         // Build reverse lookup: token string -> token ID
         let token_to_id: std::collections::HashMap<&str, u32> = vocab
             .iter()
@@ -209,7 +228,7 @@ impl GGUFModel {
         // fallback when a file has no type table; it missed llama-family `</s>`, so a
         // TinyLlama chat prompt encoded `.</s>` as `.</` `s` `>`.
         let special_tokens = crate::gguf::byte_level_bpe::special_tokens(
-            &vocab,
+            vocab,
             &crate::gguf::byte_level_bpe::token_types(&self.metadata),
         );
 
@@ -253,58 +272,10 @@ impl GGUFModel {
                 text_with_prefix.replace(' ', &space_char.to_string())
             };
 
-            let mut remaining = processed.as_str();
-
-            while !remaining.is_empty() {
-                // Greedy longest match using character boundaries (not byte indices)
-                let mut best_byte_len = 0;
-                let mut best_id = None;
-
-                // Collect character byte offsets for proper slicing
-                let char_indices: Vec<usize> = remaining
-                    .char_indices()
-                    .map(|(i, _)| i)
-                    .chain(std::iter::once(remaining.len()))
-                    .collect();
-
-                // Try all prefixes up to 32 chars (reasonable max token length)
-                for char_count in 1..=char_indices.len().saturating_sub(1).min(32) {
-                    let byte_end = char_indices[char_count];
-                    let prefix = &remaining[..byte_end];
-                    if let Some(&id) = token_to_id.get(prefix) {
-                        best_byte_len = byte_end;
-                        best_id = Some(id);
-                    }
-                }
-
-                if let Some(id) = best_id {
-                    tokens.push(id);
-                    remaining = &remaining[best_byte_len..];
-                } else {
-                    // No match found - try single UTF-8 char as byte tokens
-                    // SAFETY: remaining is non-empty (loop condition guarantees this)
-                    let ch = remaining
-                        .chars()
-                        .next()
-                        .expect("loop invariant: remaining non-empty");
-                    let ch_len = ch.len_utf8();
-
-                    // Look for byte tokens like <0x48> for 'H'
-                    for byte in remaining[..ch_len].bytes() {
-                        let byte_token = format!("<0x{:02X}>", byte);
-                        if let Some(&id) = token_to_id.get(byte_token.as_str()) {
-                            tokens.push(id);
-                        } else {
-                            // Unknown byte - use a common unknown token ID (usually 0 or 1)
-                            tokens.push(0);
-                        }
-                    }
-                    remaining = &remaining[ch_len..];
-                }
-            }
+            greedy_longest_match(&processed, &token_to_id, &mut tokens);
         }
 
-        Some(tokens)
+        tokens
     }
 
     /// The vocabulary as schema-constrained decoding sees it (#3568): each
@@ -416,12 +387,69 @@ include!("loader_parse.rs");
 include!("metadata.rs");
 
 /// The greedy longest-match fallback is not the model's tokenization; say so, once (#3726).
-fn warn_greedy_tokenizer_fallback_once(refusal: &crate::gguf::byte_level_bpe::ByteLevelBpeRefusal) {
+fn warn_greedy_tokenizer_fallback_once(tokenizer: &str, refusal: &dyn std::fmt::Display) {
     static WARNED: std::sync::Once = std::sync::Once::new();
     WARNED.call_once(|| {
         eprintln!(
-            "warning: byte-level BPE tokenizer: {refusal}; falling back to greedy longest-match, \
+            "warning: {tokenizer} tokenizer: {refusal}; falling back to greedy longest-match, \
              which does NOT reproduce the model's tokenization (#3726)"
         );
     });
+}
+
+/// Greedy longest match over one non-special segment, at most 32 characters per token; a
+/// character no prefix matches is spelled as `<0xXX>` byte tokens, or id 0 for a byte with none.
+fn greedy_longest_match(
+    processed: &str,
+    token_to_id: &std::collections::HashMap<&str, u32>,
+    tokens: &mut Vec<u32>,
+) {
+    let mut remaining = processed;
+    while !remaining.is_empty() {
+        // Greedy longest match using character boundaries (not byte indices)
+        let mut best_byte_len = 0;
+        let mut best_id = None;
+
+        // Collect character byte offsets for proper slicing
+        let char_indices: Vec<usize> = remaining
+            .char_indices()
+            .map(|(i, _)| i)
+            .chain(std::iter::once(remaining.len()))
+            .collect();
+
+        // Try all prefixes up to 32 chars (reasonable max token length)
+        for char_count in 1..=char_indices.len().saturating_sub(1).min(32) {
+            let byte_end = char_indices[char_count];
+            let prefix = &remaining[..byte_end];
+            if let Some(&id) = token_to_id.get(prefix) {
+                best_byte_len = byte_end;
+                best_id = Some(id);
+            }
+        }
+
+        if let Some(id) = best_id {
+            tokens.push(id);
+            remaining = &remaining[best_byte_len..];
+        } else {
+            // No match found - try single UTF-8 char as byte tokens
+            // SAFETY: remaining is non-empty (loop condition guarantees this)
+            let ch = remaining
+                .chars()
+                .next()
+                .expect("loop invariant: remaining non-empty");
+            let ch_len = ch.len_utf8();
+
+            // Look for byte tokens like <0x48> for 'H'
+            for byte in remaining[..ch_len].bytes() {
+                let byte_token = format!("<0x{:02X}>", byte);
+                if let Some(&id) = token_to_id.get(byte_token.as_str()) {
+                    tokens.push(id);
+                } else {
+                    // Unknown byte - use a common unknown token ID (usually 0 or 1)
+                    tokens.push(0);
+                }
+            }
+            remaining = &remaining[ch_len..];
+        }
+    }
 }

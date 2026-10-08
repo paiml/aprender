@@ -69,6 +69,8 @@ mod wgpu_model;
 /// #3726: canonical byte-level BPE (pre-tokenizer + ranked merges) for `gpt2` vocabularies.
 pub mod byte_level_bpe;
 pub mod ops;
+/// APR-EMBED-001 EG-1: canonical SPM-style BPE (ranked merges over raw UTF-8) for `gemma4` vocabularies.
+pub mod spm_bpe;
 
 // Test helpers module - shared utilities for GGUF tests
 #[cfg(test)]

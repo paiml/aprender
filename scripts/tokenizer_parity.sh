@@ -132,7 +132,7 @@ for m in "${models[@]}"; do
         path=${status%|*}
         roundtrip=${status##*|}
         case "$path" in
-            *"not a byte-level vocabulary"*)
+            *"not a byte-level or SPM-style BPE vocabulary"*)
                 printf 'UNCOVERED  %s  %s  %s\n' "$mname" "$fname" "$path"
                 uncovered=$((uncovered + 1))
                 continue ;;

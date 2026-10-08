@@ -54,6 +54,18 @@ equations:
     - every block has an attn_q tensor of non-zero width
     postconditions:
     - 'at least one layer is global and at least one is local'
+  spm_bpe_encode:
+    formula: ids(t) = concat over fragments of special id, or BPE(w) for each run w of [^\n]+|[\n]+ in escape(t), where BPE merges pairs by text in ascending merge rank, leftmost on ties
+    domain: t a UTF-8 text; a GGUF with tokenizer.ggml.model = gemma4 and tokenizer.ggml.merges
+    codomain: sequences of token ids in [0, n_vocab)
+    invariants:
+    - escape replaces every space with U+2581 and prepends nothing
+    - a newline run that is itself a token is one symbol; otherwise every UTF-8 character starts as one symbol
+    - a final symbol that is not a token is emitted as its <0xXX> byte tokens, and a byte with no token is dropped
+    preconditions:
+    - tokenizer.ggml.model is gemma4 and tokenizer.ggml.merges is present
+    postconditions:
+    - ids equal the pinned llama.cpp tokenizer ids for the same text and file
 proof_obligations:
 - id: EG2L-INV-001
   type: invariant
@@ -89,6 +101,11 @@ proof_obligations:
   type: invariant
   property: Generative verbs refuse by kind on every host
   formal: "∀ f, v ∈ {chat, serve}: kind(f) = embedding ⇒ exit(apr v f) = 6 ∧ names(apr embed)"
+  applies_to: all
+- id: EG2L-INV-008
+  type: invariant
+  property: SPM-style BPE ids equal the reference tokenizer
+  formal: "∀ t, f: model(f) = gemma4 ⇒ encode_f(t) = llama_tokenize_f(t)"
   applies_to: all
 falsification_tests:
 - id: FALSIFY-EG2L-001
@@ -126,6 +143,11 @@ falsification_tests:
   prediction: apr chat and apr serve on a gemma-embedding2 GGUF fail with ModelLoadFailed (exit 6) naming apr embed, before a tokenizer or backend is built and with no GPU; generative and unparsed files pass through to the loaders
   test: falsify_eg2l_007_*
   if_fails: The refusal ran only inside the CUDA preload, so the CPU chat path ended an empty session with exit 0
+- id: FALSIFY-EG2L-008
+  rule: SPM-style BPE ids equal the reference tokenizer
+  prediction: Merges apply by text, lowest rank first and leftmost on ties; stale pairs are skipped; a space becomes U+2581 with no prefix; words split at newline runs; unknown symbols become <0xXX> tokens; specials split out first; a gemma4 file without merges is refused by name
+  test: gguf::spm_bpe::tests::*
+  if_fails: The gemma4 vocabulary fell back to greedy longest-match, or a merge order, space or byte rule departs from llama.cpp; scripts/tokenizer_parity.sh reports the first id mismatch on a real file
 qa_gate:
   id: F-EG2L-001
   name: embeddinggemma2-load-v1 Contract
