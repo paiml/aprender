@@ -1,0 +1,103 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "manual-delta-review",
+     "informationUri": "https://github.com/paiml/aprender",
+     "rules": []
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "commandLine": "git/python3/make on the C218 new scope of PR 4655"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.fat-driver-selftest",
+     "level": "note",
+     "message": {
+      "text": "scripts/ci/fat_driver.py self-test: 60/60 rows as expected. Commit 4e1f996afe moves the older-aside loop, the leftover count and the ::warning:: from clear_dir into _sweep_asides(bucket, aside, log, rmtree), called last, before return aside. Statements, order, log text and exception propagation (OSError from sorted(bucket.iterdir()) still escapes) are unchanged; the return value stays aside; the only caller of the helper is clear_dir."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "python3",
+       "scripts/ci/fat_driver.py",
+       "self-test"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "1b4e50d44bdf97c5bdbfcce0b3d9799eb75e382944b2fec27bd5435adbd4de1b",
+      "failure_scenario": "A split that dropped the return or reordered the sweep would change clear_dir's contract (aside path / None); the self-test rows #4507 pin both and pass.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "review.merge-45a41f5b2a",
+     "level": "note",
+     "message": {
+      "text": "git diff 430be6524f 45a41f5b2a over quorum-PMAT-4646.json, entries/PMAT-4646.yaml and check_mutants_debt_ratchet.sh is empty (main's versions kept). git diff-tree --cc on all five fold merges lists no file that differs from every parent, so no hand resolution survives. make roadmap-aggregate-check: roadmap.yaml == aggregate(294 fragments), idempotent. Files changed on both sides (ci.yml, mutants-debt.tsv, derived_expiries.json, PP-LLAMA-001-MASTER.md) auto-merged: ci.yml and derived_expiries.json parse, every scripts/* path ci.yml cites exists, check_mutants_debt_ratchet.sh exits 0 (590 -> 590 rows)."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "make",
+       "roadmap-aggregate-check"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "19c2251bba99a309f2a293124fe529b5a10a29933eb7f6629498edadac7d9dd2",
+      "failure_scenario": "An aggregate that disagreed with its fragments would make roadmap CI RED; it agrees.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "review.merges-clean",
+     "level": "note",
+     "message": {
+      "text": "Merges 0d2329dcac, 78495f948c, 76d7c62bab, 83971398d2: git diff-tree --cc is empty for each, i.e. no conflict resolution to review. This git has no --remerge-diff and the lane hook refuses git merge-tree, so a full re-merge was not computed; the --cc result is the substitute."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "git",
+       "diff-tree",
+       "--cc",
+       "0d2329dcac",
+       "78495f948c",
+       "76d7c62bab",
+       "83971398d2"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "2e1cfa82b035c26cbbbdae632cea070514eb8b773f616aaeaf668e2f0be8f10d",
+      "failure_scenario": "A hand-edited conflict hunk would appear in --cc output; none does.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "review.cuda-new-scope",
+     "level": "note",
+     "message": {
+      "text": "check_pr_review_receipt.sh --match-path returns 1 (no match) for the new-scope paths scripts/ci/fat_driver.py, ci/mutants-debt.tsv, scripts/check_mutants_debt_ratchet.sh, docs/roadmaps/roadmap.yaml. It fires for 65 of 2000 paths of the whole fold diff (cuda-nightly.yml, aprender-gpu, ptx-debug), all from already-reviewed heads and out of C218 scope."
+     },
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/check_pr_review_receipt.sh",
+       "--match-path",
+       "scripts/ci/fat_driver.py"
+      ],
+      "exit_code": 1,
+      "stdout_sha256": "9bc94ab9b39bfff44297d99f66b2d1dc08ba96658be582098c879d223aa84283",
+      "failure_scenario": "A CUDA path in the new scope would need a CUDA consultation; none is there.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -15,7 +15,7 @@ aprender."
 | 4 | `gh run cancel` on a *queued* run can silently no-op | 5 runs needed `POST …/runs/<id>/force-cancel` |
 | 6 | The sweeper's first live run deleted a fresh EMPTY mountpoint (`3112/run-34568509271-guards`): a files-only age test cannot see a dir that is used by being mounted; dockerd recreated it root-owned and guard-cargo died EACCES | job 103165670305, 07:18Z; fixed by paiml/infra#507 (dir mtime counts; 14-row selftest) |
 | 7 | guard-cargo's host-side cargo steps use the SHARED `~/.cargo` (16 runners, every paiml repo) while its container steps use the per-PR `GUARD_CARGO_HOME`; a concurrent job re-extracted `registry/src` and rustc got ENOENT on `y4m` — #3089's fourth eviction | job 103197449766 on intel-clean-room-7, 09:10Z; remedy in phase 2a: `CARGO_HOME=$GUARD_CARGO_HOME` for every host-side cargo step |
-| 5 | intel 15/16 busy (another repo's CI + `trueno-rag index --jobs 16`), 11 aprender runs queued ≥ 2 h, yoga 0/5 and gx10 0/4 busy | org runner list 05:39Z; every queued job asked `clean-room`, which only intel carried |
+| 5 | intel 15/16 busy (another repo's CI + `aprender-rag index --jobs 16`), 11 aprender runs queued ≥ 2 h, yoga 0/5 and gx10 0/4 busy | org runner list 05:39Z; every queued job asked `clean-room`, which only intel carried |
 
 ## §2 Disk: the sweeper (phase 1, LIVE)
 
@@ -200,6 +200,13 @@ derives `crate<TAB>--lib<TAB>module::path` (src/a/b.rs → `a::b`, src/a/mod.rs 
 `include!()`-pulled or `#[path]`-attached file → the INCLUDING/DECLARING file's module). A module it cannot
 resolve falls back to the whole crate (2 columns) **and prints `WARN unresolved-include` on stderr** — a silent
 fallback restores the 88 % without anyone noticing.
+
+A `mod b;` for src/a/b.rs is found in src/a/mod.rs **or in the Rust-2018 sibling file src/a.rs** (no
+src/a/mod.rs). The derivation once read only the directory, so aprender-contracts'
+`ontology/extract/json/github.rs` (declared in `json.rs`) fell back whole, and that whole-lib row then won over
+all 44 module rows of the crate. Fixture: `reader_mods/src/flat.rs` declares `pub mod child;` for
+`src/flat/child.rs` → `flat::child`. Falsifier: `--self-test` with `TREE_READER_MUTATE_NO_2018=1` (the scanner
+before this rule) must lose exactly `flat::child` to `reader_mods --lib`.
 
 The narrowing is a **TOKEN** extension of the ONE build graph #3089 built (PMAT-1098 —
 `cargo nextest run --workspace --lib --tests -E "$EXPR"`): `targets=` gains

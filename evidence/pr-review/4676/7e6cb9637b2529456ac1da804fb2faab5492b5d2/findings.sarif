@@ -1,0 +1,122 @@
+{
+ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.mirror-byte-identical",
+     "level": "note",
+     "message": {
+      "text": "Both contract copies are byte-identical at head 7e6cb9637b (cmp rc 0); the delta since the first review applies the same one-line comment edit to both."
+     },
+     "properties": {
+      "grounding": "measured",
+      "failure_scenario": "A one-sided edit would make the embedded mirror (include_str! in golden_output.rs) differ from the root contract and the mirror test would fail; cmp reports none.",
+      "precision_class": "advisory",
+      "command": [
+       "cmp",
+       "contracts/thinking-budgets-v1.yaml",
+       "crates/apr-cli/contracts/thinking-budgets-v1.yaml"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     }
+    },
+    {
+     "ruleId": "review.entry-stays-fail-closed",
+     "level": "note",
+     "message": {
+      "text": "The Qwen3.5-0.8B-IQ4_XS.gguf entry still declares no `budget` key (the diff changes only why_unmeasured and owed_by text). thinking_on_budget_row returns Err for a matched row without a u64 budget, so the ON leg refuses rather than inheriting the 8B default. No gate becomes weaker and no waiver is introduced."
+     },
+     "properties": {
+      "grounding": "cited",
+      "failure_scenario": "If the diff had added a budget or a waiver key, the row would pass or skip the leg; it adds neither, so the refusal path at this line still fires for this model.",
+      "precision_class": "advisory",
+      "source": "crates/apr-cli/src/commands/golden_output.rs:363",
+      "excerpt": "    let Some(b) = v.get(\"budget\").and_then(serde_yaml::Value::as_u64) else {",
+      "excerpt_sha256": "197aaf5386ab1d176b78ed67512e4f1cdf63c1323a01bfb4acf427264fd6e3c6"
+     }
+    },
+    {
+     "ruleId": "review.owed-by-is-not-a-waiver",
+     "level": "note",
+     "message": {
+      "text": "owed_by is free text read by no code: the only consumer of the entry is thinking_on_budget_row, which reads `budget`, `basis` and `why_unmeasured` only. The new owed_by sentence says the leg FAILS (fail-closed, not waived) and that a pass needs a gate change under its own ticket (#4663). It names a ticket but no longer a queue/owner, which is accurate: nothing is owed by a measurement any more."
+     },
+     "properties": {
+      "grounding": "measured",
+      "failure_scenario": "If owed_by were machine-read as a waiver, rewording it could silently skip the leg; a repo-wide search of rust/sh/yaml consumers finds none outside the contract copies (other hits are unrelated identifiers).",
+      "precision_class": "advisory",
+      "command": [
+       "grep",
+       "-rn",
+       "owed_by",
+       "crates",
+       "scripts"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "7e320ce270b72f231bcb4740d9355d329268b2b4e14ac5fbf032af6a479afd19"
+     }
+    },
+    {
+     "ruleId": "review.stale-comment-fixed",
+     "level": "note",
+     "message": {
+      "text": "Delta a112888d2b..7e6cb9637b: the comment at contracts/thinking-budgets-v1.yaml lines 61-62 (mirrored) now says 'the measured state is that NO budget closes it (see why_unmeasured)', so it no longer contradicts the why_unmeasured text under it. The earlier note is resolved."
+     },
+     "properties": {
+      "grounding": "cited",
+      "failure_scenario": "A reader trusting the old comment would conclude the entry is merely unmeasured and queue another sweep; the reworded comment states the measured outcome.",
+      "precision_class": "advisory",
+      "source": "contracts/thinking-budgets-v1.yaml:61",
+      "excerpt": "    # NO `budget` KEY ON PURPOSE. This is the model that exposed the defect, and the\n    # measured state is that NO budget closes it (see why_unmeasured). Refusing names that, where",
+      "excerpt_sha256": "a71e5a18a11206075ec7f047f5a3dec7a47cc9b08ce86a9d7833961f9fbbff33"
+     }
+    },
+    {
+     "ruleId": "review.evidence-figures-match-contract",
+     "level": "note",
+     "message": {
+      "text": "The IQ4_XS sweep in the contract (2048/4096/8192/16384 -> 8,910/17,795/35,574/71,140 chars) equals row one of the evidence table; chars per budgeted token are 4.35 at 2048 and 4.34 at 16384, matching the stated linear growth and about 4.35 chars/token. The 4-of-8 llama.cpp sampled closure, the greedy near-tie and the Q4_K_M row (6,723/13,225/26,243/52,290; 5/8 vs 2/8) appear only in the evidence file and are consistent with the contract prose. Q4_K_M entry is untouched. Delta: the evidence ratio is now per model, 'about 4.35 chars per token for IQ4_XS, 3.2 to 3.3 for Q4_K_M'; Q4_K_M gives 6723/2048=3.28 and 52290/16384=3.19, so the stated range holds (3.19 rounds to 3.2)."
+     },
+     "properties": {
+      "grounding": "measured",
+      "failure_scenario": "A transposed or mis-copied digit would make the contract cite a figure the evidence does not hold; all four match.",
+      "precision_class": "advisory",
+      "command": [
+       "python3",
+       "-c",
+       "chars/budget for IQ4_XS 8910/2048,71140/16384 and Q4_K_M 6723/2048,52290/16384"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "8f9b3bb2989157679fb058fdd39e2a31668928bca81616e3b23095bcbf3bdab3"
+     }
+    },
+    {
+     "ruleId": "review.sweep-not-reproduced",
+     "level": "note",
+     "message": {
+      "text": "The sweep itself (apr 0.70.1 cuda runs, llama.cpp build 11382 cross-check, 8 sampled seeds) was run by the author on a GPU host and was NOT re-run by this review: no cargo, no apr binary run, no GPU, by instruction. The figures are taken as the author's measurement, internally consistent, not independently reproduced."
+     },
+     "properties": {
+      "grounding": "asserted",
+      "failure_scenario": "If the author's sweep were wrong, the fail-closed state would still hold (no budget key is the safe side), so the exposure is a misleading rationale, not a weakened gate.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  }
+ ]
+}

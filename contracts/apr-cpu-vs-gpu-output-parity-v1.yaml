@@ -607,7 +607,7 @@ proof_obligations:
   property: "on Blackwell (cc>=120) default apr run --gpu decode throughput for a 1.5B Q4_K_M model is >= 100 tok/s (on-GPU resident path, no silent CPU/wgpu fallback); ~10 tok/s falsifies it as an F2 false-fallback / stale binary (PMAT-885)"
 
 verification_summary:
-  total_obligations: 11
+  total_obligations: 10
   proven: 0
   tested: 1
   status: pending

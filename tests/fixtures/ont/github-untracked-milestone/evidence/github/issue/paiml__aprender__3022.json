@@ -1,0 +1,10 @@
+{
+  "ref": "paiml/aprender#3022@2026-09-10T03:13:40Z",
+  "repo": "paiml/aprender",
+  "number": 3022,
+  "title": "apr chat silently loads the toy Demo model for sharded SafeTensors (.safetensors.index.json) instead of the real model",
+  "state": "CLOSED",
+  "updatedAt": "2026-09-10T03:13:40Z",
+  "milestone": "paiml/aprender#3",
+  "url": "https://github.com/paiml/aprender/issues/3022"
+}

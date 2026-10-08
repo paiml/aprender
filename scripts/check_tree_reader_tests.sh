@@ -31,6 +31,9 @@
 # repository or resolves one from the manifest dir:
 #   "scripts/  "docs/  "README  "contracts/  "../../  "../..
 #   CARGO_MANIFEST_DIR  workspace_root(  project_root(
+#   workspace_path_or_skip!(  workspace_file_or_skip!(   (#4175: the shared macro
+#   hides the manifest-dir walk, and a relative path like "configs/x.yaml" names
+#   none of the prefixes above, so a caller moved onto it would drop out silently)
 # Integration targets: crates/<c>/tests/<t>.rs -> `<c> --test <t>`.
 # Lib targets: any crates/<c>/src/**/*.rs that contains `#[cfg(test)]` AND the
 # oracle -> `<c> --lib <module>`. Fixture-only readers (tests/fixtures/...) are
@@ -45,18 +48,20 @@
 #   scripts/check_tree_reader_tests.sh --self-test
 set -euo pipefail
 
-ORACLE=${ORACLE:-'"scripts/|"docs/|"README|"contracts/|"\.\./\.\./|"\.\./\.\.|CARGO_MANIFEST_DIR|workspace_root\(|project_root\('}
+ORACLE=${ORACLE:-'"scripts/|"docs/|"README|"contracts/|"\.\./\.\./|"\.\./\.\.|CARGO_MANIFEST_DIR|workspace_root\(|project_root\(|workspace_(path|file)_or_skip!\('}
 REGISTRY_DEFAULT="scripts/tree_reader_tests.txt"
 export ORACLE
 
-# The two mutation switches the --self-test falsifier rows need. They are read
+# The three mutation switches the --self-test falsifier rows need. They are read
 # from the environment ONLY under --self-test: a mutation that a CI run could
 # turn on from outside is a hole, not a falsifier.
 MUTATE_NO_INCLUDE=0
 MUTATE_FLAT=0
+MUTATE_NO_2018=0
 if [ "${TREE_READER_SELF_TEST:-0}" = 1 ]; then
     MUTATE_NO_INCLUDE=${TREE_READER_MUTATE_NO_INCLUDE:-0}
     MUTATE_FLAT=${TREE_READER_MUTATE_FLAT:-0}
+    MUTATE_NO_2018=${TREE_READER_MUTATE_NO_2018:-0}
 fi
 
 INDEX_DIR=""
@@ -107,7 +112,7 @@ index_of() { # index_of <root> <crate> -> path of that crate's module index (bui
 }
 
 module_of() { # module_of <root> <crate> <file> [depth] -> the module path; rc 1 = unresolvable
-    local root=$1 c=$2 f=$3 depth=${4:-0} rel base leaf cand idx owner site name parent fn
+    local root=$1 c=$2 f=$3 depth=${4:-0} rel base leaf cand idx owner site name parent fn sib
     if [ "$depth" -gt 4 ]; then
         printf 'WARN unresolved-include %s: include!() chain deeper than 4 hops — falling back to the whole crate (%s --lib)\n' "$f" "$c" >&2
         return 1
@@ -132,7 +137,13 @@ module_of() { # module_of <root> <crate> <file> [depth] -> the module path; rc 1
     leaf=${cand##*::}
     if [ "$MUTATE_FLAT" = 1 ]; then cand=$leaf; fi
     idx=$(index_of "$root" "$c")
-    if awk -F'\t' -v n="$leaf" -v d="$owner" '$1 == "mod" && $2 == n && $4 == d { found = 1 } END { exit !found }' "$idx"; then
+    # ...or in the 2018-layout sibling FILE: `mod b;` for src/a/b.rs may live in
+    # src/a.rs (no src/a/mod.rs). Missing it sent aprender-contracts'
+    # ontology/extract/json/github.rs (declared in json.rs) to the whole-crate
+    # fallback, which then won over every module row of that crate.
+    sib="$owner.rs"
+    if [ "$MUTATE_NO_2018" = 1 ]; then sib=""; fi
+    if awk -F'\t' -v n="$leaf" -v d="$owner" -v s="$sib" '$1 == "mod" && $2 == n && ($4 == d || $3 == s) { found = 1 } END { exit !found }' "$idx"; then
         printf '%s\n' "$cand"; return 0
     fi
     if [ "$MUTATE_NO_INCLUDE" != 1 ]; then
@@ -223,9 +234,30 @@ full_tier_excludes() { # full_tier_excludes <root> -> one crate per line
 # (PMAT-3313: that list used to be one ci.yml line). Reading only the workflows
 # after the move would call all 39 of its commands unwired. grep -q exits 0 on a
 # match even if the directory is absent.
-names_test() {
-    grep -rqF --include='*.cmd' -- "--test $2" "$1"/ci/explicit-test-commands.d/ 2>/dev/null \
-        || grep -rqF -- "--test $2" "$1"/.github/workflows/ "$1"/ci/sections.yml 2>/dev/null
+#
+# #4329: the match is WHOLE-WORD and PER-PACKAGE, on one line. The old unanchored
+# `grep -F -- "--test integration"` matched `--test integration_test` of ANOTHER
+# crate, so `aprender-cgp --test integration` read as wired while no lane ran it.
+# A line wires CRATE NAME only if it names `-p CRATE` (or `--package CRATE`) AND
+# `--test NAME`, each ending at a non-name character. $3 (CRATE) is required.
+names_test() { # names_test ROOT NAME CRATE
+    local e='([^A-Za-z0-9_-]|$)' pk ts
+    pk="(^|[[:space:]])(-p|--package)[[:space:]=]+$3$e"
+    ts="(^|[[:space:]])--test[[:space:]=]+$2$e"
+    # A here-string, never `{ grep ...; } | grep -q`: under pipefail the producer's
+    # SIGPIPE after grep -q's first match fails the pipeline (the class in wired_targets).
+    # A command continued with a trailing `\` is ONE line (ci.yml's `-p aprender-core \`
+    # then `--test falsification_spec_v10_tests`), so continuations are joined first.
+    # The joined lines are read ONCE per root (a per-target re-read cost +10 s a pass).
+    local lines f
+    if [ "${NT_ROOT:-}" != "$1" ]; then
+        NT_ROOT=$1
+        NT_LINES=$(for f in "$1"/ci/explicit-test-commands.d/*.cmd "$1"/.github/workflows/* "$1"/ci/sections.yml; do
+                       [ -f "$f" ] && awk '/\\$/ { sub(/\\$/, " "); buf = buf $0; next } { print buf $0; buf = "" }' "$f"
+                   done | grep -E -- '--test' || true)
+    fi
+    lines=$(grep -E -- "$ts" <<< "$NT_LINES" || true)
+    grep -qE -- "$pk" <<< "$lines"
 }
 
 wired_targets() { # wired_targets <root> -- the derived set, wired half only
@@ -245,7 +277,7 @@ wired_targets() { # wired_targets <root> -- the derived set, wired half only
             grep -qxF -- "$c" <<< "$ex" && continue
             if [ -n "$name" ]; then printf '%s\t%s\t%s\n' "$c" "$kind" "$name"
             else printf '%s\t%s\n' "$c" "$kind"; fi
-        elif names_test "$root" "$name"; then
+        elif names_test "$root" "$name" "$c"; then
             printf '%s\t--test\t%s\n' "$c" "$name"
         fi
     done
@@ -255,7 +287,7 @@ unwired_targets() { # unwired_targets <root> -- reads the tree, no lane runs it
     local root=$1 c kind name
     derive "$root" | while IFS=$'\t' read -r c kind name; do
         [ "$kind" = "--test" ] || continue
-        names_test "$root" "$name" || printf '%s\t--test\t%s\n' "$c" "$name"
+        names_test "$root" "$name" "$c" || printf '%s\t--test\t%s\n' "$c" "$name"
     done
 }
 
@@ -348,6 +380,17 @@ self_test() {
     else
         printf 'FAIL  row %-2s        bin-only crate mis-targeted: %s\n' "$n" "$(bash "$T" --derive "$td" 2>/dev/null | grep '^delta' | tr '\n' ';')"; red=1
     fi
+    # eta (#4175): a target that reaches the tree ONLY through the shared macro,
+    # with a relative path no other oracle pattern names. Moving a caller onto the
+    # macro must never drop it from the ledger.
+    mkdir -p "$td/crates/eta/tests"
+    printf '#[test] fn t() { let _p = provable_contracts::workspace_file_or_skip!(t, "configs/aliases.yaml"); }\n' > "$td/crates/eta/tests/via_macro.rs"
+    n=$((n + 1))
+    if grep -q '^eta	--test	via_macro$' <<< "$(bash "$T" --derive "$td" 2>/dev/null)"; then
+        printf 'ok    row %-2s        a target reading the tree only through workspace_file_or_skip!() is derived (#4175)\n' "$n"
+    else
+        printf 'FAIL  row %-2s        a workspace_file_or_skip!() caller dropped out of the derived set\n' "$n"; red=1
+    fi
     # A workflow that names one target, so the wired/unwired split is exercised
     # rather than assumed: alpha reads_readme is run by a lane, gamma manifest_dir
     # is not, beta --lib is covered by the full tier's --workspace --lib.
@@ -383,6 +426,26 @@ self_test() {
     else
         printf 'FAIL  row %-2s        ci/explicit-test-commands.d/ not read as wiring. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
     fi
+    # #4329: names_test is whole-word AND per-package. Each case is run against
+    # gamma manifest_dir alone, in a ci/ fragment, then the fragment is removed.
+    local frag want label
+    while IFS='|' read -r want frag label; do
+        mkdir -p "$td/ci/explicit-test-commands.d"
+        printf '%b\n' "$frag" > "$td/ci/explicit-test-commands.d/020-case.cmd"
+        u=$(bash "$T" --print-unwired "$td" 2>/dev/null); rm -rf "${td:?}/ci"; n=$((n + 1))
+        if grep -q '^gamma	--test	manifest_dir$' <<< "$u"; then got=unwired; else got=wired; fi
+        if [ "$got" = "$want" ]; then printf 'ok    row %-2s        #4329 %s -> %s\n' "$n" "$label" "$got"
+        else printf 'FAIL  row %-2s        #4329 %s: wanted %s, got %s\n' "$n" "$label" "$want" "$got"; red=1; fi
+    done <<'CASES'
+wired|cargo test -p gamma --test manifest_dir|exact package + name
+wired|cargo nextest run --package=gamma --test=manifest_dir --no-fail-fast|--package= / --test= spellings
+wired|cargo test -p gamma \\\n    --test manifest_dir|a backslash-continued command is one line
+unwired|cargo test -p other --test manifest_dir_extra|a LONGER test name of another crate (the cgp/orchestrate substring bug)
+unwired|cargo test -p gamma --test manifest_dir_extra|a longer test name, same package
+unwired|cargo test -p other --test manifest_dir|same test name, ANOTHER package
+unwired|cargo test -p gamma-extra --test manifest_dir|a package that only PREFIXES gamma
+unwired|cargo test -p gamma\ncargo test -p other --test manifest_dir|package and test on DIFFERENT commands
+CASES
     update "$td" "$td/registry.txt" > /dev/null 2>&1
     row 0 "registry equals derived -> PASS" '^PASS' bash "$T" --check "$td" "$td/registry.txt"
     printf 'zeta\t--lib\n' >> "$td/registry.txt"
@@ -396,6 +459,10 @@ self_test() {
     row 0 "mutant oracle without the scripts/ pattern loses beta --lib lint — this row proves the oracle is load-bearing" 'MUTANT-LOST-BETA' \
         env ORACLE="${ORACLE/\"scripts\/|/}" bash -c "if bash '$T' --derive '$td' 2>/dev/null | grep -q '^beta'; then echo MUTANT-KEPT-BETA; else echo MUTANT-LOST-BETA; fi"
 
+    # MUTANT: drop the macro pattern from the oracle -> eta vanishes (the #4175 row is load-bearing)
+    row 0 "mutant oracle without the workspace_*_or_skip! pattern loses eta via_macro" 'MUTANT-LOST-ETA' \
+        env ORACLE="${ORACLE/|workspace_(path|file)_or_skip!\\(/}" bash -c "if bash '$T' --derive '$td' 2>/dev/null | grep -q '^eta'; then echo MUTANT-KEPT-ETA; else echo MUTANT-LOST-ETA; fi"
+
     # --- PMAT-3120: module granularity, against the COMMITTED fixture crate.
     # Hermetic (no cargo, no workspace): tests/fixtures/tree_reader/crates/** is
     # a tree of .rs files, and the golden is the derived registry text.
@@ -406,6 +473,7 @@ self_test() {
     row 0 "  ...src/deep/mod.rs -> deep" '^reader_mods	--lib	deep$' cat "$td/fx.out"
     row 0 "  ...src/deep/leaf.rs -> deep::leaf" '^reader_mods	--lib	deep::leaf$' cat "$td/fx.out"
     row 0 "  ...src/gen/part.rs, pulled by include!() from src/inc.rs -> inc (the INCLUDER's module)" '^reader_mods	--lib	inc$' cat "$td/fx.out"
+    row 0 "  ...src/flat/child.rs, declared in the 2018-layout sibling src/flat.rs -> flat::child" '^reader_mods	--lib	flat::child$' cat "$td/fx.out"
     row 0 "  ...src/attached.rs, declared #[path] as mod bolted from src/deep/mod.rs -> deep::bolted" '^reader_mods	--lib	deep::bolted$' cat "$td/fx.out"
     row 0 "  ...tests/it.rs -> --test it (integration rows unchanged)" '^reader_mods	--test	it$' cat "$td/fx.out"
     row 0 "  ...an unresolvable reader -> the WHOLE crate, 2 columns (fallback, never a guessed module)" '^reader_orphan	--lib$' cat "$td/fx.out"
@@ -421,6 +489,18 @@ self_test() {
         bash -c "TREE_READER_MUTATE_FLAT=1 bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.golden.txt' -"
     row 0 "  ...and it equals the committed flat golden (deep::leaf -> leaf)" '^$' \
         bash -c "TREE_READER_MUTATE_FLAT=1 bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.flat.golden.txt' -"
+    # MUTATION 3: forget the 2018-layout sibling file (the scanner before this row)
+    # -> src/flat/child.rs is undeclared, and reader_mods falls back whole.
+    # (\074/\076 and the hunk-header filter keep literal angle brackets out of the source.)
+    TREE_READER_MUTATE_NO_2018=1 bash "$T" --derive "$FX" > "$td/no2018.out" 2> /dev/null || true
+    diff "$FX/derived.golden.txt" "$td/no2018.out" > "$td/no2018.diff" || true
+    grep -v -e '^[0-9]' -e '^---$' "$td/no2018.diff" > "$td/no2018.raw" || true
+    LC_ALL=C sort -o "$td/no2018.lines" "$td/no2018.raw"
+    printf '\074 reader_mods\t--lib\tflat::child\n\076 reader_mods\t--lib\n' > "$td/no2018.want"
+    row 0 "MUTATION: 2018-layout sibling ignored (TREE_READER_MUTATE_NO_2018=1) -> the golden DIFFERS" '^[0-9]' cat "$td/no2018.diff"
+    row 0 "  ...and exactly flat::child is lost to the whole-crate fallback (reader_mods --lib)" '^$' diff "$td/no2018.want" "$td/no2018.lines"
+    env -u TREE_READER_SELF_TEST TREE_READER_MUTATE_NO_2018=1 bash "$T" --derive "$FX" > "$td/no2018.inert" 2> /dev/null || true
+    row 0 "  ...and TREE_READER_MUTATE_NO_2018 is inert outside --self-test (the real golden)" '^$' diff "$FX/derived.golden.txt" "$td/no2018.inert"
     # The mutations are self-test-only: without TREE_READER_SELF_TEST the switch is inert.
     row 1 "the mutation switches are inert outside --self-test (TREE_READER_SELF_TEST unset -> the real golden)" '^[<>]' \
         env -u TREE_READER_SELF_TEST TREE_READER_MUTATE_FLAT=1 bash -c "bash '$T' --derive '$FX' 2>/dev/null | diff '$FX/derived.flat.golden.txt' -"

@@ -71,7 +71,9 @@ fn official_template_str_method(
 
 /// Positional argument `i` as a string; `None`/undefined count as absent (Python's default).
 fn str_arg(args: &[minijinja::Value], i: usize) -> Option<String> {
-    args.get(i).filter(|v| !v.is_none() && !v.is_undefined()).and_then(|v| v.as_str().map(str::to_string))
+    args.get(i)
+        .filter(|v| !v.is_none() && !v.is_undefined())
+        .and_then(|v| v.as_str().map(str::to_string))
 }
 
 /// `str.startswith` / `str.endswith`: Python accepts a str or a tuple of strs.
@@ -81,7 +83,9 @@ fn str_affix_any(
     f: &dyn Fn(&str) -> bool,
 ) -> Result<minijinja::Value, minijinja::Error> {
     use minijinja::{Error, ErrorKind, Value};
-    let a = args.first().ok_or_else(|| Error::new(ErrorKind::MissingArgument, method.to_string()))?;
+    let a = args
+        .first()
+        .ok_or_else(|| Error::new(ErrorKind::MissingArgument, method.to_string()))?;
     if let Some(p) = a.as_str() {
         return Ok(Value::from(f(p)));
     }
@@ -97,12 +101,18 @@ fn str_affix_any(
 /// `str.split(sep=None, maxsplit=-1)`.
 fn str_split(s: &str, args: &[minijinja::Value]) -> Result<minijinja::Value, minijinja::Error> {
     use minijinja::{Error, ErrorKind, Value};
-    let maxsplit = args.get(1).and_then(|v| i64::try_from(v.clone()).ok()).unwrap_or(-1);
+    let maxsplit = args
+        .get(1)
+        .and_then(|v| i64::try_from(v.clone()).ok())
+        .unwrap_or(-1);
     let parts: Vec<Value> = match str_arg(args, 0) {
         // Python: no separator splits on runs of whitespace and drops empties.
         None => s.split_whitespace().map(Value::from).collect(),
         Some(sep) if sep.is_empty() => {
-            return Err(Error::new(ErrorKind::InvalidOperation, "split: empty separator"));
+            return Err(Error::new(
+                ErrorKind::InvalidOperation,
+                "split: empty separator",
+            ));
         },
         Some(sep) if maxsplit >= 0 => s
             .splitn(usize::try_from(maxsplit).unwrap_or(0) + 1, sep.as_str())
@@ -111,6 +121,96 @@ fn str_split(s: &str, args: &[minijinja::Value]) -> Result<minijinja::Value, min
         Some(sep) => s.split(sep.as_str()).map(Value::from).collect(),
     };
     Ok(Value::from(parts))
+}
+
+/// `json.dumps` separators -- `", "` and `": "` -- for [`py_tojson`] (#4650).
+struct PyJsonFormatter;
+
+impl serde_json::ser::Formatter for PyJsonFormatter {
+    fn begin_array_value<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+        first: bool,
+    ) -> std::io::Result<()> {
+        if first {
+            Ok(())
+        } else {
+            writer.write_all(b", ")
+        }
+    }
+
+    fn begin_object_key<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+        first: bool,
+    ) -> std::io::Result<()> {
+        if first {
+            Ok(())
+        } else {
+            writer.write_all(b", ")
+        }
+    }
+
+    fn begin_object_value<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+    ) -> std::io::Result<()> {
+        writer.write_all(b": ")
+    }
+}
+
+/// The `tojson` filter as HuggingFace defines it for chat templates (#4650):
+/// `json.dumps(x, ensure_ascii=False)`. minijinja's own `tojson` writes compact separators
+/// and HTML-escapes `<`, `>`, `&` and `'` to `<`-style escapes, so a tool schema that
+/// says "a < b" reached the model as text it was never trained on. The `tools` block and
+/// replayed tool-call arguments are the only places the Qwen templates call it.
+///
+/// `indent` is taken positionally or as a keyword, as HF and minijinja's built-in take it.
+/// Llama 3.x templates render each tool with `tojson(indent=4)`; a filter that refused the
+/// argument failed the whole render, and the request fell back to apr's built-in template.
+/// With an indent the output is `json.dumps(x, indent=N)`: one item per line, `","`
+/// between items and `": "` after a key.
+fn py_tojson(
+    value: &minijinja::Value,
+    indent: Option<minijinja::Value>,
+    kwargs: minijinja::value::Kwargs,
+) -> Result<minijinja::Value, minijinja::Error> {
+    use serde::Serialize;
+    let indent = match indent {
+        Some(i) => Some(i),
+        None => kwargs.get::<Option<minijinja::Value>>("indent")?,
+    };
+    kwargs.assert_all_used()?;
+    let bad = |e: serde_json::Error| {
+        minijinja::Error::new(
+            minijinja::ErrorKind::BadSerialization,
+            format!("tojson: {e}"),
+        )
+    };
+    let mut out = Vec::new();
+    match indent.filter(|i| !i.is_none()) {
+        None => {
+            let mut ser = serde_json::Serializer::with_formatter(&mut out, PyJsonFormatter);
+            value.serialize(&mut ser).map_err(bad)?;
+        },
+        Some(i) => {
+            let n = i64::try_from(i).map_err(|_| {
+                minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    "tojson: indent must be an integer",
+                )
+            })?;
+            // json.dumps treats a negative indent as 0: newlines, no padding.
+            let pad = " ".repeat(usize::try_from(n).unwrap_or(0));
+            let fmt = serde_json::ser::PrettyFormatter::with_indent(pad.as_bytes());
+            let mut ser = serde_json::Serializer::with_formatter(&mut out, fmt);
+            value.serialize(&mut ser).map_err(bad)?;
+        },
+    }
+    let s = String::from_utf8(out).map_err(|e| {
+        minijinja::Error::new(minijinja::ErrorKind::BadSerialization, e.to_string())
+    })?;
+    Ok(minijinja::Value::from_safe_string(s))
 }
 
 /// Render a model's own jinja chat template, with llama.cpp/HuggingFace semantics (#3990).
@@ -125,23 +225,67 @@ pub fn render_official(
     add_generation_prompt: bool,
     enable_thinking: Option<bool>,
 ) -> Result<String, RealizarError> {
+    render_official_with_tools(
+        chat_template,
+        bos_token,
+        eos_token,
+        messages,
+        add_generation_prompt,
+        enable_thinking,
+        None,
+    )
+}
+
+/// [`render_official`] with the request's OpenAI `tools` array (#4650).
+///
+/// Qwen2.5, Qwen3 and Qwen3.5 templates gate their whole `# Tools` system block on
+/// `{% if tools %}`. The context used to carry no `tools` key, and minijinja renders an
+/// UNDEFINED variable as false with no error -- so every tool a client sent was dropped
+/// from the prompt, silently, and the model was never told a tool existed. `tools` is the
+/// array as the client sent it (`[{"type":"function","function":{...}}]`), the shape
+/// HuggingFace's `apply_chat_template(tools=...)` passes; `None` leaves it undefined.
+///
+/// # Errors
+/// See [`render_official`].
+pub fn render_official_with_tools(
+    chat_template: &str,
+    bos_token: Option<&str>,
+    eos_token: Option<&str>,
+    messages: &[ChatMessage],
+    add_generation_prompt: bool,
+    enable_thinking: Option<bool>,
+    tools: Option<&serde_json::Value>,
+) -> Result<String, RealizarError> {
     let mut env = Environment::new();
     env.set_recursion_limit(MAX_RECURSION_DEPTH);
     env.set_trim_blocks(true);
     env.set_lstrip_blocks(true);
     env.set_unknown_method_callback(official_template_str_method);
-    env.add_function("raise_exception", |msg: String| -> Result<minijinja::Value, minijinja::Error> {
-        Err(minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, format!("template raised: {msg}")))
-    });
-    env.add_template("chat", chat_template).map_err(|e| RealizarError::FormatError {
-        reason: format!("model chat_template does not parse: {e}"),
-    })?;
-    let tmpl = env.get_template("chat").map_err(|e| RealizarError::FormatError {
-        reason: format!("model chat_template: {e}"),
-    })?;
+    env.add_filter("tojson", py_tojson);
+    env.add_function(
+        "raise_exception",
+        |msg: String| -> Result<minijinja::Value, minijinja::Error> {
+            Err(minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!("template raised: {msg}"),
+            ))
+        },
+    );
+    env.add_template("chat", chat_template)
+        .map_err(|e| RealizarError::FormatError {
+            reason: format!("model chat_template does not parse: {e}"),
+        })?;
+    let tmpl = env
+        .get_template("chat")
+        .map_err(|e| RealizarError::FormatError {
+            reason: format!("model chat_template: {e}"),
+        })?;
     let mut ctx = std::collections::BTreeMap::<&str, minijinja::Value>::new();
     ctx.insert("messages", minijinja::Value::from_serialize(messages));
-    ctx.insert("add_generation_prompt", minijinja::Value::from(add_generation_prompt));
+    ctx.insert(
+        "add_generation_prompt",
+        minijinja::Value::from(add_generation_prompt),
+    );
     if let Some(b) = bos_token {
         ctx.insert("bos_token", minijinja::Value::from(b));
     }
@@ -151,9 +295,13 @@ pub fn render_official(
     if let Some(t) = enable_thinking {
         ctx.insert("enable_thinking", minijinja::Value::from(t));
     }
-    tmpl.render(minijinja::Value::from(ctx)).map_err(|e| RealizarError::FormatError {
-        reason: format!("model chat_template failed to render: {e}"),
-    })
+    if let Some(t) = tools {
+        ctx.insert("tools", minijinja::Value::from_serialize(t));
+    }
+    tmpl.render(minijinja::Value::from(ctx))
+        .map_err(|e| RealizarError::FormatError {
+            reason: format!("model chat_template failed to render: {e}"),
+        })
 }
 
 /// Render the GGUF's own `tokenizer.chat_template` for `messages`, with the generation
@@ -167,7 +315,22 @@ pub fn render_official_for_model(
     messages: &[ChatMessage],
     enable_thinking: Option<bool>,
 ) -> Result<String, RealizarError> {
-    let Some(crate::gguf::GGUFValue::String(tpl)) = gguf.metadata.get("tokenizer.chat_template") else {
+    render_official_for_model_with_tools(gguf, messages, enable_thinking, None)
+}
+
+/// [`render_official_for_model`] with the request's `tools` (#4650); see
+/// [`render_official_with_tools`].
+///
+/// # Errors
+/// See [`render_official_for_model`].
+pub fn render_official_for_model_with_tools(
+    gguf: &crate::gguf::GGUFModel,
+    messages: &[ChatMessage],
+    enable_thinking: Option<bool>,
+    tools: Option<&serde_json::Value>,
+) -> Result<String, RealizarError> {
+    let Some(crate::gguf::GGUFValue::String(tpl)) = gguf.metadata.get("tokenizer.chat_template")
+    else {
         return Err(RealizarError::FormatError {
             reason: "this GGUF carries no tokenizer.chat_template; the official renderer has nothing to render (#3990)".to_string(),
         });
@@ -178,7 +341,15 @@ pub fn render_official_for_model(
         v.get(usize::try_from(i).ok()?).cloned()
     };
     let (bos, eos) = (piece(gguf.bos_token_id()), piece(gguf.eos_token_id()));
-    render_official(tpl, bos.as_deref(), eos.as_deref(), messages, true, enable_thinking)
+    render_official_with_tools(
+        tpl,
+        bos.as_deref(),
+        eos.as_deref(),
+        messages,
+        true,
+        enable_thinking,
+        tools,
+    )
 }
 
 /// A `tokenizer_config.json` special token: a bare string, or an AddedToken object
@@ -205,9 +376,10 @@ pub fn render_official_from_tokenizer_config(
     messages: &[ChatMessage],
     enable_thinking: Option<bool>,
 ) -> Result<String, RealizarError> {
-    let cfg: serde_json::Value = serde_json::from_str(tokenizer_config_json).map_err(|e| {
-        RealizarError::FormatError { reason: format!("tokenizer_config.json does not parse: {e}") }
-    })?;
+    let cfg: serde_json::Value =
+        serde_json::from_str(tokenizer_config_json).map_err(|e| RealizarError::FormatError {
+            reason: format!("tokenizer_config.json does not parse: {e}"),
+        })?;
     let tpl = match cfg.get("chat_template") {
         Some(serde_json::Value::String(s)) => Some(s.as_str()),
         Some(serde_json::Value::Array(list)) => list
@@ -221,5 +393,12 @@ pub fn render_official_from_tokenizer_config(
     })?;
     let bos = tokenizer_config_token(cfg.get("bos_token"));
     let eos = tokenizer_config_token(cfg.get("eos_token"));
-    render_official(tpl, bos.as_deref(), eos.as_deref(), messages, true, enable_thinking)
+    render_official(
+        tpl,
+        bos.as_deref(),
+        eos.as_deref(),
+        messages,
+        true,
+        enable_thinking,
+    )
 }

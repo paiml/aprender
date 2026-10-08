@@ -1,0 +1,141 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query \"mutants debt ratchet shrink-only baseline\" --limit 5; scripts/pr_review_duplication_scan.sh --rust-semantic; plus the measured commands in each result"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-RATCHET-002",
+          "level": "warning",
+          "message": {
+            "text": "The guard can never reach an empty baseline: a head file with zero data rows (header only, or zero bytes) is reported RED as 'malformed (need 5 tab fields)' because `check_rows <<<\"$head\"` feeds awk one empty line (NF=0). A missing file is RED too (R2). So killing the LAST survivor cannot be committed under this guard, and the self-test has no case for it (R3 shrinks 2 -> 1, never to 0)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 41
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "/tmp/rvprobe.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "753d2485bb46162471372886951ecbe0daaade8ec968757254ed492ea8efb46b",
+            "failure_scenario": "Once the debt file is shrunk to its final row and that survivor is killed, the PR that deletes the last row fails guard-tree with 'malformed rows'; the author must edit the guard (or leave a dummy row) to finish the paydown, so the ratchet's goal state is unreachable as written.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-CI-COMMENT-001",
+          "level": "note",
+          "message": {
+            "text": "ci.yml:456 still says 'The blocking rule is the shrink-only survivor baseline'. The roadmap now states (AC5, #4649) that a NEW survivor is reported, not blocked; what blocks is only hand-edits that grow the debt file. The comment reads as stronger than the mechanism."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 456
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading ci.yml 454-464, the guard script's inputs (debt file at HEAD and merge base only) and PMAT-4646.yaml AC5.",
+            "failure_scenario": "A maintainer reads the ci.yml comment, believes new mutation survivors are blocked, and does not notice that between this merge and #4648/#4649 they are neither blocked nor ledgered.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "scoped guard mutation: 11 sed mutants of scripts/check_mutants_debt_ratchet.sh vs its --self-test (driver name is the receipt vocabulary slot; not a cargo-mutants run)"
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-MUT-002",
+          "level": "warning",
+          "message": {
+            "text": "11 hand-written sed mutants of scripts/check_mutants_debt_ratchet.sh (a /tmp copy; repo untouched), each run through the script's own --self-test: 11 attempted, 8 killed, 3 survived. Survivors are rules the guard states and the 12-case self-test does not exercise: (1) bad-run-id check `$5 !~ /^[0-9]+$/` weakened to accept an empty run id (line 33); (2) `index($2,$1) != 1` weakened to `< 0`, so a mutant that names its file anywhere, not at the start, passes (line 34); (3) `NF != 5` weakened to `NF < 5`, so a 6-field row passes (line 30). Not a committed mutation set: none exists for this script, so this is the reviewer's measurement and is not scored as B3."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_mutants_debt_ratchet.sh"
+                },
+                "region": {
+                  "startLine": 30
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "/tmp/rvmut/run.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "2a5a0a3a3c59d34f55b0254a848689aee544f4d11fe918b0735405b2b39d2a3b",
+            "failure_scenario": "A debt row with an empty run id, a 6th field, or a mutant string that only contains its file name mid-string is accepted into ci/mutants-debt.tsv; a later regression that loosens any of these three awk rules passes guard-tree green.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "agy -p <prompt file> --model gemini-3.1-pro-high --output-format json --json-schema .pr-review-schema.json --print-timeout 20m --dangerously-skip-permissions (disposable git-archive tree)"
+        }
+      ],
+      "results": []
+    }
+  ]
+}

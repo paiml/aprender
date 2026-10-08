@@ -31,7 +31,11 @@ on:
     # up to the interval; of a frequent one, a handful of API calls. One list
     # call carries status+conclusion, so the per-run jobs call is paid only for
     # candidates -- typically 3-6 runs, well inside the 5,000/h budget.
-    - cron: '*/10 * * * *'
+    # Two crons, one sweep: no scheduled job lands on the X64 clean-room pool
+    # between 06:00Z and 20:00Z, so the day sweep runs on the ARM64 clean-room
+    # pool (see `runs-on` below). Together they still fire every 10 minutes.
+    - cron: '*/10 0-5,20-23 * * *'
+    - cron: '*/10 6-19 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -52,7 +56,10 @@ concurrency:
 jobs:
   unwedge:
     name: unwedge
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    # The night cron keeps the X64 pool; the day cron and a manual dispatch take
+    # the ARM64 pool. Its runner image carries gh, jq, setsid and bash, all this
+    # job uses. The string must match the night cron above exactly.
+    runs-on: ${{ github.event.schedule == '*/10 0-5,20-23 * * *' && fromJSON('["self-hosted", "X64", "Linux", "clean-room"]') || fromJSON('["self-hosted", "Linux", "clean-room", "ARM64"]') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -65,7 +72,7 @@ jobs:
       # so a broken derivation cancels nothing instead of cancelling the queue.
       # Every guard is mutation-proved load-bearing; see the script header.
       - name: Predicate falsifier (must pass before anything is cancelled)
-        run: bash scripts/check_ci_unwedge.sh --self-test
+        run: setsid --wait bash scripts/check_ci_unwedge.sh --self-test
 
       - name: Scan and free
         env:
@@ -78,7 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${DRY_RUN:-false}" = "true" ]; then
-            bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20 --dry-run
+            setsid --wait bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20 --dry-run
           else
-            bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20
+            setsid --wait bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20
           fi

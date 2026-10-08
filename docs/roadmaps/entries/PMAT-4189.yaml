@@ -1,0 +1,18 @@
+- id: PMAT-4189
+  github_issue: 4189
+  item_type: task
+  title: 'P0: nightly publishes every [[bin]] at main head with a SHA manifest (G5)'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-09-29T17:58:00Z
+  updated: 2026-09-29T17:58:00Z
+  spec: null
+  acceptance_criteria:
+  - Folded into #4588 (PR-2 of #4502), C78 cop ruling (a) 2026-09-29. nightly.yml derives the bin list from workspace metadata and builds every [[bin]] at the main head with a SHA manifest; binary-release.yml plus scripts/release/asset_version_check.sh refuse a version-mismatched asset; scripts/check_bin_names_aprender.sh (#4430) keeps shipped names aprender-*. Receipt docs/audits/impl-GH-4189-receipt.md.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

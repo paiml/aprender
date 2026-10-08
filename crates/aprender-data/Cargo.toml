@@ -102,6 +102,9 @@ chrono = { version = "0.4", features = ["serde"], optional = true }
 regex = { version = "1", optional = true }
 walkdir = { version = "2", optional = true }
 
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
@@ -112,7 +115,8 @@ predicates = "3"
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # PMAT-955: path-only (no version) so cargo strips it at publish
 
 [[bin]]
-name = "alimentar"
+# #4430: every shipped [[bin]] is aprender-* (was `alimentar`)
+name = "aprender-data"
 path = "src/main.rs"
 required-features = ["cli"]
 

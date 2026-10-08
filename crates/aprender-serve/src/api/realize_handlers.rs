@@ -248,19 +248,51 @@ pub fn format_chat_messages_official_thinking(
     model_hint: Option<&str>,
     thinking: Option<bool>,
 ) -> Result<String, crate::error::RealizarError> {
+    format_chat_messages_official_thinking_tools(gguf, messages, model_hint, thinking, None)
+}
+
+/// #4650: [`format_chat_messages_official_thinking`] with the request's `tools`, rendered
+/// by the model's own template (its `# Tools` block). An empty array is no tools, as in
+/// OpenAI. The hand-coded family templates have no tools block, so a request with tools
+/// that falls back to one says so on stderr instead of dropping them in silence.
+///
+/// # Errors
+/// See [`format_chat_messages_official_thinking`].
+pub fn format_chat_messages_official_thinking_tools(
+    gguf: Option<&crate::gguf::GGUFModel>,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+    thinking: Option<bool>,
+    tools: Option<&[super::OpenAiTool]>,
+) -> Result<String, crate::error::RealizarError> {
     use crate::chat_template::{self, ChatMessage as TemplateMessage};
 
     let template_messages: Vec<TemplateMessage> = messages
         .iter()
         .map(|m| TemplateMessage::new(&m.role, &m.content))
         .collect();
+    let tools_json = tools
+        .filter(|t| !t.is_empty())
+        .and_then(|t| serde_json::to_value(t).ok());
     let own = gguf
         .filter(|g| g.metadata.contains_key("tokenizer.chat_template"))
         .map(|g| {
-            let msgs = &template_messages;
-            move |t: Option<bool>| chat_template::render_official_for_model(g, msgs, t)
+            let (msgs, tools) = (&template_messages, tools_json.as_ref());
+            move |t: Option<bool>| {
+                chat_template::render_official_for_model_with_tools(g, msgs, t, tools)
+            }
         });
-    chat_template::official_or_legacy(own, || format_chat_messages(messages, model_hint), thinking)
+    let legacy = || {
+        if tools_json.is_some() {
+            eprintln!(
+                "warning: this request carries tools, and the model's own chat template is not \
+                 being used; apr's built-in template has no tools block, so the model is not \
+                 told about them (#4650)"
+            );
+        }
+        format_chat_messages(messages, model_hint)
+    };
+    chat_template::official_or_legacy(own, legacy, thinking)
 }
 
 /// [`format_chat_messages_official`] against whatever GGUF the server retained.
@@ -288,34 +320,55 @@ pub fn format_chat_messages_for_state_thinking(
     model_hint: Option<&str>,
     thinking: Option<bool>,
 ) -> Result<String, crate::error::RealizarError> {
+    format_chat_messages_for_state_thinking_tools(state, messages, model_hint, thinking, None)
+}
+
+/// #4650: [`format_chat_messages_for_state_thinking`] with the request's `tools`.
+///
+/// # Errors
+/// See [`format_chat_messages_official_thinking`].
+pub fn format_chat_messages_for_state_thinking_tools(
+    state: &AppState,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+    thinking: Option<bool>,
+    tools: Option<&[super::OpenAiTool]>,
+) -> Result<String, crate::error::RealizarError> {
     let mapped = state.mapped_gguf_model();
     let architecture = state.model_architecture();
     let hint = architecture.as_deref().or(model_hint);
-    format_chat_messages_official_thinking(
+    format_chat_messages_official_thinking_tools(
         mapped.as_ref().map(|m| &m.model),
         messages,
         hint,
         thinking,
+        tools,
     )
 }
+
+/// The stop sequences that end an assistant response.
+///
+/// Shared by [`clean_chat_output`] (non-streaming) and the streaming
+/// `ChatStopFilter` (aprender#4340), so a marker the non-streaming body never
+/// shows can never reach a stream delta either.
+pub(crate) const CHAT_STOP_SEQUENCES: &[&str] = &[
+    "<|im_end|>",    // ChatML (Qwen, OpenHermes, Yi)
+    "<|endoftext|>", // GPT-style
+    "<|end|>",       // Alternative
+    "</s>",          // LLaMA style
+    "\nHuman:",      // Anthropic/Claude style
+    "\nUser:",       // Alternative user turn
+    "\n\nHuman:",    // With extra newline
+    "\n\nUser:",     // With extra newline
+    "<|im_start|>",  // Start of new turn in ChatML
+];
 
 /// Clean chat output to prevent prompt injection (PMAT-088)
 ///
 /// Stops output at the first stop sequence to prevent the model from
 /// generating additional conversation turns or injected content.
 pub fn clean_chat_output(text: &str) -> String {
-    // List of stop sequences that indicate end of assistant response
-    const STOP_SEQUENCES: &[&str] = &[
-        "<|im_end|>",    // ChatML (Qwen, OpenHermes, Yi)
-        "<|endoftext|>", // GPT-style
-        "<|end|>",       // Alternative
-        "</s>",          // LLaMA style
-        "\nHuman:",      // Anthropic/Claude style
-        "\nUser:",       // Alternative user turn
-        "\n\nHuman:",    // With extra newline
-        "\n\nUser:",     // With extra newline
-        "<|im_start|>",  // Start of new turn in ChatML
-    ];
+    const STOP_SEQUENCES: &[&str] = CHAT_STOP_SEQUENCES;
 
     // V1_004 follow-up (paiml/claude-code-parity-apr M291): "\nHuman:" /
     // "\n\nHuman:" require a preceding newline to match. When a response

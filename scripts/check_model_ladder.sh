@@ -166,6 +166,14 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
     # independently of the rc, because a row can be rc=0 and still not add up.
     if x.get("gates_account_for_rc") is False:
         why.append("`gates_account_for_rc` is FALSE — the recorded gates do not explain `qa_rc`, so more failed than this row accounts for (#3898)")
+    # #4016: a GPU cell counts only with llama.cpp's fit verdict "fits" recorded (full GPU, ctx >= 4096,
+    # pinned llama-fit-params). No verdict is refused, never read as a pass.
+    if claims_gpu:
+        fit = x.get("fit")
+        if not isinstance(fit, dict) or not fit.get("verdict"):
+            why.append("fit (#4016): NO llama.cpp fit verdict recorded -- a cell without one is refused")
+        elif fit.get("verdict") != "fits":
+            why.append(f"fit (#4016): {fit.get('verdict')}: {_disp(fit.get('reason', ''))}")
     be = x.get("backends") or {}
     for b in backends:
         v = be.get(b)
@@ -293,9 +301,18 @@ if main_p and os.path.exists(main_p):
         def hostset(r, allh): return set(r.get("hosts") or allh)
         allh = {h["id"] for h in L.get("hosts", []) if h.get("required")}
         mrh = {r["id"]: hostset(r, allh) for r in M.get("rungs", []) if r.get("required")}
+        # #4590: the one exception is a (host, arch) the release DE-CLAIMS in cells.declaimed. It is how the
+        # de-claim reaches released pv, which reads rung hosts and not declaimed; printed on every run.
+        dcl = {(d.get("host"), d.get("arch")): d for d in (L.get("cells") or {}).get("declaimed") or []}
         for r in rungs:
             if r.get("required") and r["id"] in mrh and not mrh[r["id"]] <= hostset(r, allh):
-                print(f"FAIL  hosts DROPPED on {r['id']} vs origin/main: {sorted(mrh[r['id']] - hostset(r, allh))} — a rung may gain hosts, never lose one"); rc = 1
+                gone = mrh[r["id"]] - hostset(r, allh)
+                for h in sorted(g for g in gone if (g, r.get("arch")) in dcl):  # a de-claimed host, not a drop
+                    d = dcl[(h, r.get("arch"))]
+                    print(f"DECLAIMED rung {r['id']} not claimed on {h} -- #{d.get('issue')}, restored in {d.get('until')}")
+                gone = {g for g in gone if (g, r.get("arch")) not in dcl}
+                if gone:
+                    print(f"FAIL  hosts DROPPED on {r['id']} vs origin/main: {sorted(gone)} — a rung may gain hosts, never lose one"); rc = 1
         mc, hc = M.get("cells") or {}, L.get("cells") or {}
         if mc and not hc:
             print("FAIL  the cells block DROPPED vs origin/main -- verbs x thinking x context would owe nothing"); rc = 1
@@ -542,6 +559,78 @@ PY
 #   lock_probe  (behavioural, self-test): a fake apr, called through --lock-probe, must see the lock
 #               held and its own oom_score_adj at 1000; with the lock held elsewhere the call must
 #               decline (exit 2) within the bounded wait, naming the holder's pid.
+# ---------------------------------------------------------------- the fit gate (#4016)
+# Operator rule 2026-09-23: llama.cpp's fit (the pinned llama-fit-params) is the placement authority for
+# every model certification and test until apr has a parity tool. Two halves, as for the lock:
+#   fit_audit  (static, also in the REAL run): measure() takes the fit verdict BEFORE its first apr call,
+#              refuses on anything but "fits", and the model probe runs only through fit_locked.
+#   fit_probe  (behavioural, self-test): the producer's --fit-probe against stub tools lands every case
+#              of the table on the right verdict and exit code.
+# fit_audit <producer> -> prints FAIL lines, exit 1 on any violation
+fit_audit() {
+  python3 - "$1" <<'PY'
+import re, sys
+src = open(sys.argv[1]).read(); bad = 0
+m = re.search(r"^measure\(\) \{\n(.*?)^\}", src, re.S | re.M)
+body = m.group(1) if m else ""
+gate, first_apr = body.find('fit_json=$(fit_verdict "$path")'), body.find("apr_locked ")
+if gate < 0 or first_apr < 0 or gate > first_apr:
+    print("FAIL  fit: measure() does not take the fit verdict before its first apr call (#4016)"); bad = 1
+# the refusal block itself (the `if` up to its own `fi`) must `return`; a `return` elsewhere is not the refusal
+blk = re.search(r'if ! grep -q \'"verdict": "fits"\' <<< "\$fit_json"; then\n(.*?)\n\s*fi\b', body, re.S)
+if not blk or not re.search(r"^\s*return\s*$", blk.group(1), re.M):
+    print("FAIL  fit: measure() does not refuse (return) a cell whose verdict is not \"fits\" (#4016)"); bad = 1
+raw = [l.strip() for l in src.splitlines() if '"$LLAMA_FIT"' in l and "--model" in l and not l.lstrip().startswith("#")]
+if raw: print(f"FAIL  fit: a raw llama-fit-params model probe outside fit_locked: {raw[0]}"); bad = 1
+if not re.search(r'^fit_locked\(\) \{ flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom -n 1000 -- "\$LLAMA_FIT"', src, re.M):
+    print("FAIL  fit: fit_locked does not run the probe under the bounded fleet lock + choom"); bad = 1
+sys.exit(bad)
+PY
+}
+# fit_probe <producer> <work dir> -> prints ok/FAIL lines, exit 1 on any case landing wrong
+fit_probe() {
+  local prod=$1 w=$2 bad=0 t pin=d1d3c3396 out rc want v
+  mkdir -p "$w" || return 1
+  : > "$w/model.gguf"   # no readable header: trained length unknown, the 4096 floor holds
+  # gguf <file> <context_length>: a minimal GGUF v3 header whose only KV is llama.context_length
+  gguf() { python3 -c 'import struct,sys; k=b"llama.context_length"; open(sys.argv[1],"wb").write(b"GGUF"+struct.pack("<IQQ",3,0,1)+struct.pack("<Q",len(k))+k+struct.pack("<II",4,int(sys.argv[2])))' "$1" "$2"; }
+  gguf "$w/trained-2k.gguf" 2048
+  gguf "$w/trained-4k.gguf" 4096
+  gguf "$w/trained-32k.gguf" 32768
+  mk() { printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "version: 0.4.1-dev (build 1, commit %s)";; *) %s;; esac\n' "$2" "$3" > "$w/$1"; chmod +x "$w/$1"; }
+  mk fits      "$pin"    'echo "-c 262144 -ngl -1"'
+  mk nofit     "$pin"    'echo "failed to fit" >&2; exit 1'
+  mk noverdict "$pin"    'echo "no parameters printed"'
+  mk partial   "$pin"    'echo "-c 8192 -ngl -1 -ot \"blk.1.ffn=CPU\""'
+  mk partialngl "$pin"   'echo "-c 32768 -ngl 20"'
+  mk smallctx  "$pin"    'echo "-c 2048 -ngl -1"'
+  mk ctx8k     "$pin"    'echo "-c 8192 -ngl -1"'
+  mk otherpin  41fc758   'echo "-c 32768 -ngl -1"'
+  # case | tool | model | expected verdict | expected exit
+  # The ctx floor is min(4096, trained ctx) (cop ruling on #4016): tinyllama, trained at 2K, must be
+  # ADMITTED at 2048; a 4K-trained model fitted at 2048 must be REFUSED; a 32K-trained model at 8192 fits.
+  while IFS='|' read -r t tool model want_v want; do
+    out=$(MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_FREE_MIB=23332 MODEL_LADDER_FIT="$w/$tool" \
+          MODEL_LADDER_FIT_PIN="$pin" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true timeout 60 bash "$prod" --fit-probe "$w/$model" 2> /dev/null); rc=$?
+    v=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("verdict",""))' "$out" 2> /dev/null)
+    if [ "$v" = "$want_v" ] && [ "$rc" = "$want" ]; then printf 'ok    fit case %-12s verdict=%s exit=%s\n' "$t" "$v" "$rc"
+    else printf 'FAIL  fit case %-12s verdict=%s exit=%s, want %s exit %s\n' "$t" "${v:-<none>}" "$rc" "$want_v" "$want"; bad=1; fi
+  done <<'CASES'
+fits|fits|model.gguf|fits|0
+does-not-fit|nofit|model.gguf|does-not-fit|1
+verdict-missing|noverdict|model.gguf|missing|1
+partial-ot|partial|model.gguf|partial-offload|1
+partial-ngl|partialngl|model.gguf|partial-offload|1
+ctx-2k-trained-unknown|smallctx|model.gguf|does-not-fit|1
+tinyllama-2k-at-2048|smallctx|trained-2k.gguf|fits|0
+4k-trained-at-2048|smallctx|trained-4k.gguf|does-not-fit|1
+32k-trained-at-8192|ctx8k|trained-32k.gguf|fits|0
+unpinned|otherpin|model.gguf|unpinned|1
+tool-absent|absent|model.gguf|tool-absent|1
+CASES
+  return "$bad"
+}
+
 # lock_audit <producer> -> prints FAIL lines, exit 1 on any raw call
 lock_audit() {
   python3 - "$1" <<'LOCKPY'
@@ -554,6 +643,27 @@ for n, line in enumerate(open(sys.argv[1]), 1):
         bad = 1
 sys.exit(bad)
 LOCKPY
+}
+# exclusive_audit <producer> -> the GPU run leg goes through gpu_exclusive_run and a CONTENDED
+# refusal declines (#3964). Static: the helper's behaviour is its own 12-row self-test
+# (scripts/lib/gpu_exclusive_run_selftest.sh); this proves the ladder is wired to it.
+exclusive_audit() {
+  python3 - "$1" <<'EXCLPY'
+import re, sys
+src = open(sys.argv[1]).read()
+code = "\n".join(re.sub(r"(^|\s)#.*$", "", l) for l in src.splitlines())
+bad = 0
+body = re.search(r"apr_exclusive\(\) \{(.*?)\n\}", code, re.S)
+if not body or 'bash scripts/lib/gpu_exclusive_run.sh "$APR" "$@"' not in body.group(1):
+    print("FAIL  apr_exclusive does not run apr through scripts/lib/gpu_exclusive_run.sh"); bad = 1
+elif "GPU_OWNED_PREFIX=" not in body.group(1) or 'GPU_LOCK="$GPU_LOCK"' not in body.group(1):
+    print("FAIL  apr_exclusive does not pass GPU_OWNED_PREFIX and the ladder's GPU_LOCK"); bad = 1
+if not re.search(r'if \[ "\$flag" = --gpu \][^\n]*\n(?:[ \t]*\n)*[ \t]*apr_exclusive run "\$path"', code):
+    print("FAIL  the --gpu run leg does not go through apr_exclusive -- a foreign GPU process goes unseen"); bad = 1
+if not re.search(r"grep -q 'gpu_exclusive_run: CONTENDED' \"\$run_o\" \"\$run_e\"; then\n[^\n]*decline: ENV the GPU was not exclusive[^\n]*\n\s*exit 2", code):
+    print("FAIL  a CONTENDED GPU leg does not decline (exit 2) -- a shared-card result would be judged"); bad = 1
+sys.exit(bad)
+EXCLPY
 }
 # lock_probe <producer> <work dir> -> prints ok/FAIL lines, exit 1 on any failure
 lock_probe() {
@@ -712,6 +822,52 @@ if [ "$SELF_TEST" = 1 ]; then
     pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
     pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
     pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
+    # The fit gate (#4016): the real producer passes the audit and the probe table; each producer mutant
+    # must fail one of them, and each judge rule deleted in a copy must turn its case RED.
+    if fit_audit "$prod" > "$mdir/fit-audit.out"; then echo "ok    fit: $prod gates every GPU cell on llama.cpp's fit verdict before any apr call"
+    else cat "$mdir/fit-audit.out"; bad=$((bad+1)); fi
+    fit_probe "$prod" "$mdir/fit" || bad=$((bad+1))
+    fmutant() { # fmutant <label> <sed expression breaking the fit gate in a copy of the producer>
+      local m="$mdir/f-$1.sh"
+      sed "$2" "$prod" > "$m"
+      if cmp -s "$prod" "$m"; then echo "FAIL  fit mutant $1 did not apply -- the fit checks prove nothing"; bad=$((bad+1)); return; fi
+      if fit_audit "$m" > /dev/null && fit_probe "$m" "$mdir/fit-$1" > /dev/null; then echo "FAIL  fit mutant $1 SURVIVED the fit checks"; bad=$((bad+1))
+      else printf 'ok    fit mutant %-19s killed by the fit checks\n' "$1"; fi
+    }
+    fmutant no-gate       's/      fit_json=\$(fit_verdict "\$path")/      fit_json=\x27{"verdict": "fits"}\x27/'
+    fmutant no-refusal    's/        return$/        :/'
+    fmutant raw-probe     's/    fit_locked --model "\$1"/    "$LLAMA_FIT" --model "$1"/'
+    vmutant() { # vmutant <label> <sed expression deleting a rule in a copy of scripts/lib/llama_fit_verdict.py>
+      local md="$mdir/v-$1"; mkdir -p "$md"
+      sed "$2" scripts/lib/llama_fit_verdict.py > "$md/llama_fit_verdict.py"
+      if cmp -s scripts/lib/llama_fit_verdict.py "$md/llama_fit_verdict.py"; then echo "FAIL  verdict mutant $1 did not apply -- the fit table proves nothing"; bad=$((bad+1)); return; fi
+      if MODEL_LADDER_FIT_LIB="$md" fit_probe "$prod" "$mdir/fitv-$1" > /dev/null; then echo "FAIL  verdict mutant $1 SURVIVED the fit case table"; bad=$((bad+1))
+      else printf 'ok    verdict mutant %-15s killed by the fit case table\n' "$1"; fi
+    }
+    vmutant tool-absent  's/    if not tool_found:/    if False:/'
+    vmutant pin          's/    if not built or k < 7 or built\[:k\] != pin\[:k\]:/    if False:/'
+    vmutant rc           's/    if rc != 0:/    if False:/'
+    vmutant no-verdict   's/    if not (c and n):/    if False:/'
+    vmutant partial-ngl  's/    if rec\["ngl"\] != -1 or/    if False or/'
+    vmutant partial-ot   's/ or " -ot " in f" {line} "//'
+    vmutant min-ctx      's/    if rec\["ctx"\] < floor:/    if False:/'
+    vmutant floor-4096   's/    floor = min(min_ctx, trained) if trained else min_ctx/    floor = min_ctx/'
+    vmutant floor-trained 's/    floor = min(min_ctx, trained) if trained else min_ctx/    floor = trained or min_ctx/'
+    vmutant no-reader    's/                    return struct.unpack(fmt, /                    return None and struct.unpack(fmt, /'
+    mutant fit-missing    red-fit-missing      's/        if not isinstance(fit, dict) or not fit.get("verdict"):/        if False:/'
+    mutant fit-not-fits   red-fit-does-not-fit 's/        elif fit.get("verdict") != "fits":/        elif False:/'
+    if exclusive_audit "$prod" > "$mdir/excl.out"; then echo "ok    exclusive: $prod runs its GPU leg through gpu_exclusive_run and declines CONTENDED (#3964)"
+    else cat "$mdir/excl.out"; bad=$((bad+1)); fi
+    emutant() { # emutant <label> <sed expression breaking the exclusive GPU leg in a copy of the producer>
+      local m="$mdir/e-$1.sh"
+      sed "$2" "$prod" > "$m"
+      if cmp -s "$prod" "$m"; then echo "FAIL  exclusive mutant $1 did not apply -- the check proves nothing"; bad=$((bad+1)); return; fi
+      if exclusive_audit "$m" > /dev/null; then echo "FAIL  exclusive mutant $1 SURVIVED the exclusive check"; bad=$((bad+1))
+      else printf 'ok    exclusive mutant %-16s killed\n' "$1"; fi
+    }
+    emutant gpu-leg-locked    's/      apr_exclusive run "$path"/      apr_locked run "$path"/'
+    emutant helper-bypassed   's/bash scripts\/lib\/gpu_exclusive_run.sh "$APR" "$@"/"$APR" "$@"/'
+    emutant contended-judged  '/decline: ENV the GPU was not exclusive/{n;s/exit 2/:/}'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
     # MODEL_LADDER_CELLS_LIB, and the case that names the rule must go RED under the copy.
     cmutant() { # cmutant <label> <case that must kill it> <sed expression deleting the rule>
@@ -729,9 +885,13 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant prompt-short    red-cells-prompt-under-rung     's/if int(c.get("prompt_tokens") or 0) < tok:/if False:/'
     cmutant modes-evidence  red-cells-thinking-modes-disagree-with-template 's/elif want is not None and modes != want:/elif False:/'
     cmutant no-representative red-cells-arch-without-representative 's/        if not r:/        if False:/'
-    cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/                            if not fit:/                            if False:/'
+    cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/    if not fit:/    if False:/'
     cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
-    cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/            if gone:/            if False:/'
+    cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/        if gone:/        if False:/'
+    cmutant declaim-skip    green-cells-declaimed           's/        if d:  # printed on every run/        if False:  # printed on every run/'
+    cmutant declaim-bare    red-cells-declaimed-bare        's/        if bad:  # a bare de-claim/        if False:  # a bare de-claim/'
+    cmutant declaim-claimed red-cells-declaimed-still-claimed 's/            if d:  # a claim the de-claim withdraws/            if False:  # a claim the de-claim withdraws/'
+    mutant declaim-host     declaimed-host-on-rung          's/                gone = {g for g in gone if (g, r.get("arch")) not in dcl}/                gone = set(gone)/'
     # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
     # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.
     xmutant() { # xmutant <label> <case that must kill it> <sed expression deleting the rule>
@@ -994,6 +1154,155 @@ SM
     xmutant certified-unheld  red-certified-not-held    's/^        if model_sha not in held:$/        if False:/'
     xmutant cert-read-as-receipt green-cert-beside-crux-receipts 's/                   if not os.path.basename(f).startswith("prompt-certification")) if crux_dir else \[\]/                   ) if crux_dir else []/'
     xmutant certified-as-none red-certified-missing-crux 's/^    need = certified is None or bool(held \& certified)$/    need = False; certified = set()/'
+    # #4086: a scope RECORDED for the release applies when no --scope is passed -- the dogfood runs this
+    # gate with no arguments. First the pure selection, then the script END TO END: a recorded scope prints
+    # `SCOPED:` and judges the scope; NO recorded scope judges the full ladder, even beside CRUX smoke
+    # receipts that would satisfy a scope (the must-RED: a scope is read from the record, never inferred).
+    select_table() { # select_table <lib dir> -> 0 when every row lands
+      python3 - "$1" <<'SEL'
+import sys
+sys.path.insert(0, sys.argv[1]); import crux_smoke_scope as C
+E = lambda n, r: {"name": n, "release": r}
+rows = [
+  ("no scope recorded -> the full ladder", {}, "0.70.0", (None, False)),
+  ("a scope for another release -> the full ladder", {"emergency_scopes": [E("crux-smoke", "0.69.1")]}, "0.70.0", (None, False)),
+  ("a release is matched whole, never as a prefix", {"emergency_scopes": [E("crux-smoke", "0.69.1")]}, "0.69.10", (None, False)),
+  ("one scope for this release -> it applies", {"emergency_scopes": [E("crux-smoke", "0.69.1")]}, "0.69.1", ("crux-smoke", False)),
+  ("two scopes for one release -> RED", {"emergency_scopes": [E("a", "0.69.1"), E("b", "0.69.1")]}, "0.69.1", (None, True)),
+  ("a nameless scope -> RED", {"emergency_scopes": [E("", "0.69.1")]}, "0.69.1", (None, True)),
+]
+bad = 0
+for name, L, v, (want_name, want_red) in rows:
+    got, why = C.recorded_scope(L, v)
+    ok = got == want_name and bool(why) == want_red
+    print(("ok    select " if ok else "FAIL  select ") + name + ("" if ok else " -> %r %r" % (got, why)))
+    bad |= not ok
+sys.exit(bad)
+SEL
+    }
+    if select_table scripts/lib; then printf 'ok    select: the recorded-scope table lands on the shipped module\n'
+    else select_table scripts/lib; bad=$((bad+1)); fi
+    selmutant() { # selmutant <label> <sed deleting a rule in crux_smoke_scope.recorded_scope>
+      local md="$mdir/sel-$1"; mkdir -p "$md"
+      cp scripts/lib/model_ladder_crux.py "$md/"
+      sed "$2" scripts/lib/crux_smoke_scope.py > "$md/crux_smoke_scope.py"
+      if cmp -s scripts/lib/crux_smoke_scope.py "$md/crux_smoke_scope.py"; then echo "FAIL  select mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if select_table "$md" > /dev/null 2>&1; then echo "FAIL  select mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    select mutant %-17s killed by the table\n' "$1"; fi
+    }
+    selmutant any-release  's/            if isinstance(e, dict) and str(e.get("release")) == str(version)\]/            if isinstance(e, dict)]/'
+    selmutant prefix-match 's/and str(e.get("release")) == str(version)\]/and str(version).startswith(str(e.get("release")))]/'
+    selmutant first-wins   's/^    if len(hits) > 1:$/    if False:/'
+    selmutant nameless-ok  's/^    if not name:$/    if False:/'
+    # END TO END. Fixtures: the green case's ladder with (or without) a recorded scope, EMPTY ladder receipts
+    # (so the full ladder is RED, and says so by name: `no receipt at .../receipts/lambda.json` is the proof
+    # the LADDER was judged, and its absence that it was not), and CRUX smoke receipts that satisfy the scope, found through the
+    # MODEL_LADDER_CRUX_DIR seam the dogfood uses (it cannot pass --crux).
+    e2e="$mdir/e2e"; mkdir -p "$e2e/receipts"
+    python3 - "$CASES_DIR/green/ladder.yaml" "$e2e" "$CASE_CUT" <<'E2E'
+import json, os, sys, yaml
+src, d, cut = sys.argv[1], sys.argv[2], sys.argv[3]
+base = yaml.safe_load(open(src))
+scope = lambda rel, name="crux-smoke": {"name": name, "release": rel, "date": "2026-09-24", "quote": "q", "hosts": ["lambda", "gx10"], "thinking": ["off"]}
+for tag, scopes in {"none": None, "one": [scope("1.2.3")], "two": [scope("1.2.3"), scope("1.2.3", "other")], "other": [scope("1.2.4")]}.items():
+    L = json.loads(json.dumps(base))
+    if scopes is not None:
+        L["ladder"]["emergency_scopes"] = scopes
+    yaml.safe_dump(L, open(os.path.join(d, "ladder-%s.yaml" % tag), "w"))
+S = "4" * 64
+for tag, hosts in {"crux": ("lambda", "gx10"), "crux-short": ("lambda",)}.items():
+    c = os.path.join(d, tag); os.makedirs(c)
+    json.dump({"admitted_by_sha": {S: ["ctl"]}, "admitted_by_sha_thinking": {S: {"off": ["ctl"], "on": []}}},
+              open(os.path.join(c, "prompt-certification.json"), "w"))
+    for h in hosts:
+        json.dump({"schema": "crux-inference-receipt/v1", "host": h, "apr": {"sha": cut}, "summary": {"verdict": "PASS"},
+                   "cells": [{"key": {"model_sha256": S, "host": h, "thinking": "off", "verb": "run"}, "verdict": "GREEN", "positive_control": True}]},
+                  open(os.path.join(c, h + "-gpu.json"), "w"))
+E2E
+    # The standing release policy's fixtures: the no-scope ladder plus a `release_policy` block (and an
+    # `emergency_scopes` list) in the contract's own hand-written layout, which is the layout its reader takes.
+    pol_fixture() { # pol_fixture <tag> <since> <extra policy line|-> <per-release entry release|->
+      awk -v since="$2" -v extra="$3" -v rel="$4" '
+        { print }
+        /^ladder:$/ {
+          print "  release_policy:"
+          print "    name: crux-smoke"; print "    since: \"" since "\""; print "    date: \"2026-10-07\""
+          print "    quote: \"q\""; print "    hosts: [lambda, gx10]"; print "    thinking: [\"off\"]"
+          print "    larger_rows: nightly"; print "    red_row_needs: ticket"; print "    ticket_owner: \"#1\""; print "    release_notes: known_failures"
+          if (extra != "-") print "    " extra
+          print "  emergency_scopes:"
+          if (rel != "-") {
+            print "    - name: crux-smoke"; print "      release: \"" rel "\""; print "      date: \"2026-10-07\""
+            print "      quote: \"q\""; print "      hosts: [lambda, gx10]"; print "      thinking: [\"off\"]"
+          }
+        }' "$e2e/ladder-none.yaml" > "$e2e/ladder-$1.yaml"
+    }
+    pol_fixture pol-cov   1.2.0 - -
+    pol_fixture pol-later 1.2.4 - -
+    pol_fixture pol-dup   1.2.0 - 1.2.3
+    pol_fixture pol-bad   1.2.0 'larger_rowz: nightly' -
+    e2e_row() { # e2e_row <label> <script> <ladder tag> <crux dir> <want rc: 0|red> <must_match|-> <must_not_match|-> [extra args]
+      local label="$1" sc="$2" tag="$3" cx="$4" want="$5" mm="$6" mn="$7" out got; shift 7
+      out=$(MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_CRUX_DIR="$e2e/$cx" bash "$sc" --ladder "$e2e/ladder-$tag.yaml" \
+            --receipts "$e2e/receipts" --version 1.2.3 --cut-commit "$CASE_CUT" "$@" 2>&1); got=$?
+      if { [ "$want" = 0 ] && [ "$got" = 0 ]; } || { [ "$want" = red ] && [ "$got" = 1 ]; }; then :; else
+        [ "$sc" = "$SELF" ] && printf 'FAIL  scope e2e %s: rc=%s want=%s\n%s\n' "$label" "$got" "$want" "$(printf '%s\n' "$out" | tail -5)"; return 1; fi
+      if [ "$mm" != - ] && ! grep -qE "$mm" <<< "$out"; then [ "$sc" = "$SELF" ] && printf 'FAIL  scope e2e %s: no /%s/\n' "$label" "$mm"; return 1; fi
+      if [ "$mn" != - ] && grep -qE "$mn" <<< "$out"; then [ "$sc" = "$SELF" ] && printf 'FAIL  scope e2e %s: printed /%s/\n' "$label" "$mn"; return 1; fi
+      [ "$sc" = "$SELF" ] && printf 'ok    scope e2e %s rc=%s\n' "$label" "$got"
+      return 0
+    }
+    e2e_table() { # e2e_table <script> -> 0 when every row lands
+      local sc="$1" r=0
+      e2e_row "no recorded scope judges the FULL ladder beside satisfying smoke receipts" "$sc" none crux red \
+        'no receipt at .*/receipts/lambda\.json' '^SCOPED: |OPERATOR EMERGENCY SCOPE' || r=1
+      e2e_row "a recorded scope applies with no --scope, and says SCOPED" "$sc" one crux 0 \
+        '^SCOPED: crux-smoke -- .*release 1\.2\.3' - || r=1
+      e2e_row "a recorded scope's pass is the scope's verdict, not the ladder's" "$sc" one crux 0 \
+        'OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied' 'no receipt at .*/receipts/lambda\.json' || r=1
+      e2e_row "a recorded scope that is not satisfied is RED, still SCOPED" "$sc" one crux-short red \
+        '^SCOPED: crux-smoke' 'smoke only -- satisfied' || r=1
+      e2e_row "--scope none judges the full ladder on a scoped release" "$sc" one crux red \
+        'no receipt at .*/receipts/lambda\.json' '^SCOPED: |OPERATOR EMERGENCY SCOPE' --scope none || r=1
+      e2e_row "two scopes recorded for one release is RED, judging neither" "$sc" two crux red \
+        'is unusable' 'OPERATOR EMERGENCY SCOPE' || r=1
+      e2e_row "a scope recorded for another release leaves the full ladder" "$sc" other crux red \
+        'no receipt at .*/receipts/lambda\.json' '^SCOPED: ' || r=1
+      e2e_row "the standing policy covers the release: said, and judged on CRUX smoke" "$sc" pol-cov crux 0 \
+        '^POLICY: crux-smoke -- .* covers 1\.2\.3' 'no receipt at .*/receipts/lambda\.json' || r=1
+      e2e_row "a policy-covered release with short smoke is RED, still SCOPED" "$sc" pol-cov crux-short red \
+        '^SCOPED: crux-smoke' 'smoke only -- satisfied' || r=1
+      e2e_row "--scope crux-smoke on a policy-covered release judges the policy's entry" "$sc" pol-cov crux 0 \
+        'OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied' - --scope crux-smoke || r=1
+      e2e_row "--scope none (the nightly) never reads the policy: the full ladder" "$sc" pol-cov crux red \
+        'no receipt at .*/receipts/lambda\.json' '^POLICY: |^SCOPED: |OPERATOR EMERGENCY SCOPE' --scope none || r=1
+      e2e_row "a policy from a later version leaves the full ladder" "$sc" pol-later crux red \
+        'no receipt at .*/receipts/lambda\.json' '^POLICY: |^SCOPED: ' || r=1
+      e2e_row "a per-release entry for a policy-covered version is RED, judging nothing" "$sc" pol-dup crux red \
+        'one release takes one ruling' 'OPERATOR EMERGENCY SCOPE|no receipt at' || r=1
+      e2e_row "an unreadable policy is RED, judging nothing" "$sc" pol-bad crux red \
+        'cannot be applied to 1\.2\.3: unknown key in release_policy: larger_rowz' 'OPERATOR EMERGENCY SCOPE|no receipt at' || r=1
+      return $r
+    }
+    if e2e_table "$SELF"; then printf 'ok    scope e2e: a recorded scope is applied and SAID; none recorded is the full ladder\n'
+    else bad=$((bad+1)); fi
+    dmutant() { # dmutant <label> <sed on a COPY of this script> -- the e2e table must go RED
+      local ms="$mdir/d-$1.sh"
+      sed "$2" "$SELF" > "$ms"
+      if cmp -s "$SELF" "$ms"; then echo "FAIL  dispatch mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if e2e_table "$ms" > /dev/null 2>&1; then echo "FAIL  dispatch mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    dispatch mutant %-15s killed by the table\n' "$1"; fi
+    }
+    dmutant no-auto-scope 's/^if \[ -z "\$SCOPE" \]; then$/if false; then/'
+    dmutant silent-scope  "s/|| printf 'SCOPED: %s -- /|| printf 'scoped: %s -- /"
+    dmutant none-ignored  's/^  SCOPE=""$/  :/'
+    dmutant crux-env-unread 's/^\[ -n "\$CRUX_DIR" \] || CRUX_DIR="\${MODEL_LADDER_CRUX_DIR:-}"$/:/'
+    dmutant policy-unread   's/^if \[ "\$SCOPE" != none \]; then$/if false; then/'
+    dmutant policy-none-read 's/^if \[ "\$SCOPE" != none \]; then$/if true; then/'
+    dmutant policy-rc-ignored 's/^  if \[ "\$prc" != 0 \]; then$/  if false; then/'
+    dmutant policy-silent   "s/printf 'POLICY: %s -- /printf 'policy: %s -- /"
+    dmutant judge-reads-contract 's/^    "\$POLICY_LADDER" "\$VERSION" "\$CRUX_DIR"/    "$LADDER" "$VERSION" "$CRUX_DIR"/'
+    dmutant lookup-reads-contract 's/^print(name or "")\x27 "\$POLICY_LADDER"/print(name or "")\x27 "$LADDER"/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -1013,7 +1322,11 @@ sys.exit(1)' 2>/dev/null)}"
 [ -n "$RECEIPT_DIR" ] || RECEIPT_DIR="evidence/dogfood/models/$VERSION"
 MAIN_LADDER=""
 TMP_LADDER=""
-_rm_tmp_ladder() { if [ -n "${TMP_LADDER:-}" ] && [ -f "$TMP_LADDER" ]; then rm -f "$TMP_LADDER"; fi; }
+_rm_tmp_ladder() {
+  if [ -n "${TMP_LADDER:-}" ] && [ -f "$TMP_LADDER" ]; then rm -f "$TMP_LADDER"; fi
+  # the policy's synthesized ladder copy, never the contract itself
+  if [ -n "${POLICY_LADDER:-}" ] && [ "$POLICY_LADDER" != "$LADDER" ] && [ -f "$POLICY_LADDER" ]; then rm -f "${POLICY_LADDER:?}"; fi
+}
 trap _rm_tmp_ladder EXIT
 if [ -n "$LADDER_MAIN_OVERRIDE" ]; then MAIN_LADDER="$LADDER_MAIN_OVERRIDE"
 else
@@ -1026,6 +1339,45 @@ git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /de
 # #3957 F2: the cut. `--cut-commit`, else HEAD. safe.directory because a CI container's checkout
 # is owned by another uid and plain rev-parse dies there (#3581). Unresolvable -> the judge declines.
 [ -n "$CUT_COMMIT" ] || CUT_COMMIT=$(git -c safe.directory="$PWD" rev-parse HEAD 2> /dev/null || true)
+# #4086: the CRUX receipts' location for a caller that cannot pass --crux (the dogfood runs every declared
+# gate with no arguments). --crux wins; the env is the release runner's seam; the tree's evidence is last.
+[ -n "$CRUX_DIR" ] || CRUX_DIR="${MODEL_LADDER_CRUX_DIR:-}"
+# #4086: with no --scope, a scope RECORDED for this release in the contract applies -- the dogfood's declared
+# gate saw only the full ladder and went RED at 0.69.1 while the release gate judged the recorded scope. It is
+# never inferred: no entry for this version = the full ladder; two entries = RED; and it is printed as
+# `SCOPED:` so no reader (and no dogfood row) can take it for a full-ladder pass. `--scope none` forces the
+# full ladder on a scoped release (the nightly's "anything huge").
+# STANDING RELEASE POLICY (`ladder.release_policy`, scripts/lib/release_policy.sh): from its `since` on, every
+# release is judged on CRUX smoke. The policy is turned into this version's `emergency_scopes` entry in a copy
+# of the ladder (POLICY_LADDER), and the recorded-scope lookup and the judge below read that copy, so the rules
+# are the same ones a per-release entry gets. A per-release entry for a covered version, or a policy block that
+# cannot be read, is RED with nothing judged. `--scope none` (the nightly) never reads the policy.
+POLICY_LADDER="$LADDER"
+if [ "$SCOPE" != none ]; then
+  if ! . scripts/lib/release_policy.sh; then echo "RED   scripts/lib/release_policy.sh could not be loaded -- nothing was judged"; exit 1; fi
+  POLICY_OUT=$(mktemp)
+  release_policy_ladder "$LADDER" "$VERSION" > "$POLICY_OUT"; prc=$?
+  POLICY_LADDER=$(cat "$POLICY_OUT"); rm -f "${POLICY_OUT:?}"
+  if [ "$prc" != 0 ]; then
+    echo "RED   the standing release policy in $LADDER cannot be applied to $VERSION: $RP_WHY -- nothing was judged"; exit 1
+  fi
+  [ "$RP_APPLIES" != 1 ] || printf 'POLICY: %s -- the standing release policy in %s covers %s: CRUX smoke is the release gate, the larger ladder rows are nightly\n' \
+    "$(awk -F '\t' '$1 == "name" { print $2; exit }' <<< "$RP_BLK")" "$LADDER" "$VERSION"
+fi
+if [ -z "$SCOPE" ]; then
+  SCOPE=$(python3 -c 'import sys, yaml
+sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
+name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open(sys.argv[1]))["ladder"], sys.argv[2])
+if why: print(why, file=sys.stderr); sys.exit(1)
+print(name or "")' "$POLICY_LADDER" "$VERSION"); src=$?
+  if [ "$src" != 0 ]; then
+    echo "RED   the recorded emergency scope for $VERSION is unusable (see above) -- neither the scope nor the ladder was judged"; exit 1
+  fi
+  [ -z "$SCOPE" ] || printf 'SCOPED: %s -- the emergency scope recorded for release %s in %s applies; this verdict is the SCOPE, not the model ladder (--scope none judges the full ladder)\n' \
+    "$SCOPE" "$VERSION" "$LADDER"
+elif [ "$SCOPE" = none ]; then
+  SCOPE=""
+fi
 # 0.69.1 OPERATOR EMERGENCY SCOPE (scripts/lib/crux_smoke_scope.py): `--scope crux-smoke` judges CRUX smoke
 # receipts from the release binary INSTEAD of the ladder, only for the release its contract entry names.
 if [ -n "$SCOPE" ]; then
@@ -1034,7 +1386,7 @@ if [ -n "$SCOPE" ]; then
 sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
 L = yaml.safe_load(open(sys.argv[1]))["ladder"]
 sys.exit(1 if crux_smoke_scope.judge(L, sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], print) else 0)' \
-    "$LADDER" "$VERSION" "$CRUX_DIR" "${CRUX_CERT:-$CRUX_DIR/prompt-certification.json}" "$CUT_COMMIT" "$SCOPE"
+    "$POLICY_LADDER" "$VERSION" "$CRUX_DIR" "${CRUX_CERT:-$CRUX_DIR/prompt-certification.json}" "$CUT_COMMIT" "$SCOPE"
   rc=$?
   if [ "$rc" = 0 ]; then
     echo "ok    OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied. The model ladder was NOT run for this release (nightly only); this is not \"every rung green\""
@@ -1080,6 +1432,8 @@ rm -f "$TMP_EQUIV" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
 # #3957 F1: exit 2 now also means DEFER, so a raw GPU call must not hide behind it -- always RED.
 if ! lock_audit scripts/model_ladder.sh; then rc=1; fi
+# ... nor measure a GPU cell without llama.cpp's fit verdict (#4016).
+if ! fit_audit scripts/model_ladder.sh; then rc=1; fi
 case $rc in
   0) if [ "$named_red" = 1 ]; then
        echo "ok    no blocking cell: every required rung is green, or RED-MODEL / RED-UNSUPPORTED re-proven on this sweep, or a KNOWN-RED shipping with its ticket (counted RED above, never green)"

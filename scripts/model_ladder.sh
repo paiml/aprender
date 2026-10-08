@@ -19,7 +19,12 @@
 # model this host holds that the run did not prove.
 #
 # Usage:  bash scripts/model_ladder.sh [--host <id>] [--out <dir>] [--dry-run]
-#                                      [--only <rung-id>]
+#                                      [--only <rung-id>] [--cells]
+#   --cells measure every owed (model, verb, thinking, context rung) cell into the
+#           receipt's `cells[]` (#3712 row B; also MODEL_LADDER_CELLS=1). Hours of
+#           GPU per host (a 148k-token prefill per long cell): nightly / release
+#           train only. Without it the inventory is still ENRICHED with the terms
+#           the owed set is derived from, and no `cells` key is written.
 #   --only  measure exactly ONE rung and write a SEPARATE receipt,
 #           <dir>/<host>.only-<id>.json. For separating a flake from a defect: a
 #           single rung costs minutes where the sweep costs hours, and #3936 spent
@@ -46,15 +51,20 @@ HOST_ID=""
 OUT_DIR=""
 DRY=0
 ONLY=""
+CELLS="${MODEL_LADDER_CELLS:-0}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) [ $# -ge 2 ] || { echo "model_ladder: --host needs a value" >&2; exit 2; }; HOST_ID="$2"; shift 2 ;;
     --out)  [ $# -ge 2 ] || { echo "model_ladder: --out needs a value" >&2; exit 2; };  OUT_DIR="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
+    --cells) CELLS=1; shift ;;
     --only) [ $# -ge 2 ] || { echo "model_ladder: --only needs a value" >&2; exit 2; }; ONLY="$2"; shift 2 ;;
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
     --lock-probe) shift; LOCK_PROBE=1; break ;;
+    # --fit-probe <gguf>: one fit verdict (#4016), printed as JSON; exit 0 only on "fits". For the
+    # case table in check_model_ladder.sh (fits / does not fit / verdict missing / tool absent).
+    --fit-probe) [ $# -ge 2 ] || { echo "model_ladder: --fit-probe needs a gguf" >&2; exit 2; }; FIT_PROBE="$2"; shift 2 ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -87,6 +97,16 @@ LOCK_BUSY=75   # flock -E: the lock was not free in LOCK_WAIT seconds (an apr ex
 command -v flock > /dev/null && command -v choom > /dev/null \
   || { echo "decline: flock and choom (util-linux) are required -- every apr call runs under the fleet GPU lock" >&2; exit 2; }
 apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+# THE LOCK IS NOT EXCLUSIVITY (#3964). The lock serializes only the processes that take it, and
+# Ollama's daemon never does: on lambda it loaded 1328 MiB onto the card in the MIDDLE of a
+# locked device A/B. So a GPU run leg goes through gpu_exclusive_run: the same lock, plus a
+# whole-run sample of the card by full path. A foreign process refuses the leg (exit 75,
+# CONTENDED -> an ENV decline, never a model verdict). Only the GPU leg: the helper refuses a
+# command it never saw on the card (UNVERIFIED), which is every CPU leg by construction.
+apr_exclusive() {
+  GPU_OWNED_PREFIX="$(readlink -f "$APR")" GPU_LOCK="$GPU_LOCK" GPU_WAIT_SECS="$LOCK_WAIT" \
+    choom -n 1000 -- bash scripts/lib/gpu_exclusive_run.sh "$APR" "$@"
+}
 
 # ── #3843: ASK THE BINARY whether a verb takes a flag; never assume ───────────
 # The verb loop hard-coded one backend flag and passed it to all four verbs. Their
@@ -414,6 +434,37 @@ if [ "${LOCK_PROBE:-0}" = 1 ]; then
   apr_locked "$@"; rc=$?
   [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "apr $*"
   exit "$rc"
+fi
+
+# THE FIT GATE (#4016, operator 2026-09-23: "use their tool as the guide until we develop a parity tool
+# or better, and require for any model certification and testing"). Before a GPU-claiming cell is
+# measured, llama.cpp's `llama-fit-params` from the PINNED commit must say the model fits FULLY on this
+# host's GPU at ctx >= 4096. Anything else (does not fit, partial offload, no parsable verdict, tool
+# absent, a build of another commit) REFUSES the cell: recorded RED, never skipped. The verdict and its
+# inputs (llama.cpp sha, free MiB, fitted -c/-ngl) go into the receipt row. The probe touches the GPU
+# only to read free memory, and runs under the same fleet lock and choom as every apr call.
+LLAMA_FIT="${MODEL_LADDER_FIT:-$HOME/src/llama.cpp-d1d3c3396/build/bin/llama-fit-params}"
+FIT_PIN="${MODEL_LADDER_FIT_PIN:-d1d3c3396}"
+fit_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$LLAMA_FIT" "$@"; }
+fit_verdict() { # fit_verdict <gguf> -> one JSON fit record on stdout (scripts/lib/llama_fit_verdict.py)
+  local found=0 rc=0 free vf sf
+  vf=$(mktemp) || return 2
+  sf=$(mktemp) || { rm -f "$vf"; return 2; }
+  if [ -x "$LLAMA_FIT" ]; then
+    found=1
+    fit_locked --version > "$vf" 2>&1; rc=$?
+    [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "llama-fit-params --version"
+    fit_locked --model "$1" > "$sf" 2> /dev/null; rc=$?
+    [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "llama-fit-params $1"
+  fi
+  free="${MODEL_LADDER_FREE_MIB:-$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2> /dev/null | head -1 | tr -d ' ')}"
+  # MODEL_LADDER_FIT_LIB: a mutant copy of the verdict module, in check_model_ladder.sh --self-test.
+  python3 "${MODEL_LADDER_FIT_LIB:-scripts/lib}/llama_fit_verdict.py" "$found" "$FIT_PIN" "$rc" "${free:-unknown}" "$vf" "$sf" "$1"
+  rm -f "$vf" "$sf"
+}
+if [ -n "${FIT_PROBE:-}" ]; then
+  rec=$(fit_verdict "$FIT_PROBE"); printf '%s\n' "$rec"
+  grep -q '"verdict": "fits"' <<< "$rec"; exit $?
 fi
 
 host_id() {
@@ -867,6 +918,25 @@ measure() {
   # GPU-capability gate. The judge accepts a SKIPPED capability_match only when cuda is not claimed,
   # and check_model_ladder.sh refuses any Q4_K rung that does not claim cuda (#3712).
   case ",$rbackends," in *,cuda,*|*,gpu,*) ;; *) cap_flag="--skip-capability" ;; esac
+  # #4016: the fit gate, BEFORE any apr call. A GPU-claiming cell llama.cpp does not place fully on
+  # this GPU is refused (RED, recorded with its verdict); a CPU-only cell places nothing on the GPU.
+  local fit_json
+  case ",$rbackends," in
+    *,cuda,*|*,gpu,*)
+      fit_json=$(fit_verdict "$path")
+      if ! grep -q '"verdict": "fits"' <<< "$fit_json"; then
+        python3 - "$rid" "$rfile" "$rinv" "$got" "$rreq" "$fit_json" >> "$ROWS" <<'PY'
+import json, sys
+rid, rfile, inv, sha, req, fit = sys.argv[1:7]
+print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv == "1", "present": True, "sha_ok": True,
+                  "sha256": sha, "required": req == "1", "fit": json.loads(fit), "refused": "fit", "green": False}))
+PY
+        EXECUTED=$((EXECUTED + 1)); RED=$((RED + 1))
+        printf '  [REFUSE] %-30s fit: %s\n' "$rid" "$(python3 -c 'import json,sys; f=json.loads(sys.argv[1]); print(f["verdict"]+" -- "+f["reason"])' "$fit_json")"
+        return
+      fi ;;
+    *) fit_json='{"verdict": "not-applicable", "reason": "cpu-only cell: nothing is placed on the GPU"}' ;;
+  esac
   # shellcheck disable=SC2086
   apr_locked qa "$path" --json --offline --skip-throughput --skip-ollama --skip-gpu-speedup \
       --skip-ptx-parity --skip-gpu-state --skip-format-parity $cap_flag > "$qa_json" 2> "$qa_json.err"; qa_rc=$?
@@ -955,9 +1025,21 @@ except Exception: print("unknown")' "$arch_json")
     # bytes, all four of them `verbose:` lines). The refusal is recorded verbatim, so the judge can
     # check that apr refused BY NAME (capability::no_cuda_forward_reason) and did not just fail.
     run_o="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.out"; run_e="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.err"
-    # shellcheck disable=SC2086
-    apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
-    [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
+    if [ "$flag" = --gpu ] && [ -n "$GPU_NAME" ]; then
+      # shellcheck disable=SC2086
+      apr_exclusive run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
+      # CONTENDED: a foreign process shared the card, or the card/lock never cleared. UNVERIFIED
+      # (apr never appeared on the card) is NOT declined: a GPU leg that ran on the CPU is the
+      # fallback defect this ladder exists to catch, and rc=75 already records it as ran=false.
+      if grep -q 'gpu_exclusive_run: CONTENDED' "$run_o" "$run_e"; then
+        echo "decline: ENV the GPU was not exclusive for apr run $rid ($b) -- $(grep -h -A3 'gpu_exclusive_run: CONTENDED' "$run_e" "$run_o" | tr '\n' ' '). Not a model verdict." >&2
+        exit 2
+      fi
+    else
+      # shellcheck disable=SC2086
+      apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
+      [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
+    fi
     run_out=$(cat "$run_o" "$run_e")
     run_stdout_bytes=$(stat -c %s "$run_o" 2> /dev/null || echo null)
     run_generated_bytes=$(grep -v '^verbose: ' "$run_o" | wc -c)
@@ -1053,11 +1135,12 @@ print(json.dumps({"probed": False,
   # The receipt carries the MEASURED file hash (ONT-4c1): a resolver joining the ladder contract to
   # this receipt compares two measurements instead of trusting the receipt's own claim that it checked.
   row_err="$WORK/${rid//[^A-Za-z0-9._-]/_}.rowbuild.err"
-  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" "$row_arch" 2>"$row_err" <<'PY'
+  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" "$row_arch" "$fit_json" 2>"$row_err" <<'PY'
 import json, sys
 rid, qa, be, qa_rc = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), int(sys.argv[4])
 req, sha, rfile, inv_only = sys.argv[5] == "1", sys.argv[6], sys.argv[7], sys.argv[8] == "1"
 arch = sys.argv[9]
+fit = json.loads(sys.argv[10])
 cap = qa.get("capability_match", {})
 # `passed` is already normalised (skipped => passed=False) by the gate() reader above, but the
 # judge must not depend on that: a skipped gate counts only when no GPU backend is claimed.
@@ -1143,7 +1226,7 @@ print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv_only, "present
                   "golden_output": qa.get("golden_output"), "gates": qa.get("gates"),
                   "gates_failed": gates_failed, "gates_reported": qa.get("gates_reported"),
                   "gates_account_for_rc": accounts_for_rc,
-                  "backends": be, "green": green}))
+                  "backends": be, "fit": fit, "green": green}))
 PY
 )
   # ── #3842: NEVER append an empty line ────────────────────────────────────────
@@ -1328,11 +1411,44 @@ mkdir -p "$OUT_DIR"
 # (check_no_shipped_machine_paths) and says nothing about what was run.
 APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
 RECEIPT_TMP="$OUT_DIR/.$RECEIPT_BASE.json.tmp.$$"
+# ---- 3. #3712 row B: the owed-set terms on every inventory row, and (--cells) the cells
+# scripts/lib/model_ladder_cells_produce.py; the owed set it measures is the JUDGE'S
+# (model_ladder_cells.owed_rungs), imported, never re-derived here.
+PRODUCE=scripts/lib/model_ladder_cells_produce.py
+GPU_MEM=$(python3 "$PRODUCE" gpumem 2>/dev/null) || GPU_MEM='{}'   # BEFORE the cells: free as found
+printf '%s\n' "$INVENTORY" > "$WORK/models.txt"
+if python3 "$PRODUCE" enrich --apr "$APR" --inventory "$INV_ROWS" --models "$WORK/models.txt" \
+     --out "$WORK/inventory.enriched.jsonl" > "$WORK/enrich.log" 2>&1; then
+  INV_RECEIPT="$WORK/inventory.enriched.jsonl"
+else
+  # Not a decline: the rows are still true, only thinner. The judge names every missing term.
+  echo "model_ladder: inventory enrichment failed ($(tail -1 "$WORK/enrich.log")) -- rows carry file/sha256/bytes only" >&2
+  INV_RECEIPT="$INV_ROWS"
+fi
+CELLS_JSON=""
+if [ "$CELLS" = 1 ]; then
+  CELLS_JSON="$WORK/cells.json"
+  python3 "$PRODUCE" measure --apr "$APR" --inventory "$INV_RECEIPT" --models "$WORK/models.txt" \
+      --ladder "$LADDER" --rungs evidence/release/context-rungs.json --work "$WORK" \
+      --lock "$GPU_LOCK" --lock-wait "$LOCK_WAIT" --only "$ONLY" --host "$HOST" --out "$CELLS_JSON" > "$WORK/cells.log" 2>&1
+  cells_rc=$?
+  tail -1 "$WORK/cells.log"
+  # A crashed producer writes NO cells key and says why: a partial cells block would read as
+  # "these are all the cells" to the judge, which is worse than none (it FAILS a receipt without).
+  [ "$cells_rc" = 0 ] || { echo "model_ladder: cells producer rc=$cells_rc: $(tail -1 "$WORK/cells.log")" >&2; CELLS_JSON=""; RED=$((RED + 1)); }
+fi
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
-python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
+python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_RECEIPT" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" "$GPU_MEM" "$CELLS_JSON" "$LADDER" <<'PY'
 import json, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
+# #4590: a (host, arch) the release DE-CLAIMS leaves inventory[] -- the universe released pv owes cells on --
+# and is kept, whole, in declaimed_inventory[], so the receipt still says the file was held and measured.
+import yaml
+dcl = {d.get("arch") for d in ((yaml.safe_load(open(sys.argv[18]))["ladder"].get("cells") or {}).get("declaimed") or [])
+       if d.get("host") == sys.argv[3]}
+held = [i for i in inv if i.get("arch") in dcl]
+inv = [i for i in inv if i.get("arch") not in dcl]
 out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5], "apr_sha": sys.argv[14],
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
@@ -1340,6 +1456,14 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "only": (sys.argv[15] or None),
        "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
        "rungs": rows}
+if held:
+    out["declaimed_inventory"] = held
+try:
+    out.update({k: v for k, v in json.loads(sys.argv[16]).items() if k in ("gpu_mem_total_bytes", "gpu_mem_free_bytes")})
+except ValueError:
+    pass
+if sys.argv[17]:
+    out["cells"] = json.load(open(sys.argv[17]))
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
 PY
 receipt_rc=$?
@@ -1349,7 +1473,8 @@ if [ "$receipt_rc" != 0 ] || ! python3 - "$RECEIPT_TMP" "$LADDER_APPENDS_ROWS" "
 import json, sys
 d = json.load(open(sys.argv[1]))
 assert len(d["rungs"]) == int(sys.argv[2]), f'rungs {len(d["rungs"])} != appended {sys.argv[2]}'
-assert len(d["inventory"]) == int(sys.argv[3]), f'inventory {len(d["inventory"])} != appended {sys.argv[3]}'
+n = len(d["inventory"]) + len(d.get("declaimed_inventory") or [])
+assert n == int(sys.argv[3]), f'inventory {n} != appended {sys.argv[3]}'
 PY
 then
     rm -f "$RECEIPT_TMP" 2>/dev/null

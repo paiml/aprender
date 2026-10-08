@@ -161,7 +161,10 @@ impl CudaExecutor {
         // PMAT-059: Prefill graph DISABLED by default — cuBLAS uses workspace-free
         // algorithms during graph capture, which are 7x slower than eager cuBLAS
         // (541ms vs 78ms for S=125 on RTX 4060L). Enable with PREFILL_GRAPH=1.
-        let graph_enabled = Self::prefill_graph_enabled();
+        // #3715: a graph bakes positions 0..S-1 and its replay resets the KV lengths to
+        // 0, so only a chunk that starts the prompt may take it. The chunked dense
+        // prefill's later chunks (positions start..end over a filled KV) run eager.
+        let graph_enabled = graph_may_run(Self::prefill_graph_enabled(), positions);
 
         if graph_enabled {
             // PMAT-059: Always try replay first — graph_capture_failed must NOT
@@ -1587,5 +1590,70 @@ impl CudaExecutor {
         let token = self.gpu_argmax(logits_buf.as_ptr(), vocab_size)?;
 
         Ok(token)
+    }
+}
+
+/// #3715: the prefill graph may run only for a chunk that starts at position 0 (see
+/// the call site in `prefill_all_layers_gpu`).
+fn graph_may_run(enabled: bool, positions: &[u32]) -> bool {
+    enabled && positions.first() == Some(&0)
+}
+
+#[cfg(test)]
+mod graph_chunk_tests_3715 {
+    use super::graph_may_run;
+
+    #[test]
+    fn only_the_first_chunk_may_replay_a_graph() {
+        assert!(graph_may_run(true, &[0, 1, 2]));
+        assert!(
+            !graph_may_run(true, &[3, 4, 5]),
+            "a later chunk would reset the KV"
+        );
+        assert!(
+            !graph_may_run(false, &[0, 1, 2]),
+            "PREFILL_GRAPH off stays off"
+        );
+        assert!(!graph_may_run(true, &[]));
+    }
+}
+
+/// #4621: model-free device tests for `prefill_all_layers_gpu`'s refusals. The
+/// mutants-cuda shard's GPU runner has no model files, so the prefill's kill tests
+/// cannot be only the model-backed parity suites.
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod prefill_refusal_tests_4621 {
+    use super::*;
+
+    /// No device → the test cannot run; under mutation a skip survives and the
+    /// shard is RED, so it never passes vacuously there.
+    fn executor() -> Option<CudaExecutor> {
+        CudaExecutor::new(0).ok()
+    }
+
+    #[test]
+    fn a_wrong_embedding_length_is_refused() {
+        let Some(mut exec) = executor() else { return };
+        let err = exec
+            .prefill_all_layers_gpu(&[0.0; 7], &[0, 1], 1, 4, 8, 1e-5)
+            .expect_err("2 positions x hidden 4 needs 8 floats");
+        assert!(matches!(err, GpuError::InvalidParameter(_)), "{err:?}");
+    }
+
+    #[test]
+    fn an_uninitialized_workspace_is_refused() {
+        let Some(mut exec) = executor() else { return };
+        let err = exec
+            .prefill_all_layers_gpu(&[0.0; 8], &[0, 1], 1, 4, 8, 1e-5)
+            .expect_err("no prefill workspace was initialized");
+        assert!(matches!(err, GpuError::InvalidLaunchConfig(_)), "{err:?}");
+    }
+
+    #[test]
+    fn an_empty_prompt_is_a_no_op() {
+        let Some(mut exec) = executor() else { return };
+        exec.prefill_all_layers_gpu(&[], &[], 1, 4, 8, 1e-5)
+            .expect("S = 0 prefills nothing");
     }
 }

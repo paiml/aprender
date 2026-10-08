@@ -10,7 +10,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "presentar"
+# #4430: every shipped [[bin]] is aprender-* (was `presentar`)
+name = "aprender-present"
 path = "src/main.rs"
 
 [dependencies]
@@ -21,6 +22,8 @@ tiny_http = "0.12"
 tungstenite = { version = "0.26", optional = true }
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 

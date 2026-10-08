@@ -12,9 +12,9 @@ use entrenar_lora::{plan, Method};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "entrenar-lora")]
+#[command(name = "aprender-train-lora")]
 #[command(about = "LoRA/QLoRA configuration optimizer and memory planner")]
-#[command(version)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

@@ -1,0 +1,63 @@
+{
+  "pr": "paiml/aprender#4216",
+  "ticket": "GH-4197",
+  "head": "6b3349974bcdd00378ea1a279309bd82b25c951c",
+  "base": "origin/main",
+  "base_resolved": "aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f",
+  "diff_sha256": "5bdcf39210770b0bbac2a4ee5c644c6d1b9bb1e24ce102ba348885cb2268cd67",
+  "brief_sha256": "6f7af0ef364469b40768e733b7dea6704cd7488e2d51c73246774cacd1553381",
+  "width": 3,
+  "executor": "claude-code",
+  "degraded": "same-family",
+  "why": "agy 429 on gemini and openai pre-check probes (quorum-review.sh lane 1 NO-VERDICT, fallback exhausted); operator fallback sonnet+haiku+opus, opus seat = second sonnet-5 sample because the author is claude-opus-5-5",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "agent_id": "a1b74bdd72603c124",
+      "verdict": "PASS",
+      "brief_sha256": "6f7af0ef364469b40768e733b7dea6704cd7488e2d51c73246774cacd1553381",
+      "findings": [],
+      "summary": "Diff matches the ticket; 14 kani_assume tests pass; recount 187 grep / 177 token over 26 files reconciled by 10 string-literal matches; tests_12b.rs unreferenced; no CLI/baseline/Makefile/workflow touched."
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "agent_id": "a26194b0db8621dc8",
+      "note": "opus seat",
+      "verdict": "PASS",
+      "brief_sha256": "6f7af0ef364469b40768e733b7dea6704cd7488e2d51c73246774cacd1553381",
+      "findings": [
+        {
+          "file": "crates/aprender-contracts/src/kani_assume.rs",
+          "line": 14,
+          "severity": "minor",
+          "grounding": "cited",
+          "claim": "doc says a comment-split kani/**/::assume is out of scope, but proc-macro2 strips comments so it IS counted (over-count, safe direction)"
+        },
+        {
+          "file": "crates/aprender-contracts/src/kani_assume.rs",
+          "line": 162,
+          "severity": "minor",
+          "grounding": "cited",
+          "claim": "imports_assume matches a Rust-2024 use<'a> precise-capturing bound and scans to the next ; (false rejection, safe direction)"
+        }
+      ],
+      "summary": "14/14 pass, clippy clean, tests_12b.rs dead; two minor safe-direction doc/impl mismatches, not blocking."
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5-20251001",
+      "agent_id": "a320e76d10b164977",
+      "verdict": "PASS",
+      "brief_sha256": "6f7af0ef364469b40768e733b7dea6704cd7488e2d51c73246774cacd1553381",
+      "findings": [],
+      "summary": "All 14 tests pass; counting, import refusal, fail-closed, per-file rises and baseline consistency meet the ticket; no out-of-scope files."
+    }
+  ]
+}

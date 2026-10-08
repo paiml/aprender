@@ -2,6 +2,7 @@
 //! workspace member and deliberately without a Cargo.toml: the derivation
 //! reads .rs text, so cargo never sees this tree.
 pub mod deep;
+pub mod flat;
 pub mod inc;
 
 /// A reader in the crate ROOT module (src/lib.rs) -> the row's module is `<root>`.

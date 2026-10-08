@@ -1,0 +1,19 @@
+- id: PMAT-4862
+  github_issue: 4862
+  item_type: task
+  title: 'FLAKE-0: aprender-profile test_decision_span_event_attributes fails with ETXTBSY (Text file busy) exec race'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wcensus
+  created: 2026-10-06T08:20:00Z
+  updated: 2026-10-06T08:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Step 1: test_decision_span_event_attributes carries #[ignore = "FLAKE-0 #4862"] and nothing else changes; every other aprender-profile test passes'
+  - 'Step 2: every script-writing test in sprint31_ruchy_integration_tests.rs is free of the write-fd/fork window (serialised, or the spawn retries on ETXTBSY), the test is un-ignored, and each passes 200 runs of the file under parallel load'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cause: the test writes a script then execs it while sibling test threads fork; a child forked in that window holds the write fd, so exec fails with ETXTBSY (run 37403017673, workspace-test shard 3). Passed on the same PR head in run 37408602581.'

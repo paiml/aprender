@@ -1,0 +1,22 @@
+- id: GH-4175
+  github_issue: 4175
+  item_type: task
+  title: 'clean-room B2: packaged-tarball test gate, all crates'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T07:51:58.558709285+00:00
+  updated: 2026-09-24T07:51:58.558709285+00:00
+  spec: null
+  acceptance_criteria:
+  - '[ ] `scripts/package_tarball_build.sh` gains the run step. Its case table covers a planted run-time panic (RED) and a clean crate (GREEN).'
+  - '[ ] `mode_b_tarball` in infra is wired nightly.'
+  - '[ ] RED measured on v0.69.1. The receipt lists the failing crates and tests, wall time and peak RSS.'
+  - '[ ] GREEN measured on the fix stack.'
+  - '[ ] Both-directions proof for the shared helper: out of tree it skips; in tree with the file removed it FAILs.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

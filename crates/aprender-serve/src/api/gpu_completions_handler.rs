@@ -48,7 +48,12 @@ fn try_gpu_completions(
         // the CPU completions handlers use; the request carries no top_k or seed.
         top_k: if temperature == 0.0 { 1 } else { 40 },
         seed: crate::sampling::DEFAULT_SEED,
-        stop_tokens: Vec::new(),
+        // aprender#4345: EOS + every EOG marker, as #4339 does on CPU; this
+        // path ran to `max_tokens` on every request.
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(&tokenizer, state.model_eos_token_id())
+            .into_iter()
+            .map(|id| id as usize)
+            .collect(),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
     };
@@ -62,7 +67,7 @@ fn try_gpu_completions(
     })?;
     let generated = gpu_model
         .generate(&prompt, &gpu_config)
-        .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| rerr(state, crate::api::generation_error_status(&e), e))?;
 
     let token_ids: Vec<u32> = generated
         .iter()
@@ -246,7 +251,7 @@ fn registry_completions(
 
     let generated = model
         .generate(&prompt, &config)
-        .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| rerr(state, crate::api::generation_error_status(&e), e))?;
     let token_ids: Vec<u32> = generated
         .iter()
         .skip(prompt_tokens)
@@ -383,12 +388,21 @@ async fn try_cuda_gguf_completions(
         return Err(rerr(state, StatusCode::BAD_REQUEST, "Prompt cannot be empty"));
     }
     let prompt_tokens = prompt_ids.len();
+    // D5: a 400 before the batch scheduler sees it (its errors come back as strings).
+    if let Some(msg) = state
+        .serving_context()
+        .and_then(|ctx| super::serve_context_refusal(prompt_tokens, ctx))
+    {
+        return Err(rerr(state, StatusCode::BAD_REQUEST, msg));
+    }
 
     let eos = state.cached_eos_token_id.unwrap_or(151643);
     let q_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        stop_tokens: vec![eos],
+        // aprender#4345: a Qwen instruct GGUF declares <|im_end|> as EOS, and a
+        // raw completion ends with <|endoftext|>; stop on both, as #4339 does.
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(&tokenizer, Some(eos)),
         ..Default::default()
     };
 
@@ -584,10 +598,33 @@ async fn completions_inner(
         return Ok(r);
     }
 
-    // GH-627/637/670: Direct CUDA model fallback for APR GPU path
-    // with_cuda_model_and_vocab sets cuda_model but NOT model,
-    // so registry_completions fails with "No model available".
     #[cfg(feature = "cuda")]
+    if let Some(r) = try_cuda_direct_completions(&state, &request, max_tokens, temperature, start)? {
+        return Ok(r);
+    }
+
+    // aprender#2609: the f32 APR / SafeTensors CPU backend, in the same position
+    // the chat chain puts it — after quantized, before the dense registry.
+    if let Some(r) =
+        try_apr_transformer_completions(&state, &request, max_tokens, temperature, start, &cancel)?
+    {
+        return Ok(r);
+    }
+
+    registry_completions(&state, &request, max_tokens, temperature, start, &cancel)
+}
+
+/// GH-627/637/670: Direct CUDA model fallback for APR GPU path.
+/// with_cuda_model_and_vocab sets cuda_model but NOT model,
+/// so registry_completions fails with "No model available".
+#[cfg(feature = "cuda")]
+fn try_cuda_direct_completions(
+    state: &AppState,
+    request: &CompletionRequest,
+    max_tokens: usize,
+    temperature: f32,
+    start: std::time::Instant,
+) -> Result<Option<CompletionResponse>, RErr> {
     if let Some(cuda_lock) = state.cuda_model() {
         use crate::gguf::QuantizedGenerateConfig;
         let tokenizer = state.tokenizer.clone().ok_or_else(|| {
@@ -602,7 +639,7 @@ async fn completions_inner(
             max_tokens: max_tokens.min(4096),
             temperature,
             top_k: crate::infer::sampling_top_k(temperature, None),
-            stop_tokens: vec![eos],
+            stop_tokens: crate::api::realize_handlers::completion_stop_tokens(&tokenizer, Some(eos)), // aprender#4345
             ..Default::default()
         };
         let result = {
@@ -610,7 +647,7 @@ async fn completions_inner(
             model.generate_gpu_resident_logprobs(
                 &prompt_ids.iter().map(|&id| id as u32).collect::<Vec<_>>(),
                 &config,
-            ).map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?
+            ).map_err(|e| rerr(&state, super::generation_error_status(&e), e))?
         };
         let prompt_len = prompt_ids.len();
         let gen_tokens: Vec<u32> = result.tokens[prompt_len..].to_vec();
@@ -622,7 +659,7 @@ async fn completions_inner(
         // #2465(2): this inline backend ignored `request.stop` too.
         let (text, finish_reason) =
             apply_stop_sequences(text, request.stop.as_deref(), completion_tokens, max_tokens);
-        return Ok(CompletionResponse {
+        return Ok(Some(CompletionResponse {
             id: format!("cmpl-cuda-{}", elapsed.as_millis()),
             object: "text_completion".to_string(),
             created: std::time::SystemTime::now()
@@ -643,18 +680,30 @@ async fn completions_inner(
             },
             // The inline CUDA block records no backend flag either (#3894).
             used_gpu: None,
-        });
+        }));
     }
+    Ok(None)
+}
 
-    // aprender#2609: the f32 APR / SafeTensors CPU backend, in the same position
-    // the chat chain puts it — after quantized, before the dense registry.
-    if let Some(r) =
-        try_apr_transformer_completions(&state, &request, max_tokens, temperature, start, &cancel)?
-    {
-        return Ok(r);
+/// The `/v1/logprobs` generation config: greedy, logprobs on, and stopping on
+/// the EOS plus every end-of-generation marker (aprender#4345). It stopped on
+/// the EOS alone, so a Qwen instruct GGUF (EOS `<|im_end|>`) generated past
+/// `<|endoftext|>` and folded those tokens into the perplexity. Split out of the
+/// CUDA-only handler so the stop set is tested without a GPU.
+#[cfg(any(feature = "cuda", test))]
+pub(crate) fn logprobs_config(
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    cached_eos: Option<u32>,
+    max_tokens: usize,
+) -> crate::gguf::QuantizedGenerateConfig {
+    crate::gguf::QuantizedGenerateConfig {
+        max_tokens,
+        temperature: 0.0, // greedy for perplexity
+        top_k: 1,
+        stop_tokens: completion_stop_tokens(tokenizer, Some(cached_eos.unwrap_or(151643))),
+        logprobs: true,
+        ..Default::default()
     }
-
-    registry_completions(&state, &request, max_tokens, temperature, start, &cancel)
 }
 
 /// realizr#191: Logprobs endpoint for perplexity measurement (F-QUALITY-01).
@@ -669,8 +718,6 @@ pub async fn logprobs_handler(
     State(state): State<AppState>,
     Json(request): Json<CompletionRequest>,
 ) -> Result<Json<serde_json::Value>, RErr> {
-    use crate::gguf::QuantizedGenerateConfig;
-
     let cuda_model_lock = state.cuda_model().ok_or_else(|| {
         rerr(&state, StatusCode::SERVICE_UNAVAILABLE, "No CUDA model loaded")
     })?;
@@ -683,23 +730,18 @@ pub async fn logprobs_handler(
         return Err(rerr(&state, StatusCode::BAD_REQUEST, "Empty prompt"));
     }
 
-    let max_tokens = request.max_tokens.unwrap_or(256);
-    let eos = state.cached_eos_token_id.unwrap_or(151643);
-    let config = QuantizedGenerateConfig {
-        max_tokens,
-        temperature: 0.0, // greedy for perplexity
-        top_k: 1,
-        stop_tokens: vec![eos],
-        logprobs: true,
-        ..Default::default()
-    };
+    let config = logprobs_config(
+        &tokenizer,
+        state.cached_eos_token_id,
+        request.max_tokens.unwrap_or(256),
+    );
 
     let result = {
         let mut model = cuda_model_lock.write().expect("CUDA model lock");
         model.generate_gpu_resident_logprobs(
             &prompt_ids.iter().map(|&x| x as u32).collect::<Vec<_>>(),
             &config,
-        ).map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?
+        ).map_err(|e| rerr(&state, crate::api::generation_error_status(&e), e))?
     };
 
     let prompt_len = prompt_ids.len();
@@ -766,7 +808,7 @@ pub async fn perplexity_handler(
     // realizr#203: Run BOTH paths for comparison during development
     let ppl_sequential = model
         .perplexity_gpu_resident(&token_ids)
-        .map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| rerr(&state, crate::api::generation_error_status(&e), e))?;
     let ppl_batched = model.perplexity_gpu_batched(&token_ids).ok();
 
     drop(model);

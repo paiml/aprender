@@ -14,8 +14,16 @@
 #     gate rc 0 -> tag is cut
 #     gate rc 1 -> no tag, no publish   (the milestone holds open items)
 #     gate rc 2 -> no tag               (Unknown; never a silent pass)
-# --self-test then removes the gate call to build a MUTANT and requires this guard to
-# go RED on it. A guard that cannot fail on the defect it names is theater.
+# #3459 part 2 made the tag path three steps (must-carry gate, carry, STRICT gate), so the
+# stubs answer each call separately and record the ORDER they ran in:
+#     must-carry rc 1/2 -> no tag AND nothing carried (a blocker is never carried around)
+#     carry rc 2        -> no tag
+#     all clean         -> the carry ran BEFORE the strict gate, and the tag is cut
+# #4691 adds a fourth stub, the coverage resolution before the tag (tag_coverage_gate.sh --resolve), which runs
+# first after readiness: rc 1 -> no tag AND nothing carried.
+# --self-test then builds MUTANTS (gate calls removed, verdicts discarded, the carry call
+# removed) and requires this guard to go RED on each. It also runs the carry script's own
+# case table, which lives in scripts/release/ where guard_tree cannot discover it.
 #
 #   check_tag_step_gated.sh              judge scripts/release/autopilot.sh
 #   check_tag_step_gated.sh --self-test  case table + the gate-removed mutant
@@ -27,26 +35,58 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
 SUBJECT="$ROOT/scripts/release/autopilot.sh"
 
-# run_cut_tag <autopilot> <gate-rc> -- extract cut_tag(), run it with stubs, print a
-# transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines). Returns 2 if the function is missing.
+# run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc> [<readiness> [<covjob-rc> [<policy> [<models>]]]]]] -- extract cut_tag(), run
+# it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
+# Returns 2 if the function is missing.
 run_cut_tag() {
-    local ap=$1 grc=$2 d fn
+    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} jrc=${6:-0} pol=${7:-none} mdl=${8:-crux} d fn pfn
     d=$(mktemp -d) || return 2
     fn=$(awk '/^cut_tag\(\) \{/,/^\}/' "$ap")
     [ -n "$fn" ] || { rmtree "$d"; return 2; }
-    mkdir -p "$d/scripts"
-    printf '#!/usr/bin/env bash\nexit %s\n' "$grc" > "$d/scripts/check_milestone_cut.sh"
+    mkdir -p "$d/scripts/release" "$d/ap" "$d/scripts/lib" "$d/contracts"
+    pfn=$(awk '/^ap_policy_applies\(\) \{/,/^\}/' "$ap")
+    # the standing release policy: the release worktree's own reader (this checkout's copy) and a ladder
+    # with no policy (none), one covering 0.0.0 (covers) or one the reader refuses (bad)
+    cp -- "$ROOT/scripts/lib/release_policy.sh" "$ROOT"/scripts/lib/release_policy_*.awk "$d/scripts/lib/" || { rmtree "$d"; return 2; }
+    {   printf 'ladder:\n'
+        case "$pol" in
+            covers|bad) printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n'
+                printf '    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: "#1"\n'
+                [ "$pol" = bad ] || printf '    release_notes: known_failures\n' ;;
+        esac
+        printf '  emergency_scopes:\n'
+    } > "$d/contracts/model-capability-ladder-v1.yaml"
+    # the models lane's log: a CRUX-smoke GO for this commit (crux), for another (stale), or none
+    case "$mdl" in
+        crux)  printf 'MODELS GO (CRUX smoke) on lambda and gx10 at deadbeef: the judge passed both receipts (apr 0.0.0 (deadbeef))\n' > "$d/ap/models-t1.log" ;;
+        stale) printf 'MODELS GO (CRUX smoke) on lambda and gx10 at cafef00d: the judge passed both receipts (apr 0.0.0 (cafef00d))\n' > "$d/ap/models-t1.log" ;;
+        ladder) printf 'MODELS GO on lambda and gx10 at deadbeef: the judge passed both receipts (apr 0.0.0 (deadbeef))\n' > "$d/ap/models-t1.log" ;;
+        absent) : ;;
+    esac
+    # #3715 B1: the readiness step's log, as the T-1 `readiness` step leaves it (or does not)
+    case "$rdy" in
+        pass)   printf 'ok    R8 release-readiness-v1 for 0.0.0: Pass\nok    R8 #3715 ENFORCE PASS version=0.0.0 commit=deadbeef pv=pv_x out_sha256=0\n' > "$d/ap/readiness-t1.log" ;;
+        report) printf 'WARN  R8 REPORT-ONLY release-readiness-v1 for 0.0.0: Fail, 3 violation(s)\n' > "$d/ap/readiness-t1.log" ;;
+        stale)  printf 'ok    R8 #3715 ENFORCE PASS version=0.0.0 commit=cafef00d pv=pv_x out_sha256=0\n' > "$d/ap/readiness-t1.log" ;;
+        absent) : ;;
+    esac
+    printf '#!/usr/bin/env bash\nif [ "${2:-}" = --must-carry ]; then echo CALL-MUST-CARRY >> %q; exit %s; fi\necho CALL-STRICT >> %q; exit %s\n' \
+        "$d/calls" "$mrc" "$d/calls" "$grc" > "$d/scripts/check_milestone_cut.sh"
+    printf '#!/usr/bin/env bash\necho CALL-CARRY >> %q\nexit %s\n' "$d/calls" "$crc" > "$d/scripts/release/carry_milestone_items.sh"
+    printf '#!/usr/bin/env bash\necho CALL-COVJOB >> %q\nexit %s\n' "$d/calls" "$jrc" > "$d/scripts/release/tag_coverage_gate.sh"
     {
         printf 'set -uo pipefail\n'
-        printf 'REPO_ROOT=%q\nLOG=%q\n' "$d" "$d/log"
+        printf 'REPO_ROOT=%q\nLOG=%q\nAP=%q\n' "$d" "$d/log" "$d/ap"
         printf 'say() { printf "SAY %%s\\n" "$*"; }\n'
         printf 'die() { printf "DIE %%s\\n" "$*"; exit 1; }\n'
         printf 'git() { printf "GIT-%%s %%s\\n" "$(printf %%s "$1" | tr "a-z" "A-Z")" "$*"; }\n'
+        printf '%s\n' "$pfn"
         printf '%s\n' "$fn"
         printf 'cut_tag 0.0.0 v0.0.0 deadbeef\n'
     } > "$d/harness.sh"
-    bash "$d/harness.sh" 2>&1
+    (cd "$d" && bash "$d/harness.sh" 2>&1)
     cat "$d/log" 2>/dev/null
+    printf 'ORDER %s\n' "$(tr '\n' ' ' 2>/dev/null < "$d/calls")"
     rmtree "$d"
 }
 
@@ -70,6 +110,51 @@ judge() {
     if grep -q 'GIT-TAG' <<< "$out"; then
         printf 'FAIL  gate rc=2 (Unknown) -> A TAG WAS CUT ANYWAY\n%s\n' "$out" >&2; bad=1
     else printf 'ok    gate rc=2 (Unknown) -> no tag\n'; fi
+    # #3459 part 2: the must-carry gate, the carry, and their ORDER
+    out=$(run_cut_tag "$ap" 0) || true
+    if grep -q '^ORDER CALL-COVJOB CALL-MUST-CARRY CALL-CARRY CALL-STRICT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
+        printf 'ok    all clean -> coverage job, must-carry, the carry, STRICT, then the tag\n'
+    else printf 'FAIL  all clean did not run coverage job -> must-carry -> carry -> strict -> tag\n%s\n' "$out" >&2; bad=1; fi
+    for m in 1 2; do
+        out=$(run_cut_tag "$ap" 0 "$m") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-CARRY' <<< "$out"; then
+            printf 'FAIL  must-carry rc=%s -> a tag was cut or items were CARRIED around a blocker\n%s\n' "$m" "$out" >&2; bad=1
+        else printf 'ok    must-carry rc=%s -> nothing carried, no tag\n' "$m"; fi
+    done
+    out=$(run_cut_tag "$ap" 0 0 2) || true
+    if grep -q 'GIT-TAG' <<< "$out"; then
+        printf 'FAIL  carry rc=2 -> A TAG WAS CUT over a failed carry\n%s\n' "$out" >&2; bad=1
+    else printf 'ok    carry rc=2 -> no tag\n'; fi
+    # #3715 B1: no ENFORCED readiness Pass for exactly this version+commit -> no tag, nothing carried
+    for r in absent report stale; do
+        out=$(run_cut_tag "$ap" 0 0 0 "$r") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out"; then
+            printf 'FAIL  readiness %s -> a tag was cut or the milestone was touched without an enforced #3715 Pass\n%s\n' "$r" "$out" >&2; bad=1
+        else printf 'ok    readiness %s -> no tag, nothing carried\n' "$r"; fi
+    done
+    # #4691: no coverage receipt holds the floor for the release commit (1) or the gate could not run (2) -> no tag, nothing carried
+    for j in 1 2; do
+        out=$(run_cut_tag "$ap" 0 0 0 pass "$j") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -qE 'CALL-(MUST-CARRY|CARRY|STRICT)' <<< "$out"; then
+            printf 'FAIL  coverage-job resolve rc=%s -> a tag was cut or the milestone was touched\n%s\n' "$j" "$out" >&2; bad=1
+        else printf 'ok    coverage-job resolve rc=%s -> no tag, nothing carried\n' "$j"; fi
+    done
+    # the standing release policy (contracts/model-capability-ladder-v1.yaml `ladder.release_policy`):
+    # a covered version tags on the models lane's CRUX-smoke GO for exactly this commit, with no readiness run
+    out=$(run_cut_tag "$ap" 0 0 0 absent 0 covers crux) || true
+    if grep -q 'GIT-TAG' <<< "$out" && grep -q '^SAY POLICY-GATE ' <<< "$out"; then
+        printf 'ok    policy covers, CRUX-smoke GO at this commit, readiness not run -> the tag is cut\n'
+    else printf 'FAIL  policy covers + CRUX-smoke GO -> NO tag (or no POLICY-GATE line)\n%s\n' "$out" >&2; bad=1; fi
+    for m in stale ladder absent; do
+        out=$(run_cut_tag "$ap" 0 0 0 pass 0 covers "$m") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out"; then
+            printf 'FAIL  policy covers, models log %s -> a tag was cut or the milestone was touched without a CRUX-smoke GO\n%s\n' "$m" "$out" >&2; bad=1
+        else printf 'ok    policy covers, models log %s -> no tag, nothing carried (a readiness Pass does not stand in)\n' "$m"; fi
+    done
+    out=$(run_cut_tag "$ap" 0 0 0 pass 0 bad crux) || true
+    if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out" || ! grep -q '^DIE the standing release policy cannot be judged' <<< "$out"; then
+        printf 'FAIL  unreadable policy block -> a tag was cut, the milestone was touched, or the refusal named another cause\n%s\n' "$out" >&2; bad=1
+    else printf 'ok    unreadable policy block -> no tag, nothing carried (not measured is not a pass)\n'; fi
     return "$bad"
 }
 
@@ -106,6 +191,84 @@ if [ "${1:-}" = "--self-test" ]; then
         ok "mutant 2: gate verdict discarded -> RED"
     fi
 
+    # M4: the MUST-CARRY verdict discarded -> items are carried around a blocker and a tag is cut.
+    sed 's#\(bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1\) || rc=$?#\1 || true#' "$SUBJECT" > "$d/m4.sh"
+    if cmp -s "$SUBJECT" "$d/m4.sh"; then
+        nok "MUTANT 4 could not be built -- the must-carry call line did not match; vacuous"
+    elif judge "$d/m4.sh" > "$d/m4.out" 2>&1; then
+        nok "MUTANT 4 (must-carry verdict discarded) PASSED"
+    else
+        ok "mutant 4: must-carry verdict discarded -> RED"
+    fi
+    # M5: the carry call deleted -> a milestone is judged strict without anything having been moved.
+    sed '/carry_milestone_items\.sh" "\$v"/d' "$SUBJECT" > "$d/m5.sh"
+    if cmp -s "$SUBJECT" "$d/m5.sh"; then
+        nok "MUTANT 5 could not be built -- the carry call line did not match; vacuous"
+    elif judge "$d/m5.sh" > "$d/m5.out" 2>&1; then
+        nok "MUTANT 5 (carry call deleted) PASSED"
+    else
+        ok "mutant 5: carry call deleted -> RED"
+    fi
+    # M6 (#3715 B1): the readiness requirement deleted -> a skipped or report-mode readiness step tags.
+    sed '/ENFORCE PASS for\|index(\$0, n) == 1/d; /no .#3715 ENFORCE PASS/d' "$SUBJECT" > "$d/m6.sh"
+    if cmp -s "$SUBJECT" "$d/m6.sh"; then
+        nok "MUTANT 6 could not be built -- the readiness check line did not match; vacuous"
+    elif judge "$d/m6.sh" > "$d/m6.out" 2>&1; then
+        nok "MUTANT 6 (readiness requirement deleted) PASSED"
+    else
+        ok "mutant 6: #3715 readiness requirement deleted -> RED"
+    fi
+    # M7 (#4691): the coverage-job resolution deleted -> a tag is cut for a job ci.yml never runs.
+    sed '/tag_coverage_gate\.sh" --resolve/,+1d' "$SUBJECT" > "$d/m7.sh"
+    if cmp -s "$SUBJECT" "$d/m7.sh"; then
+        nok "MUTANT 7 could not be built -- the --resolve call line did not match; vacuous"
+    elif judge "$d/m7.sh" > "$d/m7.out" 2>&1; then
+        nok "MUTANT 7 (coverage-job resolve deleted) PASSED"
+    else
+        ok "mutant 7: coverage-job resolve deleted -> RED"
+    fi
+    # M8 (#4691): the resolution runs but its verdict is discarded.
+    sed 's/|| die "no coverage receipt at or above COV_FLOOR/|| true; : "/' "$SUBJECT" > "$d/m8.sh"
+    if cmp -s "$SUBJECT" "$d/m8.sh"; then
+        nok "MUTANT 8 could not be built -- the --resolve die line did not match; vacuous"
+    elif judge "$d/m8.sh" > "$d/m8.out" 2>&1; then
+        nok "MUTANT 8 (coverage-job verdict discarded) PASSED"
+    else
+        ok "mutant 8: coverage-job verdict discarded -> RED"
+    fi
+    # M9: under the policy, the CRUX-smoke GO requirement discarded -> a stale or absent models GO tags.
+    sed 's/|| die "the standing release policy covers \$v but/|| true; : "/' "$SUBJECT" > "$d/m9.sh"
+    if cmp -s "$SUBJECT" "$d/m9.sh"; then
+        nok "MUTANT 9 could not be built -- the CRUX-smoke GO die line did not match; vacuous"
+    elif judge "$d/m9.sh" > "$d/m9.out" 2>&1; then
+        nok "MUTANT 9 (CRUX-smoke GO requirement discarded) PASSED"
+    else
+        ok "mutant 9: CRUX-smoke GO requirement discarded -> RED"
+    fi
+    # M10: the policy verdict discarded -> an unreadable policy block reads as "no policy".
+    sed 's/|| die "the standing release policy cannot be judged/|| true; : "/' "$SUBJECT" > "$d/m10.sh"
+    if cmp -s "$SUBJECT" "$d/m10.sh"; then
+        nok "MUTANT 10 could not be built -- the policy-judge die line did not match; vacuous"
+    elif judge "$d/m10.sh" > "$d/m10.out" 2>&1; then
+        nok "MUTANT 10 (policy verdict discarded) PASSED"
+    else
+        ok "mutant 10: policy verdict discarded -> RED"
+    fi
+    # M11: the policy branch never taken -> a covered release still demands the readiness run it replaced.
+    sed 's/^    if \[ "\$pol" = 1 \]; then$/    if false; then/' "$SUBJECT" > "$d/m11.sh"
+    if cmp -s "$SUBJECT" "$d/m11.sh"; then
+        nok "MUTANT 11 could not be built -- the policy branch line did not match; vacuous"
+    elif judge "$d/m11.sh" > "$d/m11.out" 2>&1; then
+        nok "MUTANT 11 (policy branch never taken) PASSED"
+    else
+        ok "mutant 11: policy branch never taken -> RED"
+    fi
+    # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
+    if bash "$ROOT/scripts/release/carry_milestone_items.sh" --self-test > "$d/carry.out" 2>&1; then
+        ok "carry_milestone_items.sh case table ($(grep -c '^ok ' "$d/carry.out") rows)"
+    else
+        nok "carry_milestone_items.sh case table FAILED"; cat "$d/carry.out" >&2
+    fi
     # M3: cut_tag() removed entirely -> ENV (2), never a pass.
     awk '/^cut_tag\(\) \{/,/^\}/ {next} {print}' "$SUBJECT" > "$d/m3.sh"
     judge "$d/m3.sh" > "$d/m3.out" 2>&1; rc=$?

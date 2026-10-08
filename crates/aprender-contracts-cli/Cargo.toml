@@ -12,14 +12,32 @@ repository.workspace = true
 name = "pv"
 path = "src/main.rs"
 
+# ONT-5: the reasoner. Private to this target (F-7); the library holds only the graph and the checker.
+[[bin]]
+name = "pv-sat"
+path = "src/bin/pv-sat/main.rs"
+
 [dependencies]
-aprender-contracts = { path = "../aprender-contracts", version = "0.69.3" }
+aprender-contracts = { path = "../aprender-contracts", version = "0.70.2" }
+# #3745 S1: `--model` is declared through the shared role type `ModelPath`, so
+# `apr surface` reads `apr pv verify-structure --model` as a model argument.
+batuta-common = { workspace = true, features = ["cli-roles"] }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }
-aprender-update = { workspace = true }
+# #4604 C2: optional so the crates.io pv builds from crates that are live there;
+# release binaries and in-tree builds pass `--features update-check,build-sha`.
+aprender-update = { workspace = true, optional = true }
+
+[build-dependencies]
+aprender-build-sha = { workspace = true, optional = true }  # #4219: APR_GIT_SHA for --version
+
+[features]
+# Both off by default (#4604 C2, B2a): pv publishes to crates.io without them.
+update-check = ["dep:aprender-update"]
+build-sha = ["dep:aprender-build-sha"]
 
 [dev-dependencies]
 tempfile = "3"

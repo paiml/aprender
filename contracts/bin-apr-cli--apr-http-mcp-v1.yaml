@@ -1,0 +1,183 @@
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# bin-apr-cli--apr-http-mcp-v1 — the `apr` bin target of package apr-cli (ONT-10 slice S8), drafted to the exemplar
+# contracts/bin-aprender-contracts-cli--pv-v1.yaml over the binary-surface-v1 vocabulary (#4476, #4079, aprender#4502).
+#
+# package `apr-cli` exposes (ONT-001 v4.17 ONT-4g; #4476, #4079). Identity and every CLI command are S9,
+# binary-apr-cli-apr-v1.yaml; the split is by KIND (S9 header): set equality over bin:command cannot be halved.
+#
+# MEASURED (2026-09-26, batch/ont-10 @ ff9587b596, release build, default features, private CARGO_TARGET_DIR):
+#   MCP: `apr mcp` (stdio) answers tools/list with 9 tools, EQUAL to surface_audit.csv's 9 `mcp:apr.*` rows.
+#   HTTP: `apr serve` mounts one of several routers by model format (#3979): aprender-serve api/router.rs
+#   route_table (GGUF; its openai routes add POST /v1/batch/completions only when caps.gpu_batch) and the apr-cli
+#   serve/ routers (APR-CPU, SafeTensors, the ollama stubs). The union of their ("METHOD", "/path") tables plus
+#   the `GET /` index each serves is 43 routes, EQUAL to the 43 distinct routes of the 47 HTTP ledger rows (the
+#   other 4 rows are stream:true modes of a route already counted: POST /api/chat, /api/generate,
+#   /v1/chat/completions, /v1/completions). 2 of the 43 — POST /v1/logprobs, POST /v1/perplexity — are in
+#   cuda_routes(), behind #[cfg(feature = "cuda")], so the DEFAULT build mounts 41. Their 2 ledger rows are
+#   bin:ledgerOrphanRoute on a default snapshot (LIVE RED), the same class as S9's 15 feature-gated command rows.
+#   They are NOT a ledger defect: they are the only 2 HTTP rows whose verified_hardware is `nvidia-cuda` alone
+#   (every CPU-servable row reads `x86_64-linux[;nvidia-cuda]`), so the ledger already declares them cuda-only.
+#   dogfood_reconcile.py scopes HTTP rows out, so its FEATURE_GATED set cannot carry them; the RED clears when
+#   extract:binary honours the declared gate (snapshot the --features cuda router, or treat a cuda-only
+#   verified_hardware row as an enumerated allowance) — never by a count tolerance, never by deleting the rows.
+#   The 10th non-CLI row, "HTTP 404 fallback route index", is a behaviour of every router (the fallback lists
+#   `routes`), shaped here as bin:notFoundListsRoutes.
+#
+# GAP THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): scripts/dogfood_surfaces.sh strips the METHOD
+# from both enumerations (enumerate_routes_live keeps the path only; enumerate_routes greps paths only), and its
+# source fallback reads crates/aprender-serve/src/api/ only, so GET /tensors, POST /api/pull and DELETE
+# /api/delete (apr-cli serve/) are invisible to it. bin:route here is "METHOD /path", the union over formats.
+#
+# KIND: pattern (one binary's surface over the binary-surface-v1 vocabulary).
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+name: bin-apr-cli--apr-http-mcp-v1
+version: "1.0.0"
+scope: >
+  The HTTP and MCP surface of the `apr` binary (package apr-cli, src crates/apr-cli/src/main.rs): the routes `apr serve` can mount, the tools `apr mcp` lists, and their surface-audit rows. Identity, help and the CLI command set are S9, bin-apr-cli--apr-v1.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    The HTTP and MCP surface of the `apr` binary (package apr-cli, src crates/apr-cli/src/main.rs): the routes `apr serve` can mount, the tools `apr mcp` lists, and their surface-audit rows. Identity, help and the CLI command set are S9, bin-apr-cli--apr-v1.
+  references:
+    - 'contracts/binary-surface-v1.yaml — the shared shapes and vocabulary'
+    - 'crates/aprender-serve/src/api/router.rs — route_table, cuda_routes'
+    - 'crates/apr-cli/src/commands/serve/ — the APR-CPU, SafeTensors and ollama-stub routers'
+    - 'crates/aprender-mcp/src/tools/ — the 9 MCP tools'
+    - 'docs/audits/surface_audit.csv — the ledger'
+    - 'aprender#4502 — ONT-10, slice S8'
+
+entity:
+  type: binary
+  ref: binary/apr-cli/apr
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: binary-apr-http-mcp
+    targetClass: bin:target/apr-cli/apr
+    properties:
+      - path: bin:route
+        minCount: 41
+        maxCount: 41
+        in:
+          - "DELETE /api/delete"
+          - "GET /"
+          - "GET /api/tags"
+          - "GET /api/version"
+          - "GET /health"
+          - "GET /health/live"
+          - "GET /health/ready"
+          - "GET /metrics"
+          - "GET /metrics/dispatch"
+          - "GET /models"
+          - "GET /ready"
+          - "GET /realize/model"
+          - "GET /tensors"
+          - "GET /v1/audit/:request_id"
+          - "GET /v1/effective-config"
+          - "GET /v1/gpu/status"
+          - "GET /v1/metrics"
+          - "GET /v1/models"
+          - "POST /api/chat"
+          - "POST /api/embeddings"
+          - "POST /api/generate"
+          - "POST /api/pull"
+          - "POST /api/show"
+          - "POST /batch/generate"
+          - "POST /batch/tokenize"
+          - "POST /generate"
+          - "POST /metrics/dispatch/reset"
+          - "POST /realize/batch"
+          - "POST /realize/embed"
+          - "POST /realize/generate"
+          - "POST /realize/reload"
+          - "POST /stream/generate"
+          - "POST /tokenize"
+          - "POST /v1/batch/completions"
+          - "POST /v1/chat/completions"
+          - "POST /v1/chat/completions/stream"
+          - "POST /v1/completions"
+          - "POST /v1/embeddings"
+          - "POST /v1/explain"
+          - "POST /v1/gpu/warmup"
+          - "POST /v1/predict"
+      # LIVE RED 2026-09-26 on a default snapshot: POST /v1/logprobs and POST /v1/perplexity mount only under --features cuda;
+      # their ledger rows declare it (verified_hardware = nvidia-cuda, router.rs:222-223 cuda_routes)
+      - {path: bin:unledgeredRoute, maxCount: 0}
+      - {path: bin:ledgerOrphanRoute, maxCount: 0}
+      - path: bin:mcpTool
+        minCount: 9
+        maxCount: 9
+        in: ["apr.bench", "apr.finetune", "apr.qa", "apr.run", "apr.serve", "apr.tensors", "apr.trace", "apr.validate", "apr.version"]
+      - {path: bin:unledgeredTool, maxCount: 0}
+
+equations:
+  route_set:
+    formula: "routes(snapshot(apr)) = GET / ∪ the (METHOD, /path) tables of every `apr serve` router in the default-feature build, over every model format and runtime capability"
+    domain: "aprender-serve api/router.rs route_table (cuda off) and the apr-cli commands/serve/ Indexed routers"
+    codomain: "set equality (41 routes on 2026-09-26), or a Fail naming each route in the symmetric difference"
+    invariants:
+      - "a ledger row's trailing ` (stream:...)` mode is stripped before the join: 47 HTTP rows -> 43 routes"
+      - "a --features cuda build mounts 43; this shape is over the default build, as S9's command set is"
+    preconditions:
+      - "the snapshot was written at this commit"
+    postconditions:
+      - "each route is written \"METHOD /path\", axum :param segments verbatim"
+    lean_theorem: none — L4 not declared
+  mcp_tool_set:
+    formula: "mcpTools(snapshot(apr)) = names(tools/list of `apr mcp`) = {f.feature minus the mcp: prefix : f ∈ surface_audit, f.binary = apr, f.feature starts with mcp:}"
+    domain: "a live tools/list over stdio and the 9 mcp:apr.* ledger rows"
+    codomain: "set equality (9 tools on 2026-09-26)"
+    invariants:
+      - "S9 joins the CLI rows; this contract joins only HTTP and mcp:* rows, so no row is judged twice"
+    preconditions:
+      - "tools/list was read from the binary built at this commit"
+    postconditions:
+      - "an mcp:* row naming no listed tool is a bin:ledgerOrphan"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: BIN-APR_HTTP_MCP-INV-001
+    property: every route and MCP tool apr exposes has an audited ledger row
+    formal: '∀ x ∈ routes(apr) ∪ mcpTools(apr): |{r ∈ surface_audit : r.binary = apr ∧ strip_mode(r.feature) ∈ {x, "mcp:" ++ x}}| ≥ 1'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-BIN-APR_HTTP_MCP-001
+    rule: 'G1.2 help answers'
+    prediction: '`apr --help` exits 0 with non-empty stdout'
+    test: 'scripts/dogfood_surfaces.sh --cli apr'
+    if_fails: 'the binary cannot describe its own surface (observed 2026-09-26: exit 0, GREEN)'
+    mutation: 'make the top-level --help return an error; must turn RED'
+  - id: FALSIFY-BIN-APR_HTTP_MCP-002
+    rule: 'G1.2 an unknown flag is a usage error'
+    prediction: '`apr --no-such-flag` exits 2'
+    test: 'scripts/dogfood_surfaces.sh --cli apr'
+    if_fails: 'a typo is silently ignored (observed 2026-09-26: exit 2, GREEN)'
+    mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
+  - id: FALSIFY-BIN-APR_HTTP_MCP-003
+    rule: 'G0.1 the version names the commit'
+    prediction: '`apr --version` contains the first 9 hex of the git sha it was built from'
+    test: 'NOT YET WRITTEN — the binary-target shape bin:versionLacksSha, once extract:binary lands'
+    if_fails: "GREEN 2026-09-26: `apr 0.69.3 (ff9587b596)` — the only binary in S2/S8/S20 that names its commit"
+    mutation: 'drop the sha from the version string; must turn RED'
+  - id: FALSIFY-BIN-APR_HTTP_MCP-004
+    rule: 'G1.3/G1.4 the surface set equals the snapshot'
+    prediction: 'the enumerated surface of apr equals the in: list of this shape, no more and no fewer'
+    test: 'pv lint contracts/ --gate shapes, once extract:binary writes the node'
+    if_fails: "GREEN 2026-09-26: 41 default-build routes and 9 tools, measured from the router tables and a live tools/list"
+    mutation: 'add a subcommand/route/tool without re-snapshotting; must turn RED naming it'
+  - id: FALSIFY-BIN-APR_HTTP_MCP-005
+    rule: 'ledger rows exist and resolve'
+    prediction: "docs/audits/surface_audit.csv has ≥1 row per route and per MCP tool with binary = apr (47 HTTP + 9 mcp on 2026-09-26)"
+    test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
+    if_fails: "LIVE RED 2026-09-26 on a default-feature snapshot: 2 ledger rows (POST /v1/logprobs, POST /v1/perplexity) name cuda-only routes; the 9 mcp rows and the other 41 routes join. Not a ledger defect: both rows declare verified_hardware = nvidia-cuda (the only cuda-only HTTP rows), so the RED clears when extract:binary honours that declared gate, as S12 and S9/S10 clear via FEATURE_GATED"
+    mutation: 'delete every apr row; must turn RED naming apr'
+

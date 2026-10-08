@@ -58,7 +58,9 @@ mod realizar_chat {
         /// once, at session end, to decide the command's exit code. Not reset by
         /// `/clear` — a failed generation happened whether or not the history is kept.
         had_generate_error: bool,
-        /// #3794: set when a turn was generated on an accelerator. Read at session
+        /// #3794: set when a turn was generated on an accelerator; reset at the start of
+        /// every turn (#4609), so it is THIS turn's backend. Read per turn by the
+        /// `--gpu` refusal and at session
         /// end so `--json` can report the backend that ACTUALLY answered, rather
         /// than the one that was asked for — `apr run --format json` already
         /// reports `{requested, ran, fell_back}` and `apr chat` reported nothing,

@@ -5,6 +5,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 fn main() {
+    // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
+    build_sha::emit();
+
     // Capture build metadata for reproducibility verification
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=Cargo.lock");
@@ -116,10 +119,8 @@ fn emit_contract_file(path: &Path, total_pre: &mut usize, total_post: &mut usize
     let Ok(contract) = serde_yaml::from_str::<ContractYaml>(&content) else {
         return;
     };
-    let stem_upper = stem.to_uppercase().replace('-', "_");
     for (eq_name, equation) in &contract.equations {
-        let eq_upper = eq_name.to_uppercase().replace('-', "_");
-        let key = format!("CONTRACT_{stem_upper}_{eq_upper}");
+        let key = provable_contracts::build_helper::env_key(stem, eq_name);
         emit_pre_post(&key, equation, total_pre, total_post);
     }
 }
@@ -149,12 +150,8 @@ fn emit_pre_post(
 }
 
 fn enforce_provable_binding() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("provable-contracts/contracts/simular/binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/simular/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
 
@@ -188,13 +185,9 @@ fn enforce_provable_binding() {
 fn emit_binding_vars(bf: &BindingFile) -> Vec<String> {
     let mut gaps = Vec::new();
     for b in &bf.bindings {
-        let var = format!(
-            "CONTRACT_{}_{}",
-            b.contract
-                .trim_end_matches(".yaml")
-                .to_uppercase()
-                .replace('-', "_"),
-            b.equation.to_uppercase().replace('-', "_")
+        let var = provable_contracts::build_helper::env_key(
+            b.contract.trim_end_matches(".yaml"),
+            &b.equation,
         );
         println!("cargo:rustc-env={var}={}", b.status);
         if b.status != "implemented" {

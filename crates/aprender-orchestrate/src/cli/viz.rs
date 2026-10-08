@@ -241,8 +241,47 @@ layout:
         println!("{}", config);
         println!();
         println!("{}", "To launch dashboard:".cyan());
-        println!("  presentar serve dashboard.yaml --port {}", port);
+        println!("  aprender-present serve dashboard.yaml --port {}", port);
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod dashboard_tests {
+    use super::*;
+
+    fn render(source: &str, port: u16, theme: &str) -> String {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = dir.path().join("dashboard.yaml");
+        cmd_viz_dashboard(source, port, theme, out.to_str()).expect("dashboard must write");
+        std::fs::read_to_string(&out).expect("config file must exist")
+    }
+
+    #[test]
+    fn dashboard_writes_config_with_port_theme_and_file_source() {
+        let cfg = render("metrics.db", 4321, "dark");
+        assert!(cfg.contains("port: 4321"), "{cfg}");
+        assert!(cfg.contains("theme: \"dark\""), "{cfg}");
+        assert!(cfg.contains("type: \"file\""), "{cfg}");
+        assert!(cfg.contains("path: \"metrics.db\""), "{cfg}");
+    }
+
+    #[test]
+    fn dashboard_parses_source_uri_schemes() {
+        let cfg = render("trueno-db://m.db", 1, "light");
+        assert!(cfg.contains("type: \"trueno-db\"") && cfg.contains("path: \"m.db\""), "{cfg}");
+        let cfg = render("prometheus://host:9090", 1, "light");
+        assert!(
+            cfg.contains("type: \"prometheus\"") && cfg.contains("path: \"host:9090\""),
+            "{cfg}"
+        );
+    }
+
+    #[test]
+    fn dashboard_propagates_write_failure() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let bad = dir.path().join("no-such-dir").join("d.yaml");
+        assert!(cmd_viz_dashboard("x", 1, "dark", bad.to_str()).is_err());
+    }
 }

@@ -1,0 +1,143 @@
+# readiness-nightly.yml — the nightly producer for the `readiness` verdict lane (#4719).
+#
+# Release day (scripts/release/autopilot.sh step 2c) grades the commit's fresh evidence with pv's
+# release-readiness-v1 SHACL shape through scripts/release/release_readiness.sh: the models-t1 receipts, the dogfood
+# receipt, and the surface of an apr built from that commit. This workflow runs THAT command, with the same inputs,
+# on a main commit. Its inputs come from the two producers that measure them on the same commit:
+#   dogfood-receipt  artifact of dogfood-nightly.yml (the dogfood lane, #4672)
+#   models-t1        artifact of the models lane's producer (#4721)
+# Each completion of either producer triggers a run. A run that does not find BOTH artifacts, uploaded by main runs
+# of this repository at that exact commit, skips `readiness`, and a skipped job is not_measured to the judge, never a
+# pass. So the run after the second producer finishes is the one that measures. Every verdict is
+# release_readiness.sh's exit code; a WARN R8 row is red, as autopilot reads it (report-only = waiver = stop).
+#
+# The judge's LANES row (filled once nightly-train.yml is on main):
+#   readiness;verdict;release_readiness.sh (autopilot T-1, fresh receipts);.github/workflows/readiness-nightly.yml;^workflow_run$;^readiness$
+name: readiness-nightly
+
+on:
+  workflow_run:
+    workflows: [dogfood-nightly, models-nightly]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: readiness-nightly-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  inputs:
+    # Cheap: two API reads. Finds both artifacts at the commit or reports which one is missing.
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]
+    timeout-minutes: 10
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.event != 'pull_request')
+    outputs:
+      ok: ${{ steps.find.outputs.ok }}
+      sha: ${{ steps.find.outputs.sha }}
+      dogfood_run: ${{ steps.find.outputs.dogfood_run }}
+      models_run: ${{ steps.find.outputs.models_run }}
+    steps:
+      - name: Find dogfood-receipt and models-t1 at the commit
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          REPO_ID: ${{ github.repository_id }}
+        run: |
+          set -uo pipefail
+          printf 'sha=%s\n' "$SHA" >> "$GITHUB_OUTPUT"
+          # newest unexpired artifact NAME uploaded by a main run of this repository at SHA -> its run id, or nothing
+          find_run() {
+              gh api "repos/$REPO/actions/artifacts?name=$1&per_page=100" --jq \
+                "[.artifacts[] | select(.expired == false and .workflow_run.head_sha == \"$SHA\"
+                   and .workflow_run.head_branch == \"main\" and (.workflow_run.head_repository_id | tostring) == \"$REPO_ID\")]
+                 | sort_by(.created_at) | last | .workflow_run.id // empty"
+          }
+          d=$(find_run dogfood-receipt) || { echo "::error::artifact list unreadable (dogfood-receipt)"; exit 2; }
+          m=$(find_run models-t1) || { echo "::error::artifact list unreadable (models-t1)"; exit 2; }
+          printf 'dogfood_run=%s\nmodels_run=%s\n' "$d" "$m" >> "$GITHUB_OUTPUT"
+          if [ -n "$d" ] && [ -n "$m" ]; then
+              echo "inputs at ${SHA:0:12}: dogfood-receipt run $d, models-t1 run $m"
+              echo "ok=yes" >> "$GITHUB_OUTPUT"
+          else
+              echo "::notice::readiness not measured at ${SHA:0:12}: dogfood-receipt ${d:-absent}, models-t1 ${m:-absent}"
+              echo "ok=no" >> "$GITHUB_OUTPUT"
+          fi
+
+  readiness:
+    needs: inputs
+    if: needs.inputs.outputs.ok == 'yes'
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]
+    timeout-minutes: 120
+    env:
+      MC: ${{ needs.inputs.outputs.sha }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target   # warm across nights (clean: false); the build and TD read the same dir
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.inputs.outputs.sha }}
+          fetch-depth: 0
+          clean: false
+
+      - name: Fetch the two receipts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DOGFOOD_RUN: ${{ needs.inputs.outputs.dogfood_run }}
+          MODELS_RUN: ${{ needs.inputs.outputs.models_run }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$MC" ] || { echo "::error::checkout is not $MC"; exit 2; }
+          git merge-base --is-ancestor "$MC" origin/main || { echo "::error::$MC is not on main"; exit 2; }
+          rm -rf .dogfood "${RUNNER_TEMP:?}/readiness"
+          mkdir -p .dogfood "$RUNNER_TEMP/readiness/models-t1" "$RUNNER_TEMP/readiness/dogfood"
+          gh run download "$DOGFOOD_RUN" -R "$REPO" -n dogfood-receipt -D "$RUNNER_TEMP/readiness/dogfood"
+          gh run download "$MODELS_RUN" -R "$REPO" -n models-t1 -D "$RUNNER_TEMP/readiness/models-t1"
+          find "$RUNNER_TEMP/readiness/dogfood" -name 'receipt-*.json' -type f -exec cp {} .dogfood/ \;
+          ls -l .dogfood "$RUNNER_TEMP/readiness/models-t1"
+
+      - name: release_readiness.sh (autopilot step 2c, verbatim inputs)
+        run: |
+          set -uo pipefail
+          AP="$RUNNER_TEMP/readiness"
+          V=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "aprender") | .version')
+          [ -n "$V" ] || { echo "::error::no version from cargo metadata"; exit 2; }
+          DR=$(find .dogfood -maxdepth 1 -name 'receipt-*.json' -type f 2>/dev/null | LC_ALL=C sort | tail -n 1)
+          [ -n "$DR" ] || { echo "::error::no dogfood receipt in the dogfood-receipt artifact"; exit 1; }
+          nice -n 10 cargo build --release --bin apr > "$AP/build.log" 2>&1 || { tail -n 40 "$AP/build.log"; echo "::error::apr build failed"; exit 1; }
+          TD="$CARGO_TARGET_DIR"
+          "$TD/release/apr" --version 2>/dev/null | head -n 1 | grep -qF "(${MC:0:9}" \
+            || { echo "::error::$TD/release/apr is not built from $MC"; exit 1; }
+          "$TD/release/apr" surface --json > "$AP/surface-t1.json" || { echo "::error::apr surface --json failed"; exit 1; }
+          rc=0
+          bash scripts/release/release_readiness.sh --root "$PWD" --version "$V" --commit "$MC" --receipts "$AP/models-t1" \
+            --dogfood-receipt "$DR" --surface "$AP/surface-t1.json" --out "$AP/readiness-t1.json" > "$AP/readiness-t1.log" 2>&1 || rc=$?
+          tail -n 40 "$AP/readiness-t1.log"
+          [ "$rc" -eq 0 ] || { echo "::error::release-readiness-v1 rc=$rc at $MC version $V"; exit 1; }
+          if grep -qE '^WARN +R8 ' "$AP/readiness-t1.log"; then
+              echo "::error::release-readiness-v1 printed a WARN R8 row (report-only = waiver = stop)"; exit 1
+          fi
+          need="ok    R8 #3715 ENFORCE PASS version=$V commit=$MC pv="
+          awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "$AP/readiness-t1.log" \
+            || { echo "::error::no '#3715 ENFORCE PASS' row for $V at $MC"; exit 1; }
+          echo "READINESS PASS $V at $MC"
+
+      - name: Publish the readiness log and graph
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: readiness-t1
+          path: |
+            ${{ runner.temp }}/readiness/readiness-t1.*
+            ${{ runner.temp }}/readiness/surface-t1.json
+          if-no-files-found: warn

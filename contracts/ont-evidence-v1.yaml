@@ -1,0 +1,132 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-evidence-v1 — one evidence block, PROV-O names, one L-enum (ONT-8)
+# (ONT-001 §4.3 evidence, §5 ONT-8, F-16, R-17; issue #4077; ticket PMAT-4077)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::lint::evidence_gate — PV-ONT-017..021;
+#   `pv lint --gate evidence` and gate 16 of the full run (R-8: computed
+#   everywhere, armed per repo; not armed here).
+#
+# THE LEVEL IS proof_status::ProofLevel, NOT A SECOND LIST. `levels_source`
+# reports "enum" because the gate deserialises into that one type; a level
+# outside it is PV-ONT-018. EV-3 removed L0, so L0 is refused.
+#
+# ENTITY-BLIND (R-17). `entity.type` is counted into `entity_types_checked`
+# and never branched on: a README, a model and a code contract pass or fail
+# the same block the same way.
+#
+# [V] BINDING. census.json `git_sha` is null by operator ruling (2026-09-16),
+# so a [V] sha binds to the census when it records one, and otherwise must
+# resolve as a commit in the contract directory's repository. A git that
+# cannot look (absent, shallow) is Unknown(ToolAbsent), never a finding.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-evidence
+version: "1.0.0"
+scope: >
+  The shape of a contract's `evidence` block: its level on the one proof-level enum, its mark, and its PROV-O
+  provenance (wasGeneratedBy, wasAttributedTo, generatedAtTime), across every entity type. Out of scope: whether
+  the cited command, re-run today, still yields the level claimed (that is `pv proof-status`), and what pv-sat
+  does with a level (ONT-5).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    A contract may state its evidence in one block; the evidence gate refuses undeclared keys (F-16 `author:`
+    among them), a level outside the one enum, an unknown mark or a cited/verified claim with no command, a
+    verified sha that does not resolve, and an agent Σ does not declare, on every entity type alike.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §4.3 (evidence), §5 ONT-8, F-16, R-2, R-8, R-17'
+    - 'crates/aprender-contracts/src/lint/evidence_gate.rs — PV-ONT-017..021'
+    - 'crates/aprender-contracts/src/proof_status.rs — ProofLevel, the one L-enum'
+    - 'contracts/ontology.yaml — agents, reader lint/evidence_gate.rs'
+
+relations:
+  depends_on: [ont-sigma-v1, ont-verdict-lattice-v1]
+
+equations:
+  evidence_admission:
+    formula: "admits(corpus) ⇔ ∀ c ∈ corpus: evidence(c) = ∅ ∨ (keys(evidence(c)) ⊆ K_e ∧ level(c) ∈ ProofLevel ∧ mark(c) ∈ {V,C,A,U} ∧ (mark(c) ∈ {V,C} ⇒ command(c) ≠ ∅) ∧ (mark(c) = V ⇒ resolves(sha(c))) ∧ agent(c) ∈ Σ.agents)"
+    domain: "a contract corpus and the Σ that declares its agents"
+    codomain: "Pass | Fail | Unknown"
+    invariants:
+      - "a corpus whose every evidence block is well-formed and resolves is admitted"
+      - "a corpus with no evidence block is Unknown, never Pass"
+    preconditions:
+      - "Σ parses and satisfies its own integrity rules"
+    postconditions:
+      - "verdict ∈ {Pass, Fail, Unknown}"
+      - "the verdict does not depend on entity.type"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: EV-INV-001
+    property: evidence, provenance and wasGeneratedBy carry only their declared keys
+    formal: 'k ∈ keys(evidence) ⇒ k ∈ K_e ∧ k ∈ keys(provenance) ⇒ k ∈ K_p'
+    prose: false
+  - id: EV-INV-002
+    property: the level is a member of the one proof-level enum
+    formal: 'level(c) ∈ {L1, L2, L3, L4, L5}'
+    prose: false
+  - id: EV-INV-003
+    property: a cited or verified claim names the command that produced it
+    formal: 'mark(c) ∈ {V, C} ⇒ command(c) ≠ ∅'
+    prose: false
+  - id: EV-INV-004
+    property: a verified claim's sha resolves
+    formal: 'mark(c) = V ⇒ sha(c) = census.git_sha ∨ (census.git_sha = ⊥ ∧ sha(c) ∈ commits(repo))'
+    prose: false
+  - id: EV-INV-005
+    property: the attributed agent is declared in Σ
+    formal: 'agent(c) ∈ Σ.agents'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-EV-001
+    rule: F-16
+    prediction: "`author:` under evidence, provenance or wasGeneratedBy is PV-ONT-017 at each level"
+    test: cargo test -p aprender-contracts --lib lint::evidence_gate::tests::f16_author_is_pv_ont_017_wherever_it_is_written
+    if_fails: a non-PROV name enters the provenance record
+  - id: FALSIFY-EV-002
+    rule: one L-enum
+    prediction: L0, l2, L6 and a missing level are PV-ONT-018; L1..L5 are all admitted
+    test: cargo test -p aprender-contracts --lib lint::evidence_gate::tests::a_level_outside_the_one_enum_is_pv_ont_018
+    if_fails: a second level vocabulary exists beside ProofLevel
+  - id: FALSIFY-EV-003
+    rule: a cited claim names its command
+    prediction: "mark C with no wasGeneratedBy.command is PV-ONT-019"
+    test: cargo test -p aprender-contracts --lib lint::evidence_gate::tests::a_cited_claim_without_a_command_is_pv_ont_019
+    if_fails: a claim is marked cited with nothing to re-run
+  - id: FALSIFY-EV-004
+    rule: a verified sha resolves
+    prediction: HEAD of a real repository passes; a well-formed sha that is not a commit is PV-ONT-020
+    test: cargo test -p aprender-contracts --lib lint::evidence_gate::tests::a_null_census_binds_verified_claims_to_the_repository
+    if_fails: a [V] mark can cite a commit that never existed
+  - id: FALSIFY-EV-005
+    rule: R-17
+    prediction: the same block passes on readme, apr-model and code; the same defect is rejected on readme, apr-model, code, gguf and csv
+    test: cargo test -p aprender-contracts --lib lint::evidence_gate::tests::r17_the_same_defect_is_rejected_on_every_entity_type
+    if_fails: the gate judges an entity type differently
+  - id: FALSIFY-EV-006
+    rule: zero is a decline; R-8
+    prediction: no evidence block and no Σ both exit 2; the full `pv lint` run computes evidence, reported and not armed
+    test: cargo test -p aprender-contracts-cli --test ont8_evidence_gate
+    if_fails: a decline and a pass become indistinguishable, or armed_gates could name a gate no run computes
+
+qa_gate:
+  id: F-EV-001
+  name: evidence block
+  description: One evidence block, PROV-O names, one L-enum, on every entity type (ONT-8)
+  checks:
+    - closed_key_set
+    - level_in_the_one_enum
+    - cited_claim_names_command
+    - verified_sha_resolves
+    - agent_in_sigma
+    - entity_blind
+  pass_criteria: All 6 falsification tests pass; `pv lint contracts/ --gate evidence` is Pass on the real corpus with levels_source enum and entity_types_checked ≥ 3
+  falsification: 'a level check that accepts anything, and a skip on entity.type == readme, each turn tests red (3 failures, measured 2026-09-24)'

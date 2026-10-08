@@ -392,10 +392,24 @@ fn extract_tool_parameters(
                 .and_then(|d| d.as_str())
                 .unwrap_or_default()
                 .to_string();
+            // #4650: the scalar JSON-Schema type, so a call parsed from text (Qwen XML)
+            // types its value as declared. Anything else stays String, as before.
+            let param_type = match spec.get("type").and_then(|t| t.as_str()) {
+                Some("integer") => ToolParameterType::Integer,
+                Some("number") => ToolParameterType::Number,
+                Some("boolean") => ToolParameterType::Boolean,
+                Some("array") => ToolParameterType::Array {
+                    items: Box::new(ToolParameterType::String),
+                },
+                Some("object") => ToolParameterType::Object {
+                    properties: Vec::new(),
+                },
+                _ => ToolParameterType::String,
+            };
             ToolParameter {
                 name: name.clone(),
                 description,
-                param_type: ToolParameterType::String,
+                param_type,
                 required: required.contains(name.as_str()),
                 default: None,
             }

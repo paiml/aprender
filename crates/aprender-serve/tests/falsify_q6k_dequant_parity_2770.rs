@@ -136,6 +136,8 @@ fn gpu_dequant_q6k(ctx: &CudaContext, weights: &[u8], n: u32, k: u32) -> Vec<f32
         std::ptr::addr_of!(k) as *mut _,
         std::ptr::addr_of!(n) as *mut _,
     ];
+    // SAFETY: args points at out_ptr/w_ptr/k/n, which live until after synchronize(); the kernel
+    // writes at most out_buf's length, since the config grid is sized from n.
     unsafe {
         stream
             .launch_kernel(&mut module, kernel.name(), &config, &mut args)

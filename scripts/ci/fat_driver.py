@@ -373,6 +373,20 @@ def resolve_vendored(text: str, host_dir: str) -> str:
     return body
 
 
+def secret_wiring_gaps(ci_text: str, section_texts) -> list:
+    """Every `secrets.X` a section reads must reach the driver as FAT_SECRET_X fed
+    from `secrets.X` -- the same name on both sides. #4441 wired
+    FAT_SECRET_PR_REVIEW_SIGNING_KEY_B from a secret that does not exist, so the
+    driver handed pr-review-sign an empty key and every PR carrying a receipt went red."""
+    wired = re.findall(r"FAT_SECRET_([A-Za-z0-9_]+):\s*\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}", ci_text)
+    gaps = [f"FAT_SECRET_{k} is fed from secrets.{v}" for k, v in wired if k != v]
+    names = {k for k, _ in wired}
+    for t in section_texts:
+        for n in sorted(set(re.findall(r"secrets\.([A-Za-z0-9_]+)", t)) - names - {"GITHUB_TOKEN"}):
+            gaps.append(f"secrets.{n} is read by a section and no FAT_SECRET_{n} carries it")
+    return gaps
+
+
 def section_catalogue() -> dict:
     """name -> {job, source, inputs, matrix, needs_map}. The ONE plan."""
     ci = load_yaml(CI_FILE)
@@ -447,6 +461,65 @@ PRINT_LOCK = threading.Lock()
 def say(msg: str):
     with PRINT_LOCK:
         print(msg, flush=True)
+
+
+ASIDE_KEEP = 3  # undeletable asides per section before every setup warns
+
+
+def clear_dir(d: Path, log, rmtree=shutil.rmtree):
+    """Leave `d` absent, or raise. Returns the aside path when one was needed.
+
+    A section tree from an earlier run on this runner can hold files a docker
+    section wrote as root. `rmtree(ignore_errors=True)` then deletes what it can,
+    says nothing, and the `mkdir` that follows dies on FileExistsError: #4507, which
+    RED'd #4479 twice on framework16-2. The runner user cannot delete a root-owned
+    file, but it CAN rename the tree holding it (only the parent's write bit is
+    needed), so the leftover is moved to <parent>/.aside/<name>/<ns> and the section
+    starts clean. Every failure is written to the section log; nothing is swallowed.
+    Older asides are retried each time; the ones still undeletable stay, and past
+    ASIDE_KEEP of them every setup prints a ::warning:: naming the directory.
+    """
+    if not os.path.lexists(d):
+        return None
+    try:
+        rmtree(d)
+        return None
+    except OSError as e:
+        err = e
+    bucket = d.parent / ".aside" / d.name
+    bucket.mkdir(parents=True, exist_ok=True)
+    aside = bucket / str(time.time_ns())
+    os.rename(d, aside)  # no fallback: if even this fails the section is RED, loudly
+    log.write(f"setup: {d} could not be removed ({err!r}); moved aside to {aside}\n")
+    _sweep_asides(bucket, aside, log, rmtree)
+    return aside
+
+
+def _sweep_asides(bucket: Path, aside: Path, log, rmtree):
+    """Retry every older aside in `bucket` (all but `aside`), logging each outcome;
+    past ASIDE_KEEP undeletable ones, write a ::warning:: naming the bucket."""
+    for old in sorted(bucket.iterdir()):
+        if old == aside:
+            continue
+        try:
+            rmtree(old)
+            log.write(f"setup: removed older aside {old}\n")
+        except OSError as e:
+            log.write(f"setup: older aside {old} still undeletable ({e!r})\n")
+    left = sorted(bucket.iterdir())
+    if len(left) > ASIDE_KEEP:
+        log.write(f"::warning::{len(left)} undeletable leftovers under {bucket} "
+                  f"(limit {ASIDE_KEEP}): root-owned files from a container section; "
+                  f"chown or remove them on the runner\n")
+
+
+def make_section_dirs(d: Path, log, rmtree=shutil.rmtree):
+    """A fresh section tree: <d>/_temp (RUNNER_TEMP), <d>/home, <d>/ws (RUNNER_WORKSPACE).
+    Strict mkdirs: a leftover that survived clear_dir is a RED section, not a reuse."""
+    clear_dir(d, log, rmtree=rmtree)
+    (d / "_temp").mkdir(parents=True)
+    (d / "home").mkdir()
+    (d / "ws").mkdir()
 
 
 def parse_file_command(path: Path) -> dict:
@@ -614,11 +687,7 @@ class Section:
             self.result = "failure" if self.failed else "success"
 
     def setup_workspace(self):
-        if self.dir.exists():
-            shutil.rmtree(self.dir, ignore_errors=True)
-        self.temp.mkdir(parents=True)
-        (self.dir / "home").mkdir()
-        self.workspace.parent.mkdir(parents=True)
+        make_section_dirs(self.dir, self.log)
         # A local clone HARDLINKS the checkout's object files: self-contained, and
         # nearly free on one filesystem. Not --shared: its alternates point at the
         # runner checkout, which a section's own `docker run -v $GITHUB_WORKSPACE:...`
@@ -1051,6 +1120,46 @@ class RunCtx:
         ev_path = os.environ.get("GITHUB_EVENT_PATH")
         self.event = json.load(open(ev_path)) if ev_path and os.path.exists(ev_path) else {}
         self.sections: dict = {}
+        # --external-job NAME: a need satisfied by another job of THIS workflow
+        # run, read from the Actions API (the workspace-test shards run as their
+        # own jobs; mutants, here, still needs their verdict). Pending until
+        # that job completes.
+        self.external: dict = {}
+        self.fetch_jobs = self._fetch_jobs
+        self._jobs_at = 0.0
+        self._jobs: list = []
+        self.external_deadline = time.time() + EXTERNAL_TIMEOUT_S
+
+    def _fetch_jobs(self) -> list:
+        # Run-scoped with filter=latest, not attempt-scoped: "Re-run failed jobs"
+        # carries a green workspace-test over from the earlier attempt, and an
+        # attempt-scoped list would never show it. Every page, not the first.
+        jobs, page = [], 1
+        while True:
+            url = (f"{self.api}/repos/{self.repo}/actions/runs/{self.run_id}"
+                   f"/jobs?filter=latest&per_page=100&page={page}")
+            got = gh_json(url, self.token).get("jobs", [])
+            jobs += got
+            if len(got) < 100:
+                return jobs
+            page += 1
+
+    def external_result(self, need: str):
+        # A job that never completes (or never appears) fails the need at the
+        # deadline, pointing at the need -- not at x86-main's own job timeout.
+        if time.time() >= self.external_deadline:
+            say(f"::error::external job {need!r}: not completed within {EXTERNAL_TIMEOUT_S:.0f}s")
+            return "failure"
+        if time.time() - self._jobs_at >= EXTERNAL_POLL_S:
+            self._jobs, self._jobs_at = self.fetch_jobs(), time.time()
+        js = [j for j in self._jobs if j.get("name") == need]
+        if not js or any(j.get("status") != "completed" for j in js):
+            return None
+        cs = [j.get("conclusion") for j in js]
+        for bad, r in (("failure", "failure"), ("timed_out", "failure"), ("cancelled", "cancelled")):
+            if bad in cs:
+                return r
+        return "success" if all(c == "success" for c in cs) else "skipped"
 
     def members(self, need: str) -> list:
         """A need names a job; a matrix job is every expansion present HERE.
@@ -1059,11 +1168,13 @@ class RunCtx:
         x86-main job: only the ARM64 half is in this run, and the X64 half
         reaches the compare as an artifact (a missing one fails the download).
         """
-        if need in self.sections:
+        if need in self.sections or need in self.external:
             return [need]
         return [n for n in self.sections if n.startswith(need + "[")]
 
     def need_result(self, need: str):
+        if need in self.external and need not in self.sections:
+            return self.external_result(need)
         rs = [self.sections[n].result for n in self.members(need)]
         if not rs or any(r is None for r in rs):
             return None
@@ -1075,7 +1186,8 @@ class RunCtx:
     def need_outputs(self, need: str) -> dict:
         out = {}
         for n in self.members(need):
-            out.update(self.sections[n].outputs)
+            if n in self.sections:
+                out.update(self.sections[n].outputs)
         return out
 
     def github_ctx(self, ws: Path) -> dict:
@@ -1095,6 +1207,9 @@ class RunCtx:
 
 
 DEFAULT_TIMEOUT_SCALE = 2.0
+EXTERNAL_POLL_S = 60.0
+# The shard jobs' own timeout (180 min) plus the verdict job's (10), plus queue.
+EXTERNAL_TIMEOUT_S = 200 * 60.0
 
 
 def timeout_seconds(minutes, default_minutes=0) -> float:
@@ -1182,7 +1297,10 @@ def emit_results_output(res: dict) -> None:
     out = os.environ.get("GITHUB_OUTPUT")
     if not out:
         return
-    compact = {n: {"result": r["result"], "continue_on_error": r.get("continue_on_error", False)}
+    # `outputs` rides along: the gate's NOT_MEASURED rule (ci.yml GATE-MUTANTS-CUDA-RULE) reads
+    # .<section>.outputs.<key>. Without it that rule reads "" and passes on every run (#4621).
+    compact = {n: {"result": r["result"], "continue_on_error": r.get("continue_on_error", False),
+                   "outputs": r.get("outputs") or {}}
                for n, r in res.items()}
     # The actions a section staged for the fat job's own steps (codecov, attest).
     kinds = set()
@@ -1212,6 +1330,7 @@ def cmd_run(a):
     base = Path(a.base or Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "fat")
     base.mkdir(parents=True, exist_ok=True)
     ctx = RunCtx(base)
+    ctx.external = dict.fromkeys(a.external_job or [])
     for n in names:
         ctx.sections[n] = Section(n, cat[n], ctx)
     signal.signal(signal.SIGTERM, on_signal)
@@ -1290,22 +1409,7 @@ def cmd_list(a):
             print(f"{n}\t{i}\t{label}")
 
 
-def cmd_self_test(a):
-    """Case table: each row names what it would read if the rule it guards were
-    deleted (AnyShard, implicit success(), the depth-1 cut, the verdict rule)."""
-    import tempfile
-    from types import SimpleNamespace
-    rows = []
-
-    def row(label, got, want):
-        rows.append((label, got == want, got, want))
-
-    def ev(failed=False, **ctx):
-        base = {"github": {"event_name": "pull_request"}, "matrix": {"shard": AnyShard("1"), "shards": 1},
-                "steps": {"tier": {"outputs": {"tier": "full"}}}, "env": {}}
-        base.update(ctx)
-        return Evaluator(base, make_funcs(lambda: failed, lambda: Path(".")))
-
+def _st_vendored(row):
     real = SOV_FILE.read_text()
     hd = sccache_host_dir(load_yaml(SECTIONS_FILE))
 
@@ -1316,6 +1420,13 @@ def cmd_self_test(a):
         except SystemExit:
             return 1
     row("vendored sov: token restored, body == upstream sha256", vend_rc(real), 0)
+    ci_text, sec_texts = CI_FILE.read_text(), [SECTIONS_FILE.read_text(), real]
+    row("secret wiring: every secrets.X a section reads reaches it as FAT_SECRET_X", secret_wiring_gaps(ci_text, sec_texts), [])
+    row("secret wiring: a renamed source (the #4441 _B typo) is caught",
+        len(secret_wiring_gaps("FAT_SECRET_PR_REVIEW_SIGNING_KEY_B: ${{ secrets.PR_REVIEW_SIGNING_KEY_B }}",
+                               ["${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}"])), 1)
+    row("secret wiring: a mismatched pair is caught",
+        len(secret_wiring_gaps("FAT_SECRET_K64: ${{ secrets.K }}", ["${{ secrets.K64 }}"])), 1)
     row("vendored sov: resolved volumes name the one sccache dir",
         resolve_vendored(real, hd).count(f"- {hd}:/sccache"), 4)
     row("vendored sov: MUTANT hand edit of the body is refused",
@@ -1324,6 +1435,14 @@ def cmd_self_test(a):
         vend_rc(real.replace(f"- {SOV_TOKEN}:", "- /elsewhere:", 1)), 1)
     row("vendored sov: MUTANT header without sha256 is refused",
         vend_rc(real.replace("# sha256 of the upstream file:", "# sha:", 1)), 1)
+
+
+def _st_expressions(row):
+    def ev(failed=False, **ctx):
+        base = {"github": {"event_name": "pull_request"}, "matrix": {"shard": AnyShard("1"), "shards": 1},
+                "steps": {"tier": {"outputs": {"tier": "full"}}}, "env": {}}
+        base.update(ctx)
+        return Evaluator(base, make_funcs(lambda: failed, lambda: Path(".")))
 
     e = ev()
     row("event == 'pull_request'", truthy(e.eval("github.event_name == 'pull_request'")), True)
@@ -1356,6 +1475,9 @@ def cmd_self_test(a):
     row("a bracketed name resolves to itself only", resolve_section_names(cat, "determinism[X64]"),
         ["determinism[X64]"])
     row("sov.* globs", resolve_section_names(cat, "sov.*"), ["sov.test", "sov.gate"])
+
+
+def _st_timeouts(row):
     saved = os.environ.pop("FAT_TIMEOUT_SCALE", None)
     try:
         row("timeout: a section's 30 min is scaled x2 on the shared runner", timeout_seconds(30), 3600.0)
@@ -1373,6 +1495,10 @@ def cmd_self_test(a):
         os.environ.pop("FAT_TIMEOUT_SCALE", None)
         if saved is not None:
             os.environ["FAT_TIMEOUT_SCALE"] = saved
+
+
+def _st_artifact(row):
+    import tempfile
     import http.server
     import threading
 
@@ -1404,6 +1530,11 @@ def cmd_self_test(a):
             got = repr(e)
         row("artifact download drops Authorization on the blob redirect", got, b"zipbytes")
     srv.shutdown()
+
+
+def _st_checkout(row):
+    import tempfile
+    from types import SimpleNamespace
     with tempfile.TemporaryDirectory() as td:
         f = Path(td) / "out"
         f.write_text("a=1\nb<<EOF\nx\ny=z\nEOF\nc=3\n")
@@ -1440,6 +1571,146 @@ def cmd_self_test(a):
         row("checkout fetch-depth 0: full history", (ok, cnt), (True, "3"))
         ok, _ = uses_checkout(clone("d2"), {"fetch-depth": 2}, None)
         row("checkout fetch-depth 2 refuses (not emulated)", ok, False)
+
+
+def _st_aside(row):
+    import tempfile
+    # #4507: a leftover section tree the runner user cannot delete (root-owned files
+    # from a container section). `stubborn` is rmtree on such a tree, whoever runs the
+    # self-test: it deletes all but the `rootowned` dir, then raises EACCES as the real
+    # one does -- or, with ignore_errors, says nothing, which was the bug.
+    def stubborn(p, ignore_errors=False):
+        p = Path(p)
+        keep = list(p.rglob("rootowned")) + ([p] if p.name == "rootowned" else [])
+        if not keep:
+            return shutil.rmtree(p, ignore_errors=ignore_errors)
+        for c in p.iterdir():
+            if not any(k == c or c in k.parents for k in keep):
+                shutil.rmtree(c) if c.is_dir() else c.unlink()
+        if not ignore_errors:
+            raise PermissionError(13, "Permission denied", str(keep[0]))
+
+    def plant(d):
+        (d / "ws" / "rootowned").mkdir(parents=True)
+        (d / "ws" / "rootowned" / "f").write_text("x")
+        (d / "home").mkdir()
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td)
+        d = base / "workspace-test-shard_1_3_"
+        plant(d)
+        log = open(Path(td) / "log", "w", buffering=1)
+        try:  # a raise here is this row's RED, not the end of the table
+            make_section_dirs(d, log, rmtree=stubborn)
+            asides = list((base / ".aside" / d.name).iterdir())
+            got = (len(asides), (asides[0] / "ws" / "rootowned" / "f").exists(),
+                   sorted(c.name for c in d.iterdir()))
+        except OSError as e:
+            got = repr(e)
+        row("#4507 leftover undeletable ws: moved aside, fresh section tree made",
+            got, (1, True, ["_temp", "home", "ws"]))
+        if not isinstance(got, tuple):
+            shutil.rmtree(base / ".aside", ignore_errors=True)
+            stubborn(d, ignore_errors=True)
+            shutil.move(str(d), str(base / "mutant-leftover"))
+        row("#4507 the move aside is in the section log",
+            "moved aside to" in (Path(td) / "log").read_text(), True)
+        d2 = base / "fresh"
+        plant(d2)
+        try:
+            make_section_dirs(d2, log, rmtree=lambda p: stubborn(p, ignore_errors=True))
+            got = "mkdir ok"
+        except FileExistsError:
+            got = "FileExistsError"
+        row("#4507 MUTANT rmtree(ignore_errors)+mkdir on the same leftover dies", got, "FileExistsError")
+        bucket = base / ".aside" / d.name
+        bucket.mkdir(parents=True, exist_ok=True)
+        (bucket / "1").mkdir()  # an older aside that has since become deletable
+        try:
+            shutil.rmtree(d)
+            for _ in range(ASIDE_KEEP):
+                plant(d)
+                clear_dir(d, log, rmtree=stubborn)
+            got = ((bucket / "1").exists(), len(list(bucket.iterdir())),
+                   "::warning::" in (Path(td) / "log").read_text())
+        except OSError as e:
+            got = (repr(e),) * 3
+        row("#4507 an older deletable aside is removed", got[0], False)
+        row("#4507 undeletable asides past ASIDE_KEEP warn", got[1:], (ASIDE_KEEP + 1, True))
+        row("#4507 an absent dir is a no-op", clear_dir(base / "absent", log, rmtree=stubborn), None)
+        log.close()
+    if os.geteuid() != 0:
+        # The same on a real filesystem: a dir without its write bit is what a
+        # root-owned one is to the runner user.
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td) / "sec"
+            plant(d)
+            os.chmod(d / "ws" / "rootowned", 0o500)
+            with open(os.devnull, "w") as log:
+                aside = clear_dir(d, log)
+            ok = aside is not None and not d.exists()
+            os.chmod((aside or d) / "ws" / "rootowned", 0o700)  # so the tempdir can go
+            row("#4507 real EACCES tree (non-root): moved aside, dir free", ok, True)
+
+
+def _st_external(row):
+    # --external-job: a need on another job of the run is pending until that
+    # job completes, then carries its conclusion; without the flag it is absent.
+    x = RunCtx.__new__(RunCtx)
+    x.sections, x.external, x._jobs_at, x._jobs = {}, {"workspace-test": None}, 0.0, []
+    x.external_deadline = time.time() + 3600
+    for label, jobs, want in (
+        ("external need: job not listed yet -> pending", [], None),
+        ("external need: job in progress -> pending", [{"name": "workspace-test", "status": "in_progress"}], None),
+        ("external need: completed success", [{"name": "workspace-test", "status": "completed", "conclusion": "success"}], "success"),
+        ("external need: completed failure", [{"name": "workspace-test", "status": "completed", "conclusion": "failure"}], "failure"),
+        ("external need: timed out is a failure", [{"name": "workspace-test", "status": "completed", "conclusion": "timed_out"}], "failure"),
+        ("external need: cancelled", [{"name": "workspace-test", "status": "completed", "conclusion": "cancelled"}], "cancelled"),
+        ("external need: another job's success does not count", [{"name": "workspace-test-shard (1)", "status": "completed", "conclusion": "success"}], None),
+    ):
+        x._jobs_at, x.fetch_jobs = 0.0, (lambda j=jobs: j)
+        row(label, x.need_result("workspace-test"), want)
+    row("external need: a member of the run", x.members("workspace-test"), ["workspace-test"])
+    x.external_deadline, x._jobs_at, x.fetch_jobs = time.time() - 1, 0.0, (lambda: [])
+    row("external need: past the deadline and still absent -> failure", x.need_result("workspace-test"), "failure")
+    x.external = {}
+    row("no --external-job: the need is absent (schedule refuses)", x.members("workspace-test"), [])
+
+
+def _st_results_output(row):
+    import tempfile
+
+    # emit_results_output feeds the gate job: a section's `outputs` must survive into the
+    # `results` step output, or the gate's NOT_MEASURED rule reads "" and can never be RED (#4621).
+    with tempfile.TemporaryDirectory() as td:
+        gh_out = Path(td) / "out"
+        old = os.environ.get("GITHUB_OUTPUT")
+        os.environ["GITHUB_OUTPUT"] = str(gh_out)
+        try:
+            emit_results_output({"mutants": {"result": "success", "continue_on_error": False,
+                                             "outputs": {"not_measured": "7", "not_measured_sha": "abc"}}})
+        finally:
+            if old is None:
+                os.environ.pop("GITHUB_OUTPUT", None)
+            else:
+                os.environ["GITHUB_OUTPUT"] = old
+        line = next((l for l in gh_out.read_text().splitlines() if l.startswith("results=")), "results={}")
+        emitted = json.loads(line[len("results="):]).get("mutants", {})
+        row("results output keeps a section's outputs (gate NOT_MEASURED rule reads them)",
+            emitted.get("outputs"), {"not_measured": "7", "not_measured_sha": "abc"})
+
+
+def cmd_self_test(a):
+    """Case table: each row names what it would read if the rule it guards were
+    deleted (AnyShard, implicit success(), the depth-1 cut, the verdict rule).
+    The rows live in the _st_* section functions above, run in this order."""
+    rows = []
+
+    def row(label, got, want):
+        rows.append((label, got == want, got, want))
+
+    for section in (_st_vendored, _st_expressions, _st_timeouts, _st_artifact, _st_checkout, _st_aside,
+                    _st_external, _st_results_output):
+        section(row)
     bad = 0
     for label, good, got, want in rows:
         bad += not good
@@ -1456,6 +1727,7 @@ def main(argv=None):
     r.add_argument("--results", required=True)
     r.add_argument("--base")
     r.add_argument("--background-until")
+    r.add_argument("--external-job", action="append")
     w = sub.add_parser("wait")
     w.add_argument("--results", required=True)
     w.add_argument("--base")

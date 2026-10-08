@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Known issues
+- **Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) on GB10 is not claimed for 0.70 (#3715); planned for 0.70.1.**
+  On GB10 (sm_121) every verb (run, chat, serve, code) times out at 600 s on the 20k-token rung. The 0.69.1
+  pre-load refusal is gone in 0.70.0, so these models now load and run, but too slowly to be claimed. The
+  release gate does not owe the qwen3moe x GB10 cells (`cells.declaimed` in
+  `contracts/model-capability-ladder-v1.yaml`), and the ladder gate is RED if any rung or long-rung
+  representative still claims them. Withdrawn, not waived: lambda holds both files and still owes every
+  qwen3moe cell.
+- **GB10 dense models: prompt processing unbatched; planned for 0.70.1 (#4590).** Widens the Qwen3 entry below to every dense model on GB10 (operator ruling 2026-09-28
+  16:15Z): the serial prefill is the sm_12x default for every non-hybrid arch, so dense Qwen2.5 on GB10
+  is de-claimed too (`cells.declaimed`: qwen2 and qwen3 on gx10). Output is correct; only prefill speed
+  is affected. Withdrawn, not waived: lambda still owes every dense cell, gx10 still owes every Qwen3.5 cell.
+- **Qwen3 on GB10 (sm_121, and the sm_12x family) is correct but very slow, and is not claimed for
+  0.70 (#4590).** Dense Qwen3 on sm_12x prefills one token at a time, the sm_12x default, because the
+  generic batched prefill corrupts the KV cache there (FALSIFY-CPU-GPU-009). Measured on 0.70.0
+  (8d021f61e) at an 8k think-on prompt: Qwen3-1.7B 967 s, Qwen3-8B 2163 s, against 63-80 s for
+  Qwen3.5-9B on the same host (Qwen3.5 has its own batched prefill, #3596). `apr` prints a
+  `[KNOWN-ISSUE #4590]` warning when it loads Qwen3 on sm_12x. The release gate does not owe the
+  Qwen3 x GB10 cells (`cells.declaimed` in `contracts/model-capability-ladder-v1.yaml`); every other
+  host still owes every Qwen3 cell. Planned for 0.70.1: native sm_121 SASS, then a re-test of batched
+  prefill on GB10.
+
+## [0.70.2] - 2026-10-07
+
+0.70.2 ships under a recorded operator emergency scope, `crux-smoke`, as 0.70.1 did: "0.70.2 ships on
+CRUX smoke on lambda and gx10 GPU. Everything bigger is nightly." The record is the 0.70.2 entry under
+`emergency_scopes` in `contracts/model-capability-ladder-v1.yaml`. The prompt certification is carried
+from 0.70.1 unchanged (same models, prompts and oracle engines). The full notes, with the reason for
+carrying it, are in `evidence/release/0.70.2/RELEASE-NOTES-0.70.2.md`.
+
+### Fixed
+- `apr serve`: tools in a chat request reach the chat template, and Qwen3.5 XML tool calls are parsed (#4650).
+- `apr serve`: KV caches no longer commit every byte when they are built (#4769).
+- `apr train` / `apr finetune` on CPU: an intermittent crash (SIGSEGV) in the AVX2 matrix-multiply kernel
+  is fixed (#4891).
+
+### Release
+- The PP-26 witness marker is re-measured on this release's base, so its release-phase check judges fresh
+  evidence (#4888).
+- The coverage gate reads the nightly's sha-keyed receipt and is checked before the tag (#4734); merge, tag
+  and publish requirements are one list in code (#4688); no public GitHub release before its assets,
+  clean-room and preflight (#4690).
+
+### Known issues (moved to 0.71.0)
+- Six models still fail and ship as known failures, each tracked on its ticket: #4661 and #4662 (cuda serve
+  /api/chat gibberish), #4663 (no measured thinking budget for an IQ4_XS quant), #4664 (an IQ2_XXS GPU forward
+  falls back to CPU), #4665 (no CUDA forward for qwen35moe), #4666 (think block unclosed within 2048 tokens).
+- One unattended autopilot pass: the autopilot's readiness step and tag cut do not read a recorded scope.
+
 ## [0.69.3] - 2026-09-24
 
 0.69.3 is an emergency early release, authorized by the operator: "we need near parity apr serve

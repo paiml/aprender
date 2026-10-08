@@ -1,0 +1,225 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "rules": [
+            {
+              "id": "pmat.tdg-delta"
+            },
+            {
+              "id": "pmat.duplication-hit"
+            },
+            {
+              "id": "pmat.complexity-clean"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "pmat.complexity-clean",
+          "level": "note",
+          "message": {
+            "text": "complexity_delta is empty: no function in the 3 diffed files increased in cyclomatic/cognitive complexity vs base. The two pre-existing cognitive-complexity violations (generate_gguf_with_prompt @18>15 line 256, extract_apr_eos_token @25>15 line 521, both in chat_generate_session_02.rs) are unchanged pre-existing debt, not introduced by this diff."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "crates/apr-cli/src/commands/chat_generate_session.rs|chat_generate_session_02.rs|chat_session.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "79b445a22a80df0540e647d22f8b242cf837902ffe6ac2dd06a69bcdfb71162e;b58006e7a810af1dc5004aa48ed1750b424c3b53db9f6737079d36c98f7c13f9;824315cc74b7fd8a6dd0d3c88dfd2a86e203583b539a7c6d5976372f31c356fc",
+            "failure_scenario": "N/A - this is a clean/no-regression result, not a defect. Recorded per S1 grounding rule."
+          }
+        },
+        {
+          "ruleId": "pmat.tdg-delta",
+          "level": "note",
+          "message": {
+            "text": "TDG per-file delta (base ef72c058 -> head c61482fd): chat_generate_session.rs A+ 96.33 -> A 93.82 (real degrade, still above the B min_grade floor in .pmat-gates.toml); chat_generate_session_02.rs B+ 82.83 -> B+ 82.84 (flat, noise); chat_session.rs A+ 98.18 -> A+ 98.18 (unchanged, doc-comment-only diff). No file crosses below grade B."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "tdg",
+              "crates/apr-cli/src/commands/<file>",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "computed per-file at review time; see receipt tdg_delta[] for the four numeric pairs",
+            "failure_scenario": "N/A - informational TDG movement, not a defect; still within gate."
+          }
+        },
+        {
+          "ruleId": "pmat.duplication-hit",
+          "level": "note",
+          "message": {
+            "text": "duplication_hits[] has exactly 1 entry, a lexical match of the symbol name 'generate_and_print' inside an archived markdown doc (docs/specifications/archive/qwen2.5-coder-showcase-archive/self-falsification-rounds.md:372), not Rust source. Reviewed and judged a false positive (a doc discussing an unrelated past round, coincidentally using the same identifier text) -- not a re-implementation of existing logic. No other duplication found across a full 1109/1109-branch horizon."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "ef72c058090d93d633f54ad9e1a011cbb64b197e",
+              "--head",
+              "c61482fdace1183a3dda6f9607522b5aa0ea9e75",
+              "--rust-semantic",
+              "--json",
+              "/tmp/dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "93986efc302d7f1290e9fcdb21fe236bf04435f9f29413101d518ff24480e0d4",
+            "failure_scenario": "If this were a real duplicate, the PR would be re-implementing existing generate_and_print logic elsewhere; verified false positive by reading the cited doc line."
+          }
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "internal:contracts/crux-*.yaml",
+          "rules": [
+            {
+              "id": "crux.coverage-gap"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "crux.coverage-gap",
+          "level": "note",
+          "message": {
+            "text": "Surface: 'apr chat --gpu' forced-GPU-fallback refusal (exit 14 / CliError::BackendUnavailable, via the new forced_gpu_turn_check() reusing registry::after_generation()). Category-C ('Serving & Chat UX') crux contracts were searched for BackendUnavailable/exit-14/fallback coverage of this specific chat surface: none found. crux_coverage: none. This is a coverage gap, not a defect introduced by the PR -- the PR extends the SAME pre-existing R-0b behaviour `apr run --gpu` already enforces to `apr chat --gpu`, so it closes a behavioural inconsistency even though no crux contract formally tracks either side of it yet."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-rliE",
+              "BackendUnavailable|exit.code.*14|exit_code.*14",
+              "contracts/crux-*.yaml"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "A future regression re-breaking apr chat --gpu's fallback loudness (issue #4609's original bug) would not be caught by any crux contract falsification test -- only by the new unit tests this PR adds (pmat4609_forced_gpu_turn_check)."
+          }
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://mutants.rs",
+          "rules": [
+            {
+              "id": "mutation.unreachable"
+            }
+          ]
+        }
+      },
+      "results": [],
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Rust-source mutation (cargo mutants --in-diff, MUTANT_BUDGET=40) could not reach any of the 3 diffed files. chat_generate_session.rs, chat_generate_session_02.rs and chat_session.rs are include!()'d into chat.rs (crates/apr-cli/src/commands/chat.rs:778-780), not declared as `mod` files. cargo-mutants' static syn-based file discovery does not expand include! macros: `cargo mutants --list --file crates/apr-cli/src/commands/chat_generate_session.rs` returns 0 mutants (empty, rc 0), and a whole-crate `--list` finds 81 mutants matching path 'commands/chat', ALL attributed to chat.rs's own top-level functions (e.g. resolve_chat_model at line 118), none inside the included files. pmat's own complexity analyzer independently flags chat_session.rs with analysis:'heuristic_include_fragment', corroborating that tooling treats these as non-standalone fragments. Rust-source mutation.attempted=0 for this diff; genuinely unreachable within the time budget, not skipped."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "cargo",
+                  "mutants",
+                  "--list",
+                  "-p",
+                  "apr-cli"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "307ccb08231c65d480516d46860a0c9f90d4fb00d3c1d744ecd47719fb8dc19d"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "informationUri": "internal:agy",
+          "rules": [
+            {
+              "id": "antigravity.reviewed-clean"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "antigravity.reviewed-clean",
+          "level": "note",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high, cross-vendor advisory arm) reviewed the merge-base diff in a disposable tree and reported reviewed:true, findings:[] (empty) -- consulted, found nothing. This is advisory only per S3.E and does not affect the verdict."
+          },
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "agy",
+              "-p",
+              "<prompt file>",
+              "--output-format",
+              "json",
+              "--json-schema",
+              ".pr-review-schema.json",
+              "--model",
+              "gemini-3.1-pro-high",
+              "--print-timeout",
+              "8m",
+              "--dangerously-skip-permissions",
+              "--add-dir",
+              "<disposable tree>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "2e6a31045a7663ee6c877334926c1b0df7f270c8af7c485f725c6a9f20d68405",
+            "failure_scenario": "N/A - clean advisory result, recorded for the divergence ledger."
+          }
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ]
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 //!
 //! Demonstrates the zero-allocation direct terminal backend.
 //!
-//! Run with: cargo run -p presentar-terminal --example `direct_canvas_demo`
+//! Run with: cargo run -p aprender-present-terminal --example `direct_canvas_demo`
 
 use presentar_core::{Canvas, Color, Point, Rect, TextStyle, Transform2D};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};

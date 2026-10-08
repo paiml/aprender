@@ -8,7 +8,13 @@ mod serve_official_chat_template_3990 {
     use crate::gguf::GGUFModel;
 
     fn msg(role: &str, content: &str) -> ChatMessage {
-        ChatMessage { role: role.to_string(), content: content.to_string(), name: None, tool_calls: None, tool_call_id: None }
+        ChatMessage {
+            role: role.to_string(),
+            content: content.to_string(),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
     }
 
     /// A GGUF header whose template uses bos, eos, the message content AND the generation
@@ -31,24 +37,75 @@ mod serve_official_chat_template_3990 {
     #[test]
     fn the_served_prompt_is_the_ggufs_own_template_3990() {
         let g = gguf_with(Some(MARKER_TEMPLATE));
-        let got = format_chat_messages_official(Some(&g), &[msg("system", "be terse"), msg("user", "hi")], Some("qwen2"));
+        let got = format_chat_messages_official(
+            Some(&g),
+            &[msg("system", "be terse"), msg("user", "hi")],
+            Some("qwen2"),
+        );
         assert_eq!(got, "<BOS><system>be terse<EOS><user>hi<EOS><GO>");
+    }
+
+    /// #4650 mutant kill (`!t.is_empty()` at realize_handlers.rs:275): the request's tools
+    /// reach the model's own template, and an empty array is no tools.
+    #[test]
+    fn request_tools_reach_the_ggufs_own_template_4650() {
+        use crate::api::{OpenAiFunctionDef, OpenAiTool};
+        let g = gguf_with(Some(
+            "{% if tools %}T:{{ tools[0]['function']['name'] }}{% else %}NOTOOLS{% endif %}|{% for m in messages %}{{ m['content'] }}{% endfor %}",
+        ));
+        let tool = OpenAiTool {
+            tool_type: "function".to_string(),
+            function: OpenAiFunctionDef {
+                name: "get_weather".to_string(),
+                description: "Get the weather".to_string(),
+                parameters: None,
+            },
+        };
+        let msgs = [msg("user", "hi")];
+        let render = |tools: Option<&[OpenAiTool]>| {
+            super::format_chat_messages_official_thinking_tools(
+                Some(&g),
+                &msgs,
+                Some("qwen2"),
+                Some(false),
+                tools,
+            )
+            .expect("renders")
+        };
+        assert_eq!(
+            render(Some(std::slice::from_ref(&tool))),
+            "T:get_weather|hi"
+        );
+        assert_eq!(render(Some(&[])), "NOTOOLS|hi");
+        assert_eq!(render(None), "NOTOOLS|hi");
     }
 
     #[test]
     fn no_gguf_or_no_template_keeps_the_legacy_formatter_3990() {
         let msgs = [msg("user", "hi")];
         let legacy = format_chat_messages(&msgs, Some("qwen2"));
-        assert_eq!(format_chat_messages_official(None, &msgs, Some("qwen2")), legacy);
-        assert_eq!(format_chat_messages_official(Some(&gguf_with(None)), &msgs, Some("qwen2")), legacy);
-        assert!(legacy.contains("<|im_start|>user"), "the fallback is really the ChatML family template: {legacy:?}");
+        assert_eq!(
+            format_chat_messages_official(None, &msgs, Some("qwen2")),
+            legacy
+        );
+        assert_eq!(
+            format_chat_messages_official(Some(&gguf_with(None)), &msgs, Some("qwen2")),
+            legacy
+        );
+        assert!(
+            legacy.contains("<|im_start|>user"),
+            "the fallback is really the ChatML family template: {legacy:?}"
+        );
     }
 
     #[test]
     fn a_template_that_fails_to_render_falls_back_loudly_not_to_garbage_3990() {
         let g = gguf_with(Some("{{ raise_exception('unsupported role') }}"));
         let msgs = [msg("user", "hi")];
-        assert_eq!(format_chat_messages_official(Some(&g), &msgs, Some("qwen2")), format_chat_messages(&msgs, Some("qwen2")));
+        assert_eq!(
+            format_chat_messages_official(Some(&g), &msgs, Some("qwen2")),
+            format_chat_messages(&msgs, Some("qwen2"))
+        );
     }
 
     /// REAL MODELS: the serve helper on a real GGUF equals llama.cpp's /apply-template byte
@@ -56,8 +113,10 @@ mod serve_official_chat_template_3990 {
     /// default since #3801, so those are the cells that are the same request.
     #[test]
     fn the_served_prompt_equals_llama_cpp_on_real_ggufs_3990() {
-        let cells: Vec<serde_json::Value> =
-            serde_json::from_str(include_str!("../fixtures/chat_template_3990/llama_cpp_df03399.json")).expect("oracle parses");
+        let cells: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../fixtures/chat_template_3990/llama_cpp_df03399.json"
+        ))
+        .expect("oracle parses");
         let mut ran = 0usize;
         for c in cells.iter().filter(|c| c["thinking"] == false) {
             let path = c["path"].as_str().expect("path");
@@ -70,10 +129,20 @@ mod serve_official_chat_template_3990 {
                 .as_array()
                 .expect("messages")
                 .iter()
-                .map(|m| msg(m["role"].as_str().expect("role"), m["content"].as_str().expect("content")))
+                .map(|m| {
+                    msg(
+                        m["role"].as_str().expect("role"),
+                        m["content"].as_str().expect("content"),
+                    )
+                })
                 .collect();
             let got = format_chat_messages_official(Some(&mapped.model), &msgs, None);
-            assert_eq!(got, c["prompt"].as_str().expect("prompt"), "{path} system={}", c["system"]);
+            assert_eq!(
+                got,
+                c["prompt"].as_str().expect("prompt"),
+                "{path} system={}",
+                c["system"]
+            );
             ran += 1;
         }
         eprintln!("#3990 serve: {ran}/8 real cells compared");

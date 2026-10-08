@@ -45,7 +45,7 @@ metadata:
     extract:code — the bound symbols by a syn module-tree walk (inline mods, file mods, #[path], one re-export
     hop, impl methods), fail-closed with the reason in the graph; extract:lean — theorems from the in-tree
     Theorems tree, sorry-free files only grounding, joined to the contracts that cite them by ONT-2a's name
-    forms; 16 vendored W3C SHACL-Core cases run every gate run; the oracle differential in the release gate.
+    forms; 19 vendored W3C SHACL-Core cases run every gate run; the oracle differential in the release gate.
   references:
     - 'paiml/infra docs/specifications/paiml-ontology.md §3.6 (the subset), §3.7 (extractors), §5 ONT-4b2, R-13, R-15, R-18'
     - 'paiml/infra docs/specifications/ont-oracle-ledger.md (ONT-0: the 32-case table and the pinned oracle)'

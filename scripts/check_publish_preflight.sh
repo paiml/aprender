@@ -17,10 +17,10 @@
 #       from an argument.
 #   R3  the tag `v<version>` points at HEAD: the crate that is uploaded is the
 #       commit that is tagged, not a neighbour of it.
-#   R4  HEAD is on the main ref: nothing publishes from a branch. Either HEAD is an ancestor of
-#       main, or -- main's merge queue SQUASHES (a ruleset), so a release cut never becomes an
-#       ancestor -- main CONTAINS HEAD's crate content: `git diff HEAD <main>` is empty over
-#       crates/, src/, Cargo.toml and Cargo.lock, i.e. every published source file is equal.
+#   R4  HEAD is an ancestor of release/<version> (origin/release/X.Y.Z): nothing
+#       publishes from a topic branch. NOT main (cop ruling 2026-09-24, #4286): RC
+#       binaries ship from the release branch before merge-back, and main ancestry
+#       is enforced at merge-back (#4224). A missing release ref refuses.
 #   R6  no versioned sibling dev-dependency lies on a CYCLE. cargo keeps a versioned
 #       dev-dependency in the published manifest and resolves it on the registry,
 #       so two siblings that name each other can never be uploaded first
@@ -37,6 +37,17 @@
 #       scripts/check_model_ladder.sh -- the same judge autopilot's T-1 `models` step runs on its
 #       fresh measurement. Red, a missing receipt, a missing judge or a judge DECLINE (exit 2)
 #       refuses: a decline is not a pass.
+#   R8  the release's evidence graded by pv's `release-readiness-v1` SHACL shape (#3715 done_when 4),
+#       through scripts/release/release_readiness.sh -- the same wrapper autopilot's T-1 `models` step
+#       calls on its fresh receipts; here it reads the COMMITTED receipts at HEAD, with the dogfood
+#       receipt R5 judged. Any non-zero from the wrapper refuses. The wrapper's committed DEFAULT_MODE
+#       is `enforce` (#3715 B1, operator ruling 2026-09-28; there is no report mode): a Fail verdict
+#       refuses, and a decline, a caller error or a missing pv is a non-zero too.
+#       Under a RECORDED operator emergency scope (the ladder contract records exactly NAME for exactly
+#       this release; engaged by `--scope NAME`, or with no flag by that record itself -- C280.4, Q1,
+#       0.70.1) the wrapper still runs and its verdict and rc are printed as EVIDENCE, as the model
+#       matrix is under R7's scope: it is not the gate for that release. A missing wrapper still
+#       refuses. Without a recorded scope R8 is unchanged.
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
 #       (no git/cargo/python3, not a repository). 2 is not a pass.
@@ -44,23 +55,31 @@
 # SEAMS (the selftest builds a throwaway repository and drives every rule to
 # both verdicts through them; production never sets them):
 #   PUBLISH_PREFLIGHT_ROOT         repository root (default: this script's repo)
-#   PUBLISH_PREFLIGHT_MAIN_REF     the main ref for R4 (default: origin/main)
+#   PUBLISH_PREFLIGHT_RELEASE_REF  the ref for R4 (default: origin/release/<R2 version>;
+#                                  the selftest leaves it unset so the derivation is tested)
 #   PUBLISH_PREFLIGHT_RECEIPT_DIR  the dogfood receipt dir (default: $ROOT/.dogfood)
 #   PUBLISH_PREFLIGHT_LADDER_JUDGE the R7 judge (default: $ROOT/scripts/check_model_ladder.sh)
+#   PUBLISH_PREFLIGHT_READINESS    the R8 wrapper (default: $ROOT/scripts/release/release_readiness.sh)
 #
 # USAGE
 #   bash scripts/check_publish_preflight.sh             # the gate
 #   bash scripts/check_publish_preflight.sh --selftest  # case table, both polarities
 #   bash scripts/check_publish_preflight.sh --receipt-only  # R2+R5 only: T-1, before the tag (#3708)
+#   bash scripts/check_publish_preflight.sh --graph-only    # R2+R6 only: the rc cut (#4287)
 #   bash scripts/check_publish_preflight.sh --scope crux-smoke [--cut-commit SHA]
 #       R7 under a RECORDED operator emergency scope (contracts/model-capability-ladder-v1.yaml
-#       `ladder.emergency_scopes`; 0.69.1 only): the judge's own `--scope` path
+#       `ladder.emergency_scopes`; only the release its entry names -- 0.69.1, 0.70.1): the judge's own `--scope` path
 #       (scripts/lib/crux_smoke_scope.py) decides R7 from CRUX smoke receipts bound to the CUT --
 #       the commit the release binary was built from -- instead of the model matrix. The cut
 #       defaults to HEAD; when HEAD is not the cut (receipts committed on top, or main's squash
 #       of it), every PUBLISHED path -- crates/ src/ Cargo.toml Cargo.lock, R4's set -- must be
 #       equal to the cut's, or the published source is not the smoked binary's. The
-#       model-matrix rows are still printed, as EVIDENCE, never as the verdict.
+#       model-matrix rows are still printed, as EVIDENCE, never as the verdict. When the contract
+#       records NAME for this release, R8's release-readiness verdict is printed as EVIDENCE too.
+#       With NO --scope (cascade-publish.sh and autopilot's T-4 run this gate bare), a scope the
+#       contract RECORDS for this release engages by itself, as the judge's own auto-scope does for
+#       the dogfood (#4086; Q1): it is printed `SCOPED:` and the cut is HEAD. No record = the full
+#       gate. An unusable record (two for one release, no name, an unreadable contract) refuses.
 set -uo pipefail
 
 PROG=${0##*/}
@@ -192,115 +211,18 @@ rule_r7() {
     return 1
 }
 
-# R7 under a recorded operator emergency scope (0.69.1: CRUX smoke only). The scope is READ by the
-# judge (`--scope`, scripts/lib/crux_smoke_scope.py), never re-implemented here: it refuses another
-# release, receipts from another binary, and a missing host. This rule adds the one binding the judge
-# cannot see: the source being PUBLISHED (crates/ src/ Cargo.toml Cargo.lock, the paths R4 judges) is
-# the source the smoked binary was built from. Scripts, contracts and evidence may differ: the scope's
-# own contract entry and reader arrive after the cut.
-# rule_r7_scope root version judge -> prints its rows; 0 accepted, 1 refused
-rule_r7_scope() {
-    local root="$1" version="$2" judge="$3" cut head out rc ev evrc
-    head="$(git -C "$root" rev-parse HEAD 2>/dev/null)"
-    cut="$(git -C "$root" rev-parse --verify --quiet "${CUT_COMMIT:-HEAD}^{commit}" 2>/dev/null)"
-    if [ -z "$cut" ]; then
-        echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the cut ${CUT_COMMIT:-HEAD} does not resolve in this tree"
-        return 1
-    fi
-    if [ "$cut" != "$head" ] && ! git -C "$root" diff --quiet "$cut" "$head" -- crates src Cargo.toml Cargo.lock 2>/dev/null; then
-        printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s: HEAD %s differs from the cut %s in PUBLISHED paths -- the published source is not the smoked binary'"'"'s:\n%s\n' \
-            "$SCOPE" "${head:0:12}" "${cut:0:12}" \
-            "$(git -C "$root" diff --name-only "$cut" "$head" -- crates src Cargo.toml Cargo.lock | head -n 10 | sed 's/^/        /')"
-        return 1
-    fi
-    out="$(cd "$root" && bash "$judge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" 2>&1)"; rc=$?
-    grep -E '^OPERATOR EMERGENCY SCOPE' <<< "$out" | head -n 1 | sed 's/^/        /'
-    # The model matrix, reported as EVIDENCE only: under the scope it is not the verdict, and a
-    # stale or red row must still be visible.
-    ev="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; evrc=$?
-    if [ "$evrc" != 0 ]; then
-        printf '        evidence only (NOT the verdict under the emergency scope): model matrix rc %s\n%s\n' "$evrc" \
-            "$(grep -E '^FAIL' <<< "$ev" | head -n 10 | sed 's/^/          evidence /')"
-    fi
-    case "$rc" in
-        0) echo "ok    R7 OPERATOR EMERGENCY SCOPE $SCOPE: CRUX smoke satisfied at the cut ${cut:0:12} ($(basename "$judge") --scope); the model matrix was NOT the gate for $version"; return 0 ;;
-        2) echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
-        *) printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s NOT satisfied for %s (rc %s):\n%s\n' "$SCOPE" "$version" "$rc" \
-               "$(grep -E '^FAIL' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
-    esac
-    return 1
-}
-
-gate() {
-    local root="${PUBLISH_PREFLIGHT_ROOT:-}" main_ref="${PUBLISH_PREFLIGHT_MAIN_REF:-origin/main}"
-    local fails=0 status version tags head
-    for t in git cargo python3; do
-        command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
-    done
-    if [ -z "$root" ]; then
-        root="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-    fi
-    git -C "$root" rev-parse --verify --quiet HEAD >/dev/null || die_env "$root is not a git repository with a HEAD"
-    head="$(git -C "$root" rev-parse HEAD)"
-
-    # R1 clean tree
-    status="$(git -C "$root" status --porcelain --untracked-files=all 2>/dev/null)"
-    if [ -n "$status" ]; then
-        printf 'FAIL  R1 the tree is not clean; cargo package would ship what git never saw:\n%s\n' \
-            "$(printf '%s\n' "$status" | sed 's/^/        /' | head -n 20)"
-        fails=1
-    else
-        echo "ok    R1 clean tree (no tracked change, no untracked file)"
-    fi
-
-    # R2 version from cargo metadata
-    version="$(root_version "$root")" || version=""
-    if [ -z "$version" ]; then
-        echo "FAIL  R2 cargo metadata names no version for the root manifest"
-        fails=1
-    else
-        echo "ok    R2 version $version (cargo metadata, root manifest)"
-    fi
-
-    # R3 the tag points at HEAD
-    tags="$(git -C "$root" tag --points-at HEAD 2>/dev/null)"
-    # -F: the version is a string, not a pattern. With -x alone `v1-2-3` on HEAD
-    # satisfied `v1.2.3` (second review of #2859, tag-regex-injection).
-    if [ -n "$version" ] && printf '%s\n' "$tags" | grep -Fqx -- "v$version"; then
-        echo "ok    R3 tag v$version points at HEAD ${head:0:9}"
-    else
-        printf 'FAIL  R3 tag v%s does not point at HEAD %s (tags here: %s)\n' \
-            "${version:-?}" "${head:0:9}" "${tags:-none}"
-        fails=1
-    fi
-
-    # R4 HEAD is on main: by ancestry, or by CONTENT when main squash-merged it
-    local r4diff
-    if ! git -C "$root" rev-parse --verify --quiet "${main_ref}^{commit}" >/dev/null; then
-        echo "FAIL  R4 the main ref $main_ref does not exist here"
-        fails=1
-    elif git -C "$root" merge-base --is-ancestor "$head" "$main_ref" 2>/dev/null; then
-        echo "ok    R4 HEAD is an ancestor of $main_ref"
-    else
-        r4diff="$(git -C "$root" diff --name-only "$head" "$main_ref" -- crates src Cargo.toml Cargo.lock 2>&1)"
-        if [ -z "$r4diff" ]; then
-            echo "ok    R4 cut content in main via squash $(git -C "$root" rev-parse --short=9 "$main_ref"): HEAD ${head:0:9} is not an ancestor, but every file under crates/ src/ Cargo.toml Cargo.lock is equal"
-        else
-            printf 'FAIL  R4 HEAD %s is not an ancestor of %s, and main does not contain its crate content -- %s published path(s) differ:\n%s\n' \
-                "${head:0:9}" "$main_ref" "$(printf '%s\n' "$r4diff" | grep -c .)" "$(printf '%s\n' "$r4diff" | head -n 10 | sed 's/^/        /')"
-            fails=1
-        fi
-    fi
-
-    # R5 dogfood receipt: GO, this commit, this version
-    rule_r5 "$root" "$head" "$version" || fails=1
-
+# R6, ONE function for both ends (#4287): the full gate at T-4, and --graph-only at the
+# rc cut, so a publish-graph defect is found on the rc and not at the final tag.
+# rule_r6 root -> prints its row; 0 accepted, 1 refused
+rule_r6() {
+    local root=$1
     # R6 no versioned sibling dev-dependency lies on a cycle (PMAT-955, #3468). A
     # dev-dependency with a version is kept in the published manifest and resolved
     # on the registry at publish time; a path-only one is stripped. The edge is a
     # defect only when its target can reach its source: then neither crate can be
     # uploaded first. Acyclic edges are printed, so the publish order that must
     # honour them is visible in the receipt.
+    local r6
     r6="$(cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null | python3 -c '
 import json, sys
 try:
@@ -334,31 +256,315 @@ for n, t, req in sorted(vdev):
     print("%s %s -> %s %s" % ("CYCLE" if reaches(t, n) else "ACYCLIC", n, t, req))')"
     if [ "$r6" = UNREADABLE ]; then
         echo "FAIL  R6 cargo metadata is unreadable, so sibling dev-dependencies cannot be judged"
-        fails=1
+        return 1
     elif grep -q '^CYCLE ' <<< "$r6"; then
         printf 'FAIL  R6 a versioned sibling dev-dependency lies on a cycle (kept in the published manifest; neither crate can be uploaded first):\n%s\n' \
             "$(printf '%s\n' "$r6" | sed -n 's/^CYCLE //p')"
-        fails=1
+        return 1
     elif [ -n "$r6" ]; then
         printf 'ok    R6 %s versioned sibling dev-dependency edge(s), none on a cycle (the target publishes first):\n%s\n' \
             "$(printf '%s\n' "$r6" | grep -c '^ACYCLIC ')" "$(printf '%s\n' "$r6" | sed -n 's/^ACYCLIC /        /p')"
     else
         echo "ok    R6 no sibling dev-dependency carries a version (path-only, stripped at publish)"
     fi
+    return 0
+}
+
+# R7 under a recorded operator emergency scope (0.69.1: CRUX smoke only). The scope is READ by the
+# judge (`--scope`, scripts/lib/crux_smoke_scope.py), never re-implemented here: it refuses another
+# release, receipts from another binary, and a missing host. This rule adds the one binding the judge
+# cannot see: the source being PUBLISHED (crates/ src/ Cargo.toml Cargo.lock, the paths R4 judges) is
+# the source the smoked binary was built from. Scripts, contracts and evidence may differ: the scope's
+# own contract entry and reader arrive after the cut.
+# rule_r7_scope root version judge -> prints its rows; 0 accepted, 1 refused
+rule_r7_scope() {
+    local root="$1" version="$2" judge="$3" cut head out rc ev evrc
+    head="$(git -C "$root" rev-parse HEAD 2>/dev/null)"
+    cut="$(git -C "$root" rev-parse --verify --quiet "${CUT_COMMIT:-HEAD}^{commit}" 2>/dev/null)"
+    if [ -z "$cut" ]; then
+        echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the cut ${CUT_COMMIT:-HEAD} does not resolve in this tree"
+        return 1
+    fi
+    if [ "$cut" != "$head" ] && ! git -C "$root" diff --quiet "$cut" "$head" -- crates src Cargo.toml Cargo.lock 2>/dev/null; then
+        printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s: HEAD %s differs from the cut %s in PUBLISHED paths -- the published source is not the smoked binary'"'"'s:\n%s\n' \
+            "$SCOPE" "${head:0:12}" "${cut:0:12}" \
+            "$(git -C "$root" diff --name-only "$cut" "$head" -- crates src Cargo.toml Cargo.lock | head -n 10 | sed 's/^/        /')"
+        return 1
+    fi
+    out="$(cd "$root" && bash "$judge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" 2>&1)"; rc=$?
+    grep -E '^OPERATOR EMERGENCY SCOPE' <<< "$out" | head -n 1 | sed 's/^/        /'
+    # The model matrix, reported as EVIDENCE only: under the scope it is not the verdict, and a
+    # stale or red row must still be visible.
+    # `--scope none`: since #4086 a bare call on a release with a RECORDED scope judges the scope again,
+    # and the matrix rows (the old failures, C280.6) would never be printed.
+    ev="$(cd "$root" && bash "$judge" --version "$version" --scope none 2>&1)"; evrc=$?
+    if [ "$evrc" != 0 ]; then
+        printf '        evidence only (NOT the verdict under the emergency scope): model matrix rc %s\n%s\n' "$evrc" \
+            "$(grep -E '^FAIL' <<< "$ev" | head -n 10 | sed 's/^/          evidence /')"
+    fi
+    case "$rc" in
+        0) echo "ok    R7 OPERATOR EMERGENCY SCOPE $SCOPE: CRUX smoke satisfied at the cut ${cut:0:12} ($(basename "$judge") --scope); the model matrix was NOT the gate for $version"; return 0 ;;
+        2) echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
+        *) printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s NOT satisfied for %s (rc %s):\n%s\n' "$SCOPE" "$version" "$rc" \
+               "$(grep -E '^FAIL' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
+    esac
+    return 1
+}
+
+# C280 (operator, 2026-10-03, 0.70.1): a scope is RECORDED only when the ladder contract names exactly
+# this scope for exactly this release, as read by the judge's own reader (crux_smoke_scope.recorded_scope).
+# `--scope` alone is not a record. Anything unreadable is "not recorded", so R8 stays enforced.
+# scope_recorded root version scope -> 0 recorded, 1 not
+scope_recorded() {
+    local root="$1" version="$2" scope="$3"
+    [ -n "$scope" ] || return 1
+    ( cd "$root" && PYTHONDONTWRITEBYTECODE=1 python3 -c 'import sys, yaml
+sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
+name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open(sys.argv[3]))["ladder"], sys.argv[1])
+sys.exit(0 if why is None and name == sys.argv[2] else 1)' "$version" "$scope" "${POL_LADDER:-contracts/model-capability-ladder-v1.yaml}" ) >/dev/null 2>&1
+}
+
+# Q1 (operator, 2026-10-03, 0.70.1): the scope RECORDED for this release, for a caller that passed no
+# --scope. cascade-publish.sh and autopilot's T-4 run this gate bare, as the dogfood runs the judge bare,
+# and the judge's own auto-scope (#4086) already serves that caller. Read by the judge's own reader;
+# never inferred. No contract at all = no record: the full gate.
+# recorded_scope_name root version -> sets REC_NAME (the name) or REC_WHY (why it is unusable);
+#   0 one record, 1 no record, 2 unusable
+recorded_scope_name() {
+    local root="$1" version="$2" rec_out rec_rc py
+    REC_NAME=""; REC_WHY=""
+    [ -f "$root/contracts/model-capability-ladder-v1.yaml" ] || return 1
+    py='import sys
+try:
+    import yaml
+    sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
+    name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open(sys.argv[2]))["ladder"], sys.argv[1])
+except Exception as e:
+    print(f"the ladder contract could not be loaded ({type(e).__name__}: {e})"); sys.exit(2)
+if why:
+    print(why); sys.exit(2)
+if not name:
+    sys.exit(1)
+print(name)'
+    # bashrs PERF002: not a loop body -- the reader runs once, from gate().
+    # bashrs disable-next-line=PERF002
+    rec_out="$(cd "$root" && PYTHONDONTWRITEBYTECODE=1 python3 -c "$py" "$version" "${POL_LADDER:-contracts/model-capability-ladder-v1.yaml}" 2>/dev/null)"; rec_rc=$?
+    case "$rec_rc" in
+        0) REC_NAME="$rec_out" ;;
+        1) return 1 ;;
+        *) REC_WHY="${rec_out:-the reader exited $rec_rc and printed no reason}"; return 2 ;;
+    esac
+}
+
+# The STANDING RELEASE POLICY (`ladder.release_policy`, scripts/lib/release_policy.sh): from its `since` on,
+# a release is judged on CRUX smoke as if the contract recorded a `crux-smoke` entry for it. Both scope readers
+# above read POL_LADDER: the contract itself, or a copy carrying the entry the policy grants this version.
+# Without the reader in this tree, a contract that HAS a policy block is unreadable, never "no policy".
+# policy_ladder root version -> sets POL_LADDER (absolute), POL_APPLIES, POL_WHY;
+#   0 ok, 1 a per-release entry names a covered version, 2 unreadable
+policy_ladder() {
+    local root="$1" version="$2" out prc
+    POL_LADDER="$root/contracts/model-capability-ladder-v1.yaml"; POL_APPLIES=0; POL_WHY=""
+    [ -f "$POL_LADDER" ] || return 0
+    if [ ! -f "$root/scripts/lib/release_policy.sh" ]; then
+        if grep -q '^  release_policy:' "$POL_LADDER"; then POL_WHY="the contract has a release_policy block but $root has no scripts/lib/release_policy.sh to read it"; return 2; fi
+        return 0
+    fi
+    # shellcheck source=lib/release_policy.sh
+    . "$root/scripts/lib/release_policy.sh" || { POL_WHY="$root/scripts/lib/release_policy.sh could not be loaded"; return 2; }
+    out="$(mktemp)" || { POL_WHY="mktemp failed, so the policy ladder could not be written"; return 2; }
+    release_policy_ladder "$POL_LADDER" "$version" > "$out"; prc=$?
+    POL_LADDER="$(cat "$out")"; rm -f "${out:?}"
+    POL_APPLIES="$RP_APPLIES"; POL_WHY="$RP_WHY"
+    [ "$prc" = 0 ] || POL_LADDER="$root/contracts/model-capability-ladder-v1.yaml"
+    return "$prc"
+}
+
+# rm_pol_ladder root -- removes policy_ladder's copy, never the contract
+rm_pol_ladder() {
+    if [ -n "${POL_LADDER:-}" ] && [ "$POL_LADDER" != "$1/contracts/model-capability-ladder-v1.yaml" ] && [ -f "$POL_LADDER" ]; then rm -f "${POL_LADDER:?}"; fi
+    POL_LADDER=""
+}
+
+# R8, release-readiness-v1 (#3715): the committed receipts at HEAD, graded by the shape.
+# Under a RECORDED operator emergency scope (C280.4) the wrapper still runs and its verdict is printed
+# as EVIDENCE, exactly as the model matrix is under R7's scope: it is not the gate for that release.
+# Without a recorded scope R8 is unchanged: ENFORCE PASS or refuse.
+# rule_r8 root version head -> prints its rows; 0 accepted, 1 refused
+rule_r8() {
+    local root="$1" version="$2" head="$3" wrapper receipt out rc
+    wrapper="${PUBLISH_PREFLIGHT_READINESS:-$root/scripts/release/release_readiness.sh}"
+    if [ ! -f "$wrapper" ]; then
+        echo "FAIL  R8 no release-readiness wrapper at $wrapper: the release evidence cannot be graded"
+        return 1
+    fi
+    # The STANDING RELEASE POLICY covers this version: R8 is not run at all (no evidence state on the
+    # release path). CRUX smoke under R7 is the gate; the larger rows are the nightly's, ticketed on red.
+    if [ "${POL_APPLIES:-0}" = 1 ]; then
+        echo "ok    R8 STANDING RELEASE POLICY covers $version: release-readiness was not run; CRUX smoke (R7) is the release gate"
+        R8_SCOPED=1
+        return 0
+    fi
+    receipt="$(newest_receipt "${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}")"
+    out="$(bash "$wrapper" --root "$root" --version "$version" --commit "$head" ${receipt:+--dogfood-receipt "$receipt"} 2>&1)"; rc=$?
+    if scope_recorded "$root" "$version" "${SCOPE:-}"; then
+        printf '        evidence only (NOT the verdict under the emergency scope): release-readiness wrapper rc %s\n%s\n' "$rc" \
+            "$(printf '%s\n' "$out" | sed 's/^/          evidence /')"
+        echo "ok    R8 OPERATOR EMERGENCY SCOPE $SCOPE recorded for $version: release-readiness ran (rc $rc), printed above as EVIDENCE; it is NOT the gate for $version"
+        R8_SCOPED=1
+        return 0
+    fi
+    printf '%s\n' "$out"
+    if [ "$rc" -ne 0 ]; then
+        echo "FAIL  R8 the release-readiness wrapper exited $rc (1 Fail, 2 could not judge, 3 caller error): none is a pass"
+        return 1
+    fi
+    # R10/L19 (operator 2026-09-28): report-only is a waiver and a waiver is a stop. rc 0 alone is not
+    # a pass: the wrapper must have printed the enforced Pass for exactly this version and HEAD.
+    # A here-string, never `printf | grep -q`: grep -q exits at its first match, printf takes SIGPIPE,
+    # and pipefail turns a FOUND WARN row into a miss (row r8_warn_ahead_of_2mib_refuses).
+    if grep -qE '^WARN +R8 ' <<< "$out"; then
+        echo "FAIL  R8 the release-readiness wrapper printed a WARN R8 row: report-only is a waiver, not a pass"
+        return 1
+    fi
+    if ! grep -qF "ok    R8 #3715 ENFORCE PASS version=$version commit=$head pv=" <<< "$out"; then
+        echo "FAIL  R8 the release-readiness wrapper exited 0 without '#3715 ENFORCE PASS' for $version at $head"
+        return 1
+    fi
+    return 0
+}
+
+gate() {
+    local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref
+    local fails=0 status version tags head
+    R8_SCOPED=""
+    for t in git cargo python3; do
+        command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
+    done
+    if [ -z "$root" ]; then
+        root="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+    fi
+    git -C "$root" rev-parse --verify --quiet HEAD >/dev/null || die_env "$root is not a git repository with a HEAD"
+    head="$(git -C "$root" rev-parse HEAD)"
+
+    # R1 clean tree
+    status="$(git -C "$root" status --porcelain --untracked-files=all 2>/dev/null)"
+    if [ -n "$status" ]; then
+        printf 'FAIL  R1 the tree is not clean; cargo package would ship what git never saw:\n%s\n' \
+            "$(printf '%s\n' "$status" | sed 's/^/        /' | head -n 20)"
+        fails=1
+    else
+        echo "ok    R1 clean tree (no tracked change, no untracked file)"
+    fi
+
+    # R2 version from cargo metadata
+    version="$(root_version "$root")" || version=""
+    if [ -z "$version" ]; then
+        echo "FAIL  R2 cargo metadata names no version for the root manifest"
+        fails=1
+    else
+        echo "ok    R2 version $version (cargo metadata, root manifest)"
+    fi
+
+    # The standing release policy: what both scope readers below read (policy_ladder).
+    POL_LADDER=""
+    local pol_bad=0
+    if [ -n "$version" ]; then
+        local prc=0
+        policy_ladder "$root" "$version" || prc=$?
+        case "$prc" in
+            0) [ "$POL_APPLIES" != 1 ] || echo "POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers $version: CRUX smoke under R7 is the release gate, R8 is not run, the larger ladder rows are nightly" ;;
+            *) echo "FAIL  R7/R8 the standing release policy cannot be applied to $version, so neither the scope nor the full gate can be chosen: $POL_WHY"
+               fails=1; pol_bad=1 ;;
+        esac
+    fi
+
+    # Q1: no --scope on a release whose contract RECORDS one -> that scope, for R7 and R8, at the cut
+    # HEAD -- as the judge's own auto-scope (#4086) does. An unusable record refuses.
+    if [ -z "${SCOPE:-}" ] && [ -n "$version" ] && [ "$pol_bad" = 0 ]; then
+        local rrc
+        recorded_scope_name "$root" "$version"; rrc=$?
+        case "$rrc" in
+            0) SCOPE="$REC_NAME"
+               echo "SCOPED: $SCOPE -- the operator emergency scope recorded for release $version in contracts/model-capability-ladder-v1.yaml applies (no --scope given): R7 and R8 judge under it, at the cut HEAD" ;;
+            1) : ;;
+            *) echo "FAIL  R7/R8 the emergency scope recorded for $version is unusable, so neither the scope nor the full gate can be chosen: $REC_WHY"
+               fails=1 ;;
+        esac
+    fi
+
+    # R3 the tag points at HEAD
+    tags="$(git -C "$root" tag --points-at HEAD 2>/dev/null)"
+    # -F: the version is a string, not a pattern. With -x alone `v1-2-3` on HEAD
+    # satisfied `v1.2.3` (second review of #2859, tag-regex-injection).
+    if [ -n "$version" ] && grep -Fqx -- "v$version" <<<"$tags"; then
+        echo "ok    R3 tag v$version points at HEAD ${head:0:9}"
+    else
+        printf 'FAIL  R3 tag v%s does not point at HEAD %s (tags here: %s)\n' \
+            "${version:-?}" "${head:0:9}" "${tags:-none}"
+        fails=1
+    fi
+
+    # R4 HEAD is on the release branch of THIS version (#4286), not main: main is
+    # merge-back's check (#4224). No version, no release ref to judge: refuse.
+    release_ref="${PUBLISH_PREFLIGHT_RELEASE_REF:-origin/release/${version:-?}}"
+    if [ -n "$version" ] \
+       && git -C "$root" rev-parse --verify --quiet "${release_ref}^{commit}" >/dev/null \
+       && git -C "$root" merge-base --is-ancestor "$head" "$release_ref" 2>/dev/null; then
+        echo "ok    R4 HEAD is an ancestor of $release_ref"
+    else
+        echo "FAIL  R4 HEAD ${head:0:9} is not an ancestor of $release_ref (or that ref does not exist)"
+        fails=1
+    fi
+
+    # R5 dogfood receipt: GO, this commit, this version
+    rule_r5 "$root" "$head" "$version" || fails=1
+
+    rule_r6 "$root" || fails=1
 
     # R7 the model matrix, re-read at T-4 through the T-1 judge (#3717)
     rule_r7 "$root" "$version" || fails=1
 
+    # R8 release-readiness-v1 over the committed evidence (#3715)
+    rule_r8 "$root" "$version" "$head" || fails=1
+
+    rm_pol_ladder "$root"
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
     fi
     if [ -n "${SCOPE:-}" ]; then
-        echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate)"
+        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate${R8_SCOPED:+; release-readiness was NOT the gate})"
     else
-        echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
+        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, model matrix green"
     fi
     return 0
+}
+
+# --graph-only (#4287): R2 + R6 on PUBLISH_PREFLIGHT_ROOT, the rc cut's end of the
+# publish graph. R1/R3/R4/R5/R7 describe the upload (a tag, the release branch, receipts) and are
+# judged at T-4 as before.
+graph_gate() {
+    local root="${PUBLISH_PREFLIGHT_ROOT:-}" version
+    for t in cargo python3; do
+        command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
+    done
+    if [ -z "$root" ]; then
+        root="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+    fi
+    [ -f "$root/Cargo.toml" ] || die_env "$root has no Cargo.toml"
+    version="$(root_version "$root")" || version=""
+    if [ -z "$version" ]; then
+        echo "FAIL  R2 cargo metadata names no version for the root manifest"
+        echo "REFUSE $PROG --graph-only: no version to judge."
+        return 1
+    fi
+    echo "ok    R2 version $version (cargo metadata, root manifest)"
+    if ! rule_r6 "$root"; then
+        echo "REFUSE $PROG --graph-only: the publish graph of $version cannot be uploaded (R6)."
+        return 1
+    fi
+    echo "PASS  $PROG --graph-only: R6 holds at $version (R1/R3/R4/R5/R7 are judged at publish)"
 }
 
 # --receipt-only (#3708): R2 + R5 and nothing else. R1/R3/R4/R6 describe the tree
@@ -422,6 +628,7 @@ selftest() {
         git -C "$d" add -A
         git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
         git -C "$d" tag v1.2.3
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
@@ -434,7 +641,7 @@ selftest() {
         mkdir -p "$1/scripts"
         cat > "$1/scripts/check_model_ladder.sh" <<'FXJUDGE'
 #!/usr/bin/env bash
-if [ "${3:-}" = "--scope" ]; then
+if [ "${3:-}" = "--scope" ] && [ "${4:-}" != none ]; then
     [ "${1:-} ${2:-} ${4:-} ${5:-}" = "--version 1.2.3 crux-smoke --cut-commit" ] || { echo "FAIL  judge scope call: $*"; exit 1; }
     [ "${6:-}" = "$(git rev-parse "${FX_EXPECT_CUT:-HEAD}")" ] || { echo "FAIL  judge asked about cut ${6:-}"; exit 1; }
     echo "OPERATOR EMERGENCY SCOPE: CRUX smoke only -- release 1.2.3 (fixture)"
@@ -442,9 +649,33 @@ if [ "${3:-}" = "--scope" ]; then
     exit "${FX_SCOPE_RC:-0}"
 fi
 [ "${1:-} ${2:-}" = "--version 1.2.3" ] || { echo "FAIL  judge asked about: $*"; exit 1; }
+# the real judge's #4086: a bare call on a release the contract records a scope for judges that SCOPE,
+# not the matrix; `--scope none` forces the matrix
+if [ -z "${3:-}" ] && grep -qs 'release: "1.2.3"' contracts/model-capability-ladder-v1.yaml; then
+    echo "SCOPED: crux-smoke (fixture)"; exit "${FX_SCOPE_RC:-0}"
+fi
 [ "${FX_LADDER_RC:-0}" = 0 ] || echo "FAIL  fx-rung red on lambda"
 exit "${FX_LADDER_RC:-0}"
 FXJUDGE
+        # R8's wrapper: it must be asked about THIS root, version 1.2.3, HEAD and the newest dogfood
+        # receipt, and it answers FX_READINESS_RC (default 0, with the enforced-Pass line). FX_READINESS_WARN=1
+        # prints a WARN R8 row and exits 0: only a hand-edited wrapper can, and R8 refuses it (R10).
+        # FX_READINESS_NO_ENFORCE=1 exits 0 without the enforced-Pass line: refused too.
+        mkdir -p "$1/scripts/release"
+        cat > "$1/scripts/release/release_readiness.sh" <<'FXREADY'
+#!/usr/bin/env bash
+me="$(cd "$(dirname "$0")/../.." && pwd -P)"
+[ "${1:-}" = --root ] && [ "${2:-}" -ef "$me" ] || { echo "FAIL  R8 wrapper asked about root ${2:-}, not $me"; exit 3; }
+want="--version 1.2.3 --commit $(git -C "$me" rev-parse HEAD) --dogfood-receipt"
+case "${*:3}" in "$want "*.dogfood/receipt-*.json) : ;; *) echo "FAIL  R8 wrapper asked: $*"; exit 3 ;; esac
+[ "${FX_READINESS_WARN:-0}" = 1 ] && echo "WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail, 3 violation(s): cell=3"
+# FX_READINESS_WARN_BIG=1: a WARN R8 row, then 2 MiB, then the Pass lines and exit 0 (a pipe into grep -q loses the WARN)
+[ "${FX_READINESS_WARN_BIG:-0}" = 1 ] && { echo "WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail, 1 violation(s): cell=1"; head -c 2097152 /dev/zero | tr '\0' '\n'; }
+[ "${FX_READINESS_RC:-0}" = 0 ] && [ "${FX_READINESS_WARN:-0}" = 0 ] && echo "ok    R8 release-readiness-v1 for 1.2.3: Pass"
+[ "${FX_READINESS_RC:-0}" = 0 ] && [ "${FX_READINESS_WARN:-0}" = 0 ] && [ "${FX_READINESS_NO_ENFORCE:-0}" = 0 ] \
+    && echo "ok    R8 #3715 ENFORCE PASS version=1.2.3 commit=$(git -C "$me" rev-parse HEAD) pv=pv-fixture out_sha256=0"
+exit "${FX_READINESS_RC:-0}"
+FXREADY
     }
     write_receipt() { # dir, verdict, commit, version [, phase, deferred-json-array, open-obligations-json-array]
         printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"phase":"%s","deferred":%s,"open_obligations":%s,"verdict":"%s"}\n' \
@@ -472,12 +703,13 @@ FXJUDGE
         git -C "$d" add -A
         git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
         git -C "$d" tag v1.2.3
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
     row() { # name, expect(0|1), needle, dir [, gate|receipt_gate]
         local name="$1" expect="$2" needle="$3" d="$4" mode="${5:-gate}" out rc=0
-        out="$( PUBLISH_PREFLIGHT_ROOT="$d" PUBLISH_PREFLIGHT_MAIN_REF=fixture-main "$mode" 2>&1 )" || rc=$?
+        out="$( PUBLISH_PREFLIGHT_ROOT="$d" "$mode" 2>&1 )" || rc=$?
         if [ "$rc" != "$expect" ]; then
             printf '  BROKE %-36s expected exit %s got %s\n' "$name" "$expect" "$rc"; fail=$((fail + 1)); return 0
         fi
@@ -508,26 +740,22 @@ FXJUDGE
     d="$tmp/branch"; build_repo "$d"; git -C "$d" checkout -q -b topic
     printf 'pub fn k() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    row head_off_main_refuses          1 "FAIL  R4" "$d"
+    row head_off_release_branch_refuses 1 "FAIL  R4 HEAD" "$d"
 
-    # R4 by CONTENT: main's merge queue squashes, so the cut is never an ancestor of main.
-    sq() { # dir: topic commit squash-merged onto fixture-main, HEAD left on the topic (the cut)
-        local d="$1"; build_repo "$d"; git -C "$d" checkout -q -b topic
-        printf 'pub fn k() {}\n' >> "$d/src/lib.rs"
-        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
-        git -C "$d" checkout -q fixture-main; git -C "$d" merge -q --squash topic >/dev/null
-        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'squash' >/dev/null
-    }
-    sq_finish() { git -C "$1" checkout -q topic; git -C "$1" tag -f v1.2.3 >/dev/null; write_receipt "$1" GO "$(git -C "$1" rev-parse HEAD)" 1.2.3; }
-    d="$tmp/squash"; sq "$d"; sq_finish "$d"
-    row squash_merged_content_passes   0 "ok    R4 cut content in main via squash" "$d"
-    d="$tmp/squash-docs"; sq "$d"; printf 'notes\n' > "$d/NOTES.md"; git -C "$d" add NOTES.md
-    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'docs on main' >/dev/null; sq_finish "$d"
-    row squash_then_docs_on_main_passes 0 "ok    R4 cut content in main via squash" "$d"
-    d="$tmp/squash-drift"; sq "$d"; printf 'pub fn z() {}\n' >> "$d/src/lib.rs"
-    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'crate change on main' >/dev/null; sq_finish "$d"
-    row squash_then_crate_file_differs_refuses 1 "FAIL  R4" "$d"
-    row squash_then_crate_file_names_it 1 "        src/lib.rs" "$d"
+    # R4 (#4286, cop ruling 2026-09-24): the release branch, not main. An rc commit on
+    # release/1.2.3 that main does not contain yet passes; main containing HEAD does not
+    # rescue a missing release ref; another version's release branch does not count.
+    d="$tmp/rc-on-release"; build_repo "$d"; git -C "$d" checkout -q -b release-1.2.3
+    printf 'pub fn r() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'rc fix' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    ! git -C "$d" merge-base --is-ancestor HEAD fixture-main || { echo "  BROKE fixture: rc commit is on main"; fail=$((fail + 1)); }
+    row rc_on_release_not_main_passes  0 "ok    R4 HEAD is an ancestor of origin/release/1.2.3" "$d"
+    d="$tmp/no-release-ref"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
+    row release_ref_absent_on_main_refuses 1 "FAIL  R4" "$d"
+    d="$tmp/other-release"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.4 HEAD
+    row other_versions_release_refuses 1 "not an ancestor of origin/release/1.2.3" "$d"
 
     d="$tmp/nogo"; build_repo "$d"; write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row dogfood_no_go_refuses          1 "FAIL  R5" "$d"
@@ -602,6 +830,13 @@ FXJUDGE
     row versioned_sibling_devdep_acyclic_passes 0 "fx-a -> fx-b" "$d"
     d="$tmp/devdep_path"; build_ws_repo "$d" ''
     row pathed_sibling_devdep_passes   0 "PASS" "$d"
+    # --graph-only (#4287), both polarities: the rc cut refuses the same cycle, and passes
+    # an untagged tree off its release branch that the full gate would refuse on R3/R4.
+    d="$tmp/devdep_cycle"; row graph_only_cycle_refuses      1 "FAIL  R6" "$d" graph_gate
+    d="$tmp/devdep_version"; git -C "$d" tag -d v1.2.3 >/dev/null
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -q --allow-empty -m 'off release' >/dev/null
+    row graph_only_acyclic_untagged_passes 0 "PASS  $PROG --graph-only" "$d" graph_gate
+    row graph_only_control_full_gate_refuses 1 "FAIL  R3" "$d"
 
     # R7 (#3717): the committed model-matrix receipts, judged by the T-1 judge. all_rules_hold above
     # is the green row (the stub refuses any version but 1.2.3, so it also proves the argument).
@@ -613,6 +848,140 @@ FXJUDGE
     git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no judge' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row r7_judge_absent_refuses        1 "FAIL  R7 no model-matrix judge" "$d"
+
+    # R8 (#3715): the release-readiness wrapper over the committed evidence. all_rules_hold above is the
+    # green row (the stub exits 3 unless it is asked about this root, 1.2.3, HEAD and the dogfood receipt).
+    d="$tmp/r8"; build_repo "$d"
+    row r8_pass_is_named                  0 "ok    R8 release-readiness-v1 for 1.2.3: Pass" "$d"
+    FX_READINESS_WARN=1 row r8_report_mode_warn_refuses 1 "report-only is a waiver" "$d"
+    FX_READINESS_WARN_BIG=1 row r8_warn_ahead_of_2mib_refuses 1 "report-only is a waiver" "$d"
+    FX_READINESS_NO_ENFORCE=1 row r8_rc0_without_enforce_pass_refuses 1 "without '#3715 ENFORCE PASS'" "$d"
+    FX_READINESS_RC=1 row r8_enforced_fail_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_READINESS_RC=2 row r8_could_not_judge_refuses 1 "FAIL  R8 the release-readiness wrapper exited 2" "$d"
+    FX_READINESS_RC=3 row r8_caller_error_refuses 1 "FAIL  R8 the release-readiness wrapper exited 3" "$d"
+    d="$tmp/r8-absent"; build_repo "$d"; git -C "$d" rm -q scripts/release/release_readiness.sh
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no wrapper' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r8_wrapper_absent_refuses      1 "FAIL  R8 no release-readiness wrapper" "$d"
+    # R8 under a RECORDED operator emergency scope (C280.4, 0.70.1): the wrapper still runs, its verdict
+    # and rc are printed as EVIDENCE (as R7's model matrix is), and it is not the gate. "Recorded" = the
+    # ladder contract names exactly this scope for exactly this release, read by the judge's OWN reader
+    # (copied from this checkout). `--scope` alone is not a record, and a record alone relaxes nothing.
+    record_scope() { # dir, release... -- one crux-smoke entry per release given, committed on top
+        local d="$1"; shift
+        # bashrs SEC010: self-test fixture: $d is under this script's own mktemp -d dir.
+        # bashrs disable-next-line=SEC010
+        mkdir -p "$d/contracts" "$d/scripts/lib"
+        # bashrs SEC010,SEC014: the sources are this checkout's own reader files; $d is the mktemp -d fixture above.
+        # bashrs disable-next-line=SEC010,SEC014
+        cp -- "$SCRIPT_DIR/lib/crux_smoke_scope.py" "$SCRIPT_DIR/lib/model_ladder_crux.py" "$d/scripts/lib/"
+        printf 'ladder:\n  emergency_scopes:\n' > "$d/contracts/model-capability-ladder-v1.yaml"
+        printf '    - name: crux-smoke\n      release: "%s"\n' "$@" >> "$d/contracts/model-capability-ladder-v1.yaml"
+        git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'scope' >/dev/null
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+        git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    }
+    d="$tmp/r8-scoped"; build_repo "$d"; record_scope "$d" 1.2.3
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scoped_fail_is_evidence 0 "ok    R8 OPERATOR EMERGENCY SCOPE crux-smoke recorded for 1.2.3: release-readiness ran (rc 1)" "$d"
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scoped_prints_the_wrapper_rc 0 "evidence only (NOT the verdict under the emergency scope): release-readiness wrapper rc 1" "$d"
+    FX_READINESS_WARN=1 SCOPE=crux-smoke row r8_scoped_prints_the_wrapper_rows 0 "evidence WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail" "$d"
+    FX_READINESS_NO_ENFORCE=1 SCOPE=crux-smoke row r8_scoped_no_enforce_pass_is_evidence 0 "release-readiness ran (rc 0)" "$d"
+    FX_READINESS_RC=2 SCOPE=crux-smoke row r8_scoped_could_not_judge_is_evidence 0 "release-readiness ran (rc 2)" "$d"
+    FX_READINESS_RC=3 SCOPE=crux-smoke row r8_scoped_caller_error_is_evidence 0 "release-readiness ran (rc 3)" "$d"
+    SCOPE=crux-smoke row r8_scoped_pass_is_printed_too 0 "evidence ok    R8 #3715 ENFORCE PASS version=1.2.3" "$d"
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scoped_gate_names_readiness 0 "release-readiness was NOT the gate" "$d"
+    # ... and the other way: every case that is not a recorded scope keeps R8 exactly as it was
+    # (a record with NO --scope engages the scope since Q1: its rows are the auto_scope_* block below)
+    FX_READINESS_RC=1 SCOPE=other-scope row r8_unrecorded_scope_name_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scope_without_a_contract_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$tmp/r8"
+    d="$tmp/r8-other-release"; build_repo "$d"; record_scope "$d" 0.69.1
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_scope_of_another_release_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_READINESS_NO_ENFORCE=1 SCOPE=crux-smoke row r8_scope_of_another_release_no_enforce_refuses 1 "without '#3715 ENFORCE PASS'" "$d"
+    d="$tmp/r8-two-records"; build_repo "$d"; record_scope "$d" 1.2.3 1.2.3
+    FX_READINESS_RC=1 SCOPE=crux-smoke row r8_two_records_for_one_release_refuse 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    d="$tmp/r8-scoped-absent"; build_repo "$d"; record_scope "$d" 1.2.3; git -C "$d" rm -q scripts/release/release_readiness.sh
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no wrapper' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    SCOPE=crux-smoke row r8_scoped_wrapper_absent_refuses 1 "FAIL  R8 no release-readiness wrapper" "$d"
+    # Q1: NO --scope on a release whose contract records one. cascade-publish.sh and autopilot's T-4 run
+    # this gate bare; the record alone engages the scope, as the judge's #4086 auto-scope does, at the cut HEAD.
+    d="$tmp/auto-scoped"; build_repo "$d"; record_scope "$d" 1.2.3
+    row auto_scope_is_printed 0 "SCOPED: crux-smoke -- the operator emergency scope recorded for release 1.2.3" "$d"
+    FX_READINESS_RC=1 row auto_scope_r8_readiness_is_evidence 0 "ok    R8 OPERATOR EMERGENCY SCOPE crux-smoke recorded for 1.2.3: release-readiness ran (rc 1)" "$d"
+    FX_READINESS_WARN=1 row auto_scope_r8_warn_is_evidence 0 "evidence WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail" "$d"
+    FX_LADDER_RC=1 row auto_scope_r7_judges_the_scope_at_head 0 "CRUX smoke satisfied at the cut" "$d"
+    FX_SCOPE_RC=1 row auto_scope_red_refuses 1 "FAIL  R7 OPERATOR EMERGENCY SCOPE crux-smoke NOT satisfied" "$d"
+    FX_SCOPE_RC=2 row auto_scope_decline_refuses 1 "the judge DECLINED" "$d"
+    FX_READINESS_RC=1 row auto_scope_pass_names_both 0 "release-readiness was NOT the gate" "$d"
+    # ... and the other way: no record for THIS release, or a record that cannot be used, never relaxes
+    d="$tmp/auto-other-release"; build_repo "$d"; record_scope "$d" 0.69.1
+    FX_READINESS_RC=1 row auto_scope_other_release_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_LADDER_RC=1 row auto_scope_other_release_r7_is_matrix 1 "FAIL  R7 model matrix NOT green" "$d"
+    FX_READINESS_RC=1 row auto_scope_no_contract_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$tmp/r8"
+    d="$tmp/auto-two"; build_repo "$d"; record_scope "$d" 1.2.3 1.2.3
+    row auto_scope_two_records_refuse 1 "FAIL  R7/R8 the emergency scope recorded for 1.2.3 is unusable" "$d"
+    d="$tmp/auto-unreadable"; build_repo "$d"; record_scope "$d" 1.2.3
+    printf 'ladder: [\n' > "$d/contracts/model-capability-ladder-v1.yaml"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'unreadable' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    # bashrs PERF002: not a loop body -- one fixture line, run once.
+    # bashrs disable-next-line=PERF002
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row auto_scope_unreadable_contract_refuses 1 "the ladder contract could not be loaded" "$d"
+    # The STANDING RELEASE POLICY (`ladder.release_policy`): from `since` on, the release is scoped with no
+    # per-release record. The fixture carries this checkout's own reader (scripts/lib/release_policy*).
+    record_policy() { # dir, since [, per-release entry release | nolib]
+        local d="$1"
+        # bashrs SEC010: self-test fixture: $d is under this script's own mktemp -d dir.
+        # bashrs disable-next-line=SEC010
+        mkdir -p "$d/contracts" "$d/scripts/lib"
+        # bashrs SEC010,SEC014: the sources are this checkout's own reader files; $d is the mktemp -d fixture above.
+        # bashrs disable-next-line=SEC010,SEC014
+        cp -- "$SCRIPT_DIR/lib/crux_smoke_scope.py" "$SCRIPT_DIR/lib/model_ladder_crux.py" "$d/scripts/lib/"
+        if [ "${3:-}" != nolib ]; then
+            # bashrs disable-next-line=SEC010,SEC014
+            cp -- "$SCRIPT_DIR/lib/release_policy.sh" "$SCRIPT_DIR"/lib/release_policy_*.awk "$d/scripts/lib/"
+        fi
+        { printf 'ladder:\n  release_policy:\n    name: crux-smoke\n    since: "%s"\n    date: "2026-10-07"\n' "$2"
+          printf '    quote: "q"\n    hosts: [lambda, gx10]\n    thinking: ["off", "on"]\n    larger_rows: nightly\n'
+          printf '    red_row_needs: ticket\n    ticket_owner: "#1"\n    release_notes: known_failures\n  emergency_scopes:\n'
+          case "${3:-}" in ''|nolib) : ;; *) printf '    - name: crux-smoke\n      release: "%s"\n' "$3" ;; esac
+        } > "$d/contracts/model-capability-ladder-v1.yaml"
+        git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'policy' >/dev/null
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+        # bashrs disable-next-line=PERF002
+        git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    }
+    d="$tmp/pol-cov"; build_repo "$d"; record_policy "$d" 1.2.0
+    row policy_covers_is_printed 0 "POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers 1.2.3" "$d"
+    row policy_covers_engages_the_scope 0 "SCOPED: crux-smoke -- the operator emergency scope recorded for release 1.2.3" "$d"
+    # policy_ladder writes the granted copy with mktemp; a failed mktemp is an unreadable policy, never "no policy".
+    TMPDIR="$tmp/no-such-dir" row policy_mktemp_failed_refuses 1 "mktemp failed, so the policy ladder could not be written" "$d"
+    FX_LADDER_RC=1 row policy_r7_judges_the_scope 0 "CRUX smoke satisfied at the cut" "$d"
+    FX_SCOPE_RC=1 row policy_scope_red_refuses 1 "FAIL  R7 OPERATOR EMERGENCY SCOPE crux-smoke NOT satisfied" "$d"
+    FX_READINESS_RC=1 row policy_r8_is_not_the_gate 0 "release-readiness was NOT the gate" "$d"
+    FX_READINESS_RC=1 row policy_r8_is_not_run 0 "ok    R8 STANDING RELEASE POLICY covers 1.2.3: release-readiness was not run" "$d"
+    d="$tmp/pol-rc"; build_repo "$d"; record_policy "$d" 1.2.3
+    row policy_since_equal_covers 0 "POLICY: crux-smoke" "$d"
+    d="$tmp/pol-later"; build_repo "$d"; record_policy "$d" 1.2.4
+    FX_READINESS_RC=1 row policy_later_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_LADDER_RC=1 row policy_later_r7_is_matrix 1 "FAIL  R7 model matrix NOT green" "$d"
+    d="$tmp/pol-dup"; build_repo "$d"; record_policy "$d" 1.2.0 1.2.3
+    row policy_and_record_refuse 1 "one release takes one ruling" "$d"
+    FX_READINESS_RC=1 row policy_and_record_no_scope 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    d="$tmp/pol-nolib"; build_repo "$d"; record_policy "$d" 1.2.0 nolib
+    row policy_without_reader_refuses 1 "has no scripts/lib/release_policy.sh to read it" "$d"
+    # the model matrix is still EVIDENCE on a recorded release, scope engaged by the record or by the flag
+    d="$tmp/auto-scoped"
+    FX_LADDER_RC=1 row auto_scope_keeps_the_matrix_as_evidence 0 "evidence FAIL  fx-rung red on lambda" "$d"
+    FX_LADDER_RC=1 SCOPE=crux-smoke row scope_on_a_recorded_release_keeps_matrix 0 "evidence FAIL  fx-rung red on lambda" "$d"
+    # the wrapper's own table: modes, exit mapping, the receipts-commit rule (runs wherever this selftest runs)
+    if ( TMPDIR="${TMPDIR:-/tmp}" bash "$SCRIPT_DIR/release/release_readiness.sh" --selftest >/dev/null 2>&1 ); then
+        printf '  ok    %-36s release_readiness.sh --selftest green\n' r8_wrapper_selftest; pass=$((pass + 1))
+    else
+        printf '  BROKE %-36s release_readiness.sh --selftest RED\n' r8_wrapper_selftest; fail=$((fail + 1))
+    fi
 
     # R7 under the recorded operator EMERGENCY SCOPE (--scope crux-smoke). The scope's own must-REDs
     # (another release, receipts from another binary, a host missing) live in the judge's reader,
@@ -631,6 +1000,7 @@ FXJUDGE
     # bashrs disable-next-line=SEC010
     mkdir -p "$d/evidence/crux/1.2.3"; printf '{}\n' > "$d/evidence/crux/1.2.3/lambda-gpu.json"
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'receipts' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD  # R4 (#4286): the release branch carries the commit
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_cut_below_evidence_commit_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke row scope_head_is_not_the_cut_refuses 1 "judge asked about cut" "$d"
@@ -646,6 +1016,7 @@ FXJUDGE
     # bashrs disable-next-line=SEC010
     printf '# tooling\n' > "$d/scripts/new_tool.sh"; mkdir -p "$d/contracts"; printf 'x: 1\n' > "$d/contracts/c.yaml"
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'tooling' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD  # R4 (#4286): the release branch carries the commit
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_tooling_after_the_cut_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
     d="$tmp/sc-badcut"; build_repo "$d"
@@ -686,6 +1057,7 @@ done
 case "$MODE" in
     --selftest) selftest ;;
     --receipt-only) receipt_gate ;;
+    --graph-only) graph_gate ;;
     '')         gate ;;
     -h|--help)  sed -n '2,48p' "$0" ;;
     *)          printf '%s: unknown argument %s\n' "$PROG" "$MODE" >&2; exit 2 ;;

@@ -24,7 +24,7 @@ use std::process::ExitCode;
 /// Trueno development task runner.
 #[derive(Debug, Parser)]
 #[command(
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
     about = "Trueno development task runner (xtask pattern)",
     long_about = "Trueno development task runner (xtask pattern).\n\n\
                   Normally invoked as `cargo xtask <COMMAND>`."

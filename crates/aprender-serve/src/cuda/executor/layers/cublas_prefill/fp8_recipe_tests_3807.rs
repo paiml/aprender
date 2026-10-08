@@ -42,7 +42,7 @@ fn quantizer_inputs() -> Vec<f32> {
     let grid: Vec<f64> = (0u8..=0x7E).map(e4m3_decode).collect();
     let mut xs = Vec::new();
     for w in grid.windows(2) {
-        let mid = (w[0] + w[1]) / 2.0;
+        let mid = f64::midpoint(w[0], w[1]);
         let eps = (w[1] - w[0]) * 1e-3;
         xs.extend([w[0], mid, mid - eps, mid + eps]);
     }

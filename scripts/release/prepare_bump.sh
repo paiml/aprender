@@ -13,6 +13,149 @@
 # §4.1 (freeze: open milestone items move to the next milestone with slipped_from:) is done by hand before this.
 set -uo pipefail
 die() { printf 'STOP %s\n' "$*" >&2; exit 1; }
+# The conventional-commit group of a merged PR: fix -> Fixed, feat -> Added, anything else -> Changed.
+PB_JQ_GROUP='def group: ((.title | capture("^(?<k>\\w+)(\\([^)]*\\))?!?:").k | ascii_downcase) // "")
+    | if . == "fix" then "Fixed" elif . == "feat" then "Added" else "Changed" end;'
+
+# pb_section MERGED_JSON VERSION MARK OUT -> the CHANGELOG [VERSION] draft in OUT; prints the tally
+pb_section() {
+    local day; day=$(date -u +%F) || return 1  # bashrs disable-line=DET002
+    jq -r --arg v "$2" --arg mark "$3" --arg day "$day" "$PB_JQ_GROUP"'
+        [sort_by(.number)[] | {g: group, l: "- \(.title) (#\(.number))"}] as $p
+        | ["## [\($v)] - \($day)", "", $mark, ""]
+          + ([["Added", "Fixed", "Changed"][] as $g | [$p[] | select(.g == $g) | .l]
+              | if . == [] then [] else ["### \($g)", ""] + . + [""] end] | add)
+        | .[:-1][]' "$1" > "$4" || return 1
+    jq -r "$PB_JQ_GROUP"' [.[] | group] as $g
+        | "\(length) merged PRs since the last tag: "
+          + (["Added", "Fixed", "Changed"] | map(. as $n | "\($n) \([$g[] | select(. == $n)] | length)") | join(", "))' "$1"
+}
+
+# pb_splice CHANGELOG SECTION -> SECTION inserted under the one `## [Unreleased]` line; 1 if not exactly one
+pb_splice() {
+    local s sec rest anchor=$'## [Unreleased]\n'
+    s=$(cat -- "$1" && printf x) || return 1
+    s=${s%x}
+    sec=$(cat -- "$2") || return 1
+    # python's text mode read \r\n and a lone \r as \n; keep that (#4352)
+    s=${s//$'\r\n'/$'\n'}; s=${s//$'\r'/$'\n'}; sec=${sec//$'\r\n'/$'\n'}; sec=${sec//$'\r'/$'\n'}
+    sec=${sec%"${sec##*[!$'\n']}"}
+    rest=${s#*"$anchor"}
+    if [ "$rest" = "$s" ] || [[ $rest == *"$anchor"* ]]; then
+        echo "CHANGELOG has no single [Unreleased] anchor" >&2; return 1
+    fi
+    printf '%s' "${s%%"$anchor"*}$anchor"$'\n'"$sec"$'\n'"$rest" > "$1"
+}
+
+# pb_policy_covers ROOT VERSION -> rc 0 the standing release policy (ladder.release_policy) covers VERSION,
+# 1 it does not, 2 the policy could not be read (never "not covered").
+pb_policy_covers() {
+    local root=$1 v=$2
+    ( . "$root/scripts/lib/release_policy.sh" || exit 2
+      t=$(mktemp) || exit 2
+      release_policy_ladder "$root/contracts/model-capability-ladder-v1.yaml" "$v" > "$t"; r=$?
+      lad=$(cat "$t"); rm -f "${t:?}"
+      [ -z "$lad" ] || [ "$lad" = "$root/contracts/model-capability-ladder-v1.yaml" ] || rm -f "${lad:?}"
+      [ "$r" = 0 ] || { echo "release policy: $RP_WHY" >&2; exit 2; }
+      [ "$RP_APPLIES" = 1 ] )
+}
+# pb_carry_cert ROOT VERSION BASE -> under the standing release policy, ROOT/evidence/crux/VERSION/ holds the CRUX
+# prompt certification the models lane requires at the release commit (models_t1.sh crux mode). 0.70.1 carried it
+# by hand: the newest earlier version's certification, apr_commit set to the tree it was cut from, the inventory
+# verbatim. A certification for a different prompt set is not carried: that needs a new certification run.
+# rc 0 carried, present already, or not covered; 1 refused (no earlier certification, prompts changed);
+# 2 the policy or a file could not be read.
+pb_carry_cert() {
+    local root=$1 v=$2 base=$3 dst src prev p pv vc lad got want
+    pb_policy_covers "$root" "$v" || { [ $? = 1 ] && { echo "CERT not carried: the standing release policy does not cover $v"; return 0; }; return 2; }
+    dst="$root/evidence/crux/$v"
+    if [ -f "$dst/prompt-certification.json" ]; then echo "CERT present: $dst/prompt-certification.json"; return 0; fi
+    . "$root/scripts/lib/release_policy.sh" || return 2
+    vc=$(rp_core "$v") || return 2
+    prev=""
+    for p in "$root"/evidence/crux/*/prompt-certification.json; do
+        [ -f "$p" ] && [ -f "${p%.json}-inventory.json" ] || continue
+        pv=${p%/prompt-certification.json}; pv=${pv##*/}
+        pv=$(rp_core "$pv") || continue
+        [ "$pv" != "$vc" ] && rp_ge "$vc" "$pv" || continue
+        [ -z "$prev" ] || [ "$(printf '%s\n%s\n' "${prev%%	*}" "$pv" | sort -V | tail -n 1)" = "$pv" ] && prev="$pv	$p"
+    done
+    [ -n "$prev" ] || { echo "CERT refused: no earlier evidence/crux/<version>/prompt-certification.json below $v to carry" >&2; return 1; }
+    src=${prev#*	}
+    want=$(jq -er .prompts_sha256 "$src") && p=$(jq -er .prompts "$src") || { echo "CERT refused: $src names no prompts or prompts_sha256" >&2; return 2; }
+    got=$(sha256sum < "$root/$p" 2>/dev/null | cut -d' ' -f1) || got=""
+    [ "$got" = "$want" ] || { echo "CERT refused: $p is not the prompt set $src certified (sha256 ${got:-unreadable}, certified $want) -- run a new certification" >&2; return 1; }
+    mkdir -p "$dst" && cp -- "${src%.json}-inventory.json" "$dst/prompt-certification-inventory.json" \
+        && jq --arg c "$base" '.apr_commit = $c' "$src" > "$dst/prompt-certification.json" || return 2
+    echo "CERT carried: $src -> $dst (apr_commit $base)"
+}
+
+pb_self_test() {
+    local d fail=0 got; d=$(mktemp -d) || return 2
+    printf '%s' '[{"number":4,"title":"fixup: d"},{"number":1,"title":"Fix(x)!: a"},{"number":2,"title":"feat: b"},{"number":3,"title":"chore: c"}]' > "$d/m.json"
+    got=$(pb_section "$d/m.json" 9.9.9 MARK "$d/s.md")
+    if [ "$got" = "4 merged PRs since the last tag: Added 1, Fixed 1, Changed 2" ]; then echo "  ok   section tally groups fix/feat/other"
+    else echo "  FAIL section tally: $got"; fail=1; fi
+    got=$(grep -v '^## \[' "$d/s.md" | tr '\n' '|')
+    if [ "$got" = "|MARK||### Added||- feat: b (#2)||### Fixed||- Fix(x)!: a (#1)||### Changed||- chore: c (#3)|- fixup: d (#4)|" ]; then echo "  ok   section: Added, Fixed, Changed in order, PRs by number, fixup is not fix"
+    else echo "  FAIL section body: $got"; fail=1; fi
+    printf '# C\n## [Unreleased]\nold\n' > "$d/c.md"; printf 'NEW\n\n' > "$d/n.md"
+    if pb_splice "$d/c.md" "$d/n.md" && [ "$(tr '\n' '|' < "$d/c.md")" = "# C|## [Unreleased]||NEW|old|" ]; then echo "  ok   splice lands under the one [Unreleased] line"
+    else echo "  FAIL splice: $(tr '\n' '|' < "$d/c.md")"; fail=1; fi
+    printf '## [Unreleased]\n## [Unreleased]\n' > "$d/c.md"
+    if pb_splice "$d/c.md" "$d/n.md" 2>/dev/null; then echo "  FAIL splice accepted two [Unreleased] anchors"; fail=1; else echo "  ok   splice refuses two anchors"; fi
+    printf '# C\n' > "$d/c.md"
+    if pb_splice "$d/c.md" "$d/n.md" 2>/dev/null; then echo "  FAIL splice accepted no anchor"; fail=1; else echo "  ok   splice refuses no anchor"; fi
+    # pb_carry_cert: a fixture tree with this checkout's policy reader, a ladder per case and certifications
+    local r lib rc
+    lib="$(cd "$(dirname "$0")/.." && pwd)/lib"
+    pb_cert_tree() { # pb_cert_tree DIR POLICY(covers|none|bad) VERSIONS... -> DIR with a certification per VERSION
+        local t=$1 pol=$2 x; shift 2
+        mkdir -p "$t/scripts/lib" "$t/contracts" && cp -- "$lib/release_policy.sh" "$lib"/release_policy_*.awk "$t/scripts/lib/" || return 2
+        printf 'P1\n' > "$t/prompts.json"
+        {   printf 'ladder:\n'
+            [ "$pol" = none ] || printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: "#1"\n'
+            [ "$pol" != covers ] || printf '    release_notes: known_failures\n'
+            printf '  emergency_scopes:\n'
+        } > "$t/contracts/model-capability-ladder-v1.yaml"
+        for x in "$@"; do
+            mkdir -p "$t/evidence/crux/$x"
+            printf '{"prompts":"prompts.json","prompts_sha256":"%s","apr_commit":"old-%s"}\n' "$(sha256sum < "$t/prompts.json" | cut -d' ' -f1)" "$x" > "$t/evidence/crux/$x/prompt-certification.json"
+            printf '{"inv":"%s"}\n' "$x" > "$t/evidence/crux/$x/prompt-certification-inventory.json"
+        done
+    }
+    r="$d/c1"; pb_cert_tree "$r" covers 0.69.1 0.70.1 0.9.0 0.72.0 || return 2
+    pb_carry_cert "$r" 0.71.0 base1 > /dev/null 2>&1; rc=$?
+    if [ "$rc" = 0 ] && [ "$(jq -r .apr_commit "$r/evidence/crux/0.71.0/prompt-certification.json" 2>/dev/null)" = base1 ] \
+        && [ "$(jq -r .inv "$r/evidence/crux/0.71.0/prompt-certification-inventory.json" 2>/dev/null)" = 0.70.1 ]; then
+        echo "  ok   cert: covered 0.71.0 carries the newest earlier one (0.70.1, not 0.9.0 or 0.72.0), apr_commit = the base"
+    else echo "  FAIL cert carry (rc $rc): $(cat "$r/evidence/crux/0.71.0/"*.json 2>/dev/null | tr '\n' ' ')"; fail=1; fi
+    r="$d/c2"; pb_cert_tree "$r" none 0.70.1 || return 2
+    pb_carry_cert "$r" 0.71.0 base1 > /dev/null 2>&1; rc=$?
+    if [ "$rc" = 0 ] && [ ! -e "$r/evidence/crux/0.71.0" ]; then echo "  ok   cert: no policy -> nothing carried"
+    else echo "  FAIL cert: uncovered version (rc $rc) wrote evidence/crux/0.71.0"; fail=1; fi
+    r="$d/c3"; pb_cert_tree "$r" covers 0.70.1 0.71.0 || return 2
+    pb_carry_cert "$r" 0.71.0 base1 > /dev/null 2>&1; rc=$?
+    if [ "$rc" = 0 ] && [ "$(jq -r .apr_commit "$r/evidence/crux/0.71.0/prompt-certification.json")" = old-0.71.0 ]; then echo "  ok   cert: one already present is kept as it is"
+    else echo "  FAIL cert: a present certification was rewritten (rc $rc)"; fail=1; fi
+    r="$d/c4"; pb_cert_tree "$r" covers 0.70.1 || return 2
+    printf 'P2\n' > "$r/prompts.json"
+    pb_carry_cert "$r" 0.71.0 base1 > /dev/null 2>&1; rc=$?
+    if [ "$rc" = 1 ] && [ ! -e "$r/evidence/crux/0.71.0" ]; then echo "  ok   cert: a changed prompt set is refused, not carried"
+    else echo "  FAIL cert: changed prompts gave rc $rc"; fail=1; fi
+    r="$d/c5"; pb_cert_tree "$r" covers 0.72.0 || return 2
+    pb_carry_cert "$r" 0.71.0 base1 > /dev/null 2>&1; rc=$?
+    if [ "$rc" = 1 ] && [ ! -e "$r/evidence/crux/0.71.0" ]; then echo "  ok   cert: only a later version's -> refused (never carried backwards)"
+    else echo "  FAIL cert: no earlier certification gave rc $rc"; fail=1; fi
+    r="$d/c6"; pb_cert_tree "$r" bad 0.70.1 || return 2
+    pb_carry_cert "$r" 0.71.0 base1 > /dev/null 2>&1; rc=$?
+    if [ "$rc" = 2 ] && [ ! -e "$r/evidence/crux/0.71.0" ]; then echo "  ok   cert: an unreadable policy is rc 2, not \"no policy\""
+    else echo "  FAIL cert: unreadable policy gave rc $rc"; fail=1; fi
+    rm -rf -- "${d:?}"
+    if [ "$fail" -eq 0 ]; then echo "prepare_bump self-test: PASS"; else echo "prepare_bump self-test: FAIL"; fi
+    return "$fail"
+}
+if [ "${1:-}" = --self-test ]; then pb_self_test; exit $?; fi
 # D4/D5/D6/D7 (PMAT-3459): $0-derived root and CARGO_HOME-relative cargo. Root resolved
 # BEFORE any cd. NOT `git rev-parse --show-toplevel` — refused on a bind-mounted tree (#3586).
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || die "cannot resolve the repo root from $0"
@@ -33,32 +176,11 @@ if [ "${2:-}" != "--ship" ]; then
   cd "$B" || die "cd $B"
   bash scripts/bump-version.sh "$V" > "$AP/bump.log" 2>&1 || die "bump-version.sh $V failed ($AP/bump.log)"
   bash scripts/bump-version.sh --check >> "$AP/bump.log" 2>&1 || die "bump-version.sh --check failed after the bump"
+  pb_carry_cert "$PWD" "$V" "$(git rev-parse HEAD)" || die "the CRUX prompt certification for $V could not be carried (see above)"
   since=$(git log -1 --format=%cI "$LAST_TAG") || die "no tag $LAST_TAG"
   gh pr list --repo $REPO --state merged --search "merged:>=$since" --limit 500 --json number,title > "$AP/merged.json" || die "gh pr list failed"
-  python3 - "$AP/merged.json" "$V" "$MARK" "$AP/section.md" <<'PY'
-import datetime, json, re, sys
-prs, v, mark, out = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3], sys.argv[4]
-groups = {"Added": [], "Fixed": [], "Changed": []}
-for p in sorted(prs, key=lambda p: p["number"]):
-    m = re.match(r"(\w+)(\([^)]*\))?!?:", p["title"])
-    kind = m.group(1).lower() if m else ""
-    g = "Fixed" if kind == "fix" else "Added" if kind == "feat" else "Changed"
-    groups[g].append(f"- {p['title']} (#{p['number']})")
-day = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-lines = [f"## [{v}] - {day}", "", mark, ""]
-for g in ("Added", "Fixed", "Changed"):
-    if groups[g]:
-        lines += [f"### {g}", ""] + groups[g] + [""]
-open(out, "w").write("\n".join(lines))
-print(f"{len(prs)} merged PRs since the last tag: " + ", ".join(f"{k} {len(x)}" for k, x in groups.items()))
-PY
-  python3 - CHANGELOG.md "$AP/section.md" <<'PY'
-import sys
-p, sec = sys.argv[1], open(sys.argv[2]).read()
-s = open(p).read(); anchor = "## [Unreleased]\n"
-assert s.count(anchor) == 1, "CHANGELOG has no single [Unreleased] anchor"
-open(p, "w").write(s.replace(anchor, anchor + "\n" + sec.rstrip("\n") + "\n", 1))
-PY
+  pb_section "$AP/merged.json" "$V" "$MARK" "$AP/section.md" || die "CHANGELOG draft from $AP/merged.json failed"
+  pb_splice CHANGELOG.md "$AP/section.md" || die "CHANGELOG splice failed"
   printf 'REVIEW %s/CHANGELOG.md [%s]: replace the placeholder with the train summary, curate the bullets, then run: %s %s --ship\n' "$B" "$V" "$0" "$V"
   exit 0
 fi
@@ -93,11 +215,21 @@ bash "$CLOSES_GUARD" --body "$AP/pr_body.md" > "$AP/r2.log" 2>&1 || die "the bum
 # measured until after the tag. This script does not PRODUCE them (scripts/model_ladder.sh, on each
 # required host, with an apr built from this tree): it refuses without them, judged by the SAME
 # judge the dogfood runs. `git add -A` below commits whatever the judge read, unless it is ignored.
-bash scripts/check_model_ladder.sh --version "$V" > "$AP/ladder.log" 2>&1 || {
-  grep -E '^(FAIL|decline)' "$AP/ladder.log" >&2
-  die "model-ladder receipts for $V are not green in the bump tree; nothing committed, pushed or opened ($AP/ladder.log)"
-}
-ignored=$(git ls-files --others --ignored --exclude-standard -- "evidence/dogfood/models/$V")
+# Under the standing release policy the bump carries no smoke receipts: CRUX smoke is measured at T-1
+# on the merged release commit (autopilot.sh t1_models), and the tag step and preflight R7 judge those
+# receipts. A receipt committed here would be from a pre-bump binary. The certification still rides.
+pb_policy_covers "$PWD" "$V"; prc=$?
+case $prc in
+  0) [ -f "evidence/crux/$V/prompt-certification.json" ] \
+       || die "the standing release policy covers $V but the bump tree has no evidence/crux/$V/prompt-certification.json"
+     echo "LADDER not judged at the bump: the standing release policy covers $V -- CRUX smoke is measured at T-1 on the release commit" | tee "$AP/ladder.log" ;;
+  1) bash scripts/check_model_ladder.sh --version "$V" > "$AP/ladder.log" 2>&1 || {
+       grep -E '^(FAIL|decline)' "$AP/ladder.log" >&2
+       die "model-ladder receipts for $V are not green in the bump tree; nothing committed, pushed or opened ($AP/ladder.log)"
+     } ;;
+  *) die "the standing release policy cannot be judged for $V; nothing committed, pushed or opened" ;;
+esac
+ignored=$(git ls-files --others --ignored --exclude-standard -- "evidence/dogfood/models/$V" "evidence/crux/$V")
 [ -z "$ignored" ] || die "model-ladder receipts for $V are gitignored, so the bump would not commit them: $ignored"
 cargo_bin() { "${CARGO_HOME:-$HOME/.cargo}"/bin/cargo "$@"; }
 cargo_bin fmt --all -- --check > /dev/null 2>&1 || die "cargo fmt --check failed"

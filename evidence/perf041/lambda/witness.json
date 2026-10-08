@@ -3,8 +3,8 @@
     {
       "c": 1,
       "declared_min": 64,
-      "divergence_at": 100,
-      "intra_agree_to": 128,
+      "divergence_at": 127,
+      "intra_agree_to": 127,
       "m_formed": 1,
       "max_constant_run": 1,
       "max_constant_run_declared": 16,
@@ -12,12 +12,12 @@
       "result": "PASS",
       "slots": [
         {
-          "agree_to": 100,
+          "agree_to": 127,
           "completion_tokens": 128,
           "constant_run": 1,
           "finish_reason": "length",
           "i": 0,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         }
@@ -343,8 +343,8 @@
       ]
     }
   ],
-  "binary_sha256": "e74c63f31b753e18fdee1e6ba3d1dce3a1282d73d62bf61cb70b29bb58919cd1",
-  "commit": "49fe9155a3672776d53b53bd9432636e2156f779",
+  "binary_sha256": "0ca721d8899670fa7997597b3c7d87aede4a184fc20d5abcdec9cbebdd3a0ad0",
+  "commit": "40980071333be516b6ec6683079646897e9cbcfc",
   "declared_min": 64,
   "env": {
     "APR_DECODE_GEMM": null,
@@ -368,7 +368,7 @@
   "probe": "perf041",
   "prompt_sha256": "3e31578371f85f23c8fa13b7b287e65bad7e0c09584bc79d3064feab3d1ab7e5",
   "reference": {
-    "self_divergence_at": 100,
+    "self_divergence_at": 127,
     "stable": true,
     "token_count_source": "usage",
     "tokens": 128

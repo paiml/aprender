@@ -12,9 +12,9 @@ use entrenar_inspect::{inspect, OutputFormat};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "entrenar-inspect")]
+#[command(name = "aprender-train-inspect")]
 #[command(about = "SafeTensors model inspection and format conversion")]
-#[command(version)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

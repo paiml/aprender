@@ -161,7 +161,7 @@
     fn test_execute_with_contract_gate_nonexistent() {
         let cli = Cli {
             command: Box::new(Commands::Inspect {
-                file: PathBuf::from("/tmp/nonexistent_contract_test.apr"),
+                file: PathBuf::from("/tmp/nonexistent_contract_test.apr").into(),
                 vocab: false,
                 filters: false,
                 weights: false,
@@ -207,7 +207,7 @@
     fn test_execute_rosetta_inspect_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Inspect {
-                file: PathBuf::from("/tmp/nonexistent_rosetta_inspect.gguf"),
+                file: PathBuf::from("/tmp/nonexistent_rosetta_inspect.gguf").into(),
                 hexdump: false,
                 json: false,
             },
@@ -224,8 +224,8 @@
     fn test_execute_rosetta_convert_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Convert {
-                source: PathBuf::from("/tmp/nonexistent_rosetta_convert.gguf"),
-                target: PathBuf::from("/tmp/out.safetensors"),
+                source: PathBuf::from("/tmp/nonexistent_rosetta_convert.gguf").into(),
+                target: PathBuf::from("/tmp/out.safetensors").into(),
                 quantize: None,
                 verify: false,
                 json: false,
@@ -244,7 +244,7 @@
     fn test_execute_rosetta_fingerprint_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Fingerprint {
-                model: PathBuf::from("/tmp/nonexistent_rosetta_fingerprint.gguf"),
+                model: PathBuf::from("/tmp/nonexistent_rosetta_fingerprint.gguf").into(),
                 model_b: None,
                 output: None,
                 filter: None,
@@ -263,7 +263,7 @@
     #[test]
     fn test_execute_bench_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Bench {
-            file: PathBuf::from("/tmp/nonexistent_model_bench_test.gguf"),
+            file: PathBuf::from("/tmp/nonexistent_model_bench_test.gguf").into(),
             warmup: 1,
             iterations: 1,
             max_tokens: 1,
@@ -280,8 +280,8 @@
     #[test]
     fn test_execute_eval_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Eval {
-            file: PathBuf::from("/tmp/nonexistent_model_eval_test.gguf"),
-            dataset: "wikitext-2".to_string(),
+            file: PathBuf::from("/tmp/nonexistent_model_eval_test.gguf").into(),
+            dataset: "wikitext-2".to_string().into(),
             text: None,
             max_tokens: 32,
             threshold: 20.0,
@@ -302,9 +302,9 @@
     #[test]
     fn test_execute_profile_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Profile {
-            file: PathBuf::from("/tmp/nonexistent_model_profile_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_profile_test.apr").into(),
             granular: false,
-            format: "human".to_string(),
+            format: "human".to_string().into(),
             focus: None,
             detect_naive: false,
             threshold: 10.0,
@@ -336,8 +336,8 @@
     #[test]
     fn test_execute_compare_hf_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::CompareHf {
-            file: PathBuf::from("/tmp/nonexistent_model_compare_hf_test.apr"),
-            hf: "openai/whisper-tiny".to_string(),
+            file: PathBuf::from("/tmp/nonexistent_model_compare_hf_test.apr").into(),
+            hf: "openai/whisper-tiny".to_string().into(),
             tensor: None,
             threshold: 1e-5,
             json: false,
@@ -354,8 +354,8 @@
     fn test_execute_canary_check_file_not_found() {
         let cli = make_cli(Commands::Canary {
             command: CanaryCommands::Check {
-                file: PathBuf::from("/tmp/nonexistent_canary_check.apr"),
-                canary: PathBuf::from("/tmp/nonexistent_canary.json"),
+                file: PathBuf::from("/tmp/nonexistent_canary_check.apr").into(),
+                canary: PathBuf::from("/tmp/nonexistent_canary.json").into(),
             },
         });
         let result = execute_command(&cli);
@@ -369,11 +369,11 @@
     #[test]
     fn test_execute_publish_dir_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Tools(ToolCommands::Publish {
-            directory: PathBuf::from("/tmp/nonexistent_publish_dir_test"),
-            repo_id: "test/test".to_string(),
+            directory: PathBuf::from("/tmp/nonexistent_publish_dir_test").into(),
+            repo_id: "test/test".to_string().into(),
             model_name: None,
-            license: "mit".to_string(),
-            pipeline_tag: "text-generation".to_string(),
+            license: "mit".to_string().into(),
+            pipeline_tag: "text-generation".to_string().into(),
             library_name: None,
             tags: None,
             message: None,

@@ -417,6 +417,14 @@ const CASES: &[Case] = &[
                 .to_string();
         },
     },
+    Case {
+        // VS-COUNT-001 (#2648): the stated total disagrees with the list it
+        // counts. The fixture carries exactly one obligation, so a stated 5 is
+        // the only swap; `kind: kernel` makes it an Error (schema-kind is Warn).
+        rule: "VS-COUNT-001",
+        sev: Sev::Error,
+        build: |f| f.extra = "verification_summary:\n  total_obligations: 5\n".to_string(),
+    },
     // SCHEMA-021/022/023 (PMAT-3091) — the not-applicable family. An obligation
     // that is not a property of code is declared `applies_to: not_applicable`
     // and must say WHY (`na_reason`) and WHERE the claim is actually verified
@@ -688,15 +696,24 @@ fn validate_reaches_every_rule_at_the_right_severity() {
 /// which are emitted through a local closure — the exact "guard's universe
 /// built from the wrong side" failure this repo has hit before. A new rule must
 /// ADD to the loop, never quietly fall outside it.
-fn declared_rule_ids() -> BTreeSet<String> {
-    let src = include_str!("../../aprender-contracts/src/schema/validator.rs");
+///
+/// The validator source is read at RUN time from the sibling crate (#4129). It was an
+/// `include_str!("../../aprender-contracts/…")`, a path OUTSIDE this crate, so `cargo test` from
+/// the published aprender-contracts-cli tarball could not compile this test file. The in-tree
+/// decision is the shared rule, `provable_contracts::workspace_file_or_skip!`: in tree a missing
+/// validator.rs FAILS; out of tree it returns `None` and the caller skips by name.
+fn declared_rule_ids() -> Option<BTreeSet<String>> {
+    let src = provable_contracts::workspace_file_or_skip!(
+        "every_rule_in_the_validator_source_appears_in_the_table",
+        "crates/aprender-contracts/src/schema/validator.rs",
+    )?;
     let mut ids = BTreeSet::new();
     for chunk in src.split('"').skip(1).step_by(2) {
         if is_rule_id_shaped(chunk) {
             ids.insert(chunk.to_string());
         }
     }
-    ids
+    Some(ids)
 }
 
 /// `FAMILY-NNN` where FAMILY is upper-case ASCII (possibly hyphenated) and NNN
@@ -772,7 +789,9 @@ fn validate_reaches_every_beat_rule() {
 /// table, so a new rule removes nothing from the loop.
 #[test]
 fn every_rule_in_the_validator_source_appears_in_the_table() {
-    let declared = declared_rule_ids();
+    let Some(declared) = declared_rule_ids() else {
+        return;
+    };
     assert!(
         declared.len() >= 25,
         "parsed only {} rule ids out of validator.rs — the extractor broke, \

@@ -53,6 +53,82 @@ fn streaming_text_deltas(
     StreamedText { deltas, stopped }
 }
 
+/// Incremental stop-sequence filter for a LIVE token stream (aprender#4340).
+///
+/// `true_streaming_sse_response` wrote every per-token decode straight to the
+/// wire, so a model that spelled `<|im_end|>` out as text streamed it to the
+/// client — `"<answer>7</answer><|im_end|>"` — while the non-streaming body for
+/// the same request, which goes through `clean_chat_output`, read
+/// `"<answer>7</answer>"`. The stop markers are [`CHAT_STOP_SEQUENCES`] (the
+/// very list `clean_chat_output` truncates at) plus the request's own `stop`.
+///
+/// A marker usually spans several tokens (`"<|"`, `"im"`, `"_end"`, `"|>"`), so a
+/// per-token `find()` cannot see it. The filter keeps a pending tail: whatever
+/// could still be the START of a marker is held back until the next token
+/// decides it, and everything before it is released. It never trims — the
+/// leading space BPE puts on a token is part of the delta (see `decode_token`).
+pub(crate) struct ChatStopFilter {
+    stops: Vec<String>,
+    pending: String,
+    stopped: bool,
+}
+
+impl ChatStopFilter {
+    pub(crate) fn new(request_stops: Option<&[String]>) -> Self {
+        let mut stops: Vec<String> = crate::api::realize_handlers::CHAT_STOP_SEQUENCES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        stops.extend(request_stops.unwrap_or_default().iter().filter(|s| !s.is_empty()).cloned());
+        Self {
+            stops,
+            pending: String::new(),
+            stopped: false,
+        }
+    }
+
+    /// Feed one decoded piece; returns the text that is now safe to emit.
+    /// After a stop matched, every later piece is swallowed.
+    pub(crate) fn push(&mut self, piece: &str) -> Option<String> {
+        if self.stopped {
+            return None;
+        }
+        self.pending.push_str(piece);
+        if let Some(pos) = self.stops.iter().filter_map(|s| self.pending.find(s.as_str())).min() {
+            self.stopped = true;
+            let out = self.pending[..pos].to_string();
+            self.pending.clear();
+            return (!out.is_empty()).then_some(out);
+        }
+        let keep = self.held_tail_len();
+        let cut = self.pending.len() - keep;
+        let out: String = self.pending.drain(..cut).collect();
+        (!out.is_empty()).then_some(out)
+    }
+
+    /// Release the held tail once the stream ends without a stop match.
+    pub(crate) fn finish(&mut self) -> Option<String> {
+        let out = std::mem::take(&mut self.pending);
+        (!self.stopped && !out.is_empty()).then_some(out)
+    }
+
+    /// True once a stop sequence matched and truncated the stream.
+    pub(crate) fn stopped(&self) -> bool {
+        self.stopped
+    }
+
+    /// Length of the longest pending suffix that is a proper prefix of a stop.
+    fn held_tail_len(&self) -> usize {
+        self.stops
+            .iter()
+            .flat_map(|stop| (1..stop.len()).filter(|&k| stop.is_char_boundary(k)).map(move |k| &stop[..k]))
+            .filter(|prefix| self.pending.ends_with(prefix))
+            .map(str::len)
+            .max()
+            .unwrap_or(0)
+    }
+}
+
 /// OpenAI-compatible `/v1/chat/completions/stream` endpoint (SSE).
 ///
 /// aprender#2375(4): this route is mounted unconditionally and printed by the

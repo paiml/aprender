@@ -146,6 +146,9 @@ pub enum ToolCallFormat {
     Anthropic,
     /// Hermes format: <tool_call>{"name": "tool", "arguments": {...}}</tool_call>
     Hermes,
+    /// Qwen3.5 / Qwen3-Coder XML (#4650), the format the Qwen3.5 template instructs:
+    /// `<tool_call><function=NAME><parameter=P>VALUE</parameter></function></tool_call>`
+    QwenXml,
 }
 
 impl ToolCallParser {
@@ -190,6 +193,7 @@ impl ToolCallParser {
             ToolCallFormat::OpenAI => self.parse_openai(text),
             ToolCallFormat::Anthropic => self.parse_anthropic(text),
             ToolCallFormat::Hermes => self.parse_hermes(text),
+            ToolCallFormat::QwenXml => self.parse_qwen_xml(text),
         }
     }
 
@@ -285,6 +289,75 @@ impl ToolCallParser {
 
         calls
     }
+
+    /// #4650: Qwen3.5's own call format. Each `<function=NAME>...</function>` block is one
+    /// call; the `<tool_call>` wrapper is not required, because models drop it. A call to a
+    /// tool the request did not declare is not a call, as in the other formats.
+    fn parse_qwen_xml(&mut self, text: &str) -> Vec<ToolCall> {
+        const OPEN: &str = "<function=";
+        let mut calls = Vec::new();
+        let mut pos = 0;
+        while let Some(start) = text[pos..].find(OPEN) {
+            let head = pos + start + OPEN.len();
+            let Some(name_end) = text[head..].find('>') else {
+                break;
+            };
+            let name = text[head..head + name_end].trim();
+            let body_start = head + name_end + 1;
+            let body_end = text[body_start..]
+                .find("</function>")
+                .map_or(text.len(), |e| body_start + e);
+            if let Some(tool) = self.tools.iter().find(|t| t.name == name) {
+                let arguments = qwen_xml_arguments(&text[body_start..body_end], tool);
+                calls.push(ToolCall::new(self.generate_id(), name, arguments.to_string()));
+            }
+            pos = body_end;
+        }
+        calls
+    }
+}
+
+/// #4650: the `<parameter=P>VALUE</parameter>` pairs of one Qwen XML call, as a JSON
+/// object. A missing `</parameter>` ends at the next `<parameter=`, as models emit it.
+fn qwen_xml_arguments(body: &str, tool: &ToolDefinition) -> serde_json::Value {
+    const OPEN: &str = "<parameter=";
+    let mut args = serde_json::Map::new();
+    let mut rest = body;
+    while let Some(start) = rest.find(OPEN) {
+        let head = &rest[start + OPEN.len()..];
+        let Some(name_end) = head.find('>') else {
+            break;
+        };
+        let name = head[..name_end].trim();
+        let after = &head[name_end + 1..];
+        let end = [after.find("</parameter>"), after.find(OPEN)]
+            .into_iter()
+            .flatten()
+            .min()
+            .unwrap_or(after.len());
+        let value = qwen_xml_value(&after[..end], tool, name);
+        args.insert(name.to_string(), value);
+        rest = &after[end..];
+    }
+    serde_json::Value::Object(args)
+}
+
+/// #4650: a Qwen XML parameter value. The template puts the value on its own line, so one
+/// newline either side is framing, not content. A parameter the tool declares as a string
+/// stays a string verbatim (a zip code "02134" is not the number 2134); any other is read as
+/// JSON when it parses as JSON, and kept as the string when it does not.
+fn qwen_xml_value(raw: &str, tool: &ToolDefinition, name: &str) -> serde_json::Value {
+    let raw = raw.strip_prefix('\n').unwrap_or(raw);
+    let raw = raw.strip_suffix('\n').unwrap_or(raw);
+    let declared_string = tool
+        .parameters
+        .iter()
+        .find(|p| p.name == name)
+        .is_some_and(|p| matches!(p.param_type, ToolParameterType::String));
+    if declared_string {
+        return serde_json::Value::String(raw.to_string());
+    }
+    serde_json::from_str(raw.trim()).unwrap_or_else(|_| serde_json::Value::String(raw.to_string()))
 }
 
 /// Process a single character for brace matching state machine.

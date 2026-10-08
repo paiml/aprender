@@ -156,6 +156,9 @@ t_grep 0 'Usage: install\.sh' '--help exits 0 with usage text' --help
 t_grep 0 'nightly' '--help documents --nightly' --help
 t_grep 1 'mutually exclusive' '--nightly + --version is rejected' --nightly --version v0.67.0
 t_grep 1 'Unrecognized argument' 'unknown flag is rejected' --bogus-flag
+t_grep 0 '[-]-channel (stable|rc|nightly)' '--help documents --channel (#4283)' --help
+t_grep 1 "channel must be" 'unknown --channel value is rejected (#4283)' --channel beta
+t_grep 1 'mutually exclusive' '--channel rc + --version is rejected (#4283)' --channel rc --version v0.67.0
 
 # APR_VARIANT env var validation (t()/t_grep() only set INSTALL_DIR, so this
 # one is spelled out instead of routed through the helpers).
@@ -174,7 +177,7 @@ rm -rf "${work:?}"
 # ── Network-dependent rows ──────────────────────────────────────────────────
 
 if ! network_check; then
-    printf 'ENV - no network reach to api.github.com; skipping the %s network-dependent rows below\n' 6
+    printf 'ENV - no network reach to api.github.com; skipping the %s network-dependent rows below\n' 7
 else
     t_grep 1 '404|Failed to download' 'nonexistent --version 404s cleanly, not a crash' --version v0.0.1-does-not-exist-3365
 
@@ -207,6 +210,32 @@ else
         printf 'ok    row %-2s rc=0  real nightly install produces a working apr binary\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s  real nightly install did not produce a working binary\n' "$n" "$rc"
+        printf '%s\n' "$OUT" | sed 's/^/      | /'
+        red=1
+    fi
+    rm -rf "${work:?}"
+
+    # Real install: --channel rc, cpu (#4283). The rc channel resolves the
+    # NEWEST vX.Y.Z or vX.Y.Z-rc.N tag, never the rolling `nightly` tag and
+    # never an rc older than the latest stable. The row asserts the tag the
+    # installer chose has that shape, plus a working binary, so it goes red if
+    # the resolver falls back to nightly or to /releases/latest (which skips
+    # every prerelease, and is exactly why a dev could not find the rc).
+    # The expected tag is derived here, not taken from the script: the newest
+    # entry of /releases (newest-first, prereleases included) shaped like a
+    # stable or rc tag. While an rc is newer than the latest stable, this is
+    # what separates the rc channel from `/releases/latest`.
+    want_tag=$(curl -fsSL "https://api.github.com/repos/paiml/aprender/releases?per_page=50" \
+        | sed -nE 's/.*"tag_name": *"(v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?)".*/\1/p' | head -n 1)
+    n=$((n + 1))
+    work=$(mktemp -d)
+    rc=0
+    OUT=$(INSTALL_DIR="$work" sh "$SCRIPT" --channel rc --cpu 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ -x "$work/apr" ] && "$work/apr" --version >/dev/null 2>&1 \
+        && [ -n "$want_tag" ] && grep -qF "installing: $want_tag" <<<"$OUT"; then
+        printf 'ok    row %-2s rc=0  real --channel rc install resolves the newest stable-or-rc tag (%s) and works\n' "$n" "$want_tag"
+    else
+        printf 'FAIL  row %-2s rc=%s  real --channel rc install did not resolve %s or did not work\n' "$n" "$rc" "${want_tag:-<none>}"
         printf '%s\n' "$OUT" | sed 's/^/      | /'
         red=1
     fi

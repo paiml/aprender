@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t1-guard-modes-verified",
+          "level": "note",
+          "message": {
+            "text": "Report mode behaves as claimed. With a no-trap mutant of the autopilot the guard prints the FAIL line and the REPORT line and exits 0 by default, and exits 1 with RELEASE_T1_LANES_ENFORCE=1. With a guard whose mutant anchor was moved, report mode exits 0 and ENFORCE exits 1 on '1 of 11 mutant(s)'. A missing autopilot is ENV and exits 2 in both modes. On the real tree the guard passes 8 cases and 11 of 11 mutants in report mode (rc 0)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 40
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_t1_lanes_joined.sh",
+              "<mutated autopilot>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e44ba642b9616faf260d9b2e9c063a06b4266fe224f3f426a165491c6dfb2db5",
+            "failure_scenario": "none: the claimed behaviour holds. ENFORCE=1 on the same mutant gives rc 1 (digest in the notes), ENV gives rc 2 in both modes.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-guard-report-skips-mutants",
+          "level": "warning",
+          "message": {
+            "text": "On a failing baseline case the guard now calls finish and exits at once, in report mode as in enforce mode, so none of the 11 mutants run and none are reported. The draft-release guard it copies sets bad=1 and runs every mutant before it calls finish. Measured: the report-mode run on the no-trap autopilot prints one FAIL line and one REPORT line and no mutant line. It is not weaker than before (the old guard also exited on that line), but in report mode a first failure hides every later signal, which is the mode people read. Fix: set a flag on the baseline failure and fall through to the mutants, then finish once at the end, as the draft guard does."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 144
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_t1_lanes_joined.sh",
+              "<mutated autopilot>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e44ba642b9616faf260d9b2e9c063a06b4266fe224f3f426a165491c6dfb2db5",
+            "failure_scenario": "A baseline case goes red together with a mutant that now survives; the report shows only the baseline line, and the mutant regression is not seen until the baseline is fixed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-guard-nothing-enforces",
+          "level": "note",
+          "message": {
+            "text": "No workflow, Makefile, script or contract sets RELEASE_T1_LANES_ENFORCE, so the guard now blocks nowhere; the draft-release guard is in the same state apart from being named in the tag-step contract. This is the L31 pattern the author chose and matches the precedent. The gate is weaker than the previous round by exactly that switch, and the two unguarded parts from the last round (choom and the exit-75 reason) stay unguarded. Record a promotion date or a ticket."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 24
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-rIl",
+              "RELEASE_T1_LANES_ENFORCE",
+              "scripts",
+              ".github",
+              "Makefile",
+              "contracts"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "fb2d821ed92e2124a98407924ed65add2891c0440bb4896fa119300980a75196",
+            "failure_scenario": "The guard is never promoted; a regression in the T-1 join stays a log line forever.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-report-mode-hides-mutants",
+          "level": "note",
+          "message": {
+            "text": "Early exit on baseline failure hides mutant checks"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 144
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark cited. The primary reproduced it (see t1-guard-report-skips-mutants), so this is agreed.",
+            "failure_scenario": "When the baseline check (`check \"$AUTOPILOT\" real`) fails, the script calls `finish 1`, which exits the script immediately (with `0` in report mode and `1` in enforce mode). Because it exits early, it skips running all the mutant checks, completely hiding any mutant failures from the logs. In contrast, the reference script (`check_release_draft_gated.sh`) sets `bad=1` and continues running mutants.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-skips-finish-function",
+          "level": "note",
+          "message": {
+            "text": "Success path skips the finish function"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 171
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark cited. The primary read the tail of the script: on success it falls off the end and exits 0 instead of calling finish 0. The result is the same exit code; it is a cosmetic difference from the draft guard.",
+            "failure_scenario": "When the script completes successfully (`fails=0`), it drops past the `[ \"$fails\" -eq 0 ] || finish 1` check and falls off the end of the script, implicitly exiting 0. It skips calling `finish 0`, unlike the reference script which explicitly calls `finish \"$bad\"`.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

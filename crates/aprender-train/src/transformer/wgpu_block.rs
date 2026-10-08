@@ -344,7 +344,12 @@ impl WgpuForwardPass {
             );
 
             // Execute all ops in single batch — KAIZEN-023: persistent pipeline cache
-            batch.execute_with_cache(&mut self.pipeline_cache.borrow_mut()).await?;
+            // Move the cache out for the await so no RefCell borrow is held across
+            // it (clippy::await_holding_refcell_ref); put it back before `?`.
+            let mut cache = self.pipeline_cache.take();
+            let executed = batch.execute_with_cache(&mut cache).await;
+            *self.pipeline_cache.borrow_mut() = cache;
+            executed?;
 
             // Download result
             let result_data = batch.read(ffn_out).await?;

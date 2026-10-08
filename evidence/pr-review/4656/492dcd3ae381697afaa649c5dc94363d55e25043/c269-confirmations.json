@@ -1,0 +1,27 @@
+{
+  "reviewer_actor": "agent:claude-sonnet-5-5/c269-confirm-045e2ee93c",
+  "author_actor": "agent:aprender-27/w268",
+  "head_reviewed": "9098a7511f",
+  "timestamp_utc": "2026-10-02T18:43:04Z",
+  "a_second_run_idempotent": {
+    "command": "systemd-run --user --scope -p MemoryMax=24G /mnt/nvme-raid0/targets/w268/debug/pv discharge run crates/aprender-contracts-staging/lean; git diff --exit-code -- crates/aprender-contracts-staging/discharge-summary.json",
+    "pv_exit_code": 0,
+    "wall_seconds": 382,
+    "git_diff_exit_code": 0,
+    "tracked_changes_in_git_status": 0,
+    "verdict": "PASS"
+  },
+  "b_lean_tree_hash_stable": {
+    "command": "git rev-parse 045e2ee93c:crates/aprender-contracts-staging/lean; git fetch origin main; git rev-parse origin/main:crates/aprender-contracts-staging/lean",
+    "exit_code": 0,
+    "pr_head_lean_tree": "bed17c8db6bd548d5b72aa58ab08b4ba65690629",
+    "summary_tree_sha": "bed17c8db6bd548d5b72aa58ab08b4ba65690629",
+    "origin_main_at_fetch": "989cb012e5 (fold(0.70) squash merge of #4655; was 430be6524f = merge-base, now 1 commit ahead of PR head)",
+    "origin_main_lean_tree": "bed17c8db6bd548d5b72aa58ab08b4ba65690629",
+    "discharge_summary_inside_lean_tree": false,
+    "discharge_summary_identical_on_main": false,
+    "note": "main moved from 430be6524f because #4655 merged during review (989cb012e5). Lean tree on main == PR head tree (bed17c8d), BUT the discharge-summary.json on main carries tree_sha a31602f8 != bed17c8d: main's committed summary does NOT match its lean tree. The PR-head claim (a PASS) holds; the merged result does not.",
+    "verdict": "PASS for PR head and lean tree hash; FAIL for summary-on-main consistency",
+    "main_summary_tree_sha": "a31602f85dba036712115f5f89776086e988b178"
+  }
+}

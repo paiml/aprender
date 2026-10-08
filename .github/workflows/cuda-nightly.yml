@@ -204,7 +204,7 @@ jobs:
       # NOT_RUN marker `decide` already wrote is the record.
       - name: PP-26 marker gate can still go RED (case table, no GPU)
         if: steps.decide.outputs.proceed == 'true'
-        run: bash scripts/check_perf041_marker.sh --selftest
+        run: setsid --wait bash scripts/check_perf041_marker.sh --selftest
 
       - name: Preflight — CUDA device + parity model present
         if: steps.decide.outputs.proceed == 'true'
@@ -327,6 +327,43 @@ jobs:
           nice -n 19 cargo test -p aprender-serve --lib --release cb008_checker_controls
           APR_FALSIFY_MODEL="$model" nice -n 19 cargo test -p aprender-serve --features cuda \
             --release --test falsify_cb008_no_frozen_slots_2753 -- --nocapture
+
+      # aprender#4251: #4250's serve batched-prefill test. ci.yml's cuda-only step selects it, but
+      # there a missing Qwen3.5 file is a legitimate skip, and the runners do not carry one. So it
+      # passed without running. Here the model is resolved first, and a `SKIP:` line or a
+      # run that is not exactly `1 passed` is RED. `!cancelled()` so an earlier red falsifier
+      # cannot hide this one.
+      - name: aprender#4251 - every serve route prefills through the batched prefill (Qwen3.5)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        env:
+          APR_QWEN35_MODEL_VAR: ${{ vars.APR_QWEN35_MODEL }}
+        run: |
+          set -euo pipefail
+          export APR_QWEN35_MODEL="${APR_QWEN35_MODEL_VAR:-$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf}"
+          if [ ! -f "$APR_QWEN35_MODEL" ]; then
+            echo "::error::#4251 UNMEASURABLE on ${{ matrix.name }} (provisioning, not a code defect): $APR_QWEN35_MODEL is absent"
+            exit 1
+          fi
+          echo "#4251 model: $APR_QWEN35_MODEL"
+          log="$RUNNER_TEMP/serve-batched-prefill.log"
+          rc=0
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release \
+            api::openai_handlers::qwen35_serve_tests::gpu_every_serve_route_prefills_through_the_batched_prefill \
+            -- --exact --nocapture \
+            >"$log" 2>&1 || rc=$?
+          cat "$log"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::#4251 serve batched-prefill test FAILED (exit $rc)"
+            exit "$rc"
+          fi
+          if grep -q '^SKIP:' "$log"; then
+            echo "::error::#4251 the test SKIPPED on a CUDA runner with the model named: $(grep -m1 '^SKIP:' "$log")"
+            exit 1
+          fi
+          if ! grep -q 'test result: ok\. 1 passed' "$log"; then
+            echo "::error::#4251 the filter did not run exactly one test"
+            exit 1
+          fi
       # PP-26 / L0 CORRECTNESS: the batch-invariance witness (FALSIFY-CB-006,
       # #2753, §9 #1a on Blackwell). PP-LLAMA-001 §7.0 puts correctness at layer
       # L0 and says perf041 runs "nightly + release, missing marker = RED"; the
@@ -640,6 +677,59 @@ jobs:
           nice -n 19 cargo test -p aprender-serve --release \
             --test beat_ollama_decode_throughput_speed -- --ignored --nocapture
 
+      # #4179 (binary-debt #4057): F-QW3-MOE-C22214-001 spawns `apr run` on the
+      # 17 GB Qwen3-Coder-30B MoE GGUF (~157 s on lambda) -- huge, so nightly
+      # only, and gx10 holds the model at the test's canonical pacha path.
+      # APR_QW3_MOE_REQUIRE_MODEL=1 turns the test's no-model SKIP into a
+      # failure: in the lane that owns it, a skip would be a pass that measured
+      # nothing. LAST, and `!cancelled()`: it neither delays the measurements
+      # above nor hides behind their failures. Its non-cuda `apr` rebuild comes
+      # after the beat that measures the cuda one.
+      - name: F-QW3-MOE-C22214-001 - apr run emits on the Qwen3-Coder-30B MoE (aprender#4179)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        env:
+          # The repo var wins; otherwise the runner user's pacha cache. $HOME, not a
+          # literal /home/<user>, so the hardcoded-path ratchet stays flat (#4315).
+          APR_QW3_MOE_GGUF_VAR: ${{ vars.APR_QW3_MOE_GGUF }}
+        run: |
+          set -euo pipefail
+          APR_QW3_MOE_REQUIRE_MODEL=1 \
+            APR_QW3_MOE_GGUF="${APR_QW3_MOE_GGUF_VAR:-$HOME/.cache/pacha/models/2b88b180a790988f.gguf}" \
+            nice -n 19 cargo test -p apr-cli --release --test qwen3_moe_apr_run_live_falsifier -- --nocapture
+
+      # #4250 (G0, #3596): apr serve prefills a Qwen3.5 prompt through ONE batched
+      # prefill on every route. ci.yml's cuda-unit runs this test on yoga-eph, which
+      # has no models, so there it SKIPs as model-absent and is allowed: dark. gx10
+      # holds the model at the test's MODEL_PATH, so this lane refuses the skip.
+      # The per-token run is the RED control, and it is ASSERTED to fail *on the
+      # batched-prefill assert*: a build error or a skip there is not a pass.
+      - name: G0 - serve routes prefill through the batched prefill (aprender#4250)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        run: |
+          set -uo pipefail
+          # -e OFF, as in the perf041 step: the default shell is `bash -e {0}`, so the
+          # RED control's expected exit 101 aborted the step at `; r=$?` before its
+          # assertions ran (run 37161229337: GREEN passed, step failed 101, no ::error::).
+          # Every failure path below is guarded explicitly.
+          set +e
+          t=api::openai_handlers::qwen35_serve_tests::gpu_every_serve_route_prefills_through_the_batched_prefill
+          model="$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf"
+          [ -f "$model" ] || { echo "::error::#4250 UNMEASURABLE on ${{ matrix.name }} (provisioning): $model is absent"; exit 1; }
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release --no-run || exit 1
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- \
+            "$t" --exact --test-threads 1 --nocapture > g0-green.log 2>&1; g=$?
+          tail -n 20 g0-green.log
+          if [ "$g" -ne 0 ] || grep -q 'is absent' g0-green.log || ! grep -q '^test result: ok. 1 passed' g0-green.log; then
+            echo "::error::#4250 GREEN arm failed or skipped (rc=$g)"; exit 1
+          fi
+          APR_QWEN35_SESSION_PREFILL=per-token nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- \
+            "$t" --exact --test-threads 1 --nocapture > g0-red.log 2>&1; r=$?
+          tail -n 20 g0-red.log
+          if [ "$r" -eq 0 ] || ! grep -q 'prefilled its prompt one token at a time' g0-red.log; then
+            echo "::error::#4250 RED control did not fail on the batched-prefill assert (rc=$r): the test cannot see per-token prefill"; exit 1
+          fi
+          echo "#4250 G0: GREEN passed, per-token RED control failed as required (rc=$r)"
+
   # ── ada-yoga: the sm_89 leg, restored ─────────────────────────────────────
   #
   # RESTORING A DELETION, NOT INVENTING A LANE. #2740 removed the x86_64 leg
@@ -707,6 +797,9 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
+      # One host GPU lock, shared by CI and agents (operator, 2026-09-26; see
+      # ci/sections.yml cuda-unit). cargo runs the TEST BINARY under it.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -E 175 -w 600 /run/lock/fleet-gpu/gpu.lock
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -732,6 +825,20 @@ jobs:
             exit 1
           fi
           test "$(uname -m)" = "x86_64" || { echo "::error::not x86_64"; exit 1; }
+
+      - name: Host GPU lock — present, root-owned, and the runner takes it
+        run: |
+          set -euo pipefail
+          l=/run/lock/fleet-gpu/gpu.lock
+          # flock creates a missing file; a file this job created would be a lock no
+          # other GPU user takes. The host provisions it root-owned (infra forjar).
+          if [ ! -f "$l" ] || [ "$(stat -c %U "$l")" != root ]; then
+            echo "::error::$l is not the host's root-owned lock (infra gpu-lock-tmpfiles)"; exit 1
+          fi
+          case "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER" in
+            "flock "*" $l") ;;
+            *) echo "::error::cargo's target runner does not take $l"; exit 1 ;;
+          esac
 
       # THE ASSERTION THIS LANE EXISTS FOR (YOGA-NIGHTLY-001 R-3).
       #

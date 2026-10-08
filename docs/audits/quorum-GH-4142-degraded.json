@@ -1,0 +1,46 @@
+{
+  "ticket": "GH-4142",
+  "branch": "fix/4142-mutants-workspace",
+  "base": "aa7c6ef03",
+  "head": "c5991aa8b2195c798b49b0ddd9a1429fb22063dd",
+  "executor": "claude-code-subagents",
+  "degraded": "same-family",
+  "degraded_because": "agy pre-check returned 429 on the gemini and openai families; operator rule (via cop, 2026-09-24): on a 429 fall back at once to haiku-4-5 + two sonnet-5, marked degraded same-family; no composed receipt",
+  "author": {"model": "claude-opus-5-5", "family": "claude"},
+  "lanes": [
+    {
+      "model": "claude-haiku-4-5-20251001",
+      "verdict": "PASS",
+      "head": "c5991aa8b",
+      "findings": 0,
+      "history": "PASS c759952df -> fresh lane PASS c5991aa8b (full diff vs origin/main; ran check_mutants_diff_gate.sh)"
+    },
+    {
+      "model": "claude-sonnet-5",
+      "lane": "A",
+      "verdict": "PASS",
+      "head": "c5991aa8b",
+      "findings": 0,
+      "history": "FAIL (missing gpu/cuda-edge/compute excludes) -> fixed -> PASS c759952df -> PASS c5991aa8b (delta c759952df..c5991aa8b; extracted the nightly base step and ran it under 5 stub-curl scenarios; grep -c of the anchored EXCL pattern = 1; self-test 15 rows / 12 mutants PASS)"
+    },
+    {
+      "model": "claude-sonnet-5",
+      "lane": "B",
+      "verdict": "PASS",
+      "head": "c5991aa8b",
+      "findings": 0,
+      "history": "FAIL c759952df (nightly 24h window has no memory: a missed run drops a day; EXCL grep could match its own line) -> fixed 2fadfd1db -> FAIL 2fadfd1db (base step used gh on clean-room boxes, which carry no gh per ci_self_hosted_preflight.sh / #3074; '|| true' made it silently inert) -> fixed c5991aa8b (curl+python3 REST, failed listing RED) -> PASS c5991aa8b (5 stub-curl scenarios re-run)"
+    }
+  ],
+  "agreed": "degraded: 3 of 3 non-author Claude lanes (1 haiku-4-5, 2 sonnet-5) PASS on the same head",
+  "no_self_review": true,
+  "acceptance": {
+    "gate_self_test": "scripts/mutants_diff_gate.sh --self-test: 15 rows, 12 mutants killed, stub cargo, PASS",
+    "nightly_base_step": "extracted step vs stub curl: prior run -> its head rc 0; empty listing -> 24h fallback rc 0; curl exit 22 -> rc 1; non-JSON -> rc 1",
+    "cost": "measured ~85 s per mutant; #3706=21, #3707=42, #3737=48, #3772=565, #4139=270 listed mutants (issue comments)"
+  },
+  "open": [
+    "workflow PR: the cop merges (.github/workflows touched)",
+    "#4139 lists ~270 mutants > MUTANTS_CAP 60: merge #4139 before this, or split it"
+  ]
+}

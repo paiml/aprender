@@ -61,18 +61,85 @@ jobs:
   # (and the pinned sovereign-ci reusable workflow to ci/vendor/). Each fat job
   # below runs a set of them as SECTIONS on one runner through
   # scripts/ci/fat_driver.py, which honours each section's if/needs/matrix/
-  # container/outputs exactly as the Actions runner did. The shard matrix is
-  # pinned to ONE shard (shard 1 of 1) in ci/sections.yml `matrix-pins`, so the
-  # full workspace runs in one nextest pool on the fat host instead of three
-  # partitions on three runners, and the Σ-executed step in that section
-  # compares the executed test ids with the owed universe, by id.
+  # container/outputs exactly as the Actions runner did. The workspace tests
+  # are the exception: as one shard inside x86-main they took 5358 s of it and
+  # were the release critical path, so ci/sections.yml `matrix-pins` splits
+  # them into three shards and each runs as its own `workspace-test-shard` job
+  # below, in parallel. The `workspace-test` verdict job compares the UNION of
+  # the shards' executed test ids with the owed universe, by id (#4433).
   #
   # The required contexts are produced by three verdict jobs at the end:
   # `workspace-test`, `ci / gate` and `gate`, each reading the fat jobs' results
   # with the same rule the old job of that name applied.
   # ==========================================================================
+  # T43 (Refs #4678): on merge_group, x86-main, determinism and mac-check re-ran a
+  # tree the PR head had already passed on 4 of 5 measured merges (131.5 of their
+  # 163.5 runner-min). mg-reuse READS whether this queue entry may reuse the head's
+  # green jobs: scripts/ci_mg_reuse.sh holds the key (K1-K6) and its case table.
+  # An output is 1 only when every condition was read and held; skipped, failed or
+  # 0 runs the job in full. The RustSec advisory steps are never reused:
+  # x86-main-advisories runs them whenever x86-main is skipped.
+  # #4748: a push to main then re-ran x86-main and determinism in full on the very
+  # commit the queue had just passed. On that push, mg-reuse reads the merge_group
+  # run on the same sha instead (P1-P4 in scripts/ci_mg_reuse.sh), and reuses only
+  # when that run RAN both jobs and they passed -- never a queue run that itself
+  # reused. mac-check is never reused on a push.
+  mg-reuse:
+    if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      x86: ${{ steps.key.outputs.x86 }}
+      det: ${{ steps.key.outputs.det }}
+      mac: ${{ steps.key.outputs.mac }}
+      cite: ${{ steps.key.outputs.cite }}
+    steps:
+      # Full history: the key reads the queue head's parent, the base's parent and
+      # whether the base is an ancestor of the PR head.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The reuse key's case table (hermetic)
+        run: bash scripts/ci_mg_reuse.sh --self-test
+      - name: Read the reuse key for this queue entry or push (3 or 2 API calls)
+        id: key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVT: ${{ github.event_name }}
+          QREF: ${{ github.event.merge_group.head_ref }}
+          QHEAD: ${{ github.event.merge_group.head_sha }}
+          QBASE: ${{ github.event.merge_group.base_sha }}
+          PBEFORE: ${{ github.event.before }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          case "$EVT" in
+            push) out=$(bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE" --repo "$REPO") ;;
+            *) out=$(bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF" --queue-head "$QHEAD" --base "$QBASE" --repo "$REPO") ;;
+          esac
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -E '^(x86|det|mac|cite|pr_head)=' >> "$GITHUB_OUTPUT"
+
+  # The same case table on every event, so a change that breaks the key is RED on
+  # its own PR, not first in the queue. gate requires it.
+  mg-reuse-self-test:
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: The reuse key's case table (hermetic)
+        run: bash scripts/ci_mg_reuse.sh --self-test
+
   x86-main:
-    runs-on: [self-hosted, Linux, X64, clean-room, intel]
+    needs: [mg-reuse]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 240
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
@@ -83,22 +150,76 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
-      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B: ${{ secrets.PR_REVIEW_SIGNING_KEY_B }}
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
+      # The fleet pins jq 1.8.2. Runners in this clean-room pool whose image ships jq 1.6
+      # print a number literal such as 90.00 as 90, so the guard-tree section turns RED
+      # (scripts/release/tag_coverage_gate.sh --self-test, run by check_tag_coverage_gated.sh).
+      # This step puts the pinned jq first on PATH for every later step, and through it for
+      # every section fat_driver runs on the host (step_env copies the driver's PATH; a
+      # section with a job container gets the image's PATH, and none of those calls jq).
+      # Fail closed: a checksum, version or behaviour mismatch stops the job. The sha256 is
+      # the one in the upstream release's sha256sum.txt for jq-linux-amd64.
+      - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        env:
+          JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+          JQ_SHA256: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          v=$("$d/jq" --version)
+          [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
+          rc=0; "$d/jq" -e . < /dev/null > /dev/null || rc=$?
+          [ "$rc" = 4 ] || { echo "::error::the pinned jq exits $rc on empty input with -e, not 4"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - name: jq on PATH is the pinned one
+        run: |
+          set -euo pipefail
+          command -v jq; jq --version
+          [ "$(command -v jq)" = "$RUNNER_TEMP/jq-1.8.2/jq" ] || { echo "::error::jq on PATH is $(command -v jq), not the pinned one"; exit 1; }
+          [ "$(jq --version)" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports $(jq --version)"; exit 1; }
       # Full history: a section whose own checkout asked for depth 1 (the default)
       # is cut back to exactly that by the driver; one asking for 0 needs it all.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Fail fast: the reds car#4429 took four fat runs to see, in ~2 min, before
+      # any section starts. rustfmt runs in the image sov.lint uses (same digest,
+      # so the same verdict); the ID-order rule is contract_data_integrity's,
+      # without cargo; the case tables are guard-tree's cheapest.
+      - name: Cheap checks (fmt, falsification-ID order, guard case tables)
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/fail_fast.py self-test
+          python3 scripts/ci/fail_fast.py ids --base origin/main
+          docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" -w /w \
+            localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 \
+            cargo fmt --all -- --check
+          bash scripts/tests/guard_tree_test.sh
+          bash scripts/bump-version.sh --self-test
+          setsid --wait bash scripts/check_no_claim_literals.sh --selftest
+          setsid --wait bash scripts/check_hardcoded_paths.sh --self-test
+          setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
       # The driver decides what every section's if:/matrix/needs means and whether
       # the vendored workflow is the upstream one; its case table must go RED on
       # each planted defect before it is trusted to report a section green.
       - name: fat_driver case table must still turn RED
         run: python3 scripts/ci/fat_driver.py self-test
+      # PMAT-4510: every secrets.<NAME> a section reads must be plumbed above as
+      # FAT_SECRET_<NAME> under its full name; #4441 cut one short and the
+      # receipt signer ran with an empty key on every PR. Text-only, no build.
+      - name: FAT_SECRET plumbing guard case table
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
+      - name: every section secret is plumbed under its full name
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,workspace-test-shard*,workspace-test,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,mutants,determinism[X64]'
+          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]'
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
       # Published mid-run: the determinism job's compare section is waiting for it.
@@ -121,29 +242,64 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: mutation-results
-          path: ${{ runner.temp }}/fat/artifacts/mutation-results/
-          if-no-files-found: ignore
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
           name: bench-${{ github.event.repository.name }}
           path: ${{ runner.temp }}/fat/artifacts/bench-${{ github.event.repository.name }}/
           retention-days: 90
           if-no-files-found: ignore
       # The two actions that need the Actions runtime run here, on the section's
-      # own files; both were continue-on-error in the reusable workflow.
+      # own files. Neither can block a merge, so neither runs on a PR or in the
+      # merge queue: they run only on a push to main, outside the merge path.
       - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
-        if: always() && contains(steps.wait.outputs.deferred, 'codecov')
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(steps.wait.outputs.deferred, 'codecov')
         continue-on-error: true
         with:
           files: ${{ runner.temp }}/fat/sov.coverage/ws/${{ github.event.repository.name }}/lcov.info
       - name: Generate SLSA provenance
-        if: always() && contains(steps.wait.outputs.deferred, 'attest')
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(steps.wait.outputs.deferred, 'attest')
         uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v2
         continue-on-error: true
         with:
           subject-path: ${{ runner.temp }}/fat/sov.provenance/ws/${{ github.event.repository.name }}/Cargo.toml
+
+  # T43: x86-main's RustSec advisory steps, verbatim from ci/sections.yml
+  # guard-cargo, for a merge_group run where mg-reuse skipped x86-main. Their input
+  # is the advisory database, which changes with no commit, so a green head run is
+  # no evidence for them. ci / gate and gate require this job whenever they reuse.
+  x86-main-advisories:
+    needs: [mg-reuse]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install cargo-deny (if absent)
+        env:
+          CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-deny
+        run: |
+          if ! command -v cargo-deny > /dev/null 2>&1; then
+            cargo install cargo-deny --locked
+            echo "$CARGO_INSTALL_ROOT/bin" >> "$GITHUB_PATH"
+            export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+          fi
+          cargo deny --version
+      - name: Advisories must pass, with deny.toml exemptions honoured
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
+          cargo deny check advisories
+      - name: Every deny.toml exemption must still be live
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
+          setsid --wait bash scripts/check_deny_exemptions_live.sh
 
   # The GPU decision stays OFF the GPU hosts, as before #4433: an `if:` that
   # could only be evaluated on gx10/yoga would queue the job to answer it, and
@@ -229,16 +385,25 @@ jobs:
           --results "$RUNNER_TEMP/fat/results.json"
 
   determinism:
+    needs: [mg-reuse, x86-main]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
+    # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
+    # this, the job sat on one of the two ARM64 clean-room runners for the full artifact wait (3600 s)
+    # whenever x86-main was queued or failed early. !cancelled(): a failed x86-main still runs this
+    # job, so a missing X64 raster is a RED here, never a skip (scripts/check_determinism_wait.sh).
+    # mg-reuse skips this job and x86-main together (one reuse unit), so needs lists both.
     outputs:
       results: ${{ steps.wait.outputs.results }}
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
-      # determinism-compare downloads both rasters; the X64 one is uploaded by
-      # x86-main mid-run, and the driver polls this run's artifacts for it.
+      # determinism-compare downloads both rasters. x86-main has concluded by the time this
+      # job starts, so the X64 raster is either listed or never will be: the driver reads the
+      # artifact list once (wait 0, one REST call) and a missing raster fails the download.
       FAT_EXPECT_ARTIFACTS: determinism-X64,determinism-ARM64
+      FAT_ARTIFACT_WAIT_S: "0"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -281,6 +446,8 @@ jobs:
   # the runner's own persistent target dir is used and nothing is bind-mounted.
   # Not in `gate`'s needs yet: first-green proof on a real PR before it may block.
   mac-check:
+    needs: [mg-reuse]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.mac != '1' }}
     runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
     timeout-minutes: 60
     env:
@@ -313,33 +480,123 @@ jobs:
   # missing from its fat job's results (the job died before writing them) is a
   # failure, never a pass.
   # ==========================================================================
+  # The workspace tests, one shard per job (nextest hash partition N/3 plus the
+  # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
+  # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  workspace-test-shard:
+    runs-on: [self-hosted, Linux, X64, clean-room]   # same pool as x86-main
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    outputs:
+      results: ${{ steps.run.outputs.results }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: fat_driver case table must still turn RED
+        run: python3 scripts/ci/fat_driver.py self-test
+      # `?` for the brackets and the comma: --sections splits on commas.
+      - name: Sections
+        id: run
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'workspace-test-shard?${{ matrix.shard }}?3?'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sigma-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/fat/artifacts/sigma-shard-${{ matrix.shard }}/
+          if-no-files-found: ignore
+
   workspace-test:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [x86-main]
+    needs: [workspace-test-shard]
     if: always()
     steps:
-      - name: The workspace-test section's result
+      - name: Every shard passed
         env:
-          RESULTS: ${{ needs.x86-main.outputs.results }}
+          SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
         run: |
           set -euo pipefail
-          r=$(printf '%s' "${RESULTS:-null}" | jq -r '(. // {})."workspace-test".result // "missing"')
-          echo "workspace-test section: $r"
-          [ "$r" = success ] || { echo "::error::workspace-test: section result is '$r'"; exit 1; }
+          echo "workspace-test-shard matrix result: $SHARD_RESULT"
+          [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sigma-shard-*
+          path: ${{ runner.temp }}/sigma
+      # #4433, the cop's condition: the test-id set across the jobs equals the
+      # owed set, by id. Each shard ran a partition; the UNION of their executed
+      # ids is compared with the universe shard 1 listed. A shard whose ids did
+      # not arrive is RED, never a smaller universe.
+      - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/sigma"
+          python3 scripts/ci/sigma_executed.py --self-test
+          tiers=""
+          for n in 1 2 3; do
+            [ -f "$d/sigma-shard-$n/tier" ] || { echo "::error::Σ: shard $n staged no tier file"; exit 1; }
+            tiers="$tiers $(cat "$d/sigma-shard-$n/tier")"
+          done
+          echo "shard tiers:$tiers"
+          # Each shard decides its tier on its own. Only an AGREED non-full tier
+          # skips the lib/explicit Σ; a split (full full quick) is RED, since
+          # the full shards' partitions would otherwise go unchecked.
+          set -- $tiers
+          [ "$1" = "$2" ] && [ "$2" = "$3" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }
+          [ "$1" = full ] || { echo "every shard ran tier '$1': the lib/explicit Σ is not owed"; exit 0; }
+          j=() l=()
+          for n in 1 2 3; do
+            j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
+            l+=(--log "$d/sigma-shard-$n/section.log")
+          done
+          rc=0
+          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/sigma-shard-1/lib.list.json" || rc=1
+          python3 scripts/ci/sigma_executed.py explicit --kind "explicit (3 shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
+          exit "$rc"
 
   ci-gate:
     name: ci / gate
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [x86-main]
+    needs: [x86-main, mg-reuse, x86-main-advisories]
     if: always()
     steps:
       - name: The sovereign-ci gate section's result
         env:
           RESULTS: ${{ needs.x86-main.outputs.results }}
+          EVT: ${{ github.event_name }}
+          MG: ${{ needs.mg-reuse.result }}
+          MG_X86: ${{ needs.mg-reuse.outputs.x86 }}
+          MG_DET: ${{ needs.mg-reuse.outputs.det }}
+          MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
+          ADV: ${{ needs.x86-main-advisories.result }}
         run: |
           set -euo pipefail
+          # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
+          # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
+          # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
+          # them when the merge_group run on this very commit RAN both and they passed (#4748). Either
+          # way the RustSec advisory job must have passed. A split, a flag on any other event, or a flag
+          # from a failed mg-reuse is RED.
+          REUSE=0
+          case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
+            merge_group:success:1:1:success | push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            merge_group:success:1:1:* | push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
+            *) echo "::error::reuse flags split, off merge_group/push or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
+          esac
+          # --- MG-REUSE-VERDICT-END ---
+          if [ "$REUSE" = 1 ]; then echo "ci / gate: the cited run's ci / gate passed on this tree (${MG_CITE:-})"; exit 0; fi
           r=$(printf '%s' "${RESULTS:-null}" | jq -r '(. // {})."sov.gate".result // "missing"')
           echo "sovereign-ci gate section: $r"
           [ "$r" = success ] || { echo "::error::ci / gate: section result is '$r'"; exit 1; }
@@ -347,42 +604,53 @@ jobs:
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 22
-    needs: [x86-main, determinism]   # as on main: the GPU jobs are advisory (68-C3 / 68-D2)
+    needs: [x86-main, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test]
     if: always()
     steps:
       - name: Check required sections
         env:
           X86: ${{ needs.x86-main.outputs.results }}
           DET: ${{ needs.determinism.outputs.results }}
+          WT: ${{ needs.workspace-test.result }}
           EVT: ${{ github.event_name }}
+          MG: ${{ needs.mg-reuse.result }}
+          MG_X86: ${{ needs.mg-reuse.outputs.x86 }}
+          MG_DET: ${{ needs.mg-reuse.outputs.det }}
+          MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
+          ADV: ${{ needs.x86-main-advisories.result }}
+          MST: ${{ needs.mg-reuse-self-test.result }}
         run: |
           set -euo pipefail
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
           # cuda-unit were never in the gate; they still are not.
-          for pair in X86:guard-tree X86:guard-cargo X86:sov.gate X86:workspace-test DET:determinism-compare; do
-            job="${pair%%:*}" sec="${pair#*:}"
-            r=$(res "${!job}" "$sec")
-            if [ "$r" != success ]; then
-              echo "$sec failed: $r"
-              exit 1
-            fi
-          done
-          MUT=$(res "$X86" mutants)
-          # --- GATE-MUTANTS-RULE-BEGIN (#3676; scripts/check_ci_gate_mutants_rule.sh runs this block) ---
-          # `skipped` is a pass ONLY when the skip is the job's own filter:
-          # mutants declares `if: github.event_name == 'pull_request'`, so on every
-          # other event it is skipped by design. On a pull_request it must have RUN
-          # and succeeded -- a diff with no .rs still succeeds (its steps skip, the
-          # job passes), so a pull_request `skipped` or `cancelled` means the job
-          # never ran, and the old rule ("success/skipped both pass") passed that.
-          case "$EVT:$MUT" in
-            pull_request:success) echo "mutants result: success on a pull_request" ;;
-            pull_request:*) echo "mutants on a pull_request must succeed; got '$MUT' -- a skip here is not the job's filter"; exit 1 ;;
-            *:skipped) echo "mutants result: skipped on $EVT (its filter: pull_request only)" ;;
-            *:success) echo "mutants result: success on $EVT" ;;
-            *) echo "mutants (diff-scoped mutation) on $EVT: $MUT"; exit 1 ;;
+          # workspace-test is its own job now (three shard jobs + the Σ fan-in).
+          [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
+          [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
+          # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
+          # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
+          # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
+          # them when the merge_group run on this very commit RAN both and they passed (#4748). Either
+          # way the RustSec advisory job must have passed. A split, a flag on any other event, or a flag
+          # from a failed mg-reuse is RED.
+          REUSE=0
+          case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
+            merge_group:success:1:1:success | push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            merge_group:success:1:1:* | push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
+            *) echo "::error::reuse flags split, off merge_group/push or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
           esac
-          # --- GATE-MUTANTS-RULE-END ---
+          # --- MG-REUSE-VERDICT-END ---
+          # x86-main and determinism were skipped when REUSE=1: the cited run's gate passed these on this tree (PR head run on merge_group, merge_group run on push).
+          if [ "$REUSE" = 0 ]; then
+            for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+              job="${pair%%:*}" sec="${pair#*:}"
+              r=$(res "${!job}" "$sec")
+              if [ "$r" != success ]; then
+                echo "$sec failed: $r"
+                exit 1
+              fi
+            done
+          fi
           echo "All required sections passed"

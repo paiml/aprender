@@ -65,9 +65,33 @@
 //! # Design Principles Enforcement
 //!
 //! This library enforces strict adherence to design principles (Tufte, Popper, Nielsen).
-//! The following `include_str!` ensures that the design principles test suite exists at compile time.
+//! `design_principles_suite::the_design_principles_test_suite_exists` fails the build's tests
+//! when that suite is missing.
+/// The design-principles suite must exist (#4129). This was a compile-time
+/// `include_str!("../tests/design_principles_interface.rs")`, but the package excludes `tests/`,
+/// so `cargo test` from the published tarball could not compile this crate at all. It is now a
+/// run-time check on the shared in-tree rule (`provable_contracts::workspace_path_or_skip!`): in
+/// tree a missing suite FAILS; out of tree (the crates.io tarball, which ships no `tests/`) it
+/// skips and names itself.
 #[cfg(test)]
-const _DESIGN_PRINCIPLES_TESTS: &str = include_str!("../tests/design_principles_interface.rs");
+mod design_principles_suite {
+    #[test]
+    fn the_design_principles_test_suite_exists() {
+        let Some(suite) = provable_contracts::workspace_path_or_skip!(
+            "the_design_principles_test_suite_exists",
+            "crates/aprender-present-terminal/tests/design_principles_interface.rs",
+        ) else {
+            return;
+        };
+        let text = std::fs::read_to_string(&suite)
+            .unwrap_or_else(|e| panic!("in tree, {} must exist: {e}", suite.display()));
+        assert!(
+            text.contains("#[test]"),
+            "{} holds no #[test]",
+            suite.display()
+        );
+    }
+}
 
 #[macro_use]
 #[allow(unused_macros)]

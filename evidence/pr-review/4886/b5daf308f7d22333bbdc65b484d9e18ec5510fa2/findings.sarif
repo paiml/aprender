@@ -1,0 +1,231 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "duplication_scan_no_hits",
+          "level": "note",
+          "message": {
+            "text": "The lexical duplication scan over head, all 1539 unmerged sibling branches and the merge-base-to-main range (7 files) found 0 hits for the 13 symbols the diff adds. The diff changes no Rust file, so the pmat semantic index (Rust-only) was queried but cannot reach it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "88bf12c8710dd29617a28add806a37c3edac42d2",
+              "--head",
+              "b5daf308f7d22333bbdc65b484d9e18ec5510fa2",
+              "--json",
+              "<out>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "81818df8c471f9d5b1aa9d55c8c5721c31b874161cf2f7b1061a6d8d26b1109a",
+            "failure_scenario": "A re-implementation under a different name is invisible to a name match; that residual is not covered.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "diff_patch_id_run_by_parent",
+          "level": "note",
+          "message": {
+            "text": "diff_patch_id c3fb6c97c18ef8eb23d9e20e76fd739588e52906 over 88bf12c871..b5daf308f7 (evidence/pr-review/4886/ excluded) was computed by the PARENT session, not by this lane: subagent-lock.sh refuses git patch-id in a review lane by design. Control by the parent on the previous head 6bac6be648 reproduced 30be26cb97a09421c8df64ea78e5fa9bd2505a7d, the value in that head receipt. The stdout_sha256 here is the digest of the reported id plus a newline, taken by this lane from the value relayed to it; this lane did not observe that stdout."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              ". scripts/lib/pr_review_patch_id.sh && prpid_compute <worktree> 88bf12c8710dd29617a28add806a37c3edac42d2 b5daf308f7d22333bbdc65b484d9e18ec5510fa2 4886"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "6c433b5a78c6fa36ca7bc587116722b6b6476964011958ecd81f6e0630a17382",
+            "failure_scenario": "If the relayed id were wrong, Arm 4 would find no receipt bound to the subject diff and refuse the merge, so the error cannot arm a merge that should not land.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "lane_hook_refusals",
+          "level": "note",
+          "message": {
+            "text": "This lane never ran git patch-id or git archive (the previous receipt records the hook refusing both), so nothing was routed around: the patch-id was relayed by the parent and the agy workspace was built with tar from the tracked files of the clean worktree (no .git, evidence/ left out), a file copy and not a git operation. One refusal this run: the PreToolUse hook subagent-lock.sh refused an rm of a scratch directory under /tmp/claude-1000/ outside the lane own dir; that command did not run, was not retried that way, and the scratch copy of scripts/ it named was left in place outside the worktree. A same-named scratch dir was then built under the lane own scratchpad and removed there."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The refusals are the hook output this lane received verbatim; no command ran, so there is no exit code or stdout to measure.",
+            "failure_scenario": "A reader of the receipt would otherwise take the tar-built agy workspace for a git-archive tree, and the patch-id for one this lane computed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "dead_elif_pre_publish_coverage",
+          "level": "warning",
+          "message": {
+            "text": "scripts/dogfood.sh line 1857, `elif [ \"$DOGFOOD_PHASE\" = pre-publish ]`, sits inside the `else` (line 1819) of the new `if [ \"$DOGFOOD_PHASE\" = pre-publish ]` at line 1816, which closes at line 1865. It can never be true, so the #3957 F1b branch and its FAIL message are dead code; pre-publish coverage is now decided only by cov_mark."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "sed",
+              "-n",
+              "1816p;1819p;1857p;1865p",
+              "scripts/dogfood.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "24dcf29e1f7cec413070882991cd914f534409f6da1bbcee4e21703639b01afa",
+            "failure_scenario": "A later edit trusts the F1b branch (coverage below floor in pre-publish is RED with its owed-by message) to run; it does not.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ci_read_narrower_than_measured_test",
+          "level": "note",
+          "message": {
+            "text": "In pre-publish the test row reads `workspace-test` (nextest --lib over the workspace) where the replaced row ran `cargo test $FEATS` (doctests, integration targets, bin tests). The runner comment in the 2c block discloses this; the receipt row says only `read, not re-run`."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Taken from the diff comment in scripts/dogfood.sh and CLAUDE.md Testing (only a subset of integration targets is wired into CI). Not measured by running anything.",
+            "failure_scenario": "A doctest or integration-only failure that CI does not run passes the pre-publish test row.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "committed_plants_killed",
+          "level": "note",
+          "message": {
+            "text": "All 9 committed planted defects of check_dogfood_reads_ci.sh are killed (--self-test exits 0); sha_checks.sh --self-test is 21/21."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_dogfood_reads_ci.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "542142ef51e2f92a7d6370d1e99d028e0e81b1e4b2ef29ee09f04a2e63adb258",
+            "failure_scenario": "If a plant survived, a runner defect the guard claims to catch would pass unnoticed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "extra_mutant_cov_inverted_killed",
+          "level": "note",
+          "message": {
+            "text": "Extra mutant: cov_mark records PASS when the reader's rc is non-zero (-eq 0 changed to -ne 0), in a scratch copy of the guard tree. Killed: the guard exits 1 with 9 FAIL lines."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<scratch copy, rc test inverted>/scripts/check_dogfood_reads_ci.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "4adee19aa73b74b0bac8f879f68d0c1bbf40358e06dd6aba88e15d399c8e2dcc",
+            "failure_scenario": "If it survived, an inverted coverage verdict would pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_tree_m5_green_at_head",
+          "level": "note",
+          "message": {
+            "text": "guard-tree#m5 (the guard-tree#m5 S4 script) had matched the old log name and the two old case labels as receipt readers. At b5daf308f7 the rename to coverage-gate.log and coverage_gate_* makes it exit 0: 21 rows + 4 structural, every mutant killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "bash scripts/check_cov*_receipt.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "23c3e4a959ba20ce28eabb544922ec4f32a8cbced220a9eacb99dd01a185f93a",
+            "failure_scenario": "If S4 still matched the old names, the guard-tree job would be RED and the PR could not merge; the same run shows it does not.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "extra_mutant_git_dir_survives",
+          "level": "warning",
+          "message": {
+            "text": "Extra mutant outside the committed set: cov_mark without the GIT_DIR prefix on the tag_coverage_gate.sh call (the commit message says the gate's git reads go through GIT_DIR, with no cd). The guard on a scratch copy with that edit still exits 0: R3 drives cov_mark against a planted reader that does not read git."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<scratch copy, GIT_DIR prefix removed>/scripts/check_dogfood_reads_ci.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "cbac28680162cef946dc16e5b3c097ca6286f73b198d4ec6a42ad9f377aa4475",
+            "failure_scenario": "A later edit drops GIT_DIR and the real tag_coverage_gate.sh reads git from the caller's cwd; the guard stays green and the commit message's claim is untested.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "extra_mutant_spec_substring_survives",
+          "level": "warning",
+          "message": {
+            "text": "Extra mutant outside the committed set: ci_mark matching the sha_checks line by a substring of the spec instead of the ` <spec> -- ` field. The guard on a scratch copy still exits 0. Likely behaviourally equivalent today (the two specs share no text); that is not proven."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<scratch copy, grep -F widened to the bare spec>/scripts/check_dogfood_reads_ci.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "cbac28680162cef946dc16e5b3c097ca6286f73b198d4ec6a42ad9f377aa4475",
+            "failure_scenario": "A future spec that is a substring of another check's name would read that check's line and could PASS on it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

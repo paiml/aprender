@@ -29,8 +29,8 @@ use std::process::ExitCode;
 /// that protocol exactly: same order, same meaning.
 #[derive(Debug, Parser)]
 #[command(
-    name = "trueno-zram-generator",
-    version,
+    name = "aprender-zram-generator",
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
     about = "systemd generator for zram device configuration",
     long_about = "systemd generator for zram device configuration.\n\n\
                   systemd invokes generators as `generator <NORMAL_DIR> <EARLY_DIR> <LATE_DIR>`; \
@@ -65,7 +65,7 @@ fn main() -> ExitCode {
     match run(&cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("trueno-zram-generator: {e}");
+            eprintln!("aprender-zram-generator: {e}");
             ExitCode::FAILURE
         }
     }
@@ -94,6 +94,13 @@ mod tests {
     #[test]
     fn test_cli_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    /// ONT-10 S15 (aprender#4502): the version names this binary, not `trueno-zram-generator`.
+    #[test]
+    fn test_version_names_aprender_zram_generator() {
+        let v = Cli::command().render_version();
+        assert!(v.starts_with("aprender-zram-generator "), "got {v:?}");
     }
 
     /// The systemd protocol: three positional directories, in order.

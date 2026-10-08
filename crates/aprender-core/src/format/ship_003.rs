@@ -429,10 +429,14 @@ mod ship_003_tests {
     /// test fails before any compute runs.
     #[test]
     fn falsify_ship_003_yaml_binding_pins_discharged_status() {
-        const CONTRACT_YAML: &str =
-            include_str!("../../../../contracts/qwen2-e2e-verification-v1.yaml");
+        let Some(contract_yaml) = provable_contracts::workspace_file_or_skip!(
+            "falsify_ship_003_yaml_binding_pins_discharged_status",
+            "contracts/qwen2-e2e-verification-v1.yaml"
+        ) else {
+            return;
+        };
 
-        let doc: serde_yaml::Value = serde_yaml::from_str(CONTRACT_YAML)
+        let doc: serde_yaml::Value = serde_yaml::from_str(contract_yaml.as_str())
             .expect("qwen2-e2e-verification-v1.yaml must parse as YAML");
 
         let falsifications = doc["falsification_tests"]

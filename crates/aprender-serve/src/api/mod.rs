@@ -124,9 +124,11 @@ pub use gpu_handlers::{spawn_batch_processor, BatchConfig};
 mod realize_handlers;
 pub(crate) use realize_handlers::{
     clean_chat_output, format_chat_messages, format_chat_messages_for_state,
-    format_chat_messages_for_state_thinking, format_chat_messages_official,
-    format_chat_messages_official_thinking, openai_completions_handler, openai_embeddings_handler,
-    realize_embed_handler, realize_model_handler, realize_reload_handler,
+    format_chat_messages_for_state_thinking, format_chat_messages_for_state_thinking_tools,
+    format_chat_messages_official, format_chat_messages_official_thinking,
+    format_chat_messages_official_thinking_tools, openai_completions_handler,
+    openai_embeddings_handler, realize_embed_handler, realize_model_handler,
+    realize_reload_handler,
 };
 #[cfg(feature = "cuda")]
 pub(crate) use realize_handlers::{logprobs_handler, perplexity_handler};
@@ -237,6 +239,10 @@ pub struct AppState {
     qwen35_session: Option<Arc<Qwen35Served>>,
     /// GH-330: Cached EOS token ID (avoids RwLock in hot path)
     cached_eos_token_id: Option<u32>,
+    /// D5 (ruling-3715-2010): positions a dense CUDA serve turn can reach, the
+    /// model's context capped by the device KV cache. Cached at construction so
+    /// the pre-flight length check never waits on the scheduler's write lock.
+    cached_serving_context: Option<usize>,
     /// GH-152: Enable verbose request/response logging
     verbose: bool,
     /// GH-103: Enable inference tracing (propagates into QuantizedGenerateConfig.trace)
@@ -377,6 +383,27 @@ pub(crate) fn generation_error_status(err: &RealizarError) -> StatusCode {
         RealizarError::ContextLimitExceeded { .. } => StatusCode::BAD_REQUEST,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
+}
+
+/// D5 (ruling-3715-2010): the refusal for a prompt that cannot fit a serve turn,
+/// or `None` when it fits with room to answer.
+///
+/// `serving_context` is the model's context capped by the device KV cache
+/// ([`AppState::serving_context`]). A prompt at or past it used to reach the GPU
+/// forward and come back as a 500 ("the device KV cache holds 4096"), which
+/// tells the client the server broke. It is decided by the request alone, so it
+/// is a 400 and says which limit it hit.
+pub(crate) fn serve_context_refusal(
+    prompt_tokens: usize,
+    serving_context: usize,
+) -> Option<String> {
+    (prompt_tokens >= serving_context).then(|| {
+        format!(
+            "context exceeds {serving_context}: the prompt is {prompt_tokens} tokens and this \
+             server holds {serving_context} positions per turn (the model's context, capped by \
+             the GPU KV cache). It was refused whole, not truncated."
+        )
+    })
 }
 
 include!("mod_app_state_gpu.rs");

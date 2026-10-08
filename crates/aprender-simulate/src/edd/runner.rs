@@ -11,10 +11,10 @@
 //! # CLI Commands Supported
 //!
 //! ```bash
-//! simular run experiments/harmonic_oscillator.yaml
-//! simular run experiments/harmonic_oscillator.yaml --seed 12345
-//! simular verify experiments/harmonic_oscillator.yaml
-//! simular emc-check experiments/harmonic_oscillator.yaml
+//! aprender-simulate run experiments/harmonic_oscillator.yaml
+//! aprender-simulate run experiments/harmonic_oscillator.yaml --seed 12345
+//! aprender-simulate verify experiments/harmonic_oscillator.yaml
+//! aprender-simulate emc-check experiments/harmonic_oscillator.yaml
 //! ```
 //!
 //! # References

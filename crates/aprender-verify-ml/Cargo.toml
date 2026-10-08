@@ -12,6 +12,12 @@ readme = "README.md"
 keywords = ["testing", "code-generation", "transpiler", "verification", "synthetic-data"]
 categories = ["development-tools::testing", "compilers"]
 
+
+[[bin]]
+# #4430: every shipped [[bin]] is aprender-* (was the auto-discovered `verificar`)
+name = "aprender-verify"
+path = "src/bin/verificar.rs"
+
 [lints.rust]
 unsafe_code = "allow"
 
@@ -50,7 +56,7 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 trueno = { workspace = true }
 
 # Machine learning for bug prediction (optional)
-aprender = { path = "../aprender-core", version = "0.69.3", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.70.2", package = "aprender-core", optional = true }
 
 # LLM fine-tuning integration (optional)
 entrenar = { workspace = true, optional = true }
@@ -64,6 +70,9 @@ tree-sitter-typescript = { version = "0.23", optional = true }
 # Pest for PEG grammars (optional)
 pest = { version = "2.7", optional = true }
 pest_derive = { version = "2.7", optional = true }
+
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [dev-dependencies]
 proptest = "1.6"

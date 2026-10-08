@@ -129,12 +129,16 @@ fi
 # (d) two runs of the same fixture produce byte-identical output. Concurrency
 #     must not reorder or interleave rows; the per-guard output is captured to
 #     its own file and printed in universe order afterwards.
+# The `slowest:` rows are wall-clock timing (1s vs 0s between runs); the
+# determinism guarded here is the verdict/rows, so only those lines are dropped.
 outA2="$(cd "$FA" && bash scripts/guard_tree.sh --no-cargo 2>&1)"
-if [ "$outA1" = "$outA2" ]; then
+outA1_nt="$(grep -v '^slowest: ' <<< "$outA1")"
+outA2_nt="$(grep -v '^slowest: ' <<< "$outA2")"
+if [ "$outA1_nt" = "$outA2_nt" ]; then
     ok "(d) output ordering is deterministic across two runs"
 else
     bad "(d) two runs differ:"
-    diff <(printf '%s\n' "$outA1") <(printf '%s\n' "$outA2") | sed 's/^/      | /'
+    diff <(printf '%s\n' "$outA1_nt") <(printf '%s\n' "$outA2_nt") | sed 's/^/      | /'
 fi
 
 # ---------------------------------------------------------------------------

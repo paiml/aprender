@@ -78,14 +78,14 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release -p trueno-zram-cli --target ${{ matrix.target }}
+        run: cargo build --release -p aprender-zram-cli --target ${{ matrix.target }}
 
       - name: Package (unix)
         if: runner.os != 'Windows'
         run: |
           ARCHIVE="trueno-zram-${{ matrix.target }}"
           mkdir -p "$ARCHIVE"
-          cp "target/${{ matrix.target }}/release/trueno-zram" "$ARCHIVE/"
+          cp "target/${{ matrix.target }}/release/aprender-zram" "$ARCHIVE/"
           for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
             [ -f "$f" ] && cp "$f" "$ARCHIVE/"
           done
@@ -99,7 +99,7 @@ jobs:
         run: |
           $archive = "trueno-zram-${{ matrix.target }}"
           New-Item -ItemType Directory -Force -Path $archive
-          Copy-Item "target/${{ matrix.target }}/release/trueno-zram.exe" "$archive/"
+          Copy-Item "target/${{ matrix.target }}/release/aprender-zram.exe" "$archive/"
           foreach ($f in @("README.md", "LICENSE", "LICENSE-MIT", "COPYING", "UNLICENSE")) {
             if (Test-Path $f) { Copy-Item $f "$archive/" }
           }

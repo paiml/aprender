@@ -60,9 +60,14 @@ permissions:
   pages: write
   id-token: write
 
+# #3676: one group per PR, and a newer push cancels the superseded run. The old
+# workflow-level group "pages" (cancel false) held EVERY run -- all PRs, main and
+# the nightly -- in one global queue, so each PR's mdBook check waited behind
+# every other PR's. Only the Pages deploy needs that serialisation, so the
+# "pages" group now sits on the deploy job alone. Non-PR events never cancel.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: book-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -103,7 +108,7 @@ jobs:
           # so the book's shell gate and the release's shell gate lint with different
           # linters. check_bashrs_gate.sh's own header calls that disagreement "the
           # defect this fixes".
-          bash scripts/check_tool_versions.sh
+          setsid --wait bash scripts/check_tool_versions.sh
           # Lint only check scripts; gen-*-stubs.sh contain markdown heredocs with em-dashes
           # that bashrs flags as SC1100, but those are intentional in the generated book output.
           #
@@ -129,7 +134,7 @@ jobs:
 
       # BOOK-CLOSEOUT-001 § Phase 1: zero broken file links
       - name: Linkcheck gate (FALSIFY-BOOK-LINKCHECK-001)
-        run: bash scripts/check_book_linkcheck.sh
+        run: setsid --wait bash scripts/check_book_linkcheck.sh
 
       # BOOK-CLOSEOUT-001 § Phase 4: every CLI subcommand has a chapter
       - name: CLI parity gate (FALSIFY-BOOK-CLI-PARITY-001)
@@ -146,19 +151,19 @@ jobs:
           # so name the host fault instead of mis-attributing it to the code.
           bash scripts/cargo_step.sh 'install apr-cli' -- \
             cargo install --path crates/apr-cli --locked --quiet --root "$RUNNER_TEMP/cargo-tools"
-          bash scripts/check_book_cli_parity.sh
+          setsid --wait bash scripts/check_book_cli_parity.sh
 
       # BOOK-CLOSEOUT-001 § Phase 4: every CLI stub has a runnable example
       - name: CLI example-block gate (FALSIFY-BOOK-EXAMPLE-001)
-        run: bash scripts/check_book_example_block.sh
+        run: setsid --wait bash scripts/check_book_example_block.sh
 
       # BOOK-CLOSEOUT-001 § Phase 3: every aprender-core public module has a chapter
       - name: Library parity gate (FALSIFY-BOOK-LIB-PARITY-001)
-        run: bash scripts/check_book_lib_parity.sh
+        run: setsid --wait bash scripts/check_book_lib_parity.sh
 
       # BOOK-CLOSEOUT-001 § Phase 3: every lib stub has a runnable rust example
       - name: Library example-block gate (FALSIFY-BOOK-LIB-EXAMPLE-001)
-        run: bash scripts/check_book_lib_example_block.sh
+        run: setsid --wait bash scripts/check_book_lib_example_block.sh
 
       # BOOK-CLOSEOUT-001 § Phase 4: pmat comply gates all book contracts together
       # (single check that asserts is_compliant=true; ties the linkcheck +
@@ -169,7 +174,7 @@ jobs:
           # fail-open shape check_tool_versions.sh was written to delete — a failed
           # install carried on with whatever was already on PATH, so a bad network day
           # silently downgraded the gate without failing the job that depends on it.
-          bash scripts/check_tool_versions.sh
+          setsid --wait bash scripts/check_tool_versions.sh
           # Validate the book-completeness contract via pv.
           #
           # This line used to call a bare `pv` and exited 127 (command not found)
@@ -203,6 +208,10 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # GitHub Pages deploys never overlap and are never cancelled (was workflow-level).
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
