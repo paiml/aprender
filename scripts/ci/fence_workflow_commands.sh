@@ -62,12 +62,17 @@ fenced() {
 }
 
 # live_commands <log> -> how many annotation commands the runner would act on:
-# ::error/::warning/::notice lines outside every stop..resume region.
+# ::error/::warning/::notice lines outside every stop..resume region. It errs
+# on the high side only: an indented command and a property value with a colon
+# count, an indented resume line ends a region, and an indented stop line does
+# not start one. Each can make the count larger than what the runner acts on,
+# never smaller.
 live_commands() {
   awk '
-    stop != "" { if ($0 == "::" stop "::") stop = ""; next }
+    { line = $0; sub(/^[ \t]+/, "", line) }
+    stop != "" { if (line == "::" stop "::") stop = ""; next }
     /^::stop-commands::/ { stop = substr($0, 18); next }
-    /^::(error|warning|notice)( [^:]*)?::/ { n++ }
+    line ~ /^::(error|warning|notice)( .*)?::/ { n++ }
     END { print n + 0 }' "$1"
 }
 
@@ -138,8 +143,14 @@ self_test() {
   row 'a last line with no newline: the fence still closes on its own line' 1 "$(grep -cxF "::$t2::" "$tmp/partial.out")"
   row 'a last line with no newline: rc 3 and only the failure annotation is live' '3 1' "$rc $(live_commands "$tmp/partial.out")"
 
-  fenced sh -c 'printf "::error::from stderr\n" >&2' > "$tmp/stderr.out"
-  row 'stderr is fenced too (merged into the one ordered pipe)' 0 "$(live_commands "$tmp/stderr.out")"
+  # stdout and stderr are two pipes on the runner, so they go to two files here:
+  # a stderr line that kept its own pipe would land in stderr.err, unfenced.
+  fenced sh -c 'printf "::error::from stderr\n" >&2' > "$tmp/stderr.out" 2> "$tmp/stderr.err"
+  row 'stderr is fenced too: none on its own pipe, 1 inside the fence, 0 live' '0 1 0' \
+    "$(wc -l < "$tmp/stderr.err" | tr -d ' ') $(sed '1d;$d' "$tmp/stderr.out" | grep -cxF '::error::from stderr') $(live_commands "$tmp/stderr.out")"
+
+  printf '%s\n' '  ::error::indented' '::warning file=a.rs:1,line=2::a colon in a property' '::notice::plain' > "$tmp/forms.log"
+  row 'the live counter counts an indented command and a colon in a property' 3 "$(live_commands "$tmp/forms.log")"
 
   fenced sh -c 'printf "::0123456789abcdef0123456789abcdef::\n::error::after a guessed resume\n"' > "$tmp/guess.out"
   row 'a resume line with another token does not end the fence' 0 "$(live_commands "$tmp/guess.out")"

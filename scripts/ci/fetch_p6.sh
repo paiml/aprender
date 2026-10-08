@@ -132,10 +132,12 @@ SHIM
   # A planted sleep: records how long each re-read would wait, returns at once.
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >> "$SHIM_DIR/sleeps"\n' > "$tmp/bin/sleep"
   chmod +x "$tmp/bin/git" "$tmp/bin/sleep"
+  # The caller runs under LC_ALL=POSIX, not C: a runner that already exports LC_ALL=C would
+  # otherwise pass the locale row with the helper's own LC_ALL=C removed.
   run() {  # run <mode> <fetch args...> -> rc; reads in $tmp/<mode>/count
     local mode="$1"; shift
     mkdir -p "$tmp/$mode"
-    ( cd "$tmp/client" && SLEEP_S=7 && PATH="$tmp/bin:$PATH" SHIM_DIR="$tmp/$mode" SHIM_MODE="$mode" \
+    ( cd "$tmp/client" && SLEEP_S=7 && LC_ALL=POSIX PATH="$tmp/bin:$PATH" SHIM_DIR="$tmp/$mode" SHIM_MODE="$mode" \
         SHIM_REAL="$real_git" p6_fetch "$@" ) \
       > "$tmp/$mode/out" 2> "$tmp/$mode/err"
   }
@@ -155,7 +157,7 @@ SHIM
   row 'a read that answers at once: read once, no status line' '1 0' "$(reads ok) $(status_lines ok)"
   row 'every read is cut on a stall (lowSpeedLimit and lowSpeedTime set)' 1 \
     "$(grep -c "^-c http.lowSpeedLimit=$LOW_SPEED_LIMIT -c http.lowSpeedTime=$LOW_SPEED_TIME fetch origin main\$" "$tmp/ok/args")"
-  row "git runs under LC_ALL=C, so the answer texts are git's own" C "$(cat "$tmp/ok/lc")"
+  row "git runs under LC_ALL=C, not the caller's locale, so the answer texts are git's own" C "$(cat "$tmp/ok/lc")"
 
   run cancel-twice --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main; rc=$?
   row 'curl 92 CANCEL twice, then an answer (#4934): rc 0' 0 "$rc"
