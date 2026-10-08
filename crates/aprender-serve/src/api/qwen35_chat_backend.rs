@@ -171,6 +171,7 @@ async fn try_qwen35_backend(
             prompt_token_count,
             None,
             request.stop.as_deref(),
+            crate::api::stream_tool_calls::StreamTools::from_request(request),
         ));
     }
 

@@ -19,6 +19,7 @@ use axum::{
 };
 use futures::stream::Stream;
 
+use super::stream_tool_calls::{self, StreamTools};
 use super::{
     build_trace_data, clean_chat_output, format_chat_messages,
     format_chat_messages_for_state_thinking_tools, AppState, ChatChoice, ChatCompletionChunk,
@@ -618,7 +619,7 @@ fn finalize_chat_text(
 /// type:"function", function:{name, arguments-as-JSON-STRING}) and
 /// `finish_reason` becomes `"tool_calls"`. Otherwise the message is a normal
 /// assistant text turn and the supplied `finish_reason` is preserved.
-fn build_tool_calling_message(
+pub(super) fn build_tool_calling_message(
     text: String,
     finish_reason: String,
     tools: &[super::OpenAiTool],
@@ -839,7 +840,7 @@ impl LiveUtf8Deltas {
 /// SSE writer, not the model. A receipt that recorded `ttft`/`itl_p95` off this
 /// path would be recording the wrong thing, which is why the mode is declared
 /// rather than inferred.
-fn pregenerated_sse_response(
+pub(crate) fn pregenerated_sse_response(
     token_ids: Vec<u32>,
     tokenizer: Arc<BPETokenizer>,
     request_id: String,
@@ -847,6 +848,7 @@ fn pregenerated_sse_response(
     stops: Option<&[String]>,
     max_tokens: usize,
     prompt_tokens: usize,
+    tools: Option<StreamTools>,
 ) -> Response {
     let completion_tokens = token_ids.len();
     // aprender#4340: the chat stop markers `clean_chat_output` truncates the
@@ -858,10 +860,15 @@ fn pregenerated_sse_response(
         .collect();
     let StreamedText { deltas, stopped } =
         streaming_text_deltas(&tokenizer, &token_ids, Some(&stops));
+    // #4918: tool-call detection runs after the stop filter, as on the live path.
+    let (deltas, calls) = stream_tool_calls::detect_all(tools, deltas);
     // #2375(6): `max_tokens` is a parameter so this path CANNOT emit a finish
     // reason without knowing the budget it was generated under. The terminal
     // chunk now agrees with the non-streaming body for the same request.
-    let finish = FinishReason::from_generation(stopped, completion_tokens, max_tokens);
+    let finish = stream_tool_calls::finish_reason(
+        &calls,
+        FinishReason::from_generation(stopped, completion_tokens, max_tokens),
+    );
     let usage = Usage {
         prompt_tokens,
         completion_tokens,
@@ -878,6 +885,12 @@ fn pregenerated_sse_response(
 
         for delta in &deltas {
             let chunk = ChatCompletionChunk::content(&request_id, &model_name, delta);
+            if let Some(evt) = sse_event(&chunk) {
+                yield evt;
+            }
+        }
+        if !calls.is_empty() {
+            let chunk = ChatCompletionChunk::tool_calls(&request_id, &model_name, calls);
             if let Some(evt) = sse_event(&chunk) {
                 yield evt;
             }
@@ -967,6 +980,7 @@ pub(crate) fn true_streaming_sse_response(
     prompt_tokens: usize,
     timings_rx: Option<tokio::sync::oneshot::Receiver<super::PhaseTimings>>,
     stops: Option<&[String]>,
+    tools: Option<StreamTools>,
 ) -> Response {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;
@@ -975,6 +989,8 @@ pub(crate) fn true_streaming_sse_response(
     let mut completion_tokens = 0usize;
     // aprender#4340: chat stop markers and the request's `stop` never reach a delta.
     let mut filter = ChatStopFilter::new(stops);
+    // #4918: after the stop filter, a tool call is held off the content deltas.
+    let mut detector = tools.map(StreamTools::detector);
 
     let stream = async_stream::stream! {
         if let Some(evt) = sse_event(&ChatCompletionChunk::initial_with_mode(
@@ -994,7 +1010,10 @@ pub(crate) fn true_streaming_sse_response(
                     // The token is still counted after a stop: the engine
                     // generated it. Draining (not breaking) keeps a stop from
                     // being recorded as an abandoned stream.
-                    let text = utf8.push(&tokenizer, token_id).and_then(|t| filter.push(&t));
+                    let text = utf8
+                        .push(&tokenizer, token_id)
+                        .and_then(|t| filter.push(&t))
+                        .and_then(|t| stream_tool_calls::detect(&mut detector, t));
                     if let Some(text) = text {
                         let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
                         if let Some(evt) = sse_event(&chunk) {
@@ -1010,7 +1029,14 @@ pub(crate) fn true_streaming_sse_response(
                 }
             }
         }
-        for text in tail_deltas(&mut utf8, &tokenizer, &mut filter) {
+        // #4918 (T8): the flush goes through the detector too, so a call whose last
+        // bytes were still held by the UTF-8 decoder or the stop filter is a call.
+        let tail: Vec<String> = tail_deltas(&mut utf8, &tokenizer, &mut filter)
+            .into_iter()
+            .filter_map(|t| stream_tool_calls::detect(&mut detector, t))
+            .collect();
+        let end = stream_tool_calls::finish(detector);
+        for text in tail.into_iter().chain(end.content) {
             let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
             if let Some(evt) = sse_event(&chunk) {
                 yield evt;
@@ -1019,7 +1045,16 @@ pub(crate) fn true_streaming_sse_response(
 
         // #2375(6): a token stream that delivered the whole budget was cut off at
         // `max_tokens`; anything shorter ended on a stop/EOS token.
-        let finish = FinishReason::from_generation(filter.stopped(), completion_tokens, max_tokens);
+        let finish = stream_tool_calls::finish_reason(
+            &end.calls,
+            FinishReason::from_generation(filter.stopped(), completion_tokens, max_tokens),
+        );
+        if !end.calls.is_empty() {
+            let chunk = ChatCompletionChunk::tool_calls(&request_id, &model_name, end.calls);
+            if let Some(evt) = sse_event(&chunk) {
+                yield evt;
+            }
+        }
         // The engine has finished by the time the token channel closed, so the
         // oneshot either already carries the measurement or never will.
         let timings = match timings_rx {
@@ -1150,6 +1185,7 @@ fn try_gpu_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_tokens,
+            StreamTools::from_request(request),
         ));
     }
 
@@ -1247,6 +1283,7 @@ fn try_cached_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_tokens,
+            StreamTools::from_request(request),
         ));
     }
 
