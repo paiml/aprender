@@ -68,6 +68,13 @@ rp_ge() {
 # rp_get KEY -> the raw value of KEY in the block release_policy_ladder read ($blk, dynamic scope)
 rp_get() { printf '%s\n' "$blk" | awk -F '\t' -v k="$1" '$1 == k { print $2; exit }'; }
 
+# rp_unq VALUE -> VALUE without one pair of enclosing quotes, double or single (YAML reads both the same).
+rp_unq() {
+    local v="$1" re_d='^"(.*)"$' re_s="^'(.*)'\$"
+    if [[ "$v" =~ $re_d ]] || [[ "$v" =~ $re_s ]]; then v="${BASH_REMATCH[1]}"; fi
+    printf '%s\n' "$v"
+}
+
 # rp_ticket_owner LADDER -> stdout: the one owner a nightly red-row ticket names (release_policy.ticket_owner,
 # quotes removed): an issue "#N" or a lower-case name. rc 2 + RP_WHY when the ladder or its block cannot be
 # read, there is no policy block, or the value is neither form. A ticket with no owner is never opened.
@@ -78,7 +85,7 @@ rp_ticket_owner() {
     rp_block "$1" || return 2
     blk="$RP_BLK"
     [ -n "$blk" ] || { RP_WHY="the ladder $1 has no release_policy block, so no ticket owner"; return 2; }
-    owner=$(rp_get ticket_owner); owner="${owner#\"}"; owner="${owner%\"}"
+    owner=$(rp_unq "$(rp_get ticket_owner)")
     [[ "$owner" =~ ^(#[1-9][0-9]*|[a-z][a-z0-9.-]*)$ ]] || { RP_WHY="release_policy.ticket_owner '$owner' is neither #N nor a name"; return 2; }
     printf '%s\n' "$owner"
 }
@@ -90,7 +97,7 @@ release_policy_ladder() {
     rp_block "$ladder" || return 2
     blk="$RP_BLK"
     if [ -z "$blk" ]; then printf '%s\n' "$ladder"; return 0; fi
-    since=$(rp_get since); since="${since#\"}"; since="${since%\"}"
+    since=$(rp_unq "$(rp_get since)")
     if ! [[ "$since" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         RP_WHY="release_policy.since '$since' is not X.Y.Z"; return 2
     fi
@@ -126,7 +133,7 @@ rp_known_failures() {
     kr=$(awk '/^  known_red:[[:space:]]*$/ { f = 1; next }
               f && /^  [^ ]/ { f = 0 }
               f && /^    - rung:/ { r = $3 }
-              f && /^      ticket:/ { t = $2; gsub(/"/, "", t); if (r != "") printf "- %s: known red (ladder), %s\n", r, t; r = "" }' "$ladder")
+              f && /^      ticket:/ { t = $2; if (t ~ /^".*"$/ || t ~ /^\047.*\047$/) t = substr(t, 2, length(t) - 2); if (r != "") printf "- %s: known red (ladder), %s\n", r, t; r = "" }' "$ladder")
     printf '## Known failures\n\nThese rows are not release gates under the standing release policy (CRUX smoke on lambda and gx10 is the gate). Each has a ticket.\n\n'
     [ -z "$kr" ] || printf '%s\n' "$kr"
     # --limit 1000 is gh's ceiling; a search that fills it may have been cut, so it is not measured.

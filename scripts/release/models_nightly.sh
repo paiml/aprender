@@ -171,7 +171,8 @@ relay() { # relay COMMIT OUT EVIDENCE PLANT
 }
 
 # red_rows BUNDLE -> "host<TAB>row<TAB>why", one line per red row of a red bundle: each rung a receipt
-# does not mark green:true (a missing or null green is red, as the ladder judge counts it); a red with no rung to name (a build failure, a binary that is not C, no receipt)
+# does not mark green:true (a rung with no green key is red, as the judge counts it); a red with no
+# rung to name (a build failure, a binary that is not C, no receipt)
 # is one "lane" row, so a red never goes unticketed. A host with no readable receipt while the other
 # host has one is its own "lane" row (a gx10 build or ssh failure must not hide behind a lambda rung);
 # no readable receipt on either host is the one "all" lane row. Every row is listed: no cap.
@@ -200,7 +201,7 @@ red_rows() {
 # OUT gets "host<TAB>row<TAB>#N" per row, the list a release's known failures name. A nightly row never
 # stops a release; a read or write that fails is a FAILED run of this step, never a ticket.
 tickets() {
-    local b=$1 c=$2 out=$3 gh=${MODELS_NIGHTLY_GH:-gh} host row why title n j body mark owner st=0
+    local b=$1 c=$2 out=$3 gh=${MODELS_NIGHTLY_GH:-gh} host row why title n j body mark owner len st=0
     local lib=${MODELS_NIGHTLY_POLICY_LIB:-$(dirname -- "$SCRIPT_PATH")/../lib/release_policy.sh}
     local ladder=${MODELS_NIGHTLY_LADDER:-$(dirname -- "$SCRIPT_PATH")/../../contracts/model-capability-ladder-v1.yaml}
     : > "$out" || die "cannot write $out"
@@ -210,15 +211,18 @@ tickets() {
     mark="models-nightly@$c"
     while IFS=$'\t' read -r host row why; do
         title="models-nightly red: $row on $host"
-        if ! j=$("$gh" issue list --state open --limit 1000 --search "\"$title\" in:title" --json number,title); then
+        if ! j=$("$gh" issue list --state open --limit 50 --search "\"$title\" in:title" --json number,title); then
             say "NOT-MEASURED: the issue search for '$title' failed"; st=1; continue
         fi
-        # 1000 is gh's ceiling: a full page may have been cut, and an answer that is not JSON is no answer.
-        # Either one would open a second ticket for a row that already has one.
-        if ! [ "$(printf '%s' "$j" | jq 'length' 2> /dev/null)" -lt 1000 ] 2> /dev/null; then
-            say "NOT-MEASURED: the issue search for '$title' was full or unreadable"; st=1; continue
-        fi
         n=$(printf '%s' "$j" | jq -r --arg t "$title" '[.[] | select(.title == $t) | .number] | min // empty' 2> /dev/null)
+        # A search that fills its page may have cut the matching issue off, and output that is not a JSON
+        # list proves nothing: either way a missing title is not "no issue", so nothing is opened.
+        if [ -z "$n" ]; then
+            len=$(jq 'length' <<< "$j" 2> /dev/null) || len=""
+            if ! [[ "$len" =~ ^[0-9]+$ ]] || [ "$len" -ge 50 ]; then
+                say "NOT-MEASURED: the issue search for '$title' returned a full page or no readable list"; st=1; continue
+            fi
+        fi
         body="Red in the models nightly at ${c:0:9}: $why. Under the standing release policy this row cannot stop a release; the release notes list it as a known failure with this ticket until it is green. Owner: $owner. $mark"
         if [ -n "$n" ]; then
             if ! j=$("$gh" issue view "$n" --json body,comments); then say "NOT-MEASURED: reading #$n failed"; st=1; continue; fi
@@ -579,6 +583,9 @@ GH
         '[{"number":4,"title":"models-nightly red: fx-10 on lambda"},{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}'
     row tickets_same_commit_is_not_commented_twice 0 "TICKET kept #5" "issue comment" -- tk "$tmp/tk/red" \
         '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' "{\"body\":\"x\",\"comments\":[{\"body\":\"models-nightly@$c1\"}]}"
+    R0='[{"id":"fx-3","file":"c.gguf"},{"id":"fx-2","file":"b.gguf","green":true}]'
+    tkb nogreen red "$R0"
+    row tickets_rung_without_green_is_red 0 "OUT lambda|fx-3|#77 " "fx-2" -- tk "$tmp/tk/nogreen" '[]' '{}'
     tkb lane red ""
     row tickets_red_with_no_rung_is_a_lane_row 0 "models-nightly red: lane on all" "" -- tk "$tmp/tk/lane" '[]' '{}'
     tkb nogx red "$R1" no-gx10
@@ -588,11 +595,11 @@ GH
     R25=$(for i in $(seq 1 25); do printf '{"id":"fx-%s","file":"f%s.gguf","green":false}\n' "$i" "$i"; done | jq -sc .)
     tkb many red "$R25"
     row tickets_every_red_row_no_cap 0 "lambda|fx-25|#77" "" -- tk "$tmp/tk/many" '[]' '{}'
+    P50=$(for i in $(seq 1 50); do printf '{"number":%s,"title":"models-nightly red: fx-1%s on lambda"}\n' "$((100 + i))" "$i"; done | jq -sc .)
+    row tickets_full_search_page_opens_nothing 2 "NOT-MEASURED: the issue search for 'models-nightly red: fx-1 on lambda' returned a full page" "issue create" -- \
+        tk "$tmp/tk/red" "$P50" '{}'
+    row tickets_unreadable_search_opens_nothing 2 "returned a full page or no readable list" "issue create" -- tk "$tmp/tk/red" 'not json' '{}'
     row tickets_failed_search_fails_the_step 2 "NOT-MEASURED: the issue search" "TICKET opened" -- tk "$tmp/tk/red" '[]' '{}' list
-    R1000=$(jq -nc '[range(1000) | {number: (. + 1), title: "something else"}]')
-    row tickets_full_search_is_not_measured 2 "NOT-MEASURED: the issue search for 'models-nightly red: fx-1 on lambda' was full or unreadable" \
-        "issue create" -- tk "$tmp/tk/red" "$R1000" '{}'
-    row tickets_unreadable_search_is_not_measured 2 "was full or unreadable" "issue create" -- tk "$tmp/tk/red" 'not json' '{}'
     tkb unset red '[{"id":"fx-n","file":"n.gguf"},{"id":"fx-z","file":"z.gguf","green":null},{"id":"fx-g","file":"g.gguf","green":true}]'
     row tickets_unset_green_rung_is_red 0 "OUT lambda|fx-n|#77 lambda|fx-z|#77 " "fx-g" -- tk "$tmp/tk/unset" '[]' '{}'
     row tickets_failed_comment_fails_the_step 2 "NOT-MEASURED: commenting on #5" "OUT lambda" -- tk "$tmp/tk/red" \
@@ -627,14 +634,14 @@ m20_real_ps_never_read	s/else ps -eo pgid=,args=; fi/else :; fi/
 m21_plant_feeds_readiness	s/\[ -n "\$4" \] [|][|] bundle=\$ev/bundle=$ev/
 m22_unmeasured_feeds_readiness	s/case \$state in green[|]red[)] \[/case $state in *) [/
 m23_nightly_judges_a_scope	s/ MODELS_T1_SCOPE=none \&\&/ \&\&/
-m24_green_rungs_ticketed	s/select\(.green != true\)/select(true)/
+m24_green_rungs_ticketed	s/select\(.green != true\)/select(.green != null)/
 m25_existing_issue_ignored	s/^        if \[ -n "\$n" \]; then$/        if false; then/
 m26_commented_every_slot	s/grep -qF -- "\$mark" <<< "\$j"; then say/false; then say/
 m27_ticket_failure_passes	s/^    \[ "\$st" = 0 \] [|][|] die "a ticket/    true || die "a ticket/
 m28_ticket_names_no_owner	s/ Owner: \$owner\.//
 m29_ownerless_ticket_opened	s/owner=\$\(rp_ticket_owner "\$ladder"\) [|][|] \{/owner=$(rp_ticket_owner "$ladder") || true || {/
-m30_unset_green_rung_unticketed	s/select\(.green != true\)/select(.green == false)/
-m31_full_search_trusted	s/^        if ! \[ "\$\(printf .* -lt 1000 \] 2> \/dev\/null; then$/        if false; then/'
+m30_rung_without_green_unticketed	s/select\(.green != true\)/select(.green == false)/
+m31_full_search_page_trusted	s/\[ "\$len" -ge 50 \]/false/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
