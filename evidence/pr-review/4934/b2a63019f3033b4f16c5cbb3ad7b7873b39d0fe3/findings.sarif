@@ -1,0 +1,217 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "diff-patch-id-matches-expected",
+          "level": "note",
+          "message": {
+            "text": "The patch-id of merge-base ad8fafc794..head b2a63019f3 with evidence/pr-review excluded, recomputed with scripts/lib/pr_review_patch_id.sh prpid_compute the way arm4 does, is 92e4e28cb3e614e922e61b7e5c9cface16a604bb, equal to the expected id. No mismatch. (git 2.34.1 has no native --verbatim, so the lib used its scripts/lib/git_patch_id.py port under python3; no new Python was written.)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/pr_review_patch_id.sh"
+                },
+                "region": {
+                  "startLine": 100
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              ". scripts/lib/pr_review_patch_id.sh && prpid_compute \"$PWD\" ad8fafc7943962aceefd1eff18cac65d6cb35f46 b2a63019f3033b4f16c5cbb3ad7b7873b39d0fe3 4934"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "495ed6f8aeedd65429d2b6587d70dac6726f14c69c4db5b10fe4d936e77e87e5",
+            "failure_scenario": "none: a receipt stamped with any other id would make arm4 A2 find no receipt for the subject and fail the present check.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "preflight-script-syntax",
+          "level": "note",
+          "message": {
+            "text": "bash -n exits 0 on scripts/check_publish_preflight.sh, so the edited R4 block and the six selftest rows parse."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_publish_preflight.sh"
+                },
+                "region": {
+                  "startLine": 514
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-n",
+              "scripts/check_publish_preflight.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "none: a syntax error in the edited block would make every publish preflight exit non-zero and refuse a release.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cascade-publish-syntax",
+          "level": "note",
+          "message": {
+            "text": "bash -n exits 0 on scripts/cascade-publish.sh; the diff there is a comment only."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cascade-publish.sh"
+                },
+                "region": {
+                  "startLine": 622
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-n",
+              "scripts/cascade-publish.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "none: a comment-only change cannot alter behaviour; the check only rules out a stray unterminated quote.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "r4-accepts-any-main-ancestor",
+          "level": "warning",
+          "message": {
+            "text": "R4 now passes when HEAD is an ancestor of origin/main OR of origin/release/<V>. Before, only the release branch of this version counted. An ancestor of origin/main is every commit in main history, so R4 no longer separates this release cut from an older main commit; the remaining defence is R3 (tag at HEAD) and R5 (dogfood receipt GO on this commit and version). This is the stated intent of operator ruling P5 (2026-10-08), recorded so the author and the quorum see the cost."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_publish_preflight.sh"
+                },
+                "region": {
+                  "startLine": 517
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_publish_preflight.sh:517-519 at b2a63019f3",
+            "excerpt": "        for r4_ref in \"$release_ref\" origin/main; do\n            if git -C \"$root\" rev-parse --verify --quiet \"${r4_ref}^{commit}\" >/dev/null \\\n               && git -C \"$root\" merge-base --is-ancestor \"$head\" \"$r4_ref\" 2>/dev/null; then",
+            "excerpt_sha256": "b02a3b141bfedcdf539655392c9391e683ec556b713e9e3f5c7c78aa8e2101f8",
+            "failure_scenario": "A stale checkout of an old main commit that carries a v<V> tag and a GO receipt for that commit and version passes R4, where the release-branch rule would have refused it; only R3 and R5 stand between it and a publish.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "r4-origin-main-not-fetched",
+          "level": "note",
+          "message": {
+            "text": "check_publish_preflight.sh has no git fetch (grep finds none) and cascade-publish.sh runs it as-is, so origin/main is whatever the last fetch left. A stale origin/main can only make R4 refuse a legitimate main commit; it cannot make R4 accept a commit that is not on the real main. The error is fail-closed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_publish_preflight.sh"
+                },
+                "region": {
+                  "startLine": 517
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of the full script plus scripts/cascade-publish.sh lines 621-640: neither fetches. Judgement that a local remote-tracking ref lags but never leads origin; not run against a live remote.",
+            "failure_scenario": "The release commit lands on main and the tag is cut before the box fetches: R4 prints FAIL and refuses the unattended publish until a fetch runs, a delay and not a wrong publish.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "r4-empty-version-guard-unpinned",
+          "level": "note",
+          "message": {
+            "text": "The new origin/main fallback makes the [ -n \"$version\" ] guard load-bearing: with no version the old code failed on the missing origin/release/? ref, now only the guard keeps an empty version from passing on main. None of the six new or changed selftest rows has an empty version, so deleting the guard survives the selftest."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_publish_preflight.sh"
+                },
+                "region": {
+                  "startLine": 516
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Hand-reasoned mutant, not run (the selftest needs cargo and this host has none). Earlier gates may refuse an empty version before R4, which would make this unreachable; not traced to the end.",
+            "failure_scenario": "The guard is deleted or inverted in a later edit and a tree whose Cargo.toml version cannot be read passes R4 on any main ancestor, with no selftest row failing.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "preflight-selftest-not-run",
+          "level": "note",
+          "message": {
+            "text": "The preflight selftest (build_repo runs cargo metadata) was NOT run: no cargo on this host. A supplementary cargo-free harness of the R4 block over seven ref layouts was also NOT run: the lane hook refused git init in a scratch dir (read-only git only). The six rows were therefore read, not executed; hand-reasoned mutants (drop origin/main from the loop, drop release_ref, make is-ancestor always true) each flip at least one row (on_main_without_release_ref_passes, rc_on_release_not_main_passes, head_on_neither_main_nor_release_refuses)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_publish_preflight.sh"
+                },
+                "region": {
+                  "startLine": 753
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "not_measured, not a pass. Mutation attempted 0, killed 0, recorded unreachable and the verdict DEGRADED.",
+            "failure_scenario": "A row greps the wrong text or a fixture ref is mis-set (the added origin/main update-ref in build_repo makes main equal HEAD in every row) and the selftest is red on the first CI run; nothing in this review would have caught it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
