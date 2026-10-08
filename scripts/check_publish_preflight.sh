@@ -956,6 +956,8 @@ FXREADY
     d="$tmp/pol-cov"; build_repo "$d"; record_policy "$d" 1.2.0
     row policy_covers_is_printed 0 "POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers 1.2.3" "$d"
     row policy_covers_engages_the_scope 0 "SCOPED: crux-smoke -- the operator emergency scope recorded for release 1.2.3" "$d"
+    # policy_ladder writes the granted copy with mktemp; a failed mktemp is an unreadable policy, never "no policy".
+    TMPDIR="$tmp/no-such-dir" row policy_mktemp_failed_refuses 1 "mktemp failed, so the policy ladder could not be written" "$d"
     FX_LADDER_RC=1 row policy_r7_judges_the_scope 0 "CRUX smoke satisfied at the cut" "$d"
     FX_SCOPE_RC=1 row policy_scope_red_refuses 1 "FAIL  R7 OPERATOR EMERGENCY SCOPE crux-smoke NOT satisfied" "$d"
     FX_READINESS_RC=1 row policy_r8_is_not_the_gate 0 "release-readiness was NOT the gate" "$d"
