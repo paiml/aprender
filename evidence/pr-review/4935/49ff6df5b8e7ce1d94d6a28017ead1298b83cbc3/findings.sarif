@@ -1,0 +1,222 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "diff-patch-id-matches-arm4",
+          "level": "warning",
+          "message": {
+            "text": "The patch-id of merge-base ad8fafc794..head 49ff6df5b8 with evidence/pr-review excluded, computed with scripts/lib/pr_review_patch_id.sh prpid_compute the way arm4 does (git-patch-id-verbatim/pinned-diff-v1), is a51081c3f671e602b73e42436c66c1452ff34f49. The id supplied with the task, 93e3ea5b32355b5044820120417e30cf3a5340f8, was a --stable id and differs; arm4 hashes with the verbatim algorithm, so the receipt carries a51081c3f671e602b73e42436c66c1452ff34f49. A direct git patch-id --stable recompute was refused by the lane hook and is not run."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/pr_review_patch_id.sh"
+                },
+                "region": {
+                  "startLine": 100
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              ". scripts/lib/pr_review_patch_id.sh && prpid_compute \"$PWD\" ad8fafc7943962aceefd1eff18cac65d6cb35f46 49ff6df5b8e7ce1d94d6a28017ead1298b83cbc3 4935"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "407540d0fa79134bf15dfe736347e620aded4b450643593406e22afecfb227bb",
+            "failure_scenario": "A receipt stamped with the stable id would match no arm4 A2 recompute, so the present check would find no receipt for the subject and fail.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "release-draft-gated-harness-enforce",
+          "level": "note",
+          "message": {
+            "text": "RELEASE_DRAFT_GATED_ENFORCE=1 bash scripts/check_release_draft_gated.sh exits 0 on the head: 25 rows plus 5 structural rows pass, mutants 40/40 killed, near-misses 5/5 held. The four new cascade rows and the structural row each have a killing mutant (cascade-crux-dir-dropped, cascade-cert-not-the-bumps, cascade-env-always, cascade-env-never, drain-*, cascade-*)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_draft_gated.sh"
+                },
+                "region": {
+                  "startLine": 150
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_draft_gated.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9bcdc681f939d5705938f0b6817ba051fa02aa61bf672b23694f06d9fccc1eaa",
+            "failure_scenario": "none: a surviving mutant would leave a stated rule that nothing tests; none survived.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cascade-step-hands-down-step5-receipts",
+          "level": "note",
+          "message": {
+            "text": "Step 6 passes the same two values step 5 passes to check_publish_preflight.sh (MODEL_LADDER_CRUX_DIR=$AP/models-t1, CRUX_CERT=$WT/evidence/crux/$V/prompt-certification.json), only when AP_POLICY=1; the else branch is the unchanged bare call. cascade-drain.sh line 151 unsets only CARGO_REGISTRY_TOKEN, so the two variables reach cascade-publish.sh and its preflight. The scripts/cascade-publish.sh change is comment only (bash -n clean on all three files)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 513
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/autopilot.sh:513-514 at 49ff6df5b8",
+            "excerpt": "    MODEL_LADDER_CRUX_DIR=\"$AP/models-t1\" CRUX_CERT=\"$WT/evidence/crux/$V/prompt-certification.json\" \\\n      bash scripts/cascade-drain.sh --target \"$V\" --passes 30 > \"$AP/cascade.log\" 2>&1; rc=$?",
+            "excerpt_sha256": "7f2963cc4131512cc5e9099bd4cbb035f027dd9be9d26055e829bd02ba296bcd",
+            "failure_scenario": "none: if the values drifted from step 5, R7 in the cascade preflight would judge different receipts than the tagging step did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "structural-row-line-continuation-unset",
+          "level": "note",
+          "message": {
+            "text": "The structural row scans the drain and cascade-publish.sh line by line with an awk regex requiring unset/export/declare and the variable name on the same line. An unset whose variable name sits on a continuation line is therefore not flagged. The earlier advisory probe read rc 0; this review confirmed it by reading the regex (lines 154-156), not by re-running a probe. Fails closed in effect: it needs a deliberate edit to the drain, which the 40 mutants and a reviewer both see."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_draft_gated.sh"
+                },
+                "region": {
+                  "startLine": 154
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of the per-line awk pattern; awk sees one record per physical line, so a backslash-newline split hides the name from the same-line match.",
+            "failure_scenario": "A later edit writing `unset \\` then `CRUX_CERT` on the next line would strip the receipts from the cascade preflight while the structural row stays green; R7 would then refuse after the tag is public.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "structural-row-exec-c-bash",
+          "level": "note",
+          "message": {
+            "text": "The env -i / env - detector does not match `exec -c bash \"$0\" \"$@\"`, which also clears the environment. The earlier advisory probe read rc 0; this review confirmed it by reading the pattern, not by re-running it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_draft_gated.sh"
+                },
+                "region": {
+                  "startLine": 150
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The pattern lists env -i and env - only; exec -c is a third spelling of an empty environment.",
+            "failure_scenario": "A cascade-publish.sh that re-execs itself with exec -c would drop MODEL_LADDER_CRUX_DIR and CRUX_CERT and pass the structural row.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "syntax-and-todo",
+          "level": "note",
+          "message": {
+            "text": "bash -n exits 0 on scripts/release/autopilot.sh, scripts/cascade-publish.sh and scripts/check_release_draft_gated.sh; no TODO/FIXME/HACK/XXX on added lines (grep count 0)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 513
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-n",
+              "scripts/release/autopilot.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "none: a syntax error would stop the release autopilot at step 6.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Disposable git archive tree for the agy lane was refused by the lane hook (git archive: a lane runs read-only git only); agy was not dispatched."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "--version"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "10e2e117b01523891ca271a615ae36e9d5e52348fd7d642f66727602c1b8dcbe"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
