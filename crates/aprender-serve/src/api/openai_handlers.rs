@@ -618,7 +618,7 @@ fn finalize_chat_text(
 /// type:"function", function:{name, arguments-as-JSON-STRING}) and
 /// `finish_reason` becomes `"tool_calls"`. Otherwise the message is a normal
 /// assistant text turn and the supplied `finish_reason` is preserved.
-fn build_tool_calling_message(
+pub(super) fn build_tool_calling_message(
     text: String,
     finish_reason: String,
     tools: &[super::OpenAiTool],
@@ -847,6 +847,7 @@ fn pregenerated_sse_response(
     stops: Option<&[String]>,
     max_tokens: usize,
     prompt_tokens: usize,
+    tools: Option<StreamTools>,
 ) -> Response {
     let completion_tokens = token_ids.len();
     // aprender#4340: the chat stop markers `clean_chat_output` truncates the
@@ -858,10 +859,15 @@ fn pregenerated_sse_response(
         .collect();
     let StreamedText { deltas, stopped } =
         streaming_text_deltas(&tokenizer, &token_ids, Some(&stops));
+    // #4918: tool-call detection runs after the stop filter, as on the live path.
+    let (deltas, calls) = stream_tool_calls::detect_all(tools, deltas);
     // #2375(6): `max_tokens` is a parameter so this path CANNOT emit a finish
     // reason without knowing the budget it was generated under. The terminal
     // chunk now agrees with the non-streaming body for the same request.
-    let finish = FinishReason::from_generation(stopped, completion_tokens, max_tokens);
+    let finish = stream_tool_calls::finish_reason(
+        &calls,
+        FinishReason::from_generation(stopped, completion_tokens, max_tokens),
+    );
     let usage = Usage {
         prompt_tokens,
         completion_tokens,
@@ -878,6 +884,12 @@ fn pregenerated_sse_response(
 
         for delta in &deltas {
             let chunk = ChatCompletionChunk::content(&request_id, &model_name, delta);
+            if let Some(evt) = sse_event(&chunk) {
+                yield evt;
+            }
+        }
+        if !calls.is_empty() {
+            let chunk = ChatCompletionChunk::tool_calls(&request_id, &model_name, calls);
             if let Some(evt) = sse_event(&chunk) {
                 yield evt;
             }
