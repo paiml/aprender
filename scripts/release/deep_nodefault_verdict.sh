@@ -205,7 +205,8 @@ LOG
     row C18 1 "$d/stop-error.log"        101 "an unlocated error followed by a distribute error: the next error does not explain it"
 
     printf 'deep_nodefault_verdict.sh --self-test (impl=%s): %s/%s rows pass\n' "$IMPL" "$PASS" "$((PASS + FAIL))"
-    [ "$FAIL" = 0 ] && return 0
+    # A table that lost rows proves less than it says: 18 is the row count, and fewer is a fail.
+    [ "$FAIL" = 0 ] && [ "$PASS" -ge 18 ] && return 0
     return 1
 }
 
