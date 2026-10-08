@@ -622,6 +622,10 @@ clean_room_gate() {
 # metadata, tag at HEAD, HEAD on origin/release/<version> (#4286), dogfood receipt GO for this commit
 # and version. --check and --order-check upload nothing and are not gated. The
 # drain re-runs this script per pass, so the gate is re-asked before every pass.
+# Under the standing release policy the preflight's R7 judges CRUX smoke from
+# MODEL_LADDER_CRUX_DIR and CRUX_CERT, inherited from the caller: the autopilot's
+# cascade step hands down the receipts its preflight step judged (D4). A hand run
+# passes them the same way, or R7 refuses.
 #
 # The clean-room gate runs FIRST, before the preflight and before any upload.
 # There is no mode, flag or variable that skips it for a publishing run;
