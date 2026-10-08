@@ -1,7 +1,7 @@
 - id: PMAT-4936
   github_issue: 4936
   item_type: task
-  title: 'x86-main: fat_driver self-test prints live ::error:: annotations (false 12000s red)'
+  title: 'x86-main: fence the fat_driver case-table annotations; section git fetch reads up to 3 times (P6)'
   status: inprogress
   priority: high
   assigned_to: null

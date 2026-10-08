@@ -206,6 +206,8 @@ jobs:
           setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
           setsid --wait bash scripts/ci/fence_workflow_commands.sh --self-test
           setsid --wait bash scripts/ci/fence_workflow_commands.sh
+          setsid --wait bash scripts/ci/fetch_p6.sh --self-test
+          setsid --wait bash scripts/ci/fetch_p6.sh --check-wiring
       # The driver decides what every section's if:/matrix/needs means and whether
       # the vendored workflow is the upstream one; its case table must go RED on
       # each planted defect before it is trusted to report a section green.
