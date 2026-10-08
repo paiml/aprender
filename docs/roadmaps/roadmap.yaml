@@ -24253,6 +24253,28 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: vec![vec![0; n]; layers] clones layer 0 into every layer, writing every byte, so construction commits 8.6 / 17.2 / 34.4 GB; nextest KILLed the tests on a 30 GB runner (run 37241931271, workspace-test shard 1).'
+- id: PMAT-4802
+  github_issue: 4802
+  item_type: task
+  title: 'PY-PORT: crux-judge — retire the Python CRUX judge, oracles and certifier for tools/aprender-crux-judge'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-wprodmodels
+  created: 2026-10-05T14:52:00Z
+  updated: 2026-10-05T14:52:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The binary''s collect, eval, extract, lint, certify and check subcommands replace crux_inference_judge.py, crux_oracles.py and crux_prompt_certify.py, which are deleted; every caller resolves the binary through scripts/lib/crux_judge_bin.sh'
+  - 'All 11 golden receipts are byte-identical (receipt JSON, Markdown, exit code); scripts/check_crux_oracles.sh and scripts/check_crux_inference_judge.sh are green against the binary, and every F6 mutant is rebuilt from mutated Rust sources and killed'
+  - 'run_python_cell is the one python3 seam: only the model reply plus the asserts, under unshare -rn, rlimits, python3 -I, a scrubbed env and a sentinel; each property has a planted-failure row; a missing sandbox is sandbox_unavailable, never correct'
+  - 'Checklist row, done: the crate''s tests carried 48 .unwrap() calls (certify 5, collect 3, judge 20, oracles 9, pyjson 4, pyval 7); the crate is outside the workspace, so the disallowed-methods lint never runs on it; each is now an expect with its reason, and the crate''s clippy.toml carries the disallowed-methods ban, which a planted unwrap proves fires'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Branch-only, no PR, until a PR slot. Follow-ups: port the python3 fixture harness in the two case tables; the prompt set''s note at the next recertification; stale comments in four Python drivers; remove the run_python_cell seam.'
+  epic: 4741
 - id: PMAT-4862
   github_issue: 4862
   item_type: task
