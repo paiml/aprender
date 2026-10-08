@@ -144,6 +144,7 @@ self_test() {
   pin "repo pin with components"   0 "1.93.0 rustfmt clippy" $'[toolchain]\nchannel = "1.93.0"\ncomponents = ["rustfmt", "clippy"]'
   pin "dated nightly is a pin"     0 "nightly-2026-01-02 "   $'[toolchain]\nchannel = "nightly-2026-01-02"'
   pin "floating stable refused"    1 ""                      $'[toolchain]\nchannel = "stable"'
+  pin "pin with a suffix refused"  1 ""                      $'[toolchain]\nchannel = "1.93.0-beta.1"'
   pin "no channel refused"         1 ""                      $'[toolchain]\ncomponents = ["clippy"]'
   rows=$((rows + 1))
   out=$(read_pin "$t/absent.toml" 2>/dev/null) && rc=0 || rc=$?
@@ -158,6 +159,7 @@ self_test() {
   nosync "a sync line is RED"                   1 $'info: syncing channel updates for 1.93.0-x86_64-unknown-linux-gnu\nrustc 1.93.0 (254b59607 2026-01-19)'
   nosync "image default answered is RED"        1 'rustc 1.95.0 (abc 2026-05-01)'
   nosync "1.93.01 is not 1.93.0"                1 'rustc 1.93.01 (abc 2026-05-01)'
+  nosync "dots are literal: 1x93x0 is not 1.93.0" 1 'rustc 1x93x0 (abc 2026-05-01)'
 
   # seed() end to end against a stub docker (a shell function shadows the binary). The stub
   # answers each of seed's four docker calls and refuses a probe that does not mount the
@@ -226,12 +228,18 @@ self_test() {
   else echo "FAIL  ci.yml wiring:$why"; fails=$((fails + 1)); fi
 
   # The caller in ci.yml requires this exact line, so a self-test that runs no rows is RED.
-  [ "$fails" -eq 0 ] && [ "$rows" -eq 25 ] && { echo "SELF-TEST PASSED (25 rows)"; return 0; }
-  echo "SELF-TEST FAILED ($fails failed, $rows of 25 rows run)"; return 1
+  [ "$fails" -eq 0 ] && [ "$rows" -eq 27 ] && { echo "SELF-TEST PASSED (27 rows)"; return 0; }
+  echo "SELF-TEST FAILED ($fails failed, $rows of 27 rows run)"; return 1
 }
 
 case "${1:-}" in
   --self-test) self_test ;;
-  seed) shift; [ $# -ge 2 ] || { echo "usage: $0 seed DIR IMAGE [TOOLCHAIN_FILE]" >&2; exit 2; }; seed "$@" ;;
+  seed)
+    shift; [ $# -ge 2 ] || { echo "usage: $0 seed DIR IMAGE [TOOLCHAIN_FILE]" >&2; exit 2; }
+    # seed runs its own case table first, so a caller that drops --self-test cannot skip it.
+    st=$(self_test 2>&1) || true
+    grep -qx 'SELF-TEST PASSED (27 rows)' <<< "$st" \
+      || { printf '%s\n' "$st" >&2; echo "::error::the self-test did not pass; nothing is seeded" >&2; exit 1; }
+    seed "$@" ;;
   *) echo "usage: $0 seed DIR IMAGE [TOOLCHAIN_FILE] | --self-test" >&2; exit 2 ;;
 esac
