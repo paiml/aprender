@@ -309,7 +309,7 @@ worker_run_one() {
         w_total=$((w_total + 1))
         # What is running, for the heartbeat; removed when the check returns.
         w_t0=$SECONDS
-        printf '%s\t%s\n' "$(date +%s)" "$label" > "$GUARD_TREE_RUN_DIR/$w_idx.running"
+        printf '%s\n' "$label" > "$GUARD_TREE_RUN_DIR/$w_idx.running"
         # -k: a guard that ignores TERM is KILLed 30 s later. GNU timeout
         # signals the guard's whole process group, so its children go too.
         timeout -k 30 "$GUARD_TREE_GUARD_TIMEOUT" "$@" >"$w_cap" 2>&1
@@ -686,16 +686,22 @@ done < "$PLAN"
     trap - EXIT
     parent=$$
     last=$SECONDS
+    # Ages are counted from when this loop first saw a check's .running file
+    # (scanned every second), on this shell's own SECONDS clock: no wall-clock
+    # read (bashrs DET002), and a worker is a separate xargs process whose
+    # SECONDS is not ours. A label change on the same file restarts its age.
+    declare -A seen_t0=() seen_lbl=()
     while [ ! -e "$RUN_DIR/done" ] && [ -d "$RUN_DIR" ] && kill -0 "$parent" 2>/dev/null; do
         sleep 1
-        [ $((SECONDS - last)) -ge "$GUARD_TREE_HEARTBEAT" ] || continue
-        last=$SECONDS
-        now="$(date +%s)"
+        due=0
+        [ $((SECONDS - last)) -lt "$GUARD_TREE_HEARTBEAT" ] || { due=1; last=$SECONDS; }
         for f in "$RUN_DIR"/*.running; do
             [ -f "$f" ] || continue
-            IFS="$TAB" read -r t0 lbl < "$f" 2>/dev/null || continue
-            case "${t0:-}" in ''|*[!0-9]*) continue ;; esac
-            printf 'guard_tree: still running: %s (%ss)\n' "$lbl" "$((now - t0))" >&2
+            IFS= read -r lbl < "$f" 2>/dev/null || continue
+            [ -n "$lbl" ] || continue
+            if [ "${seen_lbl[$f]-}" != "$lbl" ]; then seen_lbl[$f]=$lbl; seen_t0[$f]=$SECONDS; fi
+            [ "$due" -eq 1 ] || continue
+            printf 'guard_tree: still running: %s (%ss)\n' "$lbl" "$((SECONDS - ${seen_t0[$f]}))" >&2
         done
     done
 ) &

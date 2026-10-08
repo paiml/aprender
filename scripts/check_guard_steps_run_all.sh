@@ -341,7 +341,8 @@ manifest_rows() {
     n=$((n + 1))
     dpid="$(cat "$d/rt/daemon.pid" 2> /dev/null)"
     if [ -n "$dpid" ] && [ -d "/proc/$dpid" ]; then
-        if find "/proc/$dpid/fd" -type l -lname '*hb.*' 2> /dev/null | grep -q .; then
+        hbfd="$(find "/proc/$dpid/fd" -type l -lname '*hb.*' 2> /dev/null)"
+        if [ -n "$hbfd" ]; then
             printf 'FAIL %-58s\n' "the step's daemon inherited the heartbeat FIFO"; bad=1
         else printf 'ok   %-58s\n' "the step's daemon holds no heartbeat FIFO"; fi
         kill "$dpid" 2> /dev/null
