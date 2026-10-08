@@ -227,9 +227,29 @@ self_test() {
   if [ -z "$why" ]; then echo "ok    ci.yml wires the seed output into the fmt step, fail-closed"
   else echo "FAIL  ci.yml wiring:$why"; fails=$((fails + 1)); fi
 
+  # `seed` from the command line refuses on a broken table: a copy of this script whose
+  # self_test fails at once (so it never re-enters this row) must exit non-zero with zero
+  # docker calls and no seed directory.
+  rows=$((rows + 1))
+  local cp_rc ncalls
+  why=""
+  mkdir -p "$t/bin"
+  printf '#!/bin/sh\necho x >> "%s/pathcalls"\nexit 0\n' "$t" > "$t/bin/docker"; chmod +x "$t/bin/docker"
+  : > "$t/pathcalls"
+  sed 's/^self_test() {$/self_test() { echo "table broken on purpose"; return 1;/' "${BASH_SOURCE[0]}" > "$t/broken.sh"
+  grep -q 'table broken on purpose' "$t/broken.sh" || why=" could not plant the broken table;"
+  printf '%s\n' "$repo_pin" > "$t/cli-tc.toml"
+  PATH="$t/bin:$PATH" bash "$t/broken.sh" seed "$t/cli-never" img "$t/cli-tc.toml" > /dev/null 2>&1 && cp_rc=0 || cp_rc=$?
+  ncalls=$(wc -l < "$t/pathcalls")
+  [ "$cp_rc" != 0 ] || why="$why seed exited 0 on a broken table;"
+  [ "$ncalls" = 0 ] || why="$why $ncalls docker calls;"
+  [ ! -e "$t/cli-never" ] || why="$why the seed directory was created;"
+  if [ -z "$why" ]; then echo "ok    seed refuses on a broken table: no docker call, no directory"
+  else echo "FAIL  seed on a broken table:$why"; fails=$((fails + 1)); fi
+
   # The caller in ci.yml requires this exact line, so a self-test that runs no rows is RED.
-  [ "$fails" -eq 0 ] && [ "$rows" -eq 27 ] && { echo "SELF-TEST PASSED (27 rows)"; return 0; }
-  echo "SELF-TEST FAILED ($fails failed, $rows of 27 rows run)"; return 1
+  [ "$fails" -eq 0 ] && [ "$rows" -eq 28 ] && { echo "SELF-TEST PASSED (28 rows)"; return 0; }
+  echo "SELF-TEST FAILED ($fails failed, $rows of 28 rows run)"; return 1
 }
 
 case "${1:-}" in
@@ -238,7 +258,7 @@ case "${1:-}" in
     shift; [ $# -ge 2 ] || { echo "usage: $0 seed DIR IMAGE [TOOLCHAIN_FILE]" >&2; exit 2; }
     # seed runs its own case table first, so a caller that drops --self-test cannot skip it.
     st=$(self_test 2>&1) || true
-    grep -qx 'SELF-TEST PASSED (27 rows)' <<< "$st" \
+    grep -qx 'SELF-TEST PASSED (28 rows)' <<< "$st" \
       || { printf '%s\n' "$st" >&2; echo "::error::the self-test did not pass; nothing is seeded" >&2; exit 1; }
     seed "$@" ;;
   *) echo "usage: $0 seed DIR IMAGE [TOOLCHAIN_FILE] | --self-test" >&2; exit 2 ;;
