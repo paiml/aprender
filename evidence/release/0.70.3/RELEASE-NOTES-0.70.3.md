@@ -27,7 +27,10 @@ the tagged commit.
 
 ## Changed since 0.70.2
 
-- `apr serve`: streaming tool calls (Refs #4918). Pending: the fix's own line, written when it lands.
+- `apr serve`: with `tools` in a request, a streamed chat (`stream: true` on `/v1/chat/completions`, and
+  `/v1/chat/completions/stream`) now sends the model's tool call as `delta.tool_calls` and ends with
+  `finish_reason: "tool_calls"`, as the non-streaming path already did. Both paths parse the call with the
+  same parser. With no tools, or `tool_choice: "none"`, the stream is unchanged (Refs #4918).
 
 ## Known failures (shipped, moved to 0.71.0)
 The operator refused all six for 0.70.2 and they stand for 0.70.3 under the scope above. None has a per-model contract edit, and none is
