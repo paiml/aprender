@@ -88,10 +88,13 @@ seed() {
     sh -c 'cp -a "$RUSTUP_HOME"/. /seed/' || { echo "::error::copying $rh out of $image failed" >&2; return 1; }
   retry_bounded "$RETRY_MAX" docker run --rm --user "$(id -u):$(id -g)" -v "$dir:$rh" "$image" \
     rustup toolchain install "$ch" --profile minimal --no-self-update "${cargs[@]}" || return 1
-  probe=$(mktemp -d)
+  # The probe sits beside DIR, never in the runner's /tmp: a docker daemon that does not see
+  # that /tmp mounts an empty directory, rustup finds no toolchain file and the image default
+  # answers (yoga-build, run 37734283956 attempt 2: rustc 1.95.0 from the probe).
+  probe=$(mktemp -d "${dir%/}.probe.XXXXXX")
   cp "$pinfile" "$probe/rust-toolchain.toml"
   out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$dir:$rh:ro" -v "$probe:/probe:ro" -w /probe "$image" \
-    sh -c 'rustc --version && cargo --version && for c in "$@"; do case $c in rustfmt) cargo fmt --version ;; clippy) cargo clippy --version ;; esac; done' _ $comps 2>&1) \
+    sh -c 'test -f rust-toolchain.toml || { echo "probe: rust-toolchain.toml is not visible in the container" >&2; exit 3; }; rustc --version && cargo --version && for c in "$@"; do case $c in rustfmt) cargo fmt --version ;; clippy) cargo clippy --version ;; esac; done' _ $comps 2>&1) \
     || { echo "::error::the read-only seeded home cannot run the pinned toolchain:" >&2; printf '%s\n' "$out" >&2; return 1; }
   rm -rf "${probe:?}"
   printf '%s\n' "$out"
