@@ -390,7 +390,7 @@ ticket() {
             echo "NOT-MEASURED: the issue search for '$TICKET_TITLE' returned a full page or no readable list"; return 1
         fi
     fi
-    body="The nightly assets rehearsal at ${c:0:9} is $state ($concl): $url. Under the standing release policy this nightly cannot stop a release; the release notes list it as a known failure with this ticket until it is green. Owner: $owner. $mark"
+    body="The nightly assets rehearsal at ${c:0:9} is $state ($concl): $url. Under the standing release policy this nightly cannot stop a release; the release notes list it as a known failure with this ticket. A green night does not close it: its owner does, once the nightly is green again. Owner: $owner. $mark"
     if [ -n "$n" ]; then
         if ! j=$("$gh" issue view "$n" --json body,comments); then echo "NOT-MEASURED: reading #$n failed"; return 1; fi
         if grep -qF -- "$mark" <<< "$j"; then echo "TICKET kept #$n (already names ${c:0:9})"

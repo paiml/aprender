@@ -1,0 +1,209 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_reusable_prior_art",
+          "level": "note",
+          "message": {
+            "text": "pmat query over the head-built index for a release-ticket opener returns 5 results, none an issue opener this diff should have reused; the duplication scan over 1560 of 1560 branches hit only this PR's own earlier queue branches (9 filename hits, the same three files). Two workflows (coverage-nightly.yml:345, qwen-story-daily.yml:267) open or update an issue inline in YAML; neither is a reusable function, and this subcommand is stricter (owner, full-page and not-a-list checks), so it is not a copy."
+          },
+          "properties": {
+            "grounding": "measured",
+            "rationale": "Index built at head in this worktree; scripts/pr_review_duplication_scan.sh --rust-semantic covered rust semantic, everything else lexical, 1560/1560 branches.",
+            "failure_scenario": "If an issue-opener library already existed this PR would add a drifting second copy; none was found by either half of the search.",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "query",
+              "release ticket issue create nightly",
+              "--limit",
+              "5",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c6d8c19f7d527c5eaf72bd894745c42a3cd042016f5e54fcd4b60298ebbf9152"
+          }
+        },
+        {
+          "ruleId": "no_satd_introduced",
+          "level": "note",
+          "message": {
+            "text": "The new commit adds 0 TODO, FIXME, HACK or XXX markers."
+          },
+          "properties": {
+            "grounding": "measured",
+            "rationale": "Counted on added lines only; grep -c exits 1 on a zero count.",
+            "failure_scenario": "A new debt marker would ship without a ticket; there is none.",
+            "precision_class": "advisory",
+            "command": [
+              "sh",
+              "-c",
+              "git show 85b2d6dace -- scripts .github | grep -E \"^[+]\" | grep -v \"^[+][+][+]\" | grep -ciE \"TODO|FIXME|HACK|XXX\""
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          }
+        },
+        {
+          "ruleId": "workflow_run_no_branch_filter",
+          "level": "warning",
+          "message": {
+            "text": "assets-rehearsal-tickets.yml triggers on every completed run of the nightly, on any branch. The nightly takes workflow_dispatch (assets-rehearsal-nightly.yml:11), so a manual run on a feature branch that fails opens or comments on the one standing ticket with that branch's sha, and the release notes then list a known failure that main does not have. readiness-nightly.yml filters head_branch == 'main' for the same trigger."
+          },
+          "properties": {
+            "grounding": "measured",
+            "rationale": "The count of branch filters and concurrency keys in the tickets workflow is 0 (grep exit 1); the workflow_dispatch trigger on the nightly is measured at assets-rehearsal-nightly.yml:11. The conclusion that a feature-branch run reaches the ticket is the reviewer's reading of workflow_run semantics.",
+            "failure_scenario": "A developer dispatches the nightly on a feature branch, it fails, and the standing ticket gets a red comment and a known-failure line for a commit that is not on main.",
+            "precision_class": "advisory",
+            "command": [
+              "grep",
+              "-c",
+              "-E",
+              "concurrency|head_branch|branches:",
+              ".github/workflows/assets-rehearsal-tickets.yml"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          }
+        },
+        {
+          "ruleId": "tickets_workflow_no_concurrency",
+          "level": "warning",
+          "message": {
+            "text": "The tickets workflow has no concurrency group and the search-then-create in ticket() is not atomic (GitHub search is also eventually consistent). Two nightlies that complete close together (a late schedule and a dispatch, or a re-run) both find no open ticket and both run gh issue create, leaving two tickets under the same title; the lowest-number rule then hides one forever."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Measured absence of a concurrency key: 0 matches in the tickets workflow. The race itself is reasoning, not an executed repro.",
+            "failure_scenario": "Two overlapping completions open duplicate tickets with the same title, so 'one ticket, one owner' is broken and the second ticket is never updated.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "green_night_never_closes_ticket",
+          "level": "note",
+          "message": {
+            "text": "The job's if: (line 16) skips success, skipped and neutral, so ticket()'s own 'TICKET none' branch is unreachable from the workflow and no run ever records that a night went green. The ticket body promises 'known failure with this ticket until it is green', but nothing closes or annotates it; closing stays manual."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading of the job-level if: (measured at line 16) against the body text in ticket(). Policy may intend manual close; the diff does not say.",
+            "failure_scenario": "The nightly goes green for a week, the ticket stays open, and the release notes keep listing a fixed failure as known.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "self_test_needs_unlanded_policy_lib",
+          "level": "note",
+          "message": {
+            "text": "On this branch scripts/lib/release_policy.sh does not exist, so the default self-test reads red: 103 pass, 13 fail. With ASSETS_REHEARSAL_POLICY_LIB pointing at #4910's file it reads 116 pass, 0 fail (the stated 100 to 116 rows). The PR is only green after #4910 is on main."
+          },
+          "properties": {
+            "grounding": "measured",
+            "rationale": "The exit_code recorded is tail's, per the pipe rule; the figures are in the last line: 103 pass, 13 fail without the library, 116 pass, 0 fail with it (stdout sha256 5502a31a687c... for the library run).",
+            "failure_scenario": "Armed before #4910 lands, the PR's self-test step is red for 13 rows and the merge queue ejects it.",
+            "precision_class": "advisory",
+            "command": [
+              "sh",
+              "-c",
+              "bash scripts/release/assets_rehearsal.sh --self-test | tail -n 1"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "283b8212b2b5441547006b7fdecb7e56d43534865f846ac92df12b0f2eb97310"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux_surface_regex_false_positive_no_user_surface",
+          "level": "note",
+          "message": {
+            "text": "The guard CRUX surface regex fires on added lines of git rev-parse --short=9 in the generated workflow; they are a git flag in CI steps, not an apr flag, route or tool. The diff changes no user-facing surface and no crux contract covers it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "rationale": "The surface regex targets Rust clap and axum declarations; the match is a shell argument.",
+            "failure_scenario": "If this were a real flag declaration the competitor gap would go unrecorded; it is a git argument.",
+            "precision_class": "advisory",
+            "command": [
+              "sh",
+              "-c",
+              "git diff 4b560f06e29cfd39104fded80b27c59da27b5e55 85b2d6dacea4ec1e81b3f92858a0e2d241eaa062 | grep -E \"^[+-]\" | grep -cE \"short[[:space:]]*=\""
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "06e9d52c1720fca412803e3b07c4b228ff113e303f4c7ab94665319d832bbfb7"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "workflow_run_missing_branches_filter",
+          "level": "warning",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high): The workflow_run event does not filter for branches: [main]. If a developer triggers 'Assets rehearsal (nightly)' manually on their feature branch and it fails, the tickets workflow will run on the default branch and improperly open or update the standing issue with the feature branch's failed run details. Adding `branches: [main]` to the `workflow_run` trigger prevents this."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy reviewer judgement; the primary independently reached the same finding (R3) and measured the absence of a filter.",
+            "failure_scenario": "If a developer triggers 'Assets rehearsal (nightly)' manually on their feature branch and it fails, the tickets workflow will run on the default branch and improperly open or update the standing issue with the feature branch's failed run details. Adding `branches: [main]` to the `workflow_run` trigger prevents this.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "tickets_workflow_missing_concurrency",
+          "level": "warning",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high): The tickets workflow lacks a concurrency group to prevent race conditions during ticket creation. If multiple 'Assets rehearsal (nightly)' runs complete simultaneously (e.g., a delayed scheduled run finishing at the same time as a manual dispatch run), their respective `workflow_run` events will trigger the tickets workflow concurrently. Both jobs could find no open ticket and concurrently open duplicate standing tickets. Adding a `concurrency` group ensures singleton ticket maintenance."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy reviewer judgement; the primary independently reached the same finding (R4).",
+            "failure_scenario": "If multiple 'Assets rehearsal (nightly)' runs complete simultaneously (e.g., a delayed scheduled run finishing at the same time as a manual dispatch run), their respective `workflow_run` events will trigger the tickets workflow concurrently. Both jobs could find no open ticket and concurrently open duplicate standing tickets. Adding a `concurrency` group ensures singleton ticket maintenance.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

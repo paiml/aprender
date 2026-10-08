@@ -10,10 +10,23 @@ on:
     workflows: ["Assets rehearsal (nightly)"]
     types: [completed]
 permissions: {}
+# One writer at a time: the search-then-create in `ticket` is not atomic, so two nights finishing
+# together must not each open the ticket. Never cancelled; GitHub keeps one waiting run, so a
+# third night finishing inside that window replaces the second (the next red night still lands).
+concurrency:
+  group: assets-rehearsal-ticket
+  cancel-in-progress: false
 jobs:
   ticket:
     name: Open or update the rehearsal's ticket
-    if: ${{ github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.conclusion != 'skipped' && github.event.workflow_run.conclusion != 'neutral' }}
+    # Only a rehearsal of main in this repository speaks for main: a dispatch on a feature branch
+    # that fails must not list a known failure that main does not have.
+    if: >-
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.conclusion != 'skipped' &&
+      github.event.workflow_run.conclusion != 'neutral'
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     permissions:
