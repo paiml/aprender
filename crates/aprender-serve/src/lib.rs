@@ -360,6 +360,9 @@ pub mod layers;
 pub mod memory;
 #[cfg(feature = "server")]
 pub mod metrics;
+/// APR-EMBED-001 EG-1: model kind (generative or embedding) and the per-layer facts an embedding
+/// model reads from its file (KV heads, local/global attention).
+pub mod model_kind;
 /// Unified model loader for APR, GGUF, and SafeTensors
 ///
 /// Per spec §3.2 and §5: Combines format detection with model loading.

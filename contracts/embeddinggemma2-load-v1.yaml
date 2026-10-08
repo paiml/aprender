@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-10-08'
+  author: PAIML Engineering
+  description: EmbeddingGemma 2 load -- model kind by exact architecture match, per-layer KV heads and attention kind from the file (APR-EMBED-001 EG-1)
+  references:
+  - docs/specifications/APR-EMBED-001-embeddinggemma-2-support.md (I-3, I-9)
+  - docs/audits/APR-EMBED-001/EG-0/m9.md (architecture string, causal flag, per-layer shapes)
+  depends_on:
+  - embeddinggemma2-forward-v1
+equations:
+  model_kind:
+    formula: kind(f) = embedding if arch(f) equals gemma-embedding2 (ASCII case-insensitive), else generative
+    domain: f a GGUF file with general.architecture and optional attention.causal
+    codomain: '{generative, embedding}'
+    invariants:
+    - The match is exact; the gemma prefix match that refuses Gemma3 is not widened
+    - An embedding architecture with attention.causal = true is refused, never served under either kind
+    preconditions:
+    - general.architecture is present
+    postconditions:
+    - 'every admitted file has exactly one kind'
+  generative_path_refusal:
+    formula: load_generative(f) = Refused(model_kind, names apr embed) if kind(f) = embedding
+    domain: f with kind(f) = embedding
+    codomain: a refusal naming the verb that serves the file
+    invariants:
+    - The refusal names the kind and the verb (I-3); it never names Gemma3 or its ticket
+    preconditions:
+    - kind(f) = embedding
+    postconditions:
+    - 'no generative forward pass runs on an embedding file'
+  per_layer_kv_heads:
+    formula: kv(l) = head_count_kv[l] if head_count_kv is an array, else head_count_kv for every l
+    domain: l in [0, block_count), head_count_kv read from the GGUF
+    codomain: positive integers
+    invariants:
+    - Read from the file, never from layer-index arithmetic and never collapsed to the query head count (I-9)
+    - An array whose length differs from block_count is refused
+    preconditions:
+    - block_count > 0
+    postconditions:
+    - 'len(kv) == block_count and every entry is > 0'
+  layer_attention_kind:
+    formula: attn(l) = global if width(attn_q[l]) equals the widest attn_q in the file, else local
+    domain: l in [0, block_count), attn_q output widths read from tensor shapes
+    codomain: '{local, global}'
+    invariants:
+    - Swapping the shapes of two layers swaps their kinds (I-9)
+    - A file with a single attn_q width is refused; this architecture has both kinds
+    preconditions:
+    - every block has an attn_q tensor of non-zero width
+    postconditions:
+    - 'at least one layer is global and at least one is local'
+proof_obligations:
+- id: EG2L-INV-001
+  type: invariant
+  property: Exact architecture match
+  formal: "∀ a: kind(a) = embedding ↔ lower(a) = gemma-embedding2"
+  applies_to: all
+- id: EG2L-INV-002
+  type: invariant
+  property: Causal contradiction refused
+  formal: "∀ f: kind(f) = embedding ∧ causal(f) ⇒ refused(f)"
+  applies_to: all
+- id: EG2L-INV-003
+  type: invariant
+  property: Per-layer KV heads from the file
+  formal: "∀ l < block_count: kv(l) = head_count_kv[l] ∧ kv(l) ≥ 1 ∧ len(kv) = block_count"
+  applies_to: all
+- id: EG2L-INV-004
+  type: invariant
+  property: Layer attention kind from shapes
+  formal: "∀ l: attn(l) = global ↔ width(attn_q[l]) = max(width(attn_q))"
+  applies_to: all
+- id: EG2L-INV-005
+  type: invariant
+  property: Generative path refuses by kind
+  formal: "∀ f: kind(f) = embedding ⇒ load_generative(f) = refused(model_kind)"
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-EG2L-001
+  rule: Exact architecture match
+  prediction: gemma-embedding2 in any case is embedding; gemma, gemma2, gemma3, gemma-embedding, gemma-embedding3 and gemma-embedding2x are generative
+  test: model_kind::tests::falsify_eg2l_001_exact_arch_match_only
+  if_fails: The match was widened to a prefix
+- id: FALSIFY-EG2L-002
+  rule: Per-layer KV heads from the file
+  prediction: A 24-long array yields 24 per-layer counts in file order; a scalar broadcasts; a wrong length, zero, negative or non-integer entry is refused
+  test: model_kind::tests::falsify_eg2l_002_*
+  if_fails: The array collapsed to the query head count or to its first entry (the num_kv_heads UInt32-only reader)
+- id: FALSIFY-EG2L-003
+  rule: Layer attention kind from shapes
+  prediction: Globals are exactly the widest attn_q layers; swapping shapes swaps kinds; one width is refused
+  test: model_kind::tests::falsify_eg2l_003_*
+  if_fails: Layer kind derived from an index pattern or an architecture constant
+- id: FALSIFY-EG2L-004
+  rule: Generative path refuses by kind
+  prediction: validate_model_load on gemma-embedding2 fails at gate model_kind naming apr embed, not Gemma3; gemma-embedding3 still reaches the Gemma3 refusal
+  test: contract_gate::tests::falsify_eg2l_004_embedding_refused_by_kind_on_generative_path
+  if_fails: The file was refused with the Gemma3 message, or loaded as a generative model
+- id: FALSIFY-EG2L-005
+  rule: Causal contradiction refused
+  prediction: gemma-embedding2 with attention.causal = true is refused naming the flag; false or absent is embedding
+  test: model_kind::tests::falsify_eg2l_001_kind_and_causal_flag
+  if_fails: A causal embedding file was admitted under either kind
+qa_gate:
+  id: F-EG2L-001
+  name: embeddinggemma2-load-v1 Contract
+  description: Quality gate for loading EmbeddingGemma 2 by kind
+  checks:
+  - validation
+  - falsification
