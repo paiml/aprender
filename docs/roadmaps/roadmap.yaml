@@ -24272,3 +24272,183 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: the test writes a script then execs it while sibling test threads fork; a child forked in that window holds the write fd, so exec fails with ETXTBSY (run 37403017673, workspace-test shard 3). Passed on the same PR head in run 37408602581.'
+- id: PMAT-4899
+  github_issue: 4899
+  item_type: task
+  title: 'EG-0: Measure — probe, oracle, contracts, corpus (no engine code)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:53:52Z
+  updated: 2026-10-07T17:53:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:measurement
+  notes: null
+  epic: 4898
+- id: PMAT-4900
+  github_issue: 4900
+  item_type: task
+  title: 'EG-1: Load — GGUF, tokenizer, kind'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:53:58Z
+  updated: 2026-10-07T17:53:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4901
+  github_issue: 4901
+  item_type: task
+  title: 'EG-2: Embed on CPU'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:04Z
+  updated: 2026-10-07T17:54:04Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4902
+  github_issue: 4902
+  item_type: task
+  title: 'EG-3: Serve'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:09Z
+  updated: 2026-10-07T17:54:09Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4903
+  github_issue: 4903
+  item_type: task
+  title: 'EG-4: CUDA on sm_89 and sm_121'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:14Z
+  updated: 2026-10-07T17:54:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4904
+  github_issue: 4904
+  item_type: task
+  title: 'EG-5: Refusals, apr qa, the ladder'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:19Z
+  updated: 2026-10-07T17:54:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4905
+  github_issue: 4905
+  item_type: task
+  title: 'EG-6: Model ops round trip'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:23Z
+  updated: 2026-10-07T17:54:23Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4906
+  github_issue: 4906
+  item_type: task
+  title: 'EG-7: Fine-tune'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:28Z
+  updated: 2026-10-07T17:54:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4907
+  github_issue: 4907
+  item_type: task
+  title: 'EG-8: Prune, then distill'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:33Z
+  updated: 2026-10-07T17:54:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4908
+  github_issue: 4908
+  item_type: task
+  title: 'EG-9: Evaluate, measure, dogfood'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:38Z
+  updated: 2026-10-07T17:54:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
