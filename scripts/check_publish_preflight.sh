@@ -372,7 +372,7 @@ policy_ladder() {
     fi
     # shellcheck source=lib/release_policy.sh
     . "$root/scripts/lib/release_policy.sh" || { POL_WHY="$root/scripts/lib/release_policy.sh could not be loaded"; return 2; }
-    out="$(mktemp)"
+    out="$(mktemp)" || { POL_WHY="mktemp failed, so the policy ladder could not be written"; return 2; }
     release_policy_ladder "$POL_LADDER" "$version" > "$out"; prc=$?
     POL_LADDER="$(cat "$out")"; rm -f "${out:?}"
     POL_APPLIES="$RP_APPLIES"; POL_WHY="$RP_WHY"
