@@ -24,7 +24,7 @@ inb && /^    [^ ]/ {
     sub(/[ \t]+$/, "", val); q = substr(val, 1, 1)
     if (q == "\"" || q == "'") {
         if (length(val) < 2 || substr(val, length(val), 1) != q || index(substr(val, 2, length(val) - 2), q) > 0) {
-            print "ERR\tquoted release_policy." key " does not close at the end of the line: nothing may follow its closing quote"; bad = 1; exit
+            print "ERR\tquoted release_policy." key " does not close at the end of the line: nothing may follow its closing quote, and the value may not hold its own quote character (no \\\" or '' escapes)"; bad = 1; exit
         }
     } else if (q == "#" || val ~ /[ \t]#/) {
         print "ERR\tunquoted # in release_policy." key ", which YAML reads as a comment: quote the value"; bad = 1; exit

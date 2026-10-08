@@ -97,6 +97,9 @@ row quoted-hash-kept      0 1 "$(plant qh 's/^    quote: .*$/    quote: "a #1 b"
 row tab-hash              2 0 "$(plant th 's/^    larger_rows: nightly$/    larger_rows: nightly\t# was release/')" 0.71.0 'unquoted # in release_policy\.larger_rows'
 row comment-after-quoted  2 0 "$(plant caq 's/^    ticket_owner: .*$/    ticket_owner: "#3598" # owner/')" 0.71.0 'quoted release_policy\.ticket_owner does not close'
 row single-quoted-hash    0 1 "$(plant sqh "s/^    quote: .*\$/    quote: 'see #5'/")" 0.71.0 "^      quote: 'see #5'\$"
+row unclosed-quote        2 0 "$(plant ucq 's/^    ticket_owner: .*$/    ticket_owner: "#3598/')" 0.71.0 'quoted release_policy\.ticket_owner does not close'
+row early-close-quote     2 0 "$(plant ecq 's/^    quote: .*$/    quote: "a"b"/')" 0.71.0 'quoted release_policy\.quote does not close'
+row quoted-trailing-blank 0 1 "$(plant qtb 's/^    quote: .*$/    quote: "x y"  \t/')" 0.71.0 '^      quote: "x y"$'
 row unreadable-line       2 0 "$(plant unread 's/^    hosts: .*$/    - hosts: [lambda]/')" 0.71.0 'unreadable line in release_policy'
 row two-blocks            2 0 "$two" 0.71.0 '2 release_policy blocks'
 row header-comment        2 0 "$(plant hc 's/^  release_policy:$/  release_policy: # note/')" 0.71.0 'unreadable release_policy header'
