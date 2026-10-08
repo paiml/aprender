@@ -81,6 +81,9 @@ case "$1" in
     esac ;;
   api)
     case "${2:-}" in
+      repos/paiml/infra/actions/runs/*)
+        rid=${2#repos/paiml/infra/actions/runs/}
+        cat "$d/run-$rid.txt" 2>/dev/null || exit 1 ;;
       repos/paiml/infra/actions/jobs/*/logs)
         jid=${2#repos/paiml/infra/actions/jobs/}; jid=${jid%/logs}
         cat "$d/log-$jid.txt" 2>/dev/null || exit 1 ;;
@@ -150,7 +153,7 @@ row() {
   out=$(
     export PATH="$BIN:$PATH" STUB_DIR="$S" GH_CONFIG_DIR="$WORK/ghconfig"
     unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN
-    clean_room_gate "$FIX" "$tag" 2>&1
+    if [ -n "${PIN+x}" ]; then clean_room_gate "$FIX" "$tag" "$PIN" 2>&1; else clean_room_gate "$FIX" "$tag" 2>&1; fi
   ) || got=$?
   LAST_OUT=$out; LAST_STUB=$S
   if grep -q '^UNEXPECTED' "$S/calls"; then
@@ -241,6 +244,29 @@ row structured_sha_uppercase_refuses      1 "is not a full 40-char lowercase sha
 row two_structured_shas_refuses           1 "2 structured tested-sha record(s)"        s_struct_two
 row structured_sha_assert_failed_refuses  1 "step is completed/failure"                s_struct_assert_failed
 row structured_sha_assert_absent_refuses  1 "step is absent"                           s_struct_assert_absent
+
+# ── PINNED to the recorded run (PMAT-4687, the one door to publish) ──
+# publish_strict.sh passes the run id it recorded. Only that run is judged, by the
+# same loop; a green run elsewhere in the list never stands in for it.
+# pinned RUN STATUS CONCL [CREATED] [PATH] -- what `gh api .../runs/RUN --jq ...` prints
+pinned() { printf '%s\n[%s]\n' "${5:-.github/workflows/clean-room.yml}" "$(run_obj "$1" "$2" "$3" "${4:-2026-09-02T00:00:00Z}")" > "$S/run-$1.txt"; }
+p_green()        { pinned 9001 completed success; jobs_steps 9001 501 completed success completed success; log_tested 501 "$SHA_A" "$AB_A"; }
+p_red()          { pinned 9001 completed failure; jobs_steps 9001 501 completed failure completed success; log_tested 501 "$SHA_A" "$AB_A"; }
+p_other()        { pinned 9001 completed success; jobs_steps 9001 501 completed success completed success; log_tested 501 "$SHA_B" "$AB_B"; }
+p_red_list_green() { p_red; runs "$(run_obj 9002 completed success)"; jobs_steps 9002 502 completed success completed success; log_tested 502 "$SHA_A" "$AB_A"; }
+p_unreadable()   { :; }
+p_other_wf()     { pinned 9001 completed success "" .github/workflows/ci.yml; jobs_steps 9001 501 completed success completed success; log_tested 501 "$SHA_A" "$AB_A"; }
+p_predates()     { pinned 9001 completed success 2026-08-31T00:00:00Z; jobs_steps 9001 501 completed success completed success; log_tested 501 "$SHA_A" "$AB_A"; }
+PIN=9001 row pinned_green_on_tag_proceeds        0 "CLEAN-ROOM PROCEED: run 9001 job 501"    p_green
+PIN=9001 row pinned_red_on_tag_refuses           1 "only recorded run 9001 was examined"      p_red
+PIN=9001 row pinned_green_on_other_commit_refuses 1 "tested $SHA_B"                           p_other
+PIN=9001 row pinned_red_ignores_green_in_list    1 "conclusion=failure"                       p_red_list_green
+if grep -q '^run list' "$LAST_STUB/calls"; then fail "pinned_never_lists_runs: the pinned gate called gh run list"; else pass "pinned_never_lists_runs"; fi
+PIN=9001 row pinned_unreadable_run_refuses       1 "recorded run 9001 could not be read"      p_unreadable
+PIN=9001 row pinned_other_workflow_refuses       1 "is not a clean-room.yml run"              p_other_wf
+PIN=9001 row pinned_run_before_commit_refuses    1 "(0 clean-room.yml run(s)"                 p_predates
+PIN=""   row pinned_empty_id_refuses             1 "is not a run id"                          p_green
+PIN=9x01 row pinned_non_numeric_id_refuses       1 "is not a run id"                          p_green
 
 # No bypass: the variables anyone would reach for change nothing.
 s_bypass() { s_no_runs; }

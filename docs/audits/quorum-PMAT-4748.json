@@ -1,0 +1,276 @@
+{
+  "ticket": "PMAT-4748",
+  "base": "682dab1e2280a35345b578e2144334f45950d066",
+  "base_resolved": "682dab1e2280a35345b578e2144334f45950d066",
+  "base_note": "no origin/682dab1e2280a35345b578e2144334f45950d066 exists; judged against the local ref; brief_exclude (C45) kept out of the brief: contracts/contracts.nt docs/roadmaps/roadmap.yaml",
+  "head": "015ed1c1a0dbd78a440238a8cc744381c2663cc0",
+  "diff_sha256": "331eecad3c518b8836b77876bc9cba662cf0c46deccaa6a3e119a46702199d9c",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 65751,
+  "prompt_sha256": "3aa7183796039fa1e2490b8146abc084221bc31f9a5d7b27b8d03a390068770b",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements PMAT-4748 faithfully: mg-reuse now also triggers on `push` to `main`, resolve-push/decide-push verify via git (not just the event payload) that the pushed commit S is a single-parent commit whose parent equals `before`, locate the newest completed merge_group run on S, require x86-main/determinism/gate/`ci / gate` to have succeeded AND x86-main-advisories to be `skipped` (proving that queue run ran them for real rather than itself reusing), and reuse x86-main+determinism only in that case while mac is always 0 on push (mac-check never reused). Both verdict-block copies accept `push:success:1:1:success` the same way as the merge_group case, and all other event/flag combinations still fall through to run-in-full or error. Contracts (apr-required-checks-v1.yaml, release-schedule-06x-v1.yaml) were strengthened, not weakened, with new equation t43_push_reuse_key, obligation RC-OB-013 and falsification test RC-F-013. The added case table (P/R/X rows) and mutation self-test extension to ci_mg_reuse.sh's `# R-PUSH*` markers exercise the new logic. The evidence/pr-review/4884/* files are this branch's own PR self-review receipt (commit 13bff50aa1 matches the branch's own roadmap-regen commit), not unrelated scope creep. I found no test asserting the opposite of the ticket, no weakened gate, and no unrelated functional change.",
+      "findings": [],
+      "raw_bytes": 3658,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "3aa7183796039fa1e2490b8146abc084221bc31f9a5d7b27b8d03a390068770b",
+      "trace": {
+        "input_sha256": "9e527fbcf438917a44a2284c8f4115d9f50fe59d58c5c795648eea74b9bdbdeb",
+        "output_sha256": "57221e2b6b47e8dcb8add251684707e4c7a3d5bf48897f358f43347a862096ca",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4748, extending `mg-reuse` to reuse `x86-main` and `determinism` on pushes to `main` when the `merge_group` run for the identical SHA ran both jobs fully (checked by ensuring `x86-main-advisories` is skipped in the queue run). It correctly hooks `github.event.before` to verify fast-forward commits. The mutation test `scripts/check_ci_push_reuse.sh` successfully guards these checks. There are no unrelated changes or gate weaknesses.",
+      "findings": [],
+      "raw_bytes": 2190,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "3aa7183796039fa1e2490b8146abc084221bc31f9a5d7b27b8d03a390068770b",
+      "trace": {
+        "input_sha256": "7cf4a140cddd0f33c45d9f42cbd9574f32e0b81d87f008292f64a5fc89fbcc53",
+        "output_sha256": "6bb6ef9781f4ee08775f12d04ae763025a23e892d796152d90ae826680ca39eb",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff implements PMAT-4748 correctly. Push to main reuses x86-main + determinism from merge_group run on same SHA only when run for real (via P1–P4 checks, crucially x86-main-advisories=skipped to prevent reuse-of-reuse chain). mac-check never reused. Verdict blocks require advisory success. All 29 guard mutants killed. Three independent reviews agreed PASS. No gate weakening or extraneous changes.",
+      "findings": [],
+      "raw_bytes": 1777,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "3aa7183796039fa1e2490b8146abc084221bc31f9a5d7b27b8d03a390068770b",
+      "trace": {
+        "input_sha256": "f1ef6b160462b0eb6a54faaa8405e6440c3b7f181b2cd9597043bace3fbdcf19",
+        "output_sha256": "14a2f2ae869082ac98068fdac5c7f7621dc113bd285ba33b589dfeec2f4c141b",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "~/.claude/skills/paiml-implement/bin/prah"
+    },
+    "tier1": {
+      "agy_tier1_only": true,
+      "tier1": true,
+      "matched": [
+        ".github/workflows/ci.yml",
+        "contracts/release-schedule-06x-v1.yaml"
+      ],
+      "paths": 11,
+      "patterns": [
+        "^\\.github/workflows/",
+        "(^|/)release[^/]*\\.(ya?ml|sh|rs|toml)$",
+        "cuda|kernel|\\.cu$|\\.ptx$",
+        "(^|/)[^/]*(gate|guard)[^/]*\\.(sh|rs|py)$|^hooks/",
+        "security|secret|credential|(^|/)deny\\.toml$",
+        "^skills/quorum-review/|(^|/)(receipt-lint|roadmap-lint|release-lint|kind-gate|model-gate)[^/]*$|^crates/prah-lint/"
+      ],
+      "builtin": "^skills/quorum-review/|(^|/)skills/paiml-implement/config\\.json$|(^|/)(modellib|lane-reduce|lane-fallback|lane-group|agy-lane|cc-lane|receipt-lint|route|quota)\\.sh$|^crates/prah-lint/"
+    },
+    "bucket": {
+      "ledger": "~/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "state": "unmeasured",
+          "reason": "agy-bucket.sh could not read the ledger; the bucket is not consulted this round"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 0,
+    "collected_s": 361,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 <host>-cuda Verdict rows",
+    "brief": {
+      "bytes": 65751,
+      "sent_bytes": 65920,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "d513a7a537e9b62f120ac65c93a3a6253a3abe3639627fc546cc50fd86b7f7a2",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "<host>",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=<host>-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "ts": "2026-10-06T16:58:16.643Z",
+        "wall_ms": 340,
+        "request_id": "01a11226-d2c0-71d6-a650-8110aca37889",
+        "load1": 0.07,
+        "cold": null
+      }
+    ],
+    "ledger": "~/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=2/2"
+  }
+}

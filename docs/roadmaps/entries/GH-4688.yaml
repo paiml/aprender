@@ -1,0 +1,19 @@
+- id: GH-4688
+  github_issue: 4688
+  item_type: task
+  title: '0.70.2 T13: BLD-002 R9 one list in code of what merge, tag and publish require'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-04T11:03:30.893042328+00:00
+  updated: 2026-10-04T11:03:30.893042328+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - size:L
+  - owner:aprender-a7
+  notes: null

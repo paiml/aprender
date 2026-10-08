@@ -20,8 +20,9 @@
 # 3.30.0. A grep-for-the-field-name guard would not have caught cause 2 at all,
 # and would have to be rewritten every time the formatter changes.
 #
-# Exit 0 = the manifest formats rows from pmat's real field names, and an empty
-#          manifest fails the beat instead of passing silently.
+# Exit 0 = the manifest formats rows from pmat's real field names, an empty
+#          manifest fails the beat instead of passing silently, and coverage
+#          gaps not measured on this commit fail it too (#4715).
 # Exit 1 = at least one assertion failed.
 
 set -uo pipefail
@@ -61,9 +62,20 @@ mkdir -p "$TMP/bin"
 printf '#!/usr/bin/env bash\n' > "$TMP/bin/pmat"
 cat >> "$TMP/bin/pmat" <<'STUB'
 # Stub pmat for check_story_pmat_hunt.sh.
+[ -z "${STUB_ARGS_LOG:-}" ] || printf '%s\n' "$*" >> "$STUB_ARGS_LOG"
 case "${STUB_MODE:-rows}" in
   empty) printf '[]\n'; exit 0 ;;
   docs)  printf '{"documents":[{"path":"a.rs"},{"path":"b.rs"}]}\n'; exit 0 ;;
+esac
+# STUB_GAP_MODE breaks only the --coverage-gaps query; churn and fault stay normal.
+case " $* " in
+  *" --coverage-gaps "*)
+    case "${STUB_GAP_MODE:-}" in
+      fail)    exit 3 ;;
+      nonjson) printf 'error: cannot parse coverage file\n'; exit 0 ;;
+      empty)   printf '[]\n'; exit 0 ;;
+      blank)   printf 'pmat: coverage file unreadable\n' >&2; exit 0 ;;
+    esac ;;
 esac
 shift  # drop the `query` subcommand
 # A leading non-flag argument is a free-text semantic query.
@@ -130,9 +142,15 @@ want "the {\"documents\":[...]} fallback shape yields no rows" "" "$got"
 got=$(pmat_rows "$PMAT_FILTER_CHURN" "qa validate lint" --path x.rs --churn --limit 3)
 want "a leading free-text query returns nothing for a module-scoped path" "" "$got"
 
+# A coverage file measured on THIS checkout, so the gap block is measured
+# (section 9 covers the cases where it is not).
+COVFILE="$TMP/coverage.json"
+printf '{"data":[]}\n' > "$COVFILE"
+HEAD_SHA=$(git rev-parse HEAD)
+
 # -- 4. A hunt that finds rows passes and does not tally a failure ----------
 : > "$FAILLOG"
-out=$(PMAT_HUNT=1 pmat_hunt "check" "$LIB"); rc=$?
+out=$(STORY_COVERAGE_FILE="$COVFILE" STORY_COVERAGE_SHA="$HEAD_SHA" PMAT_HUNT=1 pmat_hunt "check" "$LIB"); rc=$?
 want "a hunt with rows returns 0" "0" "$rc"
 want "a hunt with rows tallies no failure" "" "$(cat "$FAILLOG")"
 
@@ -188,6 +206,53 @@ out=$(PMAT_HUNT=0 pmat_hunt "check" "$LIB"); rc=$?
 want "PMAT_HUNT=0 returns 0" "0" "$rc"
 want "PMAT_HUNT=0 prints nothing" "" "$out"
 want "PMAT_HUNT=0 tallies no failure" "" "$(cat "$FAILLOG")"
+
+# -- 9. Coverage gaps come from a coverage file of THIS commit, or fail ------
+# #4715: without --coverage-file one `pmat query --coverage-gaps` ran out a
+# 900 s timeout on intel, once per hunted path per beat, so the nightly was
+# cancelled each night. So without a coverage file for HEAD the query must not
+# run at all, and the hunt must go RED as not_measured. Dropping the gap block
+# and passing on churn + fault rows alone would be a green with no measurement.
+ARGS="$TMP/pmat.args"
+cov_case() { # name file sha want-rc want-coverage-query(yes|no) want-fail-text
+  : > "$FAILLOG"; : > "$ARGS"
+  out=$(STUB_GAP_MODE="${GAP_MODE:-}" STUB_ARGS_LOG="$ARGS" STORY_COVERAGE_FILE="$2" STORY_COVERAGE_SHA="$3" PMAT_HUNT=1 pmat_hunt "check" "$LIB"); rc=$?
+  want "$1: hunt returns $4" "$4" "$rc"
+  if grep -q -- '--coverage-gaps' "$ARGS"; then ran=yes; else ran=no; fi
+  want "$1: coverage-gaps query ran = $5" "$5" "$ran"
+  if [ -n "$6" ]; then
+    if grep -q -- "$6" "$FAILLOG"; then ok "$1: failure says '$6'"; else bad "$1: failure says '$6'" "$6" "$(cat "$FAILLOG")"; fi
+    if ! grep -q -- '-- coverage gaps not_measured:' <<<"$out"; then
+      bad "$1: the manifest prints the not_measured line" "a '-- coverage gaps not_measured:' line" "$out"
+    elif grep -qE '^[[:space:]]+(gap|churn|fault)[[:space:]].*not_measured' <<<"$out"; then
+      bad "$1: the not_measured line is not counted as a manifest row" "no row-shaped line" "$out"
+    else
+      ok "$1: the not_measured line is not counted as a manifest row"
+    fi
+  else
+    want "$1: no failure tallied" "" "$(cat "$FAILLOG")"
+  fi
+}
+cov_case "no coverage file"        ""              ""                 1 no  "coverage gaps not_measured: no coverage file"
+: > "$TMP/empty.json"   # zero bytes: exercises the -s branch, not the missing-file one
+cov_case "empty coverage file"     "$TMP/empty.json" "$HEAD_SHA"      1 no  "coverage gaps not_measured: no coverage file"
+cov_case "coverage path that does not exist" "$TMP/absent.json" "$HEAD_SHA" 1 no "coverage gaps not_measured: no coverage file"
+cov_case "file from another commit" "$COVFILE"     "0000000000000000000000000000000000000000" 1 no "measured on '0000000000000000000000000000000000000000'"
+cov_case "file with no recorded sha" "$COVFILE"    ""                 1 no  "measured on '(none recorded)'"
+cov_case "file from this commit"   "$COVFILE"      "$HEAD_SHA"        0 yes ""
+# The file is this commit's, but the gap query itself is not a measurement: pmat
+# fails on it, prints no JSON, or exits 0 with an empty stdout (a real pmat failure mode: stderr only). Churn and fault rows alone must not pass the beat.
+GAP_MODE=fail    cov_case "gap query exits non-zero" "$COVFILE" "$HEAD_SHA" 1 yes "coverage gaps not_measured: the coverage-gaps query failed"
+GAP_MODE=nonjson cov_case "gap query prints non-JSON" "$COVFILE" "$HEAD_SHA" 1 yes "coverage gaps not_measured: the coverage-gaps query on"
+GAP_MODE=blank   cov_case "gap query prints nothing" "$COVFILE" "$HEAD_SHA" 1 yes "coverage gaps not_measured: the coverage-gaps query on"
+# A parsed [] is a measured zero: no gaps on this path, and churn + fault carry the manifest.
+GAP_MODE=empty   cov_case "gap query returns []"     "$COVFILE" "$HEAD_SHA" 0 yes ""
+cov_case "file from this commit, again" "$COVFILE" "$HEAD_SHA"        0 yes ""
+if grep -q -- "--coverage-file $COVFILE" "$ARGS"; then
+  ok "the measured gap query reads the coverage file instead of deriving coverage"
+else
+  bad "the measured gap query reads the coverage file" "--coverage-file $COVFILE" "$(cat "$ARGS")"
+fi
 
 # -- 8. Every path the story hunts still exists -----------------------------
 # Cause 3. Static, because a path can rot without anyone running the nightly.

@@ -327,9 +327,9 @@
     #[test]
     fn f048_rmsnorm_epsilon() {
         // With near-zero input, epsilon prevents division by zero
-        // Use a relaxed budget since this test is about correctness, not performance
+        // FLAKE-0: correctness test, so no wall-time budget (1 ms flaked on a loaded host)
         let brick =
-            RmsNormBrick::new(vec![1.0; 4], 1e-5).with_budget(TokenBudget::from_latency(1000.0)); // 1ms budget for test
+            RmsNormBrick::new(vec![1.0; 4], 1e-5).with_budget(TokenBudget::from_latency(f64::MAX));
         let input = vec![1e-10f32; 4]; // Very small values
 
         let result = brick.run(&input).expect("operation failed");

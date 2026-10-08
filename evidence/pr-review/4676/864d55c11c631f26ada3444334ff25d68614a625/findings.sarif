@@ -1,0 +1,108 @@
+{
+ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "review.mirror-byte-identical",
+     "level": "note",
+     "message": {
+      "text": "At head 864d55c11c both contract copies are byte-identical (cmp rc 0) and their diffs against the merge base are identical after path normalisation."
+     },
+     "properties": {
+      "grounding": "measured",
+      "failure_scenario": "A one-sided edit would break the include_str! mirror test; cmp reports none.",
+      "precision_class": "advisory",
+      "command": [
+       "cmp",
+       "contracts/thinking-budgets-v1.yaml",
+       "crates/apr-cli/contracts/thinking-budgets-v1.yaml"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     }
+    },
+    {
+     "ruleId": "review.entry-stays-fail-closed",
+     "level": "note",
+     "message": {
+      "text": "The Qwen3.5-0.8B-IQ4_XS.gguf entry still declares no `budget` key; the diff changes only the comment, why_unmeasured and owed_by. thinking_on_budget_row returns Err for a matched row without a u64 budget, so the ON leg refuses rather than inheriting the default."
+     },
+     "properties": {
+      "grounding": "cited",
+      "failure_scenario": "Had the diff added a budget or a waiver key the row would pass or skip; it adds neither, so the refusal at this line still fires.",
+      "precision_class": "advisory",
+      "source": "crates/apr-cli/src/commands/golden_output.rs:363",
+      "excerpt": "    let Some(b) = v.get(\"budget\").and_then(serde_yaml::Value::as_u64) else {",
+      "excerpt_sha256": "197aaf5386ab1d176b78ed67512e4f1cdf63c1323a01bfb4acf427264fd6e3c6"
+     }
+    },
+    {
+     "ruleId": "review.evidence-figures-match-contract",
+     "level": "note",
+     "message": {
+      "text": "The contract figures 8,910 / 17,795 / 35,574 / 71,140 chars at 2048/4096/8192/16384 and llama.cpp sampled closes 4/8 match evidence/thinking-budgets/qwen35-0.8b-thinking-on-2026-10-04.md (lines 18 and 32), now on main via #4677."
+     },
+     "properties": {
+      "grounding": "measured",
+      "failure_scenario": "A mis-copied digit would make the contract cite a figure the evidence does not hold; all five match.",
+      "precision_class": "advisory",
+      "command": [
+       "grep",
+       "-n",
+       "-E",
+       "8,910|17,795|35,574|71,140|4/8",
+       "evidence/thinking-budgets/qwen35-0.8b-thinking-on-2026-10-04.md",
+       "contracts/thinking-budgets-v1.yaml"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "a5a2f9f3baf3355956884203492848d7c777b90a3dac4a8a4c746383fa906c30"
+     }
+    },
+    {
+     "ruleId": "review.pv-validate-green",
+     "level": "note",
+     "message": {
+      "text": "pv validate contracts/thinking-budgets-v1.yaml: 0 errors, 0 warnings, Contract is valid."
+     },
+     "properties": {
+      "grounding": "measured",
+      "failure_scenario": "A malformed YAML edit would fail schema validation; it passes.",
+      "precision_class": "advisory",
+      "command": [
+       "pv",
+       "validate",
+       "contracts/thinking-budgets-v1.yaml"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "a8b444e9c89cee9b7fd3764035c96f08409e61e634d00698c37d1017fa18f8a6"
+     }
+    },
+    {
+     "ruleId": "review.sweep-not-reproduced",
+     "level": "note",
+     "message": {
+      "text": "The author's GPU sweep (apr 0.70.1 cuda, llama.cpp cross-check) was not re-run: no cargo, no apr, no GPU, by instruction. Figures are taken as the author's measurement and cross-checked only against the in-tree evidence file. Not measured here: cargo tests, mirror include_str! test run."
+     },
+     "properties": {
+      "grounding": "asserted",
+      "failure_scenario": "If the sweep were wrong the gate still fails closed (no budget key), so the exposure is a misleading rationale, not a weaker gate.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  }
+ ]
+}

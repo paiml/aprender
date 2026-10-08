@@ -174,7 +174,7 @@
       "declared_min": 64,
       "divergence_at": 3,
       "intra_agree_to": 128,
-      "m_formed": 14,
+      "m_formed": 16,
       "max_constant_run": 1,
       "max_constant_run_declared": 16,
       "reason": null,
@@ -343,8 +343,8 @@
       ]
     }
   ],
-  "binary_sha256": "9fde772f14bceafefae2fb53fdfa8c471d9ad7b54127bbfacd193b5b7cbb9f7b",
-  "commit": "f6fa4cf0cf2424a6e69940a457af5fe8fd057ebc",
+  "binary_sha256": "0ca721d8899670fa7997597b3c7d87aede4a184fc20d5abcdec9cbebdd3a0ad0",
+  "commit": "40980071333be516b6ec6683079646897e9cbcfc",
   "declared_min": 64,
   "env": {
     "APR_DECODE_GEMM": null,

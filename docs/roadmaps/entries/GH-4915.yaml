@@ -1,0 +1,22 @@
+- id: GH-4915
+  github_issue: 4915
+  item_type: task
+  kind: code
+  title: 'Release: standing CRUX-smoke release policy in the ladder, read by autopilot, readiness and bump'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-la71
+  created: 2026-10-08T01:34:09.000000000+00:00
+  updated: 2026-10-08T01:34:09.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - 'ladder.release_policy in contracts/model-capability-ladder-v1.yaml records the standing CRUX-smoke policy'
+  - 'scripts/release/autopilot.sh, scripts/release_readiness.sh and scripts/prepare_bump.sh read it through the strict awk reader'
+  - 'the models nightly opens or updates one ticket per red row, naming release_policy.ticket_owner; a search it cannot trust opens nothing (NOT-MEASURED)'
+  - 'the release notes of a covered release list known failures: ladder known_red rungs and open models-nightly red-row tickets'
+  - 'out of scope: the #4033 levers'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

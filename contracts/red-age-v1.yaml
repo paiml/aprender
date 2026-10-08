@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-03'
+  author: PAIML Engineering
+  description: "No check may be red on main for more than 24 h (operator ruling C277 item 6, one of the bars 0.70.2 ships on). scripts/release/red_age.sh is the meter: it reads the run history of every check that reports on main and prints, per check, the age of its current red stretch and the longest stretch open in the 7 days to --as-of. At 24 h it exits red, and its E2 line is the receipt at the tag. A check with no result in the 7 days is never green, and a retried green is not a green."
+  kind: pattern
+  references:
+    - "scripts/release/red_age.sh — the meter, its case table (--selftest) and its planted mutants (--mutants)"
+    - "docs/specifications/FLOW-003-queue-and-release-cycle-model.md — G4, CI retries planned 2 -> 0: why a retried green is not a green"
+
+five_whys:
+  symptom: "In the Actions API for 2026-09-26 to 2026-10-02 (read 2026-10-02), successful / total scheduled runs on main were mutants-nightly.yml 0/5, toolchain-ceiling.yml 0/7 and guards-nightly.yml 1/7, and how long each had been red was not measured."
+  why_1: "Nothing measured how long a check on main had been red, so a red stretch had no age."
+  why_2: "A scheduled check does not block a merge, so a red one stays red while main keeps moving."
+  why_3: "There was no threshold: 'red for too long' could only be asserted, never measured."
+  why_4: "C277 item 6 makes 'no check has been red on main for more than 24 h' a ship bar, and a ship bar needs a receipt that can be re-run at the tag."
+  why_5: "A check with no result reads as nothing wrong unless something counts it as not measured."
+  root_cause: "Red on main had no measured age and no fixed threshold. The remedy is a meter with constant thresholds (24 h per check, 7 days for the receipt) in which a check with no result is never green and a retried green is not a green."
+
+equations:
+  run_class:
+    formula: "class(r) = green if r succeeded at attempt 1; red if r ended failure, timed_out or startup_failure, or succeeded only at attempt 2 or later; pending if r has no conclusion yet; void if r was cancelled, skipped, neutral, stale or action_required"
+    domain: "the rows of the run history with branch main, an event that is not a pull request, and a created_at at or before --as-of"
+    codomain: "{green, red, pending, void}"
+    invariants:
+      - "only branch main counts, and never a pull request: a pull request from a fork's branch named main reports on a merge commit, not on main"
+      - "a retried success is red: a retried green is not a green"
+      - "pending and void runs neither start nor end a red stretch"
+      - "an unknown conclusion, a short line, a bad check name or an impossible date is not_measured, never skipped"
+
+  red_age:
+    formula: "for each check c: g = its newest green; start = its oldest red at or after g; age(c) = as_of - start, or 0 when there is no such red; max7d(c) = the longest red stretch open at any time in [as_of - WINDOW, as_of], measured from its own start"
+    domain: "the green and red runs of one check up to --as-of"
+    codomain: "age(c) and max7d(c) in seconds, each marked a lower bound when no green precedes its stretch in the history"
+    invariants:
+      - "a green ends a stretch, and the age restarts at the next red"
+      - "a red in the same second as a green counts as after it"
+      - "row order in the history does not matter"
+      - "a stretch that began before the window and ended inside it counts in full; one that ended before the window does not count"
+
+  verdict:
+    formula: "per check, the first that holds: not_measured if it has no green or red result in [as_of - WINDOW, as_of]; red if age >= LIMIT; not_measured if its stretch is a lower bound under LIMIT; else ok. E2 is met iff every check is measured and no max7d exceeds LIMIT"
+    domain: "red_age over every check, and the constants LIMIT = 86400 s and WINDOW = 604800 s"
+    codomain: "exit 0 every check ok | 1 a check is red | 2 not_measured | 3 caller error; and one E2 line: met, not met or not_measured"
+    invariants:
+      - "the andon fires at exactly 24 h (age >= LIMIT), and E2 breaks only past it (max7d > LIMIT)"
+      - "a check with no result in the window is never green; it is not_measured even when its newest result is red, and its line names that result"
+      - "the exit is the worst over all checks: red, then not_measured, then ok"
+      - "the E2 line never changes the exit status"
+      - "LIMIT and WINDOW are constants: neither an option nor an environment value can change them"
+
+proof_obligations:
+  - id: RA-INV-001
+    type: invariant
+    property: "A green resets the age"
+    formal: "∀ c: green(g) ∧ g = newest_green(c) ⇒ start(c) ≥ time(g)"
+    applies_to: red_age
+  - id: RA-INV-002
+    type: invariant
+    property: "A retried green is red"
+    formal: "∀ r ∈ counted: conclusion(r) = success ∧ attempt(r) ≥ 2 ⇒ class(r) = red"
+    applies_to: run_class
+  - id: RA-INV-003
+    type: invariant
+    property: "The andon fires at 24 h"
+    formal: "∀ c: measured(c) ∧ age(c) ≥ LIMIT ⇒ verdict(c) = red"
+    applies_to: verdict
+  - id: RA-INV-004
+    type: invariant
+    property: "A check with no result in the window is never green"
+    formal: "∀ c: ¬ ∃ r ∈ results(c): time(r) ≥ as_of − WINDOW ⇒ verdict(c) = not_measured"
+    applies_to: verdict
+  - id: RA-INV-005
+    type: invariant
+    property: "The thresholds are constants"
+    formal: "LIMIT ≡ 86400 ∧ WINDOW ≡ 604800"
+    applies_to: verdict
+  - id: RA-INV-006
+    type: invariant
+    property: "Rows after --as-of change nothing"
+    formal: "∀ h, h': h' = h ∪ {r : time(r) > as_of} ⇒ verdict(h', as_of) = verdict(h, as_of)"
+    applies_to: verdict
+  - id: RA-INV-007
+    type: invariant
+    property: "The exit is the worst over all checks"
+    formal: "(∃ c: verdict(c) = red ⇒ exit = 1) ∧ (¬ ∃ c: verdict(c) = red ∧ ∃ c: verdict(c) = not_measured ⇒ exit = 2)"
+    applies_to: verdict
+  - id: RA-INV-008
+    type: invariant
+    property: "max7d is measured from each stretch's own start, never clipped to the window"
+    formal: "∀ c, s ∈ stretches(c): end(s) ≥ as_of − WINDOW ⇒ max7d(c) ≥ end(s) − start(s)"
+    applies_to: red_age
+
+falsification_tests:
+  - id: FALSIFY-RA-001
+    rule: "The meter is right on every row of its case table"
+    prediction: "Red for 25 h is red and breaks E2; red for 23 h is ok; red for exactly 24 h fires the andon and still meets E2; a green resets the age and row order does not matter; a retried green, a timed-out run and a startup failure are red; cancelled and running runs neither start nor end a stretch; a check with no result in 7 days, a red from the first row that is under 24 h and an unreadable line are not_measured; a branch run, a pull request and rows after --as-of are not counted, and a scheduled run on main is; --limit and --window are refused, and LIMIT and WINDOW in the environment are ignored; dates cross a year end and a leap day"
+    test: "bash scripts/release/red_age.sh --selftest"
+    if_fails: "The meter can call a check fine after more than 24 h red on main, or read a check with no result as green: the condition C277 item 6 exists to stop"
+
+  - id: FALSIFY-RA-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (LIMIT 48 h, one second late or from the environment; WINDOW 8 days or from the environment; a retried green counted green; failure not red; void or pending counted green; every branch or every pull request counted; rows after --as-of counted; a green that does not reset; a tie read the other way; the oldest green taken as the newest; the andon only past 24 h; E2 broken at 24 h; no window; an exclusive window edge; a lower bound trusted at the check or in E2; max7d from the current age only, clipped to the window or counting stretches that ended before it; red not winning the exit; seconds or leap years ignored) turns --selftest RED; a mutant that changes nothing or does not parse is itself a failure"
+    test: "bash scripts/release/red_age.sh --mutants"
+    if_fails: "The case table is theater: it would pass a meter that lets a check stay red on main past 24 h unseen"
+
+qa_gate:
+  id: F-RA-001
+  name: "No check on main stays red for more than 24 h unseen"
+  description: "scripts/release/red_age.sh reads the run history of every check that reports on main and prints each one's red age and 7-day maximum, fires an andon at 24 h, and prints the E2 line that is the receipt at the tag. Its case table pins every run class and the constants LIMIT and WINDOW, and its planted mutants prove the table can fail."
+  checks:
+    - "run_class"
+    - "red_age"
+    - "verdict"

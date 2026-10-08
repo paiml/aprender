@@ -1,0 +1,151 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "duplication_scan_no_hits",
+          "level": "note",
+          "message": {
+            "text": "The lexical duplication scan over head, all 1539 unmerged sibling branches and the merge-base-to-main range (13 files) found 0 hits for the 9 symbols the diff adds; pmat query for the same intent at head returned 5 Rust functions, none a release-draft order check for the shell autopilot."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "682dab1e2280a35345b578e2144334f45950d066",
+              "--head",
+              "951a03033d9abbfbe07080c5bc16937627752bc7",
+              "--json",
+              "<out>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "73c6ce12f7edf7b1945e905b381ee658fe0373e992c691add876cefa033ae7dc",
+            "failure_scenario": "A re-implementation under a different name is invisible to a name match; that residual is not covered.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "create_public_mutant_killed",
+          "level": "note",
+          "message": {
+            "text": "A copy of autopilot.sh with --draft removed from its gh release create (the guard's own create-public mutant) turns 8 rows WRONG; under RELEASE_DRAFT_GATED_ENFORCE=1 the guard exits 1."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "RELEASE_DRAFT_GATED_ENFORCE=1",
+              "bash",
+              "scripts/check_release_draft_gated.sh",
+              "<mutant autopilot>"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "ffa8b145b1dd903a863ada5794b7c8df5c9ac821a0c72f9edd26c105cdb09ad6",
+            "failure_scenario": "Without these rows a release created public would stand with no assets, clean-room or preflight behind it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "enforce_at_head",
+          "level": "note",
+          "message": {
+            "text": "The guard at this head under RELEASE_DRAFT_GATED_ENFORCE=1: rc 0, 20 rows plus 4 structural checks as expected and 24/24 in-file mutants killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "RELEASE_DRAFT_GATED_ENFORCE=1",
+              "bash",
+              "scripts/check_release_draft_gated.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "53272c11c9b38e8157d48c9a650dfcc2e787c53068e3e3400754ab0899e11198",
+            "failure_scenario": "If the guard were red at head under enforce, it could never be switched to enforce.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "publish_gate_selftest",
+          "level": "note",
+          "message": {
+            "text": "rc_publish_gate.sh --self-test at this head: rc 0; its wiring row accepts the dry run ahead of cut_tag and refuses the old order (dry run after the tag)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/rc_publish_gate.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1f36bee65ac911502e82a2f057be11a3a34e3ca8b17302ab7eeb274089044af8",
+            "failure_scenario": "A wiring check that accepted the old order would let the dry run drift back after the tag unseen.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The cross-vendor (antigravity) reviewer was not consulted by this receipt: the local budget probe for the gemini bucket failed (rc 126, jq argument list too long inside the probe). No agy call was made."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  ". ~/.claude/skills/quorum-review/agy-bucket.sh && ab_state gemini 1"
+                ],
+                "exit_code": 126,
+                "stdout_sha256": "cac5d651d59bc48ed117d295078ee3e07a7cf0c7c2ce9645e4227467651fe8f4"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
