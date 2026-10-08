@@ -314,7 +314,7 @@ worker_run_one() {
         # signals the guard's whole process group, so its children go too.
         timeout -k 30 "$GUARD_TREE_GUARD_TIMEOUT" "$@" >"$w_cap" 2>&1
         w_rc=$?
-        rm -f "$GUARD_TREE_RUN_DIR/$w_idx.running"
+        rm -f "${GUARD_TREE_RUN_DIR:?}/${w_idx:?}.running"
         if [ "$w_rc" -eq 0 ]; then
             printf 'PASS  %s\n' "$label" >> "$w_rows"
             surface_pass_summary "$w_cap" >> "$w_rows"
@@ -699,7 +699,10 @@ done < "$PLAN"
             [ -f "$f" ] || continue
             IFS= read -r lbl < "$f" 2>/dev/null || continue
             [ -n "$lbl" ] || continue
-            if [ "${seen_lbl[$f]-}" != "$lbl" ]; then seen_lbl[$f]=$lbl; seen_t0[$f]=$SECONDS; fi
+            if [ "${seen_lbl[$f]-}" != "$lbl" ]; then
+                seen_lbl[$f]=$lbl
+                seen_t0[$f]=$SECONDS
+            fi
             [ "$due" -eq 1 ] || continue
             printf 'guard_tree: still running: %s (%ss)\n' "$lbl" "$((SECONDS - ${seen_t0[$f]}))" >&2
         done
