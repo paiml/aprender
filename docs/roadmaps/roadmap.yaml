@@ -24275,25 +24275,6 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: vec![vec![0; n]; layers] clones layer 0 into every layer, writing every byte, so construction commits 8.6 / 17.2 / 34.4 GB; nextest KILLed the tests on a 30 GB runner (run 37241931271, workspace-test shard 1).'
-- id: PMAT-4862
-  github_issue: 4862
-  item_type: task
-  title: 'FLAKE-0: aprender-profile test_decision_span_event_attributes fails with ETXTBSY (Text file busy) exec race'
-  status: inprogress
-  priority: high
-  assigned_to: aprender-wcensus
-  created: 2026-10-06T08:20:00Z
-  updated: 2026-10-06T08:20:00Z
-  spec: null
-  acceptance_criteria:
-  - 'Step 1: test_decision_span_event_attributes carries #[ignore = "FLAKE-0 #4862"] and nothing else changes; every other aprender-profile test passes'
-  - 'Step 2: every script-writing test in sprint31_ruchy_integration_tests.rs is free of the write-fd/fork window (serialised, or the spawn retries on ETXTBSY), the test is un-ignored, and each passes 200 runs of the file under parallel load'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: 'Cause: the test writes a script then execs it while sibling test threads fork; a child forked in that window holds the write fd, so exec fails with ETXTBSY (run 37403017673, workspace-test shard 3). Passed on the same PR head in run 37408602581.'
 - id: PMAT-4806
   github_issue: 4806
   item_type: task
@@ -24317,3 +24298,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
     - kind:code
   notes: 'Fleet-hours per night (AC 4), measured: the GitHub jobs API durations of the successful build jobs of the last 15 binary-release.yml runs, the same jobs the rehearsal runs. Mean (max) minutes: pv 4 lanes 0.8+1.4+0.9+1.2 (max 2.5 each); all [[bin]]s aarch64 3.9 (5.2), x86_64 4.9 (6.7); apr cpu aarch64 2.9 (5.3), x86_64 4.5 (6.4), darwin 4.5 (4.5); apr cuda aarch64 2.7 (5.4), x86_64 3.8 (5.4). Sum about 32 runner-min mean, about 49 max (the sum of the per-lane maxima), plus about 3 min for the drift check and verify: about 0.6 fleet-hours per night, about 0.87 worst case, on warm caches; a cold-cache night runs longer. The first scheduled nights re-measure it. Split from the assets lane of #4720. Wiring the rehearsal into the train lane table is a gate change and is not part of this ticket: it follows three green scheduled nights. Lands as three stacked parts, each reviewed against its own planted defect: part 1 the verdict (verify, tag); part 2 the no-upload guard and lint, tested on a fixture built from the real step bodies; part 3 the generator, --check and the generated workflow.'
   epic: 4678
+- id: PMAT-4862
+  github_issue: 4862
+  item_type: task
+  title: 'FLAKE-0: aprender-profile test_decision_span_event_attributes fails with ETXTBSY (Text file busy) exec race'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wcensus
+  created: 2026-10-06T08:20:00Z
+  updated: 2026-10-06T08:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Step 1: test_decision_span_event_attributes carries #[ignore = "FLAKE-0 #4862"] and nothing else changes; every other aprender-profile test passes'
+  - 'Step 2: every script-writing test in sprint31_ruchy_integration_tests.rs is free of the write-fd/fork window (serialised, or the spawn retries on ETXTBSY), the test is un-ignored, and each passes 200 runs of the file under parallel load'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cause: the test writes a script then execs it while sibling test threads fork; a child forked in that window holds the write fd, so exec fails with ETXTBSY (run 37403017673, workspace-test shard 3). Passed on the same PR head in run 37408602581.'
