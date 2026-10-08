@@ -6,6 +6,7 @@
 #      producer: "<nightly_train lane>"[, key: "…", value: "…"]}
 #   `producer` is required when applies_to holds publish (BLD-001 row 10). `key`/`value` state one fact the
 #   requirement fixes (a mode, a threshold, a set), so two places that say different things are seen.
+#   `seven: <key>` marks the GATE that carries one of the seven entries a release always has (SEVEN below).
 #
 # THE SURFACES (fixed here, never an option: a surface set a caller can shrink is theater). Each extractor reads
 # one file of the tree and prints the requirements that file states, as anchors:
@@ -63,6 +64,8 @@
 #   release_ready.sh --found [--root DIR]           the anchors the surfaces state (the in-repo inventory)
 #   release_ready.sh --gates [--root DIR] [--list FILE]   the GATE list: every requirement, one row each
 #   release_ready.sh --probe [--root DIR] [--list FILE]   GH (default gh) · RR_REPO (default paiml/aprender)
+#   release_ready.sh --budget [--root DIR] [--list FILE]  GATEs per stage vs the caps merge=10 tag=5 publish=5,
+#                                                         and every one of SEVEN carried (rc 1: OVER or MISSING)
 #   release_ready.sh --selftest                     the case table (fixture trees, no network)
 #   release_ready.sh --mutants                      each planted mutant must turn the case table RED
 set -uo pipefail
@@ -70,6 +73,7 @@ set -uo pipefail
 SCRIPT_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"
 DEFAULT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIST_REL=contracts/release-ready-v1.yaml
+SEVEN="cleanroom-tag-commit workspace-tests crux-smoke supply-chain provenance binaries-before-public no-secret-in-crates"
 CI_REL=.github/workflows/ci.yml
 DOC_REL=CLAUDE.md
 AUTO_REL=scripts/release/autopilot.sh
@@ -385,9 +389,11 @@ found() {
 }
 
 # ---------------------------------------------------------------- the list ----------------------------------------
-# parse_list FILE -> "id<TAB>applies<TAB>anchor<TAB>checker<TAB>producer<TAB>key<TAB>value<TAB>line"; rc 3 on a bad line
+# parse_list FILE -> "id<TAB>applies<TAB>anchor<TAB>checker<TAB>producer<TAB>key<TAB>value<TAB>line<TAB>parent<TAB>seven";
+# rc 3 on a bad line
 parse_list() {
-    awk '
+    awk -v SEVEN="$SEVEN" '
+        BEGIN { n = split(SEVEN, a, " "); for (i = 1; i <= n; i++) S7[a[i]] = 1 }
         /^requirements:/ { r = 1; next }
         r && /^[^ #]/ { r = 0 }
         r && /^  - \{/ {
@@ -408,8 +414,10 @@ parse_list() {
             if (V["applies_to"] ~ /publish/ && V["producer"] == "") { printf "line %d: %s applies to publish and names no nightly producer\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
             if ((V["key"] == "") != (V["value"] == "")) { printf "line %d: key and value come together\n", NR > "/dev/stderr"; bad = 1; next }
             if (V["id"] in ID) { printf "line %d: id %s twice\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
+            if (V["seven"] != "" && !(V["seven"] in S7)) { printf "line %d: seven %s is not one of the seven\n", NR, V["seven"] > "/dev/stderr"; bad = 1; next }
+            if (V["seven"] != "" && V["parent"] != "") { printf "line %d: a row carries no seven (%s)\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
             ID[V["id"]] = 1; if (V["parent"] != "") { PA[V["id"]] = V["parent"]; PL[V["id"]] = NR }
-            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", V["id"], V["applies_to"], V["anchor"], V["checker"], V["producer"], V["key"], V["value"], NR, V["parent"]
+            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", V["id"], V["applies_to"], V["anchor"], V["checker"], V["producer"], V["key"], V["value"], NR, V["parent"], V["seven"]
         }
         END {
             # a row of a GATE names a GATE: an id on the list that is not itself a row of another
@@ -480,6 +488,25 @@ gates() {
                 printf "%-8s %-15s %-62s %s%s\n", a[1], a[2], a[3], a[4], nk[a[1]] ? "  (" nk[a[1]] " rows)" : ""; n++
                 m = split(K[a[1]], c, "\n"); for (j = 2; j <= m; j++) { split(R[c[j]], b, "\t"); printf "  %-8s row of %-8s %-55s %s\n", b[1], a[1], b[3], b[4] } }
             printf "gates=%d\n", n
+        }'
+}
+
+# ---------------------------------------------------------------- the budget ---------------------------------------
+# budget LIST: GATEs (no parent) per stage against the caps, fixed here; an entry counts in every stage it names.
+# Every key of SEVEN must ride on a GATE.
+budget() {
+    local list=$1 out
+    [ -f "$list" ] || nm "no list $list"
+    out=$(parse_list "$list") || caller_error "malformed list $list"
+    [ -n "$out" ] || nm "the list $list names no requirement"
+    printf '%s\n' "$out" | awk -F'\t' -v SEVEN="$SEVEN" '
+        $9 == "" { n = split($2, s, ","); for (i = 1; i <= n; i++) E[s[i]]++; if ($10 != "") H[$10] = 1 }
+        END {
+            CAP["merge"] = 10; CAP["tag"] = 5; CAP["publish"] = 5
+            printf "entries merge=%d tag=%d publish=%d total=%d\n", E["merge"], E["tag"], E["publish"], E["merge"] + E["tag"] + E["publish"]
+            split("merge tag publish", st, " "); for (i = 1; i <= 3; i++) if (E[st[i]] > CAP[st[i]]) { printf "OVER %s %d/%d\n", st[i], E[st[i]], CAP[st[i]]; bad = 1 }
+            n = split(SEVEN, k, " "); for (i = 1; i <= n; i++) if (!(k[i] in H)) { print "MISSING " k[i]; bad = 1 }
+            exit bad
         }'
 }
 
@@ -706,6 +733,21 @@ mutate() {
     esac
 }
 
+# budget_list M T P [DROP]: a list of M merge, T tag and P publish GATEs; the keys of SEVEN ride on the first seven,
+# except DROP
+budget_list() {
+    local st j i=0 sv
+    local -a ks
+    read -ra ks <<< "$SEVEN"
+    printf 'requirements:\n'
+    for st in "merge $1" "tag $2" "publish $3"; do
+        for ((j = 1; j <= ${st#* }; j++)); do
+            sv=${ks[$i]:-}; i=$((i + 1)); [ "$sv" != "${4:-}" ] || sv=""
+            printf '  - {id: B-%s%d, applies_to: [%s], anchor: "x", provenance: "fixture", producer: "p"%s}\n' "${st%% *}" "$j" "${st%% *}" "${sv:+, seven: $sv}"
+        done
+    done
+}
+
 # the table: case · expected exit · a pattern the output must carry
 CASES='green 0 unlisted=0 orphaned=0 contradictions=0 listed=17 stated=17
 green-comment-mention 0 stated=17
@@ -768,7 +810,7 @@ malformed-parent-is-row 3 parent FX-D1 of FX-D2 is not a GATE
 malformed-parent-unknown 3 parent FX-T9 of FX-D2 is not a GATE'
 
 selftest() {
-    local tmp c want pat out rc pass=0 fail=0 n=0 line
+    local tmp c want pat out rc pass=0 fail=0 n=0 line mx xl b1 b2 b3 b4
     tmp=$(mktemp -d) || nm "mktemp"
     fixture "$tmp/base"
     while IFS= read -r line; do
@@ -815,6 +857,25 @@ STUB
     for line in "gates-list 0 FX-M1 $tmp/base" "gates-rows 0 row of FX-T2 $tmp/base" "gates-total 0 gates=14 $tmp/base" "gates-empty 2 names no requirement $tmp/empty" "gates-absent 2 no list $tmp/none"; do
         c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line% *}; n=$((n + 1))
         out=$(bash "$SCRIPT_PATH" --gates --root "$tmp/base" --list "${line##* }/$LIST_REL" 2>&1); rc=$?
+        if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
+        else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
+    done
+    # --budget: case rc pattern|M T P [DROP] for budget_list|one more line
+    for line in 'budget-green 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|' \
+                'budget-merge-over 1 OVER merge 11/10|11 5 5|' \
+                'budget-tag-over 1 OVER tag 6/5|10 6 5|' \
+                'budget-publish-over 1 OVER publish 6/5|10 5 6|' \
+                'budget-seven-dropped 1 MISSING crux-smoke|10 5 5 crux-smoke|' \
+                'budget-seven-unknown 3 seven nope is not one of the seven|10 5 5|  - {id: B-X, applies_to: [merge], anchor: "x", provenance: "fixture", seven: nope}' \
+                'budget-seven-on-row 3 a row carries no seven|10 5 5|  - {id: B-X, applies_to: [merge], parent: B-merge1, anchor: "x", provenance: "fixture", seven: crux-smoke}' \
+                'budget-row-uncounted 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|  - {id: B-X, applies_to: [merge, tag, publish], parent: B-merge1, anchor: "x", provenance: "fixture", producer: "p"}' \
+                'budget-two-stages 0 entries merge=10 tag=5 publish=5 total=20|9 4 5|  - {id: B-X, applies_to: [merge, tag], anchor: "x", provenance: "fixture"}' \
+                'budget-empty 2 names no requirement|0 0 0|' \
+                'budget-absent 2 no list|-|'; do
+        c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line%%|*}; line=${line#*|}; n=$((n + 1))
+        mx=${line%%|*}; xl=${line#*|}; read -r b1 b2 b3 b4 <<< "$mx"
+        if [ "$mx" != - ]; then { budget_list "$b1" "$b2" "$b3" "${b4:-}"; [ -z "$xl" ] || printf '%s\n' "$xl"; } > "$tmp/$c.yaml"; fi
+        out=$(bash "$SCRIPT_PATH" --budget --root "$tmp/base" --list "$tmp/$c.yaml" 2>&1); rc=$?
         if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
         else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
     done
@@ -869,7 +930,16 @@ M40 quoted literal is a call@@(index(w, "$(") ? w : "\"\"")@@w
 M41 parent validation dropped@@if (!(PA[x] in ID) || (PA[x] in PA))@@if (0)
 M42 rows counted in the total@@if (a[9] != "") continue@@if (a[9] != "") { n++; continue }
 M43 chained dogfood calls unseen@@([t]hen|else|[d]o|;|&&|\|\||\{) +)(mark@@([t]hen|else|[d]o|;|&&|\{) +)(mark
-M44 pre-publish printf rows unseen@@if (match(t, "^pre-publish:[a-z-]+\\) +printf " Q "[a-z][a-z0-9-]* FAIL "))@@if (0)'
+M44 pre-publish printf rows unseen@@if (match(t, "^pre-publish:[a-z-]+\\) +printf " Q "[a-z][a-z0-9-]* FAIL "))@@if (0)
+M45 merge cap 11@@CAP["merge"] = 10@@CAP["merge"] = 11
+M46 tag cap 6@@CAP["tag"] = 5@@CAP["tag"] = 6
+M47 publish cap 6@@CAP["publish"] = 5@@CAP["publish"] = 6
+M48 at the cap is over@@if (E[st[i]] > CAP[st[i]])@@if (E[st[i]] >= CAP[st[i]])
+M49 a seven dropped@@ crux-smoke supply-chain@@ supply-chain
+M50 rows counted as entries@@$9 == "" { n = split($2@@1 { n = split($2
+M51 MISSING dropped@@if (!(k[i] in H))@@if (0)
+M52 unknown seven passes@@if (V["seven"] != "" && !(V["seven"] in S7))@@if (0)
+M53 seven on a row passes@@if (V["seven"] != "" && V["parent"] != "")@@if (0)'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0
@@ -900,6 +970,7 @@ main() {
             --found) mode=found; shift ;;
             --claims) mode=claims; shift ;;
             --gates) mode=gates; shift ;;
+            --budget) mode=budget; shift ;;
             --probe) mode=probe; shift ;;
             --selftest) mode=selftest; shift ;;
             --mutants) mode=mutants; shift ;;
@@ -913,6 +984,7 @@ main() {
         found) found "$root" ;;
         claims) claims "$root" ;;
         gates) gates "$list" ;;
+        budget) budget "$list" ;;
         probe) probe "$root" "$list" ;;
         selftest) selftest ;;
         mutants) mutants ;;
