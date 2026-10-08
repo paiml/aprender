@@ -23,9 +23,12 @@
 #     which every removed and added line is the same once its `version = "..."` value is blanked;
 #   - CHANGELOG.md, MODIFIED;
 #   - an ADDED evidence/dogfood/models/<V>/<host>.json, V the version Cargo.toml sets at SHA:
-#     prepare_bump.sh commits the model-ladder receipts for the version being cut (#3708).
-# A changed dependency, path or source line, a modified or deleted receipt, or another version's
-# receipt directory is not a bump.
+#     prepare_bump.sh commits the model-ladder receipts for the version being cut (#3708);
+#   - an ADDED evidence/crux/<V>/prompt-certification.json or prompt-certification-inventory.json,
+#     V as above: under the standing release policy prepare_bump.sh carries the CRUX prompt
+#     certification forward into the version being cut, and those two names are all it writes.
+# A changed dependency, path or source line, a modified or deleted receipt or certification,
+# another version's directory, or another file name there is not a bump.
 #
 # BEFORE THE TAG (#4691). autopilot.sh cut_tag() runs `--resolve SHA` ahead of `git tag`, so a
 # release commit with no qualifying receipt stops with no tag and no GitHub release made public.
@@ -87,17 +90,18 @@ version_at() {
 
 # version_only H SHA -> rc 0 iff SHA is H, or H plus a version-only bump
 version_only() {
-    local h=$1 sha=$2 v ev ns st p cargo='' d
+    local h=$1 sha=$2 v ev ec ns st p cargo='' d
     [ "$h" = "$sha" ] && return 0
     "$GIT" merge-base --is-ancestor "$h" "$sha" 2>/dev/null || return 1
     v=$(version_at "$sha"); [[ $v =~ ^[0-9A-Za-z.+-]+$ ]] || return 1
     ev="^evidence/dogfood/models/${v//./\\.}/[^/]+\\.json$"
+    ec="^evidence/crux/${v//./\\.}/prompt-certification(-inventory)?\\.json$"
     ns=$("$GIT" diff --no-renames --name-status "$h" "$sha" 2>/dev/null) || return 1
     while IFS=$'\t' read -r st p; do
         if [ -z "$st" ]; then :
         elif [[ $p =~ $SURFACE ]]; then [ "$st" = M ] || return 1
             [[ $p == CHANGELOG.md ]] || cargo+="$p"$'\n'
-        elif [[ $p =~ $ev ]]; then [ "$st" = A ] || return 1
+        elif [[ $p =~ $ev || $p =~ $ec ]]; then [ "$st" = A ] || return 1
         else return 1; fi
     done <<< "$ns"
     [ -n "$cargo" ] || return 0
@@ -196,7 +200,7 @@ STUB
     # #4735, each B + one more change: EA adds a model-ladder receipt for the version cut (0.1.1),
     # EM modifies one C already held, EO adds one for another version, EN adds a file off the surface,
     # ED deletes CHANGELOG.md.
-    local g="$d/repo" C B X D N A EA EM EO EN ED
+    local g="$d/repo" C B X D N A EA EM EO EN ED CA CM CD CO CN
     git init -q "$g" && git -C "$g" config user.email t@t && git -C "$g" config user.name t \
         && git -C "$g" config core.hooksPath /dev/null || return 1
     printf 'COV_FLOOR := 89\n' > "$g/Makefile"; mkdir -p "$g/crates/a" "$g/evidence/dogfood/models/0.1.1"
@@ -215,6 +219,18 @@ STUB
     EO=$(on_b EO evidence/dogfood/models/0.1.0/intel.json '{"host":"intel"}')
     EN=$(on_b EN docs/notes.md 'not a version')
     ED=$(git -C "$g" checkout -q "$B" && git -C "$g" rm -q CHANGELOG.md && git -C "$g" commit -qm ED && git -C "$g" rev-parse HEAD)
+    # P7 D3, the CRUX prompt certification prepare_bump.sh carries into the version cut: CA adds
+    # both files for 0.1.1 on B; CM modifies, CD deletes, one CA already holds; CO adds one for
+    # another version, CN another name beside them.
+    CA=$(on_b CA evidence/crux/0.1.1/prompt-certification-inventory.json '{"prompts":[]}' >/dev/null \
+        && printf '{"apr_commit":"x"}\n' > "$g/evidence/crux/0.1.1/prompt-certification.json" \
+        && git -C "$g" add -A && git -C "$g" commit -qm CA && git -C "$g" rev-parse HEAD)
+    CM=$(git -C "$g" checkout -q "$CA" && printf '{"apr_commit":"y"}\n' > "$g/evidence/crux/0.1.1/prompt-certification.json" \
+        && git -C "$g" commit -qam CM && git -C "$g" rev-parse HEAD)
+    CD=$(git -C "$g" checkout -q "$CA" && git -C "$g" rm -q evidence/crux/0.1.1/prompt-certification.json \
+        && git -C "$g" commit -qm CD && git -C "$g" rev-parse HEAD)
+    CO=$(on_b CO evidence/crux/0.1.0/prompt-certification.json '{"apr_commit":"x"}')
+    CN=$(on_b CN evidence/crux/0.1.1/prompt-certification-extra.json '{"apr_commit":"x"}')
     git -C "$g" checkout -q "$B"
     printf 'fn f() { g() }\n' > "$g/lib.rs"; git -C "$g" commit -qam X && X=$(git -C "$g" rev-parse HEAD)
     git -C "$g" checkout -q "$C" && sed -i -e 's|path = "../b"|path = "../evil"|' -e 's/0\.1\.0/0.1.1/g' "$g/crates/a/Cargo.toml"
@@ -273,6 +289,12 @@ STUB
     e2e 1 "e2e: any other path is not a bump" "$EN" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a DELETED surface file is not a bump" "$ED" "7:$C:$T1" "7:$C:$OK"
     e2e 1 "e2e: a receipt for a later version-only bump does not cover the commit before it" "$C" "7:$B:$T1" "7:$B:$(rec "$B" 90.00 87772 9 10)"
+    echo "$PROG self-test: the carried CRUX prompt certification (P7 D3)"
+    e2e 0 "e2e: an ADDED prompt certification and inventory for the version cut ride on the bump" "$CA" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: a MODIFIED prompt certification is not a bump" "$CM" "7:$CA:$T1" "7:$CA:$(rec "$CA" 90.00 87772 9 10)"
+    e2e 1 "e2e: a DELETED prompt certification is not a bump" "$CD" "7:$CA:$T1" "7:$CA:$(rec "$CA" 90.00 87772 9 10)"
+    e2e 1 "e2e: a prompt certification in ANOTHER version's dir is not a bump" "$CO" "7:$C:$T1" "7:$C:$OK"
+    e2e 1 "e2e: another file name beside the certification is not a bump" "$CN" "7:$C:$T1" "7:$C:$OK"
     echo "$PROG self-test: --resolve SHA, before the tag (#4691)"
     mode="--resolve"
     e2e 0 "e2e: --resolve passes on a release commit whose receipt holds the floor" "$B" "7:$C:$T1" "7:$C:$OK"
