@@ -196,7 +196,10 @@ jobs:
         id: pinned
         run: |
           set -euo pipefail
-          bash scripts/ci/pinned_rustup_home.sh --self-test
+          # The exact pass line, so a --self-test that ran no rows cannot pass this step.
+          st=$(bash scripts/ci/pinned_rustup_home.sh --self-test)
+          printf '%s\n' "$st"
+          grep -qx 'SELF-TEST PASSED (25 rows)' <<< "$st"
           bash scripts/ci/pinned_rustup_home.sh seed "$RUNNER_TEMP/pinned-rustup" \
             localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36
       # Fail fast: the reds car#4429 took four fat runs to see, in ~2 min, before

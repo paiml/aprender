@@ -36,10 +36,10 @@ retry_bounded() {
     n=$((n + 1))
     if "$@"; then echo "attempt $n/$max: ok"; return 0; else rc=$?; fi
     if [ "$n" -ge "$max" ]; then
-      echo "::error::$1 failed $n/$max attempts (last rc $rc)" >&2
+      echo "::error::'$*' failed $n/$max attempts (last rc $rc)" >&2
       return 1
     fi
-    echo "::warning::attempt $n/$max of $1 failed (rc $rc); retrying in $((10 * n)) s" >&2
+    echo "::warning::attempt $n/$max of '$*' failed (rc $rc); retrying in $((10 * n)) s" >&2
     ${RETRY_SLEEP:-sleep} "$((10 * n))"
   done
 }
@@ -96,7 +96,7 @@ seed() {
   cp "$pinfile" "$probe/rust-toolchain.toml"
   out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$dir:$rh:ro" -v "$probe:/probe:ro" -w /probe "$image" \
     sh -c 'test -f rust-toolchain.toml || { echo "probe: rust-toolchain.toml is not visible in the container" >&2; exit 3; }; rustc --version && cargo --version && for c in "$@"; do case $c in rustfmt) cargo fmt --version ;; clippy) cargo clippy --version ;; esac; done' _ $comps 2>&1) \
-    || { echo "::error::the read-only seeded home cannot run the pinned toolchain:" >&2; printf '%s\n' "$out" >&2; return 1; }
+    || { echo "::error::the read-only seeded home cannot run the pinned toolchain:" >&2; printf '%s\n' "$out" >&2; rm -rf "${probe:?}"; return 1; }
   rm -rf "${probe:?}"
   printf '%s\n' "$out"
   assert_pinned_no_sync "$ch" "$out" || return 1
@@ -106,7 +106,7 @@ seed() {
 }
 
 self_test() {
-  local t fails=0 out rc
+  local t fails=0 rows=0 out rc
   t=$(mktemp -d)
   # shellcheck disable=SC2064
   trap "rm -rf '${t:?}'" RETURN
@@ -118,6 +118,7 @@ self_test() {
   rec_sleep() { printf '%s ' "$1" >> "$t/slept"; }
   row() { # name want-rc want-calls want-slept max k
     local name=$1 wrc=$2 wcalls=$3 wslept=$4 max=$5 k=$6 calls slept
+    rows=$((rows + 1))
     : > "$t/slept"; rm -f "$t/n"
     RETRY_SLEEP=rec_sleep retry_bounded "$max" flaky "$k" > /dev/null 2>&1 && rc=0 || rc=$?
     calls=$(cat "$t/n" 2>/dev/null || echo 0); slept=$(cat "$t/slept")
@@ -134,6 +135,7 @@ self_test() {
 
   pin() { # name want-rc want-out file-content
     local name=$1 wrc=$2 wout=$3
+    rows=$((rows + 1))
     printf '%s\n' "$4" > "$t/tc.toml"
     out=$(read_pin "$t/tc.toml" 2>/dev/null) && rc=0 || rc=$?
     if [ "$rc" = "$wrc" ] && [ "$out" = "$wout" ]; then echo "ok    $name"
@@ -143,10 +145,12 @@ self_test() {
   pin "dated nightly is a pin"     0 "nightly-2026-01-02 "   $'[toolchain]\nchannel = "nightly-2026-01-02"'
   pin "floating stable refused"    1 ""                      $'[toolchain]\nchannel = "stable"'
   pin "no channel refused"         1 ""                      $'[toolchain]\ncomponents = ["clippy"]'
+  rows=$((rows + 1))
   out=$(read_pin "$t/absent.toml" 2>/dev/null) && rc=0 || rc=$?
   if [ "$rc" = 1 ]; then echo "ok    missing toolchain file refused"; else echo "FAIL  missing toolchain file: rc=$rc"; fails=$((fails + 1)); fi
 
   nosync() { # name want-rc output
+    rows=$((rows + 1))
     assert_pinned_no_sync 1.93.0 "$3" 2>/dev/null && rc=0 || rc=$?
     if [ "$rc" = "$2" ]; then echo "ok    $1"; else echo "FAIL  $1: rc=$rc (want $2)"; fails=$((fails + 1)); fi
   }
@@ -155,8 +159,75 @@ self_test() {
   nosync "image default answered is RED"        1 'rustc 1.95.0 (abc 2026-05-01)'
   nosync "1.93.01 is not 1.93.0"                1 'rustc 1.93.01 (abc 2026-05-01)'
 
-  [ "$fails" -eq 0 ] && { echo "SELF-TEST PASSED (16 rows)"; return 0; }
-  echo "SELF-TEST FAILED ($fails)"; return 1
+  # seed() end to end against a stub docker (a shell function shadows the binary). The stub
+  # answers each of seed's four docker calls and refuses a probe that does not mount the
+  # seeded home read-only or cannot see the toolchain file.
+  docker() {
+    local a="$*" p
+    echo x >> "$t/dcalls"
+    case "$a" in
+      *"printenv RUSTUP_HOME"*) [ -z "$STUB_RH" ] || printf '%s\n' "$STUB_RH"; return 0 ;;
+      *"cp -a"*) return 0 ;;
+      *"rustup toolchain install"*) echo x >> "$t/installs"; return "$STUB_INSTALL_RC" ;;
+    esac
+    case "$a" in *"-v $STUB_DIR:/rh:ro -v $STUB_DIR.probe."*":/probe:ro "*) ;;
+      *) echo "stub: probe without the read-only seeded home" >&2; return 9 ;; esac
+    p=${a#*-v "$STUB_DIR".probe.}; p="$STUB_DIR.probe.${p%%:/probe:ro*}"
+    [ -f "$p/rust-toolchain.toml" ] || { echo "stub: probe has no toolchain file" >&2; return 9; }
+    printf '%s\n' "$STUB_PROBE_OUT"; return "$STUB_PROBE_RC"
+  }
+  local good=$'rustc 1.93.0 (254b59607 2026-01-19)\ncargo 1.93.0 (x 2026-01-19)'
+  local repo_pin=$'[toolchain]\nchannel = "1.93.0"\ncomponents = ["rustfmt", "clippy"]'
+  seedrow() { # name want-rc want-mount(yes|no|none|one: no mount, refused after one docker call) rh install-rc probe-rc probe-out [pin] [prefill]
+    rows=$((rows + 1))
+    local name=$1 wrc=$2 wm=$3 s="$t/seed$rows" d calls installs why=""
+    d="$s/home"; mkdir -p "$s"; printf '%s\n' "${8:-$repo_pin}" > "$s/tc.toml"
+    if [ "${9:-}" = prefill ]; then mkdir -p "$d"; : > "$d/x"; fi
+    : > "$t/dcalls"; : > "$t/installs"; : > "$s/env"; : > "$s/out"
+    STUB_DIR=$d STUB_RH=$4 STUB_INSTALL_RC=$5 STUB_PROBE_RC=$6 STUB_PROBE_OUT=$7 \
+      GITHUB_ENV="$s/env" GITHUB_OUTPUT="$s/out" RETRY_MAX=2 RETRY_SLEEP=: \
+      seed "$d" img "$s/tc.toml" > /dev/null 2>&1 && rc=0 || rc=$?
+    calls=$(wc -l < "$t/dcalls"); installs=$(wc -l < "$t/installs")
+    [ "$rc" = "$wrc" ] || why="rc=$rc want $wrc"
+    case "$wm" in
+      yes) grep -qx "PINNED_RUSTUP_MOUNT=$d:/rh:ro" "$s/env" && grep -qx "mount=$d:/rh:ro" "$s/out" \
+             || why="$why; mount not written to GITHUB_ENV and GITHUB_OUTPUT" ;;
+      *) [ -s "$s/env" ] || [ -s "$s/out" ] && why="$why; a mount was written on failure" ;;
+    esac
+    [ "$wm" != none ] || [ "$calls" = 0 ] || why="$why; $calls docker calls before the refusal"
+    [ "$wm" != one ] || [ "$calls" = 1 ] || why="$why; $calls docker calls, want the refusal right after printenv"
+    [ "$5" = 0 ] || [ "$installs" = 2 ] || why="$why; $installs install attempts, want RETRY_MAX 2"
+    ! compgen -G "$d.probe.*" > /dev/null || why="$why; probe dir left behind"
+    if [ -z "$why" ]; then echo "ok    $name"; else echo "FAIL  $name:${why#;}"; fails=$((fails + 1)); fi
+  }
+  seedrow "seed: mount written to GITHUB_ENV and GITHUB_OUTPUT"     0 yes  /rh 0 0 "$good"
+  seedrow "seed: non-empty DIR refused before any docker call"     1 none /rh 0 0 "$good" "" prefill
+  seedrow "seed: floating pin refused before any docker call"      1 none /rh 0 0 "$good" $'[toolchain]\nchannel = "stable"'
+  seedrow "seed: image with no RUSTUP_HOME refused"                1 one  ""  0 0 "$good"
+  seedrow "seed: install failing every attempt stops at RETRY_MAX" 1 no   /rh 1 0 "$good"
+  seedrow "seed: probe answered by the image default is RED"       1 no   /rh 0 0 'rustc 1.95.0 (abc 2026-05-01)'
+  seedrow "seed: probe that synced a channel is RED"               1 no   /rh 0 0 $'info: syncing channel updates for 1.93.0-x86_64-unknown-linux-gnu\nrustc 1.93.0 (254b59607 2026-01-19)'
+  seedrow "seed: probe failure is RED and leaves no probe dir"     1 no   /rh 0 3 "$good"
+  unset -f docker
+
+  # The wiring in ci.yml: the fmt step must take the mount from the seed step's output and
+  # pass it unconditionally (an empty -v fails docker, rc 125; ${VAR:+...} would skip it).
+  rows=$((rows + 1))
+  local ci why=""
+  ci="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/.github/workflows/ci.yml"
+  if [ ! -f "$ci" ]; then why=" no $ci"
+  else
+    grep -q '^        id: pinned$' "$ci" || why="$why the seed step has no id: pinned;"
+    grep -qF 'PINNED_RUSTUP_MOUNT: ${{ steps.pinned.outputs.mount }}' "$ci" || why="$why no step env from steps.pinned.outputs.mount;"
+    grep -qF 'docker run --rm -v "$PINNED_RUSTUP_MOUNT" ' "$ci" || why="$why the fmt docker run does not mount it unconditionally;"
+    ! grep -qF 'PINNED_RUSTUP_MOUNT:+' "$ci" || why="$why ci.yml mounts it fail-open;"
+  fi
+  if [ -z "$why" ]; then echo "ok    ci.yml wires the seed output into the fmt step, fail-closed"
+  else echo "FAIL  ci.yml wiring:$why"; fails=$((fails + 1)); fi
+
+  # The caller in ci.yml requires this exact line, so a self-test that runs no rows is RED.
+  [ "$fails" -eq 0 ] && [ "$rows" -eq 25 ] && { echo "SELF-TEST PASSED (25 rows)"; return 0; }
+  echo "SELF-TEST FAILED ($fails failed, $rows of 25 rows run)"; return 1
 }
 
 case "${1:-}" in
