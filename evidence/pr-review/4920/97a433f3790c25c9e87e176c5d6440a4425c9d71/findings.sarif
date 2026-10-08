@@ -1,0 +1,352 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "sections-mount-fails-open",
+          "level": "warning",
+          "message": {
+            "text": "ci/sections.yml adds the mount as ${PINNED_RUSTUP_MOUNT:+-v \"$PINNED_RUSTUP_MOUNT\"} at four guard-cargo-steps sites (1854, 2339, 2568, 2579), so an empty or unset variable silently drops the mount, while ci.yml's fmt step passes -v \"$PINNED_RUSTUP_MOUNT\" unconditionally and fails closed. The asymmetry is real. Off x86-main (the other runners' guard-cargo steps, make guards-local) the skip is the intended behaviour, since no seed runs there; on x86-main nothing asserts the mount reached these steps."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ci/sections.yml"
+                },
+                "region": {
+                  "startLine": 1854
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "ci/sections.yml:1854",
+            "excerpt": "${PINNED_RUSTUP_MOUNT:+-v \"$PINNED_RUSTUP_MOUNT\"} \\",
+            "excerpt_sha256": "4d96b55b47f1094e0c46f6f0f179866b494d8e2ceb06af4c71934693dd58ca28",
+            "failure_scenario": "On x86-main, if the $GITHUB_ENV export from the seed step does not reach fat_driver/ci_guards (renamed variable, a section that scrubs env, a seed that wrote only $GITHUB_OUTPUT), every guard-cargo step runs the image's own rustup, syncs 1.93.0 over the network again, and stays green: the regression this PR fixes comes back with no red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard-cargo-image-tag-not-digest",
+          "level": "note",
+          "message": {
+            "text": "The seed step and the probe pin localhost:5000/sovereign-ci:stable@sha256:70f2cdc9..., but guard-cargo, whose steps consume the mount, runs IMAGE: localhost:5000/sovereign-ci:stable by tag. The probe proves the seeded home against a different image reference than the one that mounts it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ci/sections.yml"
+                },
+                "region": {
+                  "startLine": 1634
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "ci/sections.yml:1634",
+            "excerpt": "IMAGE: localhost:5000/sovereign-ci:stable",
+            "excerpt_sha256": "a7e69fcb1d652995d79604b2d2fa25558ea7fe8271998d692a4420b518413449",
+            "failure_scenario": "The :stable tag moves to an image whose RUSTUP_HOME path or rustup version differs from the digest image; the seed and probe stay green, and the guard-cargo containers mount the home at a path they do not read, or a rustup that wants to re-sync, so they fall back to the network or fail in a step the probe never covered.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "fmt-mount-fails-closed",
+          "level": "note",
+          "message": {
+            "text": "Measured: docker refuses an empty volume spec before it looks for the image (rc 125, 'invalid empty volume spec'; the control without -v fails on the missing image instead). So ci.yml's fmt step, which passes -v \"$PINNED_RUSTUP_MOUNT\" unconditionally, fails closed when the step output is empty."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 217
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "docker",
+              "run",
+              "--rm",
+              "--pull",
+              "never",
+              "-v",
+              "",
+              "pr4920-review-no-such-image:none",
+              "true"
+            ],
+            "exit_code": 125,
+            "stdout_sha256": "9520a151512db1cbe8ef4b94c79a808ee6f0bc8434ed4302fb61b37367062f37",
+            "failure_scenario": "none for the fmt step: an empty mount is a hard red, not a silent network sync. This is the half of the asymmetry that is safe.",
+            "precision_class": "advisory",
+            "note": "Docker 29.8.1 on the review host; exit 125 is the docker CLI's own refusal, distinct from the 'No such image' 125 of the control."
+          }
+        },
+        {
+          "ruleId": "workflow-env-guard-green-at-head",
+          "level": "note",
+          "message": {
+            "text": "check_workflow_env_defined.sh was red at a2bd71fd98 (ci.yml:210: x86-main interpolates $PINNED_RUSTUP_MOUNT, which nothing in that job defines) and is green at the head (OK: 32 workflows): f8939270de's step-level env: block is what defines it. Its own --self-test passes."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 211
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_workflow_env_defined.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "83c75d372043b55055c12d00cd95a124d9a8f57351bb8be4dcd89560a69113c5",
+            "failure_scenario": "none at the head; at a2bd71fd98 the same command exits 1 (stdout sha256 af59129b51fc6cf3d9a51c7e9418a0feb50404aed9d4f9064205807810b87b25).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mount-scope-fmt-and-guard-cargo-only",
+          "level": "note",
+          "message": {
+            "text": "Only the fmt step and the guard-cargo-steps manifest receive the mount. The sov.* sections that run in container: mode and the other docker run \"$IMAGE\" sites in x86-main are untouched, so they keep whatever toolchain behaviour they had before this PR."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ci/sections.yml"
+                },
+                "region": {
+                  "startLine": 1761
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from the diff (four sections.yml insertions, all inside guard-cargo-steps) and a read of the x86-main sections; not measured on a runner. If any of those other sections also hit the network rustup sync, this PR narrows the problem rather than closing it.",
+            "failure_scenario": "A non-guard-cargo x86-main section still calls rustup on first cargo use, hits the same network sync the seed was built to remove, and flakes on it while the PR's own steps stay offline.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "read-pin-ignores-targets",
+          "level": "note",
+          "message": {
+            "text": "read_pin reads only channel and components from rust-toolchain.toml. targets and profile are ignored, so a pin that later adds targets = [...] would be seeded without them. The current file has channel 1.93.0 and components [rustfmt, clippy] only, so nothing breaks today."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 49
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from read_pin (lines 49-59) and the current rust-toolchain.toml; no mutant or test covers a targets key.",
+            "failure_scenario": "Someone adds targets = [\"wasm32-unknown-unknown\"] to rust-toolchain.toml; the seed installs without it, the probe does not check targets, and the first cargo build --target in a read-only-mounted container fails because rustup cannot add the target to a :ro home.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pinned-self-test-green-at-head",
+          "level": "note",
+          "message": {
+            "text": "Measured at the head: scripts/ci/pinned_rustup_home.sh --self-test exits 0 and prints exactly 'SELF-TEST PASSED (28 rows)', the line ci.yml:202 and the seed dispatcher (line 261) both require. The new row runs a copy of the script with a broken self_test through 'seed' under a stub docker and requires rc != 0, 0 docker calls and no seed directory; it kills S1 and S2, so round 3's dispatcher-self-test-check-untested finding is fixed and dropped."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 230
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/ci/pinned_rustup_home.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "427014934f1f2fd88107130939deb475125aacc4767910450af49159a7b9e2e9",
+            "failure_scenario": "none at the head; a row count other than 28 or any FAIL row turns the ci.yml seed step red and makes the seed dispatcher refuse to seed.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "guard-mutation-score-below-one",
+          "level": "error",
+          "message": {
+            "text": "B3: 31 reviewer-planted mutants (the original 29 plus S1, S2 on the seed-dispatcher self-test check), 29 killed, 2 survive: guard_mutation_score = 29/31 = 0.935 (round 3: 27/31). S1 and S2 are now killed. Survivors: P1 (read_pin missing-file check, :51; agreed follow-up, measured not equivalent) and C1 (ci.yml seed step's self-test call removed, ci.yml:200). The author's statement that C1 is killed does not hold under the committed checks: no committed test reads ci.yml for that call. No committed mutation set exists, so the committed-set score is 0/0."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 51
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scratchpad/mut4/run.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b3efdeb278c3a4816cc7751951fc2c943a1d7b566106f6318bc3bfee84f89008",
+            "failure_scenario": "A pin file passed as a pipe or process substitution is accepted by read_pin under P1 and every committed check stays green; deleting the ci.yml self-test call (C1) also stays green.",
+            "precision_class": "blocking",
+            "note": "Harness scratchpad/mut4/run.sh (sha256 bfc9b3df33328c45d3dab54259acd125d77d4762e69260cfac81b415e6bd1801), results.tsv (sha256 2317edc6ddbf51cf86d09d4c77b41a7c3fc624a941f3bbd1d9002c087be80d48). Oracles: O1 = the caller exactly as ci.yml:200-202 runs it (exit 0 AND the exact 'SELF-TEST PASSED (28 rows)' line); O2 = check_workflow_env_defined.sh for ci.yml mutants. Both baselines green before scoring, in a full tracked-file copy at 97a433f379."
+          }
+        },
+        {
+          "ruleId": "c1-equivalent-in-gate-outcome",
+          "level": "note",
+          "message": {
+            "text": "Measured: C1 survives the committed checks but is now equivalent in gate outcome. With ci.yml's own --self-test call removed, the seed step's 'seed' command still runs the 28-row table and refuses without the exact pass line: with a self-test row broken (R6), seed exits 1 with 'nothing is seeded' and makes 0 docker calls. That refusal branch is now itself tested (S1, S2 killed by the new row). What C1 loses is only the printed table on success. A wiring-row grep for the st=$(... --self-test) line would kill it outright if the printed table matters."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 200
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scratchpad/eq4/measure.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "6c15fc95bd4272348610ddfe53d3a76889c37885324529bbd5a4cbe54b258758",
+            "failure_scenario": "A refactor drops ci.yml lines 200-202; CI stays green and still refuses a broken table at seed time, but a passing run no longer prints the table to the job log.",
+            "precision_class": "advisory",
+            "note": "scratchpad/eq4/measure.sh sha256 a9fa2e5bd2dc2637f609708b95006952bb9a38ff12830f00c52a0913a665f238. Table: clean rc=1 docker_calls=1 refusal=0 (the stub returns no RUSTUP_HOME); R6-broken rc=1 docker_calls=0 refusal=1; R6-broken+S2 rc=1 docker_calls=1 refusal=1."
+          }
+        },
+        {
+          "ruleId": "p1-not-equivalent",
+          "level": "warning",
+          "message": {
+            "text": "Measured: P1 (drop read_pin's [ -f ] check) is NOT equivalent. For an absent file or a directory both versions exit 1 with empty stdout, and only the message differs. For a non-regular readable file (process substitution, /dev/fd/63), the original refuses it (rc 1, 'no toolchain file'), while P1 reads it and returns rc 0 with '1.93.0 '. The absent-file row (line 150) checks rc only on a missing path. A row 'read_pin <(printf ...)' expecting rc 1 would kill P1. Agreed with the author as follow-up; recorded as a survivor."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci/pinned_rustup_home.sh"
+                },
+                "region": {
+                  "startLine": 51
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scratchpad/eq4/measure.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "6c15fc95bd4272348610ddfe53d3a76889c37885324529bbd5a4cbe54b258758",
+            "failure_scenario": "Under P1, seed DIR IMAGE <(cat rust-toolchain.toml) passes read_pin; seed then copies the already-drained pipe into the probe as an empty rust-toolchain.toml, and only the later rustc-version assertion stands between that and a mount of the image default.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "S3.E not run: the PreToolUse hook refused `git archive` (\"a lane runs read-only git only\"), the step that builds the disposable tree agy reviews. A hook refusal is logged, never routed around, so no substitute tree was built and agy (gemini-3.1-pro-high, 1.3.1) was never invoked."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
