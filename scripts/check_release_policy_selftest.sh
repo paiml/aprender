@@ -25,7 +25,15 @@ row() {
         fail=$((fail + 1)); return 0
     fi
     if [ "$rc" = 0 ]; then
-        if [ ! -f "$out" ] || ! grep -qE -- "$pat" "$out"; then
+        # When the policy applies, match only the synthesized entry (the first one under the top-level
+        # emergency_scopes:). Older per-release entries carry the same lines, so a whole-file match
+        # would pass even if the policy's value never reached the entry.
+        local hay="$out"
+        if [ "$wapp" = 1 ] && [ -f "$out" ]; then
+            hay="$tmp/entry.$n"
+            awk '/^  emergency_scopes:[ ]*$/ { f = 1; next } f && /^    - / && ++e > 1 { exit } f { print }' "$out" > "$hay"
+        fi
+        if [ ! -f "$out" ] || ! grep -qE -- "$pat" "$hay"; then
             printf 'FAIL %s: effective ladder %s has no line /%s/\n' "$name" "$out" "$pat"
             fail=$((fail + 1)); return 0
         fi
@@ -52,6 +60,7 @@ row real-0.71.0           0 1 "$ladder" 0.71.0      '^      release: "0\.71\.0"$
 row real-0.71.0-rc.1      0 1 "$ladder" 0.71.0-rc.1 '^      release: "0\.71\.0-rc\.1"$'
 row real-0.72.3-name      0 1 "$ladder" 0.72.3      '^    - name: crux-smoke$'
 row real-thinking         0 1 "$ladder" 0.72.3      '^      thinking: \["off", "on"\]$'
+row real-hosts            0 1 "$ladder" 0.72.3      '^      hosts: \[lambda, gx10\]$'
 row real-quote-verbatim   0 1 "$ladder" 0.71.0      '^      quote: .*"from 0\.71 on, a release ships on CRUX smoke on lambda and gx10 GPU\.'
 row real-1.0.0            0 1 "$ladder" 1.0.0       '^      release: "1\.0\.0"$'
 row real-0.70.2-uncovered 0 0 "$ladder" 0.70.2      '^  release_policy:$'
