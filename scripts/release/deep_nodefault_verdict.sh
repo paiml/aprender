@@ -205,8 +205,10 @@ LOG
     row C18 1 "$d/stop-error.log"        101 "an unlocated error followed by a distribute error: the next error does not explain it"
 
     printf 'deep_nodefault_verdict.sh --self-test (impl=%s): %s/%s rows pass\n' "$IMPL" "$PASS" "$((PASS + FAIL))"
-    # A table that lost rows proves less than it says: 18 is the row count, and fewer is a fail.
-    [ "$FAIL" = 0 ] && [ "$PASS" -ge 18 ] && return 0
+    # Every row in the table must have run and passed, and an empty table proves nothing: the
+    # expected count is the table's own `row C<n>` lines, read from this file, never a literal.
+    local want; want=$(grep -c '^    row C[0-9]' "$SELF")
+    [ "$FAIL" = 0 ] && [ "$want" -gt 0 ] && [ "$PASS" = "$want" ] && return 0
     return 1
 }
 
