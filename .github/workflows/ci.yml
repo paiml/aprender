@@ -193,6 +193,7 @@ jobs:
       # rustup home that the later cargo containers mount READ-ONLY ($PINNED_RUSTUP_MOUNT):
       # a step that still tried to download fails on the mount instead of reaching the network.
       - name: Pinned toolchain, installed once (bounded retries)
+        id: pinned
         run: |
           set -euo pipefail
           bash scripts/ci/pinned_rustup_home.sh --self-test
@@ -203,6 +204,9 @@ jobs:
       # so the same verdict); the ID-order rule is contract_data_integrity's,
       # without cargo; the case tables are guard-tree's cheapest.
       - name: Cheap checks (fmt, falsification-ID order, guard case tables)
+        # Step-level, from the seed step's output: an empty value makes docker -v fail, never skip.
+        env:
+          PINNED_RUSTUP_MOUNT: ${{ steps.pinned.outputs.mount }}
         run: |
           set -euo pipefail
           python3 scripts/ci/fail_fast.py self-test

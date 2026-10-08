@@ -16,7 +16,8 @@
 #      READ-ONLY, rustc/cargo/rustfmt/clippy report the pinned version and rustup prints no
 #      "syncing channel updates" -- a later step that still tried to download would fail
 #      on the read-only mount instead of reaching the network,
-#   4. writes PINNED_RUSTUP_MOUNT=DIR:<image RUSTUP_HOME>:ro to $GITHUB_ENV.
+#   4. writes PINNED_RUSTUP_MOUNT=DIR:<image RUSTUP_HOME>:ro to $GITHUB_ENV (the fat sections)
+#      and mount=... to $GITHUB_OUTPUT (step-level env in ci.yml; check_workflow_env_defined).
 #   Any failure is rc 1 with an ::error line. There is no fallback to the old per-step sync.
 #
 # --self-test   the case table (retry bound, backoff, pin parsing, no-sync proof); no docker.
@@ -101,6 +102,7 @@ seed() {
   assert_pinned_no_sync "$ch" "$out" || return 1
   echo "PINNED_RUSTUP_MOUNT=$dir:$rh:ro"
   if [ -n "${GITHUB_ENV:-}" ]; then echo "PINNED_RUSTUP_MOUNT=$dir:$rh:ro" >> "$GITHUB_ENV"; fi
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "mount=$dir:$rh:ro" >> "$GITHUB_OUTPUT"; fi
 }
 
 self_test() {
