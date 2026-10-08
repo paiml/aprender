@@ -17,10 +17,11 @@
 #       from an argument.
 #   R3  the tag `v<version>` points at HEAD: the crate that is uploaded is the
 #       commit that is tagged, not a neighbour of it.
-#   R4  HEAD is an ancestor of release/<version> (origin/release/X.Y.Z): nothing
-#       publishes from a topic branch. NOT main (cop ruling 2026-09-24, #4286): RC
-#       binaries ship from the release branch before merge-back, and main ancestry
-#       is enforced at merge-back (#4224). A missing release ref refuses.
+#   R4  HEAD is an ancestor of origin/main OR of origin/release/<version>: nothing
+#       publishes from a topic branch. Main (P5, operator ruling 2026-10-08): the
+#       release script tags a commit on main and creates no release ref. The release
+#       branch (#4286): RC binaries ship from it before merge-back, and main ancestry
+#       is enforced at merge-back (#4224). A commit on neither refuses.
 #   R6  no versioned sibling dev-dependency lies on a CYCLE. cargo keeps a versioned
 #       dev-dependency in the published manifest and resolves it on the registry,
 #       so two siblings that name each other can never be uploaded first
@@ -55,7 +56,7 @@
 # SEAMS (the selftest builds a throwaway repository and drives every rule to
 # both verdicts through them; production never sets them):
 #   PUBLISH_PREFLIGHT_ROOT         repository root (default: this script's repo)
-#   PUBLISH_PREFLIGHT_RELEASE_REF  the ref for R4 (default: origin/release/<R2 version>;
+#   PUBLISH_PREFLIGHT_RELEASE_REF  R4's release ref (default: origin/release/<R2 version>;
 #                                  the selftest leaves it unset so the derivation is tested)
 #   PUBLISH_PREFLIGHT_RECEIPT_DIR  the dogfood receipt dir (default: $ROOT/.dogfood)
 #   PUBLISH_PREFLIGHT_LADDER_JUDGE the R7 judge (default: $ROOT/scripts/check_model_ladder.sh)
@@ -435,7 +436,7 @@ rule_r8() {
 }
 
 gate() {
-    local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref
+    local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref r4_ref r4_on
     local fails=0 status version tags head
     R8_SCOPED=""
     for t in git cargo python3; do
@@ -505,15 +506,26 @@ gate() {
         fails=1
     fi
 
-    # R4 HEAD is on the release branch of THIS version (#4286), not main: main is
-    # merge-back's check (#4224). No version, no release ref to judge: refuse.
+    # R4 HEAD is on main or on the release branch of THIS version (P5, operator ruling
+    # 2026-10-08). The release script tags a commit on main and creates no release ref, so
+    # a release-branch-only R4 refused every unattended pass (D1); an rc fixed on the
+    # release branch before merge-back (#4286) still passes. A commit on neither refuses.
+    # No version, no release ref to judge: refuse.
     release_ref="${PUBLISH_PREFLIGHT_RELEASE_REF:-origin/release/${version:-?}}"
-    if [ -n "$version" ] \
-       && git -C "$root" rev-parse --verify --quiet "${release_ref}^{commit}" >/dev/null \
-       && git -C "$root" merge-base --is-ancestor "$head" "$release_ref" 2>/dev/null; then
-        echo "ok    R4 HEAD is an ancestor of $release_ref"
+    r4_on=""
+    if [ -n "$version" ]; then
+        for r4_ref in "$release_ref" origin/main; do
+            if git -C "$root" rev-parse --verify --quiet "${r4_ref}^{commit}" >/dev/null \
+               && git -C "$root" merge-base --is-ancestor "$head" "$r4_ref" 2>/dev/null; then
+                r4_on="$r4_ref"
+                break
+            fi
+        done
+    fi
+    if [ -n "$r4_on" ]; then
+        echo "ok    R4 HEAD is an ancestor of $r4_on"
     else
-        echo "FAIL  R4 HEAD ${head:0:9} is not an ancestor of $release_ref (or that ref does not exist)"
+        echo "FAIL  R4 HEAD ${head:0:9} is an ancestor of neither origin/main nor $release_ref (or the ref does not exist)"
         fails=1
     fi
 
@@ -629,6 +641,7 @@ selftest() {
         git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
         git -C "$d" tag v1.2.3
         git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+        git -C "$d" update-ref refs/remotes/origin/main HEAD
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
@@ -740,22 +753,33 @@ FXREADY
     d="$tmp/branch"; build_repo "$d"; git -C "$d" checkout -q -b topic
     printf 'pub fn k() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    row head_off_release_branch_refuses 1 "FAIL  R4 HEAD" "$d"
+    row head_on_neither_main_nor_release_refuses 1 "FAIL  R4 HEAD" "$d"
 
-    # R4 (#4286, cop ruling 2026-09-24): the release branch, not main. An rc commit on
-    # release/1.2.3 that main does not contain yet passes; main containing HEAD does not
-    # rescue a missing release ref; another version's release branch does not count.
+    # R4 (P5, operator ruling 2026-10-08): main OR the release branch. The release script
+    # tags a commit on main and creates no release ref (D1), so that cut passes, also after
+    # main moves on. An rc commit on release/1.2.3 that main does not contain yet still
+    # passes (#4286). A commit on neither refuses, with both refs, with neither, and when
+    # the only release branch that holds it is another version's.
     d="$tmp/rc-on-release"; build_repo "$d"; git -C "$d" checkout -q -b release-1.2.3
     printf 'pub fn r() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'rc fix' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    ! git -C "$d" merge-base --is-ancestor HEAD fixture-main || { echo "  BROKE fixture: rc commit is on main"; fail=$((fail + 1)); }
+    ! git -C "$d" merge-base --is-ancestor HEAD origin/main || { echo "  BROKE fixture: rc commit is on main"; fail=$((fail + 1)); }
     row rc_on_release_not_main_passes  0 "ok    R4 HEAD is an ancestor of origin/release/1.2.3" "$d"
-    d="$tmp/no-release-ref"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
-    row release_ref_absent_on_main_refuses 1 "FAIL  R4" "$d"
+    d="$tmp/on-main"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
+    row on_main_without_release_ref_passes 0 "ok    R4 HEAD is an ancestor of origin/main" "$d"
+    d="$tmp/main-moved-on"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
+    git -C "$d" update-ref refs/remotes/origin/main "$(git -C "$d" -c user.name=t -c user.email=t@t commit-tree 'HEAD^{tree}' -p HEAD -m 'later on main')"
+    row main_moved_past_head_passes    0 "ok    R4 HEAD is an ancestor of origin/main" "$d"
+    d="$tmp/no-refs"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
+    git -C "$d" update-ref -d refs/remotes/origin/main
+    row neither_ref_exists_refuses     1 "FAIL  R4 HEAD" "$d"
     d="$tmp/other-release"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
-    git -C "$d" update-ref refs/remotes/origin/release/1.2.4 HEAD
-    row other_versions_release_refuses 1 "not an ancestor of origin/release/1.2.3" "$d"
+    git -C "$d" checkout -q -b release-1.2.4
+    printf 'pub fn o() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'rc 1.2.4' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; git -C "$d" update-ref refs/remotes/origin/release/1.2.4 HEAD
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row other_versions_release_refuses 1 "FAIL  R4 HEAD" "$d"
 
     d="$tmp/nogo"; build_repo "$d"; write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row dogfood_no_go_refuses          1 "FAIL  R5" "$d"
