@@ -203,10 +203,10 @@
           }
         },
         {
-          "ruleId": "has-entry-awk-fails-on-leading-spaces",
-          "level": "warning",
+          "ruleId": "has-entry-awk-leading-spaces-fixed",
+          "level": "note",
           "message": {
-            "text": "release_policy_has_entry.awk fails to parse version strings with multiple leading alignment spaces due to single-space consumption in the regex."
+            "text": "FIXED at deccc49e62 and verified (antigravity reported this at e79344669c). release_policy_has_entry.awk now strips leading blanks after `release:`; policy self-test row per-release-two-blanks passes at the head (57 rows 0 failed), and with the strip deleted by hand it goes red (56 rows 1 failed at deccc49e62; file restored byte-identical)."
           },
           "locations": [
             {
@@ -229,7 +229,7 @@
             ],
             "source": "scripts/lib/release_policy_has_entry.awk",
             "failure_scenario": "If an emergency scope entry is formatted with multiple alignment spaces (e.g., `- release:   \"1.2.3\"`), the regex `/^    (- |  )release:[ ]/` consumes exactly one space. The extra spaces are retained in the extracted string `r` (e.g., `  \"1.2.3\"`). The subsequent quote stripping condition `r ~ /^\".*\"$/` fails because the string starts with a space. The version match fails, and the script falsely reports no entry, allowing a duplicate entry to be appended which violates the one-ruling-per-release rule.",
-            "precision_class": "advisory",
+            "precision_class": "note",
             "rationale_for_class": "Advisory until the arm has 30 measured samples; the primary reproduced it on the real awk (rc 1, expected 0)."
           }
         },
