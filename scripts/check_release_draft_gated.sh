@@ -302,7 +302,8 @@ if [ "$n" != 1 ]; then
   printf 'ENV   %s starts cascade-publish.sh from %s line(s), want 1: the cascade rows would judge one of them\n' "$DRAIN" "$n" >&2
   exit 2
 fi
-if ! gate_block "$CASCADE" | grep -q 'scripts/check_publish_preflight\.sh'; then
+gate=$(gate_block "$CASCADE")
+if ! grep -q 'scripts/check_publish_preflight\.sh' <<<"$gate"; then
   printf 'ENV   %s has no THE GATE block that runs check_publish_preflight.sh: the cascade rows would judge nothing\n' "$CASCADE" >&2
   exit 2
 fi
