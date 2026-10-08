@@ -140,7 +140,8 @@ equations:
       Every YAML contract under `contracts/` (including nested families)
       must be included in the README's provable-contract claim.
     invariants:
-    - "the quoted count must match `find contracts/ -name '*.yaml' | wc -l`"
+    - "the quoted count must match `find contracts/ -name '*.yaml' | wc -l` on the release train, its one writer (#4526)"
+    - "off the train the generated CONTRACT_COUNT block may lag the count and never overstate it; no PR raises it"
     preconditions: []
   cli_command_count:
     formula: |
@@ -201,15 +202,19 @@ falsification_tests:
 
 - id: FALSIFY-README-002
   rule: |
-    Contract count in README matches `find contracts/ -name "*.yaml" | wc -l`.
+    Contract count in README matches `find contracts/ -name "*.yaml" | wc -l`
+    on the release train, which generates it (scripts/readme_sync.sh). Off the
+    train no PR rewrites it, so it may lag and never overstate (#4526).
   prediction: |
     `README.md` states M provable contracts ↔ filesystem contains M YAML
     contracts under `contracts/`.
   test: |
     bash scripts/check_readme_claims.sh --claim contract_count
   if_fails: |
-    Contract folder grew/shrank without README update. Rerun
-    `bash scripts/check_readme_claims.sh --regen` to refresh.
+    On the train: the T-0 regeneration (make census) did not run. Off the
+    train: the README overstates, i.e. contracts were removed; lower the
+    block with `make readme-sync`. A PR never raises it
+    (scripts/check_generated_counts_untouched.sh).
   ship_blocking: false
   counter_example_classes:
   - stale_number

@@ -39,7 +39,9 @@
 #   --print    print the block bytes it WOULD write, to stdout. Writes nothing.
 #              This is what check_readme_claims.sh runs (twice, comparing the
 #              bytes) when README.md carries no block at all.
-#   --check    exit 0 if README.md already equals what --write would produce,
+#   --check    on the release train (or README_EXACT=1): exit 0 iff README.md
+#              equals what --write would produce. Elsewhere (#4526): exit 0 iff
+#              no block overstates the count and the frontmatter is exact,
 #              1 otherwise, naming both numbers. Writes nothing.
 #
 # A README that carries NO block is exit 3 under --write, never a silent no-op:
@@ -50,6 +52,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 README="${README_PATH:-$REPO_ROOT/README.md}"   # README_PATH: a fixture, for the tests
+# The ONE writer of a derived file (is_train, current_branch; #4526 GEN-001).
+# shellcheck source=scripts/lib_train_writer.sh
+. "$REPO_ROOT/scripts/lib_train_writer.sh" || exit 2
 
 CONTRACT_BLOCK_START='<!-- CONTRACT_COUNT_START -->'
 CONTRACT_BLOCK_END='<!-- CONTRACT_COUNT_END -->'
@@ -142,6 +147,10 @@ rewrite_stream() { # rewrite_stream WALKED_COUNT CENSUS_COUNT, README on stdin
         -e "s|^contract_count: [0-9]+\$|contract_count: ${2}|"
 }
 
+rewrite_stream_frontmatter() { # rewrite_stream_frontmatter CENSUS_COUNT, README on stdin: the frontmatter line only
+    sed -E -e "s|^contract_count: [0-9]+\$|contract_count: ${1}|"
+}
+
 mode=""
 for arg in "$@"; do
     case "$arg" in
@@ -180,6 +189,24 @@ case "$mode" in
         tmp="$(mktemp "${TMPDIR:-/tmp}/readme-sync-check.XXXXXX")"
         # shellcheck disable=SC2064
         trap "rm -f '$tmp'" EXIT
+        # GEN-001 (#4526): the release train is the blocks' one writer (scripts/lib_train_writer.sh)
+        # and is held to EQUALITY, as is README_EXACT=1. Off the train no PR rewrites them
+        # (scripts/check_generated_counts_untouched.sh), so a block may LAG the count and never
+        # overstate it; the frontmatter is still exact, since it follows the train's census.
+        if [ "${README_EXACT:-0}" != 1 ] && ! is_train "$(current_branch "$REPO_ROOT")"; then
+            rewrite_stream_frontmatter "$census_n" < "$README" > "$tmp"
+            over=$(grep -oE "${CONTRACT_BLOCK_START}[^<]*${CONTRACT_BLOCK_END}" "$README" \
+                | sed -E "s|${CONTRACT_BLOCK_START}||; s|${CONTRACT_BLOCK_END}||" \
+                | awk -v n="$count" '!/^[0-9]+$/ || $0 + 0 > n + 0' | sort -u | tr '\n' ' ') || over=""
+            if cmp -s "$README" "$tmp" && [ -z "$over" ]; then
+                printf 'ok    readme_sync: no CONTRACT_COUNT block overstates the measured count %s (off the train a block may lag; the train regenerates it)\n' "$count"
+                exit 0
+            fi
+            printf 'FAIL readme_sync: README.md overstates the measured count %s (block(s): %s) or its frontmatter contract_count is not the census n_files %s. Run: make readme-sync\n' \
+                "$count" "${over:-none}" "$census_n" >&2
+            diff -u "$README" "$tmp" | sed 's/^/  | /' >&2 || true
+            exit 1
+        fi
         rewrite_stream "$count" "$census_n" < "$README" > "$tmp"
         if cmp -s "$README" "$tmp"; then
             printf 'ok    readme_sync: README.md already states the measured count %s in every CONTRACT_COUNT block\n' "$count"

@@ -48,6 +48,9 @@ cargo_classify_selftest --quiet || exit 1
 # is shared with every baseline ratchet in the tree and its case table lives in
 # scripts/check_baseline_ratchets.sh.
 . "$REPO_ROOT/scripts/lib_baseline_ratchet.sh" || exit 1
+# The ONE writer of a derived file (is_train, current_branch), shared with
+# check_census_derived.sh and check_generated_counts_untouched.sh (#4526 GEN-001).
+. "$REPO_ROOT/scripts/lib_train_writer.sh" || exit 1
 
 # BSE-03 phase A: the README's contract count is DERIVED. scripts/readme_sync.sh
 # writes the text between these markers and a human writes neither the markers
@@ -357,8 +360,9 @@ measure_contract_count_rev() { # measure_contract_count_rev <rev>
 # stored anywhere a pull request can rewrite.
 #
 #   * the count is GENERATED into a CONTRACT_COUNT block by
-#     scripts/readme_sync.sh, so a block that disagrees with the merge tree is
-#     RED by EQUALITY: a generated number cannot legitimately lag;
+#     scripts/readme_sync.sh, whose one writer is the release train: there a block
+#     that disagrees with the merge tree is RED by EQUALITY; off the train (no PR
+#     writes it, #4526) it may lag and never overstate;
 #   * a number a human wrote outside the block keeps the G-11 ratchet (may lag,
 #     may never overstate, --exact for the orchestrator docs commit);
 #   * no block and no literal is GREEN only because the generator regenerates it
@@ -453,12 +457,27 @@ check_contract_count() {
       return 1
     fi
     target=$(pick_target "$block")
-    if [ "$block" != "$target" ]; then
-      printf 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states %s, the merge tree carries %s — the block is GENERATED, not authored, so this is an EQUALITY and not a ratchet (a generated number cannot legitimately lag). Run: make readme-sync\n' \
+    # GEN-001 (#4526): the block has ONE writer, the release train (scripts/lib_train_writer.sh),
+    # which regenerates it at T-0 and is judged by EQUALITY. A pull request does not write it
+    # (scripts/check_generated_counts_untouched.sh), so off the train the block may LAG the merge
+    # tree but never OVERSTATE it -- equality there made every contract-adding PR rewrite the
+    # same line, and parallel PRs conflicted on it. README_EXACT=1 restores equality anywhere.
+    if [ "$block" -gt "$target" ]; then
+      printf 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states %s, the merge tree carries %s — the README may lag, never overstate. Run: make readme-sync\n' \
+        "$block" "$merge_count" >&2
+      return 1
+    fi
+    if [ "$block" != "$target" ] && { [ "$EXACT" = 1 ] || is_train "$(current_branch "$REPO_ROOT")"; }; then
+      printf 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states %s, the merge tree carries %s — on the release train (or README_EXACT=1) the generated block is an EQUALITY: the train is its one writer and regenerates it. Run: make readme-sync\n' \
         "$block" "$merge_count" >&2
       return 1
     fi
     check_contract_literals "$literals" || return 1
+    if [ "$block" != "$target" ]; then
+      printf 'PASS FALSIFY-README-002 contract_count: %s (CONTRACT_COUNT block lags the merge tree %s at %s; its one writer, the release train, regenerates it)\n' \
+        "$target" "$merge_short" "$block"
+      return 0
+    fi
     printf 'PASS FALSIFY-README-002 contract_count: %s (CONTRACT_COUNT block, derived by scripts/readme_sync.sh; %s block(s) agree with the merge tree %s)\n' \
       "$block" "$nblocks" "$merge_short"
     return 0

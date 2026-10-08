@@ -28,6 +28,11 @@
 #      measurement reads a number from a FILE ON DISK instead of from the
 #      checkout must turn rows 2 and 3 GREEN. If it does not, rows 2/3 are not
 #      measuring the property and this suite is vacuous.
+#   9  the block LAGS the tree (GEN-001 #4526)      -> GREEN off the train, RED
+#      on the train (CENSUS_WRITER=train, release/X.Y.Z) and under README_EXACT=1:
+#      the train is the block's one writer and PRs never rewrite it
+#  10  readme_sync.sh --check keeps row 9's rule (lag GREEN off the train,
+#      RED on it; an overstatement RED everywhere)
 #
 # Phase B (BSE-03, this commit) adds the other two classes.
 #
@@ -165,7 +170,7 @@ fixture() { # fixture <dir> <n contracts> <readme body>
   # The guard and the generator are copied IN, so REPO_ROOT resolves to the
   # fixture (they derive it from their own location) and the mutant copy below
   # sits beside them with the same resolution.
-  cp "$GUARD" "$SYNC" "$ROOT/scripts/cargo_classify.sh" "$ROOT/scripts/lib_baseline_ratchet.sh" "$dir/scripts/" || return 1
+  cp "$GUARD" "$SYNC" "$ROOT/scripts/cargo_classify.sh" "$ROOT/scripts/lib_baseline_ratchet.sh" "$ROOT/scripts/lib_train_writer.sh" "$dir/scripts/" || return 1
   cp -R "$ROOT/scripts/lib" "$dir/scripts/lib" || return 1
   GIT_TERMINAL_PROMPT=0 git init -q --template="$WORK/empty-template" "$dir" >/dev/null 2>&1 || return 1
   git_fx "$dir" add -A -f contracts README.md >/dev/null 2>&1 || return 1
@@ -258,7 +263,7 @@ cx_commit() { # cx_commit <dir> <message>
 cx_fixture() { # cx_fixture <dir> [recorded tool_version]
   local dir="$1" recorded="${2:-pmat 0.0.0-shim}"
   mkdir -p "$dir/scripts/lib" "$dir/src" || return 1
-  cp "$CXGUARD" "$ROOT/scripts/lib_baseline_ratchet.sh" "$dir/scripts/" || return 1
+  cp "$CXGUARD" "$ROOT/scripts/lib_baseline_ratchet.sh" "$ROOT/scripts/lib_train_writer.sh" "$dir/scripts/" || return 1
   cp "$ROOT/scripts/lib/complexity_rows.py" "$dir/scripts/lib/" || return 1
   cx_lib '0.0.0-shim' 'branchy 35 34' 'cognitive_only 8 28' 'tidy 1 0' > "$dir/src/lib.rs" || return 1
   { printf '# complexity_baseline.txt — fixture inventory, NOT the comparand\n'
@@ -687,6 +692,65 @@ if [ "$mrc3" -eq 0 ]; then
   ok "row 8  mutation caught: the same mutant turns row 3 (authored literal) GREEN"
 else
   bad "row 8  mutation NOT demonstrated on row 3: the mutant still exits $mrc3"$'\n'"$(printf '%s' "$m3" | sed 's/^/        /')"
+fi
+
+# ---------------------------------------------------------------------------
+# Row 9 — the block LAGS the tree (GEN-001, #4526). A pull request that adds a
+# contract does not rewrite the block (its one writer is the release train), so
+# off the train a lag is GREEN; on the train, or under README_EXACT=1, the block
+# is an EQUALITY and the same lag is RED. The CI identity is pinned for each
+# run, so the row means the same thing on a feature PR and on release/X.Y.Z.
+F9="$WORK/f9"
+fixture "$F9" 3 "$(readme_with_block 2)" || die "row 9 fixture could not be built"
+offtrain=(GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH= GITHUB_HEAD_REF= GITHUB_REF_NAME=feat/x CENSUS_WRITER=)
+out9="$(run_guard "$F9" check_readme_claims.sh "${offtrain[@]}")"; rc=$?
+if [ "$rc" -eq 0 ] && grep -q '^PASS FALSIFY-README-002 contract_count: 3 (CONTRACT_COUNT block lags the merge tree .* at 2' <<<"$out9"; then
+  ok "row 9  block 2 lags a 3-file tree on a feature branch: GREEN, the lag is reported"
+else
+  bad "row 9  off-train lag: rc=$rc, wanted 0 and a 'lags the merge tree ... at 2' PASS line"$'\n'"$(printf '%s' "$out9" | sed 's/^/        /')"
+fi
+for on in "GITHUB_REF_NAME=release/0.72.0" "CENSUS_WRITER=train" "README_EXACT=1"; do
+  out9="$(run_guard "$F9" check_readme_claims.sh "${offtrain[@]}" "$on")"; rc=$?
+  if [ "$rc" -eq 1 ] && grep -q 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states 2, the merge tree carries 3 .* EQUALITY' <<<"$out9"; then
+    ok "row 9  the same lag with $on: RED by equality, both numbers printed"
+  else
+    bad "row 9  lag with $on: rc=$rc, wanted 1 and an EQUALITY FAIL carrying 2 and 3"$'\n'"$(printf '%s' "$out9" | sed 's/^/        /')"
+  fi
+done
+# A fork cannot buy the train's equality-or-nothing exemption by naming its branch:
+# is_fork_pr outranks the name, so a fork PR on release/9.9.9 is judged off-train.
+printf '{"pull_request":{"head":{"repo":{"full_name":"evil/aprender"}},"base":{"repo":{"full_name":"paiml/aprender"}}}}\n' > "$WORK/fork-event.json"
+out9="$(run_guard "$F9" check_readme_claims.sh "${offtrain[@]}" GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$WORK/fork-event.json" GITHUB_HEAD_REF=release/9.9.9)"; rc=$?
+if [ "$rc" -eq 0 ]; then
+  ok "row 9  a fork PR named release/9.9.9 is not the train: the lag stays GREEN"
+else
+  bad "row 9  fork PR on release/9.9.9: rc=$rc, wanted 0 (off-train)"$'\n'"$(printf '%s' "$out9" | sed 's/^/        /')"
+fi
+
+# ---------------------------------------------------------------------------
+# Row 10 — readme_sync.sh --check, the contracts gate's README step, keeps the
+# same rule (#4526): off the train a lagging block is GREEN and an overstating
+# one RED; on the train the lag is RED. Otherwise the gate would still force
+# every contract-adding PR to rewrite the block that row 9 lets lag.
+sync_check() { ( cd "$F9" && env "$@" bash "$F9/scripts/readme_sync.sh" --check ) 2>&1; }
+o10="$(sync_check "${offtrain[@]}")"; rc=$?
+if [ "$rc" -eq 0 ] && grep -q 'no CONTRACT_COUNT block overstates the measured count 3' <<<"$o10"; then
+  ok "row 10 readme_sync --check: block 2 lags 3 files on a feature branch: GREEN"
+else
+  bad "row 10 readme_sync --check off-train lag: rc=$rc, wanted 0"$'\n'"$(printf '%s' "$o10" | sed 's/^/        /')"
+fi
+o10="$(sync_check "${offtrain[@]}" CENSUS_WRITER=train)"; rc=$?
+if [ "$rc" -eq 1 ]; then
+  ok "row 10 readme_sync --check: the same lag on the train: RED"
+else
+  bad "row 10 readme_sync --check train lag: rc=$rc, wanted 1"$'\n'"$(printf '%s' "$o10" | sed 's/^/        /')"
+fi
+readme_with_block 4 > "$F9/README.md" || die "row 10: cannot rewrite the README"
+o10="$(sync_check "${offtrain[@]}")"; rc=$?
+if [ "$rc" -eq 1 ] && grep -q 'overstates the measured count 3 (block(s): 4' <<<"$o10"; then
+  ok "row 10 readme_sync --check: block 4 over 3 files on a feature branch: RED, both numbers printed"
+else
+  bad "row 10 readme_sync --check overstatement: rc=$rc, wanted 1"$'\n'"$(printf '%s' "$o10" | sed 's/^/        /')"
 fi
 
 printf '\n%s checks, %s failed\n' "$CHECKS" "$FAILED"

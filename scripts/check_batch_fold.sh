@@ -129,7 +129,7 @@ table() {
     fold "$d/r" "$subj" --regen gen1 gen2 rc1 rc2
     [ "$RC" = 0 ] && has '^regenerated the generated set and committed it'; row "--regen regenerates once, asserts the fixed points, commits (rc=$RC)" $?
     v=$(git -C "$d/r" log -1 --format=%s);  [ "${v#batch: regenerate}" != "$v" ]; row "  ...the last commit is the regeneration ($v)" $?
-    v=$(cat "$d/r/docs/roadmaps/roadmap.yaml"); [ "$v" = aggregated ] && grep -q -- '-->7<!--' "$d/r/README.md"; row "  ...roadmap aggregated and README counts rewritten" $?
+    v=$(cat "$d/r/docs/roadmaps/roadmap.yaml"); [ "$v" = aggregated ] && ! grep -q -- '-->7<!--' "$d/r/README.md"; row "  ...roadmap aggregated, README counts LEFT for the train (#4526)" $?
     v=$(git -C "$d/r" status --porcelain | wc -l | tr -d ' '); [ "$v" = 0 ]; row "  ...and the tree is clean after it (dirty=$v)" $?
 
     BATCH_FOLD_PV="$d/r.pv-badcheck" fold "$d/r" "$subj" --regen gen1
