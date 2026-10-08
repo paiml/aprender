@@ -1,4 +1,4 @@
-//! REX-001 frozen analysis code (spec §2.3, §3, §5.4).
+//! PRM-001 (PROMETHEUS) frozen analysis code (spec v3 §2.7, §3, §5.3; was REX-001).
 //!
 //! This file is part of the pre-registration bundle (`prereg.rs`): its sha256 is
 //! folded into the prereg sha that every receipt carries. Changing a single byte
@@ -13,6 +13,14 @@
 //!   resamples, SplitMix64 seeded (the generator is written out here so its
 //!   stream can never change under a dependency bump). One-sided bootstrap p =
 //!   fraction of resamples whose difference is < 0.
+//! - v2 H4: the bootstrap statistic is `p(apr) − min(p(Haiku), p(agy))` with
+//!   the min computed inside each resample (`bootstrap_vs_min_voter`). The
+//!   decision is the Holm-adjusted one-sided p; the 95 % CI is report-only.
+//! - v2 H5: recall on class R only; class-P recall and precision are
+//!   descriptive (mutant confound).
+//! - v3 H7 (a gate outside the Holm family, δ-free): Cohen's κ on per-item
+//!   errors (`error_kappa`); holds iff κ(apr, each voter) ≤ the max voter–voter
+//!   κ on the same items (`h7_holds`).
 //! - Holm step-down over the family H1–H6 at overall alpha = 0.05. The count
 //!   and threshold tests (H1, H2, H6) enter the family as p = 0 when rejected
 //!   and p = 1 when not: they are deterministic rules, not sampling statistics.
@@ -192,6 +200,122 @@ pub fn paired_bootstrap_diff(
         p_below_zero: below as f64 / diffs.len() as f64,
         undefined,
     })
+}
+
+/// One H4 item scored by apr and the two existing voters (Haiku, agy).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VsVoters {
+    /// Ground truth: the item carries a defect (class P or R).
+    pub defect: bool,
+    /// apr said FAIL.
+    pub apr_fail: bool,
+    /// The two voting lanes said FAIL, in a fixed order (Haiku, agy).
+    pub voter_fail: [bool; 2],
+}
+
+fn rate_of(items: &[VsVoters], idx: &[usize], lane: Option<usize>, which: Rate) -> Option<f64> {
+    let pick = |it: &VsVoters| lane.map_or(it.apr_fail, |v| it.voter_fail[v]);
+    let (mut num, mut den) = (0u64, 0u64);
+    for &i in idx {
+        let it = &items[i];
+        let fail = pick(it);
+        match which {
+            Rate::Precision if fail => {
+                den += 1;
+                num += u64::from(it.defect);
+            }
+            Rate::Recall if it.defect => {
+                den += 1;
+                num += u64::from(fail);
+            }
+            _ => {}
+        }
+    }
+    (den > 0).then(|| num as f64 / den as f64)
+}
+
+/// `rate(apr) − min(rate(Haiku), rate(agy))` on one index set.
+fn diff_vs_min(items: &[VsVoters], idx: &[usize], which: Rate) -> Option<f64> {
+    let a = rate_of(items, idx, None, which)?;
+    let lo = rate_of(items, idx, Some(0), which)?.min(rate_of(items, idx, Some(1), which)?);
+    Some(a - lo)
+}
+
+/// H4 (spec v2 §3): paired bootstrap of `p(apr) − min(p(Haiku), p(agy))`.
+/// The min is taken INSIDE each resample, so the weaker voter is chosen on
+/// that resample and the selection is part of the sampling distribution. The
+/// decision is the Holm-adjusted `p_below_zero`; the CI is report-only.
+#[must_use]
+pub fn bootstrap_vs_min_voter(
+    items: &[VsVoters],
+    which: Rate,
+    resamples: usize,
+    seed: u64,
+    alpha: f64,
+) -> Option<BootstrapDiff> {
+    let all: Vec<usize> = (0..items.len()).collect();
+    let estimate = diff_vs_min(items, &all, which)?;
+    let mut rng = SplitMix64::new(seed);
+    let mut diffs = Vec::with_capacity(resamples);
+    let mut undefined = 0usize;
+    let mut idx = vec![0usize; items.len()];
+    for _ in 0..resamples {
+        for slot in &mut idx {
+            *slot = rng.below(items.len());
+        }
+        match diff_vs_min(items, &idx, which) {
+            Some(d) => diffs.push(d),
+            None => undefined += 1,
+        }
+    }
+    if diffs.is_empty() {
+        return None;
+    }
+    diffs.sort_by(f64::total_cmp);
+    let below = diffs.iter().filter(|d| **d < 0.0).count();
+    Some(BootstrapDiff {
+        estimate,
+        ci: (
+            percentile_sorted(&diffs, alpha / 2.0),
+            percentile_sorted(&diffs, 1.0 - alpha / 2.0),
+        ),
+        p_below_zero: below as f64 / diffs.len() as f64,
+        undefined,
+    })
+}
+
+/// Cohen's κ between two lanes' per-item ERROR indicators (PRM-001 v3 §2.7,
+/// H7): 1 = they miss the same items, 0 = overlap at chance.
+/// `None` when the lengths differ, the sample is empty, or chance agreement
+/// is 1 (both lanes constant), where κ is undefined.
+#[must_use]
+pub fn error_kappa(a_err: &[bool], b_err: &[bool]) -> Option<f64> {
+    if a_err.len() != b_err.len() || a_err.is_empty() {
+        return None;
+    }
+    let n = a_err.len() as f64;
+    let agree = a_err.iter().zip(b_err).filter(|(x, y)| x == y).count() as f64 / n;
+    let pa = a_err.iter().filter(|x| **x).count() as f64 / n;
+    let pb = b_err.iter().filter(|x| **x).count() as f64 / n;
+    let chance = pa * pb + (1.0 - pa) * (1.0 - pb);
+    (chance < 1.0).then(|| (agree - chance) / (1.0 - chance))
+}
+
+/// H7 independence gate (PRM-001 v3 §3; outside the Holm family, δ-free):
+/// the local lane's κ_err with EVERY voter must not exceed the largest κ_err
+/// among voter–voter pairs on the same items — a tie-breaker may not be more
+/// correlated with a voter than the voters already are with each other.
+/// `None` (undecided, never "holds") when either side is empty or any κ is
+/// undefined.
+#[must_use]
+pub fn h7_holds(qwen_vs_voter: &[Option<f64>], voter_vs_voter: &[Option<f64>]) -> Option<bool> {
+    if qwen_vs_voter.is_empty() || voter_vs_voter.is_empty() {
+        return None;
+    }
+    let pairs: Option<Vec<f64>> = voter_vs_voter.iter().copied().collect();
+    let ceiling = pairs?.into_iter().fold(f64::NEG_INFINITY, f64::max);
+    let qwen: Option<Vec<f64>> = qwen_vs_voter.iter().copied().collect();
+    Some(qwen?.into_iter().all(|k| k <= ceiling))
 }
 
 /// Nearest-rank percentile of an ascending slice. `q` in (0, 1].
@@ -385,6 +509,100 @@ mod tests {
         // Precision: A and B both 1.0 -> diff 0 everywhere.
         let p = paired_bootstrap_diff(&items, Rate::Precision, 500, 7, ALPHA).expect("defined");
         assert!(close(p.estimate, 0.0, 0.0) && close(p.ci.0, 0.0, 0.0));
+    }
+
+    /// Three lanes, equal point precision 10/12, false positives on
+    /// disjoint good items: which voter is weaker flips between resamples.
+    fn tied_voters() -> Vec<VsVoters> {
+        (0..40)
+            .map(|i| {
+                let defect = i < 20;
+                let caught = i < 10;
+                VsVoters {
+                    defect,
+                    apr_fail: caught || i == 20 || i == 21,
+                    voter_fail: [caught || i == 22 || i == 23, caught || i == 24 || i == 25],
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn falsify_h4_min_is_taken_inside_each_resample() {
+        let items = tied_voters();
+        let inside =
+            bootstrap_vs_min_voter(&items, Rate::Precision, 2000, 4354, ALPHA).expect("defined");
+        // The v1 rule: pick the weaker voter ONCE on the full sample (a tie →
+        // voter 0), then bootstrap against it. Same seed → same resamples.
+        let fixed: Vec<Paired> = items
+            .iter()
+            .map(|t| Paired {
+                defect: t.defect,
+                a_fail: t.apr_fail,
+                b_fail: t.voter_fail[0],
+            })
+            .collect();
+        let once =
+            paired_bootstrap_diff(&fixed, Rate::Precision, 2000, 4354, ALPHA).expect("defined");
+        assert!(close(inside.estimate, 0.0, 1e-12) && close(once.estimate, 0.0, 1e-12));
+        // a − min(v0, v1) ≥ a − v0 on every resample, strictly on those where
+        // v1 is the weaker: the two rules must give different p.
+        assert!(
+            inside.p_below_zero < once.p_below_zero,
+            "{inside:?} vs {once:?}"
+        );
+        // Voter order is irrelevant under min().
+        let swapped: Vec<VsVoters> = items
+            .iter()
+            .map(|t| VsVoters {
+                voter_fail: [t.voter_fail[1], t.voter_fail[0]],
+                ..*t
+            })
+            .collect();
+        assert_eq!(
+            bootstrap_vs_min_voter(&swapped, Rate::Precision, 2000, 4354, ALPHA),
+            Some(inside)
+        );
+    }
+
+    #[test]
+    fn error_kappa_matches_hand_computed() {
+        // agree 3/4, pa = .5, pb = .25, chance = .5 → κ = .5
+        let k = error_kappa(&[true, true, false, false], &[true, false, false, false]);
+        assert!(close(k.expect("defined"), 0.5, 1e-12));
+        assert_eq!(error_kappa(&[true, false], &[true, false]), Some(1.0));
+        assert_eq!(
+            error_kappa(&[false, false], &[false, false]),
+            None,
+            "chance = 1"
+        );
+        assert_eq!(
+            error_kappa(&[true], &[true, false]),
+            None,
+            "length mismatch"
+        );
+        assert_eq!(error_kappa(&[], &[]), None);
+    }
+
+    #[test]
+    fn falsify_h7_is_max_pair_and_undecided_on_gaps() {
+        let pairs = [Some(0.30), Some(0.10), Some(0.20)];
+        assert_eq!(
+            h7_holds(&[Some(0.30), Some(0.05)], &pairs),
+            Some(true),
+            "≤ max pair"
+        );
+        assert_eq!(
+            h7_holds(&[Some(0.31), Some(0.05)], &pairs),
+            Some(false),
+            "one voter above max"
+        );
+        // Not the min, not the mean: 0.25 is above both and still holds.
+        assert_eq!(h7_holds(&[Some(0.25)], &pairs), Some(true));
+        assert_eq!(h7_holds(&[None, Some(0.0)], &pairs), None);
+        assert_eq!(h7_holds(&[Some(0.0)], &[Some(0.3), None]), None);
+        assert_eq!(h7_holds(&[], &pairs), None);
+        assert_eq!(h7_holds(&[Some(0.0)], &[]), None);
     }
 
     #[test]

@@ -1555,6 +1555,21 @@ oracle-check: oracle
 	@git diff --exit-code tests/oracle/differential.json \
 	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }
 
+# PRA-001 §1 G14 (T0): read-only, one row per fleet host; UNREACHABLE fails the target.
+transcript-retention-audit:
+	@bash scripts/transcript_retention_audit.sh
+.PHONY: transcript-retention-audit
+
+# PRM-C13 (was PRA T13), lane-independence-v1: κ_err scoreboard of the shadow lane vs every
+# counted lane on matured gold SPLIT rows. With MANIFEST and CANDIDATE it gates (exit 12 = S-14).
+SPLIT ?= val
+MIN_N ?= 30
+lane-kappa:
+	@test -n "$(ROWS)" || { echo "usage: make lane-kappa ROWS=trace.jsonl [SPLIT=val] [MIN_N=30 | MANIFEST=m.json CANDIDATE=c.jsonl]"; exit 2; }
+	cargo run -q -p aprender-review-experiment --example rex -- lane-kappa "$(ROWS)" --split "$(SPLIT)" \
+	  $(if $(MANIFEST),--manifest "$(MANIFEST)" --candidate "$(CANDIDATE)",--min-n "$(MIN_N)")
+.PHONY: lane-kappa
+
 # ONT-001 §3.8 / ONT-2c — the OWL oracle (release gate only, R-13; never per PR). Three arms:
 # horned-owl re-parses the fixture's written .ofn and must equal the HAND-WRITTEN axiom list; every live
 # axiom must be a told-closure-admitted kind; ELK 0.4.3 (pinned by sha256, needs a JVM) must agree with

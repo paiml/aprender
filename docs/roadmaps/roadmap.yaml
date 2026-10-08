@@ -23675,6 +23675,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'DPO x3 by pvl-b; NF4 x3 and f16 by aprender-57. The old dpo_gradient_formula axiom was false for beta < 0; now a HasDerivAt theorem plus dpo_gradient_scale_nonpos (0 <= beta).'
+- id: PMAT-4354
+  github_issue: 4354
+  item_type: task
+  kind: code
+  title: 'PRM-L: land PRM-001 v3 (PROMETHEUS) + rex/001 to main'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-84
+  created: 2026-09-25T18:38:33Z
+  updated: 2026-09-25T18:38:33Z
+  spec: docs/specifications/PRM-001-prometheus.md
+  acceptance_criteria:
+  - Refs paiml/aprender#4354. Spec PRM-001 v3 byte-exact, rex-prereg-v2 lock, v1 lock frozen, superseded banners, v3 figure.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4369
   github_issue: 4369
   item_type: task
@@ -23809,6 +23827,38 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels: []
   notes: 'Adopted from aprender-ea orphan fix/4445-bench-fresh-prefill @65fd973170 (09-25, never PRed). The bug exists only with the #4214 checkpoint, i.e. car/0.70.0 (#4429); main before #4429 does not reuse an identical prompt. Cop ruling 2026-09-27: not folded into the car; own PR on main the moment #4429 merges, before the rc.1 tag. Superseded 2026-09-27 ~14:00Z by operator "make it faster" (via cop): open on main NOW, in parallel with the car. Until the car lands this change is inert on main (an identical prompt already prefills whole there); it pre-lands the bench wiring and the API so the car merge needs only the checkpoint line, which the exhaustive destructure forces.'
+- id: PMAT-4446
+  github_issue: 4446
+  item_type: task
+  title: PRA-001 T12 terms/provider tagging (P-TERMS)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T17:08:31Z
+  updated: 2026-09-25T17:08:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4447
+  github_issue: 4447
+  item_type: task
+  title: PRM-S1 review-replay-v1 benchmark + runner
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T17:46:46Z
+  updated: 2026-09-25T17:46:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4453
   github_issue: 4453
   item_type: task
@@ -23968,6 +24018,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4524
+  github_issue: 4524
+  item_type: task
+  title: 'PRM-L land rex/001 C6+C11+C14 on main: merge main, reconcile with #4655 crate snapshot'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-08T12:49:26Z
+  updated: 2026-10-08T12:49:26Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4354
 - id: PMAT-4594
   github_issue: 4594
   item_type: task

@@ -12,7 +12,11 @@ use crate::receipt::{
 };
 use crate::stats::SplitMix64;
 use serde_json::{json, Value};
+use std::io::Read;
 use std::time::{Duration, Instant};
+
+/// Largest reply body read, in bytes (ureq's `into_string` stops at 10 MB).
+const MAX_BODY: u64 = 256 << 20;
 
 /// Fixed decoding (§2.1 `[A]`): greedy, seed = the epic number, 512 tokens
 /// (the prompt asks for a verdict line and ≤ 5 short bullets).
@@ -109,12 +113,38 @@ pub fn post(url: &str, body: &Value) -> Result<Reply, String> {
         Err(ureq::Error::Status(code, r)) => (code, r),
         Err(e) => return Err(e.to_string()),
     };
-    let body = resp.into_string().map_err(|e| e.to_string())?;
+    // `into_string` refuses bodies over 10 MB; the /tokenize reply for a large
+    // candidate diff exceeds that. Read bounded at MAX_BODY instead.
+    let body = read_bounded(resp.into_reader(), MAX_BODY)?;
     Ok(Reply {
         status,
         body,
         wall_ms: t.elapsed().as_secs_f64() * 1e3,
     })
+}
+
+/// Read `r` to a string of at most `cap` bytes.
+///
+/// # Errors
+/// The read failed, or the body ran past `cap`.
+pub fn read_bounded(r: impl Read, cap: u64) -> Result<String, String> {
+    let mut limited = r.take(cap);
+    let mut bytes = Vec::new();
+    limited.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    // Probe the reader itself, not a cap + 1 limit: Ok means it hit EOF, for
+    // every cap, u64::MAX included.
+    let mut probe = [0u8; 1];
+    let more = loop {
+        match limited.get_mut().read(&mut probe) {
+            Ok(n) => break n > 0,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    };
+    if more {
+        return Err(format!("reply body ran past the {cap}-byte cap"));
+    }
+    String::from_utf8(bytes).map_err(|e| e.to_string())
 }
 
 /// The reply's text, token counts, server timings — or why none.
