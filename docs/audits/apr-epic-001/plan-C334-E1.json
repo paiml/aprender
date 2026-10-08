@@ -11,7 +11,7 @@
     "collapse": 6,
     "park": 19
   },
-  "writes": 90,
+  "writes": 95,
   "quorum": {
     "question": "C334 item 2: #4678's open children re-parent to E1 (#3998). Q1 scope (A = #4678's 37 only / B = union with E1's own 11). Q2 do rules 6/20 keep the P0s on 0.71 ranked below 10 open. Q3 plan check: keep 14 (ranks 1-10 + #4742 #4743 #4751 + #4696 for its open P0 sub #4666; #4701 to milestone 0.71.0 per rule 3), collapse 6 (#4693 #4694 #4695 #4377 -> #4684; #4754 -> #4742; #4805 -> #4687), park 19 (#4715 #4352 #4350 #4745 #4746 #4749 #4819 #4820 #4821 #4744 #4750 #4752 #4757 #4732 #4786 #4798 #4851 #4817 #4829).",
     "author": "claude-opus-5-5",
@@ -57,7 +57,8 @@
     "agreed_on": "Q1 A 2/2, Q2 KEEP_PROTECTED 2/2, Q3 OK 2/3 after tie-break",
     "result": "scope A; keep 14 open under E1 (count differs from 10: 4 rule-6/ISSUE-TREE-protected beyond rank 10, reported); collapse 6; park 19; nothing deleted",
     "degraded": "same-family",
-    "time": "2026-10-08T11:39Z"
+    "time": "2026-10-08T11:39Z",
+    "non_claude": "not_measured: agy was not probed before this round, so the same-family degradation is recorded, not proven"
   },
   "ops": [
     {
@@ -541,5 +542,20 @@
       }
     }
   ],
-  "time": "2026-10-08T11:52Z"
+  "time": "2026-10-08T11:41:12Z",
+  "time_src": "plan written before the first write (11:41:48Z); this committed copy was made at 11:52Z",
+  "n_direct": 37,
+  "nested": [
+    {
+      "issue": 4377,
+      "sub_of": 4695
+    },
+    {
+      "issue": 4350,
+      "sub_of": 4352
+    }
+  ],
+  "n_ops": 39,
+  "n_note": "37 direct children of #4678 ranked by rule 8; 2 nested subs (#4377 under #4695, #4350 under #4352) follow their parent and carry rank null; 14+6+19 = 39 ops",
+  "writes_note": "90 issue writes (reparent, milestone, comment, label, close) + 5 issue-body writes (3 parent checklists, E1 body, E1 receipt-path fix)"
 }

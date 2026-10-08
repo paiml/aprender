@@ -358,5 +358,29 @@
   {
     "t": "11:45:58Z",
     "w": "close 4829 parked backlog"
+  },
+  {
+    "t": "11:46:27Z",
+    "w": "body 4684 +4 collapsed rows (4377 4693 4694 4695)",
+    "t_src": "body file written just before the PATCH"
+  },
+  {
+    "t": "11:46:30Z",
+    "w": "body 4742 +1 collapsed row (4754)",
+    "t_src": "body file written just before the PATCH"
+  },
+  {
+    "t": "11:46:32Z",
+    "w": "body 4687 +1 collapsed row (4805)",
+    "t_src": "body file written just before the PATCH"
+  },
+  {
+    "t": "11:47:47Z",
+    "w": "body 3998 title/train 0.71, done_when, 2 build-bar rows, #4678 summary, 17 parked lines + 2 re-annotated",
+    "t_src": "body file written just before the PATCH"
+  },
+  {
+    "t": "11:54:34Z",
+    "w": "body 3998 receipt path fix"
   }
 ]
