@@ -135,8 +135,7 @@ done
 
 # ADVISORY in 0.67. This is the row that has to be DELETED, not edited, when
 # 68-C3 / 68-D2 promote the jobs — which is the point of pinning it.
-# #4621: `gate` needs the yoga fat job for its mutants-cuda section (operator E1), so the pin reads what the gate
-# JUDGES, not its needs: no gpu-quick or cuda-unit section result is read, and gx10 is not needed at all.
+# The pin reads what the gate JUDGES, not only its needs: no gpu-quick or cuda-unit section result is read.
 row 0 "no gpu-quick / cuda-unit result is read by gate — advisory in 0.67 (68-C3 / 68-D2 promote them)" \
     "^ADVISORY$" jobq_wf gate \
     "'PROMOTED' if (({'gpu-quick','cuda-unit','gx10'} & set(job.get('needs',[]))) or __import__('re').search(r'(:|\"\\$\\w+\" |[.]\")(gpu-quick|cuda-unit)\\b', ''.join(s.get('run') or '' for s in job['steps']))) else 'ADVISORY'"

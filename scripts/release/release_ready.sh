@@ -12,6 +12,13 @@
 #   merge    .github/workflows/ci.yml           job `gate`: every `needs:` job and every `for pair in` section
 #   merge    CLAUDE.md                          the "Required status checks:" contexts
 #   tag      scripts/release/autopilot.sh       every checker a step up to and including `tag` invokes
+#   tag      scripts/release/autopilot.sh       the T-1 lanes (`for s in …; do run_step "$s"`): each lane's `t1_<step>`
+#                                               body, under its own step name
+#   tag      scripts/dogfood.sh + Cargo.toml    every row the pre-publish dogfood can FAIL: `mark X FAIL`, `gate X`,
+#                                               `ci_mark X`, a `pre-publish:…) printf 'X FAIL`, and every
+#                                               [package.metadata.dogfood].gates script (`declared:X`). A row inside a
+#                                               branch that only runs post-publish cannot stop a tag and is not read;
+#                                               nor are comments, heredoc bodies and `-c '…'` programs
 #   publish  scripts/release/autopilot.sh       every checker a step after `tag` up to `dryrun` invokes
 #   publish  scripts/check_publish_preflight.sh every rule R<n> of its RULES header
 #   publish  scripts/cascade-publish.sh         every `if ! <gate>` the cascade refuses on, and every top-level
@@ -21,9 +28,10 @@
 #                                               publish` (the spec's T-4 executor), named by its message
 #   Out: a verdict that runs after an upload (a final verification, autopilot's `cascade incomplete`) is an
 #   outcome of publishing, not a requirement to start it.
-#   A checker inside a step is: `bash scripts/X.sh [--flag]`, `python3 scripts/X.py [sub]`, `cargo test|check|build`
+#   A checker inside a step is: `bash scripts/X.sh [--flag]`, `python3 scripts/X.py [sub]`, `cargo test|check|build|metadata`
 #   with its first two flags, a workflow it dispatches or reads (`gh-workflow X.yml`), `git merge-base
-#   --is-ancestor`, and the same inside any top-level function the step calls.
+#   --is-ancestor`, and the same inside any top-level function the step calls. A quoted literal (a die message)
+#   is not a call.
 #   Claims (key = value, for contradictions): the R8 wrapper's committed mode (release_readiness.sh DEFAULT_MODE
 #   vs the preflight's RULES text), autopilot's step list (STEPS=() vs its header), the coverage floor (Makefile
 #   vs CLAUDE.md), the publish executor (the first script autopilot's `cascade` step runs vs the script the
@@ -35,6 +43,10 @@
 #                  surface states any more
 #   CONTRADICTION  one key carries two or more values across the claims and the list
 #   then one line: `release-ready: unlisted=U orphaned=O contradictions=C tree=<sha|nogit>`.
+# A row of a GATE (`parent: <id>`, e.g. one dogfood row under the dogfood step) is on the list and is checked like
+# any entry; `--gates` prints it under its GATE, and the total `gates=N` counts GATEs only: one grain.
+# A row of a GATE (`parent: <id>`, e.g. one dogfood row under the dogfood step) is on the list and is checked like
+# any entry; `--gates` prints it under its GATE and the total `gates=N` counts GATEs only, one grain.
 #
 # PROBE (--probe). TWO GitHub reads, because both enforce on main: the ruleset rules on its branch
 #   (`repos/R/rules/branches/main`) and the classic branch protection (`repos/R/branches/main/protection/
@@ -44,11 +56,12 @@
 #
 # EXIT  0 zero findings (probe: sets equal) · 1 a finding (probe: sets differ) · 2 not_measured (a surface is
 #       missing or unreadable; the probe read failed) · 3 caller error (bad arguments, a malformed list line)
-# Report-only today: no gate calls this script (wiring is a proposal; L31: three green nights first).
+# LAB today: no gate calls this script (it becomes a GATE only after three green nights and an operator yes).
 #
 # USAGE
 #   release_ready.sh [--root DIR] [--list FILE]     the verdict on a tree (default: this repo, its list)
 #   release_ready.sh --found [--root DIR]           the anchors the surfaces state (the in-repo inventory)
+#   release_ready.sh --gates [--root DIR] [--list FILE]   the GATE list: every requirement, one row each
 #   release_ready.sh --probe [--root DIR] [--list FILE]   GH (default gh) · RR_REPO (default paiml/aprender)
 #   release_ready.sh --selftest                     the case table (fixture trees, no network)
 #   release_ready.sh --mutants                      each planted mutant must turn the case table RED
@@ -66,6 +79,8 @@ STR_REL=scripts/release/publish_strict.sh
 SPEC_REL=docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
 RRW_REL=scripts/release/release_readiness.sh
 MK_REL=Makefile
+DF_REL=scripts/dogfood.sh
+CARGO_REL=Cargo.toml
 
 caller_error() { printf 'release-ready: caller error: %s\n' "$*"; exit 3; }
 nm() { printf 'release-ready: not_measured: %s\n' "$*"; exit 2; }
@@ -107,7 +122,7 @@ doc_contexts_found() {
 autopilot_found() {
     awk -v F="$2" '
         { L[NR] = $0 }
-        function invs(line, out,   s, w, n, i, f, c, nr, np) {
+        function invs(line, out,   s, t, w, n, i, f, c, nr, np) {
             out = ""
             if (line ~ /^[ \t]*#/) return ""
             s = line
@@ -122,8 +137,11 @@ autopilot_found() {
                 w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH); np++; gsub(/ +/, " ", w); out = out "\n" w
             }
             if (nr > np) UNP = 1
-            s = line
-            while (match(s, /cargo +(test|check|build)( +[^ ;|&>)]+)*/)) {
+            # a quoted literal (a die message) is not a call: pair the quotes left to right, keep a `$(` inside one
+            s = ""; t = line
+            while (match(t, /"[^"]*"/)) { w = substr(t, RSTART, RLENGTH); s = s substr(t, 1, RSTART - 1) (index(w, "$(") ? w : "\"\""); t = substr(t, RSTART + RLENGTH) }
+            s = s t
+            while (match(s, /cargo +(test|check|build|metadata)( +[^ ;|&>)]+)*/)) {
                 w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
                 n = split(w, a, / +/); c = a[1] " " a[2]; f = 0
                 for (i = 3; i <= n && f < 2; i++) if (a[i] ~ /^--/) { c = c " " a[i]; f++ }
@@ -161,6 +179,21 @@ autopilot_found() {
                             o = invs(L[b]); unp(b); m = split(o, A, "\n")
                             for (q = 2; q <= m; q++) if (!(A[q] in seen)) { seen[A[q]] = 1; printf "%s:autopilot/%s/%s\t%s:%d\n", PH[st], st, A[q], F, b; k++ }
                         }
+                }
+            }
+            # parallel lanes: `for s in a b c; do run_step "$s"` launched as `"t1_$s" &`; each step is its t1_<step> body
+            for (i = 1; i <= NR; i++) {
+                if (L[i] !~ /for s in [a-z ]+; [d]o run_step "\$s"/) continue
+                ls = L[i]; sub(/.*for s in /, "", ls); sub(/;.*/, "", ls); nl = split(ls, LN, / +/)
+                for (j = 1; j <= nl; j++) {
+                    st = LN[j]; fn = "t1_" st
+                    if (!(st in PH) || !(fn in FS0)) { unk = 1; continue }
+                    if (PH[st] == "") continue
+                    delete seen
+                    for (e = FS0[fn] + 1; e < FE[fn]; e++) {
+                        o = invs(L[e]); unp(e); m = split(o, A, "\n")
+                        for (q = 2; q <= m; q++) if (!(A[q] in seen)) { seen[A[q]] = 1; printf "%s:autopilot/%s/%s\t%s:%d\n", PH[st], st, A[q], F, e; k++ }
+                    }
                 }
             }
             # the top-level lines between steps (outside every step and function) run on every train: step `commit`
@@ -250,6 +283,56 @@ strict_found() {
     ' "$1"
 }
 
+# dogfood_found DOGFOOD CARGO: every row `dogfood.sh --phase pre-publish` can mark FAIL, named tag:dogfood/<row>. A
+# row is `mark <row> FAIL`, `gate <row> <cmd>` or `ci_mark <row>` in statement position, or a `pre-publish:` arm of
+# version_row that prints `<row> FAIL`; plus `declared:<name>` for each [package.metadata.dogfood].gates entry of the
+# root manifest (any declared gate FAILs on a non-zero exit). A site counts unless an enclosing `if` branch cannot run
+# in pre-publish: one that tests `"$DOGFOOD_PHASE" = post-publish`, or an elif/else after a branch that tests
+# `= pre-publish`. Embedded python (heredocs, `python3 -c '…'`) is skipped. An unbalanced if/fi, no declared gate or
+# no row at all is not_measured.
+dogfood_found() {
+    awk -v F="$3" -v C="$4" -v Q="'" '
+        NR == FNR {
+            if ($0 ~ /^\[package\.metadata\.dogfood\]/) { g = 1; next }
+            if (g && /^\[/) g = 0
+            if (g && match($0, /^[ \t]*"scripts\/[A-Za-z0-9_\/.-]+\.sh"/)) {
+                n = substr($0, RSTART, RLENGTH); sub(/^[ \t]*"/, "", n); sub(/"$/, "", n); sub(/.*\//, "", n); sub(/\.sh$/, "", n)
+                printf "tag:dogfood/declared:%s\t%s:%d\n", n, C, FNR; k++; nd++
+            }
+            next
+        }
+        HD != "" { u = $0; gsub(/[ \t]/, "", u); if (u == HD) HD = ""; next }
+        SQ { if (index($0, Q)) SQ = 0; next }
+        /^[ \t]*#/ { next }
+        $0 ~ ("-c " Q "[ \t]*$") { SQ = 1; next }
+        $0 !~ /<<</ && match($0, "<<-?" Q "?[A-Za-z_]+" Q "?") { HD = substr($0, RSTART, RLENGTH); gsub("[<" Q "-]", "", HD) }
+        {
+            line = $0; t = line; sub(/^[ \t]+/, "", t)
+            if (t ~ /^if /) { d++; X[d] = (t ~ /"\$DOGFOOD_PHASE" = post-publish/); P[d] = (t ~ /"\$DOGFOOD_PHASE" = pre-publish/) }
+            else if (t ~ /^elif /) { if (!d) bad = 1; X[d] = P[d] || (t ~ /"\$DOGFOOD_PHASE" = post-publish/); if (t ~ /"\$DOGFOOD_PHASE" = pre-publish/) P[d] = 1 }
+            else if (t ~ /^else([ \t]|$)/) { if (!d) bad = 1; X[d] = P[d] }
+            ex = 0; for (i = 1; i <= d; i++) if (X[i]) ex = 1
+            if (!ex) {
+                s = line
+                while (match(s, /(^[ \t]*|([t]hen|else|[d]o|;|&&|\|\||\{) +)(mark +[a-z][a-z0-9-]* +FAIL|gate +[a-z][a-z0-9-]* +[^ ]|ci_mark +[a-z][a-z0-9-]* )/)) {
+                    w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH); sub(/^.*(mark|gate|ci_mark) +/, "", w); sub(/ .*/, "", w)
+                    if (!(w in SEEN)) { SEEN[w] = 1; printf "tag:dogfood/%s\t%s:%d\n", w, F, FNR; k++ }
+                }
+                if (match(t, "^pre-publish:[a-z-]+\\) +printf " Q "[a-z][a-z0-9-]* FAIL ")) {
+                    w = substr(t, RSTART, RLENGTH); sub("^[^ ]+ +printf " Q, "", w); sub(/ .*/, "", w)
+                    if (!(w in SEEN)) { SEEN[w] = 1; printf "tag:dogfood/%s\t%s:%d\n", w, F, FNR; k++ }
+                }
+            }
+            if (t ~ /^fi([ \t;]|$)/ || (t ~ /^(if|elif|else) / && t ~ /;[ \t]*fi[ \t;]*$/)) { if (!d) bad = 1; else d-- }
+        }
+        END {
+            if (d || bad) printf "unbalanced if/fi in %s\n", F > "/dev/stderr"
+            if (!nd) printf "no [package.metadata.dogfood].gates in %s\n", C > "/dev/stderr"
+            if (bad || d || !nd || k == 0) exit 2
+        }
+    ' "$2" "$1"
+}
+
 # claims_raw ROOT: "key<TAB>value<TAB>where" for every fact two places can disagree on
 claims_raw() {
     local root=$1
@@ -289,7 +372,7 @@ claims() {
 # found ROOT: every anchor the surfaces state; rc 2 when a surface is missing or unreadable
 found() {
     local root=$1 f
-    for f in "$CI_REL" "$DOC_REL" "$AUTO_REL" "$PRE_REL" "$CAS_REL" "$STR_REL" "$SPEC_REL" "$RRW_REL" "$MK_REL"; do
+    for f in "$CI_REL" "$DOC_REL" "$AUTO_REL" "$PRE_REL" "$CAS_REL" "$STR_REL" "$SPEC_REL" "$RRW_REL" "$MK_REL" "$DF_REL" "$CARGO_REL"; do
         [ -f "$root/$f" ] || { printf 'surface missing: %s\n' "$f" >&2; return 2; }
     done
     ci_gate_found "$root/$CI_REL" "$CI_REL" || { printf 'surface unreadable: %s job gate\n' "$CI_REL" >&2; return 2; }
@@ -298,6 +381,7 @@ found() {
     preflight_found "$root/$PRE_REL" "$PRE_REL" || { printf 'surface unreadable: %s RULES\n' "$PRE_REL" >&2; return 2; }
     cascade_found "$root/$CAS_REL" "$CAS_REL" || { printf 'surface unreadable: %s gates\n' "$CAS_REL" >&2; return 2; }
     strict_found "$root/$STR_REL" "$STR_REL" || { printf 'surface unreadable: %s refusals\n' "$STR_REL" >&2; return 2; }
+    dogfood_found "$root/$DF_REL" "$root/$CARGO_REL" "$DF_REL" "$CARGO_REL" || { printf 'surface unreadable: %s rows\n' "$DF_REL" >&2; return 2; }
 }
 
 # ---------------------------------------------------------------- the list ----------------------------------------
@@ -324,10 +408,14 @@ parse_list() {
             if (V["applies_to"] ~ /publish/ && V["producer"] == "") { printf "line %d: %s applies to publish and names no nightly producer\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
             if ((V["key"] == "") != (V["value"] == "")) { printf "line %d: key and value come together\n", NR > "/dev/stderr"; bad = 1; next }
             if (V["id"] in ID) { printf "line %d: id %s twice\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
-            ID[V["id"]] = 1
-            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", V["id"], V["applies_to"], V["anchor"], V["checker"], V["producer"], V["key"], V["value"], NR
+            ID[V["id"]] = 1; if (V["parent"] != "") { PA[V["id"]] = V["parent"]; PL[V["id"]] = NR }
+            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", V["id"], V["applies_to"], V["anchor"], V["checker"], V["producer"], V["key"], V["value"], NR, V["parent"]
         }
-        END { if (bad) exit 3 }
+        END {
+            # a row of a GATE names a GATE: an id on the list that is not itself a row of another
+            for (x in PA) if (!(PA[x] in ID) || (PA[x] in PA)) { printf "line %d: parent %s of %s is not a GATE on the list\n", PL[x], PA[x], x > "/dev/stderr"; bad = 1 }
+            if (bad) exit 3
+        }
     ' "$1"
 }
 
@@ -375,6 +463,26 @@ verdict() {
     return "$rc"
 }
 
+# ---------------------------------------------------------------- the GATE list ------------------------------------
+# gates LIST: print the list as the GATE list, one row per requirement. A check is a GATE when it can block a merge
+# or a release; a check not on this list is LAB. A list that is absent, malformed or empty prints nothing to trust.
+gates() {
+    local list=$1 out
+    [ -f "$list" ] || nm "no list $list"
+    out=$(parse_list "$list") || caller_error "malformed list $list"
+    [ -n "$out" ] || nm "the list $list names no requirement"
+    printf 'GATE list from %s. A check is a GATE when it can block a merge or a release; anything not listed is LAB.\n' "${list##*/}"
+    printf 'A GATE with rows (parent: on the list) prints them indented under it; the total counts GATEs, never rows.\n'
+    printf '%s\n' "$out" | awk -F'\t' '
+        { R[NR] = $0; if ($9 != "") { K[$9] = K[$9] "\n" NR; nk[$9]++ } }
+        END {
+            for (i = 1; i <= NR; i++) { split(R[i], a, "\t"); if (a[9] != "") continue
+                printf "%-8s %-15s %-62s %s%s\n", a[1], a[2], a[3], a[4], nk[a[1]] ? "  (" nk[a[1]] " rows)" : ""; n++
+                m = split(K[a[1]], c, "\n"); for (j = 2; j <= m; j++) { split(R[c[j]], b, "\t"); printf "  %-8s row of %-8s %-55s %s\n", b[1], a[1], b[3], b[4] } }
+            printf "gates=%d\n", n
+        }'
+}
+
 # ---------------------------------------------------------------- the probe (two GitHub reads) --------------------
 probe() {
     local root=$1 list=$2 gh=${GH:-gh} repo=${RR_REPO:-paiml/aprender} got bp want lo go
@@ -398,7 +506,7 @@ probe() {
 }
 
 # ---------------------------------------------------------------- the case table ----------------------------------
-# fixture DIR: a tree whose six surfaces state 13 requirements, all listed (green)
+# fixture DIR: a tree whose seven surfaces state 17 requirements (3 of them rows of FX-T2), all listed (green)
 fixture() {
     local d=$1
     mkdir -p "$d/.github/workflows" "$d/scripts/release" "$d/contracts"
@@ -416,14 +524,19 @@ YML
     printf '%s\n' '**`main` is protected.** Required status checks: `ci / gate` + `workspace-test`. Direct pushes blocked.' \
         'The floor is `COV_FLOOR := 89`.' > "$d/$DOC_REL"
     cat > "$d/$AUTO_REL" <<'SH'
-#   steps: wait tag cleanroom dryrun cascade
-STEPS=(wait tag cleanroom dryrun cascade)
+#   steps: wait deep tag cleanroom dryrun cascade
+STEPS=(wait deep tag cleanroom dryrun cascade)
 helper() {
   bash scripts/helper_gate.sh || die "helper"
+}
+t1_deep() {
+  cargo metadata --locked --no-deps > "$AP/m.json" || die "T-1 cargo metadata failed"
 }
 if run_step wait; then
   echo waiting
 fi
+T1_LANES=(); for s in deep; do run_step "$s" && T1_LANES+=("$s"); done
+for s in "${T1_LANES[@]}"; do "t1_$s" & done
 git merge-base --is-ancestor "$MC" origin/main || die "not on main"
 if run_step tag; then
   helper
@@ -483,6 +596,18 @@ SH
     printf '%s\n' 'DEFAULT_MODE=enforce' > "$d/$RRW_REL"
     printf '%s\n' 'COV_FLOOR := 89' > "$d/$MK_REL"
     printf '%s\n' 'exit 0' > "$d/scripts/helper_gate.sh"
+    printf '%s\n' '[package.metadata.dogfood]' 'gates = [' '    "scripts/check_x.sh",' ']' '[other]' > "$d/$CARGO_REL"
+    cat > "$d/$DF_REL" <<'SH'
+mark git-clean FAIL "dirty"
+gate clippy cargo clippy -- -D warnings
+if [ "$DOGFOOD_PHASE" = post-publish ]; then
+  mark release-assets FAIL "post-publish only"
+fi
+awk -f - <<'AWK'
+mark in-heredoc FAIL
+AWK
+# mark commented FAIL
+SH
     cat > "$d/$LIST_REL" <<'YML'
 name: fixture
 requirements:
@@ -492,6 +617,10 @@ requirements:
   - {id: FX-M4, applies_to: [merge], anchor: "merge:required-context/workspace-test", checker: "CLAUDE.md#workspace-test", provenance: "fixture"}
   - {id: FX-T1, applies_to: [tag], anchor: "tag:autopilot/commit/git merge-base --is-ancestor", checker: "scripts/release/autopilot.sh#--is-ancestor", provenance: "fixture"}
   - {id: FX-T2, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/helper_gate.sh", checker: "scripts/helper_gate.sh", provenance: "fixture"}
+  - {id: FX-T3, applies_to: [tag], anchor: "tag:autopilot/deep/cargo metadata --locked --no-deps", checker: "scripts/release/autopilot.sh#cargo metadata --locked", provenance: "fixture"}
+  - {id: FX-D1, applies_to: [tag], parent: FX-T2, anchor: "tag:dogfood/git-clean", checker: "scripts/dogfood.sh#mark git-clean FAIL", provenance: "fixture"}
+  - {id: FX-D2, applies_to: [tag], parent: FX-T2, anchor: "tag:dogfood/clippy", checker: "scripts/dogfood.sh#gate clippy ", provenance: "fixture"}
+  - {id: FX-D3, applies_to: [tag], parent: FX-T2, anchor: "tag:dogfood/declared:check_x", checker: "Cargo.toml#scripts/check_x.sh", provenance: "fixture"}
   - {id: FX-P1, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow clean-room.yml", checker: "scripts/release/autopilot.sh#clean-room.yml", provenance: "fixture", producer: "cleanroom-cpu"}
   - {id: FX-P2, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check", checker: "scripts/cascade-publish.sh#--check", provenance: "fixture", producer: "publish-dryrun"}
   - {id: FX-P3, applies_to: [publish], anchor: "publish:preflight/R1", checker: "scripts/check_publish_preflight.sh#FAIL  R1 ", provenance: "fixture", producer: "preflight"}
@@ -532,7 +661,7 @@ mutate() {
         orphaned-no-checker) edit "$d" "$LIST_REL" 's|checker: "scripts/helper_gate.sh", ||' ;;
         contradiction-two-entries) plant "$d" "$LIST_REL" '  - {id: FX-X1, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main", checker: "Makefile", provenance: "fixture", key: "coverage.floor", value: "90"}' ;;
         contradiction-r8-doc) edit "$d" "$PRE_REL" 's/is `enforce`/is `report`/' ;;
-        contradiction-steps-doc) edit "$d" "$AUTO_REL" 's/^#   steps: wait tag /#   steps: wait /' ;;
+        contradiction-steps-doc) edit "$d" "$AUTO_REL" 's/^#   steps: wait deep tag /#   steps: wait tag /' ;;
         contradiction-floor) edit "$d" "$DOC_REL" 's/COV_FLOOR := 89/COV_FLOOR := 88/' ;;
         nm-surface-missing) rm -f -- "${d:?}/$AUTO_REL" ;;
         nm-claim-surface-missing) rm -f -- "${d:?}/$MK_REL" ;;
@@ -560,15 +689,28 @@ mutate() {
         malformed-no-producer) edit "$d" "$LIST_REL" 's|, producer: "preflight"||' ;;
         malformed-bad-phase) edit "$d" "$LIST_REL" 's/applies_to: \[merge\], anchor: "merge:ci.yml\/gate\/needs/applies_to: [deploy], anchor: "merge:ci.yml\/gate\/needs/' ;;
         malformed-dup-id) plant "$d" "$LIST_REL" '  - {id: FX-M1, applies_to: [merge], anchor: "x", checker: "Makefile", provenance: "fixture"}' ;;
+        unlisted-dogfood-row) plant "$d" "$DF_REL" 'mark new-row FAIL "x"' ;;
+        unlisted-dogfood-chained) plant "$d" "$DF_REL" '[ -s r ] || gate chained-row test -s r' ;;
+        unlisted-dogfood-pre-printf) plant "$d" "$DF_REL" "  pre-publish:present) printf 'pre-row FAIL %s\\n' x ;;" ;;
+        unlisted-declared-gate) edit "$d" "$CARGO_REL" '/check_x.sh/a\    "scripts/check_y.sh",' ;;
+        green-dogfood-else-of-pre) plant "$d" "$DF_REL" 'if [ "$DOGFOOD_PHASE" = pre-publish ]; then' && plant "$d" "$DF_REL" '  :' \
+            && plant "$d" "$DF_REL" 'else' && plant "$d" "$DF_REL" '  mark post-row FAIL "x"' && plant "$d" "$DF_REL" 'fi' ;;
+        unlisted-lane-cargo) edit "$d" "$AUTO_REL" '/^  cargo metadata --locked/a\  cargo test --doc --workspace' ;;
+        nm-lane-no-function) edit "$d" "$AUTO_REL" 's/^t1_deep() {/t1_deeep() {/' ;;
+        nm-dogfood-missing) rm -f -- "${d:?}/$DF_REL" ;;
+        nm-dogfood-unbalanced) plant "$d" "$DF_REL" 'if [ -n "$X" ]; then' ;;
+        nm-dogfood-no-declared) edit "$d" "$CARGO_REL" '/check_x.sh/d' ;;
+        malformed-parent-is-row) edit "$d" "$LIST_REL" 's/id: FX-D2, applies_to: \[tag\], parent: FX-T2/id: FX-D2, applies_to: [tag], parent: FX-D1/' ;;
+        malformed-parent-unknown) edit "$d" "$LIST_REL" 's/id: FX-D2, applies_to: \[tag\], parent: FX-T2/id: FX-D2, applies_to: [tag], parent: FX-T9/' ;;
         *) printf 'CASE ERROR: unknown case %s\n' "$c"; return 1 ;;
     esac
 }
 
 # the table: case · expected exit · a pattern the output must carry
-CASES='green 0 unlisted=0 orphaned=0 contradictions=0 listed=13 stated=13
-green-comment-mention 0 stated=13
-green-after-dryrun 0 stated=13
-green-gh-read 0 stated=13
+CASES='green 0 unlisted=0 orphaned=0 contradictions=0 listed=17 stated=17
+green-comment-mention 0 stated=17
+green-after-dryrun 0 stated=17
+green-gh-read 0 stated=17
 unlisted-step-script 1 UNLISTED publish:autopilot/cleanroom/bash scripts/new_gate.sh
 unlisted-function-body 1 UNLISTED tag:autopilot/tag/bash scripts/new_in_helper.sh
 unlisted-between-steps 1 UNLISTED tag:autopilot/commit/bash scripts/new_preamble.sh --check
@@ -602,7 +744,7 @@ nm-strict-unparsed 2 unparsed refusal at
 nm-strict-no-upload 2 not_measured
 nm-strict-dup 2 refusal named twice
 unlisted-cascade-if-block 1 UNLISTED publish:cascade/if [ -z $TOKEN ]
-green-cascade-if-after-loop 0 stated=13
+green-cascade-if-after-loop 0 stated=17
 contradiction-executor 1 CONTRADICTION publish.executor
 nm-executor-spec-reworded 2 not_measured
 nm-spec-missing 2 surface missing: docs/specifications/APR-RELEASE-001
@@ -611,7 +753,19 @@ nm-cascade-unclosed-if 2 unclosed top-level if at
 nm-cascade-if-spans-loop 2 unclosed top-level if at
 malformed-no-producer 3 names no nightly producer
 malformed-bad-phase 3 applies_to must be a subset
-malformed-dup-id 3 id FX-M1 twice'
+malformed-dup-id 3 id FX-M1 twice
+unlisted-dogfood-row 1 UNLISTED tag:dogfood/new-row
+unlisted-dogfood-chained 1 UNLISTED tag:dogfood/chained-row
+unlisted-dogfood-pre-printf 1 UNLISTED tag:dogfood/pre-row
+unlisted-declared-gate 1 UNLISTED tag:dogfood/declared:check_y
+green-dogfood-else-of-pre 0 stated=17
+unlisted-lane-cargo 1 UNLISTED tag:autopilot/deep/cargo test --doc --workspace
+nm-lane-no-function 2 not_measured
+nm-dogfood-missing 2 surface missing: scripts/dogfood.sh
+nm-dogfood-unbalanced 2 unbalanced if/fi
+nm-dogfood-no-declared 2 no [package.metadata.dogfood].gates
+malformed-parent-is-row 3 parent FX-D1 of FX-D2 is not a GATE
+malformed-parent-unknown 3 parent FX-T9 of FX-D2 is not a GATE'
 
 selftest() {
     local tmp c want pat out rc pass=0 fail=0 n=0 line
@@ -656,6 +810,14 @@ STUB
         if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
         else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
     done
+    # --gates: the fixture's list prints its rows; an empty list and an absent one are not_measured, never a list.
+    mkdir -p "$tmp/empty/contracts"; printf 'requirements:\n' > "$tmp/empty/$LIST_REL"
+    for line in "gates-list 0 FX-M1 $tmp/base" "gates-rows 0 row of FX-T2 $tmp/base" "gates-total 0 gates=14 $tmp/base" "gates-empty 2 names no requirement $tmp/empty" "gates-absent 2 no list $tmp/none"; do
+        c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line% *}; n=$((n + 1))
+        out=$(bash "$SCRIPT_PATH" --gates --root "$tmp/base" --list "${line##* }/$LIST_REL" 2>&1); rc=$?
+        if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
+        else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
+    done
     rm -rf -- "${tmp:?}"
     printf 'release-ready selftest: %d/%d rows pass\n' "$pass" "$n"
     [ "$fail" = 0 ] && [ "$pass" -gt 0 ]
@@ -692,7 +854,22 @@ M25 executor claim side optional@@ publish.executor:$AUTO_REL publish.executor:$
 M26 variable-only refusal named@@if (t !~ /[A-Za-z]/)@@if (0)
 M27 refusal named twice passes@@dup = 1; next }@@next }
 M28 no upload loop passes@@if (k == 0 || !loop || inb || unc) exit 2@@if (k == 0 || inb || unc) exit 2
-M29 if-block spanning the loop passes@@{ if (inb) unc = 1; loop = 1 }@@{ loop = 1 }'
+M29 if-block spanning the loop passes@@{ if (inb) unc = 1; loop = 1 }@@{ loop = 1 }
+M30 empty GATE list printed@@[ -n "$out" ] || nm "the list $list names no requirement"@@true
+M31 dogfood surface unread@@dogfood_found "$root/$DF_REL" "$root/$CARGO_REL" "$DF_REL" "$CARGO_REL" ||@@true ||
+M32 post-publish branch counted@@ex = 0; for (i = 1; i <= d; i++) if (X[i]) ex = 1@@ex = 0
+M33 else of pre-publish counted@@X[d] = P[d] }@@X[d] = 0 }
+M34 heredoc body scanned@@HD != "" { u = $0;@@0 { u = $0;
+M35 unbalanced dogfood passes@@if (bad || d || !nd || k == 0) exit 2@@if (!nd || k == 0) exit 2
+M36 no declared gates passes@@if (bad || d || !nd || k == 0) exit 2@@if (bad || d || k == 0) exit 2
+M37 declared gates unread@@printf "tag:dogfood/declared:%s\t%s:%d\n", n, C, FNR; k++; nd++@@nd++
+M38 parallel lanes unseen@@if (L[i] !~ /for s in [a-z ]+; [d]o run_step "\$s"/) continue@@continue
+M39 lane without function passes@@if (!(st in PH) || !(fn in FS0)) { unk = 1; continue }@@if (!(st in PH) || !(fn in FS0)) { continue }
+M40 quoted literal is a call@@(index(w, "$(") ? w : "\"\"")@@w
+M41 parent validation dropped@@if (!(PA[x] in ID) || (PA[x] in PA))@@if (0)
+M42 rows counted in the total@@if (a[9] != "") continue@@if (a[9] != "") { n++; continue }
+M43 chained dogfood calls unseen@@([t]hen|else|[d]o|;|&&|\|\||\{) +)(mark@@([t]hen|else|[d]o|;|&&|\{) +)(mark
+M44 pre-publish printf rows unseen@@if (match(t, "^pre-publish:[a-z-]+\\) +printf " Q "[a-z][a-z0-9-]* FAIL "))@@if (0)'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0
@@ -722,6 +899,7 @@ main() {
             --list) [ $# -ge 2 ] || caller_error "--list needs FILE"; list=$2; shift 2 ;;
             --found) mode=found; shift ;;
             --claims) mode=claims; shift ;;
+            --gates) mode=gates; shift ;;
             --probe) mode=probe; shift ;;
             --selftest) mode=selftest; shift ;;
             --mutants) mode=mutants; shift ;;
@@ -734,6 +912,7 @@ main() {
     case "$mode" in
         found) found "$root" ;;
         claims) claims "$root" ;;
+        gates) gates "$list" ;;
         probe) probe "$root" "$list" ;;
         selftest) selftest ;;
         mutants) mutants ;;
