@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "R1-op-derivation-unchecked",
+          "level": "warning",
+          "message": {
+            "text": "op_derivation.by_kind and per_file are declared, but no .rs, .sh, .toml or .yml file at this head reads op_derivation (git grep returns nothing). The new rows are unchecked text: nothing goes RED when Rust disagrees, and the contract says Rust does disagree today (required_ops inserts CausalMask for every kind, capability.rs:199)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/apr-model-capability-v1.yaml"
+                },
+                "region": {
+                  "startLine": 530
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "contracts/apr-model-capability-v1.yaml:530,533",
+            "excerpt": "  always: []\n  by_kind:\n    generative: [CausalMask]\n    embedding: [BidirectionalMask, MeanPool, DenseProjection, L2Normalize]",
+            "excerpt_sha256": "199f7f99024ab27ce20e42e9bc8430dda8bb174e9e73f28490a23ec31031c366",
+            "failure_scenario": "EG-1 wires an embedding loader and leaves required_ops() inserting CausalMask unconditionally. by_kind says embedding needs BidirectionalMask, but no test compares the two, so an embedding model is planned with a causal mask and every gate stays green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "R2-gatedmlp-still-swiglu",
+          "level": "warning",
+          "message": {
+            "text": "mlp_type still maps GatedMlp to [SwiGLU] (and capability.rs:180 does the same), while per_file adds GatedGeluMlp for the same file. contracts/embeddinggemma2-forward-v1.yaml says 'a gated MLP does not imply SwiGLU'. Once derivation is wired, the embedding file's op set holds both SwiGLU and GatedGeluMlp."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/apr-model-capability-v1.yaml"
+                },
+                "region": {
+                  "startLine": 525
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "contracts/apr-model-capability-v1.yaml:523,525",
+            "excerpt": "  mlp_type:\n    SwiGlu: [SwiGLU]\n    GatedMlp: [SwiGLU]",
+            "excerpt_sha256": "adc4333310cfdaa10c2a1ba86ad397f89c60f97591c304ee6be2d12afbdddb25",
+            "failure_scenario": "A GPU path keyed on the derived set sees SwiGLU (GPU-supported) for EmbeddingGemma 2 and can pick a SiLU kernel, which is the failure FALSIFY-EG2-004 names ('Gated MLP mapped to SwiGLU'). It is masked only while GatedGeluMlp stays unsupported.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "R3-probe-refuse-cells-exit-0",
+          "level": "warning",
+          "message": {
+            "text": "Measured at f745e7abc on the UD-Q4_K_XL file: chat exits 0 (the registry declares embedding: refuse; I-3 says a refuse cell exits non-zero), and serve plans the file 'on CUDA GPU', although the capability contract marks the 8 new ops GPU-unsupported (nothing derives them yet). The same probe has flow labelling it 'decoder-only (LLaMA/Qwen2)' (row 16). EG-5/EG-1/EG-3 own the fixes; the PR declares the cells without tallying the live silent-wrong count (spec line 210)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/audits/APR-EMBED-001/EG-0/a-probe-udq4.tsv"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "docs/audits/APR-EMBED-001/EG-0/a-probe-udq4.tsv:4,5",
+            "excerpt": "serve\t0\t━━━ Inference Plan: embeddinggemma-2-UD-Q4_K_XL (Q4_K) on CUDA GPU (unknown) ━━━\nchat\t0\t=== Model Chat (GGUF Format) ===",
+            "excerpt_sha256": "dc64da3411e3cd9a7a09a6c3583ae5b4d522bc1a80b8f52fcf7aeb7181ef220d",
+            "failure_scenario": "A user runs 'apr chat' or 'apr serve' on the embedding file between EG-0 and EG-5. chat exits 0, and serve picks the CUDA path for ops the contract says CUDA does not support. The spec's D4 bar is 0 silent-wrong cells; at this head it is at least 2, and nothing records it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "R4-probe-leaks-serve-child",
+          "level": "note",
+          "message": {
+            "text": "The probe's 'code' verb launched 'apr serve ... --gpu' as a child. timeout(1) signals only its direct child, so the serve grandchild is not reaped when the verb exits or times out. scripts/apr_embed_probe.sh:45 has no process-group kill, and the scratch trap only removes files."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/audits/APR-EMBED-001/EG-0/a-probe-udq4.tsv"
+                },
+                "region": {
+                  "startLine": 6
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "docs/audits/APR-EMBED-001/EG-0/a-probe-udq4.tsv:6,6",
+            "excerpt": "code\t1\tLaunched apr serve on port 42191 (pid 3047862, --gpu)",
+            "excerpt_sha256": "38084507e690468fcec6c8fb0f7c6e8b1f04896d6f1fbd0e15bc800add52c528",
+            "failure_scenario": "Each probe run can leave an 'apr serve --gpu' holding a port and GPU memory on the probe host. A second run then measures 'serve' against a busy port or GPU, and those exit codes are not the verb's.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "R5-tdg-capability-drop",
+          "level": "note",
+          "message": {
+            "text": "pmat tdg capability.rs went from 82.8 (B+) at the merge base to 79.4 (B) at head. That is still at the min_grade B floor, but it is the file's grade boundary. Most of the drop is the eight parallel Display arms and the enum and table rows."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/capability.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "tdg",
+              "crates/aprender-serve/src/capability.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "dcd35da30edfaf1ff58d67fed557d8bf4240bb0920cc224ab894a8563ecf61a5",
+            "failure_scenario": "The next op row added to capability.rs pushes it below B and fails the TDG gate on an unrelated PR.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "R6-corpus-pipefail-swallows-message",
+          "level": "note",
+          "message": {
+            "text": "Raised by agy, re-run by the primary: with set -euo pipefail, FILES=$(git ls-tree ... | grep '\\.md$' | ...) exits the script with rc 1 when no chapter matches, before the named 'no book chapters' error at :28-30 can print. A minimal reproduction exits 1 with empty output."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/apr_embed_corpus.sh"
+                },
+                "region": {
+                  "startLine": 27
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "pf.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "Pinning the corpus to a commit with no book/src chapters fails with rc 1 and no message. The script fails closed, but the diagnostic the script wrote for that case is dead code.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "R7-probe-args-glob-and-directive",
+          "level": "note",
+          "message": {
+            "text": "The ${args} expansion is unquoted, which is intended (the table holds argv). But the '# shellcheck disable=SC2086' directive sits at :43 above 'rc=0' (:44), not directly above the command at :45, so it does not apply (bashrs still reports SC2086 at 45:47). Nothing sets 'set -f', so a table argument holding * or ? would glob, and a model directory with spaces would split. Raised in part by agy."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/apr_embed_probe.sh"
+                },
+                "region": {
+                  "startLine": 45
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read at :41-45; bashrs lint output at 65b94809d7 lists SC2086 at 45:47-54 and 46:74-81.",
+            "failure_scenario": "A verb row whose args include a glob character, or a models directory path with a space, probes a different argv than the table states, and the TSV records that exit code as the verb's.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "R9-sec010-guard-fix",
+          "level": "note",
+          "message": {
+            "text": "Re-review of 53179f16b9..65b94809d7 (code delta: scripts/apr_embed_corpus.sh +3, scripts/apr_embed_probe.sh +6; the rest is this receipt). bashrs SEC010 count on the two scripts goes from 5 at 33a0d4253 to 0 at 65b94809d7. Run from a scratch dir, apr_embed_probe.sh with OUT=../escape.tsv and apr_embed_corpus.sh with OUT=a/../b both exit 2 with their refusal message and write nothing. probe-verbs.tsv holds no verb containing .. or /, so the new verb guard does not change the probed set. Advisory: the *..* pattern also refuses a legal name such as a..b; no default or tabled path has one."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/apr_embed_probe.sh"
+                },
+                "region": {
+                  "startLine": 13
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "g3.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "ae42f2a673a9c8d93d90003fd43747441596504115197ad4a20c315a0483274e",
+            "failure_scenario": "none at this head: a caller passing an output path with .. now gets rc 2 instead of a write outside the intended tree. The advisory case is a filename with a double dot, which is refused rather than written.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "sed-mutants-cargo-test"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "R8-totality-guard-mutation",
+          "level": "note",
+          "message": {
+            "text": "Seven mutants of the kind-totality guard and the registry, each applied with sed in a detached worktree and restored by git checkout (porcelain empty after). M1 drops the verdict vocabulary check (:1196), M2 the model-kind key check (:1225), M3 the use_instead target-must-receipt check (:1172), M4 the no-model-requires-model check (:1203), M5 loosens the mixed no-model count (:1234), M6 deletes explain's kinds line in the registry, M7 points a use_instead at a command that does not exist. Base rc 0 (2 passed); every mutant rc 101 (1 failed); final rc 0. 7/7 killed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/apr-cli/tests/cli_commands.rs"
+                },
+                "region": {
+                  "startLine": 1196
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "mut.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d162ed5dc6385a3ba3d62e6d167c0fd9e2c534b92fdbd22eef7f449d9e588435",
+            "failure_scenario": "none: every planted mutant of the guard and the registry turned the two totality tests RED.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
