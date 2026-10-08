@@ -51,7 +51,10 @@ fenced() {
   printf '::stop-commands::%s\n' "$tok"
   "$@" 2>&1
   rc=$?
-  printf '::%s::\n' "$tok"
+  # The resume line must start a line. A child whose last line has no newline
+  # would get it glued on, the fence would never close, and the failure
+  # ::error:: below would be swallowed too. One blank line is the cost.
+  printf '\n::%s::\n' "$tok"
   if [ "$rc" -ne 0 ]; then
     printf '::error::case table failed (rc=%s): %s\n' "$rc" "$*"
   fi
@@ -129,6 +132,11 @@ self_test() {
   row 'a failing table: exactly 1 live annotation, after the fence' 1 "$(live_commands "$tmp/fail.out")"
   row 'a failing table: the live annotation names it' 1 \
     "$(tail -n 1 "$tmp/fail.out" | grep -cF "::error::case table failed (rc=3): bash $tmp/table.sh 3")"
+
+  fenced sh -c 'printf "::error::planted\nno newline at the end"; exit 3' > "$tmp/partial.out"; rc=$?
+  t2="$(sed -n '1s/^::stop-commands:://p' "$tmp/partial.out")"
+  row 'a last line with no newline: the fence still closes on its own line' 1 "$(grep -cxF "::$t2::" "$tmp/partial.out")"
+  row 'a last line with no newline: rc 3 and only the failure annotation is live' '3 1' "$rc $(live_commands "$tmp/partial.out")"
 
   fenced sh -c 'printf "::error::from stderr\n" >&2' > "$tmp/stderr.out"
   row 'stderr is fenced too (merged into the one ordered pipe)' 0 "$(live_commands "$tmp/stderr.out")"
