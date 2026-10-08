@@ -30,7 +30,9 @@
 # cascade-publish.sh's gate block. The preflight they reach is the preflight step's stub, red unless it
 # is handed the T-1 receipts exactly when the policy covers the release. A row that ran the cascade
 # appends `crates-published` (a pass got past the preflight) or `crates-refused`. Mutants of the drain
-# script and of cascade-publish.sh must turn a row WRONG too, as the autopilot's do.
+# script and of cascade-publish.sh must turn a row WRONG too, as the autopilot's do. Because those rows
+# run two extracted lines, one more STRUCTURE row judges both files whole: nothing in either clears
+# the environment or unsets, exports, declares or assigns MODEL_LADDER_CRUX_DIR or CRUX_CERT.
 #
 # MODE. guard_tree runs every scripts/check_*.sh, this one included. REPORT by default (L31: a new
 # check blocks only after three green nights): a wrong row or a surviving mutant prints a REPORT line
@@ -144,6 +146,16 @@ structure() {
       if (!ok) printf "STEPS cleanroom=%d assets=%d preflight=%d publish=%d; file lines %d %d %d %d", p["cleanroom"], p["assets"], p["preflight"], p["publish"], f["cleanroom"], f["assets"], f["preflight"], f["publish"]
     }' "$ap")
   srow structure_publish_after_its_gates "$order"
+  # D4: the receipts reach the preflight only if nothing between resets them. The cascade rows run two
+  # extracted lines, so this judges the WHOLE drain and cascade-publish.sh: no `env -i` (or `env -`),
+  # and no unset, export, declaration, assignment or `env -u` of MODEL_LADDER_CRUX_DIR or CRUX_CERT
+  hits=$(awk 'FNR == 1 { f = FILENAME; sub(/.*\//, "", f) } /^[[:space:]]*#/ { next }
+    /(^|[^-_[:alnum:]])e[n]v[[:space:]]+(-[[:alpha:]]*i|--ignore-environment|-)([[:space:]]|$)/ \
+    || /(^|[^_[:alnum:]])(unset|export|readonly|declare|typeset|local)[[:space:]][^#]*(MODEL_LADDER_CRUX_DIR|CRUX_CERT)/ \
+    || /(^|[^_[:alnum:]{$])(MODEL_LADDER_CRUX_DIR|CRUX_CERT)\+?=/ \
+    || /(^|[^-_[:alnum:]])e[n]v[[:space:]][^#]*(-u[[:space:]]*|--unset[[:space:]=])(MODEL_LADDER_CRUX_DIR|CRUX_CERT)/ { print f ":" FNR }' \
+    "$DRAIN" "$CASCADE" | head -n 3 | tr '\n' ' ')
+  srow structure_drain_and_cascade_keep_the_crux_vars "$hits"
   return "$wrong"
 }
 
@@ -205,10 +217,13 @@ run() {
   # the cascade: the real gate block (clean-room stubbed green, the preflight is the stub above); a
   # pass that gets past it publishes, and --check reports a crate behind until one has
   { printf '#!/usr/bin/env bash\nMODE="${1:-publish}" REPO_ROOT=%q TARGET_VERSION=0.0.0\n' "$W"
-    printf 'clean_room_gate() { return 0; }\n'
+    cat <<'STUB'
+clean_room_gate() { return 0; }
+STUB
     gate_block "$CASCADE"
     printf 'case "$MODE" in --check|--order-check) grep -qx "CRATES published" %q || echo "aprender-core 0.0.0-rc (want 0.0.0)"; exit 0 ;; esac\n' "$W/calls"
-    printf 'echo "CRATES published" >> %q\n' "$W/calls"; } > "$W/scripts/cascade-publish.sh"
+    printf 'echo "CRATES published" >> %q\n' "$W/calls"
+  } > "$W/scripts/cascade-publish.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$W/scripts/release/tag_coverage_gate.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$W/scripts/release/rc_publish_gate.sh"
   {
@@ -219,7 +234,9 @@ run() {
     printf 'die() { printf "STOP %%s\\n" "$*" >> %q; exit 1; }\n' "$W/calls"
     printf 'sleep() { :; }\n'
     printf 'cut_tag() { printf "TAG %%s\\n" "$2" >> %q; }\n' "$W/calls"
-    printf 'ap_known_failures() { :; }\n'
+    cat <<'STUB'
+ap_known_failures() { :; }
+STUB
     printf 'git() { [ "$1" = rev-parse ] && return 1; return 0; }\n'
     printf 'run_step() { case " $ON " in *" $1 "*) return 0 ;; esac; return 1; }\n'
     extract "$ap"
@@ -233,12 +250,12 @@ run() {
     $1 == "ASSETS-CHECK" && $2 == "rc=0" { a = 1 }
     $1 == "PUBLIC" && v == "" { v = (c && p && a) ? "public-gated" : "public-EARLY" }
     $1 == "STOP" { s = "stop" }
-    $1 == "DRAIN" { d = 1 }
-    $1 == "CRATES" && $2 == "published" { k = 1 }
+    /^DRAIN$/ { d = 1 }
+    /^CRATES published$/ { k = 1 }
     END { printf "%s %s%s", (v == "" ? "draft" : v), (s == "" ? "ran" : s), (d ? (k ? " crates-published" : " crates-refused") : "") }' "$W/calls"
 }
 
-ALL="tag cleanroom assets preflight publish" ALLC="tag cleanroom assets preflight publish cascade"
+ALL="tag cleanroom assets preflight publish"
 CASES="all_green_is_public_only_after_the_gates|$ALL||public-gated ran
 the_tag_step_alone_leaves_a_draft|tag||draft ran
 a_missing_asset_stops_before_publish|$ALL|FX_ASSETS=1|draft stop
@@ -260,9 +277,9 @@ publish_alone_refuses_a_release_already_public|publish|FX_PRE=public-built|draft
 publish_alone_refuses_a_missing_release|publish|FX_PRE=gone|draft stop
 a_failed_publishing_edit_stops|publish|FX_PRE=draft-built FX_EDIT=fail|draft stop
 policy_preflight_judges_the_t1_crux_receipts|preflight|FX_POLICY=1|draft ran
-policy_cascade_preflight_reads_the_t1_crux_receipts|$ALLC|FX_POLICY=1|public-gated ran crates-published
+policy_cascade_preflight_reads_the_t1_crux_receipts|tag cleanroom assets preflight publish cascade|FX_POLICY=1|public-gated ran crates-published
 policy_cascade_resumed_alone_reads_the_t1_crux_receipts|cascade|FX_PRE=public-built FX_POLICY=1|draft ran crates-published
-no_policy_cascade_preflight_gets_no_crux_env|$ALLC||public-gated ran crates-published
+no_policy_cascade_preflight_gets_no_crux_env|tag cleanroom assets preflight publish cascade||public-gated ran crates-published
 a_red_cascade_preflight_publishes_no_crate|cascade|FX_PRE=public-built FX_PREFLIGHT=1|draft stop crates-refused"
 
 table() { # table <autopilot> -> number of WRONG rows; prints each row
@@ -281,9 +298,14 @@ table() { # table <autopilot> -> number of WRONG rows; prints each row
 grep -q '^if run_step tag; then$' "$AUTOPILOT" \
   || { printf 'ENV   %s has no tag step body: this table would judge nothing\n' "$AUTOPILOT" >&2; exit 2; }
 n=$(awk '/^[[:space:]]*#/ { next } /bash scripts\/cascade-publish\.sh/ { n++ } END { print n + 0 }' "$DRAIN")
-[ "$n" = 1 ] || { printf 'ENV   %s starts cascade-publish.sh from %s line(s), want 1: the cascade rows would judge one of them\n' "$DRAIN" "$n" >&2; exit 2; }
-gate_block "$CASCADE" | grep -q 'scripts/check_publish_preflight\.sh' \
-  || { printf 'ENV   %s has no THE GATE block that runs check_publish_preflight.sh: the cascade rows would judge nothing\n' "$CASCADE" >&2; exit 2; }
+if [ "$n" != 1 ]; then
+  printf 'ENV   %s starts cascade-publish.sh from %s line(s), want 1: the cascade rows would judge one of them\n' "$DRAIN" "$n" >&2
+  exit 2
+fi
+if ! gate_block "$CASCADE" | grep -q 'scripts/check_publish_preflight\.sh'; then
+  printf 'ENV   %s has no THE GATE block that runs check_publish_preflight.sh: the cascade rows would judge nothing\n' "$CASCADE" >&2
+  exit 2
+fi
 bad=0
 table "$AUTOPILOT" || bad=1
 rows=$(grep -c '|' <<< "$CASES")
@@ -291,21 +313,28 @@ rows=$(grep -c '|' <<< "$CASES")
 [ "${1:-}" = "" ] || finish "$bad"   # an explicit autopilot (e.g. origin/main's) runs the table only
 
 # mutant [drain|cascade] <name> <sed expression>: applied to a copy of the autopilot (or of the drain,
-# or of cascade-publish.sh), the table must go WRONG
-killed=0 total=0
+# or of cascade-publish.sh), the table must go WRONG. nearmiss, same arguments: a change that keeps the
+# receipts flowing, which every row must still hold (the must-not-match half of the structural case table)
+killed=0 total=0 held=0 near=0
 mutant() {
-  local of=autopilot src m out ap="$AUTOPILOT" dr="$DRAIN" ca="$CASCADE"
+  local of=autopilot src m out rc ap="$AUTOPILOT" dr="$DRAIN" ca="$CASCADE"
+  local kind="${KIND:-mutant}"
   case "$1" in drain|cascade) of=$1; shift ;; esac
   case "$of" in autopilot) src="$AUTOPILOT" ;; drain) src="$DRAIN" ;; cascade) src="$CASCADE" ;; esac
   m="$T/m-$1.sh"
-  total=$((total + 1))
+  if [ "$kind" = mutant ]; then total=$((total + 1)); else near=$((near + 1)); fi
   sed "$2" "$src" > "$m"
-  if cmp -s "$src" "$m"; then printf '  INCONCLUSIVE mutant %s changed nothing\n' "$1"; bad=1; return; fi
-  bash -n "$m" || { printf '  BROKEN   mutant %s does not parse\n' "$1"; bad=1; return; }
+  if cmp -s "$src" "$m"; then printf '  INCONCLUSIVE %s %s changed nothing\n' "$kind" "$1"; bad=1; return; fi
+  bash -n "$m" || { printf '  BROKEN   %s %s does not parse\n' "$kind" "$1"; bad=1; return; }
   case "$of" in autopilot) ap="$m" ;; drain) dr="$m" ;; cascade) ca="$m" ;; esac
-  if out=$(DRAIN="$dr" CASCADE="$ca" table "$ap"); then printf '  SURVIVED mutant %s\n' "$1"; bad=1
+  if out=$(DRAIN="$dr" CASCADE="$ca" table "$ap"); then rc=0; else rc=$?; fi
+  if [ "$kind" = nearmiss ]; then
+    if [ "$rc" = 0 ]; then held=$((held + 1)); printf '  held     near-miss %s\n' "$1"
+    else printf '  WRONG    near-miss %s (%s)\n' "$1" "$(grep -m1 -o 'WRONG [a-z0-9_]*' <<< "$out")"; bad=1; fi
+  elif [ "$rc" = 0 ]; then printf '  SURVIVED mutant %s\n' "$1"; bad=1
   else killed=$((killed + 1)); printf '  killed   mutant %s (%s)\n' "$1" "$(grep -m1 -o 'WRONG [a-z0-9_]*' <<< "$out")"; fi
 }
+nearmiss() { local KIND=nearmiss; mutant "$@"; }
 mutant create-public       '/gh release create "\$T"/s/ --draft//'
 mutant no-asset-dispatch   '/gh workflow run binary-release.yml/s/^  gh workflow run binary-release.yml.*/  :/'
 mutant assets-await-publish 's/--workflow binary-release.yml --event workflow_dispatch/--workflow binary-release.yml --event release/'
@@ -342,7 +371,18 @@ mutant drain drain-strips-the-receipts 's/( unset CARGO_REGISTRY_TOKEN; bash scr
 mutant drain drain-clean-env 's/( unset CARGO_REGISTRY_TOKEN; bash scripts\/cascade-publish.sh )/( unset CARGO_REGISTRY_TOKEN; env -i PATH="$PATH" bash scripts\/cascade-publish.sh )/'
 mutant cascade cascade-preflight-env-dropped 's/^    if ! bash "\$REPO_ROOT\/scripts\/check_publish_preflight.sh"; then$/    if ! env -u MODEL_LADDER_CRUX_DIR -u CRUX_CERT bash "$REPO_ROOT\/scripts\/check_publish_preflight.sh"; then/'
 mutant cascade cascade-preflight-skipped 's/^    if ! bash "\$REPO_ROOT\/scripts\/check_publish_preflight.sh"; then$/    if false; then/'
+# a reset anywhere in either file, not only on the two lines the cascade rows run
+mutant drain drain-exports-empty-crux-dir '1a\export MODEL_LADDER_CRUX_DIR=""'
+mutant drain drain-unsets-the-cert '1a\unset CRUX_CERT'
+mutant cascade cascade-reexecs-clean '1a\[ -n "${CASCADE_CLEAN:-}" ] || exec env -i CASCADE_CLEAN=1 PATH="$PATH" HOME="$HOME" bash "$0" "$@"'
+mutant cascade cascade-assigns-the-cert '1a\CRUX_CERT=/dev/null'
+mutant cascade cascade-wraps-bash '1a\bash() { env -u CRUX_CERT bash "$@"; }'
+nearmiss drain drain-reads-the-receipts '1a\: "${MODEL_LADDER_CRUX_DIR:-}" "${CRUX_CERT:-}"'
+nearmiss drain drain-touches-other-vars '1a\unset CARGO_TOKEN_OLD; export CARGO_TERM_COLOR=never'
+nearmiss cascade cascade-env-without-reset '1a\env PATH="$PATH" true'
+nearmiss cascade cascade-echoes-the-cert '1a\[ -z "${CRUX_CERT:-}" ] || echo "crux cert: $CRUX_CERT=$(printenv CRUX_CERT)"'
+nearmiss cascade cascade-comment-names-them '1a\# a hand run: MODEL_LADDER_CRUX_DIR=x CRUX_CERT=y bash scripts/cascade-publish.sh, never env -i'
 
-printf 'mutants: %s/%s killed\n' "$killed" "$total"
-[ "$bad" = 0 ] && printf 'PASS  %s row(s) + 4 structural and every mutant killed: the GitHub release is a draft until clean-room, assets and preflight are green (#4690), and the cascade'"'"'s own preflight reads the T-1 CRUX receipts (D4)\n' "$rows"
+printf 'mutants: %s/%s killed, near-misses: %s/%s held\n' "$killed" "$total" "$held" "$near"
+[ "$bad" = 0 ] && printf 'PASS  %s row(s) + 5 structural, every mutant killed and every near-miss held: the GitHub release is a draft until clean-room, assets and preflight are green (#4690), and the cascade'"'"'s own preflight reads the T-1 CRUX receipts (D4)\n' "$rows"
 finish "$bad"
