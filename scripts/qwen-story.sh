@@ -201,7 +201,7 @@ beat2_trust() {
   if qa_gates_pass_except_regression "$qa_json" ; then
     emit_pass "B2 apr qa (all gates but performance_regression)"
   else
-    emit_fail "B2 apr qa" "a gate other than performance_regression failed, or no --json gates (apr qa exit=$RC_EC)"
+    emit_fail "B2 apr qa" "a gate other than performance_regression failed, or no --json gates, apr qa exit=$RC_EC"
     rm -f "${qa_json:?}"
     return
   fi
