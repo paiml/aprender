@@ -160,7 +160,7 @@ json.dump({"schema": "crux-inference-receipt/v1", "host": host, "backend": "cpu"
 PY
 }
 
-# run_ship NAME SUBJECT CHANGELOG_SECTION [LADDER: all|no-gx10|ignored] -> the fixture dir;
+# run_ship NAME SUBJECT CHANGELOG_SECTION [LADDER: all|no-gx10|ignored|policy|policy-nocert] -> the fixture dir;
 # the exit code is in $TMP/NAME/rc
 run_ship() {
     local name=$1 subject=$2 section=$3 ladder=${4:-all} d
@@ -183,7 +183,7 @@ run_ship() {
     mkdir -p "$d/seed/scripts/lib"
     cp -- "$LADDER_JUDGE" "$d/seed/scripts/check_model_ladder.sh"
     cp -- "$LADDER_PRODUCER" "$d/seed/scripts/model_ladder.sh"
-    for m in "$LADDER_LIB"/*.py; do [ -f "$m" ] && cp -- "$m" "$d/seed/scripts/lib/"; done
+    for m in "$LADDER_LIB"/*.py "$LADDER_LIB"/release_policy*; do [ -f "$m" ] && cp -- "$m" "$d/seed/scripts/lib/"; done
     python3 - "$LADDER_CONTRACT" "$d/seed/contracts/model-capability-ladder-v1.yaml" <<'PY' || return 2
 import sys, yaml
 inv = yaml.safe_load(open(sys.argv[1]))["ladder"]["inventory"]
@@ -197,6 +197,11 @@ yaml.safe_dump({"ladder": {
     "rungs": [{"id": "fx-rung", "gguf": "fx.gguf", "required": True, "backends": ["cpu"]}]}},
     open(sys.argv[2], "w"), sort_keys=False)
 PY
+    # policy, policy-nocert: the standing release policy covers 9.9.9 (CRUX smoke at T-1, no receipts on the bump)
+    case "$ladder" in policy*)
+        printf '  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: "#1"\n    release_notes: known_failures\n  emergency_scopes:\n' \
+            >> "$d/seed/contracts/model-capability-ladder-v1.yaml" ;;
+    esac
     git init -q --bare -b main "$d/origin.git" \
         && git -C "$d/seed" init -q -b main && git -C "$d/seed" add -A \
         && git -C "$d/seed" commit -q -m seed && git -C "$d/seed" push -q "$d/origin.git" main \
@@ -205,9 +210,13 @@ PY
     printf '# Changelog\n\n## [Unreleased]\n\n## [9.9.9] - 2026-01-01\n\n%s\n\n## [9.9.8] - 2025-12-01\n\n- older\n' \
         "$section" > "$d/ap/bump/CHANGELOG.md"
     # the model-ladder receipts for 9.9.9, UNCOMMITTED in the bump tree as model_ladder.sh leaves them
-    write_receipt "$d/ap/bump/evidence/dogfood/models/9.9.9" lambda
     case "$ladder" in
-        no-gx10) ;;
+        policy) mkdir -p "$d/ap/bump/evidence/crux/9.9.9" && printf '{"apr_commit":"fixture"}\n' > "$d/ap/bump/evidence/crux/9.9.9/prompt-certification.json" ;;
+        policy-nocert) ;;
+        *) write_receipt "$d/ap/bump/evidence/dogfood/models/9.9.9" lambda ;;
+    esac
+    case "$ladder" in
+        no-gx10|policy*) ;;
         *) write_receipt "$d/ap/bump/evidence/dogfood/models/9.9.9" gx10 ;;
     esac
     [ "$ladder" = ignored ] && printf 'evidence/dogfood/models/\n' > "$d/ap/bump/.gitignore"
@@ -331,6 +340,18 @@ row_ladder() {
 }
 msg=$(row_ladder ladder-missing-real "$SUBJECT" no-gx10 "evidence/dogfood/models/9.9.9/gx10.json"); row ladder-missing-gx10 "$?" "$msg"
 msg=$(row_ladder ladder-ignored-real "$SUBJECT" ignored "are gitignored"); row ladder-ignored "$?" "$msg"
+# row_policy NAME SUBJECT -> 0 when a bump the standing release policy covers opens its PR with NO smoke
+# receipts and says why: CRUX smoke is measured at T-1 on the release commit, never on the pre-bump binary
+row_policy() {
+    local d="$TMP/$1"
+    run_ship "$1" "$2" "$PRS_SECTION" policy || return 2
+    [ "$(cat "$d/rc")" = 0 ] || { printf 'prepare_bump.sh --ship exited %s: %s\n' "$(cat "$d/rc")" "$(tail -1 "$d/out.log")"; return 1; }
+    grep -qF -- "LADDER not judged at the bump: the standing release policy covers 9.9.9" "$d/out.log" || { printf 'no policy line: %s\n' "$(tail -1 "$d/out.log")"; return 1; }
+    grep -q '^pr create' "$d/gh.log" || { printf 'no gh pr create\n'; return 1; }
+    return 0
+}
+msg=$(row_policy ladder-policy-real "$SUBJECT"); row ladder-policy-skips "$?" "$msg"
+msg=$(row_ladder ladder-policy-nocert-real "$SUBJECT" policy-nocert "evidence/crux/9.9.9/prompt-certification.json"); row ladder-policy-nocert "$?" "$msg"
 
 # --- the mutants -------------------------------------------------------------
 grep -vF -- "$KEEP_OPEN_ANCHOR" "$SUBJECT" > "$TMP/mutant-drop-keep-open.sh"
@@ -357,7 +378,23 @@ msg=$(row_ladder ladder-ignored-mutant "$TMP/mutant-drop-ignored.sh" ignored "ar
 [ "$mrc" = 2 ] && env_die "drop-ignored mutant could not build its fixture"
 [ "$mrc" != 0 ]; row "mutant drop-ignored is killed by ladder-ignored (${msg:-survived})" "$?" "the mutant PASSED ladder-ignored -- the row does not discriminate"
 
+sed 's|^  0) \[ -f "evidence/crux/\$V/prompt-certification.json" \] \\$|  0) bash scripts/check_model_ladder.sh --version "$V" >/dev/null \\|' "$SUBJECT" > "$TMP/mutant-policy-judges.sh"
+cmp -s "$SUBJECT" "$TMP/mutant-policy-judges.sh" && env_die "policy-judges mutant is identical to the subject"
+msg=$(row_policy ladder-policy-mutant "$TMP/mutant-policy-judges.sh"); mrc=$?
+[ "$mrc" = 2 ] && env_die "policy-judges mutant could not build its fixture"
+[ "$mrc" != 0 ]; row "mutant policy-judges is killed by ladder-policy-skips (${msg:-survived})" "$?" "the mutant PASSED ladder-policy-skips -- the row does not discriminate"
+
+sed 's|^  0) \[ -f "evidence/crux/\$V/prompt-certification.json" \] \\$|  0) true \\|' "$SUBJECT" > "$TMP/mutant-policy-nocert.sh"
+cmp -s "$SUBJECT" "$TMP/mutant-policy-nocert.sh" && env_die "policy-nocert mutant is identical to the subject"
+msg=$(row_ladder ladder-policy-nocert-mutant "$TMP/mutant-policy-nocert.sh" policy-nocert "evidence/crux/9.9.9/prompt-certification.json"); mrc=$?
+[ "$mrc" = 2 ] && env_die "policy-nocert mutant could not build its fixture"
+[ "$mrc" != 0 ]; row "mutant policy-nocert is killed by ladder-policy-nocert (${msg:-survived})" "$?" "the mutant PASSED ladder-policy-nocert -- the row does not discriminate"
+
+# prepare_bump.sh's own case table (splice + CRUX certification carry-forward). Nothing else runs it.
+bash "$SUBJECT" --self-test > "$TMP/pb-self-test.log" 2>&1; mrc=$?; msg=$(tail -n 1 "$TMP/pb-self-test.log")
+[ "$mrc" = 0 ]; row "prepare_bump.sh --self-test passes ($msg)" "$?" "prepare_bump.sh --self-test exited $mrc"
+
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 12 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 12 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 17 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 17 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the bump PR body passes §6 R-2 by construction, and prepare_bump.sh refuses one that does not (#3699) or whose tree lacks green model-ladder receipts (#3708)\n' "$rows"

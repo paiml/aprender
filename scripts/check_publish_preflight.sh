@@ -320,8 +320,8 @@ scope_recorded() {
     [ -n "$scope" ] || return 1
     ( cd "$root" && PYTHONDONTWRITEBYTECODE=1 python3 -c 'import sys, yaml
 sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
-name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open("contracts/model-capability-ladder-v1.yaml"))["ladder"], sys.argv[1])
-sys.exit(0 if why is None and name == sys.argv[2] else 1)' "$version" "$scope" ) >/dev/null 2>&1
+name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open(sys.argv[3]))["ladder"], sys.argv[1])
+sys.exit(0 if why is None and name == sys.argv[2] else 1)' "$version" "$scope" "${POL_LADDER:-contracts/model-capability-ladder-v1.yaml}" ) >/dev/null 2>&1
 }
 
 # Q1 (operator, 2026-10-03, 0.70.1): the scope RECORDED for this release, for a caller that passed no
@@ -338,7 +338,7 @@ recorded_scope_name() {
 try:
     import yaml
     sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
-    name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open("contracts/model-capability-ladder-v1.yaml"))["ladder"], sys.argv[1])
+    name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open(sys.argv[2]))["ladder"], sys.argv[1])
 except Exception as e:
     print(f"the ladder contract could not be loaded ({type(e).__name__}: {e})"); sys.exit(2)
 if why:
@@ -348,12 +348,42 @@ if not name:
 print(name)'
     # bashrs PERF002: not a loop body -- the reader runs once, from gate().
     # bashrs disable-next-line=PERF002
-    rec_out="$(cd "$root" && PYTHONDONTWRITEBYTECODE=1 python3 -c "$py" "$version" 2>/dev/null)"; rec_rc=$?
+    rec_out="$(cd "$root" && PYTHONDONTWRITEBYTECODE=1 python3 -c "$py" "$version" "${POL_LADDER:-contracts/model-capability-ladder-v1.yaml}" 2>/dev/null)"; rec_rc=$?
     case "$rec_rc" in
         0) REC_NAME="$rec_out" ;;
         1) return 1 ;;
         *) REC_WHY="${rec_out:-the reader exited $rec_rc and printed no reason}"; return 2 ;;
     esac
+}
+
+# The STANDING RELEASE POLICY (`ladder.release_policy`, scripts/lib/release_policy.sh): from its `since` on,
+# a release is judged on CRUX smoke as if the contract recorded a `crux-smoke` entry for it. Both scope readers
+# above read POL_LADDER: the contract itself, or a copy carrying the entry the policy grants this version.
+# Without the reader in this tree, a contract that HAS a policy block is unreadable, never "no policy".
+# policy_ladder root version -> sets POL_LADDER (absolute), POL_APPLIES, POL_WHY;
+#   0 ok, 1 a per-release entry names a covered version, 2 unreadable
+policy_ladder() {
+    local root="$1" version="$2" out prc
+    POL_LADDER="$root/contracts/model-capability-ladder-v1.yaml"; POL_APPLIES=0; POL_WHY=""
+    [ -f "$POL_LADDER" ] || return 0
+    if [ ! -f "$root/scripts/lib/release_policy.sh" ]; then
+        if grep -q '^  release_policy:' "$POL_LADDER"; then POL_WHY="the contract has a release_policy block but $root has no scripts/lib/release_policy.sh to read it"; return 2; fi
+        return 0
+    fi
+    # shellcheck source=lib/release_policy.sh
+    . "$root/scripts/lib/release_policy.sh" || { POL_WHY="$root/scripts/lib/release_policy.sh could not be loaded"; return 2; }
+    out="$(mktemp)" || { POL_WHY="mktemp failed, so the policy ladder could not be written"; return 2; }
+    release_policy_ladder "$POL_LADDER" "$version" > "$out"; prc=$?
+    POL_LADDER="$(cat "$out")"; rm -f "${out:?}"
+    POL_APPLIES="$RP_APPLIES"; POL_WHY="$RP_WHY"
+    [ "$prc" = 0 ] || POL_LADDER="$root/contracts/model-capability-ladder-v1.yaml"
+    return "$prc"
+}
+
+# rm_pol_ladder root -- removes policy_ladder's copy, never the contract
+rm_pol_ladder() {
+    if [ -n "${POL_LADDER:-}" ] && [ "$POL_LADDER" != "$1/contracts/model-capability-ladder-v1.yaml" ] && [ -f "$POL_LADDER" ]; then rm -f "${POL_LADDER:?}"; fi
+    POL_LADDER=""
 }
 
 # R8, release-readiness-v1 (#3715): the committed receipts at HEAD, graded by the shape.
@@ -367,6 +397,13 @@ rule_r8() {
     if [ ! -f "$wrapper" ]; then
         echo "FAIL  R8 no release-readiness wrapper at $wrapper: the release evidence cannot be graded"
         return 1
+    fi
+    # The STANDING RELEASE POLICY covers this version: R8 is not run at all (no evidence state on the
+    # release path). CRUX smoke under R7 is the gate; the larger rows are the nightly's, ticketed on red.
+    if [ "${POL_APPLIES:-0}" = 1 ]; then
+        echo "ok    R8 STANDING RELEASE POLICY covers $version: release-readiness was not run; CRUX smoke (R7) is the release gate"
+        R8_SCOPED=1
+        return 0
     fi
     receipt="$(newest_receipt "${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}")"
     out="$(bash "$wrapper" --root "$root" --version "$version" --commit "$head" ${receipt:+--dogfood-receipt "$receipt"} 2>&1)"; rc=$?
@@ -429,9 +466,22 @@ gate() {
         echo "ok    R2 version $version (cargo metadata, root manifest)"
     fi
 
+    # The standing release policy: what both scope readers below read (policy_ladder).
+    POL_LADDER=""
+    local pol_bad=0
+    if [ -n "$version" ]; then
+        local prc=0
+        policy_ladder "$root" "$version" || prc=$?
+        case "$prc" in
+            0) [ "$POL_APPLIES" != 1 ] || echo "POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers $version: CRUX smoke under R7 is the release gate, R8 is not run, the larger ladder rows are nightly" ;;
+            *) echo "FAIL  R7/R8 the standing release policy cannot be applied to $version, so neither the scope nor the full gate can be chosen: $POL_WHY"
+               fails=1; pol_bad=1 ;;
+        esac
+    fi
+
     # Q1: no --scope on a release whose contract RECORDS one -> that scope, for R7 and R8, at the cut
     # HEAD -- as the judge's own auto-scope (#4086) does. An unusable record refuses.
-    if [ -z "${SCOPE:-}" ] && [ -n "$version" ]; then
+    if [ -z "${SCOPE:-}" ] && [ -n "$version" ] && [ "$pol_bad" = 0 ]; then
         local rrc
         recorded_scope_name "$root" "$version"; rrc=$?
         case "$rrc" in
@@ -478,6 +528,7 @@ gate() {
     # R8 release-readiness-v1 over the committed evidence (#3715)
     rule_r8 "$root" "$version" "$head" || fails=1
 
+    rm_pol_ladder "$root"
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
@@ -878,6 +929,49 @@ FXREADY
     # bashrs disable-next-line=PERF002
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row auto_scope_unreadable_contract_refuses 1 "the ladder contract could not be loaded" "$d"
+    # The STANDING RELEASE POLICY (`ladder.release_policy`): from `since` on, the release is scoped with no
+    # per-release record. The fixture carries this checkout's own reader (scripts/lib/release_policy*).
+    record_policy() { # dir, since [, per-release entry release | nolib]
+        local d="$1"
+        # bashrs SEC010: self-test fixture: $d is under this script's own mktemp -d dir.
+        # bashrs disable-next-line=SEC010
+        mkdir -p "$d/contracts" "$d/scripts/lib"
+        # bashrs SEC010,SEC014: the sources are this checkout's own reader files; $d is the mktemp -d fixture above.
+        # bashrs disable-next-line=SEC010,SEC014
+        cp -- "$SCRIPT_DIR/lib/crux_smoke_scope.py" "$SCRIPT_DIR/lib/model_ladder_crux.py" "$d/scripts/lib/"
+        if [ "${3:-}" != nolib ]; then
+            # bashrs disable-next-line=SEC010,SEC014
+            cp -- "$SCRIPT_DIR/lib/release_policy.sh" "$SCRIPT_DIR"/lib/release_policy_*.awk "$d/scripts/lib/"
+        fi
+        { printf 'ladder:\n  release_policy:\n    name: crux-smoke\n    since: "%s"\n    date: "2026-10-07"\n' "$2"
+          printf '    quote: "q"\n    hosts: [lambda, gx10]\n    thinking: ["off", "on"]\n    larger_rows: nightly\n'
+          printf '    red_row_needs: ticket\n    ticket_owner: "#1"\n    release_notes: known_failures\n  emergency_scopes:\n'
+          case "${3:-}" in ''|nolib) : ;; *) printf '    - name: crux-smoke\n      release: "%s"\n' "$3" ;; esac
+        } > "$d/contracts/model-capability-ladder-v1.yaml"
+        git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'policy' >/dev/null
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+        # bashrs disable-next-line=PERF002
+        git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    }
+    d="$tmp/pol-cov"; build_repo "$d"; record_policy "$d" 1.2.0
+    row policy_covers_is_printed 0 "POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers 1.2.3" "$d"
+    row policy_covers_engages_the_scope 0 "SCOPED: crux-smoke -- the operator emergency scope recorded for release 1.2.3" "$d"
+    # policy_ladder writes the granted copy with mktemp; a failed mktemp is an unreadable policy, never "no policy".
+    TMPDIR="$tmp/no-such-dir" row policy_mktemp_failed_refuses 1 "mktemp failed, so the policy ladder could not be written" "$d"
+    FX_LADDER_RC=1 row policy_r7_judges_the_scope 0 "CRUX smoke satisfied at the cut" "$d"
+    FX_SCOPE_RC=1 row policy_scope_red_refuses 1 "FAIL  R7 OPERATOR EMERGENCY SCOPE crux-smoke NOT satisfied" "$d"
+    FX_READINESS_RC=1 row policy_r8_is_not_the_gate 0 "release-readiness was NOT the gate" "$d"
+    FX_READINESS_RC=1 row policy_r8_is_not_run 0 "ok    R8 STANDING RELEASE POLICY covers 1.2.3: release-readiness was not run" "$d"
+    d="$tmp/pol-rc"; build_repo "$d"; record_policy "$d" 1.2.3
+    row policy_since_equal_covers 0 "POLICY: crux-smoke" "$d"
+    d="$tmp/pol-later"; build_repo "$d"; record_policy "$d" 1.2.4
+    FX_READINESS_RC=1 row policy_later_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_LADDER_RC=1 row policy_later_r7_is_matrix 1 "FAIL  R7 model matrix NOT green" "$d"
+    d="$tmp/pol-dup"; build_repo "$d"; record_policy "$d" 1.2.0 1.2.3
+    row policy_and_record_refuse 1 "one release takes one ruling" "$d"
+    FX_READINESS_RC=1 row policy_and_record_no_scope 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    d="$tmp/pol-nolib"; build_repo "$d"; record_policy "$d" 1.2.0 nolib
+    row policy_without_reader_refuses 1 "has no scripts/lib/release_policy.sh to read it" "$d"
     # the model matrix is still EVIDENCE on a recorded release, scope engaged by the record or by the flag
     d="$tmp/auto-scoped"
     FX_LADDER_RC=1 row auto_scope_keeps_the_matrix_as_evidence 0 "evidence FAIL  fx-rung red on lambda" "$d"
