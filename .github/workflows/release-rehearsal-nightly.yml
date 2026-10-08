@@ -1,0 +1,73 @@
+# release-rehearsal-nightly.yml — the nightly release rehearsal (APR-071 spec row B1, H10; E1 #3998).
+#
+# B1: every night on main's head, the same script and the same policy file as release day run
+# everything except the tag push and the uploads. Green means exit 0, every lane measured on that
+# night's commit, no rerun. scripts/release/nightly_greens.sh counts THIS workflow's runs: only a
+# `schedule` run on `main` that succeeded at attempt 1 is a green night, so a dispatched drill or a
+# rerun never counts.
+#
+# H10: the rehearsal makes no write outside its own state directory. scripts/release/rehearse.sh
+# enforces that itself (write-guard stubs first on PATH, a bare origin inside the state dir, a
+# CARGO_HOME without credentials). This job adds a read-only token on top: nothing here can write to
+# the repository, its releases, issues or pull requests, and no secret is passed.
+#
+# Not on a PR, merge-queue or release path: schedule (and a drill dispatch) only.
+name: Release Rehearsal Nightly
+
+on:
+  schedule:
+    - cron: '20 5 * * *'   # 05:20Z: after nightly-train (04:45Z) has read the night's producers
+  workflow_dispatch: {}    # drills only; a dispatched run never counts toward the streak
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: release-rehearsal-nightly
+  cancel-in-progress: false
+
+jobs:
+  rehearse:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0       # the bump reads the tags and the history since the last one
+      - name: The rehearsal's case table and mutants (a red table runs no night)
+        run: |
+          bash scripts/release/rehearse.sh --selftest
+          bash scripts/release/rehearse.sh --mutants
+      - name: The night on main's head (exit 0 GREEN, 1 RED, 2 not_measured)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          bash scripts/release/rehearse.sh --run --state "$RUNNER_TEMP/rehearsal" --commit "$GITHUB_SHA" \
+            | tee "$RUNNER_TEMP/night.txt"
+      - name: Summary
+        if: always()
+        run: |
+          if [ -s "$RUNNER_TEMP/night.txt" ]; then
+            grep -E '^VERDICT|RED|OPEN|NOT CLEARED|WRITE' "$RUNNER_TEMP/night.txt" | head -n 60
+          else
+            echo "no night printed"
+          fi >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-rehearsal
+          path: |
+            ${{ runner.temp }}/night.txt
+            ${{ runner.temp }}/rehearsal/night.env
+            ${{ runner.temp }}/rehearsal/stages.tsv
+            ${{ runner.temp }}/rehearsal/calls.tsv
+            ${{ runner.temp }}/rehearsal/logs
+            ${{ runner.temp }}/rehearsal/train
+            ${{ runner.temp }}/rehearsal/ap/STATUS
+            ${{ runner.temp }}/rehearsal/ap/autopilot.log
+          retention-days: 30

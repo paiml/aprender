@@ -246,6 +246,15 @@ deep (T-1, local), pre-publish dogfood, tag + release, clean-room.yml dispatched
 Pmat-Ticket: PMAT-$EPIC
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 MSG
+# REHEARSAL (APR-071 B1, H10; scripts/release/rehearse.sh): every gate above ran for real and the bump
+# commit exists in the rehearsal's own clone. The push, the PR and the arm are WOULD lines; the commit
+# stays local and rehearse.sh hands it to autopilot.sh as the release commit. Unset, nothing changes.
+if [ "${RELEASE_REHEARSAL:-}" = 1 ]; then
+  printf 'WOULD git push -q -u origin %s\nWOULD gh pr create --repo %s --base main --head %s --milestone %s --title "release: %s" --body-file %s\nWOULD bash %s <the PR number>\n' \
+    "$BR" "$REPO" "$BR" "$MS" "$V" "$AP/pr_body.md" "$REPO_ROOT/scripts/arm_pr_automerge.sh"
+  printf 'REHEARSED BUMP %s on %s (local; nothing pushed, opened or armed)\n' "$(git rev-parse HEAD)" "$parent"
+  exit 0
+fi
 git push -q -u origin "$BR" || die "push failed"
 url=$(gh pr create --repo $REPO --base main --head "$BR" --milestone "$MS" --title "release: $V" --body-file "$AP/pr_body.md") || die "gh pr create failed"
 n=${url##*/}

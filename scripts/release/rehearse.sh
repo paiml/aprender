@@ -61,6 +61,7 @@ SUMMARY='Release rehearsal (B1): no train summary. This bump is never pushed.'
 # $V is the train's version. ap:<step> is autopilot.sh run for that one step: its setup is re-entrant.
 stages_table() {
     cat <<'STAGES'
+lanes|-|env -u INBOX bash scripts/release/nightly_train.sh --out "$RELEASE_REHEARSAL_TRAIN"
 t2|-|bash scripts/release/t2_preflight.sh "$V"
 bump|-|bash scripts/release/prepare_bump.sh "$V"
 summary|bump|stage_summary
@@ -96,11 +97,13 @@ DLEDGER
 die3() { printf 'rehearse.sh: caller error: %s\n' "$*" >&2; exit 3; }
 
 # ------------------------------------------------------------------ the night --
-# install_guard STATE -> stubs + a credential-free CARGO_HOME under STATE; prints the env file path
+# install_guard STATE [C] -> stubs + a credential-free CARGO_HOME under STATE; prints the env file path.
+# C is the night's commit: the release scripts' rehearsal seams (lib_rehearsal.sh) read the night's train
+# bundle in STATE/train for it.
 install_guard() {
-    local st=$1 ch bin real t f
+    local st=$1 c=${2:-} ch bin real t f
     ch="$st/cargo-home"; bin="$ch/bin"
-    mkdir -p "$bin" "$st/tmp" "$st/ap" "$st/logs" || return 2
+    mkdir -p "$bin" "$st/tmp" "$st/ap" "$st/logs" "$st/train" || return 2
     : > "$st/calls.tsv" || return 2
     local src_home=${CARGO_HOME:-$HOME/.cargo}
     for f in registry git config.toml config; do
@@ -122,6 +125,7 @@ install_guard() {
                 "$t" "$SCRIPT_DIR/lib_write_guard.sh" "$t" > "$bin/$t" && chmod +x "$bin/$t" || return 2
         done
         printf 'export CARGO_HOME=%q TMPDIR=%q RELEASE_AP=%q RELEASE_REHEARSAL=1\n' "$ch" "$st/tmp" "$st/ap"
+        printf 'export RELEASE_REHEARSAL_C=%q RELEASE_REHEARSAL_TRAIN=%q\n' "$c" "$st/train"
         printf 'export PATH=%q:"$PATH"\n' "$bin"
         printf 'unset CARGO_REGISTRY_TOKEN\n'
     } > "$st/guard.env" || return 2
@@ -180,7 +184,7 @@ run_night() {
     git clone -q --shared -- "$st/origin.git" "$st/clone" || exit 2
     git -C "$st/clone" checkout -q --detach "$commit" || exit 2
     git -C "$st/clone" config user.name "release rehearsal" && git -C "$st/clone" config user.email "rehearsal@invalid" || exit 2
-    env=$(install_guard "$st") || exit 2
+    env=$(install_guard "$st" "$commit") || exit 2
     printf 'C=%s\nV=%s\nSOURCE=%s\nSTARTED=%s\n' "$commit" "$v" "$src" "$(date -u +%FT%TZ)" > "$st/night.env"
     printf 'stage\trc\tcommit\tseconds\n' > "$st/stages.tsv"
     while IFS='|' read -r name needs cmd; do
@@ -190,22 +194,73 @@ run_night() {
             printf '%s\tunreached\t-\t0\n' "$name" >> "$st/stages.tsv"; continue
         fi
         start=$(date +%s)
-        ( cd "$st/clone" || exit 2
-          # shellcheck disable=SC1090
-          . "$env" || exit 2
-          export WG_STAGE=$name V=$v
-          eval "$cmd" ) > "$st/logs/${name//:/_}.log" 2>&1 < /dev/null
-        rc=$?
+        run_stage "$st" "$env" "$name" "$cmd" "$v"; rc=$?
+        if [ "$name" = ship ] && [ "$rc" = 0 ] && ! handoff_bump "$st" "$env" "$commit"; then
+            printf 'STOP rehearsal: the ship stage made no bump commit on %s that the release steps can read\n' "$commit" >> "$st/logs/ship.log"
+            rc=1
+        fi
         printf '%s\t%s\t%s\t%s\n' "$name" "$rc" "$(stage_commit "$st" "$name" "$commit")" "$(( $(date +%s) - start ))" >> "$st/stages.tsv"
     done < <(stages_table)
     record_bump "$st" "$commit"
     judge "$st"
 }
 
+# ap_gate_files DIR -> one "name<TAB>mtime<TAB>sha256" line per gate file directly in DIR, C-sorted
+# (STATUS and autopilot.log are carried by byte offset instead). run_stage diffs two of these: a file
+# that is new, or whose content or mtime changed, is the stage's own. Content, not an mtime stamp: mtime
+# ticks are coarse (one jiffy), so a file a fast stage writes in the stamp's own tick reads as not newer.
+ap_gate_files() {
+    local f t
+    find "$1" -maxdepth 1 -type f ! -name STATUS ! -name autopilot.log -printf '%f\t%T@\n' |
+        while IFS=$'\t' read -r f t; do
+            printf '%s\t%s\t%s\n' "$f" "$t" "$(sha256sum < "$1/$f")"
+        done | LC_ALL=C sort
+}
+
+# run_stage STATE ENV NAME CMD V -> the stage's exit status. Its log is its own output, then what it
+# added to the release scripts' state: each gate's output file there (preflight.log, tag-coverage.log,
+# ...), then what autopilot.sh `say`s into RELEASE_AP's autopilot.log and STATUS, not stdout -- STATUS
+# last, so the stage's own STOP line is the last stop line in the log (stage_tail).
+# The verdict and the D-ledger read the log, so a stop autopilot.sh printed only there still counts.
+run_stage() {
+    local st=$1 env=$2 name=$3 cmd=$4 v=$5 log rc f s0 l0 before
+    log="$st/logs/${name//:/_}.log"
+    s0=$(stat -c %s -- "$st/ap/STATUS" 2>/dev/null) || s0=0
+    l0=$(stat -c %s -- "$st/ap/autopilot.log" 2>/dev/null) || l0=0
+    before=$(ap_gate_files "$st/ap" 2>/dev/null)
+    ( cd "$st/clone" || exit 2
+      # shellcheck disable=SC1090
+      . "$env" || exit 2
+      export WG_STAGE=$name V=$v
+      eval "$cmd" ) > "$log" 2>&1 < /dev/null
+    rc=$?
+    {
+        while IFS= read -r f; do
+            printf '== RELEASE_AP/%s ==\n' "$f"; cat -- "$st/ap/$f"
+        done < <(ap_gate_files "$st/ap" | LC_ALL=C comm -13 <(printf '%s\n' "$before") - | cut -f1)
+        [ -f "$st/ap/autopilot.log" ] && { printf '== RELEASE_AP/autopilot.log (this stage) ==\n'; tail -c +"$((l0 + 1))" -- "$st/ap/autopilot.log"; }
+        [ -f "$st/ap/STATUS" ] && { printf '== RELEASE_AP/STATUS (this stage) ==\n'; tail -c +"$((s0 + 1))" -- "$st/ap/STATUS"; }
+    } >> "$log" 2>/dev/null
+    return "$rc"
+}
+
+# handoff_bump STATE ENV C -> rc 0 when the ship stage's local bump commit is one commit on C and is now
+# the release commit: the in-state origin's main moves to it, as the merged bump PR moves main on
+# release day (B1 quorum Q2 (a)), and autopilot.sh reads it as RELEASE_REHEARSAL_MC. Every write here
+# is inside the state dir.
+handoff_bump() {
+    local st=$1 env=$2 c=$3 h
+    h=$(git -C "$st/ap/bump" rev-parse --verify -q HEAD) || return 1
+    [ "$(git -C "$st/ap/bump" rev-parse --verify -q "$h^")" = "$c" ] || return 1
+    git -C "$st/clone" update-ref refs/rehearsal/bump "$h" || return 1
+    git -C "$st/origin.git" fetch -q "$st/clone" "+refs/rehearsal/bump:refs/heads/main" || return 1
+    printf 'export RELEASE_REHEARSAL_MC=%q\n' "$h" >> "$env"
+}
+
 # stage_commit STATE STAGE C -> the commit the stage measured: C before the bump, the bump commit after
 stage_commit() {
     case $2 in
-        t2|bump|summary|ship) printf '%s' "$3" ;;
+        lanes|t2|bump|summary|ship) printf '%s' "$3" ;;
         *) git -C "$1/ap/bump" rev-parse HEAD 2>/dev/null || printf '%s' - ;;
     esac
 }
@@ -269,7 +324,7 @@ judge() {
 stage_tail() {
     local f="$1/logs/${2//:/_}.log"
     [ -f "$f" ] || { printf 'no log'; return; }
-    grep -E '^(STOP|FAIL|RED|die|ERROR|⛔)' "$f" | tail -1 | cut -c1-200 | grep . || tail -1 "$f" | cut -c1-200
+    grep -E '^([0-9T:Z-]+ )?(STOP|FAIL|RED|die|ERROR|⛔)' "$f" | tail -1 | cut -c1-200 | grep . || tail -1 "$f" | cut -c1-200
 }
 
 # dledger_row STATE ROW STAGES SIG -> "CLEAR" | "OPEN <evidence>" | "NOT CLEARED <why>"
@@ -458,6 +513,7 @@ selftest() {
     c READ curl "$st/clone" -sSf -D "$st/tmp/h" https://x
     printf '  %s guard rows\n' "$((pass))"
     selftest_stub
+    selftest_seams
     selftest_judge
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
@@ -490,6 +546,99 @@ selftest_stub() {
     else printf '  BROKE %-44s calls.tsv has no READ row\n' the_read_is_recorded; fail=$((fail + 1)); fi
 }
 
+# The release scripts' rehearsal seams: the lane reader they read in place of a dispatch
+# (lib_rehearsal.sh), a stage log that carries what autopilot.sh said only into RELEASE_AP, and the
+# hand-off that makes the ship stage's bump commit the in-state origin's main.
+selftest_seams() {
+    local s="$tmp/seams" c=c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00 n=0 o rc st h
+    mkdir -p "$s" || return 2
+    lrow() { # lrow LANE STATE RUN_ID RUN_HEAD REASON -> one bundle row, nightly_train.sh's columns
+        printf '%s\tgate\t%s\tx.yml\t%s\t%s\tsuccess\t1\t-\t-\t%s\t0\n' "$@"
+    }
+    bundle() { # bundle DAY BUNDLE_C ROW...
+        local f="$s/l$n/train/$1/bundle.tsv" bc=$2; shift 2
+        mkdir -p "${f%/*}" || return 2
+        { printf 'lane\tkind\tstate\tproducer\trun_id\trun_head\tconclusion\tattempt\tstarted\tended\treason\thours_lost\n'
+          printf '%s\n' "$@"; printf '# C\t%s\n' "$bc"; } > "$f"
+    }
+    l() { # l NAME WANT_RC WANT_OUT LANE SETUP -- rehearsal_lane for C over a fresh train dir
+        local name=$1 wrc=$2 wout=$3 lane=$4
+        n=$((n + 1)); mkdir -p "$s/l$n/train" || return 2
+        eval "$5"
+        rc=0; o=$( . "$SCRIPT_DIR/lib_rehearsal.sh" || exit 9
+                   RELEASE_REHEARSAL_TRAIN="$s/l$n/train" RELEASE_REHEARSAL_C=${LC-$c} rehearsal_lane "$lane" 2>&1 ) || rc=$?
+        if [ "$rc" = "$wrc" ] && [[ $o == *"$wout"* ]]; then pass=$((pass + 1))
+        else printf '  BROKE %-44s rc=%s (want %s) out=%s\n' "$name" "$rc" "$wrc" "${o:0:160}"; fail=$((fail + 1)); fi
+    }
+    l lane_green_on_c_reads_its_run 0 4242 cleanroom-cpu \
+        'bundle d "$c" "$(lrow cleanroom-cpu green 4242 $c -)"'
+    l lane_red_is_not_green 1 "red: job failed" cleanroom-cpu 'bundle d "$c" "$(lrow cleanroom-cpu red 4242 $c "job failed")"'
+    l lane_not_measured_is_not_green 1 "not_measured: no producer" assets 'bundle d "$c" "$(lrow assets not_measured - - "no producer")"'
+    l lane_green_on_another_head_is_not 1 "not_measured: cleanroom-cpu read green on beef" cleanroom-cpu \
+        'bundle d "$c" "$(lrow cleanroom-cpu green 4242 beef -)"'
+    l lane_green_without_run_id_is_not 1 "read green with no run id" cleanroom-cpu 'bundle d "$c" "$(lrow cleanroom-cpu green - $c -)"'
+    l lane_missing_row_is_not 1 "the train bundle has no assets row" assets 'bundle d "$c" "$(lrow cleanroom-cpu green 4242 $c -)"'
+    l lane_bundle_for_another_c_is_not 1 "the train bundle is for beef" cleanroom-cpu 'bundle d beef "$(lrow cleanroom-cpu green 4242 $c -)"'
+    l lane_two_bundles_is_not 1 "2 train bundles" cleanroom-cpu \
+        'bundle d1 "$c" "$(lrow cleanroom-cpu green 4242 $c -)"; bundle d2 "$c" "$(lrow cleanroom-cpu green 4243 $c -)"'
+    l lane_no_bundle_is_not 1 "0 train bundles" cleanroom-cpu ':'
+    LC="" l lane_no_c_is_not 1 "RELEASE_REHEARSAL_C is unset" cleanroom-cpu 'bundle d "$c" "$(lrow cleanroom-cpu green 4242 $c -)"'
+    # run_stage: autopilot.sh `say`s into RELEASE_AP/STATUS, not stdout; this stage's STOP and the gate
+    # log it wrote reach the stage log, and an earlier stage's STATUS lines and untouched files do not.
+    # rewritten.log keeps its mtime (epoch 0) across the rewrite: only its content says the stage wrote it
+    st="$s/rs"; mkdir -p "$st/clone" "$st/logs" "$st/ap" || return 2
+    printf '2026-10-07T00:00:00Z STOP an earlier stage\n' > "$st/ap/STATUS"
+    printf 'stale\n' > "$st/ap/old-gate.log"
+    printf 'before-stage\n' > "$st/ap/rewritten.log"; touch -d @0 -- "$st/ap/rewritten.log"
+    printf 'export RELEASE_AP=%q\n' "$st/ap" > "$st/env"
+    rc=0; run_stage "$st" "$st/env" ap:tag 'printf "2026-10-08T00:00:00Z STOP the tag gate refused\n" >> "$RELEASE_AP/STATUS"; printf "FAIL  NOT_MEASURED: x\n" > "$RELEASE_AP/tag-coverage.log"; printf "this-stage\n" > "$RELEASE_AP/rewritten.log"; touch -d @0 -- "$RELEASE_AP/rewritten.log"; exit 1' 0.0.0 || rc=$?
+    o=$(stage_tail "$st" ap:tag)
+    if [ "$rc" = 1 ] && [ "$o" = "2026-10-08T00:00:00Z STOP the tag gate refused" ] \
+        && grep -qx 'FAIL  NOT_MEASURED: x' "$st/logs/ap_tag.log" && ! grep -q 'an earlier stage' "$st/logs/ap_tag.log" \
+        && ! grep -q stale "$st/logs/ap_tag.log" && grep -qx this-stage "$st/logs/ap_tag.log"; then pass=$((pass + 1))
+    else printf '  BROKE %-44s rc=%s tail=%s log=%s\n' run_stage_carries_this_stages_status "$rc" "$o" "$(tr '\n' '|' < "$st/logs/ap_tag.log" | cut -c1-200)"; fail=$((fail + 1)); fi
+    # handoff_bump: one bump commit on C becomes origin's main and RELEASE_REHEARSAL_MC; none, or two, do not
+    hb() { # hb NAME WANT_RC COMMITS -> a state dir with C, an in-state origin, a clone and its bump worktree
+        local name=$1 wrc=$2 k=$3 i cc mc
+        st="$s/hb-$name"; mkdir -p "$st/src" "$st/ap" || return 2
+        g() { git -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+        g -C "$st/src" init -q -b main && g -C "$st/src" commit -q --allow-empty -m C \
+            && g clone -q --bare "$st/src" "$st/origin.git" && g clone -q "$st/origin.git" "$st/clone" \
+            && g -C "$st/clone" worktree add -q --detach "$st/ap/bump" HEAD || return 2
+        cc=$(g -C "$st/clone" rev-parse HEAD); : > "$st/env"
+        for ((i = 0; i < k; i++)); do g -C "$st/ap/bump" commit -q --allow-empty -m "bump $i" || return 2; done
+        h=$(g -C "$st/ap/bump" rev-parse HEAD)
+        rc=0; handoff_bump "$st" "$st/env" "$cc" || rc=$?
+        mc=$(g -C "$st/origin.git" rev-parse refs/heads/main)
+        local ok=0
+        if [ "$wrc" = 0 ]; then
+            [ "$rc" = 0 ] && [ "$mc" = "$h" ] && grep -qx "export RELEASE_REHEARSAL_MC=$h" "$st/env" && ok=1
+        else
+            [ "$rc" != 0 ] && [ "$mc" = "$cc" ] && [ ! -s "$st/env" ] && ok=1
+        fi
+        if [ "$ok" = 1 ]; then pass=$((pass + 1))
+        else printf '  BROKE %-44s rc=%s (want %s) main=%s bump=%s env=%s\n' "$name" "$rc" "$wrc" "${mc:0:9}" "${h:0:9}" "$(tr '\n' '|' < "$st/env")"; fail=$((fail + 1)); fi
+    }
+    hb handoff_one_bump_commit_becomes_main 0 1
+    hb handoff_no_bump_commit_refuses 1 0
+    hb handoff_two_commits_on_c_refuses 1 2
+    # cascade-publish.sh --rehearse outside a rehearsal is refused before it reads anything (exit 2).
+    # A missing cascade script is a BROKE row, never a skip.
+    local cas=${REHEARSE_CASCADE:-$SCRIPT_DIR/../cascade-publish.sh} o
+    rc=0; o=$(env -u RELEASE_REHEARSAL bash "$cas" --rehearse 2>&1 < /dev/null) || rc=$?
+    if [ "$rc" = 2 ] && [[ $o == *"--rehearse runs only under RELEASE_REHEARSAL=1"* ]]; then pass=$((pass + 1))
+    else printf '  BROKE %-44s rc=%s (want 2) %s\n' cascade_rehearse_outside_rehearsal_refuses "$rc" "${o:0:160}"; fail=$((fail + 1)); fi
+    # Both libs are SOURCED into the release scripts, so a file-scope `set` would change autopilot.sh's
+    # own options on release day (CLAUDE.md, "a sourced library must be option-neutral").
+    local lib hits
+    for lib in lib_write_guard.sh lib_rehearsal.sh; do
+        hits=$(grep -nE '^set[[:space:]]+[-+]' "$SCRIPT_DIR/$lib" 2>&1) || true
+        if [ -f "$SCRIPT_DIR/$lib" ] && [ -z "$hits" ]; then pass=$((pass + 1))
+        else printf '  BROKE %-44s %s\n' "${lib%.sh}_option_neutral" "${hits:-missing $SCRIPT_DIR/$lib}"; fail=$((fail + 1)); fi
+    done
+    printf '  %s seam rows\n' "$((n + 7))"
+}
+
 # fixture_night DIR -> a night where every stage is green on C, the trace shows the freeze inside the
 # bump, and the bump commit carries a fleet trailer: the anti-vacuity arm (it must be GREEN).
 fixture_night() {
@@ -498,7 +647,7 @@ fixture_night() {
     printf 'C=c0ffee\nV=0.71.0\n' > "$d/night.env"
     printf 'stage\trc\tcommit\tseconds\n' > "$d/stages.tsv"
     while IFS='|' read -r name _ _; do
-        case $name in t2|bump|summary|ship) printf '%s\t0\tc0ffee\t1\n' "$name" ;; *) printf '%s\t0\tb0b\t1\n' "$name" ;; esac >> "$d/stages.tsv"
+        case $name in lanes|t2|bump|summary|ship) printf '%s\t0\tc0ffee\t1\n' "$name" ;; *) printf '%s\t0\tb0b\t1\n' "$name" ;; esac >> "$d/stages.tsv"
         printf 'ok\n' > "$d/logs/${name//:/_}.log"
     done < <(stages_table)
     printf 'bump\tgh\tREAD\t-\tbash scripts/release/carry_milestone_items.sh 0.71.0 --dry-run\tapi repos/o/r/milestones\n' > "$d/calls.tsv"
@@ -570,7 +719,7 @@ mutants() {
     while read -r name file expr; do
         [ -n "$name" ] || continue
         dir="$tmp/$name"; mkdir -p "$dir"
-        cp -- "$SCRIPT_PATH" "$dir/rehearse.sh"; cp -- "$SCRIPT_DIR/lib_write_guard.sh" "$dir/lib_write_guard.sh"
+        cp -- "$SCRIPT_PATH" "$dir/rehearse.sh"; cp -- "$SCRIPT_DIR/lib_write_guard.sh" "$SCRIPT_DIR/lib_rehearsal.sh" "$dir/"
         sed -i -e "$expr" "$dir/$file"
         if cmp -s "$dir/$file" "$SCRIPT_DIR/$file"; then
             printf '  BROKE %-40s changed nothing: its pattern no longer matches\n' "$name"; fail=$((fail + 1)); continue
@@ -578,7 +727,7 @@ mutants() {
         if ! bash -n "$dir/$file" 2>/dev/null; then
             printf '  BROKE %-40s does not parse: a RED from it would prove nothing\n' "$name"; fail=$((fail + 1)); continue
         fi
-        rc=0; o="$(bash "$dir/rehearse.sh" --selftest < /dev/null 2>&1)" || rc=$?
+        rc=0; o="$(REHEARSE_CASCADE="$SCRIPT_DIR/../cascade-publish.sh" bash "$dir/rehearse.sh" --selftest < /dev/null 2>&1)" || rc=$?
         case "$rc:$o" in
             0:*) printf '  BROKE %-40s SURVIVED: the case table stayed green\n' "$name"; fail=$((fail + 1)) ;;
             *"  BROKE "*) printf '  ok    %-40s killed, %s row(s) broke\n' "$name" "$(printf '%s\n' "$o" | awk '/^  BROKE /{n++} END{print n+0}')"; pass=$((pass + 1)) ;;
@@ -623,6 +772,22 @@ d6_red_bump_opens            rehearse.sh         s/NR > 1 \&\& \$1 == "bump" \&\
 d7_fable_allowed             rehearse.sh         s/^FLEET_MODELS='Claude Opus 5\\.5|/FLEET_MODELS='Claude Fable 5\\.1|Claude Opus 5\\.5|/
 d7_no_trailer_clears         rehearse.sh         s/echo "OPEN in the bump commit: no Co-Authored-By trailer"/echo CLEAR/
 green_with_reds              rehearse.sh         s/if \[ "\$reds" -eq 0 \]; then echo "VERDICT GREEN/if true; then echo "VERDICT GREEN/
+lane_unset_env_reads         lib_rehearsal.sh    s/\[ -n "\$train" \] \&\& \[ -n "\$c" \] ||/true ||/
+lane_bundle_count_ignored    lib_rehearsal.sh    s/\[ "\$n" = 1 \] ||/true ||/
+lane_bundle_c_ignored        lib_rehearsal.sh    s/\[ "\$bc" = "\$c" \] ||/true ||/
+lane_red_is_green            lib_rehearsal.sh    s/\[ "\$state" = green \] ||/true ||/
+lane_other_head_green        lib_rehearsal.sh    s/\[ "\$head" = "\$c" \] ||/true ||/
+lane_no_run_id_green         lib_rehearsal.sh    s/\[\[ \$run =~ \^\[0-9\]+\$ \]\] ||/true ||/
+stage_status_whole_file      rehearse.sh         s/tail -c +"\$((s0 + 1))" -- "\$st\/ap\/STATUS"/cat -- "$st\/ap\/STATUS"/
+stage_status_not_captured    rehearse.sh         s/\[ -f "\$st\/ap\/STATUS" \] \&\& {/false \&\& {/
+stage_gate_files_dropped     rehearse.sh         s/done < <(ap_gate_files "\$st\/ap" | /done < <(true | /
+stage_old_files_kept         rehearse.sh         s/LC_ALL=C comm -13 <(printf '%s\\n' "\$before") - | cut -f1)/cut -f1)/
+stage_content_ignored        rehearse.sh         s/"\$(sha256sum < "\$1\/\$f")"/-/
+handoff_any_parent           rehearse.sh         s/\[ "\$(git -C "\$st\/ap\/bump" rev-parse --verify -q "\$h^")" = "\$c" \] || return 1/:/
+handoff_main_not_moved       rehearse.sh         s/git -C "\$st\/origin.git" fetch -q "\$st\/clone" "+refs\/rehearsal\/bump:refs\/heads\/main" || return 1/:/
+lib_rehearsal_sets_errexit   lib_rehearsal.sh    s/^rehearsal_lane() {$/set -e\nrehearsal_lane() {/
+lib_guard_sets_option        lib_write_guard.sh  s/^wg_inside() {$/set +H\nwg_inside() {/
+handoff_mc_not_exported      rehearse.sh         s/printf 'export RELEASE_REHEARSAL_MC=%q\\n' "\$h" >> "\$env"/:/
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
