@@ -71,7 +71,11 @@ resolve_base() {
         # case table's mutation.
         if [ -n "$p1" ] && [ "${GITHUB_EVENT_NAME:-}" = merge_group ] && [ "${ROADMAP_DIFF_NO_DEEPEN:-0}" != 1 ]; then
             if ! git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
-                git -C "$REPO_ROOT" fetch -q --deepen=1 origin 2>/dev/null || git -C "$REPO_ROOT" fetch -q origin "$p1" 2>/dev/null || true
+                # Read up to 3 times under P6 (#4936); its status lines go to stderr, never into a caller's $(...).
+                local p6
+                p6="$(dirname -- "${BASH_SOURCE[0]}")/../ci/fetch_p6.sh"
+                ( cd "$REPO_ROOT" && bash "$p6" -q --deepen=1 origin ) >&2 2>/dev/null \
+                    || ( cd "$REPO_ROOT" && bash "$p6" -q origin "$p1" ) >&2 2>/dev/null || true
             fi
             if git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
                 BASE_REF="$p1"; BASE_HOW="single parent (stacked merge_group entry: the previous entry's squash, fetched by deepening the shallow checkout)"; return 0
