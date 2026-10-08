@@ -35,7 +35,9 @@ decide() {
     #    mark row -- so its absence is itself the crash signal, not a missing feature.
     declared=$(grep -oE '[0-9]+ declared gate\(s\) discovered' "$log" | head -1 | cut -d' ' -f1)
     [ -n "$declared" ] || { unknown no-declared-gate-count; return; }
-    rows=$(grep -cE '^[[:space:]]*\[[A-Z]+\]' "$log")
+    # dogfood.sh mark() prints a PASS row as `[ OK ]` (padded), every other status as `[FAIL]`,
+    # `[SKIP]` ... -- a bare [A-Z]+ never matched the OK rows, so a green run sat under its own floor.
+    rows=$(grep -cE '^[[:space:]]*\[( OK |[A-Z]+)\]' "$log")
     [ "$rows" -ge "$declared" ] || { unknown "rows=$rows<declared=$declared"; return; }
 
     # 3. only then does the absence of failures mean anything. version-unpublished is the
@@ -67,8 +69,8 @@ if [ "${1:-}" = "--self-test" ]; then
     #   count, one row per declared gate, any extra rows, and the terminal VERDICT line LAST.
     mklog() {
         local f=$1 n=$2 i=1 r; shift 2
-        printf '  [PASS] dogfood-gates              %s declared gate(s) discovered and all green\n' "$n" > "$f"
-        while [ "$i" -le "$n" ]; do printf '  [PASS] declared:gate%s  scripts/check_gate%s.sh\n' "$i" "$i" >> "$f"; i=$((i + 1)); done
+        printf '  [ OK ] dogfood-gates              %s declared gate(s) discovered and all green\n' "$n" > "$f"
+        while [ "$i" -le "$n" ]; do printf '  [ OK ] declared:gate%s  scripts/check_gate%s.sh\n' "$i" "$i" >> "$f"; i=$((i + 1)); done
         for r in "$@"; do printf '%s\n' "$r" >> "$f"; done
         printf 'VERDICT: GO (phase pre-publish)\n' >> "$f"
     }
@@ -91,7 +93,7 @@ if [ "${1:-}" = "--self-test" ]; then
     [ "$rc" -eq 2 ] && ok "truncated returns 2 (UNKNOWN)" || nok "truncated returned $rc, wanted 2"
 
     # 4. too few rows: a VERDICT line, but far fewer rows than the declared gate set
-    { printf '  [PASS] dogfood-gates              8 declared gate(s) discovered and all green\n'
+    { printf '  [ OK ] dogfood-gates              8 declared gate(s) discovered and all green\n'
       printf 'VERDICT: GO (phase pre-publish)\n'; } > "$d/thin.log"
     v=$(decide abc "$d/thin.log" 0); rc=$?
     case "$v" in GO*) nok "1 row vs 8 declared gates -> '$v' (must not be GO)";; *) ok "row count below the declared floor is not GO";; esac

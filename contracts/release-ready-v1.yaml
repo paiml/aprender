@@ -1,8 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # release-ready-v1
 #
-# ONE LIST IN CODE of what is required to merge, to tag and to publish (bar B4;
+# THE GATE LIST. ONE LIST IN CODE of what is required to merge, to tag and to publish (bar B4;
 # BLD-001 row 4; ticket #4688).
+#
+# GATE OR LAB. A check is a GATE when it can block a merge or a release, and every GATE is a row
+# below. A check that is not a row is LAB: it cannot block, and it has no report-only state on a
+# PR, merge-queue or release path.
+# Print the list: `bash scripts/release/release_ready.sh --gates`.
 #
 # WHY. The requirements of a release were stated in five places that nobody
 # compared: ci.yml's `gate` job, CLAUDE.md's required checks, autopilot.sh's
@@ -20,7 +25,7 @@
 # 10; "-" never satisfies it).
 #
 # THE CHECKER is scripts/release/release_ready.sh (bash + awk, no Python). It
-# extracts every requirement the six surfaces state, and FAILS on:
+# extracts every requirement the seven surfaces state, and FAILS on:
 #   UNLISTED       a surface states a requirement the list lacks
 #   ORPHANED       a list entry whose checker is absent or lacks its needle, or
 #                  whose anchor no surface states any more
@@ -45,9 +50,17 @@
 #     (RR-T17), the assets are re-verified in `publish` (RR-P37), and the publish dry run
 #     moved ahead of the tag (RR-P07 -> RR-T16). HEAD: unlisted=0 orphaned=0 contradictions=1,
 #     the same publish.executor claim origin/main 682dab1e22 carries.
+#   #4912 (one GATE list): the T-1 lanes (deep, dogfood, models run as `t1_<step>`) were
+#     never read, so RR-T03..T11 were orphaned=9; now they are, and RR-T18..T20 list their
+#     `cargo metadata` calls. dogfood.sh is a surface: the 50 rows its pre-publish run can
+#     FAIL are RR-D01..D50, each `parent: RR-T09` (the dogfood step). HEAD: unlisted=0
+#     orphaned=0 contradictions=1 (publish.executor, as above); `--gates` prints gates=69.
 #
-# REPORT-ONLY TODAY. No gate calls the checker. It becomes blocking only as a
-# ratchet after three green nights (L31), and only by an operator sign-off.
+# A ROW (`parent: <id>`) is part of the GATE it names: checked like any entry, printed
+# under that GATE by `--gates`, and never counted in its total.
+#
+# THE CHECKER IS LAB. No gate calls it. It becomes a GATE only with an operator
+# yes, after three green nights on main, and with one gate retired for the one added.
 # ─────────────────────────────────────────────────────────────────────────────
 name: release-ready
 version: "1.0.0"
@@ -89,7 +102,7 @@ metadata:
 equations:
   rr_listed_equals_stated:
     formula: |
-      let S = anchors stated by the six surfaces (release_ready.sh --found)
+      let S = anchors stated by the seven surfaces (release_ready.sh --found)
       let A = { e.anchor : e in requirements }
       UNLISTED = S \ A,  ORPHANED_STALE = A \ S
       |UNLISTED| = 0  and  |ORPHANED_STALE| = 0
@@ -172,7 +185,7 @@ falsification_tests:
 non_goals:
   - "Running any checker. The list says what is required and where it is checked; each checker proves itself."
   - "Changing GitHub's required status checks or rulesets. The probe reads them; the operator changes them."
-  - "Blocking any merge, tag or publish today. Wiring is a proposal (three green nights first, L31)."
+  - "Blocking any merge, tag or publish. The checker is LAB; it becomes a GATE only with an operator yes, after three green nights on main, and with one gate retired for the one added."
   - "Resolving producer names. Each publish entry must name a producer (checked non-empty); the names are lanes of the nightly release train, which is not on main yet. Resolving them against that lane table is follow-up work, not done here."
   - "Known extractor limits (a requirement written in these forms is not seen, so it cannot be flagged unlisted): a checker invoked across a backslash line continuation; a cascade refusal not written as `if ! <fn|bash script>` nor as a top-level `if [ … ]` block before the upload loop; a publish_strict.sh refusal that is not a `die` (a bare `exit`); a needle that survives only in a comment still counts as present; a function name inside an echo string counts as a call."
 
@@ -188,9 +201,6 @@ requirements:
   - {id: RR-M03, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main", checker: ".github/workflows/ci.yml#  x86-main:", provenance: "#4433 (5 fat jobs; gate needs)", producer: "ci-main"}
   - {id: RR-M04, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/workspace-test", checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "#4433 (gate needs; workspace-test fan-in)", producer: "ci-main"}
   - {id: RR-M05, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/determinism", checker: ".github/workflows/ci.yml#  determinism:", provenance: "#4433 (gate needs)", producer: "ci-main"}
-  - {id: RR-M06, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mutants-table-scope", checker: ".github/workflows/ci.yml#  mutants-table-scope:", provenance: "#4646 mutants ratchet (report-only, operator ruling 2026-10-01)", producer: "mutants", key: "merge.mutants.mode", value: "report"}
-  - {id: RR-M07, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mutants-table", checker: ".github/workflows/ci.yml#  mutants-table:", provenance: "#4646 mutants ratchet (report-only, operator ruling 2026-10-01)", producer: "mutants", key: "merge.mutants.mode", value: "report"}
-  - {id: RR-M08, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/yoga", checker: ".github/workflows/ci.yml#  yoga:", provenance: "#4621 (needed for its mutants-cuda section alone)", producer: "cuda"}
   - {id: RR-M09, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-tree", checker: ".github/workflows/ci.yml#guard-tree", provenance: "#4433 (gate section pair; was gate need guard-tree)", producer: "guards"}
   - {id: RR-M10, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-cargo", checker: ".github/workflows/ci.yml#guard-cargo", provenance: "#4433 (gate section pair; was gate need guard-cargo)", producer: "guards"}
   - {id: RR-M11, applies_to: [merge], anchor: "merge:ci.yml/gate/section/sov.gate", checker: ".github/workflows/ci.yml#sov.*", provenance: "#4433 (gate section pair; sovereign-ci gate)", producer: "ci-main"}
@@ -216,6 +226,59 @@ requirements:
   - {id: RR-T15, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/tag_coverage_gate.sh --resolve", checker: "scripts/release/tag_coverage_gate.sh", provenance: "#4691 #4734 #4738 (coverage receipt >= COV_FLOOR before the tag)", producer: "coverage"}
   - {id: RR-T16, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/rc_publish_gate.sh --verify", checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball), moved ahead of the tag (#4690, was RR-P07)", producer: "publish-dryrun"}
   - {id: RR-T17, applies_to: [tag], anchor: "tag:autopilot/tag/gh-workflow binary-release.yml", checker: ".github/workflows/binary-release.yml", provenance: "#4690 the asset build is dispatched on the draft tag", producer: "assets"}
+  - {id: RR-T18, applies_to: [tag], anchor: "tag:autopilot/deep/cargo metadata --locked --no-deps", checker: "scripts/release/autopilot.sh#cargo metadata --locked --no-deps", provenance: "APR-RELEASE-001 T-1 deep (lockfile resolves)", producer: "deep-bins-build"}
+  - {id: RR-T19, applies_to: [tag], anchor: "tag:autopilot/commit/cargo metadata --no-deps --format-version", checker: "scripts/release/autopilot.sh#release commit carries version", provenance: "#3618 (the release commit carries the version being released)", producer: "ci-main"}
+  - {id: RR-T20, applies_to: [tag], anchor: "tag:autopilot/readiness/cargo metadata --no-deps --format-version", checker: "scripts/release/autopilot.sh#is not built from", provenance: "#3745 (readiness reads the apr built from the release commit)", producer: "readiness"}
+  - {id: RR-D01, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_multiplatform_dogfood", checker: "Cargo.toml#scripts/check_multiplatform_dogfood.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D02, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_model_ladder", checker: "Cargo.toml#scripts/check_model_ladder.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D03, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_ladder_provenance", checker: "Cargo.toml#scripts/check_ladder_provenance.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D04, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_ladder_serve_verdict", checker: "Cargo.toml#scripts/check_ladder_serve_verdict.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D05, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_serve_backend_record", checker: "Cargo.toml#scripts/check_serve_backend_record.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D06, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_ladder_output_judged", checker: "Cargo.toml#scripts/check_ladder_output_judged.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D07, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_dogfood_no_defer", checker: "Cargo.toml#scripts/check_dogfood_no_defer.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D08, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_tokenizer_nonascii_parity", checker: "Cargo.toml#scripts/check_tokenizer_nonascii_parity.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D09, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_verifier_pinning", checker: "Cargo.toml#scripts/check_verifier_pinning.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D10, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_dogfood_shim", checker: "Cargo.toml#scripts/check_dogfood_shim.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D11, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_bench_receipt", checker: "Cargo.toml#scripts/check_bench_receipt.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D12, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_parity_receipt", checker: "Cargo.toml#scripts/check_parity_receipt.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D13, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_no_claim_literals", checker: "Cargo.toml#scripts/check_no_claim_literals.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D14, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_perf041_marker", checker: "Cargo.toml#scripts/check_perf041_marker.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D15, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:float16_greedy_parity", checker: "Cargo.toml#scripts/float16_greedy_parity.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D16, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:tokenizer_parity", checker: "Cargo.toml#scripts/tokenizer_parity.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D17, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:surface_audit_bins_gate", checker: "Cargo.toml#scripts/surface_audit_bins_gate.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D18, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:dogfood_comparator_env_tests", checker: "Cargo.toml#scripts/dogfood_comparator_env_tests.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D19, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:package_tarball_build", checker: "Cargo.toml#scripts/package_tarball_build.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
+  - {id: RR-D20, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/git-clean", checker: "scripts/dogfood.sh#mark git-clean FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D21, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/dogfood-gates", checker: "scripts/dogfood.sh#mark dogfood-gates FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D22, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/version-unpublished", checker: "scripts/dogfood.sh#'version-unpublished FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D23, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/coverage", checker: "scripts/dogfood.sh#mark coverage FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D24, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/fmt", checker: "scripts/dogfood.sh#ci_mark fmt ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D25, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/clippy", checker: "scripts/dogfood.sh#gate clippy ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D26, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/security", checker: "scripts/dogfood.sh#gate security ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D27, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/security-2nd-source", checker: "scripts/dogfood.sh#mark security-2nd-source FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D28, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pmat-pin", checker: "scripts/dogfood.sh#mark pmat-pin FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D29, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/release-binary", checker: "scripts/dogfood.sh#mark release-binary FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D30, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/deterministic-tools", checker: "scripts/dogfood.sh#mark deterministic-tools FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D31, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pv-contracts", checker: "scripts/dogfood.sh#mark pv-contracts FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D32, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pv-lint", checker: "scripts/dogfood.sh#mark pv-lint FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D33, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pv-bindings", checker: "scripts/dogfood.sh#mark pv-bindings FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D34, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/bashrs", checker: "scripts/dogfood.sh#mark bashrs FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D35, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/renacer", checker: "scripts/dogfood.sh#gate renacer ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D36, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pmat-verify", checker: "scripts/dogfood.sh#gate pmat-verify ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D37, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pmat-comply", checker: "scripts/dogfood.sh#mark pmat-comply FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D38, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/contracts-exit-integrity", checker: "scripts/dogfood.sh#mark contracts-exit-integrity FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D39, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/contracts", checker: "scripts/dogfood.sh#gate contracts ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D40, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/cli-surface", checker: "scripts/dogfood.sh#mark cli-surface FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D41, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/transport-decl", checker: "scripts/dogfood.sh#mark transport-decl FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D42, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/transport-absence", checker: "scripts/dogfood.sh#mark transport-absence FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D43, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/interface-parity", checker: "scripts/dogfood.sh#mark interface-parity FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D44, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/transport-invariance", checker: "scripts/dogfood.sh#mark transport-invariance FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D45, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/surface-derivation", checker: "scripts/dogfood.sh#mark surface-derivation FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D46, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/probador-suite", checker: "scripts/dogfood.sh#gate probador-suite ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D47, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/dogfood-use", checker: "scripts/dogfood.sh#mark dogfood-use FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D48, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/model-parity-falsifier", checker: "scripts/dogfood.sh#mark model-parity-falsifier FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D49, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/model-parity", checker: "scripts/dogfood.sh#mark model-parity FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
+  - {id: RR-D50, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/test", checker: "scripts/dogfood.sh#ci_mark test ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
   - {id: RR-P01, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow clean-room.yml", checker: "scripts/release/autopilot.sh#clean-room.yml", provenance: "APR-RELEASE-001 T-3 (infra#621)", producer: "cleanroom-cpu"}
   - {id: RR-P02, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow b2-gpu.yml", checker: ".github/workflows/b2-gpu.yml", provenance: "APR-RELEASE-001 T-3 GPU-host ladder legs", producer: "cleanroom-gpu"}
   - {id: RR-P03, applies_to: [publish], anchor: "publish:autopilot/assets/gh-workflow binary-release.yml", checker: ".github/workflows/binary-release.yml", provenance: "#4657 #4659 release binaries", producer: "assets"}

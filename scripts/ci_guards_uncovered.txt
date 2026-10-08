@@ -8,5 +8,4 @@
 workspace-test-shard check_build_rs_paths.sh  # runs against the shard's built tree
 workspace-test-shard check_format_sovereignty.sh  # runs against the shard's built tree
 vendored-schemas check_vendored_schemas.sh  # its own job with its own checkout
-mutants check_cargo_install_private_root.sh  # runs inside the mutants job's install
 cuda-unit check_clippy_cuda.sh  # needs the CUDA toolchain on the GPU host (yoga), which the guard runner does not have

@@ -25,7 +25,22 @@ git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 [ -z "$(git status --porcelain)" ] || die "tree dirty: $(git status --porcelain | head -3 | tr '\n' ' ')"
 [ -e .cargo/config.toml ] && die ".cargo/config.toml present in the publish tree"
 [ -s "$HOME/.cargo/credentials.toml" ] || die "no publish token on this host (precondition 5)"
-[ "${1:-}" = "--plan" ] || [ -s "$AP/cleanroom-run-id" ] || die "no green clean-room run id recorded for $T (rule 7, #3335)"
+# One door (#4687): the recorded clean-room run id must be a run that went green on exactly
+# the tag's commit. A non-empty file is not proof; the run is read back and judged by the
+# cascade's own clean_room_gate, pinned to that one run. Missing, red or another commit: STOP.
+if [ "${1:-}" != "--plan" ]; then
+  crid=""; [ -s "$AP/cleanroom-run-id" ] && IFS= read -r crid < "$AP/cleanroom-run-id"
+  [ -n "$crid" ] || die "no clean-room run id recorded for $T (#3335)"
+  CRG="$AP/clean_room_gate.fns.sh"; : > "$CRG" || die "cannot write $CRG"
+  for fn in clean_room_parse_runs clean_room_parse_job clean_room_tested_abbrevs clean_room_tested_shas clean_room_gate; do
+    sed -n "/^${fn}() {/,/^}/p" "$REPO_ROOT/scripts/cascade-publish.sh" >> "$CRG"
+    grep -q "^${fn}() {" "$CRG" || die "cannot load $fn from scripts/cascade-publish.sh"
+  done
+  # shellcheck source=/dev/null
+  . "$CRG" || die "cannot load the clean-room gate"
+  crout=$(clean_room_gate "$WT" "$T" "$crid") || die "clean-room run $crid does not prove $T: $crout"
+  say "$crout"
+fi
 [ "${1:-}" = "--plan" ] || [ -s "$AP/b2gpu-run-id" ] || die "no green B2-gpu run id recorded for $T (rule 14)"
 [ "${1:-}" = "--plan" ] || [ -s "$AP/dryrun-receipt-commit" ] || die "no committed dry-run receipt (T-4)"
 
