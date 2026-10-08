@@ -249,7 +249,7 @@ if [ "${#T1_LANES[@]}" -gt 0 ]; then
     fi
     if [ "$s" = models ] && [ -n "$t1_held" ]; then
       s=$t1_held; t1_held=''
-      if [ -z "$t1_red" ]; then
+      if [ "$v" = GO ] && [ -z "$t1_red" ]; then
         set -m; "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; set +m
         say "STEP $s started: models is GO, its CRUX receipts are in $AP/models-t1"
       else

@@ -202,7 +202,7 @@ mutant shared-deep '/^  export CARGO_TARGET_DIR="\$REPO_ROOT\/target\/t1-deep"$/
 mutant shared-dogfood 's/target\/t1-dogfood"$/target\/t1-deep"/'
 mutant stopped-any-rc 's/ \&\& \[ "\$rc" -eq "\$t1_term_rc" \]; then v=STOPPED/; then v=STOPPED/'
 mutant no-hold     's/ || t1_held=dogfood ;; esac$/ || : ;; esac/'
-mutant held-after-red 's/^      if \[ -z "\$t1_red" \]; then$/      if :; then/'
+mutant held-after-red 's/^      if \[ "\$v" = GO \] && \[ -z "\$t1_red" \]; then$/      if :; then/'
 mutant no-crux-env '/export MODEL_LADDER_CRUX_DIR="\$AP\/models-t1"/d'
 nm=$((nm + 1))
 sed -e 's/flock -E 75 -w "\${MODEL_LADDER_LOCK_WAIT:-1800}" "\${MODEL_LADDER_GPU_LOCK:-\/tmp\/apr-gpu.lock}"/env/' "$PARITY" > "$TMP/m-parity.sh"
