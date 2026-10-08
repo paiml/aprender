@@ -36,7 +36,7 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 
 ## Git Workflow (Branch Protection)
 
-**`main` is protected.** Required status checks: `ci / gate` + `workspace-test`. Direct pushes blocked.
+**`main` is protected.** Required status checks: `ci / gate` + `gate` + `workspace-test`. Branch protection names ci / gate, the org ruleset names gate, and a merge needs both. Direct pushes blocked.
 
 1. Create feature branch: `git checkout -b <name>`
 2. Commit on branch, push: `git push -u origin <name>`

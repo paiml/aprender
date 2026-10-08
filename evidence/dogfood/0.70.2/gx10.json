@@ -1,0 +1,221 @@
+{
+  "host": "gx10",
+  "arch": "aarch64",
+  "os": "Linux 6.17.0-1014-nvidia",
+  "cpu": "Cortex-X925",
+  "nproc": 20,
+  "accelerator": "NVIDIA GB10 sm_121",
+  "driver": "590.48.01",
+  "version_tested": "0.70.2",
+  "date": "2026-10-07",
+  "produced_by": "scripts/release/host_receipt.sh (the release train, #3731)",
+  "provenance": "crates.io",
+  "asset": "aprender-0.70.2.crate",
+  "install_command": "cargo install aprender --version =0.70.2 --locked --root <scratch>",
+  "install_rc": 0,
+  "install_wall_seconds": 125,
+  "crates_compiled": 543,
+  "sha256_published": "df568905f1a091b63790f1866853067aaa9f3e595b8aeace50d81c36e75a3faa",
+  "sha256_measured": "df568905f1a091b63790f1866853067aaa9f3e595b8aeace50d81c36e75a3faa",
+  "binary_path": "/tmp/tmp.meUBqsw4eq/.receipt-work/root/bin/apr",
+  "binary_sha256": "c8e9e954e8dad5a6e87a132a5c96446fa91a21750a2819ca158c12906ec1898b",
+  "binary_version_output": "apr 0.70.2 (89e261cda)",
+  "devices": {
+    "schema": "apr-devices-v1",
+    "discovered_at_unix": 1791396399,
+    "source": "machine",
+    "reserve_bytes": 3758096384,
+    "reserve_basis": "[U] default until master row 6 measures vram_peak",
+    "entries": [
+      {
+        "kind": "cpu",
+        "api": "cpu",
+        "device_index": null,
+        "device_uid": "host-cpu",
+        "device_name": "aarch64 host cpu, 20 threads",
+        "vendor": "host",
+        "vendor_id": null,
+        "device_type": "cpu",
+        "mem_total": 128453623808,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "unified",
+          "working_set_limit": null
+        },
+        "compute_class": "neon",
+        "caps": [],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "ready"
+        },
+        "transport": null
+      },
+      {
+        "kind": "cuda",
+        "api": "cuda-driver",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "not-compiled"
+        },
+        "transport": null
+      },
+      {
+        "kind": "wgpu",
+        "api": "wgpu",
+        "device_index": 0,
+        "device_uid": "nvidia:nvidia-gb10",
+        "device_name": "NVIDIA GB10",
+        "vendor": "NVIDIA",
+        "vendor_id": 4318,
+        "device_type": "integrated-gpu",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "unified",
+          "working_set_limit": 4503599627370496
+        },
+        "compute_class": null,
+        "caps": [
+          "max_buffer_size=4503599627370496"
+        ],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "ready"
+        },
+        "transport": "vulkan"
+      },
+      {
+        "kind": "wgpu",
+        "api": "wgpu",
+        "device_index": 1,
+        "device_uid": "unknown:llvmpipe--llvm-20-1-2--128-bits",
+        "device_name": "llvmpipe (LLVM 20.1.2, 128 bits)",
+        "vendor": "unknown",
+        "vendor_id": null,
+        "device_type": "software",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [
+          "max_buffer_size=2147483647"
+        ],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "software rasteriser (llvmpipe (LLVM 20.1.2, 128 bits)) is not a GPU"
+        },
+        "transport": "vulkan"
+      },
+      {
+        "kind": "metal",
+        "api": "metal",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "no native Metal backend in 0.66 (a Metal adapter appears under wgpu)"
+        },
+        "transport": null
+      },
+      {
+        "kind": "hip",
+        "api": "hip",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "no HIP backend in 0.66"
+        },
+        "transport": null
+      }
+    ],
+    "selected": {
+      "kind": "wgpu",
+      "device_index": 0,
+      "device_uid": "nvidia:nvidia-gb10",
+      "reason": "first Ready non-cpu entry; 1 physical device(s) Ready"
+    }
+  },
+  "unmeasured": [
+    "accel lane: the crates.io build carries no `cuda` feature (apr-cli default features), so no CUDA lane is measured in this receipt; the CUDA binary is the release asset, which the train's hosts step runs",
+    "bench: bench_host_receipt.sh refused (rc 1)",
+    "parity: parity_host_receipt.sh refused (rc 1)"
+  ],
+  "generate": {
+    "model": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "model_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+    "backend_line_verbatim": "",
+    "fallback_line_verbatim": null,
+    "used_gpu": false,
+    "tokens": 1,
+    "wall_ms": 7715,
+    "output_sane": true,
+    "prompt": "What is 2+2? Answer with just the number."
+  },
+  "bench_attempt": {
+    "status": "refused",
+    "rc": 1,
+    "reason": "FAIL  apr bench exited non-zero; NOT writing a bench block. |       A receipt that records a failed measurement as a measurement is |       the fabricated-measurement shape (F12)."
+  },
+  "parity_attempt": {
+    "status": "refused",
+    "rc": 1,
+    "reason": "        band[8].aggregate_tok_per_sec.subject.aggregate_tok_per_sec: contains a non-positive rate -- a throughput of zero or less is not a measurement |         band[16].aggregate_tok_per_sec.subject.aggregate_tok_per_sec: contains a non-positive rate -- a throughput of zero or less is not a measurement | REPORT exit 1: work directory kept for diagnosis: /tmp/tmp.w7KlMJzPja"
+  }
+}

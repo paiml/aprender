@@ -21,7 +21,7 @@ use futures::stream::Stream;
 
 use super::{
     build_trace_data, clean_chat_output, format_chat_messages,
-    format_chat_messages_for_state_thinking, AppState, ChatChoice, ChatCompletionChunk,
+    format_chat_messages_for_state_thinking_tools, AppState, ChatChoice, ChatCompletionChunk,
     ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse, FinishReason,
     OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
 };
@@ -90,12 +90,13 @@ fn tokenize_chat_prompt(
     messages: &[ChatMessage],
     model_hint: Option<&str>,
     thinking: Option<bool>,
+    tools: Option<&[super::OpenAiTool]>,
     state: &AppState,
 ) -> Result<Vec<u32>, Response> {
     // #3723: the request's thinking mode; an ON the model's template cannot express is the
-    // client's error, answered by name.
+    // client's error, answered by name. #4650: the request's tools reach the template too.
     let prompt_text =
-        format_chat_messages_for_state_thinking(state, messages, model_hint, thinking)
+        format_chat_messages_for_state_thinking_tools(state, messages, model_hint, thinking, tools)
             .map_err(|e| fail_response(state, StatusCode::BAD_REQUEST, e.to_string()))?;
     let ids = tokenizer.encode(&prompt_text);
     if ids.is_empty() {
@@ -639,8 +640,21 @@ fn build_tool_calling_message(
 
     let defs: Vec<crate::grammar::ToolDefinition> =
         tools.iter().map(super::OpenAiTool::to_grammar).collect();
-    let mut parser = ToolCallParser::new(defs);
-    let calls = parser.parse(&text);
+    // #4650: Qwen3.5's template instructs `<function=NAME><parameter=P>` XML. When the
+    // text carries that marker the XML parser goes FIRST: a parameter value may hold
+    // JSON shaped like a tool call, and the default parser would take that inner object
+    // as the call. With the marker the XML result is FINAL, so an XML call to an
+    // undeclared tool stays content rather than falling back to the JSON inside it. The
+    // price: a JSON call whose string argument quotes a whole declared `<function=…>`
+    // block resolves to that XML call, and JSON in text that only mentions the marker
+    // is not read.
+    let calls = if text.contains("<function=") {
+        ToolCallParser::new(defs)
+            .with_format(crate::grammar::ToolCallFormat::QwenXml)
+            .parse(&text)
+    } else {
+        ToolCallParser::new(defs).parse(&text)
+    };
 
     if calls.is_empty() {
         return (
@@ -1071,6 +1085,7 @@ fn try_gpu_backend(
         &request.messages,
         arch_hint.as_deref(),
         request.thinking(),
+        request.tools.as_deref(),
         state,
     ) {
         Ok(ids) => ids,
@@ -1188,6 +1203,7 @@ fn try_cached_backend(
         &request.messages,
         arch_hint.as_deref(),
         request.thinking(),
+        request.tools.as_deref(),
         state,
     ) {
         Ok(ids) => ids,
@@ -1426,6 +1442,109 @@ mod pmat801_tool_calling_tests {
         assert_eq!(msg.role, "assistant");
     }
 
+    fn args_of(msg: &ChatMessage) -> serde_json::Value {
+        let calls = msg.tool_calls.as_ref().expect("tool_calls populated");
+        assert_eq!(calls.len(), 1);
+        serde_json::from_str(&calls[0].function.arguments).expect("arguments is JSON")
+    }
+
+    /// #4650 must-RED on main: Qwen3.5's template tells the model to call in XML, and the
+    /// parser read only JSON, so a correct call came back as plain content.
+    #[test]
+    fn qwen35_xml_tool_call_populates_tool_calls_4650() {
+        let tools = vec![weather_tool()];
+        let generated = "I'll check.\n\n<tool_call>\n<function=get_weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>".to_string();
+        let (msg, reason) = build_tool_calling_message(generated, "stop".to_string(), &tools, None);
+        assert_eq!(reason, "tool_calls");
+        assert_eq!(
+            msg.tool_calls.as_ref().expect("calls")[0].function.name,
+            "get_weather"
+        );
+        assert_eq!(args_of(&msg), serde_json::json!({"city": "Paris"}));
+    }
+
+    /// Values are typed by the tool's schema: an integer parameter is a JSON number, a
+    /// string parameter stays the string the model wrote even when it looks numeric.
+    #[test]
+    fn qwen35_xml_values_follow_the_schema_types_4650() {
+        let tool = OpenAiTool {
+            tool_type: "function".to_string(),
+            function: OpenAiFunctionDef {
+                name: "lookup".to_string(),
+                description: "Lookup".to_string(),
+                parameters: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": { "zip": { "type": "string" }, "days": { "type": "integer" } },
+                    "required": ["zip", "days"],
+                })),
+            },
+        };
+        let generated = "<tool_call>\n<function=lookup>\n<parameter=zip>\n02134\n</parameter>\n<parameter=days>\n3\n</parameter>\n</function>\n</tool_call>".to_string();
+        let (msg, reason) =
+            build_tool_calling_message(generated, "stop".to_string(), &[tool], None);
+        assert_eq!(reason, "tool_calls");
+        assert_eq!(
+            args_of(&msg),
+            serde_json::json!({"zip": "02134", "days": 3})
+        );
+    }
+
+    /// must-RED with JSON parsed first: an XML call whose parameter value is itself a
+    /// JSON tool-call object. The default parser took the inner object as the call and
+    /// the real XML call was lost.
+    #[test]
+    fn qwen35_xml_call_wins_over_json_inside_a_parameter_4650() {
+        let note = OpenAiTool {
+            tool_type: "function".to_string(),
+            function: OpenAiFunctionDef {
+                name: "save_note".to_string(),
+                description: "Save a note".to_string(),
+                parameters: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": { "body": { "type": "string" } },
+                    "required": ["body"],
+                })),
+            },
+        };
+        let tools = vec![weather_tool(), note];
+        let inner = r#"{"name": "get_weather", "arguments": {"city": "NYC"}}"#;
+        let generated = format!(
+            "<tool_call>\n<function=save_note>\n<parameter=body>\n{inner}\n</parameter>\n</function>\n</tool_call>"
+        );
+        let (msg, reason) = build_tool_calling_message(generated, "stop".to_string(), &tools, None);
+        assert_eq!(reason, "tool_calls");
+        assert_eq!(
+            msg.tool_calls.as_ref().expect("calls")[0].function.name,
+            "save_note"
+        );
+        assert_eq!(args_of(&msg), serde_json::json!({"body": inner}));
+    }
+
+    /// must-RED with a JSON fallback after XML: an XML call to an undeclared tool parses to
+    /// nothing, and the fallback took the JSON in its parameter as a declared call.
+    #[test]
+    fn qwen35_undeclared_xml_call_does_not_promote_inner_json_4650() {
+        let tools = vec![weather_tool()];
+        let generated = "<tool_call>\n<function=rm_rf>\n<parameter=cmd>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"NYC\"}}\n</parameter>\n</function>\n</tool_call>".to_string();
+        let (msg, reason) =
+            build_tool_calling_message(generated.clone(), "stop".to_string(), &tools, None);
+        assert_eq!(reason, "stop");
+        assert!(msg.tool_calls.is_none());
+        assert_eq!(msg.content, generated);
+    }
+
+    /// A call to a tool the request never declared is not a tool call.
+    #[test]
+    fn qwen35_xml_call_to_an_undeclared_tool_stays_content_4650() {
+        let tools = vec![weather_tool()];
+        let generated = "<tool_call>\n<function=rm_rf>\n<parameter=path>\n/\n</parameter>\n</function>\n</tool_call>".to_string();
+        let (msg, reason) =
+            build_tool_calling_message(generated.clone(), "stop".to_string(), &tools, None);
+        assert_eq!(reason, "stop");
+        assert!(msg.tool_calls.is_none());
+        assert_eq!(msg.content, generated);
+    }
+
     /// tool_choice "none" skips parsing even when a tool call is present in text.
     #[test]
     fn tool_choice_none_skips_parsing() {
@@ -1563,7 +1682,8 @@ mod chat_template_wiring_3990 {
             official, legacy,
             "the probe must distinguish the two renders"
         );
-        let got = tokenize_chat_prompt(&tokenizer, &msgs, None, None, &state).expect("tokenizes");
+        let got =
+            tokenize_chat_prompt(&tokenizer, &msgs, None, None, None, &state).expect("tokenizes");
         assert_eq!(
             got,
             tokenizer.encode(&official),
@@ -1604,8 +1724,9 @@ mod chat_template_wiring_3990 {
                 official,
                 "the probe must distinguish ({client_model})"
             );
-            let got = tokenize_chat_prompt(&tokenizer, &msgs, Some(client_model), None, &state)
-                .expect("tokenizes");
+            let got =
+                tokenize_chat_prompt(&tokenizer, &msgs, Some(client_model), None, None, &state)
+                    .expect("tokenizes");
             assert_eq!(
                 got,
                 tokenizer.encode(&official),
@@ -1706,8 +1827,8 @@ mod thinking_on_refusal_3723 {
             content: "Hi".to_string(),
             ..Default::default()
         }];
-        assert!(tokenize_chat_prompt(&tokenizer, &msgs, None, Some(false), &state).is_ok());
-        let refused = tokenize_chat_prompt(&tokenizer, &msgs, None, Some(true), &state);
+        assert!(tokenize_chat_prompt(&tokenizer, &msgs, None, Some(false), None, &state).is_ok());
+        let refused = tokenize_chat_prompt(&tokenizer, &msgs, None, Some(true), None, &state);
         assert!(
             refused.is_err(),
             "Qwen2.5's template renders ON == OFF; ON must be refused"
@@ -1715,6 +1836,43 @@ mod thinking_on_refusal_3723 {
         assert_eq!(
             refused.err().map(|r| r.status()),
             Some(StatusCode::BAD_REQUEST)
+        );
+    }
+}
+
+/// #4711: `tokenize_chat_prompt` returns the encoding of the prompt it rendered. The only other
+/// callers hash its output against itself, so a body returning a constant id list passed them
+/// all. This one needs no model file: the demo state renders and encodes on any host.
+#[cfg(test)]
+mod tokenize_chat_prompt_4711 {
+    use super::*;
+
+    fn user(content: &str) -> ChatMessage {
+        ChatMessage {
+            role: "user".to_string(),
+            content: content.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn returns_the_encoding_of_the_rendered_prompt_4711() {
+        let state = AppState::demo().expect("demo state");
+        let tokenizer = require_tokenizer(&state).unwrap_or_else(|_| panic!("demo tokenizer"));
+        let msgs = [user("Hello there, how are you?")];
+        let text = format_chat_messages_for_state_thinking_tools(&state, &msgs, None, None, None)
+            .expect("renders");
+        let want = tokenizer.encode(&text);
+        // A one-id oracle could not tell the real body from `Ok(vec![0])` or `Ok(vec![1])`.
+        assert!(
+            want.len() >= 2,
+            "the probe must encode to more than one id, got {want:?}"
+        );
+        let got = tokenize_chat_prompt(&tokenizer, &msgs, None, None, None, &state)
+            .unwrap_or_else(|_| panic!("tokenizes"));
+        assert_eq!(
+            got, want,
+            "the ids are not the encoding of the rendered prompt"
         );
     }
 }

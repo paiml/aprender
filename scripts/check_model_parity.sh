@@ -271,7 +271,13 @@ while IFS= read -r name; do
     case " $seen " in *" $f "*) printf 'ALIAS %s -> %s (already measured under a longer name)\n' "$name" "$(basename "$f")"; continue ;; esac
     seen="$seen $f"
     j="$OUT/$name.json"; measured=$((measured + 1))
-    prc=0; "$APR_BIN" parity "$f" --prompt "$PROMPT" --json > "$j" 2> "$j.err" || prc=$?
+    # The release runs this (dogfood) beside the model ladder (models) on the same GPU, so each parity
+    # takes the fleet GPU lock the ladder takes per apr call (scripts/model_ladder.sh apr_locked).
+    # Under choom 1000, as the ladder runs, so a measurement and never the host is the OOM victim.
+    # A lock not free in time is exit 75: a FAIL that names the lock, never a pass.
+    prc=0; flock -E 75 -w "${MODEL_LADDER_LOCK_WAIT:-1800}" "${MODEL_LADDER_GPU_LOCK:-/tmp/apr-gpu.lock}" \
+        choom -n 1000 -- "$APR_BIN" parity "$f" --prompt "$PROMPT" --json > "$j" 2> "$j.err" || prc=$?
+    [ "$prc" != 75 ] || printf 'the fleet GPU lock was not free in %ss; nothing was measured\n' "${MODEL_LADDER_LOCK_WAIT:-1800}" >> "$j.err"
     if [ "$prc" != 0 ]; then
         # A refusal is NOT a measurement: it must not hold the vacuity floor
         # ("nothing measured is not a pass") green on a host where every model

@@ -1,0 +1,125 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "f048_still_fails_on_nonfinite_output",
+          "level": "note",
+          "message": {
+            "text": "RmsNormBrick::run (crates/aprender-serve/src/brick/brick_impls.rs:58-88, included by mod.rs:439) builds the output, then runs every assertion from assertions(): no_nan, no_inf, budget_met, through AssertionKind::check_f32 (mod.rs:299-338). A NaN or Inf output returns Err(AssertionFailed), so brick.run(..).expect(\"operation failed\") panics in the test; the test's own is_nan and is_finite asserts are unchanged and also fail. The delta removes only the wall-time budget."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "RmsNormBrick run",
+              "--include-source",
+              "--limit",
+              "3"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "not_recorded",
+            "failure_scenario": "an eps change that makes rms zero gives NaN or Inf output; run returns Err and the test fails",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "removed_budget_hides_nothing_the_test_claims",
+          "level": "note",
+          "message": {
+            "text": "The test is named f048_rmsnorm_epsilon and its comment says it checks that epsilon prevents division by zero on near-zero input. That property is the finiteness of the output, still asserted three ways (run's no_nan/no_inf, then the two test asserts). The 1 ms budget was a latency check on a loaded runner, which the name does not claim. Latency stays covered by the other brick tests that keep real budgets, e.g. rmsnorm_brick_runs in tests_f001_brick_f002.rs:143."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of the test at tests_r006_fused.rs:327-346 and of RmsNormBrick::run",
+            "failure_scenario": "none found; a latency regression in RmsNorm is not this test's job",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "f64_max_budget_no_overflow_or_nan",
+          "level": "note",
+          "message": {
+            "text": "TokenBudget::from_latency(f64::MAX) (mod.rs:60) stores us_per_token = f64::MAX and tokens_per_sec = 1_000_000.0 / f64::MAX, about 5.6e-303: a finite positive normal value, no underflow to zero, no NaN. TokenResult::new computes budget.is_met(us_per_token), which is actual <= f64::MAX: always true for a finite actual (elapsed microseconds cast from u128 to f64). No arithmetic on f64::MAX that could overflow occurs on this path; gap_factor is actual / MAX, which is finite and not called here. budget_met is therefore true and the budget_met assertion passes."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of from_latency, is_met, gap_factor and TokenResult::new",
+            "failure_scenario": "none: only NaN actual or a NaN budget would make the comparison false, neither is reachable",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "delta_scope_one_test_only",
+          "level": "note",
+          "message": {
+            "text": "git diff ab53111dfc 7f4fca56c4 touches only crates/aprender-serve/src/brick/tests_r006_fused.rs: one comment line and one expression in f048_rmsnorm_epsilon. No production code, no other test, no workflow or manifest. The comment says FLAKE-0, which matches the fleet rule on flaky tests. Nothing else in the delta."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "diff",
+              "ab53111dfc",
+              "7f4fca56c4"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "not_recorded",
+            "failure_scenario": "none",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "dup_args_of_name_collision",
+          "level": "note",
+          "message": {
+            "text": "Three lexical hits for the name args_of at HEAD in crates/aprender-contracts/src/ontology/extract/cli_surface.rs lines 209, 217, 232. This diff defines args_of only as a test-local helper in a test module of crates/aprender-serve/src/api/openai_handlers.rs (a fn over ChatMessage returning the tool-call arguments as JSON) and never calls or imports the contracts function, which belongs to a different crate and domain (CLI surface extraction). Same name, no shared behaviour: not prior art and not a second implementation."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "dee8802d9a",
+              "--head",
+              "7f4fca56c4"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "not_recorded",
+            "failure_scenario": "none: a rename of either helper cannot affect the other, they share no module",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "dup_pmat_4650_yaml_superseded_branches",
+          "level": "note",
+          "message": {
+            "text": "Four lexical filename hits for docs/roadmaps/entries/PMAT-4650.yaml on origin/fix/4650-qwen35-tools-template, origin/keep/4711-ae9d0ee6c5, origin/keep/fix/4650-qwen35-tools-template and origin/pr/4711. All are branches of the same ticket, including the superseded #4711 line whose net change this PR rebuilds. They are lineage of the one roadmap entry this PR adds, not a parallel implementation; the old branches are not merge candidates."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "dee8802d9a",
+              "--head",
+              "7f4fca56c4"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "not_recorded",
+            "failure_scenario": "if a superseded branch were merged as well, two PMAT-4650.yaml files would collide; those branches are parked and not armed",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

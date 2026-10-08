@@ -1,0 +1,182 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "duplication_scan_no_hits",
+          "level": "note",
+          "message": {
+            "text": "The lexical duplication scan over head, all 1539 unmerged sibling branches and the merge-base-to-main range (0 files) found 0 hits for the 24 symbols the diff adds. The diff changes no Rust file, so the pmat semantic index (Rust-only) was queried but cannot reach it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "e95ae8280fbf24433a853d0b73a84e1516c2dedd",
+              "--head",
+              "deb4f19d5ea9d4b77086a7fcd630ca7229aaa6ed",
+              "--json",
+              "<out>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "6a88674b1b53b138795e06fe78c18ce1765ebcc7650f8bd4b94d74911e5d440e",
+            "failure_scenario": "A re-implementation under a different name is invisible to a name match; that residual is not covered.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ci_read_narrower_than_measured_test",
+          "level": "note",
+          "message": {
+            "text": "In pre-publish the test row now reads `workspace-test`, which the runner comment itself says is nextest --lib over the workspace, while the replaced row ran `cargo test $FEATS` (doctests, integration targets, bin tests, root facade). The runner records the narrowing in a comment but the receipt row says only `read, not re-run`."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Taken from the diff comment at scripts/dogfood.sh section 2c and CLAUDE.md Testing, which says only a subset of integration targets is wired into CI. Not measured by running anything.",
+            "failure_scenario": "A doctest or integration-only failure that CI does not run passes the pre-publish test row, because the row now means workspace-test green rather than cargo test green.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "committed_plants_killed",
+          "level": "note",
+          "message": {
+            "text": "The committed planted-defect sets of check_dogfood_reads_ci.sh (9 plants) and check_dogfood_row_order.sh (2 plants) are all killed: both --self-test runs exit 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_dogfood_reads_ci.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "542142ef51e2f92a7d6370d1e99d028e0e81b1e4b2ef29ee09f04a2e63adb258",
+            "failure_scenario": "If a plant survived, a runner defect the guard claims to catch would pass unnoticed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_blind_to_cov_mark_move",
+          "level": "warning",
+          "message": {
+            "text": "Extra mutant outside the committed set: a copy of scripts/dogfood.sh with the pre-publish `cov_mark` call (a long row) moved from line 1818 to just after `ci_mark fmt` (line 706) still passes check_dogfood_row_order.sh --file, which reports O1-O3 PASS with the long rows starting at line 1818 and counting only 140 rows. row_calls requires an argument after the wrapper name, so the zero-argument `cov_mark` is not a row call and O1 never sees it."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_dogfood_row_order.sh",
+              "--file",
+              "<dogfood.sh with cov_mark moved to line 707>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3948fe1b0dd67c437e2a0042b66e62773bc36193a13443e645cb75d24b1ee4d1",
+            "failure_scenario": "cov_mark (the coverage row, a DOGFOOD_LONG_ROWS member) can be moved ahead of the cheap rows in the pre-publish branch and the order guard stays green, so the hours-long coverage read-through would again delay a red cheap row; today cov_mark only reads a receipt, so the cost is small but the guard states a rule it does not test.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "check_dogfood_row_order-blind-to-cov-mark",
+          "level": "warning",
+          "message": {
+            "text": "The row_calls function in scripts/check_dogfood_row_order.sh silently ignores the zero-argument cov_mark row wrapper."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "source scripts/check_dogfood_row_order.sh; row_calls scripts/dogfood.sh | grep cov_mark"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "de809a82013492312c2ad4df20ac310a0a45a6bce10449a04d63a627e535cecb",
+            "failure_scenario": "Because the regular expression `[[:space:]]+[^[:space:];&|)]+` strictly demands at least one argument, any zero-argument wrapper like `cov_mark` fails to match and becomes entirely invisible to the static checker. If `cov_mark` were accidentally moved before a cheap row, the order guard `O1` would fail to detect the violation and still erroneously report a PASS.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "dogfood-unreachable-coverage-check",
+          "level": "warning",
+          "message": {
+            "text": "The coverage-check elif branch for the pre-publish phase is unreachable dead code."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "-C",
+              "5",
+              "elif [ \"$DOGFOOD_PHASE\" = pre-publish ]; then",
+              "scripts/dogfood.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "de809a82013492312c2ad4df20ac310a0a45a6bce10449a04d63a627e535cecb",
+            "failure_scenario": "The entire `gate test` / `make coverage-check` block was moved into the `else` branch of `if [ \"$DOGFOOD_PHASE\" = pre-publish ]`. As a result, the `elif [ \"$DOGFOOD_PHASE\" = pre-publish ]` branch at line 1857 is logically unreachable. Any custom failure messaging or specific logic intended for the pre-publish phase in this block will never be executed, creating maintenance confusion.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -41,8 +41,8 @@
 #       through scripts/release/release_readiness.sh -- the same wrapper autopilot's T-1 `models` step
 #       calls on its fresh receipts; here it reads the COMMITTED receipts at HEAD, with the dogfood
 #       receipt R5 judged. Any non-zero from the wrapper refuses. The wrapper's committed DEFAULT_MODE
-#       is `report` until #3712's cells[] producer lands: a Fail verdict then prints as a WARN row and
-#       exits 0; a decline, a caller error or a missing pv is a non-zero in either mode.
+#       is `enforce` (#3715 B1, operator ruling 2026-09-28; there is no report mode): a Fail verdict
+#       refuses, and a decline, a caller error or a missing pv is a non-zero too.
 #       Under a RECORDED operator emergency scope (the ladder contract records exactly NAME for exactly
 #       this release; engaged by `--scope NAME`, or with no flag by that record itself -- C280.4, Q1,
 #       0.70.1) the wrapper still runs and its verdict and rc are printed as EVIDENCE, as the model

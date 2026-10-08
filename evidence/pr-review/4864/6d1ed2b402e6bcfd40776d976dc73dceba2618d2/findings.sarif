@@ -1,0 +1,76 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ignore_scoped_and_cited",
+          "level": "note",
+          "message": {
+            "text": "The diff adds exactly one attribute line in the Rust sources, #[ignore] with reason \"FLAKE-0 #4862\", directly above test_decision_span_event_attributes (the test that flaked at its cmd.assert().success() with ETXTBSY). The other ten tests in sprint31_ruchy_integration_tests.rs are unchanged and still run. The reason string cites the ticket, and docs/roadmaps/entries/PMAT-4862.yaml plus the roadmap.yaml entry carry the same id, issue and un-ignore criterion (Step 2)."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-profile/tests/sprint31_ruchy_integration_tests.rs",
+            "excerpt": "#[ignore = \"FLAKE-0 #4862\"]",
+            "excerpt_sha256": "75c3ca0907184225c71df6fcbb9ce26bfffac12e08b1cf379e94d70115e487b5",
+            "failure_scenario": "If the attribute sat on a neighbouring fn it would silence the wrong test; it sits on line 170 immediately before fn test_decision_span_event_attributes at line 171.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "sibling_tests_share_race",
+          "level": "note",
+          "message": {
+            "text": "Eleven set_permissions/exec sites exist in the same file, so the other script-writing tests share the write-fd/fork window that caused the ETXTBSY and can flake the same way until Step 2 lands. Not a defect of this PR: the PR states Step 2 as the follow-up, and quarantining only the observed flake is the stated scope."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "grep of set_permissions in the file at head returned 11 hits; the PR notes name the cause as a fork window affecting sibling test threads",
+            "failure_scenario": "A sibling test (for example test_decision_as_span_event) hits the same ETXTBSY on a loaded runner and a new FLAKE-0 ticket is needed; Step 2 of PMAT-4862 covers it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh found 2 needles (filenames) and 0 hits across 1529 of 1529 sibling branches; the diff adds no new named symbol."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json output read: hits_total 0, symbols_searched 2",
+            "failure_scenario": "A parallel quarantine of the same test on another branch under a different attribute text would escape a lexical scan; none was seen.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

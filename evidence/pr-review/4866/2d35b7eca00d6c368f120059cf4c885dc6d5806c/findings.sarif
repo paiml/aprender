@@ -1,0 +1,174 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "complexity_py_tojson",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity on chat_template_official.rs at head: py_tojson lines 173-214, cyclomatic 3, cognitive 4, nesting 4; file max cyclomatic 6, max cognitive 12. No function crosses 10."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--path",
+              "crates/aprender-serve/src/chat_template_official.rs",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "42c2ff01b0e36cac6f4dbf4a5af70fff7999eb2ad53b2af3229dd01e22edde53",
+            "failure_scenario": "a later branch in py_tojson (string indent, bool indent) pushes cyclomatic past 10",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "indent_semantics_match_json_dumps",
+          "level": "note",
+          "message": {
+            "text": "Read of py_tojson (chat_template_official.rs:173-214) against Python json.dumps(indent=N): serde PrettyFormatter with N spaces writes newline plus N-space padding, comma at line end, \": \" after a key, and [] and {} for empty containers, which is json.dumps output. indent=none and absent go to the compact PyJsonFormatter path. A negative N pads 0, as Python does (str * negative is empty). Positional and keyword indent are both read; unknown kwargs (sort_keys, ensure_ascii, separators) fail at assert_all_used. Non-ASCII and < > & are not escaped on either path, as HF tojson (ensure_ascii False)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of the diff and of serde_json PrettyFormatter semantics; no cargo run on this host",
+            "failure_scenario": "a Python-produced golden for a nested empty container under indent=2 differing from serde output would show a mismatch; none found by reading",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "new_tests_kill_ignore_indent_mutant",
+          "level": "note",
+          "message": {
+            "text": "tojson_takes_indent_as_json_dumps_does_4866 asserts the exact 4-space text for indent=4 and tojson(4), so a body that ignores indent (author mutant: match indent.filter(|_| false)) returns compact text and fails the assert_eq; a_llama3_style_tools_block_renders_4866 asserts the text contains a newline plus 4 spaces before \"type\", which compact output cannot contain. Both fail on the mutant by reading. The author reports the the author's test host run: 4 pass on the real body, 2 new tests fail on their own asserts under the mutant. Not re-run here."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of chat_template_official_tests.rs tests at head; author proof cited, not executed",
+            "failure_scenario": "a mutant that honours only the keyword form would be killed by the tojson(4) positional case; a mutant that honours only the positional form by the indent=4 case",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "negative_and_zero_indent_untested",
+          "level": "warning",
+          "message": {
+            "text": "The usize::try_from(n).unwrap_or(0) branch (negative indent) and indent=0 are not exercised by any test. A mutant that panics, errors or pads abs(n) on negative input survives. Code matches Python on reading; the guard is absent. Not blocking: no shipped template passes a negative indent."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "grep of the new tests: only indent=4, 4 and none are rendered",
+            "failure_scenario": "a refactor replacing unwrap_or(0) with n.unsigned_abs() would pad |n| and no test would fail",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "indent_type_edges_not_json_dumps",
+          "level": "note",
+          "message": {
+            "text": "Python json.dumps accepts a str indent (indent=\"\\t\") and a bool (True is 1). py_tojson refuses both through i64::try_from with indent must be an integer (a bool conversion is not confirmed by reading). A refusal falls back to the built-in template as before, so this is a gap, not a regression. aprender-w4578 records the str case as N2; agreed."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "read of the match arm at chat_template_official.rs:196-205",
+            "failure_scenario": "a template calling tojson(indent=\"\\t\") still fails to render and falls back",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Not queried in this lane. The delta is host-only string serialization; the whole-diff cuda_chat_backend.rs path was judged in the earlier receipt for this PR. Marked unreachable (not performed) rather than consulted."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Not run in this lane: crux contracts were not re-read for the 94b289cd61..2d35b7eca0 delta (a chat-template filter, no new endpoint or response field). Marked unreachable (not performed)."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "NOT run: host policy forbids cargo on this host. The author mutant proof for the indent mutant is cited, not re-run."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "agy did not run in this lane. No consultation was attempted; verdict DEGRADED."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
