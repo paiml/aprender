@@ -1,0 +1,18 @@
+- id: PMAT-4936
+  github_issue: 4936
+  item_type: task
+  title: 'x86-main: fat_driver self-test prints live ::error:: annotations (false 12000s red)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-10-08T14:17:11Z
+  updated: 2026-10-08T14:17:16.352731207+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
