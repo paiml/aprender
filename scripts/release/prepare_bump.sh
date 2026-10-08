@@ -10,7 +10,8 @@
 #                                      launch line for that PR. Case table: scripts/check_release_bump_pr_body.sh
 # The train's identity is DERIVED (#3618, lib_release_params.sh): milestone, epic, last tag and the
 # state dir AP come from GitHub and the repo, never from literals.
-# §4.1 (freeze: open milestone items move to the next milestone with slipped_from:) is done by hand before this.
+# §4 step 1, the freeze (open milestone items move to the next milestone with slipped_from:), runs first in the
+# first invocation, before the bump worktree exists (pb_freeze, #4929): no longer a hand step.
 set -uo pipefail
 die() { printf 'STOP %s\n' "$*" >&2; exit 1; }
 # The conventional-commit group of a merged PR: fix -> Fixed, feat -> Added, anything else -> Changed.
@@ -90,6 +91,31 @@ pb_carry_cert() {
     echo "CERT carried: $src -> $dst (apr_commit $base)"
 }
 
+# pb_freeze ROOT VERSION LOG -> 06x §4 step 1, the freeze, run here instead of by hand (D6, #4929). The same
+# three reads autopilot's cut_tag() makes at the tag, in the same order: must-carry (nothing moves while one is
+# open), carry every other open item out with slipped_from:, then the strict read (only the release epic open).
+# rc 0 frozen; 1 refused (an open must-carry issue, or an item still open after the carry); 2 could not judge or
+# could not carry. Unknown is never a pass.
+pb_freeze() {
+    local root=$1 v=$2 log=$3 rc=0
+    bash "$root/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$log" 2>&1 || rc=$?
+    case $rc in
+        0) ;;
+        1) echo "FREEZE refused: milestone $v holds open must-carry issue(s), nothing carried ($log)" >&2; return 1 ;;
+        *) echo "FREEZE: milestone $v could not be judged for must-carry (rc=$rc, $log)" >&2; return 2 ;;
+    esac
+    rc=0
+    bash "$root/scripts/release/carry_milestone_items.sh" "$v" >> "$log" 2>&1 || rc=$?
+    [ "$rc" = 0 ] || { echo "FREEZE: carrying the open items out of $v failed (carry_milestone_items.sh rc=$rc, $log)" >&2; return 2; }
+    rc=0
+    bash "$root/scripts/check_milestone_cut.sh" "$v" >> "$log" 2>&1 || rc=$?
+    case $rc in
+        0) echo "FREEZE $v: the milestone holds only its release epic (check_milestone_cut.sh rc=0)" ;;
+        1) echo "FREEZE refused: milestone $v still holds open item(s) after the carry ($log)" >&2; return 1 ;;
+        *) echo "FREEZE: milestone $v could not be judged (rc=$rc, $log)" >&2; return 2 ;;
+    esac
+}
+
 pb_self_test() {
     local d fail=0 got; d=$(mktemp -d) || return 2
     printf '%s' '[{"number":4,"title":"fixup: d"},{"number":1,"title":"Fix(x)!: a"},{"number":2,"title":"feat: b"},{"number":3,"title":"chore: c"}]' > "$d/m.json"
@@ -151,6 +177,28 @@ pb_self_test() {
     pb_carry_cert "$r" 0.71.0 base1 > /dev/null 2>&1; rc=$?
     if [ "$rc" = 2 ] && [ ! -e "$r/evidence/crux/0.71.0" ]; then echo "  ok   cert: an unreadable policy is rc 2, not \"no policy\""
     else echo "  FAIL cert: unreadable policy gave rc $rc"; fail=1; fi
+    # pb_freeze: stub milestone reads that log each call; the rc of each read comes from PBF_MC / PBF_CARRY / PBF_ST
+    r="$d/f"; mkdir -p "$r/scripts/release" || return 2
+    printf '#!/usr/bin/env bash\nif [ "${2:-}" = --must-carry ]; then echo mc >> "$PBF_CALLS"; exit "$PBF_MC"; fi\necho st >> "$PBF_CALLS"; exit "$PBF_ST"\n' > "$r/scripts/check_milestone_cut.sh"
+    printf '#!/usr/bin/env bash\necho carry >> "$PBF_CALLS"; exit "$PBF_CARRY"\n' > "$r/scripts/release/carry_milestone_items.sh"
+    pb_freeze_case() { # pb_freeze_case NAME MC CARRY ST WANT_RC WANT_CALLS
+        : > "$d/calls"
+        PBF_CALLS="$d/calls" PBF_MC=$2 PBF_CARRY=$3 PBF_ST=$4 pb_freeze "$r" 0.71.0 "$d/freeze.log" > /dev/null 2>&1; rc=$?
+        got=$(tr '\n' ' ' < "$d/calls")
+        if [ "$rc" = "$5" ] && [ "$got" = "$6" ]; then echo "  ok   freeze: $1"
+        else echo "  FAIL freeze: $1 (rc $rc, calls '$got'; want rc $5, calls '$6')"; fail=1; fi
+    }
+    pb_freeze_case "clean -> must-carry, carry, strict, in that order" 0 0 0 0 "mc carry st "
+    pb_freeze_case "an open must-carry issue -> refused, nothing carried" 1 0 0 1 "mc "
+    pb_freeze_case "must-carry unjudged -> rc 2, nothing carried" 2 0 0 2 "mc "
+    pb_freeze_case "the carry failed -> rc 2, no strict read" 0 1 0 2 "mc carry "
+    pb_freeze_case "an item left after the carry -> refused" 0 0 1 1 "mc carry st "
+    pb_freeze_case "strict unjudged -> rc 2, not a pass" 0 0 2 2 "mc carry st "
+    # The bump path freezes BEFORE it makes the bump worktree: no bump from an unfrozen milestone.
+    got=$(awk '/^  pb_freeze "\$REPO_ROOT"/ && !f { f = NR } /^  git worktree add -q -b "\$BR"/ && !w { w = NR }
+               END { print (f && w && f < w) ? "ordered" : "f=" f " w=" w }' "${BASH_SOURCE[0]}")
+    if [ "$got" = ordered ]; then echo "  ok   freeze: the bump path calls pb_freeze before its worktree add"
+    else echo "  FAIL freeze: the bump path does not freeze before the worktree add ($got)"; fail=1; fi
     rm -rf -- "${d:?}"
     if [ "$fail" -eq 0 ]; then echo "prepare_bump self-test: PASS"; else echo "prepare_bump self-test: FAIL"; fi
     return "$fail"
@@ -172,6 +220,10 @@ if [ "${2:-}" != "--ship" ]; then
   cd "$REPO_ROOT" || die "no repo"
   git fetch -q origin main || die "fetch failed"
   [ -e "$B" ] && die "$B exists: review it, or 'git worktree remove' it to start over"
+  pb_freeze "$REPO_ROOT" "$V" "$AP/freeze.log" || die "the freeze (06x §4 step 1) did not complete for $V, no bump ($AP/freeze.log)"
+  # The train's first freeze is its start (E1 B5, freeze to publish); a re-run after a worktree remove keeps it.
+  [ -f "$AP/freeze.json" ] || printf '{"version":"%s","frozen_at":"%s","origin_main":"%s"}\n' \
+      "$V" "$(date -u +%FT%TZ)" "$(git rev-parse origin/main)" > "$AP/freeze.json" || die "cannot write $AP/freeze.json"  # bashrs disable-line=DET002
   git worktree add -q -b "$BR" "$B" origin/main || die "worktree add failed"
   cd "$B" || die "cd $B"
   bash scripts/bump-version.sh "$V" > "$AP/bump.log" 2>&1 || die "bump-version.sh $V failed ($AP/bump.log)"
