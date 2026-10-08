@@ -1,0 +1,32 @@
+# The standing release policy (contracts/model-capability-ladder-v1.yaml, ladder.release_policy):
+# the nightly assets rehearsal cannot stop a release, and a night that is not green opens or
+# updates its one ticket, owned by the policy's ticket_owner. The rehearsal holds no credential
+# by design (assets_rehearsal.sh lint), so the ticket is written here, on its workflow_run.
+# This job checks out the default branch, never the rehearsal's head, and reads the event only
+# through env.
+name: Assets rehearsal tickets
+on:
+  workflow_run:
+    workflows: ["Assets rehearsal (nightly)"]
+    types: [completed]
+permissions: {}
+jobs:
+  ticket:
+    name: Open or update the rehearsal's ticket
+    if: ${{ github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.conclusion != 'skipped' && github.event.workflow_run.conclusion != 'neutral' }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write   # open or comment on the one ticket
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: Open or update the ticket
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: setsid --wait bash scripts/release/assets_rehearsal.sh ticket "$CONCLUSION" "$RUN_SHA" "$RUN_URL"

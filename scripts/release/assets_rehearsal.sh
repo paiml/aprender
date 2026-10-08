@@ -6,6 +6,7 @@
 #   bash scripts/release/assets_rehearsal.sh lint FILE       # FILE cannot upload
 #   bash scripts/release/assets_rehearsal.sh tag             # tag=v<workspace version>-rc.0
 #   bash scripts/release/assets_rehearsal.sh verify TAG DIR  # verdict over the built assets (env NEEDS)
+#   bash scripts/release/assets_rehearsal.sh ticket CONCLUSION SHA URL  # open/update the one ticket (gh)
 #   bash scripts/release/assets_rehearsal.sh --self-test     # the case table
 #
 # binary-release.yml runs only on `release: published` and on dispatch, so the release's
@@ -351,6 +352,57 @@ verify() {
     esac
 }
 
+
+# ticket CONCLUSION SHA URL: the standing release policy (contracts/model-capability-ladder-v1.yaml,
+# ladder.release_policy) makes this nightly one that cannot stop a release, and a night that is not
+# green opens or updates its ONE ticket, owned by the policy's ticket_owner. Run by
+# assets-rehearsal-tickets.yml on the rehearsal's workflow_run, which holds the issue credential
+# this workflow may not. failure -> red; any other conclusion that is not success, skipped or
+# neutral (cancelled, timed out, a startup failure) -> not_measured, which a ticket also records.
+# One comment per commit (the marker assets-rehearsal@<SHA>). No readable owner: no ticket, exit 1.
+# A read or write that fails is a failed run (exit 1), never a ticket. ASSETS_REHEARSAL_GH,
+# ASSETS_REHEARSAL_LADDER and ASSETS_REHEARSAL_POLICY_LIB point elsewhere (the case table only).
+TICKET_TITLE="assets-rehearsal nightly: not green"
+ticket() {
+    local concl=$1 c=$2 url=$3 gh=${ASSETS_REHEARSAL_GH:-gh} state owner mark j n len body page=50
+    local lib=${ASSETS_REHEARSAL_POLICY_LIB:-$ROOT/scripts/lib/release_policy.sh}
+    local ladder=${ASSETS_REHEARSAL_LADDER:-$ROOT/contracts/model-capability-ladder-v1.yaml}
+    command -v jq > /dev/null 2>&1 || die "jq not found"
+    [[ $c =~ ^[0-9a-f]{40}$ ]] || die "ticket: '$c' is not a commit sha"
+    case "$concl" in
+        success | skipped | neutral) echo "TICKET none: the rehearsal at ${c:0:9} concluded $concl"; return 0 ;;
+        failure) state=red ;;
+        ?*) state=not_measured ;;
+        *) die "ticket: empty conclusion" ;;
+    esac
+    . "$lib" || { echo "NO-TICKET: cannot load the release policy library $lib"; return 1; }
+    owner=$(rp_ticket_owner "$ladder") || { rp_ticket_owner "$ladder" > /dev/null; echo "NO-TICKET: no ticket owner, so no ticket is opened: $RP_WHY"; return 1; }
+    mark="assets-rehearsal@$c"
+    if ! j=$("$gh" issue list --state open --limit "$page" --search "\"$TICKET_TITLE\" in:title" --json number,title); then
+        echo "NOT-MEASURED: the issue search for '$TICKET_TITLE' failed"; return 1
+    fi
+    n=$(printf '%s' "$j" | jq -r --arg t "$TICKET_TITLE" '[.[] | select(.title == $t) | .number] | min // empty' 2> /dev/null)
+    # A search that fills its page may have cut the ticket off, and output that is not a JSON list
+    # proves nothing: either way a missing title is not "no ticket", so nothing is opened.
+    if [ -z "$n" ]; then
+        len=$(jq 'if type == "array" then length else error end' <<< "$j" 2> /dev/null) || len=""
+        if ! [[ "$len" =~ ^[0-9]+$ ]] || [ "$len" -ge "$page" ]; then
+            echo "NOT-MEASURED: the issue search for '$TICKET_TITLE' returned a full page or no readable list"; return 1
+        fi
+    fi
+    body="The nightly assets rehearsal at ${c:0:9} is $state ($concl): $url. Under the standing release policy this nightly cannot stop a release; the release notes list it as a known failure with this ticket until it is green. Owner: $owner. $mark"
+    if [ -n "$n" ]; then
+        if ! j=$("$gh" issue view "$n" --json body,comments); then echo "NOT-MEASURED: reading #$n failed"; return 1; fi
+        if grep -qF -- "$mark" <<< "$j"; then echo "TICKET kept #$n (already names ${c:0:9})"
+        elif "$gh" issue comment "$n" --body "$body" > /dev/null; then echo "TICKET updated #$n: $state"
+        else echo "NOT-MEASURED: commenting on #$n failed"; return 1; fi
+    else
+        if ! n=$("$gh" issue create --title "$TICKET_TITLE" --body "$body"); then echo "NOT-MEASURED: opening the ticket failed"; return 1; fi
+        n=${n##*/}
+        [[ $n =~ ^[0-9]+$ ]] || { echo "NOT-MEASURED: opening the ticket printed no issue url"; return 1; }
+        echo "TICKET opened #$n: $state"
+    fi
+}
 # ---------------------------------------------------------------------------------------
 PASS=0; FAIL=0
 row() { # row NAME WANT_RC GOT_RC WANT_PATTERN OUTPUT
@@ -577,6 +629,50 @@ self_test() {
     rm -f "$d/got/apr-v9.9.9-rc.0-aarch64-apple-darwin-cpu.tar.gz.sha256"
     out=$(NEEDS=$full verify v9.9.9-rc.0 "$d/got"); row "verify: darwin asset missing -> red" 1 $? 'verdict: red — the build left' "$out"
 
+    # The ticket of a night that is not green, through a gh stub that logs each call.
+    cat > "$d/gh" <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FXGH_LOG"
+case "$1 $2" in
+    "issue list") [ "${FXGH_FAIL:-}" != list ] || exit 1; cat -- "$FXGH_LIST" ;;
+    "issue view") [ "${FXGH_FAIL:-}" != view ] || exit 1; cat -- "$FXGH_VIEW" ;;
+    "issue comment") [ "${FXGH_FAIL:-}" != comment ] || exit 1 ;;
+    "issue create") [ "${FXGH_FAIL:-}" != create ] || exit 1; echo "${FXGH_CREATED:-https://github.invalid/o/r/issues/77}" ;;
+    *) exit 9 ;;
+esac
+GH
+    chmod +x "$d/gh"
+    { printf 'ladder:\n  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n'
+      printf '    hosts: [lambda, gx10]\n    thinking: ["off", "on"]\n    larger_rows: nightly\n    red_row_needs: ticket\n'
+      printf '    ticket_owner: "#3598"\n    release_notes: known_failures\n'; } > "$d/ladder.yaml"
+    grep -v ticket_owner "$d/ladder.yaml" > "$d/ladder-noowner.yaml"
+    local sha=0123456789abcdef0123456789abcdef01234567 t='assets-rehearsal nightly: not green'
+    tk() { # tk CONCLUSION LIST-JSON VIEW-JSON [FAIL] -> ticket's output, then the gh calls
+        printf '%s\n' "$2" > "$d/tk-list"; printf '%s\n' "$3" > "$d/tk-view"; : > "$d/tk-log"
+        ( export ASSETS_REHEARSAL_GH="$d/gh" FXGH_LOG="$d/tk-log" FXGH_LIST="$d/tk-list" FXGH_VIEW="$d/tk-view" FXGH_FAIL="${4:-}" \
+              ASSETS_REHEARSAL_LADDER="${TK_LADDER:-$d/ladder.yaml}"
+          ticket "$1" "$sha" https://github.invalid/run/1 ); local rc=$?
+        printf 'GH %s\n' "$(tr '\n' ';' < "$d/tk-log")"; return "$rc"
+    }
+    out=$(tk success '[]' '{}'); row "ticket: a green night opens nothing" 0 $? '^TICKET none.*GH *$' "$(tr '\n' ' ' <<< "$out")"
+    out=$(tk failure '[]' '{}'); row "ticket: a red night, no ticket -> opens one" 0 $? "TICKET opened #77: red.*issue create --title $t --body .*is red \(failure\).*Owner: #3598" "$(tr '\n' ' ' <<< "$out")"
+    out=$(tk cancelled '[]' '{}'); row "ticket: a cancelled night -> not_measured ticket" 0 $? 'TICKET opened #77: not_measured' "$out"
+    out=$(tk failure "[{\"number\":12,\"title\":\"$t\"},{\"number\":9,\"title\":\"$t\"}]" '{"body":"x"}')
+    row "ticket: an open ticket -> one comment on the lowest" 0 $? 'TICKET updated #9: red.*issue view 9 .*issue comment 9 ' "$(tr '\n' ' ' <<< "$out")"
+    out=$(tk failure "[{\"number\":9,\"title\":\"$t\"}]" "{\"body\":\"assets-rehearsal@$sha\"}")
+    row "ticket: the commit already named -> kept, no comment" 0 $? 'TICKET kept #9' "$out"
+    grep -q 'issue comment' <<< "$out"; row "ticket: kept means no comment call" 1 $? '.' "$out"
+    out=$(tk failure "[{\"number\":9,\"title\":\"$t (old)\"}]" '{}'); row "ticket: a title that only contains it -> opens its own" 0 $? 'TICKET opened #77' "$out"
+    out=$(TK_LADDER="$d/ladder-noowner.yaml" tk failure '[]' '{}'); row "ticket: no ticket owner -> no gh call, fails" 1 $? 'NO-TICKET: no ticket owner.*GH *$' "$(tr '\n' ' ' <<< "$out")"
+    out=$(tk failure '[]' '{}' list); row "ticket: the search fails -> not_measured, nothing opened" 1 $? 'NOT-MEASURED: the issue search' "$out"
+    grep -q 'issue create' <<< "$out"; row "ticket: a failed search opens nothing" 1 $? '.' "$out"
+    out=$(tk failure "$(jq -cn '[range(50) | {number: (. + 100), title: "other"}]')" '{}'); row "ticket: a full page without the title -> opens nothing" 1 $? 'full page or no readable list' "$out"
+    out=$(tk failure '{"not":"a list"}' '{}'); row "ticket: a search that is not a list -> opens nothing" 1 $? 'full page or no readable list' "$out"
+    out=$(tk failure "[{\"number\":9,\"title\":\"$t\"}]" '{}' view); row "ticket: reading the ticket fails -> fails" 1 $? 'NOT-MEASURED: reading #9' "$out"
+    out=$(tk failure "[{\"number\":9,\"title\":\"$t\"}]" '{"body":"x"}' comment); row "ticket: the comment fails -> fails" 1 $? 'NOT-MEASURED: commenting on #9' "$out"
+    out=$(tk failure '[]' '{}' create); row "ticket: opening fails -> fails" 1 $? 'NOT-MEASURED: opening the ticket failed' "$out"
+    out=$(FXGH_CREATED=oops tk failure '[]' '{}'); row "ticket: opening prints no url -> fails" 1 $? 'printed no issue url' "$out"
+
     out=$(tag); row "tag: workspace version -> vX.Y.Z-rc.0" 0 $? '^tag=v[0-9]+\.[0-9]+\.[0-9]+-rc\.0$' "$out"
 
     rm -rf "${d:?}"
@@ -590,6 +686,7 @@ case "${1:-}" in
     lint) [ $# -eq 2 ] || die "usage: lint FILE"; lint "$2" ;;
     tag) tag ;;
     verify) [ $# -eq 3 ] || die "usage: verify TAG DIR"; verify "$2" "$3" ;;
+    ticket) [ $# -eq 4 ] || die "usage: ticket CONCLUSION SHA URL"; ticket "$2" "$3" "$4" ;;
     --self-test) self_test ;;
-    *) sed -n '2,9p' "${BASH_SOURCE[0]}" >&2; exit 2 ;;
+    *) sed -n '2,10p' "${BASH_SOURCE[0]}" >&2; exit 2 ;;
 esac
