@@ -24,66 +24,68 @@ set -uo pipefail
 PROG=fleet_cells_gate
 
 # fleet_cells_verdict <cells text> <waivers text> <now epoch> -> `ok ...` rc 0 | `refuse ...` rc 1
+# bash + awk only (ARB-AUD-10: no interpreter beyond the shell on the release path). The stamp is
+# parsed here; awk sees only epochs, the UTC date and the two texts.
 fleet_cells_verdict() {
-    CELLS=$1 WAIVERS=$2 NOW=$3 MAX_AGE_H=${FLEET_CELLS_MAX_AGE_H:-6} python3 - <<'EOF'
-import datetime as dt, os, sys
-now = dt.datetime.fromtimestamp(int(os.environ["NOW"]), dt.timezone.utc)
-today = now.date().isoformat()
-def waived(host, binary):  # host "*" asks for the `*\t*` key only (missing/stale cells)
-    for line in os.environ["WAIVERS"].splitlines():
-        f = line.split("\t")
-        if not line.strip() or line.lstrip().startswith("#") or len(f) < 4 or not f[3].strip():
-            continue
-        if host == "*":
-            hit = f[0] == "*" and f[1] == "*"
-        else:
-            hit = f[0] in (host, "*") and f[1] in (binary, "*")
-        if hit and f[2] >= today:
-            return f"{f[0]}/{f[1]} until {f[2]}: {f[3]}"
-    return None
-lines = os.environ["CELLS"].splitlines()
-stamp = next((l.split(None, 2)[2] for l in lines if l.startswith("# measured ") and len(l.split()) >= 3), "")
-bad, notes, n = [], [], 0
-try:
-    measured = dt.datetime.strptime(stamp.strip(), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
-    age_h = (now - measured).total_seconds() / 3600
-    if age_h > float(os.environ["MAX_AGE_H"]):
-        bad.append(f"cells are stale: measured {stamp.strip()}, {age_h:.1f} h ago (max {os.environ['MAX_AGE_H']} h)")
-except ValueError:
-    bad.append("cells carry no '# measured <YYYY-MM-DDTHH:MM:SSZ>' stamp")
-for l in lines:
-    if not l.strip() or l.startswith("#"):
-        continue
-    f = l.split("\t")
-    if len(f) < 3:
-        bad.append(f"malformed cell: {l!r}")
-        continue
-    n += 1
-    host, binary, state = f[0], f[1], f[2]
-    reason = f[3] if len(f) > 3 else ""
-    if state == "GREEN":
-        continue
-    if state == "RED":
-        w = waived(host, binary)
-        if w:
-            notes.append(f"{host}/{binary} RED waived ({w})")
-        else:
-            bad.append(f"{host}/{binary} RED: {reason or 'no reason given'}")
-        continue
-    bad.append(f"{host}/{binary} state {state!r} is neither GREEN nor RED")
-if n == 0:
-    bad.append("no fleet cells")
-data_bad = [b for b in bad if b.startswith(("cells ", "no fleet cells"))]
-if data_bad and len(data_bad) == len(bad):
-    w = waived("*", "*")
-    if w:
-        notes.append(f"cells unusable, waived ({w}): " + "; ".join(data_bad))
-        bad = []
-if bad:
-    print("refuse " + "; ".join(bad))
-    sys.exit(1)
-print(f"ok {n} fleet cells, none RED unwaived" + ("; " + "; ".join(notes) if notes else ""))
-EOF
+    local stamp measured=-1 today
+    today=$(date -u -d "@$3" +%F) || return 2
+    stamp=$(printf '%s\n' "$1" | awk '/^# measured / && NF >= 3 { sub(/^# measured +/, ""); sub(/[ \t]+$/, ""); print; exit }')
+    if [[ $stamp =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+        measured=$(date -u -d "$stamp" +%s 2>/dev/null) || measured=-1
+    fi
+    printf '%s\n' "$1" | WAIVERS=$2 awk -F'\t' -v now="$3" -v measured="$measured" -v stamp="$stamp" \
+        -v max_age="${FLEET_CELLS_MAX_AGE_H:-6}" -v today="$today" '
+    # waived(host, binary): host "*" asks for the `*\t*` key only (missing/stale cells)
+    function waived(host, binary,    nw, w, i, f, hit) {
+        nw = split(ENVIRON["WAIVERS"], w, "\n")
+        for (i = 1; i <= nw; i++) {
+            if (w[i] ~ /^[ \t]*$/ || w[i] ~ /^[ \t]*#/) continue
+            if (split(w[i], f, "\t") < 4 || f[4] ~ /^[ \t]*$/) continue
+            if (host == "*") hit = (f[1] == "*" && f[2] == "*")
+            else hit = ((f[1] == host || f[1] == "*") && (f[2] == binary || f[2] == "*"))
+            if (hit && (f[3] "") >= today) return f[1] "/" f[2] " until " f[3] ": " f[4]
+        }
+        return ""
+    }
+    function add(msg) { bad[++nb] = msg }
+    # Data faults (stale, unstamped, empty) are the only ones `*\t*` may waive.
+    BEGIN {
+        if (measured < 0) { add("cells carry no \x27# measured <YYYY-MM-DDTHH:MM:SSZ>\x27 stamp"); nd++ }
+        else if ((now - measured) / 3600 > max_age + 0) {
+            add(sprintf("cells are stale: measured %s, %.1f h ago (max %s h)", stamp, (now - measured) / 3600, max_age)); nd++
+        }
+    }
+    /^[ \t]*$/ || /^#/ { next }
+    NF < 3 { add("malformed cell: \x27" $0 "\x27"); next }
+    {
+        n++
+        if ($3 == "GREEN") next
+        if ($3 == "RED") {
+            w = waived($1, $2)
+            if (w != "") notes[++nn] = $1 "/" $2 " RED waived (" w ")"
+            else add($1 "/" $2 " RED: " ($4 != "" ? $4 : "no reason given"))
+            next
+        }
+        add($1 "/" $2 " state \x27" $3 "\x27 is neither GREEN nor RED")
+    }
+    END {
+        if (n == 0) { add("no fleet cells"); nd++ }
+        if (nd > 0 && nd == nb) {
+            w = waived("*", "*")
+            if (w != "") {
+                msg = bad[1]; for (i = 2; i <= nb; i++) msg = msg "; " bad[i]
+                notes[++nn] = "cells unusable, waived (" w "): " msg
+                nb = 0
+            }
+        }
+        if (nb > 0) {
+            msg = bad[1]; for (i = 2; i <= nb; i++) msg = msg "; " bad[i]
+            print "refuse " msg
+            exit 1
+        }
+        msg = ""; for (i = 1; i <= nn; i++) msg = msg "; " notes[i]
+        print "ok " n + 0 " fleet cells, none RED unwaived" msg
+    }'
 }
 
 self_test() {
@@ -111,7 +113,7 @@ self_test() {
     row 1 'a waiver for another binary covers nothing' "$S\nintel\tapr\tRED\told\n" '*\tpv\t2026-09-30\tx\n'
     # MUTANTS: the refusal made a no-op must let the RED cell through.
     d=$(mktemp -d) || return 2
-    for m in 's/            bad.append(f"{host}\/{binary} RED: /            pass  # /' 's/^    sys.exit(1)$/    sys.exit(0)/'; do
+    for m in 's/            else add(\$1 "\/" \$2 " RED: "/            else ("\/" " RED: "/' 's/^            exit 1$/            exit 0/'; do
         mut=$d/m.sh; sed "$m" "${BASH_SOURCE[0]}" > "$mut"
         if cmp -s "$mut" "${BASH_SOURCE[0]}"; then echo "  FAIL mutant '$m' not built: the anchor moved"; fail=1; continue; fi
         got=$(bash -c ". '$mut' --source-only; fleet_cells_verdict \"\$(printf '%b' '$S\nintel\tapr\tRED\told\n')\" '' $now" 2>&1); rc=$?
