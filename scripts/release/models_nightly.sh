@@ -201,7 +201,7 @@ red_rows() {
 # OUT gets "host<TAB>row<TAB>#N" per row, the list a release's known failures name. A nightly row never
 # stops a release; a read or write that fails is a FAILED run of this step, never a ticket.
 tickets() {
-    local b=$1 c=$2 out=$3 gh=${MODELS_NIGHTLY_GH:-gh} host row why title n j body mark owner st=0
+    local b=$1 c=$2 out=$3 gh=${MODELS_NIGHTLY_GH:-gh} host row why title n j body mark owner len st=0
     local lib=${MODELS_NIGHTLY_POLICY_LIB:-$(dirname -- "$SCRIPT_PATH")/../lib/release_policy.sh}
     local ladder=${MODELS_NIGHTLY_LADDER:-$(dirname -- "$SCRIPT_PATH")/../../contracts/model-capability-ladder-v1.yaml}
     : > "$out" || die "cannot write $out"
@@ -215,6 +215,14 @@ tickets() {
             say "NOT-MEASURED: the issue search for '$title' failed"; st=1; continue
         fi
         n=$(printf '%s' "$j" | jq -r --arg t "$title" '[.[] | select(.title == $t) | .number] | min // empty' 2> /dev/null)
+        # A search that fills its page may have cut the matching issue off, and output that is not a JSON
+        # list proves nothing: either way a missing title is not "no issue", so nothing is opened.
+        if [ -z "$n" ]; then
+            len=$(jq 'length' <<< "$j" 2> /dev/null) || len=""
+            if ! [[ "$len" =~ ^[0-9]+$ ]] || [ "$len" -ge 50 ]; then
+                say "NOT-MEASURED: the issue search for '$title' returned a full page or no readable list"; st=1; continue
+            fi
+        fi
         body="Red in the models nightly at ${c:0:9}: $why. Under the standing release policy this row cannot stop a release; the release notes list it as a known failure with this ticket until it is green. Owner: $owner. $mark"
         if [ -n "$n" ]; then
             if ! j=$("$gh" issue view "$n" --json body,comments); then say "NOT-MEASURED: reading #$n failed"; st=1; continue; fi
@@ -587,6 +595,10 @@ GH
     R25=$(for i in $(seq 1 25); do printf '{"id":"fx-%s","file":"f%s.gguf","green":false}\n' "$i" "$i"; done | jq -sc .)
     tkb many red "$R25"
     row tickets_every_red_row_no_cap 0 "lambda|fx-25|#77" "" -- tk "$tmp/tk/many" '[]' '{}'
+    P50=$(for i in $(seq 1 50); do printf '{"number":%s,"title":"models-nightly red: fx-1%s on lambda"}\n' "$((100 + i))" "$i"; done | jq -sc .)
+    row tickets_full_search_page_opens_nothing 2 "NOT-MEASURED: the issue search for 'models-nightly red: fx-1 on lambda' returned a full page" "issue create" -- \
+        tk "$tmp/tk/red" "$P50" '{}'
+    row tickets_unreadable_search_opens_nothing 2 "returned a full page or no readable list" "issue create" -- tk "$tmp/tk/red" 'not json' '{}'
     row tickets_failed_search_fails_the_step 2 "NOT-MEASURED: the issue search" "TICKET opened" -- tk "$tmp/tk/red" '[]' '{}' list
     row tickets_failed_comment_fails_the_step 2 "NOT-MEASURED: commenting on #5" "OUT lambda" -- tk "$tmp/tk/red" \
         '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}' comment
@@ -626,7 +638,8 @@ m26_commented_every_slot	s/grep -qF -- "\$mark" <<< "\$j"; then say/false; then 
 m27_ticket_failure_passes	s/^    \[ "\$st" = 0 \] [|][|] die "a ticket/    true || die "a ticket/
 m28_ticket_names_no_owner	s/ Owner: \$owner\.//
 m29_ownerless_ticket_opened	s/owner=\$\(rp_ticket_owner "\$ladder"\) [|][|] \{/owner=$(rp_ticket_owner "$ladder") || true || {/
-m30_rung_without_green_unticketed	s/select\(.green != true\)/select(.green == false)/'
+m30_rung_without_green_unticketed	s/select\(.green != true\)/select(.green == false)/
+m31_full_search_page_trusted	s/\[ "\$len" -ge 50 \]/false/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
