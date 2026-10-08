@@ -139,18 +139,40 @@ impl PlattScaling {
 #[must_use]
 pub fn expected_calibration_error(predictions: &[f32], labels: &[bool], n_bins: usize) -> f32 {
     contract_pre_expected_calibration_error!(predictions);
-    let mut bin_sums = vec![0.0; n_bins];
-    let mut bin_correct = vec![0.0; n_bins];
+    ece_over(
+        predictions
+            .iter()
+            .zip(labels.iter())
+            .map(|(&pred, &label)| (pred, label)),
+        predictions.len(),
+        n_bins,
+    )
+}
+
+/// The equal-width binning and weighted `|acc - conf|` reduction shared by both ECE forms.
+///
+/// Extracted so the binning rule — in particular the `.min(n_bins - 1)` clamp, which is what
+/// makes `conf == 1.0` representable rather than out of range — exists ONCE. The binary and
+/// multiclass entry points differ only in how they derive `(confidence, was_correct)` from
+/// their inputs; that mapping stays at the call site, where the D-07 distinction between
+/// positive-class probability and max-class probability is visible. A bin-edge change or a
+/// clamp fix now lands in one body instead of two that must be kept in sync by hand.
+///
+/// `n` is the sample count used as the reduction denominator, passed in because the callers
+/// derive it differently (slice length vs. validated row count).
+fn ece_over(pairs: impl Iterator<Item = (f32, bool)>, n: usize, n_bins: usize) -> f32 {
+    let mut bin_sums = vec![0.0_f32; n_bins];
+    let mut bin_correct = vec![0.0_f32; n_bins];
     let mut bin_counts = vec![0usize; n_bins];
 
-    for (&pred, &label) in predictions.iter().zip(labels.iter()) {
-        let bin = ((pred * n_bins as f32) as usize).min(n_bins - 1);
-        bin_sums[bin] += pred;
-        bin_correct[bin] += if label { 1.0 } else { 0.0 };
+    for (conf, was_correct) in pairs {
+        let bin = ((conf * n_bins as f32) as usize).min(n_bins - 1);
+        bin_sums[bin] += conf;
+        bin_correct[bin] += if was_correct { 1.0 } else { 0.0 };
         bin_counts[bin] += 1;
     }
 
-    let n = predictions.len() as f32;
+    let n = n as f32;
     let mut ece = 0.0;
 
     for i in 0..n_bins {
@@ -161,6 +183,230 @@ pub fn expected_calibration_error(predictions: &[f32], labels: &[bool], n_bins: 
         }
     }
     ece
+}
+
+/// Validate the shared multiclass preconditions and return the sample count.
+///
+/// Structural violations are hard `assert!`s rather than `debug_assert!`s: a label out of
+/// range or a ragged probability matrix would otherwise index into the wrong row and
+/// return a plausible-looking number, and these two metrics feed published claims (D-07).
+/// The finiteness/non-emptiness preconditions declared in `calibration-v1` are checked by
+/// the caller through the contract macro, exactly as the binary pair does it.
+fn multiclass_rows(probabilities: &[f32], n_classes: usize, labels: &[usize]) -> usize {
+    assert!(
+        !probabilities.is_empty(),
+        "multiclass calibration: probabilities are empty"
+    );
+    assert!(
+        n_classes >= 2,
+        "multiclass calibration: n_classes must be >= 2, got {n_classes}"
+    );
+    assert!(
+        probabilities.len() % n_classes == 0,
+        "multiclass calibration: {} probabilities do not divide into rows of {n_classes}",
+        probabilities.len()
+    );
+    let n_samples = probabilities.len() / n_classes;
+    assert!(
+        labels.len() == n_samples,
+        "multiclass calibration: {} labels for {n_samples} rows",
+        labels.len()
+    );
+    for (i, &label) in labels.iter().enumerate() {
+        assert!(
+            label < n_classes,
+            "multiclass calibration: label {label} at row {i} is outside 0..{n_classes}"
+        );
+    }
+    for i in 0..n_samples {
+        let sum: f32 = probabilities[i * n_classes..(i + 1) * n_classes]
+            .iter()
+            .sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-3,
+            "multiclass calibration: row {i} sums to {sum}, not 1"
+        );
+    }
+    n_samples
+}
+
+/// Top confidence and predicted class of one row: `(max_k p_k, argmax_k p_k)`.
+///
+/// Ties resolve to the LOWEST class index, matching `numpy.argmax` — the reference
+/// fixtures' `uniform_uncertain` case depends on that tie-break.
+fn top_label(row: &[f32]) -> (f32, usize) {
+    let mut best_idx = 0;
+    let mut best = row[0];
+    for (k, &p) in row.iter().enumerate().skip(1) {
+        if p > best {
+            best = p;
+            best_idx = k;
+        }
+    }
+    (best, best_idx)
+}
+
+/// Top-label Expected Calibration Error for multiclass predictions (D-07).
+///
+/// The multiclass companion to [`expected_calibration_error`], bound to explicit ordered
+/// labels: `probabilities` is row-major with `n_classes` entries per row, and `labels[i]`
+/// is the true class index of row `i`.
+///
+/// ```text
+/// conf_i = max_k p_ik
+/// pred_i = argmax_k p_ik
+/// bin(i) = min(floor(conf_i * n_bins), n_bins - 1)
+/// ECE    = Σ_b (n_b / N) |acc_b - conf_b|
+/// ```
+///
+/// Same equal-width binning and the same `.min(n_bins - 1)` clamp as the binary function,
+/// so a saturated row (`conf = 1`, giving `conf * n_bins == n_bins`) lands in the top bin
+/// rather than out of range.
+///
+/// This is a GENERALISATION of the binary metric, not a reduction of it: the binary form
+/// bins by the positive class's probability, this one by the maximum over classes. The two
+/// therefore disagree at K = 2, on purpose.
+///
+/// # Panics
+///
+/// Panics if `probabilities` is empty, `n_classes < 2`, `n_bins == 0`, the probability
+/// count is not a multiple of `n_classes`, the label count does not match the row count,
+/// any label is `>= n_classes`, or any row does not sum to 1 within 1e-3.
+///
+/// # Reference
+///
+/// Guo et al. (2017), *On Calibration of Modern Neural Networks*, §3. Reference values are
+/// frozen in `scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json`.
+#[provable_contracts_macros::contract(
+    "calibration-v1",
+    equation = "expected_calibration_error_top_label"
+)]
+#[must_use]
+pub fn expected_calibration_error_top_label(
+    probabilities: &[f32],
+    n_classes: usize,
+    labels: &[usize],
+    n_bins: usize,
+) -> f32 {
+    contract_pre_expected_calibration_error_top_label!(probabilities);
+    assert!(n_bins > 0, "multiclass calibration: n_bins must be >= 1");
+    let n_samples = multiclass_rows(probabilities, n_classes, labels);
+
+    ece_over(
+        labels.iter().enumerate().map(|(i, &label)| {
+            let row = &probabilities[i * n_classes..(i + 1) * n_classes];
+            let (conf, pred) = top_label(row);
+            (conf, pred == label)
+        }),
+        n_samples,
+        n_bins,
+    )
+}
+
+/// Top-label ECE in f64 with exactly-rounded sums — the Laya gate's `ece_top_label`
+/// (contracts/laya-finetune-gate-v1.yaml `numeric_agreement.ece_top_label`).
+///
+/// ```text
+/// conf_i, pred_i = max_k p_ik, argmax_k p_ik        (first max on ties; conf widened f32 -> f64)
+/// bin(i)         = min(floor(conf_i x n_bins), n_bins - 1)          in f64
+/// acc_b          = fsum(correct_i for i in b) / n_b
+/// conf_b         = fsum(conf_i for i in b) / n_b
+/// ECE            = fsum over occupied bins, in bin order, of (n_b / N) x |acc_b - conf_b|
+/// ```
+///
+/// Bit-identical to `scripts/laya_train/metrics.py` `ece_top_label`, which computes the same
+/// expression with `math.fsum` on the f64-widened probabilities. It shares the input validation
+/// and the top-label rule with [`expected_calibration_error_top_label`], which it does NOT
+/// replace: that function's f32 results are frozen for its other callers.
+///
+/// # Panics
+///
+/// As [`expected_calibration_error_top_label`].
+#[must_use]
+pub fn expected_calibration_error_top_label_f64(
+    probabilities: &[f32],
+    n_classes: usize,
+    labels: &[usize],
+    n_bins: usize,
+) -> f64 {
+    contract_pre_expected_calibration_error_top_label!(probabilities);
+    assert!(n_bins > 0, "multiclass calibration: n_bins must be >= 1");
+    let n_samples = multiclass_rows(probabilities, n_classes, labels);
+    let mut conf_in: Vec<Vec<f64>> = vec![Vec::new(); n_bins];
+    let mut correct_in: Vec<usize> = vec![0; n_bins];
+    for (i, &label) in labels.iter().enumerate() {
+        let (conf, pred) = top_label(&probabilities[i * n_classes..(i + 1) * n_classes]);
+        let conf = f64::from(conf);
+        let bin = ((conf * n_bins as f64).floor() as usize).min(n_bins - 1);
+        conf_in[bin].push(conf);
+        if pred == label {
+            correct_in[bin] += 1;
+        }
+    }
+    let n = n_samples as f64;
+    let terms = conf_in
+        .iter()
+        .zip(&correct_in)
+        .filter(|(confs, _)| !confs.is_empty())
+        .map(|(confs, &correct)| {
+            let n_b = confs.len() as f64;
+            // fsum of `correct` 1.0s is the integer count, exactly: the cast IS that sum.
+            let acc = correct as f64 / n_b;
+            let mean_conf = crate::metrics::fsum(confs.iter().copied()) / n_b;
+            (n_b / n) * (acc - mean_conf).abs()
+        })
+        .collect::<Vec<f64>>();
+    crate::metrics::fsum(terms)
+}
+
+/// Multiclass Brier score, original (Brier 1950) UNNORMALISED definition (D-07).
+///
+/// ```text
+/// BS = (1/N) Σ_i Σ_k (p_ik - y_ik)²      with one-hot y
+/// ```
+///
+/// # Normalization — stated once, here, so nobody has to re-derive it
+///
+/// The class sum is **not** divided by `K`. Consequences, both contracted in
+/// `calibration-v1` and both asserted by the tests:
+///
+/// - The codomain is `[0, 2]` for every `K >= 2`, **not** `[0, 1]`. A confidently-wrong
+///   one-hot row contributes `(0-1)² + (1-0)² = 2`.
+/// - At `K = 2` with `p_i = [1-p, p]`, the class sum is
+///   `(p-y)² + ((1-p)-(1-y))² = 2(p-y)²`, so this function returns **exactly twice**
+///   [`brier_score`] — never the same value. An implementation that made the two equal
+///   would have silently divided by `K`.
+///
+/// The one-vs-rest identity `BS = Σ_k binary_brier(labels == k, p_·k)` holds and is
+/// verified against scikit-learn 1.9.0 in the fixture generator.
+///
+/// Lower is better. `BS = 0` exactly when every row is a correct one-hot prediction.
+///
+/// # Panics
+///
+/// Panics if `probabilities` is empty, `n_classes < 2`, the probability count is not a
+/// multiple of `n_classes`, the label count does not match the row count, any label is
+/// `>= n_classes`, or any row does not sum to 1 within 1e-3.
+///
+/// # Reference
+///
+/// Brier (1950), *Verification of Forecasts Expressed in Terms of Probability*. Reference
+/// values are frozen in `scripts/setfit_fixtures/claims_stats/brier_multiclass_cases.json`.
+#[provable_contracts_macros::contract("calibration-v1", equation = "brier_score_multiclass")]
+#[must_use]
+pub fn brier_score_multiclass(probabilities: &[f32], n_classes: usize, labels: &[usize]) -> f32 {
+    contract_pre_brier_score_multiclass!(probabilities);
+    let n_samples = multiclass_rows(probabilities, n_classes, labels);
+
+    let mut total = 0.0_f32;
+    for (i, &label) in labels.iter().enumerate() {
+        let row = &probabilities[i * n_classes..(i + 1) * n_classes];
+        for (k, &p) in row.iter().enumerate() {
+            let y = if k == label { 1.0 } else { 0.0 };
+            total += (p - y).powi(2);
+        }
+    }
+    total / n_samples as f32
 }
 
 /// Maximum Calibration Error (MCE).

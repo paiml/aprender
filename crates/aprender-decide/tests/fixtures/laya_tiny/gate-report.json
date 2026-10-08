@@ -1,0 +1,59 @@
+{
+  "schema": "laya-gate-report-v1",
+  "pass": false,
+  "thresholds": {
+    "min_macro_f1_margin": 0.05,
+    "max_ece": 0.1,
+    "ece_bins": 15
+  },
+  "zero_shot": {
+    "macro_f1": 0.16666666666666666,
+    "f_avg": null,
+    "ece": 0.008166154225667355,
+    "n": 9
+  },
+  "fine_tuned": {
+    "macro_f1": 0.16666666666666666,
+    "f_avg": null,
+    "ece_pre": 0.014317405789640136,
+    "ece_post": 0.008166154225667355,
+    "nll": 1.0971328620870202,
+    "n": 9
+  },
+  "margin": 0.0,
+  "calibration": {
+    "bucket": "choice:3-5",
+    "t_fitted": 1.75,
+    "t_applied": 1.75,
+    "clamp_hit": false,
+    "slice_size": 6,
+    "slice_ids": [
+      0,
+      2,
+      6,
+      7,
+      8,
+      11
+    ],
+    "slice_ids_sha256": "e8699a5ca3193af68a576c14f4dcb46099633f039c58ca255af0fafdb4e6aa52"
+  },
+  "seeds": {
+    "declared": 20260925,
+    "n": 1,
+    "label": "single seed"
+  },
+  "device_used": "cpu",
+  "device_is_cpu": true,
+  "torch_version": "2.14.0",
+  "recipe_id": "7478c6f2a919fd205c22ba171c5841bf8c89e44e67ae252ed3d23a7cb6d8ad55",
+  "inputs_sha256": {
+    "task_json": "b4f2c1689c98305f2df6d819640c692b6ac48773043432f1a9f419e1d21df184",
+    "train_jsonl": "b62d56e76bba51154cb79568b330bfa048dcf9de35be15dc3d4e28f7921ba29f",
+    "eval_jsonl": "0b9b65a95623e9eea482acdb19bfce0ecb489382927ade9400d2ac4a6ebe3721",
+    "base_model": "9cfb84324ba02d641078bdf30eef88e5dd1b98e85c1fac373c76aeda39601390",
+    "tokenizer_json": "82655b8f49968135e1eaed678582683abe0d4f4be8b988ece1434fe15d1e2528"
+  },
+  "eval_probs_sha256": "3befc2148dbe15dcbeb06ac93fc1d6ca130a52c5f80d813058da5e307c4b0296",
+  "zero_shot_probs_sha256": "3befc2148dbe15dcbeb06ac93fc1d6ca130a52c5f80d813058da5e307c4b0296",
+  "probes_sha256": "a7b1d3cd2b3765c62fbadaf9075981ebfa5a777dfec6aec734c50877bad475cc"
+}

@@ -1,0 +1,11 @@
+error[E0451]: fields `method`, `identity` and `manifest` of struct `Decider` are private
+  --> tests/ui/decider_struct_literal.rs:18:9
+   |
+17 |     let _forged = Decider {
+   |                   ------- in this type
+18 |         method: any(),
+   |         ^^^^^^ private field
+19 |         identity: any(),
+   |         ^^^^^^^^ private field
+20 |         manifest: any(),
+   |         ^^^^^^^^ private field

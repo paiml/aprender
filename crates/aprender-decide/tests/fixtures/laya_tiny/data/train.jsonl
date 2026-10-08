@@ -1,0 +1,12 @@
+{"text": "My parcel has not arrived and the tracking page is stuck.", "label": "shipping"}
+{"text": "The courier left the box at the wrong address.", "label": "shipping"}
+{"text": "Delivery was promised for Monday and it is now Friday.", "label": "shipping"}
+{"text": "Where is my package? It shows lost in transit.", "label": "shipping"}
+{"text": "I was charged twice for the same order.", "label": "billing"}
+{"text": "Please send me the invoice for last month.", "label": "billing"}
+{"text": "The refund for my return never reached my card.", "label": "billing"}
+{"text": "Why is there an extra fee on my statement?", "label": "billing"}
+{"text": "I cannot log in after resetting my password.", "label": "account"}
+{"text": "How do I change the email on my profile?", "label": "account"}
+{"text": "My account is locked after three attempts.", "label": "account"}
+{"text": "Please delete my profile and all saved settings.", "label": "account"}

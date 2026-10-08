@@ -1,0 +1,9 @@
+{
+  "type": "choice",
+  "instructions": "Which team should handle this customer message?",
+  "criteria": {
+    "shipping": "Delivery status, delays and lost parcels",
+    "billing": "Charges, invoices and refunds",
+    "account": "Login, password and profile settings"
+  }
+}

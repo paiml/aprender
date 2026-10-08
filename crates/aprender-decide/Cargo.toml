@@ -1,0 +1,83 @@
+[package]
+name = "aprender-decide"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Method-neutral decision models (Laya first) over aprender-core"
+keywords = ["classification", "decision", "laya", "modernbert", "aprender"]
+categories = ["science"]
+readme = "README.md"
+# NOT published (D-14, owner decision `publish-false`, 2026-09-29, plan 08-31): a crate name
+# becomes permanent at its first crates.io publish, and this one is not confirmed yet. The
+# crate stays in-tree and CI-tested; it leaves the publishable set, so the release cascade
+# (scripts/cascade-publish.sh TIERS) need not carry it. Reversible: delete this line and add
+# the crate to TIERS after aprender-core once the name is confirmed. Its dependents
+# aprender-mcp-decide and aprender-mcp-decide-lambda are publish = false already.
+publish = false
+
+# Library only. There is deliberately NO [[bin]] and no src/main.rs: serving is a
+# transport concern of the thin decide servers (D-15), and FALSIFY-MONO-011 allows
+# binaries only on the listed crates.
+[lib]
+name = "aprender_decide"
+path = "src/lib.rs"
+
+[features]
+# TEST-ONLY: turns on serde_json's insertion-ordered map so FALSIFY-DECIDE-APR-007's ON
+# leg is selected explicitly rather than by feature unification with another crate.
+# Never enable it in a shipped build (see the serde_json NOTE below).
+serde-preserve-order = ["serde_json/preserve_order"]
+
+[dependencies]
+# The reusable ModernBERT encoder and its primitives (D-13, OPS-03): Linear,
+# layer_norm, gelu_exact, attention and the prefix-aware `.apr` loader. Default
+# features, so `parallel` (and with it `models::modernbert`) is on.
+aprender = { path = "../aprender-core", version = "0.70.2", package = "aprender-core" }
+# Byte-identical tokenizer.json via Tokenizer::from_bytes (0.23.1, the pin Laya's
+# Python side runs).
+tokenizers = { workspace = true }
+serde = { workspace = true }
+# NOTE: `preserve_order` is deliberately NOT enabled here. Criteria order is the
+# label index (D-05) and is read with an order-preserving MapAccess visitor from the
+# raw bytes, which holds under BOTH map backings. Enabling the feature on this crate
+# would unify it workspace-wide and silently change other crates' map behaviour in
+# any build that includes this one (RESEARCH Pitfall 2).
+# `float_roundtrip`: correctly rounded float parsing, so the float64 noise record
+# (rescore-noise.json) is read bit-for-bit as Python wrote it and verify's noise
+# recomputation matches the trainer's exactly (laya-parity-v1 rescore_noise_reference).
+# Already unified on in this workspace; declared here so the claim does not depend on
+# another crate's feature choice.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+sha2 = { workspace = true }
+# The head's residual adds, as core's encoder does them.
+rayon = { workspace = true }
+provable-contracts-macros = { workspace = true }
+# Production code reads SafeTensors only in src/pack.rs: the PACK path
+# (`pack::PackInputs::from_run_dir`) and verify's base scorer
+# (`pack::scorer_from_parts`) parse the checkpoint there. Library code, so a normal
+# dependency. The `#[cfg(test)]` fixture builder src/test_support.rs also parses the
+# tiny checkpoint; it is never compiled into a server. The LOAD path (artifact, task,
+# laya) reads only .apr bytes and calls no pack function that reads files, so the
+# SafeTensors carve-out stays scoped to the back office. Enforced by the lib test
+# `safetensors_is_read_only_by_pack`.
+safetensors = { workspace = true }
+# NFC for the verifier's split re-derivation (verify::normalize_text mirrors
+# scripts/laya_train/data.py `nfc-trim-ws-v1`). Already in the workspace lock.
+unicode-normalization = { workspace = true }
+
+[dev-dependencies]
+# verify::tests run dirs and the fail-closed vectors' transient verify input.
+tempfile = { workspace = true }
+# Test-side reader of contract YAML constants and tolerances.
+serde_yaml = { workspace = true }
+# The oracle's ladder blocks are f32le_base64 (plan 08-02 fixture encoding).
+base64 = { workspace = true }
+# tests/ui.rs: compile-fail proof that Decider has no second minting path
+# (decide-apr-v1 rung 8, FALSIFY-DECIDE-APR-006).
+trybuild = { workspace = true }
+
+[lints]
+workspace = true

@@ -348,6 +348,87 @@ pub fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
     }
 }
 
+/// Per-class F1 in f64: `2 tp / (2 tp + fp + fn)`, `0` when the class has no true, predicted
+/// or missed row (`zero_division = 0`).
+///
+/// This is the form `scripts/laya_train/metrics.py` `_f1` computes (`2.0 * tp / den`), and it
+/// is exact up to one rounding: the integers are exact in f64 and the single division rounds
+/// once. It is deliberately NOT `2PR / (P + R)`, the f32 form [`f1_score`] uses, which rounds
+/// three times.
+fn class_f1_f64(tp: usize, fp: usize, fn_count: usize) -> f64 {
+    let den = 2 * tp + fp + fn_count;
+    if den == 0 {
+        0.0
+    } else {
+        (2 * tp) as f64 / den as f64
+    }
+}
+
+/// Macro-F1 in f64 with an exactly-rounded mean — the Laya gate's `macro_f1`
+/// (contracts/laya-finetune-gate-v1.yaml `numeric_agreement.macro_f1`).
+///
+/// ```text
+/// L        = labels present in y_true ∪ y_pred           (PMAT-844, sklearn's default)
+/// F1_c     = 2 tp_c / (2 tp_c + fp_c + fn_c)              in f64, 0 when the denominator is 0
+/// macro_f1 = fsum(F1_c for c in L) / |L|                  (metrics::fsum, exactly rounded)
+/// ```
+///
+/// Bit-identical to `scripts/laya_train/metrics.py` `macro_f1` (`math.fsum(f1s) / len(f1s)`),
+/// so the Rust verifier and the Python trainer reach the same verdict at an exact threshold.
+/// It shares the confusion counting and the present-label rule with [`f1_score`], which it does
+/// NOT replace: `f1_score`'s f32 results are frozen for its other callers.
+///
+/// # Panics
+///
+/// Panics if the inputs differ in length or are empty.
+#[must_use]
+pub fn macro_f1_f64(y_pred: &[usize], y_true: &[usize]) -> f64 {
+    assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
+    assert!(!y_true.is_empty(), "Vectors cannot be empty");
+    let n_classes = y_true
+        .iter()
+        .chain(y_pred.iter())
+        .max()
+        .map_or(0, |&m| m + 1);
+    let (tp, fp, fn_counts, support) = compute_tp_fp_fn(y_pred, y_true, n_classes);
+    let present = present_classes(&fp, &support);
+    let f1s = present
+        .iter()
+        .map(|&i| class_f1_f64(tp[i], fp[i], fn_counts[i]));
+    super::fsum(f1s) / present.len() as f64
+}
+
+/// The mean f64 F1 over the GIVEN labels with an exactly-rounded mean — the Laya gate's `f_avg`
+/// (TweetEval stance: `against`, `favor`; laya-finetune-gate-v1 `numeric_agreement.f_avg`).
+///
+/// ```text
+/// f_avg = fsum(F1_c for c in labels) / |labels|        F1_c as in macro_f1_f64
+/// ```
+///
+/// A label absent from both `y_true` and `y_pred` scores 0 (`zero_division = 0`), exactly as
+/// `scripts/laya_train/metrics.py` `f_avg`, which this equals bit for bit.
+///
+/// # Panics
+///
+/// Panics if the inputs differ in length, are empty, or `labels` is empty.
+#[must_use]
+pub fn mean_f1_over_labels_f64(y_pred: &[usize], y_true: &[usize], labels: &[usize]) -> f64 {
+    assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
+    assert!(!y_true.is_empty(), "Vectors cannot be empty");
+    assert!(!labels.is_empty(), "f_avg needs at least one label");
+    let n_classes = y_true
+        .iter()
+        .chain(y_pred.iter())
+        .chain(labels.iter())
+        .max()
+        .map_or(0, |&m| m + 1);
+    let (tp, fp, fn_counts, _) = compute_tp_fp_fn(y_pred, y_true, n_classes);
+    let f1s = labels
+        .iter()
+        .map(|&c| class_f1_f64(tp[c], fp[c], fn_counts[c]));
+    super::fsum(f1s) / labels.len() as f64
+}
+
 /// Compute per-class precision scores.
 ///
 /// Returns a vector of precision values, one per class (ordered by class index).
@@ -658,5 +739,44 @@ mod tests_macro_present_labels {
         // class0: tp=2,fp=1 → 2/3; class1: tp=0,fp=2 → 0; class2: tp=0,fp=1 → 0.
         let expected = (2.0_f32 / 3.0) / 3.0;
         assert!((precision(&yp, &yt, Average::Macro) - expected).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod tests_macro_f1_f64 {
+    use super::*;
+
+    /// The Laya gate's f64 macro-F1 (plan 08-27): `2tp / (2tp + fp + fn)` per present label,
+    /// exactly-rounded mean. Frozen values are `scripts/laya_train/metrics.py` `macro_f1` bits.
+    #[test]
+    fn macro_f1_f64_matches_metrics_py_bits() {
+        // Always predicts 0 on y = [0, 1, 2, 0]: F1 = (2/3, 0, 0) over {0, 1, 2} -> 2/9.
+        let got = macro_f1_f64(&[0, 0, 0, 0], &[0, 1, 2, 0]);
+        assert_eq!(got.to_bits(), (2.0_f64 / 3.0 / 3.0).to_bits());
+        // 13/60 on the 9-row exact-margin case's fine-tuned predictions: 0x3fcbbbbbbbbbbbbc.
+        let y = [0, 0, 0, 1, 1, 1, 2, 2, 2];
+        let ft = macro_f1_f64(&[2, 2, 2, 0, 1, 2, 0, 1, 2], &y);
+        let zs = macro_f1_f64(&[2, 2, 2, 2, 2, 2, 2, 2, 2], &y);
+        assert_eq!(ft.to_bits(), 0x3fcb_bbbb_bbbb_bbbc, "fine-tuned 13/60");
+        assert_eq!(zs.to_bits(), 0x3fc5_5555_5555_5555, "zero-shot 1/6");
+        // The margin is 1/20 exactly in rationals and 0.05000000000000002 in f64: PASS.
+        assert!(ft - zs >= 0.05);
+        // Present-label rule is the f32 function's (PMAT-844): perfect {0, 2} -> 1.
+        assert_eq!(macro_f1_f64(&[0, 2, 0, 2], &[0, 2, 0, 2]), 1.0);
+    }
+
+    /// f_avg: the mean over the GIVEN labels; a label absent everywhere scores 0.
+    #[test]
+    fn mean_f1_over_labels_f64_follows_metrics_py() {
+        // Always predicts 0 on y = [0, 1, 2, 0]: F1(1) = F1(2) = 0.
+        assert_eq!(
+            mean_f1_over_labels_f64(&[0, 0, 0, 0], &[0, 1, 2, 0], &[1, 2]),
+            0.0
+        );
+        // pred = [0, 0, 0, 1] on y = [0, 1, 0, 1]: F1(0) = 4/5, F1(1) = 2/3.
+        let got = mean_f1_over_labels_f64(&[0, 0, 0, 1], &[0, 1, 0, 1], &[0, 1]);
+        assert_eq!(got.to_bits(), ((0.8_f64 + 2.0 / 3.0) / 2.0).to_bits());
+        // A label index beyond every observed class is absent: 0, not a panic.
+        assert_eq!(mean_f1_over_labels_f64(&[0, 1], &[0, 1], &[5]), 0.0);
     }
 }

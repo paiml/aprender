@@ -745,6 +745,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-decide"
+version = "0.70.2"
+dependencies = [
+ "aprender-contracts-macros",
+ "aprender-core",
+ "base64 0.22.1",
+ "rayon",
+ "safetensors 0.4.5",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokenizers 0.23.1",
+ "trybuild",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "aprender-distribute"
 version = "0.70.3"
 dependencies = [

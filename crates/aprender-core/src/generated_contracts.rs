@@ -6585,6 +6585,50 @@ macro_rules! contract_inv_expected_calibration_error {
     }};
 }
 
+/// Preconditions for equation `expected_calibration_error_top_label`.
+/// Domain-specific. Call: `contract_pre_expected_calibration_error_top_label!(slice_expr)`
+macro_rules! contract_pre_expected_calibration_error_top_label {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_input = &$input;
+        debug_assert!(_pv_input.len() > 0,
+            "Contract expected_calibration_error_top_label: precondition violated — input.len() > 0");
+        debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
+            "Contract expected_calibration_error_top_label: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `expected_calibration_error_top_label`.
+/// Check after computation: `contract_inv_expected_calibration_error_top_label!(result_expr)`
+macro_rules! contract_inv_expected_calibration_error_top_label {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Preconditions for equation `brier_score_multiclass`.
+/// Domain-specific. Call: `contract_pre_brier_score_multiclass!(slice_expr)`
+macro_rules! contract_pre_brier_score_multiclass {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_input = &$input;
+        debug_assert!(_pv_input.len() > 0,
+            "Contract brier_score_multiclass: precondition violated — input.len() > 0");
+        debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
+            "Contract brier_score_multiclass: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `brier_score_multiclass`.
+/// Check after computation: `contract_inv_brier_score_multiclass!(result_expr)`
+macro_rules! contract_inv_brier_score_multiclass {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `isotonic_regression`.
 /// Domain-specific. Call: `contract_pre_isotonic_regression!(slice_expr)`
 macro_rules! contract_pre_isotonic_regression {
