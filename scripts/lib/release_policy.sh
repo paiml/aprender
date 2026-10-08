@@ -133,7 +133,7 @@ rp_known_failures() {
     kr=$(awk '/^  known_red:[[:space:]]*$/ { f = 1; next }
               f && /^  [^ ]/ { f = 0 }
               f && /^    - rung:/ { r = $3 }
-              f && /^      ticket:/ { t = $2; gsub(/^["\047]|["\047]$/, "", t); if (r != "") printf "- %s: known red (ladder), %s\n", r, t; r = "" }' "$ladder")
+              f && /^      ticket:/ { t = $2; if (t ~ /^".*"$/ || t ~ /^\047.*\047$/) t = substr(t, 2, length(t) - 2); if (r != "") printf "- %s: known red (ladder), %s\n", r, t; r = "" }' "$ladder")
     printf '## Known failures\n\nThese rows are not release gates under the standing release policy (CRUX smoke on lambda and gx10 is the gate). Each has a ticket.\n\n'
     [ -z "$kr" ] || printf '%s\n' "$kr"
     # --limit 1000 is gh's ceiling; a search that fills it may have been cut, so it is not measured.

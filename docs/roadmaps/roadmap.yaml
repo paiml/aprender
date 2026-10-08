@@ -18533,6 +18533,8 @@ roadmap:
   acceptance_criteria:
   - 'ladder.release_policy in contracts/model-capability-ladder-v1.yaml records the standing CRUX-smoke policy'
   - 'scripts/release/autopilot.sh, scripts/release_readiness.sh and scripts/prepare_bump.sh read it through the strict awk reader'
+  - 'the models nightly opens or updates one ticket per red row, naming release_policy.ticket_owner; a search it cannot trust opens nothing (NOT-MEASURED)'
+  - 'the release notes of a covered release list known failures: ladder known_red rungs and open models-nightly red-row tickets'
   - 'out of scope: the #4033 levers'
   phases: []
   subtasks: []
