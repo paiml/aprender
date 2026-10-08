@@ -1,0 +1,133 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "push_reuse_drops_x86_main_side_effects",
+          "level": "note",
+          "message": {
+            "text": "x86-main also uploads coverage and generates SLSA provenance for the commit it ran on. When a push to main reuses the queue run, x86-main is skipped, so the commit on main gets neither from its own push run; they exist only on the PR head run and the queue run."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": ".github/workflows/ci.yml:264",
+            "excerpt": "      - name: Generate SLSA provenance",
+            "excerpt_sha256": "57153c10a75839e18b098294bd307206517b34191d99d2d158216c77b678ee59",
+            "failure_scenario": "A consumer that looks for the SLSA attestation or the codecov upload keyed to a main commit by its push run finds none after a reuse, while ci / gate is green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "two_refusals_not_mutation_covered",
+          "level": "note",
+          "message": {
+            "text": "Two refusal branches carry no R-PUSH marker, so check_ci_push_reuse.sh --self-test does not mutate them: the absent-commit refusal in decide_push (acknowledged in a comment, shadowed by R-PUSHPARENT) and the no-merge_group-run refusal in resolve_push (shadowed by the jobs call failing on an empty run id)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from scripts/ci_mg_reuse.sh in the diff: two refuse lines end without a # R-PUSH marker, and a downstream refusal would still catch each.",
+            "failure_scenario": "Deleting either refusal leaves the 29-mutant table green; today a later check still answers 0, so the effect is a weaker table, not a wrong reuse.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_selftest_29_of_29",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_ci_push_reuse.sh --self-test killed 29 of 29 R-* mutants across ci_mg_workspace_result.sh, ci_test_tier.sh and ci_mg_reuse.sh, with the unmutated-copy controls green."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_ci_push_reuse.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a7b17513f144a09021171c2b2433b59ca4b9c1d1b4083c90b65fa0a4043e5ca0",
+            "failure_scenario": "A surviving mutant would mean a refusal rule the guard states and nothing tests; none survived.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ci_mg_reuse_selftest",
+          "level": "note",
+          "message": {
+            "text": "scripts/ci_mg_reuse.sh --self-test: 78 passed, 0 failed, including the push verdict rows and the push wiring rows."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/ci_mg_reuse.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0e8429bcc9ac23e0bac43cf867d8cb8ddc133849aa00cf7727370cb9d574f42a",
+            "failure_scenario": "A red row would mean the verdict block or wiring accepts a push reuse it should refuse; none did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "push_reuse_case_table",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_ci_push_reuse.sh case table (P, R, X rows plus the T36 rows) is green."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_ci_push_reuse.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c4063ed2246068cc3f179b66283aeefcb624ded420a8a24b4692c3ef3763d2ab",
+            "failure_scenario": "A red P or R row would mean decide-push reuses on an unproven key; none did.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

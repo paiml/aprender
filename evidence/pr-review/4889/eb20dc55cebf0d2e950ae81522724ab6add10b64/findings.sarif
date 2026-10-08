@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t2-regex-no-overcount",
+          "level": "note",
+          "message": {
+            "text": "The new row regex does not overcount. A log with 3 declared gates, one real [ OK ] row for the dogfood-gates line, one real [ OK ] row, and one line with [ OK ] in mid-line prose yields rows=2 and UNKNOWN reason=rows=2<declared=3. The anchor ^[[:space:]]*\\[ keeps mid-line text out. dogfood.sh mark() is the only printer of the padded token, and it writes it at line start."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 40
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "decide abc ov.log 0"
+            ],
+            "exit_code": 2,
+            "stdout_sha256": "88ec70b343c2f5fd2a983a056aabf60845f2069c2ac165914033e47a4f6ad545",
+            "failure_scenario": "none: a stray [ OK ] in non-row output would have to start a line to be counted.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t2-fixtures-kill-old-regex",
+          "level": "note",
+          "message": {
+            "text": "The changed fixtures are load-bearing. Running the self-test with the OLD regex substituted gives 4 failed cases (GO returned 2, NO-GO returned 2, rows=0<declared=8). With the new regex the self-test is OK and scripts/check_t2_preflight_verdict.sh prints PASS."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 72
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "mutated-t2_preflight.sh",
+              "--self-test"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "cdaf4a8beb1a554878e0fb8092d0a91c8cb81221c597227217c5c548208568a7",
+            "failure_scenario": "none: the mutant is killed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t2-self-test-and-guard-green",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/t2_preflight.sh --self-test and scripts/check_t2_preflight_verdict.sh both exit 0 on this head (12 cases ok, then PASS)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 62
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/t2_preflight.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4476abdc39f97281e1361122e94830c94bcc298a16d7b0ce2d1ad076b4db345b",
+            "failure_scenario": "none: both runs green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t2-floor-slack",
+          "level": "note",
+          "message": {
+            "text": "No GO rule is weakened: the VERDICT line, declared-count, FAIL scan and version-unpublished exception are unchanged. Before this change a green run could never reach GO, since PASS rows print as [ OK ] and the old regex missed them, so it failed closed as UNKNOWN. The floor is now live. It stays loose by design: rows >= declared, while a full run prints declared+1 rows (the dogfood-gates row plus one per gate), so one dropped gate row is still GO. That slack existed before and is outside this diff."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 40
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reading decide() and dogfood.sh mark(); the declared+1 count follows from the row printer, not from a run of the full dogfood.",
+            "failure_scenario": "A dogfood run that drops exactly one gate row between the declared count and the declared+1 rows is still reported GO.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

@@ -9,11 +9,11 @@
 # Rule: each `docker run` whose body runs `cargo mutants` or scripts/mutants_diff_gate.sh must carry
 # --memory=<N>g and --memory-swap=<N>g with the same N (swap = memory, so the cap is not a swap escape),
 # 1 <= N <= 16 (docker reads --memory=0 as unlimited), each flag given exactly once (docker honours the last).
-# A native run (the mutants-cuda section) is capped instead by `systemd-run --scope -p MemoryMax=<N>G
+# A native run is capped instead by `systemd-run --scope -p MemoryMax=<N>G
 # -p MemorySwapMax=0` on one line, 1 <= N <= 16, each once. A mutation run with neither cap is a FAIL.
 # Known limit: a tripwire against a cap being dropped by accident, not against an author who hides one.
 #
-#   check_mutants_memory_cap.sh [file...]  default: mutants-nightly.yml, ci/sections.yml and ci.yml (mutants-shard);
+#   check_mutants_memory_cap.sh [file...]  default: mutants-nightly.yml, the one file with a mutation run;
 #                                          each file must be readable and hold a mutation run, else rc 2
 #   check_mutants_memory_cap.sh --self-test
 set -uo pipefail
@@ -67,7 +67,7 @@ check() { # check <file...> -> 0 iff every file is readable, holds a mutation ru
 }
 
 # The files a bare run judges. The self-test proves every workflow file with a mutation run is listed here.
-defaults=("$ROOT/.github/workflows/mutants-nightly.yml" "$ROOT/ci/sections.yml" "$ROOT/.github/workflows/ci.yml")
+defaults=("$ROOT/.github/workflows/mutants-nightly.yml")
 uncovered() { # uncovered <listed file...> -> each workflow file holding a mutation run that is not listed
     local f l hit
     for f in "$ROOT"/.github/workflows/*.yml "$ROOT/ci/sections.yml"; do
@@ -109,7 +109,7 @@ if [ "${1:-}" = "--self-test" ]; then
     mrow 2 missingonly "$d/gone.yml"
     mrow 2 onerunless  "$d/capped.yml" "$d/none.yml"
     mrow 0 twocapped   "$d/capped.yml" "$d/smaller.yml"
-    # The per-PR shard runs cargo-mutants inside scripts/mutants_table_shard.sh (ci.yml mutants-shard).
+    # A cargo-mutants run inside a wrapper script (here a shard script) is still a mutation run.
     printf '    steps:\n      - name: s\n        run: |\n          docker run --rm \\\n            %s \\\n            -w /workspace "$IMAGE" \\\n            bash -c '"'"'bash scripts/mutants_table_shard.sh pr.diff 1 16 2 out'"'"'\n' '-v /a:/b' > "$d/shard.yml"
     mrow 1 shardnocap  "$d/shard.yml"
     sed -i 's#-v /a:/b#--memory=16g --memory-swap=16g#' "$d/shard.yml"
@@ -144,7 +144,7 @@ if [ "${1:-}" = "--self-test" ]; then
     if [ -r "$d/unread.yml" ]; then echo "NOT_MEASURED unreadable row: this user reads mode 000"; nm=1; else mrow 2 unreadable "$d/unread.yml"; fi
     # The bare run's list covers every workflow file that runs mutants; dropping one is caught.
     u=$(uncovered "${defaults[@]}"); [ -z "$u" ] && echo "ok    defaults cover every mutation file" || { echo "FAIL  not in defaults: $u"; bad=1; }
-    u=$(uncovered "${defaults[@]:0:2}"); [ -n "$u" ] && echo "ok    a dropped default is caught" || { echo "FAIL  dropping ci.yml went unseen"; bad=1; }
+    u=$(uncovered "${defaults[@]:1}"); [ -n "$u" ] && echo "ok    a dropped default is caught" || { echo "FAIL  dropping a default went unseen"; bad=1; }
     [ "$bad" = 0 ] && [ "${nm:-0}" = 1 ] && { echo "SELF-TEST NOT MEASURED (1 row)" >&2; exit 2; }
     [ "$bad" = 0 ] && { echo "SELF-TEST PASSED"; exit 0; }
     echo "SELF-TEST FAILED" >&2; exit 1

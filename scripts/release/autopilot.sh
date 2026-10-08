@@ -6,7 +6,8 @@
 # one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
 #   autopilot.sh <version> <bump-pr> [from-step] [to-step]
-#   steps: wait deep dogfood models readiness tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close
+#   steps: wait deep dogfood models readiness tag cleanroom assets preflight publish dryrun cascade install hosts postpub ledger close
+#   The publish dry run (rc_publish_gate.sh --verify) runs in `tag`, ahead of the tag; `dryrun` reads its receipt.
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
 #   T-1 'ci / deep' has no workflow on main, so `deep` runs the equivalent locally on the release commit.
@@ -40,7 +41,7 @@ fi
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
-STEPS=(wait deep dogfood models readiness tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close)
+STEPS=(wait deep dogfood models readiness tag cleanroom assets preflight publish dryrun cascade install hosts postpub ledger close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
@@ -90,12 +91,21 @@ v=$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import
 bash scripts/bump-version.sh --check >> "$LOG" 2>&1 || die "bump-version.sh --check: the workspaces disagree on the version"
 export CARGO_TARGET_DIR="$REPO_ROOT/target"
 
+# T-1 LANES (C316 item 2d): deep, dogfood and models are three independent measurements of the same
+# commit, so they start together and join before readiness. Each is a function below, run as its own
+# background job; the join is after the models function. The step bodies are unchanged.
+#   TARGET DIRS. All three build `release/apr`, each with different features (deep: every workspace
+#   [[bin]]; dogfood: $FEATS; models: --features cuda). In series the last writer was models, and
+#   readiness reads that binary from $CARGO_TARGET_DIR. In parallel one shared dir would be a race over
+#   which apr each lane measures, so deep and dogfood build into their own dirs under it and models
+#   keeps $CARGO_TARGET_DIR: readiness still reads the apr models built, exactly as before.
 
 # 1b. deep (T-1): no `ci / deep` workflow exists on main, so the local equivalent runs on THIS commit.
 #     doctests + examples must be rc=0. `--no-default-features` carries the standing #3176 class
 #     (every error inside aprender-distribute, identical at v0.66/v0.67): recorded, not blocking;
 #     any error OUTSIDE that crate is RED and stops the train.
-if run_step deep; then
+t1_deep() {
+  export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-deep"
   cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute > "$AP/deep-doctests.log" 2>&1; rc=$?
   say "DEEP doctests rc=$rc: $(grep -E '^test result' "$AP/deep-doctests.log" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
   [ $rc -eq 0 ] || die "T-1 doctests RED ($AP/deep-doctests.log)"
@@ -122,7 +132,7 @@ if run_step deep; then
   say "DEEP all-bins smoke rc=$rc"
   [ $rc -eq 0 ] || die "T-1 all-bins smoke RED ($AP/deep-bins-smoke.json)"
   say "DEEP GO at $MC (doctests, examples, all bins green; --no-default-features within #3176)"
-fi
+}
 
 # 2. dogfood: the R5 receipt, pre-publish, FULL, on THIS commit -- never inherited (#3708)
 #    The T-2 inheritance (operator 2026-09-17) was withdrawn by the cop's ruling on #3708 (2026-09-21).
@@ -133,7 +143,8 @@ fi
 #    Now the real dogfood runs here, and R5 is judged HERE by the same function T-4 uses
 #    (check_publish_preflight.sh --receipt-only), on the same receipt file in this worktree, so a
 #    receipt T-4 would refuse stops the train before any tag exists.
-if run_step dogfood; then
+t1_dogfood() {
+  export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-dogfood"
   bash scripts/dogfood.sh --phase pre-publish > "$AP/dogfood-pre-publish.log" 2>&1; rc=$?
   grep -E 'VERDICT' "$AP/dogfood-pre-publish.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "dogfood pre-publish NO-GO rc=$rc ($AP/dogfood-pre-publish.log)"
@@ -142,7 +153,7 @@ if run_step dogfood; then
   tail -2 "$AP/dogfood-r5.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 R5 refused the dogfood receipt rc=$rc: the T-4 publish gate would refuse it too, so nothing is tagged ($AP/dogfood-r5.log)"
   say "DOGFOOD GO at $MC (R5 holds at T-1)"
-fi
+}
 
 
 # 2b. models (#3717, #3712 done_when 3): the model matrix, measured AT THIS COMMIT on BOTH hosts
@@ -150,11 +161,54 @@ fi
 #     apr built from $MC and proved to be it. One red cell, an unreachable host, a failed build, a
 #     missing receipt or a judge decline is a STOP here, with no tag cut. The same judge re-reads the
 #     receipts committed in the bump at T-4 (check_publish_preflight.sh R7).
-if run_step models; then
+t1_models() {
   bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
   grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 model matrix NO-GO rc=$rc: nothing is tagged ($AP/models-t1.log)"
   say "MODELS GO at $MC on lambda and gx10"
+}
+
+# The join. Every selected lane starts now, each in its own process group (set -m), so a lane can be
+# stopped with everything it started. A red in any lane stops the pass (item 4): nothing after this
+# point runs. Each lane gets one row in $AP/t1-steps.tsv (step, start, end, seconds, verdict;
+# start and end are seconds after the launch, which STATUS stamps) and one STEP line in STATUS,
+# with its own log as before. GO = the lane exited 0; RED = it exited non-zero
+# by itself; STOPPED = it died of the TERM sent because another lane was red; a lane that failed
+# by itself in the same second is still RED.
+#   WHICH LANES A RED STOPS. deep and dogfood run only here, so the first red stops them. models is
+#   never stopped: its remote leg is an ssh with no pty, so killing the local ssh would leave the remote
+#   build and ladder running in the release dir the next pass reuses. models runs to its own verdict.
+#   An INT or TERM to the autopilot stops every lane (the lanes no longer share its process group),
+#   models included: the operator chose to stop, and the remote leg may run on to its own end.
+# scripts/check_release_t1_lanes_joined.sh runs this block against stub lanes, and its mutants.
+T1_LANES=(); for s in deep dogfood models; do run_step "$s" && T1_LANES+=("$s"); done
+if [ "${#T1_LANES[@]}" -gt 0 ]; then
+  declare -A T1_STEP=() T1_T0=() T1_STOPPED=()
+  trap 'for p in "${!T1_STEP[@]}"; do kill -TERM -- "-$p" 2> /dev/null; done; die "T-1 lanes interrupted"' INT TERM
+  t1_launch=$SECONDS; set -m
+  for s in "${T1_LANES[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
+  set +m
+  say "T-1 LANES started together: ${T1_LANES[*]}"
+  [ -f "$AP/t1-steps.tsv" ] || printf 'step\tstart\tend\tseconds\tverdict\n' > "$AP/t1-steps.tsv"
+  t1_red=''; t1_term_rc=$((128 + $(kill -l TERM)))
+  while [ "${#T1_STEP[@]}" -gt 0 ]; do
+    t1_pid=''; wait -n -p t1_pid "${!T1_STEP[@]}"; rc=$?
+    [ -n "$t1_pid" ] || die "T-1 join: wait returned no lane (rc=$rc) with ${#T1_STEP[@]} still recorded"
+    s=${T1_STEP[$t1_pid]}; unset "T1_STEP[$t1_pid]"; t1=$SECONDS
+    if [ "$rc" -eq 0 ]; then v=GO; elif [ -n "${T1_STOPPED[$s]:-}" ] && [ "$rc" -eq "$t1_term_rc" ]; then v=STOPPED; else v=RED; t1_red="${t1_red:+$t1_red }$s"; fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$((T1_T0[$s] - t1_launch))" "$((t1 - t1_launch))" \
+      "$((t1 - T1_T0[$s]))" "$v" >> "$AP/t1-steps.tsv"
+    say "STEP $s $v rc=$rc seconds=$((t1 - T1_T0[$s]))"
+    if [ "$v" = RED ]; then
+      for p in "${!T1_STEP[@]}"; do
+        [ "${T1_STEP[$p]}" = models ] && continue
+        T1_STOPPED[${T1_STEP[$p]}]=1; kill -TERM -- "-$p" 2> /dev/null
+      done
+    fi
+  done
+  trap - INT TERM
+  [ -z "$t1_red" ] || die "T-1 lane(s) $t1_red RED: deep and dogfood were stopped, models ran to its verdict, nothing is tagged ($AP/t1-steps.tsv)"
+  say "T-1 LANES joined GO: ${T1_LANES[*]}"
 fi
 # 2c. readiness (#3715 done_when 4): the same receipts, graded by pv's release-readiness-v1 SHACL shape,
 #     with the dogfood receipt R5 just judged. The T-4 preflight (R8) asks the same wrapper about the
@@ -180,7 +234,13 @@ if run_step readiness; then
     || die "T-1 release-readiness-v1 printed a WARN R8 row (report-only = waiver = stop): nothing is tagged ($AP/readiness-t1.log)"
   say "READINESS ok at $MC"
 fi
-# 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)
+# 3. tag + a DRAFT release, and the asset build dispatched on the tag (#4690). The release is not
+#    public until the `publish` step: binary-release.yml used to fire on `release: published`, so the
+#    assets could only be built by publishing first, and a public release stood with no assets, no
+#    clean-room and no preflight behind it. Now the build is dispatched (workflow_dispatch, input tag,
+#    from the TAG's workflow file) and uploads to the draft; every upload step finds the release by
+#    listing, which returns drafts. Publishing later fires `release: published` once more, and that
+#    run finds every asset present and rebuilds nothing (#4286).
 # cut_tag <version> <tag> <commit> -- PMAT-3459. The milestone gate lives INSIDE the
 # function that tags, ahead of `git tag`, so the tag cannot be cut without it: there is
 # no path through cut_tag() that reaches `git tag` with the gate unsatisfied. v0.68.1
@@ -237,10 +297,22 @@ cut_tag() {
 if run_step tag; then
   git rev-parse -q --verify "refs/tags/$T" > /dev/null && die "tag $T already exists locally"
   [ -f "$AP/release_notes.md" ] || die "no $AP/release_notes.md (prepare_bump.sh writes it from CHANGELOG [$V])"
+  # The publish dry run runs AHEAD of the tag. `--verify` builds every publishable crate's tarball
+  # against the local overlay (= `cargo publish --dry-run` for the whole cascade). The worktree is the
+  # release commit the tag will name, so this is the tarball the cascade uploads. A red here stops the
+  # train before anything irreversible: no carry, no tag, no draft (#4287 follow-up, #4690).
+  rm -f -- "${AP:?}/publish-dryrun-commit"
+  bash scripts/release/rc_publish_gate.sh --verify "$WT" > "$AP/publish-dryrun.log" 2>&1; rc=$?
+  tail -2 "$AP/publish-dryrun.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "publish dry-run refused rc=$rc (1 = a tarball defect, 2 = could not measure; $AP/publish-dryrun.log) -- no tag"
+  printf '%s\n' "$MC" > "$AP/publish-dryrun-commit"
+  say "PUBLISH-DRYRUN green on $MC, ahead of the tag ($AP/publish-dryrun.log)"
   cut_tag "$V" "$T" "$MC"
   say "TAGGED $T at $MC"
-  gh release create "$T" --repo $REPO --verify-tag --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create failed"
-  say "RELEASED $(gh release view "$T" --repo $REPO --json url -q .url)"
+  gh release create "$T" --repo "$REPO" --verify-tag --draft --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create --draft failed"
+  say "DRAFTED $T (not public until the publish step)"
+  gh workflow run binary-release.yml --repo "$REPO" --ref "$T" -f tag="$T" >> "$LOG" 2>&1 || die "binary-release.yml dispatch on $T failed -- the draft has no asset build"
+  say "ASSET BUILD dispatched on $T"
 fi
 
 
@@ -277,7 +349,7 @@ if run_step cleanroom; then
   fi
   # the JOB conclusion, not the run status: a sibling job that can never start must not hold the verdict hostage
   jc=""; for _ in $(seq 1 240); do
-    jc=$(gh run view "$crun" --repo $INFRA --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
+    jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
     [ -n "$jc" ] && break; sleep 60
   done
   [ "$jc" = success ] || die "clean-room (aprender) on $T concluded '${jc:-absent}' (run $crun)"
@@ -294,7 +366,7 @@ fi
 # 4. assets: the release run completes and all sixteen assets are on the release, checked by command
 if run_step assets; then
   run=""; for _ in $(seq 1 40); do
-    run=$(gh run list --repo $REPO --workflow binary-release.yml --event release --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)
+    run=$(gh run list --repo $REPO --workflow binary-release.yml --event workflow_dispatch --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)
     [ -n "$run" ] && break; sleep 30
   done
   [ -n "$run" ] || die "no binary-release run for $T after 20 min"
@@ -315,6 +387,7 @@ fi
 
 # 5. preflight (R1-R6; R5 reads the pre-publish receipt in this worktree)
 if run_step preflight; then
+  : > "$AP/preflight-pass"   # the publish step reads this; a stale PASS from an earlier run must not survive
   # #3690: the tag's own `ci / coverage` (COV_FLOOR, #3676) must be green before T-4. It was
   # recorded and never consulted, so a floor breach on the tag still reached the cascade.
   bash scripts/release/tag_coverage_gate.sh "$T" "$MC" > "$AP/tag-coverage.log" 2>&1; rc=$?
@@ -323,7 +396,36 @@ if run_step preflight; then
   bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
   tail -3 "$AP/preflight.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "publish preflight refused rc=$rc"
+  printf 'PASS %s %s\n' "$T" "$MC" > "$AP/preflight-pass"
   say "PREFLIGHT PASS"
+fi
+
+# 5a. publish the GitHub release (#4690). publish_release <tag> <commit>: the draft made at the tag
+# step goes public here and nowhere else, and only when this function has re-read each fact itself
+# rather than trusting that an earlier step ran (a run started at `publish` skipped them all):
+#   (a) clean-room: the recorded infra run's `clean-room (aprender)` job concluded success;
+#   (b) preflight: the preflight step's PASS names exactly this tag and commit;
+#   (c) assets: check_release_assets.sh <tag> exits 0 on the draft -- 1 (missing) and 2 (could not
+#       read) both refuse; Unknown is not a pass;
+#   (d) the release is still a draft: one made public outside the train is a STOP, not a no-op.
+# scripts/check_release_draft_gated.sh runs the tag..publish steps against a stub gh that
+# records the call order, plus a mutant per refusal.
+publish_release() {
+    local t=$1 mc=$2 crun="" jc d rc=0
+    IFS= read -r crun < "$AP/cleanroom-run-id" 2>/dev/null || crun=""
+    [ -n "$crun" ] || die "no clean-room run id recorded for $t -- the release stays a draft"
+    jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | .conclusion' | head -n 1) || jc=""
+    [ "$jc" = success ] || die "clean-room (aprender) run $crun reads '${jc:-unreadable}' -- the release stays a draft"
+    grep -qxF "PASS $t $mc" "$AP/preflight-pass" 2>/dev/null || die "no preflight PASS for $t at $mc -- the release stays a draft"
+    bash scripts/check_release_assets.sh "$t" > "$AP/assets-publish.log" 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] || die "check_release_assets.sh $t rc=$rc at publish (1 = missing, 2 = could not read) -- the release stays a draft"
+    d=$(gh release view "$t" --repo "$REPO" --json isDraft -q .isDraft) || d=""
+    [ "$d" = true ] || die "release $t reads isDraft='${d:-unreadable}' at publish: it is not the train's draft"
+    gh release edit "$t" --repo "$REPO" --draft=false >> "$LOG" 2>&1 || die "publishing the draft $t failed"
+}
+if run_step publish; then
+  publish_release "$T" "$MC"
+  say "RELEASED $(gh release view "$T" --repo "$REPO" --json url -q .url) (clean-room, assets and preflight green before it went public)"
 fi
 
 
@@ -335,12 +437,10 @@ fi
 #     (TO=close), but the line read as a park and cost a minute of reading -- so it now says what it is.
 if run_step dryrun; then
   # The receipt above is about not WAITING for the operator; a tarball that does not compile is a
-  # defect, not a park. `--verify` builds every publishable crate's tarball against the local
-  # overlay (= `cargo publish --dry-run` for the whole cascade), so a red here would have been a
-  # half-uploaded cascade (#4287 follow-up, operator publish word for 0.70.0, 2026-09-24).
-  bash scripts/release/rc_publish_gate.sh --verify "$WT" > "$AP/publish-dryrun.log" 2>&1; rc=$?
-  tail -2 "$AP/publish-dryrun.log" >> "$STATUS"
-  [ $rc -eq 0 ] || die "publish dry-run refused rc=$rc (1 = a tarball defect, 2 = could not measure; $AP/publish-dryrun.log)"
+  # defect, not a park. The `--verify` dry run ran in the tag step, ahead of the tag, on this same
+  # commit. Its receipt must name exactly $MC: missing or another commit is red, never a skip.
+  [ "$(cat "$AP/publish-dryrun-commit" 2>/dev/null)" = "$MC" ] \
+    || die "no green publish dry-run receipt for $MC in $AP/publish-dryrun-commit (the tag step runs it ahead of the tag)"
   bash scripts/cascade-publish.sh --check > "$AP/cascade-check.log" 2>&1; rc=$?
   behind=$(grep -cE "\(want ${V//./\\.}\)" "$AP/cascade-check.log" || true)
   tail -3 "$AP/cascade-check.log" >> "$STATUS"

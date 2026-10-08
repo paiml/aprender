@@ -1,0 +1,19 @@
+- id: PMAT-4687
+  github_issue: 4687
+  item_type: task
+  title: 'publish_strict.sh: one door to cargo publish — refuse a clean-room run id that is missing, red, or tested another commit'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-cd
+  created: 2026-10-06T00:00:00Z
+  updated: 2026-10-06T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #4687 row T10, verbatim: "publish_strict.sh must refuse a clean-room run id that is missing, red, or tested another commit (it accepts any non-empty file today, lines 28-30 at v0.70.1). Plant all three."'
+  - 'Done when, verbatim: "a contract, a planted falsifier that goes red, a first green on a real PR, and before-and-after numbers."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'SCOPE: scripts/release/publish_strict.sh, scripts/cascade-publish.sh (clean_room_gate gains an optional third argument, a pinned run id), scripts/check_cascade_clean_room_gate.sh (10 pinned rows), scripts/check_publish_strict_cleanroom.sh (new), contracts/publish-workspace-v1.yaml (PW-DOOR-005, FALSIFY-PUB-008). HOW IT IS MET: publish_strict.sh reads the recorded run id and loads clean_room_gate from the cascade script (the same extraction the existing guard uses), then calls it pinned to that one run. Pinned mode reads exactly that run through the runs API, refuses a run of another workflow, and never lists runs, so a green run elsewhere cannot stand in for a red recorded one. A missing, empty, non-numeric, unreadable, red or other-commit id stops the cascade before any upload. --plan is unchanged. MEASURED: check_publish_strict_cleanroom.sh runs the real publish_strict.sh against a fixture tag checkout and a stub gh and cargo. BEFORE (origin/main 645dc34101): 8 of 9 checks FAIL; the non-numeric, red, other-commit and unreadable ids all pass the door and stop later, on the B2-gpu id. AFTER: 9 of 9 hold; check_cascade_clean_room_gate.sh holds every row, including the 10 pinned ones.'
