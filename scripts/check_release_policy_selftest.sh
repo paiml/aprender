@@ -67,6 +67,7 @@ row per-release-entry     1 0 "$(plant dup 's/^      release: "0\.70\.1"$/      
 row per-release-rc-entry  1 0 "$(plant duprc 's/^      release: "0\.70\.1"$/      release: "0.72.0-rc.1"/')" 0.72.0-rc.1 'one release takes one ruling'
 # A block the strict reader cannot read is rc 2 with its reason.
 row since-not-xyz         2 0 "$(plant since 's/^    since: "0\.71\.0"$/    since: "0.71"/')" 0.71.0 "since '0\.71' is not X\.Y\.Z"
+row since-single-quoted   0 1 "$(plant ssq "s/^    since: \"0\\.71\\.0\"\$/    since: '0.71.0'/")" 0.71.0 '^      release: "0\.71\.0"$'
 row unknown-key           2 0 "$(plant unk 's/^    larger_rows: nightly$/    larger_rowz: nightly/')" 0.71.0 'unknown key in release_policy: larger_rowz'
 row missing-key           2 0 "$(plant miss '/^    red_row_needs: ticket$/d')" 0.71.0 'release_policy has no red_row_needs'
 row missing-owner         2 0 "$(plant miso '/^    ticket_owner: /d')" 0.71.0 'release_policy has no ticket_owner'
@@ -129,6 +130,7 @@ own() {
 }
 own owner-real            0 "$ladder" '^#3598$'
 own owner-name            0 "$(plant oname 's/^    ticket_owner: .*$/    ticket_owner: models-team/')" '^models-team$'
+own owner-single-quoted   0 "$(plant osq "s/^    ticket_owner: .*\$/    ticket_owner: '#42'/")" '^#42$'
 own owner-missing         2 "$(plant omiss '/^    ticket_owner: /d')" 'release_policy has no ticket_owner'
 own owner-empty-issue     2 "$(plant ozero 's/^    ticket_owner: .*$/    ticket_owner: "#0"/')" "ticket_owner '#0' is neither"
 own owner-two-words       2 "$(plant otwo 's/^    ticket_owner: .*$/    ticket_owner: "Some One"/')" "ticket_owner 'Some One' is neither"

@@ -171,14 +171,15 @@ relay() { # relay COMMIT OUT EVIDENCE PLANT
 }
 
 # red_rows BUNDLE -> "host<TAB>row<TAB>why", one line per red row of a red bundle: each rung a receipt
-# marks green:false; a red with no rung to name (a build failure, a binary that is not C, no receipt)
+# does not mark green:true (a rung with no green key is red, as the judge counts it); a red with no
+# rung to name (a build failure, a binary that is not C, no receipt)
 # is one "lane" row, so a red never goes unticketed. A host with no readable receipt while the other
 # host has one is its own "lane" row (a gx10 build or ssh failure must not hide behind a lambda rung);
 # no readable receipt on either host is the one "all" lane row. Every row is listed: no cap.
 red_rows() {
     local b=$1 h r rows="" missing="" seen=0
     for h in lambda gx10; do
-        if [ -f "$b/$h.json" ] && r=$(jq -r --arg h "$h" '(.rungs // [])[] | select(.green == false)
+        if [ -f "$b/$h.json" ] && r=$(jq -r --arg h "$h" '(.rungs // [])[] | select(.green != true)
             | [$h, (.id // .file // "unnamed-rung"), ("rung not green (" + (.file // "no file") + ")")] | @tsv' -- "$b/$h.json" 2> /dev/null); then
             seen=1; rows+=$r$'\n'
         else
@@ -574,6 +575,9 @@ GH
         '[{"number":4,"title":"models-nightly red: fx-10 on lambda"},{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}'
     row tickets_same_commit_is_not_commented_twice 0 "TICKET kept #5" "issue comment" -- tk "$tmp/tk/red" \
         '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' "{\"body\":\"x\",\"comments\":[{\"body\":\"models-nightly@$c1\"}]}"
+    R0='[{"id":"fx-3","file":"c.gguf"},{"id":"fx-2","file":"b.gguf","green":true}]'
+    tkb nogreen red "$R0"
+    row tickets_rung_without_green_is_red 0 "OUT lambda|fx-3|#77 " "fx-2" -- tk "$tmp/tk/nogreen" '[]' '{}'
     tkb lane red ""
     row tickets_red_with_no_rung_is_a_lane_row 0 "models-nightly red: lane on all" "" -- tk "$tmp/tk/lane" '[]' '{}'
     tkb nogx red "$R1" no-gx10
@@ -616,12 +620,13 @@ m20_real_ps_never_read	s/else ps -eo pgid=,args=; fi/else :; fi/
 m21_plant_feeds_readiness	s/\[ -n "\$4" \] [|][|] bundle=\$ev/bundle=$ev/
 m22_unmeasured_feeds_readiness	s/case \$state in green[|]red[)] \[/case $state in *) [/
 m23_nightly_judges_a_scope	s/ MODELS_T1_SCOPE=none \&\&/ \&\&/
-m24_green_rungs_ticketed	s/select\(.green == false\)/select(.green != null)/
+m24_green_rungs_ticketed	s/select\(.green != true\)/select(.green != null)/
 m25_existing_issue_ignored	s/^        if \[ -n "\$n" \]; then$/        if false; then/
 m26_commented_every_slot	s/grep -qF -- "\$mark" <<< "\$j"; then say/false; then say/
 m27_ticket_failure_passes	s/^    \[ "\$st" = 0 \] [|][|] die "a ticket/    true || die "a ticket/
 m28_ticket_names_no_owner	s/ Owner: \$owner\.//
-m29_ownerless_ticket_opened	s/owner=\$\(rp_ticket_owner "\$ladder"\) [|][|] \{/owner=$(rp_ticket_owner "$ladder") || true || {/'
+m29_ownerless_ticket_opened	s/owner=\$\(rp_ticket_owner "\$ladder"\) [|][|] \{/owner=$(rp_ticket_owner "$ladder") || true || {/
+m30_rung_without_green_unticketed	s/select\(.green != true\)/select(.green == false)/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
