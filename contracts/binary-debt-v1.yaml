@@ -110,6 +110,7 @@ legacy_names:
 binaries:
   - {crate: aprender, bin: apr, class: KEEP, reason: "the one entry point", target: null}
   - {crate: aprender-compute-xtask, bin: aprender-compute-xtask, class: KEEP, reason: "build tooling, never installed", target: null}
+  - {crate: aprender-ci-tools, bin: aprender-ci-tools, class: KEEP, reason: "CI tooling ported from scripts/**/*.py (C301), never installed", target: null}
   - {crate: aprender-contracts-cli, bin: pv, class: KEEP, reason: "contract CLI, dogfooded by every gate", target: null}
   - {crate: aprender-contracts-cli, bin: pv-sat, class: KEEP, reason: "ONT-5 SHACL reasoner (added after the census); gates call it as its own ELF. Folding it into `pv sat` is a cop ruling, and would count as debt", target: null}
   - {crate: aprender-zram-generator, bin: aprender-zram-generator, class: KEEP, reason: "systemd generator, must be a standalone ELF", target: null}
