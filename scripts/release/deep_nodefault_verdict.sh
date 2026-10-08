@@ -58,7 +58,7 @@ count_new() {
             if (L[i] ~ /^error: could not compile `aprender-distribute`( |$)/) continue   # m:any-could-not-compile m:summary-unanchored
             loc = ""
             for (j = i + 1; j <= i + 3 && j <= NR; j++) {
-                if (L[j] ~ /^(error|warning)/) break
+                if (L[j] ~ /^(error|warning)/) break   # m:lookahead-no-stop
                 if (L[j] ~ /^[ \t]*--> /) { loc = L[j]; sub(/^[ \t]*--> /, "", loc); break }
             }
             if (index(loc, "crates/aprender-distribute/") == 1) continue   # m:unanchored-path
@@ -126,6 +126,8 @@ error: cannot find macro `info` in this scope
 error: could not compile `aprender-distribute` (lib) due to 2 previous errors
 LOG
     { cat "$d/dist-only.log"; printf "%s\n" "thread 'rustc' panicked at compiler/rustc_middle/src/ty/mod.rs:1:1:"; } > "$d/dist-panic.log"
+    printf "%s\n" "error: linking with \`cc\` failed: exit status: 1" "warning: unused import: \`std::io\`" "  --> crates/aprender-distribute/src/net.rs:3:5" > "$d/stop-warn.log"
+    printf "%s\n" "error: failed to run custom build command for \`aprender-core\`" "error[E0433]: failed to resolve: use of undeclared crate or module \`tokio\`" "  --> crates/aprender-distribute/src/net.rs:12:5" > "$d/stop-error.log"
     : > "$d/empty.log"
     cat > "$d/manifest.log" <<'LOG'
 error: failed to load manifest for workspace member `crates/aprender-core`
@@ -199,6 +201,8 @@ LOG
     row C14 2 "$d/clean.log"             abc "non-integer RC = not_measured"
     row C15 1 "$d/dist-only.log"         137 "rc 137 (killed) with only #3176 errors: an unfinished run is red"
     row C16 1 "$d/dist-panic.log"        101 "rc 101, only #3176 errors plus a panicked thread: a panic is outside"
+    row C17 1 "$d/stop-warn.log"         101 "an unlocated error followed by a warning into distribute: the warning does not explain it"
+    row C18 1 "$d/stop-error.log"        101 "an unlocated error followed by a distribute error: the next error does not explain it"
 
     printf 'deep_nodefault_verdict.sh --self-test (impl=%s): %s/%s rows pass\n' "$IMPL" "$PASS" "$((PASS + FAIL))"
     [ "$FAIL" = 0 ] && return 0
@@ -220,6 +224,7 @@ LOG
 #   missing-log            a missing LOG is read as an empty one instead of not_measured
 #   abnormal-rc            a killed or terminated cargo (rc not 0 or 101) whose log holds only #3176 errors is green
 #   panic-ignored          a panicked thread (rustc ICE, cargo panic) next to only #3176 errors is green
+#   lookahead-no-stop      the --> look-ahead runs past the next error/warning line and borrows its location
 mutants() {
     local name expr killed=0 total=0 first
     d=$(mktemp -d) || return 2
@@ -248,6 +253,7 @@ summary-unanchored    s#`aprender-distribute`\( \|\$\)/#`aprender-distribute/#
 missing-log           s#^( +)if \[ ! -f.*$#\1[ -r "$log" ] || log=/dev/null; if false; then#
 abnormal-rc           s/then k=1; fi/then k=0; fi/
 panic-ignored         s/.*//
+lookahead-no-stop     s/.*//
 MUTANTS
     printf 'deep_nodefault_verdict.sh --mutants: %s/%s killed\n' "$killed" "$total"
     [ "$killed" = "$total" ] && [ "$total" -ge 5 ]
