@@ -55,6 +55,8 @@ members = [
     "crates/aprender-orchestrate",
     # --- MCP server (Model Context Protocol) ---
     "crates/aprender-mcp",
+    # Phase 8: method-neutral decision models (Laya on ModernBERT); library only
+    "crates/aprender-decide",
     # --- APR-MONO Phase 2f: satellite repos (main crates) ---
     "crates/aprender-profile",
     "crates/aprender-profile-core",
