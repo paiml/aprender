@@ -10,6 +10,9 @@ set -euo pipefail
 MODEL="${1:?model file}"
 BF16="${2:?bf16 sibling}"
 OUT="${3:?output tsv}"
+case "${OUT}" in
+    *..*) echo "apr_embed_probe: refusing an output path containing '..': ${OUT}" >&2; exit 2 ;;
+esac
 TABLE="docs/audits/APR-EMBED-001/EG-0/probe-verbs.tsv"
 TIMEOUT_S="${APR_EMBED_PROBE_TIMEOUT:-120}"
 
@@ -27,6 +30,9 @@ printf 'verb\texit\tfirst_line\n' >> "${OUT}"
 n=0
 while IFS=$'\t' read -r verb args; do
     case "${verb}" in ''|'#'*) continue ;; esac
+    case "${verb}" in
+        *..*|*/*) echo "apr_embed_probe: refusing verb '${verb}' from ${TABLE}: not a plain name" >&2; exit 2 ;;
+    esac
     o="${SCRATCH}/${verb}"
     mkdir -p "${o}"
     args="${args//\{M\}/${MODEL}}"

@@ -10,6 +10,9 @@
 set -euo pipefail
 
 OUT="${2:-docs/audits/APR-EMBED-001/corpus}"
+case "${OUT}" in
+    *..*) echo "apr_embed_corpus: refusing an output path containing '..': ${OUT}" >&2; exit 2 ;;
+esac
 if [ -n "${1:-}" ]; then
     COMMIT="$1"
 elif [ -f "${OUT}/SOURCE" ]; then
