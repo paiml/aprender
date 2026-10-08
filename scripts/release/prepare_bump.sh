@@ -90,12 +90,33 @@ pb_carry_cert() {
     echo "CERT carried: $src -> $dst (apr_commit $base)"
 }
 
+# pb_trailers MODEL AGENT -> the bump commit's trailer block; 1 (and nothing printed) when MODEL is not
+# a model the fleet runs or AGENT is not a session name. D7 (#4928): the trailer was the literal
+# "Claude Fable 5.1", a model no release worker runs, so every bump commit named the wrong author.
+# MODEL and AGENT come from RELEASE_MODEL and RELEASE_AGENT; the defaults are the release worker's.
+PB_FLEET_MODELS='Claude Opus 5.5, Claude Sonnet 5.5, Claude Haiku 5.5'
+pb_trailers() {
+    case "$1" in
+        'Claude Opus 5.5'|'Claude Sonnet 5.5'|'Claude Haiku 5.5') ;;
+        *) echo "commit trailer model '$1' is not one the fleet runs ($PB_FLEET_MODELS)" >&2; return 1 ;;
+    esac
+    [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "commit trailer agent '$2' is not a session name" >&2; return 1; }
+    printf 'Co-Authored-By: %s <noreply@anthropic.com>\nAgent: %s\n' "$1" "$2"
+}
+
 pb_self_test() {
     local d fail=0 got; d=$(mktemp -d) || return 2
     printf '%s' '[{"number":4,"title":"fixup: d"},{"number":1,"title":"Fix(x)!: a"},{"number":2,"title":"feat: b"},{"number":3,"title":"chore: c"}]' > "$d/m.json"
     got=$(pb_section "$d/m.json" 9.9.9 MARK "$d/s.md")
     if [ "$got" = "4 merged PRs since the last tag: Added 1, Fixed 1, Changed 2" ]; then echo "  ok   section tally groups fix/feat/other"
     else echo "  FAIL section tally: $got"; fail=1; fi
+    got=$(pb_trailers 'Claude Opus 5.5' apr-x 2>/dev/null | tr '\n' '|')
+    if [ "$got" = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>|Agent: apr-x|" ]; then echo "  ok   trailers: a fleet model and the agent"
+    else echo "  FAIL trailers: $got"; fail=1; fi
+    for got in 'Claude Fable 5.1|apr-x' 'Claude Opus|apr-x' 'Claude Opus 5.5 |apr-x' 'Claude Opus 5.5|' 'Claude Opus 5.5|a b'; do
+        if pb_trailers "${got%%|*}" "${got#*|}" > /dev/null 2>&1; then echo "  FAIL trailers accepted '$got'"; fail=1
+        else echo "  ok   trailers: refused '$got'"; fi
+    done
     got=$(grep -v '^## \[' "$d/s.md" | tr '\n' '|')
     if [ "$got" = "|MARK||### Added||- feat: b (#2)||### Fixed||- Fix(x)!: a (#1)||### Changed||- chore: c (#3)|- fixup: d (#4)|" ]; then echo "  ok   section: Added, Fixed, Changed in order, PRs by number, fixup is not fix"
     else echo "  FAIL section body: $got"; fail=1; fi
@@ -186,6 +207,8 @@ if [ "${2:-}" != "--ship" ]; then
 fi
 
 cd "$B" || die "no $B (run without --ship first)"
+TRAILERS=$(pb_trailers "${RELEASE_MODEL:-Claude Opus 5.5}" "${RELEASE_AGENT:-release-autopilot}") ||
+    die "the bump commit's trailer is refused (D7, #4928); nothing committed, pushed or opened"
 # T-2 PREFLIGHT BEFORE THE BUMP (operator 2026-09-17): the bump PR is refused without a GO receipt for its parent sha.
 parent=$(git rev-parse origin/main); rcpt="$AP/preflight-$parent.verdict"
 [ -f "$rcpt" ] && grep -q '^GO ' "$rcpt" || die "no T-2 GO receipt for origin/main $parent ($rcpt) — run: $REPO_ROOT/scripts/release/t2_preflight.sh $V"
@@ -244,7 +267,7 @@ per docs/specifications/06x-release-schedule.md §4.2. After this merges, script
 deep (T-1, local), pre-publish dogfood, tag + release, clean-room.yml dispatched on the tag (T-3, run id recorded), assets by command, preflight, cascade (T-4, automated), install, host + installer receipts, close.
 
 Pmat-Ticket: PMAT-$EPIC
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+$TRAILERS
 MSG
 git push -q -u origin "$BR" || die "push failed"
 url=$(gh pr create --repo $REPO --base main --head "$BR" --milestone "$MS" --title "release: $V" --body-file "$AP/pr_body.md") || die "gh pr create failed"

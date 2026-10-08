@@ -44,11 +44,16 @@
 #                   or opened.
 #   ladder-ignored  (#3708) both receipts present and green but gitignored, so `git add -A`
 #                   would not commit them: REFUSED, naming them.
+#   trailer         (D7, #4928) the pushed bump commit carries exactly one Co-Authored-By, naming
+#                   Claude Opus 5.5 (a model the fleet runs), and `Agent: release-autopilot`.
+#   trailer-refused RELEASE_MODEL='Claude Fable 5.1' is REFUSED by the D7 check: non-zero exit, the
+#                   refusal names D7, no `gh pr create`, no branch pushed.
 # THE MUTANTS (each must turn its row RED, or the table is not discriminating)
 #   drop-keep-open  prepare_bump.sh without the line that writes keep-open -> epic-and-refs RED
 #   drop-refusal    prepare_bump.sh without the R-2 refusal              -> landmine RED
 #   drop-ladder     the ladder judge replaced by `true`                   -> ladder-missing-gx10 RED
 #   drop-ignored    prepare_bump.sh without the gitignored-receipt refusal -> ladder-ignored RED
+#   fable-trailer   the trailer line put back to the old 'Claude Fable 5.1' literal  -> trailer RED
 #
 # Exit 0 = every row green and both mutants killed. 1 = a row RED or a mutant survived.
 # 2 = ENV: a subject or a mutation anchor is missing -- the table judged nothing.
@@ -61,6 +66,7 @@ KEEP_OPEN_ANCHOR='keep-open: %s'
 REFUSAL_ANCHOR='bash "$CLOSES_GUARD" --body'
 LADDER_ANCHOR='bash scripts/check_model_ladder.sh --version "$V"'
 IGNORED_ANCHOR='[ -z "$ignored" ] ||'
+TRAILER_ANCHOR='$TRAILERS'
 # The R-2 refusal's own words (prepare_bump.sh:89). `landmine` asserts the
 # refusal is THIS one, not merely that some refusal happened.
 LANDMINE_NEEDLE='the bump PR body fails §6 R-2'
@@ -82,6 +88,7 @@ grep -qF -- "$KEEP_OPEN_ANCHOR" "$SUBJECT" || env_die "prepare_bump.sh has no '$
 grep -qF -- "$REFUSAL_ANCHOR" "$SUBJECT" || env_die "prepare_bump.sh has no '$REFUSAL_ANCHOR' line -- the subject moved"
 grep -qF -- "$LADDER_ANCHOR" "$SUBJECT" || env_die "prepare_bump.sh has no '$LADDER_ANCHOR' line -- the subject moved"
 grep -qF -- "$IGNORED_ANCHOR" "$SUBJECT" || env_die "prepare_bump.sh has no '$IGNORED_ANCHOR' line -- the subject moved"
+grep -qxF -- "$TRAILER_ANCHOR" "$SUBJECT" || env_die "prepare_bump.sh has no '$TRAILER_ANCHOR' line -- the subject moved"
 
 TMP=$(mktemp -d) || exit 2
 # SEC011: validate before rm -rf. An empty or '/' value must never reach it.
@@ -231,6 +238,18 @@ PY
 
 guard_rc() { bash "$GUARD" --body "$1" > /dev/null 2>&1; printf '%s' "$?"; }
 
+# row_trailer NAME -> 0 when the bump commit epic-NAME pushed to origin names a model the fleet runs and
+# the agent (D7, #4928): exactly one Co-Authored-By, Claude Opus 5.5 by default, and `Agent: release-autopilot`
+row_trailer() {
+    local d="$TMP/epic-$1" msg
+    msg=$(git -C "$d/origin.git" log -1 --format=%B release-9.9.9 2>/dev/null) || { printf 'no bump commit was pushed\n'; return 1; }
+    [ "$(printf '%s\n' "$msg" | grep -c '^Co-Authored-By:')" = 1 ] || { printf 'expected ONE Co-Authored-By trailer: %s\n' "$(printf '%s' "$msg" | grep '^Co-Authored-By:' | tr '\n' '|')"; return 1; }
+    printf '%s\n' "$msg" | grep -qxF 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>' \
+        || { printf 'the trailer names %s, not the fleet default\n' "$(printf '%s' "$msg" | grep '^Co-Authored-By:')"; return 1; }
+    printf '%s\n' "$msg" | grep -qxF 'Agent: release-autopilot' || { printf 'no Agent: release-autopilot trailer\n'; return 1; }
+    return 0
+}
+
 EPIC_SECTION='Train summary: the fixture train, EPIC #9002.
 
 ### Fixed
@@ -276,6 +295,12 @@ row guard-case-table "$rc" "check_pr_closes_issue.sh --self-test rc=$rc: $(print
 
 msg=$(row_epic_and_refs real "$SUBJECT"); row epic-and-refs "$?" "$msg"
 BODY="$TMP/epic-real/body.md"
+msg=$(row_trailer real); row trailer "$?" "$msg"
+RELEASE_MODEL='Claude Fable 5.1' run_ship trailer-refused "$SUBJECT" "$PRS_SECTION" || env_die "trailer-refused fixture"
+d="$TMP/trailer-refused"
+[ "$(cat "$d/rc")" != 0 ] && grep -qF 'trailer is refused (D7' "$d/out.log" && ! grep -q '^pr create' "$d/gh.log" \
+    && [ -z "$(git -C "$d/origin.git" branch --list 'release-9.9.9')" ]
+row trailer-refused "$?" "rc=$(cat "$d/rc"); RELEASE_MODEL='Claude Fable 5.1' must be refused by the D7 check before push and PR: $(tail -1 "$d/out.log")"
 
 if [ -f "$BODY" ]; then
     grep -v '^keep-open:' "$BODY" > "$TMP/no-keep-open.md"
@@ -390,11 +415,19 @@ msg=$(row_ladder ladder-policy-nocert-mutant "$TMP/mutant-policy-nocert.sh" poli
 [ "$mrc" = 2 ] && env_die "policy-nocert mutant could not build its fixture"
 [ "$mrc" != 0 ]; row "mutant policy-nocert is killed by ladder-policy-nocert (${msg:-survived})" "$?" "the mutant PASSED ladder-policy-nocert -- the row does not discriminate"
 
+sed "s|^$TRAILER_ANCHOR\$|Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>|" "$SUBJECT" > "$TMP/mutant-fable-trailer.sh"
+cmp -s "$SUBJECT" "$TMP/mutant-fable-trailer.sh" && env_die "fable-trailer mutant is identical to the subject"
+msg=$(row_epic_and_refs fable "$TMP/mutant-fable-trailer.sh"); mrc=$?
+[ "$mrc" = 2 ] && env_die "fable-trailer mutant could not build its fixture"
+[ "$mrc" = 0 ] || env_die "fable-trailer mutant did not open its PR ($msg) -- the trailer row would judge nothing"
+msg=$(row_trailer fable); mrc=$?
+[ "$mrc" != 0 ]; row "mutant fable-trailer is killed by trailer (${msg:-survived})" "$?" "the mutant PASSED trailer -- the row does not discriminate"
+
 # prepare_bump.sh's own case table (splice + CRUX certification carry-forward). Nothing else runs it.
 bash "$SUBJECT" --self-test > "$TMP/pb-self-test.log" 2>&1; mrc=$?; msg=$(tail -n 1 "$TMP/pb-self-test.log")
 [ "$mrc" = 0 ]; row "prepare_bump.sh --self-test passes ($msg)" "$?" "prepare_bump.sh --self-test exited $mrc"
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 17 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 17 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 20 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 20 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the bump PR body passes §6 R-2 by construction, and prepare_bump.sh refuses one that does not (#3699) or whose tree lacks green model-ladder receipts (#3708)\n' "$rows"
