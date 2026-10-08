@@ -284,7 +284,7 @@ jobsf() { # jobsf <run-id> <sha> <extra-total> < "name<TAB>conclusion" lines
      | {name: .[0], conclusion: .[1], status: "completed", run_id: $rid, head_sha: $h}]
     | {total_count: (length + $e), jobs: .}' >"$T/p/jobs.json"
 }
-REAL=$'mg-reuse\tsuccess\nx86-main\tsuccess\nx86-main-advisories\tskipped\ndeterminism\tsuccess\nmac-check\tsuccess\ngate\tsuccess\nci / gate\tsuccess'
+REAL=$'mg-reuse\tsuccess\nx86-main\tsuccess\nguards\tsuccess\nx86-main-advisories\tskipped\ndeterminism\tsuccess\nmac-check\tsuccess\ngate\tsuccess\nci / gate\tsuccess'
 real() { printf '%s\n' "$REAL" | sed "s|^$1\t.*|$1\t$2|"; }
 green() { runsf 0 "$(mgrun 9001 "${1:-$PS0}" completed "${2:-$PB0}" 2026-10-06T09:00:00Z)"; printf '%s\n' "$REAL" | jobsf 9001 "${1:-$PS0}" 0; }
 pd() { # pd [event] [ref] [sha] [before]
@@ -313,12 +313,12 @@ no "P10 only a pull_request run on S (no merge_group run)" "'absent'"
 green; printf '%s\n' "$REAL" | jobsf 9001 "$PS0" 1; pd; no "P11 the job list has an unread page" "unread page"
 green; printf '%s\n' "$REAL" | jobsf 9002 "$PS0" 0; pd; no "P12 the jobs belong to another run" "not run 9001's"
 green; printf '%s\n' "$REAL" | jobsf 9001 "$PB0" 0; pd; no "P13 the jobs ran on another commit" "not run 9001's"
-for j in x86-main determinism gate 'ci / gate'; do
+for j in x86-main guards determinism gate 'ci / gate'; do
   green; real "$j" failure | jobsf 9001 "$PS0" 0; pd; no "P14 the queue run's $j failed" "$j is failure"
 done
 green; real x86-main-advisories success | jobsf 9001 "$PS0" 0; pd
 no "P15 x86-main-advisories ran: the queue run reused rather than ran" "reused rather than ran"
-green; printf '%s\n' "$REAL" | sed 's/^\(x86-main\|determinism\)\tsuccess$/\1\tskipped/; s/^x86-main-advisories\tskipped$/x86-main-advisories\tsuccess/' | jobsf 9001 "$PS0" 0; pd
+green; printf '%s\n' "$REAL" | sed 's/^\(x86-main\|determinism\|guards\)\tsuccess$/\1\tskipped/; s/^x86-main-advisories\tskipped$/x86-main-advisories\tsuccess/' | jobsf 9001 "$PS0" 0; pd
 no "P16 a queue run that itself reused x86-main + determinism (both skipped) is never cited" "x86-main is skipped"
 green; printf '%s\n' "$REAL" | grep -v '^determinism' | jobsf 9001 "$PS0" 0; pd; no "P17 the queue run has no determinism job" "determinism is count=0"
 

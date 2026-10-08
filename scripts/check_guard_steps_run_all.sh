@@ -388,7 +388,7 @@ reader_rows() {
     else printf 'FAIL %-58s\n' "reader: '' / \\\" / \\t / \\\\ / trailing # decode like YAML"; printf '%s\n' "$got" | sed 's/^/     | /'; bad=1; fi
 
     # car's layout: the guard jobs are the guard-* sections that ci.yml's gate job
-    # READS ("X86:guard-x" / res "$X86" guard-y); a section the gate does not
+    # READS ("GT:guard-x" / res "$X86" guard-y); a section the gate does not
     # read (guard-z, named only by another job) is not a guard job. sections.yml's other
     # top-level keys (matrix-pins' flow maps) are outside the jobs: block and
     # are not read.
@@ -402,13 +402,13 @@ reader_rows() {
     }
     printf 'guard-x 2\nguard-y 0\n' > "$d/base_xy"
     # shellcheck disable=SC2016 # literal gate text
-    gfixture "$d/g_sec.yml" "$d/g_ci.yml" 'for p in X86:guard-x X86:sov.gate; do :; done; GY=$(res "$X86" guard-y)'
+    gfixture "$d/g_sec.yml" "$d/g_ci.yml" 'for p in GT:guard-x X86:sov.gate; do :; done; GY=$(res "$X86" guard-y)'
     got="$(bash "$LIB" --workflow "$d/g_sec.yml" --gate-workflow "$d/g_ci.yml" check-run-all --baseline "$d/base_xy" 2>&1)"; rc=$?
     n=$((n + 1))
     if [ "$rc" = 0 ] && [ "$(printf '%s\n' "$got" | grep -c '^ok ')" = 2 ] \
         && grep -q '^ok   guard-x: 2 fail-fast' <<<"$got" && grep -q '^ok   guard-y: 0 fail-fast' <<<"$got"; then
-        printf 'ok   %-58s\n' "gate reads X86:guard-x + res guard-y -> exactly those 2"
-    else printf 'FAIL %-58s rc=%s\n' "gate reads X86:guard-x + res guard-y -> exactly those 2" "$rc"; printf '%s\n' "$got" | sed 's/^/     | /'; bad=1; fi
+        printf 'ok   %-58s\n' "gate reads GT:guard-x + res guard-y -> exactly those 2"
+    else printf 'FAIL %-58s rc=%s\n' "gate reads GT:guard-x + res guard-y -> exactly those 2" "$rc"; printf '%s\n' "$got" | sed 's/^/     | /'; bad=1; fi
     gfixture "$d/g_sec.yml" "$d/g_ci.yml" 'echo no guard read here'
     bash "$LIB" --workflow "$d/g_sec.yml" --gate-workflow "$d/g_ci.yml" check-run-all --baseline "$d/base_xy" > "$d/out" 2>&1; rc=$?
     n=$((n + 1))

@@ -4,7 +4,7 @@
 # (BSE-02, PMAT-1064, paiml/infra BSE-001 spec §4 wave 3).
 #
 # #4433 SPLIT THE CONTRACT ACROSS TWO FILES. The guard-tree job body moved
-# verbatim to ci/sections.yml; .github/workflows/ci.yml's x86-main fat job runs
+# verbatim to ci/sections.yml; .github/workflows/ci.yml's guards fat job runs
 # it as a section, and the verdict job `gate` reads that section's result.
 # Legs 1 and 3 read the section; legs 2 and 4 read who runs and gates it.
 #
@@ -13,9 +13,9 @@
 #   1. sections .jobs."guard-tree".needs is null (guard-tree needs nothing,
 #      so the fat driver starts it at once -- §13 F-13: gating the builds on
 #      it would add its runtime to every green run).
-#   2. gate requires it: ci.yml's x86-main runs `--sections` naming
-#      guard-tree, gate.needs contains x86-main, and gate's required-section
-#      list names `X86:guard-tree` (gate is the ONLY job that waits on it).
+#   2. gate requires it: ci.yml's guards runs `--sections` naming
+#      guard-tree, gate.needs contains guards, and gate's required-section
+#      list names `GRD:guard-tree` (gate is the ONLY job that waits on it).
 #   3. No step's `run:` text in the guard-tree section contains a bare `cargo `
 #      token -- the SAME classification regex guard_tree.sh itself uses
 #      (`(^|[^a-z_-])cargo `), not a naive substring match: a naive
@@ -24,7 +24,7 @@
 #      FLAG contains the substring "cargo " once joined with the next
 #      token. That would make the real, correct job read as violating its
 #      own contract. See CARGO_RE below and scripts/guard_tree.sh's header.
-#   4. It runs on clean-room: the section's `runs-on` AND the x86-main fat
+#   4. It runs on clean-room: the section's `runs-on` AND the guards fat
 #      job's (the section's runs-on is now only what the driver honours; the
 #      fat job's is where it actually lands).
 #
@@ -132,7 +132,7 @@ run_text_of_job_block() {
 # The fat job's --sections list names guard-tree as a whole item (quoted,
 # comma-separated), and gate's required list names X86:guard-tree.
 export SECTIONS_RE="--sections '([^']*,)?guard-tree(,[^']*)?'"
-export GATE_RE="(^|[[:space:]])X86:guard-tree([[:space:]]|$)"
+export GATE_RE="(^|[[:space:]])GRD:guard-tree([[:space:]]|$)"
 
 # assertions_yq CI SECT -- prints "true" or "false"
 # NOTE: `yq` and its subcommand are split across lines on purpose -- bashrs
@@ -151,10 +151,10 @@ assertions_yq() {
     ' "$2" 2>/dev/null)"
     b="$(yq \
         e '
-        (.jobs.gate.needs | contains(["x86-main"]))
+        (.jobs.gate.needs | contains(["guards"]))
         and (.jobs.gate.steps | map(.run // "") | join(" ") | test(strenv(GATE_RE)))
-        and (.jobs."x86-main".steps | map(.run // "") | join(" ") | test(strenv(SECTIONS_RE)))
-        and (.jobs."x86-main"."runs-on" | contains(["clean-room"]))
+        and (.jobs."guards".steps | map(.run // "") | join(" ") | test(strenv(SECTIONS_RE)))
+        and (.jobs."guards"."runs-on" | contains(["clean-room"]))
     ' "$1" 2>/dev/null)"
     if [ "$a" = true ] && [ "$b" = true ]; then echo true; else echo false; fi
 }
@@ -166,7 +166,7 @@ assertions_awk() {
     [ -n "$gt_job" ] || { echo false; return; }
     gate_job="$(job_block "gate" "$ci")"
     [ -n "$gate_job" ] || { echo false; return; }
-    x86_job="$(job_block "x86-main" "$ci")"
+    x86_job="$(job_block "guards" "$ci")"
     [ -n "$x86_job" ] || { echo false; return; }
 
     needs_line="$(grep -c '^    needs:' <<<"$gt_job")"
@@ -185,7 +185,7 @@ assertions_awk() {
     # scripts/ci_guards.sh (#4415): the no-cargo leg must read both jobs.
     gt_run="$(run_text_of_job_block <<<"$gt_job"; job_block "guard-tree-steps" "$sect" | run_text_of_job_block || true)"
     x86_runson="$(grep '^    runs-on:' <<<"$x86_job" || true)"
-    grep -qE '(^|[^a-z0-9_-])x86-main([^a-z0-9_-]|$)' <<<"$gate_needs" \
+    grep -qE '(^|[^a-z0-9_-])guards([^a-z0-9_-]|$)' <<<"$gate_needs" \
         && grep -qE "$GATE_RE" <<<"$gate_run" \
         && grep -qE -- "$SECTIONS_RE" <<<"$x86_run" \
         && leg2=true
@@ -281,22 +281,22 @@ mutant_row "cargo step in the guard-tree-steps manifest" "$CI_YML" "$m2b" differ
 # 3. Mutant: guard-tree dropped from gate's required-section list.
 # ---------------------------------------------------------------------------
 m3="$WORK/gate-drops-guard-tree.yml"
-sed -E 's/ X86:guard-tree / /' "$CI_YML" > "$m3"
+sed -E 's/ GRD:guard-tree / /' "$CI_YML" > "$m3"
 mutant_row "guard-tree dropped from gate's required sections" "$m3" "$SECT_YML" differs "$CI_YML" "$m3"
 
 # ---------------------------------------------------------------------------
-# 4. Mutant: guard-tree dropped from x86-main's --sections.
+# 4. Mutant: guard-tree dropped from guards's --sections.
 # ---------------------------------------------------------------------------
 m4="$WORK/x86-drops-guard-tree.yml"
-sed -E "s/^( *--sections '.*),guard-tree,/\1,/" "$CI_YML" > "$m4"
-mutant_row "guard-tree dropped from x86-main --sections" "$m4" "$SECT_YML" differs "$CI_YML" "$m4"
+sed -E "s/^( *--sections )'guard-tree,/\1'/" "$CI_YML" > "$m4"
+mutant_row "guard-tree dropped from guards --sections" "$m4" "$SECT_YML" differs "$CI_YML" "$m4"
 
 # ---------------------------------------------------------------------------
-# 5. Mutant: x86-main dropped from gate.needs.
+# 5. Mutant: guards dropped from gate.needs.
 # ---------------------------------------------------------------------------
 m5="$WORK/gate-drops-x86.yml"
-sed -E 's/^(    needs: \[)x86-main, ([a-z, -]*determinism\].*)$/\1\2/' "$CI_YML" > "$m5"
-mutant_row "x86-main dropped from gate.needs" "$m5" "$SECT_YML" differs "$CI_YML" "$m5"
+sed -E 's/^(    needs: \[x86-main, )guards, /\1/' "$CI_YML" > "$m5"
+mutant_row "guards dropped from gate.needs" "$m5" "$SECT_YML" differs "$CI_YML" "$m5"
 
 # ---------------------------------------------------------------------------
 # 6. Mutant: the guard-tree section gains a `needs:`.
@@ -309,15 +309,15 @@ awk '
 mutant_row "guard-tree gaining a needs:" "$CI_YML" "$m6" differs "$SECT_YML" "$m6"
 
 # ---------------------------------------------------------------------------
-# 7. Mutant: the x86-main fat job leaves clean-room.
+# 7. Mutant: the guards fat job leaves clean-room.
 # ---------------------------------------------------------------------------
 m7="$WORK/x86-off-clean-room.yml"
 awk '
-    /^  x86-main:/ { in_x = 1 }
+    /^  guards:/ { in_x = 1 }
     in_x && /^    runs-on:/ { sub(/, clean-room/, ""); in_x = 0 }
     { print }
 ' "$CI_YML" > "$m7"
-mutant_row "x86-main off clean-room" "$m7" "$SECT_YML" differs "$CI_YML" "$m7"
+mutant_row "guards off clean-room" "$m7" "$SECT_YML" differs "$CI_YML" "$m7"
 
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then

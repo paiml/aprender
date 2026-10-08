@@ -78,14 +78,15 @@ load_jobs() {
 jqj() { jq "$@" "$JOBS"; }
 
 # guard_jobs -- the guard-* sections whose result the gate job in ci.yml reads
-# (`X86:guard-tree` in its required-sections loop, `res "$X86" guard-cargo`),
+# (`GRD:guard-tree` in its required-sections loop, `res "$X86" guard-cargo`; any
+# job-output variable, since #3668 moves guard-tree and guard-cargo into the guards job),
 # in sections.yml order. A section the gate does not read is not a required
 # check, so it is not a guard job. Never empty.
 guard_jobs() {
     local read_by_gate out
     [ -r "$GATE_WORKFLOW" ] || die "cannot read $GATE_WORKFLOW: no such file"
     read_by_gate="$(awk '/^  gate:[ \t]*$/ { g = 1; next } g && /^  [^ #]/ { g = 0 } g' "$GATE_WORKFLOW" \
-        | grep -oE '(X86:|res "\$X86" )guard-[A-Za-z0-9_-]+' | sed -E 's/^(X86:|res "\$X86" )//' | LC_ALL=C sort -u)" || true
+        | grep -oE '([A-Z][A-Z0-9_]*:|res "\$[A-Z][A-Z0-9_]*" )guard-[A-Za-z0-9_-]+' | sed -E 's/^([A-Z][A-Z0-9_]*:|res "\$[A-Z][A-Z0-9_]*" )//' | LC_ALL=C sort -u)" || true
     [ -n "$read_by_gate" ] || die "the gate job in $GATE_WORKFLOW reads no guard-* section"
     out="$(jqj -r --arg n "$read_by_gate" '($n | split("\n")) as $n
         | keys_unsorted[] | select(startswith("guard-") and (. as $j | $n | index([$j]) != null))')"

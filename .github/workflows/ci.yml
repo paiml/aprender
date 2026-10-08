@@ -150,7 +150,6 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
-      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
       # The fleet pins jq 1.8.2. Runners in this clean-room pool whose image ships jq 1.6
       # print a number literal such as 90.00 as 90, so the guard-tree section turns RED
@@ -209,6 +208,13 @@ jobs:
       # each planted defect before it is trusted to report a section green.
       - name: fat_driver case table must still turn RED
         run: python3 scripts/ci/fat_driver.py self-test
+      # #3668: a section no workflow names in --sections never runs and reports
+      # nothing. RED on a section dropped from every list; its case table plants
+      # a dropped guard-cargo, a dropped pr-review-sign and a narrowed sov.*.
+      - name: every section is named by a workflow --sections
+        run: |
+          bash scripts/check_sections_claimed.sh --self-test
+          bash scripts/check_sections_claimed.sh
       # PMAT-4510: every secrets.<NAME> a section reads must be plumbed above as
       # FAT_SECRET_<NAME> under its full name; #4441 cut one short and the
       # receipt signer ran with an empty key on every PR. Text-only, no build.
@@ -219,7 +225,7 @@ jobs:
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]'
+          --sections 'sov.*,determinism[X64]'
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
       # Published mid-run: the determinism job's compare section is waiting for it.
@@ -232,13 +238,6 @@ jobs:
         id: wait
         if: always()
         run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: pr-review-shadow-sample
-          path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
-          retention-days: 90
-          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -260,6 +259,85 @@ jobs:
         continue-on-error: true
         with:
           subject-path: ${{ runner.temp }}/fat/sov.provenance/ws/${{ github.event.repository.name }}/Cargo.toml
+
+  # #3668 (UNFOLD-NEUTRAL): guard-tree, guard-cargo, vendored-schemas, pr-review-shadow
+  # and pr-review-sign run in this one arch-neutral job, as the guards did before
+  # #4441/#4471 folded them into x86-main. x86-main is pinned X64 and started every
+  # section at once on one runner, so its wall time was its slowest section, and the
+  # guards were it: over the last 19 x86-main runs with sections, guard-tree p50 2723 s /
+  # p95 3600 s and guard-cargo p50 1518 s / p95 3600 s, against sov.lint p95 1476 s and
+  # sov.test p95 1396 s. ci/sections.yml marks all five sections arch-neutral. The
+  # checks are the same section bodies; gate requires this job and reads guard-tree and
+  # guard-cargo from its results (GRD), exactly the sections it read from x86-main
+  # before; mg-reuse treats x86-main and this job as one unit: reused together, or both run.
+  guards:
+    needs: [mg-reuse]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
+    # arch-neutral, on the runners that carry the `guards` label: every X64 clean-room
+    # runner and one ARM64 one, so this job never holds more than one of the ARM64
+    # clean-room runners a release pass needs.
+    runs-on: [self-hosted, Linux, clean-room, guards]
+    timeout-minutes: 90
+    # The permissions these five sections ran under inside x86-main, unchanged.
+    permissions: write-all
+    outputs:
+      results: ${{ steps.wait.outputs.results }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+    steps:
+      # The same jq as x86-main (guard-tree is the section a jq 1.6 turns RED), for the
+      # runner's arch: both release binaries sha256-pinned, any other arch fails closed.
+      - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        run: |
+          set -euo pipefail
+          case "$RUNNER_ARCH" in
+            X64) a=amd64; sum=b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f ;;
+            ARM64) a=arm64; sum=8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309 ;;
+            *) echo "::error::no pinned jq for runner arch '$RUNNER_ARCH'"; exit 1 ;;
+          esac
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-$a"
+          printf '%s  %s\n' "$sum" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          v=$("$d/jq" --version)
+          [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
+          rc=0; "$d/jq" -e . < /dev/null > /dev/null || rc=$?
+          [ "$rc" = 4 ] || { echo "::error::the pinned jq exits $rc on empty input with -e, not 4"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - name: jq on PATH is the pinned one
+        run: |
+          set -euo pipefail
+          command -v jq; jq --version
+          [ "$(command -v jq)" = "$RUNNER_TEMP/jq-1.8.2/jq" ] || { echo "::error::jq on PATH is $(command -v jq), not the pinned one"; exit 1; }
+          [ "$(jq --version)" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports $(jq --version)"; exit 1; }
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # pr-review-sign answers in seconds; the rest take up to an hour. The driver
+      # returns once pr-review-sign is done, so a red signature check is a red step
+      # within minutes; the wait step below runs every section to the end, and the
+      # job's result is all five.
+      - name: Sections (returns early once pr-review-sign is done)
+        id: sections
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign'
+          --background-until 'pr-review-sign'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - name: Wait for every section
+        id: wait
+        if: always()
+        run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr-review-shadow-sample
+          path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
+          retention-days: 90
+          if-no-files-found: ignore
 
   # T43: x86-main's RustSec advisory steps, verbatim from ci/sections.yml
   # guard-cargo, for a merge_group run where mg-reuse skipped x86-main. Their input
@@ -604,12 +682,13 @@ jobs:
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 22
-    needs: [x86-main, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test]
+    needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test]
     if: always()
     steps:
       - name: Check required sections
         env:
           X86: ${{ needs.x86-main.outputs.results }}
+          GRD: ${{ needs.guards.outputs.results }}
           DET: ${{ needs.determinism.outputs.results }}
           WT: ${{ needs.workspace-test.result }}
           EVT: ${{ github.event_name }}
@@ -644,7 +723,7 @@ jobs:
           # --- MG-REUSE-VERDICT-END ---
           # x86-main and determinism were skipped when REUSE=1: the cited run's gate passed these on this tree (PR head run on merge_group, merge_group run on push).
           if [ "$REUSE" = 0 ]; then
-            for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+            for pair in GRD:guard-tree GRD:guard-cargo X86:sov.gate DET:determinism-compare; do
               job="${pair%%:*}" sec="${pair#*:}"
               r=$(res "${!job}" "$sec")
               if [ "$r" != success ]; then

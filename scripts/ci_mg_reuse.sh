@@ -105,6 +105,7 @@ decide() {
   jq -e --arg id "$rid" --arg h "$h" '([.jobs[]?] | length) > 0 and all(.jobs[]; (.run_id | tostring) == $id and .head_sha == $h)' "$jobs" > /dev/null 2>&1 || { refuse "K5: the job list is not run $rid's on the PR head"; return 0; } # R:k5-jobs-run
   local why="" x mc
   [ "$(concl "$jobs" x86-main)" = success ] || why="${why:+$why; }x86-main is $(concl "$jobs" x86-main)" # R:k6-x86
+  [ "$(concl "$jobs" guards)" = success ] || why="${why:+$why; }guards is $(concl "$jobs" guards)" # R:k6-guards
   [ "$(concl "$jobs" determinism)" = success ] || why="${why:+$why; }determinism is $(concl "$jobs" determinism)" # R:k6-det
   [ "$(concl "$jobs" gate)" = success ] || why="${why:+$why; }gate is $(concl "$jobs" gate)" # R:k6-gate
   [ "$(concl "$jobs" 'ci / gate')" = success ] || why="${why:+$why; }ci / gate is $(concl "$jobs" 'ci / gate')" # R:k6-cigate
@@ -211,6 +212,7 @@ decide_push() {
   jq -e --arg id "$rid" --arg h "$S" '([.jobs[]?] | length) > 0 and all(.jobs[]; (.run_id | tostring) == $id and .head_sha == $h)' "$jobs" > /dev/null 2>&1 || { refuse "P3: the job list is not run $rid's on ${S:0:10}"; return 0; } # R-PUSHJOBRUN
   local why=""
   [ "$(concl "$jobs" x86-main)" = success ] || why="${why:+$why; }x86-main is $(concl "$jobs" x86-main)" # R-PUSHX
+  [ "$(concl "$jobs" guards)" = success ] || why="${why:+$why; }guards is $(concl "$jobs" guards)" # R-PUSHGUARDS
   [ "$(concl "$jobs" determinism)" = success ] || why="${why:+$why; }determinism is $(concl "$jobs" determinism)" # R-PUSHDET
   [ "$(concl "$jobs" gate)" = success ] || why="${why:+$why; }gate is $(concl "$jobs" gate)" # R-PUSHGATE
   [ "$(concl "$jobs" 'ci / gate')" = success ] || why="${why:+$why; }ci / gate is $(concl "$jobs" 'ci / gate')" # R-PUSHCIGATE
@@ -257,7 +259,7 @@ resolve_push() {
 # from the API (two GPU-host leg job names replaced; the key never reads them):
 # x86-main failed while gate and ci / gate passed.
 PLANTED_4655_JOBS=$'gpu-touched\tsuccess\nmutants-table-scope\tsuccess\ndeterminism\tsuccess\nworkspace-test-shard (1)\tsuccess\nmac-check\tsuccess\nworkspace-test-shard (3)\tsuccess\nworkspace-test-shard (2)\tsuccess\nx86-main\tfailure\nmutants-table\tskipped\nmutants-shard\tskipped\ngpu-host-leg-a\tsuccess\ngpu-host-leg-b\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
-GREEN_JOBS=$'x86-main\tsuccess\ndeterminism\tsuccess\nmac-check\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
+GREEN_JOBS=$'x86-main\tsuccess\nguards\tsuccess\ndeterminism\tsuccess\nmac-check\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
 
 # jobs_json HEAD RUN_ID EXTRA_TOTAL < "name<TAB>conclusion" lines
 jobs_json() {
@@ -319,10 +321,11 @@ self_test() {
   printf '{"total_count":0,"jobs":[]}\n' > "$F/jobs.empty"
   printf 'not json\n' > "$F/garbage"
   local name
-  for name in determinism gate 'ci / gate' mac-check; do
+  for name in determinism gate 'ci / gate' mac-check guards; do
     sed "s|^$name	success\$|$name	failure|" <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.fail-${name//[ \/]/_}"
   done
   sed '/^determinism	/d' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.no-det"
+  sed '/^guards	/d' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.no-guards"
   { cat <<< "$GREEN_JOBS"; printf 'x86-main\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.dup-x86"
 
   row() { # row NAME "x86 det mac" decide-args...
@@ -366,6 +369,8 @@ self_test() {
   dr k6-head-ci-gate-failed     "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.fail-ci___gate
   dr k6-x86-main-twice          "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.dup-x86
   dr k6-mac-failed              "1 1 0" merge_group "$M" "$B" "$H" runs.ok jobs.fail-mac-check
+  dr k6-guards-failed           "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.fail-guards
+  dr k6-guards-missing          "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.no-guards
 
   # resolve, end to end, through a stub gh serving canned JSON. A failed lookup never reuses.
   local SB="$T/bin"; mkdir -p "$SB"
@@ -458,6 +463,10 @@ STUB
   wire mg-reuse-self-test 'bash scripts/ci_mg_reuse.sh --self-test'
   wire x86-main 'needs: [mg-reuse]'
   wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}"
+  wire guards 'needs: [mg-reuse]'  # #3668: the guards job is part of the x86-main unit
+  wire guards "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}"
+  wire gate 'needs: [x86-main, guards,'
+  wire gate 'for pair in GRD:guard-tree GRD:guard-cargo X86:sov.gate DET:determinism-compare; do'
   wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
   wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}"
   wire mac-check 'needs: [mg-reuse]'

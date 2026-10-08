@@ -28,3 +28,6 @@ self-hosted-runner:
     - mini-builder
     # #4729 / infra#1388: one-box lane for pr-review-quorum `present` (intel-clean-room-15)
     - review-light
+    # #3668: the guards job's lane, on every X64 clean-room runner and one ARM64 one, so it
+    # never holds more than one of the ARM64 clean-room runners a release pass needs
+    - guards
