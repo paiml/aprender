@@ -5,7 +5,7 @@
 # tag checkout, a fixture state dir (RELEASE_AP) and a stub `gh` and `cargo` first on PATH.
 #
 # Every row stops before an upload. The green row gets past the clean-room check and then
-# stops on the absent B2-gpu run id, which proves the check let it through. The stub
+# stops on the absent dry-run receipt (C333: the B2-gpu run id left the release path), which proves the check let it through. The stub
 # `cargo` fails the table if it is ever called.
 #
 #   bash scripts/check_publish_strict_cleanroom.sh
@@ -97,8 +97,8 @@ row() {
   ) || got=$?
   if grep -q '^UNEXPECTED\|^CARGO' "$S/calls"; then
     fail "$name: a call the table does not allow: $(grep '^UNEXPECTED\|^CARGO' "$S/calls" | head -1)"
-  elif [ "$setup" != f_green ] && [[ "$out" == *"B2-gpu run id"* ]]; then
-    fail "$name: the clean-room door let this run through (it stopped later, on the B2-gpu id)"
+  elif [ "$setup" != f_green ] && [[ "$out" == *"no committed dry-run receipt"* ]]; then
+    fail "$name: the clean-room door let this run through (it stopped later, on the dry-run receipt)"
   elif [ "$got" -eq 0 ]; then
     fail "$name: publish_strict.sh exited 0"; printf '      | %s\n' "$out"
   elif [[ "$out" != *"$needle"* ]]; then
@@ -115,7 +115,7 @@ row red_run_stops                 "clean-room run 9001 does not prove v1.2.3"   
 row run_on_other_commit_stops     "tested $OTHER"                                         f_other
 row unreadable_run_stops          "recorded run 9002 could not be read"                   f_unknown
 # green: the door opens, and the NEXT precondition stops the row before any upload
-row green_run_passes_the_door     "no green B2-gpu run id recorded"                       f_green
+row green_run_passes_the_door     "no committed dry-run receipt (T-4)"                    f_green
 if grep -q 'CLEAN-ROOM PROCEED: run 9001 job 501' "$WORK/ap-green_run_passes_the_door/STATUS" 2>/dev/null; then
   pass "green_run_recorded_in_STATUS"
 else

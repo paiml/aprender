@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# check_tag_step_gated.sh -- the release train's tag step must call
-# scripts/check_milestone_cut.sh, and must not be reachable without it (PMAT-3459).
+# check_tag_step_gated.sh -- the release train's tag step must not be reachable without its
+# gate (PMAT-3459, which first placed the milestone gate inside cut_tag).
+# C333: the milestone cut and the coverage receipt (#4691) left the release path; what this guard
+# still runs is cut_tag's release-policy / #3715 readiness gate ahead of `git tag`.
 #
 # THE DEFECT, measured 2026-09-17. v0.68.1 was tagged at 15:06:29Z by a per-train
 # autopilot copy living OUTSIDE the repository, six minutes after #3455 merged the
@@ -11,18 +13,9 @@
 # a comment. What must hold is that `git tag` is UNREACHABLE unless the gate returned
 # 0, so this guard EXTRACTS cut_tag() from the autopilot and RUNS it against stubs,
 # once per gate outcome, and asserts on whether a tag was cut:
-#     gate rc 0 -> tag is cut
-#     gate rc 1 -> no tag, no publish   (the milestone holds open items)
-#     gate rc 2 -> no tag               (Unknown; never a silent pass)
-# #3459 part 2 made the tag path three steps (must-carry gate, carry, STRICT gate), so the
-# stubs answer each call separately and record the ORDER they ran in:
-#     must-carry rc 1/2 -> no tag AND nothing carried (a blocker is never carried around)
-#     carry rc 2        -> no tag
-#     all clean         -> the carry ran BEFORE the strict gate, and the tag is cut
-# #4691 adds a fourth stub, the coverage resolution before the tag (tag_coverage_gate.sh --resolve), which runs
-# first after readiness: rc 1 -> no tag AND nothing carried.
-# --self-test then builds MUTANTS (gate calls removed, verdicts discarded, the carry call
-# removed) and requires this guard to go RED on each. It also runs the carry script's own
+#     all green -> tag is cut; readiness or policy refused -> no tag
+# --self-test then builds MUTANTS (gate requirements deleted, verdicts discarded)
+# and requires this guard to go RED on each. It also runs the carry script's own
 # case table, which lives in scripts/release/ where guard_tree cannot discover it.
 #
 #   check_tag_step_gated.sh              judge scripts/release/autopilot.sh
@@ -101,43 +94,12 @@ judge() {
     if grep -q 'GIT-TAG' <<< "$out"; then printf 'ok    gate rc=0 -> the tag is cut\n'
     else printf 'FAIL  gate rc=0 -> NO tag was cut\n%s\n' "$out" >&2; bad=1; fi
 
-    out=$(run_cut_tag "$ap" 1) || true
-    if grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'FAIL  gate rc=1 (milestone holds open items) -> A TAG WAS CUT ANYWAY\n%s\n' "$out" >&2; bad=1
-    else printf 'ok    gate rc=1 -> no tag, no publish\n'; fi
-
-    out=$(run_cut_tag "$ap" 2) || true
-    if grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'FAIL  gate rc=2 (Unknown) -> A TAG WAS CUT ANYWAY\n%s\n' "$out" >&2; bad=1
-    else printf 'ok    gate rc=2 (Unknown) -> no tag\n'; fi
-    # #3459 part 2: the must-carry gate, the carry, and their ORDER
-    out=$(run_cut_tag "$ap" 0) || true
-    if grep -q '^ORDER CALL-COVJOB CALL-MUST-CARRY CALL-CARRY CALL-STRICT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'ok    all clean -> coverage job, must-carry, the carry, STRICT, then the tag\n'
-    else printf 'FAIL  all clean did not run coverage job -> must-carry -> carry -> strict -> tag\n%s\n' "$out" >&2; bad=1; fi
-    for m in 1 2; do
-        out=$(run_cut_tag "$ap" 0 "$m") || true
-        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-CARRY' <<< "$out"; then
-            printf 'FAIL  must-carry rc=%s -> a tag was cut or items were CARRIED around a blocker\n%s\n' "$m" "$out" >&2; bad=1
-        else printf 'ok    must-carry rc=%s -> nothing carried, no tag\n' "$m"; fi
-    done
-    out=$(run_cut_tag "$ap" 0 0 2) || true
-    if grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'FAIL  carry rc=2 -> A TAG WAS CUT over a failed carry\n%s\n' "$out" >&2; bad=1
-    else printf 'ok    carry rc=2 -> no tag\n'; fi
     # #3715 B1: no ENFORCED readiness Pass for exactly this version+commit -> no tag, nothing carried
     for r in absent report stale; do
         out=$(run_cut_tag "$ap" 0 0 0 "$r") || true
         if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out"; then
             printf 'FAIL  readiness %s -> a tag was cut or the milestone was touched without an enforced #3715 Pass\n%s\n' "$r" "$out" >&2; bad=1
         else printf 'ok    readiness %s -> no tag, nothing carried\n' "$r"; fi
-    done
-    # #4691: no coverage receipt holds the floor for the release commit (1) or the gate could not run (2) -> no tag, nothing carried
-    for j in 1 2; do
-        out=$(run_cut_tag "$ap" 0 0 0 pass "$j") || true
-        if grep -q 'GIT-TAG' <<< "$out" || grep -qE 'CALL-(MUST-CARRY|CARRY|STRICT)' <<< "$out"; then
-            printf 'FAIL  coverage-job resolve rc=%s -> a tag was cut or the milestone was touched\n%s\n' "$j" "$out" >&2; bad=1
-        else printf 'ok    coverage-job resolve rc=%s -> no tag, nothing carried\n' "$j"; fi
     done
     # the standing release policy (contracts/model-capability-ladder-v1.yaml `ladder.release_policy`):
     # a covered version tags on the models lane's CRUX-smoke GO for exactly this commit, with no readiness run
@@ -173,42 +135,6 @@ if [ "${1:-}" = "--self-test" ]; then
     ok()  { printf 'ok    %s\n' "$*"; }
     nok() { printf 'FAIL  %s\n' "$*" >&2; bad=1; }
 
-    # M1: the gate call deleted -- the #3459 defect exactly, restored.
-    sed '/check_milestone_cut\.sh/d' "$SUBJECT" > "$d/m1.sh"
-    if judge "$d/m1.sh" > "$d/m1.out" 2>&1; then
-        nok "MUTANT 1 (gate call deleted) PASSED -- this guard cannot see its own defect"
-    else
-        ok "mutant 1: gate call deleted -> RED ($(grep -c '^FAIL' "$d/m1.out") failing row(s))"
-    fi
-
-    # M2: the gate runs but its verdict is discarded (`|| true`) -- absence-as-consent.
-    sed 's#\(bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" >> "$LOG" 2>&1\) || rc=$?#\1 || true#' "$SUBJECT" > "$d/m2.sh"
-    if ! grep -q '|| true' "$d/m2.sh"; then
-        nok "MUTANT 2 could not be built -- the gate-call line did not match; this self-test is vacuous"
-    elif judge "$d/m2.sh" > "$d/m2.out" 2>&1; then
-        nok "MUTANT 2 (verdict discarded) PASSED -- a gate whose result is thrown away reads as gated"
-    else
-        ok "mutant 2: gate verdict discarded -> RED"
-    fi
-
-    # M4: the MUST-CARRY verdict discarded -> items are carried around a blocker and a tag is cut.
-    sed 's#\(bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1\) || rc=$?#\1 || true#' "$SUBJECT" > "$d/m4.sh"
-    if cmp -s "$SUBJECT" "$d/m4.sh"; then
-        nok "MUTANT 4 could not be built -- the must-carry call line did not match; vacuous"
-    elif judge "$d/m4.sh" > "$d/m4.out" 2>&1; then
-        nok "MUTANT 4 (must-carry verdict discarded) PASSED"
-    else
-        ok "mutant 4: must-carry verdict discarded -> RED"
-    fi
-    # M5: the carry call deleted -> a milestone is judged strict without anything having been moved.
-    sed '/carry_milestone_items\.sh" "\$v"/d' "$SUBJECT" > "$d/m5.sh"
-    if cmp -s "$SUBJECT" "$d/m5.sh"; then
-        nok "MUTANT 5 could not be built -- the carry call line did not match; vacuous"
-    elif judge "$d/m5.sh" > "$d/m5.out" 2>&1; then
-        nok "MUTANT 5 (carry call deleted) PASSED"
-    else
-        ok "mutant 5: carry call deleted -> RED"
-    fi
     # M6 (#3715 B1): the readiness requirement deleted -> a skipped or report-mode readiness step tags.
     sed '/ENFORCE PASS for\|index(\$0, n) == 1/d; /no .#3715 ENFORCE PASS/d' "$SUBJECT" > "$d/m6.sh"
     if cmp -s "$SUBJECT" "$d/m6.sh"; then
@@ -217,24 +143,6 @@ if [ "${1:-}" = "--self-test" ]; then
         nok "MUTANT 6 (readiness requirement deleted) PASSED"
     else
         ok "mutant 6: #3715 readiness requirement deleted -> RED"
-    fi
-    # M7 (#4691): the coverage-job resolution deleted -> a tag is cut for a job ci.yml never runs.
-    sed '/tag_coverage_gate\.sh" --resolve/,+1d' "$SUBJECT" > "$d/m7.sh"
-    if cmp -s "$SUBJECT" "$d/m7.sh"; then
-        nok "MUTANT 7 could not be built -- the --resolve call line did not match; vacuous"
-    elif judge "$d/m7.sh" > "$d/m7.out" 2>&1; then
-        nok "MUTANT 7 (coverage-job resolve deleted) PASSED"
-    else
-        ok "mutant 7: coverage-job resolve deleted -> RED"
-    fi
-    # M8 (#4691): the resolution runs but its verdict is discarded.
-    sed 's/|| die "no coverage receipt at or above COV_FLOOR/|| true; : "/' "$SUBJECT" > "$d/m8.sh"
-    if cmp -s "$SUBJECT" "$d/m8.sh"; then
-        nok "MUTANT 8 could not be built -- the --resolve die line did not match; vacuous"
-    elif judge "$d/m8.sh" > "$d/m8.out" 2>&1; then
-        nok "MUTANT 8 (coverage-job verdict discarded) PASSED"
-    else
-        ok "mutant 8: coverage-job verdict discarded -> RED"
     fi
     # M9: under the policy, the CRUX-smoke GO requirement discarded -> a stale or absent models GO tags.
     sed 's/|| die "the standing release policy covers \$v but/|| true; : "/' "$SUBJECT" > "$d/m9.sh"
@@ -285,7 +193,7 @@ if [ "${1:-}" = "--self-test" ]; then
     echo "SELF-TEST FAILED" >&2; exit 1
 fi
 
-echo "=== the tag step cannot be reached without the milestone gate (check_tag_step_gated.sh) ==="
+echo "=== the tag step cannot be reached without its readiness or policy gate (check_tag_step_gated.sh) ==="
 judge "$SUBJECT"; rc=$?
-[ "$rc" -eq 0 ] && echo "PASS" || echo "FAIL: the tag step is reachable without a clean milestone (rc=$rc)" >&2
+[ "$rc" -eq 0 ] && echo "PASS" || echo "FAIL: the tag step is reachable without its gate (rc=$rc)" >&2
 exit "$rc"

@@ -389,7 +389,7 @@ found() {
 }
 
 # ---------------------------------------------------------------- the list ----------------------------------------
-# parse_list FILE -> "id<TAB>applies<TAB>anchor<TAB>checker<TAB>producer<TAB>key<TAB>value<TAB>line<TAB>parent<TAB>seven";
+# parse_list FILE -> "id<TAB>applies<TAB>anchor<TAB>checker<TAB>producer<TAB>key<TAB>value<TAB>line<TAB>parent<TAB>seven<TAB>kind";
 # rc 3 on a bad line
 parse_list() {
     awk -v SEVEN="$SEVEN" '
@@ -416,8 +416,9 @@ parse_list() {
             if (V["id"] in ID) { printf "line %d: id %s twice\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
             if (V["seven"] != "" && !(V["seven"] in S7)) { printf "line %d: seven %s is not one of the seven\n", NR, V["seven"] > "/dev/stderr"; bad = 1; next }
             if (V["seven"] != "" && V["parent"] != "") { printf "line %d: a row carries no seven (%s)\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
+            if (V["kind"] != "" && V["kind"] != "mechanics") { printf "line %d: kind %s is not mechanics, the one kind\n", NR, V["kind"] > "/dev/stderr"; bad = 1; next }
             ID[V["id"]] = 1; if (V["parent"] != "") { PA[V["id"]] = V["parent"]; PL[V["id"]] = NR }
-            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", V["id"], V["applies_to"], V["anchor"], V["checker"], V["producer"], V["key"], V["value"], NR, V["parent"], V["seven"]
+            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n", V["id"], V["applies_to"], V["anchor"], V["checker"], V["producer"], V["key"], V["value"], NR, V["parent"], V["seven"], V["kind"]
         }
         END {
             # a row of a GATE names a GATE: an id on the list that is not itself a row of another
@@ -493,6 +494,7 @@ gates() {
 
 # ---------------------------------------------------------------- the budget ---------------------------------------
 # budget LIST: GATEs (no parent) per stage against the caps, fixed here; an entry counts in every stage it names.
+# A GATE of kind mechanics (C333: publish mechanics, not a check) is not counted; no other kind exists.
 # Every key of SEVEN must ride on a GATE.
 budget() {
     local list=$1 out
@@ -500,7 +502,7 @@ budget() {
     out=$(parse_list "$list") || caller_error "malformed list $list"
     [ -n "$out" ] || nm "the list $list names no requirement"
     printf '%s\n' "$out" | awk -F'\t' -v SEVEN="$SEVEN" '
-        $9 == "" { n = split($2, s, ","); for (i = 1; i <= n; i++) E[s[i]]++; if ($10 != "") H[$10] = 1 }
+        $9 == "" && $11 != "mechanics" { n = split($2, s, ","); for (i = 1; i <= n; i++) E[s[i]]++; if ($10 != "") H[$10] = 1 }
         END {
             CAP["merge"] = 10; CAP["tag"] = 5; CAP["publish"] = 5
             printf "entries merge=%d tag=%d publish=%d total=%d\n", E["merge"], E["tag"], E["publish"], E["merge"] + E["tag"] + E["publish"]
@@ -870,6 +872,8 @@ STUB
                 'budget-seven-on-row 3 a row carries no seven|10 5 5|  - {id: B-X, applies_to: [merge], parent: B-merge1, anchor: "x", provenance: "fixture", seven: crux-smoke}' \
                 'budget-row-uncounted 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|  - {id: B-X, applies_to: [merge, tag, publish], parent: B-merge1, anchor: "x", provenance: "fixture", producer: "p"}' \
                 'budget-two-stages 0 entries merge=10 tag=5 publish=5 total=20|9 4 5|  - {id: B-X, applies_to: [merge, tag], anchor: "x", provenance: "fixture"}' \
+                'budget-mechanics-uncounted 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|  - {id: B-X, applies_to: [publish], kind: mechanics, anchor: "x", provenance: "fixture", producer: "p"}' \
+                'budget-kind-unknown 3 kind foo is not mechanics|10 5 4|  - {id: B-X, applies_to: [publish], kind: foo, anchor: "x", provenance: "fixture", producer: "p"}' \
                 'budget-empty 2 names no requirement|0 0 0|' \
                 'budget-absent 2 no list|-|'; do
         c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line%%|*}; line=${line#*|}; n=$((n + 1))
@@ -936,10 +940,12 @@ M46 tag cap 6@@CAP["tag"] = 5@@CAP["tag"] = 6
 M47 publish cap 6@@CAP["publish"] = 5@@CAP["publish"] = 6
 M48 at the cap is over@@if (E[st[i]] > CAP[st[i]])@@if (E[st[i]] >= CAP[st[i]])
 M49 a seven dropped@@ crux-smoke supply-chain@@ supply-chain
-M50 rows counted as entries@@$9 == "" { n = split($2@@1 { n = split($2
+M50 rows counted as entries@@$9 == "" && $11@@1 && $11
 M51 MISSING dropped@@if (!(k[i] in H))@@if (0)
 M52 unknown seven passes@@if (V["seven"] != "" && !(V["seven"] in S7))@@if (0)
-M53 seven on a row passes@@if (V["seven"] != "" && V["parent"] != "")@@if (0)'
+M53 seven on a row passes@@if (V["seven"] != "" && V["parent"] != "")@@if (0)
+M54 mechanics counted@@ && $11 != "mechanics" {@@ {
+M55 unknown kind passes@@if (V["kind"] != "" && V["kind"] != "mechanics")@@if (0)'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0
