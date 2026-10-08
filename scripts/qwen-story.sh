@@ -37,6 +37,9 @@ MODELS_DIR="${MODELS_DIR:-$HOME/models}"
 PMAT_HUNT="${PMAT_HUNT:-1}"  # 1 = run pmat full audit per beat
 TMPDIR_STORY="${TMPDIR_STORY:-/tmp/qwen-story-$$}"
 mkdir -p "$TMPDIR_STORY"
+# One pmat answer per directory serves every beat that hunts under it (#4715):
+# pmat 3.42.0 rebuilds its index on every query, so each query costs a minute.
+PMAT_HUNT_CACHE_DIR="$TMPDIR_STORY/pmat-hunt"
 trap '[ -n "$TMPDIR_STORY" ] && [ "$TMPDIR_STORY" != "/" ] && rm -rf "$TMPDIR_STORY" 2>/dev/null; pkill -P $$ 2>/dev/null || true' EXIT
 
 # -- Model registry ------------------------------------------------------------

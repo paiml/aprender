@@ -55,6 +55,13 @@ trap 'rm -rf "$TMP"' EXIT
 #     `query "some words" --path <module>` returns [] while the same call
 #     without the words returns rows. That asymmetry is cause 2, and encoding
 #     it here is what makes re-adding the beat label turn this check red.
+#   * (#4715, pmat 3.42.0) records come in a fixed order per file, --path is a
+#     substring filter, and --limit cuts the answer. A directory --path
+#     answers for every file directly in it, each name prefixed with its
+#     file's basename, so a cached directory answer shows which file each row
+#     was cut from. Each file has FOUR records, and only the fourth is past
+#     --limit 3, so a cut that applies the row filter before the limit shows
+#     up as a third fault row.
 mkdir -p "$TMP/bin"
 # The stub's shebang is printf'd rather than written into the heredoc: a literal
 # `#!` at the start of a line makes bashrs report SC1128 ("the shebang must be
@@ -66,6 +73,7 @@ cat >> "$TMP/bin/pmat" <<'STUB'
 case "${STUB_MODE:-rows}" in
   empty) printf '[]\n'; exit 0 ;;
   docs)  printf '{"documents":[{"path":"a.rs"},{"path":"b.rs"}]}\n'; exit 0 ;;
+  fail)  exit 3 ;;
 esac
 # STUB_GAP_MODE breaks only the --coverage-gaps query; churn and fault stay normal.
 case " $* " in
@@ -83,16 +91,29 @@ if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then
   printf '[]\n'
   exit 0
 fi
-cat <<'JSON'
-[
-  {"function_name":"cache_path","file_path":"x.rs","impact_score":42,
-   "commit_count":7,"churn_score":0.5,"fault_annotations":["CLONE","UNWRAP"]},
-  {"function_name":"parse","file_path":"x.rs","impact_score":9,
-   "commit_count":3,"churn_score":0.1,"fault_annotations":null},
-  {"function_name":"ModelSource","file_path":"x.rs","impact_score":0,
-   "commit_count":3,"churn_score":0.1,"fault_annotations":["PANIC"]}
-]
-JSON
+path="" limit=1000000
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --path)  path="$2"; shift ;;
+    --limit) limit="$2"; shift ;;
+  esac
+  shift
+done
+records() { # file_path name-prefix
+  printf '{"function_name":"%scache_path","file_path":"%s","impact_score":42,"commit_count":7,"churn_score":0.5,"fault_annotations":["CLONE","UNWRAP"]},\n' "$2" "$1"
+  printf '{"function_name":"%sparse","file_path":"%s","impact_score":9,"commit_count":3,"churn_score":0.1,"fault_annotations":null},\n' "$2" "$1"
+  printf '{"function_name":"%sModelSource","file_path":"%s","impact_score":0,"commit_count":3,"churn_score":0.1,"fault_annotations":["PANIC"]},\n' "$2" "$1"
+  printf '{"function_name":"%slate_panic","file_path":"%s","impact_score":0,"commit_count":1,"churn_score":0.0,"fault_annotations":["PANIC"]},\n' "$2" "$1"
+}
+{
+  printf '[\n'
+  if [ -n "$path" ] && [ -d "$path" ]; then
+    find "$path" -maxdepth 1 -type f | sort | while read -r f; do records "$f" "${f##*/}:"; done
+  else
+    records "${path:-x.rs}" ""
+  fi
+  printf '{}]\n'
+} | jq -c --argjson n "$limit" '[.[] | select(.function_name != null)] | .[0:$n]'
 STUB
 chmod +x "$TMP/bin/pmat"
 PATH="$TMP/bin:$PATH"
@@ -144,8 +165,10 @@ want "a leading free-text query returns nothing for a module-scoped path" "" "$g
 
 # A coverage file measured on THIS checkout, so the gap block is measured
 # (section 9 covers the cases where it is not).
+# Its source files are the paths the hunts below ask about, absolute as
+# llvm-cov writes them.
 COVFILE="$TMP/coverage.json"
-printf '{"data":[]}\n' > "$COVFILE"
+printf '{"data":[{"files":[{"filename":"/build/aprender/%s"},{"filename":"/build/aprender/%s"}]}]}\n' "$LIB" "$STORY" > "$COVFILE"
 HEAD_SHA=$(git rev-parse HEAD)
 
 # -- 4. A hunt that finds rows passes and does not tally a failure ----------
@@ -253,6 +276,77 @@ if grep -q -- "--coverage-file $COVFILE" "$ARGS"; then
 else
   bad "the measured gap query reads the coverage file" "--coverage-file $COVFILE" "$(cat "$ARGS")"
 fi
+# A path the coverage file does not contain is not asked about: pmat answers
+# it with an empty stdout, which was not_measured already. It stays
+# not_measured, with the reason named, and no query is spent on it (#4715).
+COV_OTHER="$TMP/coverage-other.json"
+printf '{"data":[{"files":[{"filename":"/build/aprender/crates/x/src/lib.rs"}]}]}\n' > "$COV_OTHER"
+cov_case "path outside the coverage file's scope" "$COV_OTHER" "$HEAD_SHA" 1 no "is outside the coverage file's scope"
+# A coverage file jq cannot read as LLVM JSON gets no scope list, so the gap
+# query runs as before and pmat's own answer decides.
+printf 'not json\n' > "$TMP/coverage-bad.json"
+cov_case "unreadable coverage file is still asked" "$TMP/coverage-bad.json" "$HEAD_SHA" 0 yes ""
+# Nor does a file that names no source file: an empty list is a shape this
+# reader does not know, not proof that the path is out of scope.
+printf '{"data":[]}\n' > "$TMP/coverage-nofiles.json"
+cov_case "coverage file naming no source file is still asked" "$TMP/coverage-nofiles.json" "$HEAD_SHA" 0 yes ""
+
+# -- 10. One cached directory query serves every hunted path under it -------
+# #4715: pmat 3.42.0 rebuilds its index on every query, so the story ran out
+# its 30 minutes on 42 churn and fault queries. They now come from one query
+# per (directory, flag set), cut per path. The cut must give each path its OWN
+# first three records, in pmat's order, BEFORE the row filter.
+CACHE="$TMP/cache"
+: > "$ARGS"; : > "$FAILLOG"
+out1=$(STUB_ARGS_LOG="$ARGS" PMAT_HUNT_CACHE_DIR="$CACHE" STORY_COVERAGE_FILE="$COVFILE" STORY_COVERAGE_SHA="$HEAD_SHA" PMAT_HUNT=1 pmat_hunt "one" "$LIB" "$STORY")
+out2=$(STUB_ARGS_LOG="$ARGS" PMAT_HUNT_CACHE_DIR="$CACHE" STORY_COVERAGE_FILE="$COVFILE" STORY_COVERAGE_SHA="$HEAD_SHA" PMAT_HUNT=1 pmat_hunt "two" "$LIB"); rc=$?
+want "cached: the second beat returns 0" "0" "$rc"
+want "cached: 3 paths over 2 beats ran ONE churn query" "1" "$(grep -c -- '--churn' "$ARGS")"
+want "cached: 3 paths over 2 beats ran ONE fault query" "1" "$(grep -c -- '--faults' "$ARGS")"
+want "cached: the churn query asked for the parent directory" "1" "$(grep -c -- '^query --path scripts --churn' "$ARGS")"
+want "cached: churn rows for the library are its own 3" "3" "$(printf '%s\n' "$out2" | grep -c "^        churn ${LIB##*/}:")"
+want "cached: no other file's churn rows" "3" "$(printf '%s\n' "$out2" | grep -c '^        churn ')"
+want "cached: each path in a beat gets its own rows" "3" "$(printf '%s\n' "$out1" | grep -c "^        churn ${STORY##*/}:")"
+# Of the first three records, two carry fault annotations. A cut that filters
+# before taking three would add the fourth, late_panic.
+want "cached: fault rows are the annotated ones among the first 3" "2" "$(printf '%s\n' "$out2" | grep -c '^        fault ')"
+want "cached: the fourth record never becomes a row" "0" "$(printf '%s\n' "$out1$out2" | grep -c 'late_panic')"
+want "cached: the gap query stays per path" "2" "$(grep -c -- "--coverage-gaps.*--path $LIB" "$ARGS")"
+want "cached: no failure tallied" "" "$(cat "$FAILLOG")"
+
+# A directory answer that reaches PMAT_HUNT_DIR_LIMIT may be cut short, so
+# the path is asked on its own.
+: > "$ARGS"
+out=$(PMAT_HUNT_DIR_LIMIT=2 STUB_ARGS_LOG="$ARGS" PMAT_HUNT_CACHE_DIR="$TMP/cache-limit" STORY_COVERAGE_FILE="$COVFILE" STORY_COVERAGE_SHA="$HEAD_SHA" PMAT_HUNT=1 pmat_hunt "limit" "$LIB")
+want "truncated: the path is asked on its own" "1" "$(grep -c -- "^query --path $LIB --churn --max-complexity 30 --limit 3" "$ARGS")"
+want "truncated: the per-path rows are printed" "3" "$(printf '%s\n' "$out" | grep -cE '^        churn (cache_path|parse|ModelSource) ')"
+
+# A failed directory query is cached as failed: no rows for any path under
+# it, one query, and the zero-row andon fails the beat.
+: > "$ARGS"; : > "$FAILLOG"
+STUB_MODE=fail STUB_ARGS_LOG="$ARGS" PMAT_HUNT_CACHE_DIR="$TMP/cache-fail" PMAT_HUNT=1 pmat_hunt "fail" "$LIB" "$STORY" >/dev/null; rc=$?
+want "failed directory query: the hunt returns 1" "1" "$rc"
+want "failed directory query: asked once for two paths" "1" "$(grep -c -- '--churn' "$ARGS")"
+
+# Without PMAT_HUNT_CACHE_DIR the hunt keeps a private cache and removes it.
+mkdir -p "$TMP/t"
+( TMPDIR="$TMP/t" PMAT_HUNT=1 pmat_hunt "own" "$LIB" >/dev/null 2>&1; printf '%s' "${PMAT_HUNT_CACHE_DIR:-}" > "$TMP/own.var" )
+want "a private cache is removed after the hunt" "" "$(find "$TMP/t" -mindepth 1 | head -1)"
+want "a private cache is not left in PMAT_HUNT_CACHE_DIR" "" "$(cat "$TMP/own.var")"
+
+# -- 11. The story's own preamble removes the shared cache on exit ----------
+# The cache lives under TMPDIR_STORY, so the story's EXIT trap is what removes
+# it. Run the story's real preamble, at most 12 lines from TMPDIR_STORY= to the
+# trap, rather than trusting a reading of it: `trap'...' EXIT` (one lost space)
+# is valid syntax, fails at run time with "command not found", and installs no
+# trap at all.
+pre=$(awk '/^TMPDIR_STORY=/{p=1} p{print; n++} p && /^trap/{exit} n >= 12{exit}' "$STORY")
+TMPDIR_STORY="$TMP/story-tmp" bash -c "$pre"'
+mkdir -p "$PMAT_HUNT_CACHE_DIR" && : > "$PMAT_HUNT_CACHE_DIR/x"
+trap -p EXIT' > "$TMP/trap.out" 2>&1
+want "qwen-story.sh: the cache is under TMPDIR_STORY" "1" "$(printf '%s\n' "$pre" | grep -c '^PMAT_HUNT_CACHE_DIR="\$TMPDIR_STORY/')"
+want "qwen-story.sh: the preamble installs an EXIT trap" "1" "$(grep -c '^trap -- .*rm -rf.* EXIT$' "$TMP/trap.out")"
+want "qwen-story.sh: the EXIT trap removes the story dir and its cache" "gone" "$([ -e "$TMP/story-tmp" ] && echo left || echo gone)"
 
 # -- 8. Every path the story hunts still exists -----------------------------
 # Cause 3. Static, because a path can rot without anyone running the nightly.
