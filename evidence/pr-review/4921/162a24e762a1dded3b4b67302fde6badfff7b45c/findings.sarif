@@ -1,0 +1,574 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "The first pmat query (without --no-docs) built the index (10861 files, 94407 functions) and then panicked in its docs printer: 'modes_docs.rs:170:40: end byte index 200 is not a char boundary', exit 134. The re-run with --no-docs answered from the same index; the results above come from it."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "query",
+                  "guard timeout heartbeat",
+                  "--limit",
+                  "5"
+                ],
+                "exit_code": 134,
+                "stdout_sha256": "2db5b1390dc55d1afd818ed7986f572a9cf9edb6163862521977a86551fe90ac"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "guard-tree-parallel-table",
+          "level": "note",
+          "message": {
+            "text": "scripts/tests/guard_tree_parallel_test.sh passes 9/9 at the head, including (g) a guard past GUARD_TREE_GUARD_TIMEOUT is killed, FAILED and named with its output, (h) the heartbeat names the hung check, and (i) the mutant without the timeout wrapper goes green, so row (g) can fail."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/guard_tree_parallel_test.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/tests/guard_tree_parallel_test.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f58845ba15c298c2d1755acd48696526098633040c6da6f456c25e9422f5f277",
+            "failure_scenario": "none at this head: deleting the timeout wrapper, the heartbeat printf or the TIMEOUT branch turns the table red (mutants A3, A4, A5 in the cargo-mutants run).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard-steps-self-test",
+          "level": "note",
+          "message": {
+            "text": "check_guard_steps_run_all.sh --self-test: 50/50 cases pass, 0 not measured, 1 quarantined (#4759, not added by this diff). The new rows cover the step heartbeat, its own printf-deleted mutant, and a step daemon that must not inherit the heartbeat FIFO."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_guard_steps_run_all.sh"
+                },
+                "region": {
+                  "startLine": 318
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_guard_steps_run_all.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4a7b2974d3e78bcaa22a90e0324e00df850deab6957d2c4b2999932ed84059f4",
+            "failure_scenario": "none at this head: dropping the 5>&- on the step subshell or the heartbeat printf turns the self-test red (mutants A1, A2).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "bashrs-guard-tree",
+          "level": "note",
+          "message": {
+            "text": "bashrs 7.4.2 lint scripts/guard_tree.sh: 0 errors, 39 warnings, 100 infos. bashrs exits 1 when warnings are present. The error count is 0 at the merge base and at the head for every changed .sh file."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/guard_tree.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bashrs",
+              "lint",
+              "scripts/guard_tree.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "08980bed5285f25d991085f21ed08ed4feb437175b6d04c1ed96f37aedc60837",
+            "failure_scenario": "none for this diff: no bashrs error is added. Warnings were not compared base against head, so a new warning would not show here.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "bashrs-ci-guard-steps",
+          "level": "note",
+          "message": {
+            "text": "bashrs 7.4.2 lint scripts/lib/ci_guard_steps.sh: 0 errors, 102 warnings, 150 infos (exit 1 on warnings)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/ci_guard_steps.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bashrs",
+              "lint",
+              "scripts/lib/ci_guard_steps.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "57599dde520b18cb3a703a47ee686d4561a8eb1fa486428ffa6356acd845e0d2",
+            "failure_scenario": "none for this diff: no bashrs error is added. Warnings were not compared base against head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication-scan-clean",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh: 1 needle, 0 hits, 1564/1564 sibling branches and the 13 files between the merge base and the main tip swept lexically. The digest covers the scan's combined stdout and stderr, as captured."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/guard_tree.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "828ccb845fd8f1ac272bc34ef0b346a90a3a2eb9",
+              "--head",
+              "162a24e762a1dded3b4b67302fde6badfff7b45c",
+              "--json",
+              "reviewer-scratch/dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b3b629080f1ec2197eba9406a62392fb4c271dcb0ae11a3714050fbada5d0b3a",
+            "failure_scenario": "An exact-name scan cannot see a re-implementation under another name, so 0 hits is not proof that no timeout or heartbeat helper exists elsewhere.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pmat-query-no-prior-art",
+          "level": "note",
+          "message": {
+            "text": "pmat query 'guard timeout heartbeat' (--no-docs) returns 5 Rust functions and no shell guard timeout or heartbeat. The semantic index is Rust-only and this diff is shell, so the lexical scan above is the half that covers it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/guard_tree.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "guard timeout heartbeat",
+              "--limit",
+              "5",
+              "--no-docs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3cfb362113c97b486ae7a6fe56d7b6eb6f1abb893bc669e215325fdbb8e1ec10",
+            "failure_scenario": "A shell heartbeat elsewhere in the tree is invisible to the Rust-only index.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "n/a - hand-built shell mutation set; the diff adds no Rust",
+          "informationUri": "https://github.com/paiml/aprender"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant A1 KILLED: scripts/lib/ci_guard_steps.sh: drop 5>&- from the step subshells. Row 'the step's daemon holds no heartbeat FIFO' goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied>; bash scripts/check_guard_steps_run_all.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "b33c5f2bf30e8898fc7b45481bc82ccbae696710f4b302eb6ab791ae4a0458a3"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant A2 KILLED: scripts/lib/ci_guard_steps.sh: delete the 'ci_guards: still running' printf. Row 'CI: the heartbeat names the step still running' goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied>; bash scripts/check_guard_steps_run_all.sh --self-test"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "06bf9614fe6c8fbdb10e99dde1c0a2c30b402f64fe80b5d36309ce602a165f2a"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant A3 KILLED: scripts/guard_tree.sh: delete the 'guard_tree: still running' printf. Row (h) goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied>; bash scripts/tests/guard_tree_parallel_test.sh"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "60d60586e2ad5720f678413d3a457c796a259c55c794a91db3390a43a401c59e"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant A4 KILLED: scripts/guard_tree.sh: remove the timeout -k 30 wrapper. Rows (g) and (i) go red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied>; bash scripts/tests/guard_tree_parallel_test.sh"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "98419961febcc878669f771e67e4ea998835741349c55bda947d23ba9015b98d"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Mutant A5 KILLED: scripts/guard_tree.sh: make the TIMEOUT branch condition never true. The table goes red."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant applied>; bash scripts/tests/guard_tree_parallel_test.sh"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "3f83dada49bcd9f1c3ad6677895c17ea8b1045174c14bd8e3937e107c7664fb1"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Not mutated: scripts/check_ci_push_reuse.sh. Its --self-test is itself a 29-table mutation run (the diff parallelises it; its own comment puts the serial cost at 1157-2330 s), too costly to repeat per mutant in this review. Its change is covered only by the guard tree run in CI."
+              },
+              "properties": {
+                "grounding": "asserted",
+                "rationale": "cost of the guard own self-test, as stated in the diff",
+                "precision_class": "advisory"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "mutant-survived-running-rm",
+          "level": "warning",
+          "message": {
+            "text": "Mutant A6 SURVIVED: deleting the worker's rm of its .running file (scripts/guard_tree.sh:317) leaves all 9 rows green, and the run's output is byte-identical to the unmutated run (same stdout digest as the baseline). No row checks that the heartbeat stops naming a check once it returns."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/guard_tree.sh"
+                },
+                "region": {
+                  "startLine": 317
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "<mutant applied>; bash scripts/tests/guard_tree_parallel_test.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f58845ba15c298c2d1755acd48696526098633040c6da6f456c25e9422f5f277",
+            "failure_scenario": "A worker's next check overwrites its .running file, so the stale file only outlives the worker's LAST check: every later heartbeat names that finished check as still running, with a growing age, until the whole tree ends. Someone reading a stalled log is sent to a check that already passed. The pass/fail verdict is not affected.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mutant-survived-reaper-kill",
+          "level": "warning",
+          "message": {
+            "text": "Mutant A7 SURVIVED: deleting the kill -TERM in the new reap_work trap (scripts/check_ladder_cells_producer.sh:28) leaves the check green. No fake apr serve was left after the mutant run (ps shows none), because a run that ends normally does not leak: the leak (#4919) needs a producer killed mid-run, and no row kills one."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_ladder_cells_producer.sh"
+                },
+                "region": {
+                  "startLine": 28
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "<mutant applied>; bash scripts/check_ladder_cells_producer.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "02dc432a5d11a51e300ffdacfe57be2303f5fbed80560a62302f509df3e58906",
+            "failure_scenario": "If a later edit breaks the reaper (a wrong WORK match, a dropped kill), the check still passes and fake serves leak on the runner again, unseen until a host fills up with them.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-F1",
+          "level": "note",
+          "message": {
+            "text": "check_ci_push_reuse.sh now tests its mutants in parallel while adhering to PUSH_REUSE_FAIL_FAST for early aborts."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_ci_push_reuse.sh"
+                },
+                "region": {
+                  "startLine": 24
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A mutation that fails its first test row wastes computing resources by running the remaining rows sequentially instead of failing fast and allowing parallel evaluation.",
+            "measured_by": "agy",
+            "command": [
+              "bash",
+              "scripts/check_ci_push_reuse.sh",
+              "--self-test"
+            ],
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-F2",
+          "level": "note",
+          "message": {
+            "text": "guard_tree.sh now limits guards to GUARD_TREE_GUARD_TIMEOUT (default 2400s) and kills processes that exceed it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/guard_tree.sh"
+                },
+                "region": {
+                  "startLine": 312
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A hung guard can stall the entire job run until an outer runner workflow limit kills it, leaving no trace in the logs of which specific check caused the stall.",
+            "measured_by": "agy",
+            "command": [
+              "bash",
+              "scripts/tests/guard_tree_parallel_test.sh"
+            ],
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-F3",
+          "level": "note",
+          "message": {
+            "text": "guard_tree.sh implements a heartbeat that reports which checks are still actively running every GUARD_TREE_HEARTBEAT seconds."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/guard_tree.sh"
+                },
+                "region": {
+                  "startLine": 678
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If the process runner terminates the whole job abruptly due to an overarching timeout, logs will be silent on which checks were actively running during the termination.",
+            "measured_by": "agy",
+            "command": [
+              "bash",
+              "scripts/tests/guard_tree_parallel_test.sh"
+            ],
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-F4",
+          "level": "note",
+          "message": {
+            "text": "ci_guard_steps.sh runs a step heartbeat without leaking the FIFO fd to the step (5>&-), ensuring any child daemons do not keep the heartbeat alive."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/ci_guard_steps.sh"
+                },
+                "region": {
+                  "startLine": 418
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A daemon spawned by a step could inherit the heartbeat's FIFO writer file descriptor, causing the pipeline runner to wait indefinitely on the heartbeat even after the original step exits.",
+            "measured_by": "agy",
+            "command": [
+              "bash",
+              "scripts/check_guard_steps_run_all.sh",
+              "--self-test"
+            ],
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-F5",
+          "level": "note",
+          "message": {
+            "text": "check_ladder_cells_producer.sh cleans up orphan processes on exit by searching /proc for cmdlines referencing the temporary $WORK directory."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_ladder_cells_producer.sh"
+                },
+                "region": {
+                  "startLine": 121
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If the check script gets killed by a timeout, the fake \\\"apr serve\\\" processes spawned inside their own process group would outlive the script and clutter the CI runner.",
+            "measured_by": "agy",
+            "command": [
+              "bash",
+              "scripts/check_ladder_cells_producer.sh",
+              "--self-test"
+            ],
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        }
+      ]
+    }
+  ]
+}
