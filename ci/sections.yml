@@ -2987,9 +2987,18 @@ jobs:
   # `schedule`, over the PRs that merged.
 
   # ==========================================================================
-  # ADVISORY GPU JOBS AT PR TIME
+  # GPU LAB SECTIONS (were: ADVISORY GPU JOBS AT PR TIME)
   # spec docs/specifications/06x-release-schedule.md §2 row 67-C1 (`gpu-quick`,
   # gx10) and §2 row 67-D1 (`cuda-unit`, yoga).
+  #
+  # Q6 quorum, C324 (DELETE-TO-LAB 3/3): a check that cannot block a merge or a
+  # release is LAB, and LAB never runs in a PR, merge-queue or release job. These
+  # three sections no longer run in ci.yml at all. Their one home is
+  # .github/workflows/gpu-lab-nightly.yml (schedule + workflow_dispatch, gx10 in
+  # perf-gx10, yoga in perf-yoga). On those events gpu-touched does not select:
+  # there is no PR diff, so it answers the whole GPU set (gpu_touched=1,
+  # cuda_lint=1). The paragraphs below are the PR-time history, kept for why
+  # the shapes are what they are.
   #
   # WHY THEY ARE NOT IN `gate.needs`.
   #   They are ADVISORY in 0.67, deliberately. Each becomes a REQUIRED check
@@ -3031,7 +3040,8 @@ jobs:
     # whole point of splitting it out.
     runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 10
-    if: github.event_name == 'pull_request'
+    # Q6 quorum, C324: LAB, nightly only (gpu-lab-nightly.yml).
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     outputs:
       gpu_touched: ${{ steps.decide.outputs.gpu_touched }}
       gpu_crates: ${{ steps.decide.outputs.gpu_crates }}
@@ -3046,33 +3056,22 @@ jobs:
       # governs — a stale selector is caught on the same PR that broke it.
       - name: The GPU selector can still go RED (case table, no GPU, no cargo)
         run: bash scripts/ci_gpu_touched.sh --self-test
-      - name: Does this PR touch the GPU set? (rows 67-C1 / 67-D1)
+      # Q6 quorum, C324: the PR-diff selection (`ci_gpu_touched.sh --diff-from`
+      # against GITHUB_BASE_REF) left with the PR rows. A nightly has no PR
+      # diff and owes the whole GPU set, so the answer is the full set, stated.
+      - name: The nightly owes the whole GPU set (rows 67-C1 / 67-D1)
         id: decide
         run: |
           set -euo pipefail
-          # Shallow checkout: no merge-base. Tip-vs-tip is a SUPERSET of the
-          # PR's diff, which is the safe direction for a selector — it can only
-          # run the GPU jobs when they were not needed, never skip them when
-          # they were.
-          git fetch --no-tags --depth=1 origin \
-            "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
-          git diff --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
-          printf 'touched (tip vs tip): %s path(s)\n' \
-            "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
-          # No `|| true` and no pipe-swallowed status: the script exits 2 when
-          # the diff is undecidable, and an undecidable selection must fail the
-          # decision job rather than answer a green 0 that skips both GPU jobs
-          # forever.
-          bash scripts/ci_gpu_touched.sh --diff-from "$RUNNER_TEMP/touched.txt" \
-            > "$RUNNER_TEMP/gpu.txt"
-          cat "$RUNNER_TEMP/gpu.txt"
-          grep -E '^(gpu_touched|gpu_crates|cuda_lint|reason)=' "$RUNNER_TEMP/gpu.txt" >> "$GITHUB_OUTPUT"
+          printf 'gpu_touched=1\ncuda_lint=1\nreason=%s: no PR diff to select from; the whole GPU set is owed\n' \
+            "$GITHUB_EVENT_NAME" | tee -a "$GITHUB_OUTPUT"
 
   # ROW 67-C1 — `gpu-quick` on gx10 (GB10, sm_121, aarch64).
   # Promotion to required: row 68-C3, after 5 consecutive green gx10 nightlies.
   gpu-quick:
     needs: [gpu-touched]
-    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    # Q6 quorum, C324: LAB, nightly only (gpu-lab-nightly.yml, perf-gx10).
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.gpu-touched.outputs.gpu_touched == '1'
     # LITERAL, not an expression: a guard can only check labels it can see, and
     # `runs-on: ${{ fromJSON(...) }}` hides them from check_runner_labels.sh.
     # `ephemeral, docker` is the DISPOSABLE gx10 runner (operator rule): its
@@ -3127,7 +3126,7 @@ jobs:
           procs=${procs:-0}
           echo "gx10: GPU memory.used=${used} MiB, existing compute procs=${procs}"
           if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
-            echo "::notice::gpu-quick: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping the GPU leg on this PR"
+            echo "::notice::gpu-quick: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping the GPU leg this run"
             echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo "proceed=true" >> "$GITHUB_OUTPUT"
@@ -3165,7 +3164,8 @@ jobs:
     # gpu_touched=1 runs every step. cuda_lint=1 alone (an apr-cli-only diff,
     # #4336) runs ONLY the clippy step: the test steps carry their own
     # gpu_touched `if:`, so yoga is held for a check build, not the test builds.
-    if: github.event_name == 'pull_request' && (needs.gpu-touched.outputs.gpu_touched == '1' || needs.gpu-touched.outputs.cuda_lint == '1')
+    # Q6 quorum, C324: LAB, nightly only (gpu-lab-nightly.yml, perf-yoga).
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (needs.gpu-touched.outputs.gpu_touched == '1' || needs.gpu-touched.outputs.cuda_lint == '1')
     runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
     # 15 -> 35 (#3810): the derived cuda-only set needs a second, default-feature
     # test build of aprender-serve to list against. MEASURED on this PR's own run

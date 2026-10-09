@@ -51,11 +51,11 @@ jobs:
   #    runs all parts to completion on the biggest runner in its class, nextest
   #    full-core, sccache warm. Same test set as today (Σ executed unchanged)."
   #
-  # The five, by job id: x86-main, gx10, yoga, determinism, and mac-check -- the
-  # ruling's "mac-refusal": the macOS lane, whose one expected failure is the
-  # Linux-only profiler's compile_error! refusal (excluded by name below). It
-  # keeps its context name `mac-check` and, as on main before #4433, is NOT in
-  # `gate`'s needs (its own comment: first-green proof before it may block).
+  # The five, by job id, were: x86-main, gx10, yoga, determinism, and mac-check
+  # (the ruling's "mac-refusal"). gx10, yoga and mac-check were never in `gate`'s
+  # needs, so none could block a merge or a release; Q6 quorum, C324 moved all
+  # three to LAB (nightly only): gx10/yoga to gpu-lab-nightly.yml, mac-check to
+  # nightly.yml. x86-main and determinism are the fat jobs this workflow runs.
   #
   # The job BODIES did not change: they moved, verbatim, to ci/sections.yml
   # (and the pinned sovereign-ci reusable workflow to ci/vendor/). Each fat job
@@ -83,7 +83,9 @@ jobs:
   # commit the queue had just passed. On that push, mg-reuse reads the merge_group
   # run on the same sha instead (P1-P4 in scripts/ci_mg_reuse.sh), and reuses only
   # when that run RAN both jobs and they passed -- never a queue run that itself
-  # reused. mac-check is never reused on a push.
+  # reused. mac-check is never reused on a push. Q6 quorum, C324: mac-check left
+  # this workflow, so its `mac` key is no longer an output here; ci_mg_reuse.sh
+  # still computes it (its case table and check_ci_push_reuse.sh read it).
   mg-reuse:
     if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: [self-hosted, Linux, X64, clean-room]
@@ -95,7 +97,6 @@ jobs:
     outputs:
       x86: ${{ steps.key.outputs.x86 }}
       det: ${{ steps.key.outputs.det }}
-      mac: ${{ steps.key.outputs.mac }}
       cite: ${{ steps.key.outputs.cite }}
     steps:
       # Full history: the key reads the queue head's parent, the base's parent and
@@ -122,7 +123,7 @@ jobs:
             *) out=$(bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF" --queue-head "$QHEAD" --base "$QBASE" --repo "$REPO") ;;
           esac
           printf '%s\n' "$out"
-          printf '%s\n' "$out" | grep -E '^(x86|det|mac|cite|pr_head)=' >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$out" | grep -E '^(x86|det|cite|pr_head)=' >> "$GITHUB_OUTPUT"
 
   # The same case table on every event, so a change that breaks the key is RED on
   # its own PR, not first in the queue. gate requires it.
@@ -312,112 +313,12 @@ jobs:
           export GIT_CONFIG_VALUE_0
           setsid --wait bash scripts/check_deny_exemptions_live.sh
 
-  # The GPU decision stays OFF the GPU hosts, as before #4433: an `if:` that
-  # could only be evaluated on gx10/yoga would queue the job to answer it, and
-  # a queued job has already claimed the fleet's one GB10 / one RTX 4060 (and
-  # displaced a pending job in its perf-* group). A ten-second decision on the
-  # clean-room pool, not a sixth fat job; gx10 and yoga run only on a
-  # pull_request that it says touches the GPU set, exactly as gpu-quick and
-  # cuda-unit did. scripts/tests/ci_gpu_touched_test.sh pins this shape.
-  gpu-touched:
-    runs-on: [self-hosted, X64, Linux, clean-room]
-    timeout-minutes: 10
-    if: github.event_name == 'pull_request'
-    outputs:
-      gpu_touched: ${{ steps.decide.outputs.gpu_touched }}
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      FAT_VARS_JSON: ${{ toJSON(vars) }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Sections
-        id: run
-        run: >-
-          python3 scripts/ci/fat_driver.py run
-          --sections 'gpu-touched'
-          --results "$RUNNER_TEMP/fat/results.json"
-      # #4948: a cancelled run never reaches a section's own container removal,
-      # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
-      # for days. always() runs on cancel too; on the passing path the driver
-      # has already removed every container and this finds none. Cancelled
-      # before the checkout, no driver ran and there is no script to call.
-      - name: Remove this job's section containers (runs on cancel too)
-        if: always()
-        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
-      - name: The decision, as this job's output
-        id: decide
-        run: |
-          set -euo pipefail
-          jq -r '"gpu_touched=" + ((."gpu-touched".outputs.gpu_touched // "0") | tostring)' \
-            "$RUNNER_TEMP/fat/results.json" | tee -a "$GITHUB_OUTPUT"
-
-  gx10:
-    runs-on: [self-hosted, Linux, ARM64, cuda, gx10, ephemeral, docker]
-    timeout-minutes: 30
-    needs: [gpu-touched]
-    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
-    # Shared with the other gx10 perf workflows (qwen-story-daily, silicon-nightly,
-    # cuda-nightly, b2-gpu): one GPU job on the box at a time.
-    concurrency:
-      group: perf-gx10
-      cancel-in-progress: false
-    outputs:
-      results: ${{ steps.run.outputs.results }}
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      FAT_VARS_JSON: ${{ toJSON(vars) }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Sections
-        id: run
-        run: >-
-          python3 scripts/ci/fat_driver.py run
-          --sections 'gpu-touched,gpu-quick'
-          --results "$RUNNER_TEMP/fat/results.json"
-      # #4948: a cancelled run never reaches a section's own container removal,
-      # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
-      # for days. always() runs on cancel too; on the passing path the driver
-      # has already removed every container and this finds none. Cancelled
-      # before the checkout, no driver ran and there is no script to call.
-      - name: Remove this job's section containers (runs on cancel too)
-        if: always()
-        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
-
-  yoga:
-    runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
-    timeout-minutes: 50
-    needs: [gpu-touched]
-    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
-    concurrency:
-      group: perf-yoga
-      cancel-in-progress: false
-    outputs:
-      results: ${{ steps.run.outputs.results }}
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      FAT_VARS_JSON: ${{ toJSON(vars) }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Sections
-        id: run
-        run: >-
-          python3 scripts/ci/fat_driver.py run
-          --sections 'gpu-touched,cuda-unit'
-          --results "$RUNNER_TEMP/fat/results.json"
-      # #4948: a cancelled run never reaches a section's own container removal,
-      # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
-      # for days. always() runs on cancel too; on the passing path the driver
-      # has already removed every container and this finds none. Cancelled
-      # before the checkout, no driver ran and there is no script to call.
-      - name: Remove this job's section containers (runs on cancel too)
-        if: always()
-        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
+  # gpu-touched, gx10 and yoga LEFT this workflow: Q6 quorum, C324 (DELETE-TO-LAB
+  # 3/3). gpu-quick and cuda-unit were never in the gate, so they could not block
+  # a merge or a release, and a check that cannot block is LAB: it never runs in
+  # a PR or merge-queue job. The sections keep their bodies in ci/sections.yml;
+  # their one home is .github/workflows/gpu-lab-nightly.yml (gx10 in perf-gx10,
+  # yoga in perf-yoga). scripts/tests/ci_gpu_touched_test.sh pins that shape.
 
   determinism:
     needs: [mg-reuse, x86-main]
@@ -479,39 +380,11 @@ jobs:
           path: ${{ runner.temp }}/fat/artifacts/raster-receipt/
           if-no-files-found: ignore
 
-  # PACK-001: mini-m4 had taken ZERO jobs in the 24 h measured -- nothing in any
-  # workflow named macOS. The multiplatform dogfood requires a mini receipt at
-  # post-publish and the three macOS-only defect classes on record (#2567 aarch64
-  # scalar GEMV, #2568 an OOM guard that reads /proc/meminfo, #2572 a metal-only
-  # dep) were each found only by building there. This lane is the cheap version:
-  # a locked workspace check plus the CLI's lib tests, on the pinned toolchain
-  # (rust-toolchain.toml; rustup on mini holds 1.93.0). No docker on macOS, so
-  # the runner's own persistent target dir is used and nothing is bind-mounted.
-  # Not in `gate`'s needs yet: first-green proof on a real PR before it may block.
-  mac-check:
-    needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.mac != '1' }}
-    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
-    timeout-minutes: 60
-    env:
-      CARGO_INCREMENTAL: 0
-      CARGO_TERM_COLOR: never
-    steps:
-      - uses: actions/checkout@v4
-      - name: Toolchain is the pinned one
-        run: |
-          set -euo pipefail
-          rustup show active-toolchain
-          cargo --version
-      # First run on mini (PR #3488, 2026-09-18) found the first macOS-only fact
-      # in two minutes: crates/aprender-profile/src/main.rs is a compile_error!
-      # on non-Linux by design ("renacer requires Linux (ptrace syscall
-      # tracing)"). That crate is excluded here on purpose; any OTHER crate that
-      # fails to check on macOS is a finding this lane exists to surface.
-      - name: cargo check --workspace --all-targets --locked (minus the Linux-only profiler)
-        run: cargo check --workspace --all-targets --locked --exclude aprender-profile
-      - name: apr-cli lib tests (nextest, ci profile)
-        run: cargo nextest run --profile ci -p apr-cli --lib
+  # mac-check (PACK-001) LEFT this workflow: Q6 quorum, C324 (DELETE-TO-LAB 3/3).
+  # It was never in `gate`'s needs, so it could not block a merge or a release,
+  # and a check that cannot block is LAB: it never runs in a PR or merge-queue
+  # job. Its home is nightly.yml job `mac-check` (same mini labels, same two
+  # cargo steps), which no publish job needs.
 
   # Poka-yoke (aprender#2269): fail fast if ANY self-hosted job omits a
   # discriminating runner label, so a bare [self-hosted, X64, Linux] selector
@@ -676,7 +549,8 @@ jobs:
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
-          # cuda-unit were never in the gate; they still are not.
+          # cuda-unit were never in the gate; Q6 quorum, C324 moved them to LAB
+          # (gpu-lab-nightly.yml), so no job of this workflow runs them.
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
           [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
