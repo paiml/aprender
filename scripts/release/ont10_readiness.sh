@@ -2,7 +2,7 @@
 # ont10_readiness.sh <version> [--run-oracle] -- ONT-001 row ONT-10: is aprender-contracts-cli <version>
 #   ready for the operator's publish? READ-ONLY toward crates.io: it never publishes, never holds a
 #   token, and ends where the row ends, at STOP(PUBLISH: aprender-contracts-cli <version>, dry-run
-#   receipt at <path>) -- the publish is the operator's (RP-001), run through publish_strict.sh.
+#   receipt at <path>) -- the publish is the operator's (RP-001), run through the cascade.
 #
 # What it measures, each a line of the receipt $AP/ont10-readiness.json:
 #   previous_pin   the version crates.io serves today (the spec's release receipt records it)

@@ -13,6 +13,9 @@ LEG correct, under every thinking mode the model has:
 refused row, or any wrong row rejects the prompt for that (model, quant), and the reason names the first
 such cell. Missing is never agreement (#3957 F3), and one right row does not outvote a wrong one.
 
+Kept only as the N-1 gate caller until a released aprender-crux-judge carries the port; the helper split is
+for the pre-commit complexity hook, with no behaviour change. Retire at 0.71+1.
+
 Rows are CRUX row contract v1 (#3739 comment 5765991210); each engine's output is read through the
 judge's own parsers (crux_inference_judge.engine_entry), so certification and the gate cannot disagree
 about what an engine said.
@@ -107,6 +110,11 @@ def driver_raw(row: dict):  # -> ((raw final reply, turns | None), None) | (None
     turns = doc.get("turns") or None
     if isinstance(doc.get("raw_text"), str) and "prompt_opens_think" in reported:
         return (("<think>" if reported["prompt_opens_think"] else "") + doc["raw_text"], turns), None
+    return _driver_raw_unsplit(row, doc, turns)
+
+
+def _driver_raw_unsplit(row: dict, doc, turns):
+    """driver_raw for a row from a driver that records no `raw_text`: refuse thinking-ON, rebuild OFF."""
     if row.get("thinking") == "on":
         return None, PRE_3990
     reasoning = doc.get("reasoning")
@@ -143,26 +151,32 @@ def certify_one(prompt: dict, model: dict, quant: str, quant_sha: str, rows: lis
     for thinking in model.get("thinking") or ["off"]:
         mode_bad = first_bad
         for leg in LEGS:
-            # Any verb counts: certification asks whether the PROMPT is answerable, not whether an
-            # interface works (that is the gate's job). The runner drives ggml through llama-server.
-            mine = [r for r in rows if r.get("prompt_id") == prompt["id"] and r.get("thinking") == thinking
-                    and leg_of(r, model, quant_sha) == leg]
-            if not mine:
-                first_bad = first_bad or f"{leg} thinking={thinking}: no row"
-                cells.append({"leg": leg, "thinking": thinking, "correct": False, "why": "no row", "row": None})
-                continue
-            for r in mine:
-                reply, why = reply_of(r, prompt)
-                v = oracles.evaluate(prompt, *reply) if reply else {"correct": False, "why": why, "extracted": None}
-                cells.append({"leg": leg, "thinking": thinking, "engine": r["engine"], "verb": r["verb"],
-                              "host": r.get("host"), "correct": v["correct"], "why": v["why"],
-                              "extracted": v["extracted"], "think": think_state(reply[0] if reply else None),
-                              "max_tokens": r.get("max_tokens"), "row": r["_at"]})
-                if not v["correct"]:
-                    first_bad = first_bad or f"{leg} {r['engine']} {r['verb']} thinking={thinking} on {r.get('host')}: {v['why']}"
+            first_bad = _certify_leg(prompt, model, quant_sha, rows, leg, thinking, cells, first_bad)
         by_mode[thinking] = first_bad == mode_bad and not any(
             c["thinking"] == thinking and not c["correct"] for c in cells)
     return first_bad is None, first_bad, cells, by_mode
+
+
+def _certify_leg(prompt: dict, model: dict, quant_sha: str, rows: list, leg: str, thinking, cells: list, first_bad):
+    """certify_one for one (leg, thinking): append its cells, return the first failure so far."""
+    # Any verb counts: certification asks whether the PROMPT is answerable, not whether an
+    # interface works (that is the gate's job). The runner drives ggml through llama-server.
+    mine = [r for r in rows if r.get("prompt_id") == prompt["id"] and r.get("thinking") == thinking
+            and leg_of(r, model, quant_sha) == leg]
+    if not mine:
+        first_bad = first_bad or f"{leg} thinking={thinking}: no row"
+        cells.append({"leg": leg, "thinking": thinking, "correct": False, "why": "no row", "row": None})
+        return first_bad
+    for r in mine:
+        reply, why = reply_of(r, prompt)
+        v = oracles.evaluate(prompt, *reply) if reply else {"correct": False, "why": why, "extracted": None}
+        cells.append({"leg": leg, "thinking": thinking, "engine": r["engine"], "verb": r["verb"],
+                      "host": r.get("host"), "correct": v["correct"], "why": v["why"],
+                      "extracted": v["extracted"], "think": think_state(reply[0] if reply else None),
+                      "max_tokens": r.get("max_tokens"), "row": r["_at"]})
+        if not v["correct"]:
+            first_bad = first_bad or f"{leg} {r['engine']} {r['verb']} thinking={thinking} on {r.get('host')}: {v['why']}"
+    return first_bad
 
 
 def closure(cells: list) -> dict:
@@ -184,6 +198,20 @@ def certify(a) -> int:
         return 2
     inventory = json.loads(Path(a.inventory).read_text(encoding="utf-8"))
     rows = read_rows(a.manifests)
+    admitted, rejected, cells, by_thinking = _certify_all(doc, inventory, rows)
+    uncontrolled_detail = _uncontrolled_all(doc, inventory, by_thinking)
+    uncontrolled = sorted({u["model"] for u in uncontrolled_detail})
+    receipt = _receipt(a, prompts_path, inventory, admitted, by_thinking, rejected, uncontrolled,
+                       uncontrolled_detail, cells)
+    Path(a.out).write_text(json.dumps(receipt, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    for model in inventory:
+        for quant, qsha in sorted(model["quants"].items()):
+            _print_quant(model, quant, qsha, by_thinking, uncontrolled_detail, admitted)
+    return 0
+
+
+def _certify_all(doc: dict, inventory, rows: list) -> tuple:
+    """certify's admission pass over every (model, quant, prompt): (admitted, rejected, cells, by_thinking)."""
     admitted, rejected, cells, by_thinking = {}, {}, [], {}
     for model in inventory:
         for quant, qsha in sorted(model["quants"].items()):
@@ -191,15 +219,27 @@ def certify(a) -> int:
             admitted[key], rejected[key] = [], {}
             by_thinking[qsha] = {t: [] for t in model.get("thinking") or ["off"]}
             for p in doc["prompts"]:
-                ok, why, cs, modes = certify_one(p, model, quant, qsha, rows)
-                for t, m_ok in modes.items():
-                    if m_ok:
-                        by_thinking[qsha][t].append(p["id"])
-                cells += [dict(c, prompt_id=p["id"], model=key) for c in cs]
-                if ok:
-                    admitted[key].append(p["id"])
-                else:
-                    rejected[key][p["id"]] = why
+                cells += _certify_prompt(p, model, quant, qsha, rows, key, admitted, rejected, by_thinking)
+    return admitted, rejected, cells, by_thinking
+
+
+def _certify_prompt(p: dict, model: dict, quant: str, qsha: str, rows: list, key: str, admitted: dict,
+                    rejected: dict, by_thinking: dict) -> list:
+    """certify one prompt for one (model, quant): record its admissions, return its cells."""
+    ok, why, cs, modes = certify_one(p, model, quant, qsha, rows)
+    for t, m_ok in modes.items():
+        if m_ok:
+            by_thinking[qsha][t].append(p["id"])
+    new_cells = [dict(c, prompt_id=p["id"], model=key) for c in cs]
+    if ok:
+        admitted[key].append(p["id"])
+    else:
+        rejected[key][p["id"]] = why
+    return new_cells
+
+
+def _uncontrolled_all(doc: dict, inventory, by_thinking: dict) -> list:
+    """certify's uncontrolled_detail: every (model, quant, thinking) lane with a verb no certified control serves."""
     # A lane needs ONE certified positive control serving its verb, per thinking mode (#3957, the cop's
     # "positive control per (host, verb, thinking)"). A second control that fails (e.g. the multi-turn
     # recall control looping at greedy on a quant) does not un-control a lane another control covers.
@@ -207,14 +247,29 @@ def certify(a) -> int:
     uncontrolled_detail = []
     for model in inventory:
         for quant, qsha in sorted(model["quants"].items()):
-            for t, ids in by_thinking[qsha].items():
-                bare = [v for v in verbs if not any(p.get("control") and p["id"] in ids and v in p["verb"]
-                                                    for p in doc["prompts"])]
-                if bare:
-                    uncontrolled_detail.append({"model": f"{model['model']}/{quant}", "sha256": qsha,
-                                                "thinking": t, "verbs": bare})
-    uncontrolled = sorted({u["model"] for u in uncontrolled_detail})
-    receipt = {
+            _uncontrolled_quant(doc, verbs, model, quant, qsha, by_thinking, uncontrolled_detail)
+    return uncontrolled_detail
+
+
+def _uncontrolled_quant(doc: dict, verbs: list, model: dict, quant: str, qsha: str, by_thinking: dict,
+                        uncontrolled_detail: list) -> None:
+    """Append one (model, quant)'s uncontrolled lanes, per thinking mode, to uncontrolled_detail."""
+    for t, ids in by_thinking[qsha].items():
+        bare = [v for v in verbs if not _controlled(doc, ids, v)]
+        if bare:
+            uncontrolled_detail.append({"model": f"{model['model']}/{quant}", "sha256": qsha,
+                                        "thinking": t, "verbs": bare})
+
+
+def _controlled(doc: dict, ids: list, v) -> bool:
+    return any(p.get("control") and p["id"] in ids and v in p["verb"]
+               for p in doc["prompts"])
+
+
+def _receipt(a, prompts_path: Path, inventory, admitted: dict, by_thinking: dict, rejected: dict,
+             uncontrolled: list, uncontrolled_detail: list, cells: list) -> dict:
+    """The certification receipt certify writes, key order and all."""
+    return {
         "schema": SCHEMA,
         "prompts": str(prompts_path),
         "prompts_sha256": sha256_path(prompts_path),
@@ -241,15 +296,16 @@ def certify(a) -> int:
         "think_closure": closure(cells),
         "cells": cells,
     }
-    Path(a.out).write_text(json.dumps(receipt, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    for model in inventory:
-        for quant, qsha in sorted(model["quants"].items()):
-            k = f"{model['model']}/{quant}"
-            modes = ", ".join(f"{t} {len(v)}" for t, v in by_thinking[qsha].items())
-            gaps = [f"{u['thinking']}:{'/'.join(u['verbs'])}" for u in uncontrolled_detail if u["model"] == k]
-            print(f"{k}: admitted {modes} (all modes {len(admitted[k])})"
-                  + (f"  [no certified control: {'; '.join(gaps)}]" if gaps else ""))
-    return 0
+
+
+def _print_quant(model: dict, quant: str, qsha: str, by_thinking: dict, uncontrolled_detail: list,
+                 admitted: dict) -> None:
+    """certify's summary line for one (model, quant)."""
+    k = f"{model['model']}/{quant}"
+    modes = ", ".join(f"{t} {len(v)}" for t, v in by_thinking[qsha].items())
+    gaps = [f"{u['thinking']}:{'/'.join(u['verbs'])}" for u in uncontrolled_detail if u["model"] == k]
+    print(f"{k}: admitted {modes} (all modes {len(admitted[k])})"
+          + (f"  [no certified control: {'; '.join(gaps)}]" if gaps else ""))
 
 
 def check(a) -> int:
