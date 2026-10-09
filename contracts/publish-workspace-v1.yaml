@@ -231,15 +231,24 @@ falsification_tests:
       only door: `make publish` refuses a real upload (PUBLISH_DRY_RUN still
       packages), and no other tracked shell script, make file, justfile, git
       hook, root workflow or file with a sh/bash/dash/ksh/mksh/zsh/bats shebang
-      runs an upload in a command without --dry-run. An upload is `cargo
-      publish`, `cargo ws|workspaces publish`, `cargo release`, `cargo
-      smart-release`, those tools run by their own name, or cargo with a
-      subcommand taken from a variable; and no tracked cargo config aliases one.
-      Two are allowed by file and command: release_ready.sh's case-table
-      stand-in, and the v0.68.1 audit record of publish_strict.sh, which nothing
-      runs. Commands are read as the shell runs them: continuation lines joined,
-      each command of a line on its own, wrappers, VAR=val, eval, sh -c,
-      find -exec, $CARGO and cargo's global flags included. cascade-publish.sh is
+      runs an upload in a command that lacks --dry-run as a word of its own. An
+      upload is `cargo publish`, `cargo ws|workspaces publish`, `cargo release`,
+      `cargo smart-release`, those tools run by their own name, cargo with a
+      subcommand taken from a variable, or any variable run as the command with
+      one of those uploads after it, since the variable may hold cargo. cargo
+      counts by a path or quoted, as $CARGO, $$CARGO or $(command -v cargo). An
+      upload stored for later counts where it is stored: a shell or make
+      variable whose value starts with one, or an alias of one; and no tracked
+      cargo config aliases one. Two are allowed by file and command:
+      release_ready.sh's case-table stand-in, and the v0.68.1 audit record of
+      publish_strict.sh, which nothing runs. A command that starts with "$APR"
+      or "$APR_BIN", the pinned apr binary, is not a crate upload: its publish
+      sends a model to Hugging Face. Commands are read as the shell runs them:
+      continuation lines joined, each command of a line on its own (split at
+      ; && || | and a lone &, not the & of a redirect), case arms, wrappers,
+      VAR=val, eval, sh -c, $( <( >(, make's $(shell), find -exec and cargo's
+      global flags included. A failed search for the shebang files fails the
+      check; it never reads as no file. cascade-publish.sh is
       the one other upload, behind its own clean_room_gate, and each of the two
       gated files holds exactly one upload command. Not scanned: Rust, where the
       aprender-orchestrate stack releaser and the dev-only `apr mono publish`
@@ -263,7 +272,8 @@ falsification_tests:
       lost its pinned mode and judges a run other than the one recorded, or a
       second way to upload to crates.io came back, or the scan went blind to a
       gated file's one upload command, an allowed entry, a kind of file it must
-      read, or the tracked cargo aliases.
+      read, or the tracked cargo aliases, or it read a failed file search as an
+      empty one.
 
 kani_harnesses:
   - id: KANI-PUB-001

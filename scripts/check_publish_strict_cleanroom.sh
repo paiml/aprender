@@ -183,33 +183,54 @@ fi
 # A command uploads when it runs `cargo publish`. door_cmds reads each file the way the shell
 # does: a line ending in \ is joined to the next (the row keeps the line the command starts
 # on), a comment line is dropped and does not continue, a trailing ` #...` comment is cut, and
-# the line is split into commands at ; && || and |. So a --dry-run on one command never hides
-# another on the same line, and `cargo \` + `publish` is still one command.
-# A command is a door when cargo ($CARGO, "${CARGO:-cargo}", $(CARGO)), with only global flags
-# after it, runs an upload: publish, ws/workspaces publish, release or smart-release, or a
-# subcommand it takes from a variable ("$sub", $(SUB)), which could be any of them. So is
-# cargo-release, cargo-smart-release or cargo-workspaces run by its own name. It counts at the
-# command's start (after ( { ! ` @ + -, then/do/else/if/elif/while/until or a workflow run:),
-# after $( or an unescaped backtick, inside sh -c "..." or eval, after find's -exec/-execdir;
-# behind VAR=val and a wrapper (env exec time command nohup sudo timeout nice xargs parallel ...).
+# the line is split into commands at ; && || | and a lone & (not the & of >& <& &>). So a
+# --dry-run on one command never hides another on the same line, and `cargo \` + `publish` is
+# still one command. --dry-run counts only as a word of its own command.
+# A command is a door when cargo (cargo by a path or quoted, $CARGO, "${CARGO:-cargo}",
+# $(CARGO), $$CARGO, $(command -v cargo)), with only global flags after it, runs an upload:
+# publish, ws/workspaces publish, release or smart-release, or a subcommand it takes from a
+# variable ("$sub", $(SUB)), which could be any of them. So is cargo-release,
+# cargo-smart-release or cargo-workspaces run by its own name, and any variable run as the
+# command with one of those uploads after it ($C publish, $(TOOL) release), since the variable
+# may hold cargo. It counts at the command's start (after ( { ! ` @ + -, `case ... in`, a case
+# pattern's `x)`, then/do/else/if/elif/while/until or a workflow run:), after $( <( >( or an
+# unescaped backtick, inside sh -c "..." or eval, after find's -exec/-execdir; behind VAR=val
+# and a wrapper (env exec time command nohup sudo timeout nice xargs parallel ... make's shell).
+# The apr binary is the one variable let through: "$APR" publish uploads a model (DOOR_APR).
+# An upload stored for later is a door where it is stored: a shell or make variable whose
+# value starts with one (X="cargo publish", UP := $(CARGO) publish, cmd=(cargo publish)) or an
+# alias of one.
 # The case table is the pattern's spec: re-run it, never re-read the pattern.
-DOOR_PRE='[[:space:]]*(([(!{`@+-]|then|do|else|if|elif|while|until|run:)[[:space:]]*)*'
-DOOR_MID='(.*(\$\(|[^\\]`|-c[[:space:]]+["'"'"']|[[:space:]]-exec(dir)?[[:space:]]+)|(.*[^A-Za-z0-9_-])?eval[[:space:]]+["'"'"']?)[[:space:]]*'
-DOOR_WRAP='((env|exec|time|command|builtin|nohup|sudo|timeout|nice|ionice|stdbuf|xargs|parallel|flock|taskset|chrt|setsid)([[:space:]]+[^[:space:]]+)*[[:space:]]+)?'
-DOOR_ASSIGN='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
-DOOR_CARGO='(cargo|"?\$\{?CARGO[A-Za-z0-9_]*(:?[-=+?][^}[:space:]]*)?\}?"?|\$\(CARGO\))'
+DOOR_PRE='[[:space:]]*(([(!{`@+-]|case[[:space:]].*[[:space:]]in|[^[:space:]()]+\)|then|do|else|if|elif|while|until|run:)[[:space:]]*)*'
+DOOR_MID='(.*(\$\(|[<>]\(|[^\\]`|-c[[:space:]]+["'"'"']|[[:space:]]-exec(dir)?[[:space:]]+)|(.*[^A-Za-z0-9_-])?eval[[:space:]]+["'"'"']?)[[:space:]]*'
+DOOR_WRAP='((env|exec|time|command|builtin|nohup|sudo|timeout|nice|ionice|stdbuf|xargs|parallel|flock|taskset|chrt|setsid|shell)([[:space:]]+[^[:space:]]+)*[[:space:]]+)?'
+# A VAR=val prefix holds no unclosed $( : in `out=$(bash "$me" release` bash is the command.
+DOOR_ASSIGN='([A-Za-z_][A-Za-z0-9_]*=([^[:space:]$]|\$[^(]|\$\([^)[:space:]]*\))*[[:space:]]+)*'
+DOOR_VAL='(.*[^A-Za-z0-9_.-])?[A-Za-z_][A-Za-z0-9_.-]*[[:space:]]*(::|:|\?|\+|!)?=[[:space:]]*[("'"'"']*[[:space:]]*'
+DOOR_PATH='([^[:space:]"'"'"'=;&|]*/)?'
+DOOR_CARGO='(["'"'"'\\]?'"$DOOR_PATH"'cargo["'"'"']?|"?\$?\$(CARGO[A-Za-z0-9_]*|\{CARGO[A-Za-z0-9_]*(:?[-=+?][^}]*)?\})"?|\$\(CARGO\)|"?(\$\(|`)(command[[:space:]]+-v|which|type[[:space:]]+-[pP])[[:space:]]+cargo(\)|`)"?)'
+# A braced ${...} ends at its } and must have one: in X="${2:-stack release}" the variable is
+# the whole ${...}, so no `release` follows it.
+DOOR_VAR='("?\$?\$([A-Za-z_][A-Za-z0-9_]*|[0-9@*]|\{([A-Za-z_][A-Za-z0-9_]*|[0-9@*])(:?[-=+?][^}]*)?\})"?|\$\([A-Za-z_][A-Za-z0-9_]*\))'
 DOOR_GFLAG='([[:space:]]+(\+[^[:space:]]+|-[A-Za-z]+|--[a-z][a-z-]*(=[^[:space:]]*)?|(-Z|-C|--config|--color)[[:space:]]+[^[:space:]]+))*'
 DOOR_SUB='(publish|(ws|workspaces)[[:space:]]+publish|release|smart-release)([[:space:]"'"'"'`)};]|$)'
 # For a variable subcommand the flags are read strictly, so -Z "$z" or --config "$f" is a flag
 # and its value, never a flag and then a variable subcommand.
 DOOR_VFLAG='([[:space:]]+(\+[^[:space:]]+|-[qv]+|--(locked|frozen|offline|quiet|verbose)|--[a-z][a-z-]*=[^[:space:]]*|(-Z|-C|--config|--color)[[:space:]]+[^[:space:]]+))*'
-DOOR_TOOL='cargo-(release|smart-release|workspaces|ws)([[:space:]]|$)'
-DOOR_RE="^[^:]*:[0-9]+:(${DOOR_PRE}|${DOOR_MID})${DOOR_WRAP}${DOOR_ASSIGN}(${DOOR_CARGO}(${DOOR_GFLAG}[[:space:]]+${DOOR_SUB}|${DOOR_VFLAG}[[:space:]]+\"?\\\$)|${DOOR_TOOL})"
+DOOR_TOOL="${DOOR_PATH}"'cargo-(release|smart-release|workspaces|ws)([[:space:]"'"'"']|$)'
+DOOR_UP="(${DOOR_CARGO}(${DOOR_GFLAG}[[:space:]]+${DOOR_SUB}|${DOOR_VFLAG}[[:space:]]+\"?\\\$)|${DOOR_VAR}${DOOR_GFLAG}[[:space:]]+${DOOR_SUB}|${DOOR_TOOL})"
+DOOR_RE="^[^:]*:[0-9]+:((${DOOR_PRE}|${DOOR_MID})${DOOR_WRAP}${DOOR_ASSIGN}|${DOOR_VAL})${DOOR_UP}"
+DOOR_DRY='(^|[[:space:]])["'"'"']?--dry-run["'"'"']?([[:space:]]|$)'
+# "$APR" and "$APR_BIN" are the pinned apr binary (scripts/apr_bin.sh): its publish uploads a
+# model to Hugging Face, not a crate. Only a command that starts with one is let through.
+DOOR_APR='^[^:]*:[0-9]+:"?\$\{?APR(_BIN)?\}?"?[[:space:]]+publish([[:space:]]|$)'
 door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
   awk '
     function emit(f, n, s,   k, i, c) {
-      k = split(s, c, /&&|\|\||;|\|/)
+      gsub(/>&/, "\001", s); gsub(/<&/, "\002", s); gsub(/&>/, "\003", s)
+      k = split(s, c, /&&|\|\||;|\||&/)
       for (i = 1; i <= k; i++) {
+        gsub(/\001/, ">\\&", c[i]); gsub(/\002/, "<\\&", c[i]); gsub(/\003/, "\\&>", c[i])
         sub(/[[:space:]]#.*$/, "", c[i])
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", c[i])
         if (c[i] != "" && c[i] !~ /^#/) print f ":" n ":" c[i]
@@ -226,7 +247,7 @@ door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
     END { if (buf != "") emit(pf, start, buf) }
   ' "$@"
 }
-door_lines() { door_cmds "$@" | grep -E "$DOOR_RE" | grep -v -e '--dry-run'; }
+door_lines() { door_cmds "$@" | grep -E "$DOOR_RE" | grep -vE "$DOOR_DRY" | grep -vE "$DOOR_APR"; }
 cases_n=0 cases_ok=0
 door_case() { # door_case door|none TEXT (TEXT may span lines)
   local got=none
@@ -291,6 +312,37 @@ door_case door 'eval "cargo publish -p x"'
 door_case door 'eval cargo publish -p x'
 door_case door 'find crates -name Cargo.toml -execdir cargo publish \;'
 door_case door 'parallel -j2 cargo publish -p {} ::: a b'
+door_case door 'cargo publish -p x & echo --dry-run'
+door_case door 'cargo publish -p x & wait'
+door_case door 'cargo publish -p x ${DRY:+--dry-run}'
+door_case door 'cargo publish -p x --dry-run-later'
+door_case door 'UP = cargo publish -p x'
+door_case door 'UP := $(CARGO) publish -p x'
+door_case door 'UP ?= cargo publish'
+door_case door 'release: UP != cargo release'
+door_case door 'X="cargo publish -p x"'
+door_case door "export X='cargo publish'"
+door_case door 'local -a cmd=(cargo publish -p x)'
+door_case door "alias up='cargo publish'"
+door_case door 'C=cargo; $C publish -p x'
+door_case door '"$c" release --execute'
+door_case door '"${C:-cargo}" publish -p x'
+door_case door '"${CARGO:-cargo +nightly}" publish -p x'
+door_case door $'\t$(TOOL) publish -p x'
+door_case door $'\t$$C publish -p x'
+door_case door $'\t$$CARGO publish -p x'
+door_case door $'\t$(shell cargo publish -p x)'
+door_case door 'diff <(cargo publish -p x) y'
+door_case door '"cargo" publish -p x'
+door_case door '\cargo publish -p x'
+door_case door '/usr/bin/cargo publish -p x'
+door_case door '"$HOME/.cargo/bin/cargo" publish -p x'
+door_case door '$(command -v cargo) publish -p x'
+door_case door '`which cargo` publish -p x'
+door_case door '~/.cargo/bin/cargo-release release --execute'
+door_case door 'publish) cargo publish -p x ;;'
+door_case door 'a|b) cargo publish -p x ;;'
+door_case door 'case "$1" in go) cargo publish -p x ;; esac'
 door_case none '# cargo publish -p x'
 door_case none '    # cargo publish -p x'
 door_case none 'x=1 # cargo publish -p x'
@@ -318,6 +370,35 @@ door_case none 'cargo --config "$f" build'
 door_case none 'cargo build $FLAGS'
 door_case none 'echo "then run cargo release"'
 door_case none 'medieval cargo publish'
+door_case none 'out=$(bash "$me" release "$d" job-1)'
+door_case none 'MSG_SUFFIX="${2:-stack release}"'
+door_case door 'X=$(date) cargo publish -p x'
+door_case none '"$APR" publish "${APR_PUBLISH_ARGS[@]}"'
+door_case none $'"$APR_BIN" publish \\\n    "$DIR" "$ID"'
+door_case door '"$APRX" publish -p x'
+door_case door '$APR_BIN2 publish -p x'
+door_case door '"$APR" publish x && cargo publish -p y'
+door_case door 'X=1 "$C" publish -p x'
+door_case none 'cargo publish -p x 2>&1 --dry-run'
+door_case none 'cargo publish -p x --dry-run &> log'
+door_case none 'cargo publish -p x --dry-run >&2'
+door_case none 'cargo publish -p x --dry-run <&0'
+door_case none 'cargo publish -p x --dry-run &'
+door_case none 'cargo publish -p x "--dry-run"'
+door_case none 'echo "a & b"'
+door_case none 'msg="cargo build failed"'
+door_case none 'PV_CARGO_RUN := cargo run --release -p x --'
+door_case none 'RUN = cargo test -p x'
+door_case none 'check_outcome "$name" release "" "$got"'
+door_case none $'\t$(MAKE) build'
+door_case none '"$GH" pr view 1'
+door_case none 'gh release view "$tag"'
+door_case none '"$APR" run m.gguf'
+door_case none '$C build -p x'
+door_case none 'x) cargo build ;;'
+door_case none 'case "$x" in a) cargo build ;; esac'
+door_case none 'echo "use case x in y) cargo publish"'
+door_case none '~/.cargo publish'
 [ "$cases_ok" -eq "$cases_n" ] && pass "door_regex_case_table ($cases_ok/$cases_n cases)"
 
 # The two gated doors: publish_strict.sh (the rows above) and cascade-publish.sh (its own
@@ -389,13 +470,22 @@ else
 fi
 mapfile -t scope < <(git -C "$DOORS_ROOT" ls-files -- "${NAMES[@]}" ":(exclude)$SELF")
 named=${#scope[@]}
+# git grep exits 1 when nothing matches and above 1 when it fails; a failed grep must not
+# read as "no shebang file names publish".
+sb_rc=0
+git -C "$DOORS_ROOT" grep -lI -e publish -- ":(exclude)$SELF" "${NAMES[@]/#/:(exclude)}" \
+  ':(exclude).github/workflows/*' > "$WORK/sb-files" 2> "$WORK/sb-err" || sb_rc=$?
+if [ "$sb_rc" -gt 1 ]; then
+  fail "door_scan_shebang_scope: git grep for the shebang scope failed (rc $sb_rc): $(head -n 1 "$WORK/sb-err")"
+fi
 while IFS= read -r f; do
   is_shell_script "$DOORS_ROOT/$f" && scope+=("$f")
-done < <(git -C "$DOORS_ROOT" grep -lI -e publish -- ":(exclude)$SELF" "${NAMES[@]/#/:(exclude)}" \
-  ':(exclude).github/workflows/*' 2>/dev/null)
+done < "$WORK/sb-files"
 raw=$( (cd "$DOORS_ROOT" && door_lines "${scope[@]}") || true)
 if [ -f "$DOORS_ROOT/$SELF" ]; then
-  sed 's/^door_case .*//; s/^shebang_case .*//' "$DOORS_ROOT/$SELF" > "$WORK/self-scan.sh"
+  # Without its case rows, and without the GATED_CMD line, whose value is the upload text.
+  awk -v g="GATED_CMD='$GATED_CMD'" '/^(door|shebang)_case / || $0 == g { $0 = "" } { print }' \
+    "$DOORS_ROOT/$SELF" > "$WORK/self-scan.sh"
   raw+=$'\n'$( (door_lines "$WORK/self-scan.sh" || true) | sed "s#^$WORK/self-scan.sh:#$SELF:#")
 fi
 cmds_of() { printf '%s\n' "$raw" | awk -v f="$1:" 'index($0, f) == 1 { sub(/^[^:]*:[0-9]+:/, ""); print }'; }
