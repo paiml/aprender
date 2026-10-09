@@ -55,6 +55,9 @@ rc_version_of_branch() {
     printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
+# tag_names_of_refs -- a git/matching-refs JSON body on stdin -> one tag name per line; [] -> nothing.
+tag_names_of_refs() { { grep -oE '"ref": *"refs/tags/[^"]+"' || true; } | sed -E 's#.*"refs/tags/([^"]+)"#\1#'; }
+
 # rc_decide -- the whole decision, pure. Inputs are named variables so the case table
 # can vary exactly one at a time:
 #   D_REPO D_HEAD_REPO D_BRANCH D_HEAD_SHA D_TIP_SHA
@@ -123,6 +126,16 @@ self_test() {
     base; D_HEAD_SHA=''; D_TIP_SHA=''; expect 'skip ? is no longer the tip of release/0.70.0 (tip ?)' 'empty head sha never cuts'
     base; D_FINALS=$'v0.70.0-rc.1\nv0.70.0'; D_TAGS=$'v0.70.0-rc.1\t'$B; expect 'skip final tag v0.70.0 already exists: release/0.70.0 is released' 'green run on a released branch cuts nothing (0.70.3-rc.1 misfire, 422)'
     base; D_FINALS=$'v0.70.0-rc.1\nv0.70.00\nv0.70.0x\nv0.70.01'; expect 'cut v0.70.0-rc.1' 'near-miss names are not the final tag'
+    # The listing run_cut reads, end to end: an API body through tag_names_of_refs into rc_decide.
+    base; D_FINALS=$(printf '%s' '[{"ref":"refs/tags/v0.70.0","node_id":"x","object":{"sha":"c","type":"commit"}},{"ref":"refs/tags/v0.70.0-rc.1"}]' | tag_names_of_refs)
+    expect 'skip final tag v0.70.0 already exists: release/0.70.0 is released' 'compact matching-refs body naming the final tag -> skip'
+    base; D_FINALS=$(printf '[\n  {\n    "ref": "refs/tags/v0.70.0-rc.2",\n    "object": {}\n  },\n  {\n    "ref": "refs/tags/v0.70.0",\n    "object": {}\n  }\n]\n' | tag_names_of_refs)
+    expect 'skip final tag v0.70.0 already exists: release/0.70.0 is released' 'pretty-printed body, final tag listed last -> skip'
+    base; D_FINALS=$(printf '[]' | tag_names_of_refs); expect 'cut v0.70.0-rc.1' 'empty listing ([]) -> no final tag'
+    base; D_FINALS=$(printf '%s' '[{"ref":"refs/tags/v0.70.00"},{"ref":"refs/tags/v0.70.0-rc.3"}]' | tag_names_of_refs); expect 'cut v0.70.0-rc.1' 'listing with near-miss names only -> no final tag'
+    # run_cut must fill D_FINALS from the listing through tag_names_of_refs, once.
+    if [ "$(grep -cxF '        D_FINALS=$(printf '"'"'%s'"'"' "$body" | tag_names_of_refs)' "${BASH_SOURCE[0]}")" = 1 ]; then echo "  ok   run_cut fills D_FINALS from the v<X.Y.Z> listing via tag_names_of_refs"
+    else echo "  FAIL run_cut no longer fills D_FINALS from the listing via tag_names_of_refs"; fail=1; fi
     # MUTANT: with the final-tag check deleted, the released-branch row must cut again.
     mut=$(mktemp) || return 2
     grep -vF 'grep -qxF "v$v"' "${BASH_SOURCE[0]}" > "$mut"
@@ -194,7 +207,7 @@ run_cut() {
         D_TIP_SHA=$(printf '%s' "$body" | json 'print(d["object"]["sha"])') || return 2
         # Every tag named v<X.Y.Z>*: the final tag, if it exists, is one of them (exact-name match in rc_decide).
         body=$(api_get "git/matching-refs/tags/v$v") || { echo "$PROG: cannot list the v$v* tags" >&2; return 2; }
-        D_FINALS=$(printf '%s' "$body" | { grep -oE '"ref": *"refs/tags/[^"]+"' || true; } | sed -E 's#.*"refs/tags/([^"]+)"#\1#')
+        D_FINALS=$(printf '%s' "$body" | tag_names_of_refs)
         # matching-refs returns [] when nothing matches; an annotated tag is dereferenced to its commit.
         body=$(api_get "git/matching-refs/tags/v$v-rc.") || { echo "$PROG: cannot list the v$v-rc.* tags" >&2; return 2; }
         D_TAGS=$(printf '%s' "$body" | python3 -c '
