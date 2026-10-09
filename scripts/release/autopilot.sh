@@ -165,6 +165,46 @@ cov_wait() {
 }
 run_step tag && cov_dispatch_at_mc
 
+# #4950: the cascade publishes to crates.io, which cannot be undone, so it re-proves its own premise
+# instead of trusting the cleanroom step's files: the tag on origin is MC, the clean-room (aprender) job
+# of the recorded run concluded success, and every tested-sha that run printed is MC. The run id and the
+# sha go to $AP/cascade-cleanroom.json, which the ledger step folds into the ledger record.
+cascade_cleanroom_at_tag() {
+    local crun tc jc shas
+    [ -s "$AP/cleanroom-run-id" ] || die "no clean-room run recorded for $T -- the cleanroom step has not passed; nothing published"
+    crun=$(cat "$AP/cleanroom-run-id")
+    tc=$(git ls-remote origin "refs/tags/$T^{}" 2>> "$LOG" | cut -f1) || die "cannot read $T on origin; nothing published"
+    [ "$tc" = "$MC" ] || die "$T on origin is at '${tc:-absent}', not the release commit $MC; nothing published"
+    jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
+    [ "$jc" = success ] || die "clean-room (aprender) run $crun concluded '${jc:-absent}'; nothing published"
+    shas=$(gh run view "$crun" --repo "$INFRA" --log 2>> "$LOG" | grep -oE 'tested-sha: [0-9a-f]{40}' | sort -u)
+    [ "$shas" = "tested-sha: $MC" ] || die "clean-room run $crun tested '${shas//$'\n'/ }', not exactly $MC; nothing published"
+    jq -n --arg run "$crun" --arg sha "$MC" --arg tag "$T" '{cleanroom_run: $run, tag: $tag, sha: $sha}' > "$AP/cascade-cleanroom.json" \
+        || die "cannot write $AP/cascade-cleanroom.json; nothing published"
+    say "CASCADE premise: $T is $MC on origin; clean-room run $crun green and tested exactly $MC"
+}
+
+# #4950: no unattended publish until the no-secrets check is on the stop list and green. Judged from the
+# release commit's own list (contracts/release-ready-v1.yaml, publish stage, the entry whose `seven:` is
+# no-secret-in-crates) and run here, on MC, so "green" means green on what is about to be published. A list,
+# reader, entry or checker that is missing stops the cascade: absent is never green.
+cascade_no_secret_green() {
+    local chk
+    bash scripts/release/release_ready.sh --budget >> "$LOG" 2>&1 \
+        || die "release_ready.sh --budget is not clean at $MC (a stage over its cap, or a carried check missing); nothing published"
+    chk=$( . scripts/lib/release_policy.sh || exit 2
+        type rp_entries > /dev/null 2>&1 || exit 2
+        rp_entries contracts/release-ready-v1.yaml publish || exit 2
+        for id in $RP_IDS; do
+            awk -v id="$id" 'index($0, "{id: " id ",") && /seven: no-secret-in-crates[,}]/ {
+                if (match($0, /checker: "scripts\/[A-Za-z0-9_\/.-]+\.sh/)) print substr($0, RSTART + 10, RLENGTH - 10) }' contracts/release-ready-v1.yaml
+        done | head -1 ) || die "the publish entries of contracts/release-ready-v1.yaml cannot be read at $MC; nothing published"
+    [ -n "$chk" ] || die "no publish entry carries no-secret-in-crates at $MC; no unattended publish"
+    [ -f "$chk" ] || die "the no-secret-in-crates checker $chk does not exist at $MC; nothing published"
+    bash "$chk" >> "$LOG" 2>&1 || die "the no-secret-in-crates check $chk is red at $MC; nothing published"
+    say "CASCADE no-secret-in-crates: on the publish list and green at $MC ($chk)"
+}
+
 # T-1 LANES (C316 item 2d): deep, dogfood and models are three independent measurements of the same
 # commit, so they start together and join before readiness. Each is a function below, run as its own
 # background job; the join is after the models function. The step bodies are unchanged.
@@ -554,6 +594,8 @@ fi
 
 # 6. crates.io cascade: multi-pass drain, then the check is the verdict (pass 1 exiting 1 is normal)
 if run_step cascade; then
+  cascade_cleanroom_at_tag
+  cascade_no_secret_green
   bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
   say "CASCADE drain rc=$rc"
   bash scripts/cascade-publish.sh --check > "$AP/cascade-check.log" 2>&1; rc2=$?
@@ -748,6 +790,10 @@ if run_step ledger; then
   python3 "$REPO_ROOT/scripts/release/ledger.py" "$AP" "$MC" "$T" "$V" "$STATUS" >> "$LOG" 2>&1 || die "ledger.py wrote no ledger record ($LOG)"
   rec="$AP/${MC:0:9}-lambda-vector-train.json"
   [ -s "$rec" ] || die "no ledger record at $rec"
+  # the clean-room run id and sha the cascade proved before it published (cascade_cleanroom_at_tag)
+  [ -s "$AP/cascade-cleanroom.json" ] || die "no $AP/cascade-cleanroom.json -- the cascade did not prove clean-room on $MC; nothing ledgered"
+  jq --slurpfile c "$AP/cascade-cleanroom.json" '. + {cascade_cleanroom: $c[0]}' "$rec" > "$rec.tmp" && mv -- "$rec.tmp" "$rec" \
+    || die "cannot fold the clean-room run id into $rec"
   lb="ledger/$V"; lw="$AP/ledger-wt"; lbase=origin/main
   git fetch -q origin main >> "$LOG" 2>&1 || die "fetch of main failed; nothing ledgered"
   if git ls-remote --exit-code --heads origin "$lb" > /dev/null 2>&1; then

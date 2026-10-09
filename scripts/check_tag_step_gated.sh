@@ -165,6 +165,81 @@ judge_cov() {
     return "$w"
 }
 
+# run_casc <autopilot> <fn> <k=v ...> -- #4950: extract cascade_cleanroom_at_tag() and
+# cascade_no_secret_green(), run <fn> against stubs, print a transcript. Knobs (defaults = all green):
+#   rec=1 tagc=mc|other|none job=success sha=mc|other|both|none            (cleanroom premise)
+#   budget=0 lib=1 seven=1 onlist=1 chkfile=1 chk=0                       (no-secret check)
+run_casc() {
+    local ap=$1 fn=$2 d body rec=1 tagc=mc job=success sha=mc budget=0 lib=1 seven=1 onlist=1 chkfile=1 chk=0 kv
+    shift 2; for kv in "$@"; do local "${kv?}"; done
+    d=$(mktemp -d) || return 2
+    body=$(awk '/^cascade_cleanroom_at_tag\(\) \{/,/^\}/; /^cascade_no_secret_green\(\) \{/,/^\}/' "$ap")
+    [ -n "$body" ] || { rmtree "$d"; return 2; }
+    mkdir -p "$d/scripts/release" "$d/scripts/lib" "$d/contracts" "$d/ap" "$d/bin"
+    [ "$rec" = 1 ] && printf '4242\n' > "$d/ap/cleanroom-run-id"
+    case "$tagc" in mc) tc=deadbeef ;; other) tc=cafef00d ;; *) tc='' ;; esac
+    M=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef O=cafef00dcafef00dcafef00dcafef00dcafef00d
+    case "$sha" in mc) lg="tested-sha: $M" ;; other) lg="tested-sha: $O" ;; both) lg="tested-sha: $M
+tested-sha: $O" ;; *) lg='' ;; esac
+    printf '%s\n' "$lg" > "$d/runlog"
+    {   printf '#!/usr/bin/env bash\n'
+        printf 'case "$1 $2" in\n  "run view") case " $* " in *" --log "*) echo "CALL-LOG $3" >> %q; cat %q ;;\n' "$d/calls" "$d/runlog"
+        printf '    *) echo "CALL-JOBS $3" >> %q; echo %q ;; esac ;;\nesac\n' "$d/calls" "$job"
+    } > "$d/bin/gh"; chmod +x "$d/bin/gh"
+    printf '#!/usr/bin/env bash\necho CALL-BUDGET >> %q\nexit %s\n' "$d/calls" "$budget" > "$d/scripts/release/release_ready.sh"
+    [ "$lib" = 1 ] && printf 'rp_entries() { RP_IDS="RR-T01 RR-P20"; return 0; }\n' > "$d/scripts/lib/release_policy.sh"
+    [ "$lib" = 1 ] || printf ': no reader\n' > "$d/scripts/lib/release_policy.sh"
+    id=RR-P20; [ "$onlist" = 1 ] || id=RR-P99
+    s='seven: no-secret-in-crates, '; [ "$seven" = 1 ] || s=''
+    {   printf '  - {id: RR-T01, applies_to: [tag, publish], seven: provenance, checker: "scripts/x.sh"}\n'
+        printf '  - {id: %s, applies_to: [publish], %schecker: "scripts/check_no_secret.sh#main", provenance: "x"}\n' "$id" "$s"
+    } > "$d/contracts/release-ready-v1.yaml"
+    [ "$chkfile" = 1 ] && printf '#!/usr/bin/env bash\necho CALL-NOSECRET >> %q\nexit %s\n' "$d/calls" "$chk" > "$d/scripts/check_no_secret.sh"
+    {   printf 'set -uo pipefail\nV=0.0.0 T=v0.0.0 MC=%s REPO=paiml/aprender INFRA=paiml/infra\n' "$M"
+        printf 'AP=%q LOG=%q\n' "$d/ap" "$d/log"
+        printf 'say() { printf "SAY %%s\\n" "$*"; }\ndie() { printf "DIE %%s\\n" "$*"; exit 1; }\n'
+        printf 'git() { [ "$1" = ls-remote ] && echo "CALL-LSREMOTE $3" >> %q && [ -n "%s" ] && printf "%%s\\trefs/tags/x\\n" "%s"; return 0; }\n' \
+            "$d/calls" "$tc" "$( [ -n "$tc" ] && { [ "$tc" = deadbeef ] && echo "$M" || echo "$O"; } )"
+        printf '%s\n%s\n' "$body" "$fn"
+    } > "$d/harness.sh"
+    (cd "$d" && PATH="$d/bin:$PATH" bash "$d/harness.sh" 2>&1)
+    printf 'ORDER %s\n' "$(tr '\n' ' ' 2>/dev/null < "$d/calls")"
+    printf 'REC %s\n' "$(jq -c . "$d/ap/cascade-cleanroom.json" 2>/dev/null)"
+    rmtree "$d"
+}
+
+# judge_casc <autopilot> -- the #4950 cascade-premise case table. Returns the number of wrong rows.
+judge_casc() {
+    local ap=$1 out w=0 cb
+    row() { if eval "$2"; then printf 'ok    %s\n' "$1"; else printf 'FAIL  %s\n%s\n' "$1" "$out" >&2; w=$((w + 1)); fi; }
+    C=cascade_cleanroom_at_tag N=cascade_no_secret_green
+    out=$(run_casc "$ap" $C)
+    row "cascade premise: tag at MC, job green, tested exactly MC -> record run id + sha" \
+        'grep -q "^REC {\"cleanroom_run\":\"4242\",\"tag\":\"v0.0.0\",\"sha\":\"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"}$" <<< "$out" && ! grep -q "^DIE" <<< "$out"'
+    for c in "rec=0|no clean-room run recorded" "tagc=other|on origin is at .cafef00d" "tagc=none|on origin is at .absent" \
+             "job=failure|concluded .failure" "job=|concluded .absent" "sha=other|tested .tested-sha: cafef00d" \
+             "sha=both|not exactly" "sha=none|tested .., not exactly"; do
+        out=$(run_casc "$ap" $C "${c%%|*}")
+        row "cascade premise: ${c%%|*} -> stop, nothing recorded" 'grep -qE "^DIE .*${c#*|}" <<< "$out" && grep -q "^REC $" <<< "$out"'
+    done
+    out=$(run_casc "$ap" $N)
+    row "no-secret: budget clean, on the publish list, checker green -> continue" \
+        'grep -q "^ORDER CALL-BUDGET CALL-NOSECRET $" <<< "$out" && grep -q "^SAY CASCADE no-secret-in-crates: on the publish list and green" <<< "$out"'
+    for c in "budget=1|release_ready.sh --budget is not clean" "lib=0|cannot be read" "seven=0|no publish entry carries" \
+             "onlist=0|no publish entry carries" "chkfile=0|does not exist" "chk=1|is red"; do
+        out=$(run_casc "$ap" $N "${c%%|*}")
+        row "no-secret: ${c%%|*} -> stop" 'grep -qE "^DIE .*${c#*|}" <<< "$out"'
+    done
+    cb=$(awk '/^if run_step cascade; then$/,/^fi$/' "$ap")
+    out=$cb
+    row "cascade: both premises run before the first cascade-drain" \
+        'awk "/^  cascade_cleanroom_at_tag\$/ { a = NR } /^  cascade_no_secret_green\$/ { b = NR } /cascade-drain.sh/ && !d { d = NR } END { exit !(a && b && d > a && d > b) }" <<< "$cb"'
+    out=$(awk '/^if run_step ledger; then$/,/^fi$/' "$ap")
+    row "ledger: refuses without the cascade record and folds it into the ledger record" \
+        'grep -q "cascade-cleanroom.json\" \] || die" <<< "$out" && grep -q "cascade_cleanroom: \$c\[0\]" <<< "$out"'
+    return "$w"
+}
+
 # judge <autopilot> -- 0 when every gate outcome behaves; 1 otherwise. Prints rows.
 judge() {
     local ap=$1 out bad=0
@@ -248,6 +323,7 @@ judge() {
     if [ -n "$out" ]; then printf 'FAIL  a GitHub poll faster than 300 s, or AP_POLL below 300: %s\n' "$out" >&2; bad=1
     else printf 'ok    every autopilot wait is AP_POLL (>= 300 s) or the one dispatch settle\n'; fi
     judge_cov "$ap" || bad=1
+    judge_casc "$ap" || bad=1
     return "$bad"
 }
 
@@ -400,6 +476,23 @@ if [ "${1:-}" = "--self-test" ]; then
             nok "MUTANT $mu (coverage dispatch/wait weakened) PASSED"
         else
             ok "mutant $mu: coverage dispatch/wait weakened -> RED"
+        fi
+    done
+    # M22-M28 (#4950): the cascade premises and the ledger fold, each weakened one way.
+    sed 's/\[ "\$tc" = "\$MC" \] || die/true || die/' "$SUBJECT" > "$d/m22.sh"
+    sed 's/\[ "\$shas" = "tested-sha: \$MC" \] || die/true || die/' "$SUBJECT" > "$d/m23.sh"
+    grep -v '^  cascade_cleanroom_at_tag$' "$SUBJECT" > "$d/m24.sh"
+    grep -v '^  cascade_no_secret_green$' "$SUBJECT" > "$d/m25.sh"
+    sed 's/bash "\$chk" >> "\$LOG" 2>&1 || die/true || die/' "$SUBJECT" > "$d/m26.sh"
+    sed 's| && /seven: no-secret-in-crates\[,}\]/||' "$SUBJECT" > "$d/m27.sh"
+    sed 's/\[ -s "\$AP\/cascade-cleanroom.json" \] || die/true || die/' "$SUBJECT" > "$d/m28.sh"
+    for mu in 22 23 24 25 26 27 28; do
+        if cmp -s "$SUBJECT" "$d/m$mu.sh"; then
+            nok "MUTANT $mu could not be built -- its cascade line did not match; vacuous"
+        elif judge "$d/m$mu.sh" > "$d/m$mu.out" 2>&1; then
+            nok "MUTANT $mu (cascade premise or ledger fold weakened) PASSED"
+        else
+            ok "mutant $mu: cascade premise or ledger fold weakened -> RED"
         fi
     done
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
