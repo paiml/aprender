@@ -152,8 +152,11 @@ t1_deep() {
   cargo metadata --locked --no-deps --format-version 1 > "$AP/deep-metadata.json" 2>> "$LOG" || die "T-1 cargo metadata failed"
   BINS=$(python3 scripts/nightly_manifest.py bins --metadata "$AP/deep-metadata.json") || die "T-1 bin derivation failed"
   BIN_ARGS=$(python3 scripts/nightly_manifest.py bins --metadata "$AP/deep-metadata.json" --format cargo) || die "T-1 bin derivation failed"
+  # pv and pv-sat stamp a sha only from APR_GIT_SHA_OVERRIDE (the crates.io default prints
+  # +no-git, #4604), so the build stamps the tree it compiled, as nightly.yml does. The smoke
+  # still compares every printed sha with $MC (#4896).
   # shellcheck disable=SC2086  # BIN_ARGS is a flag list; word-splitting is intended
-  cargo build --locked --release $BIN_ARGS > "$AP/deep-bins.log" 2>&1; rc=$?
+  APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" cargo build --locked --release $BIN_ARGS > "$AP/deep-bins.log" 2>&1; rc=$?
   say "DEEP all-bins release build rc=$rc ($(echo "$BINS" | tr ',' '\n' | wc -l) bins)"
   [ $rc -eq 0 ] || die "T-1 a workspace [[bin]] does not build ($AP/deep-bins.log)"
   python3 scripts/nightly_manifest.py smoke --sha "$MC" --bins "$BINS" --bin-dir "$CARGO_TARGET_DIR/release" \

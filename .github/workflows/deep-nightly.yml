@@ -115,8 +115,12 @@ jobs:
           [ -n "$BINS" ] && [ -n "$V" ] && [ -n "$TD" ] || { echo "::error::derived an empty bin set, version or target dir"; exit 1; }
           echo "DEEP bins at ${SHA:0:9}, version $V: $(echo "$BINS" | tr ',' '\n' | wc -l) bins"
           rc=0
+          # pv and pv-sat stamp a sha only from this override (the crates.io default prints
+          # +no-git, #4604), so the build stamps the tree it compiled, as nightly.yml and
+          # binary-release.yml do. The smoke still compares every printed sha with $SHA (#4896).
           # shellcheck disable=SC2086  # BIN_ARGS is a flag list; word-splitting is intended
-          cargo build --locked --release $BIN_ARGS > deep/deep-bins.log 2>&1 || rc=$?
+          APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
+            cargo build --locked --release $BIN_ARGS > deep/deep-bins.log 2>&1 || rc=$?
           echo "DEEP all-bins release build rc=$rc"
           tail -n 40 deep/deep-bins.log
           [ "$rc" -eq 0 ] || { echo "::error::a workspace [[bin]] does not build"; exit 1; }
