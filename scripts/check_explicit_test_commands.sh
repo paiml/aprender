@@ -36,8 +36,12 @@ RUNNER_REL="scripts/ci_run_explicit_test_commands.sh"
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 # is_megaline LINE -- rc 0 when LINE (comment-stripped) chains two cargo commands with &&.
+# The glob is a necessary condition of the regex (cargo, then &&, then cargo, in
+# that order) and answers the 11k workflow lines that cannot match without a
+# fork; grep stays the judge of every line that can (#3676).
 is_megaline() {
     local code="${1%%#*}"
+    [[ $code == *cargo*'&&'*cargo* ]] || return 1
     grep -qE '(^|[^A-Za-z0-9_-])cargo[[:space:]].*&&[[:space:]]*cargo[[:space:]]' <<< "$code"
 }
 
@@ -249,6 +253,11 @@ N|  run: echo x # cargo test -p a && cargo test -p b
 N|  which cargo-mutants || (echo installing && cargo install cargo-mutants)
 N|  cargo test -p a && echo done
 N|  bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d
+M|  (cargo build && cargo test)
+M|  cargo	test &&	cargo	build
+N|  cargo&&cargo test
+N|  xcargo test && cargo build
+N|  cargo test && cargox build
 TABLE
     fact "wiring MATCH: the runner on the directory" is_wiring "            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d"
     notfact "wiring NO-MATCH: commented out" is_wiring "  # bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d"
