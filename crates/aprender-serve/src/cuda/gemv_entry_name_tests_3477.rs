@@ -1356,4 +1356,60 @@ mod gemv_entry_name_tests_3477 {
             Some(W::Q4K)
         );
     }
+
+    /// #3953: the IQ2_S -> f32 dequant (Qwen3.5 batched prefill) is not a GEMV, so
+    /// the guards above never iterate it. Its own checks, all GPU-free:
+    ///   * the launcher's name is the PTX's one `.visible .entry`;
+    ///   * ASCII only (ptxas rejects any other byte, comments included);
+    ///   * LOOP-FREE: every `bra` jumps FORWARD, so sm_121's backward-branch patch
+    ///     has nothing to rewrite and cannot change this kernel;
+    ///   * the grid table is byte-identical to the measured GEMV's;
+    ///   * ptxas assembles it.
+    #[test]
+    fn the_iq2_s_dequant_kernel_is_named_ascii_loop_free_and_assembles() {
+        let kernels = CudaKernels::new();
+        let kt = KernelType::Iq2SDequant { k: 3584, n: 1024 };
+        let name = kernels.kernel_name(&kt);
+        let ptx = kernels.generate_ptx(&kt);
+        assert_eq!(name, "iq2_s_dequant_to_f32");
+        assert_eq!(
+            ptx.matches(".visible .entry ").count(),
+            1,
+            "exactly one entry per module"
+        );
+        assert!(ptx.contains(&format!(".visible .entry {name}(")));
+        assert!(
+            ptx.is_ascii(),
+            "non-ASCII byte in the dequant PTX; ptxas refuses it"
+        );
+        let lines: Vec<&str> = ptx.lines().map(str::trim).collect();
+        let mut branches = 0;
+        for (i, l) in lines.iter().enumerate() {
+            let Some(target) = l.split("bra ").nth(1) else {
+                continue;
+            };
+            let target = target.trim_end_matches(';');
+            let at = lines
+                .iter()
+                .position(|m| *m == format!("{target}:"))
+                .unwrap_or_else(|| panic!("branch to undefined label {target}"));
+            assert!(at > i, "backward branch `{l}` -- the dequant must be loop-free");
+            branches += 1;
+        }
+        assert!(branches >= 2, "found {branches} branches; the scan broke");
+        let table = |p: &str| {
+            p.split("iq2s_grid_g[2048] = {")
+                .nth(1)
+                .and_then(|t| t.split("};").next())
+                .expect("grid table")
+                .to_string()
+        };
+        let gemv = kernels.generate_ptx(&KernelType::Iq2SGemv { k: 3584, n: 1024 });
+        assert_eq!(table(&ptx), table(&gemv), "the dequant must read the GEMV's grid");
+        assert_eq!(table(&ptx).split(',').count(), 2048);
+        let target = crate::test_ptxas::declared_target(&ptx);
+        if let Err(e) = crate::test_ptxas::assemble(&ptx, name, &[target.as_str()]) {
+            panic!("the IQ2_S dequant PTX does not assemble: {e}");
+        }
+    }
 }

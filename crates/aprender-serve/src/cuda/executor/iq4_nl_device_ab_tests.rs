@@ -984,21 +984,74 @@ mod iq4_nl_device_ab_tests {
         }
     }
 
-    /// The same, on the REAL bytes of every type-22 tensor in the model.
-    ///
-    /// If the offset convention were wrong, GPU and CPU would read the SAME wrong bytes
-    /// and agree perfectly -- an A/B that proves nothing. So before comparing, the bytes
-    /// are shown to BE a weight tensor: every block's f16 scale `d` must be finite and
-    /// small. Header or string bytes decoded as f16 fail that.
+    /// The same, on the REAL bytes of every type-22 tensor in the model (see
+    /// `for_each_real_type22_tensor` for why those bytes are checked first).
     #[test]
     fn the_iq2_s_kernel_agrees_on_every_real_type22_tensor_on_device() {
-        use crate::gguf::MappedGGUFModel;
-        use crate::quantize::iq2_s::IQ2_S_BLOCK_BYTES;
-        const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-UD-IQ2_XXS.gguf";
         let Some(mut exec) = create_executor() else {
             eprintln!("SKIP: no CUDA device");
             return;
         };
+        for_each_real_type22_tensor(|name, k, n, bytes| {
+            assert_within(name, k, n, iq2_s_device_ab(&mut exec, bytes, k, n));
+        });
+    }
+
+    /// #3953: the batched prefill's IQ2_S -> f32 dequant on the same real bytes,
+    /// BIT-EXACT against the CPU oracle (both compute `(d * (0.5 + nib)) * 0.25 * m`
+    /// in that order, and the kernel's multiplies are `.rn`, so no contraction).
+    /// The scratch is pre-filled with NaN before every tensor: the five tensors
+    /// share one shape, so stale output from the previous one would otherwise sit
+    /// in exactly the slots a skipped write leaves behind.
+    #[test]
+    fn the_iq2_s_dequant_is_bit_exact_on_every_real_type22_tensor_on_device() {
+        use crate::cuda::types::WeightQuantType;
+        use crate::quantize::iq2_s::dequantize_iq2_s;
+        let Some(mut exec) = create_executor() else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+        for_each_real_type22_tensor(|name, k, n, bytes| {
+            let want = dequantize_iq2_s(bytes).expect("CPU oracle");
+            assert_eq!(want.len(), n * k, "{name}: k={k} is whole super-blocks");
+            let nan = vec![f32::NAN; n * k];
+            exec.dequant_scratch = Some(GpuBuffer::from_host(&exec.context, &nan).unwrap());
+            exec.dequant_scratch_size = nan.len();
+            let w = GpuBuffer::from_host(&exec.context, bytes).unwrap();
+            let p = exec
+                .qwen35_dequant_f32(WeightQuantType::IQ2S, w.as_ptr(), n as u32, k as u32)
+                .unwrap_or_else(|e| panic!("#3953 {name}: IQ2_S dequant: {e:?}"));
+            exec.stream.synchronize().unwrap();
+            let scratch = exec.dequant_scratch.as_ref().unwrap();
+            assert_eq!(p, scratch.as_ptr(), "the result is the dequant scratch");
+            let mut got = vec![0.0f32; n * k];
+            scratch.copy_to_host(&mut got).unwrap();
+            let bad = (0..n * k)
+                .filter(|&i| got[i].to_bits() != want[i].to_bits())
+                .count();
+            let first = (0..n * k).find(|&i| got[i].to_bits() != want[i].to_bits());
+            assert_eq!(
+                bad,
+                0,
+                "#3953 {name} k={k} n={n}: {bad} of {} dequantized values differ from the CPU \
+                 oracle; first {:?}",
+                n * k,
+                first.map(|i| (i, got[i], want[i]))
+            );
+            eprintln!("#3953 dequant {name} k={k} n={n}: {} values bit-exact", n * k);
+        });
+    }
+
+    /// Every type-22 tensor of Qwen3.5-0.8B-UD-IQ2_XXS as `(name, k, n, bytes)`.
+    ///
+    /// If the offset convention were wrong, GPU and CPU would read the SAME wrong bytes
+    /// and agree perfectly -- an A/B that proves nothing. So before `f` sees them, the
+    /// bytes are shown to BE a weight tensor: every block's f16 scale `d` must be finite
+    /// and small. Header or string bytes decoded as f16 fail that.
+    fn for_each_real_type22_tensor(mut f: impl FnMut(&str, usize, usize, &[u8])) {
+        use crate::gguf::MappedGGUFModel;
+        use crate::quantize::iq2_s::IQ2_S_BLOCK_BYTES;
+        const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-UD-IQ2_XXS.gguf";
         if !std::path::Path::new(MODEL).exists() {
             eprintln!("SKIP: {MODEL} is not on this host -- the real-bytes A/B did NOT run");
             return;
@@ -1040,7 +1093,7 @@ mod iq4_nl_device_ab_tests {
                  not this tensor (offset {start}), and an A/B on them would agree about garbage",
                 t.name
             );
-            assert_within(&t.name, k, n, iq2_s_device_ab(&mut exec, bytes, k, n));
+            f(&t.name, k, n, bytes);
             seen += 1;
         }
         assert_eq!(

@@ -94,6 +94,7 @@ impl CudaKernels {
             KernelType::Q2KGemv { k, n } => generate_q2_k_gemv_ptx(*k, *n),
             KernelType::Iq2XxsGemv { k, n } => generate_iq2_xxs_gemv_ptx(*k, *n),
             KernelType::Iq2SGemv { k, n } => generate_iq2_s_gemv_ptx(*k, *n),
+            KernelType::Iq2SDequant { .. } => generate_iq2_s_dequant_ptx(),
             KernelType::Iq3XxsGemv { k, n } => generate_iq3_xxs_gemv_ptx(*k, *n),
             KernelType::Q5_1Gemv { k, n } => generate_q5_1_gemv_ptx(*k, *n),
             _ => return None,
