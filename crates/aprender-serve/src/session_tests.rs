@@ -582,3 +582,30 @@ fn a_checkpoint_inside_the_prompt_is_taken() {
     assert_eq!(s.engine().inner.calls, vec![(2, 0)]);
     assert_eq!(s.checkpoint, Some(vec![7881, 7882]));
 }
+
+/// #4342: `prepare_turn` is `generate`'s setup run ahead of it, so a caller can
+/// time generation alone. It refuses what `generate` refuses, reserves the
+/// turn, runs no forward, and the turn after it is the turn `generate` alone
+/// would have produced.
+#[test]
+fn prepare_turn_is_the_setup_generate_would_do() {
+    let mut s = Session::new(Scripted::new(3, 10));
+    assert!(
+        s.prepare_turn(&[], 4).is_err(),
+        "an empty prompt is refused"
+    );
+    assert!(
+        s.prepare_turn(&[7401; 10], 4).is_err(),
+        "a prompt the context cannot hold is refused"
+    );
+    assert_eq!(s.engine().reserves, 0, "a refused prompt reserves nothing");
+    s.prepare_turn(&[7401, 7402, 7403], 4)
+        .expect("a prompt that fits");
+    assert_eq!(s.engine().reserves, 1);
+    assert!(s.engine().calls.is_empty(), "setup runs no forward");
+    let turn = s
+        .generate(&[7401, 7402, 7403], &greedy(4), &mut |_| true)
+        .expect("turn");
+    assert_eq!(turn.tokens, vec![7401, 7402, 7403, 3, 3, 3, 3]);
+    assert_eq!(s.engine().calls, vec![(3, 0), (4, 3), (5, 4), (6, 5)]);
+}

@@ -412,13 +412,7 @@ impl<F: ArchForward> Session<F> {
             digest: prompt_digest(prompt),
             on_gpu: self.on_gpu(),
         });
-        let context_length = self.context_length();
-        self.admit_prompt(prompt, context_length)?;
-        // Every position the turn can reach, reserved up front so the state
-        // never grows (and never re-prefills) mid-generation.
-        let (budget, context_limited) =
-            turn_budget(prompt.len(), config.max_tokens, context_length);
-        self.reserve(prompt.len() + budget)?;
+        let (budget, context_limited) = self.admit_and_reserve(prompt, config.max_tokens)?;
 
         let reused = self.prepare_prompt(prompt)?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
@@ -451,6 +445,30 @@ impl<F: ArchForward> Session<F> {
             used_gpu: self.on_gpu(),
             context_capped,
         })
+    }
+
+    /// A turn's setup, done ahead of [`Session::generate`] so a caller can time
+    /// generation alone (#4342): admit `prompt`, reserve every position its turn
+    /// can reach, and judge the backend on it (the F2 guard), falling back
+    /// loudly if it is rejected. `generate` then finds the reserve already held
+    /// and the guard already run (it runs once per session).
+    ///
+    /// # Errors
+    /// The prompts `generate` refuses; the fallback itself failed.
+    pub fn prepare_turn(&mut self, prompt: &[u32], max_tokens: usize) -> Result<()> {
+        self.admit_and_reserve(prompt, max_tokens)?;
+        self.forward.validate(prompt)
+    }
+
+    /// Admit `prompt` and reserve every position its turn can reach, up front,
+    /// so the state never grows (and never re-prefills) mid-generation. Returns
+    /// the turn's budget and whether the context, not `max_tokens`, set it.
+    fn admit_and_reserve(&mut self, prompt: &[u32], max_tokens: usize) -> Result<(usize, bool)> {
+        let context_length = self.context_length();
+        self.admit_prompt(prompt, context_length)?;
+        let (budget, context_limited) = turn_budget(prompt.len(), max_tokens, context_length);
+        self.reserve(prompt.len() + budget)?;
+        Ok((budget, context_limited))
     }
 
     /// Refuse a prompt `generate` cannot serve: an empty one, or one the
