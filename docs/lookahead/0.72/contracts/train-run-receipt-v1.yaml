@@ -1,0 +1,142 @@
+metadata:
+  kind: pattern
+  version: 1.1.0
+  created: '2026-09-28'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    The 0.72 R12 cell: every training run (apr finetune, distill, pretrain, train) writes one receipt that
+    ties its output to the binary, recipe, data, seed and base model that produced it. Spike S-R12
+    (2026-09-28, desk read at origin/main aca6f2d7f6) found no training writer records the apr git sha, a
+    recipe hash or a model hash; the seed is never persisted (finetune hardcodes 42); a data hash exists
+    only in finetune and covers parsed samples, not file bytes. APR-OBS has no schema (aprender#4484);
+    this contract proposes the training-run slice of it.
+    1.1.0 (2026-10-03, la-0.72): the T2 extension. beat-unsloth-finetune-throughput-v1 judges apr by
+    copying keys of this receipt (scripts/bench/unsloth_ft_apr.py, APR_KEYS) and never by the --json
+    tokens_per_sec of apr-finetune-metrics-v1, which is samples/s x avg_seq_len over the whole run.
+    A receipt with only the 1.0.0 keys lacks 18 keys the verdict needs, so the adapter exits 4.
+    1.1.0 makes `device` an object, adds the effective-recipe block, trainable_params and a timed
+    window. It is the receipt half of R15; the flag half is the canonical-task argv in apr_argv().
+    TRR-012 and TRR-013 (2026-10-03, R15b) falsify the precision read-back and after_compile invariants.
+  references:
+  - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R12, Spike S-R12
+  - contracts/entrenar/apr-checkpoint-v1.yaml (F-CKPT-017 canonical base_model_hash, no writer emits it)
+  - crates/aprender-build-sha (APR_GIT_SHA, used by --version/bench/serve, by no training writer)
+  - crates/apr-cli/src/commands/finetune.rs (seed 42 hardcoded), distill.rs (training_metadata.json), pretrain.rs
+  - contracts/beat-unsloth-finetune-throughput-v1.yaml (1.3.0, the consumer of the 1.1.0 keys; it pins precision bf16)
+  - docs/specifications/aprender-train/r15-cuda-lora-cells.md (R15 cells C5-C7; FALSIFY-TRR-012 and FALSIFY-TRR-013)
+  - scripts/bench/unsloth_ft_apr.py (APR_KEYS) and scripts/tests/unsloth_ft_apr_test.py (prints the gap list)
+  depends_on:
+  - apr-checkpoint-v1
+status: PROPOSED
+equations:
+  receipt_identity:
+    formula: 'R(run) = {apr_version, apr_git_sha, recipe_sha256, data_sha256[], seed, base_sha256[], backend, device, started_at, ended_at, steps, final_loss, output_sha256}'
+    domain: 'every successful apr finetune | distill | pretrain | train run; R written as train_receipt.json beside the output'
+    invariants:
+    - 'recipe_sha256 = sha256(canonical JSON of the EFFECTIVE config after defaults and CLI flags), so a changed default changes it'
+    - 'data_sha256 = sha256 of each input data file''s bytes, in the order read; a parsed-sample hash may be an extra key, never the only one'
+    - 'base_sha256 = the F-CKPT-017 canonical tensor hash of each input model (base, teacher, student, --init)'
+    - 'seed = the seed the RNGs were actually seeded with, including a default'
+    - 'a failed run writes no receipt claiming success (status field, or no file)'
+    preconditions:
+    - 'APR_GIT_SHA is compiled into the binary (aprender-build-sha)'
+  receipt_t2_extension:
+    formula: 'R_T2(run) = R(run) with device := {kind, name, uuid, trace_line} ∪ {recipe{precision, compute_dtype, rank, alpha, targets[], optimizer, grad_checkpointing, packing, seq_len, batch, grad_accum, warmup_steps, timed_steps, …}, trainable_params, timed_window{label_tokens, seconds, after_compile}}'
+    domain: 'every successful apr finetune run; timed_window is required when --timed-steps is given and absent otherwise'
+    invariants:
+    - 'device.kind is the 1.0.0 device string (cuda:0, cpu); name and uuid come from the driver for the device the trainer ran on, and trace_line is the [TRACE] line the trainer printed when it bound it'
+    - 'recipe is the EFFECTIVE config after defaults and CLI flags, and recipe_sha256 = sha256(canonical JSON of recipe); so the hash and the echoed values cannot disagree'
+    - 'recipe.precision is the dtype of the frozen base weights read back from the loaded model (bf16, fp32, fp16, nf4), not the --precision argv. The base weights are the ones the GEMMs read: the projections and the lm_head (for a tied model, the embedding). Tensors a model keeps wider on purpose do not count (norm weights; the Qwen3.5-4B config declares bfloat16 with float32 for mamba_ssm). A wider copy made from NF4-dequantised weights is still nf4 (the FP16_GEMM=1 base: transformer/cuda_block.rs:2975-3018, set_fp16_weights :3149)'
+    - 'recipe.compute_dtype is the dtype of the GEMM inputs the trainer actually used, including settings made through environment variables (FP16_GEMM=1 switches the NF4 path to fp16 cuBLAS at instruct_pipeline/cuda_init.rs:363, read 2026-10-03), and it enters recipe_sha256'
+    - 'recipe.targets are the module names actually wrapped with adapters, read back from the model after wrapping, not the --targets argv'
+    - 'trainable_params = Σ numel over parameters with requires_grad after adapters are attached'
+    - 'timed_window covers exactly the timed_steps optimizer steps after warmup_steps; label_tokens = Σ over those steps of Σ_row max(nonpad(row) − 1, 0); seconds is wall time from the device sync before the first timed step to the device sync after the last'
+    - 'timed_window.after_compile is true iff no kernel JIT, PTX module load or graph capture happened inside the window'
+    - 'every value is written by the trainer from its own state; no value is filled from argv by a script'
+proof_obligations:
+- type: invariant
+  property: Receipt is complete
+  formal: '∀ successful run: every key of R is present and non-empty in train_receipt.json'
+  applies_to: all
+- type: equivalence
+  property: Receipt identifies the binary
+  formal: '∀ run: R.apr_git_sha ≡ sha printed by `apr --version` of the binary that ran'
+  applies_to: all
+- type: invariant
+  property: T2 receipt is complete
+  formal: '∀ successful finetune with --timed-steps: every key of R_T2 is present and non-null'
+  applies_to: all
+- type: equivalence
+  property: Recipe hash and recipe echo agree
+  formal: 'R.recipe_sha256 ≡ sha256(canonical_json(R.recipe))'
+  applies_to: all
+- type: invariant
+  property: Hashes move with their inputs
+  formal: 'flip one byte of data ⇒ data_sha256 changes; change one tensor of base ⇒ base_sha256 changes; change one effective config value ⇒ recipe_sha256 changes'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-TRR-001
+  rule: Every training command writes a complete receipt
+  prediction: 'a tiny CPU run of each of finetune, distill, pretrain and train leaves train_receipt.json with every key of R'
+  test: 'CPU, tiny synthetic model and data; S-R12 measured 0 of 4 commands record apr_git_sha, recipe hash or model hash'
+  if_fails: 'a T2–T4 receipt cannot be attributed to the binary, recipe, data and base that produced it'
+- id: FALSIFY-TRR-002
+  rule: The git sha is the running binary's
+  prediction: 'R.apr_git_sha equals the sha in `apr --version` for the same binary'
+  test: 'same runs; compare against `"$APR" --version`'
+  if_fails: 'the receipt names a build that did not run'
+- id: FALSIFY-TRR-003
+  rule: Planted falsifier — the data hash sees a reorder and a byte flip
+  prediction: 'swapping two lines of the training data file, or flipping one byte, changes data_sha256'
+  test: 'same tiny finetune run three times (original, reordered, flipped); the sorted-sample hash of today''s classify path does NOT see the reorder and must turn this RED'
+  if_fails: 'the hash covers parsed, sorted samples, so a reordered curriculum is indistinguishable'
+- id: FALSIFY-TRR-004
+  rule: The recorded seed is the one used
+  prediction: 'two runs with the receipt''s seed produce the same first-step loss; a different seed produces a different one'
+  test: 'tiny CPU finetune; S-R12 found seed 42 hardcoded and never written'
+  if_fails: 'the receipt records a seed the RNGs never saw'
+- id: FALSIFY-TRR-005
+  rule: The base-model hash is the F-CKPT-017 canonical hash
+  prediction: 'mutating one tensor of the base .apr changes base_sha256; renaming the file does not'
+  test: 'tiny CPU run twice on a base and on a renamed copy, then on a one-tensor mutant'
+  if_fails: 'the receipt records a path (today''s base_model_source), which a rename or overwrite silently breaks'
+- id: FALSIFY-TRR-006
+  rule: The recipe hash covers defaults
+  prediction: 'passing --batch-size equal to the default gives the same recipe_sha256 as omitting it; changing it changes the hash'
+  test: 'tiny CPU distill or finetune'
+  if_fails: 'the hash covers the argv, not the effective config, so a changed default is invisible'
+- id: FALSIFY-TRR-007
+  rule: A timed finetune writes every T2 key
+  prediction: 'scripts/bench/unsloth_ft_apr.py on the receipt of a tiny CPU `apr finetune … --timed-steps 4` exits 0 and names no gap'
+  test: 'CPU, tiny synthetic model; today a TRR-only receipt makes scripts/tests/unsloth_ft_apr_test.py print 18 gaps'
+  if_fails: 'beat-unsloth-finetune-throughput-v1 stays NOT_MEASURED on the apr side'
+- id: FALSIFY-TRR-008
+  rule: Planted falsifier — recipe.targets is read back, not echoed
+  prediction: 'with --targets q_proj,k_proj,v_proj,o_proj, recipe.targets has 4 entries and trainable_params is 4/7 of the 7-target run on the same model; a writer that echoes a default target list turns this RED'
+  test: 'two tiny CPU finetunes, 7 and 4 targets'
+  if_fails: 'a half-sized LoRA could be judged as the canonical task'
+- id: FALSIFY-TRR-009
+  rule: The timed window counts label tokens over the timed steps only
+  prediction: 'with batch 2, seq_len 8, rows of 5 and 8 non-pad tokens, warmup 1 and timed 3: label_tokens = 3·((5−1)+(8−1)) = 33'
+  test: 'tiny CPU finetune on a two-row data file'
+  if_fails: 'warmup steps, padding or the shift are counted, so tokens/s is not comparable to the incumbent'
+- id: FALSIFY-TRR-010
+  rule: Recipe hash covers the echoed recipe
+  prediction: 'recomputing sha256(canonical_json(R.recipe)) from the receipt equals R.recipe_sha256'
+  test: 'any FALSIFY-TRR-001 receipt'
+  if_fails: 'the hash and the echoed values can disagree, so neither can be trusted'
+- id: FALSIFY-TRR-011
+  rule: An environment variable that changes numerics is in the recipe
+  prediction: 'the same tiny NF4 finetune with and without FP16_GEMM=1 gives recipe.compute_dtype fp16 vs fp32 and two different recipe_sha256'
+  test: 'tiny CUDA NF4 run twice (after LIVE 0.70.1 and with the train idle)'
+  if_fails: 'two runs with different numerics share a recipe hash, so the receipt cannot tell them apart'
+- id: FALSIFY-TRR-012
+  rule: Planted falsifier — recipe.precision and recipe.compute_dtype are read back, not echoed
+  prediction: 'a tiny `apr finetune … --precision bf16 --timed-steps 2` on a bf16 safetensors file, before R15 C5 (the CPU trainer holds every weight as f32, autograd/tensor.rs:20; every CudaTransformerBlock buffer is GpuBuffer<f32>), either refuses before step 1 and writes no receipt or writes recipe.precision fp32, never bf16; unsloth_ft_verdict.py on an fp32 receipt exits 1, SAME-WORK FAIL naming precision, with no ratio (FALSIFY-BEAT-UNSLOTH-FT-PRECISION). A writer that copies --precision from argv, or the dtype from the safetensors header or config.json, writes bf16 and turns this RED. After C5 the same run on CUDA writes precision bf16, read from the dtype of the base weight buffers. compute_dtype is taken where the GEMM is called, not from precision: a planted C5 build that widens the bf16 base to fp32 before each GEMM writes compute_dtype fp32 and a recipe_sha256 different from the true bf16 run. Mixed dtypes: the tiny bf16 file also stores its norm weights in fp32, with a norm weight first in its header, and after C5 the run still writes precision bf16, since only the weights the GEMMs read count; a writer that takes the dtype of the first or the widest loaded tensor writes fp32, and one that refuses a mixed model exits non-zero; either turns this RED'
+  test: 'tiny CPU finetune after R15 C6 (first half); tiny CUDA run after C5 (second half, after LIVE 0.70.1 and with the train idle)'
+  if_fails: 'an fp32 run reaches the T2 verdict labelled bf16 and is compared with bf16 Unsloth as the same work, or a run that stores bf16 but multiplies in fp32 is reported as a bf16 run'
+- id: FALSIFY-TRR-013
+  rule: Planted falsifier — after_compile sees a module load inside the timed window
+  prediction: 'a tiny CUDA `apr finetune … --warmup-steps 1 --timed-steps 2` writes timed_window.after_compile true, computed from a count of PTX module loads, kernel JITs and graph captures read at the device syncs on both window edges, never assumed; the same run with a test-only hook that loads one PTX module not yet loaded (or JIT-compiles one kernel) at timed step 1 writes false. A writer that hard-codes true turns this RED. Through unsloth_ft_apr.py and unsloth_ft_verdict.py the false receipt exits 1, SAME-WORK FAIL naming timed_after_compile, with no ratio: check_pins (unsloth_ft_verdict.py:103) pins it on every run of both sides, already tested as "timed before compile" in scripts/tests/unsloth_ft_verdict_test.py:123'
+  test: 'tiny CUDA run twice, with and without the hook, after R15 C7 (after LIVE 0.70.1 and with the train idle)'
+  if_fails: 'the receipt claims a clean window it does not have: the timed seconds include module loads or JIT, so apr''s tokens/s is not the steady state that the incumbent''s after-compile window measures'

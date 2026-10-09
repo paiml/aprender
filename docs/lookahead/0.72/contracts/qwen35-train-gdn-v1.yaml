@@ -1,0 +1,140 @@
+metadata:
+  kind: training-loop
+  version: 1.1.0
+  created: '2026-09-27'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    Gated DeltaNet (GDN) forward AND backward in the TRAINING crate (aprender-train), so that
+    Qwen 3.5 can be fine-tuned, distilled and merged as the network it is (0.72 exit criterion
+    T1). Today GDN exists only on the inference side (aprender-serve forward_qwen35 / gdn_ops);
+    aprender-train has no GDN layer at all (origin/main aca6f2d7f6). Two gates: (1) the
+    training forward equals the serving forward — the model we train IS the model we serve;
+    (2) the backward equals finite differences. LoRA over a frozen base still back-propagates
+    through every GDN layer, so (2) is required even for adapter-only training.
+  references:
+  - 'branch la-72/0.72-shaping: docs/specifications/aprender-train/train-what-you-serve-0.72.md §R2 §R3 (not on main until the 0.72 shaping PR lands)'
+  - 'branch la-72/0.72-shaping: contracts/train-arch-honesty-v1.yaml (a reference, not depends_on, until it is on main)'
+  - contracts/gated-delta-net-v1.yaml (recurrence equations, shared)
+  - contracts/qwen35-hybrid-forward-v1.yaml (layer schedule, shared)
+  - Yang et al. (2024) Gated Delta Networks
+  depends_on:
+  - gated-delta-net-v1
+  - qwen35-hybrid-forward-v1
+status: PROPOSED
+equations:
+  gdn_recurrence:
+    formula: 'S̃_t = α_t S_{t−1};  S_t = S̃_t + k_t ⊗ β_t (v_t − S̃_tᵀ k_t);  o_t = S_tᵀ q_t / √d_k;  α_t = exp(g_t), g_t = softplus(a_t + dt_bias)·ssm_a'
+    domain: 'per value head h, reading key head h mod H_k (GGUF order); S ∈ R^{d_k × d_v}, S_0 = 0; ssm_a = −exp(A_log); q_t and k_t L2-normalised; a_t is the alpha projection of x_t. z_t enters only afterwards, through gated_rmsnorm (silu(z), gated-delta-net-v1)'
+    invariants:
+    - 'The read uses the decayed state S̃_t, as serving does: delta_rule_recurrence_gqa (aprender-serve forward_qwen35.rs:221) multiplies S by exp(g) first. QTG-001 checks that the two are the same function'
+    - 'gated-delta-net-v1 1.0.0 states a different recurrence: α = sigmoid(exp(A_log)·dt + dt_bias), and o = Sᵀq × z with no 1/√d_k. Neither crate computes that, so this contract takes only gated_rmsnorm from it'
+    preconditions:
+    - d_k > 0
+    - d_v > 0
+  train_serve_forward_identity:
+    formula: 'cos(logits^{train}(x), logits^{serve}(x)) ≥ 0.9999 ∧ argmax equal, ∀ positions of x'
+    domain: Qwen3.5-4B, dequantized-f32 weights, CPU, 3 fixed prompts ≤ 64 tokens
+    invariants:
+    - Both sides load the same .apr bytes (sha recorded)
+    preconditions:
+    - same tokenizer ids fed to both sides
+    - 'serve oracle runs under realizar::quantize::with_fp32_activations — its default Q4_K matvec quantises activations to Q8_K first, which alone moves the real 0.8B to cos 0.998 of the f32 forward (the arithmetic, not the model)'
+  gdn_backward:
+    formula: '∀ θ ∈ {q,k,v,z,β,dt projections, A_log, dt_bias, conv1d, norm}: |∂L/∂θ_analytic − (L(θ+ε) − L(θ−ε))/2ε| ≤ 1e-3 · max(1, |∂L/∂θ_fd|)'
+    domain: 'f64 reference on a 2 key : 4 value head, d_k=d_v=8, T=16 GDN scan, and an 8-wide mixer with causal conv1d (K=4, T=8), both again at 3 key : 6 value heads with d_k=8, d_v=12 (qwen35-train-cuda-v1 QTC-001''s shape, where the key and value totals differ too); ε = 1e-6'
+    invariants:
+    - Gradient w.r.t. the carried state S_0 is also checked (chunked training passes state across chunks)
+    preconditions:
+    - T ≥ 2
+  lm_cross_entropy:
+    formula: 'L = (1/T) Σ_t [log Σ_v exp(z_{t,v} − m_t) + m_t − z_{t,y_t}];  ∂L/∂z_{t,v} = (softmax(z_t)_v − 1[v = y_t]) / T'
+    domain: next-token loss over the whole model (embedding, hybrid stack, final norm, lm_head or tied embedding)
+    invariants:
+    - 'the f32 softmax denominator is a compensated sum: a plain f32 sum over a 248k vocabulary drops every term below half an ulp of the running total'
+    preconditions:
+    - one target per position, every id < vocab
+  lora_adapter_gradient:
+    formula: "W' = W + s·B·A (s = alpha/r);  ∂L/∂A = s·Bᵀ·∂L/∂W',  ∂L/∂B = s·∂L/∂W'·Aᵀ"
+    domain: 'W [rows × cols] row-major (y = W x), A [r × cols], B [rows × r]; targets: attention q/k/v/out, GDN qkv/gate/out, SwiGLU gate/up/down'
+    invariants:
+    - B = 0 at init, so the adapted model equals the base bit-for-bit
+    - training steps A and B only; the base weights are never written
+    preconditions:
+    - r ≥ 1
+proof_obligations:
+- type: equivalence
+  property: The trained forward equals the served forward
+  formal: '∀ x ∈ P: argmax(logits^{train}(x)) = argmax(logits^{serve}(x)) ∧ cos ≥ 0.9999'
+  tolerance: 1.0e-04
+  applies_to: all
+- type: bound
+  property: GDN analytic gradient equals central finite differences
+  formal: 'max_θ rel_err(∂L/∂θ) ≤ 1e-3 (f64 reference)'
+  tolerance: 1.0e-03
+  applies_to: all
+- type: bound
+  property: f32 cross-entropy equals f64 cross-entropy at real vocabulary size
+  formal: '|L_f32 − L_f64| ≤ 1e-6 on a 250 000-logit row whose tail sits below half an f32 ulp of its head'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: LoRA adapter gradient equals central finite differences of the loss
+  formal: '‖pred − fd‖ / ‖fd‖ ≤ 2e-2 over one random unit direction per adapter tensor (f32, h = 1e-2, B random)'
+  tolerance: 2.0e-02
+  applies_to: all
+- type: invariant
+  property: Layer schedule matches the family contract
+  formal: '∀ l: layer_kind^{train}(l) = layer_kind^{serve}(l) (attention XOR gdn)'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QTG-001
+  rule: Train forward = serve forward on Qwen3.5-4B
+  prediction: 'per-position cosine ≥ 0.9999 and identical argmax between aprender-train and aprender-serve logits on 3 fixed prompts'
+  test: 'IN-TREE: crates/aprender-train/src/transformer/gdn_tests.rs::{falsify_qtg_001_sequence_mixer_equals_serve_per_token, falsify_qtg_001_sequence_mixer_equals_serve_per_token_unequal_widths}, crates/aprender-train/src/transformer/qwen35_layer_tests.rs::falsify_qtg_001_gated_attention_equals_serve_per_token, crates/aprender-train/src/transformer/qwen35_model_tests.rs::falsify_qtg_001_tiny_model_logits_equal_serve; ignored (needs QWEN35_GGUF) falsify_qtg_001_real_model_logits_equal_serve'
+  if_fails: 'the training model is not the served model — the class this whole train exists to remove'
+- id: FALSIFY-QTG-002
+  rule: Planted falsifier — the decay-gate mutant
+  prediction: 'in the TRAINING GDN the decay is α_t = exp(g_t) with g_t = softplus(x_t + dt_bias)·a (gdn.rs; gated-delta-net-v1 1.0.0 still says "α = sigmoid(·)", which neither crate computes). Dropping the softplus from g_t turns QTG-001 RED (the serving-side decay mutant scores 0.7656, qwen35-hybrid-forward-v1)'
+  test: 'MUTATION RUN, not an in-tree test. On la-72/fold-r2r3 @5eb4ab88f4 (intel, 2026-09-28): softplus dropped in gdn.rs → falsify_qtg_001_sequence_mixer_equals_serve_per_token and falsify_qtg_001_tiny_model_logits_equal_serve FAILED (rc=101); the attention-only QTG-001 test stayed ok, as it should. Sibling mutant β without sigmoid went RED at b370fb40ea'
+  if_fails: 'QTG-001 is vacuous (compares serve to serve, or tolerance too loose)'
+- id: FALSIFY-QTG-003
+  rule: GDN gradcheck
+  prediction: 'every parameter and S_0 passes central-difference gradcheck at rel err ≤ 1e-3 in f64'
+  test: 'IN-TREE: crates/aprender-train/src/transformer/gdn_backward_tests.rs::{falsify_qtg_003_scan_gradcheck_f64, falsify_qtg_003_scan_gradcheck_unequal_widths, falsify_qtg_003_mixer_gradcheck_f64, falsify_qtg_003_mixer_gradcheck_unequal_widths, falsify_qtg_003_mixer_gradcheck_past_softplus_cutover}'
+  if_fails: 'a backward term is missing or wrong (typically the S_tᵀk_t read-out term or the conv1d causal shift)'
+- id: FALSIFY-QTG-004
+  rule: Planted falsifier — drop the delta read-out gradient
+  prediction: 'zeroing the ∂/∂k contribution through r_t = S_tᵀ k_t makes QTG-003 RED'
+  test: 'MUTATION RUN, not an in-tree test: drop read-out dk (rel 5.2e-2), drop output dS, no decay on carried dS, drop dg — all RED at 4d862a3305'
+  if_fails: 'gradcheck does not exercise the read-out path'
+- id: FALSIFY-QTG-005
+  rule: Layer schedule identity
+  prediction: 'the training model reports the same attention/GDN layer indices as contracts/model-families/qwen3_5.yaml and aprender-serve'
+  test: 'IN-TREE: crates/aprender-train/src/transformer/qwen35_model_tests.rs::{falsify_qtg_005_layer_schedule_is_identical_across_crates, falsify_qtg_005_interval_metadata_mismatch_is_refused_not_diverged}. The table covers depths 24, 32 and every num_layers in model-families/qwen3_5.yaml (read at test time). Mutants RED at @5eb4ab88f4: train schedule negated; serve schedule off by one (i % interval)'
+  if_fails: 'layer interleaving drifted between crates'
+- id: FALSIFY-QTG-006
+  rule: Whole-model gradcheck (attention, block, language model)
+  prediction: 'the gated-attention mixer, a whole block with either mixer, and the whole LM under next-token cross-entropy (GDN + attention layers, lm_head separate and tied) pass central-difference gradcheck at rel err ≤ 1e-3 in f64, for the input and every weight'
+  test: 'IN-TREE: crates/aprender-train/src/transformer/qwen35_layer_backward_tests.rs::{falsify_qtg_003_gated_attn_gradcheck_f64, falsify_qtg_003_block_gradcheck_f64}, crates/aprender-train/src/transformer/qwen35_lm_tests.rs::falsify_qtg_003_lm_gradcheck_f64'
+  if_fails: 'a term of the attention, block, embedding, final-norm or head backward is missing or wrong'
+- id: FALSIFY-QTG-007
+  rule: Planted falsifiers for QTG-006
+  prediction: 'each of: rope backward without the inverse rotation, softmax without Σ P·dP, RMSNorm without its r³ term, wrong kv-group map, gate without σ′, block residual dropped, SwiGLU up without silu, dv without P, CE without softmax, CE without 1/T, tied head gradient dropped, embedding scatter that overwrites, final-norm backward skipped, layer input off by one, layer gradients unreversed — turns QTG-006 RED'
+  test: 'MUTATION RUN, not an in-tree test: 8 layer mutants RED at cd0ac07051 (rope no-inverse, softmax ΣPdP, RMS r³, kv group, gate σ′, block residual, SwiGLU up silu, dv no P) + 7 LM mutants RED at 8bbedb0960 (CE softmax, CE mean, tied head grad, embed scatter-add, final norm, layer input off-by-one, grad order)'
+  if_fails: 'the gradcheck does not exercise that path'
+- id: FALSIFY-QTG-008
+  rule: f32 cross-entropy keeps a large-vocabulary tail
+  prediction: 'f32 CE of a 250 000-logit row (head 0, tail −18) is within 1e-6 of f64 (0.0038); a plain f32 sum returns 0, and on the real 0.8B biases the loss 1.2e-4 low (8.880096 vs 8.881130)'
+  test: 'IN-TREE: crates/aprender-train/src/transformer/qwen35_lm_tests.rs::f32_cross_entropy_keeps_a_large_vocab_tail; ignored (needs QWEN35_GGUF) crates/aprender-train/src/transformer/qwen35_model_tests.rs::real_model_loss_and_grads_are_consistent_and_finite'
+  if_fails: 'the f32 training loss is biased low by the vocabulary tail'
+- id: FALSIFY-QTG-009
+  rule: LoRA adapter gradient is the chain rule of the gradchecked full backward
+  prediction: 'per-tensor central difference (tiny 5-layer hybrid, r3, B random) matches dA/dB, 2 seeds; B = 0 merge is bit-equal to the base; AdamW overfits without writing the base; a zero step leaves the loss exact. Planted RED: dB or dA without s, dA zeroed, wrong B index, merge without s, merge without base copy'
+  test: 'IN-TREE: crates/aprender-train/src/transformer/qwen35_lora_tests.rs::{falsify_qtg_009_lora_grad_matches_finite_difference, zero_b_merge_equals_base, adamw_lora_overfits_and_leaves_base_untouched}; ignored real_model_lora_adamw_descends (0.8B r16: 8.881 → 0.002 in 8 steps, monotone)'
+  if_fails: 'LoRA fine-tuning of Qwen3.5 optimises a different function than the served model'
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      Gates are the tolerances above (cos ≥ 0.9999, gradcheck rel err ≤ 1e-3). No composite
+      score is claimed until the tests exist.

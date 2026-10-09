@@ -1,0 +1,33 @@
+# Look-ahead kit, train 0.72 (slot 2). Flat: one item per line.
+# Spec: train-what-you-serve-0.72.md on la-72/0.72-ref-study (PROPOSED).
+train: "0.72"
+theme: "Train What You Serve"
+epic: 4000
+criteria:
+  - {id: T1, pass: "every training verb (finetune, distill, merge, quantize) runs end to end on Qwen3.5 with 0 refusals and real GDN modelling", falsifier: "a qwen35 .apr into finetune exits 0 while aprender-train has no GDN forward+backward (TAH-001 today refuses it by name)", command: asked, ruling: "O 2026-09-27"}
+  - {id: T2, pass: "QLoRA fine-tune throughput on Qwen3.5-4B >= 0.8x pinned Unsloth on the same GPU", falsifier: "beat-unsloth-finetune-throughput-v1 planted same-work row: ratio computed over unequal token counts is RED", command: asked, ruling: asked}
+  - {id: T3, pass: "a Prometheus B2 challenger model trained with apr", falsifier: asked, command: asked, ruling: "O 2026-09-27"}
+  - {id: T4, pass: "a dogfood model release candidate trained with apr is on Hugging Face", falsifier: asked, command: asked, ruling: "O 2026-09-27"}
+  - {id: T5, pass: "train -> export GGUF -> llama.cpp load round trip, logits cosine >= 0.98", falsifier: "the #4418 export with the in_proj_z name-map row removed fails qwen35_name_map_is_pinned", command: asked, ruling: "O 2026-09-27"}
+  - {id: T6, pass: asked, falsifier: asked, command: asked, ruling: asked}
+baselines:
+  - {criterion: T2, plan: "R5 harness: pinned Unsloth vs apr, Qwen3.5-4B QLoRA, same GPU, tokens/s; first run is the baseline", receipt: none}
+  - {criterion: T5, plan: "#4418 export of Qwen3.5-4B bf16 at main, llama.cpp d1d3c3396 completion + logits cosine", receipt: none}
+contracts:
+  - {row: R1, draft: docs/lookahead/0.72/contracts/train-arch-honesty-v1.yaml, falsifier: "TAH-002: re-adding the qwen3_5 -> qwen3 alias turns TAH-001 RED"}
+  - {row: R2, draft: docs/lookahead/0.72/contracts/qwen35-train-gdn-v1.yaml, falsifier: "QTG-001 mutants: no beta sigmoid; HF grouped head order"}
+  - {row: R3, draft: docs/lookahead/0.72/contracts/qwen35-train-gdn-v1.yaml, falsifier: "QTG-004: planted gradient mutant fails the f64 gradcheck"}
+  - {row: R4, draft: docs/lookahead/0.72/contracts/qwen35-qlora-e2e-v1.yaml, falsifier: "planted rows in the contract (loss not decreasing; adapter round trip)"}
+  - {row: R5, draft: docs/lookahead/0.72/contracts/beat-unsloth-finetune-throughput-v1.yaml, falsifier: "planted same-work row"}
+  - {row: R4-receipt, draft: docs/lookahead/0.72/contracts/train-run-receipt-v1.yaml, falsifier: "planted rows in the contract"}
+staged:
+  - {branch: la-72/4552-train-arch-honesty, issue: 4552, rows: R1}
+  - {branch: la-72/4418-qwen35-gguf, issue: 4418, rows: T5}
+questions:
+  - {id: Q1, text: "T2: if the R5 baseline ratio is under 0.4, slip T2 or accept an fp32 fallback?", asked: 2026-10-08, answer: open}
+  - {id: Q2, text: "T6: which APR-EMBED-001 rows are 0.72 exit criteria, and what is the pass line?", asked: 2026-10-08, answer: open}
+  - {id: Q3, text: "DDP apply path with accumulation_steps=1 has the same empty d2h_staging that kd_step_batch guards; fix in 0.72?", asked: 2026-09-28, answer: open}
+risks:
+  - {risk: "GDN backward is new numerics with no training-side reference", mechanism: "f64 gradcheck (QTG-003) and a planted mutant (QTG-004) before any e2e run; tiny layer first", tripwire: "R3 gradcheck not green 2 weeks after R2 lands: cop re-scopes T1"}
+  - {risk: "T2 0.8x Unsloth is unmeasured; Unsloth ships hand-fused Triton LoRA kernels", mechanism: "R5 baseline first, then size R14 from the gap", tripwire: "baseline ratio under 0.4: Q1 goes to ruling"}
+  - {risk: "no GPU or clean-room work while a train is active", mechanism: "CPU-first order: R1, R2 parity and R3 gradcheck are CPU", tripwire: "R4/R5 blocked over 1 week by train-active: cop"}

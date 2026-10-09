@@ -1,0 +1,213 @@
+metadata:
+  kind: training-loop
+  version: 1.1.0
+  created: '2026-09-27'
+  author: PAIML Engineering (la-72, APR-LOOKAHEAD-001 L2, train 0.72)
+  description: >-
+    `apr finetune -m qlora` completes end to end on Qwen3.5-4B on CUDA (NF4 frozen base, LoRA
+    adapters on attention, MLP and GDN projections), with 0 refusals, and the adapter it
+    writes is served by `apr serve` with the same outputs as the training-side merged forward.
+    This is the 0.72 T1 cell for finetune; distill and merge get sibling cells (R6, R7).
+    1.1.0 (2026-10-03, la-0.72): QQE-004's reference run (`-m lora` on CUDA) does not exist at
+    316dee2cd4. `-m lora --gpu-backend cuda` warns and trains on the CPU (apr-cli finetune.rs:280),
+    so an unguarded QQE-004 would compare an NF4 CUDA run against a CPU run. Both runs must now
+    record device and precision (train-run-receipt-v1 1.1.0), and the reference needs R15 cells C4
+    (fp32 frozen base), or C5 if it is bf16 (docs/specifications/aprender-train/r15-cuda-lora-cells.md).
+    1.1.0 also adds QQE-007/008 (S-R21, 2026-10-03): GGUF stores Qwen3.5's value heads tiled (h mod
+    H_k), HF stores them grouped (h / ratio), and at 316dee2cd4 neither apr import nor PEFT export
+    converts between the two (docs/specifications/aprender-train/r21-cuda-qwen35-hybrid-block.md,
+    §Value-head order). #4418's branch (0.71's R9, not on main) has the full HF-to-GGUF transform,
+    transform_qwen35_tensor. apr finetune trains from .apr only and apr import refuses every real
+    Qwen3.5 GGUF, so the base R4 trains is HF-sourced and must be converted at load (QQE-008).
+    QQE-007/008 use 3 key heads and 6 value heads. With 2 and 4 the value-head permutation is its own inverse,
+    so neither row could catch it applied backwards. The 0.8B and the 2B have 16 key and 16 value heads, so the
+    permutation is the identity there, and the 0.8B rows (QQE-005/006) cannot see the head order at all.
+    Their widths are 8 and 12, so the key and value totals differ too (24 and 72). At 8 and 4 both are 24, as on
+    the 0.8B and the 2B (2048 and 2048), and a converter that starts the value rows of attn_qkv at
+    n_k·d_k + n_v·d_v instead of 2·n_k·d_k passes there.
+    QQE-009 (PROPOSED 2026-10-03): apr serves Qwen3.5 only from a GGUF and loads no adapter, so the served side is
+    the merged file, written by apr finetune merge (apr-cli finetune_display_next_validate.rs:469). It matches
+    adapter tensors to base tensors by name (adapter_pair_names, :213), and at 316dee2cd4 it writes three wrong
+    merges without error: a partial merge, a PEFT-named adapter that matches nothing, and an adapter with no
+    lora_alpha merged at alpha 16. QQE-009 checks the merge tensor by tensor.
+    QQE-010 (PROPOSED 2026-10-04, K43): a QLoRA run trains the adapter against the NF4 round trip of the base
+    (aprender-gpu quantize_nf4: 64-value blocks, one f32 absmax each, kernels/quantize/nf4_cpu.rs:23,120, called
+    on the frozen weights at upload, transformer/cuda_block.rs:2943), and apr finetune merge adds it to the base
+    file itself (merge_completeness). R4's loss gates score the first
+    model, and the user is served the second. QQE-003 named no base, so it either compared the two, which differ
+    for a non-bug reason (the reason QQE-005 puts its two sides on one base), or never saw the trained model. On
+    Qwen3.5-4B the round trip moves each of R4's 10 target kinds by 9.2-9.5% of its Frobenius norm (first 256
+    rows of each, layers 0 and 3, numpy on the shipped bf16 safetensors). QQE-003 now runs both sides on the
+    merge's base, and QQE-010 scores the merged model against the trained one on the training loss. The version
+    stays 1.1.0: no row of this file has landed.
+    QQE-011 (PROPOSED 2026-10-04, K44): at 316dee2cd4 alpha does not reach CUDA QLoRA training. The NF4 block
+    uploads B already multiplied by s = alpha/r (transformer/cuda_block.rs:3025-3038). The forward adds
+    (x·A)·B' with no s (:3272, :3326), the backward computes dB' = (x·A)ᵀ·dq and dA = xᵀ·(dq·B'ᵀ) with no s
+    (:4433, :4456, :4594, :4608), and AdamW steps B' itself (:5098, :5130). B starts at 0 on both trainers
+    (lora/layer/core.rs:109, transformer_trainer/cuda_trainer.rs:783), so B' = s·0 = 0 for every alpha, and nothing reads s again until
+    the adapter is saved as B'/s (instruct_pipeline/accessors.rs:84-94). The (A, B') trajectory is therefore
+    the same for every alpha. The CPU path applies s in the forward (lora/layer/core.rs:278) and AdamW steps B,
+    as adapter_gradient_reference states, so one recipe trains two different models on the two devices, and
+    on CUDA B moves 1/s as far per step. apr finetune sets alpha = 2·rank (apr-finetune-v1 alpha_rank_ratio),
+    so s = 2 by default. The merge is not affected: it adds s·(B'/s)·A = B'·A, the function CUDA trained.
+    Resume is not affected either: the transformer trainer's checkpoint saves B' and restores B' unchanged
+    (cuda_trainer.rs:3187-3210, :3396-3420). QQE-011 checks that alpha scales the first step, and QQE-005
+    compares dB as AdamW receives it. The classify pipeline shares the block: under --task classify -m qlora it
+    passes s at upload (classify_pipeline/gpu.rs:250, :328) and divides B' by s at sync (:1180-1206). So a fix
+    that keeps B unscaled on the GPU drops three divisions by s, that one, the instruct save (accessors.rs:84-94)
+    and save_cuda_lora_adapter (cuda_trainer.rs:3281-3285, :3313-3317); a path it misses saves B 1/s too small.
+  references:
+  - docs/specifications/aprender-train/train-what-you-serve-0.72.md §R4
+  - contracts/qwen35-train-gdn-v1.yaml
+  - contracts/cuda-nf4-train-loss-parity-v1.yaml
+  - contracts/lora-merge-forward-equivalence-v1.yaml
+  - contracts/train-run-receipt-v1.yaml (1.1.0, device + recipe.precision + recipe.compute_dtype)
+  - 'aprender-train transformer::Qwen35Lora (CPU reference adapter gradient, FALSIFY-QTG-009)'
+  - 'crates/apr-cli/src/commands/finetune_display_next_validate.rs at 316dee2cd4 (run_merge :469, adapter_pair_names :213, gguf_proj_to_hf, read_adapter_lora_params)'
+  depends_on:
+  - train-arch-honesty-v1
+status: PROPOSED
+equations:
+  loss_decrease:
+    formula: 'mean(L[steps 191..200]) ≤ 0.9 · mean(L[steps 1..10])'
+    domain: fixed 1,000-sample instruct set (sha pinned), seed 42, rank 16, lr 2e-4, 200 steps, batch 4, seq 512
+    invariants:
+    - The run is reproducible from (recipe, data sha, seed, binary sha)
+    - Every loss value finite
+    preconditions:
+    - base is Qwen3.5-4B .apr imported by a released apr (sha recorded). At 316dee2cd4 that .apr can only come from HF safetensors, so the trainer converts it to GGUF conventions at load (tiled value heads, ssm_a = −exp(A_log), +1 on the zero-centred norms, conv [C,K]) or refuses it (QQE-008)
+  adapter_serve_identity:
+    formula: 'cos(logits^{train, merged}(x), logits^{serve, base+adapter}(x)) ≥ 0.999 ∧ argmax equal'
+    domain: '3 fixed prompts, after training; both sides on the base apr finetune merge reads (B_merge): the train side is Qwen35Lora::merge_into(B_merge, adapter), not the NF4 base the run trained on, so the identity measures layout, scale, naming and export, and trained_vs_merged covers the base gap'
+    invariants:
+    - The adapter file is standard PEFT layout (lora-merge-peft-layout-v1)
+    - 'Standard PEFT means HF order: the value rows of attn_qkv''s B, the rows of attn_gate''s B and the columns of ssm_out''s A are written grouped, although the trainer holds them tiled (QQE-007). This identity cannot see that permutation, because the trainer and the GGUF server share the tiled order'
+    - 'At 316dee2cd4 no serve path loads an adapter, so the served side is the merged file exported as a GGUF (#4418). Then this identity also rests on the merge (merge_completeness, QQE-009), and a cosine of 0.999 on logits may not see a LoRA delta that the merge dropped'
+    preconditions:
+    - adapter written by the run under test
+  merge_completeness:
+    formula: "∀ (A_t, B_t) ∈ adapter: W'_t = W_t + (α/r)·B_t·A_t;  ∀ t ∉ targets: W'_t ≡ W_t;  |pairs consumed| = |pairs in adapter|, else exit ≠ 0;  load_4b(W') = Qwen35Lora::merge_into(base, adapter)"
+    domain: 'apr finetune merge of an adapter into the HF-convention base .apr; α and r read from the adapter, never defaulted'
+    invariants:
+    - The merged file keeps the base's HF conventions; the trainer's in-memory merge (Qwen35Lora::merge_into, GGUF conventions) is a reference and is never written, because those values under HF names would make the GGUF export apply #4418's transforms a second time
+    preconditions:
+    - the adapter is in HF order (QQE-007)
+  trained_vs_merged:
+    formula: 'mean_x L(merge(B_merge, ad), x) ≤ 1.02 · mean_x L(merge(B_train, ad), x)  ∧  mean_x L(merge(B_merge, ad), x) < mean_x L(B_merge, x)'
+    domain: 'x = the first 20 samples of the pinned set, target tokens only, in the loss window the run trained with, after the last step. B_train = the base the run trained on (for -m qlora, the NF4 round trip of B_merge by the CUDA path''s quantizer); B_merge = the base apr finetune merge reads'
+    invariants:
+    - The receipt names both bases (B_train with its quantizer and block size, B_merge by sha) and the three mean losses
+    - If the first clause fails, the merge takes B_train instead and the receipt says so; the clause then holds by construction
+    preconditions:
+    - adapter written by the run under test, and merge_completeness holds
+  adapter_gradient_reference:
+    formula: "∂L/∂A = s·Bᵀ·∂L/∂W',  ∂L/∂B = s·∂L/∂W'·Aᵀ  (W' = W + s·B·A, s = alpha/r)"
+    domain: 'targets per layer, by GGUF tensor: attn_q, attn_k, attn_v, attn_output (attention layers); attn_qkv, attn_gate, ssm_out (GDN layers); ffn_gate, ffn_up, ffn_down (all layers)'
+    invariants:
+    - The CPU reference (Qwen35Lora::set_grads over the gradchecked full backward) is the oracle; the CUDA path must not hold every target's dW' at once (14.3 GB f32 at 4B; streaming one matrix = 94 MB, spike S-R17) and must still equal it
+    - B = 0 at init, so step 0's adapted forward is bit-equal to the base
+    - The tensor AdamW steps is B itself, as the adapter file stores it, with the gradient above. A CUDA buffer that holds s·B receives dB/s, and alpha cancels out of training (K44, QQE-011)
+    preconditions:
+    - same base weights on both sides (the CUDA side dequantises NF4 to the values the CPU reference loads)
+  alpha_first_step:
+    formula: "Δ_t(α) = (α/r)·B_t¹·A_t¹, the delta the merge adds after one AdamW step from B⁰ = 0;  ‖Δ_t(2α)‖ / ‖Δ_t(α)‖ = 2"
+    domain: 'one optimizer step, same base, seed, batch, rank and lr; only alpha differs (16 and 32 at r16); α and r read from each adapter file, as the merge reads them'
+    invariants:
+    - 'At step 1 the reference gives B¹ = −lr·g/(|g| + ε) with g = s·∂L/∂W''·A⁰ᵀ. That step depends on |g| only through ε, so B¹ is the same for both alphas and Δ scales with s. A buffer that holds s·B gets the same B''¹ for both alphas, the file holds B''¹/s, and Δ = B''¹·A¹ does not change'
+    - 'dA = 0 at step 1, because B⁰ = 0, so A¹ is the same in both runs'
+proof_obligations:
+- type: bound
+  property: Training makes progress
+  formal: 'mean(L_last10) ≤ 0.9 · mean(L_first10) ∧ ∀ s: is_finite(L_s)'
+  applies_to: all
+- type: equivalence
+  property: What we train is what we serve
+  formal: 'argmax^{train,merged} = argmax^{serve} ∧ cos ≥ 0.999 per position'
+  tolerance: 1.0e-03
+  applies_to: all
+- type: equivalence
+  property: CUDA adapter gradients equal the CPU reference
+  formal: '‖g^{cuda} − g^{cpu}‖ / ‖g^{cpu}‖ ≤ 1e-2 per adapter tensor, step 0 with B randomised'
+  tolerance: 1.0e-02
+  applies_to: all
+- type: invariant
+  property: Zero refusals on the canonical cell
+  formal: 'exit(apr finetune qwen3.5-4b -m qlora) = 0 ∧ refusals = 0'
+  applies_to: all
+- type: invariant
+  property: The merged file carries every adapter pair at the adapter's own scale, or the merge is refused
+  formal: "∀ t ∈ targets: max|W'_t − (W_t + (α/r)·B_t·A_t)| ≤ 1e-6·max|W_t| ∧ ∀ t ∉ targets: W'_t ≡ W_t ∧ consumed = pairs"
+  tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: The merged model keeps what training learned
+  formal: 'mean L(merge(B_merge, ad)) ≤ 1.02 · mean L(merge(B_train, ad)) ∧ mean L(merge(B_merge, ad)) < mean L(B_merge), over the first 20 pinned samples'
+  applies_to: all
+- type: equivalence
+  property: Alpha scales training the way the adapter file says it does
+  formal: '∀ t: |‖Δ_t(32)‖ / ‖Δ_t(16)‖ − 2| ≤ 2e-2 ∧ |L_trainer − L(B_train + Δ_file)| ≤ 1e-4·L_trainer, at r16 after one AdamW step from B = 0, on CUDA and on CPU'
+  tolerance: 2.0e-02
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QQE-001
+  rule: End-to-end QLoRA on Qwen3.5-4B completes and learns
+  prediction: 'exit 0; loss criterion holds; receipt carries binary sha, data sha, seed, GPU name'
+  test: 'apr finetune on the canonical cell (CUDA, lambda RTX 4090) — NOT run while train-active'
+  if_fails: 'training diverged, refused, or silently fell back to CPU (the receipt must name the device that ran, CLAUDE.md verification rule 2)'
+- id: FALSIFY-QQE-002
+  rule: Planted falsifier — frozen adapters
+  prediction: 'with a step too small to move any f32 weight (lr = f32::MIN_POSITIVE) the 20 losses are bit-identical and the loss criterion FAILS'
+  test: 'same cell, lr = f32::MIN_POSITIVE, 20 steps. Not lr = 0: the in-tree AdamW rejects lr = 0 with a precondition panic, and a crash would read as the falsifier firing (measured in S-R4a, 2026-09-27)'
+  if_fails: 'the loss criterion is vacuous (e.g. reads a smoothed or eval loss that moves without training)'
+- id: FALSIFY-QQE-003
+  rule: Trained adapter is served identically
+  prediction: 'apr serve base+adapter matches the training-side merged forward (cos ≥ 0.999, argmax equal)'
+  test: 'post-train parity check on 3 prompts. At 316dee2cd4 nothing can run the serve side: apr run, chat and serve take no adapter (commands_enum.rs and serve_commands.rs have no adapter or LoRA flag), the Modelfile ADAPTER directive is parsed and only printed (modelfile/mod.rs:121-123), and every caller of realizar::gguf::hybrid_forward_handles asks a mapped GGUF, so a qwen35 GGUF is the only Qwen3.5 model apr serves. Until an adapter path exists, the serve side is the merged model exported as a GGUF, which needs #4418'
+  if_fails: 'adapter layout, scaling (alpha/r) or GDN-projection target naming differs between train and serve'
+- id: FALSIFY-QQE-004
+  rule: NF4 quantization does not silently cost quality on Qwen3.5
+  prediction: 'mean(L_last10, QLoRA) ≤ 1.05 · mean(L_last10, LoRA) on the same cell, seed and data, where the QLoRA receipt has recipe.precision = nf4, the LoRA receipt has recipe.precision ∈ {bf16, fp32}, and both have the same device.uuid (a CUDA GPU)'
+  test: 'run the canonical cell twice, -m qlora and -m lora, compare the final loss windows. Read both receipts first; any other precision pair, a CPU device or two different GPUs is NOT_MEASURED, not a pass or a fail. Planted: the 316dee2cd4 binary, whose -m lora on CUDA trains on the CPU, must come out NOT_MEASURED'
+  if_fails: >-
+    Unsloth's Qwen3.5 guide advises against QLoRA for "higher than normal quantization differences"
+    (read 2026-09-27). If this fails, `apr finetune -m qlora` must refuse qwen3.5 by name and point
+    to -m lora. It must not train a worse adapter silently.
+- id: FALSIFY-QQE-005
+  rule: CUDA adapter gradients equal the CPU reference
+  prediction: 'on Qwen3.5-0.8B (3 fixed tokens, r16, B randomised with a fixed seed) the CUDA side emits the SAME adapter set as Qwen35Lora (150 slots, 300 tensors, matched by layer and target; a missing or extra tensor is a FAIL, never skipped — spike S-R15: the existing CUDA QLoRA path adapts Q and V only), and every CUDA dA/dB tensor is within rel 1e-2 of Qwen35Lora::set_grads, taken as AdamW receives it for the tensor the adapter file stores (B, never s·B, and never rescaled by the test: a buffer holding s·B gets dB/s, rel 0.5 at s = 2; K44, QQE-011), both sides on the SAME base: the CPU reference loads the target weights round-tripped through the NF4 quantize/dequantize the CUDA path uses (trueno_gpu::kernels::quantize_nf4 / dequantize_nf4; spike S-R4c measured a 0.33-1.20 per-tensor rel gap between the Q4_K and NF4 bases, all 300 tensors over 1e-2), so the tolerance measures the backward and not NF4 error (a Q4_K-dequantized CPU base vs an NF4 CUDA base would differ for a non-bug reason)'
+  test: 'desk-ready reference: aprender-train transformer::qwen35_model::tests::lora (FALSIFY-QTG-009, 6 planted mutants RED). CUDA side: NOT run while train-active'
+  if_fails: 'the CUDA LoRA backward optimises a different function from the gradchecked reference (scale, transpose, or a GDN target missing from the CUDA target set); planted: running the CPU side on the un-round-tripped Q4_K base must be reported as a base mismatch, not a pass or a backward defect; planted: dropping every non-Q/V slot from the CUDA side must FAIL on the adapter-set check, not pass on the tensors that remain'
+- id: FALSIFY-QQE-006
+  rule: CPU pre-flight — LoRA plus AdamW trains the real 0.8B before any GPU time is spent
+  prediction: 'r16, alpha 32, all 150 targets, AdamW lr 1e-4, one 5-token sentence, 8 steps: the loss falls every step and ends below half the start (measured 8.881 → 0.002, about 7.2 s per step on CPU)'
+  test: 'aprender-train transformer::qwen35_model::tests::lora::real_model_lora_adamw_descends (ignored; QWEN35_GGUF)'
+  if_fails: 'a regression in the backward, the merge or the optimiser: fix it on CPU before spending GPU time'
+- id: FALSIFY-QQE-007
+  rule: The PEFT adapter stores the GDN targets in HF's grouped value-head order
+  prediction: 'tiny Qwen3.5-shaped fixture (3 key heads of width 8, 6 value heads of width 12, random weights, fixed seed; not 2 and 4 heads, where the permutation is its own inverse, not equal widths, where a permutation that moves value rows in blocks of the key width still passes, and not widths 8 and 4, where the key and value totals are both 24 and a permutation that starts the value rows at the wrong total still passes): random LoRA A and B on attn_qkv, attn_gate and ssm_out in the trainer''s tiled order, exported as PEFT. A grouped-order reference forward (key head h / 2, as HF repeat_interleave) on the base permuted into HF order plus the exported adapter equals the trainer''s merged forward within 1e-5. Planted: exporting the tiled rows unpermuted, which is what peft_export.rs:100-110 does at 316dee2cd4, turns it RED while adapter_serve_identity stays green, and so does exporting with the permutation applied backwards (nk and nv/nk exchanged), and so does moving the value rows in blocks of d_k, which every local Qwen3.5 checkpoint (128 and 128) cannot tell apart, and so does starting them at n_k·d_k + n_v·d_v instead of 2·n_k·d_k, which the 0.8B and the 2B (2048 and 2048) cannot tell apart'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
+  if_fails: 'HF, vLLM and apr''s own safetensors path (grouped, linear_attn.rs:218-233) apply 30 of the 4B''s 32 value heads'' adapter deltas to the wrong head'
+- id: FALSIFY-QQE-008
+  rule: A Qwen3.5 base in HF conventions is converted or refused before training, never trained as it is
+  prediction: 'the same tiny random checkpoint (3 key heads of width 8, 6 value heads of width 12) written twice, once in GGUF conventions (tiled value heads, ssm_a, norms with the +1, conv [C,K]) and once in HF conventions (grouped value heads, A_log, zero-centred norms, conv [C,1,K]) as apr import of HF safetensors writes it once #4418 is on main, with the head counts and widths in the custom key linear_attn_hparams: either the step-1 loss of the HF copy equals the GGUF copy''s within 1e-6 relative, or the HF copy is refused before step 1 with exit ≠ 0, a message naming the convention, and no adapter written. The loader takes the counts and widths where #4418''s GGUF export takes them (linear_attn_hparams, else a config.json beside the input; gguf_export_config.rs:611-625 at 1af0e3cc11). The tensors cannot supply them, because the rows of in_proj_qkv give only 2·n_k·d_k + n_v·d_v. A third copy, the HF copy without linear_attn_hparams and with no config.json beside it (as apr import writes it at 316dee2cd4, where the key does not exist), is refused before step 1 by every loader, with a message that names the missing key. Every Qwen3.5 load path, from_gguf included, also refuses a GDN layer whose ssm_a holds a value that is not strictly negative (NaN included), since ssm_a = −exp(A_log). Planted: a loader that maps the names but skips the value-head permutation trains with a different step-1 loss, which turns it RED. So does one that applies the permutation backwards, skips the +1 on the zero-centred norms, or infers the key-head count from the tensors by taking d_k = d_v. That holds on all six local Qwen3.5 checkpoints (0.8B to 35B-A3B, 128 and 128), so only a fixture with d_k ≠ d_v catches it; this one would get 2 key heads of width 12, ratio 3 and the wrong permutation. A_log loaded under the ssm_a name, which is what a converter that maps the names and skips the values leaves, must be refused. A_log is ≥ 0 on 192 of the 4B''s 768 heads (log(−ssm_a) over its Q4_K_M GGUF, read 2026-10-04), so the sign check fires on the real base too'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
+  if_fails: 'R4 or T2 trains against the wrong head map, or with every zero-centred norm near zero, without any error'
+- id: FALSIFY-QQE-009
+  rule: apr finetune merge applies every adapter pair at the adapter's own scale, or refuses
+  prediction: 'tiny HF-convention Qwen3.5 base .apr (3 key heads, 6 value heads, 4 layers at interval 4) that carries the head counts and widths in the custom key linear_attn_hparams, as #4418''s import writes it, and Qwen35Lora on every R4 target (attn_qkv, attn_gate, ssm_out, attn_q, attn_k, attn_v, attn_output, ffn_gate, ffn_up, ffn_down) with random non-zero A and B, r 2, alpha 4, written by R4''s adapter writer: the merge exits 0, reports every pair consumed, gives W + 2·B·A within 1e-6·max|W| on each target, and leaves every other tensor bitwise equal to the base. Read back through row 4b''s loader, the merged file equals the in-memory Qwen35Lora::merge_into model within 1e-6·max|W| per tensor (ssm_a within 1e-6 absolute, after the A_log round trip). That comparison is the oracle for the whole chain, so a writer that drops a target kind (say ssm_out) is RED although the merge consumes every pair it is given. The base carries that key because row 4b''s loader refuses a Qwen3.5 file without it, and a refused read-back would leave the comparison unrun. The merge keeps the key: it clones the base''s metadata (finetune_display_next_validate.rs:518 at 316dee2cd4), and canonicalize_hf_aliases removes only the dimension aliases. A merge that rebuilt the metadata would drop it, and the read-back turns that RED. That matters beyond the test, because #4418''s GGUF export, which T5 runs on the merged file, refuses a file without the key and with no config.json beside it. Planted inputs, each of which must exit ≠ 0 and write nothing: (a) the GDN targets named the GGUF way (lora.{layer}.attn_qkv.lora_a) beside HF-named attention and MLP targets, because gguf_proj_to_hf maps only the seven llama projections; (b) the same adapter in PEFT names (…lora_A.weight), which the zero-match refusal does not count; (c) lora_alpha absent from the safetensors header and the sidecar, which read_adapter_lora_params replaces with 16.0. At 316dee2cd4 (a) writes a partial merge, (b) writes the base and (c) writes the delta at alpha 16, all with exit 0, so this row is RED until the merge is strict'
+  test: '[U] not written; CPU only, needs cargo after LIVE 0.70.1'
+  if_fails: 'the merged file that R4 serves and T5 round-trips lacks part of the adapter, or carries it at the wrong scale, and verify_merged_runnable still passes; QFR-001..006 cannot see it, because apr and llama.cpp export the same wrong file identically'
+- id: FALSIFY-QQE-010
+  rule: The merged model scores within 2% of the model that was trained, on the training loss
+  prediction: 'after R4''s last step, over the first 20 samples of the pinned set (target tokens only, in the loss window the run trained with): the mean loss of the merged file read back through row 4b''s loader is at most 1.02 × the mean loss of the trainer''s own model (its NF4 base plus the adapter), and below the mean loss of the merged file''s base alone. The receipt names both bases and the three losses. Not measurable at 316dee2cd4: R4''s CUDA path for Qwen3.5 does not exist, nothing scores a merged model, and no receipt names a base. The gap it guards is measured: an NF4 round trip with the CUDA path''s quantizer (64-value blocks, f32 absmax) moves each of R4''s 10 target kinds on Qwen3.5-4B by 9.2-9.5% of its Frobenius norm, so the trained and the merged model differ on every adapted matrix. Planted: (a) a merge that drops the adapter (the output is the base) FAILS the second clause; (b) a train side scored on B_merge instead of the NF4 base passes vacuously, so the test first checks that B_train''s target tensors differ from B_merge''s by 5-15% (relative Frobenius) in a QLoRA run, and that plant turns it RED'
+  test: '[U] not written; CUDA, after R4 runs (needs LIVE 0.70.1 and R4''s CUDA path). The base-gap probe is numpy over the bf16 safetensors and needs no GPU'
+  if_fails: 'R4 reports the loss of a model nobody is served: the adapter learned against the NF4 base, the file users run carries it on the unquantized base, and the gain the loss gate saw may not be in the served model'
+- id: FALSIFY-QQE-011
+  rule: Alpha reaches training on CUDA as it does on CPU
+  prediction: 'two runs that differ only in alpha (16 and 32 at r16; same tiny base, seed, batch and lr; one AdamW step from B = 0), each writing its adapter. (1) On every target, the delta the merge adds, (α/r)·B·A with α and r read from the file, is twice as large in the alpha-32 run, within 2e-2 (alpha_first_step). (2) In each run, the trainer''s own loss on that batch after the step equals the loss of its base (B_train) plus the file''s delta, within 1e-4 relative, so the file carries the function the trainer holds. The CPU path is the control and is GREEN at 316dee2cd4: it applies s in the forward and steps B (lora/layer/core.rs:278). The CUDA NF4 path is RED there on (1): it steps the pre-scaled B'' = s·B, both runs train the same function, and the ratio is 1. Planted: (a) alpha = r in both runs gives a ratio of 1 for a non-bug reason, so the test refuses equal alphas instead of passing them; (b) an export that drops the division by s writes B'', which makes the ratio 2 while the served delta is s times the trained one, so (1) passes and (2) FAILS; (c) Δ read from the GPU buffers instead of the written file cannot see the export, so (1) reads the file'
+  test: '[U] not written; CUDA, a tiny NF4 config (the cuda-nf4-train-loss-parity size), two runs of one step each. Needs LIVE 0.70.1 and a free GPU. The CPU control needs only cargo. For R4 it runs again on the Qwen3.5 CUDA path once that exists'
+  if_fails: 'alpha does nothing on CUDA QLoRA: a recipe trains a different model on CUDA than on the CPU, B learns at 1/s of the rate PEFT or Unsloth gives the same recipe, and QQE-004 compares the QLoRA run against a LoRA reference that may follow the other rule'
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: Gates are the loss and parity bounds above; no composite score is claimed.
