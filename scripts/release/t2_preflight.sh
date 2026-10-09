@@ -10,14 +10,32 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 
 # ---------------------------------------------------------------------------
-# decide <sha> <log> <dogfood_rc>
+# decide <sha> <log> <dogfood_rc> [ladder_log]
 #   Prints ONE verdict line and returns 0 GO / 1 NO-GO / 2 UNKNOWN.
 #   GO requires POSITIVE EVIDENCE the gate ran: dogfood's terminal VERDICT line, AND a
-#   row count at or above the declared gate set, AND zero failures outside the documented
-#   version-unpublished row. Any one missing is UNKNOWN with reason=<why> with exit 2 (#3561).
+#   row count at or above the declared gate set, AND zero failures outside the rows that
+#   cannot be green before the bump (step 3 names them). Any one missing is UNKNOWN with
+#   reason=<why> with exit 2 (#3561).
 # ---------------------------------------------------------------------------
+
+# ladder_unmeasurable_pre_bump <ladder_log> -> rc 0 when the model-ladder gate's OWN run (t2 re-runs it in
+# the same worktree) is red for exactly one reason: the CRUX scope found no receipt from the release binary
+# on a named host. That receipt is written by T-1's models lane for the release commit, after the bump, so
+# on main's head it cannot exist. Any other red in that run (wrong-sha receipt, declined, unreadable, an
+# unscoped ladder) is not this, and keeps NO-GO.
+ladder_unmeasurable_pre_bump() {
+    local l=$1
+    grep -qE '^SCOPED: crux-smoke( |$)' "$l" 2> /dev/null || return 1
+    [ "$(grep -cE '^RED ' "$l")" -eq 1 ] || return 1
+    grep -qE '^RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied' "$l" || return 1
+    grep -qE '^FAIL ' "$l" || return 1
+    # Count, never `! a | grep -q`: under pipefail, grep -q exits at the first stray FAIL row, the
+    # writer dies of SIGPIPE (141) on a log longer than the pipe, and `!` turns 141 into a pass.
+    [ "$(grep -E '^FAIL ' "$l" | grep -cvE '^FAIL  host [A-Za-z0-9_.-]+ has no CRUX receipt from the release binary -- ')" -eq 0 ]
+}
+
 decide() {
-    local sha=$1 log=$2 rc=$3 rows fails declared
+    local sha=$1 log=$2 rc=$3 lad=${4:-} rows fails declared name red dn vrow line deferred=''
 
     # Doctrine 4: crash / missing input / never-asked are UNKNOWN with reason=<why>, exit 2 --
     # never GO, never a fabricated FAIL. GO requires POSITIVE EVIDENCE that the gate
@@ -40,11 +58,38 @@ decide() {
     rows=$(grep -cE '^[[:space:]]*\[( OK |[A-Z]+)\]' "$log")
     [ "$rows" -ge "$declared" ] || { unknown "rows=$rows<declared=$declared"; return; }
 
-    # 3. only then does the absence of failures mean anything. version-unpublished is the
-    #    one row that legitimately differs pre-bump (the version IS published).
-    fails=$(grep -E '^[[:space:]]*\[FAIL\]' "$log" | grep -vcE 'version-unpublished' || true)
+    # 3. only then does the absence of failures mean anything. A [FAIL] row is judged by its NAME
+    #    (the field after the status), never by a word anywhere on the line. Pre-bump reds:
+    #    - version-unpublished: the version on main's head IS published.
+    #    - declared:check_model_ladder, D5 (E1 #3998): ONLY with the CRUX scope on the row, the version
+    #      row red beside it (proof this is a pre-bump head), and the gate's own run red solely for
+    #      missing release-binary receipts. T-1 judges the same row on the release commit; the verdict
+    #      names it (deferred_to_T1=) so no reader takes this GO for a ladder pass.
+    #    - dogfood-gates: the roll-up of the declared rows, each judged on its own row above; it is
+    #      excused only when its RED count is at least 1 and equals the declared [FAIL] rows it
+    #      summarises: a roll-up that is red with 0 RED is red for a reason no row above names.
+    red=$(grep -E '^[[:space:]]*\[FAIL\]' "$log")
+    dn=$(grep -cE '^[[:space:]]*\[FAIL\] declared:' <<< "$red")
+    vrow=0
+    if grep -qE '^[[:space:]]*\[FAIL\] version-unpublished ' <<< "$red"; then vrow=1; fi
+    fails=0
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        read -r _ name _ <<< "$line"
+        case "$name" in
+            version-unpublished) continue ;;
+            declared:check_model_ladder)
+                if [[ "$line" == *' -- SCOPED: crux-smoke '* ]] && [ "$vrow" -eq 1 ] \
+                   && ladder_unmeasurable_pre_bump "$lad"; then
+                    deferred=check_model_ladder; continue
+                fi ;;
+            dogfood-gates)
+                [[ "$line" =~ discovered,\ ([0-9]+)\ RED ]] && [ "${BASH_REMATCH[1]}" -ge 1 ] && [ "${BASH_REMATCH[1]}" -eq "$dn" ] && continue ;;
+        esac
+        fails=$((fails + 1))
+    done <<< "$red"
     if [ "$fails" -eq 0 ]; then
-        printf 'GO %s dogfood_rc=%s rows=%s declared=%s fails_excluding_version_row=0\n' "$sha" "$rc" "$rows" "$declared"; return 0
+        printf 'GO %s dogfood_rc=%s rows=%s declared=%s fails_excluding_version_row=0%s\n' "$sha" "$rc" "$rows" "$declared" "${deferred:+ deferred_to_T1=$deferred}"; return 0
     fi
     printf 'NO-GO %s dogfood_rc=%s fails=%s\n' "$sha" "$rc" "$fails"; return 1
 }
@@ -113,6 +158,87 @@ if [ "${1:-}" = "--self-test" ]; then
     case "$v" in NO-GO*) ok "a genuine FAIL row -> NO-GO";; *) nok "wanted NO-GO, got '$v'";; esac
     [ "$rc" -eq 1 ] && ok "NO-GO returns 1" || nok "NO-GO returned $rc"
 
+    # D5 (E1 #3998): the pre-bump ladder row. On main's head the gate reads the released version's CRUX
+    # scope, bound to HEAD, and only T-1's models lane writes receipts for the release commit -- so its
+    # red is as certain before the bump as version-unpublished's. Fixtures copied from a REAL run of
+    # scripts/check_model_ladder.sh at origin/main ad8fafc794 and from the 0.70.2 T-2 log.
+    LROW='  [FAIL] declared:check_model_ladder scripts/check_model_ladder.sh exit=1 -- SCOPED: crux-smoke (a recorded scope, not the full gate) — RED   OPERATOR EMERGENCY SCOPE'
+    VROW='  [FAIL] version-unpublished        aprender 0.70.2 is ALREADY in the crates.io index — bump the version'
+    # mkred <file> <declared> <red-count> [row ...]: dogfood's shape when declared gates are red
+    mkred() {
+        local f=$1 n=$2 m=$3 i=1 r; shift 3
+        while [ "$i" -le "$n" ]; do printf '  [ OK ] declared:gate%s  scripts/check_gate%s.sh\n' "$i" "$i" >> "$f"; i=$((i + 1)); done
+        for r in "$@"; do printf '%s\n' "$r" >> "$f"; done
+        printf '  [FAIL] dogfood-gates              %s declared gate(s) discovered, %s RED (each named in its own row above)\n' "$((n + m))" "$m" >> "$f"
+        printf 'VERDICT: ❌ NO-GO — fix the ROOT CAUSE (Toyota way), never bypass. Re-run dogfood.\n' >> "$f"
+    }
+    { printf -- '--- model capability ladder receipts for 0.70.2 (evidence/dogfood/models/0.70.2) ---\n'
+      printf 'SCOPED: crux-smoke -- the emergency scope recorded for release 0.70.2 in contracts/model-capability-ladder-v1.yaml applies\n'
+      printf 'FAIL  host lambda has no CRUX receipt from the release binary -- the smoke gate needs every named host\n'
+      printf 'FAIL  host gx10 has no CRUX receipt from the release binary -- the smoke gate needs every named host\n'
+      printf 'RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied (see FAIL rows)\n'
+    } > "$d/lad.log"
+    dec() { local l=$1 g=$2; shift 2; decide abc "$l" 1 "$g"; }
+
+    # 7. THE DEFECT: only the version row and the pre-bump ladder row are red -> GO, and it says what it deferred
+    mkred "$d/d5.log" 8 1 "$LROW" "$VROW"
+    v=$(dec "$d/d5.log" "$d/lad.log"); rc=$?
+    [ "$v" = 'GO abc dogfood_rc=1 rows=11 declared=9 fails_excluding_version_row=0 deferred_to_T1=check_model_ladder' ] && [ "$rc" -eq 0 ] \
+        && ok "pre-bump ladder row + version row -> GO, deferred_to_T1 named" || nok "D5: wanted the exact deferred GO line, got '$v' rc=$rc"
+    # 8. a ladder red that is not the scoped one stays NO-GO
+    mkred "$d/c8.log" 8 1 '  [FAIL] declared:check_model_ladder scripts/check_model_ladder.sh exit=1 — capability_match FAIL' "$VROW"
+    v=$(dec "$d/c8.log" "$d/lad.log"); case "$v" in NO-GO*) ok "unscoped ladder red -> NO-GO";; *) nok "unscoped ladder red -> '$v'";; esac
+    # 9. the deferral is one row: any other declared red keeps NO-GO
+    mkred "$d/c9.log" 7 2 "$LROW" '  [FAIL] declared:check_perf041_marker scripts/check_perf041_marker.sh exit=1 — stale' "$VROW"
+    v=$(dec "$d/c9.log" "$d/lad.log"); case "$v" in NO-GO*) ok "scoped ladder + another declared red -> NO-GO";; *) nok "case 9 -> '$v'";; esac
+    # 10. SCOPED text in a row that is not the ladder gate is not deferred
+    mkred "$d/c10.log" 8 1 '  [FAIL] declared:check_ladder_provenance scripts/check_ladder_provenance.sh exit=1 -- SCOPED: crux-smoke (a recorded scope, not the full gate)' "$VROW"
+    v=$(dec "$d/c10.log" "$d/lad.log"); case "$v" in NO-GO*) ok "SCOPED on another row -> NO-GO";; *) nok "case 10 -> '$v'";; esac
+    # 11. the gate's own run shows a red that is not a missing receipt (a wrong-sha receipt) -> NO-GO
+    sed 's/^FAIL  host gx10 .*/FAIL  host gx10 receipt apr sha 1234 is not the cut abc/' "$d/lad.log" > "$d/lad11.log"
+    v=$(dec "$d/d5.log" "$d/lad11.log"); case "$v" in NO-GO*) ok "a CRUX red other than no-receipt -> NO-GO";; *) nok "case 11 -> '$v'";; esac
+    # 12. no version-unpublished red = not provably pre-bump -> NO-GO
+    mkred "$d/c12.log" 8 1 "$LROW" '  [ OK ] version-unpublished        0.70.3 absent'
+    v=$(dec "$d/c12.log" "$d/lad.log"); case "$v" in NO-GO*) ok "scoped ladder red with the version unpublished -> NO-GO";; *) nok "case 12 -> '$v'";; esac
+    # 13. the gate's own run is missing, or has no FAIL row at all -> NO-GO
+    v=$(dec "$d/d5.log" "$d/nosuch.log"); case "$v" in NO-GO*) ok "no ladder re-run log -> NO-GO";; *) nok "case 13a -> '$v'";; esac
+    grep -v '^FAIL' "$d/lad.log" > "$d/lad13.log"
+    v=$(dec "$d/d5.log" "$d/lad13.log"); case "$v" in NO-GO*) ok "ladder re-run with zero FAIL rows -> NO-GO";; *) nok "case 13b -> '$v'";; esac
+    # 13c. the re-run printed a second RED (a policy that could not be applied) -> NO-GO
+    { cat "$d/lad.log"; printf 'RED   the standing release policy cannot be applied to 0.70.2 -- nothing was judged\n'; } > "$d/lad13c.log"
+    v=$(dec "$d/d5.log" "$d/lad13c.log"); case "$v" in NO-GO*) ok "ladder re-run with a second RED -> NO-GO";; *) nok "case 13c -> '$v'";; esac
+    # 13d. the re-run did not judge the CRUX scope (no SCOPED line) -> NO-GO
+    grep -v '^SCOPED' "$d/lad.log" > "$d/lad13d.log"
+    v=$(dec "$d/d5.log" "$d/lad13d.log"); case "$v" in NO-GO*) ok "ladder re-run without the SCOPED line -> NO-GO";; *) nok "case 13d -> '$v'";; esac
+    # 13e. the re-run's one RED is not the CRUX scope's verdict -> NO-GO
+    sed 's/^RED .*/RED   the recorded emergency scope for 0.70.2 is unusable/' "$d/lad.log" > "$d/lad13e.log"
+    v=$(dec "$d/d5.log" "$d/lad13e.log"); case "$v" in NO-GO*) ok "ladder re-run whose RED is another reason -> NO-GO";; *) nok "case 13e -> '$v'";; esac
+    # 14. the roll-up's RED count must equal the declared red rows it summarises
+    mkred "$d/c14.log" 8 2 "$LROW" "$VROW"
+    v=$(dec "$d/c14.log" "$d/lad.log"); case "$v" in NO-GO*) ok "roll-up 2 RED over 1 declared red row -> NO-GO";; *) nok "case 14 -> '$v'";; esac
+    # 15. a second ladder row that is red and unscoped -> NO-GO
+    mkred "$d/c15.log" 7 2 "$LROW" '  [FAIL] declared:check_model_ladder scripts/check_model_ladder.sh exit=1 — capability_match FAIL' "$VROW"
+    v=$(dec "$d/c15.log" "$d/lad.log"); case "$v" in NO-GO*) ok "scoped + unscoped ladder rows -> NO-GO";; *) nok "case 15 -> '$v'";; esac
+    # 16. version-unpublished inside another row's note is not that row
+    mklog "$d/c16.log" 8 '  [FAIL] fmt                        see version-unpublished'
+    v=$(decide abc "$d/c16.log" 1); case "$v" in NO-GO*) ok "'version-unpublished' in a note does not excuse the row -> NO-GO";; *) nok "case 16 -> '$v'";; esac
+    # 17. a roll-up red with 0 RED summarises no declared row: it is red for its own reason -> NO-GO
+    mkred "$d/c17.log" 8 0
+    v=$(decide abc "$d/c17.log" 1); case "$v" in NO-GO*) ok "roll-up [FAIL] with 0 RED -> NO-GO";; *) nok "case 17 -> '$v'";; esac
+    # 18. a host row without the release-binary clause is not the pre-bump reason -> NO-GO
+    sed 's/^FAIL  host gx10 .*/FAIL  host gx10 has no CRUX receipt/' "$d/lad.log" > "$d/lad18.log"
+    v=$(dec "$d/d5.log" "$d/lad18.log"); case "$v" in NO-GO*) ok "a host row without 'from the release binary --' -> NO-GO";; *) nok "case 18 -> '$v'";; esac
+    # 19. the re-run judged another scope, one whose name only starts with crux-smoke -> NO-GO
+    sed 's/^SCOPED: crux-smoke /SCOPED: crux-smoke-v2 /' "$d/lad.log" > "$d/lad19.log"
+    v=$(dec "$d/d5.log" "$d/lad19.log"); case "$v" in NO-GO*) ok "ladder re-run SCOPED to crux-smoke-v2 -> NO-GO";; *) nok "case 19 -> '$v'";; esac
+    # 20. one stray FAIL row, then more host rows than a pipe holds. `! a | grep -q` read grep -q's early
+    #     exit, the writer's SIGPIPE (141) under pipefail, as "no stray row" -> GO. It must be NO-GO.
+    { sed -n '1,2p' "$d/lad.log"
+      printf 'FAIL  CRUX receipt gx10.json is from apr sha %s, not the release binary abc\n' "'1234'"
+      yes 'FAIL  host lambda has no CRUX receipt from the release binary -- the smoke gate needs every named host' | head -n 20000
+      grep '^RED ' "$d/lad.log"; } > "$d/lad20.log"
+    v=$(dec "$d/d5.log" "$d/lad20.log"); case "$v" in NO-GO*) ok "a stray FAIL row ahead of 20000 host rows -> NO-GO";; *) nok "case 20 (SIGPIPE) -> '$v'";; esac
+
     [ "$bad" -eq 0 ] && { echo "self-test OK"; exit 0; }
     echo "self-test FAILED: $bad case(s)"; exit 1
 fi
@@ -127,7 +253,10 @@ git worktree add --detach "$wt" "$sha" > /dev/null 2>&1 || exit 2
 cd "$wt" || exit 2
 export CARGO_TARGET_DIR="$REPO_ROOT/target"
 bash scripts/dogfood.sh --phase pre-publish > "$AP/preflight-$sha.log" 2>&1; rc=$?
+# D5: the model-ladder gate's own output, from the same worktree and HEAD. dogfood's row keeps only 96
+# characters of it, too few to tell a missing receipt from a wrong one; decide() reads every line.
+bash scripts/check_model_ladder.sh > "$AP/preflight-$sha.ladder.log" 2>&1
 # The verdict is decided by decide() above -- the same function the --self-test case table
 # exercises, so the fixtures judge the code this path actually runs.
-decide "$sha" "$AP/preflight-$sha.log" "$rc" > "$AP/preflight-$sha.verdict"
+decide "$sha" "$AP/preflight-$sha.log" "$rc" "$AP/preflight-$sha.ladder.log" > "$AP/preflight-$sha.verdict"
 cat "$AP/preflight-$sha.verdict"; grep -E '^\s*\[FAIL\]' "$AP/preflight-$sha.log" | cut -c1-160
