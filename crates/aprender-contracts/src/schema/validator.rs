@@ -152,11 +152,15 @@ fn explain_kind_default(caused: &mut [Violation]) {
 /// `linfa` (10), the two Rust-native ML frameworks. Neither is substring-matched
 /// by `BEAT_INCUMBENTS`, so neither could be named by reusing that list.
 ///
+/// Extended 2026-10-09 (aprender#3598): category R adds `jena` (4 stories), the
+/// first source that is a second implementation of a format pv already speaks
+/// (SHACL) rather than a model or training framework.
+///
 /// So this registry is the corpus vocabulary, exactly. Every member is
 /// exercised by at least one contract in `contracts/`; adding a competitor is a
 /// deliberate one-line edit here plus a test, which is the point — an open
 /// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
-pub(crate) const CRUX_COMPETITORS: [&str; 15] = [
+pub(crate) const CRUX_COMPETITORS: [&str; 16] = [
     "apr-qa-playbook",
     // AutoGluon (autogluon/autogluon) — the AutoML library, 1.6.3 at admission
     // (../autogluon @ 77946149). Added 2026-09-16 with 24 category-O stories
@@ -179,6 +183,16 @@ pub(crate) const CRUX_COMPETITORS: [&str; 15] = [
     "ecosystem",
     "hf-kernels-community",
     "huggingface",
+    // Apache Jena (apache/jena) — the Java RDF toolkit, 5.6.0 at admission
+    // (apache-jena-5.6.0.zip, sha256 pinned in tests/oracle/jena/src/jena.rs). Added
+    // 2026-10-09 with 4 category-R stories, one per verb pv shares with it on
+    // SHACL ontologies: read Turtle/N-Triples (`riot`), write a graph the other
+    // engine reads back (`riot --output`), validate SHACL Core (`shacl
+    // validate`), and report a W3C sh:ValidationReport. NOT a BEAT pillar and
+    // not a model framework: Jena is the second engine the detached oracle
+    // under tests/oracle/jena/ compares pv against, on demand and at night,
+    // never on a PR (R-13: no JVM reachable from pv). Epic aprender#3598.
+    "jena",
     // linfa (rust-ml/linfa) — the Rust classical-ML toolkit, 0.8.1 / 18
     // algorithm sub-crates at admission. Added 2026-09-12 with 10 category-N
     // stories: linfa-nn (spatial index), linfa-pls, linfa-lars, linfa-kernel,

@@ -2,8 +2,8 @@
 
 **Subspec ID**: `CRUX-001`
 **Status**: DRAFT
-**Version**: 2.3 (2026-09-16 — Category O [AutoGluon AutoML parity, 24 stories] added, epic aprender#3370; Category N [linfa + burn, 17 stories, aprender#3146, 2026-09-12] exists in the master contract and is recorded here in §3 for the first time; story total in the master registry 267 → 291)
-**Date**: 2026-09-16
+**Version**: 2.4 (2026-10-09 — Category R [SHACL ontologies vs Apache Jena, 4 stories] registered, epic aprender#3598, §14; story total in the master registry 291 → 295). 2.3 (2026-09-16 — Category O [AutoGluon AutoML parity, 24 stories] added, epic aprender#3370; Category N [linfa + burn, 17 stories, aprender#3146, 2026-09-12] exists in the master contract and is recorded here in §3 for the first time; story total in the master registry 267 → 291)
+**Date**: 2026-10-09
 **Author**: PAIML Engineering
 **Parent**: [aprender-spec.md](aprender-spec.md), [aprender-monorepo-consolidation.md](aprender-monorepo-consolidation.md)
 **Master contract**: [`contracts/crux-competitive-research-ux-v1.yaml`](../../contracts/crux-competitive-research-ux-v1.yaml)
@@ -95,8 +95,9 @@ larger workflow surface area (HF Transformers covers training + data + hub).
 | 9 | **APR-QA Playbook** | `apr qa --gate=<N>` / `apr-model-qa-playbook` | 10 | Popperian falsification framework for model qualification (v2.2) |
 | 10 | **linfa + Burn** | `linfa::traits::Fit` / `burn::module::Module` | 17 | Rust-native ML frameworks; substrates (SVD, spatial index, rank-typed tensor) + breadth (Category N, 2026-09-12, aprender#3146) |
 | 11 | **AutoGluon** | `TabularPredictor(label).fit()` / `TimeSeriesPredictor.fit()` | 24 | AutoML: one-call tabular fit, presets, leaderboard, bagging/stacking/weighted ensemble, panel forecasting with quantiles (Category O, v2.3, aprender#3370) |
+| 12 | **Apache Jena** | `riot` / `shacl validate` | 4 | a second engine for a format pv already speaks: read, write back, validate and report SHACL ontologies, one story per cell of §14.2 (Category R, v2.4, aprender#3598) |
 
-Total = 275 stories in this document's §5 as of v2.2; the master registry carries 291 (Categories L and M are contract-only, see §6 note). See §5 for the full registry.
+Total = 275 stories in this document's §5 as of v2.2; the master registry carries 295 (Categories L and M are contract-only, see §6 note). See §5 for the full registry.
 (Counts derived from `yq '[.stories[] | .competitor] | ...'` on master contract; drift between
 this table and the YAML is falsified by FALSIFY-CRUX-010.)
 
@@ -534,7 +535,18 @@ always `contracts/crux-{ID}-v1.yaml` unless noted.
 | CRUX-O-23 | Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Croston | `hyperparameters={"SeasonalNaive": {}, "AutoETS": {}, "Theta": {}, "AutoARIMA": {}, "Croston": {}}` | 🔨 | 4 |
 | CRUX-O-24 | Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by apr pull, with optional fine-tuning | `hyperparameters={"Chronos2": {"fine_tune": True}}` | ❌ | 4 |
 
-**Total: 275 stories in §5 (v2.2) + 24 in Category O = 299 documented rows; the master registry holds 291** (Categories L and M have contracts but no registry rows — pre-existing drift recorded on aprender#3146) across 15 categories; 5 ID gaps (`C-14`, `F-10`, `H-04`, `I-05`, `K-06`) intentional and documented.
+### Category R — SHACL ontologies vs Apache Jena (4 stories)
+
+> Added v2.4 (2026-10-09). Competitor: [Apache Jena](https://jena.apache.org/) 5.6.0, the Java RDF toolkit, pinned by sha256 in `tests/oracle/jena/src/jena.rs`. One story per cell of §14.2; §14 is the design. The stories are measured by the harness `contracts/crux-shacl-jena-v1.yaml` (`tests/oracle/jena/`), on demand and at night, never on a PR: no JVM is reachable from pv (R-13). Each status comes from the harness's first run, `tests/oracle/jena/receipt.json`. Epic aprender#3598. Not a BEAT pillar. Demand scores rate each verb's traffic inside pv, because no issue-volume count exists for Jena.
+
+| ID | Story | Competitor verb | S | D |
+|----|-------|----------------|---|---|
+| CRUX-R-01 | Read Turtle and N-Triples ontologies, blank nodes included; a malformed file is refused at the same line | `riot --output=nt X.ttl` | ❌ | 3 |
+| CRUX-R-02 | Write a graph Jena reads back to the same graph (riot reads pv's `contracts.nt` and `shapes.ttl` clean; the round trip waits on R-01) | `riot --output=<syntax> X` | 🔨 | 3 |
+| CRUX-R-03 | Validate SHACL Core to the same verdict as Jena, with W3C's expected report deciding on the W3C suite (corpus RED: the `sh:closed` defect #4837) | `shacl validate --shapes S.ttl --data D.ttl` | 🔨 | 4 |
+| CRUX-R-04 | Report SHACL results as a W3C `sh:ValidationReport` with the full tuple (focus, path, value, source shape, component, severity) and a message | `shacl validate` (the report it prints) | ❌ | 4 |
+
+**Total: 275 stories in §5 (v2.2) + 24 in Category O + 4 in Category R = 303 documented rows; the master registry holds 295** (Categories L and M have contracts but no registry rows — pre-existing drift recorded on aprender#3146) across 16 categories; 5 ID gaps (`C-14`, `F-10`, `H-04`, `I-05`, `K-06`) intentional and documented.
 
 ---
 
@@ -551,6 +563,8 @@ Counts verified from §5 table (via `awk` emoji extraction). Δ columns show v2.
 | **total**    | **275** | +25 | 100 % | |
 
 > **v2.3 note (2026-09-16):** the master contract's `coverage_intake` is now asserted from `stories[]` by the aprender-contracts test-suite and reads supported 43 / partial 77 / missing 171 / total 291 after Category O (+5 partial, +19 missing). This table is the v2.2 intake and is left as history; the YAML is the source of truth.
+
+> **v2.4 note (2026-10-09):** after Category R (+2 partial, +2 missing) the master contract's `coverage_intake` reads supported 43 / partial 79 / missing 173 / total 295, recounted from `stories[]` by status. No test asserts it: a search of `crates/`, `scripts/` and the `Makefile` on 2026-10-09 found no reader of `coverage_intake`, so the v2.3 note's claim that the test-suite asserts it does not hold today, and the count is kept by hand.
 
 Demand-weighted view — **high-demand (D≥4)** stories still ❌ missing are
 the fast path to adoption parity and become the first `pmat work` items
@@ -1141,16 +1155,15 @@ $ apr qa model.apr --golden-output
 
 ---
 
-## 14. Category R — SHACL ontologies vs Apache Jena (PROPOSED for 0.71, not registered)
+## 14. Category R — SHACL ontologies vs Apache Jena (registered v2.4)
 
-> **Status: PROPOSED, branch-only.** This is the Definition-of-Ready spec for 0.71
-> DoR row 8, CRUX-SHACL (epic #3598). It registers no story. §5, §6 and the
-> master contract are untouched, and no row here starts with `| CRUX-`. Sub-ticket
-> S1 (§14.6) registers the stories and moves this section and the master contract
-> together in one commit, per §12.7. Until then the subspec stays at version 2.3.
-> - Contract draft: `docs/lookahead/contracts-draft/crux-shacl-jena-v1.yaml`
-> - Measured initial state: `docs/lookahead/0.71-crux-shacl-baseline.md`
-> - All citations are at `origin/main` `316dee2cd4`.
+> **Status: registered 2026-10-09 (v2.4).** CRUX-SHACL, epic #3598. Sub-ticket
+> S1 (§14.6) registered the four stories CRUX-R-01..04 in §5 and in the master
+> contract in one commit, per §12.7, and admitted `jena` to `CRUX_COMPETITORS`.
+> - Story contracts: `contracts/crux-R-01-v1.yaml` .. `contracts/crux-R-04-v1.yaml`, one per cell of §14.2
+> - Harness contract: `contracts/crux-shacl-jena-v1.yaml`; harness `tests/oracle/jena/` (S2)
+> - Measured state: `docs/lookahead/0.71-crux-shacl-baseline.md`, and §14.7
+> - Citations in §14.1–§14.6 are at `origin/main` `316dee2cd4` unless a line says otherwise.
 
 **The defect (raised 2026-10-04).** No test runs pv against a second SHACL
 engine to check that both:
@@ -1223,7 +1236,9 @@ Exit codes follow the ELK oracle (`tests/oracle/owl/src/main.rs`): 0 GREEN,
   - Jena cannot be fetched;
   - a pin's sha256 differs;
   - the subject is empty or partial, meaning fewer cases ran than the manifests
-    list.
+    list;
+  - a cell whose pv side needs S3 or S4 (§14.6) before it can be measured. So
+    until both land, a run with every Jena-side check green exits 2, never 0.
 - **Without a JVM, the harness can prove RED but never GREEN.** pv against
   W3C's expected reports needs no JVM. Without a JVM the exit is 1 if such a RED
   exists, else 2.
@@ -1235,15 +1250,12 @@ Exit codes follow the ELK oracle (`tests/oracle/owl/src/main.rs`): 0 GREEN,
 - **Mode: never a PR check.** R-13 (ONT-001, paiml/infra
   `docs/specifications/paiml-ontology.md`) allows no JVM reachable from `pv`.
   It admits a third-party RDF engine only as a pinned out-of-gate oracle in
-  `tests/oracle/`, outside the workspace, run in the release gate only. The
-  harness is therefore its own detached crate there, like the OWL oracle, and
-  runs at the release gate and on demand.
-- **What needs a ruling:**
-  - Making it blocking. It would be adopted as a ratchet: a measured baseline,
-    regression-only, with a measured runtime budget.
-  - Treating NOT MEASURED at the release gate as RED. The OWL oracle already
-    does this: no JVM exits 2, "RED at the release gate and never a skip"
-    (`Makefile`, `oracle-owl`). This section PROPOSES the same rule here.
+  `tests/oracle/`, outside the workspace. The harness is therefore its own
+  detached crate there, like the OWL oracle.
+- **It cannot block a merge or a release.** It runs on demand and at night,
+  never in a PR, merge-queue or release job. A RED opens or updates one ticket
+  with one owner. NOT MEASURED stays NOT MEASURED; it is never read as a pass.
+  Making it blocking is a separate decision this section does not propose.
 
 ### 14.5 Planted controls
 
@@ -1265,8 +1277,8 @@ of reports (under test, Jena, W3C) per rule.
 
 | Sub-ticket | Delivers | Cells it can turn GREEN |
 |---|---|---|
-| S1 | `jena` in `CRUX_COMPETITORS`, with its admission comment. Category R stories, one per cell, and one contract per cell. This section and the master contract move together | none (registration) |
-| S2 | The Jena distribution pinned by sha256, as the OWL oracle pins ELK 0.4.3. The detached harness under `tests/oracle/`, its exit codes and its planted controls. The JVM and Jena declared in the hosts' configuration (paiml/infra, cross-repo) | none alone; its controls prove the comparators |
+| S1 | `jena` in `CRUX_COMPETITORS`, with its admission comment. Category R stories, one per cell, and one contract per cell. This section and the master contract move together. **Done 2026-10-09** (v2.4): CRUX-R-01..04 | none (registration) |
+| S2 | The Jena distribution pinned by sha256, as the OWL oracle pins ELK 0.4.3. The detached harness under `tests/oracle/`, its exit codes and its planted controls. The JVM and Jena declared in the hosts' configuration (paiml/infra, cross-repo) | none alone; its controls prove the comparators. **Harness done 2026-10-09** (`tests/oracle/jena/`, `make oracle-jena`, self-test 26/26); the hosts' configuration in paiml/infra is not done |
 | S3 | pv reads Turtle and N-Triples, blank nodes included. The reader is in house, because R-13 bars a third-party RDF crate from `aprender-contracts`' tree, dev-dependencies included. Open design question: R-15 bars blank nodes from the graph pv extracts and hashes, so the reader must hold input blank nodes outside that graph, or S3 asks for a ruling | R-INPUT, R-RETURN |
 | S4 | pv emits a W3C `sh:ValidationReport`, as Turtle and as JSON, with every field of §14.2 | R-FEEDBACK; R-VALIDATE on S-W3C, where refused cases are named |
 | S5 | The rudof oracle reads S4's report and compares the full tuple. `tests/oracle/differential.json` is regenerated with every vendored case. The oracle runs on a schedule | none; it hardens the second oracle |
@@ -1294,3 +1306,32 @@ it, which is what R-VALIDATE tests against Jena.
     dates from 2026-09-19.
 - **The oracle compares (focus, component) only.** Changing the severity, the
   message text or the shape id in pv's report leaves its verdict unchanged.
+
+### 14.8 First Jena run (measured 2026-10-09 on branch commit `62b1cebe99`; receipt `tests/oracle/jena/receipt.json`)
+
+Jena 5.6.0 (archive sha256 pinned), OpenJDK 17.0.20.1. The self-test saw 26 of
+26 controls; FALSIFY-CRUXSHACL-027 is S5's. The run exits 1. The receipt is
+from a branch commit, not from `main`.
+
+| Cell | Case | Verdict |
+|---|---|---|
+| R-INPUT | `contracts.nt` + `shapes.ttl` | NOT MEASURED (S3). `riot` reads 32,701 + 4,166 triples |
+| R-RETURN | `contracts.nt` | GREEN: `riot`'s parse is isomorphic to the harness's own N-Triples parse, 32,701 triples |
+| R-RETURN | `shapes.ttl` | GREEN: 4,166 triples, no WARN |
+| R-RETURN | round trip | NOT MEASURED (S3) |
+| R-VALIDATE | S-CORPUS | **RED**: Jena 743 results, pv 730. All 13 extra are `sh:closed` results on rdf:type values, on 12 focus nodes: the defect of the §14.6 precondition, tracked as #4837 |
+| R-VALIDATE | S-W3C | NOT MEASURED (S4). Jena ran all 35 cases with no `jena≠w3c` line |
+| R-FEEDBACK | S-W3C + S-CORPUS | NOT MEASURED (S4) |
+| S-SHSH | `shapes.ttl` | GREEN: conforms to SHACL-SHACL |
+
+What the run taught the harness, each now handled in code:
+- Jena 5.6.0 writes its log lines to stdout, mixed with graph output, so the
+  harness separates them before reading either.
+- `riot` exits 1 on a WARN alone, so the harness reads its log, not only its exit code.
+- Jena writes a blank-node source shape as `sh:sourceShape []` with no triples,
+  so the harness keys it from the shapes graph (§14.2).
+- S-W3C is the 35 W3C core cases already vendored under `tests/oracle/w3c/`
+  (pinned by `tests/oracle/jena/w3c.sha256`), not yet every case in the `core/`
+  manifests as §14.3 asks.
+- The graph comparison is the harness's own (`tests/oracle/jena/src/nt.rs`:
+  colour refinement, then individualisation), not Jena's `rdfcompare`.

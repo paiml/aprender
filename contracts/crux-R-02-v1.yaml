@@ -1,0 +1,97 @@
+# CRUX-R-02 — Write a graph Jena reads back to the same graph (cell R-RETURN)
+# CRUX category R: SHACL ontologies vs Apache Jena. Epic aprender#3598.
+# Spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.
+# Harness: contracts/crux-shacl-jena-v1.yaml (tests/oracle/jena/), on demand and
+# at night, never on a PR. This contract states the cell; the harness measures it.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption.
+
+metadata:
+  id: CRUX-R-02
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-10-09"
+  updated: "2026-10-09"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-shacl-jena-v1
+  category: "R — SHACL ontologies vs Apache Jena"
+  competitor: jena
+  demand_score: 3  # 1..5; basis below
+  intake_status: partial
+  github_issue: 3598
+  description: >
+    What pv writes, Jena reads back to the same graph. Partial: pv writes
+    N-Triples (`to_ntriples`, ontology/rdf.rs) and Turtle shapes (`to_turtle`,
+    ontology/shapes.rs), and on 2026-10-09 Jena's `riot` read both files pv ships
+    with no error and no warning. The round trip Jena(X) ≅ Jena(pv_write(pv_read(X)))
+    needs pv to read RDF first (CRUX-R-01). Demand 3 (documented power-user
+    feature): no issue-volume count exists for Jena, so the score rates the verb
+    inside pv, where another engine reading pv's files is the interop path, not
+    the everyday one.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category R)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.2 (R-RETURN), §14.6 (S3)'
+  - 'harness: contracts/crux-shacl-jena-v1.yaml, tests/oracle/jena/ (receipt.json)'
+  - 'epic: https://github.com/paiml/aprender/issues/3598'
+  - 'competitor: https://jena.apache.org/documentation/io/ (riot --output)'
+
+equations:
+  shipped_files_read_clean:
+    formula: |
+      riot(contracts/contracts.nt) ≅ ntparse(contracts/contracts.nt)  ∧  riot(contracts/shapes.ttl) has no ERROR and no WARN
+    domain: "the two graph files pv writes and the release ships"
+    codomain: "isomorphism and riot's log"
+    invariants:
+    - "Jena 5.6.0 writes its log lines to stdout and riot exits 1 on a WARN alone; the harness separates log lines from graph lines before reading either"
+  round_trip:
+    formula: |
+      ∀ X:  Jena(X)  ≅  Jena(pv_write(pv_read(X)))
+    domain: "S-CORPUS and the R-RETURN control file"
+    codomain: "graph isomorphism"
+    invariants:
+    - "the two sides are never the same file (FALSIFY-CRUXSHACL-007)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-R-02-001
+  rule: "riot reads pv's contracts.nt as the same graph"
+  prediction: "riot parses contracts/contracts.nt with no error, and its output is isomorphic to the harness's own N-Triples parse of the file"
+  test: >-
+    jena-oracle (tests/oracle/jena/), cell R-RETURN case contracts.nt, comparator riot-vs-ntparse. GREEN 2026-10-09 at branch commit 62b1cebe99: 32701 triples (tests/oracle/jena/receipt.json).
+  if_fails: "rule 'riot reads pv's contracts.nt as the same graph' is violated — pv writes N-Triples another engine misreads or refuses"
+- id: FALSIFY-CRUX-R-02-002
+  rule: "riot reads pv's shapes.ttl with no error and no warning"
+  prediction: "riot parses contracts/shapes.ttl and logs no ERROR and no WARN"
+  test: >-
+    jena-oracle (tests/oracle/jena/), cell R-RETURN case shapes.ttl, comparator riot. GREEN 2026-10-09 at branch commit 62b1cebe99: 4166 triples, no WARN (tests/oracle/jena/receipt.json).
+  if_fails: "rule 'riot reads pv's shapes.ttl with no error and no warning' is violated — pv's Turtle writer emits syntax Jena refuses or warns on"
+- id: FALSIFY-CRUX-R-02-003
+  rule: "the round trip through pv preserves the graph"
+  prediction: "for each X, Jena's parse of X and Jena's parse of pv_write(pv_read(X)), written in the same run, are isomorphic"
+  test: >-
+    LIVE-PENDING - the harness case roundtrip is NOT MEASURED until pv reads RDF (aprender#3598 S3). The comparator is proven by FALSIFY-CRUXSHACL-005..007. The obligation is RECORDED, NOT satisfied.
+  if_fails: "rule 'the round trip through pv preserves the graph' is violated — pv loses or changes a triple between reading and writing"
+
+proof_obligations:
+- id: CR02-INV-001
+  type: invariant
+  property: "riot reads pv's contracts.nt as the same graph"
+- id: CR02-INV-002
+  type: invariant
+  property: "riot reads pv's shapes.ttl with no error and no warning"
+- id: CR02-INV-003
+  type: invariant
+  property: "the round trip through pv preserves the graph"
+
+qa_gate:
+  id: F-CRUX-R-02-QA-001
+  name: R-RETURN agrees with Jena or says it was not measured
+  description: "The harness reports each R-RETURN case GREEN only on isomorphic graphs read from files written in the same run; the round trip stays NOT MEASURED until S3, never GREEN."
+  checks:
+  - shipped_files_read_clean
+  - round_trip_isomorphic
+  pass_criteria: "jena-oracle receipt: cell R-RETURN GREEN on contracts.nt, shapes.ttl and roundtrip"
+  falsification: "Drop one triple from the written file before Jena reads it (FALSIFY-CRUXSHACL-006): the cell must turn RED"

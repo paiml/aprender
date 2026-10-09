@@ -1,4 +1,4 @@
-//! CRUX category R against Apache Jena 5.6.0 (contract draft `docs/lookahead/contracts-draft/crux-shacl-jena-v1.yaml`,
+//! CRUX category R against Apache Jena 5.6.0 (contract `contracts/crux-shacl-jena-v1.yaml`,
 //! spec §14). Out of every gate: `make oracle-jena` runs it on demand; no PR, merge-queue or release job does.
 //!
 //! - `jena-oracle --self-test` runs the planted controls, one per FALSIFY-CRUXSHACL row this harness implements, and

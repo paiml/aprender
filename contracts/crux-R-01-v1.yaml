@@ -1,0 +1,89 @@
+# CRUX-R-01 — Read Turtle and N-Triples ontologies as Jena's riot does (cell R-INPUT)
+# CRUX category R: SHACL ontologies vs Apache Jena. Epic aprender#3598.
+# Spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.
+# Harness: contracts/crux-shacl-jena-v1.yaml (tests/oracle/jena/), on demand and
+# at night, never on a PR. This contract states the cell; the harness measures it.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption.
+
+metadata:
+  id: CRUX-R-01
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-10-09"
+  updated: "2026-10-09"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-shacl-jena-v1
+  category: "R — SHACL ontologies vs Apache Jena"
+  competitor: jena
+  demand_score: 3  # 1..5; basis below
+  intake_status: missing
+  github_issue: 3598
+  description: >
+    pv reads an ontology written as Turtle or N-Triples, blank nodes included, and
+    its N-Triples dump of that ontology is isomorphic to the one Jena's `riot`
+    writes. On a malformed file both engines refuse it and name the same line.
+    Missing: pv reads no RDF file at all. Its shapes come only from YAML `shape:`
+    blocks (crates/aprender-contracts/src/ontology/shapes.rs), and the gate path
+    has no Turtle reader (ontology/w3c.rs). Demand 3 (documented power-user
+    feature): no issue-volume count exists for Jena, so the score rates the verb
+    inside pv, where reading an ontology someone else wrote is a power-user path,
+    below validating and reporting.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category R)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.2 (R-INPUT), §14.6 (S3)'
+  - 'harness: contracts/crux-shacl-jena-v1.yaml, tests/oracle/jena/'
+  - 'epic: https://github.com/paiml/aprender/issues/3598'
+  - 'competitor: https://jena.apache.org/documentation/io/ (riot)'
+
+equations:
+  input_is_isomorphic:
+    formula: |
+      ∀ X ∈ S-CORPUS ∪ inputs(S-W3C):  dump_nt(pv_read(X))  ≅  riot(X)
+    domain: "Turtle and N-Triples files, pinned by sha256 in the receipt"
+    codomain: "graph isomorphism (blank nodes by bijection, literals by lexical form)"
+    invariants:
+    - "the comparator is the harness's, proven by planted controls FALSIFY-CRUXSHACL-001..003"
+  malformed_input_same_line:
+    formula: |
+      X malformed  ⇒  pv_read(X) = Err(line_pv)  ∧  riot(X) = Err(line_riot)  ∧  line_pv = line_riot
+    domain: "files with one syntax error"
+    codomain: "1-based line numbers"
+    invariants:
+    - "pv accepting a file riot refuses is RED, not a pass"
+
+falsification_tests:
+- id: FALSIFY-CRUX-R-01-001
+  rule: "pv's dump of an ontology is isomorphic to riot's"
+  prediction: "for contracts/contracts.nt and contracts/shapes.ttl, the harness finds pv's N-Triples dump and riot's isomorphic"
+  test: >-
+    LIVE-PENDING - the harness cell R-INPUT (jena-oracle, tests/oracle/jena/src/main.rs) is NOT MEASURED until pv reads Turtle and N-Triples (aprender#3598 sub-ticket S3). Measured 2026-10-09: riot reads the two files (32701 + 4166 triples); pv has no reader to compare. The comparator itself is proven by FALSIFY-CRUXSHACL-001..003. The obligation is RECORDED, NOT satisfied.
+  if_fails: "rule 'pv's dump of an ontology is isomorphic to riot's' is violated — pv and Jena read the same file as different graphs, and the jena parity claim for CRUX-R-01 is FALSE"
+- id: FALSIFY-CRUX-R-01-002
+  rule: "a malformed file is refused by both, at the same line"
+  prediction: "tests/oracle/jena/controls/syntax-error-line-7.ttl: riot refuses it naming line 7, and pv refuses it naming line 7"
+  test: >-
+    LIVE-PENDING - the riot side is measured by the harness control input/syntax-error-line-7 (FALSIFY-CRUXSHACL-004, seen 2026-10-09). The pv side is NOT MEASURED until S3. The obligation is RECORDED, NOT satisfied.
+  if_fails: "rule 'a malformed file is refused by both, at the same line' is violated — pv recovers from a syntax error silently or counts lines differently from riot"
+
+proof_obligations:
+- id: CR01-INV-001
+  type: invariant
+  property: "pv's dump of an ontology is isomorphic to riot's"
+- id: CR01-INV-002
+  type: invariant
+  property: "a malformed file is refused by both, at the same line"
+
+qa_gate:
+  id: F-CRUX-R-01-QA-001
+  name: R-INPUT agrees with Jena or says it was not measured
+  description: "The harness reports R-INPUT GREEN only when pv's dump and riot's are isomorphic on every subject file and the line-7 control agrees; before S3 it reports NOT MEASURED, never GREEN."
+  checks:
+  - input_isomorphic_on_s_corpus
+  - malformed_input_same_line
+  pass_criteria: "jena-oracle receipt: cell R-INPUT GREEN on contracts.nt and shapes.ttl"
+  falsification: "Drop one triple from pv's dump (FALSIFY-CRUXSHACL-002) or rewrite one literal's lexical form (003): the cell must turn RED"

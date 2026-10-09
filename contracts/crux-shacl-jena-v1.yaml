@@ -1,0 +1,249 @@
+# CRUX category R harness: pv against Apache Jena on SHACL ontologies.
+# The four story contracts (crux-R-01..04-v1.yaml, one per cell) state each cell's claim; this
+# contract states the harness that measures them: its verdict, its comparators and its planted
+# controls. Runner: tests/oracle/jena/ (detached crate, `make oracle-jena`), on demand and at night,
+# never on a PR, a merge queue or a release job (R-13: no JVM reachable from pv). Exit codes follow
+# the OWL oracle: 0 GREEN, 1 RED, 2 NOT MEASURED. A host without a JVM is NOT MEASURED, never a pass.
+# registry: false: this contract carries real falsification gates and claims no exemption.
+metadata:
+  id: crux-shacl-jena-v1
+  kind: schema
+  version: "1.0.0"
+  created: "2026-10-04"
+  updated: "2026-10-09"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  description: >
+    CRUX category R: pv and Apache Jena read the same SHACL ontologies, write them
+    so each reads the other's output back to the same graph, validate them to the
+    same verdict, and report the same results with full W3C detail. The four cells
+    are R-INPUT, R-RETURN, R-VALIDATE and R-FEEDBACK (contracts crux-R-01..04).
+    Every comparator has planted controls, and a host without a JVM is NOT
+    MEASURED, never a pass.
+  references:
+  - 'docs/specifications/crux-competitive-research-ux-workflows.md §14 (category R, epic #3598)'
+  - 'docs/lookahead/0.71-crux-shacl-baseline.md (the initial state of 2026-10-04 and the first Jena run of 2026-10-09)'
+  - 'tests/oracle/jena/ (the harness: src/main.rs verdict and controls, src/nt.rs isomorphism, src/report.rs tuple comparison, src/jena.rs pins, w3c.sha256, controls/, receipt.json)'
+  - 'crates/aprender-contracts/src/ontology/shapes.rs (the SHACL Core subset, ValidationResult, check_closed)'
+  - 'crates/aprender-contracts/src/ontology/w3c.rs (the 19 vendored W3C cases and NOT_VENDORED)'
+  - 'tests/oracle/ (the rudof SHACL oracle) and tests/oracle/owl/ (the OWL oracle: exit codes, planted control, no-JVM decline)'
+  - 'paiml/infra docs/specifications/paiml-ontology.md R-13 (no JVM reachable from pv; oracles out of gate), R-15 (no blank nodes in the extracted graph)'
+  - 'W3C data-shapes test suite, data-shapes-test-suite/tests/core/'
+equations:
+  verdict:
+    formula: 'exit = 2 if ¬pins_ok ∨ ¬complete ∨ self_compare; else 1 if red_w3c; else 2 if ¬jvm; else 1 if red_jena ∨ control_unseen; else 2 if nm_cell; else 0'
+  feedback_tuple:
+    formula: 'key(r) = (focus, path, value, source_shape_key, component_iri, severity); source_shape_key = IRI(shape) if shape is an IRI, else (IRI(parent node shape), sh:path); R-FEEDBACK agrees ⇔ multiset(key, under_test) = multiset(key, reference) ∧ ∀r: message(r) ≠ "" ∧ (sh:message declared on shape(r) ⇒ it appears in message(r))'
+  graph_equality:
+    formula: 'A ≅ B ⇔ ∃ bijection φ on blank nodes: φ(A) = B, terms compared by lexical form, datatype and lower-cased language tag; decided by colour refinement then individualisation (tests/oracle/jena/src/nt.rs)'
+falsification_tests:
+  - id: FALSIFY-CRUXSHACL-001
+    rule: "R-INPUT control: relabelled blank nodes are the same graph"
+    fixture: tests/oracle/jena/controls/base.nt
+    expect: 0
+    prediction: "X and a copy of X with every blank-node label renamed compare as isomorphic, and the R-INPUT line for the pair is GREEN."
+    test: "jena-oracle --self-test, control input/bnode-relabel"
+    if_fails: "The comparator matches blank-node labels as strings, so every Turtle file with a blank node reads as a disagreement. contracts/shapes.ttl alone has 394."
+  - id: FALSIFY-CRUXSHACL-002
+    rule: "R-INPUT control: a dropped triple is RED"
+    fixture: tests/oracle/jena/controls/base.nt
+    expect: 1
+    prediction: "The side under test's dump, with one triple dropped before the comparison: exit 1, with one R-INPUT RED line that names the dropped triple."
+    test: "jena-oracle --self-test, control input/drop-one-triple"
+    if_fails: "The comparator checks triple counts or a hash of one side, or compares a dump with itself."
+  - id: FALSIFY-CRUXSHACL-003
+    rule: "R-INPUT control: a lexical change to a literal is RED"
+    fixture: tests/oracle/jena/controls/base.nt
+    expect: 1
+    prediction: "One side's dump has \"01\"^^xsd:integer rewritten to \"1\"^^xsd:integer: exit 1, naming the literal. RDF terms compare by lexical form, so value-equal literals are different terms."
+    test: "jena-oracle --self-test, control input/literal-lexical-form"
+    if_fails: "The comparator equates literals by value, so a writer that normalises literals passes unseen."
+  - id: FALSIFY-CRUXSHACL-004
+    rule: "R-INPUT: malformed input is rejected by both engines, at the same line"
+    fixture: tests/oracle/jena/controls/syntax-error-line-7.ttl
+    expect: 0
+    prediction: "A Turtle file with one error on line 7 (a space inside an IRI): riot rejects it and names line 7. Jena 5.6.0 writes that error to stdout, so the harness separates log lines from graph lines before it reads either. pv's side is NOT MEASURED until it reads Turtle (S3); then pv accepting the file, or naming another line, is RED."
+    test: "jena-oracle --self-test, control input/syntax-error-line-7"
+    if_fails: "pv's reader recovers from errors silently, or counts lines differently from riot (a leading BOM, CRLF, or a line count that starts at 0)."
+  - id: FALSIFY-CRUXSHACL-005
+    rule: "R-RETURN control: escapes, Unicode and language tags survive a write and a re-read"
+    fixture: tests/oracle/jena/controls/escapes-langtags.ttl
+    expect: 0
+    prediction: "X with string escapes, a numeric Unicode escape, a raw é and the language tags @fr and @en-GB: Jena's parse of X and Jena's parse of the written file are isomorphic."
+    test: "jena-oracle --self-test, control return/escapes-langtags"
+    if_fails: "The writer under test mis-escapes a string or drops a language tag, or the comparator compares serialised bytes instead of graphs."
+  - id: FALSIFY-CRUXSHACL-006
+    rule: "R-RETURN control: a written file missing a triple is RED"
+    fixture: tests/oracle/jena/controls/escapes-langtags.ttl
+    expect: 1
+    prediction: "The written file has one triple dropped before Jena reads it: exit 1, with one R-RETURN RED line that names the triple."
+    test: "jena-oracle --self-test, control return/drop-one-triple"
+    if_fails: "R-RETURN reads X twice and never reads the written file."
+  - id: FALSIFY-CRUXSHACL-007
+    rule: "R-RETURN: a comparison of a file with itself is refused"
+    fixture: "built by the self-test in its work directory (one file named twice, and a file older than the run)"
+    expect: 2
+    prediction: "Both sides of a comparison resolve to the same file (same path or same inode), or the written side was not created by this run: exit 2, naming the comparison. It is never GREEN."
+    test: "jena-oracle --self-test, control return/self-compare"
+    if_fails: "The harness compares a file with itself, and R-RETURN is GREEN whatever pv writes."
+  - id: FALSIFY-CRUXSHACL-008
+    rule: "R-VALIDATE control: W3C minCount-001 agrees"
+    fixture: tests/oracle/jena/controls/minCount-001.nt
+    expect: 0
+    prediction: "W3C core/property/minCount-001 (tests/oracle/w3c/property/minCount-001.ttl): Jena reports the same sh:conforms and the same result count as W3C's expected report, and controls/minCount-001.nt still holds that expected report."
+    test: "jena-oracle --self-test, control validate/minCount-001"
+    if_fails: "The harness misreads W3C's expected report, or counts results from the wrong graph."
+  - id: FALSIFY-CRUXSHACL-009
+    rule: "R-VALIDATE control: a changed constraint is RED"
+    fixture: tests/oracle/w3c/property/minCount-001.ttl
+    expect: 1
+    prediction: "The same case with sh:minCount 1 changed to 2, validated by Jena: its report differs from W3C's expected report, exit 1, naming the case and the result only one side has."
+    test: "jena-oracle --self-test, control validate/minCount-001-min2"
+    if_fails: "The comparison reads the verdict and not the results, or reads the expected report on both sides."
+  - id: FALSIFY-CRUXSHACL-010
+    rule: "R-VALIDATE: a case pv refuses is RED, never skipped"
+    fixture: "W3C core/property/datatype-003 (sh:or), a refusal planted as pv exit 3"
+    expect: 1
+    prediction: "W3C core/property/datatype-003 uses sh:or, which pv refuses at parse with exit 3 (w3c.rs NOT_VENDORED). The harness prints one R-VALIDATE RED line naming the case. The run exits 1, never 0, and the case is not dropped from the count."
+    test: "jena-oracle --self-test, control validate/datatype-003-refused"
+    if_fails: "A refusal is read as skip or as conforms, and the subset's limits never show in the verdict."
+  - id: FALSIFY-CRUXSHACL-011
+    rule: "W3C arbitrates: pv = Jena ≠ W3C is RED"
+    fixture: tests/oracle/jena/controls/minCount-001.nt
+    expect: 1
+    prediction: "A planted triple of reports in which the side under test and Jena agree with each other and differ from W3C's expected report: exit 1, comparator w3c."
+    test: "jena-oracle --self-test, control selftest/arbitrate-agree-wrong"
+    if_fails: "Agreement with Jena is taken as truth, so a defect both engines share passes."
+  - id: FALSIFY-CRUXSHACL-012
+    rule: "W3C arbitrates: pv = W3C ≠ Jena is GREEN for pv, and the difference is recorded"
+    fixture: tests/oracle/jena/controls/minCount-001.nt
+    expect: 0
+    prediction: "A planted triple of reports in which the side under test equals W3C's expected report and Jena differs: exit 0, and the receipt has exactly one line 'jena≠w3c <case>'."
+    test: "jena-oracle --self-test, control selftest/arbitrate-jena-wrong"
+    if_fails: "Jena is treated as the reference on S-W3C, so a Jena defect turns pv RED; or the difference is dropped from the receipt."
+  - id: FALSIFY-CRUXSHACL-013
+    rule: "R-FEEDBACK control: blank-node property shapes are keyed by parent IRI and path"
+    fixture: tests/oracle/jena/controls/source-shape-key.nt
+    expect: 0
+    prediction: "A report whose property shapes are blank nodes, against a copy whose blank-node labels differ: every result's source-shape key is the parent node shape's IRI plus sh:path, and the two reports agree. Jena 5.6.0 writes such a shape as sh:sourceShape [] with no triples, so the harness keys it from the shapes graph."
+    test: "jena-oracle --self-test, control feedback/source-shape-key"
+    if_fails: "sh:sourceShape is compared as a blank-node label, so every property-shape result disagrees across engines."
+  - id: FALSIFY-CRUXSHACL-014
+    rule: "R-FEEDBACK control: a changed focus node is RED"
+    fixture: tests/oracle/jena/controls/source-shape-key.nt
+    expect: 1
+    prediction: "The report under test with one result's sh:focusNode changed: exit 1, naming focus."
+    test: "jena-oracle --self-test, control feedback/mutant-focus"
+    if_fails: "The tuple comparison omits focus."
+  - id: FALSIFY-CRUXSHACL-015
+    rule: "R-FEEDBACK control: a changed path is RED"
+    fixture: tests/oracle/jena/controls/source-shape-key.nt
+    expect: 1
+    prediction: "The report under test with one result's sh:resultPath changed: exit 1, naming path."
+    test: "jena-oracle --self-test, control feedback/mutant-path"
+    if_fails: "The tuple comparison omits path."
+  - id: FALSIFY-CRUXSHACL-016
+    rule: "R-FEEDBACK control: a changed value is RED"
+    fixture: tests/oracle/jena/controls/source-shape-key.nt
+    expect: 1
+    prediction: "The report under test with one result's sh:value changed: exit 1, naming value."
+    test: "jena-oracle --self-test, control feedback/mutant-value"
+    if_fails: "The tuple comparison omits value."
+  - id: FALSIFY-CRUXSHACL-017
+    rule: "R-FEEDBACK control: a changed source shape is RED"
+    fixture: tests/oracle/jena/controls/source-shape-key.nt
+    expect: 1
+    prediction: "The report under test with one result's source shape moved to another shape: exit 1, naming source shape."
+    test: "jena-oracle --self-test, control feedback/mutant-source-shape"
+    if_fails: "The tuple comparison omits the source shape. The rudof oracle at 316dee2cd4 is blind this way: replacing every shape id leaves its verdict unchanged."
+  - id: FALSIFY-CRUXSHACL-018
+    rule: "R-FEEDBACK control: a changed component is RED"
+    fixture: tests/oracle/jena/controls/source-shape-key.nt
+    expect: 1
+    prediction: "The report under test with one result's sh:sourceConstraintComponent changed: exit 1, naming component."
+    test: "jena-oracle --self-test, control feedback/mutant-component"
+    if_fails: "The tuple comparison omits the component, or compares short names that two components share."
+  - id: FALSIFY-CRUXSHACL-019
+    rule: "R-FEEDBACK control: a changed severity is RED"
+    fixture: tests/oracle/jena/controls/source-shape-key.nt
+    expect: 1
+    prediction: "The report under test with one result's sh:resultSeverity changed from sh:Violation to sh:Warning: exit 1, naming severity."
+    test: "jena-oracle --self-test, control feedback/mutant-severity"
+    if_fails: "The tuple comparison omits severity. The rudof oracle at 316dee2cd4 is blind this way."
+  - id: FALSIFY-CRUXSHACL-020
+    rule: "R-FEEDBACK: every result has a message, and a declared sh:message appears in it"
+    fixture: tests/oracle/jena/controls/source-shape-key.nt
+    expect: 1
+    prediction: "Two planted reports, each run alone: one with a result whose message is empty, and one where the shape declares sh:message but the result does not carry it. Each exits 1, naming message."
+    test: "jena-oracle --self-test, control feedback/message"
+    if_fails: "Messages are not checked, so a report that says what failed but never why passes."
+  - id: FALSIFY-CRUXSHACL-021
+    rule: "R-FEEDBACK control: a missing value is RED"
+    fixture: tests/oracle/jena/controls/source-shape-key.nt
+    expect: 1
+    prediction: "The report under test with sh:value removed from one result whose reference result has one: exit 1, naming value."
+    test: "jena-oracle --self-test, control feedback/missing-value"
+    if_fails: "An absent field matches anything. pv's report at 316dee2cd4 has no value field at all (shapes.rs:143-152)."
+  - id: FALSIFY-CRUXSHACL-022
+    rule: "no JVM is never GREEN"
+    fixture: "a java path that does not exist (/nonexistent/jena-oracle-no-java)"
+    expect: 2
+    prediction: "With no JVM found, the harness exits 2 (NOT MEASURED), or 1 if pv already differs from a W3C expected report. It never exits 0."
+    test: "jena-oracle --self-test, control selftest/no-jvm"
+    if_fails: "A host without a JVM reports a pass, which is the vacuous GREEN this contract exists to prevent."
+  - id: FALSIFY-CRUXSHACL-023
+    rule: "a pin mismatch is NOT MEASURED"
+    fixture: "a pinned file and a manifest line whose sha256 is one hex digit off, built by the self-test"
+    expect: 2
+    prediction: "With a pinned sha256 changed by one hex digit, the harness exits 2, names the pin, and runs no comparison. The same check guards the Jena archive (src/jena.rs), the W3C suite (w3c.sha256) and the SHACL-SHACL graph."
+    test: "jena-oracle --self-test, control selftest/pin-mismatch"
+    if_fails: "An unpinned or swapped engine or suite produces a verdict."
+  - id: FALSIFY-CRUXSHACL-024
+    rule: "an empty or partial subject is NOT MEASURED"
+    fixture: "a three-case subject in which one case produces no verdict, built by the self-test"
+    expect: 2
+    prediction: "One listed case produces no verdict: exit 2, naming the case. A subject with zero cases also exits 2."
+    test: "jena-oracle --self-test, control selftest/partial-subject"
+    if_fails: "Cases that never ran are counted as agreeing, so a run that stops early reports GREEN."
+  - id: FALSIFY-CRUXSHACL-025
+    rule: "the receipt is complete"
+    fixture: "a receipt with the pv binary sha256 removed, built by the self-test"
+    expect: 1
+    prediction: "Every run writes a receipt with: the Jena version and archive sha256, java -version, the pv version and binary sha256, the git HEAD and whether it was dirty, each input's sha256, each cell's verdict, each control's seen or not seen, and the exit code. The receipt check rejects a planted receipt without the pv binary sha256: exit 1, naming the field."
+    test: "jena-oracle --self-test, control selftest/receipt-missing-field"
+    if_fails: "A verdict cannot be tied to the binary and inputs that produced it."
+  - id: FALSIFY-CRUXSHACL-026
+    rule: "S-SHSH control: an ill-formed shape is RED"
+    fixture: tests/oracle/jena/controls/shsh-ok.ttl
+    expect: 1
+    prediction: "A shapes graph with one property shape given sh:minCount \"one\" (a string, not an integer): Jena's validation against the SHACL-SHACL graph (pinned by sha256 inside jena-shacl-5.6.0.jar) reports a result for that shape, and the harness exits 1 naming it. The unmutated graph conforms."
+    test: "jena-oracle --self-test, control shsh/minCount-string"
+    if_fails: "S-SHSH validates the wrong graph, or ignores Jena's report."
+  - id: FALSIFY-CRUXSHACL-027
+    rule: "S5: the rudof oracle compares the full tuple"
+    fixture: tests/oracle/differential.json
+    expect: 1
+    prediction: "After S5, the rudof oracle run on pv's report with every severity set to Error exits 1, naming severity. At 316dee2cd4 the same mutation leaves its verdict unchanged (measured BLIND on 2026-10-04)."
+    test: "ont-oracle on a severity-mutated pv report (S5, not written)"
+    if_fails: "The second oracle still compares (focus, component) only, so severity, message and source-shape defects are invisible to it."
+qa_gate:
+  id: F-CRUXSHACL-QA-001
+  name: The Jena harness reports only real disagreements and is never GREEN unmeasured
+  description: >
+    Every planted control is seen in every run. Each RED line names one cell, one
+    case and one comparator. No run without a JVM, matching pins and a complete
+    subject exits 0. The controls act on the comparator's inputs, never on pv, so
+    they prove the harness before pv can read Turtle (S3) or emit a W3C report (S4).
+  checks:
+    - planted_control_seen_every_run
+    - red_line_names_cell_case_comparator
+    - no_green_without_jvm_pins_and_complete_subject
+    - self_comparison_refused
+  pass_criteria: "jena-oracle --self-test prints 'self-test: N/N ok', where N is the number of FALSIFY-CRUXSHACL rows it implements (26 of 27: rows 001-026; 027 is S5), and a live run's receipt lists every control as seen"
+  falsification: "Mutate the comparator (blank-node labels as strings, literals by value, each tuple field dropped in turn) and the verdict logic (no JVM gives 0, the pin check skipped, a partial run gives 0, self-comparison allowed). Each mutant must turn the self-test RED."
+mutation_record: "not run yet: the harness exists (tests/oracle/jena/, 2026-10-09) but no mutant of it has been run. Until one is, the self-test proves that each control fires on the current code, not that each control would catch its defect."
+initial_state: "Branch la-711b/v7-crux-shacl, harness at 62b1cebe99, receipt tests/oracle/jena/receipt.json (committed in 48725d2f45), 2026-10-09, Jena 5.6.0 on OpenJDK 17: self-test 26/26; exit 1. R-RETURN: riot reads pv's contracts.nt (32701 triples) and shapes.ttl (4166 triples, no WARN) GREEN; the round trip NOT MEASURED (S3). R-INPUT NOT MEASURED (S3). R-VALIDATE on S-CORPUS RED: Jena 743 results, pv 730; all 13 extra are sh:closed results on rdf:type values, the defect #4837 tracks. R-VALIDATE on S-W3C: the subject is the 35 W3C core cases vendored under tests/oracle/w3c/, not yet the full core/ manifests; Jena ran all 35 with no jena≠w3c note; pv against W3C NOT MEASURED in the harness (S4). R-FEEDBACK NOT MEASURED (S4). S-SHSH GREEN. Before the harness (origin/main 316dee2cd4, 2026-10-04): no Jena run; the rudof oracle compares (focus, component) only. Detail in docs/lookahead/0.71-crux-shacl-baseline.md"
+verification: "make oracle-jena (tests/oracle/jena/, detached crate, needs a JVM and the pinned Jena archive), on demand and at night only. The self-test runs first and a failed control stops the run."
