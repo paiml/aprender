@@ -3,9 +3,13 @@
 //! Provides dataset versioning, datasheets, and provenance tracking.
 
 mod datasheet;
+mod provenance;
 mod version;
 
 pub use datasheet::Datasheet;
+pub use provenance::{
+    AdmittedManifest, DatasetManifest, ExternalLabel, ManifestRow, Origin, SealedItems,
+};
 pub use version::DatasetVersion;
 
 use crate::storage::ContentAddress;
