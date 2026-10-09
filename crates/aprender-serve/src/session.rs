@@ -461,6 +461,10 @@ impl<F: ArchForward> Session<F> {
     /// checkpoints when it takes one, else the whole prompt. The guard judged
     /// that forward when it ran inside `generate`, so it still probes the same
     /// positions.
+    ///
+    /// A turn that restores a held checkpoint is not mirrored. A checkpoint is
+    /// only saved after a forward, which already ran the once-per-session
+    /// guard, so `validate` is a no-op on such a turn.
     fn first_forward<'p>(&self, prompt: &'p [u32]) -> &'p [u32] {
         let start = if self.extends(prompt) {
             self.processed.len()
