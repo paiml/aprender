@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.19.0"
+  version: "1.20.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -30,6 +30,8 @@ metadata:
   - "crates/aprender-serve/src/api/realize_handlers_embed_completion.rs (PMAT-803: real embeddings)"
   - "crates/aprender-serve/src/layers/model_model.rs (PMAT-803: Model::forward_hidden — pre-lm_head hidden state)"
   - "evidence/serve-api-openai-fidelity-audit-2026-06-14/findings.md (full 12-bug audit)"
+  - "crates/aprender-serve/src/api/constrained_chat_backend.rs (#3568 PR 4: response_format through the one constrained engine, and the status map)"
+  - "crates/apr-cli/src/commands/serve/response_format.rs (#3568 PR 4: apr-cli's own chat servers refuse a constraint by name)"
 version: 1
 status: enforced
 date: 2026-06-14
@@ -390,6 +392,33 @@ proof_obligations:
       AppState::demo() / AppState::new() again. (AppState::with_registry stays
       permitted: ERROR-MESSAGES-NAME-A-REAL-REMEDY names it deliberately as the
       embedder API that enables registry mode.)
+  - id: ASOC-INV-020
+    type: invariant
+    property: >
+      RESPONSE-FORMAT-HONOURED-OR-REFUSED-BY-NAME (#3568 PR 4): a
+      /v1/chat/completions request whose `response_format` asks for a
+      constraint (json_object, or json_schema with a schema) is EITHER answered
+      by the one constrained engine (Session::generate_constrained, the one
+      `apr run --json-schema` uses), with the reply checked by the second
+      reader before it ships, OR refused with a status and a `type` that name
+      the reason. It is never dropped and answered unconstrained with a 200.
+      Absent, null and {"type":"text"} ask for nothing and are served as
+      before. A `type` the server does not know, or a json_schema with no
+      schema object, is refused when the request is read (serde, or
+      SchemaInvalid), never treated as "no constraint". Status map, one table
+      (constraint_status): 400 schema_invalid, schema_unsupported,
+      schema_unsupported_path, schema_with_thinking; 422 constraint_truncated
+      (the max_tokens budget ended the document, so no partial text is
+      returned); 500 schema_violation, constraint_dead_end,
+      constraint_rejected, constraint_vocab; 501
+      structured_output_not_compiled. The body is {"error": msg, "type": kind}.
+      A serving loop that applies no constraint (stream:true, tools, stop,
+      ignore_eos, trace, the realizar router's other backends, and apr-cli's
+      own wgpu, APR CPU, APR CUDA and SafeTensors CPU chat servers) answers 400
+      schema_unsupported_path, naming its path and what removes the refusal.
+      The schema is never fetched from anywhere: the second reader's retriever
+      refuses every `$ref` outside the schema, so a request cannot make the
+      server read a URL or a local file.
 
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
@@ -620,3 +649,9 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib -- chat_stream_route_2375::stream_route_with_no_model_is_503_not_404 chat_stream_route_2375::stream_route_with_an_unknown_model_name_is_still_404'
     expected_output: "test result: ok"
     if_fails: 'A client retry policy keyed on status treats "the server has not loaded a model yet" as permanent (404 = this route does not exist) and stops retrying, on the two most-used routes of the OpenAI surface. Mutation-verified in both directions: forcing NOT_FOUND reds the 503 half, forcing SERVICE_UNAVAILABLE reds the 404 half.'
+  - id: FALSIFY-RESPONSE-FORMAT-3568
+    name: response_format_is_honoured_or_refused_by_name
+    prediction: 'Every ConstraintError variant maps to its own status and type (400 x4, 422, 500 x4, 501), and the HTTP body carries both and counts a failure. json_object and json_schema map to the constraint they ask for; text maps to none; an unknown type, {} and a json_schema with no json_schema object fail to deserialize; a json_schema whose schema is absent, a number or a string is SchemaInvalid. stream, tools, stop, ignore_eos and trace each refuse by path name, thinking on is schema_with_thinking, and stream:true with a constraint answers 400 over the real router. On the structured-output build, a real tiny GGUF through the real router answers the document the schema allows, a budget too small for it answers 422 with no partial text, a complete reply the second reader refuses does not ship, a server without the retained GGUF refuses by name, and a file:// or http:// $ref is refused with NoFetch''s own line; without structured-output the same chat answers 501 by name. apr-cli: refuse_response_format returns None for absent, null and text and a 400 schema_unsupported_path naming the path for every other value; the REAL APR CPU and SafeTensors routers answer a constrained request with that 400 and serve text without it.'
+    test_harness: 'cargo test -p aprender-serve --lib --features structured-output -- constrained_chat_tests second_reader_tests::a_ref_outside_the_schema_is_never_fetched && cargo test -p aprender-serve --lib constrained_chat_tests && cargo test -p apr-cli --lib -- response_format tests_response_format_3568'
+    expected_output: "test result: ok"
+    if_fails: 'A client that asks for JSON gets free text with a 200 and parses it, or gets an error whose body does not say the constraint was the reason. Before #3568 PR 4, ChatCompletionRequest had no response_format field and is not deny_unknown_fields, so serde dropped it on every backend and the turn was served unconstrained; apr-cli''s own chat servers read the body as a free-form Value and never looked at it.'

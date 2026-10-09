@@ -356,6 +356,34 @@ fn batch_wgpu_or_cpu(model: crate::gguf::OwnedQuantizedModel, config: &BatchInfe
     BatchModel { gpu: None, #[cfg(feature = "gpu")] wgpu: None, cpu: Some(dense_cpu(model)) }
 }
 
+/// A CUDA build: CUDA when the GPU is allowed and the quant is not legacy (wgpu, then the CPU,
+/// when CUDA does not load); else wgpu when the GPU is allowed (GH-560), else the CPU.
+/// Extracted from `init_batch_model` (pre-commit complexity cap, #3568); behaviour unchanged.
+#[cfg(feature = "cuda")]
+fn batch_cuda_first(
+    model: crate::gguf::OwnedQuantizedModel,
+    stop_tokens: &[u32],
+    config: &BatchInferenceConfig,
+) -> BatchModel {
+    if !config.no_gpu && !model_has_legacy_quant(&model) {
+        use crate::gguf::OwnedQuantizedModelCuda;
+        return match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
+            Ok(cuda_model) => batch_from_cuda(cuda_model, stop_tokens, config),
+            Err(e) => {
+                if config.verbose {
+                    eprintln!("[batch] CUDA unavailable: {}, trying wgpu...", e);
+                }
+                batch_wgpu_or_cpu(e.into_model(), config)
+            }
+        };
+    }
+    // No CUDA attempted. GH-560: wgpu before the CPU, unless the GPU is off
+    if !config.no_gpu {
+        return batch_wgpu_or_cpu(model, config);
+    }
+    BatchModel { gpu: None, #[cfg(feature = "gpu")] wgpu: None, cpu: Some(dense_cpu(model)) }
+}
+
 /// #4268: a dense CPU model as a session of the one engine.
 fn dense_cpu(model: crate::gguf::OwnedQuantizedModel) -> crate::gguf::dense_session::DenseSession {
     crate::gguf::dense_session::DenseSession::new(crate::gguf::dense_session::DenseForward::cpu(
@@ -387,41 +415,7 @@ fn init_batch_model(
 
     #[cfg(feature = "cuda")]
     {
-        if !config.no_gpu && !model_has_legacy_quant(&model) {
-            use crate::gguf::OwnedQuantizedModelCuda;
-            match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
-                Ok(cuda_model) => return Ok(batch_from_cuda(cuda_model, stop_tokens, config)),
-                Err(e) => {
-                    if config.verbose {
-                        eprintln!("[batch] CUDA unavailable: {}, trying wgpu...", e);
-                    }
-                    return Ok(batch_wgpu_or_cpu(e.into_model(), config));
-                }
-            }
-        }
-
-        // No GPU attempted — use CPU directly
-        // GH-560: Try wgpu before CPU
-        #[cfg(feature = "gpu")]
-        if !config.no_gpu {
-            if let Some(wgpu_state) = try_init_wgpu_batch(&model, config) {
-                return Ok(BatchModel {
-                    #[cfg(feature = "cuda")]
-                    gpu: None,
-                    #[cfg(feature = "gpu")]
-                    wgpu: Some(wgpu_state),
-                    cpu: None,
-                });
-            }
-        }
-
-        Ok(BatchModel {
-            #[cfg(feature = "cuda")]
-            gpu: None,
-            #[cfg(feature = "gpu")]
-            wgpu: None,
-            cpu: Some(dense_cpu(model)),
-        })
+        Ok(batch_cuda_first(model, stop_tokens, config))
     }
 
     #[cfg(not(feature = "cuda"))]

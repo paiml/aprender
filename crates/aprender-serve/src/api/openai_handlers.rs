@@ -477,6 +477,7 @@ mod pmat821_chat_handler_threading_tests {
             tool_choice: None,
             chat_template_kwargs: None,
             think: None,
+            response_format: None,
             stream_options: None,
         }
     }
@@ -1698,6 +1699,7 @@ mod pmat801_tool_calling_tests {
 include!("cuda_chat_backend.rs");
 include!("qwen35_chat_backend.rs");
 include!("chat_completions_stream.rs");
+include!("constrained_chat_backend.rs");
 
 /// #3990 WIRING: the OpenAI chat path tokenizes the GGUF's OWN template when the server
 /// retained one -- not the hand-coded family template. Without this, the helper could be

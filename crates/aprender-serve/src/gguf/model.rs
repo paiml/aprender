@@ -17,12 +17,14 @@
 
 use std::fs::File;
 use std::path::Path;
+use std::sync::{Arc, OnceLock};
 
 use memmap2::Mmap;
 
 use super::config::GGUFConfig;
 use super::quantized::{OwnedQuantizedLayer, OwnedQuantizedTensor};
 use super::types::GGUFModel;
+use crate::constrain::{ConstraintEnv, ConstraintError};
 use crate::error::{RealizarError, Result};
 
 // ============================================================================
@@ -45,6 +47,10 @@ pub struct MappedGGUFModel {
     pub model: GGUFModel,
     /// Memory-mapped file contents
     pub(crate) mmap: Mmap,
+    /// #3568: the constraint engine over this model's vocabulary, indexed on first use and kept.
+    /// Indexing walks the whole vocabulary (248,320 tokens for Qwen3.5), so a server must not pay
+    /// it per request. A refusal is kept too: the vocabulary never changes.
+    constraint_env: OnceLock<std::result::Result<Arc<ConstraintEnv>, ConstraintError>>,
 }
 
 impl MappedGGUFModel {
@@ -120,7 +126,31 @@ impl MappedGGUFModel {
         // Parse the memory-mapped data
         let model = GGUFModel::from_bytes(&mmap)?;
 
-        Ok(Self { model, mmap })
+        Ok(Self {
+            model,
+            mmap,
+            constraint_env: OnceLock::new(),
+        })
+    }
+
+    /// The constraint engine over this model's vocabulary (#3568), built on first use and kept.
+    /// `apr run` and every `apr serve` request share it.
+    ///
+    /// # Errors
+    /// `Vocab` when this GGUF has no tokenizer vocabulary or no end-of-sequence id; otherwise the
+    /// engine's own refusal (`NotCompiled` without `structured-output`).
+    pub fn constraint_env(&self) -> std::result::Result<Arc<ConstraintEnv>, ConstraintError> {
+        self.constraint_env
+            .get_or_init(|| {
+                let vocab = self.model.constraint_vocab().ok_or_else(|| {
+                    ConstraintError::Vocab(
+                        "this GGUF has no tokenizer vocabulary or no end-of-sequence id"
+                            .to_string(),
+                    )
+                })?;
+                ConstraintEnv::new(&vocab).map(Arc::new)
+            })
+            .clone()
     }
 
     /// Get the raw memory-mapped file data
