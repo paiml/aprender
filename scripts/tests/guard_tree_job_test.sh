@@ -154,7 +154,7 @@ assertions_yq() {
         (.jobs.gate.needs | contains(["guards"]))
         and (.jobs.gate.steps | map(.run // "") | join(" ") | test(strenv(GATE_RE)))
         and (.jobs."guards".steps | map(.run // "") | join(" ") | test(strenv(SECTIONS_RE)))
-        and (.jobs."guards"."runs-on" | contains(["clean-room"]))
+        and (.jobs."guards"."runs-on" | to_json(0) | test("(^|[^a-z0-9_-])clean-room([^a-z0-9_-]|$)"))
     ' "$1" 2>/dev/null)"
     if [ "$a" = true ] && [ "$b" = true ]; then echo true; else echo false; fi
 }
@@ -314,7 +314,7 @@ mutant_row "guard-tree gaining a needs:" "$CI_YML" "$m6" differs "$SECT_YML" "$m
 m7="$WORK/x86-off-clean-room.yml"
 awk '
     /^  guards:/ { in_x = 1 }
-    in_x && /^    runs-on:/ { sub(/, clean-room/, ""); in_x = 0 }
+    in_x && /^    runs-on:/ { sub(/, clean-room/, ""); sub(/"clean-room",/, ""); in_x = 0 }
     { print }
 ' "$CI_YML" > "$m7"
 mutant_row "guards off clean-room" "$m7" "$SECT_YML" differs "$CI_YML" "$m7"

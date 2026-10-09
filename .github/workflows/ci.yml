@@ -273,9 +273,13 @@ jobs:
   guards:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
-    # arch-neutral: any clean-room runner, X64 or ARM64. One job per CI run, so it holds
-    # one runner. The ARM64 clean-room runners (four on 2026-10-09) also serve this job.
-    runs-on: [self-hosted, Linux, clean-room]
+    # 0.71 only; reverted at 0.71.0. The sections are arch-neutral; for 0.71 this
+    # job runs on the ARM64 clean-room runners (four on 2026-10-09), since every hung guard
+    # run measured had been on X64 (operator yes, 2026-10-09). The repo variable
+    # GUARD_RUNS_ON, a JSON label list, overrides the default without a PR: set it to
+    # ["self-hosted","Linux","clean-room"] if the ARM64 runners are down.
+    # check_runner_labels.sh reads the default below, not the variable.
+    runs-on: ${{ fromJSON(vars.GUARD_RUNS_ON || '["self-hosted","Linux","clean-room","ARM64"]') }}
     timeout-minutes: 90
     # The permissions these five sections ran under inside x86-main, unchanged.
     permissions: write-all
@@ -312,6 +316,16 @@ jobs:
           command -v jq; jq --version
           [ "$(command -v jq)" = "$RUNNER_TEMP/jq-1.8.2/jq" ] || { echo "::error::jq on PATH is $(command -v jq), not the pinned one"; exit 1; }
           [ "$(jq --version)" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports $(jq --version)"; exit 1; }
+      # check_runner_labels.sh reads only the default label list above. A GUARD_RUNS_ON
+      # value is checked here instead: it must keep self-hosted and clean-room.
+      - name: GUARD_RUNS_ON keeps the clean-room pool
+        run: |
+          set -euo pipefail
+          v=$(jq -r '.GUARD_RUNS_ON // empty' <<< "$FAT_VARS_JSON")
+          if [ -z "$v" ]; then echo "GUARD_RUNS_ON unset: the default label list"; exit 0; fi
+          jq -e 'type == "array" and index("self-hosted") != null and index("clean-room") != null' <<< "$v" > /dev/null \
+            || { echo "::error::GUARD_RUNS_ON must be a JSON list naming self-hosted and clean-room, got: $v"; exit 1; }
+          echo "GUARD_RUNS_ON: $v"
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
