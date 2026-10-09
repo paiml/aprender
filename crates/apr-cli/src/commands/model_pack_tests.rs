@@ -355,3 +355,53 @@ fn the_producer_is_the_produced_edge_not_any_edge_into_the_model() {
     let m = pack(&f.home, &f.args("rel")).expect("the produced edge still wins");
     assert_eq!(m.lineage, vec![f.run.clone()]);
 }
+
+/// `apr model pack --version X.Y.Z` binds the release's version. The verb declares its own
+/// `--version`, so clap's generated one (propagated from the root) is off for it; while both
+/// existed, clap's tree check panicked in every test that builds the command tree.
+#[test]
+fn pack_parses_its_own_version_flag() {
+    let argv = [
+        "apr",
+        "model",
+        "pack",
+        "m1",
+        "--line",
+        "paiml/x-apr",
+        "--version",
+        "0.1.0-rc.1",
+        "--base-hf-id",
+        "org/base",
+        "--base-revision",
+        "abc",
+        "--base-sha256",
+        "def",
+        "--engine-tarball",
+        "apr.crate",
+        "--license",
+        "MIT",
+        "--license-file",
+        "LICENSE",
+        "--notice-file",
+        "NOTICE",
+        "--out",
+        "rel",
+    ];
+    // The `Commands` enum overflows the default test-thread stack in debug builds (see pretrain).
+    let got = std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            use clap::Parser;
+            let cli = crate::Cli::try_parse_from(argv).expect("clap parse");
+            match *cli.command {
+                crate::Commands::Extended(crate::ExtendedCommands::Model {
+                    command: crate::ModelCommands::Pack { version, .. },
+                }) => version.into_string(),
+                other => panic!("expected ModelCommands::Pack, got {other:?}"),
+            }
+        })
+        .expect("spawn parse thread")
+        .join()
+        .expect("parse thread must not panic");
+    assert_eq!(got, "0.1.0-rc.1");
+}

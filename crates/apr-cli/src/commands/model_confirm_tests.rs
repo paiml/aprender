@@ -210,3 +210,41 @@ fn a_yank_is_written_once_with_a_reason() {
         "the record was rewritten"
     );
 }
+
+/// `apr model yank VERSION` parses through clap and binds VERSION. While clap's generated
+/// `--version` (propagated from the root) shared the id `version`, clap's tree check panicked in
+/// every test that builds the command tree.
+#[test]
+fn yank_parses_its_version_positional() {
+    let argv = [
+        "apr",
+        "model",
+        "yank",
+        "0.1.0-rc.1",
+        "--dir",
+        "rel",
+        "--reason",
+        "bad eval",
+        "--receipt",
+        "sha256:abc",
+        "--state",
+        "st",
+    ];
+    // The `Commands` enum overflows the default test-thread stack in debug builds (see pretrain).
+    let got = std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            use clap::Parser;
+            let cli = crate::Cli::try_parse_from(argv).expect("clap parse");
+            match *cli.command {
+                crate::Commands::Extended(crate::ExtendedCommands::Model {
+                    command: crate::ModelCommands::Yank { version, .. },
+                }) => version.into_string(),
+                other => panic!("expected ModelCommands::Yank, got {other:?}"),
+            }
+        })
+        .expect("spawn parse thread")
+        .join()
+        .expect("parse thread must not panic");
+    assert_eq!(got, "0.1.0-rc.1");
+}

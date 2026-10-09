@@ -1583,6 +1583,9 @@ pub enum ModelCommands {
         json: bool,
     },
     /// Yank a version: write yanked.json and the card banner; nothing is deleted
+    // VERSION is this verb's own `version` arg, so clap's generated `--version` (propagated from
+    // the root) is off here: two args sharing an id fail clap's command-tree check.
+    #[command(disable_version_flag = true)]
     Yank {
         /// Version to yank (must be the manifest's)
         #[arg(value_name = "VERSION")]
@@ -1647,6 +1650,8 @@ pub enum ModelCommands {
         json: bool,
     },
     /// Build a release dir plus model-release-v1.json from pacha lineage (deterministic)
+    // `--version` is this verb's own (the release's X.Y.Z), so clap's generated one is off here.
+    #[command(disable_version_flag = true)]
     Pack {
         /// Registered model: id, content hash, recorded sha256 or model file
         #[arg(value_name = "MODEL")]
