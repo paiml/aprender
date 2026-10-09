@@ -552,7 +552,7 @@ fn run_publish_refuses_a_bad_repo_first() {
         "no-slash",
         None,
         t.path(),
-        "http://127.0.0.1:9",
+        &format!("http://{}:9", std::net::Ipv4Addr::LOCALHOST),
         false,
     )
     .expect_err("bad repo")
