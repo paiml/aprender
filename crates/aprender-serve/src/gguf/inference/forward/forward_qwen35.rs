@@ -2144,23 +2144,34 @@ pub(crate) fn f2_validate_qwen35_receipted_hashed(
 
 /// CPU logits at every probe position plus one greedy decode step — the
 /// reference half of [`f2_validate_qwen35`].
+///
+/// Computed with FP32 activations (`with_fp32_activations`), not the
+/// production CPU path's Q8_K ones, as the qwen3moe guard is (#3714): the GPU
+/// forward runs float GEMVs, so the exact-activation CPU forward is the one it
+/// must reproduce. #4958, the 4B's probe of the apr-code prompt: the Q8_K
+/// reference was off its own FP32 forward by cosine 0.998 on x86 and 0.506
+/// (position 42) on aarch64, and GB10 rejected its GPU on that. The FP32
+/// references of both arches agreed at 1.000000, and the GPU matched them at
+/// 0.9995 or better at every position.
 #[cfg(feature = "cuda")]
 pub(crate) fn f2_qwen35_cpu_reference(
     cpu: &Qwen35Model<'_>,
     probe: &[u32],
 ) -> Option<Vec<Vec<f32>>> {
-    let mut state = cpu.new_state(probe.len() + 2);
-    let mut per_pos: Vec<Vec<f32>> = Vec::with_capacity(probe.len() + 1);
-    for (pos, &tok) in probe.iter().enumerate() {
-        per_pos.push(cpu.forward_single_qwen35(tok, &mut state, pos).ok()?);
-    }
-    let last = per_pos.last()?;
-    let next = crate::infer::argmax_u32(last);
-    per_pos.push(
-        cpu.forward_single_qwen35(next, &mut state, probe.len())
-            .ok()?,
-    );
-    Some(per_pos)
+    crate::quantize::with_fp32_activations(|| {
+        let mut state = cpu.new_state(probe.len() + 2);
+        let mut per_pos: Vec<Vec<f32>> = Vec::with_capacity(probe.len() + 1);
+        for (pos, &tok) in probe.iter().enumerate() {
+            per_pos.push(cpu.forward_single_qwen35(tok, &mut state, pos).ok()?);
+        }
+        let last = per_pos.last()?;
+        let next = crate::infer::argmax_u32(last);
+        per_pos.push(
+            cpu.forward_single_qwen35(next, &mut state, probe.len())
+                .ok()?,
+        );
+        Some(per_pos)
+    })
 }
 
 /// GPU logits for the same positions, from a fresh device state.
