@@ -19,7 +19,7 @@ use axum::{
 };
 use futures::stream::Stream;
 
-use super::stream_tool_calls::{self, StreamTools};
+use super::stream_tool_calls::{self, StreamTools, ToolCallDetector};
 use super::{
     build_trace_data, clean_chat_output, format_chat_messages,
     format_chat_messages_for_state_thinking_tools, AppState, ChatChoice, ChatCompletionChunk,
@@ -955,6 +955,36 @@ fn tail_deltas(
     held.into_iter().chain(filter.finish()).collect()
 }
 
+/// #4918 (T8): what a closed live stream still owes before its terminal chunk. The
+/// tail deltas go through the detector too, so a call whose last bytes were still
+/// held by the UTF-8 decoder or the stop filter is a call; then the detector's own
+/// held text; then the turn's calls on one chunk. Returns those events and the finish
+/// reason, which is `tool_calls` when calls went out and `generated` otherwise.
+fn live_tail_events(
+    tail: Vec<String>,
+    mut detector: Option<ToolCallDetector>,
+    generated: FinishReason,
+    request_id: &str,
+    model_name: &str,
+) -> (Vec<Result<Event, Infallible>>, FinishReason) {
+    let mut texts: Vec<String> = tail
+        .into_iter()
+        .filter_map(|t| stream_tool_calls::detect(&mut detector, t))
+        .collect();
+    let end = stream_tool_calls::finish(detector);
+    texts.extend(end.content);
+    let finish = stream_tool_calls::finish_reason(&end.calls, generated);
+    let mut events: Vec<_> = texts
+        .iter()
+        .filter_map(|t| sse_event(&ChatCompletionChunk::content(request_id, model_name, t)))
+        .collect();
+    if !end.calls.is_empty() {
+        let chunk = ChatCompletionChunk::tool_calls(request_id, model_name, end.calls);
+        events.extend(sse_event(&chunk));
+    }
+    (events, finish)
+}
+
 /// Build a true-streaming SSE response with keep-alive (tokens arrive via channel).
 ///
 /// Deltas are raw, char-safe decodes — see `LiveUtf8Deltas`. The `clean` parameter
@@ -1029,31 +1059,14 @@ pub(crate) fn true_streaming_sse_response(
                 }
             }
         }
-        // #4918 (T8): the flush goes through the detector too, so a call whose last
-        // bytes were still held by the UTF-8 decoder or the stop filter is a call.
-        let tail: Vec<String> = tail_deltas(&mut utf8, &tokenizer, &mut filter)
-            .into_iter()
-            .filter_map(|t| stream_tool_calls::detect(&mut detector, t))
-            .collect();
-        let end = stream_tool_calls::finish(detector);
-        for text in tail.into_iter().chain(end.content) {
-            let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
-            if let Some(evt) = sse_event(&chunk) {
-                yield evt;
-            }
-        }
-
+        let tail = tail_deltas(&mut utf8, &tokenizer, &mut filter);
         // #2375(6): a token stream that delivered the whole budget was cut off at
         // `max_tokens`; anything shorter ended on a stop/EOS token.
-        let finish = stream_tool_calls::finish_reason(
-            &end.calls,
-            FinishReason::from_generation(filter.stopped(), completion_tokens, max_tokens),
-        );
-        if !end.calls.is_empty() {
-            let chunk = ChatCompletionChunk::tool_calls(&request_id, &model_name, end.calls);
-            if let Some(evt) = sse_event(&chunk) {
-                yield evt;
-            }
+        let generated = FinishReason::from_generation(filter.stopped(), completion_tokens, max_tokens);
+        let (tail_events, finish) =
+            live_tail_events(tail, detector, generated, &request_id, &model_name);
+        for evt in tail_events {
+            yield evt;
         }
         // The engine has finished by the time the token channel closed, so the
         // oneshot either already carries the measurement or never will.
