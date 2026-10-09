@@ -114,13 +114,92 @@ pub fn decode_budget(
 /// What a run reports beyond [`super::InferenceResult`].
 ///
 /// Each field is `None` on a path that does not know it, never a default that
-/// reads as a measurement. The APR and SafeTensors paths report neither today.
+/// reads as a measurement. The APR and SafeTensors paths report none of them today.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RunReport {
     /// Why generation ended.
     pub finish_reason: Option<FinishReason>,
     /// The model's context window, from its metadata.
     pub context_length: Option<usize>,
+    /// #3602: whole ms inside the GPU-vs-CPU parity guards ([`GuardCost::validate_ms`]).
+    pub validate_ms: Option<u64>,
+    /// #3602: whole ms of a GPU attempt that was refused and redone on the CPU
+    /// ([`GuardCost::rejected_ms`]).
+    pub rejected_ms: Option<u64>,
+}
+
+// #3602: `apr run --gpu` on qwen2.5-coder-0.5b took 12.7 s against 11.5 s with
+// `--no-gpu`, and nothing a run reported said where the GPU run's time went. The
+// load-time parity gate and the F2 first-token check each run a CPU reference
+// forward, and a GPU attempt they refuse is paid for and then redone on the CPU.
+// Thread-local for the reason `GENERATION_START` is: the guards run on the
+// dispatch thread, below any signature that could carry a duration back up.
+std::thread_local! {
+    static GUARD_COST: std::cell::Cell<GuardCost> =
+        const { std::cell::Cell::new(GuardCost { validate_ms: None, rejected_ms: None }) };
+}
+
+/// #3602: the wall time a run spent in the GPU-vs-CPU guards, in ms.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct GuardCost {
+    /// Inside the parity guards: the load-time gate and the F2 first-token check,
+    /// summed. Part of `setup_ms`, never of generation. `None` when neither ran.
+    pub validate_ms: Option<f64>,
+    /// A GPU attempt that ended on the CPU: from entering the GPU backend until it
+    /// handed the model back, whether a guard refused it or the device would not
+    /// start. Includes its `validate_ms`. `None` when no attempt was refused. A
+    /// forward failure mid-turn, which the dense session replays on the CPU
+    /// (#4268), is not counted here.
+    pub rejected_ms: Option<f64>,
+}
+
+impl GuardCost {
+    /// The report's whole-ms fields: `(validate_ms, rejected_ms)`.
+    #[must_use]
+    pub fn whole_ms(self) -> (Option<u64>, Option<u64>) {
+        let whole = |ms: f64| ms.max(0.0).round() as u64;
+        (self.validate_ms.map(whole), self.rejected_ms.map(whole))
+    }
+}
+
+fn add_ms(slot: Option<f64>, start: std::time::Instant) -> Option<f64> {
+    Some(slot.unwrap_or(0.0) + start.elapsed().as_secs_f64() * 1000.0)
+}
+
+/// Run a parity guard, adding its wall time to this thread's `validate_ms`.
+pub(crate) fn time_guard<T>(guard: impl FnOnce() -> T) -> T {
+    let start = std::time::Instant::now();
+    let verdict = guard();
+    GUARD_COST.with(|c| {
+        let mut cost = c.get();
+        cost.validate_ms = add_ms(cost.validate_ms, start);
+        c.set(cost);
+    });
+    verdict
+}
+
+/// Run a GPU attempt. When it hands the model back for the CPU (`Err`), its wall
+/// time is added to this thread's `rejected_ms`; a GPU that produced the answer
+/// adds nothing.
+pub(crate) fn time_gpu_attempt<T, E>(
+    attempt: impl FnOnce() -> std::result::Result<T, E>,
+) -> std::result::Result<T, E> {
+    let start = std::time::Instant::now();
+    let outcome = attempt();
+    if outcome.is_err() {
+        GUARD_COST.with(|c| {
+            let mut cost = c.get();
+            cost.rejected_ms = add_ms(cost.rejected_ms, start);
+            c.set(cost);
+        });
+    }
+    outcome
+}
+
+/// Take this thread's guard cost, leaving it empty. Called before a dispatch, so
+/// no run inherits an earlier one's, and after it, to report.
+pub(crate) fn take_guard_cost() -> GuardCost {
+    GUARD_COST.with(std::cell::Cell::take)
 }
 
 #[cfg(test)]
@@ -339,5 +418,101 @@ mod tests {
                 && msg.contains(&PYGMY_CONTEXT.to_string()),
             "the refusal must name the prompt length and the context: {msg}"
         );
+    }
+
+    fn pause() {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+
+    /// #3602 falsifier, planted: an attempt that hands the model back for the CPU
+    /// is charged to `rejected_ms`, for at least as long as it ran.
+    #[test]
+    fn a_refused_gpu_attempt_is_charged_to_rejected_ms() {
+        let _ = take_guard_cost();
+        let out: std::result::Result<(), &str> = time_gpu_attempt(|| {
+            pause();
+            Err("planted refusal")
+        });
+        assert_eq!(
+            out,
+            Err("planted refusal"),
+            "the attempt's own outcome passes through"
+        );
+        let cost = take_guard_cost();
+        let rejected = cost.rejected_ms.expect("a refused attempt must be charged");
+        assert!(
+            rejected >= 30.0,
+            "charged {rejected} ms for a 30 ms attempt"
+        );
+        assert_eq!(cost.validate_ms, None, "control: no guard ran");
+    }
+
+    /// The healthy twin: a GPU that produced the answer is charged nothing.
+    #[test]
+    fn an_accepted_gpu_attempt_is_not_charged() {
+        let _ = take_guard_cost();
+        let out: std::result::Result<u32, ()> = time_gpu_attempt(|| {
+            pause();
+            Ok(7)
+        });
+        assert_eq!(out, Ok(7));
+        assert_eq!(take_guard_cost(), GuardCost::default());
+    }
+
+    /// The load-time gate and the F2 check of one attempt are summed, each
+    /// verdict passes through, and taking the cost leaves it empty.
+    #[test]
+    fn guard_time_is_summed_over_both_guards() {
+        let _ = take_guard_cost();
+        let gate = time_guard(|| {
+            pause();
+            "gate"
+        });
+        let f2 = time_guard(|| {
+            pause();
+            "f2"
+        });
+        assert_eq!((gate, f2), ("gate", "f2"));
+        let validate = take_guard_cost().validate_ms.expect("two guards ran");
+        assert!(validate >= 60.0, "two 30 ms guards summed to {validate} ms");
+        assert_eq!(
+            take_guard_cost(),
+            GuardCost::default(),
+            "take must leave it empty"
+        );
+    }
+
+    #[test]
+    fn whole_ms_rounds_and_keeps_none() {
+        let cost = GuardCost {
+            validate_ms: Some(1234.5),
+            rejected_ms: None,
+        };
+        assert_eq!(cost.whole_ms(), (Some(1235), None));
+        let cost = GuardCost {
+            validate_ms: Some(0.4),
+            rejected_ms: Some(2.6),
+        };
+        assert_eq!(
+            cost.whole_ms(),
+            (Some(0), Some(3)),
+            "a guard that ran is Some(0), not None"
+        );
+    }
+
+    /// A run never reports an earlier run's guard time. The plant is what a
+    /// refused GPU attempt leaves on this thread; the CPU run after it ran no
+    /// guard, so it must report neither field.
+    #[test]
+    fn a_cpu_run_does_not_inherit_an_earlier_runs_guard_cost() {
+        let file = pygmy_file();
+        let _: std::result::Result<(), ()> = time_gpu_attempt(|| time_guard(|| Err(())));
+        assert_ne!(
+            GUARD_COST.with(std::cell::Cell::get),
+            GuardCost::default(),
+            "control: the plant must take, or this test measures nothing"
+        );
+        let (_, report) = run(&file, vec![1, 2, 3, 4], 2, vec![]).expect("run");
+        assert_eq!((report.validate_ms, report.rejected_ms), (None, None));
     }
 }

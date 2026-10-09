@@ -26,6 +26,8 @@ fn json_carries_the_engine_counts_and_the_finish() {
         context_length: Some(262_144),
         generation_ms: None,
         setup_ms: None,
+        validate_ms: None,
+        rejected_ms: None,
     };
     let v = build_final_json(&result_with(usage), "m.gguf", 32, false);
     assert_eq!(v["prompt_tokens"], 79);
@@ -57,6 +59,8 @@ fn stream_final_event_carries_them_too() {
         context_length: Some(4096),
         generation_ms: None,
         setup_ms: None,
+        validate_ms: None,
+        rejected_ms: None,
     };
     let mut buf: Vec<u8> = Vec::new();
     write_stream_output(&mut buf, &result_with(usage), "m.gguf", 8, false).expect("write");
@@ -81,3 +85,33 @@ fn json_carries_generation_and_setup_ms() {
     assert!(v.get("setup_ms").is_some() && v["setup_ms"].is_null(), "present, null when unmeasured");
 }
 
+
+/// #3602: a refused GPU run says what the refusal cost, beside `fell_back`; a GPU
+/// run whose guards passed carries their time and no rejection; a CPU run carries
+/// neither. Both keys are present in every case, null when not measured.
+#[test]
+fn json_carries_the_guard_cost_and_the_rejection() {
+    let refused = RunResult {
+        gpu_attempted: Some(true),
+        ..result_with(RunUsage { validate_ms: Some(1_300), rejected_ms: Some(1_900), ..RunUsage::default() })
+    };
+    let v = build_final_json(&refused, "m.gguf", 32, true);
+    assert_eq!(v["validate_ms"], 1_300);
+    assert_eq!(v["rejected_ms"], 1_900);
+    assert_eq!(v["backend"]["fell_back"], true, "control: this is the fallback row");
+
+    let healthy = RunResult {
+        used_gpu: Some(true),
+        gpu_attempted: Some(true),
+        ..result_with(RunUsage { validate_ms: Some(1_300), ..RunUsage::default() })
+    };
+    let v = build_final_json(&healthy, "m.gguf", 32, true);
+    assert_eq!(v["validate_ms"], 1_300);
+    assert!(v.get("rejected_ms").is_some() && v["rejected_ms"].is_null(), "no refusal, no charge");
+    assert_eq!(v["backend"]["fell_back"], false);
+
+    let v = build_final_json(&result_with(RunUsage::default()), "m.gguf", 32, false);
+    for key in ["validate_ms", "rejected_ms"] {
+        assert!(v.get(key).is_some() && v[key].is_null(), "{key}: present, null when unmeasured");
+    }
+}

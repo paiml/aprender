@@ -257,7 +257,7 @@ fn mock_run_report(config: &InferenceConfig, result: &InferenceResult) -> run_re
             &config.stop_tokens,
             config.max_tokens,
         )),
-        context_length: None,
+        ..run_report::RunReport::default()
     }
 }
 
@@ -339,7 +339,13 @@ fn run_gguf_inference(
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
     let _ = take_generation_start(); // #3981: never inherit a mark from an earlier run
+    let _ = run_report::take_guard_cost(); // #3602: nor its guard time
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
+    // #3602: only the dense path's guards are timed. The MoE and qwen35 engines run
+    // checks of their own that record nothing yet, so their runs report `None`
+    // rather than a sum that leaves those checks out.
+    let guards_timed = !crate::gguf::moe_forward_handles(&model.config.architecture)
+        && qwen35_host.is_none();
     // #3714 R2: `moe_forward_handles` is the one dispatch predicate — `apr
     // parity` and `apr qa` ask the same function, so no tool can route this
     // architecture differently from `apr run`. (It is exactly
@@ -392,6 +398,8 @@ fn run_gguf_inference(
     };
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
     let generation_ms = take_generation_start().map(|t| t.elapsed().as_secs_f64() * 1000.0);
+    let guard_cost = run_report::take_guard_cost();
+    let (validate_ms, rejected_ms) = if guards_timed { guard_cost.whole_ms() } else { (None, None) };
 
     let generated_tokens = &tokens[input_token_count..];
     let raw_text = mapped.model.decode(generated_tokens);
@@ -443,6 +451,8 @@ fn run_gguf_inference(
             budget,
         )),
         context_length: Some(model_config.context_length),
+        validate_ms,
+        rejected_ms,
     };
 
     Ok((
@@ -1255,6 +1265,15 @@ pub fn gpu_parity_admits(
 pub fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
     _gen_config: &crate::gguf::QuantizedGenerateConfig,
+    probe_context: &[u32],
+) -> F2Outcome {
+    // #3602: the check runs a CPU reference forward; the run reports what it cost.
+    run_report::time_guard(|| f2_validate(cuda_model, probe_context))
+}
+
+#[cfg(feature = "cuda")]
+fn f2_validate(
+    cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
     probe_context: &[u32],
 ) -> F2Outcome {
     let (kv_dim, num_layers, probe) = match f2_probe_to_judge(cuda_model, probe_context) {

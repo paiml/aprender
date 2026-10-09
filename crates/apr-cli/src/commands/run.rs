@@ -240,6 +240,12 @@ pub(crate) struct RunUsage {
     /// #3981: the part of the inference window that was NOT generation: weight upload,
     /// F2 validation. `None` when `generation_ms` is.
     pub setup_ms: Option<u64>,
+    /// #3602: ms inside the GPU-vs-CPU parity guards (load-time gate + F2 check),
+    /// each a CPU reference forward. `None` when no timed guard ran.
+    pub validate_ms: Option<u64>,
+    /// #3602: ms of a GPU attempt that was refused and redone on the CPU, its
+    /// guards included. `None` when no attempt was refused.
+    pub rejected_ms: Option<u64>,
 }
 
 /// Run result
@@ -364,6 +370,32 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
     })
 }
 
+/// The refusal for an `hf://` source that is not cached while the network is
+/// forbidden.
+///
+/// CRUX-A-20: a BARE `hf://org/repo` gets a different message, because "not
+/// cached" would be a claim we cannot support. The caller reached here having
+/// asked the Hub API which file the repo means (`run_model` → `resolve_hf_model`)
+/// and been refused, so `file` is None and the pacha cache — keyed on the full
+/// `hf://org/repo/<file>` — cannot be probed at all. The file may well be cached
+/// under a name we cannot name.
+fn offline_hf_refusal(org: &str, repo: &str, bare: bool) -> CliError {
+    if bare {
+        return CliError::ValidationFailed(format!(
+            "OFFLINE MODE: cannot resolve hf://{org}/{repo} to a file. \
+             Which file a bare repo means is only knowable from the \
+             HuggingFace API, and network access is disabled. Name the \
+             file (e.g. hf://{org}/{repo}/model.safetensors), pass a \
+             local path, or cache it first with: apr import hf://{org}/{repo}"
+        ));
+    }
+    CliError::ValidationFailed(format!(
+        "OFFLINE MODE: Model hf://{org}/{repo} not cached. \
+         Network access is disabled. Cache the model first with: \
+         apr import hf://{org}/{repo}"
+    ))
+}
+
 /// Resolve model source to local path
 ///
 /// When `offline` is true, this function enforces strict network isolation:
@@ -391,28 +423,7 @@ pub(crate) fn resolve_model(source: &ModelSource, force: bool, offline: bool) ->
 
             if offline {
                 // OFFLINE MODE: Reject any network access attempt.
-                //
-                // CRUX-A-20: a BARE `hf://org/repo` gets a different message,
-                // because "not cached" would be a claim we cannot support. The
-                // caller reached here having asked the Hub API which file the
-                // repo means (`run_model` → `resolve_hf_model`) and been
-                // refused, so `file` is None and the pacha cache — keyed on the
-                // full `hf://org/repo/<file>` — cannot be probed at all. The
-                // file may well be cached under a name we cannot name.
-                if file.is_none() {
-                    return Err(CliError::ValidationFailed(format!(
-                        "OFFLINE MODE: cannot resolve hf://{org}/{repo} to a file. \
-                         Which file a bare repo means is only knowable from the \
-                         HuggingFace API, and network access is disabled. Name the \
-                         file (e.g. hf://{org}/{repo}/model.safetensors), pass a \
-                         local path, or cache it first with: apr import hf://{org}/{repo}"
-                    )));
-                }
-                return Err(CliError::ValidationFailed(format!(
-                    "OFFLINE MODE: Model hf://{org}/{repo} not cached. \
-                     Network access is disabled. Cache the model first with: \
-                     apr import hf://{org}/{repo}"
-                )));
+                return Err(offline_hf_refusal(org, repo, file.is_none()));
             }
 
             // Auto-download like ollama

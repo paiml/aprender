@@ -634,6 +634,11 @@ fn build_final_json(
         // is the whole window (load, upload, F2, generation), kept for compatibility.
         "generation_ms": result.usage.generation_ms,
         "setup_ms": result.usage.setup_ms,
+        // #3602: what the GPU-vs-CPU guards cost, inside `setup_ms`. `rejected_ms` is
+        // the GPU attempt that was refused and redone on the CPU, so a fallback's price
+        // is a field, not a subtraction against another run. Null when not measured.
+        "validate_ms": result.usage.validate_ms,
+        "rejected_ms": result.usage.rejected_ms,
         // #3602: `used_gpu: false` alone collapses two different outcomes — "no
         // accelerator was asked for" and "one was asked for, attempted, and
         // REFUSED at runtime". A consumer cannot tell a CPU run from a rejected

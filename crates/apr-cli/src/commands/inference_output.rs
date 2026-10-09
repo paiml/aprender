@@ -426,6 +426,8 @@ fn execute_with_realizar(
             setup_ms: result
                 .generation_ms
                 .map(|g| (result.inference_ms - g).max(0.0).round() as u64),
+            validate_ms: report.validate_ms,
+            rejected_ms: report.rejected_ms,
         },
     })
 }

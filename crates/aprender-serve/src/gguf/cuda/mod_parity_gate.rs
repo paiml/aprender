@@ -196,7 +196,8 @@ impl OwnedQuantizedModelCuda {
             );
             return Ok(self);
         }
-        match parity_gate(&mut self) {
+        // #3602: the gate runs a CPU reference forward; the run reports what it cost.
+        match crate::infer::run_report::time_guard(|| parity_gate(&mut self)) {
             Ok(cosine) => {
                 self.parity = ParityGateRecord::passed(cosine);
                 Ok(self)
