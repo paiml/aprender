@@ -75,6 +75,8 @@ pub mod cuda_batch_scheduler;
 #[cfg(feature = "cuda")]
 pub mod iteration_scheduler;
 mod openai_handlers;
+// #4918: tool calls on the streaming chat path (both SSE builders).
+mod stream_tool_calls;
 pub(crate) use openai_handlers::LiveUtf8Deltas;
 pub(crate) use openai_handlers::{
     openai_chat_completions_handler, openai_chat_completions_stream_handler, openai_models_handler,

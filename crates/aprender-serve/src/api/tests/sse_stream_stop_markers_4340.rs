@@ -39,6 +39,7 @@ async fn stream(pieces: &[&str], stops: Option<&[String]>) -> (String, Vec<Strin
         0,
         None,
         stops,
+        None,
     );
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await

@@ -1,0 +1,54 @@
+# aprender#4918 T5 golden: the SSE output before the fix, created masked to 0.
+# Generated from v0.70.2 89e261cda1042ad14dba50034da9a9090abcdecb. Never regenerate it from a later tree.
+# Command: scripts/gen_stream_golden_4918.sh CHECKOUT OUT, CHECKOUT a clean v0.70.2 checkout
+# pieces: ["Sure","."," <","tool","_call",">\n","{\"name\": \"bash\", \"arguments\": {\"command\": \"ls\"}}","\n</tool_call>"," done"]
+== live
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"stream_mode":"live"}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"Sure"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":" "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"<tool"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"_call"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":">"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"\n{\"name\": \"bash\", \"arguments\": {\"command\": \"ls\"}}"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"\n</tool_call>"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":" done"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":9,"total_tokens":9}}
+
+data: [DONE]
+
+== replayed
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"stream_mode":"replayed"}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"Sure"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":" <"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"tool"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"_call"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":">\n"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"{\"name\": \"bash\", \"arguments\": {\"command\": \"ls\"}}"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":"\n</tool_call>"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{"content":" done"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-4918","object":"chat.completion.chunk","created":0,"model":"qwen3-coder","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":9,"total_tokens":9}}
+
+data: [DONE]
+
