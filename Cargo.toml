@@ -919,4 +919,21 @@ debug-assertions = false
 [profile.dev.package.aprender-compute]
 opt-level = 3
 
+# ----------------------------------------------------------------------------
+# pv runtime: debug builds run the YAML parser unoptimized
+# ----------------------------------------------------------------------------
+# serde_yaml parses through unsafe-libyaml, a C-to-Rust translation that is
+# very slow at opt-level 0. Every pv gate parses all of contracts/, so CI's
+# contracts gate paid that cost on each of its steps (#4974). Optimizing only
+# these two crates keeps every other crate debuggable, and serde_yaml_ng (apr-cli)
+# shares the unsafe-libyaml half. Same pass on intel, debug pv against this
+# profile, with byte-identical output (lint JSON less durations, census, shapes,
+# pv-sat): `pv lint contracts` 315s -> 63s, `--gate shapes` 48s -> 22s,
+# `pv census` 50s -> 22s, pv-sat 9.3s -> 3.7s. The one-off rebuild took 44.5s.
+[profile.dev.package.unsafe-libyaml]
+opt-level = 3
+
+[profile.dev.package.serde_yaml]
+opt-level = 3
+
 
