@@ -380,7 +380,7 @@ fn cr(f: &mut Fixture) -> &mut CrEvidence {
 #[test]
 fn falsify_ext_016_rc_corruption_fails_mcr() {
     // The release dir is untouched, so M0 stays green: only the clean-room copy is bad.
-    let mut f = fixture();
+    let f = fixture();
     std::fs::write(
         f.fetched.path().join("model.gguf"),
         b"GGUF\x03\x00\x00\x00tensorz",
