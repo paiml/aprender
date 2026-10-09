@@ -289,7 +289,7 @@ requirements:
   - {id: RR-P09, applies_to: [publish], anchor: "publish:preflight/R1", checker: "scripts/check_publish_preflight.sh#FAIL  R1 ", provenance: "PMAT-745 R1 clean tree", producer: "preflight"}
   - {id: RR-P10, applies_to: [publish], anchor: "publish:preflight/R2", checker: "scripts/check_publish_preflight.sh#FAIL  R2 ", provenance: "PMAT-745 R2 version from cargo metadata", producer: "preflight"}
   - {id: RR-P11, applies_to: [publish], anchor: "publish:preflight/R3", checker: "scripts/check_publish_preflight.sh#FAIL  R3 ", provenance: "PMAT-745 R3 tag at HEAD", producer: "preflight"}
-  - {id: RR-P12, applies_to: [publish], anchor: "publish:preflight/R4", checker: "scripts/check_publish_preflight.sh#FAIL  R4 ", provenance: "#4286 #4224 R4 release-branch ancestry", producer: "preflight"}
+  - {id: RR-P12, applies_to: [publish], anchor: "publish:preflight/R4", checker: "scripts/check_publish_preflight.sh#FAIL  R4 ", provenance: "#4286 #4224 P5 R4 main or release-branch ancestry", producer: "preflight"}
   - {id: RR-P13, applies_to: [publish], anchor: "publish:preflight/R5", checker: "scripts/check_publish_preflight.sh#FAIL  R5 ", provenance: "#3957 R5 dogfood receipt GO", producer: "dogfood"}
   - {id: RR-P14, applies_to: [publish], anchor: "publish:preflight/R6", checker: "scripts/check_publish_preflight.sh#FAIL  R6 ", provenance: "PMAT-955 #3468 R6 no dev-dependency cycle", producer: "preflight"}
   - {id: RR-P15, applies_to: [publish], anchor: "publish:preflight/R7", checker: "scripts/check_publish_preflight.sh#FAIL  R7 ", provenance: "#3717 #3712 R7 model matrix", producer: "models"}

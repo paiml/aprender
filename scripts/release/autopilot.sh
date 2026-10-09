@@ -632,8 +632,17 @@ if run_step dryrun; then
 fi
 
 # 6. crates.io cascade: multi-pass drain, then the check is the verdict (pass 1 exiting 1 is normal)
+#    cascade-publish.sh re-runs check_publish_preflight.sh before every pass (F-9). Under the standing
+#    release policy its R7 judges CRUX smoke, so the drain is handed the receipts step 5 judged: the
+#    T-1 models step's, and the bump's certification (D4, P7 WIRE). Bare, R7 read the tree's
+#    evidence/crux/<V>, which holds the certification and no receipts, and refused with the tag public.
 if run_step cascade; then
-  bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
+  if [ "$AP_POLICY" = 1 ]; then
+    MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json" \
+      bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
+  else
+    bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
+  fi
   say "CASCADE drain rc=$rc"
   bash scripts/cascade-publish.sh --check > "$AP/cascade-check.log" 2>&1; rc2=$?
   behind=$(grep -cE "\(want ${V//./\\.}\)" "$AP/cascade-check.log" || true)
