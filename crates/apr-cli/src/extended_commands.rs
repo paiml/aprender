@@ -1611,9 +1611,10 @@ pub enum ModelCommands {
         /// HF model repo, owner/name
         #[arg(long)]
         repo: FreeText,
-        /// File holding the HF token, mode 0600, on the driver host (never an env var)
+        /// File holding the HF token, mode 0600. Without it: HF_TOKEN, then the
+        /// local HF token file (~/.cache/huggingface/token); only the source is logged
         #[arg(long, value_name = "FILE")]
-        token_file: InputFile,
+        token_file: Option<InputFile>,
         /// Line state directory: <version>/model-publish-receipt-v1.json
         #[arg(long, value_name = "DIR")]
         state: DirPath,
