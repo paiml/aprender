@@ -27,15 +27,16 @@ metadata:
     pv reads an ontology written as Turtle or N-Triples, blank nodes included, and
     its N-Triples dump of that ontology is isomorphic to the one Jena's `riot`
     writes. On a malformed file both engines refuse it and name the same line.
-    Missing: pv reads no RDF file at all. Its shapes come only from YAML `shape:`
-    blocks (crates/aprender-contracts/src/ontology/shapes.rs), and the gate path
-    has no Turtle reader (ontology/w3c.rs). Demand 3 (documented power-user
+    Missing is the status of the first harness run, before pv read RDF. Since S3,
+    `pv ontology read` (crates/aprender-contracts/src/ontology/read/) reads both
+    syntaxes into its own input types, and the tests below record its measurement.
+    The status flips with its master row (spec §14.9). Demand 3 (documented power-user
     feature): no issue-volume count exists for Jena, so the score rates the verb
     inside pv, where reading an ontology someone else wrote is a power-user path,
     below validating and reporting.
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category R)'
-  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.2 (R-INPUT), §14.6 (S3)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.2 (R-INPUT), §14.6 (S3), §14.9'
   - 'harness: contracts/crux-shacl-jena-v1.yaml, tests/oracle/jena/'
   - 'epic: https://github.com/paiml/aprender/issues/3598'
   - 'competitor: https://jena.apache.org/documentation/io/ (riot)'
@@ -61,13 +62,13 @@ falsification_tests:
   rule: "pv's dump of an ontology is isomorphic to riot's"
   prediction: "for contracts/contracts.nt and contracts/shapes.ttl, the harness finds pv's N-Triples dump and riot's isomorphic"
   test: >-
-    LIVE-PENDING - the harness cell R-INPUT (jena-oracle, tests/oracle/jena/src/main.rs) is NOT MEASURED until pv reads Turtle and N-Triples (aprender#3598 sub-ticket S3). Measured 2026-10-09: riot reads the two files (32701 + 4166 triples); pv has no reader to compare. The comparator itself is proven by FALSIFY-CRUXSHACL-001..003. The obligation is RECORDED, NOT satisfied.
+    jena-oracle (tests/oracle/jena/), cell R-INPUT, comparator pv-vs-riot. GREEN 2026-10-09 at branch commit 27d5ccec95: contracts/contracts.nt (32732 triples), contracts/shapes.ttl (4165 distinct; riot streams 4166 because the file states one triple twice), the escapes control and 37 of 37 pinned W3C case files are isomorphic (tests/oracle/jena/receipt.json). The comparator is proven by FALSIFY-CRUXSHACL-001..003.
   if_fails: "rule 'pv's dump of an ontology is isomorphic to riot's' is violated — pv and Jena read the same file as different graphs, and the jena parity claim for CRUX-R-01 is FALSE"
 - id: FALSIFY-CRUX-R-01-002
   rule: "a malformed file is refused by both, at the same line"
   prediction: "tests/oracle/jena/controls/syntax-error-line-7.ttl: riot refuses it naming line 7, and pv refuses it naming line 7"
   test: >-
-    LIVE-PENDING - the riot side is measured by the harness control input/syntax-error-line-7 (FALSIFY-CRUXSHACL-004, seen 2026-10-09). The pv side is NOT MEASURED until S3. The obligation is RECORDED, NOT satisfied.
+    jena-oracle (tests/oracle/jena/), cell R-INPUT case tests/oracle/jena/controls/syntax-error-line-7.ttl, comparator line. GREEN 2026-10-09 at branch commit 27d5ccec95: riot and pv both refuse the file at line 7 (tests/oracle/jena/receipt.json). The riot side alone is also the control FALSIFY-CRUXSHACL-004.
   if_fails: "rule 'a malformed file is refused by both, at the same line' is violated — pv recovers from a syntax error silently or counts lines differently from riot"
 
 proof_obligations:
@@ -81,9 +82,9 @@ proof_obligations:
 qa_gate:
   id: F-CRUX-R-01-QA-001
   name: R-INPUT agrees with Jena or says it was not measured
-  description: "The harness reports R-INPUT GREEN only when pv's dump and riot's are isomorphic on every subject file and the line-7 control agrees; before S3 it reports NOT MEASURED, never GREEN."
+  description: "The harness reports R-INPUT GREEN only when pv's dump and riot's are isomorphic on every subject file and the line-7 control agrees; when pv cannot be run it reports NOT MEASURED, never GREEN."
   checks:
   - input_isomorphic_on_s_corpus
   - malformed_input_same_line
-  pass_criteria: "jena-oracle receipt: cell R-INPUT GREEN on contracts.nt and shapes.ttl"
+  pass_criteria: "jena-oracle receipt: cell R-INPUT GREEN on contracts.nt, shapes.ttl, the escapes control, the line-7 control and S-W3C"
   falsification: "Drop one triple from pv's dump (FALSIFY-CRUXSHACL-002) or rewrite one literal's lexical form (003): the cell must turn RED"

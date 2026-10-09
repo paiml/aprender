@@ -4,7 +4,7 @@
       "case": "contracts.nt",
       "cell": "R-RETURN",
       "comparator": "riot-vs-ntparse",
-      "detail": "32701 triples; []",
+      "detail": "32732 triples; []",
       "verdict": "GREEN"
     },
     {
@@ -15,24 +15,59 @@
       "verdict": "GREEN"
     },
     {
-      "case": "roundtrip",
-      "cell": "R-RETURN",
-      "comparator": "pv-write",
-      "detail": "S3: pv writes no graph it read back",
-      "verdict": "NOT MEASURED"
-    },
-    {
-      "case": "contracts.nt+shapes.ttl",
+      "case": "contracts/contracts.nt",
       "cell": "R-INPUT",
       "comparator": "pv-vs-riot",
-      "detail": "S3: pv reads no Turtle/N-Triples; riot reads 32701 + 4166 triples",
-      "verdict": "NOT MEASURED"
+      "detail": "riot 32732 triples, pv 32732 triples, isomorphic; pv 0 blank nodes",
+      "verdict": "GREEN"
+    },
+    {
+      "case": "roundtrip contracts/contracts.nt",
+      "cell": "R-RETURN",
+      "comparator": "riot-roundtrip",
+      "detail": "riot 32732 triples, pv 32732 triples, isomorphic",
+      "verdict": "GREEN"
+    },
+    {
+      "case": "contracts/shapes.ttl",
+      "cell": "R-INPUT",
+      "comparator": "pv-vs-riot",
+      "detail": "riot 4166 triples (4165 distinct), pv 4165 triples, isomorphic; pv 1562 blank nodes",
+      "verdict": "GREEN"
+    },
+    {
+      "case": "roundtrip contracts/shapes.ttl",
+      "cell": "R-RETURN",
+      "comparator": "riot-roundtrip",
+      "detail": "riot 4166 triples (4165 distinct), pv 4165 triples, isomorphic",
+      "verdict": "GREEN"
+    },
+    {
+      "case": "tests/oracle/jena/controls/escapes-langtags.ttl",
+      "cell": "R-INPUT",
+      "comparator": "pv-vs-riot",
+      "detail": "riot 14 triples, pv 14 triples, isomorphic; pv 4 blank nodes",
+      "verdict": "GREEN"
+    },
+    {
+      "case": "roundtrip tests/oracle/jena/controls/escapes-langtags.ttl",
+      "cell": "R-RETURN",
+      "comparator": "riot-roundtrip",
+      "detail": "riot 14 triples, pv 14 triples, isomorphic",
+      "verdict": "GREEN"
+    },
+    {
+      "case": "tests/oracle/jena/controls/syntax-error-line-7.ttl",
+      "cell": "R-INPUT",
+      "comparator": "line",
+      "detail": "riot line 7, pv line 7: error: ./tests/oracle/jena/controls/syntax-error-line-7.ttl: line 7, col 29: ' ' is not allowed in an IRI",
+      "verdict": "GREEN"
     },
     {
       "case": "corpus",
       "cell": "R-VALIDATE",
       "comparator": "jena-vs-pv",
-      "detail": "jena 743 results (conforms Some(false)), pv 730; 12 pairs differ: https://ont.paiml.dev/v1alpha1/csv/csv-train closed jena+1; https://ont.paiml.dev/v1alpha1/llm/claude-md closed jena+1; https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e closed jena+2; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Fgx10%2Fqwen2.5-coder-1.5b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Fgx10%2Fqwen2.5-coder-7b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-1.5b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-coder-1.5b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-coder-7b-instruct-q4_k_m.json closed jena+1",
+      "detail": "jena 745 results (conforms Some(false)), pv 732; 12 pairs differ: https://ont.paiml.dev/v1alpha1/csv/csv-train closed jena+1; https://ont.paiml.dev/v1alpha1/llm/claude-md closed jena+1; https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e closed jena+2; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Fgx10%2Fqwen2.5-coder-1.5b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Fgx10%2Fqwen2.5-coder-7b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-1.5b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-coder-1.5b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-coder-7b-instruct-q4_k_m.json closed jena+1",
       "verdict": "RED"
     },
     {
@@ -48,6 +83,13 @@
       "comparator": "full-tuple",
       "detail": "S4: pv's report has no value, source shape or W3C severity",
       "verdict": "NOT MEASURED"
+    },
+    {
+      "case": "S-W3C",
+      "cell": "R-INPUT",
+      "comparator": "pv-vs-riot",
+      "detail": "37 of 37 pinned case files isomorphic",
+      "verdict": "GREEN"
     },
     {
       "case": "shapes.ttl",
@@ -248,12 +290,14 @@
   "exit": 1,
   "git": {
     "dirty": "false",
-    "head": "62b1cebe99c4b4688e258ad5747a48a60652a58b"
+    "head": "27d5ccec957e6114463b33a33c65dc70081ad849"
   },
   "inputs": {
-    "/tmp/claude-1000/-mnt-nvme-raid0-wt-la-0-71-1b/ba8bb2a5-3e62-4d0e-8c1a-532901943a2a/scratchpad/pv-shapes-jena.json": "3771b3bb3ac86a86de9804ef2ecfd513b70f2ba00160fbbfef0ff28072b16768",
-    "contracts/contracts.nt": "e766dc34f08dffa9b7303b19ea4d1ed533c16d9d0ffedb3e01a9a953a7d7282a",
+    "/tmp/claude-1000/-mnt-nvme-raid0-wt-la-0-71-1b/ba8bb2a5-3e62-4d0e-8c1a-532901943a2a/scratchpad/s3-shapes.json": "a7b872fefb24cfab17ed55414a4c02d8c55cc7476d0f6ce9d85d5fd8fca8d52a",
+    "contracts/contracts.nt": "234398302099e1f497b3c0bcf1bad0b8a5b0ab637fd101368c56137b14eb6d21",
     "contracts/shapes.ttl": "0fb357b888925633a4e742eb10eb02a0204d587afd81c1d0d46501f166dcb60c",
+    "tests/oracle/jena/controls/escapes-langtags.ttl": "eb0d1bc68c99f6c94991848817a7c802332824a88456b975958763638b5ad918",
+    "tests/oracle/jena/controls/syntax-error-line-7.ttl": "e156d0b2a2920a5241f0e887c191fe4484ffcc79c44c00d9d1fc292f4a4f85e3",
     "tests/oracle/jena/w3c.sha256": "76a244d914b56888edf08956d8f82bdc624854b25bf94ac2c9a447fbfd8356a0"
   },
   "java": {
@@ -279,9 +323,9 @@
     "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/refusal/refusal-receipt-v1.refusals.0 closed jena+1"
   ],
   "pv": {
-    "sha256": "4cdb4a2f21793b2e1ef7503305e8d750a434e9d3dae5e44ddde1a11cab8428ba",
-    "version": "pv 0.70.2 (c14c654f7d) (aprender provable-contracts verifier)"
+    "sha256": "e94b73808da496d8b717c4b2d99c8fda63ec78120304c093d7e67eab5d63309a",
+    "version": "pv 0.70.2 (v0.70.2+no-git) (aprender provable-contracts verifier)"
   },
   "schema": "crux-shacl-jena-receipt/1",
-  "utc": 1791561935
+  "utc": 1791567047
 }

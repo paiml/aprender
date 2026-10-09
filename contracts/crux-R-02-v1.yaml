@@ -24,17 +24,19 @@ metadata:
   intake_status: partial
   github_issue: 3598
   description: >
-    What pv writes, Jena reads back to the same graph. Partial: pv writes
-    N-Triples (`to_ntriples`, ontology/rdf.rs) and Turtle shapes (`to_turtle`,
-    ontology/shapes.rs), and on 2026-10-09 Jena's `riot` read both files pv ships
-    with no error and no warning. The round trip Jena(X) ≅ Jena(pv_write(pv_read(X)))
-    needs pv to read RDF first (CRUX-R-01). Demand 3 (documented power-user
-    feature): no issue-volume count exists for Jena, so the score rates the verb
-    inside pv, where another engine reading pv's files is the interop path, not
-    the everyday one.
+    What pv writes, Jena reads back to the same graph. Partial is the status of
+    the first harness run. pv writes N-Triples (`to_ntriples`, ontology/rdf.rs)
+    and Turtle shapes (`to_turtle`, ontology/shapes.rs), and on 2026-10-09 Jena's
+    `riot` read both files pv ships with no error and no warning. Since S3 the
+    round trip Jena(X) ≅ Jena(pv_write(pv_read(X))) is measured too (test 003),
+    with pv_write the N-Triples dump of `pv ontology read`. The status flips with
+    its master row (spec §14.9). Demand 3 (documented power-user feature): no
+    issue-volume count exists for Jena, so the score rates the verb inside pv,
+    where another engine reading pv's files is the interop path, not the everyday
+    one.
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category R)'
-  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.2 (R-RETURN), §14.6 (S3)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.2 (R-RETURN), §14.6 (S3), §14.9'
   - 'harness: contracts/crux-shacl-jena-v1.yaml, tests/oracle/jena/ (receipt.json)'
   - 'epic: https://github.com/paiml/aprender/issues/3598'
   - 'competitor: https://jena.apache.org/documentation/io/ (riot --output)'
@@ -60,19 +62,19 @@ falsification_tests:
   rule: "riot reads pv's contracts.nt as the same graph"
   prediction: "riot parses contracts/contracts.nt with no error, and its output is isomorphic to the harness's own N-Triples parse of the file"
   test: >-
-    jena-oracle (tests/oracle/jena/), cell R-RETURN case contracts.nt, comparator riot-vs-ntparse. GREEN 2026-10-09 at branch commit 62b1cebe99: 32701 triples (tests/oracle/jena/receipt.json).
+    jena-oracle (tests/oracle/jena/), cell R-RETURN case contracts.nt, comparator riot-vs-ntparse. GREEN 2026-10-09 at branch commit 27d5ccec95: 32732 triples (tests/oracle/jena/receipt.json).
   if_fails: "rule 'riot reads pv's contracts.nt as the same graph' is violated — pv writes N-Triples another engine misreads or refuses"
 - id: FALSIFY-CRUX-R-02-002
   rule: "riot reads pv's shapes.ttl with no error and no warning"
   prediction: "riot parses contracts/shapes.ttl and logs no ERROR and no WARN"
   test: >-
-    jena-oracle (tests/oracle/jena/), cell R-RETURN case shapes.ttl, comparator riot. GREEN 2026-10-09 at branch commit 62b1cebe99: 4166 triples, no WARN (tests/oracle/jena/receipt.json).
+    jena-oracle (tests/oracle/jena/), cell R-RETURN case shapes.ttl, comparator riot. GREEN 2026-10-09 at branch commit 27d5ccec95: 4166 triples, no WARN (tests/oracle/jena/receipt.json).
   if_fails: "rule 'riot reads pv's shapes.ttl with no error and no warning' is violated — pv's Turtle writer emits syntax Jena refuses or warns on"
 - id: FALSIFY-CRUX-R-02-003
   rule: "the round trip through pv preserves the graph"
   prediction: "for each X, Jena's parse of X and Jena's parse of pv_write(pv_read(X)), written in the same run, are isomorphic"
   test: >-
-    LIVE-PENDING - the harness case roundtrip is NOT MEASURED until pv reads RDF (aprender#3598 S3). The comparator is proven by FALSIFY-CRUXSHACL-005..007. The obligation is RECORDED, NOT satisfied.
+    jena-oracle (tests/oracle/jena/), cell R-RETURN cases "roundtrip <file>", comparator riot-roundtrip. GREEN 2026-10-09 at branch commit 27d5ccec95 on contracts/contracts.nt (32732 triples), contracts/shapes.ttl (4165 distinct) and the escapes control (14): riot reads pv's dump, written in the run's work directory, in strict mode, and the graph equals riot's read of the original (tests/oracle/jena/receipt.json). The comparator is proven by FALSIFY-CRUXSHACL-005..007.
   if_fails: "rule 'the round trip through pv preserves the graph' is violated — pv loses or changes a triple between reading and writing"
 
 proof_obligations:
@@ -89,7 +91,7 @@ proof_obligations:
 qa_gate:
   id: F-CRUX-R-02-QA-001
   name: R-RETURN agrees with Jena or says it was not measured
-  description: "The harness reports each R-RETURN case GREEN only on isomorphic graphs read from files written in the same run; the round trip stays NOT MEASURED until S3, never GREEN."
+  description: "The harness reports each R-RETURN case GREEN only on isomorphic graphs read from files written in the same run; the round trip is NOT MEASURED, never GREEN, when pv cannot be run or writes no dump."
   checks:
   - shipped_files_read_clean
   - round_trip_isomorphic
