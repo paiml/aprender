@@ -105,13 +105,20 @@ step_regen() {
     "$PV" extract contracts >/dev/null || { echo "FAIL: pv extract contracts exited non-zero"; return 1; }
 }
 
-# A FRESH census, into a temp file: its identities hold (check_census_derived.sh --census) and the README's count
-# equals its n_files. The tracked contracts/census.json is never rewritten here.
+# A FRESH census, into a temp file: its identities hold (check_census_derived.sh --census) and the contract listing
+# readme_sync.sh walks equals its n_files, so the one definition of "a contract file" still agrees with `pv census`.
+# The README is NOT compared to the fresh census: since GEN-001 (#4526) it states the tracked release snapshot,
+# which `readme` checks. The tracked contracts/census.json is never rewritten here.
 step_census() {
-    local t rc
+    local t rc walked fresh
     t=$(mktemp "${TMPDIR:-/tmp}/pv-census.XXXXXX") || return 1
     if "$PV" census contracts --format json >"$t"; then
-        bash scripts/check_census_derived.sh --census "$t" && CENSUS_JSON="$t" bash scripts/readme_sync.sh --check
+        bash scripts/check_census_derived.sh --census "$t" && {
+            walked=$(bash scripts/readme_sync.sh --walked) || walked=""
+            fresh=$(jq -r '.n_files // empty' "$t" 2>/dev/null) || fresh=""
+            [ -n "$walked" ] && [ "$walked" = "$fresh" ] \
+                || { echo "FAIL: readme_sync.sh walks ${walked:-<nothing>} contract files, a fresh pv census counts ${fresh:-<nothing>}; the two definitions of a contract file disagree"; false; }
+        }
         rc=$?
     else
         echo "FAIL: pv census exited non-zero"
@@ -193,7 +200,7 @@ STUB
             && echo 'id: a' >contracts/a.yaml \
             && echo '{"n_files": 1}' >contracts/census.json \
             && echo 'nt 1' >contracts/contracts.nt && echo 'ttl 1' >contracts/shapes.ttl \
-            && printf '#!/usr/bin/env bash\nexit 0\n' >scripts/readme_sync.sh \
+            && printf '#!/usr/bin/env bash\nif [ "$1" = --walked ]; then [ -z "${STUB_WALKED:-}" ] || { echo "$STUB_WALKED"; exit 0; }; set -- contracts/*.yaml; echo "$#"; fi\nexit 0\n' >scripts/readme_sync.sh \
             && cp scripts/readme_sync.sh scripts/lint-provenance.sh \
             && printf '#!/usr/bin/env bash\n[ "$1" = --census ] && [ -s "$2" ] || exit 1\n[ "${STUB_CD:-}" != fail ] || { echo "stub: census invariants FAIL"; exit 1; }\n' >scripts/check_census_derived.sh \
             && git add -A && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm fixture
@@ -227,6 +234,10 @@ STUB
     out=$(STUB_CD=fail run "$SELF" "" pass); rc=$?
     [ "$rc" != 0 ] && grep -q 'FAILED: census' <<<"$out"
     row "a fresh census that breaks its invariants (check_census_derived.sh --census) is RED on census (rc=$rc)" $?
+
+    out=$(STUB_WALKED=7 run "$SELF" "" pass); rc=$?
+    [ "$rc" != 0 ] && grep -q 'FAILED: census' <<<"$out" && grep -q 'walks 7 contract files, a fresh pv census counts 1' <<<"$out"
+    row "the walked contract listing disagreeing with a fresh pv census is RED on census, both numbers named (rc=$rc)" $?
 
     (cd "$d" && echo 'id: b' >contracts/b.yaml && git add contracts/b.yaml \
         && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm 'add a contract, do not regenerate')

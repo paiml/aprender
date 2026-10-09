@@ -28,6 +28,8 @@
 #      measurement reads a number from a FILE ON DISK instead of from the
 #      checkout must turn rows 2 and 3 GREEN. If it does not, rows 2/3 are not
 #      measuring the property and this suite is vacuous.
+#   9  the snapshot (census.json) lags the tree, block = snapshot -> GREEN
+#  10  a PR hand-edits the block to the TREE count  -> RED (GEN-001 #4526)
 #
 # Phase B (BSE-03, this commit) adds the other two classes.
 #
@@ -571,7 +573,7 @@ fixture "$F2" 2 "$(readme_with_block 9)" || die "row 2 fixture could not be buil
 out2="$(run_guard "$F2" check_readme_claims.sh)"; rc=$?
 if [ "$rc" -eq 1 ] \
    && grep -q 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states 9' <<<"$out2" \
-   && grep -q 'merge tree carries 2' <<<"$out2"; then
+   && grep -q 'release snapshot contracts/census.json in [0-9a-f]* carries 2' <<<"$out2"; then
   ok "row 2  block hand-edited to 9 over 2 files: RED, both numbers printed"
 else
   bad "row 2  hand-edited block: rc=$rc, wanted 1 and a FAIL line carrying BOTH 9 and 2"$'\n'"$(printf '%s' "$out2" | sed 's/^/        /')"
@@ -666,9 +668,10 @@ fi
 # "the claim agrees with the TREE" and this suite proves nothing.
 MUTANT="check_readme_claims_mutant.sh"
 mutate() { # mutate <fixture dir>
-  sed 's|^.*# RATCHET-MUTATION-POINT.*$|  merge_count=$(cat "$RATCHET_MUTANT_COUNT_FILE")|' \
+  sed -e 's|^.*# RATCHET-MUTATION-POINT.*$|  merge_count=$(cat "$RATCHET_MUTANT_COUNT_FILE")|' \
+      -e 's|^.*# SNAPSHOT-MUTATION-POINT.*$|  snapshot=$(cat "$RATCHET_MUTANT_COUNT_FILE")|' \
       "$1/scripts/check_readme_claims.sh" > "$1/scripts/$MUTANT" || return 1
-  grep -q 'RATCHET_MUTANT_COUNT_FILE' "$1/scripts/$MUTANT"
+  [ "$(grep -c 'RATCHET_MUTANT_COUNT_FILE' "$1/scripts/$MUTANT")" -eq 2 ]
 }
 printf '9\n' > "$WORK/mutant-count.txt"
 if mutate "$F2" && mutate "$F3"; then
@@ -689,5 +692,43 @@ else
   bad "row 8  mutation NOT demonstrated on row 3: the mutant still exits $mrc3"$'\n'"$(printf '%s' "$m3" | sed 's/^/        /')"
 fi
 
+
+# ---------------------------------------------------------------------------
+# Rows 9 and 10 — GEN-001 (#4526). The block states the RELEASE SNAPSHOT
+# (contracts/census.json n_files), not the walked tree, so a PR that adds a
+# contract never edits the README. Fixture: 3 contract files, a snapshot of 2.
+lagging_snapshot() { # lagging_snapshot <dir> <readme claim>
+  fixture "$1" 3 "$(readme_with_block "$2")" || return 1
+  printf '{\n  "n_files": 2,\n  "n_parsed": 2,\n  "n_parse_errors": 0\n}\n' > "$1/contracts/census.json" || return 1
+  git_fx "$1" add -A -f contracts >/dev/null 2>&1 || return 1
+  git_fx "$1" commit -q -m "snapshot lags the tree" >/dev/null 2>&1 || return 1
+  git_fx "$1" update-ref refs/remotes/origin/main HEAD
+}
+F9="$WORK/f9"
+lagging_snapshot "$F9" 2 || die "row 9 fixture could not be built"
+out9="$(run_guard "$F9" check_readme_claims.sh)"; rc=$?
+if [ "$rc" -eq 0 ] && grep -q '^PASS FALSIFY-README-002 contract_count: 2 ' <<<"$out9" \
+   && grep -qE '^  snapshot +contracts/census.json n_files=2 ' <<<"$out9"; then
+  ok "row 9  snapshot 2 lags a tree of 3 and the block states 2: GREEN (the README follows the snapshot, never the PR)"
+else
+  bad "row 9  lagging snapshot: rc=$rc, wanted 0, a PASS line for 2 and a 'snapshot ... n_files=2' line"$'\n'"$(printf '%s' "$out9" | sed 's/^/        /')"
+fi
+F10="$WORK/f10"
+lagging_snapshot "$F10" 3 || die "row 10 fixture could not be built"
+out10="$(run_guard "$F10" check_readme_claims.sh)"; rc=$?
+if [ "$rc" -eq 1 ] \
+   && grep -q 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states 3' <<<"$out10" \
+   && grep -q 'carries 2' <<<"$out10"; then
+  ok "row 10 a PR hand-edits the block to the tree's 3 over a snapshot of 2: RED, both numbers printed (the #4502 conflict line)"
+else
+  bad "row 10 hand-edit to the tree count: rc=$rc, wanted 1 and a FAIL line carrying 3 and 2"$'\n'"$(printf '%s' "$out10" | sed 's/^/        /')"
+fi
+( cd "$F9" && bash "$F9/scripts/readme_sync.sh" --check ) >/dev/null 2>&1; rc=$?
+( cd "$F10" && bash "$F10/scripts/readme_sync.sh" --check ) >/dev/null 2>&1; rc10=$?
+if [ "$rc" -eq 0 ] && [ "$rc10" -eq 1 ]; then
+  ok "row 10 readme_sync.sh --check agrees with the guard: 2 is current, 3 is not"
+else
+  bad "row 10 readme_sync.sh --check: rc=$rc on the snapshot claim (want 0), rc=$rc10 on the tree claim (want 1)"
+fi
 printf '\n%s checks, %s failed\n' "$CHECKS" "$FAILED"
 [ "$FAILED" -eq 0 ]
