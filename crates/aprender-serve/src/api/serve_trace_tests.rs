@@ -132,6 +132,14 @@ fn measured_steps_split_prefill_decode_emit() {
         .map(|o| (o.name.as_str(), o.time_us))
         .collect();
     assert_eq!(rows, [("prefill", 400), ("decode", 210), ("emit", 15)]);
+    // The event count leads each row's details. Kills `n + 1` -> `n * 1` in the
+    // tally, which reports every count as 0 and leaves the times untouched.
+    let counts: Vec<_> = s
+        .breakdown
+        .iter()
+        .map(|o| o.details.as_deref().and_then(|d| d.split(' ').next()))
+        .collect();
+    assert_eq!(counts, [Some("1"), Some("2"), Some("3")]);
 }
 
 /// FALSIFY-OBS-TRACE-002, the boundary: a sum EXACTLY at the wall clock is still a
