@@ -163,20 +163,46 @@ module_of() { # module_of <root> <crate> <file> [depth] -> the module path; rc 1
     return 1
 }
 
+# grep_l <E|G> <pattern> <file>... -> the files `grep -l` lists, NUL-separated.
+#
+# derive used to run `grep -q` once per file: 8,264 src files, 708 test files,
+# and derive runs twice per check, so about 25,000 forks for 145 hits (#3676).
+# A file is listed here iff that per-file `grep -q` would have succeeded: same
+# pattern, same flavour, same grep. The loops below still walk the same list in
+# the same order. Batches of 1000 keep one exec under ARG_MAX. `|| :` per batch:
+# grep exits 1 on a batch with no match and 2 on a missing path, and under
+# `set -e` either one would drop every later batch (per-file grep -q skipped both).
+grep_l() {
+    local flavour=$1 pat=$2 i
+    shift 2
+    for ((i = 1; i <= $#; i += 1000)); do
+        grep -lZ"$flavour" "$pat" "${@:i:1000}" 2>/dev/null || :
+    done
+    return 0
+}
+
 derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--lib[\tmodule] | crate\t--bins
     local root=$1 f c t m
+    local -a tests=() srcs=() cfg_test=()
+    local -A test_reads_tree=() has_cfg_test=() src_reads_tree=()
     INDEX_DIR=$(mktemp -d "${TMPDIR:-/tmp}/tree-reader-idx.XXXXXX")
     trap 'rm -rf "${INDEX_DIR:?}"' RETURN
     (
-        for f in "$root"/crates/*/tests/*.rs; do
+        tests=("$root"/crates/*/tests/*.rs)
+        while IFS= read -r -d '' f; do test_reads_tree["$f"]=1; done < <(grep_l E "$ORACLE" "${tests[@]}")
+        for f in "${tests[@]}"; do
             [ -f "$f" ] || continue
-            grep -qE "$ORACLE" "$f" || continue
+            [ -n "${test_reads_tree[$f]:-}" ] || continue
             c=$(basename "$(dirname "$(dirname "$f")")"); t=$(basename "$f" .rs)
             printf '%s\t--test\t%s\n' "$c" "$t"
         done
-        for f in $(find "$root"/crates/*/src -name '*.rs' 2>/dev/null); do
-            grep -q '#\[cfg(test)\]' "$f" || continue
-            grep -qE "$ORACLE" "$f" || continue
+        # The same word-split list `for f in $(find ...)` walked, kept as it was.
+        for f in $(find "$root"/crates/*/src -name '*.rs' 2>/dev/null); do srcs+=("$f"); done
+        while IFS= read -r -d '' f; do has_cfg_test["$f"]=1; done < <(grep_l G '#\[cfg(test)\]' "${srcs[@]}")
+        for f in "${srcs[@]}"; do [ -z "${has_cfg_test[$f]:-}" ] || cfg_test+=("$f"); done
+        while IFS= read -r -d '' f; do src_reads_tree["$f"]=1; done < <(grep_l E "$ORACLE" "${cfg_test[@]}")
+        for f in "${srcs[@]}"; do
+            [ -n "${src_reads_tree[$f]:-}" ] || continue  # only cfg(test) files were grepped
             c=$(printf '%s' "$f" | sed "s|^$root/crates/||; s|/.*||")
             # `--lib` on a crate with NO library target is a hard error, never a
             # passable gate: `error: no library targets found in package X`.
@@ -367,6 +393,31 @@ self_test() {
         printf 'ok    row %-2s        derived set is exactly {alpha reads_readme, beta --lib lint, gamma manifest_dir} — the beta row names the MODULE (src/lint/mod.rs -> lint), not the crate\n' "$n"
     else
         printf 'FAIL  row %-2s        derived set wrong:\n%s\n' "$n" "$out"; red=1
+    fi
+    # grep_l against the per-file `grep -q` it replaced (#3676). The fixture files,
+    # cycled to 2,503 entries with a missing path among them, cross two batch
+    # boundaries; for both filters the listed files must be exactly, in order,
+    # the entries a per-file grep -q keeps.
+    local -a gl_files=() gl_in=()
+    local gl_i
+    gl_files=("$td"/crates/*/tests/*.rs "$td"/crates/*/src/*.rs "$td"/crates/*/src/*/*.rs "$td/crates/no-such-file.rs")
+    for ((gl_i = 0; gl_i < 2503; gl_i++)); do gl_in+=("${gl_files[gl_i % ${#gl_files[@]}]}"); done
+    gl_check() { # gl_check <E|G> <pattern> -> rc 0 when grep_l lists exactly what per-file grep -q keeps
+        local fl=$1 pat=$2 f
+        local -A q=()
+        local -a want=() got=()
+        for f in "${gl_files[@]}"; do
+            if grep -q"$fl" "$pat" "$f" 2>/dev/null; then q["$f"]=1; fi
+        done
+        for f in "${gl_in[@]}"; do [ -z "${q[$f]:-}" ] || want+=("$f"); done
+        while IFS= read -r -d '' f; do got+=("$f"); done < <(grep_l "$fl" "$pat" "${gl_in[@]}")
+        [ "${#want[@]}" -gt 0 ] && [ "${want[*]}" = "${got[*]}" ]
+    }
+    n=$((n + 1))
+    if gl_check E "$ORACLE" && gl_check G '#\[cfg(test)\]'; then
+        printf 'ok    row %-2s        grep_l lists exactly what a per-file grep -q keeps, over 2,503 entries (two batch boundaries), both filters\n' "$n"
+    else
+        printf 'FAIL  row %-2s        grep_l differs from the per-file grep -q it replaced\n' "$n"; red=1
     fi
     # delta: a crate with a cfg(test) reader and NO src/lib.rs is bin-only, so
     # the target is --bins. `--lib` there is `error: no library targets found`
