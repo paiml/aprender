@@ -1055,7 +1055,7 @@ fn the_sanitizer_judge_case_table() {
                 r#""initcheck","verdict":"ADVISORY_RED""#,
             ),
             now,
-            ok,
+            dirty,
         ),
         (
             "exactly 7 days old",
@@ -1321,7 +1321,7 @@ fn san_rows(race: String) -> Vec<String> {
     vec![
         san_row("memcheck", "CLEAN", "none", None),
         race,
-        san_row("initcheck", "ADVISORY_RED", "none", None),
+        san_row("initcheck", "CLEAN", "none", None),
         san_row("synccheck", "CLEAN", "none", None),
     ]
 }
@@ -1354,9 +1354,22 @@ fn the_sanitizer_run_judge_case_table() {
         (true, ids(&[ROPE])),
         "filtered: only covers"
     );
+    assert!(run.tools["initcheck"].0, "a CLEAN initcheck is clean");
+    let advisory = judge(&san_run(
+        "lambda",
+        "2026-09-28T12:00:00Z",
+        &path,
+        &[
+            san_row("memcheck", "CLEAN", "none", None),
+            san_row("racecheck", "CLEAN", "none", None),
+            san_row("initcheck", "ADVISORY_RED", "none", None),
+            san_row("synccheck", "CLEAN", "none", None),
+        ],
+    ))
+    .expect("judged");
     assert!(
-        run.tools["initcheck"].0,
-        "ADVISORY_RED is the recorded advisory policy"
+        !advisory.tools["initcheck"].0,
+        "ADVISORY_RED is not CLEAN: no advisory verdict passes S-SAN"
     );
 
     let no_covers = judge(&san_run(

@@ -760,8 +760,8 @@ pub const SANITIZER_MAX_AGE_S: i64 = 7 * 86_400;
 /// What one sanitizer run says about the kernels attributed to it, as the extractor judged it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SanitizerEvidence {
-    /// Every tool of [`SANITIZER_TOOLS`] ran and reported `CLEAN` (or `ADVISORY_RED`, the script's
-    /// recorded advisory policy for initcheck).
+    /// Every tool of [`SANITIZER_TOOLS`] ran and reported `CLEAN`. Any other verdict, an advisory
+    /// `ADVISORY_RED` included, is dirty: S-SAN counts a tool that is not `CLEAN` as dirty.
     pub clean: bool,
     /// The run is at most [`SANITIZER_MAX_AGE_S`] old at the gate, and not dated after it.
     pub fresh: bool,
@@ -834,10 +834,7 @@ pub fn judge_sanitizer_receipt(
             .filter(|r| r.get("tool").and_then(serde_json::Value::as_str) == Some(want))
             .collect();
         rows.len() == 1
-            && matches!(
-                rows[0].get("verdict").and_then(serde_json::Value::as_str),
-                Some("CLEAN" | "ADVISORY_RED")
-            )
+            && rows[0].get("verdict").and_then(serde_json::Value::as_str) == Some("CLEAN")
     });
     Ok(SanitizerEvidence {
         clean,
@@ -879,7 +876,7 @@ pub fn emit_sanitizer(
 pub const SANITIZER_SCHEMA_V2: &str = "ktest-05-sanitizer-receipt-v2";
 
 /// One judged, attributable sanitizer run: for each tool it ran, whether that tool was clean
-/// (`CLEAN`, or the recorded `ADVISORY_RED` policy) and the kernel ids it checked.
+/// (`CLEAN` only; `ADVISORY_RED` or any other verdict is dirty) and the kernel ids it checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SanitizerRun {
     pub fresh: bool,
@@ -933,7 +930,7 @@ pub fn judge_sanitizer_run(
             return Err(refuse(file, "a tool row lacks tool, verdict or filter"));
         };
         let checked = row_checked_ids(file, &tool, &filter, r.get("covers"), &dispatched)?;
-        let ok = matches!(verdict.as_str(), "CLEAN" | "ADVISORY_RED");
+        let ok = verdict == "CLEAN";
         if tools.insert(tool.clone(), (ok, checked)).is_some() {
             return Err(refuse(file, format!("{tool} appears twice")));
         }
