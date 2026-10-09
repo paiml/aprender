@@ -227,18 +227,26 @@ falsification_tests:
       The one door to crates.io (#4687): publish_strict.sh refuses a recorded
       clean-room run id that is missing, not a run id, unreadable, red, or a run
       that tested another commit. A non-empty file is not proof; the run is read
-      back and judged by clean_room_gate pinned to that one run.
+      back and judged by clean_room_gate pinned to that one run. And it is the
+      only door: `make publish` refuses a real upload (PUBLISH_DRY_RUN still
+      packages), and no other tracked shell script, make file or root workflow
+      runs `cargo publish` without --dry-run. cascade-publish.sh is the one other
+      upload, behind its own clean_room_gate.
     prediction: |
       Run the case table against the v0.70.1 publish_strict.sh (which checks only
       that the file is non-empty) and it FAILS four rows (non-numeric, red, other
-      commit, unreadable) with "the clean-room door let this run through".
+      commit, unreadable) with "the clean-room door let this run through". Point
+      its door rows at af58dfccff (PUBLISH_DOORS_ROOT) and they FAIL three rows:
+      `make publish` ran a real `cargo publish`, and the scan finds Makefile:1434
+      and scripts/stack_release.sh:54.
     test: |
       bash scripts/check_publish_strict_cleanroom.sh
     test_harness: |
       bash scripts/check_cascade_clean_room_gate.sh
     if_fails: |
       publish_strict.sh no longer reads the recorded run back, or clean_room_gate
-      lost its pinned mode and judges a run other than the one recorded.
+      lost its pinned mode and judges a run other than the one recorded, or a
+      second way to upload to crates.io came back.
 
 kani_harnesses:
   - id: KANI-PUB-001

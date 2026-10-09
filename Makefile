@@ -1388,15 +1388,22 @@ dev-setup: ## Set up the dev environment with sibling repo overrides
 	@echo ""
 	@$(MAKE) --no-print-directory check-siblings
 
-publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then verifies cargo install
-	@echo "Publishing to crates.io (removing [patch.crates-io] temporarily)..."
+publish: ## Dry-run one crate's package (PUBLISH_DRY_RUN=1). A real upload is refused: the one door is scripts/release/publish_strict.sh (#4687)
+	@if [ -z "$$PUBLISH_DRY_RUN" ]; then \
+		echo "REFUSED: make publish does not upload to crates.io (#4687)."; \
+		echo "  The one door is scripts/release/publish_strict.sh <version>, run from a detached"; \
+		echo "  checkout of the tag once clean-room is green on that exact commit."; \
+		echo "  A dry run still works: make publish CRATE=<crate> PUBLISH_DRY_RUN=1"; \
+		exit 1; \
+	fi
+	@echo "Dry-run packaging for crates.io (removing [patch.crates-io] temporarily)..."
 	@if [ -f .cargo/config.toml ]; then \
 		cp .cargo/config.toml .cargo/config.toml.publish-backup || exit 1; \
 		echo "# Clean config for publishing" > .cargo/config.toml; \
 	fi
 	@CRATE=$(CRATE); \
 	if [ -z "$$CRATE" ]; then \
-		echo "Usage: make publish CRATE=aprender   (or apr-cli, provable-contracts, ...)"; \
+		echo "Usage: make publish CRATE=aprender PUBLISH_DRY_RUN=1   (or apr-cli, provable-contracts, ...)"; \
 		echo "       any crate listed by: python3 scripts/lib/cascade_universe.py ."; \
 		echo "       -- INCLUDING the crates/facades/ workspace, which is excluded"; \
 		echo "          from the root and which this target could not reach at all"; \
@@ -1408,7 +1415,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 		fi; \
 		exit 1; \
 	fi; \
-	echo "Publishing $$CRATE..."; \
+	echo "Packaging $$CRATE (dry run, nothing is uploaded)..."; \
 	SEL="-p $$CRATE"; \
 	MANIFEST=$$(python3 scripts/lib/cascade_universe.py . | awk -F'\t' -v c="$$CRATE" '$$1==c{print $$3}'); \
 	WSROOT=$$(python3 scripts/lib/cascade_universe.py . | awk -F'\t' -v c="$$CRATE" '$$1==c{print $$4}'); \
@@ -1426,12 +1433,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 		echo "   because \`cargo publish -p $$CRATE\` from here is rc=101 'did not match any packages')"; \
 		SEL="--manifest-path $$MANIFEST"; \
 	fi; \
-	DRY=""; \
-	if [ -n "$$PUBLISH_DRY_RUN" ]; then \
-		echo "  (PUBLISH_DRY_RUN set: packaging and resolving, but NOT uploading)"; \
-		DRY="--dry-run --no-verify"; \
-	fi; \
-	cargo publish $$SEL $$DRY --allow-dirty --locked; \
+	cargo publish $$SEL --dry-run --no-verify --allow-dirty --locked; \
 	STATUS=$$?; \
 	echo "Restoring .cargo/config.toml..."; \
 	if [ -f .cargo/config.toml.publish-backup ]; then \
@@ -1439,52 +1441,10 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 		rm -f .cargo/config.toml.publish-backup; \
 	fi; \
 	if [ $$STATUS -ne 0 ]; then \
-		echo "FAIL: cargo publish failed"; \
+		echo "FAIL: cargo publish --dry-run failed"; \
 		exit $$STATUS; \
 	fi; \
-	if [ -n "$$PUBLISH_DRY_RUN" ]; then \
-		echo "DRY RUN OK: $$CRATE resolved and packaged; nothing was uploaded."; \
-		exit 0; \
-	fi; \
-	echo ""; \
-	echo "=== POST-PUBLISH VERIFICATION (PMAT-517) ==="; \
-	echo "Waiting for crates.io index to update..."; \
-	sleep 15; \
-	if [ "$$CRATE" = "apr-cli" ]; then \
-		echo "Verifying: cargo install apr-cli --force ..."; \
-		cargo install apr-cli --force 2>&1 | tee /tmp/publish-verify-$$CRATE.log; \
-		INSTALL_STATUS=$${PIPESTATUS[0]}; \
-		if [ $$INSTALL_STATUS -ne 0 ]; then \
-			echo ""; \
-			echo "FATAL: cargo install apr-cli FAILED after publish!"; \
-			echo "The published crate is BROKEN. You must fix and republish."; \
-			echo "Build log: /tmp/publish-verify-$$CRATE.log"; \
-			exit 1; \
-		fi; \
-		echo "Verifying apr --version..."; \
-		WANT=$$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/'); \
-		APR_BIN_PATH="$${CARGO_HOME:-$$HOME/.cargo}/bin/apr"; \
-		GOT=$$("$$APR_BIN_PATH" --version 2>&1); \
-		echo "  expected $$WANT, $$APR_BIN_PATH reports: $$GOT"; \
-		case "$$GOT" in \
-			*"$$WANT"*) echo "POST-PUBLISH VERIFICATION: PASSED" ;; \
-			*) echo "FATAL: published apr reports '$$GOT' but this tree is $$WANT."; \
-			   echo "The publish did not produce the binary we think it did."; \
-			   exit 1 ;; \
-		esac; \
-	else \
-		echo "Verifying: cargo install apr-cli --force (depends on $$CRATE)..."; \
-		cargo install apr-cli --force 2>&1 | tee /tmp/publish-verify-$$CRATE.log; \
-		INSTALL_STATUS=$${PIPESTATUS[0]}; \
-		if [ $$INSTALL_STATUS -ne 0 ]; then \
-			echo ""; \
-			echo "FATAL: cargo install apr-cli FAILED after publishing $$CRATE!"; \
-			echo "The published $$CRATE broke the apr-cli build."; \
-			echo "Build log: /tmp/publish-verify-$$CRATE.log"; \
-			exit 1; \
-		fi; \
-		echo "POST-PUBLISH VERIFICATION: PASSED"; \
-	fi
+	echo "DRY RUN OK: $$CRATE resolved and packaged; nothing was uploaded."
 
 check-wasm32: ## Verify aprender-core still compiles for wasm32-unknown-unknown (aprender#2310)
 	@bash scripts/check_wasm32_core_builds.sh
