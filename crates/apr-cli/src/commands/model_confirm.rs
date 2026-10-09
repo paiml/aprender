@@ -123,7 +123,7 @@ pub(crate) fn compare(
     Ok(checks)
 }
 
-fn version_dir(state: &Path, version: &str) -> Result<PathBuf> {
+pub(crate) fn version_dir(state: &Path, version: &str) -> Result<PathBuf> {
     if version.is_empty() || version.contains(['/', '\\']) || version.starts_with('.') {
         return Err(invalid(format!(
             "version {version:?} is not a directory name"

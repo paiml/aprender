@@ -87,6 +87,10 @@ pub(crate) mod hang_trace_classifier;
 pub(crate) mod hang_trace_lint;
 pub(crate) mod hex;
 pub(crate) mod hf_endpoint;
+#[cfg(feature = "training")]
+pub(crate) mod hf_http;
+#[cfg(feature = "training")]
+pub(crate) mod hf_publish;
 pub(crate) mod imatrix_classifier;
 pub(crate) mod imatrix_lint;
 pub(crate) mod import;
