@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# check_tag_step_gated.sh -- the release train's tag step must call
-# scripts/check_milestone_cut.sh, and must not be reachable without it (PMAT-3459).
+# check_tag_step_gated.sh -- the release train's tag step must not be reachable without its
+# gate (PMAT-3459, which first placed the milestone gate inside cut_tag).
+# #4688: the milestone cut and the coverage receipt (#4691) left the release path; what this guard
+# still runs is cut_tag's release-policy / #3715 readiness gate ahead of `git tag`.
 #
 # THE DEFECT, measured 2026-09-17. v0.68.1 was tagged at 15:06:29Z by a per-train
 # autopilot copy living OUTSIDE the repository, six minutes after #3455 merged the
@@ -11,18 +13,9 @@
 # a comment. What must hold is that `git tag` is UNREACHABLE unless the gate returned
 # 0, so this guard EXTRACTS cut_tag() from the autopilot and RUNS it against stubs,
 # once per gate outcome, and asserts on whether a tag was cut:
-#     gate rc 0 -> tag is cut
-#     gate rc 1 -> no tag, no publish   (the milestone holds open items)
-#     gate rc 2 -> no tag               (Unknown; never a silent pass)
-# #3459 part 2 made the tag path three steps (must-carry gate, carry, STRICT gate), so the
-# stubs answer each call separately and record the ORDER they ran in:
-#     must-carry rc 1/2 -> no tag AND nothing carried (a blocker is never carried around)
-#     carry rc 2        -> no tag
-#     all clean         -> the carry ran BEFORE the strict gate, and the tag is cut
-# #4691 adds a fourth stub, the coverage resolution before the tag (tag_coverage_gate.sh --resolve), which runs
-# first after readiness: rc 1 -> no tag AND nothing carried.
-# --self-test then builds MUTANTS (gate calls removed, verdicts discarded, the carry call
-# removed) and requires this guard to go RED on each. It also runs the carry script's own
+#     all green -> tag is cut; readiness or policy refused -> no tag
+# --self-test then builds MUTANTS (gate requirements deleted, verdicts discarded)
+# and requires this guard to go RED on each. It also runs the carry script's own
 # case table, which lives in scripts/release/ where guard_tree cannot discover it.
 #
 #   check_tag_step_gated.sh              judge scripts/release/autopilot.sh
@@ -92,86 +85,6 @@ run_cut_tag() {
     rmtree "$d"
 }
 
-# run_cov <autopilot> <fn> <resolve-rc> <remote-head: none|mc|other|pushfail> <run-list: hit|empty> <attached: 0|1> <conclusion>
-# -- #4950 G4: extract cov_dispatch_at_mc() and cov_wait(), run <fn> against stubs, print a transcript.
-run_cov() {
-    local ap=$1 fn=$2 rrc=$3 rh=$4 rl=$5 att=$6 con=$7 d body
-    d=$(mktemp -d) || return 2
-    body=$(awk '/^cov_dispatch_at_mc\(\) \{/,/^\}/; /^cov_wait\(\) \{/,/^\}/' "$ap")
-    [ -n "$body" ] || { rmtree "$d"; return 2; }
-    mkdir -p "$d/scripts/release" "$d/ap" "$d/bin"
-    printf '#!/usr/bin/env bash\necho CALL-RESOLVE >> %q\nexit %s\n' "$d/calls" "$rrc" > "$d/scripts/release/tag_coverage_gate.sh"
-    [ "$att" = 1 ] && printf '777\n' > "$d/ap/coverage-run-id"
-    case "$rh" in none|pushfail) h='' ;; mc) h=deadbeef ;; *) h=cafef00d ;; esac
-    case "$rl" in hit) r=555 ;; *) r='' ;; esac
-    {   printf '#!/usr/bin/env bash\n'
-        printf 'case "$1 $2" in\n'
-        printf '  "workflow run") echo "CALL-DISPATCH $*" >> %q ;;\n' "$d/calls"
-        printf '  "run list") echo CALL-LIST >> %q; case " $* " in *" --branch coverage/0.0.0 "*"headSha == \\"deadbeef\\""*) echo %q ;; esac ;;\n' "$d/calls" "$r"
-        printf '  "run view") echo "CALL-VIEW $3" >> %q; echo "completed %s" ;;\n' "$d/calls" "$con"
-        printf 'esac\n'
-    } > "$d/bin/gh"; chmod +x "$d/bin/gh"
-    {   printf 'set -uo pipefail\nV=0.0.0 MC=deadbeef REPO=paiml/aprender AP_POLL=300 AP_SETTLE=30\n'
-        printf 'AP=%q LOG=%q\n' "$d/ap" "$d/log"
-        printf 'say() { printf "SAY %%s\\n" "$*"; }\ndie() { printf "DIE %%s\\n" "$*"; exit 1; }\nsleep() { :; }\n'
-        printf 'git() { case "$1" in ls-remote) echo "CALL-LSREMOTE $3" >> %q; [ -n %q ] && printf "%%s\\trefs/heads/x\\n" %q ;; push) echo "CALL-PUSH $3" >> %q; [ %q != pushfail ] || return 1 ;; esac; return 0; }\n' \
-            "$d/calls" "$h" "$h" "$d/calls" "$rh"
-        printf '%s\n%s\n' "$body" "$fn"
-    } > "$d/harness.sh"
-    (cd "$d" && PATH="$d/bin:$PATH" bash "$d/harness.sh" 2>&1)
-    printf 'ORDER %s\n' "$(tr '\n' ' ' 2>/dev/null < "$d/calls")"
-    printf 'RUNID %s\n' "$(cat "$d/ap/coverage-run-id" 2>/dev/null)"
-    rmtree "$d"
-}
-
-# judge_cov <autopilot> -- the #4950 G4 case table. Prints rows; returns the number of wrong ones.
-judge_cov() {
-    local ap=$1 out w=0 tagblk
-    row() { if [ "$1" -eq 0 ]; then printf 'ok    %s\n' "$2"; else printf 'FAIL  %s\n%s\n' "$2" "$out" >&2; w=$((w + 1)); fi; }
-    out=$(run_cov "$ap" cov_dispatch_at_mc 0 none hit 0 success)
-    ! grep -qE "CALL-(PUSH|DISPATCH)" <<< "$out" && grep -q "^RUNID $" <<< "$out"
-    row $? "coverage: a receipt already qualifies -> nothing pushed, nothing dispatched"
-    out=$(run_cov "$ap" cov_dispatch_at_mc 1 none hit 0 success)
-    grep -q "^ORDER CALL-RESOLVE CALL-LSREMOTE refs/heads/coverage/0.0.0 CALL-PUSH deadbeef:refs/heads/coverage/0.0.0 CALL-DISPATCH workflow run coverage-nightly.yml --repo paiml/aprender --ref coverage/0.0.0 CALL-LIST $" <<< "$out" && grep -q "^RUNID 555$" <<< "$out"
-    row $? "coverage: none qualifies, no branch -> push MC to coverage/V, dispatch on it, record the run"
-    out=$(run_cov "$ap" cov_dispatch_at_mc 1 mc hit 0 success)
-    ! grep -q CALL-PUSH <<< "$out" && grep -q CALL-DISPATCH <<< "$out" && grep -q "^RUNID 555$" <<< "$out"
-    row $? "coverage: branch already at MC -> no push, dispatch"
-    out=$(run_cov "$ap" cov_dispatch_at_mc 1 other hit 0 success)
-    grep -q "^DIE coverage/0.0.0 on origin is at cafef00d" <<< "$out" && ! grep -qE "CALL-(PUSH|DISPATCH)" <<< "$out"
-    row $? "coverage: branch at another commit -> stop, nothing pushed or dispatched"
-    out=$(run_cov "$ap" cov_dispatch_at_mc 1 pushfail hit 0 success)
-    grep -q "^DIE pushing coverage/0.0.0 at deadbeef failed" <<< "$out" && ! grep -q CALL-DISPATCH <<< "$out" && grep -q "^RUNID $" <<< "$out"
-    row $? "coverage: pushing coverage/V fails -> stop, nothing dispatched or recorded"
-    out=$(run_cov "$ap" cov_dispatch_at_mc 1 none hit 1 success)
-    ! grep -qE "CALL-(RESOLVE|PUSH|DISPATCH)" <<< "$out" && grep -q "^RUNID 777$" <<< "$out"
-    row $? "coverage: a recorded run -> attach; no resolve, push or second dispatch"
-    out=$(run_cov "$ap" cov_dispatch_at_mc 1 none empty 0 success)
-    grep -q "^DIE no coverage-nightly run" <<< "$out" && grep -q "^RUNID $" <<< "$out"
-    row $? "coverage: no run at MC appears -> stop, no run recorded"
-    out=$(run_cov "$ap" cov_wait 0 none hit 1 success)
-    grep -q "^SAY COVERAGE run 777 at deadbeef green" <<< "$out" && ! grep -q "^DIE" <<< "$out"
-    row $? "coverage wait: run green -> continue"
-    for c in failure cancelled; do
-        out=$(run_cov "$ap" cov_wait 0 none hit 1 "$c")
-        grep -q "^DIE coverage-nightly run 777 at deadbeef concluded .$c." <<< "$out"
-        row $? "coverage wait: run $c -> no tag"
-    done
-    out=$(run_cov "$ap" cov_wait 0 none hit 0 failure)
-    ! grep -q CALL-VIEW <<< "$out" && ! grep -q "^DIE" <<< "$out"
-    row $? "coverage wait: nothing dispatched -> no gh call (cut_tag judges the receipt)"
-    # structure: the dispatch runs ahead of the T-1 lanes whenever the tag step will run, and the tag
-    # step waits for the run ahead of the publish dry run and the tag
-    out=$(grep -n '^run_step tag && cov_dispatch_at_mc$' "$ap")
-    [ -n "$out" ] && [ "${out%%:*}" -lt "$(grep -n "^t1_deep() {" "$ap" | cut -d: -f1)" ]
-    row $? "coverage: dispatched before the T-1 lanes when the tag step runs"
-    tagblk=$(awk '/^if run_step tag; then$/,/^fi$/' "$ap")
-    out=$tagblk
-    awk "/^  cov_wait\$/ { w = NR } /rc_publish_gate.sh --verify/ { r = NR } /^  cut_tag / { c = NR } END { exit !(w && r > w && c > w) }" <<< "$tagblk"
-    row $? "coverage: the tag step waits for the run before the dry run and cut_tag"
-    return "$w"
-}
-
 # run_casc <autopilot> <fn> <k=v ...> -- #4950: extract cascade_cleanroom_at_tag() and
 # cascade_no_secret_green(), run <fn> against stubs, print a transcript. Knobs (defaults = all green):
 #   rec=1 tagc=mc|other|none job=success sha=mc|other|both|none            (cleanroom premise)
@@ -218,7 +131,8 @@ tested-sha: $O" ;; *) lg='' ;; esac
 # judge_casc <autopilot> -- the #4950 cascade-premise case table. Returns the number of wrong rows.
 judge_casc() {
     local ap=$1 out w=0 cb
-    row() { if [ "$1" -eq 0 ]; then printf 'ok    %s\n' "$2"; else printf 'FAIL  %s\n%s\n' "$2" "$out" >&2; w=$((w + 1)); fi; }
+    # row RC DESC -- RC is the status of the check just run (no eval: each check is plain code above its row)
+    row() { if [ "$1" = 0 ]; then printf 'ok    %s\n' "$2"; else printf 'FAIL  %s\n%s\n' "$2" "$out" >&2; w=$((w + 1)); fi; }
     C=cascade_cleanroom_at_tag N=cascade_no_secret_green
     out=$(run_casc "$ap" $C)
     grep -q "^REC {\"cleanroom_run\":\"4242\",\"tag\":\"v0.0.0\",\"sha\":\"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"}$" <<< "$out" && ! grep -q "^DIE" <<< "$out"
@@ -263,44 +177,16 @@ judge() {
     out=$(run_cut_tag "$ap" 0) || true
     if grep -q 'GIT-TAG' <<< "$out"; then printf 'ok    gate rc=0 -> the tag is cut\n'
     else printf 'FAIL  gate rc=0 -> NO tag was cut\n%s\n' "$out" >&2; bad=1; fi
+    # #4950 G1: the tag, then its one-shot arm for the pre-push guard (for 300 s at most), then the push
+    if grep -q '^ORDER CALL-GIT-tag CALL-ARM CALL-GIT-push $' <<< "$out"; then printf 'ok    all clean -> the tag, arm it, push it\n'
+    else printf 'FAIL  all clean did not run tag -> arm -> push\n%s\n' "$out" >&2; bad=1; fi
 
-    out=$(run_cut_tag "$ap" 1) || true
-    if grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'FAIL  gate rc=1 (milestone holds open items) -> A TAG WAS CUT ANYWAY\n%s\n' "$out" >&2; bad=1
-    else printf 'ok    gate rc=1 -> no tag, no publish\n'; fi
-
-    out=$(run_cut_tag "$ap" 2) || true
-    if grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'FAIL  gate rc=2 (Unknown) -> A TAG WAS CUT ANYWAY\n%s\n' "$out" >&2; bad=1
-    else printf 'ok    gate rc=2 (Unknown) -> no tag\n'; fi
-    # #3459 part 2: the must-carry gate, the carry, and their ORDER
-    out=$(run_cut_tag "$ap" 0) || true
-    if grep -q '^ORDER CALL-COVJOB CALL-MUST-CARRY CALL-CARRY CALL-STRICT CALL-GIT-tag CALL-ARM CALL-GIT-push $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'ok    all clean -> coverage job, must-carry, the carry, STRICT, the tag, arm it, push it\n'
-    else printf 'FAIL  all clean did not run coverage job -> must-carry -> carry -> strict -> tag\n%s\n' "$out" >&2; bad=1; fi
-    for m in 1 2; do
-        out=$(run_cut_tag "$ap" 0 "$m") || true
-        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-CARRY' <<< "$out"; then
-            printf 'FAIL  must-carry rc=%s -> a tag was cut or items were CARRIED around a blocker\n%s\n' "$m" "$out" >&2; bad=1
-        else printf 'ok    must-carry rc=%s -> nothing carried, no tag\n' "$m"; fi
-    done
-    out=$(run_cut_tag "$ap" 0 0 2) || true
-    if grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'FAIL  carry rc=2 -> A TAG WAS CUT over a failed carry\n%s\n' "$out" >&2; bad=1
-    else printf 'ok    carry rc=2 -> no tag\n'; fi
     # #3715 B1: no ENFORCED readiness Pass for exactly this version+commit -> no tag, nothing carried
     for r in absent report stale; do
         out=$(run_cut_tag "$ap" 0 0 0 "$r") || true
         if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out"; then
             printf 'FAIL  readiness %s -> a tag was cut or the milestone was touched without an enforced #3715 Pass\n%s\n' "$r" "$out" >&2; bad=1
         else printf 'ok    readiness %s -> no tag, nothing carried\n' "$r"; fi
-    done
-    # #4691: no coverage receipt holds the floor for the release commit (1) or the gate could not run (2) -> no tag, nothing carried
-    for j in 1 2; do
-        out=$(run_cut_tag "$ap" 0 0 0 pass "$j") || true
-        if grep -q 'GIT-TAG' <<< "$out" || grep -qE 'CALL-(MUST-CARRY|CARRY|STRICT)' <<< "$out"; then
-            printf 'FAIL  coverage-job resolve rc=%s -> a tag was cut or the milestone was touched\n%s\n' "$j" "$out" >&2; bad=1
-        else printf 'ok    coverage-job resolve rc=%s -> no tag, nothing carried\n' "$j"; fi
     done
     # the standing release policy (contracts/model-capability-ladder-v1.yaml `ladder.release_policy`):
     # a covered version tags on the models lane's CRUX-smoke GO for exactly this commit, with no readiness run
@@ -335,7 +221,6 @@ judge() {
         END { if (p == "" || p + 0 < 300) w = w "AP_POLL=" p; printf "%s", w }' "$ap")
     if [ -n "$out" ]; then printf 'FAIL  a GitHub poll faster than 300 s, or AP_POLL below 300: %s\n' "$out" >&2; bad=1
     else printf 'ok    every autopilot wait is AP_POLL (>= 300 s) or the one dispatch settle\n'; fi
-    judge_cov "$ap" || bad=1
     judge_casc "$ap" || bad=1
     return "$bad"
 }
@@ -355,42 +240,6 @@ if [ "${1:-}" = "--self-test" ]; then
     ok()  { printf 'ok    %s\n' "$*"; }
     nok() { printf 'FAIL  %s\n' "$*" >&2; bad=1; }
 
-    # M1: the gate call deleted -- the #3459 defect exactly, restored.
-    sed '/check_milestone_cut\.sh/d' "$SUBJECT" > "$d/m1.sh"
-    if judge "$d/m1.sh" > "$d/m1.out" 2>&1; then
-        nok "MUTANT 1 (gate call deleted) PASSED -- this guard cannot see its own defect"
-    else
-        ok "mutant 1: gate call deleted -> RED ($(grep -c '^FAIL' "$d/m1.out") failing row(s))"
-    fi
-
-    # M2: the gate runs but its verdict is discarded (`|| true`) -- absence-as-consent.
-    sed 's#\(bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" >> "$LOG" 2>&1\) || rc=$?#\1 || true#' "$SUBJECT" > "$d/m2.sh"
-    if ! grep -q '|| true' "$d/m2.sh"; then
-        nok "MUTANT 2 could not be built -- the gate-call line did not match; this self-test is vacuous"
-    elif judge "$d/m2.sh" > "$d/m2.out" 2>&1; then
-        nok "MUTANT 2 (verdict discarded) PASSED -- a gate whose result is thrown away reads as gated"
-    else
-        ok "mutant 2: gate verdict discarded -> RED"
-    fi
-
-    # M4: the MUST-CARRY verdict discarded -> items are carried around a blocker and a tag is cut.
-    sed 's#\(bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1\) || rc=$?#\1 || true#' "$SUBJECT" > "$d/m4.sh"
-    if cmp -s "$SUBJECT" "$d/m4.sh"; then
-        nok "MUTANT 4 could not be built -- the must-carry call line did not match; vacuous"
-    elif judge "$d/m4.sh" > "$d/m4.out" 2>&1; then
-        nok "MUTANT 4 (must-carry verdict discarded) PASSED"
-    else
-        ok "mutant 4: must-carry verdict discarded -> RED"
-    fi
-    # M5: the carry call deleted -> a milestone is judged strict without anything having been moved.
-    sed '/carry_milestone_items\.sh" "\$v"/d' "$SUBJECT" > "$d/m5.sh"
-    if cmp -s "$SUBJECT" "$d/m5.sh"; then
-        nok "MUTANT 5 could not be built -- the carry call line did not match; vacuous"
-    elif judge "$d/m5.sh" > "$d/m5.out" 2>&1; then
-        nok "MUTANT 5 (carry call deleted) PASSED"
-    else
-        ok "mutant 5: carry call deleted -> RED"
-    fi
     # M6 (#3715 B1): the readiness requirement deleted -> a skipped or report-mode readiness step tags.
     sed '/ENFORCE PASS for\|index(\$0, n) == 1/d; /no .#3715 ENFORCE PASS/d' "$SUBJECT" > "$d/m6.sh"
     if cmp -s "$SUBJECT" "$d/m6.sh"; then
@@ -399,24 +248,6 @@ if [ "${1:-}" = "--self-test" ]; then
         nok "MUTANT 6 (readiness requirement deleted) PASSED"
     else
         ok "mutant 6: #3715 readiness requirement deleted -> RED"
-    fi
-    # M7 (#4691): the coverage-job resolution deleted -> a tag is cut for a job ci.yml never runs.
-    sed '/tag_coverage_gate\.sh" --resolve/,+1d' "$SUBJECT" > "$d/m7.sh"
-    if cmp -s "$SUBJECT" "$d/m7.sh"; then
-        nok "MUTANT 7 could not be built -- the --resolve call line did not match; vacuous"
-    elif judge "$d/m7.sh" > "$d/m7.out" 2>&1; then
-        nok "MUTANT 7 (coverage-job resolve deleted) PASSED"
-    else
-        ok "mutant 7: coverage-job resolve deleted -> RED"
-    fi
-    # M8 (#4691): the resolution runs but its verdict is discarded.
-    sed 's/|| die "no coverage receipt at or above COV_FLOOR/|| true; : "/' "$SUBJECT" > "$d/m8.sh"
-    if cmp -s "$SUBJECT" "$d/m8.sh"; then
-        nok "MUTANT 8 could not be built -- the --resolve die line did not match; vacuous"
-    elif judge "$d/m8.sh" > "$d/m8.out" 2>&1; then
-        nok "MUTANT 8 (coverage-job verdict discarded) PASSED"
-    else
-        ok "mutant 8: coverage-job verdict discarded -> RED"
     fi
     # M9: under the policy, the CRUX-smoke GO requirement discarded -> a stale or absent models GO tags.
     sed 's/|| die "the standing release policy covers \$v but/|| true; : "/' "$SUBJECT" > "$d/m9.sh"
@@ -475,23 +306,7 @@ if [ "${1:-}" = "--self-test" ]; then
             ok "mutant $mu: GitHub poll under 300 s -> RED"
         fi
     done
-    # M16-M21 (#4950 G4): the coverage dispatch and wait, each weakened one way.
-    sed 's/die "\$cb on origin is at \$head, not the release commit/: "/' "$SUBJECT" > "$d/m16.sh"
-    sed 's/\[ "\${c:-}" = success \] || die "coverage-nightly run/true || die "/' "$SUBJECT" > "$d/m17.sh"
-    grep -v '^  cov_wait$' "$SUBJECT" > "$d/m18.sh"
-    grep -v '^run_step tag && cov_dispatch_at_mc$' "$SUBJECT" > "$d/m19.sh"
-    grep -v 'if \[ -s "\$AP/coverage-run-id" \]; then say "COVERAGE attached' "$SUBJECT" > "$d/m20.sh"
-    sed 's/select(.headSha == \\"\$MC\\" and /select(/' "$SUBJECT" > "$d/m21.sh"
-    for mu in 16 17 18 19 20 21; do
-        if cmp -s "$SUBJECT" "$d/m$mu.sh"; then
-            nok "MUTANT $mu could not be built -- its coverage line did not match; vacuous"
-        elif judge "$d/m$mu.sh" > "$d/m$mu.out" 2>&1; then
-            nok "MUTANT $mu (coverage dispatch/wait weakened) PASSED"
-        else
-            ok "mutant $mu: coverage dispatch/wait weakened -> RED"
-        fi
-    done
-    # M22-M32 (#4950): the cascade premises, the ledger fold, the arm lifetime, the coverage push and the rehearsal secrets check, each weakened one way.
+    # M22-M32 (#4950; M31, the coverage push, left with the coverage dispatch): the cascade premises, the ledger fold, the arm lifetime and the rehearsal secrets check, each weakened one way.
     sed 's/\[ "\$tc" = "\$MC" \] || die/true || die/' "$SUBJECT" > "$d/m22.sh"
     sed 's/\[ "\$shas" = "tested-sha: \$MC" \] || die/true || die/' "$SUBJECT" > "$d/m23.sh"
     grep -v '^  cascade_cleanroom_at_tag$' "$SUBJECT" > "$d/m24.sh"
@@ -501,9 +316,8 @@ if [ "${1:-}" = "--self-test" ]; then
     sed 's/\[ -s "\$AP\/cascade-cleanroom.json" \] || die/true || die/' "$SUBJECT" > "$d/m28.sh"
     sed 's/gh run view --job "\$jid"/gh run view "$crun"/' "$SUBJECT" > "$d/m29.sh"
     sed 's/--arm-release "\$t" 120/--arm-release "$t" 100000/' "$SUBJECT" > "$d/m30.sh"
-    sed 's/ || die "pushing \$cb at \$MC failed"//' "$SUBJECT" > "$d/m31.sh"
     sed 's/^    || die "check_crate_contents.sh is not green/    || true "check_crate_contents.sh is not green/' "$SUBJECT" > "$d/m32.sh"
-    for mu in 22 23 24 25 26 27 28 29 30 31 32; do
+    for mu in 22 23 24 25 26 27 28 29 30 32; do
         if cmp -s "$SUBJECT" "$d/m$mu.sh"; then
             nok "MUTANT $mu could not be built -- its cascade line did not match; vacuous"
         elif judge "$d/m$mu.sh" > "$d/m$mu.out" 2>&1; then
@@ -534,7 +348,7 @@ if [ "${1:-}" = "--self-test" ]; then
     echo "SELF-TEST FAILED" >&2; exit 1
 fi
 
-echo "=== the tag step cannot be reached without the milestone gate (check_tag_step_gated.sh) ==="
+echo "=== the tag step cannot be reached without its readiness or policy gate (check_tag_step_gated.sh) ==="
 judge "$SUBJECT"; rc=$?
-[ "$rc" -eq 0 ] && echo "PASS" || echo "FAIL: the tag step is reachable without a clean milestone (rc=$rc)" >&2
+[ "$rc" -eq 0 ] && echo "PASS" || echo "FAIL: the tag step is reachable without its gate (rc=$rc)" >&2
 exit "$rc"

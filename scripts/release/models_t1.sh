@@ -199,8 +199,10 @@ if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ]; then
   echo "MODELS-LEG $REMOTE_HOST ENV: \$(( (free_kib + have_kib) / 1048576 )) GiB usable under \$base, a fresh cuda release target needs \$(( $NEED_KIB / 1048576 )) GiB -- refused before building"
   exit 4
 fi
+# a patch release's commit is on release/X.Y.Z, not main: fetch that branch too when it exists
+git -C "\$repo" fetch -q origin "+refs/heads/release/$ver:refs/remotes/origin/release/$ver" 2> /dev/null
 git -C "\$repo" fetch -q origin main && git -C "\$repo" cat-file -e "$sha^{commit}" \
-  || { echo "MODELS-LEG $REMOTE_HOST FETCH-FAILED: $sha9 is not reachable from origin/main there"; exit 3; }
+  || { echo "MODELS-LEG $REMOTE_HOST FETCH-FAILED: $sha9 is not reachable from origin/main or origin/release/$ver there"; exit 3; }
 git -C "\$repo" worktree remove --force "\$dir/wt" > /dev/null 2>&1
 git -C "\$repo" worktree prune
 git -C "\$repo" worktree add -q --detach "\$dir/wt" "$sha" || { echo "MODELS-LEG $REMOTE_HOST WORKTREE-FAILED"; exit 3; }
