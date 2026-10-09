@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ticket-search-full-result-unchecked",
+          "level": "warning",
+          "message": {
+            "text": "tickets() looks for an existing red-row issue with `gh issue list --state open --limit 50 --search ... in:title` and treats whatever comes back as the whole answer. The sibling fix in this same commit range (rp_known_failures, --limit 1000, a full result is reported not measured) is not applied here. A search that returns 50 rows without the exact title would open a duplicate ticket for the row. The title is quoted in the query, so a full result is very unlikely; the class is the same one the author just fixed. Fix: if the list length reaches the limit, say NOT-MEASURED and set st=1 instead of creating."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/models_nightly.sh"
+                },
+                "region": {
+                  "startLine": 213
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/models_nightly.sh",
+            "excerpt": "if ! j=$(\"$gh\" issue list --state open --limit 50 --search \"\\\"$title\\\" in:title\" --json number,title); then",
+            "excerpt_sha256": "9779ffcf71fbd79e76c5a1532aa8cc98076d625f38a92d83c65553d623cda82c",
+            "failure_scenario": "The title search returns a full page of 50 unrelated open issues (search index lag or a broad match); the exact-title filter finds none; gh issue create opens a second ticket for the same row, and the owner has two tickets for one red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "red-rows-ignore-missing-green",
+          "level": "warning",
+          "message": {
+            "text": "red_rows selects rungs with `.green == false`, while the judge counts every rung where `not x.get(\"green\")` as red (scripts/check_model_ladder.sh:424), so a rung whose green field is missing or null is red to the judge and gets no ticket here. The nightly state goes red and models-tickets runs, but that rung has no ticket and is absent from the release-notes known-failures list unless the all-lane fallback fires. Fix: select(.green != true)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/models_nightly.sh"
+                },
+                "region": {
+                  "startLine": 181
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/models_nightly.sh",
+            "excerpt": "if [ -f \"$b/$h.json\" ] && r=$(jq -r --arg h \"$h\" '(.rungs // [])[] | select(.green == false)",
+            "excerpt_sha256": "be9afcb37435e8a75276f1c5957278e384a95af2590e3e672970bc82082a7a08",
+            "failure_scenario": "A receipt rung has no green key (a writer bug or a truncated receipt). The judge reports it red and the bundle verdict is red; red_rows prints nothing for it; the row stays red with no ticket and no owner, which is the state the GATE/LAB rule says must not happen.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ticket-owner-unquoted-passes-reader",
+          "level": "note",
+          "message": {
+            "text": "The ladder comment asks for ticket_owner to be quoted, but nothing enforces it. Measured: with the value written unquoted (`ticket_owner: #3598`), rp_ticket_owner returns rc 0 and #3598, because the awk reader keeps the raw text. A YAML parser (pv, python yaml) reads that same line as a comment, i.e. null. The reader and the YAML contract can then disagree about the owner. Fix: reject an unquoted # value in rp_ticket_owner, or add a self-test row that does."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/model-capability-ladder-v1.yaml"
+                },
+                "region": {
+                  "startLine": 111
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<scratchpad>/unq.sh",
+              "<ladder with ticket_owner: #3598 unquoted>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e9953c5dc99da4de32d0a522741c38fcc76df4c7a83d9f252c9ef4063c99ddf0",
+            "failure_scenario": "Someone writes ticket_owner: #4000 without quotes; the shell reader accepts it and tickets name #4000, while pv or any YAML consumer sees null and a later tool that reads the YAML names no owner.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mktemp-suffix-after-xs-is-gnu-only",
+          "level": "note",
+          "message": {
+            "text": "mktemp \"${TMPDIR:-/tmp}/ladder-policy.XXXXXX.yaml\" puts a suffix after the Xs. GNU mktemp accepts it; BSD/macOS mktemp does not substitute the Xs, so the copy would be created with a literal name. Release hosts here are Linux, so this is advisory. release_readiness.sh and autopilot.sh match the copy by the ladder-policy.* prefix, which holds either way."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 106
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Portability of mktemp templates with a suffix is a known GNU/BSD difference; not run on a BSD host, so asserted. The fleet runs Linux only.",
+            "failure_scenario": "The reader is run on a macOS box: mktemp fails or returns a literal path, the second run collides with the first copy, and the policy judge reports mktemp failed (rc 2, not measured). It fails closed, it does not pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "kf-ladder-missing-pattern-matches-anything",
+          "level": "note",
+          "message": {
+            "text": "The kf-ladder-missing row passes the pattern ^$|.* (alternation of empty and anything), which matches every string including the empty one, so only the rc 2 is tested for that row, not the output. The row is still a real test of the rc. Replace the pattern with the empty-output assertion it appears to mean."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_policy_selftest.sh"
+                },
+                "region": {
+                  "startLine": 111
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_release_policy_selftest.sh",
+            "excerpt": "kf kf-ladder-missing        2 \"$tmp/none.yaml\" '[]' \"\" '^$|.*' 'Known failures'",
+            "excerpt_sha256": "11d3f83d179a3707dd4f20368627dfa6a3099d8ed8ab0d7b8cf276aea34e0c3a",
+            "failure_scenario": "rp_known_failures starts printing a partial list on the missing-ladder path while still returning 2; the row keeps passing, and a caller that ignores the rc appends a partial list to the release notes.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ticket-owner-and-known-failures-fixes-verified",
+          "level": "note",
+          "message": {
+            "text": "The three fixes in bc1fbd4a9f are correct and tested. (1) rp_ticket_owner reads a required ticket_owner key (#N or a name), and models_nightly.sh tickets() resolves the owner before any gh call and dies rc 2 with no ticket opened when it cannot. (2) rp_known_failures uses --limit 1000 and a result of 1000 goes to the not-measured branch. (3) the mktemp-failed branch has a row. The release_policy self-test runs 46 rows, 0 failed; the models_nightly self-test 79/79 and 29 of 29 mutants killed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_policy_selftest.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "dc72544b4fbd254657b64fe3492c8bdba82625ab99e57515c8105384c96ec7f8",
+            "failure_scenario": "none: the claimed behaviour holds. If rp_ticket_owner accepted an empty owner, a nightly red would open ownerless tickets; the owner-* and missing-owner rows would turn red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "autopilot-repo-variable-defined",
+          "level": "note",
+          "message": {
+            "text": "ap_known_failures uses $REPO, which autopilot.sh never assigns itself. Checked: release_params (lib_release_params.sh, sourced at autopilot.sh:40-41, before any use) sets REPO from RELEASE_REPO. Not a defect."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 77
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/lib_release_params.sh",
+            "excerpt": "REPO=$RELEASE_REPO",
+            "excerpt_sha256": "1ba0e021b794ceda9520d9073cc29a1b390fa7381cf6acf1415bd6bace6dc768",
+            "failure_scenario": "none: REPO is set before ap_known_failures can run. Had release_params failed, autopilot.sh exits 2 at line 41.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

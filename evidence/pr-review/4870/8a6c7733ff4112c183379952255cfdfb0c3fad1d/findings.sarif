@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "lane-rows-91",
+          "level": "note",
+          "message": {
+            "text": "scripts/tests/nightly_lanes_rows_test.sh exits 0 on this head with 91/91 rows ok."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/nightly_lanes_rows_test.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/tests/nightly_lanes_rows_test.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "ace38a66c771a67265fde29087281c9134870bd18519f4e02f24ceeb0b8dea44",
+            "failure_scenario": "none: the run is green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "lane-mutants-40",
+          "level": "note",
+          "message": {
+            "text": "scripts/tests/nightly_lanes_rows_test.sh --mutants exits 0 with 40/40 planted mutants killed (five per lane, eight lanes)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/nightly_lanes_rows_test.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/tests/nightly_lanes_rows_test.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e4835220e19a38d557696ad9434dce273e1bd9610d8acbf650a98854377687c9",
+            "failure_scenario": "none: the run is green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "train-self-test-57",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/nightly_train.sh --self-test exits 0 with 57/57 rows on this head."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/nightly_train.sh"
+                },
+                "region": {
+                  "startLine": 68
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/nightly_train.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7b2936f37dbffe23bbfc5c1b6a54c4fc3355720829054b6e5dbaf56e9be87b10",
+            "failure_scenario": "none: the run is green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "train-mutants-42",
+          "level": "note",
+          "message": {
+            "text": "scripts/release/nightly_train.sh --mutants exits 0 with 42/42 mutants killed; the models_lane_row_test.sh rows also pass 13/13."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/nightly_train.sh"
+                },
+                "region": {
+                  "startLine": 68
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/nightly_train.sh",
+              "--mutants"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "60e7100b6c510fdc1294b7b652e02ea78728d594e25a7364da140d4b4d695d4e",
+            "failure_scenario": "none: the run is green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "preflight-row-overstates",
+          "level": "warning",
+          "message": {
+            "text": "The preflight lane row keeps its release-day text \"check_publish_preflight.sh R1-R8\", but its new producer job runs check_publish_preflight.sh --graph-only (R2 + R6). The producer workflow header names the row text it expects: \"check_publish_preflight.sh --graph-only (R6; R1/R3/R4 at publish)\". A green preflight lane therefore reads as R1-R8 in the bundle while only two rules ran."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/nightly_train.sh"
+                },
+                "region": {
+                  "startLine": 83
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read the row against the producer job step in release-gates-nightly.yml and that file's own header comment; the two texts differ and the PR's byte-pin test pins the longer one.",
+            "failure_scenario": "A reader of bundle.tsv sees preflight green with the check text R1-R8 and takes R1, R3, R4, R5, R7 and R8 as measured by that lane, though only R2 and R6 were run. Other lanes cover R5, R7 and R8; R1, R3 and R4 are not run before publish. The train is report-only, so nothing is blocked.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "nodefault-tolerates-3176",
+          "level": "note",
+          "message": {
+            "text": "The deep-nodefault producer job exits 0 when every cargo check --no-default-features error lies inside crates/aprender-distribute (the standing #3176 class), while the lane row text says plain \"cargo check --workspace --no-default-features\". The lane is green with a known standing red hidden in it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/deep-nightly.yml"
+                },
+                "region": {
+                  "startLine": 69
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read the job step: the exit test counts only errors outside aprender-distribute and ignores the cargo exit code.",
+            "failure_scenario": "The #3176 class grows or stays, the lane stays green, and the bundle never shows it. The tolerance is in the producer that already exists on main, not in this diff, so this PR widens nothing; it only starts to read that job as a verdict.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-row-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

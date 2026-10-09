@@ -795,6 +795,7 @@ fn test_chat_delta() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
         content: Some("Hello".to_string()),
+        tool_calls: None,
     };
 
     let json = serde_json::to_string(&delta).unwrap();
@@ -806,6 +807,7 @@ fn test_chat_delta_empty() {
     let delta = ChatDelta {
         role: None,
         content: None,
+        tool_calls: None,
     };
 
     let json = serde_json::to_string(&delta).unwrap();

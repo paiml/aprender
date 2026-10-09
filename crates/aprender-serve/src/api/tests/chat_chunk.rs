@@ -6,6 +6,7 @@ fn test_chat_chunk_choice_streaming_content() {
         delta: ChatDelta {
             role: None,
             content: Some("partial".to_string()),
+            tool_calls: None,
         },
         finish_reason: None,
     };

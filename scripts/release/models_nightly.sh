@@ -26,15 +26,27 @@
 #                 (the judge's own "not green, not red"), a ladder decline, a timeout, an unknown exit,
 #                 or a red seen while another models_t1.sh was running (it shares the remote leg's rel-* dirs).
 #
+# TWO MEASURE MODES (--measure, for --run and --relay; default ladder). Each has its own bundle path, so the
+# same C can hold both and neither run skips for the other:
+#   ladder  pending/<C> -> models/<C>       the full GPU-host ladder (MODELS_T1_SCOPE=none), receipts
+#                                           <host>.json; its red rows go to tickets (--tickets)
+#   crux    pending-crux/<C> -> models-crux/<C>   release day's own call: MODELS_T1_MEASURE=crux and no scope,
+#                                           receipts <host>-gpu.json (crux-inference-receipt/v1), GO line
+#                                           "MODELS GO (CRUX smoke) on ...". It is the rehearsal's models
+#                                           lane (C332 a): a CRUX-smoke red stops a release, so --tickets
+#                                           refuses a crux bundle rather than file it as a known failure.
+#   --publish commits every pending bundle of both modes in one push.
+#
 # NO REGISTRY TOKEN: --run and --publish refuse (exit 3) where one is reachable -- nightly_train.sh's
 # no_token, plus $HOME/.cargo/credentials{,.toml} even when CARGO_HOME points elsewhere.
 # PLANTED FAILURE: --relay --plant-red (workflow_dispatch plant_red) turns the lane red whatever the
 # bundle says, so the train is shown to read this lane red. A planted run on C IS the newest run on C.
 #
 # usage:
-#   models_nightly.sh --run --repo DIR --work DIR [--commit SHA] [--timeout SECONDS]
+#   models_nightly.sh --run --repo DIR --work DIR [--commit SHA] [--timeout SECONDS] [--measure ladder|crux]
 #   models_nightly.sh --publish --repo DIR --work DIR
-#   models_nightly.sh --relay --commit SHA --out DIR [--evidence DIR] [--plant-red]   (cwd: a checkout)
+#   models_nightly.sh --relay --commit SHA --out DIR [--evidence DIR] [--plant-red] [--measure ladder|crux]   (cwd: a checkout)
+#   models_nightly.sh --tickets --commit SHA --evidence BUNDLE --out FILE   open/update the issue of each red row (gh)
 #   models_nightly.sh --self-test   the case table (fixture repos, no network, no GPU)
 #   models_nightly.sh --mutants     each planted mutant must turn the case table RED
 # exit: 0 done (a bundle written, published or relayed, whatever its state) · 2 failed · 3 refused
@@ -43,6 +55,17 @@ SCRIPT_PATH=$(readlink -f -- "$0")
 EV_BRANCH=nightly-evidence
 KEEP=${MODELS_NIGHTLY_KEEP:-30}   # bundles kept on the branch tip (history keeps the rest)
 TMO=21600                         # --timeout default: models_t1 gets six hours, then it is not_measured
+
+# set_measure ladder|crux -> the names one measure mode reads and writes; every other line is shared
+set_measure() {
+    case $1 in
+        ladder) PREFIX=models PENDING=pending RSUF="" MEASURER_RE='model_ladder\.sh' GO_RE='MODELS GO on' GO_SAY=GO ;;
+        crux) PREFIX=models-crux PENDING=pending-crux RSUF=-gpu MEASURER_RE='crux_sweep_shards\.sh' GO_RE='MODELS GO \(CRUX smoke\) on' GO_SAY='GO (CRUX smoke)' ;;
+        *) return 1 ;;
+    esac
+    MEASURE=$1
+}
+set_measure ladder
 
 say() { printf 'MODELS-NIGHTLY %s\n' "$*"; }
 refuse() { say "REFUSED: $*"; exit 3; }
@@ -78,20 +101,40 @@ foreign_t1() { awk -v own="$1" '$1 != own && $0 ~ /[ \/]models_t1\.sh( |$)/'; }
 # refuse every e2e row. The host units never set it.
 ps_table() { if [ -n "${MODELS_NIGHTLY_PS_TABLE:-}" ]; then cat -- "$MODELS_NIGHTLY_PS_TABLE"; else ps -eo pgid=,args=; fi; }
 
-receipt_bound() { [ -f "$1" ] && jq -es --arg w "$2" 'length == 1 and (.[0] | type == "object" and .apr_version == $w)' -- "$1" > /dev/null 2>&1; }
-receipt_red() { jq -es 'length == 1 and (.[0].red | type == "number" and . > 0)' -- "$1" > /dev/null 2>&1; }
-receipt_clean() { jq -es 'length == 1 and (.[0] | (.red | type == "number" and . == 0) and (.executed | type == "number" and . > 0))' -- "$1" > /dev/null 2>&1; }
+# The receipt predicates of the current measure. ladder: a model_ladder receipt (apr_version, red,
+# executed). crux: a crux-inference-receipt/v1 (apr.version_line, summary) -- red is what the collect
+# judge calls red (summary.RED or summary.verdict RED); clean is its PASS with judged cells and RED 0.
+receipt_bound() {
+    [ -f "$1" ] || return 1
+    case $MEASURE in
+        crux) jq -es --arg w "$2" 'length == 1 and (.[0] | type == "object" and (.apr | type == "object") and .apr.version_line == $w)' -- "$1" > /dev/null 2>&1 ;;
+        *) jq -es --arg w "$2" 'length == 1 and (.[0] | type == "object" and .apr_version == $w)' -- "$1" > /dev/null 2>&1 ;;
+    esac
+}
+receipt_red() {
+    case $MEASURE in
+        crux) jq -es 'length == 1 and (.[0].summary | type == "object" and ((.RED | type == "number" and . > 0) or .verdict == "RED"))' -- "$1" > /dev/null 2>&1 ;;
+        *) jq -es 'length == 1 and (.[0].red | type == "number" and . > 0)' -- "$1" > /dev/null 2>&1 ;;
+    esac
+}
+receipt_clean() {
+    case $MEASURE in
+        crux) jq -es 'length == 1 and (.[0].summary | type == "object" and .verdict == "PASS" and (.RED | type == "number" and . == 0) and (.judged | type == "number" and . > 0))' -- "$1" > /dev/null 2>&1 ;;
+        *) jq -es 'length == 1 and (.[0] | (.red | type == "number" and . == 0) and (.executed | type == "number" and . > 0))' -- "$1" > /dev/null 2>&1 ;;
+    esac
+}
 
-# classify BUNDLE RC VERSION SHA9 -> "<state>\t<reason>", from the bundle's files only
+# classify BUNDLE RC VERSION SHA9 -> "<state>\t<reason>", from the bundle's files only (in the current measure)
 classify() {
-    local b=$1 rc=$2 sha9=$4 want="apr $3 ($4)" log="$1/models-t1.log" h bound=0 clean=0 red="" line
+    local b=$1 rc=$2 sha9=$4 want="apr $3 ($4)" log="$1/models-t1.log" h r bound=0 clean=0 red="" line
     for h in lambda gx10; do
-        receipt_bound "$b/$h.json" "$want" || continue
+        r="$b/$h$RSUF.json"
+        receipt_bound "$r" "$want" || continue
         bound=$((bound + 1))
-        if receipt_red "$b/$h.json"; then red="${red:+$red; }$h receipt has red cells"
-        elif receipt_clean "$b/$h.json"; then clean=$((clean + 1)); fi
+        if receipt_red "$r"; then red="${red:+$red; }$h receipt has red cells"
+        elif receipt_clean "$r"; then clean=$((clean + 1)); fi
     done
-    line=$(grep -E '^MODELS (lambda|gx10) NO-GO: (no receipt -- (BUILD-FAILED|NOT-THE-RELEASE|model_ladder\.sh wrote no receipt \(rc [01]\)$)|the receipt was measured by )' -- "$log" 2> /dev/null | head -n 1)
+    line=$(grep -E '^MODELS (lambda|gx10) NO-GO: (no receipt -- (BUILD-FAILED|NOT-THE-RELEASE|'"$MEASURER_RE"' wrote no receipt \(rc [01]\)$)|the receipt was measured by )' -- "$log" 2> /dev/null | head -n 1)
     [ -z "$line" ] || red="${red:+$red; }${line#MODELS }"
     if [ "$bound" = 2 ] && grep -qE '^MODELS NO-GO: the judge found red or missing cells' -- "$log" 2> /dev/null; then
         red="${red:+$red; }the judge found red or missing cells on two bound receipts"
@@ -100,8 +143,8 @@ classify() {
         printf 'not_measured\tred while another models_t1.sh ran (%s): %s\n' "$(head -n 1 -- "$b/concurrent")" "$red"; return 0
     fi
     if [ -n "$red" ]; then printf 'red\t%s\n' "$red"; return 0; fi
-    if [ "$rc" = 0 ] && [ "$clean" = 2 ] && grep -qE "^MODELS GO on lambda and gx10 at $sha9: " -- "$log" 2> /dev/null; then
-        printf 'green\tmodels_t1 GO on lambda and gx10, both receipts bound to %s\n' "$want"; return 0
+    if [ "$rc" = 0 ] && [ "$clean" = 2 ] && grep -qE "^$GO_RE lambda and gx10 at $sha9: " -- "$log" 2> /dev/null; then
+        printf 'green\tmodels_t1 %s on lambda and gx10, both receipts bound to %s\n' "$GO_SAY" "$want"; return 0
     fi
     case $rc in
         124|137) line="models_t1 timed out (rc $rc)" ;;
@@ -116,8 +159,8 @@ classify() {
 seal() {
     local b=$1 cls
     cls=$(classify "$b" "$6" "$4" "$3")
-    printf 'commit=%s\nsha9=%s\nversion=%s\nentry=%s\nt1_rc=%s\nstate=%s\nreason=%s\n' \
-        "$2" "$3" "$4" "$5" "$6" "${cls%%$'\t'*}" "${cls#*$'\t'}" > "$b/verdict" || return 1
+    printf 'commit=%s\nsha9=%s\nversion=%s\nentry=%s\nmeasure=%s\nt1_rc=%s\nstate=%s\nreason=%s\n' \
+        "$2" "$3" "$4" "$5" "$MEASURE" "$6" "${cls%%$'\t'*}" "${cls#*$'\t'}" > "$b/verdict" || return 1
     (cd "$b" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | LC_ALL=C sort | xargs -r sha256sum -- > SHA256SUMS)
 }
 
@@ -132,6 +175,9 @@ verify() {
     [ "$listed" = "$have" ] || { printf 'not_measured\tthe bundle holds a file its SHA256SUMS does not list\n'; return 0; }
     v=$(vget commit < "$b/verdict")
     [ "$v" = "$c" ] || { printf 'not_measured\tthe bundle measured %s, not %s\n' "${v:0:9}" "${c:0:9}"; return 0; }
+    # a bundle sealed before the measure key existed is a ladder bundle; a crux bundle always names itself
+    v=$(vget measure < "$b/verdict")
+    [ "${v:-ladder}" = "$MEASURE" ] || { printf 'not_measured\tthe bundle was measured in mode %s, not %s\n' "${v:-ladder}" "$MEASURE"; return 0; }
     ver=$(git show "$c:Cargo.toml" 2> /dev/null | ws_version)
     v=$(vget version < "$b/verdict")
     [ -n "$ver" ] && [ "$v" = "$ver" ] || { printf 'not_measured\tthe bundle measured version %s, C is %s\n' "$v" "${ver:-unreadable}"; return 0; }
@@ -151,10 +197,10 @@ relay() { # relay COMMIT OUT EVIDENCE PLANT
     local c=$1 out=$2 ev=$3 cls state reason bundle=
     mkdir -p -- "$out" || die "cannot create $out"
     if [ -z "$ev" ]; then
-        ev="$out/models/$c"
+        ev="$out/$PREFIX/$c"
         if git fetch -q --no-tags --depth=1 origin "+refs/heads/$EV_BRANCH:refs/remotes/origin/$EV_BRANCH" 2> /dev/null \
-            && git rev-parse -q --verify "refs/remotes/origin/$EV_BRANCH:models/$c" > /dev/null; then
-            git archive --format=tar "refs/remotes/origin/$EV_BRANCH" "models/$c" > "$out/bundle.tar" \
+            && git rev-parse -q --verify "refs/remotes/origin/$EV_BRANCH:$PREFIX/$c" > /dev/null; then
+            git archive --format=tar "refs/remotes/origin/$EV_BRANCH" "$PREFIX/$c" > "$out/bundle.tar" \
                 && tar -xf "$out/bundle.tar" -C "$out" && rm -f -- "$out/bundle.tar"
         fi
     fi
@@ -169,12 +215,87 @@ relay() { # relay COMMIT OUT EVIDENCE PLANT
     say "RELAY $state at ${c:0:9}: $reason"
 }
 
+# red_rows BUNDLE -> "host<TAB>row<TAB>why", one line per red row of a red bundle: each rung a receipt
+# does not mark green:true (a rung with no green key is red, as the judge counts it); a red with no
+# rung to name (a build failure, a binary that is not C, no receipt)
+# is one "lane" row, so a red never goes unticketed. A host with no readable receipt while the other
+# host has one is its own "lane" row (a gx10 build or ssh failure must not hide behind a lambda rung);
+# no readable receipt on either host is the one "all" lane row. Every row is listed: no cap.
+red_rows() {
+    local b=$1 h r rows="" missing="" seen=0
+    for h in lambda gx10; do
+        if [ -f "$b/$h.json" ] && r=$(jq -r --arg h "$h" '(.rungs // [])[] | select(.green != true)
+            | [$h, (.id // .file // "unnamed-rung"), ("rung not green (" + (.file // "no file") + ")")] | @tsv' -- "$b/$h.json" 2> /dev/null); then
+            seen=1; rows+=$r$'\n'
+        else
+            missing+=$h$'\t'lane$'\t'"no readable receipt from $h"$'\n'
+        fi
+    done
+    [ "$seen" = 0 ] || rows+=$missing
+    rows=$(printf '%s' "$rows" | awk 'NF')
+    if [ -n "$rows" ]; then printf '%s\n' "$rows"
+    else printf 'all\tlane\t%s\n' "$(vget reason < "$b/verdict" 2> /dev/null | tr -d '\t')"; fi
+}
+
+# tickets BUNDLE COMMIT OUT: the standing release policy sends every red nightly row to a ticket. For
+# a verified red bundle, each red row opens the open issue titled "models-nightly red: <row> on <host>"
+# or comments on it, once per commit (the marker models-nightly@<C>: both cron slots relay the same C).
+# Every ticket names the ONE owner the standing policy records (release_policy.ticket_owner); with no
+# readable owner no ticket is opened and the step fails. MODELS_NIGHTLY_LADDER / MODELS_NIGHTLY_POLICY_LIB
+# point at another ladder / library (the case table and the mutant runs only).
+# OUT gets "host<TAB>row<TAB>#N" per row, the list a release's known failures name. A nightly row never
+# stops a release; a read or write that fails is a FAILED run of this step, never a ticket.
+tickets() {
+    local b=$1 c=$2 out=$3 gh=${MODELS_NIGHTLY_GH:-gh} host row why title n j body mark owner len page=50 st=0
+    local lib=${MODELS_NIGHTLY_POLICY_LIB:-$(dirname -- "$SCRIPT_PATH")/../lib/release_policy.sh}
+    local ladder=${MODELS_NIGHTLY_LADDER:-$(dirname -- "$SCRIPT_PATH")/../../contracts/model-capability-ladder-v1.yaml}
+    # A crux bundle is release day's CRUX smoke: its red stops a release, so it is never a known-failure row.
+    j=$(vget measure < "$b/verdict" 2> /dev/null); j=${j:-ladder}
+    [ "$j" = ladder ] || refuse "--tickets files ladder rows only; this is a $j bundle, and its red stops a release, never a known failure"
+    [ "$MEASURE" = ladder ] || refuse "--tickets files ladder rows only, never under --measure $MEASURE: that red stops a release, never a known failure"
+    : > "$out" || die "cannot write $out"
+    if [ "$(vget state < "$b/verdict" 2> /dev/null)" != red ]; then say "TICKETS none: the bundle at ${c:0:9} is not red"; return 0; fi
+    . "$lib" || die "cannot load the release policy library $lib"
+    owner=$(rp_ticket_owner "$ladder") || { rp_ticket_owner "$ladder" > /dev/null; die "no ticket owner, so no ticket is opened: $RP_WHY"; }
+    mark="models-nightly@$c"
+    while IFS=$'\t' read -r host row why; do
+        title="models-nightly red: $row on $host"
+        if ! j=$("$gh" issue list --state open --limit "$page" --search "\"$title\" in:title" --json number,title); then
+            say "NOT-MEASURED: the issue search for '$title' failed"; st=1; continue
+        fi
+        n=$(printf '%s' "$j" | jq -r --arg t "$title" '[.[] | select(.title == $t) | .number] | min // empty' 2> /dev/null)
+        # A search that fills its page may have cut the matching issue off, and output that is not a JSON
+        # list proves nothing: either way a missing title is not "no issue", so nothing is opened.
+        if [ -z "$n" ]; then
+            len=$(jq 'if type == "array" then length else error end' <<< "$j" 2> /dev/null) || len=""
+            if ! [[ "$len" =~ ^[0-9]+$ ]] || [ "$len" -ge "$page" ]; then
+                say "NOT-MEASURED: the issue search for '$title' returned a full page or no readable list"; st=1; continue
+            fi
+        fi
+        body="Red in the models nightly at ${c:0:9}: $why. Under the standing release policy this row cannot stop a release; the release notes list it as a known failure with this ticket until it is green. Owner: $owner. $mark"
+        if [ -n "$n" ]; then
+            if ! j=$("$gh" issue view "$n" --json body,comments); then say "NOT-MEASURED: reading #$n failed"; st=1; continue; fi
+            if grep -qF -- "$mark" <<< "$j"; then say "TICKET kept #$n: $title (already names ${c:0:9})"
+            elif "$gh" issue comment "$n" --body "$body" > /dev/null; then say "TICKET updated #$n: $title"
+            else say "NOT-MEASURED: commenting on #$n failed"; st=1; continue; fi
+        else
+            if ! n=$("$gh" issue create --title "$title" --body "$body"); then say "NOT-MEASURED: opening '$title' failed"; st=1; continue; fi
+            n=${n##*/}
+            [[ $n =~ ^[0-9]+$ ]] || { say "NOT-MEASURED: opening '$title' printed no issue url"; st=1; continue; }
+            say "TICKET opened #$n: $title"
+        fi
+        printf '%s\t%s\t#%s\n' "$host" "$row" "$n" >> "$out"
+    done < <(red_rows "$b")
+    [ "$st" = 0 ] || die "a ticket read or write failed; the rows above without TICKET have none"
+    say "TICKETS $(wc -l < "$out") row(s) at ${c:0:9} -> $out"
+}
+
 # already_measured REPO COMMIT WORK -> 0 when a green or red verdict for COMMIT is pending or published
 already_measured() {
     local s
-    for s in "$(vget state 2> /dev/null < "$3/pending/$2/verdict")" \
-             "$(git -C "$1" cat-file -p "refs/remotes/origin/$EV_BRANCH:models/$2/verdict" 2> /dev/null | vget state)"; do
-        case $s in green|red) say "SKIP: ${2:0:9} is already measured $s"; return 0 ;; esac
+    for s in "$(vget state 2> /dev/null < "$3/$PENDING/$2/verdict")" \
+             "$(git -C "$1" cat-file -p "refs/remotes/origin/$EV_BRANCH:$PREFIX/$2/verdict" 2> /dev/null | vget state)"; do
+        case $s in green|red) say "SKIP: ${2:0:9} is already measured $s ($MEASURE)"; return 0 ;; esac
     done
     return 1
 }
@@ -203,20 +324,30 @@ run() { # run REPO WORK COMMIT TIMEOUT
     sha9=$(git -C "$wt" rev-parse --short=9 HEAD)
     rm -rf -- "${out:?}"; mkdir -p -- "$out" "$work/target" || die "cannot create $out"
     : > "$work/foreign.log"
-    say "RUN models_t1.sh $ver at $sha9 (timeout ${tmo}s)"
-    (cd "$wt" && export CARGO_TARGET_DIR="$work/target" && exec timeout --kill-after=60 "$tmo" bash scripts/release/models_t1.sh "$ver" "$c" "$out") \
-        > "$work/models-t1.log" 2>&1 9>&- &
+    # ladder, MODELS_T1_SCOPE=none: the nightly judges the FULL ladder, never a release scope or the standing
+    # CRUX-smoke release policy. Its red rows are what the policy sends to tickets; a scoped nightly
+    # would hide them.
+    # crux: release day's own call -- MODELS_T1_MEASURE=crux and NO scope, so the judge reads the policy
+    # that covers $ver exactly as the release does. A scope inherited from the caller is dropped.
+    say "RUN models_t1.sh $ver at $sha9 (measure $MEASURE, timeout ${tmo}s)"
+    if [ "$MEASURE" = crux ]; then
+        (cd "$wt" && unset MODELS_T1_SCOPE && export CARGO_TARGET_DIR="$work/target" MODELS_T1_MEASURE=crux && exec timeout --kill-after=60 "$tmo" bash scripts/release/models_t1.sh "$ver" "$c" "$out") \
+            > "$work/models-t1.log" 2>&1 9>&- &
+    else
+        (cd "$wt" && export CARGO_TARGET_DIR="$work/target" MODELS_T1_MEASURE=ladder MODELS_T1_SCOPE=none && exec timeout --kill-after=60 "$tmo" bash scripts/release/models_t1.sh "$ver" "$c" "$out") \
+            > "$work/models-t1.log" 2>&1 9>&- &
+    fi
     tpid=$!
     # timeout leads its own process group: any other models_t1.sh seen while it runs is foreign
     (while kill -0 "$tpid" 2> /dev/null; do ps_table | foreign_t1 "$tpid" >> "$work/foreign.log"; sleep 20; done) > /dev/null 2>&1 9>&- &
     spid=$!
     wait "$tpid"; rc=$?
     kill "$spid" 2> /dev/null; wait "$spid" 2> /dev/null
-    b="$work/pending/$c"
+    b="$work/$PENDING/$c"
     rm -rf -- "${b:?}"; mkdir -p -- "$b" || die "cannot create $b"
     tail -n 400 -- "$work/models-t1.log" > "$b/models-t1.log"
     for f in lambda gx10; do
-        [ ! -f "$out/$f.json" ] || cp -- "$out/$f.json" "$b/$f.json"
+        [ ! -f "$out/$f$RSUF.json" ] || cp -- "$out/$f$RSUF.json" "$b/$f$RSUF.json"
         [ ! -f "$out/$f.log" ] || tail -n 200 -- "$out/$f.log" > "$b/$f.log.tail"
     done
     [ ! -f "$out/judge.log" ] || tail -n 200 -- "$out/judge.log" > "$b/judge.log"
@@ -227,12 +358,37 @@ run() { # run REPO WORK COMMIT TIMEOUT
     say "RUN $cls at $sha9 ($ver, models_t1 rc $rc): $(vget reason < "$b/verdict")"
 }
 
+# stage REPO WORK PENDING PREFIX BASE: stage every bundle in WORK/PENDING as PREFIX/<C>/ in the temporary
+# index, update PREFIX/INDEX (pruned to KEEP), and append to the caller's msg. Run inside publish only.
+stage() {
+    local repo=$1 work=$2 pend=$3 pfx=$4 base=$5 p c f new idx="$2/INDEX.$3" tag
+    tag=""; [ "$pfx" = models ] || tag="$pfx "
+    { [ -n "$base" ] && git -C "$repo" cat-file -p "$base:$pfx/INDEX" 2> /dev/null; } > "$idx"
+    [ -s "$idx" ] || [ -n "$(find "$work/$pend" -mindepth 2 -maxdepth 2 -name verdict 2> /dev/null | head -n 1)" ] || return 0
+    for p in "$work/$pend"/*/; do
+        c=$(basename -- "$p")
+        [[ $c =~ ^[0-9a-f]{40}$ ]] && [ -f "$p/verdict" ] || continue
+        git -C "$repo" rm -r -q --cached --ignore-unmatch -- "$pfx/$c" > /dev/null || die "index rm failed"
+        for f in "$p"*; do
+            new=$(git -C "$repo" hash-object -w -- "$f") \
+                && git -C "$repo" update-index --add --cacheinfo "100644,$new,$pfx/$c/${f##*/}" || die "cannot stage $f"
+        done
+        awk -v c="$c" '$1 != c' "$idx" > "$idx.new" && printf '%s %s\n' "$c" "$(vget state < "$p/verdict")" >> "$idx.new" && mv -- "$idx.new" "$idx"
+        msg="$msg $tag${c:0:9} $(vget state < "$p/verdict")"
+    done
+    tail -n "$KEEP" -- "$idx" > "$idx.new" && mv -- "$idx.new" "$idx"
+    git -C "$repo" ls-files -- "$pfx/" | awk -F/ 'NF == 3 { print $2 }' | LC_ALL=C sort -u | while IFS= read -r c; do
+        awk -v c="$c" '$1 == c { f = 1 } END { exit !f }' "$idx" || git -C "$repo" rm -r -q --cached -- "$pfx/$c" > /dev/null
+    done
+    new=$(git -C "$repo" hash-object -w -- "$idx") && git -C "$repo" update-index --add --cacheinfo "100644,$new,$pfx/INDEX" || die "cannot stage $pfx/INDEX"
+}
+
 publish() { # publish REPO WORK
-    local repo=$1 work=$2 p c n base idx tree new try msg
+    local repo=$1 work=$2 p n base tree new try msg
     no_token || refuse "a registry token is reachable (env, CARGO_HOME or \$HOME/.cargo): this producer holds none"
     exec 9> "$work/.lock" || die "cannot open $work/.lock"
     flock -n 9 || refuse "another models_nightly.sh holds $work/.lock"
-    n=$(find "$work/pending" -mindepth 2 -maxdepth 2 -name verdict 2> /dev/null | wc -l)
+    n=$(find "$work/pending" "$work/pending-crux" -mindepth 2 -maxdepth 2 -name verdict 2> /dev/null | wc -l)
     [ "$n" -gt 0 ] || { say "PUBLISH: nothing pending"; return 0; }
     export GIT_INDEX_FILE="$work/evidence.index"
     for try in 1 2 3; do
@@ -240,30 +396,15 @@ publish() { # publish REPO WORK
         base=$(git -C "$repo" rev-parse -q --verify "refs/remotes/origin/$EV_BRANCH^{commit}") || base=""
         rm -f -- "$GIT_INDEX_FILE"
         if [ -n "$base" ]; then git -C "$repo" read-tree "$base"; else git -C "$repo" read-tree --empty; fi || die "read-tree failed"
-        idx="$work/INDEX"; msg="models nightly:"
-        { [ -n "$base" ] && git -C "$repo" cat-file -p "$base:models/INDEX" 2> /dev/null; } > "$idx"
-        for p in "$work"/pending/*/; do
-            c=$(basename -- "$p")
-            [[ $c =~ ^[0-9a-f]{40}$ ]] && [ -f "$p/verdict" ] || continue
-            git -C "$repo" rm -r -q --cached --ignore-unmatch -- "models/$c" > /dev/null || die "index rm failed"
-            for f in "$p"*; do
-                new=$(git -C "$repo" hash-object -w -- "$f") \
-                    && git -C "$repo" update-index --add --cacheinfo "100644,$new,models/$c/${f##*/}" || die "cannot stage $f"
-            done
-            awk -v c="$c" '$1 != c' "$idx" > "$idx.new" && printf '%s %s\n' "$c" "$(vget state < "$p/verdict")" >> "$idx.new" && mv -- "$idx.new" "$idx"
-            msg="$msg ${c:0:9} $(vget state < "$p/verdict")"
-        done
-        tail -n "$KEEP" -- "$idx" > "$idx.new" && mv -- "$idx.new" "$idx"
-        git -C "$repo" ls-files -- models/ | awk -F/ 'NF == 3 { print $2 }' | LC_ALL=C sort -u | while IFS= read -r c; do
-            awk -v c="$c" '$1 == c { f = 1 } END { exit !f }' "$idx" || git -C "$repo" rm -r -q --cached -- "models/$c" > /dev/null
-        done
-        new=$(git -C "$repo" hash-object -w -- "$idx") && git -C "$repo" update-index --add --cacheinfo "100644,$new,models/INDEX" || die "cannot stage INDEX"
+        msg="models nightly:"
+        stage "$repo" "$work" pending models "$base"
+        stage "$repo" "$work" pending-crux models-crux "$base"
         tree=$(git -C "$repo" write-tree) || die "write-tree failed"
         if [ -n "$base" ]; then new=$(git -C "$repo" commit-tree "$tree" -p "$base" -m "$msg")
         else new=$(git -C "$repo" commit-tree "$tree" -m "$msg"); fi || die "commit-tree failed (is a git identity configured?)"
         if git -C "$repo" push -q origin "$new:refs/heads/$EV_BRANCH"; then
             rm -f -- "$GIT_INDEX_FILE"
-            for p in "$work"/pending/*/; do rm -rf -- "${p:?}"; done
+            for p in "$work"/pending/*/ "$work"/pending-crux/*/; do [ ! -d "$p" ] || rm -rf -- "${p:?}"; done
             say "PUBLISHED $EV_BRANCH ${new:0:9}:$msg"; return 0
         fi
         say "push rejected (try $try of 3): refetching $EV_BRANCH"
@@ -289,6 +430,24 @@ cfx() {
     printf '%s\n' "$@" > "$d/models-t1.log"
 }
 GO_LINE="MODELS GO on lambda and gx10 at $ST_S: the judge passed both receipts ($ST_WANT)"
+GO_CRUX="MODELS GO (CRUX smoke) on lambda and gx10 at $ST_S: the judge passed both receipts ($ST_WANT)"
+# crux fixture bundle: cfxc DIR SUFFIX LAMBDA GX10 LOG-LINE... ; receipts at <host>SUFFIX.json, a spec is
+# ok | red (RED 2, verdict RED) | detred (RED 0, deterministic red: verdict RED) | redcount (RED 2, verdict
+# PASS) | decline (nothing judged) | empty (PASS, judged 0) | nopass (RED 0, verdict GREEN) | wrong | none
+cfxc() {
+    local d=$1 sfx=$2 h spec r g j v l; mkdir -p -- "$d"; shift 2
+    for h in lambda gx10; do
+        spec=$1; shift; l=$ST_WANT r=0 g=4 j=4 v=PASS
+        case $spec in
+            ok) ;; red) r=2 g=2 v=RED ;; detred) v=RED ;; redcount) r=2 g=2 ;; decline) g=0 j=0 v=DECLINE ;;
+            empty) g=0 j=0 ;; nopass) v=GREEN ;; wrong) l="apr 0.0.1 (000000000)" ;; none) continue ;;
+        esac
+        jq -n --arg l "$l" --argjson r "$r" --argjson g "$g" --argjson j "$j" --arg v "$v" \
+            '{schema: "crux-inference-receipt/v1", apr: {version_line: $l},
+              summary: {RED: $r, GREEN: $g, cells: 4, judged: $j, verdict: $v, deterministic: {RED: 0, GREEN: 1}}}' > "$d/$h$sfx.json"
+    done
+    printf '%s\n' "$@" > "$d/models-t1.log"
+}
 
 self_test() {
     local tmp pass=0 fail=0 d o rc c1 c2 c3 work repo bare clone
@@ -353,6 +512,41 @@ self_test() {
     d="$tmp/c/concurrent"; cfx "$d" ok ok "MODELS NO-GO: the judge found red or missing cells (rc 1):"; echo "4242 bash x/models_t1.sh 0.70.2" > "$d/concurrent"
     row red_beside_a_concurrent_models_t1_is_not_measured 0 "${N}red while another models_t1.sh ran" "" -- cl "$d" 1
 
+    # -- classify, crux measure: release day's CRUX-smoke receipts (<host>-gpu.json) and GO line
+    clc() { (set_measure crux; cl "$@"); }
+    d="$tmp/cx/go"; cfxc "$d" -gpu ok ok "$GO_CRUX"
+    row crux_go_two_pass_receipts_is_green 0 "${G}models_t1 GO (CRUX smoke) on lambda and gx10" "" -- clc "$d" 0
+    d="$tmp/cx/ladder-go"; cfxc "$d" -gpu ok ok "$GO_LINE"
+    row crux_ladder_go_line_is_not_green 0 "$N" "$G" -- clc "$d" 0
+    d="$tmp/cx/no-suffix"; cfxc "$d" "" ok ok "$GO_CRUX"
+    row crux_receipts_at_the_ladder_names_are_not_green 0 "$N" "$G" -- clc "$d" 0
+    d="$tmp/cx/ladder-shape"; cfx "$d" ok ok "$GO_CRUX"; cp -- "$d/lambda.json" "$d/lambda-gpu.json"; cp -- "$d/gx10.json" "$d/gx10-gpu.json"
+    row crux_ladder_shaped_receipts_are_not_green 0 "$N" "$G" -- clc "$d" 0
+    d="$tmp/cx/red"; cfxc "$d" -gpu red ok "MODELS NO-GO: the judge found red or missing cells (rc 1):"
+    row crux_red_receipt_is_red 0 "${R}lambda receipt has red cells" "" -- clc "$d" 1
+    d="$tmp/cx/detred"; cfxc "$d" -gpu ok detred "MODELS NO-GO: the judge found red or missing cells (rc 1):"
+    row crux_deterministic_red_verdict_is_red 0 "${R}gx10 receipt has red cells" "" -- clc "$d" 1
+    d="$tmp/cx/redcount"; cfxc "$d" -gpu redcount ok "$GO_CRUX"
+    row crux_red_count_under_a_pass_verdict_is_red 0 "${R}lambda receipt has red cells" "" -- clc "$d" 0
+    d="$tmp/cx/decline"; cfxc "$d" -gpu decline decline "$GO_CRUX"
+    row crux_declined_receipts_are_not_green 0 "$N" "$G" -- clc "$d" 0
+    d="$tmp/cx/empty"; cfxc "$d" -gpu ok empty "$GO_CRUX"
+    row crux_pass_with_nothing_judged_is_not_green 0 "$N" "$G" -- clc "$d" 0
+    d="$tmp/cx/nopass"; cfxc "$d" -gpu nopass ok "$GO_CRUX"
+    row crux_receipt_without_a_pass_verdict_is_not_green 0 "$N" "$G" -- clc "$d" 0
+    d="$tmp/cx/wrongbin"; cfxc "$d" -gpu wrong ok "MODELS lambda NO-GO: the receipt was measured by 'apr 0.0.1 (000000000)', not '$ST_WANT'"
+    row crux_receipt_by_another_binary_is_red 0 "${R}lambda NO-GO: the receipt was measured by" "" -- clc "$d" 1
+    d="$tmp/cx/wrong-go"; cfxc "$d" -gpu ok wrong "$GO_CRUX"
+    row crux_go_line_over_a_foreign_receipt_is_not_green 0 "$N" "$G" -- clc "$d" 0
+    d="$tmp/cx/sweep1"; cfxc "$d" -gpu ok none "MODELS gx10 NO-GO: no receipt -- crux_sweep_shards.sh wrote no receipt (rc 1)"
+    row crux_sweep_exit_1_without_receipt_is_red 0 "${R}gx10 NO-GO: no receipt -- crux_sweep_shards.sh wrote no receipt (rc 1)" "" -- clc "$d" 1
+    d="$tmp/cx/sweep2"; cfxc "$d" -gpu ok none "MODELS gx10 NO-GO: no receipt -- crux_sweep_shards.sh wrote no receipt (rc 2)"
+    row crux_sweep_decline_without_receipt_is_not_measured 0 "$N" "$R" -- clc "$d" 1
+    d="$tmp/cx/ladder1"; cfxc "$d" -gpu ok none "MODELS gx10 NO-GO: no receipt -- model_ladder.sh wrote no receipt (rc 1)"
+    row crux_names_its_own_measurer_not_the_ladder 0 "$N" "$R" -- clc "$d" 1
+    d="$tmp/cx/noscope"; cfxc "$d" -gpu ok ok "MODELS NO-GO: the judge judged no CRUX scope for $ST_V (no POLICY:/SCOPED: line) -- crux mode measured nothing the release gate reads"
+    row crux_judge_with_no_crux_scope_is_not_measured 0 "${N}MODELS NO-GO: the judge judged no CRUX scope" "$R" -- clc "$d" 1
+
     # -- foreign_t1 and no_token
     row foreign_models_t1_is_seen 0 "77 bash scripts/release/models_t1.sh" "" -- foreign_t1 5 <<< $'77 bash scripts/release/models_t1.sh 0.70.2 abc out\n5 bash scripts/release/models_t1.sh 9.8.7 c out\n78 vim models_t1.sh.log'
     row own_group_and_lookalikes_are_not_foreign 0 "" "models_t1" -- foreign_t1 5 <<< $'5 bash scripts/release/models_t1.sh 9.8.7 c out\n78 tail -f out/models_t1.sh.log'
@@ -374,8 +568,20 @@ self_test() {
 #!/usr/bin/env bash
 ver=$1; out=$3; sha9=$(git rev-parse --short=9 HEAD); want="apr $ver ($sha9)"
 [ -z "${STUB_MARK:-}" ] || : > "$STUB_MARK"
+echo "MODELS_T1_SCOPE=${MODELS_T1_SCOPE-unset}"
+echo "MODELS_T1_MEASURE=${MODELS_T1_MEASURE-unset}"
 red=0; [ "${STUB_MODE:-green}" != red ] || red=2
 [ "${STUB_MODE:-green}" != slow ] || exec sleep 30
+if [ "${MODELS_T1_MEASURE:-ladder}" = crux ]; then
+    v=PASS; [ "$red" = 0 ] || v=RED
+    for h in lambda gx10; do
+        printf '{"schema":"crux-inference-receipt/v1","apr":{"version_line":"%s"},"summary":{"RED":%s,"GREEN":2,"cells":4,"judged":4,"verdict":"%s"}}\n' \
+            "$want" "$red" "$v" > "$out/$h-gpu.json"; echo "leg $h" > "$out/$h.log"
+    done
+    echo "judge ran" > "$out/judge.log"
+    if [ "$red" = 0 ]; then echo "MODELS GO (CRUX smoke) on lambda and gx10 at $sha9: the judge passed both receipts ($want)"; exit 0; fi
+    echo "MODELS NO-GO: the judge found red or missing cells (rc 1):"; exit 1
+fi
 for h in lambda gx10; do printf '{"apr_version":"%s","executed":3,"red":%s}\n' "$want" "$red" > "$out/$h.json"; echo "leg $h" > "$out/$h.log"; done
 echo "judge ran" > "$out/judge.log"
 if [ "$red" = 0 ]; then echo "MODELS GO on lambda and gx10 at $sha9: the judge passed both receipts ($want)"; exit 0; fi
@@ -386,6 +592,8 @@ STUB
     : > "$tmp/ps.none"; export MODELS_NIGHTLY_PS_TABLE="$tmp/ps.none"   # hermetic: see ps_table
     nightly() { bash "$SCRIPT_PATH" "$@"; }
     row e2e_run_green 0 "RUN green at ${c1:0:9}" "" -- nightly --run --repo "$repo" --work "$work"
+    row e2e_run_judges_the_full_ladder 0 "MODELS_T1_SCOPE=none" "" -- cat "$work/models-t1.log"
+    row e2e_run_names_the_ladder_measure 0 "MODELS_T1_MEASURE=ladder" "" -- cat "$work/models-t1.log"
     row e2e_bundle_is_sealed 0 "OK" "FAILED" -- bash -c "cd '$work/pending/$c1' && sha256sum -c SHA256SUMS"
     row e2e_second_run_on_c_skips_pending 0 "SKIP: ${c1:0:9} is already measured green" "RUN " -- env STUB_MARK="$tmp/mark" bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
     row e2e_skip_ran_no_measurer 1 "" "" -- test -e "$tmp/mark"
@@ -400,6 +608,25 @@ STUB
     row e2e_relay_plant_red 0 "RELAY red at ${c1:0:9}: PLANTED red" "RELAY green" -- bash -c "cd '$clone' && GITHUB_OUTPUT='$tmp/gho2' bash '$SCRIPT_PATH' --relay --commit $c1 --out '$tmp/relay2' --plant-red"
     row e2e_planted_red_gives_no_bundle 0 "bundle=" "bundle=/" -- cat "$tmp/gho2"
     row e2e_published_skip 0 "SKIP: ${c1:0:9} is already measured green" "RUN " -- nightly --run --repo "$repo" --work "$work"
+    # crux on the same C: its own bundle path, so the ladder's published green neither skips nor feeds it
+    row e2e_crux_run_green 0 "RUN green at ${c1:0:9}" "SKIP" -- env MODELS_T1_SCOPE=leak bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work" --commit "$c1" --measure crux
+    row e2e_crux_run_is_release_days_call 0 "MODELS_T1_MEASURE=crux" "" -- cat "$work/models-t1.log"
+    row e2e_crux_run_drops_an_inherited_scope 0 "MODELS_T1_SCOPE=unset" "MODELS_T1_SCOPE=leak" -- cat "$work/models-t1.log"
+    row e2e_crux_bundle_holds_the_gpu_receipts 0 "" "" -- test -f "$work/pending-crux/$c1/lambda-gpu.json" -a -f "$work/pending-crux/$c1/gx10-gpu.json"
+    row e2e_crux_verdict_names_its_measure 0 "measure=crux" "" -- grep -x -- measure=crux "$work/pending-crux/$c1/verdict"
+    row e2e_crux_second_run_skips_pending 0 "SKIP: ${c1:0:9} is already measured green (crux)" "RUN " -- nightly --run --repo "$repo" --work "$work" --commit "$c1" --measure crux
+    row e2e_publish_takes_no_measure 2 "takes no --measure" "PUBLISHED" -- nightly --publish --repo "$repo" --work "$work" --measure crux
+    row e2e_unknown_measure_refused 2 "neither ladder nor crux" "RUN " -- nightly --run --repo "$repo" --work "$work" --measure smoke
+    row e2e_crux_publish 0 "PUBLISHED $EV_BRANCH" "" -- nightly --publish --repo "$repo" --work "$work"
+    row e2e_crux_publish_names_its_prefix 0 "models-crux ${c1:0:9} green" "" -- git -C "$bare" log -1 --format=%s "refs/heads/$EV_BRANCH"
+    row e2e_crux_publish_cleared_pending 0 "" "verdict" -- find "$work/pending-crux" -name verdict
+    row e2e_crux_publish_kept_the_ladder_bundle 0 "" "" -- git -C "$bare" cat-file -e "refs/heads/$EV_BRANCH:models/$c1/verdict"
+    row e2e_crux_index 0 "$c1 green" "" -- git -C "$bare" cat-file -p "refs/heads/$EV_BRANCH:models-crux/INDEX"
+    row e2e_crux_published_skip 0 "SKIP: ${c1:0:9} is already measured green (crux)" "RUN " -- nightly --run --repo "$repo" --work "$work" --commit "$c1" --measure crux
+    row e2e_crux_relay_green 0 "RELAY green at ${c1:0:9}" "" -- bash -c "cd '$clone' && GITHUB_OUTPUT='$tmp/ghoc' bash '$SCRIPT_PATH' --relay --commit $c1 --out '$tmp/relayc' --measure crux"
+    row e2e_crux_relay_gives_its_bundle 0 "bundle=$tmp/relayc/models-crux/$c1" "" -- cat "$tmp/ghoc"
+    row e2e_ladder_bundle_is_not_crux 0 "measured in mode ladder, not crux" "RELAY green" -- bash -c "cd '$clone' && bash '$SCRIPT_PATH' --relay --commit $c1 --out '$tmp/relayx1' --evidence '$tmp/relay1/models/$c1' --measure crux"
+    row e2e_crux_bundle_is_not_ladder 0 "measured in mode crux, not ladder" "RELAY green" -- bash -c "cd '$clone' && bash '$SCRIPT_PATH' --relay --commit $c1 --out '$tmp/relayx2' --evidence '$tmp/relayc/models-crux/$c1'"
     echo red >> "$tmp/src/Cargo.toml"; git -C "$tmp/src" commit -q -am c2 && git -C "$tmp/src" push -q "$bare" main || exit 3
     c2=$(git -C "$tmp/src" rev-parse HEAD)
     row e2e_run_red 0 "RUN red at ${c2:0:9}" "" -- env STUB_MODE=red bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
@@ -456,14 +683,89 @@ STUB
     mkb rc1 1
     row verify_recorded_not_measured_stays 0 "RELAY not_measured" "RELAY green" -- rl "$c1" "$tmp/v/rc1"
 
+    # -- tickets: every red nightly row opens or updates its ticket, through a gh stub that logs each call
+    cat > "$tmp/gh" <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FXGH_LOG"
+case "$1 $2" in
+    "issue list") [ "${FXGH_FAIL:-}" != list ] || exit 1; cat -- "$FXGH_LIST" ;;
+    "issue view") cat -- "$FXGH_VIEW" ;;
+    "issue comment") [ "${FXGH_FAIL:-}" != comment ] || exit 1 ;;
+    "issue create") echo "https://github.invalid/o/r/issues/77" ;;
+    *) exit 9 ;;
+esac
+GH
+    chmod +x "$tmp/gh"
+    tkb() { # tkb NAME STATE LAMBDA-RUNGS-JSON -> a bundle dir
+        local d="$tmp/tk/$1"; mkdir -p -- "$d"
+        printf 'state=%s\nreason=fixture %s\n' "$2" "$2" > "$d/verdict"
+        [ -z "$3" ] || printf '{"red":1,"rungs":%s}\n' "$3" > "$d/lambda.json"
+        [ -z "$3" ] || [ "${4:-}" = no-gx10 ] || printf '{"red":0,"rungs":[]}\n' > "$d/gx10.json"
+        [ "${4:-}" != bad-gx10 ] || printf 'not json\n' > "$d/gx10.json"
+    }
+    tk() { # tk BUNDLE LIST-JSON VIEW-JSON [FAIL] -> tickets' output, then the out file and the gh calls
+        printf '%s\n' "$2" > "$tmp/tk-list"; printf '%s\n' "$3" > "$tmp/tk-view"; : > "$tmp/tk-log"
+        ( export MODELS_NIGHTLY_GH="$tmp/gh" FXGH_LOG="$tmp/tk-log" FXGH_LIST="$tmp/tk-list" FXGH_VIEW="$tmp/tk-view" FXGH_FAIL="${4:-}" \
+              MODELS_NIGHTLY_LADDER="${TK_LADDER:-$tmp/tk-ladder.yaml}"
+          tickets "$1" "$c1" "$tmp/tk-out" ); local rc=$?
+        printf 'OUT %s\n' "$(tr '\t\n' '| ' < "$tmp/tk-out")"; printf 'GH %s\n' "$(tr '\n' ';' < "$tmp/tk-log")"
+        return "$rc"
+    }
+    tkl() { # tkl NAME OWNER-LINE -> a ladder whose standing policy carries OWNER-LINE (- for none)
+        { printf 'ladder:\n  release_policy:\n    name: crux-smoke\n    since: "0.0.0"\n    date: "d"\n    quote: "q"\n'
+          printf '    hosts: [lambda, gx10]\n    thinking: ["off"]\n    larger_rows: nightly\n    red_row_needs: ticket\n'
+          [ "$2" = - ] || printf '    %s\n' "$2"
+          printf '    release_notes: known_failures\n  emergency_scopes:\n'; } > "$tmp/$1"
+    }
+    tkl tk-ladder.yaml 'ticket_owner: "#42"'; tkl tk-noowner.yaml -; tkl tk-badowner.yaml 'ticket_owner: "Some One"'
+    tko() { local TK_LADDER="$1"; shift; tk "$@"; } # tko LADDER BUNDLE ... -> tk against another ladder
+    R1='[{"id":"fx-1","file":"a.gguf","green":false},{"id":"fx-2","file":"b.gguf","green":true}]'
+    tkb green green "$R1"
+    row tickets_green_bundle_touches_no_issue 0 "TICKETS none" "issue" -- tk "$tmp/tk/green" '[]' '{}'
+    tkb red red "$R1"
+    row tickets_red_rung_opens_its_issue 0 "OUT lambda|fx-1|#77 " "fx-2" -- tk "$tmp/tk/red" '[]' '{}'
+    tkb cruxred red "$R1"; echo measure=crux >> "$tmp/tk/cruxred/verdict"
+    row tickets_crux_bundle_is_never_ticketed 3 "this is a crux bundle" "issue" -- tk "$tmp/tk/cruxred" '[]' '{}'
+    tkc() { (set_measure crux; tk "$@"); }
+    row tickets_never_under_crux_measure 3 "never under --measure crux" "issue" -- tkc "$tmp/tk/red" '[]' '{}'
+    row tickets_name_the_policy_owner 0 "Owner: #42. models-nightly@" "" -- tk "$tmp/tk/red" '[]' '{}'
+    row tickets_no_owner_opens_nothing 2 "no ticket owner, so no ticket is opened: release_policy has no ticket_owner" "issue" -- \
+        tko "$tmp/tk-noowner.yaml" "$tmp/tk/red" '[]' '{}'
+    row tickets_bad_owner_opens_nothing 2 "ticket_owner 'Some One' is neither" "issue" -- tko "$tmp/tk-badowner.yaml" "$tmp/tk/red" '[]' '{}'
+    row tickets_no_ladder_opens_nothing 2 "cannot read the ladder" "issue" -- tko "$tmp/none.yaml" "$tmp/tk/red" '[]' '{}'
+    row tickets_open_issue_gets_a_comment 0 "TICKET updated #5" "issue create" -- tk "$tmp/tk/red" \
+        '[{"number":4,"title":"models-nightly red: fx-10 on lambda"},{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}'
+    row tickets_same_commit_is_not_commented_twice 0 "TICKET kept #5" "issue comment" -- tk "$tmp/tk/red" \
+        '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' "{\"body\":\"x\",\"comments\":[{\"body\":\"models-nightly@$c1\"}]}"
+    R0='[{"id":"fx-3","file":"c.gguf"},{"id":"fx-2","file":"b.gguf","green":true}]'
+    tkb nogreen red "$R0"
+    row tickets_rung_without_green_is_red 0 "OUT lambda|fx-3|#77 " "fx-2" -- tk "$tmp/tk/nogreen" '[]' '{}'
+    tkb lane red ""
+    row tickets_red_with_no_rung_is_a_lane_row 0 "models-nightly red: lane on all" "" -- tk "$tmp/tk/lane" '[]' '{}'
+    tkb nogx red "$R1" no-gx10
+    row tickets_missing_host_is_its_own_row 0 "OUT lambda|fx-1|#77 gx10|lane|#77 " "lane on all" -- tk "$tmp/tk/nogx" '[]' '{}'
+    tkb badgx red "$R1" bad-gx10
+    row tickets_unreadable_host_is_its_own_row 0 "OUT lambda|fx-1|#77 gx10|lane|#77 " "lane on all" -- tk "$tmp/tk/badgx" '[]' '{}'
+    R25=$(for i in $(seq 1 25); do printf '{"id":"fx-%s","file":"f%s.gguf","green":false}\n' "$i" "$i"; done | jq -sc .)
+    tkb many red "$R25"
+    row tickets_every_red_row_no_cap 0 "lambda|fx-25|#77" "" -- tk "$tmp/tk/many" '[]' '{}'
+    P50=$(for i in $(seq 1 50); do printf '{"number":%s,"title":"models-nightly red: fx-1%s on lambda"}\n' "$((100 + i))" "$i"; done | jq -sc .)
+    row tickets_full_search_page_opens_nothing 2 "NOT-MEASURED: the issue search for 'models-nightly red: fx-1 on lambda' returned a full page" "issue create" -- \
+        tk "$tmp/tk/red" "$P50" '{}'
+    row tickets_unreadable_search_opens_nothing 2 "returned a full page or no readable list" "issue create" -- tk "$tmp/tk/red" 'not json' '{}'
+    row tickets_non_list_search_opens_nothing 2 "returned a full page or no readable list" "issue create" -- tk "$tmp/tk/red" '{}' '{}'
+    row tickets_failed_search_fails_the_step 2 "NOT-MEASURED: the issue search" "TICKET opened" -- tk "$tmp/tk/red" '[]' '{}' list
+    row tickets_failed_comment_fails_the_step 2 "NOT-MEASURED: commenting on #5" "OUT lambda" -- tk "$tmp/tk/red" \
+        '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}' comment
+
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     rm -rf -- "${tmp:?}"
     [ "$fail" -eq 0 ]
 }
 
 # each planted mutant must change the file, still parse, and turn at least one row RED
-MN_MUTANTS='m01_red_receipt_ignored	s/receipt_red "\$b\/\$h.json"; then red=/false; then red=/
-m02_green_without_go_line	s/\[ "\$clean" = 2 \] && grep -qE "\^MODELS GO/[ "$clean" = 2 ] || grep -qE "^MODELS GO/
+MN_MUTANTS='m01_red_receipt_ignored	s/receipt_red "\$r"; then red=/false; then red=/
+m02_green_without_go_line	s/\[ "\$clean" = 2 \] && grep -qE "\^\$GO_RE/[ "$clean" = 2 ] || grep -qE "^$GO_RE/
 m03_judge_red_without_two_bound	s/if \[ "\$bound" = 2 \] && grep -qE/if grep -qE/
 m04_ladder_decline_counted_red	s/\(rc \[01\]/(rc [012]/
 m05_build_failure_not_red	s/[(]BUILD-FAILED[|]NOT-THE-RELEASE[|]/(NOT-THE-RELEASE|/
@@ -480,14 +782,39 @@ m15_version_unchecked	s/\[ -n "\$ver" \] && \[ "\$v" = "\$ver" \] [|][|]/true ||
 m16_entry_unchecked	s/\[ -n "\$blob" \] && \[ "\$v" = "scripts\/release\/models_t1.sh@\$blob" \] \\$/true \\/
 m17_unlisted_file_ignored	s/\[ "\$listed" = "\$have" \] [|][|]/true ||/
 m18_token_guard_dropped_from_run	0,/^    no_token [|][|] refuse/s/^    no_token [|][|] refuse/    true || refuse/
-m19_prune_kept_everything	s/^        tail -n "\$KEEP" -- "\$idx"/        cat -- "$idx"/
+m19_prune_kept_everything	s/^    tail -n "\$KEEP" -- "\$idx"/    cat -- "$idx"/
 m20_real_ps_never_read	s/else ps -eo pgid=,args=; fi/else :; fi/
 m21_plant_feeds_readiness	s/\[ -n "\$4" \] [|][|] bundle=\$ev/bundle=$ev/
-m22_unmeasured_feeds_readiness	s/case \$state in green[|]red[)] \[/case $state in *) [/'
+m22_unmeasured_feeds_readiness	s/case \$state in green[|]red[)] \[/case $state in *) [/
+m23_nightly_judges_a_scope	s/ MODELS_T1_SCOPE=none \&\&/ \&\&/
+m24_green_rungs_ticketed	s/select\(.green != true\)/select(.green != null)/
+m25_existing_issue_ignored	s/^        if \[ -n "\$n" \]; then$/        if false; then/
+m26_commented_every_slot	s/grep -qF -- "\$mark" <<< "\$j"; then say/false; then say/
+m27_ticket_failure_passes	s/^    \[ "\$st" = 0 \] [|][|] die "a ticket/    true || die "a ticket/
+m28_ticket_names_no_owner	s/ Owner: \$owner\.//
+m29_ownerless_ticket_opened	s/owner=\$\(rp_ticket_owner "\$ladder"\) [|][|] \{/owner=$(rp_ticket_owner "$ladder") || true || {/
+m30_rung_without_green_unticketed	s/select\(.green != true\)/select(.green == false)/
+m31_full_search_page_trusted	s/\[ "\$len" -ge "\$page" \]/false/
+m32_non_list_search_trusted	s/if type == "array" then length else error end/length/
+m33_crux_scope_leaked	s/unset MODELS_T1_SCOPE && //
+m34_measure_key_unchecked	s/\[ "\$\{v:-ladder\}" = "\$MEASURE" \] [|][|]/true ||/
+m35_crux_pass_not_required	s/\.verdict == "PASS" and //
+m36_crux_verdict_red_ignored	s/ or \.verdict == "RED"//
+m37_crux_receipt_bound_to_nothing	s/\.apr\.version_line == \$w/true/
+m38_crux_reads_the_ladder_receipt	s/r="\$b\/\$h\$RSUF.json"/r="$b\/$h.json"/
+m39_crux_bundle_ticketed	s/^    \[ "\$j" = ladder \] [|][|] refuse/    true || refuse/
+m40_crux_mode_ticketed	s/^    \[ "\$MEASURE" = ladder \] [|][|] refuse/    true || refuse/
+m41_publish_skips_crux	/stage "\$repo" "\$work" pending-crux models-crux/d
+m42_crux_run_measures_the_ladder	s/MODELS_T1_MEASURE=crux &&/MODELS_T1_MEASURE=ladder \&\&/
+m43_publish_takes_a_measure	s/\[ -z "\$MEAS" \] [|][|] \[ "\$MODE" != --publish \] [|][|]/true ||/
+m44_crux_takes_the_ladder_go_line	s/GO_RE=.MODELS GO \\\(CRUX smoke\\\) on./GO_RE="MODELS GO.*on"/
+m45_crux_names_the_ladder_measurer	s/MEASURER_RE=.crux_sweep_shards\\\.sh./MEASURER_RE="model_ladder\\.sh"/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
     cp -- "$SCRIPT_PATH" "$tmp/models_nightly.sh"
+    # the mutant copy lives outside the tree, so it is pointed at the real policy library
+    export MODELS_NIGHTLY_POLICY_LIB="${MODELS_NIGHTLY_POLICY_LIB:-$(dirname -- "$SCRIPT_PATH")/../lib/release_policy.sh}"
     if ! bash "$tmp/models_nightly.sh" --self-test > /dev/null 2>&1; then printf '  BROKE %-44s the unmutated script is not green in the mutant dir\n' baseline; rm -rf -- "${tmp:?}"; return 1; fi
     while IFS=$'\t' read -r name expr; do
         [ -n "$name" ] || continue
@@ -511,17 +838,17 @@ MODE=${1:-}; [ $# -eq 0 ] || shift
 case $MODE in
     --self-test) self_test; exit $? ;;
     --mutants) mutants; exit $? ;;
-    --run|--publish|--relay) ;;
-    *) echo "usage: models_nightly.sh --run|--publish|--relay|--self-test|--mutants (see the header)" >&2; exit 2 ;;
+    --run|--publish|--relay|--tickets) ;;
+    *) echo "usage: models_nightly.sh --run|--publish|--relay|--tickets|--self-test|--mutants (see the header)" >&2; exit 2 ;;
 esac
-REPO=""; WORK=""; COMMIT=""; OUT=""; EVIDENCE=""; PLANT=""
+REPO=""; WORK=""; COMMIT=""; OUT=""; EVIDENCE=""; PLANT=""; MEAS=""
 while [ $# -gt 0 ]; do
     case $1 in
-        --repo|--work|--commit|--out|--evidence|--timeout)
+        --repo|--work|--commit|--out|--evidence|--timeout|--measure)
             [ $# -ge 2 ] || { echo "models_nightly: $1 needs a value" >&2; exit 2; }
             case $1 in
                 --repo) REPO=$2 ;; --work) WORK=$2 ;; --commit) COMMIT=$2 ;;
-                --out) OUT=$2 ;; --evidence) EVIDENCE=$2 ;; --timeout) TMO=$2 ;;
+                --out) OUT=$2 ;; --evidence) EVIDENCE=$2 ;; --timeout) TMO=$2 ;; --measure) MEAS=$2 ;;
             esac
             shift 2 ;;
         --plant-red) PLANT=1; shift ;;
@@ -529,6 +856,9 @@ while [ $# -gt 0 ]; do
     esac
 done
 [[ $TMO =~ ^[1-9][0-9]*$ ]] || { echo "models_nightly: --timeout '$TMO' is not a positive integer" >&2; exit 2; }
+# --publish commits both measures' bundles in one push, so a --measure there would name nothing it obeys
+[ -z "$MEAS" ] || [ "$MODE" != --publish ] || { echo "models_nightly: --publish publishes every measure; it takes no --measure" >&2; exit 2; }
+set_measure "${MEAS:-ladder}" || { echo "models_nightly: --measure '$MEAS' is neither ladder nor crux" >&2; exit 2; }
 case $MODE in
     --run|--publish)
         [ -n "$REPO" ] && [ -n "$WORK" ] || { echo "models_nightly: $MODE needs --repo and --work" >&2; exit 2; }
@@ -538,4 +868,7 @@ case $MODE in
     --relay)
         [[ $COMMIT =~ ^[0-9a-f]{40}$ ]] && [ -n "$OUT" ] || { echo "models_nightly: --relay needs --commit <40-hex sha> and --out" >&2; exit 2; }
         relay "$COMMIT" "$OUT" "$EVIDENCE" "$PLANT" ;;
+    --tickets)
+        [[ $COMMIT =~ ^[0-9a-f]{40}$ ]] && [ -n "$OUT" ] && [ -d "$EVIDENCE" ] || { echo "models_nightly: --tickets needs --commit <40-hex sha>, --evidence <bundle dir> and --out <file>" >&2; exit 2; }
+        tickets "$EVIDENCE" "$COMMIT" "$OUT" ;;
 esac
