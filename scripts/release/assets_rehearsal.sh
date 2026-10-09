@@ -196,6 +196,11 @@ lint() {
     # outside the list. These three are all the release workflow and the rehearsal use.
     v=$(lint_q '[.jobs[].steps[] | select(has("uses")) | .uses | sub("@.*"; "") | select(test("^actions/(checkout|upload-artifact|download-artifact)$") | not)] | unique | join(" ")') || lint_unmeasured "action allowlist"
     [ -z "$v" ] || { echo "lint: an action outside the allowlist (an upload path): $v"; bad=1; }
+    # A step that pipes into tee reads tee's status unless pipefail is on: `shell: bash` is
+    # -eo pipefail, the default shell is not. Without it a failed tag is a green step with an
+    # empty tag (L25).
+    v=$(lint_q '[.jobs[].steps[] | select(.run // "" | test("[|] *tee")) | select(.shell != "bash") | .name] | join(", ")') || lint_unmeasured "tee steps"
+    [ -z "$v" ] || { echo "lint: a step pipes into tee without shell: bash (no pipefail): $v"; bad=1; }
     for v in $BUILD_JOBS; do
         "$YQ" -e ".jobs[\"$v\"].steps[] | select(.uses // \"\" | test(\"^actions/upload-artifact@\"))" - <<< "$x" > /dev/null 2>&1 \
             || { echo "lint: build job $v keeps no checksums"; bad=1; }
@@ -224,6 +229,7 @@ steps:
       bash scripts/release/assets_rehearsal.sh --check
   - name: Rehearsal tag
     id: tag
+    shell: bash   # -eo pipefail: a failed tag fails the step, never an empty tag under tee
     run: bash scripts/release/assets_rehearsal.sh tag | tee -a "$GITHUB_OUTPUT"
 EOF
 }
@@ -245,6 +251,7 @@ steps:
       merge-multiple: true
       path: ${{ runner.temp }}/rehearsal-got
   - name: Verdict (green only when every build ran and the asset set is complete)
+    shell: bash
     env:
       NEEDS: ${{ toJSON(needs) }}
       TAG: ${{ needs.assets.outputs.tag }}
@@ -458,6 +465,12 @@ self_test() {
     out=$(lint "$d/m.yml"); row "an environment -> lint red" 1 $? 'environment' "$out"
     mut '.on.release = {"types": ["published"]}'
     out=$(lint "$d/m.yml"); row "release trigger -> lint red" 1 $? 'triggers' "$out"
+    mut '.jobs.build.steps += [{"name": "t", "run": "bash x.sh tag | tee -a y"}]'
+    out=$(lint "$d/m.yml"); row "a step piping into tee on the default shell (no pipefail) -> lint red" 1 $? 'pipes into tee' "$out"
+    mut '.jobs.build.steps += [{"name": "t", "shell": "sh", "run": "bash x.sh tag |tee y"}]'
+    out=$(lint "$d/m.yml"); row "a step piping into tee under shell: sh -> lint red" 1 $? 'pipes into tee' "$out"
+    mut '.jobs.build.steps += [{"name": "t", "shell": "bash", "run": "bash x.sh tag | tee -a y"}]'
+    out=$(lint "$d/m.yml"); row "a step piping into tee under shell: bash -> still cannot upload" 0 $? 'cannot upload' "$out"
     # Every way to reach a credential from an expression is red. The planted step is the
     # one a review found: a later step that maps the credential into its env and POSTs
     # with curl -d, which no upload pattern names.
