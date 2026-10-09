@@ -39,6 +39,16 @@ fn a_malformed_schema_is_schema_invalid_before_anything_loads() {
     assert!(r.message.starts_with("SchemaInvalid: "), "{}", r.message);
     let r = refusal(constraint_request(&args(Some("[1, 2]"), None)).expect_err("not a schema"));
     assert_eq!(r.kind, "SchemaInvalid");
+    // JSON, an object, and still no schema: the second reader refuses it before the model loads
+    for bad in [r#"{"type": 12}"#, r#"{"minimum": "zero"}"#] {
+        let r = refusal(constraint_request(&args(Some(bad), None)).expect_err(bad));
+        assert_eq!(r.kind, "SchemaInvalid", "{bad}");
+        assert!(
+            r.message.contains("not a valid JSON Schema"),
+            "{}",
+            r.message
+        );
+    }
     let r = refusal(
         constraint_request(&args(Some("@/nonexistent/schema.json"), None)).expect_err("no file"),
     );

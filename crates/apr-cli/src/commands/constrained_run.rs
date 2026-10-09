@@ -27,7 +27,17 @@ const WITH_THINKING_REMOVED_BY: &str = "#3735 (0.70): constrain the answer after
 /// [`CliError::ConstraintRefused`] (`SchemaInvalid`) for an unreadable or malformed argument.
 pub(crate) fn constraint_request(args: &ConstraintArgs) -> Result<Option<ConstraintRequest>> {
     let request = match (&args.json_schema, &args.grammar) {
-        (Some(schema), _) => ConstraintRequest::JsonSchema(load_schema(schema).map_err(refused)?),
+        (Some(schema), _) => {
+            let schema = load_schema(schema).map_err(refused)?;
+            // The second reader compiles the schema now: one it cannot read (`{"type": 12}`) is
+            // malformed, refused before the model loads, never named SchemaUnsupported after it
+            jsonschema::validator_for(&schema).map_err(|e| {
+                refused(ConstraintError::SchemaInvalid(format!(
+                    "the schema is not a valid JSON Schema: {e}"
+                )))
+            })?;
+            ConstraintRequest::JsonSchema(schema)
+        }
         (None, Some(grammar)) => ConstraintRequest::Lark(load_grammar(grammar).map_err(refused)?),
         (None, None) => return Ok(None),
     };
