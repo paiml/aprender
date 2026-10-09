@@ -1561,6 +1561,54 @@ pub enum ModelCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Build a release dir plus model-release-v1.json from pacha lineage (deterministic)
+    Pack {
+        /// Registered model: id, content hash, recorded sha256 or model file
+        #[arg(value_name = "MODEL")]
+        model: FreeText,
+        /// Model line, e.g. paiml/qwen3.5-4b-apr
+        #[arg(long)]
+        line: FreeText,
+        /// X.Y.Z (released) or X.Y.Z-rc.N (rc)
+        #[arg(long)]
+        version: FreeText,
+        /// rc or released
+        #[arg(long, default_value = "rc")]
+        channel: FreeText,
+        /// Upstream base model id on the Hub
+        #[arg(long)]
+        base_hf_id: FreeText,
+        /// Upstream base revision
+        #[arg(long)]
+        base_revision: FreeText,
+        /// sha256 of the upstream base weights (checked against pacha when recorded)
+        #[arg(long)]
+        base_sha256: FreeText,
+        /// Canonical sha256 of a registered dataset manifest the model trained on (repeatable)
+        #[arg(long = "dataset", value_name = "SHA256")]
+        datasets: Vec<FreeText>,
+        /// The released apr crate tarball of the producing engine
+        #[arg(long, value_name = "FILE")]
+        engine_tarball: InputFile,
+        /// SPDX id or license name
+        #[arg(long)]
+        license: FreeText,
+        /// Upstream LICENSE file, shipped as LICENSE
+        #[arg(long, value_name = "FILE")]
+        license_file: InputFile,
+        /// Upstream NOTICE file, shipped as NOTICE
+        #[arg(long, value_name = "FILE")]
+        notice_file: InputFile,
+        /// Extra file shipped as-is, e.g. a GGUF export or the card (repeatable)
+        #[arg(long = "file", value_name = "FILE")]
+        files: Vec<InputFile>,
+        /// Pacha home (default: ~/.pacha)
+        #[arg(long, value_name = "DIR")]
+        pacha_home: Option<DirPath>,
+        /// Release directory to create; must be absent or empty
+        #[arg(long, value_name = "DIR")]
+        out: DirPath,
+    },
 }
 
 #[cfg(feature = "training")]
