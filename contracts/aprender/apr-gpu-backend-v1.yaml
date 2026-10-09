@@ -262,6 +262,23 @@ falsification_tests:
         }
     }
   if_fails: Silent failure — 0 tokens captured but exit code 0 (GH-699, GH-641)
+- id: FALSIFY-GPU-010
+  rule: apr code's JSON document reports the device its completions ran on
+  prediction: |
+    The Qwen3.5 /v1/chat/completions response carries used_gpu for the turn it
+    answered, and `apr code -p --output-format json` carries
+    backend {requested, ran, fell_back}: ran is "cpu" and fell_back is true if
+    any completion under a forced GPU ran on the CPU, and both are null when a
+    completion went unreported or no driver ran.
+  test: |
+    cargo test -p aprender-orchestrate --lib served_backend
+    cargo test -p aprender-orchestrate --lib code_envelope
+    cargo test -p aprender-serve --lib a_chat_request_answers_what_apr_run_answers
+    cargo test -p aprender-serve --lib --features cuda gpu_a_chat_request_answers_from_the_gpu_session
+  if_fails: >-
+    A forced-GPU apr code run that fell back to the CPU prints the same
+    document as one that stayed on the GPU, and a ladder code cell cannot
+    prove CUDA (#3719)
 
 kani_harnesses:
 - id: KANI-GPU-001
