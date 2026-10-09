@@ -67,6 +67,13 @@ is_exempt() {
 
 # ---------------------------------------------------------------------------
 # Line classifiers. Each is probed by --self-test.
+#
+# Each one opens with a glob for a literal its pattern cannot match without
+# (#3676): `cargo`..`install`, `--root`, `CARGO_`, `docker`..`run`, a backslash,
+# `export`..`PATH=`. A line that lacks it gets the answer the grep or sed would
+# have given, without the fork. A line that has it still goes to grep or sed,
+# which stays the only judge. The scan ran four to six of these on every
+# workflow line, and that was 91 s p50 and 340 s p95 of guard-cargo.
 # ---------------------------------------------------------------------------
 
 # `cargo install` in COMMAND POSITION - start of a line, after a shell
@@ -75,11 +82,13 @@ is_exempt() {
 RE_INSTALL='(^|[;&|]|&&|\|\||run:)[[:space:]]*(sudo[[:space:]]+)?cargo[[:space:]]+install([[:space:]]|$)'
 
 is_install() {
+    [[ $1 == *cargo*install* ]] || return 1
     grep -qE "$RE_INSTALL" <<< "$1"
 }
 
 # An explicit `--root <dir>` / `--root=<dir>` on the install itself.
 has_explicit_root() {
+    [[ $1 == *--root* ]] || return 1
     grep -qE -- '--root([[:space:]]|=)' <<< "$1"
 }
 
@@ -89,6 +98,7 @@ has_explicit_root() {
 # already does) and `CARGO_INSTALL_ROOT: /tmp/apr-cov-tools-...` both qualify;
 # `CARGO_INSTALL_ROOT="$HOME/.cargo"` does not.
 declares_private_root() {
+    [[ $1 == *CARGO_* ]] || return 1
     grep -qE '(CARGO_INSTALL_ROOT|CARGO_HOME)[[:space:]]*[:=]' <<< "$1" || return 1
     if grep -qE '(\$HOME|\$\{HOME\}|~)/\.cargo' <<< "$1" ; then
         return 1
@@ -100,10 +110,12 @@ declares_private_root() {
 # continuations further down (ci.yml's mutants job is exactly that shape). The
 # caller clears the chain on the first line that does not end in a backslash.
 opens_docker_chain() {
+    [[ $1 == *docker*run* ]] || return 1
     grep -qE '(^|[[:space:]])docker[[:space:]]+run([[:space:]]|$)' <<< "$1"
 }
 
 continues_line() {
+    [[ $1 == *\\* ]] || return 1
     grep -qE '\\[[:space:]]*$' <<< "$1"
 }
 
@@ -119,6 +131,7 @@ path_first_entry() {
 # line cancels a private install root.
 path_front_is_shared() {
     local first
+    [[ $1 == *export*PATH=* ]] || return 1
     first="$(path_first_entry "$1")"
     [ -n "$first" ] || return 1
     case "$first" in
@@ -181,6 +194,11 @@ self_test() {
     probe opens_docker_chain 1 '          if docker image inspect "$IMAGE" > /dev/null 2>&1'
     probe opens_docker_chain 1 '          echo "docker running"'
 
+    probe continues_line 0 '          docker run --rm \'
+    probe continues_line 0 $'            -v "$PWD:/w" \\ \t'
+    probe continues_line 1 '          cargo build --release'
+    probe continues_line 1 '          echo "a \ b"'
+
     # path_front_is_shared
     probe path_front_is_shared 0 '          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"'
     probe path_front_is_shared 0 '          export PATH="$PATH:$COV_TOOLS/bin"'
@@ -231,10 +249,10 @@ check_job() {
     # Pass 1: job-wide facts (runs-on, private-root declarations anywhere in the
     # job - job env, step env, or an inline export).
     while IFS= read -r line; do
-        if grep -q 'runs-on:' <<< "$line" && grep -q 'self-hosted' <<< "$line"; then
+        if [[ $line == *runs-on:* && $line == *self-hosted* ]]; then
             selfhosted=1
         fi
-        trimmed="$(printf '%s' "$line" | sed 's/^[[:space:]]*//')"
+        trimmed="${line#"${line%%[![:space:]]*}"}"
         case "$trimmed" in '#'*) continue ;; *) ;; esac
         if declares_private_root "$line"; then
             privroot=1
@@ -248,7 +266,7 @@ check_job() {
     lineno=$((start - 1))
     while IFS= read -r line; do
         lineno=$((lineno + 1))
-        trimmed="$(printf '%s' "$line" | sed 's/^[[:space:]]*//')"
+        trimmed="${line#"${line%%[![:space:]]*}"}"
         case "$trimmed" in
             '#'*)
                 continues_line "$line" || docker_chain=0
