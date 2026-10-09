@@ -185,7 +185,7 @@ run_night() {
     git -C "$st/clone" checkout -q --detach "$commit" || exit 2
     git -C "$st/clone" config user.name "release rehearsal" && git -C "$st/clone" config user.email "rehearsal@invalid" || exit 2
     env=$(install_guard "$st" "$commit") || exit 2
-    printf 'C=%s\nV=%s\nSOURCE=%s\nSTARTED=%s\n' "$commit" "$v" "$src" "$(date -u +%FT%TZ)" > "$st/night.env"
+    printf 'C=%s\nV=%s\nSOURCE=%s\nSTARTED=%s\n' "$commit" "$v" "$src" "$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%FT%TZ)" > "$st/night.env"
     printf 'stage\trc\tcommit\tseconds\n' > "$st/stages.tsv"
     while IFS='|' read -r name needs cmd; do
         [ -n "$name" ] || continue
@@ -193,13 +193,13 @@ run_night() {
         if [ "$needs" != - ] && ! awk -F'\t' -v n="$needs" '$1 == n && $2 == 0 { f = 1 } END { exit !f }' "$st/stages.tsv"; then
             printf '%s\tunreached\t-\t0\n' "$name" >> "$st/stages.tsv"; continue
         fi
-        start=$(date +%s)
+        start="$SECONDS"
         run_stage "$st" "$env" "$name" "$cmd" "$v"; rc=$?
         if [ "$name" = ship ] && [ "$rc" = 0 ] && ! handoff_bump "$st" "$env" "$commit"; then
             printf 'STOP rehearsal: the ship stage made no bump commit on %s that the release steps can read\n' "$commit" >> "$st/logs/ship.log"
             rc=1
         fi
-        printf '%s\t%s\t%s\t%s\n' "$name" "$rc" "$(stage_commit "$st" "$name" "$commit")" "$(( $(date +%s) - start ))" >> "$st/stages.tsv"
+        printf '%s\t%s\t%s\t%s\n' "$name" "$rc" "$(stage_commit "$st" "$name" "$commit")" "$(( SECONDS - start ))" >> "$st/stages.tsv"
     done < <(stages_table)
     record_bump "$st" "$commit"
     judge "$st"
@@ -232,7 +232,7 @@ run_stage() {
       # shellcheck disable=SC1090
       . "$env" || exit 2
       export WG_STAGE=$name V=$v
-      eval "$cmd" ) > "$log" 2>&1 < /dev/null
+      if [ "$cmd" = stage_summary ]; then stage_summary; else bash -c -- "$cmd"; fi ) > "$log" 2>&1 < /dev/null
     rc=$?
     {
         while IFS= read -r f; do
@@ -519,6 +519,14 @@ selftest() {
     [ "$fail" -eq 0 ]
 }
 
+# snip_run TEXT: run one of this file's own literal case-table setup snippets in THIS shell, so it sees the
+# case table's functions and variables, exactly as the `eval` it replaces did. The text is written to a file
+# under the selftest's $tmp and sourced; it is never an argument or an input from outside this file.
+snip_run() {
+    printf '%s\n' "$1" > "${tmp:?}/snip.sh" || return 2
+    . "${tmp:?}/snip.sh"
+}
+
 # The stub end to end: a planted write in a stage is refused, recorded and turns the night red;
 # a read runs the real tool. Also the by-path cargo call prepare_bump.sh makes.
 selftest_stub() {
@@ -527,7 +535,7 @@ selftest_stub() {
     envf=$(install_guard "$s") || { printf '  BROKE install_guard failed\n'; fail=$((fail + 1)); return; }
     t() { # t NAME WANT_RC WANT_OUT CMD
         local name=$1 wrc=$2 wout=$3; shift 3
-        rc=0; o=$( . "$envf"; export WG_STAGE=plant; cd "$s" && eval "$*" 2>&1 ) || rc=$?
+        rc=0; o=$( . "$envf"; export WG_STAGE=plant; cd "$s" && bash -c "$*" 2>&1 ) || rc=$?
         if [ "$rc" = "$wrc" ] && [[ $o == *"$wout"* ]]; then pass=$((pass + 1))
         else printf '  BROKE %-44s rc=%s (want %s) out=%s\n' "$name" "$rc" "$wrc" "${o:0:160}"; fail=$((fail + 1)); fi
     }
@@ -556,15 +564,15 @@ selftest_seams() {
         printf '%s\tgate\t%s\tx.yml\t%s\t%s\tsuccess\t1\t-\t-\t%s\t0\n' "$@"
     }
     bundle() { # bundle DAY BUNDLE_C ROW...
-        local f="$s/l$n/train/$1/bundle.tsv" bc=$2; shift 2
-        mkdir -p "${f%/*}" || return 2
+        local f="$s/l$n/train/$1/bundle.tsv" bc=$2
+        mkdir -p -- "$s/l$((n))/train/$1" || return 2; shift 2
         { printf 'lane\tkind\tstate\tproducer\trun_id\trun_head\tconclusion\tattempt\tstarted\tended\treason\thours_lost\n'
           printf '%s\n' "$@"; printf '# C\t%s\n' "$bc"; } > "$f"
     }
     l() { # l NAME WANT_RC WANT_OUT LANE SETUP -- rehearsal_lane for C over a fresh train dir
         local name=$1 wrc=$2 wout=$3 lane=$4
-        n=$((n + 1)); mkdir -p "$s/l$n/train" || return 2
-        eval "$5"
+        n=$((n + 1)); mkdir -p -- "$s/l$((n))/train" || return 2
+        snip_run "$5"
         rc=0; o=$( . "$SCRIPT_DIR/lib_rehearsal.sh" || exit 9
                    RELEASE_REHEARSAL_TRAIN="$s/l$n/train" RELEASE_REHEARSAL_C=${LC-$c} rehearsal_lane "$lane" 2>&1 ) || rc=$?
         if [ "$rc" = "$wrc" ] && [[ $o == *"$wout"* ]]; then pass=$((pass + 1))
@@ -661,7 +669,7 @@ selftest_judge() {
         local name=$1 wrc=$2 wout=$3 mut=$4
         n=$((n + 1)); d="$tmp/night$n"
         fixture_night "$d" || return 2
-        eval "$mut"
+        snip_run "$mut"
         rc=0; o=$(judge "$d" 2>&1) || rc=$?
         if [ "$rc" = "$wrc" ] && [[ $o == *"$wout"* ]]; then pass=$((pass + 1))
         else printf '  BROKE %-48s rc=%s (want %s): %s\n' "$name" "$rc" "$wrc" "$(printf '%s' "$o" | grep -E 'RED|VERDICT' | head -3 | tr '\n' '|')"; fail=$((fail + 1)); fi
@@ -718,7 +726,7 @@ mutants() {
     trap selftest_cleanup RETURN
     while read -r name file expr; do
         [ -n "$name" ] || continue
-        dir="$tmp/$name"; mkdir -p "$dir"
+        dir=$(mktemp -d "${tmp:?}/m.XXXXXX") || return 2
         cp -- "$SCRIPT_PATH" "$dir/rehearse.sh"; cp -- "$SCRIPT_DIR/lib_write_guard.sh" "$SCRIPT_DIR/lib_rehearsal.sh" "$dir/"
         sed -i -e "$expr" "$dir/$file"
         if cmp -s "$dir/$file" "$SCRIPT_DIR/$file"; then

@@ -403,7 +403,7 @@ cut_tag_rehearsal() {
         0) say "MILESTONE-GATE $v clean at the cut (check_milestone_cut.sh rc=0)" ;;
         1) left=$(jq -r '.items[].number' "$AP/cut.json" 2>/dev/null | sort -u \
                  | comm -23 - <(sed -nE 's/^WOULD CARRY [^ ]+ #([0-9]+) .*/\1/p' "$AP/carry-plan.log" | sort -u) | tr '\n' ' ') \
-               && jq -e '.items | length > 0' "$AP/cut.json" > /dev/null 2>&1 \
+               && [ "$(jq '.items | length' "$AP/cut.json" 2>/dev/null)" -gt 0 ] 2>/dev/null \
                || die "milestone $v could not be judged against the carry plan ($AP/cut.json unreadable) -- no tag; Unknown is not a pass"
            [ -z "$left" ] || die "milestone $v still holds open item(s) the carry would not move: ${left% } -- no tag, no publish (check_milestone_cut.sh rc=1)"
            say "MILESTONE-GATE $v clean at the cut once the carry plan runs (check_milestone_cut.sh rc=1, every open item in the plan)" ;;
