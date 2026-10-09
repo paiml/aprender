@@ -102,3 +102,45 @@ jobs:
           curl -fsSL https://paiml.com/apr/install.sh -o /tmp/deployed-install.sh
           diff scripts/install.sh /tmp/deployed-install.sh
           echo "OK: https://paiml.com/apr/install.sh matches ${{ steps.ref.outputs.ref }}:scripts/install.sh"
+
+  # #3546: the same file as the release asset `install.sh`, so
+  # https://github.com/paiml/aprender/releases/latest/download/install.sh resolves
+  # (PP-066 R-6 names that URL; it 404'd on every release through v0.70.3). Its own
+  # job, because it needs `contents: write` and the deploy job above holds the AWS
+  # role on `contents: read`; this one holds no cloud credential at all.
+  #
+  # The script runs from the workflow's own commit (the tag on `release: published`,
+  # the default branch on a dispatch) and attaches the TAG's scripts/install.sh, so a
+  # dispatch can attach to a release cut before the script existed. It never
+  # overwrites or deletes, reads its upload back, and attaches nothing to a draft or
+  # a prerelease: an rc carrying install.sh would stop scripts/release/promote_rc.sh,
+  # which refuses any rc asset without -<rc>- in its name.
+  attach:
+    name: attach install.sh to the release
+    if: github.event.release.tag_name || inputs.tag
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: write  # upload one asset to the release; nothing else
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: pmat/bashrs must match the pinned fleet versions (never install)
+        run: setsid --wait bash scripts/check_tool_versions.sh
+
+      - name: attach_release_installer.sh case table (offline, stub curl)
+        run: setsid --wait bash scripts/attach_release_installer.sh --self-test
+
+      - name: The tag's scripts/install.sh, linted as the deploy job lints it
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          git fetch --no-tags --depth=1 origin "+refs/tags/${TAG}:refs/tags/${TAG}"
+          git show "refs/tags/${TAG}:scripts/install.sh" > "$RUNNER_TEMP/install.sh"
+          bashrs lint --level error "$RUNNER_TEMP/install.sh"
+
+      - name: Attach install.sh to the release (never overwrites; read back)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: INSTALLER_SRC="$RUNNER_TEMP/install.sh" setsid --wait bash scripts/attach_release_installer.sh "$TAG"
