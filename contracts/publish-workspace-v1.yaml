@@ -229,16 +229,23 @@ falsification_tests:
       that tested another commit. A non-empty file is not proof; the run is read
       back and judged by clean_room_gate pinned to that one run. And it is the
       only door: `make publish` refuses a real upload (PUBLISH_DRY_RUN still
-      packages), and no other tracked shell script, make file or root workflow
-      runs `cargo publish` without --dry-run. cascade-publish.sh is the one other
-      upload, behind its own clean_room_gate.
+      packages), and no other tracked shell script, make file, git hook or root
+      workflow runs `cargo publish` in a command without --dry-run. Commands are
+      read as the shell runs them: continuation lines joined, each command of a
+      line on its own, wrappers, VAR=val, $CARGO and cargo's global flags
+      included. cascade-publish.sh is the one other upload, behind its own
+      clean_room_gate, and each of the two gated files holds exactly one upload
+      command. Not scanned: Rust, where the aprender-orchestrate stack releaser
+      and the dev-only `apr mono publish` build the call as an argv, and Python,
+      where no tracked file calls it.
     prediction: |
       Run the case table against the v0.70.1 publish_strict.sh (which checks only
       that the file is non-empty) and it FAILS four rows (non-numeric, red, other
       commit, unreadable) with "the clean-room door let this run through". Point
       its door rows at af58dfccff (PUBLISH_DOORS_ROOT) and they FAIL three rows:
-      `make publish` ran a real `cargo publish`, and the scan finds Makefile:1434
-      and scripts/stack_release.sh:54.
+      `make publish` ran a real `cargo publish`, and the scan finds the publish
+      recipe's upload command (it starts at Makefile:1397) and
+      scripts/stack_release.sh:54.
     test: |
       bash scripts/check_publish_strict_cleanroom.sh
     test_harness: |
@@ -246,7 +253,8 @@ falsification_tests:
     if_fails: |
       publish_strict.sh no longer reads the recorded run back, or clean_room_gate
       lost its pinned mode and judges a run other than the one recorded, or a
-      second way to upload to crates.io came back.
+      second way to upload to crates.io came back, or the scan went blind to a
+      gated file's one upload command.
 
 kani_harnesses:
   - id: KANI-PUB-001

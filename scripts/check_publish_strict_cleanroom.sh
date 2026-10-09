@@ -179,18 +179,51 @@ STUB
   fi
 fi
 
-# A line uploads when `cargo publish` stands where a command starts (line start; after
-# ; & | ! $( or an unescaped backtick; after then/do/else/if/exec/time or a workflow `run:`;
-# behind env and VAR=val prefixes) and the line has no --dry-run. Comment lines are skipped.
+# A command uploads when it runs `cargo publish`. door_cmds reads each file the way the shell
+# does: a line ending in \ is joined to the next (the row keeps the line the command starts
+# on), a comment line is dropped and does not continue, a trailing ` #...` comment is cut, and
+# the line is split into commands at ; && || and |. So a --dry-run on one command never hides
+# another on the same line, and `cargo \` + `publish` is still one command.
+# A command is a door when cargo ($CARGO, "${CARGO:-cargo}", $(CARGO)), with only global flags
+# after it, runs publish: at the command's start (after ( { ! ` @ + -, then/do/else/if/elif/
+# while/until or a workflow run:), after $( or an unescaped backtick, or inside sh -c "...";
+# behind VAR=val and a wrapper (env exec time command nohup sudo timeout nice xargs ...).
 # The case table is the pattern's spec: re-run it, never re-read the pattern.
-DOOR_RE='(^|[;&|!]|\$\(|[^\\]`|(^|[[:space:]])(then|do|else|if|exec|time|run:))[[:space:]]*(env([[:space:]]+(-u[[:space:]]+[A-Za-z_][A-Za-z0-9_]*|-[A-Za-z]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*cargo[[:space:]]+(\+[^[:space:]]+[[:space:]]+)?publish([[:space:]]|;|$)'
-door_lines() { grep -nE "$DOOR_RE" -- "$@" /dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v -e '--dry-run'; }
+DOOR_PRE='[[:space:]]*(([(!{`@+-]|then|do|else|if|elif|while|until|run:)[[:space:]]*)*'
+DOOR_MID='.*(\$\(|[^\\]`|-c[[:space:]]+["'"'"'])[[:space:]]*'
+DOOR_WRAP='((env|exec|time|command|builtin|nohup|sudo|timeout|nice|ionice|stdbuf|xargs|flock|taskset|chrt|setsid)([[:space:]]+[^[:space:]]+)*[[:space:]]+)?'
+DOOR_ASSIGN='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+DOOR_CARGO='(cargo|"?\$\{?CARGO[A-Za-z0-9_]*(:?[-=+?][^}[:space:]]*)?\}?"?|\$\(CARGO\))'
+DOOR_GFLAG='([[:space:]]+(\+[^[:space:]]+|-[A-Za-z]+|--[a-z][a-z-]*(=[^[:space:]]*)?|(-Z|-C|--config|--color)[[:space:]]+[^[:space:]]+))*'
+DOOR_RE="^[^:]*:[0-9]+:(${DOOR_PRE}|${DOOR_MID})${DOOR_WRAP}${DOOR_ASSIGN}${DOOR_CARGO}${DOOR_GFLAG}[[:space:]]+publish([[:space:]\"'\`)};]|\$)"
+door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
+  awk '
+    function emit(f, n, s,   k, i, c) {
+      k = split(s, c, /&&|\|\||;|\|/)
+      for (i = 1; i <= k; i++) {
+        sub(/[[:space:]]#.*$/, "", c[i])
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", c[i])
+        if (c[i] != "" && c[i] !~ /^#/) print f ":" n ":" c[i]
+      }
+    }
+    FNR == 1 && buf != "" { emit(pf, start, buf); buf = "" }
+    { pf = FILENAME }
+    buf == "" && /^[[:space:]]*#/ { next }
+    {
+      if (buf == "") start = FNR
+      if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next }
+      emit(FILENAME, start, buf $0); buf = ""
+    }
+    END { if (buf != "") emit(pf, start, buf) }
+  ' "$@"
+}
+door_lines() { door_cmds "$@" | grep -E "$DOOR_RE" | grep -v -e '--dry-run'; }
 cases_n=0 cases_ok=0
-door_case() { # door_case door|none LINE
+door_case() { # door_case door|none TEXT (TEXT may span lines)
   local got=none
   cases_n=$((cases_n + 1))
   printf '%s\n' "$2" > "$WORK/door-case.sh"
-  door_lines "$WORK/door-case.sh" > /dev/null && got=door
+  [ -n "$(door_lines "$WORK/door-case.sh")" ] && got=door
   if [ "$got" = "$1" ]; then cases_ok=$((cases_ok + 1)); else fail "door_regex_case_table: want $1, got $got: $2"; fi
 }
 door_case door 'cargo publish --no-verify --allow-dirty 2>&1 | tail -5'
@@ -203,52 +236,91 @@ door_case door 'if cargo publish -p y; then'
 door_case door 'then cargo publish -p y'
 door_case door 'out=$(cargo publish -p y 2>&1)'
 door_case door 'out=`cargo publish -p y`'
+door_case door '`cargo publish -p y`'
 door_case door 'env -u CARGO_REGISTRY_TOKEN cargo publish -p z'
 door_case door 'CARGO_REGISTRY_TOKEN=$T cargo publish -p z'
 door_case door 'cargo +stable publish -p z'
 door_case door '  cargo   publish'
 door_case door 'x=1; cargo publish'
+door_case door 'timeout 600 cargo publish -p x'
+door_case door 'command cargo publish -p x'
+door_case door 'nohup cargo publish -p x &'
+door_case door 'nice -n 5 cargo publish -p x'
+door_case door 'sudo -E cargo publish -p x'
+door_case door "printf '%s\\n' a b | xargs -I{} cargo publish -p {}"
+door_case door 'sh -c "cargo publish -p x"'
+door_case door "bash -c 'cd x && cargo publish'"
+door_case door '$CARGO publish -p x'
+door_case door '"$CARGO" publish -p x --locked'
+door_case door '${CARGO:-cargo} publish -p x'
+door_case door $'\t$(CARGO) publish -p x'
+door_case door 'cargo -q publish -p x'
+door_case door 'cargo --locked --config net.retry=5 publish'
+door_case door '( cargo publish -p x )'
+door_case door '{ cargo publish -p x; }'
+door_case door $'\t@cargo publish -p x'
+door_case door $'\t-cargo publish -p x'
+door_case door 'cargo publish -p x --locked && echo --dry-run'
+door_case door 'cargo publish -p y --dry-run; cargo publish -p y'
+door_case door 'cargo publish -p x # --dry-run'
+door_case door $'cargo \\\n  publish -p x'
+door_case door $'\tcd x && \\\n\tcargo publish -p x'
+door_case door $'# a comment does not continue \\\ncargo publish -p x'
 door_case none '# cargo publish -p x'
 door_case none '    # cargo publish -p x'
+door_case none 'x=1 # cargo publish -p x'
 door_case none 'echo "FAIL: cargo publish failed"'
 door_case none 'echo "   because \`cargo publish -p $$CRATE\` from here"'
 door_case none $'\tcargo publish $$SEL --dry-run --no-verify --allow-dirty --locked; \\'
 door_case none 'DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?'
+door_case none 'cargo publish -p x --dry-run && echo ok'
+door_case none $'cargo \\\n  publish -p x --dry-run'
 door_case none '        /cargo publish/ { cut = 1 }'
 door_case none '  live "$c" "$v" || die "$c $v: cargo publish rc=0 but the version is not on the index"'
 door_case none 'echo "   3. Publish to crates.io: cargo publish"'
+door_case none 'echo "use: cargo publish"'
 door_case none '    echo "DEFER (cargo publish exited 0 but printed no line)"'
+door_case none 'if [ "$CARGO" = x ]; then echo publish; fi'
 door_case none 'cargo publishing notes'
 door_case none 'cargo-publish x'
 [ "$cases_ok" -eq "$cases_n" ] && pass "door_regex_case_table ($cases_ok/$cases_n cases)"
 
 # The two gated doors: publish_strict.sh (the rows above) and cascade-publish.sh (its own
-# clean_room_gate, scripts/check_cascade_clean_room_gate.sh). The scan must see both, or it
-# is blind. One fixture is allowed by file AND text: release_ready.sh writes a stand-in
-# publish_strict.sh for its own case table, so a real upload added there is still caught.
-# This file is skipped too: its case table above is made of upload lines.
-# Make files at any depth (`make -C crates/x publish` is a door too). Workflows only at the
+# clean_room_gate, scripts/check_cascade_clean_room_gate.sh). The scan must see each one's
+# upload line, or it is blind, and nothing else in them: a second upload added to a gated
+# file is not behind the gate just because the file has one. One fixture is allowed by file
+# AND text: release_ready.sh writes a stand-in publish_strict.sh for its own case table, so a
+# real upload added there is still caught. This file is scanned without its case table rows.
+# Make files and git hooks at any depth (`make -C crates/x publish` is a door too). Workflows only at the
 # root: GitHub runs no other .github/workflows directory.
 GATED='scripts/release/publish_strict.sh scripts/cascade-publish.sh'
+GATED_CMD='cargo publish "${sel[@]}" --locked > "$log" 2>&1'
 FIXTURE='scripts/release/release_ready.sh:cargo publish -p x'
 SELF=scripts/check_publish_strict_cleanroom.sh
 mapfile -t scope < <(git -C "$DOORS_ROOT" ls-files -- '*.sh' '*.bash' '*.mk' \
   'Makefile' '*/Makefile' 'makefile' '*/makefile' 'GNUmakefile' '*/GNUmakefile' \
-  '.github/workflows/*.yml' '.github/workflows/*.yaml')
+  '.githooks/*' '*/.githooks/*' '.github/workflows/*.yml' '.github/workflows/*.yaml' ":(exclude)$SELF")
 raw=$( (cd "$DOORS_ROOT" && door_lines "${scope[@]}") || true)
+if [ -f "$DOORS_ROOT/$SELF" ]; then
+  sed 's/^door_case .*//' "$DOORS_ROOT/$SELF" > "$WORK/self-scan.sh"
+  raw+=$'\n'$( (door_lines "$WORK/self-scan.sh" || true) | sed "s#^$WORK/self-scan.sh:#$SELF:#")
+fi
 for g in $GATED; do
-  if printf '%s\n' "$raw" | grep -qF "$g:"; then
-    pass "door_scan_sees $g"
-  else
+  got=$(printf '%s\n' "$raw" | awk -v f="$g:" 'index($0, f) == 1 { sub(/^[^:]*:[0-9]+:/, ""); print }')
+  if [ -z "$got" ]; then
     fail "door_scan_sees $g: no upload line found in it (${#scope[@]} files scanned), so the scan proves nothing"
+  elif [ "$got" != "$GATED_CMD" ]; then
+    fail "door_scan_sees $g: want its one upload, $GATED_CMD, got: $(printf '%s' "$got" | tr '\n' '|')"
+  else
+    pass "door_scan_sees $g (its one upload line, and no other)"
   fi
 done
-doors=$(printf '%s\n' "$raw" | awk -v gated=" $GATED $SELF " -v fx="$FIXTURE" '
-  { f = $0; sub(/:.*/, "", f); t = $0; sub(/^[^:]*:[0-9]+:/, "", t); gsub(/^[[:space:]]+|[[:space:]]+$/, "", t) }
+doors=$(printf '%s\n' "$raw" | awk -v gated=" $GATED " -v fx="$FIXTURE" '
+  { f = $0; sub(/:.*/, "", f); t = $0; sub(/^[^:]*:[0-9]+:/, "", t) }
   f == "" || index(gated, " " f " ") || f ":" t == fx { next }
   { print }')
 if [ -z "$doors" ]; then
-  pass "no_other_door (${#scope[@]} tracked shell scripts, make files and root workflows scanned)"
+  pass "no_other_door (${#scope[@]} tracked shell scripts, make files, git hooks and root workflows, and this file, scanned)"
 else
   while IFS= read -r d; do fail "no_other_door: a real cargo publish outside the gated doors: $d"; done <<< "$doors"
 fi
