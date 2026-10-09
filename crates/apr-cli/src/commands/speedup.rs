@@ -143,7 +143,7 @@ fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<(f64, &'static s
     for _ in 0..config.iterations.max(1) {
         let result = run()?;
         generated += result.generated_token_count;
-        seconds += result.inference_ms / 1000.0;
+        seconds += timed_ms(result.inference_ms, result.generation_ms) / 1000.0;
         runs += 1;
         gpu_runs += usize::from(result.used_gpu);
     }
@@ -154,6 +154,16 @@ fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<(f64, &'static s
         0.0
     };
     Ok((tps, runtime_backend_label(gpu_runs, runs)))
+}
+
+/// #3714: the window a timed run's tokens are divided by. `generation_ms` (#3981) starts
+/// after weight upload and the F2 check; `inference_ms` includes both. The MoE CUDA
+/// path spends ~12 s on them on GB10, so dividing by `inference_ms` read 5.5 tok/s for
+/// a file that decodes at 39. A path that does not mark generation falls back to
+/// `inference_ms`, the rule `InferenceResult::tok_per_sec` already follows.
+#[cfg(feature = "inference")]
+fn timed_ms(inference_ms: f64, generation_ms: Option<f64>) -> f64 {
+    generation_ms.unwrap_or(inference_ms)
 }
 
 /// #3714: the backend the timed runs REPORTED (`used_gpu`), never the build's

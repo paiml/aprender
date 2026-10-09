@@ -629,3 +629,16 @@
         }
     }
 
+    /// #3714: the throughput gate times generation when the backend marked it (#3981),
+    /// never the weight upload and F2 check before it; an unmarked path keeps the
+    /// whole window, so a path that cannot say where generation began is not flattered.
+    #[cfg(feature = "inference")]
+    #[test]
+    fn throughput_gate_times_generation_not_setup() {
+        // GB10 qwen3moe, measured: 128 tokens, ~12 s setup + 3.3 s generation.
+        assert_eq!(timed_ms(15_300.0, Some(3_300.0)), 3_300.0);
+        assert_eq!(timed_ms(15_300.0, None), 15_300.0);
+        assert_eq!(timed_ms(500.0, Some(500.0)), 500.0);
+        assert_eq!(timed_ms(0.0, None), 0.0);
+    }
+
