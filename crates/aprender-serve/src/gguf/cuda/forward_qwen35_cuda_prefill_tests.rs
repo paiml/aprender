@@ -492,8 +492,8 @@ fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one(
 const MODEL_4B: &str = "/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf";
 
 /// #4958: the apr-code fixture's question. `apr run` prefills it in the GGUF's own
-/// chat template, 76 tokens. The 4B's F2 probe of it (the last 64 tokens: batched
-/// prefill, then one decode step) rejected on GB10 at position 42, cosine 0.5065
+/// chat template. The 4B's F2 probe of it (the last 64 tokens: batched prefill,
+/// then one decode step) rejected on GB10 at position 42, cosine 0.5065
 /// against the CPU with both argmaxes 16. The rejection held under every prefill GEMM
 /// mode (f32, f16, dp4a) and both attention paths, and the 4090, the 2B and the 9B
 /// accepted the same probe. `apr parity` held the per-token GPU path to cosine 0.994
@@ -526,12 +526,20 @@ fn qwen35_prefill_equals_per_token_at_every_position_of_the_4958_probe_4b() {
     let prepared = crate::infer::prepare_tokens(&config, &crate::format::ModelFormat::Gguf)
         .expect("tokenize as `apr run` does");
     let ids = prepared.tokens();
+    // The slice `f2_validate_qwen35` takes. The prompt is longer than the cap, so
+    // the probe is a full one, as it was in the rejection.
+    let cap = crate::gguf::forward_qwen35::QWEN35_F2_PROBE_MAX;
+    let probe = &ids[ids.len().saturating_sub(cap)..];
     assert_eq!(
-        ids.len(),
-        76,
-        "`apr run` prefilled 76 tokens for this prompt"
+        probe.len(),
+        cap,
+        "{} prompt tokens: the F2 probe is not full",
+        ids.len()
     );
-    let probe = &ids[ids.len() - crate::gguf::forward_qwen35::QWEN35_F2_PROBE_MAX..];
+    println!(
+        "[4958] {} prompt tokens; F2 probes the last {cap}",
+        ids.len()
+    );
     let n = probe.len();
     let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
     let qwen =
