@@ -1210,14 +1210,35 @@ for tag, scopes in {"none": None, "one": [scope("1.2.3")], "two": [scope("1.2.3"
         L["ladder"]["emergency_scopes"] = scopes
     yaml.safe_dump(L, open(os.path.join(d, "ladder-%s.yaml" % tag), "w"))
 S = "4" * 64
+cert = {"admitted_by_sha": {S: ["ctl"]}, "admitted_by_sha_thinking": {S: {"off": ["ctl"], "on": []}}}
+rec = lambda h: {"schema": "crux-inference-receipt/v1", "host": h, "apr": {"sha": cut}, "summary": {"verdict": "PASS"},
+                 "cells": [{"key": {"model_sha256": S, "host": h, "thinking": "off", "verb": "run"}, "verdict": "GREEN", "positive_control": True}]}
 for tag, hosts in {"crux": ("lambda", "gx10"), "crux-short": ("lambda",)}.items():
     c = os.path.join(d, tag); os.makedirs(c)
-    json.dump({"admitted_by_sha": {S: ["ctl"]}, "admitted_by_sha_thinking": {S: {"off": ["ctl"], "on": []}}},
-              open(os.path.join(c, "prompt-certification.json"), "w"))
+    json.dump(cert, open(os.path.join(c, "prompt-certification.json"), "w"))
     for h in hosts:
-        json.dump({"schema": "crux-inference-receipt/v1", "host": h, "apr": {"sha": cut}, "summary": {"verdict": "PASS"},
-                   "cells": [{"key": {"model_sha256": S, "host": h, "thinking": "off", "verb": "run"}, "verdict": "GREEN", "positive_control": True}]},
-                  open(os.path.join(c, h + "-gpu.json"), "w"))
+        json.dump(rec(h), open(os.path.join(c, h + "-gpu.json"), "w"))
+# #4897: the dir scripts/release/models_t1.sh writes, as 0.70.3's was -- both hosts' receipts side by side, their
+# logs, judge.log, and the lambda sweep's own --out one level down (its copy of the receipt, .meta.json, shards/) --
+# and NO certification in it. Two fixture trees: `root` holds the release's certification at
+# evidence/crux/1.2.3/, `root-nocert` holds none. Each borrows this tree's scripts/lib and nothing else.
+for tag, hosts, own_cert in (("flat", ("lambda", "gx10"), False), ("flat-short", ("lambda",), False),
+                             ("flat-selfcert", ("lambda", "gx10"), True)):
+    c = os.path.join(d, tag); os.makedirs(os.path.join(c, "lambda-crux", "shards"))
+    for h in hosts:
+        json.dump(rec(h), open(os.path.join(c, h + "-gpu.json"), "w"))
+        open(os.path.join(c, h + ".log"), "w").write("crux host=%s\n" % h)
+    open(os.path.join(c, "judge.log"), "w").write("")
+    json.dump(rec("lambda"), open(os.path.join(c, "lambda-crux", "lambda-gpu.json"), "w"))
+    json.dump({"host": "lambda"}, open(os.path.join(c, "lambda-crux", "lambda-gpu.meta.json"), "w"))
+    if own_cert:
+        json.dump(cert, open(os.path.join(c, "prompt-certification.json"), "w"))
+for root, has_cert in (("root", True), ("root-nocert", False)):
+    os.makedirs(os.path.join(d, root, "scripts"))
+    os.symlink(os.path.abspath("scripts/lib"), os.path.join(d, root, "scripts", "lib"))
+    if has_cert:
+        os.makedirs(os.path.join(d, root, "evidence", "crux", "1.2.3"))
+        json.dump(cert, open(os.path.join(d, root, "evidence", "crux", "1.2.3", "prompt-certification.json"), "w"))
 E2E
     # The standing release policy's fixtures: the no-scope ladder plus a `release_policy` block (and an
     # `emergency_scopes` list) in the contract's own hand-written layout, which is the layout its reader takes.
@@ -1242,8 +1263,11 @@ E2E
     pol_fixture pol-dup   1.2.0 - 1.2.3
     pol_fixture pol-bad   1.2.0 'larger_rowz: nightly' -
     e2e_row() { # e2e_row <label> <script> <ladder tag> <crux dir> <want rc: 0|red> <must_match|-> <must_not_match|-> [extra args]
+      # The tree is this one and the certification the fixture's own, named by CRUX_CERT. With E2E_ROOT set
+      # (#4897) the tree is that fixture root and CRUX_CERT is UNSET: the judge must find the certification itself.
       local label="$1" sc="$2" tag="$3" cx="$4" want="$5" mm="$6" mn="$7" out got; shift 7
-      out=$(MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_CRUX_DIR="$e2e/$cx" bash "$sc" --ladder "$e2e/ladder-$tag.yaml" \
+      out=$(if [ -n "${E2E_ROOT:-}" ]; then unset CRUX_CERT; else export CRUX_CERT="$e2e/$cx/prompt-certification.json"; fi
+            MODEL_LADDER_ROOT="${E2E_ROOT:-"$PWD"}" MODEL_LADDER_CRUX_DIR="$e2e/$cx" bash "$sc" --ladder "$e2e/ladder-$tag.yaml" \
             --receipts "$e2e/receipts" --version 1.2.3 --cut-commit "$CASE_CUT" "$@" 2>&1); got=$?
       if { [ "$want" = 0 ] && [ "$got" = 0 ]; } || { [ "$want" = red ] && [ "$got" = 1 ]; }; then :; else
         [ "$sc" = "$SELF" ] && printf 'FAIL  scope e2e %s: rc=%s want=%s\n%s\n' "$label" "$got" "$want" "$(printf '%s\n' "$out" | tail -5)"; return 1; fi
@@ -1282,7 +1306,21 @@ E2E
         'one release takes one ruling' 'OPERATOR EMERGENCY SCOPE|no receipt at' || r=1
       e2e_row "an unreadable policy is RED, judging nothing" "$sc" pol-bad crux red \
         'cannot be applied to 1\.2\.3: unknown key in release_policy: larger_rowz' 'OPERATOR EMERGENCY SCOPE|no receipt at' || r=1
+      e2e_flat "the driver's flat dir, both hosts, no copy step and no CRUX_CERT: the tree's certification, green" \
+        "$sc" root flat 0 'OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied' '^FAIL ' || r=1
+      e2e_flat "the driver's flat dir with one host's receipt missing is RED, naming the host" "$sc" root flat-short red \
+        '^FAIL  host gx10 has no CRUX receipt' 'smoke only -- satisfied' || r=1
+      e2e_flat "a certification beside the receipts is never read: none in the tree is RED" "$sc" root-nocert flat-selfcert red \
+        "^FAIL  no prompt-certification receipt at 'evidence/crux/1\\.2\\.3/prompt-certification\\.json'" 'smoke only -- satisfied' || r=1
+      e2e_flat "the full ladder (--scope none) reads the tree certification too, never one beside the receipts" "$sc" root-nocert \
+        flat-selfcert red "no prompt-certification receipt at 'evidence/crux/1\\.2\\.3/prompt-certification\\.json'" \
+        '^SCOPED: |OPERATOR EMERGENCY SCOPE' --scope none || r=1
       return $r
+    }
+    e2e_flat() { # e2e_flat LABEL SCRIPT FIXTURE_ROOT CRUX_DIR WANT MUST_MATCH MUST_NOT_MATCH [extra args], as e2e_row
+      # #4897: judged as scripts/release/models_t1.sh judges its dir -- --crux, a recorded scope, no CRUX_CERT.
+      local label="$1" sc="$2" root="$3" cx="$4"; shift 4
+      E2E_ROOT="$e2e/$root" e2e_row "$label" "$sc" one "$cx" "$@" --crux "$e2e/$cx"
     }
     if e2e_table "$SELF"; then printf 'ok    scope e2e: a recorded scope is applied and SAID; none recorded is the full ladder\n'
     else bad=$((bad+1)); fi
@@ -1303,6 +1341,10 @@ E2E
     dmutant policy-silent   "s/printf 'POLICY: %s -- /printf 'policy: %s -- /"
     dmutant judge-reads-contract 's/^    "\$POLICY_LADDER" "\$VERSION" "\$CRUX_DIR"/    "$LADDER" "$VERSION" "$CRUX_DIR"/'
     dmutant lookup-reads-contract 's/^print(name or "")\x27 "\$POLICY_LADDER"/print(name or "")\x27 "$LADDER"/'
+    dmutant cert-beside-receipts 's/^CRUX_CERT="\${CRUX_CERT:-evidence\/crux\/\$VERSION\/prompt-certification\.json}"$/CRUX_CERT="${CRUX_CERT:-$CRUX_DIR\/prompt-certification.json}"/'
+    dmutant cert-env-unread 's/^CRUX_CERT="\${CRUX_CERT:-evidence/CRUX_CERT="${CRUX_CERT_X:-evidence/'
+    dmutant scope-cert-unread 's/^    "\$POLICY_LADDER" "\$VERSION" "\$CRUX_DIR" "\$CRUX_CERT"/    "$POLICY_LADDER" "$VERSION" "$CRUX_DIR" "$CRUX_DIR\/prompt-certification.json"/'
+    dmutant full-cert-unread  's/"\$TMP_EQUIV" "\$CRUX_DIR" "\$CRUX_CERT"/"$TMP_EQUIV" "$CRUX_DIR" "$CRUX_DIR\/prompt-certification.json"/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -1342,6 +1384,10 @@ git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /de
 # #4086: the CRUX receipts' location for a caller that cannot pass --crux (the dogfood runs every declared
 # gate with no arguments). --crux wins; the env is the release runner's seam; the tree's evidence is last.
 [ -n "$CRUX_DIR" ] || CRUX_DIR="${MODEL_LADDER_CRUX_DIR:-}"
+# #4897: the prompt certification is the RELEASE's, in the tree. Never a file beside the receipts: a driver's
+# receipt dir (models_t1.sh writes one flat dir per run) holds no certification, and one it did hold would be
+# the producer certifying itself. CRUX_CERT still wins. Missing = the judges FAIL; nothing falls back.
+CRUX_CERT="${CRUX_CERT:-evidence/crux/$VERSION/prompt-certification.json}"
 # #4086: with no --scope, a scope RECORDED for this release in the contract applies -- the dogfood's declared
 # gate saw only the full ladder and went RED at 0.69.1 while the release gate judged the recorded scope. It is
 # never inferred: no entry for this version = the full ladder; two entries = RED; and it is printed as
@@ -1386,7 +1432,7 @@ if [ -n "$SCOPE" ]; then
 sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
 L = yaml.safe_load(open(sys.argv[1]))["ladder"]
 sys.exit(1 if crux_smoke_scope.judge(L, sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], print) else 0)' \
-    "$POLICY_LADDER" "$VERSION" "$CRUX_DIR" "${CRUX_CERT:-$CRUX_DIR/prompt-certification.json}" "$CUT_COMMIT" "$SCOPE"
+    "$POLICY_LADDER" "$VERSION" "$CRUX_DIR" "$CRUX_CERT" "$CUT_COMMIT" "$SCOPE"
   rc=$?
   if [ "$rc" = 0 ]; then
     echo "ok    OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied. The model ladder was NOT run for this release (nightly only); this is not \"every rung green\""
@@ -1417,7 +1463,7 @@ if kind: print(sys.argv[1] + "\t" + proof)' "$s" "$CUT_COMMIT" "$LADDER" "$TMP_E
 done > "$TMP_EQUIV"
 [ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
 TMP_OUT=$(mktemp)
-judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR" "$CRUX_DIR/prompt-certification.json" > "$TMP_OUT"; rc=$?
+judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR" "$CRUX_CERT" > "$TMP_OUT"; rc=$?
 cat "$TMP_OUT"
 # #3957 F9/F10: a run whose only non-green cells are re-proven RED-MODEL / RED-UNSUPPORTED exits 0,
 # and must not then claim "every required rung green". Read from the file, never through a pipe.
