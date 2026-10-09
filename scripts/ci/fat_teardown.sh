@@ -117,7 +117,9 @@ self_test() {
         else echo "FAIL $1 (want '$2', got '$3')"; fails=$((fails + 1)); fi
     }
     cleanup_st() {
-        docker rm -f "fat-${run}-a" "fat-${run}-b" "fat-${run}-c" "fat-${run}1-a" "fat-x${run}-a" >/dev/null 2>&1
+        # Every container the self-test starts, -d included: a run cut short
+        # (an outage, a kill) must not leave one behind (it did, 2026-10-09).
+        docker rm -f "fat-${run}-a" "fat-${run}-b" "fat-${run}-c" "fat-${run}-d" "fat-${run}1-a" "fat-x${run}-a" >/dev/null 2>&1
         rm -rf -- "${td:?}"
     }
     trap cleanup_st EXIT
