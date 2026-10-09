@@ -21,6 +21,8 @@
 #       determinism-compare waits on x86-main's X64 artifact and the gate reads
 #       both jobs' section results, so they are reused together, and only when
 #       the head run's `gate` and `ci / gate` succeeded too. mac-check stands alone.
+#       (Q6 quorum, C324: mac-check left ci.yml for nightly.yml. Its `mac` key is still
+#       computed, and its rows still pin it, but no ci.yml job reads it.)
 # Why K1-K3 make the head run's origin/main comparand equal B: H contains B, so
 # every run on H started after B was on main; B was main's tip when the queue
 # entry was cut, and main only moves forward. So main's tip was B for the whole
@@ -460,8 +462,12 @@ STUB
   wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}"
   wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
   wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}"
-  wire mac-check 'needs: [mg-reuse]'
-  wire mac-check "if: \${{ !cancelled() && needs.mg-reuse.outputs.mac != '1' }}"
+  # Q6 quorum, C324: mac-check is LAB and left ci.yml (nightly.yml now). The `mac` key is
+  # still computed above; ci.yml must neither run the job nor export the key.
+  if [ -z "$(job mac-check)" ]; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL wiring: ci.yml runs mac-check, a LAB job (Q6 quorum, C324)"; fi
+  if grep -qF 'outputs.mac' <<<"$(job mg-reuse)"; then
+    fail=$((fail + 1)); echo "FAIL wiring: mg-reuse still exports mac, which no ci.yml job reads"; else pass=$((pass + 1)); fi
   wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}"
   wire x86-main-advisories 'cargo deny check advisories'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'

@@ -15,6 +15,9 @@
 #         0.67; rows 68-C3 / 68-D2 promote them to required after five
 #         consecutive green nightlies). Every one of those is a property of
 #         the YAML, so it is read from the YAML.
+#     (c) Q6 quorum, C324 (DELETE-TO-LAB 3/3): the two jobs are LAB. They left
+#         ci.yml (no PR, merge-queue or release job runs them) and run only in
+#         .github/workflows/gpu-lab-nightly.yml, on schedule and dispatch.
 #
 #   bash scripts/tests/ci_gpu_touched_test.sh
 set -uo pipefail
@@ -23,6 +26,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT" || exit 2
 SCRIPT="scripts/ci_gpu_touched.sh"
 WF=".github/workflows/ci.yml"
+NW=".github/workflows/gpu-lab-nightly.yml"   # Q6 quorum, C324: the LAB home
 # #4433: the job BODIES moved verbatim to ci/sections.yml; gx10/yoga/gpu-touched
 # in ci.yml are the fat jobs that run them and must keep the same decision shape.
 SEC="ci/sections.yml"
@@ -76,6 +80,9 @@ jobq() { # jobq <job> <python expr over `job`>
 jobq_wf() { # jobq_wf <job> <python expr over `job`> -- a job in the workflow itself
     jobq_in "$WF" "$@"
 }
+jobq_nw() { # jobq_nw <job> <python expr over `job`> -- a job in the LAB nightly
+    jobq_in "$NW" "$@"
+}
 jobq_in() {
     python3 - "$1" "$2" "$3" <<'PY'
 import sys, yaml
@@ -110,8 +117,8 @@ row 0 "the clippy --features cuda step has NO step if: — it runs whenever the 
     "^True$" jobq cuda-unit "any('check_clippy_cuda.sh' in (s.get('run') or '') and not s.get('if') for s in job['steps'])"
 
 for j in gpu-quick cuda-unit; do
-    row 0 "$j runs ONLY on pull_request — never merge_group, never push (the queue stays under 20 min)" \
-        "^True$" jobq "$j" "\"github.event_name == 'pull_request'\" in job.get('if','')"
+    row 0 "$j runs ONLY on schedule / workflow_dispatch — LAB, never pull_request, merge_group or push (Q6, C324)" \
+        "^True$" jobq "$j" "\"(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&\" in job.get('if','') and not any(e in job.get('if','') for e in ('pull_request', 'merge_group', \"'push'\"))"
     row 0 "$j is gated on the decision job's gpu_touched (cuda-unit ALSO on cuda_lint, #4336; skipped, not queued, otherwise)" \
         "^True$" jobq "$j" "\"gpu_touched\" in job.get('if','') and 'gpu-touched' in job.get('needs',[])"
     row 0 "$j is NOT continue-on-error — an honest red on the PR is the point" \
@@ -120,18 +127,32 @@ for j in gpu-quick cuda-unit; do
         "^True$" jobq "$j" "any('ci_self_hosted_preflight.sh' in (s.get('run') or '') for s in job['steps'])"
 done
 
-for q in jobq jobq_wf; do
-    row 0 "the decision job itself runs on the clean-room pool, so a non-GPU PR never holds a GPU runner ($q)" \
-        "clean-room" $q gpu-touched "job['runs-on']"
-    row 0 "the decision job publishes gpu_touched as a job output ($q)" \
-        "gpu_touched" $q gpu-touched "sorted(job.get('outputs',{}))"
-done
-# #4433: the fat jobs that run gpu-quick / cuda-unit carry the decision at JOB level,
-# so GitHub skips them off the GPU host instead of queueing them on it.
-for j in gx10 yoga; do
-    row 0 "fat job $j runs ONLY on pull_request and only when gpu-touched said 1 (skipped, not queued)" \
-        "^True$" jobq_wf "$j" "\"github.event_name == 'pull_request'\" in job.get('if','') and \"gpu_touched == '1'\" in job.get('if','') and 'gpu-touched' in job.get('needs',[])"
-done
+row 0 "the decision section is documented on the clean-room pool" \
+    "clean-room" jobq gpu-touched "job['runs-on']"
+row 0 "the decision section publishes gpu_touched as a job output" \
+    "gpu_touched" jobq gpu-touched "sorted(job.get('outputs',{}))"
+row 0 "the decision section is LAB too: schedule / workflow_dispatch only (Q6, C324)" \
+    "^True$" jobq gpu-touched "job.get('if','') == \"github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'\""
+row 0 "the decision section's own case table still runs before it answers" \
+    "^True$" jobq gpu-touched "'ci_gpu_touched.sh --self-test' in (job['steps'][1].get('run') or '')"
+
+# Q6 quorum, C324: no job of ci.yml runs a GPU LAB section, and none is named gx10/yoga/gpu-touched.
+row 0 "ci.yml has no gpu-touched / gx10 / yoga job (they left the PR path)" \
+    "^NONE$" jobq_in "$WF" gate \
+    "'NONE' if not ({'gpu-touched','gx10','yoga','gpu-quick','cuda-unit'} & set(doc['jobs'])) else sorted({'gpu-touched','gx10','yoga','gpu-quick','cuda-unit'} & set(doc['jobs']))"
+row 0 "no ci.yml step runs a GPU LAB section through fat_driver" \
+    "^NONE$" jobq_in "$WF" gate \
+    "'NONE' if not __import__('re').search(r\"--sections '[^']*\\b(gpu-touched|gpu-quick|cuda-unit)\\b\", __import__('json').dumps(doc['jobs'])) else 'FOUND'"
+
+# The LAB home: schedule + workflow_dispatch only, the fat jobs' runners and perf-* groups.
+row 0 "gpu-lab-nightly.yml triggers on schedule and workflow_dispatch ONLY" \
+    "^\['schedule', 'workflow_dispatch'\]$" jobq_nw gx10 "sorted(doc[True])"
+row 0 "gx10 runs gpu-touched,gpu-quick on the disposable gx10 runner in perf-gx10" \
+    "^True$" jobq_nw gx10 \
+    "job['runs-on'] == ['self-hosted','Linux','ARM64','cuda','gx10','ephemeral','docker'] and job['concurrency']['group'] == 'perf-gx10' and any(\"--sections 'gpu-touched,gpu-quick'\" in (s.get('run') or '') for s in job['steps'])"
+row 0 "yoga runs gpu-touched,cuda-unit on the disposable yoga runner in perf-yoga" \
+    "^True$" jobq_nw yoga \
+    "job['runs-on'] == ['self-hosted','Linux','X64','cuda','yoga','ephemeral','docker'] and job['concurrency']['group'] == 'perf-yoga' and any(\"--sections 'gpu-touched,cuda-unit'\" in (s.get('run') or '') for s in job['steps'])"
 
 # ADVISORY in 0.67. This is the row that has to be DELETED, not edited, when
 # 68-C3 / 68-D2 promote the jobs — which is the point of pinning it.

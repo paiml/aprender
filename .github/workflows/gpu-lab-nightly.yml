@@ -1,0 +1,71 @@
+# GPU LAB nightly — the one home of the gpu-quick (gx10) and cuda-unit (yoga)
+# sections. Q6 quorum, C324 (DELETE-TO-LAB 3/3): neither was ever in ci.yml's
+# gate, so neither could block a merge or a release; a check that cannot block
+# is LAB, and LAB never runs in a PR, merge-queue or release job. These two jobs
+# are ci.yml's former `gx10` and `yoga` fat jobs, minus the pull_request trigger
+# and the gpu-touched PR-diff decision: on schedule and workflow_dispatch the
+# gpu-touched section answers the whole GPU set (ci/sections.yml).
+#
+# No pull_request, merge_group or push trigger, on purpose.
+name: GPU LAB nightly
+
+on:
+  schedule:
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gx10:
+    runs-on: [self-hosted, Linux, ARM64, cuda, gx10, ephemeral, docker]
+    timeout-minutes: 30
+    # Shared with the other gx10 perf workflows (qwen-story-daily, silicon-nightly,
+    # cuda-nightly, b2-gpu): one GPU job on the box at a time.
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Sections
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'gpu-touched,gpu-quick'
+          --results "$RUNNER_TEMP/fat/results.json"
+      # #4948: a cancelled run never reaches a section's own container removal,
+      # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
+      # for days. always() runs on cancel too; on the passing path the driver
+      # has already removed every container and this finds none. Cancelled
+      # before the checkout, no driver ran and there is no script to call.
+      - name: Remove this job's section containers (runs on cancel too)
+        if: always()
+        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
+
+  yoga:
+    runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
+    timeout-minutes: 50
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Sections
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'gpu-touched,cuda-unit'
+          --results "$RUNNER_TEMP/fat/results.json"
+      # #4948: as in gx10 above.
+      - name: Remove this job's section containers (runs on cancel too)
+        if: always()
+        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi

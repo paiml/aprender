@@ -120,7 +120,9 @@ row() {   # row <id> <want: GREEN|RED> <got-rc> <text>
 # plant <out> <sed-expr>: a copy of the real ci.yml with one edit inside the determinism job; an edit that
 # changes nothing is an error (exit 2), never a row that passes for the wrong reason.
 plant() {
-    sed -E "/^  determinism:\$/,/^  mac-check:\$/{$2}" "$CI" > "$1"
+    # The range ends at the NEXT job key, whatever it is (it named mac-check, which left ci.yml:
+    # Q6 quorum, C324). sed tests the end only from the line after the start.
+    sed -E "/^  determinism:\$/,/^  [A-Za-z0-9_-]+:\$/{$2}" "$CI" > "$1"
     if cmp -s "$1" "$CI"; then printf 'ENV   planted edit did not apply: %s\n' "$2"; exit 2; fi
 }
 

@@ -21,7 +21,7 @@
 #   default workflows: every .github/workflows/*.y{a,}ml and .github/actions/*/action.y{a,}ml,
 #   plus ci/*.yml and ci/vendor/*.yml (the fat-job sections since #4441)
 #   (every job that calls a guard runs on a self-hosted Linux runner -- review of #4133
-#   measured the runs-on of all 13 such workflows; ci.yml's mac-check job is self-hosted
+#   measured the runs-on of all 13 such workflows; nightly.yml's mac-check job (from ci.yml, Q6/C324) is self-hosted
 #   macOS and calls no guard)
 # Exit: 0 every invocation isolated · 1 an unisolated invocation (named) · 2 usage/ENV.
 set -uo pipefail
