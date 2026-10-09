@@ -847,14 +847,25 @@ pub(crate) fn f2_select_probe_path(
 /// Without the path, a log cannot distinguish "the batched prefill diverged"
 /// from "the decode path diverged" — the exact ambiguity that let #3413 B ship
 /// behind a green guard. Pure + string-returning so it is unit-testable.
+///
+/// #4958: a rejection with an AGREEING argmax was the cosine floor alone, and it
+/// printed `argmax 16 != 16`. The clause now says which rule fired.
 pub(crate) fn f2_divergence_msg(report: &F2PositionReport, via: F2ProbePath) -> String {
+    let reason = if report.first_bad_gpu_argmax == report.first_bad_cpu_argmax {
+        format!(
+            "argmax {} on both, cosine {:.4} < {F2_GATE_COSINE_MIN}",
+            report.first_bad_gpu_argmax, report.first_bad_cosine,
+        )
+    } else {
+        format!(
+            "argmax {} != {}, cosine {:.4}",
+            report.first_bad_gpu_argmax, report.first_bad_cpu_argmax, report.first_bad_cosine,
+        )
+    };
     format!(
-        "warning: GPU output diverges from CPU at position {} (argmax {} != {}, cosine {:.4}); \
+        "warning: GPU output diverges from CPU at position {} ({reason}); \
 min cosine {:.4}, validated via {} — falling back to CPU",
         report.first_bad_pos,
-        report.first_bad_gpu_argmax,
-        report.first_bad_cpu_argmax,
-        report.first_bad_cosine,
         report.min_cosine_real,
         via.as_str(),
     )
@@ -2124,6 +2135,38 @@ mod pmat3477_f2_prefill_path_tests {
             assert!(msg.contains("198"), "{msg}");
             assert!(msg.contains("0.9186"), "{msg}");
         }
+    }
+
+    /// #4958: GB10 rejected the 4B at a position whose argmax AGREED (cosine 0.5065,
+    /// the floor alone) and the line read `argmax 16 != 16`. A line that states an
+    /// inequality of two equal numbers sends the reader after a flip that never was.
+    #[test]
+    fn f2_divergence_message_never_claims_a_flip_when_the_argmax_agrees() {
+        let floor_only = F2PositionReport {
+            accepted: false,
+            pos0_argmax_flip: false,
+            min_cosine_real: 0.5065,
+            first_bad_pos: 42,
+            first_bad_cpu_argmax: 16,
+            first_bad_gpu_argmax: 16,
+            first_bad_cosine: 0.5065,
+        };
+        let msg = f2_divergence_msg(&floor_only, F2ProbePath::Batched);
+        assert!(!msg.contains("!="), "an agreeing argmax is not a flip: {msg}");
+        assert!(msg.contains("argmax 16 on both"), "{msg}");
+        assert!(msg.contains("cosine 0.5065 < 0.95"), "the rule that fired: {msg}");
+        // What the ladder and the apr-code judge key on is unchanged.
+        assert!(msg.contains("diverges from CPU at position 42"), "{msg}");
+        assert!(msg.ends_with("falling back to CPU"), "{msg}");
+
+        let flip = F2PositionReport {
+            first_bad_cpu_argmax: 40,
+            first_bad_gpu_argmax: 198,
+            first_bad_cosine: 0.9705,
+            ..floor_only
+        };
+        let msg = f2_divergence_msg(&flip, F2ProbePath::Batched);
+        assert!(msg.contains("argmax 198 != 40, cosine 0.9705"), "{msg}");
     }
 }
 

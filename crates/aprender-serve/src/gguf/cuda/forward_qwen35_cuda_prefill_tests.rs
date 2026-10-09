@@ -125,9 +125,39 @@ fn assert_states_agree(
     what: &str,
     budget: Budget,
 ) {
+    let worst = state_divergence(gpu, batched, per_token, what)
+        .into_iter()
+        .fold((0.0f32, String::new()), |worst, (at, linf)| {
+            if linf > worst.0 {
+                (linf, at)
+            } else {
+                worst
+            }
+        });
+    println!(
+        "[3596] {what}: worst state rel L∞ {:.3e} at {}",
+        worst.0, worst.1
+    );
+    assert!(
+        worst.0 <= budget.state,
+        "{what}: state rel L∞ {} at {} > {}",
+        worst.0,
+        worst.1,
+        budget.state
+    );
+}
+
+/// `(buffer, rel L∞)` for each layer's conv window, recurrent state and written KV
+/// rows, in layer order.
+fn state_divergence(
+    gpu: &mut Qwen35CudaModel<'_>,
+    batched: &Qwen35CudaState,
+    per_token: &Qwen35CudaState,
+    what: &str,
+) -> Vec<(String, f32)> {
     gpu.executor_mut().sync_stream().expect("sync");
     assert_eq!(batched.kv_len, per_token.kv_len, "{what}: kv_len");
-    let mut worst = (0.0f32, String::new());
+    let mut out = Vec::new();
     for il in 0..batched.conv.len() {
         let mut pairs = Vec::new();
         if let (Some((kb, vb)), Some((kp, vp))) = (&batched.kv[il], &per_token.kv[il]) {
@@ -148,22 +178,10 @@ fn assert_states_agree(
         }
         for (kind, b, p) in pairs {
             let linf = rel_linf(&b, &p, &format!("{what} layer {il} {kind}"));
-            if linf > worst.0 {
-                worst = (linf, format!("layer {il} {kind}"));
-            }
+            out.push((format!("layer {il} {kind}"), linf));
         }
     }
-    println!(
-        "[3596] {what}: worst state rel L∞ {:.3e} at {}",
-        worst.0, worst.1
-    );
-    assert!(
-        worst.0 <= budget.state,
-        "{what}: state rel L∞ {} at {} > {}",
-        worst.0,
-        worst.1,
-        budget.state
-    );
+    out
 }
 
 /// Deterministic token ids inside the embedding table, away from the special tokens.
@@ -467,5 +485,125 @@ fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one(
             want,
             "{forced:?}, flash supported {flash}"
         );
+    }
+}
+
+/// #4958: the 4B file whose F2 probe GB10 (sm_121) rejected.
+const MODEL_4B: &str = "/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf";
+
+/// #4958: the apr-code fixture's question, as `apr run` prefills it (no template,
+/// 76 tokens). The 4B's F2 probe of it (the last 64 tokens: batched prefill, then
+/// one decode step) rejected on GB10 at position 42, cosine 0.5065 against the CPU
+/// with both argmaxes 16. The rejection held under every prefill GEMM mode (f32,
+/// f16, dp4a) and both attention paths. The per-token GPU path held at that
+/// position (`apr parity`: 0.9997), and the 4090, the 2B and the 9B accepted the
+/// same probe.
+const PROMPT_4958: &str = "pub fn mean(xs: &[f64]) -> f64 { if xs.is_empty() { return 0.0; } \
+let sum: f64 = xs.iter().sum(); sum / (xs.len() as f64 - 1.0) } — what is wrong with this \
+function and how do you fix it?";
+
+/// #4958: the cosine floor between the batched and per-token logits at EVERY
+/// position of a real probe. The budgets above hold the last position of random
+/// tokens on the 0.8B to 0.99999; F2 refuses below 0.95, and the rejection read 0.5065.
+const EVERY_POSITION_COSINE: f64 = 0.999;
+
+/// #4958: the batched prefill agrees with the per-token path at every position of
+/// the probe F2 compares, not just the last. A red run prints, for the worst row,
+/// whether the rows after it, the GEMM row count or a layer's state moves it.
+#[test]
+#[serial_test::serial]
+fn qwen35_prefill_equals_per_token_at_every_position_of_the_4958_probe_4b() {
+    if !std::path::Path::new(MODEL_4B).exists() {
+        eprintln!("SKIP: {MODEL_4B} is absent");
+        return;
+    }
+    let executor = crate::cuda_executor_or_skip!(0);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_4B).expect("map the GGUF");
+    let ids = mapped.model.encode(PROMPT_4958).expect("tokenize");
+    assert_eq!(
+        ids.len(),
+        76,
+        "`apr run` prefilled 76 tokens for this prompt"
+    );
+    let probe = &ids[ids.len() - crate::gguf::forward_qwen35::QWEN35_F2_PROBE_MAX..];
+    let n = probe.len();
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, n + 2).expect("gpu model");
+    let what = format!(
+        "4B #4958 probe (f16 GEMM {}, attention {})",
+        gpu.executor.qwen35_prefill_f16(),
+        gpu.prefill_attention_mode().as_str()
+    );
+
+    let mut per_token = gpu.new_state().expect("state");
+    let want: Vec<Vec<f32>> = probe
+        .iter()
+        .enumerate()
+        .map(|(pos, &t)| {
+            gpu.forward_single(t, &mut per_token, pos)
+                .expect("forward_single")
+        })
+        .collect();
+
+    // The F2 probe's call: one batched prefill, the logits of every position.
+    let every: Vec<usize> = (0..n).collect();
+    let mut batched = gpu.new_state().expect("state");
+    let got = gpu
+        .prefill_logits_at(probe, &mut batched, 0, &every)
+        .expect("prefill");
+    let mut worst = (f64::INFINITY, 0usize);
+    for (pos, (g, w)) in got.iter().zip(&want).enumerate() {
+        let cos = cosine(g, w);
+        println!(
+            "[4958] {what} pos {pos} token {}: argmax batched {} / per-token {}, \
+cosine {cos:.7}, rel L∞ {:.3e}",
+            probe[pos],
+            argmax(g),
+            argmax(w),
+            rel_linf(g, w, "logits")
+        );
+        if cos < worst.0 {
+            worst = (cos, pos);
+        }
+    }
+    let (cos, at) = worst;
+    if cos < EVERY_POSITION_COSINE {
+        localize_4958(&mut gpu, probe, at, &want[at]);
+    }
+    assert!(
+        cos >= EVERY_POSITION_COSINE,
+        "{what}: cosine {cos:.7} at position {at} < {EVERY_POSITION_COSINE}"
+    );
+}
+
+/// #4958: where row `at` goes bad, printed for the reader of a red run. A prefix
+/// that ends at `at` drops the rows after it, which causal attention and the scan
+/// never read. The GEMM row count changes only how the rows are batched. A layer
+/// whose state is the first to diverge took a bad input.
+fn localize_4958(gpu: &mut Qwen35CudaModel<'_>, probe: &[u32], at: usize, want: &[f32]) {
+    let prefix = &probe[..=at];
+    let default_rows = gpu.prefill_rows;
+    for rows in [default_rows, 32, 8, 2, 1] {
+        gpu.set_prefill_chunk_rows(rows);
+        let mut s = gpu.new_state().expect("state");
+        let got = gpu
+            .prefill_logits_at(prefix, &mut s, 0, &[at])
+            .expect("prefix prefill");
+        println!(
+            "[4958] prefix ..={at}, chunk rows {rows}: cosine {:.7}",
+            cosine(&got[0], want)
+        );
+    }
+    gpu.set_prefill_chunk_rows(default_rows);
+    let mut b = gpu.new_state().expect("state");
+    gpu.prefill(prefix, &mut b, 0).expect("prefix prefill");
+    let mut p = gpu.new_state().expect("state");
+    for (pos, &t) in prefix.iter().enumerate() {
+        gpu.forward_single(t, &mut p, pos).expect("forward_single");
+    }
+    for (buffer, linf) in state_divergence(gpu, &b, &p, "#4958 prefix") {
+        println!("[4958] prefix ..={at} {buffer}: rel L∞ {linf:.3e}");
     }
 }

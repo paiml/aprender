@@ -1,0 +1,18 @@
+- id: PMAT-4958
+  github_issue: 4958
+  item_type: task
+  title: GB10 Qwen3.5-4B batched prefill diverges from per-token (F2 reject) + argmax X != X message
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-09T12:18:29Z
+  updated: 2026-10-09T12:18:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3994
