@@ -30,7 +30,7 @@ pub(crate) const M1_MIN_COSINE: f64 = 0.98;
 pub(crate) const M1_LLAMA_CPP_PIN: &str = "d1d3c3396";
 /// The files a release dir may hold beside those the manifest lists: the gate's own
 /// inputs and output.
-const GATE_FILES: [&str; 2] = [MANIFEST, RECEIPT];
+pub(crate) const GATE_FILES: [&str; 2] = [MANIFEST, RECEIPT];
 
 /// One file of the release (§3.4 `files`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,7 +178,7 @@ pub(crate) struct GateInputs<'a> {
     pub env: &'a dyn GateEnv,
 }
 
-fn sha256_file(path: &Path) -> std::io::Result<(u64, String)> {
+pub(crate) fn sha256_file(path: &Path) -> std::io::Result<(u64, String)> {
     let mut f = std::fs::File::open(path)?;
     let mut h = Sha256::new();
     let n = std::io::copy(&mut f, &mut h)?;

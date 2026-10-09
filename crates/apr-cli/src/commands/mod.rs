@@ -97,6 +97,8 @@ pub(crate) mod kv_timeline_classifier;
 pub(crate) mod kv_timeline_lint;
 pub(crate) mod lint;
 pub(crate) mod lint_error;
+#[cfg(feature = "training")]
+pub(crate) mod model_confirm;
 pub(crate) mod model_gate;
 #[cfg(feature = "training")]
 pub(crate) mod model_gate_cli;
