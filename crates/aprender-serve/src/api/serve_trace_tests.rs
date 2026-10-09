@@ -35,9 +35,9 @@ fn layer(total_us: u64, calls: u32) -> LayerTiming {
     }
 }
 
-/// FALSIFY-TRACE-001: a trace whose tracer did not run is never `Measured`.
+/// FALSIFY-OBS-TRACE-001: a trace whose tracer did not run is never `Measured`.
 #[test]
-fn falsify_trace_001_no_events_is_not_measured() {
+fn falsify_obs_trace_001_no_events_is_not_measured() {
     let (_, step, _) = traces_for(&serve("step", &[], None, 10_000));
     let step = step.expect("the header still gets its wall-clock row");
     assert_eq!(step.provenance, TraceProvenance::WallClockTotal);
@@ -58,10 +58,10 @@ fn falsify_trace_001_no_events_is_not_measured() {
     );
 }
 
-/// FALSIFY-TRACE-001, the tracer half: a tracer that is not tracing records
+/// FALSIFY-OBS-TRACE-001, the tracer half: a tracer that is not tracing records
 /// nothing, so no reply built from it can claim a measurement.
 #[test]
-fn falsify_trace_001_disabled_tracer_records_nothing() {
+fn falsify_obs_trace_001_disabled_tracer_records_nothing() {
     let mut t = InferenceTracer::disabled();
     t.record_timed(TraceStep::TransformerBlock, 0, None, 5);
     assert!(t.events().is_empty());
@@ -69,10 +69,10 @@ fn falsify_trace_001_disabled_tracer_records_nothing() {
     assert!(tracer_for(None).is_none());
 }
 
-/// FALSIFY-TRACE-002: per-layer time that sums past the request's wall clock
+/// FALSIFY-OBS-TRACE-002: per-layer time that sums past the request's wall clock
 /// is not a measurement of that request.
 #[test]
-fn falsify_trace_002_layer_sum_over_wall_is_not_measured() {
+fn falsify_obs_trace_002_layer_sum_over_wall_is_not_measured() {
     let over = [layer(600, 3), layer(500, 3)];
     let (_, _, l) = traces_for(&serve("layer", &[], Some(&over), 1_000));
     assert_eq!(
@@ -134,11 +134,11 @@ fn measured_steps_split_prefill_decode_emit() {
     assert_eq!(rows, [("prefill", 400), ("decode", 210), ("emit", 15)]);
 }
 
-/// FALSIFY-TRACE-002, the boundary: a sum EXACTLY at the wall clock is still a
+/// FALSIFY-OBS-TRACE-002, the boundary: a sum EXACTLY at the wall clock is still a
 /// measurement. Kills `total > wall_us` -> `>=` in both `step_trace` and
 /// `layer_trace`; one unit over is the refusal side of the same edge.
 #[test]
-fn falsify_trace_002_sum_at_wall_is_measured_one_over_is_not() {
+fn falsify_obs_trace_002_sum_at_wall_is_measured_one_over_is_not() {
     let case = |sum_extra: u64| {
         let at = [layer(600, 3), layer(400 + sum_extra, 3)];
         let (_, _, l) = traces_for(&serve("layer", &[], Some(&at), 1_000));

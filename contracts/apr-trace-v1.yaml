@@ -39,15 +39,15 @@ proof_obligations:
   - id: PO-TRACE-001
     kind: correctness
     statement: "traces_for returns wall_clock_total, never measured, when the tracer recorded no event and the backend timed no layer."
-    discharged_by: FALSIFY-TRACE-001
+    discharged_by: FALSIFY-OBS-TRACE-001
   - id: PO-TRACE-002
     kind: correctness
     statement: "traces_for refuses measured when the per-layer (or per-step) sum exceeds the request's wall clock."
-    discharged_by: FALSIFY-TRACE-002
+    discharged_by: FALSIFY-OBS-TRACE-002
 falsification:
-  - id: FALSIFY-TRACE-001
+  - id: FALSIFY-OBS-TRACE-001
     description: "A trace returned with provenance measured when the tracer did not run. Discharges C-TRACE-001 and PO-TRACE-001."
-    test: "cargo test -p aprender-serve --lib serve_trace::tests::falsify_trace_001"
-  - id: FALSIFY-TRACE-002
+    test: "cargo test -p aprender-serve --lib serve_trace::tests::falsify_obs_trace_001"
+  - id: FALSIFY-OBS-TRACE-002
     description: "A per-layer (or per-step) sum greater than the request's wall clock reported as measured. Discharges C-TRACE-002 and PO-TRACE-002."
-    test: "cargo test -p aprender-serve --lib serve_trace::tests::falsify_trace_002"
+    test: "cargo test -p aprender-serve --lib serve_trace::tests::falsify_obs_trace_002"
