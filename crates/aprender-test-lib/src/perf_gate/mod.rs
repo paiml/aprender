@@ -171,6 +171,7 @@ pub mod protocol;
 pub mod receipt;
 pub mod replicate;
 pub mod samples;
+pub mod ttft_verdict;
 pub mod window;
 pub mod witness;
 
@@ -1734,6 +1735,47 @@ mod gate_conformance_tests {
             Receipt::parse(&banded.to_string()).is_err(),
             "and the same inside a band"
         );
+    }
+
+    /// PMAT-973 — the band writer appends `corpus_sha256` to a receipt bound to
+    /// a prompts file. The reader refused that key, so every corpus-bound receipt
+    /// (the #4954 V1 baselines among them) read as "does not parse". MUST-FIRE
+    /// both ways: the digest is read back, a malformed one is refused, and a key
+    /// one character off is still an unknown field.
+    #[test]
+    fn a_corpus_bound_receipt_parses_and_its_digest_is_checked() {
+        let digest = "f".repeat(64);
+        let mut bound = rendered();
+        bound
+            .as_object_mut()
+            .expect("object")
+            .insert("corpus_sha256".to_string(), serde_json::json!(digest));
+        let parsed = Receipt::parse(&bound.to_string()).expect("a corpus-bound receipt parses");
+        parsed.validate().expect("and a 64-hex digest validates");
+        assert_eq!(parsed.corpus_sha256.as_deref(), Some(digest.as_str()));
+        let back = serde_json::to_value(&parsed).expect("serialises");
+        assert_eq!(back["corpus_sha256"], serde_json::json!(digest));
+
+        let plain = Receipt::parse(&rendered().to_string()).expect("unbound parses");
+        assert!(plain.corpus_sha256.is_none());
+        let back = serde_json::to_value(&plain).expect("serialises");
+        assert!(back.get("corpus_sha256").is_none(), "no key is invented");
+
+        for bad in ["F".repeat(64), "f".repeat(63), String::new()] {
+            bound["corpus_sha256"] = serde_json::json!(bad);
+            let err = Receipt::parse(&bound.to_string())
+                .expect("still parses")
+                .validate()
+                .expect_err("a malformed corpus digest");
+            assert!(err.contains("receipt.corpus_sha256"), "{bad:?}: {err}");
+        }
+
+        let mut near = rendered();
+        near.as_object_mut()
+            .expect("object")
+            .insert("corpus_sha257".to_string(), serde_json::json!(digest));
+        let err = Receipt::parse(&near.to_string()).expect_err("still an unknown field");
+        assert!(err.contains("corpus_sha257"), "{err}");
     }
 
     /// PP-3 / PP-17, read back: `ratios` without a `baseline` is refused by the

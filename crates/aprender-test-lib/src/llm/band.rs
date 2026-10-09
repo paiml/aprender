@@ -56,6 +56,12 @@ pub struct RequestExtra {
     /// §3 `prefill` — the server's `timings.prompt_ms` for this request.
     /// `None` when the server reported none; never a client-side estimate.
     pub prefill_ms: Option<f64>,
+    /// #4954 — the server's `timings.load_ms`: handler start to the first
+    /// prompt forward. `apr serve` only; `None` when the server reported none.
+    pub load_ms: Option<f64>,
+    /// #4954 — the server's `timings.first_token_ms`: the end of prefill to
+    /// the first content chunk. `apr serve` only; `None` when not reported.
+    pub first_token_ms: Option<f64>,
     /// PP-27 — what the server declared on this request's FIRST SSE chunk.
     pub stream_mode: Option<StreamMode>,
 }
@@ -193,6 +199,9 @@ struct Observed {
     prompt_tokens: u32,
     /// §3 — the server's `timings.prompt_ms`, when it reported one.
     prefill_ms: Option<f64>,
+    /// #4954 — the server's `timings.load_ms` and `timings.first_token_ms`.
+    load_ms: Option<f64>,
+    first_token_ms: Option<f64>,
     /// PP-27 — what the server declared on the first chunk.
     stream_mode: Option<StreamMode>,
 }
@@ -215,6 +224,8 @@ fn observe_blocking(response: &ChatResponse) -> Observed {
         prompt_tokens,
         // A blocking response carries no phase split and declares no mode.
         prefill_ms: None,
+        load_ms: None,
+        first_token_ms: None,
         stream_mode: None,
     }
 }
@@ -237,6 +248,8 @@ async fn issue(client: &LlmClient, prompt: &ChatRequest, stream: bool) -> Option
             generated_tokens: streamed.usage.completion_tokens,
             prompt_tokens: streamed.usage.prompt_tokens,
             prefill_ms: streamed.timings.and_then(|t| t.prompt_ms),
+            load_ms: streamed.timings.and_then(|t| t.load_ms),
+            first_token_ms: streamed.timings.and_then(|t| t.first_token_ms),
             stream_mode: streamed.stream_mode,
         });
     }
@@ -326,6 +339,8 @@ async fn worker_loop(w: Worker) {
             // was asked with what came back.
             expected_tokens: prompt.max_tokens,
             prefill_ms: observed.and_then(|o| o.prefill_ms),
+            load_ms: observed.and_then(|o| o.load_ms),
+            first_token_ms: observed.and_then(|o| o.first_token_ms),
             stream_mode: observed.and_then(|o| o.stream_mode),
         };
         lock(&w.samples).push((sample, extra));
@@ -597,7 +612,8 @@ mod tests {
             "data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"length\"}}],\
              \"usage\":{{\"prompt_tokens\":512,\"completion_tokens\":{SERVER_COMPLETION_TOKENS},\
              \"total_tokens\":{}}},\"timings\":{{\"prompt_n\":512,\"prompt_ms\":40.0,\
-             \"predicted_n\":{SERVER_COMPLETION_TOKENS},\"predicted_ms\":200.0}}}}\n\n",
+             \"predicted_n\":{SERVER_COMPLETION_TOKENS},\"predicted_ms\":200.0,\
+             \"load_ms\":5.0,\"first_token_ms\":7.0}}}}\n\n",
             512 + SERVER_COMPLETION_TOKENS
         );
         let _ = sock.write_all(terminal.as_bytes()).await;
@@ -960,6 +976,8 @@ mod tests {
             RequestExtra {
                 expected_tokens: Some(128),
                 prefill_ms: None,
+                load_ms: None,
+                first_token_ms: None,
                 stream_mode: mode,
             },
         )
@@ -1045,6 +1063,12 @@ mod tests {
         for e in completed {
             assert_eq!(e.expected_tokens, Some(128), "PP-28: the issued n_predict");
             assert_eq!(e.prefill_ms, Some(40.0), "§3: the SERVER's prompt_ms");
+            assert_eq!(e.load_ms, Some(5.0), "#4954: the SERVER's load_ms");
+            assert_eq!(
+                e.first_token_ms,
+                Some(7.0),
+                "#4954: the SERVER's first_token_ms"
+            );
             assert_eq!(e.stream_mode, Some(StreamMode::Live));
         }
     }

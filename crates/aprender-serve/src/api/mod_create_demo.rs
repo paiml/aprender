@@ -646,6 +646,16 @@ pub struct Timings {
     pub predicted_per_second: Option<f64>,
     /// Which clock produced the two durations.
     pub clock: String,
+    /// Milliseconds from the handler's start to the engine starting prefill:
+    /// template, tokenize, the session lock (#4954). Not a llama.cpp key;
+    /// absent when the engine did not mark prefill's start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_ms: Option<f64>,
+    /// Milliseconds from prefill choosing the first token to the first content
+    /// chunk being handed to the stream (#4954). Not a llama.cpp key; absent
+    /// outside a stream, or when the engine did not mark prefill's end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_token_ms: Option<f64>,
 }
 
 /// The clock [`Timings`] is measured on.
@@ -658,7 +668,7 @@ pub const TIMINGS_CLOCK: &str = "server std::time::Instant (CLOCK_MONOTONIC)";
 /// `cuda` feature gate on purpose: the handler that receives it compiles in
 /// every build, so the channel type has to as well.
 ///
-/// Both fields are `Option`: an engine that timed prefill but not decode
+/// Every field is `Option`: an engine that timed prefill but not decode
 /// reports exactly that.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct PhaseTimings {
@@ -666,9 +676,56 @@ pub struct PhaseTimings {
     pub prefill_ms: Option<f64>,
     /// Wall-clock milliseconds spent decoding.
     pub decode_ms: Option<f64>,
+    /// When prefill started (#4954): the handler's anchor for `load_ms`.
+    pub prefill_started: Option<std::time::Instant>,
+    /// When prefill had chosen the first token (#4954): the handler's anchor
+    /// for `first_token_ms`.
+    pub prefill_ended: Option<std::time::Instant>,
 }
 
 impl PhaseTimings {
+    /// The split an engine that marked its phase edges reports (#4954):
+    /// prefill from `prefill_started` to `prefill_ended`, decode from there to
+    /// `decode_ended`, and both marks kept for the handler. A mark out of
+    /// order leaves its duration `None` rather than a zero.
+    #[must_use]
+    pub fn from_marks(
+        prefill_started: std::time::Instant,
+        prefill_ended: std::time::Instant,
+        decode_ended: std::time::Instant,
+    ) -> Self {
+        Self {
+            prefill_ms: elapsed_ms(prefill_started, prefill_ended),
+            decode_ms: elapsed_ms(prefill_ended, decode_ended),
+            prefill_started: Some(prefill_started),
+            prefill_ended: Some(prefill_ended),
+        }
+    }
+
+    /// [`Self::to_timings`] plus the two TTFT edges only the handler can
+    /// close (#4954): `load_ms` from `request_start` to prefill's start, and
+    /// `first_token_ms` from prefill's end to `first_content`, the instant the
+    /// first content chunk was handed to the stream. An edge with a missing or
+    /// out-of-order mark stays `None`.
+    #[must_use]
+    pub fn to_timings_at(
+        self,
+        prompt_n: usize,
+        predicted_n: usize,
+        request_start: std::time::Instant,
+        first_content: Option<std::time::Instant>,
+    ) -> Option<Timings> {
+        let mut timings = self.to_timings(prompt_n, predicted_n)?;
+        timings.load_ms = self
+            .prefill_started
+            .and_then(|started| elapsed_ms(request_start, started));
+        timings.first_token_ms = self
+            .prefill_ended
+            .zip(first_content)
+            .and_then(|(ended, first)| elapsed_ms(ended, first));
+        Some(timings)
+    }
+
     /// Pair the measured durations with the token counts the handler knows.
     ///
     /// Returns `None` unless BOTH phases were measured. A `timings` block whose
@@ -707,8 +764,18 @@ impl Timings {
             predicted_ms,
             predicted_per_second: rate_per_second(predicted_n, predicted_ms),
             clock: TIMINGS_CLOCK.to_string(),
+            load_ms: None,
+            first_token_ms: None,
         }
     }
+}
+
+/// Milliseconds from `earlier` to `later`, or `None` when `later` is earlier.
+#[must_use]
+fn elapsed_ms(earlier: std::time::Instant, later: std::time::Instant) -> Option<f64> {
+    later
+        .checked_duration_since(earlier)
+        .map(|d| d.as_secs_f64() * 1000.0)
 }
 
 /// Tokens per second over a millisecond duration, or `None` when undefined.

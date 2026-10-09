@@ -847,6 +847,16 @@ profile:
 bench:
 	cargo bench
 
+# APR-071 V1 (#4954): reference TTFT ÷ apr TTFT with its 95% lower bound, on
+# THIS host. Starts the pinned llama.cpp and `apr serve run` on the same GGUF and
+# hands both to `apr test llm bench --band` (PERF-009: the one entrypoint).
+# Run on a GPU host under the fleet GPU lock:
+#   flock -w 900 /tmp/apr-gpu.lock make v1-ttft-baseline HOST=lambda MODEL=<gguf>
+.PHONY: v1-ttft-baseline
+v1-ttft-baseline:
+	@test -n "$(HOST)" -a -n "$(MODEL)" || { echo "usage: make v1-ttft-baseline HOST=<host> MODEL=<gguf> [V1_ARGS=...]"; exit 2; }
+	bash scripts/v1_ttft_baseline.sh --host "$(HOST)" --model "$(MODEL)" $(V1_ARGS)
+
 # Chaos engineering tests (from renacer, Issue #99)
 chaos-test: build ## Run chaos engineering tests with renacer
 	@echo "🔥 Running chaos engineering tests..."
