@@ -102,6 +102,72 @@ fn without_the_feature_a_constraint_is_refused_never_ignored() {
     );
 }
 
+/// #3793: `--grammar` reads inline or `@path`, and an empty grammar is refused before the
+/// model loads.
+#[test]
+fn load_grammar_takes_it_inline_or_at_path_and_refuses_an_empty_one() {
+    assert_eq!(
+        load_grammar(r#"start: "a""#).expect("inline"),
+        r#"start: "a""#
+    );
+    let dir = std::env::temp_dir().join(format!("apr-3793-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let file = dir.join("g.lark");
+    std::fs::write(&file, r#"start: "b""#).expect("write");
+    assert_eq!(
+        load_grammar(&format!("@{}", file.display())).expect("@path"),
+        r#"start: "b""#
+    );
+    std::fs::remove_file(&file).expect("remove");
+    for empty in ["", "  \n "] {
+        let e = load_grammar(empty).expect_err("empty");
+        assert!(
+            matches!(&e, ConstraintError::SchemaInvalid(why) if why.contains("empty")),
+            "{e}"
+        );
+    }
+    let e = load_grammar("@/no/such/g.lark").expect_err("unreadable");
+    assert!(matches!(e, ConstraintError::SchemaInvalid(_)));
+}
+
+/// #3793: every refusal is one line whose first word is its name, so a consumer reading
+/// stderr can tell them apart without parsing prose.
+#[test]
+fn the_new_refusals_are_one_named_line_each() {
+    let cases = [
+        (
+            ConstraintError::UnsupportedPath {
+                path: "gguf-cuda".into(),
+                removed_by: "#3568 PR 3".into(),
+            },
+            "SchemaUnsupportedPath: ",
+        ),
+        (
+            ConstraintError::WithThinking("x".into()),
+            "SchemaWithThinking: ",
+        ),
+        (ConstraintError::Violation("x".into()), "SchemaViolation: "),
+        (ConstraintError::Truncated { max_tokens: 7 }, "Truncated: "),
+    ];
+    for (e, prefix) in cases {
+        let line = e.to_string();
+        assert!(line.starts_with(prefix), "{line}");
+        assert!(!line.contains('\n'), "{line:?}");
+    }
+    let path = ConstraintError::UnsupportedPath {
+        path: "gguf-cuda".into(),
+        removed_by: "#3568 PR 3".into(),
+    }
+    .to_string();
+    assert!(
+        path.contains("gguf-cuda") && path.contains("removed_by: #3568 PR 3"),
+        "{path}"
+    );
+    assert!(ConstraintError::Truncated { max_tokens: 7 }
+        .to_string()
+        .contains('7'));
+}
+
 #[cfg(feature = "structured-output")]
 mod engine {
     use super::*;
@@ -702,6 +768,27 @@ mod engine {
             matches!(&e, ConstraintError::SchemaInvalid(why) if why.contains("admits no document")),
             "{e}"
         );
+    }
+
+    /// #3793: a request compiles to the same constraint its engine call builds.
+    #[test]
+    fn a_request_compiles_to_the_engine_it_names() {
+        let v = vocab();
+        let env = ConstraintEnv::new(&v).expect("index the vocabulary");
+        let mut c = ConstraintRequest::Lark(r#"start: "PASS" | "FAIL""#.to_string())
+            .compile(&env)
+            .expect("compile the grammar");
+        let out = generate(&v, Some(c.as_mut()), 16).expect("constrained run");
+        assert!(
+            out == b"PASS" || out == b"FAIL",
+            "{}",
+            String::from_utf8_lossy(&out)
+        );
+        let e = ConstraintRequest::JsonSchema(serde_json::json!(false))
+            .compile(&env)
+            .err()
+            .expect("`false` is refused");
+        assert!(matches!(e, ConstraintError::SchemaInvalid(_)), "{e}");
     }
 
     #[test]

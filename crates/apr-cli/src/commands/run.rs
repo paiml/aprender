@@ -181,6 +181,25 @@ pub(crate) struct RunOptions {
     /// mode that needs per-token decoded text, and resolving the tokenizer for
     /// it costs a second open of the model file.
     pub stream: bool,
+    /// #3793: `--json-schema` / `--grammar`, as given (inline or `@path`), read and checked
+    /// before the model loads.
+    pub constraint: ConstraintArgs,
+}
+
+/// `apr run --json-schema` / `--grammar` as the user gave them (#3793).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ConstraintArgs {
+    /// A JSON Schema, inline or `@path`.
+    pub json_schema: Option<String>,
+    /// A Lark grammar, inline or `@path`.
+    pub grammar: Option<String>,
+}
+
+impl ConstraintArgs {
+    /// Whether either flag was given.
+    pub(crate) fn is_set(&self) -> bool {
+        self.json_schema.is_some() || self.grammar.is_some()
+    }
 }
 
 impl Default for RunOptions {
@@ -212,6 +231,7 @@ impl Default for RunOptions {
             chat_template: false,
             thinking: None,
             stream: false,
+            constraint: ConstraintArgs::default(),
         }
     }
 }
@@ -273,6 +293,10 @@ pub(crate) struct RunResult {
     pub token_texts: Option<Vec<String>>,
     /// Prompt and completion counts plus the finish reason (#3718).
     pub usage: RunUsage,
+    /// #3793: a constrained run whose output was produced and then refused (`Truncated`, or
+    /// `SchemaViolation` from the second reader). The output is still emitted in `--json`,
+    /// beside the refusal; the run then exits non-zero.
+    pub constraint_refusal: Option<crate::error::ConstraintRefusal>,
 }
 
 /// Resolve a user-supplied model argument into a [`ModelSource`].
@@ -361,6 +385,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         generated_tokens: output.generated_tokens,
         token_texts: output.token_texts,
         usage: output.usage,
+        constraint_refusal: output.constraint_refusal,
     })
 }
 
@@ -381,62 +406,83 @@ pub(crate) fn resolve_model(source: &ModelSource, force: bool, offline: bool) ->
     match source {
         ModelSource::Local(path) => Ok(path.clone()),
         ModelSource::HuggingFace { org, repo, file } => {
-            // Check multiple cache locations for the model
-            // GH-528: Skip cache when --force is set to re-download
-            if !force {
-                if let Some(path) = find_cached_model(org, repo, file.as_deref()) {
-                    return Ok(path);
-                }
-            }
-
-            if offline {
-                // OFFLINE MODE: Reject any network access attempt.
-                //
-                // CRUX-A-20: a BARE `hf://org/repo` gets a different message,
-                // because "not cached" would be a claim we cannot support. The
-                // caller reached here having asked the Hub API which file the
-                // repo means (`run_model` → `resolve_hf_model`) and been
-                // refused, so `file` is None and the pacha cache — keyed on the
-                // full `hf://org/repo/<file>` — cannot be probed at all. The
-                // file may well be cached under a name we cannot name.
-                if file.is_none() {
-                    return Err(CliError::ValidationFailed(format!(
-                        "OFFLINE MODE: cannot resolve hf://{org}/{repo} to a file. \
-                         Which file a bare repo means is only knowable from the \
-                         HuggingFace API, and network access is disabled. Name the \
-                         file (e.g. hf://{org}/{repo}/model.safetensors), pass a \
-                         local path, or cache it first with: apr import hf://{org}/{repo}"
-                    )));
-                }
-                return Err(CliError::ValidationFailed(format!(
-                    "OFFLINE MODE: Model hf://{org}/{repo} not cached. \
-                     Network access is disabled. Cache the model first with: \
-                     apr import hf://{org}/{repo}"
-                )));
-            }
-
-            // Auto-download like ollama
-            eprintln!("{}", format!("Downloading hf://{org}/{repo}...").yellow());
-            download_hf_model(org, repo, file.as_deref())
+            resolve_hf_source(org, repo, file.as_deref(), force, offline)
         }
-        ModelSource::Url(url) => {
-            let cache_path = source.cache_path();
-            // GH-528: Skip cache when --force is set
-            if !force && cache_path.exists() {
-                // Cached URLs are allowed even in offline mode
-                find_model_in_dir(&cache_path)
-            } else if offline {
-                // OFFLINE MODE: Reject any network access attempt
-                Err(CliError::ValidationFailed(format!(
-                    "OFFLINE MODE: URL {url} not cached. \
-                     Network access is disabled. Download and cache the model first."
-                )))
-            } else {
-                // Auto-download from URL
-                eprintln!("{}", format!("Downloading {url}...").yellow());
-                download_url_model(url)
-            }
+        ModelSource::Url(url) => resolve_url_source(source, url, force, offline),
+    }
+}
+
+/// [`resolve_model`] for `hf://org/repo[/file]`: the cache, else the offline refusal,
+/// else a download.
+fn resolve_hf_source(
+    org: &str,
+    repo: &str,
+    file: Option<&str>,
+    force: bool,
+    offline: bool,
+) -> Result<PathBuf> {
+    // Check multiple cache locations for the model
+    // GH-528: Skip cache when --force is set to re-download
+    if !force {
+        if let Some(path) = find_cached_model(org, repo, file) {
+            return Ok(path);
         }
+    }
+
+    if offline {
+        // OFFLINE MODE: Reject any network access attempt.
+        //
+        // CRUX-A-20: a BARE `hf://org/repo` gets a different message,
+        // because "not cached" would be a claim we cannot support. The
+        // caller reached here having asked the Hub API which file the
+        // repo means (`run_model` → `resolve_hf_model`) and been
+        // refused, so `file` is None and the pacha cache — keyed on the
+        // full `hf://org/repo/<file>` — cannot be probed at all. The
+        // file may well be cached under a name we cannot name.
+        if file.is_none() {
+            return Err(CliError::ValidationFailed(format!(
+                "OFFLINE MODE: cannot resolve hf://{org}/{repo} to a file. \
+                 Which file a bare repo means is only knowable from the \
+                 HuggingFace API, and network access is disabled. Name the \
+                 file (e.g. hf://{org}/{repo}/model.safetensors), pass a \
+                 local path, or cache it first with: apr import hf://{org}/{repo}"
+            )));
+        }
+        return Err(CliError::ValidationFailed(format!(
+            "OFFLINE MODE: Model hf://{org}/{repo} not cached. \
+             Network access is disabled. Cache the model first with: \
+             apr import hf://{org}/{repo}"
+        )));
+    }
+
+    // Auto-download like ollama
+    eprintln!("{}", format!("Downloading hf://{org}/{repo}...").yellow());
+    download_hf_model(org, repo, file)
+}
+
+/// [`resolve_model`] for a URL: the cache (allowed even offline), else the offline
+/// refusal, else a download.
+fn resolve_url_source(
+    source: &ModelSource,
+    url: &str,
+    force: bool,
+    offline: bool,
+) -> Result<PathBuf> {
+    let cache_path = source.cache_path();
+    // GH-528: Skip cache when --force is set
+    if !force && cache_path.exists() {
+        // Cached URLs are allowed even in offline mode
+        find_model_in_dir(&cache_path)
+    } else if offline {
+        // OFFLINE MODE: Reject any network access attempt
+        Err(CliError::ValidationFailed(format!(
+            "OFFLINE MODE: URL {url} not cached. \
+             Network access is disabled. Download and cache the model first."
+        )))
+    } else {
+        // Auto-download from URL
+        eprintln!("{}", format!("Downloading {url}...").yellow());
+        download_url_model(url)
     }
 }
 

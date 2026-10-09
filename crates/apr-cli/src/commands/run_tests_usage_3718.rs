@@ -14,6 +14,7 @@ fn result_with(usage: RunUsage) -> RunResult {
         generated_tokens: None,
         token_texts: None,
         usage,
+        constraint_refusal: None,
     }
 }
 
