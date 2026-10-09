@@ -1,49 +1,26 @@
 #!/usr/bin/env bash
-# check_tag_coverage_gated.sh -- the release reads coverage-nightly's receipt for the release commit (#3690, #4734, #4735)
+# check_tag_coverage_gated.sh -- tag_coverage_gate.sh, the judge of coverage-nightly's receipt, holds (#3690, #4734, #4735)
 #
-#   bash scripts/check_tag_coverage_gated.sh              # judge scripts/release/autopilot.sh
-#   bash scripts/check_tag_coverage_gated.sh --self-test  # wiring rows + mutants of the gate itself
+#   bash scripts/check_tag_coverage_gated.sh              # the gate's own case table
+#   bash scripts/check_tag_coverage_gated.sh --self-test  # mutants of the gate itself
 #
 # #3676 moved COV_FLOOR off the PR path; nothing on the release path read it, so a floor breach
 # still reached the crates.io cascade. #4734: the tag push's coverage section was vacuous on
 # v0.70.1 (0 tests, no %), so the gate now judges coverage-nightly's sha-keyed receipt instead.
-# This guard holds four facts:
+# #4688 took the gate off the release path (autopilot preflight and cut_tag --resolve no longer call it),
+# so the wiring facts left with it. This guard holds two:
 #   1. the gate's own case table passes (it stubs gh over a real git history; no network);
-#   2. autopilot.sh invokes the gate on the tag and its commit ("$T" "$MC");
-#   3. that call sits BEFORE the dryrun and cascade steps, and a nonzero rc dies;
-#   4. every mutant of the gate below turns its case table RED. A table that a deleted check
+#   2. every mutant of the gate below turns its case table RED. A table that a deleted check
 #      cannot turn red holds nothing up (L25).
-# The before-the-tag `--resolve` call in cut_tag() is held by scripts/check_tag_step_gated.sh.
 #
-# EXIT 0 wired · 1 not wired · 2 the subject moved (a file or anchor is missing).
+# EXIT 0 green · 1 red · 2 the subject moved (a file or anchor is missing).
 set -uo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 GATE="$ROOT/scripts/release/tag_coverage_gate.sh"
-CALL='bash scripts/release/tag_coverage_gate.sh "$T" "$MC"'
-DIE='|| die "tag coverage on $T refused'
-
-# wired FILE -> prints ok or the reason; rc 0 wired, 1 not, 2 anchor missing
-wired() {
-    local f=$1 call dry casc
-    [ -f "$f" ] || { echo "no $f"; return 2; }
-    dry=$(grep -nF 'if run_step dryrun; then' "$f" | head -1 | cut -d: -f1)
-    casc=$(grep -nF 'if run_step cascade; then' "$f" | head -1 | cut -d: -f1)
-    [ -n "$dry" ] && [ -n "$casc" ] || { echo "autopilot.sh has no dryrun/cascade step anchor -- the subject moved"; return 2; }
-    call=$(grep -nF -- "$CALL" "$f" | head -1 | cut -d: -f1)
-    [ -n "$call" ] || { echo "autopilot.sh never runs the tag coverage gate on \"\$T\" \"\$MC\""; return 1; }
-    [ "$call" -lt "$dry" ] && [ "$call" -lt "$casc" ] || { echo "the tag coverage gate runs at line $call, after the dryrun ($dry) or cascade ($casc) step"; return 1; }
-    local after
-    after=$(sed -n "$call,$((call + 3))p" "$f")
-    grep -qF -- "$DIE" <<< "$after" || { echo "nothing dies on the tag coverage gate's rc within 3 lines of line $call"; return 1; }
-    echo ok
-}
 
 judge() {
-    local ap=$1 why rc
     bash "$GATE" --self-test > /dev/null 2>&1 || { echo "FAIL  tag_coverage_gate.sh --self-test is red"; return 1; }
-    why=$(wired "$ap"); rc=$?
-    if [ "$rc" -eq 0 ]; then echo "PASS  autopilot judges the nightly coverage receipt for the release commit before T-4 (#3690, #4734)"; return 0; fi
-    echo "FAIL  $why"; return "$rc"
+    echo "PASS  tag_coverage_gate.sh judges coverage-nightly's receipt (#3690, #4734); off the release path (#4688)"
 }
 
 # Each row: NAME, then a fixed string in the gate, then what replaces its first occurrence. A row
@@ -77,19 +54,8 @@ mutate() {
 }
 
 self_test() {
-    local d fail=0 want name rc old new killed=0 total=0
+    local d fail=0 name old new killed=0 total=0
     d=$(mktemp -d) || return 2
-    local AP="$ROOT/scripts/release/autopilot.sh"
-    cp -- "$AP" "$d/real.sh"
-    grep -vF -- "$CALL" "$AP" > "$d/deleted.sh"
-    grep -vF -- "$DIE" "$AP" > "$d/unread.sh"
-    # the call moved after the cascade step: drop it, then re-insert it after the anchor
-    grep -vF -- "$CALL" "$AP" | awk -v c="  $CALL" '{print} /if run_step cascade; then/{print c}' > "$d/late.sh"
-    for row in "0 real" "1 deleted" "1 unread" "1 late"; do
-        want=${row%% *}; name=${row#* }
-        wired "$d/$name.sh" > /dev/null; rc=$?
-        if [ "$rc" = "$want" ]; then echo "  ok   $name -> rc $rc"; else echo "  FAIL $name: wanted rc $want, got $rc"; fail=1; fi
-    done
     if bash "$GATE" --self-test > /dev/null 2>&1; then echo "  ok   the real gate's case table is GREEN"
     else echo "  FAIL the real gate's case table is RED, so no mutant below can be told apart"; fail=1; fi
     # The separator is '|'; a literal '|' inside a fixed string is written '\|'.
@@ -106,13 +72,13 @@ self_test() {
         else echo "  ok   mutant '$name' -> RED"; killed=$((killed + 1)); fi
     done <<< "$MUTANTS"
     echo "  mutants killed $killed/$total"
-    rm -f -- "$d/real.sh" "$d/deleted.sh" "$d/unread.sh" "$d/late.sh" "$d/gate.sh"; rmdir -- "$d"
+    rm -f -- "$d/gate.sh"; rmdir -- "$d"
     [ "$fail" -eq 0 ] && { echo "check_tag_coverage_gated self-test: PASS"; return 0; }
     echo "check_tag_coverage_gated self-test: FAIL"; return 1
 }
 
 case "${1:-}" in
     --self-test) self_test ;;
-    '') judge "$ROOT/scripts/release/autopilot.sh" ;;
+    '') judge ;;
     *) echo "usage: $0 [--self-test]" >&2; exit 2 ;;
 esac

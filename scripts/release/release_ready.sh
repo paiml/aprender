@@ -6,6 +6,10 @@
 #      producer: "<nightly_train lane>"[, key: "…", value: "…"]}
 #   `producer` is required when applies_to holds publish (BLD-001 row 10). `key`/`value` state one fact the
 #   requirement fixes (a mode, a threshold, a set), so two places that say different things are seen.
+#   `seven: <key>` marks the GATE that carries one of the seven entries a release always has (SEVEN below).
+#   `also: ["<anchor>", …]` names more anchors of the same GATE: stops a surface states that this GATE covers
+#   without a row of their own. Each is matched like `anchor` (it lists a stop; a stop no surface states any more
+#   is ORPHANED). A row (`parent:`) carries no `also`.
 #
 # THE SURFACES (fixed here, never an option: a surface set a caller can shrink is theater). Each extractor reads
 # one file of the tree and prints the requirements that file states, as anchors:
@@ -24,8 +28,7 @@
 #   publish  scripts/cascade-publish.sh         every `if ! <gate>` the cascade refuses on, and every top-level
 #                                               `if [ … ]` block before the upload loop (first top-level `for …; do`)
 #                                               that exits 1..9
-#   publish  scripts/release/publish_strict.sh  every `|| die "…"` / `&& die "…"` refusal before its first `cargo
-#                                               publish` (the spec's T-4 executor), named by its message
+#   (scripts/release/publish_strict.sh was a surface until #4688 deleted it: no step ran it, the cascade does.)
 #   Out: a verdict that runs after an upload (a final verification, autopilot's `cascade incomplete`) is an
 #   outcome of publishing, not a requirement to start it.
 #   A checker inside a step is: `bash scripts/X.sh [--flag]`, `python3 scripts/X.py [sub]`, `cargo test|check|build|metadata`
@@ -63,6 +66,8 @@
 #   release_ready.sh --found [--root DIR]           the anchors the surfaces state (the in-repo inventory)
 #   release_ready.sh --gates [--root DIR] [--list FILE]   the GATE list: every requirement, one row each
 #   release_ready.sh --probe [--root DIR] [--list FILE]   GH (default gh) · RR_REPO (default paiml/aprender)
+#   release_ready.sh --budget [--root DIR] [--list FILE]  GATEs per stage vs the caps merge=10 tag=5 publish=5,
+#                                                         and every one of SEVEN carried (rc 1: OVER or MISSING)
 #   release_ready.sh --selftest                     the case table (fixture trees, no network)
 #   release_ready.sh --mutants                      each planted mutant must turn the case table RED
 set -uo pipefail
@@ -70,12 +75,12 @@ set -uo pipefail
 SCRIPT_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"
 DEFAULT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIST_REL=contracts/release-ready-v1.yaml
+SEVEN="cleanroom-tag-commit workspace-tests crux-smoke supply-chain provenance binaries-before-public no-secret-in-crates"
 CI_REL=.github/workflows/ci.yml
 DOC_REL=CLAUDE.md
 AUTO_REL=scripts/release/autopilot.sh
 PRE_REL=scripts/check_publish_preflight.sh
 CAS_REL=scripts/cascade-publish.sh
-STR_REL=scripts/release/publish_strict.sh
 SPEC_REL=docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
 RRW_REL=scripts/release/release_readiness.sh
 MK_REL=Makefile
@@ -252,37 +257,6 @@ cascade_found() {
     ' "$1" "$1"
 }
 
-# strict_found FILE: every `|| die "…"` / `&& die "…"` before the first `cargo publish`, named by its message: the
-# text up to the first `$(`, `: ` or closing quote, `$VAR` read as VAR, as at most 8 lowercase words. A `die` that
-# names no word of its own (`die "$msg"`), a `die` without that form, or a name met twice is not_measured.
-strict_found() {
-    awk -v F="$2" '
-        /^[ \t]*#/ { next }
-        /cargo publish/ { cut = 1 }
-        cut { next }
-        /^[ \t]*die\(\)/ { next }
-        /(^|[^A-Za-z0-9_])die[ \t]/ {
-            s = $0
-            if (!match(s, /(\|\||&&)[ \t]*die "/)) { UL[++nu] = F ":" FNR; next }
-            s = substr(s, RSTART + RLENGTH)
-            if (match(s, /\$\(|: |"/)) s = substr(s, 1, RSTART - 1)
-            t = s; gsub(/\$\{?[A-Za-z0-9_]+\}?/, "", t); if (t !~ /[A-Za-z]/) { UL[++nu] = F ":" FNR; next }
-            gsub(/\$\{?/, "", s); gsub(/\}/, "", s)
-            s = tolower(s); gsub(/[^a-z0-9]+/, "-", s); gsub(/^-+|-+$/, "", s)
-            n = split(s, w, "-"); s = ""; for (i = 1; i <= n && i <= 8; i++) s = s (i > 1 ? "-" : "") w[i]
-            if (s == "") { UL[++nu] = F ":" FNR; next }
-            if (s in SEEN) { printf "refusal named twice: %s at %s and %s:%d\n", s, SEEN[s], F, FNR > "/dev/stderr"; dup = 1; next }
-            SEEN[s] = F ":" FNR
-            printf "publish:strict/%s\t%s:%d\n", s, F, FNR; k++
-        }
-        END {
-            for (i = 1; i <= nu; i++) printf "unparsed refusal at %s\n", UL[i] > "/dev/stderr"
-            if (!cut) printf "no cargo publish in %s: the upload line is the boundary\n", F > "/dev/stderr"
-            if (!cut || nu || dup || k == 0) exit 2
-        }
-    ' "$1"
-}
-
 # dogfood_found DOGFOOD CARGO: every row `dogfood.sh --phase pre-publish` can mark FAIL, named tag:dogfood/<row>. A
 # row is `mark <row> FAIL`, `gate <row> <cmd>` or `ci_mark <row>` in statement position, or a `pre-publish:` arm of
 # version_row that prints `<row> FAIL`; plus `declared:<name>` for each [package.metadata.dogfood].gates entry of the
@@ -372,7 +346,7 @@ claims() {
 # found ROOT: every anchor the surfaces state; rc 2 when a surface is missing or unreadable
 found() {
     local root=$1 f
-    for f in "$CI_REL" "$DOC_REL" "$AUTO_REL" "$PRE_REL" "$CAS_REL" "$STR_REL" "$SPEC_REL" "$RRW_REL" "$MK_REL" "$DF_REL" "$CARGO_REL"; do
+    for f in "$CI_REL" "$DOC_REL" "$AUTO_REL" "$PRE_REL" "$CAS_REL" "$SPEC_REL" "$RRW_REL" "$MK_REL" "$DF_REL" "$CARGO_REL"; do
         [ -f "$root/$f" ] || { printf 'surface missing: %s\n' "$f" >&2; return 2; }
     done
     ci_gate_found "$root/$CI_REL" "$CI_REL" || { printf 'surface unreadable: %s job gate\n' "$CI_REL" >&2; return 2; }
@@ -380,14 +354,15 @@ found() {
     autopilot_found "$root/$AUTO_REL" "$AUTO_REL" || { printf 'surface unreadable: %s steps\n' "$AUTO_REL" >&2; return 2; }
     preflight_found "$root/$PRE_REL" "$PRE_REL" || { printf 'surface unreadable: %s RULES\n' "$PRE_REL" >&2; return 2; }
     cascade_found "$root/$CAS_REL" "$CAS_REL" || { printf 'surface unreadable: %s gates\n' "$CAS_REL" >&2; return 2; }
-    strict_found "$root/$STR_REL" "$STR_REL" || { printf 'surface unreadable: %s refusals\n' "$STR_REL" >&2; return 2; }
     dogfood_found "$root/$DF_REL" "$root/$CARGO_REL" "$DF_REL" "$CARGO_REL" || { printf 'surface unreadable: %s rows\n' "$DF_REL" >&2; return 2; }
 }
 
 # ---------------------------------------------------------------- the list ----------------------------------------
-# parse_list FILE -> "id<TAB>applies<TAB>anchor<TAB>checker<TAB>producer<TAB>key<TAB>value<TAB>line"; rc 3 on a bad line
+# parse_list FILE -> "id<TAB>applies<TAB>anchor<TAB>checker<TAB>producer<TAB>key<TAB>value<TAB>line<TAB>parent<TAB>seven<TAB>kind";
+# rc 3 on a bad line
 parse_list() {
-    awk '
+    awk -v SEVEN="$SEVEN" '
+        BEGIN { n = split(SEVEN, a, " "); for (i = 1; i <= n; i++) S7[a[i]] = 1 }
         /^requirements:/ { r = 1; next }
         r && /^[^ #]/ { r = 0 }
         r && /^  - \{/ {
@@ -397,7 +372,14 @@ parse_list() {
                 sub(/^[ ,]+/, "", s); if (s == "") break
                 if (!match(s, /^[a-z_]+: */)) { printf "line %d: expected key at: %s\n", NR, s > "/dev/stderr"; bad = 1; break }
                 k = substr(s, 1, RLENGTH); sub(/: *$/, "", k); s = substr(s, RLENGTH + 1)
-                if (s ~ /^"/) { if (!match(s, /^"[^"]*"/)) { bad = 1; break } v = substr(s, 2, RLENGTH - 2) }
+                if (k == "also") {
+                    # also: ["<anchor>", …] — each item quoted; joined with \034 (an anchor may hold "]" or ",")
+                    if (!match(s, /^\[[ ,]*("[^"]*"[ ,]*)+\]/)) { printf "line %d: also is a list of quoted anchors\n", NR > "/dev/stderr"; bad = 1; break }
+                    L = RLENGTH; t = substr(s, 2, L - 2); v = ""
+                    while (match(t, /"[^"]*"/)) { v = v (v == "" ? "" : "\034") substr(t, RSTART + 1, RLENGTH - 2); t = substr(t, RSTART + RLENGTH) }
+                    RLENGTH = L
+                }
+                else if (s ~ /^"/) { if (!match(s, /^"[^"]*"/)) { bad = 1; break } v = substr(s, 2, RLENGTH - 2) }
                 else if (s ~ /^\[/) { if (!match(s, /^\[[^]]*\]/)) { bad = 1; break } v = substr(s, 2, RLENGTH - 2); gsub(/ /, "", v) }
                 else { match(s, /^[^,]*/); v = substr(s, 1, RLENGTH); sub(/[ \t]+$/, "", v) }
                 if (k in V) { printf "line %d: key %s twice\n", NR, k > "/dev/stderr"; bad = 1 }
@@ -408,8 +390,12 @@ parse_list() {
             if (V["applies_to"] ~ /publish/ && V["producer"] == "") { printf "line %d: %s applies to publish and names no nightly producer\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
             if ((V["key"] == "") != (V["value"] == "")) { printf "line %d: key and value come together\n", NR > "/dev/stderr"; bad = 1; next }
             if (V["id"] in ID) { printf "line %d: id %s twice\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
+            if (V["seven"] != "" && !(V["seven"] in S7)) { printf "line %d: seven %s is not one of the seven\n", NR, V["seven"] > "/dev/stderr"; bad = 1; next }
+            if (V["seven"] != "" && V["parent"] != "") { printf "line %d: a row carries no seven (%s)\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
+            if (V["kind"] != "" && V["kind"] != "mechanics") { printf "line %d: kind %s is not mechanics, the one kind\n", NR, V["kind"] > "/dev/stderr"; bad = 1; next }
+            if (V["also"] != "" && V["parent"] != "") { printf "line %d: a row carries no also (%s)\n", NR, V["id"] > "/dev/stderr"; bad = 1; next }
             ID[V["id"]] = 1; if (V["parent"] != "") { PA[V["id"]] = V["parent"]; PL[V["id"]] = NR }
-            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", V["id"], V["applies_to"], V["anchor"], V["checker"], V["producer"], V["key"], V["value"], NR, V["parent"]
+            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", V["id"], V["applies_to"], V["anchor"], V["checker"], V["producer"], V["key"], V["value"], NR, V["parent"], V["seven"], V["kind"], V["also"]
         }
         END {
             # a row of a GATE names a GATE: an id on the list that is not itself a row of another
@@ -440,6 +426,7 @@ verdict() {
         }
         {
             id = $1; LA[$3] = id; n++
+            na = split($12, AL, "\034"); for (j = 1; j <= na; j++) { LA[AL[j]] = id; if (!(AL[j] in FW)) { print "ORPHANED " id ": no surface states " AL[j] " any more"; o++ } }
             if ($6 != "") C[++nc] = $6 "\t" $7 "\t" LISTF ":" $8 " (" id ")"
             ck = $4; nd = ""; if (index(ck, "#")) { nd = substr(ck, index(ck, "#") + 1); ck = substr(ck, 1, index(ck, "#") - 1) }
             if (ck == "" || ck == "-") { print "ORPHANED " id ": no checker"; o++; next }
@@ -478,8 +465,29 @@ gates() {
         END {
             for (i = 1; i <= NR; i++) { split(R[i], a, "\t"); if (a[9] != "") continue
                 printf "%-8s %-15s %-62s %s%s\n", a[1], a[2], a[3], a[4], nk[a[1]] ? "  (" nk[a[1]] " rows)" : ""; n++
+                na = split(a[12], al, "\034"); for (j = 1; j <= na; j++) printf "  also of %-8s %-55s\n", a[1], al[j]
                 m = split(K[a[1]], c, "\n"); for (j = 2; j <= m; j++) { split(R[c[j]], b, "\t"); printf "  %-8s row of %-8s %-55s %s\n", b[1], a[1], b[3], b[4] } }
             printf "gates=%d\n", n
+        }'
+}
+
+# ---------------------------------------------------------------- the budget ---------------------------------------
+# budget LIST: GATEs (no parent) per stage against the caps, fixed here; an entry counts in every stage it names.
+# A GATE of kind mechanics (#4688: publish mechanics, not a check) is not counted; no other kind exists.
+# Every key of SEVEN must ride on a GATE.
+budget() {
+    local list=$1 out
+    [ -f "$list" ] || nm "no list $list"
+    out=$(parse_list "$list") || caller_error "malformed list $list"
+    [ -n "$out" ] || nm "the list $list names no requirement"
+    printf '%s\n' "$out" | awk -F'\t' -v SEVEN="$SEVEN" '
+        $9 == "" && $11 != "mechanics" { n = split($2, s, ","); for (i = 1; i <= n; i++) E[s[i]]++; if ($10 != "") H[$10] = 1 }
+        END {
+            CAP["merge"] = 10; CAP["tag"] = 5; CAP["publish"] = 5
+            printf "entries merge=%d tag=%d publish=%d total=%d\n", E["merge"], E["tag"], E["publish"], E["merge"] + E["tag"] + E["publish"]
+            split("merge tag publish", st, " "); for (i = 1; i <= 3; i++) if (E[st[i]] > CAP[st[i]]) { printf "OVER %s %d/%d\n", st[i], E[st[i]], CAP[st[i]]; bad = 1 }
+            n = split(SEVEN, k, " "); for (i = 1; i <= n; i++) if (!(k[i] in H)) { print "MISSING " k[i]; bad = 1 }
+            exit bad
         }'
 }
 
@@ -506,7 +514,8 @@ probe() {
 }
 
 # ---------------------------------------------------------------- the case table ----------------------------------
-# fixture DIR: a tree whose seven surfaces state 17 requirements (3 of them rows of FX-T2), all listed (green)
+# fixture DIR: a tree whose six surfaces state 16 requirements, all listed (green) by 15 entries: 3 of them rows of
+# FX-T2, and one stop (the cascade's `if [ $N -lt 1 ]`) covered by FX-P2's `also`
 fixture() {
     local d=$1
     mkdir -p "$d/.github/workflows" "$d/scripts/release" "$d/contracts"
@@ -549,7 +558,7 @@ if run_step dryrun; then
   bash scripts/cascade-publish.sh --check
 fi
 if run_step cascade; then
-  bash scripts/release/publish_strict.sh "$V"
+  bash scripts/cascade-drain.sh --target "$V"
   bash scripts/after_dryrun.sh
 fi
 SH
@@ -584,15 +593,8 @@ if [ "$OK" = 0 ]; then
 fi
 # --check
 SH
-    cat > "$d/$STR_REL" <<'SH'
-die() { echo "$*"; exit 1; }
-[ "$(git rev-parse HEAD)" = "$T" ] || die "HEAD is not $T"
-# [ -s r ] || die "commented out"
-cargo publish -p x
-[ "$n" -eq 1 ] || die "final verification: $n live"
-SH
     mkdir -p "$d/${SPEC_REL%/*}"
-    printf '%s\n' '| **T-4 Publish** | `publish_strict.sh` from a detached checkout of the tag |' > "$d/$SPEC_REL"
+    printf '%s\n' '| **T-4 Publish** | `cascade-drain.sh` from a detached checkout of the tag |' > "$d/$SPEC_REL"
     printf '%s\n' 'DEFAULT_MODE=enforce' > "$d/$RRW_REL"
     printf '%s\n' 'COV_FLOOR := 89' > "$d/$MK_REL"
     printf '%s\n' 'exit 0' > "$d/scripts/helper_gate.sh"
@@ -622,12 +624,10 @@ requirements:
   - {id: FX-D2, applies_to: [tag], parent: FX-T2, anchor: "tag:dogfood/clippy", checker: "scripts/dogfood.sh#gate clippy ", provenance: "fixture"}
   - {id: FX-D3, applies_to: [tag], parent: FX-T2, anchor: "tag:dogfood/declared:check_x", checker: "Cargo.toml#scripts/check_x.sh", provenance: "fixture"}
   - {id: FX-P1, applies_to: [publish], anchor: "publish:autopilot/cleanroom/gh-workflow clean-room.yml", checker: "scripts/release/autopilot.sh#clean-room.yml", provenance: "fixture", producer: "cleanroom-cpu"}
-  - {id: FX-P2, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check", checker: "scripts/cascade-publish.sh#--check", provenance: "fixture", producer: "publish-dryrun"}
+  - {id: FX-P2, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check", also: ["publish:cascade/if [ $N -lt 1 ]"], checker: "scripts/cascade-publish.sh#--check", provenance: "fixture", producer: "publish-dryrun"}
   - {id: FX-P3, applies_to: [publish], anchor: "publish:preflight/R1", checker: "scripts/check_publish_preflight.sh#FAIL  R1 ", provenance: "fixture", producer: "preflight"}
   - {id: FX-P4, applies_to: [tag, publish], anchor: "publish:preflight/R8", checker: "scripts/check_publish_preflight.sh#FAIL  R8 ", provenance: "fixture", producer: "readiness", key: "publish.R8.mode", value: "enforce"}
   - {id: FX-P5, applies_to: [publish], anchor: "publish:cascade/clean_room_gate", checker: "scripts/cascade-publish.sh#clean_room_gate() {", provenance: "fixture", producer: "cleanroom-cpu"}
-  - {id: FX-P6, applies_to: [publish], anchor: "publish:strict/head-is-not-t", checker: "scripts/release/publish_strict.sh#HEAD is not $T", provenance: "fixture", producer: "publish-dryrun"}
-  - {id: FX-P7, applies_to: [publish], anchor: "publish:cascade/if [ $N -lt 1 ]", checker: "scripts/cascade-publish.sh#Refusing to publish nothing", provenance: "fixture", producer: "publish-dryrun"}
 YML
 }
 
@@ -674,13 +674,13 @@ mutate() {
         nm-unparsed-quoted-root) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  bash "$R"/scripts/quoted_gate.sh' ;;
         nm-unparsed-python-root) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  python3 "$R/scripts/root_gate.py"' ;;
         nm-unparsed-exec) edit "$d" "$AUTO_REL" '/^  echo waiting/a\  ./scripts/exec_gate.sh' ;;
-        unlisted-strict-refusal) edit "$d" "$STR_REL" '/^cargo publish/i\[ -s r ] || die "no receipt for $T: run T-4"' ;;
-        nm-strict-unparsed) edit "$d" "$STR_REL" '/^cargo publish/i\[ -s r ] || die "$msg"' ;;
-        nm-strict-no-upload) edit "$d" "$STR_REL" '/^cargo publish/d' ;;
-        nm-strict-dup) edit "$d" "$STR_REL" '/^cargo publish/i\[ -n "$T" ] && die "HEAD is not $T"' ;;
+        unlisted-also-dropped) edit "$d" "$LIST_REL" 's/, also: \["[^"]*"\]//' ;;
+        orphaned-also-anchor-gone) edit "$d" "$CAS_REL" '/^if \[ "$N" -lt 1 \]; then/,/^fi/d' ;;
+        malformed-also-on-row) edit "$d" "$LIST_REL" 's/parent: FX-T2, anchor: "tag:dogfood\/git-clean"/parent: FX-T2, also: ["x"], anchor: "tag:dogfood\/git-clean"/' ;;
+        malformed-also-unquoted) edit "$d" "$LIST_REL" 's/also: \["publish/also: [publish/' ;;
         unlisted-cascade-if-block) edit "$d" "$CAS_REL" '/^# upload loop/i\if [ -z "$TOKEN" ]; then exit 3; fi' ;;
         green-cascade-if-after-loop) edit "$d" "$CAS_REL" '/^# --check/i\if [ -z "$LATE" ]; then exit 1; fi' ;;
-        contradiction-executor) edit "$d" "$AUTO_REL" 's|bash scripts/release/publish_strict.sh|bash scripts/release/cascade-drain.sh|' ;;
+        contradiction-executor) edit "$d" "$AUTO_REL" 's|bash scripts/cascade-drain.sh|bash scripts/release/other-drain.sh|' ;;
         nm-executor-spec-reworded) edit "$d" "$SPEC_REL" 's/T-4 Publish/T-4 Upload/' ;;
         nm-spec-missing) rm -f -- "${d:?}/$SPEC_REL" ;;
         nm-cascade-no-loop) edit "$d" "$CAS_REL" 's/^for x in a/while false/' ;;
@@ -706,11 +706,26 @@ mutate() {
     esac
 }
 
+# budget_list M T P [DROP]: a list of M merge, T tag and P publish GATEs; the keys of SEVEN ride on the first seven,
+# except DROP
+budget_list() {
+    local st j i=0 sv
+    local -a ks
+    read -ra ks <<< "$SEVEN"
+    printf 'requirements:\n'
+    for st in "merge $1" "tag $2" "publish $3"; do
+        for ((j = 1; j <= ${st#* }; j++)); do
+            sv=${ks[$i]:-}; i=$((i + 1)); [ "$sv" != "${4:-}" ] || sv=""
+            printf '  - {id: B-%s%d, applies_to: [%s], anchor: "x", provenance: "fixture", producer: "p"%s}\n' "${st%% *}" "$j" "${st%% *}" "${sv:+, seven: $sv}"
+        done
+    done
+}
+
 # the table: case · expected exit · a pattern the output must carry
-CASES='green 0 unlisted=0 orphaned=0 contradictions=0 listed=17 stated=17
-green-comment-mention 0 stated=17
-green-after-dryrun 0 stated=17
-green-gh-read 0 stated=17
+CASES='green 0 unlisted=0 orphaned=0 contradictions=0 listed=15 stated=16
+green-comment-mention 0 stated=16
+green-after-dryrun 0 stated=16
+green-gh-read 0 stated=16
 unlisted-step-script 1 UNLISTED publish:autopilot/cleanroom/bash scripts/new_gate.sh
 unlisted-function-body 1 UNLISTED tag:autopilot/tag/bash scripts/new_in_helper.sh
 unlisted-between-steps 1 UNLISTED tag:autopilot/commit/bash scripts/new_preamble.sh --check
@@ -739,12 +754,12 @@ nm-unknown-step 2 not_measured
 nm-unparsed-quoted-root 2 unparsed call form at
 nm-unparsed-python-root 2 unparsed call form at
 nm-unparsed-exec 2 unparsed call form at
-unlisted-strict-refusal 1 UNLISTED publish:strict/no-receipt-for-t
-nm-strict-unparsed 2 unparsed refusal at
-nm-strict-no-upload 2 not_measured
-nm-strict-dup 2 refusal named twice
+unlisted-also-dropped 1 UNLISTED publish:cascade/if [ $N -lt 1 ]
+orphaned-also-anchor-gone 1 ORPHANED FX-P2: no surface states publish:cascade/if [ $N -lt 1 ]
+malformed-also-on-row 3 a row carries no also
+malformed-also-unquoted 3 also is a list of quoted anchors
 unlisted-cascade-if-block 1 UNLISTED publish:cascade/if [ -z $TOKEN ]
-green-cascade-if-after-loop 0 stated=17
+green-cascade-if-after-loop 0 stated=16
 contradiction-executor 1 CONTRADICTION publish.executor
 nm-executor-spec-reworded 2 not_measured
 nm-spec-missing 2 surface missing: docs/specifications/APR-RELEASE-001
@@ -758,7 +773,7 @@ unlisted-dogfood-row 1 UNLISTED tag:dogfood/new-row
 unlisted-dogfood-chained 1 UNLISTED tag:dogfood/chained-row
 unlisted-dogfood-pre-printf 1 UNLISTED tag:dogfood/pre-row
 unlisted-declared-gate 1 UNLISTED tag:dogfood/declared:check_y
-green-dogfood-else-of-pre 0 stated=17
+green-dogfood-else-of-pre 0 stated=16
 unlisted-lane-cargo 1 UNLISTED tag:autopilot/deep/cargo test --doc --workspace
 nm-lane-no-function 2 not_measured
 nm-dogfood-missing 2 surface missing: scripts/dogfood.sh
@@ -768,7 +783,7 @@ malformed-parent-is-row 3 parent FX-D1 of FX-D2 is not a GATE
 malformed-parent-unknown 3 parent FX-T9 of FX-D2 is not a GATE'
 
 selftest() {
-    local tmp c want pat out rc pass=0 fail=0 n=0 line
+    local tmp c want pat out rc pass=0 fail=0 n=0 line mx xl b1 b2 b3 b4
     tmp=$(mktemp -d) || nm "mktemp"
     fixture "$tmp/base"
     while IFS= read -r line; do
@@ -812,9 +827,30 @@ STUB
     done
     # --gates: the fixture's list prints its rows; an empty list and an absent one are not_measured, never a list.
     mkdir -p "$tmp/empty/contracts"; printf 'requirements:\n' > "$tmp/empty/$LIST_REL"
-    for line in "gates-list 0 FX-M1 $tmp/base" "gates-rows 0 row of FX-T2 $tmp/base" "gates-total 0 gates=14 $tmp/base" "gates-empty 2 names no requirement $tmp/empty" "gates-absent 2 no list $tmp/none"; do
+    for line in "gates-list 0 FX-M1 $tmp/base" "gates-rows 0 row of FX-T2 $tmp/base" "gates-also 0 also of FX-P2 $tmp/base" "gates-total 0 gates=12 $tmp/base" "gates-empty 2 names no requirement $tmp/empty" "gates-absent 2 no list $tmp/none"; do
         c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line% *}; n=$((n + 1))
         out=$(bash "$SCRIPT_PATH" --gates --root "$tmp/base" --list "${line##* }/$LIST_REL" 2>&1); rc=$?
+        if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
+        else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
+    done
+    # --budget: case rc pattern|M T P [DROP] for budget_list|one more line
+    for line in 'budget-green 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|' \
+                'budget-merge-over 1 OVER merge 11/10|11 5 5|' \
+                'budget-tag-over 1 OVER tag 6/5|10 6 5|' \
+                'budget-publish-over 1 OVER publish 6/5|10 5 6|' \
+                'budget-seven-dropped 1 MISSING crux-smoke|10 5 5 crux-smoke|' \
+                'budget-seven-unknown 3 seven nope is not one of the seven|10 5 5|  - {id: B-X, applies_to: [merge], anchor: "x", provenance: "fixture", seven: nope}' \
+                'budget-seven-on-row 3 a row carries no seven|10 5 5|  - {id: B-X, applies_to: [merge], parent: B-merge1, anchor: "x", provenance: "fixture", seven: crux-smoke}' \
+                'budget-row-uncounted 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|  - {id: B-X, applies_to: [merge, tag, publish], parent: B-merge1, anchor: "x", provenance: "fixture", producer: "p"}' \
+                'budget-two-stages 0 entries merge=10 tag=5 publish=5 total=20|9 4 5|  - {id: B-X, applies_to: [merge, tag], anchor: "x", provenance: "fixture"}' \
+                'budget-mechanics-uncounted 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|  - {id: B-X, applies_to: [publish], kind: mechanics, anchor: "x", provenance: "fixture", producer: "p"}' \
+                'budget-kind-unknown 3 kind foo is not mechanics|10 5 4|  - {id: B-X, applies_to: [publish], kind: foo, anchor: "x", provenance: "fixture", producer: "p"}' \
+                'budget-empty 2 names no requirement|0 0 0|' \
+                'budget-absent 2 no list|-|'; do
+        c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line%%|*}; line=${line#*|}; n=$((n + 1))
+        mx=${line%%|*}; xl=${line#*|}; read -r b1 b2 b3 b4 <<< "$mx"
+        if [ "$mx" != - ]; then { budget_list "$b1" "$b2" "$b3" "${b4:-}"; [ -z "$xl" ] || printf '%s\n' "$xl"; } > "$tmp/$c.yaml"; fi
+        out=$(bash "$SCRIPT_PATH" --budget --root "$tmp/base" --list "$tmp/$c.yaml" 2>&1); rc=$?
         if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
         else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
     done
@@ -847,12 +883,8 @@ M18 lowercase functions only@@if (L[i] ~ /^[A-Za-z_][A-Za-z0-9_]*\(\) *\{/@@if (
 M19 drop protection read@@got=$(printf '"'"'%s\n%s\n'"'"' "$got" "$bp")@@got=$(printf '"'"'%s\n'"'"' "$got")
 M20 empty protection passes@@[ -n "$(printf '"'"'%s\n'"'"' "$bp" | awk '"'"'NF'"'"')" ] ||@@true ||
 M21 unparsed call form skipped@@if (nr > np) UNP = 1@@if (0) UNP = 1
-M22 strict refusals after the upload read@@        cut { next }@@        0 { next }
-M23 unparsed strict refusal passes@@if (!cut || nu || dup || k == 0) exit 2@@if (!cut || dup || k == 0) exit 2
 M24 cascade if-blocks ignored@@!loop && /^if \[/ {@@0 && /^if \[/ {
 M25 executor claim side optional@@ publish.executor:$AUTO_REL publish.executor:$SPEC_REL"@@"
-M26 variable-only refusal named@@if (t !~ /[A-Za-z]/)@@if (0)
-M27 refusal named twice passes@@dup = 1; next }@@next }
 M28 no upload loop passes@@if (k == 0 || !loop || inb || unc) exit 2@@if (k == 0 || inb || unc) exit 2
 M29 if-block spanning the loop passes@@{ if (inb) unc = 1; loop = 1 }@@{ loop = 1 }
 M30 empty GATE list printed@@[ -n "$out" ] || nm "the list $list names no requirement"@@true
@@ -869,7 +901,21 @@ M40 quoted literal is a call@@(index(w, "$(") ? w : "\"\"")@@w
 M41 parent validation dropped@@if (!(PA[x] in ID) || (PA[x] in PA))@@if (0)
 M42 rows counted in the total@@if (a[9] != "") continue@@if (a[9] != "") { n++; continue }
 M43 chained dogfood calls unseen@@([t]hen|else|[d]o|;|&&|\|\||\{) +)(mark@@([t]hen|else|[d]o|;|&&|\{) +)(mark
-M44 pre-publish printf rows unseen@@if (match(t, "^pre-publish:[a-z-]+\\) +printf " Q "[a-z][a-z0-9-]* FAIL "))@@if (0)'
+M44 pre-publish printf rows unseen@@if (match(t, "^pre-publish:[a-z-]+\\) +printf " Q "[a-z][a-z0-9-]* FAIL "))@@if (0)
+M45 merge cap 11@@CAP["merge"] = 10@@CAP["merge"] = 11
+M46 tag cap 6@@CAP["tag"] = 5@@CAP["tag"] = 6
+M47 publish cap 6@@CAP["publish"] = 5@@CAP["publish"] = 6
+M48 at the cap is over@@if (E[st[i]] > CAP[st[i]])@@if (E[st[i]] >= CAP[st[i]])
+M49 a seven dropped@@ crux-smoke supply-chain@@ supply-chain
+M50 rows counted as entries@@$9 == "" && $11@@1 && $11
+M51 MISSING dropped@@if (!(k[i] in H))@@if (0)
+M52 unknown seven passes@@if (V["seven"] != "" && !(V["seven"] in S7))@@if (0)
+M53 seven on a row passes@@if (V["seven"] != "" && V["parent"] != "")@@if (0)
+M54 mechanics counted@@ && $11 != "mechanics" {@@ {
+M55 unknown kind passes@@if (V["kind"] != "" && V["kind"] != "mechanics")@@if (0)
+M56 also ignored@@{ LA[AL[j]] = id; if@@{ if
+M57 also orphan unchecked@@if (!(AL[j] in FW))@@if (0)
+M58 also on a row passes@@if (V["also"] != "" && V["parent"] != "")@@if (0)'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0
@@ -900,6 +946,7 @@ main() {
             --found) mode=found; shift ;;
             --claims) mode=claims; shift ;;
             --gates) mode=gates; shift ;;
+            --budget) mode=budget; shift ;;
             --probe) mode=probe; shift ;;
             --selftest) mode=selftest; shift ;;
             --mutants) mode=mutants; shift ;;
@@ -913,6 +960,7 @@ main() {
         found) found "$root" ;;
         claims) claims "$root" ;;
         gates) gates "$list" ;;
+        budget) budget "$list" ;;
         probe) probe "$root" "$list" ;;
         selftest) selftest ;;
         mutants) mutants ;;
