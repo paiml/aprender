@@ -119,7 +119,8 @@ pub fn decode_budget(
 /// What a run reports beyond [`super::InferenceResult`].
 ///
 /// Each field is `None` on a path that does not know it, never a default that
-/// reads as a measurement. The APR and SafeTensors paths report neither today.
+/// reads as a measurement. The SafeTensors path and the APR CUDA and CPU paths
+/// report neither today; the APR wgpu path reports `finish_reason` (#4984).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RunReport {
     /// Why generation ended.
