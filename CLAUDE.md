@@ -58,7 +58,9 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 - Capture evidence into `evidence/section-NN-*/findings.json`
 - Update memory files (`memory/*.md`) with new lessons
 - Continue cascades — when one PR lands, automatically start the next prioritized item per §80-class queues
-- Surface defects as new spec sections rather than asking "should I file this?"
+- Record a defect as one line in `docs/findings/<session>.jsonl` (schema `contracts/findings-ledger-v1.yaml`,
+  appended by `scripts/findings_ledger.sh add`) or in the cop inbox, not as a new spec section, rather than
+  asking "should I file this?"
 - Pivot strategies (e.g. when P0-A blocks, immediately try P0-B; when P0-B blocks, surface §81-class amendment and continue to next prereq)
 
 ### Check in BEFORE acting (real escalations only)

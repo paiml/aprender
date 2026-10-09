@@ -23829,6 +23829,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'pr-review-quorum run 36177378373 (merge_group, 00058476c = #4426 queue squash) failed on receipt-reviews-ancestor, legacy-exempt-in-window, legacy-exempt-not-ancestor, legacy-two-last-stale. Parent PMAT-4421.'
+- id: PMAT-4455
+  github_issue: 4455
+  item_type: task
+  title: 'APR-EPIC-001 A8: findings-ledger-v1 — a findings line is under contract, written and checked by pv'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-wmainred
+  created: 2026-10-09T00:00:00Z
+  updated: 2026-10-09T00:00:00Z
+  spec: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md
+  acceptance_criteria:
+  - 'Spec row A8, verbatim: "Findings schema and contract `findings-ledger-v1`."'
+  - 'Spec rule 17 fields, verbatim: "`{id, title, evidence, repro, suspected_epic, severity, found_at_sha}`".'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'SCOPE: contracts/findings-ledger-v1.yaml (new, kind pattern, closed shape over the seven rule-17 fields), scripts/findings_ledger.sh (new: add and check, both judged by pv lint --gate shapes on the real contract), tests/fixtures/ont/findings-ledger/*.jsonl and crates/aprender-contracts-cli/tests/ont_findings_ledger.rs (the case table, both arms), ci/explicit-test-commands.d (one .cmd), CLAUDE.md (the "surface defects" line). NOT BUILT, with reasons recorded on the issue: the rule-17 author check (every session files as one account), rule 18 (the existing closes-issue guard already covers a cited-but-unclosed ref), rule 19 (a ratchet; C324 rule 6). The contract binds lines written after it lands; the lines already in docs/findings/ are not rewritten, and no PR or release step reads docs/findings/.'
 - id: PMAT-4469
   github_issue: 4469
   item_type: task
