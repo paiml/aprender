@@ -2,9 +2,11 @@
 
 mod ancestry;
 mod database;
+mod evals;
 
 pub use ancestry::{Ancestry, StoredEdge};
 pub use database::RegistryDb;
+pub use evals::{is_sha256_hex, EvalRecord};
 
 use crate::data::{Dataset, DatasetId, Datasheet};
 use crate::error::{PachaError, Result};
@@ -563,6 +565,38 @@ pub struct StorageStats {
     pub dataset_count: usize,
     /// Number of registered recipes.
     pub recipe_count: usize,
+}
+
+// ==================== Evals (EXT-09, aprender#4391) ====================
+
+impl Registry {
+    /// Record one eval row after validating it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the row is invalid or the insert fails.
+    pub fn record_eval(&self, eval: &EvalRecord) -> Result<()> {
+        eval.validate()?;
+        self.db.insert_eval(eval)
+    }
+
+    /// Every eval row for a model sha256, oldest first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn list_evals(&self, model_sha: &str) -> Result<Vec<EvalRecord>> {
+        self.db.list_evals_for_model(model_sha)
+    }
+
+    /// True when a registered model card carries this sha256 (`extra.sha256`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn is_model_sha_registered(&self, model_sha: &str) -> Result<bool> {
+        self.db.model_sha_registered(model_sha)
+    }
 }
 
 #[cfg(test)]

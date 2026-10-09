@@ -547,6 +547,10 @@ pub fn run(
 
     if json {
         emit_qa_json(&report);
+        // EXT-09 (#4391): `apr qa --json` attaches its result to the file in pacha.
+        if let Some(outcome) = super::eval_attach::qa_outcome(&report) {
+            super::eval_attach::attach(path, &outcome);
+        }
     }
 
     if !report.passed {

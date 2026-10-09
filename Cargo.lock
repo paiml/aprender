@@ -298,6 +298,7 @@ dependencies = [
  "gag",
  "glob",
  "half",
+ "hostname",
  "humansize",
  "jsonschema",
  "libc",
