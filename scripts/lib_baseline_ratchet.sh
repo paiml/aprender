@@ -56,6 +56,14 @@
 #     stronger (it also forbids re-adding an entry main has already deleted).
 #     The cost is a false red on a branch behind a main that already shrank the
 #     baseline; the remedy is `git rebase origin/main`, and the FAIL says so.
+#   * FIRSTPARENT comes before the tip on a pull_request run whose HEAD is the
+#     event's own merge commit (#4983). That commit's first parent is the main
+#     GitHub merged the PR onto. A re-run keeps that merge commit but fetches
+#     origin/main fresh, so on the tip path main's own deletions since then read
+#     as this PR's growth, and an unchanged PR turns red. The first parent is
+#     fixed for the life of the run and chosen by GitHub, not the PR author. Not
+#     fetched, it is UNRESOLVABLE (hard failure), never the tip. Fetched but
+#     lacking the path, the tip is skipped too (BOOTSTRAP or ABSENT below).
 #   * if NEITHER resolves, this is a HARD FAILURE. It never degrades to
 #     comparing the branch against itself, which would disarm every ratchet
 #     silently — the exact failure this library is about.
@@ -453,8 +461,31 @@ _br_cmp_keyed2() { # _br_cmp_keyed2 <base-file> <cur-file>  (lines are <key> <in
 # CALLER decides, so that "could not resolve" is a loud verdict row rather than
 # a swallowed error.
 
+# The first parent of HEAD, printed only when HEAD is this pull_request run's
+# own merge commit: the event is pull_request, HEAD is GITHUB_SHA, and HEAD has
+# two or more parents. Anything else prints nothing. The parent is read from
+# the commit object, not from HEAD^1, which a depth-1 graft cannot resolve.
+_br_event_merge_first_parent() { # _br_event_merge_first_parent <root>
+    local root="$1" head
+    [ "${GITHUB_EVENT_NAME:-}" = pull_request ] || return 0
+    head=$(git -C "$root" rev-parse --verify --quiet 'HEAD^{commit}' 2>/dev/null) || return 0
+    [ -n "${GITHUB_SHA:-}" ] && [ "$head" = "$GITHUB_SHA" ] || return 0
+    git -C "$root" cat-file -p "$head" 2>/dev/null |
+        LC_ALL=C awk '/^parent /{ n++; if (n == 1) p = $2 } /^$/{ exit } END { if (n >= 2) print p }'
+}
+
+# The fetch that makes an UNRESOLVABLE comparand resolvable. A full sha is a
+# merge commit's first parent; anything else is the protected branch.
+baseline_ratchet_fetch_hint() { # baseline_ratchet_fetch_hint <ref>
+    if printf '%s' "$1" | LC_ALL=C grep -qE '^[0-9a-f]{40}$'; then
+        printf 'git fetch --no-tags --depth=1 origin %s\n' "$1"
+    else
+        printf 'git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'
+    fi
+}
+
 baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
-    local root="$1" ref="$2" path="$3" mb
+    local root="$1" ref="$2" path="$3" mb p1
     if ! git -C "$root" rev-parse --verify --quiet "${ref}^{commit}" >/dev/null 2>&1; then
         printf 'UNRESOLVABLE\t%s\n' "$ref"
         return 0
@@ -463,6 +494,29 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
     if [ -n "$mb" ] && git -C "$root" cat-file -e "${mb}:${path}" 2>/dev/null; then
         printf 'MERGEBASE\t%s\n' "$mb"
         return 0
+    fi
+    # FIRSTPARENT (#4983): see the header. Only for the protected ref and only
+    # when no merge-base exists, so every shape that resolves one is unchanged.
+    if [ -z "$mb" ] && [ "$ref" = "origin/main" ]; then
+        p1=$(_br_event_merge_first_parent "$root") # RATCHET-FIRSTPARENT-MUTATION-POINT
+        if [ -n "$p1" ]; then
+            if ! git -C "$root" cat-file -e "${p1}^{commit}" 2>/dev/null; then
+                printf 'UNRESOLVABLE\t%s\n' "$p1"
+                return 0
+            fi
+            if git -C "$root" cat-file -e "${p1}:${path}" 2>/dev/null; then
+                printf 'FIRSTPARENT\t%s\n' "$p1"
+                return 0
+            fi
+            # The base this PR was merged onto has no such file: the tip would
+            # judge the PR against a main it was never merged onto, so skip it.
+            if [ -f "$root/$path" ]; then
+                printf 'BOOTSTRAP\t%s\n' "$p1"
+                return 0
+            fi
+            printf 'ABSENT\t%s\n' "$p1"
+            return 0
+        fi
     fi
     if git -C "$root" cat-file -e "${ref}:${path}" 2>/dev/null; then
         printf 'TIP\t%s\n' "$ref"
@@ -529,7 +583,7 @@ baseline_ratchet_check() {
             printf '               for %s is UNMEASURED. It is NOT degraded to\n' "$path"
             printf '               comparing this branch against itself — that disarms the\n'
             printf '               ratchet silently. In CI, before this guard runs:\n'
-            printf '               git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'
+            printf '               %s\n' "$(baseline_ratchet_fetch_hint "$ref")"
             return 1 ;;
         BOOTSTRAP)
             printf 'REPORT ratchet %s is NOT ARMED on this commit: %s carries\n' "$path" "$ref"
@@ -591,6 +645,7 @@ baseline_ratchet_check() {
     case "$mode" in
         MERGEBASE) how="merge-base with $BASELINE_RATCHET_BASE_REF" ;;
         TIP)       how="tip of $BASELINE_RATCHET_BASE_REF (no merge-base available; stricter)" ;;
+        FIRSTPARENT) how="first parent of this pull request's merge commit, $ref (the main it was merged onto; the same on every re-run)" ;;
         *)         how="$mode" ;;
     esac
     note="protected; a pull request cannot rewrite it"

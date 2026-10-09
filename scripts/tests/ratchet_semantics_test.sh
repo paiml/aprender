@@ -398,6 +398,114 @@ run_complexity() {
   else
     bad "C7  mutation NOT demonstrated: the mutant still exits $rc on the improvement fixture, so C3 does not discriminate 'measured comparand' from 'file on disk'"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
   fi
+
+  # --- C8-C11: A RE-RUN AFTER MAIN MOVED (#4983) ---------------------------
+  # A pull_request run checks out GitHub's merge commit M at depth 1: first
+  # parent B1 (the main it was merged onto), second parent the PR head. A
+  # re-run keeps M but fetches origin/main fresh. Here main then moved to B2,
+  # which fixed cognitive_only (cognitive 28 -> 3), a function this PR never
+  # touches. Judged against the moving tip, M "adds" an offender; judged
+  # against B1, it adds nothing. The clone is shallow, as CI's is, so there
+  # is no merge-base and the resolver is past its MERGEBASE branch.
+  local CO="$WORK/cx8-origin" CC="$WORK/cx8-clone" B1 X M B2 FP_ENV
+  cx_fixture "$CO" || die "C8 origin fixture could not be built"
+  B1=$(git_fx "$CO" rev-parse HEAD) || die "C8: no B1"
+  git_fx "$CO" checkout -q -b pr >/dev/null 2>&1 || die "C8: cannot branch the PR"
+  cx_lib '0.0.0-shim' 'branchy 35 34' 'cognitive_only 8 28' 'tidy 2 0' > "$CO/src/lib.rs" || die "C8: cannot write the PR edit"
+  cx_commit "$CO" 'pr: an unrelated edit under both thresholds' || die "C8: PR commit failed"
+  X=$(git_fx "$CO" rev-parse HEAD) || die "C8: no X"
+  git_fx "$CO" checkout -q --detach "$B1" >/dev/null 2>&1 || die "C8: cannot return to B1"
+  git_fx "$CO" merge -q --no-ff --no-edit "$X" >/dev/null 2>&1 || die "C8: cannot build the merge commit"
+  M=$(git_fx "$CO" rev-parse HEAD) || die "C8: no M"
+  [ "$(git_fx "$CO" rev-parse "$M^1")" = "$B1" ] || die "C8: M's first parent is not B1"
+  git_fx "$CO" update-ref refs/pull/1/merge "$M" || die "C8: cannot publish refs/pull/1/merge"
+  git_fx "$CO" checkout -q --detach "$B1" >/dev/null 2>&1 || die "C8: cannot return to B1 for main"
+  cx_lib '0.0.0-shim' 'branchy 35 34' 'cognitive_only 3 3' 'tidy 1 0' > "$CO/src/lib.rs" || die "C8: cannot write B2"
+  cx_commit "$CO" 'main: fix cognitive_only after the PR was merged onto B1' || die "C8: B2 commit failed"
+  B2=$(git_fx "$CO" rev-parse HEAD) || die "C8: no B2"
+  git_fx "$CO" update-ref refs/heads/main "$B2" || die "C8: cannot move main to B2"
+  git_fx "$CO" config uploadpack.allowAnySHA1InWant true || die "C8: cannot allow a fetch by sha"
+
+  # The shallow clone: its OWN repository under $WORK, never a worktree of
+  # this one (a shallow fetch writes .git/shallow into the common dir).
+  GIT_TERMINAL_PROMPT=0 git init -q --template="$WORK/empty-template" "$CC" >/dev/null 2>&1 || die "C8: clone init failed"
+  [ "$(git -C "$CC" rev-parse --absolute-git-dir 2>/dev/null)" = "$CC/.git" ] || die "C8: $CC is not its own repository"
+  git_fx "$CC" fetch -q --no-tags --depth=1 "file://$CO" '+refs/pull/1/merge:refs/remotes/pull/1/merge' >/dev/null 2>&1 || die "C8: depth-1 fetch of M failed"
+  git_fx "$CC" checkout -q --detach refs/remotes/pull/1/merge >/dev/null 2>&1 || die "C8: cannot check out M"
+  git_fx "$CC" fetch -q --no-tags --depth=1 "file://$CO" '+refs/heads/main:refs/remotes/origin/main' >/dev/null 2>&1 || die "C8: depth-1 fetch of main failed"
+  [ "$(git_fx "$CC" rev-parse HEAD)" = "$M" ] && [ "$(git_fx "$CC" rev-parse origin/main)" = "$B2" ] \
+    && [ -z "$(git_fx "$CC" merge-base HEAD origin/main 2>/dev/null)" ] \
+    && ! git_fx "$CC" cat-file -e "${B1}^{commit}" 2>/dev/null \
+    || die "C8: the clone is not the re-run shape (HEAD=M, origin/main=B2, no merge-base, B1 unfetched)"
+  FP_ENV=(GITHUB_EVENT_NAME=pull_request "GITHUB_SHA=$M")
+
+  # C8: CONTROL. Not a pull_request event, so the comparand is the moved tip
+  # and the PR is blamed for main's fix. This is the #4983 false red; it must
+  # reproduce here, or C10's GREEN below proves nothing.
+  out=$(cx_run "$CC" check_complexity_ratchet.sh GITHUB_EVENT_NAME=push "GITHUB_SHA=$M"); rc=$?
+  if [ "$rc" -eq 1 ] && grep -qE '^  comparand   TIP ' <<<"$out" \
+     && grep -q 'RED    NEW      src/lib.rs::cognitive_only' <<<"$out"; then
+    ok "C8  control: on the tip path the re-run blames this PR for a function only main changed (the #4983 false red, reproduced)"
+  else
+    bad "C8  control: rc=$rc, wanted 1, 'comparand   TIP' and 'RED    NEW      src/lib.rs::cognitive_only'"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+
+  # C9: the first parent is not in the clone. Fail-closed: UNRESOLVABLE at
+  # preflight, B1 and its fetch named, nothing measured, and NOT the tip.
+  out=$(cx_run "$CC" check_complexity_ratchet.sh "${FP_ENV[@]}"); rc=$?
+  if [ "$rc" -eq 1 ] && grep -q 'FAIL PREFLIGHT' <<<"$out" \
+     && grep -q "cannot resolve the comparand ref <$B1>" <<<"$out" \
+     && grep -q "git fetch --no-tags --depth=1 origin $B1" <<<"$out" \
+     && ! grep -qE '^  measured    base ' <<<"$out"; then
+    ok "C9  first parent not fetched: RED at preflight, the parent and its fetch named, NO measurement and no tip fallback"
+  else
+    bad "C9  unfetched first parent: rc=$rc, wanted 1, a PREFLIGHT failure naming $B1 and its fetch, and no measurement line"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+
+  # C10: the CI step fetches the first parent; the re-run is GREEN against B1.
+  git_fx "$CC" fetch -q --no-tags --depth=1 "file://$CO" "$B1" >/dev/null 2>&1 || die "C10: depth-1 fetch of B1 failed"
+  [ -z "$(git_fx "$CC" merge-base HEAD origin/main 2>/dev/null)" ] || die "C10: fetching B1 made a merge-base resolve; the row would not test FIRSTPARENT"
+  out=$(cx_run "$CC" check_complexity_ratchet.sh "${FP_ENV[@]}"); rc=$?
+  if [ "$rc" -eq 0 ] && grep -qE "^  comparand   FIRSTPARENT +${B1:0:7}" <<<"$out" \
+     && grep -q '^PASS (D2)' <<<"$out"; then
+    ok "C10 re-run after main moved: comparand FIRSTPARENT = B1, GREEN"
+  else
+    bad "C10 re-run: rc=$rc, wanted 0, 'comparand   FIRSTPARENT ${B1:0:7}' and 'PASS (D2)'"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+
+  # C11: the FIRST run, when origin/main was still B1, gives the same verdict
+  # on both paths: the old tip path and the first-parent path.
+  git_fx "$CC" update-ref refs/remotes/origin/main "$B1" || die "C11: cannot pin origin/main to B1"
+  out=$(cx_run "$CC" check_complexity_ratchet.sh GITHUB_EVENT_NAME= GITHUB_SHA=); rc=$?
+  local out2 rc2
+  out2=$(cx_run "$CC" check_complexity_ratchet.sh "${FP_ENV[@]}"); rc2=$?
+  if [ "$rc" -eq 0 ] && grep -qE '^  comparand   TIP ' <<<"$out" && grep -q '^PASS (D2)' <<<"$out" \
+     && [ "$rc2" -eq 0 ] && grep -qE '^  comparand   FIRSTPARENT ' <<<"$out2" && grep -q '^PASS (D2)' <<<"$out2"; then
+    ok "C11 first run (origin/main = B1): GREEN on the tip path and on the first-parent path, the same verdict as the re-run"
+  else
+    bad "C11 first run: rc=$rc (tip) / rc=$rc2 (first parent), wanted 0 and 'PASS (D2)' on both"$'\n'"$(printf '%s\n%s' "$out" "$out2" | sed 's/^/        /')"
+  fi
+  git_fx "$CC" update-ref refs/remotes/origin/main "$B2" || die "C11: cannot move origin/main back to B2"
+
+  # C12: THE REGISTERED MUTATION of the fix. Blank the first parent at its
+  # marked line (a copy of the lib in the clone; the repo's file is not
+  # touched) and C10's re-run must go back to the C8 false red.
+  cp "$CC/scripts/lib_baseline_ratchet.sh" "$WORK/cx8-lib.orig" || die "C12: cannot save the lib"
+  if sed 's|^\( *\)p1=\$(_br_event_merge_first_parent "\$root") # RATCHET-FIRSTPARENT-MUTATION-POINT$|\1p1=""|' \
+        "$WORK/cx8-lib.orig" > "$CC/scripts/lib_baseline_ratchet.sh" \
+     && grep -qE '^ +p1=""$' "$CC/scripts/lib_baseline_ratchet.sh" \
+     && ! grep -q 'RATCHET-FIRSTPARENT-MUTATION-POINT' "$CC/scripts/lib_baseline_ratchet.sh"; then
+    ok "C12 the first-parent mutation point is present in the shipped lib and the mutant was derived from a COPY of it"
+  else
+    bad "C12 the mutation could not be derived: no '# RATCHET-FIRSTPARENT-MUTATION-POINT' line in scripts/lib_baseline_ratchet.sh"
+  fi
+  out=$(cx_run "$CC" check_complexity_ratchet.sh "${FP_ENV[@]}"); rc=$?
+  cp "$WORK/cx8-lib.orig" "$CC/scripts/lib_baseline_ratchet.sh" || die "C12: cannot restore the lib"
+  if [ "$rc" -eq 1 ] && grep -q 'RED    NEW      src/lib.rs::cognitive_only' <<<"$out"; then
+    ok "C12 mutation caught: without the first parent the re-run is RED again on main's own fix, so C10's GREEN is load-bearing"
+  else
+    bad "C12 mutation NOT demonstrated: the mutant exits $rc on the re-run fixture, so C10 does not discriminate first parent from tip"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
 }
 
 # ===========================================================================

@@ -377,7 +377,7 @@ check_contract_count() {
   case "$mode" in
     UNRESOLVABLE)
       { printf 'FAIL FALSIFY-README-002 contract_count: PREFLIGHT — cannot resolve the comparand ref <%s>, so the count is UNMEASURED against anything. That is not "no drift", and it is not degraded to comparing this branch against itself.\n' "$ref"
-        printf '     In CI, before this guard runs:  git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'; } >&2
+        printf '     In CI, before this guard runs:  %s\n' "$(baseline_ratchet_fetch_hint "$ref")"; } >&2
       return 1 ;;
     ABSENT|BOOTSTRAP)
       printf 'FAIL FALSIFY-README-002 contract_count: PREFLIGHT — <%s> carries no contracts/ tree, so there is no comparand to diff against. A missing comparand is not "no drift".\n' "$ref" >&2

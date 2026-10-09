@@ -1147,10 +1147,12 @@ jobs:
       # never as "no growth", so the mistake would have been loud rather than
       # silent. It is still a mistake. One fetch, before all of them.
       #
-      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
-      # ratchets fall back to the origin/main TIP. That is the STRICTER
-      # comparand, and it means the CI path is the tip path: a local run that
-      # passes on the merge-base can still red here, and CI is authoritative.
+      # fetch-depth is 1 here, so the merge-base is usually unavailable. On a
+      # pull_request run the ratchets then compare against the first parent of
+      # the run's merge commit (#4983), fetched below; on every other event
+      # without a merge-base they fall back to the origin/main TIP, the STRICTER
+      # comparand. A local run that passes on the merge-base can still red
+      # here, and CI is authoritative.
       - id: guard-setup
         name: Fetch origin/main as the comparand for every ratchet in this job
         run: |
@@ -1159,6 +1161,14 @@ jobs:
           # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
           # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
           if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+          # pull_request shape (#4983): HEAD is GitHub's merge commit, and its FIRST PARENT is the main
+          # this run merged the PR onto. A re-run keeps that commit but the fetch above brings main's
+          # NEW tip, so the ratchets judge against that parent (scripts/lib_baseline_ratchet.sh
+          # FIRSTPARENT), never the moving tip. Not fetched, every ratchet fails UNRESOLVABLE.
+          if [ "${GITHUB_EVENT_NAME:-}" = pull_request ]; then
+            p1=$(git cat-file -p HEAD | awk '/^parent /{ n++; if (n == 1) p = $2 } /^$/{ exit } END { if (n >= 2) print p }')
+            if [ -n "$p1" ] && ! git cat-file -e "${p1}^{commit}" 2>/dev/null; then git fetch --no-tags --depth=1 origin "$p1"; fi
+          fi
       # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-tree-steps
       # below, keeps going past a red one, and reports every failure. GitHub would
       # stop this job at its first red step, and the others would never be seen.
@@ -1685,10 +1695,12 @@ jobs:
       # never as "no growth", so the mistake would have been loud rather than
       # silent. It is still a mistake. One fetch, before all of them.
       #
-      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
-      # ratchets fall back to the origin/main TIP. That is the STRICTER
-      # comparand, and it means the CI path is the tip path: a local run that
-      # passes on the merge-base can still red here, and CI is authoritative.
+      # fetch-depth is 1 here, so the merge-base is usually unavailable. On a
+      # pull_request run the ratchets then compare against the first parent of
+      # the run's merge commit (#4983), fetched below; on every other event
+      # without a merge-base they fall back to the origin/main TIP, the STRICTER
+      # comparand. A local run that passes on the merge-base can still red
+      # here, and CI is authoritative.
       - name: Fetch origin/main as the comparand for every ratchet in this job
         run: |
           git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
@@ -1696,6 +1708,14 @@ jobs:
           # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
           # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
           if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+          # pull_request shape (#4983): HEAD is GitHub's merge commit, and its FIRST PARENT is the main
+          # this run merged the PR onto. A re-run keeps that commit but the fetch above brings main's
+          # NEW tip, so the ratchets judge against that parent (scripts/lib_baseline_ratchet.sh
+          # FIRSTPARENT), never the moving tip. Not fetched, every ratchet fails UNRESOLVABLE.
+          if [ "${GITHUB_EVENT_NAME:-}" = pull_request ]; then
+            p1=$(git cat-file -p HEAD | awk '/^parent /{ n++; if (n == 1) p = $2 } /^$/{ exit } END { if (n >= 2) print p }')
+            if [ -n "$p1" ] && ! git cat-file -e "${p1}^{commit}" 2>/dev/null; then git fetch --no-tags --depth=1 origin "$p1"; fi
+          fi
       # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
       # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
       # container that mounts it and drops to the runner's uid cannot write
