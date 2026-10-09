@@ -51,6 +51,10 @@
 #   attempt's job list). A called job is named "<caller> / <job>"; the prefix is cut, so the lane rows are unchanged.
 #   The run's head is the caller's commit, not C: a lane job is on C only when its own step `Assert HEAD is <C>`
 #   succeeded. A job that asserted nothing, or another commit, votes on nothing, and its lane reads not_measured.
+#   The models lane comes from the same run, from its own job INRUN_MODELS (C's models_nightly.sh --relay --measure
+#   crux at C, C332 a) in place of INRUN_MODELS_WF's runs: on C only when its `Assert HEAD is <C>` step and its
+#   `Relayed the models-crux bundle of <C>` step both succeeded. The relay names a bundle only for a verified green or
+#   red of C, so a night with no bundle relayed votes on nothing: not_measured, never green. Same job list, no call.
 #
 # EXIT  0 a verdict line was printed (RELEASABLE or NOT) · 2 the train failed part-way (trap line) · 3 caller error
 #   With --exit-verdict, NOT RELEASABLE exits 1 (a CI job is green only on a releasable head).
@@ -119,18 +123,19 @@ evaluate() {
     FILENAME == ARGV[1] { split($0, a, ";"); n++; L[n] = a[1]; K[n] = a[2]; CK[n] = a[3]; WF[n] = a[4]; EV[n] = a[5]; RE[n] = a[6]; NEED[n] = (a[7] ~ /^[0-9]+$/ ? a[7] + 0 : 1); next }
     FILENAME == ARGV[2] { AT[$1] = $2; next }
     {
-        key = $3 SUBSEP $10 SUBSEP $13
+        # a run can carry the jobs of two producers (--in-run: the lanes and models jobs of the rehearsal); a lane reads only its own
+        key = $2 SUBSEP $3 SUBSEP $10 SUBSEP $13
         if (key in seen) next
-        seen[key] = 1; r = $3
+        seen[key] = 1; r = $3; RWF[r, $2] = 1
         if (!(r in RW)) { RW[r] = $2; REV[r] = $4; RBR[r] = $5; RH[r] = $6; RC[r] = $7; RST[r] = toupper($8); RCO[r] = toupper($9); nr++; RID[nr] = r }
-        if ($10 != "") { nj[r]++; k = nj[r]; JN[r, k] = $10; JS[r, k] = toupper($11); JC[r, k] = toupper($12); JB[r, k] = $13; JE[r, k] = $14; JD[r, k] = $15 }
+        if ($10 != "") { nj[r]++; k = nj[r]; JN[r, k] = $10; JS[r, k] = toupper($11); JC[r, k] = toupper($12); JB[r, k] = $13; JE[r, k] = $14; JD[r, k] = $15; JW[r, k] = $2 }
     }
     # lane state of run r for lane i: green | red | pending | void; sets WHY, ST, EN, DUP
     function lst(i, r,    k, b, fb, nm, pend, bad, ok, tot) {
         split("", b); split("", fb); ST = ""; EN = ""; DUP = 0; WHY = ""
         if (RST[r] != "COMPLETED") { WHY = "run " r " is " tolower(RST[r]); return "pending" }
         for (k = 1; k <= nj[r]; k++) if (JN[r, k] == "#truncated") { WHY = "run " r ": its job list was cut at the page size, so a failed job may be unseen"; return "unread" }
-        for (k = 1; k <= nj[r]; k++) if (JN[r, k] ~ RE[i]) {
+        for (k = 1; k <= nj[r]; k++) if (JN[r, k] ~ RE[i] && JW[r, k] == WF[i]) {
             if (!(JN[r, k] in b) || JB[r, k] > JB[r, b[JN[r, k]]]) b[JN[r, k]] = k
             if (JD[r, k] > 1) DUP = 1
             # every matched job votes, not only the newest of a name: two parallel legs that render the same name must not
@@ -163,7 +168,7 @@ evaluate() {
             if (!readok) { if (MODE == "final") out(i, "not_measured", "", "", "read " RD); continue }
             # this lane'"'"'s runs on main, newest first
             m = 0; split("", S)
-            for (q = 1; q <= nr; q++) { r = RID[q]; if (RW[r] == WF[i] && REV[r] ~ EV[i] && RBR[r] == "main") S[++m] = r }
+            for (q = 1; q <= nr; q++) { r = RID[q]; if (((r, WF[i]) in RWF) && REV[r] ~ EV[i] && RBR[r] == "main") S[++m] = r }
             for (p = 2; p <= m; p++) for (q = p; q > 1 && RC[S[q]] > RC[S[q - 1]]; q--) { t = S[q]; S[q] = S[q - 1]; S[q - 1] = t }
             pick = ""; pst = ""; pwhy = ""; other = ""
             for (q = 1; q <= m; q++) {
@@ -361,9 +366,14 @@ commit_ok() {
 INRUN_WF=".github/workflows/release-lanes-nightly.yml"
 INRUN_FROM=".github/workflows/release-rehearsal-nightly.yml"
 INRUN_CALLER="lanes"
+# The run's own job INRUN_MODELS relays C's models-crux bundle (C332 a): it is the models lane in place of
+#   INRUN_MODELS_WF's runs, so its rows carry that producer and the lane row is unchanged.
+INRUN_MODELS="models"
+INRUN_MODELS_WF=".github/workflows/models-nightly.yml"
 # inrun_read RAW RUN -> RAW/inrun.run (id, event, branch, attempt, created, head, workflow path) and RAW/inrun.jobs.tsv
-#   (per job of that attempt: name, status, conclusion, started, completed, and the sha of its succeeded step
-#   `Assert HEAD is <sha>`, else empty); 1, with RAW/read saying why, on any failed read
+#   (per job of that attempt: name, status, conclusion, started, completed, the sha of its succeeded step
+#   `Assert HEAD is <sha>`, and the sha of its succeeded step `Relayed the models-crux bundle of <sha>`, each else
+#   empty); 1, with RAW/read saying why, on any failed read
 inrun_read() {
     local raw="$1" id="$2" att
     call_ok || { printf 'failed: call budget\n' > "$raw/read"; return 1; }
@@ -375,16 +385,19 @@ inrun_read() {
     gh api "repos/$REPO/actions/runs/$id/attempts/$att/jobs?per_page=100" --jq '
         (.jobs // []) as $j
         | ($j[] | [.name, .status, (.conclusion // ""), (.started_at // ""), (.completed_at // ""),
-             ([(.steps // [])[] | select(.conclusion == "success") | (.name // "") | capture("^Assert HEAD is (?<s>[0-9a-f]{40})$") | .s] | first // "")]
+             ([(.steps // [])[] | select(.conclusion == "success") | (.name // "") | capture("^Assert HEAD is (?<s>[0-9a-f]{40})$") | .s] | first // ""),
+             ([(.steps // [])[] | select(.conclusion == "success") | (.name // "") | capture("^Relayed the models-crux bundle of (?<s>[0-9a-f]{40})$") | .s] | first // "")]
              | map(tostring) | join("\t")),
-          (if (.total_count // 0) > ($j | length) then "#truncated\tcompleted\ttruncated\t\t\t" else empty end)' > "$raw/inrun.jobs.tsv" 2>/dev/null \
+          (if (.total_count // 0) > ($j | length) then "#truncated\tcompleted\ttruncated\t\t\t\t" else empty end)' > "$raw/inrun.jobs.tsv" 2>/dev/null \
         || { printf 'failed: in-run run %s jobs unread\n' "$id" > "$raw/read"; return 1; }
 }
-# inrun_rows RAW -> RAW/runs.tsv without INRUN_WF's own runs (and without any row of the rehearsal's run), plus one row
-#   per lane job of the rehearsal's run; RAW/attempts.tsv gets the run's attempt. The run's head is the caller's
-#   commit, not C, so a job is a row of C only when its own `Assert HEAD is <C>` step succeeded: a job that asserted
-#   nothing (skipped, failed before its assert) or another commit votes on nothing, and its lane reads not_measured.
-#   The run reads completed only when every called job has. 1, with RAW/read saying why, when the read is unusable.
+# inrun_rows RAW -> RAW/runs.tsv without INRUN_WF's and INRUN_MODELS_WF's own runs (and without any row of the
+#   rehearsal's run), plus one row per lane job of the rehearsal's run; RAW/attempts.tsv gets the run's attempt. The
+#   run's head is the caller's commit, not C, so a job is a row of C only when its own `Assert HEAD is <C>` step
+#   succeeded: a job that asserted nothing (skipped, failed before its assert) or another commit votes on nothing, and
+#   its lane reads not_measured. The models job also needs its `Relayed the models-crux bundle of <C>` step: a night
+#   that relayed no bundle of C measured nothing. The run reads completed only when every lane job has. 1, with
+#   RAW/read saying why, when the read is unusable.
 inrun_rows() {
     local raw="$1" c id ev br att cr hd pa
     c="$(cat "$raw/C" 2>/dev/null)"
@@ -393,19 +406,25 @@ inrun_rows() {
     [ "$id" = "$INRUN" ] || { printf 'failed: the in-run read is of run %s, not %s\n' "$id" "$INRUN" > "$raw/read"; return 1; }
     [ "$pa" = "$INRUN_FROM" ] || { printf 'failed: run %s is a run of %s, not %s\n' "$id" "${pa:-no workflow}" "$INRUN_FROM" > "$raw/read"; return 1; }
     [ -f "$raw/inrun.jobs.tsv" ] || { printf 'failed: in-run run %s jobs unread\n' "$id" > "$raw/read"; return 1; }
-    awk -F '\t' -v W="$INRUN_WF" -v R="$id" '$2 != W && $3 != R' "$raw/runs.tsv" > "$raw/runs.next" || return 1
-    awk -F '\t' -v OFS='\t' -v P="$INRUN_CALLER / " -v C="$c" -v W="$INRUN_WF" -v R="$id" -v EV="$ev" -v BR="$br" -v CR="$cr" -v HD="$hd" '
+    awk -F '\t' -v W="$INRUN_WF" -v MW="$INRUN_MODELS_WF" -v R="$id" '$2 != W && $2 != MW && $3 != R' "$raw/runs.tsv" > "$raw/runs.next" || return 1
+    awk -F '\t' -v OFS='\t' -v P="$INRUN_CALLER / " -v M="$INRUN_MODELS" -v C="$c" -v W="$INRUN_WF" -v MW="$INRUN_MODELS_WF" -v R="$id" -v EV="$ev" -v BR="$br" -v CR="$cr" -v HD="$hd" '
         $1 == "#truncated" { cut = 1; next }
-        index($1, P) != 1 { next }
-        { n++; N[n] = substr($1, length(P) + 1); S[n] = toupper($2); K[n] = toupper($3); B[n] = $4; E[n] = $5; A[n] = $6; cnt[N[n]]++
+        # a called lane job votes for W on its assert; the models job (by its exact name) for MW on its assert and its relay
+        index($1, P) == 1 { nm = substr($1, length(P) + 1); pw = W; on = ($6 == C) }
+        $1 == M { nm = M; pw = MW; on = ($6 == C && $7 == C) }
+        index($1, P) != 1 && $1 != M { next }
+        { n++; N[n] = nm; PW[n] = pw; ON[n] = on; S[n] = toupper($2); K[n] = toupper($3); B[n] = $4; E[n] = $5; cnt[pw, nm]++
           if (S[n] != "COMPLETED") pend = 1
           else if (K[n] ~ /^(FAILURE|TIMED_OUT|STARTUP_FAILURE)$/) bad = 1
           else if (K[n] == "CANCELLED") can = 1 }
         END {
             rs = (pend ? "IN_PROGRESS" : "COMPLETED"); rc = (pend ? "" : (bad ? "FAILURE" : (can ? "CANCELLED" : "SUCCESS")))
-            for (i = 1; i <= n; i++) if (C ~ /^[0-9a-f]{40}$/ && A[i] == C) { print "wf", W, R, EV, BR, C, CR, rs, rc, N[i], S[i], K[i], B[i], E[i], cnt[N[i]]; m++ }
+            for (i = 1; i <= n; i++) if (C ~ /^[0-9a-f]{40}$/ && ON[i]) { print "wf", PW[i], R, EV, BR, C, CR, rs, rc, N[i], S[i], K[i], B[i], E[i], cnt[PW[i], N[i]]; m++; got[PW[i]] = 1 }
             h = (m > 0 ? C : HD)
-            if (m == 0) print "wf", W, R, EV, BR, h, CR, rs, rc, "", "", "", "", "", 0
+            # each producer with no row of C still gets its run, so its lane says what this run did not measure
+            if (!(W in got)) print "wf", W, R, EV, BR, h, CR, rs, rc, "", "", "", "", "", 0
+            if (!(MW in got)) print "wf", MW, R, EV, BR, h, CR, rs, rc, "", "", "", "", "", 0
+            # one cut row unreads every lane of the run: evaluate looks for it among all the rows of the run, of either producer
             if (cut) print "wf", W, R, EV, BR, h, CR, rs, rc, "#truncated", "COMPLETED", "TRUNCATED", "", "", 1
         }' "$raw/inrun.jobs.tsv" >> "$raw/runs.next" || return 1
     mv -- "$raw/runs.next" "$raw/runs.tsv" || return 1
@@ -811,7 +830,8 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     #      asserted C. Against a stub gh (no network); the replay rows read a jobs TSV fixture.
     ST_IR_LANES='v-a;verdict;check A;.github/workflows/a.yml;^schedule$;^job-a$
 l-gpu;verdict;check G;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-gpu$
-l-dry;verdict;check P;.github/workflows/release-lanes-nightly.yml;^schedule$;^publish-dryrun$'
+l-dry;verdict;check P;.github/workflows/release-lanes-nightly.yml;^schedule$;^publish-dryrun$
+l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
     mkdir -p "$tmp/ir/bin"
     printf '%s\n' '#!/bin/bash' 'q=""; n=""; for a in "$@"; do [ -z "$n" ] || q="$a"; n=""; [ "$a" != --jq ] || n=1; done' 'case "$*" in' \
         '  *rate_limit*) echo "5000 5000" ;;' \
@@ -820,22 +840,27 @@ l-dry;verdict;check P;.github/workflows/release-lanes-nightly.yml;^schedule$;^pu
         '  *actions/runs/7001/attempts/*) jq -r "$q" "$STUB_JOBS" ;;' \
         '  *"actions/runs/7001 "*) jq -r "$q" "$STUB_RUN" ;;' \
         '  *) echo 1 ;;' 'esac' > "$tmp/ir/bin/gh"; chmod +x "$tmp/ir/bin/gh"
-    printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WL","path":"%s"}]}\n' "$INRUN_WF" > "$tmp/ir/wf.json"
-    # ir_gql OID -> the GraphQL reply: OID by oid; a.yml green on C; INRUN_WF's own scheduled run 900, green on C, which --in-run must not read
+    printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WL","path":"%s"},{"node_id":"WM","path":"%s"}]}\n' "$INRUN_WF" "$INRUN_MODELS_WF" > "$tmp/ir/wf.json"
+    # ir_gql OID -> the GraphQL reply: OID by oid; a.yml green on C; INRUN_WF's own scheduled run 900 and INRUN_MODELS_WF's
+    #   own scheduled run 950, each green on C, which --in-run must not read
     ir_gql() {
         printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main"},"object":{"oid":"'"$1"'","tree":{"oid":"t"},"statusCheckRollup":null}},'
         printf '%s' '"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"2026-10-04T01:00:00Z","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"pageInfo":{"hasNextPage":false},"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e"}]}}}]}},'
-        printf '%s\n' '"w1":{"id":"WL","runs":{"nodes":[{"databaseId":900,"createdAt":"2026-10-03T23:17:00Z","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"pageInfo":{"hasNextPage":false},"nodes":[{"name":"cleanroom-gpu","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e"},{"name":"publish-dryrun","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e"}]}}}]}}}}'
+        printf '%s\n' '"w1":{"id":"WL","runs":{"nodes":[{"databaseId":900,"createdAt":"2026-10-03T23:17:00Z","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"pageInfo":{"hasNextPage":false},"nodes":[{"name":"cleanroom-gpu","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e"},{"name":"publish-dryrun","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e"}]}}}]}},'
+        printf '%s\n' '"w2":{"id":"WM","runs":{"nodes":[{"databaseId":950,"createdAt":"2026-10-04T01:30:00Z","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"pageInfo":{"hasNextPage":false},"nodes":[{"name":"models","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e"}]}}}]}}}}'
     }
     ir_gql "$ST_C" > "$tmp/ir/gql.json"; ir_gql "$ST_X" > "$tmp/ir/gqlx.json"
-    # ir_job NAME STATUS CONCLUSION-JSON [ASSERTED-SHA ASSERT-CONCLUSION] -> one REST job
+    # ir_job NAME STATUS CONCLUSION-JSON [ASSERTED-SHA ASSERT-CONCLUSION [RELAYED-SHA RELAY-CONCLUSION]] -> one REST job
     ir_job() {
         local s=""; [ -z "${4:-}" ] || s="$(printf ',{"name":"Assert HEAD is %s","conclusion":"%s"}' "$4" "$5")"
+        [ -z "${6:-}" ] || s="$s$(printf ',{"name":"Relayed the models-crux bundle of %s","conclusion":"%s"}' "$6" "$7")"
         printf '{"name":"%s","status":"%s","conclusion":%s,"started_at":"2026-10-04T05:30:00Z","completed_at":"2026-10-04T05:40:00Z","steps":[{"name":"Set up job","conclusion":"success"}%s]}' "$1" "$2" "$3" "$s"
     }
     # ir_case NAME EVENT ATTEMPT ID PATH TOTAL JOB... -> tmp/ir/NAME/{run,jobs}.json (the run's head is the caller's, X)
+    #   TOTAL "=" is the number of JOBs given, so a fixture cannot read as a cut job list by a miscount; only the cut case names more
     ir_case() {
         local d="$tmp/ir/$1" ev="$2" at="$3" id="$4" pa="$5" tot="$6"; shift 6; mkdir -p "$d"
+        [ "$tot" != "=" ] || tot=$#
         printf '{"id":%s,"event":"%s","head_branch":"main","run_attempt":%s,"created_at":"2026-10-04T05:20:00Z","head_sha":"%s","path":"%s"}\n' "$id" "$ev" "$at" "$ST_X" "$pa" > "$d/run.json"
         printf '{"total_count":%s,"jobs":[%s]}\n' "$tot" "$(IFS=,; printf '%s' "$*")" > "$d/jobs.json"
     }
@@ -855,39 +880,73 @@ l-dry;verdict;check P;.github/workflows/release-lanes-nightly.yml;^schedule$;^pu
     J_GPU="$(ir_job 'lanes / cleanroom-gpu' completed '"success"' "$ST_C" success)"
     J_DRY="$(ir_job 'lanes / publish-dryrun' completed '"success"' "$ST_C" success)"
     J_SELF="$(ir_job rehearse in_progress null "$ST_C" success)"
-    ir_case base schedule 1 7001 "$IRP" 6 "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_SELF"
+    J_MOD="$(ir_job models completed '"success"' "$ST_C" success "$ST_C" success)"
+    ir_case base schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_asserted_lane_jobs_vote_on_c 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_ir base
     row inrun_a_lane_row_is_the_run_on_c 0 "$(printf 'l-gpu\tverdict\tgreen\t%s ^cleanroom-gpu$\t7001\t%s\tsuccess\t1' "$INRUN_WF" "$ST_C")" "" -- st_ir base
     row inrun_reads_the_runs_attempt_once 0 "read=ok calls=5" "" -- st_ir base
     st_ir_budget() { MAX_CALLS=4; st_ir base; }
     row inrun_adds_its_two_calls_to_the_budget 0 "RELEASABLE H=$ST_C" "attempt not read" -- st_ir_budget
-    ir_case red schedule 1 7001 "$IRP" 5 "$J_PICK" "$J_CASE" "$(ir_job 'lanes / cleanroom-gpu' completed '"failure"' "$ST_C" success)" "$J_DRY" "$J_SELF"
+    ir_case red schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$(ir_job 'lanes / cleanroom-gpu' completed '"failure"' "$ST_C" success)" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_failed_lane_job_is_red 0 "NOT RELEASABLE: l-gpu, 7001" "RELEASABLE H=" -- st_ir red
     row inrun_a_failed_lane_job_fails_the_run 0 "$(printf 'l-gpu\tverdict\tred\t%s ^cleanroom-gpu$\t7001\t%s\tfailure' "$INRUN_WF" "$ST_C")" "" -- st_ir red
-    ir_case skip schedule 1 7001 "$IRP" 5 "$J_PICK" "$J_CASE" "$(ir_job 'lanes / cleanroom-gpu' completed '"skipped"')" "$J_DRY" "$J_SELF"
+    ir_case skip schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$(ir_job 'lanes / cleanroom-gpu' completed '"skipped"')" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_an_unasserted_lane_job_is_not_measured 0 "NOT RELEASABLE: l-gpu, not_measured" "RELEASABLE H=" -- st_ir skip
     st_ir_no900() { st_ir skip > /dev/null; awk -F "\t" "\$3 == 900 { n++ } END { print \"rows of 900=\" n+0 }" "$tmp/ir/skip/runs.tsv"; }
     row inrun_drops_the_lanes_scheduled_runs 0 "rows of 900=0" "" -- st_ir_no900
-    ir_case failassert schedule 1 7001 "$IRP" 5 "$J_PICK" "$J_CASE" "$(ir_job 'lanes / cleanroom-gpu' completed '"failure"' "$ST_C" failure)" "$J_DRY" "$J_SELF"
+    ir_case failassert schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$(ir_job 'lanes / cleanroom-gpu' completed '"failure"' "$ST_C" failure)" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_failed_assert_is_not_measured 0 "NOT RELEASABLE: l-gpu, not_measured" "l-gpu, 7001" -- st_ir failassert
-    ir_case otherc schedule 1 7001 "$IRP" 5 "$J_PICK" "$(ir_job 'lanes / cleanroom-gpu' completed '"success"' "$ST_X" success)" \
+    ir_case otherc schedule 1 7001 "$IRP" = "$J_PICK" "$(ir_job 'lanes / cleanroom-gpu' completed '"success"' "$ST_X" success)" \
         "$(ir_job 'lanes / publish-dryrun' completed '"success"' "$ST_X" success)" "$J_SELF"
     row inrun_an_assert_of_another_commit_is_not_measured 0 "newest run 7001 on bbbbbbbbbb" "RELEASABLE H=" -- st_ir otherc
-    ir_case unprefixed schedule 1 7001 "$IRP" 6 "$J_PICK" "$(ir_job 'lanes / cleanroom-gpu' completed '"skipped"')" \
-        "$(ir_job cleanroom-gpu completed '"success"' "$ST_C" success)" "$J_DRY" "$J_SELF"
+    ir_case unprefixed schedule 1 7001 "$IRP" = "$J_PICK" "$(ir_job 'lanes / cleanroom-gpu' completed '"skipped"')" \
+        "$(ir_job cleanroom-gpu completed '"success"' "$ST_C" success)" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_only_the_callers_jobs_vote 0 "NOT RELEASABLE: l-gpu, not_measured" "RELEASABLE H=" -- st_ir unprefixed
-    ir_case running schedule 1 7001 "$IRP" 5 "$J_PICK" "$J_GPU" "$(ir_job 'lanes / publish-dryrun' in_progress null)" "$J_SELF"
+    ir_case running schedule 1 7001 "$IRP" = "$J_PICK" "$J_GPU" "$(ir_job 'lanes / publish-dryrun' in_progress null)" "$J_MOD" "$J_SELF"
     row inrun_a_called_job_still_running_is_not_measured 0 "in progress: run 7001 is in_progress" "RELEASABLE H=" -- st_ir running
-    ir_case retry schedule 2 7001 "$IRP" 6 "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_SELF"
+    ir_case retry schedule 2 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_rerun_rehearsal_is_red 0 "success only at attempt 2" "RELEASABLE H=" -- st_ir retry
-    ir_case dispatch workflow_dispatch 1 7001 "$IRP" 6 "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_SELF"
+    ir_case dispatch workflow_dispatch 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_dispatched_rehearsal_is_not_measured 0 "NOT RELEASABLE: l-gpu, not_measured" "RELEASABLE H=" -- st_ir dispatch
-    ir_case cut schedule 1 7001 "$IRP" 9 "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_SELF"
+    ir_case cut schedule 1 7001 "$IRP" 10 "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_cut_job_list_is_not_measured 0 "its job list was cut" "RELEASABLE H=" -- st_ir cut
-    ir_case path schedule 1 7001 "$INRUN_WF" 6 "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_SELF"
+    ir_case path schedule 1 7001 "$INRUN_WF" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_run_of_another_workflow_fails_the_read 0 "read=failed: run 7001 is a run of $INRUN_WF" "RELEASABLE H=" -- st_ir path
-    ir_case otherrun schedule 1 7002 "$IRP" 6 "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_SELF"
+    ir_case otherrun schedule 1 7002 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_read_of_another_run_fails 0 "read=failed: the in-run read is of run 7002, not 7001" "RELEASABLE H=" -- st_ir otherrun
+    # ---- the models lane in-run (C332 a): the run's own job INRUN_MODELS, on C only where it asserted C and relayed C's
+    #      bundle; INRUN_MODELS_WF's own runs are not read. A night with no bundle of C relayed is not_measured.
+    # st_ir_lane NAME LANE -> that lane's row of st_ir NAME
+    st_ir_lane() { st_ir "$1" > /dev/null; awk -F "\t" -v l="$2" "\$1 == l" "$tmp/ir/$1/lanes.tsv"; }
+    row inrun_the_models_job_is_the_models_lane_on_c 0 "$(printf 'l-mod\tverdict\tgreen\t%s ^models$\t7001\t%s\tsuccess\t1' "$INRUN_MODELS_WF" "$ST_C")" "" -- st_ir base
+    st_ir_no950() { st_ir base > /dev/null; awk -F "\t" "\$3 == 950 { n++ } END { print \"rows of 950=\" n+0 }" "$tmp/ir/base/runs.tsv"; }
+    row inrun_drops_the_models_scheduled_runs 0 "rows of 950=0" "" -- st_ir_no950
+    ir_case modred schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$(ir_job models completed '"failure"' "$ST_C" success "$ST_C" success)" "$J_SELF"
+    row inrun_a_failed_models_job_that_relayed_c_is_red 0 "$(printf 'l-mod\tverdict\tred\t%s ^models$\t7001\t%s\tfailure' "$INRUN_MODELS_WF" "$ST_C")" "RELEASABLE H=" -- st_ir modred
+    ir_case modnone schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$(ir_job models completed '"failure"' "$ST_C" success)" "$J_SELF"
+    row inrun_no_models_bundle_is_not_measured 0 "$(printf 'l-mod\tverdict\tnot_measured\t%s ^models$\tnot_measured\t\t\t\t\t\trun 7001: no job matched' "$INRUN_MODELS_WF")" "RELEASABLE H=" -- st_ir modnone
+    ir_case modother schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$(ir_job models completed '"success"' "$ST_C" success "$ST_X" success)" "$J_SELF"
+    row inrun_a_bundle_of_another_commit_is_not_measured 0 "NOT RELEASABLE: l-mod, not_measured" "RELEASABLE H=" -- st_ir modother
+    ir_case modrelayfail schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$(ir_job models completed '"failure"' "$ST_C" success "$ST_C" failure)" "$J_SELF"
+    row inrun_a_failed_relay_step_is_not_measured 0 "NOT RELEASABLE: l-mod, not_measured" "l-mod, 7001" -- st_ir modrelayfail
+    ir_case modnoassert schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$(ir_job models completed '"success"' "" "" "$ST_C" success)" "$J_SELF"
+    row inrun_a_models_job_that_asserted_nothing_is_not_measured 0 "NOT RELEASABLE: l-mod, not_measured" "RELEASABLE H=" -- st_ir modnoassert
+    ir_case modcalled schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$(ir_job 'lanes / models' completed '"success"' "$ST_C" success "$ST_C" success)" "$J_SELF"
+    row inrun_a_called_models_job_is_not_the_models_lane 0 "NOT RELEASABLE: l-mod, not_measured" "RELEASABLE H=" -- st_ir modcalled
+    ir_case modfirst schedule 1 7001 "$IRP" = "$J_PICK" "$J_MOD" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_SELF"
+    row inrun_each_lane_reads_its_own_producers_rows 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_ir modfirst
+    ir_case modrunning schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$(ir_job models in_progress null "$ST_C" success "$ST_C" success)" "$J_SELF"
+    row inrun_a_models_job_still_running_holds_the_run 0 "NOT RELEASABLE: l-gpu, not_measured" "RELEASABLE H=" -- st_ir modrunning
+    row inrun_a_cut_job_list_leaves_the_models_lane_unmeasured 0 "run 7001: its job list was cut" "green" -- st_ir_lane cut l-mod
+    row inrun_a_run_on_no_c_is_named_for_the_models_lane 0 "no run on C; newest run 7001 on bbbbbbbbbb" "" -- st_ir_lane otherc l-mod
+    row inrun_a_run_on_no_c_is_named_for_a_called_lane 0 "no run on C; newest run 7001 on bbbbbbbbbb" "" -- st_ir_lane otherc l-gpu
+    # without --in-run the models lane is INRUN_MODELS_WF's own scheduled run, as before
+    st_noir() {
+        local f="$tmp/ir/noir"; mkdir -p "$f"; COMMIT="$ST_C"; INRUN=""; CALLS=0
+        PATH="$tmp/ir/bin:$PATH" STUB_WF="$tmp/ir/wf.json" STUB_GQL="$tmp/ir/gql.json" LANES="$ST_IR_LANES" fetch "$f" "$f/cache"
+        decide "$ST_IR_LANES" "$f" 2026-10-04T06:00:00Z; cat "$f/line"; awk -F "\t" "\$1 == \"l-mod\"" "$f/lanes.tsv"
+    }
+    row without_in_run_the_models_lane_is_its_own_run 0 "$(printf 'l-mod\tverdict\tgreen\t%s ^models$\t950\t%s\tsuccess\t1' "$INRUN_MODELS_WF" "$ST_C")" "" -- st_noir
     st_ir_otherc() { st_ir base "$tmp/ir/gqlx.json"; }
     row commit_a_read_of_another_commit_fails 0 "read=failed: the read is of $ST_X, not of --commit $ST_C" "RELEASABLE H=" -- st_ir_otherc
     row gql_query_reads_the_commit_by_oid 0 "object(oid: \"$ST_C\") { ... on Commit { oid tree" "target {" -- gql_query "$ST_IR_LANES" "$tmp/ir/wf.json" "$ST_C"
@@ -902,10 +961,17 @@ l-dry;verdict;check P;.github/workflows/release-lanes-nightly.yml;^schedule$;^pu
     printf '%s\n' "$ST_C" > "$d/C"; printf 'ok\n' > "$d/read"; printf 't\n' > "$d/tree"
     printf 'wf\t%s\t900\tschedule\tmain\t%s\t2026-10-03T23:17:00Z\tCOMPLETED\tSUCCESS\t%s\tCOMPLETED\tSUCCESS\t2026-10-03T23:20:00Z\t2026-10-03T23:50:00Z\t1\n' \
         "$INRUN_WF" "$ST_C" cleanroom-gpu "$INRUN_WF" "$ST_C" publish-dryrun > "$d/runs.tsv"
-    printf '900\t1\n' > "$d/attempts.tsv"
+    printf 'wf\t%s\t950\tschedule\tmain\t%s\t2026-10-04T01:30:00Z\tCOMPLETED\tSUCCESS\tmodels\tCOMPLETED\tSUCCESS\t2026-10-04T01:31:00Z\t2026-10-04T02:10:00Z\t1\n' \
+        "$INRUN_MODELS_WF" "$ST_C" >> "$d/runs.tsv"
+    printf '900\t1\n950\t1\n' > "$d/attempts.tsv"
     printf '7001\tschedule\tmain\t1\t2026-10-04T05:20:00Z\t%s\t%s\n' "$ST_X" "$INRUN_FROM" > "$d/inrun.run"
+    # six columns, as before the relay column: its models job asserted C and can relay nothing
     printf '%s\t%s\t%s\t2026-10-04T05:30:00Z\t2026-10-04T05:40:00Z\t%s\n' 'lanes / cleanroom-gpu' completed success "$ST_C" \
-        'lanes / measure: publish-dryrun' completed success "" 'lanes / publish-dryrun' completed skipped "" > "$d/inrun.jobs.tsv"
+        'lanes / measure: publish-dryrun' completed success "" 'lanes / publish-dryrun' completed skipped "" models completed success "$ST_C" > "$d/inrun.jobs.tsv"
+    # seven columns: the models job asserted C and relayed C's bundle
+    mkdir -p "$tmp/ir/rawm"; cp "$d"/* "$tmp/ir/rawm/"
+    printf '%s\t%s\t%s\t2026-10-04T05:30:00Z\t2026-10-04T05:40:00Z\t%s\t%s\n' 'lanes / cleanroom-gpu' completed success "$ST_C" "" \
+        models completed success "$ST_C" "$ST_C" > "$tmp/ir/rawm/inrun.jobs.tsv"
     st_ir_replay() {
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ir/o$1" --commit "$2" --in-run 7001 --now 2026-10-04T06:00:00Z > /dev/null
         awk -F "\t" "\$1 == \"cleanroom-gpu\" || \$1 == \"publish-dryrun\" { printf \"%s=%s@%s \", \$1, \$3, \$5 } \$1 == \"# in-run\" || \$1 == \"# read\" { printf \"%s=%s \", substr(\$1, 3), \$2 } END { print \"\" }" \
@@ -914,6 +980,15 @@ l-dry;verdict;check P;.github/workflows/release-lanes-nightly.yml;^schedule$;^pu
     row a_replay_reads_a_jobs_tsv_fixture 0 "cleanroom-gpu=green@7001 publish-dryrun=not_measured@not_measured read=ok in-run=7001" "" -- st_ir_replay 1 "$ST_C"
     row a_replay_of_another_commit_is_not_measured 0 "cleanroom-gpu=not_measured@not_measured publish-dryrun=not_measured@not_measured read=failed: the read is of $ST_C, not of --commit $ST_X" "" -- \
         st_ir_replay 2 "$ST_X"
+    # st_ir_models DIR N [ARG...] -> the models lane of a replay of DIR by the real lane table: state@run
+    st_ir_models() {
+        local dd="$1" n="$2"; shift 2
+        bash "$SCRIPT_PATH" --from "$dd" --out "$tmp/ir/om$n" --commit "$ST_C" "$@" --now 2026-10-04T06:00:00Z > /dev/null
+        awk -F "\t" "\$1 == \"models\" { print \"models=\" \$3 \"@\" \$5 }" "$tmp/ir/om$n/2026-10-04/bundle.tsv"
+    }
+    row a_replay_reads_the_runs_models_job 0 "models=green@7001" "" -- st_ir_models "$tmp/ir/rawm" 1 --in-run 7001
+    row a_six_column_replay_relays_no_models_bundle 0 "models=not_measured@not_measured" "" -- st_ir_models "$d" 2 --in-run 7001
+    row a_replay_without_in_run_reads_the_models_run 0 "models=green@950" "" -- st_ir_models "$d" 3
     row in_run_needs_commit 3 "--in-run RUN needs --commit C" "" -- bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ir/oe1" --in-run 7001 --now 2026-10-04T06:00:00Z
     row commit_must_be_40_hex 3 "--commit must be a 40-hex commit id" "" -- bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ir/oe2" --commit abc --now 2026-10-04T06:00:00Z
     row an_empty_commit_is_a_caller_error 3 "--commit needs a commit id" "" -- bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ir/oe3" --commit "" --now 2026-10-04T06:00:00Z
@@ -970,10 +1045,10 @@ m46_normalize_reads_the_head	s/(.data.repository.object \/\/ .data.repository.de
 m47_query_ignores_the_commit	s/(if \$commit == "" then/(if true then/
 m48_commit_read_from_the_head	s/jq -r .\.data\.repository\.object\.oid \/\/ empty. /jq -r ".data.repository.defaultBranchRef.target.oid \/\/ empty" /
 m49_inrun_never_read	s/^    if \[ -n "\$INRUN" \]; then inrun_read "\$raw" "\$INRUN" && inrun_rows "\$raw" || return 0; fi$/    :/
-m50_assert_not_required	s/A\[i\] == C) {/1) {/
-m51_prefix_kept	s/N\[n\] = substr(\$1, length(P) + 1)/N[n] = $1/
-m52_unprefixed_jobs_vote	s/^        index(\$1, P) != 1 { next }$/        0 { next }/
-m53_lanes_own_runs_kept	s/\$2 != W && \$3 != R/$3 != R/
+m50_assert_not_required	s/on = (\$6 == C) }/on = 1 }/
+m51_prefix_kept	s/{ nm = substr(\$1, length(P) + 1);/{ nm = $1;/
+m52_unprefixed_jobs_vote	s/^        index(\$1, P) != 1 && \$1 != M { next }$/        0 { next }/
+m53_lanes_own_runs_kept	s/\$2 != W && \$2 != MW && \$3 != R/$2 != MW \&\& $3 != R/
 m54_run_path_unchecked	s/^    \[ "\$pa" = "\$INRUN_FROM" \] ||/    true ||/
 m55_run_id_unchecked	s/^    \[ "\$id" = "\$INRUN" \] ||/    true ||/
 m56_run_status_always_completed	s/rs = (pend ? "IN_PROGRESS" : "COMPLETED")/rs = "COMPLETED"/
@@ -994,6 +1069,18 @@ m70_commit_not_40_hex	s/^\[ -z "\$COMMIT" \] || \[\[ "\$COMMIT" .*hex commit id"
 m71_run_id_not_numeric	s/^\[ -z "\$INRUN" \] || \[\[ "\$INRUN" .*must be a run id"$/:/
 m72_empty_commit_accepted	s/COMMIT="\${2:-}"; \[ -n "\$COMMIT" \] || caller_error "--commit needs a commit id"; /COMMIT="${2:-}"; /
 m73_failed_assert_counts	s/select(.conclusion == "success") | (.name/select(true) | (.name/
+m74_models_relay_not_required	s/on = (\$6 == C && \$7 == C)/on = ($6 == C)/
+m75_models_assert_not_required	s/on = (\$6 == C && \$7 == C)/on = ($7 == C)/
+m76_models_own_runs_kept	s/\$2 != W && \$2 != MW && \$3 != R/$2 != W \&\& $3 != R/
+m77_models_job_by_pattern	s/^        \$1 == M { nm = M;/        $1 ~ M { nm = M;/
+m78_lane_reads_any_producer	s/JN\[r, k\] ~ RE\[i\] && JW\[r, k\] == WF\[i\]) {/JN[r, k] ~ RE[i]) {/
+m79_dedup_across_producers	s/key = \$2 SUBSEP \$3 SUBSEP/key = $3 SUBSEP/
+m80_lane_runs_by_first_producer	s/if (((r, WF\[i\]) in RWF) &&/if (RW[r] == WF[i] \&\&/
+m81_relay_column_unread	s/capture("^Relayed the models-crux bundle of (?<s>/capture("^Relayed nothing of (?<s>/
+m82_failed_relay_counts	s/select(.conclusion == "success") | (.name \/\/ "") | capture("^Relayed/select(true) | (.name \/\/ "") | capture("^Relayed/
+m83_models_unrun_row_dropped	/if (!(MW in got)) print/d
+m84_lanes_unrun_row_dropped	/if (!(W in got)) print/d
+m85_models_job_misnamed	s/^INRUN_MODELS="models"$/INRUN_MODELS="rehearse"/
 '
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
