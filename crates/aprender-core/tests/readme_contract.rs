@@ -155,53 +155,14 @@ fn number_before(text: &str, suffix: &str) -> Option<usize> {
     digits.chars().rev().collect::<String>().parse().ok()
 }
 
-/// FALSIFY-README-007: Contract count in README matches `find contracts/ -name '*.yaml'`.
-///
-/// The "**M** provable contracts" claim was previously checked ONLY by
-/// `scripts/check_readme_claims.sh`, which is executable but wired into NO
-/// workflow (`grep -rn check_readme_claims .github/workflows` = 0 hits). So the
-/// count drifted freely: README said **1331** while the tree held **1766**
-/// (Fable rank-7, PMAT-DRIFT-GATES-001). This test rides the already-wired
-/// `cargo test` job, so the claim can no longer drift without failing a PR.
-/// Counts `*.yaml` recursively to match the canonical script method.
-#[test]
-fn test_readme_contract_count_matches_workspace() {
-    let readme = read_readme();
-    let contracts_dir = workspace_root().join("contracts");
-
-    fn count_yaml(dir: &Path) -> usize {
-        let mut n = 0;
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    n += count_yaml(&path);
-                } else if path.extension().is_some_and(|ext| ext == "yaml") {
-                    n += 1;
-                }
-            }
-        }
-        n
-    }
-
-    let contract_count = count_yaml(&contracts_dir);
-    // G-11 (PMAT-1062): lag allowed, overstatement RED (see FALSIFY-README-005 above).
-    // BSE-03 phase A (PMAT-1068): the number is DERIVED and sits inside the
-    // generated CONTRACT_COUNT block, so the claim reads
-    // `**<!-- CONTRACT_COUNT_START -->N<!-- CONTRACT_COUNT_END -->** provable contracts`.
-    // Strip the markers before parsing; the universe below is the generator's
-    // (`find contracts/ -name '*.yaml'`), unchanged.
-    let readme = readme
-        .replace("<!-- CONTRACT_COUNT_START -->", "")
-        .replace("<!-- CONTRACT_COUNT_END -->", "");
-    let claimed = number_before(&readme, "** provable contracts")
-        .expect("FALSIFY-README-007: README lacks a `**M** provable contracts` claim");
-    assert!(
-        claimed <= contract_count,
-        "FALSIFY-README-007: README claims {claimed} provable contracts but `find contracts/ -name '*.yaml'` \
-         counts {contract_count} — the README may lag, never overstate; the orchestrator docs commit regenerates it"
-    );
-}
+// The README's contract count has no check in this file (GEN-001 G3, #4526). It is
+// GENERATED into the CONTRACT_COUNT block from the release snapshot
+// contracts/census.json, and FALSIFY-README-002 (scripts/check_readme_claims.sh, PR
+// path) holds that block EQUAL to the snapshot's n_files; scripts/contracts_gate.sh
+// re-runs the generator and diffs. The test that stood here compared the block with
+// the tree's *.yaml count instead, so a PR that deleted enough contracts to take the
+// tree below the snapshot turned it RED with no way back to green: that PR may edit
+// neither the block nor the snapshot.
 
 /// FALSIFY-SVG-002: Hero SVG is accessible
 #[test]

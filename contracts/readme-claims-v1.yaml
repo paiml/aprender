@@ -1,6 +1,6 @@
 metadata:
   id: C-README-CLAIMS
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-24"
   author: PAIML Engineering
   kind: pattern
@@ -135,12 +135,14 @@ equations:
     preconditions: []
   contract_count:
     formula: |
-      readme_contract_count == count(find contracts/ -name "*.yaml")
+      readme_contract_count == n_files(contracts/census.json at the merge commit)
     domain: |
-      Every YAML contract under `contracts/` (including nested families)
-      must be included in the README's provable-contract claim.
+      The README's provable-contract claim is GENERATED into the CONTRACT_COUNT
+      block by scripts/readme_sync.sh from the release snapshot
+      contracts/census.json (one writer, `make census` on the release train;
+      GEN-001 #4526). A pull request edits neither the block nor the snapshot.
     invariants:
-    - "the quoted count must match `find contracts/ -name '*.yaml' | wc -l`"
+    - "the CONTRACT_COUNT block equals census.json n_files at the merge commit"
     preconditions: []
   cli_command_count:
     formula: |
@@ -169,8 +171,8 @@ proof_obligations:
   applies_to: metadata
 - id: RC2139-INV-002
   type: invariant
-  property: README contract count matches filesystem
-  formal: "readme_contract_count == |contracts/**/*.yaml|"
+  property: README contract count equals the release snapshot it is generated from
+  formal: "readme_contract_count == census.json.n_files"
   applies_to: metadata
 - id: RC2139-INV-003
   type: invariant
@@ -201,15 +203,18 @@ falsification_tests:
 
 - id: FALSIFY-README-002
   rule: |
-    Contract count in README matches `find contracts/ -name "*.yaml" | wc -l`.
+    The README's CONTRACT_COUNT block equals n_files of contracts/census.json, the
+    release snapshot it is generated from, at the merge commit.
   prediction: |
-    `README.md` states M provable contracts ↔ filesystem contains M YAML
-    contracts under `contracts/`.
+    `README.md` states M provable contracts in its CONTRACT_COUNT block ↔
+    contracts/census.json at the merge commit carries n_files = M. A block split
+    across lines, or more than one block, is RED.
   test: |
     bash scripts/check_readme_claims.sh --claim contract_count
   if_fails: |
-    Contract folder grew/shrank without README update. Rerun
-    `bash scripts/check_readme_claims.sh --regen` to refresh.
+    The block was edited by hand, or the snapshot moved without a regenerate. A
+    pull request edits neither: revert the README edit. On the release train,
+    `make census` then `make readme-sync` regenerate both.
   ship_blocking: false
   counter_example_classes:
   - stale_number

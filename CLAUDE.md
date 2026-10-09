@@ -29,7 +29,8 @@ here disagrees with its command, the command wins.
 | Released version | `git tag --sort=-creatordate \| head -1` · `gh release list` | **v0.63.0**, 2026-08-01 ("provenance") |
 
 `crates/aprender-core/tests/readme_contract.rs` is the drift gate for all three published
-docs: README.md's crate/contract counts, `docs/BEATS.md` vs the beat contracts, and every
+docs: README.md's crate count (its contract count is generated from `contracts/census.json`
+and held equal to it by `scripts/check_readme_claims.sh`), `docs/BEATS.md` vs the beat contracts, and every
 repo-relative file path cited in **this file**. A path here that does not exist fails the
 build (FALSIFY-DOCS-CLAUDE-001) — that is what caught the six pre-monorepo `realizar/…`
 and `src/format/…` paths this file still advertised. Counts it cannot check, you re-derive.
