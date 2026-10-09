@@ -22,7 +22,10 @@ pub(crate) const TOKEN_VARS: [&str; 2] = ["HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"];
 fn standard_file(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
     let set = |k: &str| env(k).filter(|v| !v.is_empty());
     if let Some(p) = set("HF_TOKEN_PATH") {
-        return Some(PathBuf::from(p));
+        return Some(match (p.strip_prefix("~/"), set("HOME")) {
+            (Some(rest), Some(h)) => PathBuf::from(h).join(rest),
+            _ => PathBuf::from(p),
+        });
     }
     if let Some(h) = set("HF_HOME") {
         return Some(PathBuf::from(h).join("token"));
@@ -47,8 +50,13 @@ pub(crate) fn resolve(
     if let Some(p) = explicit {
         return Ok((Token::from_file(p)?, format!("file:{}", p.display())));
     }
-    for k in TOKEN_VARS {
-        if let Some(v) = env(k).filter(|v| !v.trim().is_empty()) {
+    // huggingface_hub: `HF_TOKEN or HUGGING_FACE_HUB_TOKEN`, then cleaned. The first
+    // NON-EMPTY var decides; a blank one yields no env token and falls to the file.
+    if let Some((k, v)) = TOKEN_VARS
+        .iter()
+        .find_map(|k| env(k).filter(|v| !v.is_empty()).map(|v| (*k, v)))
+    {
+        if !v.trim().is_empty() {
             return Ok((Token::parse(&v, k)?, format!("env:{k}")));
         }
     }
@@ -104,7 +112,7 @@ mod tests {
         std::fs::write(hf_home.join("token"), format!("{SECRET}-hfhome")).expect("w");
         let hf_home = hf_home.to_str().expect("utf8");
 
-        let cases: [(&[(&str, &str)], &str, &str); 5] = [
+        let cases: [(&[(&str, &str)], &str, &str); 7] = [
             (
                 &[
                     ("HF_TOKEN", "a"),
@@ -116,12 +124,26 @@ mod tests {
             ),
             (
                 &[
-                    ("HF_TOKEN", " "),
+                    ("HF_TOKEN", ""),
                     ("HUGGING_FACE_HUB_TOKEN", "b"),
                     ("HOME", home),
                 ],
                 "env:HUGGING_FACE_HUB_TOKEN",
                 "b",
+            ),
+            (
+                &[
+                    ("HF_TOKEN", " "),
+                    ("HUGGING_FACE_HUB_TOKEN", "b"),
+                    ("HOME", home),
+                ],
+                ".cache/huggingface/token",
+                "-cache",
+            ),
+            (
+                &[("HF_TOKEN_PATH", "~/hfhome/token"), ("HOME", home)],
+                "hfhome/token",
+                "-hfhome",
             ),
             (
                 &[("HF_HOME", hf_home), ("HOME", home)],
