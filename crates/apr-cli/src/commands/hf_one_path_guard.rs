@@ -1,17 +1,18 @@
 //! #4961: `apr` has ONE Hugging Face upload path, aprender-core `hf_hub`, whose
 //! `repo_api` holds the Hub write endpoints. This scan is RED when a write
 //! endpoint is named anywhere in `crates/apr-cli/` or the root `src/`, the code
-//! that builds `apr`. It reads the string literals on the non-comment lines of
-//! every `.rs` file there:
+//! that builds `apr`. It reads the string literals (plain, byte and raw, across
+//! lines, a `\` line continuation joined) outside the comments of every `.rs`
+//! file there:
 //!
 //! - an upload-only endpoint (`info/lfs/objects/batch`, `preupload/`,
 //!   `xet-write-token`, `api/repos/create`) is a hit by itself;
 //! - a commit, branch, tag or upload endpoint (`commit/`, `branch/`, `tag/`,
-//!   `/upload/`) is a hit unless the same literal names a known non-Hub host
-//!   (`github.com`, `gitlab.com`) and no Hub API path (`api/models`,
-//!   `api/datasets`, `api/spaces`). Any other host, or none in sight, is taken
-//!   as the Hub: its base usually comes from a constant or another module, and
-//!   `HF_ENDPOINT` may name a mirror.
+//!   `/upload/`) is a hit unless the same literal's host is a known non-Hub one
+//!   (`github.com`, `gitlab.com`, or a subdomain) and it names no Hub API path
+//!   (`api/models`, `api/datasets`, `api/spaces`). Any other host, or none in
+//!   sight, is taken as the Hub: its base usually comes from a constant or
+//!   another module, and `HF_ENDPOINT` may name a mirror.
 //!
 //! The one file it skips is this one: it names every endpoint as data, and the
 //! last test checks that it holds no HTTP client.
@@ -31,62 +32,182 @@ const WRITE: [&str; 4] = ["commit/", "branch/", "tag/", "/upload/"];
 const SCOPES: [&str; 2] = ["crates/apr-cli", "src"];
 const SELF: &str = "crates/apr-cli/src/commands/hf_one_path_guard.rs";
 
-/// The chars after the opening `'` of a quote char literal (`'"'`, `'\"'`), else 0.
-fn quote_char_len(rest: &str) -> usize {
-    ["'\"'", "'\\\"'"]
-        .iter()
-        .find(|q| rest.starts_with(**q))
-        .map_or(0, |q| q.len() - 1)
+/// A Rust lexer as far as this scan needs: where each string literal starts
+/// and ends, and what is a comment, a char literal or a lifetime.
+struct Lex<'a> {
+    src: &'a str,
+    cs: Vec<(usize, char)>,
+    line: usize,
 }
 
-/// The text between unescaped quotes on one line, past quote char literals; an
-/// unclosed quote is dropped.
-fn line_literals(l: &str) -> Vec<&str> {
-    let (mut out, mut open, mut esc, mut skip) = (Vec::new(), None, false, 0);
-    for (i, c) in l.char_indices() {
-        if skip > 0 {
-            skip -= 1;
-            continue;
-        }
-        match (open, c) {
-            (Some(_), _) if esc => esc = false,
-            (Some(_), '\\') => esc = true,
-            (Some(s), '"') => {
-                out.push(&l[s..i]);
-                open = None;
+impl Lex<'_> {
+    fn at(&self, j: usize) -> Option<char> {
+        self.cs.get(j).map(|p| p.1)
+    }
+
+    /// The source text from char `a` up to char `b`.
+    fn text(&self, a: usize, b: usize) -> String {
+        let off = |k: usize| self.cs.get(k).map_or(self.src.len(), |p| p.0);
+        self.src[off(a)..off(b)].to_string()
+    }
+
+    /// The token at `j`: its text if it is a string literal, and the index past it.
+    fn token(&mut self, j: usize) -> (Option<String>, usize) {
+        match (self.at(j), self.at(j + 1)) {
+            (Some('\n'), _) => {
+                self.line += 1;
+                (None, j + 1)
             }
-            (None, '"') => open = Some(i + 1),
-            (None, '\'') => skip = quote_char_len(&l[i..]),
-            _ => {}
+            (Some('/'), Some('/')) => (None, self.eol(j)),
+            (Some('/'), Some('*')) => (None, self.block_comment(j)),
+            (Some('\''), _) => (None, self.quote(j)),
+            (Some('"'), _) => {
+                let (s, k) = self.plain(j);
+                (Some(s), k)
+            }
+            (Some('r'), Some('"' | '#')) => self.raw(j),
+            _ => (None, j + 1),
         }
     }
-    out
+
+    /// The index of the newline that ends the line comment at `j`.
+    fn eol(&self, j: usize) -> usize {
+        (j..self.cs.len())
+            .find(|&k| self.at(k) == Some('\n'))
+            .unwrap_or(self.cs.len())
+    }
+
+    /// Past the `/* */` comment at `j`, nested ones included.
+    fn block_comment(&mut self, mut j: usize) -> usize {
+        let mut depth = 0;
+        while let Some(c) = self.at(j) {
+            j += match (c, self.at(j + 1)) {
+                ('/', Some('*')) => {
+                    depth += 1;
+                    2
+                }
+                ('*', Some('/')) if depth == 1 => return j + 2,
+                ('*', Some('/')) => {
+                    depth -= 1;
+                    2
+                }
+                _ => {
+                    self.line += usize::from(c == '\n');
+                    1
+                }
+            };
+        }
+        j
+    }
+
+    /// Past the char or byte literal at `j` (`'"'`, `'\''`, `b'\\'`), or past
+    /// the `'` of a lifetime or label.
+    fn quote(&self, j: usize) -> usize {
+        match (self.at(j + 1), self.at(j + 2)) {
+            (Some('\\'), _) => (j + 3..j + 12)
+                .find(|&k| self.at(k) == Some('\''))
+                .map_or(j + 1, |k| k + 1),
+            (Some(c), Some('\'')) if c != '\n' => j + 3,
+            _ => j + 1,
+        }
+    }
+
+    /// The plain or byte string at `j` (its `"`) as far as the scan needs: a
+    /// `\` line continuation drops the newline and the next line's indent, as
+    /// Rust does; other escapes stay as written. An unclosed one runs to the end.
+    fn plain(&mut self, j: usize) -> (String, usize) {
+        let (mut s, mut k) = (String::new(), j + 1);
+        while let Some(c) = self.at(k) {
+            match (c, self.at(k + 1)) {
+                ('"', _) => return (s, k + 1),
+                ('\\', Some('\n' | '\r')) => k = self.indent_end(k + 1),
+                ('\\', Some(e)) => {
+                    s.push(c);
+                    s.push(e);
+                    k += 2;
+                }
+                _ => {
+                    self.line += usize::from(c == '\n');
+                    s.push(c);
+                    k += 1;
+                }
+            }
+        }
+        (s, k)
+    }
+
+    /// Past the line break at `k` and the whitespace after it.
+    fn indent_end(&mut self, mut k: usize) -> usize {
+        while let Some(c) = self.at(k).filter(|c| c.is_whitespace()) {
+            self.line += usize::from(c == '\n');
+            k += 1;
+        }
+        k
+    }
+
+    /// The raw string at `j` (the `r` of `r"…"`, `br#"…"#`), or nothing and
+    /// `j + 1` for a raw identifier (`r#type`).
+    fn raw(&mut self, j: usize) -> (Option<String>, usize) {
+        let hashes = (j + 1..self.cs.len())
+            .take_while(|&k| self.at(k) == Some('#'))
+            .count();
+        let open = j + 1 + hashes;
+        if self.at(open) != Some('"') {
+            return (None, j + 1);
+        }
+        let closes = |k: &usize| {
+            self.at(*k) == Some('"') && (1..=hashes).all(|h| self.at(k + h) == Some('#'))
+        };
+        let close = (open + 1..self.cs.len())
+            .find(closes)
+            .unwrap_or(self.cs.len());
+        let s = self.text(open + 1, close);
+        self.line += s.matches('\n').count();
+        (Some(s), (close + 1 + hashes).min(self.cs.len()))
+    }
 }
 
-/// The string literals on the non-comment lines of `src`, with line numbers.
-fn literals(src: &str) -> impl Iterator<Item = (usize, &str)> {
-    src.lines()
-        .enumerate()
-        .filter(|(_, l)| !l.trim_start().starts_with("//"))
-        .flat_map(|(i, l)| line_literals(l).into_iter().map(move |s| (i + 1, s)))
+/// The string literals of `src` (plain, byte and raw, which may run across
+/// lines), each with the line it opens on; comments are stepped over.
+fn literals(src: &str) -> Vec<(usize, String)> {
+    let mut lx = Lex {
+        src,
+        cs: src.char_indices().collect(),
+        line: 1,
+    };
+    let (mut out, mut j) = (Vec::new(), 0);
+    while j < lx.cs.len() {
+        let line = lx.line;
+        let (lit, next) = lx.token(j);
+        out.extend(lit.map(|s| (line, s)));
+        j = next;
+    }
+    out
 }
 
 fn names_any(s: &str, set: &[&str]) -> bool {
     set.iter().any(|n| s.contains(n))
 }
 
-/// A literal that names a known non-Hub host and no Hub API path.
+/// A literal whose host is a known non-Hub one, or a subdomain of one, and
+/// that names no Hub API path.
 fn other_host(s: &str) -> bool {
     let host = s
         .split("://")
         .nth(1)
         .and_then(|r| r.split(['/', '{', ':']).next());
-    host.is_some_and(|h| names_any(h, &NOT_HUB)) && !names_any(s, &HUB_PATHS)
+    let known = |h: &str| {
+        NOT_HUB
+            .iter()
+            .any(|n| h == *n || h.strip_suffix(n).is_some_and(|p| p.ends_with('.')))
+    };
+    host.is_some_and(known) && !names_any(s, &HUB_PATHS)
 }
 
 /// The hits in one file's text, as `line:literal`.
 fn hits(src: &str) -> Vec<String> {
     literals(src)
+        .into_iter()
         .filter(|(_, s)| names_any(s, &UPLOAD_ONLY) || (names_any(s, &WRITE) && !other_host(s)))
         .map(|(n, s)| format!("{n}:{s}"))
         .collect()
@@ -151,6 +272,14 @@ fn the_case_table() {
         r#"let q = '\"'; let u = format!("{b}/x/preupload/{r}");"#,
         r#"let u = format!("https://hf-mirror.com/{r}/commit/{rev}");"#,
         "let c = \"commit/\"; // a Hub name in a comment does not matter",
+        "let u = format!(\"{base}/api/models/{repo}/\\\n    commit/{rev}\");",
+        "let u = format!(\"{b}/x/info/lfs/\\\n    objects/batch\");",
+        r##"let u = format!(r#"a " {b}/x/commit/{r}"#);"##,
+        "let p = r\"C:\\\";\nlet u = format!(\"{b}/x/commit/{r}\");",
+        "/* it's \"odd */ let u = format!(\"{b}/x/commit/{r}\");",
+        "fn f<'a>(b: &'a str) -> String { format!(\"{b}/x/commit/{r}\") }",
+        r#"let u = format!("https://github.com@hub.example/{r}/commit/{rev}");"#,
+        r#"let u = format!("https://notgithub.com/{r}/commit/{rev}");"#,
     ];
     let must_not_hit = [
         r#"// let u = format!("{b}/info/lfs/objects/batch");"#,
@@ -161,6 +290,9 @@ fn the_case_table() {
         r#"let u = format!("https://huggingface.co/{repo}/resolve/main/{file}");"#,
         "let h = \"https://huggingface.co\";\nlet t = format!(\"refs/tags/{t}\");",
         r#"let s = "a \" b"; // commit/ is not in a literal"#,
+        "let x = 1; // format!(\"{b}/x/commit/{r}\")",
+        "/* /* */ \"{b}/x/commit/{r}\" */",
+        r#"let u = r"https://api.github.com/repos/{o}/{r}/git/commit/{sha}";"#,
         "",
     ];
     for src in must_hit {
@@ -172,6 +304,10 @@ fn the_case_table() {
     assert_eq!(
         hits("let a = \"x/preupload/y\";\nlet b = \"z/info/lfs/objects/batch\";"),
         ["1:x/preupload/y", "2:z/info/lfs/objects/batch"]
+    );
+    assert_eq!(
+        hits("let u = format!(\"{b}/x/\\\n    preupload/{r}\");\nlet v = \"a\nb/tag/c\";"),
+        ["1:{b}/x/preupload/{r}", "3:a\nb/tag/c"]
     );
 }
 
