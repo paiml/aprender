@@ -215,7 +215,7 @@ stages:
   release_entries:
     merge: RR-M02 RR-M05 RR-M09 RR-M10 RR-M11 RR-M13 RR-M15 RR-M16 RR-M17
     tag: RR-T01 RR-T09 RR-T11 RR-T16 RR-T21
-    publish: RR-T01 RR-P01 RR-P03 RR-P14
+    publish: RR-T01 RR-P01 RR-P03 RR-P14 RR-P38
 
 # THE LIST. One requirement per line (the checker parses this block; keep one flow map per line).
 requirements:
@@ -234,6 +234,7 @@ requirements:
   - {id: RR-T16, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/rc_publish_gate.sh --verify", also: ["publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check"], checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball), moved ahead of the tag (#4690, was RR-P07)", producer: "publish-dryrun"}
   - {id: RR-T21, applies_to: [tag], anchor: "tag:autopilot/tag/git push origin", checker: "scripts/hooks/pre-push-tags.sh", provenance: "#4943 #4944 the pre-push tag guard refuses a release tag that is not exactly its release branch head", producer: "tag"}
   - {id: RR-T22, applies_to: [tag], kind: mechanics, anchor: "tag:autopilot/tag/source scripts/lib/release_policy.sh", checker: "scripts/lib/release_policy.sh#rp_known_failures", provenance: "the release notes list each known failure with its ticket; it lists and never stops a release", producer: "tag"}
+  - {id: RR-T23, applies_to: [tag], kind: mechanics, anchor: "tag:autopilot/tag/bash scripts/hooks/pre-push-tags.sh --arm-release", checker: "scripts/hooks/pre-push-tags.sh#--arm-release", provenance: "#4950 G1: the one-shot marker the pre-push tag guard needs to let a release tag out, armed for that one tag after every tag check passed; it arms the push and judges nothing", producer: "tag"}
   - {id: RR-D01, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_multiplatform_dogfood", checker: "Cargo.toml#scripts/check_multiplatform_dogfood.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
   - {id: RR-D02, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_model_ladder", checker: "Cargo.toml#scripts/check_model_ladder.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
   - {id: RR-D03, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_ladder_provenance", checker: "Cargo.toml#scripts/check_ladder_provenance.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
@@ -288,3 +289,4 @@ requirements:
   - {id: RR-P03, applies_to: [publish], seven: binaries-before-public, anchor: "publish:autopilot/publish/bash scripts/check_release_assets.sh", also: ["publish:autopilot/assets/gh-workflow binary-release.yml", "tag:autopilot/tag/gh-workflow binary-release.yml"], checker: "scripts/check_release_assets.sh", provenance: "#4657 #4659 release binaries; #4690 the draft goes public only with its assets verified (#4688: was RR-P37)", producer: "assets"}
   - {id: RR-P06, applies_to: [publish], kind: mechanics, anchor: "publish:autopilot/preflight/bash scripts/check_publish_preflight.sh", also: ["publish:cascade/if [ -f .cargo/config.toml ]"], checker: "scripts/check_publish_preflight.sh", provenance: "PMAT-745 publish preflight", producer: "preflight"}
   - {id: RR-P14, applies_to: [publish], anchor: "publish:preflight/R6", also: ["publish:cascade/facade_upstream_ready", "publish:cascade/if [ $UNIVERSE_N -lt 70 ]"], checker: "scripts/check_publish_preflight.sh#FAIL  R6 ", provenance: "PMAT-955 #3468 R6 no dev-dependency cycle", producer: "preflight"}
+  - {id: RR-P38, applies_to: [publish], anchor: "publish:autopilot/dryrun/bash scripts/release/check_crate_contents.sh", checker: "scripts/release/check_crate_contents.sh", seven: no-secret-in-crates, provenance: "#4950 nothing secret in the published crates: every publishable crate's package list read for key files, PEM private-key blocks and token shapes; rc 1 a finding, 2 not measured; the cascade runs it again on the release commit before the upload. Its nights are the crate-contents job of release-gates-nightly.yml", producer: "crate-contents"}
