@@ -7,7 +7,7 @@ criteria:
   - {id: T1, pass: "every training verb (finetune, distill, merge, quantize) runs end to end on Qwen3.5 with 0 refusals and real GDN modelling", falsifier: "a qwen35 .apr into finetune exits 0 while aprender-train has no GDN forward+backward (TAH-001 today refuses it by name)", command: asked, ruling: "O 2026-09-27"}
   - {id: T2, pass: "QLoRA fine-tune throughput on Qwen3.5-4B >= 0.8x pinned Unsloth on the same GPU", falsifier: "beat-unsloth-finetune-throughput-v1 planted same-work row: ratio computed over unequal token counts is RED", command: asked, ruling: asked}
   - {id: T3, pass: "a Prometheus B2 challenger model trained with apr", falsifier: asked, command: asked, ruling: "O 2026-09-27"}
-  - {id: T4, pass: "a dogfood model release candidate trained with apr is on Hugging Face", falsifier: asked, command: asked, ruling: "O 2026-09-27"}
+  - {id: T4, pass: "a dogfood model release candidate trained with apr is on Hugging Face", falsifier: "contracts/dogfood-model-lifecycle-v1.yaml on la-72/e4-*: FALSIFY-EXT-016 (a one-byte corrupt rc fails M-CR) and FALSIFY-EXT-017 (a planted post-publish sha or file-set mismatch triggers yank + STOP)", command: "unrun: apr model pack -> apr model gate (M0..M6, M-CR) -> one HF publish path (#4961) -> apr model confirm", ruling: "O 2026-09-27"}
   - {id: T5, pass: "train -> export GGUF -> llama.cpp load round trip, logits cosine >= 0.98", falsifier: "the #4418 export with the in_proj_z name-map row removed fails qwen35_name_map_is_pinned", command: asked, ruling: "O 2026-09-27"}
   - {id: T6, pass: asked, falsifier: asked, command: asked, ruling: asked}
 baselines:
@@ -23,6 +23,14 @@ contracts:
 staged:
   - {branch: la-72/4552-train-arch-honesty, issue: 4552, rows: R1}
   - {branch: la-72/4418-qwen35-gguf, issue: 4418, rows: T5}
+  - {branch: la-72/e4-s1-4382, issue: 4382, rows: T4}
+  - {branch: la-72/e4-s2-4386a, issue: 4386, rows: T4}
+  - {branch: la-72/e4-s3-4386b, issue: 4386, rows: T4}
+  - {branch: la-72/e4-s4-4393a, issue: 4393, rows: T4}
+  - {branch: la-72/e4-s5-4393b, issue: 4393, rows: T4}
+  - {branch: la-72/e4-s5h-4393-ext14, issue: 4393, rows: T4, held: "EXT-14 HF publish waits for #4961"}
+  - {branch: la-72/e4-s6-4401a, issue: 4401, rows: T4}
+  - {branch: la-72/e4-s7-4401b, issue: 4401, rows: T4}
 questions:
   - {id: Q1, text: "T2: if the R5 baseline ratio is under 0.4, slip T2 or accept an fp32 fallback?", asked: 2026-10-08, answer: open}
   - {id: Q2, text: "T6: which APR-EMBED-001 rows are 0.72 exit criteria, and what is the pass line?", asked: 2026-10-08, answer: open}
