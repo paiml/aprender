@@ -50,7 +50,8 @@
 #       Ready prints one RECEIPT line per counting night. EXIT 0 ready · 1 not ready · 2 · 3 as below.
 #   rehearse.sh --classify TOOL CWD [ARG...]   READ or WRITE <why>, as the guard decides it
 #   rehearse.sh --selftest       the case table: guard must-refuse/must-pass, the stub end to end,
-#                                the judge on fixture nights (both polarities)
+#                                the judge on fixture nights (both polarities), and the rehearsal
+#                                workflow's wiring against the train that reads its run (wiring())
 #   rehearse.sh --mutants        each planted mutant must turn --selftest RED
 #
 # EXIT  0 GREEN · 1 RED · 2 not_measured (no night to judge, or the box cannot run one) · 3 caller error
@@ -73,6 +74,9 @@ IDS_POLICY=contracts/model-capability-ladder-v1.yaml
 # The workflow whose scheduled runs on main are the counting nights, and the floor its REST reads keep.
 WORKFLOW=release-rehearsal-nightly.yml
 RATE_FLOOR=1000
+# That workflow's file, and the train that reads its run (--in-run): wiring() holds the one to the other.
+REHEARSAL_WF="$SCRIPT_DIR/../../.github/workflows/$WORKFLOW"
+TRAIN_SCRIPT="$SCRIPT_DIR/nightly_train.sh"
 # A night's own record: the artifact its rehearse job uploads (night.txt, rehearsal/night.env, ...). The streak reads
 # it for the night's C, newest night first, and reads none past the night that makes nightly_greens.sh's NEED.
 RECORD_ARTIFACT=release-rehearsal
@@ -668,6 +672,70 @@ dledger_d7() {
     else echo CLEAR; fi
 }
 
+# wiring WORKFLOW TRAIN -> 0 when the rehearsal workflow is wired the way nightly_train.sh --in-run reads its run. The
+# train finds its lane jobs by NAME ("<INRUN_CALLER> / <job>", and INRUN_MODELS exactly) and a job's proof of C by
+# STEP NAME (its two capture prefixes, then C), so a renamed job or step is a lane that reads not_measured every
+# night, and a job of the rehearsal's own named "<INRUN_CALLER> / x" would vote as a lane. The models job's conclusion
+# is the models lane: it checks out and asserts C, its relay step may not fail quietly, the relayed step runs only on
+# a bundle the relay named and passes only on green or red, and a step fails the job on anything but green. The night
+# needs both callers, or the train reads a run whose lanes still run, and hands the train C and its own run.
+wiring() {
+    local wf=$1 tr=$2 bad="" at='${{ needs.pick.outputs.c }}' from caller wfl models lk mk rk b s caps
+    [ -f "$wf" ] || { printf '%s is missing' "$wf"; return 1; }
+    [ -f "$tr" ] || { printf '%s is missing' "$tr"; return 1; }
+    wr_tv() { sed -n "s/^$1=\"\\([^\"]*\\)\"\$/\\1/p" "$tr"; }
+    from=$(wr_tv INRUN_FROM); caller=$(wr_tv INRUN_CALLER); wfl=$(wr_tv INRUN_WF); models=$(wr_tv INRUN_MODELS)
+    { [ -n "$caller" ] && [ -n "$wfl" ] && [ -n "$models" ]; } || { printf 'miswired: the train names no INRUN_CALLER, INRUN_WF or INRUN_MODELS'; return 1; }
+    [ "$from" = ".github/workflows/$WORKFLOW" ] || bad="$bad train(INRUN_FROM=$from)"
+    # the train's capture prefixes, in its column order: the assert, then the relay
+    mapfile -t caps < <(grep -o 'capture("^[^"(]*(?<s>\[0-9a-f\]{40})\$")' "$tr" | sed 's/^capture("^//; s/(?<s>.*$//')
+    [ "${#caps[@]}" -eq 2 ] || { printf 'miswired: the train has %s step-name captures, not 2' "${#caps[@]}"; return 1; }
+    # wr_named NAME -> the key of each job whose name: is NAME; wr_with ERE -> the key of each job with a line matching ERE
+    wr_named() { awk -v n="$1" '/^jobs:$/ { j = 1; next } !j { next } /^  [A-Za-z0-9_-]+:$/ { k = substr($1, 1, length($1) - 1); next }
+        /^    name: / { v = $0; sub(/^    name: /, "", v); sub(/[ \t]+#.*$/, "", v); if (v == n || (P != "" && index(v, P) == 1)) print k }' P="${2:-}" "$wf"; }
+    wr_with() { awk -v re="$1" '/^jobs:$/ { j = 1; next } !j { next } /^  [A-Za-z0-9_-]+:$/ { k = substr($1, 1, length($1) - 1); next } $0 ~ re && !(k in s) { s[k]; print k }' "$wf"; }
+    # wr_step BLOCK LINE -> the step of a job block (from its `      - ` line to the next) holding the exact line LINE
+    wr_step() { awk -v l="$2" '/^      - / { if (hit) exit; s = "" } { s = s $0 "\n" } $0 == l { hit = 1 } END { if (hit) printf "%s", s }' <<< "$1"; }
+    wr_one() { [ -n "$1" ] && [ "$1" = "${1%%$'\n'*}" ]; }
+    lk=$(wr_named "$caller"); mk=$(wr_named "$models")
+    s=$(wr_named "" "$caller / "); [ -z "$s" ] || bad="$bad $caller(prefix:$(printf '%s' "$s" | tr '\n' ','))"
+    if wr_one "$lk"; then b=$(job_block "$wf" "$lk")
+        grep -qxF "    uses: ./$wfl" <<< "$b" || bad="$bad $caller(uses)"
+        grep -qxF "      ref: $at" <<< "$b" || bad="$bad $caller(ref-C)"
+        grep -qxF "      caller: $caller" <<< "$b" || bad="$bad $caller(caller)"
+    else bad="$bad $caller(name)"; fi
+    if wr_one "$mk"; then b=$(job_block "$wf" "$mk")
+        grep -qxF "      C: $at" <<< "$b" || bad="$bad $models(C)"
+        grep -qxF "          ref: $at" <<< "$b" || bad="$bad $models(checkout-at-C)"
+        grep -qxF '          [ "$h" = "$C" ] || { echo "::error::HEAD is $h, not C $C"; exit 1; }' <<< "$(wr_step "$b" "      - name: ${caps[0]}$at")" \
+            || bad="$bad $models(assert)"
+        grep -qE '^        run: setsid --wait bash scripts/release/models_nightly\.sh --relay --commit "\$C" .*--measure crux$' <<< "$(wr_step "$b" "        id: relay")" \
+            || bad="$bad $models(relay)"
+        ! grep -q 'continue-on-error' <<< "$b" || bad="$bad $models(continue-on-error)"
+        s=$(wr_step "$b" "      - name: ${caps[1]}$at")
+        if [ -z "$s" ]; then bad="$bad $models(relayed)"
+        else
+            grep -qxF "        if: steps.relay.outputs.bundle != ''" <<< "$s" || bad="$bad $models(relayed-if)"
+            { grep -qxF '          STATE: ${{ steps.relay.outputs.state }}' <<< "$s" \
+                && grep -qF '          case "$STATE" in green|red) ;; *) ' <<< "$s"; } || bad="$bad $models(relayed-state)"
+        fi
+        grep -qxF '          [ "$STATE" = green ] || { echo "::error::models RED on C $C: $REASON"; exit 1; }' <<< "$b" || bad="$bad $models(green-only)"
+    else bad="$bad $models(name)"; fi
+    rk=$(wr_with '^ +bash scripts/release/rehearse\.sh --run ')
+    if wr_one "$rk"; then b=$(job_block "$wf" "$rk")
+        s=$(sed -n 's/^    needs: \[\(.*\)\]$/\1/p' <<< "$b" | tr -d ' ' | tr ',' '\n')
+        { grep -qx pick <<< "$s" && grep -qxF "$lk" <<< "$s" && grep -qxF "$mk" <<< "$s"; } || bad="$bad $rk(needs)"
+        grep -qxF "      C: $at" <<< "$b" || bad="$bad $rk(C)"
+        grep -qE '^ +bash scripts/release/rehearse\.sh --run .*--commit "\$C" --in-run "\$GITHUB_RUN_ID"( |$)' <<< "$b" || bad="$bad $rk(in-run)"
+    else bad="$bad night(run)"; fi
+    if [ -n "$bad" ]; then printf 'miswired:%s' "$bad"; return 1; fi
+    printf '"%s / <job>" of %s and "%s", on C by "%s<C>" and "%s<C>"' "$caller" "$wfl" "$models" "${caps[0]}" "${caps[1]}"
+}
+# job_block WORKFLOW JOB -> the lines of job JOB, from `  JOB:` to the next job
+job_block() {
+    awk -v j="  $2:" '$0 == j { f = 1; next } f && /^  [^ #]/ { exit } f' "$1"
+}
+
 # ------------------------------------------------------------------ case table --
 selftest_cleanup() { [ -n "${tmp:-}" ] && case "$tmp" in ?*/tmp.?*) rm -rf -- "${tmp:?}" ;; esac; }
 
@@ -814,6 +882,7 @@ selftest() {
     selftest_streak
     selftest_pick
     selftest_lanes_argv
+    selftest_wiring
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
 }
@@ -1256,19 +1325,85 @@ selftest_lanes_argv() {
     printf '  %s night rows\n' "$((pass + fail - p0))"
 }
 
+# The rehearsal workflow against the train that reads its run: the real pair is wired, and each miswiring is refused
+# for its own reason.
+selftest_wiring() {
+    local p0=$((pass + fail)) o
+    wrow() { # wrow NAME wf|train NEEDLE SED -> wiring() refuses the pair with SED applied to that one file, naming NEEDLE
+        local w=$REHEARSAL_WF t=$TRAIN_SCRIPT src out
+        if [ "$2" = wf ]; then src=$w; out=$tmp/wr.yml; w=$out; else src=$t; out=$tmp/wr-train.sh; t=$out; fi
+        sed -e "$4" "$src" > "$out" 2>/dev/null
+        if cmp -s "$src" "$out"; then printf '  BROKE %-48s the fixture edit changed nothing\n' "$1"; fail=$((fail + 1))
+        elif o=$(wiring "$w" "$t"); then printf '  BROKE %-48s accepted: %s\n' "$1" "$o"; fail=$((fail + 1))
+        elif [[ $o != *"$3"* ]]; then printf '  BROKE %-48s refused, but not for %s: %s\n' "$1" "$3" "$o"; fail=$((fail + 1))
+        else pass=$((pass + 1)); fi
+    }
+    if o=$(wiring "$REHEARSAL_WF" "$TRAIN_SCRIPT"); then pass=$((pass + 1))
+    else printf '  BROKE %-48s %s\n' the_rehearsal_workflow_is_wired_as_its_train_reads_it "$o"; fail=$((fail + 1)); fi
+    local mb='/^  models:$/,/^  [a-z]/'
+    wrow a_renamed_models_job_is_refused wf 'models(name)' 's/^    name: models   #/    name: models-crux   #/'
+    wrow a_renamed_lanes_caller_is_refused wf 'lanes(name)' 's/^    name: lanes   #/    name: lane   #/'
+    wrow a_lanes_caller_input_of_another_name_is_refused wf 'lanes(caller)' 's/^      caller: lanes$/      caller: lane/'
+    wrow lanes_called_at_another_ref_are_refused wf 'lanes(ref-C)' 's/^      ref: \${{ needs\.pick\.outputs\.c }}$/      ref: main/'
+    wrow lanes_calling_another_workflow_are_refused wf 'lanes(uses)' 's#^    uses: \./\.github/workflows/release-lanes-nightly\.yml$#    uses: ./.github/workflows/x.yml#'
+    wrow a_job_of_its_own_named_as_a_lane_is_refused wf 'lanes(prefix:rehearse' 's/^    name: rehearse$/    name: lanes \/ rehearse/'
+    wrow a_renamed_relayed_step_is_refused wf 'models(relayed)' 's/^      - name: Relayed the models-crux bundle of /      - name: Relayed the bundle of /'
+    wrow a_renamed_models_assert_is_refused wf 'models(assert)' "${mb}s/^      - name: Assert HEAD is /      - name: Assert head is /"
+    wrow a_models_assert_that_asserts_nothing_is_refused wf 'models(assert)' "${mb}"'s/\[ "\$h" = "\$C" \] ||/true ||/'
+    wrow a_relayed_step_run_on_no_bundle_is_refused wf 'models(relayed-if)' "/^      - name: Relayed/,/^      - /s/^        if: steps\\.relay\\.outputs\\.bundle != ''\$/        if: always()/"
+    wrow a_relayed_step_passing_any_state_is_refused wf 'models(relayed-state)' 's/case "\$STATE" in green|red) ;;/case "$STATE" in *) ;;/'
+    wrow a_models_job_that_succeeds_on_red_is_refused wf 'models(green-only)' 's/\[ "\$STATE" = green \] || {/[ -n "$STATE" ] || {/'
+    wrow a_relay_that_may_fail_quietly_is_refused wf 'models(continue-on-error)' 's/^        id: relay$/&\n        continue-on-error: true/'
+    wrow a_relay_of_the_ladder_is_refused wf 'models(relay)' 's/--measure crux$/--measure ladder/'
+    wrow a_relay_step_under_another_id_is_refused wf 'models(relay)' 's/^        id: relay$/        id: crux/'
+    wrow a_models_job_on_another_c_is_refused wf 'models(C)' "${mb}"'s/^      C: \${{ needs\.pick\.outputs\.c }}$/      C: ${{ github.sha }}/'
+    wrow a_models_checkout_of_another_commit_is_refused wf 'models(checkout-at-C)' "${mb}"'s/^          ref: \${{ needs\.pick\.outputs\.c }}$/          ref: ${{ github.sha }}/'
+    wrow a_night_that_does_not_wait_for_models_is_refused wf 'rehearse(needs)' 's/^    needs: \[pick, lanes, models\]$/    needs: [pick, lanes]/'
+    wrow a_night_on_another_c_is_refused wf 'rehearse(C)' '/^  rehearse:$/,$s/^      C: \${{ needs\.pick\.outputs\.c }}$/      C: ${{ github.sha }}/'
+    wrow a_night_without_its_own_run_is_refused wf 'rehearse(in-run)' 's/ --in-run "\$GITHUB_RUN_ID"//'
+    wrow a_train_reading_another_workflow_is_refused train 'train(INRUN_FROM=' 's#^INRUN_FROM="\.github/workflows/release-rehearsal-nightly\.yml"$#INRUN_FROM=".github/workflows/x.yml"#'
+    wrow a_train_reading_another_caller_is_refused train 'lane(name)' 's/^INRUN_CALLER="lanes"$/INRUN_CALLER="lane"/'
+    wrow a_train_reading_another_models_job_is_refused train 'models-crux(name)' 's/^INRUN_MODELS="models"$/INRUN_MODELS="models-crux"/'
+    wrow a_train_capturing_another_assert_is_refused train 'models(assert)' 's/capture("^Assert HEAD is (?<s>/capture("^Asserted (?<s>/'
+    wrow a_train_capturing_another_relay_is_refused train 'models(relayed)' 's/capture("^Relayed the models-crux bundle of (?<s>/capture("^Relayed models-crux of (?<s>/'
+    wrow a_second_job_named_models_is_refused wf 'models(name)' 's/^    name: rehearse$/    name: models/'
+    wrow a_workflow_that_runs_no_night_is_refused wf 'night(run)' 's/bash scripts\/release\/rehearse\.sh --run /bash scripts\/release\/rehearse.sh --judge /'
+    wrow a_train_with_one_capture_is_refused train 'step-name captures, not 2' 's/capture("^Relayed the models-crux bundle of (?<s>\[0-9a-f\]{40})\$")/test("^Relayed")/'
+    wrow a_train_naming_no_models_job_is_refused train 'names no INRUN' 's/^INRUN_MODELS="models"$/INRUN_MODELS=models/'
+    if o=$(wiring "$tmp/no-such.yml" "$TRAIN_SCRIPT" 2>&1); then printf '  BROKE %-48s accepted: %s\n' a_missing_workflow_is_refused "$o"; fail=$((fail + 1))
+    elif [[ $o == *"no-such.yml is missing"* ]]; then pass=$((pass + 1)); else printf '  BROKE %-48s %s\n' a_missing_workflow_is_refused "$o"; fail=$((fail + 1)); fi
+    if o=$(wiring "$REHEARSAL_WF" "$tmp/no-such.sh" 2>&1); then printf '  BROKE %-48s accepted: %s\n' a_missing_train_is_refused "$o"; fail=$((fail + 1))
+    elif [[ $o == *"no-such.sh is missing"* ]]; then pass=$((pass + 1)); else printf '  BROKE %-48s %s\n' a_missing_train_is_refused "$o"; fail=$((fail + 1)); fi
+    printf '  %s wiring rows\n' "$((pass + fail - p0))"
+}
+
 # ------------------------------------------------------------------ mutants --
 # Each mutant is "name sed-script". It must change this file, still parse, and turn --selftest RED with at
 # least one BROKE row. A pattern that no longer matches is reported, never skipped. Mutants of the guard
-# library are applied to a copy of it that a copy of this script sources.
+# library are applied to a copy of it that a copy of this script sources. Each copy is laid out as the repo is, with
+# the train and the workflow that wiring() reads, and the unmutated copy must be green there first: a copy missing
+# a file would turn every mutant RED and prove nothing.
 mutants() {
     local tmp pass=0 fail=0 name file expr dir o rc
     tmp="$(mktemp -d)"
     case "$tmp" in ?*/tmp.?*) : ;; *) echo "mktemp gave '${tmp:-}', refusing"; return 2 ;; esac
     trap selftest_cleanup RETURN
+    mdir() { # mdir -> DIR/scripts/release of a fresh copy of what the case table reads
+        local d
+        d=$(mktemp -d "${tmp:?}/m.XXXXXX") && mkdir -p "$d/scripts/release" "$d/.github/workflows" \
+            && cp -- "$SCRIPT_PATH" "$SCRIPT_DIR/lib_write_guard.sh" "$SCRIPT_DIR/lib_rehearsal.sh" "$SCRIPT_DIR/nightly_greens.sh" \
+                "$SCRIPT_DIR/release_lanes.sh" "$TRAIN_SCRIPT" "$d/scripts/release/" \
+            && cp -- "$REHEARSAL_WF" "$d/.github/workflows/" && printf '%s/scripts/release' "$d"
+    }
+    dir=$(mdir) || return 2
+    rc=0; o="$(REHEARSE_CASCADE="$SCRIPT_DIR/../cascade-publish.sh" bash "$dir/rehearse.sh" --selftest < /dev/null 2>&1)" || rc=$?
+    if [ "$rc" != 0 ]; then
+        printf '  BROKE %-40s the unmutated copy is not green in the mutant dir (exit %s): %s\n' baseline "$rc" "$(printf '%s\n' "$o" | grep -m 3 '^  BROKE ' | tr '\n' '|')"
+        return 1
+    fi
     while read -r name file expr; do
         [ -n "$name" ] || continue
-        dir=$(mktemp -d "${tmp:?}/m.XXXXXX") || return 2
-        cp -- "$SCRIPT_PATH" "$dir/rehearse.sh"; cp -- "$SCRIPT_DIR/lib_write_guard.sh" "$SCRIPT_DIR/lib_rehearsal.sh" "$SCRIPT_DIR/nightly_greens.sh" "$SCRIPT_DIR/release_lanes.sh" "$dir/"
+        dir=$(mdir) || return 2
         sed -i -e "$expr" "$dir/$file"
         if cmp -s "$dir/$file" "$SCRIPT_DIR/$file"; then
             printf '  BROKE %-40s changed nothing: its pattern no longer matches\n' "$name"; fail=$((fail + 1)); continue
@@ -1400,6 +1535,34 @@ lanes_stage_in_run_always    rehearse.sh         s/\${RELEASE_REHEARSAL_IN_RUN:+
 guard_env_drops_in_run       rehearse.sh         s/ RELEASE_REHEARSAL_IN_RUN=%q\\n' "\$c" "\$st\/train" "\$run"/\\n' "$c" "$st\/train"/
 run_night_drops_in_run       rehearse.sh         s/install_guard "\$st" "\$commit" "\$inrun"/install_guard "$st" "$commit"/
 in_run_unvalidated           rehearse.sh         s/^    \[ -z "\$inrun" \] || \[\[ \$inrun =~ .*must be a run id.*$/    :/
+wiring_missing_wf_unnamed    rehearse.sh         s/\[ -f "\$wf" \] || { printf '%s is missing' "\$wf"; return 1; }/:/
+wiring_missing_train_unnamed rehearse.sh         s/\[ -f "\$tr" \] || { printf '%s is missing' "\$tr"; return 1; }/:/
+wiring_train_names_unchecked rehearse.sh         s/|| { printf 'miswired: the train names no INRUN_CALLER/|| true || { printf 'x/
+wiring_train_from_unchecked  rehearse.sh         s/\[ "\$from" = ".github\/workflows\/\$WORKFLOW" \] || bad=/true || bad=/
+wiring_capture_count_free    rehearse.sh         s/\[ "\${#caps\[@\]}" -eq 2 \] || {/true || {/
+wiring_names_keep_comments   rehearse.sh         s/ sub(\/\[ \\t\]+#\.\*\$\/, "", v);//
+wiring_step_runs_past_its_end rehearse.sh        s/{ if (hit) exit; s = "" }/{ s = "" }/
+wiring_one_takes_two_jobs    rehearse.sh         s/wr_one() { .*/wr_one() { [ -n "$1" ]; }/
+wiring_own_lane_names_free   rehearse.sh         s/\[ -z "\$s" \] || bad="\$bad \$caller(prefix/true || bad="$bad $caller(prefix/
+wiring_caller_uses_free      rehearse.sh         s/|| bad="\$bad \$caller(uses)"/|| :/
+wiring_caller_ref_free       rehearse.sh         s/|| bad="\$bad \$caller(ref-C)"/|| :/
+wiring_caller_input_free     rehearse.sh         s/|| bad="\$bad \$caller(caller)"/|| :/
+wiring_caller_name_unnamed   rehearse.sh         s/    else bad="\$bad \$caller(name)"; fi/    fi/
+wiring_models_c_free         rehearse.sh         s/|| bad="\$bad \$models(C)"/|| :/
+wiring_models_checkout_free  rehearse.sh         s/|| bad="\$bad \$models(checkout-at-C)"/|| :/
+wiring_models_assert_free    rehearse.sh         s/|| bad="\$bad \$models(assert)"/|| :/
+wiring_assert_read_as_relay  rehearse.sh         s/"      - name: \${caps\[0\]}\$at"/"      - name: ${caps[1]}$at"/
+wiring_models_relay_free     rehearse.sh         s/|| bad="\$bad \$models(relay)"/|| :/
+wiring_relay_may_fail        rehearse.sh         s/|| bad="\$bad \$models(continue-on-error)"/|| :/
+wiring_relayed_unnamed       rehearse.sh         s/if \[ -z "\$s" \]; then bad="\$bad \$models(relayed)"/if false; then :/
+wiring_relayed_if_free       rehearse.sh         s/|| bad="\$bad \$models(relayed-if)"/|| :/
+wiring_relayed_state_free    rehearse.sh         s/|| bad="\$bad \$models(relayed-state)"/|| :/
+wiring_green_only_free       rehearse.sh         s/|| bad="\$bad \$models(green-only)"/|| :/
+wiring_models_name_unnamed   rehearse.sh         s/    else bad="\$bad \$models(name)"; fi/    fi/
+wiring_needs_models_free     rehearse.sh         s/ && grep -qxF "\$mk" <<< "\$s"//
+wiring_night_c_free          rehearse.sh         s/|| bad="\$bad \$rk(C)"/|| :/
+wiring_night_in_run_free     rehearse.sh         s/|| bad="\$bad \$rk(in-run)"/|| :/
+wiring_night_run_unnamed     rehearse.sh         s/    else bad="\$bad night(run)"; fi/    fi/
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
