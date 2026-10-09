@@ -466,6 +466,18 @@ check_contract_count() {
     compare_count FALSIFY-README-002 contract_count "$lits" "$tgt" "the merge tree $merge_short (git archive <rev> -- contracts, *.yaml)"
   }
 
+  # The block reader is line-wise, so a block whose markers sit on different
+  # lines (or that holds markup) is invisible to it: a hand-edited number there
+  # passed beside one valid block (GEN-001 #4526, Q7). Every START marker must
+  # open a block that closes on its own line.
+  nstart=$(grep -oF "$CONTRACT_BLOCK_START" "$README" | grep -c .) || nstart=0
+  ninline=$(grep -oE "${CONTRACT_BLOCK_START}[^<]*${CONTRACT_BLOCK_END}" "$README" | grep -c .) || ninline=0
+  if [ "$nstart" -ne "$ninline" ]; then # SPLIT-MUTATION-POINT
+    printf 'FAIL FALSIFY-README-002 contract_count: README.md has %s CONTRACT_COUNT START marker(s) but %s block(s) that close on the same line. A block split across lines, or holding markup, is not read by this check. Put each block on one line, then run: make readme-sync\n' \
+      "$nstart" "$ninline" >&2
+    return 1
+  fi
+
   blocks=$(contract_block_counts) || blocks=""
   literals=$(claimed_contract_counts) || literals=""
 
