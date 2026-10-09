@@ -18,7 +18,8 @@
 //!   regrouped from key-head-major to value-head-major ([`reorder_v_heads`])
 //! * metadata: `qwen35.ssm.*`, `full_attention_interval`, M-RoPE sections,
 //!   partial rotary dims, and a `gpt2`/`qwen35` tokenizer with token types
-//! * quantization ([`qwen35_q4km_type`]): llama.cpp's Q4_K_M layer policy
+//! * quantization ([`qwen35_q4km_type`]): the per-tensor types of the published
+//!   unsloth Q4_K_M file, which differ from llama.cpp's own Q4_K_M policy
 
 use crate::error::{AprenderError, Result};
 use crate::format::gguf::{GgmlType, GgufTensor, GgufValue};
@@ -42,11 +43,12 @@ pub(crate) fn enforce_hybrid_layer_completeness(names: &[&str], num_layers: usiz
         "mlp.down_proj.weight",
     ];
     for i in 0..num_layers {
+        // Anchored on the exporter's own prefix strip: a tensor counts for this
+        // layer only if `qwen35_gguf_name` would export it as one, so `mtp.*`,
+        // `*visual.*` and unknown prefixes never satisfy the gate.
         let has = |suffix: &str| {
             let want = format!("layers.{i}.{suffix}");
-            names
-                .iter()
-                .any(|n| n.ends_with(&want) && !n.starts_with("mtp."))
+            names.iter().any(|n| strip_lm_prefix(n) == Some(want.as_str()))
         };
         let mixer: Vec<&str> = if has("linear_attn.A_log") {
             QWEN35_LAYER_NAME_MAP
@@ -283,13 +285,17 @@ pub(crate) fn use_more_bits(i: usize, n: usize) -> bool {
     i < n / 8 || i >= 7 * n / 8 || (i >= n / 8 && (i - n / 8) % 3 == 2)
 }
 
-/// Q4_K_M tensor type, mirroring llama.cpp `llama_tensor_get_type` for this
-/// architecture (and the published unsloth Q4_K_M: token_embd Q6_K, attn_qkv
-/// and ssm_out Q5_K, attn_v / ffn_down Q6_K on `use_more_bits` layers).
-/// `attn_v_rank` is the tensor's index among the `attn_v` tensors; llama.cpp
-/// counts it against `n_layer`, not against the number of attn_v tensors.
-/// ssm_alpha/ssm_beta stay F32: llama.cpp uses Q8_0 there and trueno_quant has
-/// no Q8_0 encoder (they are 2 x nv x hidden, well under 1% of the file).
+/// Q4_K_M tensor type. This reproduces the published unsloth Qwen3.5 Q4_K_M
+/// file tensor by tensor (compared on Qwen3.5-4B): token_embd Q6_K, attn_qkv
+/// and ssm_out Q5_K, attn_v / ffn_down Q6_K on `use_more_bits` layers. It is
+/// NOT llama.cpp `llama_tensor_get_type` at `d1d3c3396`, which sends attn_qkv
+/// down its attn_v branch and has no ssm_out rule.
+/// `attn_v_rank` is the tensor's index among the `attn_v` tensors (one per
+/// full-attention layer), tested against `n_layer`: that pairing gives the
+/// published file's attn_v types.
+/// ssm_alpha/ssm_beta stay F32: the published file has Q8_0 there and
+/// trueno_quant has no Q8_0 encoder (they are 2 x nv x hidden, well under 1% of
+/// the file).
 pub(crate) fn qwen35_q4km_type(
     gguf: &str,
     layer: Option<usize>,

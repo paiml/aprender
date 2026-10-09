@@ -382,6 +382,53 @@ fn hybrid_completeness_names_the_missing_tensor() {
     assert!(enforce_hybrid_layer_completeness(&refs, 3).is_err());
 }
 
+#[test]
+fn hybrid_completeness_counts_only_language_model_tensors() {
+    // Layer 0's input norm exists only under a vision or MTP prefix: the
+    // exporter drops both, so neither may stand in for the missing tensor.
+    for stand_in in [
+        "model.visual.layers.0.input_layernorm.weight",
+        "mtp.layers.0.input_layernorm.weight",
+    ] {
+        let mut names = hybrid_names();
+        names.retain(|n| n != &format!("{P}layers.0.input_layernorm.weight"));
+        names.push(stand_in.to_string());
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let err = enforce_hybrid_layer_completeness(&refs, 2).expect_err(stand_in);
+        assert!(err.to_string().contains("input_layernorm"), "{stand_in}: {err}");
+    }
+    // the text-only prefixes the exporter strips are still accepted
+    for prefix in ["model.", "language_model.model."] {
+        let names: Vec<String> = hybrid_names()
+            .iter()
+            .map(|n| n.replacen(P, prefix, 1))
+            .collect();
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        enforce_hybrid_layer_completeness(&refs, 2).expect(prefix);
+    }
+}
+
+#[test]
+fn attn_v_quant_follows_its_rank_among_attn_v_tensors_not_its_layer() {
+    // 8 layers, full attention at 3 and 7. use_more_bits(_, 8) holds for
+    // 0, 3, 6 and 7, so by layer both attn_v would be Q6_K; by rank (0, 1)
+    // only the first is.
+    let mut t = BTreeMap::new();
+    for layer in [3, 7] {
+        let name = format!("{P}layers.{layer}.self_attn.v_proj.weight");
+        t.insert(name, (vec![0.5_f32; 256], vec![1, 256]));
+    }
+    let out = build_qwen35_tensors(&t, D, 8, true).expect("build");
+    let v: Vec<(&str, GgmlType)> = out.iter().map(|g| (g.name.as_str(), g.dtype)).collect();
+    assert_eq!(
+        v,
+        vec![
+            ("blk.3.attn_v.weight", GgmlType::Q6K),
+            ("blk.7.attn_v.weight", GgmlType::Q4K),
+        ]
+    );
+}
+
 fn added(id: usize, content: &str, special: bool) -> AddedToken {
     AddedToken {
         id,
