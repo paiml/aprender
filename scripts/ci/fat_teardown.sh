@@ -52,14 +52,16 @@ own_containers() {
 }
 
 stop_driver() {
-    local rt=$1 pidf pid i
+    local rt=$1 pidf pid i cmd
     pidf="${rt%/}/fat/driver.pid"
     [ -f "$pidf" ] || return 0
     pid=$(cat "$pidf" 2>/dev/null)
     case "$pid" in ''|*[!0-9]*) return 0 ;; esac
     # A recorded pid can be reused once its process is gone: kill it only if it
-    # is still fat_driver.
-    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'fat_driver.py' || return 0
+    # is still fat_driver. The 2>/dev/null goes BEFORE the < : a driver the
+    # runner already killed has no /proc entry, and that is not worth a log line.
+    cmd=$(tr '\0' ' ' 2>/dev/null < "/proc/$pid/cmdline") || return 0
+    case "$cmd" in *fat_driver.py*) ;; *) return 0 ;; esac
     echo "$PROG: stopping the background driver, pid $pid"
     kill -TERM "$pid" 2>/dev/null
     for i in $(seq 1 30); do
