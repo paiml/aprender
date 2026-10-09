@@ -474,19 +474,31 @@ gates() {
 # ---------------------------------------------------------------- the budget ---------------------------------------
 # budget LIST: GATEs (no parent) per stage against the caps, fixed here; an entry counts in every stage it names.
 # A GATE of kind mechanics (#4688: publish mechanics, not a check) is not counted; no other kind exists.
-# Every key of SEVEN must ride on a GATE.
+# Every key of SEVEN must ride on a GATE. The stage lists (`release_entries`, read by rp_entries) must name
+# exactly the counted GATEs of each stage: a GATE off its stage's list is UNLISTED, a listed id that is not
+# one is STALE. A list the reader refuses is not measured, never "no limit".
+# shellcheck source=scripts/lib/release_policy.sh
+. "${SCRIPT_PATH%/*}/../lib/release_policy.sh" || exit 2
 budget() {
-    local list=$1 out
+    local list=$1 out st lists=""
     [ -f "$list" ] || nm "no list $list"
     out=$(parse_list "$list") || caller_error "malformed list $list"
     [ -n "$out" ] || nm "the list $list names no requirement"
-    printf '%s\n' "$out" | awk -F'\t' -v SEVEN="$SEVEN" '
-        $9 == "" && $11 != "mechanics" { n = split($2, s, ","); for (i = 1; i <= n; i++) E[s[i]]++; if ($10 != "") H[$10] = 1 }
+    for st in merge tag publish; do
+        rp_entries "$list" "$st" || nm "$RP_WHY"
+        lists="$lists$st	$RP_IDS
+"
+    done
+    printf '%s%s\n' "$lists" "$out" | awk -F'\t' -v SEVEN="$SEVEN" '
+        NF == 2 { n = split($2, s, " "); for (i = 1; i <= n; i++) L[$1 SUBSEP s[i]] = 1; next }
+        $9 == "" && $11 != "mechanics" { n = split($2, s, ","); for (i = 1; i <= n; i++) { E[s[i]]++; G[s[i] SUBSEP $1] = 1 }; if ($10 != "") H[$10] = 1 }
         END {
             CAP["merge"] = 10; CAP["tag"] = 5; CAP["publish"] = 5
             printf "entries merge=%d tag=%d publish=%d total=%d\n", E["merge"], E["tag"], E["publish"], E["merge"] + E["tag"] + E["publish"]
             split("merge tag publish", st, " "); for (i = 1; i <= 3; i++) if (E[st[i]] > CAP[st[i]]) { printf "OVER %s %d/%d\n", st[i], E[st[i]], CAP[st[i]]; bad = 1 }
             n = split(SEVEN, k, " "); for (i = 1; i <= n; i++) if (!(k[i] in H)) { print "MISSING " k[i]; bad = 1 }
+            for (x in G) if (!(x in L)) { split(x, p, SUBSEP); print "UNLISTED " p[1] " " p[2]; bad = 1 }
+            for (x in L) if (!(x in G)) { split(x, p, SUBSEP); print "STALE " p[1] " " p[2]; bad = 1 }
             exit bad
         }'
 }
@@ -706,17 +718,22 @@ mutate() {
     esac
 }
 
-# budget_list M T P [DROP]: a list of M merge, T tag and P publish GATEs; the keys of SEVEN ride on the first seven,
-# except DROP
+# budget_list M T P [DROP]: a list of M merge, T tag and P publish GATEs (RR-M1.., RR-T1.., RR-P1..), each
+# stage's GATEs named on its release_entries line; the keys of SEVEN ride on the first seven, except DROP
 budget_list() {
-    local st j i=0 sv
+    local st j i=0 sv ids
     local -a ks
     read -ra ks <<< "$SEVEN"
+    printf 'stages:\n  release_entries:\n'
+    for st in "merge $1" "tag $2" "publish $3"; do
+        ids=""; for ((j = 1; j <= ${st#* }; j++)); do ids="$ids RR-$(printf '%s' "${st%% *}" | cut -c1 | tr '[:lower:]' '[:upper:]')$j"; done
+        printf '    %s: %s\n' "${st%% *}" "${ids# }"
+    done
     printf 'requirements:\n'
     for st in "merge $1" "tag $2" "publish $3"; do
         for ((j = 1; j <= ${st#* }; j++)); do
             sv=${ks[$i]:-}; i=$((i + 1)); [ "$sv" != "${4:-}" ] || sv=""
-            printf '  - {id: B-%s%d, applies_to: [%s], anchor: "x", provenance: "fixture", producer: "p"%s}\n' "${st%% *}" "$j" "${st%% *}" "${sv:+, seven: $sv}"
+            printf '  - {id: RR-%s%d, applies_to: [%s], anchor: "x", provenance: "fixture", producer: "p"%s}\n' "$(printf '%s' "${st%% *}" | cut -c1 | tr '[:lower:]' '[:upper:]')" "$j" "${st%% *}" "${sv:+, seven: $sv}"
         done
     done
 }
@@ -839,20 +856,34 @@ STUB
                 'budget-tag-over 1 OVER tag 6/5|10 6 5|' \
                 'budget-publish-over 1 OVER publish 6/5|10 5 6|' \
                 'budget-seven-dropped 1 MISSING crux-smoke|10 5 5 crux-smoke|' \
-                'budget-seven-unknown 3 seven nope is not one of the seven|10 5 5|  - {id: B-X, applies_to: [merge], anchor: "x", provenance: "fixture", seven: nope}' \
-                'budget-seven-on-row 3 a row carries no seven|10 5 5|  - {id: B-X, applies_to: [merge], parent: B-merge1, anchor: "x", provenance: "fixture", seven: crux-smoke}' \
-                'budget-row-uncounted 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|  - {id: B-X, applies_to: [merge, tag, publish], parent: B-merge1, anchor: "x", provenance: "fixture", producer: "p"}' \
-                'budget-two-stages 0 entries merge=10 tag=5 publish=5 total=20|9 4 5|  - {id: B-X, applies_to: [merge, tag], anchor: "x", provenance: "fixture"}' \
-                'budget-mechanics-uncounted 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|  - {id: B-X, applies_to: [publish], kind: mechanics, anchor: "x", provenance: "fixture", producer: "p"}' \
-                'budget-kind-unknown 3 kind foo is not mechanics|10 5 4|  - {id: B-X, applies_to: [publish], kind: foo, anchor: "x", provenance: "fixture", producer: "p"}' \
+                'budget-seven-unknown 3 seven nope is not one of the seven|10 5 5|  - {id: RR-X1, applies_to: [merge], anchor: "x", provenance: "fixture", seven: nope}' \
+                'budget-seven-on-row 3 a row carries no seven|10 5 5|  - {id: RR-X1, applies_to: [merge], parent: RR-M1, anchor: "x", provenance: "fixture", seven: crux-smoke}' \
+                'budget-row-uncounted 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|  - {id: RR-X1, applies_to: [merge, tag, publish], parent: RR-M1, anchor: "x", provenance: "fixture", producer: "p"}' \
+                'budget-two-stages 0 entries merge=10 tag=5 publish=5 total=20|9 4 5|  - {id: RR-X1, applies_to: [merge, tag], anchor: "x", provenance: "fixture"}|s/^    merge: /    merge: RR-X1 /;s/^    tag: /    tag: RR-X1 /' \
+                'budget-mechanics-uncounted 0 entries merge=10 tag=5 publish=5 total=20|10 5 5|  - {id: RR-X1, applies_to: [publish], kind: mechanics, anchor: "x", provenance: "fixture", producer: "p"}' \
+                'budget-kind-unknown 3 kind foo is not mechanics|10 5 4|  - {id: RR-X1, applies_to: [publish], kind: foo, anchor: "x", provenance: "fixture", producer: "p"}' \
+                'budget-unlisted 1 UNLISTED merge RR-M10|10 5 5||s/ RR-M10$//' \
+                'budget-stale 1 STALE tag RR-T9|10 5 5||s/^    tag: /    tag: RR-T9 /' \
+                'budget-no-block 2 has no release_entries block|10 5 5||/^stages:/,/^    publish:/d' \
+                'budget-unknown-stage 2 unknown key in release_entries: deploy|10 5 5||s/^    publish:/    deploy:/' \
+                'budget-bad-id 2 is not an entry id|10 5 5||s/RR-M1 /rm1 /' \
+                'budget-dup-id 2 names RR-M1 twice|10 5 5||s/RR-M2 /RR-M1 /' \
                 'budget-empty 2 names no requirement|0 0 0|' \
                 'budget-absent 2 no list|-|'; do
         c=${line%% *}; line=${line#* }; want=${line%% *}; line=${line#* }; pat=${line%%|*}; line=${line#*|}; n=$((n + 1))
-        mx=${line%%|*}; xl=${line#*|}; read -r b1 b2 b3 b4 <<< "$mx"
+        mx=${line%%|*}; xl=${line#*|}; ed=""; case "$xl" in *"|"*) ed=${xl#*|}; xl=${xl%%|*} ;; esac; read -r b1 b2 b3 b4 <<< "$mx"
         if [ "$mx" != - ]; then { budget_list "$b1" "$b2" "$b3" "${b4:-}"; [ -z "$xl" ] || printf '%s\n' "$xl"; } > "$tmp/$c.yaml"; fi
+        if [ -n "$ed" ]; then sed -i -e "$ed" "$tmp/$c.yaml"; fi
         out=$(bash "$SCRIPT_PATH" --budget --root "$tmp/base" --list "$tmp/$c.yaml" 2>&1); rc=$?
         if [ "$rc" = "$want" ] && [[ "$out" == *"$pat"* ]]; then pass=$((pass + 1))
         else fail=$((fail + 1)); printf 'FAIL  %-28s want rc=%s and "%s"; got rc=%s: %s\n' "$c" "$want" "$pat" "$rc" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
+    done
+    # The seven, written here from the ruling and never read from SEVEN or the list: dropping any one is MISSING.
+    for k in cleanroom-tag-commit workspace-tests crux-smoke supply-chain provenance binaries-before-public no-secret-in-crates; do
+        n=$((n + 1)); budget_list 10 5 5 "$k" > "$tmp/seven-$k.yaml"
+        out=$(bash "$SCRIPT_PATH" --budget --root "$tmp/base" --list "$tmp/seven-$k.yaml" 2>&1); rc=$?
+        if [ "$rc" = 1 ] && [[ "$out" == *"MISSING $k"* ]]; then pass=$((pass + 1))
+        else fail=$((fail + 1)); printf 'FAIL  seven-%-22s want rc=1 and "MISSING %s"; got rc=%s\n' "$k" "$k" "$rc"; fi
     done
     rm -rf -- "${tmp:?}"
     printf 'release-ready selftest: %d/%d rows pass\n' "$pass" "$n"

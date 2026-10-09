@@ -202,6 +202,17 @@ binding_registry:
   selftest: 'bash scripts/release/release_ready.sh --selftest'
   issue: "https://github.com/paiml/aprender/issues/4688"
 
+# THE ENTRY LIST. Each stage reads its line through scripts/lib/release_policy.sh rp_entries
+# (the strict release_policy reader with block=release_entries). The ids are the counted GATEs of
+# `requirements` below: a GATE that is not on its stage's line is UNLISTED, a listed id that is not a
+# counted GATE of that stage is STALE, and either fails `release_ready.sh --budget`. Caps 10/5/5.
+# The checker stays LAB: a stage calls it as a blocking step only after three green nights on main.
+stages:
+  release_entries:
+    merge: RR-M01 RR-M02 RR-M05 RR-M09 RR-M10 RR-M11 RR-M13 RR-M14 RR-M15 RR-M16
+    tag: RR-T01 RR-T09 RR-T11 RR-T12 RR-T16
+    publish: RR-T01 RR-P01 RR-P03 RR-P14
+
 # THE LIST. One requirement per line (the checker parses this block; keep one flow map per line).
 requirements:
   - {id: RR-M01, applies_to: [merge], anchor: "merge:required-context/ci / gate", checker: ".github/workflows/ci.yml#    name: ci / gate", provenance: "CLAUDE.md Git Workflow; classic branch protection on main", producer: "ci-main"}
