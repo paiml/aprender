@@ -421,6 +421,7 @@ fn test_chat_delta_empty() {
     let delta = ChatDelta {
         role: None,
         content: None,
+        tool_calls: None,
     };
 
     let json = serde_json::to_string(&delta).expect("serialize");
@@ -433,6 +434,7 @@ fn test_chat_delta_both_present() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
         content: Some("Hello".to_string()),
+        tool_calls: None,
     };
 
     let json = serde_json::to_string(&delta).expect("serialize");
@@ -451,6 +453,7 @@ fn test_chat_chunk_choice_with_length_finish_reason() {
         delta: ChatDelta {
             role: None,
             content: None,
+            tool_calls: None,
         },
         finish_reason: Some("length".to_string()),
     };

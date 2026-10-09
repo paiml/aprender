@@ -1,0 +1,209 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_reusable_prior_art",
+          "level": "note",
+          "message": {
+            "text": "pmat query over the head-built index for a release-workflow generator, lint and credential guard returns 5 results, none a workflow generator or no-upload lint this diff should have reused; the duplication scan searched 22 needles over 1499/1499 sibling branches and its 6 hits are this PR and its own merge-queue refs."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "rehearsal workflow generate lint credential guard",
+              "--limit",
+              "5",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "2f7e99d53b83037d0492220207659dcb665f26ae173cee118337ea2fe696d408",
+            "rationale": "A second query, verify release assets completeness check, returned checksum and stack-release helpers, not the check_release_assets.sh the script already calls.",
+            "failure_scenario": "If a generator or lint for no-upload workflows already existed, this PR would add a second drifting copy; none was found by either half of the search.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_satd_introduced",
+          "level": "note",
+          "message": {
+            "text": "The diff adds 0 TODO, FIXME, HACK or XXX markers."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "sh",
+              "-c",
+              "git diff BASE HEAD | grep -E \"^[+]\" | grep -ciE \"TODO|FIXME|HACK|XXX\""
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+            "rationale": "Counted on added lines only, so standing debt is not reported.",
+            "failure_scenario": "A new debt marker would ship without a ticket; there is none.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "verify_missing_artifacts_reads_red_not_not_measured",
+          "level": "warning",
+          "message": {
+            "text": "With every build job reporting success and the kept-checksum directory absent, verify prints verdict: red (the build left an owed asset out) and exits 1. The acceptance criterion and the script header say a night that could not be measured is not_measured, and the download step is continue-on-error, so a failed artifact download reads as a red build."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/assets_rehearsal.sh",
+              "verify",
+              "v0.70.0-rc.0",
+              "/nonexistent/dir"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "869f9667f522e67e21fa8acd83d85230975e9f5ce33ec3743fd5388ff19630c4",
+            "rationale": "Run with NEEDS holding six success results. Both outcomes exit 1 so the night is never green; only the label differs, which matters because the three-green-nights rule counts red and not_measured differently.",
+            "failure_scenario": "A transient download-artifact failure on a night where all five build jobs succeeded is recorded as red and a red-night count is inflated; the owner debugs a build that was fine.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "download_step_continue_on_error",
+          "level": "note",
+          "message": {
+            "text": "The cause is the download step carrying continue-on-error, which lets verify run on an empty directory."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/assets_rehearsal.sh:240, verify_job heredoc, step Fetch the kept checksums",
+            "excerpt": "continue-on-error: true",
+            "excerpt_sha256": "9ff6534d73ee98fe23e9d75bb1a54e2cd91526ac127a27c8c1b455696fb0b273",
+            "rationale": "Failing the job or testing that the directory exists and holds at least one sha256 file would let verify say not_measured.",
+            "failure_scenario": "See verify_missing_artifacts_reads_red_not_not_measured.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "yq_pin_fail_closed",
+          "level": "note",
+          "message": {
+            "text": "The assets job downloads yq and checks its sha256 before it is executed or exported, under set -euo pipefail, so a swapped binary stops the job before the self-test and drift check run."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/assets_rehearsal.sh:219, assets_job heredoc",
+            "excerpt": "echo \"a74bd266990339e0c48a2103534aef692abf99f19390d12c2b0ce6830385c459  $RUNNER_TEMP/yq\" | sha256sum -c -",
+            "excerpt_sha256": "9a977f37432703a2254b325db1be27e19eab9634c63e126f42d0a48ae6fdd093",
+            "rationale": "The checksum line precedes chmod +x and the YQ export.",
+            "failure_scenario": "An unpinned yq on a clean-room runner would let a tampered binary judge its own lint; it is pinned.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "case_table_green_and_generation_fresh",
+          "level": "note",
+          "message": {
+            "text": "The case table passes 100 of 100 rows, the committed workflow equals a fresh generation, and lint reports it cannot upload."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/assets_rehearsal.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a7276074e711278ad2650b64d8d070a555e9939dc0881ac55a2f629c9702cc3d",
+            "rationale": "Also ran --check and lint on the committed workflow, both ok.",
+            "failure_scenario": "A red case table would mean the no-upload property is untested; it is green.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux_surface_regex_false_positive_no_user_surface",
+          "level": "note",
+          "message": {
+            "text": "The guard CRUX surface regex fires on four added lines of git rev-parse --short=9 in the generated workflow; they are a git flag in CI steps, not an apr flag, route or tool. The diff changes no user-facing surface and no crux contract covers a nightly release rehearsal, so crux_coverage is none."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "sh",
+              "-c",
+              "git diff BASE HEAD | grep -E \"^[+-]\" | grep -cE \"short[[:space:]]*=\""
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7de1555df0c2700329e815b93b32c571c3ea54dc967b89e81ab73b9972b72d1d",
+            "rationale": "The surface regex is meant for Rust clap and axum declarations; the match is on a shell argument, so there is no competitor behaviour to compare.",
+            "failure_scenario": "If this were a real flag declaration the gap against the competitor would go unrecorded; it is a git argument.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "bashrs-lint-warnings",
+          "level": "warning",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high): scripts/release/assets_rehearsal.sh is not bashrs lint clean; mktemp calls in generate, lint, verify and self_test have no trap EXIT cleanup (REL002)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bashrs",
+              "lint",
+              "scripts/release/assets_rehearsal.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "e0367dac1b392125b9556c3afd7eb571e74468429e0c468831c1eca516a39d31",
+            "rationale": "Re-run by the primary: 0 errors, 33 warnings, 5 of them REL002. The repo gate check_bashrs_gate.sh prints PASS because it counts SEC, DET and IDEM errors only.",
+            "failure_scenario": "An interrupted self-test or generation leaves temp directories on a runner; the cost is disk litter on a nightly job, not a wrong verdict.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -34,6 +34,10 @@ pub enum FinishReason {
     /// Generation was cut off at its token budget: `max_tokens`, or the room left
     /// in the context window when a path shrinks the budget to fit it.
     Length,
+    /// The model called a tool, and the server returned the call as
+    /// `tool_calls` (#4918: the streaming terminal chunk, which used to be able
+    /// to say only `stop` or `length`).
+    ToolCalls,
 }
 
 impl FinishReason {
@@ -79,6 +83,7 @@ impl FinishReason {
         match self {
             Self::Stop => "stop",
             Self::Length => "length",
+            Self::ToolCalls => "tool_calls",
         }
     }
 }

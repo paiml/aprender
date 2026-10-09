@@ -29,6 +29,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host still owes every Qwen3 cell. Planned for 0.70.1: native sm_121 SASS, then a re-test of batched
   prefill on GB10.
 
+## [0.70.3] - 2026-10-08
+
+0.70.3 carries one change, streaming tool calls. It ships under a recorded operator emergency scope,
+`crux-smoke`, as 0.70.2 did: "0.70.3 ships on CRUX smoke on lambda and gx10 GPU. Everything bigger is
+nightly." The record is the 0.70.3 entry under `emergency_scopes` in
+`contracts/model-capability-ladder-v1.yaml`. The prompt certification is carried from 0.70.2 unchanged.
+The full notes are in `evidence/release/0.70.3/RELEASE-NOTES-0.70.3.md`.
+
+### Fixed
+- `apr serve`: with `tools` in a request, a streamed chat sends the tool call as `delta.tool_calls` and ends
+  with `finish_reason: "tool_calls"`, as the non-streaming path does (Refs #4918).
+
+### Known issues (moved to 0.71.0)
+- The six known failures of 0.70.2 still ship, each on its ticket: #4661, #4662, #4663, #4664, #4665, #4666.
+
 ## [0.70.2] - 2026-10-07
 
 0.70.2 ships under a recorded operator emergency scope, `crux-smoke`, as 0.70.1 did: "0.70.2 ships on

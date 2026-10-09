@@ -53,6 +53,36 @@ run_step() { # run_step <name>: true when <name> is at or after FROM and at or b
     done
     return 1
 }
+# ap_policy_applies <version> -> prints 1 when the STANDING RELEASE POLICY (`ladder.release_policy` in the
+# release commit's contracts/model-capability-ladder-v1.yaml, read by its own scripts/lib/release_policy.sh)
+# covers <version>, else 0. Run from the release worktree. Non-zero (reason on stderr) when it cannot be
+# judged, or when a per-release emergency scope also names a covered version: never "no policy".
+# Under the policy the release ships on CRUX smoke on lambda and gx10 (the models lane, crux mode);
+# release-readiness is not run, and the larger ladder rows are the nightly's, ticketed on red.
+ap_policy_applies() {
+    ( . scripts/lib/release_policy.sh || exit 2
+      t=$(mktemp) || exit 2
+      release_policy_ladder contracts/model-capability-ladder-v1.yaml "$1" > "$t"; r=$?
+      l=$(cat "$t"); rm -f "${t:?}"
+      [ -z "$l" ] || [ "$l" = contracts/model-capability-ladder-v1.yaml ] || rm -f "${l:?}"
+      [ "$r" = 0 ] || { printf '%s\n' "$RP_WHY" >&2; exit "$r"; }
+      printf '%s\n' "$RP_APPLIES" )
+}
+# ap_rp_known_failures: the release commit's own policy library, sourced in a subshell (as
+# ap_policy_applies does), prints the known-failures section. It lists; it checks nothing.
+ap_rp_known_failures() {
+    ( . scripts/lib/release_policy.sh || exit 2
+      rp_known_failures contracts/model-capability-ladder-v1.yaml "$REPO" )
+}
+# ap_known_failures NOTES: under the standing release policy the release notes list every known failure
+# with its ticket (ladder.known_red, then the models nightly's open red-row issues), appended once. It
+# lists; it never stops the release. rc 2 only when the release commit's ladder cannot be read.
+ap_known_failures() {
+    grep -qF '## Known failures' -- "$1" && return 0
+    ap_rp_known_failures > "$1.kf" || return 2
+    { printf '\n'; cat -- "$1.kf"; } >> "$1" || return 2
+    rm -f -- "${1:?}.kf"
+}
 # D1: pure-bash membership. `producer | grep -q` returns 141 on SIGPIPE under pipefail,
 # so the old form could fail step-name validation for a reason unrelated to the step name.
 case " ${STEPS[*]} " in *" $FROM "*) ;; *) die "unknown step '$FROM' (${STEPS[*]})" ;; esac
@@ -90,6 +120,10 @@ v=$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import
 [ "$v" = "$V" ] || die "release commit carries version $v, not $V"
 bash scripts/bump-version.sh --check >> "$LOG" 2>&1 || die "bump-version.sh --check: the workspaces disagree on the version"
 export CARGO_TARGET_DIR="$REPO_ROOT/target"
+# The standing release policy, judged ONCE from the release commit: it picks the models lane mode and
+# whether readiness runs. cut_tag re-judges it itself (a log is not the gate).
+AP_POLICY=$(ap_policy_applies "$V" 2>> "$LOG") || die "the standing release policy cannot be judged for $V (see $LOG): nothing is measured"
+[ "$AP_POLICY" != 1 ] || say "POLICY: the standing release policy covers $V -- CRUX smoke on lambda and gx10 is the release gate, readiness (R8) is not run, the larger ladder rows are nightly"
 
 # T-1 LANES (C316 item 2d): deep, dogfood and models are three independent measurements of the same
 # commit, so they start together and join before readiness. Each is a function below, run as its own
@@ -109,10 +143,10 @@ t1_deep() {
   cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute > "$AP/deep-doctests.log" 2>&1; rc=$?
   say "DEEP doctests rc=$rc: $(grep -E '^test result' "$AP/deep-doctests.log" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
   [ $rc -eq 0 ] || die "T-1 doctests RED ($AP/deep-doctests.log)"
-  cargo check --workspace --no-default-features > "$AP/deep-nodefault.log" 2>&1; rc=$?
-  other=$(grep -E '^error' -A3 "$AP/deep-nodefault.log" | grep -E '^\s+--> ' | grep -vc 'crates/aprender-distribute/' || true)
-  say "DEEP --no-default-features rc=$rc errors_outside_aprender-distribute=$other (standing #3176 class is inside it)"
-  [ "$other" = 0 ] || die "T-1 --no-default-features RED outside the #3176 class ($AP/deep-nodefault.log)"
+  cargo check --workspace --no-default-features --keep-going > "$AP/deep-nodefault.log" 2>&1; rc=$?
+  verdict=$(bash "$REPO_ROOT/scripts/release/deep_nodefault_verdict.sh" "$AP/deep-nodefault.log" "$rc"); vrc=$?
+  say "$verdict (standing #3176 class is inside it)"
+  [ "$vrc" = 0 ] || die "T-1 --no-default-features RED outside the #3176 class ($AP/deep-nodefault.log)"
   cargo build --workspace --examples > "$AP/deep-examples.log" 2>&1; rc=$?
   say "DEEP examples build rc=$rc"
   [ $rc -eq 0 ] || die "T-1 examples RED ($AP/deep-examples.log)"
@@ -145,6 +179,10 @@ t1_deep() {
 #    receipt T-4 would refuse stops the train before any tag exists.
 t1_dogfood() {
   export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-dogfood"
+  # D2 (#4930): under the standing release policy the declared ladder gate (check_model_ladder.sh) judges
+  # the CRUX receipts the models lane wrote at $MC and the certification committed in the bump -- the same
+  # pair the T-4 preflight reads. The join starts this lane only after models is GO.
+  [ "$AP_POLICY" != 1 ] || export MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json"
   bash scripts/dogfood.sh --phase pre-publish > "$AP/dogfood-pre-publish.log" 2>&1; rc=$?
   grep -E 'VERDICT' "$AP/dogfood-pre-publish.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "dogfood pre-publish NO-GO rc=$rc ($AP/dogfood-pre-publish.log)"
@@ -160,12 +198,14 @@ t1_dogfood() {
 #     before any tag -- lambda here, gx10 over the operator-authorized lambda->gx10 SSH, each with an
 #     apr built from $MC and proved to be it. One red cell, an unreachable host, a failed build, a
 #     missing receipt or a judge decline is a STOP here, with no tag cut. The same judge re-reads the
-#     receipts committed in the bump at T-4 (check_publish_preflight.sh R7).
+#     receipts committed in the bump at T-4 (check_publish_preflight.sh R7); under the standing release
+#     policy R7 reads the CRUX receipts this step writes to $AP/models-t1 instead (the preflight step).
 t1_models() {
-  bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
+  local measure=ladder; [ "$AP_POLICY" != 1 ] || measure=crux
+  MODELS_T1_MEASURE=$measure bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
   grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 model matrix NO-GO rc=$rc: nothing is tagged ($AP/models-t1.log)"
-  say "MODELS GO at $MC on lambda and gx10"
+  say "MODELS GO at $MC on lambda and gx10 (measured: $measure)"
 }
 
 # The join. Every selected lane starts now, each in its own process group (set -m), so a lane can be
@@ -180,15 +220,22 @@ t1_models() {
 #   build and ladder running in the release dir the next pass reuses. models runs to its own verdict.
 #   An INT or TERM to the autopilot stops every lane (the lanes no longer share its process group),
 #   models included: the operator chose to stop, and the remote leg may run on to its own end.
+#   HELD LANE (D2, #4930). Under the standing release policy dogfood's ladder gate judges the CRUX
+#   receipts models writes to $AP/models-t1, so with both selected dogfood is HELD: it starts when
+#   models exits GO and no lane is red, else its row reads NOT-RUN and it never starts. deep is not held.
+#   Dogfood selected alone is not held: it reads whatever an earlier pass left in $AP/models-t1.
 # scripts/check_release_t1_lanes_joined.sh runs this block against stub lanes, and its mutants.
 T1_LANES=(); for s in deep dogfood models; do run_step "$s" && T1_LANES+=("$s"); done
 if [ "${#T1_LANES[@]}" -gt 0 ]; then
   declare -A T1_STEP=() T1_T0=() T1_STOPPED=()
   trap 'for p in "${!T1_STEP[@]}"; do kill -TERM -- "-$p" 2> /dev/null; done; die "T-1 lanes interrupted"' INT TERM
+  t1_held=''
+  case " ${T1_LANES[*]} " in *" dogfood "*"models "*) [ "$AP_POLICY" != 1 ] || t1_held=dogfood ;; esac
+  T1_NOW=(); for s in "${T1_LANES[@]}"; do [ "$s" = "$t1_held" ] || T1_NOW+=("$s"); done
   t1_launch=$SECONDS; set -m
-  for s in "${T1_LANES[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
+  for s in "${T1_NOW[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
   set +m
-  say "T-1 LANES started together: ${T1_LANES[*]}"
+  say "T-1 LANES started together: ${T1_LANES[*]}${t1_held:+ ($t1_held held until models is GO)}"
   [ -f "$AP/t1-steps.tsv" ] || printf 'step\tstart\tend\tseconds\tverdict\n' > "$AP/t1-steps.tsv"
   t1_red=''; t1_term_rc=$((128 + $(kill -l TERM)))
   while [ "${#T1_STEP[@]}" -gt 0 ]; do
@@ -205,6 +252,16 @@ if [ "${#T1_LANES[@]}" -gt 0 ]; then
         T1_STOPPED[${T1_STEP[$p]}]=1; kill -TERM -- "-$p" 2> /dev/null
       done
     fi
+    if [ "$s" = models ] && [ -n "$t1_held" ]; then
+      s=$t1_held; t1_held=''
+      if [ "$v" = GO ] && [ -z "$t1_red" ]; then
+        set -m; "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; set +m
+        say "STEP $s started: models is GO, its CRUX receipts are in $AP/models-t1"
+      else
+        printf '%s\t%s\t%s\t0\tNOT-RUN\n' "$s" "$((t1 - t1_launch))" "$((t1 - t1_launch))" >> "$AP/t1-steps.tsv"
+        say "STEP $s NOT-RUN: held for models' CRUX receipts, and $t1_red went red first"
+      fi
+    fi
   done
   trap - INT TERM
   [ -z "$t1_red" ] || die "T-1 lane(s) $t1_red RED: deep and dogfood were stopped, models ran to its verdict, nothing is tagged ($AP/t1-steps.tsv)"
@@ -215,7 +272,8 @@ fi
 #     committed receipts. Its committed mode is `enforce` (#3715 B1): a Fail verdict, a decline, a caller
 #     error or a missing pv each stops here, before any tag exists.
 #     Its own step, so a models-only rerun never re-grades.
-if run_step readiness; then
+! run_step readiness || [ "$AP_POLICY" != 1 ] || say "READINESS not run: the standing release policy covers $V (R8 is not run; CRUX smoke at T-1 is the gate)"
+if run_step readiness && [ "$AP_POLICY" != 1 ]; then
   DR=$(find .dogfood -maxdepth 1 -name 'receipt-*.json' -type f 2>/dev/null | LC_ALL=C sort | tail -n 1)
   [ -n "$DR" ] || die "T-1 readiness: no dogfood receipt in $WT/.dogfood to grade"
   # #3745: the cells are derived from the candidate's own surface, taken from the apr models_t1 built from
@@ -260,14 +318,25 @@ fi
 #       missed, or one that reappeared, is RED here: a tagged milestone is never left with an
 #       open item.
 cut_tag() {
-    local v=$1 t=$2 mc=$3 rc=0
+    local v=$1 t=$2 mc=$3 rc=0 pol need
+    # The STANDING RELEASE POLICY, re-judged here from the release worktree (never from AP_POLICY or a log).
+    # Covered: release-readiness is not run, and the gate is the models lane's CRUX-smoke GO for exactly
+    # this commit on both hosts. Unjudgeable -> no tag.
+    pol=$(ap_policy_applies "$v") || die "the standing release policy cannot be judged for $v -- no tag"
+    if [ "$pol" = 1 ]; then
+        need="MODELS GO (CRUX smoke) on lambda and gx10 at ${mc:0:9}:"
+        grep -qF -- "$need" "${AP:-/nonexistent}/models-t1.log" 2>/dev/null \
+            || die "the standing release policy covers $v but ${AP:-<unset AP>}/models-t1.log has no CRUX-smoke GO at ${mc:0:9} -- no tag"
+        say "POLICY-GATE $(grep -F -- "$need" "$AP/models-t1.log" | tail -n 1) (readiness not run: the standing release policy covers $v)"
+    else
     # #3715 B1 (operator 2026-09-28: "missing or skipped step -> release refused"). FIRST, ahead of the
     # carry and of `git tag`: the readiness step's log must hold an ENFORCED Pass for exactly this version
     # and commit. A run started past `readiness`, a report-mode Pass, a Fail, or no log -> no tag.
-    local need="ok    R8 #3715 ENFORCE PASS version=$v commit=$mc pv="
+    need="ok    R8 #3715 ENFORCE PASS version=$v commit=$mc pv="
     awk -v n="$need" 'index($0, n) == 1 { f = 1 } END { exit !f }' "${AP:-/nonexistent}/readiness-t1.log" 2>/dev/null \
         || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
+    fi
     # #4691 + #4734: coverage-nightly's receipt for $mc (or for the commit $mc is a version-only bump of)
     # must hold COV_FLOOR BEFORE the tag. Missing, stale, unmeasured, below floor or gh failing -> no tag,
     # nothing carried (on v0.70.1 the coverage refusal came 25 min after the tag was public).
@@ -297,6 +366,10 @@ cut_tag() {
 if run_step tag; then
   git rev-parse -q --verify "refs/tags/$T" > /dev/null && die "tag $T already exists locally"
   [ -f "$AP/release_notes.md" ] || die "no $AP/release_notes.md (prepare_bump.sh writes it from CHANGELOG [$V])"
+  if [ "$AP_POLICY" = 1 ]; then
+    ap_known_failures "$AP/release_notes.md" || die "the known-failures list for the release notes could not be built (the ladder is unreadable) -- no tag"
+    say "NOTES: known failures listed in $AP/release_notes.md under the standing release policy"
+  fi
   # The publish dry run runs AHEAD of the tag. `--verify` builds every publishable crate's tarball
   # against the local overlay (= `cargo publish --dry-run` for the whole cascade). The worktree is the
   # release commit the tag will name, so this is the tarball the cascade uploads. A red here stops the
@@ -393,7 +466,15 @@ if run_step preflight; then
   bash scripts/release/tag_coverage_gate.sh "$T" "$MC" > "$AP/tag-coverage.log" 2>&1; rc=$?
   tail -1 "$AP/tag-coverage.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "tag coverage on $T refused rc=$rc ($AP/tag-coverage.log)"
-  bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
+  # Under the standing release policy R7 judges CRUX smoke at the cut: the receipts the T-1 models step
+  # measured at $MC (the tagged commit), with the certification committed in the bump. Nothing is
+  # committed by hand after the bump to feed it.
+  if [ "$AP_POLICY" = 1 ]; then
+    MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json" \
+      bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
+  else
+    bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
+  fi
   tail -3 "$AP/preflight.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "publish preflight refused rc=$rc"
   printf 'PASS %s %s\n' "$T" "$MC" > "$AP/preflight-pass"
@@ -449,8 +530,17 @@ if run_step dryrun; then
 fi
 
 # 6. crates.io cascade: multi-pass drain, then the check is the verdict (pass 1 exiting 1 is normal)
+#    cascade-publish.sh re-runs check_publish_preflight.sh before every pass (F-9). Under the standing
+#    release policy its R7 judges CRUX smoke, so the drain is handed the receipts step 5 judged: the
+#    T-1 models step's, and the bump's certification (D4, P7 WIRE). Bare, R7 read the tree's
+#    evidence/crux/<V>, which holds the certification and no receipts, and refused with the tag public.
 if run_step cascade; then
-  bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
+  if [ "$AP_POLICY" = 1 ]; then
+    MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json" \
+      bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
+  else
+    bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
+  fi
   say "CASCADE drain rc=$rc"
   bash scripts/cascade-publish.sh --check > "$AP/cascade-check.log" 2>&1; rc2=$?
   behind=$(grep -cE "\(want ${V//./\\.}\)" "$AP/cascade-check.log" || true)
