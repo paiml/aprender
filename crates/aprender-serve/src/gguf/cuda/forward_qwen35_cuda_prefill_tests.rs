@@ -495,33 +495,23 @@ const MODEL_4B: &str = "/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf";
 /// chat template, 83 tokens, and its first forward stops before the generation
 /// header, at 76. The 4B's F2 probe of that forward (its last 64 tokens: batched
 /// prefill, then one decode step) rejected on GB10 at position 42, cosine 0.5065
-/// against the CPU with both argmaxes 16. The rejection held under every prefill GEMM
-/// mode (f32, f16, dp4a) and both attention paths, and the 4090, the 2B and the 9B
-/// accepted the same probe. `apr parity` held the per-token GPU path to cosine 0.994
-/// or better at all 71 positions of a sequence that was not the templated one. So
-/// this test, batched against per-token on the probe itself, names the side: red
-/// means the batched prefill; green on GB10 points at the CPU reference.
+/// against the CPU with both argmaxes 16. The batched prefill matched the per-token
+/// GPU path at every position (cosine 0.999994 or better on GB10); the side that
+/// moved was the CPU reference, on Q8_K activations, which on aarch64 fell to cosine
+/// 0.506 of its own FP32 forward at position 42.
 const PROMPT_4958: &str = "pub fn mean(xs: &[f64]) -> f64 { if xs.is_empty() { return 0.0; } \
 let sum: f64 = xs.iter().sum(); sum / (xs.len() as f64 - 1.0) } — what is wrong with this \
 function and how do you fix it?";
 
-/// #4958: the cosine floor between the batched and per-token logits at EVERY
-/// position of a real probe. The budgets above hold the last position of random
-/// tokens on the 0.8B to 0.99999; F2 refuses below 0.95, and the rejection read 0.5065.
+/// #4958: the cosine floor at EVERY position of a real probe, between the batched
+/// and per-token logits and between F2's CPU reference and its GPU half. Measured on
+/// GB10: 0.999994 and 0.9995 (position 44). The budgets above hold the last position
+/// of random tokens on the 0.8B to 0.99999; F2 refuses below 0.95, and the rejection
+/// read 0.5065.
 const EVERY_POSITION_COSINE: f64 = 0.999;
 
-/// #4958: the batched prefill agrees with the per-token path at every position of
-/// the probe F2 compares, not just the last. A red run prints, for the worst row,
-/// whether the rows after it, the GEMM row count or a layer's state moves it.
-#[test]
-#[serial_test::serial]
-fn qwen35_prefill_equals_per_token_at_every_position_of_the_4958_probe_4b() {
-    if !std::path::Path::new(MODEL_4B).exists() {
-        eprintln!("SKIP: {MODEL_4B} is absent");
-        return;
-    }
-    let executor = crate::cuda_executor_or_skip!(0);
-    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_4B).expect("map the GGUF");
+/// #4958: the probe F2 judged — `apr run`'s tokens, the last 64 of its first forward.
+fn probe_4958(mapped: &crate::gguf::MappedGGUFModel) -> Vec<u32> {
     // `apr run`'s own entry point, which applies the template before the encode.
     let config = crate::infer::InferenceConfig::new(MODEL_4B).with_prompt(PROMPT_4958);
     let prepared = crate::infer::prepare_tokens(&config, &crate::format::ModelFormat::Gguf)
@@ -552,6 +542,22 @@ fn qwen35_prefill_equals_per_token_at_every_position_of_the_4958_probe_4b() {
         "[4958] {} prompt tokens, the first forward holds {k}, F2 probes the last {cap} of it",
         ids.len()
     );
+    probe.to_vec()
+}
+
+/// #4958: the batched prefill agrees with the per-token path at every position of
+/// the probe F2 compares, not just the last. A red run prints, for the worst row,
+/// whether the rows after it, the GEMM row count or a layer's state moves it.
+#[test]
+#[serial_test::serial]
+fn qwen35_prefill_equals_per_token_at_every_position_of_the_4958_probe_4b() {
+    if !std::path::Path::new(MODEL_4B).exists() {
+        eprintln!("SKIP: {MODEL_4B} is absent");
+        return;
+    }
+    let executor = crate::cuda_executor_or_skip!(0);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_4B).expect("map the GGUF");
+    let probe = &probe_4958(&mapped)[..];
     let n = probe.len();
     let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
     let qwen =
@@ -632,4 +638,102 @@ fn localize_4958(gpu: &mut Qwen35CudaModel<'_>, probe: &[u32], at: usize, want: 
     for (buffer, linf) in state_divergence(gpu, &b, &p, "#4958 prefix") {
         println!("[4958] prefix ..={at} {buffer}: rel L∞ {linf:.3e}");
     }
+}
+
+/// #4958: F2's CPU reference is the forward on FP32 activations. On the production
+/// path's Q8_K activations it was off that forward by cosine 0.998 on x86 and 0.506
+/// on aarch64 (position 42 of this probe). The first positions tell the two paths
+/// apart (x86's worst Q8_K row was position 0), and no GPU is needed.
+#[test]
+fn f2_cpu_reference_is_the_fp32_activation_forward_on_the_4958_probe_4b() {
+    if !std::path::Path::new(MODEL_4B).exists() {
+        eprintln!("SKIP: {MODEL_4B} is absent");
+        return;
+    }
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_4B).expect("map the GGUF");
+    let probe = probe_4958(&mapped);
+    let head = &probe[..4];
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let got = crate::gguf::forward_qwen35::f2_qwen35_cpu_reference(&qwen, head)
+        .expect("the F2 reference");
+    let want: Vec<Vec<f32>> = crate::quantize::with_fp32_activations(|| {
+        let mut state = qwen.new_state(head.len() + 2);
+        let mut rows: Vec<Vec<f32>> = head
+            .iter()
+            .enumerate()
+            .map(|(pos, &t)| {
+                qwen.forward_single_qwen35(t, &mut state, pos)
+                    .expect("forward")
+            })
+            .collect();
+        let next = crate::infer::argmax_u32(rows.last().expect("a row"));
+        rows.push(
+            qwen.forward_single_qwen35(next, &mut state, head.len())
+                .expect("decode"),
+        );
+        rows
+    });
+    assert_eq!(got.len(), want.len(), "rows");
+    for (pos, (g, w)) in got.iter().zip(&want).enumerate() {
+        let cos = cosine(g, w);
+        println!(
+            "[4958] F2 reference vs the FP32-activation forward, row {pos}: cosine {cos:.7}, \
+rel L∞ {:.3e}",
+            rel_linf(g, w, "logits")
+        );
+        assert!(
+            cos >= 0.999_999,
+            "row {pos}: the F2 reference is not the FP32-activation forward (cosine {cos:.7})"
+        );
+    }
+}
+
+/// #4958: F2's two halves agree at every position of the probe GB10 rejected and at
+/// its decode step, and F2 accepts. On GB10 the Q8_K reference read cosine 0.5065 at
+/// position 42; the FP32 one reads 0.9995 or better everywhere.
+#[test]
+#[serial_test::serial]
+fn f2_reference_and_gpu_agree_at_every_position_of_the_4958_probe_4b() {
+    if !std::path::Path::new(MODEL_4B).exists() {
+        eprintln!("SKIP: {MODEL_4B} is absent");
+        return;
+    }
+    let executor = crate::cuda_executor_or_skip!(0);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_4B).expect("map the GGUF");
+    let probe = probe_4958(&mapped);
+    let n = probe.len();
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let cpu = crate::gguf::forward_qwen35::f2_qwen35_cpu_reference(&qwen, &probe)
+        .expect("the F2 reference");
+    let decode = crate::infer::argmax_u32(&cpu[n - 1]);
+    let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, n + 2).expect("gpu model");
+    let got = crate::gguf::forward_qwen35::f2_qwen35_gpu_logits(&mut gpu, &probe, decode)
+        .expect("the F2 GPU half");
+    let mut worst = (f64::INFINITY, 0usize);
+    for (pos, (g, c)) in got.iter().zip(&cpu).enumerate() {
+        let cos = cosine(g, c);
+        println!(
+            "[4958] F2 row {pos}: argmax GPU {} / CPU {}, cosine {cos:.7}",
+            argmax(g),
+            argmax(c)
+        );
+        if cos < worst.0 {
+            worst = (cos, pos);
+        }
+    }
+    let report = crate::infer::f2_multi_position_report(&cpu, &got);
+    assert!(
+        report.accepted,
+        "{}",
+        crate::infer::f2_divergence_msg(&report, crate::infer::F2ProbePath::Batched)
+    );
+    let (cos, at) = worst;
+    assert!(
+        cos >= EVERY_POSITION_COSINE,
+        "F2 reference vs GPU: cosine {cos:.7} at row {at} < {EVERY_POSITION_COSINE}"
+    );
 }

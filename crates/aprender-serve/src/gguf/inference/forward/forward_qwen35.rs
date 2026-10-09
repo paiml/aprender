@@ -2145,7 +2145,10 @@ pub(crate) fn f2_validate_qwen35_receipted_hashed(
 /// CPU logits at every probe position plus one greedy decode step — the
 /// reference half of [`f2_validate_qwen35`].
 #[cfg(feature = "cuda")]
-fn f2_qwen35_cpu_reference(cpu: &Qwen35Model<'_>, probe: &[u32]) -> Option<Vec<Vec<f32>>> {
+pub(crate) fn f2_qwen35_cpu_reference(
+    cpu: &Qwen35Model<'_>,
+    probe: &[u32],
+) -> Option<Vec<Vec<f32>>> {
     let mut state = cpu.new_state(probe.len() + 2);
     let mut per_pos: Vec<Vec<f32>> = Vec::with_capacity(probe.len() + 1);
     for (pos, &tok) in probe.iter().enumerate() {
@@ -2162,7 +2165,7 @@ fn f2_qwen35_cpu_reference(cpu: &Qwen35Model<'_>, probe: &[u32]) -> Option<Vec<V
 
 /// GPU logits for the same positions, from a fresh device state.
 #[cfg(feature = "cuda")]
-fn f2_qwen35_gpu_logits(
+pub(crate) fn f2_qwen35_gpu_logits(
     gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
     probe: &[u32],
     decode_token: u32,
