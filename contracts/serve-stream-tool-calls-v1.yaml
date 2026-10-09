@@ -54,7 +54,6 @@ equations:
     postconditions:
     - calls ≠ [] ⟹ one delta.tool_calls chunk before the terminal chunk, finish_reason "tool_calls"
     - calls = [] ⟹ finish_reason is what from_generation returns (stop or length)
-    lean_theorem: Theorems.Serve_Stream_Tool_Call_Split
   stream_nonstream_parity:
     formula: calls_stream(t) = calls_body(t[m..]) ∧ finish_stream(t) = finish_body(t[m..])
     domain: a generation t with a marker at m
@@ -66,7 +65,6 @@ equations:
     - the same request and the same generated text
     postconditions:
     - streamed calls, minus their index, equal the non-streaming message.tool_calls
-    lean_theorem: Theorems.Serve_Stream_Nonstream_Parity
   stream_no_tools_passthrough:
     formula: tools = none ∨ tool_choice = "none" ⟹ sse(tokens) = sse_v0.70.2(tokens)
     domain: any token sequence through either SSE builder
@@ -78,7 +76,6 @@ equations:
     - the request declares no tools, or tool_choice is "none"
     postconditions:
     - the body is byte-identical to the v0.70.2 golden
-    lean_theorem: Theorems.Serve_Stream_No_Tools_Passthrough
 proof_obligations:
 - id: SSTC-INV-001
   type: invariant
