@@ -31,10 +31,15 @@
 # unreached stage clears nothing. Every D-row that is not CLEAR is named in the verdict.
 #
 # USAGE
-#   rehearse.sh --run --state DIR [--commit SHA] [--version V] [--source REPO] [--stages a,b]
+#   rehearse.sh --run --state DIR [--commit SHA] [--version V] [--source REPO] [--stages a,b] [--in-run RUN]
 #       DIR must not exist (or be empty). SHA defaults to the source's HEAD; V to the lowest open
 #       milestone above the workspace version. --stages runs a subset (a development aid: the
-#       stages it skips are unreached, so such a night is never green).
+#       stages it skips are unreached, so such a night is never green). The lanes stage reads the
+#       train on SHA; RUN is the workflow run whose lanes job ran the in-repo lanes at SHA.
+#   rehearse.sh --pick-c --cache DIR [--repo DIR] [--remote NAME]
+#       C on stdout (B1 Q1): the newest first-parent main commit the models crux bundle (its INDEX on
+#       nightly-evidence) and an infra clean-room run (release_lanes.sh measured-cpu) both measured.
+#       EXIT 0 · 2 not_measured (a read failed, or no commit both measured: the count resets) · 3.
 #   rehearse.sh --judge DIR      the verdict of a finished night (the --run prints it too)
 #   rehearse.sh --streak --commit REV --as-of YYYY-MM-DD --cache DIR [--repo DIR] [--history FILE] [--release-path]
 #       the three counting nights a pass on REV needs (C345 #4, Q9). Each night records the tree id of
@@ -67,6 +72,12 @@ IDS_POLICY=contracts/model-capability-ladder-v1.yaml
 # The workflow whose scheduled runs on main are the counting nights, and the floor its one REST read keeps.
 WORKFLOW=release-rehearsal-nightly.yml
 RATE_FLOOR=1000
+# B1 Q1: C is the newest first-parent main commit that both the models crux bundle and an infra clean-room run
+# measured. The bundle and its INDEX sit on EVIDENCE_BRANCH under MODELS_DIR; the walk reads main's newest PICK_DEPTH
+# first-parent commits (about five days of main in early October 2026), and a commit further back is no night's C.
+EVIDENCE_BRANCH=nightly-evidence
+MODELS_DIR=models-crux
+PICK_DEPTH=60
 
 # shellcheck source=scripts/release/lib_write_guard.sh
 . "$SCRIPT_DIR/lib_write_guard.sh" || exit 2
@@ -75,7 +86,7 @@ RATE_FLOOR=1000
 # $V is the train's version. ap:<step> is autopilot.sh run for that one step: its setup is re-entrant.
 stages_table() {
     cat <<'STAGES'
-lanes|-|env -u INBOX bash scripts/release/nightly_train.sh --out "$RELEASE_REHEARSAL_TRAIN"
+lanes|-|env -u INBOX bash scripts/release/nightly_train.sh --out "$RELEASE_REHEARSAL_TRAIN" --commit "$RELEASE_REHEARSAL_C" ${RELEASE_REHEARSAL_IN_RUN:+--in-run "$RELEASE_REHEARSAL_IN_RUN"}
 t2|-|bash scripts/release/t2_preflight.sh "$V"
 bump|-|bash scripts/release/prepare_bump.sh "$V"
 summary|bump|stage_summary
@@ -111,11 +122,11 @@ DLEDGER
 die3() { printf 'rehearse.sh: caller error: %s\n' "$*" >&2; exit 3; }
 
 # ------------------------------------------------------------------ the night --
-# install_guard STATE [C] -> stubs + a credential-free CARGO_HOME under STATE; prints the env file path.
+# install_guard STATE [C [RUN]] -> stubs + a credential-free CARGO_HOME under STATE; prints the env file path.
 # C is the night's commit: the release scripts' rehearsal seams (lib_rehearsal.sh) read the night's train
-# bundle in STATE/train for it.
+# bundle in STATE/train for it. RUN is the workflow run whose lanes job ran the in-repo lanes at C.
 install_guard() {
-    local st=$1 c=${2:-} ch bin real t f
+    local st=$1 c=${2:-} run=${3:-} ch bin real t f
     ch="$st/cargo-home"; bin="$ch/bin"
     mkdir -p "$bin" "$st/tmp" "$st/ap" "$st/logs" "$st/train" || return 2
     : > "$st/calls.tsv" || return 2
@@ -139,7 +150,7 @@ install_guard() {
                 "$t" "$SCRIPT_DIR/lib_write_guard.sh" "$t" > "$bin/$t" && chmod +x "$bin/$t" || return 2
         done
         printf 'export CARGO_HOME=%q TMPDIR=%q RELEASE_AP=%q RELEASE_REHEARSAL=1\n' "$ch" "$st/tmp" "$st/ap"
-        printf 'export RELEASE_REHEARSAL_C=%q RELEASE_REHEARSAL_TRAIN=%q\n' "$c" "$st/train"
+        printf 'export RELEASE_REHEARSAL_C=%q RELEASE_REHEARSAL_TRAIN=%q RELEASE_REHEARSAL_IN_RUN=%q\n' "$c" "$st/train" "$run"
         printf 'export PATH=%q:"$PATH"\n' "$bin"
         printf 'unset CARGO_REGISTRY_TOKEN\n'
     } > "$st/guard.env" || return 2
@@ -170,7 +181,7 @@ default_version() {
 }
 
 run_night() {
-    local st="" commit="" v="" src="" only="" env name needs cmd rc start
+    local st="" commit="" v="" src="" only="" inrun="" env name needs cmd rc start
     while [ $# -gt 0 ]; do
         case $1 in
             --state) st=${2:-}; shift 2 ;;
@@ -178,9 +189,11 @@ run_night() {
             --version) v=${2:-}; shift 2 ;;
             --source) src=${2:-}; shift 2 ;;
             --stages) only=${2:-}; shift 2 ;;
+            --in-run) inrun=${2:-}; shift 2 ;;
             *) die3 "unknown option $1" ;;
         esac
     done
+    [ -z "$inrun" ] || [[ $inrun =~ ^[1-9][0-9]*$ ]] || die3 "--in-run must be a run id, not '$inrun'"
     [ -n "$st" ] || die3 "--state DIR is required"
     [ ! -e "$st" ] || [ -z "$(ls -A -- "$st" 2>/dev/null)" ] || die3 "--state $st exists and is not empty"
     mkdir -p "$st" || exit 2
@@ -198,7 +211,7 @@ run_night() {
     git clone -q --shared -- "$st/origin.git" "$st/clone" || exit 2
     git -C "$st/clone" checkout -q --detach "$commit" || exit 2
     git -C "$st/clone" config user.name "release rehearsal" && git -C "$st/clone" config user.email "rehearsal@invalid" || exit 2
-    env=$(install_guard "$st" "$commit") || exit 2
+    env=$(install_guard "$st" "$commit" "$inrun") || exit 2
     night_env "$st" "$commit" "$v" "$src" || exit 2
     printf 'stage\trc\tcommit\tseconds\n' > "$st/stages.tsv"
     while IFS='|' read -r name needs cmd; do
@@ -409,6 +422,79 @@ streak() {
         FNR > 1 && ($1 in want) { printf "RECEIPT run %s night %s head %s %s\n", $1, substr($2, 1, 10), $7, ids[$7]; n++ }
         END { exit (n != 3) }' "$cache/heads.tsv" "$hist" \
         || { echo "not_measured: nightly_greens.sh said ready, but its run IDs are not three counted runs in $hist"; return 2; }
+}
+
+# ------------------------------------------------------------------ the pick --
+# models_measured REPO REF CACHE -> "sha TAB green|red" for each commit the models INDEX on REF says the crux bundle
+# measured. INDEX lines are `<40-hex> green|red|not_measured`, one per commit, and a not_measured line is not a
+# measurement. A green or red line counts only when its bundle MODELS_DIR/<sha>/ is on REF with a verdict whose state
+# is the same. rc 2 and the reason on stderr: no INDEX, a line out of that format, a commit with two lines, or a
+# measured line its bundle does not bear out. A reader that cannot trust its input reads nothing, never a part of it.
+models_measured() {
+    local g=$1 ref=$2 f="$3/INDEX" re='^([0-9a-f]{40}) (green|red|not_measured)$' line n=0 sha state v
+    local -A seen=()
+    git -C "$g" cat-file blob "$ref:$MODELS_DIR/INDEX" > "$f" 2>/dev/null || { echo "not_measured: models: $EVIDENCE_BRANCH has no blob $MODELS_DIR/INDEX" >&2; return 2; }
+    while IFS= read -r line || [ -n "$line" ]; do
+        n=$((n + 1))
+        [[ $line =~ $re ]] || { echo "not_measured: models: $MODELS_DIR/INDEX line $n is not '<40-hex> green|red|not_measured': ${line:0:80}" >&2; return 2; }
+        sha=${BASH_REMATCH[1]}; state=${BASH_REMATCH[2]}
+        [ -z "${seen[$sha]:-}" ] || { echo "not_measured: models: $MODELS_DIR/INDEX has two lines for $sha" >&2; return 2; }
+        seen[$sha]=1
+        [ "$state" != not_measured ] || continue
+        v=$(git -C "$g" cat-file blob "$ref:$MODELS_DIR/$sha/verdict" 2>/dev/null | awk 'index($0, "state=") == 1 { print substr($0, 7); exit }')
+        [ "$v" = "$state" ] || { echo "not_measured: models: $MODELS_DIR/INDEX says $state for $sha, and its bundle's verdict says ${v:-nothing}" >&2; return 2; }
+        printf '%s\t%s\n' "$sha" "$state"
+    done < "$f"
+}
+
+# cpu_measured CACHE -> release_lanes.sh measured-cpu: "sha TAB green|red TAB run" for each commit an infra clean-room
+# run measured; rc 2 not_measured, its reason on stderr
+cpu_measured() { bash "$SCRIPT_DIR/release_lanes.sh" measured-cpu --cache "$1"; }
+
+# pick_c --cache DIR [--repo DIR] [--remote NAME] -> C on stdout, rc 0 (B1 Q1). Fetches REMOTE's main and evidence
+# branch into REPO's refs/rehearsal/ (whole fetches, never shallow; a shallow REPO is refused, its first-parent list is
+# cut), reads both measured sets, and walks main's newest PICK_DEPTH first-parent commits, newest first: the first one
+# both sides measured is C, printed with a receipt on stderr. A red on either side is a measurement. rc 2 and the
+# reason on stderr: a fetch or a reader read nothing, or no commit in the walk was measured by both. That night is
+# not_measured, and the count resets. rc 3 a caller error.
+pick_c() {
+    local g="" remote=origin cache="" rows line sha fp k=0 cre=$'^([0-9a-f]{40})\t(green|red)\t([0-9]+)$'
+    local -A models=() cpu=()
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --repo) g=${2:-}; shift 2 ;;
+            --remote) remote=${2:-}; shift 2 ;;
+            --cache) cache=${2:-}; shift 2 ;;
+            *) die3 "unknown option $1" ;;
+        esac
+    done
+    [ -n "$cache" ] || die3 "--pick-c needs --cache DIR"
+    g=${g:-$(cd "$SCRIPT_DIR/../.." && pwd)}
+    mkdir -p -- "$cache" || return 2
+    [ "$(git -C "$g" rev-parse --is-shallow-repository 2>/dev/null)" = false ] || { echo "not_measured: $g is not a full clone (shallow, or no git): its first-parent list is cut" >&2; return 2; }
+    git -C "$g" fetch -q --no-tags "$remote" "+refs/heads/main:refs/rehearsal/main" || { echo "not_measured: main was not fetched from $remote" >&2; return 2; }
+    git -C "$g" fetch -q --no-tags "$remote" "+refs/heads/$EVIDENCE_BRANCH:refs/rehearsal/$EVIDENCE_BRANCH" || { echo "not_measured: $EVIDENCE_BRANCH was not fetched from $remote (absent, or the read failed): no models bundle was read" >&2; return 2; }
+    rows=$(models_measured "$g" "refs/rehearsal/$EVIDENCE_BRANCH" "$cache") || return 2
+    if [ -n "$rows" ]; then
+        while IFS=$'\t' read -r sha line; do models[$sha]=$line; done <<< "$rows"
+    fi
+    rows=$(cpu_measured "$cache/cpu") || { echo "not_measured: cleanroom-cpu: release_lanes.sh measured-cpu read nothing (its reason is above)" >&2; return 2; }
+    if [ -n "$rows" ]; then
+        while IFS= read -r line; do
+            [[ $line =~ $cre ]] || { echo "not_measured: cleanroom-cpu: measured-cpu printed a line that is not 'sha TAB green|red TAB run': ${line:0:80}" >&2; return 2; }
+            cpu[${BASH_REMATCH[1]}]="${BASH_REMATCH[2]} run ${BASH_REMATCH[3]}"
+        done <<< "$rows"
+    fi
+    fp=$(git -C "$g" rev-list --first-parent -n "$PICK_DEPTH" refs/rehearsal/main) || { echo "not_measured: main's first-parent list was not read" >&2; return 2; }
+    while read -r sha; do
+        if [ -n "${models[$sha]:-}" ] && [ -n "${cpu[$sha]:-}" ]; then
+            printf 'pick: C %s (main~%s): models-crux %s, cleanroom-cpu %s\n' "$sha" "$k" "${models[$sha]}" "${cpu[$sha]}" >&2
+            printf '%s\n' "$sha"; return 0
+        fi
+        k=$((k + 1))
+    done <<< "$fp"
+    echo "not_measured: no commit in main's newest $PICK_DEPTH first-parent commits was measured by both the models bundle (${#models[@]} commits) and an infra clean-room run (${#cpu[@]} commits)" >&2
+    return 2
 }
 
 # ------------------------------------------------------------------ the judge --
@@ -658,6 +744,8 @@ selftest() {
     selftest_seams
     selftest_judge
     selftest_streak
+    selftest_pick
+    selftest_lanes_argv
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
 }
@@ -959,6 +1047,106 @@ GH
     printf '  %s streak rows\n' "$((pass + fail - p0))"
 }
 
+# --pick-c on a fixture origin: main is m0..m5 on its first parents, with a side commit s1 merged at m2 and dated after
+# m1, and each row writes the evidence branch it needs. A full clone fetches from it; measured-cpu's lines are planted
+# in place of the infra read, except in the last read row, which runs the real release_lanes.sh with no token.
+selftest_pick() {
+    local p="$tmp/pick" p0=$((pass + fail)) o e rc t m0 m1 s1 m2 m3 m4 m5 idxa cpua
+    pg() { git -C "$p/origin.git" -c user.name=t -c user.email=t@invalid "$@"; }
+    mkdir -p "$p" && git init -q --bare "$p/origin.git" && t=$(pg mktree < /dev/null) || return 2
+    cm() { # cm DATE MSG PARENT... -> a commit of the empty tree, dated DATE (epoch seconds)
+        local d=$1 m=$2 x a=(); shift 2
+        for x in "$@"; do a+=(-p "$x"); done
+        GIT_COMMITTER_DATE="@$d +0000" GIT_AUTHOR_DATE="@$d +0000" pg commit-tree "$t" -m "$m" "${a[@]}"
+    }
+    m0=$(cm 100 m0) && m1=$(cm 200 m1 "$m0") && s1=$(cm 300 s1 "$m0") && m2=$(cm 400 m2 "$m1" "$s1") \
+        && m3=$(cm 500 m3 "$m2") && m4=$(cm 600 m4 "$m3") && m5=$(cm 700 m5 "$m4") || return 2
+    pg update-ref refs/heads/main "$m5" && pg symbolic-ref HEAD refs/heads/main || return 2
+    git clone -q -- "$p/origin.git" "$p/clone" 2>/dev/null || return 2
+    ev() { # ev INDEX SHA:STATE... -> origin's evidence branch: models-crux/INDEX (none when INDEX is -) and one bundle per
+        local i=$1 b v tb l mc root c # SHA:STATE, models-crux/<SHA>/verdict saying state=STATE
+        shift
+        l=""
+        if [ "$i" != - ]; then i=$(printf '%s' "$i" | pg hash-object -w --stdin) || return 2; l=$(printf '100644 blob %s\tINDEX' "$i"); fi
+        for b in "$@"; do
+            v=$(printf 'state=%s\nreason=fixture\n' "${b#*:}" | pg hash-object -w --stdin) || return 2
+            tb=$(printf '100644 blob %s\tverdict\n' "$v" | pg mktree) || return 2
+            l="$l${l:+$'\n'}$(printf '040000 tree %s\t%s' "$tb" "${b%%:*}")"
+        done
+        mc=$(printf '%s\n' "$l" | sed '/^$/d' | pg mktree) && root=$(printf '040000 tree %s\t%s\n' "$mc" models-crux | pg mktree) \
+            && c=$(pg commit-tree "$root" -m evidence) && pg update-ref refs/heads/nightly-evidence "$c"
+    }
+    pk() { # pk NAME WANT_RC WANT_STDOUT WANT_STDERR [ARG...] -- pick_c on the clone, measured-cpu answering CPU, rc CPU_RC
+        local name=$1 wrc=$2 wout=$3 werr=$4; shift 4
+        rc=0; o=$( cpu_measured() { [ -z "${CPU:-}" ] || printf '%s\n' "$CPU"; return "${CPU_RC:-0}"; }
+                   pick_c --repo "$p/clone" --cache "$p/cache" "$@" 2> "$p/err" ) || rc=$?
+        e=$(cat -- "$p/err")
+        if [ "$rc" = "$wrc" ] && [ "$o" = "$wout" ] && [[ $e == *"$werr"* ]]; then pass=$((pass + 1))
+        else printf '  BROKE %-48s rc=%s (want %s) out=%s err=%s\n' "$name" "$rc" "$wrc" "${o:0:41}" "$(printf '%s' "$e" | tail -n 2 | tr '\n' '|' | cut -c1-200)"; fail=$((fail + 1)); fi
+    }
+    idxa=$(printf '%s not_measured\n%s red\n%s green\n%s green\n' "$m5" "$m3" "$s1" "$m1")
+    cpua=$(printf '%s\tgreen\t11\n%s\tred\t12\n%s\tgreen\t13\n%s\tgreen\t14\n%s\tred\t15\n' "$m5" "$m4" "$s1" "$m2" "$m1")
+    ev "$idxa" "$m5:not_measured" "$m3:red" "$s1:green" "$m1:green" || return 2
+    CPU=$cpua pk c_is_the_newest_first_parent_commit_both_measured 0 "$m1" "pick: C $m1 (main~4): models-crux green, cleanroom-cpu red run 15"
+    CPU=$cpua PICK_DEPTH=4 pk the_walk_is_bounded 2 "" "no commit in main's newest 4 first-parent commits was measured by both"
+    ev "$m5 red" "$m5:red" || return 2
+    CPU=$(printf '%s\tgreen\t21' "$m5") pk a_red_models_bundle_on_the_head_is_c 0 "$m5" "pick: C $m5 (main~0): models-crux red, cleanroom-cpu green run 21"
+    ev "$m1 green" || return 2
+    CPU=$cpua pk a_measured_line_with_no_bundle_is_not_measured 2 "" "INDEX says green for $m1, and its bundle's verdict says nothing"
+    ev "$m1 green" "$m1:red" || return 2
+    CPU=$cpua pk a_bundle_that_says_otherwise_is_not_measured 2 "" "INDEX says green for $m1, and its bundle's verdict says red"
+    ev "$(printf '%s green\n%s pass' "$m1" "$m3")" "$m1:green" "$m3:red" || return 2
+    CPU=$cpua pk an_index_line_out_of_format_is_not_measured 2 "" "INDEX line 2 is not '<40-hex> green|red|not_measured': $m3 pass"
+    ev "$(printf '%s green\n%s red' "$m1" "$m1")" "$m1:green" || return 2
+    CPU=$cpua pk two_index_lines_for_a_commit_are_not_measured 2 "" "INDEX has two lines for $m1"
+    ev - "$m1:green" || return 2
+    CPU=$cpua pk no_index_is_not_measured 2 "" "nightly-evidence has no blob models-crux/INDEX"
+    ev "$idxa" "$m5:not_measured" "$m3:red" "$s1:green" "$m1:green" || return 2
+    CPU=$cpua CPU_RC=2 pk a_not_measured_cpu_read_is_not_measured 2 "" "cleanroom-cpu: release_lanes.sh measured-cpu read nothing"
+    CPU=$(printf '%s green 14' "$m1") pk a_cpu_line_out_of_format_is_not_measured 2 "" "measured-cpu printed a line that is not 'sha TAB green|red TAB run': $m1 green 14"
+    CPU=$cpua pk an_unreachable_remote_is_not_measured 2 "" "main was not fetched from nowhere" --remote nowhere
+    pg update-ref -d refs/heads/nightly-evidence || return 2
+    CPU=$cpua pk an_evidence_branch_gone_is_not_read_from_an_old_fetch 2 "" "nightly-evidence was not fetched from origin"
+    ev "$idxa" "$m5:not_measured" "$m3:red" "$s1:green" "$m1:green" || return 2
+    git clone -q -- "$p/origin.git" "$p/shallow" 2>/dev/null && printf '%s\n' "$m3" > "$p/shallow/.git/shallow" || return 2
+    CPU=$cpua pk a_shallow_clone_is_not_measured 2 "" "is not a full clone (shallow, or no git)" --repo "$p/shallow"
+    rc=0; o=$( unset INFRA_TOKEN; pick_c --repo "$p/clone" --cache "$p/cache" 2>&1 ) || rc=$?
+    if [ "$rc" = 2 ] && [[ $o == *"not_measured: no infra read token (INFRA_ACTIONS_READ)"* ]]; then pass=$((pass + 1))
+    else printf '  BROKE %-48s rc=%s (want 2): %s\n' the_cpu_side_is_release_lanes_measured_cpu "$rc" "$(printf '%s' "$o" | tail -n 2 | tr '\n' '|')"; fail=$((fail + 1)); fi
+    rc=0; o=$( pick_c --repo "$p/clone" 2>&1 ) || rc=$?
+    if [ "$rc" = 3 ] && [[ $o == *"--pick-c needs --cache DIR"* ]]; then pass=$((pass + 1))
+    else printf '  BROKE %-48s rc=%s (want 3): %s\n' a_pick_without_a_cache_is_a_caller_error "$rc" "$o"; fail=$((fail + 1)); fi
+    printf '  %s pick rows\n' "$((pass + fail - p0))"
+}
+
+# The night hands its train C and its own run: run_night --stages lanes on a fixture source whose nightly_train.sh prints
+# its arguments. The lanes stage passes --commit C always, and --in-run RUN only when the night has a run.
+selftest_lanes_argv() {
+    local g="$tmp/ln" p0=$((pass + fail)) k=0 c b rl sc rt o rc
+    lg() { git -C "$g" -c user.name=t -c user.email=t@invalid "$@"; }
+    mkdir -p "$g" && git init -q "$g" || return 2
+    printf '%s\n' "printf 'arg %s\\n' \"\$@\"" > "$tmp/ln-train.sh" || return 2
+    b=$(lg hash-object -w -- "$tmp/ln-train.sh") && rl=$(printf '100644 blob %s\tnightly_train.sh\n' "$b" | lg mktree) \
+        && sc=$(printf '040000 tree %s\trelease\n' "$rl" | lg mktree) && rt=$(printf '040000 tree %s\tscripts\n' "$sc" | lg mktree) \
+        && c=$(lg commit-tree "$rt" -m lanes) && lg update-ref refs/heads/main "$c" && lg symbolic-ref HEAD refs/heads/main || return 2
+    la() { # la NAME RUN -- the lanes stage's arguments, with --in-run RUN when RUN is set
+        local name=$1 run=$2 st want got
+        k=$((k + 1)); st="$tmp/ln-night$k"
+        o=$( run_night --state "$st" --source "$g" --commit "$c" --version 9.9.9 --stages lanes ${run:+--in-run "$run"} 2>&1 )
+        st=$(realpath -- "$st") || st="$tmp/ln-night$k"
+        want="--out $st/train --commit $c${run:+ --in-run $run} "
+        got=$(sed -n 's/^arg //p' "$st/logs/lanes.log" 2>/dev/null | tr '\n' ' ')
+        if [ "$got" = "$want" ]; then pass=$((pass + 1))
+        else printf '  BROKE %-48s got "%s" want "%s": %s\n' "$name" "$got" "$want" "$(printf '%s' "$o" | tail -n 2 | tr '\n' '|')"; fail=$((fail + 1)); fi
+    }
+    la the_lanes_stage_reads_c_in_the_nights_run 4242
+    la the_lanes_stage_without_a_run_reads_c ""
+    rc=0; o=$( run_night --state "$tmp/ln-bad" --source "$g" --commit "$c" --version 9.9.9 --stages lanes --in-run 12x 2>&1 ) || rc=$?
+    if [ "$rc" = 3 ] && [[ $o == *"--in-run must be a run id"* ]] && [ ! -e "$tmp/ln-bad" ]; then pass=$((pass + 1))
+    else printf '  BROKE %-48s rc=%s (want 3): %s\n' an_in_run_that_is_not_a_run_id_is_a_caller_error "$rc" "$o"; fail=$((fail + 1)); fi
+    printf '  %s night rows\n' "$((pass + fail - p0))"
+}
+
 # ------------------------------------------------------------------ mutants --
 # Each mutant is "name sed-script". It must change this file, still parse, and turn --selftest RED with at
 # least one BROKE row. A pattern that no longer matches is reported, never skipped. Mutants of the guard
@@ -971,7 +1159,7 @@ mutants() {
     while read -r name file expr; do
         [ -n "$name" ] || continue
         dir=$(mktemp -d "${tmp:?}/m.XXXXXX") || return 2
-        cp -- "$SCRIPT_PATH" "$dir/rehearse.sh"; cp -- "$SCRIPT_DIR/lib_write_guard.sh" "$SCRIPT_DIR/lib_rehearsal.sh" "$SCRIPT_DIR/nightly_greens.sh" "$dir/"
+        cp -- "$SCRIPT_PATH" "$dir/rehearse.sh"; cp -- "$SCRIPT_DIR/lib_write_guard.sh" "$SCRIPT_DIR/lib_rehearsal.sh" "$SCRIPT_DIR/nightly_greens.sh" "$SCRIPT_DIR/release_lanes.sh" "$dir/"
         sed -i -e "$expr" "$dir/$file"
         if cmp -s "$dir/$file" "$SCRIPT_DIR/$file"; then
             printf '  BROKE %-40s changed nothing: its pattern no longer matches\n' "$name"; fail=$((fail + 1)); continue
@@ -1055,6 +1243,35 @@ night_ids_dropped            rehearse.sh         s/then printf 'IDS=%s\\n' "\$id
 judge_ids_unchecked          rehearse.sh         s/if \[\[ \$ids =~ \^tree=/if true || [[ $ids =~ ^tree=/
 release_path_keeps_floor     rehearse.sh         s/if \[ "\$relpath" = 1 \]; then fl=0; fi/:/
 nights_lose_the_floor        rehearse.sh         s/relpath=\${3:-0}/relpath=1/
+pick_not_measured_line_counts rehearse.sh         s/\[ "\$state" != not_measured \] || continue/true || continue/
+pick_bundle_unchecked        rehearse.sh         s/\[ "\$v" = "\$state" \] || {/true || {/
+pick_not_first_parent        rehearse.sh         s/rev-list --first-parent -n "\$PICK_DEPTH"/rev-list -n "$PICK_DEPTH"/
+pick_unbounded               rehearse.sh         s/ -n "\$PICK_DEPTH" refs\/rehearsal\/main/ refs\/rehearsal\/main/
+pick_models_red_refused      rehearse.sh         s/ (green|red|not_measured)\$'/ (green|not_measured)$'/
+pick_cpu_red_refused         rehearse.sh         s/\\t(green|red)\\t/\\t(green)\\t/
+pick_models_side_unchecked   rehearse.sh         s/if \[ -n "\${models\[\$sha\]:-}" \] && /if /
+pick_cpu_side_unchecked      rehearse.sh         s/ && \[ -n "\${cpu\[\$sha\]:-}" \]; then/; then/
+pick_stale_evidence_read     rehearse.sh         s/refs\/rehearsal\/\$EVIDENCE_BRANCH" || {/refs\/rehearsal\/$EVIDENCE_BRANCH" || true || {/
+pick_main_fetch_ignored      rehearse.sh         s/"+refs\/heads\/main:refs\/rehearsal\/main" || {/"+refs\/heads\/main:refs\/rehearsal\/main" || true || {/
+pick_index_state_unchecked   rehearse.sh         s/ (green|red|not_measured)\$'/ ([a-z_]+)$'/
+pick_duplicates_allowed      rehearse.sh         s/\[ -z "\${seen\[\$sha\]:-}" \] || {/true || {/
+pick_cpu_rc_ignored          rehearse.sh         s/rows=\$(cpu_measured "\$cache\/cpu") || {/rows=$(cpu_measured "$cache\/cpu") || true || {/
+pick_cpu_rows_unvalidated    rehearse.sh         s/\[\[ \$line =~ \$cre \]\] || {/true || {/
+pick_shallow_allowed         rehearse.sh         s/--is-shallow-repository 2>\/dev\/null)" = false \] || {/--is-shallow-repository 2>\/dev\/null)" = false ] || true || {/
+pick_cpu_reader_not_called   rehearse.sh         s/^cpu_measured() { bash .*; }$/cpu_measured() { :; }/
+pick_c_not_printed           rehearse.sh         s/printf '%s\\n' "\$sha"; return 0/return 0/
+pick_cache_optional          rehearse.sh         s/^    \[ -n "\$cache" \] || die3 "--pick-c needs --cache DIR"$/    :/
+pick_index_last_line_dropped rehearse.sh         s/while IFS= read -r line || \[ -n "\$line" \]; do/while IFS= read -r line; do/
+pick_no_index_read_as_empty  rehearse.sh         s/\/INDEX" > "\$f" 2>\/dev\/null || {/\/INDEX" > "$f" 2>\/dev\/null || true || {/
+pick_wrong_models_dir        rehearse.sh         s/^MODELS_DIR=models-crux$/MODELS_DIR=models/
+pick_wrong_evidence_branch   rehearse.sh         s/^EVIDENCE_BRANCH=nightly-evidence$/EVIDENCE_BRANCH=evidence/
+pick_receipt_depth_wrong     rehearse.sh         s/"\$sha" "\$k" "\${models\[\$sha\]}"/"$sha" 0 "${models[$sha]}"/
+lanes_stage_no_commit        rehearse.sh         s/ --commit "\$RELEASE_REHEARSAL_C"//
+lanes_stage_in_run_dropped   rehearse.sh         s/ \${RELEASE_REHEARSAL_IN_RUN:+--in-run "\$RELEASE_REHEARSAL_IN_RUN"}//
+lanes_stage_in_run_always    rehearse.sh         s/\${RELEASE_REHEARSAL_IN_RUN:+--in-run "\$RELEASE_REHEARSAL_IN_RUN"}/--in-run "$RELEASE_REHEARSAL_IN_RUN"/
+guard_env_drops_in_run       rehearse.sh         s/ RELEASE_REHEARSAL_IN_RUN=%q\\n' "\$c" "\$st\/train" "\$run"/\\n' "$c" "$st\/train"/
+run_night_drops_in_run       rehearse.sh         s/install_guard "\$st" "\$commit" "\$inrun"/install_guard "$st" "$commit"/
+in_run_unvalidated           rehearse.sh         s/^    \[ -z "\$inrun" \] || \[\[ \$inrun =~ .*must be a run id.*$/    :/
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
@@ -1066,7 +1283,8 @@ case "${1:-}" in
     --classify) [ $# -ge 3 ] || die3 "--classify TOOL CWD [ARG...]"; t=$2; d=$3; shift 3; wg_classify "$t" "${WG_STATE:-/nonexistent-state}" "$d" "$@" ;;
     --selftest) selftest ;;
     --streak) shift; streak "$@" ;;
+    --pick-c) shift; pick_c "$@" ;;
     --mutants) mutants ;;
     -h|--help) awk 'NR > 1 && /^set -uo pipefail$/ { exit } NR > 1' "$0" ;;
-    *) die3 "usage: rehearse.sh --run|--judge|--streak|--classify|--selftest|--mutants (see --help)" ;;
+    *) die3 "usage: rehearse.sh --run|--judge|--streak|--pick-c|--classify|--selftest|--mutants (see --help)" ;;
 esac
