@@ -11,6 +11,7 @@ impl CudaKernels {
             .or_else(|| Self::norm_rope_kernel_name(kernel_type))
             .or_else(|| Self::activation_misc_kernel_name(kernel_type))
             .or_else(|| Self::gdn_kernel_name(kernel_type))
+            .or_else(|| Self::prefill_dequant_kernel_name(kernel_type))
             .unwrap_or("unknown")
     }
 
@@ -90,7 +91,6 @@ impl CudaKernels {
             KernelType::Q2KGemv { .. } => "q2_k_gemv_warp_reduce",
             KernelType::Iq2XxsGemv { .. } => "iq2_xxs_gemv_warp_reduce",
             KernelType::Iq2SGemv { .. } => "iq2_s_gemv_warp_reduce",
-            KernelType::Iq2SDequant { .. } => "iq2_s_dequant_to_f32",
             KernelType::Iq3XxsGemv { .. } => "iq3_xxs_gemv_warp_reduce",
             KernelType::Q5_1Gemv { .. } => "q5_1_gemv_warp_reduce",
             _ => return None,

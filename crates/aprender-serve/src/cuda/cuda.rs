@@ -32,6 +32,7 @@ impl CudaKernels {
             .or_else(|| Self::generate_attention_ptx(kernel_type, target))
             .or_else(|| Self::generate_norm_rope_ptx(kernel_type, target))
             .or_else(|| Self::generate_activation_misc_ptx(kernel_type, target))
+            .or_else(|| Self::generate_prefill_dequant_ptx(kernel_type))
             .unwrap_or_default()
     }
 }

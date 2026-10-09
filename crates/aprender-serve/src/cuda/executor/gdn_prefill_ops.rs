@@ -151,18 +151,18 @@ impl CudaExecutor {
                 self.qp_prepare(&key, &kern)?;
                 (key, "iq4_xs_dequant_to_f32", (n, k.div_ceil(256)))
             },
-            // #3953: Qwen3.5-0.8B-UD-IQ2_XXS's five type-22 `ffn_down` weights. The
-            // PTX bakes in no shape (k and n are launch params), so one module serves
-            // every shape; the module-key proof checks that on every hit.
-            WeightQuantType::IQ2S => {
-                let key = "qp_iq2s_dequant".to_string();
-                self.ensure_kernel_module(&key, &KernelType::Iq2SDequant { k, n })?;
-                (key, "iq2_s_dequant_to_f32", (n, k.div_ceil(256)))
-            },
             other => {
-                return Err(GpuError::InvalidParameter(format!(
-                    "qwen35 prefill: no f32 dequant kernel for {other:?}"
-                )))
+                let Some((key, kt)) = shape_free_dequant(other, k, n) else {
+                    return Err(GpuError::InvalidParameter(format!(
+                        "qwen35 prefill: no f32 dequant kernel for {other:?}"
+                    )));
+                };
+                self.ensure_kernel_module(key, &kt)?;
+                (
+                    key.to_string(),
+                    self.kernels.kernel_name(&kt),
+                    (n, k.div_ceil(256)),
+                )
             },
         };
         let config = LaunchConfig::grid_2d(grid.0, grid.1, 32, 1);
@@ -706,6 +706,29 @@ impl CudaExecutor {
     }
 }
 
+/// #3953 / #4952: the prefill dequants whose PTX bakes in no shape (`k` and `n` are
+/// launch params), so one module per type serves every shape under a constant key;
+/// `ensure_kernel_module` proves on every hit that the key is complete. Each runs on
+/// grid `(n, ceil(k/256))`, 32 threads. `None`: no dequant for that type.
+///
+/// IQ2_S: Qwen3.5-0.8B-UD-IQ2_XXS's five type-22 `ffn_down` weights (#3953). IQ2_XXS,
+/// IQ3_S, IQ3_XXS and Q2_K: the same model's weights of the four types that had a GEMV
+/// but no dequant until #4952.
+fn shape_free_dequant(
+    qtype: WeightQuantType,
+    k: u32,
+    n: u32,
+) -> Option<(&'static str, KernelType)> {
+    Some(match qtype {
+        WeightQuantType::IQ2S => ("qp_iq2s_dequant", KernelType::Iq2SDequant { k, n }),
+        WeightQuantType::IQ2XXS => ("qp_iq2xxs_dequant", KernelType::Iq2XxsDequant { k, n }),
+        WeightQuantType::IQ3S => ("qp_iq3s_dequant", KernelType::Iq3SDequant { k, n }),
+        WeightQuantType::IQ3XXS => ("qp_iq3xxs_dequant", KernelType::Iq3XxsDequant { k, n }),
+        WeightQuantType::Q2K => ("qp_q2k_dequant", KernelType::Q2KDequant { k, n }),
+        _ => return None,
+    })
+}
+
 /// Which GEMM the Qwen3.5 prefill projections run (#4313), from
 /// `APR_QWEN35_PREFILL_GEMM` = `f16` (default) | `f32` | `dp4a`. Read once. `f16`
 /// runs only on an executor whose fp16 set was prewarmed completely
@@ -845,5 +868,138 @@ mod dequant_dispatch_tests_4621 {
                 "#3953 n={n} k={k}: the kernel stored past the last row"
             );
         }
+    }
+
+    /// #4952: `n` rows of `ceil(k/256)` super-blocks of deterministic pseudo-random
+    /// bytes -- every index, sign and scale field takes values across its whole range --
+    /// with the f16 at each offset in `f16_at` overwritten by a finite value that varies
+    /// from block to block, so a kernel that ignored one of them fails.
+    fn random_blocks(n: usize, k: usize, block_bytes: usize, f16_at: &[usize]) -> Vec<u8> {
+        let mut s = 0x9e37_79b9_7f4a_7c15u64;
+        let mut bytes: Vec<u8> = (0..n * k.div_ceil(256) * block_bytes)
+            .map(|_| {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                (s >> 24) as u8
+            })
+            .collect();
+        for (i, blk) in bytes.chunks_exact_mut(block_bytes).enumerate() {
+            for (j, &at) in f16_at.iter().enumerate() {
+                let v = half::f16::from_f32(0.000_7 * ((i + 3 * j) % 11) as f32 + 0.000_3);
+                blk[at..at + 2].copy_from_slice(&v.to_le_bytes());
+            }
+        }
+        bytes
+    }
+
+    /// #4952: `qtype`'s dequant against the CPU oracle, BIT-EXACT, at k=512, at the
+    /// real model's 14-block k=3584, and at k=300, which ends in a partial block whose
+    /// columns past `k` must not be stored. `row_oracle` decodes one row's blocks. The
+    /// scratch is pre-filled with NaN, so an output the kernel never writes fails, and
+    /// so does a store past the last row.
+    fn assert_dequant_bit_exact(
+        qtype: WeightQuantType,
+        block_bytes: usize,
+        f16_at: &[usize],
+        row_oracle: impl Fn(&[u8]) -> Vec<f32>,
+    ) {
+        let Some(mut exec) = executor() else { return };
+        let guard = 512usize;
+        for (n, k) in [(3usize, 512usize), (4, 3584), (5, 300)] {
+            let bytes = random_blocks(n, k, block_bytes, f16_at);
+            let row_bytes = k.div_ceil(256) * block_bytes;
+            let mut want = Vec::with_capacity(n * k);
+            for row in bytes.chunks_exact(row_bytes) {
+                want.extend_from_slice(&row_oracle(row)[..k]);
+            }
+            assert!(
+                want.iter().any(|v| *v != 0.0) && want.iter().all(|v| v.is_finite()),
+                "#4952 {qtype:?} n={n} k={k}: the oracle output is degenerate"
+            );
+            let nan = vec![f32::NAN; n * k + guard];
+            exec.dequant_scratch =
+                Some(GpuBuffer::from_host(&exec.context, &nan).expect("scratch"));
+            exec.dequant_scratch_size = nan.len();
+            let w = GpuBuffer::from_host(&exec.context, &bytes).expect("w");
+            let p = exec
+                .qwen35_dequant_f32(qtype, w.as_ptr(), n as u32, k as u32)
+                .unwrap_or_else(|e| panic!("#4952: {qtype:?} has a dequant kernel: {e}"));
+            exec.stream.synchronize().expect("sync");
+            let scratch = exec.dequant_scratch.as_ref().expect("scratch");
+            assert_eq!(p, scratch.as_ptr(), "the result is the dequant scratch");
+            let mut got = vec![0.0f32; scratch.len()];
+            scratch.copy_to_host(&mut got).expect("readback");
+            let bad: Vec<usize> = (0..n * k)
+                .filter(|&i| got[i].to_bits() != want[i].to_bits())
+                .collect();
+            assert!(
+                bad.is_empty(),
+                "#4952 {qtype:?} n={n} k={k}: {} of {} outputs differ from the CPU oracle; \
+                 first at {}: GPU {} vs CPU {}",
+                bad.len(),
+                n * k,
+                bad[0],
+                got[bad[0]],
+                want[bad[0]]
+            );
+            assert!(
+                got[n * k..].iter().all(|v| v.is_nan()),
+                "#4952 {qtype:?} n={n} k={k}: the kernel stored past the last row"
+            );
+        }
+    }
+
+    /// One row through the per-block IQ oracle `quantize::iq_dispatch`.
+    fn iq_row_oracle(ggml_type: u32, block_bytes: usize) -> impl Fn(&[u8]) -> Vec<f32> {
+        move |row: &[u8]| {
+            let mut out = vec![0.0f32; row.len() / block_bytes * 256];
+            for (blk, o) in row.chunks_exact(block_bytes).zip(out.chunks_exact_mut(256)) {
+                crate::quantize::iq_dispatch::dequantize_iq_block(ggml_type, blk, o)
+                    .expect("oracle");
+            }
+            out
+        }
+    }
+
+    #[test]
+    fn iq2_xxs_weight_dequantizes_bit_exactly_on_the_device() {
+        use crate::quantize::iq2_xxs::{GGML_TYPE_IQ2_XXS, IQ2_XXS_BLOCK_BYTES};
+        assert_dequant_bit_exact(
+            WeightQuantType::IQ2XXS,
+            IQ2_XXS_BLOCK_BYTES,
+            &[0],
+            iq_row_oracle(GGML_TYPE_IQ2_XXS, IQ2_XXS_BLOCK_BYTES),
+        );
+    }
+
+    #[test]
+    fn iq3_s_weight_dequantizes_bit_exactly_on_the_device() {
+        use crate::quantize::iq3_s::{GGML_TYPE_IQ3_S, IQ3_S_BLOCK_BYTES};
+        assert_dequant_bit_exact(
+            WeightQuantType::IQ3S,
+            IQ3_S_BLOCK_BYTES,
+            &[0],
+            iq_row_oracle(GGML_TYPE_IQ3_S, IQ3_S_BLOCK_BYTES),
+        );
+    }
+
+    #[test]
+    fn iq3_xxs_weight_dequantizes_bit_exactly_on_the_device() {
+        use crate::quantize::iq3_xxs::{GGML_TYPE_IQ3_XXS, IQ3_XXS_BLOCK_BYTES};
+        assert_dequant_bit_exact(
+            WeightQuantType::IQ3XXS,
+            IQ3_XXS_BLOCK_BYTES,
+            &[0],
+            iq_row_oracle(GGML_TYPE_IQ3_XXS, IQ3_XXS_BLOCK_BYTES),
+        );
+    }
+
+    /// Q2_K's `d` is at +80 and `dmin` at +82; both vary per block.
+    #[test]
+    fn q2_k_weight_dequantizes_bit_exactly_on_the_device() {
+        assert_dequant_bit_exact(WeightQuantType::Q2K, 84, &[80, 82], |row| {
+            crate::quantize::dequantize_q2_k(row).expect("oracle")
+        });
     }
 }

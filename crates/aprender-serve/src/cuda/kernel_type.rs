@@ -400,6 +400,30 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// IQ2_XXS -> f32 dequant of a row-major `[n x k]` weight, for the Qwen3.5 batched
+    /// prefill's GEMM path - #4952
+    Iq2XxsDequant {
+        k: u32,
+        n: u32,
+    },
+    /// IQ3_S -> f32 dequant of a row-major `[n x k]` weight, for the Qwen3.5 batched
+    /// prefill's GEMM path - #4952
+    Iq3SDequant {
+        k: u32,
+        n: u32,
+    },
+    /// IQ3_XXS -> f32 dequant of a row-major `[n x k]` weight, for the Qwen3.5 batched
+    /// prefill's GEMM path - #4952
+    Iq3XxsDequant {
+        k: u32,
+        n: u32,
+    },
+    /// Q2_K -> f32 dequant of a row-major `[n x k]` weight, for the Qwen3.5 batched
+    /// prefill's GEMM path - #4952
+    Q2KDequant {
+        k: u32,
+        n: u32,
+    },
     /// IQ3_XXS GEMV (8-bit indices into a 4-magnitude grid, 7-bit sign codes) - #3963
     Iq3XxsGemv {
         k: u32,

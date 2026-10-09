@@ -53,4 +53,5 @@ include!("kernel_type.rs");
 include!("kernel_generator.rs");
 include!("kernel.rs");
 include!("layout.rs");
+include!("prefill_dequant_ptx.rs");
 include!("kernels_generate.rs");
