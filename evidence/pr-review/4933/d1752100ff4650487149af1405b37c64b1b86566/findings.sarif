@@ -1,0 +1,157 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "pmat 3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no-duplication",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh: 2 symbols searched, 0 hits over head, 1595/1595 sibling branches and the 20 files that landed on origin/main after the merge base; nothing in the diff re-implements existing code."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 227
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "ad8fafc7943962aceefd1eff18cac65d6cb35f46",
+              "--head",
+              "d1752100ff4650487149af1405b37c64b1b86566",
+              "--rust-semantic",
+              "--json",
+              "dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3aeadcc856881489d9dffed24b4d115fa6acfaaaefffdc0eecf81bb8059ea723",
+            "failure_scenario": "none: a re-implemented symbol of the same name would be a hit in dup.json",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "scripts/check_release_t1_lanes_joined.sh own mutant set (bash; cargo-mutants not applicable)"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t1-join-selftest",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_release_t1_lanes_joined.sh with RELEASE_T1_LANES_ENFORCE=1: PASS, 12 cases, 14 of 14 mutants killed (incl. no-hold, held-after-red, no-crux-env). Two extra reviewer mutants were killed too: dropping the t1_red clause from the start condition (policy-deep-red fires) and holding dogfood without the policy (two-reds fires)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 201
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "RELEASE_T1_LANES_ENFORCE=1",
+              "bash",
+              "scripts/check_release_t1_lanes_joined.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9a99c3c50fc64672a8966cf31560a04a9c65ef81b5d026c73b1d0c5616053b67",
+            "failure_scenario": "none: a surviving mutant would print FAIL and exit 1",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ladder-gate-still-red",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_model_ladder.sh --version 0.71.0 with MODEL_LADDER_CRUX_DIR and CRUX_CERT at a nonexistent path exits 1 (FAIL no prompt-certification receipt; RED CRUX smoke NOT satisfied): the gate the PR feeds is still red on a missing receipt. check_model_ladder.sh --self-test: 153 cases, 0 bad."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_model_ladder.sh"
+                },
+                "region": {
+                  "startLine": 1389
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "MODEL_LADDER_CRUX_DIR=/nonexistent",
+              "CRUX_CERT=/nonexistent/c.json",
+              "bash",
+              "scripts/check_model_ladder.sh",
+              "--version",
+              "0.71.0"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "f3c3fc2672b3f9454d1746f456be48a6554a9ee1153060bd4cb08c182949ce49",
+            "failure_scenario": "none: a gate that read green on an absent certification would exit 0 here",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.2"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
