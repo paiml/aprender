@@ -730,7 +730,7 @@ fn emit_op_parity_receipts() {
     }
 }
 
-/// Every `op_receipts` entry of the ratchet file with the receipt it points at.
+/// Every `op_receipts` entry of the receipts file with the receipt it points at.
 pub(super) fn committed_ops() -> Vec<(serde_json::Value, serde_json::Value)> {
     let doc: serde_json::Value =
         serde_json::from_str(include_str!("../kernel-registry-receipts.json"))

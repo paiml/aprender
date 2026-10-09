@@ -1,8 +1,6 @@
 {
- "schema": "apr-kernel-registry-receipts/v1",
- "note": "KREG-001 AC-3 (aprender#4539, OBS-15 #4574), RATCHET per cop ruling 2026-09-27 13:13Z: a registry row is admitted with a per-arch parity receipt from a host whose arch equals the row's arch (any host for an arch=any row). Until 0.73 the rows without one are counted and that count must equal unreceipted_max; lower unreceipted_max when you add a receipt, never raise it. From version 0.73.0 unreceipted_max must be 0 (hard RED). Checked by realizar::kernel_registry tests (FALSIFY-KREG-008).",
- "unreceipted_max": 20,
- "hard_red_at": "0.73.0",
+ "schema": "apr-kernel-registry-receipts/v2",
+ "note": "KREG-001 AC-3 (aprender#4539): a registry row is admitted with a per-arch parity receipt from a host whose arch equals the row's arch (any host for an arch=any row). Each entry below names a real row, once, and its receipt path is that row's tolerance; every row's tolerance is its receipt path or \"unmeasured\". Every cpu row has a receipt. A GPU row may still be \"unmeasured\": GPU receipt coverage is a LAB check, off the merge path (#4574), and no count is kept in this file. Checked by realizar::kernel_registry tests (FALSIFY-KREG-008).",
  "receipts": [
   {
    "kernel_id": "cpu.matvec.q4_k",
@@ -110,7 +108,6 @@
    "receipt": "evidence/kreg/parity/cpu.matvec.apr_q8.json"
   }
  ],
- "op_unreceipted_max": 26,
  "op_receipts": [
   {
    "kernel_id": "cpu.rmsnorm.f32",

@@ -12,7 +12,7 @@
   - 'Phase 1: registry rows + shape contract + runtime admit gate + coverage test. Refs #4539'
   - 'AC-1 (key): the admission key includes arch, isa_features and backend; admit() matches on them (issue #4539 body)'
   - 'AC-2 (arch-generic): no field or enum is valid for only one of x86 or CUDA; aarch64, Metal and wgpu rows validate with no schema change (issue #4539 body)'
-  - 'AC-3 (receipt-gated admission): a row without a parity receipt from a host of its arch is a violation. Phase 1 lands it as a ratchet per the cop ruling of 2026-09-27T13:13Z (ACCEPTED): kernel-registry-receipts.json unreceipted count may only fall, hard RED at 0.73.0 (issue #4539 body)'
+  - 'AC-3 (receipt-gated admission): a row without a parity receipt from a host of its arch is a violation. Every cpu row carries a receipt, and every receipt names its row, once, from a host of its arch, at the row''s tolerance path (FALSIFY-KREG-008, no allowance count). GPU rows may be unmeasured: their receipt coverage is a LAB check, off the merge path (#4574) (issue #4539 body)'
   - 'AC-4 (stable id): every row has a stable kernel_id plus shape_class and precision, for OBS-15 kernel_path (issue #4539 body)'
   phases: []
   subtasks: []

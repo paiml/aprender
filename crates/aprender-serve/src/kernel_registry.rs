@@ -1327,105 +1327,213 @@ mod tests {
         assert!(checked > 0, "no row was checked");
     }
 
-    /// FALSIFY-KREG-008 (AC-3, ratchet): a parity receipt names a real row and was taken on a
-    /// host of that row's arch; the rows without one number exactly `unreceipted_max`, which
-    /// only ever falls, and is 0 from `hard_red_at` on.
-    #[test]
-    fn unreceipted_rows_only_fall_and_reach_zero_at_the_hard_red_version() {
-        let doc: serde_json::Value =
-            serde_json::from_str(include_str!("../kernel-registry-receipts.json"))
-                .expect("receipts json");
-        let r = registry().expect("registry");
-        let mut receipted = std::collections::HashSet::new();
-        for rc in doc["receipts"].as_array().expect("receipts") {
-            let id = rc["kernel_id"].as_str().expect("kernel_id");
-            let row = r
-                .rows()
-                .iter()
-                .find(|row| row.kernel_id == id)
-                .unwrap_or_else(|| panic!("receipt for unregistered kernel {id}"));
-            let host_arch = rc["host_arch"].as_str().expect("host_arch");
-            assert!(
-                row.arch == "any" || row.arch == host_arch,
-                "{id}: receipt from a {host_arch} host cannot admit an arch={} row",
-                row.arch
-            );
-            assert!(
-                rc["receipt"].as_str().is_some_and(|p| !p.is_empty()),
-                "{id}: receipt path"
-            );
-            assert!(receipted.insert(id), "{id}: two receipts");
-        }
-        let unreceipted = r.rows().len() - receipted.len();
-        let max = doc["unreceipted_max"].as_u64().expect("unreceipted_max");
-        assert_eq!(
-            unreceipted as u64, max,
-            "unreceipted rows = {unreceipted}; set unreceipted_max to it (it may only fall)"
-        );
-        let minor = |v: &str| -> (u64, u64) {
-            let mut it = v
-                .split('.')
-                .map(|x| x.parse::<u64>().expect("version part"));
-            (it.next().expect("major"), it.next().expect("minor"))
-        };
-        let hard = doc["hard_red_at"].as_str().expect("hard_red_at");
-        let this = env!("CARGO_PKG_VERSION")
-            .split('-')
-            .next()
-            .expect("version");
-        if minor(this) >= minor(hard) {
-            assert_eq!(
-                unreceipted, 0,
-                "AC-3 is hard RED from {hard}: {unreceipted} rows lack a receipt"
-            );
-        }
+    /// One registry row as the FALSIFY-KREG-008 checks read it: `kernels[]` and `ops[]` rows alike.
+    struct ReceiptRow<'a> {
+        id: &'a str,
+        arch: &'a str,
+        backend: &'a str,
+        tolerance: &'a str,
     }
 
-    /// FALSIFY-KREG-008 for `ops[]`: an `op_receipts` entry names a real op row, from a host of its
-    /// arch, once; the op rows without one number exactly `op_unreceipted_max`, which only falls.
-    /// Its own count, so adding the op ratchet did not move the `kernels[]` one it sits beside.
-    #[test]
-    fn unreceipted_op_rows_only_fall() {
-        let doc: serde_json::Value =
-            serde_json::from_str(include_str!("../kernel-registry-receipts.json"))
-                .expect("receipts json");
-        let r = registry().expect("registry");
-        let mut receipted = std::collections::HashSet::new();
-        for rc in doc["op_receipts"].as_array().expect("op_receipts") {
-            let id = rc["kernel_id"].as_str().expect("kernel_id");
-            let row = r
-                .ops()
-                .iter()
-                .find(|row| row.kernel_id == id)
-                .unwrap_or_else(|| panic!("op receipt for unregistered op {id}"));
-            let host_arch = rc["host_arch"].as_str().expect("host_arch");
-            assert!(
-                row.arch == "any" || row.arch == host_arch,
+    fn kernel_receipt_rows(r: &Registry) -> Vec<ReceiptRow<'_>> {
+        r.rows()
+            .iter()
+            .map(|row| ReceiptRow {
+                id: &row.kernel_id,
+                arch: &row.arch,
+                backend: &row.backend,
+                tolerance: &row.tolerance,
+            })
+            .collect()
+    }
+
+    fn op_receipt_rows(r: &Registry) -> Vec<ReceiptRow<'_>> {
+        r.ops()
+            .iter()
+            .map(|row| ReceiptRow {
+                id: &row.kernel_id,
+                arch: &row.arch,
+                backend: &row.backend,
+                tolerance: &row.tolerance,
+            })
+            .collect()
+    }
+
+    fn receipts_doc() -> serde_json::Value {
+        serde_json::from_str(include_str!("../kernel-registry-receipts.json"))
+            .expect("receipts json")
+    }
+
+    /// One receipt entry of `key`: it names a real row, was taken on a host of that row's arch
+    /// (any host for an `arch: any` row), and its path is an evidence file equal to the row's
+    /// tolerance. Returns the row id.
+    fn admit_receipt<'a>(
+        rc: &'a serde_json::Value,
+        key: &str,
+        rows: &[ReceiptRow<'_>],
+    ) -> std::result::Result<&'a str, String> {
+        let id = rc["kernel_id"]
+            .as_str()
+            .ok_or("receipt without kernel_id")?;
+        let row = rows
+            .iter()
+            .find(|row| row.id == id)
+            .ok_or_else(|| format!("{key}: receipt for unregistered row {id}"))?;
+        let host_arch = rc["host_arch"]
+            .as_str()
+            .ok_or("receipt without host_arch")?;
+        if row.arch != "any" && row.arch != host_arch {
+            return Err(format!(
                 "{id}: receipt from a {host_arch} host cannot admit an arch={} row",
                 row.arch
-            );
-            assert!(
-                rc["receipt"].as_str().is_some_and(|p| p == row.tolerance),
-                "{id}: the op row's tolerance must be its receipt path"
-            );
-            assert!(receipted.insert(id), "{id}: two receipts");
+            ));
         }
-        for row in r.ops() {
-            assert!(
-                row.tolerance == "unmeasured" || receipted.contains(row.kernel_id.as_str()),
-                "{}: tolerance {} has no op_receipts entry",
-                row.kernel_id,
+        let path = rc["receipt"].as_str().unwrap_or_default();
+        let json = std::path::Path::new(path)
+            .extension()
+            .is_some_and(|x| x == "json");
+        if !(path.starts_with("evidence/") && json) {
+            return Err(format!(
+                "{id}: receipt path {path:?} is not an evidence file"
+            ));
+        }
+        if path != row.tolerance {
+            return Err(format!(
+                "{id}: receipt {path} is not the row's tolerance {}",
                 row.tolerance
-            );
+            ));
         }
-        let unreceipted = r.ops().len() - receipted.len();
-        let max = doc["op_unreceipted_max"]
-            .as_u64()
-            .expect("op_unreceipted_max");
-        assert_eq!(
-            unreceipted as u64, max,
-            "unreceipted op rows = {unreceipted}; set op_unreceipted_max to it (it may only fall)"
+        Ok(id)
+    }
+
+    /// FALSIFY-KREG-008 (AC-3): the receipt checks, none with an allowance in it. Every receipt
+    /// under `key` passes `admit_receipt`, once per row; every row's tolerance is its receipt
+    /// path or `unmeasured`; and no `cpu` row is `unmeasured`. GPU rows may still be
+    /// `unmeasured`: their receipt coverage is a LAB check (#4574), not a number kept here.
+    /// Returns how many receipts were admitted.
+    fn receipts_admit(
+        doc: &serde_json::Value,
+        key: &str,
+        rows: &[ReceiptRow<'_>],
+    ) -> std::result::Result<usize, String> {
+        let mut receipted = std::collections::HashSet::new();
+        for rc in doc[key]
+            .as_array()
+            .ok_or_else(|| format!("{key}: not a list"))?
+        {
+            let id = admit_receipt(rc, key, rows)?;
+            if !receipted.insert(id) {
+                return Err(format!("{id}: two receipts"));
+            }
+        }
+        for row in rows {
+            let unmeasured = row.tolerance == "unmeasured";
+            if unmeasured && row.backend == "cpu" {
+                return Err(format!("{}: a cpu row with no parity receipt", row.id));
+            }
+            if !unmeasured && !receipted.contains(row.id) {
+                return Err(format!(
+                    "{}: tolerance {} has no {key} entry",
+                    row.id, row.tolerance
+                ));
+            }
+        }
+        Ok(receipted.len())
+    }
+
+    /// FALSIFY-KREG-008 over `kernels[]` and `receipts`.
+    #[test]
+    fn kreg008_every_cpu_kernel_row_has_a_receipt_and_every_receipt_names_its_row() {
+        let r = registry().expect("registry");
+        let admitted = receipts_admit(&receipts_doc(), "receipts", &kernel_receipt_rows(r))
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(admitted > 0, "no kernel receipt was checked");
+    }
+
+    /// FALSIFY-KREG-008 over `ops[]` and `op_receipts`.
+    #[test]
+    fn kreg008_every_cpu_op_row_has_a_receipt_and_every_receipt_names_its_row() {
+        let r = registry().expect("registry");
+        let admitted = receipts_admit(&receipts_doc(), "op_receipts", &op_receipt_rows(r))
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(admitted > 0, "no op receipt was checked");
+    }
+
+    /// FALSIFY-KREG-008's planted falsifiers: each defect, planted into the committed registry
+    /// and receipts, turns `receipts_admit` RED with its own message. The unplanted pair is
+    /// GREEN first, so a check that rejects everything cannot pass this table.
+    #[test]
+    fn kreg008_turns_red_on_each_planted_defect() {
+        fn red(doc: &serde_json::Value, rows: &[ReceiptRow<'_>], want: &str) {
+            let got = receipts_admit(doc, "receipts", rows).expect_err(want);
+            assert!(got.contains(want), "planted {want:?}, got {got:?}");
+        }
+        fn without(doc: &serde_json::Value, i: usize) -> serde_json::Value {
+            let mut d = doc.clone();
+            d["receipts"].as_array_mut().expect("receipts").remove(i);
+            d
+        }
+        fn set(doc: &serde_json::Value, i: usize, field: &str, to: &str) -> serde_json::Value {
+            let mut d = doc.clone();
+            d["receipts"][i][field] = to.into();
+            d
+        }
+        let r = registry().expect("registry");
+        let doc = receipts_doc();
+        let rows = kernel_receipt_rows(r);
+        receipts_admit(&doc, "receipts", &rows).unwrap_or_else(|e| panic!("unplanted: {e}"));
+        let cpu = rows
+            .iter()
+            .position(|row| row.backend == "cpu" && row.tolerance != "unmeasured")
+            .expect("a receipted cpu row");
+        let i = doc["receipts"]
+            .as_array()
+            .expect("receipts")
+            .iter()
+            .position(|rc| rc["kernel_id"] == rows[cpu].id)
+            .expect("its receipt");
+        let mut planted = kernel_receipt_rows(r);
+
+        // 1. A cpu row loses its receipt and goes back to `unmeasured`.
+        planted[cpu].tolerance = "unmeasured";
+        red(
+            &without(&doc, i),
+            &planted,
+            "a cpu row with no parity receipt",
         );
+        // 2. A tolerance outside the two forms, with no receipt behind it.
+        planted[cpu].tolerance = "1e-3";
+        red(&without(&doc, i), &planted, "has no receipts entry");
+        // 3. A receipt names no registry row.
+        red(
+            &set(&doc, i, "kernel_id", "cpu.matvec.no_such_qtype"),
+            &rows,
+            "receipt for unregistered row",
+        );
+        // 4. A receipt path differs from its row's tolerance.
+        red(
+            &set(&doc, i, "receipt", "evidence/kreg/parity/elsewhere.json"),
+            &rows,
+            "is not the row's tolerance",
+        );
+        // 5. A receipt path that is not an evidence file.
+        red(
+            &set(&doc, i, "receipt", ""),
+            &rows,
+            "is not an evidence file",
+        );
+        // 6. The same row receipted twice.
+        let mut twice = doc.clone();
+        let twin = twice["receipts"][i].clone();
+        twice["receipts"]
+            .as_array_mut()
+            .expect("receipts")
+            .push(twin);
+        red(&twice, &rows, "two receipts");
+        // 7. A receipt for an arch-specific row, taken on a host of another arch.
+        planted = kernel_receipt_rows(r);
+        planted[cpu].arch = "riscv64";
+        red(&doc, &planted, "cannot admit an arch=riscv64 row");
     }
 
     /// KREG coverage (CUDA): the registry's `cuda` rows and the ids `WeightQuantType` declares
@@ -1513,6 +1621,28 @@ mod tests {
         Some(&rest[..rest.find('"')?])
     }
 
+    /// The file a `mod name;` line in `here` (module dir `mdir`) compiles, with the module dir
+    /// that file's own `mod` lines resolve against: the `#[path]` target if one preceded it,
+    /// else the first of `name.rs` and `name/mod.rs` that exists.
+    fn mod_target(
+        root: &std::path::Path,
+        here: &std::path::Path,
+        mdir: &std::path::Path,
+        name: &str,
+        path_attr: Option<String>,
+    ) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        if let Some(p) = path_attr {
+            let f = norm(&here.join(p));
+            let d = f.with_extension("");
+            return Some((f, d));
+        }
+        let d = mdir.join(name);
+        [mdir.join(format!("{name}.rs")), d.join("mod.rs")]
+            .into_iter()
+            .find(|f| root.join(f).is_file())
+            .map(|f| (f, d))
+    }
+
     /// The files rustc compiles into a crate, walked from `lib`: `mod x;` (x.rs or x/mod.rs in
     /// the module dir), `#[path = "…"] mod x;`, and `include!("…")` (the included text keeps
     /// the includer's module dir). Anything it does not understand is not reached, so a row
@@ -1539,40 +1669,37 @@ mod tests {
                 .parent()
                 .map(std::path::Path::to_path_buf)
                 .unwrap_or_default();
-            let mut path_attr: Option<String> = None;
-            for line in src.lines() {
-                let t = line.trim();
-                if t.starts_with("//") {
-                    continue;
-                }
-                if t.starts_with("#[path") {
-                    path_attr = quoted_after(t, "#[path").map(str::to_string);
-                    continue;
-                }
-                if let Some(inc) = quoted_after(t, "include!(") {
-                    stack.push((norm(&here.join(inc)), mdir.clone()));
-                }
-                if let Some(name) = mod_decl(t) {
-                    if let Some(p) = path_attr.take() {
-                        let f = norm(&here.join(p));
-                        let d = f.with_extension("");
-                        stack.push((f, d));
-                    } else {
-                        let d = mdir.join(name);
-                        for f in [mdir.join(format!("{name}.rs")), d.join("mod.rs")] {
-                            if root.join(&f).is_file() {
-                                stack.push((f, d));
-                                break;
-                            }
-                        }
-                    }
-                }
-                if !t.starts_with("#[") {
-                    path_attr = None;
-                }
-            }
+            stack.extend(file_children(root, &src, &here, &mdir));
         }
         seen
+    }
+
+    /// The files one compiled file `src` (in dir `here`, module dir `mdir`) pulls in, each with
+    /// the module dir it resolves against: its `include!`s and its `mod x;` lines.
+    fn file_children(
+        root: &std::path::Path,
+        src: &str,
+        here: &std::path::Path,
+        mdir: &std::path::Path,
+    ) -> Vec<(std::path::PathBuf, std::path::PathBuf)> {
+        let mut out = Vec::new();
+        let mut path_attr: Option<String> = None;
+        for t in src.lines().map(str::trim).filter(|t| !t.starts_with("//")) {
+            if t.starts_with("#[path") {
+                path_attr = quoted_after(t, "#[path").map(str::to_string);
+                continue;
+            }
+            if let Some(inc) = quoted_after(t, "include!(") {
+                out.push((norm(&here.join(inc)), mdir.to_path_buf()));
+            }
+            if let Some(name) = mod_decl(t) {
+                out.extend(mod_target(root, here, mdir, name, path_attr.take()));
+            }
+            if !t.starts_with("#[") {
+                path_attr = None;
+            }
+        }
+        out
     }
 
     /// FALSIFY-KREG-005: every row names a function that exists in its source file, and that

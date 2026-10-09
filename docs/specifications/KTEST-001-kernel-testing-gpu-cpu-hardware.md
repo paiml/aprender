@@ -272,7 +272,7 @@ Every other CPU row (q5_k, iq\*, q2_k/q3_k/q4_1/q5_0/q5_1, layernorm, gelu, argm
 2. The base `any`/`none` row becomes the scalar path. Its receipt is re-emitted under `APR_FORCE_ISA=scalar`.
 3. The emitter refuses to write a receipt unless `admit_for(Target::host())` is the row being receipted, and it records `isa_forced` in the header. Together these stop a native run from being stamped on the scalar row.
 4. The committed-receipt hold test checks each row in a child process forced to that row's ceiling, because the ceiling is fixed once per process.
-5. **Ratchet.** `unreceipted_max` is never raised. A per-ISA row lands only in the same commit as its receipt, so no row is ever added without one.
+5. **Every CPU row is receipted.** FALSIFY-KREG-008 refuses a `cpu` row whose tolerance is `unmeasured`, with no allowance count, so a per-ISA row lands only in the same commit as its receipt.
 6. **F-11.** A fleet ISA table, verified from `/proc/cpuinfo`, lists what each host can run. intel (Xeon W-3245) has `fma sse4_1 f16c avx2 avx512f avx512bw avx512_vnni`, so it covers every x86 row. gx10 and mini are `[U]` until KTEST-00. A row whose `isa_features` no host in the table satisfies is refused.
 7. The MXCSR FTZ/DAZ state goes into the receipt header next to `isa_forced` (§6.1).
 

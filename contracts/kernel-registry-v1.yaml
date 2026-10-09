@@ -219,10 +219,17 @@ falsification_tests:
     test: cargo test -p aprender-serve --lib every_row_agrees_with_the_upstream_reference
     if_fails: a wrong type id or block size admits a kernel for bytes it cannot decode
   - id: FALSIFY-KREG-008
-    rule: receipt-gated admission is a ratchet (AC-3)
-    prediction: a parity receipt names a real row and was taken on a host of that row's arch; the rows without one number exactly unreceipted_max, which only falls, and is 0 from hard_red_at on
-    test: cargo test -p aprender-serve --lib unreceipted_rows_only_fall_and_reach_zero_at_the_hard_red_version
-    if_fails: a row ships with no parity receipt and nothing ever forces one
+    rule: receipt-gated admission (AC-3), with no allowance count
+    prediction: >
+      every entry of receipts and op_receipts names a real row, once, was taken on a host of that row's arch,
+      and its path is an evidence file equal to the row's tolerance; every row's tolerance is its receipt path
+      or unmeasured; and no cpu row is unmeasured. Planted falsifiers, each RED with its own message: a cpu
+      row reset to unmeasured, a tolerance outside the two forms, a receipt naming no row, a receipt path that
+      is not the row's tolerance, a receipt path that is not an evidence file, a row receipted twice, and a
+      receipt from a host of another arch. GPU rows may be unmeasured; their receipt coverage is a LAB check,
+      off the merge path (#4574)
+    test: cargo test -p aprender-serve --lib kreg008_
+    if_fails: a cpu row ships with no parity receipt, or a receipt admits a row it was not measured on
   - id: FALSIFY-KREG-009
     rule: a tolerance path is a receipt that still holds, and the row's precision is what the kernel serves
     prediction: >

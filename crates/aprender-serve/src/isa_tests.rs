@@ -116,6 +116,29 @@ fn is_test_file(rel: &str) -> bool {
     rel.contains("tests")
 }
 
+/// A `.rs` file of library code: the files the ISA gate scan reads.
+fn is_library_source(p: &std::path::Path, rel: &str) -> bool {
+    p.extension().is_some_and(|ext| ext == "rs") && !is_test_file(rel)
+}
+
+/// One library file of the gate scan: a probe file other than the gate itself must still
+/// filter through `isa::permits`; any other file's raw detections are appended to `raw`.
+fn scan_library_file(rel: &str, text: &str, raw: &mut Vec<String>) {
+    if PROBE_FILES.contains(&rel) {
+        assert!(
+            rel == "isa.rs" || text.contains("crate::isa::permits("),
+            "{rel} probes the CPU but no longer filters through isa::permits"
+        );
+        return;
+    }
+    raw.extend(
+        text.lines()
+            .enumerate()
+            .filter(|(_, line)| raw_detection(line))
+            .map(|(i, line)| format!("src/{rel}:{}: {}", i + 1, line.trim())),
+    );
+}
+
 /// FALSIFY-KTEST-04-GUARD: no runtime ISA decision in this crate bypasses `APR_FORCE_ISA`. A
 /// raw `is_x86_feature_detected!` in library code is a path a forced run cannot reach, so its
 /// receipts would describe a path that did not run (KTEST-001 §4, S-2).
@@ -136,26 +159,13 @@ fn every_runtime_isa_decision_goes_through_the_gate() {
                 .expect("under src")
                 .to_string_lossy()
                 .replace('\\', "/");
-            if !rel.ends_with(".rs") || is_test_file(&rel) {
+            if !is_library_source(&p, &rel) {
                 continue;
             }
             let text = std::fs::read_to_string(&p).expect("read .rs");
             scanned += 1;
             gated += text.matches("isa::cpu_feature!(").count();
-            if PROBE_FILES.contains(&rel.as_str()) {
-                if rel != "isa.rs" {
-                    assert!(
-                        text.contains("crate::isa::permits("),
-                        "{rel} probes the CPU but no longer filters through isa::permits"
-                    );
-                }
-                continue;
-            }
-            for (i, line) in text.lines().enumerate() {
-                if raw_detection(line) {
-                    raw.push(format!("src/{rel}:{}: {}", i + 1, line.trim()));
-                }
-            }
+            scan_library_file(&rel, &text, &mut raw);
         }
     }
     // Anti-vacuity: the walk found the crate, and the gate is actually in use.
