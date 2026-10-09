@@ -36,6 +36,13 @@
 # (--engine) and any failure in it is rc 2: a run that could not read every
 # PR is never reported as a pass (0) nor blamed on the PR as a duplicate (1).
 #
+# Where it runs: LAB (C324). .github/workflows/dup-patches-nightly.yml runs
+# `--self-test` and then `--all` at night, and nothing runs it on a PR, merge
+# queue or release path. Every invocation carries an argument, which is what
+# makes scripts/guard_tree.sh skip it (`wired-with-args`). A bare invocation in
+# any workflow would put a cross-PR check on the PR path. It becomes a GATE only
+# with a quorum yes, three green nights first, and one gate retired for it.
+#
 # Usage:
 #   check_pr_duplicate_patches.sh --pr N        check open PR N against every other open PR
 #   check_pr_duplicate_patches.sh               same, N read from $GITHUB_EVENT_PATH; an event

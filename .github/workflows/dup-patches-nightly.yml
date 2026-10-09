@@ -1,0 +1,70 @@
+# dup-patches-nightly -- DUP-001 (#4536): does any open pull request carry a
+# change (git patch-id --stable, per commit, per hunk, cumulative) that another
+# open pull request already carries?
+#
+# LAB, NOT A GATE (C324). It runs at night on main, never inside a PR,
+# merge-queue or release job, and it can block nothing. A red night means two
+# open PRs share a change. The one owner (the #4536 assignee) reads the run and
+# updates #4536 by hand; this job comments on nothing and labels nothing. Red
+# or unmeasured for 7 days, the owner disables it until they bring it back.
+#
+# Why a workflow of its own and not a step in guards-nightly.yml: a red run
+# there means "a defect that reached main", and its manifest lists the steps
+# that LEFT the PR path (PMAT-1098). A change shared by two open PRs is
+# neither.
+#
+# `--all` is load-bearing twice. It checks every open pair once, and it is
+# what makes scripts/guard_tree.sh skip this guard as `wired-with-args`, so the
+# cross-PR check never runs bare on the PR path. Do not add a bare invocation
+# of check_pr_duplicate_patches.sh to any workflow.
+#
+# It becomes a GATE only with a quorum yes, three green nights here first, and
+# one gate retired for it.
+#
+# Cost: one `gh pr list` call and one fetch of the open PR heads per run; the
+# first sweep took 129 s (2026-10-09).
+
+name: dup-patches-nightly
+
+on:
+  schedule:
+    # 22:41 UTC: a slot no other workflow holds. Like the other nightlies the
+    # cron is set ~5h early for GitHub's schedule delay on this account
+    # (#3292), so the run lands near 03:41 UTC.
+    - cron: '41 22 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: dup-patches-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sweep:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # merge-bases and landed hunks need full history
+
+      # The case table first: if the engine is red on its own fixtures, a
+      # green sweep would mean nothing.
+      - name: DUP-001 case table (check_pr_duplicate_patches.sh --self-test)
+        run: setsid --wait bash scripts/check_pr_duplicate_patches.sh --self-test
+
+      - name: DUP-001 every open pair (check_pr_duplicate_patches.sh --all)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          setsid --wait bash scripts/check_pr_duplicate_patches.sh --all || rc=$?
+          case $rc in
+            0) echo "DUP-001: no change is carried by two open PRs (rc=0)" ;;
+            1) echo "::error::DUP-001: two or more open PRs carry the same change (rc=1); the #4536 owner updates #4536"; exit 1 ;;
+            *) echo "::error::DUP-001 could not be judged (rc=$rc): unmeasured is not a pass"; exit 1 ;;
+          esac

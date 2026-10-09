@@ -6,7 +6,7 @@
   priority: critical
   assigned_to: aprender-wcensus
   created: 2026-09-27T19:10:00Z
-  updated: 2026-10-09T19:00:00Z
+  updated: 2026-10-09T18:30:00Z
   spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
   acceptance_criteria:
   - 'scripts/check_pr_duplicate_patches.sh fails a pull request whose commit or hunk patch-id (--stable) matches one in another OPEN PR, naming both PRs, both shas and the file + hunk'
@@ -14,11 +14,12 @@
   - '--self-test case table passes: must-match pure copy, copy then edit, cherry-pick with another message, squash, the same end state in two commits; must-not-match identical generated regen (roadmap, README count block, pv-sat witness), whitespace-only, a fix the base already landed'
   - 'a gh, fetch or engine failure exits 2, and so does an event with no pull request in it: nothing unread is ever reported green'
   - 'every mutant in scripts/mutate_pr_dup_patches.sh is killed; no Python (bash, awk, jq), green under gawk and mawk'
+  - 'LAB until it is a GATE: dup-patches-nightly.yml runs --self-test and --all nightly, every invocation carries an argument so guard_tree skips it (wired-with-args); nothing runs it on a PR, merge-queue or release path'
   - 'it blocks a merge only as a GATE: a quorum yes, three green nightly --all sweeps on main first, one gate retired for it; never report-only'
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'The 09-27 engine (Python, never wired) is ported to bash + awk + jq. First --all sweep, 2026-10-09: 2 duplicated pairs among the open PRs, one squash-copy and one undeclared stack.'
+  notes: 'The 09-27 engine (Python, never wired) is ported to bash + awk + jq. First --all sweep, 2026-10-09: 2 duplicated pairs among the open PRs, one squash-copy and one undeclared stack. Wired as LAB by quorum q-dupwire (Q1 B 3-0): .github/workflows/dup-patches-nightly.yml runs --self-test then --all nightly; a red night is updated on #4536 by its owner by hand.'
   epic: 3676
