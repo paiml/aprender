@@ -235,8 +235,8 @@ jobs:
 
   # ── Build apr: macOS aarch64 natively on mini-m4 (#3204) ──
   # Host-native: there is no docker on macOS and no glibc floor to pin, so the
-  # toolchain is rust-toolchain.toml via the runner's rustup, as in ci.yml's
-  # mac-check. A LITERAL runs-on list, not fromJSON, so check_runner_labels.sh
+  # toolchain is rust-toolchain.toml via the runner's rustup, as in the
+  # mac-check job below. A LITERAL runs-on list, not fromJSON, so check_runner_labels.sh
   # sees the apple-silicon label. Gated on the same `gate` decision as the Linux
   # matrix (car's `check-activity` job does not exist on this branch -- folded
   # into `gate`'s reused/build/red-ci/ci-pending verdict, #4189). One box with
@@ -291,6 +291,38 @@ jobs:
           path: |
             apr-aarch64-apple-darwin.tar.gz
             apr-aarch64-apple-darwin.tar.gz.sha256
+
+  # ── mac-check: LAB, moved here from ci.yml (Q6 quorum, C324) ──
+  # PACK-001's macOS lane: a locked workspace check plus the CLI's lib tests on
+  # the pinned toolchain. It was never in ci.yml's gate, so it could not block a
+  # merge or a release, and a check that cannot block is LAB: nightly only. The
+  # mini is one 16 GB box, so this runs AFTER build-darwin (always(): a red build
+  # still gets its check) and nothing waits on it -- neither `publish` nor
+  # `publish-darwin` needs this job, so it never holds the nightly publish.
+  # crates/aprender-profile is a compile_error! on non-Linux by design
+  # ("renacer requires Linux (ptrace syscall tracing)"), so it is excluded by
+  # name; any OTHER crate that fails to check on macOS is a finding.
+  mac-check:
+    needs: [gate, build-darwin]
+    if: always() && needs.gate.result == 'success' && needs.gate.outputs.decision != 'reused'
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+      - name: Toolchain is the pinned one
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          cargo --version
+      - name: cargo check --workspace --all-targets --locked (minus the Linux-only profiler)
+        run: cargo check --workspace --all-targets --locked --exclude aprender-profile
+      - name: apr-cli lib tests (nextest, ci profile)
+        run: cargo nextest run --profile ci -p apr-cli --lib
 
   # ── Publish per arch, then the manifest ──────────────────
   publish:
