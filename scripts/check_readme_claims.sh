@@ -103,14 +103,14 @@ measured_crate_count() {
 }
 
 measured_contract_count() {
-  # The count is a property of the WORKING TREE, measured with the one definition
-  # of "a contract file" that `pv census` (ONT-001 ONT-1) and the lint walker
-  # apply (contract_files_only). It used to be read out of the tracked
-  # contracts/census.json, but since #3569 that file is a release-train snapshot
-  # that no PR may edit, so it lags by design. A README generated from it would
-  # lag the tree it describes, and FALSIFY-README-002 holds the block EQUAL to the
-  # tree. CENSUS_JSON=<a fresh pv census> reads that census instead; `make
-  # contracts` uses it to prove this listing and `pv census` still agree.
+  # The WORKING TREE's count, measured with the one definition of "a contract
+  # file" that `pv census` (ONT-001 ONT-1) and the lint walker apply
+  # (contract_files_only). It is the working-tree side of the G-11 ratchet on an
+  # authored literal outside the block, and the report's line; the CONTRACT_COUNT
+  # block itself is held EQUAL to the release snapshot contracts/census.json
+  # (GEN-001 #4526), never to this.
+  # CENSUS_JSON=<a fresh pv census> reads that census instead; `make contracts`
+  # uses it to prove this listing and `pv census` still agree.
   local n
   if [ -n "${CENSUS_JSON:-}" ]; then
     [ -s "$CENSUS_JSON" ] || {
