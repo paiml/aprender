@@ -610,6 +610,24 @@ ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 # enforces COV_FLOOR, so this is a name, not a new policy.
 coverage-check: coverage
 
+# #4715: an LLVM coverage JSON plus the commit it was measured on, from the profiles a `make coverage`
+# run just left. qwen-story-daily's pmat hunt reads coverage gaps ONLY from this file, and only when the
+# recorded sha is its own checkout; without it `pmat query --coverage-gaps` derives coverage itself,
+# measured at >900 s per query on intel. Same report scope and excludes as the lcov in `coverage`.
+# Under .ONESHELL without -e every line carries its own `|| exit`.
+.PHONY: coverage-json
+coverage-json: ## LLVM coverage JSON + measured sha from the last `make coverage` profiles (pmat --coverage-file)
+	@[ -s target/coverage/lcov.info ] || { echo "❌ coverage-json: no lcov.info - run make coverage first"; exit 1; }
+	rm -f target/coverage/coverage.json target/coverage/coverage.sha || exit 1
+	scripts/coverage_report_scope.sh --self-test > /dev/null || { echo "❌ coverage-json: coverage_report_scope.sh self-test failed"; exit 1; }
+	scripts/coverage_report_scope.sh --exclude aprender-gpu > /dev/null || { echo "❌ coverage-json: no derived report scope"; exit 1; }
+	$(COV_CARGO_ENV) cargo llvm-cov report $$(scripts/coverage_report_scope.sh --exclude aprender-gpu) \
+		--json --output-path $(CURDIR)/target/coverage/coverage.json \
+		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" || exit 1
+	[ -s target/coverage/coverage.json ] || { echo "❌ coverage-json: no JSON was written"; exit 1; }
+	git rev-parse HEAD > target/coverage/coverage.sha || exit 1
+	echo "coverage-json: $$(du -h target/coverage/coverage.json | cut -f1) for $$(cat target/coverage/coverage.sha)"
+
 # PVL-001 EV-6a (#4139): the ONLY writer of the Lean label ratchet. `pv discharge check` never writes
 # unresolved-labels.json; this rewrites it DOWNWARD (a label that resolves now leaves; a new one is never added).
 .PHONY: label-ratchet
@@ -1555,3 +1573,36 @@ oracle-owl:
 oracle-owl-check: oracle-owl
 	@git diff --exit-code tests/oracle/tbox-differential.json \
 	  || { echo "FAIL: tests/oracle/tbox-differential.json differs from a fresh run — commit it"; exit 1; }
+
+# ── BLD-002 R4: nightly evidence train (report-only) ────────────────────────────────────────────────────────
+# One line a night for main's head: RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. The timer runs a bundle copied
+# out of git at pinned shas, never the working tree; all three default to HEAD, since they ship in one tree. OUT (and optionally INBOX) come from the command line:
+#   make nightly-train-install OUT=<dir> [INBOX=<file>]   pin, self-test, install + enable the daily 04:45 UTC user timer
+#   make nightly-train-run                                 run the installed unit once, by hand, and print its line
+#   make nightly-train-show                                the unit, its next fire and linger
+NIGHTLY_TRAIN_HOME ?= $(HOME)/.local/share/aprender-nightly-train
+NIGHTLY_TRAIN_SHA ?= HEAD
+NIGHTLY_GREENS_SHA ?= HEAD
+RED_AGE_SHA ?= HEAD
+.PHONY: nightly-train-install nightly-train-run nightly-train-show nightly-train-self-test
+nightly-train-install:
+	@test -n "$(OUT)" || { echo "FAIL: OUT=<dir> is required"; exit 3; }
+	bash scripts/release/nightly_train.sh --install --home "$(NIGHTLY_TRAIN_HOME)" --out "$(OUT)" --inbox "$(INBOX)" \
+	  --train "$(NIGHTLY_TRAIN_SHA)" --greens "$(NIGHTLY_GREENS_SHA)" --redage "$(RED_AGE_SHA)"
+
+nightly-train-run:
+	@rc=0; systemctl --user start --wait aprender-nightly-train.service || rc=$$?; \
+	id=$$(systemctl --user show -p InvocationID --value aprender-nightly-train.service); \
+	l=$$(journalctl --user _SYSTEMD_INVOCATION_ID="$$id" -o cat --no-pager | grep -E '^(NOT )?RELEASABLE' | tail -n 1); \
+	if [ -n "$$l" ]; then printf '%s\n' "$$l"; else printf 'no verdict line from invocation %s\n' "$${id:-unknown}"; fi; \
+	exit $$rc
+
+nightly-train-show:
+	@systemctl --user cat aprender-nightly-train.service aprender-nightly-train.timer --no-pager
+	@systemctl --user list-timers aprender-nightly-train.timer --no-pager
+	@loginctl show-user "$$(id -un)" -p Linger
+
+nightly-train-self-test:
+	@test -n "$(BUNDLE)" || { echo "FAIL: BUNDLE=<pinned bundle dir> is required (the helpers live there)"; exit 3; }
+	bash "$(BUNDLE)/nightly_train.sh" --self-test
+	bash "$(BUNDLE)/nightly_train.sh" --mutants

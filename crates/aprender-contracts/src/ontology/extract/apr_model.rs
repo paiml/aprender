@@ -60,7 +60,7 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<AprHeader, ExtractError> {
         return Err(err("header checksum does not match the header bytes".into()));
     }
     let index_entries =
-        count_index_entries(bytes, tensor_index_offset, data_offset).map_err(&err)?;
+        count_index_entries(bytes, tensor_index_offset, data_offset).map_err(err)?;
     if index_entries != tensor_count {
         return Err(err(format!(
             "header says {tensor_count} tensor(s), the index holds {index_entries}"

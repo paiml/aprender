@@ -286,6 +286,10 @@ cmd_run() {
     # ONE manifest step and took 2481 s on CI (run 36229622731, x86-main, 2026-09-26),
     # so a 1200 s cap would kill it on every run. ~2x the measured worst step.
     local only="" stream="" timeout="${CI_GUARDS_STEP_TIMEOUT:-4800}" root scratch job
+    # A step that outlives the JOB (guard-cargo was killed at 3567 s and 3494 s, #4914 #4917, #4919)
+    # dies before its own --step-timeout fires, and the log never said which step it was. Every
+    # CI_GUARDS_HEARTBEAT seconds (default 300, 0 = off) the running step is named on stderr.
+    local heartbeat="${CI_GUARDS_HEARTBEAT:-300}" hb_pid
     local -a names=()
     while [ "$#" -gt 0 ]; do
         case "$1" in
@@ -298,6 +302,7 @@ cmd_run() {
         esac
     done
     [[ $timeout =~ ^[0-9]+$ ]] || die "--step-timeout wants whole seconds, got '$timeout'"
+    [[ $heartbeat =~ ^[0-9]+$ ]] || die "CI_GUARDS_HEARTBEAT wants whole seconds, got '$heartbeat'"
     if [ -z "$stream" ]; then if in_ci; then stream=1; else stream=0; fi; fi
     root="$(git rev-parse --show-toplevel 2> /dev/null)" || true
     [ -n "$root" ] || die "not in a git work tree"
@@ -409,15 +414,35 @@ cmd_run() {
             # check_clippy_cuda's planted import in a local tree (2026-09-26). timeout(1)
             # signals its whole process group, so background children still die.
             [ "$timeout" -gt 0 ] && tcmd=(timeout -s TERM -k 60 "$timeout")
+            # The heartbeat reads a FIFO the runner holds open for the step's life: closing it is an
+            # instant EOF, so stopping the heartbeat costs no sleep and signals nothing. The step
+            # itself gets fd 5 closed, so a daemon it leaves behind cannot hold the heartbeat open.
+            hb_pid=""
+            if [ "$heartbeat" -gt 0 ] && mkfifo "$scratch/hb.$tag"; then
+                (
+                    trap - EXIT
+                    s=0
+                    exec 4< "$scratch/hb.$tag"
+                    while :; do
+                        read -r -t "$heartbeat" -u 4 _; r=$?
+                        [ "$r" -gt 128 ] || exit 0   # EOF: the step is over
+                        s=$((s + heartbeat))
+                        printf 'ci_guards: still running: %s#%s %s (%ss)\n' "$job" "$idx" "$name" "$s" >&2
+                    done
+                ) &
+                hb_pid=$!
+                exec 5> "$scratch/hb.$tag"
+            fi
             if [ "$stream" = 1 ]; then
                 # bashrs disable-next-line=SEC010
-                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null 3<&-)
+                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null 3<&- 5>&-)
             else
                 # bashrs disable-next-line=SEC010
-                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null > "$log" 2>&1 3<&-)
+                (cd "$root" && env "${senv[@]}" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null > "$log" 2>&1 3<&- 5>&-)
             fi
             rc=$?
             t1="$(now)"
+            if [ -n "$hb_pid" ]; then exec 5>&-; wait "$hb_pid"; rm -f -- "${scratch:?}/hb.${tag:?}"; fi
             [ "$stream" = 1 ] && echo "::endgroup::"
             status=PASS
             if [ "$rc" -ne 0 ]; then

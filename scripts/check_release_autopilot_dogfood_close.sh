@@ -132,6 +132,10 @@ fixture() {
     cp -- "$subject" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" \
         && cp -- "$preflight" "$r/scripts/check_publish_preflight.sh" || return 2
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
+    # the autopilot judges the standing release policy first (unreadable = STOP): the real reader and a
+    # ladder with no policy block, so 9.9.9 runs the pre-policy train these rows were written for
+    mkdir -p "$r/scripts/lib" "$r/contracts" && cp -- "$ROOT/scripts/lib/release_policy.sh" "$ROOT"/scripts/lib/release_policy_*.awk "$r/scripts/lib/" \
+        && printf 'ladder:\n  emergency_scopes:\n' > "$r/contracts/model-capability-ladder-v1.yaml" || return 2
     # dogfood.sh: writes the receipt a real run writes; the row picks verdict/version/commit
     cat > "$r/scripts/dogfood.sh" <<'STUB'
 #!/usr/bin/env bash

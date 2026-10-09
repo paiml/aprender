@@ -598,10 +598,33 @@ async fn completions_inner(
         return Ok(r);
     }
 
-    // GH-627/637/670: Direct CUDA model fallback for APR GPU path
-    // with_cuda_model_and_vocab sets cuda_model but NOT model,
-    // so registry_completions fails with "No model available".
     #[cfg(feature = "cuda")]
+    if let Some(r) = try_cuda_direct_completions(&state, &request, max_tokens, temperature, start)? {
+        return Ok(r);
+    }
+
+    // aprender#2609: the f32 APR / SafeTensors CPU backend, in the same position
+    // the chat chain puts it — after quantized, before the dense registry.
+    if let Some(r) =
+        try_apr_transformer_completions(&state, &request, max_tokens, temperature, start, &cancel)?
+    {
+        return Ok(r);
+    }
+
+    registry_completions(&state, &request, max_tokens, temperature, start, &cancel)
+}
+
+/// GH-627/637/670: Direct CUDA model fallback for APR GPU path.
+/// with_cuda_model_and_vocab sets cuda_model but NOT model,
+/// so registry_completions fails with "No model available".
+#[cfg(feature = "cuda")]
+fn try_cuda_direct_completions(
+    state: &AppState,
+    request: &CompletionRequest,
+    max_tokens: usize,
+    temperature: f32,
+    start: std::time::Instant,
+) -> Result<Option<CompletionResponse>, RErr> {
     if let Some(cuda_lock) = state.cuda_model() {
         use crate::gguf::QuantizedGenerateConfig;
         let tokenizer = state.tokenizer.clone().ok_or_else(|| {
@@ -636,7 +659,7 @@ async fn completions_inner(
         // #2465(2): this inline backend ignored `request.stop` too.
         let (text, finish_reason) =
             apply_stop_sequences(text, request.stop.as_deref(), completion_tokens, max_tokens);
-        return Ok(CompletionResponse {
+        return Ok(Some(CompletionResponse {
             id: format!("cmpl-cuda-{}", elapsed.as_millis()),
             object: "text_completion".to_string(),
             created: std::time::SystemTime::now()
@@ -657,18 +680,9 @@ async fn completions_inner(
             },
             // The inline CUDA block records no backend flag either (#3894).
             used_gpu: None,
-        });
+        }));
     }
-
-    // aprender#2609: the f32 APR / SafeTensors CPU backend, in the same position
-    // the chat chain puts it — after quantized, before the dense registry.
-    if let Some(r) =
-        try_apr_transformer_completions(&state, &request, max_tokens, temperature, start, &cancel)?
-    {
-        return Ok(r);
-    }
-
-    registry_completions(&state, &request, max_tokens, temperature, start, &cancel)
+    Ok(None)
 }
 
 /// The `/v1/logprobs` generation config: greedy, logprobs on, and stopping on

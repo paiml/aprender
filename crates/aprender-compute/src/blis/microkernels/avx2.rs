@@ -314,6 +314,15 @@ pub unsafe fn microkernel_8x6_true_asm(
             ".p2align 4",                      // Align loop for better I-cache
             "3:",
 
+            // Reload source for this iteration. On the last iteration there is
+            // no next block: A[k+4..k+7] lies past the panel, and for the last
+            // ir panel past the allocation (#4891, SIGSEGV on a guard page).
+            // So the last iteration reloads the current, in-bounds block; the
+            // values are dead, the k % 4 remainder reads A from memory.
+            "lea {tmp}, [{a_ptr} - 128]",
+            "cmp {k_cnt}, 1",
+            "cmovne {tmp}, {a_ptr}",
+
             // --- K iteration 0: Use ymm6 (A[0]), load next A[4] into ymm6 ---
             "vbroadcastss ymm10, dword ptr [{b_ptr}]",
             "vbroadcastss ymm11, dword ptr [{b_ptr} + 4]",
@@ -327,7 +336,7 @@ pub unsafe fn microkernel_8x6_true_asm(
             "vfmadd231ps ymm3, ymm6, ymm13",   // c3 += a0 * b3
             "vfmadd231ps ymm4, ymm6, ymm14",   // c4 += a0 * b4
             "vfmadd231ps ymm5, ymm6, ymm15",   // c5 += a0 * b5
-            "vmovups ymm6, [{a_ptr}]",         // Reload A[4] -> ymm6 (reuse register)
+            "vmovups ymm6, [{tmp}]",           // Reload A[4] -> ymm6 (reuse register)
 
             // --- K iteration 1: Use ymm7 (A[1]), load next A[5] into ymm7 ---
             "vbroadcastss ymm10, dword ptr [{b_ptr} + 24]",
@@ -342,7 +351,7 @@ pub unsafe fn microkernel_8x6_true_asm(
             "vfmadd231ps ymm3, ymm7, ymm13",
             "vfmadd231ps ymm4, ymm7, ymm14",
             "vfmadd231ps ymm5, ymm7, ymm15",
-            "vmovups ymm7, [{a_ptr} + 32]",    // Reload A[5] -> ymm7
+            "vmovups ymm7, [{tmp} + 32]",      // Reload A[5] -> ymm7
 
             // --- K iteration 2: Use ymm8 (A[2]), load next A[6] into ymm8 ---
             "vbroadcastss ymm10, dword ptr [{b_ptr} + 48]",
@@ -357,7 +366,7 @@ pub unsafe fn microkernel_8x6_true_asm(
             "vfmadd231ps ymm3, ymm8, ymm13",
             "vfmadd231ps ymm4, ymm8, ymm14",
             "vfmadd231ps ymm5, ymm8, ymm15",
-            "vmovups ymm8, [{a_ptr} + 64]",    // Reload A[6] -> ymm8
+            "vmovups ymm8, [{tmp} + 64]",      // Reload A[6] -> ymm8
 
             // --- K iteration 3: Use ymm9 (A[3]), load next A[7] into ymm9 ---
             "vbroadcastss ymm10, dword ptr [{b_ptr} + 72]",
@@ -372,7 +381,7 @@ pub unsafe fn microkernel_8x6_true_asm(
             "vfmadd231ps ymm3, ymm9, ymm13",
             "vfmadd231ps ymm4, ymm9, ymm14",
             "vfmadd231ps ymm5, ymm9, ymm15",
-            "vmovups ymm9, [{a_ptr} + 96]",    // Reload A[7] -> ymm9
+            "vmovups ymm9, [{tmp} + 96]",      // Reload A[7] -> ymm9
 
             // Advance pointers for next 4 K iterations
             "add {a_ptr}, 128",                // 4 * MR * sizeof(f32) = 4 * 8 * 4 = 128

@@ -18462,6 +18462,85 @@ roadmap:
   labels:
   - ont-0.70
   notes: The PVL-001 EV-10 probe greps .github/workflows/ci.yml and uses repo-root tests/ paths; aprender wires integration tests via ci/explicit-test-commands.d fragments and the test lives under crates/aprender-contracts-cli/tests/. Reported to the PVL-001 owner (infra) as a stale probe. The src/ fixture files end .rs.txt because ten aprender gates scan tracked .rs files.
+- id: GH-4688
+  github_issue: 4688
+  item_type: task
+  title: '0.70.2 T13: BLD-002 R9 one list in code of what merge, tag and publish require'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-04T11:03:30.893042328+00:00
+  updated: 2026-10-04T11:03:30.893042328+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - size:L
+  - owner:aprender-a7
+  notes: null
+- id: GH-4691
+  github_issue: 4691
+  item_type: task
+  title: 'tag_coverage_gate.sh waits for a CI job that no longer exists: resolve it before the tag or refuse'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-10-04T00:00:00+00:00
+  updated: 2026-10-04T00:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the coverage job name lives in one function and is resolved against the jobs of .github/workflows/ci.yml at the release commit before any tag step'
+  - 'absent or renamed job = FAIL naming the job and the file, with 0 GitHub calls (must-RED: origin/main waited for the run, then refused after the tag)'
+  - 'unreadable/empty ci.yml, no jobs, or a reusable-workflow caller = NOT_MEASURED, which refuses'
+  - 'present + green passes; present + red refuses; gh failing refuses'
+  - 'autopilot cut_tag calls --resolve before must-carry/carry/strict; check_tag_step_gated.sh order row and two plants (call removed, die neutered) go RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Before: v0.70.1 tag run completed 25 min after start with no ci / coverage job; the gate refused only at preflight, after the tag and the GitHub release were public (up to 90 tries x 60 s, 2 gh calls/try). After: refused at cut_tag, 0 gh calls, 0 s. NOTE: ci.yml today declares no ci / coverage job (coverage runs inside x86-main), so every release refuses at cut_tag until one is declared or the gate is retargeted.'
+- id: GH-4718
+  github_issue: 4718
+  item_type: task
+  title: '0702-P1: nightly producers for the deep lanes (deep-doctests, deep-nodefault, deep-bins-smoke)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-04T09:17:34.904751550+00:00
+  updated: 2026-10-04T09:17:34.904751550+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  notes: null
+- id: GH-4915
+  github_issue: 4915
+  item_type: task
+  kind: code
+  title: 'Release: standing CRUX-smoke release policy in the ladder, read by autopilot, readiness and bump'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-la71
+  created: 2026-10-08T01:34:09.000000000+00:00
+  updated: 2026-10-08T01:34:09.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - 'ladder.release_policy in contracts/model-capability-ladder-v1.yaml records the standing CRUX-smoke policy'
+  - 'scripts/release/autopilot.sh, scripts/release_readiness.sh and scripts/prepare_bump.sh read it through the strict awk reader'
+  - 'the models nightly opens or updates one ticket per red row, naming release_policy.ticket_owner; a search it cannot trust opens nothing (NOT-MEASURED)'
+  - 'the release notes of a covered release list known failures: ladder known_red rungs and open models-nightly red-row tickets'
+  - 'out of scope: the #4033 levers'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -24060,6 +24139,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Operator C187(a)/C188(a), 2026-10-01: ratchet, not a waiver.'
+- id: PMAT-4650
+  github_issue: 4650
+  item_type: task
+  title: 'apr serve: pass request tools into the GGUF chat template and parse Qwen3.5 XML tool calls (tool calling was silently dead)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-w4650
+  created: 2026-10-04T00:00:00Z
+  updated: 2026-10-04T00:00:00Z
+  acceptance_criteria:
+  - With request `tools`, the Qwen2.5, Qwen3 and Qwen3.5 templates render their `<tools>` block, and the tool JSON is written as HF tojson writes it (json.dumps with Python separators and no HTML escaping)
+  - With no tools, the rendered prompt is byte-identical to before, so the 16 #3990 oracle cells do not move
+  - A Qwen3.5 XML call (`<function=NAME><parameter=P>V</parameter></function>`) to a declared tool returns tool_calls with schema-typed arguments and finish_reason "tool_calls". A call to an undeclared tool stays content
+  - The Qwen3.5, CUDA and dense chat paths all pass request.tools to the renderer
+  - 'Out of scope, follow-ups: streaming tool_calls; replaying assistant tool_calls and tool-role messages into the template; tools on the legacy template path (it warns)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:bug
+  notes: 'Filed by alfredodeza. Operator: must hit 0.70.2.'
 - id: PMAT-4651
   github_issue: 4651
   item_type: task
@@ -24083,3 +24183,137 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:docs
   notes: 'Operator C197, 2026-10-01 12:40Z: re-date via the spec''s own procedure; check unchanged; not a waiver.'
+- id: PMAT-4687
+  github_issue: 4687
+  item_type: task
+  title: 'publish_strict.sh: one door to cargo publish — refuse a clean-room run id that is missing, red, or tested another commit'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-cd
+  created: 2026-10-06T00:00:00Z
+  updated: 2026-10-06T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #4687 row T10, verbatim: "publish_strict.sh must refuse a clean-room run id that is missing, red, or tested another commit (it accepts any non-empty file today, lines 28-30 at v0.70.1). Plant all three."'
+  - 'Done when, verbatim: "a contract, a planted falsifier that goes red, a first green on a real PR, and before-and-after numbers."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'SCOPE: scripts/release/publish_strict.sh, scripts/cascade-publish.sh (clean_room_gate gains an optional third argument, a pinned run id), scripts/check_cascade_clean_room_gate.sh (10 pinned rows), scripts/check_publish_strict_cleanroom.sh (new), contracts/publish-workspace-v1.yaml (PW-DOOR-005, FALSIFY-PUB-008). HOW IT IS MET: publish_strict.sh reads the recorded run id and loads clean_room_gate from the cascade script (the same extraction the existing guard uses), then calls it pinned to that one run. Pinned mode reads exactly that run through the runs API, refuses a run of another workflow, and never lists runs, so a green run elsewhere cannot stand in for a red recorded one. A missing, empty, non-numeric, unreadable, red or other-commit id stops the cascade before any upload. --plan is unchanged. MEASURED: check_publish_strict_cleanroom.sh runs the real publish_strict.sh against a fixture tag checkout and a stub gh and cargo. BEFORE (origin/main 645dc34101): 8 of 9 checks FAIL; the non-numeric, red, other-commit and unreadable ids all pass the door and stop later, on the B2-gpu id. AFTER: 9 of 9 hold; check_cascade_clean_room_gate.sh holds every row, including the 10 pinned ones.'
+- id: PMAT-4715
+  github_issue: 4715
+  item_type: task
+  title: 'B2: root-cause fixes for red nightlies on main'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-wmainred
+  created: 2026-10-04T00:00:00Z
+  updated: 2026-10-04T00:00:00Z
+  acceptance_criteria:
+  - Each red or cancelled scheduled workflow on main has a root cause named in its fix PR, one PR per defect, listed on issue #4715
+  - Each fix PR changes no gate's acceptance; a threshold or acceptance change goes to the train lead's sign-off batch instead
+  - After each fix merges, the next scheduled or dispatched run of that workflow on main gets past the step that failed
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: 'Parent #4678 (0.70.2), bar B2: no check red on main for more than 24 h. Proposed by aprender-a7, minted by cop aprender-14.'
+- id: PMAT-4719
+  github_issue: 4719
+  item_type: task
+  title: '0702-P2: nightly producers for the readiness, milestone and preflight verdict lanes (#4719)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-04T09:18:17Z
+  updated: 2026-10-04T09:18:17Z
+  spec: null
+  acceptance_criteria:
+  - release-gates-nightly.yml runs milestone (--must-carry) and preflight (--graph-only) at main HEAD
+  - readiness-nightly.yml runs release_readiness.sh on same-commit dogfood-receipt + models-t1, else skipped (not_measured)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
+- id: PMAT-4729
+  github_issue: 4729
+  item_type: task
+  title: pr-review-quorum present on its own review-light runner lane
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-04T11:38:38Z
+  updated: 2026-10-04T11:38:38Z
+  spec: null
+  acceptance_criteria:
+  - 'C310 item 8: move present to [self-hosted, review-light], steps unchanged.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
+- id: PMAT-4748
+  github_issue: 4748
+  item_type: task
+  title: 'T43: push to main reuses the merge queue''s real x86-main + determinism on the same sha'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-06T09:28:27Z
+  updated: 2026-10-06T09:28:27Z
+  spec: null
+  acceptance_criteria:
+  - 'Refs #4748. A push run on main reuses x86-main and determinism from the merge_group run on that sha, only when that run ran them for real (not itself a reuse). Guard: scripts/check_ci_push_reuse.sh.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
+- id: PMAT-4769
+  github_issue: 4769
+  item_type: task
+  title: 'FLAKE-0: StreamingKVCache memory-bound tests commit up to 34 GB and are OOM-killed on smaller runners'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wmainred
+  created: 2026-10-04T23:34:00Z
+  updated: 2026-10-04T23:50:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Step 1: the three long-context memory-bound tests (ultra, super, mega) carry #[ignore = "FLAKE-0 #4769"] and nothing else changes; every other aprender-serve lib test passes'
+  - 'Step 2: StreamingKVCache and StreamingKVCacheFp16 allocate each layer as its own zeroed buffer, the three tests are un-ignored and pass under a 24 GB memory cap, and decode throughput shows no regression beyond noise'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cause: vec![vec![0; n]; layers] clones layer 0 into every layer, writing every byte, so construction commits 8.6 / 17.2 / 34.4 GB; nextest KILLed the tests on a 30 GB runner (run 37241931271, workspace-test shard 1).'
+- id: PMAT-4862
+  github_issue: 4862
+  item_type: task
+  title: 'FLAKE-0: aprender-profile test_decision_span_event_attributes fails with ETXTBSY (Text file busy) exec race'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wcensus
+  created: 2026-10-06T08:20:00Z
+  updated: 2026-10-06T08:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Step 1: test_decision_span_event_attributes carries #[ignore = "FLAKE-0 #4862"] and nothing else changes; every other aprender-profile test passes'
+  - 'Step 2: every script-writing test in sprint31_ruchy_integration_tests.rs is free of the write-fd/fork window (serialised, or the spawn retries on ETXTBSY), the test is un-ignored, and each passes 200 runs of the file under parallel load'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Cause: the test writes a script then execs it while sibling test threads fork; a child forked in that window holds the write fd, so exec fails with ETXTBSY (run 37403017673, workspace-test shard 3). Passed on the same PR head in run 37408602581.'

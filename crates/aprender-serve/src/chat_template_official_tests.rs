@@ -216,3 +216,128 @@ mod official_chat_template_3990 {
         );
     }
 }
+
+// #4650: a request's OpenAI `tools` must reach the model's own template. The context used
+// to carry no `tools` key; `{% if tools %}` on an UNDEFINED variable is false with no error,
+// so the whole `# Tools` block was skipped and tool calling was dead, silently. Yokoten:
+// Qwen2.5 and Qwen3 gate their tools block the same way, so all three are checked.
+#[cfg(test)]
+mod tools_reach_the_template_4650 {
+    use super::*;
+
+    const QWEN25: &str = include_str!("fixtures/chat_template_3990/qwen25.jinja");
+    const QWEN3: &str = include_str!("fixtures/chat_template_3990/qwen3.jinja");
+    const QWEN35: &str = include_str!("fixtures/chat_template_3990/qwen35.jinja");
+
+    fn tools() -> serde_json::Value {
+        serde_json::json!([{
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Weather for a city, when a < b & c > d",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"]
+                }
+            }
+        }])
+    }
+
+    fn render(tpl: &str, tools: Option<&serde_json::Value>) -> String {
+        let msgs = vec![ChatMessage::user("What is the weather in Paris?")];
+        render_official_with_tools(tpl, None, None, &msgs, true, Some(false), tools)
+            .expect("renders")
+    }
+
+    /// The tool with `json.dumps(tool, ensure_ascii=False)`'s separators (`", "` / `": "`) and
+    /// no HTML escaping. NOT json.dumps byte for byte: minijinja is built without
+    /// `preserve_order`, so every object's keys come out sorted, where HF keeps the client's
+    /// order. That is a known gap (see the PR's out-of-scope list), pinned here so a change
+    /// to it is seen.
+    const TOOL_JSON: &str = r#"{"function": {"description": "Weather for a city, when a < b & c > d", "name": "get_weather", "parameters": {"properties": {"city": {"type": "string"}}, "required": ["city"], "type": "object"}}, "type": "function"}"#;
+
+    /// must-RED on the pre-#4650 renderer: the tools block is absent.
+    #[test]
+    fn every_qwen_template_renders_the_tools_block_4650() {
+        for (name, tpl) in [("qwen25", QWEN25), ("qwen3", QWEN3), ("qwen35", QWEN35)] {
+            let got = render(tpl, Some(&tools()));
+            let block = format!("<tools>\n{TOOL_JSON}\n</tools>");
+            assert!(
+                got.contains(&block),
+                "{name}: no tools block {block:?} in:\n{got}"
+            );
+            assert!(
+                got.contains("<tool_call>"),
+                "{name}: no call format in:\n{got}"
+            );
+            assert!(
+                got.contains("What is the weather in Paris?"),
+                "{name}: the user turn is gone:\n{got}"
+            );
+        }
+    }
+
+    /// Qwen3.5 is told to call in XML -- the format the response parser must read.
+    #[test]
+    fn qwen35_instructs_the_xml_call_format_4650() {
+        let got = render(QWEN35, Some(&tools()));
+        assert!(
+            got.contains("<function=example_function_name>\n<parameter=example_parameter_1>"),
+            "{got}"
+        );
+    }
+
+    /// No tools is byte-identical to the renderer without the parameter: the #3990 cells
+    /// (which carry no tools) cannot move.
+    #[test]
+    fn no_tools_renders_exactly_what_render_official_renders_4650() {
+        let msgs = vec![ChatMessage::user("What is the weather in Paris?")];
+        for tpl in [QWEN25, QWEN3, QWEN35] {
+            let plain =
+                render_official(tpl, None, None, &msgs, true, Some(false)).expect("renders");
+            assert_eq!(render(tpl, None), plain);
+            assert!(!plain.contains("<tools>"));
+        }
+    }
+
+    fn tojson_in(tpl: &str) -> Result<String, minijinja::Error> {
+        let mut env = minijinja::Environment::new();
+        env.add_filter("tojson", py_tojson);
+        let v = serde_json::json!({"a": [1, "x<y&z>'"], "b": null});
+        env.render_str(tpl, minijinja::context! { v => v })
+    }
+
+    /// `tojson` is `json.dumps`: no `<` escapes, Python separators. minijinja's own
+    /// filter fails both.
+    #[test]
+    fn tojson_writes_what_json_dumps_writes_4650() {
+        let got = tojson_in("{{ v | tojson }}").expect("serializes");
+        assert_eq!(got, r#"{"a": [1, "x<y&z>'"], "b": null}"#);
+    }
+
+    /// must-RED on a one-argument filter (C129 F1 on #4866): Llama 3.x templates call
+    /// `tojson(indent=4)`, and a refused argument failed the whole render. With an indent
+    /// the text is `json.dumps(v, indent=4)`, keyword or positional.
+    #[test]
+    fn tojson_takes_indent_as_json_dumps_does_4866() {
+        let want = "{\n    \"a\": [\n        1,\n        \"x<y&z>'\"\n    ],\n    \"b\": null\n}";
+        for tpl in ["{{ v | tojson(indent=4) }}", "{{ v | tojson(4) }}"] {
+            assert_eq!(tojson_in(tpl).expect("renders"), want, "{tpl}");
+        }
+        assert_eq!(
+            tojson_in("{{ v | tojson(indent=none) }}").expect("renders"),
+            r#"{"a": [1, "x<y&z>'"], "b": null}"#
+        );
+        assert!(tojson_in("{{ v | tojson(sort_keys=true) }}").is_err());
+    }
+
+    /// The Llama 3.x shape end to end: `tools` defined, each rendered with `tojson(indent=4)`.
+    #[test]
+    fn a_llama3_style_tools_block_renders_4866() {
+        let tpl = "{%- if tools is not none %}{%- for t in tools %}{{ t | tojson(indent=4) }}\n\n{%- endfor %}{%- endif %}{{ messages[0].content }}";
+        let got = render(tpl, Some(&tools()));
+        assert!(got.contains("\n    \"type\": \"function\"\n}"), "{got}");
+        assert!(got.contains("What is the weather in Paris?"), "{got}");
+    }
+}

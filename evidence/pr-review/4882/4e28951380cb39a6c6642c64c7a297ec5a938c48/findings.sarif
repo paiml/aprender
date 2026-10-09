@@ -1,0 +1,150 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "duplication_scan_no_hits",
+          "level": "note",
+          "message": {
+            "text": "The lexical duplication scan over head, all 1538 unmerged sibling branches and the merge-base-to-main range (226 files) found 0 hits for the 13 symbols the diff adds; pmat query for the same intent at head returned 5 Rust functions, none a row-order lint for a shell runner."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "316dee2cd4b3b3990ad47cc1a7a661c979a4e1d3",
+              "--head",
+              "4e28951380cb39a6c6642c64c7a297ec5a938c48",
+              "--json",
+              "<out>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "78e32059c9a33de7dbeab224ba2326530bf496cb5ea62e66993104e2cff31134",
+            "failure_scenario": "A re-implementation under a different name is invisible to a name match; that residual is not covered.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "row_move_mutant_killed",
+          "level": "note",
+          "message": {
+            "text": "A copy of dogfood.sh with the long row 'gate test cargo test $FEATS' moved from line 1770 to just after the fmt row (line 664) turns the guard RED under DOGFOOD_ROW_ORDER_ENFORCE=1 (rc 1): O1 reports clippy, security and every later cheap row as running after the first long row."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "DOGFOOD_ROW_ORDER_ENFORCE=1",
+              "bash",
+              "scripts/check_dogfood_row_order.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "3d083bdb41e8d4405f36635a9dab18585e59d5d1621c60b58eeb2fcd01fdc03a",
+            "failure_scenario": "Without O1, a reorder that puts a long row back ahead of the cheap rows would pass, and a red cheap row would again wait hours behind it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "enforce_at_head",
+          "level": "note",
+          "message": {
+            "text": "The unmutated guard at this head under DOGFOOD_ROW_ORDER_ENFORCE=1: rc 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "env",
+              "DOGFOOD_ROW_ORDER_ENFORCE=1",
+              "bash",
+              "scripts/check_dogfood_row_order.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "42ec723bf632fc5d333f622eab619bdadfdaea310eed810097f980de4e141ab2",
+            "failure_scenario": "If the guard were red at head under enforce, the enforce switch could never be turned on for this runner.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "selftest_at_head",
+          "level": "note",
+          "message": {
+            "text": "The guard's own self-test at this head: rc 0."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_dogfood_row_order.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4d245049b376bcfee3f92accccd4f346560219a970b6233befa1feb8504e29ec",
+            "failure_scenario": "A red self-test would mean the guard's case table no longer matches its rules.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The cross-vendor (antigravity) reviewer was not consulted by this receipt: the local budget probe for the gemini bucket failed (rc 126, jq argument list too long inside the probe). No agy call was made."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  ". ~/.claude/skills/quorum-review/agy-bucket.sh && ab_state gemini 1"
+                ],
+                "exit_code": 126,
+                "stdout_sha256": "cac5d651d59bc48ed117d295078ee3e07a7cf0c7c2ce9645e4227467651fe8f4"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}

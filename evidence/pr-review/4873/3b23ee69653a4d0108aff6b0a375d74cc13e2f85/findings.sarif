@@ -1,0 +1,165 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "push_runs_pr_mode",
+          "level": "note",
+          "message": {
+            "text": "provable_ladder_discharge.sh mode() now maps push to mode pr alongside pull_request and merge_group; schedule, workflow_dispatch and any unknown or empty event stay mode full, so a mistake can only add the slow check."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/ci/provable_ladder_discharge.sh:30",
+            "excerpt": "pull_request | merge_group | push) echo pr ;;",
+            "excerpt_sha256": "2ae92efa51d4ae678b6c38b80c7a7da4413da5ad813e429d2d312b4f3aeedaff",
+            "failure_scenario": "If push were dropped from the pr arm, a push to main would again run the leanchecker; the push row of the case table turns red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "nightly_job_bounded",
+          "level": "note",
+          "message": {
+            "text": "The nightly job has a 100-minute timeout over the section's 90 minutes plus checkout and jq pin; one run at a time via the concurrency group."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": ".github/workflows/provable-ladder-nightly.yml:44",
+            "excerpt": "timeout-minutes: 100",
+            "excerpt_sha256": "3be022801e8b56a2e06405d3b60c0b3dd110cd141dee318a770d222f242b8bd8",
+            "failure_scenario": "A run past 100 minutes is cancelled red, which an info lane reports as a failed night, not a false pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "verdict_reads_section_result",
+          "level": "note",
+          "message": {
+            "text": "fat_driver skips continue-on-error sections in its own verdict, so the last step reads the section result from results.json and fails on anything but success; a missing or unreadable file reads as missing or unreadable, never success."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": ".github/workflows/provable-ladder-nightly.yml:81",
+            "excerpt": "[ \"$r\" = success ] || { echo \"::error::provable-ladder: $r\"; exit 1; }",
+            "excerpt_sha256": "1e951f850d6b414c8c5b023113e9c001a75178d2536683938e1a735007c5a099",
+            "failure_scenario": "If the step trusted the job status, a red ladder would show a green nightly because the section is continue-on-error.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "info_lane_registered",
+          "level": "note",
+          "message": {
+            "text": "nightly_train.sh lists the new workflow as an info lane keyed on the schedule event, so it counts a streak and gates nothing."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/nightly_train.sh:99",
+            "excerpt": "provable-ladder;info;provable-ladder full run, pv discharge run",
+            "excerpt_sha256": "25a874eb596ce05807c076cbe0b76638cf09d1f324951ace7e246fa190860e38",
+            "failure_scenario": "A lane missing from the table would run unobserved; a gate lane would block releases on an unproven nightly. It is info.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "case_table_32_of_32",
+          "level": "note",
+          "message": {
+            "text": "scripts/ci/ladder_pr_skips_leanchecker.sh at head exits 0 and prints ok on every row, including the push row, the schedule row, the nightly wiring rows and the two mutant rows that must be caught. The 32 ok count was read from the run."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/ci/ladder_pr_skips_leanchecker.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3ba8a0e9508d259fc9baeb219e1724230679287385cb5f5aaa478cb3265f32b6",
+            "failure_scenario": "A loosened event split turns a table row red; the mutants (all events to pr, push to full) are caught by the schedule and push rows.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "same_family_degraded",
+          "level": "note",
+          "message": {
+            "text": "Reviewer claude-sonnet-5-5, author claude-opus-5-5: different model ids, same vendor. Antigravity was not reached from a subagent; the standing rule is Claude Code lanes. Verdict is DEGRADED, not PASS."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "receipt degraded_reason states it; other reviews (a sonnet-5-5 session, a second session, two planted quorum rounds) are cited by the author, not re-run here",
+            "failure_scenario": "A same-vendor blind spot would not be seen by this lane; the planted quorum rounds with a second vendor cover it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "diff_scope",
+          "level": "note",
+          "message": {
+            "text": "Subject diff touches five files: the new nightly workflow, two section-step names and comments in ci/sections.yml (no command change), the event split, the case table and nightly_train.sh. The sections.yml change is names and comments only, so the PR path's commands are unchanged."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "git diff of the base to head read in full",
+            "failure_scenario": "A command change hidden in a comment hunk would alter the PR path; none was found.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh at head: 5 needles, 0 hits across 1534 of 1534 sibling branches. No second nightly for the provable-ladder exists."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json read; hits_total is 0",
+            "failure_scenario": "A parallel nightly under another name would escape a lexical scan; none was seen.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "patch_id_binds",
+          "level": "note",
+          "message": {
+            "text": "Subject diff 645dc34101..3b23ee6965 (three-dot) has patch-id 5a4baa9319e8027a5ae064f0e525de3c02fbdff6 under prpid_compute, equal to the id CI's Arm 4 computed."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "prpid_compute run under bash -c on the review worktree at head",
+            "failure_scenario": "A stale base would bind the receipt to a different diff than CI computes; the ids match.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

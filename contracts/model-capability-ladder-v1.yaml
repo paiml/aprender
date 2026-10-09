@@ -91,12 +91,43 @@ ladder:
         ticket: "#4022"
         date: "2026-09-23"
         ruling: '"nope, override.  I am the boss" (operator, verbatim, via aprender-cf)'
+  # STANDING RELEASE POLICY (operator ruling, 2026-10-07 18:35Z, two non-author reviews). It replaces the
+  # per-release emergency scope from 0.71.0 on: every release whose version is >= `since` is judged on
+  # CRUX smoke on the hosts and thinking modes below, with the same receipts and judge as an
+  # `emergency_scopes` entry. Larger ladder rows run nightly and never stop a release, but a red one
+  # must carry a ticket, and the release notes list every known failure. A per-release
+  # `emergency_scopes` entry for a version this policy already covers is RED: one release, one ruling.
+  # `ticket_owner` is the one owner every nightly red-row ticket names: the issue whose owner fixes the
+  # check or brings it back. Quoted, because an unquoted # starts a YAML comment.
+  release_policy:
+    name: crux-smoke
+    since: "0.71.0"
+    date: "2026-10-07"
+    quote: '"from 0.71 on, a release ships on CRUX smoke on lambda and gx10 GPU. Everything bigger is nightly; it cannot stop a release, and each red row is a ticket. This replaces the per-release emergency scope. Known failures stay listed in the release notes."'
+    hosts: [lambda, gx10]
+    thinking: ["off", "on"]
+    larger_rows: nightly
+    red_row_needs: ticket
+    ticket_owner: "#3598"
+    release_notes: known_failures
   # OPERATOR EMERGENCY SCOPE for 0.69.1 ONLY (relayed verbatim by the release cop aprender-cf,
   # 2026-09-23). `check_model_ladder.sh --scope crux-smoke` judges CRUX smoke receipts from the RELEASE
   # BINARY instead of the ladder (scripts/lib/crux_smoke_scope.py): every host below, every certified
   # model (from the prompt certification), every thinking mode below, all GREEN with a GREEN positive
   # control, receipts bound to the cut exactly. Refused for any other release.
   emergency_scopes:
+    - name: crux-smoke
+      release: "0.70.2"
+      date: "2026-10-07"
+      quote: '"0.70.2 ships on CRUX smoke on lambda and gx10 GPU. Everything bigger is nightly."'
+      hosts: [lambda, gx10]
+      thinking: ["off", "on"]
+    - name: crux-smoke
+      release: "0.70.1"
+      date: "2026-10-03"
+      quote: '"0.70.1 ships on CRUX smoke on lambda and gx10 GPU. Everything bigger is nightly."'
+      hosts: [lambda, gx10]
+      thinking: ["off", "on"]
     - name: crux-smoke
       release: "0.69.1"
       date: "2026-09-23"

@@ -1,0 +1,139 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-04'
+  author: PAIML Engineering
+  description: "BLD-002 row R4, the nightly evidence train: one entry point judges main's head C from the results its lanes' scheduled producers recorded for C, and prints one line, RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. scripts/release/nightly_train.sh is the judge. A lane that cannot be read prints not_measured, never pass. Report-only: it blocks nothing and no release script reads it."
+  kind: pattern
+  references:
+    - "scripts/release/nightly_train.sh — the judge, its case table (--self-test) and its planted mutants (--mutants)"
+    - "scripts/release/autopilot.sh — the release-day steps the verdict lanes mirror (wait, deep, dogfood, models, readiness, tag, cleanroom, assets, preflight, dryrun)"
+    - "scripts/check_publish_preflight.sh — rules R1-R8, part of the verdict"
+    - "docs/specifications/FLOW-003-queue-and-release-cycle-model.md — G4, CI retries planned 2 -> 0: why a retried green is not a green"
+
+five_whys:
+  symptom: "The 0.70 release path ran about a dozen long steps in series, each for the first time on release day and each bound to the exact commit; the train had 68 stalls of more than an hour."
+  why_1: "Every release-day step measured the code for the first time, so each failure was found on the critical path."
+  why_2: "No single place said whether main's head was releasable before release day; each step's result lived in its own workflow, script or receipt."
+  why_3: "Scheduled workflows on main already produced some of the evidence every night, but nothing read them together against the release-day checks."
+  why_4: "A check with no nightly producer looked like nothing to report, not like a gap, so the gaps stayed invisible until release day."
+  why_5: "Without one line per night, nobody could count releasable nights or rank the reds by the hours they cost."
+  root_cause: "Release readiness had no nightly measurement. The remedy is one judge over every release-day check, reading the night's evidence for main's head, where a missing, unfinished, retried or unreadable result is not_measured and only an all-green verdict set prints RELEASABLE."
+
+equations:
+  lane_state:
+    formula: "state(lane, C) = not_measured if the lane has no producer, the read failed, no run of the producer on main is for C, the newest such run is unfinished, no matched job ran, or its attempt is unread; red if any matched job (every leg of a repeated name votes) ended failure, timed_out or startup_failure, or the run succeeded only at attempt 2 or later; else green"
+    domain: "one lane of the constant lane table, and the producer runs read for main's head C"
+    codomain: "{green, red, not_measured} for each lane"
+    invariants:
+      - "a run on another commit never stands for C"
+      - "an unfinished run, an unread attempt or a failed read is not_measured, never green"
+      - "a retried success is red: a retried green is not a green"
+      - "a run whose matched jobs were skipped, cancelled or neutral, or fewer than the lane requires, measured nothing, and the next older run for C is taken; only the matched jobs decide, the run's own conclusion is not read"
+
+  verdict_line:
+    formula: "RELEASABLE H=C iff every verdict lane is green; else NOT RELEASABLE: L, R where L is the first failing verdict lane, red before not_measured, then by hours lost, then table order, and R its run id or not_measured"
+    domain: "lane_state over the constant lane table; info lanes are read and reported but never enter the verdict"
+    codomain: "exactly one line on stdout per run"
+    invariants:
+      - "the verdict lanes are the checks release day enforces today, a constant in the script, neither an option nor an environment value"
+      - "an info lane, coverage included, never changes the verdict"
+      - "a failure part-way prints NOT RELEASABLE: nightly-train, <step>, never silence"
+      - "reds and not_measured lanes are ranked by hours lost, the age of each lane's current red stretch"
+
+proof_obligations:
+  - id: NT-INV-001
+    type: invariant
+    property: "RELEASABLE only when every verdict lane is green on C"
+    formal: "line = RELEASABLE(C) ⇒ ∀ l ∈ verdict: state(l, C) = green"
+    applies_to: verdict_line
+  - id: NT-INV-002
+    type: invariant
+    property: "A lane that cannot be read is never green"
+    formal: "∀ l: read_failed ∨ no_run(l, C) ∨ unfinished(l, C) ∨ attempt_unread(l, C) ∨ job_list_truncated(l, C) ∨ rollup_truncated(C) ∨ no_producer(l) ⇒ state(l, C) = not_measured"
+    applies_to: lane_state
+  - id: NT-INV-003
+    type: invariant
+    property: "A retried success is red"
+    formal: "∀ l: success(run(l, C)) ∧ attempt(run(l, C)) ≥ 2 ⇒ state(l, C) = red"
+    applies_to: lane_state
+  - id: NT-INV-004
+    type: invariant
+    property: "Info lanes never vote"
+    formal: "∀ l ∈ info: verdict(states) = verdict(states[l := any])"
+    applies_to: verdict_line
+  - id: NT-INV-005
+    type: invariant
+    property: "Every run with a writable stdout prints exactly one line; with a closed stdout the line file keeps the real verdict"
+    formal: "∀ run: writable(stdout(run)) ⇒ |stdout(run)| = 1"
+    applies_to: verdict_line
+  - id: NT-INV-006
+    type: invariant
+    property: "A void run is never the evidence; the next older run on C is read instead. Void is decided by the matched jobs only"
+    formal: "∀ r: (matched_jobs(r) = ∅ ∨ (¬failed(r) ∧ ∃ j ∈ matched_jobs(r): conclusion(j) ∈ {skipped, cancelled, neutral}) ∨ (¬failed(r) ∧ |distinct_jobs(r)| < need(l))) ⇒ pick(l, C) ≠ r"
+    applies_to: lane_state
+  - id: NT-INV-007
+    type: invariant
+    property: "An edited bundle refuses to judge; under --pinned a missing PIN or SHA256SUMS, or sums that do not cover PIN, refuse too"
+    formal: "sha256(bundle ∪ {PIN}) ≠ SHA256SUMS ∨ (pinned ∧ (PIN ∉ bundle ∨ SHA256SUMS ∉ bundle ∨ PIN ∉ SHA256SUMS)) ⇒ line = NOT RELEASABLE: nightly-train, pin"
+    applies_to: verdict_line
+  - id: NT-INV-008
+    type: invariant
+    property: "One history row per run, whatever step fails, the pin and tools checks included"
+    formal: "∀ run: |history_rows(run)| = 1"
+    applies_to: verdict_line
+  - id: NT-INV-009
+    type: invariant
+    property: "A self-test, a mutant or a planted fault never writes the inbox the caller named"
+    formal: "∀ run: (self_test(run) ∨ mutant(run) ∨ planted_fault(run)) ⇒ inbox(run) ∈ tmp"
+    applies_to: verdict_line
+  - id: NT-INV-010
+    type: invariant
+    property: "Every matched job votes: a failed leg is not hidden by a later success of the same name"
+    formal: "∀ l, r: (∃ j ∈ matched_jobs(r): conclusion(j) ∈ {failure, timed_out, startup_failure}) ⇒ state(l, r) = red"
+    applies_to: lane_state
+  - id: NT-INV-011
+    type: invariant
+    property: "The read refuses before it spends: under the rate floor (fifth(limit): the token's own hourly limit divided by 5, rounded down, capped at RATE_FLOOR, so the fleet token keeps its 1000 reserve and a job token refuses under 200), past the call budget, or on a GraphQL error the read is failed"
+    formal: "remaining < min(RATE_FLOOR, fifth(limit)) ∨ limit_unread ∨ calls ≥ MAX_CALLS ∨ graphql_errors ⇒ read ≠ ok"
+    applies_to: lane_state
+  - id: NT-INV-012
+    type: invariant
+    property: "An info lane's attempt that was not read is shown as inferred, never as a read attempt 1"
+    formal: "∀ l ∈ info: ¬read(attempt(l)) ∧ ¬repeated_job(l) ⇒ attempt_field(l) = 1?"
+    applies_to: lane_state
+  - id: NT-INV-013
+    type: invariant
+    property: "An inbox line that does not read back ends the run non-zero"
+    formal: "∀ run: inbox_named(run) ∧ tail(inbox) ≠ line(run) ⇒ exit(run) ≠ 0"
+    applies_to: verdict_line
+  - id: NT-INV-014
+    type: invariant
+    property: "The train refuses to start where a registry token is reachable: a CARGO_REGISTRY_TOKEN or CARGO_REGISTRIES_<NAME>_TOKEN variable, set even empty, a credentials file or a token = line in the config under CARGO_HOME or the uid's own ~/.cargo; the refusal is the trap line and its one history row. The installed unit hides ~/.cargo in a user namespace and install runs the probe inside that sandbox, installing nothing unless it is clear"
+    formal: "token_env(run) ∨ credentials_file(CARGO_HOME(run)) ∨ config_token(CARGO_HOME(run)) ∨ credentials_file(HOME(run)/.cargo) ∨ config_token(HOME(run)/.cargo) ⇒ prefix(line, \"NOT RELEASABLE: nightly-train, no-token failed\") ∧ exit(run) ≠ 0"
+    applies_to: verdict_line
+  - id: NT-INV-015
+    type: invariant
+    property: "Under --exit-verdict exit 0 means RELEASABLE and every NOT RELEASABLE exits non-zero; a RELEASABLE run still exits non-zero when a later step fails (inbox read-back, NT-INV-013); without the flag the status says only whether the train ran"
+    formal: "exit_verdict(run) ⇒ (exit(run) = 0 ⇒ line(run) = RELEASABLE(C)) ∧ (line(run) ≠ RELEASABLE(C) ⇒ exit(run) ≠ 0)"
+    applies_to: verdict_line
+
+falsification_tests:
+  - id: FALSIFY-NT-001
+    rule: "The judge is right on every row of its case table"
+    prediction: "All verdict lanes green is RELEASABLE; a removed lane, a run on another commit, a run in progress, an unread attempt or a failed read is NOT RELEASABLE with not_measured; a green at attempt 2 is red; an info lane red leaves the verdict; reds rank by hours lost; greens in a row follow the scheduled-nights rule; a planted fault prints the trap line; a void newer run falls to the older run on C; a lane missing a required job, a cut job list or no producer is not_measured; stdout is one line; a fault or a closed stdout after the history row adds no second row; an edited bundle refuses and still leaves its line and one history row; under --pinned a missing PIN, an edited PIN or sums that omit PIN refuse while an intact pinned bundle judges; a failed parallel leg of one name is red; a cut rollup is marked; the read refuses under the rate floor, past the call budget and on a GraphQL error; an info lane attempt not read shows 1?; an inbox read-back mismatch exits non-zero; a closed stdout keeps the real verdict; a registry token variable, an empty named one or a credentials file or a legacy config token, under CARGO_HOME or ~/.cargo, refuses to start and the probe is clear only where none is reachable; the read refuses at 999 of 5000 and 199 of 1000, reads at 200 of 1000, and refuses an unread limit; --exit-verdict maps RELEASABLE to 0 and NOT RELEASABLE to 1, and a full RELEASABLE run under it exits 0; a self-test and a planted fault write only a throwaway inbox"
+    test: "bash scripts/release/nightly_train.sh --self-test"
+    if_fails: "The train can print RELEASABLE for a commit some release-day check never measured, or stay silent when it fails"
+
+  - id: FALSIFY-NT-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant (not_measured counted green, a run on any commit, an unfinished run counted, a retried green counted, a failed read counted, an unread attempt counted, no trap, info lanes voting, ranking reversed, total counted as streak, coverage made a verdict lane, a verdict lane dropped, the rollup dropped, a re-run job not counted, a missing producer not refused, the required-job count ignored, a cut job list read, a void run picked, an edited bundle run, a producerless lane green, a second history row after the first, the caller's inbox inherited by the self-test, a drill writing the named inbox, one leg hiding another, a cut rollup read, the day set after the pin step, --pinned not requiring PIN, unhashed PIN accepted, the rate floor ignored, the call budget ignored, GraphQL errors read, an inbox mismatch exiting 0, an inferred info attempt claimed as 1, the token guard dropped, the credentials file ignored, a named registry token ignored, --exit-verdict ignored, a RELEASABLE verdict exiting 1, every verdict exiting 1 under the flag, a config token ignored, ~/.cargo left unchecked, the floor ignoring the limit) turns at least one row RED, after the unmutated copy is shown green in the same directory"
+    test: "bash scripts/release/nightly_train.sh --mutants"
+    if_fails: "The case table is theater: it would pass a judge that calls main releasable on evidence it never read"
+
+qa_gate:
+  id: F-NT-001
+  name: "Main's head is called releasable only from green evidence for every release-day check"
+  description: "scripts/release/nightly_train.sh reads the night's results for main's head and prints RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. Its case table pins every lane state and the verdict set; its mutants prove the table can fail."
+  checks:
+    - "lane_state"
+    - "verdict_line"

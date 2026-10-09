@@ -40,7 +40,6 @@ apr-format	--test	golden_fixtures
 aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
-aprender-contracts	--lib
 aprender-contracts	--lib	binding
 aprender-contracts	--lib	build_helper
 aprender-contracts	--lib	discharge::comparator
@@ -67,6 +66,7 @@ aprender-contracts	--lib	ontology::extract::apr_model
 aprender-contracts	--lib	ontology::extract::binary
 aprender-contracts	--lib	ontology::extract::claims
 aprender-contracts	--lib	ontology::extract::code
+aprender-contracts	--lib	ontology::extract::json::github
 aprender-contracts	--lib	ontology::extract::lean
 aprender-contracts	--lib	ontology::extract::llm_context
 aprender-contracts	--lib	ontology::extract::pv_contract

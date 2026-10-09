@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t1-lanes-fixes-hold-on-main",
+          "level": "note",
+          "message": {
+            "text": "Re-verified on the merged head, whose three scripts are byte-identical to 04fbad0de5 (git diff shows no change). Two lanes that exit 1 by themselves in one second are both RED and both named, models GO, rc 1. The guard passes 8 cases and 11 of 11 mutants in the default mode and under RELEASE_T1_LANES_ENFORCE=1, rc 0 both. Parity takes the GPU lock under choom with a lock-timeout reason (read; the busy-lock probe was run on the previous heads and the file is unchanged)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 196
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "t1_join_race_probe.sh",
+              "<scratch>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "40ac0c0c06854ae8bdf1c8fe3f8f7b7282c6f763444ee374d1c0ec17d1a6f010",
+            "failure_scenario": "none: earlier findings closed. The guard digest in the notes is the default-mode run; the enforce run gives the same result.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-interrupt-still-kills-models",
+          "level": "note",
+          "message": {
+            "text": "INT/TERM to the autopilot sends TERM to every lane's group including models; the stub models child is gone. The comment documents it as the operator's choice. Judged deliberate and acceptable; the remote ssh leg may run on in the release dir and nothing in the guard pins the kill or a cleanup. Unchanged."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 186
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "t1_int_probe.sh",
+              "<scratch>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "94c67307c91994555bbcab3b3547265f3d64e899a10451b628dc24d2e23b7f25",
+            "failure_scenario": "TERM while models runs leaves the remote build and ladder running; the next pass starts against it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-launch-window-race",
+          "level": "note",
+          "message": {
+            "text": "An interrupt between a lane launch and its record leaves that lane out of the trap kill loop."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 188
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The primary read autopilot.sh:188: the trap is installed before the launch loop, but an interrupt between a lane being launched and recorded leaves it out of the kill loop. The window is microseconds; judged acceptable. Unchanged.",
+            "failure_scenario": "INT in the microseconds after a lane starts leaves it running after the autopilot stops.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-guard-nothing-enforces",
+          "level": "note",
+          "message": {
+            "text": "Unchanged: no workflow, Makefile, script or contract sets RELEASE_T1_LANES_ENFORCE, so the guard blocks nowhere, as with the draft guard. Record a promotion date or a ticket."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 24
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-rIl",
+              "RELEASE_T1_LANES_ENFORCE",
+              "scripts",
+              ".github",
+              "Makefile",
+              "contracts"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "fb2d821ed92e2124a98407924ed65add2891c0440bb4896fa119300980a75196",
+            "failure_scenario": "The guard is never promoted.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "t1-parity-choom-and-reason-unguarded",
+          "level": "warning",
+          "message": {
+            "text": "The guard pins the flock only. Deleting 'choom -n 1000 --' from the parity call and deleting the exit-75 reason line each leave the guard at PASS, 11 of 11 killed. Unchanged since the second round."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 138
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_t1_lanes_joined.sh",
+              "<mutated check_model_parity.sh>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "aa27c50cf30294c9807b70c19836871bf94f85a27c6a5bd33d5c2426a06b58c0",
+            "failure_scenario": "A later edit drops choom or the reason and the guard stays green.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "t1-dirs-passes-a-commented-export",
+          "level": "warning",
+          "message": {
+            "text": "dirs() reads the first line matching export CARGO_TARGET_DIR= inside t1_deep and t1_dogfood, with no check that the line is code. A commented-out export passes it: dirs returns 0 on an autopilot whose t1_deep export is commented, and deep then builds into the shared target dir the guard exists to prevent. The shared-deep mutant deletes the line and is killed; a comment is not. Fix: skip lines whose first non-space character is #."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 128
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "cm_dirs.sh",
+              "<autopilot with deep export commented>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "54f945b0240728dc6b84b8866874a871b8d6fbc67affbdb843a75cff58920704",
+            "failure_scenario": "A developer comments the export while debugging; the guard stays green and deep and dogfood race on one target dir.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-F01",
+          "level": "warning",
+          "message": {
+            "text": "The `dirs()` guard function blindly passes on commented-out `CARGO_TARGET_DIR` exports."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_t1_lanes_joined.sh"
+                },
+                "region": {
+                  "startLine": 128
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark measured. Re-marked asserted: agy supplied no command or stdout digest. The primary reproduced it (t1-dirs-passes-a-commented-export): agreed.",
+            "failure_scenario": "If a developer comments out `export CARGO_TARGET_DIR=...` in `t1_deep` or `t1_dogfood`, the `awk` regex will still match the commented line, resulting in a vacuous pass. This causes a target-dir collision as the lane will build in the shared target directory, but the guard will fail to prevent the merge.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-F02",
+          "level": "note",
+          "message": {
+            "text": "Interrupting the autopilot leaves the remote `models` build and measurement as an orphaned process."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 186
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy mark cited. Same defect as the primary t1-interrupt-still-kills-models: agreed. The primary judged it deliberate and documented.",
+            "failure_scenario": "When `autopilot.sh` is interrupted by `INT` or `TERM`, the trap sends `TERM` to the `models` lane's process group. This terminates the local `ssh` client. However, because the SSH session was started without a PTY, the remote SSH daemon does not send `SIGHUP` or `TERM` to the remote `bash -s` process. The remote host is left with an orphaned measurement script consuming GPU resources.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
