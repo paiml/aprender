@@ -165,6 +165,7 @@ pub(crate) fn fixture() -> Fixture {
                         baseline: Some(cand()),
                     },
                 }],
+                comparator: super::super::model_gate_m2::arms::tests::block(),
             }],
         }),
         m3: Some(m3),
@@ -252,7 +253,7 @@ type Plant = (&'static str, &'static str, fn(&mut Fixture));
 
 #[test]
 fn falsify_ext_015_each_gate_turns_red_on_its_plant() {
-    let plants: [Plant; 22] = [
+    let plants: [Plant; 23] = [
         ("M0", "one byte of the model flipped", |f| {
             std::fs::write(
                 f.dir.path().join("model.gguf"),
@@ -294,6 +295,13 @@ fn falsify_ext_015_each_gate_turns_red_on_its_plant() {
             f.evidence.m2.as_mut().unwrap().arms.clear()
         }),
         ("M2", "no sealed-suite evidence", |f| f.evidence.m2 = None),
+        (
+            "M2",
+            "stock arm without a comparator block (FALSIFY-EXT-020)",
+            |f| {
+                f.evidence.m2.as_mut().unwrap().arms[0].comparator = None;
+            },
+        ),
         ("M3", "apr serve misses a probe", |f| {
             f.evidence.m3.as_mut().unwrap().probes[1].serve_answered = false;
         }),
