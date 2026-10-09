@@ -319,20 +319,48 @@ ltrim() {
 # the scan called it pinned (#3679). So single-quoted text goes (it is inert),
 # and the body of every $(...) or `...` is lifted out before the "..." strip
 # and appended to the probe. Nesting deeper than one level is not parsed.
+#
+# Both strips are pure bash, into $PROBE_PV / $PROBE (#3676). They were
+# `printf | sed`, `grep -oE | tr` and `$(...)`: about ten processes for each of
+# the ~5,000 lines this scans, which put the guard at 89 s p50 and 285 s p95 on
+# a loaded runner, for a text check. The output is byte-identical on every
+# line of the tree (--self-test re-checks the case table against the sed/grep
+# forms). One input differs: an invalid UTF-8 byte inside "...". Under a UTF-8
+# locale sed's [^"] does not match that byte, so the old strip kept the span and
+# the verdict depended on the runner's locale; it is now stripped in every locale.
+SUBST_RE='\$\([^)]*\)|`[^`]*`'
+
+# strip_quoted <q> <text> -> $STRIPPED: every <q>...<q> span removed, left to
+# right, an unclosed <q> kept (sed "s/q[^q]*q//g").
+strip_quoted() {
+    local q="$1" s="$2" out=""
+    while [[ $s == *"$q"*"$q"* ]]; do
+        out+="${s%%"$q"*}"
+        s="${s#*"$q"}"
+        s="${s#*"$q"}"
+    done
+    STRIPPED="$out$s"
+}
+
 demessage_pv() {
-    local s subs
-    s="$(printf '%s' "$1" | sed "s/'[^']*'//g")"
-    subs="$({ printf '%s' "$s" | grep -oE '\$\([^)]*\)|`[^`]*`' || true; } | tr '\n' ' ')"
-    printf '%s %s' "$(printf '%s' "$s" | sed 's/"[^"]*"//g')" "$subs"
+    local s rest subs="" m
+    strip_quoted "'" "$1"; s="$STRIPPED"
+    # every $(...) / `...` left to right, each followed by a space (grep -oE | tr '\n' ' ')
+    rest="$s"
+    while [[ $rest =~ $SUBST_RE ]]; do
+        m="${BASH_REMATCH[0]}"
+        subs+="$m "
+        rest="${rest#*"$m"}"
+    done
+    strip_quoted '"' "$s"
+    PROBE_PV="$STRIPPED $subs"
 }
 
 demessage() {
-    local t="$1"
-    case "$t" in
+    case "$1" in
         echo\ *|printf\ *|echo|printf)
-            printf '%s' "$t" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g"
-            ;;
-        *) printf '%s' "$t" ;;
+            strip_quoted "'" "$1"; strip_quoted '"' "$STRIPPED"; PROBE="$STRIPPED" ;;
+        *) PROBE="$1" ;;
     esac
 }
 
@@ -367,7 +395,7 @@ check_file() {
                 continue ;;
         esac
 
-        probe="$(demessage "$trimmed")"
+        demessage "$trimmed"; probe="$PROBE"
 
         # CLASS 1 --------------------------------------------------------
         if [[ $probe =~ $BARE_APR ]]; then
@@ -389,7 +417,7 @@ check_file() {
         # CLASS 3 --------------------------------------------------------
         # apr_bin.sh probes `type -aP apr` on purpose, to NAME the shadows;
         # it is exempted wholesale above.
-        probe_pv="$(demessage_pv "$trimmed")"
+        demessage_pv "$trimmed"; probe_pv="$PROBE_PV"
         if [[ $probe_pv =~ $BARE_PV ]]; then
             report "$f" "$lineno" "BARE-PV" "$trimmed"
         fi
@@ -495,7 +523,7 @@ if [ "${1:-}" = "--self-test" ]; then
         # Mirror check_file's own pre-filters exactly, or the table would be
         # testing a different pipeline than the one that ships.
         ltrim "$line"; t="$LTRIM"
-        p="$(demessage "$t")"
+        demessage "$t"; p="$PROBE"
         case "$t" in '#'*) p='' ;; esac
         case "$t" in name:*|-\ name:*) p='' ;; esac
         if [ "$want" = match ]; then
@@ -517,7 +545,7 @@ if [ "${1:-}" = "--self-test" ]; then
     probe_case_pv() {
         local re="$1" line="$2" want="$3" label="$4" p t
         ltrim "$line"; t="$LTRIM"
-        p="$(demessage_pv "$t")"
+        demessage_pv "$t"; p="$PROBE_PV"
         case "$t" in '#'*) p='' ;; esac
         case "$t" in name:*|-\ name:*) p='' ;; esac
         if [ "$want" = match ]; then
@@ -570,6 +598,38 @@ if [ "${1:-}" = "--self-test" ]; then
     for c in "${must_not_match_abs[@]}"; do probe_case "$ABS_APR" "$c" nomatch abs; done
     for c in "${must_match_pathres[@]}"; do probe_case "$PATHRES" "$c" match pathres; done
     for c in "${must_not_match_pathres[@]}"; do probe_case "$PATHRES" "$c" nomatch pathres; done
+
+    # -- the pure-bash strips against the sed/grep forms they replaced (#3676) --
+    # Every case above plus the quote shapes the table does not reach: unclosed,
+    # adjacent, nested, repeated substitutions, multibyte, TAB and CR.
+    demessage_ref() {
+        case "$1" in
+            echo\ *|printf\ *|echo|printf) printf '%s' "$1" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g" ;;
+            *) printf '%s' "$1" ;;
+        esac
+    }
+    demessage_pv_ref() {
+        local s subs
+        s="$(printf '%s' "$1" | sed "s/'[^']*'//g")"
+        subs="$({ printf '%s' "$s" | grep -oE '\$\([^)]*\)|`[^`]*`' || true; } | tr '\n' ' ')"
+        printf '%s %s' "$(printf '%s' "$s" | sed 's/"[^"]*"//g')" "$subs"
+    }
+    equiv_cases=(
+        "${must_match_bare[@]}" "${must_not_match_bare[@]}" "${must_match_abs[@]}" "${must_not_match_abs[@]}"
+        "${must_match_pathres[@]}" "${must_not_match_pathres[@]}" "${must_match_pv[@]}" "${must_not_match_pv[@]}"
+        "${must_match_pathres_pv[@]}" "${must_not_match_pathres_pv[@]}"
+        '' "'" '"' "''" '""' "echo 'a" "echo 'a' 'b" "echo \"a\" 'b\" c' d\"" "printf 'x'\"y\"'z'" 'echo' 'printf'
+        'x=$(apr qa) y=$(pv lint' 'a `b` c `d' '$( $(pv x) )' '$()' '``' '`$(pv)`' "echo '\$(pv x)'"
+        'é apr «pv» "ü"' $'tab\there "q"' $'cr\r "x"' '$(a)$(b)$(a)' '`a``b`' '$(a `b` c)'
+        'echo "x" $(y "z") `w '"'"'v'"'"'`'
+    )
+    for c in "${equiv_cases[@]}"; do
+        demessage "$c"; demessage_pv "$c"
+        if [ "$PROBE" != "$(demessage_ref "$c")" ] || [ "$PROBE_PV" != "$(demessage_pv_ref "$c")" ]; then
+            printf 'EQUIV FAIL: pure-bash strip differs from sed/grep for: %q\n' "$c" >&2
+            fails=$((fails + 1))
+        fi
+    done
 
     # -- per-surface mutation ----------------------------------------------
     TMPROOT=$(mktemp -d)
