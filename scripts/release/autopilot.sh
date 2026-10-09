@@ -68,13 +68,18 @@ ap_policy_applies() {
       [ "$r" = 0 ] || { printf '%s\n' "$RP_WHY" >&2; exit "$r"; }
       printf '%s\n' "$RP_APPLIES" )
 }
+# ap_rp_known_failures: the release commit's own policy library, sourced in a subshell (as
+# ap_policy_applies does), prints the known-failures section. It lists; it checks nothing.
+ap_rp_known_failures() {
+    ( . scripts/lib/release_policy.sh || exit 2
+      rp_known_failures contracts/model-capability-ladder-v1.yaml "$REPO" )
+}
 # ap_known_failures NOTES: under the standing release policy the release notes list every known failure
 # with its ticket (ladder.known_red, then the models nightly's open red-row issues), appended once. It
 # lists; it never stops the release. rc 2 only when the release commit's ladder cannot be read.
 ap_known_failures() {
     grep -qF '## Known failures' -- "$1" && return 0
-    ( . scripts/lib/release_policy.sh || exit 2
-      rp_known_failures contracts/model-capability-ladder-v1.yaml "$REPO" ) > "$1.kf" || return 2
+    ap_rp_known_failures > "$1.kf" || return 2
     { printf '\n'; cat -- "$1.kf"; } >> "$1" || return 2
     rm -f -- "${1:?}.kf"
 }

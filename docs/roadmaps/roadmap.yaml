@@ -24294,6 +24294,28 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: the test writes a script then execs it while sibling test threads fork; a child forked in that window holds the write fd, so exec fails with ETXTBSY (run 37403017673, workspace-test shard 3). Passed on the same PR head in run 37408602581.'
+- id: PMAT-4918
+  github_issue: 4918
+  item_type: task
+  title: streaming chat emits tool_calls (A3)
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-08T13:32:24Z
+  updated: 2026-10-08T14:00:00Z
+  spec: contracts/serve-stream-tool-calls-v1.yaml
+  acceptance_criteria:
+  - With tools declared, a streamed reply that holds a tool call ends with one delta.tool_calls chunk and finish_reason tool_calls, on the live and the replayed SSE builder (T1, T2)
+  - The streamed calls equal the non-streaming calls for the same text, under any split of the deltas (T3)
+  - With no tools or tool_choice none, the stream is byte-identical to the v0.70.2 golden (T5)
+  - FALSIFY-SSTC-001..012 pass, each with its mutant recorded red
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4926
 - id: PMAT-4930
   github_issue: 4930
   item_type: task

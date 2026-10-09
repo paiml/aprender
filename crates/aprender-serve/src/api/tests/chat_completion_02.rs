@@ -32,6 +32,7 @@ fn test_chat_delta_serialization_skip_none() {
     let delta = ChatDelta {
         role: None,
         content: Some("test".to_string()),
+        tool_calls: None,
     };
     let json = serde_json::to_string(&delta).expect("test");
 
@@ -47,6 +48,7 @@ fn test_chat_chunk_choice_serialization() {
         delta: ChatDelta {
             role: Some("assistant".to_string()),
             content: None,
+            tool_calls: None,
         },
         finish_reason: None,
     };
