@@ -205,6 +205,7 @@ struct SidecarGguf {
 #[derive(Debug, Deserialize)]
 struct SidecarComparator {
     pin: Option<String>,
+    sha256: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,6 +224,8 @@ struct SidecarInterval {
 struct RunIdentity {
     host: String,
     gguf_sha256: String,
+    comparator_pin: String,
+    comparator_sha256: String,
     concurrency: u32,
     replicates: usize,
     method: String,
@@ -249,7 +252,14 @@ impl RunIdentity {
                 "provenance GGUF sha256 `{gguf_sha256}` is not a sha256"
             ));
         }
-        non_empty(s.comparator.and_then(|c| c.pin), "comparator pin")?;
+        let (pin, sha) = s.comparator.map_or((None, None), |c| (c.pin, c.sha256));
+        let comparator_pin = non_empty(pin, "comparator pin")?;
+        let comparator_sha256 = non_empty(sha, "comparator sha256")?;
+        if !is_sha256(&comparator_sha256) {
+            return Err(format!(
+                "provenance comparator sha256 `{comparator_sha256}` is not a sha256"
+            ));
+        }
         let band = s.band.ok_or("provenance names no band")?;
         let concurrency = band
             .concurrency
@@ -262,6 +272,8 @@ impl RunIdentity {
         Ok(Self {
             host,
             gguf_sha256,
+            comparator_pin,
+            comparator_sha256,
             concurrency,
             replicates,
             method,
@@ -327,6 +339,25 @@ fn check_identity(receipt: &Receipt, id: &RunIdentity) -> Result<(), String> {
             receipt.provenance.host, id.host
         ));
     }
+    // The ratio's denominator: a receipt measured against another llama.cpp
+    // build is not this run's evidence.
+    let Some(c) = &receipt.provenance.comparator else {
+        return Err("receipt names no comparator".to_string());
+    };
+    if c.commit != id.comparator_pin {
+        return Err(format!(
+            "receipt comparator commit {} differs from provenance comparator pin {}",
+            c.commit, id.comparator_pin
+        ));
+    }
+    if c.sha256 != id.comparator_sha256 {
+        return Err(format!(
+            "receipt comparator sha256 {} differs from provenance comparator sha256",
+            c.sha256
+        ));
+    }
+    // The baseline script leaves `model_file` null and binds the GGUF in the
+    // sidecar, so the model digest is cross-checked only where a receipt has one.
     match &receipt.provenance.model_file {
         Some(m) if m.sha256 != id.gguf_sha256 => Err(format!(
             "receipt model sha256 {} differs from provenance GGUF sha256",
@@ -543,6 +574,7 @@ mod tests {
 
     const LAMBDA_R1: &str = include_str!("ttft_verdict_fixture.json");
     const SHA: &str = "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4";
+    const LLAMA_SHA: &str = "9aabba99701a9733af68d95db5f0452324a9c84daf49c55afb306d29eb30aa5c";
 
     fn policy() -> TtftPolicy {
         TtftPolicy {
@@ -588,7 +620,7 @@ mod tests {
         let mut s = json!({
             "host": host,
             "gguf": {"sha256": SHA},
-            "comparator": {"pin": "d1d3c3396"},
+            "comparator": {"pin": "d1d3c3396", "sha256": LLAMA_SHA},
             "band": {"concurrency": 1, "replicates": 5},
             "interval": {"method": "paired_percentile_bootstrap"}
         });
@@ -738,6 +770,11 @@ mod tests {
             ("", "host", "provenance names no host"),
             ("/gguf", "sha256", "provenance names no GGUF sha256"),
             ("/comparator", "pin", "provenance names no comparator pin"),
+            (
+                "/comparator",
+                "sha256",
+                "provenance names no comparator sha256",
+            ),
             (
                 "/band",
                 "replicates",
@@ -905,6 +942,33 @@ mod tests {
             &ttft_verdict(&policy(), &runs),
             "is not a valid receipt: PP-3",
         );
+    }
+
+    /// FALSIFY-APR-TTFT-011: a ratio against another llama.cpp build is not
+    /// this run's ratio.
+    #[test]
+    fn anti_copy_receipt_against_another_comparator_build() {
+        let mut runs = green_pair();
+        runs[0].receipts[2].1 = receipt_with("lambda", 3, 1.2, |r| {
+            r["provenance"]["comparator"]["commit"] = json!("0123456789");
+        });
+        assert_not_measured(
+            &ttft_verdict(&policy(), &runs),
+            "receipt comparator commit 0123456789 differs from provenance comparator pin d1d3c3396",
+        );
+
+        let mut runs = green_pair();
+        runs[1].receipts[4].1 = receipt_with("gx10", 5, 1.2, |r| {
+            r["provenance"]["comparator"]["sha256"] = json!(SHA);
+        });
+        assert_not_measured(
+            &ttft_verdict(&policy(), &runs),
+            "differs from provenance comparator sha256",
+        );
+
+        let mut runs = green_pair();
+        runs[0].provenance = sidecar_with("lambda", |s| s["comparator"]["sha256"] = json!("abc"));
+        assert_not_measured(&ttft_verdict(&policy(), &runs), "is not a sha256");
     }
 
     // FALSIFY-APR-TTFT-012: the same verdict from run directories, as the CLI
