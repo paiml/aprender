@@ -489,7 +489,7 @@ fn m5(m: &ReleaseManifest) -> GateRow {
 }
 
 /// A card line's receipt markers: `[receipt:<id>]`.
-fn receipt_markers(line: &str) -> (String, Vec<&str>) {
+pub(crate) fn receipt_markers(line: &str) -> (String, Vec<&str>) {
     let mut ids = Vec::new();
     let mut rest = String::with_capacity(line.len());
     let mut s = line;
@@ -513,7 +513,7 @@ fn receipt_markers(line: &str) -> (String, Vec<&str>) {
 
 /// Whether a line states a figure: a digit that is not part of an identifier (the
 /// `3.5` in `Qwen3.5-4B`, the `0` in `v0.1.0`) and not an ordered-list marker.
-fn states_a_figure(text: &str) -> bool {
+pub(crate) fn states_a_figure(text: &str) -> bool {
     let b = strip_list_marker(text).as_bytes();
     let mut i = 0;
     while i < b.len() {
