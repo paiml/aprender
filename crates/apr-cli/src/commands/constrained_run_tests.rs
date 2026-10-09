@@ -202,6 +202,21 @@ fn a_grammar_has_no_second_reader_and_says_nothing_it_did_not_check() {
 }
 
 #[test]
+fn an_empty_completion_is_refused_never_an_empty_success() {
+    // A grammar that admits the empty string still does not make "" a success
+    let lark = ConstraintRequest::Lark(r#"start: "yes" | """#.to_string());
+    let schema = ConstraintRequest::JsonSchema(schema());
+    for request in [&lark, &schema] {
+        for text in ["", " \n"] {
+            let r = constraint_verdict(request, Some(FinishReason::ConstraintComplete), text, 8)
+                .expect("an empty completion is refused");
+            assert_eq!(r.kind, "SchemaViolation");
+            assert!(r.message.contains("the output is empty"), "{}", r.message);
+        }
+    }
+}
+
+#[test]
 fn a_constrained_run_that_reports_no_constrained_finish_is_not_a_success() {
     let request = ConstraintRequest::JsonSchema(schema());
     for finish in [None, Some(FinishReason::Stop)] {

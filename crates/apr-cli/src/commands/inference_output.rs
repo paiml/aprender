@@ -220,6 +220,21 @@ fn execute_inference(
     // Fallback: placeholder when realizar not available
     #[cfg(not(feature = "inference"))]
     {
+        // #3793: no engine here to mask with, so a constraint is refused by name, never
+        // dropped for the placeholder below.
+        if options.constraint.is_set() {
+            return Err(CliError::ConstraintRefused(
+                crate::error::ConstraintRefusal {
+                    kind: "StructuredOutputNotCompiled",
+                    message: "StructuredOutputNotCompiled: this build has no `inference` \
+                              feature, so a schema or grammar cannot be enforced (refused \
+                              rather than ignored)"
+                        .to_string(),
+                    removed_by: Some("build apr with the `inference` feature".to_string()),
+                    finish_reason: None,
+                },
+            ));
+        }
         let input_desc =
             input_path.map_or_else(|| "stdin".to_string(), |p| p.display().to_string());
 
