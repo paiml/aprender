@@ -1622,6 +1622,27 @@ pub enum ModelCommands {
         #[arg(long, value_name = "COMMIT")]
         llama_pin: Option<FreeText>,
     },
+    /// Publish a release dir to the HF Hub: rc to its branch, released to main + tag (idempotent)
+    Publish {
+        /// Release directory holding model-release-v1.json
+        #[arg(value_name = "DIR")]
+        dir: DirPath,
+        /// HF model repo, owner/name
+        #[arg(long)]
+        repo: FreeText,
+        /// File holding the HF token, mode 0600, on the driver host (never an env var)
+        #[arg(long, value_name = "FILE")]
+        token_file: InputFile,
+        /// Line state directory: <version>/model-publish-receipt-v1.json
+        #[arg(long, value_name = "DIR")]
+        state: DirPath,
+        /// Hub endpoint
+        #[arg(long, default_value = "https://huggingface.co")]
+        endpoint: FreeText,
+        /// Print the receipt as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Build a release dir plus model-release-v1.json from pacha lineage (deterministic)
     Pack {
         /// Registered model: id, content hash, recorded sha256 or model file

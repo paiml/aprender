@@ -347,7 +347,7 @@ commands:
     # confirm/yank write only under --state/<version>/ (a yank never deletes);
     # speed-gate only reads its ledger.
     side_effects: [filesystem]
-    subcommands: [gate, pack, confirm, yank, speed-gate]
+    subcommands: [gate, pack, confirm, yank, speed-gate, publish]
 
   - name: canary
     category: evaluation
