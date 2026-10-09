@@ -137,8 +137,8 @@ fn the_new_refusals_are_one_named_line_each() {
     let cases = [
         (
             ConstraintError::UnsupportedPath {
-                path: "gguf-cuda".into(),
-                removed_by: "#3568 PR 3".into(),
+                path: "gguf-wgpu".into(),
+                removed_by: "not scheduled".into(),
             },
             "SchemaUnsupportedPath: ",
         ),
@@ -155,12 +155,12 @@ fn the_new_refusals_are_one_named_line_each() {
         assert!(!line.contains('\n'), "{line:?}");
     }
     let path = ConstraintError::UnsupportedPath {
-        path: "gguf-cuda".into(),
-        removed_by: "#3568 PR 3".into(),
+        path: "gguf-wgpu".into(),
+        removed_by: "not scheduled".into(),
     }
     .to_string();
     assert!(
-        path.contains("gguf-cuda") && path.contains("removed_by: #3568 PR 3"),
+        path.contains("gguf-wgpu") && path.contains("removed_by: not scheduled"),
         "{path}"
     );
     assert!(ConstraintError::Truncated { max_tokens: 7 }

@@ -316,7 +316,7 @@ fn generate_gguf_unconstrained(
             gen_config,
             config.no_gpu,
         )?;
-        Ok((tokens, used_gpu, cfg!(feature = "cuda") && !config.no_gpu))
+        Ok((tokens, used_gpu, session_cuda_attempted(config)))
     } else if let Some(qwen) = qwen35_host {
         // #3477/#4263: the one engine. The GPU forward (#3090) when this is a
         // cuda build and `--no-gpu` was not given; the CPU forward (#3091)
@@ -334,7 +334,7 @@ fn generate_gguf_unconstrained(
         mark_generation_start(); // #3981: host + device load end here
         let turn = session.generate(input_tokens, gen_config, &mut |_| true)?;
         // #3826: attempted is the same two facts as the MoE dispatch's.
-        Ok((turn.tokens, turn.used_gpu, cfg!(feature = "cuda") && !config.no_gpu))
+        Ok((turn.tokens, turn.used_gpu, session_cuda_attempted(config)))
     } else if let Some(model) = owned {
         run_gguf_generate(model, input_tokens, gen_config, config)
     } else {
@@ -421,11 +421,12 @@ fn run_gguf_inference(
     let infer_start = Instant::now();
     let _ = take_generation_start(); // #3981: never inherit a mark from an earlier run
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    // #3793: a constrained run takes the one engine on the CPU, which applies the
-    // constraint, or refuses by name before a token is generated
+    // #3793: a constrained run takes the one engine, which applies the constraint, or
+    // refuses by name before a token is generated. Its GPU pair is reported as the
+    // unconstrained run's is (#3568 PR 3, #3826)
     let (tokens, used_gpu, gpu_attempted, constrained) = match &config.constraint {
         Some(request) => {
-            let (tokens, stop) = generate_gguf_constrained(
+            let (tokens, used_gpu, gpu_attempted, stop) = generate_gguf_constrained(
                 request,
                 config,
                 &mapped,
@@ -434,7 +435,7 @@ fn run_gguf_inference(
                 &input_tokens,
                 &gen_config,
             )?;
-            (tokens, false, false, Some(stop))
+            (tokens, used_gpu, gpu_attempted, Some(stop))
         },
         None => {
             let (tokens, used_gpu, gpu_attempted) = generate_gguf_unconstrained(
