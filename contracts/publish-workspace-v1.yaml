@@ -229,8 +229,11 @@ falsification_tests:
       that tested another commit. A non-empty file is not proof; the run is read
       back and judged by clean_room_gate pinned to that one run. And it is the
       only door: `make publish` refuses a real upload (PUBLISH_DRY_RUN still
-      packages), and no other tracked shell script, make file, git hook or root
-      workflow runs `cargo publish` in a command without --dry-run. Commands are
+      packages), and no other tracked shell script, make file, git hook, root
+      workflow or file with a sh/bash/dash/ksh/zsh/bats shebang runs `cargo
+      publish` in a command without --dry-run. Two are allowed by file and
+      command: release_ready.sh's case-table stand-in, and the v0.68.1 audit
+      record of publish_strict.sh, which nothing runs. Commands are
       read as the shell runs them: continuation lines joined, each command of a
       line on its own, wrappers, VAR=val, $CARGO and cargo's global flags
       included. cascade-publish.sh is the one other upload, behind its own

@@ -288,25 +288,67 @@ door_case none 'cargo-publish x'
 # The two gated doors: publish_strict.sh (the rows above) and cascade-publish.sh (its own
 # clean_room_gate, scripts/check_cascade_clean_room_gate.sh). The scan must see each one's
 # upload line, or it is blind, and nothing else in them: a second upload added to a gated
-# file is not behind the gate just because the file has one. One fixture is allowed by file
-# AND text: release_ready.sh writes a stand-in publish_strict.sh for its own case table, so a
-# real upload added there is still caught. This file is scanned without its case table rows.
-# Make files and git hooks at any depth (`make -C crates/x publish` is a door too). Workflows only at the
-# root: GitHub runs no other .github/workflows directory.
+# file is not behind the gate just because the file has one. This file is scanned without
+# its case table rows.
+# SCOPE. By name: shell scripts, make files and git hooks at any depth (`make -C crates/x
+# publish` is a door too); workflows only at the root, as GitHub runs no other
+# .github/workflows directory. By content: any other tracked file that names publish and
+# starts with a sh/bash/dash/ksh/zsh/bats shebang, so an extensionless script is read too.
+# Not scanned: Rust and Python, which build the call as an argv (the contract names them).
+# ALLOWED is matched by file AND command, so a second upload added to one is still caught,
+# and each must still be seen (the positive control for the content scope):
+# - release_ready.sh writes a stand-in publish_strict.sh for its own case table;
+# - the v0.68.1 audit record, publish_strict.sh as that release ran it, kept as evidence.
+#   Nothing runs or cites it. Run by hand it would upload on a non-empty run-id file alone.
 GATED='scripts/release/publish_strict.sh scripts/cascade-publish.sh'
 GATED_CMD='cargo publish "${sel[@]}" --locked > "$log" 2>&1'
-FIXTURE='scripts/release/release_ready.sh:cargo publish -p x'
+DOOR_ALLOWED='scripts/release/release_ready.sh:cargo publish -p x
+docs/audits/release/v0.68.1/publish_strict.as-run.sh.txt:cargo publish "${sel[@]}" --locked > "$log" 2>&1'
+export DOOR_ALLOWED
 SELF=scripts/check_publish_strict_cleanroom.sh
+SHEBANG_RE='^#!.*[/[:space:]](sh|bash|dash|ksh|mksh|zsh|bats)([[:space:]]|$)'
+is_shell_script() { local l=''; IFS= read -r l < "$1" || [ -n "$l" ]; printf '%s\n' "$l" | grep -qE "$SHEBANG_RE"; }
+sb_n=0 sb_ok=0
+shebang_case() { # shebang_case shell|other FIRST-LINE
+  local got=other
+  sb_n=$((sb_n + 1))
+  printf '%s\necho\n' "$2" > "$WORK/shebang-case"
+  is_shell_script "$WORK/shebang-case" && got=shell
+  if [ "$got" = "$1" ]; then sb_ok=$((sb_ok + 1)); else fail "shebang_case_table: want $1, got $got: $2"; fi
+}
+shebang_case shell '#!/bin/sh'
+shebang_case shell '#!/bin/bash'
+shebang_case shell '#! /bin/bash -e'
+shebang_case shell '#!/usr/bin/env bash'
+shebang_case shell '#!/usr/bin/env -S bash -eu'
+shebang_case shell '#!/usr/bin/env bats'
+shebang_case shell '#!/bin/dash'
+shebang_case shell '#!/usr/bin/zsh'
+shebang_case other '#!/usr/bin/env python3'
+shebang_case other '#!/usr/bin/perl -w'
+shebang_case other '#!/usr/bin/env node'
+shebang_case other '# runs under bash'
+shebang_case other 'cargo publish -p x'
+shebang_case other '#!/usr/bin/env bashful'
+[ "$sb_ok" -eq "$sb_n" ] && pass "shebang_case_table ($sb_ok/$sb_n cases)"
 mapfile -t scope < <(git -C "$DOORS_ROOT" ls-files -- '*.sh' '*.bash' '*.mk' \
   'Makefile' '*/Makefile' 'makefile' '*/makefile' 'GNUmakefile' '*/GNUmakefile' \
   '.githooks/*' '*/.githooks/*' '.github/workflows/*.yml' '.github/workflows/*.yaml' ":(exclude)$SELF")
+named=${#scope[@]}
+while IFS= read -r f; do
+  is_shell_script "$DOORS_ROOT/$f" && scope+=("$f")
+done < <(git -C "$DOORS_ROOT" grep -lI -e publish -- ":(exclude)$SELF" ':(exclude)*.sh' ':(exclude)*.bash' \
+  ':(exclude)*.mk' ':(exclude)Makefile' ':(exclude)*/Makefile' ':(exclude)makefile' ':(exclude)*/makefile' \
+  ':(exclude)GNUmakefile' ':(exclude)*/GNUmakefile' ':(exclude).githooks/*' ':(exclude)*/.githooks/*' \
+  ':(exclude).github/workflows/*' 2>/dev/null)
 raw=$( (cd "$DOORS_ROOT" && door_lines "${scope[@]}") || true)
 if [ -f "$DOORS_ROOT/$SELF" ]; then
-  sed 's/^door_case .*//' "$DOORS_ROOT/$SELF" > "$WORK/self-scan.sh"
+  sed 's/^door_case .*//; s/^shebang_case .*//' "$DOORS_ROOT/$SELF" > "$WORK/self-scan.sh"
   raw+=$'\n'$( (door_lines "$WORK/self-scan.sh" || true) | sed "s#^$WORK/self-scan.sh:#$SELF:#")
 fi
+cmds_of() { printf '%s\n' "$raw" | awk -v f="$1:" 'index($0, f) == 1 { sub(/^[^:]*:[0-9]+:/, ""); print }'; }
 for g in $GATED; do
-  got=$(printf '%s\n' "$raw" | awk -v f="$g:" 'index($0, f) == 1 { sub(/^[^:]*:[0-9]+:/, ""); print }')
+  got=$(cmds_of "$g")
   if [ -z "$got" ]; then
     fail "door_scan_sees $g: no upload line found in it (${#scope[@]} files scanned), so the scan proves nothing"
   elif [ "$got" != "$GATED_CMD" ]; then
@@ -315,12 +357,21 @@ for g in $GATED; do
     pass "door_scan_sees $g (its one upload line, and no other)"
   fi
 done
-doors=$(printf '%s\n' "$raw" | awk -v gated=" $GATED " -v fx="$FIXTURE" '
+while IFS= read -r a; do
+  af=${a%%:*}
+  if [ "$(cmds_of "$af")" = "${a#*:}" ]; then
+    pass "door_scan_sees_allowed $af (its one allowed command)"
+  else
+    fail "door_scan_sees_allowed $af: want exactly ${a#*:}, got: $(cmds_of "$af" | tr '\n' '|') (blind, or the file changed or is gone: then update DOOR_ALLOWED)"
+  fi
+done <<< "$DOOR_ALLOWED"
+doors=$(printf '%s\n' "$raw" | awk -v gated=" $GATED " '
+  BEGIN { n = split(ENVIRON["DOOR_ALLOWED"], a, "\n"); for (i = 1; i <= n; i++) ok[a[i]] = 1 }
   { f = $0; sub(/:.*/, "", f); t = $0; sub(/^[^:]*:[0-9]+:/, "", t) }
-  f == "" || index(gated, " " f " ") || f ":" t == fx { next }
+  f == "" || index(gated, " " f " ") || ((f ":" t) in ok) { next }
   { print }')
 if [ -z "$doors" ]; then
-  pass "no_other_door (${#scope[@]} tracked shell scripts, make files, git hooks and root workflows, and this file, scanned)"
+  pass "no_other_door (${#scope[@]} files scanned: $named tracked shell scripts, make files, git hooks and root workflows, $((${#scope[@]} - named)) more by shebang, and this file)"
 else
   while IFS= read -r d; do fail "no_other_door: a real cargo publish outside the gated doors: $d"; done <<< "$doors"
 fi
