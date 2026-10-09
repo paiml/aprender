@@ -91,6 +91,11 @@ pub(crate) fn constraint_verdict(
 ) -> Option<ConstraintRefusal> {
     match finish_reason {
         Some(FinishReason::Length) => Some(refusal_of(&ConstraintError::Truncated { max_tokens })),
+        // An empty completion is an error, never an empty success, even where a grammar
+        // admits the empty string and no second reader runs
+        Some(FinishReason::ConstraintComplete) if text.trim().is_empty() => Some(refusal_of(
+            &ConstraintError::Violation("the output is empty".to_string()),
+        )),
         Some(FinishReason::ConstraintComplete) => match request {
             ConstraintRequest::JsonSchema(schema) => second_reader(schema, text)
                 .err()
