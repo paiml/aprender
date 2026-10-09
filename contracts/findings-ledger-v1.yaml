@@ -15,7 +15,7 @@
 # ── NO `entity:` HERE, ON PURPOSE ───────────────────────────────────────────────────────────────────────────
 #
 # The ledger is many files, one per session, and `entity.ref` names one. More to the point: this contract binds
-# lines written AFTER it lands. The 59 lines already in docs/findings/ predate it and are not rewritten, so a
+# lines written AFTER it lands. The 60 lines already in docs/findings/ predate it and are not rewritten, so a
 # corpus gate pointed at them would be red on history nobody can fix by writing a better line, and no PR or
 # release step reads docs/findings/. The shape therefore grades zero focus nodes in the corpus; it is not in
 # `armed_shapes`, so that zero never feeds a verdict. It is graded where a line is written:
