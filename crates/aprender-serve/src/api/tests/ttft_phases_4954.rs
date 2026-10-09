@@ -242,5 +242,8 @@ async fn the_stream_reports_the_first_token_edge_it_measured() {
     assert_eq!(t["prompt_ms"].as_f64(), Some(5.0), "{t}");
     assert_eq!(t["prompt_n"].as_u64(), Some(7), "{t}");
     let first = t["first_token_ms"].as_f64().expect("first_token_ms");
-    assert!(first >= 30.0, "first_token_ms {first} < the 30 ms planted: {t}");
+    assert!(
+        first >= 30.0,
+        "first_token_ms {first} < the 30 ms planted: {t}"
+    );
 }

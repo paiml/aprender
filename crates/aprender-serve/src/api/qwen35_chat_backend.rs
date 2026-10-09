@@ -197,7 +197,8 @@ async fn try_qwen35_backend(
             session
                 .on_gpu
                 .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
-            r.map(|turn| (turn, decode_ended)).map_err(|e| e.to_string())
+            r.map(|turn| (turn, decode_ended))
+                .map_err(|e| e.to_string())
         },
         Err(_) => Err(POISONED.to_string()),
     })
@@ -234,8 +235,12 @@ async fn try_qwen35_backend(
 
     // #4954: the same phase split the stream reports; no stream, so no
     // first-content edge.
-    let timings = crate::api::PhaseTimings::from_marks(turn.prefill_started, turn.prefill_ended, decode_ended)
-        .to_timings_at(prompt_token_count, completion_tokens, start, None);
+    let timings = crate::api::PhaseTimings::from_marks(
+        turn.prefill_started,
+        turn.prefill_ended,
+        decode_ended,
+    )
+    .to_timings_at(prompt_token_count, completion_tokens, start, None);
     let duration = start.elapsed();
     state.metrics.record_success(completion_tokens, duration);
     Some(build_chat_response(
