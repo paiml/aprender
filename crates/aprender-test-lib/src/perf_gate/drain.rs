@@ -490,6 +490,15 @@ pub struct RequestOutcome {
     /// `None` when the server reported none — never a client-side estimate
     /// (PP-13).
     pub prefill_ms: Option<f64>,
+    /// #4954 — the server's `timings.load_ms`: handler start to the first
+    /// prompt forward. `apr serve` only, and omitted when not reported, so a
+    /// record from before it reads unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_ms: Option<f64>,
+    /// #4954 — the server's `timings.first_token_ms`: the end of prefill to
+    /// the first content chunk. `apr serve` only; omitted when not reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_token_ms: Option<f64>,
     /// Concurrent requests in flight at the instant this one was issued. The
     /// direct per-request evidence that the client was actually concurrent
     /// (PP-8).
@@ -516,6 +525,8 @@ impl RequestOutcome {
             expected_tokens: None,
             ttft_ms: None,
             prefill_ms: None,
+            load_ms: None,
+            first_token_ms: None,
             in_flight_at_start: 0,
             token_times_ms: Vec::new(),
         }
@@ -540,6 +551,15 @@ impl RequestOutcome {
     pub fn server_prefill(mut self, prompt_tokens: u32, prefill_ms: f64) -> Self {
         self.prompt_tokens = prompt_tokens;
         self.prefill_ms = Some(prefill_ms);
+        self
+    }
+
+    /// Record the server's TTFT edges around prefill (#4954): from the
+    /// handler's start to prefill, and from prefill's end to the first chunk.
+    #[must_use]
+    pub fn server_edges(mut self, load_ms: Option<f64>, first_token_ms: Option<f64>) -> Self {
+        self.load_ms = load_ms;
+        self.first_token_ms = first_token_ms;
         self
     }
 
@@ -639,6 +659,9 @@ impl RequestOutcome {
             prompt_tokens: self.prompt_tokens,
             ttft_ms: self.ttft_ms,
             in_flight_at_start: self.in_flight_at_start,
+            prefill_ms: self.prefill_ms,
+            load_ms: self.load_ms,
+            first_token_ms: self.first_token_ms,
         }
     }
 }
@@ -663,6 +686,18 @@ pub struct SampleRow {
     pub ttft_ms: Option<f64>,
     /// In-flight requests when this one was issued (PP-8).
     pub in_flight_at_start: u32,
+    /// The server's phase split of the TTFT (#4954), so a reader can find the
+    /// phase that holds a gap: `timings.prompt_ms`, and on `apr serve`
+    /// `timings.load_ms` and `timings.first_token_ms`. Each is omitted when
+    /// the server reported none, so a row from before them reads unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefill_ms: Option<f64>,
+    /// See `prefill_ms`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_ms: Option<f64>,
+    /// See `prefill_ms`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_token_ms: Option<f64>,
 }
 
 /// Receipt-level facts a band needs in order to know its own status.

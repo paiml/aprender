@@ -130,6 +130,14 @@ pub struct ServerTimings {
     /// The server's own `predicted_n / predicted_ms`, in tokens per second.
     #[serde(default)]
     pub predicted_per_second: Option<f64>,
+    /// #4954 — `apr serve` only: milliseconds from the handler's start to the
+    /// first prompt forward. llama.cpp reports none.
+    #[serde(default)]
+    pub load_ms: Option<f64>,
+    /// #4954 — `apr serve` only: milliseconds from the end of prefill to the
+    /// first content chunk on the wire. llama.cpp reports none.
+    #[serde(default)]
+    pub first_token_ms: Option<f64>,
 }
 
 /// A streaming chunk response from the chat completion endpoint.
@@ -1617,5 +1625,8 @@ mod tests {
         assert_eq!(t.prompt_ms, Some(40.0));
         assert_eq!(t.predicted_n, Some(128));
         assert_eq!(t.prompt_per_second, None, "absent stays absent, never 0.0");
+        // #4954: llama.cpp reports no phase edges; they read as absent.
+        assert_eq!(t.load_ms, None);
+        assert_eq!(t.first_token_ms, None);
     }
 }

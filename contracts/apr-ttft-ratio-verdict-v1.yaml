@@ -1,5 +1,5 @@
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-10-09'
   author: PAIML Engineering
   description: "The time-to-first-token row of the 0.71.1 train, as a verdict. TTFT ratio = reference TTFT / apr TTFT, per GPU host, and the row is green when the lower bound of its 95% interval is at least the floor in scripts/perf-matrix.yaml. The receipts already carry the ratio; this contract owns the reader that turns them into GREEN, RED or NOT MEASURED, and the rule that a receipt which cannot be read, or a host that was not measured, is never GREEN and never RED."
@@ -62,6 +62,15 @@ equations:
       - "prefill_started follows the reserve and precedes the first prompt forward; prefill_ended follows the last prompt forward, the checkpoint suffix included, and precedes the first on_token call and the first decode forward"
       - "An edge with a missing or out-of-order mark is absent, never 0; prompt_ms and predicted_ms appear only when both phases were measured"
 
+  the_gap_is_read_by_phase:
+    formula: "per side, the p50 over completed samples of ttft, prefill and outside prefill = ttft - prefill; for apr also of load, first token and transfer = ttft - load - prefill - first token"
+    domain: "one receipt band with a reference baseline; samples carry the server's prompt_ms, load_ms and first_token_ms when it reported them"
+    codomain: "one line printed under the band's reading, apr beside the reference with the gap for each phase"
+    invariants:
+      - "A delay planted in one part of apr's TTFT moves that part's p50 and the ttft p50 by the delay, and no other part"
+      - "A part no completed sample reports is printed as absent, never 0, and a timed-out sample adds to no part"
+      - "The line never changes the outcome; receipts written before the phase keys parse and print absent parts"
+
 proof_obligations:
   - id: APR-TTFT-INV-001
     type: invariant
@@ -98,6 +107,11 @@ proof_obligations:
     property: "The prefill marks bracket every prompt forward and nothing else"
     formal: "on a prompt prefilled in two calls (up to its checkpoint, then the rest), both calls run inside [prefill_started, prefill_ended], the reserve ends before prefill_started, and the first on_token call and every decode forward begin after prefill_ended"
     applies_to: the_ttft_splits_by_phase
+  - id: APR-TTFT-INV-008
+    type: invariant
+    property: "The reader charges a planted delay to its own part of the gap"
+    formal: "with apr samples whose load, prefill, first token and transfer have p50 6, 41, 6 and 11 ms, adding 100 ms to one part in every sample moves that part's p50 and the ttft p50 by 100 ms, outside prefill by 100 ms unless the plant was prefill, and leaves the other parts equal; the verdict's outcome is the same with and without the phase keys"
+    applies_to: the_gap_is_read_by_phase
 
 falsification_tests:
   - id: FALSIFY-APR-TTFT-001
@@ -184,6 +198,18 @@ falsification_tests:
     test: "cargo test -p aprender-serve --lib session::tests::prefill_marks_"
     if_fails: "The reserve, the caller's channel send or a decode step is reported as prefill, or the checkpoint suffix call is left out of it"
 
+  - id: FALSIFY-APR-TTFT-015
+    rule: "The receipt reader charges a planted delay to the part that holds it"
+    prediction: "Each of four plants of 100 ms (load, prefill, first token, transfer) in apr's samples moves its own p50 and the ttft p50 by 100 ms and no other part; a part no sample reports is absent, a timed-out sample is left out, and the printed line never changes GREEN or RED"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::phases_"
+    if_fails: "The Pareto of the gap names a phase that does not hold the time, or a missing part reads as 0 ms and hides where the gap is"
+
+  - id: FALSIFY-APR-TTFT-016
+    rule: "The server's phase keys reach the band's samples"
+    prediction: "A streamed terminal timings block with prompt_ms 40, load_ms 5 and first_token_ms 7 gives every completed sample prefill 40, load 5 and first token 7; a llama.cpp block without the keys reads them as absent"
+    test: "cargo test -p aprender-test-lib --lib llm::band::tests::the_band_records_what_the_server_declared"
+    if_fails: "The server measures its phases and the receipt drops them, so the reader prints every apr part as absent"
+
 qa_gate:
   id: F-APR-TTFT-001
   name: "TTFT ratio verdict — three outcomes, a floor in one file, and no verdict from missing evidence"
@@ -193,3 +219,4 @@ qa_gate:
     - "a_band_counts_only_when_both_sides_were_measured"
     - "the_receipt_names_what_was_measured"
     - "the_ttft_splits_by_phase"
+    - "the_gap_is_read_by_phase"

@@ -23,12 +23,17 @@
 //!
 //! The floor, the host list and the replicate minimum come from the matrix; no
 //! threshold is written here.
+//!
+//! Beside each receipt's line, the gap split by phase (#4954): the p50 of each
+//! side's TTFT, of its server-reported prefill, and of what lies outside
+//! prefill; for `apr`, that last part split again into load, first token and
+//! transfer. It names the phase that holds the gap and never moves the outcome.
 
 use std::path::Path;
 
 use serde::Deserialize;
 
-use super::drain::BandStatus;
+use super::drain::{percentile, BandStatus, Outcome, SampleRow};
 use super::protocol::PERF_MATRIX_SOURCE;
 use super::receipt::{Receipt, ReceiptBand};
 
@@ -403,11 +408,84 @@ fn read_receipt(name: &str, text: &str, id: &RunIdentity) -> Result<Reading, Str
         line.push_str("\n    reason: ");
         line.push_str(&reason);
     }
+    if let Some(phases) = phase_line(band) {
+        line.push_str("\n    ");
+        line.push_str(&phases);
+    }
     Ok(Reading {
         replicate: band.replicate,
         lcb95,
         line,
     })
+}
+
+/// One side's TTFT by phase (#4954): the p50, in milliseconds, of each part
+/// over the side's completed rows. A part a row does not report is left out
+/// of that part's p50, and a part no row reports is `None`, never 0.
+#[derive(Debug, Default, PartialEq)]
+struct PhaseMedians {
+    ttft: Option<f64>,
+    prefill: Option<f64>,
+    outside_prefill: Option<f64>,
+    load: Option<f64>,
+    first_token: Option<f64>,
+    transfer: Option<f64>,
+}
+
+fn p50(values: impl Iterator<Item = f64>) -> Option<f64> {
+    let mut v: Vec<f64> = values.filter(|x| x.is_finite()).collect();
+    v.sort_by(f64::total_cmp);
+    percentile(&v, 0.5)
+}
+
+impl PhaseMedians {
+    fn of(rows: &[SampleRow]) -> Self {
+        let done: Vec<&SampleRow> = rows
+            .iter()
+            .filter(|r| r.outcome == Outcome::Completed)
+            .collect();
+        let part = |f: fn(&SampleRow) -> Option<f64>| p50(done.iter().filter_map(|r| f(r)));
+        Self {
+            ttft: part(|r| r.ttft_ms),
+            prefill: part(|r| r.prefill_ms),
+            outside_prefill: part(|r| Some(r.ttft_ms? - r.prefill_ms?)),
+            load: part(|r| r.load_ms),
+            first_token: part(|r| r.first_token_ms),
+            // What the client waited beyond the server's three phases: the
+            // request and the first chunk in transit, and parsing them.
+            transfer: part(|r| Some(r.ttft_ms? - r.load_ms? - r.prefill_ms? - r.first_token_ms?)),
+        }
+    }
+}
+
+fn ms(v: Option<f64>) -> String {
+    v.map_or_else(|| "-".to_string(), |v| format!("{v:.1}"))
+}
+
+/// `apr` against the reference, and the gap where both sides have the part.
+fn versus(apr: Option<f64>, reference: Option<f64>) -> String {
+    let gap = match (apr, reference) {
+        (Some(a), Some(r)) => format!("{:+.1}", a - r),
+        _ => "-".to_string(),
+    };
+    format!("{} vs {} (gap {gap})", ms(apr), ms(reference))
+}
+
+/// The band's TTFT gap split by phase, `apr` against the reference band it
+/// was measured with. `None` when the band carries no reference band.
+fn phase_line(band: &ReceiptBand) -> Option<String> {
+    let apr = PhaseMedians::of(&band.samples);
+    let reference = PhaseMedians::of(&band.baseline.as_ref()?.samples);
+    Some(format!(
+        "phases p50 ms, apr vs reference: ttft {}; prefill {}; outside prefill {}; \
+         apr outside prefill: load {}, first token {}, transfer {}",
+        versus(apr.ttft, reference.ttft),
+        versus(apr.prefill, reference.prefill),
+        versus(apr.outside_prefill, reference.outside_prefill),
+        ms(apr.load),
+        ms(apr.first_token),
+        ms(apr.transfer),
+    ))
 }
 
 /// One host's result: its minimum lcb95, or why it has none.
@@ -1043,5 +1121,158 @@ mod tests {
         assert_eq!(names, ["receipt.r2.json", "receipt.r10.json"]);
         assert_eq!(run.receipts[1].1, "receipt.r10.json");
         assert_eq!(run.provenance, PROVENANCE_FILE);
+    }
+
+    // FALSIFY-APR-TTFT-015: the gap split by phase (#4954).
+
+    use crate::perf_gate::drain::RequestOutcome;
+
+    const PLANT: f64 = 100.0;
+
+    /// A completed row whose TTFT is its four parts: load, prefill, first
+    /// token, transfer. Built through `to_row`, as the band runner builds it.
+    fn split_row(
+        load: Option<f64>,
+        prefill: f64,
+        first_token: Option<f64>,
+        transfer: f64,
+    ) -> SampleRow {
+        let ttft = load.unwrap_or(0.0) + prefill + first_token.unwrap_or(0.0) + transfer;
+        RequestOutcome::completed(0.0, ttft + 400.0, 128)
+            .streamed(ttft, Vec::new())
+            .server_prefill(512, prefill)
+            .server_edges(load, first_token)
+            .to_row(0)
+    }
+
+    /// Three `apr` rows around `parts` (load, prefill, first token, transfer);
+    /// the p50 is the middle row, `parts` plus 1 ms each.
+    fn apr_rows(parts: [f64; 4]) -> Vec<SampleRow> {
+        (0..3)
+            .map(|i| {
+                let d = f64::from(i);
+                split_row(
+                    Some(parts[0] + d),
+                    parts[1] + d,
+                    Some(parts[2] + d),
+                    parts[3] + d,
+                )
+            })
+            .collect()
+    }
+
+    /// Three reference rows: llama.cpp reports prefill and no edges.
+    fn reference_rows() -> Vec<SampleRow> {
+        (0..3)
+            .map(|i| split_row(None, 40.0 + f64::from(i), None, 60.0))
+            .collect()
+    }
+
+    fn parts(m: &PhaseMedians) -> [Option<f64>; 4] {
+        [m.load, m.prefill, m.first_token, m.transfer]
+    }
+
+    #[test]
+    fn phases_a_delay_planted_in_one_part_moves_that_part_and_only_that_part() {
+        let base_parts = [5.0, 40.0, 5.0, 10.0];
+        let base = PhaseMedians::of(&apr_rows(base_parts));
+        assert_eq!(
+            parts(&base),
+            [Some(6.0), Some(41.0), Some(6.0), Some(11.0)],
+            "{base:?}"
+        );
+        assert_eq!(base.ttft, Some(64.0), "{base:?}");
+        assert_eq!(base.outside_prefill, Some(23.0), "{base:?}");
+        for planted in 0..4 {
+            let mut moved_parts = base_parts;
+            moved_parts[planted] += PLANT;
+            let moved = PhaseMedians::of(&apr_rows(moved_parts));
+            for (part, (got, was)) in parts(&moved).into_iter().zip(parts(&base)).enumerate() {
+                let want = if part == planted {
+                    was.map(|ms| ms + PLANT)
+                } else {
+                    was
+                };
+                assert_eq!(
+                    got, want,
+                    "a delay in part {planted} moved part {part}: {moved:?}"
+                );
+            }
+            assert_eq!(moved.ttft, base.ttft.map(|ms| ms + PLANT), "{moved:?}");
+            let outside = if planted == 1 {
+                base.outside_prefill
+            } else {
+                base.outside_prefill.map(|ms| ms + PLANT)
+            };
+            assert_eq!(moved.outside_prefill, outside, "{moved:?}");
+        }
+    }
+
+    #[test]
+    fn phases_a_part_no_row_reports_is_absent_not_zero() {
+        let mut rows = reference_rows();
+        // A request that did not complete is no part of any phase.
+        let mut timed_out = split_row(Some(9e3), 9e3, Some(9e3), 9e3);
+        timed_out.outcome = Outcome::Timeout;
+        rows.push(timed_out);
+        let m = PhaseMedians::of(&rows);
+        assert_eq!(m.prefill, Some(41.0), "{m:?}");
+        assert_eq!(m.ttft, Some(101.0), "{m:?}");
+        assert_eq!(m.outside_prefill, Some(60.0), "{m:?}");
+        assert_eq!(
+            (m.load, m.first_token, m.transfer),
+            (None, None, None),
+            "{m:?}"
+        );
+
+        // Rows from before the split carry no prefill: nothing outside it either.
+        let mut bare = split_row(None, 40.0, None, 60.0);
+        bare.prefill_ms = None;
+        let m = PhaseMedians::of(&[bare]);
+        assert_eq!(m.ttft, Some(100.0), "{m:?}");
+        assert_eq!((m.prefill, m.outside_prefill), (None, None), "{m:?}");
+        assert_eq!(PhaseMedians::of(&[]), PhaseMedians::default());
+    }
+
+    #[test]
+    fn phases_are_printed_beside_the_reading_and_never_move_the_outcome() {
+        let phased = |name: &str, lcb95: f64| -> TtftRun {
+            let receipts = (1..=5)
+                .map(|r| {
+                    receipt_with(name, r, lcb95, |v| {
+                        v["bands"][0]["samples"] = json!(apr_rows([5.0, 40.0, 5.0, 10.0]));
+                        v["bands"][0]["baseline"]["samples"] = json!(reference_rows());
+                    })
+                })
+                .collect();
+            run_with(sidecar_with(name, |_| {}), name, receipts)
+        };
+        for lcb95 in [1.2, 0.4] {
+            let plain = ttft_verdict(
+                &policy(),
+                &[host("lambda", &[lcb95; 5]), host("gx10", &[lcb95; 5])],
+            );
+            let with = ttft_verdict(&policy(), &[phased("lambda", lcb95), phased("gx10", lcb95)]);
+            assert_eq!(with.outcome, plain.outcome, "{:#?}", with.lines);
+            assert!(
+                says(
+                    &with,
+                    "prefill 41.0 vs 41.0 (gap +0.0); outside prefill 23.0 vs 60.0 (gap -37.0)"
+                ),
+                "{:#?}",
+                with.lines
+            );
+            assert!(
+                says(
+                    &with,
+                    "apr outside prefill: load 6.0, first token 6.0, transfer 11.0"
+                ),
+                "{:#?}",
+                with.lines
+            );
+        }
+        // A receipt from before the split prints its parts as absent.
+        let plain = ttft_verdict(&policy(), &green_pair());
+        assert!(says(&plain, "prefill - vs - (gap -)"), "{:#?}", plain.lines);
     }
 }
