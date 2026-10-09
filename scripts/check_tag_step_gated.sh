@@ -203,7 +203,7 @@ judge() {
     else printf 'ok    unreadable policy block -> no tag, nothing carried (not measured is not a pass)\n'; fi
     # #4950 G1: arming the tag for the pre-push guard fails -> the tag is never pushed
     out=$(run_cut_tag "$ap" 0 0 0 pass 0 none crux 2) || true
-    if grep -q 'GIT-PUSH' <<< "$out" || ! grep -q '^DIE arming v0.0.0 for the pre-push tag guard failed' <<< "$out"; then
+    if grep -q 'GIT-PUSH' <<< "$out" || ! grep -q '^DIE arming v0.0.0 .*pre-push tag guard failed' <<< "$out"; then
         printf 'FAIL  arm rc=2 -> the tag was pushed unarmed, or the refusal named another cause\n%s\n' "$out" >&2; bad=1
     else printf 'ok    arm rc=2 -> tag not pushed\n'; fi
     # #4950 G2, over the WHOLE autopilot: GitHub polls share one hourly budget, so every wait is
