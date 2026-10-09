@@ -1,6 +1,6 @@
+use super::super::repo_api::{CommitOp, RepoApi};
 use super::super::{
-    base64_encode, HfHubClient, HfHubError, ModelCard, PushOptions, Result, UploadProgress,
-    UploadResult,
+    HfHubClient, HfHubError, ModelCard, PushOptions, Result, UploadProgress, UploadResult,
 };
 use std::path::PathBuf;
 
@@ -354,8 +354,11 @@ impl HfHubClient {
     }
 
     /// Upload small file directly via commit API
+    ///
+    /// PMAT-690 P3-C-prep defect 5 — small-file half of the
+    /// `feedback_hf_commit_ndjson_load_bearing.md` memory rule: the file goes
+    /// as an NDJSON `file` line, which [`RepoApi::commit`] (#4961) writes.
     #[cfg(feature = "hf-hub-integration")]
-    #[allow(clippy::disallowed_methods)] // serde_json::json! macro internally uses unwrap()
     fn upload_direct(
         &self,
         repo_id: &str,
@@ -364,49 +367,12 @@ impl HfHubClient {
         commit_msg: &str,
         token: &str,
     ) -> Result<()> {
-        let url = format!("{}/api/models/{}/commit/main", self.api_base, repo_id);
-
-        // PMAT-690 P3-C-prep defect 5 — small-file half of the
-        // `feedback_hf_commit_ndjson_load_bearing.md` memory rule.
-        // The JSON `addOrUpdate` body returns 200 but silently drops the
-        // file (same failure mode as the LFS commit before its fix).
-        // Use NDJSON with `key: "header"` + `key: "file"` per HF Hub spec.
-        let header_line = serde_json::json!({
-            "key": "header",
-            "value": {
-                "summary": commit_msg,
-                "description": ""
-            }
-        });
-        let file_line = serde_json::json!({
-            "key": "file",
-            "value": {
-                "path": filename,
-                "content": base64_encode(data),
-                "encoding": "base64"
-            }
-        });
-        let ndjson_body = format!("{}\n{}", header_line, file_line);
-
-        let response = ureq::post(&url)
-            .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/x-ndjson")
-            .timeout(std::time::Duration::from_mins(2))
-            .send_string(&ndjson_body);
-
-        match response {
-            Ok(resp) if resp.status() >= 200 && resp.status() < 300 => Ok(()),
-            Ok(resp) => {
-                let body = resp.into_string().unwrap_or_default();
-                Err(HfHubError::NetworkError(format!("Upload failed: {body}")))
-            }
-            Err(ureq::Error::Status(code, resp)) => {
-                let body = resp.into_string().unwrap_or_default();
-                Err(HfHubError::NetworkError(format!(
-                    "Upload failed (HTTP {code}): {body}"
-                )))
-            }
-            Err(e) => Err(HfHubError::NetworkError(format!("Network error: {e}"))),
-        }
+        let op = CommitOp::File {
+            path: filename.to_string(),
+            bytes: data.to_vec(),
+        };
+        RepoApi::new(&self.api_base, repo_id, token)
+            .commit("main", commit_msg, &[op])
+            .map(drop)
     }
 }

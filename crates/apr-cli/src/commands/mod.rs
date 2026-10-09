@@ -87,8 +87,8 @@ pub(crate) mod hang_trace_classifier;
 pub(crate) mod hang_trace_lint;
 pub(crate) mod hex;
 pub(crate) mod hf_endpoint;
-#[cfg(feature = "training")]
-pub(crate) mod hf_http;
+#[cfg(test)]
+mod hf_one_path_guard;
 #[cfg(feature = "training")]
 pub(crate) mod hf_publish;
 #[cfg(feature = "training")]

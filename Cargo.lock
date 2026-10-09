@@ -286,7 +286,6 @@ dependencies = [
  "async-stream",
  "axum 0.7.9",
  "axum-test",
- "base64 0.22.1",
  "blake3",
  "bytemuck",
  "chrono",

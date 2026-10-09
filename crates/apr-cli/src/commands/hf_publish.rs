@@ -74,7 +74,25 @@ impl Token {
         Ok(Self(t.to_string()))
     }
 
-    /// The `Authorization` header value.
+    /// The hub this token acts on. The token goes into the `Authorization`
+    /// header of aprender's HF repo API, the one HF upload path (#4961), and
+    /// nowhere else.
+    #[cfg(feature = "hf-hub")]
+    fn hub(self, endpoint: &str, repo: &str) -> RepoHub {
+        RepoHub(aprender::hf_hub::repo_api::RepoApi::new(
+            endpoint, repo, self.0,
+        ))
+    }
+
+    /// Without the `hf-hub` feature there is no hub to act on.
+    #[cfg(not(feature = "hf-hub"))]
+    fn hub(self, _endpoint: &str, _repo: &str) -> RepoHub {
+        drop(self.0);
+        RepoHub
+    }
+
+    /// The `Authorization` header value; tests compare the parsed token.
+    #[cfg(test)]
     pub(crate) fn bearer(&self) -> String {
         format!("Bearer {}", self.0)
     }
@@ -137,6 +155,152 @@ pub(crate) trait Hub {
     /// One atomic commit on branch `rev`; returns the commit id.
     fn commit(&self, rev: &str, summary: &str, ops: &[Op]) -> HubResult<String>;
     fn create_tag(&self, rev: &str, tag: &str) -> HubResult<()>;
+}
+
+/// [`Hub`] over aprender's HF repo API, the one HF upload path (#4961): `apr
+/// publish` reaches the same endpoints through `HfHubClient`.
+#[cfg(feature = "hf-hub")]
+pub(crate) struct RepoHub(aprender::hf_hub::repo_api::RepoApi);
+
+/// Without the `hf-hub` feature every hub call fails, naming the feature.
+#[cfg(not(feature = "hf-hub"))]
+pub(crate) struct RepoHub;
+
+/// For each offered file, whether the preupload `answer` sends it to LFS.
+/// A file the answer does not name is an error, never a guess.
+#[cfg(feature = "hf-hub")]
+pub(crate) fn lfs_modes(
+    files: &[Upload<'_>],
+    answer: &[serde_json::Value],
+) -> HubResult<Vec<bool>> {
+    files
+        .iter()
+        .map(|f| {
+            answer
+                .iter()
+                .find(|a| a["path"] == f.path)
+                .map(|a| a["uploadMode"] == "lfs")
+                .ok_or_else(|| format!("preupload: no mode for {}", f.path))
+        })
+        .collect()
+}
+
+/// An LFS object this publisher cannot store: over 5 GiB the Hub wants the Xet
+/// protocol, which uploads and commits by itself and so cannot join the
+/// release's one commit.
+#[cfg(feature = "hf-hub")]
+pub(crate) fn needs_xet(size: u64, file: &Path) -> Option<String> {
+    aprender::hf_hub::xet::should_use_xet(size).then(|| {
+        format!(
+            "{}: {size} bytes is over the 5 GiB LFS limit and needs the Xet upload, \
+             which `apr model publish` does not do yet",
+            file.display()
+        )
+    })
+}
+
+#[cfg(feature = "hf-hub")]
+impl Hub for RepoHub {
+    fn refs(&self) -> HubResult<Refs> {
+        let r = self.0.refs().map_err(|e| e.to_string())?;
+        Ok(Refs {
+            branches: r.branches,
+            tags: r.tags,
+        })
+    }
+
+    fn tree(&self, rev: &str) -> HubResult<Vec<RemoteFile>> {
+        let files = self.0.tree(rev).map_err(|e| e.to_string())?;
+        Ok(files
+            .into_iter()
+            .map(|f| RemoteFile {
+                path: f.path,
+                size: f.size,
+                git_oid: f.git_oid,
+                lfs_sha256: f.lfs_sha256,
+            })
+            .collect())
+    }
+
+    fn preupload(&self, rev: &str, files: &[Upload<'_>]) -> HubResult<Vec<bool>> {
+        use aprender::hf_hub::repo_api::PreuploadFile;
+        let offer: Vec<PreuploadFile<'_>> = files
+            .iter()
+            .map(|f| PreuploadFile {
+                path: f.path,
+                size: f.size,
+                sample: &f.sample,
+            })
+            .collect();
+        let answer = self.0.preupload(rev, &offer).map_err(|e| e.to_string())?;
+        lfs_modes(files, &answer)
+    }
+
+    fn upload_lfs(&self, sha256: &str, size: u64, file: &Path) -> HubResult<bool> {
+        use aprender::hf_hub::repo_api::LfsBody;
+        if let Some(e) = needs_xet(size, file) {
+            return Err(e);
+        }
+        self.0
+            .upload_lfs(sha256, size, LfsBody::File(file))
+            .map_err(|e| e.to_string())
+    }
+
+    fn create_branch(&self, branch: &str, from: &str) -> HubResult<()> {
+        self.0
+            .create_branch(branch, from)
+            .map_err(|e| e.to_string())
+    }
+
+    fn commit(&self, rev: &str, summary: &str, ops: &[Op]) -> HubResult<String> {
+        use aprender::hf_hub::repo_api::CommitOp;
+        let ops: Vec<CommitOp> = ops
+            .iter()
+            .cloned()
+            .map(|op| match op {
+                Op::Lfs { path, sha256, size } => CommitOp::Lfs { path, sha256, size },
+                Op::File { path, bytes } => CommitOp::File { path, bytes },
+                Op::Delete { path } => CommitOp::Delete { path },
+            })
+            .collect();
+        self.0.commit(rev, summary, &ops).map_err(|e| e.to_string())
+    }
+
+    fn create_tag(&self, rev: &str, tag: &str) -> HubResult<()> {
+        self.0.create_tag(rev, tag).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(not(feature = "hf-hub"))]
+impl RepoHub {
+    fn off<T>() -> HubResult<T> {
+        Err("apr model publish needs the 'hf-hub' feature; rebuild with --features hf-hub".into())
+    }
+}
+
+#[cfg(not(feature = "hf-hub"))]
+impl Hub for RepoHub {
+    fn refs(&self) -> HubResult<Refs> {
+        Self::off()
+    }
+    fn tree(&self, _rev: &str) -> HubResult<Vec<RemoteFile>> {
+        Self::off()
+    }
+    fn preupload(&self, _rev: &str, _files: &[Upload<'_>]) -> HubResult<Vec<bool>> {
+        Self::off()
+    }
+    fn upload_lfs(&self, _sha256: &str, _size: u64, _file: &Path) -> HubResult<bool> {
+        Self::off()
+    }
+    fn create_branch(&self, _branch: &str, _from: &str) -> HubResult<()> {
+        Self::off()
+    }
+    fn commit(&self, _rev: &str, _summary: &str, _ops: &[Op]) -> HubResult<String> {
+        Self::off()
+    }
+    fn create_tag(&self, _rev: &str, _tag: &str) -> HubResult<()> {
+        Self::off()
+    }
 }
 
 fn invalid(msg: impl Into<String>) -> CliError {
@@ -573,7 +737,7 @@ pub(crate) fn run_publish(
     check_repo(repo)?;
     let (token, source) = super::hf_token::resolve_from_process(token_file)?;
     eprintln!("token: {source}");
-    let hub = super::hf_http::HfHttp::new(endpoint, repo, token);
+    let hub = token.hub(endpoint, repo);
     let mut log = Vec::new();
     let result = publish(&hub, repo, dir, &mut log);
     for line in &log {
