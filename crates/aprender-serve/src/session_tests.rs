@@ -20,6 +20,8 @@ struct Scripted {
     restores: usize,
     /// The forward loses its checkpoint (a reallocation, a fallback).
     lose_checkpoint: bool,
+    /// What each `validate` call judged the backend on (#4342).
+    probes: Vec<Vec<u32>>,
 }
 
 impl Scripted {
@@ -35,6 +37,7 @@ impl Scripted {
             saved: None,
             restores: 0,
             lose_checkpoint: false,
+            probes: Vec::new(),
         }
     }
 
@@ -65,6 +68,10 @@ impl ArchForward for Scripted {
     fn reserve(&mut self, _positions: usize) -> Result<bool> {
         self.reserves += 1;
         Ok(self.drop_on_reserve)
+    }
+    fn validate(&mut self, probe: &[u32]) -> Result<()> {
+        self.probes.push(probe.to_vec());
+        Ok(())
     }
     fn checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
         let marker = self.marker?;
@@ -608,4 +615,32 @@ fn prepare_turn_is_the_setup_generate_would_do() {
         .expect("turn");
     assert_eq!(turn.tokens, vec![7401, 7402, 7403, 3, 3, 3, 3]);
     assert_eq!(s.engine().calls, vec![(3, 0), (4, 3), (5, 4), (6, 5)]);
+}
+
+/// #4342: the guard `prepare_turn` runs judges the positions it judged when it
+/// ran inside `generate`, on the turn's first forward: the prefix the session
+/// checkpoints when it takes one (a chat prompt's last turn marker), else the
+/// whole prompt.
+#[test]
+fn prepare_turn_probes_what_the_first_forward_covers() {
+    let mut s = Session::new(Scripted::new(3, 10));
+    s.prepare_turn(&[7401, 7402, 7403], 4)
+        .expect("a prompt that fits");
+    assert_eq!(s.engine().probes, vec![vec![7401, 7402, 7403]]);
+
+    let mut s = Session::new(Scripted::checkpointing(3, 16, 7900));
+    let prompt = [7401, 7900, 7402, 7403];
+    s.prepare_turn(&prompt, 4).expect("a prompt that fits");
+    assert_eq!(
+        s.engine().probes,
+        vec![vec![7401]],
+        "the checkpointed prefix"
+    );
+    s.generate(&prompt, &greedy(2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(
+        s.engine().calls[0],
+        (1, 0),
+        "the first forward covers the probe"
+    );
 }
