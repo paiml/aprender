@@ -74,7 +74,7 @@ rc_decide() {
         printf 'skip branch %s is not release/X.Y.Z\n' "${D_BRANCH:-?}"; return 0
     fi
     # A release branch whose FINAL tag exists is released: an rc cut after it is a misfire (GitHub 422s it).
-    if printf '%s\n' "${D_FINALS:-}" | grep -qxF "v$v"; then printf 'skip final tag v%s already exists: release/%s is released\n' "$v" "$v"; return 0; fi
+    if grep -qxF "v$v" <<< "${D_FINALS:-}"; then printf 'skip final tag v%s already exists: release/%s is released\n' "$v" "$v"; return 0; fi
     for name in "${REQUIRED_CHECKS[@]}"; do
         # Every job with this name must be success, and at least one must exist:
         # a missing required check is not a green one.

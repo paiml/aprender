@@ -127,44 +127,48 @@ run_cov() {
 # judge_cov <autopilot> -- the #4950 G4 case table. Prints rows; returns the number of wrong ones.
 judge_cov() {
     local ap=$1 out w=0 tagblk
-    row() { if eval "$2"; then printf 'ok    %s\n' "$1"; else printf 'FAIL  %s\n%s\n' "$1" "$out" >&2; w=$((w + 1)); fi; }
+    row() { if [ "$1" -eq 0 ]; then printf 'ok    %s\n' "$2"; else printf 'FAIL  %s\n%s\n' "$2" "$out" >&2; w=$((w + 1)); fi; }
     out=$(run_cov "$ap" cov_dispatch_at_mc 0 none hit 0 success)
-    row "coverage: a receipt already qualifies -> nothing pushed, nothing dispatched" \
-        '! grep -qE "CALL-(PUSH|DISPATCH)" <<< "$out" && grep -q "^RUNID $" <<< "$out"'
+    ! grep -qE "CALL-(PUSH|DISPATCH)" <<< "$out" && grep -q "^RUNID $" <<< "$out"
+    row $? "coverage: a receipt already qualifies -> nothing pushed, nothing dispatched"
     out=$(run_cov "$ap" cov_dispatch_at_mc 1 none hit 0 success)
-    row "coverage: none qualifies, no branch -> push MC to coverage/V, dispatch on it, record the run" \
-        'grep -q "^ORDER CALL-RESOLVE CALL-LSREMOTE refs/heads/coverage/0.0.0 CALL-PUSH deadbeef:refs/heads/coverage/0.0.0 CALL-DISPATCH workflow run coverage-nightly.yml --repo paiml/aprender --ref coverage/0.0.0 CALL-LIST $" <<< "$out" && grep -q "^RUNID 555$" <<< "$out"'
+    grep -q "^ORDER CALL-RESOLVE CALL-LSREMOTE refs/heads/coverage/0.0.0 CALL-PUSH deadbeef:refs/heads/coverage/0.0.0 CALL-DISPATCH workflow run coverage-nightly.yml --repo paiml/aprender --ref coverage/0.0.0 CALL-LIST $" <<< "$out" && grep -q "^RUNID 555$" <<< "$out"
+    row $? "coverage: none qualifies, no branch -> push MC to coverage/V, dispatch on it, record the run"
     out=$(run_cov "$ap" cov_dispatch_at_mc 1 mc hit 0 success)
-    row "coverage: branch already at MC -> no push, dispatch" \
-        '! grep -q CALL-PUSH <<< "$out" && grep -q CALL-DISPATCH <<< "$out" && grep -q "^RUNID 555$" <<< "$out"'
+    ! grep -q CALL-PUSH <<< "$out" && grep -q CALL-DISPATCH <<< "$out" && grep -q "^RUNID 555$" <<< "$out"
+    row $? "coverage: branch already at MC -> no push, dispatch"
     out=$(run_cov "$ap" cov_dispatch_at_mc 1 other hit 0 success)
-    row "coverage: branch at another commit -> stop, nothing pushed or dispatched" \
-        'grep -q "^DIE coverage/0.0.0 on origin is at cafef00d" <<< "$out" && ! grep -qE "CALL-(PUSH|DISPATCH)" <<< "$out"'
+    grep -q "^DIE coverage/0.0.0 on origin is at cafef00d" <<< "$out" && ! grep -qE "CALL-(PUSH|DISPATCH)" <<< "$out"
+    row $? "coverage: branch at another commit -> stop, nothing pushed or dispatched"
     out=$(run_cov "$ap" cov_dispatch_at_mc 1 pushfail hit 0 success)
-    row "coverage: pushing coverage/V fails -> stop, nothing dispatched or recorded" \
-        'grep -q "^DIE pushing coverage/0.0.0 at deadbeef failed" <<< "$out" && ! grep -q CALL-DISPATCH <<< "$out" && grep -q "^RUNID $" <<< "$out"'
+    grep -q "^DIE pushing coverage/0.0.0 at deadbeef failed" <<< "$out" && ! grep -q CALL-DISPATCH <<< "$out" && grep -q "^RUNID $" <<< "$out"
+    row $? "coverage: pushing coverage/V fails -> stop, nothing dispatched or recorded"
     out=$(run_cov "$ap" cov_dispatch_at_mc 1 none hit 1 success)
-    row "coverage: a recorded run -> attach; no resolve, push or second dispatch" \
-        '! grep -qE "CALL-(RESOLVE|PUSH|DISPATCH)" <<< "$out" && grep -q "^RUNID 777$" <<< "$out"'
+    ! grep -qE "CALL-(RESOLVE|PUSH|DISPATCH)" <<< "$out" && grep -q "^RUNID 777$" <<< "$out"
+    row $? "coverage: a recorded run -> attach; no resolve, push or second dispatch"
     out=$(run_cov "$ap" cov_dispatch_at_mc 1 none empty 0 success)
-    row "coverage: no run at MC appears -> stop, no run recorded" \
-        'grep -q "^DIE no coverage-nightly run" <<< "$out" && grep -q "^RUNID $" <<< "$out"'
+    grep -q "^DIE no coverage-nightly run" <<< "$out" && grep -q "^RUNID $" <<< "$out"
+    row $? "coverage: no run at MC appears -> stop, no run recorded"
     out=$(run_cov "$ap" cov_wait 0 none hit 1 success)
-    row "coverage wait: run green -> continue" 'grep -q "^SAY COVERAGE run 777 at deadbeef green" <<< "$out" && ! grep -q "^DIE" <<< "$out"'
+    grep -q "^SAY COVERAGE run 777 at deadbeef green" <<< "$out" && ! grep -q "^DIE" <<< "$out"
+    row $? "coverage wait: run green -> continue"
     for c in failure cancelled; do
         out=$(run_cov "$ap" cov_wait 0 none hit 1 "$c")
-        row "coverage wait: run $c -> no tag" 'grep -q "^DIE coverage-nightly run 777 at deadbeef concluded .$c." <<< "$out"'
+        grep -q "^DIE coverage-nightly run 777 at deadbeef concluded .$c." <<< "$out"
+        row $? "coverage wait: run $c -> no tag"
     done
     out=$(run_cov "$ap" cov_wait 0 none hit 0 failure)
-    row "coverage wait: nothing dispatched -> no gh call (cut_tag judges the receipt)" '! grep -q CALL-VIEW <<< "$out" && ! grep -q "^DIE" <<< "$out"'
+    ! grep -q CALL-VIEW <<< "$out" && ! grep -q "^DIE" <<< "$out"
+    row $? "coverage wait: nothing dispatched -> no gh call (cut_tag judges the receipt)"
     # structure: the dispatch runs ahead of the T-1 lanes whenever the tag step will run, and the tag
     # step waits for the run ahead of the publish dry run and the tag
     out=$(grep -n '^run_step tag && cov_dispatch_at_mc$' "$ap")
-    row "coverage: dispatched before the T-1 lanes when the tag step runs" '[ -n "$out" ] && [ "${out%%:*}" -lt "$(grep -n "^t1_deep() {" "$ap" | cut -d: -f1)" ]'
+    [ -n "$out" ] && [ "${out%%:*}" -lt "$(grep -n "^t1_deep() {" "$ap" | cut -d: -f1)" ]
+    row $? "coverage: dispatched before the T-1 lanes when the tag step runs"
     tagblk=$(awk '/^if run_step tag; then$/,/^fi$/' "$ap")
     out=$tagblk
-    row "coverage: the tag step waits for the run before the dry run and cut_tag" \
-        'awk "/^  cov_wait\$/ { w = NR } /rc_publish_gate.sh --verify/ { r = NR } /^  cut_tag / { c = NR } END { exit !(w && r > w && c > w) }" <<< "$tagblk"'
+    awk "/^  cov_wait\$/ { w = NR } /rc_publish_gate.sh --verify/ { r = NR } /^  cut_tag / { c = NR } END { exit !(w && r > w && c > w) }" <<< "$tagblk"
+    row $? "coverage: the tag step waits for the run before the dry run and cut_tag"
     return "$w"
 }
 
@@ -214,36 +218,38 @@ tested-sha: $O" ;; *) lg='' ;; esac
 # judge_casc <autopilot> -- the #4950 cascade-premise case table. Returns the number of wrong rows.
 judge_casc() {
     local ap=$1 out w=0 cb
-    row() { if eval "$2"; then printf 'ok    %s\n' "$1"; else printf 'FAIL  %s\n%s\n' "$1" "$out" >&2; w=$((w + 1)); fi; }
+    row() { if [ "$1" -eq 0 ]; then printf 'ok    %s\n' "$2"; else printf 'FAIL  %s\n%s\n' "$2" "$out" >&2; w=$((w + 1)); fi; }
     C=cascade_cleanroom_at_tag N=cascade_no_secret_green
     out=$(run_casc "$ap" $C)
-    row "cascade premise: tag at MC, job green, tested exactly MC -> record run id + sha" \
-        'grep -q "^REC {\"cleanroom_run\":\"4242\",\"tag\":\"v0.0.0\",\"sha\":\"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"}$" <<< "$out" && ! grep -q "^DIE" <<< "$out"'
+    grep -q "^REC {\"cleanroom_run\":\"4242\",\"tag\":\"v0.0.0\",\"sha\":\"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"}$" <<< "$out" && ! grep -q "^DIE" <<< "$out"
+    row $? "cascade premise: tag at MC, job green, tested exactly MC -> record run id + sha"
     for c in "rec=0|no clean-room run recorded" "tagc=other|on origin is at .cafef00d" "tagc=none|on origin is at .absent" \
              "job=failure|concluded .failure" "job=|concluded .absent" "sha=other|tested .tested-sha: cafef00d" \
              "sha=both|not exactly" "sha=none|tested .., not exactly"; do
         out=$(run_casc "$ap" $C "${c%%|*}")
-        row "cascade premise: ${c%%|*} -> stop, nothing recorded" 'grep -qE "^DIE .*${c#*|}" <<< "$out" && grep -q "^REC $" <<< "$out"'
+        grep -qE "^DIE .*${c#*|}" <<< "$out" && grep -q "^REC $" <<< "$out"
+        row $? "cascade premise: ${c%%|*} -> stop, nothing recorded"
     done
     out=$(run_casc "$ap" $N)
-    row "no-secret: budget clean, on the publish list, checker green -> continue" \
-        'grep -q "^ORDER CALL-BUDGET CALL-NOSECRET $" <<< "$out" && grep -q "^SAY CASCADE no-secret-in-crates: on the publish list and green" <<< "$out"'
+    grep -q "^ORDER CALL-BUDGET CALL-NOSECRET $" <<< "$out" && grep -q "^SAY CASCADE no-secret-in-crates: on the publish list and green" <<< "$out"
+    row $? "no-secret: budget clean, on the publish list, checker green -> continue"
     for c in "budget=1|release_ready.sh --budget is not clean" "lib=0|cannot be read" "seven=0|no publish entry carries" \
              "onlist=0|no publish entry carries" "chkfile=0|does not exist" "chk=1|is red"; do
         out=$(run_casc "$ap" $N "${c%%|*}")
-        row "no-secret: ${c%%|*} -> stop" 'grep -qE "^DIE .*${c#*|}" <<< "$out"'
+        grep -qE "^DIE .*${c#*|}" <<< "$out"
+        row $? "no-secret: ${c%%|*} -> stop"
     done
     db=$(awk '/^if run_step dryrun; then$/,/^fi$/' "$ap")
     out=$db
-    row "dryrun: every rehearsal runs check_crate_contents.sh, and anything but rc 0 stops it" \
-        'awk "/^  bash scripts\\/release\\/check_crate_contents.sh .*\\\\\$/ { s = NR } s && NR == s + 1 && /^    \\|\\| die / { ok = 1 } END { exit !ok }" <<< "$db"'
+    awk "/^  bash scripts\\/release\\/check_crate_contents.sh .*\\\\\$/ { s = NR } s && NR == s + 1 && /^    \\|\\| die / { ok = 1 } END { exit !ok }" <<< "$db"
+    row $? "dryrun: every rehearsal runs check_crate_contents.sh, and anything but rc 0 stops it"
     cb=$(awk '/^if run_step cascade; then$/,/^fi$/' "$ap")
     out=$cb
-    row "cascade: both premises run before the first cascade-drain" \
-        'awk "/^  cascade_cleanroom_at_tag\$/ { a = NR } /^  cascade_no_secret_green\$/ { b = NR } /cascade-drain.sh/ && !d { d = NR } END { exit !(a && b && d > a && d > b) }" <<< "$cb"'
+    awk "/^  cascade_cleanroom_at_tag\$/ { a = NR } /^  cascade_no_secret_green\$/ { b = NR } /cascade-drain.sh/ && !d { d = NR } END { exit !(a && b && d > a && d > b) }" <<< "$cb"
+    row $? "cascade: both premises run before the first cascade-drain"
     out=$(awk '/^if run_step ledger; then$/,/^fi$/' "$ap")
-    row "ledger: refuses without the cascade record and folds it into the ledger record" \
-        'grep -q "cascade-cleanroom.json\" \] || die" <<< "$out" && grep -q "cascade_cleanroom: \$c\[0\]" <<< "$out"'
+    grep -q "cascade-cleanroom.json\" \] || die" <<< "$out" && grep -q "cascade_cleanroom: \$c\[0\]" <<< "$out"
+    row $? "ledger: refuses without the cascade record and folds it into the ledger record"
     return "$w"
 }
 
