@@ -675,7 +675,7 @@ REF=${RESOLUTION##*$'\t'}
 case "$MODE" in
     UNRESOLVABLE)
         printf 'FAIL PREFLIGHT: cannot resolve the comparand ref <%s>, so complexity is UNMEASURED against anything. That is not "no growth", and it is not degraded to comparing this branch against itself.\n' "$REF" >&2
-        printf '     In CI, before this guard runs:  git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n' >&2
+        printf '     In CI, before this guard runs:  %s\n' "$(baseline_ratchet_fetch_hint "$REF")" >&2
         exit 1 ;;
     ABSENT | BOOTSTRAP)
         printf 'FAIL PREFLIGHT: <%s> carries no %s/ tree, so there is no comparand to measure. A missing comparand is not "no growth".\n' "$REF" "$CX_COMPARAND_PATH" >&2
