@@ -1551,6 +1551,9 @@ pub enum ModelCommands {
         /// The released apr crate tarball, re-hashed against engine.crate_tarball_sha256
         #[arg(long, value_name = "FILE")]
         engine_tarball: Option<InputFile>,
+        /// The rc as the clean-room job fetched it from HF, re-hashed for M-CR
+        #[arg(long, value_name = "DIR")]
+        fetched: Option<DirPath>,
         /// Pacha home (default: ~/.pacha)
         #[arg(long, value_name = "DIR")]
         pacha_home: Option<DirPath>,
