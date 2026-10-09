@@ -281,9 +281,19 @@ fn hits(source: &str, needles: &[&str]) -> Vec<String> {
     source
         .lines()
         .filter(|l| !l.trim_start().starts_with("//"))
-        .filter(|l| needles.iter().any(|n| l.contains(n)))
+        .filter(|l| needles.iter().any(|n| found(l, n)))
         .map(str::to_string)
         .collect()
+}
+
+/// `needle` in `line`. A needle that opens with `impl ` names an item, so it must open the line too: an
+/// argument typed `impl Into<String>` converts nothing.
+fn found(line: &str, needle: &str) -> bool {
+    if needle.starts_with("impl ") {
+        line.trim_start().starts_with(needle)
+    } else {
+        line.contains(needle)
+    }
 }
 
 fn hits_in(files: &[PathBuf], needles: &[&str]) -> Vec<String> {
@@ -326,7 +336,16 @@ fn the_scans_catch_what_they_look_for() {
         hits("impl From<InputGraph> for X {}\n", &INTO_PV_GRAPH).len(),
         1
     );
+    assert_eq!(
+        hits("    impl Into<Graph> for InputGraph {}\n", &INTO_PV_GRAPH).len(),
+        1
+    );
     assert!(hits("//! unlike rdf::Term\n", &INTO_PV_GRAPH).is_empty());
+    assert!(hits(
+        "    fn err(&self, message: impl Into<String>) -> ReadError {\n",
+        &INTO_PV_GRAPH
+    )
+    .is_empty());
     assert_eq!(hits("let g: InputGraph = x;\n", &NAMES_THE_READER).len(), 1);
 }
 
