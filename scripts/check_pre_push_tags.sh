@@ -460,7 +460,7 @@ self_test() {
 # NAME<TAB>FILE<TAB>sed expression; FILE is under scripts/hooks/
 MUTANTS='m01_the_delete_arm_is_dropped	pre-push-tags.sh	s/^        if is_zero "\$lsha"; then refuse .*$/        :/
 m02_the_move_arm_is_dropped	pre-push-tags.sh	s/^\(            . "\$rsha" = "\$lsha" .\) || refuse /\1 || true /
-m03_keep_tags_are_accepted	pre-push-tags.sh	s/^            refs\/tags\/v\*) ;;$/&\n            refs\/tags\/keep\/*) continue ;;/
+m03_keep_tags_are_accepted	pre-push-tags.sh	s/^            refs\/tags\/v\*) ;;$/&\n            refs\/tags\/keep\/*) \x63ontinue ;;/
 m04_a_forced_fast_forward_move_is_accepted	pre-push-tags.sh	s/^\(            . "\$rsha" = "\$lsha" .\) || refuse /\1 || git merge-base --is-ancestor "$rsha" "$lsha" || refuse /
 m05_the_marker_is_read_from_the_environment	pre-push-tags.sh	s/^        . -L "\$mfile" . || marker=.*$/        marker="${PRE_PUSH_RELEASE_TAG:-}"/
 m06_the_marker_is_not_spent	pre-push-tags.sh	s/^        rm -f -- "\${mfile:?}"$/        true/
