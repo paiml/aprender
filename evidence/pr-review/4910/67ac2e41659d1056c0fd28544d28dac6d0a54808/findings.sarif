@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ticket-search-full-result-unchecked",
+          "level": "warning",
+          "message": {
+            "text": "tickets() looks for an existing red-row issue with `gh issue list --state open --limit 50 --search ... in:title` and treats whatever comes back as the whole answer. The sibling fix in this same commit range (rp_known_failures, --limit 1000, a full result is reported not measured) is not applied here. A search that returns 50 rows without the exact title would open a duplicate ticket for the row. The title is quoted in the query, so a full result is very unlikely; the class is the same one the author just fixed. Fix: if the list length reaches the limit, say NOT-MEASURED and set st=1 instead of creating."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/models_nightly.sh"
+                },
+                "region": {
+                  "startLine": 213
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/models_nightly.sh",
+            "excerpt": "if ! j=$(\"$gh\" issue list --state open --limit 50 --search \"\\\"$title\\\" in:title\" --json number,title); then",
+            "excerpt_sha256": "9779ffcf71fbd79e76c5a1532aa8cc98076d625f38a92d83c65553d623cda82c",
+            "failure_scenario": "The title search returns a full page of 50 unrelated open issues (search index lag or a broad match); the exact-title filter finds none; gh issue create opens a second ticket for the same row, and the owner has two tickets for one red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "red-rows-ignore-missing-green",
+          "level": "warning",
+          "message": {
+            "text": "red_rows selects rungs with `.green == false`, while the judge counts every rung where `not x.get(\"green\")` as red (scripts/check_model_ladder.sh:424), so a rung whose green field is missing or null is red to the judge and gets no ticket here. The nightly state goes red and models-tickets runs, but that rung has no ticket and is absent from the release-notes known-failures list unless the all-lane fallback fires. Fix: select(.green != true)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/models_nightly.sh"
+                },
+                "region": {
+                  "startLine": 181
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/models_nightly.sh",
+            "excerpt": "if [ -f \"$b/$h.json\" ] && r=$(jq -r --arg h \"$h\" '(.rungs // [])[] | select(.green == false)",
+            "excerpt_sha256": "be9afcb37435e8a75276f1c5957278e384a95af2590e3e672970bc82082a7a08",
+            "failure_scenario": "A receipt rung has no green key (a writer bug or a truncated receipt). The judge reports it red and the bundle verdict is red; red_rows prints nothing for it; the row stays red with no ticket and no owner, which is the state the GATE/LAB rule says must not happen.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ticket-owner-unquoted-passes-reader",
+          "level": "note",
+          "message": {
+            "text": "The ladder comment asks for ticket_owner to be quoted, but nothing enforces it. Measured: with the value written unquoted (`ticket_owner: #3598`), rp_ticket_owner returns rc 0 and #3598, because the awk reader keeps the raw text. A YAML parser (pv, python yaml) reads that same line as a comment, i.e. null. The reader and the YAML contract can then disagree about the owner. Fix: reject an unquoted # value in rp_ticket_owner, or add a self-test row that does."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/model-capability-ladder-v1.yaml"
+                },
+                "region": {
+                  "startLine": 111
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<scratchpad>/unq.sh",
+              "<ladder with ticket_owner: #3598 unquoted>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e9953c5dc99da4de32d0a522741c38fcc76df4c7a83d9f252c9ef4063c99ddf0",
+            "failure_scenario": "Someone writes ticket_owner: #4000 without quotes; the shell reader accepts it and tickets name #4000, while pv or any YAML consumer sees null and a later tool that reads the YAML names no owner.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "yaml-single-quoted-scalars-not-stripped",
+          "level": "warning",
+          "message": {
+            "text": "The policy readers strip only double quotes. A single-quoted YAML scalar keeps its quotes: rp_ticket_owner (ticket_owner: '#123'), release_policy_ladder (since: '0.0.0') and rp_known_failures (ticket: '#123') all treat the quote characters as part of the value. Measured: the first two answer rc 2 (a refusal, not a pass), the third prints the ticket with literal quotes in the release notes. Single quotes are the natural way to keep a # from being read as a comment, so this is the likely hand edit. Found by agy, reproduced by the primary on this head. Fix: strip a matching pair of either quote in rp_get and the known_red awk."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 81
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "<scratchpad>/sq/sq.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "8ba6cfcbdb69f4b159232485457a06efa3ec16475529b918806a2df832b52ef1",
+            "failure_scenario": "Someone writes ticket_owner: '#4000' (single quotes, to keep the # out of a comment). models_nightly.sh tickets() asks rp_ticket_owner, gets rc 2 \"neither #N nor a name\", and dies rc 2 with no ticket opened for any red row, so the nightly step fails closed. A ticket: '#4000' under known_red instead prints with the quotes in the release notes.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "has-entry-awk-single-quoted-release",
+          "level": "note",
+          "message": {
+            "text": "release_policy_has_entry.awk strips only double quotes from an emergency_scopes release value, so a hand-written entry release: '1.2.3' is not found for v=1.2.3 (measured rc 1; the double-quoted control is rc 0). The caller then believes the version has no entry. Entries the tooling writes are double-quoted, so this needs a hand edit. Found by agy, reproduced by the primary."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_has_entry.awk"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/lib/release_policy_has_entry.awk",
+            "excerpt": "ins && $0 ~ /^      release: / { r = substr($0, 16); gsub(/\"/, \"\", r); if (r == v) found = 1 }",
+            "excerpt_sha256": "b3b016bbcfd66b673f4b3079a3b9550dcadef8ce0c4e0995e40724060d79ba1e",
+            "failure_scenario": "A maintainer hand-writes release: '0.71.0' in emergency_scopes; the policy path reports no entry for 0.71.0 and appends a second entry, so one release carries two rulings, which the one-ruling-per-release rule forbids.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mktemp-suffix-after-xs-is-gnu-only",
+          "level": "note",
+          "message": {
+            "text": "mktemp \"${TMPDIR:-/tmp}/ladder-policy.XXXXXX.yaml\" puts a suffix after the Xs. GNU mktemp accepts it; BSD/macOS mktemp does not substitute the Xs, so the copy would be created with a literal name. Release hosts here are Linux, so this is advisory. release_readiness.sh and autopilot.sh match the copy by the ladder-policy.* prefix, which holds either way."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 106
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Portability of mktemp templates with a suffix is a known GNU/BSD difference; not run on a BSD host, so asserted. The fleet runs Linux only.",
+            "failure_scenario": "The reader is run on a macOS box: mktemp fails or returns a literal path, the second run collides with the first copy, and the policy judge reports mktemp failed (rc 2, not measured). It fails closed, it does not pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "kf-ladder-missing-pattern-matches-anything",
+          "level": "note",
+          "message": {
+            "text": "The kf-ladder-missing row passes the pattern ^$|.* (alternation of empty and anything), which matches every string including the empty one, so only the rc 2 is tested for that row, not the output. The row is still a real test of the rc. Replace the pattern with the empty-output assertion it appears to mean."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_policy_selftest.sh"
+                },
+                "region": {
+                  "startLine": 111
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_release_policy_selftest.sh",
+            "excerpt": "kf kf-ladder-missing        2 \"$tmp/none.yaml\" '[]' \"\" '^$|.*' 'Known failures'",
+            "excerpt_sha256": "11d3f83d179a3707dd4f20368627dfa6a3099d8ed8ab0d7b8cf276aea34e0c3a",
+            "failure_scenario": "rp_known_failures starts printing a partial list on the missing-ladder path while still returning 2; the row keeps passing, and a caller that ignores the rc appends a partial list to the release notes.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "receipt-name-has-two-sources",
+          "level": "note",
+          "message": {
+            "text": "After 67ac2e4165 the receipt names are set in two places. LREC and RREC (written, copied and fetched) hard-code the -gpu suffix, while the judge loop still builds the name it reads as $h$RSUF.json from RSUF=-gpu. Today they agree and the models_t1 table kills four hand mutants of the new variables (run by the primary), but a later edit to one side would make the judge read a name nothing writes. Fix: derive RSUF-based reads from LREC and RREC, or set LREC and RREC from RSUF. The comment on the assignment block still says the names are <host><RSUF>.json."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/models_t1.sh"
+                },
+                "region": {
+                  "startLine": 248
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/models_t1.sh",
+            "excerpt": "set -- $hr; h=$1; rc=$2; receipt=\"$out/$h$RSUF.json\"",
+            "excerpt_sha256": "6cd1e9376192374213ed4e494c63c0d8c7b1bc8ba7cd0baad7caa6eb82fbb25a",
+            "failure_scenario": "Someone renames the suffix by editing RSUF only; the legs still write host-gpu.json, the judge reads host-NEWSUFFIX.json, every crux leg reports no receipt, and the release stops at NO-GO. It fails closed, and the table would turn red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ticket-owner-and-known-failures-fixes-verified",
+          "level": "note",
+          "message": {
+            "text": "The three fixes in bc1fbd4a9f are correct and tested. (1) rp_ticket_owner reads a required ticket_owner key (#N or a name), and models_nightly.sh tickets() resolves the owner before any gh call and dies rc 2 with no ticket opened when it cannot. (2) rp_known_failures uses --limit 1000 and a result of 1000 goes to the not-measured branch. (3) the mktemp-failed branch has a row. The release_policy self-test runs 46 rows, 0 failed; the models_nightly self-test 79/79 and 29 of 29 mutants killed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_release_policy_selftest.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "44823be8e9ec0a5f55b67afa227f3fae50248a09f5b0190e33bf8c02b7461b18",
+            "failure_scenario": "none: the claimed behaviour holds. If rp_ticket_owner accepted an empty owner, a nightly red would open ownerless tickets; the owner-* and missing-owner rows would turn red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "delta-67ac2e4165-verified",
+          "level": "note",
+          "message": {
+            "text": "The delta 67ac2e4165 is behaviour-preserving. (1) The five printf | grep -q sites became here-strings; a here-string adds the same trailing newline printf '%s\\n' did (the two printf '%s' sites matched a single-line fixed mark), and the reads no longer sit in a pipeline, so no SIGPIPE under pipefail. The own() test in the policy self-test keeps its meaning: it fails the row when rc differs or the chosen text does not match. check_no_pipe_into_grep_q measures 60 against a baseline of 60. (2) LREC and RREC equal the old $LOCAL_HOST$RSUF.json and $REMOTE_HOST$RSUF.json in both modes (plain host names in ladder mode, -gpu in crux mode) and the rm list is the same set. (3) The two re-anchored mutants still bite: the m26 sed now matches the here-string text and is killed by 1 row; crux-ladder-wording and crux-remote-rcpt-name are killed, 35 of 35 in the table. The primary also planted four mutants of its own in a scratch copy (cat of the remote receipt, cp destination, LREC without -gpu, .part name); the table went red on all four."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/models_t1.sh"
+                },
+                "region": {
+                  "startLine": 144
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_no_pipe_into_grep_q.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "7fa401454ffed273a1cbbe649985b88eefc2addf9a0ba828e8a8c0718aa43a77",
+            "failure_scenario": "none: the claimed behaviour holds. Had a conversion changed the match input (for example a missing newline for an anchored pattern), a policy self-test or readiness row would have turned red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "autopilot-repo-variable-defined",
+          "level": "note",
+          "message": {
+            "text": "ap_known_failures uses $REPO, which autopilot.sh never assigns itself. Checked: release_params (lib_release_params.sh, sourced at autopilot.sh:40-41, before any use) sets REPO from RELEASE_REPO. Not a defect."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 77
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/lib_release_params.sh",
+            "excerpt": "REPO=$RELEASE_REPO",
+            "excerpt_sha256": "1ba0e021b794ceda9520d9073cc29a1b390fa7381cf6acf1415bd6bace6dc768",
+            "failure_scenario": "none: REPO is set before ap_known_failures can run. Had release_params failed, autopilot.sh exits 2 at line 41.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "single-quote-since",
+          "level": "warning",
+          "message": {
+            "text": "release_policy_ladder fails to strip single quotes from `since` version"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 93
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "source scripts/lib/release_policy.sh && cat > test_ladder.yaml <<EOF\n  release_policy:\n    name: crux-smoke\n    since: '0.0.0'\n    date: \"2026-10-07\"\n    quote: \"q\"\n    hosts: [lambda, gx10]\n    thinking: [\"off\", \"on\"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: \"#123\"\n    release_notes: known_failures\nEOF\nrelease_policy_ladder test_ladder.yaml 1.0.0; echo \"RC=$? WHY=$RP_WHY\""
+            ],
+            "source": "scripts/lib/release_policy.sh",
+            "failure_scenario": "If a user defines `since: '0.0.0'` in the standing release policy, `release_policy_ladder` strips only double quotes. The remaining single quotes cause the version regex match `^[0-9]+\\.[0-9]+\\.[0-9]+$` to fail, causing the policy to erroneously reject the ladder with 'is not X.Y.Z'.",
+            "precision_class": "advisory",
+            "rationale_for_class": "The antigravity arm is advisory until it has 30 measured samples; the primary reproduced this finding on the reviewed head, which makes it real but does not give the arm blocking authority."
+          }
+        },
+        {
+          "ruleId": "single-quote-has-entry",
+          "level": "warning",
+          "message": {
+            "text": "release_policy_has_entry.awk fails to strip single quotes from release versions"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_has_entry.awk"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "cat > test_ladder.yaml <<EOF\n  emergency_scopes:\n    - name: manual-test\n      release: '1.2.3'\nEOF\nawk -v v=\"1.2.3\" -f scripts/lib/release_policy_has_entry.awk test_ladder.yaml; echo \"RC=$?\""
+            ],
+            "source": "scripts/lib/release_policy_has_entry.awk",
+            "failure_scenario": "If a user manually writes `release: '1.2.3'` in an emergency_scopes entry, `gsub(/\"/, \"\", r)` strips only double quotes. The equality check `r == v` fails against `1.2.3`, causing the standing policy to erroneously append a duplicate entry and violate the 'one release takes one ruling' rule.",
+            "precision_class": "advisory",
+            "rationale_for_class": "The antigravity arm is advisory until it has 30 measured samples; the primary reproduced this finding on the reviewed head, which makes it real but does not give the arm blocking authority."
+          }
+        },
+        {
+          "ruleId": "single-quote-ticket-owner",
+          "level": "warning",
+          "message": {
+            "text": "rp_ticket_owner fails to strip single quotes from ticket_owner"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 81
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "source scripts/lib/release_policy.sh && cat > test_ladder.yaml <<EOF\n  release_policy:\n    name: crux-smoke\n    since: \"0.0.0\"\n    date: \"2026-10-07\"\n    quote: \"q\"\n    hosts: [lambda, gx10]\n    thinking: [\"off\", \"on\"]\n    larger_rows: nightly\n    red_row_needs: ticket\n    ticket_owner: '#123'\n    release_notes: known_failures\nEOF\nrp_ticket_owner test_ladder.yaml; echo \"RC=$? WHY=$RP_WHY\""
+            ],
+            "source": "scripts/lib/release_policy.sh",
+            "failure_scenario": "If a user writes `ticket_owner: '#123'` to avoid YAML treating `#` as a comment, `rp_ticket_owner` strips only double quotes. The remaining single quotes cause the validation regex to fail, preventing nightly scripts from filing tickets or erroneously blocking the release with an invalid owner error.",
+            "precision_class": "advisory",
+            "rationale_for_class": "The antigravity arm is advisory until it has 30 measured samples; the primary reproduced this finding on the reviewed head, which makes it real but does not give the arm blocking authority."
+          }
+        },
+        {
+          "ruleId": "single-quote-known-failures",
+          "level": "warning",
+          "message": {
+            "text": "rp_known_failures fails to strip single quotes from known_red tickets"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy.sh"
+                },
+                "region": {
+                  "startLine": 129
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "source scripts/lib/release_policy.sh && cat > test_ladder.yaml <<EOF\n  known_red:\n    - rung: some-rung\n      ticket: '#123'\nEOF\nrp_known_failures test_ladder.yaml repo"
+            ],
+            "source": "scripts/lib/release_policy.sh",
+            "failure_scenario": "If a user defines a known failure ticket as `ticket: '#123'` (using single quotes so YAML doesn't treat it as a comment), `gsub(/\"/, \"\", t)` fails to strip them. The rendered release notes will include literal single quotes (e.g. `known red (ladder), '#123'`), causing malformed markdown output.",
+            "precision_class": "advisory",
+            "rationale_for_class": "The antigravity arm is advisory until it has 30 measured samples; the primary reproduced this finding on the reviewed head, which makes it real but does not give the arm blocking authority."
+          }
+        }
+      ]
+    }
+  ]
+}

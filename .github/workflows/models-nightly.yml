@@ -1,0 +1,185 @@
+# models-nightly.yml -- the producer for the nightly train's `models` lane
+# (#4721). Before this file the lane had no producer on main, so the train
+# could only ever print not_measured for it.
+#
+# WHAT IS MEASURED, AND WHERE
+# ---------------------------
+# The models lane is scripts/release/models_t1.sh: the model ladder on
+# the two GPU hosts, judged by check_model_ladder.sh. It is the SAME entry point
+# release day runs. It needs both GPU hosts, and no runner in this repo's pool
+# is either of them, so the measurement does not happen here. A timer on a GPU host
+# runs `models_nightly.sh --run` against main's head C, seals the receipts, the
+# models_t1 log and a verdict into one bundle, and `--publish` pushes the bundle
+# to the `nightly-evidence` branch as models/<C>/. Neither half holds a registry
+# token: both refuse to start when one is in reach (the R4 no-token refusal,
+# copied verbatim from nightly_train.sh).
+#
+# WHAT THIS WORKFLOW DOES
+# -----------------------
+# It reads that bundle for the commit it was dispatched on (github.sha), checks
+# it, and turns it into the `models` job's conclusion -- the column the train
+# reads. `--relay` re-checks everything the bundle claims and believes nothing:
+#
+#   SHA256SUMS covers every file and nothing else; the verdict names this exact
+#   commit, the version in this commit's Cargo.toml and this commit's
+#   models_t1.sh blob; and the classifier, re-run here on the bundle's own
+#   files, reaches the state the verdict recorded.
+#
+# Any check that fails is not_measured, never green.
+#
+#   bundle verdict   `models` job   train reads
+#   --------------   ------------   -----------
+#   green            success        green
+#   red              failure        red
+#   not_measured     skipped        not_measured
+#   no bundle for C  skipped        not_measured
+#   relay broke      skipped        not_measured  (models-evidence fails)
+#
+# THE PLANTED FAILURE. A workflow_dispatch with plant_red=true makes the relay
+# print red whatever the bundle says, and the `models` job fails. That is the
+# proof the lane can go red; it is never on in a scheduled run, and a planted
+# run uploads no models-t1, so readiness never reads a plant as a receipt.
+#
+# ARTIFACT models-t1. On a verified green or red the bundle (each host leg's
+# <host>.json receipt, the models_t1 log, verdict, SHA256SUMS) is uploaded as models-t1
+# for readiness-nightly.yml, which reads the receipts' *.json at its root.
+#
+# RUNNER. [self-hosted, Linux, X64, clean-room]. The job reads git and runs
+# bash, jq and sha256sum on the host, with no cargo, so it needs no image beyond
+# the ownership restore every job on this pool runs first.
+name: models-nightly
+
+on:
+  schedule:
+    # Both slots fire by 23:17Z. Schedule events land late on this account,
+    # and later after midnight. Measured over the 14 nights to 2026-10-04:
+    # crons at 20:30-23:17Z fired 22:38-02:36Z; crons at 00:00Z fired
+    # 03:33-04:42Z; nightly-bench's 00:30Z fired 04:56-06:14Z, after the
+    # train's 04:45Z read on all 14. So the latest fire here (~02:36Z) plus
+    # this workflow's whole budget (25 + 15 min of job timeouts) ends by
+    # ~03:16Z, before the read.
+    # The upstream both slots wait on is the GPU-host publish: that run starts
+    # ~21:00Z and its ladder time is not measured. A slot that fires before the
+    # publish is not_measured. The train takes the newest completed run on C
+    # that measured something, so the second slot covers a first that fired
+    # too early, and a skipped second slot never hides a measured first one.
+    # If nights read not_measured for that reason, start the GPU-host run
+    # earlier; never move these crons past 23:17Z. Re-measure the delay before
+    # trusting either slot.
+    - cron: '17 22 * * *'
+    - cron: '17 23 * * *'
+  workflow_dispatch:
+    inputs:
+      plant_red:
+        description: 'Planted failure: report red whatever the bundle says'
+        type: boolean
+        default: false
+
+concurrency:
+  group: models-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  models-evidence:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # BSE-05: T = max(15, ceil(1.5*p99), p99+20). This job has no history; the
+    # basis is ~2 min (checkout, the script's case table, one depth-1 fetch of
+    # nightly-evidence), so T = max(15, 3, 22) = 22, rounded to 25. The first
+    # three runs replace this basis.
+    timeout-minutes: 25
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+    outputs:
+      state: ${{ steps.relay.outputs.state }}
+      reason: ${{ steps.relay.outputs.reason }}
+      bundle: ${{ steps.relay.outputs.bundle }}
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Verbatim from ci.yml's guard-cargo. A hard-killed docker job leaves
+        # root-owned files in the runner checkout and the next job's
+        # `git clean -ffdx` dies with EACCES before a step runs.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: The producer's case table, before it is trusted
+        run: setsid --wait bash scripts/release/models_nightly.sh --self-test
+      - name: Relay the GPU-host measurement of this commit
+        id: relay
+        env:
+          PLANT_RED: ${{ inputs.plant_red }}
+        run: |
+          plant=()
+          case "$PLANT_RED" in true) plant=(--plant-red) ;; esac
+          setsid --wait bash scripts/release/models_nightly.sh --relay --commit "$GITHUB_SHA" --out "$RUNNER_TEMP/models-relay" "${plant[@]}"
+      - name: Publish the verified receipts for readiness-nightly (models-t1)
+        # readiness-nightly.yml reads artifact models-t1 from a run on main at
+        # its head and globs *.json at the artifact root, so the upload is the
+        # bundle dir itself. The relay names it only for a verified green or
+        # red with no plant: a not_measured bundle proved nothing, and a planted
+        # red is not a measurement.
+        if: steps.relay.outputs.bundle != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: models-t1
+          path: ${{ steps.relay.outputs.bundle }}
+          if-no-files-found: error
+          retention-days: 30
+
+  # The column the nightly train reads (job regex ^models$). It runs only on a
+  # measured verdict, so a missing or broken measurement is a skipped job,
+  # which the train reads as not_measured.
+  models:
+    name: models
+    needs: models-evidence
+    if: needs.models-evidence.outputs.state == 'green' || needs.models-evidence.outputs.state == 'red'
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 15
+    env:
+      STATE: ${{ needs.models-evidence.outputs.state }}
+      REASON: ${{ needs.models-evidence.outputs.reason }}
+    steps:
+      - name: The models lane verdict
+        run: |
+          echo "models lane: $STATE -- $REASON"
+          [ "$STATE" = green ]
+
+  # The standing release policy (contracts/model-capability-ladder-v1.yaml,
+  # ladder.release_policy): a red nightly row cannot stop a release. Each red
+  # row opens or updates its own issue here, and the release notes list it
+  # with that issue. Only a verified, unplanted red reaches this job (bundle
+  # is set for nothing else), and its failure never touches the models column.
+  models-tickets:
+    name: models-tickets
+    needs: models-evidence
+    if: needs.models-evidence.outputs.state == 'red' && needs.models-evidence.outputs.bundle != ''
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      issues: write   # open or comment on one issue per red row
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: models-t1
+          path: ${{ runner.temp }}/models-t1
+      - name: Open or update the issue of each red row
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          setsid --wait bash scripts/release/models_nightly.sh --tickets --commit "$GITHUB_SHA" \
+            --evidence "$RUNNER_TEMP/models-t1" --out "$RUNNER_TEMP/models-tickets.tsv"
+          cat -- "$RUNNER_TEMP/models-tickets.tsv"

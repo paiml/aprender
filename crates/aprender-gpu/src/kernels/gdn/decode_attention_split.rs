@@ -527,6 +527,7 @@ mod gdn_decode_attention_split_device_tests {
     }
 
     #[test]
+    #[ignore = "FLAKE #4956: intermittent SIGSEGV in libcuda; runs nightly in cuda-nightly.yml ada-yoga"]
     fn gdn_decode_attention_split_matches_unsplit() {
         let Ok(ctx) = CudaContext::new(0) else {
             println!("gdn_decode_attention_split: no CUDA device — SKIPPED.");

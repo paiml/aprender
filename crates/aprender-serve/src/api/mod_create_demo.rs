@@ -383,10 +383,24 @@ fn extract_tool_parameters(
                 .and_then(|d| d.as_str())
                 .unwrap_or_default()
                 .to_string();
+            // #4650: the scalar JSON-Schema type, so a call parsed from text (Qwen XML)
+            // types its value as declared. Anything else stays String, as before.
+            let param_type = match spec.get("type").and_then(|t| t.as_str()) {
+                Some("integer") => ToolParameterType::Integer,
+                Some("number") => ToolParameterType::Number,
+                Some("boolean") => ToolParameterType::Boolean,
+                Some("array") => ToolParameterType::Array {
+                    items: Box::new(ToolParameterType::String),
+                },
+                Some("object") => ToolParameterType::Object {
+                    properties: Vec::new(),
+                },
+                _ => ToolParameterType::String,
+            };
             ToolParameter {
                 name: name.clone(),
                 description,
-                param_type: ToolParameterType::String,
+                param_type,
                 required: required.contains(name.as_str()),
                 default: None,
             }
@@ -791,6 +805,30 @@ pub struct ChatDelta {
     /// Content chunk
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// #4918: the tool calls a streamed turn made, on one chunk before the
+    /// terminal one. Absent from the JSON when there are none, so a stream
+    /// without tools reads exactly as it did before the field existed.
+    #[serde(default, skip_serializing_if = "no_delta_tool_calls")]
+    pub tool_calls: Option<Vec<ChatDeltaToolCall>>,
+}
+
+fn no_delta_tool_calls(calls: &Option<Vec<ChatDeltaToolCall>>) -> bool {
+    calls.as_ref().is_none_or(Vec::is_empty)
+}
+
+/// One entry of `delta.tool_calls`: a [`ResponseToolCall`] plus the `index`
+/// OpenAI streaming clients key their accumulation on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatDeltaToolCall {
+    /// Position of this call in the turn's list of calls.
+    pub index: usize,
+    /// Unique tool-call id, e.g. "call_0".
+    pub id: String,
+    /// Always "function".
+    #[serde(rename = "type")]
+    pub call_type: String,
+    /// The called function (name + arguments-as-string).
+    pub function: ResponseFunctionCall,
 }
 
 impl ChatCompletionChunk {
@@ -813,6 +851,7 @@ impl ChatCompletionChunk {
                         None
                     },
                     content,
+                    tool_calls: None,
                 },
                 finish_reason,
             }],
@@ -843,6 +882,28 @@ impl ChatCompletionChunk {
     /// Create content chunk
     fn content(id: &str, model: &str, text: &str) -> Self {
         Self::new(id, model, Some(text.to_string()), None)
+    }
+
+    /// #4918: the chunk that carries a streamed turn's tool calls, each with
+    /// its `index`. Arguments arrive whole, in this one chunk.
+    fn tool_calls(id: &str, model: &str, calls: Vec<ResponseToolCall>) -> Self {
+        let mut chunk = Self::new(id, model, None, None);
+        let delta = &mut chunk.choices[0].delta;
+        // `new` reads (no content, no finish) as the opening chunk and adds a role.
+        delta.role = None;
+        delta.tool_calls = Some(
+            calls
+                .into_iter()
+                .enumerate()
+                .map(|(index, call)| ChatDeltaToolCall {
+                    index,
+                    id: call.id,
+                    call_type: call.call_type,
+                    function: call.function,
+                })
+                .collect(),
+        );
+        chunk
     }
 
     /// Create the terminal chunk, carrying the reason generation ACTUALLY ended.

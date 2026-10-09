@@ -478,8 +478,17 @@ clean_room_tested_shas() {
 # clean_room_gate ROOT TAG -- 0 only when a completed `clean-room (aprender)`
 # job, whose log records exactly one tested commit resolving to TAG's commit,
 # concluded `success`. Every other outcome prints a REFUSE line and returns 1.
+# clean_room_gate ROOT TAG RUN_ID -- the same, but only the run RUN_ID (a run id
+# recorded earlier) is examined; a green run other than that one does not count.
+# An empty RUN_ID is refused: passing the third argument means a run was recorded.
 clean_room_gate() {
-  local root=$1 tag=$2
+  local root=$1 tag=$2 pin="" pinned=""
+  if [ "$#" -ge 3 ]; then
+    pin=$3
+    case "$pin" in
+      ''|*[!0-9]*) echo "CLEAN-ROOM REFUSE: recorded clean-room run id '$pin' for tag $tag is not a run id"; return 1 ;;
+    esac
+  fi
   local repo="paiml/infra" workflow="clean-room.yml" job_name="clean-room (aprender)"
   local assert_step="Assert the commit under test"
   local want epoch runs_json runs examined=0 seen=""
@@ -499,7 +508,20 @@ clean_room_gate() {
     echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); gh is unauthenticated or erroring -- cannot prove clean-room ran on it"
     return 1
   fi
-  if ! runs_json=$(gh run list --repo "$repo" --workflow "$workflow" --limit 30 \
+  if [ -n "$pin" ]; then
+    # PINNED (PMAT-4687): judge exactly the recorded run and no other. It is read
+    # through the same parser and loop below, so it passes only on the same proof.
+    if ! pinned=$(gh api "repos/$repo/actions/runs/$pin" \
+          --jq '.path, ([{databaseId: .id, status: .status, conclusion: .conclusion, createdAt: .created_at}] | tojson)' 2>/dev/null); then
+      echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); recorded run $pin could not be read from $repo"
+      return 1
+    fi
+    if [ "$(head -n 1 <<< "$pinned")" != ".github/workflows/$workflow" ]; then
+      echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); recorded run $pin is not a $workflow run (path: $(head -n 1 <<< "$pinned"))"
+      return 1
+    fi
+    runs_json=$(sed -n '2p' <<< "$pinned")
+  elif ! runs_json=$(gh run list --repo "$repo" --workflow "$workflow" --limit 30 \
         --json databaseId,status,conclusion,createdAt 2>/dev/null); then
     echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); gh run list --repo $repo --workflow $workflow failed"
     return 1
@@ -591,15 +613,19 @@ clean_room_gate() {
     seen="$seen"$'\n'"  - run $rid job $jid: tested $tested = the tag commit, conclusion=$jconcl [$tsource]"
   done <<< "$runs"
 
-  echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); no green '$job_name' run tested it ($examined $workflow run(s) created after that commit examined)${seen:- -- found none}"
+  echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); no green '$job_name' run tested it${pin:+ -- only recorded run $pin was examined} ($examined $workflow run(s) created after that commit examined)${seen:- -- found none}"
   return 1
 }
 
 # THE GATE (F-9, PMAT-745). Every mode that uploads passes through
 # scripts/check_publish_preflight.sh first: clean tree, version from cargo
-# metadata, tag at HEAD, HEAD on origin/release/<version> (#4286), dogfood receipt GO for this commit
+# metadata, tag at HEAD, HEAD on origin/main or origin/release/<version> (P5, #4286), dogfood receipt GO for this commit
 # and version. --check and --order-check upload nothing and are not gated. The
 # drain re-runs this script per pass, so the gate is re-asked before every pass.
+# Under the standing release policy the preflight's R7 judges CRUX smoke from
+# MODEL_LADDER_CRUX_DIR and CRUX_CERT, inherited from the caller: the autopilot's
+# cascade step hands down the receipts its preflight step judged (D4). A hand run
+# passes them the same way, or R7 refuses.
 #
 # The clean-room gate runs FIRST, before the preflight and before any upload.
 # There is no mode, flag or variable that skips it for a publishing run;

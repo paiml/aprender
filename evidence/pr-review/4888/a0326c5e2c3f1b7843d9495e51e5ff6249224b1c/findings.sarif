@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "perf041-marker-witness-agree",
+          "level": "note",
+          "message": {
+            "text": "marker.json and witness.json agree: sha256 == binary_sha256 (0ca721d8...), commit == the base commit 4098007133, max_m 16 == the largest m_formed in the witness rows, status PASS, exit 0. Only data fields changed against the base (commit, sha256, started_utc, max_m, m_formed, binary_sha256); no script, threshold or matrix change."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "evidence/perf041/lambda/marker.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "jq",
+              "-e",
+              "-s",
+              "marker.sha256==witness.binary_sha256 and marker.commit==witness.commit and marker.max_m==max(witness m_formed)",
+              "marker.json",
+              "witness.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74",
+            "failure_scenario": "none: the two artifacts are internally consistent.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

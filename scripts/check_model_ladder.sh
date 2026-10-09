@@ -1219,6 +1219,28 @@ for tag, hosts in {"crux": ("lambda", "gx10"), "crux-short": ("lambda",)}.items(
                    "cells": [{"key": {"model_sha256": S, "host": h, "thinking": "off", "verb": "run"}, "verdict": "GREEN", "positive_control": True}]},
                   open(os.path.join(c, h + "-gpu.json"), "w"))
 E2E
+    # The standing release policy's fixtures: the no-scope ladder plus a `release_policy` block (and an
+    # `emergency_scopes` list) in the contract's own hand-written layout, which is the layout its reader takes.
+    pol_fixture() { # pol_fixture <tag> <since> <extra policy line|-> <per-release entry release|->
+      awk -v since="$2" -v extra="$3" -v rel="$4" '
+        { print }
+        /^ladder:$/ {
+          print "  release_policy:"
+          print "    name: crux-smoke"; print "    since: \"" since "\""; print "    date: \"2026-10-07\""
+          print "    quote: \"q\""; print "    hosts: [lambda, gx10]"; print "    thinking: [\"off\"]"
+          print "    larger_rows: nightly"; print "    red_row_needs: ticket"; print "    ticket_owner: \"#1\""; print "    release_notes: known_failures"
+          if (extra != "-") print "    " extra
+          print "  emergency_scopes:"
+          if (rel != "-") {
+            print "    - name: crux-smoke"; print "      release: \"" rel "\""; print "      date: \"2026-10-07\""
+            print "      quote: \"q\""; print "      hosts: [lambda, gx10]"; print "      thinking: [\"off\"]"
+          }
+        }' "$e2e/ladder-none.yaml" > "$e2e/ladder-$1.yaml"
+    }
+    pol_fixture pol-cov   1.2.0 - -
+    pol_fixture pol-later 1.2.4 - -
+    pol_fixture pol-dup   1.2.0 - 1.2.3
+    pol_fixture pol-bad   1.2.0 'larger_rowz: nightly' -
     e2e_row() { # e2e_row <label> <script> <ladder tag> <crux dir> <want rc: 0|red> <must_match|-> <must_not_match|-> [extra args]
       local label="$1" sc="$2" tag="$3" cx="$4" want="$5" mm="$6" mn="$7" out got; shift 7
       out=$(MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_CRUX_DIR="$e2e/$cx" bash "$sc" --ladder "$e2e/ladder-$tag.yaml" \
@@ -1246,6 +1268,20 @@ E2E
         'is unusable' 'OPERATOR EMERGENCY SCOPE' || r=1
       e2e_row "a scope recorded for another release leaves the full ladder" "$sc" other crux red \
         'no receipt at .*/receipts/lambda\.json' '^SCOPED: ' || r=1
+      e2e_row "the standing policy covers the release: said, and judged on CRUX smoke" "$sc" pol-cov crux 0 \
+        '^POLICY: crux-smoke -- .* covers 1\.2\.3' 'no receipt at .*/receipts/lambda\.json' || r=1
+      e2e_row "a policy-covered release with short smoke is RED, still SCOPED" "$sc" pol-cov crux-short red \
+        '^SCOPED: crux-smoke' 'smoke only -- satisfied' || r=1
+      e2e_row "--scope crux-smoke on a policy-covered release judges the policy's entry" "$sc" pol-cov crux 0 \
+        'OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied' - --scope crux-smoke || r=1
+      e2e_row "--scope none (the nightly) never reads the policy: the full ladder" "$sc" pol-cov crux red \
+        'no receipt at .*/receipts/lambda\.json' '^POLICY: |^SCOPED: |OPERATOR EMERGENCY SCOPE' --scope none || r=1
+      e2e_row "a policy from a later version leaves the full ladder" "$sc" pol-later crux red \
+        'no receipt at .*/receipts/lambda\.json' '^POLICY: |^SCOPED: ' || r=1
+      e2e_row "a per-release entry for a policy-covered version is RED, judging nothing" "$sc" pol-dup crux red \
+        'one release takes one ruling' 'OPERATOR EMERGENCY SCOPE|no receipt at' || r=1
+      e2e_row "an unreadable policy is RED, judging nothing" "$sc" pol-bad crux red \
+        'cannot be applied to 1\.2\.3: unknown key in release_policy: larger_rowz' 'OPERATOR EMERGENCY SCOPE|no receipt at' || r=1
       return $r
     }
     if e2e_table "$SELF"; then printf 'ok    scope e2e: a recorded scope is applied and SAID; none recorded is the full ladder\n'
@@ -1261,6 +1297,12 @@ E2E
     dmutant silent-scope  "s/|| printf 'SCOPED: %s -- /|| printf 'scoped: %s -- /"
     dmutant none-ignored  's/^  SCOPE=""$/  :/'
     dmutant crux-env-unread 's/^\[ -n "\$CRUX_DIR" \] || CRUX_DIR="\${MODEL_LADDER_CRUX_DIR:-}"$/:/'
+    dmutant policy-unread   's/^if \[ "\$SCOPE" != none \]; then$/if false; then/'
+    dmutant policy-none-read 's/^if \[ "\$SCOPE" != none \]; then$/if true; then/'
+    dmutant policy-rc-ignored 's/^  if \[ "\$prc" != 0 \]; then$/  if false; then/'
+    dmutant policy-silent   "s/printf 'POLICY: %s -- /printf 'policy: %s -- /"
+    dmutant judge-reads-contract 's/^    "\$POLICY_LADDER" "\$VERSION" "\$CRUX_DIR"/    "$LADDER" "$VERSION" "$CRUX_DIR"/'
+    dmutant lookup-reads-contract 's/^print(name or "")\x27 "\$POLICY_LADDER"/print(name or "")\x27 "$LADDER"/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -1280,7 +1322,11 @@ sys.exit(1)' 2>/dev/null)}"
 [ -n "$RECEIPT_DIR" ] || RECEIPT_DIR="evidence/dogfood/models/$VERSION"
 MAIN_LADDER=""
 TMP_LADDER=""
-_rm_tmp_ladder() { if [ -n "${TMP_LADDER:-}" ] && [ -f "$TMP_LADDER" ]; then rm -f "$TMP_LADDER"; fi; }
+_rm_tmp_ladder() {
+  if [ -n "${TMP_LADDER:-}" ] && [ -f "$TMP_LADDER" ]; then rm -f "$TMP_LADDER"; fi
+  # the policy's synthesized ladder copy, never the contract itself
+  if [ -n "${POLICY_LADDER:-}" ] && [ "$POLICY_LADDER" != "$LADDER" ] && [ -f "$POLICY_LADDER" ]; then rm -f "${POLICY_LADDER:?}"; fi
+}
 trap _rm_tmp_ladder EXIT
 if [ -n "$LADDER_MAIN_OVERRIDE" ]; then MAIN_LADDER="$LADDER_MAIN_OVERRIDE"
 else
@@ -1301,12 +1347,29 @@ git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /de
 # never inferred: no entry for this version = the full ladder; two entries = RED; and it is printed as
 # `SCOPED:` so no reader (and no dogfood row) can take it for a full-ladder pass. `--scope none` forces the
 # full ladder on a scoped release (the nightly's "anything huge").
+# STANDING RELEASE POLICY (`ladder.release_policy`, scripts/lib/release_policy.sh): from its `since` on, every
+# release is judged on CRUX smoke. The policy is turned into this version's `emergency_scopes` entry in a copy
+# of the ladder (POLICY_LADDER), and the recorded-scope lookup and the judge below read that copy, so the rules
+# are the same ones a per-release entry gets. A per-release entry for a covered version, or a policy block that
+# cannot be read, is RED with nothing judged. `--scope none` (the nightly) never reads the policy.
+POLICY_LADDER="$LADDER"
+if [ "$SCOPE" != none ]; then
+  if ! . scripts/lib/release_policy.sh; then echo "RED   scripts/lib/release_policy.sh could not be loaded -- nothing was judged"; exit 1; fi
+  POLICY_OUT=$(mktemp)
+  release_policy_ladder "$LADDER" "$VERSION" > "$POLICY_OUT"; prc=$?
+  POLICY_LADDER=$(cat "$POLICY_OUT"); rm -f "${POLICY_OUT:?}"
+  if [ "$prc" != 0 ]; then
+    echo "RED   the standing release policy in $LADDER cannot be applied to $VERSION: $RP_WHY -- nothing was judged"; exit 1
+  fi
+  [ "$RP_APPLIES" != 1 ] || printf 'POLICY: %s -- the standing release policy in %s covers %s: CRUX smoke is the release gate, the larger ladder rows are nightly\n' \
+    "$(awk -F '\t' '$1 == "name" { print $2; exit }' <<< "$RP_BLK")" "$LADDER" "$VERSION"
+fi
 if [ -z "$SCOPE" ]; then
   SCOPE=$(python3 -c 'import sys, yaml
 sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
 name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open(sys.argv[1]))["ladder"], sys.argv[2])
 if why: print(why, file=sys.stderr); sys.exit(1)
-print(name or "")' "$LADDER" "$VERSION"); src=$?
+print(name or "")' "$POLICY_LADDER" "$VERSION"); src=$?
   if [ "$src" != 0 ]; then
     echo "RED   the recorded emergency scope for $VERSION is unusable (see above) -- neither the scope nor the ladder was judged"; exit 1
   fi
@@ -1323,7 +1386,7 @@ if [ -n "$SCOPE" ]; then
 sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
 L = yaml.safe_load(open(sys.argv[1]))["ladder"]
 sys.exit(1 if crux_smoke_scope.judge(L, sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], print) else 0)' \
-    "$LADDER" "$VERSION" "$CRUX_DIR" "${CRUX_CERT:-$CRUX_DIR/prompt-certification.json}" "$CUT_COMMIT" "$SCOPE"
+    "$POLICY_LADDER" "$VERSION" "$CRUX_DIR" "${CRUX_CERT:-$CRUX_DIR/prompt-certification.json}" "$CUT_COMMIT" "$SCOPE"
   rc=$?
   if [ "$rc" = 0 ]; then
     echo "ok    OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied. The model ladder was NOT run for this release (nightly only); this is not \"every rung green\""

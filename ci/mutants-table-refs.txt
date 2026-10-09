@@ -1,5 +1,0 @@
-# Head refs whose PR is judged by the CI survivor table (mutants-shard matrix + mutants-table), not by the
-# one-job `mutants` section (#4587 A', operator 2026-09-29 06:36Z). Scope: PR-1 and PR-2 of 0.70 ONLY.
-# After 0.70 this file is emptied and the 60-mutant cap is checked at PR OPEN (L26).
-# Option (a): emptied for PR-1/PR-2 too -- their mutants are judged by the #4647 ratchet section
-# (report-only + shrink-only ci/mutants-debt.tsv), because the intel shards hit the 720m timeout.

@@ -1,0 +1,219 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_existing_module_resolver",
+          "level": "note",
+          "message": {
+            "text": "pmat query at head (index rebuilt at tree b831c300fd) returns 5 results, none of which resolves a file's module path from mod declarations."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "resolve rust module path of a source file from mod declarations",
+              "--limit",
+              "5"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "5f151b239374b711c41346a00ccdbea04d13a7e0d2bd073b084852069917dc13",
+            "rationale": "No Rust helper derives a module path from mod declarations for the guard to reuse; the guard stays a cargo-free shell derivation.",
+            "failure_scenario": "If a shared resolver existed, a second derivation in the guard would drift from it; none was found at head.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "sibling_branch_parallel_fix",
+          "level": "note",
+          "message": {
+            "text": "Duplication scan: 8 needles over 1468/1468 sibling branches, 1 hit: build-kaizen/b2-red-guards-nightly-a7n has tests/fixtures/tree_reader/crates/reader_mods/src/flat.rs; it is not an ancestor of this PR."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "89ef1b7e35",
+              "--head",
+              "5c3ad274a4 (tree b831c300fd)",
+              "--json",
+              "dup2.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "66c0bf06fa0b5d7f922966ad45259337ba30ffa8f40a6319391927241fe783bc",
+            "rationale": "One sibling branch with no PR carries its own 2018-layout fixture; this PR supersedes it, and it was flagged to its owner.",
+            "failure_scenario": "If both landed, two fixtures would pin the same resolver rule twice and could disagree; the sibling has no PR, so it cannot land without review.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "planted_question_rejected",
+          "level": "note",
+          "message": {
+            "text": "Planted contrary question (merge put back map_err(&err)) rejected by both lanes, quoting the head line that passes err by value."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-contracts/src/ontology/extract/apr_model.rs:63 at 29f9d6141e",
+            "excerpt": "        count_index_entries(bytes, tensor_index_offset, data_offset).map_err(err)?;",
+            "excerpt_sha256": "eacf354a7d909a94ae7dcce414d659720a1afc4d24c87adc4d66f875713f86d2",
+            "rationale": "Both lanes rejected the planted claim that the merge reverted main's needless-borrow fix, each quoting this line.",
+            "failure_scenario": "Had a lane accepted it, the round would not count; neither did.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "merge_round_lane1_sonnet",
+          "level": "note",
+          "message": {
+            "text": "Lane 1, claude-sonnet-5-5: SHIP."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "merge-resolution round lane 1 (claude-sonnet-5-5) output at 5c3ad274a4 (tree b831c300fd, identical to head 29f9d6141e; only the commit message trailer line changed)",
+            "excerpt": "VERDICT: SHIP",
+            "excerpt_sha256": "a3c77339a218d8d34cca8f7d0bd226060bba5a75904cecf7f555856b066e1ae9",
+            "rationale": "Lane 1 verdict recorded on its own, with exact model id.",
+            "failure_scenario": "A lane that returned FIX-FIRST would make the same-family round non-unanimous and void.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "merge_round_lane2_haiku",
+          "level": "note",
+          "message": {
+            "text": "Lane 2, claude-haiku-4-5-20251001: SHIP."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "merge-resolution round lane 2 (claude-haiku-4-5-20251001) output at 5c3ad274a4 (tree b831c300fd, identical to head 29f9d6141e; only the commit message trailer line changed)",
+            "excerpt": "VERDICT: SHIP",
+            "excerpt_sha256": "a3c77339a218d8d34cca8f7d0bd226060bba5a75904cecf7f555856b066e1ae9",
+            "rationale": "Lane 2 verdict recorded on its own, with exact model id.",
+            "failure_scenario": "A lane that returned FIX-FIRST would make the same-family round non-unanimous and void.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "merge_resolution_path_attr_dropped",
+          "level": "note",
+          "message": {
+            "text": "The only difference between main and the merge head under ontology/extract/ is the removed attribute; apr_model.rs and scripts/tree_reader_tests.txt equal main."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "crates/aprender-contracts/src/ontology/extract/json/mod.rs:27-28 at 29f9d6141e",
+            "excerpt": "/// ONT-4f (aprender#4330): the GitHub snapshot entity types, read through this module's [`node`].\npub mod github;",
+            "excerpt_sha256": "9c05d76bf4d3a119dbea3e778e39853724939edd9ac132f3447cf0bbc09724e6",
+            "rationale": "Main's #4828 put #[path = \"json/github.rs\"] on the declaration in json.rs; this PR moved that file to json/mod.rs, where a #[path] resolves against json/, so the carried line would name json/json/github.rs. The merge drops it and the plain declaration resolves to json/github.rs.",
+            "failure_scenario": "Keeping the auto-merged attribute fails the crate build with a module file not found error.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "ratchet_baseline_banked",
+          "level": "note",
+          "message": {
+            "text": "pipe-into-grep -q ratchet: baseline 60, measured 60, PASS."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/pipe_grep_q_baseline.txt:4 at 29f9d6141e",
+            "excerpt": "60",
+            "excerpt_sha256": "39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9",
+            "rationale": "The two removed pipe-into-grep -q sites are banked: the ceiling equals the measured count, written by the guard's --update.",
+            "failure_scenario": "With the ceiling left at 62, two new pipe-into-grep -q sites could return unnoticed.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "tree_reader_mutants_killed",
+          "level": "note",
+          "message": {
+            "text": "tree-reader self-test at head: 41 checks, 0 failed; 3/3 MUTATION rows killed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_tree_reader_tests.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4e522f719dcaf933e7d47246de6fa480a7bca11228d301a404467015366c2e52",
+            "rationale": "All three resolver mutants (include-resolver hidden, module path flattened, 2018 sibling ignored) make the golden differ.",
+            "failure_scenario": "A surviving mutant would mean the fixture cannot tell the 2018-layout rule from its absence.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "merge_attr_mutant_killed",
+          "level": "note",
+          "message": {
+            "text": "cargo check with the attribute restored: non-zero exit (killed); the unmutated head checks clean."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "check",
+              "-p",
+              "aprender-contracts",
+              "--lib"
+            ],
+            "exit_code": 101,
+            "stdout_sha256": "f422d15c4d17dd7633b5eeadc2275e0daa9a109ab07e13c5a7539919bc8813df",
+            "rationale": "Restoring the auto-merged #[path] in json/mod.rs makes the crate fail to build, so dropping it is required, not cosmetic.",
+            "failure_scenario": "Had the build passed with the attribute, the line would be harmless and the resolution untested.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

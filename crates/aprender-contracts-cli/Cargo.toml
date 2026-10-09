@@ -18,7 +18,7 @@ name = "pv-sat"
 path = "src/bin/pv-sat/main.rs"
 
 [dependencies]
-aprender-contracts = { path = "../aprender-contracts", version = "0.70.0" }
+aprender-contracts = { path = "../aprender-contracts", version = "0.70.3" }
 # #3745 S1: `--model` is declared through the shared role type `ModelPath`, so
 # `apr surface` reads `apr pv verify-structure --model` as a model argument.
 batuta-common = { workspace = true, features = ["cli-roles"] }

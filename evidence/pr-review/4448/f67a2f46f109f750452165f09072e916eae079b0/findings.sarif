@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pull-hint-prints-invalid-serve",
+          "level": "warning",
+          "message": {
+            "text": "README.md:68 transcribes the hint that `apr pull` itself prints, `apr serve <path>`. That is not valid CLI, because serve requires the `run` or `plan` subcommand. The README is faithful to the binary. The defect is the hint at crates/apr-cli/src/commands/pull.rs:316, repeated at :372 and :437, outside this diff. The transcript stays as the contributor wrote it, per the maintainer ruling."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/apr-cli/src/commands/pull.rs"
+                },
+                "region": {
+                  "startLine": 316
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "-F",
+              "apr serve {}",
+              "crates/apr-cli/src/commands/pull.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "67cc6505365b6a778b5327447661b8d0ac9a8b5296e42ddfcf6c37a22b3d93f2",
+            "failure_scenario": "A user runs the serve hint shown in the transcript (and printed by apr pull) and gets a clap unrecognized-subcommand error. The copy-paste block above the transcript uses apr run, which is valid.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "transcript-cosmetic",
+          "level": "note",
+          "message": {
+            "text": "The sample-output transcript is hand-trimmed. The pull banner reads `== APR Pull ===`, a bare `$` is left at the end, and 5 added lines carry trailing whitespace. The added apr pull/list/run lines share a code block with the three alternative cargo install lines. Cosmetic only, and the wording stays as the contributor wrote it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "README.md"
+                },
+                "region": {
+                  "startLine": 44
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from the README diff by the primary review lane. None of these slips is a failing command or a private string.",
+            "failure_scenario": "A reader who pastes the whole block also runs all three cargo install variants (slow, but not wrong). A reader who diffs the transcript against real output finds one differing banner character.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.17"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-invalid-serve-command",
+          "level": "warning",
+          "message": {
+            "text": "The documented `apr serve` command is incorrect and missing the required `run` or `plan` subcommand."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "README.md"
+                },
+                "region": {
+                  "startLine": 68
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy (gemini-3.1-pro-high) finding `invalid-serve-command`, agy mark `cited`. Re-marked asserted: agy supplied no excerpt or stdout digest that could be verified. The primary did not re-verify it.",
+            "failure_scenario": "Users will copy the documented command `apr serve ~/.cache/...` from the README and it will fail to run, because `apr serve` requires a subcommand (like `run` or `plan`).",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-transcript-banner-typo",
+          "level": "warning",
+          "message": {
+            "text": "README.md shows `== APR Pull ===`, but the binary prints `=== APR Pull ===`"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "README.md"
+                },
+                "region": {
+                  "startLine": 56
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy (gemini-3.1-pro-high) finding `transcript-banner-typo`, agy mark `measured`. Re-marked asserted: agy supplied no excerpt or stdout digest that could be verified. The primary did not re-verify it.",
+            "failure_scenario": "A reader who diffs the README transcript against real `apr pull` output finds one differing banner character. No command is affected.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-removed-alias-example",
+          "level": "warning",
+          "message": {
+            "text": "The PR removes a valuable and idiomatic example of using model aliases."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "README.md"
+                },
+                "region": {
+                  "startLine": 44
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy (gemini-3.1-pro-high) finding `removed-alias-example`, agy mark `asserted`. Re-marked asserted: agy supplied no excerpt or stdout digest that could be verified. The primary did not re-verify it.",
+            "failure_scenario": "Users reading the Quick Start guide will not learn about the user-friendly model alias feature (`apr pull qwen2.5-coder-1.5b`), as the clean example was removed and replaced entirely with an opaque cache path.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

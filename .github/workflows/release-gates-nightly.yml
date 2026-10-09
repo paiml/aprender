@@ -1,0 +1,86 @@
+# release-gates-nightly.yml — the nightly producers for the `milestone` and `preflight` verdict lanes (#4719).
+#
+# scripts/release/nightly_train.sh judges 15 verdict lanes; a lane with no producer on main prints not_measured,
+# so the train can never read RELEASABLE. This workflow runs the release-day command of two of them at main HEAD,
+# unchanged, so each night measures what release day would refuse. Nothing here decides what a gate accepts:
+# every verdict is the called script's exit code, and release day still runs the full commands in autopilot.sh.
+#
+#   milestone  scripts/check_milestone_cut.sh <train> --must-carry (autopilot cut_tag). rc 0 = green; 1 (an open
+#              must-carry issue) and every other rc (could not judge) = red. Unknown is never a pass. The train is
+#              the lowest open milestone titled X.Y.Z above the newest final vX.Y.Z tag (the version on main is
+#              the last release, bumped at T-0; released and stale milestones stay open). Neither carry nor the strict re-check runs: both
+#              belong to the tag step, after the carry has MOVED items (a write this job must never make).
+#   preflight  scripts/check_publish_preflight.sh --graph-only (R2 + R6, the rc-cut mode). The full gate is red on
+#              EVERY untagged main commit by design: R3 wants tag v<version> at HEAD, R4 HEAD on release/<version>,
+#              R7 the receipts the bump commits. Faking a tag or a release ref to get past them would be theater.
+#              The measurable rules are produced nightly by their own lanes: R5 = dogfood, R7 = models,
+#              R8 = readiness (readiness-nightly.yml); R1/R3/R4 describe the upload and stay at publish (T-4).
+#
+# The judge's LANES rows (filled once nightly-train.yml is on main):
+#   milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
+#   preflight;verdict;check_publish_preflight.sh --graph-only (R6; R1/R3/R4 at publish);.github/workflows/release-gates-nightly.yml;^schedule$;^preflight$
+name: release-gates-nightly
+
+on:
+  schedule:
+    # Schedule events on this account fire 3h51m-6h49m late (examples-nightly.yml, #3292), so the cron is set
+    # ~5h before the 04:45Z judge. Both jobs take minutes; landing early is harmless, landing after 04:45Z is
+    # not_measured for that night.
+    - cron: '15 22 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: release-gates-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  milestone:
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # the tags name the last release
+
+      - name: check_milestone_cut.sh <train> --must-carry (autopilot cut_tag, before the carry)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          titles=$(gh api "repos/$REPO/milestones?state=open&per_page=100" --paginate --jq '.[].title') \
+            || { echo "::error::milestone list could not be read: no verdict"; exit 2; }
+          # the train = the lowest open X.Y.Z milestone ABOVE the newest final tag. Released versions keep open
+          # milestones (0.70.0 and 0.70.1 held 50 and 60 open items on 2026-10-04), and stale ones are empty
+          # (0.69.3: 0 open), so "lowest open" alone would judge the wrong train, or pass on an empty one.
+          last=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -n 1)
+          [ -n "$last" ] || { echo "::error::no final vX.Y.Z tag: the train cannot be named"; exit 2; }
+          train=$(printf '%s\n' "$titles" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V \
+            | while IFS= read -r t; do [ "$t" != "$last" ] && [ "$(printf '%s\n%s\n' "$last" "$t" | sort -V | tail -n 1)" = "$t" ] && { echo "$t"; break; }; done)
+          [ -n "$train" ] || { echo "::error::no open X.Y.Z milestone above v$last: the train cannot be named"; exit 2; }
+          echo "train milestone: $train (lowest open X.Y.Z above the newest final tag v$last)"
+          rc=0
+          setsid --wait bash scripts/check_milestone_cut.sh "$train" --must-carry || rc=$?
+          case $rc in
+            0) echo "MUST-CARRY $train: no open must-carry issue (rc=0)" ;;
+            1) echo "::error::milestone $train holds open must-carry issue(s) (rc=1)"; exit 1 ;;
+            *) echo "::error::milestone $train could not be judged (rc=$rc): Unknown is not a pass"; exit 1 ;;
+          esac
+
+  preflight:
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: check_publish_preflight.sh --graph-only (R2 + R6)
+        run: |
+          set -uo pipefail
+          rc=0
+          setsid --wait bash scripts/check_publish_preflight.sh --graph-only || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::publish preflight --graph-only refused rc=$rc (1 = a rule refused, 2 = could not answer)"; exit 1; }

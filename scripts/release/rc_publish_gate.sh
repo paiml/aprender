@@ -59,6 +59,17 @@ rpg_verdict() {
     fi
 }
 
+# Pure: exit 0 when AUTOPILOT's `if run_step tag` block runs `--verify "$WT"` and its
+# `die "publish dry-run` BEFORE the cut_tag call (the dry run is ahead of the tag), else 1.
+wiring_ahead_of_tag() {
+    awk '/^if run_step tag; then/ { t = 1; next }
+         t && /^fi/ { t = 0 }
+         t && /^ +cut_tag / { if (v && d) ok = 1; t = 0 }
+         t && /^ +bash scripts\/release\/rc_publish_gate\.sh --verify "\$WT"/ { v = 1 }
+         t && v && /die "publish dry-run/ { d = 1 }
+         END { exit !ok }' "$1"
+}
+
 # Pure: `cargo metadata` JSON on stdin -> every member whose `publish` is not `[]`, sorted,
 # one per line; one empty line when there is none. jq, not python3 (#4352).
 rpg_publishable() {
@@ -102,10 +113,17 @@ EOF
     if grep -qx 'package -p a --no-verify --locked' "$d/args"; then echo "  ok   the default walk stays --no-verify (rc-cut cost)"
     else echo "  FAIL default ran: $(cat "$d/args")"; fail=1; fi
     rm -rf -- "${d:?}"
-    # WIRING: the autopilot's T-4 dryrun step runs --verify on the tagged tree and dies on red.
-    if grep -qE '^ +bash scripts/release/rc_publish_gate.sh --verify "\$WT"' "$HERE/autopilot.sh" \
-        && grep -qE 'die "publish dry-run' "$HERE/autopilot.sh"; then echo "  ok   autopilot dryrun runs --verify and stops on red"
-    else echo "  FAIL autopilot.sh dryrun does not run rc_publish_gate.sh --verify with a die"; fail=1; fi
+    # WIRING: the autopilot's tag step runs --verify on the release commit AHEAD of the tag: the
+    # --verify line and its `die "publish dry-run` sit inside `if run_step tag`, before cut_tag.
+    if wiring_ahead_of_tag "$HERE/autopilot.sh"; then echo "  ok   autopilot runs --verify ahead of the tag and stops on red"
+    else echo "  FAIL autopilot.sh does not run rc_publish_gate.sh --verify with a die ahead of cut_tag"; fail=1; fi
+    # The same predicate must refuse the old order (the dry run after the tag), or it proves nothing.
+    d=$(mktemp -d) || return 2
+    printf '%s\n' 'if run_step tag; then' '  cut_tag "$V" "$T" "$MC"' 'fi' 'if run_step dryrun; then' \
+        '  bash scripts/release/rc_publish_gate.sh --verify "$WT" > x 2>&1; rc=$?' '  [ $rc -eq 0 ] || die "publish dry-run refused"' 'fi' > "$d/after.sh"
+    if wiring_ahead_of_tag "$d/after.sh"; then echo "  FAIL the wiring check accepts a dry run after the tag"; fail=1
+    else echo "  ok   the wiring check refuses a dry run after the tag"; fi
+    rm -rf -- "${d:?}"
     if [ "$fail" -eq 0 ]; then echo "$PROG self-test: PASS"; return 0; fi
     echo "$PROG self-test: FAIL"; return 1
 }

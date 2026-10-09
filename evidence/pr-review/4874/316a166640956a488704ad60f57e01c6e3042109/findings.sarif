@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "row-floor-has-no-mutant",
+          "level": "note",
+          "message": {
+            "text": "The new row floor (`PASS -ge 18`) works: an empty table and a table with 9 rows dropped both exit 1. But the floor itself has no mutant. Changing it to `-ge 0` leaves --self-test at rc 0 and --mutants at 11/11 killed, so a future edit that removes the floor is not noticed by the proofs. The nightly step still catches an emptied table through --mutants (0/11), so the exposure is a partly emptied table. Also, the literal 18 must be bumped by hand when a row is added."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/deep_nodefault_verdict.sh"
+                },
+                "region": {
+                  "startLine": 209
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scratch-copy-with-floor-set-to-0.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "edab6a55fd1302529b14cdbdef86abbffd3ca4a6510becdf98c8746680f6a83c",
+            "failure_scenario": "Someone loosens the floor to 0; every proof stays green.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

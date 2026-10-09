@@ -299,7 +299,10 @@ case "${1:-}" in
     [ "$rc" = 0 ] || { printf 'error: failed to compile `aprender v9.9.9`\n'; exit "$rc"; }
     mkdir -p "$root/bin" "$CARGO_HOME/registry/cache/index.crates.io-fixture" || exit 1
     cp "$FX_APR_STUB" "$root/bin/apr" && chmod +x "$root/bin/apr" || exit 1
-    printf 'fixture crate bytes\n' > "$CARGO_HOME/registry/cache/index.crates.io-fixture/aprender-9.9.9.crate"
+    # The fixture hosts run in parallel and share one CARGO_HOME, so a truncate-then-write here let a
+    # host hash an empty .crate mid-write (#4764). Write a temp name the cache glob cannot match, then mv.
+    c="$CARGO_HOME/registry/cache/index.crates.io-fixture/aprender-9.9.9.crate"
+    printf 'fixture crate bytes\n' > "$c.tmp.$$" && mv -f -- "$c.tmp.$$" "$c" || exit 1
     printf '  Installed package `aprender v9.9.9` (executable `apr`)\n' ;;
   *) exit 0 ;;
 esac
@@ -642,6 +645,10 @@ open(p, "w").write(s)
 PY
     fi
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
+    # the autopilot judges the standing release policy first (unreadable = STOP): the real reader and a
+    # ladder with no policy block, so 9.9.9 runs the pre-policy train these rows were written for
+    mkdir -p "$r/scripts/lib" "$r/contracts" && cp -- "$ROOT/scripts/lib/release_policy.sh" "$ROOT"/scripts/lib/release_policy_*.awk "$r/scripts/lib/" \
+        && printf 'ladder:\n  emergency_scopes:\n' > "$r/contracts/model-capability-ladder-v1.yaml" || return 2
     # the post-publish dogfood: runs the REAL gate over the receipts it is pointed at, then writes the
     # receipt a real run writes, with the verdict/deferred the row picks
     cat > "$r/scripts/dogfood.sh" <<'STUB'

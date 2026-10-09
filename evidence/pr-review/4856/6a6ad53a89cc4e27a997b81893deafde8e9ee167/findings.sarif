@@ -1,0 +1,131 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "query_strip_and_scope_docker_in_limit",
+          "level": "note",
+          "message": {
+            "text": "Round-4 diff read in full: a query call (cargo mutants --version, mutants_*.sh --exempt-ref or --self-test) is now removed from a copy of the line instead of hiding the whole line, and the scope arm skips a line that holds docker run so the docker arm judges it. No new gap within the guard stated limit (a tripwire against an accidental drop, not an author who hides a cap). A hidden run, such as one built by variable expansion, is out of scope by that limit."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_mutants_memory_cap.sh:41",
+            "excerpt": "{ q = $0; gsub(/cargo mutants --version|mutants_[a-z_]+\\.sh --(exempt-ref|self-test)/, \"\", q) }",
+            "excerpt_sha256": "0ab83511ff04c8f0d0c8ec2e3405d430ff1762db5af5485316954b5634938f3e",
+            "failure_scenario": "A run assembled from a variable (CMD=cargo; $CMD mutants) is not seen; that is the hidden-run case the guard states it does not defend.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "earlier_rounds_still_fixed",
+          "level": "note",
+          "message": {
+            "text": "Rounds 1-3 stay fixed at this head: the scope-wraps-echo repro still gives rc 1, as do the apostrophe-in-double-quotes repro and rows scopeother, scopeswnz and scopeapos. The new rows shareline (a real run beside a query call on one docker line) and scopedocker (a scope around docker run caps only the CLI) both give rc 1, and --self-test passes."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_memory_cap.sh",
+              "<temp file: capped systemd-run echo, then bare mutants_diff_gate.sh>"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "c97634a2f1373f2cad23019319f8570c073125ede02462e3a7097e04b5c31719",
+            "failure_scenario": "Without the scope-end rule that repro passes with rc 0.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "mutation_sweep_round4",
+          "level": "note",
+          "message": {
+            "text": "Sweep of the round-4 edits: restoring the scope arm onto docker lines, dropping the query strip, and dropping the double-quote strip each turn --self-test red (3 of 3 killed). Two further edits were equivalent (a +0 on the quote count; a redundant --version test) and are not counted."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "mutation-sweep: sed one edit into a copy of the guard under a temp ROOT, run --self-test, killed iff non-zero"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3aa7f6e7d08e1760e1202a8994f8ad8cf5489a2f19e5790b89261eac0c54204f",
+            "failure_scenario": "A revert of either round-4 edit would go unseen if no row pinned it; shareline and scopedocker pin them.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "bare_run_green",
+          "level": "note",
+          "message": {
+            "text": "The bare run at head exits 0 with the same four ok runs: mutants-nightly.yml:89, ci/sections.yml:3478 (scope), ci/sections.yml:3987, ci.yml:652."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_mutants_memory_cap.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f2c9b3795bfac857e42d2f2393ded2aab13ba4b6fd5047ce994601f603a3b95f",
+            "failure_scenario": "If the cuda scope lost its flags the bare run would turn rc 1.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh at head: 5 needles, 0 hits across 1491 of 1491 sibling branches."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json output read: hits_total 0",
+            "failure_scenario": "A parallel guard under another name would escape a lexical scan; none was seen.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "patch_id_binds",
+          "level": "note",
+          "message": {
+            "text": "Subject diff 358e9d4d1188..6a6ad53a89cc has patch-id e732bfee2fabb636d6acee87003f615ed0df280d under prpid_compute; the local origin/main ref was used without a fetch."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "prpid_compute run under bash -c on the review worktree at head",
+            "failure_scenario": "A stale local origin/main would bind the receipt to a different base than CI computes.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

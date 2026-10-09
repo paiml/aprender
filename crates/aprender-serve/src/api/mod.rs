@@ -75,6 +75,8 @@ pub mod cuda_batch_scheduler;
 #[cfg(feature = "cuda")]
 pub mod iteration_scheduler;
 mod openai_handlers;
+// #4918: tool calls on the streaming chat path (both SSE builders).
+mod stream_tool_calls;
 pub(crate) use openai_handlers::LiveUtf8Deltas;
 pub(crate) use openai_handlers::{
     openai_chat_completions_handler, openai_chat_completions_stream_handler, openai_models_handler,
@@ -122,9 +124,11 @@ pub use gpu_handlers::{spawn_batch_processor, BatchConfig};
 mod realize_handlers;
 pub(crate) use realize_handlers::{
     clean_chat_output, format_chat_messages, format_chat_messages_for_state,
-    format_chat_messages_for_state_thinking, format_chat_messages_official,
-    format_chat_messages_official_thinking, openai_completions_handler, openai_embeddings_handler,
-    realize_embed_handler, realize_model_handler, realize_reload_handler,
+    format_chat_messages_for_state_thinking, format_chat_messages_for_state_thinking_tools,
+    format_chat_messages_official, format_chat_messages_official_thinking,
+    format_chat_messages_official_thinking_tools, openai_completions_handler,
+    openai_embeddings_handler, realize_embed_handler, realize_model_handler,
+    realize_reload_handler,
 };
 #[cfg(feature = "cuda")]
 pub(crate) use realize_handlers::{logprobs_handler, perplexity_handler};

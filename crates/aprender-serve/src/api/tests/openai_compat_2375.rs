@@ -326,6 +326,7 @@ async fn true_streaming_terminal_chunk_distinguishes_length_from_stop() {
             0,
             None,
             None,
+            None,
         );
         let body = body_text(response).await;
         sse_payloads(&body)
@@ -511,24 +512,7 @@ fn no_shipped_string_leaks_an_internal_rust_constructor() {
         let Ok(source) = std::fs::read_to_string(&path) else {
             continue;
         };
-        for (lineno, line) in source.lines().enumerate() {
-            // Doc comments explain internals on purpose; only real literals ship.
-            if line.trim_start().starts_with("//") {
-                continue;
-            }
-            for text in string_literals(line) {
-                for needle in &needles {
-                    if text.contains(needle.as_str()) {
-                        offenders.push(format!(
-                            "{}:{}: {}",
-                            path.display(),
-                            lineno + 1,
-                            line.trim()
-                        ));
-                    }
-                }
-            }
-        }
+        offenders.extend(constructor_leaks(&path, &source, &needles));
     }
 
     assert!(scanned_apr_handlers, "guard never reached apr_handlers.rs");
@@ -537,6 +521,26 @@ fn no_shipped_string_leaks_an_internal_rust_constructor() {
         "shipped strings must not name internal Rust constructors (#2375 finding 8):\n{}",
         offenders.join("\n")
     );
+}
+
+/// Every line of `source` holding a string literal that names one of
+/// `needles`, as `path:line: text`, once per literal and needle that match.
+fn constructor_leaks(path: &std::path::Path, source: &str, needles: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (lineno, line) in source.lines().enumerate() {
+        // Doc comments explain internals on purpose; only real literals ship.
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        for text in string_literals(line) {
+            for needle in needles {
+                if text.contains(needle.as_str()) {
+                    out.push(format!("{}:{}: {}", path.display(), lineno + 1, line.trim()));
+                }
+            }
+        }
+    }
+    out
 }
 
 fn collect_rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {

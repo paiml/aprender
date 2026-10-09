@@ -32,9 +32,9 @@
 # shape (aggregates, regressions, cross-run identity, cross-engine parity).
 # ─────────────────────────────────────────────────────────────────────────────
 metadata:
-  version: 1.1.0
+  version: 1.3.0
   created: '2026-04-23'
-  last_modified: '2026-04-23'
+  last_modified: '2026-10-04'
   author: PAIML Engineering
   kind: pattern   # cross-cutting compound-gate pattern, not a single mathematical kernel
   compound_gates_kind: CompoundShipGatesContract
@@ -708,3 +708,109 @@ falsification_tests:
       - non_finite_promoted_to_pass
       - out_of_range_measured_accepted
       - out_of_range_threshold_accepted
+  - id: FALSIFY-GATE-SHIP-013
+    rule: >
+      The nightly coverage measurement leaves a receipt keyed by the commit it
+      measured: sha, floor, pct (two decimals, truncated, never rounded up),
+      and the number of libtest tests that passed, or status not_measured with
+      a reason and pct and passed null. A previous run's log, a run that
+      printed DID NOT MEASURE, a log with no TOTAL line, zero instrumented
+      lines, zero tests run, or covered above total is not_measured, never a
+      number. Only the release gate (FALSIFY-GATE-SHIP-014) reads it
+      (#4672, #4734).
+    prediction: >
+      scripts/coverage_receipt.sh matches every row of
+      scripts/check_coverage_receipt.sh (21 rows); coverage-nightly touches a
+      marker before the coverage step, runs the receipt step after it with
+      if: always() and continue-on-error, keyed by git rev-parse HEAD with
+      COV_FLOOR as make resolves it, and uploads the receipt by its exact glob
+      with if: always(), continue-on-error and if-no-files-found: error;
+      nothing in the tracked tree but the release gate and its guard
+      (contracts/ prose aside) reads it; each of 31 mutants turns a row WRONG.
+      The three steps are held to their reviewed text exactly (comments and
+      blank lines aside).
+    test: |
+      bash scripts/check_coverage_receipt.sh
+    if_fails: >
+      The release gate would accept a stale, partial, rounded-up or zero-test
+      number for a commit the nightly did not measure, or an unreviewed reader
+      starts trusting the receipt.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-012
+    binds_to: GATE-SHIP-012
+    ship_blocking: false  # the producer never blocks the nightly; the TAG row is the blocking read
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'scripts/coverage_receipt.sh'
+      - 'scripts/check_coverage_receipt.sh (21 rows + 4 structural; 31 mutants)'
+      - '.github/workflows/coverage-nightly.yml (marker, receipt and upload steps)'
+    full_discharge_blocks_on: >
+      Three consecutive green nightlies whose receipt is measured with passed
+      above zero (L31), so the release gate's read has a measured baseline.
+    counter_example_classes:
+      - stale_log_trusted
+      - did_not_measure_promoted_to_a_number
+      - pct_rounded_up_past_the_floor
+      - keyed_by_ref_not_sha
+      - zero_tests_promoted_to_a_number
+      - unreviewed_reader
+  - id: FALSIFY-GATE-SHIP-014
+    rule: >
+      The release reads coverage-nightly's sha-keyed receipt for the release
+      commit C, never the tag push's own coverage section, which went green on
+      v0.70.1 having run 0 tests and printed no figure (#4734). The newest
+      completed nightly whose head commit H is C, or a version-only parent of
+      C, must carry a receipt with schema coverage-receipt/v1, sha H, status
+      measured, passed >= 1, total >= 1, covered <= total, pct equal to
+      covered/total truncated to two decimals, and pct >= COV_FLOOR from the
+      Makefile at C. H is a version-only parent (#4735) when H is an ancestor
+      of C and every path between them is a MODIFIED Cargo manifest or lock
+      or CHANGELOG.md, an ADDED evidence/dogfood/models/V/*.json, or an ADDED
+      evidence/crux/V/prompt-certification.json or
+      prompt-certification-inventory.json (P7 D3), with V the
+      workspace version at C, and the Cargo diff is equal once version values
+      are blanked. Any other path, a modified ladder receipt or certification,
+      another file name in evidence/crux/V, another
+      version's directory, a missing receipt, a receipt for another commit,
+      no figure, 0 tests, no COV_FLOOR, or gh failing refuses. The same
+      judgement runs before the tag (--resolve C) in the autopilot's tag step
+      and again in the preflight on the tag (#4691).
+    prediction: >
+      scripts/release/tag_coverage_gate.sh --self-test passes 12 judge rows,
+      18 end-to-end rows, 6 version-surface rows, 5 carried-certification
+      rows and 5 --resolve rows over a
+      real git history and a stubbed gh, including the plants: a missing
+      receipt, a receipt for another sha, one with no %, one with 0 tests and
+      gh failing refuse; a receipt for C and for a version-only bump of C
+      accept. scripts/check_tag_coverage_gated.sh holds the preflight call
+      before the dryrun and cascade steps with a dying rc, and each of its 17
+      mutants of the gate turns the gate's self-test red.
+      scripts/check_tag_step_gated.sh holds the --resolve call before the tag
+      is created, with a dying rc.
+    test: |
+      bash scripts/check_tag_coverage_gated.sh --self-test
+      bash scripts/check_tag_coverage_gated.sh
+      bash scripts/check_tag_step_gated.sh --self-test
+      bash scripts/check_tag_step_gated.sh
+    if_fails: >
+      A release commit whose coverage was never measured, measured on another
+      commit, ran 0 tests or fell below COV_FLOOR is tagged and reaches the
+      crates.io cascade; or an ordinary version bump is refused for want of a
+      nightly on the bump commit itself.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-012
+    binds_to: GATE-SHIP-012
+    ship_blocking: true  # autopilot dies on its rc before the tag and before T-4
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'scripts/release/tag_coverage_gate.sh (46 self-test rows)'
+      - 'scripts/check_tag_coverage_gated.sh (wiring rows; 17 mutants)'
+      - 'scripts/check_tag_step_gated.sh (--resolve before the tag)'
+      - 'scripts/release/autopilot.sh (tag step and preflight calls)'
+    full_discharge_blocks_on: >
+      A release cut end to end through the gate against a live nightly
+      receipt; until then the e2e rows stub gh over a real git history.
+    counter_example_classes:
+      - vacuous_tag_section_read_as_a_measurement
+      - receipt_for_another_commit_accepted
+      - zero_tests_accepted
+      - non_version_change_rides_on_a_bump
+      - check_by_job_name_not_by_commit

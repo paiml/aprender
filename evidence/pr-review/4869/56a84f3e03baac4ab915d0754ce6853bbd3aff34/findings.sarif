@@ -1,0 +1,179 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "door_pins_recorded_run",
+          "level": "note",
+          "message": {
+            "text": "publish_strict.sh line 41 hands the recorded run id to clean_room_gate as a third argument and dies on a non-zero return. Missing, empty, non-numeric, unreadable, red and other-commit ids each stop; the green id passes through the same proof the cascade uses (job conclusion plus the logged tested sha equal to the tag commit). Read in full; no defect found."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/release/publish_strict.sh:41",
+            "excerpt": "crout=$(clean_room_gate \"$WT\" \"$T\" \"$crid\") || die \"clean-room run $crid does not prove $T: $crout\"",
+            "excerpt_sha256": "8653ea43d93876d813292a0f700cd0e56c10e9d3a8c5916ea56156901d342358",
+            "failure_scenario": "If the pinned argument were dropped the gate would accept any green run of the last 30, so a run for another commit could stand in for the recorded one; mutation m2 shows that edit turns the table red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pin_arity_is_argc_not_emptiness",
+          "level": "note",
+          "message": {
+            "text": "clean_room_gate treats the third argument by argument count, so an empty recorded id is refused rather than falling back to the unpinned search. This closes the path where an empty STATUS value would silently widen the gate."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/cascade-publish.sh:485",
+            "excerpt": "local root=$1 tag=$2 pin=\"\" pinned=\"\"",
+            "excerpt_sha256": "703c220898a224e2432a033ea9b1b8f1f116ba0ccdab1bbd907647a71d673c40",
+            "failure_scenario": "Testing emptiness instead of argc would let an empty id search the whole recent list and pass on an unrelated green run; mutation m8 (argc threshold) is killed.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "publish_guard_table",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_publish_strict_cleanroom.sh runs the real publish_strict.sh against a fixture tag, stub gh and a cargo stub that fails the table if called. 9 rows ok, PASS."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_publish_strict_cleanroom.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d4355ab7381796c11b37283437910db2644fa82979ff5aeda3d4837324f19014",
+            "failure_scenario": "A door that accepts a red or other-commit run exits 0 and the table row fails.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cascade_gate_table",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_cascade_clean_room_gate.sh with its 10 new pinned rows: every row held, PASS."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/check_cascade_clean_room_gate.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "24d371ddb4c3fa260761e2cadb26105a0b1baca40142d677c37ee1c9e20f9513",
+            "failure_scenario": "A pinned call that returns 0 for a run before the commit, an empty id or a non-numeric id turns a row red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "guard_mutation_sweep",
+          "level": "note",
+          "message": {
+            "text": "13 hand-made edits across the two guarded files (publish_strict.sh door block; cascade-publish.sh pinned branch), each run against both guards via PUBLISH_STRICT_UNDER_TEST and CASCADE_UNDER_TEST on copies in a scratch dir; 13 of 13 killed. One earlier edit (m11) only appended a no-op after an echo and left return 1 in place, so it was an equivalent mutant; it was discarded and replaced by m11b, not counted as a survivor."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "mutation-sweep: sed one edit into a scratch copy of publish_strict.sh or cascade-publish.sh, run both guards with the UNDER_TEST env vars, killed iff either exits non-zero"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "acccfb039eb4549e0c8c1490d5942966b0477c9204226dab66e19456f97ea68b",
+            "failure_scenario": "A surviving edit would be a rule the guards state and nothing tests; none survived.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "no_committed_mutation_set",
+          "level": "note",
+          "message": {
+            "text": "The skill asks for 100% kill on the guard committed mutation set. Neither check_publish_strict_cleanroom.sh nor check_cascade_clean_room_gate.sh has one in the tree (no scripts/mutate_ file names them), so the 13-edit sweep above is this review's own and is not reproducible from the repo. The kill rate is honest; the committed set the skill expects does not exist."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "git grep over the head for the two guard names finds only the contract, the roadmap entry and the guards themselves; scripts/ holds mutate_ scripts for other guards only",
+            "failure_scenario": "A later edit that weakens the door and also a table row would not be caught by any stored mutation set.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "live_run_path_shape",
+          "level": "note",
+          "message": {
+            "text": "The pinned branch reads gh api repos/paiml/infra/actions/runs/<id> and compares .path to .github/workflows/clean-room.yml. Measured live once on run 37624063306: path is exactly that string and the created_at/status/conclusion mapping parses. The guard tables use a stub gh, so this is the only real-gh evidence; a run whose path carried an @ref suffix would be refused, which fails closed."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "gh",
+              "api",
+              "repos/paiml/infra/actions/runs/37624063306",
+              "--jq",
+              ".path, ([{databaseId: .id, status: .status, conclusion: .conclusion, createdAt: .created_at}] | tojson)"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0d46dbbbbb48da0c482a38ff8dea27de9299c96c1d3c481ab109b8981b28c0a3",
+            "failure_scenario": "If path ever carried a ref suffix every pinned run would be refused and the publish would stop; it fails closed, never open.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "writer_matches_reader",
+          "level": "note",
+          "message": {
+            "text": "autopilot.sh:288 writes the numeric infra run id to cleanroom-run-id, the form the new door requires, and ont10_readiness.sh only checks the file is non-empty. No writer emits a non-numeric value."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "git grep cleanroom-run-id over scripts at the head, writer line read in context",
+            "failure_scenario": "A writer that stored a URL or a prefixed id would be refused at publish time, a stop and not a false pass.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh: 18 needles, 0 hits across 1553 of 1553 sibling branches, merge-base-to-main swept (136 files). pmat query for the clean-room-run verification returned only unrelated Python receipt code. No parallel pinned gate exists."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json hits_total read as 0; pmat query output grepped for clean_room and cleanroom with no match",
+            "failure_scenario": "A re-implementation under another name would escape a lexical scan; none was seen.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

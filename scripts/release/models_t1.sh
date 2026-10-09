@@ -30,7 +30,23 @@
 # An unreachable host, a failed build, a binary that is not the release, a missing receipt, a red
 # cell and a judge DECLINE (exit 2) are each NO-GO. None is a pass, and nothing is retried here.
 #
-# usage: models_t1.sh <version> <release-commit> <out-dir>
+# MEASURE MODE -- env MODELS_T1_MEASURE (from 0.71.0 a release ships on CRUX smoke, the standing
+# `ladder.release_policy` in contracts/model-capability-ladder-v1.yaml):
+#   unset|ladder  the above, unchanged.
+#   crux          the same build + binary proof per leg, then
+#                 `choom -n 1000 -- bash scripts/crux_sweep_shards.sh <v> --host <id> --apr <proved apr>
+#                  --out <dir> --backend gpu --certification evidence/crux/<v>/prompt-certification.json`.
+#                 That certification must be committed at the release commit (prepare_bump carries it
+#                 forward), else exit 2 before any leg. Receipts: <out>/<host>-gpu.json (the local leg
+#                 sweeps into <out>/lambda-crux/ and copies its receipt up: the sweep's meta/plan files
+#                 beside it would be globbed by the judge). Each receipt's .apr.version_line must be the
+#                 proved line. The judge runs as `check_model_ladder.sh --version <v> --crux <out>
+#                 --cut-commit <sha>` with CRUX_CERT set, and its rc 0 counts only when it printed a
+#                 `POLICY: ` or `SCOPED: ` line -- otherwise it judged no CRUX scope and crux mode
+#                 measured nothing the release gate reads.
+#   anything else exit 2.
+#
+# usage: [MODELS_T1_MEASURE=ladder|crux] models_t1.sh <version> <release-commit> <out-dir>
 # exit:  0 GO on both hosts  ·  1 NO-GO  ·  2 usage/ENV (the caller STOPs on any non-zero)
 set -uo pipefail
 LOCAL_HOST=lambda
@@ -58,6 +74,20 @@ mt_receipt_fields() {
             | join("\t") end end' -- "$1" 2>/dev/null; } || printf 'UNREADABLE\t-\t-\n'
 }
 
+# mt_crux_fields RECEIPT -> "<apr.version_line>\t<summary.cells>\t<summary.RED>" for a
+# crux-inference-receipt/v1, printed as mt_receipt_fields prints ('-' for a missing key), or
+# "UNREADABLE\t-\t-". Same BOM rule.
+mt_crux_fields() {
+    { [ -f "$1" ] && [ -r "$1" ] && [ "$(head -c 3 -- "$1")" != $'\xef\xbb\xbf' ] \
+        && jq -rs 'if length != 1 then "UNREADABLE\t-\t-" else .[0] | if type != "object" then empty else
+            [(.apr | if type == "object" and has("version_line") then .version_line else "-" end),
+             (.summary | if type == "object" and has("cells") then .cells else "-" end),
+             (.summary | if type == "object" and has("RED") then .RED else "-" end)]
+            | map(if type == "string" then . elif . == null then "None" elif . == true then "True"
+                  elif . == false then "False" else tojson end)
+            | join("\t") end end' -- "$1" 2>/dev/null; } || printf 'UNREADABLE\t-\t-\n'
+}
+
 mt_self_test() {
     local d fail=0 want got
     d=$(mktemp -d) || return 2
@@ -78,13 +108,35 @@ EOF
     if [ "$got" = "UNREADABLE|-|-" ]; then echo "  ok   a BOM-prefixed receipt is UNREADABLE, as python read it"; else echo "  FAIL BOM receipt gave '$got'"; fail=1; fi
     got=$(mt_receipt_fields "$d/absent.json" | tr '\t' '|')
     if [ "$got" = "UNREADABLE|-|-" ]; then echo "  ok   a missing receipt is UNREADABLE, once"; else echo "  FAIL missing receipt gave '$got'"; fail=1; fi
+    while IFS='~' read -r want got; do
+        printf '%s' "$got" > "$d/c.json"
+        got=$(mt_crux_fields "$d/c.json" | tr '\t' '|')
+        if [ "$got" = "$want" ]; then echo "  ok   crux receipt -> $want"; else echo "  FAIL crux receipt: wanted $want, got $got"; fail=1; fi
+    done <<'EOF'
+apr 1.0.0 (abc)|12|0~{"apr":{"version_line":"apr 1.0.0 (abc)"},"summary":{"cells":12,"RED":0,"verdict":"GREEN"}}
+apr 1.0.0 (abc)|-|-~{"apr":{"version_line":"apr 1.0.0 (abc)"}}
+-|4|1~{"apr":"apr 1.0.0 (abc)","summary":{"cells":4,"RED":1}}
+None|-|-~{"apr":{"version_line":null},"summary":[]}
+UNREADABLE|-|-~not json
+UNREADABLE|-|-~
+UNREADABLE|-|-~{} {}
+EOF
+    printf '\xef\xbb\xbf{"apr":{"version_line":"apr 1.0.0 (abc)"}}' > "$d/c.json"
+    got=$(mt_crux_fields "$d/c.json" | tr '\t' '|')
+    if [ "$got" = "UNREADABLE|-|-" ]; then echo "  ok   a BOM-prefixed crux receipt is UNREADABLE"; else echo "  FAIL BOM crux receipt gave '$got'"; fail=1; fi
     rm -rf -- "${d:?}"
     if [ "$fail" -eq 0 ]; then echo "models_t1 self-test: PASS"; else echo "models_t1 self-test: FAIL"; fi
     return "$fail"
 }
 if [ "${1:-}" = --self-test ]; then mt_self_test; exit $?; fi
 
-[ $# -eq 3 ] || { echo "usage: models_t1.sh <version> <release-commit> <out-dir>" >&2; exit 2; }
+USAGE="usage: [MODELS_T1_MEASURE=ladder|crux] models_t1.sh <version> <release-commit> <out-dir>"
+MEASURE=${MODELS_T1_MEASURE:-ladder}
+case $MEASURE in
+    ladder|crux) ;;
+    *) echo "models_t1: MODELS_T1_MEASURE='$MEASURE' is neither ladder nor crux" >&2; echo "$USAGE" >&2; exit 2 ;;
+esac
+[ $# -eq 3 ] || { echo "$USAGE" >&2; exit 2; }
 ver=$1; out=$3
 [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "models_t1: version '$ver' is not X.Y.Z" >&2; exit 2; }
 sha=$(git rev-parse --verify --quiet "$2^{commit}") || { echo "models_t1: '$2' is not a commit in $(pwd)" >&2; exit 2; }
@@ -92,8 +144,28 @@ sha=$(git rev-parse --verify --quiet "$2^{commit}") || { echo "models_t1: '$2' i
     || { echo "models_t1: $(pwd) is at $(git rev-parse --short=9 HEAD), not the release commit ${sha:0:9}" >&2; exit 2; }
 sha9=$(git rev-parse --short=9 "$sha")
 want="apr $ver ($sha9)"
+# crux mode: the receipt names (<host><RSUF>.json: LREC, RREC, each set from one variable), the measurer leg_reason names, the certification
+RSUF=""
+LREC="$LOCAL_HOST.json"
+RREC="$REMOTE_HOST.json"
+MEASURER=model_ladder.sh; CERT="evidence/crux/$ver/prompt-certification.json"
+if [ "$MEASURE" = crux ]; then
+    RSUF=-gpu
+    LREC="$LOCAL_HOST-gpu.json"
+    RREC="$REMOTE_HOST-gpu.json"
+    MEASURER=crux_sweep_shards.sh
+    git cat-file -e "$sha:$CERT" 2>/dev/null \
+        || { echo "MODELS NO-GO: no prompt certification for $ver at $CERT -- CRUX smoke cannot be planned"; exit 2; }
+fi
 mkdir -p "$out" || exit 2
+if [ "$MEASURE" = crux ]; then
+    # the judge globs every *.json in $out: a ladder receipt left by an earlier pass would read as a bad CRUX one
+    rm -f -- "${out:?}/$LOCAL_HOST.json" "${out:?}/$REMOTE_HOST.json" "${out:?}/$LREC" \
+        "${out:?}/$RREC" "${out:?}/$RREC.part"
+    rm -rf -- "${out:?}/$LOCAL_HOST-crux"
+else
 rm -f -- "$out/$LOCAL_HOST.json" "$out/$REMOTE_HOST.json" "$out/$REMOTE_HOST.json.part"
+fi
 
 local_leg() {
     local tdir got
@@ -102,6 +174,12 @@ local_leg() {
     tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)}
     got=$("$tdir/release/apr" --version 2>/dev/null | head -n 1)
     [ "$got" = "$want" ] || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: '$got' (want '$want')"; return 3; }
+    if [ "$MEASURE" = crux ]; then
+        local lrc cdir="$out/$LOCAL_HOST-crux"
+        choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host "$LOCAL_HOST" --apr "$tdir/release/apr" --out "$cdir" --backend gpu --certification "$CERT"; lrc=$?
+        [ ! -f "$cdir/$LREC" ] || cp -- "$cdir/$LREC" "$out/$LREC"
+        return "$lrc"
+    fi
     choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --cells --out "$out"
 }
 
@@ -121,8 +199,10 @@ if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ]; then
   echo "MODELS-LEG $REMOTE_HOST ENV: \$(( (free_kib + have_kib) / 1048576 )) GiB usable under \$base, a fresh cuda release target needs \$(( $NEED_KIB / 1048576 )) GiB -- refused before building"
   exit 4
 fi
+# a patch release's commit is on release/X.Y.Z, not main: fetch that branch too when it exists
+git -C "\$repo" fetch -q origin "+refs/heads/release/$ver:refs/remotes/origin/release/$ver" 2> /dev/null
 git -C "\$repo" fetch -q origin main && git -C "\$repo" cat-file -e "$sha^{commit}" \
-  || { echo "MODELS-LEG $REMOTE_HOST FETCH-FAILED: $sha9 is not reachable from origin/main there"; exit 3; }
+  || { echo "MODELS-LEG $REMOTE_HOST FETCH-FAILED: $sha9 is not reachable from origin/main or origin/release/$ver there"; exit 3; }
 git -C "\$repo" worktree remove --force "\$dir/wt" > /dev/null 2>&1
 git -C "\$repo" worktree prune
 git -C "\$repo" worktree add -q --detach "\$dir/wt" "$sha" || { echo "MODELS-LEG $REMOTE_HOST WORKTREE-FAILED"; exit 3; }
@@ -133,9 +213,12 @@ cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/bui
 got=\$("\$CARGO_TARGET_DIR/release/apr" --version 2>/dev/null | head -n 1)
 [ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
 rm -rf -- "\$dir/out"
-choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out "\$dir/out"; lrc=\$?
-if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then
-  echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$REMOTE_HOST.json"; echo "---END RECEIPT---"
+case $MEASURE in
+crux) choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host $REMOTE_HOST --apr "\$CARGO_TARGET_DIR/release/apr" --out "\$dir/out" --backend gpu --certification "$CERT" ;;
+*) choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out "\$dir/out" ;;
+esac; lrc=\$?
+if [ -f "\$dir/out/$RREC" ]; then
+  echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$RREC"; echo "---END RECEIPT---"
 fi
 git -C "\$repo" worktree remove --force "\$dir/wt" > /dev/null 2>&1
 exit \$lrc
@@ -148,25 +231,32 @@ leg_reason() {
     r=$(grep -E "^MODELS-LEG $1 " "$out/$1.log" | tail -n 1)
     if [ -n "$r" ]; then printf '%s (rc %s)' "${r#MODELS-LEG $1 }" "$2"
     elif [ "$1" = "$REMOTE_HOST" ] && [ "$2" = 255 ]; then printf 'unreachable over SSH (ssh rc 255)'
-    else printf 'model_ladder.sh wrote no receipt (rc %s)' "$2"; fi
+    else printf '%s wrote no receipt (rc %s)' "$MEASURER" "$2"; fi
 }
 
 local_leg > "$out/$LOCAL_HOST.log" 2>&1 & lpid=$!
 remote_leg > "$out/$REMOTE_HOST.log" 2>&1 & rpid=$!
 wait "$lpid"; lrc=$?
 wait "$rpid"; rrc=$?
-sed -n "/^---RECEIPT $REMOTE_HOST---\$/,/^---END RECEIPT---\$/p" "$out/$REMOTE_HOST.log" | sed '1d;$d' > "$out/$REMOTE_HOST.json.part"
-if [ -s "$out/$REMOTE_HOST.json.part" ]; then mv -- "$out/$REMOTE_HOST.json.part" "$out/$REMOTE_HOST.json"
-else rm -f -- "$out/$REMOTE_HOST.json.part"; fi
+sed -n "/^---RECEIPT $REMOTE_HOST---\$/,/^---END RECEIPT---\$/p" "$out/$REMOTE_HOST.log" | sed '1d;$d' > "$out/$RREC.part"
+if [ -s "$out/$RREC.part" ]; then mv -- "$out/$RREC.part" "$out/$RREC"
+else rm -f -- "$out/$RREC.part"; fi
 
 nogo=0; env=0
 for h in "$LOCAL_HOST" "$REMOTE_HOST"; do
     grep -qE "^MODELS-LEG $h ENV:" "$out/$h.log" && env=1
 done
 for hr in "$LOCAL_HOST $lrc" "$REMOTE_HOST $rrc"; do
-    set -- $hr; h=$1; rc=$2; receipt="$out/$h.json"
+    set -- $hr; h=$1; rc=$2; receipt="$out/$h$RSUF.json"
     if [ ! -s "$receipt" ]; then
         echo "MODELS $h NO-GO: no receipt -- $(leg_reason "$h" "$rc")"; nogo=1; continue
+    fi
+    if [ "$MEASURE" = crux ]; then
+        IFS=$'\t' read -r av cells red < <(mt_crux_fields "$receipt")
+        if [ "$av" != "$want" ]; then
+            echo "MODELS $h NO-GO: the receipt was measured by '$av', not '$want'"; nogo=1; continue
+        fi
+        echo "MODELS $h measured by $want: cells=$cells red=$red (crux_sweep_shards rc $rc)"; continue
     fi
     # tab-separated: apr_version itself contains spaces ("apr <v> (<sha9>)")
     IFS=$'\t' read -r av executed red < <(mt_receipt_fields "$receipt")
@@ -176,14 +266,26 @@ for hr in "$LOCAL_HOST $lrc" "$REMOTE_HOST $rrc"; do
     echo "MODELS $h measured by $want: executed=$executed red=$red (model_ladder rc $rc)"
 done
 
-bash scripts/check_model_ladder.sh --version "$ver" --receipts "$out" > "$out/judge.log" 2>&1; jrc=$?
+# MODELS_T1_SCOPE (optional) is passed to the judge as --scope. The nightly sets it to `none`: it judges
+# the full ladder even where a release scope or the standing CRUX-smoke release policy covers $ver.
+if [ "$MEASURE" = crux ]; then
+    CRUX_CERT="$CERT" bash scripts/check_model_ladder.sh --version "$ver" --crux "$out" --cut-commit "$sha" ${MODELS_T1_SCOPE:+--scope "$MODELS_T1_SCOPE"} > "$out/judge.log" 2>&1; jrc=$?
+else
+bash scripts/check_model_ladder.sh --version "$ver" ${MODELS_T1_SCOPE:+--scope "$MODELS_T1_SCOPE"} --receipts "$out" > "$out/judge.log" 2>&1; jrc=$?
+fi
 case $jrc in
-    0) ;;
+    0) # crux mode: a pass of no CRUX scope (the full ladder, with no ladder receipts here) judged nothing we measured
+       if [ "$MEASURE" = crux ] && ! grep -qE '^(POLICY|SCOPED): ' "$out/judge.log"; then
+           echo "MODELS NO-GO: the judge judged no CRUX scope for $ver (no POLICY:/SCOPED: line) -- crux mode measured nothing the release gate reads"; nogo=1
+       fi ;;
     2) echo "MODELS NO-GO: the judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 "$out/judge.log")"; nogo=1 ;;
     *) echo "MODELS NO-GO: the judge found red or missing cells (rc $jrc):"
        grep -E '^FAIL' "$out/judge.log" | head -n 40 | sed 's/^/MODELS   /'; nogo=1 ;;
 esac
 [ "$env" -eq 0 ] || exit 2
 [ "$nogo" -eq 0 ] || exit 1
+if [ "$MEASURE" = crux ]; then
+    echo "MODELS GO (CRUX smoke) on $LOCAL_HOST and $REMOTE_HOST at $sha9: the judge passed both receipts ($want)"; exit 0
+fi
 echo "MODELS GO on $LOCAL_HOST and $REMOTE_HOST at $sha9: the judge passed both receipts ($want)"
 exit 0

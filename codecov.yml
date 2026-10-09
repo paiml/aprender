@@ -1,27 +1,9 @@
-# Codecov configuration
-# https://docs.codecov.com/docs/codecovyml-reference
-
+# Coverage is uploaded only on a push to main (ci.yml, x86-main). Codecov posts
+# no status and no comment: a status it posts cannot block a merge, so it is not
+# put on a pull request. The enforced coverage floor is COV_FLOOR in the Makefile.
 coverage:
   status:
-    project:
-      default:
-        target: 95%
-        # CB-124: PMAT sovereign stack standard requires 95%
-        threshold: 95%
-    patch:
-      default:
-        target: 90%
-
-comment:
-  layout: "reach,diff,flags,files"
-  behavior: default
-  require_changes: "true"
-
-ignore:
-  - "tests/**"
-  - "benches/**"
-  - "examples/**"
-  - "crates/**"
-  - "fuzz/**"
-  - "scripts/**"
-  - "golden_traces/**"
+    project: off
+    patch: off
+comment: false
+ignore: [tests/**, benches/**, examples/**, crates/**, fuzz/**, scripts/**, golden_traces/**]
