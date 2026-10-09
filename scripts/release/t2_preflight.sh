@@ -29,7 +29,9 @@ ladder_unmeasurable_pre_bump() {
     [ "$(grep -cE '^RED ' "$l")" -eq 1 ] || return 1
     grep -qE '^RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied' "$l" || return 1
     grep -qE '^FAIL ' "$l" || return 1
-    ! grep -E '^FAIL ' "$l" | grep -qvE '^FAIL  host [A-Za-z0-9_.-]+ has no CRUX receipt from the release binary -- '
+    # Count, never `! a | grep -q`: under pipefail, grep -q exits at the first stray FAIL row, the
+    # writer dies of SIGPIPE (141) on a log longer than the pipe, and `!` turns 141 into a pass.
+    [ "$(grep -E '^FAIL ' "$l" | grep -cvE '^FAIL  host [A-Za-z0-9_.-]+ has no CRUX receipt from the release binary -- ')" -eq 0 ]
 }
 
 decide() {
@@ -64,7 +66,8 @@ decide() {
     #      missing release-binary receipts. T-1 judges the same row on the release commit; the verdict
     #      names it (deferred_to_T1=) so no reader takes this GO for a ladder pass.
     #    - dogfood-gates: the roll-up of the declared rows, each judged on its own row above; it is
-    #      excused only when its RED count equals the declared [FAIL] rows it summarises.
+    #      excused only when its RED count is at least 1 and equals the declared [FAIL] rows it
+    #      summarises: a roll-up that is red with 0 RED is red for a reason no row above names.
     red=$(grep -E '^[[:space:]]*\[FAIL\]' "$log")
     dn=$(grep -cE '^[[:space:]]*\[FAIL\] declared:' <<< "$red")
     vrow=0
@@ -81,7 +84,7 @@ decide() {
                     deferred=check_model_ladder; continue
                 fi ;;
             dogfood-gates)
-                [[ "$line" =~ discovered,\ ([0-9]+)\ RED ]] && [ "${BASH_REMATCH[1]}" -eq "$dn" ] && continue ;;
+                [[ "$line" =~ discovered,\ ([0-9]+)\ RED ]] && [ "${BASH_REMATCH[1]}" -ge 1 ] && [ "${BASH_REMATCH[1]}" -eq "$dn" ] && continue ;;
         esac
         fails=$((fails + 1))
     done <<< "$red"
@@ -219,6 +222,22 @@ if [ "${1:-}" = "--self-test" ]; then
     # 16. version-unpublished inside another row's note is not that row
     mklog "$d/c16.log" 8 '  [FAIL] fmt                        see version-unpublished'
     v=$(decide abc "$d/c16.log" 1); case "$v" in NO-GO*) ok "'version-unpublished' in a note does not excuse the row -> NO-GO";; *) nok "case 16 -> '$v'";; esac
+    # 17. a roll-up red with 0 RED summarises no declared row: it is red for its own reason -> NO-GO
+    mkred "$d/c17.log" 8 0
+    v=$(decide abc "$d/c17.log" 1); case "$v" in NO-GO*) ok "roll-up [FAIL] with 0 RED -> NO-GO";; *) nok "case 17 -> '$v'";; esac
+    # 18. a host row without the release-binary clause is not the pre-bump reason -> NO-GO
+    sed 's/^FAIL  host gx10 .*/FAIL  host gx10 has no CRUX receipt/' "$d/lad.log" > "$d/lad18.log"
+    v=$(dec "$d/d5.log" "$d/lad18.log"); case "$v" in NO-GO*) ok "a host row without 'from the release binary --' -> NO-GO";; *) nok "case 18 -> '$v'";; esac
+    # 19. the re-run judged another scope, one whose name only starts with crux-smoke -> NO-GO
+    sed 's/^SCOPED: crux-smoke /SCOPED: crux-smoke-v2 /' "$d/lad.log" > "$d/lad19.log"
+    v=$(dec "$d/d5.log" "$d/lad19.log"); case "$v" in NO-GO*) ok "ladder re-run SCOPED to crux-smoke-v2 -> NO-GO";; *) nok "case 19 -> '$v'";; esac
+    # 20. one stray FAIL row, then more host rows than a pipe holds. `! a | grep -q` read grep -q's early
+    #     exit, the writer's SIGPIPE (141) under pipefail, as "no stray row" -> GO. It must be NO-GO.
+    { sed -n '1,2p' "$d/lad.log"
+      printf 'FAIL  CRUX receipt gx10.json is from apr sha %s, not the release binary abc\n' "'1234'"
+      yes 'FAIL  host lambda has no CRUX receipt from the release binary -- the smoke gate needs every named host' | head -n 20000
+      grep '^RED ' "$d/lad.log"; } > "$d/lad20.log"
+    v=$(dec "$d/d5.log" "$d/lad20.log"); case "$v" in NO-GO*) ok "a stray FAIL row ahead of 20000 host rows -> NO-GO";; *) nok "case 20 (SIGPIPE) -> '$v'";; esac
 
     [ "$bad" -eq 0 ] && { echo "self-test OK"; exit 0; }
     echo "self-test FAILED: $bad case(s)"; exit 1
