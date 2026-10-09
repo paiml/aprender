@@ -9,8 +9,9 @@
 # `cargo` fails the table if publish_strict.sh ever calls it.
 #
 # It is only the ONE door if nothing else uploads, so the last rows check the other doors
-# (#4687 R5b): `make publish` must refuse a real upload and still dry-run, and no other
-# tracked shell script, make file or root workflow may run a real `cargo publish`.
+# (#4687 R5b): `make publish` must refuse a real upload and still dry-run, no other tracked
+# shell script, make file, justfile, git hook, root workflow or shell-shebang file may run a
+# real upload, and no tracked cargo config may alias one.
 # PUBLISH_DOORS_ROOT points those rows at another checkout (the before numbers).
 #
 #   bash scripts/check_publish_strict_cleanroom.sh
@@ -185,17 +186,25 @@ fi
 # the line is split into commands at ; && || and |. So a --dry-run on one command never hides
 # another on the same line, and `cargo \` + `publish` is still one command.
 # A command is a door when cargo ($CARGO, "${CARGO:-cargo}", $(CARGO)), with only global flags
-# after it, runs publish: at the command's start (after ( { ! ` @ + -, then/do/else/if/elif/
-# while/until or a workflow run:), after $( or an unescaped backtick, or inside sh -c "...";
-# behind VAR=val and a wrapper (env exec time command nohup sudo timeout nice xargs ...).
+# after it, runs an upload: publish, ws/workspaces publish, release or smart-release, or a
+# subcommand it takes from a variable ("$sub", $(SUB)), which could be any of them. So is
+# cargo-release, cargo-smart-release or cargo-workspaces run by its own name. It counts at the
+# command's start (after ( { ! ` @ + -, then/do/else/if/elif/while/until or a workflow run:),
+# after $( or an unescaped backtick, inside sh -c "..." or eval, after find's -exec/-execdir;
+# behind VAR=val and a wrapper (env exec time command nohup sudo timeout nice xargs parallel ...).
 # The case table is the pattern's spec: re-run it, never re-read the pattern.
 DOOR_PRE='[[:space:]]*(([(!{`@+-]|then|do|else|if|elif|while|until|run:)[[:space:]]*)*'
-DOOR_MID='.*(\$\(|[^\\]`|-c[[:space:]]+["'"'"'])[[:space:]]*'
-DOOR_WRAP='((env|exec|time|command|builtin|nohup|sudo|timeout|nice|ionice|stdbuf|xargs|flock|taskset|chrt|setsid)([[:space:]]+[^[:space:]]+)*[[:space:]]+)?'
+DOOR_MID='(.*(\$\(|[^\\]`|-c[[:space:]]+["'"'"']|[[:space:]]-exec(dir)?[[:space:]]+)|(.*[^A-Za-z0-9_-])?eval[[:space:]]+["'"'"']?)[[:space:]]*'
+DOOR_WRAP='((env|exec|time|command|builtin|nohup|sudo|timeout|nice|ionice|stdbuf|xargs|parallel|flock|taskset|chrt|setsid)([[:space:]]+[^[:space:]]+)*[[:space:]]+)?'
 DOOR_ASSIGN='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
 DOOR_CARGO='(cargo|"?\$\{?CARGO[A-Za-z0-9_]*(:?[-=+?][^}[:space:]]*)?\}?"?|\$\(CARGO\))'
 DOOR_GFLAG='([[:space:]]+(\+[^[:space:]]+|-[A-Za-z]+|--[a-z][a-z-]*(=[^[:space:]]*)?|(-Z|-C|--config|--color)[[:space:]]+[^[:space:]]+))*'
-DOOR_RE="^[^:]*:[0-9]+:(${DOOR_PRE}|${DOOR_MID})${DOOR_WRAP}${DOOR_ASSIGN}${DOOR_CARGO}${DOOR_GFLAG}[[:space:]]+publish([[:space:]\"'\`)};]|\$)"
+DOOR_SUB='(publish|(ws|workspaces)[[:space:]]+publish|release|smart-release)([[:space:]"'"'"'`)};]|$)'
+# For a variable subcommand the flags are read strictly, so -Z "$z" or --config "$f" is a flag
+# and its value, never a flag and then a variable subcommand.
+DOOR_VFLAG='([[:space:]]+(\+[^[:space:]]+|-[qv]+|--(locked|frozen|offline|quiet|verbose)|--[a-z][a-z-]*=[^[:space:]]*|(-Z|-C|--config|--color)[[:space:]]+[^[:space:]]+))*'
+DOOR_TOOL='cargo-(release|smart-release|workspaces|ws)([[:space:]]|$)'
+DOOR_RE="^[^:]*:[0-9]+:(${DOOR_PRE}|${DOOR_MID})${DOOR_WRAP}${DOOR_ASSIGN}(${DOOR_CARGO}(${DOOR_GFLAG}[[:space:]]+${DOOR_SUB}|${DOOR_VFLAG}[[:space:]]+\"?\\\$)|${DOOR_TOOL})"
 door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
   awk '
     function emit(f, n, s,   k, i, c) {
@@ -266,6 +275,22 @@ door_case door 'cargo publish -p x # --dry-run'
 door_case door $'cargo \\\n  publish -p x'
 door_case door $'\tcd x && \\\n\tcargo publish -p x'
 door_case door $'# a comment does not continue \\\ncargo publish -p x'
+door_case door 'cargo ws publish --yes'
+door_case door 'cargo workspaces publish --from-git'
+door_case door 'cargo release --execute'
+door_case door 'cargo smart-release -u'
+door_case door 'cargo-release release --execute'
+door_case door 'cargo-workspaces workspaces publish'
+door_case door 'sub=publish; cargo "$sub" -p x'
+door_case door 'cargo $VERB -p x'
+door_case door 'cargo ${VERB:-publish} -p x'
+door_case door 'cargo --locked "$cmd" -p x'
+door_case door '"$CARGO" "$@"'
+door_case door $'\t$(CARGO) $(SUB) -p x'
+door_case door 'eval "cargo publish -p x"'
+door_case door 'eval cargo publish -p x'
+door_case door 'find crates -name Cargo.toml -execdir cargo publish \;'
+door_case door 'parallel -j2 cargo publish -p {} ::: a b'
 door_case none '# cargo publish -p x'
 door_case none '    # cargo publish -p x'
 door_case none 'x=1 # cargo publish -p x'
@@ -283,6 +308,16 @@ door_case none '    echo "DEFER (cargo publish exited 0 but printed no line)"'
 door_case none 'if [ "$CARGO" = x ]; then echo publish; fi'
 door_case none 'cargo publishing notes'
 door_case none 'cargo-publish x'
+door_case none 'cargo build --release'
+door_case none 'cargo test --release -p x'
+door_case none 'cargo ws list'
+door_case none 'cargo releases'
+door_case none 'cargo +"$TC" build'
+door_case none 'cargo -Z "$z" build'
+door_case none 'cargo --config "$f" build'
+door_case none 'cargo build $FLAGS'
+door_case none 'echo "then run cargo release"'
+door_case none 'medieval cargo publish'
 [ "$cases_ok" -eq "$cases_n" ] && pass "door_regex_case_table ($cases_ok/$cases_n cases)"
 
 # The two gated doors: publish_strict.sh (the rows above) and cascade-publish.sh (its own
@@ -290,10 +325,10 @@ door_case none 'cargo-publish x'
 # upload line, or it is blind, and nothing else in them: a second upload added to a gated
 # file is not behind the gate just because the file has one. This file is scanned without
 # its case table rows.
-# SCOPE. By name: shell scripts, make files and git hooks at any depth (`make -C crates/x
-# publish` is a door too); workflows only at the root, as GitHub runs no other
+# SCOPE. By name: shell scripts, make files, justfiles and git hooks at any depth (`make -C
+# crates/x publish` is a door too); workflows only at the root, as GitHub runs no other
 # .github/workflows directory. By content: any other tracked file that names publish and
-# starts with a sh/bash/dash/ksh/zsh/bats shebang, so an extensionless script is read too.
+# starts with a sh/bash/dash/ksh/mksh/zsh/bats shebang, so an extensionless script is read too.
 # Not scanned: Rust and Python, which build the call as an argv (the contract names them).
 # ALLOWED is matched by file AND command, so a second upload added to one is still caught,
 # and each must still be seen (the positive control for the content scope):
@@ -331,15 +366,32 @@ shebang_case other '# runs under bash'
 shebang_case other 'cargo publish -p x'
 shebang_case other '#!/usr/bin/env bashful'
 [ "$sb_ok" -eq "$sb_n" ] && pass "shebang_case_table ($sb_ok/$sb_n cases)"
-mapfile -t scope < <(git -C "$DOORS_ROOT" ls-files -- '*.sh' '*.bash' '*.mk' \
-  'Makefile' '*/Makefile' 'makefile' '*/makefile' 'GNUmakefile' '*/GNUmakefile' \
-  '.githooks/*' '*/.githooks/*' '.github/workflows/*.yml' '.github/workflows/*.yaml' ":(exclude)$SELF")
+NAMES=('*.sh' '*.bash' '*.mk' 'Makefile' '*/Makefile' 'makefile' '*/makefile' 'GNUmakefile' '*/GNUmakefile'
+  'justfile' '*/justfile' 'Justfile' '*/Justfile' '.justfile' '*/.justfile' '*.just'
+  '.githooks/*' '*/.githooks/*' '.github/workflows/*.yml' '.github/workflows/*.yaml')
+# The name scope's spec: a throwaway repo holds one empty file per path below, and NAMES must
+# select exactly the "in" ones. Most kinds hold no door today, so without this a kind dropped
+# from NAMES would go unseen.
+SC="$WORK/scope-case"
+SCOPE_IN='x.sh a/b.bash c.mk Makefile a/Makefile makefile GNUmakefile a/b/GNUmakefile justfile crates/x/justfile
+Justfile a/Justfile .justfile a/.justfile r.just .githooks/pre-push crates/x/.githooks/pre-commit
+.github/workflows/r.yml .github/workflows/r.yaml'
+SCOPE_OUT='x.py x.rs README.md a/Makefile.am x.sh.txt justfile.md crates/x/.github/workflows/r.yml .github/actions/a.yml'
+mkdir -p "$SC" && git -C "$SC" init -q
+for p in $SCOPE_IN $SCOPE_OUT; do mkdir -p "$SC/$(dirname "$p")" && : > "$SC/$p"; done
+git -C "$SC" add -A
+sc_got=$(git -C "$SC" ls-files -- "${NAMES[@]}" | sort | tr '\n' ' ')
+sc_want=$(printf '%s\n' $SCOPE_IN | sort | tr '\n' ' ')
+if [ "$sc_got" = "$sc_want" ]; then
+  pass "scope_case_table ($(wc -w <<< "$SCOPE_IN") paths in, $(wc -w <<< "$SCOPE_OUT") out)"
+else
+  fail "scope_case_table: want $sc_want, got $sc_got"
+fi
+mapfile -t scope < <(git -C "$DOORS_ROOT" ls-files -- "${NAMES[@]}" ":(exclude)$SELF")
 named=${#scope[@]}
 while IFS= read -r f; do
   is_shell_script "$DOORS_ROOT/$f" && scope+=("$f")
-done < <(git -C "$DOORS_ROOT" grep -lI -e publish -- ":(exclude)$SELF" ':(exclude)*.sh' ':(exclude)*.bash' \
-  ':(exclude)*.mk' ':(exclude)Makefile' ':(exclude)*/Makefile' ':(exclude)makefile' ':(exclude)*/makefile' \
-  ':(exclude)GNUmakefile' ':(exclude)*/GNUmakefile' ':(exclude).githooks/*' ':(exclude)*/.githooks/*' \
+done < <(git -C "$DOORS_ROOT" grep -lI -e publish -- ":(exclude)$SELF" "${NAMES[@]/#/:(exclude)}" \
   ':(exclude).github/workflows/*' 2>/dev/null)
 raw=$( (cd "$DOORS_ROOT" && door_lines "${scope[@]}") || true)
 if [ -f "$DOORS_ROOT/$SELF" ]; then
@@ -371,9 +423,67 @@ doors=$(printf '%s\n' "$raw" | awk -v gated=" $GATED " '
   f == "" || index(gated, " " f " ") || ((f ":" t) in ok) { next }
   { print }')
 if [ -z "$doors" ]; then
-  pass "no_other_door (${#scope[@]} files scanned: $named tracked shell scripts, make files, git hooks and root workflows, $((${#scope[@]} - named)) more by shebang, and this file)"
+  pass "no_other_door (${#scope[@]} files scanned: $named tracked shell scripts, make files, justfiles, git hooks and root workflows, $((${#scope[@]} - named)) more by shebang, and this file)"
 else
   while IFS= read -r d; do fail "no_other_door: a real cargo publish outside the gated doors: $d"; done <<< "$doors"
+fi
+
+# A cargo alias makes `cargo <name>` an upload the door scan cannot see, so no tracked cargo
+# config may define one: an alias ([alias] table or a top-level alias.<name> key) whose first
+# word, after flags, is publish, release or smart-release, or ws/workspaces with publish.
+alias_rows() { # alias_rows all|doors FILE...: "file:line:text" per alias (all) or per upload alias
+  awk -v all="$1" '
+    FNR == 1 { s = "" }
+    /^[[:space:]]*\[/ { s = $0; sub(/#.*/, "", s); gsub(/[[:space:]]/, "", s); next }
+    {
+      v = $0
+      if (!((s == "[alias]" && v ~ /=/) || (s == "" && v ~ /^[[:space:]]*alias\.[^=]*=/))) next
+      if (all == "all") { print FILENAME ":" FNR ":" $0; next }
+      sub(/^[^=]*=/, "", v); gsub(/[]["'"'"',]/, " ", v)
+      k = split(v, w, /[[:space:]]+/)
+      for (i = 1; i <= k; i++) if (w[i] != "" && w[i] !~ /^[-+]/) break
+      if (i > k) next
+      if (w[i] ~ /^(publish|release|smart-release)$/ || (w[i] ~ /^(ws|workspaces)$/ && (" " v " ") ~ /[[:space:]]publish[[:space:]]/)) print FILENAME ":" FNR ":" $0
+    }' "${@:2}"
+}
+al_n=0 al_ok=0
+alias_case() { # alias_case door|none CONFIG-TEXT
+  local got=none
+  al_n=$((al_n + 1))
+  printf '%s\n' "$2" > "$WORK/alias-case.toml"
+  [ -n "$(alias_rows doors "$WORK/alias-case.toml")" ] && got=door
+  if [ "$got" = "$1" ]; then al_ok=$((al_ok + 1)); else fail "alias_case_table: want $1, got $got: $2"; fi
+}
+alias_case door $'[alias]\npub = "publish -p x"'
+alias_case door $'[alias]\np = ["publish", "-p", "x"]'
+alias_case door $'alias.pub = "publish"'
+alias_case door $'[ alias ] # mine\nq = "--locked publish"'
+alias_case door $'[alias]\nr = "release --execute"'
+alias_case door $'[alias]\nsr = "smart-release -u"'
+alias_case door $'[alias]\nw = "ws publish --yes"'
+alias_case door $'[build]\njobs = 4\n[alias]\nt = "test"\np = "publish"'
+alias_case none $'[alias]\nb = "build --release"'
+alias_case none $'[alias]\ncl = "clippy --all-targets -- -D warnings"'
+alias_case none $'[alias]\nw = "ws list"'
+alias_case none $'[registry]\ndefault = "publish"'
+alias_case none $'# [alias]\n# pub = "publish"'
+alias_case none $'[alias]\nt = "test"\n[env]\nX = "publish"'
+alias_case none $'[build]\nalias.p = "publish"'
+[ "$al_ok" -eq "$al_n" ] && pass "alias_case_table ($al_ok/$al_n cases)"
+mapfile -t cfgs < <(git -C "$DOORS_ROOT" ls-files -- '.cargo/config' '.cargo/config.toml' '*/.cargo/config' '*/.cargo/config.toml')
+if [ "${#cfgs[@]}" -eq 0 ]; then
+  fail "no_publish_alias: no tracked cargo config found, so the row proves nothing"
+else
+  al_all=$(cd "$DOORS_ROOT" && alias_rows all "${cfgs[@]}" | grep -c . || true)
+  al_doors=$(cd "$DOORS_ROOT" && alias_rows doors "${cfgs[@]}" || true)
+  case "$al_all" in '' | *[!0-9]*) al_all=0 ;; esac
+  if [ "$al_all" -eq 0 ]; then
+    fail "no_publish_alias: ${#cfgs[@]} cargo configs read and no alias seen in any, so the row proves nothing"
+  elif [ -n "$al_doors" ]; then
+    while IFS= read -r d; do fail "no_publish_alias: a cargo alias that uploads: $d"; done <<< "$al_doors"
+  else
+    pass "no_publish_alias (${#cfgs[@]} tracked cargo configs, $al_all aliases read)"
+  fi
 fi
 
 if [ "$rc" -eq 0 ]; then
