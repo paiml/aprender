@@ -1542,6 +1542,39 @@ fn parse_best_ppl(output: &str) -> f64 {
     best
 }
 
+/// Materialise the per-round trial config as a COPY. Halving used to patch
+/// `max_steps` / `output_dir` into the user's own sweep-*.yaml in place, so
+/// a second run with a different --steps-per-round trained against inputs
+/// the first run had silently rewritten. Returns survivor index → trial config;
+/// a survivor whose copy could not be written is absent and runs its own path.
+fn materialise_trial_configs(
+    results: &[HalvingEntry],
+    survivors: &[usize],
+    round_idx: usize,
+    steps: usize,
+    trials_dir: &std::path::Path,
+) -> std::collections::HashMap<usize, std::path::PathBuf> {
+    let _ = std::fs::create_dir_all(trials_dir);
+    let mut trial_paths = std::collections::HashMap::new();
+    for &idx in survivors {
+        let path = &results[idx].path;
+        let content = std::fs::read_to_string(path).unwrap_or_default();
+        if let Ok(mut yaml) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
+            set_yaml_u64(&mut yaml, &["training", "max_steps"], steps as u64);
+            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+            let out_dir = format!("./checkpoints/halving-{stem}");
+            yaml["training"]["output_dir"] = serde_yaml::Value::String(out_dir);
+            if let Ok(s) = serde_yaml::to_string(&yaml) {
+                let dest = trials_dir.join(format!("round{round_idx}-{stem}.yaml"));
+                if std::fs::write(&dest, s).is_ok() {
+                    trial_paths.insert(idx, dest);
+                }
+            }
+        }
+    }
+    trial_paths
+}
+
 /// Execute one halving round: update configs, run survivors, rank, eliminate worst half.
 /// Returns the surviving indices after elimination.
 fn run_halving_round(
@@ -1566,29 +1599,7 @@ fn run_halving_round(
         println!();
     }
 
-    // Materialise the per-round trial config as a COPY. Halving used to patch
-    // `max_steps` / `output_dir` into the user's own sweep-*.yaml in place, so
-    // a second run with a different --steps-per-round trained against inputs
-    // the first run had silently rewritten.
-    let _ = std::fs::create_dir_all(trials_dir);
-    let mut trial_paths: std::collections::HashMap<usize, std::path::PathBuf> =
-        std::collections::HashMap::new();
-    for &idx in survivors {
-        let path = &results[idx].path;
-        let content = std::fs::read_to_string(path).unwrap_or_default();
-        if let Ok(mut yaml) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-            set_yaml_u64(&mut yaml, &["training", "max_steps"], steps as u64);
-            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-            let out_dir = format!("./checkpoints/halving-{stem}");
-            yaml["training"]["output_dir"] = serde_yaml::Value::String(out_dir);
-            if let Ok(s) = serde_yaml::to_string(&yaml) {
-                let dest = trials_dir.join(format!("round{round_idx}-{stem}.yaml"));
-                if std::fs::write(&dest, s).is_ok() {
-                    trial_paths.insert(idx, dest);
-                }
-            }
-        }
-    }
+    let trial_paths = materialise_trial_configs(results, survivors, round_idx, steps, trials_dir);
 
     // Run each survivor and collect scores
     let mut round_scores: Vec<(usize, f64)> = Vec::new();

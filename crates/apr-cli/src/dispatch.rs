@@ -245,6 +245,45 @@ renders its own prompts. Run the prompts through `apr run --thinking` instead."
     )
 }
 
+/// What `apr run` resolved its device flags to, once every refusal had its chance to fire.
+struct RunDevice {
+    accel_forced: bool,
+    no_gpu: bool,
+}
+
+/// `apr run` device preflight: the F2 revalidate request, the `--backend` check and the
+/// PERF-021 accelerator refusal, in that order. Extracted from `dispatch_runtime_commands`
+/// unchanged, and still called ABOVE its `batch_jsonl` early return.
+fn run_preflight(
+    revalidate: bool,
+    gpu: bool,
+    no_gpu: bool,
+    backend: Option<&str>,
+) -> Result<RunDevice, CliError> {
+    request_f2_revalidate(revalidate);
+    // GH-614: --backend cpu forces CPU-only inference
+    let backend_forces_cpu = backend == Some("cpu");
+    check_run_backend(backend)?;
+    // PERF-021: `apr run` is the surface #2696 was MEASURED through —
+    // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
+    // no guard. The jidoka refusal landed only on `apr serve`, one
+    // command over from where the defect was recorded.
+    //
+    // Runs ABOVE `effective_no_gpu` and above the `batch_jsonl` early
+    // return: that return bypasses `dispatch_run` entirely, so a check
+    // any lower is skipped by `apr run --gpu --batch-jsonl f.jsonl`.
+    crate::accel::ensure_available(gpu && !no_gpu, &crate::accel::asked_flag(gpu, backend))?;
+    Ok(RunDevice {
+        accel_forced: run_accelerator_forced(gpu, no_gpu, backend),
+        // GH-326: --gpu overrides --no-gpu when both specified
+        no_gpu: if gpu {
+            false
+        } else {
+            no_gpu || backend_forces_cpu
+        },
+    })
+}
+
 /// Dispatch runtime commands: check, run, serve.
 fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
@@ -286,35 +325,11 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             backend: BackendArg { backend },
             thinking,
         } => {
-            request_f2_revalidate(*revalidate);
-            // GH-614: --backend cpu forces CPU-only inference
-            let backend_forces_cpu = backend.as_deref() == Some("cpu");
-            if let Err(e) = check_run_backend(backend.as_deref()) {
-                return Some(Err(e));
-            }
-            // PERF-021: `apr run` is the surface #2696 was MEASURED through —
-            // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
-            // no guard. The jidoka refusal landed only on `apr serve`, one
-            // command over from where the defect was recorded.
-            //
-            // Placed ABOVE `effective_no_gpu` and above the `batch_jsonl` early
-            // return below: that return bypasses `dispatch_run` entirely, so a
-            // check any lower is skipped by `apr run --gpu --batch-jsonl f.jsonl`.
-            if let Err(e) = crate::accel::ensure_available(
-                *gpu && !*no_gpu,
-                &crate::accel::asked_flag(*gpu, backend.as_deref()),
-            ) {
-                return Some(Err(e));
-            }
-
-            let accel_forced = run_accelerator_forced(*gpu, *no_gpu, backend.as_deref());
-
-            // GH-326: --gpu overrides --no-gpu when both specified
-            let effective_no_gpu = if *gpu {
-                false
-            } else {
-                *no_gpu || backend_forces_cpu
+            let device = match run_preflight(*revalidate, *gpu, *no_gpu, backend.as_deref()) {
+                Ok(device) => device,
+                Err(e) => return Some(Err(e)),
             };
+            let verbose = *verbose || cli.verbose;
 
             // Batch JSONL mode: load model once, process all prompts
             #[cfg(feature = "inference")]
@@ -326,8 +341,8 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     *max_tokens,
                     *temperature,
                     *top_k,
-                    effective_no_gpu,
-                    *verbose || cli.verbose,
+                    device.no_gpu,
+                    verbose,
                 ));
             }
 
@@ -344,11 +359,11 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 language.as_deref(),
                 task.as_deref(),
                 effective_format,
-                effective_no_gpu,
-                accel_forced,
+                device.no_gpu,
+                device.accel_forced,
                 *offline,
                 *benchmark,
-                *verbose || cli.verbose,
+                verbose,
                 *trace,
                 *trace_payload,
                 trace_steps.as_deref(),
@@ -655,6 +670,50 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(result)
 }
 
+/// SHIP-007 layer-0 stage diff: `apr trace --save-tensor` on a .apr file goes to the
+/// end-to-end save-tensor wrapper (PR-A clap → PR-B plan → PR-C-real step1+2 wrapper).
+/// `None` means fall through to the existing trace path. Extracted from
+/// `dispatch_diagnostic_commands` unchanged.
+#[cfg(feature = "inference")]
+fn dispatch_trace_save_tensor(
+    r: &Path,
+    stages: &str,
+    dir: Option<&Path>,
+    layers: &str,
+) -> Option<Result<(), CliError>> {
+    let ext_lower = r
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    match ext_lower.as_deref() {
+        Some("apr") => Some(crate::commands::trace_save_tensor::run_save_tensor_apr(
+            r, stages, dir, layers,
+        )),
+        // M-MOE-SUB-2 step (a) CLI completion: GGUF dispatches to the MoE-traced
+        // wireup if the arch is qwen3_moe; dense-GGUF will be wired in SHIP-007 PR-E.
+        Some("gguf") => Some(
+            crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(r, stages, dir, layers),
+        ),
+        _ => {
+            eprintln!(
+                "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
+                 supported today; .safetensors will be wired in SHIP-007 PR-E \
+                 (got {})",
+                r.display()
+            );
+            None
+        }
+    }
+}
+
+/// Resolve both model paths of a two-file command, `a` first, so a missing `a` is the
+/// error reported when both are missing.
+fn resolve_model_pair(a: &Path, b: &Path) -> Result<(PathBuf, PathBuf), CliError> {
+    let ra = crate::error::resolve_model_path(a)?;
+    let rb = crate::error::resolve_model_path(b)?;
+    Ok((ra, rb))
+}
+
 /// Dispatch diagnostic commands: trace, tensors, diff.
 fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
@@ -671,46 +730,16 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             save_tensor_dir,
             save_tensor_layers,
         } => crate::error::resolve_model_path(file).and_then(|r| {
-            // SHIP-007 layer-0 stage diff: when --save-tensor is set on a
-            // .apr file, dispatch to the end-to-end save-tensor wrapper
-            // (PR-A clap → PR-B plan → PR-C-real step1+2 wrapper). For
-            // .gguf/.safetensors and the common no-flag case, fall through
-            // to the existing trace path.
             #[cfg(feature = "inference")]
-            if let Some(stages) = save_tensor.as_deref() {
-                let ext_lower = r
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(str::to_ascii_lowercase);
-                match ext_lower.as_deref() {
-                    Some("apr") => {
-                        return crate::commands::trace_save_tensor::run_save_tensor_apr(
-                            &r,
-                            stages,
-                            save_tensor_dir.as_deref(),
-                            save_tensor_layers,
-                        );
-                    }
-                    Some("gguf") => {
-                        // M-MOE-SUB-2 step (a) CLI completion: GGUF dispatches
-                        // to the MoE-traced wireup if the arch is qwen3_moe;
-                        // dense-GGUF will be wired in SHIP-007 PR-E.
-                        return crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(
-                            &r,
-                            stages,
-                            save_tensor_dir.as_deref(),
-                            save_tensor_layers,
-                        );
-                    }
-                    _ => {
-                        eprintln!(
-                            "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
-                             supported today; .safetensors will be wired in SHIP-007 PR-E \
-                             (got {})",
-                            r.display()
-                        );
-                    }
-                }
+            if let Some(done) = save_tensor.as_deref().and_then(|stages| {
+                dispatch_trace_save_tensor(
+                    &r,
+                    stages,
+                    save_tensor_dir.as_deref(),
+                    save_tensor_layers,
+                )
+            }) {
+                return done;
             }
             trace::run(
                 &r,
@@ -752,37 +781,23 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             quant_roundtrip,
             threshold,
             no_threshold,
-        } => {
+        } => resolve_model_pair(file1, file2).and_then(|(r1, r2)| {
             if *quant_roundtrip {
                 // CRUX-B-20: per-tensor quant roundtrip error report.
-                crate::error::resolve_model_path(file1).and_then(|r1| {
-                    crate::error::resolve_model_path(file2).and_then(|r2| {
-                        dispatch_quant_roundtrip(
-                            &r1,
-                            &r2,
-                            *threshold,
-                            *no_threshold,
-                            *json || cli.json,
-                        )
-                    })
-                })
+                dispatch_quant_roundtrip(&r1, &r2, *threshold, *no_threshold, *json || cli.json)
             } else {
-                crate::error::resolve_model_path(file1).and_then(|r1| {
-                    crate::error::resolve_model_path(file2).and_then(|r2| {
-                        diff::run(
-                            &r1,
-                            &r2,
-                            *weights,
-                            *values,
-                            filter.as_deref(),
-                            *limit,
-                            *transpose_aware,
-                            *json || cli.json,
-                        )
-                    })
-                })
+                diff::run(
+                    &r1,
+                    &r2,
+                    *weights,
+                    *values,
+                    filter.as_deref(),
+                    *limit,
+                    *transpose_aware,
+                    *json || cli.json,
+                )
             }
-        }
+        }),
 
         _ => return None,
     })
@@ -988,6 +1003,13 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     })
 }
 
+/// `apr pull dataset <REPO>`: the dataset puller needs its REPO positional.
+fn require_dataset_repo(repo: Option<&str>) -> Result<&str, CliError> {
+    repo.ok_or_else(|| {
+        CliError::ValidationFailed("apr pull dataset <REPO>: REPO argument required".to_string())
+    })
+}
+
 /// Dispatch model management commands: merge, finetune, prune, distill, pull, list, rm, tui.
 #[provable_contracts_macros::contract(
     "apr-cli-operations-v1",
@@ -1186,22 +1208,19 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             // repo and dispatch to the dataset puller. Otherwise fall
             // through to the existing model puller (backward compat).
             if model_ref == "dataset" {
-                match repo.as_deref() {
-                    // Issue #1410 / FALSIFY-PULL-DATASET-009: thread `dry_run`
-                    // through to the dataset puller. Previously dropped on
-                    // the floor, so `apr pull dataset --dry-run` performed
-                    // full downloads in violation of the contract.
-                    Some(r) => pull::run_dataset(
+                // Issue #1410 / FALSIFY-PULL-DATASET-009: thread `dry_run`
+                // through to the dataset puller. Previously dropped on
+                // the floor, so `apr pull dataset --dry-run` performed
+                // full downloads in violation of the contract.
+                require_dataset_repo(repo.as_deref()).and_then(|r| {
+                    pull::run_dataset(
                         r,
                         &batuta_common::cli_roles::strings(include),
                         revision.as_deref(),
                         output.as_deref(),
                         *dry_run,
-                    ),
-                    None => Err(crate::error::CliError::ValidationFailed(
-                        "apr pull dataset <REPO>: REPO argument required".to_string(),
-                    )),
-                }
+                    )
+                })
             } else if *verify {
                 // Verify-only: no network I/O, no download. Resolves the cache
                 // directory for the reference and re-hashes what is on disk.
