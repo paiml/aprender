@@ -69,13 +69,24 @@ refuse() {
     BAD=1
 }
 
+# remote_ref URL REF: print the sha the remote has at exactly REF. ls-remote matches a pattern
+# against trailing path components, so refs/heads/x/refs/heads/main matches refs/heads/main too;
+# only a line naming REF itself counts, and anything but exactly one such line is a failure.
+remote_ref() {
+    local out sha name found='' n=0
+    out="$(git ls-remote "$1" "$2")" || return 1
+    while read -r sha name; do
+        if [ "$name" = "$2" ]; then found="$sha"; n=$((n + 1)); fi
+    done <<< "$out"
+    [ "$n" -eq 1 ] && [ -n "$found" ] || return 1
+    printf '%s\n' "$found"
+}
+
 # on_main SHA URL: SHA peels to a commit that the remote's main contains
 on_main() {
     local commit main
     commit="$(git rev-parse --verify -q "$1^{commit}")" || return 1
-    main="$(git ls-remote "$2" refs/heads/main)" || return 1
-    main="${main%%[[:space:]]*}"
-    [ -n "$main" ] || return 1
+    main="$(remote_ref "$2" refs/heads/main)" || return 1
     git merge-base --is-ancestor "$commit" "$main" 2>/dev/null
 }
 
@@ -87,9 +98,7 @@ at_release_head() {
     commit="$(git rev-parse --verify -q "$1^{commit}")" || return 1
     ver="${3#v}"; ver="${ver%%-rc.*}"
     ref="refs/heads/release/$ver"
-    head="$(git ls-remote "$2" "$ref")" || return 1
-    head="${head%%[[:space:]]*}"
-    [ -n "$head" ] || return 1
+    head="$(remote_ref "$2" "$ref")" || return 1
     [ "$commit" = "$head" ]
 }
 

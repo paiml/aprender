@@ -22,7 +22,7 @@ set -euo pipefail
 
 SELF="$(cd "$(dirname "$0")" && pwd)/${0##*/}"
 HOOK_DIR="$(dirname "$SELF")/hooks"
-WANT_ROWS=54
+WANT_ROWS=56
 ROWS=0
 FAILS=0
 HOOK=''
@@ -162,6 +162,10 @@ step_rel_head() {
 }
 step_rel_move() { git tag -f v0.4.0 "$R1" > /dev/null && bash "$HOOK" --arm-release v0.4.0 && git push -f origin v0.4.0; }
 step_rel_delete() { bash "$HOOK" --arm-release v0.4.0 && git push origin :refs/tags/v0.4.0; }
+# decoy branches a/refs/heads/main and a/refs/heads/release/0.7.0 at DECOY (off main, no real
+# release/0.7.0): ls-remote tail-matches both patterns and lists the decoys first
+step_decoy_release() { git tag v0.7.0 "$DECOY" && bash "$HOOK" --arm-release v0.7.0 && git push origin v0.7.0; }
+step_decoy_main() { git tag v0.8.0 "$DECOY" && bash "$HOOK" --arm-release v0.8.0 && git push origin v0.8.0; }
 # a linked work tree of w3 with a worktree-scoped core.hooksPath: --verify there is RED, plain
 # --verify in w3 stays green, and --all-worktrees from w3 is RED
 step_verify_worktree_hookspath() {
@@ -347,6 +351,10 @@ fixture() {
     git commit -q --allow-empty -m r5
     git push -q origin rel5:refs/heads/release/0.5.0
     R5="$(git rev-parse rel5)"
+    git checkout -q -b decoy side
+    git commit -q --allow-empty -m decoy
+    git push -q origin decoy:refs/heads/a/refs/heads/main decoy:refs/heads/a/refs/heads/release/0.7.0
+    DECOY="$(git rev-parse decoy)"
     git checkout -q main
     printf '#!/usr/bin/env bash\ncat >> "%s/chained.log"\n' "$TP" > .git/hooks/pre-push
     chmod 0755 .git/hooks/pre-push
@@ -423,6 +431,8 @@ self_test() {
     push_row an_armed_release_tag_at_the_release_head_is_pushed allowed refs/tags/v0.4.0 step_rel_head
     push_row moving_a_release_tag_off_the_release_head_is_refused "move of refs/tags/v0.4.0" refs/tags/v0.4.0 step_rel_move
     push_row deleting_a_release_tag_at_the_release_head_is_refused "delete of refs/tags/v0.4.0" refs/tags/v0.4.0 step_rel_delete
+    push_row a_decoy_branch_ending_in_a_release_ref_is_not_the_release_head "create of refs/tags/v0.7.0: $DECOY is neither" refs/tags/v0.7.0 step_decoy_release
+    push_row a_decoy_branch_ending_in_refs_heads_main_is_not_main "create of refs/tags/v0.8.0: $DECOY is neither" refs/tags/v0.8.0 step_decoy_main
     push_row the_marker_is_spent_by_one_push 'create of refs/tags/v0.2.0 at' refs/tags/v0.2.0 step_spent
     push_row one_bad_line_refuses_an_armed_release_too 'create of refs/tags/keep/new,' refs/tags/v0.2.0 step_one_bad_line
 
@@ -475,7 +485,8 @@ m24_verify_walks_only_the_main_admin_dir	pre-push-tags.sh	s/^    for gd in "\$co
 m25_an_unreadable_admin_dir_is_not_counted	pre-push-tags.sh	s/elif . "\$rc" .ne 0 .; then unjudged/elif false; then unjudged/
 m26_the_release_head_equality_is_dropped	pre-push-tags.sh	s/^    \[ "\$commit" = "\$head" \]$/    true/
 m27_the_release_head_is_an_ancestor_test	pre-push-tags.sh	s/^    \[ "\$commit" = "\$head" \]$/    git merge-base --is-ancestor "$commit" "$head"/
-m28_the_rc_suffix_is_kept	pre-push-tags.sh	s/^    ver="\${3#v}"; ver="\${ver%%-rc.\*}"$/    ver="${3#v}"/'
+m28_the_rc_suffix_is_kept	pre-push-tags.sh	s/^    ver="\${3#v}"; ver="\${ver%%-rc.\*}"$/    ver="${3#v}"/
+m29_the_first_tail_match_is_taken	pre-push-tags.sh	s/^        if \[ "\$name" = "\$2" \]; then found=.*$/        if [ -z "$found" ]; then found="$sha"; n=1; fi/'
 
 mutants() {
     local name file expr rc killed=0 total=0 t
