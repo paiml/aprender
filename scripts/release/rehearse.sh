@@ -915,9 +915,15 @@ snip_run() {
 # The stub end to end: a planted write in a stage is refused, recorded and turns the night red;
 # a read runs the real tool. Also the by-path cargo call prepare_bump.sh makes.
 selftest_stub() {
-    local s="$tmp/stub" envf o rc
-    mkdir -p "$s" || return 2
-    envf=$(install_guard "$s") || { printf '  BROKE install_guard failed\n'; fail=$((fail + 1)); return; }
+    local s="$tmp/stub" src="$tmp/src-home" envf o rc f
+    mkdir -p "$s" "$src" || return 2
+    # The source CARGO_HOME HAS credentials, so credentials_are_not_copied can fail on a host whose own
+    # CARGO_HOME has none (a clean-room runner). The rest links to the real one, so reads still resolve.
+    for f in registry git config.toml config bin; do
+        [ -e "${CARGO_HOME:-$HOME/.cargo}/$f" ] && ln -sfn "${CARGO_HOME:-$HOME/.cargo}/$f" "$src/$f"
+    done
+    printf 'token = "planted"\n' > "$src/credentials.toml" && printf 'token = "planted"\n' > "$src/credentials" || return 2
+    envf=$(CARGO_HOME="$src" install_guard "$s") || { printf '  BROKE install_guard failed\n'; fail=$((fail + 1)); return; }
     t() { # t NAME WANT_RC WANT_OUT CMD
         local name=$1 wrc=$2 wout=$3; shift 3
         rc=0; o=$( . "$envf"; export WG_STAGE=plant; cd "$s" && bash -c "$*" 2>&1 ) || rc=$?
@@ -1523,6 +1529,7 @@ ssh_is_a_read                lib_write_guard.sh  s/ssh|scp|sftp) v="WRITE/ssh|sc
 stub_runs_a_write            lib_write_guard.sh  s/^        READ) exec "\$real" "\$@" ;;$/        *) exec "$real" "$@" ;;/
 stub_records_nothing         lib_write_guard.sh  s/>> "\${WG_CALLS:?}"/> \/dev\/null/
 credentials_copied           rehearse.sh         s/for f in registry git config.toml config; do/for f in registry git config.toml config credentials.toml; do/
+credentials_legacy_copied    rehearse.sh         s/for f in registry git config.toml config; do/for f in registry git config.toml config credentials; do/
 token_kept                   rehearse.sh         s/printf 'unset CARGO_REGISTRY_TOKEN\\n'/printf 'export CARGO_REGISTRY_TOKEN=set\\n'/
 cargo_home_bin_not_guarded   rehearse.sh         s/rm -f "\${bin:?}\/\${t:?}"/[ -e "${bin:?}\/${t:?}" ] \&\& continue/
 writes_not_counted           rehearse.sh         s/\$3 == "WRITE" || \$3 == "MISSING"/$3 == "MISSING"/
