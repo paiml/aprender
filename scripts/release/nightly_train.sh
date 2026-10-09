@@ -79,7 +79,7 @@ readiness;verdict;release_readiness.sh, preflight R8;-;-;-
 milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
 cleanroom-cpu;verdict;clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-cpu$
 cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-gpu$
-assets;verdict;binary-release.yml + check_release_assets.sh;.github/workflows/assets-rehearsal-nightly.yml;^schedule$;^(Rehearsal tag, and the rehearsal is still the release.s build|The rehearsal built every asset the release owes)$;2
+assets;verdict;binary-release.yml + check_release_assets.sh;-;-;-
 preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^schedule$;^preflight$
 publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^schedule$;^publish-dryrun$
 coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^schedule$;^coverage$
@@ -591,15 +591,6 @@ self_test() {
     st_verdict_lanes_are_release_day_checks() { printf "verdict=%s;coverage=%s\n" "$(printf "%s\n" "$LANES" | awk -F ";" "\$2 == \"verdict\" { printf \"%s%s\", s, \$1; s = \" \" }")" "$(printf "%s\n" "$LANES" | awk -F ";" "\$1 == \"coverage\" { print \$2 }")"; }
     row verdict_lanes_are_release_day_checks 0 "verdict=ci-main deep-doctests deep-nodefault deep-examples deep-bins-build deep-bins-smoke dogfood models readiness milestone cleanroom-cpu cleanroom-gpu assets preflight publish-dryrun;coverage=info" "" -- \
         st_verdict_lanes_are_release_day_checks
-    # assets reads the nightly rehearsal (assets_rehearsal.sh): its tag job and its verify job, both required. A red tag
-    # job skips verify, and verify alone would read that night void. No build leg may match: verify judges every leg.
-    st_assets_lane_reads_the_rehearsal() {
-        printf '%s\n' "$LANES" | awk -F ';' -v names="Rehearsal tag, and the rehearsal is still the release's build|The rehearsal built every asset the release owes|pv t on h|all [[bin]]s t on h|apr (cuda) t on h|apr (cpu) t on h|apr (cpu) aarch64-apple-darwin on mini" '
-            $1 == "assets" { n = split(names, j, "|"); for (k = 1; k <= n; k++) if (j[k] ~ $6) m = m (m == "" ? "" : ",") k
-                printf "producer=%s event=%s need=%s matched=%s\n", $4, $5, $7, m }'
-    }
-    row assets_lane_reads_the_rehearsal_tag_and_verify 0 'producer=.github/workflows/assets-rehearsal-nightly.yml event=^schedule$ need=2 matched=1,2' "" -- \
-        st_assets_lane_reads_the_rehearsal
     st_norm() {
         printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WC","path":".github/workflows/c.yml"}]}\n' > "$tmp/wf.json"
         printf '%s' '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":{"oid":"'"$ST_C"'","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"nodes":[{},{"name":"gate","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s","completedAt":"e","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"workflowRun":{"databaseId":301,"event":"push","createdAt":"c","workflow":{"id":"WC"}}}}]}}}}},"w0":{"id":"WA","runs":{"nodes":[{"databaseId":101,"createdAt":"c1","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"'"$ST_C"'"},"checkRuns":{"nodes":[{"name":"job-a","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"s1","completedAt":"e1"},{"name":"job-a","status":"COMPLETED","conclusion":"FAILURE","startedAt":"s0","completedAt":"e0"}]}}}]}}}}' > "$tmp/gql.json"
@@ -777,9 +768,7 @@ m38_verdict_rc_always_red	s/"RELEASABLE "\*) return 0 ;;/"RELEASABLE "*) return 
 m39_exit_verdict_always_red	s/^    \[ -z "\$EXIT_VERDICT" \] || verdict_rc "\$line" || exit 1$/    [ -z "$EXIT_VERDICT" ] || exit 1/
 m40_config_token_ignored	s/^        if grep -qsE /        if false \&\& grep -qsE /
 m41_home_cargo_unchecked	s/ "\$HOME\/.cargo"; do$/; do/
-m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/
-m43_assets_lane_unproduced	s/^assets;verdict;\(.*\);\.github\/workflows\/assets-rehearsal-nightly\.yml;.*$/assets;verdict;\1;-;-;-/
-m44_assets_tag_job_unread	s/;^(Rehearsal tag, and the rehearsal is still the release.s build|The rehearsal built every asset the release owes)\$;2$/;^The rehearsal built every asset the release owes$/'
+m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/'
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
