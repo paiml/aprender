@@ -266,7 +266,7 @@ falsification_tests:
       Run the case table against the v0.70.1 publish_strict.sh (which checks only
       that the file is non-empty) and it FAILS four rows (non-numeric, red, other
       commit, unreadable) with "the clean-room door let this run through". Point
-      its door rows at af58dfccff (PUBLISH_DOORS_ROOT) and they FAIL three rows:
+      its door rows at af58dfccff (PUBLISH_DOORS_ROOT) and two rows FAIL, with three findings:
       `make publish` ran a real `cargo publish`, and the scan finds the publish
       recipe's upload command (it starts at Makefile:1397) and
       scripts/stack_release.sh:54.
