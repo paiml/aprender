@@ -120,6 +120,9 @@ pub(crate) mod speed_gate;
 // EXT-19 speed ledger; its consumer is the EXT-001 §3.7 per-tag speed loop.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod speed_ledger;
+// EXT-19 reading APR-OBS apr-perf-ledger-v1 rows (#4551).
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod speed_perf_rows;
 // Poka-yoke for the *-lint family error surface (#2377-8/-9): scans the family's
 // own source so the class cannot be reintroduced by the next copy-paste.
 #[cfg(test)]
