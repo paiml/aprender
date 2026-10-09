@@ -3,6 +3,7 @@
 mod ancestry;
 mod database;
 mod evals;
+mod export;
 
 pub use ancestry::{Ancestry, StoredEdge};
 pub use database::RegistryDb;
