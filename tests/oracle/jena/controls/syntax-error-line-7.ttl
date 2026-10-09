@@ -1,0 +1,8 @@
+@prefix ex: <http://ex.org/> .
+# Six good lines, then an IRI with a space in it on line 7 (FALSIFY-CRUXSHACL-004).
+ex:a ex:p "one" .
+ex:b ex:p "two" .
+ex:c ex:p "three" .
+ex:d ex:p "four" .
+ex:e ex:p <http://ex.org/has space> .
+ex:f ex:p "eight" .

@@ -1,0 +1,10 @@
+@prefix ex: <http://ex.org/> .
+# FALSIFY-CRUXSHACL-005: string escapes, numeric Unicode escapes, raw non-ASCII, language tags, a list.
+ex:s ex:a "tab\there \"quoted\" back\\slash\nnew line\rreturn" ;
+  ex:b "café and \U0001F600" ;
+  ex:c "é raw, ü raw, 漢字" ;
+  ex:d "bonjour"@fr ;
+  ex:e "colour"@en-GB ;
+  ex:f [ ex:g ( 1 2.5 "three" ) ] ;
+  ex:h """two
+lines""" .

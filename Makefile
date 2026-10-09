@@ -1574,6 +1574,18 @@ oracle-owl-check: oracle-owl
 	@git diff --exit-code tests/oracle/tbox-differential.json \
 	  || { echo "FAIL: tests/oracle/tbox-differential.json differs from a fresh run — commit it"; exit 1; }
 
+# CRUX category R (spec §14): pv against Apache Jena 5.6.0, pinned by sha256, on a JVM 17+ (`ONT_ORACLE_JAVA`
+# names one; else `java` on PATH). ON DEMAND ONLY: no PR, merge-queue or release job runs it. It runs the planted
+# controls, then the cells, and writes tests/oracle/jena/receipt.json. Exit 0 GREEN, 1 RED, 2 NOT MEASURED; the
+# cells whose pv side waits for a Turtle reader or a W3C report are NOT MEASURED, so today's best is 2. A pv
+# report with no findings array (pv did not run) is an incomplete subject, never zero violations.
+.PHONY: oracle-jena
+oracle-jena:
+	@echo "== CRUX R: pv vs Apache Jena 5.6.0 (on demand, never a gate) =="
+	@. scripts/pv_bin.sh && "$$PV" lint contracts --gate shapes --format json > "$${TMPDIR:-/tmp}/pv-shapes-jena.json" 2>/dev/null || true
+	@cargo build --release --quiet --manifest-path tests/oracle/jena/Cargo.toml
+	@. scripts/pv_bin.sh && "$$(cargo metadata --no-deps --format-version 1 --manifest-path tests/oracle/jena/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/jena-oracle" run . "$${TMPDIR:-/tmp}/pv-shapes-jena.json" --pv "$$PV"
+
 # ── BLD-002 R4: nightly evidence train (report-only) ────────────────────────────────────────────────────────
 # One line a night for main's head: RELEASABLE H=<C> or NOT RELEASABLE: <lane>, <run>. The timer runs a bundle copied
 # out of git at pinned shas, never the working tree; all three default to HEAD, since they ship in one tree. OUT (and optionally INBOX) come from the command line:
