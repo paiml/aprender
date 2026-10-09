@@ -108,32 +108,32 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: softmax-kernel-v1.yaml
   equation: softmax
-  module_path: trueno
-  function: softmax
+  module_path: trueno::vector::ops::activations
+  function: Vector::softmax
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: cross-entropy-kernel-v1.yaml
   equation: log_softmax
-  module_path: trueno
-  function: log_softmax
+  module_path: trueno::vector::ops::activations
+  function: Vector::log_softmax
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: matmul-kernel-v1.yaml
   equation: matmul
-  module_path: trueno
-  function: matmul
+  module_path: trueno::matrix::ops::arithmetic
+  function: Matrix::matmul
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: gated-delta-net-v1.yaml
   equation: read
-  module_path: trueno
-  function: read
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_rule_step
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: gated-delta-net-v1.yaml
   equation: write
-  module_path: trueno
-  function: write
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_rule_step
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: model-config-algebra-v1.yaml
@@ -162,14 +162,14 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: quantization-ordering-v1.yaml
   equation: bytes_per_param
-  module_path: trueno
-  function: bytes_per_param
+  module_path: trueno::tuner::types
+  function: QuantType::bytes_per_param
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: embedding-lookup-v1.yaml
   equation: embedding_lookup
-  module_path: trueno
-  function: embedding_lookup
+  module_path: trueno::matrix::ops::ml_ops
+  function: Matrix::embedding_lookup
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: graph-centrality-v1.yaml
@@ -187,14 +187,14 @@ bindings:
   notes: 'In crates/cbtop/src/quantize/gguf.rs. Counts tensors in GGUF model files.'
 - contract: metrics-classification-v1.yaml
   equation: precision
-  module_path: trueno::cbtop::adaptive_ml::types
+  module_path: cbtop::adaptive_ml::types
   function: ClassificationMetrics::precision
   signature: 'pub fn precision(&self) -> f64'
   status: implemented
   notes: 'In crates/cbtop/src/adaptive_ml/types.rs. TP / (TP + FP).'
 - contract: metrics-classification-v1.yaml
   equation: recall
-  module_path: trueno::cbtop::adaptive_ml::types
+  module_path: cbtop::adaptive_ml::types
   function: ClassificationMetrics::recall
   signature: 'pub fn recall(&self) -> f64'
   status: implemented
@@ -209,7 +209,7 @@ bindings:
     (incremental) + MultiWarp + FlashDecoding variants.'
 - contract: int8-symmetric-quant-v1.yaml
   equation: quantize
-  module_path: trueno::crates::trueno_quant::quantize
+  module_path: trueno_quant::quantize
   function: quantize_q4_k
   signature: 'pub fn quantize_q4_k(data: &[f32]) -> Vec<u8>'
   status: implemented
@@ -225,7 +225,7 @@ bindings:
     HardwareProfile::peak_bandwidth_gbps.'
 - contract: roofline-model-v1.yaml
   equation: throughput_bound
-  module_path: trueno::cbtop::roofline
+  module_path: cbtop::roofline
   function: HardwareProfile::theoretical_peak_at_oi
   signature: 'pub fn theoretical_peak_at_oi(&self, operational_intensity: f64) -> f64'
   status: implemented

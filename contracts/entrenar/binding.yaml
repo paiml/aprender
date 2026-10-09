@@ -51,8 +51,8 @@ bindings:
   notes: Pre-allocated head buffers; zero per-head heap alloc
 - contract: cuda-classify-training-v1.yaml
   equation: gpu_forward
-  module_path: entrenar::transformer::cuda_block
-  function: CudaTransformerBlock::gpu_forward
+  module_path: entrenar::train::transformer_trainer::cuda_trainer
+  function: CudaTransformerTrainer::gpu_forward
   signature: 'fn gpu_forward(&self, hidden: &CudaBuffer) -> CudaBuffer'
   status: implemented
   notes: GPU forward pass; parity within 1e-3 of CPU
@@ -65,15 +65,15 @@ bindings:
   notes: function not found in source
 - contract: cuda-classify-training-v1.yaml
   equation: device_dispatch
-  module_path: entrenar::autograd::cuda_training
+  module_path: entrenar::finetune::device
   function: ComputeDevice::auto_detect
   signature: fn auto_detect() -> ComputeDevice
   status: implemented
   notes: Auto-detects CUDA, wgpu, or CPU fallback
 - contract: distributed-training-v1.yaml
   equation: gradient_allreduce
-  module_path: entrenar::finetune::data_parallel
-  function: DataParallelCoordinator::allreduce
+  module_path: entrenar::finetune::ring_allreduce
+  function: RingAllReduceWorker::allreduce
   signature: 'fn allreduce(&self, grads: &mut [Tensor]) -> Result<()>'
   status: implemented
   notes: Phase 1 complete (multi-GPU); Phase 2 in progress (multi-node)
@@ -225,7 +225,7 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: silu-kernel-v1.yaml
   equation: sigmoid
-  module_path: entrenar
+  module_path: entrenar::generative::code_gan::discriminator
   function: sigmoid
   status: implemented
   notes: Auto-inferred by pv infer
@@ -237,8 +237,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: metrics-classification-v1.yaml
   equation: accuracy
-  module_path: entrenar
-  function: accuracy
+  module_path: entrenar::eval::classification::confusion
+  function: ConfusionMatrix::accuracy
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
@@ -249,13 +249,13 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: metrics-classification-v1.yaml
   equation: confusion_matrix
-  module_path: entrenar
+  module_path: entrenar::eval::classification::report
   function: confusion_matrix
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-ranking-v1.yaml
   equation: ndcg_at_k
-  module_path: entrenar
+  module_path: entrenar::eval::generative::retrieval
   function: ndcg_at_k
   status: implemented
   notes: Auto-inferred by pv infer
@@ -279,8 +279,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: metrics-regression-v1.yaml
   equation: rmse
-  module_path: entrenar
-  function: rmse
+  module_path: entrenar::quant::error_analysis
+  function: QuantErrorStats::rmse
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: int8-symmetric-quant-v1.yaml
@@ -309,31 +309,31 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: attention-kernel-v1.yaml
   equation: attention
-  module_path: entrenar
+  module_path: entrenar::autograd::ops
   function: attention
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: transpose-kernel-v1.yaml
   equation: transpose
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::matmul
   function: transpose
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: matmul-kernel-v1.yaml
   equation: matmul
-  module_path: entrenar
+  module_path: entrenar::autograd::ops
   function: matmul
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: relu
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::activations
   function: relu
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: gelu
-  module_path: entrenar
+  module_path: entrenar::autograd::ops::activations
   function: gelu
   status: implemented
   notes: Auto-inferred by pv infer

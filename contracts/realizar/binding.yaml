@@ -9,7 +9,7 @@ bindings:
   notes: '#4369: #[contract] site at crates/aprender-serve/src/gguf/ops.rs:128 had no binding row, and contracts/forward-pass-v1.yaml does not exist in-tree: the annotation cites no contract'
 - contract: gemm-v1.yaml
   equation: flattened_batched_gemm
-  module_path: realizar::gguf::inference::cached::single_flattened_batched_owned
+  module_path: realizar::gguf::inference::cached::single
   function: flattened_batched_gemm
   status: partial
   notes: '#4369: #[contract] site at crates/aprender-serve/src/gguf/inference/cached/single_flattened_batched_owned.rs:19 had no binding row, and contracts/gemm-v1.yaml does not exist in-tree: the annotation cites no contract'
@@ -46,7 +46,7 @@ bindings:
   notes: Scalar, AVX2, AVX-512 VNNI variants; also Q6K, Q8_0
 - contract: flash-attention-v1.yaml
   equation: flash_attention
-  module_path: realizar::gguf::inference::attention_part_02
+  module_path: realizar::gguf::inference::attention
   function: flash_attention_tiled
   signature: 'fn flash_attention_tiled(q: &[f32], k: &[f32], v: &[f32], ...) -> Vec<f32>'
   status: implemented
@@ -70,35 +70,35 @@ bindings:
 - contract: gated-delta-net-v1.yaml
   equation: decay
   module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_decay
+  function: gated_delta_rule_step
   signature: 'fn gated_delta_net_decay(a_log: &[f32], dt: &[f32]) -> Vec<f32>'
   status: implemented
   notes: decay = exp(g_h), S *= decay
 - contract: gated-delta-net-v1.yaml
   equation: read
   module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_read
+  function: gated_delta_rule_step
   signature: 'fn gated_delta_net_read(state: &[f32], q: &[f32]) -> Vec<f32>'
   status: implemented
   notes: 'State read: mem = S^T @ k_norm'
 - contract: gated-delta-net-v1.yaml
   equation: write
   module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_write
+  function: gated_delta_rule_step
   signature: 'fn gated_delta_net_write(state: &mut [f32], k: &[f32], delta: &[f32], decay: &[f32])'
   status: implemented
   notes: 'State write: S += k (x) delta'
 - contract: gated-delta-net-v1.yaml
   equation: delta
   module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_delta
+  function: gated_delta_rule_step
   signature: 'fn gated_delta_net_delta(v: &[f32], read: &[f32], beta: &[f32]) -> Vec<f32>'
   status: implemented
   notes: 'Delta rule: delta = beta * (v - mem)'
 - contract: gated-delta-net-v1.yaml
   equation: output
   module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_output
+  function: gated_delta_rule_step
   signature: 'fn gated_delta_net_output(y: &[f32], z: &[f32]) -> Vec<f32>'
   status: implemented
   notes: 'Output: o = S^T @ q, then rms_norm_gated'
@@ -132,7 +132,7 @@ bindings:
   notes: YaRN mixed-frequency applied via ScaledRope::apply()
 - contract: inference-pipeline-v1.yaml
   equation: prefill_phase
-  module_path: realizar::gguf::inference::forward::batch_part_02_part_03
+  module_path: realizar::gguf::inference::forward::batch
   function: prefill_batch
   signature: 'fn prefill_batch(model: &mut Model, tokens: &[u32], ...) -> Result<Vec<f32>>'
   status: implemented
@@ -146,21 +146,21 @@ bindings:
   notes: Single-token forward pass; decode is the default path after prefill
 - contract: kv-cache-equivalence-v1.yaml
   equation: prefill_incremental
-  module_path: realizar::gguf::inference::forward::batch_part_02_part_03
-  function: prefill_batch
+  module_path: realizar::cuda::executor::layers::prefill
+  function: prefill_all_layers_gpu
   signature: 'fn prefill_batch(model: &mut Model, tokens: &[u32], ...) -> Result<Vec<f32>>'
   status: implemented
   notes: KV cache populated incrementally during batched prefill
 - contract: kv-cache-equivalence-v1.yaml
   equation: batched_serial_equivalence
-  module_path: realizar::gguf::inference::forward
+  module_path: realizar::gguf::inference::forward::batch
   function: generate_with_batched_prefill
   signature: fn generate_with_batched_prefill(...) -> Result<Vec<u32>>
   status: implemented
   notes: Batched prefill produces same KV cache as serial
 - contract: kv-cache-equivalence-v1.yaml
   equation: fused_kernel
-  module_path: realizar::cuda::executor::kv_cache_part_02_part_03
+  module_path: realizar::cuda::executor::kv_cache
   function: flash_attention_cached
   signature: 'fn flash_attention_cached(q: &CudaSlice, k_cache: &CudaSlice, v_cache: &CudaSlice, ...) -> Result<()>'
   status: implemented
@@ -168,14 +168,14 @@ bindings:
 - contract: qwen35-hybrid-forward-v1.yaml
   equation: gdn_sublayer
   module_path: realizar::gpu::scheduler::linear_attn
-  function: gated_delta_net_forward
+  function: forward_linear_block_incremental
   signature: 'fn gated_delta_net_forward(input: &[f32], weights: &GdnWeights, state: &mut GdnState) -> Vec<f32>'
   status: implemented
   notes: pre-norm -> projections -> causal Conv1D -> SiLU -> gated_delta_rule_step -> RMSNorm_gated -> out_proj -> residual
 - contract: qwen35-shapes-v1.yaml
   equation: o_projection_transpose
   module_path: realizar::gguf::config
-  function: ArchConstraints::from_gguf_metadata
+  function: ArchConstraints::from_architecture
   signature: 'fn from_gguf_metadata(metadata: &GgufMetadata) -> ArchConstraints'
   status: implemented
   notes: O projection shape [hidden, n_h * d_k] validated by ArchConstraints
@@ -210,7 +210,7 @@ bindings:
   notes: sm_target set from context.compute_capability() at executor init
 - contract: ptx-target-parity-v1.yaml
   equation: no_hardcoded_targets
-  module_path: realizar::cuda::kernel_generator
+  module_path: realizar::cuda::kernels
   function: CudaKernels::generate_ptx
   signature: 'fn generate_ptx(&self, kernel_type: &KernelType) -> String'
   status: implemented
@@ -232,15 +232,15 @@ bindings:
   notes: 'PMAT-054A: Q8_1 quantize once, 3x GEMV reuse. Saves 56 kernel launches per token.'
 - contract: paged-kv-cache-v1.yaml
   equation: slot_mapping
-  module_path: realizar::cuda::executor::kv_cache
+  module_path: realizar::paged_kv
   function: PagedKvCache::slot
   signature: 'fn slot(&self, req: usize, pos: usize) -> usize'
   status: implemented
   notes: 'PMAT-052: Requires block table allocator. Currently stride-based.'
 - contract: paged-kv-cache-v1.yaml
   equation: block_allocation
-  module_path: realizar::cuda::executor::kv_cache
-  function: BlockAllocator::allocate
+  module_path: realizar::paged_kv
+  function: PagedKvCache::allocate_blocks
   signature: 'fn allocate(&mut self, num_blocks: usize) -> Result<Vec<u32>, GpuError>'
   status: implemented
   notes: 'PMAT-052: Free list block allocator. Currently contiguous allocation.'
@@ -253,8 +253,8 @@ bindings:
   notes: 'PMAT-053: Paged attention kernel. Currently incremental_attention_into.'
 - contract: continuous-batching-v1.yaml
   equation: token_budget
-  module_path: realizar::api::cuda_batch_scheduler
-  function: CudaBatchScheduler::schedule_step
+  module_path: realizar::scheduler
+  function: Scheduler::schedule_step
   signature: fn schedule_step(&mut self) -> SchedulerOutput
   status: implemented
   notes: 'PMAT-051: Token budget scheduler. Currently 10ms accumulation window.'
@@ -267,7 +267,7 @@ bindings:
   notes: 'PMAT-051: Chunked prefill to avoid blocking decode. Currently full prefill.'
 - contract: continuous-batching-v1.yaml
   equation: correctness_under_batching
-  module_path: realizar::gguf::cuda::generate_batched_streaming
+  module_path: realizar::gguf::cuda::generation
   function: generate_batched_streaming
   signature: 'fn generate_batched_streaming(&mut self, slots: &[BatchSlot]) -> Result<(), GpuError>'
   status: implemented
@@ -302,50 +302,50 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: matmul-kernel-v1.yaml
   equation: matmul
-  module_path: realizar
+  module_path: realizar::gpu::metrics
   function: matmul
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: relu
-  module_path: realizar
+  module_path: realizar::gpu::metrics
   function: relu
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: silu-kernel-v1.yaml
   equation: sigmoid
-  module_path: realizar
+  module_path: realizar::gpu::metrics
   function: sigmoid
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: backend-dispatch-v1.yaml
   equation: gpu_threshold
-  module_path: realizar
+  module_path: realizar::gpu::metrics
   function: gpu_threshold
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: transpose-kernel-v1.yaml
   equation: transpose
-  module_path: realizar
+  module_path: realizar::parallel
   function: transpose
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: softmax-kernel-v1.yaml
   equation: softmax
-  module_path: realizar
+  module_path: realizar::layers
   function: softmax
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: gelu
-  module_path: realizar
+  module_path: realizar::layers
   function: gelu
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: sliding-window-attention-v1.yaml
   equation: effective_context
-  module_path: realizar
-  function: effective_context
+  module_path: realizar::layers::attention
+  function: SlidingWindowAttention::effective_context
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: kmeans-kernel-v1.yaml
@@ -368,19 +368,19 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: silu
-  module_path: realizar
+  module_path: realizar::gguf::ops
   function: silu
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: learned-position-embedding-v1.yaml
   equation: position_embedding
-  module_path: realizar
+  module_path: realizar::gguf::model
   function: position_embedding
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: online-softmax-v1.yaml
   equation: standard_softmax
-  module_path: realizar
+  module_path: realizar::gguf::inference::forward::batch
   function: standard_softmax
   status: implemented
   notes: Auto-inferred by pv infer
@@ -392,14 +392,14 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: flash-attention-v1.yaml
   equation: flash_attention
-  module_path: realizar
-  function: flash_attention
+  module_path: realizar::gguf::inference::attention
+  function: flash_attention_tiled
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: rmsnorm-kernel-v1.yaml
   equation: rmsnorm
-  module_path: realizar
-  function: rmsnorm
+  module_path: realizar::gguf::ops
+  function: rms_norm
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: format-parity-v1.yaml
@@ -410,14 +410,14 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: greedy
-  module_path: realizar
-  function: greedy
+  module_path: realizar::generate
+  function: sample_greedy
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: top_k
-  module_path: realizar
-  function: top_k
+  module_path: realizar::generate
+  function: sample_top_k
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
@@ -469,7 +469,7 @@ bindings:
   notes: 'PMAT-414: 4 exhaustive arms for (has_qk_norm, has_bias) boolean pairs'
 - contract: qwen35-hybrid-forward-v1.yaml
   equation: attention_sublayer
-  module_path: realizar::gpu::scheduler::forward_from_model
+  module_path: realizar::gpu::scheduler::model
   function: forward_block_traced
   signature: 'fn forward_block_traced(&mut self, input: &[f32], seq_len: usize, block_idx: usize) -> Result<(Vec<f32>, LayerActivation)>'
   status: implemented
@@ -483,8 +483,8 @@ bindings:
   notes: 'PMAT-414: SwiGLU FFN kernel. gate *= sigmoid(gate) * up'
 - contract: qwen35-hybrid-forward-v1.yaml
   equation: hybrid_block
-  module_path: realizar::safetensors::safetensors_config
-  function: SafeTensorsConfig::is_hybrid_attention
+  module_path: realizar::safetensors
+  function: SafetensorsConfig::is_hybrid_attention
   signature: 'pub fn is_hybrid_attention(&self) -> bool'
   status: implemented
   notes: 'PMAT-414: Dispatches attention vs GDN per layer_types array'
@@ -504,7 +504,7 @@ bindings:
   notes: 'PMAT-414: Q4K 0.5625 < Q6K 0.8203 < Q8_0 1.0625 B/param'
 - contract: fused-qkv-projection-v1.yaml
   equation: fused_qkv
-  module_path: realizar::gpu::scheduler::model_forward_block_gpu
+  module_path: realizar::gpu::scheduler::model
   function: fused_qkv_projection
   signature: 'pub fn fused_qkv_projection(&mut self, input: &[f32]) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)>'
   status: implemented
@@ -518,8 +518,8 @@ bindings:
   notes: 'PMAT-408: Temperature scaling applied before top-k/top-p sampling'
 - contract: bpe-tokenization-v1.yaml
   equation: merge_rule
-  module_path: realizar::gguf::token
-  function: GgufTokenizer::merge_rules
+  module_path: realizar::gguf::loader
+  function: GGUFModel::merge_rules
   signature: 'pub fn merge_rules(&self) -> Option<Vec<(String, String)>>'
   status: implemented
   notes: 'PMAT-408: BPE merge pairs from GGUF metadata'
@@ -560,8 +560,8 @@ bindings:
   notes: 'PMAT-405: hidden += attn_proj, residual += ffn_out. Also GPU PTX residualadd kernel'
 - contract: inference-pipeline-v1.yaml
   equation: layer_composition
-  module_path: realizar::gpu::adapters::using
-  function: forward_layer
+  module_path: realizar::gpu::adapters::apr_q4
+  function: GpuModelQ4::forward_layer
   signature: 'fn forward_layer(&self, executor: &mut CudaExecutor, input: &GpuBuffer<f32>, layer_idx: usize, seq_len: usize) -> Result<GpuBuffer<f32>>'
   status: implemented
   notes: 'PMAT-405: Chained forward through num_layers. CPU and GPU paths'
@@ -651,7 +651,7 @@ bindings:
   notes: 'PMAT-405: Detects garbled output from quantization errors'
 - contract: backend-dispatch-v1.yaml
   equation: qk_norm_score_bound
-  module_path: realizar::cuda::executor::layers::apply
+  module_path: realizar::cuda::executor::layers::indexed
   function: apply_qk_norm
   signature: 'fn apply_qk_norm(&mut self, q_buf: &GpuBuffer<f32>, k_buf: &GpuBuffer<f32>, layer_weights: &ValidatedLayerWeights, epsilon: f32) -> Result<(), GpuError>'
   status: implemented
@@ -679,8 +679,8 @@ bindings:
   notes: 'PMAT-404: No-op when cc >= 100. Prevents context poisoning on Blackwell.'
 - contract: gpu-context-health-v1.yaml
   equation: cuda_graph_guard
-  module_path: realizar::cuda::executor::layers::graphed_capture
-  function: try_graph_capture
+  module_path: realizar::cuda::executor::layers::graphed
+  function: CudaExecutor::try_graph_capture
   signature: 'fn try_graph_capture(&mut self) -> bool'
   status: implemented
   notes: 'PMAT-404: Opt-IN via CUDA_GRAPH_ENABLE=1. ThreadLocal capture mode (PMAT-374).'
@@ -700,15 +700,15 @@ bindings:
   notes: 'PMAT-403: CUDA_GRAPH_ENABLE=1 required. Profiling requires graphs OFF (bricks only measured during capture, not replay)'
 - contract: gpu-decode-profiling-v1.yaml
   equation: report_fidelity
-  module_path: realizar::cuda::executor::executor_api
-  function: ExecutorApi::start_brick_id
+  module_path: realizar::cuda::executor::core
+  function: CudaExecutor::start_brick_id
   signature: 'pub(crate) fn start_brick_id(&mut self, brick_id: BrickId) -> Option<BrickIdTimer>'
   status: implemented
   notes: 'PMAT-403: JSON actual_us must equal profiler per-call avg. start/stop_brick_id provide ground truth'
 - contract: gpu-decode-profiling-v1.yaml
   equation: report_completeness
-  module_path: realizar::cuda::executor::executor_api
-  function: ExecutorApi::stop_brick_id
+  module_path: realizar::cuda::executor::core
+  function: CudaExecutor::stop_brick_id
   signature: 'pub(crate) fn stop_brick_id(&mut self, timer: Option<BrickIdTimer>, elements: u64)'
   status: implemented
   notes: 'PMAT-403: Every profiler brick must appear in output. No silent truncation'
