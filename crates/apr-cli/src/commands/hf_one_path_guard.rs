@@ -7,10 +7,11 @@
 //! - an upload-only endpoint (`info/lfs/objects/batch`, `preupload/`,
 //!   `xet-write-token`, `api/repos/create`) is a hit by itself;
 //! - a commit, branch, tag or upload endpoint (`commit/`, `branch/`, `tag/`,
-//!   `/upload/`) is a hit unless the same literal names another service's host
-//!   (`https://api.github.com/…`) and no Hub API path (`api/models`,
-//!   `api/datasets`, `api/spaces`). The Hub base usually comes from a constant
-//!   or another module, so a write endpoint with no host in sight is the Hub's.
+//!   `/upload/`) is a hit unless the same literal names a known non-Hub host
+//!   (`github.com`, `gitlab.com`) and no Hub API path (`api/models`,
+//!   `api/datasets`, `api/spaces`). Any other host, or none in sight, is taken
+//!   as the Hub: its base usually comes from a constant or another module, and
+//!   `HF_ENDPOINT` may name a mirror.
 //!
 //! The one file it skips is this one: it names every endpoint as data, and the
 //! last test checks that it holds no HTTP client.
@@ -24,16 +25,29 @@ const UPLOAD_ONLY: [&str; 4] = [
     "xet-write-token",
     "api/repos/create",
 ];
-const HUB_HOSTS: [&str; 2] = ["huggingface.co", "hf.co"];
+const NOT_HUB: [&str; 2] = ["github.com", "gitlab.com"];
 const HUB_PATHS: [&str; 3] = ["api/models", "api/datasets", "api/spaces"];
 const WRITE: [&str; 4] = ["commit/", "branch/", "tag/", "/upload/"];
 const SCOPES: [&str; 2] = ["crates/apr-cli", "src"];
 const SELF: &str = "crates/apr-cli/src/commands/hf_one_path_guard.rs";
 
-/// The text between unescaped quotes on one line; an unclosed quote is dropped.
+/// The chars after the opening `'` of a quote char literal (`'"'`, `'\"'`), else 0.
+fn quote_char_len(rest: &str) -> usize {
+    ["'\"'", "'\\\"'"]
+        .iter()
+        .find(|q| rest.starts_with(**q))
+        .map_or(0, |q| q.len() - 1)
+}
+
+/// The text between unescaped quotes on one line, past quote char literals; an
+/// unclosed quote is dropped.
 fn line_literals(l: &str) -> Vec<&str> {
-    let (mut out, mut open, mut esc) = (Vec::new(), None, false);
+    let (mut out, mut open, mut esc, mut skip) = (Vec::new(), None, false, 0);
     for (i, c) in l.char_indices() {
+        if skip > 0 {
+            skip -= 1;
+            continue;
+        }
         match (open, c) {
             (Some(_), _) if esc => esc = false,
             (Some(_), '\\') => esc = true,
@@ -42,6 +56,7 @@ fn line_literals(l: &str) -> Vec<&str> {
                 open = None;
             }
             (None, '"') => open = Some(i + 1),
+            (None, '\'') => skip = quote_char_len(&l[i..]),
             _ => {}
         }
     }
@@ -60,13 +75,13 @@ fn names_any(s: &str, set: &[&str]) -> bool {
     set.iter().any(|n| s.contains(n))
 }
 
-/// A literal that names some other service's host and no Hub API path.
+/// A literal that names a known non-Hub host and no Hub API path.
 fn other_host(s: &str) -> bool {
     let host = s
         .split("://")
         .nth(1)
         .and_then(|r| r.split(['/', '{', ':']).next());
-    host.is_some_and(|h| !h.is_empty() && !names_any(h, &HUB_HOSTS)) && !names_any(s, &HUB_PATHS)
+    host.is_some_and(|h| names_any(h, &NOT_HUB)) && !names_any(s, &HUB_PATHS)
 }
 
 /// The hits in one file's text, as `line:literal`.
@@ -132,6 +147,9 @@ fn the_case_table() {
         r#"let u = format!("{}/{}/commit/{}", DEFAULT_HF_ENDPOINT, repo, rev);"#,
         r#"let u = format!("https://hub.example.org/api/models/{r}/commit/main");"#,
         r#"let b = "say \"hi"; let u = format!("{b}/x/preupload/{r}");"#,
+        r#"let q = '"'; let u = format!("{b}/x/commit/{r}");"#,
+        r#"let q = '\"'; let u = format!("{b}/x/preupload/{r}");"#,
+        r#"let u = format!("https://hf-mirror.com/{r}/commit/{rev}");"#,
         "let c = \"commit/\"; // a Hub name in a comment does not matter",
     ];
     let must_not_hit = [
