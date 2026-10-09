@@ -227,10 +227,13 @@ door_case none 'cargo-publish x'
 # is blind. One fixture is allowed by file AND text: release_ready.sh writes a stand-in
 # publish_strict.sh for its own case table, so a real upload added there is still caught.
 # This file is skipped too: its case table above is made of upload lines.
+# Make files at any depth (`make -C crates/x publish` is a door too). Workflows only at the
+# root: GitHub runs no other .github/workflows directory.
 GATED='scripts/release/publish_strict.sh scripts/cascade-publish.sh'
 FIXTURE='scripts/release/release_ready.sh:cargo publish -p x'
 SELF=scripts/check_publish_strict_cleanroom.sh
-mapfile -t scope < <(git -C "$DOORS_ROOT" ls-files -- '*.sh' '*.bash' 'Makefile' '*.mk' \
+mapfile -t scope < <(git -C "$DOORS_ROOT" ls-files -- '*.sh' '*.bash' '*.mk' \
+  'Makefile' '*/Makefile' 'makefile' '*/makefile' 'GNUmakefile' '*/GNUmakefile' \
   '.github/workflows/*.yml' '.github/workflows/*.yaml')
 raw=$( (cd "$DOORS_ROOT" && door_lines "${scope[@]}") || true)
 for g in $GATED; do
