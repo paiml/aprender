@@ -304,11 +304,13 @@ pub(crate) fn run_import(
     } else {
         Vec::new()
     };
-    print_plan(&planned, &ids, yes, json);
+    println!("{}", render_plan(&planned, &ids, yes, json));
     Ok(())
 }
 
-fn print_plan(planned: &[Planned], ids: &[String], applied: bool, json: bool) {
+/// The plan (or what was written) as `apr runs import` prints it.
+fn render_plan(planned: &[Planned], ids: &[String], applied: bool, json: bool) -> String {
+    use std::fmt::Write as _;
     let imports = planned
         .iter()
         .filter(|p| matches!(p.outcome, Outcome::Import(_)))
@@ -331,32 +333,33 @@ fn print_plan(planned: &[Planned], ids: &[String], applied: bool, json: bool) {
                 }),
             })
             .collect();
-        println!(
-            "{}",
-            serde_json::json!({
+        return serde_json::json!({
                 "applied": applied,
                 "dirs": planned.len(),
                 "import": imports,
                 "skip": planned.len() - imports,
                 "run_ids": ids,
-                "rows": rows,
-            })
-        );
-        return;
+            "rows": rows,
+        })
+        .to_string();
     }
+    let mut out = String::new();
     for p in planned {
         match &p.outcome {
-            Outcome::Import(run) => println!(
+            Outcome::Import(run) => writeln!(
+                out,
                 "IMPORT {} status={:?} metrics={} artifacts={}",
                 p.source.display(),
                 run.status,
                 run.metrics.len(),
                 run.artifacts.len()
             ),
-            Outcome::Skip(reason) => println!("SKIP   {} ({reason})", p.source.display()),
+            Outcome::Skip(reason) => writeln!(out, "SKIP   {} ({reason})", p.source.display()),
         }
+        .expect("write to String");
     }
-    println!(
+    write!(
+        out,
         "{} dir(s): {imports} import, {} skip{}",
         planned.len(),
         planned.len() - imports,
@@ -365,7 +368,9 @@ fn print_plan(planned: &[Planned], ids: &[String], applied: bool, json: bool) {
         } else {
             "; plan only, pass --yes to write".into()
         }
-    );
+    )
+    .expect("write to String");
+    out
 }
 
 #[cfg(test)]
