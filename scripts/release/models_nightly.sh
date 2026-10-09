@@ -755,6 +755,8 @@ GH
     row tickets_unreadable_search_opens_nothing 2 "returned a full page or no readable list" "issue create" -- tk "$tmp/tk/red" 'not json' '{}'
     row tickets_non_list_search_opens_nothing 2 "returned a full page or no readable list" "issue create" -- tk "$tmp/tk/red" '{}' '{}'
     row tickets_failed_search_fails_the_step 2 "NOT-MEASURED: the issue search" "TICKET opened" -- tk "$tmp/tk/red" '[]' '{}' list
+    tkb unset red '[{"id":"fx-n","file":"n.gguf"},{"id":"fx-z","file":"z.gguf","green":null},{"id":"fx-g","file":"g.gguf","green":true}]'
+    row tickets_unset_green_rung_is_red 0 "OUT lambda|fx-n|#77 lambda|fx-z|#77 " "fx-g" -- tk "$tmp/tk/unset" '[]' '{}'
     row tickets_failed_comment_fails_the_step 2 "NOT-MEASURED: commenting on #5" "OUT lambda" -- tk "$tmp/tk/red" \
         '[{"number":5,"title":"models-nightly red: fx-1 on lambda"}]' '{"body":"x","comments":[]}' comment
 

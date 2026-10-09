@@ -24,10 +24,13 @@
 # "this PR's own receipt" line, not the case-table run) must live in its OWN
 # workflow, triggered by `pull_request_target` (base-defined: GitHub reads a
 # `pull_request_target` workflow from the DEFAULT branch, regardless of what
-# the PR's head carries) and `merge_group` (so the merge queue is not
-# deadlocked waiting on an event the workflow never fires for), and must NOT
-# also be triggered by `pull_request` (which would reintroduce the head-defined
-# reading for the same job). `gate`, in turn, must not `needs:` that job, nor
+# the PR's head carries), and must NOT also be triggered by `pull_request`
+# (which would reintroduce the head-defined reading for the same job), nor by
+# `merge_group`. The job is not a required context, so a queue run of it cannot
+# block a merge, and a check that cannot block a merge does not run on the
+# merge-queue path (#4688: 8 of 30 queue runs failed, 2026-10-06..09, and all
+# 8 PRs merged). If it becomes a required context, `merge_group` returns with
+# it and this rule flips back. `gate`, in turn, must not `needs:` that job, nor
 # any job literally named `pr-review-present` — a `needs:` entry only resolves
 # within the SAME workflow file, so `gate` depending on a base-owned job in a
 # DIFFERENT file is structurally impossible; the only way `gate` can end up
@@ -46,8 +49,8 @@
 #       `--self-test` invocations (the case-table run) do not count and may
 #       live anywhere.
 #
-#   B2  that workflow's top-level `on:` declares BOTH `pull_request_target`
-#       and `merge_group`, and does NOT declare `pull_request`. Parsed in its
+#   B2  that workflow's top-level `on:` declares `pull_request_target`, and
+#       declares NEITHER `pull_request` NOR `merge_group`. Parsed in its
 #       two YAML spellings — a mapping under `on:` and a flow list
 #       `on: [a, b]` — anything else is refused, never guessed.
 #
@@ -59,8 +62,8 @@
 #
 #   B4  the invoking job (identified by B1) carries a JOB-level `if:` (4-space
 #       indent under the job key — the same convention check_pr_review_wiring.sh
-#       uses for R3/R4) that evaluates TRUE on `pull_request_target` and
-#       `merge_group`, and FALSE on `push` and `workflow_dispatch`. A missing
+#       uses for R3/R4) that evaluates TRUE on `pull_request_target`, and
+#       FALSE on `merge_group`, `push` and `workflow_dispatch`. A missing
 #       job-level `if:` is a FAIL; the evaluator understands only a
 #       disjunction of `github.event_name == '<literal>'` and refuses anything
 #       else rather than guess.
@@ -92,8 +95,8 @@ GUARD_BASENAME='check_pr_review_arm4.sh'
 # real one gets missed.
 GUARD_RE="(^|[[:space:];&|(])((ba)?sh[[:space:]]+|[.]/)?[^[:space:]]*check_pr_review_arm4[.]sh([[:space:]]|\$|['\"])"
 
-EVENTS_TRUE='pull_request_target merge_group'
-EVENTS_FALSE='push workflow_dispatch'
+EVENTS_TRUE='pull_request_target'
+EVENTS_FALSE='merge_group push workflow_dispatch'
 
 # ---------------------------------------------------------------------------
 # invocation_loci <dir> — one "<file>:<job>" line per (file, job) whose steps
@@ -286,9 +289,10 @@ check_b2() {
         printf 'FAIL B2: %s does not declare `pull_request_target` in its top-level `on:`.\n' "$(basename "$f")"
         return 1
     fi
-    if [[ "$events" != *" merge_group "* ]]; then
-        printf 'FAIL B2: %s does not declare `merge_group` in its top-level `on:` — the\n' "$(basename "$f")"
-        printf '        merge queue would deadlock waiting on an event it never fires for.\n'
+    if [[ "$events" == *" merge_group "* ]]; then
+        printf 'FAIL B2: %s declares `merge_group` in its top-level `on:`. The job is\n' "$(basename "$f")"
+        printf '        not a required context, so a queue run cannot block a merge, and a\n'
+        printf '        check that cannot block does not run on the merge-queue path.\n'
         return 1
     fi
     if [[ "$events" == *" pull_request "* ]]; then
@@ -296,7 +300,7 @@ check_b2() {
         printf '        head-defined reading for the same job (PRQ-013).\n'
         return 1
     fi
-    printf 'ok  B2  %s declares pull_request_target + merge_group, not pull_request\n' "$(basename "$f")"
+    printf 'ok  B2  %s declares pull_request_target, neither pull_request nor merge_group\n' "$(basename "$f")"
     return 0
 }
 
@@ -365,7 +369,12 @@ check_b4() {
         eval_if "$ifexpr" "$ev"
         case $? in
             1) printf 'ok  B4  %-20s -> skipped\n' "$ev" ;;
-            0) printf 'FAIL B4: %s -> runs. There is no PR to judge on this event.\n' "$ev"; rc=1 ;;
+            0) if [ "$ev" = merge_group ]; then
+                   printf 'FAIL B4: merge_group -> runs. A check that cannot block a merge does not run in the queue.\n'
+               else
+                   printf 'FAIL B4: %s -> runs. There is no PR to judge on this event.\n' "$ev"
+               fi
+               rc=1 ;;
             *) printf 'FAIL B4: this guard cannot evaluate `%s`.\n' "$ifexpr"; return 1 ;;
         esac
     done
@@ -427,10 +436,9 @@ if [ "${1:-}" = "--self-test" ]; then
     ON_MAP='on:
   pull_request_target:
     branches: [main]
-  merge_group:
   workflow_dispatch:'
-    ON_FLOW='on: [pull_request_target, merge_group]'
-    JOBIF="    if: github.event_name == 'pull_request_target' || github.event_name == 'merge_group'"
+    ON_FLOW='on: [pull_request_target, workflow_dispatch]'
+    JOBIF="    if: github.event_name == 'pull_request_target'"
     SELFTEST_LINE='      - run: bash scripts/check_pr_review_arm4.sh --self-test'
     REAL_LINE='      - run: bash scripts/check_pr_review_arm4.sh'
 
@@ -510,17 +518,17 @@ $REAL_LINE"
     branches: [main]
   pull_request:
     branches: [main]
-  merge_group:
   workflow_dispatch:' 'pr-review-present' "$JOBIF" "$REAL_LINE"
     assert 'B2 pull_request also declared' FAIL "$d" ci.yml 'ALSO declares'
 
-    d=$TD/b2-nomerge; mkdir -p "$d"
+    d=$TD/b2-merge; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
     emit_quorum "$d/pr-review-quorum.yml" 'on:
   pull_request_target:
     branches: [main]
+  merge_group:
   workflow_dispatch:' 'pr-review-present' "$JOBIF" "$REAL_LINE"
-    assert 'B2 missing merge_group' FAIL "$d" ci.yml 'merge_group'
+    assert 'B2 merge_group declared' FAIL "$d" ci.yml 'declares `merge_group`'
 
     d=$TD/b2-opaque; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
@@ -567,7 +575,7 @@ $REAL_LINE"
     d=$TD/b4-ok; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
     emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' "$JOBIF" "$REAL_LINE"
-    assert 'B4 correct if: pull_request_target || merge_group' PASS "$d" ci.yml
+    assert 'B4 correct if: pull_request_target only' PASS "$d" ci.yml
 
     d=$TD/b4-push; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
@@ -579,6 +587,12 @@ $REAL_LINE"
     emit_ci "$d/ci.yml" 'ci' ''
     emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' '    if: always()' "$REAL_LINE"
     assert 'B4 an if: this guard cannot evaluate' FAIL "$d" ci.yml 'cannot evaluate'
+
+    d=$TD/b4-merge; mkdir -p "$d"
+    emit_ci "$d/ci.yml" 'ci' ''
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' \
+        "    if: github.event_name == 'pull_request_target' || github.event_name == 'merge_group'" "$REAL_LINE"
+    assert 'B4 if: also true on merge_group' FAIL "$d" ci.yml 'merge_group -> runs'
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED (%s/%s rows)\n' "$((row - fails))" "$row"; exit 1; }
     printf '\nSELF-TEST PASSED (%s/%s rows)\n' "$row" "$row"
@@ -597,6 +611,6 @@ if check_all "$WORKFLOWS_DIR"; then
     exit 0
 fi
 printf '\nPRQ-013: the job that invokes check_pr_review_arm4.sh (without --self-test)\n'
-printf 'must live in a workflow triggered by pull_request_target + merge_group, never\n'
-printf 'pull_request; `gate` must not needs: a head-defined receipt job.\n'
+printf 'must live in a workflow triggered by pull_request_target, never pull_request\n'
+printf 'or merge_group; `gate` must not needs: a head-defined receipt job.\n'
 exit 1

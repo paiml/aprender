@@ -60,6 +60,7 @@ rc_version_of_branch() {
 #   D_REPO D_HEAD_REPO D_BRANCH D_HEAD_SHA D_TIP_SHA
 #   D_JOBS  lines "<job name>\t<conclusion>"
 #   D_TAGS  lines "<tag name>\t<commit sha>" for existing tags matching v<X.Y.Z>-rc.*
+#   D_FINALS lines "<tag name>" for existing tags matching v<X.Y.Z>* (the final tag, if any, is one)
 # Prints "cut <tag>" or "skip <reason>". Returns 0 for both.
 rc_decide() {
     local v name c n max=0 have
@@ -69,6 +70,8 @@ rc_decide() {
     if ! v=$(rc_version_of_branch "${D_BRANCH:-}"); then
         printf 'skip branch %s is not release/X.Y.Z\n' "${D_BRANCH:-?}"; return 0
     fi
+    # A release branch whose FINAL tag exists is released: an rc cut after it is a misfire (GitHub 422s it).
+    if grep -qxF "v$v" <<< "${D_FINALS:-}"; then printf 'skip final tag v%s already exists: release/%s is released\n' "$v" "$v"; return 0; fi
     for name in "${REQUIRED_CHECKS[@]}"; do
         # Every job with this name must be success, and at least one must exist:
         # a missing required check is not a green one.
@@ -99,7 +102,7 @@ self_test() {
         got=$(rc_decide)
         if [ "$got" = "$1" ]; then printf '  ok   %s\n' "$2"; else printf '  FAIL %s\n       want: %s\n       got:  %s\n' "$2" "$1" "$got"; fail=1; fi
     }
-    base() { D_REPO=paiml/aprender D_HEAD_REPO=paiml/aprender D_BRANCH=release/0.70.0 D_HEAD_SHA=$A D_TIP_SHA=$A D_JOBS=$J_OK D_TAGS=''; }
+    base() { D_REPO=paiml/aprender D_HEAD_REPO=paiml/aprender D_BRANCH=release/0.70.0 D_HEAD_SHA=$A D_TIP_SHA=$A D_JOBS=$J_OK D_TAGS='' D_FINALS=''; }
     echo "$PROG self-test: rc_decide case table"
     base; expect 'cut v0.70.0-rc.1' 'first green run on a fresh release branch -> rc.1 (a red non-required job does not block)'
     base; D_TAGS=$'v0.70.0-rc.1\t'$B; expect 'cut v0.70.0-rc.2' 'rc.1 exists on an older commit -> rc.2'
@@ -118,6 +121,16 @@ self_test() {
     base; D_JOBS=$'ci / gate\tskipped\nworkspace-test\tsuccess'; expect 'skip required check "ci / gate" concluded skipped' 'skipped is not success'
     base; D_TIP_SHA=$B; expect "skip $A is no longer the tip of release/0.70.0 (tip $B)" 'superseded push cuts nothing'
     base; D_HEAD_SHA=''; D_TIP_SHA=''; expect 'skip ? is no longer the tip of release/0.70.0 (tip ?)' 'empty head sha never cuts'
+    base; D_FINALS=$'v0.70.0-rc.1\nv0.70.0'; D_TAGS=$'v0.70.0-rc.1\t'$B; expect 'skip final tag v0.70.0 already exists: release/0.70.0 is released' 'green run on a released branch cuts nothing (0.70.3-rc.1 misfire, 422)'
+    base; D_FINALS=$'v0.70.0-rc.1\nv0.70.00\nv0.70.0x\nv0.70.01'; expect 'cut v0.70.0-rc.1' 'near-miss names are not the final tag'
+    # MUTANT: with the final-tag check deleted, the released-branch row must cut again.
+    mut=$(mktemp) || return 2
+    grep -vF 'grep -qxF "v$v"' "${BASH_SOURCE[0]}" > "$mut"
+    got=$(D_REPO=paiml/aprender D_HEAD_REPO=paiml/aprender D_BRANCH=release/0.70.0 D_HEAD_SHA=$A D_TIP_SHA=$A \
+          D_JOBS="$J_OK" D_TAGS='' D_FINALS='v0.70.0' bash -c ". '$mut' --source-only; rc_decide")
+    if [ "$got" = 'cut v0.70.0-rc.1' ]; then echo "  ok   mutant (final-tag check deleted) cuts on a released branch: the released-branch row can see that defect"
+    else printf '  FAIL final-tag mutant did not behave as a mutant: %s\n' "$got"; fail=1; fi
+    rm -f -- "${mut:?}"
     # MUTANT: a decider with the required-check loop deleted must turn the red-gate row
     # the other way. Build it from THIS file, so the mutant tracks the shipped code.
     mut=$(mktemp) || return 2
@@ -166,7 +179,7 @@ run_cut() {
     D_HEAD_REPO=$(printf '%s' "$run" | json 'print((d.get("head_repository") or {}).get("full_name",""))') || return 2
     D_BRANCH=$(printf '%s' "$run" | json 'print(d.get("head_branch") or "")') || return 2
     D_HEAD_SHA=$(printf '%s' "$run" | json 'print(d.get("head_sha") or "")') || return 2
-    D_JOBS='' D_TAGS='' D_TIP_SHA=''
+    D_JOBS='' D_TAGS='' D_TIP_SHA='' D_FINALS=''
     # Read the jobs, tip and tags only for a candidate; rc_decide still judges every field.
     if v=$(rc_version_of_branch "$D_BRANCH") && [ "$D_HEAD_REPO" = "$D_REPO" ]; then
         page=1
@@ -179,6 +192,9 @@ run_cut() {
         done
         body=$(api_get "git/ref/heads/release/$v") || { echo "$PROG: cannot read the tip of release/$v" >&2; return 2; }
         D_TIP_SHA=$(printf '%s' "$body" | json 'print(d["object"]["sha"])') || return 2
+        # Every tag named v<X.Y.Z>*: the final tag, if it exists, is one of them (exact-name match in rc_decide).
+        body=$(api_get "git/matching-refs/tags/v$v") || { echo "$PROG: cannot list the v$v* tags" >&2; return 2; }
+        D_FINALS=$(printf '%s' "$body" | { grep -oE '"ref": *"refs/tags/[^"]+"' || true; } | sed -E 's#.*"refs/tags/([^"]+)"#\1#')
         # matching-refs returns [] when nothing matches; an annotated tag is dereferenced to its commit.
         body=$(api_get "git/matching-refs/tags/v$v-rc.") || { echo "$PROG: cannot list the v$v-rc.* tags" >&2; return 2; }
         D_TAGS=$(printf '%s' "$body" | python3 -c '
