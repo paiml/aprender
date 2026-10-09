@@ -352,13 +352,33 @@ measure_contract_count_rev() { # measure_contract_count_rev <rev>
   printf '%s\n' "$n"
 }
 
+# GEN-001 (#4526): the README's contract count blocks state the RELEASE SNAPSHOT,
+# contracts/census.json `.n_files`, whose one writer is `make census` on the
+# release train (#3569). Held EQUAL to the snapshot in the merge commit, they
+# never move on an ordinary pull request, so two PRs that each add a contract no
+# longer conflict on the README line (#4502). census_snapshot_n reads a census on
+# stdin; a missing, non-numeric or zero n_files is a FAILED read, never a count.
+census_snapshot_n() {
+  local n
+  n=$(jq -r '.n_files // empty' 2>/dev/null) || n=""
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$n" -gt 0 ] || return 1
+  printf '%s\n' "$n"
+}
+
+measure_census_snapshot_rev() { # measure_census_snapshot_rev <rev>
+  git -C "$REPO_ROOT" show "$1:contracts/census.json" 2>/dev/null | census_snapshot_n
+}
+
 # FALSIFY-README-002, BSE-03 phase A. The verdict is a function of
 # (comparand SHA, merge SHA) and of the README's claim -- never of a number
 # stored anywhere a pull request can rewrite.
 #
 #   * the count is GENERATED into a CONTRACT_COUNT block by
-#     scripts/readme_sync.sh, so a block that disagrees with the merge tree is
-#     RED by EQUALITY: a generated number cannot legitimately lag;
+#     scripts/readme_sync.sh from the RELEASE SNAPSHOT contracts/census.json
+#     (GEN-001 #4526; one writer, `make census` on the train, #3569), so a
+#     block that disagrees with the merge commit's snapshot is RED by EQUALITY.
+#     A pull request never edits it: the snapshot does not move on a PR;
 #   * a number a human wrote outside the block keeps the G-11 ratchet (may lag,
 #     may never overstate, --exact for the orchestrator docs commit);
 #   * no block and no literal is GREEN only because the generator regenerates it
@@ -368,7 +388,7 @@ measure_contract_count_rev() { # measure_contract_count_rev <rev>
 #     would invalidate (P5).
 check_contract_count() {
   local resolution mode ref base_sha merge_sha base_count merge_count disk delta
-  local blocks literals block nblocks target base_short merge_short base_date p1 p2 pn
+  local blocks literals block nblocks target base_short merge_short base_date p1 p2 pn snapshot disk_snapshot
 
   # --- PREFLIGHT: the comparand, before a single file is counted ----------
   resolution=$(baseline_ratchet_resolve "$REPO_ROOT" "$BASELINE_RATCHET_BASE_REF" contracts)
@@ -393,11 +413,13 @@ check_contract_count() {
   # --- measurement: ONE instrument, TWO revisions ------------------------
   base_count=$(measure_contract_count_rev "$base_sha") || base_count=""
   merge_count=$(measure_contract_count_rev "$merge_sha") || merge_count=""   # RATCHET-MUTATION-POINT — the tree under test is measured from the OBJECT STORE, never read from a file on disk (the registered mutation of scripts/tests/ratchet_semantics_test.sh replaces exactly this line)
+  snapshot=$(measure_census_snapshot_rev "$merge_sha") || snapshot=""   # SNAPSHOT-MUTATION-POINT — the release snapshot is read from the merge commit in the OBJECT STORE, never from a file on disk (the registered mutation replaces exactly this line)
   if [ -z "$base_count" ] || [ -z "$merge_count" ]; then
     printf 'FAIL FALSIFY-README-002 contract_count: MEASUREMENT FAILED (base=%q merge=%q). A tree that could not be counted is a broken check, not a README drift; do not "fix" the README.\n' "$base_count" "$merge_count" >&2
     return 1
   fi
   disk=$(measured_contract_count)
+  disk_snapshot=$(census_snapshot_n < "$REPO_ROOT/contracts/census.json" 2>/dev/null) || disk_snapshot=""
   delta=$(( merge_count - base_count ))
   base_short=$(git -C "$REPO_ROOT" rev-parse --short "$base_sha" 2>/dev/null) || base_short="$base_sha"
   merge_short=$(git -C "$REPO_ROOT" rev-parse --short "$merge_sha" 2>/dev/null) || merge_short="$merge_sha"
@@ -408,6 +430,7 @@ check_contract_count() {
   printf '  merge       %-12s %s  (HEAD)\n' 'HEAD' "$merge_short"
   printf '  contracts   base=%s  merge=%s  delta=%s\n' "$base_count" "$merge_count" "$(printf '%+d' "$delta")"
   printf '  polarity    the verdict is about TRUTH, not DIRECTION: a count that FELL vs the comparand is an IMPROVEMENT, and a README stating the fallen count is GREEN. There is no lower bound and nothing to delete.\n'
+  printf '  snapshot    contracts/census.json n_files=%s in %s (the release snapshot: the README count blocks must EQUAL it; one writer, `make census`)\n' "${snapshot:-<unreadable>}" "$merge_short"
   if [ "$BASELINE_RATCHET_BASE_REF" != "origin/main" ]; then
     printf '  OVERRIDDEN  comparand set via BASELINE_RATCHET_BASE_REF=%s — NOT a protected ref\n' "$BASELINE_RATCHET_BASE_REF"
   fi
@@ -421,6 +444,12 @@ check_contract_count() {
   # differs from the merge commit (never in CI).
   pick_target() { # pick_target <claimed>
     if [ "$disk" != "$merge_count" ] && [ "$1" = "$disk" ]; then printf '%s\n' "$disk"; else printf '%s\n' "$merge_count"; fi
+  }
+  # The snapshot a block is judged against: the merge commit's, or the WORKING
+  # tree's census when it differs and the block states it (`make census` run but
+  # not yet committed). Both are census files; neither is a stored README literal.
+  pick_snapshot() { # pick_snapshot <claimed>
+    if [ -n "$disk_snapshot" ] && [ "$disk_snapshot" != "$snapshot" ] && [ "$1" = "$disk_snapshot" ]; then printf '%s\n' "$disk_snapshot"; else printf '%s\n' "$snapshot"; fi
   }
 
   # An authored literal keeps the G-11 ratchet; there must be at most one.
@@ -452,14 +481,15 @@ check_contract_count() {
       printf 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block holds %q, which is not a number. It is generated: run `make readme-sync`.\n' "$block" >&2
       return 1
     fi
-    target=$(pick_target "$block")
+    [ -n "$snapshot" ] || { printf 'FAIL FALSIFY-README-002 contract_count: contracts/census.json in %s is missing or has no positive n_files, so the release snapshot the README count is generated from is UNMEASURED. That is a broken check, not a README drift.\n' "$merge_short" >&2; return 1; }
+    target=$(pick_snapshot "$block")
     if [ "$block" != "$target" ]; then
-      printf 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states %s, the merge tree carries %s — the block is GENERATED, not authored, so this is an EQUALITY and not a ratchet (a generated number cannot legitimately lag). Run: make readme-sync\n' \
-        "$block" "$merge_count" >&2
+      printf 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states %s, the release snapshot contracts/census.json in %s carries %s — the block is GENERATED from that snapshot, whose one writer is `make census` on the release train (GEN-001 #4526, #3569), so this is an EQUALITY and a pull request never edits the number. Run: make readme-sync\n' \
+        "$block" "$merge_short" "$snapshot" >&2
       return 1
     fi
     check_contract_literals "$literals" || return 1
-    printf 'PASS FALSIFY-README-002 contract_count: %s (CONTRACT_COUNT block, derived by scripts/readme_sync.sh; %s block(s) agree with the merge tree %s)\n' \
+    printf 'PASS FALSIFY-README-002 contract_count: %s (CONTRACT_COUNT block, derived by scripts/readme_sync.sh from the release snapshot contracts/census.json; %s block(s) equal the snapshot in %s)\n' \
       "$block" "$nblocks" "$merge_short"
     return 0
   fi
@@ -473,6 +503,7 @@ check_contract_count() {
   # generator produces it here, twice, byte for byte -- an absent claim on its
   # own proves nothing and inverting the old "makes no claim" FAIL without the
   # generator would have deleted the check (threat model, open question 1).
+  [ -n "$snapshot" ] || { printf 'FAIL FALSIFY-README-002 contract_count: contracts/census.json in %s is missing or has no positive n_files, so the release snapshot the README count is generated from is UNMEASURED. That is a broken check, not a README drift.\n' "$merge_short" >&2; return 1; }
   p1=$(bash "$REPO_ROOT/scripts/readme_sync.sh" --print 2>/dev/null) || p1=""
   p2=$(bash "$REPO_ROOT/scripts/readme_sync.sh" --print 2>/dev/null) || p2=""
   if [ -z "$p1" ] || [ "$p1" != "$p2" ]; then
@@ -480,8 +511,8 @@ check_contract_count() {
     return 1
   fi
   pn=$(printf '%s' "$p1" | sed -E "s|${CONTRACT_BLOCK_START}||; s|${CONTRACT_BLOCK_END}||")
-  if [ "$pn" != "$(pick_target "$pn")" ]; then
-    printf 'FAIL FALSIFY-README-002 contract_count: the generator would write %s, the merge tree carries %s — the generator and the tree under test disagree.\n' "$pn" "$merge_count" >&2
+  if [ "$pn" != "$(pick_snapshot "$pn")" ]; then
+    printf 'FAIL FALSIFY-README-002 contract_count: the generator would write %s, the release snapshot contracts/census.json in %s carries %s — the generator and the snapshot under test disagree.\n' "$pn" "$merge_short" "$snapshot" >&2
     return 1
   fi
   printf 'PASS FALSIFY-README-002 contract_count: DERIVED — the README states no count, and scripts/readme_sync.sh regenerates it deterministically (two runs, byte-identical). It would write: %s\n' "$p1"

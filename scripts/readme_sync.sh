@@ -28,9 +28,12 @@
 # could not sit in README.md's metrics table row or mid-paragraph without
 # changing how the file renders.
 #
-# The count is `find contracts/ -name '*.yaml' | wc -l` — the same universe
-# `check_readme_claims.sh` measures, so the generator and the guard cannot
-# disagree about what "a contract" is.
+# The count is contracts/census.json `.n_files`: the release train's snapshot,
+# written only by `make census` (#3569). Since GEN-001 (#4526) the README states
+# that snapshot, not the walked tree, so a PR that adds a contract no longer
+# edits README.md and the README count has one writer, like the census. It lags
+# the tree between releases by design. check_readme_claims.sh holds every block
+# EQUAL to the snapshot in the merge commit.
 #
 # Modes:
 #   --write    rewrite every block in README.md, in place, atomically (default
@@ -41,6 +44,9 @@
 #              bytes) when README.md carries no block at all.
 #   --check    exit 0 if README.md already equals what --write would produce,
 #              1 otherwise, naming both numbers. Writes nothing.
+#   --walked   print the WORKING TREE's contract count (contract_files_only).
+#              Not a README number: contracts_gate.sh holds it equal to a
+#              fresh `pv census`.
 #
 # A README that carries NO block is exit 3 under --write, never a silent no-op:
 # "rewrote 0 blocks" over a file whose count is stale is the vacuous-scan class
@@ -56,15 +62,16 @@ CONTRACT_BLOCK_END='<!-- CONTRACT_COUNT_END -->'
 
 usage() {
     cat >&2 <<'USAGE'
-usage: bash scripts/readme_sync.sh [--write|--print|--check]
+usage: bash scripts/readme_sync.sh [--write|--print|--check|--walked]
   --write  rewrite every CONTRACT_COUNT block in README.md (idempotent)
   --print  print the block bytes --write would produce; write nothing
   --check  exit 0 iff README.md already matches; 1 otherwise
+  --walked print the working tree's contract count (not a README number)
 USAGE
     exit 2
 }
 
-# The measurement. One instrument, shared with check_readme_claims.sh's
+# The walked measurement. One instrument, shared with check_readme_claims.sh's
 # measured_contract_count(): find over contracts/, *.yaml, any depth.
 # ONE definition of "a contract file" — kept byte-identical to
 # scripts/check_readme_claims.sh's, and held to `pv census` by `make contracts`.
@@ -75,25 +82,43 @@ contract_files_only() {
     | grep -Ev '(^|/)\.[^/]*$'
 }
 
-measured_contract_count() {
-    # The count is a property of the WORKING TREE, measured with the one definition
-    # of "a contract file" that `pv census` (ONT-001 ONT-1) and the lint walker
-    # apply (contract_files_only). It used to be read out of the tracked
-    # contracts/census.json, but since #3569 that file is a release-train snapshot
-    # that no PR may edit, so it lags by design. A README generated from it would
-    # lag the tree it describes, and FALSIFY-README-002 holds the block EQUAL to the
-    # tree. CENSUS_JSON=<a fresh pv census> reads that census instead; `make
-    # contracts` uses it to prove this listing and `pv census` still agree.
+walked_contract_count() {
+    # The WORKING TREE's count, with the one definition of "a contract file" that
+    # `pv census` (ONT-001 ONT-1) and the lint walker apply (contract_files_only).
+    # It is NOT what the README states (see snapshot_contract_count). `--walked`
+    # prints it so `contracts_gate.sh census` can prove this listing and a fresh
+    # `pv census` still agree.
     local n
-    if [ -n "${CENSUS_JSON:-}" ]; then
-        [ -s "$CENSUS_JSON" ] || {
-            printf 'FAIL readme_sync: CENSUS_JSON=%s is missing or empty. The count is UNMEASURED, which is a failure, not a zero.\n' "$CENSUS_JSON" >&2
+    n=$(cd "$REPO_ROOT" && { find contracts -type f -name '*.yaml' 2>/dev/null || true; } | contract_files_only | grep -c .) || true
+    case "$n" in
+        '' | *[!0-9]*)
+            printf 'FAIL readme_sync: the walked contract count read %q, not a number\n' "$n" >&2
             return 1
-        }
-        n=$(jq -r '.n_files // empty' "$CENSUS_JSON" 2>/dev/null || true)
-    else
-        n=$(cd "$REPO_ROOT" && { find contracts -type f -name '*.yaml' 2>/dev/null || true; } | contract_files_only | grep -c .) || true
-    fi
+            ;;
+    esac
+    [ "$n" -gt 0 ] || {
+        printf 'FAIL readme_sync: the walked contract count is 0. A zero count is a broken measurement.\n' >&2
+        return 1
+    }
+    printf '%s' "$n"
+}
+
+snapshot_contract_count() {
+    # GEN-001 (#4526): the README states the RELEASE SNAPSHOT, not the walked tree.
+    # It used to state the walked tree, and FALSIFY-README-002 held that block EQUAL
+    # to the merge tree, so every PR that added a contract had to rewrite the same
+    # README line and two such PRs conflicted on it (#4502: 1887 vs 1888). The count
+    # now comes from contracts/census.json `.n_files`, which has ONE writer -- `make
+    # census` on the release train (#3569; scripts/check_census_derived.sh refuses a
+    # PR that edits it) -- so a PR never edits the README count either, and the
+    # README lags the tree between releases by design, as census.json does.
+    # CENSUS_JSON=<file> reads another census (a fixture).
+    local n src="${CENSUS_JSON:-"$REPO_ROOT/contracts/census.json"}"
+    [ -s "$src" ] || {
+        printf 'FAIL readme_sync: %s is missing or empty. The count is UNMEASURED, which is a failure, not a zero.\n' "$src" >&2
+        return 1
+    }
+    n=$(jq -r '.n_files // empty' "$src" 2>/dev/null || true)
     case "$n" in
         '' | *[!0-9]*)
             printf 'FAIL readme_sync: the contract count read %q, not a number\n' "$n" >&2
@@ -123,23 +148,11 @@ block_occurrences() {
 # equal the TRACKED contracts/census.json `n_files`, not the walked tree. The two differ on every branch that adds a
 # contract, because census.json is the release train's snapshot (#3569) and lags by design; writing the walked count
 # there made readme_sync and the extractor demand different numbers (#4429: 1844 vs 1837, one of them always RED).
-# The body blocks stay the walked count (FALSIFY-README-002 holds them to the tree); the frontmatter follows the census.
-tracked_census_count() {
-    local n
-    n=$(jq -r '.n_files // empty' "$REPO_ROOT/contracts/census.json" 2>/dev/null || true)
-    case "$n" in
-        '' | *[!0-9]*)
-            printf 'FAIL readme_sync: contracts/census.json n_files is %q, not a number — the frontmatter contract_count is UNMEASURED\n' "$n" >&2
-            return 1
-            ;;
-    esac
-    printf '%s' "$n"
-}
-
-rewrite_stream() { # rewrite_stream WALKED_COUNT CENSUS_COUNT, README on stdin
+# Since GEN-001 (#4526) the body blocks follow the same census, so the README carries ONE contract count.
+rewrite_stream() { # rewrite_stream SNAPSHOT_COUNT, README on stdin
     # Only a line that is exactly `contract_count: N` matches; the frontmatter is the only place README.md carries one.
     sed -E -e "s|(${CONTRACT_BLOCK_START})[^<]*(${CONTRACT_BLOCK_END})|\1${1}\2|g" \
-        -e "s|^contract_count: [0-9]+\$|contract_count: ${2}|"
+        -e "s|^contract_count: [0-9]+\$|contract_count: ${1}|"
 }
 
 mode=""
@@ -148,6 +161,7 @@ for arg in "$@"; do
         --write) mode=write ;;
         --print) mode=print ;;
         --check) mode=check ;;
+        --walked) mode=walked ;;
         -h|--help) usage ;;
         *) printf 'unknown arg: %s\n' "$arg" >&2; usage ;;
     esac
@@ -163,12 +177,13 @@ if [ ! -d "$REPO_ROOT/contracts" ]; then
     exit 2
 fi
 
-count="$(measured_contract_count)"
-if [ -z "$count" ] || [ "$count" -eq 0 ]; then
-    printf 'FAIL readme_sync: contracts/ holds 0 *.yaml files. A zero count is a broken measurement, not a README to regenerate.\n' >&2
-    exit 2
+if [ "$mode" = walked ]; then
+    walked_contract_count || exit 2
+    printf '\n'
+    exit 0
 fi
-census_n="$(tracked_census_count)" || exit 2
+
+count="$(snapshot_contract_count)" || exit 2
 
 case "$mode" in
     print)
@@ -180,12 +195,12 @@ case "$mode" in
         tmp="$(mktemp "${TMPDIR:-/tmp}/readme-sync-check.XXXXXX")"
         # shellcheck disable=SC2064
         trap "rm -f '$tmp'" EXIT
-        rewrite_stream "$count" "$census_n" < "$README" > "$tmp"
+        rewrite_stream "$count" < "$README" > "$tmp"
         if cmp -s "$README" "$tmp"; then
-            printf 'ok    readme_sync: README.md already states the measured count %s in every CONTRACT_COUNT block\n' "$count"
+            printf 'ok    readme_sync: README.md already states the release snapshot count %s (contracts/census.json) in every CONTRACT_COUNT block and the frontmatter\n' "$count"
             exit 0
         fi
-        printf 'FAIL readme_sync: README.md does not match what the generator produces (contracts/ holds %s *.yaml). Run: make readme-sync\n' "$count" >&2
+        printf 'FAIL readme_sync: README.md does not match what the generator produces (contracts/census.json n_files is %s). Run: make readme-sync\n' "$count" >&2
         diff -u "$README" "$tmp" | sed 's/^/  | /' >&2 || true
         exit 1
         ;;
@@ -200,16 +215,16 @@ case "$mode" in
         tmp="$(mktemp "${TMPDIR:-/tmp}/readme-sync.XXXXXX")"
         # shellcheck disable=SC2064
         trap "rm -f '$tmp'" EXIT
-        rewrite_stream "$count" "$census_n" < "$README" > "$tmp"
+        rewrite_stream "$count" < "$README" > "$tmp"
         cat "$tmp" > "$README"
         # Read the file BACK and assert the effect, rather than reporting that
         # bytes were written: every block must now carry the measured count.
         after="$(grep -oE "${CONTRACT_BLOCK_START}[^<]*${CONTRACT_BLOCK_END}" "$README" | grep -cF "$(render_block "$count")")" || after=0
         if [ "$after" -ne "$n" ]; then
-            printf 'FAIL readme_sync: %s of %s block(s) carry the measured count %s after the rewrite.\n' "$after" "$n" "$count" >&2
+            printf 'FAIL readme_sync: %s of %s block(s) carry the snapshot count %s after the rewrite.\n' "$after" "$n" "$count" >&2
             exit 1
         fi
-        printf 'ok    readme_sync: %s CONTRACT_COUNT block(s) now state %s (contract files under contracts/, walked)\n' "$n" "$count"
+        printf 'ok    readme_sync: %s CONTRACT_COUNT block(s) now state %s (contracts/census.json n_files, the release snapshot)\n' "$n" "$count"
         exit 0
         ;;
 esac
