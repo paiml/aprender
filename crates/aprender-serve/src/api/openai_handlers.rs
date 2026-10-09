@@ -987,6 +987,9 @@ pub(crate) fn true_streaming_sse_response(
 
         tokio::pin!(token_stream);
         let mut utf8 = LiveUtf8Deltas::new();
+        // #4954: the far edge of the server's TTFT, which the client's own
+        // TTFT ends on one network hop later.
+        let mut first_content_at: Option<Instant> = None;
         while let Some(result) = token_stream.next().await {
             match result {
                 Ok(token_id) => {
@@ -998,6 +1001,7 @@ pub(crate) fn true_streaming_sse_response(
                     if let Some(text) = text {
                         let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
                         if let Some(evt) = sse_event(&chunk) {
+                            first_content_at.get_or_insert_with(Instant::now);
                             yield evt;
                         }
                     }
@@ -1013,6 +1017,7 @@ pub(crate) fn true_streaming_sse_response(
         for text in tail_deltas(&mut utf8, &tokenizer, &mut filter) {
             let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
             if let Some(evt) = sse_event(&chunk) {
+                first_content_at.get_or_insert_with(Instant::now);
                 yield evt;
             }
         }
@@ -1023,10 +1028,9 @@ pub(crate) fn true_streaming_sse_response(
         // The engine has finished by the time the token channel closed, so the
         // oneshot either already carries the measurement or never will.
         let timings = match timings_rx {
-            Some(rx) => rx
-                .await
-                .ok()
-                .and_then(|phases| phases.to_timings(prompt_tokens, completion_tokens)),
+            Some(rx) => rx.await.ok().and_then(|phases| {
+                phases.to_timings_at(prompt_tokens, completion_tokens, start, first_content_at)
+            }),
             None => None,
         };
         let usage = Usage {

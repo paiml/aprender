@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-10-09'
   author: PAIML Engineering
   description: "The time-to-first-token row of the 0.71.1 train, as a verdict. TTFT ratio = reference TTFT / apr TTFT, per GPU host, and the row is green when the lower bound of its 95% interval is at least the floor in scripts/perf-matrix.yaml. The receipts already carry the ratio; this contract owns the reader that turns them into GREEN, RED or NOT MEASURED, and the rule that a receipt which cannot be read, or a host that was not measured, is never GREEN and never RED."
@@ -11,6 +11,8 @@ metadata:
     - "scripts/perf-matrix.yaml — arms.L3.v1 (ttft_floor, hosts) and protocol.replicates_min"
     - "crates/apr-cli/src/commands/test_llm_ttft.rs — `apr test llm ttft-verdict --run <dir>...`, exit 0 GREEN, 1 RED, 2 NOT MEASURED"
     - "contracts/pp-llama-001-perf-gate-v1.yaml — no reader carries a threshold"
+    - "crates/aprender-serve/src/api/mod_create_demo.rs — Timings.load_ms and Timings.first_token_ms; PhaseTimings::from_marks and to_timings_at (the TTFT split by phase)"
+    - "crates/aprender-serve/src/session.rs — Turn.prefill_started and Turn.prefill_ended, the marks the split is taken on"
 
 five_whys:
   symptom: "The TTFT row was measured on both GPU hosts as five replicate receipts each, and nothing read them into a verdict: the row's pass or fail was whatever a person computed from the JSON by hand."
@@ -51,6 +53,15 @@ equations:
       - "The provenance n is band.replicates, the number of replicate receipts the run states; more readable receipts than it states is NOT MEASURED"
       - "A receipt counts once: a duplicate replicate, a host claimed by two runs, a receipt whose run_id does not re-derive from its own provenance, and a receipt measured against a comparator build other than the provenance pin (commit or sha256) are each NOT MEASURED"
 
+  the_ttft_splits_by_phase:
+    formula: "server TTFT = load_ms + prompt_ms + first_token_ms, with load_ms = prefill_started - handler start, prompt_ms = prefill_ended - prefill_started, first_token_ms = first content chunk - prefill_ended; predicted_ms = decode end - prefill_ended"
+    domain: "one /v1/chat/completions request served through a Session (streamed, or not streamed with no first_token_ms)"
+    codomain: "the timings block of the response, in llama.cpp key names plus load_ms and first_token_ms"
+    invariants:
+      - "A delay planted in one phase moves that phase's field by the delay and leaves the other three unchanged"
+      - "prefill_started follows the reserve and precedes the first prompt forward; prefill_ended follows the last prompt forward, the checkpoint suffix included, and precedes the first on_token call and the first decode forward"
+      - "An edge with a missing or out-of-order mark is absent, never 0; prompt_ms and predicted_ms appear only when both phases were measured"
+
 proof_obligations:
   - id: APR-TTFT-INV-001
     type: invariant
@@ -77,6 +88,16 @@ proof_obligations:
     property: "The CLI exit code is the verdict's"
     formal: "`apr test llm ttft-verdict` exits 0, 1 or 2 exactly as the library verdict, and never with one of apr's error codes for NOT MEASURED"
     applies_to: ttft_ratio_meets_the_floor
+  - id: APR-TTFT-INV-006
+    type: invariant
+    property: "A planted delay moves only its own phase"
+    formal: "with edges 10, 50, 55 and 250 ms after the handler start, adding 100 ms to load, prefill, first token or decode adds exactly 100 ms to load_ms, prompt_ms, first_token_ms or predicted_ms and leaves the other three fields equal"
+    applies_to: the_ttft_splits_by_phase
+  - id: APR-TTFT-INV-007
+    type: invariant
+    property: "The prefill marks bracket every prompt forward and nothing else"
+    formal: "on a prompt prefilled in two calls (up to its checkpoint, then the rest), both calls run inside [prefill_started, prefill_ended], the reserve ends before prefill_started, and the first on_token call and every decode forward begin after prefill_ended"
+    applies_to: the_ttft_splits_by_phase
 
 falsification_tests:
   - id: FALSIFY-APR-TTFT-001
@@ -151,6 +172,18 @@ falsification_tests:
     test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::dirs_"
     if_fails: "A directory listing order, or a stray .sig or notes file, changes which receipts decide the row"
 
+  - id: FALSIFY-APR-TTFT-013
+    rule: "A delay planted in one phase moves that phase's field and only that field"
+    prediction: "Each of four plants of 100 ms (load, prefill, first token, decode) moves its own field by 100 ms and no other; a missing or out-of-order mark gives an absent field, never 0; the two new keys are omitted when unmeasured and a block without them parses; a stream whose first token is held back 30 ms reports first_token_ms of at least 30"
+    test: "cargo test -p aprender-serve --lib ttft_phases_4954"
+    if_fails: "The TTFT gap is charged to the wrong phase, and the lever chosen to close it works on a phase that does not hold the time"
+
+  - id: FALSIFY-APR-TTFT-014
+    rule: "Prefill is measured from the first prompt forward to the first token chosen"
+    prediction: "A two-call prefill (checkpoint, then suffix) lies inside the marks with the reserve before them; time spent in on_token and every decode forward lies after prefill_ended"
+    test: "cargo test -p aprender-serve --lib session::tests::prefill_marks_"
+    if_fails: "The reserve, the caller's channel send or a decode step is reported as prefill, or the checkpoint suffix call is left out of it"
+
 qa_gate:
   id: F-APR-TTFT-001
   name: "TTFT ratio verdict — three outcomes, a floor in one file, and no verdict from missing evidence"
@@ -159,3 +192,4 @@ qa_gate:
     - "ttft_ratio_meets_the_floor"
     - "a_band_counts_only_when_both_sides_were_measured"
     - "the_receipt_names_what_was_measured"
+    - "the_ttft_splits_by_phase"

@@ -582,3 +582,131 @@ fn a_checkpoint_inside_the_prompt_is_taken() {
     assert_eq!(s.engine().inner.calls, vec![(2, 0)]);
     assert_eq!(s.checkpoint, Some(vec![7881, 7882]));
 }
+
+// #4954: the turn's prefill marks, which the server's `timings` split the TTFT
+// on. Judged by order against the forwards themselves, not by magnitudes, so
+// a loaded machine cannot turn them red (FALSIFY-APR-TTFT-014).
+
+const PLANT: std::time::Duration = std::time::Duration::from_millis(5);
+
+/// A [`Scripted`] forward that sleeps in `reserve` and in each of its first
+/// `prefill_calls` forwards, and records when each forward ran.
+struct Clocked {
+    inner: Scripted,
+    prefill_calls: usize,
+    reserved_at: Option<Instant>,
+    /// `(entered, left)` of each forward, in call order.
+    spans: Vec<(Instant, Instant)>,
+}
+
+impl Clocked {
+    fn new(inner: Scripted, prefill_calls: usize) -> Self {
+        Self {
+            inner,
+            prefill_calls,
+            reserved_at: None,
+            spans: Vec::new(),
+        }
+    }
+}
+
+impl ArchForward for Clocked {
+    fn arch(&self) -> &'static str {
+        "clocked"
+    }
+    fn on_gpu(&self) -> bool {
+        false
+    }
+    fn context_length(&self) -> usize {
+        self.inner.context_length()
+    }
+    fn batched_prefills(&self) -> usize {
+        0
+    }
+    fn notices(&self) -> &[String] {
+        &[]
+    }
+    fn reserve(&mut self, positions: usize) -> Result<bool> {
+        std::thread::sleep(PLANT);
+        let dropped = self.inner.reserve(positions)?;
+        self.reserved_at = Some(Instant::now());
+        Ok(dropped)
+    }
+    fn checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
+        self.inner.checkpoint_at(prompt)
+    }
+    fn save_checkpoint(&mut self) -> Result<()> {
+        self.inner.save_checkpoint()
+    }
+    fn restore_checkpoint(&mut self) -> Result<bool> {
+        self.inner.restore_checkpoint()
+    }
+    fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
+        let entered = Instant::now();
+        if self.spans.len() < self.prefill_calls {
+            std::thread::sleep(PLANT);
+        }
+        let logits = self.inner.forward(tokens, start)?;
+        self.spans.push((entered, Instant::now()));
+        Ok(logits)
+    }
+}
+
+/// The gx10 shape: a prompt prefilled in two calls, up to its checkpoint and
+/// then the rest. Both calls are prefill; the reserve before them is not, and
+/// no decode forward is.
+#[test]
+fn prefill_marks_bracket_every_prompt_forward_and_nothing_else() {
+    let mut s = Session::new(Clocked::new(Scripted::checkpointing(3, 100, MARK), 2));
+    let prompt = [7901, 7902, MARK, 7903];
+    let turn = s
+        .generate(&prompt, &greedy(3), &mut |_| true)
+        .expect("turn");
+    let f = s.engine();
+    assert_eq!(f.inner.calls[..2], [(2, 0), (4, 2)], "two prefill calls");
+    assert_eq!(f.spans.len(), 4, "two prefill calls and two decode steps");
+
+    let reserved = f.reserved_at.expect("the turn reserved");
+    assert!(
+        reserved <= turn.prefill_started,
+        "the reserve was counted as prefill"
+    );
+    for (i, (entered, left)) in f.spans[..2].iter().enumerate() {
+        assert!(
+            turn.prefill_started <= *entered && *left <= turn.prefill_ended,
+            "prefill call {i} ran outside the prefill marks"
+        );
+    }
+    for (i, (entered, _)) in f.spans[2..].iter().enumerate() {
+        assert!(
+            turn.prefill_ended <= *entered,
+            "decode step {i} began inside the prefill marks"
+        );
+    }
+    assert!(turn.prefill_ended.duration_since(turn.prefill_started) >= 2 * PLANT);
+}
+
+/// What the caller does with a token — send it down a channel, sleep — happens
+/// after prefill has ended, so it can only ever show up as decode.
+#[test]
+fn prefill_marks_exclude_time_the_caller_spends_in_on_token() {
+    let mut s = Session::new(Clocked::new(Scripted::new(3, 100), 1));
+    let mut first_call: Option<Instant> = None;
+    let turn = s
+        .generate(&[7911, 7912, 7913], &greedy(3), &mut |_| {
+            first_call.get_or_insert_with(Instant::now);
+            std::thread::sleep(PLANT);
+            true
+        })
+        .expect("turn");
+    let first_call = first_call.expect("on_token ran");
+    assert!(
+        turn.prefill_ended <= first_call,
+        "prefill ended after the first token reached the caller"
+    );
+    let (first_decode, _) = s.engine().spans[1];
+    assert!(
+        first_decode.duration_since(turn.prefill_ended) >= PLANT,
+        "the caller's delay landed inside prefill"
+    );
+}
