@@ -1350,6 +1350,32 @@ mod runs_tests {
         );
     }
 
+    /// Deleting-tool guard (2026-10-09: a reaper test that inherits the real
+    /// default root is a live deletion run). Every gc call in this module
+    /// names its own temp store and never `--global`; a call that falls back
+    /// to `.` or `~/.entrenar` turns this RED. The needles are split with
+    /// `concat!` so this test's own source does not match them.
+    #[test]
+    fn gc_tests_never_reach_the_default_root() {
+        let src = include_str!("runs.rs");
+        let tests = &src[src.find("mod runs_tests").expect("test module")..];
+        let sandboxed = concat!("run_", "gc(&Some(dir.path().to_path_buf()),false,");
+        let calls: Vec<String> = tests
+            .match_indices(concat!("run_", "gc("))
+            .map(|(i, _)| {
+                tests[i..]
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .take(sandboxed.len())
+                    .collect()
+            })
+            .collect();
+        assert!(calls.len() >= 2, "vacuous: {} gc calls", calls.len());
+        for call in &calls {
+            assert_eq!(call, sandboxed, "a gc test reaches the default root");
+        }
+    }
+
     // ─── --status filtering (dogfood 0.63.0, issue #2374 finding 8) ─────────
     //
     // `apr runs ls --status completed` — the one non-trivial value --help
