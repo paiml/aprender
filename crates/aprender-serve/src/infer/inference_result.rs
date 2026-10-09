@@ -18,6 +18,20 @@ fn take_generation_start() -> Option<std::time::Instant> {
     GENERATION_START.with(std::cell::Cell::take)
 }
 
+/// #4342: one `apr run` turn on a loaded session, its generation marked only once the
+/// turn's setup is done. `load_for_run` has uploaded the weights by then, but the F2
+/// guard ran inside `generate`, on its first forward, so a qwen35 `--gpu` run's tok/s
+/// still divided by the guard's CPU probe. `prepare_turn` runs the guard first.
+fn generate_after_setup<F: crate::session::ArchForward>(
+    session: &mut crate::session::Session<F>,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+) -> Result<crate::session::Turn> {
+    session.prepare_turn(input_tokens, gen_config.max_tokens)?;
+    mark_generation_start(); // #3981/#4342: load, upload and the F2 guard end here
+    session.generate(input_tokens, gen_config, &mut |_| true)
+}
+
 /// #3981: tokens per second over generation when it was measured, else over the whole
 /// inference window. Pure, so the rule is tested without a model.
 #[must_use]
@@ -379,8 +393,7 @@ fn run_gguf_inference(
             config.no_gpu,
             positions,
         )?;
-        mark_generation_start(); // #3981: host + device load end here
-        let turn = session.generate(&input_tokens, &gen_config, &mut |_| true)?;
+        let turn = generate_after_setup(&mut session, &input_tokens, &gen_config)?;
         // #3826: attempted is the same two facts as the MoE dispatch's.
         (turn.tokens, turn.used_gpu, cfg!(feature = "cuda") && !config.no_gpu)
     } else if let Some(model) = owned {
@@ -2348,3 +2361,73 @@ mod throughput_3981_tests {
     }
 }
 
+// ============================================================================
+// #4342: the F2 guard is setup, so generation is marked only after it.
+#[cfg(test)]
+mod generation_mark_4342_tests {
+    use super::*;
+    use crate::session::{ArchForward, Session};
+    use std::time::{Duration, Instant};
+
+    /// A forward whose `validate` stands in for the F2 guard: it takes a while,
+    /// as the guard's CPU probe does, and records when it finished.
+    struct Guarded {
+        guard_done: Vec<Instant>,
+    }
+
+    impl ArchForward for Guarded {
+        fn arch(&self) -> &'static str {
+            "guarded"
+        }
+        fn on_gpu(&self) -> bool {
+            false
+        }
+        fn context_length(&self) -> usize {
+            64
+        }
+        fn batched_prefills(&self) -> usize {
+            0
+        }
+        fn notices(&self) -> &[String] {
+            &[]
+        }
+        fn reserve(&mut self, _positions: usize) -> Result<bool> {
+            Ok(false)
+        }
+        fn validate(&mut self, _probe: &[u32]) -> Result<()> {
+            std::thread::sleep(Duration::from_millis(20));
+            self.guard_done.push(Instant::now());
+            Ok(())
+        }
+        fn forward(&mut self, _tokens: &[u32], _start: usize) -> Result<Vec<f32>> {
+            let mut logits = vec![0.0; 8];
+            logits[3] = 1.0;
+            Ok(logits)
+        }
+    }
+
+    /// The ticket's must-RED shape: generation was marked after the weights were
+    /// uploaded but before the F2 guard, so a qwen35 `--gpu` run's tok/s divided
+    /// by the guard's probe too (#4342).
+    #[test]
+    fn the_f2_guard_runs_once_before_generation_is_marked() {
+        let _ = take_generation_start();
+        let mut session = Session::new(Guarded { guard_done: Vec::new() });
+        let config = crate::gguf::QuantizedGenerateConfig {
+            max_tokens: 4,
+            temperature: 0.0,
+            top_k: 1,
+            ..Default::default()
+        };
+        let turn = generate_after_setup(&mut session, &[7501, 7502], &config)
+            .expect("the turn runs");
+        assert_eq!(turn.tokens, vec![7501, 7502, 3, 3, 3, 3]);
+        let mark = take_generation_start().expect("generation was marked");
+        let guard = &session.engine().guard_done;
+        assert_eq!(guard.len(), 1, "the guard ran once, as setup");
+        assert!(
+            mark >= guard[0],
+            "generation was marked before the F2 guard finished, so tok/s bills the guard"
+        );
+    }
+}
