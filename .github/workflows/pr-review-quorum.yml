@@ -15,10 +15,16 @@
 # checks out the BASE by default. The PR head is fetched as a ref and ONLY its
 # receipt directory (evidence/pr-review/<pr>/) is materialised with `git
 # archive` — data files, never executed. Every script that runs here is the
-# base's copy. `merge_group` is declared too so the context reports on the
-# queue's merge ref and cannot deadlock the queue; on that event the ref is the
-# merge commit (which contains the PR), the accepted GitHub limit that
-# scripts/check_receipt_gate_base_owned.sh records rather than hides.
+# base's copy.
+#
+# NOT ON THE MERGE QUEUE (#4688). `present` is not a required context: main
+# requires `gate` and `workspace-test` only, so its verdict cannot stop a merge.
+# It used to run on `merge_group` too. MEASURED 2026-10-06..09: 8 of the last
+# 30 queue runs concluded failure and all 8 PRs merged (5 had no receipt, 2
+# had a receipt bound to another patch-id, 1 was rejected). A check that cannot
+# block a merge does not run on the merge-queue path. If `present` becomes a
+# required context, `merge_group` comes back with it, as a listed merge entry
+# in contracts/release-ready-v1.yaml, or the queue deadlocks.
 #
 # SECURITY (pull_request_target has a write-capable token by default):
 #   - permissions are pinned to contents: read; nothing here writes. The one
@@ -30,8 +36,8 @@
 #
 # GUARDS THAT READ THIS FILE: scripts/check_receipt_gate_base_owned.sh (B1..B4:
 # exactly one workflow invokes check_pr_review_arm4.sh without --self-test, it
-# is triggered by pull_request_target + merge_group and not pull_request, the
-# invoking job's job-level `if:` is true on exactly those two events, and
+# is triggered by pull_request_target and neither pull_request nor
+# merge_group, the invoking job's job-level `if:` is true on that event only, and
 # ci.yml's `gate` needs no head-defined receipt job). Moving this job back to
 # `on: pull_request` turns that guard RED (the registered mutation).
 name: pr-review-quorum
@@ -39,7 +45,6 @@ name: pr-review-quorum
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
-  merge_group:
 
 permissions:
   contents: read
@@ -73,27 +78,23 @@ jobs:
     runs-on: [self-hosted, review-light]
     timeout-minutes: 20
     # B1 (#4512): read the pr-review-signature check run. Job-scoped, read-only.
-    # pull-requests: read - in the queue Arm 4 must name the PR's head, which the
-    # merge_group payload does not carry (see ARM4_PR_HEAD_SHA below).
+    # pull-requests: read went with merge_group: only the queue payload lacked
+    # the PR head, so only the queue read it from the pulls API.
     permissions:
       contents: read
       checks: read
-      pull-requests: read
-    if: github.event_name == 'pull_request_target' || github.event_name == 'merge_group'
+    if: github.event_name == 'pull_request_target'
     env:
-      # pull_request_target carries the PR; merge_group carries the queue ref
-      # `refs/heads/gh-readonly-queue/main/pr-<N>-<base sha>` and the merge
-      # commit as head_sha. The `resolve` step turns both into step OUTPUTS
-      # (`steps.resolve.outputs.pr` / `.head`) that the later steps bind as their
-      # own `env:` — every name a `run:` block reads is defined on the step or
-      # the job that reads it (scripts/check_workflow_env_defined.sh fails closed
-      # on anything else; a GITHUB_ENV write is invisible to it by design).
+      # pull_request_target carries the PR. The `resolve` step turns it into
+      # step OUTPUTS (`steps.resolve.outputs.pr` / `.head`) that the later
+      # steps bind as their own `env:` — every name a `run:` block reads is
+      # defined on the step or the job that reads it
+      # (scripts/check_workflow_env_defined.sh fails closed on anything else; a
+      # GITHUB_ENV write is invisible to it by design).
       EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
       EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      EVENT_MG_HEAD_REF: ${{ github.event.merge_group.head_ref }}
-      EVENT_MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
     steps:
-      - name: Checkout the BASE (pull_request_target) or the queue ref (merge_group)
+      - name: Checkout the BASE (pull_request_target)
         uses: actions/checkout@v7
         with:
           # Arm 4 resolves ancestry with `git merge-base`, which a shallow
@@ -108,10 +109,6 @@ jobs:
           case "$GITHUB_EVENT_NAME" in
             pull_request_target)
               pr="$EVENT_PR_NUMBER"; head="$EVENT_PR_HEAD_SHA" ;;
-            merge_group)
-              # refs/heads/gh-readonly-queue/main/pr-2875-42be1560b... -> 2875
-              pr=$(printf '%s\n' "$EVENT_MG_HEAD_REF" | sed -nE 's#.*/pr-([0-9]+)-[0-9a-f]+$#\1#p')
-              head="$EVENT_MG_HEAD_SHA" ;;
             *) echo "unsupported event: $GITHUB_EVENT_NAME" >&2; exit 2 ;;
           esac
           case "$pr" in ''|*[!0-9]*) echo "could not resolve a PR number from the event" >&2; exit 2 ;; esac
@@ -158,11 +155,7 @@ jobs:
           PR_HEAD_SHA: ${{ steps.resolve.outputs.head }}
           # B1: an unsigned-on-disk receipt is judged by the pr-review-signature
           # check run on the PR head; the check-runs read uses this token (checks: read).
-          # The signer posts that check run on the PR HEAD. On pull_request_target the
-          # event names it. On merge_group steps.resolve.outputs.head is the QUEUE
-          # squash, which never carries a signature, so every queued PR read UNSIGNED
-          # (#4632 run 36602609576, #4647 runs 36888741583/36890960012). There this is
-          # empty and Arm 4 reads the PR head from the pulls API (pull-requests: read).
+          # The signer posts that check run on the PR HEAD, and the event names it.
           ARM4_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
         run: setsid --wait bash scripts/check_pr_review_arm4.sh
