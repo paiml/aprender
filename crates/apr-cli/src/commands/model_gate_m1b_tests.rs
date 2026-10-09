@@ -119,6 +119,49 @@ fn falsify_ext_021_degraded_quant_red() {
     ev.current.ours.top1 = 0.920;
     let r = red(&ev);
     assert!(r.iter().any(|f| f.contains("top-1")), "{r:?}");
+
+    // The measured records (evidence/ext-001/EXT-27): the first record is green and
+    // sets the baseline; the same quant with blk.10.ffn_down re-quantized to Q2_K,
+    // measured by the same llama.cpp on the same corpus and reference, is RED.
+    let first = measured("m1b-first-record.json");
+    assert!(first.baseline.is_none());
+    let (r, rep) = gate(&release_of(&first), Some(&first));
+    assert!(r.green, "{:?}", r.findings);
+    assert!(rep.expect("report").first_record);
+
+    let plant = measured("m1b-plant-q2k.json");
+    assert_eq!(plant.baseline.as_ref(), Some(&first.current));
+    assert_ne!(
+        plant.current.ours.file_sha256,
+        first.current.ours.file_sha256
+    );
+    let (r, _) = gate(&release_of(&plant), Some(&plant));
+    assert!(!r.green, "the measured Q2_K plant stayed green");
+    for a in &plant.current.arms {
+        assert!(
+            r.findings
+                .iter()
+                .any(|f| f.contains(&format!("KL gap to {} widened", a.arm))),
+            "{}: {:?}",
+            a.arm,
+            r.findings
+        );
+    }
+}
+
+fn measured(name: &str) -> M1bEvidence {
+    let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../evidence/ext-001/EXT-27")
+        .join(name);
+    let text = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
+}
+
+/// A release whose only file is the quant `ev` measured as ours.
+fn release_of(ev: &M1bEvidence) -> ReleaseManifest {
+    let mut m = manifest();
+    m.files[0].sha256.clone_from(&ev.current.ours.file_sha256);
+    m
 }
 
 /// Movement inside the noise band is not a widening; just past it is.
