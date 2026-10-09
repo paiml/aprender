@@ -2678,14 +2678,6 @@
         sh:path <https://ont.paiml.dev/v1alpha1/release/unpredictedKernel> ;
         sh:maxCount 0 ;
     ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/release/smoke> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:class <https://ont.paiml.dev/v1alpha1/release/SmokeCell> ;
-        sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node> ;
-    ] ;
 .
 
 <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node> a sh:NodeShape ;
@@ -2715,7 +2707,19 @@
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model-smoke> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/ModelKernelCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/smoke> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/release/SmokeCell> ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model-smoke/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model-smoke/node> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;

@@ -380,14 +380,24 @@ mod rr2 {
         arch_match: true,
     };
 
-    fn shapes() -> Vec<crate::ontology::shapes::NodeShape> {
+    fn contract() -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../contracts/release-readiness-v2.yaml");
-        let text = std::fs::read_to_string(&path).expect("release-readiness-v2.yaml is committed");
-        let doc: serde_yaml::Value = serde_yaml::from_str(&text).expect("the contract is YAML");
-        let s =
-            parse_shapes("release-readiness-v2", &doc).expect("shapes inside the engine's subset");
-        assert_eq!(s.len(), 3, "the kernel, model and sanitizer shapes");
+        std::fs::read_to_string(&path).expect("release-readiness-v2.yaml is committed")
+    }
+
+    fn parse(text: &str) -> Vec<crate::ontology::shapes::NodeShape> {
+        let doc: serde_yaml::Value = serde_yaml::from_str(text).expect("the contract is YAML");
+        parse_shapes("release-readiness-v2", &doc).expect("shapes inside the engine's subset")
+    }
+
+    fn shapes() -> Vec<crate::ontology::shapes::NodeShape> {
+        let s = parse(&contract());
+        assert_eq!(
+            s.len(),
+            4,
+            "the kernel, model, model-smoke and sanitizer shapes"
+        );
         s
     }
 
@@ -534,6 +544,45 @@ mod rr2 {
         assert!(report.conforms(), "{:#?}", report.results);
         // 3 model cells + 3 kernel cells were graded.
         assert!(report.focus_nodes_n >= 6, "{}", report.focus_nodes_n);
+    }
+
+    /// The Turtle export names each v2 node shape once. A nested shape is named `<shape>/node`, so a shape with
+    /// two `node:` blocks writes one IRI twice, and an RDF reader merges the two into a shape no cell passes.
+    #[test]
+    fn rr2_turtle_names_each_node_shape_once() {
+        fn census(shapes: &[crate::ontology::shapes::NodeShape]) -> (usize, Vec<String>) {
+            let ttl = crate::ontology::shapes::to_turtle(shapes);
+            let mut seen = BTreeMap::<String, usize>::new();
+            for l in ttl.lines().filter(|l| l.ends_with(" a sh:NodeShape ;")) {
+                let subject = l.split(' ').next().unwrap_or_default().to_string();
+                *seen.entry(subject).or_default() += 1;
+            }
+            let twice = seen
+                .iter()
+                .filter(|(_, n)| **n > 1)
+                .map(|(s, _)| s.clone())
+                .collect();
+            (seen.len(), twice)
+        }
+        assert_eq!(
+            census(&shapes()),
+            (6, vec![]),
+            "4 shapes and 2 nested nodes, each named once"
+        );
+        // Control: drop the model-smoke header, so the smoke property falls back into release-readiness-v2.model.
+        let header = "  - id: release-readiness-v2.model-smoke\n    targetClass: release:ModelKernelCell\n    properties:\n";
+        let text = contract();
+        assert!(text.contains(header), "the model-smoke shape header moved");
+        let (_, twice) = census(&parse(&text.replace(header, "")));
+        assert_eq!(
+            twice.len(),
+            1,
+            "the planted control did not fire: {twice:?}"
+        );
+        assert!(
+            twice[0].ends_with("shape/release-readiness-v2.model/node>"),
+            "{twice:?}"
+        );
     }
 
     /// RR2-F1, for each kernel: exactly the model cells whose map uses it, plus the kernel cell itself.

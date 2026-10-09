@@ -59,6 +59,9 @@ semantics from Core:
      - {path: release:smoke, minCount: 1, node: release:SmokeCellPass}
    release:KernelParityCellPass:   # verdict pass, withinBound, fresh, receipt minCount 1
    ```
+   The committed contract puts `release:smoke` in a shape of its own, `release-readiness-v2.model-smoke`, on
+   the same target class. The engine names a nested shape `<shape>/node`, so two `node:` blocks in one shape
+   would export one IRI twice, and an RDF reader merges the two into a shape no cell passes.
    A KernelParityCell with no receipt fails `KernelParityCellPass`, so every ModelKernelCell that points at it fails
    through `sh:node`. That is the first falsifier, enforced by the shape and not by the extractor.
 

@@ -73,13 +73,19 @@ shapes:
                              {path: release:archMatch, minCount: 1, maxCount: 1, in: [true]}]}}
       - {path: release:unregisteredQtype, maxCount: 0}
       - {path: release:unpredictedKernel, maxCount: 0}
+  # The smoke has a shape of its own on the same target. The engine names a nested shape `<shape>/node`, so a
+  # second `node:` in release-readiness-v2.model would export a second sh:NodeShape under the same IRI, and an
+  # RDF reader (Jena, rudof) merges the two into one node shape that neither cell can pass.
+  - id: release-readiness-v2.model-smoke
+    targetClass: release:ModelKernelCell
+    properties:
       - {path: release:smoke, minCount: 1, maxCount: 1, nodeKind: IRI, class: release:SmokeCell,
          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
                              {path: release:fresh, minCount: 1, maxCount: 1, in: [true]},
                              {path: release:kernelPathKnown, minCount: 1, maxCount: 1, in: [true]}]}}
   # KTEST-001 S-SAN: a cuda kernel cell also needs a clean compute-sanitizer run (memcheck, racecheck,
-  # initcheck, synccheck; KTEST-05) that dispatched it, at most 7 days old. Kernel cells only: the model
-  # node above reads the parity fields, so a cpu kernel is never asked for one.
+  # initcheck, synccheck; KTEST-05) that dispatched it, at most 7 days old. Kernel cells only: the usesKernel
+  # node of release-readiness-v2.model reads the parity fields, so a cpu kernel is never asked for one.
   - id: release-readiness-v2.sanitizer
     targetClass: release:SanitizedKernelCell
     properties:
