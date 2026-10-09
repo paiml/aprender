@@ -1,0 +1,119 @@
+# CRUX-P-04 — Experiment tracking and lineage vs MLflow / DVC
+# CRUX category P: Dogfood Model Lifecycle (EXT-001 §10, surface C5).
+# Written by EXT-25 (aprender#4407). Coverage is gated by
+# FALSIFY-EXT-019 (validator_tests_ext_crux_coverage.rs).
+
+metadata:
+  id: CRUX-P-04
+  version: 1.0.0
+  created: '2026-09-25'
+  updated: '2026-09-25'
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  valid_under:
+    world: committed
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - dogfood-model-lifecycle-v1
+  category: P — Dogfood Model Lifecycle
+  competitor: mlflow
+  demand_score: 4
+  intake_status: partial
+  github_issue: 4407
+  description: 'Experiment tracking and lineage vs MLflow / DVC. EXT-001 surface C5 `tracking`. Arms:
+    MLflow 3 (LoggedModel lineage, aliases); DVC (content-addressed data/model versions); W&B (comparator:
+    unrunnable-hermetically — SaaS, no artifact sha). Comparator: behavioural fixtures; MLflow and DVC
+    pinned in containers. Metric: (a) one command answers which run, dataset sha and base produced model
+    X; (b) dataset identity is content-addressed; (c) promotion is an alias, never a mutation; (d) works
+    offline with no server; (e) write overhead per metric row (report-only). Gate: coverage only (R-14);
+    gap_effect recorded.'
+  surface: tracking
+  ext_surface: C5
+  verbs:
+  - runs
+  - registry
+  crux_coverage: covered
+  gap_effect: closes
+  gap_note: 'closes one gap: `apr runs gc` (EXT-03) reaps .tmp and orphaned runs keyed on (host, boot_id,
+    pid, start_time); MLflow''s `mlflow gc` reaps only deleted runs. Behaviours (a)-(e) are unmeasured
+    until EXT-31'
+  references:
+  - 'spec: paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §10 row C5'
+  - 'epic: https://github.com/paiml/aprender/issues/4381'
+  - 'row: https://github.com/paiml/aprender/issues/4407 (EXT-25, this contract)'
+  - 'measurement row: https://github.com/paiml/aprender/issues/4413 (EXT-31)'
+equations:
+  lineage_in_one_command:
+    formula: One apr command answers which run, dataset sha and base model produced a given model
+    domain: EXT-001 C5 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - One apr command answers which run, dataset sha and base model produced a given model
+  promotion_is_an_alias:
+    formula: apr registry promote moves an alias and never rewrites a version's bytes or metadata
+    domain: EXT-001 C5 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - apr registry promote moves an alias and never rewrites a version's bytes or metadata
+  tracking_works_offline:
+    formula: apr runs and apr registry work with no server and no network
+    domain: EXT-001 C5 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - apr runs and apr registry work with no server and no network
+proof_obligations:
+- id: CRUX-P-04-OB-01
+  type: invariant
+  property: One apr command answers which run, dataset sha and base model produced a given model
+  applies_to: lineage_in_one_command
+- id: CRUX-P-04-OB-02
+  type: invariant
+  property: apr registry promote moves an alias and never rewrites a version's bytes or metadata
+  applies_to: promotion_is_an_alias
+- id: CRUX-P-04-OB-03
+  type: invariant
+  property: apr runs and apr registry work with no server and no network
+  applies_to: tracking_works_offline
+falsification_tests:
+- id: FALSIFY-CRUX-P-04-001
+  obligation: CRUX-P-04-OB-01
+  rule: lineage in one command
+  prediction: a model registered without a producing run is reported as an orphan, RED
+  if_fails: 'the C5 claim ''lineage in one command'' is unproven (owed EXT-31 #4413; planned: the EXT-31
+    fixture binds FALSIFY-CRUX-P-04-001)'
+- id: FALSIFY-CRUX-P-04-002
+  obligation: CRUX-P-04-OB-02
+  rule: promotion is an alias
+  prediction: a mutated promote that rewrites a version turns the fixture RED
+  if_fails: 'the C5 claim ''promotion is an alias'' is unproven (owed EXT-31 #4413; planned: the EXT-31
+    fixture binds FALSIFY-CRUX-P-04-002)'
+- id: FALSIFY-CRUX-P-04-003
+  obligation: CRUX-P-04-OB-03
+  rule: tracking works offline
+  prediction: a planted network call in the tracking path fails the offline fixture
+  if_fails: 'the C5 claim ''tracking works offline'' is unproven (owed EXT-31 #4413; planned: the EXT-31
+    fixture binds FALSIFY-CRUX-P-04-003)'
+kani_harnesses:
+- id: KH-CRUX-P-04-001
+  obligation: lineage_in_one_command
+  property: lineage_in_one_command_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-P-04-002
+  obligation: promotion_is_an_alias
+  property: promotion_is_an_alias_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-P-04-003
+  obligation: tracking_works_offline
+  property: tracking_works_offline_holds_on_bounded_input
+  bound: 4
+qa_gate:
+  id: F-CRUX-P-04-GATE
+  name: CRUX C5 tracking
+  description: Gate for EXT-001 surface C5 `tracking`
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 3 falsification tests are bound by EXT-31 and pass; until then crux_coverage is covered
+    and the obligations are owed, not satisfied
+  falsification: FALSIFY-CRUX-P-04-001 through FALSIFY-CRUX-P-04-003

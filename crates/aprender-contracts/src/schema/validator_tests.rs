@@ -288,6 +288,10 @@ falsification_tests: []
     #[path = "validator_tests_dogfood_lifecycle.rs"]
     mod dogfood_lifecycle;
 
+    /// EXT-25 (aprender#4407): FALSIFY-EXT-019, every EXT surface has a CRUX contract.
+    #[path = "validator_tests_ext_crux_coverage.rs"]
+    mod ext_crux_coverage;
+
     /// PMAT-3091: `applies_to: not_applicable` + `na_reason`/`na_owner` (SCHEMA-021..023).
     #[path = "validator_tests_na.rs"]
     mod na;

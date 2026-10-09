@@ -1,0 +1,95 @@
+# CRUX-P-05 — Model line distribution vs Qwen / unsloth / bartowski / Ollama library
+# CRUX category P: Dogfood Model Lifecycle (EXT-001 §10, surface C6).
+# Written by EXT-25 (aprender#4407). Coverage is gated by
+# FALSIFY-EXT-019 (validator_tests_ext_crux_coverage.rs).
+
+metadata:
+  id: CRUX-P-05
+  version: 1.0.0
+  created: '2026-09-25'
+  updated: '2026-09-25'
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  valid_under:
+    world: committed
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - dogfood-model-lifecycle-v1
+  category: P — Dogfood Model Lifecycle
+  competitor: huggingface
+  demand_score: 4
+  intake_status: missing
+  github_issue: 4407
+  description: 'Model line distribution vs Qwen / unsloth / bartowski / Ollama library. EXT-001 surface
+    C6 `distribution`. Arms: Qwen official, unsloth, bartowski (HF model repos); Ollama library. Comparator:
+    behavioural fixtures on pinned revisions. Metric: (a) re-download by version tag is sha-stable; (b)
+    tags are immutable; (c) every card number is receipt-backed; (d) a build receipt / lineage is published.
+    Gate: coverage only; our (a)-(d) already block via M-CR, M6, M7 and I-8.'
+  surface: distribution
+  ext_surface: C6
+  verbs:
+  - publish
+  - pull
+  crux_coverage: covered
+  gap_effect: none
+  gap_note: 'unmeasured: competitor behaviours recorded as [X] from pinned revisions in EXT-31'
+  references:
+  - 'spec: paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §10 row C6'
+  - 'epic: https://github.com/paiml/aprender/issues/4381'
+  - 'row: https://github.com/paiml/aprender/issues/4407 (EXT-25, this contract)'
+  - 'measurement row: https://github.com/paiml/aprender/issues/4413 (EXT-31)'
+equations:
+  tag_redownload_is_sha_stable:
+    formula: Pulling the same version tag twice yields the same sha256
+    domain: EXT-001 C6 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - Pulling the same version tag twice yields the same sha256
+  card_numbers_are_receipted:
+    formula: Every number on a published model card resolves to a receipt
+    domain: EXT-001 C6 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - Every number on a published model card resolves to a receipt
+proof_obligations:
+- id: CRUX-P-05-OB-01
+  type: invariant
+  property: Pulling the same version tag twice yields the same sha256
+  applies_to: tag_redownload_is_sha_stable
+- id: CRUX-P-05-OB-02
+  type: invariant
+  property: Every number on a published model card resolves to a receipt
+  applies_to: card_numbers_are_receipted
+falsification_tests:
+- id: FALSIFY-CRUX-P-05-001
+  obligation: CRUX-P-05-OB-01
+  rule: tag redownload is sha stable
+  prediction: a re-pushed tag with changed bytes turns the fixture RED
+  if_fails: 'the C6 claim ''tag redownload is sha stable'' is unproven (owed EXT-31 #4413; planned: the
+    EXT-31 fixture binds FALSIFY-CRUX-P-05-001)'
+- id: FALSIFY-CRUX-P-05-002
+  obligation: CRUX-P-05-OB-02
+  rule: card numbers are receipted
+  prediction: a hand-typed number on the card fails the card lint
+  if_fails: 'the C6 claim ''card numbers are receipted'' is unproven (owed EXT-31 #4413; planned: the
+    EXT-31 fixture binds FALSIFY-CRUX-P-05-002)'
+kani_harnesses:
+- id: KH-CRUX-P-05-001
+  obligation: tag_redownload_is_sha_stable
+  property: tag_redownload_is_sha_stable_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-P-05-002
+  obligation: card_numbers_are_receipted
+  property: card_numbers_are_receipted_holds_on_bounded_input
+  bound: 4
+qa_gate:
+  id: F-CRUX-P-05-GATE
+  name: CRUX C6 distribution
+  description: Gate for EXT-001 surface C6 `distribution`
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 2 falsification tests are bound by EXT-31 and pass; until then crux_coverage is covered
+    and the obligations are owed, not satisfied
+  falsification: FALSIFY-CRUX-P-05-001 through FALSIFY-CRUX-P-05-002

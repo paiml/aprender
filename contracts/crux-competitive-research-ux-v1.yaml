@@ -497,15 +497,27 @@ stories:
   - { id: CRUX-O-23, title: "Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Cro", competitor: autogluon, demand_score: 4, status: partial,  contract: crux-O-23-v1.yaml }
   - { id: CRUX-O-24, title: "Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by a", competitor: autogluon, demand_score: 4, status: missing,  contract: crux-O-24-v1.yaml }
 
+  # Category P — Dogfood Model Lifecycle (6) — EXT-001 §10 surfaces C1, C3-C7
+  # (aprender#4407, epic #4381, 2026-09-25). C2 `inference` extends the
+  # existing CRUX-E-16 (TTFT) and CRUX-C-27 (GGUF loading) — no duplicate.
+  # Spec of record: paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md.
+  # Registry edit: mlflow, qwen, unsloth added to CRUX_COMPETITORS.
+  - { id: CRUX-P-01, title: "Released quant file quality vs community quants", competitor: unsloth, demand_score: 5, status: missing, contract: crux-P-01-v1.yaml }
+  - { id: CRUX-P-02, title: "QLoRA / distill correctness vs PEFT + TRL reference", competitor: huggingface, demand_score: 4, status: partial, contract: crux-P-02-v1.yaml }
+  - { id: CRUX-P-03, title: "apr quantize output vs llama-quantize", competitor: llama_cpp, demand_score: 4, status: partial, contract: crux-P-03-v1.yaml }
+  - { id: CRUX-P-04, title: "Experiment tracking and lineage vs MLflow / DVC", competitor: mlflow, demand_score: 4, status: partial, contract: crux-P-04-v1.yaml }
+  - { id: CRUX-P-05, title: "Model line distribution vs Qwen / unsloth / bartowski / Ollama library", competitor: huggingface, demand_score: 4, status: missing, contract: crux-P-05-v1.yaml }
+  - { id: CRUX-P-06, title: "Dogfood fine-tune vs upstream stock Qwen3.5-4B on the sealed review suites", competitor: qwen, demand_score: 5, status: missing, contract: crux-P-06-v1.yaml }
+
 # ─────────────────────────────────────────────────────────────
 # Coverage — intake v2.0.0 (verified by awk over §5 of subspec)
 # ─────────────────────────────────────────────────────────────
 coverage_intake:
   supported: 43
-  partial:   77
-  missing:   171
+  partial:   80
+  missing:   174
   unclear:    0
-  total:    291
+  total:    297
   notes: |
     ID gaps at C-14, F-10, H-04, I-05, K-06 are intentional — those
     five stories were dropped pre-v1.0.0 as duplicative (see inline
@@ -517,6 +529,10 @@ coverage_intake:
     Category O (24 rows, aprender#3370) was added 2026-09-16: 19 missing,
     5 partial. Competitor autogluon (1.6.3) — AutoML parity: predictor-level
     tabular AutoML and multi-series forecasting. Same registry edit.
+    Category P (6 rows, aprender#4407) was added 2026-09-25: 3 missing,
+    3 partial. EXT-001 dogfood model lifecycle surfaces; each contract
+    carries metadata.surface / crux_coverage / gap_effect, and
+    FALSIFY-EXT-019 turns the workspace-test job RED if one goes missing.
 
 # ─────────────────────────────────────────────────────────────
 # Falsification conditions

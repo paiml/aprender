@@ -1,0 +1,98 @@
+# CRUX-P-02 — QLoRA / distill correctness vs PEFT + TRL reference
+# CRUX category P: Dogfood Model Lifecycle (EXT-001 §10, surface C3).
+# Written by EXT-25 (aprender#4407). Coverage is gated by
+# FALSIFY-EXT-019 (validator_tests_ext_crux_coverage.rs).
+
+metadata:
+  id: CRUX-P-02
+  version: 1.0.0
+  created: '2026-09-25'
+  updated: '2026-09-25'
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  valid_under:
+    world: committed
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - dogfood-model-lifecycle-v1
+  category: P — Dogfood Model Lifecycle
+  competitor: huggingface
+  demand_score: 4
+  intake_status: partial
+  github_issue: 4407
+  description: 'QLoRA / distill correctness vs PEFT + TRL reference. EXT-001 surface C3 `training`. Arms:
+    HF PEFT + TRL (reference implementation); Unsloth (speed CONCEDED, R-16). Comparator: hermetic container,
+    lockfile with hashes. Metric: step-0 loss and gradient cosine vs PEFT on identical data/seed/LoRA
+    config; loss trajectory inside the reference seed band; sealed-suite eval of the adapter. Speed report-only.
+    Gate: correctness blocks once the seed band exists; before that, report-only.'
+  surface: training
+  ext_surface: C3
+  verbs:
+  - finetune
+  - distill
+  crux_coverage: covered
+  gap_effect: none
+  gap_note: 'unmeasured: the reference seed band is [U] until k reference seeds have run (EXT-29)'
+  references:
+  - 'spec: paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §10 row C3'
+  - 'epic: https://github.com/paiml/aprender/issues/4381'
+  - 'row: https://github.com/paiml/aprender/issues/4407 (EXT-25, this contract)'
+  - 'measurement row: https://github.com/paiml/aprender/issues/4411 (EXT-29)'
+equations:
+  step0_matches_reference:
+    formula: On identical data, seed and LoRA config, step-0 loss matches PEFT and the gradient cosine
+      is near 1
+    domain: EXT-001 C3 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - On identical data, seed and LoRA config, step-0 loss matches PEFT and the gradient cosine is near
+      1
+  trajectory_inside_seed_band:
+    formula: The loss trajectory lies inside the band measured from k reference seeds
+    domain: EXT-001 C3 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - The loss trajectory lies inside the band measured from k reference seeds
+proof_obligations:
+- id: CRUX-P-02-OB-01
+  type: invariant
+  property: On identical data, seed and LoRA config, step-0 loss matches PEFT and the gradient cosine
+    is near 1
+  applies_to: step0_matches_reference
+- id: CRUX-P-02-OB-02
+  type: invariant
+  property: The loss trajectory lies inside the band measured from k reference seeds
+  applies_to: trajectory_inside_seed_band
+falsification_tests:
+- id: FALSIFY-CRUX-P-02-001
+  obligation: CRUX-P-02-OB-01
+  rule: step0 matches reference
+  prediction: a transposed LoRA A/B init moves the step-0 gradient cosine off 1 and turns the check RED
+  if_fails: 'the C3 claim ''step0 matches reference'' is unproven (owed EXT-29 #4411; planned: the EXT-29
+    fixture binds FALSIFY-CRUX-P-02-001)'
+- id: FALSIFY-CRUX-P-02-002
+  obligation: CRUX-P-02-OB-02
+  rule: trajectory inside seed band
+  prediction: a learning rate 10x the config's leaves the band and turns the check RED
+  if_fails: 'the C3 claim ''trajectory inside seed band'' is unproven (owed EXT-29 #4411; planned: the
+    EXT-29 fixture binds FALSIFY-CRUX-P-02-002)'
+kani_harnesses:
+- id: KH-CRUX-P-02-001
+  obligation: step0_matches_reference
+  property: step0_matches_reference_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-P-02-002
+  obligation: trajectory_inside_seed_band
+  property: trajectory_inside_seed_band_holds_on_bounded_input
+  bound: 4
+qa_gate:
+  id: F-CRUX-P-02-GATE
+  name: CRUX C3 training
+  description: Gate for EXT-001 surface C3 `training`
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 2 falsification tests are bound by EXT-29 and pass; until then crux_coverage is covered
+    and the obligations are owed, not satisfied
+  falsification: FALSIFY-CRUX-P-02-001 through FALSIFY-CRUX-P-02-002
