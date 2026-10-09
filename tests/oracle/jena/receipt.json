@@ -1,0 +1,287 @@
+{
+  "cells": [
+    {
+      "case": "contracts.nt",
+      "cell": "R-RETURN",
+      "comparator": "riot-vs-ntparse",
+      "detail": "32701 triples; []",
+      "verdict": "GREEN"
+    },
+    {
+      "case": "shapes.ttl",
+      "cell": "R-RETURN",
+      "comparator": "riot",
+      "detail": "4166 triples, no WARN",
+      "verdict": "GREEN"
+    },
+    {
+      "case": "roundtrip",
+      "cell": "R-RETURN",
+      "comparator": "pv-write",
+      "detail": "S3: pv writes no graph it read back",
+      "verdict": "NOT MEASURED"
+    },
+    {
+      "case": "contracts.nt+shapes.ttl",
+      "cell": "R-INPUT",
+      "comparator": "pv-vs-riot",
+      "detail": "S3: pv reads no Turtle/N-Triples; riot reads 32701 + 4166 triples",
+      "verdict": "NOT MEASURED"
+    },
+    {
+      "case": "corpus",
+      "cell": "R-VALIDATE",
+      "comparator": "jena-vs-pv",
+      "detail": "jena 743 results (conforms Some(false)), pv 730; 12 pairs differ: https://ont.paiml.dev/v1alpha1/csv/csv-train closed jena+1; https://ont.paiml.dev/v1alpha1/llm/claude-md closed jena+1; https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e closed jena+2; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Fgx10%2Fqwen2.5-coder-1.5b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Fgx10%2Fqwen2.5-coder-7b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-1.5b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-coder-1.5b-instruct-q4_k_m.json closed jena+1; https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-coder-7b-instruct-q4_k_m.json closed jena+1",
+      "verdict": "RED"
+    },
+    {
+      "case": "S-W3C",
+      "cell": "R-VALIDATE",
+      "comparator": "pv-vs-w3c",
+      "detail": "S4: pv writes no sh:ValidationReport; 35 cases, Jena ran 35, 1 compared without source shape",
+      "verdict": "NOT MEASURED"
+    },
+    {
+      "case": "S-W3C+S-CORPUS",
+      "cell": "R-FEEDBACK",
+      "comparator": "full-tuple",
+      "detail": "S4: pv's report has no value, source shape or W3C severity",
+      "verdict": "NOT MEASURED"
+    },
+    {
+      "case": "shapes.ttl",
+      "cell": "S-SHSH",
+      "comparator": "shacl-shacl",
+      "detail": "conforms to SHACL-SHACL",
+      "verdict": "GREEN"
+    }
+  ],
+  "controls": {
+    "rows": [
+      {
+        "got": 0,
+        "id": "FALSIFY-CRUXSHACL-001",
+        "name": "input/bnode-relabel",
+        "seen": true,
+        "want": 0
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-002",
+        "name": "input/drop-one-triple",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-003",
+        "name": "input/literal-lexical-form",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 2,
+        "id": "FALSIFY-CRUXSHACL-007",
+        "name": "return/self-compare",
+        "seen": true,
+        "want": 2
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-010",
+        "name": "validate/datatype-003-refused",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-011",
+        "name": "selftest/arbitrate-agree-wrong",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 0,
+        "id": "FALSIFY-CRUXSHACL-012",
+        "name": "selftest/arbitrate-jena-wrong",
+        "seen": true,
+        "want": 0
+      },
+      {
+        "got": 0,
+        "id": "FALSIFY-CRUXSHACL-013",
+        "name": "feedback/source-shape-key",
+        "seen": true,
+        "want": 0
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-014",
+        "name": "feedback/mutant-focus",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-015",
+        "name": "feedback/mutant-path",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-016",
+        "name": "feedback/mutant-value",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-017",
+        "name": "feedback/mutant-source-shape",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-018",
+        "name": "feedback/mutant-component",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-019",
+        "name": "feedback/mutant-severity",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-020",
+        "name": "feedback/message",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-021",
+        "name": "feedback/missing-value",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 2,
+        "id": "FALSIFY-CRUXSHACL-022",
+        "name": "selftest/no-jvm",
+        "seen": true,
+        "want": 2
+      },
+      {
+        "got": 2,
+        "id": "FALSIFY-CRUXSHACL-023",
+        "name": "selftest/pin-mismatch",
+        "seen": true,
+        "want": 2
+      },
+      {
+        "got": 2,
+        "id": "FALSIFY-CRUXSHACL-024",
+        "name": "selftest/partial-subject",
+        "seen": true,
+        "want": 2
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-025",
+        "name": "selftest/receipt-missing-field",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 0,
+        "id": "FALSIFY-CRUXSHACL-004",
+        "name": "input/syntax-error-line-7",
+        "seen": true,
+        "want": 0
+      },
+      {
+        "got": 0,
+        "id": "FALSIFY-CRUXSHACL-005",
+        "name": "return/escapes-langtags",
+        "seen": true,
+        "want": 0
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-006",
+        "name": "return/drop-one-triple",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 0,
+        "id": "FALSIFY-CRUXSHACL-008",
+        "name": "validate/minCount-001",
+        "seen": true,
+        "want": 0
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-009",
+        "name": "validate/minCount-001-min2",
+        "seen": true,
+        "want": 1
+      },
+      {
+        "got": 1,
+        "id": "FALSIFY-CRUXSHACL-026",
+        "name": "shsh/minCount-string",
+        "seen": true,
+        "want": 1
+      }
+    ],
+    "seen": 26,
+    "total": 26
+  },
+  "exit": 1,
+  "git": {
+    "dirty": "false",
+    "head": "62b1cebe99c4b4688e258ad5747a48a60652a58b"
+  },
+  "inputs": {
+    "/tmp/claude-1000/-mnt-nvme-raid0-wt-la-0-71-1b/ba8bb2a5-3e62-4d0e-8c1a-532901943a2a/scratchpad/pv-shapes-jena.json": "3771b3bb3ac86a86de9804ef2ecfd513b70f2ba00160fbbfef0ff28072b16768",
+    "contracts/contracts.nt": "e766dc34f08dffa9b7303b19ea4d1ed533c16d9d0ffedb3e01a9a953a7d7282a",
+    "contracts/shapes.ttl": "0fb357b888925633a4e742eb10eb02a0204d587afd81c1d0d46501f166dcb60c",
+    "tests/oracle/jena/w3c.sha256": "76a244d914b56888edf08956d8f82bdc624854b25bf94ac2c9a447fbfd8356a0"
+  },
+  "java": {
+    "version": "openjdk version \"17.0.20.1\" 2026-08-18"
+  },
+  "jena": {
+    "shsh_sha256": "af9e8c2968aff88aa8895fca951e2cd14891b27bd2ef90a10ad2c2452332a7e1",
+    "version": "5.6.0",
+    "zip_sha256": "fb26f8753ed3c4f8e04607a60d9605e18cf6e22143a47fc7334dcd87f655d888"
+  },
+  "notes": [
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/csv/csv-train closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/llm/claude-md closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e closed jena+2",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Fgx10%2Fqwen2.5-coder-1.5b-instruct-q4_k_m.json closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Fgx10%2Fqwen2.5-coder-7b-instruct-q4_k_m.json closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-1.5b-instruct-q4_k_m.json closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-coder-1.5b-instruct-q4_k_m.json closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1%2Flambda%2Fqwen2.5-coder-7b-instruct-q4_k_m.json closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1b%2Fgx10%2Fqwen2.5-coder-1.5b-instruct-q4_k_m.json closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1b%2Fgx10%2Fqwen2.5-coder-7b-instruct-q4_k_m.json closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/readme/readme-root closed jena+1",
+    "corpus jena≠pv: https://ont.paiml.dev/v1alpha1/refusal/refusal-receipt-v1.refusals.0 closed jena+1"
+  ],
+  "pv": {
+    "sha256": "4cdb4a2f21793b2e1ef7503305e8d750a434e9d3dae5e44ddde1a11cab8428ba",
+    "version": "pv 0.70.2 (c14c654f7d) (aprender provable-contracts verifier)"
+  },
+  "schema": "crux-shacl-jena-receipt/1",
+  "utc": 1791561935
+}
