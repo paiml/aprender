@@ -304,6 +304,31 @@ crux_surfaces:
 - {id: C5, surface: tracking, verbs: [runs, registry], contracts: [crux-P-04-v1.yaml]}
 - {id: C6, surface: distribution, verbs: [publish, pull], contracts: [crux-P-05-v1.yaml]}
 - {id: C7, surface: decision, verbs: [eval], contracts: [crux-P-06-v1.yaml]}
+
+# I-12 (EXT-INV-012, row EXT-23): the apr lane casts no vote on a PR that
+# touches one of these paths (spec §3.9: this contract, the sealed manifest,
+# the gate code, the publisher). Each entry is a repo-relative path prefix, and
+# a PR path is recused iff it starts with one. The review lanes' recusal
+# filters read this list from main and keep no copy of it. The sealed store is
+# outside the repo, so its surface here is the code that reads it and the
+# training write perimeter around it. An entry that matches no file recuses
+# nothing, so a rename that strands one turns the workspace-test job RED
+# (validator_tests_dogfood_lifecycle.rs).
+dogfood_gate_paths:
+- contracts/dogfood-model-lifecycle-v1.yaml     # this contract; the sealed manifest sha (I-9)
+- crates/aprender-registry/src/data/provenance  # the sealed set and the leak refusal (I-11)
+- crates/aprender-train/src/perimeter           # training write perimeter: sealed store, publish token
+- crates/apr-cli/src/commands/model_gate        # apr model gate: clean-room and M0..M6
+- crates/apr-cli/src/commands/model_card        # the M6 card lint
+- crates/apr-cli/src/commands/comparator        # M2 competitor arms
+- crates/apr-cli/src/commands/speed_gate        # the speed ratchet
+- crates/apr-cli/src/commands/speed_ledger
+- crates/apr-cli/src/commands/speed_perf_rows
+- crates/apr-cli/src/commands/model_pack        # the publisher: pack, publish, post-publish confirm
+- crates/apr-cli/src/commands/model_confirm
+- crates/apr-cli/src/commands/hf_publish
+- crates/apr-cli/src/commands/publish
+- crates/aprender-core/src/hf_hub/
 qa_gate:
   id: F-EXT-GATE
   name: Dogfood Model Lifecycle Contract
