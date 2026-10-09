@@ -123,6 +123,48 @@ export CARGO_TARGET_DIR="$REPO_ROOT/target"
 AP_POLICY=$(ap_policy_applies "$V" 2>> "$LOG") || die "the standing release policy cannot be judged for $V (see $LOG): nothing is measured"
 [ "$AP_POLICY" != 1 ] || say "POLICY: the standing release policy covers $V -- CRUX smoke on lambda and gx10 is the release gate, readiness (R8) is not run, the larger ladder rows are nightly"
 
+# #4950 G4: cut_tag needs a coverage-nightly receipt for MC (tag_coverage_gate.sh --resolve). main keeps
+# moving after the bump, so the scheduled nightly measures a later head, never MC. When no receipt
+# qualifies yet, coverage-nightly is dispatched ONCE on a branch coverage/<V> that points at exactly MC
+# (a non-main push triggers no workflow), here, so its ~3 h runs beside the T-1 lanes; the tag step waits
+# for that run. The run id is kept in $AP/coverage-run-id, so a resumed pass attaches and never re-dispatches.
+cov_dispatch_at_mc() {
+    local cb="coverage/$V" head t0 run
+    if [ -s "$AP/coverage-run-id" ]; then say "COVERAGE attached to run $(cat "$AP/coverage-run-id") for $MC"; return 0; fi
+    if bash scripts/release/tag_coverage_gate.sh --resolve "$MC" >> "$LOG" 2>&1; then
+        say "COVERAGE a coverage-nightly receipt already qualifies for $MC: nothing dispatched"; return 0
+    fi
+    head=$(git ls-remote origin "refs/heads/$cb" 2>> "$LOG" | cut -f1) || die "cannot read $cb on origin"
+    if [ -z "$head" ]; then
+        git push origin "$MC:refs/heads/$cb" >> "$LOG" 2>&1 || die "pushing $cb at $MC failed"
+    elif [ "$head" != "$MC" ]; then
+        die "$cb on origin is at $head, not the release commit $MC -- coverage not dispatched"
+    fi
+    t0=$(date -u +%s)  # bashrs disable-line=DET002
+    gh workflow run coverage-nightly.yml --repo "$REPO" --ref "$cb" >> "$LOG" 2>&1 || die "coverage-nightly.yml dispatch on $cb failed"
+    sleep "$AP_SETTLE"; run=""; for _ in 1 2 3; do
+        run=$(gh run list --repo "$REPO" --workflow coverage-nightly.yml --branch "$cb" --event workflow_dispatch --limit 10 --json databaseId,headSha,createdAt --jq "[.[] | select(.headSha == \"$MC\" and (.createdAt | fromdateiso8601) >= $t0 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
+        [ -n "$run" ] && break; sleep "$AP_POLL"
+    done
+    [ -n "$run" ] || die "no coverage-nightly run on $cb at $MC appeared after the dispatch"
+    printf '%s\n' "$run" > "$AP/coverage-run-id"
+    say "COVERAGE dispatched coverage-nightly run $run on $cb at $MC"
+}
+# cov_wait: the dispatched run (if any) completes green before the tag; cut_tag then judges its receipt.
+cov_wait() {
+    local run s c
+    [ -s "$AP/coverage-run-id" ] || return 0
+    run=$(cat "$AP/coverage-run-id")
+    for _ in $(seq 1 72); do
+        s=$(gh run view "$run" --repo "$REPO" --json status,conclusion --jq '"\(.status) \(.conclusion)"') || s=unknown
+        case "$s" in completed*) c=${s#completed }; break ;; esac
+        sleep "$AP_POLL"
+    done
+    [ "${c:-}" = success ] || die "coverage-nightly run $run at $MC concluded '${c:-not in 6 h}' -- no tag"
+    say "COVERAGE run $run at $MC green"
+}
+run_step tag && cov_dispatch_at_mc
+
 # T-1 LANES (C316 item 2d): deep, dogfood and models are three independent measurements of the same
 # commit, so they start together and join before readiness. Each is a function below, run as its own
 # background job; the join is after the models function. The step bodies are unchanged.
@@ -354,6 +396,7 @@ if run_step tag; then
   # against the local overlay (= `cargo publish --dry-run` for the whole cascade). The worktree is the
   # release commit the tag will name, so this is the tarball the cascade uploads. A red here stops the
   # train before anything irreversible: no carry, no tag, no draft (#4287 follow-up, #4690).
+  cov_wait
   rm -f -- "${AP:?}/publish-dryrun-commit"
   bash scripts/release/rc_publish_gate.sh --verify "$WT" > "$AP/publish-dryrun.log" 2>&1; rc=$?
   tail -2 "$AP/publish-dryrun.log" >> "$STATUS"

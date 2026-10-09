@@ -92,6 +92,79 @@ run_cut_tag() {
     rmtree "$d"
 }
 
+# run_cov <autopilot> <fn> <resolve-rc> <remote-head: none|mc|other> <run-list: hit|empty> <attached: 0|1> <conclusion>
+# -- #4950 G4: extract cov_dispatch_at_mc() and cov_wait(), run <fn> against stubs, print a transcript.
+run_cov() {
+    local ap=$1 fn=$2 rrc=$3 rh=$4 rl=$5 att=$6 con=$7 d body
+    d=$(mktemp -d) || return 2
+    body=$(awk '/^cov_dispatch_at_mc\(\) \{/,/^\}/; /^cov_wait\(\) \{/,/^\}/' "$ap")
+    [ -n "$body" ] || { rmtree "$d"; return 2; }
+    mkdir -p "$d/scripts/release" "$d/ap" "$d/bin"
+    printf '#!/usr/bin/env bash\necho CALL-RESOLVE >> %q\nexit %s\n' "$d/calls" "$rrc" > "$d/scripts/release/tag_coverage_gate.sh"
+    [ "$att" = 1 ] && printf '777\n' > "$d/ap/coverage-run-id"
+    case "$rh" in none) h='' ;; mc) h=deadbeef ;; *) h=cafef00d ;; esac
+    case "$rl" in hit) r=555 ;; *) r='' ;; esac
+    {   printf '#!/usr/bin/env bash\n'
+        printf 'case "$1 $2" in\n'
+        printf '  "workflow run") echo "CALL-DISPATCH $*" >> %q ;;\n' "$d/calls"
+        printf '  "run list") echo CALL-LIST >> %q; case " $* " in *" --branch coverage/0.0.0 "*"headSha == \\"deadbeef\\""*) echo %q ;; esac ;;\n' "$d/calls" "$r"
+        printf '  "run view") echo "CALL-VIEW $3" >> %q; echo "completed %s" ;;\n' "$d/calls" "$con"
+        printf 'esac\n'
+    } > "$d/bin/gh"; chmod +x "$d/bin/gh"
+    {   printf 'set -uo pipefail\nV=0.0.0 MC=deadbeef REPO=paiml/aprender AP_POLL=300 AP_SETTLE=30\n'
+        printf 'AP=%q LOG=%q\n' "$d/ap" "$d/log"
+        printf 'say() { printf "SAY %%s\\n" "$*"; }\ndie() { printf "DIE %%s\\n" "$*"; exit 1; }\nsleep() { :; }\n'
+        printf 'git() { case "$1" in ls-remote) echo "CALL-LSREMOTE $3" >> %q; [ -n %q ] && printf "%%s\\trefs/heads/x\\n" %q ;; push) echo "CALL-PUSH $3" >> %q ;; esac; return 0; }\n' \
+            "$d/calls" "$h" "$h" "$d/calls"
+        printf '%s\n%s\n' "$body" "$fn"
+    } > "$d/harness.sh"
+    (cd "$d" && PATH="$d/bin:$PATH" bash "$d/harness.sh" 2>&1)
+    printf 'ORDER %s\n' "$(tr '\n' ' ' 2>/dev/null < "$d/calls")"
+    printf 'RUNID %s\n' "$(cat "$d/ap/coverage-run-id" 2>/dev/null)"
+    rmtree "$d"
+}
+
+# judge_cov <autopilot> -- the #4950 G4 case table. Prints rows; returns the number of wrong ones.
+judge_cov() {
+    local ap=$1 out w=0 tagblk
+    row() { if eval "$2"; then printf 'ok    %s\n' "$1"; else printf 'FAIL  %s\n%s\n' "$1" "$out" >&2; w=$((w + 1)); fi; }
+    out=$(run_cov "$ap" cov_dispatch_at_mc 0 none hit 0 success)
+    row "coverage: a receipt already qualifies -> nothing pushed, nothing dispatched" \
+        '! grep -qE "CALL-(PUSH|DISPATCH)" <<< "$out" && grep -q "^RUNID $" <<< "$out"'
+    out=$(run_cov "$ap" cov_dispatch_at_mc 1 none hit 0 success)
+    row "coverage: none qualifies, no branch -> push MC to coverage/V, dispatch on it, record the run" \
+        'grep -q "^ORDER CALL-RESOLVE CALL-LSREMOTE refs/heads/coverage/0.0.0 CALL-PUSH deadbeef:refs/heads/coverage/0.0.0 CALL-DISPATCH workflow run coverage-nightly.yml --repo paiml/aprender --ref coverage/0.0.0 CALL-LIST $" <<< "$out" && grep -q "^RUNID 555$" <<< "$out"'
+    out=$(run_cov "$ap" cov_dispatch_at_mc 1 mc hit 0 success)
+    row "coverage: branch already at MC -> no push, dispatch" \
+        '! grep -q CALL-PUSH <<< "$out" && grep -q CALL-DISPATCH <<< "$out" && grep -q "^RUNID 555$" <<< "$out"'
+    out=$(run_cov "$ap" cov_dispatch_at_mc 1 other hit 0 success)
+    row "coverage: branch at another commit -> stop, nothing pushed or dispatched" \
+        'grep -q "^DIE coverage/0.0.0 on origin is at cafef00d" <<< "$out" && ! grep -qE "CALL-(PUSH|DISPATCH)" <<< "$out"'
+    out=$(run_cov "$ap" cov_dispatch_at_mc 1 none hit 1 success)
+    row "coverage: a recorded run -> attach; no resolve, push or second dispatch" \
+        '! grep -qE "CALL-(RESOLVE|PUSH|DISPATCH)" <<< "$out" && grep -q "^RUNID 777$" <<< "$out"'
+    out=$(run_cov "$ap" cov_dispatch_at_mc 1 none empty 0 success)
+    row "coverage: no run at MC appears -> stop, no run recorded" \
+        'grep -q "^DIE no coverage-nightly run" <<< "$out" && grep -q "^RUNID $" <<< "$out"'
+    out=$(run_cov "$ap" cov_wait 0 none hit 1 success)
+    row "coverage wait: run green -> continue" 'grep -q "^SAY COVERAGE run 777 at deadbeef green" <<< "$out" && ! grep -q "^DIE" <<< "$out"'
+    for c in failure cancelled; do
+        out=$(run_cov "$ap" cov_wait 0 none hit 1 "$c")
+        row "coverage wait: run $c -> no tag" 'grep -q "^DIE coverage-nightly run 777 at deadbeef concluded .$c." <<< "$out"'
+    done
+    out=$(run_cov "$ap" cov_wait 0 none hit 0 failure)
+    row "coverage wait: nothing dispatched -> no gh call (cut_tag judges the receipt)" '! grep -q CALL-VIEW <<< "$out" && ! grep -q "^DIE" <<< "$out"'
+    # structure: the dispatch runs ahead of the T-1 lanes whenever the tag step will run, and the tag
+    # step waits for the run ahead of the publish dry run and the tag
+    out=$(grep -n '^run_step tag && cov_dispatch_at_mc$' "$ap")
+    row "coverage: dispatched before the T-1 lanes when the tag step runs" '[ -n "$out" ] && [ "${out%%:*}" -lt "$(grep -n "^t1_deep() {" "$ap" | cut -d: -f1)" ]'
+    tagblk=$(awk '/^if run_step tag; then$/,/^fi$/' "$ap")
+    out=$tagblk
+    row "coverage: the tag step waits for the run before the dry run and cut_tag" \
+        'awk "/^  cov_wait\$/ { w = NR } /rc_publish_gate.sh --verify/ { r = NR } /^  cut_tag / { c = NR } END { exit !(w && r > w && c > w) }" <<< "$tagblk"'
+    return "$w"
+}
+
 # judge <autopilot> -- 0 when every gate outcome behaves; 1 otherwise. Prints rows.
 judge() {
     local ap=$1 out bad=0
@@ -174,6 +247,7 @@ judge() {
         END { if (p == "" || p + 0 < 300) w = w "AP_POLL=" p; printf "%s", w }' "$ap")
     if [ -n "$out" ]; then printf 'FAIL  a GitHub poll faster than 300 s, or AP_POLL below 300: %s\n' "$out" >&2; bad=1
     else printf 'ok    every autopilot wait is AP_POLL (>= 300 s) or the one dispatch settle\n'; fi
+    judge_cov "$ap" || bad=1
     return "$bad"
 }
 
@@ -310,6 +384,22 @@ if [ "${1:-}" = "--self-test" ]; then
             nok "MUTANT $mu (GitHub poll under 300 s) PASSED"
         else
             ok "mutant $mu: GitHub poll under 300 s -> RED"
+        fi
+    done
+    # M16-M21 (#4950 G4): the coverage dispatch and wait, each weakened one way.
+    sed 's/die "\$cb on origin is at \$head, not the release commit/: "/' "$SUBJECT" > "$d/m16.sh"
+    sed 's/\[ "\${c:-}" = success \] || die "coverage-nightly run/true || die "/' "$SUBJECT" > "$d/m17.sh"
+    grep -v '^  cov_wait$' "$SUBJECT" > "$d/m18.sh"
+    grep -v '^run_step tag && cov_dispatch_at_mc$' "$SUBJECT" > "$d/m19.sh"
+    grep -v 'if \[ -s "\$AP/coverage-run-id" \]; then say "COVERAGE attached' "$SUBJECT" > "$d/m20.sh"
+    sed 's/select(.headSha == \\"\$MC\\" and /select(/' "$SUBJECT" > "$d/m21.sh"
+    for mu in 16 17 18 19 20 21; do
+        if cmp -s "$SUBJECT" "$d/m$mu.sh"; then
+            nok "MUTANT $mu could not be built -- its coverage line did not match; vacuous"
+        elif judge "$d/m$mu.sh" > "$d/m$mu.out" 2>&1; then
+            nok "MUTANT $mu (coverage dispatch/wait weakened) PASSED"
+        else
+            ok "mutant $mu: coverage dispatch/wait weakened -> RED"
         fi
     done
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it

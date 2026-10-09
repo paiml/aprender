@@ -187,6 +187,7 @@ run() {
     printf 'die() { printf "STOP %%s\\n" "$*" >> %q; exit 1; }\n' "$W/calls"
     printf 'sleep() { :; }\n'
     printf 'cut_tag() { printf "TAG %%s\\n" "$2" >> %q; }\n' "$W/calls"
+    printf 'cov_wait() { :; }\n'
     printf 'git() { [ "$1" = rev-parse ] && return 1; return 0; }\n'
     printf 'run_step() { case " $ON " in *" $1 "*) return 0 ;; esac; return 1; }\n'
     extract "$ap"
