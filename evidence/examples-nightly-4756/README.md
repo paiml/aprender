@@ -40,10 +40,14 @@ They are not gated on the GPU (`performance_parity.rs:66` onward), and all 8 ran
 
 ## Not measured here
 
-- **The CUDA rows on the nightly runner.** Here they read `cuInit failed` (libcuda present,
-  no device). The failing nightly read `CUDA driver not found (libcuda.so)`. Both match
-  the classifier's needs-hardware pattern, but the nightly row is read from the old
-  run's log, not measured.
+- **The 10 CUDA rows on the nightly runner.** In the failing run they got
+  `CUDA driver not found`, the error aprender-gpu gives when it cannot load libcuda.
+  test_gemv_correctness shows that text on its row. The other nine rows show only their
+  first output line. No classifier pattern matched it. Since 51b6d69fe8, aprender-gpu says
+  `CUDA driver not found (libcuda.so)`, which is how its spec already writes it, and the
+  classifier's `libcuda\.so` pattern matches that. This box has libcuda and no device, so
+  its CUDA rows stop at `cuInit` instead. This run does not exercise the no-libcuda path:
+  that path's class was checked against the regex, not run.
 - **parity_035 with no Ollama server.** Here a server runs without the model, and the row
   is needs-data (`Model not found: phi2:2.7b ...`). With no server, the example prints
   `Ollama server not found at http://localhost:11434 ...`. Checked against the
