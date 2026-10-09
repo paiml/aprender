@@ -238,14 +238,18 @@ falsification_tests:
       `cargo smart-release`, those tools run by their own name, cargo with a
       subcommand taken from a variable, or any variable run as the command with
       one of those uploads after it, since the variable may hold cargo. cargo
-      counts by a path or quoted, as $CARGO, $$CARGO or $(command -v cargo). An
+      counts by a path, quoted (a quoted path may hold spaces), as $CARGO,
+      $$CARGO or $(command -v cargo). Quotes and backslashes inside a word hide
+      nothing: cargo "publish", cargo pub""lish, cargo \publish and cargo
+      $'publish' are read as the shell reads them, as cargo publish. An
       upload stored for later counts where it is stored: a shell or make
       variable whose value starts with one, or an alias of one; and no tracked
       cargo config aliases one. Two are allowed by file and command:
       release_ready.sh's case-table stand-in, and the v0.68.1 audit record of
       publish_strict.sh, which nothing runs. A command that starts with "$APR"
       or "$APR_BIN", the pinned apr binary, is not a crate upload: its publish
-      sends a model to Hugging Face. Commands are read as the shell runs them:
+      sends a model to Hugging Face. So setting APR or APR_BIN to cargo, in any of
+      those spellings, is a door where it is set. Commands are read as the shell runs them:
       continuation lines joined, each command of a line on its own (split at
       ; && || | and a lone &, not the & of a redirect), case arms, wrappers,
       VAR=val, eval, sh -c, $( <( >(, make's $(shell), find -exec and cargo's
@@ -256,7 +260,8 @@ falsification_tests:
       aprender-orchestrate stack releaser and the dev-only `apr mono publish`
       build the call as an argv; Python, where no tracked file calls it; workflow
       files below the root, which GitHub never runs; and a command assembled at
-      run time from data.
+      run time from data, including cargo carried into APR through another
+      variable.
     prediction: |
       Run the case table against the v0.70.1 publish_strict.sh (which checks only
       that the file is non-empty) and it FAILS four rows (non-numeric, red, other

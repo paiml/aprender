@@ -186,7 +186,7 @@ fi
 # the line is split into commands at ; && || | and a lone & (not the & of >& <& &>). So a
 # --dry-run on one command never hides another on the same line, and `cargo \` + `publish` is
 # still one command. --dry-run counts only as a word of its own command.
-# A command is a door when cargo (cargo by a path or quoted, $CARGO, "${CARGO:-cargo}",
+# A command is a door when cargo (cargo by a path, quoted, a quoted path with spaces, $CARGO, "${CARGO:-cargo}",
 # $(CARGO), $$CARGO, $(command -v cargo)), with only global flags after it, runs an upload:
 # publish, ws/workspaces publish, release or smart-release, or a subcommand it takes from a
 # variable ("$sub", $(SUB)), which could be any of them. So is cargo-release,
@@ -196,10 +196,16 @@ fi
 # pattern's `x)`, then/do/else/if/elif/while/until or a workflow run:), after $( <( >( or an
 # unescaped backtick, inside sh -c "..." or eval, after find's -exec/-execdir; behind VAR=val
 # and a wrapper (env exec time command nohup sudo timeout nice xargs parallel ... make's shell).
-# The apr binary is the one variable let through: "$APR" publish uploads a model (DOOR_APR).
+# The apr binary is the one variable let through: "$APR" publish uploads a model (DOOR_APR),
+# so setting APR or APR_BIN to cargo is a door where it is set (DOOR_APRSET). cargo carried
+# into APR through another variable (APR=$X) is run-time data, which no line scan reads.
 # An upload stored for later is a door where it is stored: a shell or make variable whose
 # value starts with one (X="cargo publish", UP := $(CARGO) publish, cmd=(cargo publish)) or an
 # alias of one.
+# The shell drops quotes and backslashes inside a word, so cargo "publish", cargo pub""lish and
+# cargo \publish all run publish: door_keep matches each command as written and again with the
+# quotes removed ($'...' and $"..." too) and a backslash before a letter, digit, _ or - dropped,
+# and prints it as written. An escaped \` or \$ keeps its backslash: it is not a substitution.
 # The case table is the pattern's spec: re-run it, never re-read the pattern.
 DOOR_PRE='[[:space:]]*(([(!{`@+-]|case[[:space:]].*[[:space:]]in|[^[:space:]()]+\)|then|do|else|if|elif|while|until|run:)[[:space:]]*)*'
 DOOR_MID='(.*(\$\(|[<>]\(|[^\\]`|-c[[:space:]]+["'"'"']|[[:space:]]-exec(dir)?[[:space:]]+)|(.*[^A-Za-z0-9_-])?eval[[:space:]]+["'"'"']?)[[:space:]]*'
@@ -208,7 +214,7 @@ DOOR_WRAP='((env|exec|time|command|builtin|nohup|sudo|timeout|nice|ionice|stdbuf
 DOOR_ASSIGN='([A-Za-z_][A-Za-z0-9_]*=([^[:space:]$]|\$[^(]|\$\([^)[:space:]]*\))*[[:space:]]+)*'
 DOOR_VAL='(.*[^A-Za-z0-9_.-])?[A-Za-z_][A-Za-z0-9_.-]*[[:space:]]*(::|:|\?|\+|!)?=[[:space:]]*[("'"'"']*[[:space:]]*'
 DOOR_PATH='([^[:space:]"'"'"'=;&|]*/)?'
-DOOR_CARGO='(["'"'"'\\]?'"$DOOR_PATH"'cargo["'"'"']?|"?\$?\$(CARGO[A-Za-z0-9_]*|\{CARGO[A-Za-z0-9_]*(:?[-=+?][^}]*)?\})"?|\$\(CARGO\)|"?(\$\(|`)(command[[:space:]]+-v|which|type[[:space:]]+-[pP])[[:space:]]+cargo(\)|`)"?)'
+DOOR_CARGO='("[^"]*/cargo"|'"'"'[^'"'"']*/cargo'"'"'|["'"'"'\\]?'"$DOOR_PATH"'cargo["'"'"']?|"?\$?\$(CARGO[A-Za-z0-9_]*|\{CARGO[A-Za-z0-9_]*(:?[-=+?][^}]*)?\})"?|\$\(CARGO\)|"?(\$\(|`)(command[[:space:]]+-v|which|type[[:space:]]+-[pP])[[:space:]]+cargo(\)|`)"?)'
 # A braced ${...} ends at its } and must have one: in X="${2:-stack release}" the variable is
 # the whole ${...}, so no `release` follows it.
 DOOR_VAR='("?\$?\$([A-Za-z_][A-Za-z0-9_]*|[0-9@*]|\{([A-Za-z_][A-Za-z0-9_]*|[0-9@*])(:?[-=+?][^}]*)?\})"?|\$\([A-Za-z_][A-Za-z0-9_]*\))'
@@ -219,7 +225,8 @@ DOOR_SUB='(publish|(ws|workspaces)[[:space:]]+publish|release|smart-release)([[:
 DOOR_VFLAG='([[:space:]]+(\+[^[:space:]]+|-[qv]+|--(locked|frozen|offline|quiet|verbose)|--[a-z][a-z-]*=[^[:space:]]*|(-Z|-C|--config|--color)[[:space:]]+[^[:space:]]+))*'
 DOOR_TOOL="${DOOR_PATH}"'cargo-(release|smart-release|workspaces|ws)([[:space:]"'"'"']|$)'
 DOOR_UP="(${DOOR_CARGO}(${DOOR_GFLAG}[[:space:]]+${DOOR_SUB}|${DOOR_VFLAG}[[:space:]]+\"?\\\$)|${DOOR_VAR}${DOOR_GFLAG}[[:space:]]+${DOOR_SUB}|${DOOR_TOOL})"
-DOOR_RE="^[^:]*:[0-9]+:((${DOOR_PRE}|${DOOR_MID})${DOOR_WRAP}${DOOR_ASSIGN}|${DOOR_VAL})${DOOR_UP}"
+DOOR_APRSET='(.*[^A-Za-z0-9_.-])?APR(_BIN)?[[:space:]]*(::|:|\?|\+|!)?=[[:space:]]*[("'"'"']*[[:space:]]*'"${DOOR_CARGO}"'([[:space:]"'"'"');]|$)'
+DOOR_RE="^[^:]*:[0-9]+:(((${DOOR_PRE}|${DOOR_MID})${DOOR_WRAP}${DOOR_ASSIGN}|${DOOR_VAL})${DOOR_UP}|${DOOR_APRSET})"
 DOOR_DRY='(^|[[:space:]])["'"'"']?--dry-run["'"'"']?([[:space:]]|$)'
 # "$APR" and "$APR_BIN" are the pinned apr binary (scripts/apr_bin.sh): its publish uploads a
 # model to Hugging Face, not a crate. Only a command that starts with one is let through.
@@ -247,7 +254,18 @@ door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
     END { if (buf != "") emit(pf, start, buf) }
   ' "$@"
 }
-door_keep() { grep -E "$DOOR_RE" | grep -vE "$DOOR_DRY" | grep -vE "$DOOR_APR"; }
+door_unquote() { sed -e 's/[$]["'"'"']/'"'"'/g' -e 's/\\\([A-Za-z0-9_-]\)/\1/g' -e 's/["'"'"']//g'; }
+door_keep() { # a row matched as written or unquoted; --dry-run and $APR judged as written
+  local t n out=""
+  t=$(mktemp "$WORK/keep.XXXXXX") || return 2
+  cat > "$t"
+  n=$( { grep -nE "$DOOR_RE" "$t"; door_unquote < "$t" | grep -nE "$DOOR_RE"; } | cut -d: -f1 | sort -un)
+  if [ -n "$n" ]; then
+    out=$(printf '%s\n' "$n" | awk 'NR == FNR { k[$1]; next } FNR in k' - "$t" | grep -vE "$DOOR_DRY" | grep -vE "$DOOR_APR")
+  fi
+  rm -f "${t:?}"
+  [ -n "$out" ] && printf '%s\n' "$out"
+}
 door_lines() { door_cmds "$@" | door_keep; }
 cases_n=0 cases_ok=0
 door_case() { # door_case door|none TEXT (TEXT may span lines)
@@ -379,6 +397,39 @@ door_case none $'"$APR_BIN" publish \\\n    "$DIR" "$ID"'
 door_case door '"$APRX" publish -p x'
 door_case door '$APR_BIN2 publish -p x'
 door_case door '"$APR" publish x && cargo publish -p y'
+door_case door '"$APR" "publish" x'
+door_case door 'APR=cargo'
+door_case door 'export APR_BIN="$HOME/.cargo/bin/cargo"'
+door_case door 'APR=${CARGO:-cargo} bash x.sh'
+door_case door 'local APR=$(command -v cargo)'
+door_case door 'APR := cargo'
+door_case door "APR='cargo'; \"\$APR\" publish -p x"
+door_case none 'APR="$root/target/release/apr"'
+door_case none 'APR="${CARGO_HOME:-$HOME/.cargo}/bin/apr"'
+door_case none 'APR=$CARGO_TARGET_DIR/release/apr'
+door_case none 'APR_CARGO=1'
+door_case none 'APR="$(cargo metadata --format-version 1 | jq -r .target_directory)/release/apr"'
+door_case none 'MY_APR=cargo'
+door_case door 'cargo "publish" -p x'
+door_case door "cargo 'publish' --locked"
+door_case door 'cargo pub""lish -p x'
+door_case door 'cargo \publish -p x'
+door_case door 'cargo pub\lish -p x'
+door_case door "cargo \$'publish' -p x"
+door_case door "\"\$C\" \$'publish' -p x"
+door_case door '"cargo" "ws" "publish"'
+door_case door 'X="cargo" "publish"'
+door_case none 'cargo "publish" -p x --dry-run'
+door_case none "cargo 'publish' -p x '--dry-run'"
+door_case none 'echo "cargo publish"'
+door_case none "grep -q 'cargo publish' notes.md"
+door_case none 'cargo "build" -p x'
+door_case door '"/opt/my tools/cargo" publish -p x'
+door_case door "'/opt/my tools/cargo' publish -p x"
+door_case door 'APR="/opt/my tools/cargo"'
+door_case none '"/opt/my tools/cargo" build -p x'
+door_case none 'echo "see /opt/cargo" publish'
+door_case none 'echo "because \`cargo publish -p x\` failed"'
 door_case door 'X=1 "$C" publish -p x'
 door_case none 'cargo publish -p x 2>&1 --dry-run'
 door_case none 'cargo publish -p x --dry-run &> log'
