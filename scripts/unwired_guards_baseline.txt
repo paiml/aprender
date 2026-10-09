@@ -12,7 +12,7 @@ check_mcp_never_path_resolves_apr.sh
 # declared in Cargo.toml [package.metadata.dogfood] is wired by the release dogfood.
 check_pr_review_receipt.sh
 # ^ NOT dark: check_pr_review_arm4.sh runs it with a receipt path (A3 on a scratch
-#   receipt, A4 on the PR's own), and pr-review-quorum.yml runs arm4 on every
-#   pull_request_target and merge_group. Ledgered only because this meta-guard
+#   receipt, A4 on the PR's own), and pr-review-quorum.yml runs arm4 nightly on
+#   every PR that merged (#4602). Ledgered only because this meta-guard
 #   counts a DIRECT workflow invocation, and a bare run is RED by design (S6.3:
 #   a run over zero receipts is not a pass). Found by aprender-62 on #3646.

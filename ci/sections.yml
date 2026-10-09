@@ -2659,9 +2659,10 @@ jobs:
   #     derived universe (`git ls-files 'scripts/check_*.sh'`, BSE-001 PR-A) runs
   #     them in `guard-tree`, which `gate` needs. Adding a guard never edits this
   #     file, and removing this job does not un-wire them.
-  #   * the PR's own receipt is judged from the BASE by pr-review-quorum.yml
-  #     (`pull_request_target` + `merge_group`), which invokes
-  #     check_pr_review_arm4.sh itself and consumed nothing from this job.
+  #   * the receipts of merged PRs are judged once a night from the BASE by
+  #     pr-review-quorum.yml (`schedule`; #4602 took it off the PR and the
+  #     queue), which invokes check_pr_review_arm4.sh through
+  #     review_receipts_nightly.sh and consumed nothing from this job.
   #
   # WHAT NO LONGER RUNS IN CI, stated rather than discovered later: the two
   # mutation sweeps `scripts/mutate-guard.sh` (Arm 3) and
@@ -2964,7 +2965,9 @@ jobs:
   # judged a PR's own receipt was editable by that PR. `pull_request_target`
   # runs the base's definition. `gate` below no longer waits on it; the
   # ruleset decides whether `pr-review-quorum / present` is required (recorded
-  # in the C0-5 PR body, never applied by the session that wrote this).
+  # in the C0-5 PR body, never applied by the session that wrote this). It is
+  # not required, so since #4602 it runs on no PR at all: once a night, on
+  # `schedule`, over the PRs that merged.
 
   # ==========================================================================
   # ADVISORY GPU JOBS AT PR TIME

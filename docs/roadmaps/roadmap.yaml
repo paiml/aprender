@@ -18465,6 +18465,7 @@ roadmap:
 - id: GH-4688
   github_issue: 4688
   item_type: task
+  kind: code
   title: '0.70.2 T13: BLD-002 R9 one list in code of what merge, tag and publish require'
   status: inprogress
   priority: medium

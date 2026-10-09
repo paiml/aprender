@@ -18,55 +18,60 @@
 # `skipped` and passes. This is the phantom-required-check deadlock's twin —
 # not a check nothing runs, but a check whose verdict the subject controls.
 #
-# THE FIX (PRQ-013)
-# ------------------
-# The job that invokes `check_pr_review_arm4.sh` (without `--self-test` — the
-# "this PR's own receipt" line, not the case-table run) must live in its OWN
-# workflow, triggered by `pull_request_target` (base-defined: GitHub reads a
-# `pull_request_target` workflow from the DEFAULT branch, regardless of what
-# the PR's head carries), and must NOT also be triggered by `pull_request`
-# (which would reintroduce the head-defined reading for the same job), nor by
-# `merge_group`. The job is not a required context, so a queue run of it cannot
-# block a merge, and a check that cannot block a merge does not run on the
-# merge-queue path (#4688: 8 of 30 queue runs failed, 2026-10-06..09, and all
-# 8 PRs merged). If it becomes a required context, `merge_group` returns with
-# it and this rule flips back. `gate`, in turn, must not `needs:` that job, nor
-# any job literally named `pr-review-present` — a `needs:` entry only resolves
-# within the SAME workflow file, so `gate` depending on a base-owned job in a
-# DIFFERENT file is structurally impossible; the only way `gate` can end up
-# waiting on a head-defined receipt job is by keeping one, under either name,
-# inside ci.yml itself.
+# THE FIX (PRQ-013), AND WHERE THE JUDGEMENT RUNS NOW (#4602, #4688)
+# ------------------------------------------------------------------
+# The receipt judgement must live in its OWN workflow, defined by the DEFAULT
+# branch and never by a PR's head, and `gate` must not `needs:` it. From
+# 2026-09-05 that workflow ran on `pull_request_target` (base-defined). But the
+# job is not a required context, so its red never stopped a merge: measured
+# 2026-10-06..09, 8 of the last 30 merge-queue runs failed and all 8 PRs
+# merged, and #4944 merged with it red on the PR too. A check that cannot block
+# a merge does not run on the PR or merge-queue path. So it now runs once a
+# night, on `schedule` (also base-defined: a scheduled or dispatched run reads
+# the default branch), over the PRs that actually merged
+# (scripts/review_receipts_nightly.sh, which calls check_pr_review_arm4.sh per
+# merged PR). If it is ever made a required context, its PR trigger and
+# `merge_group` come back in that same change and these rules flip with it.
+#
+# `gate`, in turn, must not `needs:` the receipt job, nor any job literally
+# named `pr-review-present` — a `needs:` entry only resolves within the SAME
+# workflow file, so `gate` depending on a base-owned job in a DIFFERENT file is
+# structurally impossible; the only way `gate` can end up waiting on a
+# head-defined receipt job is by keeping one, under either name, inside ci.yml
+# itself.
 #
 # THE FOUR RULES (each independently falsifiable; B-for-"base-owned")
 #
-#   B1  exactly ONE workflow under .github/workflows/*.yml invokes
-#       check_pr_review_arm4.sh WITHOUT --self-test on a non-comment `run:`
-#       line — the "this PR's own receipt" invocation. Zero means the receipt
-#       is judged nowhere (theater); two or more means two definitions to keep
-#       in step, and today's defect (ci.yml carries it TWICE — once in
-#       `pr-review-receipt`, a shadow job with no `needs:` weight, and again in
-#       `pr-review-present`, which `gate` depends on) is exactly this shape.
-#       `--self-test` invocations (the case-table run) do not count and may
-#       live anywhere.
+#   B1  exactly ONE (workflow, job) under .github/workflows/*.yml runs the
+#       receipt judgement on a non-comment line: an invocation of
+#       review_receipts_nightly.sh or of check_pr_review_arm4.sh that is not
+#       `--self-test` (the case-table run) or `--seven-nights` (the LAB stop's
+#       arithmetic). Zero means the receipt is judged nowhere (theater); two or
+#       more means two definitions to keep in step, and the pre-PRQ-013 defect
+#       (ci.yml carried it TWICE — once in `pr-review-receipt`, a shadow job
+#       with no `needs:` weight, and again in `pr-review-present`, which `gate`
+#       depended on) is exactly that shape. So is a PR-path job that calls
+#       check_pr_review_arm4.sh next to the nightly one.
 #
-#   B2  that workflow's top-level `on:` declares `pull_request_target`, and
-#       declares NEITHER `pull_request` NOR `merge_group`. Parsed in its
-#       two YAML spellings — a mapping under `on:` and a flow list
+#   B2  that workflow's top-level `on:` declares `schedule`, and declares none
+#       of `pull_request`, `pull_request_target` and `merge_group`. Parsed in
+#       its two YAML spellings — a mapping under `on:` and a flow list
 #       `on: [a, b]` — anything else is refused, never guessed.
 #
 #   B3  in .github/workflows/ci.yml, the job named `gate` needs: NO job which
-#       (a) is itself named `pr-review-present`, or (b) invokes
-#       check_pr_review_arm4.sh without --self-test. `needs:` cannot name a
-#       job in another file, so this rule only ever fires against a job
-#       ci.yml still carries internally — which is today's defect.
+#       (a) is itself named `pr-review-present`, or (b) runs the receipt
+#       judgement (B1's definition). `needs:` cannot name a job in another
+#       file, so this rule only ever fires against a job ci.yml carries
+#       internally.
 #
-#   B4  the invoking job (identified by B1) carries a JOB-level `if:` (4-space
+#   B4  the judging job (identified by B1) carries a JOB-level `if:` (4-space
 #       indent under the job key — the same convention check_pr_review_wiring.sh
-#       uses for R3/R4) that evaluates TRUE on `pull_request_target`, and
-#       FALSE on `merge_group`, `push` and `workflow_dispatch`. A missing
-#       job-level `if:` is a FAIL; the evaluator understands only a
-#       disjunction of `github.event_name == '<literal>'` and refuses anything
-#       else rather than guess.
+#       uses for R3/R4) that evaluates TRUE on `schedule` and
+#       `workflow_dispatch`, and FALSE on `pull_request`, `pull_request_target`,
+#       `merge_group` and `push`. A missing job-level `if:` is a FAIL; the
+#       evaluator understands only a disjunction of
+#       `github.event_name == '<literal>'` and refuses anything else rather
+#       than guess.
 #
 #   bash scripts/check_receipt_gate_base_owned.sh              # check
 #   bash scripts/check_receipt_gate_base_owned.sh --self-test  # case table
@@ -87,20 +92,20 @@ PROG=${0##*/}
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOWS_DIR="${RECEIPT_GATE_WORKFLOWS_DIR:-$REPO_ROOT/.github/workflows}"
 
-GUARD_BASENAME='check_pr_review_arm4.sh'
+GUARD_BASENAME='the receipt judgement (review_receipts_nightly.sh or check_pr_review_arm4.sh)'
 # Same invocation shape check_pr_review_wiring.sh uses: a MENTION (a trailing
 # `#` comment) is not an invocation, so comments are stripped from the first
 # `#` before matching. `[.]` and not `\.` — a dynamic-regex `\.` warns on some
 # awk builds, and a warning scrolling past a guard's own diagnostics is how a
 # real one gets missed.
-GUARD_RE="(^|[[:space:];&|(])((ba)?sh[[:space:]]+|[.]/)?[^[:space:]]*check_pr_review_arm4[.]sh([[:space:]]|\$|['\"])"
+GUARD_RE="(^|[[:space:];&|(])((ba)?sh[[:space:]]+|[.]/)?[^[:space:]]*(review_receipts_nightly|check_pr_review_arm4)[.]sh([[:space:]]|\$|['\"])"
 
-EVENTS_TRUE='pull_request_target'
-EVENTS_FALSE='merge_group push workflow_dispatch'
+EVENTS_TRUE='schedule workflow_dispatch'
+EVENTS_FALSE='pull_request pull_request_target merge_group push'
 
 # ---------------------------------------------------------------------------
 # invocation_loci <dir> — one "<file>:<job>" line per (file, job) whose steps
-# invoke check_pr_review_arm4.sh WITHOUT --self-test on a non-comment `run:`
+# run the receipt judgement (B1: not --self-test, not --seven-nights) on a non-comment
 # line, across every *.yml/*.yaml directly inside <dir>. Prints nothing when
 # there are none.
 # ---------------------------------------------------------------------------
@@ -115,7 +120,7 @@ invocation_loci() {
             /^  [A-Za-z0-9_-]+:/   { job = $0; sub(/^  /, "", job); sub(/:.*$/, "", job); next }
             {
                 line = $0; sub(/#.*$/, "", line)
-                if (job != "" && line ~ re && line !~ /--self-test/) { print job }
+                if (job != "" && line ~ re && line !~ /--self-test/ && line !~ /--seven-nights/) { print job }
             }
         ' "$f" | LC_ALL=C sort -u)
         [ -z "$jobs" ] && continue
@@ -285,22 +290,24 @@ check_b2() {
         return 1
     fi
     events=" $(printf '%s' "$events" | tr '\n' ' ') "
-    if [[ "$events" != *" pull_request_target "* ]]; then
-        printf 'FAIL B2: %s does not declare `pull_request_target` in its top-level `on:`.\n' "$(basename "$f")"
-        return 1
-    fi
-    if [[ "$events" == *" merge_group "* ]]; then
-        printf 'FAIL B2: %s declares `merge_group` in its top-level `on:`. The job is\n' "$(basename "$f")"
-        printf '        not a required context, so a queue run cannot block a merge, and a\n'
-        printf '        check that cannot block does not run on the merge-queue path.\n'
-        return 1
-    fi
     if [[ "$events" == *" pull_request "* ]]; then
-        printf 'FAIL B2: %s ALSO declares `pull_request` — that reintroduces the\n' "$(basename "$f")"
-        printf '        head-defined reading for the same job (PRQ-013).\n'
+        printf 'FAIL B2: %s declares `pull_request` — that reintroduces the head-defined\n' "$(basename "$f")"
+        printf '        reading for the same job (PRQ-013).\n'
         return 1
     fi
-    printf 'ok  B2  %s declares pull_request_target, neither pull_request nor merge_group\n' "$(basename "$f")"
+    if [[ "$events" == *" pull_request_target "* || "$events" == *" merge_group "* ]]; then
+        printf 'FAIL B2: %s declares `pull_request_target` or `merge_group` in its\n' "$(basename "$f")"
+        printf '        top-level `on:`. The job is not a required context, so its red cannot\n'
+        printf '        block a merge, and a check that cannot block does not run on the PR or\n'
+        printf '        merge-queue path. It runs on `schedule`, over what merged.\n'
+        return 1
+    fi
+    if [[ "$events" != *" schedule "* ]]; then
+        printf 'FAIL B2: %s does not declare `schedule` in its top-level `on:`, so\n' "$(basename "$f")"
+        printf '        nothing runs the nightly receipt judgement.\n'
+        return 1
+    fi
+    printf 'ok  B2  %s declares schedule, and none of pull_request, pull_request_target, merge_group\n' "$(basename "$f")"
     return 0
 }
 
@@ -369,10 +376,10 @@ check_b4() {
         eval_if "$ifexpr" "$ev"
         case $? in
             1) printf 'ok  B4  %-20s -> skipped\n' "$ev" ;;
-            0) if [ "$ev" = merge_group ]; then
-                   printf 'FAIL B4: merge_group -> runs. A check that cannot block a merge does not run in the queue.\n'
+            0) if [ "$ev" = push ]; then
+                   printf 'FAIL B4: push -> runs. The receipts are judged once a night over what merged.\n'
                else
-                   printf 'FAIL B4: %s -> runs. There is no PR to judge on this event.\n' "$ev"
+                   printf 'FAIL B4: %s -> runs. A check that cannot block a merge does not run on the PR or merge-queue path.\n' "$ev"
                fi
                rc=1 ;;
             *) printf 'FAIL B4: this guard cannot evaluate `%s`.\n' "$ifexpr"; return 1 ;;
@@ -397,7 +404,7 @@ check_all() {
         check_b4 "$B1_FILE" "$B1_JOB" || rc=1
     fi
     if [ "$rc" -eq 0 ]; then
-        printf 'ok  B1..B4 hold: %s judges the PR'"'"'s own receipt from the base\n' "$(basename "$B1_FILE")"
+        printf 'ok  B1..B4 hold: %s judges merged PRs'"'"' receipts at night, from the base, off the PR and queue path\n' "$(basename "$B1_FILE")"
     fi
     return "$rc"
 }
@@ -434,13 +441,24 @@ if [ "${1:-}" = "--self-test" ]; then
     }
 
     ON_MAP='on:
+  schedule:
+    - cron: 41 2 * * *
+  workflow_dispatch:
+    inputs:
+      since:
+        default: 26 hours ago'
+    JOBIF="    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+    SELFTEST_LINE='      - run: bash scripts/check_pr_review_arm4.sh --self-test
+      - run: bash scripts/review_receipts_nightly.sh --self-test'
+    SEVEN_LINE='      - run: if bash scripts/review_receipts_nightly.sh --seven-nights failure; then echo stop; fi'
+    REAL_LINE='      - run: bash scripts/review_receipts_nightly.sh --since "$SINCE"'
+    # The pre-#4602 wiring: Arm 4 on the PR's own receipt, on pull_request_target.
+    ON_PRT='on:
   pull_request_target:
     branches: [main]
   workflow_dispatch:'
-    ON_FLOW='on: [pull_request_target, workflow_dispatch]'
-    JOBIF="    if: github.event_name == 'pull_request_target'"
-    SELFTEST_LINE='      - run: bash scripts/check_pr_review_arm4.sh --self-test'
-    REAL_LINE='      - run: bash scripts/check_pr_review_arm4.sh'
+    PRT_IF="    if: github.event_name == 'pull_request_target'"
+    ARM4_LINE='      - run: bash scripts/check_pr_review_arm4.sh'
 
     # assert <label> <PASS|FAIL> <dir> <ci_yml_name> [<expected-message-substring>]
     assert() {
@@ -472,68 +490,90 @@ if [ "${1:-}" = "--self-test" ]; then
     # --- control: correctly wired, everything holds -------------------------
     d=$TD/control; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' "$JOBIF" "$SELFTEST_LINE
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" "$SELFTEST_LINE
+$SEVEN_LINE
 $REAL_LINE"
     assert 'a correctly wired pair' PASS "$d" ci.yml
 
     # --- B1 -------------------------------------------------------------------
     d=$TD/b1-zero; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' "$JOBIF" "$SELFTEST_LINE"
-    assert 'B1 zero real invocations' FAIL "$d" ci.yml '0 real invocations'
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" "$SELFTEST_LINE"
+    assert 'B1 --self-test-only invocations do not count' FAIL "$d" ci.yml '0 real invocations'
 
-    d=$TD/b1-two; mkdir -p "$d"
+    d=$TD/b1-seven-only; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' "$JOBIF" "$SELFTEST_LINE
-$REAL_LINE"
-    emit_quorum "$d/pr-review-quorum-2.yml" "$ON_MAP" 'pr-review-present-2' "$JOBIF" "$REAL_LINE"
-    assert 'B1 two workflows both invoke it' FAIL "$d" ci.yml 'places'
-
-    d=$TD/b1-selftest-only; mkdir -p "$d"
-    emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' "$JOBIF" "$SELFTEST_LINE"
-    assert 'B1 a --self-test-only invocation does not count' FAIL "$d" ci.yml '0 real invocations'
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" "$SELFTEST_LINE
+$SEVEN_LINE"
+    assert 'B1 a --seven-nights invocation does not count' FAIL "$d" ci.yml '0 real invocations'
 
     d=$TD/b1-comment; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' "$JOBIF" \
-        '      - run: echo skipped # bash scripts/check_pr_review_arm4.sh'
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" \
+        '      - run: echo skipped # bash scripts/review_receipts_nightly.sh'
     assert 'B1 named only in a trailing comment' FAIL "$d" ci.yml '0 real invocations'
 
-    # --- B2 -------------------------------------------------------------------
-    d=$TD/b2-map; mkdir -p "$d"
+    d=$TD/b1-two; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' "$JOBIF" "$REAL_LINE"
-    assert 'B2 mapping form' PASS "$d" ci.yml
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" "$REAL_LINE"
+    emit_quorum "$d/pr-review-quorum-2.yml" "$ON_MAP" 'present-2' "$JOBIF" "$REAL_LINE"
+    assert 'B1 two workflows both run it' FAIL "$d" ci.yml 'places'
 
+    d=$TD/b1-pr-job-back; mkdir -p "$d"
+    emit_ci "$d/ci.yml" 'ci' ''
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" "$REAL_LINE"
+    emit_quorum "$d/pr-receipt.yml" "$ON_PRT" 'pr-receipt' "$PRT_IF" "$ARM4_LINE"
+    assert 'B1 a PR-path Arm 4 job next to the nightly' FAIL "$d" ci.yml 'places'
+
+    d=$TD/b1-block; mkdir -p "$d"
+    emit_ci "$d/ci.yml" 'ci' ''
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" '      - run: |
+          rc=0
+          bash scripts/review_receipts_nightly.sh --since "$SINCE" > out.md || rc=$?
+          exit "$rc"'
+    assert 'B1 the judgement inside a run: | block' PASS "$d" ci.yml
+
+    # --- B2 -------------------------------------------------------------------
     d=$TD/b2-flow; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_FLOW" 'pr-review-present' "$JOBIF" "$REAL_LINE"
-    assert 'B2 flow-list form' PASS "$d" ci.yml
+    emit_quorum "$d/pr-review-quorum.yml" 'on: [pull_request_target, workflow_dispatch]' 'present' "$JOBIF" "$REAL_LINE"
+    assert 'B2 flow-list form, pull_request_target' FAIL "$d" ci.yml 'declares `pull_request_target` or `merge_group`'
 
-    d=$TD/b2-pullreq; mkdir -p "$d"
+    d=$TD/b2-prt; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" 'on:
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP
   pull_request_target:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:' 'pr-review-present' "$JOBIF" "$REAL_LINE"
-    assert 'B2 pull_request also declared' FAIL "$d" ci.yml 'ALSO declares'
+    branches: [main]" 'present' "$JOBIF" "$REAL_LINE"
+    assert 'B2 pull_request_target declared' FAIL "$d" ci.yml 'declares `pull_request_target` or `merge_group`'
 
     d=$TD/b2-merge; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP
+  merge_group:" 'present' "$JOBIF" "$REAL_LINE"
+    assert 'B2 merge_group declared' FAIL "$d" ci.yml 'declares `pull_request_target` or `merge_group`'
+
+    d=$TD/b2-pullreq; mkdir -p "$d"
+    emit_ci "$d/ci.yml" 'ci' ''
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP
+  pull_request:
+    branches: [main]" 'present' "$JOBIF" "$REAL_LINE"
+    assert 'B2 pull_request declared' FAIL "$d" ci.yml 'declares `pull_request` —'
+
+    d=$TD/b2-no-schedule; mkdir -p "$d"
+    emit_ci "$d/ci.yml" 'ci' ''
     emit_quorum "$d/pr-review-quorum.yml" 'on:
-  pull_request_target:
-    branches: [main]
-  merge_group:
-  workflow_dispatch:' 'pr-review-present' "$JOBIF" "$REAL_LINE"
-    assert 'B2 merge_group declared' FAIL "$d" ci.yml 'declares `merge_group`'
+  workflow_dispatch:' 'present' "$JOBIF" "$REAL_LINE"
+    assert 'B2 no schedule' FAIL "$d" ci.yml 'does not declare `schedule`'
 
     d=$TD/b2-opaque; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" 'on: "pull_request_target"' 'pr-review-present' "$JOBIF" "$REAL_LINE"
+    emit_quorum "$d/pr-review-quorum.yml" 'on: "schedule"' 'present' "$JOBIF" "$REAL_LINE"
     assert 'B2 an on: this guard cannot evaluate' FAIL "$d" ci.yml 'cannot evaluate'
+
+    d=$TD/b2-old-wiring; mkdir -p "$d"
+    emit_ci "$d/ci.yml" 'ci' ''
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_PRT" 'pr-review-present' "$PRT_IF" "$ARM4_LINE"
+    assert 'B2 the pre-#4602 PR wiring' FAIL "$d" ci.yml 'declares `pull_request_target` or `merge_group`'
 
     # --- B3 -------------------------------------------------------------------
     d=$TD/b3-named; mkdir -p "$d"
@@ -543,7 +583,7 @@ $REAL_LINE"
     steps:
       - run: echo hi
 '
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-quorum-job' "$JOBIF" "$REAL_LINE"
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" "$REAL_LINE"
     assert 'B3 gate needs literal pr-review-present' FAIL "$d" ci.yml 'needs `pr-review-present`'
 
     d=$TD/b3-renamed; mkdir -p "$d"
@@ -553,8 +593,18 @@ $REAL_LINE"
     steps:
       - run: bash scripts/check_pr_review_arm4.sh
 '
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-quorum-job' "$JOBIF" "$REAL_LINE"
-    assert 'B3 gate needs a differently-named job that invokes arm4' FAIL "$d" ci.yml 'needs `custom-receipt`'
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" "$REAL_LINE"
+    assert 'B3 gate needs a differently-named job that runs Arm 4' FAIL "$d" ci.yml 'needs `custom-receipt`'
+
+    d=$TD/b3-renamed-nightly; mkdir -p "$d"
+    emit_ci "$d/ci.yml" 'ci, custom-nightly' \
+        '  custom-nightly:
+    runs-on: [self-hosted]
+    steps:
+      - run: bash scripts/review_receipts_nightly.sh
+'
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" "$SELFTEST_LINE"
+    assert 'B3 gate needs a job that runs the nightly judgement' FAIL "$d" ci.yml 'needs `custom-nightly`'
 
     d=$TD/b3-clean; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci, workspace-test' \
@@ -563,36 +613,33 @@ $REAL_LINE"
     steps:
       - run: echo hi
 '
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' "$JOBIF" "$REAL_LINE"
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' "$JOBIF" "$REAL_LINE"
     assert 'B3 a clean gate' PASS "$d" ci.yml
 
     # --- B4 -------------------------------------------------------------------
     d=$TD/b4-noif; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' '' "$REAL_LINE"
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' '' "$REAL_LINE"
     assert 'B4 job has no if:' FAIL "$d" ci.yml 'no JOB-level'
 
-    d=$TD/b4-ok; mkdir -p "$d"
+    d=$TD/b4-schedule-only; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' "$JOBIF" "$REAL_LINE"
-    assert 'B4 correct if: pull_request_target only' PASS "$d" ci.yml
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' \
+        "    if: github.event_name == 'schedule'" "$REAL_LINE"
+    assert 'B4 if: false on workflow_dispatch' FAIL "$d" ci.yml 'workflow_dispatch -> SKIPPED'
 
-    d=$TD/b4-push; mkdir -p "$d"
-    emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' \
-        "    if: github.event_name == 'pull_request_target' || github.event_name == 'push'" "$REAL_LINE"
-    assert 'B4 if: also true on push' FAIL "$d" ci.yml 'runs. There is no PR'
+    for ev in pull_request_target merge_group pull_request push; do
+        d=$TD/b4-$ev; mkdir -p "$d"
+        emit_ci "$d/ci.yml" 'ci' ''
+        emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' \
+            "$JOBIF || github.event_name == '$ev'" "$REAL_LINE"
+        assert "B4 if: also true on $ev" FAIL "$d" ci.yml "FAIL B4: $ev -> runs"
+    done
 
     d=$TD/b4-opaque; mkdir -p "$d"
     emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' '    if: always()' "$REAL_LINE"
+    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'present' '    if: always()' "$REAL_LINE"
     assert 'B4 an if: this guard cannot evaluate' FAIL "$d" ci.yml 'cannot evaluate'
-
-    d=$TD/b4-merge; mkdir -p "$d"
-    emit_ci "$d/ci.yml" 'ci' ''
-    emit_quorum "$d/pr-review-quorum.yml" "$ON_MAP" 'pr-review-present' \
-        "    if: github.event_name == 'pull_request_target' || github.event_name == 'merge_group'" "$REAL_LINE"
-    assert 'B4 if: also true on merge_group' FAIL "$d" ci.yml 'merge_group -> runs'
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED (%s/%s rows)\n' "$((row - fails))" "$row"; exit 1; }
     printf '\nSELF-TEST PASSED (%s/%s rows)\n' "$row" "$row"
@@ -604,13 +651,13 @@ if [ "${1:-}" != "" ]; then
     exit 2
 fi
 
-printf '=== the PR'"'"'s own receipt is judged from the base, not the head (%s) ===\n' "$PROG"
+printf '=== the receipt judgement is base-defined and off the PR and queue path (%s) ===\n' "$PROG"
 printf 'workflows dir: %s\n' "$WORKFLOWS_DIR"
 if check_all "$WORKFLOWS_DIR"; then
     printf 'PASS\n'
     exit 0
 fi
-printf '\nPRQ-013: the job that invokes check_pr_review_arm4.sh (without --self-test)\n'
-printf 'must live in a workflow triggered by pull_request_target, never pull_request\n'
-printf 'or merge_group; `gate` must not needs: a head-defined receipt job.\n'
+printf '\nPRQ-013, #4602: the receipt judgement runs in ONE workflow triggered by schedule,\n'
+printf 'never by pull_request, pull_request_target or merge_group (it cannot block a\n'
+printf 'merge); `gate` must not needs: a receipt job.\n'
 exit 1
