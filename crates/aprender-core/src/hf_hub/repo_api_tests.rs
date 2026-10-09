@@ -3,7 +3,7 @@
 
 use super::*;
 use std::io::{BufRead, BufReader, Write as _};
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, TcpListener};
 use std::sync::mpsc;
 
 const TOKEN: &str = "hf_secret_test_token";
@@ -20,11 +20,11 @@ struct Seen {
     body: Vec<u8>,
 }
 
-/// A fake Hub on 127.0.0.1 that answers `replies` in order, one per
+/// A fake Hub on the loopback address that answers `replies` in order, one per
 /// connection, and hands back what it received. `{base}` in a reply body or
 /// header is replaced by the server's own base URL.
 fn fake_hub(replies: Vec<Reply>) -> (String, mpsc::Receiver<Seen>) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
     let (tx, rx) = mpsc::channel();
     let b = base.clone();
@@ -354,7 +354,7 @@ fn errors_name_the_path_never_the_token_or_the_signature() {
         api.commit("main", "s", &[])
             .expect_err("no oid")
             .to_string(),
-        RepoApi::new("http://127.0.0.1:9", "org/m", TOKEN)
+        RepoApi::new(&format!("http://{}:9", Ipv4Addr::LOCALHOST), "org/m", TOKEN)
             .tree("main")
             .expect_err("refused")
             .to_string(),
