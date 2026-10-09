@@ -569,7 +569,7 @@ fn sibling_tokenizer_config(model_path: &std::path::Path) -> Option<String> {
 /// The formatted prompt leaves a `<think>` block open: the model's first tokens would be its
 /// reasoning (#3793, `SchemaWithThinking`). Keyed on what the SELECTED template produced, so
 /// apr's default Qwen3 no-think template, which prefills a closed block, passes.
-fn prompt_opens_thinking(formatted_prompt: &str) -> bool {
+pub(crate) fn prompt_opens_thinking(formatted_prompt: &str) -> bool {
     match (
         formatted_prompt.rfind("<think>"),
         formatted_prompt.rfind("</think>"),

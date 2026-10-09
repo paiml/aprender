@@ -224,6 +224,14 @@ pub(crate) async fn safetensors_chat_completions_handler(
     use axum::response::{sse::Event, IntoResponse, Sse};
     use futures_util::stream;
 
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) = super::response_format::refuse_response_format(
+        &request,
+        super::response_format::SAFETENSORS_CPU,
+    ) {
+        return refusal;
+    }
+
     // Parse request - try structured first, fallback to raw JSON (GH-160)
     let parsed_request = match parse_chat_completion_request(&request) {
         Ok(req) => req,

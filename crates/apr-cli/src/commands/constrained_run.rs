@@ -2,14 +2,17 @@
 //! loads, every refusal named in one line, and a SECOND READER.
 //!
 //! The engine masks each step so the output can only be what the schema allows. That is one
-//! reader. The finished text is then checked again by `jsonschema`, a validator that shares
-//! nothing with the engine, before `apr run` exits 0. Masking is one reader; this is the
-//! other. A Lark grammar has no second reader: nothing independent of the engine parses Lark
-//! in this tree, and saying so is better than pretending one ran.
+//! reader. The finished text is then checked again by `realizar::constrain::second_reader`
+//! (`jsonschema`, which shares nothing with the engine and fetches nothing), before `apr run`
+//! exits 0. Masking is one reader; this is the other, the same one `apr serve` runs. A Lark
+//! grammar has no second reader: nothing independent of the engine parses Lark in this tree,
+//! and saying so is better than pretending one ran.
 
 use crate::commands::run::ConstraintArgs;
 use crate::error::{CliError, ConstraintRefusal, Result};
-use realizar::constrain::{load_grammar, load_schema, ConstraintError, ConstraintRequest};
+use realizar::constrain::{
+    check_schema, load_grammar, load_schema, second_reader, ConstraintError, ConstraintRequest,
+};
 use realizar::infer::run_report::FinishReason;
 
 /// What removes a `SchemaUnsupported` refusal: the engine (llguidance 1.8.0) cannot enforce the
@@ -31,11 +34,7 @@ pub(crate) fn constraint_request(args: &ConstraintArgs) -> Result<Option<Constra
             let schema = load_schema(schema).map_err(refused)?;
             // The second reader compiles the schema now: one it cannot read (`{"type": 12}`) is
             // malformed, refused before the model loads, never named SchemaUnsupported after it
-            jsonschema::validator_for(&schema).map_err(|e| {
-                refused(ConstraintError::SchemaInvalid(format!(
-                    "the schema is not a valid JSON Schema: {e}"
-                )))
-            })?;
+            check_schema(&schema).map_err(refused)?;
             ConstraintRequest::JsonSchema(schema)
         }
         (None, Some(grammar)) => ConstraintRequest::Lark(load_grammar(grammar).map_err(refused)?),
@@ -107,9 +106,9 @@ pub(crate) fn constraint_verdict(
             &ConstraintError::Violation("the output is empty".to_string()),
         )),
         Some(FinishReason::ConstraintComplete) => match request {
-            ConstraintRequest::JsonSchema(schema) => second_reader(schema, text)
-                .err()
-                .map(|why| refusal_of(&ConstraintError::Violation(why))),
+            ConstraintRequest::JsonSchema(schema) => {
+                second_reader(schema, text).err().map(|e| refusal_of(&e))
+            }
             ConstraintRequest::Lark(_) => None,
         },
         // A constrained loop reports only the two above; anything else is not a finished
@@ -118,33 +117,6 @@ pub(crate) fn constraint_verdict(
             "the constrained loop ended with finish_reason {:?}, not a complete document",
             other.map(FinishReason::as_str)
         )))),
-    }
-}
-
-/// Validate `text` against `schema` with `jsonschema`, which shares nothing with the engine.
-///
-/// # Errors
-/// Why the text is not a conforming document: not JSON, or the first validation errors.
-pub(crate) fn second_reader(
-    schema: &serde_json::Value,
-    text: &str,
-) -> std::result::Result<(), String> {
-    let doc: serde_json::Value = serde_json::from_str(text)
-        .map_err(|e| format!("the output is not one JSON document: {e}"))?;
-    let validator = jsonschema::validator_for(schema)
-        .map_err(|e| format!("the second reader cannot compile the schema: {e}"))?;
-    let errors: Vec<String> = validator
-        .iter_errors(&doc)
-        .take(3)
-        .map(|e| format!("{e} (at {})", e.instance_path))
-        .collect();
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "the output fails the schema in a validator independent of the engine: {}",
-            errors.join("; ")
-        ))
     }
 }
 

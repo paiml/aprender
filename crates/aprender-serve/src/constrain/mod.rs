@@ -20,7 +20,8 @@
 //! nothing about them (rmedia, #3716).
 //!
 //! This module has no generation loop in it. It is the trait, the refusals,
-//! the schema source, and the vocabulary the engine needs (each token's RAW
+//! the schema source, the second reader that checks a finished document
+//! independently of the engine, and the vocabulary the engine needs (each token's RAW
 //! BYTES, from the same per-token decoding `GGUFModel::decode` uses, so the mask
 //! and the decoded text can never disagree about what a token is).
 
@@ -30,6 +31,30 @@ use std::fmt;
 mod llg;
 #[cfg(feature = "structured-output")]
 pub use llg::{LlgConstraint, LlgEnv};
+#[cfg(feature = "structured-output")]
+mod second_reader;
+#[cfg(feature = "structured-output")]
+pub use second_reader::{check_schema, second_reader};
+
+/// Without `structured-output` there is no second reader either: refused by name.
+///
+/// # Errors
+/// Always [`ConstraintError::NotCompiled`].
+#[cfg(not(feature = "structured-output"))]
+pub fn check_schema(schema: &serde_json::Value) -> Result<(), ConstraintError> {
+    let _ = schema;
+    Err(ConstraintError::NotCompiled)
+}
+
+/// Without `structured-output` there is no second reader either: refused by name.
+///
+/// # Errors
+/// Always [`ConstraintError::NotCompiled`].
+#[cfg(not(feature = "structured-output"))]
+pub fn second_reader(schema: &serde_json::Value, text: &str) -> Result<(), ConstraintError> {
+    let _ = (schema, text);
+    Err(ConstraintError::NotCompiled)
+}
 
 /// What every constrained generation loop calls, once per generated token.
 pub trait TokenConstraint: Send {
@@ -45,6 +70,11 @@ pub trait TokenConstraint: Send {
     /// The output so far is a complete document: end-of-sequence is allowed here.
     fn is_complete(&mut self) -> bool;
 }
+
+/// What removes a `SchemaUnsupportedPath` refusal on a serving loop that applies no
+/// constraint and is not one of #3568's four PRs: the realizar router's other backends and
+/// apr-cli's own servers answer with this one line, so a client reads one reason everywhere.
+pub const OUTSIDE_3568: &str = "not scheduled: this backend's loop is outside #3568's four PRs";
 
 /// Every way a constrained generation refuses, by name (#3568: "refused in one line").
 #[derive(Debug, Clone, PartialEq, Eq)]
