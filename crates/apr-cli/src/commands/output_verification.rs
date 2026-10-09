@@ -1055,6 +1055,7 @@ fn run_golden_output_gate_runtime(
 /// pass message's ON-leg clause (empty when the model has no thinking-on case), and
 /// `Err(failed)` ends the gate. Extracted from `run_golden_output_gate_runtime` unchanged,
 /// to keep that function under the complexity ratchet.
+#[cfg(feature = "inference")]
 fn runtime_thinking_on_leg(
     path: &Path,
     architecture: Option<&str>,
