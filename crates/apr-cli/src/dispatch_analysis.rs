@@ -942,6 +942,19 @@ fn dispatch_model_command(command: &ModelCommands, cli: &Cli) -> std::result::Re
             state,
             *json || cli.json,
         ),
+        ModelCommands::SpeedGate {
+            ledger,
+            tags,
+            cells,
+            rows,
+            llama_pin,
+        } => commands::speed_gate_cli::run(
+            ledger,
+            &tags.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            &cells.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            *rows,
+            llama_pin.as_deref(),
+        ),
         ModelCommands::Pack {
             model,
             line,
