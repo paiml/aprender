@@ -273,10 +273,9 @@ jobs:
   guards:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
-    # arch-neutral, on the runners that carry the `guards` label: every X64 clean-room
-    # runner and one ARM64 one, so this job never holds more than one of the ARM64
-    # clean-room runners a release pass needs.
-    runs-on: [self-hosted, Linux, clean-room, guards]
+    # arch-neutral: any clean-room runner, X64 or ARM64. One job per CI run, so it holds
+    # one runner. The ARM64 clean-room runners (four on 2026-10-09) also serve this job.
+    runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 90
     # The permissions these five sections ran under inside x86-main, unchanged.
     permissions: write-all
