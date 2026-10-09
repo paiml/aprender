@@ -292,6 +292,10 @@ falsification_tests: []
     #[path = "validator_tests_ext_crux_coverage.rs"]
     mod ext_crux_coverage;
 
+    /// EXT-24 (aprender#4406): the CRUX bind receipt pins every EXT-001 section 10 arm.
+    #[path = "validator_tests_ext_crux_bind.rs"]
+    mod ext_crux_bind;
+
     /// PMAT-3091: `applies_to: not_applicable` + `na_reason`/`na_owner` (SCHEMA-021..023).
     #[path = "validator_tests_na.rs"]
     mod na;

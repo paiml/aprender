@@ -1,0 +1,104 @@
+{
+  "schema": "ext-crux-bind-receipt-v1",
+  "row": "EXT-24",
+  "ticket": "PMAT-4406",
+  "issue": "paiml/aprender#4406",
+  "worker": "aprender-df",
+  "spec": {"repo": "paiml/infra", "path": "docs/specifications/EXT-001-dogfood-model-lifecycle.md", "sha256_prefix": "a47a6c0386da", "section": "10"},
+  "stamp": {
+    "host": "noah-Lambda-Vector",
+    "boot_id": "bddb62a6-6bd7-4813-bbe0-a103ffe342f6",
+    "tree": "origin/ext/epic-4381 011282e3e5a241115ebc8394c35ca4143897d026",
+    "worktree": "/mnt/nvme-raid0/worktrees/df-ext24",
+    "time_utc": "2026-09-25T15:00Z..17:40Z",
+    "pins_read_utc": "2026-09-25T15:04Z..15:10Z"
+  },
+  "pin_sources": {
+    "hf": "GET https://huggingface.co/api/models/<repo>?blobs=true (sha = revision, siblings[].lfs.sha256 = file sha256)",
+    "ollama": "GET https://registry.ollama.ai/v2/library/qwen3.5/manifests/4b; manifest_sha256 = sha256 of the body",
+    "containers": "registry manifest digest for the named tag",
+    "pypi": "GET https://pypi.org/pypi/<pkg>/<ver>/json, digests.sha256 of the named wheel",
+    "git": "git ls-remote / tag object resolved to the commit"
+  },
+  "category_enum": {
+    "closed": false,
+    "owner": "none: metadata.category is not modeled in crates/aprender-contracts/src/schema (Contract is not deny_unknown_fields, serde drops it); the only writer is the generator scripts/crux_scaffold_contracts.py CATEGORY_NAMES",
+    "enumeration": "crates/aprender-contracts/src/schema/validator_tests_ext_crux_bind.rs recomputes letter -> names from the live contracts/crux-*.yaml through parse_contract (parser.rs:15) plus the raw metadata.category; `pmat query \"parse contract\"` returned no indexed hit in 100 s, so the loader was bound by its signature",
+    "drift": "several letters carry more than one name (e.g. J: generator 'Vision-Language (OpenCLIP/OpenCLAW)' vs files 'OpenCLAW Agent Orchestration'); the test lists them",
+    "competitor_list": "CRUX_COMPETITORS (validator.rs, CRUX-002) is the only closed vocabulary; EXT-25 (017266a5f) added mlflow, qwen, unsloth",
+    "action": "no enum to fork; category P added by EXT-25 in the generator's letter scheme"
+  },
+  "matrix": [
+    {"surface": "C1", "name": "model-artifact", "contracts": ["crux-P-01-v1.yaml"]},
+    {"surface": "C2", "name": "inference", "contracts": [], "extends": ["crux-E-16-v1.yaml", "crux-C-27-v1.yaml"]},
+    {"surface": "C3", "name": "training", "contracts": ["crux-P-02-v1.yaml"]},
+    {"surface": "C4", "name": "quantize", "contracts": ["crux-P-03-v1.yaml"]},
+    {"surface": "C5", "name": "tracking", "contracts": ["crux-P-04-v1.yaml"]},
+    {"surface": "C6", "name": "distribution", "contracts": ["crux-P-05-v1.yaml"]},
+    {"surface": "C7", "name": "decision", "contracts": ["crux-P-06-v1.yaml"]}
+  ],
+  "c2_reused_contracts": [
+    "contracts/crux-E-16-v1.yaml",
+    "contracts/crux-C-27-v1.yaml",
+    "contracts/crux-C-01-v1.yaml",
+    "contracts/beat-ollama-decode-throughput-speed-v1.yaml",
+    "contracts/pp-llama-001-perf-gate-v1.yaml",
+    "contracts/pp-llama-001-comparator-pin-v1.yaml",
+    "contracts/qwen35-batched-prefill-v1.yaml",
+    "contracts/apr-serve-v1.yaml"
+  ],
+  "arms": [
+    {"surface": "C1", "arm": "unsloth-q4_k_m", "status": "Pinned", "pin": {"repo": "unsloth/Qwen3.5-4B-GGUF", "revision": "e87f176479d0855a907a41277aca2f8ee7a09523", "file": "Qwen3.5-4B-Q4_K_M.gguf", "bytes": 2740937888, "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"}},
+    {"surface": "C1", "arm": "bartowski-q4_k_m", "status": "Pinned", "pin": {"repo": "bartowski/Qwen_Qwen3.5-4B-GGUF", "revision": "4168f45a16a1290d65a4ec0fa312ae917a4c15d6", "file": "Qwen_Qwen3.5-4B-Q4_K_M.gguf", "bytes": 3013027808, "sha256": "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983"}},
+    {"surface": "C1", "arm": "ollama-qwen3.5-4b", "status": "Pinned", "pin": {"manifest": "registry.ollama.ai/library/qwen3.5:4b", "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd", "model_layer": "sha256:81fb60c7daa80fc1123380b98970b320ae233409f0f71a72ed7b9b0d62f40490", "bytes": 3389971840, "file_type": "Q4_K_M"},
+     "s14": "the model blob embeds the vision tower (model_type 4.7B vs 4B text): file bytes are NOT like-for-like and EXT-27 must refuse that metric for this arm; KL/top-1 on text logits is the admissible comparison"},
+    {"surface": "C1", "arm": "unsloth-ud-q4_k_xl", "status": "Pinned", "pin": {"repo": "unsloth/Qwen3.5-4B-GGUF", "revision": "e87f176479d0855a907a41277aca2f8ee7a09523", "file": "Qwen3.5-4B-UD-Q4_K_XL.gguf", "bytes": 2912109728, "sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7"},
+     "label": "separate arm: UD-Q4 is a different quant recipe than Q4_K_M (S-14)"},
+    {"surface": "C1", "arm": "reference-bf16", "status": "Pinned", "pin": {"repo": "Qwen/Qwen3.5-4B", "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a", "files": [
+      {"file": "model.safetensors-00001-of-00002.safetensors", "bytes": 5329398688, "sha256": "26a93f066e1916adb13453dae5a0c707c0fbc71299ed98779571a907b8e74c61"},
+      {"file": "model.safetensors-00002-of-00002.safetensors", "bytes": 3990429408, "sha256": "cb544bd9bfae93dc59b0f22b292f5933573854a7f9b97835c67060d7d910e188"}]}},
+    {"surface": "C1", "arm": "comparator-llama.cpp", "status": "Pinned", "pin": {"repo": "ggml-org/llama.cpp", "commit": "d1d3c3396aa13a5f239109a822666c4870490ad5", "commit_date": "2026-09-15", "contract": "contracts/pp-llama-001-comparator-pin-v1.yaml"}},
+
+    {"surface": "C2", "arm": "llama.cpp", "status": "Pinned", "pin": {"repo": "ggml-org/llama.cpp", "commit": "d1d3c3396aa13a5f239109a822666c4870490ad5", "contract": "contracts/pp-llama-001-comparator-pin-v1.yaml"}},
+    {"surface": "C2", "arm": "ollama", "status": "Pinned", "pin": {"version": "0.34.4", "image": "ollama/ollama:0.34.4", "digest": "sha256:8262851b2846b87c649eddf3e76beb270c52f4d1bc94559f47efde16b0841551", "model_manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd"},
+     "s14": "the served qwen3.5:4b blob carries the vision tower; the m=1 text-only REX-08 cell must not load the projector, and a run that does is refused, not normalised"},
+    {"surface": "C2", "arm": "mistral.rs", "status": "NotRun", "pin": {"repo": "EricLBuehler/mistral.rs", "tag": "v0.9.4", "commit": "4400935451da5e2dc7379a3f92fbbada66557f6c"},
+     "reason": "qwen35 load is claimed by upstream (examples/{python,server}/qwen3_5.py at v0.9.4) but unmeasured; EXT-28 records Refused{...} if it cannot load. The v0.9.4 image cuda-sm121-0.9.4 (sha256:0a7d3b08c3731677b49f936a6240ae6bfceccffa23a25fe26d487982eadae2ee) is sm_121 only and the newest cuda-89 tag is 0.8.3, so the lambda sm_89 arm must build from the pinned commit"},
+
+    {"surface": "C3", "arm": "peft-trl-reference", "status": "Pinned", "pin": {"python": "cp312 manylinux_2_28 x86_64", "wheels": [
+      {"pkg": "peft", "version": "0.21.0", "sha256": "b64eb75fd9dece7401c70e675b8d9de024993b70483691b41c62876f0c7809b7"},
+      {"pkg": "trl", "version": "1.14.0", "sha256": "10059306c0efc6a2c32b17bc28363bb1c7b186a820d0e34e1fbd8b2aac80c22c"},
+      {"pkg": "transformers", "version": "5.17.0", "sha256": "78ec1ce21579b38dfb83950a0658cd119f87212a2fcfdff478096ce9d6c03801"},
+      {"pkg": "torch", "version": "2.14.0", "sha256": "fecffb58f51fd643d213acd68da21cc3fc19bea05a3bc64b4ee55128f47a4963"}]},
+     "lockfile": "NotRun: the hashed lockfile for the transitive closure is produced by the EXT-26 harness container (R-1a); EXT-29 is NotRun{Refused(removed_by=0.71)} per spec 10.1"},
+    {"surface": "C3", "arm": "unsloth", "status": "Refused", "reason": "R-16: training speed is a conceded segment; S-13 drops a blocking conceded-speed arm. No correctness claim is made against it"},
+
+    {"surface": "C4", "arm": "llama-quantize+imatrix", "status": "Pinned", "pin": {"repo": "ggml-org/llama.cpp", "commit": "d1d3c3396aa13a5f239109a822666c4870490ad5", "tools": ["llama-quantize", "llama-imatrix"]}},
+
+    {"surface": "C5", "arm": "mlflow", "status": "Pinned", "pin": {"version": "3.16.1", "image": "ghcr.io/mlflow/mlflow:v3.16.1", "digest": "sha256:06058cc872276873e9759c635e773342aca4731e240f6d20d88ea43774083984", "wheel_sha256": "e4dfe69ceae31dfc7b8480e76ffe6a7f36752bdfac30e058e6430ade1fb5920b"}},
+    {"surface": "C5", "arm": "dvc", "status": "Pinned", "pin": {"version": "3.67.1", "wheel_sha256": "b1ea7d8d690a637adbcba74591555f811eed1ab96cc74d808dfd861669d030ed"}},
+    {"surface": "C5", "arm": "wandb", "status": "NotRun", "comparator": "unrunnable-hermetically", "reason": "S-12: SaaS, no artifact sha; report-only, no claim may cite it"},
+
+    {"surface": "C6", "arm": "qwen-official", "status": "Pinned", "pin": {"repo": "Qwen/Qwen3.5-4B", "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a", "sha256": "26a93f066e1916adb13453dae5a0c707c0fbc71299ed98779571a907b8e74c61"},
+     "note": "Qwen publishes no official GGUF: Qwen/Qwen3.5-4B-GGUF returns 401"},
+    {"surface": "C6", "arm": "unsloth", "status": "Pinned", "pin": {"repo": "unsloth/Qwen3.5-4B-GGUF", "revision": "e87f176479d0855a907a41277aca2f8ee7a09523", "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"}},
+    {"surface": "C6", "arm": "bartowski", "status": "Pinned", "pin": {"repo": "bartowski/Qwen_Qwen3.5-4B-GGUF", "revision": "4168f45a16a1290d65a4ec0fa312ae917a4c15d6", "sha256": "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983"}},
+    {"surface": "C6", "arm": "ollama-library", "status": "Pinned", "pin": {"manifest": "registry.ollama.ai/library/qwen3.5:4b", "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd"}},
+
+    {"surface": "C7", "arm": "upstream-stock-4b", "status": "Pinned", "pin": {"repo": "Qwen/Qwen3.5-4B", "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a", "sha256": "26a93f066e1916adb13453dae5a0c707c0fbc71299ed98779571a907b8e74c61", "runner_commit": "d1d3c3396aa13a5f239109a822666c4870490ad5"}},
+    {"surface": "C7", "arm": "qwen3.5-9b-control", "status": "Pinned", "pin": {"repo": "Qwen/Qwen3.5-9B", "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a", "files": [
+      {"file": "model.safetensors-00001-of-00004.safetensors", "bytes": 5276436216, "sha256": "db6f444b43d318c92f360a13a25561a6a65b10c0631b8ed305a426dbaa6c380e"},
+      {"file": "model.safetensors-00002-of-00004.safetensors", "bytes": 5335161512, "sha256": "31c7d7e2dd5d207840b31cc59083c8f4c4718959149e0358c0364052bb9a0330"},
+      {"file": "model.safetensors-00003-of-00004.safetensors", "bytes": 5368717440, "sha256": "7ec36ba3a4176a44c3c0876ad80c56a2f70c84bf008d82e9501df642f17dadec"},
+      {"file": "model.safetensors-00004-of-00004.safetensors", "bytes": 3325995712, "sha256": "b62b0c4cd7e44edee103ee8f4fe225f246d5e768e07bfd5f25b63a8aa1fdd0c6"}]}},
+    {"surface": "C7", "arm": "haiku-4.5", "status": "NotRun", "comparator": "unrunnable-hermetically", "model_id": "claude-haiku-4-5-20251001", "reason": "S-12: API arm, no artifact sha; report-only per spec 10 C7"},
+    {"surface": "C7", "arm": "agy-lane", "status": "NotRun", "comparator": "unrunnable-hermetically", "model_id": "gemini-3.1-pro-high", "reason": "S-12: API arm, no artifact sha; report-only per spec 10 C7"},
+    {"surface": "C7", "arm": "typesafe-jev", "status": "NotRun", "comparator": "unrunnable-hermetically", "reason": "spec 10 C7 marks it unrunnable; see side_findings for the missing crux-decision contract"}
+  ],
+  "side_findings": [
+    "spec 10 C7 cites 'TypeSafe Jev (existing crux-decision contract)': no crux-*.yaml at 011282e3e carries a decision category or names Jev except crux-P-06 (added by EXT-25). The cited contract does not exist; the spec line is stale, not a gap EXT-24 can fill",
+    "the Ollama qwen3.5:4b blob is multimodal (vision tower embedded); every Ollama arm carries an S-14 note",
+    "no official Qwen GGUF exists (401), so C1's 'official' reference is the BF16 safetensors"
+  ],
+  "verdict": "BOUND: 24 arms, 18 Pinned, 5 NotRun, 1 Refused; 7/7 surfaces in the matrix; 8 C2 reuse contracts named by path"
+}
