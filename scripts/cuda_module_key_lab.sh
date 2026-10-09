@@ -239,7 +239,7 @@ issue_body() {
         r=$(cat "$r")
     fi
     printf '%s\n' "$r" | jq -r --arg run "$2" --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
-        "Owner aprender-a7n. Refs #3759.\n\n" +
+        "Owner: the session named by the owner label on #3759. Refs #3759.\n\n" +
         "The nightly LAB run of the CUDA lib suites under the module-key guard on GB10 sm_121 is red. " +
         "This issue is the one place a red goes (C324 LAB); it is rewritten on each red night and " +
         "closed by its owner.\n\n" +
@@ -452,7 +452,7 @@ STUB
         mutant: {ran: true, passed: true, skipped: false}, failed_tests: ["x::one", "y::two"]}' >"$t/red.json"
     out=$(issue_body "$t/red.json" https://example.invalid/run/1)
     st_expect "issue body: owner, ref, status and every failed row" "1 1 1 1 1" \
-        "$(for s in 'Owner aprender-a7n' 'Refs #3759' 'status: FAIL - suite exit' '`x::one`' '`y::two`'; do
+        "$(for s in 'Owner: the session named by the owner label on #3759' 'Refs #3759' 'status: FAIL - suite exit' '`x::one`' '`y::two`'; do
             printf '%s\n' "$out" | grep -cF -- "$s"; done | tr '\n' ' ' | sed 's/ $//')"
     out=$(issue_body "$t/absent.json" https://example.invalid/run/2)
     st_expect "issue body: no receipt is an ERROR, not an empty report" 1 \
