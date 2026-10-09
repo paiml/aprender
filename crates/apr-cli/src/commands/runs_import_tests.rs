@@ -167,3 +167,24 @@ fn rusqlite_row_times(home: &Path, id: &str) -> (String, Option<String>) {
     )
     .expect("row")
 }
+
+/// Files are collected at most two levels below a run dir; a deeper model
+/// file is not the run's artifact.
+#[test]
+fn files_deeper_than_two_levels_are_not_collected() {
+    let dir = TempDir::new().expect("tempdir");
+    write(&dir.path().join("r1/a/b/kept.apr"), "w");
+    write(&dir.path().join("r1/a/b/c/deep.apr"), "w");
+    let Outcome::Import(run) = plan_dir(&dir.path().join("r1")) else {
+        panic!("has a model file");
+    };
+    assert_eq!(run.artifacts.len(), 1, "{:?}", run.artifacts);
+}
+
+/// R-6: under 5 GiB free is refused, exactly 5 GiB is enough.
+#[test]
+fn a_write_is_refused_under_five_gib_free() {
+    let home = Path::new("/x");
+    assert!(refuse_low_space((5 << 30) - 1, home).is_err());
+    assert!(refuse_low_space(5 << 30, home).is_ok());
+}
