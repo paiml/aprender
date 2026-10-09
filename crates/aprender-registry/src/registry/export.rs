@@ -7,6 +7,11 @@
 //! every column but the host-local autoincrement ids, with keys in sorted order, and the
 //! lines are sorted. Nothing in a line depends on when, or on which host, the export ran,
 //! so an unchanged registry exports to the same bytes (EXT-INV-007).
+//!
+//! Byte identity is per host. The `models`, `datasets` and `recipes` rows still carry the
+//! random id and `created_at` each host recorded at registration, so two hosts that
+//! register the same content do not produce the same `row`; the fleet merge joins on
+//! `key`, never on `row`.
 
 use super::database::RegistryDb;
 use crate::error::{PachaError, Result};
