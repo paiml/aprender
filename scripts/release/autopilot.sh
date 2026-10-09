@@ -68,13 +68,18 @@ ap_policy_applies() {
       [ "$r" = 0 ] || { printf '%s\n' "$RP_WHY" >&2; exit "$r"; }
       printf '%s\n' "$RP_APPLIES" )
 }
+# ap_rp_known_failures: the release commit's own policy library, sourced in a subshell (as
+# ap_policy_applies does), prints the known-failures section. It lists; it checks nothing.
+ap_rp_known_failures() {
+    ( . scripts/lib/release_policy.sh || exit 2
+      rp_known_failures contracts/model-capability-ladder-v1.yaml "$REPO" )
+}
 # ap_known_failures NOTES: under the standing release policy the release notes list every known failure
 # with its ticket (ladder.known_red, then the models nightly's open red-row issues), appended once. It
 # lists; it never stops the release. rc 2 only when the release commit's ladder cannot be read.
 ap_known_failures() {
     grep -qF '## Known failures' -- "$1" && return 0
-    ( . scripts/lib/release_policy.sh || exit 2
-      rp_known_failures contracts/model-capability-ladder-v1.yaml "$REPO" ) > "$1.kf" || return 2
+    ap_rp_known_failures > "$1.kf" || return 2
     { printf '\n'; cat -- "$1.kf"; } >> "$1" || return 2
     rm -f -- "${1:?}.kf"
 }
@@ -138,10 +143,10 @@ t1_deep() {
   cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute > "$AP/deep-doctests.log" 2>&1; rc=$?
   say "DEEP doctests rc=$rc: $(grep -E '^test result' "$AP/deep-doctests.log" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
   [ $rc -eq 0 ] || die "T-1 doctests RED ($AP/deep-doctests.log)"
-  cargo check --workspace --no-default-features > "$AP/deep-nodefault.log" 2>&1; rc=$?
-  other=$(grep -E '^error' -A3 "$AP/deep-nodefault.log" | grep -E '^\s+--> ' | grep -vc 'crates/aprender-distribute/' || true)
-  say "DEEP --no-default-features rc=$rc errors_outside_aprender-distribute=$other (standing #3176 class is inside it)"
-  [ "$other" = 0 ] || die "T-1 --no-default-features RED outside the #3176 class ($AP/deep-nodefault.log)"
+  cargo check --workspace --no-default-features --keep-going > "$AP/deep-nodefault.log" 2>&1; rc=$?
+  verdict=$(bash "$REPO_ROOT/scripts/release/deep_nodefault_verdict.sh" "$AP/deep-nodefault.log" "$rc"); vrc=$?
+  say "$verdict (standing #3176 class is inside it)"
+  [ "$vrc" = 0 ] || die "T-1 --no-default-features RED outside the #3176 class ($AP/deep-nodefault.log)"
   cargo build --workspace --examples > "$AP/deep-examples.log" 2>&1; rc=$?
   say "DEEP examples build rc=$rc"
   [ $rc -eq 0 ] || die "T-1 examples RED ($AP/deep-examples.log)"
@@ -174,6 +179,10 @@ t1_deep() {
 #    receipt T-4 would refuse stops the train before any tag exists.
 t1_dogfood() {
   export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-dogfood"
+  # D2 (#4930): under the standing release policy the declared ladder gate (check_model_ladder.sh) judges
+  # the CRUX receipts the models lane wrote at $MC and the certification committed in the bump -- the same
+  # pair the T-4 preflight reads. The join starts this lane only after models is GO.
+  [ "$AP_POLICY" != 1 ] || export MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json"
   bash scripts/dogfood.sh --phase pre-publish > "$AP/dogfood-pre-publish.log" 2>&1; rc=$?
   grep -E 'VERDICT' "$AP/dogfood-pre-publish.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "dogfood pre-publish NO-GO rc=$rc ($AP/dogfood-pre-publish.log)"
@@ -211,15 +220,22 @@ t1_models() {
 #   build and ladder running in the release dir the next pass reuses. models runs to its own verdict.
 #   An INT or TERM to the autopilot stops every lane (the lanes no longer share its process group),
 #   models included: the operator chose to stop, and the remote leg may run on to its own end.
+#   HELD LANE (D2, #4930). Under the standing release policy dogfood's ladder gate judges the CRUX
+#   receipts models writes to $AP/models-t1, so with both selected dogfood is HELD: it starts when
+#   models exits GO and no lane is red, else its row reads NOT-RUN and it never starts. deep is not held.
+#   Dogfood selected alone is not held: it reads whatever an earlier pass left in $AP/models-t1.
 # scripts/check_release_t1_lanes_joined.sh runs this block against stub lanes, and its mutants.
 T1_LANES=(); for s in deep dogfood models; do run_step "$s" && T1_LANES+=("$s"); done
 if [ "${#T1_LANES[@]}" -gt 0 ]; then
   declare -A T1_STEP=() T1_T0=() T1_STOPPED=()
   trap 'for p in "${!T1_STEP[@]}"; do kill -TERM -- "-$p" 2> /dev/null; done; die "T-1 lanes interrupted"' INT TERM
+  t1_held=''
+  case " ${T1_LANES[*]} " in *" dogfood "*"models "*) [ "$AP_POLICY" != 1 ] || t1_held=dogfood ;; esac
+  T1_NOW=(); for s in "${T1_LANES[@]}"; do [ "$s" = "$t1_held" ] || T1_NOW+=("$s"); done
   t1_launch=$SECONDS; set -m
-  for s in "${T1_LANES[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
+  for s in "${T1_NOW[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
   set +m
-  say "T-1 LANES started together: ${T1_LANES[*]}"
+  say "T-1 LANES started together: ${T1_LANES[*]}${t1_held:+ ($t1_held held until models is GO)}"
   [ -f "$AP/t1-steps.tsv" ] || printf 'step\tstart\tend\tseconds\tverdict\n' > "$AP/t1-steps.tsv"
   t1_red=''; t1_term_rc=$((128 + $(kill -l TERM)))
   while [ "${#T1_STEP[@]}" -gt 0 ]; do
@@ -235,6 +251,16 @@ if [ "${#T1_LANES[@]}" -gt 0 ]; then
         [ "${T1_STEP[$p]}" = models ] && continue
         T1_STOPPED[${T1_STEP[$p]}]=1; kill -TERM -- "-$p" 2> /dev/null
       done
+    fi
+    if [ "$s" = models ] && [ -n "$t1_held" ]; then
+      s=$t1_held; t1_held=''
+      if [ "$v" = GO ] && [ -z "$t1_red" ]; then
+        set -m; "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; set +m
+        say "STEP $s started: models is GO, its CRUX receipts are in $AP/models-t1"
+      else
+        printf '%s\t%s\t%s\t0\tNOT-RUN\n' "$s" "$((t1 - t1_launch))" "$((t1 - t1_launch))" >> "$AP/t1-steps.tsv"
+        say "STEP $s NOT-RUN: held for models' CRUX receipts, and $t1_red went red first"
+      fi
     fi
   done
   trap - INT TERM
@@ -504,8 +530,17 @@ if run_step dryrun; then
 fi
 
 # 6. crates.io cascade: multi-pass drain, then the check is the verdict (pass 1 exiting 1 is normal)
+#    cascade-publish.sh re-runs check_publish_preflight.sh before every pass (F-9). Under the standing
+#    release policy its R7 judges CRUX smoke, so the drain is handed the receipts step 5 judged: the
+#    T-1 models step's, and the bump's certification (D4, P7 WIRE). Bare, R7 read the tree's
+#    evidence/crux/<V>, which holds the certification and no receipts, and refused with the tag public.
 if run_step cascade; then
-  bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
+  if [ "$AP_POLICY" = 1 ]; then
+    MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json" \
+      bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
+  else
+    bash scripts/cascade-drain.sh --target "$V" --passes 30 > "$AP/cascade.log" 2>&1; rc=$?
+  fi
   say "CASCADE drain rc=$rc"
   bash scripts/cascade-publish.sh --check > "$AP/cascade-check.log" 2>&1; rc2=$?
   behind=$(grep -cE "\(want ${V//./\\.}\)" "$AP/cascade-check.log" || true)

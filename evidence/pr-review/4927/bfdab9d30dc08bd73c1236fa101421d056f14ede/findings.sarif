@@ -1,0 +1,97 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {"driver": {"name": "pmat", "version": "3.42.0"}},
+      "invocations": [{"executionSuccessful": true, "toolExecutionNotifications": []}],
+      "results": [
+        {
+          "ruleId": "prompt-certification-carried",
+          "level": "note",
+          "message": {"text": "evidence/crux/0.70.3/prompt-certification.json (8,906 lines) and its inventory are byte copies of the evidence/crux/0.70.2 files (sha256 pairs equal, as RELEASE-NOTES-0.70.3.md says). The certification's apr_commit is the pre-0.70.2 commit cc4463f7, so the CRUX smoke at the 0.70.3 commit relies on a certification that was never re-run for this tag; the notes disclose it."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "evidence/crux/0.70.3/prompt-certification.json"}, "region": {"startLine": 1}}}],
+          "properties": {
+            "grounding": "measured",
+            "command": ["sha256sum", "evidence/crux/0.70.2/prompt-certification.json", "evidence/crux/0.70.3/prompt-certification.json", "evidence/crux/0.70.2/prompt-certification-inventory.json", "evidence/crux/0.70.3/prompt-certification-inventory.json"],
+            "exit_code": 0,
+            "stdout_sha256": "65e583e3b59c6f74055639aa1a3a505e17cd0759d66d8e7b56eace609db47364",
+            "failure_scenario": "If a certified model file or prompt changed between 0.70.2 and 0.70.3, the smoke would run against prompts certified for different bytes; the carried copy cannot detect that, only the pinned sha256 inside it can.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "release-scope-claim-holds",
+          "level": "note",
+          "message": {"text": "The release notes claim the published-path diff against v0.70.2 is the #4918 fix's files plus the version bump. git diff --name-only v0.70.2 HEAD -- crates src lists 67 files: the aprender-serve api/infer files and tests named in the fix, plus Cargo.toml version bumps and crates/facades/Cargo.lock. Nothing else under crates or src."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "evidence/release/0.70.3/RELEASE-NOTES-0.70.3.md"}, "region": {"startLine": 3}}}],
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "diff", "--name-only", "v0.70.2", "HEAD", "--", "crates", "src"],
+            "exit_code": 0,
+            "stdout_sha256": "45b5b596e753b4d1bdd948bec1786655375e24c86cff78ba6f7f14d52ca32e33",
+            "failure_scenario": "none: a stray source change in the patch release would appear in this list and contradict the notes.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "public-enum-variant-in-patch-release",
+          "level": "warning",
+          "message": {"text": "FinishReason is a pub enum reachable as realizar::infer::run_report::FinishReason (pub mod infer, pub mod run_report) and is not #[non_exhaustive]. Adding the ToolCalls variant breaks any downstream exhaustive match on it, in a 0.70.x patch release. No in-repo exhaustive match exists (searched crates for FinishReason::Stop/Length arms), so the workspace builds, but crates.io consumers are not covered by that search."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "crates/aprender-serve/src/infer/run_report.rs"}, "region": {"startLine": 37}}}],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reviewer judgement from reading the enum definition and the module visibility; no semver-check tool was run (cargo is not permitted on this box).",
+            "failure_scenario": "A downstream crate that matches FinishReason with Stop and Length arms and no wildcard stops compiling when it takes 0.70.3.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {"driver": {"name": "crux-by-surface"}},
+      "invocations": [{"executionSuccessful": true, "toolExecutionNotifications": []}],
+      "results": [
+        {
+          "ruleId": "crux-I-08-gap-narrowed",
+          "level": "note",
+          "message": {"text": "POST /v1/chat/completions with stream:true and tools now emits delta.tool_calls and finish_reason tool_calls, which crux-I-08 (competitor vllm) requires. It does not meet I-08's incremental-argument-fragment shape: arguments arrive whole in one chunk (D-b in serve-stream-tool-calls-v1.yaml, stated by the author). So the gap narrows and is not closed."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "contracts/crux-I-08-v1.yaml"}, "region": {"startLine": 32}}}],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reviewer comparison of contracts/crux-I-08-v1.yaml streaming_tool_call_delta_schema with the PR's contract serve-stream-tool-calls-v1.yaml and ChatDeltaToolCall; no vLLM comparator was run.",
+            "failure_scenario": "A client that reassembles incremental argument fragments by index still works with one whole fragment, but a client that expects the first delta to carry only id/type/name and later deltas the arguments would see all fields in one delta.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {"driver": {"name": "cuda-docs-reviewer"}},
+      "invocations": [{"executionSuccessful": false, "toolExecutionNotifications": [
+        {"level": "error",
+         "message": {"text": "The S3.B trigger fires (cuda_chat_backend.rs and aprender-cuda-edge/Cargo.toml match --match-path) but this review lane has no Agent tool, so the cuda-docs-reviewer agent could not be dispatched. No CUDA documentation was consulted. The diff touches no kernel, PTX or device-memory code in cuda_chat_backend.rs: each hunk passes StreamTools::from_request(request) as a new argument."},
+         "properties": {"grounding": "measured", "command": ["bash", "scripts/check_pr_review_receipt.sh", "--match-path", "crates/aprender-serve/src/api/cuda_chat_backend.rs"], "exit_code": 0, "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}
+      ]}],
+      "results": []
+    },
+    {
+      "tool": {"driver": {"name": "cargo-mutants"}},
+      "invocations": [{"executionSuccessful": false, "toolExecutionNotifications": [
+        {"level": "error",
+         "message": {"text": "S3.D triggered (Rust source and two contracts/*.yaml falsifier files changed) but nothing was attempted: cargo mutants and every cargo build are forbidden on this box by the operator's instruction (tests run on another host), and no committed bash mutation set covers scripts/release/autopilot.sh, scripts/release/models_t1.sh or the new contract's falsifiers."},
+         "properties": {"grounding": "measured", "command": ["bash", "scripts/check_pr_review_receipt.sh", "--match-mutation-trigger", "crates/aprender-serve/src/api/stream_tool_calls.rs"], "exit_code": 0, "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}
+      ]}],
+      "results": []
+    },
+    {
+      "tool": {"driver": {"name": "antigravity"}},
+      "invocations": [{"executionSuccessful": false, "toolExecutionNotifications": [
+        {"level": "error",
+         "message": {"text": "agy resolves on PATH, model gemini-3.1-pro-high passes --match-arm-e-same-family (exit 1), but the arm did not run: the disposable tree is built with git archive and the lane's hook refused 'git archive' (and 'git fetch') as non-read-only git. No agy process was started and no agy output exists."},
+         "properties": {"grounding": "measured", "command": ["command", "-v", "agy"], "exit_code": 0, "stdout_sha256": "a81c65966a4dc91bc9ea55614f8f56129f20aa63624cb7077c9105c4f5c8226f"}}
+      ]}],
+      "results": []
+    }
+  ]
+}

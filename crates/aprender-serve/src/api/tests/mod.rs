@@ -76,3 +76,4 @@ mod usage_finish_3718; // aprender#3718: a context-clamped cut is "length", an u
 mod completions_eog_stop_4339; // aprender#4339: raw /v1/completions stops on EOS and every EOG marker
 #[cfg(feature = "gpu")]
 mod completions_eog_stop_4345; // aprender#4345: the wgpu GpuModel /v1/completions path stops on EOS + EOG too
+mod stream_tool_calls_4918; // aprender#4918: streamed tool calls arrive as delta.tool_calls, finish tool_calls (T1-T12)

@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ladder-host-pattern-open-tail",
+          "level": "warning",
+          "message": {
+            "text": "ladder_unmeasurable_pre_bump excuses every FAIL row that begins `FAIL  host <h> has no CRUX receipt from the release binary -- `; nothing constrains what follows the final `-- `. Measured: a log whose only FAIL row is `... release binary -- FATAL: database corrupted` returns rc 0 (deferred). Today's emitter (scripts/lib/crux_smoke_scope.py:122) always prints `-- the smoke gate needs every named host`, so no real log reaches this, but the pattern excuses more than the one reason it names. Fix: end the pattern with the emitter's tail and `$`."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 34
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "rev-4931.tmp/f3.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "93ff7811a209e2a8479230bbb9b6bc19f7f311d3af383ec350c1db2a7e7d5494",
+            "failure_scenario": "A future change to crux_smoke_scope.py (or a wrapper) prints a fatal reason after the same host prefix: the stray row is not counted, the one RED still matches, and decide() returns GO deferred_to_T1 on a ladder run that failed for a reason other than a missing receipt.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "pre-bump-proof-accepts-unknown-version-row",
+          "level": "warning",
+          "message": {
+            "text": "vrow=1 is set by any `[FAIL] version-unpublished ` row and is described as proof of a pre-bump head. dogfood.sh:563 and :641 print that same row name when the registry status is UNKNOWN (index unreachable, dry-run failed with no already-exists marker), which proves nothing about the version being published. No case row (12 uses an [ OK ] row) separates the two reasons, and the `^[[:space:]]*\\[FAIL\\] ` anchor on this grep is untested (my mutant m16 survived)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 74
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read from dogfood.sh:560-568 and :636-641; the row name is shared by the ALREADY-published and UNKNOWN reasons, and decide() keys on the name only. Not exercised end to end here because cargo and the registry are unavailable on this host.",
+            "failure_scenario": "On a head whose version row is red because crates.io could not be consulted, and whose ladder run is red only for missing receipts, decide() returns GO deferred_to_T1 although the head may be a post-bump commit. T-2 runs on origin/main before the bump, so the window is narrow; the deferral is still named in the GO line.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "script-exit-status-is-display-pipeline",
+          "level": "note",
+          "message": {
+            "text": "Not in the diff (line 262 is unchanged context, from 23f0eb411fb): the script's own exit status is the status of the closing `grep -E '^\\s*\\[FAIL\\]' log | cut -c1-160` pipeline, not decide()'s. Under pipefail a log with no [FAIL] row makes that pipeline exit 1 after a GO was written. The only consumer found (prepare_bump.sh:191) reads the verdict file with grep -q '^GO ', not the exit status, so no wrong verdict results; a caller that trusted the exit status would see a green run as failed (fail-closed)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 262
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "rev-4931.tmp/f13.sh",
+              "rev-4931.tmp/f13tmp"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "bf5171bbfe837e03c6355f487b863ececf3716935c5375216a04b3d128ed8ae7",
+            "failure_scenario": "A future caller gates on t2_preflight.sh's exit code: a fully green run (no [FAIL] row, e.g. after the bump) exits 1 and is read as NO-GO. Fail-closed, so advisory.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "self-test-and-verdict-guard-green",
+          "level": "note",
+          "message": {
+            "text": "bash scripts/release/t2_preflight.sh --self-test exits 0 with 'self-test OK' (cases 1-20 and sub-rows, 30 ok lines, 0 FAIL); bash scripts/check_t2_preflight_verdict.sh exits 0 (PASS). A real red still prints NO-GO (case 'a genuine FAIL row -> NO-GO', rc 1)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 158
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/release/t2_preflight.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "543df653fdc1a4e5a16cc01212a8ad53364929c3c73ad040849b0a2fb60bab63",
+            "failure_scenario": "none: a regression in decide() turns a case row to FAIL and the script exits 1.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "mutation",
+          "version": "primary-hand-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "sigpipe-mutant-killed-by-case-20",
+          "level": "note",
+          "message": {
+            "text": "Restoring the pre-fix `! grep '^FAIL ' | grep -qvE <host pattern>` form in a copy of the script makes --self-test exit 1 (case 20 FAILs, 1 failing row): the SIGPIPE fix is real and its regression row discriminates."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 34
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "rev-4931.tmp/mut1/m03_pipe_not.sh",
+              "--self-test"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "e5ba806deaa142b12f39831f45dfe2ee40c556391d180226225e3891f3ea4ad0",
+            "failure_scenario": "none: this records that the old fail-open form is detected.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.2"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-pipe-exit-status-verdict",
+          "level": "note",
+          "message": {
+            "text": "Pipeline at end of script exits 1 on green runs due to pipefail, turning a GO verdict into a NO-GO script exit status."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 262
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "The script ends with a pipeline `grep -E ... | cut -c1-160`. On a perfectly green log with no `[FAIL]` lines, `grep` exits 1. Because `set -uo pipefail` is active at the top of the script, the entire pipeline exits 1. As the last command executed, this causes `t2_preflight.sh` to exit with status 1. Callers (like `prepare_bump.sh`) will read this exit status as a failure (NO-GO) despite `decide()` correctly evaluating the log as GO.",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "-c",
+              "cat << 'EOF' > test.sh\nset -uo pipefail\ntouch empty.log\ngrep -E '^\\s*\\[FAIL\\]' empty.log | cut -c1-160\nEOF\nbash test.sh; echo rc=$?"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; the primary re-ran the relevant command itself (see the pmat run)"
+          }
+        },
+        {
+          "ruleId": "agy-dogfood-gates-loosened",
+          "level": "note",
+          "message": {
+            "text": "The dogfood-gates row is now conditionally deferred."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 86
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "failure_scenario": "The `dogfood-gates` row is a roll-up of declared gate failures. In this patch, it is explicitly excused (`continue`) if its RED count equals the number of declared failing gates. Previously, any `[FAIL]` row (except `version-unpublished`) including `dogfood-gates` would increment the `fails` counter and cause a NO-GO. Now, it is loosely evaluated and deferred under these conditions.",
+            "precision_class": "advisory",
+            "source": "scripts/release/t2_preflight.sh",
+            "excerpt": "scripts/release/t2_preflight.sh line 86: [[ \"$line\" =~ discovered,\\ ([0-9]+)\\ RED ]] && [ \"${BASH_REMATCH[1]}\" -ge 1 ] && [ \"${BASH_REMATCH[1]}\" -eq \"$dn\" ] && continue ;;",
+            "excerpt_sha256": "bfd57e8fadf6bfb9dd3ff3dc85db11383ca2ff97d15a3765c92aaca79ed76425"
+          }
+        },
+        {
+          "ruleId": "agy-unanchored-regex-bypass",
+          "level": "note",
+          "message": {
+            "text": "Unanchored regex allows malicious FAIL lines to bypass the ladder unmeasurable check."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/t2_preflight.sh"
+                },
+                "region": {
+                  "startLine": 34
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "The regex `^FAIL  host [A-Za-z0-9_.-]+ has no CRUX receipt from the release binary -- ` in `ladder_unmeasurable_pre_bump` is not anchored at the end (missing `$`). If an input log includes a `FAIL` line that starts with this prefix but ends with an entirely different, critical failure reason (e.g. `... -- FATAL: database corrupted`), it will match the `grep -cvE` exclusion and be ignored. This bypasses the validation, allowing `decide()` to incorrectly return GO when it should be NO-GO.",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "-c",
+              "ladder_unmeasurable_pre_bump() {\nlocal l=$1\ngrep -qE '^SCOPED: crux-smoke( |$)' \"$l\" || return 1\n[ \"$(grep -cE '^RED ' \"$l\")\" -eq 1 ] || return 1\ngrep -qE '^RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied' \"$l\" || return 1\ngrep -qE '^FAIL ' \"$l\" || return 1\n[ \"$(grep -E '^FAIL ' \"$l\" | grep -cvE '^FAIL  host [A-Za-z0-9_.-]+ has no CRUX receipt from the release binary -- ')\" -eq 0 ]\n}\ncat << 'LOG' > bad.log\nSCOPED: crux-smoke \nRED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied\nFAIL  host x has no CRUX receipt from the release binary -- VIRUS\nLOG\nladder_unmeasurable_pre_bump bad.log; echo rc=$?"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; the primary re-ran the relevant command itself (see the pmat run)"
+          }
+        }
+      ]
+    }
+  ]
+}
