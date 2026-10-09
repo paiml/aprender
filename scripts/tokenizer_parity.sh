@@ -118,7 +118,7 @@ if [ ${#models[@]} -eq 0 ]; then
     while read -r verdict a b; do
         case "$verdict" in
             '') ;;
-            ok) models+=("$a") ;;
+            ok) models+=("$model_dir/$a") ;;
             absent)
                 printf 'FAIL       %s  -  listed, absent from %s\n' "$a" "$model_dir"
                 fail=$((fail + 1)) ;;

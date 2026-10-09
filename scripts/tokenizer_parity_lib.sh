@@ -120,11 +120,14 @@ tp_inventory_rows() {
 }
 
 # tp_resolve_inventory DIR < ROWS -> one verdict per "<sha256> <name>" row of tp_inventory_rows:
-#   ok DIR/NAME                  the file is there and its sha256 is the declared one
+#   ok NAME                      DIR/NAME is there and its sha256 is the declared one
 #   absent NAME                  no regular file DIR/NAME
 #   mismatch NAME GOT_SHA256     the file is there with another sha256
 #   unhashable NAME              sha256sum could not read it
 # Status 0 iff every row is ok. A file in DIR that no row names is never looked at.
+# A verdict never carries DIR: a name has no whitespace (tp_inventory_rows' pattern) and a
+# sha256 is hex, so `read -r verdict name sha` splits every verdict whatever DIR holds. The
+# caller joins DIR/NAME itself.
 tp_resolve_inventory() {
     local dir=${1-} want name got verdict bad=0
     while read -r want name; do
@@ -136,7 +139,7 @@ tp_resolve_inventory() {
         elif [ "${got%% *}" != "$want" ]; then
             verdict="mismatch $name ${got%% *}"
         else
-            verdict="ok $dir/$name"
+            verdict="ok $name"
         fi
         printf '%s\n' "$verdict"
         case "$verdict" in ok\ *) ;; *) bad=1 ;; esac

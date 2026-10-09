@@ -116,13 +116,25 @@ res() { # model dir, inventory rows -> verdicts|rc
     printf '%s|rc=%s' "$out" "$rc"
 }
 row "resolve: listed, present, sha256 equal" "$(res "$tmp" "$sa a.gguf"$'\n'"$sb b.gguf")" \
-    "ok $tmp/a.gguf"$'\n'"ok $tmp/b.gguf|rc=0"
+    "ok a.gguf"$'\n'"ok b.gguf|rc=0"
 row "resolve: a listed model absent is FAIL" "$(res "$tmp" "$sa a.gguf"$'\n'"$sb gone.gguf")" \
-    "ok $tmp/a.gguf"$'\n'"absent gone.gguf|rc=1"
+    "ok a.gguf"$'\n'"absent gone.gguf|rc=1"
 row "resolve: an absent model named *ok* is FAIL" "$(res "$tmp" "$sa book.gguf")" "absent book.gguf|rc=1"
 row "resolve: another sha256 is FAIL" "$(res "$tmp" "$zero a.gguf")" "mismatch a.gguf $sa|rc=1"
 row "resolve: a directory is not the model" "$(res "$tmp" "$sa dir.gguf")" "absent dir.gguf|rc=1"
-row "resolve: an unlisted file is ignored" "$(res "$tmp" "$sb b.gguf")" "ok $tmp/b.gguf|rc=0"
+row "resolve: an unlisted file is ignored" "$(res "$tmp" "$sb b.gguf")" "ok b.gguf|rc=0"
+# a model dir with a space: tokenizer_parity.sh splits each verdict with `read -r verdict a b`,
+# so no verdict may carry the dir
+mkdir "$tmp/models dir"
+cp "$tmp/a.gguf" "$tmp/b.gguf" "$tmp/models dir/"
+split() { # model dir, inventory rows -> each verdict as `read -r verdict a b` splits it
+    local v a b out=""
+    while read -r v a b; do out+="$v|$a|$b;"; done < <(tp_resolve_inventory "$1" <<<"$2")
+    printf '%s' "$out"
+}
+row "resolve: a model dir with a space splits into the same fields" \
+    "$(split "$tmp/models dir" "$sa a.gguf"$'\n'"$zero b.gguf"$'\n'"$sa gone.gguf")" \
+    "ok|a.gguf|;mismatch|b.gguf|$sb;absent|gone.gguf|;"
 committed="$(dirname "$0")/../evidence/release-models.sha256"
 if committed_rows=$(tp_inventory_rows "$committed" 2>/dev/null); then
     row "the committed inventory reads" read read
