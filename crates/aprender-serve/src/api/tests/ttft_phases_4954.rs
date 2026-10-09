@@ -248,3 +248,82 @@ async fn the_stream_reports_the_first_token_edge_it_measured() {
         "first_token_ms {first} < the 30 ms planted: {t}"
     );
 }
+
+/// A turn that is only a tool call sends no content, so a client's TTFT never
+/// ends on it, and the server's first-content edge must not end either: the
+/// calls' chunk does not set `first_token_ms`. The body must still carry the
+/// call, or the absent field would prove nothing.
+#[tokio::test]
+async fn a_calls_only_turn_reports_no_first_token_edge() {
+    let pieces = [
+        "<tool_call>",
+        "\n",
+        "{\"name\": \"bash\", \"arguments\": {\"command\": \"ls\"}}",
+        "\n</tool_call>",
+    ];
+    let vocab: Vec<String> = pieces.iter().map(|p| (*p).to_string()).collect();
+    let tokenizer = Arc::new(BPETokenizer::new(vocab, vec![], pieces[0]).expect("tokenizer"));
+    let request: crate::api::ChatCompletionRequest = serde_json::from_value(serde_json::json!({
+        "model": "qwen3-coder",
+        "messages": [{"role": "user", "content": "list the files"}],
+        "tools": [{"type": "function", "function": {"name": "bash",
+            "parameters": {"type": "object", "properties": {"command": {"type": "string"}}}}}],
+        "stream": true
+    }))
+    .expect("request parses");
+    let tools = crate::api::stream_tool_calls::StreamTools::from_request(&request);
+    assert!(tools.is_some(), "the request declares a tool");
+
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(pieces.len());
+    let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<PhaseTimings>();
+    let start = Instant::now();
+    let response = crate::api::openai_handlers::true_streaming_sse_response(
+        rx,
+        tokenizer,
+        "chatcmpl-test".to_string(),
+        "test-model".to_string(),
+        Arc::new(crate::metrics::MetricsCollector::new()),
+        start,
+        256,
+        7,
+        Some(timing_rx),
+        None,
+        tools,
+    );
+    tokio::spawn(async move {
+        for id in 0..u32::try_from(pieces.len()).expect("small vocab") {
+            tx.send(Ok(id)).await.expect("send token");
+        }
+        drop(tx);
+        let _ = timing_tx.send(PhaseTimings::from_marks(
+            start + Duration::from_millis(5),
+            start + Duration::from_millis(10),
+            start + Duration::from_millis(40),
+        ));
+    });
+
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read SSE body");
+    let body = String::from_utf8(bytes.to_vec()).expect("utf-8");
+    let frames: Vec<serde_json::Value> = body
+        .lines()
+        .filter_map(|l| l.strip_prefix("data: "))
+        .filter_map(|p| serde_json::from_str(p).ok())
+        .collect();
+    let delta = |v: &serde_json::Value, key: &str| v["choices"][0]["delta"].get(key).cloned();
+    assert!(
+        frames.iter().any(|v| delta(v, "tool_calls").is_some()),
+        "the call went out: {body}"
+    );
+    assert!(
+        !frames
+            .iter()
+            .filter_map(|v| delta(v, "content"))
+            .any(|c| c.as_str().is_some_and(|s| !s.is_empty())),
+        "no content went out: {body}"
+    );
+    let t = terminal_timings(&body).expect("terminal chunk carries timings");
+    assert_eq!(t["load_ms"].as_f64(), Some(5.0), "{t}");
+    assert!(t.get("first_token_ms").is_none(), "{t}");
+}
