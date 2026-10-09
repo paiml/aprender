@@ -319,6 +319,8 @@ pub mod grammar;
 /// Pillar-5 "prompt parity on either harness"
 /// (`contracts/apr-code-harness-ir-v1.yaml`).
 pub mod harness_ir;
+/// #4947: will the Qwen3.5 host build fit in host RAM — decided before building it.
+pub mod host_capacity;
 /// HTTP client for real model server benchmarking
 ///
 /// Implements actual HTTP calls to external servers (vLLM, Ollama, llama.cpp).

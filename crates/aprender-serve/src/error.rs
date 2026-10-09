@@ -177,6 +177,11 @@ pub enum RealizarError {
     /// memory) as a typed budget, so `--json` prints numbers rather than prose.
     #[error("GPU capacity refused: {0}. Pass --no-gpu to run the CPU forward instead")]
     CapacityRefused(Box<crate::capacity::CapacityRefusal>),
+
+    /// #4947: the host build cannot fit in host RAM, decided BEFORE building it,
+    /// with the arithmetic, rather than leaving the OOM killer to end the process.
+    #[error("host RAM refused: {0}")]
+    HostRamRefused(String),
 }
 
 #[cfg(test)]

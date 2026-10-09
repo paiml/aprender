@@ -803,3 +803,56 @@ fn a_failed_restore_falls_back_on_the_device_and_propagates_on_the_cpu() {
         f.notices
     );
 }
+
+/// #4947 F2: the host-RAM check runs inside the host build, before it. A synthetic
+/// qwen35 file with an embedding and no layers cannot build, so with ample memory
+/// the build itself fails; with too little, the guard refuses first.
+#[test]
+fn leak_host_refuses_on_host_ram_before_building() {
+    use crate::gguf::test_factory::GGUFBuilder;
+    use crate::host_capacity::HostMemory;
+    use std::io::Write;
+
+    let file = GGUFBuilder::new()
+        .architecture("qwen35")
+        .add_f32_tensor("token_embd.weight", &[4, 8], &[0.0; 32])
+        .build();
+    let mut tmp = tempfile::NamedTempFile::new().expect("tempfile");
+    tmp.write_all(&file).expect("write the synthetic GGUF");
+    let mapped = MappedGGUFModel::from_path(tmp.path()).expect("map the synthetic GGUF");
+
+    match Qwen35Forward::leak_host_within(&mapped, HostMemory::Available(1)) {
+        Err(RealizarError::HostRamRefused(_)) => {},
+        Err(other) => panic!("expected HostRamRefused, got {other}"),
+        Ok(_) => panic!("a 1-byte host admitted the build"),
+    }
+    match Qwen35Forward::leak_host_within(&mapped, HostMemory::Available(u64::MAX)) {
+        Err(RealizarError::HostRamRefused(msg)) => panic!("refused with ample RAM: {msg}"),
+        Err(_) => {},
+        Ok(_) => panic!("a file with no layers built a host model"),
+    }
+}
+
+/// #4947 F2 on the real 0.8B: its embedding is the 970 MiB f32 term, a Jetson's
+/// 3910 MiB available admits it, and a host below its need is refused unbuilt.
+#[test]
+fn the_real_08b_is_admitted_on_a_jetson_and_refused_below_its_need() {
+    use crate::host_capacity::{admit_qwen35_host_build, qwen35_embedding_f32_bytes, HostMemory};
+
+    let mapped = mapped_or_skip!();
+    assert_eq!(
+        qwen35_embedding_f32_bytes(&mapped.model),
+        248_320 * 1024 * 4
+    );
+    let file_bytes = mapped.data().len() as u64;
+    let mib = 1024 * 1024;
+    assert!(
+        admit_qwen35_host_build(&mapped.model, file_bytes, HostMemory::Available(3910 * mib))
+            .is_ok()
+    );
+    match Qwen35Forward::leak_host_within(&mapped, HostMemory::Available(2000 * mib)) {
+        Err(RealizarError::HostRamRefused(_)) => {},
+        Err(other) => panic!("expected HostRamRefused, got {other}"),
+        Ok(_) => panic!("2000 MiB admitted a build that peaks at 2121 MiB"),
+    }
+}

@@ -332,8 +332,27 @@ impl Qwen35Forward {
     /// it got, rather than leaking a copy per call.
     ///
     /// # Errors
-    /// The base or a hybrid layer would not load.
+    /// [`RealizarError::HostRamRefused`] when this host's RAM cannot hold the
+    /// build (#4947), or the base or a hybrid layer would not load.
     pub fn leak_host(mapped: &MappedGGUFModel) -> Result<&'static Qwen35Model<'static>> {
+        Self::leak_host_within(mapped, crate::host_capacity::HostMemory::measure())
+    }
+
+    /// [`Self::leak_host`] against a given measurement of host RAM: the admission
+    /// check runs first, so a build that would be OOM-killed is refused with its
+    /// arithmetic before a byte of it is allocated (#4947).
+    ///
+    /// # Errors
+    /// As [`Self::leak_host`].
+    pub fn leak_host_within(
+        mapped: &MappedGGUFModel,
+        memory: crate::host_capacity::HostMemory,
+    ) -> Result<&'static Qwen35Model<'static>> {
+        crate::host_capacity::admit_qwen35_host_build(
+            &mapped.model,
+            mapped.data().len() as u64,
+            memory,
+        )?;
         let base = Qwen35Model::create_base_model(&mapped.model, mapped.data())?;
         let base: &'static OwnedQuantizedModel = Box::leak(Box::new(base));
         Ok(Box::leak(Box::new(Qwen35Model::from_model_and_layers(
