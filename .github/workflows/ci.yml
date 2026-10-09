@@ -482,10 +482,46 @@ jobs:
   # ==========================================================================
   # The workspace tests, one shard per job (nextest hash partition N/3 plus the
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
-  # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  # QM-09 (#4527) compile-once: workspace-test-build compiles the workspace lib
+  # tests once and archives them; each shard downloads the archive and runs its
+  # partition with no lib compile. X64 on both ends: an archive is native.
+  workspace-test-build:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 60
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: fat_driver case table must still turn RED
+        run: python3 scripts/ci/fat_driver.py self-test
+      - name: Sections
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'workspace-test-build'
+          --results "$RUNNER_TEMP/fat/results.json"
+      # Already zstd: no second compression. One day: the archive is only this
+      # run's input.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ws-lib-archive
+          path: ${{ runner.temp }}/fat/artifacts/ws-lib-archive/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sigma-build
+          path: ${{ runner.temp }}/fat/artifacts/sigma-build/
+          if-no-files-found: ignore
+
   workspace-test-shard:
     runs-on: [self-hosted, Linux, X64, clean-room]   # same pool as x86-main
     timeout-minutes: 180
+    needs: [workspace-test-build]
     strategy:
       fail-fast: false
       matrix:
@@ -495,6 +531,10 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
+      # The build job has finished (needs:), so the archive is there or never
+      # will be: wait for it briefly, never the driver's default hour.
+      FAT_EXPECT_ARTIFACTS: ws-lib-archive
+      FAT_ARTIFACT_WAIT_S: "120"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -518,20 +558,23 @@ jobs:
   workspace-test:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [workspace-test-shard]
+    needs: [workspace-test-build, workspace-test-shard]
     if: always()
     steps:
       - name: Every shard passed
         env:
+          BUILD_RESULT: ${{ needs.workspace-test-build.result }}
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
         run: |
           set -euo pipefail
+          echo "workspace-test-build result: $BUILD_RESULT"
+          [ "$BUILD_RESULT" = success ] || { echo "::error::workspace-test: the build job's result is '$BUILD_RESULT'"; exit 1; }
           echo "workspace-test-shard matrix result: $SHARD_RESULT"
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
-          pattern: sigma-shard-*
+          pattern: sigma-*
           path: ${{ runner.temp }}/sigma
       # #4433, the cop's condition: the test-id set across the jobs equals the
       # owed set, by id. Each shard ran a partition; the UNION of their executed
@@ -548,19 +591,25 @@ jobs:
             tiers="$tiers $(cat "$d/sigma-shard-$n/tier")"
           done
           echo "shard tiers:$tiers"
+          # QM-09 (#4527): the build job decided the tier too, and listed the lib universe.
+          [ -f "$d/sigma-build/tier" ] || { echo "::error::Σ: the build job staged no tier file"; exit 1; }
+          bt="$(cat "$d/sigma-build/tier")"
+          echo "build tier: $bt"
           # Each shard decides its tier on its own. Only an AGREED non-full tier
           # skips the lib/explicit Σ; a split (full full quick) is RED, since
           # the full shards' partitions would otherwise go unchecked.
           set -- $tiers
           [ "$1" = "$2" ] && [ "$2" = "$3" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }
           [ "$1" = full ] || { echo "every shard ran tier '$1': the lib/explicit Σ is not owed"; exit 0; }
+          # Full shards ran the build job's archive, so its lib universe is the one owed.
+          [ "$bt" = full ] || { echo "::error::Σ: the shards ran tier full, the build job '$bt'"; exit 1; }
           j=() l=()
           for n in 1 2 3; do
             j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
             l+=(--log "$d/sigma-shard-$n/section.log")
           done
           rc=0
-          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/sigma-shard-1/lib.list.json" || rc=1
+          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/sigma-build/lib.list.json" || rc=1
           python3 scripts/ci/sigma_executed.py explicit --kind "explicit (3 shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
           exit "$rc"
 

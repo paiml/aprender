@@ -453,7 +453,9 @@ jobs:
           git update-ref refs/remotes/origin/main "$base"
           printf 'refinement base: %s base %s pinned as origin/main\n' "${GITHUB_EVENT_NAME}" "$(git rev-parse 'origin/main^{commit}')"
       - name: Workspace lib tests (25,300+)
-        if: steps.tier.outputs.tier == 'full'
+        # QM-09 (#4527): sharded, the lib tests run from the build job's archive
+        # (the next two steps); this compiling form is the one-shard run's.
+        if: steps.tier.outputs.tier == 'full' && matrix.shards == 1
         # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
         # -- each runs as its own step below. The GPU crates are `default = []`, but they
         # CANNOT ride this `--workspace` line: cargo unifies features across the whole
@@ -512,6 +514,44 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
             cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition "hash:${SHARD}/${SHARDS}"
+      # QM-09 (#4527) compile-once: the build job compiled the workspace lib tests
+      # ONCE and archived them; this shard downloads the archive and runs its hash
+      # partition with no compile. Before: every shard compiled the whole
+      # workspace lib itself (4m52s warm on run 36102215061 shard 2, and the four
+      # cold shards of run 36257835805 were cancelled at 15 min still compiling).
+      - name: "Workspace lib tests: fetch the build job's archive (QM-09 #4527)"
+        if: steps.tier.outputs.tier == 'full' && matrix.shards != 1
+        uses: actions/download-artifact@v4
+        with:
+          name: ws-lib-archive
+          path: ws-lib-archive-dl
+      - name: "Workspace lib tests from the compile-once archive (QM-09 #4527)"
+        if: steps.tier.outputs.tier == 'full' && matrix.shards != 1
+        # No compile here: run 37906785914's shard 1 ran its ~28k lib tests in
+        # 1192 s on intel-clean-room; 60 leaves a contended box room.
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          set -euo pipefail
+          a=ws-lib-archive-dl/ws-lib-archive
+          [ -s "$a/lib.tar.zst" ] || { echo "::error::no archive at $a/lib.tar.zst"; exit 1; }
+          # The two jobs decide the tier on their own; an archive built for another
+          # tier is not this shard's universe.
+          bt=$(cat "$a/tier")
+          [ "$bt" = full ] || { echo "::error::the build job decided tier '$bt', this shard 'full'"; exit 1; }
+          docker run --rm \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e SHARD -e SHARDS -e ARCHIVE="/workspace/$a/lib.tar.zst" \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              mkdir -p /workspace/target/ws-extract
+              cargo nextest run --profile ci --archive-file "$ARCHIVE" --workspace-remap /workspace --extract-to /workspace/target/ws-extract --extract-overwrite --partition "hash:${SHARD}/${SHARDS}"'
       - name: "Σ-executed: keep the workspace lib junit (the next nextest run overwrites it)"
         if: steps.tier.outputs.tier == 'full'
         # #4433: nextest writes <target>/nextest/ci/junit.xml and every invocation
@@ -676,9 +716,13 @@ jobs:
             -e CARGO_BUILD_JOBS=8 \
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e SHARDS \
             "$IMAGE" \
             bash -c 'set -euo pipefail
-              cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /sigma/lib.list.json
+              # QM-09 (#4527): sharded, the lib universe is listed by the build job.
+              if [ "$SHARDS" = 1 ]; then
+                cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /sigma/lib.list.json
+              fi
               cargo nextest list --profile ci -p aprender-gpu -p aprender-cuda-edge --lib --message-format json > /sigma/gpu.list.json
               cargo test -p aprender-compute --lib -- --list > /sigma/compute.list.txt
               cargo test -p aprender-compute --lib -- --list --ignored > /sigma/compute.ignored.txt'
@@ -1047,17 +1091,375 @@ jobs:
   # shards in. `if: always()` so a failed shard still produces a red check here
   # instead of a skipped one (a skipped required check blocks nothing and says
   # nothing). Every non-success matrix result is named.
+  # QM-09 (#4527) compile-once: the workspace lib tests are compiled ONCE per run,
+  # here, and archived (`cargo nextest archive`); the eight workspace-test-shard
+  # jobs need this one and run their hash partition from the archive. The tier is
+  # decided here as in the shards (the same step), and the fan-in checks both
+  # agree. The Σ universe of the lib tests is listed here with its filters written
+  # out again -- never read back from the archive -- so an --exclude added to the
+  # archive line cannot narrow its own yardstick. X64 only: an archive holds
+  # native binaries.
+  workspace-test-build:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 60
+    env:
+      SCCACHE_HOST_DIR: /home/noah/data/sccache
+      IMAGE: localhost:5000/sovereign-ci:stable
+      # Its own cargo state, as each shard has (`-s<N>`): `-sb` for the build.
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}-sb
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Five-whys: the end-of-job "Fix file ownership" step is
+        # `if: always()`, but a hard-killed job (runner death, forced
+        # cancel) skips even always() steps → root-owned
+        # target/.rustc_info.json + target/package/ survive in the runner
+        # checkout → the NEXT run's actions/checkout `git clean -ffdx`
+        # fails with EACCES (observed 2026-07-02: 4 jobs across PRs
+        # #2257/#2258 on runners 10/14/16, each needing a manual
+        # `ssh intel sudo rm` sweep). Restoring ownership BEFORE checkout
+        # makes every run self-healing instead of depending on the
+        # previous run's clean exit.
+        # Soundness of the cached-image gate: leftovers can only exist if
+        # a previous docker job ran on this runner — which implies the
+        # image is already in the local cache. So "image not cached ⟹ no
+        # leftovers" and skipping is safe (also keeps this step
+        # registry-outage-tolerant).
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+      - name: Pull sovereign-ci image (with retry + local-cache fallback)
+        # Self-hosted runner's local Docker registry at localhost:5000 is
+        # occasionally restarting OR experiencing extended outages
+        # (paiml/infra ops). Two layers of resilience:
+        #   1. Check the local Docker daemon cache first — the image was
+        #      successfully pulled on a prior run, so it's almost certainly
+        #      still in the cache (Docker doesn't GC images unless `prune`
+        #      is run). If present, skip the pull entirely; this makes the
+        #      workflow registry-outage-tolerant.
+        #   2. Otherwise, try to pull with 15-attempt linear-backoff retry
+        #      (~13min total) — plenty for any normal restart cycle.
+        # The local-cache path accepts slight staleness as the price of
+        # registry-outage tolerance. paiml/infra:machines/intel/sovereign-
+        # ci/rebuild.sh rebuilds the stable tag nightly so any drift gets
+        # corrected within 24h on the next successful pull.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image $IMAGE already cached locally — skipping pull"
+            echo "(local cache is registry-outage-tolerant; nightly rebuild keeps it fresh)"
+            exit 0
+          fi
+          max_attempts=15
+          delay=4
+          for i in $(seq 1 $max_attempts); do
+            if docker pull "$IMAGE"; then
+              echo "Image pulled successfully on attempt $i"
+              exit 0
+            fi
+            if [ "$i" -eq "$max_attempts" ]; then
+              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts (~13min) AND image not in local cache"
+              echo "::error::Suggests paiml/infra runner-side registry restart + initial image seed needed"
+              exit 1
+            fi
+            echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
+            sleep "$delay"
+            delay=$((delay + 6))  # linear backoff: 4,10,16,22,28,34,...
+          done
+      - name: Reclaim orphaned per-RUN target dirs (never a live sibling)
+        # WHAT THIS REPLACED, and why (#2825).
+        #
+        # This step used to run, whenever the previous run on the branch was
+        # cancelled:
+        #
+        #   docker run --rm \
+        #     -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+        #     "$IMAGE" bash -c 'rm -rf /workspace/target/* /workspace/target/.[!.]* ...'
+        #
+        # It mounted the PARENT. The tree is `aprender-ci/<PR>/run-<RUN_ID>`
+        # since #1693, so `<PR>/` is the shared parent of every run for that PR
+        # and `rm -rf <PR>/*` removed every sibling `run-*` directory with no
+        # notion of whether the run owning it was still building.
+        #
+        # Its own five-whys (whose text is preserved below) was written against
+        # a premise #1693 removed: "the target dir is bind-mounted from a per-PR
+        # persistent path /mnt/nvme-raid0/targets/aprender-ci/<PR>/, so partial-
+        # compile state survives across runs". Since #1693 the mount is per-RUN,
+        # so no other run's state can reach this run at all. The parent-wide
+        # removal bought nothing and could only take a sibling with it:
+        #
+        #   1. Why the "no such file or directory .rcgu.o" / missing-extern
+        #      failures? Cargo's incremental state on the target dir is
+        #      inconsistent.
+        #   2. Why inconsistent? A prior cargo was SIGKILL'd mid-compile and
+        #      left .rmeta without the matching .rcgu.o.
+        #   3. Why SIGKILL'd? concurrency.cancel-in-progress cancels the
+        #      previous run as soon as a new commit lands on the branch.
+        #   4. Why did it persist? -- ANSWERED BY #1693. It no longer does:
+        #      the mount is `<PR>/run-<RUN_ID>`, fresh per run.
+        #   5. So the residual risk is not stale state reaching this run; it is
+        #      this step reaching somebody else's live run.
+        #
+        # Measured 2026-08-31 over 36 of the last 100 runs:
+        #   * workspace-test and guard-tree are two jobs of the SAME
+        #     run, on two runners of one host, and both mount
+        #     `<PR>/run-<RUN_ID>` (guard's "model-tests falsification suites"
+        #     step). Their job windows overlap by 21-29 minutes.
+        #   * The removal does fire: runs 33372476223 and 33375180919 both
+        #     logged "Previous run was cancelled; nuking target dir".
+        #   * The margin between this step and that sibling step on the shared
+        #     directory is uncontrolled and CHANGES SIGN -- +7.6 min at the
+        #     tightest (run 33369566809) and -10.8 min in run 33243677674,
+        #     where this step ran AFTER the sibling's cargo instead of before.
+        #     Nothing orders them; today it misses on luck, and the image pull
+        #     this job documents at up to 20 minutes moves it either way.
+        #
+        # So the removal is scoped: `run-<THIS_RUN_ID>` is never touched (a
+        # sibling JOB of this run is writing to it), and a sibling RUN's dir is
+        # reclaimed only when the API says that run is completed -- or, if the
+        # API cannot answer, only when the dir is older than the 100-minute job
+        # timeout. That age fallback is deliberate: sparing everything on an
+        # oracle outage would make this step inert exactly when it is needed.
+        # Cleanup never fails the build; a planner error downgrades to a
+        # warning and reclaims nothing.
+        run: |
+          set -uo pipefail
+          set +e
+          PARENT="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
+          PLAN="${RUNNER_TEMP:-/tmp}/reclaim-${GITHUB_RUN_ID}.txt"
+          bash scripts/ci_reclaim_target_dirs.sh "$PARENT" "$GITHUB_RUN_ID" > "$PLAN"
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::reclaim planner exited ${rc}; reclaiming nothing (cleanup never fails the build)"
+            exit 0
+          fi
+          if [ ! -s "$PLAN" ]; then
+            echo "Nothing to reclaim under ${PARENT}"
+            exit 0
+          fi
+          echo "Reclaiming $(wc -l < "$PLAN") orphaned run dir(s):"
+          cat "$PLAN"
+          docker run --rm -i \
+            -v "${PARENT}:/parent" \
+            "$IMAGE" \
+            bash -c 'set -u; while read -r d; do case "$d" in run-*) rm -rf "/parent/${d:?}" ;; *) echo "refusing to remove: ${d}" ;; esac; done; ls -la /parent' \
+            < "$PLAN"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Create this run's target dir and registry on the host (before any bind mount)
+        run: |
+          set -euo pipefail
+          # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
+          # ref (gh-readonly-queue/main/pr-N-<sha>), so the per-ref dir is NESTED
+          # and an ancestor may already be root-owned from a build whose bind
+          # mount let the docker daemon create it (#3037's queue build: mkdir
+          # EACCES on .../aprender-ci/gh-readonly-queue/...). Walk every
+          # component from ROOT down; chown each existing unwritable one through
+          # the image (that directory only, never its contents); then mkdir -p.
+          heal_path() {
+            local root=$1 path=$2 cur=$1 rel part
+            rel=${path#"$root"/}
+            IFS=/ read -ra parts <<< "$rel"
+            for part in "${parts[@]}"; do
+              cur="$cur/$part"
+              if [ -d "$cur" ] && [ ! -w "$cur" ]; then
+                docker run --rm -v "$(dirname "$cur"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$cur")"
+              fi
+            done
+            mkdir -p "$path"
+          }
+          parent="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
+          reg="/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}"
+          # infra#1059: admit this target unit against gx10's disk budget BEFORE creating it
+          # (free >= 50G + 25G x (live+1), live < 2; waits <=20m, then exit 1). The admit
+          # record is what the runner's JOB_COMPLETED hook reaps, and nothing else. Hosts
+          # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
+          # gate there is red, never a silent skip.
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            ci-target-admit "${parent}/run-${GITHUB_RUN_ID}" || exit 1
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
+          heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
+          heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
+          ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
+      - name: Pre-build chown — fix per-RUN root ownership
+        # Root cause (five-whys):
+        #   1. Why do fresh runs sometimes fail with "failed to create
+        #      /workspace/target/debug" / "No such file or directory"?
+        #      Cargo (running as user 1000 inside the container) can't
+        #      write to /workspace/target/debug.
+        #   2. Why can't it write? The bind-mount source dir on the host
+        #      (/mnt/nvme-raid0/targets/aprender-ci/<PR>/run-<RUN_ID>) is
+        #      owned by root:root.
+        #   3. Why is it root-owned? Docker's bind-mount creates missing
+        #      host directories with the daemon's uid (root). Per-RUN
+        #      paths are always fresh, so this fires every run.
+        #   4. Why didn't this happen before? Pre-#1693 the per-PR (not
+        #      per-RUN) path persisted across runs, and the downstream
+        #      "post-job cleanup" docker chown step fixed ownership for
+        #      the NEXT run's git-clean. Per-RUN paths invalidate that —
+        #      each run gets a brand-new root-owned dir.
+        #   5. Root cause: the chown step runs AFTER cargo, not BEFORE.
+        #      First-runs always fail; reruns appear to work only when
+        #      the previous run's belated chown fixed the now-stale dir.
+        # Fix (this step): docker run as root, chown the per-RUN target
+        # dir + cargo registry to noah:1000 BEFORE the cargo step.
+        # Idempotent — `|| true` tolerates dirs that are already
+        # noah-owned (e.g. a rerun of the same run-id).
+        run: |
+          docker run --rm \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            "$IMAGE" \
+            bash -c 'chown -R 1000:1000 /workspace/target /usr/local/cargo/registry 2>/dev/null || true'
+      - name: Decide the test tier (BSE-17, PMAT-1077)
+        id: tier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          args=(--event "${GITHUB_EVENT_NAME}")
+          # PMAT-1098 67-E2: the queue and a push to main re-derive their own
+          # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the
+          # new base). actions/checkout is shallow, so that parent is not in the
+          # object store until we deepen -- and without it ci_test_tier.sh falls
+          # closed to `full` every single time, which would make the whole
+          # optimisation inert while looking like it worked. Best effort by
+          # design: if the deepen fails the decision still falls closed, and the
+          # warning below says so instead of the run silently paying the hour.
+          case "${GITHUB_EVENT_NAME}" in
+            merge_group|push)
+              git fetch --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
+                || git fetch --no-tags --deepen=1 origin 2>/dev/null \
+                || true
+              if git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
+                printf 'first parent available: %s\n' "$(git rev-parse HEAD^1)"
+              else
+                printf '::warning::first parent unavailable after deepen -- the tier falls closed to full\n'
+              fi
+              ;;
+          esac
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request)
+              git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+              # --no-renames (#3664): a rename must list BOTH paths, or a source
+              # moved into docs/ reads as docs-only and runs zero tests.
+              git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
+              printf 'touched (tip vs tip): %s path(s)\n' "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
+              args+=(--diff-from "$RUNNER_TEMP/touched.txt")
+              ;;
+            merge_group)
+              pr=$(printf '%s' "${GITHUB_REF_NAME}" | sed -n 's|^gh-readonly-queue/[^/]*/pr-\([0-9]*\)-.*|\1|p')
+              if [ -n "$pr" ]; then
+                head=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .head.sha)
+                git fetch --no-tags --depth=1 origin "$head"
+                concl=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head}/check-runs?check_name=workspace-test&per_page=20" --jq '[.check_runs[]|select(.status=="completed")]|sort_by(.completed_at)|last|.conclusion // "none"')
+                args+=(--pr-head "$head" --pr-head-conclusion "${concl:-none}")
+              fi
+              ;;
+            push)
+              # T36: the merge queue already tested this very sha. Hand its
+              # workspace-test result to the tier script, which reuses it only
+              # on a success for HEAD itself. A failed lookup is the push's own
+              # tier, as before -- never a reuse, never a red step.
+              mg=$(bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}") || mg=""
+              if [ -n "$mg" ]; then
+                mapfile -t mgargs <<<"$mg"
+                args+=("${mgargs[@]}")
+              else
+                printf 'no merge_group workspace-test result for %s: the tier is decided from the push diff\n' "${GITHUB_SHA}"
+              fi
+              ;;
+          esac
+          bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
+          grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+      - name: "Compile once: archive the workspace lib tests and list their universe (QM-09 #4527)"
+        if: steps.tier.outputs.tier == 'full'
+        timeout-minutes: 50
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ws-lib-archive sigma-build
+          docker run --rm \
+          -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=16 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              cargo nextest archive --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --archive-file /workspace/ws-lib-archive/lib.tar.zst
+              cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /workspace/sigma-build/lib.list.json'
+          ls -la ws-lib-archive sigma-build
+      - name: "Stage the tier this job decided (the shards and the fan-in check it)"
+        shell: bash
+        env:
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: |
+          set -euo pipefail
+          mkdir -p ws-lib-archive sigma-build
+          printf '%s\n' "$TIER" > ws-lib-archive/tier
+          printf '%s\n' "$TIER" > sigma-build/tier
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ws-lib-archive
+          path: ws-lib-archive/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sigma-build
+          path: sigma-build/
+          if-no-files-found: error
+      - name: Fix file ownership (container runs as root, runner as noah:1000)
+        if: always()
+        run: |
+          # Five-whys: Docker container creates files as root on bind-mounted
+          # workspace. Runner (noah:1000) can't git-clean them on next run
+          # → checkout fails → CI breaks. This runs inside the container
+          # (as root) restoring host ownership for subsequent bare-metal jobs.
+          # infra#1059: mount the target unit only if it exists. When the disk
+          # admit gate refused it, a bind mount here would make docker create the
+          # refused unit as root, unrecorded, so the reap hook would never free it.
+          unit="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          target_mount=()
+          if [ -d "$unit" ]; then target_mount=(-v "${unit}:/workspace/target"); fi
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            "${target_mount[@]}" \
+            "$IMAGE" \
+            bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
+
+
   workspace-test:
-    needs: [workspace-test-shard]
+    needs: [workspace-test-build, workspace-test-shard]
     if: always()
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     steps:
       - name: Every shard passed
         env:
+          BUILD_RESULT: ${{ needs.workspace-test-build.result }}
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
         run: |
           set -euo pipefail
+          printf 'workspace-test-build result: %s\n' "$BUILD_RESULT"
+          [ "$BUILD_RESULT" = success ] || { echo "::error::workspace-test: the build job's result is '$BUILD_RESULT'"; exit 1; }
           printf 'workspace-test-shard matrix result: %s\n' "$SHARD_RESULT"
           case "$SHARD_RESULT" in
             success) echo "workspace-test: all shards green" ;;

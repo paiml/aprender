@@ -12,7 +12,7 @@
 #
 #   L rows  the lookup, against a stub `gh` serving canned JSON (no network)
 #   D rows  the decision, scripts/ci_test_tier.sh --event push on throwaway repositories
-#   W rows  the tier step in ci/sections.yml calls the lookup on push, and survives its failure
+#   W rows  every tier step in ci/sections.yml calls the lookup on push, and survives its failure
 #   A rows  the workspace-test aggregator in ci.yml still refuses a split tier
 #   P rows  decide-push for x86-main + determinism, on a throwaway repository and canned lists
 #   R rows  resolve-push against the stub `gh`: 2 calls, and a failed call runs the jobs
@@ -270,9 +270,13 @@ hasnt "D11 pull_request ignores --mg-*: never reuse" "tier=reuse" "$OUT"
 
 # -- W: the CI wiring ------------------------------------------------------------------------------
 SEC="$ROOT/ci/sections.yml"
-want "W1 the tier step's push arm calls the lookup for GITHUB_SHA" 1 \
+# One tier step per job that decides a tier (the shards, and the QM-09 build job, #4527): each one
+# must carry the push arm, so W1/W2 count one lookup per tier step, never a fixed 1.
+ntier="$(grep -cF 'name: Decide the test tier (BSE-17, PMAT-1077)' "$SEC")"
+want "W0 ci/sections.yml has a tier step" 1 "$([ "$ntier" -ge 1 ] && echo 1 || echo 0)"
+want "W1 every tier step's push arm calls the lookup for GITHUB_SHA" "$ntier" \
      "$(grep -cF 'bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}"' "$SEC")"
-want "W2 a failed lookup is not fatal to the step (it falls to today's tier)" 1 \
+want "W2 a failed lookup is not fatal to any tier step (it falls to today's tier)" "$ntier" \
      "$(grep -cF '"${GITHUB_SHA}") || mg=""' "$SEC")"
 W3PAT="push) printf 'cited merge_group run: %s"
 if grep -qF "$W3PAT" "$SEC"; then w3=1; else w3=0; fi
