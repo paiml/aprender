@@ -1,5 +1,5 @@
-# measured 2026-10-09T03:25:04Z
-lambda-labs	apr	GREEN	no-sha (installed nightly@e0cb137, target nightly@e0cb137)
+# measured 2026-10-09T03:40:05Z
+lambda-labs	apr	GREEN	ok (installed nightly@e0cb137, target nightly@e0cb137)
 lambda-labs	pv	GREEN	ok (installed v0.70.2@89e261c, target v0.70.2@89e261c)
 lambda-labs	forjar	GREEN	no-sha (installed nightly@ce9e490, target nightly@ce9e490)
 lambda-labs	bashrs	GREEN	no-sha (installed nightly@63abc48, target nightly@63abc48)
