@@ -91,6 +91,8 @@ pub(crate) mod hf_endpoint;
 pub(crate) mod hf_http;
 #[cfg(feature = "training")]
 pub(crate) mod hf_publish;
+#[cfg(feature = "training")]
+pub(crate) mod hf_token;
 pub(crate) mod imatrix_classifier;
 pub(crate) mod imatrix_lint;
 pub(crate) mod import;
