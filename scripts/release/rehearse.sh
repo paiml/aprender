@@ -44,7 +44,8 @@
 #   rehearse.sh --streak --commit REV --as-of YYYY-MM-DD --cache DIR [--repo DIR] [--history FILE] [--release-path]
 #       the three counting nights a pass on REV needs (C345 #4, Q9). Each night records the tree id of
 #       scripts/release and the blob ids of the stop list and the policy file; a night counts only when
-#       its ids equal REV's (release day's), so any change to them resets the count. The count is
+#       its ids equal REV's (release day's), so any change to them resets the count. A night is keyed on
+#       the C its own record names (the release-rehearsal artifact), never on the run's head_sha. The count is
 #       nightly_greens.sh's over this workflow's scheduled runs on main: a dispatched day run never counts.
 #       Ready prints one RECEIPT line per counting night. EXIT 0 ready · 1 not ready · 2 · 3 as below.
 #   rehearse.sh --classify TOOL CWD [ARG...]   READ or WRITE <why>, as the guard decides it
@@ -69,9 +70,13 @@ SUMMARY='Release rehearsal (B1): no train summary. This bump is never pushed.'
 IDS_TREE=scripts/release
 IDS_STOP=contracts/release-ready-v1.yaml
 IDS_POLICY=contracts/model-capability-ladder-v1.yaml
-# The workflow whose scheduled runs on main are the counting nights, and the floor its one REST read keeps.
+# The workflow whose scheduled runs on main are the counting nights, and the floor its REST reads keep.
 WORKFLOW=release-rehearsal-nightly.yml
 RATE_FLOOR=1000
+# A night's own record: the artifact its rehearse job uploads (night.txt, rehearsal/night.env, ...). The streak reads
+# it for the night's C, newest night first, and reads none past the night that makes nightly_greens.sh's NEED.
+RECORD_ARTIFACT=release-rehearsal
+STREAK_NEED=3
 # B1 Q1: C is the newest first-parent main commit that both the models crux bundle and an infra clean-room run
 # measured. The bundle and its INDEX sit on EVIDENCE_BRANCH under MODELS_DIR; the walk reads main's newest PICK_DEPTH
 # first-parent commits (about five days of main in early October 2026), and a commit further back is no night's C.
@@ -326,11 +331,9 @@ night_env() {
     else printf 'IDS=-\nIDS_WHY=%s\n' "${ids%%$'\n'*}"; fi >> "$1/night.env"
 }
 
-# fetch_runs CACHE OUT -> OUT: the workflow's scheduled runs on main, nightly_greens.sh's six columns then head_sha.
-# One REST read, sent with the cached ETag (a 304 reuses CACHE/runs.json). rc 2 and the reason on stderr when
-# GitHub cannot be read or the floor is reached: not_measured, never "no nights".
-fetch_runs() {
-    local cache=$1 out=$2 relpath=${3:-0} lim rem fl st hdr=()
+# rate_ok RELPATH -> rc 0 while the core allowance is above the floor; rc 2 and the reason on stderr otherwise.
+rate_ok() {
+    local relpath=$1 lim rem fl
     read -r lim rem <<< "$(gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
     case "$lim:$rem" in *[!0-9:]*|:*|*:) echo "rate_limit unreadable" >&2; return 2 ;; esac
     # a fifth of the token's own hourly limit, capped at RATE_FLOOR, as nightly_train.sh's read keeps. The pass start
@@ -339,6 +342,14 @@ fetch_runs() {
     fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR
     if [ "$relpath" = 1 ]; then fl=0; fi
     [ "$rem" -ge "$fl" ] || { echo "core remaining $rem under $fl" >&2; return 2; }
+}
+
+# fetch_runs CACHE OUT -> OUT: the workflow's scheduled runs on main, nightly_greens.sh's six columns then head_sha.
+# One REST read, sent with the cached ETag (a 304 reuses CACHE/runs.json). rc 2 and the reason on stderr when
+# GitHub cannot be read or the floor is reached: not_measured, never "no nights".
+fetch_runs() {
+    local cache=$1 out=$2 relpath=${3:-0} st hdr=()
+    rate_ok "$relpath" || return 2
     [ -s "$cache/runs.etag" ] && [ -s "$cache/runs.json" ] && hdr=(-H "If-None-Match: $(cat "$cache/runs.etag")")
     gh api -i "${hdr[@]}" "repos/$REPO/actions/workflows/$WORKFLOW/runs?branch=main&event=schedule&per_page=60" > "$cache/runs.http" 2>/dev/null
     st=$(awk 'NR == 1 { print $2; exit }' "$cache/runs.http")
@@ -354,13 +365,51 @@ fetch_runs() {
     } > "$out" 2>/dev/null || { echo "the runs read is not a workflow_runs list" >&2; return 2; }
 }
 
+# night_record CACHE RUN ATTEMPT -> CACHE/rec/RUN.ATTEMPT: that run's RECORD_ARTIFACT as uploaded (night.txt,
+# rehearsal/night.env, ...). It is gh run download: two REST calls, the run's artifact list then the zip (measured
+# with GH_DEBUG=api on gh 2.85.0; the blob the zip redirects to is not the API). A run attempt's artifact never
+# changes, so a record is kept and never read again: 0 calls after the first. rc 2 and the reason on stderr when it
+# cannot be read (none uploaded, expired after its 30 days, refused): not_measured, never a red night.
+night_record() {
+    local t o
+    mkdir -p "$1/rec" && t=$(mktemp -d "$1/rec/.dl.XXXXXX") || return 2
+    o=$(gh run download "$2" -R "$REPO" -n "$RECORD_ARTIFACT" -D "$t/a" 2>&1) \
+        || { echo "$RECORD_ARTIFACT of run $2 cannot be read: ${o##*$'\n'}" >&2; return 2; }
+    mv -- "$t/a" "$1/rec/$2.$3" || { echo "$RECORD_ARTIFACT of run $2 extracted nothing" >&2; return 2; }
+    rmdir -- "$t" 2>/dev/null || :
+}
+
+# record_c REC -> the night's C, rc 0. rc 1 and the reason on stdout when the record names no C, or its two sources
+# disagree: night.env's C= as uploaded, and the judge's "REHEARSAL <v> on <C>" in night.txt, which the judge printed
+# from night.env after the last stage. So the second is not independent of the first: it catches a night.env changed
+# after the judge, or a night.txt from another night. Both are in the one record, so the cross-check costs no call.
+record_c() {
+    local e t
+    e=$(sed -n 's/^C=//p' "$1/rehearsal/night.env" 2>/dev/null)
+    t=$(sed -n 's/^REHEARSAL [^ ]* on //p' "$1/night.txt" 2>/dev/null)
+    [[ $e =~ ^[0-9a-f]{40}$ ]] || { printf 'its night.env names no C, or more than one'; return 1; }
+    [ "$t" = "$e" ] || { printf 'night.env names C %s, night.txt %s' "$e" "${t:-no C}"; return 1; }
+    printf '%s' "$e"
+}
+
+# ids_diff IDS TARGET -> which of tree, stop and policy differ
+ids_diff() {
+    local a b i out=""
+    read -ra a <<< "$1"; read -ra b <<< "$2"
+    for i in 0 1 2; do [ "${a[i]}" = "${b[i]}" ] || out="$out${out:+, }${b[i]%%=*}"; done
+    printf '%s differ' "$out"
+}
+
 # streak --commit REV --as-of YYYY-MM-DD --cache DIR [--repo DIR] [--history FILE] -> the three counting nights'
-# receipts a pass on REV needs (C345 #4, Q9). REV's ids are release day's. A scheduled night on main counts only
-# when its head carries the same ids; any other is a reset, judged as a red night. The count is nightly_greens.sh's.
-# The history is FILE (seven columns, as fetch_runs writes) or one read of the workflow's runs. Writes only in DIR.
+# receipts a pass on REV needs (C345 #4, Q9). REV's ids are release day's. A scheduled night on main is keyed on its
+# own C, the commit its record names, never on the run's head_sha (the pick sets C behind main's head). It counts
+# only when C carries the same ids; any other, and a record that names no C or two, is a reset, judged as a red
+# night. The count is nightly_greens.sh's. The history is FILE (seven columns, as fetch_runs writes) or one read of
+# the workflow's runs; the records are CACHE/rec (night_record). Writes only in DIR.
 # rc 0 ready (one RECEIPT line per counting night) · 1 not ready · 2 not_measured · 3 caller error
 streak() {
-    local rev="" repo="" hist="" asof="" cache="" relpath=0 target rc head ids o hdr
+    local rev="" repo="" hist="" asof="" cache="" relpath=0 target rc ids o hdr
+    local id day co at hd prev="" last="" n=0 red=0 cut="" rated=0 c why
     while [ $# -gt 0 ]; do
         case $1 in
             --commit|--repo|--history|--as-of|--cache)
@@ -386,42 +435,61 @@ streak() {
     hdr=$(head -n 1 -- "$hist" 2>/dev/null)
     [ "$hdr" = "$(printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\thead_sha')" ] \
         || { echo "not_measured: $hist is not a seven-column run history"; return 2; }
-    : > "$cache/heads.tsv"
-    while IFS= read -r head; do
-        rc=0; ids=$(release_ids "$repo" "$head" 2>&1) || rc=$?
-        case $rc in
-            0) printf '%s\t%s\n' "$head" "$ids" >> "$cache/heads.tsv" ;;
-            1) printf '%s\t-\t%s\n' "$head" "$ids" >> "$cache/heads.tsv" ;;
-            *) echo "not_measured: a counted night's head is not in $repo ($ids): fetch main first"; return 2 ;;
+    # the walk, newest night first, up to --as-of. An attempt-1 green is keyed on its record's C; a red or retried run
+    # is red whatever its C, and a running or void one is nightly_greens.sh's to judge from its conclusion alone. The
+    # walk ends after the night that is red or makes STREAK_NEED counting nights: no older night can change the
+    # verdict, and its record may be past the artifact's 30 days. The history judged ends there too, so total= counts
+    # the walked nights only.
+    : > "$cache/nights.tsv"; : > "$cache/resets.tsv"
+    while IFS=$'\t' read -r id day co at hd; do
+        if [ "$day" != "$prev" ]; then
+            if [ "$red" = 1 ] || [ "$n" -ge "$STREAK_NEED" ]; then cut=$day; break; fi
+            prev=$day
+        fi
+        case $co:$at in
+            success:1) ;;
+            success:*|failure:*|timed_out:*|startup_failure:*) red=1; continue ;;
+            *) continue ;;
         esac
-    done < <(awk -F'\t' 'NR > 1 && $3 == "main" && $4 == "schedule" { print $7 }' "$hist" | LC_ALL=C sort -u)
-    # a night whose ids are not the target's is a reset: its run is judged failure, whatever it ended as
-    awk -F'\t' -v OFS='\t' -v target="$target" '
-        function diff(a, b,    x, y, i, out) {
-            if (a == "-") return b
-            split(a, x, " "); split(target, y, " "); out = ""
-            for (i = 1; i <= 3; i++) if (x[i] != y[i]) out = out (out == "" ? "" : ", ") substr(y[i], 1, index(y[i], "=") - 1)
-            return out " differ"
-        }
-        FILENAME == ARGV[1] { ids[$1] = $2; why[$1] = $3; next }
+        if [ ! -d "$cache/rec/$id.$at" ]; then
+            if [ "$rated" = 0 ]; then o=$(rate_ok "$relpath" 2>&1) || { echo "not_measured: night $day run $id: $o"; return 2; }; rated=1; fi
+            o=$(night_record "$cache" "$id" "$at" 2>&1) || { echo "not_measured: night $day run $id: $o"; return 2; }
+        fi
+        if c=$(record_c "$cache/rec/$id.$at"); then
+            rc=0; ids=$(release_ids "$repo" "$c" 2>&1) || rc=$?
+            case $rc in
+                0) if [ "$ids" = "$target" ]; then
+                       printf '%s\t%s\t%s\n' "$id" "$c" "$ids" >> "$cache/nights.tsv"
+                       [ "$day" = "$last" ] || n=$((n + 1)); last=$day; continue
+                   fi
+                   why=$(ids_diff "$ids" "$target") ;;
+                1) why=$ids ;;
+                *) echo "not_measured: night $day run $id: its C $c is not in $repo ($ids): fetch main first"; return 2 ;;
+            esac
+        else why=$c; c=-
+        fi
+        # a night whose C is not on the target's ids is a reset: its run is judged failure, whatever it ended as
+        printf 'RESET run %s (night %s, C %s): %s\n' "$id" "$day" "$c" "$why"
+        printf '%s\n' "$id" >> "$cache/resets.tsv"; red=1
+    done < <(awk -F'\t' -v OFS='\t' -v asof="$asof" 'NR > 1 && $3 == "main" && $4 == "schedule" && substr($2, 1, 10) <= asof {
+                 print $2, $1, substr($2, 1, 10), ($5 == "" ? "-" : $5), $6, $7 }' "$hist" | LC_ALL=C sort -r | cut -f 2-)
+    awk -F'\t' -v OFS='\t' -v cut="$cut" '
+        FILENAME == ARGV[1] { reset[$1] = 1; next }
         FNR == 1 { print $1, $2, $3, $4, $5, $6; next }
-        $3 == "main" && $4 == "schedule" && ids[$7] != target {
-            printf "RESET run %s (night %s, head %s): %s\n", $1, substr($2, 1, 10), $7, diff(ids[$7], why[$7]) > "/dev/stderr"
-            $5 = "failure"
-        }
-        { print $1, $2, $3, $4, $5, $6 }' "$cache/heads.tsv" "$hist" > "$cache/history.tsv" 2> "$cache/resets.txt" \
+        $3 == "main" && $4 == "schedule" && cut != "" && substr($2, 1, 10) <= cut { next }
+        $3 == "main" && $4 == "schedule" && ($1 in reset) { $5 = "failure" }
+        { print $1, $2, $3, $4, $5, $6 }' "$cache/resets.tsv" "$hist" > "$cache/history.tsv" \
         || { echo "not_measured: the history could not be read"; return 2; }
-    cat -- "$cache/resets.txt"
     rc=0; o=$(bash "$SCRIPT_DIR/nightly_greens.sh" --check release-rehearsal --history "$cache/history.tsv" --as-of "$asof") || rc=$?
     printf '%s\n' "$o"
     [ "$rc" = 0 ] || return "$rc"
-    # the three receipts: the run IDs nightly_greens.sh printed, each with its night, head and ids
+    # the three receipts: the run IDs nightly_greens.sh printed, each with its night, its C, the run's head and the ids
     o=$(printf '%s\n' "$o" | sed -n 's/^ok .* ready: .*: runs\(\( [0-9][0-9]*\)*\) (.*/\1/p')
     awk -F'\t' -v runs="$o" 'BEGIN { split(runs, r, " "); for (i in r) want[r[i]] = 1 }
-        FILENAME == ARGV[1] { ids[$1] = $2; next }
-        FNR > 1 && ($1 in want) { printf "RECEIPT run %s night %s head %s %s\n", $1, substr($2, 1, 10), $7, ids[$7]; n++ }
-        END { exit (n != 3) }' "$cache/heads.tsv" "$hist" \
-        || { echo "not_measured: nightly_greens.sh said ready, but its run IDs are not three counted runs in $hist"; return 2; }
+        FILENAME == ARGV[1] { c[$1] = $2; ids[$1] = $3; next }
+        FNR > 1 && ($1 in want) && ($1 in c) { printf "RECEIPT run %s night %s C %s head %s %s\n", $1, substr($2, 1, 10), c[$1], $7, ids[$1]; n++ }
+        END { exit (n != 3) }' "$cache/nights.tsv" "$hist" \
+        || { echo "not_measured: nightly_greens.sh said ready, but its run IDs are not three keyed nights in $hist"; return 2; }
 }
 
 # ------------------------------------------------------------------ the pick --
@@ -950,9 +1018,11 @@ selftest_judge() {
     printf '  %s judge rows\n' "$n"
 }
 
-# --streak on a fixture repository: one commit per id path changed, and run histories on them. The pass commit's
-# ids are release day's; a night on other ids resets the count. Then night_env on the same commits, and the read
-# itself through a planted gh: one call, its ETag sent back, a 304 reused, the floor kept.
+# --streak on a fixture repository: one commit per id path changed, and run histories on them, each night with its
+# record (the artifact's night.env and night.txt). The pass commit's ids are release day's; a night is keyed on its
+# record's C, never its head, and a night on other ids, or with no C, or two, resets the count. Then night_env on the
+# same commits, and the reads themselves through a planted gh: the runs read in one call, its ETag sent back and a 304
+# reused, each record read once, the floor kept.
 selftest_streak() {
     local g="$tmp/sr" k=0 p0=$((pass + fail)) o rc c0 c1 c2 c3 c4 c5 c6 none=0123456789abcdef0123456789abcdef01234567
     sg() { git -C "$g" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@invalid -c commit.gpgsign=false "$@"; }
@@ -966,34 +1036,82 @@ selftest_streak() {
     sg checkout -q --detach "$c2" && printf 'q\n' > "$g/$IDS_POLICY" && sg commit -qam c5 && c5=$(sg rev-parse HEAD) || return 2
     sg checkout -q --detach "$c2" && sg rm -q "$IDS_STOP" && mkdir -p "$g/$IDS_STOP" && printf 's\n' > "$g/$IDS_STOP/x" \
         && sg add -A && sg commit -qm c6 && c6=$(sg rev-parse HEAD) || return 2
-    hist() { # hist FILE ROW... with ROW = run|YYYY-MM-DD|event|conclusion|attempt|head
-        local f=$1 r id dd ev co at hd; shift
-        printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\thead_sha\n' > "$f"
+    # the planted gh: rate_limit prints GHS_RATE; the runs read answers 200 with an ETag, then 304 to that ETag; gh run
+    # download extracts GHS/art/RUN where gh would, or fails as gh does when the run has no such artifact
+    local gs="$tmp/ghs"
+    mkdir -p "$gs/bin" || return 2
+    cat > "$gs/bin/gh" <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GHS/calls"
+case " $* " in *" rate_limit "*) printf '%s\n' "${GHS_RATE:-5000 4000}"; exit 0 ;; esac
+if [ "$1 $2" = "run download" ]; then
+    run=$3 dir="" name="" repo=""; shift 3
+    while [ $# -ge 2 ]; do case $1 in -D) dir=$2 ;; -n) name=$2 ;; -R) repo=$2 ;; esac; shift 2; done
+    [ "$repo" = paiml/aprender ] && [ "$name" = release-rehearsal ] && [ -n "$dir" ] && [ -d "$GHS/art/$run" ] \
+        || { echo "no artifact matches any of the names or patterns provided" >&2; exit 1; }
+    mkdir -p "$dir" && cp -R "$GHS/art/$run/." "$dir/"; exit
+fi
+case "${GHS_RATE:-}" in *" 0") printf 'HTTP/2.0 403 Forbidden\r\n\r\n{"message": "API rate limit exceeded"}'; exit 1 ;; esac
+for a in "$@"; do [ "$a" = 'If-None-Match: "e1"' ] && { printf 'HTTP/2.0 304 Not Modified\r\n\r\n'; exit 0; }; done
+printf 'HTTP/2.0 200 OK\r\nEtag: "e1"\r\nContent-Type: application/json\r\n\r\n'; cat "$GHS/body.json"
+GH
+    chmod +x "$gs/bin/gh" || return 2
+    nrec() { # nrec DIR C_ENV C_TXT: a night's record as its artifact holds it; "-" leaves that file without a C
+        mkdir -p "$1/rehearsal" || return 2
+        { [ "$2" = - ] || printf 'C=%s\n' "$2"; printf 'V=0.71.0\nSOURCE=.\n'; } > "$1/rehearsal/night.env" || return 2
+        { [ "$3" = - ] || printf 'REHEARSAL 0.71.0 on %s\n' "$3"; printf 'VERDICT GREEN: planted\n'; } > "$1/night.txt"
+    }
+    hist() { # hist FILE CACHE GHS ROW... with ROW = run|YYYY-MM-DD|event|conclusion|attempt|head[|record], the record
+        # C (default: head) kept in CACHE, C_ENV/C_TXT (the two sources apart), noc (night.env names no C), art (gh
+        # holds it, C = head) or none (no artifact at all)
+        local f=$1 cd=$2 gd=$3 r id dd ev co at hd rs; shift 3
+        printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\thead_sha\n' > "$f" || return 2
         for r in "$@"; do
-            IFS='|' read -r id dd ev co at hd <<< "$r"
+            IFS='|' read -r id dd ev co at hd rs <<< "$r"
             printf '%s\t%sT05:20:00Z\tmain\t%s\t%s\t%s\t%s\n' "$id" "$dd" "$ev" "$co" "$at" "$hd" >> "$f"
+            case ${rs:-$hd} in
+                none) ;;
+                noc) nrec "$cd/rec/$id.$at" - "$hd" ;;
+                art) nrec "$gd/art/$id" "$hd" "$hd" ;;
+                */*) nrec "$cd/rec/$id.$at" "${rs%/*}" "${rs#*/}" ;;
+                *) nrec "$cd/rec/$id.$at" "${rs:-$hd}" "${rs:-$hd}" ;;
+            esac || return 2
         done
     }
-    sr() { # sr NAME WANT_RC WANT_OUT REV ROW...
+    sr() { # sr NAME WANT_RC WANT_OUT REV ROW... ; SR_RATE and SR_FLAG set the planted rate and a flag
         local name=$1 wrc=$2 wout=$3 rev=$4; shift 4
-        k=$((k + 1)); hist "$tmp/h$k.tsv" "$@"
-        rc=0; o=$(streak --commit "$rev" --repo "$g" --history "$tmp/h$k.tsv" --as-of 2026-10-08 --cache "$tmp/sc$k" 2>&1) || rc=$?
+        k=$((k + 1))
+        mkdir -p "$tmp/sg$k" && hist "$tmp/h$k.tsv" "$tmp/sc$k" "$tmp/sg$k" "$@" \
+            || { printf '  BROKE %-48s fixture\n' "$name"; fail=$((fail + 1)); return; }
+        rc=0; o=$(PATH="$gs/bin:$PATH" GHS="$tmp/sg$k" GHS_RATE="${SR_RATE:-5000 4000}" streak --commit "$rev" --repo "$g" \
+            --history "$tmp/h$k.tsv" --as-of 2026-10-08 --cache "$tmp/sc$k" ${SR_FLAG:+"$SR_FLAG"} 2>&1) || rc=$?
         if [ "$rc" = "$wrc" ] && [[ $o == *"$wout"* ]]; then pass=$((pass + 1))
         else printf '  BROKE %-48s rc=%s (want %s): %s\n' "$name" "$rc" "$wrc" "$(printf '%s' "$o" | grep -v '^TARGET' | head -3 | tr '\n' '|')"; fail=$((fail + 1)); fi
     }
     local n6="1|2026-10-06|schedule|success|1" n7="2|2026-10-07|schedule|success|1" n8="3|2026-10-08|schedule|success|1"
-    sr three_nights_on_the_same_ids_are_ready 0 "RECEIPT run 1 night 2026-10-06 head $c1 tree=" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c2"
-    sr a_release_scripts_change_after_them_resets 1 "RESET run 3 (night 2026-10-08, head $c2): tree differ" "$c3" "$n6|$c1" "$n7|$c2" "$n8|$c2"
-    sr a_stop_list_change_resets 1 "RESET run 3 (night 2026-10-08, head $c2): stop differ" "$c4" "$n6|$c1" "$n7|$c2" "$n8|$c2"
-    sr a_policy_file_change_resets 1 "RESET run 3 (night 2026-10-08, head $c2): policy differ" "$c5" "$n6|$c1" "$n7|$c2" "$n8|$c2"
+    sr three_nights_on_the_same_ids_are_ready 0 "RECEIPT run 1 night 2026-10-06 C $c1 head $c1 tree=" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c2"
+    sr a_release_scripts_change_after_them_resets 1 "RESET run 3 (night 2026-10-08, C $c2): tree differ" "$c3" "$n6|$c1" "$n7|$c2" "$n8|$c2"
+    sr a_stop_list_change_resets 1 "RESET run 3 (night 2026-10-08, C $c2): stop differ" "$c4" "$n6|$c1" "$n7|$c2" "$n8|$c2"
+    sr a_policy_file_change_resets 1 "RESET run 3 (night 2026-10-08, C $c2): policy differ" "$c5" "$n6|$c1" "$n7|$c2" "$n8|$c2"
     sr a_night_on_other_ids_breaks_the_streak 1 "not ready: night 2026-10-07 was red (run 2, failure)" "$c2" "$n6|$c2" "$n7|$c3" "$n8|$c2"
-    sr a_night_without_the_stop_list_resets 1 "head $c0): $c0 has no blob $IDS_STOP" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c0"
-    sr a_head_not_in_the_repo_is_not_measured 2 "not_measured: a counted night's head is not in" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$none"
+    sr a_night_without_the_stop_list_resets 1 "C $c0): $c0 has no blob $IDS_STOP" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c0"
+    sr a_c_not_in_the_repo_is_not_measured 2 "not_measured: night 2026-10-08 run 3: its C $none is not in" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c2|$none"
     sr a_pass_commit_without_the_stop_list_is_not_measured 2 "not_measured: the pass commit's ids cannot be read" "$c0" "$n6|$c0" "$n7|$c0" "$n8|$c0"
     sr a_stop_list_that_is_a_directory_is_not_measured 2 "has no blob $IDS_STOP" "$c6" "$n6|$c2" "$n7|$c2" "$n8|$c2"
     sr day_runs_do_not_count 1 "not ready" "$c2" "$n6|$c1" "$n7|$c2" "4|2026-10-08|workflow_dispatch|success|1|$none"
     sr a_running_night_on_the_same_ids_waits 0 "RECEIPT run 2 night 2026-10-07" "$c2" "0|2026-10-05|schedule|success|1|$c1" "$n6|$c1" "$n7|$c2" "3|2026-10-08|schedule||1|$c2"
-    sr a_running_night_on_other_ids_is_a_reset 1 "not ready: night 2026-10-08 was red (run 3, failure)" "$c2" "0|2026-10-05|schedule|success|1|$c1" "$n6|$c1" "$n7|$c2" "3|2026-10-08|schedule||1|$c3"
+    # keyed on C: the head is the workflow's commit, C the one the night measured
+    sr a_night_counts_on_its_c_whatever_its_head 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c3" "$c2" "$n6|$c3|$c1" "$n7|$c3|$c2" "$n8|$c3|$c2"
+    sr a_running_night_waits_whatever_its_head 0 "RECEIPT run 2 night 2026-10-07" "$c2" "0|2026-10-05|schedule|success|1|$c1" "$n6|$c1" "$n7|$c2" "3|2026-10-08|schedule||1|$c3|none"
+    sr a_record_without_c_resets 1 "RESET run 2 (night 2026-10-07, C -): its night.env names no C" "$c2" "$n6|$c2" "$n7|$c2|noc" "$n8|$c2"
+    sr sources_that_disagree_reset 1 "RESET run 2 (night 2026-10-07, C -): night.env names C $c2, night.txt $c1" "$c2" "$n6|$c2" "$n7|$c2|$c2/$c1" "$n8|$c2"
+    sr a_missing_record_is_not_measured 2 "not_measured: night 2026-10-07 run 2: release-rehearsal of run 2 cannot be read: no artifact" "$c2" "$n6|$c2" "$n7|$c2|none" "$n8|$c2"
+    sr a_night_past_the_third_is_not_read 0 "(streak=3 total=3" "$c2" "0|2026-10-05|schedule|success|1|$c2|none" "$n6|$c2" "$n7|$c2" "$n8|$c2"
+    sr a_red_night_needs_no_record 1 "not ready: night 2026-10-07 was red (run 2, failure)" "$c2" "$n6|$c2|none" "2|2026-10-07|schedule|failure|1|$c2|none" "$n8|$c2"
+    sr a_green_at_attempt_two_needs_no_record 1 "not ready: night 2026-10-07 was red (run 2, success only at attempt 2" "$c2" "$n6|$c2|none" "2|2026-10-07|schedule|success|2|$c2|none" "$n8|$c2"
+    sr a_reset_ends_the_walk 1 "not ready: night 2026-10-07 was red (run 2, failure)" "$c2" "$n6|$c2|none" "$n7|$c3" "$n8|$c2"
+    SR_RATE="5000 999" sr a_record_read_under_the_floor_is_not_measured 2 "not_measured: night 2026-10-06 run 1: core remaining 999 under 1000" "$c2" "$n6|$c2|art" "$n7|$c2" "$n8|$c2"
+    SR_RATE="5000 999" SR_FLAG="--release-path" sr the_pass_start_reads_a_record_under_the_floor 0 "RECEIPT run 1 night 2026-10-06 C $c2 head $c2" "$c2" "$n6|$c2|art" "$n7|$c2" "$n8|$c2"
     printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$tmp/h6col.tsv"
     rc=0; o=$(streak --commit "$c2" --repo "$g" --history "$tmp/h6col.tsv" --as-of 2026-10-08 --cache "$tmp/sc6col" 2>&1) || rc=$?
     if [ "$rc" = 2 ] && [[ $o == *"not a seven-column run history"* ]]; then pass=$((pass + 1))
@@ -1014,36 +1132,27 @@ selftest_streak() {
     rc=0; o=$(judge "$d" 2>&1) || rc=$?
     if [ "$rc" = 1 ] && [[ $o == *"RED   ids not recorded ($c0 has no blob $IDS_STOP)"* ]]; then pass=$((pass + 1))
     else printf '  BROKE %-48s rc=%s (want 1)\n' a_night_on_a_tree_without_the_list_is_red "$rc"; fail=$((fail + 1)); fi
-    # the read: a planted gh answers 200 with an ETag, then 304 to that ETag; the rate floor is kept
-    local gs="$tmp/ghs"
-    mkdir -p "$gs/bin" || return 2
-    jq -n --arg a "$c1" --arg b "$c2" '{workflow_runs: [
-        {id: 3, created_at: "2026-10-08T05:20:00Z", head_branch: "main", event: "schedule", conclusion: "success", run_attempt: 1, head_sha: $b},
-        {id: 2, created_at: "2026-10-07T05:20:00Z", head_branch: "main", event: "schedule", conclusion: "success", run_attempt: 1, head_sha: $b},
-        {id: 1, created_at: "2026-10-06T05:20:00Z", head_branch: "main", event: "schedule", conclusion: "success", run_attempt: 1, head_sha: $a},
-        {id: 4, created_at: "2026-10-09T05:20:00Z", head_branch: "main", event: "schedule", conclusion: null, run_attempt: 1, head_sha: $b}]}' > "$gs/body.json" || return 2
-    cat > "$gs/bin/gh" <<'GH'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >> "$GHS/calls"
-case " $* " in *" rate_limit "*) printf '%s\n' "${GHS_RATE:-5000 4000}"; exit 0 ;; esac
-case "${GHS_RATE:-}" in *" 0") printf 'HTTP/2.0 403 Forbidden\r\n\r\n{"message": "API rate limit exceeded"}'; exit 1 ;; esac
-for a in "$@"; do [ "$a" = 'If-None-Match: "e1"' ] && { printf 'HTTP/2.0 304 Not Modified\r\n\r\n'; exit 0; }; done
-printf 'HTTP/2.0 200 OK\r\nEtag: "e1"\r\nContent-Type: application/json\r\n\r\n'; cat "$GHS/body.json"
-GH
-    chmod +x "$gs/bin/gh" || return 2
-    rd() { # rd NAME WANT_RC WANT_OUT WANT_RUNS_CALLS WANT_ETAG_CALLS [RATE [FLAG]]
-        rc=0; o=$(PATH="$gs/bin:$PATH" GHS="$gs" GHS_RATE="${6:-5000 4000}" streak --commit "$c2" --repo "$g" --as-of 2026-10-08 --cache "$gs/cache" ${7:+"$7"} 2>&1) || rc=$?
-        local runs etag
+    # the reads: every run's head is c3, on other ids; each record names the C its night measured
+    jq -n --arg a "$c1" --arg b "$c2" --arg h "$c3" '{workflow_runs: [
+        {id: 3, created_at: "2026-10-08T05:20:00Z", head_branch: "main", event: "schedule", conclusion: "success", run_attempt: 1, head_sha: $h},
+        {id: 2, created_at: "2026-10-07T05:20:00Z", head_branch: "main", event: "schedule", conclusion: "success", run_attempt: 1, head_sha: $h},
+        {id: 1, created_at: "2026-10-06T05:20:00Z", head_branch: "main", event: "schedule", conclusion: "success", run_attempt: 1, head_sha: $h},
+        {id: 4, created_at: "2026-10-09T05:20:00Z", head_branch: "main", event: "schedule", conclusion: null, run_attempt: 1, head_sha: $h}]}' > "$gs/body.json" || return 2
+    nrec "$gs/art/3" "$c2" "$c2" && nrec "$gs/art/2" "$c2" "$c2" && nrec "$gs/art/1" "$c1" "$c1" || return 2
+    rd() { # rd NAME WANT_RC WANT_OUT WANT_RUNS_CALLS WANT_ETAG_CALLS WANT_RECORD_READS [RATE [FLAG]]
+        rc=0; o=$(PATH="$gs/bin:$PATH" GHS="$gs" GHS_RATE="${7:-5000 4000}" streak --commit "$c2" --repo "$g" --as-of 2026-10-08 --cache "$gs/cache" ${8:+"$8"} 2>&1) || rc=$?
+        local runs etag dl
         runs=$(grep -c 'actions/workflows/release-rehearsal-nightly.yml/runs?branch=main&event=schedule' "$gs/calls" 2>/dev/null)
         etag=$(grep -c 'If-None-Match: "e1"' "$gs/calls" 2>/dev/null)
-        if [ "$rc" = "$2" ] && [[ $o == *"$3"* ]] && [ "${runs:-0}" = "$4" ] && [ "${etag:-0}" = "$5" ]; then pass=$((pass + 1))
-        else printf '  BROKE %-48s rc=%s (want %s) runs=%s etag=%s: %s\n' "$1" "$rc" "$2" "${runs:-0}" "${etag:-0}" "$(printf '%s' "$o" | grep -v '^TARGET' | head -2 | tr '\n' '|')"; fail=$((fail + 1)); fi
+        dl=$(grep -c '^run download ' "$gs/calls" 2>/dev/null)
+        if [ "$rc" = "$2" ] && [[ $o == *"$3"* ]] && [ "${runs:-0}" = "$4" ] && [ "${etag:-0}" = "$5" ] && [ "${dl:-0}" = "$6" ]; then pass=$((pass + 1))
+        else printf '  BROKE %-48s rc=%s (want %s) runs=%s etag=%s records=%s: %s\n' "$1" "$rc" "$2" "${runs:-0}" "${etag:-0}" "${dl:-0}" "$(printf '%s' "$o" | grep -v '^TARGET' | head -2 | tr '\n' '|')"; fail=$((fail + 1)); fi
     }
-    rd the_first_read_is_one_call 0 "RECEIPT run 3 night 2026-10-08 head $c2" 1 0
-    rd the_second_read_sends_the_etag_and_reuses_a_304 0 "RECEIPT run 2 night 2026-10-07 head $c2" 2 1
-    rd a_read_under_the_floor_is_not_measured 2 "not_measured: core remaining 999 under 1000" 2 1 "5000 999"
-    rd the_pass_start_reads_under_the_floor 0 "RECEIPT run 3 night 2026-10-08 head $c2" 3 2 "5000 999" --release-path
-    rd a_refused_read_at_the_pass_start_is_still_not_measured 2 "not_measured: workflow runs read: HTTP 403" 4 3 "5000 0" --release-path
+    rd the_first_read_is_one_call_and_a_record_a_night 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c3" 1 0 3
+    rd the_second_read_sends_the_etag_and_keeps_the_records 0 "RECEIPT run 2 night 2026-10-07 C $c2 head $c3" 2 1 3
+    rd a_read_under_the_floor_is_not_measured 2 "not_measured: core remaining 999 under 1000" 2 1 3 "5000 999"
+    rd the_pass_start_reads_under_the_floor 0 "RECEIPT run 1 night 2026-10-06 C $c1 head $c3" 3 2 3 "5000 999" --release-path
+    rd a_refused_read_at_the_pass_start_is_still_not_measured 2 "not_measured: workflow runs read: HTTP 403" 4 3 3 "5000 0" --release-path
     printf '  %s streak rows\n' "$((pass + fail - p0))"
 }
 
@@ -1232,9 +1341,28 @@ ids_reset_skipped            rehearse.sh         s/\$5 = "failure"/$5 = $5/
 ids_tree_not_release_scripts rehearse.sh         s/^IDS_TREE=scripts\/release$/IDS_TREE=contracts/
 ids_policy_is_the_stop_list  rehearse.sh         s/^IDS_POLICY=contracts\/model-capability-ladder-v1.yaml$/IDS_POLICY=contracts\/release-ready-v1.yaml/
 ids_type_unchecked           rehearse.sh         s/ \&\& \[ "\$(git -C "\$g" cat-file -t "\$id")" = "\$want" \]//
-ids_reset_names_nothing      rehearse.sh         s/if (x\[i\] != y\[i\]) out = out/if (0) out = out/
-missing_head_is_a_reset      rehearse.sh         s/^            1) printf '%s\\t-\\t%s\\n' "\$head"/            1|2) printf '%s\\t-\\t%s\\n' "$head"/
-day_runs_get_ids             rehearse.sh         s/NR > 1 \&\& \$3 == "main" \&\& \$4 == "schedule" { print \$7 }/NR > 1 { print $7 }/
+ids_reset_names_nothing      rehearse.sh         s/\[ "\${a\[i\]}" = "\${b\[i\]}" \] ||/true ||/
+missing_c_is_a_reset         rehearse.sh         s/^                1) why=\$ids ;;/                1|2) why=$ids ;;/
+day_runs_get_ids             rehearse.sh         s/NR > 1 \&\& \$3 == "main" \&\& \$4 == "schedule" \&\& substr(\$2, 1, 10) <= asof {/NR > 1 \&\& substr($2, 1, 10) <= asof {/
+c_keyed_on_head              rehearse.sh         s/ids=\$(release_ids "\$repo" "\$c" 2>\&1)/ids=$(release_ids "$repo" "$hd" 2>\&1)/
+record_without_c_counts      rehearse.sh         s/\[\[ \$e =~ \^\[0-9a-f\]{40}\$ \]\] ||/true ||/
+sources_not_compared         rehearse.sh         s/\[ "\$t" = "\$e" \] ||/true ||/
+missing_record_is_a_reset    rehearse.sh         s/o=\$(night_record "\$cache" "\$id" "\$at" 2>\&1) ||/o=$(night_record "$cache" "$id" "$at" 2>\&1) || true ||/
+records_not_kept             rehearse.sh         s/if \[ ! -d "\$cache\/rec\/\$id.\$at" \]; then/if true; then/
+record_repo_dropped          rehearse.sh         s/gh run download "\$2" -R "\$REPO" -n/gh run download "$2" -n/
+artifact_name_changed        rehearse.sh         s/^RECORD_ARTIFACT=release-rehearsal$/RECORD_ARTIFACT=release-rehearsal-night/
+record_layout_changed        rehearse.sh         s/"\$1\/rehearsal\/night.env" 2>\/dev\/null/"$1\/night.env" 2>\/dev\/null/
+record_floor_skipped         rehearse.sh         s/if \[ "\$rated" = 0 \]; then o=\$(rate_ok/if false; then o=$(rate_ok/
+record_floor_off_the_pass_start rehearse.sh         s/o=\$(rate_ok "\$relpath" 2>\&1)/o=$(rate_ok 0 2>\&1)/
+walk_past_the_need           rehearse.sh         s/\[ "\$n" -ge "\$STREAK_NEED" \]/[ "$n" -gt "$STREAK_NEED" ]/
+need_lowered                 rehearse.sh         s/^STREAK_NEED=3$/STREAK_NEED=2/
+walk_past_a_red              rehearse.sh         s/if \[ "\$red" = 1 \] || \[ "\$n"/if false || [ "$n"/
+reset_not_red                rehearse.sh         s/>> "\$cache\/resets.tsv"; red=1/>> "$cache\/resets.tsv"; red=0/
+failure_does_not_end_walk    rehearse.sh         s/success:\*|failure:\*|timed_out/success:*|timed_out/
+retried_does_not_end_walk    rehearse.sh         s/success:\*|failure:\*/failure:*/
+pending_night_read           rehearse.sh         s/^            success:1) ;;/            success:1|-:1) ;;/
+cut_not_applied              rehearse.sh         s/cut != "" \&\& substr(\$2, 1, 10) <= cut { next }/cut != "" \&\& 0 { next }/
+receipt_names_head_as_c      rehearse.sh         s/substr(\$2, 1, 10), c\[\$1\], \$7, ids/substr($2, 1, 10), $7, $7, ids/
 six_column_history_read      rehearse.sh         s/\[ "\$hdr" = "\$(printf 'run_id/[ -n "$hdr" ] || [ "$hdr" = "$(printf 'run_id/
 receipts_not_printed         rehearse.sh         s/printf "RECEIPT run %s night/printf "RCPT run %s night/
 etag_not_sent                rehearse.sh         s/\[ -s "\$cache\/runs.etag" \] \&\& \[ -s "\$cache\/runs.json" \] \&\& hdr=/false \&\& hdr=/
