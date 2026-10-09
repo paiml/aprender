@@ -955,18 +955,28 @@ fn tail_deltas(
     held.into_iter().chain(filter.finish()).collect()
 }
 
+/// What [`live_tail_events`] returns. The content and the calls' chunk stay apart
+/// because only content ends a client's TTFT (#4954), and so only content may set
+/// the server's first-content instant.
+struct LiveTail {
+    content: Vec<Result<Event, Infallible>>,
+    calls: Option<Result<Event, Infallible>>,
+    finish: FinishReason,
+}
+
 /// #4918 (T8): what a closed live stream still owes before its terminal chunk. The
 /// tail deltas go through the detector too, so a call whose last bytes were still
 /// held by the UTF-8 decoder or the stop filter is a call; then the detector's own
 /// held text; then the turn's calls on one chunk. Returns those events and the finish
-/// reason, which is `tool_calls` when calls went out and `generated` otherwise.
+/// reason, which is `tool_calls` when calls went out and `generated` otherwise. The
+/// content events go out before the calls' chunk.
 fn live_tail_events(
     tail: Vec<String>,
     mut detector: Option<ToolCallDetector>,
     generated: FinishReason,
     request_id: &str,
     model_name: &str,
-) -> (Vec<Result<Event, Infallible>>, FinishReason) {
+) -> LiveTail {
     let mut texts: Vec<String> = tail
         .into_iter()
         .filter_map(|t| stream_tool_calls::detect(&mut detector, t))
@@ -974,15 +984,21 @@ fn live_tail_events(
     let end = stream_tool_calls::finish(detector);
     texts.extend(end.content);
     let finish = stream_tool_calls::finish_reason(&end.calls, generated);
-    let mut events: Vec<_> = texts
+    let content = texts
         .iter()
         .filter_map(|t| sse_event(&ChatCompletionChunk::content(request_id, model_name, t)))
         .collect();
-    if !end.calls.is_empty() {
+    let calls = if end.calls.is_empty() {
+        None
+    } else {
         let chunk = ChatCompletionChunk::tool_calls(request_id, model_name, end.calls);
-        events.extend(sse_event(&chunk));
+        sse_event(&chunk)
+    };
+    LiveTail {
+        content,
+        calls,
+        finish,
     }
-    (events, finish)
 }
 
 /// Build a true-streaming SSE response with keep-alive (tokens arrive via channel).
@@ -1033,6 +1049,9 @@ pub(crate) fn true_streaming_sse_response(
 
         tokio::pin!(token_stream);
         let mut utf8 = LiveUtf8Deltas::new();
+        // #4954: the far edge of the server's TTFT, which the client's own
+        // TTFT ends on one network hop later.
+        let mut first_content_at: Option<Instant> = None;
         while let Some(result) = token_stream.next().await {
             match result {
                 Ok(token_id) => {
@@ -1047,6 +1066,7 @@ pub(crate) fn true_streaming_sse_response(
                     if let Some(text) = text {
                         let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
                         if let Some(evt) = sse_event(&chunk) {
+                            first_content_at.get_or_insert_with(Instant::now);
                             yield evt;
                         }
                     }
@@ -1063,18 +1083,21 @@ pub(crate) fn true_streaming_sse_response(
         // #2375(6): a token stream that delivered the whole budget was cut off at
         // `max_tokens`; anything shorter ended on a stop/EOS token.
         let generated = FinishReason::from_generation(filter.stopped(), completion_tokens, max_tokens);
-        let (tail_events, finish) =
+        let LiveTail { content, calls, finish } =
             live_tail_events(tail, detector, generated, &request_id, &model_name);
-        for evt in tail_events {
+        for evt in content {
+            first_content_at.get_or_insert_with(Instant::now);
+            yield evt;
+        }
+        if let Some(evt) = calls {
             yield evt;
         }
         // The engine has finished by the time the token channel closed, so the
         // oneshot either already carries the measurement or never will.
         let timings = match timings_rx {
-            Some(rx) => rx
-                .await
-                .ok()
-                .and_then(|phases| phases.to_timings(prompt_tokens, completion_tokens)),
+            Some(rx) => rx.await.ok().and_then(|phases| {
+                phases.to_timings_at(prompt_tokens, completion_tokens, start, first_content_at)
+            }),
             None => None,
         };
         let usage = Usage {

@@ -36,6 +36,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::Instant;
 
 use crate::error::{RealizarError, Result};
 use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
@@ -142,6 +143,14 @@ pub struct Turn {
     /// `max_tokens` and before a stop token. It is the one reason a reply is
     /// shorter than asked for that the caller did not choose.
     pub context_capped: bool,
+    /// When the prompt's first forward was about to run: after admission and
+    /// the reserve, before any prefill (#4954). What came before it — the
+    /// handler, the template, the lock — is not prefill.
+    pub prefill_started: Instant,
+    /// When the prompt's prefill had chosen the first token: the end of
+    /// prefill and the start of decode (#4954). Earlier than the first
+    /// `on_token` call, so time a caller spends there is never prefill.
+    pub prefill_ended: Instant,
 }
 
 /// A loaded model plus its decode state: the one engine (#4263).
@@ -420,9 +429,11 @@ impl<F: ArchForward> Session<F> {
             turn_budget(prompt.len(), config.max_tokens, context_length);
         self.reserve(prompt.len() + budget)?;
 
+        let prefill_started = Instant::now();
         let reused = self.prepare_prompt(prompt)?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
         let (mut next, _) = self.advance_and_choose(prompt, config, &mut rng)?;
+        let prefill_ended = Instant::now();
         let mut tokens = prompt.to_vec();
         let mut context_capped = false;
         for generated in 1..=budget {
@@ -450,6 +461,8 @@ impl<F: ArchForward> Session<F> {
             reused,
             used_gpu: self.on_gpu(),
             context_capped,
+            prefill_started,
+            prefill_ended,
         })
     }
 

@@ -15,6 +15,78 @@ use crate::perf_gate::drain::StreamMode;
 pub struct StreamDelta {
     /// Content fragment (may be empty or absent).
     pub content: Option<String>,
+    /// A reasoning model's thinking fragment. llama-server (and vLLM) stream a
+    /// thinking model's tokens here instead of in `content`, so a client that
+    /// read only `content` saw a Qwen3.5 stream with no token at all and
+    /// refused every comparator request as `StreamNoContent` (#4954). `reasoning`
+    /// is the newer spelling of the same field.
+    #[serde(default, alias = "reasoning")]
+    pub reasoning_content: Option<String>,
+}
+
+impl StreamDelta {
+    /// The generated fragment this delta carries, from either channel. A
+    /// thinking token is a generated token: it costs a decode step and it is
+    /// the first token a TTFT measures.
+    #[must_use]
+    pub fn generated(&self) -> Option<&str> {
+        [self.content.as_deref(), self.reasoning_content.as_deref()]
+            .into_iter()
+            .flatten()
+            .find(|s| !s.is_empty())
+    }
+}
+
+/// What a streamed response has delivered so far, one SSE line at a time.
+#[derive(Default)]
+struct StreamAccum {
+    content: String,
+    token_timestamps: Vec<Duration>,
+    ttft: Option<Duration>,
+    usage: Option<Usage>,
+    finish_reason: Option<String>,
+    stream_mode: Option<StreamMode>,
+    timings: Option<ServerTimings>,
+}
+
+impl StreamAccum {
+    /// Fold one trimmed SSE line, seen `now` after the request was sent.
+    /// Returns `false` on the `[DONE]` sentinel; any other line, parsable or
+    /// not, returns `true`.
+    fn absorb_line(&mut self, line: &str, now: Duration) -> bool {
+        if line == "data: [DONE]" {
+            return false;
+        }
+        let Some(chunk) = line
+            .strip_prefix("data: ")
+            .and_then(|json| serde_json::from_str::<StreamChunk>(json).ok())
+        else {
+            return true;
+        };
+        if let Some(choice) = chunk.choices.first() {
+            if let Some(c) = choice.delta.generated() {
+                self.ttft.get_or_insert(now);
+                self.token_timestamps.push(now);
+                self.content.push_str(c);
+            }
+            if choice.finish_reason.is_some() {
+                self.finish_reason.clone_from(&choice.finish_reason);
+            }
+        }
+        // PP-27: the server declares the mechanism on the FIRST chunk. Later
+        // chunks do not carry it, and a later one that did must not overwrite
+        // the first -- the declaration is a property of the stream.
+        if self.stream_mode.is_none() {
+            self.stream_mode = chunk.stream_mode;
+        }
+        if chunk.usage.is_some() {
+            self.usage = chunk.usage;
+        }
+        if chunk.timings.is_some() {
+            self.timings = chunk.timings;
+        }
+        true
+    }
 }
 
 /// A single choice in a streaming chunk.
@@ -58,6 +130,14 @@ pub struct ServerTimings {
     /// The server's own `predicted_n / predicted_ms`, in tokens per second.
     #[serde(default)]
     pub predicted_per_second: Option<f64>,
+    /// #4954 — `apr serve` only: milliseconds from the handler's start to the
+    /// first prompt forward. llama.cpp reports none.
+    #[serde(default)]
+    pub load_ms: Option<f64>,
+    /// #4954 — `apr serve` only: milliseconds from the end of prefill to the
+    /// first content chunk on the wire. llama.cpp reports none.
+    #[serde(default)]
+    pub first_token_ms: Option<f64>,
 }
 
 /// A streaming chunk response from the chat completion endpoint.
@@ -698,13 +778,7 @@ impl LlmClient {
             });
         }
 
-        let mut content = String::new();
-        let mut token_timestamps = Vec::new();
-        let mut ttft = None;
-        let mut final_usage = None;
-        let mut finish_reason = None;
-        let mut stream_mode = None;
-        let mut timings = None;
+        let mut acc = StreamAccum::default();
 
         // Read the response incrementally via chunk() for real per-token timestamps.
         // Each chunk() call returns data as it arrives from the server, so timestamps
@@ -715,54 +789,17 @@ impl LlmClient {
 
         while !done {
             match resp.chunk().await? {
-                Some(chunk_bytes) => {
-                    buffer.push_str(&String::from_utf8_lossy(&chunk_bytes));
-                }
-                None => {
-                    done = true;
-                }
+                Some(chunk_bytes) => buffer.push_str(&String::from_utf8_lossy(&chunk_bytes)),
+                None => done = true,
             }
 
             // Process complete lines from buffer
             while let Some(newline_pos) = buffer.find('\n') {
                 let line: String = buffer[..newline_pos].trim().to_string();
                 buffer = buffer[newline_pos + 1..].to_string();
-
-                if line == "data: [DONE]" {
+                if !acc.absorb_line(&line, start.elapsed()) {
                     done = true;
                     break;
-                }
-                if let Some(json_str) = line.strip_prefix("data: ") {
-                    if let Ok(sse_chunk) = serde_json::from_str::<StreamChunk>(json_str) {
-                        if let Some(choice) = sse_chunk.choices.first() {
-                            if let Some(ref c) = choice.delta.content {
-                                if !c.is_empty() {
-                                    let now = start.elapsed();
-                                    if ttft.is_none() {
-                                        ttft = Some(now);
-                                    }
-                                    token_timestamps.push(now);
-                                    content.push_str(c);
-                                }
-                            }
-                            if choice.finish_reason.is_some() {
-                                finish_reason = choice.finish_reason.clone();
-                            }
-                        }
-                        // PP-27: the server declares the mechanism on the
-                        // FIRST chunk. Later chunks do not carry it, and a
-                        // later one that did must not overwrite the first --
-                        // the declaration is a property of the stream.
-                        if stream_mode.is_none() {
-                            stream_mode = sse_chunk.stream_mode;
-                        }
-                        if sse_chunk.usage.is_some() {
-                            final_usage = sse_chunk.usage;
-                        }
-                        if sse_chunk.timings.is_some() {
-                            timings = sse_chunk.timings;
-                        }
-                    }
                 }
             }
         }
@@ -773,21 +810,21 @@ impl LlmClient {
         // produce a number with the shape of a measurement: a chunk count that
         // is not a token count, and a `ttft` equal to `e2e` that is exactly
         // what a REPLAYED stream looks like.
-        let usage = final_usage.ok_or_else(|| LlmClientError::StreamNoUsage {
+        let usage = acc.usage.ok_or_else(|| LlmClientError::StreamNoUsage {
             url: url.clone(),
-            frames: token_timestamps.len(),
+            frames: acc.token_timestamps.len(),
         })?;
-        let ttft = ttft.ok_or(LlmClientError::StreamNoContent { url })?;
+        let ttft = acc.ttft.ok_or(LlmClientError::StreamNoContent { url })?;
 
         Ok(StreamedChatResponse {
-            content,
+            content: acc.content,
             latency,
             ttft,
-            token_timestamps,
+            token_timestamps: acc.token_timestamps,
             usage,
-            stream_mode,
-            timings,
-            finish_reason,
+            stream_mode: acc.stream_mode,
+            timings: acc.timings,
+            finish_reason: acc.finish_reason,
         })
     }
 
@@ -1005,6 +1042,60 @@ mod tests {
         assert_eq!(chunk.choices[0].delta.content.as_deref(), Some(""));
     }
 
+    /// #4954 MUST-FIRE: a thinking model's token arrives in
+    /// `reasoning_content` (the chunk below is llama-server d1d3c3396's, on
+    /// Qwen3.5-4B, verbatim but for the ids) and is a generated token. Before
+    /// the fix `generated()` did not exist and the loop read `content` only, so
+    /// this stream had no first token and every request failed.
+    #[test]
+    fn test_stream_chunk_reasoning_content_is_a_generated_token() {
+        let json = r#"{"choices":[{"finish_reason":null,"index":0,"delta":{"reasoning_content":"Thinking"}}],"object":"chat.completion.chunk"}"#;
+        let chunk: StreamChunk = serde_json::from_str(json).unwrap();
+        assert_eq!(chunk.choices[0].delta.generated(), Some("Thinking"));
+        let newer = r#"{"choices":[{"delta":{"reasoning":"Hmm"},"finish_reason":null}]}"#;
+        let chunk: StreamChunk = serde_json::from_str(newer).unwrap();
+        assert_eq!(chunk.choices[0].delta.generated(), Some("Hmm"));
+        // MUST-NOT-FIRE: the role-only opener and an empty fragment are not tokens.
+        let role =
+            r#"{"choices":[{"delta":{"role":"assistant","content":null},"finish_reason":null}]}"#;
+        let chunk: StreamChunk = serde_json::from_str(role).unwrap();
+        assert_eq!(chunk.choices[0].delta.generated(), None);
+        let empty =
+            r#"{"choices":[{"delta":{"content":"","reasoning_content":""},"finish_reason":null}]}"#;
+        let chunk: StreamChunk = serde_json::from_str(empty).unwrap();
+        assert_eq!(chunk.choices[0].delta.generated(), None);
+        // Plain content still counts.
+        let plain = r#"{"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}"#;
+        let chunk: StreamChunk = serde_json::from_str(plain).unwrap();
+        assert_eq!(chunk.choices[0].delta.generated(), Some("Hello"));
+    }
+
+    /// #4954: a thinking stream folded line by line has a first token, and
+    /// `[DONE]` ends it. TTFT is the FIRST generated token, not the last.
+    #[test]
+    fn test_stream_accum_thinking_stream_has_a_ttft() {
+        let mut acc = StreamAccum::default();
+        let ms = Duration::from_millis;
+        assert!(acc.absorb_line(
+            r#"data: {"choices":[{"delta":{"role":"assistant","content":null}}]}"#,
+            ms(1)
+        ));
+        assert!(acc.absorb_line(
+            r#"data: {"choices":[{"delta":{"reasoning_content":"Think"}}]}"#,
+            ms(5)
+        ));
+        assert!(acc.absorb_line(
+            r#"data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}"#,
+            ms(9)
+        ));
+        assert!(acc.absorb_line(": keep-alive", ms(10)));
+        assert!(!acc.absorb_line("data: [DONE]", ms(11)));
+        assert_eq!(acc.ttft, Some(ms(5)));
+        assert_eq!(acc.token_timestamps, vec![ms(5), ms(9)]);
+        assert_eq!(acc.content, "Thinkok");
+        assert_eq!(acc.finish_reason.as_deref(), Some("stop"));
+    }
+
     /// PP-27 — a streamed request ALWAYS asks for the terminal usage frame,
     /// and a blocking one never carries the field.
     ///
@@ -1191,23 +1282,15 @@ mod tests {
         }
     }
 
-    /// Serve one scripted SSE response and hand the request body back.
+    /// Read one HTTP request off `sock` and return its body, or `None` if the
+    /// peer hung up first.
     #[cfg(feature = "llm")]
-    async fn serve_scripted_sse(
-        mut sock: tokio::net::TcpStream,
-        script: SseScript,
-        bodies: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-    ) {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    async fn read_request_body(sock: &mut tokio::net::TcpStream) -> Option<String> {
+        use tokio::io::AsyncReadExt;
         let mut buf = vec![0_u8; 8192];
         let mut seen = Vec::new();
         loop {
-            let Ok(n) = sock.read(&mut buf).await else {
-                return;
-            };
-            if n == 0 {
-                return;
-            }
+            let n = sock.read(&mut buf).await.ok().filter(|&n| n > 0)?;
             seen.extend_from_slice(&buf[..n]);
             let text = String::from_utf8_lossy(&seen).to_string();
             let Some(head_end) = text.find("\r\n\r\n") else {
@@ -1221,11 +1304,23 @@ mod tests {
                 .and_then(|t| t.trim().parse().ok())
                 .unwrap_or(0);
             if seen.len() >= head_end + 4 + len {
-                let body = String::from_utf8_lossy(&seen[head_end + 4..]).to_string();
-                bodies.lock().unwrap_or_else(|e| e.into_inner()).push(body);
-                break;
+                return Some(String::from_utf8_lossy(&seen[head_end + 4..]).to_string());
             }
         }
+    }
+
+    /// Serve one scripted SSE response and hand the request body back.
+    #[cfg(feature = "llm")]
+    async fn serve_scripted_sse(
+        mut sock: tokio::net::TcpStream,
+        script: SseScript,
+        bodies: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    ) {
+        use tokio::io::AsyncWriteExt;
+        let Some(body) = read_request_body(&mut sock).await else {
+            return;
+        };
+        bodies.lock().unwrap_or_else(|e| e.into_inner()).push(body);
 
         let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
                     Cache-Control: no-cache\r\nConnection: close\r\n\r\n";
@@ -1530,5 +1625,8 @@ mod tests {
         assert_eq!(t.prompt_ms, Some(40.0));
         assert_eq!(t.predicted_n, Some(128));
         assert_eq!(t.prompt_per_second, None, "absent stays absent, never 0.0");
+        // #4954: llama.cpp reports no phase edges; they read as absent.
+        assert_eq!(t.load_ms, None);
+        assert_eq!(t.first_token_ms, None);
     }
 }

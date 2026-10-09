@@ -231,6 +231,15 @@ arms:
     delta: {dec_ratio: 0.0, prefill_ratio: 0.0, agg_ratio: 0.0}
     # Written by the first PASS: armed_by.<host>.<wl>.c<c>.<metric> = {receipt, commit}
     armed_by: {}
+    # V1 (#4954). TTFT ratio = reference TTFT / apr TTFT. A host is GREEN iff
+    # each of its >= protocol.replicates_min receipts has ratios.ttft.lcb95 >=
+    # ttft_floor in a band whose comparator_status is MEASURED and whose status
+    # is MEASURED or NONCONFORMANT-VALID; the host figure is the minimum. Fewer
+    # receipts, or a band that does not count, is NOT MEASURED -- never GREEN.
+    # Read by `apr test llm ttft-verdict` (aprender-test-lib perf_gate::ttft_verdict).
+    v1:
+      ttft_floor: 0.5
+      hosts: [lambda, gx10]
     rising_decode_trap: >-
       decode_ratio RISING while agg_ratio FALLS is the serialization signature,
       not a win: each request owns the whole device in turn. The measurement
