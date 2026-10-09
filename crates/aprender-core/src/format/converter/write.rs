@@ -146,6 +146,20 @@ pub(super) fn insert_f32_tokenizer_metadata(
     }
 }
 
+/// #4418: carry the hybrid linear-attention hyperparameters (Qwen3.5) into APR
+/// custom metadata so the GGUF exporter can write `qwen35.ssm.*`.
+pub(super) fn insert_linear_attn_hparams(
+    model_config: Option<&GgufModelConfig>,
+    custom: &mut std::collections::HashMap<String, serde_json::Value>,
+) {
+    if let Some(h) = model_config.and_then(|c| c.linear_attn_hparams.as_ref()) {
+        custom.insert(
+            "linear_attn_hparams".to_string(),
+            serde_json::Value::Object(h.clone()),
+        );
+    }
+}
+
 /// Build the custom metadata map for the F32 tensor import path.
 ///
 /// Combines tensor shapes, user metadata, tied-embedding flags, and tokenizer data
@@ -348,12 +362,13 @@ pub(crate) fn write_apr_file(
         })
         .sum();
 
-    let custom = build_f32_custom_metadata(
+    let mut custom = build_f32_custom_metadata(
         &tensors_with_lm_head,
         user_metadata,
         has_tied_embeddings,
         tokenizer,
     );
+    insert_linear_attn_hparams(model_config, &mut custom);
 
     // Extract transformer config from model_config (CRITICAL for inference)
     let metadata = AprV2Metadata {
