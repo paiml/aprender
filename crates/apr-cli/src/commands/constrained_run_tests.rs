@@ -98,8 +98,8 @@ fn every_refusal_has_its_own_name() {
         ),
         (
             ConstraintError::UnsupportedPath {
-                path: "gguf-cuda".into(),
-                removed_by: "#3568 PR 3".into(),
+                path: "gguf-wgpu".into(),
+                removed_by: "not scheduled".into(),
             },
             "SchemaUnsupportedPath",
             true,
