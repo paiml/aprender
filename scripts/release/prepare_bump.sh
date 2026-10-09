@@ -97,7 +97,7 @@ pb_carry_cert() {
 # allowed, since a night cannot need its own three nights; not_measured (2) or a caller error (3) stops it there too.
 pb_streak() {
     local script=$1 repo=$2 dir=$3 rc=0 a
-    a=(--commit origin/main --as-of "$(date -u +%F)" --cache "$dir" --repo "$repo")
+    a=(--commit origin/main --as-of "$(date -u +%F)" --cache "$dir" --repo "$repo")  # bashrs disable-line=DET002
     [ "${RELEASE_REHEARSAL:-}" = 1 ] || a+=(--release-path)
     mkdir -p -- "$dir" || return 1
     bash "$script" --streak "${a[@]}" > "$dir/streak.txt" 2>&1 || rc=$?
