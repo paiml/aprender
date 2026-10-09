@@ -6,9 +6,11 @@
 //! drifting from the scalar decode, not a decode that is wrong in both. The receipt says so
 //! (`oracle_independent: false`).
 //!
-//! The dequant-only and IQ rows are measured against an INDEPENDENT oracle instead: fixtures that
-//! `scripts/kreg_ggufpy_oracle.py` wrote from llama.cpp's gguf-py (its own decoders and grid
-//! tables) under `evidence/kreg/oracle/<TYPE>/`. Their receipts say `oracle_independent: true`.
+//! The dequant-only and IQ rows are measured against an INDEPENDENT oracle instead: fixtures under
+//! `evidence/kreg/oracle/<TYPE>/`, generated once, outside this repo, from llama.cpp's gguf-py (its
+//! own decoders and grid tables) as an external cross-check. Each `meta.json` pins the llama.cpp
+//! commit and every file's sha256; the tree ships no generator. Their receipts say
+//! `oracle_independent: true`.
 //!
 //! The dense rows (F32, F16, BF16) run through the served selector, `fused_matmul`, and are
 //! measured against weights decoded by `f32::from_le_bytes` and the `half` crate, not by the
