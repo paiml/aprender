@@ -3,6 +3,52 @@ use super::*;
 use crate::error::Result;
 use crate::primitives::Matrix;
 
+/// Samples per block in `GaussianNB::predict`. The block's feature-major copy
+/// (`n_features × 128` f32, 15 KiB at 30 features) stays in L1.
+const GNB_PREDICT_BLOCK: usize = 128;
+
+/// The rows `idx` of the row-major `data`, each `n_features` wide.
+fn gnb_rows<'a>(
+    data: &'a [f32],
+    n_features: usize,
+    idx: impl Iterator<Item = usize> + 'a,
+) -> impl Iterator<Item = &'a [f32]> + 'a {
+    idx.map(move |s| &data[s * n_features..(s + 1) * n_features])
+}
+
+/// Copies `b` row-major rows into `tile` feature-major: `tile[f * b + j] = rows[j * n_features + f]`.
+fn gnb_transpose_block(rows: &[f32], b: usize, tile: &mut [f32]) {
+    let n_features = tile.len() / b;
+    if n_features == 0 {
+        return;
+    }
+    for (j, row) in rows.chunks_exact(n_features).enumerate() {
+        for (f, &v) in row.iter().enumerate() {
+            tile[f * b + j] = v;
+        }
+    }
+}
+
+/// `lp[j] = const_term − Σ_f (x[j,f] − μ_f)² · inv_2var_f` for one class over a feature-major
+/// block (`tile[f * b + j]`, `b = lp.len()`). Each `lp[j]` takes the same operations in the same
+/// order as the per-sample scalar loop, so it is bit-identical to it; the update runs across
+/// samples, so it vectorizes.
+fn gnb_class_log_posterior(
+    tile: &[f32],
+    const_term: f32,
+    mean_c: &[f32],
+    inv_c: &[f32],
+    lp: &mut [f32],
+) {
+    lp.fill(const_term);
+    for ((col, &mean), &inv) in tile.chunks_exact(lp.len()).zip(mean_c).zip(inv_c) {
+        for (l, &v) in lp.iter_mut().zip(col) {
+            let diff = v - mean;
+            *l -= diff * diff * inv;
+        }
+    }
+}
+
 impl GaussianNB {
     /// Creates a new Gaussian Naive Bayes classifier.
     ///
@@ -84,29 +130,18 @@ impl GaussianNB {
         // EVERY per-class feature variance. A raw additive `var_smoothing` would be thousands
         // of times too small on mixed-scale data, distorting the Gaussian log-likelihood.
         // Refs PMAT-890 / F-GAUSSIANNB-EPSILON-003.
-        let mut max_feature_var = 0.0_f32;
-        for feature_idx in 0..n_features {
-            let mut sum = 0.0_f32;
-            for sample_idx in 0..n_samples {
-                sum += x.get(sample_idx, feature_idx);
-            }
-            let mean = sum / n_samples as f32;
-            let mut sum_sq_diff = 0.0_f32;
-            for sample_idx in 0..n_samples {
-                let diff = x.get(sample_idx, feature_idx) - mean;
-                sum_sq_diff += diff * diff;
-            }
-            let feature_var = sum_sq_diff / n_samples as f32;
-            if feature_var > max_feature_var {
-                max_feature_var = feature_var;
-            }
-        }
+        //
+        // Every statistic below is accumulated row by row (one pass over the row-major data per
+        // sum) instead of one strided pass per feature. Each feature's sum still adds its samples
+        // in index order from the same start value, so the result is bit-identical (#4965).
+        let data = x.as_slice();
+        let max_feature_var = Self::max_feature_variance(data, n_samples, n_features);
         let epsilon = self.var_smoothing * max_feature_var;
 
         // Initialize storage
         let mut class_priors = vec![0.0; n_classes];
-        let mut means = vec![vec![0.0; n_features]; n_classes];
-        let mut variances = vec![vec![0.0; n_features]; n_classes];
+        let mut means = Vec::with_capacity(n_classes);
+        let mut variances = Vec::with_capacity(n_classes);
 
         // Compute class priors and feature statistics
         for (class_idx, &class_label) in classes.iter().enumerate() {
@@ -120,27 +155,10 @@ impl GaussianNB {
             let n_class_samples = class_samples.len() as f32;
             class_priors[class_idx] = n_class_samples / n_samples as f32;
 
-            // Compute mean for each feature
-            for (feature_idx, mean_val) in means[class_idx].iter_mut().enumerate() {
-                let sum: f32 = class_samples
-                    .iter()
-                    .map(|&sample_idx| x.get(sample_idx, feature_idx))
-                    .sum();
-                *mean_val = sum / n_class_samples;
-            }
-
-            // Compute variance for each feature
-            for (feature_idx, variance_val) in variances[class_idx].iter_mut().enumerate() {
-                let mean = means[class_idx][feature_idx];
-                let sum_sq_diff: f32 = class_samples
-                    .iter()
-                    .map(|&sample_idx| {
-                        let diff = x.get(sample_idx, feature_idx) - mean;
-                        diff * diff
-                    })
-                    .sum();
-                *variance_val = sum_sq_diff / n_class_samples + epsilon;
-            }
+            let (mean_c, variance_c) =
+                Self::class_mean_variance(data, n_features, &class_samples, epsilon);
+            means.push(mean_c);
+            variances.push(variance_c);
         }
 
         self.class_priors = Some(class_priors);
@@ -184,27 +202,98 @@ impl GaussianNB {
 
         // For class assignment we only need argmax of the log-posterior — softmax normalization
         // (exp / log-sum-exp / per-sample allocation) is wasted work, so skip it entirely.
+        //
+        // Samples go through in blocks, copied feature-major, so the per-feature update runs
+        // across the samples of a block and vectorizes (#4965). Each sample's log-posterior keeps
+        // the scalar loop's operation order, so predictions are bit-identical to it.
+        let data = x.as_slice();
+        let mut tile = vec![0.0_f32; n_features * GNB_PREDICT_BLOCK];
+        let mut lp = [0.0_f32; GNB_PREDICT_BLOCK];
+        let mut best_lp = [0.0_f32; GNB_PREDICT_BLOCK];
+        let mut best_idx = [0usize; GNB_PREDICT_BLOCK];
         let mut predictions = Vec::with_capacity(n_samples);
-        for sample_idx in 0..n_samples {
-            let mut best_idx = 0usize;
-            let mut best_lp = f32::NEG_INFINITY;
+        for start in (0..n_samples).step_by(GNB_PREDICT_BLOCK) {
+            let b = GNB_PREDICT_BLOCK.min(n_samples - start);
+            let tile = &mut tile[..n_features * b];
+            gnb_transpose_block(&data[start * n_features..(start + b) * n_features], b, tile);
+            let (lp, best_lp, best_idx) = (&mut lp[..b], &mut best_lp[..b], &mut best_idx[..b]);
+            best_lp.fill(f32::NEG_INFINITY);
+            best_idx.fill(0);
             for class_idx in 0..n_classes {
-                let mean_c = &means[class_idx];
-                let inv_c = &inv_2var[class_idx];
-                let mut lp = const_term[class_idx];
-                for feature_idx in 0..n_features {
-                    let diff = x.get(sample_idx, feature_idx) - mean_c[feature_idx];
-                    lp -= diff * diff * inv_c[feature_idx];
-                }
-                if lp > best_lp {
-                    best_lp = lp;
-                    best_idx = class_idx;
+                gnb_class_log_posterior(
+                    tile,
+                    const_term[class_idx],
+                    &means[class_idx],
+                    &inv_2var[class_idx],
+                    lp,
+                );
+                for ((&l, bl), bi) in lp.iter().zip(best_lp.iter_mut()).zip(best_idx.iter_mut()) {
+                    if l > *bl {
+                        *bl = l;
+                        *bi = class_idx;
+                    }
                 }
             }
-            predictions.push(classes[best_idx]);
+            predictions.extend(best_idx.iter().map(|&i| classes[i]));
         }
 
         Ok(predictions)
+    }
+
+    /// The largest per-feature (population) variance over all rows of the row-major `data`:
+    /// the scale sklearn applies to `var_smoothing`.
+    fn max_feature_variance(data: &[f32], n_samples: usize, n_features: usize) -> f32 {
+        let mut sums = vec![0.0_f32; n_features];
+        for row in gnb_rows(data, n_features, 0..n_samples) {
+            for (acc, &v) in sums.iter_mut().zip(row) {
+                *acc += v;
+            }
+        }
+        let feature_means: Vec<f32> = sums.iter().map(|&s| s / n_samples as f32).collect();
+        let mut sq = vec![0.0_f32; n_features];
+        for row in gnb_rows(data, n_features, 0..n_samples) {
+            for ((acc, &v), &mean) in sq.iter_mut().zip(row).zip(&feature_means) {
+                let diff = v - mean;
+                *acc += diff * diff;
+            }
+        }
+        let mut max_feature_var = 0.0_f32;
+        for &s in &sq {
+            let feature_var = s / n_samples as f32;
+            if feature_var > max_feature_var {
+                max_feature_var = feature_var;
+            }
+        }
+        max_feature_var
+    }
+
+    /// Per-feature mean and smoothed variance of the rows `class_samples` of `data`.
+    fn class_mean_variance(
+        data: &[f32],
+        n_features: usize,
+        class_samples: &[usize],
+        epsilon: f32,
+    ) -> (Vec<f32>, Vec<f32>) {
+        // The value `Iterator::sum` folds from, so each sum below equals the iterator sum this
+        // replaced bit for bit, the sign of an all-zero sum included.
+        let start: f32 = std::iter::empty::<f32>().sum();
+        let n_class_samples = class_samples.len() as f32;
+        let mut acc = vec![start; n_features];
+        for row in gnb_rows(data, n_features, class_samples.iter().copied()) {
+            for (a, &v) in acc.iter_mut().zip(row) {
+                *a += v;
+            }
+        }
+        let mean_c: Vec<f32> = acc.iter().map(|&s| s / n_class_samples).collect();
+        acc.fill(start);
+        for row in gnb_rows(data, n_features, class_samples.iter().copied()) {
+            for ((a, &v), &mean) in acc.iter_mut().zip(row).zip(&mean_c) {
+                let diff = v - mean;
+                *a += diff * diff;
+            }
+        }
+        let variance_c = acc.iter().map(|&s| s / n_class_samples + epsilon).collect();
+        (mean_c, variance_c)
     }
 
     /// Precomputes the sample-independent per-class log term
@@ -340,3 +429,7 @@ pub struct LinearSVM {
 #[cfg(test)]
 #[path = "tests_nb_contract.rs"]
 mod tests_nb_contract;
+
+#[cfg(test)]
+#[path = "tests_gnb_blocked.rs"]
+mod tests_gnb_blocked;
