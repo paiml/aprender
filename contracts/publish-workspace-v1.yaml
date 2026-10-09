@@ -230,9 +230,11 @@ falsification_tests:
       back and judged by clean_room_gate pinned to that one run. And it is the
       only door: `make publish` refuses a real upload (PUBLISH_DRY_RUN still
       packages), and no other tracked shell script, make file, justfile, git
-      hook, root workflow or file with a sh/bash/dash/ksh/mksh/zsh/bats shebang
-      runs an upload in a command that lacks --dry-run as a word of its own. An
-      upload is `cargo publish`, `cargo ws|workspaces publish`, `cargo release`,
+      hook, root workflow, composite action under .github/actions, CI job file
+      (ci/sections.yml and ci/vendor/*.yml, which the fat CI jobs run, and the
+      ci/*.cmd test commands) or file with a sh/bash/dash/ksh/mksh/zsh/bats
+      shebang runs an upload in a command that lacks --dry-run as a word of its
+      own. An upload is `cargo publish`, `cargo ws|workspaces publish`, `cargo release`,
       `cargo smart-release`, those tools run by their own name, cargo with a
       subcommand taken from a variable, or any variable run as the command with
       one of those uploads after it, since the variable may hold cargo. cargo

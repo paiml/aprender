@@ -10,8 +10,8 @@
 #
 # It is only the ONE door if nothing else uploads, so the last rows check the other doors
 # (#4687 R5b): `make publish` must refuse a real upload and still dry-run, no other tracked
-# shell script, make file, justfile, git hook, root workflow or shell-shebang file may run a
-# real upload, and no tracked cargo config may alias one.
+# shell script, make file, justfile, git hook, root workflow, composite action, ci/ job file or
+# shell-shebang file may run a real upload, and no tracked cargo config may alias one.
 # PUBLISH_DOORS_ROOT points those rows at another checkout (the before numbers).
 #
 #   bash scripts/check_publish_strict_cleanroom.sh
@@ -450,15 +450,21 @@ shebang_case other '#!/usr/bin/env bashful'
 [ "$sb_ok" -eq "$sb_n" ] && pass "shebang_case_table ($sb_ok/$sb_n cases)"
 NAMES=('*.sh' '*.bash' '*.mk' 'Makefile' '*/Makefile' 'makefile' '*/makefile' 'GNUmakefile' '*/GNUmakefile'
   'justfile' '*/justfile' 'Justfile' '*/Justfile' '.justfile' '*/.justfile' '*.just'
-  '.githooks/*' '*/.githooks/*' '.github/workflows/*.yml' '.github/workflows/*.yaml')
+  '.githooks/*' '*/.githooks/*' '.github/workflows/*.yml' '.github/workflows/*.yaml'
+  '.github/actions/*.yml' '.github/actions/*.yaml' 'ci/*.yml' 'ci/*.yaml' 'ci/*.cmd')
+# A composite action under .github/actions runs its steps wherever a root workflow uses it.
+# ci/ holds commands CI runs: fat_driver.py runs the job bodies in ci/sections.yml and the
+# vendored ci/vendor/sovereign-ci.yml, and a section runs each ci/explicit-test-commands.d/*.cmd.
 # The name scope's spec: a throwaway repo holds one empty file per path below, and NAMES must
 # select exactly the "in" ones. Most kinds hold no door today, so without this a kind dropped
 # from NAMES would go unseen.
 SC="$WORK/scope-case"
 SCOPE_IN='x.sh a/b.bash c.mk Makefile a/Makefile makefile GNUmakefile a/b/GNUmakefile justfile crates/x/justfile
 Justfile a/Justfile .justfile a/.justfile r.just .githooks/pre-push crates/x/.githooks/pre-commit
-.github/workflows/r.yml .github/workflows/r.yaml'
-SCOPE_OUT='x.py x.rs README.md a/Makefile.am x.sh.txt justfile.md crates/x/.github/workflows/r.yml .github/actions/a.yml'
+.github/workflows/r.yml .github/workflows/r.yaml
+.github/actions/x/action.yml .github/actions/y/action.yaml ci/sections.yml ci/vendor/v.yaml ci/t.d/010-x.cmd'
+SCOPE_OUT='x.py x.rs README.md a/Makefile.am x.sh.txt justfile.md crates/x/.github/workflows/r.yml .github/dependabot.yml
+crates/x/ci/r.yml ci/m.tsv'
 mkdir -p "$SC" && git -C "$SC" init -q
 for p in $SCOPE_IN $SCOPE_OUT; do mkdir -p "$SC/$(dirname "$p")" && : > "$SC/$p"; done
 git -C "$SC" add -A
@@ -526,7 +532,7 @@ fi
 if [ -n "$doors" ]; then
   while IFS= read -r d; do fail "no_other_door: a real cargo publish outside the gated doors: $d"; done <<< "$doors"
 elif [ -z "$read_err" ]; then
-  pass "no_other_door (${#scope[@]} files scanned: $named tracked shell scripts, make files, justfiles, git hooks and root workflows, $((${#scope[@]} - named)) more by shebang, and this file)"
+  pass "no_other_door (${#scope[@]} files scanned: $named tracked shell scripts, make files, justfiles, git hooks, root workflows, composite actions and ci/ job files, $((${#scope[@]} - named)) more by shebang, and this file)"
 fi
 
 # A cargo alias makes `cargo <name>` an upload the door scan cannot see, so no tracked cargo
