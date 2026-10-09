@@ -892,7 +892,7 @@ l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
     row inrun_a_failed_lane_job_fails_the_run 0 "$(printf 'l-gpu\tverdict\tred\t%s ^cleanroom-gpu$\t7001\t%s\tfailure' "$INRUN_WF" "$ST_C")" "" -- st_ir red
     ir_case skip schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$(ir_job 'lanes / cleanroom-gpu' completed '"skipped"')" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_an_unasserted_lane_job_is_not_measured 0 "NOT RELEASABLE: l-gpu, not_measured" "RELEASABLE H=" -- st_ir skip
-    st_ir_no900() { st_ir skip > /dev/null; awk -F "\t" "\$3 == 900 { n++ } END { print \"rows of 900=\" n+0 }" "$tmp/ir/skip/runs.tsv"; }
+    st_ir_no900() { st_ir skip > /dev/null; awk -F '\t' -v id=900 '$3 == id { n++ } END { print "rows of " id "=" n+0 }' "$tmp/ir/skip/runs.tsv"; }
     row inrun_drops_the_lanes_scheduled_runs 0 "rows of 900=0" "" -- st_ir_no900
     ir_case failassert schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$(ir_job 'lanes / cleanroom-gpu' completed '"failure"' "$ST_C" failure)" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_failed_assert_is_not_measured 0 "NOT RELEASABLE: l-gpu, not_measured" "l-gpu, 7001" -- st_ir failassert
@@ -919,7 +919,7 @@ l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
     # st_ir_lane NAME LANE -> that lane's row of st_ir NAME
     st_ir_lane() { st_ir "$1" > /dev/null; awk -F "\t" -v l="$2" "\$1 == l" "$tmp/ir/$1/lanes.tsv"; }
     row inrun_the_models_job_is_the_models_lane_on_c 0 "$(printf 'l-mod\tverdict\tgreen\t%s ^models$\t7001\t%s\tsuccess\t1' "$INRUN_MODELS_WF" "$ST_C")" "" -- st_ir base
-    st_ir_no950() { st_ir base > /dev/null; awk -F "\t" "\$3 == 950 { n++ } END { print \"rows of 950=\" n+0 }" "$tmp/ir/base/runs.tsv"; }
+    st_ir_no950() { st_ir base > /dev/null; awk -F '\t' -v id=950 '$3 == id { n++ } END { print "rows of " id "=" n+0 }' "$tmp/ir/base/runs.tsv"; }
     row inrun_drops_the_models_scheduled_runs 0 "rows of 950=0" "" -- st_ir_no950
     ir_case modred schedule 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$(ir_job models completed '"failure"' "$ST_C" success "$ST_C" success)" "$J_SELF"
     row inrun_a_failed_models_job_that_relayed_c_is_red 0 "$(printf 'l-mod\tverdict\tred\t%s ^models$\t7001\t%s\tfailure' "$INRUN_MODELS_WF" "$ST_C")" "RELEASABLE H=" -- st_ir modred

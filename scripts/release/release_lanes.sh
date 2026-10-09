@@ -301,11 +301,12 @@ measured_cpu() {
     [ "$rem" -ge "$fl" ] || { echo "not_measured: core remaining $rem under $fl" >&2; return 2; }
     rows="$(infra_rows "" infra_gh)" || { echo "not_measured: paiml/infra clean-room runs were not read" >&2; return 2; }
     while read -r sha; do
+        [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || continue
         v="$(printf '%s\n' "$rows" | judge_cpu "$sha")"
         case "${v%%"$TAB"*}" in
             green|red) tsv "$sha" "${v%%"$TAB"*}" "$(printf '%s\n' "$rows" | awk -F '\t' -v s="$sha" '$5 == s { print $1; exit }')" ;;
         esac
-    done < <(printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 && length($5) == 40 && $5 ~ /^[0-9a-f]+$/ && !seen[$5]++ { print $5 }')
+    done < <(printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 && !seen[$5]++ { print $5 }')
 }
 
 # assert_head REF -> 0 when this checkout's HEAD is REF, a 40-hex sha; prints the tested-sha record. A lane job runs it
@@ -376,7 +377,7 @@ wiring() {
     grep -qE "^      ref: $at\$" <<< "$(job_block "$wf" b2-gpu-at-c)" || bad="$bad b2-gpu-at-c(ref)"
     grep -qE "^          LANES_REF: $at\$" <<< "$(job_block "$wf" measure-cleanroom-cpu)" || bad="$bad cleanroom-cpu(LANES_REF)"
     grep -qE '^          LANES_CALLER: \$\{\{ inputs\.caller \}\}$' <<< "$(job_block "$wf" measure-cleanroom-gpu)" || bad="$bad cleanroom-gpu(LANES_CALLER)"
-    ! sed -E "/^ *#/d; s/$at//g" "$wf" | grep -qE 'github\.sha|GITHUB_SHA' || bad="$bad caller-sha"
+    ! grep -qE 'github\.sha|GITHUB_SHA' <<< "$(sed -E "/^ *#/d; s/$at//g" "$wf")" || bad="$bad caller-sha"
     [ "$(grep -cE '^      - run: test "\$VERDICT" = green$' "$wf")" -eq "$n" ] || bad="$bad exit(green-only)"
     if [ -n "$bad" ]; then printf 'miswired:%s' "$bad"; return 1; fi
     printf '%s lanes' "$n"

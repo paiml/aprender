@@ -710,7 +710,7 @@ dledger_d7() {
 # a bundle the relay named and passes only on green or red, and a step fails the job on anything but green. The night
 # needs both callers, or the train reads a run whose lanes still run, and hands the train C and its own run.
 wiring() {
-    local wf=$1 tr=$2 bad="" at='${{ needs.pick.outputs.c }}' from caller wfl models lk mk rk b s caps
+    local wf=$1 tr=$2 bad="" at='${{ needs.pick.outputs.c }}' from caller wfl models lk mk rk b found caps
     [ -f "$wf" ] || { printf '%s is missing' "$wf"; return 1; }
     [ -f "$tr" ] || { printf '%s is missing' "$tr"; return 1; }
     wr_tv() { sed -n "s/^$1=\"\\([^\"]*\\)\"\$/\\1/p" "$tr"; }
@@ -728,7 +728,7 @@ wiring() {
     wr_step() { awk -v l="$2" '/^      - / { if (hit) exit; s = "" } { s = s $0 "\n" } $0 == l { hit = 1 } END { if (hit) printf "%s", s }' <<< "$1"; }
     wr_one() { [ -n "$1" ] && [ "$1" = "${1%%$'\n'*}" ]; }
     lk=$(wr_named "$caller"); mk=$(wr_named "$models")
-    s=$(wr_named "" "$caller / "); [ -z "$s" ] || bad="$bad $caller(prefix:$(printf '%s' "$s" | tr '\n' ','))"
+    found=$(wr_named "" "$caller / "); [ -z "$found" ] || bad="$bad $caller(prefix:$(printf '%s' "$found" | tr '\n' ','))"
     if wr_one "$lk"; then b=$(job_block "$wf" "$lk")
         grep -qxF "    uses: ./$wfl" <<< "$b" || bad="$bad $caller(uses)"
         grep -qxF "      ref: $at" <<< "$b" || bad="$bad $caller(ref-C)"
@@ -742,19 +742,19 @@ wiring() {
         grep -qE '^        run: setsid --wait bash scripts/release/models_nightly\.sh --relay --commit "\$C" .*--measure crux$' <<< "$(wr_step "$b" "        id: relay")" \
             || bad="$bad $models(relay)"
         ! grep -q 'continue-on-error' <<< "$b" || bad="$bad $models(continue-on-error)"
-        s=$(wr_step "$b" "      - name: ${caps[1]}$at")
-        if [ -z "$s" ]; then bad="$bad $models(relayed)"
+        found=$(wr_step "$b" "      - name: ${caps[1]}$at")
+        if [ -z "$found" ]; then bad="$bad $models(relayed)"
         else
-            grep -qxF "        if: steps.relay.outputs.bundle != ''" <<< "$s" || bad="$bad $models(relayed-if)"
-            { grep -qxF '          STATE: ${{ steps.relay.outputs.state }}' <<< "$s" \
-                && grep -qF '          case "$STATE" in green|red) ;; *) ' <<< "$s"; } || bad="$bad $models(relayed-state)"
+            grep -qxF "        if: steps.relay.outputs.bundle != ''" <<< "$found" || bad="$bad $models(relayed-if)"
+            { grep -qxF '          STATE: ${{ steps.relay.outputs.state }}' <<< "$found" \
+                && grep -qF '          case "$STATE" in green|red) ;; *) ' <<< "$found"; } || bad="$bad $models(relayed-state)"
         fi
         grep -qxF '          [ "$STATE" = green ] || { echo "::error::models RED on C $C: $REASON"; exit 1; }' <<< "$b" || bad="$bad $models(green-only)"
     else bad="$bad $models(name)"; fi
     rk=$(wr_with '^ +bash scripts/release/rehearse\.sh --run ')
     if wr_one "$rk"; then b=$(job_block "$wf" "$rk")
-        s=$(sed -n 's/^    needs: \[\(.*\)\]$/\1/p' <<< "$b" | tr -d ' ' | tr ',' '\n')
-        { grep -qx pick <<< "$s" && grep -qxF "$lk" <<< "$s" && grep -qxF "$mk" <<< "$s"; } || bad="$bad $rk(needs)"
+        found=$(sed -n 's/^    needs: \[\(.*\)\]$/\1/p' <<< "$b" | tr -d ' ' | tr ',' '\n')
+        { grep -qx pick <<< "$found" && grep -qxF "$lk" <<< "$found" && grep -qxF "$mk" <<< "$found"; } || bad="$bad $rk(needs)"
         grep -qxF "      C: $at" <<< "$b" || bad="$bad $rk(C)"
         grep -qE '^ +bash scripts/release/rehearse\.sh --run .*--commit "\$C" --in-run "\$GITHUB_RUN_ID"( |$)' <<< "$b" || bad="$bad $rk(in-run)"
     else bad="$bad night(run)"; fi
@@ -1645,7 +1645,7 @@ wiring_capture_count_free    rehearse.sh         s/\[ "\${#caps\[@\]}" -eq 2 \] 
 wiring_names_keep_comments   rehearse.sh         s/ sub(\/\[ \\t\]+#\.\*\$\/, "", v);//
 wiring_step_runs_past_its_end rehearse.sh        s/{ if (hit) exit; s = "" }/{ s = "" }/
 wiring_one_takes_two_jobs    rehearse.sh         s/wr_one() { .*/wr_one() { [ -n "$1" ]; }/
-wiring_own_lane_names_free   rehearse.sh         s/\[ -z "\$s" \] || bad="\$bad \$caller(prefix/true || bad="$bad $caller(prefix/
+wiring_own_lane_names_free   rehearse.sh         s/\[ -z "\$found" \] || bad="\$bad \$caller(prefix/true || bad="$bad $caller(prefix/
 wiring_caller_uses_free      rehearse.sh         s/|| bad="\$bad \$caller(uses)"/|| :/
 wiring_caller_ref_free       rehearse.sh         s/|| bad="\$bad \$caller(ref-C)"/|| :/
 wiring_caller_input_free     rehearse.sh         s/|| bad="\$bad \$caller(caller)"/|| :/
@@ -1656,12 +1656,12 @@ wiring_models_assert_free    rehearse.sh         s/|| bad="\$bad \$models(assert
 wiring_assert_read_as_relay  rehearse.sh         s/"      - name: \${caps\[0\]}\$at"/"      - name: ${caps[1]}$at"/
 wiring_models_relay_free     rehearse.sh         s/|| bad="\$bad \$models(relay)"/|| :/
 wiring_relay_may_fail        rehearse.sh         s/|| bad="\$bad \$models(continue-on-error)"/|| :/
-wiring_relayed_unnamed       rehearse.sh         s/if \[ -z "\$s" \]; then bad="\$bad \$models(relayed)"/if false; then :/
+wiring_relayed_unnamed       rehearse.sh         s/if \[ -z "\$found" \]; then bad="\$bad \$models(relayed)"/if false; then :/
 wiring_relayed_if_free       rehearse.sh         s/|| bad="\$bad \$models(relayed-if)"/|| :/
 wiring_relayed_state_free    rehearse.sh         s/|| bad="\$bad \$models(relayed-state)"/|| :/
 wiring_green_only_free       rehearse.sh         s/|| bad="\$bad \$models(green-only)"/|| :/
 wiring_models_name_unnamed   rehearse.sh         s/    else bad="\$bad \$models(name)"; fi/    fi/
-wiring_needs_models_free     rehearse.sh         s/ && grep -qxF "\$mk" <<< "\$s"//
+wiring_needs_models_free     rehearse.sh         s/ && grep -qxF "\$mk" <<< "\$found"//
 wiring_night_c_free          rehearse.sh         s/|| bad="\$bad \$rk(C)"/|| :/
 wiring_night_in_run_free     rehearse.sh         s/|| bad="\$bad \$rk(in-run)"/|| :/
 wiring_night_run_unnamed     rehearse.sh         s/    else bad="\$bad night(run)"; fi/    fi/
