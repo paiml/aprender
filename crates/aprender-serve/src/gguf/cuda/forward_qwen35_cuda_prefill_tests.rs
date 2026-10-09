@@ -492,8 +492,9 @@ fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one(
 const MODEL_4B: &str = "/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf";
 
 /// #4958: the apr-code fixture's question. `apr run` prefills it in the GGUF's own
-/// chat template. The 4B's F2 probe of it (the last 64 tokens: batched prefill,
-/// then one decode step) rejected on GB10 at position 42, cosine 0.5065
+/// chat template, 83 tokens, and its first forward stops before the generation
+/// header, at 76. The 4B's F2 probe of that forward (its last 64 tokens: batched
+/// prefill, then one decode step) rejected on GB10 at position 42, cosine 0.5065
 /// against the CPU with both argmaxes 16. The rejection held under every prefill GEMM
 /// mode (f32, f16, dp4a) and both attention paths, and the 4090, the 2B and the 9B
 /// accepted the same probe. `apr parity` held the per-token GPU path to cosine 0.994
@@ -526,18 +527,29 @@ fn qwen35_prefill_equals_per_token_at_every_position_of_the_4958_probe_4b() {
     let prepared = crate::infer::prepare_tokens(&config, &crate::format::ModelFormat::Gguf)
         .expect("tokenize as `apr run` does");
     let ids = prepared.tokens();
-    // The slice `f2_validate_qwen35` takes. The prompt is longer than the cap, so
-    // the probe is a full one, as it was in the rejection.
+    // The session's first forward stops before the prompt's last `<|im_start|>`
+    // (`checkpoint_at`, session.rs), and F2 judges that forward: the last `cap`
+    // tokens of it. The rest of the prompt follows as a second forward.
+    let im_start = mapped
+        .model
+        .vocabulary()
+        .and_then(|v| v.iter().position(|t| t == "<|im_start|>"))
+        .and_then(|i| u32::try_from(i).ok())
+        .expect("the 4B's vocabulary has <|im_start|>");
+    let k = ids
+        .iter()
+        .rposition(|&t| t == im_start)
+        .filter(|&k| k > 0)
+        .expect("a templated prompt holds a generation header");
     let cap = crate::gguf::forward_qwen35::QWEN35_F2_PROBE_MAX;
-    let probe = &ids[ids.len().saturating_sub(cap)..];
+    let probe = &ids[k.saturating_sub(cap)..k];
     assert_eq!(
         probe.len(),
         cap,
-        "{} prompt tokens: the F2 probe is not full",
-        ids.len()
+        "{k} tokens before the header: the F2 probe is not full"
     );
     println!(
-        "[4958] {} prompt tokens; F2 probes the last {cap}",
+        "[4958] {} prompt tokens, the first forward holds {k}, F2 probes the last {cap} of it",
         ids.len()
     );
     let n = probe.len();
