@@ -62,6 +62,7 @@
 #     anchor on the GATE it belonged to. RR-P03 now checks check_release_assets.sh in
 #     `publish` (was RR-P37); the `assets` wait on the binary-release run is its `also`.
 #     Child rows 82 -> 50 (RR-D01..D50); GATEs unchanged at 19 (merge 10, tag 5, publish 5).
+#     The spec's T-4 row now names the executor the `cascade` step runs, so publish.executor agrees.
 #
 # A ROW (`parent: <id>`) is part of the GATE it names: checked like any entry, printed
 # under that GATE by `--gates`, and never counted in its total.
