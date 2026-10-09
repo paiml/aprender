@@ -174,6 +174,10 @@ t1_deep() {
 #    receipt T-4 would refuse stops the train before any tag exists.
 t1_dogfood() {
   export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-dogfood"
+  # D2 (#4930): under the standing release policy the declared ladder gate (check_model_ladder.sh) judges
+  # the CRUX receipts the models lane wrote at $MC and the certification committed in the bump -- the same
+  # pair the T-4 preflight reads. The join starts this lane only after models is GO.
+  [ "$AP_POLICY" != 1 ] || export MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json"
   bash scripts/dogfood.sh --phase pre-publish > "$AP/dogfood-pre-publish.log" 2>&1; rc=$?
   grep -E 'VERDICT' "$AP/dogfood-pre-publish.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "dogfood pre-publish NO-GO rc=$rc ($AP/dogfood-pre-publish.log)"
@@ -211,15 +215,22 @@ t1_models() {
 #   build and ladder running in the release dir the next pass reuses. models runs to its own verdict.
 #   An INT or TERM to the autopilot stops every lane (the lanes no longer share its process group),
 #   models included: the operator chose to stop, and the remote leg may run on to its own end.
+#   HELD LANE (D2, #4930). Under the standing release policy dogfood's ladder gate judges the CRUX
+#   receipts models writes to $AP/models-t1, so with both selected dogfood is HELD: it starts when
+#   models exits GO and no lane is red, else its row reads NOT-RUN and it never starts. deep is not held.
+#   Dogfood selected alone is not held: it reads whatever an earlier pass left in $AP/models-t1.
 # scripts/check_release_t1_lanes_joined.sh runs this block against stub lanes, and its mutants.
 T1_LANES=(); for s in deep dogfood models; do run_step "$s" && T1_LANES+=("$s"); done
 if [ "${#T1_LANES[@]}" -gt 0 ]; then
   declare -A T1_STEP=() T1_T0=() T1_STOPPED=()
   trap 'for p in "${!T1_STEP[@]}"; do kill -TERM -- "-$p" 2> /dev/null; done; die "T-1 lanes interrupted"' INT TERM
+  t1_held=''
+  case " ${T1_LANES[*]} " in *" dogfood "*"models "*) [ "$AP_POLICY" != 1 ] || t1_held=dogfood ;; esac
+  T1_NOW=(); for s in "${T1_LANES[@]}"; do [ "$s" = "$t1_held" ] || T1_NOW+=("$s"); done
   t1_launch=$SECONDS; set -m
-  for s in "${T1_LANES[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
+  for s in "${T1_NOW[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
   set +m
-  say "T-1 LANES started together: ${T1_LANES[*]}"
+  say "T-1 LANES started together: ${T1_LANES[*]}${t1_held:+ ($t1_held held until models is GO)}"
   [ -f "$AP/t1-steps.tsv" ] || printf 'step\tstart\tend\tseconds\tverdict\n' > "$AP/t1-steps.tsv"
   t1_red=''; t1_term_rc=$((128 + $(kill -l TERM)))
   while [ "${#T1_STEP[@]}" -gt 0 ]; do
@@ -235,6 +246,16 @@ if [ "${#T1_LANES[@]}" -gt 0 ]; then
         [ "${T1_STEP[$p]}" = models ] && continue
         T1_STOPPED[${T1_STEP[$p]}]=1; kill -TERM -- "-$p" 2> /dev/null
       done
+    fi
+    if [ "$s" = models ] && [ -n "$t1_held" ]; then
+      s=$t1_held; t1_held=''
+      if [ "$v" = GO ] && [ -z "$t1_red" ]; then
+        set -m; "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; set +m
+        say "STEP $s started: models is GO, its CRUX receipts are in $AP/models-t1"
+      else
+        printf '%s\t%s\t%s\t0\tNOT-RUN\n' "$s" "$((t1 - t1_launch))" "$((t1 - t1_launch))" >> "$AP/t1-steps.tsv"
+        say "STEP $s NOT-RUN: held for models' CRUX receipts, and $t1_red went red first"
+      fi
     fi
   done
   trap - INT TERM
