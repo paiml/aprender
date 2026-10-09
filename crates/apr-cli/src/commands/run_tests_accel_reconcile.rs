@@ -197,7 +197,7 @@ fn json_plus_benchmark_is_not_a_machine_surface() {
 // #3817: --gpu on an architecture with no CUDA forward refuses BEFORE the load
 // =============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "inference"))]
 mod forced_accelerator_refusal_tests {
     use crate::commands::run::forced_accelerator_refusal;
 
@@ -277,6 +277,29 @@ mod forced_accelerator_refusal_tests {
              normalizer folds it into qwen3_moe — so it would reach a forward that cannot run \
              its Gated-DeltaNet/SSM layers (#3714, #3817)."
         );
+    }
+}
+
+/// #4972: without `inference` there is no forward on any device, so a forced
+/// accelerator is refused for every architecture, an unread one included, and
+/// an unforced run is never refused.
+#[cfg(all(test, not(feature = "inference")))]
+mod forced_accelerator_refusal_without_inference_tests {
+    use crate::commands::run::forced_accelerator_refusal;
+
+    #[test]
+    fn a_forced_accelerator_is_refused_for_every_architecture() {
+        for arch in [Some("qwen2"), Some("llama"), Some("qwen35moe"), None] {
+            let reason = forced_accelerator_refusal(true, arch)
+                .expect("a build without inference has no forward to reach");
+            assert!(reason.contains("inference"), "{reason}");
+        }
+    }
+
+    #[test]
+    fn an_unforced_run_is_not_refused() {
+        assert!(forced_accelerator_refusal(false, Some("qwen2")).is_none());
+        assert!(forced_accelerator_refusal(false, None).is_none());
     }
 }
 

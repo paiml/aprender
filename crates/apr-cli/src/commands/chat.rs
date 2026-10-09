@@ -40,6 +40,7 @@ use aprender::serialization::apr::AprReader;
 // asking…` on Qwen3-1.7B. Two functions with the same name, two enums, one of
 // which could not express the right answer.
 use colored::Colorize;
+#[cfg(feature = "inference")]
 use realizar::chat_template::{
     auto_detect_template, detect_format_from_name, ChatMessage, ChatTemplateEngine, TemplateFormat,
 };
@@ -682,7 +683,9 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
     print_welcome_banner_for(path, detect_format(path), config);
 }
 
-fn print_welcome_banner_for(path: &Path, format: ModelFormat, config: &ChatConfig) {
+/// The chat-template family the banner names, detected from the file name.
+#[cfg(feature = "inference")]
+fn banner_template_family(path: &Path) -> &'static str {
     // Detect chat template format from model name (Toyota Way: Visual Control)
     let model_name = path
         .file_stem()
@@ -692,7 +695,18 @@ fn print_welcome_banner_for(path: &Path, format: ModelFormat, config: &ChatConfi
     // #3801: ONE spelling of the name. This was a second copy of
     // `template_format_name`, and two copies of a match over an enum are how a
     // new variant gets handled in one place and not the other.
-    let template_name = crate::chat::realizar_chat::template_format_name(template_format);
+    crate::chat::realizar_chat::template_format_name(template_format)
+}
+
+/// #4972: without `inference` there is no template detector, and the session
+/// refuses before its first turn.
+#[cfg(not(feature = "inference"))]
+fn banner_template_family(_path: &Path) -> &'static str {
+    "none: this apr was built without the `inference` feature"
+}
+
+fn print_welcome_banner_for(path: &Path, format: ModelFormat, config: &ChatConfig) {
+    let template_name = banner_template_family(path);
 
     match format {
         ModelFormat::Apr => {

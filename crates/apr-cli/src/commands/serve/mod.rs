@@ -9,6 +9,7 @@ pub mod auth;
 pub mod handlers;
 #[cfg(feature = "inference")]
 pub mod ollama;
+#[cfg(feature = "inference")]
 pub(crate) mod route_index;
 pub mod routes;
 #[cfg(feature = "inference")]

@@ -355,6 +355,7 @@ fn thinking_on_budget_override() -> std::result::Result<Option<(usize, String)>,
 /// One matched row of the `models` table. A row that declares no `budget`
 /// REFUSES rather than inheriting the default, which was measured on a
 /// different model (#3907).
+#[cfg(feature = "inference")]
 fn thinking_on_budget_row(
     v: &serde_yaml::Value,
     pat: &str,
@@ -385,6 +386,7 @@ fn thinking_on_budget_row(
 
 /// The first `models` pattern that matches `model_file`, or `None` when the
 /// model is unlisted and the `default` row applies.
+#[cfg(feature = "inference")]
 fn thinking_on_budget_match(
     doc: &serde_yaml::Value,
     model_file: &str,
@@ -400,6 +402,7 @@ fn thinking_on_budget_match(
 }
 
 /// The `default` row, for a model no pattern names.
+#[cfg(feature = "inference")]
 fn thinking_on_budget_default(
     doc: &serde_yaml::Value,
 ) -> std::result::Result<(usize, String), String> {
@@ -418,6 +421,7 @@ fn thinking_on_budget_default(
     Ok((usize::try_from(b).unwrap_or(0), format!("default: {basis}")))
 }
 
+#[cfg(feature = "inference")]
 fn thinking_on_budget_for(model_file: &str) -> std::result::Result<(usize, String), String> {
     if let Some(over) = thinking_on_budget_override()? {
         return Ok(over);

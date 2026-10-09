@@ -212,6 +212,7 @@ fn reconcile_and_emit(
 /// (not a GGUF, a hub id rather than a path, an unreadable header), and an
 /// unknown architecture is never refused — this predicate lists what we know we
 /// did NOT build, never what we support.
+#[cfg(feature = "inference")]
 pub(crate) fn forced_accelerator_refusal(
     accel_forced: bool,
     architecture: Option<&str>,
@@ -220,6 +221,20 @@ pub(crate) fn forced_accelerator_refusal(
         return None;
     }
     realizar::capability::no_cuda_forward_reason(architecture?)
+}
+
+/// #4972: a build without `inference` has no forward on any accelerator, so a
+/// forced one is refused whatever the architecture, including an unread one.
+#[cfg(not(feature = "inference"))]
+pub(crate) fn forced_accelerator_refusal(
+    accel_forced: bool,
+    _architecture: Option<&str>,
+) -> Option<String> {
+    accel_forced.then(|| {
+        "an accelerator was forced, but this apr was built without the `inference` \
+         feature, so it has no forward on any device (#4972)"
+            .to_string()
+    })
 }
 
 /// Read the declared architecture from a model path without loading it.
