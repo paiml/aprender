@@ -24,10 +24,11 @@
 //! ```bash
 //! cargo run --example qa_verify -- --all
 //! cargo run --example qa_verify -- --section 1
-//! cargo run --example qa_verify -- --json
+//! cargo run --example qa_verify -- --all --json
 //! ```
 
 use std::env;
+use std::io::IsTerminal;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -387,9 +388,11 @@ fn main() {
     }
 
     // Every section shells out to whole-workspace cargo test/build/clippy/doc, so a
-    // bare run is minutes of work. Ask for it explicitly instead of starting it
-    // by default from a run with no arguments.
-    if config.section.is_none() && !run_all {
+    // bare run is minutes of work. A debug build or a run with no terminal (CI, a
+    // pipe) asks for it explicitly; a release build on a terminal runs every section,
+    // as it always has.
+    let bare_runs_all = !cfg!(debug_assertions) && std::io::stdout().is_terminal();
+    if config.section.is_none() && !run_all && !bare_runs_all {
         eprintln!(
             "Usage: cargo run --example qa_verify -- --all | --section N [--json] [--verbose]"
         );
