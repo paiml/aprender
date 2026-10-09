@@ -37,9 +37,14 @@
 # Usage:
 #   scripts/tokenizer_parity.sh [--apr BIN] [--llama-tokenize BIN] [--model GGUF]... [--corpus FILE]...
 # Defaults: --apr from scripts/apr_bin.sh (built from HEAD); --llama-tokenize from
-# $LLAMA_TOKENIZE, else ~/src/llama.cpp-<build_commit>/build/bin/llama-tokenize; --model every
-# *.gguf in ${APR_MODEL_DIR:-$HOME/models} except shards 2+ of a split file (they carry no
-# tokenizer); --corpus every file in evidence/tokenizer-parity/corpus/.
+# $LLAMA_TOKENIZE, else ~/src/llama.cpp-<build_commit>/build/bin/llama-tokenize; --corpus every
+# file in evidence/tokenizer-parity/corpus/; --model every model evidence/release-models.sha256
+# lists, read from ${APR_MODEL_DIR:-$HOME/models} (#4981).
+#
+# THE MODELS ARE DECLARED, NOT FOUND. The denominator is the committed list, so the verdict
+# depends on the commit and not on what the host holds. A listed model that is absent from the
+# model dir, or whose sha256 is not the listed one, is FAIL. A file the list does not name is
+# never looked at. An unreadable or malformed list is refused (rc 2).
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -62,7 +67,7 @@ while [ $# -gt 0 ]; do
         --llama-tokenize) lt_bin=${2:?--llama-tokenize needs a path}; shift 2 ;;
         --model) models+=("${2:?--model needs a path}"); shift 2 ;;
         --corpus) corpus+=("${2:?--corpus needs a path}"); shift 2 ;;
-        -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+        -h|--help) sed -n '/^set -uo pipefail/q; 2,$p' "$0"; exit 0 ;;
         *) printf 'tokenizer_parity: unknown argument %q\n' "$1" >&2; exit 2 ;;
     esac
 done
@@ -90,29 +95,49 @@ if ! tp_commit_matches "$want_commit" "$lt_version"; then
     exit 2
 fi
 
-if [ ${#models[@]} -eq 0 ]; then
-    for m in "${APR_MODEL_DIR:-$HOME/models}"/*.gguf; do
-        [ -e "$m" ] || continue
-        case "$m" in *-0000[2-9]-of-0000[0-9].gguf) continue ;; esac
-        models+=("$m")
-    done
-fi
 if [ ${#corpus[@]} -eq 0 ]; then
     for f in "$root"/evidence/tokenizer-parity/corpus/*; do
         [ -f "$f" ] && corpus+=("$f")
     done
 fi
-[ ${#models[@]} -gt 0 ] || { printf 'REFUSE: no models\n' >&2; exit 2; }
 [ ${#corpus[@]} -gt 0 ] || { printf 'REFUSE: no corpus files\n' >&2; exit 2; }
 
 printf 'apr:            %s (%s)\n' "$apr_bin" "$("$apr_bin" --version 2>/dev/null | head -1)"
 printf 'llama-tokenize: %s (%s)\n' "$lt_bin" "$lt_version"
+
+pass=0 fail=0 uncovered=0
+if [ ${#models[@]} -eq 0 ]; then
+    inventory="$root/evidence/release-models.sha256"
+    model_dir="${APR_MODEL_DIR:-$HOME/models}"
+    if ! rows=$(tp_inventory_rows "$inventory"); then
+        printf 'REFUSE: cannot read the declared model list %s\n' "$inventory" >&2
+        exit 2
+    fi
+    printf 'model list:     %s (%s models), read from %s\n' "${inventory#"$root"/}" "$(grep -c . <<<"$rows")" "$model_dir"
+    verdicts=$(tp_resolve_inventory "$model_dir" <<<"$rows")
+    while read -r verdict a b; do
+        case "$verdict" in
+            '') ;;
+            ok) models+=("$a") ;;
+            absent)
+                printf 'FAIL       %s  -  listed, absent from %s\n' "$a" "$model_dir"
+                fail=$((fail + 1)) ;;
+            mismatch)
+                printf 'FAIL       %s  -  sha256 %s is not the listed one\n' "$a" "$b"
+                fail=$((fail + 1)) ;;
+            unhashable)
+                printf 'FAIL       %s  -  sha256sum cannot read it\n' "$a"
+                fail=$((fail + 1)) ;;
+            *) printf 'REFUSE: unknown model-list verdict %q\n' "$verdict" >&2; exit 2 ;;
+        esac
+    done <<<"$verdicts"
+fi
+[ ${#models[@]} -gt 0 ] || [ "$fail" -gt 0 ] || { printf 'REFUSE: no models\n' >&2; exit 2; }
 printf 'models: %s   corpus files: %s\n' "${#models[@]}" "${#corpus[@]}"
 
 tmp=$(mktemp -d) || exit 2
 trap 'rm -rf -- "${tmp:?}"' EXIT
 
-pass=0 fail=0 uncovered=0
 for m in "${models[@]}"; do
     mname=$(basename "$m")
     for f in "${corpus[@]}"; do

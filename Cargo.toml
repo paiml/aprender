@@ -668,10 +668,11 @@ gates = [
     # runs this entry. The PR-time half, the comparison helpers' case table, is
     # scripts/check_float16_greedy_parity.sh, which guard_tree.sh dispatches.
     "scripts/float16_greedy_parity.sh",
-    # #3726: apr's token ids against the pinned llama-tokenize, for every GGUF on the
-    # release host and every file in evidence/tokenizer-parity/corpus/. A mismatch, a greedy
-    # fallback on a byte-level vocabulary, a failed round trip or a non-byte-level model is
-    # RED. `apr parity` cannot see a tokenizer defect: both of its sides share the tokenizer.
+    # #3726: apr's token ids against the pinned llama-tokenize, for every GGUF
+    # evidence/release-models.sha256 lists (#4981: read from ${APR_MODEL_DIR:-$HOME/models};
+    # listed and absent, or another sha256, is RED; an unlisted file is never read) and every
+    # file in evidence/tokenizer-parity/corpus/. A mismatch, a greedy fallback on a byte-level
+    # vocabulary, a failed round trip or a non-byte-level model is RED. `apr parity` cannot see a tokenizer defect: both of its sides share the tokenizer.
     # Release time only, like the entry above; the PR-time half (the helpers' case table) is
     # scripts/check_tokenizer_parity.sh, which guard_tree.sh dispatches.
     "scripts/tokenizer_parity.sh",
