@@ -170,14 +170,16 @@ run_step tag && cov_dispatch_at_mc
 # of the recorded run concluded success, and every tested-sha that run printed is MC. The run id and the
 # sha go to $AP/cascade-cleanroom.json, which the ledger step folds into the ledger record.
 cascade_cleanroom_at_tag() {
-    local crun tc jc shas
+    local crun tc jc jid shas
     [ -s "$AP/cleanroom-run-id" ] || die "no clean-room run recorded for $T -- the cleanroom step has not passed; nothing published"
     crun=$(cat "$AP/cleanroom-run-id")
     tc=$(git ls-remote origin "refs/tags/$T^{}" 2>> "$LOG" | cut -f1) || die "cannot read $T on origin; nothing published"
     [ "$tc" = "$MC" ] || die "$T on origin is at '${tc:-absent}', not the release commit $MC; nothing published"
-    jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
+    jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | "\(.conclusion) \(.databaseId)"' | head -1)
+    jid=${jc#* }; jc=${jc%% *}
     [ "$jc" = success ] || die "clean-room (aprender) run $crun concluded '${jc:-absent}'; nothing published"
-    shas=$(gh run view "$crun" --repo "$INFRA" --log 2>> "$LOG" | grep -oE 'tested-sha: [0-9a-f]{40}' | sort -u)
+    # the job's own log: a whole-run log is unavailable while any sibling job is still running
+    shas=$(gh run view --job "$jid" --repo "$INFRA" --log 2>> "$LOG" | grep -oE 'tested-sha: [0-9a-f]{40}' | sort -u)
     [ "$shas" = "tested-sha: $MC" ] || die "clean-room run $crun tested '${shas//$'\n'/ }', not exactly $MC; nothing published"
     jq -n --arg run "$crun" --arg sha "$MC" --arg tag "$T" '{cleanroom_run: $run, tag: $tag, sha: $sha}' > "$AP/cascade-cleanroom.json" \
         || die "cannot write $AP/cascade-cleanroom.json; nothing published"
@@ -585,6 +587,11 @@ if run_step dryrun; then
   # commit. Its receipt must name exactly $MC: missing or another commit is red, never a skip.
   [ "$(cat "$AP/publish-dryrun-commit" 2>/dev/null)" = "$MC" ] \
     || die "no green publish dry-run receipt for $MC in $AP/publish-dryrun-commit (the tag step runs it ahead of the tag)"
+  # #4950: the no-secrets-in-crates check (E19) runs on every rehearsal, on the packaged crates of $MC.
+  # rc 0 green, 1 a finding, 2 not measured: anything but 0 stops the pass. Absent is never green.
+  bash scripts/release/check_crate_contents.sh > "$AP/crate-contents.log" 2>&1 \
+    || die "check_crate_contents.sh is not green at $MC (rc=$?; $AP/crate-contents.log) -- no secrets check, no publish"
+  say "DRYRUN check_crate_contents.sh green at $MC"
   bash scripts/cascade-publish.sh --check > "$AP/cascade-check.log" 2>&1; rc=$?
   behind=$(grep -cE "\(want ${V//./\\.}\)" "$AP/cascade-check.log" || true)
   tail -3 "$AP/cascade-check.log" >> "$STATUS"

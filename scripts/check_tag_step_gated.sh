@@ -75,7 +75,7 @@ run_cut_tag() {
     printf '#!/usr/bin/env bash\necho CALL-CARRY >> %q\nexit %s\n' "$d/calls" "$crc" > "$d/scripts/release/carry_milestone_items.sh"
     printf '#!/usr/bin/env bash\necho CALL-COVJOB >> %q\nexit %s\n' "$d/calls" "$jrc" > "$d/scripts/release/tag_coverage_gate.sh"
     # #4950 G1: the pre-push tag guard's --arm-release, for exactly the tag being cut
-    printf '#!/usr/bin/env bash\n[ "$1 $2" = "--arm-release v0.0.0" ] && echo CALL-ARM >> %q\nexit %s\n' "$d/calls" "$arc" > "$d/scripts/hooks/pre-push-tags.sh"
+    printf '#!/usr/bin/env bash\n[ "$1 $2" = "--arm-release v0.0.0" ] && [ "$3" -le 300 ] 2>/dev/null && echo CALL-ARM >> %q\nexit %s\n' "$d/calls" "$arc" > "$d/scripts/hooks/pre-push-tags.sh"
     {
         printf 'set -uo pipefail\n'
         printf 'REPO_ROOT=%q\nLOG=%q\nAP=%q\n' "$d" "$d/log" "$d/ap"
@@ -92,7 +92,7 @@ run_cut_tag() {
     rmtree "$d"
 }
 
-# run_cov <autopilot> <fn> <resolve-rc> <remote-head: none|mc|other> <run-list: hit|empty> <attached: 0|1> <conclusion>
+# run_cov <autopilot> <fn> <resolve-rc> <remote-head: none|mc|other|pushfail> <run-list: hit|empty> <attached: 0|1> <conclusion>
 # -- #4950 G4: extract cov_dispatch_at_mc() and cov_wait(), run <fn> against stubs, print a transcript.
 run_cov() {
     local ap=$1 fn=$2 rrc=$3 rh=$4 rl=$5 att=$6 con=$7 d body
@@ -102,7 +102,7 @@ run_cov() {
     mkdir -p "$d/scripts/release" "$d/ap" "$d/bin"
     printf '#!/usr/bin/env bash\necho CALL-RESOLVE >> %q\nexit %s\n' "$d/calls" "$rrc" > "$d/scripts/release/tag_coverage_gate.sh"
     [ "$att" = 1 ] && printf '777\n' > "$d/ap/coverage-run-id"
-    case "$rh" in none) h='' ;; mc) h=deadbeef ;; *) h=cafef00d ;; esac
+    case "$rh" in none|pushfail) h='' ;; mc) h=deadbeef ;; *) h=cafef00d ;; esac
     case "$rl" in hit) r=555 ;; *) r='' ;; esac
     {   printf '#!/usr/bin/env bash\n'
         printf 'case "$1 $2" in\n'
@@ -114,8 +114,8 @@ run_cov() {
     {   printf 'set -uo pipefail\nV=0.0.0 MC=deadbeef REPO=paiml/aprender AP_POLL=300 AP_SETTLE=30\n'
         printf 'AP=%q LOG=%q\n' "$d/ap" "$d/log"
         printf 'say() { printf "SAY %%s\\n" "$*"; }\ndie() { printf "DIE %%s\\n" "$*"; exit 1; }\nsleep() { :; }\n'
-        printf 'git() { case "$1" in ls-remote) echo "CALL-LSREMOTE $3" >> %q; [ -n %q ] && printf "%%s\\trefs/heads/x\\n" %q ;; push) echo "CALL-PUSH $3" >> %q ;; esac; return 0; }\n' \
-            "$d/calls" "$h" "$h" "$d/calls"
+        printf 'git() { case "$1" in ls-remote) echo "CALL-LSREMOTE $3" >> %q; [ -n %q ] && printf "%%s\\trefs/heads/x\\n" %q ;; push) echo "CALL-PUSH $3" >> %q; [ %q != pushfail ] || return 1 ;; esac; return 0; }\n' \
+            "$d/calls" "$h" "$h" "$d/calls" "$rh"
         printf '%s\n%s\n' "$body" "$fn"
     } > "$d/harness.sh"
     (cd "$d" && PATH="$d/bin:$PATH" bash "$d/harness.sh" 2>&1)
@@ -140,6 +140,9 @@ judge_cov() {
     out=$(run_cov "$ap" cov_dispatch_at_mc 1 other hit 0 success)
     row "coverage: branch at another commit -> stop, nothing pushed or dispatched" \
         'grep -q "^DIE coverage/0.0.0 on origin is at cafef00d" <<< "$out" && ! grep -qE "CALL-(PUSH|DISPATCH)" <<< "$out"'
+    out=$(run_cov "$ap" cov_dispatch_at_mc 1 pushfail hit 0 success)
+    row "coverage: pushing coverage/V fails -> stop, nothing dispatched or recorded" \
+        'grep -q "^DIE pushing coverage/0.0.0 at deadbeef failed" <<< "$out" && ! grep -q CALL-DISPATCH <<< "$out" && grep -q "^RUNID $" <<< "$out"'
     out=$(run_cov "$ap" cov_dispatch_at_mc 1 none hit 1 success)
     row "coverage: a recorded run -> attach; no resolve, push or second dispatch" \
         '! grep -qE "CALL-(RESOLVE|PUSH|DISPATCH)" <<< "$out" && grep -q "^RUNID 777$" <<< "$out"'
@@ -183,8 +186,8 @@ run_casc() {
 tested-sha: $O" ;; *) lg='' ;; esac
     printf '%s\n' "$lg" > "$d/runlog"
     {   printf '#!/usr/bin/env bash\n'
-        printf 'case "$1 $2" in\n  "run view") case " $* " in *" --log "*) echo "CALL-LOG $3" >> %q; cat %q ;;\n' "$d/calls" "$d/runlog"
-        printf '    *) echo "CALL-JOBS $3" >> %q; echo %q ;; esac ;;\nesac\n' "$d/calls" "$job"
+        printf 'case "$1 $2" in\n  "run view") case " $* " in *" --log "*) echo "CALL-LOG $3 $4" >> %q; [ "$3 $4" = "--job 77" ] && cat %q ;;\n' "$d/calls" "$d/runlog"
+        printf '    *) echo "CALL-JOBS $3" >> %q; echo %q ;; esac ;;\nesac\n' "$d/calls" "${job:+$job 77}"
     } > "$d/bin/gh"; chmod +x "$d/bin/gh"
     printf '#!/usr/bin/env bash\necho CALL-BUDGET >> %q\nexit %s\n' "$d/calls" "$budget" > "$d/scripts/release/release_ready.sh"
     [ "$lib" = 1 ] && printf 'rp_entries() { RP_IDS="RR-T01 RR-P20"; return 0; }\n' > "$d/scripts/lib/release_policy.sh"
@@ -230,6 +233,10 @@ judge_casc() {
         out=$(run_casc "$ap" $N "${c%%|*}")
         row "no-secret: ${c%%|*} -> stop" 'grep -qE "^DIE .*${c#*|}" <<< "$out"'
     done
+    db=$(awk '/^if run_step dryrun; then$/,/^fi$/' "$ap")
+    out=$db
+    row "dryrun: every rehearsal runs check_crate_contents.sh, and anything but rc 0 stops it" \
+        'awk "/^  bash scripts\\/release\\/check_crate_contents.sh .*\\\\\$/ { s = NR } s && NR == s + 1 && /^    \\|\\| die / { ok = 1 } END { exit !ok }" <<< "$db"'
     cb=$(awk '/^if run_step cascade; then$/,/^fi$/' "$ap")
     out=$cb
     row "cascade: both premises run before the first cascade-drain" \
@@ -478,7 +485,7 @@ if [ "${1:-}" = "--self-test" ]; then
             ok "mutant $mu: coverage dispatch/wait weakened -> RED"
         fi
     done
-    # M22-M28 (#4950): the cascade premises and the ledger fold, each weakened one way.
+    # M22-M32 (#4950): the cascade premises, the ledger fold, the arm lifetime, the coverage push and the rehearsal secrets check, each weakened one way.
     sed 's/\[ "\$tc" = "\$MC" \] || die/true || die/' "$SUBJECT" > "$d/m22.sh"
     sed 's/\[ "\$shas" = "tested-sha: \$MC" \] || die/true || die/' "$SUBJECT" > "$d/m23.sh"
     grep -v '^  cascade_cleanroom_at_tag$' "$SUBJECT" > "$d/m24.sh"
@@ -486,13 +493,17 @@ if [ "${1:-}" = "--self-test" ]; then
     sed 's/bash "\$chk" >> "\$LOG" 2>&1 || die/true || die/' "$SUBJECT" > "$d/m26.sh"
     sed 's| && /seven: no-secret-in-crates\[,}\]/||' "$SUBJECT" > "$d/m27.sh"
     sed 's/\[ -s "\$AP\/cascade-cleanroom.json" \] || die/true || die/' "$SUBJECT" > "$d/m28.sh"
-    for mu in 22 23 24 25 26 27 28; do
+    sed 's/gh run view --job "\$jid"/gh run view "$crun"/' "$SUBJECT" > "$d/m29.sh"
+    sed 's/--arm-release "\$t" 120/--arm-release "$t" 100000/' "$SUBJECT" > "$d/m30.sh"
+    sed 's/ || die "pushing \$cb at \$MC failed"//' "$SUBJECT" > "$d/m31.sh"
+    sed 's/^    || die "check_crate_contents.sh is not green/    || true "check_crate_contents.sh is not green/' "$SUBJECT" > "$d/m32.sh"
+    for mu in 22 23 24 25 26 27 28 29 30 31 32; do
         if cmp -s "$SUBJECT" "$d/m$mu.sh"; then
             nok "MUTANT $mu could not be built -- its cascade line did not match; vacuous"
         elif judge "$d/m$mu.sh" > "$d/m$mu.out" 2>&1; then
             nok "MUTANT $mu (cascade premise or ledger fold weakened) PASSED"
         else
-            ok "mutant $mu: cascade premise or ledger fold weakened -> RED"
+            ok "mutant $mu: a #4950 check weakened -> RED"
         fi
     done
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
