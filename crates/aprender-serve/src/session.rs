@@ -29,7 +29,8 @@
 //!
 //! # The witness
 //!
-//! [`Session::generate`] and [`Session::score`] each record an [`Entry`].
+//! [`Session::generate`], [`Session::generate_constrained`] and [`Session::score`] each
+//! record an [`Entry`].
 //! `tests_engine_identity` checks that each verb × arch produced its entry. A
 //! verb that decodes through its own loop, or calls an [`ArchForward`]
 //! directly, leaves no entry and turns the guard RED.
@@ -39,6 +40,10 @@ use std::sync::Mutex;
 
 use crate::error::{RealizarError, Result};
 use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
+
+#[path = "session_constrained.rs"]
+mod constrained;
+pub use constrained::ConstrainedStop;
 
 /// One architecture's forward on one backend: the only per-arch code a verb
 /// reaches, and only through a [`Session`].
@@ -648,3 +653,7 @@ pub fn entries_of_session(id: u64) -> Vec<Entry> {
 #[cfg(test)]
 #[path = "session_tests.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "structured-output"))]
+#[path = "session_constrained_tests.rs"]
+mod constrained_tests;

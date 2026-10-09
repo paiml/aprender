@@ -234,6 +234,10 @@ pub struct InferenceConfig {
     /// removes the empty `<think>` prefill so the model reasons, and is refused by name on a
     /// template with no thinking mode ([`crate::chat_template::apply_thinking_mode`]).
     pub thinking: Option<bool>,
+    /// #3793: constrain generation to a JSON Schema or a Lark grammar (`apr run --json-schema`
+    /// / `--grammar`), read and checked before the model loads. A path that cannot apply it
+    /// refuses by name; it never runs unconstrained.
+    pub constraint: Option<crate::constrain::ConstraintRequest>,
 }
 
 /// The top-k a SAMPLED generation uses when the caller names none (#3754).
@@ -288,6 +292,7 @@ impl InferenceConfig {
             use_mock_backend: false,
             force_chat_template: false,
             thinking: None,
+            constraint: None,
         }
     }
 
@@ -386,6 +391,13 @@ impl InferenceConfig {
     #[must_use]
     pub fn with_thinking(mut self, thinking: Option<bool>) -> Self {
         self.thinking = thinking;
+        self
+    }
+
+    /// #3793: constrain generation to a JSON Schema or a Lark grammar.
+    #[must_use]
+    pub fn with_constraint(mut self, constraint: crate::constrain::ConstraintRequest) -> Self {
+        self.constraint = Some(constraint);
         self
     }
 
@@ -554,6 +566,20 @@ fn sibling_tokenizer_config(model_path: &std::path::Path) -> Option<String> {
     declared.then_some(text)
 }
 
+/// The formatted prompt leaves a `<think>` block open: the model's first tokens would be its
+/// reasoning (#3793, `SchemaWithThinking`). Keyed on what the SELECTED template produced, so
+/// apr's default Qwen3 no-think template, which prefills a closed block, passes.
+fn prompt_opens_thinking(formatted_prompt: &str) -> bool {
+    match (
+        formatted_prompt.rfind("<think>"),
+        formatted_prompt.rfind("</think>"),
+    ) {
+        (Some(open), Some(close)) => open > close,
+        (Some(_), None) => true,
+        (None, _) => false,
+    }
+}
+
 fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<PreparedTokens> {
     use crate::chat_template::{format_messages, ChatMessage};
     use crate::gguf::{GGUFValue, MappedGGUFModel};
@@ -596,6 +622,18 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     } else {
         thinking_mode(config, prompt.to_string())?
     };
+
+    // #3793: a constraint applies to no-think output only (cop ruling (2) on #3568)
+    if config.constraint.is_some() && prompt_opens_thinking(&formatted_prompt) {
+        return Err(RealizarError::Constraint(
+            crate::constrain::ConstraintError::WithThinking(
+                "the selected chat template leaves a <think> block open, so the model would \
+                 reason before it answers; a constraint applies to no-think output only (#3735 \
+                 constrains after </think>)"
+                    .to_string(),
+            ),
+        ));
+    }
 
     if config.verbose {
         eprintln!(
@@ -909,6 +947,10 @@ mod log_head_4018 {
 
 include!("inference_result.rs");
 include!("gguf_gpu_generate.rs");
+include!("constrained_generate.rs");
+#[cfg(test)]
+#[path = "constrained_generate_tests.rs"]
+mod constrained_generate_tests;
 include!("mod_log_transformer_eos.rs");
 include!("mod_05.rs");
 include!("batch.rs");

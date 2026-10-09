@@ -181,6 +181,7 @@ pub fn run_inference_report(
 ) -> Result<(InferenceResult, run_report::RunReport)> {
     // PMAT-COV-95: Mock backend for testing without disk I/O
     if config.use_mock_backend {
+        refuse_constraint_on(config, "mock", "not scheduled: the mock backend generates no text")?;
         let result = run_mock_inference(config)?;
         let report = mock_run_report(config, &result);
         return Ok((result, report));
@@ -194,6 +195,11 @@ pub fn run_inference_report(
         // Validate path (F-SEC-222) - json extension is now allowed
         validate_model_path(&config.model_path)?;
 
+        refuse_constraint_on(
+            config,
+            "sharded-safetensors",
+            "not scheduled: #3568 constrains the GGUF loops",
+        )?;
         let format = ModelFormat::SafeTensors;
         let prepared = prepare_tokens(config, &format)?;
         return run_sharded_safetensors_inference(config, &prepared)
@@ -230,6 +236,15 @@ pub fn run_inference_report(
         reason: format!("Format detection failed: {}", e),
     })?;
 
+    // #3793: only the GGUF loops apply a constraint
+    if format != ModelFormat::Gguf {
+        refuse_constraint_on(
+            config,
+            if format == ModelFormat::Apr { "apr" } else { "safetensors" },
+            "not scheduled: #3568 constrains the GGUF loops",
+        )?;
+    }
+
     // PMAT-236: Prepare tokens with chat template BEFORE format dispatch.
     // This is compile-time enforced - format-specific functions accept
     // PreparedTokens (private inner data) which can ONLY be created here.
@@ -258,6 +273,72 @@ fn mock_run_report(config: &InferenceConfig, result: &InferenceResult) -> run_re
             config.max_tokens,
         )),
         context_length: None,
+    }
+}
+
+/// The unconstrained GGUF dispatch: the MoE loop, the Qwen3.5 hybrid through the one engine
+/// (GPU or CPU), or the dense loops (CUDA, wgpu, CPU). Returns `(tokens, used_gpu,
+/// gpu_attempted)`. Moved out of `run_gguf_inference` unchanged when #3793 added the
+/// constrained branch beside it.
+fn generate_gguf_unconstrained(
+    config: &InferenceConfig,
+    mapped: &crate::gguf::MappedGGUFModel,
+    owned: Option<crate::gguf::OwnedQuantizedModel>,
+    qwen35_host: Option<&'static crate::gguf::forward_qwen35::Qwen35Model<'static>>,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+) -> Result<(Vec<u32>, bool, bool)> {
+    let no_model = || RealizarError::InvalidShape {
+        reason: "no model was loaded".to_string(),
+    };
+    let model = owned
+        .as_ref()
+        .or(qwen35_host.map(|q| q.base))
+        .ok_or_else(no_model)?;
+    // #3714 R2: `moe_forward_handles` is the one dispatch predicate — `apr
+    // parity` and `apr qa` ask the same function, so no tool can route this
+    // architecture differently from `apr run`. (It is exactly
+    // `canonical_arch == "qwen3_moe"`, so taking it changes no routing.)
+    //
+    // #3826: `gpu_attempted` is part of the envelope, so a GPU that was tried and
+    // refused reads as `fell_back: true` rather than as a CPU run nobody asked for.
+    // The MoE dispatch now TRIES CUDA (#3714): it attempts exactly when this is a
+    // cuda build and `--no-gpu` was not given, and on failure prints its reason and
+    // runs the CPU chain. So its attempt is derived from those same two facts here,
+    // which is what makes #3817 (a silent `--gpu` fallback to CPU) visible as
+    // attempted && !used_gpu. The qwen35 dispatch still does not report its attempt
+    // separately; that obligation is unchanged.
+    if crate::gguf::moe_forward_handles(&model.config.architecture) {
+        let (tokens, used_gpu) = crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
+            mapped,
+            model,
+            input_tokens,
+            gen_config,
+            config.no_gpu,
+        )?;
+        Ok((tokens, used_gpu, cfg!(feature = "cuda") && !config.no_gpu))
+    } else if let Some(qwen) = qwen35_host {
+        // #3477/#4263: the one engine. The GPU forward (#3090) when this is a
+        // cuda build and `--no-gpu` was not given; the CPU forward (#3091)
+        // otherwise, and after any GPU failure — printed, never silent. A
+        // context the device cannot hold is refused before upload (#3596).
+        let context_length = model.config.context_length;
+        crate::gguf::forward_qwen35::qwen35_check_context(input_tokens.len(), context_length)?;
+        let positions = (input_tokens.len() + gen_config.max_tokens).min(context_length);
+        let mut session = crate::gguf::qwen35_session::Qwen35Session::load_for_run(
+            qwen,
+            mapped,
+            config.no_gpu,
+            positions,
+        )?;
+        mark_generation_start(); // #3981: host + device load end here
+        let turn = session.generate(input_tokens, gen_config, &mut |_| true)?;
+        // #3826: attempted is the same two facts as the MoE dispatch's.
+        Ok((turn.tokens, turn.used_gpu, cfg!(feature = "cuda") && !config.no_gpu))
+    } else if let Some(model) = owned {
+        run_gguf_generate(model, input_tokens, gen_config, config)
+    } else {
+        Err(no_model())
     }
 }
 
@@ -340,55 +421,32 @@ fn run_gguf_inference(
     let infer_start = Instant::now();
     let _ = take_generation_start(); // #3981: never inherit a mark from an earlier run
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    // #3714 R2: `moe_forward_handles` is the one dispatch predicate — `apr
-    // parity` and `apr qa` ask the same function, so no tool can route this
-    // architecture differently from `apr run`. (It is exactly
-    // `canonical_arch == "qwen3_moe"`, so taking it changes no routing.)
-    //
-    // #3826: `gpu_attempted` is part of the envelope, so a GPU that was tried and
-    // refused reads as `fell_back: true` rather than as a CPU run nobody asked for.
-    // The MoE dispatch now TRIES CUDA (#3714): it attempts exactly when this is a
-    // cuda build and `--no-gpu` was not given, and on failure prints its reason and
-    // runs the CPU chain. So its attempt is derived from those same two facts here,
-    // which is what makes #3817 (a silent `--gpu` fallback to CPU) visible as
-    // attempted && !used_gpu. The qwen35 dispatch still does not report its attempt
-    // separately; that obligation is unchanged.
-    let (tokens, used_gpu, gpu_attempted) = if crate::gguf::moe_forward_handles(&model.config.architecture) {
-        let (tokens, used_gpu) = crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
-            &mapped,
-            model,
-            &input_tokens,
-            &gen_config,
-            config.no_gpu,
-        )?;
-        (tokens, used_gpu, cfg!(feature = "cuda") && !config.no_gpu)
-    } else if let Some(qwen) = qwen35_host {
-        // #3477/#4263: the one engine. The GPU forward (#3090) when this is a
-        // cuda build and `--no-gpu` was not given; the CPU forward (#3091)
-        // otherwise, and after any GPU failure — printed, never silent. A
-        // context the device cannot hold is refused before upload (#3596).
-        crate::gguf::forward_qwen35::qwen35_check_context(
-            input_tokens.len(),
-            model_config.context_length,
-        )?;
-        let positions =
-            (input_tokens.len() + gen_config.max_tokens).min(model_config.context_length);
-        let mut session = crate::gguf::qwen35_session::Qwen35Session::load_for_run(
-            qwen,
-            &mapped,
-            config.no_gpu,
-            positions,
-        )?;
-        mark_generation_start(); // #3981: host + device load end here
-        let turn = session.generate(&input_tokens, &gen_config, &mut |_| true)?;
-        // #3826: attempted is the same two facts as the MoE dispatch's.
-        (turn.tokens, turn.used_gpu, cfg!(feature = "cuda") && !config.no_gpu)
-    } else if let Some(model) = owned {
-        run_gguf_generate(model, &input_tokens, &gen_config, config)?
-    } else {
-        return Err(RealizarError::InvalidShape {
-            reason: "no model was loaded".to_string(),
-        });
+    // #3793: a constrained run takes the one engine on the CPU, which applies the
+    // constraint, or refuses by name before a token is generated
+    let (tokens, used_gpu, gpu_attempted, constrained) = match &config.constraint {
+        Some(request) => {
+            let (tokens, stop) = generate_gguf_constrained(
+                request,
+                config,
+                &mapped,
+                owned,
+                qwen35_host,
+                &input_tokens,
+                &gen_config,
+            )?;
+            (tokens, false, false, Some(stop))
+        },
+        None => {
+            let (tokens, used_gpu, gpu_attempted) = generate_gguf_unconstrained(
+                config,
+                &mapped,
+                owned,
+                qwen35_host,
+                &input_tokens,
+                &gen_config,
+            )?;
+            (tokens, used_gpu, gpu_attempted, None)
+        },
     };
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
     let generation_ms = take_generation_start().map(|t| t.elapsed().as_secs_f64() * 1000.0);
@@ -411,7 +469,13 @@ fn run_gguf_inference(
             log_head(&raw_text, 200)
         );
     }
-    let text = clean_model_output(&raw_text);
+    // #3793: a constrained output is exactly the document the constraint accepted; cleaning
+    // chat markers out of it could change a string inside it
+    let text = if constrained.is_some() {
+        raw_text
+    } else {
+        clean_model_output(&raw_text)
+    };
     let generated_token_count = generated_tokens.len();
     let tps = throughput(generated_token_count, inference_ms, generation_ms);
 
@@ -437,7 +501,8 @@ fn run_gguf_inference(
         clamps_to_context,
     );
     let report = run_report::RunReport {
-        finish_reason: Some(run_report::FinishReason::from_decode(
+        finish_reason: Some(gguf_finish_reason(
+            constrained,
             generated_tokens,
             &gen_config.stop_tokens,
             budget,
