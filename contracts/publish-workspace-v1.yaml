@@ -229,7 +229,8 @@ falsification_tests:
       that tested another commit. A non-empty file is not proof; the run is read
       back and judged by clean_room_gate pinned to that one run. And it is the
       only door: `make publish` refuses a real upload (PUBLISH_DRY_RUN still
-      packages), and no other tracked shell script, make file, justfile, git
+      packages), and no other tracked shell script, make file (Makefile,
+      makefile, GNUmakefile, Makefile.*, *.mk, *.mak, *.make), justfile, git
       hook, root workflow, composite action under .github/actions, CI job file
       (ci/sections.yml and ci/vendor/*.yml, which the fat CI jobs run, and the
       ci/*.cmd test commands) or file with a sh/bash/dash/ksh/mksh/zsh/bats
@@ -263,8 +264,11 @@ falsification_tests:
       continuation lines joined, each command of a line on its own (split at
       ; && || | and a lone &, not the & of a redirect), case arms, wrappers
       by name or by path (env, sudo, doas, timeout, rustup run, ...), VAR=val,
-      eval, sh -c (and -ec, --command, nix-shell --run), $( <( >(, make's
-      $(shell), find -exec and cargo's global flags included. A failed search
+      eval, sh -c (and -ec, --command, nix-shell --run), make's $(shell), find
+      -exec and cargo's global flags included, and the body of every $(...),
+      <(...), >(...) and `...`, nested ones too, read as a command of its own:
+      --dry-run or "$APR" on the outer command lets no upload inside it
+      through. A failed search
       for the shebang files, or a file in scope that cannot be read, fails the
       check; it never reads as no door. cascade-publish.sh is the one other
       upload, behind its own clean_room_gate, and each of the two
@@ -293,7 +297,8 @@ falsification_tests:
       second way to upload to crates.io came back, or the scan went blind to a
       gated file's one upload command, an allowed entry, a kind of file it must
       read, the shebang files or the TOML files it must read for aliases, the
-      tracked cargo aliases, or a token handed to CI, or it read a failed file
+      tracked cargo aliases, or a token handed to CI, or it stopped reading a
+      substitution's body as a command of its own, or it read a failed file
       search or an unreadable file as no door.
 
 kani_harnesses:

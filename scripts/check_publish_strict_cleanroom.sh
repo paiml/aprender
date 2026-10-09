@@ -185,7 +185,10 @@ fi
 # on), a comment line is dropped and does not continue, a trailing ` #...` comment is cut, and
 # the line is split into commands at ; && || | and a lone & (not the & of >& <& &>). So a
 # --dry-run on one command never hides another on the same line, and `cargo \` + `publish` is
-# still one command. --dry-run counts only as a word of its own command.
+# still one command. --dry-run counts only as a word of its own command. The body of a $(...),
+# <(...), >(...) or `...` is a command row of its own (nested ones too, to the matching close;
+# an escaped \` or \$ opens none), so --dry-run or "$APR" publish on the outer command never
+# lets a cargo upload inside it through.
 # A command is a door when cargo (cargo by a path, quoted, a quoted path with spaces, $CARGO, "${CARGO:-cargo}",
 # $(CARGO), $$CARGO, $(command -v cargo)), with only global flags after it, runs an upload:
 # publish, ws/workspaces publish, release or smart-release, or a subcommand it takes from a
@@ -193,9 +196,9 @@ fi
 # cargo-smart-release or cargo-workspaces run by its own name, and any variable run as the
 # command with one of those uploads after it ($C publish, $(TOOL) release), since the variable
 # may hold cargo. A $'...', $(...) or `...` word run as the command counts the same way: its
-# value is only known when it runs. It counts at the command's start (after ( { ! ` @ + -,
+# value is only known when it runs. It counts at the command's start (after ( { ! @ + -,
 # `case ... in`, a case pattern's `x)`, then/do/else/if/elif/while/until or a workflow run:),
-# after $( <( >( or an unescaped backtick, inside sh -c "..." (or -ec, -lc, --command, --run) or
+# inside sh -c "..." (or -ec, -lc, --command, --run) or
 # eval, after find's -exec/-execdir; behind VAR=val and a wrapper, by name or by a path (env exec
 # time command nohup sudo doas timeout nice xargs parallel rustup ... make's shell). Anywhere
 # else in a command, a cargo word with an upload after it still counts (DOOR_BARE): the words
@@ -215,11 +218,12 @@ fi
 # alias of one.
 # The shell drops quotes and backslashes inside a word, so cargo "publish", cargo pub""lish and
 # cargo \publish all run publish: door_keep matches each command as written and again with the
-# quotes removed ($'...' and $"..." too) and a backslash before a letter, digit, _ or - dropped,
-# and prints it as written. An escaped \` or \$ keeps its backslash: it is not a substitution.
+# quotes removed ($'...' and $"..." too) and every backslash dropped (more than the shell drops,
+# never fewer), and prints it as written. door_cmds finds substitutions in the text as written,
+# so an escaped \` or \$ opens none.
 # The case table is the pattern's spec: re-run it, never re-read the pattern.
-DOOR_PRE='[[:space:]]*(([(!{`@+-]|case[[:space:]].*[[:space:]]in|[^[:space:]()]+\)|then|do|else|if|elif|while|until|run:)[[:space:]]*)*'
-DOOR_MID='(.*(\$\(|[<>]\(|[^\\]`|-[A-Za-z]*c[[:space:]]+["'"'"']|--(command|run)[[:space:]=]+["'"'"']|[[:space:]]-exec(dir)?[[:space:]]+)|(.*[^A-Za-z0-9_-])?eval[[:space:]]+["'"'"']?)[[:space:]]*'
+DOOR_PRE='[[:space:]]*(([(!{@+-]|case[[:space:]].*[[:space:]]in|[^[:space:]()]+\)|then|do|else|if|elif|while|until|run:)[[:space:]]*)*'
+DOOR_MID='(.*(-[A-Za-z]*c[[:space:]]+["'"'"']|--(command|run)[[:space:]=]+["'"'"']|[[:space:]]-exec(dir)?[[:space:]]+)|(.*[^A-Za-z0-9_-])?eval[[:space:]]+["'"'"']?)[[:space:]]*'
 DOOR_PATH='([^[:space:]"'"'"'=;&|]*/)?'
 DOOR_WRAP='('"$DOOR_PATH"'(env|exec|time|command|builtin|nohup|sudo|doas|runuser|timeout|nice|ionice|stdbuf|xargs|parallel|flock|taskset|chrt|setsid|unshare|nsenter|chroot|firejail|systemd-run|strace|ltrace|rustup|shell)([[:space:]]+[^[:space:]]+)*[[:space:]]+)?'
 # A VAR=val prefix holds no unclosed $( : in `out=$(bash "$me" release` bash is the command.
@@ -245,7 +249,7 @@ DOOR_DRY='(^|[[:space:]])["'"'"']?--dry-run["'"'"']?([[:space:]]|$)'
 # "$APR" and "$APR_BIN" are the pinned apr binary (scripts/apr_bin.sh): its publish uploads a
 # model to Hugging Face, not a crate. Only a command that starts with one is let through.
 DOOR_APR='^[^:]*:[0-9]+:"?\$\{?APR(_BIN)?\}?"?[[:space:]]+publish([[:space:]]|$)'
-door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
+door_cmds() { # door_cmds FILE...: one "file:line:command" row per command, and per $(...) body
   awk '
     function emit(f, n, s,   k, i, c) {
       gsub(/>&/, "\001", s); gsub(/<&/, "\002", s); gsub(/&>/, "\003", s)
@@ -254,7 +258,28 @@ door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
         gsub(/\001/, ">\\&", c[i]); gsub(/\002/, "<\\&", c[i]); gsub(/\003/, "\\&>", c[i])
         sub(/[[:space:]]#.*$/, "", c[i])
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", c[i])
-        if (c[i] != "" && c[i] !~ /^#/) print f ":" n ":" c[i]
+        if (c[i] != "" && c[i] !~ /^#/) { print f ":" n ":" c[i]; bodies(f, n, c[i]) }
+      }
+    }
+    function bodies(f, n, s,   L, i, j, c, d, depth) {
+      L = length(s)
+      for (i = 1; i <= L; i++) {
+        c = substr(s, i, 1); d = substr(s, i + 1, 1)
+        if (c == "\\") { i++; continue }
+        if (d == "(" && (c == "$" || c == "<" || c == ">")) {
+          depth = 1
+          for (j = i + 2; j <= L; j++) {
+            c = substr(s, j, 1)
+            if (c == "\\") { j++; continue }
+            if (c == "(") depth++
+            if (c == ")" && --depth == 0) break
+          }
+          emit(f, n, substr(s, i + 2, j - i - 2)); i = j; continue
+        }
+        if (c == "`") {
+          for (j = i + 1; j <= L && substr(s, j, 1) != "`"; j++) if (substr(s, j, 1) == "\\") j++
+          emit(f, n, substr(s, i + 1, j - i - 1)); i = j
+        }
       }
     }
     FNR == 1 && buf != "" { emit(pf, start, buf); buf = "" }
@@ -268,7 +293,7 @@ door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
     END { if (buf != "") emit(pf, start, buf) }
   ' "$@"
 }
-door_unquote() { sed -e 's/[$]["'"'"']/'"'"'/g' -e 's/\\\([A-Za-z0-9_-]\)/\1/g' -e 's/["'"'"']//g'; }
+door_unquote() { sed -e 's/[$]["'"'"']/'"'"'/g' -e 's/\\\(.\)/\1/g' -e 's/["'"'"']//g'; }
 door_words() { # a row naming cargo, as the shell splits its words: a quoted string that holds a
   # space becomes Q (a message), any other loses its quotes, and a backslash before a letter goes
   awk '
@@ -434,6 +459,16 @@ door_case door '"$APRX" publish -p x'
 door_case door '$APR_BIN2 publish -p x'
 door_case door '"$APR" publish x && cargo publish -p y'
 door_case door '"$APR" "publish" x'
+door_case door '"$APR" publish "$(cargo publish -p y)"'
+door_case door '"$APR" publish x `cargo publish -p y` z'
+door_case door '$APR_BIN publish <(cargo publish -p y)'
+door_case door 'cargo publish --dry-run -p x "$(cargo publish -p y)"'
+door_case door 'X=$( (cargo publish -p x) )'
+door_case door '"$APR" publish "$(env X=$(date) cargo publish -p y)"'
+door_case none '"$APR" publish x --repo "$(whoami)/m"'
+door_case none 'cargo publish --dry-run -p "$(cargo pkgid -p x)"'
+door_case none 'X=$(cargo publish --dry-run -p x 2>&1)'
+door_case none 'n=$((n + 1))'
 door_case door 'APR=cargo'
 door_case door 'export APR_BIN="$HOME/.cargo/bin/cargo"'
 door_case door 'APR=${CARGO:-cargo} bash x.sh'
@@ -598,21 +633,26 @@ shebang_files() {
   return 0
 }
 NAMES=('*.sh' '*.bash' '*.mk' 'Makefile' '*/Makefile' 'makefile' '*/makefile' 'GNUmakefile' '*/GNUmakefile'
+  '*.mak' '*.make' 'Makefile.*' '*/Makefile.*'
   'justfile' '*/justfile' 'Justfile' '*/Justfile' '.justfile' '*/.justfile' '*.just'
   '.githooks/*' '*/.githooks/*' '.github/workflows/*.yml' '.github/workflows/*.yaml'
   '.github/actions/*.yml' '.github/actions/*.yaml' 'ci/*.yml' 'ci/*.yaml' 'ci/*.cmd')
 # A composite action under .github/actions runs its steps wherever a root workflow uses it.
 # ci/ holds commands CI runs: fat_driver.py runs the job bodies in ci/sections.yml and the
 # vendored ci/vendor/sovereign-ci.yml, and a section runs each ci/explicit-test-commands.d/*.cmd.
+# make -f reads a make file by any name; *.mak, *.make and Makefile.* are the names one goes
+# by (automake copies a Makefile.am recipe into the Makefile it writes). makefile.* is not: a
+# makefile.rs is Rust.
 # The name scope's spec: a throwaway repo holds one empty file per path below, and NAMES must
 # select exactly the "in" ones. Most kinds hold no door today, so without this a kind dropped
 # from NAMES would go unseen.
 SC="$WORK/scope-case"
-SCOPE_IN='x.sh a/b.bash c.mk Makefile a/Makefile makefile GNUmakefile a/b/GNUmakefile justfile crates/x/justfile
+SCOPE_IN='x.sh a/b.bash c.mk Makefile a/Makefile makefile GNUmakefile a/b/GNUmakefile r.mak a/b.make Makefile.release
+a/Makefile.inc a/Makefile.am justfile crates/x/justfile
 Justfile a/Justfile .justfile a/.justfile r.just .githooks/pre-push crates/x/.githooks/pre-commit
 .github/workflows/r.yml .github/workflows/r.yaml
 .github/actions/x/action.yml .github/actions/y/action.yaml ci/sections.yml ci/vendor/v.yaml ci/t.d/010-x.cmd'
-SCOPE_OUT='x.py x.rs README.md a/Makefile.am x.sh.txt justfile.md crates/x/.github/workflows/r.yml .github/dependabot.yml
+SCOPE_OUT='x.py x.rs README.md a/makefile.rs x.mak.txt x.sh.txt justfile.md crates/x/.github/workflows/r.yml .github/dependabot.yml
 crates/x/ci/r.yml ci/m.tsv'
 mkdir -p "$SC" && git -C "$SC" init -q
 for p in $SCOPE_IN $SCOPE_OUT; do mkdir -p "$SC/$(dirname "$p")" && : > "$SC/$p"; done
