@@ -27,8 +27,12 @@
 # every one of D1 to D7 that is still open. A rehearsal that is green while one of them is open is
 # not the release path."). Each D-row names the stage(s) its gate line sits in and the line the
 # release scripts print when they stop on it. A D-row is CLEAR only when every one of its stages ran
-# green on the night (and, for D6 and D7, the night's own trace or bump commit shows the fix). An
-# unreached stage clears nothing. Every D-row that is not CLEAR is named in the verdict.
+# green on the night (and, for D7, the night's own bump commit shows the fix). An unreached stage
+# clears nothing. Every D-row that is not CLEAR is named in the verdict.
+# D3 and D6 are retired: #4967 took their checks off release day, and the rehearsal runs what release
+# day runs. D3 was the tag step's coverage gate; #4932 fixed its version-only rule, and the
+# dogfood step's coverage row still stops the night on a missing receipt. D6 was the milestone
+# freeze, which no release-day script runs, so a row demanding it would hold every night red.
 #
 # USAGE
 #   rehearse.sh --run --state DIR [--commit SHA] [--version V] [--source REPO] [--stages a,b] [--in-run RUN]
@@ -115,15 +119,13 @@ STAGES
 }
 
 # DLEDGER: row | stages its gate line sits in (comma list) | the line the scripts print when they stop
-# on it (ERE) | the defect, as the spec states it. D6 and D7 also have a trace check (dledger_extra).
+# on it (ERE) | the defect, as the spec states it. D7 also has a trace check (dledger_d7).
 dledger_table() {
     cat <<'DLEDGER'
 D1|ap:preflight,cascade|FAIL +R4 HEAD .* is not an ancestor of origin/release/|preflight R4 requires origin/release/<V>, which no script creates
 D2|t2,ap:dogfood|\[FAIL\] declared:check_model_ladder|the dogfood ladder gate runs with no CRUX receipt dir, beside the models lane that writes them
-D3|ap:tag|NOT_MEASURED: no completed .* run on [0-9a-f]+ or a version-only parent|the coverage gate's version-only rule does not admit evidence/crux/<V>/prompt-certification*.json
 D4|cascade|FAIL +R7 |the cascade's own preflight runs without the CRUX receipts
 D5|ship|no T-2 GO receipt for origin/main|prepare_bump.sh --ship needs a T-2 GO that cannot exist
-D6|bump,ship|-|the freeze (carry_milestone_items.sh) is a hand step: the bump script never runs it
 D7|ship|-|the bump commit's trailer names a model the fleet does not use
 DLEDGER
 }
@@ -645,7 +647,7 @@ judge() {
             *) printf 'RED   %s %s -- %s\n' "$row" "$dl" "$what"; reds=$((reds + 1)) ;;
         esac
     done < <(dledger_table)
-    if [ "$reds" -eq 0 ]; then echo "VERDICT GREEN: every stage green on $c, its ids recorded, 0 writes, D1..D7 clear"; return 0; fi
+    if [ "$reds" -eq 0 ]; then echo "VERDICT GREEN: every stage green on $c, its ids recorded, 0 writes, every D-row clear"; return 0; fi
     echo "VERDICT RED: $reds red line(s)"
     return 1
 }
@@ -670,24 +672,9 @@ dledger_row() {
         [ "$rc" = 0 ] || notrun="$notrun $s(${rc:-not run})"
     done
     case $row in
-        D6) dledger_d6 "$st" "$notrun"; return ;;
         D7) dledger_d7 "$st" "$notrun"; return ;;
     esac
     if [ -n "$notrun" ]; then echo "NOT CLEARED: its stage did not finish green:$notrun"; else echo CLEAR; fi
-}
-
-# D6: the freeze must run inside the bump script -- the guard's trace shows carry_milestone_items.sh
-# calling out during the bump or ship stage. A bump that finished green with no such call is the
-# defect, measured; a bump that did not finish proves nothing either way.
-dledger_d6() {
-    local st=$1 notrun=$2
-    if awk -F'\t' '($1 == "bump" || $1 == "ship") && $5 ~ /carry_milestone_items\.sh/ { f = 1 } END { exit !f }' "$st/calls.tsv"; then
-        if [ -n "$notrun" ]; then echo "NOT CLEARED: the freeze ran, but its stage did not finish green:$notrun"; else echo CLEAR; fi
-    elif awk -F'\t' 'NR > 1 && $1 == "bump" && $2 == 0 { f = 1 } END { exit !f }' "$st/stages.tsv"; then
-        echo "OPEN: the bump finished and carry_milestone_items.sh made no call in it"
-    else
-        echo "NOT CLEARED: the bump did not finish green"
-    fi
 }
 
 # D7: the bump commit's Co-Authored-By trailers must each name a model the fleet runs.
@@ -1126,7 +1113,7 @@ fixture_night() {
         case $name in lanes|t2|bump|summary|ship) printf '%s\t0\tc0ffee\t1\n' "$name" ;; *) printf '%s\t0\tb0b\t1\n' "$name" ;; esac >> "$d/stages.tsv"
         printf 'ok\n' > "$d/logs/${name//:/_}.log"
     done < <(stages_table)
-    printf 'bump\tgh\tREAD\t-\tbash scripts/release/carry_milestone_items.sh 0.71.0 --dry-run\tapi repos/o/r/milestones\n' > "$d/calls.tsv"
+    printf 'bump\tgit\tREAD\t-\tbash scripts/release/prepare_bump.sh 0.71.0\tlog -1\n' > "$d/calls.tsv"
     printf 'b0b\n' > "$d/bump.commit"; printf 'c0ffee\n' > "$d/bump.parent"
     printf 'release: 0.71.0\n\nPmat-Ticket: PMAT-1\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n' > "$d/bump.msg"
 }
@@ -1161,16 +1148,10 @@ selftest_judge() {
         'printf "FAIL  R4 HEAD abc is not an ancestor of origin/release/0.71.0 (or that ref does not exist)\n" > "$d/logs/ap_preflight.log"'
     j d2_line_names_d2 1 "RED   D2 OPEN in t2:" \
         'printf "  [FAIL] declared:check_model_ladder  exit=1\n" > "$d/logs/t2.log"'
-    j d3_line_names_d3 1 "RED   D3 OPEN in ap:tag" \
-        'printf "FAIL  NOT_MEASURED: no completed coverage-nightly.yml run on b0b or a version-only parent of it -- x\n" > "$d/logs/ap_tag.log"'
     j d4_line_names_d4 1 "RED   D4 OPEN in cascade" \
         'printf "FAIL  R7 model matrix: no receipt\n" > "$d/logs/cascade.log"'
     j d5_line_names_d5 1 "RED   D5 OPEN in ship" \
         'printf "STOP no T-2 GO receipt for origin/main c0ffee (x) -- run: t2\n" > "$d/logs/ship.log"'
-    j d6_no_freeze_call_is_open 1 "RED   D6 OPEN: the bump finished" ': > "$d/calls.tsv"'
-    j d6_red_bump_is_not_cleared 1 "RED   D6 NOT CLEARED: the bump did not finish green" \
-        ': > "$d/calls.tsv"; sed -i "s/^bump\t0/bump\t1/" "$d/stages.tsv"'
-    j d6_freeze_in_another_stage_is_open 1 "RED   D6 OPEN" 'sed -i "s/^bump\t/ap:tag\t/" "$d/calls.tsv"'
     j d7_fable_trailer_is_open 1 "RED   D7 OPEN in the bump commit: Co-Authored-By: Claude Fable 5.1" \
         'sed -i "s/Claude Opus 5.5/Claude Fable 5.1/" "$d/bump.msg"'
     j d7_no_trailer_is_open 1 "RED   D7 OPEN in the bump commit: no Co-Authored-By" \
@@ -1551,9 +1532,6 @@ other_commit_is_green        rehearse.sh         s/if \[ "\$commit" = "\$c" \] |
 bump_parent_not_checked      rehearse.sh         s/\&\& \[ "\$bparent" = "\$c" \]; }/; }/
 dledger_sig_ignored          rehearse.sh         s/\[ -n "\$hit" \] \&\& { echo "OPEN in \$s: \$hit"; return; }/:/
 unreached_d_row_clears       rehearse.sh         s/\[ "\$rc" = 0 \] || notrun="\$notrun \$s(\${rc:-not run})"/:/
-d6_any_stage_counts          rehearse.sh         s/(\$1 == "bump" || \$1 == "ship") \&\& \$5/$5/
-d6_absent_clears             rehearse.sh         s/echo "OPEN: the bump finished and carry_milestone_items.sh made no call in it"/echo CLEAR/
-d6_red_bump_opens            rehearse.sh         s/NR > 1 \&\& \$1 == "bump" \&\& \$2 == 0/NR > 1 \&\& $1 == "bump"/
 d7_fable_allowed             rehearse.sh         s/^FLEET_MODELS='Claude Opus 5\\.5|/FLEET_MODELS='Claude Fable 5\\.1|Claude Opus 5\\.5|/
 d7_no_trailer_clears         rehearse.sh         s/echo "OPEN in the bump commit: no Co-Authored-By trailer"/echo CLEAR/
 green_with_reds              rehearse.sh         s/if \[ "\$reds" -eq 0 \]; then echo "VERDICT GREEN/if true; then echo "VERDICT GREEN/
