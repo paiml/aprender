@@ -285,7 +285,6 @@ pub struct GgufRawLoadResult {
 
 /// Load GGUF with raw quantized tensors (preserves Q4K for GPU inference)
 ///
-/// This is essential for APR format to achieve 2x Ollama performance.
 /// The Q4K bytes are stored directly in APR and used by GPU kernels.
 pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
     let reader = GgufReader::from_file(path)?;
