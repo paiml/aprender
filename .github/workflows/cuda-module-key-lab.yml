@@ -1,0 +1,165 @@
+name: cuda-module-key-lab
+
+# #3759 LAB: the CUDA lib suites under the module-key guard, on GB10 (sm_121).
+#
+# WHAT IT MEASURES. A module-cache key that leaves out a parameter its kernel bakes into the
+# PTX hands every later request the first request's kernel; RMSNorm keyed by shape alone ran
+# a 1e-6 model at 1e-5 (#3759). The guard that proves "one key, one PTX" exists only in
+# debug and cfg(test) builds, so it is exercised only where the CUDA lib suites run. PR CI
+# runs them on one sm_89 card for PRs that touch GPU paths; nothing runs them on sm_121,
+# whose PTX and default prefill path differ. scripts/cuda_module_key_lab.sh says the rest.
+#
+# LAB, NOT A GATE (C324). It runs at night on an idle box and is on no PR, merge-queue or
+# release path, so it can block nothing: no pull_request trigger, and no required workflow
+# names it. A red updates ONE tracking issue (one owner) with the run link and the failed
+# rows, then stays silent. Red or unmeasured for 7 days, the scheduled run stops itself
+# (the `decide` step) until the owner brings it back with a manual dispatch.
+#
+# NOT cuda-nightly.yml. That workflow has an opt-in pull_request path (`cuda-check` label),
+# and a LAB check must never run inside a PR job.
+
+on:
+  schedule:
+    # GitHub dispatches schedule events 3h51m-6h49m late on this account (cuda-nightly.yml
+    # #3292), so 21:00 UTC lands ~01:00-04:00 UTC, behind cuda-nightly in the box's perf queue.
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Run even if the GPU is busy (bypass the yield). A dispatch also restarts a stopped LAB."
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+jobs:
+  module-key:
+    # One group per HOST (PP-19), shared with every other job on this box, so this queues behind
+    # cuda-nightly and silicon-nightly instead of contending for the device.
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
+    if: ${{ vars.CUDA_RUNNER_READY == 'true' }}
+    permissions:
+      contents: read
+      actions: read   # the 7-day stop reads this workflow's runs and artifacts
+      issues: write   # a red updates the one tracking issue
+    # LITERAL labels naming the one box (cuda-nightly.yml says why the box label and not `gpu`).
+    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell, gx10]
+    timeout-minutes: 150
+    env:
+      CARGO_TERM_COLOR: never
+      LAB_OUT: ${{ github.workspace }}/cuda-module-key-lab
+      LAB_TITLE: "LAB: CUDA module-key guard on GB10 sm_121 (#3759)"
+      GH_API: ${{ github.api_url }}/repos/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Before the device or the build: yield, disk floor, and the C324 7-day stop.
+      - name: Decide whether to run (yield, disk, 7-day stop)
+        id: decide
+        env:
+          TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$LAB_OUT"
+          not_run() {
+            echo "::notice::cuda-module-key-lab: not run - $1"
+            bash scripts/cuda_module_key_lab.sh --not-run "$1" --out "$LAB_OUT/receipt.json"
+            echo "status=NOT_RUN" >> "$GITHUB_OUTPUT"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          # (a) C324 item 5: red or unmeasured for 7 days -> the schedule stops. A manual
+          #     dispatch is the owner bringing it back, so it is never stopped. A failed API
+          #     read is not a measurement and decides nothing: the night runs.
+          if [ "$EVENT" = "schedule" ]; then
+            api() { curl -sSf -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "$GH_API/$1"; }
+            wf="actions/workflows/cuda-module-key-lab.yml/runs"
+            week_ago=$(date -u -d '7 days ago' +%Y-%m-%d)
+            if last_pass=$(api "actions/artifacts?name=cuda-module-key-lab-PASS&per_page=1" | jq -r '.artifacts[0].created_at // "-"') \
+              && last_dispatch=$(api "$wf?event=workflow_dispatch&per_page=1" | jq -r '.workflow_runs[0].created_at // "-"') \
+              && has_old=$(api "$wf?created=%3C$week_ago&per_page=1" | jq -r '.total_count > 0'); then
+              verdict=$(bash scripts/cuda_module_key_lab.sh --stop-check "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$last_pass" "$last_dispatch" "$has_old")
+              rc=$?
+              echo "$verdict"
+              if [ "$rc" -eq 1 ]; then
+                not_run "$verdict"
+              fi
+            else
+              echo "::warning::cuda-module-key-lab: could not read run history; the 7-day stop is not measured tonight"
+            fi
+          fi
+          # (b) C338: no load on a box at >= 90% disk; the release build of two CUDA suites is GBs.
+          disk=$(df --output=pcent "$GITHUB_WORKSPACE" | tail -1 | tr -cd '0-9')
+          if [ "${disk:-100}" -ge 90 ]; then
+            not_run "disk at ${disk:-?}% (C338: no load at >= 90%)"
+          fi
+          # (c) Yield to training, as cuda-nightly does: compute procs are the portable signal,
+          #     memory.used is [N/A] on GB10's unified memory. `tr -cd`, never `grep -o`, under -e.
+          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -cd '0-9')
+          procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c . || true)
+          echo "GPU memory.used=${used:-0} MiB, compute procs=${procs:-0}, disk ${disk}%"
+          if [ "$FORCE" != "true" ] && { [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; }; then
+            not_run "GPU busy (${used:-0} MiB, ${procs:-0} procs); yielding"
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Preflight - this box has the tools this job assumes
+        if: steps.decide.outputs.proceed == 'true'
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda --need flock
+
+      # The judge, the per-test runner and the 7-day stop must be able to go red before their
+      # verdict on the device means anything.
+      - name: The LAB judge can still go RED (case table, no GPU)
+        if: steps.decide.outputs.proceed == 'true'
+        run: setsid --wait bash scripts/cuda_module_key_lab.sh --self-test
+
+      - name: Both CUDA lib suites under the module-key guard, mutant caught
+        id: lab
+        if: steps.decide.outputs.proceed == 'true'
+        run: |
+          set -uo pipefail
+          rc=0
+          nice -n 19 setsid --wait bash scripts/cuda_module_key_lab.sh --run --host blackwell-gb10 --out "$LAB_OUT/receipt.json" || rc=$?
+          status=$(jq -r '.status // empty' "$LAB_OUT/receipt.json" 2>/dev/null || true)
+          echo "status=${status:-ERROR}" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      # Every night uploads its receipt, NOT_RUN included, so a stopped or yielded night is
+      # visible and never reads as a pass.
+      - name: Upload the receipt
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          # The 7-day stop finds the newest cuda-module-key-lab-PASS artifact by name.
+          name: cuda-module-key-lab-${{ steps.lab.outputs.status || steps.decide.outputs.status || 'ERROR' }}
+          path: cuda-module-key-lab/
+          retention-days: 30
+          if-no-files-found: warn
+
+      # One ticket, one owner (C324): find the open tracking issue by its exact title and
+      # rewrite its body; open it only if there is none. A body edit notifies no one.
+      - name: A red updates the one tracking issue
+        if: ${{ failure() && steps.decide.outputs.proceed == 'true' }}
+        env:
+          TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body=$(bash scripts/cuda_module_key_lab.sh --issue-body "$LAB_OUT/receipt.json" "$RUN_URL")
+          api() { curl -sSf -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "$@"; }
+          # Search narrows by title words; the exact-title match below is the decision.
+          n=$(api -G "${{ github.api_url }}/search/issues" \
+            --data-urlencode "q=repo:${{ github.repository }} is:issue is:open in:title \"$LAB_TITLE\"" \
+            | jq -r '[.items[] | select(.title == env.LAB_TITLE)][0].number // empty')
+          if [ -n "$n" ]; then
+            printf '%s' "$body" | jq -Rs '{body: .}' | api -X PATCH "$GH_API/issues/$n" --data @- > /dev/null
+            echo "updated tracking issue #$n"
+          else
+            printf '%s' "$body" | jq -Rs '{title: env.LAB_TITLE, body: .}' | api -X POST "$GH_API/issues" --data @- > /dev/null
+            echo "opened the tracking issue"
+          fi
