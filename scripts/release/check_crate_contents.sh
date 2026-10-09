@@ -41,6 +41,16 @@ PEM_BEGIN='-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----'
 
 nm() { echo "NOT MEASURED: $*" >&2; exit 2; }
 
+# one_component S -> rc 1 unless S is one path component: not empty, no '/', no '..'
+one_component() {
+    [[ -n "$1" && "$1" != */* && "$1" != *..* ]] || return 1
+}
+
+# no_climb P -> rc 1 when P has a '..' in it (it could leave the directory it is built under)
+no_climb() {
+    [[ "$1" != *..* ]] || return 1
+}
+
 # name_rule BASENAME -> prints the rule a file name breaks, nothing when it breaks none
 name_rule() {
     case "$1" in
@@ -147,6 +157,9 @@ EOF
 crate() {
     local st="$1" name="$2" pub="$3" f
     shift 3
+    # a crate name is one path component: it never climbs out of, or nests under, the stub workspace
+    one_component "$name" || { echo "crate: '$name' is not one path component" >&2; return 2; }
+    no_climb "$st" || { echo "crate: stub dir '$st' has a '..' in it" >&2; return 2; }
     mkdir -p "$st/ws/$name"
     : > "$st/$name.list"
     for f in "$@"; do
@@ -242,7 +255,10 @@ selftest() {
     root=$(mktemp -d "${TMPDIR:-/tmp}/crate-contents-st.XXXXXX") || { echo "selftest: mktemp failed" >&2; return 2; }
     for c in "${CASES[@]}"; do
         read -r name want pat <<< "$c"
-        st="$root/$name"; mkdir -p "$st"; : > "$st/crates.tsv"
+        one_component "$name" || { echo "FAIL $name: a case name is one path component"; fail=1; continue; }
+        st="$root/$name"
+        no_climb "$st" || { echo "FAIL $name: stub dir '$st' has a '..' in it"; fail=1; continue; }
+        mkdir -p "$st"; : > "$st/crates.tsv"
         stub_cargo "$st"
         plant "$name" "$st" || { fail=1; continue; }
         rc=0

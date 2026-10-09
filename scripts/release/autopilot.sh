@@ -663,7 +663,7 @@ if run_step ledger; then
   [ -s "$rec" ] || die "no ledger record at $rec"
   # the clean-room run id and sha the cascade proved before it published (cascade_cleanroom_at_tag)
   [ -s "$AP/cascade-cleanroom.json" ] || die "no $AP/cascade-cleanroom.json -- the cascade did not prove clean-room on $MC; nothing ledgered"
-  jq --slurpfile c "$AP/cascade-cleanroom.json" '. + {cascade_cleanroom: $c[0]}' "$rec" > "$rec.tmp" && mv -- "$rec.tmp" "$rec" \
+  folded=$(jq --slurpfile c "$AP/cascade-cleanroom.json" '. + {cascade_cleanroom: $c[0]}' "$rec") && printf '%s\n' "$folded" > "$rec" \
     || die "cannot fold the clean-room run id into $rec"
   lb="ledger/$V"; lw="$AP/ledger-wt"; lbase=origin/main
   git fetch -q origin main >> "$LOG" 2>&1 || die "fetch of main failed; nothing ledgered"

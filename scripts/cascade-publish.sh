@@ -637,6 +637,10 @@ case "$MODE" in
       echo "⛔ clean-room gate refused (clean-room.yml is not green on exactly the v$TARGET_VERSION commit); nothing was published." >&2
       exit 1
     fi
+    if ! bash "$REPO_ROOT/scripts/check_publish_preflight.sh"; then
+      echo "⛔ check_publish_preflight.sh refused; nothing was published." >&2
+      exit 1
+    fi
     ;;
 esac
 

@@ -131,36 +131,39 @@ tested-sha: $O" ;; *) lg='' ;; esac
 # judge_casc <autopilot> -- the #4950 cascade-premise case table. Returns the number of wrong rows.
 judge_casc() {
     local ap=$1 out w=0 cb
-    row() { if eval "$2"; then printf 'ok    %s\n' "$1"; else printf 'FAIL  %s\n%s\n' "$1" "$out" >&2; w=$((w + 1)); fi; }
+    # row RC DESC -- RC is the status of the check just run (no eval: each check is plain code above its row)
+    row() { if [ "$1" = 0 ]; then printf 'ok    %s\n' "$2"; else printf 'FAIL  %s\n%s\n' "$2" "$out" >&2; w=$((w + 1)); fi; }
     C=cascade_cleanroom_at_tag N=cascade_no_secret_green
     out=$(run_casc "$ap" $C)
-    row "cascade premise: tag at MC, job green, tested exactly MC -> record run id + sha" \
-        'grep -q "^REC {\"cleanroom_run\":\"4242\",\"tag\":\"v0.0.0\",\"sha\":\"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"}$" <<< "$out" && ! grep -q "^DIE" <<< "$out"'
+    grep -q "^REC {\"cleanroom_run\":\"4242\",\"tag\":\"v0.0.0\",\"sha\":\"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"}$" <<< "$out" && ! grep -q "^DIE" <<< "$out"
+    row $? "cascade premise: tag at MC, job green, tested exactly MC -> record run id + sha"
     for c in "rec=0|no clean-room run recorded" "tagc=other|on origin is at .cafef00d" "tagc=none|on origin is at .absent" \
              "job=failure|concluded .failure" "job=|concluded .absent" "sha=other|tested .tested-sha: cafef00d" \
              "sha=both|not exactly" "sha=none|tested .., not exactly"; do
         out=$(run_casc "$ap" $C "${c%%|*}")
-        row "cascade premise: ${c%%|*} -> stop, nothing recorded" 'grep -qE "^DIE .*${c#*|}" <<< "$out" && grep -q "^REC $" <<< "$out"'
+        grep -qE "^DIE .*${c#*|}" <<< "$out" && grep -q "^REC $" <<< "$out"
+        row $? "cascade premise: ${c%%|*} -> stop, nothing recorded"
     done
     out=$(run_casc "$ap" $N)
-    row "no-secret: budget clean, on the publish list, checker green -> continue" \
-        'grep -q "^ORDER CALL-BUDGET CALL-NOSECRET $" <<< "$out" && grep -q "^SAY CASCADE no-secret-in-crates: on the publish list and green" <<< "$out"'
+    grep -q "^ORDER CALL-BUDGET CALL-NOSECRET $" <<< "$out" && grep -q "^SAY CASCADE no-secret-in-crates: on the publish list and green" <<< "$out"
+    row $? "no-secret: budget clean, on the publish list, checker green -> continue"
     for c in "budget=1|release_ready.sh --budget is not clean" "lib=0|cannot be read" "seven=0|no publish entry carries" \
              "onlist=0|no publish entry carries" "chkfile=0|does not exist" "chk=1|is red"; do
         out=$(run_casc "$ap" $N "${c%%|*}")
-        row "no-secret: ${c%%|*} -> stop" 'grep -qE "^DIE .*${c#*|}" <<< "$out"'
+        grep -qE "^DIE .*${c#*|}" <<< "$out"
+        row $? "no-secret: ${c%%|*} -> stop"
     done
     db=$(awk '/^if run_step dryrun; then$/,/^fi$/' "$ap")
     out=$db
-    row "dryrun: every rehearsal runs check_crate_contents.sh, and anything but rc 0 stops it" \
-        'awk "/^  bash scripts\\/release\\/check_crate_contents.sh .*\\\\\$/ { s = NR } s && NR == s + 1 && /^    \\|\\| die / { ok = 1 } END { exit !ok }" <<< "$db"'
+    awk "/^  bash scripts\\/release\\/check_crate_contents.sh .*\\\\\$/ { s = NR } s && NR == s + 1 && /^    \\|\\| die / { ok = 1 } END { exit !ok }" <<< "$db"
+    row $? "dryrun: every rehearsal runs check_crate_contents.sh, and anything but rc 0 stops it"
     cb=$(awk '/^if run_step cascade; then$/,/^fi$/' "$ap")
     out=$cb
-    row "cascade: both premises run before the first cascade-drain" \
-        'awk "/^  cascade_cleanroom_at_tag\$/ { a = NR } /^  cascade_no_secret_green\$/ { b = NR } /cascade-drain.sh/ && !d { d = NR } END { exit !(a && b && d > a && d > b) }" <<< "$cb"'
+    awk "/^  cascade_cleanroom_at_tag\$/ { a = NR } /^  cascade_no_secret_green\$/ { b = NR } /cascade-drain.sh/ && !d { d = NR } END { exit !(a && b && d > a && d > b) }" <<< "$cb"
+    row $? "cascade: both premises run before the first cascade-drain"
     out=$(awk '/^if run_step ledger; then$/,/^fi$/' "$ap")
-    row "ledger: refuses without the cascade record and folds it into the ledger record" \
-        'grep -q "cascade-cleanroom.json\" \] || die" <<< "$out" && grep -q "cascade_cleanroom: \$c\[0\]" <<< "$out"'
+    grep -q "cascade-cleanroom.json\" \] || die" <<< "$out" && grep -q "cascade_cleanroom: \$c\[0\]" <<< "$out"
+    row $? "ledger: refuses without the cascade record and folds it into the ledger record"
     return "$w"
 }
 
