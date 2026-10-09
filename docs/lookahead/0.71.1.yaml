@@ -1,0 +1,40 @@
+# Look-ahead kit, train 0.71.1 (slot 1 patch train). Flat: one item per line.
+# Spec rows: APR-071 section 4 "Train B: 0.71.0 Fast Verbs" on docs/la-0-three-specs @630d85dd00.
+# V1, V3, V4, V5 and V7 rolled from 0.71.0 to 0.71.1 (APR-071 P4, ROLL); X6 is 0.71.1 under E1.
+# One criterion not green at the 0.71.1 cut is a stop.
+# This print fills V1 and V3. V4, V5, V7 and X6 carry id and pass only; their owners fill the rest.
+train: "0.71.1"
+theme: "Fast Verbs (rolled from 0.71.0)"
+epic: 3598
+criteria:
+  - {id: V1, pass: "TTFT ratio = llama.cpp TTFT p50 / apr TTFT p50 (llama.cpp pin d1d3c3396, same host, same GGUF Qwen3.5-4B Q4_K_M, c=1); on each of lambda and gx10, each of >= 5 replicates has a one-sided 95% lower bound >= 0.5; the host value is the minimum", falsifier: "contracts/apr-ttft-ratio-verdict-v1.yaml 1.2.0 on la-711b/v1-phases: FALSIFY-APR-TTFT-001 (min lcb95 0.50 GREEN, 0.49 RED), 004-008 (a missing host, replicate, provenance field or lcb95 is NOT MEASURED, never a pass), 013-016 (a delay planted in one phase moves that phase's field and only that field)", command: "apr test llm ttft-verdict --run <lambda dir> --run <gx10 dir> (exit 0 GREEN, 1 RED, 2 NOT MEASURED); on la-711b/v1-phases, not on main", ruling: "O 2026-10-07"}
+  - {id: V3, pass: "a perf041 witness on Qwen3.5-4B (sha256 recorded) with bands c in {1,4,8,16} all measured, m_formed == c in every band, identity (binary_sha256, commit, host, prompt_sha256), divergence_at >= declared_min against m=1 or a recorded top-2 margin < 0.05 logit at the divergence, perf041 PASS per band, and per-request decode at c=4 >= 50% of c=1 in the same run (FALSIFY-CB-004)", falsifier: "serving-shape-parity-v1 draft 0.3.0 FALSIFY-SSP-001..016 and its 21-case table; the lambda witness of 2026-10-03 (qwen2.5-coder-1.5b; c=16 formed m=14; divergence at token 3 with no margin) reads NOT ADMISSIBLE", command: asked, ruling: asked, bar: "S1-S7 of docs/lookahead/0.71-v3-serving-shape-parity.md on la-71/v3-serving-shape-parity @adf6c4b4aa, proposed by la-0.71.1a, not adopted; epsilon 0.05 is an assumption"}
+  - {id: V4, pass: "--json-schema constrained decoding (#3568)", falsifier: asked, command: asked, ruling: "O 2026-10-07"}
+  - {id: V5, pass: "kernel registry live: 0 unregistered dispatches (#4539)", falsifier: asked, command: asked, ruling: "O 2026-10-07"}
+  - {id: V7, pass: "CRUX gates against the reference engines defined (EXT-001)", falsifier: asked, command: asked, ruling: asked}
+  - {id: X6, pass: "local gate in 10 min, pre-push receipt, tiered CI", falsifier: asked, command: asked, ruling: "O 2026-09-28"}
+baselines:
+  - {criterion: V1, host: lambda, measured: "2026-10-09, issue #4954: min lcb95 1.076 (GREEN at 0.5); GGUF sha256 00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4, pin d1d3c3396, subject apr 0.70.3 95f64ba14, 5 replicates x 60 s, paired percentile bootstrap 10000 resamples seed 2026", receipt: none}
+  - {criterion: V1, host: gx10, measured: "2026-10-09 10:57-11:14Z, issue #4954: min lcb95 0.318 (RED at 0.5); same GGUF sha256, pin d1d3c3396 aarch64 build, subject apr 0.70.3 95f64ba14 aarch64, same harness and interval method", receipt: none}
+  - {criterion: V3, plan: "add Qwen3.5-4B to the perf041 nightly model set on lambda and gx10 (proposed V3-b); the first witness that passes S1-S4 is the baseline", receipt: none}
+contracts:
+  - {row: V1, draft: "contracts/apr-ttft-ratio-verdict-v1.yaml 1.2.0, already in the row's own branch la-711b/v1-phases", falsifier: "FALSIFY-APR-TTFT-001..016; six planted mutants of the reader, the wire and the server marks must each turn a test RED"}
+  - {row: V3, draft: "docs/lookahead/contracts-draft/serving-shape-parity-v1.yaml 0.3.0 on la-71/v3-serving-shape-parity @adf6c4b4aa", falsifier: "FALSIFY-SSP-001..016; F-SSP-QA-001 runs the 21-case table"}
+must_carry:
+  - {issue: 4450, size: M, owner: la-0.71, needs: [], for: "V1 gx10: qwen35 prefill falls to one token at a time when the 512-row workspace misses"}
+  - {issue: 4483, size: M, owner: none, needs: [], for: "V1 gx10: Qwen3.5 tensor-core prefill projections"}
+  - {issue: 4313, size: M, owner: la-0.71, needs: [], for: "V1 gx10: MMQ int8 prefill matmul + LM head on the last token only"}
+  - {issue: 4442, size: M, owner: la-0.71, needs: [], for: "V1 gx10: flash attention for the full-attention layers in batched prefill"}
+  - {issue: 4274, size: M, owner: la-0.71, needs: [], for: "V1 gx10: the second, 7-token checkpoint-suffix prefill call (~65 ms per request)"}
+staged:
+  - {branch: la-711b/v1-phases, issue: 4954, rows: "V1 harness, verdict, server phase split, receipt rows", tip: 0a87381f9d}
+  - {branch: la-71/v3-serving-shape-parity, rows: V3, tip: adf6c4b4aa, held: "carries scripts/lookahead/v3_shape_check.py; staged branches carry no Python, so it waits for the Rust port (proposed V3-d)"}
+questions:
+  - {id: Q1, text: "V3: is epsilon = 0.05 logit right? Calibrate from the margin distribution of measured near-ties once the top-2 margin is exposed (V3-a)", asked: 2026-10-04, answer: open}
+  - {id: Q2, text: "V3: should S5 also bound how many near-tie divergences a run may have (for example at most 1 per band), so a systematic kernel error cannot hide behind many small margins?", asked: 2026-10-04, answer: open}
+  - {id: Q3, text: "V3: which tickets carry V3-a (top-2 margin), V3-b (Qwen3.5-4B in perf041 nightly), V3-c (c=16 formed m=14) and V3-d (Rust port of the check)?", asked: 2026-10-04, answer: open}
+risks:
+  - {risk: "V1 is RED on gx10 today: min lcb95 0.318 against 0.5", mechanism: "apr TTFT p50 ~295 ms on GB10 against ~99 ms on the RTX 4090; the reference is ~100 ms on both hosts. The ~195 ms gap by phase is prefill +225 ms (a 510-token call of 202 ms plus a 7-token checkpoint-suffix call of 65 ms, against llama.cpp prompt eval 42 ms) and non-prefill -30 ms. Levers in order of measured ms: GB10 prefill rate (#4450 #4483 #4313 #4442), then the second call (#4274)", tripwire: "gx10 min lcb95 < 0.5 on the receipt run at the 0.71.1 cut: stop"}
+  - {risk: "V3 S5 cannot pass for any batched band until the server exposes the top-2 margin, unless the batched and m=1 kernels agree to declared_min tokens", mechanism: "proposed V3-a: top-2 logit margin per step behind a debug header, recorded by perf041 as top2_margin_at_divergence", tripwire: "the first Qwen3.5-4B witness diverges from m=1 before declared_min with no margin recorded: V3 is RED by construction"}
+  - {risk: "V3 has no command: its only checker is Python, which the build never runs", mechanism: "proposed V3-d: port the check to Rust with its 21-case table and wire it beside check_perf041_marker.sh behind the contract", tripwire: "no Rust checker on a branch when V3-a lands: V3 has no command at the cut"}
+  - {risk: "V1 receipts record model_file null, so the GGUF sha256 rides only in the v1-provenance.json sidecar", mechanism: "the verdict reads the sidecar and a run without it, or without the sha256 in it, is NOT MEASURED (FALSIFY-APR-TTFT-006)", tripwire: "a receipt run at the cut without the sidecar exits 2"}
