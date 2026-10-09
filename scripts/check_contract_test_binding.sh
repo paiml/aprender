@@ -421,7 +421,7 @@ main() {
     printf '\n' >&2
     printf 'A contract cites a test that no `cargo test` invocation can run.\n' >&2
     printf 'Fix the citation (or add the test); do NOT raise the baseline.\n' >&2
-    printf 'Detail:  "$PV" lint %s --strict-test-binding, with PV from scripts/pv_bin.sh\n' \
+    printf 'Detail:  . scripts/pv_bin.sh && "$PV" lint %s --strict-test-binding\n' \
         "$CONTRACT_DIR" >&2
     exit 1
 }
