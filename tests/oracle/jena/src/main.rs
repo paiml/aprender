@@ -3,16 +3,17 @@
 //!
 //! - `jena-oracle --self-test` runs the planted controls, one per FALSIFY-CRUXSHACL row this harness implements, and
 //!   prints `self-test: N/N ok`. The controls act on the comparator's inputs, never on pv, so they prove the harness
-//!   before pv can read Turtle (S3) or write a W3C report (S4). Six of them need the JVM.
+//!   whatever pv does. Six of them need the JVM.
 //! - `jena-oracle run <repo> <pv-shapes.json> --pv <pv>` checks the pins, runs every control, measures the cells and
-//!   writes `tests/oracle/jena/receipt.json`.
+//!   writes `tests/oracle/jena/receipt.json`. R-INPUT and the R-RETURN round trip run `<pv> ontology read` (S3).
 //!
-//! Exit codes follow the OWL oracle: 0 GREEN, 1 RED, 2 NOT MEASURED, by the contract's `verdict` equation. Until S3
-//! and S4 land, the cells whose pv side needs them are NOT MEASURED, so a run whose every Jena-side check is green
+//! Exit codes follow the OWL oracle: 0 GREEN, 1 RED, 2 NOT MEASURED, by the contract's `verdict` equation. Until S4
+//! lands, the cells whose pv side needs it are NOT MEASURED, so a run whose every Jena-side check is green
 //! exits 2, never 0. The JVM is `ONT_ORACLE_JAVA`, else `java` on PATH.
 
 mod jena;
 mod nt;
+mod pv;
 mod report;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -91,7 +92,7 @@ impl Line {
 }
 
 /// The inputs of the contract's `verdict` equation, plus `nm_cell`: a run that would exit 0 while a cell is still
-/// NOT MEASURED (its pv side waits for S3 or S4) exits 2.
+/// NOT MEASURED (its pv side waits for S4) exits 2.
 #[derive(Clone, Copy, Default)]
 struct Facts {
     pins_ok: bool,
@@ -454,6 +455,52 @@ fn write(work: &Path, name: &str, text: &str) -> PathBuf {
     let p = work.join(name);
     std::fs::write(&p, text).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
     p
+}
+
+/// A case or file name as a file-name fragment.
+fn tag(s: &str) -> String {
+    s.replace(['/', '#', ' '], "-")
+}
+
+/// `N triples`, or `N triples (D distinct)` when the file states a triple more than once: a graph is a set, so
+/// the reader that keeps one copy and the one that streams both agree.
+fn counted(t: &[Triple]) -> String {
+    let distinct = t.iter().collect::<std::collections::BTreeSet<_>>().len();
+    if distinct == t.len() {
+        format!("{} triples", t.len())
+    } else {
+        format!("{} triples ({distinct} distinct)", t.len())
+    }
+}
+
+/// Are `a` (riot's) and `b` (pv's side) one graph? The harness's comparator; when it is inconclusive (a split
+/// class of blank nodes), `jena.rdfcompare` on both written out decides.
+fn same_graph(j: &Jena, work: &Path, tag: &str, a: &[Triple], b: &[Triple]) -> (V, String) {
+    let iso = nt::compare(a, b);
+    let counts = format!("riot {}, pv {}", counted(a), counted(b));
+    if iso.equal {
+        return (V::Green, format!("{counts}, isomorphic"));
+    }
+    let diff: Vec<String> = iso
+        .only_a
+        .iter()
+        .map(|l| format!("riot only {l}"))
+        .chain(iso.only_b.iter().map(|l| format!("pv only {l}")))
+        .take(3)
+        .collect();
+    if !iso.inconclusive {
+        return (V::Red, format!("{counts}; {}", diff.join("; ")));
+    }
+    let pa = write(work, &format!("{tag}-riot.nt"), &nt_text(a));
+    let pb = write(work, &format!("{tag}-pv.nt"), &nt_text(b));
+    match j.rdfcompare(&pa, &pb) {
+        Ok(true) => (V::Green, format!("{counts}, isomorphic by rdfcompare")),
+        Ok(false) => (
+            V::Red,
+            format!("{counts}; rdfcompare: not isomorphic; {}", diff.join("; ")),
+        ),
+        Err(e) => (V::Nm, format!("{counts}; refinement inconclusive and {e}")),
+    }
 }
 
 fn with_result(r: &Report, i: usize, f: impl Fn(&mut report::Res)) -> Report {
@@ -902,7 +949,7 @@ fn jvm_controls(j: &Jena, work: &Path) -> Vec<Ctl> {
         .collect()
 }
 
-/// 004: riot rejects the file and names line 7 (pv's side is S3).
+/// 004: riot rejects the file and names line 7 (pv's side is the R-INPUT cell on the same file).
 fn riot_line7(j: &Jena, work: &Path) -> (u8, String) {
     let p = write(work, "line7.ttl", LINE7_TTL);
     match j.riot(&p, None) {
@@ -1406,6 +1453,8 @@ fn w3c_cases(rel: &str, t: &[Triple]) -> Vec<(String, Report, PathBuf, PathBuf)>
 /// What one `run` accumulates: its cell lines, notes, facts for the verdict, and the receipt's metadata.
 struct Run<'a> {
     repo: &'a Path,
+    pv: &'a Path,
+    started: SystemTime,
     work: PathBuf,
     nt_path: PathBuf,
     ttl_path: PathBuf,
@@ -1537,10 +1586,12 @@ impl Run<'_> {
     }
 
     /// R-RETURN, read side: riot reads pv's two files without a warning; contracts.nt reads to the same graph as
-    /// the neutral N-Triples parser here. R-INPUT and the write side wait for S3.
+    /// the neutral N-Triples parser here. Then pv's side (S3): R-INPUT and the round trip on both files and on the
+    /// escapes control, and R-INPUT on the malformed control.
     fn return_cells(&mut self, j: &Jena) {
-        let nt_jena = j.read(&self.nt_path, None, true);
-        let ttl_jena = j.read(&self.ttl_path, None, true);
+        let (nt_path, ttl_path) = (self.nt_path.clone(), self.ttl_path.clone());
+        let nt_jena = j.read(&nt_path, Some(&self.base(&nt_path)), true);
+        let ttl_jena = j.read(&ttl_path, Some(&self.base(&ttl_path)), true);
         let parsed = std::fs::read_to_string(&self.nt_path)
             .map_err(|e| e.to_string())
             .and_then(|s| nt::parse(&s));
@@ -1559,20 +1610,147 @@ impl Run<'_> {
             Err(e) => (V::Red, e.clone()),
         };
         self.line("R-RETURN", "shapes.ttl", "riot", v, detail);
-        let roundtrip = "S3: pv writes no graph it read back".into();
-        self.line("R-RETURN", "roundtrip", "pv-write", V::Nm, roundtrip);
-        let input = format!(
-            "S3: pv reads no Turtle/N-Triples; riot reads {} + {} triples",
-            nt_jena.as_ref().map_or(0, Vec::len),
-            ttl_jena.as_ref().map_or(0, Vec::len)
-        );
-        self.line(
-            "R-INPUT",
-            "contracts.nt+shapes.ttl",
-            "pv-vs-riot",
-            V::Nm,
-            input,
-        );
+        let esc = self
+            .repo
+            .join("tests/oracle/jena/controls/escapes-langtags.ttl");
+        let esc_jena = j.read(&esc, Some(&self.base(&esc)), true);
+        for (x, jena) in [(nt_path, nt_jena), (ttl_path, ttl_jena), (esc, esc_jena)] {
+            self.pv_cells(j, &x, jena.as_ref());
+        }
+        self.malformed_cell(j);
+    }
+
+    /// X relative to the repo, as a case name.
+    fn rel(&self, x: &Path) -> String {
+        x.strip_prefix(self.repo).unwrap_or(x).display().to_string()
+    }
+
+    /// The base both engines resolve X against: fixed, so a receipt does not depend on where the repo sits.
+    fn base(&self, x: &Path) -> String {
+        format!("file:///{}", self.rel(x))
+    }
+
+    /// Record the sha256 of an input the cells read beyond the subjects.
+    fn pin_input(&mut self, x: &Path) {
+        let sha = jena::sha256(x).unwrap_or_else(|| nm("unreadable"));
+        self.meta.inputs.insert(self.rel(x), sha);
+    }
+
+    /// pv's dump of X against riot's parse `a`; the dump comes back for the round trip.
+    fn pv_vs_riot(&self, j: &Jena, x: &Path, a: &[Triple]) -> (V, String, Option<String>) {
+        match pv::read(self.pv, x, &self.base(x)) {
+            Ok(pv::Read::Dump(text, b)) => {
+                let (v, d) = same_graph(j, &self.work, &tag(&self.rel(x)), a, &b);
+                let d = format!("{d}; pv {} blank nodes", pv::blank_nodes(&b));
+                (v, d, Some(text))
+            }
+            Ok(pv::Read::Refused(_, msg)) => {
+                (V::Red, format!("pv refuses what riot reads: {msg}"), None)
+            }
+            Ok(pv::Read::Broken(e)) => (V::Red, e, None),
+            Err(e) => (V::Nm, e, None),
+        }
+    }
+
+    /// R-INPUT and the R-RETURN round trip on X, which riot read as `jena`.
+    fn pv_cells(&mut self, j: &Jena, x: &Path, jena: Result<&Vec<Triple>, &String>) {
+        self.pin_input(x);
+        let case = self.rel(x);
+        let trip = format!("roundtrip {case}");
+        let a = match jena {
+            Ok(a) => a,
+            Err(e) => {
+                let why = format!("riot refused X: {e}");
+                self.line("R-INPUT", &case, "pv-vs-riot", V::Nm, why.clone());
+                return self.line("R-RETURN", &trip, "riot-roundtrip", V::Nm, why);
+            }
+        };
+        let (v, detail, dump) = self.pv_vs_riot(j, x, a);
+        self.line("R-INPUT", &case, "pv-vs-riot", v, detail);
+        match dump {
+            Some(d) => self.roundtrip_cell(j, x, &trip, a, &d),
+            None => self.line(
+                "R-RETURN",
+                &trip,
+                "riot-roundtrip",
+                V::Nm,
+                "pv wrote no dump".into(),
+            ),
+        }
+    }
+
+    /// R-RETURN round trip: Jena(X) ≅ Jena(pv_write(pv_read(X))). pv's dump goes to a file of its own, made by this
+    /// run; X itself or a stale file is refused (FALSIFY-CRUXSHACL-007).
+    fn roundtrip_cell(&mut self, j: &Jena, x: &Path, trip: &str, a: &[Triple], dump: &str) {
+        let w = write(&self.work, &format!("pv-{}.nt", tag(trip)), dump);
+        if let Some(why) = self_compare(x, &w, self.started) {
+            self.f.self_compare = true;
+            return self.line("R-RETURN", trip, "riot-roundtrip", V::Nm, why);
+        }
+        let (v, detail) = match j.read(&w, None, true) {
+            Ok(b) => same_graph(j, &self.work, &tag(trip), a, &b),
+            Err(e) => (V::Red, format!("riot refuses the file pv wrote: {e}")),
+        };
+        self.line("R-RETURN", trip, "riot-roundtrip", v, detail);
+    }
+
+    /// R-INPUT on a malformed X: riot and pv both refuse it, at the same line.
+    fn malformed_cell(&mut self, j: &Jena) {
+        let x = self
+            .repo
+            .join("tests/oracle/jena/controls/syntax-error-line-7.ttl");
+        self.pin_input(&x);
+        let base = self.base(&x);
+        let riot = match j.riot(&x, Some(&base)) {
+            Ok((ok, clean, _, err)) if !ok || !clean => {
+                pv::riot_line(&err).ok_or_else(|| format!("riot names no line: {err}"))
+            }
+            Ok(_) => Err("riot accepted it".into()),
+            Err(e) => Err(e),
+        };
+        let (v, detail) = match (riot, pv::read(self.pv, &x, &base)) {
+            (Err(e), _) | (_, Err(e)) => (V::Nm, e),
+            (Ok(r), Ok(pv::Read::Refused(Some(p), msg))) => {
+                let v = if p == r { V::Green } else { V::Red };
+                (v, format!("riot line {r}, pv line {p}: {msg}"))
+            }
+            (Ok(r), Ok(pv::Read::Refused(None, msg))) => {
+                (V::Red, format!("riot line {r}, pv names no line: {msg}"))
+            }
+            (Ok(r), Ok(pv::Read::Dump(_, b))) => (
+                V::Red,
+                format!("riot refuses at line {r}, pv reads {} triples", b.len()),
+            ),
+            (Ok(_), Ok(pv::Read::Broken(e))) => (V::Red, e),
+        };
+        let case = self.rel(&x);
+        self.line("R-INPUT", &case, "line", v, detail);
+    }
+
+    /// R-INPUT on S-W3C: pv's dump of every pinned case file against riot's, read non-strict (some cases hold
+    /// ill-formed literals on purpose). A line for each file that does not agree, and one for the files that do.
+    fn w3c_input_cells(&mut self, j: &Jena, suite: &[String]) {
+        let mut agree = 0;
+        for rel in suite {
+            let x = self.repo.join(rel);
+            let (v, detail) = match j.read(&x, Some(&self.base(&x)), false) {
+                Ok(a) => {
+                    let (v, d, _) = self.pv_vs_riot(j, &x, &a);
+                    (v, d)
+                }
+                Err(e) => (V::Nm, e),
+            };
+            if v == V::Green {
+                agree += 1;
+            } else {
+                self.line("R-INPUT", rel, "pv-vs-riot", v, detail);
+            }
+        }
+        let detail = format!("{agree} of {} pinned case files isomorphic", suite.len());
+        if suite.is_empty() || agree < suite.len() {
+            return self.notes.push(format!("R-INPUT S-W3C: {detail}"));
+        }
+        self.line("R-INPUT", "S-W3C", "pv-vs-riot", V::Green, detail);
     }
 
     /// R-VALIDATE, corpus: Jena's (focus, component) multiset against pv's.
@@ -1763,6 +1941,8 @@ fn run(repo: &Path, pv_json: &Path, pv: &Path) -> u8 {
     };
     let mut r = Run {
         repo,
+        pv,
+        started: SystemTime::now() - Duration::from_secs(2),
         work,
         nt_path: repo.join("contracts/contracts.nt"),
         ttl_path: repo.join("contracts/shapes.ttl"),
@@ -1791,6 +1971,7 @@ fn run(repo: &Path, pv_json: &Path, pv: &Path) -> u8 {
         r.return_cells(j);
         r.corpus_cell(j, pv_pairs.as_ref());
         r.w3c_cells(j, &suite);
+        r.w3c_input_cells(j, &suite);
         r.shsh_cell(j, shsh);
     }
     r.finish(&controls)
