@@ -3,7 +3,6 @@
 //! the HTTP header. Driven against an in-memory hub; the live hub is NotRun
 //! {NoDeclaredExecutor} until a token is provisioned on the driver host (R-7).
 
-use super::super::hf_http::{commit_body, next_link, parse_refs, parse_tree, redact, rev_segment};
 use super::*;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -402,8 +401,9 @@ fn an_unvouched_release_dir_is_refused() {
     }
 }
 
-/// R-7: a token file must be 0600, the token prints redacted, and neither publisher
-/// module reads the environment (only `hf_token` does, for the local HF token).
+/// R-7: a token file must be 0600, the token prints redacted, and the publisher
+/// module does not read the environment (only `hf_token` does, for the local HF
+/// token). The HTTP side's own check is in aprender-core `hf_hub::repo_api`.
 #[test]
 fn the_token_stays_in_its_file() {
     use std::os::unix::fs::PermissionsExt;
@@ -424,12 +424,10 @@ fn the_token_stays_in_its_file() {
         let err = Token::from_file(&p).expect_err(body).to_string();
         assert!(err.contains("one token"), "{err}");
     }
-    for src in [include_str!("hf_publish.rs"), include_str!("hf_http.rs")] {
-        assert!(
-            !src.contains(concat!("env", "::var")),
-            "a publisher module reads env"
-        );
-    }
+    assert!(
+        !include_str!("hf_publish.rs").contains(concat!("env", "::var")),
+        "the publisher module reads env"
+    );
 }
 
 #[test]
@@ -442,58 +440,38 @@ fn wire_formats() {
         git_blob_oid(b"hello\n"),
         "ce013625030ba8dba906f756967f9e9ca394464a"
     );
+}
+
+/// The preupload answer decides LFS per file by path; a file it does not name is an
+/// error, never a guess. Over 5 GiB is refused before any byte is sent (Xet).
+#[cfg(feature = "hf-hub")]
+#[test]
+fn preupload_modes_and_the_xet_limit() {
+    let up = |path| Upload {
+        path,
+        size: 1,
+        sample: Vec::new(),
+    };
+    let answer = [
+        json!({"path": "README.md", "uploadMode": "regular"}),
+        json!({"path": "m.apr", "uploadMode": "lfs"}),
+    ];
     assert_eq!(
-        redact("https://s3.x/obj?X-Amz-Signature=abc#f"),
-        "https://s3.x/obj"
+        lfs_modes(&[up("m.apr"), up("README.md")], &answer),
+        Ok(vec![true, false])
     );
-    assert_eq!(rev_segment("rc/v0.1.0-rc.1"), "rc%2Fv0.1.0-rc.1");
-    assert_eq!(
-        next_link(Some("<https://h/api?cursor=2>; rel=\"next\"")).as_deref(),
-        Some("https://h/api?cursor=2")
-    );
-    assert_eq!(next_link(Some("<https://h/p1>; rel=\"prev\"")), None);
+    assert_eq!(lfs_modes(&[], &answer), Ok(vec![]));
+    let err = lfs_modes(&[up("m.apr"), up("x.bin")], &answer).expect_err("unnamed");
+    assert_eq!(err, "preupload: no mode for x.bin");
 
-    let tree = parse_tree(&json!([
-        {"type": "file", "path": "a.apr", "size": 3, "oid": "p", "lfs": {"oid": "s", "size": 3}},
-        {"type": "file", "path": "README.md", "size": 6, "oid": "g"},
-        {"type": "directory", "path": "d", "oid": "t"}
-    ]))
-    .expect("tree");
-    assert_eq!(tree.len(), 2);
-    assert_eq!(tree[0].lfs_sha256.as_deref(), Some("s"));
-    assert_eq!(tree[1].lfs_sha256, None);
-
-    let refs = parse_refs(
-        &json!({"branches": [{"name": "main", "targetCommit": "c1"}],
-        "tags": [{"name": "v1.0.0", "targetCommit": "c2"}], "converts": []}),
+    let limit = 5 * 1024 * 1024 * 1024;
+    let p = Path::new("w/m.apr");
+    assert_eq!(needs_xet(limit, p), None);
+    let err = needs_xet(limit + 1, p).expect("over the limit");
+    assert!(
+        err.starts_with("w/m.apr: 5368709121 bytes") && err.contains("Xet"),
+        "{err}"
     );
-    assert_eq!(refs.branches["main"], "c1");
-    assert_eq!(refs.tags["v1.0.0"], "c2");
-
-    let body = commit_body(
-        "s",
-        &[
-            Op::Lfs {
-                path: "a.apr".into(),
-                sha256: "ab".into(),
-                size: 3,
-            },
-            Op::File {
-                path: "R".into(),
-                bytes: b"hi".to_vec(),
-            },
-            Op::Delete { path: "old".into() },
-        ],
-    );
-    let lines: Vec<serde_json::Value> = body
-        .lines()
-        .map(|l| serde_json::from_str(l).expect("ndjson line"))
-        .collect();
-    assert_eq!(lines.len(), 4);
-    assert_eq!(lines[0]["key"], "header");
-    assert_eq!(lines[1]["value"]["oid"], "ab");
-    assert_eq!(lines[2]["value"]["content"], "aGk=");
-    assert_eq!(lines[3]["key"], "deletedFile");
 }
 
 fn local(t: &TempDir, name: &str, bytes: &[u8]) -> Local {

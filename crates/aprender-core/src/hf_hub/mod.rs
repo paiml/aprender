@@ -324,5 +324,9 @@ mod client_modules;
 /// pulls in `hf-xet`) is feature-gated.
 pub mod xet;
 
+/// The Hub write endpoints of one repo at a named revision (#4961): the one HF
+/// upload path. `HfHubClient`'s upload and `apr model publish` both use it.
+pub mod repo_api;
+
 #[cfg(test)]
 mod tests;
