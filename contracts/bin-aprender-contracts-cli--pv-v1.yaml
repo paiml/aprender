@@ -115,6 +115,8 @@ shapes:
           - "verify-structure"
       # GREEN 2026-09-27: all 49 paths have a ledger row (was 11 unledgered on 2026-09-26)
       - {path: bin:unledgeredCommand, maxCount: 0}
+      # 2026-10-09: 1 ledgerOrphan, `ontology read` (CRUX-SHACL S3, #3598): ledgered and built, not yet in the snapshot.
+      # It leaves at the next snapshot refresh, which makes the count 50 and adds it to the list above.
       - {path: bin:ledgerOrphan, maxCount: 0}
 
 equations:

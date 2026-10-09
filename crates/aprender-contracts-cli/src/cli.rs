@@ -746,4 +746,17 @@ pub enum OntologyCommand {
         #[arg(long)]
         write: bool,
     },
+    /// Read a Turtle or N-Triples file and print it as canonical N-Triples: sorted lines, blank nodes `_:b0`,
+    /// `_:b1`, … in the order they are met. Exit 1 if the file is malformed (the refusal names its line), 2 if
+    /// it cannot be read or its syntax is unknown
+    Read {
+        /// The RDF file. `.ttl` is Turtle and `.nt` is N-Triples; any other name needs --syntax
+        input: PathBuf,
+        /// `turtle` or `ntriples`, overriding the extension
+        #[arg(long)]
+        syntax: Option<String>,
+        /// The base IRI Turtle resolves relative IRIs against (default: the file's own `file://` IRI)
+        #[arg(long)]
+        base: Option<String>,
+    },
 }

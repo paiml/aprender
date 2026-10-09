@@ -26,6 +26,8 @@
 #       data x doctest extract|merge, data x hub push, data x import hf  (aprender-data features doctest / hf-hub)
 #       mono archive|audit|publish|shims                                  (apr-cli feature `dev`)
 #       rag eval compare|gate|generate|judge|metrics|retrieve|sample      (aprender-rag-cli feature `eval`)
+#     +1 since 2026-10-09: pv ontology read (CRUX-SHACL S3, #3598) is ledgered and built, but the snapshot predates it;
+#       it leaves at the next snapshot refresh, which makes |C| 265 and adds it to the list below.
 #     12 commands had no ledger row (RED 2026-09-26): capability, pv census, pv challenge check|gen,
 #       pv discharge check|gen-axioms|label-ratchet|run, pv extract, pv obligations, pv ontology export|tbox.
 #       FIXED 2026-09-27: all 12 now have binary=apr ledger rows (capability by ONT-4g #4476; the 11 `apr pv` mirrors by ONT-10 S9/S7).
