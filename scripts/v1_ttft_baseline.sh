@@ -64,6 +64,23 @@ printf 'band       : c=1, %s replicates x %s s, receipt dir %s\n' "$REPLICATES" 
 [ "$DRY" -eq 0 ] || exit 0
 
 mkdir -p "$OUT"
+# The receipt names the subject, the client and the comparator, but not the
+# GGUF: its model field is the server's alias. This sidecar binds every receipt
+# in $OUT to the file both servers loaded and to the interval method.
+jq -n --arg host "$HOST" --arg model "$MODEL" --arg model_sha "$MODEL_SHA" \
+    --arg llama "$LLAMA_SERVER" --arg llama_commit "$LLAMA_COMMIT" --arg llama_sha "$LLAMA_SHA" \
+    --arg lflags "$lflags" --arg subject "$APR_SERVE" --arg subject_commit "$APR_COMMIT" \
+    --arg subject_sha "$(sha "$APR_SERVE")" --arg client "$APR" --arg client_sha "$(sha "$APR")" \
+    --argjson replicates "$REPLICATES" --argjson duration "$DURATION" --argjson ctx "$CTX" \
+    '{host: $host, gguf: {path: $model, sha256: $model_sha},
+      comparator: {binary: $llama, pin: $llama_commit, sha256: $llama_sha, flags: $lflags},
+      subject: {binary: $subject, commit: $subject_commit, sha256: $subject_sha,
+                args: "serve run --gpu-layers all --context-length \($ctx)"},
+      client: {binary: $client, sha256: $client_sha},
+      band: {concurrency: 1, replicates: $replicates, duration_s: $duration},
+      interval: {field: "bands[].ratios.ttft", ratio: "comparator ttft_p50 / subject ttft_p50",
+                 method: "paired_percentile_bootstrap", resamples: 10000, seed: 2026,
+                 bound: "one-sided 95% lower (5th percentile)"}}' > "$OUT/v1-provenance.json"
 PIDS=""
 stop_servers() {
     local p
