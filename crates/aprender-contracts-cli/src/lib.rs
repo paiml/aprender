@@ -225,6 +225,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             explain,
             watch,
             strict_test_binding,
+            strict_test_binding_only,
             armed_baseline_ref,
             gate,
             shape,
@@ -257,7 +258,8 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 crate_dir.as_deref(),
                 min_level.as_deref(),
                 watch,
-                strict_test_binding,
+                strict_test_binding || strict_test_binding_only,
+                strict_test_binding_only,
                 armed_baseline_ref.as_deref(),
                 &gate,
                 commands::lint::shapes_options(

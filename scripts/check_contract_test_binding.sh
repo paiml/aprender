@@ -87,22 +87,39 @@ need() {
 }
 
 # ---------------------------------------------------------------------------
-# Run `pv lint --strict-test-binding` and emit its JSON on stdout.
+# Run `pv lint --strict-test-binding-only` and emit its JSON on stdout.
 #
-# `pv` is invoked through `cargo run`, never through PATH and never through a
-# path found lying in the target directory. On this box the target dir is
-# redirected by a gitignored .cargo/config.toml and is SHARED between the main
-# checkout and every worktree, so a `pv` sitting there may have been built from
-# a different tree — while writing this guard, a concurrent build from `main`
-# replaced the binary mid-session and a measurement silently reverted to the
-# pre-fix numbers. Asking cargo to build-and-run is the only resolution that
-# cannot pick up someone else's artifact.
+# `pv` comes from scripts/pv_bin.sh, never from PATH and never from a path found
+# lying in the target directory. On this box the target dir is redirected by a
+# gitignored .cargo/config.toml and is SHARED between the main checkout and every
+# worktree, so a `pv` sitting there may have been built from a different tree —
+# while writing this guard, a concurrent build from `main` replaced the binary
+# mid-session and a measurement silently reverted to the pre-fix numbers.
+# pv_bin.sh builds first and proves the artifact it returns is this tree's.
+#
+# It is also the build contracts_gate.sh resolves, features and all, so after
+# that gate this step compiles nothing. The `cargo run` it replaces built pv
+# WITHOUT those features: a second full compile on every run, overwriting the
+# first build's binary (aprender#4974). PV_BIN_REQUIRE=head because this gate
+# answers for the resolver in THIS tree; the fleet nightly pin never answers it.
+#
+# --strict-test-binding-only runs validate (the gate's precondition) and the
+# strict gate, and not the twenty other gates whose findings this script never
+# read. The JSON keeps the full-lint shape and goes through the same finalize
+# path, so total_refs and the PV-VER-002 set are the full lint's; the pv unit
+# test strict_test_binding_only_answers_as_the_full_run_does pins that.
 # ---------------------------------------------------------------------------
 run_pv_lint() {
     local contract_dir="$1" out="$2" err="$3"
-    ( cd "$REPO_ROOT" && cargo run -q -p aprender-contracts-cli --bin pv -- \
-        lint "$contract_dir" --strict-test-binding --format json --no-cache ) \
-        > "$out" 2> "$err"
+    (
+        cd "$REPO_ROOT" || exit 1
+        PV_BIN_REQUIRE=head
+        if ! . scripts/pv_bin.sh >&2; then
+            printf 'check_contract_test_binding: pv_bin.sh could not resolve pv\n' >&2
+            exit 1
+        fi
+        "$PV" lint "$contract_dir" --strict-test-binding-only --format json --no-cache
+    ) > "$out" 2> "$err"
     # NOTE: pv exits 1 whenever ANY gate reports findings, which it always does
     # on this tree. The exit status is therefore not the verdict — the JSON is.
     # What we must not tolerate is pv failing to produce parseable JSON, which
@@ -324,7 +341,7 @@ main() {
     json="$tmp/lint.json"
     err="$tmp/lint.err"
 
-    printf 'Running pv lint %s --strict-test-binding ...\n' "$CONTRACT_DIR"
+    printf 'Running pv lint %s --strict-test-binding-only ...\n' "$CONTRACT_DIR"
     run_pv_lint "$CONTRACT_DIR" "$json" "$err"
     if ! jq -e . "$json" >/dev/null 2>&1; then
         printf 'pv produced no parseable JSON. The measurement is MISSING, which is a failure.\n' >&2
@@ -404,7 +421,7 @@ main() {
     printf '\n' >&2
     printf 'A contract cites a test that no `cargo test` invocation can run.\n' >&2
     printf 'Fix the citation (or add the test); do NOT raise the baseline.\n' >&2
-    printf 'Detail:  cargo run -q -p aprender-contracts-cli --bin pv -- lint %s --strict-test-binding\n' \
+    printf 'Detail:  "$PV" lint %s --strict-test-binding, with PV from scripts/pv_bin.sh\n' \
         "$CONTRACT_DIR" >&2
     exit 1
 }
