@@ -141,6 +141,12 @@ autopilot_found() {
             while (match(s, /python3 +scripts\/[A-Za-z0-9_\/.-]+\.py( +[a-z][a-z-]*)?/)) {
                 w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH); np++; gsub(/ +/, " ", w); out = out "\n" w
             }
+            s = line
+            # a sourced library: `. scripts/lib/x.sh` or `source scripts/lib/x.sh`; its functions run in this step
+            while (match(s, /(^|[ \t(;&|])(\.|source) +"?(\$\{?[A-Za-z_]+\}?\/)?scripts\/[A-Za-z0-9_\/.-]+\.sh"?/)) {
+                w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH); np++
+                gsub(/"/, "", w); sub(/^[ \t(;&|]*(\.|source) +/, "", w); sub(/\$\{?[A-Za-z_]+\}?\//, "", w); out = out "\nsource " w
+            }
             if (nr > np) UNP = 1
             # a quoted literal (a die message) is not a call: pair the quotes left to right, keep a `$(` inside one
             s = ""; t = line
@@ -157,6 +163,8 @@ autopilot_found() {
                 w = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH); sub(/.* /, "", w); out = out "\ngh-workflow " w
             }
             if (line ~ /git merge-base --is-ancestor/) out = out "\ngit merge-base --is-ancestor"
+            # the tag push: the pre-push tag guard (scripts/hooks/pre-push-tags.sh) refuses it from inside
+            if (line ~ /git push origin/) out = out "\ngit push origin"
             return out
         }
         function unp(ln) { if (UNP) { UL[++nu] = F ":" ln; UNP = 0 } }
@@ -170,8 +178,12 @@ autopilot_found() {
                 fn = L[i]; sub(/\(.*/, "", fn); FS0[fn] = i
                 for (e = i + 1; e <= NR && L[e] !~ /^\}/; e++) ; FE[fn] = e; FN[++nf] = fn
             }
+            # a step guarded by `&& [ "$AP_POLICY" != 1 ]` does not run under the standing release policy:
+            # off the release path (its fi still closes it, and its body is not top-level)
+            for (i = 1; i <= NR; i++) if (L[i] ~ /^if run_step [a-z]+ && \[ "\$AP_POLICY" != 1 \]; then/) { OFF[i] = 1; sub(/ && \[ "\$AP_POLICY" != 1 \]/, "", L[i]) }
             for (i = 1; i <= NR; i++) {
                 if (L[i] !~ /^if run_step [a-z]+; then/) continue
+                if (i in OFF) continue
                 st = L[i]; sub(/^if run_step /, "", st); sub(/;.*/, "", st)
                 if (!(st in PH)) { unk = 1; continue }
                 if (PH[st] == "") continue
@@ -223,11 +235,22 @@ autopilot_found() {
 # preflight_found FILE: the rules of the RULES header
 preflight_found() {
     awk -v F="$2" '
+        NR == FNR {
+            # a rule whose function opens by returning 0 when the standing release policy covers the release
+            # (`if [ "${POL_APPLIES:-0}" = 1 ]` holding only echo, assignments and `return 0`) does not run under
+            # the policy: off the release path, like a step autopilot guards with AP_POLICY
+            if ($0 ~ /^rule_r[0-9]+\(\)/) { fn = toupper(substr($0, 6, index($0, "(") - 6)); next }
+            if (fn != "" && $0 ~ /^    if \[ "\$\{POL_APPLIES:-0\}" = 1 \]; then$/) { p = 1; ok = 1; ret = 0; next }
+            if (p && $0 ~ /^    fi$/) { if (ok && ret) OFF[fn] = 1; p = 0; next }
+            if (p) { if ($0 ~ /^        return 0$/) ret = 1; else if ($0 !~ /^        (echo |[A-Z0-9_]+=[^ ;]*$)/) ok = 0 }
+            if ($0 ~ /^}/) fn = ""
+            next
+        }
         /^# RULES/ { r = 1; next }
         r && /^#[ \t]*$/ { r = 0 }
-        r && /^#   R[0-9]+  / { x = $2; printf "publish:preflight/%s\t%s:%d\n", x, F, FNR; k++ }
+        r && /^#   R[0-9]+  / { x = $2; if (!(x in OFF)) printf "publish:preflight/%s\t%s:%d\n", x, F, FNR; k++ }
         END { if (k == 0) exit 2 }
-    ' "$1"
+    ' "$1" "$1"
 }
 
 # cascade_found FILE: every `if ! <function|bash script>` the cascade refuses on. A bare word counts only when the
@@ -690,6 +713,11 @@ mutate() {
         orphaned-also-anchor-gone) edit "$d" "$CAS_REL" '/^if \[ "$N" -lt 1 \]; then/,/^fi/d' ;;
         malformed-also-on-row) edit "$d" "$LIST_REL" 's/parent: FX-T2, anchor: "tag:dogfood\/git-clean"/parent: FX-T2, also: ["x"], anchor: "tag:dogfood\/git-clean"/' ;;
         malformed-also-unquoted) edit "$d" "$LIST_REL" 's/also: \["publish/also: [publish/' ;;
+        unlisted-sourced-lib) edit "$d" "$AUTO_REL" '/^  helper$/a\  . scripts/lib/new_lib.sh || die x' ;;
+        unlisted-tag-push) edit "$d" "$AUTO_REL" '/^  helper$/a\  git push origin "$t" || die x' ;;
+        orphaned-policy-off-step) edit "$d" "$AUTO_REL" 's/^if run_step cleanroom; then/if run_step cleanroom \&\& [ "$AP_POLICY" != 1 ]; then/' ;;
+        orphaned-policy-off-rule) plant "$d" "$PRE_REL" "$(printf 'rule_r8() {\n    if [ "${POL_APPLIES:-0}" = 1 ]; then\n        echo skipped\n        R8_SCOPED=1\n        return 0\n    fi\n}')" ;;
+        green-policy-guard-runs-a-call) plant "$d" "$PRE_REL" "$(printf 'rule_r8() {\n    if [ "${POL_APPLIES:-0}" = 1 ]; then\n        bash scripts/still_runs.sh\n        return 0\n    fi\n}')" ;;
         unlisted-cascade-if-block) edit "$d" "$CAS_REL" '/^# upload loop/i\if [ -z "$TOKEN" ]; then exit 3; fi' ;;
         green-cascade-if-after-loop) edit "$d" "$CAS_REL" '/^# --check/i\if [ -z "$LATE" ]; then exit 1; fi' ;;
         contradiction-executor) edit "$d" "$AUTO_REL" 's|bash scripts/cascade-drain.sh|bash scripts/release/other-drain.sh|' ;;
@@ -797,7 +825,12 @@ nm-dogfood-missing 2 surface missing: scripts/dogfood.sh
 nm-dogfood-unbalanced 2 unbalanced if/fi
 nm-dogfood-no-declared 2 no [package.metadata.dogfood].gates
 malformed-parent-is-row 3 parent FX-D1 of FX-D2 is not a GATE
-malformed-parent-unknown 3 parent FX-T9 of FX-D2 is not a GATE'
+malformed-parent-unknown 3 parent FX-T9 of FX-D2 is not a GATE
+unlisted-sourced-lib 1 UNLISTED tag:autopilot/tag/source scripts/lib/new_lib.sh
+unlisted-tag-push 1 UNLISTED tag:autopilot/tag/git push origin
+orphaned-policy-off-step 1 ORPHANED FX-P1
+orphaned-policy-off-rule 1 ORPHANED FX-P4
+green-policy-guard-runs-a-call 0 unlisted=0 orphaned=0'
 
 selftest() {
     local tmp c want pat out rc pass=0 fail=0 n=0 line mx xl b1 b2 b3 b4
@@ -946,19 +979,26 @@ M54 mechanics counted@@ && $11 != "mechanics" {@@ {
 M55 unknown kind passes@@if (V["kind"] != "" && V["kind"] != "mechanics")@@if (0)
 M56 also ignored@@{ LA[AL[j]] = id; if@@{ if
 M57 also orphan unchecked@@if (!(AL[j] in FW))@@if (0)
-M58 also on a row passes@@if (V["also"] != "" && V["parent"] != "")@@if (0)'
+M58 also on a row passes@@if (V["also"] != "" && V["parent"] != "")@@if (0)
+M59 sourced lib ignored@@out = out "\nsource " w@@out = out
+M60 tag push ignored@@out = out "\ngit push origin"@@out = out
+M61 policy-off step read@@if (i in OFF) continue@@if (0) continue
+M62 policy-off rule read@@if (!(x in OFF)) printf@@if (1) printf
+M63 any body is policy-off@@ok = 0 }@@ok = 1 }'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0
     tmp=$(mktemp -d) || nm "mktemp"
+    # the mutant runs from a copy of the tree's layout: it sources ../lib/release_policy.sh beside it
+    mkdir -p "$tmp/scripts/release" && cp -R -- "${SCRIPT_PATH%/*}/../lib" "$tmp/scripts/lib" || nm "cannot copy scripts/lib for the mutants"
     while IFS= read -r line; do
         [ -n "$line" ] || continue
         id=${line%% *}; line=${line#* }; name=${line%%@@*}; line=${line#*@@}; from=${line%%@@*}; to=${line#*@@}
         total=$((total + 1))
         RR_FROM=$from RR_TO=$to awk '{ i = index($0, ENVIRON["RR_FROM"]); if (i && !done) { $0 = substr($0, 1, i - 1) ENVIRON["RR_TO"] substr($0, i + length(ENVIRON["RR_FROM"])); done = 1 } print }
-            END { if (!done) exit 1 }' "$SCRIPT_PATH" > "$tmp/m.sh" && ! cmp -s "$SCRIPT_PATH" "$tmp/m.sh" && bash -n "$tmp/m.sh" \
+            END { if (!done) exit 1 }' "$SCRIPT_PATH" > "$tmp/scripts/release/m.sh" && ! cmp -s "$SCRIPT_PATH" "$tmp/scripts/release/m.sh" && bash -n "$tmp/scripts/release/m.sh" \
             || { printf 'ERROR    %s %s: the patch did not apply (or broke the syntax)\n' "$id" "$name"; err=$((err + 1)); continue; }
-        if bash "$tmp/m.sh" --selftest > "$tmp/out" 2>&1; then printf 'SURVIVED %s %s\n' "$id" "$name"
+        if bash "$tmp/scripts/release/m.sh" --selftest > "$tmp/out" 2>&1; then printf 'SURVIVED %s %s\n' "$id" "$name"
         elif ! grep -q -e '^FAIL' "$tmp/out"; then printf 'ERROR    %s %s: the case table went red with no FAIL row (a crash is not a kill)\n' "$id" "$name"; err=$((err + 1))
         else killed=$((killed + 1)); printf 'killed   %s %s (%s rows red)\n' "$id" "$name" "$(grep -c -e '^FAIL' "$tmp/out")"; fi
     done <<< "$MUTANTS"

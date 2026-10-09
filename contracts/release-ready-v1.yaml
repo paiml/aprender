@@ -208,29 +208,32 @@ binding_registry:
 # `requirements` below: a GATE that is not on its stage's line is UNLISTED, a listed id that is not a
 # counted GATE of that stage is STALE, and either fails `release_ready.sh --budget`. Caps 10/5/5.
 # The checker stays LAB: a stage calls it as a blocking step only after three green nights on main.
+# Merge 9: the x86-main preflight is listed (RR-M17); RR-M01 is the same gate job as RR-M16 and RR-M14
+# the case table of RR-M13, so each is an `also`. Tag 5: readiness runs nightly (autopilot skips it under
+# the standing release policy), and the pre-push tag guard (RR-T21) takes its place.
 stages:
   release_entries:
-    merge: RR-M01 RR-M02 RR-M05 RR-M09 RR-M10 RR-M11 RR-M13 RR-M14 RR-M15 RR-M16
-    tag: RR-T01 RR-T09 RR-T11 RR-T12 RR-T16
+    merge: RR-M02 RR-M05 RR-M09 RR-M10 RR-M11 RR-M13 RR-M15 RR-M16 RR-M17
+    tag: RR-T01 RR-T09 RR-T11 RR-T16 RR-T21
     publish: RR-T01 RR-P01 RR-P03 RR-P14
 
 # THE LIST. One requirement per line (the checker parses this block; keep one flow map per line).
 requirements:
-  - {id: RR-M01, applies_to: [merge], anchor: "merge:required-context/ci / gate", checker: ".github/workflows/ci.yml#    name: ci / gate", provenance: "CLAUDE.md Git Workflow; classic branch protection on main", producer: "ci-main"}
   - {id: RR-M02, applies_to: [merge], seven: workspace-tests, anchor: "merge:required-context/workspace-test", also: ["merge:ci.yml/gate/needs/workspace-test"], checker: ".github/workflows/ci.yml#  workspace-test:", provenance: "CLAUDE.md Git Workflow; branch protection on main", producer: "ci-main"}
   - {id: RR-M05, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/determinism", also: ["merge:ci.yml/gate/section/determinism-compare"], checker: ".github/workflows/ci.yml#  determinism:", provenance: "#4433 (gate needs)", producer: "ci-main"}
-  - {id: RR-M09, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-tree", also: ["merge:ci.yml/gate/needs/x86-main"], checker: ".github/workflows/ci.yml#guard-tree", provenance: "#4433 (gate section pair; was gate need guard-tree)", producer: "guards"}
+  - {id: RR-M09, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-tree", checker: ".github/workflows/ci.yml#guard-tree", provenance: "#4433 (gate section pair; was gate need guard-tree)", producer: "guards"}
   - {id: RR-M10, applies_to: [merge], anchor: "merge:ci.yml/gate/section/guard-cargo", checker: ".github/workflows/ci.yml#guard-cargo", provenance: "#4433 (gate section pair; was gate need guard-cargo)", producer: "guards"}
   - {id: RR-M11, applies_to: [merge], anchor: "merge:ci.yml/gate/section/sov.gate", checker: ".github/workflows/ci.yml#sov.*", provenance: "#4433 (gate section pair; sovereign-ci gate)", producer: "ci-main"}
-  - {id: RR-M13, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mg-reuse", checker: ".github/workflows/ci.yml#  mg-reuse:", provenance: "#4753 T43 (merge_group reuses the head run on the same tree)", producer: "ci-main"}
-  - {id: RR-M14, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mg-reuse-self-test", checker: ".github/workflows/ci.yml#  mg-reuse-self-test:", provenance: "#4753 T43 (the reuse reader's own case table)", producer: "ci-main"}
+  - {id: RR-M13, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/mg-reuse", also: ["merge:ci.yml/gate/needs/mg-reuse-self-test"], checker: ".github/workflows/ci.yml#  mg-reuse:", provenance: "#4753 T43 (merge_group reuses the head run on the same tree)", producer: "ci-main"}
   - {id: RR-M15, applies_to: [merge], seven: supply-chain, anchor: "merge:ci.yml/gate/needs/x86-main-advisories", checker: ".github/workflows/ci.yml#  x86-main-advisories:", provenance: "#4753 T43 (advisories run whenever mg-reuse skips x86-main)", producer: "ci-main"}
-  - {id: RR-M16, applies_to: [merge], anchor: "merge:required-context/gate", checker: ".github/workflows/ci.yml#  gate:", provenance: "CLAUDE.md Git Workflow; org ruleset on main (ci/sections.yml: rulesets need the exact name gate)", producer: "ci-main"}
+  - {id: RR-M16, applies_to: [merge], anchor: "merge:required-context/gate", also: ["merge:required-context/ci / gate"], checker: ".github/workflows/ci.yml#  gate:", provenance: "CLAUDE.md Git Workflow; org ruleset on main (ci/sections.yml: rulesets need the exact name gate)", producer: "ci-main"}
+  - {id: RR-M17, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main", checker: ".github/workflows/ci.yml#  x86-main:", provenance: "the x86-main preflight: the jq pin, the cheap checks, the fat_driver and secret-plumbing case tables run before its sections", producer: "ci-main"}
   - {id: RR-T01, applies_to: [tag, publish], seven: provenance, anchor: "tag:autopilot/commit/git merge-base --is-ancestor", also: ["tag:autopilot/commit/cargo metadata --no-deps --format-version", "publish:preflight/R1", "publish:preflight/R2", "publish:preflight/R3", "publish:preflight/R4"], checker: "scripts/release/autopilot.sh#git merge-base --is-ancestor", provenance: "APR-RELEASE-001 T-0, #3599 (release commit on origin/main)", producer: "ci-main"}
   - {id: RR-T09, applies_to: [tag], anchor: "tag:autopilot/dogfood/bash scripts/dogfood.sh --phase", also: ["publish:preflight/R5"], checker: "scripts/dogfood.sh", provenance: "APR-RELEASE-001 T-1 dogfood GO (#3957)", producer: "dogfood"}
   - {id: RR-T11, applies_to: [tag], seven: crux-smoke, anchor: "tag:autopilot/models/bash scripts/release/models_t1.sh", also: ["publish:preflight/R7"], checker: "scripts/release/models_t1.sh", provenance: "#3717 #3712 model matrix", producer: "models"}
-  - {id: RR-T12, applies_to: [tag], anchor: "tag:autopilot/readiness/bash scripts/release/release_readiness.sh --root", also: ["tag:autopilot/readiness/cargo metadata --no-deps --format-version", "publish:preflight/R8"], checker: "scripts/release/release_readiness.sh#DEFAULT_MODE=enforce", provenance: "#3715 B1, operator ruling 2026-09-28", producer: "readiness", key: "publish.R8.mode", value: "enforce"}
   - {id: RR-T16, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/rc_publish_gate.sh --verify", also: ["publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check"], checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball), moved ahead of the tag (#4690, was RR-P07)", producer: "publish-dryrun"}
+  - {id: RR-T21, applies_to: [tag], anchor: "tag:autopilot/tag/git push origin", checker: "scripts/hooks/pre-push-tags.sh", provenance: "#4943 #4944 the pre-push tag guard refuses a release tag that is not exactly its release branch head", producer: "tag"}
+  - {id: RR-T22, applies_to: [tag], kind: mechanics, anchor: "tag:autopilot/tag/source scripts/lib/release_policy.sh", checker: "scripts/lib/release_policy.sh#rp_known_failures", provenance: "the release notes list each known failure with its ticket; it lists and never stops a release", producer: "tag"}
   - {id: RR-D01, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_multiplatform_dogfood", checker: "Cargo.toml#scripts/check_multiplatform_dogfood.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
   - {id: RR-D02, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_model_ladder", checker: "Cargo.toml#scripts/check_model_ladder.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
   - {id: RR-D03, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_ladder_provenance", checker: "Cargo.toml#scripts/check_ladder_provenance.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
