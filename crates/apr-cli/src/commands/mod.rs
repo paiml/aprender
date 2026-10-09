@@ -34,6 +34,9 @@ pub(crate) mod check_finite_classifier;
 pub(crate) mod check_finite_lint;
 pub mod compare_hf;
 pub(crate) mod compile;
+/// #3793: `apr run --json-schema` / `--grammar`.
+#[cfg(feature = "inference")]
+pub(crate) mod constrained_run;
 pub(crate) mod convert;
 pub(crate) mod copy_tag;
 pub(crate) mod ddp_metrics_classifier;

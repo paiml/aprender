@@ -177,6 +177,11 @@ pub enum RealizarError {
     /// memory) as a typed budget, so `--json` prints numbers rather than prose.
     #[error("GPU capacity refused: {0}. Pass --no-gpu to run the CPU forward instead")]
     CapacityRefused(Box<crate::capacity::CapacityRefusal>),
+    /// A constrained generation refused (#3793), with the constraint's own error kept TYPED,
+    /// so a caller tells a dead end from a truncation from an unsupported path without
+    /// reading message text.
+    #[error("{0}")]
+    Constraint(crate::constrain::ConstraintError),
 }
 
 #[cfg(test)]
