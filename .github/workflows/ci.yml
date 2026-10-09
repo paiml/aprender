@@ -213,8 +213,8 @@ jobs:
       # a dropped guard-cargo, a dropped pr-review-sign and a narrowed sov.*.
       - name: every section is named by a workflow --sections
         run: |
-          bash scripts/check_sections_claimed.sh --self-test
-          bash scripts/check_sections_claimed.sh
+          setsid --wait bash scripts/check_sections_claimed.sh --self-test
+          setsid --wait bash scripts/check_sections_claimed.sh
       # PMAT-4510: every secrets.<NAME> a section reads must be plumbed above as
       # FAT_SECRET_<NAME> under its full name; #4441 cut one short and the
       # receipt signer ran with an empty key on every PR. Text-only, no build.
