@@ -270,14 +270,24 @@ hasnt "D11 pull_request ignores --mg-*: never reuse" "tier=reuse" "$OUT"
 
 # -- W: the CI wiring ------------------------------------------------------------------------------
 SEC="$ROOT/ci/sections.yml"
-# One tier step per job that decides a tier (the shards, and the QM-09 build job, #4527): each one
-# must carry the push arm, so W1/W2 count one lookup per tier step, never a fixed 1.
-ntier="$(grep -cF 'name: Decide the test tier (BSE-17, PMAT-1077)' "$SEC")"
-want "W0 ci/sections.yml has a tier step" 1 "$([ "$ntier" -ge 1 ] && echo 1 || echo 0)"
-want "W1 every tier step's push arm calls the lookup for GITHUB_SHA" "$ntier" \
-     "$(grep -cF 'bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}"' "$SEC")"
-want "W2 a failed lookup is not fatal to any tier step (it falls to today's tier)" "$ntier" \
-     "$(grep -cF '"${GITHUB_SHA}") || mg=""' "$SEC")"
+# Two jobs decide a tier: the shards, and the QM-09 build job (#4527). W0-W2 hold per job (each has
+# exactly one tier step, one lookup, one fallback); W1/W2 file-wide count one lookup per tier step,
+# so a third tier step without the push arm is RED too.
+TIERSTEP='name: Decide the test tier (BSE-17, PMAT-1077)'
+LOOKUP='bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}"'
+FALLBACK='"${GITHUB_SHA}") || mg=""'
+# the job's block under the top-level jobs: (matrix-pins: names the shard job too)
+job_block() { awk -v j="  $1:" '/^jobs:/ {in_jobs = 1; next} /^[^ #]/ {in_jobs = 0}
+  in_jobs && $0 == j {p = 1; next} p && /^  [^ #]/ {exit} p' "$SEC"; }
+for job in workspace-test-shard workspace-test-build; do
+  blk="$(job_block "$job")"
+  want "W0 $job has one tier step" 1 "$(printf '%s\n' "$blk" | grep -cF "$TIERSTEP")"
+  want "W1 $job: the tier step's push arm calls the lookup for GITHUB_SHA" 1 "$(printf '%s\n' "$blk" | grep -cF "$LOOKUP")"
+  want "W2 $job: a failed lookup is not fatal to the step (it falls to today's tier)" 1 "$(printf '%s\n' "$blk" | grep -cF "$FALLBACK")"
+done
+ntier="$(grep -cF "$TIERSTEP" "$SEC")"
+want "W1 every tier step in the file calls the lookup" "$ntier" "$(grep -cF "$LOOKUP" "$SEC")"
+want "W2 every tier step in the file falls back on a failed lookup" "$ntier" "$(grep -cF "$FALLBACK" "$SEC")"
 W3PAT="push) printf 'cited merge_group run: %s"
 if grep -qF "$W3PAT" "$SEC"; then w3=1; else w3=0; fi
 want "W3 the reuse step labels a push citation as a merge_group run, not a PR head" 1 "$w3"

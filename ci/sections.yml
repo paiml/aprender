@@ -751,8 +751,9 @@ jobs:
           if [ "$TIER" = full ]; then
             cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
             cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
+            # QM-09 (#4527): the lib universe is the build job's (sigma-build).
             if [ "$SHARD" = 1 ]; then
-              cp "$sig/lib.list.json" "$sig/explicit.list.txt" sigma-shard/
+              cp "$sig/explicit.list.txt" sigma-shard/
             fi
           fi
       - uses: actions/upload-artifact@v7
