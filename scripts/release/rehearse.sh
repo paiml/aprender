@@ -36,7 +36,7 @@
 #       milestone above the workspace version. --stages runs a subset (a development aid: the
 #       stages it skips are unreached, so such a night is never green).
 #   rehearse.sh --judge DIR      the verdict of a finished night (the --run prints it too)
-#   rehearse.sh --streak --commit REV --as-of YYYY-MM-DD --cache DIR [--repo DIR] [--history FILE]
+#   rehearse.sh --streak --commit REV --as-of YYYY-MM-DD --cache DIR [--repo DIR] [--history FILE] [--release-path]
 #       the three counting nights a pass on REV needs (C345 #4, Q9). Each night records the tree id of
 #       scripts/release and the blob ids of the stop list and the policy file; a night counts only when
 #       its ids equal REV's (release day's), so any change to them resets the count. The count is
@@ -317,11 +317,14 @@ night_env() {
 # One REST read, sent with the cached ETag (a 304 reuses CACHE/runs.json). rc 2 and the reason on stderr when
 # GitHub cannot be read or the floor is reached: not_measured, never "no nights".
 fetch_runs() {
-    local cache=$1 out=$2 lim rem fl st hdr=()
+    local cache=$1 out=$2 relpath=${3:-0} lim rem fl st hdr=()
     read -r lim rem <<< "$(gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
     case "$lim:$rem" in *[!0-9:]*|:*|*:) echo "rate_limit unreadable" >&2; return 2 ;; esac
-    # a fifth of the token's own hourly limit, capped at RATE_FLOOR, as nightly_train.sh's read keeps
+    # a fifth of the token's own hourly limit, capped at RATE_FLOOR, as nightly_train.sh's read keeps. The pass start
+    # (--release-path) is the release path, which GH-1 lets call below 1000: no floor there (quorum 09:34Z, C345 Q9 Q3 B);
+    # a refused or rate-limited read is still rc 2 for it.
     fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR
+    if [ "$relpath" = 1 ]; then fl=0; fi
     [ "$rem" -ge "$fl" ] || { echo "core remaining $rem under $fl" >&2; return 2; }
     [ -s "$cache/runs.etag" ] && [ -s "$cache/runs.json" ] && hdr=(-H "If-None-Match: $(cat "$cache/runs.etag")")
     gh api -i "${hdr[@]}" "repos/$REPO/actions/workflows/$WORKFLOW/runs?branch=main&event=schedule&per_page=60" > "$cache/runs.http" 2>/dev/null
@@ -344,13 +347,14 @@ fetch_runs() {
 # The history is FILE (seven columns, as fetch_runs writes) or one read of the workflow's runs. Writes only in DIR.
 # rc 0 ready (one RECEIPT line per counting night) · 1 not ready · 2 not_measured · 3 caller error
 streak() {
-    local rev="" repo="" hist="" asof="" cache="" target rc head ids o hdr
+    local rev="" repo="" hist="" asof="" cache="" relpath=0 target rc head ids o hdr
     while [ $# -gt 0 ]; do
         case $1 in
             --commit|--repo|--history|--as-of|--cache)
                 [ $# -ge 2 ] || die3 "$1 needs a value"
                 case $1 in --commit) rev=$2 ;; --repo) repo=$2 ;; --history) hist=$2 ;; --as-of) asof=$2 ;; *) cache=$2 ;; esac
                 shift 2 ;;
+            --release-path) relpath=1; shift ;;
             *) die3 "unknown option $1" ;;
         esac
     done
@@ -364,7 +368,7 @@ streak() {
     printf 'TARGET %s %s\n' "$rev" "$target"
     if [ -z "$hist" ]; then
         hist="$cache/runs.tsv"
-        o=$(fetch_runs "$cache" "$hist" 2>&1) || { echo "not_measured: $o"; return 2; }
+        o=$(fetch_runs "$cache" "$hist" "$relpath" 2>&1) || { echo "not_measured: $o"; return 2; }
     fi
     hdr=$(head -n 1 -- "$hist" 2>/dev/null)
     [ "$hdr" = "$(printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\thead_sha')" ] \
@@ -934,12 +938,13 @@ selftest_streak() {
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GHS/calls"
 case " $* " in *" rate_limit "*) printf '%s\n' "${GHS_RATE:-5000 4000}"; exit 0 ;; esac
+case "${GHS_RATE:-}" in *" 0") printf 'HTTP/2.0 403 Forbidden\r\n\r\n{"message": "API rate limit exceeded"}'; exit 1 ;; esac
 for a in "$@"; do [ "$a" = 'If-None-Match: "e1"' ] && { printf 'HTTP/2.0 304 Not Modified\r\n\r\n'; exit 0; }; done
 printf 'HTTP/2.0 200 OK\r\nEtag: "e1"\r\nContent-Type: application/json\r\n\r\n'; cat "$GHS/body.json"
 GH
     chmod +x "$gs/bin/gh" || return 2
-    rd() { # rd NAME WANT_RC WANT_OUT WANT_RUNS_CALLS WANT_ETAG_CALLS [RATE]
-        rc=0; o=$(PATH="$gs/bin:$PATH" GHS="$gs" GHS_RATE="${6:-5000 4000}" streak --commit "$c2" --repo "$g" --as-of 2026-10-08 --cache "$gs/cache" 2>&1) || rc=$?
+    rd() { # rd NAME WANT_RC WANT_OUT WANT_RUNS_CALLS WANT_ETAG_CALLS [RATE [FLAG]]
+        rc=0; o=$(PATH="$gs/bin:$PATH" GHS="$gs" GHS_RATE="${6:-5000 4000}" streak --commit "$c2" --repo "$g" --as-of 2026-10-08 --cache "$gs/cache" ${7:+"$7"} 2>&1) || rc=$?
         local runs etag
         runs=$(grep -c 'actions/workflows/release-rehearsal-nightly.yml/runs?branch=main&event=schedule' "$gs/calls" 2>/dev/null)
         etag=$(grep -c 'If-None-Match: "e1"' "$gs/calls" 2>/dev/null)
@@ -949,6 +954,8 @@ GH
     rd the_first_read_is_one_call 0 "RECEIPT run 3 night 2026-10-08 head $c2" 1 0
     rd the_second_read_sends_the_etag_and_reuses_a_304 0 "RECEIPT run 2 night 2026-10-07 head $c2" 2 1
     rd a_read_under_the_floor_is_not_measured 2 "not_measured: core remaining 999 under 1000" 2 1 "5000 999"
+    rd the_pass_start_reads_under_the_floor 0 "RECEIPT run 3 night 2026-10-08 head $c2" 3 2 "5000 999" --release-path
+    rd a_refused_read_at_the_pass_start_is_still_not_measured 2 "not_measured: workflow runs read: HTTP 403" 4 3 "5000 0" --release-path
     printf '  %s streak rows\n' "$((pass + fail - p0))"
 }
 
@@ -1046,6 +1053,8 @@ etag_not_sent                rehearse.sh         s/\[ -s "\$cache\/runs.etag" \]
 rate_floor_ignored           rehearse.sh         s/\[ "\$rem" -ge "\$fl" \] || { echo "core remaining/true || { echo "core remaining/
 night_ids_dropped            rehearse.sh         s/then printf 'IDS=%s\\n' "\$ids"/then :/
 judge_ids_unchecked          rehearse.sh         s/if \[\[ \$ids =~ \^tree=/if true || [[ $ids =~ ^tree=/
+release_path_keeps_floor     rehearse.sh         s/if \[ "\$relpath" = 1 \]; then fl=0; fi/:/
+nights_lose_the_floor        rehearse.sh         s/relpath=\${3:-0}/relpath=1/
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
