@@ -416,23 +416,31 @@ use crate::LlmSubcommand;
 /// Propagates whichever mode ran.
 #[cfg(feature = "inference")]
 pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
+    if let LlmSubcommand::TtftVerdict { runs } = command {
+        return super::test_llm_ttft::run(runs);
+    }
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
     match command {
         LlmSubcommand::Bench { band, .. } if *band => rt.block_on(dispatch_band(command)),
-        LlmSubcommand::Bench { .. } => rt.block_on(dispatch_legacy(command)),
+        _ => rt.block_on(dispatch_legacy(command)),
     }
 }
 
 /// #4041: the benchmark drives its server through tokio, which only the `inference` feature brings. A minimal
 /// build (`--no-default-features`) names the missing feature instead of failing to compile.
+/// `ttft-verdict` reads files only, so it runs in every build (#4954).
 ///
 /// # Errors
-/// Always: this build cannot run the benchmark.
+/// `bench`, always: this build cannot run the benchmark.
 #[cfg(not(feature = "inference"))]
-pub fn dispatch(_command: &LlmSubcommand) -> Result<()> {
+pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
+    if let LlmSubcommand::TtftVerdict { runs } = command {
+        return super::test_llm_ttft::run(runs);
+    }
     Err(CliError::InferenceFailed(
-        "`apr test llm` needs the `inference` feature (this apr was built without it)".to_string(),
+        "`apr test llm bench` needs the `inference` feature (this apr was built without it)"
+            .to_string(),
     ))
 }
 
@@ -477,7 +485,12 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         key_id,
         keyring,
         ..
-    } = command;
+    } = command
+    else {
+        return Err(CliError::InvalidInput(
+            "the band mode runs `bench` only".to_string(),
+        ));
+    };
     // Unreachable: clap's `requires = "receipt"` enforces it. Stated rather
     // than unwrapped, because a receipt-less band run would measure for
     // minutes and then discard the measurement.
@@ -547,7 +560,12 @@ async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
         profile,
         prompts,
         ..
-    } = command;
+    } = command
+    else {
+        return Err(CliError::InvalidInput(
+            "the legacy mode runs `bench` only".to_string(),
+        ));
+    };
     run_bench(BenchArgs {
         url,
         model,

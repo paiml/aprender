@@ -171,6 +171,7 @@ pub mod protocol;
 pub mod receipt;
 pub mod replicate;
 pub mod samples;
+pub mod ttft_verdict;
 pub mod window;
 pub mod witness;
 

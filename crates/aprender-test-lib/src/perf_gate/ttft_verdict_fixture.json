@@ -1,0 +1,237 @@
+{
+  "spec": "PP-LLAMA-001 v3.0",
+  "schema_version": 3,
+  "run_id": "e61c37bf990d72f64b1c541275f27465",
+  "commit": "95f64ba1441233ef201e0c4ea7b9fc20aad83bf0",
+  "workload": "W1",
+  "protocol": {
+    "window_ms": 60000,
+    "warmup_requests_per_worker": 2,
+    "quiesce_ms": 5000,
+    "cooldown_ms": 10000,
+    "n_predict": 128,
+    "replicates": 5,
+    "interleaved": true,
+    "sampler": {
+      "temperature": 0.0,
+      "seed": 0,
+      "ignore_eos": true
+    }
+  },
+  "client_model": "closed_loop",
+  "provenance": {
+    "binary_path": "/mnt/nvme-raid0/tmp/w4664-v1-bin/apr",
+    "binary_sha256": "45fbc73f89efa66fb9daa94ef4f99622900ef8695d23e1507004db76fc3d8ac7",
+    "resolution": "current_exe",
+    "compute_class": "cuda",
+    "host": "lambda",
+    "accelerator": "cuda",
+    "model": "default",
+    "quantization": "Q4_K_M",
+    "feature_set": [
+      "server",
+      "cli",
+      "cuda"
+    ],
+    "started_utc": "2026-10-09T10:21:55.247Z",
+    "clock_source": "std::time::SystemTime (CLOCK_REALTIME)",
+    "subject": {
+      "path": "/home/noah/.cargo/bin/apr",
+      "sha256": "0bf3c6db44bfcb464d683e9dc2204cfc2c6a3a82d3b8db32f2e04b70a7e47f31",
+      "commit": "95f64ba14",
+      "feature_set": [
+        "server",
+        "cli",
+        "cuda"
+      ]
+    },
+    "client": {
+      "path": "/mnt/nvme-raid0/tmp/w4664-v1-bin/apr",
+      "sha256": "45fbc73f89efa66fb9daa94ef4f99622900ef8695d23e1507004db76fc3d8ac7",
+      "commit": "95f64ba1441233ef201e0c4ea7b9fc20aad83bf0",
+      "pid": 614283
+    },
+    "comparator": {
+      "commit": "d1d3c3396",
+      "cmake": "cmake -B build -DGGML_CUDA=ON",
+      "sha256": "9aabba99701a9733af68d95db5f0452324a9c84daf49c55afb306d29eb30aa5c",
+      "pin_expiry": "2026-12-01T00:00:00.000Z",
+      "props": {}
+    },
+    "server_config": null,
+    "model_file": null
+  },
+  "tokenization": {
+    "method": "server_usage",
+    "counts_special_tokens": false,
+    "counts_prompt_echo": false
+  },
+  "requested": 41,
+  "completed": 41,
+  "timeouts": 0,
+  "truncated": 0,
+  "errors": 0,
+  "short_of_n_predict": 0,
+  "drain_ms": 0.0,
+  "n": 41,
+  "samples_ms": [],
+  "ladder": {
+    "declared": [
+      1
+    ],
+    "derived": [
+      1
+    ],
+    "slots_admitted": {
+      "apr": null,
+      "llama": 1
+    }
+  },
+  "bands": [
+    {
+      "concurrency": 1,
+      "replicate": 1,
+      "status": "NONCONFORMANT-VALID",
+      "aggregate_tok_per_sec": 86.54183876636228,
+      "tokens_total": 5248,
+      "span_ms": 60641.188988,
+      "window_ms": 60641.338283000005,
+      "drain_ms": 0.0,
+      "requested": 41,
+      "completed": 41,
+      "timeouts": 0,
+      "truncated": 0,
+      "errors": 0,
+      "short_of_n_predict": 0,
+      "suspect": [],
+      "stream_mode": "live",
+      "stream_witness": {
+        "client_ttft_over_e2e_median": 0.06688098975969592,
+        "verdict": "live",
+        "source": "server"
+      },
+      "witness": null,
+      "scaling_efficiency": null,
+      "overhead_share": 0.9650764372868409,
+      "roofline_tok_per_sec": null,
+      "samples_file": {
+        "path": "samples.c1.r1.jsonl.gz",
+        "sha256": "1dd532b37ab796fbf5b80d29845c2ab3537172c245464bc0cd4a59e7a7c66789",
+        "bytes": 32353,
+        "rows": 41
+      },
+      "samples": [],
+      "join_key": {
+        "host": "lambda",
+        "workload": "W1",
+        "band": 1,
+        "model": "default",
+        "quant": "Q4_K_M",
+        "tokenization": "server_usage",
+        "window_ms": 60000,
+        "replicates": 5,
+        "interleaved": true,
+        "n_ctx_slot": 1024,
+        "kv_type": "f16",
+        "fa": null,
+        "n_batch": 2048,
+        "n_predict": 128
+      },
+      "decode_tok_per_sec": 89.67355892519862,
+      "ttft_p50_ms": 98.82544399999915,
+      "ttft_p95_ms": 103.65614999999906,
+      "itl_p50_ms": 10.819646500001909,
+      "itl_p95_ms": 11.567947499999716,
+      "comparator_status": "MEASURED",
+      "baseline": {
+        "concurrency": 1,
+        "replicate": 1,
+        "status": "UNMEASURED",
+        "aggregate_tok_per_sec": 162.51117177534948,
+        "tokens_total": 9856,
+        "span_ms": 60648.138170000006,
+        "window_ms": 60648.252312,
+        "drain_ms": 0.0,
+        "requested": 79,
+        "completed": 77,
+        "timeouts": 0,
+        "truncated": 0,
+        "errors": 2,
+        "short_of_n_predict": 0,
+        "suspect": [],
+        "stream_mode": null,
+        "stream_witness": {
+          "client_ttft_over_e2e_median": 0.1369590003507227,
+          "verdict": "live",
+          "source": "client"
+        },
+        "witness": null,
+        "scaling_efficiency": null,
+        "overhead_share": 0.8692568896438799,
+        "roofline_tok_per_sec": null,
+        "samples_file": {
+          "path": "comparator.samples.c1.r1.jsonl.gz",
+          "sha256": "711325f64d56ee4afbe8d1d069c8753d6727ce193ec610eb6f1340c0205d288c",
+          "bytes": 60638,
+          "rows": 79
+        },
+        "samples": [],
+        "join_key": {
+          "host": "lambda",
+          "workload": "W1",
+          "band": 1,
+          "model": "default",
+          "quant": "Q4_K_M",
+          "tokenization": "server_usage",
+          "window_ms": 60000,
+          "replicates": 5,
+          "interleaved": true,
+          "n_ctx_slot": 1024,
+          "kv_type": "f16",
+          "fa": null,
+          "n_batch": 2048,
+          "n_predict": 128
+        },
+        "run_id": "e61c37bf990d72f64b1c541275f27465",
+        "decode_tok_per_sec": 186.9541371618321,
+        "ttft_p50_ms": 106.81913999999892,
+        "ttft_p95_ms": 112.39461899999945,
+        "itl_p50_ms": 5.3325989999998455,
+        "itl_p95_ms": 5.9257269999947315,
+        "prefill_tok_per_sec": 9510.01423324536,
+        "prefill_source": "server"
+      },
+      "ratios": {
+        "agg": {
+          "point": 0.5325285506278614,
+          "lcb95": null,
+          "method": "replicate_t_lower",
+          "n": 1
+        },
+        "dec": {
+          "point": 0.49325597654739534,
+          "lcb95": 0.488767486705376,
+          "method": "paired_percentile_bootstrap",
+          "n": 120
+        },
+        "prefill": null,
+        "ttft": {
+          "point": 1.0808870233864047,
+          "lcb95": 1.0764730794110906,
+          "method": "paired_percentile_bootstrap",
+          "n": 120
+        }
+      }
+    }
+  ],
+  "unproduced_fields": [
+    "§4.4.9 scheduler block (max_in_flight, admission_rejected, preempted_recompute, preempted_swap, kv_blocks_total, kv_blocks_peak_used, kv_bytes_reserved, kv_bytes_used, gpu_layers_requested, gpu_layers_resolved, gpu_layers_total, backend_loa",
+    "Arm D `kv` block (bytes_used, bytes_reserved, admission_rejected, preempted_swap) — server-reported. Absent here, so this receipt is legal at merge phase and correctly FAILS at release phase rather than carrying invented memory figures.",
+    "PP-23 roofline_tok_per_sec — no `[V]` memory bandwidth is committed for this host, so the ceiling is null on every band. A vendor GB/s figure is not a measurement (PP-12).",
+    "PP-4 c=1: prefill_tok_per_sec — no request carried a server-reported `timings.prompt_ms`, and a client-side prefill estimate is exactly the harness-inferred field PP-13 refuses",
+    "§7.4 c=1: this band is NONCONFORMANT-VALID — a historical record, cited, never a baseline",
+    "§5.1 server start — the subject server reports started_utc 2026-10-09T10:21:54.348Z; this run read its own clock at 2026-10-09T10:21:55.247Z. A server start LATER than the run start means the server restarted mid-preparation and the warmup'",
+    "PP-26 witness — no --witness-json was given, so no band carries a batch-invariance witness. Every band at c>1 is INVALID-CORRECTNESS and reports no throughput at all: §7.0 asks \"were the tokens right?\" before \"how fast?\", and an unwitnessed"
+  ],
+  "corpus_sha256": "f99c0417aeda6c9efd92fddf2e5b531d14bae37ed9642942f654bbab052d52e6"
+}
