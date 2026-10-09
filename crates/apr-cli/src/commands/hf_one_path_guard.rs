@@ -7,8 +7,10 @@
 //! - an upload-only endpoint (`info/lfs/objects/batch`, `preupload/`,
 //!   `xet-write-token`, `api/repos/create`) is a hit by itself;
 //! - a commit, branch, tag or upload endpoint (`commit/`, `branch/`, `tag/`,
-//!   `/upload/`) is a hit in a file that also names the Hub (`api/models`,
-//!   `api/datasets`, `api/spaces`, `huggingface.co`, `hf.co/`).
+//!   `/upload/`) is a hit unless the same literal names another service's host
+//!   (`https://api.github.com/…`) and no Hub API path (`api/models`,
+//!   `api/datasets`, `api/spaces`). The Hub base usually comes from a constant
+//!   or another module, so a write endpoint with no host in sight is the Hub's.
 //!
 //! The one file it skips is this one: it names every endpoint as data, and the
 //! last test checks that it holds no HTTP client.
@@ -22,41 +24,57 @@ const UPLOAD_ONLY: [&str; 4] = [
     "xet-write-token",
     "api/repos/create",
 ];
-const HUB: [&str; 5] = [
-    "api/models",
-    "api/datasets",
-    "api/spaces",
-    "huggingface.co",
-    "hf.co/",
-];
+const HUB_HOSTS: [&str; 2] = ["huggingface.co", "hf.co"];
+const HUB_PATHS: [&str; 3] = ["api/models", "api/datasets", "api/spaces"];
 const WRITE: [&str; 4] = ["commit/", "branch/", "tag/", "/upload/"];
 const SCOPES: [&str; 2] = ["crates/apr-cli", "src"];
 const SELF: &str = "crates/apr-cli/src/commands/hf_one_path_guard.rs";
+
+/// The text between unescaped quotes on one line; an unclosed quote is dropped.
+fn line_literals(l: &str) -> Vec<&str> {
+    let (mut out, mut open, mut esc) = (Vec::new(), None, false);
+    for (i, c) in l.char_indices() {
+        match (open, c) {
+            (Some(_), _) if esc => esc = false,
+            (Some(_), '\\') => esc = true,
+            (Some(s), '"') => {
+                out.push(&l[s..i]);
+                open = None;
+            }
+            (None, '"') => open = Some(i + 1),
+            _ => {}
+        }
+    }
+    out
+}
 
 /// The string literals on the non-comment lines of `src`, with line numbers.
 fn literals(src: &str) -> impl Iterator<Item = (usize, &str)> {
     src.lines()
         .enumerate()
         .filter(|(_, l)| !l.trim_start().starts_with("//"))
-        .flat_map(|(i, l)| l.split('"').skip(1).step_by(2).map(move |s| (i + 1, s)))
+        .flat_map(|(i, l)| line_literals(l).into_iter().map(move |s| (i + 1, s)))
 }
 
 fn names_any(s: &str, set: &[&str]) -> bool {
     set.iter().any(|n| s.contains(n))
 }
 
+/// A literal that names some other service's host and no Hub API path.
+fn other_host(s: &str) -> bool {
+    let host = s
+        .split("://")
+        .nth(1)
+        .and_then(|r| r.split(['/', '{', ':']).next());
+    host.is_some_and(|h| !h.is_empty() && !names_any(h, &HUB_HOSTS)) && !names_any(s, &HUB_PATHS)
+}
+
 /// The hits in one file's text, as `line:literal`.
 fn hits(src: &str) -> Vec<String> {
-    let at = |set: &'static [&'static str]| {
-        literals(src)
-            .filter(move |(_, s)| names_any(s, set))
-            .map(|(n, s)| format!("{n}:{s}"))
-    };
-    let upload: Vec<String> = at(&UPLOAD_ONLY).collect();
-    if !upload.is_empty() || at(&HUB).next().is_none() {
-        return upload;
-    }
-    at(&WRITE).collect()
+    literals(src)
+        .filter(|(_, s)| names_any(s, &UPLOAD_ONLY) || (names_any(s, &WRITE) && !other_host(s)))
+        .map(|(n, s)| format!("{n}:{s}"))
+        .collect()
 }
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -110,15 +128,21 @@ fn the_case_table() {
         "const API: &str = \"/api/spaces/\";\nfn t(r: &str) -> String { format!(\"{r}/tag/v1\") }",
         r#"agent.post(&format!("{}/api/datasets/{}/upload/main", b, r))"#,
         r#"let u = "https://hf.co/x/commit/main";"#,
+        r#"let u = format!("{b}/x/commit/{rev}");"#,
+        r#"let u = format!("{}/{}/commit/{}", DEFAULT_HF_ENDPOINT, repo, rev);"#,
+        r#"let u = format!("https://hub.example.org/api/models/{r}/commit/main");"#,
+        r#"let b = "say \"hi"; let u = format!("{b}/x/preupload/{r}");"#,
+        "let c = \"commit/\"; // a Hub name in a comment does not matter",
     ];
     let must_not_hit = [
         r#"// let u = format!("{b}/info/lfs/objects/batch");"#,
         r#"    /// POSTs "{base}/api/models/{repo}/commit/{rev}""#,
         r#".map_err(|e| hub_err("preupload", e))"#,
         r#"let u = format!("https://api.github.com/repos/{o}/{r}/git/commit/{sha}");"#,
+        r#"let u = format!("https://uploads.github.com/repos/{o}/{r}/releases/{id}/upload/");"#,
         r#"let u = format!("https://huggingface.co/{repo}/resolve/main/{file}");"#,
         "let h = \"https://huggingface.co\";\nlet t = format!(\"refs/tags/{t}\");",
-        "let c = \"commit/\"; // an anchor in a comment: huggingface.co",
+        r#"let s = "a \" b"; // commit/ is not in a literal"#,
         "",
     ];
     for src in must_hit {
