@@ -561,8 +561,9 @@ fn number_end(b: &[u8], start: usize) -> usize {
     i
 }
 
-/// M6 card truth (I-10): every card line that states a figure cites a known receipt id.
-/// The comparator-block and `[X]` label checks belong to EXT-16's card lint.
+/// M6 card truth (I-10): the EXT-16 card lint on the release's `README.md` — every
+/// figure cites a known receipt id, no ratio or comparative token next to a competitor,
+/// and every `[X]` figure is labelled third-party and names no competitor.
 fn m6(m: &ReleaseManifest, inp: &GateInputs<'_>) -> GateRow {
     let Some(card) = m.files.iter().find(|f| f.name == "README.md") else {
         return row(
@@ -581,33 +582,18 @@ fn m6(m: &ReleaseManifest, inp: &GateInputs<'_>) -> GateRow {
         .iter()
         .map(String::as_str)
         .collect();
-    let mut red = Vec::new();
-    let mut cited = 0usize;
-    for (n, line) in text.lines().enumerate() {
-        let (rest, ids) = receipt_markers(line);
-        for id in &ids {
-            if !known.contains(id) {
-                red.push(format!(
-                    "README.md:{}: receipt {id:?} is not a known receipt",
-                    n + 1
-                ));
-            }
-        }
-        if states_a_figure(&rest) {
-            if ids.is_empty() {
-                red.push(format!(
-                    "README.md:{}: a figure with no receipt id (I-10)",
-                    n + 1
-                ));
-            } else {
-                cited += 1;
-            }
-        }
+    let lint = super::model_card::lint_card("README.md", &text, &known);
+    let mut red = lint.findings;
+    if !red.is_empty() {
+        red.push(format!("card_unmapped_numbers={}", lint.unmapped));
     }
     row(
         "M6",
         red,
-        format!("{cited} card lines with figures, each citing a known receipt"),
+        format!(
+            "{} card lines with figures, each citing a known receipt; card_unmapped_numbers=0",
+            lint.cited
+        ),
     )
 }
 

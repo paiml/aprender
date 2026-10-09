@@ -252,7 +252,8 @@ falsification_tests:
   obligation: EXT-INV-010
   rule: Card numbers are receipted
   prediction: a hand-typed number on a model card fails the card lint
-  if_fails: 'the card can claim a number no receipt backs (owed EXT-16 #4398; planned: cargo test -p apr-cli --test ext_card_lint falsify_ext_018_hand_typed_number_fails)'
+  test: cargo test -p apr-cli --lib falsify_ext_018_hand_typed_number_fails
+  if_fails: 'the card can claim a number no receipt backs: a figure with no [receipt:<id>], or citing an id the release does not carry, passes the card lint (apr model gate M6, EXT-16 #4398; the control renders a card from receipts and it lints clean)'
 - id: FALSIFY-EXT-019
   obligation: EXT-INV-012
   rule: Every EXT surface has a CRUX contract
@@ -286,7 +287,8 @@ falsification_tests:
   obligation: EXT-INV-010
   rule: No competitor ratio on a card
   prediction: the card lint rejects a ratio token adjacent to a competitor name
-  if_fails: 'the card makes an unreceipted comparative claim (owed EXT-16 #4398; planned: cargo test -p apr-cli --test ext_card_lint falsify_ext_024_ratio_next_to_competitor_rejected)'
+  test: cargo test -p apr-cli --lib falsify_ext_024_ratio_next_to_competitor_rejected
+  if_fails: 'the card makes a comparative claim against a competitor: an N×, Nx, "% faster", "faster than", "speedup" or "beats" on a line naming llama.cpp, Ollama, vLLM, mistral.rs or another listed engine passes the lint even with a receipt (EXT-16 #4398, T28: absolute values only)'
 
 # EXT-001 §10: every surface this spec creates or depends on, and the CRUX
 # contract that covers it (R-14). FALSIFY-EXT-019 reads this list: a surface

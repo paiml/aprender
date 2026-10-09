@@ -97,6 +97,7 @@ pub(crate) mod kv_timeline_classifier;
 pub(crate) mod kv_timeline_lint;
 pub(crate) mod lint;
 pub(crate) mod lint_error;
+pub(crate) mod model_card;
 #[cfg(feature = "training")]
 pub(crate) mod model_confirm;
 // EXT-26 comparator harness; its consumers are the EXT-27/28 competitor arms.
