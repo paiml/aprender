@@ -247,7 +247,8 @@ door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
     END { if (buf != "") emit(pf, start, buf) }
   ' "$@"
 }
-door_lines() { door_cmds "$@" | grep -E "$DOOR_RE" | grep -vE "$DOOR_DRY" | grep -vE "$DOOR_APR"; }
+door_keep() { grep -E "$DOOR_RE" | grep -vE "$DOOR_DRY" | grep -vE "$DOOR_APR"; }
+door_lines() { door_cmds "$@" | door_keep; }
 cases_n=0 cases_ok=0
 door_case() { # door_case door|none TEXT (TEXT may span lines)
   local got=none
@@ -481,7 +482,14 @@ fi
 while IFS= read -r f; do
   is_shell_script "$DOORS_ROOT/$f" && scope+=("$f")
 done < "$WORK/sb-files"
-raw=$( (cd "$DOORS_ROOT" && door_lines "${scope[@]}") || true)
+# Every file in scope must be read. awk skips a file it cannot open with a warning (gawk) or
+# stops there (mawk), and either would read as files with no door.
+read_err="" dc_rc=0
+(cd "$DOORS_ROOT" && door_cmds "${scope[@]}") > "$WORK/scope-cmds" 2> "$WORK/scope-err" || dc_rc=$?
+if [ "$dc_rc" -ne 0 ] || [ -s "$WORK/scope-err" ]; then
+  read_err="rc $dc_rc: $(head -n 1 "$WORK/scope-err")"
+fi
+raw=$(door_keep < "$WORK/scope-cmds" || true)
 if [ -f "$DOORS_ROOT/$SELF" ]; then
   # Without its case rows, and without the GATED_CMD line, whose value is the upload text.
   awk -v g="GATED_CMD='$GATED_CMD'" '/^(door|shebang)_case / || $0 == g { $0 = "" } { print }' \
@@ -512,10 +520,13 @@ doors=$(printf '%s\n' "$raw" | awk -v gated=" $GATED " '
   { f = $0; sub(/:.*/, "", f); t = $0; sub(/^[^:]*:[0-9]+:/, "", t) }
   f == "" || index(gated, " " f " ") || ((f ":" t) in ok) { next }
   { print }')
-if [ -z "$doors" ]; then
-  pass "no_other_door (${#scope[@]} files scanned: $named tracked shell scripts, make files, justfiles, git hooks and root workflows, $((${#scope[@]} - named)) more by shebang, and this file)"
-else
+if [ -n "$read_err" ]; then
+  fail "no_other_door: reading the ${#scope[@]} files in scope failed ($read_err), so a file went unscanned"
+fi
+if [ -n "$doors" ]; then
   while IFS= read -r d; do fail "no_other_door: a real cargo publish outside the gated doors: $d"; done <<< "$doors"
+elif [ -z "$read_err" ]; then
+  pass "no_other_door (${#scope[@]} files scanned: $named tracked shell scripts, make files, justfiles, git hooks and root workflows, $((${#scope[@]} - named)) more by shebang, and this file)"
 fi
 
 # A cargo alias makes `cargo <name>` an upload the door scan cannot see, so no tracked cargo

@@ -247,9 +247,9 @@ falsification_tests:
       continuation lines joined, each command of a line on its own (split at
       ; && || | and a lone &, not the & of a redirect), case arms, wrappers,
       VAR=val, eval, sh -c, $( <( >(, make's $(shell), find -exec and cargo's
-      global flags included. A failed search for the shebang files fails the
-      check; it never reads as no file. cascade-publish.sh is
-      the one other upload, behind its own clean_room_gate, and each of the two
+      global flags included. A failed search for the shebang files, or a file
+      in scope that cannot be read, fails the check; it never reads as no
+      door. cascade-publish.sh is the one other upload, behind its own clean_room_gate, and each of the two
       gated files holds exactly one upload command. Not scanned: Rust, where the
       aprender-orchestrate stack releaser and the dev-only `apr mono publish`
       build the call as an argv; Python, where no tracked file calls it; workflow
@@ -272,8 +272,8 @@ falsification_tests:
       lost its pinned mode and judges a run other than the one recorded, or a
       second way to upload to crates.io came back, or the scan went blind to a
       gated file's one upload command, an allowed entry, a kind of file it must
-      read, or the tracked cargo aliases, or it read a failed file search as an
-      empty one.
+      read, or the tracked cargo aliases, or it read a failed file search or an
+      unreadable file as no door.
 
 kani_harnesses:
   - id: KANI-PUB-001
