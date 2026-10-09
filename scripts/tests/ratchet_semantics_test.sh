@@ -506,6 +506,107 @@ run_complexity() {
   else
     bad "C12 mutation NOT demonstrated: the mutant exits $rc on the re-run fixture, so C10 does not discriminate first parent from tip"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
   fi
+
+  # --- C13-C16: A REAL RISE STAYS RED ON THE SAME RE-RUN (#4983, #4861) ----
+  # C10's GREEN must not be bought by going blind. A second PR, merged onto
+  # the same B1 and re-run after main moved to B2, lands a function over both
+  # thresholds: it is RED on the first-parent path (C13) and on the pinned
+  # origin/main a non-library reader sees (C15), and main's own fix to
+  # cognitive_only is blamed on neither PR. C14 is the stale re-run on the
+  # pinned path, and C16 is the pin's registered mutation. The pin needs an
+  # `origin` remote, so these clones carry one; CC above does not.
+  cx_rerun_clone() { # cx_rerun_clone <dir> <pull number> <merge sha>: HEAD = merge, origin/main = B2, depth 1
+    GIT_TERMINAL_PROMPT=0 git init -q --template="$WORK/empty-template" "$1" >/dev/null 2>&1 || return 1
+    [ "$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" = "$1/.git" ] || return 1
+    git_fx "$1" remote add origin "file://$CO" || return 1
+    git_fx "$1" fetch -q --no-tags --depth=1 origin "+refs/pull/$2/merge:refs/remotes/pull/$2/merge" >/dev/null 2>&1 || return 1
+    git_fx "$1" checkout -q --detach "refs/remotes/pull/$2/merge" >/dev/null 2>&1 || return 1
+    git_fx "$1" fetch -q --no-tags --depth=1 origin '+refs/heads/main:refs/remotes/origin/main' >/dev/null 2>&1 || return 1
+    [ "$(git_fx "$1" rev-parse HEAD)" = "$3" ] && [ "$(git_fx "$1" rev-parse origin/main)" = "$B2" ] \
+      && [ -z "$(git_fx "$1" merge-base HEAD origin/main 2>/dev/null)" ]
+  }
+  cx_pin() { # cx_pin <dir> <pr head> [pin script]: scripts/ci/pin_build_base.sh as CI runs it on a pull_request
+    ( cd "$1" && env GITHUB_EVENT_NAME=pull_request PR_HEAD_SHA="$2" MG_BASE_SHA= \
+        bash "${3:-$ROOT/scripts/ci/pin_build_base.sh}" ) 2>&1
+  }
+  local X3 M3 CC3="$WORK/cx13-clone" CC4="$WORK/cx14-clone" CC5="$WORK/cx16-clone" TIP_ENV=(GITHUB_EVENT_NAME= GITHUB_SHA=)
+  git_fx "$CO" checkout -q -b pr3 "$B1" >/dev/null 2>&1 || die "C13: cannot branch the second PR off B1"
+  cx_lib '0.0.0-shim' 'branchy 35 34' 'cognitive_only 8 28' 'tidy 1 0' 'newbie 40 40' > "$CO/src/lib.rs" || die "C13: cannot write the PR edit"
+  cx_commit "$CO" 'pr3: land a function over both thresholds' || die "C13: PR commit failed"
+  X3=$(git_fx "$CO" rev-parse HEAD) || die "C13: no X3"
+  git_fx "$CO" checkout -q --detach "$B1" >/dev/null 2>&1 || die "C13: cannot return to B1"
+  git_fx "$CO" merge -q --no-ff --no-edit "$X3" >/dev/null 2>&1 || die "C13: cannot build the merge commit"
+  M3=$(git_fx "$CO" rev-parse HEAD) || die "C13: no M3"
+  [ "$(git_fx "$CO" rev-parse "$M3^1")" = "$B1" ] || die "C13: M3's first parent is not B1"
+  git_fx "$CO" update-ref refs/pull/3/merge "$M3" || die "C13: cannot publish refs/pull/3/merge"
+  [ "$(git_fx "$CO" rev-parse refs/heads/main)" = "$B2" ] || die "C13: main is not B2"
+
+  # C13: the first-parent path, B1 fetched as CI's setup step does.
+  cx_rerun_clone "$CC3" 3 "$M3" || die "C13: the clone is not the re-run shape (HEAD=M3, origin/main=B2, no merge-base)"
+  git_fx "$CC3" fetch -q --no-tags --depth=1 origin "$B1" >/dev/null 2>&1 || die "C13: depth-1 fetch of B1 failed"
+  out=$(cx_run "$CC3" check_complexity_ratchet.sh GITHUB_EVENT_NAME=pull_request "GITHUB_SHA=$M3"); rc=$?
+  if [ "$rc" -eq 1 ] && grep -qE "^  comparand   FIRSTPARENT +${B1:0:7}" <<<"$out" \
+     && grep -q 'RED    NEW      src/lib.rs::newbie' <<<"$out" \
+     && ! grep -qE 'RED +[A-Z]+ +src/lib.rs::cognitive_only' <<<"$out"; then
+    ok "C13 re-run of a PR that lands an offender: comparand FIRSTPARENT = B1, RED on that function and on nothing of main's"
+  else
+    bad "C13 real rise on the re-run: rc=$rc, wanted 1, 'comparand   FIRSTPARENT ${B1:0:7}', 'RED    NEW      src/lib.rs::newbie' and no cognitive_only row"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+
+  # C14: the stale re-run (the C8 PR) on the PINNED path: origin/main = B1, so a
+  # reader of origin/main that never asks the library for a first parent gets
+  # C10's verdict too. The check runs with no event, i.e. on the tip path.
+  cx_rerun_clone "$CC4" 1 "$M" || die "C14: the clone is not the re-run shape (HEAD=M, origin/main=B2, no merge-base)"
+  out=$(cx_pin "$CC4" "$X"); rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(git_fx "$CC4" rev-parse origin/main)" = "$B1" ]; then
+    ok "C14 the pin on the stale re-run: origin/main = B1, the merge commit's first parent"
+  else
+    bad "C14 the pin on the stale re-run: rc=$rc, origin/main=$(git_fx "$CC4" rev-parse origin/main 2>&1), wanted 0 and B1 (${B1:0:7})"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+  out=$(cx_run "$CC4" check_complexity_ratchet.sh "${TIP_ENV[@]}"); rc=$?
+  if [ "$rc" -eq 0 ] && grep -qE "^  comparand   TIP +${B1:0:7}" <<<"$out" && grep -q '^PASS (D2)' <<<"$out"; then
+    ok "C14 stale re-run, origin/main pinned to the build base: tip path reads B1, GREEN"
+  else
+    bad "C14 pinned re-run: rc=$rc, wanted 0, 'comparand   TIP ${B1:0:7}' and 'PASS (D2)'"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+
+  # C15: the real rise on the pinned path. A fresh pin on CC3 (B1 is fetched
+  # there already; the pin fetches it again and moves origin/main to it).
+  out=$(cx_pin "$CC3" "$X3"); rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(git_fx "$CC3" rev-parse origin/main)" = "$B1" ]; then
+    ok "C15 the pin on the real rise: origin/main = B1, the merge commit's first parent"
+  else
+    bad "C15 the pin on the real rise: rc=$rc, origin/main=$(git_fx "$CC3" rev-parse origin/main 2>&1), wanted 0 and B1 (${B1:0:7})"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+  out=$(cx_run "$CC3" check_complexity_ratchet.sh "${TIP_ENV[@]}"); rc=$?
+  if [ "$rc" -eq 1 ] && grep -qE "^  comparand   TIP +${B1:0:7}" <<<"$out" \
+     && grep -q 'RED    NEW      src/lib.rs::newbie' <<<"$out" \
+     && ! grep -qE 'RED +[A-Z]+ +src/lib.rs::cognitive_only' <<<"$out"; then
+    ok "C15 real rise, origin/main pinned to the build base: tip path reads B1, RED on the PR's function only"
+  else
+    bad "C15 pinned real rise: rc=$rc, wanted 1, 'comparand   TIP ${B1:0:7}', 'RED    NEW      src/lib.rs::newbie' and no cognitive_only row"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+
+  # C16: THE PIN'S REGISTERED MUTATION. A copy of pin_build_base.sh whose
+  # pull_request case is unreachable falls through to the tip, and C14's
+  # stale re-run must go back to the C8 false red.
+  if sed 's|^\( *\)pull_request) # PIN-BUILD-BASE-MUTATION-POINT$|\1pull_request_MUTANT)|' \
+        "$ROOT/scripts/ci/pin_build_base.sh" > "$WORK/pin-mutant.sh" \
+     && grep -qE '^ +pull_request_MUTANT\)$' "$WORK/pin-mutant.sh" \
+     && ! grep -q 'PIN-BUILD-BASE-MUTATION-POINT' "$WORK/pin-mutant.sh"; then
+    ok "C16 the pin's mutation point is present in the shipped script and the mutant was derived from a COPY of it"
+  else
+    bad "C16 the mutation could not be derived: no '# PIN-BUILD-BASE-MUTATION-POINT' line in scripts/ci/pin_build_base.sh"
+  fi
+  cx_rerun_clone "$CC5" 1 "$M" || die "C16: the clone is not the re-run shape (HEAD=M, origin/main=B2, no merge-base)"
+  out=$(cx_pin "$CC5" "$X" "$WORK/pin-mutant.sh"); rc=$?
+  out=$(cx_run "$CC5" check_complexity_ratchet.sh "${TIP_ENV[@]}"); rc=$?
+  if [ "$rc" -eq 1 ] && grep -qE "^  comparand   TIP +${B2:0:7}" <<<"$out" \
+     && grep -q 'RED    NEW      src/lib.rs::cognitive_only' <<<"$out"; then
+    ok "C16 mutation caught: without the pull_request pin the stale re-run reads B2 and is RED on main's own fix, so C14's GREEN is load-bearing"
+  else
+    bad "C16 mutation NOT demonstrated: the mutant pin leaves rc=$rc on the stale re-run, so C14 does not discriminate build base from tip"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
 }
 
 # ===========================================================================

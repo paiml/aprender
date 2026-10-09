@@ -56,6 +56,11 @@
 #     stronger (it also forbids re-adding an entry main has already deleted).
 #     The cost is a false red on a branch behind a main that already shrank the
 #     baseline; the remedy is `git rebase origin/main`, and the FAIL says so.
+#     In guard-tree and guard-cargo the "tip" is no longer fetched live: since
+#     #4861 scripts/ci/pin_build_base.sh pins origin/main to the run's build
+#     base (a pull_request merge commit's first parent, merge_group.base_sha in
+#     the queue, the tip on any other event), so there the tip path and
+#     FIRSTPARENT name the same commit.
 #   * FIRSTPARENT comes before the tip on a pull_request run whose HEAD is the
 #     event's own merge commit (#4983). That commit's first parent is the main
 #     GitHub merged the PR onto. A re-run keeps that merge commit but fetches
