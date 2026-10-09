@@ -181,7 +181,7 @@ run() {
   printf '#!/usr/bin/env bash\nexit 0\n' > "$W/scripts/release/rc_publish_gate.sh"
   {
     printf 'set -uo pipefail\ncd %q || exit 2\n' "$W"
-    printf 'REPO=paiml/aprender INFRA=paiml/infra V=0.0.0 T=v0.0.0 MC=deadbeef AP_POLICY=%s\n' "$FX_POLICY"
+    printf 'REPO=paiml/aprender INFRA=paiml/infra V=0.0.0 T=v0.0.0 MC=deadbeef AP_POLICY=%s AP_POLL=300 AP_SETTLE=30\n' "$FX_POLICY"
     printf 'AP=%q LOG=%q STATUS=%q WT=%q\n' "$W/ap" "$W/log" "$W/status" "$W"
     printf 'say() { printf "SAY %%s\\n" "$*" >> "$LOG"; }\n'
     printf 'die() { printf "STOP %%s\\n" "$*" >> %q; exit 1; }\n' "$W/calls"

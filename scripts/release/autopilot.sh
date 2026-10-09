@@ -40,6 +40,9 @@ fi
 . "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
+# #4950 G2: GitHub polls share one fleet-wide hourly budget, so one object is polled at most every 300 s.
+# AP_SETTLE is the one short wait, between a dispatch and the first look for the run it created.
+AP_POLL=300; AP_SETTLE=30
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
 STEPS=(wait deep dogfood models readiness tag cleanroom assets preflight publish dryrun cascade install hosts postpub ledger close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
@@ -97,7 +100,7 @@ if run_step wait; then
   while :; do
     s=$(gh pr view "$PR" --repo $REPO --json state -q .state) || s=unknown
     [ "$s" = MERGED ] && break; [ "$s" = CLOSED ] && die "#$PR closed unmerged"
-    sleep 300
+    sleep "$AP_POLL"
   done
 fi
 MC=$(gh pr view "$PR" --repo $REPO --json mergeCommit -q .mergeCommit.oid)
@@ -335,6 +338,9 @@ cut_tag() {
         *) die "milestone $v could not be judged (check_milestone_cut.sh rc=$rc) -- no tag; Unknown is not a pass" ;;
     esac
     git tag -a "$t" -m "aprender $t" "$mc" >> "$LOG" 2>&1 || die "tag failed"
+    # #4950 G1: the pre-push tag guard (#4944) refuses a release tag without its one-shot marker. Every
+    # gate above has passed for exactly $mc, so arm that one tag for the next push, for 120 s, and push.
+    bash "$REPO_ROOT/scripts/hooks/pre-push-tags.sh" --arm-release "$t" 120 >> "$LOG" 2>&1 || die "arming $t for the pre-push tag guard failed -- tag not pushed"
     git push origin "$t" >> "$LOG" 2>&1 || die "tag push failed"
 }
 if run_step tag; then
@@ -374,9 +380,9 @@ if run_step cleanroom; then
     t0=$(date -u +%s)  # bashrs disable-line=DET002
     gh workflow run clean-room.yml --repo $INFRA -f repos=aprender -f ref="$T" >> "$LOG" 2>&1 || die "clean-room.yml dispatch on $T failed"
     say "CLEANROOM dispatched on $T"
-    crun=""; for _ in $(seq 1 30); do
+    sleep "$AP_SETTLE"; crun=""; for _ in 1 2 3; do
       crun=$(gh run list --repo $INFRA --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t0 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
-      [ -n "$crun" ] && break; sleep 20
+      [ -n "$crun" ] && break; sleep "$AP_POLL"
     done
     [ -n "$crun" ] || die "no clean-room.yml workflow_dispatch run appeared after the dispatch"
     say "CLEANROOM RUN $crun"
@@ -387,41 +393,41 @@ if run_step cleanroom; then
   else
     t1=$(date -u +%s)  # bashrs disable-line=DET002
     gh workflow run b2-gpu.yml --repo $REPO --ref main -f ref="$T" >> "$LOG" 2>&1 || die "b2-gpu.yml dispatch on $T failed (is aprender#3467 merged?)"
-    grun=""; for _ in $(seq 1 30); do
+    sleep "$AP_SETTLE"; grun=""; for _ in 1 2 3; do
       grun=$(gh run list --repo $REPO --workflow b2-gpu.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t1 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
-      [ -n "$grun" ] && break; sleep 20
+      [ -n "$grun" ] && break; sleep "$AP_POLL"
     done
     [ -n "$grun" ] || die "no b2-gpu.yml run appeared after the dispatch"
     say "B2-GPU RUN $grun"
   fi
   # the JOB conclusion, not the run status: a sibling job that can never start must not hold the verdict hostage
-  jc=""; for _ in $(seq 1 240); do
+  jc=""; for _ in $(seq 1 48); do
     jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
-    [ -n "$jc" ] && break; sleep 60
+    [ -n "$jc" ] && break; sleep "$AP_POLL"
   done
   [ "$jc" = success ] || die "clean-room (aprender) on $T concluded '${jc:-absent}' (run $crun)"
   say "B2-CPU GREEN on $T (infra run $crun)"
-  gc=""; for _ in $(seq 1 120); do
-    gs=$(gh run view "$grun" --repo $REPO --json status,conclusion,headSha --jq '"\(.status) \(.conclusion)"'); case "$gs" in completed*) gc=${gs#completed }; break;; esac; sleep 60
+  gc=""; for _ in $(seq 1 24); do
+    gs=$(gh run view "$grun" --repo $REPO --json status,conclusion,headSha --jq '"\(.status) \(.conclusion)"'); case "$gs" in completed*) gc=${gs#completed }; break;; esac; sleep "$AP_POLL"
   done
   [ "$gc" = success ] || die "b2-gpu on $T concluded '${gc:-absent}' (aprender run $grun)"
-  ok=0; for _ in 1 2 3 4 5 6; do gh run view "$grun" --repo $REPO --log > "$AP/b2gpu-run.log" 2>/dev/null; grep -q "tested-sha: $MC" "$AP/b2gpu-run.log" && { ok=1; break; }; sleep 30; done; [ $ok = 1 ] || die "b2-gpu run $grun did not test $MC"
+  ok=0; for _ in 1 2; do gh run view "$grun" --repo $REPO --log > "$AP/b2gpu-run.log" 2>/dev/null; grep -q "tested-sha: $MC" "$AP/b2gpu-run.log" && { ok=1; break; }; sleep "$AP_POLL"; done; [ $ok = 1 ] || die "b2-gpu run $grun did not test $MC"
   printf '%s\n' "$crun" > "$AP/cleanroom-run-id"; printf '%s\n' "$grun" > "$AP/b2gpu-run-id"
   say "CLEANROOM GREEN on $T: B2-cpu infra run $crun + B2-gpu aprender run $grun, both on $MC"
 fi
 
 # 4. assets: the release run completes and all sixteen assets are on the release, checked by command
 if run_step assets; then
-  run=""; for _ in $(seq 1 40); do
+  run=""; for _ in 1 2 3 4 5; do
     run=$(gh run list --repo $REPO --workflow binary-release.yml --event workflow_dispatch --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)
-    [ -n "$run" ] && break; sleep 30
+    [ -n "$run" ] && break; sleep "$AP_POLL"
   done
-  [ -n "$run" ] || die "no binary-release run for $T after 20 min"
+  [ -n "$run" ] || die "no binary-release run for $T after 25 min"
   say "ASSET RUN $run"
-  for _ in $(seq 1 240); do
+  for _ in $(seq 1 48); do
     s=$(gh run view "$run" --repo $REPO --json status -q .status)
     [ "$s" = completed ] && break
-    sleep 60
+    sleep "$AP_POLL"
   done
   c=$(gh run view "$run" --repo $REPO --json conclusion -q .conclusion)
   gh api "repos/$REPO/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | "  \(.name) = \(.conclusion)"' >> "$STATUS"

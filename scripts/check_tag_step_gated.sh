@@ -39,11 +39,11 @@ SUBJECT="$ROOT/scripts/release/autopilot.sh"
 # it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
 # Returns 2 if the function is missing.
 run_cut_tag() {
-    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} jrc=${6:-0} pol=${7:-none} mdl=${8:-crux} d fn pfn
+    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} jrc=${6:-0} pol=${7:-none} mdl=${8:-crux} arc=${9:-0} d fn pfn
     d=$(mktemp -d) || return 2
     fn=$(awk '/^cut_tag\(\) \{/,/^\}/' "$ap")
     [ -n "$fn" ] || { rmtree "$d"; return 2; }
-    mkdir -p "$d/scripts/release" "$d/ap" "$d/scripts/lib" "$d/contracts"
+    mkdir -p "$d/scripts/hooks" "$d/scripts/release" "$d/ap" "$d/scripts/lib" "$d/contracts"
     pfn=$(awk '/^ap_policy_applies\(\) \{/,/^\}/' "$ap")
     # the standing release policy: the release worktree's own reader (this checkout's copy) and a ladder
     # with no policy (none), one covering 0.0.0 (covers) or one the reader refuses (bad)
@@ -74,12 +74,14 @@ run_cut_tag() {
         "$d/calls" "$mrc" "$d/calls" "$grc" > "$d/scripts/check_milestone_cut.sh"
     printf '#!/usr/bin/env bash\necho CALL-CARRY >> %q\nexit %s\n' "$d/calls" "$crc" > "$d/scripts/release/carry_milestone_items.sh"
     printf '#!/usr/bin/env bash\necho CALL-COVJOB >> %q\nexit %s\n' "$d/calls" "$jrc" > "$d/scripts/release/tag_coverage_gate.sh"
+    # #4950 G1: the pre-push tag guard's --arm-release, for exactly the tag being cut
+    printf '#!/usr/bin/env bash\n[ "$1 $2" = "--arm-release v0.0.0" ] && echo CALL-ARM >> %q\nexit %s\n' "$d/calls" "$arc" > "$d/scripts/hooks/pre-push-tags.sh"
     {
         printf 'set -uo pipefail\n'
         printf 'REPO_ROOT=%q\nLOG=%q\nAP=%q\n' "$d" "$d/log" "$d/ap"
         printf 'say() { printf "SAY %%s\\n" "$*"; }\n'
         printf 'die() { printf "DIE %%s\\n" "$*"; exit 1; }\n'
-        printf 'git() { printf "GIT-%%s %%s\\n" "$(printf %%s "$1" | tr "a-z" "A-Z")" "$*"; }\n'
+        printf 'git() { printf "GIT-%%s %%s\\n" "$(printf %%s "$1" | tr "a-z" "A-Z")" "$*"; echo "CALL-GIT-$1" >> %q; }\n' "$d/calls"
         printf '%s\n' "$pfn"
         printf '%s\n' "$fn"
         printf 'cut_tag 0.0.0 v0.0.0 deadbeef\n'
@@ -112,8 +114,8 @@ judge() {
     else printf 'ok    gate rc=2 (Unknown) -> no tag\n'; fi
     # #3459 part 2: the must-carry gate, the carry, and their ORDER
     out=$(run_cut_tag "$ap" 0) || true
-    if grep -q '^ORDER CALL-COVJOB CALL-MUST-CARRY CALL-CARRY CALL-STRICT $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
-        printf 'ok    all clean -> coverage job, must-carry, the carry, STRICT, then the tag\n'
+    if grep -q '^ORDER CALL-COVJOB CALL-MUST-CARRY CALL-CARRY CALL-STRICT CALL-GIT-tag CALL-ARM CALL-GIT-push $' <<< "$out" && grep -q 'GIT-TAG' <<< "$out"; then
+        printf 'ok    all clean -> coverage job, must-carry, the carry, STRICT, the tag, arm it, push it\n'
     else printf 'FAIL  all clean did not run coverage job -> must-carry -> carry -> strict -> tag\n%s\n' "$out" >&2; bad=1; fi
     for m in 1 2; do
         out=$(run_cut_tag "$ap" 0 "$m") || true
@@ -155,6 +157,23 @@ judge() {
     if grep -q 'GIT-TAG' <<< "$out" || grep -q 'CALL-' <<< "$out" || ! grep -q '^DIE the standing release policy cannot be judged' <<< "$out"; then
         printf 'FAIL  unreadable policy block -> a tag was cut, the milestone was touched, or the refusal named another cause\n%s\n' "$out" >&2; bad=1
     else printf 'ok    unreadable policy block -> no tag, nothing carried (not measured is not a pass)\n'; fi
+    # #4950 G1: arming the tag for the pre-push guard fails -> the tag is never pushed
+    out=$(run_cut_tag "$ap" 0 0 0 pass 0 none crux 2) || true
+    if grep -q 'GIT-PUSH' <<< "$out" || ! grep -q '^DIE arming v0.0.0 for the pre-push tag guard failed' <<< "$out"; then
+        printf 'FAIL  arm rc=2 -> the tag was pushed unarmed, or the refusal named another cause\n%s\n' "$out" >&2; bad=1
+    else printf 'ok    arm rc=2 -> tag not pushed\n'; fi
+    # #4950 G2, over the WHOLE autopilot: GitHub polls share one hourly budget, so every wait is
+    # AP_POLL (at least 300 s) or the one AP_SETTLE after a dispatch; the crates.io index settle is not a poll
+    out=$(awk '/^[[:space:]]*#/ { next }
+        /^AP_POLL=/ { s = $0; sub(/^AP_POLL=/, "", s); sub(/[^0-9].*$/, "", s); p = s }
+        { l = $0
+          while (match(l, /(^|[^_[:alnum:]])sleep[[:space:]]+[^;&|[:space:]]+/)) {
+            a = substr(l, RSTART, RLENGTH); sub(/^.*sleep[[:space:]]+/, "", a)
+            if (a != "\"$AP_POLL\"" && a != "\"$AP_SETTLE\"" && a != "\"${RELEASE_INDEX_SETTLE_S:-180}\"") w = w NR ":sleep " a " "
+            l = substr(l, RSTART + RLENGTH) } }
+        END { if (p == "" || p + 0 < 300) w = w "AP_POLL=" p; printf "%s", w }' "$ap")
+    if [ -n "$out" ]; then printf 'FAIL  a GitHub poll faster than 300 s, or AP_POLL below 300: %s\n' "$out" >&2; bad=1
+    else printf 'ok    every autopilot wait is AP_POLL (>= 300 s) or the one dispatch settle\n'; fi
     return "$bad"
 }
 
@@ -263,6 +282,36 @@ if [ "${1:-}" = "--self-test" ]; then
     else
         ok "mutant 11: policy branch never taken -> RED"
     fi
+    # M12: the arm verdict discarded -> an unarmed tag is pushed and the guard refuses it on release day.
+    sed 's/|| die "arming \$t for the pre-push tag guard failed/|| true; : "/' "$SUBJECT" > "$d/m12.sh"
+    if cmp -s "$SUBJECT" "$d/m12.sh"; then
+        nok "MUTANT 12 could not be built -- the arm die line did not match; vacuous"
+    elif judge "$d/m12.sh" > "$d/m12.out" 2>&1; then
+        nok "MUTANT 12 (arm verdict discarded) PASSED"
+    else
+        ok "mutant 12: arm verdict discarded -> RED"
+    fi
+    # M13: the arm call deleted -> the ORDER row must see it missing.
+    grep -v 'pre-push-tags.sh" --arm-release' "$SUBJECT" > "$d/m13.sh"
+    if cmp -s "$SUBJECT" "$d/m13.sh"; then
+        nok "MUTANT 13 could not be built -- the arm call line did not match; vacuous"
+    elif judge "$d/m13.sh" > "$d/m13.out" 2>&1; then
+        nok "MUTANT 13 (arm call deleted) PASSED"
+    else
+        ok "mutant 13: arm call deleted -> RED"
+    fi
+    # M14/M15: the poll interval lowered, once globally and once at a single wait.
+    sed 's/^AP_POLL=300;/AP_POLL=60;/' "$SUBJECT" > "$d/m14.sh"
+    awk '!d && /sleep "\$AP_POLL"/ { sub(/sleep "\$AP_POLL"/, "sleep 60"); d = 1 } { print }' "$SUBJECT" > "$d/m15.sh"
+    for mu in 14 15; do
+        if cmp -s "$SUBJECT" "$d/m$mu.sh"; then
+            nok "MUTANT $mu could not be built -- the poll line did not match; vacuous"
+        elif judge "$d/m$mu.sh" > "$d/m$mu.out" 2>&1; then
+            nok "MUTANT $mu (GitHub poll under 300 s) PASSED"
+        else
+            ok "mutant $mu: GitHub poll under 300 s -> RED"
+        fi
+    done
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it
     if bash "$ROOT/scripts/release/carry_milestone_items.sh" --self-test > "$d/carry.out" 2>&1; then
         ok "carry_milestone_items.sh case table ($(grep -c '^ok ' "$d/carry.out") rows)"
