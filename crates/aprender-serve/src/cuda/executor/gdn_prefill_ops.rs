@@ -2,23 +2,25 @@
 //!
 //! Three groups:
 //!
-//! 1. **Projections as GEMMs.** [`CudaExecutor::qwen35_project_rows`] dequantizes one
-//!    weight into the shared f32 scratch and runs a cuBLAS SGEMM over `rows` activation
-//!    rows. This path is f32 end to end — deliberately NOT `cublas_prefill_gemm`, whose
-//!    default on sm_89+ is FP8 and whose other legs are FP16/WMMA/DP4A: the hybrid feeds
-//!    its projections into a recurrence, which compounds low-precision activation error
-//!    (`Qwen35CudaModel::pin_float_gemv` documents the measured DP4A failure). The
-//!    handle is `CUBLAS_PEDANTIC_MATH` (no TF32), so SGEMM here is fp32 in and out.
-//!    #4313 adds legs, chosen by `APR_QWEN35_PREFILL_GEMM`:
-//!    - `f16` caches each weight once as fp16 (prewarmed at load when it fits in
-//!      VRAM) and runs `gemm_f16_to_f32` (fp16 in, fp32 accumulate and out) on its own
-//!      tensor-op handle. The recurrence still reads fp32 outputs, and only the GEMM
-//!      inputs round to fp16 (10-bit mantissa, unlike DP4A's 8-bit activations).
+//! 1. **Projections as GEMMs.** [`CudaExecutor::qwen35_project_rows`] runs one GEMM
+//!    over `rows` activation rows per weight. `APR_QWEN35_PREFILL_GEMM` picks the leg
+//!    (#4313):
+//!    - `f16`, the default (operator, 2026-09-25): each weight is cached once as fp16
+//!      (prewarmed at load) and runs `gemm_f16_to_f32` (fp16 in, fp32 accumulate and
+//!      out) on its own tensor-op handle. The recurrence still reads fp32 outputs, and
+//!      only the GEMM inputs round to fp16 (10-bit mantissa, unlike DP4A's 8-bit
+//!      activations). The #4483 receipts (`docs/audits/prm-001/s1-v2/4483/`) measure it
+//!      against `f32` and llama.cpp, with the review verdicts compared item by item.
+//!    - `f32` dequantizes into the shared f32 scratch and runs a cuBLAS SGEMM on the
+//!      `CUBLAS_PEDANTIC_MATH` handle (no TF32), fp32 in and out, on no tensor core. It
+//!      is the escape hatch, and the path `f16` falls back to when the prewarm did not
+//!      complete: a host without the VRAM for the cache, or a failed prewarm.
 //!    - `dp4a` runs the Q4K int8 GEMM, measured slower than f32, and carries the
 //!      #3513 hazard.
-//!    - `f32` is this path, unchanged, and the escape hatch.
-//!    `f16` is the default (operator, 2026-09-25) and runs only where the prewarm
-//!    completed; a host without the VRAM, or a failed prewarm, keeps the f32 path.
+//!    No leg goes through `cublas_prefill_gemm`, whose default on sm_89+ is FP8: the
+//!    hybrid feeds its projections into a recurrence, which compounds low-precision
+//!    activation error. `Qwen35CudaModel::pin_reference_gemv` documents the measured
+//!    DP4A error; that is the decode GEMV, a separate choice from these legs.
 //! 2. **The row-batched Gated `DeltaNet` kernels** (`aprender-gpu` `kernels/gdn`): the
 //!    chunk-resident delta-rule scan, conv1d over a chunk, and the row twins of the L2
 //!    norm, gates and partial RoPE. Each is bitwise-equal to `T` launches of its

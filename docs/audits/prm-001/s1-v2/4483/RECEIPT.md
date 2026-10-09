@@ -33,3 +33,5 @@ Decode is unchanged at 0.50× llama. That gap is the next RCA-SRV-001 item, not 
 - Parsed verdict state is identical on **200/200** items. The mix is 39 Fail / 161 Pass on both legs, so the match is not vacuous; llama.cpp gives 38/162.
 - Output token count is identical on 177/200. Greedy text is therefore **not** bit-identical: f16 accumulation moves near-tie argmaxes.
   Stated tolerance: the verdict must be identical on every item. Met.
+
+The RTX 4090 receipt, on a `main` binary with no car commits, is in `lambda-4090/RECEIPT.md`.
