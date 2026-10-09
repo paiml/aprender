@@ -252,7 +252,9 @@ async fn the_stream_reports_the_first_token_edge_it_measured() {
 /// A turn that is only a tool call sends no content, so a client's TTFT never
 /// ends on it, and the server's first-content edge must not end either: the
 /// calls' chunk does not set `first_token_ms`. The body must still carry the
-/// call, or the absent field would prove nothing.
+/// call, or the absent field would prove nothing. The tokens arrive 30 ms after
+/// prefill ended, so a calls' chunk that did set the edge would give an
+/// in-order `first_token_ms`, not one the out-of-order rule leaves absent.
 #[tokio::test]
 async fn a_calls_only_turn_reports_no_first_token_edge() {
     let pieces = [
@@ -277,6 +279,7 @@ async fn a_calls_only_turn_reports_no_first_token_edge() {
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(pieces.len());
     let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<PhaseTimings>();
     let start = Instant::now();
+    let prefill_ended = start + Duration::from_millis(10);
     let response = crate::api::openai_handlers::true_streaming_sse_response(
         rx,
         tokenizer,
@@ -291,13 +294,14 @@ async fn a_calls_only_turn_reports_no_first_token_edge() {
         tools,
     );
     tokio::spawn(async move {
+        tokio::time::sleep_until((prefill_ended + Duration::from_millis(30)).into()).await;
         for id in 0..u32::try_from(pieces.len()).expect("small vocab") {
             tx.send(Ok(id)).await.expect("send token");
         }
         drop(tx);
         let _ = timing_tx.send(PhaseTimings::from_marks(
             start + Duration::from_millis(5),
-            start + Duration::from_millis(10),
+            prefill_ended,
             start + Duration::from_millis(40),
         ));
     });
