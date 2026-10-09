@@ -30,6 +30,8 @@
 #      measuring the property and this suite is vacuous.
 #   9  the snapshot (census.json) lags the tree, block = snapshot -> GREEN
 #  10  a PR hand-edits the block to the TREE count  -> RED (GEN-001 #4526)
+#  11  a block split across lines beside a valid one -> RED; a mutant without
+#      the START-marker count turns it GREEN (GEN-001 #4526, Q7)
 #
 # Phase B (BSE-03, this commit) adds the other two classes.
 #
@@ -729,6 +731,34 @@ if [ "$rc" -eq 0 ] && [ "$rc10" -eq 1 ]; then
   ok "row 10 readme_sync.sh --check agrees with the guard: 2 is current, 3 is not"
 else
   bad "row 10 readme_sync.sh --check: rc=$rc on the snapshot claim (want 0), rc=$rc10 on the tree claim (want 1)"
+fi
+
+# ---------------------------------------------------------------------------
+# Row 11 — a block split across lines (Q7). The block reader is line-wise, so
+# a hand-edited 9999 between split markers was invisible and the one valid
+# block of 2 passed alone. The mutant drops the marker count; it must turn the
+# row GREEN, or the RED is not the marker count's.
+F11="$WORK/f11"
+lagging_snapshot "$F11" 2 || die "row 11 fixture could not be built"
+{ readme_with_block 2; printf '\nThe snapshot carries %s\n9999\n%s contracts.\n' "$START" "$END"; } > "$F11/README.md" \
+  || die "row 11: cannot write the README"
+git_fx "$F11" add -A -f README.md >/dev/null 2>&1 || die "row 11: git add failed"
+git_fx "$F11" commit -q -m "split block" >/dev/null 2>&1 || die "row 11: git commit failed"
+out11="$(run_guard "$F11" check_readme_claims.sh)"; rc=$?
+if [ "$rc" -eq 1 ] \
+   && grep -q 'FAIL FALSIFY-README-002 contract_count: README.md has 2 CONTRACT_COUNT START marker(s) but 1 block(s)' <<<"$out11"; then
+  ok "row 11 a block split across lines hides 9999 beside a valid 2: RED, both marker counts printed"
+else
+  bad "row 11 split block: rc=$rc, wanted 1 and a FAIL line with 2 START markers and 1 block"$'\n'"$(printf '%s' "$out11" | sed 's/^/        /')"
+fi
+SPLIT_MUTANT="check_readme_claims_split_mutant.sh"
+sed -e 's|^.*# SPLIT-MUTATION-POINT.*$|  if false; then|' \
+  "$F11/scripts/check_readme_claims.sh" > "$F11/scripts/$SPLIT_MUTANT" || die "row 11: cannot derive the mutant"
+m11="$(run_guard "$F11" "$SPLIT_MUTANT")"; mrc11=$?
+if [ "$(grep -c '^  if false; then$' "$F11/scripts/$SPLIT_MUTANT")" -eq 1 ] && [ "$mrc11" -eq 0 ]; then
+  ok "row 11 mutation caught: without the marker count the split block passes — row 11's RED is load-bearing"
+else
+  bad "row 11 mutation NOT demonstrated: mutant exit $mrc11 (want 0), or no SPLIT-MUTATION-POINT line in the guard"$'\n'"$(printf '%s' "$m11" | sed 's/^/        /')"
 fi
 printf '\n%s checks, %s failed\n' "$CHECKS" "$FAILED"
 [ "$FAILED" -eq 0 ]
