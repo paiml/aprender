@@ -258,22 +258,21 @@ pub fn dequantize_q5_0(data: &[u8]) -> Result<Vec<f32>> {
     let num_blocks = data.len() / BLOCK_BYTES;
     // Pre-allocate with correct size for candle layout
     let mut result = vec![0.0f32; num_blocks * BLOCK_SIZE];
+    dequantize_q5_0_into(data, &mut result);
+    Ok(result)
+}
 
-    for block_idx in 0..num_blocks {
-        let block_start = block_idx * BLOCK_BYTES;
-        let out_start = block_idx * BLOCK_SIZE;
-
-        let d_bytes = &data[block_start..block_start + 2];
-        let d = f16_to_f32(u16::from_le_bytes([d_bytes[0], d_bytes[1]]));
-
-        let qh = u32::from_le_bytes([
-            data[block_start + 2],
-            data[block_start + 3],
-            data[block_start + 4],
-            data[block_start + 5],
-        ]);
-
-        let qs = &data[block_start + 6..block_start + 22];
+/// Dequantize whole `Q5_0` blocks into a caller-owned buffer.
+///
+/// The decoder behind [`dequantize_q5_0`], for a caller that decodes one weight
+/// row at a time into a buffer it reuses (#3602: the CPU matmul used to expand
+/// the whole tensor on every call). Decodes `min(data.len() / 22, out.len() / 32)`
+/// blocks; a trailing partial block on either side is left untouched.
+pub(crate) fn dequantize_q5_0_into(data: &[u8], out: &mut [f32]) {
+    for (block, dst) in data.chunks_exact(22).zip(out.chunks_exact_mut(BLOCK_SIZE)) {
+        let d = f16_to_f32(u16::from_le_bytes([block[0], block[1]]));
+        let qh = u32::from_le_bytes([block[2], block[3], block[4], block[5]]);
+        let qs = &block[6..22];
 
         // Use candle layout:
         // - Low nibbles (byte & 0xF) at positions 0-15
@@ -285,7 +284,7 @@ pub fn dequantize_q5_0(data: &[u8]) -> Result<Vec<f32>> {
             let q_low = low_q | (high_bit_low << 4);
             #[allow(clippy::cast_possible_wrap)]
             let value_low = q_low as i8 - 16;
-            result[out_start + i] = d * f32::from(value_low);
+            dst[i] = d * f32::from(value_low);
 
             // High 4 bits + 5th bit go to position i + 16 (16-31)
             let high_q = (byte >> 4) & 0x0F;
@@ -293,11 +292,9 @@ pub fn dequantize_q5_0(data: &[u8]) -> Result<Vec<f32>> {
             let q_high = high_q | (high_bit_high << 4);
             #[allow(clippy::cast_possible_wrap)]
             let value_high = q_high as i8 - 16;
-            result[out_start + i + 16] = d * f32::from(value_high);
+            dst[i + 16] = d * f32::from(value_high);
         }
     }
-
-    Ok(result)
 }
 
 /// Dequantize `Q5_1` format weights

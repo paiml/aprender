@@ -32,6 +32,8 @@ mod generate_quantized_topp_tests;
 mod generation_tests;
 #[cfg(test)]
 mod matmul_tests;
+#[cfg(test)]
+mod q5_0_matmul_tests;
 
 // Re-export cached model types for external use
 #[cfg(any(feature = "gpu", feature = "cuda"))]

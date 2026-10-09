@@ -35,8 +35,68 @@ pub(super) fn float16_matmul(
     all_output
 }
 
+/// CPU matmul for `Q5_0` weights, one row decoded at a time.
+///
+/// #3602: this arm used to expand the WHOLE tensor to f32 and build a trueno
+/// matrix on every call. The CUDA path's F2 parity check runs a CPU reference
+/// forward one token at a time, so a dense Q5_0 model paid that expansion per
+/// tensor per token, and `--gpu` came out slower than `--no-gpu`. Now each row is
+/// decoded once (by the same decoder, so the weights are bit-identical) into a
+/// buffer each rayon worker reuses, and dotted with every sequence position.
+///
+/// The work runs in `[out_dim][seq_len]` order, one contiguous chunk per row, and
+/// is transposed to `[seq_len][out_dim]` only when `seq_len > 1`.
+pub(super) fn q5_0_matmul(
+    input: &[f32],
+    data: &[u8],
+    in_dim: usize,
+    out_dim: usize,
+    seq_len: usize,
+) -> Result<Vec<f32>> {
+    use crate::apr::simd_dot;
+    use crate::quantize::dequant::dequantize_q5_0_into;
+    use rayon::prelude::*;
+
+    let row_bytes = (in_dim / 32) * 22;
+    if !in_dim.is_multiple_of(32) || data.len() != out_dim * row_bytes {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "Q5_0 weight is {} bytes; a {out_dim}x{in_dim} matrix of whole 32-element \
+                 blocks needs {}",
+                data.len(),
+                out_dim * row_bytes
+            ),
+        });
+    }
+
+    let mut by_row = vec![0.0f32; out_dim * seq_len];
+    by_row
+        .par_chunks_mut(seq_len.max(1))
+        .zip(data.par_chunks(row_bytes.max(1)))
+        .with_min_len(64)
+        .for_each_init(
+            || vec![0.0f32; in_dim],
+            |row, (out, row_data)| {
+                dequantize_q5_0_into(row_data, row);
+                for (s, o) in out.iter_mut().enumerate() {
+                    *o = simd_dot(row, &input[s * in_dim..(s + 1) * in_dim]);
+                }
+            },
+        );
+    if seq_len <= 1 {
+        return Ok(by_row);
+    }
+    let mut output = vec![0.0f32; seq_len * out_dim];
+    for (r, row) in by_row.chunks_exact(seq_len).enumerate() {
+        for (s, &v) in row.iter().enumerate() {
+            output[s * out_dim + r] = v;
+        }
+    }
+    Ok(output)
+}
+
 /// Dequantized-F32 weights × activations through trueno's SIMD matvec, one
-/// sequence position at a time. Shared by the Q4_1 / Q5_0 / APR-Q4 / APR-Q8
+/// sequence position at a time. Shared by the Q4_1 / Q5_1 / APR-Q4 / APR-Q8
 /// paths of `fused_matmul` (extracted for complexity, PMAT-3477: the four
 /// copies were what kept that function above the cognitive ceiling).
 fn dequant_f32_matmul(
@@ -136,7 +196,7 @@ impl OwnedQuantizedModel {
         input: &[f32],
         weight: &OwnedQuantizedTensor,
     ) -> Result<Vec<f32>> {
-        use crate::quantize::{dequantize_q4_1, dequantize_q5_0, dequantize_q5_1};
+        use crate::quantize::{dequantize_q4_1, dequantize_q5_1};
 
         let in_dim = weight.in_dim;
         let out_dim = weight.out_dim;
@@ -160,7 +220,8 @@ impl OwnedQuantizedModel {
         //   F32        rayon parallel dot products, zero-copy on the raw bytes
         //   BF16/F16   GH-368: decode 2-byte floats, BF16 = f32::from_bits(bits << 16)
         //   Q4_0/Q8_0  fused integer SIMD matmul
-        //   Q4_1/Q5_0  dequantize + SIMD matvec
+        //   Q5_0       one row decoded at a time, SIMD dot per position (#3602)
+        //   Q4_1/Q5_1  dequantize + SIMD matvec
         //   APR Q4/Q8  GH-478: per-tensor scratch dequant (F32 expansion bounded to
         //              one tensor's working set, not 4 × num_params at load time)
         //   otherwise  the K-quant kernels (Q4_K/Q5_K/Q6_K) and, in their default
@@ -195,14 +256,7 @@ impl OwnedQuantizedModel {
                 out_dim,
                 seq_len,
             ),
-            GGUF_TYPE_Q5_0 => dequant_f32_matmul(
-                input,
-                dequantize_q5_0(data)?,
-                "Q5_0",
-                in_dim,
-                out_dim,
-                seq_len,
-            ),
+            GGUF_TYPE_Q5_0 => q5_0_matmul(input, data, in_dim, out_dim, seq_len),
             // #3869: Q5_1 sat in the gap between its two siblings. The
             // dequantizer has always been here (`quantize::dequantize_q5_1`,
             // `pub`), and the GPU-side `acceleration.rs::dequantize_weight`
