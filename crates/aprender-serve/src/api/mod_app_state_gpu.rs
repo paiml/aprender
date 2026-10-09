@@ -748,13 +748,30 @@ impl AppState {
     /// the mmap, so the mapped model must outlive any inference call. The
     /// CLI server-command load path must retain its `MappedGGUFModel` in
     /// an `Arc` + attach it here.
+    ///
+    /// #4979: the tokenizer then encodes with the file's own byte-level BPE.
     #[must_use]
     pub fn with_mapped_gguf_model(
         mut self,
         mapped: std::sync::Arc<crate::gguf::MappedGGUFModel>,
     ) -> Self {
+        self.attach_gguf_byte_level_bpe(&mapped.model);
         self.mapped_gguf_model = Some(mapped);
         self
+    }
+
+    /// #4979: serve encodes a prompt with the GGUF's own byte-level BPE, the encoder `apr run`
+    /// uses, so the two verbs hand the model the same ids. The tokenizer built from the
+    /// vocabulary alone encoded by greedy longest-match. A file that is not byte-level, or
+    /// whose pre-tokenizer is not implemented, keeps the tokenizer it has (the latter is
+    /// said once on stderr).
+    pub(crate) fn attach_gguf_byte_level_bpe(&mut self, model: &crate::gguf::GGUFModel) {
+        let Some(bpe) = model.byte_level_bpe() else {
+            return;
+        };
+        if let Some(tokenizer) = self.tokenizer.take() {
+            self.tokenizer = Some(Arc::new(Arc::unwrap_or_clone(tokenizer).with_byte_level_bpe(bpe)));
+        }
     }
 
     /// aprender#1789 Option B: accessor for the retained

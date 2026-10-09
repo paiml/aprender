@@ -37,7 +37,11 @@ impl AppState {
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
         let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
-        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
+        let mut tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
+        // #4979: the file's own byte-level BPE, as on every other GGUF route.
+        if let Some(bpe) = mapped.model.byte_level_bpe() {
+            tokenizer = tokenizer.with_byte_level_bpe(bpe);
+        }
         let architecture = mapped.model.architecture().map(str::to_string);
         let eos_token_id = mapped.model.eos_token_id();
 

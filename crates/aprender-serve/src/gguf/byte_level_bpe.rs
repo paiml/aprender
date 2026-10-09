@@ -609,6 +609,40 @@ impl PartialOrd for Pending {
     }
 }
 
+impl super::GGUFModel {
+    /// #4979: the file's own byte-level BPE, the one [`super::GGUFModel::encode`] uses, so
+    /// serve can hand the model the same ids `apr run` does. `None` when the file is not
+    /// byte-level (`tokenizer.ggml.model` is not `gpt2`/`bpe`) or [`ByteLevelBpe::from_gguf`]
+    /// refuses it (said once on stderr); the caller keeps the tokenizer it has. The
+    /// `tokenizer.ggml.model` check is the twin of `encode_byte_level` in `gguf/token.rs`.
+    #[must_use]
+    pub fn byte_level_bpe(&self) -> Option<Arc<ByteLevelBpe>> {
+        let byte_level = self
+            .metadata
+            .get("tokenizer.ggml.model")
+            .is_some_and(|v| matches!(v, GGUFValue::String(s) if s == "gpt2" || s == "bpe"));
+        if !byte_level {
+            return None;
+        }
+        let vocab = self.vocabulary()?;
+        ByteLevelBpe::from_gguf(&self.metadata, &vocab)
+            .map_err(|refusal| warn_serve_greedy_fallback_once(&refusal))
+            .ok()
+    }
+}
+
+/// Serve keeps greedy longest-match for this file, which is not the model's tokenization;
+/// say so, once (#4979, as `apr run` does for #3726).
+fn warn_serve_greedy_fallback_once(refusal: &ByteLevelBpeRefusal) {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| {
+        eprintln!(
+            "warning: byte-level BPE tokenizer: {refusal}; serve falls back to greedy \
+             longest-match, which does NOT reproduce the model's tokenization (#4979)"
+        );
+    });
+}
+
 #[cfg(test)]
 #[path = "byte_level_bpe_tests.rs"]
 mod tests;

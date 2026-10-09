@@ -413,3 +413,7 @@ include!("dispatch_metrics.rs");
 #[cfg(test)]
 #[path = "tests_engine_identity.rs"]
 mod tests_engine_identity;
+
+#[cfg(test)]
+#[path = "tests_gguf_byte_level_4979.rs"]
+mod tests_gguf_byte_level_4979;
