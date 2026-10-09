@@ -93,6 +93,7 @@ PICK_DEPTH=60
 
 # STAGES: name | needs (a stage that must have finished green, or -) | command, run from the clone root.
 # $V is the train's version. ap:<step> is autopilot.sh run for that one step: its setup is re-entrant.
+# stage_summary and stage_cascade are functions below, run in the stage's own shell.
 stages_table() {
     cat <<'STAGES'
 lanes|-|env -u INBOX bash scripts/release/nightly_train.sh --out "$RELEASE_REHEARSAL_TRAIN" --commit "$RELEASE_REHEARSAL_C" ${RELEASE_REHEARSAL_IN_RUN:+--in-run "$RELEASE_REHEARSAL_IN_RUN"}
@@ -110,7 +111,7 @@ ap:assets|ap:tag|bash scripts/release/autopilot.sh "$V" rehearsal assets assets
 ap:preflight|ap:tag|bash scripts/release/autopilot.sh "$V" rehearsal preflight preflight
 ap:publish|ap:tag|bash scripts/release/autopilot.sh "$V" rehearsal publish publish
 ap:dryrun|ap:tag|bash scripts/release/autopilot.sh "$V" rehearsal dryrun dryrun
-cascade|ap:preflight|bash scripts/cascade-publish.sh --rehearse
+cascade|ap:preflight|stage_cascade
 STAGES
 }
 
@@ -175,6 +176,35 @@ stage_summary() {
     [[ $s == *"$MARK"* ]] || { echo "the CHANGELOG has no placeholder to replace"; return 1; }
     printf '%s' "${s/"$MARK"/"$SUMMARY"}" > "$f" || return 1
     echo "summary: placeholder replaced with the rehearsal's fixed paragraph"
+}
+
+# ap_policy_fn AUTOPILOT -> the text of its ap_policy_applies function, empty when it has none
+ap_policy_fn() { awk '/^ap_policy_applies\(\) \{/,/^\}/' "$1" 2>/dev/null; }
+
+# stage_cascade: cascade-publish.sh --rehearse, run as release day's cascade step runs the drain
+# (autopilot.sh step 6). It runs from the release worktree at the bump commit, where the preflight
+# step ran; from the clone it judged C, not the commit the tag step names. Under the standing
+# release policy it is handed the CRUX receipts the models step measured and the bump's
+# certification. Without them R7 refuses (D4). Release day's own ap_policy_applies judges the
+# policy, read from the release commit's autopilot.sh.
+stage_cascade() {
+    local w="$RELEASE_AP/wt" h fn pol
+    h=$(git -C "$w" rev-parse -q --verify HEAD 2>/dev/null) || h=""
+    if [ -z "$h" ] || [ "$h" != "${RELEASE_REHEARSAL_MC:-}" ]; then
+        echo "STOP rehearsal: the release worktree $w is at ${h:-no commit}, not the bump commit ${RELEASE_REHEARSAL_MC:-(unset)}"
+        return 1
+    fi
+    cd -- "$w" || return 1
+    fn=$(ap_policy_fn scripts/release/autopilot.sh)
+    [ -n "$fn" ] || { echo "STOP rehearsal: the release commit's autopilot.sh has no ap_policy_applies"; return 1; }
+    pol=$( . <(printf '%s\n' "$fn") && ap_policy_applies "$V" ) \
+        || { echo "STOP rehearsal: the standing release policy cannot be judged for $V"; return 1; }
+    case $pol in
+        1) MODEL_LADDER_CRUX_DIR="$RELEASE_AP/models-t1" CRUX_CERT="$w/evidence/crux/$V/prompt-certification.json" \
+               bash scripts/cascade-publish.sh --rehearse ;;
+        0) bash scripts/cascade-publish.sh --rehearse ;;
+        *) echo "STOP rehearsal: ap_policy_applies printed '$pol' for $V, not 1 or 0"; return 1 ;;
+    esac
 }
 
 # default_version SOURCE -> the next release day's version: the lowest V above the workspace version
@@ -268,7 +298,7 @@ run_stage() {
       # shellcheck disable=SC1090
       . "$env" || exit 2
       export WG_STAGE=$name V=$v
-      if [ "$cmd" = stage_summary ]; then stage_summary; else bash -c -- "$cmd"; fi ) > "$log" 2>&1 < /dev/null
+      case $cmd in stage_summary|stage_cascade) "$cmd" ;; *) bash -c -- "$cmd" ;; esac ) > "$log" 2>&1 < /dev/null
     rc=$?
     {
         while IFS= read -r f; do
@@ -878,6 +908,7 @@ selftest() {
     printf '  %s guard rows\n' "$((pass))"
     selftest_stub
     selftest_seams
+    selftest_cascade
     selftest_judge
     selftest_streak
     selftest_pick
@@ -1013,6 +1044,76 @@ selftest_seams() {
         else printf '  BROKE %-44s %s\n' "${lib%.sh}_option_neutral" "${hits:-missing $SCRIPT_DIR/$lib}"; fail=$((fail + 1)); fi
     done
     printf '  %s seam rows\n' "$((n + 7))"
+}
+
+# The cascade stage (D4): its command from the stage table, through run_stage, over a release worktree
+# at the bump commit. The fixture's cascade-publish.sh prints the call it got and, under the policy,
+# refuses R7 without the CRUX receipts as the preflight does. The judge reads that stage log: the
+# receipts handed down clear D4, and the bare call opens it. The last row holds stage_cascade to what
+# autopilot.sh's own cascade step hands the drain.
+selftest_cascade() {
+    local s="$tmp/cascade" n=0 cmd st w rc o d a r
+    cmd=$(stages_table | awk -F'|' '$1 == "cascade" { print $3 }')
+    cs() { # cs NAME WANT_RC WANT_OUT POLICY SETUP [CMD] -- @W@ and @AP@ in WANT_OUT are the worktree and RELEASE_AP
+        local name=$1 wrc=$2 wout=$3 pol=$4 h
+        n=$((n + 1)); st="$s/c$n"; w="$st/ap/wt"
+        wout=${wout//@W@/$w}; wout=${wout//@AP@/$st/ap}
+        mkdir -p "$st/clone" "$st/logs" "$w/scripts/release" || return 2
+        git -c init.defaultBranch=main init -q "$w" \
+            && git -C "$w" -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m bump \
+            && h=$(git -C "$w" rev-parse HEAD) || return 2
+        printf '%s\n' "$pol" > "$w/fx-policy"
+        cat > "$w/scripts/release/autopilot.sh" <<'FX'
+#!/usr/bin/env bash
+ap_policy_applies() {
+    [ "${1:-}" = 0.71.0 ] || { echo "asked about ${1:-no version}" >&2; return 2; }
+    case $(cat fx-policy) in 1|0|yes) cat fx-policy ;; *) echo "the policy cannot be read" >&2; return 2 ;; esac
+}
+FX
+        cat > "$w/scripts/cascade-publish.sh" <<'FX'
+#!/usr/bin/env bash
+printf 'CALL pwd=%s args=%s dir=%s cert=%s\n' "$PWD" "$*" "${MODEL_LADDER_CRUX_DIR:-}" "${CRUX_CERT:-}"
+if [ "$(cat fx-policy)" = 1 ] && { [ -z "${MODEL_LADDER_CRUX_DIR:-}" ] || [ -z "${CRUX_CERT:-}" ]; }; then
+    echo "FAIL  R7 STANDING RELEASE POLICY: no CRUX receipt dir or certification"; exit 1
+fi
+echo "ok    R7 CRUX smoke"
+FX
+        printf 'export RELEASE_AP=%q RELEASE_REHEARSAL_MC=%q\n' "$st/ap" "$h" > "$st/env"
+        snip_run "$5"
+        rc=0; run_stage "$st" "$st/env" cascade "${6:-$cmd}" 0.71.0 || rc=$?
+        o=$(cat -- "$st/logs/cascade.log" 2>&1)
+        if [ "$rc" = "$wrc" ] && [[ $o == *"$wout"* ]] && { [[ $name != *_stops ]] || [[ $o != *"CALL "* ]]; }; then pass=$((pass + 1))
+        else printf '  BROKE %-44s rc=%s (want %s) log=%s\n' "$name" "$rc" "$wrc" "$(printf '%s' "$o" | tr '\n' '|' | cut -c1-200)"; fail=$((fail + 1)); fi
+    }
+    dj() { # dj NAME WANT_RC WANT_OUT -- the judge over a green fixture night carrying the last cs row's cascade log
+        n=$((n + 1)); d="$s/night$n"
+        fixture_night "$d" && cp -- "$st/logs/cascade.log" "$d/logs/cascade.log" || return 2
+        rc=0; o=$(judge "$d" 2>&1) || rc=$?
+        if [ "$rc" = "$2" ] && [[ $o == *"$3"* ]]; then pass=$((pass + 1))
+        else printf '  BROKE %-44s rc=%s (want %s): %s\n' "$1" "$rc" "$2" "$(printf '%s' "$o" | grep -E 'RED|VERDICT' | head -3 | tr '\n' '|')"; fail=$((fail + 1)); fi
+    }
+    cs cascade_policy_hands_the_crux_receipts 0 \
+        "CALL pwd=@W@ args=--rehearse dir=@AP@/models-t1 cert=@W@/evidence/crux/0.71.0/prompt-certification.json" 1 ':'
+    dj d4_clear_with_the_receipts 0 "VERDICT GREEN"
+    cs cascade_bare_call_refuses_r7 1 "FAIL  R7 STANDING RELEASE POLICY" 1 ':' 'cd -- "$RELEASE_AP/wt" && bash scripts/cascade-publish.sh --rehearse'
+    dj d4_open_on_the_bare_call 1 "RED   D4 OPEN in cascade"
+    cs cascade_off_policy_runs_bare 0 "CALL pwd=@W@ args=--rehearse dir= cert=" 0 ':'
+    cs cascade_policy_not_judged_stops 1 "STOP rehearsal: the standing release policy cannot be judged for 0.71.0" x ':'
+    cs cascade_policy_neither_1_nor_0_stops 1 "ap_policy_applies printed 'yes' for 0.71.0" yes ':'
+    cs cascade_no_policy_judge_stops 1 "autopilot.sh has no ap_policy_applies" 1 ': > "$w/scripts/release/autopilot.sh"'
+    cs cascade_worktree_on_another_commit_stops 1 "not the bump commit beef" 1 'printf "export RELEASE_REHEARSAL_MC=beef\n" >> "$st/env"'
+    cs cascade_no_bump_commit_stops 1 "not the bump commit (unset)" 1 'printf "export RELEASE_REHEARSAL_MC=\n" >> "$st/env"'
+    cs cascade_no_worktree_stops 1 "is at no commit" 1 'printf "export RELEASE_AP=%q\n" "$st/none" >> "$st/env"'
+    # release day's hand-down: autopilot.sh's cascade step and stage_cascade name the same receipts
+    a=$(awk '/^if run_step cascade; then$/,/^fi$/' "$SCRIPT_DIR/autopilot.sh" | grep -oE 'MODEL_LADDER_CRUX_DIR=[^ ]+ CRUX_CERT=[^ ]+')
+    r=$(awk '/^stage_cascade\(\) \{/,/^\}/' "$SCRIPT_PATH" | grep -oE 'MODEL_LADDER_CRUX_DIR=[^ ]+ CRUX_CERT=[^ ]+')
+    local ap_from='$AP/' ap_to='$RELEASE_AP/' wt_from='$WT/' wt_to='$w/'
+    a=${a//"$ap_from"/"$ap_to"}; a=${a//"$wt_from"/"$wt_to"}
+    n=$((n + 1))
+    if [ -n "$a" ] && [ "$(printf '%s\n' "$a" | wc -l)" = 1 ] && [ "$a" = "$r" ] && [ -n "$(ap_policy_fn "$SCRIPT_DIR/autopilot.sh")" ]; then pass=$((pass + 1))
+    else printf '  BROKE %-44s autopilot=%s rehearse=%s policy_fn=%s\n' cascade_hands_what_release_day_hands "${a:-none}" "${r:-none}" \
+        "$(ap_policy_fn "$SCRIPT_DIR/autopilot.sh" | head -1)"; fail=$((fail + 1)); fi
+    printf '  %s cascade rows\n' "$n"
 }
 
 # fixture_night DIR -> a night where every stage is green on C, the trace shows the freeze inside the
@@ -1381,7 +1482,8 @@ selftest_wiring() {
 # Each mutant is "name sed-script". It must change this file, still parse, and turn --selftest RED with at
 # least one BROKE row. A pattern that no longer matches is reported, never skipped. Mutants of the guard
 # library are applied to a copy of it that a copy of this script sources. Each copy is laid out as the repo is, with
-# the train and the workflow that wiring() reads, and the unmutated copy must be green there first: a copy missing
+# the train and the workflow that wiring() reads and the autopilot.sh the cascade rows read, and the unmutated copy
+# must be green there first: a copy missing
 # a file would turn every mutant RED and prove nothing.
 mutants() {
     local tmp pass=0 fail=0 name file expr dir o rc
@@ -1392,7 +1494,7 @@ mutants() {
         local d
         d=$(mktemp -d "${tmp:?}/m.XXXXXX") && mkdir -p "$d/scripts/release" "$d/.github/workflows" \
             && cp -- "$SCRIPT_PATH" "$SCRIPT_DIR/lib_write_guard.sh" "$SCRIPT_DIR/lib_rehearsal.sh" "$SCRIPT_DIR/nightly_greens.sh" \
-                "$SCRIPT_DIR/release_lanes.sh" "$TRAIN_SCRIPT" "$d/scripts/release/" \
+                "$SCRIPT_DIR/release_lanes.sh" "$SCRIPT_DIR/autopilot.sh" "$TRAIN_SCRIPT" "$d/scripts/release/" \
             && cp -- "$REHEARSAL_WF" "$d/.github/workflows/" && printf '%s/scripts/release' "$d"
     }
     dir=$(mdir) || return 2
@@ -1563,6 +1665,18 @@ wiring_needs_models_free     rehearse.sh         s/ && grep -qxF "\$mk" <<< "\$s
 wiring_night_c_free          rehearse.sh         s/|| bad="\$bad \$rk(C)"/|| :/
 wiring_night_in_run_free     rehearse.sh         s/|| bad="\$bad \$rk(in-run)"/|| :/
 wiring_night_run_unnamed     rehearse.sh         s/    else bad="\$bad night(run)"; fi/    fi/
+cascade_bare_under_policy    rehearse.sh         s/1) MODEL_LADDER_CRUX_DIR=[^ ]* CRUX_CERT=[^ ]* /1) /
+cascade_cert_not_this_v      rehearse.sh         s/CRUX_CERT="\$w\/evidence\/crux\/\$V\//CRUX_CERT="$w\/evidence\/crux\//
+cascade_crux_dir_elsewhere   rehearse.sh         s/MODEL_LADDER_CRUX_DIR="\$RELEASE_AP\/models-t1"/MODEL_LADDER_CRUX_DIR="$RELEASE_AP\/models"/
+cascade_runs_in_the_clone    rehearse.sh         s/^    cd -- "\$w" || return 1$/    :/
+cascade_worktree_unchecked   rehearse.sh         s/if \[ -z "\$h" \] || \[ "\$h" != "\${RELEASE_REHEARSAL_MC:-}" \]; then/if false; then/
+cascade_odd_policy_bare      rehearse.sh         s/^        0) bash scripts\/cascade-publish.sh --rehearse ;;$/        *) bash scripts\/cascade-publish.sh --rehearse ;;/
+cascade_policy_not_about_v   rehearse.sh         s/ap_policy_applies "\$V" ) \\$/ap_policy_applies ) \\/
+cascade_policy_rc_ignored    rehearse.sh         s/ap_policy_applies "\$V" ) \\$/ap_policy_applies "$V"; : ) \\/
+cascade_stage_from_clone     rehearse.sh         s/^cascade|ap:preflight|stage_cascade$/cascade|ap:preflight|bash scripts\/cascade-publish.sh --rehearse/
+cascade_stage_as_text        rehearse.sh         s/stage_summary|stage_cascade) "\$cmd" ;;/stage_summary) "$cmd" ;;/
+ap_policy_fn_renamed         autopilot.sh        s/^ap_policy_applies() {$/ap_policy_judge() {/
+ap_cascade_other_receipts    autopilot.sh        /^if run_step cascade; then$/,/^fi$/s/models-t1/models-x/
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
