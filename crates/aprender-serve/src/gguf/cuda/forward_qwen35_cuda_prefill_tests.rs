@@ -491,13 +491,15 @@ fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one(
 /// #4958: the 4B file whose F2 probe GB10 (sm_121) rejected.
 const MODEL_4B: &str = "/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf";
 
-/// #4958: the apr-code fixture's question, as `apr run` prefills it (no template,
-/// 76 tokens). The 4B's F2 probe of it (the last 64 tokens: batched prefill, then
-/// one decode step) rejected on GB10 at position 42, cosine 0.5065 against the CPU
-/// with both argmaxes 16. The rejection held under every prefill GEMM mode (f32,
-/// f16, dp4a) and both attention paths. The per-token GPU path held at that
-/// position (`apr parity`: 0.9997), and the 4090, the 2B and the 9B accepted the
-/// same probe.
+/// #4958: the apr-code fixture's question. `apr run` prefills it in the GGUF's own
+/// chat template, 76 tokens. The 4B's F2 probe of it (the last 64 tokens: batched
+/// prefill, then one decode step) rejected on GB10 at position 42, cosine 0.5065
+/// against the CPU with both argmaxes 16. The rejection held under every prefill GEMM
+/// mode (f32, f16, dp4a) and both attention paths, and the 4090, the 2B and the 9B
+/// accepted the same probe. `apr parity` held the per-token GPU path to cosine 0.994
+/// or better at all 71 positions of a sequence that was not the templated one. So
+/// this test, batched against per-token on the probe itself, names the side: red
+/// means the batched prefill; green on GB10 points at the CPU reference.
 const PROMPT_4958: &str = "pub fn mean(xs: &[f64]) -> f64 { if xs.is_empty() { return 0.0; } \
 let sum: f64 = xs.iter().sum(); sum / (xs.len() as f64 - 1.0) } — what is wrong with this \
 function and how do you fix it?";
@@ -519,7 +521,11 @@ fn qwen35_prefill_equals_per_token_at_every_position_of_the_4958_probe_4b() {
     }
     let executor = crate::cuda_executor_or_skip!(0);
     let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_4B).expect("map the GGUF");
-    let ids = mapped.model.encode(PROMPT_4958).expect("tokenize");
+    // `apr run`'s own entry point, which applies the template before the encode.
+    let config = crate::infer::InferenceConfig::new(MODEL_4B).with_prompt(PROMPT_4958);
+    let prepared = crate::infer::prepare_tokens(&config, &crate::format::ModelFormat::Gguf)
+        .expect("tokenize as `apr run` does");
+    let ids = prepared.tokens();
     assert_eq!(
         ids.len(),
         76,
