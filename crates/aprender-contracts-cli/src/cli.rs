@@ -304,6 +304,12 @@ pub enum Commands {
         /// promote to Error and fail CI. Issue #1510.
         #[arg(long)]
         strict_test_binding: bool,
+        /// Run only what `--strict-test-binding` needs: validate (its precondition) and the strict
+        /// test-binding gate. Gates 2-22 do not run and nothing is cached or recorded as trend;
+        /// every armed gate that did not run reads `NotRun`, so this never reports a full-lint
+        /// PASS. The JSON keeps the full-lint shape. Implies `--strict-test-binding`. aprender#4974.
+        #[arg(long, conflicts_with_all = ["gate", "watch", "trend"])]
+        strict_test_binding_only: bool,
         /// Git ref whose `lint-baseline.json` is the `armed_gates` comparand (ONT-001 section 3.9). Default:
         /// merge-base(HEAD, origin/main), else the origin/main tip; with neither, NOT CHECKED is printed.
         #[arg(long)]
