@@ -205,6 +205,34 @@ scan_file() {
              | cut -d: -f1)
 }
 
+# scan_all <root> <relpath>... -> scan_file's records for every file, in order.
+#
+# ONE grep -l OVER THE UNIVERSE FIRST (#3676). scan_file forks about seven
+# processes per file before it knows whether the file holds a claim at all, and
+# about 95% of the ~7,500 files hold none: that was 93 s p50 and 164 s p95 of
+# guard-cargo for a text check. A file grep -l does not list gives no record
+# from scan_file either, because scan_file's first filter is the same pattern
+# through the same grep, so skipping it changes no record. --selftest checks
+# that over the whole fixture tree, at this batch size and at 4 so a batch
+# boundary is crossed. Batches of 1000 keep one exec well under ARG_MAX as the
+# tree grows.
+SCAN_ALL_BATCH=1000
+scan_all() {
+    local root="$1"
+    shift
+    local -A has_claim=()
+    local -a batch=() hits=()
+    local rel i
+    for ((i = 1; i <= $#; i += SCAN_ALL_BATCH)); do
+        batch=("${@:i:SCAN_ALL_BATCH}")
+        mapfile -d '' -t hits < <(cd "$root" && grep -lZE -- "$CLAIM_RE" "${batch[@]}" 2>/dev/null)
+        for rel in "${hits[@]}"; do has_claim["$rel"]=1; done
+    done
+    for rel in "$@"; do
+        if [ -n "${has_claim[$rel]:-}" ]; then scan_file "$root" "$rel"; fi
+    done
+}
+
 # ---------------------------------------------------------------- selftest --
 if [ "${1:-}" = "--selftest" ]; then
     TD=$(mktemp -d) || exit 2
@@ -307,6 +335,21 @@ if [ "${1:-}" = "--selftest" ]; then
     printf '/// ~4x faster -- see evidence/real/gone.json\n' > "$TD/crates/x/src/f.rs"
     row 'dangling citation in a doc comment'  dangling crates/x/src/f.rs
 
+    # THE PREFILTER (#3676). The gate runs scan_all, which skips every file
+    # grep -l does not list, so over this whole fixture tree -- claim-free files
+    # included -- it must hand back exactly what scan_file gives file by file.
+    mapfile -t fx < <(cd "$TD" && find docs crates -type f | LC_ALL=C sort)
+    want=$(for rel in "${fx[@]}"; do scan_file "$TD" "$rel"; done)
+    got=$(scan_all "$TD" "${fx[@]}")
+    got4=$(SCAN_ALL_BATCH=4; scan_all "$TD" "${fx[@]}")
+    t=$((t + 1))
+    if [ -n "$want" ] && [ "$got" = "$want" ] && [ "$got4" = "$want" ]; then
+        printf '  ok    %-9s %s\n' same "scan_all = scan_file over ${#fx[@]} fixture files, batch 1000 and 4"
+    else
+        printf '  FAIL  scan_all differs from scan_file over the fixture tree\n'
+        f=$((f + 1))
+    fi
+
     if [ "$t" -lt 19 ]; then
         printf '  FAIL  case table has %s row(s); at least 19 are required\n' "$t"
         f=$((f + 1))
@@ -368,11 +411,7 @@ fi
 printf 'universe: %s markdown + %s Rust file(s) (doc comments only)\n' \
     "${#MD[@]}" "${#RS[@]}"
 
-records=""
-for rel in "${SRC[@]}"; do
-    r=$(scan_file "." "$rel")
-    [ -n "$r" ] && records="${records}${r}"$'\n'
-done
+records=$(scan_all "." "${SRC[@]}")
 records=$(printf '%s' "$records" | grep -v '^$' || true)
 
 # ----------------------------------------------------------------- explain --
