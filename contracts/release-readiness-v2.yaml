@@ -1,0 +1,165 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# release-readiness-v2 — release readiness on KERNEL receipts; model cells DERIVED (aprender#3715 v2, 0.71)
+#
+# Operator, 2026-09-28 08:15Z, verbatim: "rebuild the release-readiness shape on KERNEL receipts.
+# :Kernel × :Backend × :ShapeClass → Receipt(Pass) with sh:minCount 1; model cells DERIVED by SHACL rule (all
+# kernels of the model Pass on that host's backend) + one e2e smoke per model×host. Falsifiers: remove one
+# kernel receipt → every model using it goes RED; a model with an unregistered kernel → RED. Target: gate ≤ 30
+# min, 0 unvalidated cells."
+#
+# DESIGN: docs/specifications/release-readiness-v2-kernel-cells.md. v1 stays the release gate until P3.
+#
+# THE CELLS
+#   release:KernelParityCell  (host, kernel_id): kernel_id fixes backend and shape_class (KREG-001 registry row), the
+#       host fixes arch/sm. Its parity receipt's judged fields sit ON the cell (verdict, withinBound, fresh,
+#       archMatch), so a ModelKernelCell reaches them through ONE level of sh:node (the engine's limit).
+#   release:ModelKernelCell   (host, model sha256): DERIVED. The extractor writes only release:usesKernel edges (the
+#       static map: per-tensor ggml types through the registry, extract/kernel_cells.rs), unregisteredQtype for a
+#       type no row serves, unpredictedKernel for a dispatched kernel the map did not predict, and the smoke edge.
+#       It never writes a verdict: the shape below is the derivation.
+#   release:SmokeCell   (host, model sha256): one e2e run (rr2-smoke-receipt/v1). kernelPathKnown is true only when
+#       its kernel_path (apr-kernel-path-v1, OBS-15) names registry ids, so an unchecked static map is RED.
+#
+# NOT ARMED. `armed_shapes` in contracts/lint-baseline.json does not list these shapes, so an ordinary PR's
+# shapes gate reports them and cannot fail on them. They are armed at P3 with the v2 extractor wiring.
+#
+# KIND: pattern. Vocabulary, emitters and shapes over a graph; the proof is the RR2 case table.
+
+name: release-readiness-v2
+version: "0.1.0"
+scope: >
+  Whether a release's kernel parity receipts and per-(model, host) smoke receipts prove every derived model cell.
+  Out of scope: producing the receipts (KREG-001 AC-3, the smoke runner), wiring the extractor into
+  extract:release-evidence (P1 remainder), switching scripts/release/release_readiness.sh (P3).
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-28'
+  last_modified: '2026-09-28'
+  author: PAIML Engineering
+  description: >
+    Kernel cells are measured once per host; model cells are derived from them by sh:node, plus one smoke.
+    Removing one kernel receipt turns exactly the model cells whose static map uses that kernel RED; a tensor
+    type no registry row serves turns its model cell RED.
+  references:
+    - 'aprender#3715 (v2 design), aprender#4539 KREG-001 (the registry and parity receipts; contracts/kernel-registry-v1.yaml lands with it), #3430'
+    - 'docs/specifications/release-readiness-v2-kernel-cells.md'
+    - 'crates/aprender-contracts/src/ontology/extract/{kernel_cells.rs, kernel_cells_tests.rs, gguf.rs}'
+
+entity:
+  type: release-evidence
+
+relations:
+  depends_on: [ont-shapes-v1, release-readiness-v1]
+
+shapes:
+  - id: release-readiness-v2.kernel
+    targetClass: release:KernelParityCell
+    properties:
+      - {path: release:kernelId, minCount: 1, maxCount: 1}
+      - {path: release:verdict, minCount: 1, maxCount: 1, in: [pass]}
+      - {path: release:withinBound, minCount: 1, maxCount: 1, in: [true]}
+      - {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}
+      - {path: release:archMatch, minCount: 1, maxCount: 1, in: [true]}
+  - id: release-readiness-v2.model
+    targetClass: release:ModelKernelCell
+    properties:
+      - {path: release:usesKernel, minCount: 1, nodeKind: IRI, class: release:KernelParityCell,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
+                             {path: release:withinBound, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:archMatch, minCount: 1, maxCount: 1, in: [true]}]}}
+      - {path: release:unregisteredQtype, maxCount: 0}
+      - {path: release:unpredictedKernel, maxCount: 0}
+      - {path: release:smoke, minCount: 1, maxCount: 1, nodeKind: IRI, class: release:SmokeCell,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:kernelPathKnown, minCount: 1, maxCount: 1, in: [true]}]}}
+  # KTEST-001 S-SAN: a cuda kernel cell also needs a clean compute-sanitizer run (memcheck, racecheck,
+  # initcheck, synccheck; KTEST-05) that dispatched it, at most 7 days old. Kernel cells only: the model
+  # node above reads the parity fields, so a cpu kernel is never asked for one.
+  - id: release-readiness-v2.sanitizer
+    targetClass: release:SanitizedKernelCell
+    properties:
+      - {path: release:sanitizerClean, minCount: 1, maxCount: 1, in: [true]}
+      - {path: release:sanitizerFresh, minCount: 1, maxCount: 1, in: [true]}
+
+equations:
+  static_map:
+    formula: "uses(m, h) = { r.kernel_id : r ∈ Reg(h), r.ggml_type ∈ types(m) } ∪ { r.kernel_id : r ∈ Reg(h), r ∈ Ops(h), types(m) ≠ ∅, archs(r) = ⊥ ∨ arch(m) = ⊥ ∨ arch(m) ∈ archs(r) }"
+    domain: "types(m) = the distinct per-tensor ggml types of the model file (model:tensorType); arch(m) = its general.architecture; Reg(h) = the kernel-registry.json rows with backend = backend(h), layout = row_major, arch ∈ {any, arch(h)}; Ops(h) = its ops[] rows (per-forward ops: norm, rope, attention, …) with that backend and arch, which carry no type"
+    codomain: "release:usesKernel edges, and release:unregisteredQtype for each t ∈ types(m) no such row serves"
+    invariants:
+      - "a superset of admit(): every row a host of that arch could be served needs a receipt"
+      - "a malformed registry is refused whole, never read in part"
+      - "an op row serves no tensor type; an unknown arch(m) takes every op row (the superset)"
+    preconditions:
+      - "the model file's tensor infos parse in full (a truncated or >4-dim info is refused)"
+    postconditions:
+      - "removing a row turns its type unregistered for exactly the models that have it"
+    lean_theorem: none — L4 not declared
+  model_pass:
+    formula: "Pass(m, h) ⇔ uses(m, h) ≠ ∅ ∧ ∀ k ∈ uses(m, h): Pass(k, h) ∧ unregistered(m, h) = ∅ ∧ unpredicted(m, h) = ∅ ∧ |smoke(m, h)| = 1 ∧ Pass(smoke(m, h))"
+    domain: "every release:ModelKernelCell"
+    codomain: "a violation naming the model cell, or none"
+    invariants:
+      - "Pass(k, h) ⇔ verdict = pass ∧ withinBound ∧ fresh ∧ archMatch, all present"
+    preconditions:
+      - "an absent field is never the passing value"
+    postconditions:
+      - "derived by the shape through sh:node; the extractor writes no model verdict"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: RR2-INV-001
+    property: removing one kernel receipt fails exactly the model cells whose static map uses that kernel
+    formal: 'receipt(k, h) = ⊥ ⇒ {m : Fail(v2.model, (m, h))} = {m : k ∈ uses(m, h)}'
+    prose: false
+  - id: RR2-INV-002
+    property: a model tensor type no registry row serves fails that model cell
+    formal: 't ∈ types(m) ∧ ¬∃ r serving t on h ⇒ Fail(v2.model, (m, h))'
+    prose: false
+  - id: RR2-INV-004
+    property: a cuda kernel cell with no, a dirty, or a stale (> 7 d) sanitizer run fails that kernel cell only
+    formal: 'backend(h) = cuda ∧ ¬(clean(san(k, h)) ∧ age(san(k, h)) ≤ 7d) ⇒ Fail(v2.sanitizer, (k, h))'
+    prose: false
+  - id: RR2-INV-003
+    property: a kernel receipt measured on another arch fails that kernel cell and its dependants
+    formal: '¬archMatch(k, h) ⇒ Fail(v2.kernel, (k, h)) ∧ ∀ m: k ∈ uses(m, h) ⇒ Fail(v2.model, (m, h))'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-RR2-001
+    rule: the static map
+    prediction: "per-tensor types map to exactly the rows of the host's backend and arch; a type no row serves is unregistered; a removed row unregisters its type and nothing else; an ops[] row joins every typed model's map of its backend, narrowed by archs (unknown arch takes all), and removing its receipt fails every such model; a malformed registry (no ops[], a kernels[] row with an absent or null ggml_type, a type key on an op row, archs on a typed row, a bad archs list, an id shared across kernels and ops) is refused whole"
+    test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells
+    if_fails: a model's kernel set silently drops a kernel, so a missing receipt cannot turn it RED
+  - id: FALSIFY-RR2-002
+    rule: the RR2 case table against these shapes
+    prediction: "the all-green graph conforms; RR2-F1 (one kernel receipt removed) fails exactly the model cells using it plus that kernel cell; RR2-F2 unregistered qtype, RR2-F3 unpredicted kernel, RR2-F4 stale receipt, RR2-F5 no smoke, RR2-F6 foreign-arch receipt each fail naming their cells"
+    test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells::tests::rr2
+    if_fails: a model cell passes with a kernel nobody measured on that host
+
+  - id: FALSIFY-RR2-003
+    rule: S-SAN, the sanitizer judge and shape
+    prediction: "a receipt missing, repeating or failing any of the four tools judges not clean whatever its own `clean` says; age > 7 d, dated after the gate, or no --gate-utc judges stale; a v2 run checks the kernels its kreg kernel_path dispatched, and a --kernel-name-filtered tool only the ids in its covers (none without it), so a kernel is clean only when every tool checked it and no check was dirty; a v1, trace or null-path run is refused; each of no run, dirty, stale fails exactly that kernel cell; a cpu host is asked for none"
+    test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells
+    if_fails: a cuda kernel ships with no race/memory check, or on a sanitizer run from an older tree
+  - id: FALSIFY-RR2-004
+    rule: RR2-F3, the smoke judge
+    prediction: "a kreg kernel_path's ids outside the model's static map are unpredictedKernel (RED); a null or trace path is kernelPathKnown false (RED); another host, a bad sha, an unknown source, no entries or an entry naming no kernel is refused; a second receipt for one model refuses the directory"
+    test: cargo test -p aprender-contracts --lib ontology::extract::kernel_cells
+    if_fails: a model passes on a static map no run ever checked, or a kernel nobody predicted ships unmeasured
+
+qa_gate:
+  id: F-RR2-001
+  name: release-readiness-v2
+  description: 'Model cells derived from kernel receipts plus one smoke (aprender#3715 v2)'
+  checks:
+    - kernel_receipt_removal_reds_exactly_its_models
+    - unregistered_qtype_is_red
+    - no_model_verdict_written_by_the_extractor
+  pass_criteria: Both falsification tests pass
+  falsification: 'drop the node block from release-readiness-v2.model usesKernel → RR2-F1 stops naming the model cells'

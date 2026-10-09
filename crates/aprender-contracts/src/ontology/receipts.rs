@@ -87,6 +87,10 @@ pub struct InventoryItem {
     pub workspace_bytes: Option<u64>,
     /// The KV precision `kv_bytes_per_token` was computed at (#3712, 62: device KV was measured as f32).
     pub kv_dtype: Option<String>,
+    /// The distinct per-tensor ggml types of the file (#3715 v2, `model:tensorType`): the input of the static
+    /// model → kernel map. `None` when absent OR when any element is not a u32: a set read in part would drop
+    /// kernels from the model's map, so it is read whole or not at all.
+    pub tensor_types: Option<std::collections::BTreeSet<u32>>,
 }
 
 /// One (model × verb × thinking × context rung) row of v2 `cells[]` (#3712 / #3715).
@@ -326,6 +330,7 @@ fn parse_inventory_item(r: &serde_json::Value) -> InventoryItem {
             .and_then(serde_json::Value::as_u64),
         workspace_bytes: r.get("workspace_bytes").and_then(serde_json::Value::as_u64),
         kv_dtype: str_of(r, "kv_dtype"),
+        tensor_types: u32_set(r, "tensor_types"),
     }
 }
 
@@ -517,6 +522,14 @@ fn emit_receipt_node(g: &mut Graph, rec: &Receipt, row: &Row, rung: &Rung) -> St
 }
 
 /// An array of strings at `key`, or `None` when the key is absent (which is not an empty list).
+fn u32_set(r: &serde_json::Value, key: &str) -> Option<std::collections::BTreeSet<u32>> {
+    r.get(key)?
+        .as_array()?
+        .iter()
+        .map(|v| v.as_u64().and_then(|t| u32::try_from(t).ok()))
+        .collect()
+}
+
 fn strings(r: &serde_json::Value, key: &str) -> Option<Vec<String>> {
     r.get(key).and_then(serde_json::Value::as_array).map(|a| {
         a.iter()

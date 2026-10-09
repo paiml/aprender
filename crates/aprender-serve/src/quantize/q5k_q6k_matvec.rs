@@ -117,7 +117,7 @@ pub fn fused_q4k_q8k_parallel_matvec_into(
     // is from bounds checks, slice operations, and closure dispatch between
     // memory loads. This path uses raw pointers like ggml (ggml-cpu.c:1214).
     #[cfg(target_arch = "x86_64")]
-    let use_lean = is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma");
+    let use_lean = crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma");
     #[cfg(not(target_arch = "x86_64"))]
     let use_lean = false;
 
@@ -175,7 +175,7 @@ pub fn fused_q4k_q8k_parallel_matvec_into(
 
     #[cfg(target_arch = "x86_64")]
     let use_4row_kernel =
-        is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512vnni");
+        crate::isa::cpu_feature!("avx512f") && crate::isa::cpu_feature!("avx512vnni");
     #[cfg(not(target_arch = "x86_64"))]
     let use_4row_kernel = false;
 

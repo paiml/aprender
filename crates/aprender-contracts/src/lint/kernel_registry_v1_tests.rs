@@ -36,15 +36,18 @@ fn gate(doc: &serde_json::Value) -> ShapesOutcome {
 }
 
 fn assert_refused(case: &str, doc: &serde_json::Value, property: &str) {
+    assert_refused_at(case, doc, "kernel-registry-v1.kernels.0", property);
+}
+
+fn assert_refused_at(case: &str, doc: &serde_json::Value, focus: &str, property: &str) {
     match gate(doc) {
         ShapesOutcome::Ran { result, findings } => {
             assert!(!result.passed, "{case} was not refused");
             let all: Vec<&str> = findings.iter().map(|f| f.message.as_str()).collect();
             assert!(
                 all.iter()
-                    .any(|m| m.contains("kernel-registry-v1.kernels.0")
-                        && m.contains(&format!("ont:kreg/{property}"))),
-                "{case}: no finding names row 0 and `{property}`: {all:?}"
+                    .any(|m| m.contains(focus) && m.contains(&format!("ont:kreg/{property}"))),
+                "{case}: no finding names `{focus}` and `{property}`: {all:?}"
             );
         }
         other => panic!("{case}: expected Ran, got {other:?}"),
@@ -76,6 +79,13 @@ fn kernel_registry_v1_the_real_registry_conforms_with_every_row_a_focus_node() {
             match &result.extra {
                 Some(GateExtra::Shapes { by_shape, .. }) => {
                     let want = format!("kernel-registry-v1={rows}");
+                    assert!(by_shape.contains(&want), "{want} not in {by_shape:?}");
+                    let ops = doc["ops"].as_array().expect("ops").len();
+                    assert!(
+                        ops > 0,
+                        "no op row: the op shape would pass on nothing (L25)"
+                    );
+                    let want = format!("kernel-registry-v1.op={ops}");
                     assert!(by_shape.contains(&want), "{want} not in {by_shape:?}");
                 }
                 other => panic!("{other:?}"),
@@ -139,4 +149,56 @@ fn kernel_registry_v1_a_lowercase_or_spaced_requires_is_refused() {
     let d = with_row0("requires", Some(serde_json::json!("SHADER_F16 + SUBGROUP")));
     assert_refused("spaced requires", &d, "requires");
     assert_refused("no requires", &with_row0("requires", None), "requires");
+}
+
+fn with_op0(key: &str, value: Option<serde_json::Value>) -> serde_json::Value {
+    let mut d = real_registry();
+    let row = d["ops"][0].as_object_mut().expect("op 0 is an object");
+    match value {
+        Some(v) => {
+            row.insert(key.to_string(), v);
+        }
+        None => {
+            row.remove(key);
+        }
+    }
+    d
+}
+
+/// FALSIFY-KREG-013: the op shape is closed, so a tensor type on a per-forward op is refused rather
+/// than silently carried; its op set, accumulator and archs are closed too.
+#[test]
+fn falsify_kreg_013_an_op_row_case_table() {
+    let at = "kernel-registry-v1.ops.0";
+    let cases: [(&str, serde_json::Value, &str); 6] = [
+        (
+            "a ggml_type on an op",
+            with_op0("ggml_type", Some(serde_json::json!(0))),
+            "ggml_type",
+        ),
+        (
+            "a qtype on an op",
+            with_op0("qtype", Some(serde_json::json!("F32"))),
+            "qtype",
+        ),
+        (
+            "an op outside the set",
+            with_op0("op", Some(serde_json::json!("matvec"))),
+            "op",
+        ),
+        ("no op", with_op0("op", None), "op"),
+        (
+            "a quantized accumulator",
+            with_op0("accumulate", Some(serde_json::json!("i32_f32"))),
+            "accumulate",
+        ),
+        (
+            "a spaced arch",
+            with_op0("archs", Some(serde_json::json!(["Llama 3"]))),
+            "archs",
+        ),
+    ];
+    for (case, doc, property) in cases {
+        assert_refused_at(case, &doc, at, property);
+    }
 }

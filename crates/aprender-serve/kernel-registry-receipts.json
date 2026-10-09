@@ -1,7 +1,7 @@
 {
  "schema": "apr-kernel-registry-receipts/v1",
  "note": "KREG-001 AC-3 (aprender#4539, OBS-15 #4574), RATCHET per cop ruling 2026-09-27 13:13Z: a registry row is admitted with a per-arch parity receipt from a host whose arch equals the row's arch (any host for an arch=any row). Until 0.73 the rows without one are counted and that count must equal unreceipted_max; lower unreceipted_max when you add a receipt, never raise it. From version 0.73.0 unreceipted_max must be 0 (hard RED). Checked by realizar::kernel_registry tests (FALSIFY-KREG-008).",
- "unreceipted_max": 25,
+ "unreceipted_max": 20,
  "hard_red_at": "0.73.0",
  "receipts": [
   {
@@ -83,6 +83,99 @@
    "kernel_id": "cpu.matvec.iq4_xs",
    "host_arch": "x86_64",
    "receipt": "evidence/kreg/parity/cpu.matvec.iq4_xs.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.f32.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.f16",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.f16.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.bf16",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.bf16.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.apr_q4",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.apr_q4.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.apr_q8",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.apr_q8.json"
+  }
+ ],
+ "op_unreceipted_max": 26,
+ "op_receipts": [
+  {
+   "kernel_id": "cpu.rmsnorm.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.rmsnorm.f32.json"
+  },
+  {
+   "kernel_id": "cpu.layernorm.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.layernorm.f32.json"
+  },
+  {
+   "kernel_id": "cpu.gelu.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.gelu.f32.json"
+  },
+  {
+   "kernel_id": "cpu.argmax.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.argmax.f32.json"
+  },
+  {
+   "kernel_id": "cpu.rope.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.rope.f32.json"
+  },
+  {
+   "kernel_id": "cpu.attention.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.attention.f32.json"
+  },
+  {
+   "kernel_id": "cpu.embed.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.embed.f32.json"
+  },
+  {
+   "kernel_id": "cpu.kv_write.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.kv_write.f32.json"
+  },
+  {
+   "kernel_id": "cpu.swiglu.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.swiglu.f32.json"
+  },
+  {
+   "kernel_id": "cpu.residual_add.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.residual_add.f32.json"
+  },
+  {
+   "kernel_id": "cpu.sample.topk.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.sample.topk.f32.json"
+  },
+  {
+   "kernel_id": "cpu.sample.seeded.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.sample.seeded.f32.json"
+  },
+  {
+   "kernel_id": "cpu.repeat_penalty.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.repeat_penalty.f32.json"
   }
  ]
 }

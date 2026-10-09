@@ -150,7 +150,7 @@ mod tests {
     #[test]
     #[cfg(target_arch = "x86_64")]
     fn test_avx512_detection() {
-        let has = is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw");
+        let has = crate::isa::cpu_feature!("avx512f") && crate::isa::cpu_feature!("avx512bw");
         eprintln!("AVX-512 F+BW: {has}");
     }
 }

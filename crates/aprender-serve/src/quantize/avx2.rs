@@ -69,7 +69,7 @@ pub fn fused_swiglu_simd(gate: &mut [f32], up: &[f32]) {
 
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
             // SAFETY: AVX2 and FMA verified at runtime
             unsafe {
                 fused_swiglu_avx2(gate, up);
@@ -214,7 +214,7 @@ pub fn softmax_simd(x: &mut [f32]) {
 
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
             // SAFETY: Memory safety ensured by bounds checking and alignment
             unsafe {
                 softmax_avx2(x);

@@ -674,6 +674,13 @@ pub struct ReleaseArgs {
     /// The CRUX receipts, apr vs its comparators (default: evidence/crux/<version>/)
     #[arg(long)]
     pub crux_receipts: Option<PathBuf>,
+    /// aprender#3715 v2: the kernel-cell evidence dir (`input-sets.json`, `<host>/parity/*.json`). Adds the v2
+    /// kernel and model cells to the release graph; absent → none. Needs the kernel registry in the repo.
+    #[arg(long)]
+    pub v2_evidence: Option<PathBuf>,
+    /// The gate time (`YYYY-MM-DDTHH:MM:SSZ`) v2 sanitizer runs are aged against; absent → every run is stale
+    #[arg(long)]
+    pub gate_utc: Option<String>,
 }
 
 impl ReleaseArgs {
@@ -689,6 +696,8 @@ impl ReleaseArgs {
             || self.tokenizer_receipts.is_some()
             || self.surface.is_some()
             || self.crux_receipts.is_some()
+            || self.v2_evidence.is_some()
+            || self.gate_utc.is_some()
     }
 
     /// The subject, or `None` when no flag was passed. A partial set is refused, never completed by a default.
@@ -718,6 +727,8 @@ impl ReleaseArgs {
             .clone_from(&self.tokenizer_receipts);
         s.surface.clone_from(&self.surface);
         s.crux_receipts_dir.clone_from(&self.crux_receipts);
+        s.v2_dir.clone_from(&self.v2_evidence);
+        s.v2_gate_utc.clone_from(&self.gate_utc);
         Ok(Some(s))
     }
 }
