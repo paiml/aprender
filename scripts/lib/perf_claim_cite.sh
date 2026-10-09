@@ -146,6 +146,13 @@ claim_line_is_receipted() {
     hi=$((n + PERF_CLAIM_CITE_WINDOW))
     if [ "$hi" -gt "$total" ]; then hi="$total"; fi
     block=$(sed -n "${lo},${hi}p" "$f" 2>/dev/null)
+    # Every token resolve_citations reports is a PERF_CLAIM_RECEIPT_RE match, and
+    # every such match holds the literal `evidence/`. A window without that
+    # literal cannot be receipted, so it is refused here, before the four forks
+    # of the resolve pipeline. That is 353 of the 440 windows the negative guard
+    # asks about (#3676). Should the regex ever stop requiring the literal, this
+    # refuses the exemption: it fails toward a finding, never toward a pass.
+    [[ $block == *evidence/* ]] || return 1
     cites=$(resolve_citations "$root" "$block")
     grep -q ' exists$' <<< "$cites"
 }

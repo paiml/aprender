@@ -258,27 +258,64 @@ TABLE_HEADER_COMP_RE="\\|[^|]*${COMPETITOR_RE}[^|]*\\|"
 # The header block is CAPTURED and then matched, never `sed … | grep -q`: an
 # early-exiting reader hands the producer SIGPIPE and pipefail reports 141
 # though grep MATCHED. That exact shape has been a live fail-open here.
+#
+# header_window <file> <lo> <hi> -> HEADER_WINDOW_TEXT, byte for byte what
+# `$(sed -n "<lo>,<hi>p" <file>)` returns, without a `sed` for each of the ~540
+# candidates the sweep finds (#3676).
+#
+# The file is read once with mapfile into the CALLER's `hw_lines`, keyed by its
+# `hw_file`; the candidates arrive grouped by file, so each file is read once.
+# mapfile keeps each line's newline, and a line it cut short at a NUL byte has
+# none, so such a window goes to `sed` as before; so does a window `sed` reads
+# oddly (line 0, or an end before the start). `$(...)` strips trailing
+# newlines, and so does the last step here. The self-test holds every one of
+# these cases to `sed`'s own answer.
+header_window() {
+    local file="$1" lo="$2" hi="$3" l ok=0 nl=$'\n'
+    if [ "$file" != "${hw_file-}" ]; then
+        hw_lines=()
+        hw_file=""
+        # Only a regular file that reads is cached. A missing path or a directory
+        # goes to `sed`, which answers it as before: no text, and a failing status.
+        if [ -f "$file" ] && mapfile hw_lines 2>/dev/null < "$file"; then hw_file=$file; fi
+    fi
+    if [ "$file" = "$hw_file" ] && [ "$lo" -ge 1 ] && [ "$hi" -ge "$lo" ]; then
+        ok=1
+        for l in "${hw_lines[@]:lo-1:hi-lo+1}"; do
+            [[ $l == *"$nl" ]] || ok=0
+        done
+    fi
+    if [ "$ok" -eq 1 ]; then
+        printf -v HEADER_WINDOW_TEXT '%s' "${hw_lines[@]:lo-1:hi-lo+1}"
+        HEADER_WINDOW_TEXT=${HEADER_WINDOW_TEXT%"${HEADER_WINDOW_TEXT##*[!$nl]}"}
+    else
+        HEADER_WINDOW_TEXT=$(sed -n "${lo},${hi}p" "$file" 2>/dev/null)
+    fi
+}
+
 table_ratio_hits_in() {
     local root="$1"
     shift
     [ "$#" -gt 0 ] || return 0
-    local rec f n lo hi block cands
+    local rec f n lo hi block cands hw_file="" HEADER_WINDOW_TEXT=""
+    local -a hw_lines=()
     # The candidate scan runs INSIDE $root so the emitted paths are the ones the
     # caller passed, and the header lookup below can dereference them as
-    # "$root/$f". Captured rather than piped: the loop body runs `sed` and
-    # `grep`, and a `grep | while` would put those in a subshell whose SIGPIPE
-    # status pipefail then reports as a failure.
+    # "$root/$f". Captured rather than piped: the loop body runs `grep`, and a
+    # `grep | while` would put it in a subshell whose SIGPIPE status pipefail
+    # then reports as a failure.
     cands=$( cd "$root" && grep -HInE "$TABLE_CELL_RATIO_RE" "$@" 2>/dev/null || true )
     [ -n "$cands" ] || return 0
     while IFS= read -r rec; do
         f="${rec%%:*}"
-        n=$(printf '%s' "$rec" | cut -d: -f2)
+        n="${rec#*:}"; n="${n%%:*}"   # `cut -d: -f2`, without two forks per candidate
         case "$n" in '' | *[!0-9]*) continue ;; esac
         hi=$((n - 1))
         [ "$hi" -ge 1 ] || continue
         lo=$((n - TABLE_HEADER_WINDOW))
         if [ "$lo" -lt 1 ]; then lo=1; fi
-        block=$(sed -n "${lo},${hi}p" "$root/$f" 2>/dev/null)
+        header_window "$root/$f" "$lo" "$hi"
+        block=$HEADER_WINDOW_TEXT
         if grep -qE "$TABLE_HEADER_COMP_RE" <<< "$block"; then
             printf '%s\n' "$rec"
         fi
@@ -520,7 +557,7 @@ drop_receipted() { # drop_receipted <root> < findings-on-stdin
     while IFS= read -r rec; do
         [ -n "$rec" ] || continue
         f="${rec%%:*}"
-        n=$(printf '%s' "$rec" | cut -d: -f2)
+        n="${rec#*:}"; n="${n%%:*}"   # `cut -d: -f2`, without two forks per finding
         # `claim_citation_exempts`, NOT `claim_line_is_receipted`: the exemption
         # is a CONJUNCTION of "cites a resolving evidence/ FILE" and "is on one
         # of the three surfaces PP-12 names". Applied without the second
@@ -539,16 +576,42 @@ drop_receipted() { # drop_receipted <root> < findings-on-stdin
 # `path:LINE:content`; the location key is the same one the known/new check uses.
 count_stale() { # count_stale <baseline-file> <hits: one `path:LINE:content` per line>
     local base="$1" hits="$2" locs n=0 loc
+    local -A present=()
     locs=$(printf '%s\n' "$hits" | grep -v '^$' | awk -F: '{print $1":"$2}')
+    # The locations as a set, so each entry is a lookup. It was `grep -qxF "$loc" <<< "$locs"`,
+    # a fork for each of ~420 entries (#3676). Never `printf | grep -q`: under pipefail, grep -q
+    # exits on its first match, the rest of printf's output gets SIGPIPE (141), and the
+    # pipeline "fails", so a PRESENT entry was counted stale (#4113 quorum lane 2:
+    # intermittent false REPORTs). A set has no pipe to break.
+    while IFS= read -r loc; do
+        if [ -n "$loc" ]; then
+            present["$loc"]=1
+        fi
+    done <<< "$locs"
     while IFS= read -r loc; do
         [ -n "$loc" ] || continue
         case "$loc" in '#'*) continue ;; esac
-        # A HERE-STRING, never `printf | grep -q`: under pipefail, grep -q exits on its first
-        # match, the rest of printf's output gets SIGPIPE (141), and the pipeline "fails", so a
-        # PRESENT entry was counted stale (#4113 quorum lane 2: intermittent false REPORTs).
-        grep -qxF "$loc" <<< "$locs" || n=$((n + 1))
+        [ -n "${present[$loc]:-}" ] || n=$((n + 1))
     done < "$base"
     printf '%s' "$n"
+}
+
+# load_baseline <file> / is_baselined <path:LINE> -- the known/new test below, as a set
+# loaded once. It was `grep -qxF "$loc" "$BASELINE"`, a fork for each of ~500 findings
+# (#3676). Every location holds a `:`, so a line without one (blank, or a header line
+# without a colon) can never equal a location; it is left out, as grep -x never matched it.
+# The self-test holds is_baselined to that grep's own answer.
+declare -A BASELINED=()
+load_baseline() { # load_baseline <file>
+    local l
+    BASELINED=()
+    [ -f "$1" ] || return 0
+    while IFS= read -r l || [ -n "$l" ]; do
+        case "$l" in *:*) BASELINED["$l"]=1 ;; esac
+    done < "$1"
+}
+is_baselined() { # is_baselined <path:LINE>
+    [ -n "${BASELINED[$1]:-}" ]
 }
 
 if [ "${1:-}" = "--selftest" ]; then
@@ -912,6 +975,55 @@ if [ "${1:-}" = "--selftest" ]; then
     # A cell with no leading space must still match: the left-boundary spelling
     # is an OPTIONAL prefix, not a required one.
     check_table match   "$TBL_HDR" '|c=16|1120.8|0.097×|'
+
+    # One call over two files: a ratio cell under a competitor header in the
+    # first, under a plain header in the second. Only the first is a hit; a
+    # header window read from the wrong file would make the second one too.
+    printf '%s\n%s\n' "$TBL_HDR" '| c=16 | 1120.8 | 108.4 | **0.097×** |' > "$TABLE_TD/two-a.md"
+    printf '%s\n%s\n' '| band | agg | dec | scaling |' '| c=16 | 1120.8 | 108.4 | **0.097×** |' > "$TABLE_TD/two-b.md"
+    out=$(table_ratio_hits_in "$TABLE_TD" two-a.md two-b.md 2>/dev/null || true)
+    out=$(printf '%s\n' "$out" | cut -d: -f1-2 | tr '\n' ' ')
+    tt=$((tt+1))
+    if [ "$out" = "two-a.md:2 " ]; then printf '  ok    two files in one call: the hit is two-a.md:2 alone\n'
+    else printf '  FAIL  two files in one call: want two-a.md:2 alone, got %s\n' "$out"; tf=$((tf+1)); fi
+
+    # header_window must answer what `$(sed -n "lo,hip" file)` answers, byte for
+    # byte and with the same status, on every shape it can meet (#3676). Each row
+    # asks both.
+    printf 'l%s\n' 1 2 3 4 5 6 7 8 9 10 11 12 > "$TABLE_TD/hw-plain.md"
+    printf 'a\r\n|b|\r\nc\r\n' > "$TABLE_TD/hw-crlf.md"
+    printf 'x\n|y|\n\n\n\nz\n' > "$TABLE_TD/hw-blank.md"
+    printf '|Oll\000ama|\n| 1.5x |\n' > "$TABLE_TD/hw-nul.md"
+    printf 'p\nq' > "$TABLE_TD/hw-unterminated.md"
+    mkdir "$TABLE_TD/hw-dir.md"
+    hw_row() { # hw_row <file> <lo> <hi> <name> -- inside hw_rows' hw_file/hw_lines scope
+        local want got wrc grc
+        if { want=$(sed -n "$2,$3p" "$1" 2>/dev/null); } 2>/dev/null; then wrc=0; else wrc=$?; fi
+        if header_window "$1" "$2" "$3" 2>/dev/null; then grc=0; else grc=$?; fi
+        got=$HEADER_WINDOW_TEXT
+        tt=$((tt+1))
+        if [ "$got" = "$want" ] && [ "$grc" = "$wrc" ]; then printf '  ok    window   %s (rc %s)\n' "$4" "$wrc"
+        else printf '  FAIL  window   %s: sed gave %q rc %s, header_window %q rc %s\n' "$4" "$want" "$wrc" "$got" "$grc"; tf=$((tf+1)); fi
+    }
+    hw_rows() {
+        local hw_file="" HEADER_WINDOW_TEXT=""
+        local -a hw_lines=()
+        hw_row "$TABLE_TD/hw-plain.md" 1 1 "line 1 alone"
+        hw_row "$TABLE_TD/hw-plain.md" 2 11 "a ten-line window"
+        hw_row "$TABLE_TD/hw-crlf.md" 1 3 "CRLF lines keep their CR"
+        hw_row "$TABLE_TD/hw-blank.md" 1 5 "trailing empty lines go, as \$(...) drops them"
+        hw_row "$TABLE_TD/hw-plain.md" 3 6 "back to an earlier file: the cache follows the path"
+        hw_row "$TABLE_TD/hw-nul.md" 1 2 "a NUL byte: mapfile cuts the line short, so sed answers"
+        hw_row "$TABLE_TD/hw-unterminated.md" 1 2 "a last line with no newline"
+        hw_row "$TABLE_TD/hw-plain.md" 11 13 "a window past the end"
+        hw_row "$TABLE_TD/hw-plain.md" 0 2 "line 0, which sed refuses"
+        hw_row "$TABLE_TD/hw-plain.md" 5 3 "an end before the start, which sed reads as one line"
+        hw_row "$TABLE_TD/hw-none.md" 1 2 "a file that is not there"
+        hw_row "$TABLE_TD/hw-dir.md" 1 2 "a directory"
+        hw_row "$TABLE_TD/hw-plain.md" 4 4 "a file read again after two that were not cached"
+    }
+    hw_rows
+
     if [ "$tt" -lt 8 ]; then
         printf '  FAIL  table class has %s row(s); at least 8 are required\n' "$tt"; tf=$((tf+1))
     fi
@@ -1044,10 +1156,36 @@ if [ "${1:-}" = "--selftest" ]; then
     if [ "$got" = "0" ]; then printf '  ok    stale-count large payload, early match -> 0 (no SIGPIPE false stale)\n'
     else printf '  FAIL  stale-count large payload, early match: want 0 got %s (SIGPIPE under pipefail?)\n' "$got"; f=$((f+1)); fi
 
+    # is_baselined must answer what `grep -qxF "$loc" "$BASELINE"` answered (#3676): an
+    # exact whole line, a CR kept, a last line with no newline still read.
+    printf '# header: comment\nx.md:12\ndocs/a b.md:3\ny.md:7\r\na]b.md:1\nz.md:9' > "$ST_TD/known"
+    load_baseline "$ST_TD/known"
+    bl_yes=0; bl_no=0; bl_bad=""
+    for loc in 'x.md:12' 'x.md:1' 'x.md:120' 'docs/a b.md:3' 'y.md:7' 'a]b.md:1' 'z.md:9' '# header: comment' 'q.md:1'; do
+        if grep -qxF "$loc" "$ST_TD/known"; then want=1; bl_yes=$((bl_yes+1)); else want=0; bl_no=$((bl_no+1)); fi
+        if is_baselined "$loc"; then got=1; else got=0; fi
+        [ "$got" = "$want" ] || bl_bad="$bl_bad [$loc: grep $want, set $got]"
+    done
+    t=$((t+1))
+    if [ -z "$bl_bad" ] && [ "$bl_yes" -ge 3 ] && [ "$bl_no" -ge 3 ]; then
+        printf '  ok    is_baselined agrees with grep -qxF on %s known and %s new location(s)\n' "$bl_yes" "$bl_no"
+    else
+        printf '  FAIL  is_baselined disagrees with grep -qxF:%s (%s known, %s new)\n' "${bl_bad:- none}" "$bl_yes" "$bl_no"; f=$((f+1))
+    fi
+
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
     [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$rf" -eq 0 ] && [ "$mf" -eq 0 ] \
         && [ "$tf" -eq 0 ] && [ "$cf2" -eq 0 ] || exit 1
     exit 0
+fi
+# The block above ends in `exit` either way, so a self-test that reaches this line
+# was ABANDONED. Outside POSIX mode, bash meets an expansion error (`substring
+# expression < 0`, say) by dropping the top-level command it is in, here the whole
+# self-test, and running the next one: the real scan, whose PASS then answered for
+# a self-test that never gave a verdict (#3676, found by planting a mutant).
+if [ "${1:-}" = "--selftest" ]; then
+    printf 'FAIL  the self-test stopped before its verdict (an expansion error?)\n'
+    exit 1
 fi
 
 
@@ -1243,10 +1381,12 @@ fi
 
 known=0
 new=0
+load_baseline "$BASELINE"
 while IFS= read -r line; do
     [ -n "$line" ] || continue
-    loc="${line%%:*}:$(printf '%s' "$line" | cut -d: -f2)"
-    if [ -f "$BASELINE" ] && grep -qxF "$loc" "$BASELINE"; then
+    rest="${line#*:}"
+    loc="${line%%:*}:${rest%%:*}"   # `path:` plus `cut -d: -f2`, without the forks
+    if is_baselined "$loc"; then
         known=$((known + 1))
     else
         printf 'FAIL  %s\n' "$(printf '%s' "$line" | cut -c1-150)"
