@@ -1,0 +1,102 @@
+# EXT-00 probe outputs, re-derived 2026-10-09 (la-0.72b). Paths and the host name are replaced by <placeholders>.
+# jq "parse error" lines come from the HTTP= trailer appended after each body; the JSON before it parsed.
+
+## t1-t3
+HOST=<host> BOOT=69946f1a-dc3e-4a90-8158-f00fa30fe9c2 TIME=2026-10-09T17:29:40Z
+SQLITE=3.47.2
+T1 81|38|0
+T2a 391|58
+T2b completed|190 failed|201 
+T2c 0
+T3 48
+
+## net1
+TIME=2026-10-09T17:29:51Z
+== T20
+jq: parse error: Invalid numeric literal at line 3, column 0
+{"id":"paiml/albor-370m-v1","sha":"15c1f609192c2ea06368ba974747634567f81093","lastModified":"2026-05-18T04:51:39.000Z","private":false,"gated":false}
+== T15 refs
+{"tags":[],"branches":[{"name":"main","ref":"refs/heads/main","targetCommit":"15c1f609192c2ea06368ba974747634567f81093"}],"converts":[]}
+HTTP=200
+
+== T15 tree
+jq: parse error: Invalid numeric literal at line 3, column 0
+[{"type":"file","path":".gitattributes"},{"type":"file","path":"LICENSE"},{"type":"file","path":"README.md"},{"type":"file","path":"albor-370m-v1-q4k.gguf"}]
+== T19 meta
+jq: parse error: Invalid numeric literal at line 3, column 0
+{"id":"Qwen/Qwen3.5-4B","sha":"851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a","license":"apache-2.0","tags":["license:apache-2.0"]}
+== T21
+jq: parse error: Invalid numeric literal at line 3, column 0
+{"name":"ocipkg","max_stable_version":"0.4.0","updated_at":"2025-11-17T17:33:24.289340Z"}
+
+## net2
+TIME=2026-10-09T17:30:03Z
+T19 LICENSE HTTP=200
+T19 LICENSE_sha256=bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a bytes=11544 head= Apache License Version 2.0, January 2004 
+T19 README HTTP=200
+T19 README license lines: 3:license: apache-2.0;4:license_link: https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE;
+T14 HTTP=200
+T14  Each file included in a release must be under 2 GiB; Each file included in a release must be under 2 GiB;
+T14 assets: 
+
+## net3
+2026-10-09T17:36:34Z
+T15 resolve config.json: 307 text/plain; charset=utf-8
+T15 resolve README.md: 307 text/plain; charset=utf-8
+T19 api: {"sha":"851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a","pipeline_tag":"image-text-to-text","gated":false,"base":["Qwen/Qwen3.5-4B-Base"],"lic":"apache-2.0","st":["LICENSE"]}
+T19 shard bytes (tree): [{"p":"model.safetensors-00001-of-00002.safetensors","s":5329398688,"oid":"26a93f066e19"},{"p":"model.safetensors-00002-of-00002.safetensors","s":3990429408,"oid":"cb544bd9bfae"}]
+T15 resolve config.json -L: 200 hops=1 bytes=559
+T15 307 Location: location: /api/resolve-cache/models/paiml/albor-370m-v1/15c1f609192c2ea06368ba974747634567f81093/config.json?%2Fpaiml%2Falbor-370m-v1%2Fresolve%2F15c1f609192c2e
+
+## engine
+ENGINE apr 0.70.3 (95f64ba14) sha256=c63f5cf15e3fa48e
+HELP publish rc=0 lines=28 usage=Usage: apr publish [OPTIONS] <DIRECTORY> <REPO_ID>
+HELP export rc=0 lines=26 usage=Usage: apr export [OPTIONS] [FILE]
+HELP quantize rc=0 lines=23 usage=Usage: apr quantize [OPTIONS] <FILE>
+HELP import rc=0 lines=34 usage=Usage: apr import [OPTIONS] <SOURCE>
+T16 publish: Publish model to HuggingFace Hub (APR-PUB-001);Usage: apr publish [OPTIONS] <DIRECTORY> <REPO_ID>;  <REPO_ID>    HuggingFace repository ID (e.g., paiml/whisper-apr-tiny);
+T18 export formats: Export model to other formats;      --format <FORMAT>      Output format (safetensors, gguf, mlx, onnx, openvino, coreml);      --list-formats         List all supported export formats;
+T17 quantize:       --format <FORMAT>  Output format override (apr, gguf, safetensors);
+
+## t16-gaps
+== T16 gaps at origin/main acd599e52a
+crates/aprender-core/src/hf_hub/client_impl.rs:10:    /// Reads token from `HF_TOKEN` environment variable.
+crates/aprender-core/src/hf_hub/client_impl.rs:16:        let token = std::env::var("HF_TOKEN").ok();
+crates/aprender-core/src/hf_hub/client_impl.rs:367:        let url = format!("{}/api/models/{}/commit/main", self.api_base, repo_id);
+crates/aprender-core/src/hf_hub/upload.rs:17:        let preupload_url = format!("{}/api/models/{}/preupload/main", self.api_base, repo_id);
+crates/aprender-core/src/hf_hub/upload.rs:394:        let commit_url = format!("{}/api/models/{}/commit/main", self.api_base, repo_id);
+crates/aprender-core/src/hf_hub/upload.rs:479:    /// Returns `HfHubError::MissingToken` when `HF_TOKEN` is not set.
+crates/aprender-core/src/hf_hub/upload.rs:581:            revision: "main",
+crates/aprender-core/src/hf_hub/upload.rs:593:    /// 1. POST to /api/models/{repo}/preupload/main with SHA256 to get presigned URLs
+crates/apr-cli/src/commands/publish.rs
+crates/apr-cli/src/commands/publish_tests.rs
+help-publish:       --license <LICENSE>            License (SPDX identifier, default: mit) [default: mit]
+help-publish:       --pipeline-tag <PIPELINE_TAG>  Pipeline tag (e.g., automatic-speech-recognition,
+
+## pmat-main
+2026-10-09T17:40:36Z
+tree origin/main acd599e52a (git archive of crates/apr-cli, crates/aprender-core, crates/aprender-train)
+== T16 pmat query 'hugging face upload' --path crates/apr-cli
+crates/apr-cli/src/commands/pull_extract_shard.rs:48-70 │ resolve_hf_token │ TDG: A │ O(n)
+crates/apr-cli/src/commands/serve_plan.rs:378-399 │ resolve_hf_token │ TDG: A │ O(n)
+crates/apr-cli/src/commands/forward_error.rs:127-144 │ discover_hf_cache │ TDG: A │ O(n)
+crates/apr-cli/src/commands/publish.rs:338-401 │ upload_to_hub │ TDG: A │ O(n)
+crates/apr-cli/src/commands/oracle.rs:408-439 │ fetch_hf_data │ TDG: A+ │ O(1)
+crates/apr-cli/src/commands/oracle.rs:372-383 │ HuggingFaceData │ TDG: A+ │ O(1)
+crates/apr-cli/src/commands/serve_plan.rs:120-123 │ ServePlanSource │ TDG: A+ │ O(1)
+crates/apr-cli/src/commands/fails.rs:164-180 │ offline_mode_rejects_uncached_huggingface │ TDG: A+ │ O(1)
+== T18 pmat query 'gguf export' 2026-10-09T17:41:02Z
+crates/aprender-core/src/format/rosetta/tests_gh346.rs:27-61 │ falsify_f_conv_rt_001_no_double_quantization_gguf_export │ TDG: A+ │ O(1)
+crates/aprender-core/src/format/converter/gguf_export_config.rs:81-94 │ GgufExportConfig │ TDG: A+ │ O(1)
+crates/aprender-train/src/hf_pipeline/export/pipeline.rs:31-57 │ quantize_and_export │ TDG: A+ │ O(1)
+crates/aprender-core/src/format/test_factory/harness_impl.rs:130-153 │ export_to_gguf │ TDG: A+ │ O(1)
+crates/aprender-train/src/hf_pipeline/export/exporter.rs:182-239 │ export_gguf │ TDG: A │ O(n)
+crates/aprender-train/src/ecosystem/realizar/exporter.rs:11-20 │ GgufExporter │ TDG: A+ │ O(1)
+crates/apr-cli/src/commands/quantize.rs:561-609 │ quantize_to_gguf │ TDG: A │ O(1)
+crates/aprender-train/src/ecosystem/realizar/exporter.rs:83-118 │ export │ TDG: A+ │ O(1)
+== T17 qwen35 GGUF name map at main: crates/aprender-core/src/format/converter/qwen35_gguf.rs present=no
+
+## T19 upstream files read at the pinned revision
+bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a  qwen35-LICENSE
+1406be1b6b8fd8a6545870da516912804756593628a1d0fb0a7965211e82a7bb  qwen35-README.md
+4ad51ea849a5d8dde7cfe102592e9da2dcab3eac1ee0410af30430ce82ecdc38  gh-about-releases.html

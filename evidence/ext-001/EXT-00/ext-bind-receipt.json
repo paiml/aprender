@@ -1,0 +1,191 @@
+{
+  "schema": "ext-bind-receipt-v1",
+  "row": "EXT-00",
+  "ticket": "PMAT-4382",
+  "issue": "paiml/aprender#4382",
+  "spec": {
+    "doc": "EXT-001-dogfood-model-lifecycle.md",
+    "version": "v1.1",
+    "sha256_prefix": "a47a6c0386da"
+  },
+  "stamp": {
+    "host_sha256_12": "7314e3ebcc09",
+    "boot_id": "69946f1a-dc3e-4a90-8158-f00fa30fe9c2",
+    "tree": "origin/main acd599e52ac17d3a9133341909d961d5665506d9",
+    "tree_note": "pmat probes ran on a git archive of acd599e52a (crates/apr-cli, crates/aprender-core, crates/aprender-train); file:line citations are at that commit",
+    "time_utc": "2026-10-09T17:29:40Z..17:41:02Z",
+    "previous": "2026-09-25 receipt: tree a5efa14433b52138bc80bed7faead845123f18d5, apr 0.69.3"
+  },
+  "engine": {
+    "apr_version": "0.70.3 (95f64ba14)",
+    "artifact": "apr-v0.70.3-x86_64-unknown-linux-gnu-cpu.tar.gz",
+    "tarball_sha256": "5bd0e7aad709c48d78992c97e7df6aed74d1caacd6dcd7ab23857731d8ce1e41",
+    "sha_check": "OK against the release .sha256 asset",
+    "binary_sha256": "c63f5cf15e3fa48e536d45f574291fa1506077484dcc17cd77b5054935f0bb6d",
+    "oracles": [
+      "llama.cpp d1d3c3396 (the 2026-09-25 receipt's oracle)",
+      "llama.cpp b11531 8b5436102"
+    ]
+  },
+  "evidence": [
+    "probes.txt",
+    "t17-run.txt"
+  ],
+  "rows": [
+    {
+      "id": "T1",
+      "was": "[A]",
+      "now": "[V]",
+      "value": {"models": 81, "runs": 38, "lineage": 0},
+      "delta_vs_previous": "runs 0 -> 38 (registry.db last written 2026-09-26)",
+      "probe": "sqlite3 ~/.pacha/registry.db (models,runs,lineage counts)"
+    },
+    {
+      "id": "T2",
+      "was": "[A]",
+      "now": "[V]",
+      "value": {"experiments": 391, "tmp_named": 58, "runs_running": 0, "runs_completed": 190, "runs_failed": 201, "artifacts": 0},
+      "delta_vs_previous": "experiments 3947 -> 391, .tmp-named 3614 -> 58, running 238 -> 0: rows were deleted from the same file (created 2026-03-02, last written 2026-10-07T21:10Z) by a writer this row did not identify",
+      "probe": "sqlite3 ~/.entrenar/experiments.db"
+    },
+    {
+      "id": "T3",
+      "was": "[A]",
+      "now": "[V]",
+      "value": {"loose_run_dirs": 48},
+      "probe": "ls -1d <runs>/*/ | wc -l"
+    },
+    {
+      "id": "T13",
+      "was": "[X]->[U]",
+      "now": "bound-to:EXT-17",
+      "value": null,
+      "reason": "the spec's own probe for T13 is 're-verify with a real push in EXT-17'; a push needs a registry token that exists only on the driver host (R-7). Not probed here, so the issue's done-when does not hold yet"
+    },
+    {
+      "id": "T14",
+      "was": "[U]",
+      "now": "[X]-verified",
+      "value": {"per_file_limit": "2 GiB", "assets_per_release": 1000},
+      "consequence": "Release assets carry manifest, card and receipts only, never weights (D-2 default holds)",
+      "probe": "docs.github.com about-releases, fetched 2026-10-09T17:30:03Z: 'Each file included in a release must be under 2 GiB'; 'Up to 1000 release assets may be associated with a single release'"
+    },
+    {
+      "id": "T15",
+      "was": "[U]",
+      "now": "[V] read / [X] write",
+      "value": {
+        "refs_endpoint": "GET https://huggingface.co/api/models/{repo}/refs -> 200 {tags:[], branches:[main@15c1f609], converts:[]}",
+        "tree_endpoint": "GET /api/models/{repo}/tree/{revision} -> 200 (lfs.oid = sha256)",
+        "resolve_by_revision": "GET /{repo}/resolve/{sha}/{file} -> 307 to /api/resolve-cache/models/{repo}/{sha}/{file} -> 200 after one hop",
+        "write_endpoints": "POST /api/models/{repo}/branch/{name}, POST /api/models/{repo}/tag/{revision}, POST /api/models/{repo}/commit/{revision} (hub API, [X]); bound by EXT-14 with a real token on the driver host"
+      },
+      "probe": "curl against paiml/albor-370m-v1 @15c1f609, 2026-10-09T17:29:51Z and 17:36:34Z"
+    },
+    {
+      "id": "T16",
+      "was": "[U]",
+      "now": "[V] exists / scope=extend",
+      "value": {
+        "verb": "apr publish [OPTIONS] <DIRECTORY> <REPO_ID> (APR-PUB-001); v0.70.3 --help rc 0",
+        "impl": "crates/apr-cli/src/commands/publish.rs:338-401 upload_to_hub (pmat top publish hit) over crates/aprender-core/src/hf_hub (native Rust, no Python)",
+        "gaps": [
+          "commit/preupload URLs hardcode revision 'main' (client_impl.rs:367; upload.rs:17, :394, :581): no rc branch, no tag, no move-main",
+          "token read from HF_TOKEN env (client_impl.rs:16): R-7 needs a driver-host file source and a training-verb env scrub",
+          "default --license mit (v0.70.3 help): must be the upstream license (Apache-2.0)"
+        ]
+      },
+      "consequence": "unchanged since 2026-09-25: EXT-14 extends apr publish, it does not implement one",
+      "probe": "pmat query 'hugging face upload' --path crates/apr-cli at acd599e52a; apr publish --help"
+    },
+    {
+      "id": "T17",
+      "was": "[U]",
+      "now": "premise-falsified",
+      "value": {
+        "input": "Qwen/Qwen3.5-4B@851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a BF16 (shards and tokenizer.json sha256 OK vs HF lfs.oid)",
+        "import_rc": 0,
+        "import_wall_s": 50.0,
+        "import_peak_rss_kb": 6306708,
+        "quantize": "apr quantize -s q4k --format gguf",
+        "quantize_rc": 0,
+        "quantize_wall_s": 119.1,
+        "quantize_peak_rss_kb": 43964776,
+        "output_file_bytes": 7369079328,
+        "output_tensor_data_bytes": 7359076352,
+        "output_sha256": "50ef6e2108e88eb6b57ae0b52204e2c4fb2be7adbe697fd9fecb05db90771b41",
+        "same_as_previous": "byte-identical to the 2026-09-25 apr 0.69.3 output",
+        "dtypes": {"F32": 384, "Q4_K": 355},
+        "blk_named": 0,
+        "hf_named": 723,
+        "visual_tensors": 297,
+        "over_4d": ["model.visual.patch_embed.proj.weight"],
+        "oracle_load": {
+          "d1d3c3396": "FAIL rc 1: tensor 'model.visual.patch_embed.proj.weight' has invalid number of dimensions: 5 > 4; failed to read tensor info",
+          "b11531": "FAIL rc 1: same error"
+        },
+        "positive_control": "Qwen3.5-4B-Q4_K_M.gguf (00fe7986..., byte-identical to unsloth's) loads on both oracles: 'The capital of France is' -> 'Paris' (-no-cnv, -n 8, temp 0)",
+        "fix_status": "#4418 open; its fix 1b8b4c4702 (qwen35_gguf.rs) is on side branches only, not on acd599e52a or v0.70.3"
+      },
+      "probe": "apr quantize --help; one run receipt (t17-run.txt), 2026-10-09T17:33:57Z..17:39Z"
+    },
+    {
+      "id": "T18",
+      "was": "[U]",
+      "now": "[V] verb / premise-falsified for qwen35",
+      "value": {
+        "verb": "apr export --format {safetensors,gguf,mlx,onnx,openvino,coreml}; apr quantize --format {apr,gguf,safetensors}",
+        "impl": "crates/apr-cli/src/commands/quantize.rs:561-609 quantize_to_gguf; crates/aprender-core/src/format/converter/gguf_export_config.rs:81-94 GgufExportConfig",
+        "qwen35": "not loadable by the oracle (T17, #4418)"
+      },
+      "probe": "pmat query 'gguf export' at acd599e52a; apr export --help; apr quantize --help"
+    },
+    {
+      "id": "T19",
+      "was": "[U]",
+      "now": "[V]",
+      "value": {
+        "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+        "license": "apache-2.0",
+        "LICENSE_sha256": "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a",
+        "LICENSE_bytes": 11544,
+        "NOTICE": "absent upstream (file list at revision has LICENSE only)",
+        "pipeline_tag": "image-text-to-text",
+        "base_model": "Qwen/Qwen3.5-4B-Base",
+        "gated": false,
+        "bf16_total_bytes": 9319828096
+      },
+      "consequence": "S-5 does NOT fire: Apache-2.0 permits derivatives with LICENSE carried and changes stated. I-13/M5 must accept 'upstream NOTICE absent' as a recorded fact, not a failure",
+      "probe": "HF API and resolve at the pinned revision, 2026-10-09T17:30:03Z and 17:36:34Z"
+    },
+    {
+      "id": "T20",
+      "was": "[A]",
+      "now": "[V]",
+      "value": {"repo": "paiml/albor-370m-v1", "sha": "15c1f609192c2ea06368ba974747634567f81093", "private": false, "gated": false},
+      "probe": "HF API, 2026-10-09T17:29:51Z"
+    },
+    {
+      "id": "T21",
+      "was": "[X]",
+      "now": "[V]",
+      "value": {"crate": "ocipkg", "max_stable_version": "0.4.0", "updated_at": "2025-11-17"},
+      "probe": "crates.io API, 2026-10-09T17:29:51Z (admission is decided in EXT-17)"
+    }
+  ],
+  "side_findings": [
+    "T17's GGUF from apr 0.70.3 is byte-identical to the 0.69.3 one: nothing between the two releases changed the qwen35 export, and #4418's fix 1b8b4c4702 is not on main",
+    "The 2026-09-25 receipt's T17 output_bytes 7359076352 is the tensor-data total; the file is 7369079328 bytes. Both are recorded now",
+    "In this run both oracles exit 1 on the failed load; the 2026-09-25 receipt saw d1d3c3396 exit 0 on one. A gate still reads the log, not the rc",
+    "llama-completion b11531 defaults to chat mode, where -n 8 is spent on a <think> block; the positive control needs -no-cnv to reach 'Paris'",
+    "HF resolve-by-revision now answers 307 to /api/resolve-cache/...; a fetch client must follow one redirect",
+    "~/.entrenar/experiments.db lost 3556 rows between 2026-09-25 and 2026-10-07 to a writer this row did not identify"
+  ],
+  "verdict": {
+    "premise_falsified": ["T17", "T18(qwen35)"],
+    "s5_license_stop": false,
+    "ext14_rescope": "extend apr publish",
+    "blockers": ["#4418 blocks EXT-18 (open; fix not on main)"],
+    "done_when": "not met: T13 is bound by the spec to EXT-17's real push; every other [U]/[A] row is [V], [X]-verified or premise-falsified"
+  }
+}

@@ -15,7 +15,7 @@ metadata:
   references:
   - 'paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §4 (invariants), §9 (falsifiers)'
   - 'paiml/aprender#4381 — EXT-001 epic (rows EXT-00..31 = #4382..#4413)'
-  - 'evidence/ext-001/EXT-00/ext-bind-receipt.json — ground truth bound at a5efa144'
+  - 'evidence/ext-001/EXT-00/ext-bind-receipt.json — ground truth bound at a5efa144, re-derived at acd599e52a (apr 0.70.3)'
   - 'contracts/apr-model-lifecycle-v1.yaml — format-level lifecycle (pull/import/export)'
   depends_on:
   - apr-model-lifecycle-v1

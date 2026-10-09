@@ -1,0 +1,259 @@
+# EXT-00 T17 run receipt, apr v0.70.3 release binary (la-0.72b). Paths and the host name are replaced by <placeholders>;
+# llama.cpp log lines lose their elapsed-time prefix.
+
+## stamp
+2026-10-09T17:33:57Z
+<host>
+69946f1a-dc3e-4a90-8158-f00fa30fe9c2
+pid 1224641
+apr 0.70.3 (95f64ba14)
+c63f5cf15e3fa48e536d45f574291fa1506077484dcc17cd77b5054935f0bb6d  <apr-v0.70.3>/apr
+oracle_old commit d1d3c3396
+oracle_new commit 8b5436102
+00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4  <local-models>/Qwen3.5-4B-Q4_K_M.gguf
+model.safetensors-00001-of-00002.safetensors: OK
+model.safetensors-00002-of-00002.safetensors: OK
+tokenizer.json: OK
+shards_rc=0
+LOAD_OK import load=14.54
+import_rc=0
+LOAD_OK quantize load=13.28
+quantize_rc=0
+50ef6e2108e88eb6b57ae0b52204e2c4fb2be7adbe697fd9fecb05db90771b41  <models>/t17-0703/qwen35-4b-q4k.gguf
+bytes=7369079328
+tensors_rc=0
+LOAD_OK oracle load=12.91
+llama[old qwen35-4b-q4k.gguf] rc=1 load_errors=8 paris=0
+llama[old Qwen3.5-4B-Q4_K_M.gguf] rc=0 load_errors=0 paris=0
+llama[new qwen35-4b-q4k.gguf] rc=1 load_errors=8 paris=0
+llama[new Qwen3.5-4B-Q4_K_M.gguf] rc=0 load_errors=0 paris=0
+done 2026-10-09T17:38:01Z
+DONE
+oracle rerun -no-cnv (chat mode spent -n 8 on <think>) 2026-10-09T17:38:37Z load=24.55
+llama2[old qwen35-4b-q4k.gguf] rc=1 load_errors=8 paris=0
+llama2[old Qwen3.5-4B-Q4_K_M.gguf] rc=0 load_errors=0 paris=1
+llama2[new qwen35-4b-q4k.gguf] rc=1 load_errors=8 paris=0
+llama2[new Qwen3.5-4B-Q4_K_M.gguf] rc=0 load_errors=0 paris=1
+DONE2
+
+## import (full)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APR Import Pipeline
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭────────┬─────────────────────────────────────────────────────────────────────────────────╮
+│ Source │ <models>/Qwen3.5-4B@851bf6e8/model.safetensors.index.json │
+│ Output │ <models>/t17-0703/qwen35-4b-bf16.apr                      │
+╰────────┴─────────────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────┬───────╮
+│ Architecture │ Auto  │
+│   Validation │ Basic │
+╰──────────────┴───────╯
+
+  ◉ Importing
+[BUG-EXPORT-004] Vocab: base=248044, added=26, expected=0, final=248070
+[PMAT-221] Embedding 247587 BPE merge rules into APR metadata (SafeTensors path)
+[realizar#136] Streaming import: 2 shards, 738 tensors → <models>/t17-0703/qwen35-4b-bf16.apr
+[realizar#136] Shard model.safetensors-00001-of-00002.safetensors: 87 tensors (87 F16 passthrough, 0 quantized)
+[realizar#136] Shard model.safetensors-00002-of-00002.safetensors: 651 tensors (603 F16 passthrough, 48 quantized)
+[realizar#136] Weight tying: duplicated model.language_model.embed_tokens.weight → lm_head.weight
+[realizar#136] Streaming write complete: 739 tensors (690 F16 passthrough, 49 quantized), 11.0 GB data
+[realizar#136] Written <models>/t17-0703/qwen35-4b-bf16.apr (11.1 GB)
+
+
+  ─── Validation Report
+╭───────┬─────────────────────╮
+│ Score │ 0/0 checks that ran │
+│ Grade │ N/A                 │
+╰───────┴─────────────────────╯
+
+  ⚠ Import completed with warnings
+	Command being timed: "nice -n 19 <apr-v0.70.3>/apr import <models>/Qwen3.5-4B@851bf6e8/model.safetensors.index.json -o <models>/t17-0703/qwen35-4b-bf16.apr"
+	User time (seconds): 20.69
+	System time (seconds): 28.29
+	Percent of CPU this job got: 97%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:50.02
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 6306708
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 10
+	Minor (reclaiming a frame) page faults: 1447775
+	Voluntary context switches: 529
+	Involuntary context switches: 26687
+	Swaps: 0
+	File system inputs: 2544
+	File system outputs: 46352832
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+
+## quantize (head 25 + tail 30; per-tensor lines between are elided, 788 lines in all)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APR Quantize
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭────────┬────────────────────────────────────────────────────────────╮
+│  Input │ <models>/t17-0703/qwen35-4b-bf16.apr │
+│ Scheme │ Q4K                                                        │
+│ Output │ <models>/t17-0703/qwen35-4b-q4k.gguf │
+╰────────┴────────────────────────────────────────────────────────────╯
+
+  ◉ Quantizing to GGUF
+[BUG-EXPORT-004] Warning: No tokenizer.json found near <models>/t17-0703/qwen35-4b-bf16.apr, GGUF may lack tokenizer metadata
+[P0-G] Padding APR-fallback tokenizer.ggml.tokens: 248070 + 250 placeholders = 248320
+[GH-211] Extracted 4 tokenizer entries from APR metadata
+[GGUF-EXPORT-001] Writing 18 metadata keys (arch=qwen3_5, layers=32, heads=40/16kv, hidden=2560)
+[GH-277] Family 'qwen3_5' has no gguf_tensor_template, using legacy mapping
+[GH-277] WARNING: No GGUF mapping for tensor 'model.language_model.embed_tokens.weight', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.language_model.layers.0.input_layernorm.weight', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.language_model.layers.0.linear_attn.A_log', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.language_model.layers.0.linear_attn.conv1d.weight', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.language_model.layers.0.linear_attn.dt_bias', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.language_model.layers.0.linear_attn.in_proj_a.weight', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.language_model.layers.0.linear_attn.in_proj_b.weight', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.language_model.layers.0.linear_attn.in_proj_qkv.weight', passing through
+[GH-277] WARNING: No GGUF mapping for tensor 'model.language_model.layers.0.linear_attn.in_proj_z.weight', passing through
+[...]
+│ Original size │ 11.05 GiB │
+│     GGUF size │ 6.86 GiB  │
+│       Tensors │ 739       │
+│        Format │ GGUF      │
+╰───────────────┴───────────╯
+
+  ✓ GGUF quantization successful
+	Command being timed: "nice -n 19 <apr-v0.70.3>/apr quantize -s q4k --format gguf -o <models>/t17-0703/qwen35-4b-q4k.gguf <models>/t17-0703/qwen35-4b-bf16.apr"
+	User time (seconds): 23.47
+	System time (seconds): 94.73
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:59.14
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 43964776
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 272
+	Minor (reclaiming a frame) page faults: 35014059
+	Voluntary context switches: 131
+	Involuntary context switches: 51825
+	Swaps: 0
+	File system inputs: 47247912
+	File system outputs: 14392960
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+
+## GGUF tensor summary (apr tensors --json)
+{"count":739,"total":7359076352,"dtypes":{"F32":384,"Q4_K":355},"blk_named":0,"hf_named":723,"visual":297,"gt4d":["model.visual.patch_embed.proj.weight"]}
+
+## llama2-new-qwen35-4b-q4k.gguf.txt (-no-cnv; llama-completion exits 0 on a failed load, so read the log)
+E ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected
+warning: no usable GPU found, --gpu-layers option will be ignored
+warning: one possible reason is that llama.cpp was compiled without GPU support
+warning: consult docs/build.md for compilation instructions
+I llama_completion: llama backend init
+I llama_completion: load the model and apply lora adapter, if any
+E gguf_init_from_reader: tensor 'model.visual.patch_embed.proj.weight' has invalid number of dimensions: 5 > 4
+E gguf_init_from_reader: failed to read tensor info
+E llama_model_load: error loading model: llama_model_loader: failed to load model from <models>/t17-0703/qwen35-4b-q4k.gguf
+E llama_model_load_from_file_impl: failed to load model
+<common_fit_params line elided: the fit-params retry after the failed load>
+E gguf_init_from_reader: tensor 'model.visual.patch_embed.proj.weight' has invalid number of dimensions: 5 > 4
+E gguf_init_from_reader: failed to read tensor info
+E llama_model_load: error loading model: llama_model_loader: failed to load model from <models>/t17-0703/qwen35-4b-q4k.gguf
+E llama_model_load_from_file_impl: failed to load model
+E cmn  common_init_: failed to load model '<models>/t17-0703/qwen35-4b-q4k.gguf'
+E llama_completion: error: unable to create context
+
+## llama2-new-Qwen3.5-4B-Q4_K_M.gguf.txt (-no-cnv; llama-completion exits 0 on a failed load, so read the log)
+E ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected
+warning: no usable GPU found, --gpu-layers option will be ignored
+warning: one possible reason is that llama.cpp was compiled without GPU support
+warning: consult docs/build.md for compilation instructions
+I llama_completion: llama backend init
+I llama_completion: load the model and apply lora adapter, if any
+I cmn          init: llama threadpool init, n_threads = 8
+I 
+I system_info: n_threads = 8 (n_threads_batch = 8) / 48 | CUDA : ARCHS = 890 | USE_GRAPHS = 1 | FA_QUANTS = q4_0-q4_0,q8_0-q8_0,f16-f16,bf16-bf16 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | AVX512 = 1 | AVX512_VBMI = 1 | AVX512_VNNI = 1 | AVX512_BF16 = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1 | 
+I 
+I sampler seed: 4294967295
+I sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 40, top_p = 0.950, min_p = 0.050, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+I sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> min-p -> ?xtc -> temp-ext -> greedy 
+I generate: n_ctx = 262144, n_batch = 2048, n_predict = 8, n_keep = 0
+I 
+The capital of France is Paris.
+A. True
+B
+
+I common_perf_print:    sampling time =       1.94 ms
+I common_perf_print:    samplers time =       0.69 ms /    13 tokens
+I common_perf_print:        load time =    5395.58 ms
+I common_perf_print: prompt eval time =     100.07 ms /     5 tokens (   20.01 ms per token,    49.97 tokens per second)
+I common_perf_print:        eval time =     408.09 ms /     7 runs   (   58.30 ms per token,    17.15 tokens per second)
+I common_perf_print:       total time =     510.64 ms /    12 tokens
+I common_perf_print: unaccounted time =       0.55 ms /   0.1 %      (total - sampling - prompt eval - eval) / (total)
+I common_perf_print:    graphs reused =          6
+
+## llama2-old-qwen35-4b-q4k.gguf.txt (-no-cnv; llama-completion exits 0 on a failed load, so read the log)
+E ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected
+warning: no usable GPU found, --gpu-layers option will be ignored
+warning: one possible reason is that llama.cpp was compiled without GPU support
+warning: consult docs/build.md for compilation instructions
+I llama_completion: llama backend init
+I llama_completion: load the model and apply lora adapter, if any
+E gguf_init_from_reader: tensor 'model.visual.patch_embed.proj.weight' has invalid number of dimensions: 5 > 4
+E gguf_init_from_reader: failed to read tensor info
+E llama_model_load: error loading model: llama_model_loader: failed to load model from <models>/t17-0703/qwen35-4b-q4k.gguf
+E llama_model_load_from_file_impl: failed to load model
+<common_fit_params line elided: the fit-params retry after the failed load>
+E gguf_init_from_reader: tensor 'model.visual.patch_embed.proj.weight' has invalid number of dimensions: 5 > 4
+E gguf_init_from_reader: failed to read tensor info
+E llama_model_load: error loading model: llama_model_loader: failed to load model from <models>/t17-0703/qwen35-4b-q4k.gguf
+E llama_model_load_from_file_impl: failed to load model
+E cmn  common_init_: failed to load model '<models>/t17-0703/qwen35-4b-q4k.gguf'
+E llama_completion: error: unable to create context
+
+## llama2-old-Qwen3.5-4B-Q4_K_M.gguf.txt (-no-cnv; llama-completion exits 0 on a failed load, so read the log)
+E ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected
+warning: no usable GPU found, --gpu-layers option will be ignored
+warning: one possible reason is that llama.cpp was compiled without GPU support
+warning: consult docs/build.md for compilation instructions
+I llama_completion: llama backend init
+I llama_completion: load the model and apply lora adapter, if any
+I cmn          init: llama threadpool init, n_threads = 8
+I 
+I system_info: n_threads = 8 (n_threads_batch = 8) / 48 | CUDA : ARCHS = 500,610,700,750,800,860,890,900,1200 | USE_GRAPHS = 1 | FA_QUANTS = q4_0-q4_0,q8_0-q8_0,f16-f16,bf16-bf16 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | AVX512 = 1 | AVX512_VBMI = 1 | AVX512_VNNI = 1 | AVX512_BF16 = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1 | 
+I 
+I sampler seed: 1772166793
+I sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 40, top_p = 0.950, min_p = 0.050, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+I sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> min-p -> ?xtc -> temp-ext -> dist 
+I generate: n_ctx = 262144, n_batch = 2048, n_predict = 8, n_keep = 0
+I 
+The capital of France is Paris.
+A. True
+B
+
+I common_perf_print:    sampling time =       4.45 ms
+I common_perf_print:    samplers time =       1.58 ms /    13 tokens
+I common_perf_print:        load time =    5900.31 ms
+I common_perf_print: prompt eval time =     105.55 ms /     5 tokens (   21.11 ms per token,    47.37 tokens per second)
+I common_perf_print:        eval time =     413.38 ms /     7 runs   (   59.05 ms per token,    16.93 tokens per second)
+I common_perf_print:       total time =     523.89 ms /    12 tokens
+I common_perf_print: unaccounted time =       0.52 ms /   0.1 %      (total - sampling - prompt eval - eval) / (total)
+I common_perf_print:    graphs reused =          6
