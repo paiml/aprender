@@ -233,29 +233,41 @@ falsification_tests:
       hook, root workflow, composite action under .github/actions, CI job file
       (ci/sections.yml and ci/vendor/*.yml, which the fat CI jobs run, and the
       ci/*.cmd test commands) or file with a sh/bash/dash/ksh/mksh/zsh/bats
-      shebang runs an upload in a command that lacks --dry-run as a word of its
-      own. An upload is `cargo publish`, `cargo ws|workspaces publish`, `cargo release`,
-      `cargo smart-release`, those tools run by their own name, cargo with a
-      subcommand taken from a variable, or any variable run as the command with
-      one of those uploads after it, since the variable may hold cargo. cargo
+      shebang, whatever it holds, runs an upload in a command that lacks
+      --dry-run as a word of its own. An upload is `cargo publish`, `cargo
+      ws|workspaces publish`, `cargo release`, `cargo smart-release`, those
+      tools run by their own name, `release-plz release`, a PUT to the
+      crates.io API (/api/v1/crates/new), cargo with a subcommand taken from a
+      variable, or any variable, $(...), `...` or $'...' word run as the command
+      with one of those uploads after it, since it may hold cargo. cargo
       counts by a path, quoted (a quoted path may hold spaces), as $CARGO,
-      $$CARGO or $(command -v cargo). Quotes and backslashes inside a word hide
-      nothing: cargo "publish", cargo pub""lish, cargo \publish and cargo
-      $'publish' are read as the shell reads them, as cargo publish. An
-      upload stored for later counts where it is stored: a shell or make
-      variable whose value starts with one, or an alias of one; and no tracked
-      cargo config aliases one. Two are allowed by file and command:
+      $$CARGO or $(command -v cargo), and after any word of a command, so a
+      wrapper the scan does not know (retry 3 cargo publish) counts too; only a
+      quoted string with a space in it, a message, hides it. Quotes and
+      backslashes inside a word hide nothing: cargo "publish", cargo
+      pub""lish, cargo \publish and cargo $'publish' are read as the shell
+      reads them, as cargo publish. An upload stored for later counts where it
+      is stored: a shell or make variable whose value starts with one, or an
+      alias of one. No cargo alias may upload: not `--config
+      alias.p=publish`, not CARGO_ALIAS_P=publish, and not an [alias] in any
+      tracked TOML file, since `cargo --config <path>` reads any. And no file
+      in scope hands a crates.io token to a CI step (an env key
+      CARGO_REGISTRY_TOKEN or CARGO_REGISTRIES_<name>_TOKEN, a secret named for
+      cargo or crates and a token, or crates-io-auth-action): no gated door
+      runs in CI, so no CI step needs one. Two are allowed by file and command:
       release_ready.sh's case-table stand-in, and the v0.68.1 audit record of
       publish_strict.sh, which nothing runs. A command that starts with "$APR"
       or "$APR_BIN", the pinned apr binary, is not a crate upload: its publish
       sends a model to Hugging Face. So setting APR or APR_BIN to cargo, in any of
       those spellings, is a door where it is set. Commands are read as the shell runs them:
       continuation lines joined, each command of a line on its own (split at
-      ; && || | and a lone &, not the & of a redirect), case arms, wrappers,
-      VAR=val, eval, sh -c, $( <( >(, make's $(shell), find -exec and cargo's
-      global flags included. A failed search for the shebang files, or a file
-      in scope that cannot be read, fails the check; it never reads as no
-      door. cascade-publish.sh is the one other upload, behind its own clean_room_gate, and each of the two
+      ; && || | and a lone &, not the & of a redirect), case arms, wrappers
+      by name or by path (env, sudo, doas, timeout, rustup run, ...), VAR=val,
+      eval, sh -c (and -ec, --command, nix-shell --run), $( <( >(, make's
+      $(shell), find -exec and cargo's global flags included. A failed search
+      for the shebang files, or a file in scope that cannot be read, fails the
+      check; it never reads as no door. cascade-publish.sh is the one other
+      upload, behind its own clean_room_gate, and each of the two
       gated files holds exactly one upload command. Not scanned: Rust, where the
       aprender-orchestrate stack releaser and the dev-only `apr mono publish`
       build the call as an argv; Python, where no tracked file calls it; workflow
@@ -266,7 +278,8 @@ falsification_tests:
       Run the case table against the v0.70.1 publish_strict.sh (which checks only
       that the file is non-empty) and it FAILS four rows (non-numeric, red, other
       commit, unreadable) with "the clean-room door let this run through". Point
-      its door rows at af58dfccff (PUBLISH_DOORS_ROOT) and two rows FAIL, with three findings:
+      its door rows at af58dfccff or 845004a121 (PUBLISH_DOORS_ROOT) and two rows
+      FAIL, with three findings:
       `make publish` ran a real `cargo publish`, and the scan finds the publish
       recipe's upload command (it starts at Makefile:1397) and
       scripts/stack_release.sh:54.
@@ -279,8 +292,9 @@ falsification_tests:
       lost its pinned mode and judges a run other than the one recorded, or a
       second way to upload to crates.io came back, or the scan went blind to a
       gated file's one upload command, an allowed entry, a kind of file it must
-      read, or the tracked cargo aliases, or it read a failed file search or an
-      unreadable file as no door.
+      read, the shebang files or the TOML files it must read for aliases, the
+      tracked cargo aliases, or a token handed to CI, or it read a failed file
+      search or an unreadable file as no door.
 
 kani_harnesses:
   - id: KANI-PUB-001

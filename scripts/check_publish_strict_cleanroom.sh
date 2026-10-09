@@ -192,10 +192,21 @@ fi
 # variable ("$sub", $(SUB)), which could be any of them. So is cargo-release,
 # cargo-smart-release or cargo-workspaces run by its own name, and any variable run as the
 # command with one of those uploads after it ($C publish, $(TOOL) release), since the variable
-# may hold cargo. It counts at the command's start (after ( { ! ` @ + -, `case ... in`, a case
-# pattern's `x)`, then/do/else/if/elif/while/until or a workflow run:), after $( <( >( or an
-# unescaped backtick, inside sh -c "..." or eval, after find's -exec/-execdir; behind VAR=val
-# and a wrapper (env exec time command nohup sudo timeout nice xargs parallel ... make's shell).
+# may hold cargo. A $'...', $(...) or `...` word run as the command counts the same way: its
+# value is only known when it runs. It counts at the command's start (after ( { ! ` @ + -,
+# `case ... in`, a case pattern's `x)`, then/do/else/if/elif/while/until or a workflow run:),
+# after $( <( >( or an unescaped backtick, inside sh -c "..." (or -ec, -lc, --command, --run) or
+# eval, after find's -exec/-execdir; behind VAR=val and a wrapper, by name or by a path (env exec
+# time command nohup sudo doas timeout nice xargs parallel rustup ... make's shell). Anywhere
+# else in a command, a cargo word with an upload after it still counts (DOOR_BARE): the words
+# are read as the shell reads them (door_words), and a quoted string that holds a space is a
+# message, not a word, so `fail "ran cargo publish"` is not a door and `doas "cargo" publish` is.
+# cargo --config 'alias.p="publish"' and CARGO_ALIAS_P=publish make p an upload (DOOR_CALIAS);
+# a PUT to crates.io's /api/v1/crates/new uploads without cargo, and so does release-plz
+# release; and a crates.io token handed to a CI step (an env key CARGO_REGISTRY_TOKEN or
+# CARGO_REGISTRIES_<name>_TOKEN, a secret named for cargo or crates and a token, or the
+# trusted-publishing crates-io-auth-action) lets any step upload (DOOR_TOKEN). No gated door
+# runs in CI, so no CI step needs one.
 # The apr binary is the one variable let through: "$APR" publish uploads a model (DOOR_APR),
 # so setting APR or APR_BIN to cargo is a door where it is set (DOOR_APRSET). cargo carried
 # into APR through another variable (APR=$X) is run-time data, which no line scan reads.
@@ -208,25 +219,28 @@ fi
 # and prints it as written. An escaped \` or \$ keeps its backslash: it is not a substitution.
 # The case table is the pattern's spec: re-run it, never re-read the pattern.
 DOOR_PRE='[[:space:]]*(([(!{`@+-]|case[[:space:]].*[[:space:]]in|[^[:space:]()]+\)|then|do|else|if|elif|while|until|run:)[[:space:]]*)*'
-DOOR_MID='(.*(\$\(|[<>]\(|[^\\]`|-c[[:space:]]+["'"'"']|[[:space:]]-exec(dir)?[[:space:]]+)|(.*[^A-Za-z0-9_-])?eval[[:space:]]+["'"'"']?)[[:space:]]*'
-DOOR_WRAP='((env|exec|time|command|builtin|nohup|sudo|timeout|nice|ionice|stdbuf|xargs|parallel|flock|taskset|chrt|setsid|shell)([[:space:]]+[^[:space:]]+)*[[:space:]]+)?'
+DOOR_MID='(.*(\$\(|[<>]\(|[^\\]`|-[A-Za-z]*c[[:space:]]+["'"'"']|--(command|run)[[:space:]=]+["'"'"']|[[:space:]]-exec(dir)?[[:space:]]+)|(.*[^A-Za-z0-9_-])?eval[[:space:]]+["'"'"']?)[[:space:]]*'
+DOOR_PATH='([^[:space:]"'"'"'=;&|]*/)?'
+DOOR_WRAP='('"$DOOR_PATH"'(env|exec|time|command|builtin|nohup|sudo|doas|runuser|timeout|nice|ionice|stdbuf|xargs|parallel|flock|taskset|chrt|setsid|unshare|nsenter|chroot|firejail|systemd-run|strace|ltrace|rustup|shell)([[:space:]]+[^[:space:]]+)*[[:space:]]+)?'
 # A VAR=val prefix holds no unclosed $( : in `out=$(bash "$me" release` bash is the command.
 DOOR_ASSIGN='([A-Za-z_][A-Za-z0-9_]*=([^[:space:]$]|\$[^(]|\$\([^)[:space:]]*\))*[[:space:]]+)*'
 DOOR_VAL='(.*[^A-Za-z0-9_.-])?[A-Za-z_][A-Za-z0-9_.-]*[[:space:]]*(::|:|\?|\+|!)?=[[:space:]]*[("'"'"']*[[:space:]]*'
-DOOR_PATH='([^[:space:]"'"'"'=;&|]*/)?'
 DOOR_CARGO='("[^"]*/cargo"|'"'"'[^'"'"']*/cargo'"'"'|["'"'"'\\]?'"$DOOR_PATH"'cargo["'"'"']?|"?\$?\$(CARGO[A-Za-z0-9_]*|\{CARGO[A-Za-z0-9_]*(:?[-=+?][^}]*)?\})"?|\$\(CARGO\)|"?(\$\(|`)(command[[:space:]]+-v|which|type[[:space:]]+-[pP])[[:space:]]+cargo(\)|`)"?)'
 # A braced ${...} ends at its } and must have one: in X="${2:-stack release}" the variable is
 # the whole ${...}, so no `release` follows it.
-DOOR_VAR='("?\$?\$([A-Za-z_][A-Za-z0-9_]*|[0-9@*]|\{([A-Za-z_][A-Za-z0-9_]*|[0-9@*])(:?[-=+?][^}]*)?\})"?|\$\([A-Za-z_][A-Za-z0-9_]*\))'
+DOOR_VAR='("?\$?\$([A-Za-z_][A-Za-z0-9_]*|[0-9@*]|\{([A-Za-z_][A-Za-z0-9_]*|[0-9@*])(:?[-=+?][^}]*)?\})"?|"?\$\([^()]*\)"?|`[^`]*`|\$'"'"'[^'"'"']*'"'"')'
 DOOR_GFLAG='([[:space:]]+(\+[^[:space:]]+|-[A-Za-z]+|--[a-z][a-z-]*(=[^[:space:]]*)?|(-Z|-C|--config|--color)[[:space:]]+[^[:space:]]+))*'
 DOOR_SUB='(publish|(ws|workspaces)[[:space:]]+publish|release|smart-release)([[:space:]"'"'"'`)};]|$)'
 # For a variable subcommand the flags are read strictly, so -Z "$z" or --config "$f" is a flag
 # and its value, never a flag and then a variable subcommand.
 DOOR_VFLAG='([[:space:]]+(\+[^[:space:]]+|-[qv]+|--(locked|frozen|offline|quiet|verbose)|--[a-z][a-z-]*=[^[:space:]]*|(-Z|-C|--config|--color)[[:space:]]+[^[:space:]]+))*'
-DOOR_TOOL="${DOOR_PATH}"'cargo-(release|smart-release|workspaces|ws)([[:space:]"'"'"']|$)'
+DOOR_TOOL="${DOOR_PATH}"'(cargo-(release|smart-release|workspaces|ws)|release-plz[[:space:]]+release)([[:space:]"'"'"']|$)'
 DOOR_UP="(${DOOR_CARGO}(${DOOR_GFLAG}[[:space:]]+${DOOR_SUB}|${DOOR_VFLAG}[[:space:]]+\"?\\\$)|${DOOR_VAR}${DOOR_GFLAG}[[:space:]]+${DOOR_SUB}|${DOOR_TOOL})"
 DOOR_APRSET='(.*[^A-Za-z0-9_.-])?APR(_BIN)?[[:space:]]*(::|:|\?|\+|!)?=[[:space:]]*[("'"'"']*[[:space:]]*'"${DOOR_CARGO}"'([[:space:]"'"'"');]|$)'
-DOOR_RE="^[^:]*:[0-9]+:(((${DOOR_PRE}|${DOOR_MID})${DOOR_WRAP}${DOOR_ASSIGN}|${DOOR_VAL})${DOOR_UP}|${DOOR_APRSET})"
+DOOR_CALIAS='(.*[^A-Za-z0-9_.-])?(CARGO_ALIAS_[A-Za-z0-9_]+|alias\.[A-Za-z0-9_-]+)[[:space:]]*(::|:|\?|\+|!)?=[[:space:]]*[[("'"'"']*[[:space:]]*(-[^[:space:]]*[[:space:]]+)*["'"'"']?(publish|(ws|workspaces)[[:space:]]+publish|release|smart-release)([^A-Za-z0-9_-]|$)'
+DOOR_TOKEN='((.*[^A-Za-z0-9_])?(CARGO_REGISTRY_TOKEN|CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN)[[:space:]]*:([[:space:]]|$)|.*secrets\.[A-Za-z0-9_]*(CARGO|CRATE)[A-Za-z0-9_]*TOKEN|.*crates-io-auth-actio[n]|.*/api/v1/crates/ne[w]([^A-Za-z0-9_-]|$))'
+DOOR_RE="^[^:]*:[0-9]+:(((${DOOR_PRE}|${DOOR_MID})${DOOR_WRAP}${DOOR_ASSIGN}|${DOOR_VAL})${DOOR_UP}|${DOOR_APRSET}|${DOOR_CALIAS}|${DOOR_TOKEN})"
+DOOR_BARE="^[^:]*:[0-9]+:(.*[[:space:]])?${DOOR_CARGO}${DOOR_GFLAG}[[:space:]]+${DOOR_SUB}"
 DOOR_DRY='(^|[[:space:]])["'"'"']?--dry-run["'"'"']?([[:space:]]|$)'
 # "$APR" and "$APR_BIN" are the pinned apr binary (scripts/apr_bin.sh): its publish uploads a
 # model to Hugging Face, not a crate. Only a command that starts with one is let through.
@@ -255,11 +269,33 @@ door_cmds() { # door_cmds FILE...: one "file:line:command" row per command
   ' "$@"
 }
 door_unquote() { sed -e 's/[$]["'"'"']/'"'"'/g' -e 's/\\\([A-Za-z0-9_-]\)/\1/g' -e 's/["'"'"']//g'; }
-door_keep() { # a row matched as written or unquoted; --dry-run and $APR judged as written
+door_words() { # a row naming cargo, as the shell splits its words: a quoted string that holds a
+  # space becomes Q (a message), any other loses its quotes, and a backslash before a letter goes
+  awk '
+    !/[Cc][Aa][Rr][Gg][Oo]/ { print; next }
+    {
+      s = $0; o = ""; n = length(s); i = 1
+      while (i <= n) {
+        c = substr(s, i, 1); d = substr(s, i + 1, 1)
+        if (c == "$" && (d == "\"" || d == "'"'"'")) { i++; continue }
+        if (c == "\"" || c == "'"'"'") {
+          j = i + 1
+          while (j <= n && substr(s, j, 1) != c) { if (c == "\"" && substr(s, j, 1) == "\\") j++; j++ }
+          w = substr(s, i + 1, j - i - 1)
+          if (w ~ /[[:space:]]/) o = o "Q"; else o = o w
+          i = j + 1; continue
+        }
+        if (c == "\\" && d ~ /[A-Za-z0-9_-]/) { i++; continue }
+        o = o c; i++
+      }
+      print o
+    }'
+}
+door_keep() { # a row matched as written, unquoted or by its words; --dry-run and $APR judged as written
   local t n out=""
   t=$(mktemp "$WORK/keep.XXXXXX") || return 2
   cat > "$t"
-  n=$( { grep -nE "$DOOR_RE" "$t"; door_unquote < "$t" | grep -nE "$DOOR_RE"; } | cut -d: -f1 | sort -un)
+  n=$( { grep -nE "$DOOR_RE" "$t"; door_unquote < "$t" | grep -nE "$DOOR_RE"; door_words < "$t" | grep -nE "$DOOR_BARE"; } | cut -d: -f1 | sort -un)
   if [ -n "$n" ]; then
     out=$(printf '%s\n' "$n" | awk 'NR == FNR { k[$1]; next } FNR in k' - "$t" | grep -vE "$DOOR_DRY" | grep -vE "$DOOR_APR")
   fi
@@ -388,7 +424,7 @@ door_case none 'cargo -Z "$z" build'
 door_case none 'cargo --config "$f" build'
 door_case none 'cargo build $FLAGS'
 door_case none 'echo "then run cargo release"'
-door_case none 'medieval cargo publish'
+door_case none 'medieval "cargo publish"'
 door_case none 'out=$(bash "$me" release "$d" job-1)'
 door_case none 'MSG_SUFFIX="${2:-stack release}"'
 door_case door 'X=$(date) cargo publish -p x'
@@ -451,6 +487,55 @@ door_case none 'x) cargo build ;;'
 door_case none 'case "$x" in a) cargo build ;; esac'
 door_case none 'echo "use case x in y) cargo publish"'
 door_case none '~/.cargo publish'
+door_case door '/usr/bin/env cargo publish -p x'
+door_case door '/usr/bin/timeout 600 cargo publish -p x'
+door_case door '"/usr/bin/env" cargo publish -p x'
+door_case door 'doas cargo publish -p x'
+door_case door '/usr/bin/env "$C" publish -p x'
+door_case door 'doas "$C" publish -p x'
+door_case door 'my_wrapper cargo "publish" -p x'
+door_case door 'rustup run stable "$C" publish -p x'
+door_case door "my_wrapper \$'cargo' publish -p x"
+door_case door 'my_wrapper cargo \publish -p x'
+door_case door '"$C" \publish -p x'
+door_case door 'a)cargo publish -p x;;'
+door_case door 'case $x in a)cargo publish -p x;; esac'
+door_case door 'my_wrapper "a\"b c" cargo publish -p x'
+door_case door '$(shell $(TOOL) publish -p x)'
+door_case door 'rustup run stable cargo publish -p x'
+door_case door 'retry 3 cargo publish -p x'
+door_case door 'my_wrapper "cargo" publish -p x'
+door_case door 'echo cargo publish -p x'
+door_case door 'bash -ec "cargo publish -p x"'
+door_case door 'nix-shell --run '"'"'cargo publish -p x'"'"
+door_case door 'cargo --config '"'"'alias.p="publish"'"'"' p -p x'
+door_case door 'cargo --config alias.p=publish p -p x'
+door_case door 'cargo --config '"'"'alias.p=["publish", "-p", "x"]'"'"' p'
+door_case door 'CARGO_ALIAS_P=publish cargo p -p x'
+door_case door 'export CARGO_ALIAS_UP='"'"'publish'"'"
+door_case door "\$'\\x63argo' publish -p x"
+door_case door "\$'\\143argo' publish -p x"
+door_case door '"$(printf cargo)" publish -p x'
+door_case door '`printf cargo` publish -p x'
+door_case door 'release-plz release --git-token "$T"'
+door_case door 'curl -X PUT -H "Authorization: $T" https://crates.io/api/v1/crates/new --data-binary @x'
+door_case door '          CARGO_REGISTRY_TOKEN: ${{ secrets.X }}'
+door_case door '          CARGO_REGISTRIES_MINE_TOKEN: x'
+door_case door '        env: { T: "${{ secrets.CRATES_IO_TOKEN }}" }'
+door_case door '      - uses: rust-lang/crates-io-auth-action@v1'
+door_case none 'fail "ran cargo publish -p x"'
+door_case none 'echo "x: cargo publish failed"'
+door_case none '/usr/bin/env cargo build -p x'
+door_case none 'bash -ec "cargo build -p x"'
+door_case none 'git config alias.x y'
+door_case none 'CARGO_ALIAS_B=build cargo b'
+door_case none 'cargo --config '"'"'alias.b="build"'"'"' b'
+door_case none '"$(git rev-parse --show-toplevel)/x.sh" release'
+door_case none 'unset CARGO_REGISTRY_TOKEN'
+door_case none '[ -z "${CARGO_REGISTRY_TOKEN:-}" ] || die "token set"'
+door_case none '          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}'
+door_case none 'curl -s https://crates.io/api/v1/crates/x'
+door_case none 'grep -c '"'"'publish'"'"' f'
 [ "$cases_ok" -eq "$cases_n" ] && pass "door_regex_case_table ($cases_ok/$cases_n cases)"
 
 # The two gated doors: publish_strict.sh (the rows above) and cascade-publish.sh (its own
@@ -460,8 +545,8 @@ door_case none '~/.cargo publish'
 # its case table rows.
 # SCOPE. By name: shell scripts, make files, justfiles and git hooks at any depth (`make -C
 # crates/x publish` is a door too); workflows only at the root, as GitHub runs no other
-# .github/workflows directory. By content: any other tracked file that names publish and
-# starts with a sh/bash/dash/ksh/mksh/zsh/bats shebang, so an extensionless script is read too.
+# .github/workflows directory. By content: any other tracked file whose first line is a
+# sh/bash/dash/ksh/mksh/zsh/bats shebang, so an extensionless script is read too, whatever it runs.
 # Not scanned: Rust and Python, which build the call as an argv (the contract names them).
 # ALLOWED is matched by file AND command, so a second upload added to one is still caught,
 # and each must still be seen (the positive control for the content scope):
@@ -499,6 +584,19 @@ shebang_case other '# runs under bash'
 shebang_case other 'cargo publish -p x'
 shebang_case other '#!/usr/bin/env bashful'
 [ "$sb_ok" -eq "$sb_n" ] && pass "shebang_case_table ($sb_ok/$sb_n cases)"
+# shebang_files ROOT: each tracked file outside NAMES whose first line is a shell shebang. git
+# grep lists every file with a line that starts with #!, whatever else it holds (a `cargo
+# release` script need not say publish), and is_shell_script keeps those where it is line 1.
+# git grep exits 1 when nothing matches and above 1 when it fails; a failed grep returns git's
+# status, so it never reads as "no shebang file".
+shebang_files() {
+  local r=0 f
+  git -C "$1" grep -lI -e "^#!" -- ":(exclude)$SELF" "${NAMES[@]/#/:(exclude)}" \
+    ":(exclude).github/workflows/*" > "$WORK/sb-files" 2> "$WORK/sb-err" || r=$?
+  [ "$r" -gt 1 ] && return "$r"
+  while IFS= read -r f; do is_shell_script "$1/$f" && printf "%s\n" "$f"; done < "$WORK/sb-files"
+  return 0
+}
 NAMES=('*.sh' '*.bash' '*.mk' 'Makefile' '*/Makefile' 'makefile' '*/makefile' 'GNUmakefile' '*/GNUmakefile'
   'justfile' '*/justfile' 'Justfile' '*/Justfile' '.justfile' '*/.justfile' '*.just'
   '.githooks/*' '*/.githooks/*' '.github/workflows/*.yml' '.github/workflows/*.yaml'
@@ -526,19 +624,32 @@ if [ "$sc_got" = "$sc_want" ]; then
 else
   fail "scope_case_table: want $sc_want, got $sc_got"
 fi
+# The shebang scope's spec: a script is read for its first line, not for what it holds.
+SB="$WORK/sb-case"
+mkdir -p "$SB/tools" "$SB/t" "$SB/docs" && git -C "$SB" init -q
+printf '#!/bin/sh\ncargo release -x\n' > "$SB/tools/rel"
+printf '#!/usr/bin/env bats\n' > "$SB/t/x.bats"
+printf '#!/usr/bin/env python3\n' > "$SB/tools/py"
+printf 'notes\n#!/bin/sh\n' > "$SB/docs/n.txt"
+printf '#!/bin/sh\n' > "$SB/x.sh"
+git -C "$SB" add -A
+sbs_rc=0
+shebang_files "$SB" > "$WORK/sbs-got" || sbs_rc=$?
+sbs_got=$(sort "$WORK/sbs-got" | tr '\n' ' ')
+sbs_want=$(printf '%s\n' tools/rel t/x.bats | sort | tr '\n' ' ')
+if [ "$sbs_rc" -eq 0 ] && [ "$sbs_got" = "$sbs_want" ]; then
+  pass "shebang_scope_case_table (2 files in, 3 out)"
+else
+  fail "shebang_scope_case_table: rc $sbs_rc, want $sbs_want, got $sbs_got"
+fi
 mapfile -t scope < <(git -C "$DOORS_ROOT" ls-files -- "${NAMES[@]}" ":(exclude)$SELF")
 named=${#scope[@]}
-# git grep exits 1 when nothing matches and above 1 when it fails; a failed grep must not
-# read as "no shebang file names publish".
 sb_rc=0
-git -C "$DOORS_ROOT" grep -lI -e publish -- ":(exclude)$SELF" "${NAMES[@]/#/:(exclude)}" \
-  ':(exclude).github/workflows/*' > "$WORK/sb-files" 2> "$WORK/sb-err" || sb_rc=$?
-if [ "$sb_rc" -gt 1 ]; then
+shebang_files "$DOORS_ROOT" > "$WORK/sb-scope" || sb_rc=$?
+if [ "$sb_rc" -ne 0 ]; then
   fail "door_scan_shebang_scope: git grep for the shebang scope failed (rc $sb_rc): $(head -n 1 "$WORK/sb-err")"
 fi
-while IFS= read -r f; do
-  is_shell_script "$DOORS_ROOT/$f" && scope+=("$f")
-done < "$WORK/sb-files"
+while IFS= read -r f; do scope+=("$f"); done < "$WORK/sb-scope"
 # Every file in scope must be read. awk skips a file it cannot open with a warning (gawk) or
 # stops there (mawk), and either would read as files with no door.
 read_err="" dc_rc=0
@@ -547,9 +658,11 @@ if [ "$dc_rc" -ne 0 ] || [ -s "$WORK/scope-err" ]; then
   read_err="rc $dc_rc: $(head -n 1 "$WORK/scope-err")"
 fi
 raw=$(door_keep < "$WORK/scope-cmds" || true)
+self_n=0
 if [ -f "$DOORS_ROOT/$SELF" ]; then
+  self_n=1
   # Without its case rows, and without the GATED_CMD line, whose value is the upload text.
-  awk -v g="GATED_CMD='$GATED_CMD'" '/^(door|shebang)_case / || $0 == g { $0 = "" } { print }' \
+  awk -v g="GATED_CMD='$GATED_CMD'" '/^(door|shebang|alias)_case / || $0 == g { $0 = "" } { print }' \
     "$DOORS_ROOT/$SELF" > "$WORK/self-scan.sh"
   raw+=$'\n'$( (door_lines "$WORK/self-scan.sh" || true) | sed "s#^$WORK/self-scan.sh:#$SELF:#")
 fi
@@ -583,11 +696,12 @@ fi
 if [ -n "$doors" ]; then
   while IFS= read -r d; do fail "no_other_door: a real cargo publish outside the gated doors: $d"; done <<< "$doors"
 elif [ -z "$read_err" ]; then
-  pass "no_other_door (${#scope[@]} files scanned: $named tracked shell scripts, make files, justfiles, git hooks, root workflows, composite actions and ci/ job files, $((${#scope[@]} - named)) more by shebang, and this file)"
+  self_txt=""; [ "$self_n" -eq 1 ] && self_txt=", and this file"
+  pass "no_other_door ($((${#scope[@]} + self_n)) files scanned: $named by name (tracked shell scripts, make files, justfiles, git hooks, root workflows, composite actions and ci/ job files), $((${#scope[@]} - named)) by a shell shebang$self_txt)"
 fi
 
 # A cargo alias makes `cargo <name>` an upload the door scan cannot see, so no tracked cargo
-# config may define one: an alias ([alias] table or a top-level alias.<name> key) whose first
+# config, and no other tracked TOML file (`cargo --config <path>` reads any), may define one: an alias ([alias] table or a top-level alias.<name> key) whose first
 # word, after flags, is publish, release or smart-release, or ws/workspaces with publish.
 alias_rows() { # alias_rows all|doors FILE...: "file:line:text" per alias (all) or per upload alias
   awk -v all="$1" '
@@ -628,19 +742,35 @@ alias_case none $'# [alias]\n# pub = "publish"'
 alias_case none $'[alias]\nt = "test"\n[env]\nX = "publish"'
 alias_case none $'[build]\nalias.p = "publish"'
 [ "$al_ok" -eq "$al_n" ] && pass "alias_case_table ($al_ok/$al_n cases)"
-mapfile -t cfgs < <(git -C "$DOORS_ROOT" ls-files -- '.cargo/config' '.cargo/config.toml' '*/.cargo/config' '*/.cargo/config.toml')
+CFG_NAMES=('*.toml' '.cargo/config' '*/.cargo/config')
+# The config scope's spec, as for NAMES: cargo reads .cargo/config(.toml) at any depth, and
+# `cargo --config <path>` reads any TOML file.
+AC="$WORK/alias-scope-case"
+AC_IN='.cargo/config .cargo/config.toml a/.cargo/config a/b/.cargo/config.toml Cargo.toml zz/pub.toml'
+AC_OUT='config a/config.txt x.yml .cargo/env'
+mkdir -p "$AC" && git -C "$AC" init -q
+for p in $AC_IN $AC_OUT; do mkdir -p "$AC/$(dirname "$p")" && : > "$AC/$p"; done
+git -C "$AC" add -A
+ac_got=$(git -C "$AC" ls-files -- "${CFG_NAMES[@]}" | sort | tr '\n' ' ')
+ac_want=$(printf '%s\n' $AC_IN | sort | tr '\n' ' ')
+if [ "$ac_got" = "$ac_want" ]; then
+  pass "alias_scope_case_table ($(wc -w <<< "$AC_IN") paths in, $(wc -w <<< "$AC_OUT") out)"
+else
+  fail "alias_scope_case_table: want $ac_want, got $ac_got"
+fi
+mapfile -t cfgs < <(git -C "$DOORS_ROOT" ls-files -- "${CFG_NAMES[@]}")
 if [ "${#cfgs[@]}" -eq 0 ]; then
-  fail "no_publish_alias: no tracked cargo config found, so the row proves nothing"
+  fail "no_publish_alias: no tracked cargo config or TOML file found, so the row proves nothing"
 else
   al_all=$(cd "$DOORS_ROOT" && alias_rows all "${cfgs[@]}" | grep -c . || true)
   al_doors=$(cd "$DOORS_ROOT" && alias_rows doors "${cfgs[@]}" || true)
   case "$al_all" in '' | *[!0-9]*) al_all=0 ;; esac
   if [ "$al_all" -eq 0 ]; then
-    fail "no_publish_alias: ${#cfgs[@]} cargo configs read and no alias seen in any, so the row proves nothing"
+    fail "no_publish_alias: ${#cfgs[@]} cargo configs and TOML files read and no alias seen in any, so the row proves nothing"
   elif [ -n "$al_doors" ]; then
     while IFS= read -r d; do fail "no_publish_alias: a cargo alias that uploads: $d"; done <<< "$al_doors"
   else
-    pass "no_publish_alias (${#cfgs[@]} tracked cargo configs, $al_all aliases read)"
+    pass "no_publish_alias (${#cfgs[@]} tracked cargo configs and TOML files, $al_all aliases read)"
   fi
 fi
 
