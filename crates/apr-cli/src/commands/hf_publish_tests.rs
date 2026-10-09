@@ -417,7 +417,7 @@ fn the_token_stays_in_its_file() {
     std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).expect("chmod");
     let tok = Token::from_file(&p).expect("0600");
     assert_eq!(tok.bearer(), "Bearer hf_SECRETvalue");
-    assert!(!format!("{tok:?}").contains("SECRET"));
+    assert_eq!(format!("{tok:?}"), "Token(<redacted>)");
 
     for body in ["", "  \n", "two tokens"] {
         std::fs::write(&p, body).expect("w");
