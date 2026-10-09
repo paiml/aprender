@@ -262,6 +262,12 @@ async fn handle_gpu_chat_completion(
             return err_response;
         }
     }
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(&req, super::response_format::APR_CUDA)
+    {
+        return refusal;
+    }
 
     let messages = req.get("messages").and_then(|m| m.as_array());
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);

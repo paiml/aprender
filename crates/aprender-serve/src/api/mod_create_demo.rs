@@ -159,6 +159,78 @@ pub struct ChatCompletionRequest {
     /// Absent on both = thinking OFF, production's default since #3801.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub think: Option<bool>,
+    /// #3568 PR 4: OpenAI's structured output. `json_schema` and `json_object` run the turn
+    /// under a constraint and a second reader; `text` (or absent) is today's turn. A `type`
+    /// apr does not know is refused at deserialization, never dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<ResponseFormat>,
+}
+
+/// OpenAI's `response_format` (#3568 PR 4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResponseFormat {
+    /// Free text: no constraint.
+    Text,
+    /// Any JSON object: the schema `{"type": "object"}`.
+    JsonObject,
+    /// A JSON Schema the output must satisfy.
+    JsonSchema {
+        /// The schema and its name.
+        json_schema: JsonSchemaFormat,
+    },
+}
+
+/// The `json_schema` object of a `response_format` (#3568 PR 4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JsonSchemaFormat {
+    /// The schema's name, echoed by OpenAI; apr reads none of it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// What the schema is for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// The JSON Schema.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<serde_json::Value>,
+    /// OpenAI's opt-in to enforcement. apr enforces every schema it accepts, so `false`
+    /// loosens nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
+}
+
+impl ResponseFormat {
+    /// The constraint this format asks for: `None` for `text`.
+    ///
+    /// # Errors
+    /// `SchemaInvalid` for a `json_schema` with no schema, or one that is not an object or a
+    /// boolean.
+    pub fn constraint(
+        &self,
+    ) -> Result<Option<crate::constrain::ConstraintRequest>, crate::constrain::ConstraintError>
+    {
+        use crate::constrain::{ConstraintError, ConstraintRequest};
+        let schema = match self {
+            Self::Text => return Ok(None),
+            Self::JsonObject => serde_json::json!({"type": "object"}),
+            Self::JsonSchema { json_schema } => match &json_schema.schema {
+                Some(s) if s.is_object() || s.is_boolean() => s.clone(),
+                Some(_) => {
+                    return Err(ConstraintError::SchemaInvalid(
+                        "response_format.json_schema.schema is JSON but not a schema: a JSON \
+                         Schema is an object or a boolean"
+                            .to_string(),
+                    ))
+                },
+                None => {
+                    return Err(ConstraintError::SchemaInvalid(
+                        "response_format.json_schema has no `schema`".to_string(),
+                    ))
+                },
+            },
+        };
+        Ok(Some(ConstraintRequest::JsonSchema(schema)))
+    }
 }
 
 /// The `chat_template_kwargs` apr honours (#3723).

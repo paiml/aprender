@@ -9,6 +9,8 @@ pub mod auth;
 pub mod handlers;
 #[cfg(feature = "inference")]
 pub mod ollama;
+#[cfg(feature = "inference")]
+pub(crate) mod response_format;
 pub(crate) mod route_index;
 pub mod routes;
 #[cfg(feature = "inference")]
@@ -26,6 +28,8 @@ mod tests;
 // pointed at code that never ran.
 #[cfg(test)]
 mod tests_contract_enforcement;
+#[cfg(all(test, feature = "inference"))]
+mod tests_response_format_3568;
 #[cfg(all(test, feature = "inference"))]
 mod tests_route_index_3979;
 // PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process

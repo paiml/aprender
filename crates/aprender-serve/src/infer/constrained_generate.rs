@@ -113,7 +113,7 @@ fn generate_gguf_constrained(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
 ) -> Result<(Vec<u32>, bool, bool, crate::session::ConstrainedStop)> {
-    use crate::constrain::{ConstraintEnv, ConstraintError};
+    use crate::constrain::ConstraintError;
     let no_model = || RealizarError::InvalidShape {
         reason: "no model was loaded".to_string(),
     };
@@ -129,12 +129,7 @@ fn generate_gguf_constrained(
             removed_by: removed_by.to_string(),
         }));
     }
-    let vocab = mapped.model.constraint_vocab().ok_or_else(|| {
-        RealizarError::Constraint(ConstraintError::Vocab(
-            "this GGUF has no tokenizer vocabulary or no end-of-sequence id".to_string(),
-        ))
-    })?;
-    let env = ConstraintEnv::new(&vocab).map_err(RealizarError::Constraint)?;
+    let env = mapped.constraint_env().map_err(RealizarError::Constraint)?;
     let mut constraint = request.compile(&env).map_err(RealizarError::Constraint)?;
     let context_length = model.config.context_length;
     let (turn, stop, gpu_attempted) = if let Some(qwen) = qwen35_host {

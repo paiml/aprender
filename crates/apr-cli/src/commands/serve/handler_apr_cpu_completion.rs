@@ -340,6 +340,12 @@ async fn handle_apr_cpu_chat_completion(
     if let Some(err_response) = validate_request_model(req, &s.model_name) {
         return err_response;
     }
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(req, super::response_format::APR_CPU)
+    {
+        return refusal;
+    }
 
     let messages = req.get("messages").and_then(|m| m.as_array());
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
