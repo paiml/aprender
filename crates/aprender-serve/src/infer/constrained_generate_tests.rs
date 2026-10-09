@@ -124,7 +124,7 @@ fn trace_refuses_on_the_dense_loop_only() {
 }
 
 #[test]
-fn a_gpu_path_refuses_exactly_when_the_dispatch_would_attempt_it() {
+fn the_engine_runs_wherever_the_dispatch_takes_it_and_only_other_loops_refuse() {
     let (_f, model) = pygmy_model();
     let greedy = crate::gguf::QuantizedGenerateConfig::default();
     let sampled = crate::gguf::QuantizedGenerateConfig {
@@ -132,20 +132,115 @@ fn a_gpu_path_refuses_exactly_when_the_dispatch_would_attempt_it() {
         top_k: 40,
         ..Default::default()
     };
+    let traced = crate::gguf::QuantizedGenerateConfig {
+        trace: true,
+        ..Default::default()
+    };
     let bare = InferenceConfig::new("m.gguf");
     let forced = InferenceConfig::new("m.gguf").with_accel_forced(true);
+    // #3568 PR 3: the engine applies the constraint on the device as on the CPU, so a bare run
+    // takes it on every build: CUDA on a cuda build, the CPU otherwise (#3757: never wgpu)
+    assert_eq!(path_of(&bare, &greedy, &model, false), None);
+    assert_eq!(path_of(&bare, &greedy, &model, true), None);
+    // The hybrid has no wgpu forward and no instrumented loop
+    assert_eq!(path_of(&forced, &greedy, &model, true), None);
+    assert_eq!(path_of(&bare, &traced, &model, true), None);
+    assert_eq!(path_of(&forced, &sampled, &model, false), None);
     if cfg!(feature = "cuda") {
-        assert_eq!(path_of(&bare, &greedy, &model, false), Some("gguf-cuda"));
-        assert_eq!(path_of(&bare, &greedy, &model, true), Some("qwen35-cuda"));
+        // CUDA is entered before wgpu, so `--gpu` takes the engine on the device
+        assert_eq!(path_of(&forced, &greedy, &model, false), None);
+        // `--trace` on the device keeps the instrumented device loop
+        assert_eq!(
+            path_of(&bare, &traced, &model, false),
+            Some("gguf-cuda-trace")
+        );
     } else {
-        // #3757: a bare run never enters wgpu, so it takes the engine
-        assert_eq!(path_of(&bare, &greedy, &model, false), None);
-        assert_eq!(path_of(&bare, &greedy, &model, true), None);
         // `--gpu` enters wgpu for a greedy request (#3757) and never for a sampled one (#3760)
         let wgpu = cfg!(feature = "gpu").then_some("gguf-wgpu");
         assert_eq!(path_of(&forced, &greedy, &model, false), wgpu);
-        assert_eq!(path_of(&forced, &sampled, &model, false), None);
-        // The hybrid has no wgpu forward
-        assert_eq!(path_of(&forced, &greedy, &model, true), None);
+        assert_eq!(path_of(&bare, &traced, &model, false), Some("gguf-trace"));
+    }
+}
+
+/// #3826: the constrained run reports `gpu_attempted` from the dispatch's own facts: a cuda
+/// build, no `--no-gpu`, no legacy quant. Never from a device probe.
+#[test]
+fn the_dense_cuda_attempt_is_the_build_and_the_request() {
+    let bare = InferenceConfig::new("m.gguf");
+    let cpu = InferenceConfig::new("m.gguf").without_gpu();
+    assert_eq!(dense_cuda_attempted(&bare, false), cfg!(feature = "cuda"));
+    assert!(!dense_cuda_attempted(&cpu, false));
+    // Legacy quant never enters CUDA, in either run
+    assert!(!dense_cuda_attempted(&bare, true));
+    // The hybrid's attempt (no legacy-quant rule) is the same build-and-request fact
+    assert_eq!(session_cuda_attempted(&bare), cfg!(feature = "cuda"));
+    assert!(!session_cuda_attempted(&cpu));
+}
+
+/// A Q4_K model, which the dense dispatch sends to CUDA on a cuda build (the pygmy model is
+/// Q4_0, legacy, and never enters it), with a tokenizer the constraint compiles against.
+#[cfg(feature = "structured-output")]
+fn q4k_model_with_vocab() -> (tempfile::NamedTempFile, crate::gguf::MappedGGUFModel) {
+    use crate::gguf::test_factory::build_minimal_llama_gguf_with;
+    use std::io::Write;
+    let vocab: Vec<String> = ["<unk>", "</s>", "a", "b"]
+        .into_iter()
+        .map(String::from)
+        .chain((4..32).map(|i| format!("x{i}")))
+        .collect();
+    let vocab: Vec<&str> = vocab.iter().map(String::as_str).collect();
+    // intermediate = hidden: the builder sizes each Q4_K tensor from its first dim as rows, so
+    // a non-square FFN tensor gets half the bytes its out dim needs and the forward refuses it.
+    let bytes = build_minimal_llama_gguf_with(32, 64, 64, 4, 4, |b| {
+        b.add_string("tokenizer.ggml.model", "llama")
+            .add_string_array("tokenizer.ggml.tokens", &vocab)
+            .add_u32("tokenizer.ggml.eos_token_id", 1)
+    });
+    let mut f = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp");
+    f.write_all(&bytes).expect("write");
+    let mapped = crate::gguf::MappedGGUFModel::from_path(f.path()).expect("map");
+    (f, mapped)
+}
+
+/// #3826, end to end through the function the report reads: a dense constrained run returns
+/// the turn's `used_gpu` beside the dispatch's attempt, whatever the device did. On a cuda
+/// build a device that refuses the model (no driver, a failed upload, an F2 mismatch) leaves
+/// the CPU engine serving the turn and the pair (false, true), which the report reads as
+/// fell_back; a run that reports the attempt only when the device served it hides that.
+#[cfg(feature = "structured-output")]
+#[test]
+fn a_dense_constrained_run_reports_the_attempt_the_dispatch_made() {
+    let (_f, mapped) = q4k_model_with_vocab();
+    let request = ConstraintRequest::Lark(r#"start: "a" | "b""#.to_string());
+    let gen_config = crate::gguf::QuantizedGenerateConfig {
+        max_tokens: 4,
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: vec![1],
+        ..Default::default()
+    };
+    for (config, attempted) in [
+        (InferenceConfig::new("m.gguf"), cfg!(feature = "cuda")),
+        (InferenceConfig::new("m.gguf").without_gpu(), false),
+    ] {
+        let model = crate::gguf::OwnedQuantizedModel::from_mapped(&mapped).expect("load");
+        assert!(!model_has_legacy_quant(&model), "Q4_K is not legacy");
+        let (tokens, used_gpu, gpu_attempted, stop) = generate_gguf_constrained(
+            &request,
+            &config,
+            &mapped,
+            Some(model),
+            None,
+            &[2],
+            &gen_config,
+        )
+        .expect("a constrained turn");
+        assert_eq!(gpu_attempted, attempted, "no_gpu={}", config.no_gpu);
+        assert!(
+            !used_gpu || gpu_attempted,
+            "the device served an unattempted turn"
+        );
+        assert_eq!(stop, ConstrainedStop::Complete);
+        assert!(matches!(tokens.get(1), Some(2 | 3)), "{tokens:?}");
     }
 }

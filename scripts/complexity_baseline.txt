@@ -501,8 +501,6 @@ crates/aprender-serve/src/gpu/adapters/apr_q4k.rs::upload_apr_q4k_weights 14 35
 crates/aprender-serve/src/gpu/scheduler/from_gguf_config.rs::from_apr_weights 12 27
 crates/aprender-serve/src/grammar/mod.rs::validate 8 27
 crates/aprender-serve/src/infer/batch.rs::init_batch_model 15 51
-crates/aprender-serve/src/infer/gguf_gpu_generate.rs::try_apr_wgpu_inference 25 69
-crates/aprender-serve/src/infer/gguf_gpu_generate.rs::try_wgpu_generate 19 49
 crates/aprender-serve/src/infer/qwen3_moe_generate.rs::run_qwen3_moe_generate_streaming 10 27
 crates/aprender-serve/src/infer/qwen3_moe_generate.rs::sample_from_logits 20 46
 crates/aprender-serve/src/inference_trace/execution_failure.rs::format_text 34 100

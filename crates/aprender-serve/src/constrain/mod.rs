@@ -77,7 +77,7 @@ pub enum ConstraintError {
     /// A generation path that does not apply a constraint yet (#3793). Refused, never run
     /// unconstrained: "a constraint that is silently ignored is decoration".
     UnsupportedPath {
-        /// The path, by name (`gguf-cuda`, `apr`, `qwen3-moe`, ...).
+        /// The path, by name (`gguf-wgpu`, `apr`, `qwen3-moe`, ...).
         path: String,
         /// What removes this refusal.
         removed_by: String,

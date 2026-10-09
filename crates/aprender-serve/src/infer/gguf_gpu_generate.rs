@@ -156,6 +156,202 @@ fn wgpu_greedy_decode<E>(
     Ok(output_tokens)
 }
 
+/// The CPU tail both wgpu paths share: the output RMSNorm with the model's gamma,
+/// then the LM head. Split out of `try_wgpu_generate` and `try_apr_wgpu_inference`
+/// (#3568 PR 3, the pre-commit complexity cap); the arithmetic is theirs, unchanged.
+#[cfg(feature = "gpu")]
+struct WgpuLmHead<'a> {
+    output_norm: &'a [f32],
+    lm_head: &'a [f32],
+    hidden_dim: usize,
+    vocab_size: usize,
+    eps: f32,
+}
+
+#[cfg(feature = "gpu")]
+impl<'a> WgpuLmHead<'a> {
+    fn new(model: &'a crate::gguf::OwnedQuantizedModel, lm_head: &'a [f32]) -> Self {
+        let config = model.config();
+        Self {
+            output_norm: model.output_norm_weight(),
+            lm_head,
+            hidden_dim: config.hidden_dim,
+            vocab_size: config.vocab_size,
+            eps: config.eps,
+        }
+    }
+
+    fn normed(&self, hidden: &[f32]) -> Vec<f32> {
+        let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
+        let rms = (sq_sum / hidden.len() as f32 + self.eps).sqrt();
+        hidden
+            .iter()
+            .zip(self.output_norm.iter())
+            .map(|(x, g)| (x / rms) * g)
+            .collect()
+    }
+
+    fn logit(&self, normed: &[f32], i: usize) -> f32 {
+        let row = &self.lm_head[i * self.hidden_dim..(i + 1) * self.hidden_dim];
+        row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum()
+    }
+
+    /// Every vocab logit: what the parity probe compares with the CPU's.
+    fn logits(&self, hidden: &[f32]) -> Vec<f32> {
+        let normed = self.normed(hidden);
+        (0..self.vocab_size).map(|i| self.logit(&normed, i)).collect()
+    }
+
+    /// Greedy: the FIRST maximum wins.
+    fn argmax(&self, hidden: &[f32]) -> u32 {
+        let normed = self.normed(hidden);
+        first_argmax((0..self.vocab_size).map(|i| self.logit(&normed, i)))
+    }
+}
+
+/// The index of the FIRST maximum; a NaN never wins, and no values give 0.
+#[cfg(feature = "gpu")]
+fn first_argmax(values: impl Iterator<Item = f32>) -> u32 {
+    let mut best_idx = 0u32;
+    let mut best_val = f32::NEG_INFINITY;
+    for (i, v) in values.enumerate() {
+        if v > best_val {
+            best_val = v;
+            best_idx = i as u32;
+        }
+    }
+    best_idx
+}
+
+/// An empty (K, V) pair per layer, each with room for `max_seq` positions.
+#[cfg(feature = "gpu")]
+fn wgpu_kv_caches(
+    model: &crate::gguf::OwnedQuantizedModel,
+    max_seq: usize,
+) -> Vec<(Vec<f32>, Vec<f32>)> {
+    let config = model.config();
+    let kv_dim = config.num_kv_heads * (config.hidden_dim / config.num_heads);
+    (0..config.num_layers)
+        .map(|_| (Vec::with_capacity(max_seq * kv_dim), Vec::with_capacity(max_seq * kv_dim)))
+        .collect()
+}
+
+/// One token through every wgpu layer at `position`, from its embedding; the
+/// final hidden state, or the layer that failed and why.
+#[cfg(feature = "gpu")]
+fn wgpu_forward_token(
+    model: &crate::gguf::OwnedQuantizedModel,
+    fwd: &trueno::backends::gpu::WgslForwardPass,
+    kv_caches: &mut [(Vec<f32>, Vec<f32>)],
+    token_id: u32,
+    position: usize,
+) -> std::result::Result<Vec<f32>, (usize, String)> {
+    let mut hidden = model.embed(&[token_id]);
+    for (layer_idx, (kv_k, kv_v)) in kv_caches.iter_mut().enumerate() {
+        let prefix = format!("layer.{layer_idx}");
+        fwd.forward_layer(&mut hidden, &prefix, position, kv_k, kv_v)
+            .map_err(|e| (layer_idx, e))?;
+    }
+    Ok(hidden)
+}
+
+/// A wgpu forward pass sized from the model, its RMSNorm on the model's eps (#4056:
+/// the WGSL RMSNorm hardcoded 1e-6).
+#[cfg(feature = "gpu")]
+fn wgpu_forward_pass(
+    model: &crate::gguf::OwnedQuantizedModel,
+    gpu: trueno::backends::gpu::GpuDevice,
+) -> trueno::backends::gpu::WgslForwardPass {
+    let config = model.config();
+    let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
+        gpu.device,
+        gpu.queue,
+        config.hidden_dim,
+        config.num_heads,
+        config.num_kv_heads,
+        config.hidden_dim / config.num_heads,
+        config.intermediate_dim,
+    );
+    fwd.set_rms_norm_eps(config.eps);
+    fwd
+}
+
+/// The dequantized `lm_head` among the uploaded weights; empty when there is none.
+#[cfg(feature = "gpu")]
+fn wgpu_lm_head_weight(weights: &[(String, Vec<f32>, usize, usize)]) -> Vec<f32> {
+    weights
+        .iter()
+        .find(|(n, _, _, _)| n == "lm_head")
+        .map(|(_, d, _, _)| d.clone())
+        .unwrap_or_default()
+}
+
+/// FALSIFY-CPU-GPU-006 (#1864): the multi-step CPU vs wgpu parity gate both wgpu
+/// paths run before the first user-visible token (each call site says why).
+///
+/// One CPU cache and one wgpu cache serve every probe step, so both paths see the
+/// same autoregressive state. Each step cosine-compares the full vocab-size logit
+/// vectors, then advances BOTH paths by the CPU argmax: wgpu's logits never steer
+/// its own cache, so a divergence at step k cannot hide by steering the probe away
+/// from the tokens that show it. Steps: APR_WGPU_PARITY_STEPS in [1, 16], else 3.
+/// `Err` carries the reason, after the WGPU_FALLBACK_LOG_PREFIX line on stderr.
+#[cfg(feature = "gpu")]
+fn wgpu_parity_probe(
+    model: &crate::gguf::OwnedQuantizedModel,
+    fwd: &trueno::backends::gpu::WgslForwardPass,
+    head: &WgpuLmHead<'_>,
+    first_token: u32,
+) -> std::result::Result<(), String> {
+    const MULTI_STEP_PROBE_DEFAULT: usize = 3;
+    let steps: usize = std::env::var("APR_WGPU_PARITY_STEPS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|&n| (1..=16).contains(&n))
+        .unwrap_or(MULTI_STEP_PROBE_DEFAULT);
+
+    let probe_max_seq = steps + 1;
+    let mut cpu_cache =
+        crate::gguf::OwnedQuantizedKVCache::from_config(model.config(), probe_max_seq);
+    let mut probe_kv_caches = wgpu_kv_caches(model, probe_max_seq);
+    let mut probe_token = first_token;
+    for step in 0..steps {
+        let cpu_logits = model
+            .forward_single_with_cache(probe_token, &mut cpu_cache, step)
+            .map_err(|e| {
+                eprintln!(
+                    "{}, attempting fallback: CPU probe step {} forward failed: {}",
+                    WGPU_FALLBACK_LOG_PREFIX, step, e
+                );
+                format!("wgpu parity gate: CPU probe step {step} failed: {e}")
+            })?;
+        let hidden = wgpu_forward_token(model, fwd, &mut probe_kv_caches, probe_token, step)
+            .map_err(|(layer_idx, e)| {
+                eprintln!(
+                    "{}, attempting fallback: wgpu probe step {} layer {} failed: {}",
+                    WGPU_FALLBACK_LOG_PREFIX, step, layer_idx, e
+                );
+                format!("wgpu parity gate: step {step} layer {layer_idx} failed: {e}")
+            })?;
+        let cos = cpu_vs_gpu_cosine_similarity(&cpu_logits, &head.logits(&hidden));
+        if !(cos.is_finite() && cos >= 0.99) {
+            eprintln!(
+                "{}, attempting fallback: cosine vs CPU = {:.6} (< 0.99) at step {}/{}",
+                WGPU_FALLBACK_LOG_PREFIX,
+                cos,
+                step + 1,
+                steps
+            );
+            return Err(format!(
+                "wgpu parity gate: cosine={cos:.6} < 0.99 at step {}/{}",
+                step + 1,
+                steps
+            ));
+        }
+        probe_token = first_argmax(cpu_logits.iter().copied());
+    }
+    Ok(())
+}
+
 #[cfg(feature = "gpu")]
 fn try_wgpu_generate(
     model: &crate::gguf::OwnedQuantizedModel,
@@ -177,24 +373,7 @@ fn try_wgpu_generate(
     let _ = verbose;
     eprintln!("Backend: wgpu (Vulkan)");
 
-    let config = model.config();
-    let hidden_dim = config.hidden_dim;
-    let num_layers = config.num_layers;
-    let num_heads = config.num_heads;
-    let num_kv_heads = config.num_kv_heads;
-    let head_dim = hidden_dim / num_heads;
-    let intermediate_dim = config.intermediate_dim;
-    let vocab_size = config.vocab_size;
-    let eps = config.eps;
-    let kv_dim = num_kv_heads * head_dim;
-
-    // Create forward pass and upload dequantized weights
-    let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
-        gpu.device, gpu.queue,
-        hidden_dim, num_heads, num_kv_heads, head_dim, intermediate_dim,
-    );
-    // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
-    fwd.set_rms_norm_eps(eps);
+    let mut fwd = wgpu_forward_pass(model, gpu);
 
     // C-WGPU-Q4K-001: Upload raw Q4K bytes for projection weights.
     // encode_matmul() auto-selects Q4K GEMV when M=1 and Q4K weights exist.
@@ -217,18 +396,9 @@ fn try_wgpu_generate(
         fwd.upload_weight(name, data);
     }
 
-    // Get output norm and LM head weights
-    let output_norm = model.output_norm_weight();
-    let lm_head_f32: Vec<f32> = weights.iter()
-        .find(|(n, _, _, _)| n == "lm_head")
-        .map(|(_, d, _, _)| d.clone())
-        .unwrap_or_default();
-
-    // KV caches
-    let max_seq = gen_config.max_tokens + input_tokens.len() + 16;
-    let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-        .map(|_| (Vec::with_capacity(max_seq * kv_dim), Vec::with_capacity(max_seq * kv_dim)))
-        .collect();
+    // Output norm and LM head weights.
+    let lm_head_f32 = wgpu_lm_head_weight(&weights);
+    let head = WgpuLmHead::new(model, &lm_head_f32);
 
     // FALSIFY-CPU-GPU-006 (#1864): multi-step CPU vs wgpu parity gate.
     //
@@ -248,116 +418,24 @@ fn try_wgpu_generate(
     //
     // Cost: N forward passes at init (~0.5-2s on 7B Q4K) — paid once per
     // `apr run`, not per token. See contracts/apr-cpu-vs-gpu-output-parity-v1.yaml.
-    {
-        const MULTI_STEP_PROBE_DEFAULT: usize = 3;
-        let multi_step_probe: usize = std::env::var("APR_WGPU_PARITY_STEPS")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .filter(|&n| (1..=16).contains(&n))
-            .unwrap_or(MULTI_STEP_PROBE_DEFAULT);
+    wgpu_parity_probe(model, &fwd, &head, *input_tokens.first().unwrap_or(&0))
+        .map_err(RealizarError::InferenceError)?;
 
-        let probe_max_seq = multi_step_probe + 1;
-        let mut cpu_cache = crate::gguf::OwnedQuantizedKVCache::from_config(&config, probe_max_seq);
-        let mut probe_kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-            .map(|_| (Vec::with_capacity(probe_max_seq * kv_dim), Vec::with_capacity(probe_max_seq * kv_dim)))
-            .collect();
-        let mut probe_token = *input_tokens.first().unwrap_or(&0);
-
-        for probe_step in 0..multi_step_probe {
-            let cpu_logits = match model.forward_single_with_cache(probe_token, &mut cpu_cache, probe_step) {
-                Ok(l) => l,
-                Err(e) => {
-                    eprintln!(
-                        "{}, attempting fallback: CPU probe step {} forward failed: {}",
-                        WGPU_FALLBACK_LOG_PREFIX, probe_step, e
-                    );
-                    return Err(RealizarError::InferenceError(format!("wgpu parity gate: CPU probe step {probe_step} failed: {e}")));
-                }
-            };
-
-            let mut hidden = model.embed(&[probe_token]);
-            for layer_idx in 0..num_layers {
-                let prefix = format!("layer.{layer_idx}");
-                let (ref mut kv_k, ref mut kv_v) = probe_kv_caches[layer_idx];
-                if let Err(e) = fwd.forward_layer(&mut hidden, &prefix, probe_step, kv_k, kv_v) {
-                    eprintln!(
-                        "{}, attempting fallback: wgpu probe step {} layer {} failed: {}",
-                        WGPU_FALLBACK_LOG_PREFIX, probe_step, layer_idx, e
-                    );
-                    return Err(RealizarError::InferenceError(format!("wgpu parity gate: step {probe_step} layer {layer_idx} failed: {e}")));
-                }
-            }
-            let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
-            let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
-            let normed: Vec<f32> = hidden
-                .iter()
-                .zip(output_norm.iter())
-                .map(|(x, g)| (x / rms) * g)
-                .collect();
-            let mut wgpu_logits = vec![0.0_f32; vocab_size];
-            for i in 0..vocab_size {
-                let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
-                wgpu_logits[i] = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
-            }
-
-            let cos = cpu_vs_gpu_cosine_similarity(&cpu_logits, &wgpu_logits);
-            if !(cos.is_finite() && cos >= 0.99) {
-                eprintln!(
-                    "{}, attempting fallback: cosine vs CPU = {:.6} (< 0.99) at step {}/{}",
-                    WGPU_FALLBACK_LOG_PREFIX, cos, probe_step + 1, multi_step_probe
-                );
-                return Err(RealizarError::InferenceError(format!(
-                    "wgpu parity gate: cosine={cos:.6} < 0.99 at step {}/{}",
-                    probe_step + 1, multi_step_probe
-                )));
-            }
-
-            // Advance both paths via CPU argmax (deterministic).
-            let mut best_idx: u32 = 0;
-            let mut best_val = f32::NEG_INFINITY;
-            for (i, &v) in cpu_logits.iter().enumerate() {
-                if v > best_val {
-                    best_val = v;
-                    best_idx = i as u32;
-                }
-            }
-            probe_token = best_idx;
-        }
-    }
-
-    // Prefill, then autoregressive generation (#4264).
+    // Prefill, then autoregressive generation (#4264). Output norm + LM head
+    // run on the CPU (small cost).
+    let mut kv_caches = wgpu_kv_caches(model, gen_config.max_tokens + input_tokens.len() + 16);
     let output_tokens = wgpu_greedy_decode::<RealizarError>(
         input_tokens,
         gen_config.max_tokens,
         &gen_config.stop_tokens,
         |token_id, position| {
-            let mut hidden = model.embed(&[token_id]);
-            for (layer_idx, (kv_k, kv_v)) in kv_caches.iter_mut().enumerate() {
-                let prefix = format!("layer.{layer_idx}");
-                fwd.forward_layer(&mut hidden, &prefix, position, kv_k, kv_v)
-                    .map_err(|e| RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}")))?;
-            }
-            Ok(hidden)
+            wgpu_forward_token(model, &fwd, &mut kv_caches, token_id, position).map_err(
+                |(layer_idx, e)| {
+                    RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}"))
+                },
+            )
         },
-        |hidden| {
-            // Output norm + LM head (CPU — small cost), greedy: the FIRST maximum wins.
-            let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
-            let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
-            let normed: Vec<f32> = hidden.iter().zip(output_norm.iter())
-                .map(|(x, g)| (x / rms) * g)
-                .collect();
-            let mut best_idx = 0u32;
-            let mut best_val = f32::NEG_INFINITY;
-            for i in 0..vocab_size {
-                let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
-                let logit: f32 = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
-                if logit > best_val {
-                    best_val = logit;
-                    best_idx = i as u32;
-                }
-            }
-            best_idx
-        },
+        |hidden| head.argmax(hidden),
     )?;
 
     Ok((output_tokens, true)) // true = used GPU (wgpu)
@@ -372,6 +450,44 @@ fn try_gguf_gpu_generate(
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     verbose: bool,
 ) -> std::result::Result<Result<(Vec<u32>, bool)>, Box<crate::gguf::OwnedQuantizedModel>> {
+    let mut cuda_model = cuda_dense_model(model, input_tokens, gen_config, verbose)?;
+
+    // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
+    // and resets GPU KV positions internally, so validation doesn't "consume" it.
+    mark_generation_start(); // #3981: setup (upload + F2) ends here
+    if gen_config.trace {
+        // #4268: `--trace` keeps the instrumented loop; the engine has no brick profiler.
+        let result = cuda_model
+            .generate_gpu_resident(input_tokens, gen_config)
+            .map(|tokens| (tokens, true))
+            .map_err(|e| RealizarError::InferenceError(format!("GPU generation failed: {}", e)));
+        return Ok(result);
+    }
+    // #4268: the one engine. A forward failure no longer ends the run: the
+    // session says so on stderr, moves to the CPU and replays the turn there,
+    // and `used_gpu` comes back false.
+    let mut session = crate::gguf::dense_session::DenseSession::new(
+        crate::gguf::dense_session::DenseForward::cuda(cuda_model),
+    );
+    Ok(crate::gguf::dense_session::dense_turn(
+        &mut session,
+        input_tokens,
+        gen_config,
+    ))
+}
+
+/// The dense model on the device, validated (#3568 PR 3: the unconstrained and the
+/// constrained run share it): uploaded with a KV that holds the whole turn, then the F2
+/// first-token check. `Err(model)` hands the model back for the CPU: the device could not
+/// take it, or F2 measured a mismatch.
+#[cfg(feature = "cuda")]
+fn cuda_dense_model(
+    model: crate::gguf::OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    verbose: bool,
+) -> std::result::Result<crate::gguf::OwnedQuantizedModelCuda, Box<crate::gguf::OwnedQuantizedModel>>
+{
     use crate::gguf::OwnedQuantizedModelCuda;
 
     // #4268: the device KV holds the whole turn. It was a flat 2048, and the
@@ -410,29 +526,7 @@ fn try_gguf_gpu_generate(
         },
         F2Outcome::Validated { .. } => {},
     }
-
-    // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
-    // and resets GPU KV positions internally, so validation doesn't "consume" it.
-    mark_generation_start(); // #3981: setup (upload + F2) ends here
-    if gen_config.trace {
-        // #4268: `--trace` keeps the instrumented loop; the engine has no brick profiler.
-        let result = cuda_model
-            .generate_gpu_resident(input_tokens, gen_config)
-            .map(|tokens| (tokens, true))
-            .map_err(|e| RealizarError::InferenceError(format!("GPU generation failed: {}", e)));
-        return Ok(result);
-    }
-    // #4268: the one engine. A forward failure no longer ends the run: the
-    // session says so on stderr, moves to the CPU and replays the turn there,
-    // and `used_gpu` comes back false.
-    let mut session = crate::gguf::dense_session::DenseSession::new(
-        crate::gguf::dense_session::DenseForward::cuda(cuda_model),
-    );
-    Ok(crate::gguf::dense_session::dense_turn(
-        &mut session,
-        input_tokens,
-        gen_config,
-    ))
+    Ok(cuda_model)
 }
 
 /// #4268: the device KV length for a turn: the prompt plus its budget, held to
@@ -618,6 +712,31 @@ fn run_apr_inference(
     run_apr_cpu_inference(config, input_tokens, input_token_count, load_start)
 }
 
+/// The APR wgpu path's generate config: stop tokens from the model config plus the
+/// sibling tokenizer, and every sampling parameter (PMAT-823: it was hardcoded greedy).
+#[cfg(feature = "gpu")]
+fn apr_wgpu_generate_config(
+    config: &InferenceConfig,
+    model: &crate::gguf::OwnedQuantizedModel,
+) -> crate::gguf::QuantizedGenerateConfig {
+    let cfg = model.config();
+    let mut stop_toks: Vec<u32> = cfg.eos_token_id.into_iter().collect();
+    let extra = crate::infer::resolve_apr_stop_tokens(cfg.eos_token_id, &[], &config.model_path);
+    for t in &extra {
+        if !stop_toks.contains(t) {
+            stop_toks.push(*t);
+        }
+    }
+    let mut gen_config = crate::gguf::QuantizedGenerateConfig {
+        max_tokens: config.max_tokens,
+        stop_tokens: stop_toks,
+        trace: config.trace,
+        ..Default::default()
+    };
+    config.apply_sampling_to(&mut gen_config);
+    gen_config
+}
+
 /// GH-559: Try wgpu (Vulkan) inference for APR models.
 /// Returns None if wgpu not available, Some(Result) if attempted.
 #[cfg(feature = "gpu")]
@@ -655,70 +774,23 @@ fn try_apr_wgpu_inference(
     eprintln!("Backend: wgpu (Vulkan)");
 
     // Load model
-    let mapped = match MappedAprModel::from_path(&config.model_path) {
-        Ok(m) => m,
-        Err(_) => return None,
-    };
-    let model = match crate::gguf::OwnedQuantizedModel::from_apr(&mapped) {
-        Ok(m) => m,
-        Err(_) => return None,
-    };
-
-    let cfg = model.config();
-    let hidden_dim = cfg.hidden_dim;
-    let num_layers = cfg.num_layers;
-    let num_heads = cfg.num_heads;
-    let num_kv_heads = cfg.num_kv_heads;
-    let head_dim = hidden_dim / num_heads;
-    let intermediate_dim = cfg.intermediate_dim;
-    let vocab_size = cfg.vocab_size;
-    let eps = cfg.eps;
-    let kv_dim = num_kv_heads * head_dim;
-    // Resolve stop tokens from model config + sibling tokenizer
-    let mut stop_toks: Vec<u32> = cfg.eos_token_id.into_iter().collect();
-    let extra = crate::infer::resolve_apr_stop_tokens(
-        cfg.eos_token_id, &[], &config.model_path,
-    );
-    for t in &extra {
-        if !stop_toks.contains(t) { stop_toks.push(*t); }
-    }
-    let mut gen_config = crate::gguf::QuantizedGenerateConfig {
-        max_tokens: config.max_tokens,
-        stop_tokens: stop_toks,
-        trace: config.trace,
-        ..Default::default()
-    };
-    // PMAT-823: APR wgpu path — forward all sampling params (was hardcoded greedy).
-    config.apply_sampling_to(&mut gen_config);
+    let mapped = MappedAprModel::from_path(&config.model_path).ok()?;
+    let model = crate::gguf::OwnedQuantizedModel::from_apr(&mapped).ok()?;
+    let gen_config = apr_wgpu_generate_config(config, &model);
 
     // Dequantize and upload weights
     let weights = match wgpu_adapter::dequant_model_weights(&model) {
         Ok(w) => w,
         Err(e) => return Some(Err(e)),
     };
-
-    let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
-        gpu.device, gpu.queue,
-        hidden_dim, num_heads, num_kv_heads, head_dim, intermediate_dim,
-    );
-    // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
-    fwd.set_rms_norm_eps(eps);
-
+    let mut fwd = wgpu_forward_pass(&model, gpu);
     for (name, data, _rows, _cols) in &weights {
         fwd.upload_weight(name, data);
     }
     // KV cache initialized by caller (no init_kv_cache needed — API change)
 
-    let output_norm = model.output_norm_weight();
-    let lm_head_f32: Vec<f32> = weights.iter()
-        .find(|(n, _, _, _)| n == "lm_head")
-        .map(|(_, d, _, _)| d.clone())
-        .unwrap_or_default();
-
-    let max_seq = gen_config.max_tokens + input_tokens.len() + 16;
-    let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-        .map(|_| (Vec::with_capacity(max_seq * kv_dim), Vec::with_capacity(max_seq * kv_dim)))
-        .collect();
+    let lm_head_f32 = wgpu_lm_head_weight(&weights);
+    let head = WgpuLmHead::new(&model, &lm_head_f32);
 
     // FALSIFY-CPU-GPU-005 part b: wgpu cosine parity gate.
     //
@@ -741,127 +813,27 @@ fn try_apr_wgpu_inference(
     //
     // See contracts/apr-cpu-vs-gpu-output-parity-v1.yaml § FALSIFY-CPU-GPU-006
     // (multi_step_parity_gate) for the formal invariant.
-    {
-        const MULTI_STEP_PROBE_DEFAULT: usize = 3;
-        let multi_step_probe: usize = std::env::var("APR_WGPU_PARITY_STEPS")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .filter(|&n| (1..=16).contains(&n))
-            .unwrap_or(MULTI_STEP_PROBE_DEFAULT);
-
-        // Reuse a single CPU cache + wgpu KV cache across all probe steps so
-        // both paths see identical autoregressive state. max_seq sized to fit
-        // the probe.
-        let probe_max_seq = multi_step_probe + 1;
-        let mut cpu_cache = crate::gguf::OwnedQuantizedKVCache::from_config(cfg, probe_max_seq);
-        let mut probe_kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-            .map(|_| (Vec::with_capacity(probe_max_seq * kv_dim), Vec::with_capacity(probe_max_seq * kv_dim)))
-            .collect();
-        let mut probe_token = *input_tokens.first().unwrap_or(&0);
-
-        for step in 0..multi_step_probe {
-            // CPU reference logits at this step.
-            let cpu_logits = match model.forward_single_with_cache(probe_token, &mut cpu_cache, step) {
-                Ok(l) => l,
-                Err(e) => {
-                    eprintln!(
-                        "{}, attempting fallback: CPU probe step {} forward failed: {}",
-                        WGPU_FALLBACK_LOG_PREFIX, step, e
-                    );
-                    return None;
-                }
-            };
-
-            // wgpu single-step replay at the same position.
-            let mut hidden = model.embed(&[probe_token]);
-            for layer_idx in 0..num_layers {
-                let prefix = format!("layer.{layer_idx}");
-                let (ref mut kv_k, ref mut kv_v) = probe_kv_caches[layer_idx];
-                if let Err(e) = fwd.forward_layer(&mut hidden, &prefix, step, kv_k, kv_v) {
-                    eprintln!(
-                        "{}, attempting fallback: wgpu probe step {} layer {} failed: {}",
-                        WGPU_FALLBACK_LOG_PREFIX, step, layer_idx, e
-                    );
-                    return None;
-                }
-            }
-            // Output norm + LM head (mirrors the autoregressive loop body).
-            let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
-            let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
-            let normed: Vec<f32> = hidden
-                .iter()
-                .zip(output_norm.iter())
-                .map(|(x, g)| (x / rms) * g)
-                .collect();
-            let mut wgpu_logits = vec![0.0_f32; vocab_size];
-            for i in 0..vocab_size {
-                let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
-                wgpu_logits[i] = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
-            }
-
-            let cos = cpu_vs_gpu_cosine_similarity(&cpu_logits, &wgpu_logits);
-            if !(cos.is_finite() && cos >= 0.99) {
-                eprintln!(
-                    "{}, attempting fallback: cosine vs CPU = {:.6} (< 0.99) at step {}/{}",
-                    WGPU_FALLBACK_LOG_PREFIX, cos, step + 1, multi_step_probe
-                );
-                return None;
-            }
-
-            // Advance both paths deterministically via CPU argmax.
-            // (Greedy choice; matches what the autoregressive loop will do for
-            // step 0 in the common case. Probe is contract verification, not
-            // user-visible generation.)
-            let mut best_idx: u32 = 0;
-            let mut best_val = f32::NEG_INFINITY;
-            for (i, &v) in cpu_logits.iter().enumerate() {
-                if v > best_val {
-                    best_val = v;
-                    best_idx = i as u32;
-                }
-            }
-            probe_token = best_idx;
-        }
-    }
+    wgpu_parity_probe(&model, &fwd, &head, *input_tokens.first().unwrap_or(&0)).ok()?;
 
     let model_load_ms = load_start.elapsed().as_millis() as f64;
 
     // Autoregressive generation
+    let mut kv_caches = wgpu_kv_caches(&model, gen_config.max_tokens + input_tokens.len() + 16);
     let infer_start = Instant::now();
-    // Prefill, then autoregressive generation (#4264).
+    // Prefill, then autoregressive generation (#4264). Output norm (RMSNorm with
+    // output_norm gamma), then the LM head argmax on CPU.
     let decoded = wgpu_greedy_decode::<RealizarError>(
         input_tokens,
         gen_config.max_tokens,
         &gen_config.stop_tokens,
         |token_id, position| {
-            let mut hidden = model.embed(&[token_id]);
-            for (layer_idx, (kv_k, kv_v)) in kv_caches.iter_mut().enumerate() {
-                let prefix = format!("layer.{layer_idx}");
-                fwd.forward_layer(&mut hidden, &prefix, position, kv_k, kv_v)
-                    .map_err(|e| RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}")))?;
-            }
-            Ok(hidden)
+            wgpu_forward_token(&model, &fwd, &mut kv_caches, token_id, position).map_err(
+                |(layer_idx, e)| {
+                    RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}"))
+                },
+            )
         },
-        |hidden| {
-            // Output norm (RMSNorm with output_norm gamma), then the LM head
-            // argmax on CPU; the FIRST maximum wins.
-            let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
-            let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
-            let normed: Vec<f32> = hidden.iter().zip(output_norm.iter())
-                .map(|(x, g)| (x / rms) * g)
-                .collect();
-            let mut best_idx = 0u32;
-            let mut best_val = f32::NEG_INFINITY;
-            for i in 0..vocab_size {
-                let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
-                let logit: f32 = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
-                if logit > best_val {
-                    best_val = logit;
-                    best_idx = i as u32;
-                }
-            }
-            best_idx
-        },
+        |hidden| head.argmax(hidden),
     );
     let output_tokens = match decoded {
         Ok(t) => t,
@@ -1546,6 +1518,43 @@ mod tests {
             0.0,
             "empty input must fail closed"
         );
+    }
+}
+
+/// The CPU tail both wgpu paths share (#3568 PR 3 split it out of them): what the
+/// parity probe compares, and the token the decode loop picks.
+#[cfg(all(test, feature = "gpu"))]
+mod wgpu_lm_head_tail {
+    use super::{first_argmax, WgpuLmHead};
+
+    #[test]
+    fn first_argmax_takes_the_first_maximum_and_never_a_nan() {
+        assert_eq!(first_argmax([1.0, 3.0, 3.0, 2.0].into_iter()), 1);
+        assert_eq!(first_argmax([f32::NAN, 0.5, f32::NAN, 0.25].into_iter()), 1);
+        assert_eq!(first_argmax([f32::NEG_INFINITY, -1.0].into_iter()), 1);
+        assert_eq!(first_argmax(std::iter::empty()), 0);
+    }
+
+    #[test]
+    fn the_head_norms_with_eps_and_gamma_then_projects_every_vocab_row() {
+        let head = WgpuLmHead {
+            output_norm: &[1.0, 2.0],
+            lm_head: &[1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0],
+            hidden_dim: 2,
+            vocab_size: 4,
+            eps: 0.5,
+        };
+        // hidden [3, 4]: mean square 12.5, plus eps
+        let rms = (25.0_f32 / 2.0 + 0.5).sqrt();
+        let (n0, n1) = (3.0 / rms, (4.0 / rms) * 2.0);
+        assert_eq!(head.logits(&[3.0, 4.0]), vec![n0, n1, n0 + n1, n1]);
+        assert_eq!(head.argmax(&[3.0, 4.0]), 2);
+        // rows 1 and 3 tie at the maximum when the sum row is gone: the first wins
+        let tied = WgpuLmHead {
+            lm_head: &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            ..head
+        };
+        assert_eq!(tied.argmax(&[3.0, 4.0]), 1);
     }
 }
 
