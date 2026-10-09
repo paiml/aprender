@@ -101,7 +101,6 @@ t2|-|bash scripts/release/t2_preflight.sh "$V"
 bump|-|bash scripts/release/prepare_bump.sh "$V"
 summary|bump|stage_summary
 ship|summary|bash scripts/release/prepare_bump.sh "$V" --ship
-ap:deep|ship|bash scripts/release/autopilot.sh "$V" rehearsal deep deep
 ap:dogfood|ship|bash scripts/release/autopilot.sh "$V" rehearsal dogfood dogfood
 ap:models|ship|bash scripts/release/autopilot.sh "$V" rehearsal models models
 ap:readiness|ap:models|bash scripts/release/autopilot.sh "$V" rehearsal readiness readiness
@@ -284,7 +283,7 @@ ap_gate_files() {
 }
 
 # run_stage STATE ENV NAME CMD V -> the stage's exit status. Its log is its own output, then what it
-# added to the release scripts' state: each gate's output file there (preflight.log, tag-coverage.log,
+# added to the release scripts' state: each gate's output file there (preflight.log, publish-dryrun.log,
 # ...), then what autopilot.sh `say`s into RELEASE_AP's autopilot.log and STATUS, not stdout -- STATUS
 # last, so the stage's own STOP line is the last stop line in the log (stage_tail).
 # The verdict and the D-ledger read the log, so a stop autopilot.sh printed only there still counts.
@@ -1147,16 +1146,16 @@ selftest_judge() {
     j one_write_row_is_red 1 "RED   WRITE in stage ap:tag: git push" \
         'printf "ap:tag\tgit\tWRITE\tgit push\tbash autopilot.sh\tpush origin v0.71.0\n" >> "$d/calls.tsv"'
     j a_missing_real_tool_is_red 1 "RED   MISSING" \
-        'printf "ap:deep\tcurl\tMISSING\tno real curl\tbash x\t-fsSL u\n" >> "$d/calls.tsv"'
-    j a_red_stage_is_red 1 "RED   stage ap:deep       exit 1: STOP deep failed" \
-        'sed -i "s/^ap:deep\t0/ap:deep\t1/" "$d/stages.tsv"; printf "STOP deep failed\n" > "$d/logs/ap_deep.log"'
+        'printf "ap:dogfood\tcurl\tMISSING\tno real curl\tbash x\t-fsSL u\n" >> "$d/calls.tsv"'
+    j a_red_stage_is_red 1 "RED   stage ap:dogfood    exit 1: STOP dogfood failed" \
+        'sed -i "s/^ap:dogfood\t0/ap:dogfood\t1/" "$d/stages.tsv"; printf "STOP dogfood failed\n" > "$d/logs/ap_dogfood.log"'
     j an_unreached_stage_is_red 1 "RED   stage ap:cleanroom  unreached" \
         'sed -i "s/^ap:cleanroom\t0\tb0b/ap:cleanroom\tunreached\t-/" "$d/stages.tsv"'
     j a_stage_never_run_is_red 1 "RED   stage cascade       not run" \
         'sed -i "/^cascade\t/d" "$d/stages.tsv"'
     j a_stage_on_another_commit_is_red 1 "measured on beef, not on c0ffee" \
         'sed -i "s/^ap:assets\t0\tb0b/ap:assets\t0\tbeef/" "$d/stages.tsv"'
-    j a_bump_not_on_c_is_red 1 "RED   stage ap:deep       measured on b0b" \
+    j a_bump_not_on_c_is_red 1 "RED   stage ap:dogfood    measured on b0b" \
         'printf "beef\n" > "$d/bump.parent"'
     j d1_line_names_d1 1 "RED   D1 OPEN in ap:preflight: FAIL  R4 HEAD" \
         'printf "FAIL  R4 HEAD abc is not an ancestor of origin/release/0.71.0 (or that ref does not exist)\n" > "$d/logs/ap_preflight.log"'
