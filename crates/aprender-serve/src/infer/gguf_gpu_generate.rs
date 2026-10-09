@@ -567,7 +567,12 @@ fn run_gguf_generate(
         && wgpu_can_serve(gen_config.temperature, gen_config.top_k)
     {
         gpu_attempted = true;
-        match try_wgpu_generate(&model, input_tokens, gen_config, config.verbose) {
+        // #3602: a refused wgpu attempt is redone on the CPU too, so it is charged to
+        // `rejected_ms` beside a refused CUDA attempt (its F32 dequant and probe).
+        let attempt = run_report::time_gpu_attempt(|| {
+            try_wgpu_generate(&model, input_tokens, gen_config, config.verbose)
+        });
+        match attempt {
             Ok((t, u)) => return Ok((t, u, true)),
             Err(e) => {
                 if config.verbose {

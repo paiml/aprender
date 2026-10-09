@@ -145,9 +145,10 @@ pub struct GuardCost {
     /// Inside the parity guards: the load-time gate and the F2 first-token check,
     /// summed. Part of `setup_ms`, never of generation. `None` when neither ran.
     pub validate_ms: Option<f64>,
-    /// A GPU attempt that ended on the CPU: from entering the GPU backend until it
-    /// handed the model back, whether a guard refused it or the device would not
-    /// start. Includes its `validate_ms`. `None` when no attempt was refused. A
+    /// GPU attempts that ended on the CPU, summed (CUDA, then wgpu): each from
+    /// entering its backend until it handed the model back, whether a guard refused
+    /// it or the device would not start. Includes their `validate_ms`. `None` when
+    /// no attempt was refused. A
     /// forward failure mid-turn, which the dense session replays on the CPU
     /// (#4268), is not counted here.
     pub rejected_ms: Option<f64>,
