@@ -146,7 +146,7 @@ pub(crate) mod gpu {
         let decode_s = decode_start.elapsed().as_secs_f64();
         eprintln!(
             "qwen3moe CUDA: {} prompt + {generated} generated tokens in {:.0} ms ({:.1} tok/s \
-             including the token-by-token prefill)",
+             including the chunked prefill)",
             input_tokens.len(),
             decode_s * 1000.0,
             (input_tokens.len() + generated) as f64 / decode_s.max(1e-9)
@@ -167,12 +167,12 @@ pub(crate) mod gpu {
             .map_err(|e| format!("the decode state would not allocate: {e}"))?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
 
-        let mut logits = Vec::new();
-        for (pos, &token) in input_tokens.iter().enumerate() {
-            logits = gpu
-                .forward_single(token, &mut state, pos)
-                .map_err(|e| format!("the GPU forward failed at prompt position {pos}: {e}"))?;
-        }
+        // The prompt goes through the chunked prefill — the path the F2 guard
+        // judged. A prefill failure fails the GPU run (a printed CPU fallback),
+        // never a silent switch to a per-token prompt loop the guard did not see.
+        let mut logits = gpu
+            .prefill(input_tokens, &mut state, 0)
+            .map_err(|e| format!("the GPU prefill failed: {e}"))?;
         let mut tokens = input_tokens.to_vec();
         for _ in 0..gen_config.max_tokens {
             let next = sample_from_logits(&logits, gen_config, &mut rng, &tokens)
@@ -245,26 +245,39 @@ pub(crate) mod gpu {
     }
 
     /// The same positions and the same decode token, on the GPU, from a
-    /// throwaway state.
+    /// throwaway state: the probe through `path` (one `forward_single` per
+    /// token, or the chunked prefill returning every position's logits), then
+    /// the decode token through `forward_single` on the KV that path wrote.
     pub(crate) fn gpu_logits(
         gpu: &mut Qwen3MoeCudaModel<'_>,
         probe: &[u32],
         decode_token: u32,
+        path: crate::infer::F2ProbePath,
     ) -> std::result::Result<Vec<Vec<f32>>, String> {
         let mut state = gpu
             .new_state()
             .map_err(|e| format!("the probe state would not allocate: {e}"))?;
-        let mut per_pos = Vec::with_capacity(probe.len() + 1);
-        for (pos, &token) in probe
-            .iter()
-            .chain(std::iter::once(&decode_token))
-            .enumerate()
-        {
-            per_pos.push(
-                gpu.forward_single(token, &mut state, pos)
-                    .map_err(|e| format!("the GPU probe failed at position {pos}: {e}"))?,
-            );
-        }
+        let mut per_pos = match path {
+            crate::infer::F2ProbePath::Serial => {
+                let mut per_pos = Vec::with_capacity(probe.len() + 1);
+                for (pos, &token) in probe.iter().enumerate() {
+                    per_pos.push(
+                        gpu.forward_single(token, &mut state, pos)
+                            .map_err(|e| format!("the GPU probe failed at position {pos}: {e}"))?,
+                    );
+                }
+                per_pos
+            },
+            crate::infer::F2ProbePath::Batched => {
+                let positions: Vec<usize> = (0..probe.len()).collect();
+                gpu.prefill_logits_at(probe, &mut state, 0, &positions)
+                    .map_err(|e| format!("the GPU probe prefill failed: {e}"))?
+            },
+        };
+        per_pos.push(
+            gpu.forward_single(decode_token, &mut state, probe.len())
+                .map_err(|e| format!("the GPU probe failed at the decode step: {e}"))?,
+        );
         Ok(per_pos)
     }
 
@@ -297,21 +310,20 @@ pub(crate) mod gpu {
         let decode_token = cpu
             .get(probe.len() - 1)
             .map_or(0, |l| crate::infer::argmax_u32(l));
-        let gpu_per_pos = gpu_logits(gpu, probe, decode_token)?;
+        let path = crate::infer::F2ProbePath::Batched;
+        let gpu_per_pos = gpu_logits(gpu, probe, decode_token, path)?;
         let report = crate::infer::f2_multi_position_report(&cpu, &gpu_per_pos);
         let ms = start.elapsed().as_secs_f64() * 1000.0;
         if report.accepted {
             eprintln!(
-                "F2 guard: GPU matches the CPU forward on {} positions (min cosine {:.4}) in {ms:.0} ms",
+                "F2 guard: GPU ({}) matches the CPU forward on {} positions (min cosine {:.4}) in {ms:.0} ms",
+                path.as_str(),
                 cpu.len(),
                 report.min_cosine_real
             );
             Ok(())
         } else {
-            Err(crate::infer::f2_divergence_msg(
-                &report,
-                crate::infer::F2ProbePath::Serial,
-            ))
+            Err(crate::infer::f2_divergence_msg(&report, path))
         }
     }
 }

@@ -2,9 +2,11 @@
 //! on the real Qwen3-Coder-30B-A3B Q4_K_M file (present on both CUDA hosts).
 //!
 //! The comparison runs the SAME code the runtime F2 guard runs — the probe is
-//! the CPU's `forward_single_qwen3_moe_with_cache` and the GPU's
-//! `forward_single`, over 64 prompt positions plus one greedy decode step — and
-//! is judged by the SAME rule, `f2_multi_position_report`. A test with its own
+//! the CPU's `forward_single_qwen3_moe_with_cache` against the GPU over 64
+//! prompt positions plus one greedy decode step — and is judged by the SAME
+//! rule, `f2_multi_position_report`. The GPU side takes either path: `Serial`
+//! (`forward_single` per position) or `Batched` (the chunked `prefill`, which
+//! is what decode runs and what the runtime guard judges). A test with its own
 //! looser floors would certify a GPU path the runtime then refuses.
 //!
 //! Skips (never fails) when the file is absent, there is no CUDA device, or the
@@ -13,6 +15,7 @@
 use super::{capacity_inputs, Qwen3MoeCudaModel, MIB};
 use crate::infer::qwen3_moe_dispatch::gpu::{cpu_reference, gpu_logits, load_moe_layers};
 use crate::infer::qwen3_moe_dispatch::qwen3_moe_shape;
+use crate::infer::F2ProbePath;
 
 /// The file this row is specified against; `APR_QWEN3MOE_GGUF` overrides it.
 const DEFAULT_MODEL_PATH: &str = "/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf";
@@ -49,7 +52,8 @@ const CHAT_TURN_START: [u32; 3] = [151_644, 872, 198];
 /// GPU forward vs CPU forward over `prefix` + the first `POSITIONS -
 /// prefix.len()` tokens of [`PROBE_TEXT`], plus one greedy decode step, judged
 /// by the runtime F2 rule. Every position's cosine and argmax is printed.
-fn assert_parity_after(prefix: &[u32], label: &str) {
+fn assert_parity_after(prefix: &[u32], label: &str, probe_path: F2ProbePath) {
+    let label = &format!("{label}, {}", probe_path.as_str());
     let path = model_path();
     if !std::path::Path::new(&path).exists() {
         eprintln!("SKIP: {path} is absent");
@@ -91,7 +95,7 @@ fn assert_parity_after(prefix: &[u32], label: &str) {
     let cpu_ms = t0.elapsed().as_secs_f64() * 1e3;
     let decode_token = crate::infer::argmax_u32(&cpu[POSITIONS - 1]);
     let t1 = std::time::Instant::now();
-    let got = gpu_logits(&mut gpu, &probe, decode_token).expect("GPU forward");
+    let got = gpu_logits(&mut gpu, &probe, decode_token, probe_path).expect("GPU forward");
     let gpu_ms = t1.elapsed().as_secs_f64() * 1e3;
     assert_eq!(got.len(), POSITIONS + 1);
     assert_eq!(cpu.len(), POSITIONS + 1);
@@ -115,7 +119,7 @@ fn assert_parity_after(prefix: &[u32], label: &str) {
     assert!(
         report.accepted,
         "[{label}] the runtime F2 rule rejects this GPU forward: {}",
-        crate::infer::f2_divergence_msg(&report, crate::infer::F2ProbePath::Serial)
+        crate::infer::f2_divergence_msg(&report, probe_path)
     );
     // The F2 rule is the runtime's floor; against an exact reference the GPU
     // is held to far more, at every position (position 0 included).
@@ -137,7 +141,7 @@ fn assert_parity_after(prefix: &[u32], label: &str) {
 #[test]
 #[serial_test::serial]
 fn qwen3moe_cuda_forward_matches_cpu_at_64_positions() {
-    assert_parity_after(&[], "e2e");
+    assert_parity_after(&[], "e2e", F2ProbePath::Serial);
 }
 
 /// The production shape: a chat turn start at position 0 — the token Qwen3
@@ -145,7 +149,22 @@ fn qwen3moe_cuda_forward_matches_cpu_at_64_positions() {
 #[test]
 #[serial_test::serial]
 fn qwen3moe_cuda_forward_matches_cpu_after_a_chat_turn_start() {
-    assert_parity_after(&CHAT_TURN_START, "chat");
+    assert_parity_after(&CHAT_TURN_START, "chat", F2ProbePath::Serial);
+}
+
+/// #3714 gap 2: the chunked prefill `apr run` now takes, judged position by
+/// position against the same CPU reference and floors as the per-token path.
+#[test]
+#[serial_test::serial]
+fn qwen3moe_cuda_batched_prefill_matches_cpu_at_64_positions() {
+    assert_parity_after(&[], "e2e", F2ProbePath::Batched);
+}
+
+/// The batched prefill after a chat turn start — the production prompt shape.
+#[test]
+#[serial_test::serial]
+fn qwen3moe_cuda_batched_prefill_matches_cpu_after_a_chat_turn_start() {
+    assert_parity_after(&CHAT_TURN_START, "chat", F2ProbePath::Batched);
 }
 
 /// The 30B-A3B Q4_K_M weights as uploaded, measured on the real file:
@@ -293,52 +312,58 @@ fn qwen3moe_parity_rejects_injected_routing_faults() {
     let cpu = cpu_reference(&model, &layers, shape, mapped.data(), &probe).expect("CPU reference");
     let decode_token = crate::infer::argmax_u32(&cpu[POSITIONS - 1]);
 
-    let mut verdicts = Vec::new();
-    for fault in [
-        None,
-        Some(RoutingFault::WrongExpert),
-        Some(RoutingFault::DropTopExpert),
-        Some(RoutingFault::UniformWeights),
-    ] {
-        gpu.fault = fault;
-        let got = gpu_logits(&mut gpu, &probe, decode_token).expect("GPU forward");
-        let min_cos = cpu
-            .iter()
-            .zip(&got)
-            .map(|(c, g)| crate::infer::logits_cosine_similarity(c, g))
-            .fold(1.0f32, f32::min);
-        let mismatches = cpu
-            .iter()
-            .zip(&got)
-            .filter(|(c, g)| crate::infer::argmax_u32(c) != crate::infer::argmax_u32(g))
-            .count();
-        let exact_ok = min_cos >= EXACT_REFERENCE_COSINE_FLOOR && mismatches == 0;
-        let f2 = crate::infer::f2_multi_position_report(&cpu, &got);
-        eprintln!(
-            "[qwen3moe fault] {fault:?}: min cosine {min_cos:.6}, argmax mismatches \
-             {mismatches}/{}, exact-reference check {}, runtime F2 {}",
-            cpu.len(),
-            if exact_ok { "PASS" } else { "REJECT" },
-            if f2.accepted { "ACCEPT" } else { "REJECT" },
-        );
-        verdicts.push((fault, exact_ok, f2.accepted));
-    }
-    gpu.fault = None;
+    // Both probe paths: the fault rides `inject` in the per-token and the
+    // chunked MoE layer alike, and each path's guard must see it.
+    for probe_path in [F2ProbePath::Serial, F2ProbePath::Batched] {
+        let mut verdicts = Vec::new();
+        for fault in [
+            None,
+            Some(RoutingFault::WrongExpert),
+            Some(RoutingFault::DropTopExpert),
+            Some(RoutingFault::UniformWeights),
+        ] {
+            gpu.fault = fault;
+            let got = gpu_logits(&mut gpu, &probe, decode_token, probe_path).expect("GPU forward");
+            let min_cos = cpu
+                .iter()
+                .zip(&got)
+                .map(|(c, g)| crate::infer::logits_cosine_similarity(c, g))
+                .fold(1.0f32, f32::min);
+            let mismatches = cpu
+                .iter()
+                .zip(&got)
+                .filter(|(c, g)| crate::infer::argmax_u32(c) != crate::infer::argmax_u32(g))
+                .count();
+            let exact_ok = min_cos >= EXACT_REFERENCE_COSINE_FLOOR && mismatches == 0;
+            let f2 = crate::infer::f2_multi_position_report(&cpu, &got);
+            eprintln!(
+                "[qwen3moe fault, {}] {fault:?}: min cosine {min_cos:.6}, argmax mismatches \
+                 {mismatches}/{}, exact-reference check {}, runtime F2 {}",
+                probe_path.as_str(),
+                cpu.len(),
+                if exact_ok { "PASS" } else { "REJECT" },
+                if f2.accepted { "ACCEPT" } else { "REJECT" },
+            );
+            verdicts.push((fault, exact_ok, f2.accepted));
+        }
+        gpu.fault = None;
 
-    assert!(
-        verdicts[0].1 && verdicts[0].2,
-        "the control (no fault) must pass both checks, or the rejections prove nothing"
-    );
-    for &(fault, exact_ok, f2_ok) in &verdicts[1..] {
+        let p = probe_path.as_str();
         assert!(
-            !exact_ok,
-            "{fault:?} passed the exact-reference check: it cannot fail"
+            verdicts[0].1 && verdicts[0].2,
+            "[{p}] the control (no fault) must pass both checks, or the rejections prove nothing"
         );
-        if matches!(
-            fault,
-            Some(RoutingFault::WrongExpert | RoutingFault::UniformWeights)
-        ) {
-            assert!(!f2_ok, "{fault:?} passed the runtime F2 guard");
+        for &(fault, exact_ok, f2_ok) in &verdicts[1..] {
+            assert!(
+                !exact_ok,
+                "[{p}] {fault:?} passed the exact-reference check: it cannot fail"
+            );
+            if matches!(
+                fault,
+                Some(RoutingFault::WrongExpert | RoutingFault::UniformWeights)
+            ) {
+                assert!(!f2_ok, "[{p}] {fault:?} passed the runtime F2 guard");
+            }
         }
     }
 }

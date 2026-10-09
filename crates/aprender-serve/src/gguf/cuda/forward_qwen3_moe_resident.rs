@@ -1056,6 +1056,10 @@ impl<'a> Qwen3MoeCudaModel<'a> {
     }
 }
 
+/// Chunked prefill: one GEMM per projection per chunk (#3714 gap 2).
+#[path = "forward_qwen3_moe_prefill.rs"]
+mod prefill;
+
 /// Unit tests that need no device, and the device parity test (which skips
 /// itself without a GPU and without the model file).
 #[cfg(test)]
