@@ -1,3 +1,0 @@
-  ⚠ GPU not available, using CPU fallback
-cpu rc=0 secs=24
-gpu rc=124 secs=1505

@@ -1,5 +1,0 @@
-# dogfood_examples.sh version=0.70.0 examples=2 timeout_secs=180
-# pkg	example	class	rc	secs	cite
-aprender-orchestrate	bug_hunter_demo	pass	0	10	
-aprender-orchestrate	design_by_contract	pass	0	5	
-# summary pass=2 fail=0 timeout=0 needs-args=0 needs-hardware=0 needs-data=0

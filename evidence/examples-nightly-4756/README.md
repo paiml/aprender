@@ -1,37 +1,54 @@
 # examples-nightly reds — receipts (#4756)
 
-Before: CI run 37169058144 (yoga-build, main @316dee2cd4), 36 rows fail 29 + timeout 7.
+Before: CI run 37169058144 (main @316dee2cd4). Of the 36 rows, 29 fail and 7 time out.
 
-After, on intel, debug builds, `scripts/dogfood_examples.sh --timeout-secs 180`, load ~100:
+After: `examples-36.tsv`, one run of the unchanged `scripts/dogfood_examples.sh` on the
+code tree of d7d611f0e1, the last code commit on this branch. The run used debug builds,
+`--timeout-secs 180` and a `--filter` that matched exactly the 36 rows, on 2026-10-09 from
+23:19 to 23:37Z. It is a self-hosted x86-64 box with 4 CPUs pinned. It has a GPU that wgpu
+can use, and libcuda with no CUDA device.
 
-- `after-intel.tsv`: the 36 rows on branch 51b6d69fe8 minus its last two fixes:
-  pass 8, needs-args 11, needs-hardware 10, needs-data 4, needs-feature 1, fail 1, timeout 1.
-- `rerun-parity_035.tsv`: parity_035 with the Ollama model probe. fail -> needs-data.
-  Intel runs an Ollama server without phi2. CI has no server and hits the TCP probe.
-- `performance_parity-cpu.txt`: no wgpu adapter (VK_ICD_FILENAMES=/nonexistent.json):
-  rc 0 in 24 s, was 322 s. timeout -> pass.
-  The GPU path (wgpu adapter present) still timed out at 1505 s in debug. CI's
-  yoga-build has no adapter. A GPU runner would need its own fix.
-- `rerun-bug_hunter.tsv`: bug_hunter_demo and design_by_contract after limiting the
-  narrowed scan to debug builds (quorum round 1 finding): both pass.
+| class | rows |
+|---|---|
+| pass | 9 |
+| needs-args | 11 |
+| needs-hardware | 10 |
+| needs-data | 5 |
+| needs-feature | 1 |
+| fail | 0 |
+| timeout | 0 |
 
-Net for the 36 rows: pass 9, needs-args 11, needs-hardware 10, needs-data 5,
-needs-feature 1, fail 0, timeout 0.
+The script's `# summary` line has no needs-feature counter, so it sums to 35. The table
+counts column 3 of the 36 rows.
 
-The CUDA rows read "cuInit failed" on intel (libcuda, no device). On CI they read
-"CUDA driver not found (libcuda.so)", which the classifier's `libcuda\.so` pattern
-matches. That CI row is inferred from the message and is not measured here.
+## performance_parity on a GPU
 
-## Notes for review (quorum round 2)
+Review round 2 found that performance_parity's GPU path ran past 25 minutes in a debug
+build (rc 124 at 1505 s) when wgpu found an adapter. Since d7d611f0e1, a debug build runs
+GPU-001 alone (`performance_parity.rs:52`, `:101`, `:107`). A release build still runs all 31
+GPU benchmarks.
 
-- The Q4_0/Q8_0 buffer change in performance_parity (20 -> 18, 36 -> 34 bytes per
-  32-value block) fixes a bug and is not a workload reduction. Q4_0 is an f16
-  scale plus 16 quant bytes (18), and Q8_0 is an f16 scale plus 32 int8 (34). The
-  old sizes made dequantize return InvalidShape, which panicked the example in
-  every build, release included.
-- The `timeout` row for performance_parity in `after-intel.tsv` comes from the tree
-  before the fused-attention debug reduction. Its after-fix measurement is
-  `performance_parity-cpu.txt` (rc 0, 24 s), and it should be read in place of
-  that row.
-- performance_parity's GPU path in debug is not_measured as passing: 1505 s, rc 124
-  on intel. That is a known gap on GPU runners, not part of the 36-row claim.
+`performance_parity-gpu.txt` is the debug binary from the same run, re-run once with its
+output kept, because the script keeps no per-example output. The file records the commit
+and the binary's sha256. It printed `GPU detected and available`, ran GPU-001 on the GPU
+(15.95 GFLOPS) and the debug-build note, and exited rc 0 in 10 s. The script reported the
+same row as pass in 11 s.
+
+On a host with no adapter, the example runs the same 8 CPU benchmarks without GPU-001.
+They are not gated on the GPU (`performance_parity.rs:66` onward), and all 8 ran in that
+10 s.
+
+## Not measured here
+
+- **The CUDA rows on the nightly runner.** Here they read `cuInit failed` (libcuda present,
+  no device). The failing nightly read `CUDA driver not found (libcuda.so)`. Both match
+  the classifier's needs-hardware pattern, but the nightly row is read from the old
+  run's log, not measured.
+- **parity_035 with no Ollama server.** Here a server runs without the model, and the row
+  is needs-data (`Model not found: phi2:2.7b ...`). With no server, the example prints
+  `Ollama server not found at http://localhost:11434 ...`. Checked against the
+  classifier's own regexes, that line is needs-data and not needs-args or needs-hardware.
+  It was not run.
+- **The issue's done-when** is the nightly itself: the same 36 rows with fail 0 and
+  timeout 0. examples-nightly stays disabled until this lands on main. Then it is
+  re-enabled for one green night, and that run is the receipt of record.

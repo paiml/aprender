@@ -1,4 +1,0 @@
-# dogfood_examples.sh version=0.70.0 examples=1 timeout_secs=180
-# pkg	example	class	rc	secs	cite
-aprender-serve	parity_035_m4_verification	needs-data	1	3	Model not found: phi2:2.7b on the Ollama server (run `ollama pull phi2:2.7b`)
-# summary pass=0 fail=0 timeout=0 needs-args=0 needs-hardware=0 needs-data=1
