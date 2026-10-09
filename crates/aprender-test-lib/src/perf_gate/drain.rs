@@ -72,7 +72,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::bootstrap::{median_decode_tok_s, paired_ratio_lcb};
+use super::bootstrap::{median_decode_tok_s, paired_ratio_lcb, ttft_p50_ms};
 use super::join::{BandRatios, JoinKey, Ratio, RatioMethod};
 use super::metrics::RequestSample;
 use super::protocol::{stream_live_ttft_over_e2e_max, INTERLEAVED, REPLICATES};
@@ -1432,7 +1432,26 @@ fn ratios_of(
         subject_band.prefill_tok_per_sec,
         comparator_band.prefill_tok_per_sec,
     );
-    Ok(BandRatios { agg, dec, prefill })
+    // V1: the lanes are swapped in the call, not the result inverted, so the
+    // bound is the 5th percentile of comparator÷subject draws — a lower bound
+    // on the ratio the receipt names, not a reciprocal of an upper one. Gated
+    // on both lanes' derived TTFT for the same reason as `dec` above.
+    let ttft = if subject_band.ttft_p50_ms.is_some() && comparator_band.ttft_p50_ms.is_some() {
+        paired_ratio_lcb(
+            &comparator.request_samples(),
+            &subject.request_samples(),
+            ttft_p50_ms,
+            VERDICT_CONFIDENCE,
+        )
+    } else {
+        None
+    };
+    Ok(BandRatios {
+        agg,
+        dec,
+        prefill,
+        ttft,
+    })
 }
 
 /// §4.3 replicate unit, from a single replicate: the point estimate with an
@@ -2727,6 +2746,75 @@ mod tests {
             one.role(Lane::Llama).derive().expect("renders").status,
             BandStatus::InvalidCorrectness
         );
+    }
+
+    // -- APR-071 V1: the TTFT ratio -----------------------------------------
+
+    /// A conformant band whose every request's first token lands `ttft_ms`
+    /// after issue — the one quantity the V1 tests vary.
+    fn band_with_ttft(ttft_ms: f64) -> BandInput {
+        let requests: Vec<RequestOutcome> = (0..8)
+            .map(|i| {
+                let (issued, dur) = (f64::from(i) * 100.0, 90.0 + f64::from(i));
+                let times: Vec<f64> = (0..128)
+                    .map(|k| issued + ttft_ms + f64::from(k) * (dur - ttft_ms) / 128.0)
+                    .collect();
+                done(issued, dur, 128)
+                    .streamed(ttft_ms, times)
+                    .server_prefill(512, dur * 0.05)
+            })
+            .collect();
+        BandInput::new(1, 1000.0, requests, unmeasured())
+            .n_predict(128)
+            .stream_mode(StreamMode::Live)
+            .witness(passing_witness())
+    }
+
+    fn ttft_ratio(subject: &BandInput, comparator: &BandInput) -> Option<Ratio> {
+        let id = same_run();
+        let status = BandInput::join_status(subject, comparator, &jkey(1), &jkey(1), (&id, &id))
+            .expect("joins");
+        let ComparatorStatus::Measured(join) = &status else {
+            panic!("expected Measured, got {status:?}");
+        };
+        join.ratios().ttft.clone()
+    }
+
+    /// V1's direction: comparator ÷ subject, so a subject whose first token
+    /// lands in HALF the comparator's time reads 2, not 0.5. The other three
+    /// ratios are subject ÷ comparator because higher is better there; TTFT
+    /// is lower-is-better, and a ratio that read "0.5" for a twice-as-fast
+    /// subject would turn V1's floor of 0.5 into a pass for a 2× regression.
+    #[test]
+    fn v1_ttft_ratio_is_comparator_over_subject() {
+        let fast = band_with_ttft(4.0);
+        let slow = band_with_ttft(8.0);
+        let r = ttft_ratio(&fast, &slow).expect("two live lanes form a ttft ratio");
+        assert!((r.point - 2.0).abs() < 1e-9, "{r:?}");
+        assert_eq!(r.method, RatioMethod::PairedPercentileBootstrap);
+        assert_eq!(r.n, 16, "n counts both lanes' requests");
+        let lcb = r.lcb95.expect("the request unit bounds");
+        assert!(lcb <= r.point && lcb > 1.0, "{r:?}");
+
+        // REVERT -> the mirror image: swapping the lanes inverts the point.
+        let back = ttft_ratio(&slow, &fast).expect("forms");
+        assert!((back.point - 0.5).abs() < 1e-9, "{back:?}");
+    }
+
+    /// MUST-FIRE: a lane whose TTFT the band withheld (a replayed stream)
+    /// forms no TTFT ratio — same reason as `dec`: the raw samples survive
+    /// the band's refusal, so the ratio has to be told.
+    #[test]
+    fn v1_a_lane_with_withheld_ttft_forms_no_ttft_ratio() {
+        let replayed = band_with_ttft(8.0).stream_mode(StreamMode::Replayed);
+        assert_eq!(
+            replayed.derive().expect("renders").ttft_p50_ms,
+            None,
+            "the fixture's ttft must actually be withheld"
+        );
+        assert!(ttft_ratio(&band_with_ttft(4.0), &replayed).is_none());
+        // REVERT -> GREEN: the same pair, both live, does form one.
+        assert!(ttft_ratio(&band_with_ttft(4.0), &band_with_ttft(8.0)).is_some());
     }
 
     // -- P-5: a ratio of two withheld numbers -------------------------------
