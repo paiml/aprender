@@ -338,6 +338,14 @@ commands:
     requires_model: true
     side_effects: []
 
+  - name: model
+    category: evaluation
+    description: "Model release gates M0..M6 (EXT-001 §3.6, EXT-12)"
+    requires_model: false
+    # gate writes model-gate-receipt-v1.json into the release dir (or --out).
+    side_effects: [filesystem]
+    subcommands: [gate]
+
   - name: canary
     category: evaluation
     description: "Manage canary tests for regression"
