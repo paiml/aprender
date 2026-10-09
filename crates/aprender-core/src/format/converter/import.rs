@@ -663,7 +663,7 @@ fn streaming_sharded_import(
     output_path: &Path,
     options: &ImportOptions,
 ) -> Result<ValidationReport> {
-    use crate::format::v2::{AprV2Metadata, AprV2StreamingWriter};
+    use crate::format::v2::AprV2StreamingWriter;
 
     let content = fs::read_to_string(index_path).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to read shard index {}: {e}", index_path.display()),
@@ -708,49 +708,12 @@ fn streaming_sharded_import(
             .as_ref()
             .and_then(|c| c.architecture.as_deref()),
     );
-
-    // Build metadata for APR file
-    let param_count = 0u64; // Computed during finalize from tensor shapes
-
-    // GH-478: Embed tokenizer in metadata (was previously discarded in streaming path)
-    let mut custom = std::collections::HashMap::new();
-    if let Some(ref tok) = tokenizer {
-        super::write::insert_f32_tokenizer_metadata(tok, &mut custom);
-    }
-
-    let metadata = AprV2Metadata {
-        model_type: format!("{metadata_arch:?}"),
-        name: Some(
-            output_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("model")
-                .to_string(),
-        ),
-        param_count,
-        custom,
-        architecture: model_config.as_ref().and_then(|c| c.architecture.clone()),
-        // PMAT-690 P0-K: streaming-import path. The synchronous import
-        // path in write.rs already stamps these; without the same wiring
-        // here, the streaming path silently drops the HF identity and
-        // reintroduces the §81-§83 cascade root cause for any model
-        // large enough to trigger streaming (>1 GB).
-        hf_architecture: model_config.as_ref().and_then(|c| c.hf_architecture.clone()),
-        hf_model_type: model_config.as_ref().and_then(|c| c.hf_model_type.clone()),
-        hidden_size: model_config.as_ref().and_then(|c| c.hidden_size),
-        num_layers: model_config.as_ref().and_then(|c| c.num_layers),
-        num_heads: model_config.as_ref().and_then(|c| c.num_heads),
-        num_kv_heads: model_config.as_ref().and_then(|c| c.num_kv_heads),
-        vocab_size: model_config.as_ref().and_then(|c| c.vocab_size),
-        intermediate_size: model_config.as_ref().and_then(|c| c.intermediate_size),
-        max_position_embeddings: model_config
-            .as_ref()
-            .and_then(|c| c.max_position_embeddings),
-        rope_theta: model_config.as_ref().and_then(|c| c.rope_theta),
-        rope_type: model_config.as_ref().and_then(|c| c.rope_type),
-        rms_norm_eps: model_config.as_ref().and_then(|c| c.rms_norm_eps),
-        ..Default::default()
-    };
+    let metadata = streaming_metadata(
+        &metadata_arch,
+        model_config.as_ref(),
+        tokenizer.as_ref(),
+        output_path,
+    );
 
     eprintln!(
         "[realizar#136] Streaming import: {} shards, {} tensors → {}",
@@ -769,8 +732,7 @@ fn streaming_sharded_import(
     let mut f16_passthrough = 0usize;
 
     // GH-478: Track weight tying — if no lm_head.weight found, duplicate embedding
-    let mut has_lm_head = false;
-    let mut embed_info: Option<(String, String)> = None; // (shard_file, original_name)
+    let mut tying = WeightTying::default();
 
     for shard_file in index.shard_files() {
         let shard_path = base_dir.join(shard_file);
@@ -789,117 +751,35 @@ fn streaming_sharded_import(
                 message: format!("Failed to mmap shard {shard_file}: {e}"),
             })?;
 
-        let names: Vec<String> = mapped
-            .tensor_names()
-            .iter()
-            .map(|&s| (*s).to_string())
-            .collect();
+        let shard = StreamingShard {
+            mapped: &mapped,
+            file: shard_file,
+            arch: &metadata_arch,
+            quantize: options.quantize,
+        };
+        let (shard_names, shard_written, shard_f16) =
+            write_shard_tensors(&mut writer, &shard, &mut tying)?;
+        total_tensors += shard_written;
 
-        let mut shard_f16 = 0usize;
-
-        for name in &names {
-            if name.starts_with("__") {
-                continue;
-            }
-
-            let meta = mapped
-                .get_metadata(name)
-                .ok_or_else(|| AprenderError::FormatError {
-                    message: format!("Tensor metadata not found for '{name}'"),
-                })?;
-
-            // Map tensor name to canonical APR name
-            let mapped_name = metadata_arch.map_name(name);
-
-            // GH-478: Track lm_head and embedding for weight tying
-            if mapped_name == "lm_head.weight" || mapped_name == "output.weight" {
-                has_lm_head = true;
-            }
-            if mapped_name.contains("embed_tokens.weight")
-                || mapped_name == "token_embd.weight"
-                || mapped_name == "wte.weight"
-            {
-                embed_info = Some((shard_file.clone(), name.clone()));
-            }
-
-            let is_bf16 = meta.dtype == "BF16";
-            let is_f16 = meta.dtype == "F16" || is_bf16;
-
-            // GH-478: Only passthrough F16/BF16 when no quantization (or Fp16) is requested.
-            // When user requests Int4/Int8/Q4K, dequantize to F32 and dispatch quantization.
-            if is_f16 && matches!(options.quantize, None | Some(QuantizationType::Fp16)) {
-                if let Some(raw_bytes) = mapped.get_tensor_bytes(name) {
-                    writer
-                        .add_raw_f16_tensor(&mapped_name, meta.shape.clone(), raw_bytes, is_bf16)
-                        .map_err(|e| AprenderError::FormatError {
-                            message: format!("Failed to write tensor '{mapped_name}': {e}"),
-                        })?;
-                    shard_f16 += 1;
-                    total_tensors += 1;
-                    continue;
-                }
-            }
-
-            // Dequantize to F32 (handles F16/BF16→F32 and native F32)
-            let data = mapped
-                .get_tensor(name)
-                .map_err(|e| AprenderError::FormatError {
-                    message: format!("Failed to extract tensor '{name}': {e}"),
-                })?;
-
-            // GH-478: Dispatch quantization for streaming imports
-            streaming_dispatch_quantize(
-                &mut writer,
-                &mapped_name,
-                &data,
-                meta.shape.clone(),
-                options.quantize,
-            )
-            .map_err(|e| AprenderError::FormatError {
-                message: format!("Failed to write tensor '{mapped_name}': {e}"),
-            })?;
-            total_tensors += 1;
-        }
-
-        let shard_quantized = names.len() - shard_f16;
+        let shard_quantized = shard_names - shard_f16;
         f16_passthrough += shard_f16;
         eprintln!(
             "[realizar#136] Shard {shard_file}: {} tensors ({shard_f16} F16 passthrough, {shard_quantized} quantized)",
-            names.len(),
+            shard_names,
         );
 
         // mapped (mmap) dropped here — OS reclaims virtual address space
     }
 
     // GH-478: Weight tying — if no lm_head.weight, duplicate embedding as lm_head
-    if !has_lm_head {
-        if let Some((embed_shard, embed_name)) = &embed_info {
-            let shard_path = base_dir.join(embed_shard);
-            let mapped =
-                MappedSafeTensors::open(&shard_path).map_err(|e| AprenderError::FormatError {
-                    message: format!("Failed to re-mmap shard for weight tying: {e}"),
-                })?;
-            let meta =
-                mapped
-                    .get_metadata(embed_name)
-                    .ok_or_else(|| AprenderError::FormatError {
-                        message: "Embedding tensor metadata not found for weight tying".to_string(),
-                    })?;
-            let data = mapped
-                .get_tensor(embed_name)
-                .map_err(|e| AprenderError::FormatError {
-                    message: format!("Failed to extract embedding for weight tying: {e}"),
-                })?;
-            streaming_dispatch_quantize(
+    if !tying.has_lm_head {
+        if let Some((embed_shard, embed_name)) = &tying.embed_info {
+            write_tied_lm_head(
                 &mut writer,
-                "lm_head.weight",
-                &data,
-                meta.shape.clone(),
+                &base_dir.join(embed_shard),
+                embed_name,
                 options.quantize,
-            )
-            .map_err(|e| AprenderError::FormatError {
-                message: format!("Failed to write tied lm_head.weight: {e}"),
-            })?;
+            )?;
             total_tensors += 1;
             eprintln!("[realizar#136] Weight tying: duplicated {embed_name} → lm_head.weight");
         }
@@ -930,6 +810,205 @@ fn streaming_sharded_import(
 
     // Return a basic validation report
     Ok(ValidationReport::new())
+}
+
+/// realizar#136: APR metadata for the streaming path, from config.json and the tokenizer.
+fn streaming_metadata(
+    metadata_arch: &Architecture,
+    model_config: Option<&GgufModelConfig>,
+    tokenizer: Option<&GgufTokenizer>,
+    output_path: &Path,
+) -> crate::format::v2::AprV2Metadata {
+    // Build metadata for APR file
+    let param_count = 0u64; // Computed during finalize from tensor shapes
+
+    // GH-478: Embed tokenizer in metadata (was previously discarded in streaming path)
+    let mut custom = std::collections::HashMap::new();
+    if let Some(tok) = tokenizer {
+        super::write::insert_f32_tokenizer_metadata(tok, &mut custom);
+    }
+
+    crate::format::v2::AprV2Metadata {
+        model_type: format!("{metadata_arch:?}"),
+        name: Some(
+            output_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("model")
+                .to_string(),
+        ),
+        param_count,
+        custom,
+        architecture: model_config.and_then(|c| c.architecture.clone()),
+        // PMAT-690 P0-K: streaming-import path. The synchronous import
+        // path in write.rs already stamps these; without the same wiring
+        // here, the streaming path silently drops the HF identity and
+        // reintroduces the §81-§83 cascade root cause for any model
+        // large enough to trigger streaming (>1 GB).
+        hf_architecture: model_config.and_then(|c| c.hf_architecture.clone()),
+        hf_model_type: model_config.and_then(|c| c.hf_model_type.clone()),
+        hidden_size: model_config.and_then(|c| c.hidden_size),
+        num_layers: model_config.and_then(|c| c.num_layers),
+        num_heads: model_config.and_then(|c| c.num_heads),
+        num_kv_heads: model_config.and_then(|c| c.num_kv_heads),
+        vocab_size: model_config.and_then(|c| c.vocab_size),
+        intermediate_size: model_config.and_then(|c| c.intermediate_size),
+        max_position_embeddings: model_config.and_then(|c| c.max_position_embeddings),
+        rope_theta: model_config.and_then(|c| c.rope_theta),
+        rope_type: model_config.and_then(|c| c.rope_type),
+        rms_norm_eps: model_config.and_then(|c| c.rms_norm_eps),
+        ..Default::default()
+    }
+}
+
+/// GH-478: what the shard pass learns for weight tying.
+#[derive(Default)]
+struct WeightTying {
+    has_lm_head: bool,
+    /// (shard_file, original_name) of the last embedding tensor seen.
+    embed_info: Option<(String, String)>,
+}
+
+impl WeightTying {
+    fn observe(&mut self, mapped_name: &str, shard_file: &str, name: &str) {
+        if mapped_name == "lm_head.weight" || mapped_name == "output.weight" {
+            self.has_lm_head = true;
+        }
+        if mapped_name.contains("embed_tokens.weight")
+            || mapped_name == "token_embd.weight"
+            || mapped_name == "wte.weight"
+        {
+            self.embed_info = Some((shard_file.to_string(), name.to_string()));
+        }
+    }
+}
+
+/// One mapped shard of a streaming import and how to write it.
+struct StreamingShard<'a> {
+    mapped: &'a MappedSafeTensors,
+    file: &'a str,
+    arch: &'a Architecture,
+    quantize: Option<QuantizationType>,
+}
+
+/// realizar#136: write every tensor of one shard to the streaming writer.
+///
+/// Returns (names in the shard, tensors written, F16/BF16 passthroughs).
+fn write_shard_tensors(
+    writer: &mut crate::format::v2::AprV2StreamingWriter,
+    shard: &StreamingShard<'_>,
+    tying: &mut WeightTying,
+) -> Result<(usize, usize, usize)> {
+    let names: Vec<String> = shard
+        .mapped
+        .tensor_names()
+        .iter()
+        .map(|&s| (*s).to_string())
+        .collect();
+
+    let mut written = 0usize;
+    let mut shard_f16 = 0usize;
+
+    for name in names.iter().filter(|n| !n.starts_with("__")) {
+        // Map tensor name to canonical APR name
+        let mapped_name = shard.arch.map_name(name);
+        // GH-478: Track lm_head and embedding for weight tying
+        tying.observe(&mapped_name, shard.file, name);
+
+        if write_f16_passthrough(writer, shard, name, &mapped_name)? {
+            shard_f16 += 1;
+        } else {
+            // Dequantize to F32 (handles F16/BF16→F32 and native F32)
+            let data = shard
+                .mapped
+                .get_tensor(name)
+                .map_err(|e| AprenderError::FormatError {
+                    message: format!("Failed to extract tensor '{name}': {e}"),
+                })?;
+            let shape = tensor_shape(shard.mapped, name)?;
+
+            // GH-478: Dispatch quantization for streaming imports
+            streaming_dispatch_quantize(writer, &mapped_name, &data, shape, shard.quantize)
+                .map_err(|e| AprenderError::FormatError {
+                    message: format!("Failed to write tensor '{mapped_name}': {e}"),
+                })?;
+        }
+        written += 1;
+    }
+
+    Ok((names.len(), written, shard_f16))
+}
+
+fn tensor_shape(mapped: &MappedSafeTensors, name: &str) -> Result<Vec<usize>> {
+    mapped
+        .get_metadata(name)
+        .map(|meta| meta.shape.clone())
+        .ok_or_else(|| AprenderError::FormatError {
+            message: format!("Tensor metadata not found for '{name}'"),
+        })
+}
+
+/// GH-478: Only passthrough F16/BF16 when no quantization (or Fp16) is requested.
+/// When user requests Int4/Int8/Q4K, the caller dequantizes to F32 and dispatches
+/// quantization. Returns whether the tensor was written raw.
+fn write_f16_passthrough(
+    writer: &mut crate::format::v2::AprV2StreamingWriter,
+    shard: &StreamingShard<'_>,
+    name: &str,
+    mapped_name: &str,
+) -> Result<bool> {
+    let meta = shard
+        .mapped
+        .get_metadata(name)
+        .ok_or_else(|| AprenderError::FormatError {
+            message: format!("Tensor metadata not found for '{name}'"),
+        })?;
+    let is_bf16 = meta.dtype == "BF16";
+    let is_f16 = meta.dtype == "F16" || is_bf16;
+    if !(is_f16 && matches!(shard.quantize, None | Some(QuantizationType::Fp16))) {
+        return Ok(false);
+    }
+    let Some(raw_bytes) = shard.mapped.get_tensor_bytes(name) else {
+        return Ok(false);
+    };
+    writer
+        .add_raw_f16_tensor(mapped_name, meta.shape.clone(), raw_bytes, is_bf16)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to write tensor '{mapped_name}': {e}"),
+        })?;
+    Ok(true)
+}
+
+/// GH-478: duplicate the embedding as `lm_head.weight` when the model ties them.
+fn write_tied_lm_head(
+    writer: &mut crate::format::v2::AprV2StreamingWriter,
+    shard_path: &Path,
+    embed_name: &str,
+    quantize: Option<QuantizationType>,
+) -> Result<()> {
+    let mapped = MappedSafeTensors::open(shard_path).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to re-mmap shard for weight tying: {e}"),
+    })?;
+    let meta = mapped
+        .get_metadata(embed_name)
+        .ok_or_else(|| AprenderError::FormatError {
+            message: "Embedding tensor metadata not found for weight tying".to_string(),
+        })?;
+    let data = mapped
+        .get_tensor(embed_name)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to extract embedding for weight tying: {e}"),
+        })?;
+    streaming_dispatch_quantize(
+        writer,
+        "lm_head.weight",
+        &data,
+        meta.shape.clone(),
+        quantize,
+    )
+    .map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to write tied lm_head.weight: {e}"),
+    })
 }
 
 include!("import_include_01.rs");

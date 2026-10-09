@@ -402,73 +402,67 @@ fn infer_intermediate_size_from_tensors(
 pub(super) fn infer_architecture_from_names(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> Option<String> {
-    let has_model_layers = tensors.keys().any(|k| k.contains("model.layers"));
+    if let Some(family) = infer_prefixed_family(tensors) {
+        return Some(family.to_string());
+    }
     // GH-255: SafeTensors GPT-2 uses "h.N.*" without "transformer." prefix
     let has_transformer_h = tensors.keys().any(|k| k.contains("transformer.h"))
         || tensors
             .keys()
             .any(|k| k.starts_with("h.") && k.contains(".attn."));
-    let has_blk = tensors.keys().any(|k| k.contains("blk."));
 
-    // PMAT-546: Detect Mamba (backbone.layers.N.mixer.*) — SSM, not transformer
-    let has_mamba = tensors
-        .keys()
-        .any(|k| k.contains("mixer.in_proj") || k.contains("mixer.out_proj"));
-    if has_mamba {
-        return Some("mamba".to_string());
-    }
-
-    // PMAT-546: Detect RWKV (rwkv.blocks.N.*)
-    let has_rwkv = tensors
-        .keys()
-        .any(|k| k.starts_with("rwkv.blocks.") || k.contains("blocks.0.att."));
-    if has_rwkv {
-        return Some("rwkv".to_string());
-    }
-
-    // GH-311: Detect GPT-NeoX (gpt_neox.layers.N.*) — must check before model.layers
-    let has_gpt_neox = tensors.keys().any(|k| k.starts_with("gpt_neox."));
-    if has_gpt_neox {
-        return Some("gpt-neox".to_string());
-    }
-
-    // GH-311: Detect OPT (model.decoder.layers.N.*) — must check before model.layers
-    let has_opt_decoder = tensors
-        .keys()
-        .any(|k| k.starts_with("model.decoder.layers."));
-    if has_opt_decoder {
-        return Some("opt".to_string());
-    }
-
-    // GH-311: Detect BERT (bert.encoder.layer.N.*)
-    let has_bert = tensors.keys().any(|k| k.starts_with("bert."));
-    if has_bert {
-        return Some("bert".to_string());
-    }
-
-    if has_model_layers {
-        // Qwen3 has QK norm — unique signal, check first
-        let has_qk_norm = tensors
-            .keys()
-            .any(|k| k.contains("self_attn.q_norm.weight"));
-        if has_qk_norm {
-            return Some("qwen3".to_string());
-        }
-        // Distinguish Qwen2 from LLaMA/Mistral by attention bias presence
-        let has_attn_bias = tensors.keys().any(|k| k.contains("self_attn.q_proj.bias"));
-        let has_fused_qkv = tensors.keys().any(|k| k.contains("qkv_proj.weight"));
-        if has_attn_bias || has_fused_qkv {
-            Some("qwen2".to_string())
-        } else {
-            Some("llama".to_string())
-        }
+    let family = if tensors.keys().any(|k| k.contains("model.layers")) {
+        infer_model_layers_family(tensors)
     } else if has_transformer_h {
-        Some("gpt2".to_string())
-    } else if has_blk {
-        // GGUF naming — cannot reliably distinguish architectures
-        Some("unknown".to_string())
+        "gpt2"
     } else {
-        Some("unknown".to_string())
+        // GGUF naming (`blk.*`) cannot reliably distinguish architectures,
+        // and neither can anything else left here.
+        "unknown"
+    };
+    Some(family.to_string())
+}
+
+/// Families whose tensor prefix names them outright. GPT-NeoX and OPT must
+/// be checked before the generic `model.layers` rule.
+fn infer_prefixed_family(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Option<&'static str> {
+    let any = |pred: fn(&str) -> bool| tensors.keys().any(|k| pred(k));
+    // PMAT-546: Detect Mamba (backbone.layers.N.mixer.*) — SSM, not transformer
+    if any(|k| k.contains("mixer.in_proj") || k.contains("mixer.out_proj")) {
+        return Some("mamba");
+    }
+    // PMAT-546: Detect RWKV (rwkv.blocks.N.*)
+    if any(|k| k.starts_with("rwkv.blocks.") || k.contains("blocks.0.att.")) {
+        return Some("rwkv");
+    }
+    // GH-311: Detect GPT-NeoX (gpt_neox.layers.N.*)
+    if any(|k| k.starts_with("gpt_neox.")) {
+        return Some("gpt-neox");
+    }
+    // GH-311: Detect OPT (model.decoder.layers.N.*)
+    if any(|k| k.starts_with("model.decoder.layers.")) {
+        return Some("opt");
+    }
+    // GH-311: Detect BERT (bert.encoder.layer.N.*)
+    if any(|k| k.starts_with("bert.")) {
+        return Some("bert");
+    }
+    None
+}
+
+/// Bug 210 (GH-222): split `model.layers` models into Qwen3, Qwen2 and LLaMA.
+fn infer_model_layers_family(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> &'static str {
+    // Qwen3 has QK norm — unique signal, check first
+    if tensors.keys().any(|k| k.contains("self_attn.q_norm.weight")) {
+        return "qwen3";
+    }
+    // Distinguish Qwen2 from LLaMA/Mistral by attention bias presence
+    let has_attn_bias = tensors.keys().any(|k| k.contains("self_attn.q_proj.bias"));
+    let has_fused_qkv = tensors.keys().any(|k| k.contains("qkv_proj.weight"));
+    if has_attn_bias || has_fused_qkv {
+        "qwen2"
+    } else {
+        "llama"
     }
 }
 
