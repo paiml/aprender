@@ -1,0 +1,18 @@
+- id: PMAT-5014
+  github_issue: 5014
+  item_type: task
+  title: 'conleche-nightly: controls export resolves lean via elan default (none) -> pin LEAN_SYSROOT'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-10-10T01:31:28Z
+  updated: 2026-10-10T01:31:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2870

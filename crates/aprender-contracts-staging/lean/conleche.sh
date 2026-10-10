@@ -138,7 +138,10 @@ controls() {
     printf 'theorem ok_thm : True := trivial\n' > "$d/Pos.lean"
     for m in Neg Pos; do
         (cd "$d" && elan run "$TC" lean -o "$m.olean" "$m.lean") || notverdict "control $m did not compile"
-        LEAN_PATH="$d:$sr/lib/lean" "$EXPORTER" "$m" > "$d/$m.ndjson" || notverdict "control $m did not export"
+        # lean4export starts with findSysroot: LEAN_SYSROOT if set, else `lean --print-prefix` through elan's proxy,
+        # resolved from this cwd -- which has no lean-toolchain, and the job's elan has no default toolchain (#5014).
+        # A host whose elan does have a default would hand back THAT toolchain's sysroot, not $TC's. Pin it.
+        LEAN_SYSROOT="$sr" LEAN_PATH="$d:$sr/lib/lean" "$EXPORTER" "$m" > "$d/$m.ndjson" || notverdict "control $m did not export"
     done
     # The negative control must fail for the PLANTED reason: exit 2 naming escape_ax. A crash (exit 1) or any other
     # RED would also judge 1, and then the control would pass without con-leche ever having seen the axiom.
