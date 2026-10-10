@@ -319,6 +319,10 @@ selftest() {
     jn near_miss_digit_suffixed_needs_three             1 "(streak=1 total=1 need=3)" release-rehearsal7
     jn near_miss_letter_suffixed_needs_three            1 "(streak=1 total=1 need=3)" release-rehearsalZ
     jn near_miss_nightly_dot_train_needs_three          1 "(streak=1 total=1 need=3)" nightly.train
+    # A space or a slash never reaches need_of: the name check refuses it first, so those strip spellings are closed there.
+    jn near_miss_dash_suffixed_needs_three              1 "(streak=1 total=1 need=3)" release-rehearsal-
+    jn near_miss_space_suffixed_is_refused              3 "must be a name" "release-rehearsal x"
+    jn near_miss_slash_suffixed_is_refused              3 "must be a name" release-rehearsal/old
     if [ "$REHEARSAL_NEED" = 1 ]; then
         printf '  ok    %-50s REHEARSAL_NEED=1\n' committed_rehearsal_need_is_one; pass=$((pass + 1))
     else
@@ -371,6 +375,9 @@ dot_suffix_stripped         /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${
 digit_suffix_stripped       /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1%[0-9]}" = release-rehearsal ]|
 letter_deleted              /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1//Z/}" = release-rehearsal ]|
 nightly_dot_train_keyed     /^need_of() /s|\[ "\$1" = release-rehearsal \]|{ [ "$1" = release-rehearsal ] \|\| [ "$1" = nightly.train ]; }|
+dash_suffix_stripped        /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1%-}" = release-rehearsal ]|
+name_check_allows_space     /must be a name of letters/s|\[!A-Za-z0-9._-\]|[!A-Za-z0-9._[:blank:]-]|
+name_check_allows_slash     /must be a name of letters/s|\[!A-Za-z0-9._-\]|[!A-Za-z0-9._/-]|
 one_night_for_every_check   /^need_of() /s/"\$NEED"/"$REHEARSAL_NEED"/
 retried_counts_as_green     /^judge() {$/,/^}$/s/? "green" : "retried"/? "green" : "green"/
 failure_is_not_red          /^judge() {$/,/^}$/s/co == "failure" || co == "timed_out"/co == "never" || co == "timed_out"/
