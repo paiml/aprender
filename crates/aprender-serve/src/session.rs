@@ -526,17 +526,35 @@ impl<F: ArchForward> Session<F> {
         on_token: &mut dyn FnMut(u32) -> bool,
         trace: Option<TurnTrace<'_>>,
     ) -> Result<Turn> {
-        let layer_timing = trace.as_ref().is_some_and(|t| t.layers);
-        let mut tracer = trace.map(|t| t.tracer);
-        // Only a backend that said it would time its layers has timing to undo.
-        let timing_on = layer_timing && self.forward.set_layer_timing(true);
-        let turn = self.generate_inner(
+        self.generate_traced_with_logprobs(
             prompt,
             config,
             None,
             &mut |token, _| on_token(token),
-            &mut tracer,
-        );
+            trace,
+        )
+    }
+
+    /// [`Session::generate_traced`] and [`Session::generate_with_logprobs`] in
+    /// one turn: the trace records what was measured, and with `top_n` (#4971)
+    /// `on_token` gets each step's record. Tracing never changes which token is
+    /// chosen, and neither does asking for logprobs.
+    ///
+    /// # Errors
+    /// As [`Session::generate_with_logprobs`].
+    pub fn generate_traced_with_logprobs(
+        &mut self,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        top_n: Option<usize>,
+        on_token: &mut dyn FnMut(u32, Option<StepLogprobs>) -> bool,
+        trace: Option<TurnTrace<'_>>,
+    ) -> Result<Turn> {
+        let layer_timing = trace.as_ref().is_some_and(|t| t.layers);
+        let mut tracer = trace.map(|t| t.tracer);
+        // Only a backend that said it would time its layers has timing to undo.
+        let timing_on = layer_timing && self.forward.set_layer_timing(true);
+        let turn = self.generate_inner(prompt, config, top_n, on_token, &mut tracer);
         if timing_on {
             self.forward.set_layer_timing(false);
         }

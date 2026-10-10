@@ -1,41 +1,148 @@
 // #3571: /v1/chat/completions for the Qwen3.5 hybrid, served from the resident
 // `Qwen35Session` the server built once at startup.
 
-/// Spawn the blocking generate that feeds the SSE stream.
+/// One generate on the resident session: the turn, with the stop token that
+/// ends it kept from `on_token` -- it is not content, and with `top_n` (#4971)
+/// neither is its logprobs record. A poisoned lock is refused, and `on_gpu`
+/// records the route the turn ended on.
+fn qwen35_generate(
+    served: &crate::api::Qwen35Served,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+    top_n: Option<usize>,
+    on_token: &mut dyn FnMut(u32, Option<crate::gguf::logprobs::StepLogprobs>) -> bool,
+) -> Result<crate::session::Turn, String> {
+    let mut s = served.session.lock().map_err(|_| POISONED.to_string())?;
+    let turn = s.generate_with_logprobs(prompt, config, top_n, &mut |token, record| {
+        config.stop_tokens.contains(&token) || on_token(token, record)
+    });
+    served
+        .on_gpu
+        .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
+    turn.map_err(|e| e.to_string())
+}
+
+/// The non-streaming Qwen3.5 reply (#4971, APR-OBS-001 OBS-09).
+struct Qwen35Reply {
+    /// The reply's tokens, without the stop token that ended it.
+    tokens: Vec<u32>,
+    /// With `top_n`, one logprobs record per reply token; else empty.
+    steps: Vec<crate::gguf::logprobs::StepLogprobs>,
+    /// What THIS turn ran on, measured by the session at its end (#3719).
+    used_gpu: bool,
+    /// What a step|layer trace measured over the turn.
+    measured: TracedTurn,
+}
+
+/// The non-streaming Qwen3.5 turn on the resident session: with `top_n`
+/// (#4971) one logprobs record per reply token, the stop token's dropped with
+/// it; with `tracer` (APR-OBS-001 OBS-09) the turn's events, and with
+/// `time_layers` its per-layer time. A poisoned lock is refused, and `on_gpu`
+/// records the route the turn ended on.
+fn qwen35_turn(
+    served: &crate::api::Qwen35Served,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+    top_n: Option<usize>,
+    mut tracer: Option<crate::inference_trace::InferenceTracer>,
+    time_layers: bool,
+) -> Result<Qwen35Reply, String> {
+    let mut s = served.session.lock().map_err(|_| POISONED.to_string())?;
+    let trace = tracer.as_mut().map(|tracer| crate::session::TurnTrace {
+        tracer,
+        layers: time_layers,
+    });
+    let mut steps = Vec::new();
+    let turn = s.generate_traced_with_logprobs(
+        prompt,
+        config,
+        top_n,
+        &mut |token, record| {
+            if !config.stop_tokens.contains(&token) {
+                steps.extend(record);
+            }
+            true
+        },
+        trace,
+    );
+    let layers = if time_layers {
+        s.take_layer_timings()
+    } else {
+        None
+    };
+    let measured = TracedTurn {
+        tracer,
+        layers,
+        num_layers: s.num_layers(),
+    };
+    served
+        .on_gpu
+        .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
+    let turn = turn.map_err(|e| e.to_string())?;
+    let mut reply = turn.tokens[prompt.len()..].to_vec();
+    if reply.last().is_some_and(|t| config.stop_tokens.contains(t)) {
+        reply.pop();
+    }
+    if top_n.is_some() && steps.len() != reply.len() {
+        return Err(format!(
+            "the reply's {} tokens came with {} logprobs records (#4971)",
+            reply.len(),
+            steps.len()
+        ));
+    }
+    Ok(Qwen35Reply {
+        tokens: reply,
+        steps,
+        used_gpu: turn.used_gpu,
+        measured,
+    })
+}
+
+/// Spawn the blocking generate that feeds the SSE stream, and with `top_n`
+/// (#4971) the [`StreamLogprobs`](super::chat_logprobs::StreamLogprobs) its
+/// records go to, each ahead of its token.
 ///
 /// Extracted from `try_qwen35_backend` (#3844). This was the function's deepest
 /// nesting -- `if` -> `spawn_blocking` closure -> `match lock()` -> `Ok` arm ->
 /// `generate` callback closure -> `if let Err` -- and cognitive complexity counts
 /// NESTING, which is why flattening the nine flat `unwrap_or` arms alone did not move
-/// the number. Behaviour is unchanged: same lock, same stop-token-ends-the-turn
-/// callback, same `on_gpu` store, same error forwarded down the channel.
+/// the number. The lock, the stop-token-ends-the-turn callback and the `on_gpu`
+/// store are [`qwen35_generate`]'s; an error is forwarded down the channel.
 fn spawn_streaming_generate(
     session: Arc<crate::api::Qwen35Served>,
     input_ids: Vec<u32>,
     gen_config: crate::gguf::QuantizedGenerateConfig,
-    stop_tokens: Vec<u32>,
-    tx: tokio::sync::mpsc::Sender<Result<u32, String>>,
     sink_metrics: Arc<crate::metrics::MetricsCollector>,
+    top_n: Option<usize>,
+) -> (
+    tokio::sync::mpsc::Receiver<Result<u32, String>>,
+    Option<super::chat_logprobs::StreamLogprobs>,
 ) {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
+    let (records, logprobs) = top_n
+        .map(|_| super::chat_logprobs::StreamLogprobs::channel())
+        .unzip();
     tokio::task::spawn_blocking(move || {
         let mut sink = crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
-        let result = match session.session.lock() {
-            Ok(mut s) => {
-                let r = s.generate(&input_ids, &gen_config, &mut |tok| {
-                    // The stop token ends the turn; it is not content.
-                    stop_tokens.contains(&tok) || sink(tok)
-                });
-                session
-                    .on_gpu
-                    .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
-                r.map(|_| ()).map_err(|e| e.to_string())
+        let result = qwen35_generate(
+            &session,
+            &input_ids,
+            &gen_config,
+            top_n,
+            &mut |t, record| {
+                // A record that cannot be sent means the response is gone, and
+                // the sink sees that too and records the abandonment.
+                if let (Some(records), Some(record)) = (&records, record) {
+                    let _ = records.send(record);
+                }
+                sink(t)
             },
-            Err(_) => Err(POISONED.to_string()),
-        };
+        );
         if let Err(e) = result {
             let _ = tx.blocking_send(Err(e));
         }
     });
+    (rx, logprobs)
 }
 
 /// Build the generate config from a chat request, with the CONTEXT-BOUNDED budget.
@@ -98,7 +205,7 @@ async fn try_qwen35_backend(
             "the Qwen3.5 session has no retained GGUF to tokenize with (#3571)",
         ));
     };
-    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "Qwen3.5") {
+    let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -146,20 +253,14 @@ async fn try_qwen35_backend(
     let stop_tokens = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
     // The context-bounded budget, not the request's number: what is decoded and what
     // `finish_reason` is judged against are the same count.
-    let gen_config = gen_config_from_request(request, budget, stop_tokens.clone(), cancel.clone());
+    let gen_config = gen_config_from_request(request, budget, stop_tokens, cancel.clone());
+    // #4971: the session records each step's logprobs when they were asked for.
+    let top_n = request.logprobs_top_n();
 
     if request.stream {
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
-        let sink_metrics = state.metrics.clone();
-        spawn_streaming_generate(
-            session,
-            input_ids,
-            gen_config,
-            stop_tokens,
-            tx,
-            sink_metrics,
-        );
-        return Some(crate::api::openai_handlers::true_streaming_sse_response(
+        let (rx, logprobs) =
+            spawn_streaming_generate(session, input_ids, gen_config, state.metrics.clone(), top_n);
+        return Some(crate::api::openai_handlers::live_sse_response(
             rx,
             tokenizer,
             request_id.to_string(),
@@ -171,39 +272,19 @@ async fn try_qwen35_backend(
             None,
             request.stop.as_deref(),
             crate::api::stream_tool_calls::StreamTools::from_request(request),
+            logprobs,
         ));
     }
 
     let decode_mapped = mapped.clone();
     // APR-OBS-001 OBS-09: a step|layer header runs the tracer over this turn.
-    let mut tracer = crate::api::serve_trace::tracer_for(trace_level);
+    let tracer = crate::api::serve_trace::tracer_for(trace_level);
     let time_layers = trace_level == Some("layer");
-    let turn = tokio::task::spawn_blocking(move || match session.session.lock() {
-        Ok(mut s) => {
-            let trace = tracer.as_mut().map(|tracer| crate::session::TurnTrace {
-                tracer,
-                layers: time_layers,
-            });
-            let r = s.generate_traced(&input_ids, &gen_config, &mut |_| true, trace);
-            let layers = if time_layers {
-                s.take_layer_timings()
-            } else {
-                None
-            };
-            let measured = TracedTurn {
-                tracer,
-                layers,
-                num_layers: s.num_layers(),
-            };
-            session
-                .on_gpu
-                .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
-            r.map(|turn| (turn, measured)).map_err(|e| e.to_string())
-        },
-        Err(_) => Err(POISONED.to_string()),
+    let turn = tokio::task::spawn_blocking(move || {
+        qwen35_turn(&session, &input_ids, &gen_config, top_n, tracer, time_layers)
     })
     .await;
-    let (turn, measured) = match turn {
+    let reply = match turn {
         Ok(Ok(turn)) => turn,
         Ok(Err(e)) => {
             state.metrics.record_failure();
@@ -223,15 +304,10 @@ async fn try_qwen35_backend(
         },
     };
 
-    let mut generated_ids = turn.tokens[prompt_token_count..].to_vec();
-    if generated_ids
-        .last()
-        .is_some_and(|t| stop_tokens.contains(t))
-    {
-        generated_ids.pop();
-    }
-    let completion_tokens = generated_ids.len();
-    let response_text = clean_chat_output(&decode_mapped.model.decode(&generated_ids));
+    let completion_tokens = reply.tokens.len();
+    let response_text = clean_chat_output(&decode_mapped.model.decode(&reply.tokens));
+    let logprobs = top_n.map(|_| super::ChatLogprobs::from_steps(&tokenizer, &reply.steps));
+    let measured = reply.measured;
 
     let duration = start.elapsed();
     state.metrics.record_success(completion_tokens, duration);
@@ -259,8 +335,8 @@ async fn try_qwen35_backend(
         // #3719: what THIS turn ran on, measured by the session at its end. A forced-GPU
         // turn that fell back to the CPU still answers 200; this is how the client
         // (`apr code`'s document) can tell.
-        Some(turn.used_gpu),
-        None,
+        Some(reply.used_gpu),
+        logprobs,
     ))
 }
 
