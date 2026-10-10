@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::margin::{token_ids, TokenLogprob};
+use super::protocol::{matrix_block, ProtocolParams, PERF_MATRIX_SOURCE};
 use super::witness::{BatchInvariance, BatchInvarianceWitness};
 
 /// The witness layout this module writes. The script's is 2; 3 adds the margin.
@@ -400,6 +401,105 @@ pub struct ProbeSampler {
     pub max_tokens: u32,
     /// The best tokens asked for per step; 2 gives the top-2 margin.
     pub top_logprobs: u8,
+}
+
+/// The best tokens asked for per step: two, so a band can record the top-2 margin.
+pub const TOP_LOGPROBS: u8 = 2;
+
+/// What configures a probe run, all of it from `scripts/perf-matrix.yaml`
+/// (PP-33): the policy a band is judged by, the sampler every request carries,
+/// and the declared ladder.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProbeMatrix {
+    /// `witness.min_agree_tokens`, `protocol.n_predict`, `witness.max_constant_run`.
+    pub policy: ProbePolicy,
+    /// `protocol.sampler`, with `max_tokens = protocol.n_predict` and [`TOP_LOGPROBS`].
+    pub sampler: ProbeSampler,
+    /// `ladder.declared`: the concurrencies fired, in order.
+    pub ladder: Vec<u32>,
+}
+
+impl ProbeMatrix {
+    /// Read from the compiled-in matrix.
+    ///
+    /// # Errors
+    /// As [`Self::from_matrix_source`].
+    pub fn from_matrix() -> Result<Self, String> {
+        Self::from_matrix_source(PERF_MATRIX_SOURCE)
+    }
+
+    /// Read from an explicit document. The script falls back to its own
+    /// literals when a key is absent and notes it; this refuses instead and
+    /// names the key, because a probe judged by numbers the matrix does not
+    /// hold is the drift PP-33 exists to prevent.
+    ///
+    /// # Errors
+    /// When a block or a key is missing; when the ladder is empty or holds a
+    /// 0; when `max_constant_run` is 0; or when `min_agree_tokens` exceeds
+    /// `n_predict`, so no run could pass.
+    pub fn from_matrix_source(source: &str) -> Result<Self, String> {
+        let protocol = ProtocolParams::from_matrix_source(source)?;
+        let witness: MatrixProbeWitness =
+            serde_yaml_ng::from_value(matrix_block(source, "witness")?)
+                .map_err(|e| format!("perf-matrix.yaml `witness:` block: {e}"))?;
+        let ladder: MatrixLadder = serde_yaml_ng::from_value(matrix_block(source, "ladder")?)
+            .map_err(|e| format!("perf-matrix.yaml `ladder:` block: {e}"))?;
+        let policy = ProbePolicy {
+            declared_min: witness.min_agree_tokens,
+            n_predict: protocol.n_predict,
+            max_constant_run: witness.max_constant_run,
+        };
+        check_matrix(&policy, &ladder.declared)?;
+        Ok(Self {
+            policy,
+            sampler: ProbeSampler {
+                temperature: protocol.sampler.temperature,
+                seed: protocol.sampler.seed,
+                ignore_eos: protocol.sampler.ignore_eos,
+                max_tokens: protocol.n_predict,
+                top_logprobs: TOP_LOGPROBS,
+            },
+            ladder: ladder.declared,
+        })
+    }
+}
+
+/// Refuse a matrix under which no run could be judged.
+fn check_matrix(policy: &ProbePolicy, ladder: &[u32]) -> Result<(), String> {
+    if ladder.is_empty() || ladder.contains(&0) {
+        return Err(format!(
+            "perf-matrix.yaml `ladder.declared` must list concurrencies >= 1, got {ladder:?}"
+        ));
+    }
+    if policy.max_constant_run == 0 {
+        return Err(
+            "perf-matrix.yaml `witness.max_constant_run` is 0: every slot would read as frozen"
+                .to_string(),
+        );
+    }
+    if policy.declared_min > policy.n_predict {
+        return Err(format!(
+            "perf-matrix.yaml `witness.min_agree_tokens` ({}) exceeds `protocol.n_predict` ({}): no \
+             slot could agree for that long",
+            policy.declared_min, policy.n_predict
+        ));
+    }
+    Ok(())
+}
+
+/// The two `witness:` keys the probe reads. The rest of the block is
+/// governance and is ignored, as in every `Matrix*` reader in
+/// [`super::protocol`].
+#[derive(Debug, Deserialize)]
+struct MatrixProbeWitness {
+    min_agree_tokens: u32,
+    max_constant_run: u32,
+}
+
+/// The `ladder:` key the probe reads.
+#[derive(Debug, Deserialize)]
+struct MatrixLadder {
+    declared: Vec<u32>,
 }
 
 /// The served model: the file name, never a host path, and its bytes' sha256.
@@ -805,5 +905,91 @@ mod tests {
             sha,
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
+    }
+
+    /// A matrix with every key the probe reads, plus a governance key it ignores.
+    fn matrix(witness: &str, ladder: &str) -> String {
+        format!(
+            "protocol:\n  window_ms: 1000\n  warmup_requests_per_worker: 1\n  quiesce_ms: 0\n  \
+             cooldown_ms: 0\n  n_predict: 32\n  replicates_min: 1\n  interleaved: true\n  \
+             sampler: {{temperature: 0.0, seed: 9, ignore_eos: true}}\nwitness:\n{witness}  \
+             author: spec-owner\nladder:\n{ladder}"
+        )
+    }
+
+    const WITNESS_OK: &str = "  min_agree_tokens: 24\n  max_constant_run: 6\n";
+
+    #[test]
+    fn the_matrix_configures_the_policy_the_sampler_and_the_ladder() {
+        let m = ProbeMatrix::from_matrix_source(&matrix(WITNESS_OK, "  declared: [1, 2, 3]\n"))
+            .expect("a complete matrix reads");
+        assert_eq!(
+            m.policy,
+            ProbePolicy {
+                declared_min: 24,
+                n_predict: 32,
+                max_constant_run: 6
+            }
+        );
+        assert_eq!(
+            m.sampler,
+            ProbeSampler {
+                temperature: 0.0,
+                seed: 9,
+                ignore_eos: true,
+                max_tokens: 32,
+                top_logprobs: 2
+            }
+        );
+        assert_eq!(m.ladder, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn the_shipped_matrix_configures_the_probe_as_the_other_readers_read_it() {
+        let m = ProbeMatrix::from_matrix().expect("the shipped matrix configures the probe");
+        let protocol = ProtocolParams::from_matrix().expect("the shipped protocol block");
+        let declared_min =
+            super::super::protocol::witness_min_agree_tokens_from(PERF_MATRIX_SOURCE)
+                .expect("the shipped witness block");
+        assert_eq!(m.policy.declared_min, declared_min);
+        assert_eq!(m.policy.n_predict, protocol.n_predict);
+        assert_eq!(m.sampler.max_tokens, protocol.n_predict);
+        assert_eq!(m.sampler.seed, protocol.sampler.seed);
+        assert!(
+            m.ladder.iter().any(|&c| c > 1),
+            "a ladder with no c > 1 could never PASS: {:?}",
+            m.ladder
+        );
+    }
+
+    #[test]
+    fn a_matrix_that_cannot_judge_a_run_is_refused_by_name() {
+        for (witness, ladder, named) in [
+            (
+                "  min_agree_tokens: 24\n",
+                "  declared: [1, 2]\n",
+                "max_constant_run",
+            ),
+            (WITNESS_OK, "  derive_from: []\n", "declared"),
+            (WITNESS_OK, "  declared: []\n", "ladder.declared"),
+            (WITNESS_OK, "  declared: [1, 0]\n", "ladder.declared"),
+            (
+                "  min_agree_tokens: 24\n  max_constant_run: 0\n",
+                "  declared: [1, 2]\n",
+                "max_constant_run",
+            ),
+            (
+                "  min_agree_tokens: 33\n  max_constant_run: 6\n",
+                "  declared: [1, 2]\n",
+                "min_agree_tokens",
+            ),
+        ] {
+            let err = ProbeMatrix::from_matrix_source(&matrix(witness, ladder)).expect_err(named);
+            assert!(err.contains(named), "{named}: {err}");
+        }
+        let no_ladder =
+            matrix(WITNESS_OK, "  declared: [1]\n").replace("ladder:\n  declared: [1]\n", "");
+        let err = ProbeMatrix::from_matrix_source(&no_ladder).expect_err("no ladder block");
+        assert!(err.contains("`ladder:`"), "{err}");
     }
 }

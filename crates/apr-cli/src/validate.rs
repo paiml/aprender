@@ -15,10 +15,15 @@ fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
             },
             // `llm bench` measures an HTTP endpoint, not a local model file,
             // and `llm shape-check` reads a perf041 witness JSON, not a model.
+            // `llm parity` drives an endpoint too: its `--model` is hashed
+            // for the witness and never loaded, so the gate has nothing to
+            // refuse.
             // Listed explicitly so a future subcommand that DOES name a model
             // has to be handled here rather than absorbed by a wildcard.
             TestSubcommand::Llm { command } => match command {
-                LlmSubcommand::Bench { .. } | LlmSubcommand::ShapeCheck { .. } => vec![],
+                LlmSubcommand::Bench { .. }
+                | LlmSubcommand::ShapeCheck { .. }
+                | LlmSubcommand::Parity { .. } => vec![],
             },
         },
         ExtendedCommands::CompareHf { file, .. }

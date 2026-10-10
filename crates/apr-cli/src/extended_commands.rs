@@ -2004,6 +2004,57 @@ pub enum LlmSubcommand {
         /// The perf041 `witness.json` to check.
         witness: InputFile,
     },
+
+    /// #4971 V3: run the perf041 batched-parity probe against a server.
+    ///
+    /// The Rust port of `scripts/perf041_batched_parity_probe.py`. It decodes
+    /// one prompt twice alone (m=1), then as c identical concurrent requests
+    /// for each c of the ladder, reads the batch each band formed from the
+    /// server's log, and writes the witness `apr test llm shape-check` reads,
+    /// with the reference's top-2 margin at every divergence. The thresholds,
+    /// sampler and ladder come from `scripts/perf-matrix.yaml`, compiled in.
+    ///
+    /// Exits 0 on PASS, 5 on FAIL (a batch's slots parted before
+    /// `declared_min`, or a slot froze), and 8 on UNMEASURABLE; the witness
+    /// is written first either way. A server log, binary or model that is not
+    /// a file exits 3 before any request. Not a gate: no release job runs it.
+    Parity {
+        /// The server's base URL; requests go to `/v1/chat/completions`.
+        #[arg(long, default_value = "http://127.0.0.1:8080")]
+        url: FreeText,
+        /// Model name sent in the request body, as the script sends it.
+        #[arg(long, default_value = "q")]
+        served_model: FreeText,
+        /// The server's log, where the scheduler writes `Batch m=N done`.
+        /// Read from where it ended before each band, so a band counts only
+        /// the batches it formed.
+        #[arg(long)]
+        server_log: InputFile,
+        /// The prompt every request carries. Recorded by its sha256.
+        #[arg(long, default_value = "Write an essay on compilers.")]
+        prompt: FreeText,
+        /// Concurrencies to fire, comma-separated, replacing the matrix's
+        /// `ladder.declared`. The V3 shape check admits only {1, 4, 8, 16}.
+        #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(u32).range(1..))]
+        ladder: Vec<u32>,
+        /// Write the witness JSON here.
+        #[arg(long)]
+        json: Option<OutputPath>,
+        /// Host recorded in the witness. Defaults to `PERF041_HOST`, then
+        /// this host's name.
+        #[arg(long)]
+        host: Option<FreeText>,
+        /// Commit the server was built from. Defaults to `PERF041_COMMIT`.
+        #[arg(long)]
+        commit: Option<FreeText>,
+        /// The serving binary; its sha256 is recorded.
+        #[arg(long)]
+        binary: Option<InputFile>,
+        /// The served model file; its file name and sha256 are recorded. The
+        /// probe hashes it and never loads it.
+        #[arg(long)]
+        model: Option<InputFile>,
+    },
 }
 
 /// Parse `apr cbtop --iterations`, rejecting 0.
