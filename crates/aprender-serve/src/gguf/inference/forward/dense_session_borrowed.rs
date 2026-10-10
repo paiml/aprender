@@ -16,6 +16,7 @@ use crate::error::{RealizarError, Result};
 use crate::gguf::{OwnedQuantizedKVCache, OwnedQuantizedModelCuda};
 
 use crate::gguf::dense_session::{cuda_forward, cuda_forward_greedy, cuda_reset};
+use crate::session::GreedyStep;
 
 /// A dense CUDA forward over a borrowed model, for one scheduler turn.
 pub struct BorrowedCudaForward<'a> {
@@ -156,8 +157,15 @@ impl crate::session::ArchForward for BorrowedCudaForward<'_> {
         Ok(logits)
     }
 
-    fn forward_greedy(&mut self, tokens: &[u32], start: usize) -> Result<Option<u32>> {
-        let next = self.run(tokens, start, cuda_forward_greedy)?;
+    fn forward_greedy(
+        &mut self,
+        tokens: &[u32],
+        start: usize,
+        read_logits: bool,
+    ) -> Result<Option<GreedyStep>> {
+        let next = self.run(tokens, start, |model, cache, tokens, start, prefills| {
+            cuda_forward_greedy(model, cache, tokens, start, prefills, read_logits)
+        })?;
         // `None`: the prefill ran and chose nothing; the session replays
         // through `forward`, from 0.
         if next.is_some() {
