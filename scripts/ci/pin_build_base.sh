@@ -28,6 +28,15 @@
 set -euo pipefail
 
 ZERO=0000000000000000000000000000000000000000
+# #4936 (P6, operator C343 #9): every fetch below goes through fetch_p6.sh, as the sections' fetches
+# do. A read that did not answer (curl 92, curl 56, a stall) is read again, up to 3 reads in all; a
+# read that answered, an object origin does not have among them, is never read again.
+P6="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fetch_p6.sh"
+
+fetch() { # fetch <repo dir> <git fetch args...>: git fetch in <repo dir>, read under P6
+    local dir="$1"; shift
+    bash "$P6" -C "$dir" "$@"
+}
 
 is_sha() { [[ ${1:-} =~ ^[0-9a-f]{40}$ ]] && [ "$1" != "$ZERO" ]; }
 
@@ -54,15 +63,15 @@ pin() { # pin <repo dir>: pins origin/main there for $GITHUB_EVENT_NAME
             base="$MG_BASE_SHA"; how="merge_group.base_sha"
             ;;
         *)
-            git -C "$dir" fetch -q --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main || return 1
+            fetch "$dir" -q --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main || return 1
             if [ "$ev" = push ]; then
-                git -C "$dir" fetch -q --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main || return 1
+                fetch "$dir" -q --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main || return 1
             fi
             printf 'comparand: %s pinned as origin/main (the tip; event %s)\n' "$(git -C "$dir" rev-parse 'origin/main^{commit}')" "${ev:-none}"
             return 0
             ;;
     esac
-    git -C "$dir" fetch -q --no-tags --depth=1 origin "$base" || refuse "cannot fetch the build base $base" || return 1
+    fetch "$dir" -q --no-tags --depth=1 origin "$base" || refuse "cannot fetch the build base $base" || return 1
     git -C "$dir" update-ref refs/remotes/origin/main "$base"
     [ "$(git -C "$dir" rev-parse 'origin/main^{commit}')" = "$base" ] || refuse "origin/main does not read back as $base" || return 1
     printf 'comparand: %s pinned as origin/main (%s; event %s)\n' "$base" "$how" "$ev"
@@ -77,6 +86,11 @@ self_test() {
     local lib="$here/scripts/lib_baseline_ratchet.sh"
     [ -f "$lib" ] || { printf 'FAIL  self-test: %s is missing\n' "$lib"; return 1; }
     TD=$(mktemp -d); trap 'rm -rf "${TD:?}"' EXIT
+    # #4936: the table runs in TD, and git finds no repository above it. A fetch that lost its -C (a
+    # mutant, a slip) then reads "not a git repository" here, never the caller's checkout.
+    # The ceiling is TD's parent: git never stops at the directory it starts in.
+    cd -- "$TD" || return 1
+    export GIT_CEILING_DIRECTORIES="${TD%/*}"
     local o="$TD/origin.git" w="$TD/w" u="file://$TD/origin.git"
     local c0 prh m c2 grh m2 ok=0 bad=0
     g() { git -C "$w" -c user.name=st -c user.email=st@example.invalid -c commit.gpgsign=false "$@"; }
@@ -176,8 +190,53 @@ self_test() {
     rc=0; run_pin "$TD/pr1" pull_request "$prh" "" || rc=$?
     row "pinning twice is idempotent" "$rc $PINNED" "0 $c0"
 
+    # #4936 P6: a planted git counts every fetch read and answers each read whose number is in
+    # SHIM_DIE ("1 3": the first and the third) as a stalled read (curl 92); a planted sleep skips the back-off. The real git does the rest.
+    local shim="$TD/shim" real_git READS
+    real_git=$(command -v git)
+    mkdir -p "$shim"
+    printf '%s\n' '#!/usr/bin/env bash' \
+        'case " $* " in *" fetch "*)' \
+        '    echo fetch >> "$SHIM_LOG"' \
+        '    case " $SHIM_DIE " in *" $(wc -l < "$SHIM_LOG" | tr -d " ") "*)' \
+        "        printf '%s\\n' 'error: RPC failed; curl 92 HTTP/2 stream 5 was not closed cleanly: CANCEL (err 8)' 'fatal: early EOF' >&2; exit 128" \
+        '    esac ;;' \
+        'esac' \
+        'exec "$SHIM_REAL" "$@"' > "$shim/git"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$shim/sleep"
+    chmod +x "$shim/git" "$shim/sleep"
+    run_pin_p6() { # run_pin_p6 "<dead read numbers>" <dir> <event> <pr head> <mg base> -> as run_pin; READS = fetch reads git saw
+        local dies="$1" rc=0; shift
+        : > "$TD/reads.log"
+        PATH="$shim:$PATH" SHIM_REAL="$real_git" SHIM_LOG="$TD/reads.log" SHIM_DIE="$dies" run_pin "$@" || rc=$?
+        READS=$(wc -l < "$TD/reads.log" | tr -d ' ')
+        return "$rc"
+    }
+    d=$(clone_at p6mg "$m2"); rc=0; run_pin_p6 1 "$d" merge_group "" "$c2" || rc=$?
+    row "P6: merge_group's base fetch, first read dead (curl 92), is read again and pins" \
+        "$rc $PINNED $READS $(said 'read 1/3 did not answer')" "0 $c2 2 says-cause"
+    d=$(clone_at p6pr "$m"); rc=0; run_pin_p6 "1 2" "$d" pull_request "$prh" "" || rc=$?
+    row "P6: pull_request's base fetch, two reads dead, pins on the third" "$rc $PINNED $READS" "0 $c0 3"
+    d=$(clone_at p6push "$c2"); rc=0; run_pin_p6 1 "$d" push "" "" || rc=$?
+    row "P6: push's tip fetch, first read dead, is read again; the deepen still runs" \
+        "$rc $PINNED $READS $(git -C "$d" rev-parse -q --verify 'origin/main^1^{commit}' 2>/dev/null || printf none)" "0 $c2 3 $c0"
+    d=$(clone_at p6deepen "$c2"); rc=0; run_pin_p6 2 "$d" push "" "" || rc=$?
+    row "P6: push's deepen fetch, first read dead, is read again; the tip's first parent is fetched" \
+        "$rc $PINNED $READS $(git -C "$d" rev-parse -q --verify 'origin/main^1^{commit}' 2>/dev/null || printf none)" "0 $c2 3 $c0"
+    d=$(clone_at p6cap "$m2"); rc=0; run_pin_p6 "1 2 3" "$d" merge_group "" "$c2" || rc=$?
+    row "P6: three dead reads are the cap, and the pin refuses" \
+        "$rc $PINNED $READS $(said 'no answer under P6') $(said 'cannot fetch the build base')" "1 unset 3 says-cause says-cause"
+    d=$(clone_at p6answer "$m2"); rc=0; run_pin_p6 "" "$d" merge_group "" "$(printf '%040d' 7)" || rc=$?
+    row "P6: a read that answered (origin has no such base) is read once, never again" \
+        "$rc $PINNED $READS $(said 'cannot fetch the build base')" "1 unset 1 says-cause"
+
+    row "the table runs in a cwd that is no repository, so a fetch without -C reaches no checkout" \
+        "$(if git rev-parse --git-dir >/dev/null 2>&1; then printf repo; else printf none; fi)" none
+    row "git looks no higher than TD, even if TD sits inside a checkout" \
+        "${GIT_CEILING_DIRECTORIES:-unset}" "${TD%/*}"
+
     printf 'pin_build_base self-test: %s ok, %s bad\n' "$ok" "$bad"
-    [ "$bad" -eq 0 ] && [ "$ok" -ge 22 ]
+    [ "$bad" -eq 0 ] && [ "$ok" -ge 30 ]
 }
 
 case "${1:-}" in

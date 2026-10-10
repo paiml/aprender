@@ -419,6 +419,50 @@ EOF
         *"is not a merge commit nor a commit on the origin/main tip"*) printf 'ok    row %-2s stacked entry with deepening disabled (mutation): refused by name\n' "$row" ;;
         *) printf 'FAIL  row %-2s stacked entry with deepening disabled: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc7" "$err7"; fails=1 ;;
     esac
+    # #4936 (P6): the same stacked entry with the deepen's first read dead (curl 92). fetch_p6.sh reads the
+    # deepen again and the base still resolves. A planted git logs every fetch read; both must be the
+    # deepen, so a deepen that is one bare read (it dies, and the by-sha fetch after it answers) is RED.
+    # It runs from a cwd outside REPO_ROOT (the shim's own dir), as check_ont_ratchet.sh may (it never cds),
+    # and git finds no repository above that cwd: a deepen read that lost its -C "$REPO_ROOT" fails, the row is
+    # RED. The deepen answers on its second read, so the by-sha read never runs here; the next row covers it.
+    row=$((row + 1))
+    rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    S="$TD/p6-shim"; rm -rf "${S:?}"; mkdir -p "$S"
+    printf '%s\n' '#!/usr/bin/env bash' \
+        'case " $* " in *" fetch "*)' \
+        '    printf "%s\n" "$*" >> "$P6_SHIM_LOG"' \
+        '    if [ "$(wc -l < "$P6_SHIM_LOG")" -eq 1 ]; then' \
+        "        printf '%s\\n' 'error: RPC failed; curl 92 HTTP/2 stream 5 was not closed cleanly: CANCEL (err 8)' 'fatal: early EOF' >&2; exit 128" \
+        '    fi ;;' \
+        'esac' \
+        'exec "$P6_SHIM_REAL" "$@"' > "$S/git"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$S/sleep"; chmod +x "$S/git" "$S/sleep"; : > "$S/reads"
+    got8=$( PATH="$S:$PATH" P6_SHIM_REAL="$(command -v git)" P6_SHIM_LOG="$S/reads" GITHUB_EVENT_NAME=merge_group GIT_CEILING_DIRECTORIES="$TD" bash -c 'cd "$2" || exit 2; if git rev-parse --git-dir >/dev/null 2>&1; then printf "cwd is a repo|"; else printf "no repo|"; fi; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" "$S" 2>/dev/null ) || true
+    reads8="$(grep -c -e '--deepen=1' "$S/reads") of $(wc -l < "$S/reads" | tr -d ' ')"
+    case "$reads8|$got8" in "2 of 2|no repo|$want6|single parent (stacked merge_group entry"*) printf 'ok    row %-2s stacked entry, the deepen read dead once (curl 92), from a cwd that is no repo: read again under P6 in REPO_ROOT, base = the previous entry squash\n' "$row" ;;
+        *) printf 'FAIL  row %-2s stacked entry, deepen read dead once: wanted 2 of 2 deepen reads, a cwd that is no repo and base %s; got %s deepen reads, %s\n' "$row" "$want6" "$reads8" "$got8"; fails=1 ;; esac
+    # #4936 (P6): the same entry with all 3 deepen reads dead, then the by-sha read dead once. P6 reads the by-sha
+    # fetch again and the base still resolves. Same cwd and ceiling as the row above: a by-sha read that lost its
+    # -C "$REPO_ROOT" runs in no repo, and one that skips P6 is never read again; either way the row is RED.
+    # Wanted: 3 deepen reads, then 2 by-sha reads.
+    row=$((row + 1))
+    rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    printf '%s\n' '#!/usr/bin/env bash' \
+        'case " $* " in *" fetch "*)' \
+        '    printf "%s\n" "$*" >> "$P6_SHIM_LOG"' \
+        '    dead=; case " $* " in *" --deepen=1 "*) dead=1 ;; *) [ "$(grep -vc -e --deepen=1 "$P6_SHIM_LOG")" -eq 1 ] && dead=1 ;; esac' \
+        '    if [ -n "$dead" ]; then' \
+        "        printf '%s\\n' 'error: RPC failed; curl 92 HTTP/2 stream 5 was not closed cleanly: CANCEL (err 8)' 'fatal: early EOF' >&2; exit 128" \
+        '    fi ;;' \
+        'esac' \
+        'exec "$P6_SHIM_REAL" "$@"' > "$S/git"
+    : > "$S/reads"
+    got9=$( PATH="$S:$PATH" P6_SHIM_REAL="$(command -v git)" P6_SHIM_LOG="$S/reads" GITHUB_EVENT_NAME=merge_group GIT_CEILING_DIRECTORIES="$TD" bash -c 'cd "$2" || exit 2; if git rev-parse --git-dir >/dev/null 2>&1; then printf "cwd is a repo|"; else printf "no repo|"; fi; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" "$S" 2>/dev/null ) || true
+    reads9="$(grep -c -e '--deepen=1' "$S/reads") of $(wc -l < "$S/reads" | tr -d ' ')"
+    case "$reads9|$got9" in "3 of 5|no repo|$want6|single parent (stacked merge_group entry"*) printf 'ok    row %-2s stacked entry, all 3 deepen reads dead and the by-sha read dead once, from a cwd that is no repo: by-sha read again under P6 in REPO_ROOT, base = the previous entry squash\n' "$row" ;;
+        *) printf 'FAIL  row %-2s stacked entry, all 3 deepen reads dead and the by-sha read dead once: wanted 3 of 5 deepen reads, a cwd that is no repo and base %s; got %s deepen reads, %s\n' "$row" "$want6" "$reads9" "$got9"; fails=1 ;; esac
+    rm -rf "${S:?}"
+
     rm -rf "${Q:?}" "${Q:?}.clone"
 
     # Rows 19-22: --staged, the pre-commit entry point (B4, #3047). A scratch

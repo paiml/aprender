@@ -18,6 +18,12 @@
 # the G-10 review quorum's blocking finding, 2026-09-06); and a refusal -
 # never the tree against itself - for anything else.
 # ROADMAP_DIFF_FORCE_SHALLOW=1 makes a full clone behave like depth-1 (tests).
+# fetch_p6.sh is found once, at SOURCE time: a caller may source this file by a relative path
+# and cd before it calls resolve_base, and REPO_ROOT may be another tree. CDPATH is cleared so
+# cd neither prints nor goes elsewhere. A failed lookup leaves the deepen to fail, and the
+# stacked entry is refused below, as it was before #4936 when the fetch failed.
+_RESOLVE_BASE_P6="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../ci/fetch_p6.sh" || _RESOLVE_BASE_P6=""
+
 resolve_base() {
     local head=$1 mb parents headid main_tip
     local PROG="${PROG:-resolve_base}"
@@ -71,7 +77,10 @@ resolve_base() {
         # case table's mutation.
         if [ -n "$p1" ] && [ "${GITHUB_EVENT_NAME:-}" = merge_group ] && [ "${ROADMAP_DIFF_NO_DEEPEN:-0}" != 1 ]; then
             if ! git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
-                git -C "$REPO_ROOT" fetch -q --deepen=1 origin 2>/dev/null || git -C "$REPO_ROOT" fetch -q origin "$p1" 2>/dev/null || true
+                # Read up to 3 times under P6 (#4936). `>&2 2>/dev/null` applies left to right: the helper's
+                # status lines (its stdout) go to stderr, never into a caller's $(...); git's own stderr is dropped.
+                bash "$_RESOLVE_BASE_P6" -C "$REPO_ROOT" -q --deepen=1 origin >&2 2>/dev/null \
+                    || bash "$_RESOLVE_BASE_P6" -C "$REPO_ROOT" -q origin "$p1" >&2 2>/dev/null || true
             fi
             if git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
                 BASE_REF="$p1"; BASE_HOW="single parent (stacked merge_group entry: the previous entry's squash, fetched by deepening the shallow checkout)"; return 0
