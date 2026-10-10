@@ -41,14 +41,28 @@ tracked_ignored() {
   git -C "$1" ls-files -i -c --exclude-standard
 }
 
-# The subset a packaged crate compiles from: Rust sources under src/, the
-# build script and its siblings, and the manifest. One of these that is tracked
+# The subset a packaged crate compiles from: everything under src/ (Rust
+# sources and the data they include_str!), the build script and its siblings,
+# and any manifest, nested crates included. One of these that is tracked
 # AND ignored ships from this checkout but vanishes from any tree rebuilt with
 # `git add` (a `git archive` re-import, a vendored copy): the crate then fails
 # its own package verify with E0583 (#5093, three crates at once). No baseline:
 # the count of these is zero and must stay zero.
 packaged_sources() {
-  grep -E '^(crates/[^/]+/)?(src/.*\.rs|build[a-z_]*\.rs|Cargo\.toml)$' || true
+  grep -E '^((crates/[^/]+/)?(src/.+|build[a-z_]*\.rs)|(.*/)?Cargo\.toml)$' || true
+}
+
+# The hard row. It runs before the vacuity check: it can only fail a run,
+# never pass one, so an empty scan cannot slip through it.
+hard_row() {
+  local src
+  src="$(printf '%s\n' "$1" | packaged_sources)"
+  [ -n "$src" ] || return 0
+  printf '\nFAIL: a packaged crate source is tracked AND ignored. A tree rebuilt\n'
+  printf 'with `git add` drops it and the crate fails its package verify (E0583).\n'
+  printf 'Delete the ignore rule that claims it:\n\n'
+  printf '%s\n' "$src" | sed 's|^|  |'
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -102,10 +116,11 @@ if [ "${1:-}" = "--self-test" ]; then
 
   # Row 4: scratch that is tracked and ignored is NOT a packaged source, so
   # the hard row stays quiet on what the ratchet alone governs.
-  printf '{}\n' > "$TD/crates/c/src/notes.json"
-  printf 'src/g.rs\nsrc/notes.json\n' > "$TD/crates/c/.gitignore"
+  mkdir -p "$TD/crates/c/.pmat-metrics"
+  printf '{}\n' > "$TD/crates/c/.pmat-metrics/m.json"
+  printf 'src/g.rs\n.pmat-metrics/\n' > "$TD/crates/c/.gitignore"
   git -C "$TD" rm --cached -q crates/c/src/g.rs 2>/dev/null
-  git -C "$TD" add -f crates/c/.gitignore crates/c/src/notes.json 2>/dev/null
+  git -C "$TD" add -f crates/c/.gitignore crates/c/.pmat-metrics/m.json 2>/dev/null
   git -C "$TD" commit -qm w 2>/dev/null
   got="$(tracked_ignored "$TD" | packaged_sources)"
   if [ -z "$got" ] && [ -n "$(tracked_ignored "$TD")" ]; then
@@ -114,8 +129,44 @@ if [ "${1:-}" = "--self-test" ]; then
     printf 'FAIL  row 4 got [%s], expected empty\n' "$got"; fails=1
   fi
 
+  # Row 5: data a source includes (src/, not .rs) and a nested crate's
+  # manifest are packaged too.
+  got="$(printf 'crates/c/src/t/fixture.json\ncrates/c/sub/Cargo.toml\nCargo.toml\ncrates/c/benches/x.json\n' | packaged_sources)"
+  want="$(printf 'crates/c/src/t/fixture.json\ncrates/c/sub/Cargo.toml\nCargo.toml')"
+  if [ "$got" = "$want" ]; then
+    printf 'ok    row 5 src/ data and nested manifests are packaged; benches/ data is not\n'
+  else
+    printf 'FAIL  row 5 got [%s]\n' "$got"; fails=1
+  fi
+
+  # Rows 6 and 7 run the MAIN path, not the helpers: a copy of this script
+  # inside the temp repo, so REPO_ROOT is that repo. Row 6 is the #5093 shape
+  # and must exit 1 naming the file; row 7 is the control without it and must
+  # not print the hard row (it still fails later, on vacuity). A neutered hard
+  # row passes rows 1-5 and fails row 6.
+  mkdir -p "$TD/scripts"
+  SELF="${REPO_ROOT}/scripts/check_no_tracked_ignored_files.sh"
+  cat -- "$SELF" > "$TD/scripts/check_no_tracked_ignored_files.sh" \
+    || { printf 'FAIL: could not copy %s into the temp repo\n' "$SELF"; exit 1; }
+  git -C "$TD" add -f crates/c/src/g.rs 2>/dev/null
+  git -C "$TD" commit -qm v 2>/dev/null
+  out="$(bash "$TD/scripts/check_no_tracked_ignored_files.sh" 2>&1)"; rc=$?
+  if [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q '^  crates/c/src/g.rs$'; then
+    printf 'ok    row 6 main path exits 1 and names crates/c/src/g.rs\n'
+  else
+    printf 'FAIL  row 6 rc=%s, expected 1 naming crates/c/src/g.rs\n' "$rc"; fails=1
+  fi
+  git -C "$TD" rm --cached -q crates/c/src/g.rs 2>/dev/null
+  git -C "$TD" commit -qm u 2>/dev/null
+  out="$(bash "$TD/scripts/check_no_tracked_ignored_files.sh" 2>&1)"; rc=$?
+  if ! printf '%s\n' "$out" | grep -q 'packaged crate source'; then
+    printf 'ok    row 7 control: no packaged source, no hard-row FAIL (rc=%s, vacuity)\n' "$rc"
+  else
+    printf 'FAIL  row 7 hard row fired without a packaged source\n'; fails=1
+  fi
+
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-  printf '\nSELF-TEST PASSED (4/4)\n'
+  printf '\nSELF-TEST PASSED (7/7)\n'
   exit 0
 fi
 
@@ -125,20 +176,13 @@ FOUND="$(tracked_ignored "$REPO_ROOT")"
 count="$(printf '%s\n' "$FOUND" | grep -c . || true)"
 total_tracked="$(git -C "${REPO_ROOT}" ls-files | grep -c . || true)"
 
+# Hard row, before the ratchet and outside it: a packaged source that is
+# tracked AND ignored fails at any count (#5093). Self-test rows 6 and 7.
+hard_row "$FOUND" || exit 1
+
 # Vacuity: `ls-files` returning nothing would make any count trivially zero.
 if [ "$total_tracked" -lt 1000 ]; then
   printf '\nFAIL (vacuity): only %s tracked file(s) seen; git is not reporting the repo.\n' "$total_tracked"
-  exit 1
-fi
-
-# Hard row, before the ratchet and outside it: a packaged source that is
-# tracked AND ignored fails at any count (#5093).
-SRC="$(printf '%s\n' "$FOUND" | packaged_sources)"
-if [ -n "$SRC" ]; then
-  printf '\nFAIL: a packaged crate source is tracked AND ignored. A tree rebuilt\n'
-  printf 'with `git add` drops it and the crate fails its package verify (E0583).\n'
-  printf 'Delete the ignore rule that claims it:\n\n'
-  printf '%s\n' "$SRC" | sed 's|^|  |'
   exit 1
 fi
 
