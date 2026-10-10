@@ -204,6 +204,7 @@ aprender-test-lib	--lib	llm::prompts
 aprender-test-lib	--lib	perf_gate
 aprender-test-lib	--lib	perf_gate::drain
 aprender-test-lib	--lib	perf_gate::protocol
+aprender-test-lib	--lib	perf_gate::ttft_verdict
 aprender-test-lib	--lib	perf_gate::witness
 aprender-train	--lib	hf_pipeline::export::pipeline
 aprender-train	--lib	models::llama_370m

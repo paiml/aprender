@@ -566,10 +566,11 @@ pub enum ExtendedCommands {
     ///   replay  the runner itself — recording, state machines, reporting
     ///           (record, playbook, coverage, report)
     ///
-    /// Routed today: `tensor` (PMAT-481 visual regression) and `llm bench`
-    /// (GH-876 Milestone 2). The rest land as they are delegated to the
-    /// probador library. Renaming now costs one path — after those land it is
-    /// a breaking change across the whole testing surface.
+    /// Routed today: `tensor` (PMAT-481 visual regression), `llm bench`
+    /// (GH-876 Milestone 2) and `llm ttft-verdict` (#4954). The rest land as
+    /// they are delegated to the probador library. Renaming now costs one path
+    /// — after those land it is a breaking change across the whole testing
+    /// surface.
     ///
     /// `apr probar` stays as a hidden alias so existing scripts keep working.
     #[command(alias = "probar")]
@@ -1986,6 +1987,19 @@ pub enum LlmSubcommand {
         /// `$APR_PERF_RECEIPT_KEYRING` inside the signing script.
         #[arg(long)]
         keyring: Option<ConfigPath>,
+    },
+    /// #4954: decide the TTFT ratio row from each GPU host's receipts.
+    ///
+    /// TTFT ratio = reference TTFT / apr TTFT. Exits 0 GREEN when every host
+    /// in `arms.L3.v1.hosts` of `scripts/perf-matrix.yaml` has at least
+    /// `protocol.replicates_min` receipts and each one's `ratios.ttft.lcb95` is
+    /// at or above `arms.L3.v1.ttft_floor`; 1 RED when all of them read and a
+    /// host's minimum is below it; 2 NOT MEASURED when anything is missing.
+    TtftVerdict {
+        /// A host's run directory, as `scripts/v1_ttft_baseline.sh` writes it:
+        /// `v1-provenance.json` and `receipt.r<N>.json`. Once per host.
+        #[arg(long = "run", required = true)]
+        runs: Vec<DirPath>,
     },
 }
 

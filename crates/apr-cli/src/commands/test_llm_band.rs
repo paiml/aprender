@@ -1012,6 +1012,8 @@ fn band_input(run: &BandRun, comparator: ComparatorStatus) -> BandInput {
                 expected_tokens: extra.expected_tokens,
                 ttft_ms: s.token_times_s.first().map(|t| (t - s.start_s) * 1000.0),
                 prefill_ms: extra.prefill_ms,
+                load_ms: extra.load_ms,
+                first_token_ms: extra.first_token_ms,
                 in_flight_at_start: u32::try_from(s.in_flight_at_start).unwrap_or(u32::MAX),
                 token_times_ms: s.token_times_s.iter().map(|t| t * 1000.0).collect(),
             }
@@ -2748,6 +2750,8 @@ mod tests {
                     expected_tokens: Some(128),
                     ttft_ms: Some(ttft),
                     prefill_ms: Some(dur * 0.04),
+                    load_ms: None,
+                    first_token_ms: None,
                     in_flight_at_start: c,
                     token_times_ms: times,
                 }
