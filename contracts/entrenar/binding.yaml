@@ -16,8 +16,8 @@ bindings:
   notes: APR v1.2.0 format with adapter + training state
 - contract: apr-checkpoint-v1.yaml
   equation: load_checkpoint
-  module_path: entrenar::finetune::classify_trainer
-  function: load_checkpoint
+  module_path: entrenar::train::transformer_trainer::wgpu_trainer
+  function: WgpuModelState::load_checkpoint
   signature: 'fn load_checkpoint(&mut self, path: &Path) -> Result<()>'
   status: implemented
   notes: Restores optimizer state, epoch, step counters
@@ -122,8 +122,8 @@ bindings:
   notes: wgpu LoRA gradients restored; 5K to 5.9M trainable params
 - contract: qlora-hyperparameters-v1.yaml
   equation: learning_rate_scaling
-  module_path: entrenar::finetune::qlora_config
-  function: QLoraConfig::learning_rate
+  module_path: entrenar::finetune::instruct_pipeline::accessors
+  function: InstructPipeline::learning_rate
   signature: fn learning_rate(&self) -> f32
   status: implemented
   notes: HP design pending; contract specifies constraints
@@ -143,8 +143,8 @@ bindings:
   notes: function not found in source
 - contract: qlora-hyperparameters-v1.yaml
   equation: seq_len_from_data
-  module_path: entrenar::finetune::qlora_config
-  function: QLoraConfig::max_seq_len
+  module_path: entrenar::hf_pipeline::dataset::batch
+  function: Batch::max_seq_len
   signature: fn max_seq_len(&self) -> usize
   status: implemented
   notes: Derived from P99 of training data lengths
@@ -243,8 +243,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: greedy
-  module_path: entrenar
-  function: greedy
+  module_path: entrenar::finetune::instruct_pipeline::generate
+  function: GenerateConfig::greedy
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-classification-v1.yaml

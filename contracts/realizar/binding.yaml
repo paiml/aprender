@@ -105,28 +105,28 @@ bindings:
 - contract: rope-extrapolation-v1.yaml
   equation: ntk_scaled_base
   module_path: realizar::layers::position
-  function: ScaledRope::new
+  function: ScaledRoPE::new
   signature: 'fn new(config: RopeConfig) -> Self'
   status: implemented
   notes: RopeScalingType::Ntk and DynamicNtk
 - contract: rope-extrapolation-v1.yaml
   equation: linear_interpolation
   module_path: realizar::layers::position
-  function: ScaledRope::new
+  function: ScaledRoPE::new
   signature: 'fn new(config: RopeConfig) -> Self'
   status: implemented
   notes: RopeScalingType::Linear; context_multiplier tested
 - contract: rope-extrapolation-v1.yaml
   equation: yarn_ramp
   module_path: realizar::layers::position
-  function: ScaledRope::new
+  function: ScaledRoPE::new
   signature: 'fn new(config: RopeConfig) -> Self'
   status: implemented
   notes: RopeScalingType::Yarn with ramp function
 - contract: rope-extrapolation-v1.yaml
   equation: yarn_mixed_frequency
   module_path: realizar::layers::position
-  function: ScaledRope::new
+  function: ScaledRoPE::new
   signature: 'fn new(config: RopeConfig) -> Self'
   status: implemented
   notes: YaRN mixed-frequency applied via ScaledRope::apply()
@@ -139,8 +139,8 @@ bindings:
   notes: Batched and chunked prefill; 8.2x speedup over serial
 - contract: inference-pipeline-v1.yaml
   equation: decode_step
-  module_path: realizar::gguf::inference::forward
-  function: Model::forward
+  module_path: realizar::gguf::inference::forward::core
+  function: OwnedQuantizedModel::forward
   signature: 'fn forward(&mut self, token: u32, position: usize) -> Result<Vec<f32>>'
   status: implemented
   notes: Single-token forward pass; decode is the default path after prefill
@@ -224,7 +224,7 @@ bindings:
   notes: PTX JIT with blocklist; target parity ensures CUDA_SUCCESS
 - contract: fused-qkv-projection-v1.yaml
   equation: shared_q8_qkv
-  module_path: realizar::cuda::executor::q4k_mwv_gemv
+  module_path: realizar::cuda::executor::q4k
   function: CudaExecutor::batched_qkv_dp4a_q4k_gemv_into
   signature: 'fn batched_qkv_dp4a_q4k_gemv_into(&mut self, q_w: u64, k_w: u64, v_w: u64, input: &GpuBuffer<f32>, q_out: &GpuBuffer<f32>,
     k_out: &GpuBuffer<f32>, v_out: &GpuBuffer<f32>, m: u32, q_dim: u32, kv_dim: u32, k: u32) -> Result<(), GpuError>'
@@ -296,8 +296,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: int8-symmetric-quant-v1.yaml
   equation: quantize
-  module_path: realizar
-  function: quantize
+  module_path: realizar::quantize::types
+  function: Q8_0Block::quantize
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: matmul-kernel-v1.yaml
@@ -356,8 +356,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: gqa-kernel-v1.yaml
   equation: gqa
-  module_path: realizar
-  function: gqa
+  module_path: realizar::layers::attention
+  function: MultiHeadAttention::gqa
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: model-config-algebra-v1.yaml
@@ -404,8 +404,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: format-parity-v1.yaml
   equation: element_count
-  module_path: realizar
-  function: element_count
+  module_path: realizar::apr
+  function: TensorEntry::element_count
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
@@ -422,8 +422,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: top_p
-  module_path: realizar
-  function: top_p
+  module_path: realizar::generate
+  function: sample_top_p
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: cma-es-kernel-v1.yaml
@@ -567,8 +567,8 @@ bindings:
   notes: 'PMAT-405: Chained forward through num_layers. CPU and GPU paths'
 - contract: inference-pipeline-v1.yaml
   equation: hybrid_layer_schedule
-  module_path: realizar::safetensors::safetensors_config
-  function: SafeTensorsConfig::is_hybrid_attention
+  module_path: realizar::safetensors
+  function: SafetensorsConfig::is_hybrid_attention
   signature: 'pub fn is_hybrid_attention(&self) -> bool'
   status: implemented
   notes: 'PMAT-405: GDN/attention dispatch per layer_types array (Qwen3.5 MoE)'
@@ -693,8 +693,8 @@ bindings:
   notes: 'PMAT-404: Pre-uploads all weights at startup. Uses from_host_registered on cc>=120.'
 - contract: gpu-decode-profiling-v1.yaml
   equation: graph_disable
-  module_path: realizar::cuda::executor::layers::graphed_capture
-  function: try_graph_capture
+  module_path: realizar::cuda::executor::layers::graphed
+  function: CudaExecutor::try_graph_capture
   signature: 'fn try_graph_capture(&mut self) -> bool'
   status: implemented
   notes: 'PMAT-403: CUDA_GRAPH_ENABLE=1 required. Profiling requires graphs OFF (bricks only measured during capture, not replay)'

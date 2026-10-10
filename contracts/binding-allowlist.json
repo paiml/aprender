@@ -46,11 +46,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "entrenar::finetune::classify_trainer::load_checkpoint",
-      "reason": "ghost: no `fn load_checkpoint` (free or in an impl) or item `load_checkpoint` in `crates/aprender-train/src/finetune/classify_trainer.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "entrenar::finetune::data_parallel::DataParallelCoordinator::shard_data",
       "reason": "ghost: no `fn shard_data` in an `impl DataParallelCoordinator` or `trait DataParallelCoordinator` in `crates/aprender-train/src/finetune/data_parallel.rs`",
       "ticket": "#4502"
@@ -71,28 +66,13 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::learning_rate",
-      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "entrenar::finetune::qlora_config::QLoraConfig::lora_alpha",
-      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::max_seq_len",
       "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
       "ticket": "#4502"
     },
     {
       "symbol": "entrenar::finetune::qlora_config::QLoraConfig::warmup_steps",
       "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::greedy",
-      "reason": "ghost: no `fn greedy` (free or in an impl) or item `greedy` in `crates/aprender-train/src/lib.rs`",
       "ticket": "#4502"
     },
     {
@@ -176,53 +156,13 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "realizar::cuda::executor::layers::graphed_capture::try_graph_capture",
-      "reason": "ghost: no `mod graphed_capture` or `use \u2026 graphed_capture` in `crates/aprender-serve/src/cuda/executor/layers/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "realizar::cuda::executor::layers::prefill::CudaExecutor::chunked_prefill",
       "reason": "ghost: no `fn chunked_prefill` in an `impl CudaExecutor` or `trait CudaExecutor` in `crates/aprender-serve/src/cuda/executor/layers/prefill.rs`",
       "ticket": "#4502"
     },
     {
-      "symbol": "realizar::cuda::executor::q4k_mwv_gemv::CudaExecutor::batched_qkv_dp4a_q4k_gemv_into",
-      "reason": "ghost: no `mod q4k_mwv_gemv` or `use \u2026 q4k_mwv_gemv` in `crates/aprender-serve/src/cuda/executor/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::element_count",
-      "reason": "ghost: no `fn element_count` (free or in an impl) or item `element_count` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::gguf::inference::forward::Model::forward",
-      "reason": "ghost: no `mod Model` or `use \u2026 Model` in `crates/aprender-serve/src/gguf/inference/forward/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::gqa",
-      "reason": "ghost: no `fn gqa` (free or in an impl) or item `gqa` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::layers::position::ScaledRope::new",
-      "reason": "ghost: no `mod ScaledRope` or `use \u2026 ScaledRope` in `crates/aprender-serve/src/layers/position.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "realizar::predict",
       "reason": "ghost: no `fn predict` (free or in an impl) or item `predict` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::quantize",
-      "reason": "ghost: no `fn quantize` (free or in an impl) or item `quantize` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::safetensors::safetensors_config::SafeTensorsConfig::is_hybrid_attention",
-      "reason": "ghost: no `mod safetensors_config` or `use \u2026 safetensors_config` in `crates/aprender-serve/src/safetensors/mod.rs`",
       "ticket": "#4502"
     },
     {
@@ -233,11 +173,6 @@
     {
       "symbol": "realizar::tensor_count",
       "reason": "ghost: no `fn tensor_count` (free or in an impl) or item `tensor_count` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::top_p",
-      "reason": "ghost: no `fn top_p` (free or in an impl) or item `top_p` in `crates/aprender-serve/src/arch_requirements.rs`",
       "ticket": "#4502"
     },
     {
