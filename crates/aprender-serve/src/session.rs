@@ -38,7 +38,7 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 
 use crate::error::{RealizarError, Result};
-use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
+use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig, StepLogprobs};
 
 /// One architecture's forward on one backend: the only per-arch code a verb
 /// reaches, and only through a [`Session`].
@@ -121,9 +121,20 @@ pub trait ArchForward {
     /// the state is as it was, and the session calls
     /// [`ArchForward::forward`] instead. The default has no such path.
     ///
+    /// With `read_logits` (#4971: the caller asked for logprobs) the token is
+    /// still the device's argmax, and the logits it read are copied to the
+    /// host after it, in [`GreedyStep::logits`]. Asking for them must never
+    /// move the step onto another kernel path, because another path can
+    /// choose another token on a near-tie.
+    ///
     /// # Errors
     /// As [`ArchForward::forward`].
-    fn forward_greedy(&mut self, _tokens: &[u32], _start: usize) -> Result<Option<u32>> {
+    fn forward_greedy(
+        &mut self,
+        _tokens: &[u32],
+        _start: usize,
+        _read_logits: bool,
+    ) -> Result<Option<GreedyStep>> {
         Ok(None)
     }
 
@@ -161,6 +172,34 @@ pub struct LayerTiming {
     pub calls: u32,
     /// What the layer is, e.g. `"deltanet"` or `"attention"`.
     pub kind: &'static str,
+}
+
+/// What [`ArchForward::forward_greedy`] chose.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GreedyStep {
+    /// The argmax token, chosen on the device.
+    pub token: u32,
+    /// The logits that argmax read, copied to the host after it. `Some`
+    /// exactly when the call asked for them (`read_logits`).
+    pub logits: Option<Vec<f32>>,
+}
+
+impl GreedyStep {
+    /// A step that read back only the token.
+    #[must_use]
+    pub fn token(token: u32) -> Self {
+        Self {
+            token,
+            logits: None,
+        }
+    }
+}
+
+/// The token [`Session`] chose after a prefix, and the logits the choice was
+/// made from when the caller asked for them.
+struct Choice {
+    token: u32,
+    logits: Option<Vec<f32>>,
 }
 
 /// What one [`Session::generate`] call did.
@@ -369,47 +408,72 @@ impl<F: ArchForward> Session<F> {
         }
     }
 
-    /// Make the state hold exactly `tokens` and choose the token after them;
-    /// return it and how many leading tokens were already held. A greedy
-    /// choice with no repetition penalty goes through
-    /// [`ArchForward::forward_greedy`] when the backend has it.
+    /// Make the state hold exactly `tokens` and choose the token after them.
+    /// A greedy choice with no repetition penalty goes through
+    /// [`ArchForward::forward_greedy`] when the backend has it, with or without
+    /// `want_logits`. Otherwise the choice is made from the logits after the
+    /// repetition penalty, and those are the logits returned.
     fn advance_and_choose(
         &mut self,
         tokens: &[u32],
         config: &QuantizedGenerateConfig,
         rng: &mut rand::rngs::StdRng,
-    ) -> Result<(u32, usize)> {
+        want_logits: bool,
+    ) -> Result<Choice> {
         if is_greedy(config) && !penalty_active(config) {
-            let start = if self.extends(tokens) {
-                self.processed.len()
-            } else {
-                0
-            };
-            if self.checkpoint.as_ref().is_some_and(|c| start < c.len()) {
-                self.checkpoint = None;
-            }
-            match self.forward.forward_greedy(tokens, start) {
-                Ok(Some(next)) => {
-                    self.processed.truncate(start);
-                    self.processed.extend_from_slice(&tokens[start..]);
-                    return Ok((next, start));
-                },
-                Ok(None) => {},
-                Err(e) => {
-                    self.processed.clear();
-                    self.checkpoint = None;
-                    return Err(e);
-                },
+            if let Some(choice) = self.device_greedy(tokens, want_logits)? {
+                return Ok(choice);
             }
         }
-        let (mut logits, reused) = self.advance_to(tokens)?;
+        let (mut logits, _) = self.advance_to(tokens)?;
         OwnedQuantizedModel::apply_repeat_penalty(
             &mut logits,
             tokens,
             config.repeat_penalty,
             config.repeat_last_n,
         );
-        Ok((choose_token(&logits, config, rng), reused))
+        let token = choose_token(&logits, config, rng);
+        Ok(Choice {
+            token,
+            logits: want_logits.then_some(logits),
+        })
+    }
+
+    /// [`ArchForward::forward_greedy`] over `tokens`, recording what the state
+    /// then holds. `None` when the backend has no device argmax.
+    fn device_greedy(&mut self, tokens: &[u32], want_logits: bool) -> Result<Option<Choice>> {
+        let start = if self.extends(tokens) {
+            self.processed.len()
+        } else {
+            0
+        };
+        if self.checkpoint.as_ref().is_some_and(|c| start < c.len()) {
+            self.checkpoint = None;
+        }
+        match self.forward.forward_greedy(tokens, start, want_logits) {
+            Ok(Some(step)) => {
+                self.processed.truncate(start);
+                self.processed.extend_from_slice(&tokens[start..]);
+                if want_logits && step.logits.is_none() {
+                    return Err(RealizarError::InvalidShape {
+                        reason: format!(
+                            "{} forward_greedy was asked for the logits and returned none",
+                            self.arch()
+                        ),
+                    });
+                }
+                Ok(Some(Choice {
+                    token: step.token,
+                    logits: step.logits.filter(|_| want_logits),
+                }))
+            },
+            Ok(None) => Ok(None),
+            Err(e) => {
+                self.processed.clear();
+                self.checkpoint = None;
+                Err(e)
+            },
+        }
     }
 
     fn reserve(&mut self, positions: usize) -> Result<()> {
@@ -466,7 +530,13 @@ impl<F: ArchForward> Session<F> {
         let mut tracer = trace.map(|t| t.tracer);
         // Only a backend that said it would time its layers has timing to undo.
         let timing_on = layer_timing && self.forward.set_layer_timing(true);
-        let turn = self.generate_inner(prompt, config, on_token, &mut tracer);
+        let turn = self.generate_inner(
+            prompt,
+            config,
+            None,
+            &mut |token, _| on_token(token),
+            &mut tracer,
+        );
         if timing_on {
             self.forward.set_layer_timing(false);
         }
@@ -479,11 +549,33 @@ impl<F: ArchForward> Session<F> {
         self.forward.take_layer_timings()
     }
 
+    /// [`Session::generate`], and with `top_n` (#4971) the record of each step:
+    /// `on_token` then gets each token with its [`StepLogprobs`] — the chosen
+    /// token's logprob and the `top_n` most likely tokens. Asking never
+    /// changes which token is chosen: a greedy step keeps the device argmax and
+    /// copies the logits it read. A sampled or penalized step is recorded from
+    /// the logits after the repetition penalty, before temperature. With
+    /// `None` no logits are read back for a record and `on_token` gets `None`.
+    ///
+    /// # Errors
+    /// As [`Session::generate`], and a backend whose device argmax was asked
+    /// for the logits and returned none.
+    pub fn generate_with_logprobs(
+        &mut self,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        top_n: Option<usize>,
+        on_token: &mut dyn FnMut(u32, Option<StepLogprobs>) -> bool,
+    ) -> Result<Turn> {
+        self.generate_inner(prompt, config, top_n, on_token, &mut None)
+    }
+
     fn generate_inner(
         &mut self,
         prompt: &[u32],
         config: &QuantizedGenerateConfig,
-        on_token: &mut dyn FnMut(u32) -> bool,
+        top_n: Option<usize>,
+        on_token: &mut dyn FnMut(u32, Option<StepLogprobs>) -> bool,
         tracer: &mut Option<&mut crate::inference_trace::InferenceTracer>,
     ) -> Result<Turn> {
         use crate::inference_trace::TraceStep;
@@ -506,7 +598,8 @@ impl<F: ArchForward> Session<F> {
         let clock = std::time::Instant::now();
         let reused = self.prepare_prompt(prompt)?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
-        let (mut next, _) = self.advance_and_choose(prompt, config, &mut rng)?;
+        let want_logits = top_n.is_some();
+        let mut choice = self.advance_and_choose(prompt, config, &mut rng, want_logits)?;
         record(tracer, TraceStep::TransformerBlock, 0, clock);
         let mut tokens = prompt.to_vec();
         let mut context_capped = false;
@@ -519,12 +612,16 @@ impl<F: ArchForward> Session<F> {
             // never computes a token it throws away (#4325).
             if generated > 1 {
                 let clock = std::time::Instant::now();
-                next = self.advance_and_choose(&tokens, config, &mut rng)?.0;
+                choice = self.advance_and_choose(&tokens, config, &mut rng, want_logits)?;
                 record(tracer, TraceStep::TransformerBlock, generated - 1, clock);
             }
+            let next = choice.token;
+            let logprobs = top_n
+                .zip(choice.logits.take())
+                .map(|(n, logits)| StepLogprobs::of(generated - 1, next, &logits, n));
             tokens.push(next);
             let clock = std::time::Instant::now();
-            let keep_going = on_token(next);
+            let keep_going = on_token(next, logprobs);
             record(tracer, TraceStep::Decode, generated - 1, clock);
             if !keep_going || config.stop_tokens.contains(&next) {
                 break;
