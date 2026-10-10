@@ -1316,6 +1316,59 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/findings-ledger-v1> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/finding/Finding> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/finding/id> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^FND-[0-9]{8}-[a-z0-9]+(-[a-z0-9]+)*$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/finding/title> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 12 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/finding/evidence> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 12 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/finding/repro> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 4 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/finding/suspected_epic> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^(#[0-9]+|unknown)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/finding/severity> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "P0" "P1" "P2" "P3" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/finding/found_at_sha> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^[0-9a-f]{40}$" ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/github-repo> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/Repo> ;
     sh:property [

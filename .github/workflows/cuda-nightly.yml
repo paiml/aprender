@@ -730,6 +730,34 @@ jobs:
           fi
           echo "#4250 G0: GREEN passed, per-token RED control failed as required (rc=$r)"
 
+      # #4523: the qwen35 CPU/GPU parity module on sm_121. ci.yml's cuda-unit runs it
+      # on yoga-eph with no models, so every test there SKIPs as model-absent: the
+      # whole-forward budgets were only ever read on sm_89 + x86_64, and GB10 +
+      # aarch64 sat 7.105e-2 over a 7e-2 budget with no lane to say so. This lane
+      # runs the module where the model is and refuses a skip or an empty selection.
+      - name: qwen35 CUDA parity module on sm_121 (aprender#4523)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        run: |
+          set -uo pipefail
+          # -e OFF, as in G0 above: under the default `bash -e {0}` a red cargo test
+          # ended the step at `; rc=$?` with no [e2e] reading and no ::error::.
+          set +e
+          m=gguf::cuda::forward_qwen35_cuda::qwen35_cuda_tests::
+          model="$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf"
+          [ -f "$model" ] || { echo "::error::#4523 UNMEASURABLE on ${{ matrix.name }} (provisioning): $model is absent"; exit 1; }
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- \
+            "$m" --test-threads 1 --nocapture > q35-parity.log 2>&1; rc=$?
+          grep -E '^\[e2e\]|^test result' q35-parity.log | tail -n 20
+          if [ "$rc" -ne 0 ]; then echo "::error::#4523 qwen35 parity module failed on sm_121 (rc=$rc)"; exit 1; fi
+          if grep -qE 'is absent|SKIP' q35-parity.log; then
+            grep -E 'is absent|SKIP' q35-parity.log | head -5
+            echo "::error::#4523 a qwen35 parity test skipped on the host that holds the model"; exit 1
+          fi
+          # The libtest summary, not '... ok' lines: --nocapture output can split those.
+          n=$(sed -nE 's/^test result: ok\. ([0-9]+) passed.*/\1/p' q35-parity.log | tail -1)
+          if [ "${n:-0}" -eq 0 ]; then echo "::error::#4523 the module filter selected ZERO tests"; exit 1; fi
+          echo "#4523: ${n} qwen35 parity test(s) passed on sm_121, 0 skips"
+
   # ── ada-yoga: the sm_89 leg, restored ─────────────────────────────────────
   #
   # RESTORING A DELETION, NOT INVENTING A LANE. #2740 removed the x86_64 leg
@@ -794,7 +822,7 @@ jobs:
     # in two vocabularies, which is how the fleet lost sight of this runner in
     # the first place.
     runs-on: [self-hosted, gpu, yoga, Linux, X64, cuda, ada]
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       CARGO_TERM_COLOR: always
       # One host GPU lock, shared by CI and agents (operator, 2026-09-26; see

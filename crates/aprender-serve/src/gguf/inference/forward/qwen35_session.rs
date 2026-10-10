@@ -797,6 +797,30 @@ impl crate::session::ArchForward for Qwen35Forward {
             }
         }
     }
+
+    /// The device decode times its layers (APR-OBS-001 OBS-09); the CPU
+    /// forward does not, and says so.
+    fn set_layer_timing(&mut self, on: bool) -> bool {
+        match &mut self.backend {
+            #[cfg(feature = "cuda")]
+            Backend::Gpu(gpu) => {
+                gpu.model.set_layer_timing(on);
+                true
+            },
+            Backend::Cpu(_) => {
+                let _ = on;
+                false
+            },
+        }
+    }
+
+    fn take_layer_timings(&mut self) -> Option<Vec<crate::session::LayerTiming>> {
+        match &mut self.backend {
+            #[cfg(feature = "cuda")]
+            Backend::Gpu(gpu) => gpu.model.take_layer_timings(),
+            Backend::Cpu(_) => None,
+        }
+    }
 }
 
 /// Choose the prefill attention and chunk rows for a prefill ending at `end`, the

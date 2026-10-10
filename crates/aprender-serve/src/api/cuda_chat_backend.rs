@@ -170,6 +170,7 @@ async fn try_cuda_backend(
             prompt_tokens,
             Some(timing_rx),
             request.stop.as_deref(),
+            crate::api::stream_tool_calls::StreamTools::from_request(request),
         ));
     }
 
@@ -480,6 +481,7 @@ fn try_quantized_backend(
             // decode, so §3 timings are absent rather than zero.
             None,
             request.stop.as_deref(),
+            crate::api::stream_tool_calls::StreamTools::from_request(request),
         ));
     }
 
@@ -609,6 +611,7 @@ fn try_apr_transformer_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_tokens,
+            crate::api::stream_tool_calls::StreamTools::from_request(request),
         ));
     }
 
@@ -761,6 +764,7 @@ fn registry_fallback(
             request.stop.as_deref(),
             request.max_tokens.unwrap_or(256),
             prompt_tokens,
+            crate::api::stream_tool_calls::StreamTools::from_request(request),
         );
     }
 
@@ -1006,7 +1010,16 @@ pub async fn openai_chat_completions_handler(
     }
 
     // #3571: a Qwen3.5 hybrid is answered from its resident session or not at all.
-    if let Some(r) = try_qwen35_backend(&state, &request, &request_id, start, &cancel).await {
+    if let Some(r) = try_qwen35_backend(
+        &state,
+        &request,
+        &request_id,
+        trace_level.as_deref(),
+        start,
+        &cancel,
+    )
+    .await
+    {
         return r;
     }
 
@@ -1252,6 +1265,7 @@ fn moe_stream_cpu(
         // The MoE generator reports no phase split; §3 timings are absent.
         None,
         request.stop.as_deref(),
+        crate::api::stream_tool_calls::StreamTools::from_request(request),
     )
 }
 
@@ -1359,6 +1373,7 @@ fn try_qwen3_moe_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_token_count,
+            crate::api::stream_tool_calls::StreamTools::from_request(request),
         ));
     }
 

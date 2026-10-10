@@ -1,0 +1,27 @@
+# evidence/release-models.sha256 (#4981): the GGUF models the release-time model gates declare.
+# One row per model, sha256sum format: "<sha256>  <file name>". Read by
+# scripts/tokenizer_parity.sh (every row) and crates/aprender-serve/tests/qwen3_moe_argmax_parity.rs
+# (its one row), both under ${APR_MODEL_DIR:-$HOME/models}.
+# A listed model that is absent, or whose sha256 differs, is FAIL, never skipped.
+# A file in the model dir that is not listed here is ignored.
+0b2e17471ccc784dfd7b042a81e34289a3accb75ccda7347598a329e0a932099  Qwen2.5-0.5B-Instruct-IQ3_M.gguf
+df178ccd68e24ce0c74f957765c00e8f5eec5c51216a1acd4444202e58df6cc1  Qwen2.5-0.5B-Instruct-IQ4_XS.gguf
+f1ad9d1174ce6ab47b584d522634c47e411b75bffdffd9a4e106e21e882392e5  Qwen2.5-0.5B-Instruct-f16.gguf
+f9c9f1d3c1e21755b82d4e165f88dbbbd4355646d632fb5d6cef7c66ed4ee04e  Qwen3-0.6B-BF16.gguf
+b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897  Qwen3-1.7B-Q4_K_M.gguf
+6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0  Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785  Qwen3-8B-Q4_K_M.gguf
+fadc3e5f8d42bf7e894a785b05082e47daee4df26680389817e2093056f088ad  Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+619917ae92f61eb6515a7070e944a0a7c2b198a2cf6536386f475485188a36ff  Qwen3.5-0.8B-IQ4_XS.gguf
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517  Qwen3.5-0.8B-Q4_K_M.gguf
+a369165c8ec45a92d55cbad98b5377e2c32ca8dfc824c899d9d05b33b6b53e54  Qwen3.5-0.8B-UD-IQ2_XXS.gguf
+84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806  Qwen3.5-27B-Q4_K_M.gguf
+aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223  Qwen3.5-2B-Q4_K_M.gguf
+745def087c9ec34d12a94eb9b31eb52dba958b36def510b7e8f6f2e6bf1be123  Qwen3.5-35B-A3B-UD-IQ4_XS.gguf
+00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4  Qwen3.5-4B-Q4_K_M.gguf
+b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7  Qwen3.5-4B-UD-Q4_K_XL.gguf
+03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8  Qwen3.5-9B-Q4_K_M.gguf
+6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e  qwen2.5-1.5b-instruct-q4_k_m.gguf
+1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32  qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046  qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c  qwen2.5-coder-7b-instruct-q4_k_m.gguf

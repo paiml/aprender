@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
+use super::served_backend::{served_used_gpu, BackendReport, BackendTally};
 use super::{CompletionRequest, CompletionResponse, LlmDriver, Message, ToolCall};
 use crate::agent::result::{AgentError, DriverError, StopReason, TokenUsage};
 use crate::serve::backends::PrivacyTier;
@@ -123,6 +124,10 @@ pub struct AprServeDriver {
     max_tokens_override: Option<u32>,
     /// `apr code --thinking` (#3723); see [`ServeLaunchOptions::think`].
     think: Option<bool>,
+    /// The child was launched `--gpu` (#3719): what [`Self::backend_tally`] is judged against.
+    requested_gpu: bool,
+    /// Each completion's `used_gpu`, as the child reported it (#3719).
+    backend_tally: BackendTally,
 }
 
 impl Drop for AprServeDriver {
@@ -249,6 +254,8 @@ impl AprServeDriver {
             model_size_bytes,
             max_tokens_override: opts.max_tokens,
             think: opts.think,
+            requested_gpu: opts.backend == ServeBackend::Gpu,
+            backend_tally: BackendTally::default(),
         };
 
         // Wait for server to be ready
@@ -544,6 +551,8 @@ impl LlmDriver for AprServeDriver {
             .json()
             .await
             .map_err(|e| AgentError::Driver(DriverError::InferenceFailed(format!("parse: {e}"))))?;
+        // #3719: a 200 is not proof of the device asked for; the body says which ran.
+        self.backend_tally.record(served_used_gpu(&json));
 
         // Extract response from OpenAI format
         let raw_text = json["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string();
@@ -573,6 +582,10 @@ impl LlmDriver for AprServeDriver {
 
     fn context_window(&self) -> usize {
         self.context_window_size
+    }
+
+    fn backend_observed(&self) -> Option<BackendReport> {
+        Some(self.backend_tally.report(self.requested_gpu))
     }
 
     fn privacy_tier(&self) -> PrivacyTier {

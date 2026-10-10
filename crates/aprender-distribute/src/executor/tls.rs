@@ -277,22 +277,8 @@ Fl3mXqH5nGlKpQqZWGxKpQqFl3mXqH5nGlKpQqZWGxKpQqFl3mXqH5nGlKpQqZWG
 xKpQqFl3mXqH5nGlKpQqZWGxKpQqFl3mXqH5nGlKpQqZWGxKpQqFg==
 -----END CERTIFICATE-----";
 
-    const TEST_KEY_PEM: &str = r"-----BEGIN PRIVATE KEY-----
-MIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBANnUOwPj6iameQZ8
-Zh592adKKi+Jxqh95cSyqeUKvlptSvI/WCqWalhsSqUKhZd5l6h+ZxpSqUKmVhsS
-qUKhZd5l6h+ZxpSqUKmVhsSqUKhZd5l6h+ZxpSqUKmVhsSqUKhZd5l6h+ZxpSqUK
-mVhsSqUKhZd5l6h+ZxpSqUKhAgMBAAECgYAqH3mXqH5nGlKpQqZWGxKpQqFl3mXq
-H5nGlKpQqZWGxKpQqFl3mXqH5nGlKpQqZWGxKpQqFl3mXqH5nGlKpQqZWGxKpQqF
-l3mXqH5nGlKpQqZWGxKpQqFl3mXqH5nGlKpQqZWGxKpQqFl3mXqH5nGlKpQqZWGx
-KpQqFl3mXqH5nGlKpQqZQJBAP8xL6h+ZxpSqUKmVhsSqUKhZd5l6h+ZxpSqUKmVh
-sSqUKhZd5l6h+ZxpSqUKmVhsSqUKhZd5l6h+ZxpSqUKmVhsCQQDaVDsD4+ompnkG
-fGYefdmnSiovic aofqH5nGlKpQqZWGxKpQqFl3mXqH5nGlKpQqZWGxKpQqFl3mXq
-H5nGlKpQqZWGxAkEA2lQ7A+PqJqZ5BnxmHn3Zp0oqL4nGqH6h+ZxpSqUKmVhsSqU
-KhZd5l6h+ZxpSqUKmVhsSqUKhZd5l6h+ZxpSqUKmVhsQJANpUOwPj6iameQZ8Zh5
-92adKKi+Jxqh+ZxpSqUKmVhsSqUKhZd5l6h+ZxpSqUKmVhsSqUKhZd5l6h+ZxpSq
-UKmVhsQJBANpUOwPj6iameQZ8Zh592adKKi+Jxqh+ZxpSqUKmVhsSqUKhZd5l6h+
-ZxpSqUKmVhsSqUKhZd5l6h+ZxpSqUKmVhsQ=
------END PRIVATE KEY-----";
+    // The fixture key lives under tests/, which the package excludes: a published crate carries no key block.
+    const TEST_KEY_PEM: &str = include_str!("../../tests/fixtures/tls_test_key.pem");
 
     fn create_temp_file(content: &str) -> std::path::PathBuf {
         let mut temp_file = std::env::temp_dir();

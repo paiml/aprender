@@ -34,6 +34,7 @@ fn test_chat_chunk_choice_serialize_more_cov() {
         delta: ChatDelta {
             role: Some("assistant".to_string()),
             content: Some("Hello".to_string()),
+            tool_calls: None,
         },
         finish_reason: None,
     };
@@ -47,6 +48,7 @@ fn test_chat_delta_empty_serialize_more_cov() {
     let delta = ChatDelta {
         role: None,
         content: None,
+        tool_calls: None,
     };
     let json = serde_json::to_string(&delta).expect("serialize");
     assert_eq!(json, "{}");

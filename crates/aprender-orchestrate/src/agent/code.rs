@@ -816,7 +816,7 @@ fn exit_no_model(json_document: bool, started: std::time::Instant) -> ! {
             "no model found: pass --model or place a model where apr code discovers one",
             exit_code::NO_MODEL,
         );
-        println!("{}", envelope(None, Some(&outcome), started.elapsed()));
+        println!("{}", envelope(None, Some(&outcome), None, started.elapsed()));
     }
     std::process::exit(exit_code::NO_MODEL);
 }
@@ -842,7 +842,7 @@ pub fn emit_error_document(
         .cloned()
         .unwrap_or_else(|| CodeOutcome::failed("agent_error", err.to_string(), exit_code));
     outcome.exit_code = exit_code;
-    println!("{}", envelope(None, Some(&outcome), elapsed));
+    println!("{}", envelope(None, Some(&outcome), None, elapsed));
 }
 
 fn print_no_model_error() {
@@ -1356,7 +1356,10 @@ fn run_single_prompt(
                 // PMAT-CODE-OUTPUT-FORMAT-001: structured envelope mirroring
                 // Claude Code's `claude -p --output-format json` shape, plus
                 // the #3720 status/error fields.
-                println!("{}", envelope(Some(&r), empty.as_ref(), elapsed));
+                println!(
+                    "{}",
+                    envelope(Some(&r), empty.as_ref(), driver.backend_observed().as_ref(), elapsed)
+                );
             } else if empty.is_none() {
                 println!("{}", r.text);
             }
@@ -1384,7 +1387,15 @@ fn run_single_prompt(
             // 500) used to leave stdout EMPTY in json mode.
             if json {
                 let outcome = CodeOutcome::from_agent_error(&e, code);
-                println!("{}", envelope(None, Some(&outcome), started.elapsed()));
+                println!(
+                    "{}",
+                    envelope(
+                        None,
+                        Some(&outcome),
+                        driver.backend_observed().as_ref(),
+                        started.elapsed()
+                    )
+                );
             }
             code
         }

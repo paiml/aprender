@@ -1,0 +1,186 @@
+# release-rehearsal-nightly.yml — the nightly release rehearsal (APR-071 spec row B1, H10; E1 #3998).
+#
+# B1: every night, the same script and the same policy file as release day run everything except the
+# tag push and the uploads, on that night's commit C. Green means exit 0, every lane measured on C,
+# no rerun. scripts/release/nightly_greens.sh counts THIS workflow's runs: only a `schedule` run on
+# `main` that succeeded at attempt 1 is a green night, so a dispatched drill or a rerun never counts.
+#
+# C (B1 Q1) is the newest first-parent main commit that both the models crux bundle (its INDEX on
+# nightly-evidence) and an infra clean-room run measured. When no commit was measured by both, or a
+# read failed, `pick` exits 2 and no job after it runs: the night is not_measured, never green, and
+# the count resets.
+#
+#   pick      main's head runs its own case table, then rehearse.sh --pick-c, and outputs C.
+#   lanes     release-lanes-nightly.yml called at ref C (B1 Q3): every job checks out C, and each lane
+#             job asserts its HEAD is C. GitHub names the called jobs "lanes / <job>", the names
+#             nightly_train.sh --in-run reads. release-lanes-nightly.yml keeps its own schedule.
+#   models    C checked out and asserted, C's models_nightly.sh case table, then C's --relay --measure
+#             crux: C's models-crux bundle on nightly-evidence, re-verified here. Green succeeds, red
+#             fails, and the step `Relayed the models-crux bundle of <C>` runs only when the relay named a
+#             verified green or red bundle of C. nightly_train.sh --in-run reads the models lane from this
+#             job (INRUN_MODELS), on C only where both its assert and that step succeeded: no bundle
+#             relayed is not_measured, never green. models-nightly.yml keeps its own schedule.
+#   rehearse  C checked out and asserted, C's case table, then C's rehearse.sh --run --commit C
+#             --in-run <this run>: the train reads the in-repo lanes from this run's lanes jobs and the
+#             models lane from its models job, each on C only where its assert passed. It runs after
+#             lanes and models whatever they concluded (a red or unmeasured lane is the night's to
+#             judge), and never without a C.
+#
+# H10: the rehearsal makes no write outside its own state directory. scripts/release/rehearse.sh
+# enforces that itself (write-guard stubs first on PATH, a bare origin inside the state dir, a
+# CARGO_HOME without credentials). The jobs add a read-only token on top: nothing here can write to
+# the repository, its releases, issues or pull requests, and nothing dispatches a run. The one secret
+# is INFRA_ACTIONS_READ (paiml/infra, Actions: read) of the environment infra-read, which only main can
+# use: `pick` reads it, as does the called `measure: cleanroom-cpu`. No secret is passed to a called
+# workflow, and neither the night itself (`rehearse`) nor `models` has one.
+#
+# Not on a PR, merge-queue or release path: schedule (and a drill dispatch) only.
+name: Release Rehearsal Nightly
+
+on:
+  schedule:
+    - cron: '20 5 * * *'   # 05:20Z: after nightly-train (04:45Z) has read the night's producers
+  workflow_dispatch: {}    # drills only; a dispatched run never counts toward the streak
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: release-rehearsal-nightly
+  cancel-in-progress: false
+
+jobs:
+  pick:
+    name: pick
+    # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    environment: infra-read   # holds INFRA_ACTIONS_READ; only main may use it
+    # rehearse.sh --mutants ran 145 mutants in 18.4 and 20.3 min on 2026-10-09; a timed-out pick is a not_measured night
+    timeout-minutes: 45
+    outputs:
+      c: ${{ steps.c.outputs.c }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0       # --pick-c walks main's first parents and refuses a shallow clone
+      - name: The pick's case table and mutants (a red table picks no C)
+        run: |
+          bash scripts/release/rehearse.sh --selftest
+          bash scripts/release/rehearse.sh --mutants
+      - id: c
+        name: C, the newest main commit the models bundle and a clean-room run both measured (exit 2 not_measured)
+        env:
+          INFRA_TOKEN: ${{ secrets.INFRA_ACTIONS_READ }}
+        run: |
+          c=$(bash scripts/release/rehearse.sh --pick-c --cache "$RUNNER_TEMP/pick")
+          [[ $c =~ ^[0-9a-f]{40}$ ]] || { echo "::error::--pick-c printed '$c', not a commit"; exit 1; }
+          echo "c=$c" >> "$GITHUB_OUTPUT"
+          echo "C $c" >> "$GITHUB_STEP_SUMMARY"
+
+  lanes:
+    name: lanes   # INRUN_CALLER in nightly_train.sh: the called jobs are "lanes / <job>"
+    needs: pick
+    uses: ./.github/workflows/release-lanes-nightly.yml
+    with:
+      ref: ${{ needs.pick.outputs.c }}
+      caller: lanes
+
+  models:
+    name: models   # INRUN_MODELS in nightly_train.sh: the models lane of this run, by this exact name
+    needs: pick
+    # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # models-nightly.yml's models-evidence budget: the same case table and the same one relay
+    timeout-minutes: 25
+    env:
+      C: ${{ needs.pick.outputs.c }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.pick.outputs.c }}
+          fetch-depth: 1       # the relay reads C's Cargo.toml and models_t1.sh blob, and fetches nightly-evidence itself
+      # plain git, not a script of C's: the assert holds whatever C carries
+      - name: Assert HEAD is ${{ needs.pick.outputs.c }}
+        run: |
+          h=$(git rev-parse --verify HEAD)
+          [ "$h" = "$C" ] || { echo "::error::HEAD is $h, not C $C"; exit 1; }
+      - name: The producer's case table at C, before it is trusted
+        run: setsid --wait bash scripts/release/models_nightly.sh --self-test
+      - name: Relay C's models-crux bundle (release day's CRUX smoke)
+        id: relay
+        run: setsid --wait bash scripts/release/models_nightly.sh --relay --commit "$C" --out "$RUNNER_TEMP/models-relay" --measure crux
+      # the train's proof that this job measured C: it runs only on a bundle the relay verified as green or red
+      - name: Relayed the models-crux bundle of ${{ needs.pick.outputs.c }}
+        if: steps.relay.outputs.bundle != ''
+        env:
+          STATE: ${{ steps.relay.outputs.state }}
+          REASON: ${{ steps.relay.outputs.reason }}
+          BUNDLE: ${{ steps.relay.outputs.bundle }}
+        run: |
+          case "$STATE" in green|red) ;; *) echo "::error::the relay named a bundle in state '$STATE', not green or red"; exit 1 ;; esac
+          [ -d "$BUNDLE" ] || { echo "::error::the relay named $BUNDLE, which is not a directory"; exit 1; }
+          echo "models-crux of C $C: $STATE ($REASON)" >> "$GITHUB_STEP_SUMMARY"
+      - name: The models lane on C (green succeeds, red fails)
+        if: steps.relay.outputs.bundle != ''
+        env:
+          STATE: ${{ steps.relay.outputs.state }}
+          REASON: ${{ steps.relay.outputs.reason }}
+        run: |
+          [ "$STATE" = green ] || { echo "::error::models RED on C $C: $REASON"; exit 1; }
+          echo "models GREEN on C $C"
+
+  rehearse:
+    name: rehearse
+    needs: [pick, lanes, models]
+    if: ${{ !cancelled() && needs.pick.result == 'success' }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 300
+    env:
+      C: ${{ needs.pick.outputs.c }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.pick.outputs.c }}
+          fetch-depth: 0       # the bump reads the tags and the history since the last one
+      # plain git, not a script of C's: the assert holds whatever C carries
+      - name: Assert HEAD is ${{ needs.pick.outputs.c }}
+        run: |
+          h=$(git rev-parse --verify HEAD)
+          [ "$h" = "$C" ] || { echo "::error::HEAD is $h, not C $C"; exit 1; }
+      - name: The rehearsal's case table and mutants at C (a red table runs no night)
+        run: |
+          bash scripts/release/rehearse.sh --selftest
+          bash scripts/release/rehearse.sh --mutants
+      - name: The night on C (exit 0 GREEN, 1 RED, 2 not_measured)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          bash scripts/release/rehearse.sh --run --state "$RUNNER_TEMP/rehearsal" --commit "$C" --in-run "$GITHUB_RUN_ID" \
+            | tee "$RUNNER_TEMP/night.txt"
+      - name: Summary
+        if: always()
+        run: |
+          if [ -s "$RUNNER_TEMP/night.txt" ]; then
+            grep -E '^VERDICT|RED|OPEN|NOT CLEARED|WRITE' "$RUNNER_TEMP/night.txt" | head -n 60
+          else
+            echo "no night printed"
+          fi >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: release-rehearsal
+          path: |
+            ${{ runner.temp }}/night.txt
+            ${{ runner.temp }}/rehearsal/night.env
+            ${{ runner.temp }}/rehearsal/stages.tsv
+            ${{ runner.temp }}/rehearsal/calls.tsv
+            ${{ runner.temp }}/rehearsal/logs
+            ${{ runner.temp }}/rehearsal/train
+            ${{ runner.temp }}/rehearsal/ap/STATUS
+            ${{ runner.temp }}/rehearsal/ap/autopilot.log
+          retention-days: 30

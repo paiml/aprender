@@ -1,45 +1,62 @@
-# pr-review-quorum.yml — the PR's own review receipt is judged from the BASE,
-# never from the PR head (PRQ-013; PP-066 DAG row C0-5, #2982).
+# pr-review-quorum.yml — receipt_presence over the pull requests that MERGED to
+# main, judged once a night by main's own Arm 4 (#4602). A LAB check: it runs on
+# no pull request and in no merge queue, and a red night updates one ticket.
 #
-# WHY A SEPARATE WORKFLOW
-# -----------------------
-# Until 2026-09-05 the job that judged a pull request's own review receipt
-# (`pr-review-present`, Arm 4) lived in ci.yml under
-# `if: github.event_name == 'pull_request'`, and the required `gate` job waited
-# on it. GitHub reads a `pull_request` workflow's definition from the PR HEAD,
-# so the check that decided whether a PR's receipt was acceptable was defined by
-# the PR under review: a PR could edit the check. That is theater with a green
-# badge (PP-066 §1 F-28 class; measured in docs/audits/pp-066-plan-quorum.md).
+# WHY IT LEFT THE PR AND THE MERGE QUEUE (#4602, #4688)
+# ----------------------------------------------------
+# `present` is not a required context: main requires `gate` and `workspace-test`
+# only, and no ruleset names it, so its verdict never stopped a merge. MEASURED
+# 2026-10-06..09: 8 of the last 30 merge-queue runs concluded failure and all 8
+# PRs merged (5 had no receipt, 2 had a receipt bound to another patch-id, 1 was
+# rejected), and #4944 merged with `present` red on the PR as well. A check that
+# cannot block a merge does not run on the PR or merge-queue path; a red there
+# that nothing has to read is a third state. So it runs here, over what merged.
+# It becomes a merge gate again only with an explicit yes, three green nights on
+# main and one gate retired. Then the PR trigger and `merge_group` come back with
+# it, it becomes a required context in the same change, and
+# scripts/check_receipt_gate_base_owned.sh flips with it.
 #
-# `pull_request_target` runs with the BASE branch's workflow definition and
-# checks out the BASE by default. The PR head is fetched as a ref and ONLY its
-# receipt directory (evidence/pr-review/<pr>/) is materialised with `git
-# archive` — data files, never executed. Every script that runs here is the
-# base's copy. `merge_group` is declared too so the context reports on the
-# queue's merge ref and cannot deadlock the queue; on that event the ref is the
-# merge commit (which contains the PR), the accepted GitHub limit that
-# scripts/check_receipt_gate_base_owned.sh records rather than hides.
+# WHY A SEPARATE WORKFLOW (PRQ-013; PP-066 DAG row C0-5, #2982)
+# ------------------------------------------------------------
+# Until 2026-09-05 the judgement lived in ci.yml under `if: github.event_name ==
+# 'pull_request'`, and GitHub reads a `pull_request` workflow's definition from
+# the PR HEAD: a PR could edit the check that judged it (PP-066 §1 F-28 class;
+# measured in docs/audits/pp-066-plan-quorum.md). `schedule` and
+# `workflow_dispatch` run the DEFAULT branch's definition, so every script here
+# is main's copy, judging main's tree.
 #
-# SECURITY (pull_request_target has a write-capable token by default):
-#   - permissions are pinned to contents: read; nothing here writes. The one
-#     job adds checks: read, job-scoped (B1, #4512): the receipt signature is a
-#     check run on the head sha, never a commit, and Arm 4 reads it back.
-#   - no step checks out or executes head code; the head's tree is read with
-#     `git archive <sha> evidence/pr-review/<pr>` only.
-#   - the fork guard on the signer (ci.yml pr-review-sign) is unchanged.
+# WHAT A NIGHT DOES
+#   scripts/review_receipts_nightly.sh walks main's first-parent commits from the
+#   last 26 hours. Each is a queue squash ending in "(#N)", and Arm 4
+#   (scripts/check_pr_review_arm4.sh, unchanged) judges PR N with the squash as a
+#   QUEUE subject, as the queue run did. A red or unmeasured night rewrites the
+#   night section at the end of the one LAB ticket (LAB_TICKET_TITLE; opened if
+#   none is open) and stays silent: no comment, no ping. Seven nights in a row
+#   that are not green disable this workflow until its owner enables it again.
+#
+# SECURITY: the workflow token is contents: read; the one job adds checks: read
+# and pull-requests: read (Arm 4 reads each merged PR's head and its
+# pr-review-signature check run), issues: write (the one ticket) and
+# actions: write (the seven-night stop disables this workflow, nothing else).
+# No PR head is checked out or fetched.
 #
 # GUARDS THAT READ THIS FILE: scripts/check_receipt_gate_base_owned.sh (B1..B4:
-# exactly one workflow invokes check_pr_review_arm4.sh without --self-test, it
-# is triggered by pull_request_target + merge_group and not pull_request, the
-# invoking job's job-level `if:` is true on exactly those two events, and
-# ci.yml's `gate` needs no head-defined receipt job). Moving this job back to
-# `on: pull_request` turns that guard RED (the registered mutation).
+# exactly one workflow runs the receipt judgement, it is triggered by `schedule`
+# and by none of pull_request, pull_request_target and merge_group, its
+# job-level `if:` is true on schedule and workflow_dispatch only, and ci.yml's
+# `gate` needs no receipt job). Putting this job back on a PR trigger turns that
+# guard RED.
 name: pr-review-quorum
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
-  merge_group:
+  schedule:
+    - cron: '41 2 * * *'   # 02:41 UTC, after the day's merges
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'git date where the window starts'
+        required: false
+        default: '26 hours ago'
 
 permissions:
   contents: read
@@ -71,72 +88,23 @@ jobs:
     # select bare [self-hosted, Linux, clean-room], so any runner with that
     # label is back in the build FIFO. The job's steps are unchanged.
     runs-on: [self-hosted, review-light]
-    timeout-minutes: 20
-    # B1 (#4512): read the pr-review-signature check run. Job-scoped, read-only.
-    # pull-requests: read - in the queue Arm 4 must name the PR's head, which the
-    # merge_group payload does not carry (see ARM4_PR_HEAD_SHA below).
+    timeout-minutes: 60
     permissions:
       contents: read
-      checks: read
-      pull-requests: read
-    if: github.event_name == 'pull_request_target' || github.event_name == 'merge_group'
+      checks: read          # Arm 4 B1: the pr-review-signature check run on each PR head
+      pull-requests: read   # Arm 4: the PR head behind each squash, from the pulls API
+      issues: write         # the one LAB ticket
+      actions: write        # the seven-night stop disables this workflow
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     env:
-      # pull_request_target carries the PR; merge_group carries the queue ref
-      # `refs/heads/gh-readonly-queue/main/pr-<N>-<base sha>` and the merge
-      # commit as head_sha. The `resolve` step turns both into step OUTPUTS
-      # (`steps.resolve.outputs.pr` / `.head`) that the later steps bind as their
-      # own `env:` — every name a `run:` block reads is defined on the step or
-      # the job that reads it (scripts/check_workflow_env_defined.sh fails closed
-      # on anything else; a GITHUB_ENV write is invisible to it by design).
-      EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
-      EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      EVENT_MG_HEAD_REF: ${{ github.event.merge_group.head_ref }}
-      EVENT_MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+      LAB_TICKET_TITLE: 'LAB: pr-review-quorum present - nightly receipt check of merged PRs'
     steps:
-      - name: Checkout the BASE (pull_request_target) or the queue ref (merge_group)
+      - name: Checkout main
         uses: actions/checkout@v7
         with:
-          # Arm 4 resolves ancestry with `git merge-base`, which a shallow
-          # clone cannot answer (the script exits 2, never 1, on that).
+          # Arm 4 diffs each squash against its parent and resolves ancestry with
+          # `git merge-base`, which a shallow clone cannot answer.
           fetch-depth: 0
-
-      - name: Resolve the PR number and head sha from the event
-        id: resolve
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "$GITHUB_EVENT_NAME" in
-            pull_request_target)
-              pr="$EVENT_PR_NUMBER"; head="$EVENT_PR_HEAD_SHA" ;;
-            merge_group)
-              # refs/heads/gh-readonly-queue/main/pr-2875-42be1560b... -> 2875
-              pr=$(printf '%s\n' "$EVENT_MG_HEAD_REF" | sed -nE 's#.*/pr-([0-9]+)-[0-9a-f]+$#\1#p')
-              head="$EVENT_MG_HEAD_SHA" ;;
-            *) echo "unsupported event: $GITHUB_EVENT_NAME" >&2; exit 2 ;;
-          esac
-          case "$pr" in ''|*[!0-9]*) echo "could not resolve a PR number from the event" >&2; exit 2 ;; esac
-          case "$head" in ''|*[!0-9a-f]*) echo "could not resolve a head sha from the event" >&2; exit 2 ;; esac
-          printf 'pr=%s\nhead=%s\n' "$pr" "$head" >> "$GITHUB_OUTPUT"
-          echo "PR #$pr head $head ($GITHUB_EVENT_NAME)"
-
-      - name: Fetch the PR head and materialise ONLY its receipt directory (data, never code)
-        if: github.event_name == 'pull_request_target'
-        shell: bash
-        env:
-          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
-          PR_HEAD_SHA: ${{ steps.resolve.outputs.head }}
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}"
-          git rev-parse --verify --quiet "${PR_HEAD_SHA}^{commit}" >/dev/null \
-            || { echo "head $PR_HEAD_SHA is not reachable after fetching refs/pull/$PR_NUMBER/head" >&2; exit 2; }
-          if git cat-file -e "${PR_HEAD_SHA}:evidence/pr-review/${PR_NUMBER}" 2>/dev/null; then
-            git archive "$PR_HEAD_SHA" "evidence/pr-review/${PR_NUMBER}" | tar -x
-            echo "materialised evidence/pr-review/${PR_NUMBER} from $PR_HEAD_SHA:"
-            find "evidence/pr-review/${PR_NUMBER}" -type f | sort
-          else
-            echo "the head carries no evidence/pr-review/${PR_NUMBER} — Arm 4 decides what that means"
-          fi
 
       - name: Install the tools Arm 4 refuses to run without
         shell: bash
@@ -151,18 +119,63 @@ jobs:
         shell: bash
         run: setsid --wait bash scripts/check_pr_review_arm4.sh --self-test
 
-      - name: This PR's own receipt, judged by the base's Arm 4 under the base's public key
+      - name: "Nightly case table: 15 rows, the window walk and the seven-night stop"
+        shell: bash
+        run: bash scripts/review_receipts_nightly.sh --self-test
+
+      - name: Judge every pull request that merged in the window
         shell: bash
         env:
-          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
-          PR_HEAD_SHA: ${{ steps.resolve.outputs.head }}
-          # B1: an unsigned-on-disk receipt is judged by the pr-review-signature
-          # check run on the PR head; the check-runs read uses this token (checks: read).
-          # The signer posts that check run on the PR HEAD. On pull_request_target the
-          # event names it. On merge_group steps.resolve.outputs.head is the QUEUE
-          # squash, which never carries a signature, so every queued PR read UNSIGNED
-          # (#4632 run 36602609576, #4647 runs 36888741583/36890960012). There this is
-          # empty and Arm 4 reads the PR head from the pulls API (pull-requests: read).
-          ARM4_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SINCE: ${{ inputs.since || '26 hours ago' }}
           GH_TOKEN: ${{ github.token }}
-        run: setsid --wait bash scripts/check_pr_review_arm4.sh
+        run: |
+          set -uo pipefail
+          rc=0
+          bash scripts/review_receipts_nightly.sh --since "$SINCE" > "$RUNNER_TEMP/receipts.md" || rc=$?
+          cat "$RUNNER_TEMP/receipts.md"
+          cat "$RUNNER_TEMP/receipts.md" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: A red or unmeasured night rewrites the night section of the one LAB ticket
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          marker='<!-- pr-review-quorum.yml rewrites everything below this line each red night -->'
+          night="$RUNNER_TEMP/night.md"
+          {
+            printf '%s\n\n### Night of %s: not green\n\nRun: %s\n\n' "$marker" "$(date -u +%Y-%m-%d)" "$RUN_URL"
+            if [ -s "$RUNNER_TEMP/receipts.md" ]; then cat "$RUNNER_TEMP/receipts.md"
+            else echo 'No table: the run failed before the judge wrote one (not measured).'; fi
+          } > "$night"
+          num=$(T="$LAB_TICKET_TITLE" gh issue list --state open --search "\"$LAB_TICKET_TITLE\" in:title" \
+                  --json number,title --jq '[.[] | select(.title == env.T)][0].number // empty')
+          if [ -n "$num" ]; then
+            gh issue view "$num" --json body --jq .body > "$RUNNER_TEMP/body.md"
+            awk -v m="$marker" '$0 == m { exit } { print }' "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/new.md"
+            cat "$night" >> "$RUNNER_TEMP/new.md"
+            gh issue edit "$num" --body-file "$RUNNER_TEMP/new.md"
+          else
+            gh issue create --title "$LAB_TICKET_TITLE" --label owner:aprender-a7 --body-file "$night"
+          fi
+
+      - name: Seven nights in a row not green stop this workflow until its owner enables it
+        if: failure() && github.event_name == 'schedule'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # This night is not green (the step runs on failure only); the six before
+          # it are the newest completed scheduled runs, newest first.
+          mapfile -t prev < <(gh run list --workflow pr-review-quorum.yml --event schedule \
+                                --status completed --limit 6 --json conclusion --jq '.[].conclusion')
+          if bash scripts/review_receipts_nightly.sh --seven-nights failure "${prev[@]}"; then
+            gh workflow disable pr-review-quorum.yml
+            echo "::warning::seven nights not green in a row: pr-review-quorum is disabled until its owner runs: gh workflow enable pr-review-quorum.yml"
+          fi

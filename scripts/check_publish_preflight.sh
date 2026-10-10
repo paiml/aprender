@@ -498,7 +498,18 @@ gate() {
     tags="$(git -C "$root" tag --points-at HEAD 2>/dev/null)"
     # -F: the version is a string, not a pattern. With -x alone `v1-2-3` on HEAD
     # satisfied `v1.2.3` (second review of #2859, tag-regex-injection).
-    if [ -n "$version" ] && grep -Fqx -- "v$version" <<<"$tags"; then
+    # A release rehearsal (scripts/release/rehearse.sh, APR-071 B1/H10) cuts no tag: its tag step
+    # writes "<tag> <commit>" for the tag it would make, and R3 judges THAT tag against HEAD. Only
+    # under RELEASE_REHEARSAL=1; otherwise the variable is ignored and the real tag is required.
+    if [ "${RELEASE_REHEARSAL:-}" = 1 ] && [ -n "${PUBLISH_PREFLIGHT_WOULD_TAG:-}" ]; then
+        if [ -n "$version" ] && [ "$PUBLISH_PREFLIGHT_WOULD_TAG" = "v$version $head" ]; then
+            echo "ok    R3 would-be tag v$version names HEAD ${head:0:9} (rehearsal: the tag is a WOULD line)"
+        else
+            printf 'FAIL  R3 would-be tag (%s) is not v%s on HEAD %s\n' \
+                "$PUBLISH_PREFLIGHT_WOULD_TAG" "${version:-?}" "${head:0:9}"
+            fails=1
+        fi
+    elif [ -n "$version" ] && grep -Fqx -- "v$version" <<<"$tags"; then
         echo "ok    R3 tag v$version points at HEAD ${head:0:9}"
     else
         printf 'FAIL  R3 tag v%s does not point at HEAD %s (tags here: %s)\n' \
@@ -749,6 +760,18 @@ FXREADY
     printf 'pub fn h() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'second' >/dev/null
     git -C "$d" tag v1.2.3 HEAD~1; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row tag_on_another_commit_refuses  1 "FAIL  R3" "$d"
+
+    # R3 in a rehearsal (B1, E1 #3998): no tag exists, the tag step's WOULD line names it. The would-be
+    # tag must be v<version> on HEAD; outside a rehearsal the same line is ignored and the real tag rules.
+    d="$tmp/would-tag"; build_repo "$d"; git -C "$d" tag -d v1.2.3 >/dev/null
+    RELEASE_REHEARSAL=1 PUBLISH_PREFLIGHT_WOULD_TAG="v1.2.3 $(git -C "$d" rev-parse HEAD)" \
+        row rehearsal_would_tag_on_head_holds 0 "ok    R3 would-be tag v1.2.3" "$d"
+    RELEASE_REHEARSAL=1 PUBLISH_PREFLIGHT_WOULD_TAG="v1.2.3 $(git -C "$d" rev-parse HEAD~0^{tree})" \
+        row rehearsal_would_tag_elsewhere_refuses 1 "FAIL  R3 would-be tag" "$d"
+    RELEASE_REHEARSAL=1 PUBLISH_PREFLIGHT_WOULD_TAG="v1.2.4 $(git -C "$d" rev-parse HEAD)" \
+        row rehearsal_would_tag_other_version_refuses 1 "FAIL  R3 would-be tag" "$d"
+    PUBLISH_PREFLIGHT_WOULD_TAG="v1.2.3 $(git -C "$d" rev-parse HEAD)" \
+        row would_tag_outside_rehearsal_ignored 1 "FAIL  R3 tag v1.2.3 does not point" "$d"
 
     d="$tmp/branch"; build_repo "$d"; git -C "$d" checkout -q -b topic
     printf 'pub fn k() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
