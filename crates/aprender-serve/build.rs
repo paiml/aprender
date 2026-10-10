@@ -296,28 +296,9 @@ fn emit_contract_bindings() {
         return;
     }
 
-    let yaml_content = match std::fs::read_to_string(&binding_path) {
-        Ok(s) => s,
-        Err(e) => {
-            println!(
-                "cargo:warning=Failed to read binding.yaml: {e}; \
-                 CONTRACT_* env vars will not be set"
-            );
-            println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
-            return;
-        },
-    };
-
-    let bindings: BindingFile = match serde_yaml_ng::from_str(&yaml_content) {
-        Ok(b) => b,
-        Err(e) => {
-            println!(
-                "cargo:warning=Failed to parse binding.yaml: {e}; \
-                 CONTRACT_* env vars will not be set"
-            );
-            println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
-            return;
-        },
+    let Some(bindings) = load_bindings(&binding_path) else {
+        println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
+        return;
     };
 
     let seen = dedup_bindings(&bindings);
@@ -338,70 +319,7 @@ fn emit_contract_bindings() {
     );
 
     // ── Layer 2: Verify bound functions exist in source ──
-    {
-        let mut expected: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for b in &bindings.bindings {
-            if b.status == "implemented" {
-                if let Some(ref func) = b.function {
-                    let short = func.rsplit("::").next().unwrap_or(func).to_lowercase();
-                    expected.insert(short);
-                }
-            }
-        }
-        if !expected.is_empty() {
-            let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
-            fn scan_rs(dir: &std::path::Path, found: &mut std::collections::HashSet<String>) {
-                let Ok(entries) = std::fs::read_dir(dir) else {
-                    return;
-                };
-                for e in entries.flatten() {
-                    let p = e.path();
-                    if p.is_dir() {
-                        let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                        if n != "target" && n != ".git" {
-                            scan_rs(&p, found);
-                        }
-                    } else if p.extension().and_then(|e| e.to_str()) == Some("rs") {
-                        if let Ok(c) = std::fs::read_to_string(&p) {
-                            for line in c.lines() {
-                                let t = line.trim();
-                                if t.starts_with("pub fn ")
-                                    || t.starts_with("pub async fn ")
-                                    || t.starts_with("pub(crate) fn ")
-                                {
-                                    let part = t
-                                        .trim_start_matches("pub async fn ")
-                                        .trim_start_matches("pub(crate) fn ")
-                                        .trim_start_matches("pub fn ");
-                                    let name = part
-                                        .split('(')
-                                        .next()
-                                        .unwrap_or("")
-                                        .split('<')
-                                        .next()
-                                        .unwrap_or("")
-                                        .trim()
-                                        .to_lowercase();
-                                    if !name.is_empty() {
-                                        found.insert(name);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            scan_rs(std::path::Path::new("src"), &mut found);
-            scan_rs(std::path::Path::new("crates"), &mut found);
-            let missing: Vec<_> = expected
-                .iter()
-                .filter(|n| !found.contains(n.as_str()))
-                .collect();
-            if !missing.is_empty() {
-                println!("cargo:warning=[contract] L2: {} bound function(s) not found in source (soft warning)", missing.len());
-            }
-        }
-    }
+    warn_unbound_functions(&bindings);
 
     // Set metadata env vars for the proc macro
     println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=binding.yaml");
@@ -413,6 +331,101 @@ fn emit_contract_bindings() {
     println!("cargo:rustc-env=CONTRACT_IMPLEMENTED={implemented}");
     println!("cargo:rustc-env=CONTRACT_PARTIAL={partial}");
     println!("cargo:rustc-env=CONTRACT_GAPS={not_implemented}");
+}
+
+/// Read and parse binding.yaml, warning (and returning `None`) on either failure.
+fn load_bindings(binding_path: &Path) -> Option<BindingFile> {
+    let yaml_content = match std::fs::read_to_string(binding_path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!(
+                "cargo:warning=Failed to read binding.yaml: {e}; \
+                 CONTRACT_* env vars will not be set"
+            );
+            return None;
+        },
+    };
+    match serde_yaml_ng::from_str(&yaml_content) {
+        Ok(b) => Some(b),
+        Err(e) => {
+            println!(
+                "cargo:warning=Failed to parse binding.yaml: {e}; \
+                 CONTRACT_* env vars will not be set"
+            );
+            None
+        },
+    }
+}
+
+/// Layer 2: soft-warn when an `implemented` binding names a function that no
+/// `pub fn` / `pub async fn` / `pub(crate) fn` line under `src/` or `crates/` defines.
+fn warn_unbound_functions(bindings: &BindingFile) {
+    let expected: std::collections::HashSet<String> = bindings
+        .bindings
+        .iter()
+        .filter(|b| b.status == "implemented")
+        .filter_map(|b| b.function.as_ref())
+        .map(|func| func.rsplit("::").next().unwrap_or(func).to_lowercase())
+        .collect();
+    if expected.is_empty() {
+        return;
+    }
+    let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
+    scan_rs(Path::new("src"), &mut found);
+    scan_rs(Path::new("crates"), &mut found);
+    let missing = expected
+        .iter()
+        .filter(|n| !found.contains(n.as_str()))
+        .count();
+    if missing > 0 {
+        println!("cargo:warning=[contract] L2: {missing} bound function(s) not found in source (soft warning)");
+    }
+}
+
+/// Collect the lowercased names of public fns in every `.rs` file under `dir`,
+/// skipping `target` and `.git`.
+fn scan_rs(dir: &Path, found: &mut std::collections::HashSet<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if n != "target" && n != ".git" {
+                scan_rs(&p, found);
+            }
+        } else if p.extension().and_then(|e| e.to_str()) == Some("rs") {
+            if let Ok(c) = std::fs::read_to_string(&p) {
+                found.extend(c.lines().filter_map(pub_fn_name));
+            }
+        }
+    }
+}
+
+/// The lowercased fn name a `pub fn` / `pub async fn` / `pub(crate) fn` line declares.
+fn pub_fn_name(line: &str) -> Option<String> {
+    let t = line.trim();
+    if !(t.starts_with("pub fn ")
+        || t.starts_with("pub async fn ")
+        || t.starts_with("pub(crate) fn "))
+    {
+        return None;
+    }
+    let part = t
+        .trim_start_matches("pub async fn ")
+        .trim_start_matches("pub(crate) fn ")
+        .trim_start_matches("pub fn ");
+    let name = part
+        .split('(')
+        .next()
+        .unwrap_or("")
+        .split('<')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+    (!name.is_empty()).then_some(name)
 }
 
 /// Rank status values for deduplication: `implemented` > `partial` > `not_implemented`.
@@ -492,12 +505,16 @@ fn find_binding_note<'a>(bindings: &'a BindingFile, var_name: &str) -> &'a str {
 }
 
 /// PMAT-228: Read architecture-requirements-v1.yaml and generate `arch_requirements.rs`.
+///
+/// #5056: the in-tree contract, the same root `generate_arch_constraints_file` reads.
+/// The old path, `../../../provable-contracts/`, was the pre-monorepo sibling repo: it
+/// resolved only from a checkout at `~/src/aprender` (to the archived copy), so every
+/// worktree and CI build used the hand-written fallback and an edit to the in-tree
+/// contract changed nothing.
 fn generate_arch_requirements_file() {
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("..")
-        .join("provable-contracts")
         .join("contracts")
         .join("architecture-requirements-v1.yaml");
 
@@ -860,23 +877,24 @@ fn emit_contract_assertions() {
         };
         for (eq, e) in &y.equations {
             let k = provable_contracts::build_helper::env_key(stem, eq);
-            if !e.preconditions.is_empty() {
-                println!("cargo:rustc-env={k}_PRE_COUNT={}", e.preconditions.len());
-                for (i, v) in e.preconditions.iter().enumerate() {
-                    println!("cargo:rustc-env={k}_PRE_{i}={v}");
-                }
-                tp += e.preconditions.len();
-            }
-            if !e.postconditions.is_empty() {
-                println!("cargo:rustc-env={k}_POST_COUNT={}", e.postconditions.len());
-                for (i, v) in e.postconditions.iter().enumerate() {
-                    println!("cargo:rustc-env={k}_POST_{i}={v}");
-                }
-                tq += e.postconditions.len();
-            }
+            tp += emit_condition_env(&k, "PRE", &e.preconditions);
+            tq += emit_condition_env(&k, "POST", &e.postconditions);
         }
     }
     println!(
         "cargo:warning=[contract] Assertions: {tp} preconditions, {tq} postconditions from YAML"
     );
+}
+
+/// Emit `{k}_{tag}_COUNT` and `{k}_{tag}_{i}` for a non-empty condition list;
+/// returns how many were emitted.
+fn emit_condition_env(k: &str, tag: &str, conditions: &[String]) -> usize {
+    if conditions.is_empty() {
+        return 0;
+    }
+    println!("cargo:rustc-env={k}_{tag}_COUNT={}", conditions.len());
+    for (i, v) in conditions.iter().enumerate() {
+        println!("cargo:rustc-env={k}_{tag}_{i}={v}");
+    }
+    conditions.len()
 }
