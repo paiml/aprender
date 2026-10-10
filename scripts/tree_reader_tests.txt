@@ -158,6 +158,8 @@ aprender-core	--test	readme_contract
 aprender-core	--test	setfit_conformance
 aprender-decide	--lib	<root>
 aprender-decide	--lib	test_support
+aprender-decide	--test	demo_run
+aprender-decide	--test	fail_closed_vectors
 aprender-decide	--test	laya_parity
 aprender-distribute	--lib	executor::tls
 aprender-orchestrate	--lib	agent::contracts

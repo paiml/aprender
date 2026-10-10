@@ -25,8 +25,6 @@ aprender-core	--test	spec_checklist_v_sovereign
 aprender-core	--test	spec_checklist_w_advanced_perf
 aprender-core	--test	spec_checklist_x_anti_stub
 aprender-core	--test	toyota_principles_tests
-aprender-decide	--test	demo_run
-aprender-decide	--test	fail_closed_vectors
 aprender-mcp	--test	falsify_mcp_008
 aprender-present-lib	--test	showcase_shell_autocomplete
 aprender-present-terminal	--test	pixel_perfect_tests
