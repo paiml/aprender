@@ -6,7 +6,7 @@
   "out_dim": 32,
   "seed": 4560,
   "oracle": "gguf_py_dequant_f64",
-  "gguf_py": "/home/noah/src/llama.cpp/gguf-py/gguf/__init__.py",
+  "gguf_py": "llama.cpp@llama_cpp_commit:gguf-py/gguf/__init__.py",
   "llama_cpp_commit": "60b06ab9a9eeec26f8125c9316ccbf4ee4713d1f",
   "sha256": {
     "weights.bin": "bb3142b7c469f2ef423eaee37cf620a304c978d808a76483468e846962a761ff",

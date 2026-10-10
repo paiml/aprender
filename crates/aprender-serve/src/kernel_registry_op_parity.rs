@@ -766,11 +766,11 @@ fn committed_op_parity_receipts_hold_on_this_host() {
         assert_eq!(rc["schema"], SCHEMA, "{path}: schema");
         assert_eq!(
             entry["kernel_id"], id,
-            "{path}: ratchet entry names another op"
+            "{path}: receipts entry names another op"
         );
         assert_eq!(
             entry["host_arch"], rc["host_arch"],
-            "{path}: ratchet entry arch"
+            "{path}: receipts entry arch"
         );
         let row = op_row(&r, id);
         let o = op(id);

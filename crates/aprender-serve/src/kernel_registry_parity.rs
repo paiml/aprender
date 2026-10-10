@@ -962,7 +962,7 @@ fn committed() -> Vec<(serde_json::Value, serde_json::Value)> {
         .collect()
 }
 
-/// FALSIFY-KREG-009: a committed receipt is the row's tolerance, agrees with its ratchet entry,
+/// FALSIFY-KREG-009: a committed receipt is the row's tolerance, agrees with its receipts entry,
 /// and still holds — its own seed and workload, re-measured here, stay within `tolerance_rel`.
 #[test]
 fn committed_parity_receipts_hold_on_this_host() {
@@ -973,11 +973,11 @@ fn committed_parity_receipts_hold_on_this_host() {
         assert_eq!(rc["schema"], SCHEMA, "{path}: schema");
         assert_eq!(
             entry["kernel_id"], id,
-            "{path}: ratchet entry names another kernel"
+            "{path}: receipts entry names another kernel"
         );
         assert_eq!(
             entry["host_arch"], rc["host_arch"],
-            "{path}: ratchet entry arch"
+            "{path}: receipts entry arch"
         );
         let row = r
             .rows()
@@ -1238,10 +1238,10 @@ fn check_fixture_receipt(id: &str, path: &str, rc: &serde_json::Value, row: &Ker
     }
 }
 
-/// A row whose tolerance names a receipt has a ratchet entry for it: the path is never typed
+/// A row whose tolerance names a receipt has a receipts entry for it: the path is never typed
 /// without the measurement behind it.
 #[test]
-fn a_receipt_path_tolerance_has_a_ratchet_entry() {
+fn a_receipt_path_tolerance_has_a_receipts_entry() {
     let r = registry().expect("registry");
     let entries: Vec<String> = committed()
         .iter()
