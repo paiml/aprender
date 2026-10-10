@@ -122,7 +122,7 @@ STAGES
 # on it (ERE) | the defect, as the spec states it. D7 also has a trace check (dledger_d7).
 dledger_table() {
     cat <<'DLEDGER'
-D1|ap:preflight,cascade|FAIL +R4 HEAD .* is not an ancestor of origin/release/|preflight R4 requires origin/release/<V>, which no script creates
+D1|ap:preflight,cascade|FAIL +R4 HEAD .* is an ancestor of neither origin/main nor |preflight R4 refuses: the release commit is on neither origin/main nor origin/release/<V>
 D2|t2,ap:dogfood|\[FAIL\] declared:check_model_ladder|the dogfood ladder gate runs with no CRUX receipt dir, beside the models lane that writes them
 D4|cascade|FAIL +R7 |the cascade's own preflight runs without the CRUX receipts
 D5|ship|no T-2 GO receipt for origin/main|prepare_bump.sh --ship needs a T-2 GO that cannot exist
@@ -1108,6 +1108,16 @@ FX
     printf '  %s cascade rows\n' "$n"
 }
 
+# preflight_r4_fail_line -> the R4 FAIL line check_publish_preflight.sh prints, rendered from its own echo with a
+# planted HEAD and release ref. Prints nothing when the preflight has no such echo, so D1's rows break.
+preflight_r4_fail_line() {
+    local t
+    t=$(sed -n 's/^ *echo "\(FAIL  R4 HEAD .*\)"$/\1/p' "$SCRIPT_DIR/../check_publish_preflight.sh" | head -1)
+    [ -n "$t" ] || return 0
+    t=${t//'${head:0:9}'/abc123def}; t=${t//'$release_ref'/origin/release/0.71.0}
+    printf '%s\n' "$t"
+}
+
 # fixture_night DIR -> a night where every stage is green on C, the trace shows the freeze inside the
 # bump, and the bump commit carries a fleet trailer: the anti-vacuity arm (it must be GREEN).
 fixture_night() {
@@ -1150,8 +1160,15 @@ selftest_judge() {
         'sed -i "s/^ap:assets\t0\tb0b/ap:assets\t0\tbeef/" "$d/stages.tsv"'
     j a_bump_not_on_c_is_red 1 "RED   stage ap:dogfood    measured on b0b" \
         'printf "beef\n" > "$d/bump.parent"'
+    # D1's planted line is read from the preflight itself, so a reworded R4 FAIL line breaks this row instead of
+    # leaving the signature dead (#5059: the row sought "is not an ancestor of origin/release/" for two days
+    # after #4934 reworded R4). An ok R4 line never opens D1.
     j d1_line_names_d1 1 "RED   D1 OPEN in ap:preflight: FAIL  R4 HEAD" \
-        'printf "FAIL  R4 HEAD abc is not an ancestor of origin/release/0.71.0 (or that ref does not exist)\n" > "$d/logs/ap_preflight.log"'
+        'preflight_r4_fail_line > "$d/logs/ap_preflight.log"'
+    j d1_in_cascade_names_d1 1 "RED   D1 OPEN in cascade: FAIL  R4 HEAD" \
+        'preflight_r4_fail_line > "$d/logs/cascade.log"'
+    j d1_ok_r4_line_is_clear 0 "ok    D1 clear" \
+        'printf "ok    R4 HEAD is an ancestor of origin/main\n" > "$d/logs/ap_preflight.log"'
     j d2_line_names_d2 1 "RED   D2 OPEN in t2:" \
         'printf "  [FAIL] declared:check_model_ladder  exit=1\n" > "$d/logs/t2.log"'
     j d4_line_names_d4 1 "RED   D4 OPEN in cascade" \
@@ -1481,6 +1498,7 @@ mutants() {
         d=$(mktemp -d "${tmp:?}/m.XXXXXX") && mkdir -p "$d/scripts/release" "$d/.github/workflows" \
             && cp -- "$SCRIPT_PATH" "$SCRIPT_DIR/lib_write_guard.sh" "$SCRIPT_DIR/lib_rehearsal.sh" "$SCRIPT_DIR/nightly_greens.sh" \
                 "$SCRIPT_DIR/release_lanes.sh" "$SCRIPT_DIR/autopilot.sh" "$TRAIN_SCRIPT" "$d/scripts/release/" \
+            && cp -- "$SCRIPT_DIR/../check_publish_preflight.sh" "$d/scripts/" \
             && cp -- "$REHEARSAL_WF" "$d/.github/workflows/" && printf '%s/scripts/release' "$d"
     }
     dir=$(mdir) || return 2
@@ -1538,6 +1556,8 @@ unreached_is_green           rehearse.sh         s/unreached) printf 'RED   stag
 other_commit_is_green        rehearse.sh         s/if \[ "\$commit" = "\$c" \] ||/if true ||/
 bump_parent_not_checked      rehearse.sh         s/\&\& \[ "\$bparent" = "\$c" \]; }/; }/
 dledger_sig_ignored          rehearse.sh         s/\[ -n "\$hit" \] \&\& { echo "OPEN in \$s: \$hit"; return; }/:/
+d1_sig_old_text              rehearse.sh         s/R4 HEAD \.\* is an ancestor of neither origin\/main nor /R4 HEAD .* is not an ancestor of origin\/release\//
+d1_preflight_reworded        ../check_publish_preflight.sh s/R4 HEAD \${head:0:9} is an ancestor of neither/R4 HEAD ${head:0:9} is on neither/
 unreached_d_row_clears       rehearse.sh         s/\[ "\$rc" = 0 \] || notrun="\$notrun \$s(\${rc:-not run})"/:/
 d7_fable_allowed             rehearse.sh         s/^FLEET_MODELS='Claude Opus 5\\.5|/FLEET_MODELS='Claude Fable 5\\.1|Claude Opus 5\\.5|/
 d7_no_trailer_clears         rehearse.sh         s/echo "OPEN in the bump commit: no Co-Authored-By trailer"/echo CLEAR/
