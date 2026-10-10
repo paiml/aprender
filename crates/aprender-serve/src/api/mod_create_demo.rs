@@ -1,4 +1,3 @@
-
 /// Create a demo APR v2 model for testing
 pub(crate) fn create_demo_apr_model(_input_dim: usize) -> Result<AprModel, RealizarError> {
     use crate::apr::TensorEntry;
@@ -75,7 +74,10 @@ pub struct ChatCompletionRequest {
     /// (aprender#2375) — see `types::deserialize_temperature_f32`. `/api/chat`
     /// and `/api/generate` build this struct in Rust rather than deserializing
     /// it, so their own `options.temperature` carries the same guard.
-    #[serde(default, deserialize_with = "crate::api::types::deserialize_temperature_f32")]
+    #[serde(
+        default,
+        deserialize_with = "crate::api::types::deserialize_temperature_f32"
+    )]
     pub temperature: Option<f32>,
     /// Nucleus sampling
     #[serde(default)]
@@ -159,6 +161,15 @@ pub struct ChatCompletionRequest {
     /// Absent on both = thinking OFF, production's default since #3801.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub think: Option<bool>,
+    /// #4971: OpenAI's `logprobs`. When true the reply carries
+    /// `choices[0].logprobs`, one entry per generated token, or the backend
+    /// answers 501 (ASOC-INV-021).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logprobs: Option<bool>,
+    /// #4971: OpenAI's `top_logprobs`, 0 to 20 alternatives per entry. Only
+    /// with `logprobs: true`; alone it is refused with 400.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_logprobs: Option<super::TopLogprobs>,
 }
 
 /// The `chat_template_kwargs` apr honours (#3723).
@@ -176,13 +187,18 @@ impl ChatCompletionRequest {
     /// [`Self::thinking_conflict`] at the handler entry, so this never has to choose.
     #[must_use]
     pub fn thinking(&self) -> Option<bool> {
-        self.chat_template_kwargs.and_then(|k| k.enable_thinking).or(self.think)
+        self.chat_template_kwargs
+            .and_then(|k| k.enable_thinking)
+            .or(self.think)
     }
 
     /// `Some(reason)` when the two spellings of the toggle disagree (#3723).
     #[must_use]
     pub fn thinking_conflict(&self) -> Option<String> {
-        match (self.chat_template_kwargs.and_then(|k| k.enable_thinking), self.think) {
+        match (
+            self.chat_template_kwargs.and_then(|k| k.enable_thinking),
+            self.think,
+        ) {
             (Some(a), Some(b)) if a != b => Some(format!(
                 "chat_template_kwargs.enable_thinking={a} contradicts think={b}; send one (#3723)"
             )),

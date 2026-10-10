@@ -537,6 +537,55 @@ pub fn dense_stream<F: crate::session::ArchForward>(
     config: &crate::gguf::QuantizedGenerateConfig,
     on_token: &mut dyn FnMut(u32) -> bool,
 ) -> Result<(Vec<u32>, bool)> {
+    admit_dense_prompt(session, prompt)?;
+    let turn = session.generate(prompt, config, &mut |t| {
+        config.stop_tokens.contains(&t) || on_token(t)
+    })?;
+    Ok(without_stop_token(turn, prompt.len(), config))
+}
+
+/// [`dense_turn`] that also records each generated token's logprobs, with
+/// the `top_n` most likely tokens of its step (#4971). The record of the stop
+/// token that ends the turn is dropped with the token, so there is exactly
+/// one record per token of the reply.
+///
+/// # Errors
+/// As [`dense_turn`], and a turn whose records do not cover every token of
+/// the reply: a reply is never handed back with some of its logprobs missing.
+pub fn dense_turn_with_logprobs<F: crate::session::ArchForward>(
+    session: &mut crate::session::Session<F>,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+    top_n: usize,
+) -> Result<(Vec<u32>, Vec<crate::gguf::logprobs::StepLogprobs>)> {
+    admit_dense_prompt(session, prompt)?;
+    let mut steps = Vec::new();
+    let turn = session.generate_with_logprobs(prompt, config, Some(top_n), &mut |t, record| {
+        if !config.stop_tokens.contains(&t) {
+            steps.extend(record);
+        }
+        true
+    })?;
+    let (tokens, _) = without_stop_token(turn, prompt.len(), config);
+    let generated = tokens.len() - prompt.len();
+    if steps.len() != generated {
+        return Err(RealizarError::UnsupportedOperation {
+            operation: "dense_turn_with_logprobs".to_string(),
+            reason: format!(
+                "{generated} tokens were generated but {} have logprobs (#4971)",
+                steps.len()
+            ),
+        });
+    }
+    Ok((tokens, steps))
+}
+
+/// A prompt longer than the model's context keeps the error the old loops
+/// raised, [`RealizarError::ContextLimitExceeded`].
+fn admit_dense_prompt<F: crate::session::ArchForward>(
+    session: &crate::session::Session<F>,
+    prompt: &[u32],
+) -> Result<()> {
     let maximum = session.context_length();
     if prompt.len() > maximum {
         return Err(RealizarError::ContextLimitExceeded {
@@ -544,18 +593,25 @@ pub fn dense_stream<F: crate::session::ArchForward>(
             maximum,
         });
     }
-    let turn = session.generate(prompt, config, &mut |t| {
-        config.stop_tokens.contains(&t) || on_token(t)
-    })?;
+    Ok(())
+}
+
+/// The turn's prompt and reply without the stop token that ended it (the old
+/// loops never kept it; the engine does), and whether the GPU served it.
+fn without_stop_token(
+    turn: crate::session::Turn,
+    prompt_len: usize,
+    config: &crate::gguf::QuantizedGenerateConfig,
+) -> (Vec<u32>, bool) {
     let mut tokens = turn.tokens;
-    if tokens.len() > prompt.len()
+    if tokens.len() > prompt_len
         && tokens
             .last()
             .is_some_and(|t| config.stop_tokens.contains(t))
     {
         tokens.pop();
     }
-    Ok((tokens, turn.used_gpu))
+    (tokens, turn.used_gpu)
 }
 
 /// Grow `cache` in place to `target` (what it holds stays held), or build a new one
