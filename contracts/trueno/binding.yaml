@@ -136,12 +136,6 @@ bindings:
   function: gated_delta_rule_step
   status: implemented
   notes: Auto-inferred by pv infer
-- contract: model-config-algebra-v1.yaml
-  equation: bounds
-  module_path: trueno
-  function: bounds
-  status: implemented
-  notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: silu
   module_path: trueno::activations

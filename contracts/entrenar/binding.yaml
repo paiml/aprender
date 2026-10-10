@@ -28,13 +28,6 @@ bindings:
   signature: 'fn write(&self, path: &Path, tensors: &[(&str, &Array1<f32>)]) -> Result<()>'
   status: implemented
   notes: Cross-crate; aprender provides APR format I/O
-- contract: apr-checkpoint-v1.yaml
-  equation: apr_reader
-  module_path: aprender::serialization::apr
-  function: AprReader::read
-  signature: 'fn read(path: &Path) -> Result<Vec<(String, Array1<f32>)>>'
-  status: implemented
-  notes: Cross-crate; aprender provides APR format I/O
 - contract: attention-head-extraction-v1.yaml
   equation: forward_with_lora
   module_path: entrenar::transformer::attention
@@ -150,11 +143,11 @@ bindings:
   notes: Derived from P99 of training data lengths
 - contract: qlora-hyperparameters-v1.yaml
   equation: warmup_fraction
-  module_path: entrenar::finetune::qlora_config
-  function: QLoraConfig::warmup_steps
-  signature: fn warmup_steps(&self) -> usize
+  module_path: entrenar::finetune::classify_trainer
+  function: ClassifyTrainer::train
+  signature: 'pub fn train(&mut self) -> TrainResult'
   status: implemented
-  notes: function not found in source
+  notes: 'warmup_steps = (warmup_fraction * total_steps) as usize, computed inline in train'
 - contract: qlora-hyperparameters-v1.yaml
   equation: gradient_clip_bound
   module_path: entrenar::optim::clip
@@ -169,13 +162,6 @@ bindings:
   signature: fn epochs(&self) -> usize
   status: implemented
   notes: 3-10 epochs; more for imbalanced datasets
-- contract: tensor-rc-data-v1.yaml
-  equation: tensor_clone
-  module_path: entrenar::autograd::tensor
-  function: Tensor::clone
-  signature: fn clone(&self) -> Tensor
-  status: implemented
-  notes: 'KAIZEN-019: Rc bump (O(1)) instead of 16GB deep copies'
 - contract: tensor-rc-data-v1.yaml
   equation: data_read
   module_path: entrenar::autograd::tensor
@@ -202,13 +188,6 @@ bindings:
   module_path: trueno::backends::gpu::batch
   function: GpuCommandBatch::import_buffer
   signature: 'fn import_buffer(&mut self, buffer: &GpuBuffer)'
-  status: implemented
-  notes: function not found in source
-- contract: wgpu-resident-weights-v1.yaml
-  equation: vram_budget
-  module_path: entrenar::finetune::classify_pipeline
-  function: estimate_wgpu_vram
-  signature: 'fn estimate_wgpu_vram(model_params: usize) -> usize'
   status: implemented
   notes: function not found in source
 - contract: cma-es-kernel-v1.yaml
@@ -287,12 +266,6 @@ bindings:
   equation: quantize
   module_path: entrenar::quant::gguf_quant::q8_0
   function: Q8_0::quantize
-  status: implemented
-  notes: Auto-inferred by pv infer
-- contract: model-config-algebra-v1.yaml
-  equation: bounds
-  module_path: entrenar
-  function: bounds
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: gated-delta-net-v1.yaml

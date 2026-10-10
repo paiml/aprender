@@ -1,61 +1,6 @@
 {
   "entries": [
     {
-      "symbol": "aprender::serialization::apr::AprReader::read",
-      "reason": "ghost: no `fn read` in an `impl AprReader` or `trait AprReader` in `crates/aprender-core/src/serialization/apr/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "batuta::src::agent::driver::validate::tokenizer_encode::encode",
-      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "batuta::src::agent::session::Session::new",
-      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "batuta::src::cli::mod::build_transpiler_args",
-      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "batuta::src::cli::pipeline_cmds::cmd_analyze",
-      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "batuta::src::cli::pipeline_cmds_transpile::cmd_transpile",
-      "reason": "ghost: no `mod src` or `use \u2026 src` in `crates/aprender-orchestrate/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::autograd::tensor::Tensor::clone",
-      "reason": "ghost: no `fn clone` in an `impl Tensor` or `trait Tensor` in `crates/aprender-train/src/autograd/tensor.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::bounds",
-      "reason": "ghost: no `fn bounds` (free or in an impl) or item `bounds` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::finetune::classify_pipeline::estimate_wgpu_vram",
-      "reason": "ghost: no `fn estimate_wgpu_vram` (free or in an impl) or item `estimate_wgpu_vram` in `crates/aprender-train/src/finetune/classify_pipeline/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::warmup_steps",
-      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::apr::cuda_part_02_part_03::AprV2ModelCuda::upload_quantized_weights_to_gpu",
-      "reason": "ghost: no `mod cuda_part_02_part_03` or `use \u2026 cuda_part_02_part_03` in `crates/aprender-serve/src/apr/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "realizar::arch_requirements_fallback::WeightRole::field_name",
       "reason": "ghost: no `mod arch_requirements_fallback` or `use \u2026 arch_requirements_fallback` in `crates/aprender-serve/src/arch_requirements.rs`",
       "ticket": "#4502"
@@ -66,33 +11,8 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "realizar::bounds",
-      "reason": "ghost: no `fn bounds` (free or in an impl) or item `bounds` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::cuda::executor::attention::paged_attention_into",
-      "reason": "ghost: no `fn paged_attention_into` (free or in an impl) or item `paged_attention_into` in `crates/aprender-serve/src/cuda/executor/attention.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::cuda::executor::executor_api::ExecutorApi::start_brick_id",
-      "reason": "ghost: no `mod ExecutorApi` or `use \u2026 ExecutorApi` in `crates/aprender-serve/src/cuda/executor/executor_api.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "realizar::cuda::executor::layers::prefill::CudaExecutor::chunked_prefill",
       "reason": "ghost: no `fn chunked_prefill` in an `impl CudaExecutor` or `trait CudaExecutor` in `crates/aprender-serve/src/cuda/executor/layers/prefill.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "realizar::verification_specs::verify_kv_cache_size",
-      "reason": "ghost: no `mod verification_specs` or `use \u2026 verification_specs` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "trueno::bounds",
-      "reason": "ghost: no `fn bounds` (free or in an impl) or item `bounds` in `crates/aprender-compute/src/lib.rs`",
       "ticket": "#4502"
     }
   ]

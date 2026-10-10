@@ -188,13 +188,6 @@ bindings:
   status: implemented
   notes: GGUF loader path; validates via ValidatedLayerWeights::validate()
 - contract: architecture-requirements-v1.yaml
-  equation: apr_loader_validation
-  module_path: realizar::apr::cuda_part_02_part_03
-  function: AprV2ModelCuda::upload_quantized_weights_to_gpu
-  signature: fn upload_quantized_weights_to_gpu(&mut self) -> Result<usize>
-  status: implemented
-  notes: APR loader path; derives ArchConstraints from metadata
-- contract: architecture-requirements-v1.yaml
   equation: safetensors_loader_validation
   module_path: realizar::safetensors_cuda
   function: SafeTensorsCudaModel::upload_weights
@@ -244,13 +237,6 @@ bindings:
   signature: 'fn allocate(&mut self, num_blocks: usize) -> Result<Vec<u32>, GpuError>'
   status: implemented
   notes: 'PMAT-052: Free list block allocator. Currently contiguous allocation.'
-- contract: paged-kv-cache-v1.yaml
-  equation: paged_contiguous_equivalence
-  module_path: realizar::cuda::executor::attention
-  function: paged_attention_into
-  signature: 'fn paged_attention_into(&self, q: &GpuBuffer, block_table: &GpuBuffer, ...) -> Result<(), GpuError>'
-  status: implemented
-  notes: 'PMAT-053: Paged attention kernel. Currently incremental_attention_into.'
 - contract: continuous-batching-v1.yaml
   equation: token_budget
   module_path: realizar::scheduler
@@ -358,12 +344,6 @@ bindings:
   equation: gqa
   module_path: realizar::layers::attention
   function: MultiHeadAttention::gqa
-  status: implemented
-  notes: Auto-inferred by pv infer
-- contract: model-config-algebra-v1.yaml
-  equation: bounds
-  module_path: realizar
-  function: bounds
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
@@ -574,10 +554,10 @@ bindings:
   notes: 'PMAT-405: GDN/attention dispatch per layer_types array (Qwen3.5 MoE)'
 - contract: inference-pipeline-v1.yaml
   equation: kv_cache_growth
-  module_path: realizar::verification_specs
-  function: verify_kv_cache_size
-  signature: 'fn verify_kv_cache_size(num_layers: u64, num_heads: u64, head_dim: u64, max_seq_len: u64) -> u64'
-  status: implemented
+  module_path: realizar::cuda::executor::kv_cache
+  function: CudaExecutor::kv_single_sequence_bytes
+  signature: 'pub fn kv_single_sequence_bytes(&self, num_layers: usize) -> usize'
+  status: partial
   notes: 'PMAT-405: KV cache = 2 * layers * seq_len * kv_dim * 4 bytes'
 - contract: q4k-q6k-superblock-v1.yaml
   equation: q4k_superblock
@@ -714,16 +694,16 @@ bindings:
   notes: 'PMAT-403: Every profiler brick must appear in output. No silent truncation'
 - contract: gpu-decode-profiling-v1.yaml
   equation: report_denominator
-  module_path: realizar::cuda::executor::executor_api
-  function: ExecutorApi::start_brick_id
-  signature: 'pub(crate) fn start_brick_id(&mut self, brick_id: BrickId) -> Option<BrickIdTimer>'
+  module_path: apr_cli::commands::cbtop
+  function: brick_scores_from_profiler
+  signature: 'fn brick_scores_from_profiler(cuda_model: &realizar::gguf::OwnedQuantizedModelCuda, num_layers: usize) -> Vec<BrickScore>'
   status: implemented
   notes: 'PMAT-403: decoded_tokens = LmHead.count (exactly 1 LmHead per decoded token). Never use profiler.total_tokens'
 - contract: gpu-decode-profiling-v1.yaml
   equation: report_metadata
-  module_path: realizar::cuda::executor::executor_api
-  function: ExecutorApi::start_brick_id
-  signature: 'pub(crate) fn start_brick_id(&mut self, brick_id: BrickId) -> Option<BrickIdTimer>'
+  module_path: apr_cli::commands::cbtop
+  function: generate_headless_report_simulated
+  signature: 'fn generate_headless_report_simulated(model_name: &str, pipeline: &PipelineState, _config: &CbtopConfig) -> HeadlessReport'
   status: implemented
   notes: 'PMAT-403: metadata fields must be measured or zero. No hardcoded nonzero constants (137, 173.9, etc.)'
 critical_path:
