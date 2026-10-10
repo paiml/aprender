@@ -719,9 +719,10 @@ mod tests {
     //! FALSIFY-APR-TTFT-001..009, 011 and 012 (`contracts/apr-ttft-ratio-verdict-v1.yaml`).
     //!
     //! Every receipt is replicate 1 of the lambda V1 run (#4954), a real receipt
-    //! with its per-request samples and the comparator's server props emptied;
-    //! the verdict reads neither. A case edits the one field it is about and
-    //! re-derives `run_id`, so the receipt still validates.
+    //! with its per-request samples and the comparator's server props emptied
+    //! and its three binary paths set to `<scrubbed>`; the verdict reads none
+    //! of them, and `run_id` hashes no path. A case edits the one field it is
+    //! about and re-derives `run_id`, so the receipt still validates.
 
     use super::*;
     use crate::perf_gate::RunId;
@@ -1238,8 +1239,13 @@ mod tests {
         (port_of(&a), port_of(&b))
     }
 
-    /// `--host lambda --dry-run`; the exit code and stderr.
-    fn baseline_script(pin_host: &str, out: &Path, (apr, llama): (u16, u16)) -> (i32, String) {
+    /// `--host lambda --dry-run`; the exit code and stderr. A port is any
+    /// `Display`, so a case can pass one that is not a number.
+    fn baseline_script(
+        pin_host: &str,
+        out: &Path,
+        (apr, llama): (impl std::fmt::Display, impl std::fmt::Display),
+    ) -> (i32, String) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let dir = tempfile::tempdir().expect("tempdir");
         let model = dir.path().join("model.gguf");
@@ -1302,6 +1308,33 @@ mod tests {
             "{err}"
         );
         drop(held);
+    }
+
+    #[test]
+    fn anti_copy_script_refuses_a_port_that_is_not_a_number() {
+        let out = tempfile::tempdir().expect("tempdir");
+        let llama = free_ports().1;
+        let (rc, err) = baseline_script("lambda", out.path(), ("18o90", llama));
+        assert_eq!(rc, 2, "{err}");
+        // Without the number check, curl refuses the URL and the run is
+        // refused for the wrong reason: "port 18o90 already answers".
+        assert!(err.contains("port 18o90 is not a number"), "{err}");
+    }
+
+    #[test]
+    fn anti_copy_script_refuses_one_port_for_both_servers() {
+        let out = tempfile::tempdir().expect("tempdir");
+        let port = free_ports().0;
+        let (rc, err) = baseline_script("lambda", out.path(), (port, port));
+        assert_eq!(rc, 2, "{err}");
+        assert!(
+            err.contains(&format!("--apr-port and --llama-port are both {port}")),
+            "{err}"
+        );
+        // Control: two free ports pass the check and stop at the pin.
+        let (rc, err) = baseline_script("lambda", out.path(), free_ports());
+        assert_eq!(rc, 1, "{err}");
+        assert!(!err.contains("are both"), "{err}");
     }
 
     /// A port that answers every request 200, as a healthy server's does.
