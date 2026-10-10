@@ -795,10 +795,26 @@ fn witness_of(band: &Value, source: &str, path: &Path) -> Result<BatchInvariance
         divergence_at: as_u32(band.get("divergence_at")),
         intra_agree_to: as_u32(band.get("intra_agree_to")),
         max_constant_run: as_u32(band.get("max_constant_run")),
+        top2_margin_at_divergence: margin_of(band, path)?,
         declared_min: as_u32(band.get("declared_min")).unwrap_or_default(),
         m_formed: as_u32(band.get("m_formed")).unwrap_or_default(),
         source: source.to_string(),
     })
+}
+
+/// Master §12 row 22 (#4971): the top-2 margin at `divergence_at`, when the
+/// probe recorded one. A value that is not a number is REFUSED, like an unknown
+/// verdict token: reading `true` as "no margin" would hide what the probe wrote.
+fn margin_of(band: &Value, path: &Path) -> Result<Option<f64>> {
+    match band.get("top2_margin_at_divergence") {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_f64().map(Some).ok_or_else(|| {
+            CliError::InvalidFormat(format!(
+                "--witness-json {}: top2_margin_at_divergence {v} is not a number (#4971)",
+                path.display()
+            ))
+        }),
+    }
 }
 
 /// §4.2.2 — who measured, what served, and what the pinned comparator was.
@@ -2670,6 +2686,32 @@ mod tests {
         );
         let err = load_witness(Some(&path)).expect_err("SKIP is not a PP-26 verdict");
         assert!(err.to_string().contains("SKIP"), "{err}");
+    }
+
+    #[test]
+    fn a_recorded_top2_margin_is_read_and_a_non_number_is_refused() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = witness_file(
+            dir.path(),
+            r#"{"bands":[
+                 {"c":1,"result":"PASS","divergence_at":null,"declared_min":64,"m_formed":1},
+                 {"c":4,"result":"PASS","divergence_at":3,"declared_min":64,"m_formed":4,
+                  "top2_margin_at_divergence":0.01}
+               ]}"#,
+        );
+        let w = load_witness(Some(&path)).expect("loads");
+        assert_eq!(w[&1].top2_margin_at_divergence, None);
+        assert_eq!(w[&4].top2_margin_at_divergence, Some(0.01));
+        let path = witness_file(
+            dir.path(),
+            r#"{"bands":[{"c":4,"result":"PASS","divergence_at":3,"declared_min":64,
+                 "m_formed":4,"top2_margin_at_divergence":"0.01"}]}"#,
+        );
+        let err = load_witness(Some(&path)).expect_err("a string is not a margin");
+        assert!(
+            err.to_string().contains("top2_margin_at_divergence"),
+            "{err}"
+        );
     }
 
     #[test]
