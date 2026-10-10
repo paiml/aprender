@@ -184,13 +184,17 @@ self_test() {
     row 1 'a CRLF waiver with no reason is not recorded' "$S\nh1\tapr\tRED\told\n" 'h1\tapr\t2026-12-31\t\r\n'
     row 1 'a no-break-space reason is no reason' "$S\nh1\tapr\tRED\told\n" 'h1\tapr\t2026-12-31\t\0302\0240\n'
     row 1 'hosts compare as strings: waiver 01 is not host 1' "$S\n1\tapr\tRED\told\n" '01\tapr\t2026-12-31\tx\n'
+    row 1 'binaries compare as strings: waiver 01 is not binary 1' "$S\nh1\t1\tRED\told\n" 'h1\t01\t2026-12-31\tx\n'
+    row 1 'the *\t* waiver does not waive an unknown state beside stale cells' '# measured 2026-09-24T09:00:00Z\nh2\tapr\tAMBER\t\n' '*\t*\t2026-09-30\tx\n'
     row 1 'a vertical tab ends a line: what follows is a malformed cell' "$S\nh2\tapr\tGREEN\tok\vjunk\n"
     FLEET_CELLS_MAX_AGE_H=abc row 1 'a max age that is not a number refuses' "$S\nh2\tapr\tGREEN\t\n"
     FLEET_CELLS_MAX_AGE_H='\066' row 1 'a max age is not unescaped' "$S\nh2\tapr\tGREEN\t\n"
     FLEET_CELLS_MAX_AGE_H=' 1e3 ' row 0 'a max age python reads as a float is read' '# measured 2026-09-01T00:00:00Z\nh2\tapr\tGREEN\t\n'
+    FLEET_CELLS_MAX_AGE_H=6e row 1 'a max age with a number in front is still not a number' "$S\nh2\tapr\tGREEN\t\n"
     now=1.5 row 1 'a clock that is not an integer refuses' "$S\nh2\tapr\tGREEN\t\n"
     now=1000000000000 row 1 'a clock past year 9999 refuses, even under a *\t* waiver to 9999' '# measured 2026-09-24T09:00:00Z\nh2\tapr\tGREEN\t\n' '*\t*\t9999-12-31\tx\n'
     now=253402300799 row 0 'the last second of year 9999 is still a clock' '# measured 9999-12-31T23:58:00Z\nh2\tapr\tGREEN\t\n'
+    now=253402300800 row 1 'the first second of year 10000 refuses, even under a *\t* waiver to 9999' '# measured 2026-09-24T09:00:00Z\nh2\tapr\tGREEN\t\n' '*\t*\t9999-12-31\tx\n'
     # The calendar arithmetic that replaced date(1): each row flips if a leap or month rule is dropped.
     now=1835442000 row 0 'a leap day is a stamp (2028-02-29)' '# measured 2028-02-29T12:00:00Z\nh2\tapr\tGREEN\t\n'
     now=951829200 row 0 'a leap day in a year divisible by 400 is a stamp (2000-02-29)' '# measured 2000-02-29T12:00:00Z\nh2\tapr\tGREEN\t\n'
