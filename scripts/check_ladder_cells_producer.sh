@@ -178,11 +178,12 @@ cases() { # cases <lib> -> 0 all as expected
   local lib=$1 r=0
   expect "$lib" "enrich derives the owed-set terms from the header (arch, context, both thinking modes, KV)" good \
     '"\"arch\": \"qwen2\"" in out and "\"context_length\": 32768" in out and "[\"off\", \"on\"]" in out and "\"kv_bytes_per_token\": 57344" in out' || r=1
-  expect "$lib" "good: every owed cell has ONE row (2 rungs x 4 verbs x 2 modes), all but code pass" good \
-    '"cells: 16 owed, 12 pass" in out and "ROWS 16 " in out and not [l for l in out.splitlines() if l.startswith("JUDGE FAIL") and "code/" not in l and "PASSES on no" not in l]' || r=1
-  expect "$lib" "good: apr code reports no backend, and the judge names it (apr's gap, visible)" good \
-    '"code/on/4k '"'"'pass'"'"' is not a pass: backend None" in out or "backend None" in out' || r=1
-  expect "$lib" "fellback: a cpu run after asking for gpu is not a pass" fellback '"fell back" in out and "FELLBACK 12" in out' || r=1
+  expect "$lib" "good: every owed cell has ONE row (2 rungs x 4 verbs x 2 modes), all pass (code too: its envelope names the backend, #3719)" good \
+    '"cells: 16 owed, 16 pass" in out and "ROWS 16 PASS 16 " in out and not [l for l in out.splitlines() if l.startswith("JUDGE FAIL")]' || r=1
+  expect "$lib" "codenull: apr code's envelope says backend null, so its cells are not established and not a pass" codenull \
+    '"cells: 16 owed, 12 pass" in out and len([l for l in out.splitlines() if l.startswith("JUDGE FAIL") and "code/" in l and "backend None" in l]) == 4' || r=1
+  expect "$lib" "fellback: a cpu run after asking for gpu is not a pass (code too)" fellback \
+    '"FELLBACK 16" in out and "cells: 16 owed, 0 pass" in out and "code/off/4k '"'"'pass'"'"' is not a pass: backend '"'"'cpu'"'"', fell back" in out' || r=1
   expect "$lib" "noneedle: an answer without the token-0 needle is not a pass" noneedle '"RUNPASS 0" in out' || r=1
   expect "$lib" "noclose: a think block that never closes is not a pass" noclose '"thinking never closed" in out' || r=1
   expect "$lib" "refuse: a pre-load capacity refusal is a refused row with apr's arithmetic" refuse '"REFUSED 8" in out and "REFUSED without" not in out' || r=1
@@ -217,16 +218,17 @@ mutant() { # mutant <name> <sed-expr>
     echo "ok    mutant $1 killed by: $(grep -m1 '^FAIL' "$md/out" | cut -c7-)"
   fi
 }
-mutant needle     's/elif NEEDLE_WORD not in answer:/elif False:/'
+mutant needle     's/    if NEEDLE_WORD not in answer:/    if False:/'
 mutant fallback   's/row\["fallback"\] = be.get("fell_back")/row["fallback"] = False/'
+mutant code-backend 's/    be = doc.get("backend") or {}/    be = {}/'
 mutant retry      's/for _attempt in range(3):/for _attempt in range(1):/'
 mutant owed-set   's/for rid, tok in J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max):/for (rid, tok), _one in zip(J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max), range(1)):/'
 mutant refusal    's/if rc != 0 and ref is not None:/if False:/'
 mutant think      's/if "<\/think>" in text:/if False:/'
 mutant only-vacuity 's/if a.only and not matched:/if False:/'
 mutant rungs-silent 's/^    if rc:$/    if False:/'
-mutant serve-inline 's/deferred.append((len(rows) - 1, prompt, mode, budget, measured))/serve = serve or Serve(R, path, a.serve_ceiling); rows[-1] = measure_serve(serve, prompt, mode, budget, rows[-1], R.timeout)/'
-mutant declaim      's/            if d:  # the judge owes nothing here/            if False:  # the judge owes nothing here/'
+mutant serve-inline 's/deferred.append((len(rows) - 1, prompt, mode, budget, measured))/a.serve = getattr(a, "serve", None) or Serve(R, path, a.serve_ceiling); rows[-1] = measure_serve(a.serve, prompt, mode, budget, rows[-1], R.timeout)/'
+mutant declaim      's/        if d:  # the judge owes nothing here/        if False:  # the judge owes nothing here/'
 mutant offmode-budget 's/target = min(tok, int(ctx) - budget - 1)/target = min(tok, int(ctx) - a.max_tokens_thinking - 1)/'
 
 [ "$bad" = 0 ] && { echo "check_ladder_cells_producer: all cases and mutants as expected"; exit 0; }

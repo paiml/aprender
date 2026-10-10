@@ -18,9 +18,9 @@ not re-derived, so the producer can never measure a set the judge does not deman
 
 WHAT A ROW CLAIMS IS WHAT WAS MEASURED, and an unmeasured field is null, never a guess:
   * backend/fallback come from apr's own envelope (`backend.ran`/`backend.fell_back` for run, the chat
-    epilogue for chat, `used_gpu` in a serve body). `apr code` reports no backend at all, so its rows
-    carry backend null -- the judge reads that as "not a pass" and the gap stays visible (it is apr's
-    gap, not the gate's).
+    epilogue for chat, `used_gpu` in a serve body, the JSON document's `backend.ran`/`backend.fell_back`
+    for code, #3719). Where apr's envelope says `backend: null` (nothing measured), the row carries
+    backend null -- the judge reads that as "not a pass", and the gap stays visible.
   * prompt_tokens is apr's count. chat and code print none, so those rows carry the count `apr run`
     measured for the IDENTICAL prompt text, named in `prompt_tokens_source`; a chat template only
     ever ADDS tokens to that, so it is a floor, never an overstatement.
@@ -192,6 +192,18 @@ def base_row(item, verb, mode, rid, max_tokens):
             "backend": None, "fallback": None, "rc": None, "reason": ""}
 
 
+def fail_reason(row, rc, answer, closed, stderr):
+    """Why a measured answer is not a pass, or None when it is one."""
+    if rc != 0:
+        return f"rc {rc}: " + (stderr.strip().splitlines()[-1] if stderr.strip() else "no stderr")
+    if closed is False:
+        return f"thinking never closed within max_tokens {row['max_tokens']}: no </think> in the output"
+    if NEEDLE_WORD not in answer:
+        more = f" ... and {len(answer) - 120} more chars" if len(answer) > 120 else ""
+        return f"answer does not contain the needle planted at token 0: {answer[:120]!r}" + more
+    return None
+
+
 def finish(row, rc, text, stderr):
     """Shared verdict: refusal, failure, or a pass that must contain the needle."""
     row["rc"] = rc
@@ -202,14 +214,10 @@ def finish(row, rc, text, stderr):
         return row
     answer, closed = split_thinking(text or "")
     row["answer_chars"], row["think_closed"] = len(answer), closed
-    if rc != 0:
-        row["reason"] = f"rc {rc}: " + (stderr.strip().splitlines()[-1] if stderr.strip() else "no stderr")
-    elif closed is False:
-        row["reason"] = f"thinking never closed within max_tokens {row['max_tokens']}: no </think> in the output"
-    elif NEEDLE_WORD not in answer:
-        row["reason"] = f"answer does not contain the needle planted at token 0: {answer[:120]!r}" + (f" ... and {len(answer) - 120} more chars" if len(answer) > 120 else "")
-    else:
-        row["verdict"], row["reason"] = "pass", "ok"
+    reason = fail_reason(row, rc, answer, closed, stderr)
+    if reason is None:
+        row["verdict"], reason = "pass", "ok"
+    row["reason"] = reason
     return row
 
 
@@ -252,11 +260,15 @@ def measure_code(R, path, prompt, mode, max_tokens, row):
     rc, out, err = R.call(["code", "--model", path, "-p", "--output-format", "json", "--thinking", mode,
                            "--max-tokens", str(max_tokens), "--gpu"], stdin=prompt)
     try:
-        text = json.loads(out).get("result", "") if rc == 0 else ""
+        doc = json.loads(out)
     except json.JSONDecodeError:
-        text, rc = "", rc or 3
-    # backend stays None: `apr code` reports none (its serve child's backend is not in the envelope).
-    row["reason_backend"] = "apr code's envelope carries no backend; not established"
+        doc, rc = {}, rc or 3
+    doc = doc if isinstance(doc, dict) else {}
+    text = doc.get("result", "") if rc == 0 else ""
+    # #3719: the envelope's backend is {requested, ran, fell_back}, or null when nothing was measured.
+    be = doc.get("backend") or {}
+    row["backend"] = {"gpu": "cuda", "cpu": "cpu"}.get(be.get("ran"))
+    row["fallback"] = be.get("fell_back")
     return finish(row, rc, text, err)
 
 
@@ -337,71 +349,97 @@ def cells_for(item, L, rungs_doc):
     return out
 
 
-def measure_item(R, item, path, L, rungs_doc, a):
-    rows, density = [], a.chars_per_token
-    owed = cells_for(item, L, rungs_doc)
-    by_rung = {}
-    for rid, tok, mode, verb in owed:
-        by_rung.setdefault((rid, tok), []).append((mode, verb))
+def borrow_count(row, measured):
+    """chat, code and serve print no prompt count: carry `apr run`'s count for the IDENTICAL prompt text."""
+    if row["prompt_tokens"] is None and measured:
+        row["prompt_tokens"] = measured
+        row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
+    return row
+
+
+def measure_run_sized(R, path, pf, prompt, target, density, cell):
+    """`apr run` until its prompt reaches the rung: the first rung's density is a guess; apr's count corrects it.
+    -> (row, prompt, density)"""
+    item, mode, rid, budget = cell
+    for _attempt in range(3):
+        row = measure_run(R, path, pf, mode, budget, base_row(item, "run", mode, rid, budget))
+        pt = row["prompt_tokens"]
+        if not pt:
+            break
+        density = max(1.0, len(prompt) / pt)
+        if pt >= target:
+            break
+        prompt = build_prompt(target, density)
+        open(pf, "w").write(prompt)
+    return row, prompt, density
+
+
+def measure_mode(R, item, path, a, cell, verbs, density, rows, deferred):
+    """One rung x one thinking mode: size its prompt, then measure its verbs, run first (it counts). -> density"""
+    rid, tok, mode = cell
+    # Each mode's prompt leaves room for THAT mode's answer budget, no more: sizing an off-mode
+    # prompt by the thinking budget built it below a rung the model could hold (quorum 2, #3715).
+    # At the `declared` rung (tok == context_length) the prompt is context_length - budget - 1,
+    # which the judge's `prompt_tokens >= tok` refuses: that conflict is the judge's to rule on
+    # (reported on #3712), not this file's to hide.
+    ctx = item.get("context_length")
+    budget = a.max_tokens_thinking if mode == "on" else a.max_tokens
+    target = min(tok, int(ctx) - budget - 1) if ctx else tok
+    prompt = build_prompt(target, density)
+    pf = os.path.join(a.work, f"prompt-{rid}-{mode}.txt")
+    open(pf, "w").write(prompt)
+    measured = None
+    for verb in sorted(verbs, key=lambda v: v != "run"):
+        row = base_row(item, verb, mode, rid, budget)
+        if verb == "serve":
+            rows.append(row)
+            deferred.append((len(rows) - 1, prompt, mode, budget, measured))
+            continue
+        if verb == "run":
+            row, prompt, density = measure_run_sized(R, path, pf, prompt, target, density, (item, mode, rid, budget))
+            measured = row["prompt_tokens"] or None
+        else:
+            row = (measure_chat if verb == "chat" else measure_code)(R, path, prompt, mode, budget, row)
+        rows.append(borrow_count(row, measured))
+    return density
+
+
+def measure_deferred(R, path, a, rows, deferred):
+    """The serve cells, on ONE serve per model, after every other cell of it (see measure_item)."""
     serve = None
-    # The serve cells run LAST, after every run/chat/code cell of this model. `apr serve` holds the GPU lock for its
-    # whole life, so a serve kept up across rungs made the next rung's locked `apr run` wait LOCK_WAIT and be refused,
-    # and every cell after it (09-28 pilot, #3715). Deferring keeps ONE serve per model and never waits on ourselves.
-    deferred = []
     try:
-        for (rid, tok), jobs in sorted(by_rung.items(), key=lambda kv: kv[0][1] or 0):
-            if tok is None:
-                for mode, verb in jobs:
-                    r = base_row(item, verb, mode, rid, a.max_tokens); r["reason"] = "rung has no token count"; rows.append(r)
-                continue
-            ctx = item.get("context_length")
-            for mode in sorted({m for m, _ in jobs}):
-                # Each mode's prompt leaves room for THAT mode's answer budget, no more: sizing an off-mode
-                # prompt by the thinking budget built it below a rung the model could hold (quorum 2, #3715).
-                # At the `declared` rung (tok == context_length) the prompt is context_length - budget - 1,
-                # which the judge's `prompt_tokens >= tok` refuses: that conflict is the judge's to rule on
-                # (reported on #3712), not this file's to hide.
-                budget = a.max_tokens_thinking if mode == "on" else a.max_tokens
-                target = min(tok, int(ctx) - budget - 1) if ctx else tok
-                prompt = build_prompt(target, density)
-                pf = os.path.join(a.work, f"prompt-{rid}-{mode}.txt")
-                open(pf, "w").write(prompt)
-                measured = None
-                verbs = sorted((v for m, v in jobs if m == mode), key=lambda v: v != "run")  # run first: it counts
-                for verb in verbs:
-                    row = base_row(item, verb, mode, rid, budget)
-                    if verb == "run":
-                        for _attempt in range(3):  # the first rung's density is a guess; apr's count corrects it
-                            row = measure_run(R, path, pf, mode, budget, base_row(item, verb, mode, rid, budget))
-                            pt = row["prompt_tokens"]
-                            if not pt:
-                                break
-                            density = max(1.0, len(prompt) / pt)
-                            if pt >= target:
-                                break
-                            prompt = build_prompt(target, density)
-                            open(pf, "w").write(prompt)
-                        measured = row["prompt_tokens"] or None
-                    elif verb == "serve":
-                        rows.append(row)
-                        deferred.append((len(rows) - 1, prompt, mode, budget, measured))
-                        continue
-                    else:
-                        row = (measure_chat if verb == "chat" else measure_code)(R, path, prompt, mode, budget, row)
-                    if row["prompt_tokens"] is None and measured:
-                        row["prompt_tokens"] = measured
-                        row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
-                    rows.append(row)
         for i, prompt, mode, budget, measured in deferred:
             serve = serve or Serve(R, path, a.serve_ceiling)
-            row = measure_serve(serve, prompt, mode, budget, rows[i], R.timeout)
-            if row["prompt_tokens"] is None and measured:
-                row["prompt_tokens"] = measured
-                row["prompt_tokens_source"] = "apr run, identical prompt text (this verb prints no count)"
-            rows[i] = row
+            rows[i] = borrow_count(measure_serve(serve, prompt, mode, budget, rows[i], R.timeout), measured)
     finally:
         if serve:
             serve.close()
+
+
+def measure_rung(R, item, path, a, rung, jobs, density, rows, deferred):
+    """Every (mode, verb) cell owed at one rung. -> density"""
+    rid, tok = rung
+    if tok is None:
+        rows += [{**base_row(item, verb, mode, rid, a.max_tokens), "reason": "rung has no token count"}
+                 for mode, verb in jobs]
+        return density
+    for mode in sorted({m for m, _ in jobs}):
+        density = measure_mode(R, item, path, a, (rid, tok, mode), [v for m, v in jobs if m == mode],
+                               density, rows, deferred)
+    return density
+
+
+def measure_item(R, item, path, L, rungs_doc, a):
+    rows, deferred, density = [], [], a.chars_per_token
+    by_rung = {}
+    for rid, tok, mode, verb in cells_for(item, L, rungs_doc):
+        by_rung.setdefault((rid, tok), []).append((mode, verb))
+    # The serve cells run LAST, after every run/chat/code cell of this model. `apr serve` holds the GPU lock for its
+    # whole life, so a serve kept up across rungs made the next rung's locked `apr run` wait LOCK_WAIT and be refused,
+    # and every cell after it (09-28 pilot, #3715). Deferring keeps ONE serve per model and never waits on ourselves.
+    for (rid, tok), jobs in sorted(by_rung.items(), key=lambda kv: kv[0][1] or 0):
+        density = measure_rung(R, item, path, a, (rid, tok), jobs, density, rows, deferred)
+    measure_deferred(R, path, a, rows, deferred)
     return rows
 
 
@@ -423,27 +461,31 @@ def cmd_enrich(a):
     return 0
 
 
+def measure_inventory(R, a, L, rungs_doc, paths, dec):
+    """Every inventory model --only selects, less the arches de-claimed on this host. -> (rows, matched)"""
+    rows, matched = [], 0
+    for it in (json.loads(l) for l in open(a.inventory) if l.strip()):
+        if a.only and a.only not in (it["file"], "inv:" + it["file"]):
+            continue
+        matched += 1
+        d = dec.get((a.host, it.get("arch")))
+        if d:  # the judge owes nothing here (#4590); hours of cells would measure a claim the release does not make
+            print(f"cells: {it['file']} DECLAIMED on {a.host} (arch {d['arch']}, #{d['issue']}) -- not measured", file=sys.stderr)
+            continue
+        rows += measure_item(R, it, paths[it["file"]], L, rungs_doc, a)
+    return rows, matched
+
+
 def cmd_measure(a):
     import yaml
     L = yaml.safe_load(open(a.ladder))["ladder"]
     rungs_doc = json.load(open(a.rungs))
     paths = dict(l.rstrip("\n").split("|", 1) for l in open(a.models) if "|" in l)
     R = Runner(a.apr, a.lock, a.lock_wait, a.timeout)
-    rows, matched = [], 0
     dec, drc = J.declaimed(L.get("cells") or {}, {h.get("id") for h in L.get("hosts") or []}, lambda w: print("cells: refused -- " + w, file=sys.stderr))
     if drc:
         return 1
-    for l in open(a.inventory):
-        if l.strip():
-            it = json.loads(l)
-            if a.only and a.only not in (it["file"], "inv:" + it["file"]):
-                continue
-            matched += 1
-            d = dec.get((a.host, it.get("arch")))
-            if d:  # the judge owes nothing here (#4590); hours of cells would measure a claim the release does not make
-                print(f"cells: {it['file']} DECLAIMED on {a.host} (arch {d['arch']}, #{d['issue']}) -- not measured", file=sys.stderr)
-                continue
-            rows += measure_item(R, it, paths[it["file"]], L, rungs_doc, a)
+    rows, matched = measure_inventory(R, a, L, rungs_doc, paths, dec)
     if a.only and not matched:
         # model_ladder.sh accepts a rung id for --only; cells are owed per INVENTORY model, so a rung id
         # selects none. Zero rows at rc 0 would read as "this host owes no cells" (quorum 2, #3715).
