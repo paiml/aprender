@@ -13,16 +13,6 @@ const REPORT_JSON: &str = r#"{"runs": [
   {"total_requests": 9, "successful": 9, "failed": 0, "decode_tok_per_sec": 120.0, "prefill_tok_per_sec": 880.0}
 ], "regressions": []}"#;
 
-const OLLAMA_STATS: &str = "\
-total duration:       2.1s
-prompt eval count:    12 token(s)
-prompt eval rate:     480.00 tokens/s
-eval count:           128 token(s)
-eval rate:            61.50 tokens/s
-prompt eval rate:     470.00 tokens/s
-eval rate:            60.00 tokens/s
-";
-
 #[test]
 fn median_needs_min_samples_and_positive_speeds() {
     assert!(median(&[1.0; MIN_SAMPLES - 1]).is_err());
@@ -56,12 +46,6 @@ fn llm_bench_reads_each_runs_decode_rate_never_prefill() {
 }
 
 #[test]
-fn ollama_reads_eval_rate_never_prompt_eval_rate() {
-    assert_eq!(parse_ollama_verbose(OLLAMA_STATS), Ok(vec![61.5, 60.0]));
-    assert!(parse_ollama_verbose("eval rate: fast tokens/s").is_err());
-}
-
-#[test]
 fn llama_cpp_pin_is_enforced() {
     assert!(check_llama_pin("version: 6500 (d1d3c339)").is_ok());
     assert!(check_llama_pin("version: 6512 (0badc0de)").is_err());
@@ -77,21 +61,19 @@ fn mistralrs_is_recorded_not_dropped() {
     assert!(reason.contains(MISTRALRS_TAG) && reason.starts_with("Refused"));
 }
 
+/// Ollama's own `eval rate` is not our client's number (PP-25), so the arm is
+/// recorded with its reason, never timed by `ollama run --verbose`.
 #[test]
-fn ollama_arm_is_digest_pinned_and_offline() {
-    let dir = TempDir::new().expect("tmp");
-    let spec = ollama_arm("Say hi", dir.path());
-    let image = spec.image.clone().expect("container arm");
-    let argv =
-        super::super::comparator::container_argv(&image, &spec.command, &spec.env, dir.path())
-            .expect("pinned image");
-    assert!(argv.contains(&"--network=none".to_string()));
-    assert!(image.contains("@sha256:"));
-    let models = dir.path().join("ollama-models").display().to_string();
-    assert!(spec
-        .env
-        .iter()
-        .any(|(k, v)| k == "OLLAMA_MODELS" && *v == models));
+fn ollama_is_recorded_not_timed_by_its_own_client() {
+    let ArmOutcome::NotRun { arm, reason } = ollama_outcome() else {
+        panic!("ollama must be NotRun until our client times it");
+    };
+    assert_eq!(arm, "ollama");
+    assert!(reason.starts_with("Refused{one-client}"), "{reason}");
+    for want in ["ollama/ollama:0.34.4", OLLAMA_MODEL, "PP-25", "#5033"] {
+        assert!(reason.contains(want), "{want}: {reason}");
+    }
+    assert!(!reason.contains("@sha256:"), "{reason}");
 }
 
 /// A fake host: `llama-server` prints `version`, and a fake `apr` records its argv

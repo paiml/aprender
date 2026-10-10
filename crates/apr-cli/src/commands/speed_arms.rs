@@ -7,9 +7,9 @@
 //!   on the host, started and timed by OUR client, `apr test llm bench`, as
 //!   scripts/parity_host_receipt.sh does (PERF-019, APR-PERF-GATE-001 §4.4.8). Its
 //!   version line must name that commit, or the arm is refused.
-//! - `ollama` — the pinned image, run by digest with the network denied; the model
-//!   store lives inside the workdir, pre-populated with the pinned manifest. It is
-//!   timed by Ollama's own client, so it feeds no ratio (see [`ollama_arm`]).
+//! - `ollama` — `NotRun` until our client times it (#5033): the pinned image's
+//!   only timing so far is Ollama's own client (`ollama run --verbose`), which is
+//!   not PP-25's one client (see [`ollama_outcome`]).
 //! - `mistral.rs` — `NotRun`: upstream claims `qwen35` at v0.9.4 but nobody has
 //!   measured it (EXT-24 bind receipt). It is recorded, never silently dropped.
 //!
@@ -135,35 +135,18 @@ pub(crate) fn llama_cpp_arm(
     }
 }
 
-/// The Ollama arm: the pinned image, offline, `MIN_SAMPLES` verbose runs whose
-/// stats go to the artifact. `workdir/ollama-models` must hold the pinned model.
+/// The Ollama arm is recorded, not run, until our client times it (#5033).
 ///
-/// Its number is Ollama's own client timing itself (`eval rate`), not our client,
-/// so it is not PERF-019's one client (PP-25) and never enters a ratio: the ledger
-/// takes ratios against the llama.cpp arm only.
-pub(crate) fn ollama_arm(prompt: &str, workdir: &Path) -> ArmSpec {
-    let artifact = workdir.join("ollama-verbose.txt");
-    let a = quote(&artifact.display().to_string());
-    let script = format!(
-        "ollama serve >/dev/null 2>&1 & \
-         i=0; until ollama list >/dev/null 2>&1; do i=$((i+1)); [ $i -gt 60 ] && exit 3; sleep 1; done; \
-         : > {a}; n=0; while [ $n -lt {MIN_SAMPLES} ]; do \
-         ollama run {OLLAMA_MODEL} --verbose {} 2>>{a} >/dev/null || exit 4; n=$((n+1)); done",
-        quote(prompt)
-    );
-    let mut env = base_env();
-    env.push((
-        "OLLAMA_MODELS".into(),
-        workdir.join("ollama-models").display().to_string(),
-    ));
-    ArmSpec {
-        name: "ollama".into(),
-        command: sh(script),
-        version_command: vec!["ollama".into(), "--version".into()],
-        env,
-        artifact,
-        image: Some(OLLAMA_IMAGE.into()),
-        workdir: workdir.to_path_buf(),
+/// `ollama run --verbose` reports Ollama's own client timing itself (`eval
+/// rate`), not PERF-019's one client (PP-25), so it is no sample.
+pub(crate) fn ollama_outcome() -> ArmOutcome {
+    let image = OLLAMA_IMAGE.split('@').next().unwrap_or(OLLAMA_IMAGE);
+    ArmOutcome::NotRun {
+        arm: "ollama".into(),
+        reason: format!(
+            "Refused{{one-client}}: {image} with {OLLAMA_MODEL} is not yet timed by our \
+             client, and its own `eval rate` is not PP-25's one client (#5033)"
+        ),
     }
 }
 
@@ -223,20 +206,6 @@ pub(crate) fn parse_llm_bench(json: &str) -> Result<Vec<f64>, String> {
         .collect()
 }
 
-/// Decode samples from `ollama run --verbose` stats: each `eval rate:` line, never
-/// a `prompt eval rate:` line.
-pub(crate) fn parse_ollama_verbose(text: &str) -> Result<Vec<f64>, String> {
-    text.lines()
-        .map(str::trim)
-        .filter_map(|l| l.strip_prefix("eval rate:"))
-        .map(|rest| {
-            let num = rest.trim().trim_end_matches("tokens/s").trim();
-            num.parse::<f64>()
-                .map_err(|e| format!("eval rate `{}`: {e}", rest.trim()))
-        })
-        .collect()
-}
-
 /// The version line must name the pinned commit (llama.cpp prints its first 8
 /// hex digits: `version: 6500 (d1d3c339)`).
 pub(crate) fn check_llama_pin(version: &str) -> Result<(), String> {
@@ -267,13 +236,6 @@ pub(crate) fn measure_llama_cpp(spec: &ArmSpec, log_dir: &Path) -> Result<ArmOut
     let block = run_arm(spec, log_dir)?;
     check_llama_pin(&block.version)?;
     let samples = parse_llm_bench(&read(&spec.artifact)?)?;
-    measured(spec, block, &samples)
-}
-
-/// Run the Ollama arm and read its decode speed from the hashed artifact.
-pub(crate) fn measure_ollama(spec: &ArmSpec, log_dir: &Path) -> Result<ArmOutcome, String> {
-    let block = run_arm(spec, log_dir)?;
-    let samples = parse_ollama_verbose(&read(&spec.artifact)?)?;
     measured(spec, block, &samples)
 }
 
