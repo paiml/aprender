@@ -1,0 +1,11 @@
+2026-10-10T09:15:58Z
+GET /api/version: {"version":"0.40.2"}
+GET /api/tags models: ["qwen2.5-coder:1.5b-instruct"]
+
+POST /api/show {"model":"phi2:2.7b"}
+{"error":"model 'phi2:2.7b' not found"}
+http 404 content-type application/json; charset=utf-8
+
+POST /api/nosuchroute {"model":"phi2:2.7b"}
+404 page not found
+http 404 content-type text/plain

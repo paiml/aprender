@@ -9,7 +9,7 @@
 //!
 //! Run with: cargo run --example `brick_computer` -p aprender-present-lib
 
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -693,8 +693,21 @@ fn main() {
     let tick_ms = 50u32; // 20 FPS
     let mut frame = 0u64;
 
-    // Run until Ctrl+C
+    // Run until Ctrl+C on a terminal. Without one (CI, a pipe) nobody can press
+    // Ctrl+C, so draw 2 s of frames and exit.
+    let max_frames: Option<u64> = if io::stdout().is_terminal() {
+        None
+    } else {
+        Some(40)
+    };
+
     loop {
+        if max_frames.is_some_and(|max| frame >= max) {
+            print!("\x1b[?25h");
+            println!();
+            io::stdout().flush().ok();
+            return;
+        }
         clear_screen();
 
         // Header

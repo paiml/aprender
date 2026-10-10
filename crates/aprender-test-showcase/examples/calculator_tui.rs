@@ -5,7 +5,7 @@
 //!
 //! Run with: cargo run --example calculator_tui --features tui
 
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 use crossterm::{
     cursor,
@@ -17,6 +17,12 @@ use presentar_terminal::{CellBuffer, Color, DiffRenderer, Modifiers};
 use showcase_calculator::tui::{render_to_buffer, CalculatorApp, InputHandler, KeyAction};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Raw mode needs a terminal; without one (CI, a pipe) it fails with ENXIO.
+    // Drive the same app headless instead and check one evaluation.
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        return run_headless();
+    }
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -126,4 +132,21 @@ fn run_app(stdout: &mut io::Stdout) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// No terminal: type one expression into the app, evaluate it, print the result.
+fn run_headless() -> Result<(), Box<dyn std::error::Error>> {
+    let expression = "2+3*4";
+    let mut app = CalculatorApp::new();
+    for c in expression.chars() {
+        app.insert_char(c);
+    }
+    app.evaluate();
+    let shown = app.result_display();
+    println!("No terminal: headless run of the calculator app");
+    println!("  {expression} = {shown}");
+    match app.result() {
+        Some(Ok(value)) if (*value - 14.0).abs() < f64::EPSILON => Ok(()),
+        _ => Err(format!("expected {expression} = 14, got {shown:?}").into()),
+    }
 }

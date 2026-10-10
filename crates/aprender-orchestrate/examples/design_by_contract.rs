@@ -68,7 +68,15 @@ fn main() {
             ..Default::default()
         };
 
-        let result = hunt(Path::new("."), config);
+        // Debug builds scan one module: "." is the workspace root when run through cargo,
+        // and a debug-build scan of the whole monorepo is minutes.
+        // Release builds keep the original whole-tree scan.
+        let target = if cfg!(debug_assertions) {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bug_hunter")
+        } else {
+            Path::new(".").to_path_buf()
+        };
+        let result = hunt(&target, config);
         let contract_findings: Vec<_> =
             result.findings.iter().filter(|f| f.id.starts_with("BH-CONTRACT")).collect();
 

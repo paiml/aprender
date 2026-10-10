@@ -392,8 +392,11 @@ fn main() {
             ) -> Result<CompletionResponse, AgentError> {
                 Err(AgentError::Driver(DriverError::InferenceFailed("GPU not available".into())))
             }
+            // Must exceed the default manifest's max_tokens (4096), which the
+            // context manager reserves for output: a 4096 window left 0 input
+            // tokens and the run failed with ContextOverflow before routing.
             fn context_window(&self) -> usize {
-                4096
+                32_768
             }
             fn privacy_tier(&self) -> batuta::serve::backends::PrivacyTier {
                 batuta::serve::backends::PrivacyTier::Sovereign

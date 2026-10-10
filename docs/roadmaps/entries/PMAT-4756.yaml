@@ -1,0 +1,21 @@
+- id: PMAT-4756
+  github_issue: 4756
+  item_type: task
+  title: 'examples-nightly: 29 examples fail and 7 time out on main (run 37169058144)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wmainred
+  created: 2026-10-04T17:55:00Z
+  updated: 2026-10-10T07:32:00Z
+  spec: null
+  acceptance_criteria:
+  - The 36 rows that were fail or timeout in run 37169058144 are pass or a skip class (needs-args, needs-hardware, needs-data, needs-feature), with fail 0 and timeout 0, under scripts/dogfood_examples.sh --timeout-secs 180
+  - scripts/dogfood_examples.sh and its classifier are unchanged
+  - Release-build workloads are unchanged; only debug builds or non-terminal runs take a shorter path
+  - Out of scope, on build-kaizen/examples-nightly-queue - the workflow's runs-on, concurrency and runner label
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Receipts: evidence/examples-nightly-4756/. Before (CI run 37169058144): fail 29, timeout 7. After (one debug run of the 36 rows on 22954be7ab, libcuda hidden): pass 9, needs-args 11, needs-hardware 10, needs-data 5, needs-feature 1, fail 0, timeout 0. Receipt of record: the re-enabled nightly. qa_verify''s own gate failures (every section rc 1, 0 tests from the root facade) are #5026, outside this ticket.'

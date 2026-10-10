@@ -32,9 +32,10 @@ fn rah_lane_schema() -> serde_json::Value {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let path = args
-        .get(1)
-        .expect("usage: constrain_mask_overhead <model.gguf> [schema | @schema.json]");
+    let Some(path) = args.get(1) else {
+        eprintln!("Usage: constrain_mask_overhead <model.gguf> [schema | @schema.json]");
+        std::process::exit(2);
+    };
     let mapped = MappedGGUFModel::from_path(path).expect("map the GGUF");
     let vocab = mapped
         .model

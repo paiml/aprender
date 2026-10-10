@@ -25,7 +25,7 @@ const QUESTION: &str = "What is 2+2?";
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 4 || !matches!(args[3].as_str(), "cpu" | "gpu") {
-        eprintln!("usage: think_ab <model.gguf> <budget> <cpu|gpu>");
+        eprintln!("Usage: think_ab <model.gguf> <budget> <cpu|gpu>");
         std::process::exit(2);
     }
     let path = PathBuf::from(&args[1]);

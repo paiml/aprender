@@ -1,0 +1,8 @@
+# run stage alone, after the cold 36-row run on the same tree (cargo run -q, debug, stdout to a file); job started 00:01:13Z 2026-10-10
+4a79227e9ff78d28f8d9f1a7eb4d217fcdb77e18
+aprender-orchestrate:agent_demo	rc=0	run_secs=1
+aprender-serve:pipeline_tui	rc=0	run_secs=141
+aprender-serve:api_server	rc=0	run_secs=0
+aprender-profile:buggy_server	rc=0	run_secs=6
+aprender-core:publish_shell_safety	rc=1	run_secs=7
+aprender-train:finetune_real	rc=101	run_secs=1

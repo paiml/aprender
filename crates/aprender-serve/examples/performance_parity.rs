@@ -47,8 +47,16 @@ fn main() {
     // Check GPU availability
     let gpu_available = check_gpu_availability();
 
+    // The GPU suite GPU-002..GPU-031 ran past 25 minutes in a debug build on a discrete
+    // GPU, so a debug build smoke-tests the GPU path with GPU-001 alone. Release runs all 31.
+    let full_gpu_suite = gpu_available && !cfg!(debug_assertions);
+
     // Run all benchmarks with progress
-    let total_benchmarks = if gpu_available { 39 } else { 8 }; // Added GPU-031 (M28)
+    let total_benchmarks = match (gpu_available, full_gpu_suite) {
+        (true, true) => 39, // Added GPU-031 (M28)
+        (true, false) => 9,
+        (false, _) => 8,
+    };
     let pb = create_progress_bar(
         total_benchmarks as u64,
         "Running performance parity benchmarks...",
@@ -94,7 +102,9 @@ fn main() {
         pb.set_message("GPU-001: Matmul throughput");
         gpu_results.push(bench_gpu_matmul());
         pb.inc(1);
+    }
 
+    if full_gpu_suite {
         pb.set_message("GPU-002: Hybrid scheduler");
         gpu_results.push(bench_hybrid_scheduler());
         pb.inc(1);
@@ -217,6 +227,13 @@ fn main() {
     }
 
     pb.finish_with_message("Benchmarks complete!");
+
+    if gpu_available && !full_gpu_suite {
+        println!(
+            "  {} Debug build: GPU-002..GPU-031 run only with `cargo run --release --example performance_parity`",
+            style("⚠").yellow()
+        );
+    }
 
     // Print CPU results table
     print_results_table(&results, "CPU BENCHMARK RESULTS");
@@ -351,13 +368,20 @@ fn bench_fused_attention() -> BenchResult {
     let input =
         Tensor::from_vec(vec![seq_len, hidden_dim], vec![0.1; seq_len * hidden_dim]).expect("test");
 
+    // A debug forward pass is ~3 s at seq_len 128, so the release counts
+    // (10 + 100) take over five minutes. Debug builds only smoke-test the path.
+    let (warmup, iterations) = if cfg!(debug_assertions) {
+        (1, 5)
+    } else {
+        (10, 100)
+    };
+
     // Warm up
-    for _ in 0..10 {
+    for _ in 0..warmup {
         let _ = fused.forward(&input);
     }
 
     // Benchmark
-    let iterations = 100;
     let start = Instant::now();
     for _ in 0..iterations {
         let _ = fused.forward(&input).expect("test");
@@ -486,16 +510,16 @@ fn bench_batch_prefill() -> BenchResult {
 fn bench_quantization_formats() -> BenchResult {
     let iterations = 100;
 
-    // Q4_0: 20 bytes per 32 values
-    let q4_0_data = vec![0u8; 20 * 32];
+    // Q4_0: 18 bytes (f16 scale + 16 quant bytes) per 32 values, 32 blocks
+    let q4_0_data = vec![0u8; 18 * 32];
     let start = Instant::now();
     for _ in 0..iterations {
         let _ = dequantize_q4_0(&q4_0_data).expect("test");
     }
     let _q4_0_time = start.elapsed();
 
-    // Q8_0: 36 bytes per 32 values
-    let q8_0_data = vec![0u8; 36 * 32];
+    // Q8_0: 34 bytes (f16 scale + 32 int8 quants) per 32 values, 32 blocks
+    let q8_0_data = vec![0u8; 34 * 32];
     let start = Instant::now();
     for _ in 0..iterations {
         let _ = dequantize_q8_0(&q8_0_data).expect("test");
@@ -3261,6 +3285,20 @@ fn print_summary(cpu_results: &[BenchResult], gpu_results: &[BenchResult], gpu_a
     println!();
     println!("  {}", style("Milestone Status:").bold());
 
+    print_milestones(cpu_results, gpu_results, gpu_available);
+
+    println!();
+    println!(
+        "  {}",
+        style("Toyota Way: Kaizen - Continuous Improvement")
+            .yellow()
+            .italic()
+    );
+    println!();
+}
+
+/// Milestone lines M1-M4 of the summary.
+fn print_milestones(cpu_results: &[BenchResult], gpu_results: &[BenchResult], gpu_available: bool) {
     // M1: CPU Parity (check from CPU results)
     let token_gen = cpu_results
         .iter()
@@ -3334,13 +3372,4 @@ fn print_summary(cpu_results: &[BenchResult], gpu_results: &[BenchResult], gpu_a
         "    {} M4: Full Parity   - 230+ tok/s (90% llama.cpp)",
         style("⏳").dim()
     );
-
-    println!();
-    println!(
-        "  {}",
-        style("Toyota Way: Kaizen - Continuous Improvement")
-            .yellow()
-            .italic()
-    );
-    println!();
 }
