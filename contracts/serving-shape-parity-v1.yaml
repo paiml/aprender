@@ -257,11 +257,14 @@ findings:
     summary: 'The draft did not check S7 and had the receipt cite CB-004 beside the witness.'
     closed_by: 'Superseded by the bar: S7 is read from the same witness. The probe records each band''s per-request decode_tok_s from live streams and v3_shape reads it (FALSIFY-SSP-017).'
 mutation_record:
-  note: 'History: the draft''s record, measured on the Python checker. The Rust port has not been mutation-tested yet.'
-  date: '2026-10-04'
-  mutants: 32
-  patched_self_test: {killed: 30, killed_by_crash: 4, survived: 2}
-  survived_table: [startswith-to-in, declared-min-default-64]
+  note: 'The Rust port, by cargo-mutants on gx10 (aarch64, CPU only) against the perf_gate unit tests. Scope: all of perf_gate/v3_shape.rs, plus live_decode_tok_s, band_decode_tok_s and check_reference in perf_gate/parity.rs. g16 at 8978becb22 was cut off by the 08:49Z reboot at 43 of 98 with 3 missed; 5227cda79c kills them. g17 at 5227cda79c left one, killed by ba959efa3e; g18 at ba959efa3e re-ran check_reference.'
+  date: '2026-10-10'
+  mutants: 98
+  runs:
+    - {run: g17, commit: 5227cda79c, mutants: 98, caught: 95, missed: 1, unviable: 2, timeout: 0}
+    - {run: g18, commit: ba959efa3e, filter: check_reference, mutants: 5, caught: 5, missed: 0, unviable: 0, timeout: 0}
+  survived_table: []
+  python_draft: {date: '2026-10-04', mutants: 32, killed: 30, killed_by_crash: 4, survived: 2, survived_table: [startswith-to-in, declared-min-default-64]}
 verification: >
   cargo test -p aprender-test-lib --lib perf_gate::v3_shape and cargo test -p apr-cli
   --lib test_llm_shape, on gx10 at la-711a/4971-v3a-margin. At 72283efd5e (2026-10-10
