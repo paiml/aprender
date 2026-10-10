@@ -264,7 +264,7 @@ mutation_record:
   survived_table: [startswith-to-in, declared-min-default-64]
 verification: >
   cargo test -p aprender-test-lib --lib perf_gate::v3_shape and cargo test -p apr-cli
-  --lib test_llm_shape, on gx10 at la-711a/4971-v3a-margin. FALSIFY-SSP-007 by hand
-  gave exit 5 and the four pre-S7 reasons on gx10 at 32282bcd5f (2026-10-10 07:50Z);
-  its fifth reason, S7 unmeasured, is read off the code until a run at the S7 commit
-  measures it.
+  --lib test_llm_shape, on gx10 at la-711a/4971-v3a-margin. At 72283efd5e (2026-10-10
+  08:11Z, gx10 aarch64, CPU only): perf_gate 251 passed, llm::parity 7 passed, apr-cli
+  test_llm 89 passed, and FALSIFY-SSP-007 by hand gave exit 5 with its five reasons,
+  S7 unmeasured among them. No GPU host class has run the probe yet.
