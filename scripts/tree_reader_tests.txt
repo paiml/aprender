@@ -15,6 +15,7 @@ apr-cli	--lib	commands::eval
 apr-cli	--lib	commands::glob_filter
 apr-cli	--lib	commands::kernel_explain
 apr-cli	--lib	commands::lint_family_guard
+apr-cli	--lib	commands::model_gate
 apr-cli	--lib	commands::parity_admission
 apr-cli	--lib	commands::ptx_map
 apr-cli	--lib	commands::publish
