@@ -1,8 +1,9 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, llama_fit_verdict, package_include_diff,
-    publishable_crates, tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    coverage_report_scope, dag_status, git_patch_id, llama_fit_verdict, nextest_fail_fast,
+    package_include_diff, publishable_crates, tarball_build_errors, tarball_shrink_report,
+    tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -94,6 +95,16 @@ enum Cmd {
         /// empty path reads as empty. Any other count exits 1, as the original's unpacking did.
         #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
+    },
+    /// `VERDICT <tag> <path>: <msg>` for `[profile.ci].fail-fast` in a nextest config (was
+    /// the inline Python judge in scripts/check_nextest_ci_profile_no_fail_fast.sh). Exit 0
+    /// ok, 1 FAIL, 2 ENV (cannot judge). The runner name is $NEXTEST_GUARD_RUNNER.
+    NextestFailFast {
+        /// `library` (a full TOML parser) or `fallback` (the purpose-built line reader).
+        #[arg(long, value_parser = ["library", "fallback"], default_value = "library")]
+        reader: String,
+        /// The nextest config, e.g. .config/nextest.toml.
+        toml: PathBuf,
     },
 }
 
@@ -201,6 +212,20 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             dag_status::run(&root, &rows).map_err(nothing_printed)
         }
         Cmd::LlamaFitVerdict { args } => llama_fit_verdict::run(&args).map_err(nothing_printed),
+        Cmd::NextestFailFast { reader, toml } => {
+            // clap's value_parser admits only the two names parse() knows.
+            let reader = nextest_fail_fast::Reader::parse(&reader)
+                .ok_or_else(|| nothing_printed(format!("unknown --reader {reader}")))?;
+            let runner = std::env::var_os("NEXTEST_GUARD_RUNNER").map_or_else(
+                || "unknown".to_owned(),
+                |r| r.to_string_lossy().into_owned(),
+            );
+            match nextest_fail_fast::run(&toml, reader, &runner) {
+                (0, out) => Ok(out),
+                // The verdict line is the whole report, as in the original: no stderr.
+                (code, out) => Err((out, code, String::new())),
+            }
+        }
     }
 }
 
@@ -234,7 +259,9 @@ fn main() -> ExitCode {
     match refusal {
         None => ExitCode::SUCCESS,
         Some((code, reason)) => {
-            eprintln!("{reason}");
+            if !reason.is_empty() {
+                eprintln!("{reason}");
+            }
             ExitCode::from(code)
         }
     }
