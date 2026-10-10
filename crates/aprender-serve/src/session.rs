@@ -473,8 +473,8 @@ impl<F: ArchForward> Session<F> {
         turn
     }
 
-    /// The per-layer decode time the last traced turn measured, or `None`
-    /// when the backend timed no layer.
+    /// The per-layer time of the single-token forwards the last traced turn
+    /// measured, or `None` when the backend timed no layer.
     pub fn take_layer_timings(&mut self) -> Option<Vec<LayerTiming>> {
         self.forward.take_layer_timings()
     }
