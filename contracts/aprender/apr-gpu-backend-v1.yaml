@@ -267,9 +267,11 @@ falsification_tests:
   prediction: |
     The Qwen3.5 /v1/chat/completions response carries used_gpu for the turn it
     answered, and `apr code -p --output-format json` carries
-    backend {requested, ran, fell_back}: ran is "cpu" and fell_back is true if
-    any completion under a forced GPU ran on the CPU, and both are null when a
-    completion went unreported or no driver ran.
+    backend {requested, ran, fell_back}. One completion on the CPU decides the
+    run: ran is "cpu" whatever the others reported, and fell_back is true when
+    the GPU was forced. ran is "gpu" only when every completion reported the
+    GPU. Both are null when no completion reported the CPU and at least one
+    went unreported, or when no completion or no driver ran.
   test: |
     cargo test -p aprender-orchestrate --lib served_backend
     cargo test -p aprender-orchestrate --lib code_envelope
