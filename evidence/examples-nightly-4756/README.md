@@ -201,9 +201,10 @@ sizes fixed above (`:514`, `:522`).
 `performance_parity-gpu.txt` is the debug binary from the 36-row run, run once more with its
 output kept, because the script keeps no output per example. The file records the commit and
 the binary's sha256. Outside the namespace, it printed `GPU detected and available`, ran
-GPU-001 on the GPU and printed the debug-build note. GPU-001's row reads 13.70 GFLOPS
+GPU-001 on the GPU and printed the debug-build note. GPU-001's row reads 15.82 GFLOPS
 (`performance_parity-gpu.txt:47`); the process ran pinned to 4 CPUs at nice 19. It exited
-rc 0 in 8 s. The script reported the same row as pass in 12 s, build included.
+rc 0 in 10 s (`:66`). The script reported the same row as pass in 14 s, build included
+(`examples-36.tsv`).
 
 It also printed `Overall: Some benchmarks failed (5/9, 56%)` and exited 0. Its `fn main()`
 returns nothing and never calls `process::exit`, on this branch and on main, so it exits 0
@@ -225,8 +226,8 @@ whether those runs found an adapter is not recorded.
   that log does not show what they printed after it.
 - **parity_035 with no Ollama server.** `parity_035-no-server.txt` is the same tree in a
   private network namespace with loopback up and nothing listening. The example printed
-  `Ollama server not found at http://localhost:11434 ...` and exited rc 1 in 1 s. The
-  classifier's `not found at ` pattern makes that needs-data. In the 36-row run a server was
+  `Ollama server not found at http://localhost:11434 ...` and exited rc 1 in under a second
+  (`secs=0`). The classifier's `not found at ` pattern makes that needs-data. In the 36-row run a server was
   up without the model, and the row is needs-data on `Model not found`.
 - **parity_035 with a server that answers 500.** `parity_035-500.txt` is the same tree in a
   private network namespace, with a listener on port 11434 that reads each request and
