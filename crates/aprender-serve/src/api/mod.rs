@@ -74,6 +74,11 @@ pub mod batch_admission;
 pub mod cuda_batch_scheduler;
 #[cfg(feature = "cuda")]
 pub mod iteration_scheduler;
+// #4971: logprobs and top_logprobs on the chat route (ASOC-INV-021).
+mod chat_logprobs;
+pub use chat_logprobs::{
+    ChatLogprobs, ChatTokenLogprob, ChatTopLogprob, TopLogprobs, MAX_TOP_LOGPROBS,
+};
 mod openai_handlers;
 mod serve_trace;
 // #4918: tool calls on the streaming chat path (both SSE builders).

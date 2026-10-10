@@ -111,7 +111,7 @@ async fn try_qwen35_backend(
             "the Qwen3.5 session has no retained GGUF to tokenize with (#3571)",
         ));
     };
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "Qwen3.5") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -285,6 +285,7 @@ async fn try_qwen35_backend(
         // turn that fell back to the CPU still answers 200; this is how the client
         // (`apr code`'s document) can tell.
         Some(turn.used_gpu),
+        None,
     ))
 }
 
