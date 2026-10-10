@@ -13,7 +13,9 @@
 //! Enabled via `ITERATION_SCHEDULER=1` env var (opt-in during development).
 
 #[cfg(feature = "cuda")]
-use crate::api::cuda_batch_scheduler::CudaBatchRequest;
+use crate::api::cuda_batch_scheduler::{
+    token_callback, CudaBatchRequest, TokenCallback, TokenSender,
+};
 #[cfg(feature = "cuda")]
 use crate::gguf::OwnedQuantizedModelCuda;
 use renacer_core::PhaseTimer;
@@ -243,6 +245,18 @@ async fn iteration_scheduler_loop(
     }
 }
 
+/// A running batch: its decode state, each slot's error sender, and the
+/// sub-phase timer of its iterations.
+#[cfg(feature = "cuda")]
+struct IterationBatch {
+    state: crate::gguf::BatchedDecodeState,
+    /// PMAT-088c: Option<Sender> so we can drop individual senders when slots finish.
+    /// Both the callback's sender AND this sender must be dropped for the channel to close.
+    error_senders: Vec<Option<TokenSender>>,
+    /// PMAT-284: Uniform sub-phase timing via renacer-core PhaseTimer
+    phase_timer: PhaseTimer,
+}
+
 /// Process a batch using iteration-level scheduling.
 ///
 /// Uses the existing PMAT-072/073/074 infrastructure but adds:
@@ -258,17 +272,13 @@ fn process_iteration_batch(
     max_slots: usize,
     total_iterations: &mut u64,
 ) {
-    use crate::gguf::QuantizedGenerateConfig;
-
-    let m = batch.len();
-
     // Single request — fast M=1 path (CUDA graph replay)
     // realizr#212: non_streaming accumulates via Vec::push then bulk-sends
     // PERF-041: same predicate, via the one ungated statement of it, so the
     // F-BATCH-004 knob applies here too. Off, this is `m == 1 && waiting.is_empty()`
     // unchanged.
     if crate::api::batch_admission::fast_path_eligible(
-        m,
+        batch.len(),
         waiting.is_empty(),
         crate::api::batch_admission::force_batched_path(),
     ) {
@@ -280,34 +290,9 @@ fn process_iteration_batch(
     }
 
     // Multi-request batch — PMAT-072/073/074 step-wise decode
-    let prompts: Vec<Vec<u32>> = batch.iter().map(|r| r.prompt_ids.clone()).collect();
-    let configs: Vec<QuantizedGenerateConfig> = batch.iter().map(|r| r.config.clone()).collect();
-    // PMAT-088c: Option<Sender> so we can drop individual senders when slots finish.
-    // Both the callback's sender AND this sender must be dropped for the channel to close.
-    let mut error_senders: Vec<Option<tokio::sync::mpsc::Sender<Result<u32, String>>>> =
-        batch.iter().map(|r| Some(r.token_tx.clone())).collect();
-
-    let callbacks: Vec<Box<dyn FnMut(u32) -> bool + Send>> = batch
-        .into_iter()
-        .map(|req| {
-            Box::new(move |token_id: u32| -> bool { req.token_tx.try_send(Ok(token_id)).is_ok() })
-                as Box<dyn FnMut(u32) -> bool + Send>
-        })
-        .collect();
-
     // Phase 1: Setup + Prefill
-    let mut state = {
-        let mut cuda_model = model.write().expect("PMAT-088: model lock poisoned");
-        match cuda_model.batched_setup_and_prefill(&prompts, &configs, callbacks, max_slots) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("[PMAT-088] Setup+prefill ERROR (m={m}): {e}");
-                for tx in error_senders.iter().flatten() {
-                    let _ = tx.try_send(Err(e.to_string()));
-                }
-                return;
-            },
-        }
+    let Some(mut running) = iteration_setup(model, batch, max_slots) else {
+        return;
     };
 
     // Phase 2: Iteration-level decode loop
@@ -316,194 +301,269 @@ fn process_iteration_batch(
     // are pending requests. Recycle done slots instead of exiting → restarting.
     // Without this, every batch restart costs ~20ms setup + 3×30ms slot adds = ~110ms,
     // causing TTFT P50 = 116ms. With continuous recycling, TTFT ≈ 27ms (recycle + decode).
-
-    // PMAT-284: Uniform sub-phase timing via renacer-core PhaseTimer
-    let mut phase_timer = PhaseTimer::from_env("PMAT_283_TIMING", "PMAT-283");
-
-    loop {
-        // Exit conditions:
-        // 1. All slots done AND no pending requests (batch truly complete)
-        // 2. gen_idx exceeded AND all slots done (safety limit)
-        if state.all_done() {
-            // Drain channel into waiting queue before deciding to exit
-            while let Ok(req) = rx.try_recv() {
-                waiting.push_back(req);
-            }
-            if waiting.is_empty() {
-                break; // No pending requests — batch complete
-            }
-            // Pending requests exist — continue loop to recycle done slots
-        }
-        if state.gen_idx >= state.max_tokens_max && state.all_done() {
-            break; // Safety limit reached
-        }
-
+    while !iteration_batch_complete(&running.state, rx, waiting) {
         *total_iterations += 1;
-        let iter_start = std::time::Instant::now();
-
-        phase_timer.start();
-
-        let token_ids = {
-            let mut cuda_model = model.write().expect("PMAT-088: model lock poisoned");
-
-            phase_timer.mark("lock");
-
-            // PMAT-088: Check waiting queue FIRST, then rx channel.
-            // This ensures requests that arrived during previous iteration's
-            // token distribution get scheduled before new channel arrivals.
-
-            // PMAT-088d: Batch recycle — collect ALL done slots with waiting
-            // requests and recycle them in one prefill_multi_prompt call (~14ms
-            // total regardless of count, vs N×17ms sequential). This eliminates
-            // recycle serialization when multiple slots finish simultaneously.
-            //
-            // Priority: RECYCLE done slots first, then ADD new slots.
-            let mut joined_this_step = false;
-
-            // 1. BATCH RECYCLE done slots (multi-prompt prefill, one weight read)
-            let has_done_slots = state.done.iter().any(|&d| d);
-            if has_done_slots {
-                let mut recycle_pairs: Vec<(
-                    usize,
-                    Vec<u32>,
-                    crate::gguf::QuantizedGenerateConfig,
-                    Box<dyn FnMut(u32) -> bool + Send>,
-                )> = Vec::new();
-                let mut recycle_error_txs: Vec<(
-                    usize,
-                    tokio::sync::mpsc::Sender<Result<u32, String>>,
-                )> = Vec::new();
-
-                for slot_idx in 0..state.m {
-                    if !state.done[slot_idx] {
-                        continue;
-                    }
-                    let next_req = waiting.pop_front().or_else(|| rx.try_recv().ok());
-                    if let Some(req) = next_req {
-                        let error_tx = req.token_tx.clone();
-                        let on_token: Box<dyn FnMut(u32) -> bool + Send> = {
-                            let token_tx = req.token_tx;
-                            Box::new(move |token_id: u32| -> bool {
-                                token_tx.try_send(Ok(token_id)).is_ok()
-                            })
-                        };
-                        recycle_error_txs.push((slot_idx, error_tx));
-                        recycle_pairs.push((slot_idx, req.prompt_ids, req.config, on_token));
-                    } else {
-                        break; // No more waiting requests
-                    }
-                }
-
-                if !recycle_pairs.is_empty() {
-                    match cuda_model.recycle_slots_batch(&mut state, recycle_pairs) {
-                        Ok(()) => {
-                            for (slot_idx, error_tx) in recycle_error_txs {
-                                error_senders[slot_idx] = Some(error_tx);
-                            }
-                            joined_this_step = true;
-                        },
-                        Err(e) => {
-                            eprintln!("[PMAT-088d] Batch recycle FAILED: {e}");
-                            for (_, error_tx) in &recycle_error_txs {
-                                let _ = error_tx.try_send(Err(e.to_string()));
-                            }
-                        },
-                    }
-                }
-            }
-
-            // 2. ADD new slots only when no done slots to recycle
-            if !joined_this_step && !has_done_slots && state.m < state.max_kv_slots {
-                let next_req = waiting.pop_front().or_else(|| rx.try_recv().ok());
-                if let Some(req) = next_req {
-                    let error_tx = req.token_tx.clone();
-                    let on_token: Box<dyn FnMut(u32) -> bool + Send> = {
-                        let token_tx = req.token_tx;
-                        Box::new(move |token_id: u32| -> bool {
-                            token_tx.try_send(Ok(token_id)).is_ok()
-                        })
-                    };
-                    match cuda_model.add_slot_to_batch(
-                        &mut state,
-                        req.prompt_ids,
-                        req.config,
-                        on_token,
-                    ) {
-                        Ok(()) => {
-                            error_senders.push(Some(error_tx));
-                            joined_this_step = true;
-                        },
-                        Err(e) => {
-                            eprintln!("[PMAT-088c] Mid-batch join FAILED: {e}");
-                            let _ = error_tx.try_send(Err(e.to_string()));
-                        },
-                    }
-                }
-            }
-
-            let _ = joined_this_step; // suppress unused warning
-
-            phase_timer.mark("sched");
-
-            // Decode step
-            match cuda_model.batched_decode_step(&mut state) {
-                Ok(ids) => ids,
-                Err(e) => {
-                    eprintln!(
-                        "[PMAT-088] Decode step ERROR (m={}, step={}): {e}",
-                        state.m, state.gen_idx
-                    );
-                    for tx in error_senders.iter().flatten() {
-                        let _ = tx.try_send(Err(e.to_string()));
-                    }
-                    cuda_model.batched_cleanup(&state);
-                    return;
-                },
-            }
-        };
-
-        phase_timer.mark("decode");
-
-        // Token distribution WITHOUT lock
-        state.distribute_tokens(&token_ids);
-
-        phase_timer.mark("dist");
-
-        // PMAT-088c: Drop callbacks AND error senders for done slots to close channels.
-        // The SSE handler waits for channel closure (ALL senders dropped) to send [DONE].
-        // Without this, continuous batching keeps senders alive → SSE never ends
-        // → probador never sends new requests → recycling never gets requests.
-        for slot_idx in 0..state.m {
-            if state.done[slot_idx]
-                && error_senders
-                    .get(slot_idx)
-                    .and_then(|o| o.as_ref())
-                    .is_some()
-            {
-                // Replace callback → drops old closure → drops one sender
-                state.on_tokens[slot_idx] = Box::new(|_| false);
-                // Drop error sender → drops second sender → channel closes
-                error_senders[slot_idx] = None;
-            }
-        }
-
-        // PMAT-284: Uniform sub-phase timing via renacer-core PhaseTimer
-        phase_timer.emit(*total_iterations as u64, state.m);
-
-        // Per-iteration metrics (first 3 only to avoid log spam)
-        if *total_iterations <= 3 || state.gen_idx % 50 == 0 {
-            let iter_ms = iter_start.elapsed().as_secs_f64() * 1000.0;
-            let active_slots = state.done.iter().filter(|&&d| !d).count();
-            eprintln!(
-                "[PMAT-088] iter={}, m={}, active={}, step_ms={:.1}",
-                total_iterations, state.m, active_slots, iter_ms,
-            );
+        if !iteration_step(model, &mut running, rx, waiting, *total_iterations) {
+            return;
         }
     }
 
     // Phase 3: Cleanup
     {
         let mut cuda_model = model.write().expect("PMAT-088: model lock poisoned");
-        cuda_model.batched_cleanup(&state);
+        cuda_model.batched_cleanup(&running.state);
+    }
+}
+
+/// Phase 1: prefill the batch's prompts into a new decode state. If that
+/// fails, every request gets the error and there is no batch.
+#[cfg(feature = "cuda")]
+fn iteration_setup(
+    model: &Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
+    batch: Vec<CudaBatchRequest>,
+    max_slots: usize,
+) -> Option<IterationBatch> {
+    use crate::gguf::QuantizedGenerateConfig;
+
+    let m = batch.len();
+    let prompts: Vec<Vec<u32>> = batch.iter().map(|r| r.prompt_ids.clone()).collect();
+    let configs: Vec<QuantizedGenerateConfig> = batch.iter().map(|r| r.config.clone()).collect();
+    let error_senders: Vec<Option<TokenSender>> =
+        batch.iter().map(|r| Some(r.token_tx.clone())).collect();
+    let callbacks: Vec<TokenCallback> = batch
+        .into_iter()
+        .map(|req| token_callback(req.token_tx))
+        .collect();
+
+    let setup = {
+        let mut cuda_model = model.write().expect("PMAT-088: model lock poisoned");
+        cuda_model.batched_setup_and_prefill(&prompts, &configs, callbacks, max_slots)
+    };
+    match setup {
+        Ok(state) => Some(IterationBatch {
+            state,
+            error_senders,
+            phase_timer: PhaseTimer::from_env("PMAT_283_TIMING", "PMAT-283"),
+        }),
+        Err(e) => {
+            eprintln!("[PMAT-088] Setup+prefill ERROR (m={m}): {e}");
+            for tx in error_senders.iter().flatten() {
+                let _ = tx.try_send(Err(e.to_string()));
+            }
+            None
+        },
+    }
+}
+
+/// Whether the batch is over. Exit conditions:
+/// 1. All slots done AND no pending requests (batch truly complete)
+/// 2. gen_idx exceeded AND all slots done (safety limit)
+///
+/// With every slot done, the channel is drained into the waiting queue first:
+/// a pending request keeps the batch going, to recycle a done slot.
+#[cfg(feature = "cuda")]
+fn iteration_batch_complete(
+    state: &crate::gguf::BatchedDecodeState,
+    rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
+    waiting: &mut VecDeque<CudaBatchRequest>,
+) -> bool {
+    if !state.all_done() {
+        return false;
+    }
+    while let Ok(req) = rx.try_recv() {
+        waiting.push_back(req);
+    }
+    waiting.is_empty() || state.gen_idx >= state.max_tokens_max
+}
+
+/// One iteration: under the model lock, give waiting requests slots and
+/// decode a step; then hand out its tokens without the lock and close the
+/// channels of the slots it finished. False when the decode failed: every
+/// slot has the error, and the batch is cleaned up.
+#[cfg(feature = "cuda")]
+fn iteration_step(
+    model: &Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
+    running: &mut IterationBatch,
+    rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
+    waiting: &mut VecDeque<CudaBatchRequest>,
+    iteration: u64,
+) -> bool {
+    let iter_start = std::time::Instant::now();
+
+    running.phase_timer.start();
+
+    let token_ids = {
+        let mut cuda_model = model.write().expect("PMAT-088: model lock poisoned");
+
+        running.phase_timer.mark("lock");
+
+        schedule_waiting(&mut cuda_model, running, rx, waiting);
+
+        running.phase_timer.mark("sched");
+
+        // Decode step
+        match cuda_model.batched_decode_step(&mut running.state) {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!(
+                    "[PMAT-088] Decode step ERROR (m={}, step={}): {e}",
+                    running.state.m, running.state.gen_idx
+                );
+                for tx in running.error_senders.iter().flatten() {
+                    let _ = tx.try_send(Err(e.to_string()));
+                }
+                cuda_model.batched_cleanup(&running.state);
+                return false;
+            },
+        }
+    };
+
+    running.phase_timer.mark("decode");
+
+    // Token distribution WITHOUT lock
+    running.state.distribute_tokens(&token_ids);
+
+    running.phase_timer.mark("dist");
+
+    close_done_slots(running);
+
+    // PMAT-284: Uniform sub-phase timing via renacer-core PhaseTimer
+    running.phase_timer.emit(iteration, running.state.m);
+
+    // Per-iteration metrics (first 3 only to avoid log spam)
+    if iteration <= 3 || running.state.gen_idx % 50 == 0 {
+        let iter_ms = iter_start.elapsed().as_secs_f64() * 1000.0;
+        let active_slots = running.state.done.iter().filter(|&&d| !d).count();
+        eprintln!(
+            "[PMAT-088] iter={}, m={}, active={}, step_ms={:.1}",
+            iteration, running.state.m, active_slots, iter_ms,
+        );
+    }
+    true
+}
+
+/// PMAT-088: Check waiting queue FIRST, then rx channel.
+/// This ensures requests that arrived during previous iteration's
+/// token distribution get scheduled before new channel arrivals.
+///
+/// Priority: RECYCLE done slots first, then ADD new slots.
+#[cfg(feature = "cuda")]
+fn schedule_waiting(
+    cuda_model: &mut OwnedQuantizedModelCuda,
+    running: &mut IterationBatch,
+    rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
+    waiting: &mut VecDeque<CudaBatchRequest>,
+) {
+    if running.state.done.iter().any(|&d| d) {
+        // 1. BATCH RECYCLE done slots (multi-prompt prefill, one weight read)
+        recycle_done_slots(cuda_model, running, rx, waiting);
+    } else if running.state.m < running.state.max_kv_slots {
+        // 2. ADD new slots only when no done slots to recycle
+        join_waiting_slot(cuda_model, running, rx, waiting);
+    }
+}
+
+/// PMAT-088d: Batch recycle — collect ALL done slots with waiting
+/// requests and recycle them in one prefill_multi_prompt call (~14ms
+/// total regardless of count, vs N×17ms sequential). This eliminates
+/// recycle serialization when multiple slots finish simultaneously.
+#[cfg(feature = "cuda")]
+fn recycle_done_slots(
+    cuda_model: &mut OwnedQuantizedModelCuda,
+    running: &mut IterationBatch,
+    rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
+    waiting: &mut VecDeque<CudaBatchRequest>,
+) {
+    let mut recycle_pairs: Vec<(
+        usize,
+        Vec<u32>,
+        crate::gguf::QuantizedGenerateConfig,
+        TokenCallback,
+    )> = Vec::new();
+    let mut recycle_error_txs: Vec<(usize, TokenSender)> = Vec::new();
+
+    for slot_idx in 0..running.state.m {
+        if !running.state.done[slot_idx] {
+            continue;
+        }
+        let Some(req) = waiting.pop_front().or_else(|| rx.try_recv().ok()) else {
+            break; // No more waiting requests
+        };
+        recycle_error_txs.push((slot_idx, req.token_tx.clone()));
+        recycle_pairs.push((
+            slot_idx,
+            req.prompt_ids,
+            req.config,
+            token_callback(req.token_tx),
+        ));
+    }
+
+    if recycle_pairs.is_empty() {
+        return;
+    }
+    match cuda_model.recycle_slots_batch(&mut running.state, recycle_pairs) {
+        Ok(()) => {
+            for (slot_idx, error_tx) in recycle_error_txs {
+                running.error_senders[slot_idx] = Some(error_tx);
+            }
+        },
+        Err(e) => {
+            eprintln!("[PMAT-088d] Batch recycle FAILED: {e}");
+            for (_, error_tx) in &recycle_error_txs {
+                let _ = error_tx.try_send(Err(e.to_string()));
+            }
+        },
+    }
+}
+
+/// PMAT-088c: the next waiting request joins the batch in a new slot.
+#[cfg(feature = "cuda")]
+fn join_waiting_slot(
+    cuda_model: &mut OwnedQuantizedModelCuda,
+    running: &mut IterationBatch,
+    rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
+    waiting: &mut VecDeque<CudaBatchRequest>,
+) {
+    let Some(req) = waiting.pop_front().or_else(|| rx.try_recv().ok()) else {
+        return;
+    };
+    let error_tx = req.token_tx.clone();
+    match cuda_model.add_slot_to_batch(
+        &mut running.state,
+        req.prompt_ids,
+        req.config,
+        token_callback(req.token_tx),
+    ) {
+        Ok(()) => running.error_senders.push(Some(error_tx)),
+        Err(e) => {
+            eprintln!("[PMAT-088c] Mid-batch join FAILED: {e}");
+            let _ = error_tx.try_send(Err(e.to_string()));
+        },
+    }
+}
+
+/// PMAT-088c: Drop callbacks AND error senders for done slots to close channels.
+/// The SSE handler waits for channel closure (ALL senders dropped) to send [DONE].
+/// Without this, continuous batching keeps senders alive → SSE never ends
+/// → probador never sends new requests → recycling never gets requests.
+#[cfg(feature = "cuda")]
+fn close_done_slots(running: &mut IterationBatch) {
+    let IterationBatch {
+        state,
+        error_senders,
+        ..
+    } = running;
+    for slot_idx in 0..state.m {
+        if state.done[slot_idx]
+            && error_senders
+                .get(slot_idx)
+                .and_then(|o| o.as_ref())
+                .is_some()
+        {
+            // Replace callback → drops old closure → drops one sender
+            state.on_tokens[slot_idx] = Box::new(|_| false);
+            // Drop error sender → drops second sender → channel closes
+            error_senders[slot_idx] = None;
+        }
     }
 }

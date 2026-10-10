@@ -423,15 +423,15 @@ fn log_batch_done(batch_size: usize, elapsed: std::time::Duration) {
 
 /// The channel one request's tokens (or its error) go back on.
 #[cfg(feature = "cuda")]
-type TokenSender = tokio::sync::mpsc::Sender<Result<u32, String>>;
+pub(crate) type TokenSender = tokio::sync::mpsc::Sender<Result<u32, String>>;
 
 /// A slot's per-token callback; `false` means its caller has gone.
 #[cfg(feature = "cuda")]
-type TokenCallback = Box<dyn FnMut(u32) -> bool + Send>;
+pub(crate) type TokenCallback = Box<dyn FnMut(u32) -> bool + Send>;
 
 /// The callback that streams a slot's tokens to `token_tx`.
 #[cfg(feature = "cuda")]
-fn token_callback(token_tx: TokenSender) -> TokenCallback {
+pub(crate) fn token_callback(token_tx: TokenSender) -> TokenCallback {
     Box::new(move |token_id: u32| -> bool { token_tx.try_send(Ok(token_id)).is_ok() })
 }
 
