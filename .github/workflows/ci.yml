@@ -204,11 +204,14 @@ jobs:
           setsid --wait bash scripts/check_no_claim_literals.sh --selftest
           setsid --wait bash scripts/check_hardcoded_paths.sh --self-test
           setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
+          setsid --wait bash scripts/ci/fixture_quiet.sh --self-test
       # The driver decides what every section's if:/matrix/needs means and whether
       # the vendored workflow is the upstream one; its case table must go RED on
       # each planted defect before it is trusted to report a section green.
+      # #4596: its fixture rows print real ::error:: lines; fixture_quiet.sh shows
+      # them as labelled text, never as job annotations, and keeps the exit status.
       - name: fat_driver case table must still turn RED
-        run: python3 scripts/ci/fat_driver.py self-test
+        run: setsid --wait bash scripts/ci/fixture_quiet.sh "fat_driver self-test" -- python3 scripts/ci/fat_driver.py self-test
       # PMAT-4510: every secrets.<NAME> a section reads must be plumbed above as
       # FAT_SECRET_<NAME> under its full name; #4441 cut one short and the
       # receipt signer ran with an empty key on every PR. Text-only, no build.
@@ -539,8 +542,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # #4596: see the x86-main step of the same name.
       - name: fat_driver case table must still turn RED
-        run: python3 scripts/ci/fat_driver.py self-test
+        run: setsid --wait bash scripts/ci/fixture_quiet.sh "fat_driver self-test" -- python3 scripts/ci/fat_driver.py self-test
       # `?` for the brackets and the comma: --sections splits on commas.
       - name: Sections
         id: run
