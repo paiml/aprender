@@ -45,12 +45,13 @@ answered() {
 }
 
 # p6_fetch [-C <dir>] <git fetch args...> -> git fetch (in <dir> when -C names one),
-# read up to P6_READS times. -C with no dir is a usage error (rc 129): an answer.
+# read up to P6_READS times. -C with no dir, or an empty one, is a usage error (rc 129): an
+# answer. `git -C ""` keeps the cwd, so a caller's unset dir would read in whatever repo the cwd is.
 # rc = the last read's rc. git's stderr reaches the caller's stderr.
 p6_fetch() {
   local err n rc why at=()
   if [ "${1:-}" = -C ]; then
-    [ $# -ge 2 ] || { printf 'fetch_p6: -C needs a directory\n' >&2; return 129; }
+    if [ -z "${2:-}" ]; then printf 'fetch_p6: -C needs a directory\n' >&2; return 129; fi
     at=(-C "$2"); shift 2
   fi
   err="$(mktemp)" || return 2
@@ -135,6 +136,7 @@ case "$SHIM_MODE" in
   norepo) printf '%s\n' 'fatal: not a git repository (or any of the parent directories): .git' >&2; exit 128 ;;
   usage) printf '%s\n' 'usage: git fetch [<options>] [<repository> [<refspec>...]]' >&2; exit 129 ;;
   real) exec "$SHIM_REAL" "$@" ;;
+  *) printf 'shim: unknown SHIM_MODE %s\n' "$SHIM_MODE" >&2; exit 99 ;;
 esac
 SHIM
   # A planted sleep: records how long each re-read would wait, returns at once.
@@ -227,6 +229,11 @@ SHIM
   rm -rf -- "${tmp:?}/ok"
   run ok -C; rc=$?
   row '-C with no dir is a usage error: rc 129, git never runs' '129 0' "$rc $(reads ok)"
+  run ok -C '' origin main; rc=$?
+  row '-C with an empty dir is a usage error too (git -C "" keeps the cwd): rc 129, git never runs' '129 0' \
+    "$rc $(reads ok)"
+  run no-such-mode origin main; rc=$?
+  row 'a misspelled SHIM_MODE fails its row: the planted git exits 99, never 0' 99 "$rc"
 
   # Wiring: no bare `git fetch` in the sections file.
   printf '          bash %s --no-tags --depth=1 origin x\n          # git fetch in a comment is prose\n' \

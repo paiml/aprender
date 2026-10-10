@@ -422,6 +422,8 @@ EOF
     # #4936 (P6): the same stacked entry with the deepen's first read dead (curl 92). fetch_p6.sh reads the
     # deepen again and the base still resolves. A planted git logs every fetch read; both must be the
     # deepen, so a deepen that is one bare read (it dies, and the by-sha fetch after it answers) is RED.
+    # It runs from a cwd outside REPO_ROOT (the shim's own dir), as check_ont_ratchet.sh may (it never cds),
+    # and git finds no repository above that cwd: a read that lost its -C "$REPO_ROOT" fails, the row is RED.
     row=$((row + 1))
     rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
     S="$TD/p6-shim"; rm -rf "${S:?}"; mkdir -p "$S"
@@ -434,10 +436,10 @@ EOF
         'esac' \
         'exec "$P6_SHIM_REAL" "$@"' > "$S/git"
     printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$S/sleep"; chmod +x "$S/git" "$S/sleep"; : > "$S/reads"
-    got8=$( PATH="$S:$PATH" P6_SHIM_REAL="$(command -v git)" P6_SHIM_LOG="$S/reads" GITHUB_EVENT_NAME=merge_group bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" "$Q.clone" 2>/dev/null ) || true
+    got8=$( PATH="$S:$PATH" P6_SHIM_REAL="$(command -v git)" P6_SHIM_LOG="$S/reads" GITHUB_EVENT_NAME=merge_group GIT_CEILING_DIRECTORIES="$TD" bash -c 'cd "$2" || exit 2; if git rev-parse --git-dir >/dev/null 2>&1; then printf "cwd is a repo|"; else printf "no repo|"; fi; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" "$S" 2>/dev/null ) || true
     reads8="$(grep -c -e '--deepen=1' "$S/reads") of $(wc -l < "$S/reads" | tr -d ' ')"
-    case "$reads8|$got8" in "2 of 2|$want6|single parent (stacked merge_group entry"*) printf 'ok    row %-2s stacked entry, the deepen read dead once (curl 92): read again under P6, base = the previous entry squash\n' "$row" ;;
-        *) printf 'FAIL  row %-2s stacked entry, deepen read dead once: wanted 2 of 2 deepen reads and base %s, got %s deepen reads, %s\n' "$row" "$want6" "$reads8" "$got8"; fails=1 ;; esac
+    case "$reads8|$got8" in "2 of 2|no repo|$want6|single parent (stacked merge_group entry"*) printf 'ok    row %-2s stacked entry, the deepen read dead once (curl 92), from a cwd that is no repo: read again under P6 in REPO_ROOT, base = the previous entry squash\n' "$row" ;;
+        *) printf 'FAIL  row %-2s stacked entry, deepen read dead once: wanted 2 of 2 deepen reads, a cwd that is no repo and base %s; got %s deepen reads, %s\n' "$row" "$want6" "$reads8" "$got8"; fails=1 ;; esac
     rm -rf "${S:?}"
 
     rm -rf "${Q:?}" "${Q:?}.clone"
