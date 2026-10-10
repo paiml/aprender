@@ -20,7 +20,7 @@ fn try_safetensors_cuda_backend(
     ) {
         return Some(r);
     }
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "SafeTensors CUDA") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -113,7 +113,7 @@ async fn try_cuda_backend(
     let t0 = if ttft_trace { Some(std::time::Instant::now()) } else { None };
 
     let cuda_model_lock = state.cuda_model()?;
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "CUDA") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -206,6 +206,7 @@ async fn try_cuda_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         timings,
+        None,
         None,
     ))
 }
@@ -394,6 +395,33 @@ fn dense_cpu_session(
     )
 }
 
+/// The prompt and reply of a non-streaming quantized turn, and the record of
+/// each reply token's logprobs when they were asked for (#4971).
+type QuantizedTurn = (Vec<u32>, Option<Vec<crate::gguf::logprobs::StepLogprobs>>);
+
+/// #4268: the non-streaming dense CPU turn runs on the one engine, and with
+/// `top_n` (#4971) records each step; `--trace` keeps the instrumented loop,
+/// which records none (a traced request for logprobs is refused before this).
+fn quantized_turn(
+    model: &Arc<crate::gguf::OwnedQuantizedModel>,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+    top_n: Option<usize>,
+) -> crate::error::Result<QuantizedTurn> {
+    use crate::gguf::dense_session::{dense_turn, dense_turn_with_logprobs};
+    if config.trace {
+        return model
+            .generate_with_cache(prompt, config)
+            .map(|tokens| (tokens, None));
+    }
+    let mut session = dense_cpu_session(model);
+    match top_n {
+        None => dense_turn(&mut session, prompt, config).map(|(tokens, _)| (tokens, None)),
+        Some(n) => dense_turn_with_logprobs(&mut session, prompt, config, n)
+            .map(|(tokens, steps)| (tokens, Some(steps))),
+    }
+}
+
 /// Quantized model (GGUF serve mode) backend with true streaming.
 fn try_quantized_backend(
     state: &AppState,
@@ -427,6 +455,11 @@ fn try_quantized_backend(
         state.should_trace(trace_level),
         cancel,
     );
+    // #4971: logprobs come from the non-streaming dense turn only.
+    if let Some(reason) = super::chat_logprobs::quantized_logprobs_refusal(request, q_config.trace)
+    {
+        return Some(fail_response(state, StatusCode::NOT_IMPLEMENTED, reason));
+    }
     // #3718: the dense CPU loop spends `effective_max_tokens` (the request clamped
     // to the context room), so the finish is judged against THAT budget. Judged
     // against the request's number, every context-clamped cut read as "stop". A
@@ -486,22 +519,17 @@ fn try_quantized_backend(
     }
 
     // Non-streaming quantized
-    // #4268: the dense CPU turn runs on the one engine; `--trace` keeps the
-    // instrumented loop.
-    let generated = if q_config.trace {
-        quantized_model.generate_with_cache(&prompt_ids, &q_config)
-    } else {
-        crate::gguf::dense_session::dense_turn(
-            &mut dense_cpu_session(quantized_model),
-            &prompt_ids,
-            &q_config,
-        )
-        .map(|(tokens, _)| tokens)
-    };
-    let generated = match generated {
-        Ok(g) => g,
+    let turn = quantized_turn(
+        quantized_model,
+        &prompt_ids,
+        &q_config,
+        request.logprobs_top_n(),
+    );
+    let (generated, steps) = match turn {
+        Ok(turn) => turn,
         Err(e) => return Some(fail_response(state, crate::api::generation_error_status(&e), e)),
     };
+    let logprobs = steps.map(|steps| super::ChatLogprobs::from_steps(&tokenizer, &steps));
 
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
     let completion_tokens = token_ids.len();
@@ -526,6 +554,7 @@ fn try_quantized_backend(
         request_tool_choice(request),
         None,
         None,
+        logprobs,
     ))
 }
 
@@ -565,7 +594,7 @@ fn try_apr_transformer_backend(
     ) {
         return Some(r);
     }
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "APR transformer (f32)") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -634,6 +663,7 @@ fn try_apr_transformer_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
         None,
         None,
     ))
@@ -716,6 +746,10 @@ fn registry_fallback(
     ) {
         return r;
     }
+    // #4971: no logprobs here either, so refuse rather than drop them.
+    if let Some(reason) = super::chat_logprobs::logprobs_refusal(request, "dense registry") {
+        return fail_response(state, StatusCode::NOT_IMPLEMENTED, reason);
+    }
     let model_id = if request.model == "default" || request.model.is_empty() {
         None
     } else {
@@ -789,6 +823,7 @@ fn registry_fallback(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
         None,
         None,
     )
@@ -872,7 +907,7 @@ async fn try_apr_q4k_chat_backend(
     use crate::api::apr_q4k_scheduler::AprQ4kRequest;
 
     let q4k_tx = state.apr_q4k_tx()?;
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "APR Q4K CUDA") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -966,6 +1001,7 @@ async fn try_apr_q4k_chat_backend(
         request_tool_choice(request),
         None,
         None,
+        None,
     ))
 }
 
@@ -1005,7 +1041,8 @@ pub async fn openai_chat_completions_handler(
     );
 
     // #3723: two spellings of the thinking toggle that disagree are refused, never picked between.
-    if let Some(reason) = request.thinking_conflict() {
+    // #4971: so is `top_logprobs` without `logprobs: true`.
+    if let Some(reason) = request.field_conflict() {
         return fail_response(&state, StatusCode::BAD_REQUEST, reason);
     }
 
@@ -1278,7 +1315,7 @@ fn try_qwen3_moe_backend(
         Ok(m) => m,
         Err(r) => return Some(r),
     };
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "Qwen3-MoE") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -1397,6 +1434,7 @@ fn try_qwen3_moe_backend(
         request_tool_choice(request),
         None,
         Some(used_gpu),
+        None,
     ))
 }
 

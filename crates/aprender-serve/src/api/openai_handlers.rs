@@ -65,6 +65,21 @@ fn require_tokenizer(state: &AppState) -> Result<Arc<BPETokenizer>, Response> {
     })
 }
 
+/// [`require_tokenizer`] for a chat backend that does not compute logprobs:
+/// a request that asked for them is refused with 501 naming `backend`, never
+/// served without them (#4971, ASOC-INV-021).
+#[allow(clippy::result_large_err)]
+fn require_tokenizer_refusing_logprobs(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    backend: &str,
+) -> Result<Arc<BPETokenizer>, Response> {
+    match super::chat_logprobs::logprobs_refusal(request, backend) {
+        Some(reason) => Err(fail_response(state, StatusCode::NOT_IMPLEMENTED, reason)),
+        None => require_tokenizer(state),
+    }
+}
+
 /// D5 (ruling-3715-2010): pass a tokenized turn through, or refuse it with a 400
 /// that names the limit when it cannot fit the serving context
 /// ([`AppState::serving_context`]; `None` means no cap, so nothing is refused).
@@ -478,6 +493,8 @@ mod pmat821_chat_handler_threading_tests {
             chat_template_kwargs: None,
             think: None,
             stream_options: None,
+            logprobs: None,
+            top_logprobs: None,
         }
     }
 
@@ -710,6 +727,7 @@ pub(crate) fn build_chat_response(
     tool_choice: Option<crate::grammar::ToolChoice>,
     timings: Option<super::Timings>,
     used_gpu: Option<bool>,
+    logprobs: Option<super::ChatLogprobs>,
 ) -> Response {
     let (brick_trace, step_trace, layer_trace) = build_trace_data(
         trace_level,
@@ -735,7 +753,7 @@ pub(crate) fn build_chat_response(
         ),
     };
 
-    Json(ChatCompletionResponse {
+    let response = ChatCompletionResponse {
         used_gpu,
         id: request_id,
         object: "chat.completion".to_string(),
@@ -755,8 +773,8 @@ pub(crate) fn build_chat_response(
         step_trace,
         layer_trace,
         timings,
-    })
-    .into_response()
+    };
+    super::chat_logprobs::chat_reply(response, logprobs)
 }
 
 /// Serialize a value to an SSE event, returning `None` if serialization fails.
@@ -1122,7 +1140,7 @@ fn try_gpu_backend(
     use crate::gpu::GpuGenerateConfig;
 
     let gpu_model_lock = state.gpu_model()?;
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "GPU") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -1225,6 +1243,7 @@ fn try_gpu_backend(
         // absent rather than zero.
         None,
         None,
+        None,
     ))
 }
 
@@ -1241,7 +1260,7 @@ fn try_cached_backend(
     use crate::gguf::QuantizedGenerateConfig;
 
     let cached_model = state.cached_model()?;
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "cached quantized") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -1321,6 +1340,7 @@ fn try_cached_backend(
         request_tool_choice(request),
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
+        None,
         None,
         None,
     ))
