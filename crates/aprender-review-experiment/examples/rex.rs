@@ -3,6 +3,9 @@
 //! An example, not a `[[bin]]`: the workspace binary register only shrinks
 //! (monorepo_invariants::test_no_unauthorized_binaries).
 //!
+//! The lanes run Qwen3.5 (4B primary, 9B control). `llama` in a flag or a
+//! cell name (`--llama-receipts`, `--llama-cell`) is the llama.cpp runtime.
+//!
 //! Commands:
 //! - `prereg`        print the prereg lock the tree implies
 //! - `prereg-check`  exit 1 unless the committed lock matches the tree

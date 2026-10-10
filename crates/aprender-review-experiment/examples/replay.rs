@@ -3,6 +3,9 @@
 //! PRM-S1: the `review-replay-v1` speed benchmark (contract `review-replay-v1`,
 //! library `replay.rs`). An example, not a `[[bin]]` (see `rex.rs`).
 //!
+//! Both engines decode Qwen3.5 from the replay GGUF. `llama-server` and
+//! `--engine llama_cpp` are the llama.cpp runtime.
+//!
 //! Commands:
 //! - `build --version V --candidates F --tokenize-url U --diffs-out DIR --out SET
 //!   [--per-stratum N]` F is JSONL `{"group":"owner/repo#N","diff":"path"}`, one

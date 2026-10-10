@@ -437,8 +437,9 @@ fn falsify_tdc_008_iso_weeks_and_zstd_sizes_match_their_standards() {
 /// FALSIFY-TDC-009 (PRM-C14 acceptance): G16 is decided only when every week is
 /// measured. `within` and `outside` are both results; one `unmeasured` week, or
 /// no week at all, keeps G16 at `[U]` and names the open week.
+// `json!` over strings.
 #[test]
-#[allow(clippy::disallowed_methods)] // `json!` over strings
+#[allow(clippy::disallowed_methods)]
 fn falsify_tdc_009_g16_is_decided_only_when_every_week_is_measured() {
     let rx = |gs: &[(&str, &str)]| serde_json::json!({"weeks": gs.iter().map(|(w, g)| serde_json::json!({"week": w, "g16": g})).collect::<Vec<_>>()});
     assert_eq!(
