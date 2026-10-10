@@ -153,7 +153,7 @@ jobs:
           # a persistent runner keeps older .dogfood/receipt-*.json files, and a glob would upload them and
           # satisfy if-no-files-found with a receipt from another night.
           SOURCE_DATE_EPOCH=$(date -u +%s); export SOURCE_DATE_EPOCH
-          ts=$(jq -rn --argjson e "$SOURCE_DATE_EPOCH" '$e | strftime("%Y%m%dT%H%M%SZ")')
+          ts=$(date -u -d @"$SOURCE_DATE_EPOCH" +%Y%m%dT%H%M%SZ)
           bash scripts/dogfood.sh --phase nightly > "$RUNNER_TEMP/dogfood/dogfood-nightly.log" 2>&1; rc=$?
           if [ -f ".dogfood/receipt-$ts.json" ]; then cp ".dogfood/receipt-$ts.json" "$RUNNER_TEMP/dogfood/receipt-$ts.json"; else echo "::error::dogfood wrote no receipt-$ts.json tonight (rc=$rc)"; norcpt=1; fi
           tail -n 40 "$RUNNER_TEMP/dogfood/dogfood-nightly.log"
@@ -167,7 +167,7 @@ jobs:
           fi
           [ -z "${norcpt:-}" ] || exit 1
           [ "$rc" -eq 0 ] || { echo "::error::dogfood nightly NO-GO rc=$rc at $(git rev-parse HEAD)"; exit 1; }
-          echo "DOGFOOD GO at $(git rev-parse HEAD) for ${DOGFOOD_TARGET_VERSION:-?} (R5 refuses the nightly receipt, as it must)"
+          echo "DOGFOOD GO at $(git rev-parse HEAD) (R5 refuses the nightly receipt, as it must)"
 
       - name: Publish tonight's receipt and the logs
         if: always()
