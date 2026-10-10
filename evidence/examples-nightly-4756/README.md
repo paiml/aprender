@@ -83,9 +83,9 @@ shorter path. Each item below names its gate:
     `qa_verify-sections.txt:78`).
     The example does not print its nested cargo output, so the file does not show why those
     gates failed. A bare run that ran a section would be a fail even when it finished inside
-    the bound. Those gate failures are in every build, and are #5026, not this ticket. The
-    file is the job's output with its colour escape codes removed afterwards, as its first
-    line says. On main the row was a timeout.
+    the bound. Those gate failures were measured in a debug build only, and are #5026, not this
+    ticket. The file is the job's output with its colour escape codes removed afterwards, as
+    its first line says. On main the row was a timeout.
   - *llama2-train.* Its default config, `examples/llama2/configs/124m.toml`, is relative to
     the crate. `git ls-files` finds it tracked at
     `crates/aprender-train/examples/llama2/configs/124m.toml` and nothing at the default path
@@ -132,8 +132,10 @@ reach its end. Neither shortens a run.
   window with the manifest's `max_tokens` as the output reserve
   (`crates/aprender-orchestrate/src/agent/runtime.rs:340`), the default manifest's
   `max_tokens` is 4096 (`agent/manifest.rs:110`), and the input budget is the window minus
-  the reserve (`serve/context.rs:32`). That left 0 input tokens, so every run stopped on
-  `ContextOverflow`. The window is now 32 768 (`agent_demo.rs:399`).
+  the reserve (`serve/context.rs:32`). That left 0 input tokens, and a prompt that does not fit is
+  refused as `AgentError::ContextOverflow`, which the runtime maps from the context
+  manager's `ExceedsLimit` (`agent/runtime_helpers.rs:31-34`). The window is now 32 768
+  (`agent_demo.rs:399`).
 
 ## A probe in every build: parity_035
 
