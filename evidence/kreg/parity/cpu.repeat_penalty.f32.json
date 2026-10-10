@@ -1,5 +1,5 @@
 {
-  "build_identity": "d64d8a7118",
+  "build_identity": "1238c8caaf4cbd3ad3449388371022c75c910a02",
   "host": "mac-server",
   "host_arch": "x86_64",
   "input_set": {
@@ -7,10 +7,10 @@
     "driver": "none",
     "oracle": "f64_definition:repeat_penalty:once per distinct t<n in last_n,x<=0?fl32(x*p):fl32(x/p),p=1.3,last_n=32",
     "row_sha256": "4100adcadd80cda0ee8ba2285d863e06e2ee7bf71ce129ce16dc4b10957086b3",
-    "source_sha256": "04e9c6b2c8d6fba236532200b23feeedd6388f8067761aa7971fe93f4200901e",
+    "source_sha256": "24ea25e178f1d088728d904529d4fbc580b1627497d267fa3dea1a2a957d2388",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "1986d17cd4d4115ade3a13bacf9140105a651b938d57826ee4dc65a1e3ec3390",
+  "input_set_hash": "53e2dd8596ce6abe7c1f0737a52d6363c9e819a03481474fc59d2512857cf602",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -20,6 +20,7 @@
     "avx512bw",
     "avx512vnni"
   ],
+  "isa_forced": "native",
   "kernel_id": "cpu.repeat_penalty.f32",
   "margin": {
     "error_model": "EM-ELEM",
@@ -37,7 +38,7 @@
   },
   "source_fn": "apply_repeat_penalty",
   "tolerance_rel": 2.9999999999999997e-308,
-  "ts": "2026-09-29T17:37:59Z",
+  "ts": "2026-10-10T01:56:41Z",
   "workload": {
     "n": 896,
     "seed": 1161367296,
