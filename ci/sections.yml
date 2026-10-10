@@ -1364,6 +1364,7 @@ jobs:
           python3 scripts/lib/roadmap_merge.py --selftest
           python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
           bash scripts/nightly_prune_release.sh --self-test   # nightly publish overflowed page one (422)
+          bash scripts/nightly_gate_retry.sh --self-test   # #5053 ci-pending retries, then RED never green
       # The baseline printer holds its OWN output to the same pairing rule and
       # re-derives every number the contract quotes.
       - name: Dogfood baselines must re-derive from the ledger
