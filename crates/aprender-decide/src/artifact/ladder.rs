@@ -1556,7 +1556,6 @@ fn probe_replay_failure_is_rung_7() {
 // CLASS B, artifact half: decide-apr-v1 untrusted_input_bounds (plan 08-26)
 // ---------------------------------------------------------------------------
 
-/// A row value as text (a YAML string or number).
 /// [`artifact_bounds_table_is_swept`]: every row carries its required fields, and the test it
 /// names exists.
 fn bounds_row_fields(row: &serde_yaml::Value, id: &str, failures: &mut Vec<String>) {
@@ -1642,6 +1641,7 @@ fn bounds_refusal(
     }
 }
 
+/// A row value as text (a YAML string or number).
 fn row_text(row: &serde_yaml::Value, key: &str) -> String {
     match &row[key] {
         serde_yaml::Value::String(s) => s.clone(),
