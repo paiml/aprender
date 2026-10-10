@@ -223,6 +223,8 @@ if [ "${1:-}" = "--self-test" ]; then
         row 2 "unparseable TOML -> ENV rc=2, never a pass"                $'[profile.ci\nfail-fast = false\n'
         row 0 "a top-level nextest key before [profile.ci] -> PASS (EXT-02's experimental = setup-scripts)" \
             $'experimental = ["setup-scripts"]\n[profile.ci]\nretries = 2\nfail-fast = false\n'
+        row 0 "the other top-level nextest key before [profile.ci] -> PASS (nextest-version)" \
+            $'nextest-version = "0.9.50"\n[profile.ci]\nfail-fast = false\n'
         row 2 "an inline top-level profile that redefines [profile.ci] -> ENV rc=2, never a pass" \
             $'profile = { ci = { "fail-fast" = true } }\n[profile.ci]\nfail-fast = false\n'
         row 2 "the same inline profile with its key QUOTED -> ENV rc=2, never a pass" \
@@ -250,6 +252,8 @@ if [ "${1:-}" = "--self-test" ]; then
             $'[profile.ci]\nfail-fast = fals\n'
         NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "an unknown top-level key (not nextest's own) -> ENV, never a guess" \
             $'experimentl = ["setup-scripts"]\n[profile.ci]\nfail-fast = false\n'
+        NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "a skipped top-level key whose value continues past its line -> ENV, never a guess" \
+            $'experimental = [\n  "setup-scripts",\n]\n[profile.ci]\nfail-fast = false\n'
     elif [ "$pyrc" -eq 3 ]; then
         cat "$d/py.state"
         printf 'UNMEASURED runner=%s reason=no-interpreter -- the reader case table (both readers) needs python3 and did not run here (#3697)\n' "${RUNNER_NAME:-unknown}"

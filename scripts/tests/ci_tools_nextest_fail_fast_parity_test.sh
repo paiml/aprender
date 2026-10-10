@@ -29,7 +29,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 GUARD="$ROOT/scripts/check_nextest_ci_profile_no_fail_fast.sh"
-EXPECTED_CASES=123
+EXPECTED_CASES=124
 
 if ! "$PY" -I -c 'import tomllib' 2>/dev/null; then
     echo "FAIL: $PY has no tomllib, so the guard's library reader cannot run here; set PYTHON to python3.11+" >&2
@@ -224,6 +224,9 @@ differ "a float that overflows to inf"   0 2 "${ok}x = 1e400"$'\n'
 differ "fail-fast = 1e400"               1 2 $'[profile.ci]\nfail-fast = 1e400\n'
 printf '%sx = %s\n' "$ok" "$(nest 79 '[' ']')" >"$tmp/c.toml"
 compare "arrays nested 79 deep" library 0 "$tmp/c.toml"
+# A table defined twice: once by a dotted key under [profile], again by its header.
+printf '[profile]\nci.fail-fast = true\n[profile.ci]\nfail-fast = false\n' >"$tmp/c.toml"
+compare "[profile.ci] defined by a dotted key, then by its header" library 2 "$tmp/c.toml"
 differ "arrays nested 80 deep"           0 2 "${ok}x = $(nest 80 '[' ']')"$'\n'
 differ "inline tables nested 81 deep"    0 2 "${ok}x = $(nest 81 '{' '}' | sed 's/{/{a=/g')"$'\n'
 
