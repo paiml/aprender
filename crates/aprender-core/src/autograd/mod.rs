@@ -57,6 +57,13 @@ pub use ops::{
     additive_attention_mask, cosine_similarity_rows, embedding_gather, l2_normalize_rows,
     masked_mean_pool, mse_loss, OpError, NEG_MASK,
 };
+// ModernBERT training ops (APR-LAYA-TRAIN-001 LT-2), contract modernbert-train-v1.
+#[path = "ops/train_ops.rs"]
+mod train_ops;
+pub use train_ops::{clip_grad_norm_, concat, local_window_mask, local_window_padding_mask};
+#[cfg(test)]
+#[path = "ops/train_ops_tests.rs"]
+mod train_ops_tests;
 
 use std::cell::RefCell;
 

@@ -1,0 +1,295 @@
+contract: modernbert-train
+metadata:
+  kind: training-loop
+  version: 1.0.0
+  created: '2026-10-10'
+  author: PAIML Engineering
+  description: >
+    APR-LAYA-TRAIN-001 row LT-2: the differentiable operations a ModernBERT
+    encoder forward needs that the aprender-core autograd engine
+    (`aprender::autograd`) did not have — column/row narrowing, chunking of a
+    fused Wqkv projection, concatenation, clamping, rotate-half rotary position
+    embedding with a caller-supplied theta (global 160000, local 10000), the
+    sliding-window local-attention additive mask, and global-L2 gradient
+    clipping over the autograd gradient store.
+
+    Every differentiable equation below carries its backward formula, and every
+    one is enforced by a central finite-difference gradcheck evaluated in f64
+    bookkeeping over an f32 forward (h = 1e-3, loss = sum(out * W) with a fixed
+    non-uniform W). Each gradcheck ships a MUTANT PROOF: the same harness, fed
+    the sign-flipped analytical gradient, must REJECT it. A checker that cannot
+    reject a wrong-sign backward is vacuous, and the mutant test makes that
+    state RED.
+
+    Boundary choices are torch's: clamp passes gradient where min <= x <= max
+    (inclusive), clip_grad_norm_ scales by max_norm / (total + 1e-6) only when
+    that coefficient is below 1. The local window is inclusive (|i - j| <=
+    half_window). Masked entries use the finite NEG_MASK = -1e9 that
+    `additive_attention_mask` (setfit-encoder-conformance-v1) already uses, so
+    the two masks compose without -inf arithmetic.
+  references:
+  - 'Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position Embedding'
+  - 'Warner et al. (2024) Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder (ModernBERT)'
+  - 'Pascanu et al. (2013) On the difficulty of training recurrent neural networks (gradient norm clipping)'
+  - 'crates/aprender-core/src/autograd/ops/train_ops.rs'
+  - 'crates/aprender-core/src/autograd/ops/train_ops_tests.rs'
+  depends_on:
+  - setfit-encoder-conformance-v1
+  - tensor-layout-v1
+
+equations:
+
+  narrow:
+    formula: >
+      out = x[:, start:start+len] (dim 1) or x[start:start+len, :] (dim 0);
+      backward dx = zeros_like(x) with dx[window] = g
+    domain: x in R^{R x C} row-major, dim in {0,1}, start + len <= shape[dim], len >= 1
+    codomain: R^{R x len} (dim 1) or R^{len x C} (dim 0)
+    invariants:
+    - 'Row-major layout (LAYOUT-001)'
+    - Backward scatters the upstream gradient into the window and leaves zeros outside it
+    preconditions:
+    - 'x.ndim() == 2'
+    - 'start + len <= x.shape()[dim]'
+    postconditions:
+    - 'result.shape()[dim] == len'
+
+  chunk:
+    formula: >
+      chunk(x, n)[k] = narrow(x, 1, k*C/n, C/n) for k in 0..n;
+      backward of each chunk is the narrow backward, accumulated into dx
+    domain: x in R^{R x C}, n >= 1, C divisible by n
+    codomain: n tensors in R^{R x C/n}
+    invariants:
+    - Splits a fused Wqkv output [N, 3d] into Q, K, V each [N, d] without severing the graph
+    - The n chunks tile the columns exactly; their gradients sum into disjoint windows of dx
+    preconditions:
+    - 'x.shape()[1] % n == 0'
+    postconditions:
+    - 'result.len() == n'
+
+  concat:
+    formula: >
+      out = [x_1 | x_2 | ... | x_k] along dim; backward dx_i = g restricted to
+      x_i's window along dim
+    domain: x_i in R^{R_i x C_i}, all equal on the non-concatenated dim, k >= 1
+    codomain: R^{R x sum C_i} (dim 1) or R^{sum R_i x C} (dim 0)
+    invariants:
+    - 'Row-major layout (LAYOUT-001)'
+    - Backward splits g into k pieces whose shapes equal the input shapes
+    preconditions:
+    - 'tensors.len() >= 1'
+    postconditions:
+    - 'result.shape()[dim] == sum of input shape[dim]'
+
+  clamp:
+    formula: >
+      out = min(max(x, lo), hi) with either bound optional;
+      backward dx = g * 1[lo <= x <= hi] (torch boundary: inclusive)
+    domain: x in R^n, lo <= hi when both are given
+    codomain: R^n
+    invariants:
+    - Gradient passes where the input lies inside OR ON a bound, matching torch.clamp backward
+    - Gradient is exactly zero strictly outside the bounds
+    preconditions:
+    - 'lo.is_none() || hi.is_none() || lo <= hi'
+    postconditions:
+    - 'result.numel() == x.numel()'
+
+  max_scalar:
+    formula: out = max(x, c) = clamp(x, lo = c, hi = None); backward dx = g * 1[x >= c]
+    domain: x in R^n, c finite
+    codomain: R^n
+    invariants:
+    - Defined as clamp with only a lower bound, so it inherits clamp's inclusive boundary
+    preconditions:
+    - 'c.is_finite()'
+    postconditions:
+    - 'result.numel() == x.numel()'
+
+  rope_rotate_half:
+    formula: >
+      inv_freq_i = theta^(-2i/dh), angle(p, i) = p * inv_freq_i for i in 0..dh/2;
+      out = x * cos + rotate_half(x) * sin, rotate_half(x) = cat(-x2, x1);
+      backward dx = g * cos + rotate_half^T(g * sin), rotate_half^T(y) = cat(y2, -y1)
+    domain: x in R^{S x H*dh} row-major, dh even, positions in N^S, theta > 0
+    codomain: R^{S x H*dh}
+    invariants:
+    - Rotate-half layout — x1 is the first half of each head's dh, x2 the second half; element i and i + dh/2 share the angle
+    - Position 0 is the identity rotation
+    - theta is a parameter, so the same op serves the global (160000) and the local (10000) rotary base and the two differ at any position > 0
+    - The rotation is orthogonal, so the backward is the inverse rotation applied to g
+    preconditions:
+    - 'head_dim % 2 == 0'
+    - 'x.shape()[1] % head_dim == 0'
+    - 'positions.len() == x.shape()[0]'
+    postconditions:
+    - 'result.shape() == x.shape()'
+
+  local_window_mask:
+    formula: M[i][j] = 0 if |i - j| <= half_window else NEG_MASK, NEG_MASK = -1e9
+    domain: seq >= 1, half_window >= 0
+    codomain: R^{S x S}, requires_grad == false
+    invariants:
+    - 'CARVE-OUT — a CONSTANT with no differentiable input: no grad_fn is recorded'
+    - The window is INCLUSIVE — |i - j| == half_window is kept, half_window + 1 is masked
+    - The diagonal is always kept, so no softmax row is fully masked
+    - The batched form combines the window with a padding mask on keys into [B, 1, S, S]
+    preconditions:
+    - 'seq > 0'
+    postconditions:
+    - 'result.shape() == [seq, seq]'
+
+  clip_grad_norm:
+    formula: >
+      total = sqrt(sum_p sum_k grad_p[k]^2); coef = max_norm / (total + 1e-6);
+      if coef < 1 then grad_p *= coef for every p; returns total (pre-clip)
+    domain: grads in the autograd gradient store for the given tensor ids, max_norm > 0
+    codomain: total >= 0 (f32)
+    invariants:
+    - torch.nn.utils.clip_grad_norm_ semantics — the returned norm is the PRE-clip global norm
+    - The norm is accumulated in f64 and covers ALL listed gradients jointly, not per tensor
+    - Below the threshold every gradient is left bit-for-bit unchanged
+    - After clipping, the global norm is max_norm within 1e-4 relative
+    preconditions:
+    - 'max_norm > 0'
+    postconditions:
+    - 'total >= 0 || total.is_nan()'
+
+proof_obligations:
+
+- id: MBT-GRAD-001
+  type: equivalence
+  property: >
+    Every differentiable operation (narrow, chunk, concat, clamp, max_scalar,
+    rope_rotate_half) has an analytical backward that agrees with a central
+    finite difference of loss = sum(out * W) at every input element.
+  formal: for all k, |dL/dx_k - (L(x + h e_k) - L(x - h e_k)) / 2h| <= tol * max(1, |dL/dx_k|)
+  tolerance: 0.01
+  applies_to: all
+
+- id: MBT-MUTANT-002
+  type: invariant
+  property: >
+    The gradcheck is not vacuous: for every differentiable operation, the
+    sign-flipped analytical gradient is REJECTED by the same checker that
+    accepts the correct one.
+  formal: check(-dL/dx) == false for every op
+  applies_to: all
+
+- id: MBT-ROPE-003
+  type: invariant
+  property: >
+    rope_rotate_half is the identity at position 0, and theta = 10000 and
+    theta = 160000 produce different outputs at some position > 0.
+  formal: rope(x, p=0) == x && rope(x, theta=1e4) != rope(x, theta=1.6e5) for p > 0
+  applies_to: all
+
+- id: MBT-WINDOW-004
+  type: invariant
+  property: >
+    local_window_mask keeps |i - j| == half_window and masks |i - j| ==
+    half_window + 1; building it with half_window - 1 or half_window + 1
+    changes at least one entry.
+  formal: M[i][i+w] == 0 && M[i][i+w+1] == NEG_MASK
+  applies_to: all
+
+- id: MBT-CLIP-005
+  type: invariant
+  property: >
+    clip_grad_norm_ returns the hand-computed pre-clip global L2 norm, leaves
+    the global norm at max_norm after clipping, and leaves gradients unchanged
+    below the threshold.
+  formal: total == sqrt(sum g^2) && norm(clipped) ~= max_norm && (total <= max_norm => unchanged)
+  tolerance: 0.0001
+  applies_to: all
+
+falsification_tests:
+
+- id: FALSIFY-MBT-001
+  rule: narrow backward scatters into the window
+  prediction: >
+    narrow along dim 1 and dim 0 matches a central finite difference, and the
+    sign-flipped gradient is rejected
+  test: cargo test -p aprender-core --lib train_ops_narrow
+  test_harness: cargo test -p aprender-core --lib train_ops_narrow
+  expected_output: 'test result: ok'
+  if_fails: NarrowBackward wrote the gradient to the wrong window or did not record its edge.
+
+- id: FALSIFY-MBT-002
+  rule: chunk backward accumulates per-chunk windows
+  prediction: >
+    chunk(3) of a fused [N, 3d] tensor matches a central finite difference when
+    all three chunks feed the loss, and the sign-flipped gradient is rejected
+  test: cargo test -p aprender-core --lib train_ops_chunk
+  test_harness: cargo test -p aprender-core --lib train_ops_chunk
+  expected_output: 'test result: ok'
+  if_fails: A chunk was built outside the graph, or two chunks shared a window.
+
+- id: FALSIFY-MBT-003
+  rule: concat backward splits the gradient
+  prediction: >
+    concat along dim 1 and dim 0 gives each input a gradient matching a central
+    finite difference, and the sign-flipped gradient is rejected
+  test: cargo test -p aprender-core --lib train_ops_concat
+  test_harness: cargo test -p aprender-core --lib train_ops_concat
+  expected_output: 'test result: ok'
+  if_fails: ConcatBackward split the gradient at the wrong offsets.
+
+- id: FALSIFY-MBT-004
+  rule: clamp and max_scalar pass gradient inclusively inside the bounds
+  prediction: >
+    clamp (both bounds, lower only, upper only) and max_scalar match a central
+    finite difference away from the kinks, pass gradient at x == bound, and the
+    sign-flipped gradient is rejected
+  test: cargo test -p aprender-core --lib train_ops_clamp
+  test_harness: cargo test -p aprender-core --lib train_ops_clamp
+  expected_output: 'test result: ok'
+  if_fails: ClampBackward used a strict comparison (torch is inclusive) or inverted the mask.
+
+- id: FALSIFY-MBT-005
+  rule: rope_rotate_half backward is the inverse rotation
+  prediction: >
+    rope_rotate_half matches a central finite difference for multi-head input,
+    is the identity at position 0, differs between theta 10000 and 160000, and
+    the sign-flipped gradient is rejected
+  test: cargo test -p aprender-core --lib train_ops_rope
+  test_harness: cargo test -p aprender-core --lib train_ops_rope
+  expected_output: 'test result: ok'
+  if_fails: The backward applied the forward rotation instead of its transpose, or the halves were paired across heads.
+
+- id: FALSIFY-MBT-006
+  rule: local window is inclusive and constant
+  prediction: >
+    |i - j| == half_window is 0, == half_window + 1 is NEG_MASK, the half_window
+    -1 and +1 mutants differ from it, the result records no grad_fn, and the
+    batched form masks padded keys
+  test: cargo test -p aprender-core --lib train_ops_window
+  test_harness: cargo test -p aprender-core --lib train_ops_window
+  expected_output: 'test result: ok'
+  if_fails: The window comparison is off by one (strict instead of inclusive).
+
+- id: FALSIFY-MBT-007
+  rule: clip_grad_norm_ follows torch semantics on the autograd store
+  prediction: >
+    The returned total equals the hand-computed global norm, the clipped norm is
+    max_norm, and a below-threshold call leaves gradients unchanged
+  test: cargo test -p aprender-core --lib train_ops_clip
+  test_harness: cargo test -p aprender-core --lib train_ops_clip
+  expected_output: 'test result: ok'
+  if_fails: The norm was taken per tensor instead of globally, or the scale was applied below the threshold.
+
+qa_gate:
+  id: F-MBT-001
+  name: modernbert-train-v1 Contract
+  description: >
+    LT-2 gate — every ModernBERT training op missing from aprender-core autograd
+    exists, records its backward, and is gradchecked with a mutant proof
+  checks:
+  - validation
+  - falsification
+  pass_criteria: >
+    pv validate exits 0; every falsification test above is green
+  falsification: >
+    Negate any backward in train_ops.rs — the matching finite-difference test
+    must turn RED, exactly as the in-test sign-flipped mutant does.
