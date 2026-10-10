@@ -598,8 +598,17 @@ run_complexity() {
   else
     bad "C16 the mutation could not be derived: no '# PIN-BUILD-BASE-MUTATION-POINT' line in scripts/ci/pin_build_base.sh"
   fi
+  # #4936: the pin reads origin through fetch_p6.sh beside it, so the mutant gets the same neighbour.
+  # Without it the mutant dies on the missing helper and C16 would pass on a crash, not on the
+  # fall-through to the tip that it names; the mutant's own line proves which one ran.
+  cp "$ROOT/scripts/ci/fetch_p6.sh" "$WORK/fetch_p6.sh" || die "C16: cannot place fetch_p6.sh beside the mutant"
   cx_rerun_clone "$CC5" 1 "$M" || die "C16: the clone is not the re-run shape (HEAD=M, origin/main=B2, no merge-base)"
   out=$(cx_pin "$CC5" "$X" "$WORK/pin-mutant.sh"); rc=$?
+  if [ "$rc" -eq 0 ] && grep -q "^comparand: $B2 pinned as origin/main (the tip; event pull_request)$" <<<"$out"; then
+    ok "C16 the mutant pin ran its fall-through: origin/main = B2, the tip"
+  else
+    bad "C16 the mutant pin did not fall through to the tip (rc=$rc)"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
   out=$(cx_run "$CC5" check_complexity_ratchet.sh "${TIP_ENV[@]}"); rc=$?
   if [ "$rc" -eq 1 ] && grep -qE "^  comparand   TIP +${B2:0:7}" <<<"$out" \
      && grep -q 'RED    NEW      src/lib.rs::cognitive_only' <<<"$out"; then
