@@ -622,9 +622,10 @@ PY
 # failure class this guard exists to catch (#2644 audit, CI-3 / VP-05 / F2).
 # The path is the WHOLE rest of a GATE line, as dogfood.sh reads it
 # (`read -r dg_kind dg_path`): a path with a space in it runs in full, so it
-# must be scanned in full. awk $2 kept only its first word.
+# must be scanned in full (awk $2 kept only its first word), and, like read,
+# without trailing blanks.
 gate_paths() {
-    awk '$1=="GATE"{sub(/^[ \t]*GATE[ \t]+/, ""); print}'
+    awk '$1=="GATE"{sub(/^[ \t]*GATE[ \t]+/, ""); sub(/[ \t]+$/, ""); print}'
 }
 
 resolve_scope() {
@@ -914,7 +915,7 @@ EOF
 
     # The scope must name every declared gate exactly as dogfood.sh runs it.
     local gp
-    gp=$(printf 'GATE scripts/a.sh\nNODECL\nGATE scripts/a b.sh\n' | gate_paths | paste -sd'|' -)
+    gp=$(printf 'GATE scripts/a.sh \nNODECL\nGATE scripts/a b.sh\n' | gate_paths | paste -sd'|' -)
     if [ "$gp" = 'scripts/a.sh|scripts/a b.sh' ]; then
         printf 'ok    GATE-PATHS    a declared path with a space is scoped whole\n'
     else
