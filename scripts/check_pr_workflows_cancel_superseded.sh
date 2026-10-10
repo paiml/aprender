@@ -43,11 +43,7 @@ files = sorted(glob.glob(sys.argv[1] + "/*.yml") + glob.glob(sys.argv[1] + "/*.y
 if not files:
     print("ENV   no workflow files in %s -- cannot judge, not a pass" % sys.argv[1]); sys.exit(2)
 # name -> reason. Shrink-only: a stale entry is RED.
-ALLOW = {
-    "pr-review-quorum.yml": "base-owned receipt gate held to its exact shape by "
-        "check_receipt_gate_base_owned.sh B1..B4; it runs in seconds, so it is "
-        "not a CI-cost surface worth a change to a merge-gate workflow",
-}
+ALLOW = {}
 GROUP = re.compile(r"\$\{\{[^}]*github\.event\.pull_request\.number[^}]*\}\}")
 CANCEL = "${{ github.event_name == 'pull_request' }}"
 bad = n = 0
