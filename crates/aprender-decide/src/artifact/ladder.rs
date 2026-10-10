@@ -934,11 +934,7 @@ fn component(start: &str, edges: &[(String, String)], skip: usize) -> (BTreeSet<
             if i == skip {
                 continue;
             }
-            let other = if *a == n {
-                b
-            } else if *b == n {
-                a
-            } else {
+            let Some(other) = other_end(&n, a, b) else {
                 continue;
             };
             if !settable(other) {
@@ -949,6 +945,17 @@ fn component(start: &str, edges: &[(String, String)], skip: usize) -> (BTreeSet<
         }
     }
     (seen, pinned)
+}
+
+/// The end of the edge `a <-> b` opposite `n`, or `None` when `n` is on neither end.
+fn other_end<'e>(n: &str, a: &'e String, b: &'e String) -> Option<&'e String> {
+    if a == n {
+        Some(b)
+    } else if b == n {
+        Some(a)
+    } else {
+        None
+    }
 }
 
 /// A forgery that breaks EXACTLY the one binding `edges[i]`: every other binding still
@@ -1550,6 +1557,91 @@ fn probe_replay_failure_is_rung_7() {
 // ---------------------------------------------------------------------------
 
 /// A row value as text (a YAML string or number).
+/// [`artifact_bounds_table_is_swept`]: every row carries its required fields, and the test it
+/// names exists.
+fn bounds_row_fields(row: &serde_yaml::Value, id: &str, failures: &mut Vec<String>) {
+    for key in [
+        "bound",
+        "checked_by",
+        "owner_crate",
+        "test",
+        "disposition",
+        "rung",
+    ] {
+        if row_text(row, key).is_empty() {
+            failures.push(format!("{id}: no {key}"));
+        }
+    }
+    if let Some(missing) = missing_named_test(&row_text(row, "test")) {
+        failures.push(format!("{id}: {missing}"));
+    }
+}
+
+/// [`artifact_bounds_table_is_swept`]: an accepted row has a reason and a
+/// documented-behaviour case.
+fn bounds_row_accepted(row: &serde_yaml::Value, id: &str, failures: &mut Vec<String>) {
+    if row_text(row, "reason").is_empty() {
+        failures.push(format!("{id}: accepted without a reason"));
+    }
+    if !accepted_case(id) {
+        failures.push(format!(
+            "{id}: accepted row without a documented-behaviour case"
+        ));
+    }
+}
+
+/// [`artifact_bounds_table_is_swept`]: an enforced row's hostile case refuses as the row
+/// names. Returns whether the row was swept (it had a hostile case).
+fn bounds_row_enforced(row: &serde_yaml::Value, id: &str, failures: &mut Vec<String>) -> bool {
+    let Some(errors) = hostile_case(id) else {
+        failures.push(format!("{id}: owned row without a hostile case"));
+        return false;
+    };
+    let refusals: Vec<String> = match &row["refusal"] {
+        serde_yaml::Value::Sequence(v) => v
+            .iter()
+            .filter_map(|r| r.as_str().map(str::to_string))
+            .collect(),
+        _ => Vec::new(),
+    };
+    if row_text(row, "refusal") == "none" {
+        if !errors.is_empty() {
+            failures.push(format!("{id}: an overriding bound refused: {errors:?}"));
+        }
+    } else if errors.is_empty() || refusals.is_empty() {
+        failures.push(format!("{id}: no refusal provoked or named"));
+    }
+    let rung = row["rung"].as_u64();
+    for e in &errors {
+        bounds_refusal(id, e, &refusals, rung, failures);
+    }
+    true
+}
+
+/// One provoked refusal: a variant the row names, at the rung it names.
+fn bounds_refusal(
+    id: &str,
+    e: &ArtifactError,
+    refusals: &[String],
+    rung: Option<u64>,
+    failures: &mut Vec<String>,
+) {
+    let debug = format!("{e:?}");
+    if !refusals.iter().any(|r| debug.starts_with(r.as_str())) {
+        failures.push(format!(
+            "{id}: refused as {debug}, the row names {refusals:?}"
+        ));
+    }
+    if let Some(rung) = rung {
+        if rung_number(e) != rung {
+            failures.push(format!(
+                "{id}: refused at rung {} ({e}), the row names {rung}",
+                e.rung()
+            ));
+        }
+    }
+}
+
 fn row_text(row: &serde_yaml::Value, key: &str) -> String {
     match &row[key] {
         serde_yaml::Value::String(s) => s.clone(),
@@ -1961,74 +2053,20 @@ fn artifact_bounds_table_is_swept() {
     for row in rows {
         let id = row_text(row, "id");
         assert!(ids.insert(id.clone()), "duplicate row {id}");
-        for key in [
-            "bound",
-            "checked_by",
-            "owner_crate",
-            "test",
-            "disposition",
-            "rung",
-        ] {
-            if row_text(row, key).is_empty() {
-                failures.push(format!("{id}: no {key}"));
-            }
-        }
-        if let Some(missing) = missing_named_test(&row_text(row, "test")) {
-            failures.push(format!("{id}: {missing}"));
-        }
+        bounds_row_fields(row, &id, &mut failures);
         if row_text(row, "owner_crate") != "aprender-decide" {
             external += 1;
             continue;
         }
         match row_text(row, "disposition").as_str() {
             "accepted" => {
-                if row_text(row, "reason").is_empty() {
-                    failures.push(format!("{id}: accepted without a reason"));
-                }
-                if !accepted_case(&id) {
-                    failures.push(format!(
-                        "{id}: accepted row without a documented-behaviour case"
-                    ));
-                }
+                bounds_row_accepted(row, &id, &mut failures);
                 accepted += 1;
             }
             "enforced" => {
-                let Some(errors) = hostile_case(&id) else {
-                    failures.push(format!("{id}: owned row without a hostile case"));
-                    continue;
-                };
-                let refusals: Vec<String> = match &row["refusal"] {
-                    serde_yaml::Value::Sequence(v) => v
-                        .iter()
-                        .filter_map(|r| r.as_str().map(str::to_string))
-                        .collect(),
-                    _ => Vec::new(),
-                };
-                if row_text(row, "refusal") == "none" {
-                    if !errors.is_empty() {
-                        failures.push(format!("{id}: an overriding bound refused: {errors:?}"));
-                    }
-                } else if errors.is_empty() || refusals.is_empty() {
-                    failures.push(format!("{id}: no refusal provoked or named"));
+                if bounds_row_enforced(row, &id, &mut failures) {
+                    swept += 1;
                 }
-                let rung = row["rung"].as_u64();
-                for e in &errors {
-                    let debug = format!("{e:?}");
-                    if !refusals.iter().any(|r| debug.starts_with(r.as_str())) {
-                        failures.push(format!(
-                            "{id}: refused as {debug}, the row names {refusals:?}"
-                        ));
-                    }
-                    if let Some(rung) = rung {
-                        if rung_number(e) != rung {
-                            failures.push(format!(
-                                "{id}: refused at rung {} ({e}), the row names {rung}",
-                                e.rung()
-                            ));
-                        }
-                    }
-                }
-                swept += 1;
             }
             other => failures.push(format!("{id}: unknown disposition {other}")),
         }

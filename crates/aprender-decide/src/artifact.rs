@@ -1021,24 +1021,35 @@ fn compare_probes(
         return Err(err(stored.len().min(rust.len()), "count"));
     }
     for (index, (r, s)) in rust.iter().zip(stored).enumerate() {
-        if s.input_index != index {
-            return Err(err(index, "input_index"));
-        }
-        if s.tokens != r.tokens {
-            return Err(err(index, "tokens"));
-        }
-        if s.label != r.label {
-            return Err(err(index, "label"));
-        }
-        if s.probabilities_f32_hex.len() != r.probabilities.len() {
+        compare_probe(index, r, s, err)?;
+    }
+    Ok(())
+}
+
+/// One row of [`compare_probes`]: the first component of `s` that disagrees with `r`.
+fn compare_probe(
+    index: usize,
+    r: &RustProbe,
+    s: &ProbeRecord,
+    err: fn(usize, &'static str) -> ArtifactError,
+) -> Result<(), ArtifactError> {
+    if s.input_index != index {
+        return Err(err(index, "input_index"));
+    }
+    if s.tokens != r.tokens {
+        return Err(err(index, "tokens"));
+    }
+    if s.label != r.label {
+        return Err(err(index, "label"));
+    }
+    if s.probabilities_f32_hex.len() != r.probabilities.len() {
+        return Err(err(index, "probabilities"));
+    }
+    for (h, &p) in s.probabilities_f32_hex.iter().zip(&r.probabilities) {
+        let want = f32_from_hex(h).ok_or_else(|| err(index, "hex"))?;
+        let delta = (f64::from(p) - f64::from(want)).abs();
+        if !within(delta, PROBE_PROBABILITIES_ABS) {
             return Err(err(index, "probabilities"));
-        }
-        for (h, &p) in s.probabilities_f32_hex.iter().zip(&r.probabilities) {
-            let want = f32_from_hex(h).ok_or_else(|| err(index, "hex"))?;
-            let delta = (f64::from(p) - f64::from(want)).abs();
-            if !within(delta, PROBE_PROBABILITIES_ABS) {
-                return Err(err(index, "probabilities"));
-            }
         }
     }
     Ok(())
@@ -1475,34 +1486,7 @@ fn rung4_structure<'r>(
     //     carry is trusted to derive the weight set. Their dtype / size / bounds are
     //     checked with every other entry in (c); a hash over the in-bounds bytes is
     //     what makes the configs trustworthy here.
-    let names: Vec<&str> = manifest.blobs.iter().map(|b| b.name.as_str()).collect();
-    if names != BLOB_TENSORS {
-        return Err(ArtifactError::ManifestBlobs {
-            observed: names.iter().map(|n| (*n).to_string()).collect(),
-        });
-    }
-    // In BLOB_TENSORS order (just checked equal to the manifest's). Each blob is hashed
-    // exactly once, here; the later bindings reuse these digests.
-    let mut data: [&[u8]; 6] = [&[]; 6];
-    let mut sha: [String; 6] = Default::default();
-    for ((slot, digest), b) in data.iter_mut().zip(sha.iter_mut()).zip(&manifest.blobs) {
-        if reader.get_tensor(&b.name).is_none() {
-            return Err(ArtifactError::MissingTensor {
-                name: b.name.clone(),
-            });
-        }
-        *slot = reader
-            .get_tensor_data(&b.name)
-            .ok_or_else(|| ArtifactError::DataOutOfBounds {
-                name: b.name.clone(),
-            })?;
-        *digest = sha256_hex(slot);
-        if *digest != b.sha256 {
-            return Err(ArtifactError::BlobHashMismatch {
-                blob: b.name.clone(),
-            });
-        }
-    }
+    let (data, sha) = hashed_blobs(reader, manifest)?;
     let [tokenizer, task_bytes, encoder_config_bytes, agent_config_bytes, recipe, gate_report] =
         data;
     let [tokenizer_sha, task_sha, _, _, recipe_sha, gate_report_sha] = sha;
@@ -1528,20 +1512,7 @@ fn rung4_structure<'r>(
 
     // (c) Every entry: dtype, size == product(shape) x width, data inside the file.
     for name in &index {
-        let entry = reader
-            .get_tensor(name)
-            .ok_or_else(|| ArtifactError::MissingTensor {
-                name: (*name).to_string(),
-            })?;
-        if let Some(&want) = expected.get(*name) {
-            check_dtype(name, want, entry.dtype)?;
-        }
-        check_size(name, &entry.shape, entry.dtype, entry.size)?;
-        if reader.get_tensor_data(name).is_none() {
-            return Err(ArtifactError::DataOutOfBounds {
-                name: (*name).to_string(),
-            });
-        }
+        check_entry(reader, &expected, name)?;
     }
 
     // (d) The task blob's labels ARE the manifest labels (D-05).
@@ -1574,6 +1545,67 @@ fn rung4_structure<'r>(
         encoder_config: encoder_config_bytes,
         agent_config: agent_config_bytes,
     })
+}
+
+/// Rung 4 (a): the manifest names exactly [`BLOB_TENSORS`], in order, and each blob is
+/// present, in bounds and hashes to the manifest. Returns the blob bytes and their digests in
+/// `BLOB_TENSORS` order; each blob is hashed exactly once, here, and the later bindings reuse
+/// these digests.
+fn hashed_blobs<'r>(
+    reader: &'r AprV2ReaderRef<'_>,
+    manifest: &Manifest,
+) -> Result<([&'r [u8]; 6], [String; 6]), ArtifactError> {
+    let names: Vec<&str> = manifest.blobs.iter().map(|b| b.name.as_str()).collect();
+    if names != BLOB_TENSORS {
+        return Err(ArtifactError::ManifestBlobs {
+            observed: names.iter().map(|n| (*n).to_string()).collect(),
+        });
+    }
+    let mut data: [&[u8]; 6] = [&[]; 6];
+    let mut sha: [String; 6] = Default::default();
+    for ((slot, digest), b) in data.iter_mut().zip(sha.iter_mut()).zip(&manifest.blobs) {
+        if reader.get_tensor(&b.name).is_none() {
+            return Err(ArtifactError::MissingTensor {
+                name: b.name.clone(),
+            });
+        }
+        *slot = reader
+            .get_tensor_data(&b.name)
+            .ok_or_else(|| ArtifactError::DataOutOfBounds {
+                name: b.name.clone(),
+            })?;
+        *digest = sha256_hex(slot);
+        if *digest != b.sha256 {
+            return Err(ArtifactError::BlobHashMismatch {
+                blob: b.name.clone(),
+            });
+        }
+    }
+    Ok((data, sha))
+}
+
+/// Rung 4 (c), one index entry: its dtype, size == product(shape) x width, data inside the
+/// file.
+fn check_entry(
+    reader: &AprV2ReaderRef<'_>,
+    expected: &BTreeMap<String, TensorDType>,
+    name: &str,
+) -> Result<(), ArtifactError> {
+    let entry = reader
+        .get_tensor(name)
+        .ok_or_else(|| ArtifactError::MissingTensor {
+            name: name.to_string(),
+        })?;
+    if let Some(&want) = expected.get(name) {
+        check_dtype(name, want, entry.dtype)?;
+    }
+    check_size(name, &entry.shape, entry.dtype, entry.size)?;
+    if reader.get_tensor_data(name).is_none() {
+        return Err(ArtifactError::DataOutOfBounds {
+            name: name.to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// The sha-bound sources rung 4 has verified by the time the manifest bindings run: the

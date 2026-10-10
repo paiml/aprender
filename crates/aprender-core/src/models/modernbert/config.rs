@@ -260,6 +260,133 @@ fn theta(rope: Option<&RawRope>, field: &'static str) -> Result<f64, ModernBertC
     }
 }
 
+/// The integer dimensions: none zero, a bounded layer count, an even head size.
+fn check_dimensions(raw: &RawConfig) -> Result<(), ModernBertConfigError> {
+    for (field, v) in [
+        ("vocab_size", raw.vocab_size),
+        ("hidden_size", raw.hidden_size),
+        ("intermediate_size", raw.intermediate_size),
+        ("num_hidden_layers", raw.num_hidden_layers),
+        ("num_attention_heads", raw.num_attention_heads),
+        ("global_attn_every_n_layers", raw.global_attn_every_n_layers),
+        ("local_attention", raw.local_attention),
+    ] {
+        if v == 0 {
+            return Err(ModernBertConfigError::ZeroDimension { field });
+        }
+    }
+    // Before anything per-layer is derived: the count is untrusted input.
+    if raw.num_hidden_layers > MAX_NUM_HIDDEN_LAYERS {
+        return Err(ModernBertConfigError::TooManyLayers {
+            value: raw.num_hidden_layers,
+            max: MAX_NUM_HIDDEN_LAYERS,
+        });
+    }
+    if raw.hidden_size % raw.num_attention_heads != 0 {
+        return Err(ModernBertConfigError::HeadsDoNotDivideHidden {
+            hidden_size: raw.hidden_size,
+            num_attention_heads: raw.num_attention_heads,
+        });
+    }
+    let head_dim = raw.hidden_size / raw.num_attention_heads;
+    if head_dim % 2 != 0 {
+        return Err(ModernBertConfigError::OddHeadDim { head_dim });
+    }
+    if raw.local_attention % 2 != 0 {
+        return Err(ModernBertConfigError::OddLocalAttention {
+            local_attention: raw.local_attention,
+        });
+    }
+    Ok(())
+}
+
+/// `layer_types`, when present, as one `is_global` flag per layer.
+fn declared_layer_types(raw: &RawConfig) -> Result<Option<Vec<bool>>, ModernBertConfigError> {
+    let Some(types) = &raw.layer_types else {
+        return Ok(None);
+    };
+    if types.len() != raw.num_hidden_layers {
+        return Err(ModernBertConfigError::LayerTypesLength {
+            expected: raw.num_hidden_layers,
+            observed: types.len(),
+        });
+    }
+    let mut globals = Vec::with_capacity(types.len());
+    for (layer, t) in types.iter().enumerate() {
+        match t.as_str() {
+            FULL_ATTENTION => globals.push(true),
+            SLIDING_ATTENTION => globals.push(false),
+            _ => {
+                return Err(ModernBertConfigError::UnknownLayerType {
+                    layer,
+                    value: t.clone(),
+                })
+            }
+        }
+    }
+    Ok(Some(globals))
+}
+
+/// The norm, bias, activation and rope settings this encoder implements.
+fn check_supported(raw: &RawConfig) -> Result<(), ModernBertConfigError> {
+    if !positive_finite(raw.norm_eps) {
+        return Err(ModernBertConfigError::BadNormEps {
+            value: raw.norm_eps,
+        });
+    }
+    for (field, on) in [
+        ("norm_bias", raw.norm_bias),
+        ("attention_bias", raw.attention_bias),
+        ("mlp_bias", raw.mlp_bias),
+    ] {
+        if on {
+            return Err(ModernBertConfigError::UnsupportedBias { field });
+        }
+    }
+    if let Some(act) = raw
+        .hidden_activation
+        .as_deref()
+        .filter(|a| *a != SUPPORTED_ACTIVATION)
+    {
+        return Err(ModernBertConfigError::UnsupportedActivation {
+            value: act.to_string(),
+        });
+    }
+    check_rope(raw)
+}
+
+/// No `rope_scaling`, and only the supported `rope_type` on either attention kind.
+fn check_rope(raw: &RawConfig) -> Result<(), ModernBertConfigError> {
+    if let Some(scaling) = raw.rope_scaling.as_ref().filter(|s| !s.is_null()) {
+        return Err(ModernBertConfigError::UnsupportedRope {
+            field: "rope_scaling",
+            value: scaling.to_string(),
+        });
+    }
+    let rope = raw.rope_parameters.as_ref();
+    for (field, r) in [
+        (
+            "rope_parameters.full_attention.rope_type",
+            rope.and_then(|r| r.full_attention.as_ref()),
+        ),
+        (
+            "rope_parameters.sliding_attention.rope_type",
+            rope.and_then(|r| r.sliding_attention.as_ref()),
+        ),
+    ] {
+        if let Some(t) = r
+            .and_then(|r| r.rope_type.as_deref())
+            .filter(|t| *t != SUPPORTED_ROPE_TYPE)
+        {
+            return Err(ModernBertConfigError::UnsupportedRope {
+                field,
+                value: t.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn checked_product(dims: &[usize], field: &'static str) -> Result<usize, ModernBertConfigError> {
     dims.iter()
         .try_fold(1usize, |acc, &d| acc.checked_mul(d))
@@ -280,116 +407,10 @@ impl ModernBertConfig {
     }
 
     fn validate(raw: RawConfig) -> Result<Self, ModernBertConfigError> {
-        for (field, v) in [
-            ("vocab_size", raw.vocab_size),
-            ("hidden_size", raw.hidden_size),
-            ("intermediate_size", raw.intermediate_size),
-            ("num_hidden_layers", raw.num_hidden_layers),
-            ("num_attention_heads", raw.num_attention_heads),
-            ("global_attn_every_n_layers", raw.global_attn_every_n_layers),
-            ("local_attention", raw.local_attention),
-        ] {
-            if v == 0 {
-                return Err(ModernBertConfigError::ZeroDimension { field });
-            }
-        }
-        // Before anything per-layer is derived: the count is untrusted input.
-        if raw.num_hidden_layers > MAX_NUM_HIDDEN_LAYERS {
-            return Err(ModernBertConfigError::TooManyLayers {
-                value: raw.num_hidden_layers,
-                max: MAX_NUM_HIDDEN_LAYERS,
-            });
-        }
-        if raw.hidden_size % raw.num_attention_heads != 0 {
-            return Err(ModernBertConfigError::HeadsDoNotDivideHidden {
-                hidden_size: raw.hidden_size,
-                num_attention_heads: raw.num_attention_heads,
-            });
-        }
-        let head_dim = raw.hidden_size / raw.num_attention_heads;
-        if head_dim % 2 != 0 {
-            return Err(ModernBertConfigError::OddHeadDim { head_dim });
-        }
-        if raw.local_attention % 2 != 0 {
-            return Err(ModernBertConfigError::OddLocalAttention {
-                local_attention: raw.local_attention,
-            });
-        }
-        let declared = match &raw.layer_types {
-            None => None,
-            Some(types) => {
-                if types.len() != raw.num_hidden_layers {
-                    return Err(ModernBertConfigError::LayerTypesLength {
-                        expected: raw.num_hidden_layers,
-                        observed: types.len(),
-                    });
-                }
-                let mut globals = Vec::with_capacity(types.len());
-                for (layer, t) in types.iter().enumerate() {
-                    match t.as_str() {
-                        FULL_ATTENTION => globals.push(true),
-                        SLIDING_ATTENTION => globals.push(false),
-                        _ => {
-                            return Err(ModernBertConfigError::UnknownLayerType {
-                                layer,
-                                value: t.clone(),
-                            })
-                        }
-                    }
-                }
-                Some(globals)
-            }
-        };
-        if !positive_finite(raw.norm_eps) {
-            return Err(ModernBertConfigError::BadNormEps {
-                value: raw.norm_eps,
-            });
-        }
-        for (field, on) in [
-            ("norm_bias", raw.norm_bias),
-            ("attention_bias", raw.attention_bias),
-            ("mlp_bias", raw.mlp_bias),
-        ] {
-            if on {
-                return Err(ModernBertConfigError::UnsupportedBias { field });
-            }
-        }
-        if let Some(act) = raw
-            .hidden_activation
-            .as_deref()
-            .filter(|a| *a != SUPPORTED_ACTIVATION)
-        {
-            return Err(ModernBertConfigError::UnsupportedActivation {
-                value: act.to_string(),
-            });
-        }
-        if let Some(scaling) = raw.rope_scaling.as_ref().filter(|s| !s.is_null()) {
-            return Err(ModernBertConfigError::UnsupportedRope {
-                field: "rope_scaling",
-                value: scaling.to_string(),
-            });
-        }
+        check_dimensions(&raw)?;
+        let declared = declared_layer_types(&raw)?;
+        check_supported(&raw)?;
         let rope = raw.rope_parameters.as_ref();
-        for (field, r) in [
-            (
-                "rope_parameters.full_attention.rope_type",
-                rope.and_then(|r| r.full_attention.as_ref()),
-            ),
-            (
-                "rope_parameters.sliding_attention.rope_type",
-                rope.and_then(|r| r.sliding_attention.as_ref()),
-            ),
-        ] {
-            if let Some(t) = r
-                .and_then(|r| r.rope_type.as_deref())
-                .filter(|t| *t != SUPPORTED_ROPE_TYPE)
-            {
-                return Err(ModernBertConfigError::UnsupportedRope {
-                    field,
-                    value: t.to_string(),
-                });
-            }
-        }
         let rope_theta_global = theta(
             rope.and_then(|r| r.full_attention.as_ref()),
             "rope_parameters.full_attention.rope_theta",

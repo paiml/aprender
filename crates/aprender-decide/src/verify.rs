@@ -2158,52 +2158,8 @@ fn recompute_noise(
     }
     let mut noise = 0.0f64;
     for (i, (r, p32)) in set.rows.iter().zip(probs).enumerate() {
-        if r.row != i {
-            return Err(bad(
-                Some(i),
-                "rows",
-                format!(
-                    "position {i} holds row {}: every eval row once, in order",
-                    r.row
-                ),
-            ));
-        }
-        let p64 = &r.probabilities_f64;
-        if p64.len() != p32.len() {
-            return Err(bad(
-                Some(i),
-                "probabilities_f64",
-                format!("{} components, the task has {}", p64.len(), p32.len()),
-            ));
-        }
-        if let Some(p) = p64
-            .iter()
-            .find(|p| !(p.is_finite() && (0.0..=1.0).contains(*p)))
-        {
-            return Err(bad(
-                Some(i),
-                "probabilities_f64",
-                format!("{p} is not a finite value in [0, 1]"),
-            ));
-        }
-        let sum: f64 = p64.iter().sum();
-        if !within((sum - 1.0).abs(), PROBS_ROW_SUM_ABS) {
-            return Err(bad(
-                Some(i),
-                "probabilities_f64",
-                format!("sum {sum}, not 1 within {PROBS_ROW_SUM_ABS}"),
-            ));
-        }
-        let (torch, reference) = (argmax(p32), argmax(p64));
-        if torch != reference {
-            return Err(VerifyError::NoiseArgmaxFlip {
-                which,
-                row: i,
-                torch,
-                reference,
-            });
-        }
-        for (&a, &b) in p32.iter().zip(p64) {
+        check_noise_row(which, i, r, p32)?;
+        for (&a, &b) in p32.iter().zip(&r.probabilities_f64) {
             let d = (f64::from(a) - b).abs();
             noise = if d.is_nan() || noise.is_nan() {
                 f64::NAN
@@ -2222,6 +2178,59 @@ fn recompute_noise(
         });
     }
     Ok(noise)
+}
+
+/// One row of [`recompute_noise`]: at position `i`, `K` finite f64 components in `[0, 1]`
+/// summing to 1, whose argmax equals the stored float32 argmax.
+fn check_noise_row(
+    which: ProbsWhich,
+    i: usize,
+    r: &pack::NoiseRow,
+    p32: &[f32],
+) -> Result<(), VerifyError> {
+    let bad = |field, why| noise_invalid(Some(which), Some(i), field, why);
+    if r.row != i {
+        return Err(bad(
+            "rows",
+            format!(
+                "position {i} holds row {}: every eval row once, in order",
+                r.row
+            ),
+        ));
+    }
+    let p64 = &r.probabilities_f64;
+    if p64.len() != p32.len() {
+        return Err(bad(
+            "probabilities_f64",
+            format!("{} components, the task has {}", p64.len(), p32.len()),
+        ));
+    }
+    if let Some(p) = p64
+        .iter()
+        .find(|p| !(p.is_finite() && (0.0..=1.0).contains(*p)))
+    {
+        return Err(bad(
+            "probabilities_f64",
+            format!("{p} is not a finite value in [0, 1]"),
+        ));
+    }
+    let sum: f64 = p64.iter().sum();
+    if !within((sum - 1.0).abs(), PROBS_ROW_SUM_ABS) {
+        return Err(bad(
+            "probabilities_f64",
+            format!("sum {sum}, not 1 within {PROBS_ROW_SUM_ABS}"),
+        ));
+    }
+    let (torch, reference) = (argmax(p32), argmax(p64));
+    if torch != reference {
+        return Err(VerifyError::NoiseArgmaxFlip {
+            which,
+            row: i,
+            torch,
+            reference,
+        });
+    }
+    Ok(())
 }
 
 /// laya-parity-v1 A1: the bound each re-score is held to, DERIVED in Rust.
@@ -2677,6 +2686,39 @@ fn check_seeds_block<'a>(
     Ok((per, shipped))
 }
 
+/// One `per_seed` row of [`check_seed_selection`]: its pass and rank key equal the ones
+/// recomputed from `ece` and `margin`. `row.seed` was already checked against its file.
+fn check_seed_verdict(
+    row: &pack::PerSeedRow,
+    ece: f64,
+    margin: f64,
+    policy: &VerifyPolicy,
+    decl: &pack::SeedSelectionDecl,
+) -> Result<(), VerifyError> {
+    let seed = row.seed;
+    let pass = at_least(margin, policy.min_macro_f1_margin) && within(ece, policy.max_ece);
+    if pass != row.pass {
+        return Err(seed_violated(
+            "per_seed.pass",
+            format!(
+                "seed {seed}: reported pass={} recomputed pass={pass}",
+                row.pass
+            ),
+        ));
+    }
+    let key = rank_key(seed, ece, decl.rank_scale)?;
+    if key != row.rank_key {
+        return Err(seed_violated(
+            "per_seed.rank_key",
+            format!(
+                "seed {seed}: reported rank_key {} but floor({} x {}) = {key}; refused rather than guessed (seed_policy.why_quantized)",
+                row.rank_key, ece, decl.rank_scale
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// laya-finetune-gate-v1 1.4.0 `seed_selection_median`, RE-DERIVED from the files.
 ///
 /// `Ok(None)` for a legacy recipe (no `seed_selection`; its report must carry no seed
@@ -2742,26 +2784,7 @@ pub fn check_seed_selection(
         metric_close_for(s, "per_seed.macro_f1", row.macro_f1, m.macro_f1, tol)?;
         metric_close_for(s, "per_seed.ece_post", row.ece_post, m.ece, tol)?;
         metric_close_for(s, "per_seed.margin", row.margin, margin, tol)?;
-        let pass = at_least(margin, policy.min_macro_f1_margin) && within(m.ece, policy.max_ece);
-        if pass != row.pass {
-            return Err(seed_violated(
-                "per_seed.pass",
-                format!(
-                    "seed {seed}: reported pass={} recomputed pass={pass}",
-                    row.pass
-                ),
-            ));
-        }
-        let key = rank_key(*seed, m.ece, decl.rank_scale)?;
-        if key != row.rank_key {
-            return Err(seed_violated(
-                "per_seed.rank_key",
-                format!(
-                    "seed {seed}: reported rank_key {} but floor({} x {}) = {key}; refused rather than guessed (seed_policy.why_quantized)",
-                    row.rank_key, m.ece, decl.rank_scale
-                ),
-            ));
-        }
+        check_seed_verdict(row, m.ece, margin, policy, decl)?;
         eces.push((*seed, m.ece));
     }
     if eces.len() != per.len() {

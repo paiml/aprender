@@ -23,17 +23,52 @@
 /// exactly, returns `+0.0`.
 #[must_use]
 pub fn fsum(values: impl IntoIterator<Item = f64>) -> f64 {
-    let mut partials: Vec<f64> = Vec::new();
-    let mut special_sum = 0.0_f64;
-    let mut inf_sum = 0.0_f64;
-    let mut overflow = false;
-
+    let mut acc = Partials::default();
     for value in values {
+        acc.add(value);
+    }
+    acc.finish()
+}
+
+/// Shewchuk's non-overlapping partials plus CPython's separate tally of the specials.
+#[derive(Default)]
+struct Partials {
+    partials: Vec<f64>,
+    special_sum: f64,
+    inf_sum: f64,
+    overflow: bool,
+}
+
+impl Partials {
+    fn add(&mut self, value: f64) {
+        let x = self.absorb(value);
+        if x == 0.0 {
+            return;
+        }
+        if x.is_finite() {
+            self.partials.push(x);
+            return;
+        }
+        // A non-finite x is either an intermediate overflow of finite terms or the
+        // result of an inf / NaN summand (CPython keeps the specials apart).
+        if value.is_finite() {
+            self.overflow = true;
+        } else {
+            if value.is_infinite() {
+                self.inf_sum += value;
+            }
+            self.special_sum += value;
+        }
+        self.partials.clear();
+    }
+
+    /// Folds `value` through the partials, keeping each non-zero low part, and returns the
+    /// high part left over.
+    fn absorb(&mut self, value: f64) -> f64 {
         let mut x = value;
         let mut kept = 0;
-        let mut j = 0;
-        while j < partials.len() {
-            let mut y = partials[j];
+        for j in 0..self.partials.len() {
+            let mut y = self.partials[j];
             if x.abs() < y.abs() {
                 std::mem::swap(&mut x, &mut y);
             }
@@ -41,49 +76,36 @@ pub fn fsum(values: impl IntoIterator<Item = f64>) -> f64 {
             let yr = hi - x;
             let lo = y - yr;
             if lo != 0.0 {
-                partials[kept] = lo;
+                self.partials[kept] = lo;
                 kept += 1;
             }
             x = hi;
-            j += 1;
         }
-        partials.truncate(kept);
-        if x != 0.0 {
-            if x.is_finite() {
-                partials.push(x);
+        self.partials.truncate(kept);
+        x
+    }
+
+    fn finish(&self) -> f64 {
+        if self.special_sum != 0.0 {
+            // (NaN != 0.0 is true, so a NaN summand lands here too, as in CPython.)
+            return if self.inf_sum.is_nan() {
+                f64::NAN
             } else {
-                // A non-finite x is either an intermediate overflow of finite terms or the
-                // result of an inf / NaN summand (CPython keeps the specials apart).
-                if value.is_finite() {
-                    overflow = true;
-                } else {
-                    if value.is_infinite() {
-                        inf_sum += value;
-                    }
-                    special_sum += value;
-                }
-                partials.clear();
-            }
+                self.special_sum
+            };
         }
+        if self.overflow {
+            return f64::NAN;
+        }
+        round_partials(&self.partials)
     }
+}
 
-    if special_sum != 0.0 {
-        // (NaN != 0.0 is true, so a NaN summand lands here too, as in CPython.)
-        return if inf_sum.is_nan() {
-            f64::NAN
-        } else {
-            special_sum
-        };
-    }
-    if overflow {
-        return f64::NAN;
-    }
-
-    let mut n = partials.len();
-    if n == 0 {
+/// CPython's final correct-rounding step over the non-overlapping partials.
+fn round_partials(partials: &[f64]) -> f64 {
+    let Some(mut n) = partials.len().checked_sub(1) else {
         return 0.0;
-    }
-    n -= 1;
+    };
     let mut hi = partials[n];
     let mut lo = 0.0_f64;
     // Sum the partials from the top, stopping when the sum becomes inexact.
@@ -100,7 +122,7 @@ pub fn fsum(values: impl IntoIterator<Item = f64>) -> f64 {
     }
     // Make half-even rounding work across multiple partials: if the remaining partials push
     // `lo` further in its own direction, `hi + 2 lo` is the correctly rounded result.
-    if n > 0 && ((lo < 0.0 && partials[n - 1] < 0.0) || (lo > 0.0 && partials[n - 1] > 0.0)) {
+    if n > 0 && same_sign_nonzero(lo, partials[n - 1]) {
         let y = lo * 2.0;
         let x = hi + y;
         let yr = x - hi;
@@ -109,6 +131,11 @@ pub fn fsum(values: impl IntoIterator<Item = f64>) -> f64 {
         }
     }
     hi
+}
+
+/// Both strictly negative or both strictly positive.
+fn same_sign_nonzero(a: f64, b: f64) -> bool {
+    (a < 0.0 && b < 0.0) || (a > 0.0 && b > 0.0)
 }
 
 #[cfg(test)]

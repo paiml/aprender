@@ -2467,6 +2467,78 @@ fn swap_slice_member(run: &Run, i: usize) -> Value {
     Value::from(ids)
 }
 
+/// `None` when `got` is a refusal naming `names`; otherwise the failure line for `leaf`.
+fn refused_naming(
+    got: &Result<VerifyReport, VerifyError>,
+    names: Option<&str>,
+    leaf: &str,
+    what: &str,
+) -> Option<String> {
+    match (got, names) {
+        (Err(e), Some(n)) if e.to_string().contains(n) || verdict(got).contains(n) => None,
+        _ => Some(format!(
+            "{leaf} ({what}): expected a refusal naming {names:?}, got {}",
+            verdict(got)
+        )),
+    }
+}
+
+/// `None` when `got` verifies with the control's verdict; otherwise the failure line for
+/// `leaf`.
+fn accepted_unchanged(
+    got: &Result<VerifyReport, VerifyError>,
+    control: &VerifyReport,
+    leaf: &str,
+    what: &str,
+) -> Option<String> {
+    match got {
+        Ok(r) if r.recomputed == control.recomputed && r.shipped_seed == control.shipped_seed => {
+            None
+        }
+        _ => Some(format!(
+            "{leaf} ({what}): report_only, but the verdict changed: {}",
+            verdict(got)
+        )),
+    }
+}
+
+/// The verdict check [`every_run_field_is_bound_or_report_only`] applies to one mutated run.
+type Expect<'a> = dyn Fn(&Result<VerifyReport, VerifyError>, &str) -> Option<String> + 'a;
+
+/// A `membership_report_only` leaf (a `calibration.slice_ids` entry): a duplicate id is
+/// refused (structure), and a same-class fit row in its place still verifies (membership).
+fn slice_membership_failure(
+    run: &Run,
+    policy: &VerifyPolicy,
+    file: &str,
+    ptr: &str,
+    expect_refused: &Expect<'_>,
+    expect_accepted: &Expect<'_>,
+) -> Option<String> {
+    let i: usize = ptr
+        .rsplit('/')
+        .next()
+        .and_then(|i| i.parse().ok())
+        .expect("a list index");
+    // Structure: a duplicate id (its neighbour's) is refused.
+    let ids = read_json(&run.path(file))["calibration"]["slice_ids"].clone();
+    let n = ids.as_array().expect("ids").len();
+    set_leaf(run, file, ptr, ids[(i + 1) % n].clone());
+    let structure = expect_refused(&run.verify(policy), "a duplicate id");
+    // Membership: a same-class fit row in its place still verifies.
+    let run = fullest_copy(policy);
+    let swapped = swap_slice_member(&run, i);
+    set_leaf(&run, file, "/calibration/slice_ids", swapped);
+    let rid = sha256_hex(
+        serde_json::to_string(&read_json(&run.path(file))["calibration"]["slice_ids"])
+            .expect("ids")
+            .as_bytes(),
+    );
+    run.edit_json(file, |r| r["calibration"]["slice_ids_sha256"] = rid.into());
+    let membership = expect_accepted(&run.verify(policy), "a same-class member swap");
+    structure.or(membership)
+}
+
 /// CLASS A, verify side: every leaf of the fullest run copy's recipe.json and gate-report.json,
 /// mutated alone and resealed, is refused naming its row (bound) or still verifies
 /// (report_only); expected-open rows are listed, never counted as bound.
@@ -2499,24 +2571,12 @@ fn every_run_field_is_bound_or_report_only() {
             continue;
         };
         let names = row_str(row, "names");
-        let expect_refused =
-            |got: &Result<VerifyReport, VerifyError>, what: &str| match (got, names) {
-                (Err(e), Some(n)) if e.to_string().contains(n) || verdict(got).contains(n) => None,
-                _ => Some(format!(
-                    "{file}{ptr} ({what}): expected a refusal naming {names:?}, got {}",
-                    verdict(got)
-                )),
-            };
-        let expect_accepted = |got: &Result<VerifyReport, VerifyError>, what: &str| match got {
-            Ok(r)
-                if r.recomputed == control.recomputed && r.shipped_seed == control.shipped_seed =>
-            {
-                None
-            }
-            _ => Some(format!(
-                "{file}{ptr} ({what}): report_only, but the verdict changed: {}",
-                verdict(got)
-            )),
+        let leaf = format!("{file}{ptr}");
+        let expect_refused = |got: &Result<VerifyReport, VerifyError>, what: &str| {
+            refused_naming(got, names, &leaf, what)
+        };
+        let expect_accepted = |got: &Result<VerifyReport, VerifyError>, what: &str| {
+            accepted_unchanged(got, &control, &leaf, what)
         };
         let run = fullest_copy(&policy);
         let old = read_json(&run.path(file))
@@ -2550,28 +2610,7 @@ fn every_run_field_is_bound_or_report_only() {
                 expect_accepted(&got, "a non-shipped seed's row")
             }
         } else if row_str(row, "membership_report_only").is_some() {
-            let i: usize = ptr
-                .rsplit('/')
-                .next()
-                .and_then(|i| i.parse().ok())
-                .expect("a list index");
-            // Structure: a duplicate id (its neighbour's) is refused.
-            let ids = read_json(&run.path(file))["calibration"]["slice_ids"].clone();
-            let n = ids.as_array().expect("ids").len();
-            set_leaf(&run, file, &ptr, ids[(i + 1) % n].clone());
-            let structure = expect_refused(&run.verify(&policy), "a duplicate id");
-            // Membership: a same-class fit row in its place still verifies.
-            let run = fullest_copy(&policy);
-            let swapped = swap_slice_member(&run, i);
-            set_leaf(&run, file, "/calibration/slice_ids", swapped);
-            let rid = sha256_hex(
-                serde_json::to_string(&read_json(&run.path(file))["calibration"]["slice_ids"])
-                    .expect("ids")
-                    .as_bytes(),
-            );
-            run.edit_json(file, |r| r["calibration"]["slice_ids_sha256"] = rid.into());
-            let membership = expect_accepted(&run.verify(&policy), "a same-class member swap");
-            structure.or(membership)
+            slice_membership_failure(&run, &policy, file, &ptr, &expect_refused, &expect_accepted)
         } else {
             set_leaf(&run, file, &ptr, mutate_leaf(&old));
             expect_refused(&run.verify(&policy), "bound")
