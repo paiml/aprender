@@ -3,7 +3,10 @@
 //!
 //! ARMED only by BOTH `LAYA_MODEL_DIR` (the declared base snapshot) and `LAYA_DEMO_RUN=1`;
 //! otherwise it prints `SKIP: demo run not armed (LAYA_MODEL_DIR + LAYA_DEMO_RUN=1)` and passes
-//! (never `#[ignore]`). The run dir is gitignored local evidence, so CI compiles this only.
+//! (never `#[ignore]`). The run dir is gitignored local evidence, so CI cannot run that test.
+//! CI runs the two weight-free cases instead (fragment 801): `demo_s64_block_has_a_decision_rule`
+//! (the contract block) and `decide_both_agrees_on_the_tiny_fixture` (the same pack + verify path
+//! on the committed laya_tiny run, which both must refuse as `SyntheticNotDeployable`).
 //!
 //! ```text
 //! LAYA_DEMO_RUN=1 \
@@ -72,7 +75,8 @@ fn declared() -> Declared {
 /// exact bytes of the same run through `verify_path` on a file. Returns both results and the
 /// sha256 of the file verify read.
 fn decide_both(
-    d: &Declared,
+    run_dir: &Path,
+    data_dir: &Path,
     base: &Path,
     policy: &VerifyPolicy,
 ) -> (
@@ -82,7 +86,7 @@ fn decide_both(
 ) {
     let out = tempfile::TempDir::new().expect("tempdir");
     let apr = out.path().join("laya-stance-64.apr");
-    let pack = pack_for_serving(&d.run_dir, &d.data_dir, base, &apr, policy);
+    let pack = pack_for_serving(run_dir, data_dir, base, &apr, policy);
     let file = if pack.is_ok() {
         apr
     } else {
@@ -91,13 +95,13 @@ fn decide_both(
             .collect();
         assert!(left.is_empty(), "a refused pack wrote {left:?}");
         // The low-level bytes of the same run, so verify decides on a real file too.
-        let bytes = pack_run_dir(&d.run_dir, &d.data_dir).expect("low-level pack");
+        let bytes = pack_run_dir(run_dir, data_dir).expect("low-level pack");
         let f = out.path().join("low-level.apr");
         std::fs::write(&f, &bytes).expect("write scratch apr");
         f
     };
     let sha = artifact_sha256_hex(&std::fs::read(&file).expect("read the verified file"));
-    let verify = verify_path(&file, &d.run_dir, &d.data_dir, base, policy);
+    let verify = verify_path(&file, run_dir, data_dir, base, policy);
     (pack, verify, sha)
 }
 
@@ -136,7 +140,7 @@ fn declared_demo_run_matches_its_outcome_of_record() {
     );
     let policy = common::policy();
     let t0 = std::time::Instant::now();
-    let (pack, verify, sha) = decide_both(&d, &base, &policy);
+    let (pack, verify, sha) = decide_both(&d.run_dir, &d.data_dir, &base, &policy);
     match d.outcome.as_str() {
         "gate_pass" => {
             let p = pack.unwrap_or_else(|e| {
@@ -218,5 +222,95 @@ fn declared_demo_run_matches_its_outcome_of_record() {
         d.outcome,
         t0.elapsed().as_secs_f64(),
         std::env::consts::ARCH
+    );
+}
+
+/// The committed tiny fixture run: `(run dir, data dir, base checkpoint)`. Fails closed when
+/// any part is absent, so the CI cases below can never pass on nothing.
+fn tiny_run() -> (PathBuf, PathBuf, PathBuf) {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/laya_tiny");
+    for rel in [
+        "gate-report.json",
+        "recipe.json",
+        "data/eval.jsonl",
+        "checkpoint/model.safetensors",
+    ] {
+        assert!(
+            dir.join(rel).is_file(),
+            "the laya_tiny fixture lacks {rel} ({})",
+            dir.display()
+        );
+    }
+    (dir.clone(), dir.join("data"), dir.join("checkpoint"))
+}
+
+/// CI case (no weights): `demo_s64` is decidable. Its outcome is one of `outcome_values`,
+/// every value has a decision rule in this test, and the record carries the fields the
+/// outcome's rule reads.
+#[test]
+fn demo_s64_block_has_a_decision_rule() {
+    const RULES: [&str; 5] = [
+        "pending",
+        "aborted",
+        "gate_pass",
+        "gate_fail",
+        "pack_refused",
+    ];
+    let d = declared();
+    assert!(
+        d.values.contains(&d.outcome),
+        "demo_s64.outcome {:?} is not one of {:?}",
+        d.outcome,
+        d.values
+    );
+    for v in &d.values {
+        assert!(
+            RULES.contains(&v.as_str()),
+            "outcome value {v:?} has no decision rule"
+        );
+    }
+    match d.outcome.as_str() {
+        "gate_pass" => assert!(
+            d.record["shipped_seed"].as_i64().is_some(),
+            "gate_pass needs outcome_record.shipped_seed"
+        ),
+        "gate_fail" => assert!(
+            d.record["failed_clauses"]
+                .as_sequence()
+                .is_some_and(|c| !c.is_empty() && c.iter().all(|x| x.as_str().is_some())),
+            "gate_fail needs outcome_record.failed_clauses"
+        ),
+        "pack_refused" => assert!(
+            d.record["refusal"].as_str().is_some(),
+            "pack_refused needs outcome_record.refusal"
+        ),
+        _ => {}
+    }
+    println!("DEMO_S64 outcome {} has its record", d.outcome);
+}
+
+/// CI case (tiny fixture): the same `decide_both` path the armed test takes, on the committed
+/// laya_tiny run. The fixture is synthetic, so pack and verify both refuse it as
+/// `SyntheticNotDeployable`, identically, and the refused pack writes nothing.
+#[test]
+fn decide_both_agrees_on_the_tiny_fixture() {
+    let (run, data, base) = tiny_run();
+    let policy = common::policy();
+    let (pack, verify, sha) = decide_both(&run, &data, &base, &policy);
+    for (side, r) in [("pack", &pack), ("verify", &verify)] {
+        match r {
+            Err(e) => assert_eq!(e.variant_name(), "SyntheticNotDeployable", "{side}: {e}"),
+            Ok(rep) => panic!("{side} accepted the synthetic fixture: {rep:?}"),
+        }
+    }
+    assert_eq!(pack, verify, "pack and verify refused differently");
+    assert_eq!(sha.len(), 64, "verify decided on a real file");
+    println!(
+        "TINY pack={} verify={}",
+        pack.as_ref()
+            .map_or_else(|e| e.variant_name().to_string(), |_| "ok".into()),
+        verify
+            .as_ref()
+            .map_or_else(|e| e.variant_name().to_string(), |_| "ok".into())
     );
 }

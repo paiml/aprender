@@ -4,8 +4,9 @@
 //! ARMED only by BOTH `LAYA_MODEL_DIR` (the declared base snapshot) and
 //! `LAYA_FAIL_CLOSED_VECTORS=1`; otherwise it prints
 //! `SKIP: fail-closed vectors not armed (LAYA_MODEL_DIR + LAYA_FAIL_CLOSED_VECTORS=1)` and returns
-//! (never `#[ignore]`). The run dirs are gitignored local evidence from plan 08-08, so CI compiles
-//! this and runs nothing until plan 08-12.
+//! (never `#[ignore]`). The run dirs are gitignored local evidence from plan 08-08, so CI cannot run
+//! that test. CI runs `every_contract_vector_has_a_documented_refusal` instead (fragment 802): the
+//! contract vectors parse, are distinct, and each has a documented refusal in [`expected`].
 //!
 //! ```text
 //! LAYA_FAIL_CLOSED_VECTORS=1 \
@@ -288,4 +289,31 @@ fn demo_vectors_are_refused_fail_closed() {
         std::env::consts::ARCH
     );
     assert_eq!(refused, vectors.len());
+}
+
+/// CI case (no weights): every `demo.fail_closed_vectors` entry parses to a 64-hex recipe_id
+/// and a run dir, the ids and dirs are distinct, and each id has a documented refusal in
+/// [`expected`]. A new vector without one fails here, in CI, not only when armed.
+#[test]
+fn every_contract_vector_has_a_documented_refusal() {
+    let vectors = vectors();
+    assert!(
+        vectors.len() >= 2,
+        "fewer than two fail-closed vectors parse"
+    );
+    let mut ids: Vec<&str> = vectors.iter().map(|(r, _)| r.as_str()).collect();
+    let mut dirs: Vec<&Path> = vectors.iter().map(|(_, d)| d.as_path()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    dirs.sort_unstable();
+    dirs.dedup();
+    assert_eq!(ids.len(), vectors.len(), "duplicate recipe_id");
+    assert_eq!(dirs.len(), vectors.len(), "duplicate run dir");
+    for (rid, _) in &vectors {
+        assert!(
+            expected(rid).is_some(),
+            "vector {rid} has no documented refusal in this test"
+        );
+    }
+    println!("VECTORS {} each with a documented refusal", vectors.len());
 }
