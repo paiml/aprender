@@ -8,6 +8,7 @@
 //!
 //! Run with: cargo run --release --example parity_035_m4_verification
 
+use std::io::IsTerminal;
 use std::time::Instant;
 
 const OLLAMA_ENDPOINT: &str = "http://localhost:11434/api/generate";
@@ -202,22 +203,10 @@ fn benchmark_realizar_gpu_attention() -> Result<BenchmarkResult, Box<dyn std::er
     })
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n╔════════════════════════════════════════════════════════════════╗");
-    println!("║         PARITY-035: M4 Parity Verification Benchmark          ║");
-    println!("║                     RTX 4090 vs Ollama                         ║");
-    println!("╚════════════════════════════════════════════════════════════════╝\n");
-
-    println!("Configuration:");
-    println!("  Prompt: \"{}\"", &PROMPT[..50.min(PROMPT.len())]);
-    println!("  Max tokens: {}", MAX_TOKENS);
-    println!("  Warmup: {} iterations", WARMUP_ITERATIONS);
-    println!("  Measurement: {} iterations", MEASUREMENT_ITERATIONS);
-    println!();
-
-    // The baseline is a live Ollama server. Probe it first, so a host without one
-    // says so instead of failing inside the HTTP client. The benchmark asks for
-    // `localhost`, so every address it resolves to is tried.
+/// Exits with status 1 when nothing listens on `localhost:11434`, or when the
+/// server there says phi2:2.7b is missing. Any other answer returns.
+fn probe_ollama() {
+    // The benchmark asks for `localhost`, so every address it resolves to is tried.
     let listening =
         std::net::ToSocketAddrs::to_socket_addrs(&("localhost", 11434)).is_ok_and(|mut addrs| {
             addrs.any(|addr| {
@@ -253,6 +242,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if model_missing {
         eprintln!("Model not found: phi2:2.7b on the Ollama server (run `ollama pull phi2:2.7b`)");
         std::process::exit(1);
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n╔════════════════════════════════════════════════════════════════╗");
+    println!("║         PARITY-035: M4 Parity Verification Benchmark          ║");
+    println!("║                     RTX 4090 vs Ollama                         ║");
+    println!("╚════════════════════════════════════════════════════════════════╝\n");
+
+    println!("Configuration:");
+    println!("  Prompt: \"{}\"", &PROMPT[..50.min(PROMPT.len())]);
+    println!("  Max tokens: {}", MAX_TOKENS);
+    println!("  Warmup: {} iterations", WARMUP_ITERATIONS);
+    println!("  Measurement: {} iterations", MEASUREMENT_ITERATIONS);
+    println!();
+
+    // The baseline is a live Ollama server. A debug build, or a run without a
+    // terminal, probes it first, so a host without one says so instead of failing
+    // inside the HTTP client. A release run at a terminal goes straight to the
+    // benchmark, as it did before this probe.
+    if cfg!(debug_assertions) || !std::io::stdout().is_terminal() {
+        probe_ollama();
     }
 
     // Benchmark Ollama
