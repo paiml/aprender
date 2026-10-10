@@ -1,4 +1,4 @@
-# measured 2026-10-10T12:58:20Z
+# measured 2026-10-10T13:13:22Z
 lambda-labs	apr	GREEN	ok (installed nightly@1a8f2ea, target nightly@1a8f2ea)
 lambda-labs	pv	GREEN	ok (installed v0.70.3@95f64ba, target v0.70.3@95f64ba)
 lambda-labs	forjar	GREEN	no-sha (installed nightly@6fdad20, target nightly@6fdad20)
@@ -30,4 +30,4 @@ yoga	copia	GREEN	no-sha (installed nightly@ce1909f, target nightly@ce1909f)
 yoga	apex	GREEN	ok (installed v-apex-0.1.0-rc.2@f2e20b6, target v-apex-0.1.0-rc.2@f2e20b6)
 intel	apex	GREEN	ok (installed v-apex-0.1.0-rc.2@f2e20b6, target v-apex-0.1.0-rc.2@f2e20b6)
 intel	ollama	GREEN	ok (installed 0.40.2, target v0.40.2)
-mini	apr	RED	behind (installed v0.70.3@95f64ba, target nightly@1a8f2ea)
+mini	apr	GREEN	ok (installed nightly@1a8f2ea, target nightly@1a8f2ea)
