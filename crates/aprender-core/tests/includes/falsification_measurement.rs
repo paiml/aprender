@@ -204,7 +204,13 @@ fn m010_output_file_created() {
     use std::fs;
     use std::path::Path;
 
-    let output_path = "/tmp/m010_test_output.json";
+    // One path per process: with a shared fixed path, a concurrent run on the
+    // same host could delete this run's file or supply one this run never wrote.
+    let output_path = std::env::temp_dir()
+        .join(format!("m010_test_output_{}.json", std::process::id()))
+        .to_string_lossy()
+        .into_owned();
+    let output_path = output_path.as_str();
 
     let _ = fs::remove_file(output_path);
 
