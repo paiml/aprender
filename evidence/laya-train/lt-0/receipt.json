@@ -11,7 +11,7 @@
   "enforcing": ["scripts/check_laya_train_rules.sh --self-test"],
   "ci_fragment": "ci/explicit-test-commands.d/795-laya-train-rules-self-test.cmd",
   "command": "bash scripts/check_laya_train_rules.sh --base origin/main --head HEAD",
-  "self_test_cases": 26,
+  "self_test_cases": 35,
   "py_added": 0,
   "ops_absent_core": 9,
   "carry_on_main": false,
