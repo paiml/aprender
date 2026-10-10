@@ -9,6 +9,16 @@
 name: examples-nightly
 
 on:
+  workflow_call:   # #5082: release-rehearsal-nightly.yml calls this at its pick C
+    inputs:
+      ref:
+        description: C, the 40-hex commit every job checks out and asserts
+        type: string
+        required: true
+      caller:
+        description: the calling job's name, which GitHub puts first in each called job's name
+        type: string
+        required: true
   schedule:
     # SHIFTED so it actually runs at night (#3292). GitHub dispatches
     # schedule events 3h51m-6h49m late on this account (28 runs, 10
@@ -28,7 +38,7 @@ on:
         default: ''
 
 concurrency:
-  group: examples-nightly
+  group: examples-nightly${{ inputs.caller && format('-{0}-{1}', inputs.caller, github.run_id) || '' }}
   cancel-in-progress: false
 
 permissions:
@@ -41,6 +51,12 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
       - name: dogfood_examples.sh case table (hermetic, scratch workspace)
         run: bash scripts/dogfood_examples.sh --selftest

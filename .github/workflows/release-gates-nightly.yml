@@ -28,6 +28,16 @@
 name: release-gates-nightly
 
 on:
+  workflow_call:   # #5082: release-rehearsal-nightly.yml calls this at its pick C
+    inputs:
+      ref:
+        description: C, the 40-hex commit every job checks out and asserts
+        type: string
+        required: true
+      caller:
+        description: the calling job's name, which GitHub puts first in each called job's name
+        type: string
+        required: true
   schedule:
     # Schedule events on this account fire 3h51m-6h49m late (examples-nightly.yml, #3292), so the cron is set
     # ~5h before the 04:45Z judge. Both jobs take minutes; landing early is harmless, landing after 04:45Z is
@@ -36,7 +46,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: release-gates-nightly-${{ github.ref }}
+  group: release-gates-nightly-${{ github.ref }}${{ inputs.caller && format('-{0}-{1}', inputs.caller, github.run_id) || '' }}
   cancel-in-progress: false
 
 permissions:
@@ -51,7 +61,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0   # the tags name the last release
+      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
       - name: check_milestone_cut.sh <train> --must-carry (autopilot cut_tag, before the carry)
         env:
@@ -83,6 +98,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
       - name: check_publish_preflight.sh --graph-only (R2 + R6)
         run: |
@@ -96,6 +117,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
       - name: check_crate_contents.sh (nothing secret in the published crates)
         run: |

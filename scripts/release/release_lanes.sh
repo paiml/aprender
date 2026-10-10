@@ -19,9 +19,10 @@
 #                      1. On not_measured it is SKIPPED, which the train reads as not_measured. A measure job
 #                      that dies writes no output, so its lane job is skipped too. No path from a crash to a pass.
 #
-# THE LANES. C is the workflow's `inputs.ref || github.sha`, passed in as LANES_REF: the rehearsal's pick when
-# release-rehearsal-nightly.yml calls the workflow (B1 Q1, Q3), else the head of main when the scheduled run
-# started. GITHUB_SHA is never C in a called run (it is the caller's commit), so no lane reads it. A called
+# THE LANES. C is the workflow's `needs.pick.outputs.c` (#5082), passed in as LANES_REF: the rehearsal's pick when
+# release-rehearsal-nightly.yml calls the workflow (B1 Q1, Q3), else on the schedule the commit tonight's nightly.yml
+# measured (lanes_pick_c.sh; none is not_measured, never main's head), else (a dispatch) its github.sha.
+# GITHUB_SHA is never C in a called run (it is the caller's commit), so no lane reads it. A called
 # run's job names start with the caller job's name: LANES_CALLER names it, and the judged prefixes carry it.
 # Every lane job checks out C and runs `assert-head C` first, so a lane job that ran on another commit fails.
 #   cleanroom-gpu   b2-gpu.yml called with ref=C. green: every b2-gpu job succeeded. red: a step that is not a
@@ -355,12 +356,12 @@ measure() {
 # and a lane job named exactly the lane, gated on the measure job's green/red, that exits 0 only on green. The
 # train matches job NAMES, so a renamed job is a lane that reads not_measured forever, and a lane job that ran on
 # not_measured would turn it into a pass.
-# Every job measures at C (THE LANES): both jobs of a lane check out `inputs.ref || github.sha`, the lane job asserts
+# Every job measures at C (THE LANES): both jobs of a lane check out `needs.pick.outputs.c` and need the pick, the lane job asserts
 # its HEAD in a step named for C before anything else, the cpu read gets C as LANES_REF and the gpu judge its caller
-# as LANES_CALLER. A called run's github.sha is the caller's commit, so nothing reads it (or GITHUB_SHA) but as that
-# expression's fallback.
+# as LANES_CALLER. Only the pick job reads github.sha, as a dispatch's C; it is never C on the schedule or in a called run
+# (#5082). The pick passes inputs.ref, github.event_name and github.sha to lanes_pick_c.sh, which decides.
 wiring() {
-    local wf=$1 lane b bad="" n=0 at='\$\{\{ inputs\.ref \|\| github\.sha \}\}'
+    local wf=$1 lane b j rest bad="" n=0 at='\$\{\{ needs\.pick\.outputs\.c \}\}'
     [ -f "$wf" ] || { printf '%s is missing' "$wf"; return 1; }
     for lane in $WIRED_LANES; do
         n=$((n + 1))
@@ -373,11 +374,24 @@ wiring() {
             && grep -qE '^        run: bash scripts/release/release_lanes\.sh assert-head "\$REF"$' <<< "$b"; } || bad="$bad $lane(assert-head)"
         grep -qE "^          ref: $at\$" <<< "$(job_block "$wf" "measure-$lane")" || bad="$bad measure-$lane(checkout-at-C)"
     done
-    [ "$(grep -cE '^      - uses: actions/checkout@' "$wf")" -eq "$(grep -cE "^          ref: $at\$" "$wf")" ] || bad="$bad checkout-at-C"
+    rest="$(awk '$0 == "  pick:" { s = 1; next } s && /^  [^ #]/ { s = 0 } !s' "$wf")"   # every job but the pick
+    [ "$(grep -cE '^      - uses: actions/checkout@' <<< "$rest")" -eq "$(grep -cE "^          ref: $at\$" <<< "$rest")" ] || bad="$bad checkout-at-C"
     grep -qE "^      ref: $at\$" <<< "$(job_block "$wf" b2-gpu-at-c)" || bad="$bad b2-gpu-at-c(ref)"
     grep -qE "^          LANES_REF: $at\$" <<< "$(job_block "$wf" measure-cleanroom-cpu)" || bad="$bad cleanroom-cpu(LANES_REF)"
     grep -qE '^          LANES_CALLER: \$\{\{ inputs\.caller \}\}$' <<< "$(job_block "$wf" measure-cleanroom-gpu)" || bad="$bad cleanroom-gpu(LANES_CALLER)"
-    ! grep -qE 'github\.sha|GITHUB_SHA' <<< "$(sed -E "/^ *#/d; s/$at//g" "$wf")" || bad="$bad caller-sha"
+    ! grep -qE 'github\.sha|GITHUB_SHA' <<< "$(sed -E "/^ *#/d; s/$at//g" <<< "$rest")" || bad="$bad caller-sha"
+    # the pick (#5082): a caller's ref, else tonight's nightly.yml commit on the schedule, else (a dispatch) github.sha
+    b="$(job_block "$wf" pick)"
+    { grep -qE '^          REF: \$\{\{ inputs\.ref \}\}$' <<< "$b" && grep -qE '^          EVENT: \$\{\{ github\.event_name \}\}$' <<< "$b" \
+        && grep -qE '^          SHA: \$\{\{ github\.sha \}\}$' <<< "$b" && grep -qE '^      c: \$\{\{ steps\.c\.outputs\.c \}\}$' <<< "$b" \
+        && grep -qF 'c="$(bash scripts/release/lanes_pick_c.sh c "$GITHUB_REPOSITORY" "$REF" "$EVENT" "$SHA")" || exit 1' <<< "$b"; } || bad="$bad pick"
+    # a job that reads C without needing the pick reads an empty C, and an empty checkout ref is github.sha
+    for j in $(awk '/^jobs:/ { f = 1; next } f && /^  [a-z0-9-]+:$/ { sub(/:$/, ""); print $1 }' "$wf"); do
+        [ "$j" != pick ] || continue
+        b="$(job_block "$wf" "$j")"
+        grep -qE "$at" <<< "$b" || continue
+        grep -qE '^    needs: (pick|\[pick(, [a-z0-9-]+)*\])$' <<< "$b" || bad="$bad $j(needs-pick)"
+    done
     [ "$(grep -cE '^      - run: test "\$VERDICT" = green$' "$wf")" -eq "$n" ] || bad="$bad exit(green-only)"
     if [ -n "$bad" ]; then printf 'miswired:%s' "$bad"; return 1; fi
     printf '%s lanes' "$n"
@@ -709,11 +723,17 @@ FAKE
     refused wiring_refuses_a_lane_job_with_no_checkout '/^  cleanroom-cpu:$/,/^  [a-z]/{/actions\/checkout@/,/fetch-depth/d}'
     refused wiring_refuses_a_measure_job_with_no_checkout '/^  measure-cleanroom-gpu:$/,/^  [a-z]/{/actions\/checkout@/,/fetch-depth/d}'
     refused wiring_refuses_a_case_table_of_another_commit '/^  case-table:$/,/^  [a-z]/{/^          ref: /d}'
-    refused wiring_refuses_the_callers_sha 's/^      ref: \${{ inputs\.ref || github\.sha }}$/      ref: ${{ github.sha }}/'
-    refused wiring_refuses_b2_gpu_on_a_branch 's/^      ref: \${{ inputs\.ref || github\.sha }}$/      ref: main/'
+    refused wiring_refuses_the_callers_sha 's/^      ref: \${{ needs\.pick\.outputs\.c }}$/      ref: ${{ github.sha }}/'
+    refused wiring_refuses_b2_gpu_on_a_branch 's/^      ref: \${{ needs\.pick\.outputs\.c }}$/      ref: main/'
     refused wiring_refuses_a_worktree_of_the_callers_commit 's/"\$RUNNER_TEMP\/lanes-c" "\$REF"$/"$RUNNER_TEMP\/lanes-c" "$GITHUB_SHA"/'
     refused wiring_refuses_a_cpu_read_without_lanes_ref '/^          LANES_REF: /d'
     refused wiring_refuses_a_gpu_judge_without_its_caller '/^          LANES_CALLER: /d'
+    # the pick (#5082): a schedule that falls back to main's head, a job that reads C without needing the pick
+    refused wiring_refuses_a_pick_that_falls_back_to_the_head 's/^\(          c="\$(bash scripts\/release\/lanes_pick_c\.sh c .*\)" || exit 1$/\1" || c=$SHA/'
+    refused wiring_refuses_a_pick_without_the_callers_ref 's/^          REF: \${{ inputs\.ref }}$/          REF: ""/'
+    refused wiring_refuses_a_job_that_does_not_need_the_pick 's/^    needs: \[pick, case-table\]$/    needs: case-table/'
+    refused wiring_refuses_b2_gpu_without_the_pick '/^  b2-gpu-at-c:$/,/^  [a-z]/{/^    needs: pick$/d}'
+    refused wiring_refuses_a_head_read_outside_the_pick '/^  case-table:$/,/^  [a-z]/s/^          ref: .*$/          ref: ${{ github.sha }}/'
     rl_rows_b1
     rm -rf -- "${tmp:?}"
     printf -- '--- %s ok, %s broke ---\n' "$pass" "$fail"
@@ -769,7 +789,10 @@ m45_commit_listed_once_per_run s#&& !seen\[\$5\]++ { print \$5 }#{ print $5 }#
 m46_cached_etag_never_sent s#hdr=(-H "If-None-Match: \$(cat -- "\$k.etag")")#hdr=()#
 m47_assert_head_takes_any_word s#\[\[ "\$ref" =~ #[[ -n "$ref" ]] || [[ "$ref" =~ #
 m48_lanes_ref_takes_any_word s#"\${LANES_REF:-}" .~ \^\[0-9a-f\]{40}\$ \]\]#-n "${LANES_REF:-}" ]]#
-m49_lanes_caller_takes_any_word s#\[\[ "\${LANES_CALLER:-}" .~ \^\[A-Za-z0-9._-\]\*\$ \]\]#true#'
+m49_lanes_caller_takes_any_word s#\[\[ "\${LANES_CALLER:-}" .~ \^\[A-Za-z0-9._-\]\*\$ \]\]#true#
+m50_wiring_ignores_the_pick s# || bad="\$bad pick"# || true#
+m51_wiring_ignores_needs_pick s# || bad="\$bad \$j(needs-pick)"# || true#
+m52_wiring_counts_the_pick_as_a_job s#^    rest="\$(awk .*#    rest="$(cat "$wf")"#'
 
 mutants() {
     local tmp pass=0 fail=0 name expr o rc m

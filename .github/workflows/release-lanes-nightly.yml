@@ -7,10 +7,11 @@
 # red; on not_measured it is skipped, so a lane that could not run is never a pass. A measure job
 # that dies writes no verdict, and its lane job is skipped the same way.
 #
-# C is `inputs.ref || github.sha`: the scheduled run measures main's head, and the nightly rehearsal
+# C is `needs.pick.outputs.c` (#5082, scripts/release/lanes_pick_c.sh): the scheduled run measures the commit
+# tonight's scheduled nightly.yml measured, or nothing (not_measured, never main's head); the nightly rehearsal
 # (release-rehearsal-nightly.yml, B1 Q3) calls this workflow with ref = its pick C and caller = the
 # calling job's name, which GitHub puts first in each called job's name. A called run's github.sha
-# is the CALLER's commit, so nothing here reads it but as that fallback. Every job checks out C, and
+# is the CALLER's commit, so only the pick job reads it, for a dispatch. Every job checks out C, and
 # each lane job asserts its HEAD is C in a step named for C, before its verdict: the rehearsal reads a
 # lane on C only from a lane job whose assert passed.
 #
@@ -59,15 +60,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # C for every job below (#5082): a caller's ref; on the schedule, the commit tonight's scheduled nightly.yml
+  # measured, or not_measured (this job fails and every job below is skipped), never github.sha; a dispatch, github.sha.
+  pick:
+    name: pick C
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 5
+    outputs:
+      c: ${{ steps.c.outputs.c }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+      - run: bash scripts/release/lanes_pick_c.sh --self-test
+      - id: c
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          c="$(bash scripts/release/lanes_pick_c.sh c "$GITHUB_REPOSITORY" "$REF" "$EVENT" "$SHA")" || exit 1
+          echo "c=$c" >> "$GITHUB_OUTPUT"
+
   case-table:
     name: case table (release_lanes.sh --self-test, --mutants)
+    needs: pick
     # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ needs.pick.outputs.c }}
           fetch-depth: 1
       - run: bash scripts/release/release_lanes.sh --self-test
       - run: bash scripts/release/release_lanes.sh --mutants
@@ -75,13 +100,14 @@ jobs:
   # ------------------------------------------------------------------ cleanroom-gpu
   b2-gpu-at-c:
     name: b2-gpu at C
+    needs: pick
     uses: ./.github/workflows/b2-gpu.yml
     with:
-      ref: ${{ inputs.ref || github.sha }}
+      ref: ${{ needs.pick.outputs.c }}
 
   measure-cleanroom-gpu:
     name: 'measure: cleanroom-gpu'
-    needs: [case-table, b2-gpu-at-c]
+    needs: [pick, case-table, b2-gpu-at-c]
     if: always() && needs.case-table.result == 'success'
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
@@ -91,7 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ needs.pick.outputs.c }}
           fetch-depth: 1
       - id: m
         env:
@@ -101,7 +127,7 @@ jobs:
 
   cleanroom-gpu:
     name: cleanroom-gpu
-    needs: measure-cleanroom-gpu
+    needs: [pick, measure-cleanroom-gpu]
     if: always() && contains(fromJSON('["green","red"]'), needs.measure-cleanroom-gpu.outputs.verdict)
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 5
@@ -111,11 +137,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ needs.pick.outputs.c }}
           fetch-depth: 1
-      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+      - name: Assert HEAD is ${{ needs.pick.outputs.c }}
         env:
-          REF: ${{ inputs.ref || github.sha }}
+          REF: ${{ needs.pick.outputs.c }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
       - run: echo "cleanroom-gpu $VERDICT — $REASON"
       - run: test "$VERDICT" = green
@@ -123,7 +149,7 @@ jobs:
   # ------------------------------------------------------------------ cleanroom-cpu
   measure-cleanroom-cpu:
     name: 'measure: cleanroom-cpu'
-    needs: case-table
+    needs: [pick, case-table]
     runs-on: [self-hosted, Linux, X64, clean-room]
     environment: infra-read   # holds INFRA_ACTIONS_READ; only main may use it
     timeout-minutes: 15
@@ -133,17 +159,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ needs.pick.outputs.c }}
           fetch-depth: 1
       - id: m
         env:
           INFRA_TOKEN: ${{ secrets.INFRA_ACTIONS_READ }}
-          LANES_REF: ${{ inputs.ref || github.sha }}
+          LANES_REF: ${{ needs.pick.outputs.c }}
         run: bash scripts/release/release_lanes.sh measure cleanroom-cpu
 
   cleanroom-cpu:
     name: cleanroom-cpu
-    needs: measure-cleanroom-cpu
+    needs: [pick, measure-cleanroom-cpu]
     if: always() && contains(fromJSON('["green","red"]'), needs.measure-cleanroom-cpu.outputs.verdict)
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 5
@@ -153,11 +179,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ needs.pick.outputs.c }}
           fetch-depth: 1
-      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+      - name: Assert HEAD is ${{ needs.pick.outputs.c }}
         env:
-          REF: ${{ inputs.ref || github.sha }}
+          REF: ${{ needs.pick.outputs.c }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
       - run: echo "cleanroom-cpu $VERDICT — $REASON"
       - run: test "$VERDICT" = green
@@ -165,7 +191,7 @@ jobs:
   # ------------------------------------------------------------------ publish-dryrun
   measure-publish-dryrun:
     name: 'measure: publish-dryrun'
-    needs: case-table
+    needs: [pick, case-table]
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 80   # --verify measured 18 min warm (rc_publish_gate.sh header); ends before 04:45Z
     outputs:
@@ -174,19 +200,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ needs.pick.outputs.c }}
           fetch-depth: 1
       # C beside the checkout, in RUNNER_TEMP, as rc-cut.yml does: no cargo config is inherited
       - name: A worktree of C
         env:
-          REF: ${{ inputs.ref || github.sha }}
+          REF: ${{ needs.pick.outputs.c }}
         run: git worktree add --detach "$RUNNER_TEMP/lanes-c" "$REF"
       - id: m
         run: bash scripts/release/release_lanes.sh measure publish-dryrun "$RUNNER_TEMP/lanes-c"
 
   publish-dryrun:
     name: publish-dryrun
-    needs: measure-publish-dryrun
+    needs: [pick, measure-publish-dryrun]
     if: always() && contains(fromJSON('["green","red"]'), needs.measure-publish-dryrun.outputs.verdict)
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 5
@@ -196,11 +222,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ needs.pick.outputs.c }}
           fetch-depth: 1
-      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+      - name: Assert HEAD is ${{ needs.pick.outputs.c }}
         env:
-          REF: ${{ inputs.ref || github.sha }}
+          REF: ${{ needs.pick.outputs.c }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
       - run: echo "publish-dryrun $VERDICT — $REASON"
       - run: test "$VERDICT" = green
