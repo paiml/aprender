@@ -113,7 +113,7 @@ async fn try_cuda_backend(
     let t0 = if ttft_trace { Some(std::time::Instant::now()) } else { None };
 
     let cuda_model_lock = state.cuda_model()?;
-    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "CUDA") {
+    let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -142,48 +142,60 @@ async fn try_cuda_backend(
         state.should_trace(trace_level),
         cancel,
     );
+    // #4971: logprobs come from the dense turn; the traced loop records none.
+    if let Some(reason) =
+        super::chat_logprobs::traced_logprobs_refusal(request, "CUDA", q_config.trace)
+    {
+        return Some(fail_response(state, StatusCode::NOT_IMPLEMENTED, reason));
+    }
     let max_tokens = q_config.max_tokens;
+    let (sink, logprobs) = cuda_record_channel(request.logprobs_top_n());
 
     if request.stream {
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(16);
-        // §3: the engine's return path for the server-measured phase split.
-        // The handler returns the SSE response before generation finishes, so
-        // the measurement cannot be a return value; the terminal chunk awaits
-        // this oneshot after the token channel closes.
-        let (timing_tx, timing_rx) =
-            tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
-
-        if let Err(r) =
-            dispatch_cuda_stream(state, cuda_model_lock, prompt_ids, q_config, tx, timing_tx)
-        {
-            return Some(r);
-        }
-
-        return Some(true_streaming_sse_response(
-            rx,
-            tokenizer,
-            request_id.to_string(),
-            request.model.clone(),
-            state.metrics.clone(),
+        return Some(cuda_streamed_reply(
+            state,
+            request,
+            request_id,
             start,
-            max_tokens,
-            prompt_tokens,
-            Some(timing_rx),
-            request.stop.as_deref(),
-            crate::api::stream_tool_calls::StreamTools::from_request(request),
+            cuda_model_lock,
+            prompt_ids,
+            q_config,
+            tokenizer,
+            sink,
+            logprobs,
         ));
     }
 
     // Non-streaming CUDA — route through batch scheduler when available (realizr#211)
     let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
     let generated = if let Some(batch_tx) = state.cuda_batch_tx() {
-        cuda_batch_collect(state, batch_tx, prompt_ids, q_config, timing_tx, &tokenizer).await
+        cuda_batch_collect(
+            state, batch_tx, prompt_ids, q_config, timing_tx, &tokenizer, sink,
+        )
+        .await
     } else {
-        cuda_direct_collect(state, cuda_model_lock, &prompt_ids, &q_config, timing_tx, &tokenizer, prompt_tokens)
+        cuda_direct_collect(
+            state,
+            cuda_model_lock,
+            &prompt_ids,
+            &q_config,
+            timing_tx,
+            &tokenizer,
+            sink.as_ref(),
+        )
     };
     let (token_ids, completion_tokens, response_text) = match generated {
         Ok(g) => g,
         Err(r) => return Some(r),
+    };
+    // #4971: every record was sent ahead of its token, so all of them are here.
+    // A token without its own (a batched turn records none) fails the request.
+    let logprobs = match logprobs
+        .map(|l| l.collect(&tokenizer, &token_ids))
+        .transpose()
+    {
+        Ok(l) => l,
+        Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
     };
 
     let latency = start.elapsed();
@@ -207,13 +219,86 @@ async fn try_cuda_backend(
         request_tool_choice(request),
         timings,
         None,
-        None,
+        logprobs,
     ))
+}
+
+/// `try_cuda_backend`'s streamed reply: dispatch the turn, then hand its
+/// token channel to the SSE stream. A refused dispatch is the reply.
+#[cfg(feature = "cuda")]
+fn cuda_streamed_reply(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    start: Instant,
+    cuda_model_lock: &Arc<std::sync::RwLock<crate::gguf::OwnedQuantizedModelCuda>>,
+    prompt_ids: Vec<u32>,
+    q_config: crate::gguf::QuantizedGenerateConfig,
+    tokenizer: Arc<BPETokenizer>,
+    sink: Option<super::cuda_batch_scheduler::RecordSink>,
+    logprobs: Option<super::chat_logprobs::StreamLogprobs>,
+) -> Response {
+    let max_tokens = q_config.max_tokens;
+    let prompt_tokens = prompt_ids.len();
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(16);
+    // §3: the engine's return path for the server-measured phase split.
+    // The handler returns the SSE response before generation finishes, so
+    // the measurement cannot be a return value; the terminal chunk awaits
+    // this oneshot after the token channel closes.
+    let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
+
+    if let Err(r) = dispatch_cuda_stream(
+        state,
+        cuda_model_lock,
+        prompt_ids,
+        q_config,
+        tx,
+        timing_tx,
+        sink,
+    ) {
+        return r;
+    }
+
+    live_sse_response(
+        rx,
+        tokenizer,
+        request_id.to_string(),
+        request.model.clone(),
+        state.metrics.clone(),
+        start,
+        max_tokens,
+        prompt_tokens,
+        Some(timing_rx),
+        request.stop.as_deref(),
+        crate::api::stream_tool_calls::StreamTools::from_request(request),
+        logprobs,
+    )
+}
+
+/// #4971: the engine's and the handler's ends of a request's logprobs records,
+/// when it asked for them with `top_n` alternatives per token.
+#[cfg(feature = "cuda")]
+fn cuda_record_channel(
+    top_n: Option<usize>,
+) -> (
+    Option<super::cuda_batch_scheduler::RecordSink>,
+    Option<super::chat_logprobs::StreamLogprobs>,
+) {
+    top_n
+        .map(|top_n| {
+            let (records, logprobs) = super::chat_logprobs::StreamLogprobs::channel();
+            (
+                super::cuda_batch_scheduler::RecordSink { top_n, records },
+                logprobs,
+            )
+        })
+        .unzip()
 }
 
 /// `try_cuda_backend`'s streaming dispatch: the batch scheduler when one is
 /// running, else the direct RwLock path on a blocking task. `Err` is the 503
-/// for a full batch queue.
+/// for a full batch queue. With `logprobs` (#4971) each token's record goes
+/// ahead of the token.
 #[cfg(feature = "cuda")]
 #[allow(clippy::result_large_err)]
 fn dispatch_cuda_stream(
@@ -223,6 +308,7 @@ fn dispatch_cuda_stream(
     q_config: crate::gguf::QuantizedGenerateConfig,
     tx: tokio::sync::mpsc::Sender<Result<u32, String>>,
     timing_tx: tokio::sync::oneshot::Sender<crate::api::PhaseTimings>,
+    logprobs: Option<super::cuda_batch_scheduler::RecordSink>,
 ) -> Result<(), Response> {
     // PMAT-044: Use batch scheduler if available (continuous batching)
     if let Some(batch_tx) = state.cuda_batch_tx() {
@@ -233,6 +319,7 @@ fn dispatch_cuda_stream(
             non_streaming: false,
             enqueue_time: std::time::Instant::now(),
             timing_tx: Some(timing_tx),
+            logprobs,
         };
         if let Err(e) = batch_tx.try_send(batch_req) {
             // §5.2: this 503 is the one admission REFUSAL this server has
@@ -256,7 +343,13 @@ fn dispatch_cuda_stream(
             // Stops when the client goes away — see `streaming_token_sink`.
             let sink =
                 crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
-            let result = dense_cuda_turn(&mut cuda_model, &prompt_ids, &q_config, sink);
+            let result = dense_cuda_turn(
+                &mut cuda_model,
+                &prompt_ids,
+                &q_config,
+                logprobs.as_ref(),
+                sink,
+            );
             // Taken under the SAME write lock the request ran under, so the
             // split belongs to this request and to no other.
             let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
@@ -270,7 +363,8 @@ fn dispatch_cuda_stream(
 
 /// `try_cuda_backend`'s non-streaming turn through the batch scheduler
 /// (realizr#211): submit, then collect every token. Returns
-/// `(tokens, completion_tokens, cleaned text)`.
+/// `(tokens, completion_tokens, cleaned text)`. With `logprobs` (#4971) each
+/// token's record goes ahead of the token.
 #[cfg(feature = "cuda")]
 async fn cuda_batch_collect(
     state: &AppState,
@@ -279,6 +373,7 @@ async fn cuda_batch_collect(
     q_config: crate::gguf::QuantizedGenerateConfig,
     timing_tx: tokio::sync::oneshot::Sender<crate::api::PhaseTimings>,
     tokenizer: &BPETokenizer,
+    logprobs: Option<super::cuda_batch_scheduler::RecordSink>,
 ) -> Result<(Vec<u32>, usize, String), Response> {
     // Use batch scheduler: submit request and collect all tokens
     // realizr#212: capacity 512 for bulk-send after non-streaming generation
@@ -290,6 +385,7 @@ async fn cuda_batch_collect(
         non_streaming: true, // realizr#212: scheduler accumulates + bulk-sends
         enqueue_time: std::time::Instant::now(),
         timing_tx: Some(timing_tx),
+        logprobs,
     };
     if let Err(e) = batch_tx.try_send(batch_req) {
         // §5.2: counted at the refusal, as in `dispatch_cuda_stream`.
@@ -317,7 +413,8 @@ async fn cuda_batch_collect(
 }
 
 /// `try_cuda_backend`'s non-streaming turn when no batch scheduler runs: the
-/// direct RwLock path (serialized). Same return shape as `cuda_batch_collect`.
+/// direct RwLock path (serialized). Same return shape and `logprobs` as
+/// `cuda_batch_collect`.
 #[cfg(feature = "cuda")]
 #[allow(clippy::result_large_err)]
 fn cuda_direct_collect(
@@ -327,11 +424,13 @@ fn cuda_direct_collect(
     q_config: &crate::gguf::QuantizedGenerateConfig,
     timing_tx: tokio::sync::oneshot::Sender<crate::api::PhaseTimings>,
     tokenizer: &BPETokenizer,
-    prompt_tokens: usize,
+    logprobs: Option<&super::cuda_batch_scheduler::RecordSink>,
 ) -> Result<(Vec<u32>, usize, String), Response> {
+    let prompt_tokens = prompt_ids.len();
     let mut cuda_model = cuda_model_lock.write().expect("operation failed");
     let generate_start = std::time::Instant::now();
-    let generated = match dense_cuda_turn(&mut cuda_model, prompt_ids, q_config, |_| true) {
+    let generated = match dense_cuda_turn(&mut cuda_model, prompt_ids, q_config, logprobs, |_| true)
+    {
         Ok(g) => g,
         Err(e) => return Err(fail_response(state, crate::api::generation_error_status(&e), e)),
     };
@@ -352,13 +451,16 @@ fn cuda_direct_collect(
 /// #4268: one serve request's dense CUDA turn, run on the one engine over the
 /// model borrowed under the request's write lock. A GPU failure is an error,
 /// as it always was here: serve has no CPU copy to fall back to. `--trace`
-/// keeps the instrumented loop. Stale phase timings are cleared first so
-/// [`phase_split`] reads this request's.
+/// keeps the instrumented loop, which records no logprobs (a traced request
+/// for them is refused before this). Stale phase timings are cleared first so
+/// [`phase_split`] reads this request's. With `logprobs` (#4971) each token's
+/// record goes ahead of the token.
 #[cfg(feature = "cuda")]
 fn dense_cuda_turn(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
     prompt: &[u32],
     config: &crate::gguf::QuantizedGenerateConfig,
+    logprobs: Option<&super::cuda_batch_scheduler::RecordSink>,
     mut on_token: impl FnMut(u32) -> bool,
 ) -> crate::error::Result<Vec<u32>> {
     if config.trace {
@@ -368,8 +470,14 @@ fn dense_cuda_turn(
     let mut session = crate::session::Session::new(
         crate::gguf::dense_session_borrowed::BorrowedCudaForward::new(cuda_model),
     );
-    crate::gguf::dense_session::dense_stream(&mut session, prompt, config, &mut on_token)
-        .map(|(tokens, _)| tokens)
+    super::cuda_batch_scheduler::dense_stream_recording(
+        &mut session,
+        prompt,
+        config,
+        logprobs,
+        &mut on_token,
+    )
+    .map(|(tokens, _)| tokens)
 }
 
 #[cfg(feature = "cuda")]
@@ -509,7 +617,8 @@ fn try_quantized_backend(
         cancel,
     );
     // #4971: logprobs come from the dense turn; the traced loop records none.
-    if let Some(reason) = super::chat_logprobs::quantized_logprobs_refusal(request, q_config.trace)
+    if let Some(reason) =
+        super::chat_logprobs::traced_logprobs_refusal(request, "quantized", q_config.trace)
     {
         return Some(fail_response(state, StatusCode::NOT_IMPLEMENTED, reason));
     }
