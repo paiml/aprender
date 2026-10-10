@@ -2037,9 +2037,11 @@ pub enum LlmSubcommand {
         /// `ladder.declared`. The V3 shape check admits only {1, 4, 8, 16}.
         #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(u32).range(1..))]
         ladder: Vec<u32>,
-        /// Write the witness JSON here.
-        #[arg(long)]
-        json: Option<OutputPath>,
+        /// Write the witness JSON here. Not `--json`: that is `apr`'s global
+        /// flag, and a second arg with its id made clap downcast one to the
+        /// other's type and panic on every `apr test llm parity` run.
+        #[arg(long, value_name = "FILE")]
+        witness: Option<OutputPath>,
         /// Host recorded in the witness. Defaults to `PERF041_HOST`, then
         /// this host's name.
         #[arg(long)]
