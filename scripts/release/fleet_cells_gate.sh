@@ -51,7 +51,7 @@ fleet_cells_epoch() {  # <YYYY-MM-DDTHH:MM:SSZ, fields in range> -> epoch second
     local s=$1 y m d era yoe days
     local -a mdays=(0 31 28 31 30 31 30 31 31 30 31 30 31)
     y=$(( 10#${s:0:4} )); m=$(( 10#${s:5:2} )); d=$(( 10#${s:8:2} ))
-    if (( d > mdays[m] + (m == 2 && ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0)) )); then echo -1; return; fi
+    if (( d > mdays[m] + (m == 2 && !(y % 4) && (y % 100 || !(y % 400))) )); then echo -1; return; fi
     y=$(( y - (m <= 2) )); era=$(( (y >= 0 ? y : y - 399) / 400 )); yoe=$(( y - era * 400 ))
     days=$(( era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1 - 719468 ))
     echo $(( days * 86400 + 10#${s:11:2} * 3600 + 10#${s:14:2} * 60 + 10#${s:17:2} ))
@@ -112,7 +112,7 @@ fleet_cells_verdict() {
             ch = substr(s, i, 1); k = ORD[ch]
             if (ch == "\\" || ch == q) out = out "\\" ch
             else if (ch == "\t") out = out "\\t"
-            else if (k < 32 || k == 127) out = out sprintf("\\x%02x", k)
+            else if (k < 32 || k == ORD["\177"]) out = out sprintf("\\x%02x", k)
             else out = out ch
         }
         return out q
