@@ -75,9 +75,10 @@ mod tests {
     use super::*;
     use serde_json::{json, Value};
 
-    /// The library's control witness: every rule S1-S6 holds.
+    /// The library's control witness: every rule S1-S7, the floor and the
+    /// cap hold.
     fn admissible() -> Value {
-        let band = |c: u32| json!({"c": c, "m_formed": c, "result": "PASS", "declared_min": 64, "divergence_at": 127});
+        let band = |c: u32, rate: f64| json!({"c": c, "m_formed": c, "result": "PASS", "declared_min": 64, "divergence_at": 127, "decode_tok_s": rate});
         json!({
             "_planted": "FIXTURE: not a measurement",
             "binary_sha256": "a".repeat(64),
@@ -85,7 +86,7 @@ mod tests {
             "host": "lambda",
             "prompt_sha256": "b".repeat(64),
             "model": {"path": "Qwen3.5-4B-Q4_K_M.gguf", "sha256": "c".repeat(64)},
-            "bands": [band(1), band(4), band(8), band(16)],
+            "bands": [band(1, 40.0), band(4, 30.0), band(8, 25.0), band(16, 20.0)],
         })
     }
 
@@ -144,6 +145,36 @@ mod tests {
         w["bands"][2]["top2_margin_at_divergence"] = json!(0.01);
         let (code, printed) = exit_of(&w.to_string());
         assert_eq!(code, 0, "{printed}");
+    }
+
+    /// The V3 bar's falsifier (FALSIFY-SSP-017): from the admitted control,
+    /// set c=4's per-request decode to 49% of c=1's. Exit 5, naming CB-004.
+    #[test]
+    fn c4_decode_at_49_percent_of_c1_exits_5_and_names_cb_004() {
+        let mut w = admissible();
+        w["bands"][1]["decode_tok_s"] = json!(19.6);
+        let (code, printed) = exit_of(&w.to_string());
+        assert_eq!(code, 5, "{printed}");
+        assert!(printed.contains("  - S7 (FALSIFY-CB-004): "), "{printed}");
+        w["bands"][1]["decode_tok_s"] = json!(20.0);
+        assert_eq!(exit_of(&w.to_string()).0, 0, "50% holds");
+    }
+
+    /// The bar's cap row (FALSIFY-SSP-018): c=4 and c=8 both admitted only by
+    /// a near-tie. Exit 5, naming the cap.
+    #[test]
+    fn two_near_tie_batched_bands_exit_5_and_name_the_cap() {
+        let mut w = admissible();
+        for band in [1, 2] {
+            w["bands"][band]["divergence_at"] = json!(3);
+            w["bands"][band]["top2_margin_at_divergence"] = json!(0.01);
+        }
+        let (code, printed) = exit_of(&w.to_string());
+        assert_eq!(code, 5, "{printed}");
+        assert!(
+            printed.contains("  - near-tie cap: 2 batched bands (c=4, c=8)"),
+            "{printed}"
+        );
     }
 
     /// F1 across the mapping: RED never shares NOT ADMISSIBLE's code. And it
