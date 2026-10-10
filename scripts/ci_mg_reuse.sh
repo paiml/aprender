@@ -22,9 +22,12 @@
 #       both jobs' section results, so they are reused together, and only when
 #       the head run's `gate` and `ci / gate` succeeded too. mac-check stands alone.
 # Why K1-K3 make the head run's origin/main comparand equal B: H contains B, so
-# every run on H started after B was on main; B was main's tip when the queue
-# entry was cut, and main only moves forward. So main's tip was B for the whole
-# head run, and the ratchets that compare against origin/main compared against B.
+# the head run's merge commit was built on a main that already held B; B was
+# still main's tip when the queue entry was cut, and main only moves forward. So
+# that merge commit's first parent is B. scripts/ci/pin_build_base.sh pins
+# origin/main to that first parent on every attempt, a re-run after main moved
+# included (#4861), so the ratchets that compare against origin/main compared
+# against B. Main's tip is NOT the argument: a re-run can start after it moved.
 # Anything not proven -- a failed or partial lookup included -- answers 0, i.e.
 # run the job (L25). The RustSec advisory steps are never reused (their input
 # changes with no commit): ci.yml's x86-main-advisories job runs them whenever

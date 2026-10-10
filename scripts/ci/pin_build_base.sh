@@ -54,9 +54,11 @@ pin() { # pin <repo dir>: pins origin/main there for $GITHUB_EVENT_NAME
             base="$MG_BASE_SHA"; how="merge_group.base_sha"
             ;;
         *)
-            git -C "$dir" fetch -q --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main || return 1
+            git -C "$dir" fetch -q --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main \
+                || refuse "cannot fetch main's tip from origin (event ${ev:-none})" || return 1
             if [ "$ev" = push ]; then
-                git -C "$dir" fetch -q --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main || return 1
+                git -C "$dir" fetch -q --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main \
+                    || refuse "cannot deepen main's tip by one (event push)" || return 1
             fi
             printf 'comparand: %s pinned as origin/main (the tip; event %s)\n' "$(git -C "$dir" rev-parse 'origin/main^{commit}')" "${ev:-none}"
             return 0
@@ -175,9 +177,58 @@ self_test() {
     row "workflow_dispatch pins the tip" "$rc $PINNED" "0 $c2"
     rc=0; run_pin "$TD/pr1" pull_request "$prh" "" || rc=$?
     row "pinning twice is idempotent" "$rc $PINNED" "0 $c0"
+    d=$(clone_at nomain "$c2"); git -C "$d" remote set-url origin "file://$TD/no-such-origin.git"
+    rc=0; run_pin "$d" workflow_dispatch "" "" || rc=$?
+    row "a tip fetch that fails refuses, says why, and pins nothing" \
+        "$rc $PINNED $(said "cannot fetch main's tip")" "1 unset says-cause"
+
+    # A tag or branch NAMED origin/main outranks refs/remotes/origin/main when git resolves
+    # `origin/main`, so every reader would compare against it, not the pin. The read-back sees it.
+    d=$(clone_at shadow "$m"); rc=0
+    git -C "$d" fetch -q --no-tags --depth=1 origin "$c2" && git -C "$d" update-ref refs/tags/origin/main "$c2" || rc=99
+    [ "$rc" -eq 0 ] && { run_pin "$d" pull_request "$prh" "" || rc=$?; }
+    row "a tag named origin/main shadowing the pin refuses at the read-back" \
+        "$rc $(said 'does not read back as')" "1 says-cause"
+
+    # The refinement gate in workspace-test pins origin/main with its OWN event map
+    # (ci/sections.yml, #4502). Its step script runs here AS COMMITTED, beside the
+    # pin, on the same commits. GitHub builds a pull_request's merge commit on
+    # pull_request.base.sha (measured: #4970 and #4964 runs, base.sha = the merge's first
+    # parent), so the two maps must name one commit on pull_request and on merge_group.
+    # On push they differ by design: the refinement gate compares with `before`, the pin
+    # takes the tip. Either map drifting from that turns a row below RED.
+    local refine="$TD/refine.sh" r
+    awk -v want="- name: Pin the event's base commit as origin/main (refinement gate comparand" '
+        index($0, want) { s = 1; next }
+        s && !r && /^ *- (name|uses|id):/ { exit }
+        s && !r && /^ *run: [|]$/ { r = 1; ind = -1; next }
+        r && /^ *$/ { print ""; next }
+        r { match($0, /^ */); if (ind < 0) ind = RLENGTH; if (RLENGTH < ind) exit; print substr($0, ind + 1) }
+    ' "$here/ci/sections.yml" > "$refine"
+    run_refine() { # run_refine <dir> <event> <pr base> <mg base> <push before> -> rc; PINNED as run_pin
+        local rc=0
+        ( cd -- "$1" && GITHUB_EVENT_NAME="$2" PR_BASE_SHA="$3" MG_BASE_SHA="$4" PUSH_BEFORE="$5" bash "$refine" ) \
+            > "$TD/last.log" 2>&1 || rc=$?
+        PINNED=$(git -C "$1" rev-parse -q --verify 'refs/remotes/origin/main^{commit}' 2>/dev/null) || PINNED=unset
+        return "$rc"
+    }
+    pinned() { git -C "$1" rev-parse -q --verify 'refs/remotes/origin/main^{commit}' 2>/dev/null || printf unset; }
+    : > "$TD/last.log"
+    row "the refinement step's script is found in ci/sections.yml, one arm per event" \
+        "$(grep -cE '^ *(pull_request|merge_group|push|workflow_dispatch)\)( |$)' "$refine")" 4
+    d=$(clone_at refpr "$m"); rc=0; run_refine "$d" pull_request "$c0" "" "" || rc=$?
+    row "pull_request: the refinement gate and the pin name one commit, the merge's first parent" \
+        "$rc $PINNED $(pinned "$TD/pr1")" "0 $c0 $c0"
+    d=$(clone_at refmg "$m2"); rc=0; run_refine "$d" merge_group "" "$c2" "" || rc=$?
+    row "merge_group: the refinement gate and the pin name one commit, base_sha" \
+        "$rc $PINNED $(pinned "$TD/mg")" "0 $c2 $c2"
+    d=$(clone_at refpush "$c2"); rc=0; run_refine "$d" push "" "" "$c0" || rc=$?
+    r=$(pinned "$TD/push")
+    row "push: the refinement gate takes before, the pin the tip (by design, not drift)" \
+        "$rc $PINNED $r" "0 $c0 $c2"
 
     printf 'pin_build_base self-test: %s ok, %s bad\n' "$ok" "$bad"
-    [ "$bad" -eq 0 ] && [ "$ok" -ge 22 ]
+    [ "$bad" -eq 0 ] && [ "$ok" -ge 28 ]
 }
 
 case "${1:-}" in

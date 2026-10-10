@@ -201,6 +201,38 @@ CASES
     git -C "$r" update-ref -d refs/remotes/origin/main
     rc=0; CENSUS_WRITER='' touch_check "$r" feat >/dev/null || rc=$?; row "RED: no comparand is UNMEASURED, not untouched" "$rc" 1
 
+    # -- a pull_request re-run after main moved (#4983). The checkout is the merge
+    # commit fetched shallow, so it shares no merge-base with main's tip, and the
+    # comparand is its first parent (FIRSTPARENT): the main the PR was built on.
+    # Main has regenerated the census since, so the tip would call this PR an editor.
+    local o="$t/origin" s="$t/shallow" b h m
+    if mkdir -p "$o/contracts" "$s" \
+       && git -C "$o" init -q -b main \
+       && git -C "$o" config user.email t@t && git -C "$o" config user.name t \
+       && git -C "$o" config commit.gpgsign false && git -C "$o" config core.hooksPath /dev/null \
+       && printf '%s\n' "$good" > "$o/$CENSUS_PATH" && printf 'a\n' > "$o/contracts/a.yaml" \
+       && git -C "$o" add -A && git -C "$o" commit -qm base && b=$(git -C "$o" rev-parse HEAD) \
+       && git -C "$o" checkout -qb pr && printf 'b\n' > "$o/contracts/b.yaml" \
+       && git -C "$o" add -A && git -C "$o" commit -qm "add a contract" && h=$(git -C "$o" rev-parse HEAD) \
+       && git -C "$o" checkout -q --detach "$b" && git -C "$o" merge -q --no-ff -m "merge pr" "$h" \
+       && m=$(git -C "$o" rev-parse HEAD) && git -C "$o" update-ref refs/pull/1/merge "$m" \
+       && git -C "$o" checkout -q main \
+       && jq -c '.n_files += 1 | .n_parsed += 1 | .by_kind.kernel += 1 | .by_anchoring.unanchored += 1' "$o/$CENSUS_PATH" > "$t/c2" \
+       && cp "$t/c2" "$o/$CENSUS_PATH" && git -C "$o" commit -qam "main regenerates the census" \
+       && git -C "$s" init -q \
+       && git -C "$s" fetch -q --no-tags --depth=1 "file://$o" +refs/pull/1/merge:refs/remotes/pull/1/merge \
+       && git -C "$s" checkout -q --detach refs/remotes/pull/1/merge \
+       && git -C "$s" fetch -q --no-tags --depth=1 "file://$o" +refs/heads/main:refs/remotes/origin/main "$b" \
+       && [ -z "$(git -C "$s" merge-base HEAD origin/main 2>/dev/null)" ]; then
+        rc=0; CENSUS_WRITER='' GITHUB_EVENT_NAME=pull_request GITHUB_SHA="$m" touch_check "$s" feat > "$t/out" || rc=$?
+        row "a pull_request re-run after main moved is judged against its first parent" "$rc" 0
+        grep -q '(FIRSTPARENT)' "$t/out"; row "the re-run names FIRSTPARENT as its comparand" "$?" 0
+        rc=0; CENSUS_WRITER='' GITHUB_EVENT_NAME=push GITHUB_SHA="$m" touch_check "$s" feat >/dev/null || rc=$?
+        row "RED control: the same tree on a push is judged against the moved tip" "$rc" 1
+    else
+        row "the shallow re-run shape could be built (else FIRSTPARENT is UNTESTED)" 1 0
+    fi
+
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf -- "$t"
     [ "$fail" -eq 0 ] && [ "$pass" -gt 0 ]

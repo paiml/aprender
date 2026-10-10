@@ -479,6 +479,29 @@ _br_event_merge_first_parent() { # _br_event_merge_first_parent <root>
         LC_ALL=C awk '/^parent /{ n++; if (n == 1) p = $2 } /^$/{ exit } END { if (n >= 2) print p }'
 }
 
+# The FIRSTPARENT arm (#4983), the ONE copy every resolver of origin/main calls
+# (this library and check_no_fabricated_baselines.sh), so the two cannot drift.
+# It applies only to the protected ref and only when no merge-base exists, so
+# every shape that resolves one is unchanged. Applied, it prints one of
+#   FIRSTPARENT <p1>   the parent carries <path>
+#   UNRESOLVABLE <p1>  the parent was not fetched (hard failure, never the tip)
+#   NOFILE <p1>        the parent lacks <path>; the CALLER decides what that is
+# and returns 0. Not applied, it prints nothing and returns 1.
+baseline_ratchet_first_parent_arm() { # <root> <ref> <merge-base or ""> <path>
+    local root="$1" ref="$2" mb="$3" path="$4" p1
+    if [ -z "$mb" ] && [ "$ref" = "origin/main" ]; then
+        p1=$(_br_event_merge_first_parent "$root") # RATCHET-FIRSTPARENT-MUTATION-POINT
+    fi
+    [ -n "${p1:-}" ] || return 1
+    if ! git -C "$root" cat-file -e "${p1}^{commit}" 2>/dev/null; then
+        printf 'UNRESOLVABLE\t%s\n' "$p1"
+    elif git -C "$root" cat-file -e "${p1}:${path}" 2>/dev/null; then
+        printf 'FIRSTPARENT\t%s\n' "$p1"
+    else
+        printf 'NOFILE\t%s\n' "$p1"
+    fi
+}
+
 # The fetch that makes an UNRESOLVABLE comparand resolvable. A full sha is a
 # merge commit's first parent; anything else is the protected branch.
 baseline_ratchet_fetch_hint() { # baseline_ratchet_fetch_hint <ref>
@@ -490,7 +513,7 @@ baseline_ratchet_fetch_hint() { # baseline_ratchet_fetch_hint <ref>
 }
 
 baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
-    local root="$1" ref="$2" path="$3" mb p1
+    local root="$1" ref="$2" path="$3" mb fp
     if ! git -C "$root" rev-parse --verify --quiet "${ref}^{commit}" >/dev/null 2>&1; then
         printf 'UNRESOLVABLE\t%s\n' "$ref"
         return 0
@@ -500,28 +523,20 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
         printf 'MERGEBASE\t%s\n' "$mb"
         return 0
     fi
-    # FIRSTPARENT (#4983): see the header. Only for the protected ref and only
-    # when no merge-base exists, so every shape that resolves one is unchanged.
-    if [ -z "$mb" ] && [ "$ref" = "origin/main" ]; then
-        p1=$(_br_event_merge_first_parent "$root") # RATCHET-FIRSTPARENT-MUTATION-POINT
-        if [ -n "$p1" ]; then
-            if ! git -C "$root" cat-file -e "${p1}^{commit}" 2>/dev/null; then
-                printf 'UNRESOLVABLE\t%s\n' "$p1"
-                return 0
-            fi
-            if git -C "$root" cat-file -e "${p1}:${path}" 2>/dev/null; then
-                printf 'FIRSTPARENT\t%s\n' "$p1"
-                return 0
-            fi
-            # The base this PR was merged onto has no such file: the tip would
-            # judge the PR against a main it was never merged onto, so skip it.
-            if [ -f "$root/$path" ]; then
-                printf 'BOOTSTRAP\t%s\n' "$p1"
-                return 0
-            fi
-            printf 'ABSENT\t%s\n' "$p1"
-            return 0
-        fi
+    # FIRSTPARENT (#4983): see the header and baseline_ratchet_first_parent_arm.
+    if fp=$(baseline_ratchet_first_parent_arm "$root" "$ref" "$mb" "$path"); then
+        case "$fp" in
+            NOFILE$'\t'*)
+                # The base this PR was merged onto has no such file: the tip would
+                # judge the PR against a main it was never merged onto, so skip it.
+                if [ -f "$root/$path" ]; then
+                    printf 'BOOTSTRAP\t%s\n' "${fp#*$'\t'}"
+                else
+                    printf 'ABSENT\t%s\n' "${fp#*$'\t'}"
+                fi ;;
+            *) printf '%s\n' "$fp" ;;
+        esac
+        return 0
     fi
     if git -C "$root" cat-file -e "${ref}:${path}" 2>/dev/null; then
         printf 'TIP\t%s\n' "$ref"

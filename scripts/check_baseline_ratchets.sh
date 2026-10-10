@@ -405,9 +405,9 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
                && [ -z "$(git -C "$SC" merge-base HEAD origin/main 2>/dev/null)" ] \
                && ! git -C "$SC" cat-file -e "${SR_BASE}^{commit}" 2>/dev/null; then
 
-                fp_row() { # fp_row <label> <want-mode> <want-ref|-> <GITHUB_EVENT_NAME> <GITHUB_SHA>
+                fp_row() { # fp_row <label> <want-mode> <want-ref|-> <GITHUB_EVENT_NAME> <GITHUB_SHA> [<ref> [<repo>]]
                     local got ref
-                    got=$(GITHUB_EVENT_NAME="$4" GITHUB_SHA="$5" baseline_ratchet_resolve "$SC" origin/main "$P")
+                    got=$(GITHUB_EVENT_NAME="$4" GITHUB_SHA="$5" baseline_ratchet_resolve "${7:-$SC}" "${6:-origin/main}" "$P")
                     ref=${got##*$'\t'}
                     got=${got%%$'\t'*}
                     rows=$((rows + 1))
@@ -440,6 +440,14 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
                    && [ -z "$(git -C "$SC" merge-base HEAD origin/main 2>/dev/null)" ]; then
                     fp_row 'firstparent: parent fetched -> FIRSTPARENT' FIRSTPARENT "$SR_BASE" pull_request "$SR_M"
                     fp_e2e 'firstparent: re-run after main moved'  0                      pull_request "$SR_M"
+                    # The arm is for the protected ref only. An overridden comparand
+                    # naming the same tip is judged as named: TIP, not the parent.
+                    if git -C "$SC" update-ref refs/remotes/override/main "$(git -C "$SC" rev-parse 'origin/main^{commit}')"; then
+                        fp_row 'firstparent: overridden ref keeps TIP' TIP override/main pull_request "$SR_M" override/main
+                    else
+                        printf 'FAIL  firstparent: the override ref could not be written. UNTESTED.\n'
+                        bad=1
+                    fi
                 else
                     printf 'FAIL  firstparent: the first parent could not be fetched, or it made a\n'
                     printf '      merge-base resolve. FIRSTPARENT is UNTESTED. Not a skip.\n'
@@ -466,6 +474,23 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
                     printf 'FAIL  firstparent: the second merge commit could not be checked out. UNTESTED.\n'
                     bad=1
                 fi
+                # The arm is for a checkout with NO merge-base. With full history the
+                # pre-#4983 order holds even on the event's own merge commit: here the
+                # merge-base predates the baseline and the tip carries one, so TIP.
+                if git -C "$SR" checkout -q --detach "$SR_NOBASE" >/dev/null 2>&1 \
+                   && printf '# header\na\n' > "$SR/$P" \
+                   && git -C "$SR" add -A \
+                   && git -C "$SR" -c commit.gpgsign=false commit -qm 'a main with its own baseline' >/dev/null 2>&1 \
+                   && SR_D=$(git -C "$SR" rev-parse HEAD) \
+                   && git -C "$SR" checkout -q --detach "$SR_M" >/dev/null 2>&1 \
+                   && git -C "$SR" update-ref refs/remotes/origin/main "$SR_D" \
+                   && [ "$(git -C "$SR" merge-base HEAD origin/main 2>/dev/null)" = "$SR_NOBASE" ]; then
+                    fp_row 'firstparent: a merge-base, even without the file, keeps TIP' TIP origin/main pull_request "$SR_M" origin/main "$SR"
+                else
+                    printf 'FAIL  firstparent: the full-history merge-base shape could not be built. UNTESTED.\n'
+                    bad=1
+                fi
+                git -C "$SR" update-ref -d refs/remotes/origin/main 2>/dev/null
             else
                 printf 'FAIL  resolve FIRSTPARENT UNTESTED — the shallow re-run clone could\n'
                 printf '      not be built, and a pull_request re-run is that shape. Not a skip.\n'

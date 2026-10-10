@@ -568,7 +568,7 @@ ledger_verdict() { # ledger_verdict <ledger-file> <hits-file>  -> rc 0 iff clean
 BASE_REF="${FABBASE_BASE_REF:-origin/main}"
 
 resolve_base_ref() { # resolve_base_ref <root> <ref> -> "<MODE>\t<commit-ish>"
-    local root="$1" ref="$2" mb p1
+    local root="$1" ref="$2" mb fp
     if ! git -C "$root" rev-parse --verify --quiet "${ref}^{commit}" >/dev/null 2>&1; then
         printf 'UNRESOLVABLE\t%s\n' "$ref"; return 0
     fi
@@ -576,17 +576,14 @@ resolve_base_ref() { # resolve_base_ref <root> <ref> -> "<MODE>\t<commit-ish>"
     if [ -n "$mb" ] && git -C "$root" cat-file -e "${mb}:${RUST_LEDGER}" 2>/dev/null; then
         printf 'MERGEBASE\t%s\n' "$mb"; return 0
     fi
-    if [ -z "$mb" ] && [ "$ref" = "origin/main" ]; then
-        p1=$(_br_event_merge_first_parent "$root") # FABBASE-FIRSTPARENT-MUTATION-POINT
-        if [ -n "$p1" ]; then
-            if ! git -C "$root" cat-file -e "${p1}^{commit}" 2>/dev/null; then
-                printf 'UNRESOLVABLE\t%s\n' "$p1"; return 0
-            fi
-            if git -C "$root" cat-file -e "${p1}:${RUST_LEDGER}" 2>/dev/null; then
-                printf 'FIRSTPARENT\t%s\n' "$p1"; return 0
-            fi
-            printf 'ABSENT\t%s\n' "$p1"; return 0
-        fi
+    # The library's one FIRSTPARENT arm. A parent without the ledger is ABSENT
+    # here, never a bootstrap: this ledger has been on main since #2710.
+    if fp=$(baseline_ratchet_first_parent_arm "$root" "$ref" "$mb" "$RUST_LEDGER"); then
+        case "$fp" in
+            NOFILE$'\t'*) printf 'ABSENT\t%s\n' "${fp#*$'\t'}" ;;
+            *) printf '%s\n' "$fp" ;;
+        esac
+        return 0
     fi
     if git -C "$root" cat-file -e "${ref}:${RUST_LEDGER}" 2>/dev/null; then
         printf 'TIP\t%s\n' "$ref"; return 0
@@ -947,9 +944,9 @@ if mkdir -p "$sr/scripts" \
            && git -C "$sc" fetch -q --no-tags --depth=1 "file://$sr" '+refs/heads/fp-main:refs/remotes/origin/main' >/dev/null 2>&1 \
            && [ -z "$(git -C "$sc" merge-base HEAD origin/main 2>/dev/null)" ] \
            && ! git -C "$sc" cat-file -e "${sr_base}^{commit}" 2>/dev/null; then
-            fp_case() { # fp_case <label> <want-mode> <want-ref|-> <GITHUB_EVENT_NAME> <GITHUB_SHA>
+            fp_case() { # fp_case <label> <want-mode> <want-ref|-> <GITHUB_EVENT_NAME> <GITHUB_SHA> [<ref>]
                 local got ref
-                got=$(GITHUB_EVENT_NAME="$4" GITHUB_SHA="$5" resolve_base_ref "$sc" origin/main)
+                got=$(GITHUB_EVENT_NAME="$4" GITHUB_SHA="$5" resolve_base_ref "$sc" "${6:-origin/main}")
                 ref=${got##*$'\t'}
                 got=${got%%$'\t'*}
                 sr_rows=$((sr_rows + 1))
@@ -996,6 +993,14 @@ if mkdir -p "$sr/scripts" \
                && [ -z "$(git -C "$sc" merge-base HEAD origin/main 2>/dev/null)" ]; then
                 fp_case    'parent fetched -> FIRSTPARENT' FIRSTPARENT "$sr_base"  pull_request "$sr_m"
                 fp_verdict 're-run after main moved'       0                       pull_request "$sr_m"
+                # The arm is for the protected ref only: an overridden comparand naming
+                # the same tip is judged as named, TIP, never the parent.
+                if git -C "$sc" update-ref refs/remotes/override/main "$(git -C "$sc" rev-parse 'origin/main^{commit}')"; then
+                    fp_case    'overridden ref keeps TIP'     TIP         override/main pull_request "$sr_m" override/main
+                else
+                    printf 'FAIL  comparand: the override ref could not be written. UNTESTED.\n'
+                    tbl_bad=1
+                fi
             else
                 printf 'FAIL  comparand: the first parent could not be fetched, or it made a\n'
                 printf '      merge-base resolve. FIRSTPARENT is UNTESTED. Not a skip.\n'
