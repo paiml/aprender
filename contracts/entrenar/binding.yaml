@@ -80,7 +80,7 @@ bindings:
 - contract: distributed-training-v1.yaml
   equation: sharding
   module_path: entrenar::finetune::data_parallel
-  function: DataParallelCoordinator::shard_data
+  function: shard_samples
   signature: 'fn shard_data(&self, dataset: &[Sample]) -> Vec<Vec<Sample>>'
   status: implemented
   notes: function not found in source
@@ -94,7 +94,7 @@ bindings:
 - contract: distributed-training-v1.yaml
   equation: swiglu_ffn
   module_path: entrenar::transformer::cuda_block
-  function: CudaTransformerBlock::swiglu_ffn
+  function: CudaTransformerBlock::forward
   signature: 'fn swiglu_ffn(&self, hidden: &CudaBuffer) -> CudaBuffer'
   status: implemented
   notes: function not found in source
@@ -129,15 +129,15 @@ bindings:
   notes: HP design pending; contract specifies constraints
 - contract: qlora-hyperparameters-v1.yaml
   equation: effective_batch_size
-  module_path: entrenar::finetune::qlora_config
-  function: QLoraConfig::effective_batch_size
+  module_path: entrenar::finetune::classify_pipeline
+  function: ClassifyConfig::validate_hyperparameters
   signature: fn effective_batch_size(&self) -> usize
   status: implemented
   notes: function not found in source
 - contract: qlora-hyperparameters-v1.yaml
   equation: lora_alpha_ratio
-  module_path: entrenar::finetune::qlora_config
-  function: QLoraConfig::lora_alpha
+  module_path: entrenar::finetune::classify_pipeline
+  function: ClassifyConfig::validate_hyperparameters
   signature: fn lora_alpha(&self) -> f32
   status: implemented
   notes: function not found in source
@@ -157,15 +157,15 @@ bindings:
   notes: function not found in source
 - contract: qlora-hyperparameters-v1.yaml
   equation: gradient_clip_bound
-  module_path: entrenar::finetune::qlora_config
-  function: QLoraConfig::gradient_clip_norm
+  module_path: entrenar::optim::clip
+  function: clip_grad_norm
   signature: fn gradient_clip_norm(&self) -> f32
   status: implemented
   notes: function not found in source
 - contract: qlora-hyperparameters-v1.yaml
   equation: epoch_count_imbalanced
-  module_path: entrenar::finetune::qlora_config
-  function: QLoraConfig::epochs
+  module_path: entrenar::finetune::classify_pipeline
+  function: ClassifyConfig::validate_with_data
   signature: fn epochs(&self) -> usize
   status: implemented
   notes: 3-10 epochs; more for imbalanced datasets

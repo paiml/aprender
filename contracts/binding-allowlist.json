@@ -46,31 +46,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "entrenar::finetune::data_parallel::DataParallelCoordinator::shard_data",
-      "reason": "ghost: no `fn shard_data` in an `impl DataParallelCoordinator` or `trait DataParallelCoordinator` in `crates/aprender-train/src/finetune/data_parallel.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::effective_batch_size",
-      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::epochs",
-      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::gradient_clip_norm",
-      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::finetune::qlora_config::QLoraConfig::lora_alpha",
-      "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "entrenar::finetune::qlora_config::QLoraConfig::warmup_steps",
       "reason": "ghost: no `mod qlora_config` or `use \u2026 qlora_config` in `crates/aprender-train/src/finetune/mod.rs`",
       "ticket": "#4502"
@@ -78,11 +53,6 @@
     {
       "symbol": "entrenar::statistics",
       "reason": "ghost: no `fn statistics` (free or in an impl) or item `statistics` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
-      "symbol": "entrenar::transformer::cuda_block::CudaTransformerBlock::swiglu_ffn",
-      "reason": "ghost: no `fn swiglu_ffn` in an `impl CudaTransformerBlock` or `trait CudaTransformerBlock` in `crates/aprender-train/src/transformer/cuda_block.rs`",
       "ticket": "#4502"
     },
     {
