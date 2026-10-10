@@ -141,9 +141,10 @@ if [ "${1:-}" = "--self-test" ]; then
 
   # Rows 6 and 7 run the MAIN path, not the helpers: a copy of this script
   # inside the temp repo, so REPO_ROOT is that repo. Row 6 is the #5093 shape
-  # and must exit 1 naming the file; row 7 is the control without it and must
-  # not print the hard row (it still fails later, on vacuity). A neutered hard
-  # row passes rows 1-5 and fails row 6.
+  # and must exit 1 AT the hard row (naming the file, never reaching vacuity, so
+  # `hard_row ... || true` cannot pass on the temp repo's vacuity rc); row 7 is
+  # the control without it and must not print the hard row (it still fails
+  # later, on vacuity). A neutered hard row passes rows 1-5 and fails row 6.
   mkdir -p "$TD/scripts"
   SELF="${REPO_ROOT}/scripts/check_no_tracked_ignored_files.sh"
   cat -- "$SELF" > "$TD/scripts/check_no_tracked_ignored_files.sh" \
@@ -151,10 +152,11 @@ if [ "${1:-}" = "--self-test" ]; then
   git -C "$TD" add -f crates/c/src/g.rs 2>/dev/null
   git -C "$TD" commit -qm v 2>/dev/null
   out="$(bash "$TD/scripts/check_no_tracked_ignored_files.sh" 2>&1)"; rc=$?
-  if [ "$rc" -eq 1 ] && grep -q '^  crates/c/src/g.rs$' <<<"$out"; then
-    printf 'ok    row 6 main path exits 1 and names crates/c/src/g.rs\n'
+  if [ "$rc" -eq 1 ] && grep -q '^  crates/c/src/g.rs$' <<<"$out" \
+     && ! grep -q 'FAIL (vacuity)' <<<"$out"; then
+    printf 'ok    row 6 main path exits 1 at the hard row, naming crates/c/src/g.rs\n'
   else
-    printf 'FAIL  row 6 rc=%s, expected 1 naming crates/c/src/g.rs\n' "$rc"; fails=1
+    printf 'FAIL  row 6 rc=%s, expected 1 at the hard row naming crates/c/src/g.rs, not at vacuity\n' "$rc"; fails=1
   fi
   git -C "$TD" rm --cached -q crates/c/src/g.rs 2>/dev/null
   git -C "$TD" commit -qm u 2>/dev/null
