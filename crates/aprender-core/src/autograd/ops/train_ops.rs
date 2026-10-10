@@ -260,6 +260,7 @@ impl Tensor {
     /// Panics if the tensor is not 2D, `dim > 1`, `len == 0`, or the window exceeds
     /// the dimension.
     #[must_use]
+    #[provable_contracts_macros::contract("modernbert-train-v1", equation = "narrow")]
     pub fn narrow(&self, dim: usize, start: usize, len: usize) -> Tensor {
         let (rows, cols) = dims2(self, "narrow");
         assert!(dim <= 1, "narrow: dim must be 0 or 1, got {dim}");
@@ -292,6 +293,7 @@ impl Tensor {
     /// Panics if the tensor is not 2D, `n == 0`, or the column count is not divisible
     /// by `n`.
     #[must_use]
+    #[provable_contracts_macros::contract("modernbert-train-v1", equation = "chunk")]
     pub fn chunk(&self, n: usize) -> Vec<Tensor> {
         let (_, cols) = dims2(self, "chunk");
         assert!(
@@ -311,6 +313,7 @@ impl Tensor {
     ///
     /// Panics if both bounds are given and `lo > hi`.
     #[must_use]
+    #[provable_contracts_macros::contract("modernbert-train-v1", equation = "clamp")]
     pub fn clamp(&self, lo: Option<f32>, hi: Option<f32>) -> Tensor {
         if let (Some(l), Some(h)) = (lo, hi) {
             assert!(l <= h, "clamp: lo {l} > hi {h}");
@@ -336,6 +339,7 @@ impl Tensor {
     /// Elementwise `max(x, c)`. Defined as `clamp(Some(c), None)`, so its backward
     /// passes the gradient where `x >= c` (torch `clamp(min=c)` semantics).
     #[must_use]
+    #[provable_contracts_macros::contract("modernbert-train-v1", equation = "max_scalar")]
     pub fn max_scalar(&self, c: f32) -> Tensor {
         self.clamp(Some(c), None)
     }
@@ -353,6 +357,7 @@ impl Tensor {
     /// Panics if `x` is not 2D, `head_dim` is zero or odd, the width is not a multiple
     /// of `head_dim`, or `positions.len() != S`.
     #[must_use]
+    #[provable_contracts_macros::contract("modernbert-train-v1", equation = "rope_rotate_half")]
     pub fn rope_rotate_half(&self, positions: &[usize], head_dim: usize, theta: f32) -> Tensor {
         let (seq, width) = dims2(self, "rope_rotate_half");
         assert!(
@@ -389,6 +394,7 @@ impl Tensor {
 /// Panics if `tensors` is empty, any tensor is not 2D, `dim > 1`, or the inputs
 /// disagree on the non-concatenated dimension.
 #[must_use]
+#[provable_contracts_macros::contract("modernbert-train-v1", equation = "concat")]
 pub fn concat(tensors: &[&Tensor], dim: usize) -> Tensor {
     assert!(!tensors.is_empty(), "concat: no tensors");
     assert!(dim <= 1, "concat: dim must be 0 or 1, got {dim}");
@@ -436,6 +442,7 @@ fn in_window(i: usize, j: usize, half_window: usize) -> bool {
 /// # Errors
 ///
 /// [`OpError::ZeroDimension`] when `seq == 0`.
+#[provable_contracts_macros::contract("modernbert-train-v1", equation = "local_window_mask")]
 pub fn local_window_mask(seq: usize, half_window: usize) -> Result<Tensor, OpError> {
     if seq == 0 {
         return Err(OpError::ZeroDimension { which: "seq" });
@@ -493,6 +500,7 @@ pub fn local_window_padding_mask(
 /// # Panics
 ///
 /// Panics if `max_norm` is not finite and positive.
+#[provable_contracts_macros::contract("modernbert-train-v1", equation = "clip_grad_norm")]
 pub fn clip_grad_norm_(params: &[TensorId], max_norm: f32) -> f32 {
     assert!(
         max_norm.is_finite() && max_norm > 0.0,
