@@ -78,7 +78,7 @@ jobs:
           # One read every 5 minutes (GH-1), at most 12: tonight's nightly.yml run is created
           # within minutes of this one or the lane is not_measured, never a guess.
           for i in $(seq 1 12); do
-            sha=$(bash scripts/release/dogfood_night_sha.sh); rc=$?
+            sha=$(bash scripts/release/dogfood_night_sha.sh --now "$(date -u +%s)"); rc=$?
             [ "$rc" -ne 1 ] && break
             [ "$i" -lt 12 ] && sleep 300
           done

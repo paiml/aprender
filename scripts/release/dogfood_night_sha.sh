@@ -11,7 +11,8 @@
 # and measuring it would be a confident answer about the wrong night. That refuses (rc 1) instead.
 # The run's status does not matter here: its head is fixed when it is created.
 #
-#   dogfood_night_sha.sh                 print the sha (one gh api call; GH_TOKEN, GITHUB_REPOSITORY)
+#   dogfood_night_sha.sh --now EPOCH     print the sha (one gh api call; GH_TOKEN, GITHUB_REPOSITORY). The caller
+#                                        passes the read time: the script reads no clock, so the same input decides the same.
 #   dogfood_night_sha.sh --pick F NOW    pick from a runs JSON file F at epoch NOW (no network)
 #   dogfood_night_sha.sh --self-test     case table, then mutants of the pick
 # rc 0 = the sha on stdout; 1 = no night commit (reason on stderr); 2 = could not read.
@@ -85,7 +86,7 @@ ROWS
   # The pick decides nothing unless the producer checks out what it prints.
   WF="$(dirname "$SELF")/../../.github/workflows/dogfood-nightly.yml"
   if [ -f "$WF" ]; then
-    for want in '          ref: ${{ needs.night.outputs.sha }}' '            sha=$(bash scripts/release/dogfood_night_sha.sh); rc=$?' '    needs: night'; do
+    for want in '          ref: ${{ needs.night.outputs.sha }}' '            sha=$(bash scripts/release/dogfood_night_sha.sh --now "$(date -u +%s)"); rc=$?' '    needs: night'; do
       grep -qxF -- "$want" "$WF" || { echo "SELF-TEST FAILED: dogfood-nightly.yml no longer has: $want"; exit 1; }
     done
     echo "self-test: dogfood-nightly.yml checks out the pick"
@@ -106,9 +107,11 @@ ROWS
   exit "$bad"
 fi
 
+[ "${1:-}" = --now ] && [[ "${2:-}" =~ ^[0-9]+$ ]] || { echo "usage: dogfood_night_sha.sh --now EPOCH | --pick F NOW | --self-test" >&2; exit 2; }
+NOW="$2"
 : "${GITHUB_REPOSITORY:?}"
 f=$(mktemp) || exit 2
 trap 'rm -f -- "${f:?}"' EXIT
 gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$NIGHT_WF/runs?event=schedule&branch=main&per_page=10" > "$f" 2> /dev/null \
   || { echo "dogfood_night_sha: listing the scheduled $NIGHT_WF runs failed" >&2; exit 2; }
-emit "$(night_pick "$f" "$(date -u +%s)")"
+emit "$(night_pick "$f" "$NOW")"
