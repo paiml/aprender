@@ -15,10 +15,15 @@
 //! | S4 | identity: `binary_sha256`, `commit`, `host`, `prompt_sha256` |
 //! | S5 | agreement with the `m = 1` reference to `declared_min`, unless a recorded top-2 margin below ε explains the divergence as a near-tie |
 //! | S6 | perf041 PASS in every band |
+//! | S7 | FALSIFY-CB-004: per-request decode at c=4 at least half of c=1's, read from the bands' `decode_tok_s` |
+//! | floor | every band's `declared_min` is at least 64, the perf matrix's `witness.min_agree_tokens` |
+//! | cap | at most one of c=4, 8, 16 is admitted through the near-tie clause |
 //!
-//! S7 (FALSIFY-CB-004, per-request decode at c=4 at least half of c=1) needs
-//! timing the witness does not carry. The receipt cites it beside the witness,
-//! and this check does not read it.
+//! S7, the floor and the cap are the V3 bar's (C314 round 2, contract
+//! `serving-shape-parity-v1`), as is ε = 0.05 logit, now fixed. A witness
+//! with no per-request decode timing at c=1 or c=4 is not admissible: S7 is
+//! unmeasured, never assumed. The probe times a request only on a stream the
+//! server declared live ([`super::parity::live_decode_tok_s`]).
 //!
 //! The port closes the draft contract's findings:
 //! * **F1** an unreadable witness is RED (exit 2), never NOT ADMISSIBLE;
@@ -42,14 +47,26 @@ pub const BLESSED_MODEL_PREFIX: &str = "qwen3.5-4b";
 /// S2: the bands `apr serve` advertises.
 pub const V3_BANDS: [u32; 4] = [1, 4, 8, 16];
 
-/// S5: ε in logits, `[A]` until measured near-ties calibrate it. A recorded
-/// top-2 margin explains a divergence only when `0 <= margin < ε`.
+/// S5: ε in logits, fixed by the V3 bar. A recorded top-2 margin explains a
+/// divergence only when `0 <= margin < ε`.
 pub const NEAR_TIE_EPS: f64 = 0.05;
+
+/// The cap: batched bands (c > 1) that may be admitted through the near-tie
+/// clause. Bands c=4, 8 and 16 share one batched path, so more than one early
+/// divergence there points at the path, not at independent near-ties.
+pub const NEAR_TIE_CAP: usize = 1;
+
+/// The floor under every band's `declared_min`: the perf matrix's
+/// `witness.min_agree_tokens`, so a witness cannot declare its own bar.
+pub const DECLARED_MIN_FLOOR: u32 = 64;
+
+/// S7 (FALSIFY-CB-004): per-request decode at c=4 over c=1's, at least.
+pub const S7_MIN_RATIO: f64 = 0.5;
 
 /// The check's answer. Exit codes follow the Python reference: 0, 1, 2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShapeVerdict {
-    /// Every rule S1–S6 holds.
+    /// Every rule S1–S7, the floor and the cap hold.
     Admissible,
     /// The witness was read, and these rules failed.
     NotAdmissible(Vec<String>),
@@ -115,6 +132,7 @@ struct ShapeBand {
     divergence_at: Option<u32>,
     declared_min: Option<u32>,
     top2_margin_at_divergence: Option<f64>,
+    decode_tok_s: Option<f64>,
 }
 
 /// Check the witness file at `path`. A file that cannot be read is RED (F1).
@@ -182,7 +200,7 @@ fn blank(value: &str) -> bool {
     value.trim().is_empty()
 }
 
-/// S2, F6 and the per-band rules, in band order.
+/// S2, F6 and the per-band rules in band order, then the cap and S7.
 fn bands_reasons(bands: &[ShapeBand]) -> Vec<String> {
     let mut by_c: BTreeMap<u32, Vec<&ShapeBand>> = BTreeMap::new();
     for band in bands {
@@ -204,10 +222,12 @@ fn bands_reasons(bands: &[ShapeBand]) -> Vec<String> {
             out.extend(band_reasons(band));
         }
     }
+    out.extend(near_tie_cap_reason(&by_c));
+    out.extend(s7_reason(&by_c));
     out
 }
 
-/// S6, S3 and S5 for one band.
+/// S6, S3, the floor and S5 for one band.
 fn band_reasons(band: &ShapeBand) -> Vec<String> {
     let c = band.c;
     let result = band.result.as_deref();
@@ -223,8 +243,86 @@ fn band_reasons(band: &ShapeBand) -> Vec<String> {
         Some(m) => out.push(format!("c={c}: m_formed {m} != c (shape not served)")),
         None => out.push(format!("c={c}: m_formed not recorded (shape not shown)")),
     }
+    if let Some(min) = band.declared_min.filter(|&min| min < DECLARED_MIN_FLOOR) {
+        out.push(format!(
+            "c={c}: declared_min {min} is below the floor of {DECLARED_MIN_FLOOR} \
+             (witness.min_agree_tokens)"
+        ));
+    }
     out.extend(divergence_reason(band, result == Some("PASS")));
     out
+}
+
+/// S5's near-tie clause: a recorded top-2 margin in `[0, ε)`.
+fn near_tie(margin: f64) -> bool {
+    (0.0..NEAR_TIE_EPS).contains(&margin)
+}
+
+/// True when S5 holds for `band` only through the near-tie clause: it parts
+/// from m=1 before `declared_min`, at a recorded near-tie.
+fn admitted_by_near_tie(band: &ShapeBand) -> bool {
+    match (
+        band.declared_min,
+        band.divergence_at,
+        band.top2_margin_at_divergence,
+    ) {
+        (Some(min), Some(at), Some(margin)) => at < min && near_tie(margin),
+        _ => false,
+    }
+}
+
+/// The cap: at most [`NEAR_TIE_CAP`] batched V3 bands admitted through the
+/// near-tie clause. c=1 is not batched, and a band outside V3 is ignored, as
+/// everywhere else.
+fn near_tie_cap_reason(by_c: &BTreeMap<u32, Vec<&ShapeBand>>) -> Option<String> {
+    let tied: Vec<String> = V3_BANDS
+        .iter()
+        .filter(|&&c| c > 1)
+        .flat_map(|c| by_c.get(c).into_iter().flatten())
+        .filter(|band| admitted_by_near_tie(band))
+        .map(|band| format!("c={}", band.c))
+        .collect();
+    (tied.len() > NEAR_TIE_CAP).then(|| {
+        format!(
+            "near-tie cap: {} batched bands ({}) are admitted only by a near-tie margin; \
+             at most {NEAR_TIE_CAP} of c=4, 8, 16 may be",
+            tied.len(),
+            tied.join(", ")
+        )
+    })
+}
+
+/// S7 (FALSIFY-CB-004): per-request decode at c=4 at least [`S7_MIN_RATIO`]
+/// of c=1's. Read only when c=1 and c=4 each have exactly one band: a missing
+/// or doubled band already has its reason, and which copy's rate S7 would read
+/// is not defined. A band with no rate, or a rate that is not positive, leaves
+/// S7 unmeasured, and an unmeasured S7 is not admissible.
+fn s7_reason(by_c: &BTreeMap<u32, Vec<&ShapeBand>>) -> Option<String> {
+    let one = |c: u32| match by_c.get(&c).map(Vec::as_slice) {
+        Some([band]) => Some(*band),
+        _ => None,
+    };
+    let (c1, c4) = (one(1)?, one(4)?);
+    let rate = |band: &ShapeBand| band.decode_tok_s.filter(|&r| r > 0.0);
+    let (Some(d1), Some(d4)) = (rate(c1), rate(c4)) else {
+        let unmeasured: Vec<&str> = [(c1, "c=1"), (c4, "c=4")]
+            .into_iter()
+            .filter(|&(band, _)| rate(band).is_none())
+            .map(|(_, name)| name)
+            .collect();
+        return Some(format!(
+            "S7 (FALSIFY-CB-004) is unmeasured: no positive per-request decode_tok_s at {}",
+            unmeasured.join(" and ")
+        ));
+    };
+    (d4 < S7_MIN_RATIO * d1).then(|| {
+        format!(
+            "S7 (FALSIFY-CB-004): per-request decode at c=4 is {d4} tok/s, {:.1}% of c=1's \
+             {d1} tok/s; needs at least {}%",
+            100.0 * d4 / d1,
+            100.0 * S7_MIN_RATIO
+        )
+    })
 }
 
 /// S5, with F3 (no `declared_min`), F4 (name the recorded margin) and F5 (no
@@ -248,7 +346,7 @@ fn divergence_reason(band: &ShapeBand, passed: bool) -> Option<String> {
         None => Some(format!(
             "c={c}: diverges from m=1 at {at} < {min} with no near-tie margin recorded"
         )),
-        Some(margin) if (0.0..NEAR_TIE_EPS).contains(&margin) => None,
+        Some(margin) if near_tie(margin) => None,
         Some(margin) => Some(format!(
             "c={c}: diverges from m=1 at {at} < {min}; the recorded top-2 margin {margin} \
              is not a near-tie (needs 0 <= margin < {NEAR_TIE_EPS})"
@@ -262,9 +360,10 @@ mod tests {
     use serde_json::{json, Value};
 
     /// The admissible control, as `fixtures/v3/admissible.json` on the spec
-    /// branch has it. Every case below changes one thing in it.
+    /// branch has it, plus S7's per-request decode rates (c=4 at 75% of c=1).
+    /// Every case below changes one thing in it.
     fn admissible() -> Value {
-        let band = |c: u32| json!({"c": c, "m_formed": c, "result": "PASS", "declared_min": 64, "divergence_at": 127});
+        let band = |c: u32, rate: f64| json!({"c": c, "m_formed": c, "result": "PASS", "declared_min": 64, "divergence_at": 127, "decode_tok_s": rate});
         json!({
             "_planted": "FIXTURE: not a measurement",
             "binary_sha256": "a".repeat(64),
@@ -272,7 +371,7 @@ mod tests {
             "host": "lambda",
             "prompt_sha256": "b".repeat(64),
             "model": {"path": "Qwen3.5-4B-Q4_K_M.gguf", "sha256": "c".repeat(64)},
-            "bands": [band(1), band(4), band(8), band(16)],
+            "bands": [band(1, 40.0), band(4, 30.0), band(8, 25.0), band(16, 20.0)],
         })
     }
 
@@ -309,6 +408,20 @@ mod tests {
             if let Some(margin) = &margin {
                 band.insert("top2_margin_at_divergence".into(), margin.clone());
             }
+        }
+    }
+
+    fn remove(index: usize, key: &'static str) -> impl Fn(&mut Value) {
+        move |w: &mut Value| {
+            band_mut(w, index).remove(key);
+        }
+    }
+
+    /// Several changes, in order.
+    fn both(a: impl Fn(&mut Value), b: impl Fn(&mut Value)) -> impl Fn(&mut Value) {
+        move |w: &mut Value| {
+            a(w);
+            b(w);
         }
     }
 
@@ -443,10 +556,84 @@ mod tests {
                 0,
                 vec![],
             ),
+            // FALSIFY-SSP-017, S7: the bar's falsifier, its boundary, and a
+            // witness that cannot say.
+            (
+                "S7 c=4 at 49% of c=1 (the bar's falsifier)",
+                Box::new(set(1, "decode_tok_s", json!(19.6))),
+                1,
+                vec!["S7 (FALSIFY-CB-004): per-request decode at c=4 is 19.6 tok/s, 49.0% of c=1's 40 tok/s; needs at least 50%"],
+            ),
+            ("S7 c=4 at exactly 50%", Box::new(set(1, "decode_tok_s", json!(20.0))), 0, vec![]),
+            ("S7 reads c=4, not c=8 or c=16", Box::new(both(set(2, "decode_tok_s", json!(1.0)), set(3, "decode_tok_s", json!(1.0)))), 0, vec![]),
+            (
+                "S7 no timing at c=4",
+                Box::new(remove(1, "decode_tok_s")),
+                1,
+                vec!["S7 (FALSIFY-CB-004) is unmeasured: no positive per-request decode_tok_s at c=4"],
+            ),
+            (
+                "S7 null timing at c=1",
+                Box::new(set(0, "decode_tok_s", Value::Null)),
+                1,
+                vec!["S7 (FALSIFY-CB-004) is unmeasured: no positive per-request decode_tok_s at c=1"],
+            ),
+            (
+                "S7 zero rates are not rates",
+                Box::new(both(set(0, "decode_tok_s", json!(0.0)), set(1, "decode_tok_s", json!(0.0)))),
+                1,
+                vec!["S7 (FALSIFY-CB-004) is unmeasured: no positive per-request decode_tok_s at c=1 and c=4"],
+            ),
+            (
+                "S7 is not read beside a missing c=1 (its band says it)",
+                Box::new(both(drop_band(0), set(0, "decode_tok_s", Value::Null))),
+                1,
+                vec!["band c=1 not measured"],
+            ),
+            ("F2 decode_tok_s as a string", Box::new(set(1, "decode_tok_s", json!("30"))), 2, vec![]),
+            // FALSIFY-SSP-018, the cap: one near-tie batched band is chance,
+            // two are the batched path.
+            (
+                "near-tie cap: c=4 and c=8",
+                Box::new(both(diverge(1, 3, Some(json!(0.01))), diverge(2, 3, Some(json!(0.01))))),
+                1,
+                vec!["near-tie cap: 2 batched bands (c=4, c=8) are admitted only by a near-tie margin; at most 1 of c=4, 8, 16 may be"],
+            ),
+            (
+                "near-tie cap: all three batched bands",
+                Box::new(|w: &mut Value| {
+                    for index in 1..4 {
+                        diverge(index, 3, Some(json!(0.01)))(w);
+                    }
+                }),
+                1,
+                vec!["near-tie cap: 3 batched bands (c=4, c=8, c=16) are admitted only by a near-tie margin; at most 1 of c=4, 8, 16 may be"],
+            ),
+            ("near-tie at c=16 alone", Box::new(diverge(3, 3, Some(json!(0.01)))), 0, vec![]),
+            ("near-tie cap: c=1 is not batched", Box::new(both(diverge(0, 3, Some(json!(0.01))), diverge(1, 3, Some(json!(0.01))))), 0, vec![]),
+            (
+                "near-tie cap: a margin on a band that agreed to declared_min is not counted",
+                Box::new(both(diverge(1, 64, Some(json!(0.01))), diverge(2, 3, Some(json!(0.01))))),
+                0,
+                vec![],
+            ),
+            // FALSIFY-SSP-019, the floor: a witness does not set its own bar.
+            (
+                "floor: declared_min 1",
+                Box::new(both(set(1, "declared_min", json!(1)), diverge(1, 3, None))),
+                1,
+                vec!["c=4: declared_min 1 is below the floor of 64 (witness.min_agree_tokens)"],
+            ),
+            (
+                "floor: declared_min 63",
+                Box::new(set(2, "declared_min", json!(63))),
+                1,
+                vec!["c=8: declared_min 63 is below the floor of 64 (witness.min_agree_tokens)"],
+            ),
         ]
     }
 
-    /// FALSIFY-SSP-001..006, 008..016 and F1–F6: every planted case exits as
+    /// FALSIFY-SSP-001..006, 008..019 and F1–F6: every planted case exits as
     /// its row says and prints exactly its row's reasons. A RED row with no
     /// reasons listed checks the exit code and the `RED:` prefix.
     #[test]
@@ -507,6 +694,17 @@ mod tests {
         assert_eq!(check_v3_shape_file(&path), ShapeVerdict::Admissible);
         std::fs::remove_file(&path).expect("remove");
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// The floor is the shipped perf matrix's `witness.min_agree_tokens`, not
+    /// a second copy of it that can drift.
+    #[test]
+    fn the_floor_is_the_shipped_matrix_min_agree_tokens() {
+        let shipped = super::super::protocol::witness_min_agree_tokens_from(
+            super::super::protocol::PERF_MATRIX_SOURCE,
+        )
+        .expect("the shipped witness block");
+        assert_eq!(DECLARED_MIN_FLOOR, shipped);
     }
 
     #[test]

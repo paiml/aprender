@@ -12,9 +12,10 @@ use std::path::PathBuf;
 use futures::future::join_all;
 
 use super::client::{ChatMessage, ChatRequest, LlmClient, Role};
+use crate::perf_gate::drain::StreamMode;
 use crate::perf_gate::parity::{
-    batch_formed_since, check_reference, evaluate_band, log_offset, run_verdict, ProbeBand,
-    ProbePolicy, ProbeReference, ProbeSample, ProbeSampler, SampleResult,
+    batch_formed_since, check_reference, evaluate_band, live_decode_tok_s, log_offset, run_verdict,
+    ProbeBand, ProbePolicy, ProbeReference, ProbeSample, ProbeSampler, SampleResult,
 };
 use crate::perf_gate::witness::BatchInvariance;
 
@@ -96,12 +97,19 @@ impl ParityProbe {
     }
 }
 
-/// One streamed request, as the probe records it.
+/// One streamed request, as the probe records it. S7's decode rate comes
+/// from the client's own arrival times, and only on a stream the server
+/// declared live: the batched CUDA path drops the server's `timings`.
 async fn fire(client: &LlmClient, request: &ChatRequest) -> SampleResult {
     client
         .chat_completion_stream(request)
         .await
         .map(|r| ProbeSample {
+            decode_tok_s: live_decode_tok_s(
+                r.stream_mode == Some(StreamMode::Live),
+                &r.token_timestamps,
+                r.usage.completion_tokens,
+            ),
             logprobs: r.logprobs,
             completion_tokens: Some(r.usage.completion_tokens),
             finish_reason: r.finish_reason,
@@ -150,20 +158,24 @@ mod tests {
         format!("data: {chunk}\n\n")
     }
 
-    fn sse_body(tokens: &[(String, f64)]) -> String {
+    /// The stream's frames. A `live` stream declares it on the role chunk,
+    /// as `apr serve` does (PP-27); otherwise the stream declares nothing.
+    fn sse_frames(tokens: &[(String, f64)], live: bool) -> Vec<String> {
         let n = tokens.len();
         let usage = json!({"prompt_tokens": 5, "completion_tokens": n, "total_tokens": n + 5});
         let terminal =
             json!({"choices": [{"delta": {}, "finish_reason": "length"}], "usage": usage});
-        std::iter::once(
-            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n".to_string(),
-        )
-        .chain(tokens.iter().map(|(t, gap)| token_frame(t, *gap)))
-        .chain([
-            format!("data: {terminal}\n\n"),
-            "data: [DONE]\n\n".to_string(),
-        ])
-        .collect()
+        let mut role = json!({"choices": [{"delta": {"role": "assistant"}}]});
+        if live {
+            role["stream_mode"] = json!("live");
+        }
+        std::iter::once(format!("data: {role}\n\n"))
+            .chain(tokens.iter().map(|(t, gap)| token_frame(t, *gap)))
+            .chain([
+                format!("data: {terminal}\n\n"),
+                "data: [DONE]\n\n".to_string(),
+            ])
+            .collect()
     }
 
     /// Read one request through its body, so the client never sees a reset.
@@ -189,8 +201,10 @@ mod tests {
 
     /// The script's `_replay_server`: canned SSE per request index, and the
     /// scheduler's line appended to the log from inside the handler, as a real
-    /// server does, so the band offsets are exercised for real.
-    async fn replay(plan: Plan, log: PathBuf) -> String {
+    /// server does, so the band offsets are exercised for real. A `live`
+    /// server declares it and paces its frames 5 ms apart; otherwise the
+    /// whole body goes in one write.
+    async fn replay(plan: Plan, log: PathBuf, live: bool) -> String {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind loopback");
@@ -209,13 +223,21 @@ mod tests {
                             .expect("open log");
                         writeln!(file, "{line}").expect("append log");
                     }
-                    let body = sse_body(&tokens);
+                    let frames = sse_frames(&tokens, live);
                     let head = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
                          Content-Length: {}\r\nConnection: close\r\n\r\n",
-                        body.len()
+                        frames.iter().map(String::len).sum::<usize>()
                     );
-                    let _ = sock.write_all((head + &body).as_bytes()).await;
+                    if live {
+                        let _ = sock.write_all(head.as_bytes()).await;
+                        for frame in frames {
+                            let _ = sock.write_all(frame.as_bytes()).await;
+                            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                        }
+                    } else {
+                        let _ = sock.write_all((head + &frames.concat()).as_bytes()).await;
+                    }
                     let _ = sock.shutdown().await;
                 });
             }
@@ -228,10 +250,18 @@ mod tests {
     async fn probe(
         plan: impl Fn(usize) -> (Vec<(String, f64)>, Option<String>) + Send + Sync + 'static,
     ) -> ParityRun {
+        probe_with(false, plan).await
+    }
+
+    /// [`probe`] against a server that declares its streams `live` or not.
+    async fn probe_with(
+        live: bool,
+        plan: impl Fn(usize) -> (Vec<(String, f64)>, Option<String>) + Send + Sync + 'static,
+    ) -> ParityRun {
         let dir = tempfile::tempdir().expect("tempdir");
         let log = dir.path().join("server.log");
         std::fs::write(&log, "server starting\n").expect("seed log");
-        let url = replay(Arc::new(plan), log.clone()).await;
+        let url = replay(Arc::new(plan), log.clone(), live).await;
         let probe = ParityProbe {
             prompt: "Write an essay on compilers.".to_string(),
             ladder: vec![1, 2],
@@ -265,6 +295,33 @@ mod tests {
         let formed: Vec<u32> = run.bands.iter().map(|b| b.m_formed).collect();
         assert_eq!(formed, vec![1, 2], "each band reads only its own lines");
         assert_eq!(run.bands[1].divergence_at, Some(8));
+    }
+
+    /// S7's input, end to end: a stream the server declared live records a
+    /// per-request decode rate on every slot and band; the same stream
+    /// undeclared records none, so V3 reads S7 as unmeasured, never as fast.
+    /// Only the rate's sign is asserted: its size is the test box's timing.
+    #[tokio::test]
+    async fn a_live_stream_records_per_request_decode_and_an_undeclared_one_does_not() {
+        let live = probe_with(true, |i| (canned("a"), batch_line(i))).await;
+        assert_eq!(live.result, BatchInvariance::Pass, "{live:?}");
+        for band in &live.bands {
+            let rate = band.decode_tok_s.expect("a live band is timed");
+            assert!(rate.is_finite() && rate > 0.0, "{band:?}");
+            assert!(
+                band.slots.iter().all(|s| s.decode_tok_s.is_some()),
+                "{band:?}"
+            );
+        }
+        let undeclared = probe(|i| (canned("a"), batch_line(i))).await;
+        assert_eq!(undeclared.result, BatchInvariance::Pass, "{undeclared:?}");
+        for band in &undeclared.bands {
+            assert_eq!(band.decode_tok_s, None, "{band:?}");
+            assert!(
+                band.slots.iter().all(|s| s.decode_tok_s.is_none()),
+                "{band:?}"
+            );
+        }
     }
 
     /// `witness_no_batch_formed_is_unmeasurable`, end to end.

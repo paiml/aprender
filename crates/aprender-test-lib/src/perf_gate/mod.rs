@@ -194,9 +194,9 @@ pub use join::{BandRatios, JoinKey, Ratio, RatioBound, RatioMethod};
 pub use margin::{token_ids, top2_margin, TokenLogprob, TopLogprob, LOGPROBS_SOURCE};
 pub use metrics::{agg_tok_s, aggregate_terms, BandMetrics, RequestSample};
 pub use parity::{
-    batch_formed_since, check_reference, evaluate_band, run_verdict, ProbeBand, ProbeMatrix,
-    ProbeModel, ProbePolicy, ProbeReference, ProbeSample, ProbeSampler, ProbeSlot, ProbeWitness,
-    SampleResult,
+    band_decode_tok_s, batch_formed_since, check_reference, evaluate_band, live_decode_tok_s,
+    run_verdict, ProbeBand, ProbeMatrix, ProbeModel, ProbePolicy, ProbeReference, ProbeSample,
+    ProbeSampler, ProbeSlot, ProbeWitness, SampleResult,
 };
 pub use protocol::{
     min_sampled_requests, warmup_requests, BandConfig, ClientModel, ProtocolParams, ProtocolSource,
@@ -212,7 +212,8 @@ pub use receipt::{
 pub use replicate::{log_ratio_lcb, t_lower_one_sided_95, ArmOrder, ReplicatePair, MIN_REPLICATES};
 pub use samples::{read_samples_gz, write_samples_gz, SamplesFile};
 pub use v3_shape::{
-    check_v3_shape, check_v3_shape_file, ShapeVerdict, BLESSED_MODEL_PREFIX, NEAR_TIE_EPS, V3_BANDS,
+    check_v3_shape, check_v3_shape_file, ShapeVerdict, BLESSED_MODEL_PREFIX, DECLARED_MIN_FLOOR,
+    NEAR_TIE_CAP, NEAR_TIE_EPS, S7_MIN_RATIO, V3_BANDS,
 };
 pub use window::{WindowController, WindowReport};
 pub use witness::{BatchInvariance, BatchInvarianceWitness};
