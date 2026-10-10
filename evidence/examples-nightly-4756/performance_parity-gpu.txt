@@ -1,5 +1,5 @@
-08:11:00Z
-819e4132dc7f2c38360206f0595062d7dcd0cc04
+09:32:14Z
+22954be7ab1f63b168ee6f6ae2843b70903570a2
 014cdffaacaf1b2a027d02a8acb2438f2b7f7075ebf35f01e60d4720d7721846  target/debug/examples/performance_parity
 
 ╔══════════════════════════════════════════════════════════════════╗
@@ -20,21 +20,21 @@ Toyota Production System: Genchi Genbutsu (Go and See)
 ┌────────────────────────────┬──────────────────┬──────────────────┬─────────────────┬─────────┐
 │ Benchmark                  ┆ Metric           ┆ Value            ┆ Target          ┆ Status  │
 ╞════════════════════════════╪══════════════════╪══════════════════╪═════════════════╪═════════╡
-│ IMP-001: SIMD Q4_K Dequant ┆ Throughput       ┆ 0.67 GB/s        ┆ 10.00 GB/s      ┆ ❌ FAIL │
+│ IMP-001: SIMD Q4_K Dequant ┆ Throughput       ┆ 0.46 GB/s        ┆ 10.00 GB/s      ┆ ❌ FAIL │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ IMP-002: Mmap Streaming    ┆ Throughput       ┆ 0.64 GB/s        ┆ 5.00 GB/s       ┆ ❌ FAIL │
+│ IMP-002: Mmap Streaming    ┆ Throughput       ┆ 0.29 GB/s        ┆ 5.00 GB/s       ┆ ❌ FAIL │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ IMP-003: Fused Attention   ┆ Latency          ┆ 1063.92 ms       ┆ 10.00 ms        ┆ ❌ FAIL │
+│ IMP-003: Fused Attention   ┆ Latency          ┆ 1249.46 ms       ┆ 10.00 ms        ┆ ❌ FAIL │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ IMP-004: KV Cache          ┆ Ops/sec          ┆ 5243096.15 ops/s ┆ 100000.00 ops/s ┆ ✅ PASS │
+│ IMP-004: KV Cache          ┆ Ops/sec          ┆ 4728736.06 ops/s ┆ 100000.00 ops/s ┆ ✅ PASS │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ IMP-005: Batch Prefill     ┆ Parallel Speedup ┆ 3.05 x           ┆ 5.00 x          ┆ ✅ PASS │
+│ IMP-005: Batch Prefill     ┆ Parallel Speedup ┆ 2.63 x           ┆ 5.00 x          ┆ ✅ PASS │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Quantization Formats       ┆ Q4_K Throughput  ┆ 26.07 MB/s       ┆ 500.00 MB/s     ┆ ❌ FAIL │
+│ Quantization Formats       ┆ Q4_K Throughput  ┆ 21.88 MB/s       ┆ 500.00 MB/s     ┆ ❌ FAIL │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ E2E Inference              ┆ Latency          ┆ 16.52 ms         ┆ 100.00 ms       ┆ ✅ PASS │
+│ E2E Inference              ┆ Latency          ┆ 20.11 ms         ┆ 100.00 ms       ┆ ✅ PASS │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Token Generation           ┆ Throughput       ┆ 147.60 tok/s     ┆ 20.00 tok/s     ┆ ✅ PASS │
+│ Token Generation           ┆ Throughput       ┆ 126.08 tok/s     ┆ 20.00 tok/s     ┆ ✅ PASS │
 └────────────────────────────┴──────────────────┴──────────────────┴─────────────────┴─────────┘
 
 ═══════════════════════════════════════════════════════════════════
@@ -44,7 +44,7 @@ Toyota Production System: Genchi Genbutsu (Go and See)
 ┌─────────────────┬────────────┬──────────────┬───────────────┬─────────┐
 │ Benchmark       ┆ Metric     ┆ Value        ┆ Target        ┆ Status  │
 ╞═════════════════╪════════════╪══════════════╪═══════════════╪═════════╡
-│ GPU-001: Matmul ┆ Throughput ┆ 13.70 GFLOPS ┆ 100.00 GFLOPS ┆ ✅ PASS │
+│ GPU-001: Matmul ┆ Throughput ┆ 15.82 GFLOPS ┆ 100.00 GFLOPS ┆ ✅ PASS │
 └─────────────────┴────────────┴──────────────┴───────────────┴─────────┘
 
 ═══════════════════════════════════════════════════════════════════
@@ -57,10 +57,10 @@ Toyota Production System: Genchi Genbutsu (Go and See)
   ❌ Overall: Some benchmarks failed (5/9, 56%)
 
   Milestone Status:
-    ✅ M1: CPU Parity    - 148 tok/s (Target: 20)
-    ✅ M2: WGPU Basic    - 13.7 GFLOPS (GPU working!)
+    ✅ M1: CPU Parity    - 126 tok/s (Target: 20)
+    ✅ M2: WGPU Basic    - 15.8 GFLOPS (GPU working!)
     ⏳ M4: Full Parity   - 230+ tok/s (90% llama.cpp)
 
   Toyota Way: Kaizen - Continuous Improvement
 
-END rc=0 secs=8 08:11:09Z
+END rc=0 secs=10 09:32:25Z

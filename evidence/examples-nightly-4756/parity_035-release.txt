@@ -1,0 +1,66 @@
+# parity_035 release builds, head 22954be7ab and merge-base e37e6dec56, each run in a private network
+# namespace with loopback up and nothing listening on 127.0.0.1:11434. Build lines, sha256 of each binary, the
+# output of each run, and a diff of the two terminal runs follow.
+09:32:33Z
+22954be7ab1f63b168ee6f6ae2843b70903570a2
+END release build rc=0 secs=445 head 22954be7ab1f63b168ee6f6ae2843b70903570a2
+9b67fc5fd7a41f982985b14d32dc43ea29e9420e0d13783b99cad8395f121bd7  target/release/examples/parity_035_m4_verification
+
+## head 22954be7ab: release, no server, at a terminal (script -qec; stdout is a pty)
+
+╔════════════════════════════════════════════════════════════════╗
+║         PARITY-035: M4 Parity Verification Benchmark          ║
+║                     RTX 4090 vs Ollama                         ║
+╚════════════════════════════════════════════════════════════════╝
+
+Configuration:
+  Prompt: "Write a function that calculates the factorial of "
+  Max tokens: 50
+  Warmup: 2 iterations
+  Measurement: 5 iterations
+
+[1/3] Benchmarking Ollama phi2:2.7b...
+  Warming up Ollama (2 iterations)...
+Error: reqwest::Error { kind: Request, url: "http://localhost:11434/api/generate", source: hyper_util::client::legacy::Error(Connect, ConnectError("tcp connect error", 127.0.0.1:11434, Os { code: 111, kind: ConnectionRefused, message: "Connection refused" })) }
+END rc=1 secs=0
+
+## head: release, no server, stdout to a file (not a terminal)
+
+╔════════════════════════════════════════════════════════════════╗
+║         PARITY-035: M4 Parity Verification Benchmark          ║
+║                     RTX 4090 vs Ollama                         ║
+╚════════════════════════════════════════════════════════════════╝
+
+Configuration:
+  Prompt: "Write a function that calculates the factorial of "
+  Max tokens: 50
+  Warmup: 2 iterations
+  Measurement: 5 iterations
+
+Ollama server not found at http://localhost:11434 (run `ollama serve` and `ollama pull phi2:2.7b`)
+END rc=1 secs=0
+
+## merge-base build
+END release build rc=0 secs=58 head e37e6dec56f4608c862f1c2e625bf81873f3e536
+88cd3bb714ac76a8de5a9c3a65d3b97fe4aebb58067535421019c733296278b2  target/release/examples/parity_035_m4_verification
+
+## merge-base e37e6dec56: release, no server, at a terminal (script -qec; stdout is a pty)
+
+╔════════════════════════════════════════════════════════════════╗
+║         PARITY-035: M4 Parity Verification Benchmark          ║
+║                     RTX 4090 vs Ollama                         ║
+╚════════════════════════════════════════════════════════════════╝
+
+Configuration:
+  Prompt: "Write a function that calculates the factorial of "
+  Max tokens: 50
+  Warmup: 2 iterations
+  Measurement: 5 iterations
+
+[1/3] Benchmarking Ollama phi2:2.7b...
+  Warming up Ollama (2 iterations)...
+Error: reqwest::Error { kind: Request, url: "http://localhost:11434/api/generate", source: hyper_util::client::legacy::Error(Connect, ConnectError("tcp connect error", 127.0.0.1:11434, Os { code: 111, kind: ConnectionRefused, message: "Connection refused" })) }
+END rc=1 secs=0
+
+## diff of the two terminal outputs (head vs merge-base), carriage returns removed
+END diff rc=0; head back at 22954be7ab1f63b168ee6f6ae2843b70903570a2

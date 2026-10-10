@@ -1,6 +1,4 @@
-# Bodies the Ollama server on the run host sends, read with curl outside the namespace before the 36-row run
-# (job of 819e4132dc7f2c38360206f0595062d7dcd0cc04). The server has no phi2:2.7b.
-2026-10-10T07:53:48Z
+2026-10-10T09:15:58Z
 GET /api/version: {"version":"0.40.2"}
 GET /api/tags models: ["qwen2.5-coder:1.5b-instruct"]
 

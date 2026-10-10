@@ -3,9 +3,9 @@
 Before: CI run 37169058144 (main @316dee2cd4). Of the 36 rows, 29 fail and 7 time out.
 
 After: `examples-36.tsv`, one run of the unchanged `scripts/dogfood_examples.sh` on
-819e4132dc, the last code commit on this branch, in a job on 2026-10-10 from 07:53:48Z to
-08:11:21Z. `qa_verify-sections.txt` and `bug-hunter-scan.txt` were taken on 73f34268e6. The
-two code commits after it, fa3364688c and 819e4132dc, change only
+22954be7ab, the last code commit on this branch, in a job on 2026-10-10 from 09:15:58Z to
+09:41:01Z. `qa_verify-sections.txt` and `bug-hunter-scan.txt` were taken on 73f34268e6. The
+three code commits after it, fa3364688c, 819e4132dc and 22954be7ab, change only
 `parity_035_m4_verification.rs`.
 
 - Debug builds, `--timeout-secs 180`, and a `--filter` that matched exactly the 36 rows. The
@@ -33,7 +33,7 @@ means the example ran to the end and exited 0. It checks no figure the example p
 
 ## Build time and the timeout
 
-Each row's `secs` is build plus run. agent_demo's row took 150 s, and its run stage timed
+Each row's `secs` is build plus run. agent_demo's row took 165 s, and its run stage timed
 alone afterwards on the same tree took 1 s (`run-stage-secs.txt`), so nearly all of that row
 was build. The script bounds only the run (`scripts/dogfood_examples.sh:226`, "Only the RUN
 is bounded."), so a long build cannot time a row out. `examples-36-cold-4a79227e9f.tsv` is
@@ -42,15 +42,14 @@ up to 293 s (agent_demo).
 
 `run-stage-secs.txt` times the run stage alone (`cargo run -q`, stdout to a file) after the
 36-row run on the same tree. It covers the six rows with the highest `secs` in the
-4a79227e9f cold run, plus bug_hunter_demo and design_by_contract. None ran longer than 7 s.
+4a79227e9f cold run, plus bug_hunter_demo and design_by_contract. None ran longer than 9 s.
 
 ## What a debug build or a non-terminal run does differently
 
 A release build run from a terminal keeps its workload: nothing it ran before is skipped or
-cut down. Its result can still change, through the two bug fixes and the parity_035 probe
-under "Bug fixes for every build" and "A probe in every build", which apply to every build.
-Only a debug build, or a run without a terminal as each example's own gate tests it, takes a
-shorter path. Each item below names its gate:
+cut down. Its result can still change, through the two bug fixes under "Bug fixes for every
+build", which apply to every build. Only a debug build, or a run without a terminal as each
+example's own gate tests it, takes a shorter path. Each item below names its gate:
 
 - **pipeline_tui.** Its correctness check generated `GenerationConfig::default()`'s 100
   tokens (`crates/aprender-serve/src/generate/mod.rs:154`) through the unoptimized forward
@@ -60,7 +59,7 @@ shorter path. Each item below names its gate:
   the row's build was the example alone. The two were timed separately on a shared box, so
   the run stage alone can take longer than the whole row did, and here it did by 4 s. Both
   put the row within 43 s of the bound. A debug build now generates one token
-  (`pipeline_tui.rs:19`, `:458`), and on 819e4132dc its run stage alone took 3 s
+  (`pipeline_tui.rs:19`, `:458`), and on 22954be7ab its run stage alone took 3 s
   (`run-stage-secs.txt`). A release build still generates 100. The same debug-only flag,
   `REDUCED` (`:19`), also cuts the other stages: 1 iteration each (`:23`), the Medium model
   skipped (`:132`), sequence lengths 1, 5 and 10 instead of up to 50 (`:164`). The run prints
@@ -112,9 +111,14 @@ shorter path. Each item below names its gate:
   stdout is a terminal. buggy_server (`:21`) and brick_computer (`:698`) take it when stdout
   is not a terminal. calculator_tui (`:22`) takes it when either stdin or stdout is not one.
   Run with both at a terminal, all four keep their full path.
+- **parity_035's Ollama probe.** It runs only in a debug build or when stdout is not a
+  terminal (`parity_035_m4_verification.rs:265`), and can stop the run before the benchmark.
+  A release build whose stdout is a terminal goes straight to the benchmark. See "parity_035's
+  probe" below.
 
-Release builds of the 36 rows were not run here. That their workloads are unchanged rests
-on the gate lines cited above.
+Of the 36 rows, only parity_035 was also run from a release build here ("Measured since
+review round 3"). That the other workloads are unchanged in a release build rests on the gate
+lines cited above.
 
 ## Bug fixes for every build
 
@@ -138,13 +142,14 @@ reach its end. Neither shortens a run.
   manager's `ExceedsLimit` (`agent/runtime_helpers.rs:31-34`). The window is now 32 768
   (`agent_demo.rs:399`).
 
-## A probe in every build: parity_035
+## parity_035's probe: debug builds and runs without a terminal
 
 This is not a bug fix and does not let a run reach its end. It changes how a missing server
-or a missing model is reported, in every build. The failing nightly's log shows only the
-row's first line (the banner), so it does not show why that run failed. Before the benchmark
-the example now makes two checks (`parity_035_m4_verification.rs`, the block after the
-Warmup and Measurement lines):
+or a missing model is reported, and only in a debug build or a run whose stdout is not a
+terminal (`parity_035_m4_verification.rs:265`); a release build at a terminal skips it and
+runs as before. The failing nightly's log shows only the row's first line (the banner), so it
+does not show why that run failed. Before the benchmark the probe makes two checks
+(`fn probe_ollama`, `parity_035_m4_verification.rs:208`):
 
 - It tries a TCP connection to port 11434 on every address `localhost` resolves to, the name
   the benchmark asks for. If none connects, it prints `Ollama server not found at
@@ -157,10 +162,10 @@ Warmup and Measurement lines):
 
 Any other answer from `/api/show`, or a failed request, falls through to the benchmark,
 which runs or fails as it did before the probe. So a server whose `/api/show` fails while its
-`/api/generate` works still runs the benchmark, in a release build too, and a server that is
-broken or is not Ollama fails inside the benchmark, not as a missing model. When the server
-has the model, the benchmark runs as before. No run here had a server with the model, so
-that path rests on the code.
+`/api/generate` works still runs the benchmark, and a server that is broken or is not Ollama
+fails inside the benchmark, not as a missing model. When the server has the model, the
+benchmark runs as before. No run here had a server with the model, so that path rests on the
+code.
 
 ## Every other change, by kind
 
@@ -175,7 +180,8 @@ that path rests on the code.
   tokenizer load, `finetune_real.rs:2016-2017`, rc 101, and the row is classed by that
   message), profile_cuda_trainer (`requires the 'cuda' feature`),
   aprender-gpu's driver loader (`CUDA driver not found (libcuda.so)`), and parity_035's
-  `Ollama server not found at ...` when nothing listens on the port.
+  `Ollama server not found at ...` when nothing listens on the port (from its probe, so only
+  in a debug build or a run without a terminal).
 - **Optional arguments.** `qa_verify -- --all` and `test_mac_worker <host:port>` run the full
   workload from any build, `api_server -- --serve` keeps serving with no terminal, and
   buggy_server takes an iteration count as its bound. The book pages for qa_verify now show
@@ -226,8 +232,8 @@ whether those runs found an adapter is not recorded.
   private network namespace, with a listener on port 11434 that reads each request and
   answers `HTTP/1.1 500 Internal Server Error`. A 500 from `/api/show` is not the
   model-missing 404, so the example went on to the benchmark. That failed on the first
-  measured response it could not decode (`parity_035_m4_verification.rs:81`, a line the
-  branch does not change): it printed `Error: reqwest::Error { kind: Decode, source:
+  measured response it could not decode (`parity_035_m4_verification.rs:82`, a line the
+  branch does not change; the branch's `use` line moved it down one): it printed `Error: reqwest::Error { kind: Decode, source:
   Error("EOF while parsing a value", ...) }` and exited rc 1. The unchanged script, run on
   that one row, classed it fail (`summary pass=0 fail=1`, exit 1). The listener's log shows,
   for each of the two runs, the TCP probe's connection with no request, then `POST
@@ -242,6 +248,15 @@ whether those runs found an adapter is not recorded.
   rc 1. The unchanged script, run on that one row, classed it fail (`summary pass=0 fail=1`,
   exit 1). The listener's log shows the same requests as in the 500 case. A 404 that does not
   say the model is missing is a failure, not needs-data.
+- **parity_035 from a release build, at a terminal and not.** `parity_035-release.txt` is three
+  runs of a release build, each in a private network namespace with loopback up and nothing
+  listening on port 11434. On 22954be7ab with stdout a terminal (a pty from `script -qec`), the
+  example skipped the probe and went straight to the benchmark: it printed `[1/3] Benchmarking
+  Ollama phi2:2.7b...`, then `Error: reqwest::Error { kind: Request, ... }` on a refused
+  connection, and exited rc 1. On the same build with stdout to a file, it probed and printed
+  `Ollama server not found at http://localhost:11434 ...`, rc 1. On the merge-base, e37e6dec56,
+  built and run the same way at a terminal, the output was the same as the first run: `diff`
+  of the two terminal outputs, carriage returns removed, exited 0 with no lines.
 
 ## Not measured here
 
