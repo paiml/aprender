@@ -47,6 +47,7 @@ pub fn run(
     min_level: Option<&str>,
     watch: bool,
     strict_test_binding: bool,
+    strict_test_binding_only: bool,
     armed_baseline_ref: Option<&str>,
     gate: &[String],
     shapes_opts: ShapesOptions,
@@ -94,7 +95,7 @@ pub fn run(
         }
     }
 
-    let config = build_config(
+    let mut config = build_config(
         contract_dir,
         binding_path,
         min_score,
@@ -112,6 +113,7 @@ pub fn run(
         min_level,
         strict_test_binding,
     );
+    config.strict_test_binding_only = strict_test_binding_only;
 
     // ONT-6 (PMAT-3451): the shrink check needs no lint run, so it refuses (exit 3) before one.
     let arming = lint_arming::resolve(contract_dir, armed_baseline_ref)?;
@@ -1111,6 +1113,7 @@ fn build_config<'a>(
         crate_dir,
         min_level: min_level.and_then(parse_enforcement_level),
         strict_test_binding,
+        strict_test_binding_only: false,
     }
 }
 
@@ -1216,5 +1219,29 @@ mod tests {
         let e = meet(vec![pass(), reject(), decline(), pass(), pass()], 5).expect_err("a reject");
         let r = e.downcast_ref::<LintRejected>().expect("LintRejected");
         assert_eq!((r.passed, r.armed), (3, 5));
+    }
+
+    /// aprender#4974: the scoped flag parses alone, and refuses the modes a partial run would make
+    /// lie: one gate's report (`--gate`), the watch loop, and a partial run recorded as trend history.
+    #[test]
+    fn strict_test_binding_only_refuses_gate_watch_and_trend() {
+        #[derive(clap::Parser)]
+        struct T {
+            #[command(subcommand)]
+            c: crate::cli::Commands,
+        }
+        let parses = |extra: &[&str]| {
+            <T as clap::Parser>::try_parse_from(
+                ["t", "lint", "contracts", "--strict-test-binding-only"]
+                    .into_iter()
+                    .chain(extra.iter().copied()),
+            )
+            .is_ok()
+        };
+        assert!(parses(&[]));
+        assert!(parses(&["--strict-test-binding", "--no-cache"]));
+        for refused in [&["--gate", "validate"][..], &["--watch"], &["--trend"]] {
+            assert!(!parses(refused), "{refused:?} must be refused");
+        }
     }
 }

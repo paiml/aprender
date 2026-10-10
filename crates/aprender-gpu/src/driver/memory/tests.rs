@@ -666,4 +666,80 @@ mod cuda_tests {
             }
         }
     }
+
+    /// #4956 falsifier: while `device_memory_exclusive()` is held, another
+    /// thread's `GpuBuffer` allocation must wait for it.
+    ///
+    /// `test_oom_resilience` holds the claim and fills the device. Unrelated
+    /// in-process tests allocated inside that window and failed with OOM in
+    /// `GpuBuffer::from_host`. Black box: the second allocation must not
+    /// complete until the claim is released.
+    #[test]
+    fn test_allocation_waits_for_device_memory_exclusive() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let _ctx = cuda_ctx!();
+        let allocated = Arc::new(AtomicBool::new(false));
+        let allocated_bg = Arc::clone(&allocated);
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<bool>();
+
+        let held = crate::driver::device_memory_exclusive();
+        let bg = std::thread::spawn(move || {
+            let Ok(ctx) = CudaContext::new(0) else {
+                let _ = ready_tx.send(false);
+                return true;
+            };
+            let _ = ready_tx.send(true);
+            let ok = GpuBuffer::<f32>::new(&ctx, 1024).is_ok();
+            allocated_bg.store(true, Ordering::SeqCst);
+            ok
+        });
+
+        if ready_rx.recv().expect("allocating thread must report") {
+            for _ in 0..50 {
+                assert!(
+                    !allocated.load(Ordering::SeqCst),
+                    "a GpuBuffer allocation completed while device_memory_exclusive() \
+                     was held — a test filling the device can still OOM its neighbours"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(4));
+            }
+        }
+
+        drop(held);
+        let ok = bg.join().expect("allocating thread must not panic");
+        assert!(ok, "allocation failed after the claim was released");
+        assert!(allocated.load(Ordering::SeqCst));
+    }
+
+    /// #4956: the claim holder's own allocations pass the claim instead of
+    /// waiting on it. Runs on its own thread so a self-deadlock fails on the
+    /// timeout rather than hanging the binary's report.
+    #[test]
+    fn test_claim_holder_allocates_without_waiting_on_itself() {
+        let _ctx = cuda_ctx!();
+        let (tx, rx) = std::sync::mpsc::channel::<Option<bool>>();
+        std::thread::spawn(move || {
+            let Ok(ctx) = CudaContext::new(0) else {
+                let _ = tx.send(None);
+                return;
+            };
+            let _claim = crate::driver::device_memory_exclusive();
+            let ok = GpuBuffer::<f32>::new(&ctx, 1024).is_ok();
+            // Result ignored: a device without managed memory may refuse it.
+            // Only returning at all is asserted.
+            let _ = GpuBuffer::<f32>::new_managed(&ctx, 1024);
+            let _ = tx.send(Some(ok));
+        });
+
+        match rx.recv_timeout(std::time::Duration::from_secs(30)) {
+            Ok(Some(ok)) => assert!(ok, "allocation under the claim failed"),
+            Ok(None) => eprintln!("Skipping: no CUDA context on the spawned thread"),
+            Err(e) => panic!(
+                "an allocation by the device_memory_exclusive() holder did not return \
+                 within 30s ({e}) — it is waiting on its own claim"
+            ),
+        }
+    }
 }

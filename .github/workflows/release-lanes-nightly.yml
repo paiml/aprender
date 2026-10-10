@@ -7,6 +7,13 @@
 # red; on not_measured it is skipped, so a lane that could not run is never a pass. A measure job
 # that dies writes no verdict, and its lane job is skipped the same way.
 #
+# C is `inputs.ref || github.sha`: the scheduled run measures main's head, and the nightly rehearsal
+# (release-rehearsal-nightly.yml, B1 Q3) calls this workflow with ref = its pick C and caller = the
+# calling job's name, which GitHub puts first in each called job's name. A called run's github.sha
+# is the CALLER's commit, so nothing here reads it but as that fallback. Every job checks out C, and
+# each lane job asserts its HEAD is C in a step named for C, before its verdict: the rehearsal reads a
+# lane on C only from a lane job whose assert passed.
+#
 #   cleanroom-gpu   b2-gpu.yml called at C on yoga. The release-day dispatch of b2-gpu is unchanged.
 #   cleanroom-cpu   paiml/infra clean-room.yml's `clean-room (aprender)` job that tested C. Its read
 #                   token is INFRA_ACTIONS_READ (paiml/infra, Actions: read), the secret of the
@@ -30,13 +37,25 @@ on:
   schedule:
     - cron: '17 23 * * *'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: C, the 40-hex commit every job measures
+        type: string
+        required: true
+      caller:
+        description: the calling job's name, which GitHub puts first in each called job's name
+        type: string
+        required: true
 
 permissions:
   contents: read
   actions: read   # measure: cleanroom-gpu reads this run's own job list
 
+# A called run never shares the scheduled run's group: it would queue behind it, or be replaced in the
+# queue by the next one. The schedule's group name is unchanged.
 concurrency:
-  group: release-lanes-nightly
+  group: release-lanes-nightly${{ inputs.caller && format('-{0}-{1}', inputs.caller, github.run_id) || '' }}
   cancel-in-progress: false
 
 jobs:
@@ -48,6 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
       - run: bash scripts/release/release_lanes.sh --self-test
       - run: bash scripts/release/release_lanes.sh --mutants
@@ -57,7 +77,7 @@ jobs:
     name: b2-gpu at C
     uses: ./.github/workflows/b2-gpu.yml
     with:
-      ref: ${{ github.sha }}
+      ref: ${{ inputs.ref || github.sha }}
 
   measure-cleanroom-gpu:
     name: 'measure: cleanroom-gpu'
@@ -71,10 +91,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
       - id: m
         env:
           GH_TOKEN: ${{ github.token }}
+          LANES_CALLER: ${{ inputs.caller }}
         run: bash scripts/release/release_lanes.sh measure cleanroom-gpu
 
   cleanroom-gpu:
@@ -87,6 +109,14 @@ jobs:
       VERDICT: ${{ needs.measure-cleanroom-gpu.outputs.verdict }}
       REASON: ${{ needs.measure-cleanroom-gpu.outputs.reason }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: bash scripts/release/release_lanes.sh assert-head "$REF"
       - run: echo "cleanroom-gpu $VERDICT — $REASON"
       - run: test "$VERDICT" = green
 
@@ -103,10 +133,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
       - id: m
         env:
           INFRA_TOKEN: ${{ secrets.INFRA_ACTIONS_READ }}
+          LANES_REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh measure cleanroom-cpu
 
   cleanroom-cpu:
@@ -119,6 +151,14 @@ jobs:
       VERDICT: ${{ needs.measure-cleanroom-cpu.outputs.verdict }}
       REASON: ${{ needs.measure-cleanroom-cpu.outputs.reason }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: bash scripts/release/release_lanes.sh assert-head "$REF"
       - run: echo "cleanroom-cpu $VERDICT — $REASON"
       - run: test "$VERDICT" = green
 
@@ -134,10 +174,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
       # C beside the checkout, in RUNNER_TEMP, as rc-cut.yml does: no cargo config is inherited
       - name: A worktree of C
-        run: git worktree add --detach "$RUNNER_TEMP/lanes-c" "$GITHUB_SHA"
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: git worktree add --detach "$RUNNER_TEMP/lanes-c" "$REF"
       - id: m
         run: bash scripts/release/release_lanes.sh measure publish-dryrun "$RUNNER_TEMP/lanes-c"
 
@@ -151,5 +194,13 @@ jobs:
       VERDICT: ${{ needs.measure-publish-dryrun.outputs.verdict }}
       REASON: ${{ needs.measure-publish-dryrun.outputs.reason }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: bash scripts/release/release_lanes.sh assert-head "$REF"
       - run: echo "publish-dryrun $VERDICT — $REASON"
       - run: test "$VERDICT" = green

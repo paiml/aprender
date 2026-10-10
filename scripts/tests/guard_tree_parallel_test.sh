@@ -211,9 +211,58 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Fixture H -- a hung guard is NAMED (0.71 row 25). Rows print only after the
+# pool finishes, so one guard that never returned kept the step silent until
+# the job deadline (3469 s, 3572 s) and the log never said which guard it was.
+# check_hang.sh outlives the 4 s per-check budget by a wide margin and would
+# PASS if it were allowed to finish, so only the timeout can make it a FAIL:
+# no duration is asserted, only which of the two outcomes happened.
+FH="$(new_fixture h)"
+plant_guard "$FH/scripts/check_alpha.sh" 0 "alpha ran"
+cat > "$FH/scripts/check_hang.sh" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in --help) printf 'usage: fixture guard\n'; exit 0 ;; esac
+printf 'hang: started\n'
+sleep 20
+exit 0
+EOF
+commit_fixture "$FH"
+outH="$(cd "$FH" && GUARD_TREE_GUARD_TIMEOUT=4 GUARD_TREE_HEARTBEAT=1 bash scripts/guard_tree.sh --no-cargo 2>&1)"; rcH=$?
+if [ "$rcH" -ne 0 ] \
+   && grep -q '^2 checks, 1 failed$' <<< "$outH" \
+   && grep -q '^FAIL  scripts/check_hang.sh \[run\]$' <<< "$outH" \
+   && grep -q 'TIMEOUT -- scripts/check_hang.sh \[run\] was still running after 4s' <<< "$outH" \
+   && grep -q 'hang: started' <<< "$outH" \
+   && grep -q '^PASS  scripts/check_alpha.sh \[run\]$' <<< "$outH"; then
+    ok "(g) a guard past GUARD_TREE_GUARD_TIMEOUT is killed, FAILED and named with its output"
+else
+    bad "(g) rc=$rcH -- hung-guard row wrong:"
+    printf '%s\n' "$outH" | sed 's/^/      | /'
+fi
+if grep -q '^guard_tree: still running: scripts/check_hang.sh \[run\] ([0-9]*s)$' <<< "$outH"; then
+    ok "(h) the heartbeat names the check still running, while it runs"
+else
+    bad "(h) no 'still running' line named check_hang.sh:"
+    printf '%s\n' "$outH" | sed 's/^/      | /'
+fi
+# (i) the mutant: the same dispatcher with the per-check timeout removed lets
+#     the hung guard run to its end and PASS -- so row (g) can fail.
+sed 's/timeout -k 30 "\$GUARD_TREE_GUARD_TIMEOUT" //' "$GUARD_TREE" > "$FH/scripts/guard_tree.sh"
+if cmp -s "$GUARD_TREE" "$FH/scripts/guard_tree.sh"; then
+    bad "(i) the mutation did not apply -- the timeout wrapper is not where this row expects it"
+else
+    outHm="$(cd "$FH" && GUARD_TREE_GUARD_TIMEOUT=4 GUARD_TREE_HEARTBEAT=1 bash scripts/guard_tree.sh --no-cargo 2>&1)"; rcHm=$?
+    if [ "$rcHm" -eq 0 ] && ! grep -q 'TIMEOUT' <<< "$outHm"; then
+        ok "(i) mutant without the timeout waits the hang out and goes green -- row (g) can fail"
+    else
+        bad "(i) mutant rc=$rcHm -- it still reported a timeout, so row (g) proves nothing"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 if [ "$fails" -ne 0 ]; then
     printf '\nGUARD_TREE PARALLEL CASE TABLE FAILED\n'
     exit 1
 fi
-printf '\nGUARD_TREE PARALLEL CASE TABLE PASSED (6/6)\n'
+printf '\nGUARD_TREE PARALLEL CASE TABLE PASSED (9/9)\n'
 exit 0

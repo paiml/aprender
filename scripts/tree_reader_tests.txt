@@ -153,6 +153,7 @@ aprender-core	--test	falsification_spec_v10_tests
 aprender-core	--test	monorepo_invariants
 aprender-core	--test	readme_contract
 aprender-core	--test	setfit_conformance
+aprender-distribute	--lib	executor::tls
 aprender-orchestrate	--lib	agent::contracts
 aprender-orchestrate	--lib	agent::driver::chat_template
 aprender-orchestrate	--lib	agent::repl_directives

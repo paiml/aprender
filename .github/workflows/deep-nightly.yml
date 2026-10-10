@@ -72,15 +72,24 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The verdict proves itself before it judges: its case table, then its mutants. They
+      # run here, in the nightly job that uses the verdict, and not on the PR path.
+      - name: deep_nodefault_verdict.sh case table and mutants (#4871)
+        run: |
+          set -uo pipefail
+          bash scripts/release/deep_nodefault_verdict.sh --self-test
+          bash scripts/release/deep_nodefault_verdict.sh --mutants
+
       - name: cargo check --workspace --no-default-features (0 errors outside the #3176 class)
         run: |
           set -uo pipefail
           mkdir -p deep
-          cargo check --workspace --no-default-features > deep/deep-nodefault.log 2>&1; rc=$?
-          other=$(grep -E '^error' -A3 deep/deep-nodefault.log | grep -E '^\s+--> ' | grep -vc 'crates/aprender-distribute/' || true)
-          echo "DEEP --no-default-features rc=$rc errors_outside_aprender-distribute=$other (standing #3176 class is inside it)"
+          # The step shell is `bash -e`: catch both statuses so the DEEP line and ::error:: always print.
+          rc=0; cargo check --workspace --no-default-features --keep-going > deep/deep-nodefault.log 2>&1 || rc=$?
+          vrc=0; verdict=$(bash scripts/release/deep_nodefault_verdict.sh deep/deep-nodefault.log "$rc") || vrc=$?
+          echo "$verdict (standing #3176 class is inside it)"
           tail -n 40 deep/deep-nodefault.log
-          [ "$other" = 0 ] || { echo "::error::--no-default-features RED outside the #3176 class: $other errors"; exit 1; }
+          [ "$vrc" = 0 ] || { echo "::error::--no-default-features RED: $verdict"; exit 1; }
 
       - name: Publish the log
         if: always()

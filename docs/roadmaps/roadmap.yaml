@@ -24275,6 +24275,51 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: vec![vec![0; n]; layers] clones layer 0 into every layer, writing every byte, so construction commits 8.6 / 17.2 / 34.4 GB; nextest KILLed the tests on a 30 GB runner (run 37241931271, workspace-test shard 1).'
+- id: PMAT-4802
+  github_issue: 4802
+  item_type: task
+  title: 'PY-PORT: crux-judge — retire the Python CRUX judge, oracles and certifier for tools/aprender-crux-judge'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-wprodmodels
+  created: 2026-10-05T14:52:00Z
+  updated: 2026-10-05T14:52:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The binary''s collect, eval, extract, lint, certify and check subcommands replace crux_inference_judge.py, crux_oracles.py and crux_prompt_certify.py, which are deleted; every caller resolves the binary through scripts/lib/crux_judge_bin.sh'
+  - 'All 11 golden receipts are byte-identical (receipt JSON, Markdown, exit code); scripts/check_crux_oracles.sh and scripts/check_crux_inference_judge.sh are green against the binary, and every F6 mutant is rebuilt from mutated Rust sources and killed'
+  - 'run_python_cell is the one python3 seam: only the model reply plus the asserts, under unshare -rn, rlimits, python3 -I, a scrubbed env and a sentinel; each property has a planted-failure row; a missing sandbox is sandbox_unavailable, never correct'
+  - 'Checklist row, done: the crate''s tests carried 48 .unwrap() calls (certify 5, collect 3, judge 20, oracles 9, pyjson 4, pyval 7); the crate is outside the workspace, so the disallowed-methods lint never runs on it; each is now an expect with its reason, and the crate''s clippy.toml carries the disallowed-methods ban, which a planted unwrap proves fires'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Branch-only, no PR, until a PR slot. Follow-ups: port the python3 fixture harness in the two case tables; the prompt set''s note at the next recertification; stale comments in four Python drivers; remove the run_python_cell seam.'
+  epic: 4741
+- id: PMAT-4806
+  github_issue: 4806
+  item_type: task
+  title: '0702-P3a: nightly assets rehearsal for RR-P03/P04 — build every release asset at main''s head on a schedule, never upload, no secrets (child of #4678)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wprodmodels
+  created: 2026-10-05T15:10:00Z
+  updated: "2026-10-05T17:45:00Z"
+  spec: null
+  acceptance_criteria:
+    - '`.github/workflows/assets-rehearsal-nightly.yml` is generated from `binary-release.yml` by one script (no hand copy). The build steps are the release''s own; only the trigger, the permissions, the tag source, the checkout ref and the upload steps differ. A drift check (`--check`) regenerates and diffs, and runs first in every rehearsal run, so a release-workflow edit without a regen makes the rehearsal red rather than stale.'
+    - 'It cannot upload: workflow `permissions: contents: read`, no `secrets.` reference, no `environment:`, no upload or release step. Every job starts with a guard that refuses to run when a registry token (env or cargo credentials file) is present. Each property has a planted row in the case table.'
+    - 'The `verify` job runs `check_release_assets.sh <tag> --assets-from <list of built files>` over the union of what the build jobs produced. The tag is `v<workspace version>-rc.0` at the run commit, so the rc stamp runs as on a real rc; a missing asset is red; a build job that could not run reads not_measured, never green.'
+    - 'Fleet-hours per night are stated from measured job durations.'
+    - 'Red/green proof: a planted upload step, a planted `secrets.` reference, a planted token and a hand edit of the generated file each go red; the clean tree is green.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+    - kind:code
+  notes: 'Fleet-hours per night (AC 4), measured: the GitHub jobs API durations of the successful build jobs of the last 15 binary-release.yml runs, the same jobs the rehearsal runs. Mean (max) minutes: pv 4 lanes 0.8+1.4+0.9+1.2 (max 2.5 each); all [[bin]]s aarch64 3.9 (5.2), x86_64 4.9 (6.7); apr cpu aarch64 2.9 (5.3), x86_64 4.5 (6.4), darwin 4.5 (4.5); apr cuda aarch64 2.7 (5.4), x86_64 3.8 (5.4). Sum about 32 runner-min mean, about 49 max (the sum of the per-lane maxima), plus about 3 min for the drift check and verify: about 0.6 fleet-hours per night, about 0.87 worst case, on warm caches; a cold-cache night runs longer. The first scheduled nights re-measure it. Split from the assets lane of #4720. Wiring the rehearsal into the train lane table is a gate change and is not part of this ticket: it follows three green scheduled nights. Lands as three stacked parts, each reviewed against its own planted defect: part 1 the verdict (verify, tag); part 2 the no-upload guard and lint, tested on a fixture built from the real step bodies; part 3 the generator, --check and the generated workflow.'
+  epic: 4678
 - id: PMAT-4862
   github_issue: 4862
   item_type: task
@@ -24294,6 +24339,49 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: the test writes a script then execs it while sibling test threads fork; a child forked in that window holds the write fd, so exec fails with ETXTBSY (run 37403017673, workspace-test shard 3). Passed on the same PR head in run 37408602581.'
+- id: PMAT-4918
+  github_issue: 4918
+  item_type: task
+  title: streaming chat emits tool_calls (A3)
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-08T13:32:24Z
+  updated: 2026-10-08T14:00:00Z
+  spec: contracts/serve-stream-tool-calls-v1.yaml
+  acceptance_criteria:
+  - With tools declared, a streamed reply that holds a tool call ends with one delta.tool_calls chunk and finish_reason tool_calls, on the live and the replayed SSE builder (T1, T2)
+  - The streamed calls equal the non-streaming calls for the same text, under any split of the deltas (T3)
+  - With no tools or tool_choice none, the stream is byte-identical to the v0.70.2 golden (T5)
+  - FALSIFY-SSTC-001..012 pass, each with its mutant recorded red
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4926
+- id: PMAT-4930
+  github_issue: 4930
+  item_type: task
+  title: 'D2: T-1 dogfood ladder gate waits for the models lane''s CRUX receipts'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-clerk
+  created: 2026-10-08T13:38:42Z
+  updated: 2026-10-08T13:38:42Z
+  spec: null
+  acceptance_criteria:
+  - 'under the standing release policy the T-1 dogfood lane starts only after the models lane exits GO, with MODEL_LADDER_CRUX_DIR and CRUX_CERT set to the receipts it wrote'
+  - 'a red in models, or in any lane before models ends, leaves dogfood NOT-RUN'
+  - 'scripts/check_release_t1_lanes_joined.sh policy cases are red on main and green with the fix; every mutant is killed'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
 - id: PMAT-4936
   github_issue: 4936
   item_type: task
@@ -24303,6 +24391,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   assigned_to: null
   created: 2026-10-08T14:17:11Z
   updated: 2026-10-08T14:17:16.352731207+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-4948
+  github_issue: 4948
+  item_type: task
+  title: '#4948 ci: fat-job section containers outlive cancelled runs'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-09T08:14:39Z
+  updated: 2026-10-09T08:14:39Z
   spec: null
   acceptance_criteria: []
   phases: []

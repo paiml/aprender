@@ -876,6 +876,7 @@ mod gdn_decode_attention_device_tests {
     /// the eager kernel's output bit for bit — including across the multi-pass
     /// boundary, where `seq_len` drives the chunk loop.
     #[test]
+    #[ignore = "FLAKE #4956: intermittent SIGSEGV in libcuda; runs nightly in cuda-nightly.yml ada-yoga"]
     fn gdn_decode_attention_indirect_is_bit_identical_to_direct() {
         let Ok(ctx) = CudaContext::new(0) else {
             println!("gdn_decode_attention indirect: no CUDA device — SKIPPED.");

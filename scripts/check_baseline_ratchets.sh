@@ -372,6 +372,107 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
                 bad=1
             fi
 
+            # FIRSTPARENT (#4983): a pull_request re-run. CI checks out GitHub's
+            # merge commit at depth 1, so there is no merge-base, and the re-run
+            # fetches origin/main fresh. Here main moved on and SHRANK the
+            # baseline (b deleted). Against the tip, the PR "appends" b, an
+            # entry it never touched; against the first parent, it changed
+            # nothing. The shallow clone is its own repository under $TD.
+            SC="$TD/shallow"
+            if git -C "$SR" checkout -q -b fp-pr "$SR_BASE" >/dev/null 2>&1 \
+               && printf 'pr edit\n' > "$SR/scripts/unrelated.txt" \
+               && git -C "$SR" -c commit.gpgsign=false commit -qam 'pr: unrelated edit' >/dev/null 2>&1 \
+               && SR_X=$(git -C "$SR" rev-parse HEAD) \
+               && git -C "$SR" checkout -q --detach "$SR_BASE" >/dev/null 2>&1 \
+               && git -C "$SR" -c commit.gpgsign=false merge -q --no-ff --no-edit "$SR_X" >/dev/null 2>&1 \
+               && SR_M=$(git -C "$SR" rev-parse HEAD) \
+               && git -C "$SR" update-ref refs/pull/1/merge "$SR_M" \
+               && git -C "$SR" checkout -q --detach "$SR_NOBASE" >/dev/null 2>&1 \
+               && git -C "$SR" -c commit.gpgsign=false merge -q --no-ff --no-edit "$SR_BASE" >/dev/null 2>&1 \
+               && SR_M2=$(git -C "$SR" rev-parse HEAD) \
+               && git -C "$SR" update-ref refs/pull/2/merge "$SR_M2" \
+               && git -C "$SR" checkout -q --detach "$SR_BASE" >/dev/null 2>&1 \
+               && printf '# header\na\n' > "$SR/$P" \
+               && git -C "$SR" -c commit.gpgsign=false commit -qam 'main: shrink the baseline' >/dev/null 2>&1 \
+               && git -C "$SR" update-ref refs/heads/fp-main "$(git -C "$SR" rev-parse HEAD)" \
+               && git -C "$SR" checkout -q --detach "$SR_BASE" >/dev/null 2>&1 \
+               && git -C "$SR" config uploadpack.allowAnySHA1InWant true \
+               && git init -q "$SC" >/dev/null 2>&1 \
+               && [ "$(git -C "$SC" rev-parse --absolute-git-dir 2>/dev/null)" = "$SC/.git" ] \
+               && git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" '+refs/pull/1/merge:refs/remotes/pull/1/merge' >/dev/null 2>&1 \
+               && git -C "$SC" checkout -q --detach refs/remotes/pull/1/merge >/dev/null 2>&1 \
+               && git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" '+refs/heads/fp-main:refs/remotes/origin/main' >/dev/null 2>&1 \
+               && [ -z "$(git -C "$SC" merge-base HEAD origin/main 2>/dev/null)" ] \
+               && ! git -C "$SC" cat-file -e "${SR_BASE}^{commit}" 2>/dev/null; then
+
+                fp_row() { # fp_row <label> <want-mode> <want-ref|-> <GITHUB_EVENT_NAME> <GITHUB_SHA>
+                    local got ref
+                    got=$(GITHUB_EVENT_NAME="$4" GITHUB_SHA="$5" baseline_ratchet_resolve "$SC" origin/main "$P")
+                    ref=${got##*$'\t'}
+                    got=${got%%$'\t'*}
+                    rows=$((rows + 1))
+                    if [ "$got" != "$2" ] || { [ "$3" != - ] && [ "$ref" != "$3" ]; }; then
+                        printf 'FAIL  %-46s want %s %s got %s %s\n' "$1" "$2" "$3" "$got" "$ref"
+                        bad=1
+                    fi
+                }
+                fp_e2e() { # fp_e2e <label> <want-rc> <GITHUB_EVENT_NAME> <GITHUB_SHA>
+                    local got
+                    ( GITHUB_EVENT_NAME="$3" GITHUB_SHA="$4" BASELINE_RATCHET_BASE_REF=origin/main \
+                      baseline_ratchet_check "$SC" "$P" set ) >/dev/null 2>&1
+                    got=$?
+                    rows=$((rows + 1))
+                    if [ "$got" != "$2" ]; then
+                        printf 'FAIL  %-46s want rc=%s got rc=%s\n' "$1" "$2" "$got"
+                        bad=1
+                    fi
+                }
+                # Controls: the tip path is unchanged off the event, and it
+                # carries the false red this fix removes.
+                fp_row 'firstparent: push event keeps TIP'        TIP          origin/main push         "$SR_M"
+                fp_e2e 'firstparent: tip blames PR for main shrink' 1                      push         "$SR_M"
+                # A head that is not the event's own merge commit is never read.
+                fp_row 'firstparent: HEAD != GITHUB_SHA keeps TIP' TIP         origin/main pull_request "$SR_X"
+                # Fail-closed: the parent not fetched is UNRESOLVABLE, never TIP.
+                fp_row 'firstparent: parent unfetched -> UNRESOLVABLE' UNRESOLVABLE "$SR_BASE" pull_request "$SR_M"
+                fp_e2e 'firstparent: parent unfetched -> rc 1'    1                      pull_request "$SR_M"
+                if git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" "$SR_BASE" >/dev/null 2>&1 \
+                   && [ -z "$(git -C "$SC" merge-base HEAD origin/main 2>/dev/null)" ]; then
+                    fp_row 'firstparent: parent fetched -> FIRSTPARENT' FIRSTPARENT "$SR_BASE" pull_request "$SR_M"
+                    fp_e2e 'firstparent: re-run after main moved'  0                      pull_request "$SR_M"
+                else
+                    printf 'FAIL  firstparent: the first parent could not be fetched, or it made a\n'
+                    printf '      merge-base resolve. FIRSTPARENT is UNTESTED. Not a skip.\n'
+                    bad=1
+                fi
+                # A single-parent head (a merge_group squash) has no first
+                # parent to trust: it keeps TIP.
+                if git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" "$SR_X" >/dev/null 2>&1 \
+                   && git -C "$SC" checkout -q --detach "$SR_X" >/dev/null 2>&1; then
+                    fp_row 'firstparent: single-parent head keeps TIP' TIP     origin/main pull_request "$SR_X"
+                else
+                    printf 'FAIL  firstparent: the single-parent head could not be checked out. UNTESTED.\n'
+                    bad=1
+                fi
+                # The base the PR was merged onto has no baseline: the PR
+                # introduces it. The tip, which has one, is NOT consulted.
+                if git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" '+refs/pull/2/merge:refs/remotes/pull/2/merge' "$SR_NOBASE" >/dev/null 2>&1 \
+                   && git -C "$SC" checkout -q --detach refs/remotes/pull/2/merge >/dev/null 2>&1; then
+                    fp_row 'firstparent: parent lacks file -> BOOTSTRAP' BOOTSTRAP "$SR_NOBASE" pull_request "$SR_M2"
+                    mv "$SC/$P" "$SC/$P.hidden"
+                    fp_row 'firstparent: not in tree either -> ABSENT' ABSENT    "$SR_NOBASE" pull_request "$SR_M2"
+                    mv "$SC/$P.hidden" "$SC/$P"
+                else
+                    printf 'FAIL  firstparent: the second merge commit could not be checked out. UNTESTED.\n'
+                    bad=1
+                fi
+            else
+                printf 'FAIL  resolve FIRSTPARENT UNTESTED — the shallow re-run clone could\n'
+                printf '      not be built, and a pull_request re-run is that shape. Not a skip.\n'
+                bad=1
+            fi
+            git -C "$SR" checkout -q --detach "$SR_BASE" >/dev/null 2>&1
+
             # END TO END, through the public entry point, on a real repository:
             # append -> RED, delete -> GREEN, unchanged -> GREEN.
             e2e_row() { # e2e_row <label> <want-rc> <content>
