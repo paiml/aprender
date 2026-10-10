@@ -422,6 +422,59 @@ fn quantized_turn(
     }
 }
 
+/// `try_quantized_backend`'s stream: the turn runs on a blocking thread and
+/// hands each token to the SSE response through the returned channel. With
+/// `top_n` (#4971) each token's logprobs record is sent ahead of the token,
+/// to the [`StreamLogprobs`](super::chat_logprobs::StreamLogprobs) returned
+/// with it.
+fn spawn_quantized_stream(
+    model: Arc<crate::gguf::OwnedQuantizedModel>,
+    prompt: Vec<u32>,
+    config: crate::gguf::QuantizedGenerateConfig,
+    metrics: Arc<crate::metrics::MetricsCollector>,
+    top_n: Option<usize>,
+) -> (
+    tokio::sync::mpsc::Receiver<Result<u32, String>>,
+    Option<super::chat_logprobs::StreamLogprobs>,
+) {
+    use crate::gguf::dense_session::{dense_stream, dense_stream_with_logprobs};
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(16);
+    let (records, logprobs) = match top_n {
+        Some(n) => {
+            let (records, logprobs) = super::chat_logprobs::StreamLogprobs::channel();
+            (Some((records, n)), Some(logprobs))
+        },
+        None => (None, None),
+    };
+    tokio::task::spawn_blocking(move || {
+        // Stops when the client goes away — see `streaming_token_sink`.
+        let mut sink = crate::api::openai_handlers::streaming_token_sink(tx.clone(), metrics);
+        // #4268: the dense CPU turn runs on the one engine.
+        let result = match records {
+            _ if config.trace => model
+                .generate_with_cache_streaming(&prompt, &config, sink)
+                .map(drop),
+            None => {
+                dense_stream(&mut dense_cpu_session(&model), &prompt, &config, &mut sink).map(drop)
+            },
+            Some((records, n)) => {
+                let mut session = dense_cpu_session(&model);
+                dense_stream_with_logprobs(&mut session, &prompt, &config, n, &mut |t, record| {
+                    // A record that cannot be sent means the response is gone,
+                    // and the sink sees that too and records the abandonment.
+                    let _ = records.send(record);
+                    sink(t)
+                })
+                .map(drop)
+            },
+        };
+        if let Err(e) = result {
+            let _ = tx.blocking_send(Err(e.to_string()));
+        }
+    });
+    (rx, logprobs)
+}
+
 /// Quantized model (GGUF serve mode) backend with true streaming.
 fn try_quantized_backend(
     state: &AppState,
@@ -455,7 +508,7 @@ fn try_quantized_backend(
         state.should_trace(trace_level),
         cancel,
     );
-    // #4971: logprobs come from the non-streaming dense turn only.
+    // #4971: logprobs come from the dense turn; the traced loop records none.
     if let Some(reason) = super::chat_logprobs::quantized_logprobs_refusal(request, q_config.trace)
     {
         return Some(fail_response(state, StatusCode::NOT_IMPLEMENTED, reason));
@@ -472,36 +525,14 @@ fn try_quantized_backend(
     };
 
     if request.stream {
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(16);
-        let quantized_model_clone = quantized_model.clone();
-        let prompt_ids_clone = prompt_ids.clone();
-        let q_config_clone = q_config.clone();
-        let sink_metrics = state.metrics.clone();
-
-        tokio::task::spawn_blocking(move || {
-            // Stops when the client goes away — see `streaming_token_sink`.
-            let mut sink =
-                crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
-            let result = if q_config_clone.trace {
-                quantized_model_clone
-                    .generate_with_cache_streaming(&prompt_ids_clone, &q_config_clone, sink)
-                    .map(drop)
-            } else {
-                // #4268: the dense CPU turn runs on the one engine.
-                crate::gguf::dense_session::dense_stream(
-                    &mut dense_cpu_session(&quantized_model_clone),
-                    &prompt_ids_clone,
-                    &q_config_clone,
-                    &mut sink,
-                )
-                .map(drop)
-            };
-            if let Err(e) = result {
-                let _ = tx.blocking_send(Err(e.to_string()));
-            }
-        });
-
-        return Some(true_streaming_sse_response(
+        let (rx, logprobs) = spawn_quantized_stream(
+            Arc::clone(quantized_model),
+            prompt_ids,
+            q_config,
+            state.metrics.clone(),
+            request.logprobs_top_n(),
+        );
+        return Some(live_sse_response(
             rx,
             tokenizer,
             request_id.to_string(),
@@ -515,6 +546,7 @@ fn try_quantized_backend(
             None,
             request.stop.as_deref(),
             crate::api::stream_tool_calls::StreamTools::from_request(request),
+            logprobs,
         ));
     }
 

@@ -5,10 +5,15 @@
 //! carried no `logprobs`, and a client that asked for them was answered as if it had
 //! not. Every test here asserts what that client observes.
 
-use axum::http::StatusCode;
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use serde_json::Value;
+use tower::util::ServiceExt;
 
-use super::native_routes_2376::{post, quantized_state};
+use super::native_routes_2376::{body_string, post, quantized_state};
+use crate::api::create_router;
 
 const CHAT: &str = "/v1/chat/completions";
 
@@ -101,14 +106,79 @@ async fn top_logprobs_out_of_range_or_without_logprobs_is_refused_naming_the_fie
     }
 }
 
+/// The `data:` chunks of an SSE body, without the closing `[DONE]`.
+fn stream_chunks(body: &str) -> Vec<Value> {
+    body.lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter(|data| *data != "[DONE]")
+        .map(|data| serde_json::from_str(data).expect("an SSE chunk is JSON"))
+        .collect()
+}
+
+async fn stream_chunks_of(extra: &str) -> Vec<Value> {
+    let body = chat_body(&format!(r#","stream":true{extra}"#));
+    let (status, body) = post(quantized_state(), CHAT, &body).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let chunks = stream_chunks(&body);
+    assert!(!chunks.is_empty(), "no chunks: {body}");
+    chunks
+}
+
 #[tokio::test]
-async fn a_streamed_request_for_logprobs_is_refused_not_served_without_them() {
-    let (status, body) = post(
-        quantized_state(),
-        CHAT,
-        &chat_body(r#","stream":true,"logprobs":true"#),
-    )
-    .await;
+async fn a_stream_carries_on_its_chunks_the_entries_of_the_same_reply_unstreamed() {
+    let chunks = stream_chunks_of(r#","logprobs":true,"top_logprobs":2"#).await;
+    let completion_tokens = chunks
+        .iter()
+        .find_map(|c| c["usage"]["completion_tokens"].as_u64())
+        .expect("the terminal chunk carries usage");
+    let streamed: Vec<&Value> = chunks
+        .iter()
+        .filter_map(|c| c["choices"][0]["logprobs"]["content"].as_array())
+        .flatten()
+        .collect();
+    assert!(completion_tokens > 0, "the fixture streamed nothing");
+    assert_eq!(streamed.len() as u64, completion_tokens, "{chunks:?}");
+    for entry in &streamed {
+        let tops = entry["top_logprobs"].as_array().expect("top_logprobs");
+        assert_eq!(tops.len(), 2, "{entry}");
+        assert!(logprob(entry) <= 0.0, "{entry}");
+        assert!((logprob(entry) - logprob(&tops[0])).abs() < 1e-4, "{entry}");
+    }
+    // Streaming changes no entry: the same request unstreamed has the same ones.
+    let reply = chat_json(r#","logprobs":true,"top_logprobs":2"#).await;
+    let unstreamed = reply["choices"][0]["logprobs"]["content"]
+        .as_array()
+        .expect("content");
+    assert_eq!(streamed.len(), unstreamed.len(), "{reply}");
+    for (s, u) in streamed.iter().zip(unstreamed) {
+        assert_eq!(s["token"], u["token"], "{s} vs {u}");
+        assert!((logprob(s) - logprob(u)).abs() < 1e-4, "{s} vs {u}");
+    }
+}
+
+#[tokio::test]
+async fn a_stream_without_logprobs_has_no_logprobs_key_on_any_chunk() {
+    for chunk in stream_chunks_of("").await {
+        let choice = chunk["choices"][0].as_object().expect("choice object");
+        assert!(!choice.contains_key("logprobs"), "{chunk}");
+    }
+}
+
+#[tokio::test]
+async fn a_traced_request_for_logprobs_is_refused_not_served_without_them() {
+    let request = Request::builder()
+        .method("POST")
+        .uri(CHAT)
+        .header("content-type", "application/json")
+        .header("X-Trace-Level", "brick")
+        .body(Body::from(chat_body(r#","logprobs":true"#)))
+        .expect("build request");
+    let response = create_router(quantized_state())
+        .oneshot(request)
+        .await
+        .expect("dispatch");
+    let status = response.status();
+    let body = body_string(response).await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{body}");
-    assert!(body.contains("quantized (streaming)"), "{body}");
+    assert!(body.contains("quantized (traced)"), "{body}");
 }

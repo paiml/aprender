@@ -127,29 +127,91 @@ impl ChatLogprobs {
     pub fn from_steps(tokenizer: &BPETokenizer, steps: &[StepLogprobs]) -> Self {
         let content = steps
             .iter()
-            .map(|step| {
-                let (token, bytes) = token_text(tokenizer, step.chosen);
-                let top_logprobs = step
-                    .top
-                    .iter()
-                    .map(|top| {
-                        let (token, bytes) = token_text(tokenizer, top.token_id);
-                        ChatTopLogprob {
-                            token,
-                            logprob: top.logprob,
-                            bytes,
-                        }
-                    })
-                    .collect();
-                ChatTokenLogprob {
+            .map(|step| ChatTokenLogprob::from_step(tokenizer, step))
+            .collect();
+        Self { content }
+    }
+}
+
+impl ChatTokenLogprob {
+    /// The wire entry of one step record of the engine.
+    #[must_use]
+    pub fn from_step(tokenizer: &BPETokenizer, step: &StepLogprobs) -> Self {
+        let (token, bytes) = token_text(tokenizer, step.chosen);
+        let top_logprobs = step
+            .top
+            .iter()
+            .map(|top| {
+                let (token, bytes) = token_text(tokenizer, top.token_id);
+                ChatTopLogprob {
                     token,
-                    logprob: step.chosen_logprob,
+                    logprob: top.logprob,
                     bytes,
-                    top_logprobs,
                 }
             })
             .collect();
-        Self { content }
+        Self {
+            token,
+            logprob: step.chosen_logprob,
+            bytes,
+            top_logprobs,
+        }
+    }
+}
+
+/// #4971: the logprobs of a live stream. The engine sends each token's record
+/// ahead of the token, so the record is here by the time the stream receives
+/// the token. The entries are held until a chunk carries text, and that chunk
+/// carries all of them; what is still held when the stream ends goes on its
+/// terminal chunk. So every entry is sent once, in the order of the tokens.
+pub(crate) struct StreamLogprobs {
+    records: tokio::sync::mpsc::UnboundedReceiver<StepLogprobs>,
+    held: Vec<ChatTokenLogprob>,
+}
+
+impl StreamLogprobs {
+    /// The engine's end and the stream's end of one stream's records.
+    pub(crate) fn channel() -> (tokio::sync::mpsc::UnboundedSender<StepLogprobs>, Self) {
+        let (tx, records) = tokio::sync::mpsc::unbounded_channel();
+        let held = Vec::new();
+        (tx, Self { records, held })
+    }
+
+    /// Holds the entry of `token`, which the stream has just received.
+    ///
+    /// # Errors
+    /// The engine sent no record for `token`, or the record of another token.
+    /// The stream then ends with an error rather than go on with entries that
+    /// do not match its tokens.
+    pub(crate) async fn take(
+        &mut self,
+        tokenizer: &BPETokenizer,
+        token: u32,
+    ) -> Result<(), String> {
+        match self.records.recv().await {
+            Some(step) if step.chosen == token => {
+                self.held
+                    .push(ChatTokenLogprob::from_step(tokenizer, &step));
+                Ok(())
+            },
+            Some(step) => Err(format!(
+                "token {token} arrived with the logprobs of token {} (#4971)",
+                step.chosen
+            )),
+            None => Err(format!(
+                "token {token} arrived without its logprobs (#4971)"
+            )),
+        }
+    }
+
+    /// The entries held until now, for the chunk about to be sent, or `None`
+    /// when none are held.
+    pub(crate) fn release(&mut self) -> Option<ChatLogprobs> {
+        if self.held.is_empty() {
+            return None;
+        }
+        let content = std::mem::take(&mut self.held);
+        Some(ChatLogprobs { content })
     }
 }
 
@@ -189,11 +251,13 @@ pub(crate) fn chat_reply(
     }
 }
 
-fn with_logprobs(
-    response: &ChatCompletionResponse,
+/// `reply` (a chat reply or a stream chunk) as JSON, with `logprobs` as its
+/// `choices[0].logprobs`.
+pub(crate) fn with_logprobs(
+    reply: &impl Serialize,
     logprobs: &ChatLogprobs,
 ) -> Option<serde_json::Value> {
-    let mut body = serde_json::to_value(response).ok()?;
+    let mut body = serde_json::to_value(reply).ok()?;
     let choice = body.pointer_mut("/choices/0")?.as_object_mut()?;
     choice.insert("logprobs".to_string(), serde_json::to_value(logprobs).ok()?);
     Some(body)
@@ -213,18 +277,16 @@ pub(crate) fn logprobs_refusal(request: &ChatCompletionRequest, backend: &str) -
 }
 
 /// [`logprobs_refusal`] for the quantized CPU backend, which computes them on
-/// its non-streaming dense turn only: its stream and its traced loop refuse.
+/// its dense turn, streamed or not: only its traced loop refuses.
 #[must_use]
 pub(crate) fn quantized_logprobs_refusal(
     request: &ChatCompletionRequest,
     traced: bool,
 ) -> Option<String> {
-    let path = match (request.stream, traced) {
-        (true, _) => "quantized (streaming)",
-        (false, true) => "quantized (traced)",
-        (false, false) => return None,
-    };
-    logprobs_refusal(request, path)
+    if !traced {
+        return None;
+    }
+    logprobs_refusal(request, "quantized (traced)")
 }
 
 #[cfg(test)]
@@ -411,14 +473,14 @@ mod tests {
     }
 
     #[test]
-    fn the_quantized_backend_refuses_its_stream_and_its_traced_loop() {
+    fn the_quantized_backend_refuses_only_its_traced_loop() {
         let mut asks = request(r#","logprobs":true"#).expect("valid");
         // (stream, traced, refused as)
         let table: &[(bool, bool, Option<&str>)] = &[
             (false, false, None),
-            (true, false, Some("quantized (streaming)")),
+            (true, false, None),
             (false, true, Some("quantized (traced)")),
-            (true, true, Some("quantized (streaming)")),
+            (true, true, Some("quantized (traced)")),
         ];
         for &(stream, traced, want) in table {
             asks.stream = stream;
