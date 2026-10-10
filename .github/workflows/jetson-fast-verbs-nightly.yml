@@ -64,13 +64,20 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          uname -a
-          cat /etc/nv_tegra_release 2>/dev/null || echo 'no /etc/nv_tegra_release'
-          ls -l /usr/lib/aarch64-linux-gnu/tegra/libcuda.so* /usr/lib/aarch64-linux-gnu/libcuda.so* 2>/dev/null || echo 'no libcuda under the usual aarch64 paths'
+          # The log is public: kernel, sizes and booleans only, never a path.
+          uname -srm
+          head -n 1 /etc/nv_tegra_release 2>/dev/null | cut -d, -f1-2 || echo 'l4t release: absent'
+          if compgen -G '/usr/lib/aarch64-linux-gnu/tegra/libcuda.so*' > /dev/null \
+             || compgen -G '/usr/lib/aarch64-linux-gnu/libcuda.so*' > /dev/null; then
+            echo 'libcuda: present'
+          else
+            echo 'libcuda: absent'
+          fi
           free -g
-          df -h "$HOME"
+          echo "home disk (size avail use%): $(df -h --output=size,avail,pcent "$HOME" | tail -n 1)"
           for t in cargo rustc jq curl sha256sum; do
-            printf '%-10s %s\n' "$t" "$(command -v "$t" || echo MISSING)"
+            if command -v "$t" > /dev/null 2>&1; then s=present; else s=MISSING; fi
+            printf '%-10s %s\n' "$t" "$s"
           done
           cargo --version
           rustc --version
@@ -102,7 +109,7 @@ jobs:
             echo "::error::model sha256 $got != pinned $MODEL_SHA256"
             exit 1
           fi
-          echo "model $model sha256 $got ($MODEL_BYTES bytes)"
+          echo "model $MODEL_FILE sha256 $got ($MODEL_BYTES bytes)"
 
       - name: Run the fast verbs (run, chat, serve, bench) on the GPU
         shell: bash
@@ -112,9 +119,11 @@ jobs:
           # dir from cargo metadata, so it must see the same CARGO_TARGET_DIR.
           export CARGO_TARGET_DIR="$HOME/.cache/aprender-jetson-target"
           model="$HOME/models/jetson-fast-verbs/$MODEL_FILE"
-          . scripts/apr_bin.sh || exit 1
           out="$RUNNER_TEMP/fast-verbs"
           mkdir -p "$out"
+          # apr_bin.sh's refusal names checkout and binary paths; the public log
+          # gets one line, the artifact (scrubbed below) gets the detail.
+          . scripts/apr_bin.sh 2> "$out/apr_bin.err" || { echo '::error::apr_bin.sh refused the binary (apr_bin.err in the artifact)'; sed -i "s|$HOME|~|g" "$out/apr_bin.err"; exit 1; }
           {
             echo "apr: $("$APR" --version)"
             echo "model: $MODEL_REPO@$MODEL_REV/$MODEL_FILE sha256 $MODEL_SHA256"
@@ -123,6 +132,9 @@ jobs:
           cat "$out/provenance.txt"
           bash scripts/jetson_fast_verbs.sh "$APR" "$model" "$out"
           rc=$?
+          # Server and chat logs can name the model path; the artifact carries no
+          # runner directory either.
+          find "$out" -type f -exec sed -i "s|$HOME|~|g; s|$RUNNER_TEMP|\$RUNNER_TEMP|g" {} +
           {
             echo '### jetson fast verbs'
             echo

@@ -8,9 +8,19 @@
 # A verb PASSES when it exits 0 and answered:
 #   run    `--gpu --json`, and the JSON says backend.ran == "gpu" (apr exits 14
 #          when --gpu fell back, so a CPU answer is never a pass)
-#   chat   two stdin turns, --gpu, exit 0 on EOF, a non-empty transcript
+#   chat   two stdin turns, `--gpu --json`, exit 0 on EOF, a non-empty transcript,
+#          and its closing backend line not ran == "cpu"
 #   serve  `serve run --gpu`, /health up, one POST /v1/chat/completions that
-#          returns HTTP 200 with a non-empty choices[0].message.content
+#          returns HTTP 200 with a non-empty choices[0].message.content, and
+#          /v1/effective-config backend_loaded not exactly ["cpu"]
+#
+# DEVICE PROOF PER VERB. Each row carries device=gpu | cpu | not-proven. gpu
+# means the verb itself reported the GPU (run, chat: backend.ran; serve:
+# backend_loaded names cuda or gpu). cpu fails the verb. not-proven is recorded
+# as exactly that, never as gpu: a missing field is not a measurement.
+#
+# NO PATHS IN OUTPUT. The workflow log is public, so stdout and every message
+# here name files, never the runner's directories.
 #   bench  `bench --json` exits 0 with tokens_per_second > 0. bench has no --gpu
 #          flag and its compute_class reads nvidia-smi, which Jetson lacks, so
 #          its device is NOT proven here; the row says so.
@@ -29,12 +39,12 @@ decline() { printf 'decline: %s\n' "$*" >&2; exit 2; }
 APR="$1"
 MODEL="$2"
 OUT="$3"
-[ -x "$APR" ] || decline "no executable apr at $APR"
-[ -f "$MODEL" ] || decline "no model at $MODEL"
+[ -x "$APR" ] || decline "the apr argument is not an executable file"
+[ -f "$MODEL" ] || decline "the model argument is not a file"
 for t in jq curl timeout; do
     command -v "$t" >/dev/null 2>&1 || decline "$t is not installed on this runner"
 done
-mkdir -p "$OUT" || decline "cannot create $OUT"
+mkdir -p "$OUT" || decline "cannot create the out-dir"
 
 TMO=${FAST_VERBS_TIMEOUT:-900}
 PORT=${FAST_VERBS_PORT:-18431}
@@ -63,21 +73,35 @@ wall=$(( $(now_ms) - t0 ))
 ran=$(jq -r '.backend.ran // "absent"' "$OUT/run.json" 2>/dev/null) || ran=unparsed
 tps=$(jq -r '.tok_per_sec // "absent"' "$OUT/run.json" 2>/dev/null) || tps=unparsed
 setup=$(jq -r '.setup_ms // "absent"' "$OUT/run.json" 2>/dev/null) || setup=unparsed
+case "$ran" in
+    gpu) rdev=gpu ;;
+    cpu) rdev=cpu ;;
+    *) rdev=not-proven ;;
+esac
 pass=no
-[ "$rc" -eq 0 ] && [ "$ran" = gpu ] && pass=yes
-row run "$rc" "$pass" "$wall" "backend.ran=$ran tok_per_sec=$tps setup_ms=$setup"
+[ "$rc" -eq 0 ] && [ "$rdev" = gpu ] && pass=yes
+row run "$rc" "$pass" "$wall" "device=$rdev backend.ran=$ran tok_per_sec=$tps setup_ms=$setup"
 
 # ---- chat -----------------------------------------------------------------
 printf '%s\n%s\n' "$PROMPT" 'Now add 3 to it. One number.' > "$OUT/chat-turns.txt"
 t0=$(now_ms)
-timeout -k 10 "$TMO" "$APR" chat "$MODEL" --max-tokens 64 --gpu \
+timeout -k 10 "$TMO" "$APR" chat "$MODEL" --max-tokens 64 --gpu --json \
     < "$OUT/chat-turns.txt" > "$OUT/chat.out" 2> "$OUT/chat.err"
 rc=$?
 wall=$(( $(now_ms) - t0 ))
 bytes=$(wc -c < "$OUT/chat.out")
+# `--json` closes the session with {"backend":{"requested","ran","fell_back"}},
+# where ran is what answered (chat_generate_session.rs, chat_backend_report).
+grep -o '{"backend":{[^}]*}}' "$OUT/chat.out" | tail -n 1 > "$OUT/chat-backend.json"
+cran=$(jq -r '.backend.ran // "absent"' "$OUT/chat-backend.json" 2>/dev/null) || cran=unparsed
+case "$cran" in
+    gpu) cdev=gpu ;;
+    cpu) cdev=cpu ;;
+    *) cdev=not-proven ;;
+esac
 pass=no
-[ "$rc" -eq 0 ] && [ "$bytes" -gt 0 ] && pass=yes
-row chat "$rc" "$pass" "$wall" "transcript_bytes=$bytes"
+[ "$rc" -eq 0 ] && [ "$bytes" -gt 0 ] && [ "$cdev" != cpu ] && pass=yes
+row chat "$rc" "$pass" "$wall" "device=$cdev backend.ran=$cran transcript_bytes=$bytes"
 
 # ---- serve ----------------------------------------------------------------
 t0=$(now_ms)
@@ -104,6 +128,19 @@ if [ "$up" = yes ]; then
     jq -r '.choices[0].message.content // ""' "$OUT/serve-resp.json" > "$OUT/serve-content.txt" 2>/dev/null
     content_bytes=$(wc -c < "$OUT/serve-content.txt")
 fi
+# backend_loaded is derived from residency, not from the build (effective_config.rs).
+sdev=not-proven
+sloaded=absent
+if [ "$up" = yes ]; then
+    curl -s --max-time 30 "http://127.0.0.1:$PORT/v1/effective-config" \
+        > "$OUT/serve-effective-config.json" 2>/dev/null
+    sloaded=$(jq -c '.backend_loaded // "absent"' "$OUT/serve-effective-config.json" 2>/dev/null) || sloaded=unparsed
+    if jq -e '(.backend_loaded // []) | index("cuda")' "$OUT/serve-effective-config.json" > /dev/null 2>&1; then
+        sdev=gpu
+    elif [ "$sloaded" = '["cpu"]' ]; then
+        sdev=cpu
+    fi
+fi
 wall=$(( $(now_ms) - t0 ))
 kill -TERM "$spid" 2>/dev/null
 j=0
@@ -112,8 +149,8 @@ kill -KILL "$spid" 2>/dev/null
 wait "$spid" 2>/dev/null
 src=$?
 pass=no
-[ "$up" = yes ] && [ "$code" = 200 ] && [ "$content_bytes" -gt 1 ] && pass=yes
-row serve "$src" "$pass" "$wall" "health_up=$up ready_ms=$ready_ms http=$code content_bytes=$content_bytes"
+[ "$up" = yes ] && [ "$code" = 200 ] && [ "$content_bytes" -gt 1 ] && [ "$sdev" != cpu ] && pass=yes
+row serve "$src" "$pass" "$wall" "device=$sdev backend_loaded=$sloaded health_up=$up ready_ms=$ready_ms http=$code content_bytes=$content_bytes"
 
 # ---- bench ----------------------------------------------------------------
 t0=$(now_ms)
@@ -127,5 +164,5 @@ pass=no
 [ "$rc" -eq 0 ] && awk -v v="$btps" 'BEGIN { exit !(v + 0 > 0) }' && pass=yes
 row bench "$rc" "$pass" "$wall" "tokens_per_second=$btps ttft_ms=$ttft device=not-proven(no --gpu flag, no nvidia-smi)"
 
-printf '\nreceipt: %s\n' "$RECEIPT"
+printf '\nreceipt: fast-verbs.tsv\n'
 exit "$failed"
