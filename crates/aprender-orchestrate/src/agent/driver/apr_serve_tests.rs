@@ -542,3 +542,87 @@ fn f3978_max_tokens_override_is_exact_and_uncapped() {
     assert_eq!(effective_max_tokens(None, 4096, Some("100")), 100);
     assert_eq!(effective_max_tokens(None, 50, None), 50);
 }
+
+/// One HTTP/1.1 exchange on `l`: read the request, answer 200 with `body`.
+fn answer_once(l: &std::net::TcpListener, body: &str) {
+    use std::io::{BufRead, Read, Write};
+    let (stream, _) = l.accept().expect("accept");
+    let mut r = std::io::BufReader::new(stream);
+    let mut len = 0;
+    loop {
+        let mut line = String::new();
+        r.read_line(&mut line).expect("request header");
+        if line.trim_end().is_empty() {
+            break;
+        }
+        if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            len = v.trim().parse().expect("content-length");
+        }
+    }
+    let mut request = vec![0; len];
+    r.read_exact(&mut request).expect("request body");
+    let mut s = r.into_inner();
+    write!(
+        s,
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .expect("reply");
+}
+
+/// What a `--gpu` driver reports after one completion per `used_gpu` value
+/// (`None`: the body carries no `used_gpu`, as serve's Qwen3.5 route did).
+async fn observed_after(used_gpu: &[Option<bool>]) -> Option<BackendReport> {
+    let l = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+    let base_url = format!("http://{}", l.local_addr().expect("addr"));
+    let bodies: Vec<String> = used_gpu
+        .iter()
+        .map(|u| {
+            let field = u.map_or(String::new(), |g| format!(r#","used_gpu":{g}"#));
+            format!(r#"{{"choices":[{{"message":{{"content":"ok"}}}}]{field}}}"#)
+        })
+        .collect();
+    let server = std::thread::spawn(move || bodies.iter().for_each(|b| answer_once(&l, b)));
+    let d = AprServeDriver {
+        base_url,
+        model_name: "test".into(),
+        _child: std::process::Command::new("sleep").arg("60").spawn().expect("a stand-in child"),
+        context_window_size: 4096,
+        model_size_bytes: None,
+        max_tokens_override: None,
+        think: None,
+        requested_gpu: true,
+        backend_tally: BackendTally::default(),
+    };
+    for _ in used_gpu {
+        let req = make_request(None, vec![crate::agent::driver::Message::User("hi".into())], 8);
+        d.complete(req).await.expect("the fake server answers 200");
+    }
+    server.join().expect("the fake server");
+    d.backend_observed()
+}
+
+/// #3719: the driver reads `used_gpu` off every 200. Before it, a `--gpu` child
+/// that answered from the CPU was a 200 like any other, and the run's document
+/// could not say it fell back.
+#[tokio::test]
+async fn f3719_a_cpu_answer_under_gpu_is_reported_as_a_fallback() {
+    let r = observed_after(&[Some(true), Some(false)]).await;
+    assert_eq!(
+        r,
+        Some(BackendReport { requested: "gpu", ran: Some("cpu"), fell_back: Some(true) })
+    );
+    let r = observed_after(&[Some(true), Some(true)]).await;
+    assert_eq!(
+        r,
+        Some(BackendReport { requested: "gpu", ran: Some("gpu"), fell_back: Some(false) })
+    );
+}
+
+/// A server that does not say (the pre-#3719 Qwen3.5 route) leaves the run
+/// unmeasured: `ran` is null, never a GPU pass.
+#[tokio::test]
+async fn f3719_an_unreported_answer_is_not_measured() {
+    let r = observed_after(&[Some(true), None]).await;
+    assert_eq!(r, Some(BackendReport { requested: "gpu", ran: None, fell_back: None }));
+}
