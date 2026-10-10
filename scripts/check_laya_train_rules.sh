@@ -26,10 +26,10 @@ PIP_WORD="pi""p "
 UV_WORD="uv"" run"
 DIRTY_FLAG="--allow""-dirty"
 SSH_WORD="ss""h "
-# ssh only in command position (line start, or after ; & | ( or a backtick, optionally
-# behind sudo/exec/command/time), so prose that names it is not a hit.
-SSH_RE='(^|[;&|(`])[[:space:]]*((sudo|exec|command|time)[[:space:]]+)?'"ss""h"'[[:space:]]'
 PUBLISH_RE='(cargo|make)[[:space:]]+'"publi""sh"
+# H15 skips exactly this file by path (C314, handoff/c314-a3-laya-lt0-lt1a.md): it must name
+# the forbidden needles to plant them. The needle itself stays a plain substring.
+H15_SELF="scripts/check_laya_train_rules.sh"
 
 LT1_RECEIPT="evidence/laya-train/lt-1/receipt.json"
 # The ONE path H4 exempts (Q5 ruling, handoff/quorum-a3-laya-q5-lt1-order.md): the LT-1
@@ -234,13 +234,13 @@ rule_h12() {
 
 rule_h15() {
     local hits
-    hits=$(added_runner_lines | awk -v a="$DIRTY_FLAG" -v s="$SSH_RE" -v re="$PUBLISH_RE" \
-        '{ body = $0; sub(/^[^:]*:/, "", body) } index(body, a) || body ~ s || body ~ re' | head -n 5 | paste -sd ';' -)
+    hits=$(added_runner_lines | awk -v a="$DIRTY_FLAG" -v b="$SSH_WORD" -v re="$PUBLISH_RE" -v self="$H15_SELF:" \
+        'index($0, self) == 1 {next} { body = $0; sub(/^[^:]*:/, "", body) } index(body, a) || index(body, b) || body ~ re' | head -n 5 | paste -sd ';' -)
     if [ -n "$hits" ]; then
-        line H15 RED "forbidden line added: $hits" "runner lines scanned"
+        line H15 RED "forbidden line added: $hits" "runner lines scanned; path skipped: $H15_SELF"
     else
         line H15 PASS "no dirty-publish, publish or ssh line added" \
-            "$(added_runner_lines | wc -l) added runner lines scanned"
+            "$(added_runner_lines | wc -l) added runner lines scanned; path skipped: $H15_SELF"
     fi
 }
 
@@ -310,7 +310,18 @@ self_test() {
     st_case plant-dirty RED H15 sh -c "echo 'cargo package ${DIRTY_FLAG}' >> scripts/a.sh"
     st_case plant-ssh RED H15 sh -c "echo '${SSH_WORD}host true' >> scripts/a.sh"
     st_case plant-ssh-chained RED H15 sh -c "echo 'true; sudo ${SSH_WORD}host true' >> scripts/a.sh"
-    st_case ssh-in-prose PASS H15 sh -c "echo '# no ${SSH_WORD}line is added here' >> scripts/a.sh"
+    st_case plant-ssh-yaml-run RED H15 sh -c "mkdir -p .github/workflows && echo '      run: ${SSH_WORD}host true' > .github/workflows/w.yml"
+    st_case plant-ssh-then RED H15 sh -c "echo 'if true; then ${SSH_WORD}host true; fi' >> scripts/a.sh"
+    st_case plant-ssh-do RED H15 sh -c "echo 'for h in a; do ${SSH_WORD}\$h true; done' >> scripts/a.sh"
+    st_case plant-ssh-else RED H15 sh -c "echo 'if false; then :; else ${SSH_WORD}host true; fi' >> scripts/a.sh"
+    st_case plant-ssh-brace RED H15 sh -c "echo '{ ${SSH_WORD}host true; }' >> scripts/a.sh"
+    st_case plant-ssh-env RED H15 sh -c "echo 'env A=1 ${SSH_WORD}host true' >> scripts/a.sh"
+    st_case plant-ssh-xargs RED H15 sh -c "echo 'echo h | xargs -I{} ${SSH_WORD}{} true' >> scripts/a.sh"
+    st_case plant-ssh-nohup RED H15 sh -c "echo 'nohup ${SSH_WORD}host true &' >> scripts/a.sh"
+    st_case plant-ssh-timeout RED H15 sh -c "echo 'timeout 5 ${SSH_WORD}host true' >> scripts/a.sh"
+    st_case plant-ssh-abspath RED H15 sh -c "echo '/usr/bin/${SSH_WORD}host true' >> scripts/a.sh"
+    st_case h15-self-path PASS H15 sh -c "echo '# ${SSH_WORD}is a needle here' >> $H15_SELF"
+    st_case plant-ssh-self-lookalike RED H15 sh -c "echo '${SSH_WORD}host true' >> scripts/check_laya_train_rules2.sh"
 
     # H5 and H10 need LT-1's receipt and LT-9's declaration on the base.
     git -C "$ST" checkout -q base
