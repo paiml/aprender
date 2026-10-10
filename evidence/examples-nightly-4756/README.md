@@ -44,8 +44,10 @@ up to 293 s (agent_demo).
 
 ## What a debug build or a non-terminal run does differently
 
-A release build run from a terminal does what it did before. Only a debug build, or a run
-whose stdout or stdin is not a terminal, takes the shorter path:
+A release build run from a terminal keeps its workload: nothing it ran before is skipped or
+cut down. Its result can still change, through the two bug fixes and the parity_035 probe
+under "Bug fixes for every build" and "A probe in every build", which apply to every build.
+Only a debug build, or a run whose stdout or stdin is not a terminal, takes a shorter path:
 
 - **pipeline_tui.** Its correctness check generated `GenerationConfig::default()`'s 100
   tokens (`crates/aprender-serve/src/generate/mod.rs:154`) through the unoptimized forward
@@ -60,6 +62,16 @@ whose stdout or stdin is not a terminal, takes the shorter path:
 - **Bare runs with no arguments.** qa_verify, llama2-train and test_mac_worker keep their
   default only in a release build at a terminal (`qa_verify.rs:394`, `llama2/train.rs:236`,
   `test_mac_worker.rs:16`). Otherwise they print their usage and the row is needs-args.
+  qa_verify has two sections, and each runs cargo commands as child processes
+  (`qa_verify.rs:121`). `qa_verify-sections.txt` runs each one in a debug build with no
+  terminal, the way the nightly row runs, after building the example alone in an empty build
+  directory. Section 2, run first, took 325 s. Run again with its nested builds present, it
+  took 81 s. Section 1 ran third, after section 2 had built its nested test target, and took
+  283 s. Every run exited rc 1 with gates reported FAIL, which the classifier classes fail.
+  The example does not print its nested cargo output, so the file does not show why those
+  gates failed. A default section in a bare run would make the row a timeout from a build
+  directory like the nightly's, and a fail even with the nested builds present. Those gate
+  failures are in every build and are not changed here.
 - **Smaller debug workloads.** bug_hunter_demo (`:318`), design_by_contract (`:74`) and
   performance_parity (`:52`, `:373`) shrink only when `cfg!(debug_assertions)` is set. The
   two bug-hunter examples then scan `crates/aprender-orchestrate/src/bug_hunter`, 34 tracked

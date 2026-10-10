@@ -6,7 +6,7 @@
   priority: high
   assigned_to: aprender-wmainred
   created: 2026-10-04T17:55:00Z
-  updated: 2026-10-10T01:56:00Z
+  updated: 2026-10-10T04:44:00Z
   spec: null
   acceptance_criteria:
   - The 36 rows that were fail or timeout in run 37169058144 are pass or a skip class (needs-args, needs-hardware, needs-data, needs-feature), with fail 0 and timeout 0, under scripts/dogfood_examples.sh --timeout-secs 180
