@@ -68,12 +68,15 @@ fleet_cells_epoch() {  # <YYYY-MM-DDTHH:MM:SSZ, fields in range> -> epoch second
 fleet_cells_verdict() {
     local stamp measured=-1 today
     # python's int() + fromtimestamp(utc) refused a clock that is not an integer, or past year 9999,
-    # with rc 1; refuse both here (1.5, 1000000000000 = year 33658)
-    if ! [[ $3 =~ ^[0-9]{1,12}$ ]] || (( 10#$3 > 253402300799 )); then
+    # with rc 1; refuse both here (1.5, 1000000000000 = year 33658). The digits are a set, never a
+    # range: under a UTF-8 locale bash's [0-9] also matches other scripts' digits (Arabic-Indic 0-8).
+    if ! [[ $3 =~ ^[0123456789]{1,12}$ ]] || (( 10#$3 > 253402300799 )); then
         printf 'refuse clock %q is not a whole epoch second up to 9999-12-31T23:59:59Z\n' "$3"
         return 1
     fi
-    today=$(fleet_cells_day "$3")
+    # an empty today would let every dated waiver cover: no day, no verdict
+    today=$(fleet_cells_day "$3") || return 2
+    [[ $today =~ ^[0123456789]{4}-[0123456789]{2}-[0123456789]{2}$ ]] || return 2
     stamp=$(CELLS=$1 LC_ALL=C awk "$FLEET_CELLS_AWK_LIB"'
     BEGIN {
         nl = split(pylines(ENVIRON["CELLS"]), L, "\n")
@@ -82,7 +85,7 @@ fleet_cells_verdict() {
             s = L[i]; sub(/^# measured/, "", s); print pystrip(s); exit
         }
     }')
-    if [[ $stamp =~ ^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$ ]]; then
+    if [[ $stamp =~ ^[0123456789]{4}-(0[123456789]|1[012])-(0[123456789]|[12][0123456789]|3[01])T([01][0123456789]|2[0123]):[012345][0123456789]:[012345][0123456789]Z$ ]]; then
         # a stamp before 1970, year 0000 included (python had no year 0), is negative: no stamp
         measured=$(fleet_cells_epoch "$stamp")
     fi
@@ -203,6 +206,15 @@ self_test() {
     now=1777636800 row 1 'a day a 30-day month lacks is no stamp (2026-04-31)' '# measured 2026-04-31T12:00:00Z\nh2\tapr\tGREEN\t\n'
     now=4107542400 row 0 'the clock 2100-03-01 is that day: a waiver to it covers' '# measured 2100-02-28T23:00:00Z\nh2\tapr\tRED\told\n' 'h2\tapr\t2100-03-01\tx\n'
     now=4107542400 row 1 'and is not 2100-02-29: a waiver to that day has expired' '# measured 2100-02-28T23:00:00Z\nh2\tapr\tRED\told\n' 'h2\tapr\t2100-02-29\tx\n'
+    now=1800014400 row 1 'a January clock is that year: a waiver to the December before has expired' '# measured 2027-01-15T11:58:00Z\nh1\tapr\tRED\told\n' 'h1\tapr\t2026-12-31\texpired\n'
+    now=1798848000 row 1 'a January stamp a day old is stale' '# measured 2027-01-01T00:00:00Z\nh1\tapr\tGREEN\t\n'
+    now=01790272800 row 1 'a zero-padded clock is the same day: an expired waiver covers nothing' "$S\nh2\tapr\tRED\told\n" 'h2\tapr\t2026-09-23\tx\n'
+    row 1 'six hours and one second is stale' '# measured 2026-09-24T11:59:59Z\nh2\tapr\tGREEN\t\n'
+    row 0 'exactly six hours is not stale' '# measured 2026-09-24T12:00:00Z\nh2\tapr\tGREEN\t\n'
+    now=1788944400 row 0 'a stamp with 08 and 09 in its day and time is a stamp' '# measured 2026-09-09T08:08:09Z\nh2\tapr\tGREEN\t\n'
+    # 1788000000 in Arabic-Indic digits, no 9 among them: [0-9] matched it under en_US.UTF-8
+    now=$(printf '\331\241\331\247\331\250\331\250\331\240\331\240\331\240\331\240\331\240\331\240') \
+        row 1 'a clock in digits that are not ASCII refuses' '# measured 2026-08-01T00:00:00Z\nh2\tapr\tGREEN\t\n'
     # MUTANTS: the refusal made a no-op must let the RED cell through.
     d=$(mktemp -d) || return 2
     for m in 's/                else add(c\[1\] "\/" c\[2\] " RED: "/                else ("\/" " RED: "/' 's/^            exit 1$/            exit 0/'; do
