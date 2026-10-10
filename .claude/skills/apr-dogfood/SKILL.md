@@ -6,7 +6,7 @@
 # invoked and nothing warns. Edits look effective and change nothing that runs.
 # That is what happened when #2357 hardened Gates 1 and 13.
 name: apr-dogfood
-allowed-tools: Bash(cargo:*), Bash(apr:*), Bash(pmat:*), Bash(gh:*), Bash(git:*), Bash(find:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(grep:*), Bash(diff:*), Bash(timeout:*), Bash(jq:*), Bash(python3:*), Bash(echo:*), Bash(cat:*), Bash(rm:*), Bash(ssh:*), Read, Glob, Grep, Agent
+allowed-tools: Bash(cargo:*), Bash(apr:*), Bash(pmat:*), Bash(gh:*), Bash(git:*), Bash(find:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(grep:*), Bash(diff:*), Bash(timeout:*), Bash(jq:*), Bash(python3 scripts/dogfood_baseline.py:*), Bash(python3 scripts/lib/dogfood_coverage_gate.py:*), Bash(gawk:*), Bash(echo:*), Bash(cat:*), Bash(rm:*), Bash(ssh:*), Read, Glob, Grep, Agent
 description: Dogfood the aprender release surface — derive every interface from the built binaries, measure gate coverage against the surface ledger, exercise the covered set, and emit a go/no-go receipt
 ---
 
@@ -24,8 +24,8 @@ and the runner promptly grew one):
 `scripts/dogfood.sh` is the ONE fleet release-gate protocol and
 `.claude/skills/dogfood/SKILL.md` is its ONE prose. This skill layers aprender's
 surface-coverage ledger ON TOP of it and must not restate a gate the runner owns.
-The `invariance.py` transport gate likewise belongs to the runner
-(`scripts/invariance.py`), not to this file.
+The `invariance.sh` transport gate likewise belongs to the runner
+(`scripts/invariance.sh`; `invariance.py` until #4377), not to this file.
 
 Three documents describe overlapping release work; each owns exactly one scope:
 
@@ -123,7 +123,7 @@ already guards against per-enumeration, applied one level up.
 - apr pinned to HEAD: !`. scripts/apr_bin.sh >/dev/null 2>&1 && "$APR" --version || echo "NOT built from HEAD — every verdict below would describe a binary you are not running"`
 - Models available: !`find ~/models -maxdepth 2 \( -name "*.apr" -o -name "*.gguf" -o -name "*.safetensors" \) -type f 2>/dev/null | wc -l`
 - Surface ledger: !`test -f docs/audits/surface_audit.csv && wc -l < docs/audits/surface_audit.csv || echo "ABSENT — Phase 2 will FAIL"`
-- Clusters: !`test -f docs/audits/surface_audit.csv && python3 -c "import csv,collections;r=list(csv.DictReader(open('docs/audits/surface_audit.csv')));c=collections.Counter(x['cluster_label'] for x in r);g=collections.Counter(x['cluster_label'] for x in r if x['in_dogfood_skill'].strip().lower()=='yes');print(f'{sum(1 for k in c if g[k])}/{len(c)} clusters gated, {sum(g.values())}/{len(r)} features gated')" || echo "ABSENT"`
+- Clusters: !`test -f docs/audits/surface_audit.csv && gawk 'BEGIN{FPAT="([^,]*)|(\"([^\"]|\"\")*\")"}{b=b $0; if(gsub(/"/,"\"",b)%2){b=b "\n"; next}; $0=b; b=""; if(!seen++){next}; n++; l=$8; c[l]=1; y=tolower($6); gsub(/^[ \t]+|[ \t]+$/,"",y); if(y=="yes"){f++; g[l]=1}}END{k=0; for(l in g)k++; m=0; for(l in c)m++; printf "%d/%d clusters gated, %d/%d features gated\n",k,m,f,n}' docs/audits/surface_audit.csv || echo "ABSENT"`
 
 ## Arguments
 
@@ -532,7 +532,8 @@ Bodies carried **verbatim** from v2.0 Gates 4–7.
 
 ```bash
 # Verify contract is valid
-python3 -c "import yaml; yaml.safe_load(open('contracts/apr-cli-qa-v1.yaml')); print('VALID')"
+. scripts/pv_bin.sh || exit 1   # exports $PV, the pinned in-tree pv
+"$PV" validate contracts/apr-cli-qa-v1.yaml && echo VALID
 
 # Run integration tests that enforce the contract
 cargo test -p apr-cli --test cli_commands 2>&1 | tail -3
@@ -929,12 +930,13 @@ Contract: `contracts/apr-qa-coverage-v1.yaml`
 
 ### V1. Contract YAML validity (all 6 QA contracts parse)
 ```bash
+. scripts/pv_bin.sh || exit 1   # exports $PV, the pinned in-tree pv
 VALID=0; TOTAL=0
 for c in contracts/apr-cli-qa-v1.yaml contracts/apr-qa-metamorphic-v1.yaml \
   contracts/apr-qa-silent-fallback-v1.yaml contracts/apr-qa-differential-v1.yaml \
   contracts/apr-qa-chaos-v1.yaml contracts/apr-qa-coverage-v1.yaml; do
   TOTAL=$((TOTAL+1))
-  python3 -c "import yaml; yaml.safe_load(open('$c')); print('  VALID: $c')" 2>&1 && VALID=$((VALID+1))
+  "$PV" validate "$c" > /dev/null 2>&1 && echo "  VALID: $c" && VALID=$((VALID+1))
 done
 echo "V1: $VALID/$TOTAL contracts valid"
 [ "$VALID" -eq "$TOTAL" ] && echo "V1 PASS" || echo "V1 FAIL"
@@ -986,11 +988,12 @@ echo "V4: $HIGH_CC functions with CC > 15"
 # Re-compute V1-V4 for a single aggregate verdict. V1 (contracts parse) and
 # V3 (critical modules run) are required; V2 (SATD) and V4 (complexity) are
 # quality signals that demote PASS → WARN but never cause FAIL on their own.
+. scripts/pv_bin.sh || exit 1
 V1_OK=0
 for c in contracts/apr-cli-qa-v1.yaml contracts/apr-qa-metamorphic-v1.yaml \
   contracts/apr-qa-silent-fallback-v1.yaml contracts/apr-qa-differential-v1.yaml \
   contracts/apr-qa-chaos-v1.yaml contracts/apr-qa-coverage-v1.yaml; do
-  python3 -c "import yaml; yaml.safe_load(open('$c'))" 2>/dev/null && V1_OK=$((V1_OK+1))
+  "$PV" validate "$c" > /dev/null 2>&1 && V1_OK=$((V1_OK+1))
 done
 V2_SATD=$(pmat analyze satd -p crates/apr-cli/ 2>&1 | grep -c "High" 2>/dev/null || echo "0")
 V4_CC=$(pmat analyze complexity -p crates/apr-cli/ --format json 2>/dev/null \
@@ -1465,7 +1468,7 @@ test. `0 tests, ok` is a vacuous pass and FAILS.
 Probe the real binary for **undeclared** transports. A transport that exists and
 is not declared is RED.
 
-## G4.4 — Transport invariance (`invariance.py`)
+## G4.4 — Transport invariance (`invariance.sh`)
 
 Stand every transport up **simultaneously**, derive the verb list **from the
 binary**, invoke one verb through all live transports, compare byte-for-byte.

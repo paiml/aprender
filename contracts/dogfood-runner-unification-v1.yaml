@@ -367,7 +367,7 @@ falsification_tests:
     write and completion leaves NO file matching receipt-*.json, never a
     complete-looking unreadable one. Exit 3 (receipt unreadable, verdict
     withheld) is part of the documented exit contract.
-  test: 'run the runner with a relative REPO_DIR from a parent dir; drive the receipt block with a corrupting python3 shim (argc=0 write shape)'
+  test: 'run the runner with a relative REPO_DIR from a parent dir; drive the receipt block with a corrupting jq shim (the encoder, since #4377; python3 before it)'
   if_fails: 'evidence nests inside the tree as next-run dirt (DF-3), or a crashed run leaves a previous or garbage verdict readable as current (DF-12)'
   mutation: 'restore RECEIPT_DIR="$REPO_DIR/.dogfood" (nested .dogfood reappears under a relative arg) or write directly to $RECEIPT (corrupt write leaves garbage at the evidence name); both observed pre-fix 2026-08-23'
 
@@ -385,7 +385,7 @@ falsification_tests:
   rule: one declaration, one parser
   prediction: >
     The guard's scan universe IS the set the runner executes, because both read
-    [package.metadata.dogfood] through scripts/lib/dogfood_gates.py. A gate
+    [package.metadata.dogfood] through scripts/lib/dogfood_gates.jq (dogfood_gates.py until #4377). A gate
     declared without a .sh suffix, or with TOML literal quotes, is both RUN and
     SCANNED.
   test: "declare gates = [\"scripts/a.sh\", \"scripts/check_noext\", 'scripts/lit.sh'] in a fixture crate; the guard scope and the runner plan must be the same set"
@@ -475,6 +475,23 @@ falsification_tests:
   test: 'bash scripts/check_dogfood_reads_ci.sh --self-test; bash scripts/release/sha_checks.sh --self-test; bash scripts/release/tag_coverage_gate.sh --self-test'
   if_fails: 'a check or receipt that is red, absent, or for another commit lets the release dogfood say GO'
   mutation: 'let a dirty tree read HEAD (nodirty), make the no-receipt fallback a PASS (skipread), pass a refused coverage receipt (covskip), resolve another sha (covwrongsha); each must turn RED; sha_checks.sh plants 21 rows (observed 2026-10-06)'
+- id: F-DOG1-034
+  rule: the receipt is a dogfood-receipt/v1, and the gate path needs no Python
+  prediction: >
+    The runner's own receipt block, lifted and driven against planted rows, writes one
+    object that is both the legacy receipt (crate, version, timestamp, commit, gates,
+    phase, deferred, open_obligations, verdict) and a dogfood-receipt/v1 (paiml/infra
+    contracts/dogfood-receipt-v1.yaml): counts equal a recount, NotRun and SKIP carry a
+    reason, GO has no FAIL and at least one PASS, row ids are unique. The same bytes are
+    written as dogfood-receipt-v1.<host>.json, the name the tag's release carries. A run
+    with no PASS row is NO-GO, and a status outside mark()'s vocabulary is RED, as is a repo that is not owner/name
+    (DOGFOOD_REPO, else origin), since v1 refuses a receipt without one. Every
+    reader of the declarations and of tool JSON is jq (scripts/lib/dogfood_gates.jq,
+    scripts/lib/dogfood_transports.jq) and the transport-invariance probe is
+    scripts/invariance.sh; dogfood.sh runs no python3.
+  test: 'bash scripts/tests/dogfood_receipt_v1_test.sh; bash scripts/tests/dogfood_jq_parsers_test.sh'
+  if_fails: 'the fleet sensor finds no receipt on the tag, or one arbiter refuses, and a release ships with its dogfood evidence unreadable to the fleet; or a host without Python cannot run the release gate'
+  mutation: 'map WARN to PASS (warn-passes), drop the zero-pass row (no-zero-pass-row), stop suffixing repeated ids (ids-not-unique), skip the asset copy (no-asset-copy), drop the repo check (no-repo-row); each must turn RED; unwrapping dogfood_transports.jq''s all-or-nothing array must turn tp-error-prints-nothing RED (observed 2026-10-10)'
 proof_obligations:
 - id: DRU-INV-001
   type: invariant

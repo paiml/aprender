@@ -1,0 +1,19 @@
+- id: GH-4377
+  github_issue: 4377
+  item_type: task
+  title: Adopt dogfood-receipt-v1 in apr-dogfood, and remove python3 from it (ARB-SELF-001 ASL-05)
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-10T13:24:25.785855612+00:00
+  updated: 2026-10-10T13:24:25.785855612+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - size:M
+  - owner:aprender-a7
+  notes: null

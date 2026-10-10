@@ -357,7 +357,7 @@ all three to the crate's `.gitignore`.
    `probe` must name a verb that is **safe to invoke repeatedly and has no side
    effects** — the gate calls it once per transport, every run.
 
-   Absent declaration → SKIP. Declaration present but `invariance.py` missing →
+   Absent declaration → SKIP. Declaration present but `invariance.sh` missing →
    **FAIL**, not SKIP: a gate that cannot run has not passed.
 
 ### Never dogfood by hand
@@ -592,7 +592,7 @@ ledger — mutation → the gate that turned RED:
 | `vacuous-zero-test-e2e` (target compiles, runs no tests) | interface-parity | target ran 0 tests — a vacuous pass |
 | `render-compact-over-http` (one transport pretty, one compact) | transport-invariance | `validate` differs between cli and http — verified against forjar 2026-08-22 |
 | `empty-verb-list` (binary lists no verbs) | transport-invariance | the binary lists NO verbs — a parity check over an empty surface is vacuous |
-| `delete-invariance.py` | transport-invariance | invariance.py missing — a gate that cannot run is not a SKIP |
+| `delete-invariance.sh` | transport-invariance | invariance.sh missing — a gate that cannot run is not a SKIP |
 | `advertised-but-unusable` (list `diag` in `--help`, don't implement it) | cli-surface | advertised but unusable: diag (of 2 checked) |
 
 Two negatives worth keeping, because "did not go red" is also a finding:

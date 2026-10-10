@@ -61,9 +61,6 @@ display	scripts/check_thresholds_in_matrix.sh|553c4ce1|0	"constant `%s`" % strip
 display	scripts/check_thresholds_in_matrix.sh|9acbe18d|0	"literal in `%s`" % stripped[:96]))
 display	scripts/check_verifier_pinning.sh|5196de0f|0	print("ROW FAIL bypass at line %d: %s" % (n, l[:80]))
 display	scripts/generate_golden_traces.py|32e68fd4|0	print(f"Processing: {test_input[:50]}...")
-display	scripts/invariance.py|4ae75dee|0	print(f" {n}: {results[n][:300]!r}")
-display	scripts/invariance.py|b8440556|0	print(f"INVARIANCE_FAIL all transports agree but the payload is not JSON: {first[:200]!r}")
-display	scripts/invariance.py|e8ea38ec|0	print(f" {names[0]}: {first[:300]!r}")
 display	scripts/lib/crux_inference_judge.py|75527fee|0	lines += ["", "Greedy divergence (REPORTED, not judged): %s" % json.dumps(r["greedy"])[:600]]
 display	scripts/lib/crux_openai_client.py|72931f36|0	out["error"] = "HTTP %s: %s" % (exc.code, exc.read().decode("utf-8", "replace")[:300])
 display	scripts/lib/dogfood_coverage_gate.py|37f625cd|0	+ "\n".join(f" - {b}" for b in bad[:10]))
@@ -85,10 +82,6 @@ display	scripts/tests/model_ladder_diagnostic_not_truncated_test.sh|74f3435a|0	p
 display	scripts/tests/model_ladder_diagnostic_not_truncated_test.sh|e6946f47|0	# two [:70] `why` lines, and the judge's two [:60] display lines. The judge half
 display	scripts/tests/model_ladder_diagnostic_not_truncated_test.sh|eb43ab55|0	printf 'FAIL producer reason TRUNCATED (the [:70] why line)\n' >&2
 fatal	scripts/check_model_parity.sh|93646ee1|0	print(f"FAIL {model}: {len(bad)} of {len(cos)} positions below cosine {mc} (basis {basis}); min {mn[1]:.4f} at position {mn[0]}; first: " + ", ".join(f"{p}:{c:.4f}" for p, c in bad[:5])); sys.exit(1)
-fatal	scripts/invariance.py|0288f0bf|0	die(f"cli invoke failed ({r.returncode}): {r.stderr.strip()[:200]}")
-fatal	scripts/invariance.py|631a3cc1|0	die(f"http invoke returned {e.code}: {e.read()[:200]!r}")
-fatal	scripts/invariance.py|7a337516|0	die(f"`{list_cmd}` exited {r.returncode}: {r.stderr.strip()[:200]}")
-fatal	scripts/invariance.py|dd9a7577|0	die(f"probe verb `{verb}` is not in the binary's own list ({', '.join(verbs[:6])}…)")
 fatal	scripts/render_dag.py|42dbf339|0	print(f"NOT ARMED: {spec_path} carries no `{BEGIN[:22]}…` / `{END}` marker pair; the §5/§6 tables are still hand-typed (SPEC-1.6 inserts them). exit 3, not a pass.")
 id-prefix	scripts/check_no_silent_truncation.sh|dda62789|0	k = "%s|%s|%s" % (k.split("|")[0], hashlib.sha1(t.encode()).hexdigest()[:8], k.split("|")[2])
 id-prefix	scripts/check_perf041_marker.sh|b774b180|0	str(marker.get("commit"))[:12], marker.get("max_m"), age_days,
