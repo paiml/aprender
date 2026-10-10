@@ -1,5 +1,5 @@
-01:40:54Z
-73f34268e616d941f5443b9f289b42804f302280
+07:10:33Z
+fa3364688c6cf0fa36b3bb18312161d802eaa63f
 014cdffaacaf1b2a027d02a8acb2438f2b7f7075ebf35f01e60d4720d7721846  target/debug/examples/performance_parity
 
 ╔══════════════════════════════════════════════════════════════════╗
@@ -20,32 +20,32 @@ Toyota Production System: Genchi Genbutsu (Go and See)
 ┌────────────────────────────┬──────────────────┬──────────────────┬─────────────────┬─────────┐
 │ Benchmark                  ┆ Metric           ┆ Value            ┆ Target          ┆ Status  │
 ╞════════════════════════════╪══════════════════╪══════════════════╪═════════════════╪═════════╡
-│ IMP-001: SIMD Q4_K Dequant ┆ Throughput       ┆ 0.32 GB/s        ┆ 10.00 GB/s      ┆ ❌ FAIL │
+│ IMP-001: SIMD Q4_K Dequant ┆ Throughput       ┆ 0.45 GB/s        ┆ 10.00 GB/s      ┆ ❌ FAIL │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ IMP-002: Mmap Streaming    ┆ Throughput       ┆ 0.33 GB/s        ┆ 5.00 GB/s       ┆ ❌ FAIL │
+│ IMP-002: Mmap Streaming    ┆ Throughput       ┆ 0.58 GB/s        ┆ 5.00 GB/s       ┆ ❌ FAIL │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ IMP-003: Fused Attention   ┆ Latency          ┆ 1487.26 ms       ┆ 10.00 ms        ┆ ❌ FAIL │
+│ IMP-003: Fused Attention   ┆ Latency          ┆ 1136.82 ms       ┆ 10.00 ms        ┆ ❌ FAIL │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ IMP-004: KV Cache          ┆ Ops/sec          ┆ 4177894.76 ops/s ┆ 100000.00 ops/s ┆ ✅ PASS │
+│ IMP-004: KV Cache          ┆ Ops/sec          ┆ 4993408.70 ops/s ┆ 100000.00 ops/s ┆ ✅ PASS │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ IMP-005: Batch Prefill     ┆ Parallel Speedup ┆ 1.68 x           ┆ 5.00 x          ┆ ✅ PASS │
+│ IMP-005: Batch Prefill     ┆ Parallel Speedup ┆ 2.02 x           ┆ 5.00 x          ┆ ✅ PASS │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Quantization Formats       ┆ Q4_K Throughput  ┆ 15.60 MB/s       ┆ 500.00 MB/s     ┆ ❌ FAIL │
+│ Quantization Formats       ┆ Q4_K Throughput  ┆ 23.43 MB/s       ┆ 500.00 MB/s     ┆ ❌ FAIL │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ E2E Inference              ┆ Latency          ┆ 22.54 ms         ┆ 100.00 ms       ┆ ✅ PASS │
+│ E2E Inference              ┆ Latency          ┆ 17.45 ms         ┆ 100.00 ms       ┆ ✅ PASS │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Token Generation           ┆ Throughput       ┆ 106.60 tok/s     ┆ 20.00 tok/s     ┆ ✅ PASS │
+│ Token Generation           ┆ Throughput       ┆ 137.57 tok/s     ┆ 20.00 tok/s     ┆ ✅ PASS │
 └────────────────────────────┴──────────────────┴──────────────────┴─────────────────┴─────────┘
 
 ═══════════════════════════════════════════════════════════════════
                    GPU BENCHMARK RESULTS (M2-M4)                   
 ═══════════════════════════════════════════════════════════════════
 
-┌─────────────────┬────────────┬─────────────┬───────────────┬─────────┐
-│ Benchmark       ┆ Metric     ┆ Value       ┆ Target        ┆ Status  │
-╞═════════════════╪════════════╪═════════════╪═══════════════╪═════════╡
-│ GPU-001: Matmul ┆ Throughput ┆ 6.34 GFLOPS ┆ 100.00 GFLOPS ┆ ✅ PASS │
-└─────────────────┴────────────┴─────────────┴───────────────┴─────────┘
+┌─────────────────┬────────────┬──────────────┬───────────────┬─────────┐
+│ Benchmark       ┆ Metric     ┆ Value        ┆ Target        ┆ Status  │
+╞═════════════════╪════════════╪══════════════╪═══════════════╪═════════╡
+│ GPU-001: Matmul ┆ Throughput ┆ 14.03 GFLOPS ┆ 100.00 GFLOPS ┆ ✅ PASS │
+└─────────────────┴────────────┴──────────────┴───────────────┴─────────┘
 
 ═══════════════════════════════════════════════════════════════════
                             SUMMARY                                 
@@ -57,10 +57,10 @@ Toyota Production System: Genchi Genbutsu (Go and See)
   ❌ Overall: Some benchmarks failed (5/9, 56%)
 
   Milestone Status:
-    ✅ M1: CPU Parity    - 107 tok/s (Target: 20)
-    ✅ M2: WGPU Basic    - 6.3 GFLOPS (GPU working!)
+    ✅ M1: CPU Parity    - 138 tok/s (Target: 20)
+    ✅ M2: WGPU Basic    - 14.0 GFLOPS (GPU working!)
     ⏳ M4: Full Parity   - 230+ tok/s (90% llama.cpp)
 
   Toyota Way: Kaizen - Continuous Improvement
 
-END rc=0 secs=13 01:41:07Z
+END rc=0 secs=9 07:10:42Z
