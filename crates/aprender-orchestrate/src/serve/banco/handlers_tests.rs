@@ -335,3 +335,49 @@ async fn test_BANCO_HDL_008_privacy_header_on_health() {
         .expect("str");
     assert_eq!(tier, "standard");
 }
+
+// ============================================================================
+// #4971 (ASOC-INV-021): banco computes no logprobs, so a request for them is
+// refused rather than answered 200 without them.
+// ============================================================================
+
+#[tokio::test]
+#[allow(non_snake_case)]
+async fn test_BANCO_HDL_004_chat_completions_refuse_logprobs() {
+    // (fields added to a valid request, status, words the reply must carry)
+    let table: &[(serde_json::Value, StatusCode, &str)] = &[
+        (serde_json::json!({"logprobs": true}), StatusCode::NOT_IMPLEMENTED, "banco chat backend"),
+        (
+            serde_json::json!({"logprobs": true, "top_logprobs": 2}),
+            StatusCode::NOT_IMPLEMENTED,
+            "banco chat backend",
+        ),
+        (serde_json::json!({"top_logprobs": 2}), StatusCode::BAD_REQUEST, "requires logprobs"),
+        (
+            serde_json::json!({"logprobs": true, "top_logprobs": 21}),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "top_logprobs must be",
+        ),
+        (serde_json::json!({"logprobs": false}), StatusCode::OK, "chat.completion"),
+    ];
+    for (fields, want, words) in table {
+        let mut body = serde_json::json!({"messages": [{"role": "user", "content": "Hello!"}]});
+        for (k, v) in fields.as_object().expect("object") {
+            body[k] = v.clone();
+        }
+        let response = test_app()
+            .oneshot(
+                Request::post("/api/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).expect("json")))
+                    .expect("req"),
+            )
+            .await
+            .expect("resp");
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 1_048_576).await.expect("read body");
+        let reply = String::from_utf8_lossy(&bytes);
+        assert_eq!(status, *want, "{fields}: {reply}");
+        assert!(reply.contains(words), "{fields}: {reply}");
+    }
+}

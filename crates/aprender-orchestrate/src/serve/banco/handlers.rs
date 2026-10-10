@@ -74,10 +74,30 @@ pub async fn system_handler(State(state): State<BancoState>) -> Json<super::type
 // BANCO-HDL-004: Chat Completions
 // ============================================================================
 
+/// #4971 (ASOC-INV-021): banco computes no logprobs, so a request for them is
+/// refused (501 naming banco, or 400 for `top_logprobs` alone, as realizar's
+/// router answers) rather than served without them.
+fn refuse_logprobs(request: &BancoChatRequest) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let refusal =
+        realizar::api::logprobs_fields_refusal(request.logprobs, request.top_logprobs, "banco");
+    match refusal {
+        None => Ok(()),
+        Some((status, reason)) => {
+            let kind = if status == StatusCode::NOT_IMPLEMENTED {
+                "not_implemented"
+            } else {
+                "invalid_request"
+            };
+            Err((status, Json(ErrorResponse::new(reason, kind, status.as_u16()))))
+        }
+    }
+}
+
 pub async fn chat_completions_handler(
     State(state): State<BancoState>,
     Json(request): Json<BancoChatRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    refuse_logprobs(&request)?;
     // Expand @preset: references in message content
     let mut request = request;
     for msg in &mut request.messages {

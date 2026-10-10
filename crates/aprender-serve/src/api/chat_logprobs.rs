@@ -76,9 +76,7 @@ impl ChatCompletionRequest {
     /// OpenAI refuses it; serving it would return none of what was asked for.
     #[must_use]
     pub fn logprobs_conflict(&self) -> Option<String> {
-        (self.top_logprobs.is_some() && self.logprobs != Some(true)).then(|| {
-            "top_logprobs requires logprobs: true; send both or neither (#4971)".to_string()
-        })
+        (self.top_logprobs.is_some() && self.logprobs != Some(true)).then(conflict_reason)
     }
 
     /// Every cross-field conflict the chat handler refuses with 400 before it
@@ -285,12 +283,68 @@ pub(crate) fn with_logprobs(
 /// this, never a 200 without them.
 #[must_use]
 pub(crate) fn logprobs_refusal(request: &ChatCompletionRequest, backend: &str) -> Option<String> {
-    request.logprobs_top_n().map(|_| {
-        format!(
-            "`logprobs` is not supported by the {backend} chat backend; the reply would \
-             carry none. Refused rather than served (#4971, ASOC-INV-021)."
-        )
-    })
+    request.logprobs_top_n().map(|_| refusal_reason(backend))
+}
+
+/// The 400 reason for `top_logprobs` sent without `logprobs: true`.
+fn conflict_reason() -> String {
+    "top_logprobs requires logprobs: true; send both or neither (#4971)".to_string()
+}
+
+/// The 501 reason of a backend that does not compute logprobs.
+fn refusal_reason(backend: &str) -> String {
+    format!(
+        "`logprobs` is not supported by the {backend} chat backend; the reply would \
+         carry none. Refused rather than served (#4971, ASOC-INV-021)."
+    )
+}
+
+/// What a chat handler outside this crate's router answers for the two fields
+/// when its backend does not compute logprobs (#4971, ASOC-INV-021), the same
+/// as the router: `top_logprobs` without `logprobs: true` is 400, `logprobs:
+/// true` is 501 naming `backend`, and anything else is served (`None`).
+#[must_use]
+pub fn logprobs_fields_refusal(
+    logprobs: Option<bool>,
+    top_logprobs: Option<TopLogprobs>,
+    backend: &str,
+) -> Option<(StatusCode, String)> {
+    if top_logprobs.is_some() && logprobs != Some(true) {
+        return Some((StatusCode::BAD_REQUEST, conflict_reason()));
+    }
+    (logprobs == Some(true)).then(|| (StatusCode::NOT_IMPLEMENTED, refusal_reason(backend)))
+}
+
+/// [`logprobs_fields_refusal`] for a handler that takes the body as JSON: a
+/// `logprobs` that is not true or false, or a `top_logprobs` outside 0 to
+/// [`MAX_TOP_LOGPROBS`], is 422 naming the field, as the router refuses it at
+/// deserialization. An absent or null field was not sent.
+#[must_use]
+pub fn json_logprobs_refusal(
+    body: &serde_json::Value,
+    backend: &str,
+) -> Option<(StatusCode, String)> {
+    let sent = |name: &str| body.get(name).filter(|v| !v.is_null());
+    let logprobs = match sent("logprobs").map(serde_json::Value::as_bool) {
+        None => None,
+        Some(Some(asks)) => Some(asks),
+        Some(None) => {
+            let reason = "logprobs must be true or false (#4971)".to_string();
+            return Some((StatusCode::UNPROCESSABLE_ENTITY, reason));
+        },
+    };
+    let top_logprobs = match sent("top_logprobs").map(TopLogprobs::deserialize) {
+        None => None,
+        Some(Ok(top)) => Some(top),
+        Some(Err(e)) => {
+            let reason = e.to_string();
+            let reason = reason
+                .strip_prefix(crate::api::CLIENT_VISIBLE_MARKER)
+                .unwrap_or(&reason);
+            return Some((StatusCode::UNPROCESSABLE_ENTITY, reason.to_string()));
+        },
+    };
+    logprobs_fields_refusal(logprobs, top_logprobs, backend)
 }
 
 /// [`logprobs_refusal`] for a backend that computes them on its dense turn,
@@ -489,6 +543,77 @@ mod tests {
             "{reason}"
         );
         assert_eq!(logprobs_refusal(&plain, "CUDA"), None);
+    }
+
+    #[test]
+    fn handlers_outside_the_router_refuse_the_fields_as_the_router_does() {
+        // (body, Some(status, words the reason must carry) / None served)
+        let table: &[(serde_json::Value, Option<(StatusCode, &str)>)] = &[
+            (serde_json::json!({"messages": []}), None),
+            (serde_json::json!({"logprobs": false}), None),
+            (
+                serde_json::json!({"logprobs": null, "top_logprobs": null}),
+                None,
+            ),
+            (serde_json::json!([1, 2]), None),
+            (
+                serde_json::json!({"logprobs": true}),
+                Some((StatusCode::NOT_IMPLEMENTED, "WGPU chat backend")),
+            ),
+            (
+                serde_json::json!({"logprobs": true, "top_logprobs": 20}),
+                Some((StatusCode::NOT_IMPLEMENTED, "WGPU chat backend")),
+            ),
+            (
+                serde_json::json!({"top_logprobs": 3}),
+                Some((StatusCode::BAD_REQUEST, "requires logprobs: true")),
+            ),
+            (
+                serde_json::json!({"logprobs": false, "top_logprobs": 3}),
+                Some((StatusCode::BAD_REQUEST, "requires logprobs: true")),
+            ),
+            (
+                serde_json::json!({"logprobs": true, "top_logprobs": 21}),
+                Some((StatusCode::UNPROCESSABLE_ENTITY, "top_logprobs must be")),
+            ),
+            (
+                serde_json::json!({"logprobs": true, "top_logprobs": "3"}),
+                Some((StatusCode::UNPROCESSABLE_ENTITY, "top_logprobs must be")),
+            ),
+            (
+                serde_json::json!({"logprobs": "yes"}),
+                Some((
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "logprobs must be true or false",
+                )),
+            ),
+        ];
+        for (body, want) in table {
+            let got = json_logprobs_refusal(body, "WGPU");
+            match want {
+                None => assert_eq!(got, None, "{body}"),
+                Some((status, words)) => {
+                    let (got_status, reason) = got.unwrap_or_else(|| panic!("{body} is served"));
+                    assert_eq!(got_status, *status, "{body}: {reason}");
+                    assert!(reason.contains(words), "{body}: {reason}");
+                    assert!(
+                        !reason.contains(crate::api::CLIENT_VISIBLE_MARKER),
+                        "{reason}"
+                    );
+                },
+            }
+        }
+        let typed = |json: &str| {
+            let r = request(json).expect("valid");
+            logprobs_fields_refusal(r.logprobs, r.top_logprobs, "banco").map(|(s, _)| s)
+        };
+        assert_eq!(
+            typed(r#","logprobs":true"#),
+            Some(StatusCode::NOT_IMPLEMENTED)
+        );
+        assert_eq!(typed(r#","top_logprobs":1"#), Some(StatusCode::BAD_REQUEST));
+        assert_eq!(typed(r#","logprobs":false"#), None);
+        assert_eq!(typed(""), None);
     }
 
     #[test]

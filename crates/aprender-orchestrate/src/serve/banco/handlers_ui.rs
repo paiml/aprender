@@ -50,6 +50,8 @@ pub async fn chat_form_handler(
         attachments: vec![],
         tools: None,
         tool_choice: None,
+        logprobs: None,
+        top_logprobs: None,
     };
 
     let response = super::handlers_inference::try_inference(&state, &request)

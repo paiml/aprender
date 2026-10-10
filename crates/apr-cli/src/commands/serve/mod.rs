@@ -28,6 +28,9 @@ mod tests;
 mod tests_contract_enforcement;
 #[cfg(all(test, feature = "inference"))]
 mod tests_route_index_3979;
+// #4971: the chat routes outside realizar's router refuse logprobs (ASOC-INV-021).
+#[cfg(all(test, feature = "inference"))]
+mod tests_logprobs_4971;
 // PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process
 // publishes. `inference`-gated because the report type comes from realizar.
 #[cfg(test)]

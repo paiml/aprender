@@ -224,6 +224,12 @@ pub(crate) async fn safetensors_chat_completions_handler(
     use axum::response::{sse::Event, IntoResponse, Sse};
     use futures_util::stream;
 
+    if let Some(refused) =
+        super::handlers::logprobs_refusal_response(&request, "SafeTensors F32 CPU")
+    {
+        return refused;
+    }
+
     // Parse request - try structured first, fallback to raw JSON (GH-160)
     let parsed_request = match parse_chat_completion_request(&request) {
         Ok(req) => req,
