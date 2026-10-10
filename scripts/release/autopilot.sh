@@ -38,6 +38,15 @@ fi
 # shellcheck source=scripts/release/lib_release_params.sh
 . "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
+# REHEARSAL (APR-071 B1, H10): scripts/release/rehearse.sh runs these same steps every night with
+# RELEASE_REHEARSAL=1, inside its own state dir. Each write this script makes on release day becomes a
+# `WOULD` line there, and each step that dispatches a producer on the tag reads that night's producer
+# on main's head instead (lib_rehearsal.sh). With RELEASE_REHEARSAL unset not one line below changes.
+rehearsal() { [ "${RELEASE_REHEARSAL:-}" = 1 ]; }
+if rehearsal; then
+  # shellcheck source=scripts/release/lib_rehearsal.sh
+  . "$REPO_ROOT/scripts/release/lib_rehearsal.sh" || exit 2
+fi
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 # #4950 G2: GitHub polls share one fleet-wide hourly budget, so one object is polled at most every 300 s.
 # AP_SETTLE is the one short wait, between a dispatch and the first look for the run it created.
@@ -100,6 +109,9 @@ WT="$AP/wt"
 say "START autopilot pid=$$ pr=#$PR from=$FROM to=$TO"
 
 # 1. wait: the bump PR merges; its merge commit is the release commit
+if run_step wait && rehearsal; then
+  die "rehearsal: no bump PR to wait for -- the bump commit is local (start at dogfood)"
+fi
 if run_step wait; then
   while :; do
     s=$(gh pr view "$PR" --repo $REPO --json state -q .state) || s=unknown
@@ -107,12 +119,24 @@ if run_step wait; then
     sleep "$AP_POLL"
   done
 fi
-MC=$(gh pr view "$PR" --repo $REPO --json mergeCommit -q .mergeCommit.oid)
-[ -n "$MC" ] || die "#$PR has no merge commit"
-say "RELEASE COMMIT $MC (#$PR)"
+if rehearsal; then
+  # the bump commit prepare_bump.sh --ship made in the rehearsal's clone; rehearse.sh moved the
+  # state-dir origin's main to it (inside the state dir, H10), so the checks below read it as merged
+  MC=${RELEASE_REHEARSAL_MC:-}
+  [ -n "$MC" ] || die "rehearsal: RELEASE_REHEARSAL_MC is unset (the ship stage made no bump commit)"
+  say "RELEASE COMMIT $MC (rehearsal: the local bump commit, never pushed)"
+else
+  MC=$(gh pr view "$PR" --repo $REPO --json mergeCommit -q .mergeCommit.oid)
+  [ -n "$MC" ] || die "#$PR has no merge commit"
+  say "RELEASE COMMIT $MC (#$PR)"
+fi
 cd "$REPO_ROOT" || die "no repo"
 git fetch -q origin main >> "$LOG" 2>&1 || die "fetch failed"
 git merge-base --is-ancestor "$MC" origin/main || die "merge commit $MC not on origin/main"
+if rehearsal; then
+  [ "$(git rev-parse -q --verify "$MC^" 2>/dev/null)" = "${RELEASE_REHEARSAL_C:-}" ] \
+    || die "rehearsal: the bump commit $MC is not one commit on C ${RELEASE_REHEARSAL_C:-unset}: the night's producers measured another tree"
+fi
 if [ ! -d "$WT" ] || [ "$(git -C "$WT" rev-parse HEAD 2>/dev/null)" != "$MC" ]; then
   [ -d "$WT" ] && git worktree remove --force "$WT" >> "$LOG" 2>&1
   git worktree add --detach "$WT" "$MC" >> "$LOG" 2>&1 || die "worktree add failed"
@@ -209,10 +233,32 @@ t1_dogfood() {
 #     policy R7 reads the CRUX receipts this step writes to $AP/models-t1 instead (the preflight step).
 t1_models() {
   local measure=ladder; [ "$AP_POLICY" != 1 ] || measure=crux
+  if rehearsal; then t1_models_rehearsal "$measure"; return; fi
   MODELS_T1_MEASURE=$measure bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
   grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 model matrix NO-GO rc=$rc: nothing is tagged ($AP/models-t1.log)"
   say "MODELS GO at $MC on lambda and gx10 (measured: $measure)"
+}
+# Rehearsal: no SSH leg (a remote host is outside the state dir, H10). The night's models-nightly run
+# on C is the measurement; its verified bundle (artifact models-t1: the receipts and models_t1.sh's own
+# log) is read into $AP/models-t1, where release day's step writes, and its own MODELS line is the
+# verdict. It stands in for release day only when it measured in release day's mode.
+t1_models_rehearsal() {
+  local measure=$1 crun line sha9=${RELEASE_REHEARSAL_C:0:9}
+  crun=$(rehearsal_lane models) || die "REHEARSAL lane models on C: $crun"
+  rm -rf -- "${AP:?}/models-t1"
+  gh run download "$crun" --repo "$REPO" -n models-t1 -D "$AP/models-t1" >> "$LOG" 2>&1 \
+    || die "REHEARSAL models-nightly run $crun on C has no readable models-t1 artifact"
+  cp -- "$AP/models-t1/models-t1.log" "$AP/models-t1.log" \
+    || die "REHEARSAL models-nightly run $crun: its bundle holds no models-t1.log"
+  grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
+  line=$(grep -E "^MODELS GO .* at $sha9:" "$AP/models-t1.log" | tail -n 1)
+  [ -n "$line" ] || die "REHEARSAL models-nightly run $crun printed no MODELS GO at C $sha9 ($AP/models-t1.log)"
+  case $measure:$line in
+    crux:"MODELS GO (CRUX smoke) "*|ladder:"MODELS GO on "*) ;;
+    *) die "REHEARSAL models-nightly run $crun measured another mode than release day's $measure: $line" ;;
+  esac
+  say "MODELS GO at C $sha9 on lambda and gx10 (measured: $measure; rehearsal: models-nightly run $crun on C, the bump's parent)"
 }
 
 # The join. Every selected lane starts now, each in its own process group (set -m), so a lane can be
@@ -315,10 +361,13 @@ cut_tag() {
     # Covered: release-readiness is not run, and the gate is the models lane's CRUX-smoke GO for exactly
     # this commit on both hosts. Unjudgeable -> no tag.
     pol=$(ap_policy_applies "$v") || die "the standing release policy cannot be judged for $v -- no tag"
+    # rehearsal: the models GO is the night's producer's, on C, the bump's parent (t1_models_rehearsal)
+    local gc=$mc
+    if rehearsal; then gc=${RELEASE_REHEARSAL_C:-}; fi
     if [ "$pol" = 1 ]; then
-        need="MODELS GO (CRUX smoke) on lambda and gx10 at ${mc:0:9}:"
+        need="MODELS GO (CRUX smoke) on lambda and gx10 at ${gc:0:9}:"
         grep -qF -- "$need" "${AP:-/nonexistent}/models-t1.log" 2>/dev/null \
-            || die "the standing release policy covers $v but ${AP:-<unset AP>}/models-t1.log has no CRUX-smoke GO at ${mc:0:9} -- no tag"
+            || die "the standing release policy covers $v but ${AP:-<unset AP>}/models-t1.log has no CRUX-smoke GO at ${gc:0:9} -- no tag"
         say "POLICY-GATE $(grep -F -- "$need" "$AP/models-t1.log" | tail -n 1) (readiness not run: the standing release policy covers $v)"
     else
     # #3715 B1 (operator 2026-09-28: "missing or skipped step -> release refused"). FIRST, ahead of the
@@ -329,11 +378,20 @@ cut_tag() {
         || die "no '#3715 ENFORCE PASS' for $v at $mc in ${AP:-<unset AP>}/readiness-t1.log -- release-readiness-v1 missing, skipped or not enforced; no tag"
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
     fi
+    if rehearsal; then cut_tag_rehearsal "$t" "$mc"; return; fi
     git tag -a "$t" -m "aprender $t" "$mc" >> "$LOG" 2>&1 || die "tag failed"
     # #4950 G1: the pre-push tag guard (#4944) refuses a release tag without its one-shot marker. Every
     # gate above has passed for exactly $mc, so arm that one tag for the next push, for 120 s, and push.
     bash "$REPO_ROOT/scripts/hooks/pre-push-tags.sh" --arm-release "$t" 120 >> "$LOG" 2>&1 || die "arming $t for the pre-push tag guard failed -- tag not pushed"
     git push origin "$t" >> "$LOG" 2>&1 || die "tag push failed"
+}
+# Rehearsal (H10: no tag): every gate above ran as on release day; the tag and its push are WOULD
+# lines, and $AP/would-tag records "<tag> <commit>" for the steps that read the tag on release day.
+cut_tag_rehearsal() {
+    local t=$1 mc=$2
+    say "WOULD git tag -a $t -m \"aprender $t\" $mc"
+    say "WOULD git push origin $t"
+    printf '%s %s\n' "$t" "$mc" > "$AP/would-tag" || die "cannot write $AP/would-tag"
 }
 if run_step tag; then
   git rev-parse -q --verify "refs/tags/$T" > /dev/null && die "tag $T already exists locally"
@@ -352,19 +410,41 @@ if run_step tag; then
   [ $rc -eq 0 ] || die "publish dry-run refused rc=$rc (1 = a tarball defect, 2 = could not measure; $AP/publish-dryrun.log) -- no tag"
   printf '%s\n' "$MC" > "$AP/publish-dryrun-commit"
   say "PUBLISH-DRYRUN green on $MC, ahead of the tag ($AP/publish-dryrun.log)"
+  if rehearsal; then
+    rm -f -- "${AP:?}/would-tag"
+    cut_tag "$V" "$T" "$MC"
+    say "WOULD gh release create $T --repo $REPO --verify-tag --draft --title \"aprender $V\" --notes-file $AP/release_notes.md"
+    say "WOULD gh workflow run binary-release.yml --repo $REPO --ref $T -f tag=$T"
+    say "REHEARSED the tag step for $T at $MC: WOULD lines only, nothing tagged, drafted or dispatched"
+  else
   cut_tag "$V" "$T" "$MC"
   say "TAGGED $T at $MC"
   gh release create "$T" --repo "$REPO" --verify-tag --draft --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create --draft failed"
   say "DRAFTED $T (not public until the publish step)"
   gh workflow run binary-release.yml --repo "$REPO" --ref "$T" -f tag="$T" >> "$LOG" 2>&1
   say "ASSET BUILD dispatched on $T"
+  fi
 fi
 
 
 # 3b. cleanroom (T-3): dispatch paiml/infra clean-room.yml ON THE TAG (infra#621 ref input), record the
 #     run id, wait, require the `clean-room (aprender)` job green. The run's own first step asserts
 #     HEAD == the ref; cascade-publish.sh re-derives all of this fail-closed before T-4.
+# Rehearsal: there is no tag to dispatch on. release-lanes-nightly's cleanroom-cpu job measured C, the
+# bump's parent, that night; it must read green on C. Its run id is this repo's (not paiml/infra's), so
+# publish_release re-reads it through the same lane reader. b2-gpu is not read: as on release day, it
+# is a nightly lane, not a stop of this step.
+cleanroom_rehearsal() {
+  local crun
+  say "WOULD gh workflow run clean-room.yml --repo $INFRA -f repos=aprender -f ref=$T"
+  crun=$(rehearsal_lane cleanroom-cpu) || die "REHEARSAL lane cleanroom-cpu on C: $crun"
+  printf '%s\n' "$crun" > "$AP/cleanroom-run-id"
+  say "CLEANROOM GREEN on C ${RELEASE_REHEARSAL_C:0:9} (rehearsal: release-lanes-nightly cleanroom-cpu run $crun, on the bump's parent)"
+}
 if run_step cleanroom; then
+  if rehearsal; then
+  cleanroom_rehearsal
+  else
   # B2-cpu: paiml/infra clean-room.yml on the tag. Attach to a run already dispatched (cleanroom-attach) or dispatch.
   if [ -s "$AP/cleanroom-attach" ]; then
     crun=$(cat "$AP/cleanroom-attach"); say "CLEANROOM attached to run $crun"
@@ -388,10 +468,17 @@ if run_step cleanroom; then
   say "B2-CPU GREEN on $T (infra run $crun)"
   printf '%s\n' "$crun" > "$AP/cleanroom-run-id"
   say "CLEANROOM GREEN on $T: B2-cpu infra run $crun on $MC"
+  fi
 fi
 
 # 4. assets: the release run completes and all sixteen assets are on the release, checked by command
 if run_step assets; then
+  if rehearsal; then
+  # no tag, so no binary-release run on it: the night's asset build of C is the lane (Q1 (a) of the B1
+  # quorum: not_measured, so red, until #4720 P3b gives the lane a producer)
+  arun=$(rehearsal_lane assets) || die "REHEARSAL lane assets on C: $arun (#4720 P3b: no nightly asset build of C)"
+  say "ASSETS green on C ${RELEASE_REHEARSAL_C:0:9} (rehearsal: the nightly asset build, run $arun)"
+  else
   run=""; for _ in 1 2 3 4 5; do
     run=$(gh run list --repo $REPO --workflow binary-release.yml --event workflow_dispatch --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)
     [ -n "$run" ] && break; sleep "$AP_POLL"
@@ -407,6 +494,7 @@ if run_step assets; then
   gh api "repos/$REPO/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | "  \(.name) = \(.conclusion)"' >> "$STATUS"
   [ "$c" = success ] || die "binary-release run $run concluded '$c' (jobs above)"
   say "ASSETS all present on $T (run $run)"
+  fi
 fi
 
 # 5. preflight (R1-R6; R5 reads the pre-publish receipt in this worktree)
@@ -415,6 +503,12 @@ if run_step preflight; then
   # Under the standing release policy R7 judges CRUX smoke at the cut: the receipts the T-1 models step
   # measured at $MC (the tagged commit), with the certification committed in the bump. Nothing is
   # committed by hand after the bump to feed it.
+  if rehearsal; then
+    # no tag exists: R3 judges the tag the tag step would have made ("<tag> <commit>")
+    PUBLISH_PREFLIGHT_WOULD_TAG=$(cat "$AP/would-tag" 2>/dev/null) && [ -n "$PUBLISH_PREFLIGHT_WOULD_TAG" ] \
+      || die "rehearsal: no $AP/would-tag (the tag step names the tag it would make)"
+    export PUBLISH_PREFLIGHT_WOULD_TAG
+  fi
   if [ "$AP_POLICY" = 1 ]; then
     MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json" \
       bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
@@ -441,6 +535,17 @@ publish_release() {
     local t=$1 mc=$2 crun="" jc d rc=0
     IFS= read -r crun < "$AP/cleanroom-run-id" 2>/dev/null || crun=""
     [ -n "$crun" ] || die "no clean-room run id recorded for $t -- the release stays a draft"
+    # Rehearsal: the same facts, re-read for the night -- (a) the recorded clean-room run is the night's
+    # green cleanroom-cpu lane on C, (b) the preflight PASS names this tag and commit, (c) the night's
+    # asset lane is green on C -- and (d) the edit is a WOULD line: there is no draft to publish.
+    if rehearsal; then
+        jc=$(rehearsal_lane cleanroom-cpu) || die "REHEARSAL lane cleanroom-cpu on C: $jc -- the release stays a draft"
+        [ "$jc" = "$crun" ] || die "the recorded clean-room run $crun is not the night's cleanroom-cpu run $jc -- the release stays a draft"
+        grep -qxF "PASS $t $mc" "$AP/preflight-pass" 2>/dev/null || die "no preflight PASS for $t at $mc -- the release stays a draft"
+        d=$(rehearsal_lane assets) || die "REHEARSAL lane assets on C: $d (#4720 P3b: no nightly asset build of C) -- the release stays a draft"
+        say "WOULD gh release edit $t --repo $REPO --draft=false"
+        return
+    fi
     jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | .conclusion' | head -n 1) || jc=""
     [ "$jc" = success ] || die "clean-room (aprender) run $crun reads '${jc:-unreadable}' -- the release stays a draft"
     grep -qxF "PASS $t $mc" "$AP/preflight-pass" 2>/dev/null || die "no preflight PASS for $t at $mc -- the release stays a draft"
@@ -452,7 +557,11 @@ publish_release() {
 }
 if run_step publish; then
   publish_release "$T" "$MC"
+  if rehearsal; then
+    say "REHEARSED the publish step for $T: clean-room, assets and preflight green; nothing made public"
+  else
   say "RELEASED $(gh release view "$T" --repo "$REPO" --json url -q .url) (clean-room, assets and preflight green before it went public)"
+  fi
 fi
 
 

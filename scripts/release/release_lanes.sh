@@ -5,6 +5,8 @@
 #   bash scripts/release/release_lanes.sh measure cleanroom-cpu         # judge paiml/infra's clean-room run on C
 #   bash scripts/release/release_lanes.sh measure publish-dryrun ROOT   # rc_publish_gate.sh --verify ROOT
 #   bash scripts/release/release_lanes.sh measure assets                # judge this run's dry binary-release jobs
+#   bash scripts/release/release_lanes.sh measured-cpu --cache DIR      # every commit infra's clean-room measured
+#   bash scripts/release/release_lanes.sh assert-head REF               # a lane job's proof that it ran on REF
 #   bash scripts/release/release_lanes.sh --self-test | --mutants
 #
 # WHO READS THIS. nightly_train.sh reads a lane as the newest completed run of its producer on C (main's head):
@@ -17,7 +19,11 @@
 #                      1. On not_measured it is SKIPPED, which the train reads as not_measured. A measure job
 #                      that dies writes no output, so its lane job is skipped too. No path from a crash to a pass.
 #
-# THE LANES. C is GITHUB_SHA: the head of main when the scheduled run started.
+# THE LANES. C is the workflow's `inputs.ref || github.sha`, passed in as LANES_REF: the rehearsal's pick when
+# release-rehearsal-nightly.yml calls the workflow (B1 Q1, Q3), else the head of main when the scheduled run
+# started. GITHUB_SHA is never C in a called run (it is the caller's commit), so no lane reads it. A called
+# run's job names start with the caller job's name: LANES_CALLER names it, and the judged prefixes carry it.
+# Every lane job checks out C and runs `assert-head C` first, so a lane job that ran on another commit fails.
 #   cleanroom-gpu   b2-gpu.yml called with ref=C. green: every b2-gpu job succeeded. red: a step that is not a
 #                   precondition failed, in a job that ended failure or timed_out (a step cancelled inside such
 #                   a job counts as failed). not_measured: a precondition failed (checkout, the commit assert,
@@ -41,7 +47,15 @@
 #                   every asset built and smoke-run. Same judge as cleanroom-gpu, with that workflow's
 #                   precondition steps.
 #
-# EXIT  measure: 0 when a verdict was written · 3 a caller error. --self-test / --mutants: 0 green, 1 red.
+# THE MEASURED COMMITS (B1 Q1: C is the newest main commit both the models bundle and an infra clean-room run
+# measured). `measured-cpu` prints one `sha TAB green|red TAB run-id` line per commit the newest infra runs
+# measured, newest run first, each judged exactly as `measure cleanroom-cpu` judges C. It reads with gh as
+# INFRA_TOKEN, every read sent with the ETag cached in DIR (a 304 reuses DIR's copy), and keeps the rate floor
+# (a fifth of the token's limit, capped at 1000). No token, the floor reached, or any read that failed, a job
+# log's included, is exit 2: not_measured, never an empty list. An empty list at exit 0 is a read that found none.
+#
+# EXIT  measure: 0 when a verdict was written · 3 a caller error. measured-cpu: 0 read · 2 not_measured · 3.
+#       assert-head: 0 HEAD is REF (prints `tested-sha: REF`) · 1 it is not. --self-test / --mutants: 0 green, 1 red.
 set -uo pipefail
 PROG=release_lanes
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,6 +70,7 @@ INFRA_JOB='clean-room (aprender)'
 INFRA_ASSERT='Assert the commit under test'   # the step whose success makes the log's tested-sha count
 INFRA_RUNS=6            # newest infra runs searched for the one that tested C
 INFRA_MAX_LOGS=3        # job logs read at most (each is a whole clean-room log)
+RATE_FLOOR=1000         # measured-cpu reads nothing below min(this, a fifth of the limit), as nightly_train.sh
 INDEX_URL="${RELEASE_LANES_INDEX_URL:-https://index.crates.io/ap/re/aprender}"
 # the lanes release-lanes-nightly.yml wires (the self-test checks each one's two jobs)
 WIRED_LANES='cleanroom-gpu cleanroom-cpu publish-dryrun'
@@ -67,6 +82,8 @@ ASSETS_ENV='^(Set up job|Complete job|Set up runner|Run actions/checkout@.*|Chec
 
 caller_error() { printf '%s: caller error: %s\n' "$PROG" "$*" >&2; exit 3; }
 tsv() { local IFS="$TAB"; printf '%s\n' "$*"; }
+# called PREFIX -> PREFIX as this run's job names carry it: after the caller job's name when the workflow was called
+called() { printf '%s%s\n' "${LANES_CALLER:+$LANES_CALLER / }" "$1"; }
 
 # ---------------------------------------------------------------- pure judges: print VERDICT, TAB, REASON --------
 # judge_jobs PREFIX ENV_RE (a run's jobs JSON on stdin). The jobs a lane judges are the ones named `PREFIX / ...`
@@ -219,21 +236,45 @@ log_proves() {
     [ "$1" = completed ] && [ "$2" = completed/success ]
 }
 
-# infra_rows C -> the TSV judge_cpu reads, newest run first; stops at the first run that tested C
+# infra_curl PATH -> the body of API PATH, read with INFRA_TOKEN (measure's read)
+infra_curl() { api "$API/$1" "$INFRA_TOKEN"; }
+
+# infra_gh PATH -> the body of API PATH, read with gh as INFRA_TOKEN and sent with the ETag cached in INFRA_CACHE
+# (measured-cpu's read). 200 refreshes the cache; 304 reuses it, and a 304 with nothing cached is a failed read, as
+# is any other status. gh's own exit is not read: on a 304 it is non-zero, so the status line decides.
+infra_gh() {
+    local k st hdr=()
+    k="$INFRA_CACHE/$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')"
+    [ -s "$k.etag" ] && [ -f "$k.body" ] && hdr=(-H "If-None-Match: $(cat -- "$k.etag")")
+    GH_TOKEN="$INFRA_TOKEN" gh api -i "${hdr[@]}" "$1" > "$k.http" 2>/dev/null
+    st="$(awk 'NR == 1 { print $2; exit }' "$k.http")"
+    case "$st" in
+        200) awk 'f { print } /^\r?$/ { f = 1 }' "$k.http" > "$k.body" || return 1
+             awk 'tolower($1) == "etag:" { sub(/\r$/, ""); sub(/^[^:]*: */, ""); print; exit }' "$k.http" > "$k.etag" ;;
+        304) [ -f "$k.body" ] || return 1 ;;
+        *) return 1 ;;
+    esac
+    cat -- "$k.body"
+}
+
+# infra_rows C [GET] -> the TSV judge_cpu reads, newest run first; stops at the first run that tested C (an empty C
+# reads them all). GET PATH prints an API path's body (infra_curl by default). Any read that fails, a job log's
+# included, fails the whole read: a log that could not be fetched is never a run that tested nothing.
 infra_rows() {
-    local runs ids id att jobs jid jst jcon jassert sha logs=0
-    runs="$(api "$API/repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?per_page=$INFRA_RUNS" "$INFRA_TOKEN")" || return 1
+    local get=${2:-infra_curl} runs ids id att jobs jid jst jcon jassert sha log logs=0
+    runs="$("$get" "repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?per_page=$INFRA_RUNS")" || return 1
     ids="$(printf '%s\n' "$runs" | jq -r '.workflow_runs[] | "\(.id) \(.run_attempt)"')" || return 1
     while read -r id att; do
         [ -n "$id" ] || continue
-        jobs="$(api "$API/repos/$INFRA_REPO/actions/runs/$id/jobs?per_page=100" "$INFRA_TOKEN")" || return 1
+        jobs="$("$get" "repos/$INFRA_REPO/actions/runs/$id/jobs?per_page=100")" || return 1
         jid=""; jst=""; jcon=""; jassert=""
         read -r jid jst jcon jassert < <(printf '%s\n' "$jobs" | infra_job)
         [ -n "$jid" ] || continue
         sha="?"
         if log_proves "$jst" "$jassert" && [ "$logs" -lt "$INFRA_MAX_LOGS" ]; then
             logs=$((logs + 1))
-            sha="$(api "$API/repos/$INFRA_REPO/actions/jobs/$jid/logs" "$INFRA_TOKEN" | tested_sha)"
+            log="$("$get" "repos/$INFRA_REPO/actions/jobs/$jid/logs")" || return 1
+            sha="$(printf '%s\n' "$log" | tested_sha)"
             [ -n "$sha" ] || sha="?"
         fi
         tsv "$id" "$att" "$jst" "$jcon" "$sha"
@@ -246,6 +287,37 @@ measure_cpu() {
     [ -n "${INFRA_TOKEN:-}" ] || { printf 'not_measured\tno infra read token: repository secret INFRA_ACTIONS_READ is unset, and paiml/infra is private\n'; return; }
     rows="$(infra_rows "$c")" || { printf 'not_measured\tpaiml/infra clean-room runs were not read\n'; return; }
     printf '%s\n' "$rows" | judge_cpu "$c"
+}
+
+# measured_cpu CACHE -> "sha TAB green|red TAB run" for each commit the newest infra clean-room runs measured, newest
+# run first (THE MEASURED COMMITS). rc 2 with the reason on stderr: no token, the floor reached, a read failed.
+measured_cpu() {
+    local INFRA_CACHE=$1 lim rem fl rows sha v
+    [ -n "${INFRA_TOKEN:-}" ] || { echo "not_measured: no infra read token (INFRA_ACTIONS_READ); paiml/infra is private" >&2; return 2; }
+    mkdir -p -- "$INFRA_CACHE" || return 2
+    read -r lim rem <<< "$(GH_TOKEN="$INFRA_TOKEN" gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
+    case "$lim:$rem" in *[!0-9:]*|:*|*:) echo "not_measured: rate_limit unreadable" >&2; return 2 ;; esac
+    fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR
+    [ "$rem" -ge "$fl" ] || { echo "not_measured: core remaining $rem under $fl" >&2; return 2; }
+    rows="$(infra_rows "" infra_gh)" || { echo "not_measured: paiml/infra clean-room runs were not read" >&2; return 2; }
+    while read -r sha; do
+        [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || continue
+        v="$(printf '%s\n' "$rows" | judge_cpu "$sha")"
+        case "${v%%"$TAB"*}" in
+            green|red) tsv "$sha" "${v%%"$TAB"*}" "$(printf '%s\n' "$rows" | awk -F '\t' -v s="$sha" '$5 == s { print $1; exit }')" ;;
+        esac
+    done < <(printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 && !seen[$5]++ { print $5 }')
+}
+
+# assert_head REF -> 0 when this checkout's HEAD is REF, a 40-hex sha; prints the tested-sha record. A lane job runs it
+# before anything else, so a lane job that ran on any other commit fails (nightly_train.sh reads a lane on C only
+# from a job whose assert step passed).
+assert_head() {
+    local ref=${1:-} head
+    [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || { printf '%s: assert-head: "%s" is not a 40-hex sha\n' "$PROG" "$ref" >&2; return 1; }
+    head="$(git rev-parse --verify -q HEAD 2>/dev/null)" || { printf '%s: assert-head: no HEAD here\n' "$PROG" >&2; return 1; }
+    [ "$head" = "$ref" ] || { printf '%s: assert-head: HEAD is %s, not %s\n' "$PROG" "$head" "$ref" >&2; return 1; }
+    printf 'tested-sha: %s\n' "$head"
 }
 
 measure_dryrun() {
@@ -264,12 +336,13 @@ measure_dryrun() {
 
 measure() {
     local lane=${1:-} line
+    [[ "${LANES_CALLER:-}" =~ ^[A-Za-z0-9._-]*$ ]] || caller_error "LANES_CALLER '${LANES_CALLER:-}' is not a caller job name"
     case "$lane" in
-        cleanroom-gpu) line="$(measure_jobs "$GPU_PREFIX" "$GPU_ENV")" ;;
-        assets) line="$(measure_jobs "$ASSETS_PREFIX" "$ASSETS_ENV")" ;;
+        cleanroom-gpu) line="$(measure_jobs "$(called "$GPU_PREFIX")" "$GPU_ENV")" ;;
+        assets) line="$(measure_jobs "$(called "$ASSETS_PREFIX")" "$ASSETS_ENV")" ;;
         cleanroom-cpu)
-            [[ "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || caller_error "GITHUB_SHA is not a 40-hex sha"
-            line="$(measure_cpu "$GITHUB_SHA")" ;;
+            [[ "${LANES_REF:-}" =~ ^[0-9a-f]{40}$ ]] || caller_error "LANES_REF is not a 40-hex sha (the workflow passes inputs.ref || github.sha)"
+            line="$(measure_cpu "$LANES_REF")" ;;
         publish-dryrun)
             [ -n "${2:-}" ] || caller_error "measure publish-dryrun ROOT"
             line="$(measure_dryrun "$2")" ;;
@@ -282,18 +355,37 @@ measure() {
 # and a lane job named exactly the lane, gated on the measure job's green/red, that exits 0 only on green. The
 # train matches job NAMES, so a renamed job is a lane that reads not_measured forever, and a lane job that ran on
 # not_measured would turn it into a pass.
+# Every job measures at C (THE LANES): both jobs of a lane check out `inputs.ref || github.sha`, the lane job asserts
+# its HEAD in a step named for C before anything else, the cpu read gets C as LANES_REF and the gpu judge its caller
+# as LANES_CALLER. A called run's github.sha is the caller's commit, so nothing reads it (or GITHUB_SHA) but as that
+# expression's fallback.
 wiring() {
-    local wf=$1 lane bad="" n=0
+    local wf=$1 lane b bad="" n=0 at='\$\{\{ inputs\.ref \|\| github\.sha \}\}'
     [ -f "$wf" ] || { printf '%s is missing' "$wf"; return 1; }
     for lane in $WIRED_LANES; do
         n=$((n + 1))
         grep -qE "^    name: $lane\$" "$wf" || bad="$bad $lane(name)"
         grep -qE "^    if: always\(\) && contains\(fromJSON\('\[\"green\",\"red\"\]'\), needs\.measure-$lane\.outputs\.verdict\)\$" "$wf" || bad="$bad $lane(if)"
         grep -qE "^        run: bash scripts/release/release_lanes.sh measure $lane( |\$)" "$wf" || bad="$bad $lane(measure)"
+        b="$(job_block "$wf" "$lane")"
+        grep -qE "^          ref: $at\$" <<< "$b" || bad="$bad $lane(checkout-at-C)"
+        { grep -qE "^      - name: Assert HEAD is $at\$" <<< "$b" && grep -qE "^          REF: $at\$" <<< "$b" \
+            && grep -qE '^        run: bash scripts/release/release_lanes\.sh assert-head "\$REF"$' <<< "$b"; } || bad="$bad $lane(assert-head)"
+        grep -qE "^          ref: $at\$" <<< "$(job_block "$wf" "measure-$lane")" || bad="$bad measure-$lane(checkout-at-C)"
     done
+    [ "$(grep -cE '^      - uses: actions/checkout@' "$wf")" -eq "$(grep -cE "^          ref: $at\$" "$wf")" ] || bad="$bad checkout-at-C"
+    grep -qE "^      ref: $at\$" <<< "$(job_block "$wf" b2-gpu-at-c)" || bad="$bad b2-gpu-at-c(ref)"
+    grep -qE "^          LANES_REF: $at\$" <<< "$(job_block "$wf" measure-cleanroom-cpu)" || bad="$bad cleanroom-cpu(LANES_REF)"
+    grep -qE '^          LANES_CALLER: \$\{\{ inputs\.caller \}\}$' <<< "$(job_block "$wf" measure-cleanroom-gpu)" || bad="$bad cleanroom-gpu(LANES_CALLER)"
+    ! grep -qE 'github\.sha|GITHUB_SHA' <<< "$(sed -E "/^ *#/d; s/$at//g" "$wf")" || bad="$bad caller-sha"
     [ "$(grep -cE '^      - run: test "\$VERDICT" = green$' "$wf")" -eq "$n" ] || bad="$bad exit(green-only)"
     if [ -n "$bad" ]; then printf 'miswired:%s' "$bad"; return 1; fi
     printf '%s lanes' "$n"
+}
+
+# job_block WORKFLOW JOB -> the lines of job JOB, from `  JOB:` to the next job
+job_block() {
+    awk -v j="  $2:" '$0 == j { f = 1; next } f && /^  [^ #]/ { exit } f' "$1"
 }
 
 # ---------------------------------------------------------------- the case table ---------------------------------
@@ -305,6 +397,151 @@ fx_job() {
         '{name: $n, status: $s, conclusion: (if $c == "-" then null else $c end), steps: $st}'
 }
 fx_run() { jq -cs '{jobs: .}'; }
+# fxgit ARG... -> git with no inherited repository: a self-test run from a hook must never touch the real one
+fxgit() { env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY git "$@"; }
+
+# rl_rows_b1: the rehearsal's rows (B1 Q1, Q3). The measured-commits reader against a fixture gh, the lane job's HEAD
+# assert against a fixture repo, and the caller prefix. Called by self_test, inside it (its ok, broke, tmp, c, d, g, gt).
+rl_rows_b1() {
+    local e h fg rc want
+    exact() {   # exact NAME WANT-RC WANT-STDOUT -- CMD... : CMD exits WANT-RC and prints exactly WANT-STDOUT
+        local name=$1 wrc=$2 wout=$3; shift 4
+        o="$("$@" 2>/dev/null)"; rc=$?
+        if [ "$rc" != "$wrc" ]; then broke "$name" "want exit $wrc, got $rc: $(printf '%s' "$o" | tr '\t\n' '^|')"
+        elif [ "$o" != "$wout" ]; then broke "$name" "printed: $(printf '%s' "$o" | tr '\t\n' '^|')"
+        else ok "$name" "exit $rc"; fi
+    }
+    fgh() {     # fgh DIR PATH STATUS [BODY] : the fixture gh answers PATH with STATUS, and BODY on a 200
+        local k; k="$1/$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')"
+        printf '%s\n' "$3" > "$k.status"; printf '%s\n' "${4:-}" > "$k.body"
+    }
+    infra() {   # infra DIR RUN JOB STATUS CONCLUSION : run RUN's clean-room (aprender) job JOB, its commit assert passed
+        fgh "$1" "repos/$INFRA_REPO/actions/runs/$2/jobs?per_page=100" 200 "$(jq -cn --argjson id "$3" --arg s "$4" --arg c "$5" \
+            --arg n "$INFRA_JOB" --arg a "$INFRA_ASSERT" '{jobs: [{id: $id, name: $n, status: $s, conclusion: (if $c == "-" then null else $c end),
+             steps: [{name: $a, status: "completed", conclusion: "success"}]}]}')"
+    }
+    runs() { fgh "$1" "repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?per_page=$INFRA_RUNS" "$2" "${3:-}"; }
+    logs() { fgh "$1" "repos/$INFRA_REPO/actions/jobs/$2/logs" "$3" "${4:+2026-10-08T02:28:41Z     tested-sha: $4}"; }
+    cpu() {     # cpu FIXTURE CACHE : measured-cpu against the fixture gh
+        env -u GITHUB_OUTPUT -u GH_TOKEN PATH="$tmp/ghbin:$PATH" FGH="$1" INFRA_TOKEN=fixture-infra-token bash "$SCRIPT_PATH" measured-cpu --cache "$2"
+    }
+    fx_get() {  # fx_get PATH : infra_rows' getter over FGH_DIR, as a read that fails on any status but 200
+        local k; k="$FGH_DIR/$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')"
+        [ "$(cat -- "$k.status" 2>/dev/null)" = 200 ] && cat -- "$k.body"
+    }
+    in_dir() { (cd -- "$1" && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR "${@:2}"); }
+    mkdir -p "$tmp/ghbin" "$tmp/fa" "$tmp/fb" "$tmp/fc" "$tmp/jobsbin"
+    cat > "$tmp/ghbin/gh" <<'FAKE'
+#!/usr/bin/env bash
+# the self-test's gh, for INFRA_TOKEN only. `api rate_limit` prints $FGH/rate. `api -i [-H 'If-None-Match: E'] PATH`
+# answers $FGH/<key>.status (404 when absent), and on a 200 the Etag "<key>" and $FGH/<key>.body; a request whose E is
+# that Etag gets a 304, and every request does while $FGH/all304 exists. Each request is logged to $FGH/calls.
+[ "${GH_TOKEN:-}" = fixture-infra-token ] || exit 4
+[ "${1:-}" = api ] || exit 9
+shift
+if [ "${1:-}" = rate_limit ]; then [ -f "$FGH/rate" ] || exit 1; cat -- "$FGH/rate"; exit 0; fi
+inm="" path=""
+while [ $# -gt 0 ]; do
+    case $1 in
+        -i) shift ;;
+        -H) case $2 in If-None-Match:*) inm=${2#If-None-Match: } ;; esac; shift 2 ;;
+        *) path=$1; shift ;;
+    esac
+done
+k=$(printf '%s' "$path" | tr -c 'A-Za-z0-9._-' '_')
+printf '%s %s\n' "$k" "${inm:--}" >> "$FGH/calls"
+st=$(cat -- "$FGH/$k.status" 2>/dev/null) || st=404
+if [ -f "$FGH/all304" ] || { [ "$st" = 200 ] && [ "$inm" = "\"$k\"" ]; }; then printf 'HTTP/2.0 304 Not Modified\r\n\r\n'; exit 1; fi
+printf 'HTTP/2.0 %s X\r\nEtag: "%s"\r\nContent-Type: application/json\r\n\r\n' "$st" "$k"
+[ "$st" = 200 ] || exit 1
+cat -- "$FGH/$k.body"
+FAKE
+    chmod +x "$tmp/ghbin/gh"
+    # fixture a: four runs, newest first. 40 still running (no log), 30 tested d and failed, 25 tested e and was cancelled,
+    # 20 tested c and passed at attempt 1. The measured commits are d (red) and c (green); e and the running one are not.
+    e=1111111111111111111111111111111111111111
+    fg="$tmp/fa"
+    printf '5000 4000\n' > "$fg/rate"
+    runs "$fg" 200 '{"workflow_runs":[{"id":40,"run_attempt":1},{"id":30,"run_attempt":1},{"id":25,"run_attempt":1},{"id":20,"run_attempt":1}]}'
+    infra "$fg" 40 400 in_progress -; infra "$fg" 30 300 completed failure; infra "$fg" 25 250 completed cancelled; infra "$fg" 20 200 completed success
+    logs "$fg" 300 200 "$d"; logs "$fg" 250 200 "$e"; logs "$fg" 200 200 "$c"
+    want="$(tsv "$d" red 30; tsv "$c" green 20)"
+    exact measured_cpu_lists_each_measured_commit_newest_first 0 "$want" -- cpu "$fg" "$tmp/ca"
+    : > "$fg/calls"
+    exact measured_cpu_second_read_is_the_same_read 0 "$want" -- cpu "$fg" "$tmp/ca"
+    if [ "$(grep -c '' "$fg/calls")" -gt 0 ] && ! grep -q ' -$' "$fg/calls"; then ok measured_cpu_resends_every_cached_etag "$(grep -c '' "$fg/calls") reads"
+    else broke measured_cpu_resends_every_cached_etag "calls: $(tr '\n' '|' < "$fg/calls")"; fi
+    : > "$fg/all304"
+    exact measured_cpu_a_304_with_nothing_cached_is_not_measured 2 "" -- cpu "$fg" "$tmp/cb"
+    rm -f -- "$fg/all304"
+    runs "$fg" 403
+    exact measured_cpu_a_refused_read_is_not_measured_cache_or_not 2 "" -- cpu "$fg" "$tmp/ca"
+    runs "$fg" 200 '{"workflow_runs":[{"id":40,"run_attempt":1},{"id":30,"run_attempt":1},{"id":25,"run_attempt":1},{"id":20,"run_attempt":1}]}'
+    logs "$fg" 250 502
+    exact measured_cpu_a_failed_log_read_is_not_measured 2 "" -- cpu "$fg" "$tmp/cc"
+    if FGH_DIR=$fg infra_rows "$c" fx_get > /dev/null; then broke infra_rows_a_failed_log_read_fails_the_read "read as a run that tested nothing"
+    else ok infra_rows_a_failed_log_read_fails_the_read "rc 1"; fi
+    logs "$fg" 250 200 "$e"
+    o="$(FGH_DIR=$fg infra_rows "$d" fx_get | cut -f1 | tr '\n' ' ')"
+    if [ "$o" = "40 30 " ]; then ok infra_rows_stops_at_the_run_on_c "$o"; else broke infra_rows_stops_at_the_run_on_c "rows: $o"; fi
+    infra "$fg" 25 250 completed cancelled; fgh "$fg" "repos/$INFRA_REPO/actions/runs/25/jobs?per_page=100" 500
+    exact measured_cpu_a_failed_jobs_read_is_not_measured 2 "" -- cpu "$fg" "$tmp/cd"
+    infra "$fg" 25 250 completed cancelled
+    printf '5000 999\n' > "$fg/rate"
+    exact measured_cpu_under_the_floor_is_not_measured 2 "" -- cpu "$fg" "$tmp/ce"
+    printf '15000 1000\n' > "$fg/rate"
+    exact measured_cpu_floor_is_capped_at_1000 0 "$want" -- cpu "$fg" "$tmp/cm"
+    printf '1000 250\n' > "$fg/rate"
+    exact measured_cpu_floor_is_a_fifth_of_a_small_limit 0 "$want" -- cpu "$fg" "$tmp/cf"
+    printf '1000 199\n' > "$fg/rate"
+    exact measured_cpu_floor_holds_on_a_small_limit 2 "" -- cpu "$fg" "$tmp/cg"
+    rm -f -- "$fg/rate"
+    exact measured_cpu_unreadable_rate_limit_is_not_measured 2 "" -- cpu "$fg" "$tmp/ch"
+    printf '5000 4000\n' > "$fg/rate"
+    exact measured_cpu_without_a_token_is_not_measured 2 "" -- env -u INFRA_TOKEN PATH="$tmp/ghbin:$PATH" FGH="$fg" bash "$SCRIPT_PATH" measured-cpu --cache "$tmp/ci"
+    exact measured_cpu_needs_its_cache 3 "" -- bash "$SCRIPT_PATH" measured-cpu
+    # fixture b: c tested twice, the newest run (green) decides and c is listed once
+    printf '5000 4000\n' > "$tmp/fb/rate"
+    runs "$tmp/fb" 200 '{"workflow_runs":[{"id":30,"run_attempt":1},{"id":20,"run_attempt":1}]}'
+    infra "$tmp/fb" 30 300 completed success; infra "$tmp/fb" 20 200 completed failure
+    logs "$tmp/fb" 300 200 "$c"; logs "$tmp/fb" 200 200 "$c"
+    exact measured_cpu_lists_a_commit_once_as_its_newest_run_judged_it 0 "$(tsv "$c" green 30)" -- cpu "$tmp/fb" "$tmp/cj"
+    # fixture c: an empty run list is a read that found none; a body that is no run list is a failed read
+    printf '5000 4000\n' > "$tmp/fc/rate"
+    runs "$tmp/fc" 200 '{"workflow_runs":[]}'
+    exact measured_cpu_no_runs_is_a_measured_none 0 "" -- cpu "$tmp/fc" "$tmp/ck"
+    runs "$tmp/fc" 200 '{"message":"Not Found"}'
+    exact measured_cpu_a_body_that_is_no_run_list_is_not_measured 2 "" -- cpu "$tmp/fc" "$tmp/cl"
+    # assert-head, in a fixture repo (one empty commit, made without a hook) and in a repo with no commit
+    fxgit init -q "$tmp/repo" && fxgit init -q "$tmp/empty"
+    h="$(fxgit -C "$tmp/repo" mktree < /dev/null)" \
+        && h="$(GIT_AUTHOR_NAME=fixture GIT_AUTHOR_EMAIL=fixture@invalid GIT_COMMITTER_NAME=fixture GIT_COMMITTER_EMAIL=fixture@invalid \
+                fxgit -C "$tmp/repo" commit-tree "$h" -m fixture)" && fxgit -C "$tmp/repo" update-ref HEAD "$h" || h=""
+    exact assert_head_passes_on_its_own_commit 0 "tested-sha: $h" -- in_dir "$tmp/repo" bash "$SCRIPT_PATH" assert-head "$h"
+    exact assert_head_fails_on_another_commit 1 "" -- in_dir "$tmp/repo" bash "$SCRIPT_PATH" assert-head "$c"
+    exact assert_head_refuses_a_ref_name 1 "" -- in_dir "$tmp/repo" bash "$SCRIPT_PATH" assert-head HEAD
+    says assert_head_names_a_ref_that_is_not_a_sha "is not a 40-hex sha" -- in_dir "$tmp/repo" bash "$SCRIPT_PATH" assert-head "${h^^}"
+    exact assert_head_fails_with_no_commit 1 "" -- in_dir "$tmp/empty" bash "$SCRIPT_PATH" assert-head "$c"
+    # the caller prefix: a called run's jobs are `<caller> / b2-gpu at C / ...`, and only LANES_CALLER finds them
+    o="$(LANES_CALLER=lanes called "$GPU_PREFIX")"
+    if [ "$o" = "lanes / $GPU_PREFIX" ]; then ok called_puts_the_caller_job_first "$o"; else broke called_puts_the_caller_job_first "got: $o"; fi
+    cat > "$tmp/jobsbin/curl" <<'FAKE'
+#!/usr/bin/env bash
+# the self-test's curl for a run's job list: prints $FCURL, whatever was asked
+cat -- "$FCURL"
+FAKE
+    chmod +x "$tmp/jobsbin/curl"
+    fx_job "lanes / $g" completed success "$gt:success" | fx_run > "$tmp/called.json"
+    gpu() { env -u GITHUB_OUTPUT -u GITHUB_STEP_SUMMARY -u LANES_CALLER PATH="$tmp/jobsbin:$PATH" FCURL="$tmp/called.json" GH_TOKEN=fixture \
+                GITHUB_REPOSITORY=o/r GITHUB_RUN_ID=1 "$@" bash "$SCRIPT_PATH" measure cleanroom-gpu; }
+    says measure_judges_the_callers_called_jobs "cleanroom-gpu: green" -- gpu LANES_CALLER=lanes
+    says measure_without_its_caller_reads_no_called_job "no job named $GPU_PREFIX / ..." -- gpu
+    says measure_refuses_a_caller_that_is_not_a_job_name "caller error" -- gpu "LANES_CALLER=lanes / x"
+    says measure_cpu_reads_c_from_lanes_ref "cleanroom-cpu: not_measured — no infra read token" -- \
+        env -u INFRA_TOKEN -u GITHUB_OUTPUT -u GITHUB_STEP_SUMMARY LANES_REF="$c" bash "$SCRIPT_PATH" measure cleanroom-cpu
+    says measure_cpu_refuses_a_ref_that_is_not_a_sha "caller error" -- env -u INFRA_TOKEN LANES_REF=main bash "$SCRIPT_PATH" measure cleanroom-cpu
+    says measure_cpu_never_reads_the_callers_sha "caller error" -- env -u INFRA_TOKEN -u LANES_REF GITHUB_SHA="$c" bash "$SCRIPT_PATH" measure cleanroom-cpu
+}
 
 self_test() {
     local pass=0 fail=0 o tmp c d g a gt st as
@@ -465,6 +702,19 @@ FAKE
     refused wiring_refuses_a_renamed_lane_job 's/^    name: cleanroom-cpu$/    name: cleanroom cpu/'
     refused wiring_refuses_a_lane_job_run_on_any_verdict 's/^\(    if: always() && \)contains(fromJSON(.\["green","red"\].), \(needs\.measure-publish-dryrun\.outputs\.verdict\))$/\1\2 != '"''"'/'
     refused wiring_refuses_a_lane_job_that_passes_red '0,/^      - run: test "\$VERDICT" = green$/s//      - run: true/'
+    # every job at C (B1 Q3): the miswirings that would measure the caller's commit, or a lane job that never proved its own
+    refused wiring_refuses_a_lane_job_without_its_head_assert '/^  cleanroom-gpu:$/,/^  [a-z]/s/release_lanes\.sh assert-head "\$REF"$/release_lanes.sh --self-test/'
+    refused wiring_refuses_a_lane_job_checked_out_elsewhere '/^  publish-dryrun:$/,$s/^          ref: .*$/          ref: main/'
+    refused wiring_refuses_a_measure_job_checked_out_elsewhere '/^  measure-cleanroom-cpu:$/,/^  cleanroom-cpu:$/s/^          ref: .*$/          ref: main/'
+    refused wiring_refuses_a_lane_job_with_no_checkout '/^  cleanroom-cpu:$/,/^  [a-z]/{/actions\/checkout@/,/fetch-depth/d}'
+    refused wiring_refuses_a_measure_job_with_no_checkout '/^  measure-cleanroom-gpu:$/,/^  [a-z]/{/actions\/checkout@/,/fetch-depth/d}'
+    refused wiring_refuses_a_case_table_of_another_commit '/^  case-table:$/,/^  [a-z]/{/^          ref: /d}'
+    refused wiring_refuses_the_callers_sha 's/^      ref: \${{ inputs\.ref || github\.sha }}$/      ref: ${{ github.sha }}/'
+    refused wiring_refuses_b2_gpu_on_a_branch 's/^      ref: \${{ inputs\.ref || github\.sha }}$/      ref: main/'
+    refused wiring_refuses_a_worktree_of_the_callers_commit 's/"\$RUNNER_TEMP\/lanes-c" "\$REF"$/"$RUNNER_TEMP\/lanes-c" "$GITHUB_SHA"/'
+    refused wiring_refuses_a_cpu_read_without_lanes_ref '/^          LANES_REF: /d'
+    refused wiring_refuses_a_gpu_judge_without_its_caller '/^          LANES_CALLER: /d'
+    rl_rows_b1
     rm -rf -- "${tmp:?}"
     printf -- '--- %s ok, %s broke ---\n' "$pass" "$fail"
     [ "$fail" -eq 0 ]
@@ -495,7 +745,31 @@ m21_build_metadata_counts_as_bumped s/%%\[-+\]\*}" r=/%%[-]*}" r=/
 m22_log_proves_without_the_assert s/\[ "\$2" = completed\/success \]/true/
 m23_two_legacy_records_count s/\(\*\$.\\n.\*)\) return 0 ;;/\1 ;;/
 m24_disagreeing_legacy_record_counts s/\*) case "\$s" in "\$a"\*) ;; \*) return 0 ;; esac ;;/*) ;;/
-m25_token_in_argv s/-H @<(printf .Authorization: Bearer %s\\n. "\$2")/-H "Authorization: Bearer $2"/'
+m25_token_in_argv s/-H @<(printf .Authorization: Bearer %s\\n. "\$2")/-H "Authorization: Bearer $2"/
+m26_failed_infra_read_is_none s#rows="\$(infra_rows "" infra_gh)" || {#rows="$(infra_rows "" infra_gh)" || true || {#
+m27_failed_log_read_is_no_commit s#/logs")" || return 1#/logs")" || log=""#
+m28_304_with_no_cache_is_empty s#304) \[ -f "\$k.body" \] || return 1 ;;#304) touch -- "$k.body" ;;#
+m29_rate_floor_ignored s#\[ "\$rem" -ge "\$fl" \] || {#true || {#
+m30_floor_is_never_a_fifth s#fl=\$((lim / 5)); \[ "\$fl" -le "\$RATE_FLOOR" \] || fl=\$RATE_FLOOR#fl=$RATE_FLOOR#
+m31_floor_is_never_capped s#\] || fl=\$RATE_FLOOR#] || true#
+m32_unmeasured_commit_listed s#            green|red) tsv "\$sha"#            *) tsv "$sha"#
+m33_assert_head_passes_another_commit s#\[ "\$head" = "\$ref" \] || {#true || {#
+m34_caller_prefix_dropped s#"\${LANES_CALLER:+\$LANES_CALLER / }" "\$1"#"" "$1"#
+m35_wiring_ignores_the_head_assert s# || bad="\$bad \$lane(assert-head)"# || true#
+m36_wiring_ignores_a_lane_jobs_checkout s# || bad="\$bad \$lane(checkout-at-C)"# || true#
+m37_wiring_ignores_a_measure_jobs_checkout s# || bad="\$bad measure-\$lane(checkout-at-C)"# || true#
+m38_wiring_ignores_a_checkout_of_another_commit s# || bad="\$bad checkout-at-C"# || true#
+m39_wiring_ignores_the_callers_sha s# || bad="\$bad caller-sha"# || true#
+m40_wiring_ignores_b2_gpus_ref s# || bad="\$bad b2-gpu-at-c(ref)"# || true#
+m41_wiring_ignores_lanes_ref s# || bad="\$bad cleanroom-cpu(LANES_REF)"# || true#
+m42_wiring_ignores_lanes_caller s# || bad="\$bad cleanroom-gpu(LANES_CALLER)"# || true#
+m43_gh_read_with_the_ambient_token s#"\$INFRA_TOKEN" gh api -i#"${GH_TOKEN:-}" gh api -i#
+m44_any_status_is_a_200 s#        200) awk#        [0-9]*) awk#
+m45_commit_listed_once_per_run s#&& !seen\[\$5\]++ { print \$5 }#{ print $5 }#
+m46_cached_etag_never_sent s#hdr=(-H "If-None-Match: \$(cat -- "\$k.etag")")#hdr=()#
+m47_assert_head_takes_any_word s#\[\[ "\$ref" =~ #[[ -n "$ref" ]] || [[ "$ref" =~ #
+m48_lanes_ref_takes_any_word s#"\${LANES_REF:-}" .~ \^\[0-9a-f\]{40}\$ \]\]#-n "${LANES_REF:-}" ]]#
+m49_lanes_caller_takes_any_word s#\[\[ "\${LANES_CALLER:-}" .~ \^\[A-Za-z0-9._-\]\*\$ \]\]#true#'
 
 mutants() {
     local tmp pass=0 fail=0 name expr o rc m
@@ -527,6 +801,10 @@ case "${1:-}" in
     --mutants) mutants; exit $? ;;
     measure) shift; measure "$@"; exit $? ;;
     judge-cpu-measure) measure_cpu "${2:-}"; exit 0 ;;   # the self-test's door to the no-token row
-    -h|--help) sed -n '2,42p' "$SCRIPT_PATH"; exit 0 ;;
-    *) caller_error "usage: measure LANE [ROOT] | --self-test | --mutants" ;;
+    measured-cpu)
+        [ "${2:-}" = --cache ] && [ -n "${3:-}" ] || caller_error "measured-cpu --cache DIR"
+        measured_cpu "$3"; exit $? ;;
+    assert-head) assert_head "${2:-}"; exit $? ;;
+    -h|--help) sed -n '2,58p' "$SCRIPT_PATH"; exit 0 ;;
+    *) caller_error "usage: measure LANE [ROOT] | measured-cpu --cache DIR | assert-head REF | --self-test | --mutants" ;;
 esac

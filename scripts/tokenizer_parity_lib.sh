@@ -90,3 +90,59 @@ tp_commit_matches() {
     return 1
 }
 
+
+# tp_inventory_rows FILE -> the model rows of a declared inventory (#4981), one "<sha256> <name>"
+# per line. The file is sha256sum format, "<64 lowercase hex>  <file name>", with '#' comment
+# and blank lines allowed. A name is a bare *.gguf file name, never a path. Status 1, naming the
+# reason on stderr, when the file cannot be read, a line is malformed, a name is listed twice, or
+# no model is listed: an inventory the gate cannot read is a refusal, never an empty pass.
+tp_inventory_rows() {
+    local file=${1-} line n=0 seen=" "
+    [ -f "$file" ] && [ -r "$file" ] || { printf 'inventory %s: cannot read it\n' "$file" >&2; return 1; }
+    local re='^([0-9a-f]{64})  ([A-Za-z0-9._+-]+\.gguf)$'
+    local out=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in '' | '#'*) continue ;; esac
+        if ! [[ $line =~ $re ]]; then
+            printf 'inventory %s: malformed line %q\n' "$file" "$line" >&2
+            return 1
+        fi
+        case "$seen" in *" ${BASH_REMATCH[2]} "*)
+            printf 'inventory %s: %s is listed twice\n' "$file" "${BASH_REMATCH[2]}" >&2
+            return 1 ;;
+        esac
+        seen="$seen${BASH_REMATCH[2]} "
+        out="$out${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"$'\n'
+        n=$((n + 1))
+    done <"$file"
+    [ "$n" -gt 0 ] || { printf 'inventory %s: lists no model\n' "$file" >&2; return 1; }
+    printf '%s' "$out"
+}
+
+# tp_resolve_inventory DIR < ROWS -> one verdict per "<sha256> <name>" row of tp_inventory_rows:
+#   ok NAME                      DIR/NAME is there and its sha256 is the declared one
+#   absent NAME                  no regular file DIR/NAME
+#   mismatch NAME GOT_SHA256     the file is there with another sha256
+#   unhashable NAME              sha256sum could not read it
+# Status 0 iff every row is ok. A file in DIR that no row names is never looked at.
+# A verdict never carries DIR: a name has no whitespace (tp_inventory_rows' pattern) and a
+# sha256 is hex, so `read -r verdict name sha` splits every verdict whatever DIR holds. The
+# caller joins DIR/NAME itself.
+tp_resolve_inventory() {
+    local dir=${1-} want name got verdict bad=0
+    while read -r want name; do
+        [ -n "$want" ] || continue
+        if [ ! -f "$dir/$name" ]; then
+            verdict="absent $name"
+        elif ! got=$(sha256sum -- "$dir/$name" 2>/dev/null) || [ -z "$got" ]; then
+            verdict="unhashable $name"
+        elif [ "${got%% *}" != "$want" ]; then
+            verdict="mismatch $name ${got%% *}"
+        else
+            verdict="ok $name"
+        fi
+        printf '%s\n' "$verdict"
+        case "$verdict" in ok\ *) ;; *) bad=1 ;; esac
+    done
+    return "$bad"
+}

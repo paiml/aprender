@@ -630,8 +630,12 @@ clean_room_gate() {
 # The clean-room gate runs FIRST, before the preflight and before any upload.
 # There is no mode, flag or variable that skips it for a publishing run;
 # --check REPORTS its verdict (it uploads nothing, so there is nothing to bypass).
+# --rehearse asks both gates the way the night can answer them, in the block after
+# this one, and exits before the config backup and every upload. It sits AFTER the
+# publishing path's block so that block stays the first of both calls in this file:
+# check_cascade_clean_room_gate.sh reads the first call of each to prove the order.
 case "$MODE" in
-  --check|--order-check) : ;;
+  --check|--order-check|--rehearse) : ;;
   *)
     if ! clean_room_gate "$REPO_ROOT" "v$TARGET_VERSION"; then
       echo "⛔ clean-room gate refused (clean-room.yml is not green on exactly the v$TARGET_VERSION commit); nothing was published." >&2
@@ -643,6 +647,33 @@ case "$MODE" in
     fi
     ;;
 esac
+
+# THE RELEASE REHEARSAL (scripts/release/rehearse.sh, APR-071 B1/H10): the two gates above, asked
+# the way the night can answer them, then a stop before the config backup and every upload. No tag
+# exists, so the clean-room fact is the night's cleanroom-cpu lane on C (the bump's parent), and the
+# preflight's R3 judges the tag the tag step would have made. Both gates are asked even when the
+# first refuses, so one night names both. Refused outright unless RELEASE_REHEARSAL=1.
+if [ "$MODE" = --rehearse ]; then
+  [ "${RELEASE_REHEARSAL:-}" = 1 ] || { echo "⛔ --rehearse runs only under RELEASE_REHEARSAL=1 (scripts/release/rehearse.sh)" >&2; exit 2; }
+  # shellcheck source=scripts/release/lib_rehearsal.sh
+  . "$REPO_ROOT/scripts/release/lib_rehearsal.sh" || exit 2
+  reh_rc=0
+  if reh_run=$(rehearsal_lane cleanroom-cpu); then
+    echo "CLEAN-ROOM OK (rehearsal): the night's cleanroom-cpu run $reh_run is green on C ${RELEASE_REHEARSAL_C:0:9}"
+  else
+    echo "⛔ clean-room gate refused (rehearsal): lane cleanroom-cpu on C: $reh_run; nothing was published." >&2
+    reh_rc=1
+  fi
+  PUBLISH_PREFLIGHT_WOULD_TAG=$(cat "${RELEASE_AP:-/nonexistent}/would-tag" 2>/dev/null) || PUBLISH_PREFLIGHT_WOULD_TAG=""
+  export PUBLISH_PREFLIGHT_WOULD_TAG
+  if ! bash "$REPO_ROOT/scripts/check_publish_preflight.sh"; then
+    echo "⛔ check_publish_preflight.sh refused; nothing was published." >&2
+    reh_rc=1
+  fi
+  [ "$reh_rc" = 0 ] || exit 1
+  echo "REHEARSAL: every publishing gate asked and green; stopped before the config backup and the uploads"
+  exit 0
+fi
 
 # Backup .cargo/config.toml once (publish needs a clean one without [patch.crates-io]).
 # The backup lives OUTSIDE the tree. Beside the config it was an untracked file

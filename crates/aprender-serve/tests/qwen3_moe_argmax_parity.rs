@@ -38,8 +38,12 @@
 //! Three operator-confirm-gated inputs:
 //!
 //! 1. The 17.3 GB `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` weights, mmap'd
-//!    by llama-cli. Cached on lambda-vector at the paths in
-//!    `CANONICAL_QWEN3_CODER_GGUF_PATHS`.
+//!    by llama-cli. DECLARED, not searched for (#4981): the file name and its
+//!    sha256 are the row `evidence/release-models.sha256` lists for it, and the
+//!    file is read from `${APR_MODEL_DIR:-$HOME/models}`, the dir
+//!    `scripts/tokenizer_parity.sh` reads the same list from. No machine path is
+//!    named here. A file whose sha256 is not the listed one is a failure, not a
+//!    different model to test.
 //! 2. The `qwen3_moe_fp16_logits_pos0.json` fixture, generated once via
 //!    `scripts/generate_qwen3_moe_fp16_logits.py` (M32d.1, PR #1129).
 //! 3. The PINNED `llama-completion`, and only that one: `$LLAMA_COMPLETION` as
@@ -62,7 +66,8 @@
 //!
 //! ## What the test does
 //!
-//! 1. Locate llama-cli binary, GGUF, and JSON fixture (skip if any missing).
+//! 1. Locate llama-cli binary, GGUF, and JSON fixture (skip if any missing),
+//!    and assert the GGUF's sha256 is the one the model list declares.
 //! 2. Read `fixture.prompt` and `fixture.argmax_text`.
 //! 3. Spawn `llama-cli -m <gguf> -p <prompt> -n 1 --top-k 1 --temp 0.0
 //!    --seed 0 --no-display-prompt -no-cnv --no-warmup --log-disable`,
@@ -72,14 +77,16 @@
 //!    accommodating whitespace differences between tokenizers' detokenize
 //!    paths (some prepend spaces; some don't).
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const CANONICAL_QWEN3_CODER_GGUF_PATHS: &[&str] = &[
-    "/home/noah/.cache/pacha/models/2b88b180a790988f.gguf",
-    "/mnt/nvme-raid0/cache/apr-home/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
-    "/mnt/nvme-raid0/models/qwen3-coder-30b-q4k.gguf",
-];
+/// The model this test runs: its file name is the key of its row in [`MODEL_LIST`].
+const MODEL_FILE: &str = "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf";
+/// The committed list of release-time models, `<sha256>  <file name>` per row (#4981).
+const MODEL_LIST: &str = "evidence/release-models.sha256";
+/// The model dir, as `scripts/tokenizer_parity.sh` reads it: `${APR_MODEL_DIR:-$HOME/models}`.
+const MODEL_DIR_ENV: &str = "APR_MODEL_DIR";
 
 const FIXTURE_RELATIVE: &str = "tests/fixtures/qwen3_moe_fp16_logits_pos0.json";
 
@@ -101,14 +108,40 @@ struct Fp16Fixture {
     argmax_text: String,
 }
 
-fn find_first_existing<I: AsRef<str>>(paths: &[I]) -> Option<PathBuf> {
-    for p in paths {
-        let pb = PathBuf::from(p.as_ref());
-        if pb.exists() {
-            return Some(pb);
-        }
+/// The sha256 the list declares for `name`: the first row `<sha256>  <name>`, two spaces as
+/// sha256sum writes them. Comments (`#`) and blank lines are not rows. The list's own shape
+/// (64 lowercase hex, no name twice) is held at PR time by `scripts/check_tokenizer_parity.sh`.
+fn listed_sha256(list: &str, name: &str) -> Option<String> {
+    list.lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| l.split_once("  "))
+        .find(|(_, n)| *n == name)
+        .map(|(sha, _)| sha.to_string())
+}
+
+/// `${APR_MODEL_DIR:-$HOME/models}`: an empty `APR_MODEL_DIR` is unset, as in the shell.
+fn model_dir_from(apr_model_dir: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
+    match apr_model_dir.filter(|v| !v.is_empty()) {
+        Some(dir) => Some(PathBuf::from(dir)),
+        None => home
+            .filter(|h| !h.is_empty())
+            .map(|h| PathBuf::from(h).join("models")),
     }
-    None
+}
+
+fn model_list_path() -> PathBuf {
+    // CARGO_MANIFEST_DIR is crates/aprender-serve; the list lives at the repo root.
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(MODEL_LIST)
+}
+
+fn sha256_file(path: &Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// `$LLAMA_CLI` from `scripts/llama_bin.sh`, or `None`. The value is used as
@@ -160,12 +193,42 @@ fn f_qw3_moe_parity_002_argmax_vs_llama_cpp() {
         llama_cli.display()
     );
 
-    let Some(gguf_path) = find_first_existing(CANONICAL_QWEN3_CODER_GGUF_PATHS) else {
+    let list_path = model_list_path();
+    let list = std::fs::read_to_string(&list_path).unwrap_or_else(|e| {
+        panic!(
+            "F-QW3-MOE-PARITY-002: cannot read the model list {}: {e}",
+            list_path.display()
+        )
+    });
+    let want_sha256 = listed_sha256(&list, MODEL_FILE)
+        .unwrap_or_else(|| panic!("F-QW3-MOE-PARITY-002: {MODEL_LIST} does not list {MODEL_FILE}"));
+    let Some(model_dir) = model_dir_from(std::env::var_os(MODEL_DIR_ENV), std::env::var_os("HOME"))
+    else {
         eprintln!(
-            "F-QW3-MOE-PARITY-002: skipped — no cached Qwen3-Coder GGUF in {CANONICAL_QWEN3_CODER_GGUF_PATHS:?}"
+            "F-QW3-MOE-PARITY-002: skipped — neither ${MODEL_DIR_ENV} nor $HOME is set, so there is no model dir"
         );
         return;
     };
+    let gguf_path = model_dir.join(MODEL_FILE);
+    if !gguf_path.is_file() {
+        eprintln!(
+            "F-QW3-MOE-PARITY-002: skipped — {MODEL_FILE}, listed in {MODEL_LIST}, is absent from {}",
+            model_dir.display()
+        );
+        return;
+    }
+    let got_sha256 = sha256_file(&gguf_path).unwrap_or_else(|e| {
+        panic!(
+            "F-QW3-MOE-PARITY-002: cannot hash {}: {e}",
+            gguf_path.display()
+        )
+    });
+    assert_eq!(
+        got_sha256,
+        want_sha256,
+        "F-QW3-MOE-PARITY-002: {} is not the model {MODEL_LIST} lists",
+        gguf_path.display()
+    );
 
     let fx_path = fixture_path();
     let Some(fixture) = load_fixture(&fx_path) else {
@@ -275,10 +338,62 @@ fn locate_llama_cli_reads_only_the_pinned_env() {
 }
 
 #[test]
-fn find_first_existing_handles_missing() {
-    // Still used for the model GGUF (not the comparator): a bogus list returns None.
-    let none_paths: &[&str] = &["/nonexistent/model.gguf", "/also/nonexistent"];
-    assert!(find_first_existing(none_paths).is_none());
+fn listed_sha256_reads_only_the_named_row() {
+    // #4981: the model is a declared row, never the first file that happens to exist.
+    let a = "a".repeat(64);
+    let b = "b".repeat(64);
+    let list = format!("# header\n\n{a}  other.gguf\n{b}  {MODEL_FILE}\n");
+    assert_eq!(listed_sha256(&list, MODEL_FILE), Some(b.clone()));
+    assert_eq!(listed_sha256(&list, "other.gguf"), Some(a));
+    assert_eq!(listed_sha256(&list, "absent.gguf"), None);
+    // one space is not the sha256sum row shape; a commented-out row is not a row
+    assert_eq!(
+        listed_sha256(&format!("{b} {MODEL_FILE}\n"), MODEL_FILE),
+        None
+    );
+    assert_eq!(
+        listed_sha256(&format!("#{b}  {MODEL_FILE}\n"), MODEL_FILE),
+        None
+    );
+}
+
+#[test]
+fn model_dir_is_apr_model_dir_else_home_models() {
+    assert_eq!(
+        model_dir_from(Some("/declared".into()), Some("/h".into())),
+        Some(PathBuf::from("/declared"))
+    );
+    assert_eq!(
+        model_dir_from(Some(OsString::new()), Some("/h".into())),
+        Some(PathBuf::from("/h/models"))
+    );
+    assert_eq!(
+        model_dir_from(None, Some("/h".into())),
+        Some(PathBuf::from("/h/models"))
+    );
+    assert_eq!(model_dir_from(None, None), None);
+}
+
+#[test]
+fn the_committed_model_list_names_this_model() {
+    let list = std::fs::read_to_string(model_list_path()).expect("evidence/release-models.sha256");
+    let sha = listed_sha256(&list, MODEL_FILE).expect("a row for the MoE comparator's model");
+    assert_eq!(sha.len(), 64);
+    assert!(sha
+        .bytes()
+        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
+}
+
+#[test]
+fn sha256_file_is_the_sha256sum_digest() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("abc.gguf");
+    std::fs::write(&path, b"abc").expect("write");
+    assert_eq!(
+        sha256_file(&path).expect("hash"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert!(sha256_file(&dir.path().join("absent.gguf")).is_err());
 }
 
 #[test]

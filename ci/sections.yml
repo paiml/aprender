@@ -1147,18 +1147,34 @@ jobs:
       # never as "no growth", so the mistake would have been loud rather than
       # silent. It is still a mistake. One fetch, before all of them.
       #
-      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
-      # ratchets fall back to the origin/main TIP. That is the STRICTER
-      # comparand, and it means the CI path is the tip path: a local run that
-      # passes on the merge-base can still red here, and CI is authoritative.
+      # #4861 + #4983: origin/main is pinned to the commit this tree was BUILT
+      # on, not fetched at its tip. fetch-depth is 1 here, so the merge-base is
+      # usually unavailable and the ratchets read origin/main as it stands.
+      # Fetched at the tip, a run that started after main shrank a baseline or
+      # fixed a function judged a merge commit built before that change against
+      # it: #4813 went red (pipe_grep_q_baseline.txt 62 vs 60, a file it never
+      # touched), and #4970's re-run went red on m17 complexity (checkout at
+      # 60a59031, compared against acd599e52), while a re-run rebuilds the SAME
+      # merge commit. Pinned per event (scripts/ci/pin_build_base.sh):
+      #   pull_request  the merge commit's first parent, checked against the PR head
+      #   merge_group   merge_group.base_sha, as the refinement-gate pin does
+      #   otherwise     the tip, deepened by one on push (resolve_base.sh judges a
+      #                 push against HEAD's first parent: HEAD vs HEAD would pass
+      #                 vacuously, the G-10 quorum's finding)
+      # The shared ratchet library takes the same first parent on its own
+      # (scripts/lib_baseline_ratchet.sh FIRSTPARENT), so a lib ratchet and a
+      # script that reads origin/main directly cannot disagree. A PR that adds
+      # back an entry main has since deleted is still refused by its
+      # merge_group run, which builds on main as it merges. The pin refuses,
+      # and every guard below is skipped red, when the event names no build base.
       - id: guard-setup
-        name: Fetch origin/main as the comparand for every ratchet in this job
+        name: Pin origin/main to this run's build base, the comparand for every ratchet in this job (#4861)
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
-          # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
-          # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
-          # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
-          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+          bash scripts/ci/pin_build_base.sh --self-test
+          bash scripts/ci/pin_build_base.sh
       # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-tree-steps
       # below, keeps going past a red one, and reports every failure. GitHub would
       # stop this job at its first red step, and the others would never be seen.
@@ -1685,17 +1701,16 @@ jobs:
       # never as "no growth", so the mistake would have been loud rather than
       # silent. It is still a mistake. One fetch, before all of them.
       #
-      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
-      # ratchets fall back to the origin/main TIP. That is the STRICTER
-      # comparand, and it means the CI path is the tip path: a local run that
-      # passes on the merge-base can still red here, and CI is authoritative.
-      - name: Fetch origin/main as the comparand for every ratchet in this job
-        run: |
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
-          # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
-          # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
-          # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
-          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+      # #4861 + #4983: origin/main is pinned to the commit this tree was BUILT
+      # on, not fetched at its tip -- the same pin, for the same reason, as
+      # guard-tree's guard-setup (which also runs the pin's self-test; this job
+      # only pins). m17's complexity ratchet is the #4983 case: a re-run of an
+      # unchanged PR judged against main's moved tip went red.
+      - name: Pin origin/main to this run's build base, the comparand for every ratchet in this job (#4861)
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: bash scripts/ci/pin_build_base.sh
       # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
       # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
       # container that mounts it and drops to the runner's uid cannot write
@@ -2072,9 +2087,11 @@ jobs:
       # runs first so a bad resolver is named as such rather than surfacing as a
       # mysterious verdict from the gate underneath it.
       #
-      # Cost: it sources pv_bin.sh, which cargo-builds pv -- already paid for by
-      # check_contract_test_binding.sh on the next line, which `cargo run`s the
-      # same binary. Nothing extra is compiled by placing it here.
+      # Cost: it sources pv_bin.sh, which cargo-builds pv -- the build the contracts
+      # gate and check_contract_test_binding.sh below resolve through the same
+      # pv_bin.sh, so the job compiles pv once. (#4974: the binding check used to
+      # `cargo run` pv WITHOUT pv_bin.sh's features, a second compile on every run
+      # that this comment said did not happen.)
       - name: pv_bin.sh must resolve the HEAD-built pv and refuse a stale one
         run: setsid --wait bash scripts/check_pv_bin_resolution.sh
       # #4475: the contract gate, blocking. `make contracts` stopped after its first step (an
@@ -2659,9 +2676,10 @@ jobs:
   #     derived universe (`git ls-files 'scripts/check_*.sh'`, BSE-001 PR-A) runs
   #     them in `guard-tree`, which `gate` needs. Adding a guard never edits this
   #     file, and removing this job does not un-wire them.
-  #   * the PR's own receipt is judged from the BASE by pr-review-quorum.yml
-  #     (`pull_request_target` + `merge_group`), which invokes
-  #     check_pr_review_arm4.sh itself and consumed nothing from this job.
+  #   * the receipts of merged PRs are judged once a night from the BASE by
+  #     pr-review-quorum.yml (`schedule`; #4602 took it off the PR and the
+  #     queue), which invokes check_pr_review_arm4.sh through
+  #     review_receipts_nightly.sh and consumed nothing from this job.
   #
   # WHAT NO LONGER RUNS IN CI, stated rather than discovered later: the two
   # mutation sweeps `scripts/mutate-guard.sh` (Arm 3) and
@@ -2964,7 +2982,9 @@ jobs:
   # judged a PR's own receipt was editable by that PR. `pull_request_target`
   # runs the base's definition. `gate` below no longer waits on it; the
   # ruleset decides whether `pr-review-quorum / present` is required (recorded
-  # in the C0-5 PR body, never applied by the session that wrote this).
+  # in the C0-5 PR body, never applied by the session that wrote this). It is
+  # not required, so since #4602 it runs on no PR at all: once a night, on
+  # `schedule`, over the PRs that merged.
 
   # ==========================================================================
   # ADVISORY GPU JOBS AT PR TIME

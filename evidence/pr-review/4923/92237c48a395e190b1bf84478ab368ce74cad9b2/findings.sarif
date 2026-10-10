@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crate-contents-checker-absent",
+          "level": "error",
+          "message": {
+            "text": "The new rehearsal call (autopilot.sh:592) runs scripts/release/check_crate_contents.sh, which is absent from HEAD, origin/main and every origin branch (checked with git ls-tree and cat-file over all refs/remotes/origin). bash exits 127, so the dryrun step dies on every rehearsal until that file lands. The guard row only greps the call text and mutant 32 only weakens the die, so a green self-test does not show the callee exists. Earlier finding cascade-no-secret-reader-absent also stands: release_ready.sh has no --budget, the lib has no rp_entries, the contract has no seven: key."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 592
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "Every rehearsal (dryrun step) runs bash scripts/release/check_crate_contents.sh, which no ref contains: bash exits 127, die fires, the dryrun step cannot pass until the file lands, and the self-test stays green because it greps call text only.",
+            "command": [
+              "bash",
+              "absent.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "ruleId": "cascade-cleanroom-run-log-fixed",
+          "level": "note",
+          "message": {
+            "text": "Finding 2 FIXED in d93ae11118: tested-sha is read with gh run view --job <databaseId> --log (available while sibling jobs run); jid comes from the same jobs query that gates on completed and success. Mutant 29 is killed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 180
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Finding 2 FIXED in d93ae11118: tested-sha is read with gh run view --job <databaseId> --log (available while sibling jobs run); jid comes from the same jobs query that gates on completed and success. Mutant 29 is killed.",
+            "rationale": "read from the diff and files at head 6e78cc99d7; see message"
+          }
+        },
+        {
+          "ruleId": "coverage-run-id-never-expires",
+          "level": "warning",
+          "message": {
+            "text": "Finding 4 NOT fixed in code: line 133 still attaches to any non-empty coverage-run-id without checking it belongs to MC; d93ae11118 only added the die on a failed coverage/V push (mutant 31). Backstop: cov_wait needs conclusion success and cut_tag judges the receipt for MC via tag_coverage_gate --resolve, so a stale id fails closed. Low."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 133
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Finding 4 NOT fixed in code: line 133 still attaches to any non-empty coverage-run-id without checking it belongs to MC; d93ae11118 only added the die on a failed coverage/V push (mutant 31). Backstop: cov_wait needs conclusion success and ",
+            "rationale": "read from the diff and files at head 6e78cc99d7; see message"
+          }
+        },
+        {
+          "ruleId": "merge-resolution-cascade-block-ok",
+          "level": "note",
+          "message": {
+            "text": "Merge 6e78cc99d7 resolution reviewed: the cascade drain takes MODEL_LADDER_CRUX_DIR and CRUX_CERT under AP_POLICY=1, identical to the preflight step at line 538; cascade_cleanroom_at_tag and cascade_no_secret_green still run first; AP_POLICY and WT are bound before use; bash -n clean; d93ae11118 edits intact."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 603
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Merge 6e78cc99d7 resolution reviewed: the cascade drain takes MODEL_LADDER_CRUX_DIR and CRUX_CERT under AP_POLICY=1, identical to the preflight step at line 538; cascade_cleanroom_at_tag and cascade_no_secret_green still run first; AP_POLIC",
+            "rationale": "read from the diff and files at head 6e78cc99d7; see message"
+          }
+        },
+        {
+          "ruleId": "cascade-cleanroom-duplicates-existing-gate",
+          "level": "note",
+          "message": {
+            "text": "Unchanged: cascade_cleanroom_at_tag still re-implements clean_room_gate of cascade-publish.sh."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 172
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Unchanged: cascade_cleanroom_at_tag still re-implements clean_room_gate of cascade-publish.sh.",
+            "rationale": "read from the diff and files at head 6e78cc99d7; see message"
+          }
+        },
+        {
+          "ruleId": "tag-pre-push-hook-now-on-branch",
+          "level": "note",
+          "message": {
+            "text": "Earlier note resolved: scripts/hooks/pre-push-tags.sh now exists at HEAD via the merge of main."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/autopilot.sh"
+                },
+                "region": {
+                  "startLine": 425
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Earlier note resolved: scripts/hooks/pre-push-tags.sh now exists at HEAD via the merge of main.",
+            "rationale": "read from the diff and files at head 6e78cc99d7; see message"
+          }
+        },
+        {
+          "ruleId": "rc-cut-finals-wiring-untested",
+          "level": "warning",
+          "message": {
+            "text": "rc_cut.sh run_cut populates D_FINALS from the live matching-refs call, but --self-test only drives rc_decide with D_FINALS set by hand. A mutant that breaks the population (D_FINALS=$(true printf ...)) passes the self-test (exit 0, built and run at head), so a broken listing silently disables the released-branch skip and the 422 misfire (0.70.3-rc.1) returns. Fail-closed on API error only."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/rc_cut.sh"
+                },
+                "region": {
+                  "startLine": 197
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "rc_cut.sh run_cut populates D_FINALS from the live matching-refs call, but --self-test only drives rc_decide with D_FINALS set by hand. A mutant that breaks the population (D_FINALS=$(true printf ...)) passes the self-test (exit 0, built and run at head), so a",
+            "rationale": "read from the diff and files at head 92237c48a3; see message"
+          }
+        },
+        {
+          "ruleId": "arm-refusal-pattern-loosened",
+          "level": "note",
+          "message": {
+            "text": "c899db46ac widens the arm-refusal self-test pattern from `^DIE arming v0.0.0 for the pre-push tag guard failed` to `^DIE arming v0.0.0 .*pre-push tag guard failed`. The real message (autopilot.sh:427) still matches; the loosening admits any wording between, but the row also requires GIT-PUSH absent. Negligible."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_tag_step_gated.sh"
+                },
+                "region": {
+                  "startLine": 317
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "c899db46ac widens the arm-refusal self-test pattern from `^DIE arming v0.0.0 for the pre-push tag guard failed` to `^DIE arming v0.0.0 .*pre-push tag guard failed`. The real message (autopilot.sh:427) still matches; the loosening admits any wording between, bu",
+            "rationale": "read from the diff and files at head 92237c48a3; see message"
+          }
+        },
+        {
+          "ruleId": "rc-cut-change-outside-pr-title",
+          "level": "note",
+          "message": {
+            "text": "The rc_cut.sh released-branch skip (#4957) is unrelated to the release-policy / autopilot scope of this PR; the exact-name grep -qxF is correct (mutant -qF is killed by the near-miss row) and v<X.Y.Z> sorts first in matching-refs so one unpaginated page suffices."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/rc_cut.sh"
+                },
+                "region": {
+                  "startLine": 74
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "The rc_cut.sh released-branch skip (#4957) is unrelated to the release-policy / autopilot scope of this PR; the exact-name grep -qxF is correct (mutant -qF is killed by the near-miss row) and v<X.Y.Z> sorts first in matching-refs so one unpaginated page suffic",
+            "rationale": "read from the diff and files at head 92237c48a3; see message"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.2"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

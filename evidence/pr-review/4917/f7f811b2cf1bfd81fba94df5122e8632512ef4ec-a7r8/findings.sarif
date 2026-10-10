@@ -1,0 +1,197 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "port_not_wired_to_callers",
+          "level": "warning",
+          "message": {
+            "text": "The PR ships the Rust binary and scripts/lib/crux_judge_bin.sh, but nothing resolves the binary: no script, workflow or Makefile outside the resolver itself names crux_judge_bin.sh or the binary, and the three Python modules are kept (their only change is a helper split for the complexity hook), not deleted. The task premise that the .py files hook into the binary is false. The Python therefore cannot fail open on a missing binary because it never calls it; the cost is that acceptance criterion 1 (Python deleted, callers on the binary) is not met by this half of the split and the port is unexercised by any gate. Non-blocking: the file itself says it is the N-1 gate caller and the PR body scopes this as split 2/2."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/lib/crux_oracles.py",
+            "excerpt": "Kept only as the N-1 gate caller until a released aprender-crux-judge carries the port; the helper split is for the pre-commit complexity hook, with no behaviour change. Retire at 0.71+1.",
+            "excerpt_sha256": "f347a7f5e2072d10f0559d6298af84b8619412541ba182561c2dc9437f1291af",
+            "failure_scenario": "A regression in the Rust verdict logic would not be caught by CI because check_crux_oracles.sh and check_crux_inference_judge.sh still drive the Python.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "gate_still_drives_python",
+          "level": "note",
+          "message": {
+            "text": "check_crux_inference_judge.sh line 30 still defaults JUDGE to the Python module, so the F6 mutant and golden-receipt claims in PMAT-4802 acceptance criterion 2 are not exercised against the binary by this tree. At head the Python gate check_crux_oracles.sh prints PASS, so the Python refactor shows no behaviour drift on that gate."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "scripts/check_crux_inference_judge.sh",
+            "excerpt": "JUDGE=\"${CRUX_JUDGE_OVERRIDE:-$ROOT/scripts/lib/crux_inference_judge.py}\"",
+            "excerpt_sha256": "12277d8b56debe471eda8a0e633db2b757aa1686f50a553baad96b87a012a0de",
+            "failure_scenario": "The roadmap entry marks criterion 2 as met while the gate that proves it targets the retiring Python.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "sandbox_sentinel_fails_closed",
+          "level": "note",
+          "message": {
+            "text": "Rust code_tests verdict matches the Python: pass needs rc 0 AND stdout ending in the sentinel, so a reply calling sys.exit(0) is not accepted, and a missing or failed sandbox probe yields sandbox_unavailable (oracles.rs lines 201-230), never correct. Verdict paths judge_answer, normalize and strip_think were compared line by line with crux_oracles.py on main and agree."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "tools/aprender-crux-judge/src/oracles.rs",
+            "excerpt": "if rc == 0 && py_rstrip(&stdout).ends_with(SENTINEL) {",
+            "excerpt_sha256": "95c678558830fbe89c9592b54b67ea570f17209c8e368ff304e8289c47c34f93",
+            "failure_scenario": "If the sentinel test were dropped, any reply ending in sys.exit(0) would count as correct; a mutant doing exactly that is killed by oracles::tests::sandbox_case_table.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "sandbox_constrains_network_and_resources",
+          "level": "note",
+          "message": {
+            "text": "sandbox.rs wraps the cell in prlimit (CPU, address space, file size) then unshare -rn, with env cleared to PATH and stdin null, in a 0700 tmpdir; this is the same constraint set as the Python oracle. It does not constrain the filesystem (the cell can read or write anything the user can), which equals the Python behaviour and is not a regression."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "tools/aprender-crux-judge/src/sandbox.rs",
+            "excerpt": ".arg(\"-rn\")",
+            "excerpt_sha256": "9401e41f4e1ce2a375543a7fe5f22181efe35c73448756872006006962ca73ea",
+            "failure_scenario": "Model-written code can read host files; the same holds on main, so only the network namespace and rlimits bound it.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "duplication_scan",
+          "level": "note",
+          "message": {
+            "text": "pr_review_duplication_scan.sh at head: 470 needles, 128 hits (100 recorded), 1562 of 1562 sibling branches. All recorded hits are in the HEAD tree and are common identifier names (one_of, is_int, extract_answer, entry_mut) matching pre-existing unrelated code, plus the Python gate scripts the port mirrors by design. No hit is a second implementation of the judge on another branch. Four recorded hits whose paths carry host names were dropped from the receipt for privacy; they were evidence files matching judged_at, serve_routes, literal_eval and report_greedy."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "scan --json output read; 28 hits beyond the 100 cap were not recorded, so a sibling copy in that tail cannot be excluded",
+            "failure_scenario": "A copy of the port on a sibling branch would appear as a ref other than HEAD; none of the 100 recorded hits is one.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "patch_id_binds",
+          "level": "note",
+          "message": {
+            "text": "Subject diff 828ccb845f..f7f811b2cf (three-dot) has patch-id b9b86f93f41f2d5438f421f93e170781b473b587 under prpid_compute (previous head a144e9310b: 43652d81b3189d03a3b369e4a273c8c0fa507c7d)."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "prpid_compute run under bash -c on the review worktree at head",
+            "failure_scenario": "A stale local origin/main would bind the receipt to a different base than CI computes.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "crate_tests_green",
+          "level": "note",
+          "message": {
+            "text": "cargo test for the excluded crate at head: 39 passed, 0 failed. The taskset core list 28-31 given in the brief is not in this host cpuset (taskset: Invalid argument), so the run used cores 20-23 under the same flock and nice; every other part of the prescribed command is unchanged."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "test",
+              "--manifest-path",
+              "tools/aprender-crux-judge/Cargo.toml",
+              "-j4"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c9ea6d46bb458f43a5714e262a972e5a73c6ce39ae81718fbf3875a564e400e6",
+            "failure_scenario": "A failing unit test in the port would turn this red.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "delta_since_a144e9310b",
+          "level": "note",
+          "message": {
+            "text": "The delta since previously reviewed head a144e9310b is the generated docs/roadmaps/roadmap.yaml only (+22 lines, adds PMAT-4802), verified by `python3 scripts/lib/roadmap_fragments.py aggregate --check` (ok, roadmap.yaml == aggregate(306 fragments), idempotent) and by git diff --name-only (no non-evidence file other than roadmap.yaml changed). The prior findings carry over unchanged; pmat, mutation and crate-test consultations were measured at a144e9310b and were not re-run at f7f811b2cf."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "python3",
+              "scripts/lib/roadmap_fragments.py",
+              "aggregate",
+              "--check"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "A hand-edited roadmap.yaml would make aggregate --check report a mismatch with the fragments.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "manual_mutants_killed",
+          "level": "note",
+          "message": {
+            "text": "Three hand-made mutants were applied to a scratch copy of the crate, not the worktree: oracles.rs judge_answer equality negated, sandbox.rs -rn changed to -r, and oracles.rs sentinel check removed. Each made cargo test fail (evaluate_answer_and_structure, sandbox_case_table, sandbox_case_table), so 3 of 3 were killed. cargo-mutants itself was not run."
+          },
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "test",
+              "--manifest-path",
+              "<mutant copy>/Cargo.toml",
+              "-j4"
+            ],
+            "exit_code": 101,
+            "stdout_sha256": "ac5c57b68aa989c4772245aa229eb6b601315526974f77257946a15e566b8a6d",
+            "failure_scenario": "A surviving mutant in verdict or sandbox logic would mean a defect no test notices; none of the three survived.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
