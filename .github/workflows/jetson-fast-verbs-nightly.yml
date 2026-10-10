@@ -1,0 +1,190 @@
+# jetson-fast-verbs-nightly: the E2 (#3598) fast-verbs infra test of the 4B
+# model on the jetson-edge runner (Jetson Orin, sm_87, aarch64), every night.
+#
+# WHAT IT PROVES. A `--features cuda` apr built from main at this commit
+# (scripts/apr_bin.sh attributes it), driving run / chat / serve / bench on ONE
+# pinned GGUF: Qwen3.5-4B-Q4_K_M from unsloth/Qwen3.5-4B-GGUF at a fixed
+# revision, verified by size and sha256 before any verb runs (the same pin as
+# evidence/crux/hf-sources.yaml). scripts/jetson_fast_verbs.sh owns the pass
+# rule per verb and writes fast-verbs.tsv, uploaded as the night's receipt.
+#
+# LAB, NOT A GATE (C324). This workflow runs on schedule and workflow_dispatch
+# ONLY: no pull_request, no merge_group, no push trigger, and it is absent from
+# contracts/release-ready-v1.yaml, so it can block no merge and no release. A
+# red or unmeasured night rewrites the night section of its ONE ticket
+# (LAB_TICKET_TITLE, owner:la-0.71) and stays silent; seven nights in a row not
+# green disable the workflow until its owner enables it again.
+#
+# NO SPEED GATE. Rates and wall times are recorded and judged against nothing:
+# SILICON_FLOORS has no 8.7 key (scripts/perf-matrix.yaml, host jetson: NA).
+#
+# The job-level `perf-jetson` concurrency group is the PP-19 one-perf-job-per-
+# host rule (scripts/check_perf_concurrency_groups.sh); `cuda` is the
+# discriminating label scripts/check_runner_labels.sh requires.
+name: jetson-fast-verbs-nightly
+
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fast-verbs:
+    runs-on: [self-hosted, jetson, cuda]
+    concurrency:
+      group: perf-jetson
+      cancel-in-progress: false
+    # A cold `--features cuda` release build on the Orin is the long pole; the
+    # target dir persists under $HOME so warm nights skip most of it.
+    timeout-minutes: 330
+    permissions:
+      contents: read
+      issues: write         # the one LAB ticket
+      actions: write        # the seven-night stop disables this workflow
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    env:
+      LAB_TICKET_TITLE: 'LAB: jetson-fast-verbs-nightly - 4B fast verbs on jetson-edge'
+      MODEL_REPO: unsloth/Qwen3.5-4B-GGUF
+      MODEL_REV: e87f176479d0855a907a41277aca2f8ee7a09523
+      MODEL_FILE: Qwen3.5-4B-Q4_K_M.gguf
+      MODEL_SHA256: 00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4
+      MODEL_BYTES: '2740937888'
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+
+      - name: Put the runner's rustup toolchain on PATH
+        shell: bash
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Preflight - what this runner is (recorded, not judged)
+        shell: bash
+        run: |
+          set -uo pipefail
+          uname -a
+          cat /etc/nv_tegra_release 2>/dev/null || echo 'no /etc/nv_tegra_release'
+          ls -l /usr/lib/aarch64-linux-gnu/tegra/libcuda.so* /usr/lib/aarch64-linux-gnu/libcuda.so* 2>/dev/null || echo 'no libcuda under the usual aarch64 paths'
+          free -g
+          df -h "$HOME"
+          for t in cargo rustc jq curl sha256sum; do
+            printf '%-10s %s\n' "$t" "$(command -v "$t" || echo MISSING)"
+          done
+          cargo --version
+          rustc --version
+
+      - name: Build apr with --features cuda
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$HOME/.cache/aprender-jetson-target"
+          # -j 4: a 4B-capable Orin still runs out of RAM linking the cuda
+          # crates at full parallelism.
+          cargo build --release --features cuda --bin apr -j 4
+
+      - name: Fetch the pinned 4B GGUF and verify size and sha256
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$HOME/models/jetson-fast-verbs"
+          mkdir -p "$dir"
+          model="$dir/$MODEL_FILE"
+          have=$(stat -c %s "$model" 2>/dev/null || echo 0)
+          if [ "$have" != "$MODEL_BYTES" ]; then
+            curl -fL --retry 3 -o "$model.part" \
+              "https://huggingface.co/$MODEL_REPO/resolve/$MODEL_REV/$MODEL_FILE"
+            mv "$model.part" "$model"
+          fi
+          got=$(sha256sum "$model" | cut -d' ' -f1)
+          if [ "$got" != "$MODEL_SHA256" ]; then
+            echo "::error::model sha256 $got != pinned $MODEL_SHA256"
+            exit 1
+          fi
+          echo "model $model sha256 $got ($MODEL_BYTES bytes)"
+
+      - name: Run the fast verbs (run, chat, serve, bench) on the GPU
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Same paths the build and fetch steps used; apr_bin.sh reads the target
+          # dir from cargo metadata, so it must see the same CARGO_TARGET_DIR.
+          export CARGO_TARGET_DIR="$HOME/.cache/aprender-jetson-target"
+          model="$HOME/models/jetson-fast-verbs/$MODEL_FILE"
+          . scripts/apr_bin.sh || exit 1
+          out="$RUNNER_TEMP/fast-verbs"
+          mkdir -p "$out"
+          {
+            echo "apr: $("$APR" --version)"
+            echo "model: $MODEL_REPO@$MODEL_REV/$MODEL_FILE sha256 $MODEL_SHA256"
+            echo "commit: $GITHUB_SHA"
+          } > "$out/provenance.txt"
+          cat "$out/provenance.txt"
+          bash scripts/jetson_fast_verbs.sh "$APR" "$model" "$out"
+          rc=$?
+          {
+            echo '### jetson fast verbs'
+            echo
+            sed 's/^/    /' "$out/provenance.txt"
+            echo
+            echo '| verb | rc | pass | wall_ms | detail |'
+            echo '|---|---|---|---|---|'
+            tail -n +2 "$out/fast-verbs.tsv" 2>/dev/null | awk -F '\t' '{ printf "| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5 }'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: Upload the night's receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jetson-fast-verbs-${{ github.run_id }}
+          path: ${{ runner.temp }}/fast-verbs
+          if-no-files-found: warn
+
+      - name: A red or unmeasured night rewrites the night section of the one LAB ticket
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          marker='<!-- jetson-fast-verbs-nightly.yml rewrites everything below this line each red night -->'
+          night="$RUNNER_TEMP/night.md"
+          {
+            printf '%s\n\n### Night of %s: not green\n\nRun: %s\n\n' "$marker" "$(date -u +%Y-%m-%d)" "$RUN_URL"
+            if [ -s "$RUNNER_TEMP/fast-verbs/fast-verbs.tsv" ]; then
+              echo '```'
+              cat "$RUNNER_TEMP/fast-verbs/fast-verbs.tsv"
+              echo '```'
+            else echo 'No receipt: the run failed before any verb ran (not measured).'; fi
+          } > "$night"
+          num=$(T="$LAB_TICKET_TITLE" gh issue list --state open --search "\"$LAB_TICKET_TITLE\" in:title" \
+                  --json number,title --jq '[.[] | select(.title == env.T)][0].number // empty')
+          if [ -n "$num" ]; then
+            gh issue view "$num" --json body --jq .body > "$RUNNER_TEMP/body.md"
+            awk -v m="$marker" '$0 == m { exit } { print }' "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/new.md"
+            cat "$night" >> "$RUNNER_TEMP/new.md"
+            gh issue edit "$num" --body-file "$RUNNER_TEMP/new.md"
+          else
+            gh issue create --title "$LAB_TICKET_TITLE" --label owner:la-0.71 --body-file "$night"
+          fi
+
+      - name: Seven nights in a row not green stop this workflow until its owner enables it
+        if: failure() && github.event_name == 'schedule'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # This night is not green (the step runs on failure only); the six before
+          # it are the newest completed scheduled runs, newest first.
+          mapfile -t prev < <(gh run list --workflow jetson-fast-verbs-nightly.yml --event schedule \
+                                --status completed --limit 6 --json conclusion --jq '.[].conclusion')
+          if bash scripts/review_receipts_nightly.sh --seven-nights failure "${prev[@]}"; then
+            gh workflow disable jetson-fast-verbs-nightly.yml
+            echo "::warning::seven nights not green in a row: jetson-fast-verbs-nightly is disabled until its owner runs: gh workflow enable jetson-fast-verbs-nightly.yml"
+          fi

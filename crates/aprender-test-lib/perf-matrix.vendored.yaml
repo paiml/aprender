@@ -189,6 +189,25 @@ hosts:
       taken here is comparable to anything (YOGA-NIGHTLY-001 §7, R-7, N-4).
     decided_by: spec-owner
     date: '2026-09-09'
+
+  # jetson (Jetson Orin, sm_87, aarch64; org runner jetson-edge) is declared for
+  # the same ONE reason yoga is: jetson-fast-verbs-nightly.yml's job needs a
+  # valid `perf-jetson` group, and PP-19 reads its host vocabulary from here.
+  # NO PERFORMANCE CELL: SILICON_FLOORS has no 8.7 key, so the nightly records
+  # its rates and judges none of them (E2 #3598, scripts/jetson_fast_verbs.sh).
+  jetson:
+    accelerator: jetson-orin
+    compute_class: cuda
+    comparator: llamacpp
+    reachable_by: [cuda]
+    ci_runner: self-hosted
+    status: NA
+    reason: >-
+      infra-test host. SILICON_FLOORS has no key for compute capability 8.7, so
+      no throughput number taken here is compared to anything; the fast-verbs
+      nightly records rates and gates none.
+    decided_by: spec-owner
+    date: '2026-10-10'
 workloads: [W1, W2]
 
 arms:
@@ -429,6 +448,9 @@ baselines:
   yoga:
     W1: {status: NA, reason: 'SILICON_FLOORS keyed on 8.9, shared with the 4090 (R-7)', decided_by: spec-owner, date: '2026-09-09'}
     W2: {status: NA, reason: 'SILICON_FLOORS keyed on 8.9, shared with the 4090 (R-7)', decided_by: spec-owner, date: '2026-09-09'}
+  jetson:
+    W1: {status: NA, reason: 'SILICON_FLOORS has no 8.7 key; fast-verbs nightly records, never gates', decided_by: spec-owner, date: '2026-10-10'}
+    W2: {status: NA, reason: 'SILICON_FLOORS has no 8.7 key; fast-verbs nightly records, never gates', decided_by: spec-owner, date: '2026-10-10'}
   mini:
     W1: {status: NA, reason: 'no Metal inference path (#2841)', decided_by: spec-owner, date: '2026-09-02'}
     W2: {status: NA, reason: 'no Metal inference path (#2841)', decided_by: spec-owner, date: '2026-09-02'}

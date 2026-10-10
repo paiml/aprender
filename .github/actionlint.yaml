@@ -28,3 +28,5 @@ self-hosted-runner:
     - mini-builder
     # #4729 / infra#1388: one-box lane for pr-review-quorum `present` (intel-clean-room-15)
     - review-light
+    # E2 #3598 / C338: the Jetson Orin org runner jetson-edge (jetson-fast-verbs-nightly)
+    - jetson
