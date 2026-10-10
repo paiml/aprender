@@ -14,6 +14,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `dag-status --root DIR` (reads `[id, row]` JSON pairs on stdin) | `scripts/lib/dag_status.py` (kept for now, see below) |
 | `git-patch-id [--stable\|--unstable\|--verbatim]` (reads a diff on stdin) | `scripts/lib/git_patch_id.py` (kept: callers `scripts/lib/pr_review_patch_id.sh` and `scripts/check_pr_review_arm4.sh` not yet switched) |
 | `llama-fit-verdict TOOL_FOUND PIN RC FREE_MIB VERSION_FILE STDOUT_FILE MODEL` | `scripts/lib/llama_fit_verdict.py` (kept: `scripts/model_ladder.sh` calls it on the certification path, and `scripts/check_model_ladder.sh` mutates copies of it) |
+| `nextest-fail-fast [--reader library\|fallback] TOML` | the inline Python judge in `scripts/check_nextest_ci_profile_no_fail_fast.sh` (kept: the guard runs it inline and switches once a released `aprender-ci-tools` carries the port, N-1) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
@@ -63,6 +64,26 @@ before `RecursionError` turns the trained context into `null`. The port follows 
 are what the ladder's hosts run. Under 3.10 or 3.14 the original itself answers those
 edges differently, so the parity test refuses any interpreter but 3.12/3.13 for this
 section (`LFV_PYTHON=`).
+
+## Where `nextest-fail-fast` differs (by design; the parity test maps the first two)
+
+`scripts/tests/ci_tools_nextest_fail_fast_parity_test.sh` cuts the judge out of the
+guard and runs it under tomllib and under its purpose-built reader
+(`NEXTEST_GUARD_FORCE_FALLBACK=1`), against `--reader library` and `--reader fallback`.
+It needs Python 3.11+ (tomllib) and counts its cases on its own. The original took the
+purpose-built reader only where `tomllib`/`tomli` were missing; `--reader` picks it here.
+Every verdict, exit status and ENV/FAIL reason is the original's, except:
+
+| Case | Original | Port |
+|------|----------|------|
+| the library reader's name in `reader=` | `tomllib` or `tomli` | `toml crate` |
+| the purpose-built reader's name | `purpose-built reader (no tomllib/tomli on this interpreter)` | `purpose-built reader` |
+| the words of a TOML parse error | tomllib's | the `toml` crate's, on one line, with tomllib's `(at line L, column C)` |
+| a value tomllib would read as a datetime, or an integer outside `i64`, as `fail-fast` | its Python `repr()` | its TOML text, or a parse error |
+| an inline table with two or more keys as `fail-fast`, in a FAIL line | keys in file order | keys in the `toml` crate's map order (sorted unless its `preserve_order` feature is on) |
+| `repr()` of a non-printable, non-ASCII character in a FAIL line | `\x..`/`\u....` escapes | the character itself |
+| an invalid UTF-8 byte past the first 8 KiB, or a truncated sequence at the end, in the purpose-built reader | the position within the chunk text mode was decoding | the position in the file |
+| which characters `\d` and `int()` take as digits | the interpreter's Unicode version | the `regex` crate's |
 
 ## Where `tarball-workspace` output differs (by design; the parity test maps or skips each)
 
