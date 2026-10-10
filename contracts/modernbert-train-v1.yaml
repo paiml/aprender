@@ -174,7 +174,7 @@ proof_obligations:
     The gradcheck is not vacuous: for every differentiable operation, the
     sign-flipped analytical gradient is REJECTED by the same checker that
     accepts the correct one.
-  formal: check(-dL/dx) == false for every op
+  formal: "∀ op: check(-dL/dx) == false"
   applies_to: all
 
 - id: MBT-ROPE-003
@@ -182,7 +182,7 @@ proof_obligations:
   property: >
     rope_rotate_half is the identity at position 0, and theta = 10000 and
     theta = 160000 produce different outputs at some position > 0.
-  formal: rope(x, p=0) == x && rope(x, theta=1e4) != rope(x, theta=1.6e5) for p > 0
+  formal: "rope(x, p=0) == x ∧ ∀ p > 0: rope(x, theta=1e4) ≠ rope(x, theta=1.6e5)"
   applies_to: all
 
 - id: MBT-WINDOW-004
@@ -191,7 +191,7 @@ proof_obligations:
     local_window_mask keeps |i - j| == half_window and masks |i - j| ==
     half_window + 1; building it with half_window - 1 or half_window + 1
     changes at least one entry.
-  formal: M[i][i+w] == 0 && M[i][i+w+1] == NEG_MASK
+  formal: "M[i][i+w] == 0 ∧ M[i][i+w+1] == NEG_MASK"
   applies_to: all
 
 - id: MBT-CLIP-005
