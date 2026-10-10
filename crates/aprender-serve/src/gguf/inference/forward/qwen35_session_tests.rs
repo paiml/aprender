@@ -702,6 +702,11 @@ fn synthetic_forward() -> Qwen35Forward {
     let base: &'static OwnedQuantizedModel = Box::leak(Box::new(base));
     let qwen: &'static Qwen35Model<'static> = Box::leak(Box::new(Qwen35Model {
         base,
+        embedding: crate::gguf::forward_qwen35::qwen35_embedding::Qwen35Embedding::from_f32(
+            &base.token_embedding,
+            4,
+        )
+        .expect("embedding table"),
         layers: vec![],
         head_dim: 4,
         num_kv_heads: 1,

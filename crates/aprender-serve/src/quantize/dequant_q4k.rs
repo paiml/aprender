@@ -1,6 +1,16 @@
 
 /// Dequantize `Q4_K` format weights
 pub fn dequantize_q4_k(data: &[u8]) -> Result<Vec<f32>> {
+    let mut result = vec![0.0f32; data.len() / 144 * QK_K];
+    dequantize_q4_k_into(data, &mut result)?;
+    Ok(result)
+}
+
+/// [`dequantize_q4_k`] into `result`, which holds exactly the tensor's values.
+///
+/// # Errors
+/// `data` is not whole super-blocks, or `result` is not their length.
+pub(crate) fn dequantize_q4_k_into(data: &[u8], result: &mut [f32]) -> Result<()> {
     const SUPER_BLOCK_BYTES: usize = 144;
 
     if !data.len().is_multiple_of(SUPER_BLOCK_BYTES) {
@@ -14,7 +24,7 @@ pub fn dequantize_q4_k(data: &[u8]) -> Result<Vec<f32>> {
     }
 
     let num_super_blocks = data.len() / SUPER_BLOCK_BYTES;
-    let mut result = vec![0.0f32; num_super_blocks * QK_K];
+    check_into_len("Q4_K", result.len(), num_super_blocks * QK_K)?;
 
     for sb_idx in 0..num_super_blocks {
         let sb_start = sb_idx * SUPER_BLOCK_BYTES;
@@ -55,7 +65,7 @@ pub fn dequantize_q4_k(data: &[u8]) -> Result<Vec<f32>> {
         }
     }
 
-    Ok(result)
+    Ok(())
 }
 
 /// Dequantize `Q5_K` format weights
@@ -123,6 +133,16 @@ pub(crate) fn for_each_q5k_value(sb: &[u8], mut emit: impl FnMut(usize, f32)) {
 
 /// Dequantize `Q6_K` format weights
 pub fn dequantize_q6_k(data: &[u8]) -> Result<Vec<f32>> {
+    let mut result = vec![0.0f32; data.len() / 210 * QK_K];
+    dequantize_q6_k_into(data, &mut result)?;
+    Ok(result)
+}
+
+/// [`dequantize_q6_k`] into `result`, which holds exactly the tensor's values.
+///
+/// # Errors
+/// `data` is not whole super-blocks, or `result` is not their length.
+pub(crate) fn dequantize_q6_k_into(data: &[u8], result: &mut [f32]) -> Result<()> {
     const SUPER_BLOCK_BYTES: usize = 210;
 
     if !data.len().is_multiple_of(SUPER_BLOCK_BYTES) {
@@ -136,7 +156,7 @@ pub fn dequantize_q6_k(data: &[u8]) -> Result<Vec<f32>> {
     }
 
     let num_super_blocks = data.len() / SUPER_BLOCK_BYTES;
-    let mut result = vec![0.0f32; num_super_blocks * QK_K];
+    check_into_len("Q6_K", result.len(), num_super_blocks * QK_K)?;
 
     for sb_idx in 0..num_super_blocks {
         let sb_start = sb_idx * SUPER_BLOCK_BYTES;
@@ -177,7 +197,7 @@ pub fn dequantize_q6_k(data: &[u8]) -> Result<Vec<f32>> {
         }
     }
 
-    Ok(result)
+    Ok(())
 }
 
 /// Dequantize `Q2_K` format weights
@@ -348,4 +368,15 @@ pub fn dequantize_q3_k(data: &[u8]) -> Result<Vec<f32>> {
 pub(crate) fn read_f16(bytes: &[u8]) -> f32 {
     let bits = u16::from_le_bytes([bytes[0], bytes[1]]);
     half::f16::from_bits(bits).to_f32()
+}
+
+/// Refuse an `_into` output that is not exactly the tensor's length.
+fn check_into_len(kind: &str, got: usize, want: usize) -> Result<()> {
+    if got == want {
+        Ok(())
+    } else {
+        Err(RealizarError::InvalidShape {
+            reason: format!("{kind} dequant into {got} values, the data holds {want}"),
+        })
+    }
 }

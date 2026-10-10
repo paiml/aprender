@@ -118,28 +118,43 @@ pub fn dequantize_q8_0(data: &[u8]) -> Result<Vec<f32>> {
         });
     }
 
+    let mut result = vec![0.0f32; data.len() / BLOCK_BYTES * BLOCK_SIZE];
+    dequantize_q8_0_into(data, &mut result)?;
+    Ok(result)
+}
+
+/// [`dequantize_q8_0`] into `result`, which holds exactly the tensor's values.
+///
+/// # Errors
+/// `data` is not whole blocks, or `result` is not their length.
+pub(crate) fn dequantize_q8_0_into(data: &[u8], result: &mut [f32]) -> Result<()> {
+    const BLOCK_BYTES: usize = 2 + 32;
+
+    if !data.len().is_multiple_of(BLOCK_BYTES) {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "Q8_0 data length {} is not a multiple of block size {}",
+                data.len(),
+                BLOCK_BYTES
+            ),
+        });
+    }
     let num_blocks = data.len() / BLOCK_BYTES;
-    let mut result = Vec::with_capacity(num_blocks * BLOCK_SIZE);
+    check_into_len("Q8_0", result.len(), num_blocks * BLOCK_SIZE)?;
 
-    for block_idx in 0..num_blocks {
-        let block_start = block_idx * BLOCK_BYTES;
-
+    for (block, out) in data
+        .chunks_exact(BLOCK_BYTES)
+        .zip(result.chunks_exact_mut(BLOCK_SIZE))
+    {
         // Read scale (f16 -> f32)
-        let scale_bits = u16::from_le_bytes([data[block_start], data[block_start + 1]]);
-        let scale = f16_to_f32(scale_bits);
-
-        // Read quantized values (32 int8 values)
-        let quants_start = block_start + 2;
-        let quants = &data[quants_start..quants_start + 32];
-
-        // Dequantize
-        for &byte in quants {
-            let value = i8::from_le_bytes([byte]);
-            result.push(scale * f32::from(value));
+        let scale = f16_to_f32(u16::from_le_bytes([block[0], block[1]]));
+        // Dequantize the 32 int8 values
+        for (o, &byte) in out.iter_mut().zip(&block[2..]) {
+            *o = scale * f32::from(i8::from_le_bytes([byte]));
         }
     }
 
-    Ok(result)
+    Ok(())
 }
 
 /// Convert IEEE 754 half-precision (f16) to single-precision (f32)

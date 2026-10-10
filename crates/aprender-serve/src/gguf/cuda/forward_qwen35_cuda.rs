@@ -271,6 +271,9 @@ pub struct Qwen35CudaModel<'a> {
     /// copied in, every layer updates it in place. `None` only while a forward
     /// has it out.
     hidden_buf: Option<GpuBuffer<f32>>,
+    /// Host `[hidden_dim]` the embedding row is dequantized into (#4991), reused so
+    /// a decode token allocates nothing on the host.
+    embed_row: Vec<f32>,
     dims: Qwen35CudaDims,
     /// Positions the device KV caches hold.
     max_seq_len: usize,
@@ -673,6 +676,7 @@ impl<'a> Qwen35CudaModel<'a> {
             out_normed,
             logits_buf,
             hidden_buf,
+            embed_row: vec![0.0; dims.hidden_dim as usize],
             dims,
             max_seq_len,
             prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
@@ -1742,21 +1746,20 @@ impl<'a> Qwen35CudaModel<'a> {
         Ok(logits)
     }
 
-    /// `token`'s embedding row, after checking the token and the position.
+    /// `token`'s embedding row, dequantized into the reused `embed_row` (#4991),
+    /// after checking the token and the position. The caller hands the buffer
+    /// back with `self.embed_row = row` once the row is uploaded.
     fn embedding_row(
-        &self,
+        &mut self,
         token: u32,
         state: &Qwen35CudaState,
         position: usize,
-    ) -> Result<&'a [f32]> {
-        let hidden_dim = self.dims.hidden_dim as usize;
-        let embedding = self.model.base.token_embedding();
-        let start = (token as usize) * hidden_dim;
-        if start + hidden_dim > embedding.len() {
+    ) -> Result<Vec<f32>> {
+        let rows = self.model.embedding.rows();
+        if token as usize >= rows {
             return Err(RealizarError::InvalidShape {
                 reason: format!(
-                    "qwen35_cuda: token {token} is outside the {}-row embedding table",
-                    embedding.len() / hidden_dim
+                    "qwen35_cuda: token {token} is outside the {rows}-row embedding table"
                 ),
             });
         }
@@ -1769,7 +1772,10 @@ impl<'a> Qwen35CudaModel<'a> {
             });
         }
 
-        Ok(&embedding[start..start + hidden_dim])
+        let mut row = std::mem::take(&mut self.embed_row);
+        row.resize(self.model.embedding.row_len(), 0.0);
+        self.model.embedding.row_into(token as usize, &mut row)?;
+        Ok(row)
     }
 
     /// The token temperature 0 picks after `token` at `position` (#4215): the
@@ -1815,8 +1821,9 @@ impl<'a> Qwen35CudaModel<'a> {
             .ok_or_else(|| RealizarError::InvalidShape {
                 reason: "qwen35_cuda: the hidden buffer is already in use".to_string(),
             })?;
-        let run = self.run_layers_and_head(&mut dev, row, state, position);
+        let run = self.run_layers_and_head(&mut dev, &row, state, position);
         self.hidden_buf = Some(dev);
+        self.embed_row = row;
         run
     }
 

@@ -7,6 +7,10 @@ use std::f32::consts::E;
 #[path = "qwen35_known_issue.rs"]
 pub mod qwen35_known_issue;
 
+/// The token embedding kept quantized, one row dequantized per lookup (#4991).
+#[path = "qwen35_embedding.rs"]
+pub(crate) mod qwen35_embedding;
+
 /// SiLU activation function
 pub fn silu(x: f32) -> f32 {
     x / (1.0 + (-x as f32).exp())
@@ -592,6 +596,8 @@ pub(crate) enum Qwen35OwnedLayer {
 /// layers, on top of the dense model's embeddings, final norm and `lm_head`.
 pub struct Qwen35Model<'a> {
     pub(crate) base: &'a OwnedQuantizedModel,
+    /// `token_embd.weight` in its GGUF encoding; the base carries no f32 copy (#4991).
+    pub(crate) embedding: qwen35_embedding::Qwen35Embedding,
     pub(crate) layers: Vec<Qwen35OwnedLayer>,
     pub(crate) head_dim: usize,
     pub(crate) num_kv_heads: usize,
@@ -859,8 +865,9 @@ fn attention_head_dim(layers: &[Qwen35OwnedLayer], fallback: usize) -> usize {
 }
 
 impl<'a> Qwen35Model<'a> {
-    /// Build the shared base (config, token embeddings, final norm, `lm_head`) without the
-    /// dense layer loader, which refuses hybrid files.
+    /// Build the shared base (config, final norm, `lm_head`) without the dense layer loader,
+    /// which refuses hybrid files. Its `token_embedding` is EMPTY: the table stays quantized
+    /// in `Qwen35Model::embedding`, loaded by [`Self::from_model_and_layers`] (#4991).
     ///
     /// # Errors
     /// Missing or malformed base tensors or metadata.
@@ -872,7 +879,6 @@ impl<'a> Qwen35Model<'a> {
         qwen35_known_issue::warn_if_known_issue(model);
         let config = crate::gguf::config::ValidatedModelConfig::from_gguf(model)?.into_inner();
 
-        let token_embedding = model.get_tensor_f32("token_embd.weight", data)?;
         let output_norm_weight = model.get_tensor_f32("output_norm.weight", data)?;
 
         let lm_head_ref =
@@ -893,7 +899,7 @@ impl<'a> Qwen35Model<'a> {
 
         Ok(crate::gguf::OwnedQuantizedModel {
             config,
-            token_embedding,
+            token_embedding: Vec::new(),
             position_embedding: None,
             layers: vec![],
             encoder_layers: vec![],
@@ -923,6 +929,34 @@ impl<'a> Qwen35Model<'a> {
         model: &GGUFModel,
         data: &[u8],
     ) -> Result<Self> {
+        Self::load_layers(base, model, data, &mut || {})
+    }
+
+    /// [`Self::from_model_and_layers`] off a map, dropping the map's resident
+    /// pages after the embedding and after every layer is copied out (#4991):
+    /// the map is populated and locked at open, so without this the build
+    /// peaks at the file plus a full copy of it.
+    ///
+    /// # Errors
+    /// As [`Self::from_model_and_layers`].
+    pub(crate) fn from_mapped(
+        base: &'a OwnedQuantizedModel,
+        mapped: &crate::gguf::MappedGGUFModel,
+    ) -> Result<Self> {
+        // Best effort: a refused release costs memory, never a wrong byte.
+        Self::load_layers(base, &mapped.model, mapped.data(), &mut || {
+            let _ = mapped.release_resident_pages();
+        })
+    }
+
+    /// The loader behind both constructors; `copied` runs after the embedding
+    /// and after each layer has been copied out of `data`.
+    fn load_layers(
+        base: &'a OwnedQuantizedModel,
+        model: &GGUFModel,
+        data: &[u8],
+        copied: &mut dyn FnMut(),
+    ) -> Result<Self> {
         let refs = crate::gguf::qwen35_load::load_qwen35_layers(model, data)?;
         let meta = qwen35_ssm_meta(&model.metadata);
 
@@ -943,6 +977,9 @@ impl<'a> Qwen35Model<'a> {
             value_dim,
         };
 
+        let embedding =
+            qwen35_embedding::Qwen35Embedding::load(model, data, base.config.hidden_dim)?;
+        copied();
         let mut owned = Vec::with_capacity(refs.len());
         for layer_ref in refs {
             owned.push(match layer_ref {
@@ -953,11 +990,13 @@ impl<'a> Qwen35Model<'a> {
                     Qwen35OwnedLayer::Attention(own_attention_layer(&a, data, &dims)?)
                 },
             });
+            copied();
         }
 
         let attn_head_dim = attention_head_dim(&owned, head_dim);
         Ok(Self {
             base,
+            embedding,
             layers: owned,
             head_dim: attn_head_dim,
             num_kv_heads,
@@ -996,10 +1035,7 @@ impl<'a> Qwen35Model<'a> {
         cache: &mut Qwen35State,
         position: usize,
     ) -> Result<Vec<f32>> {
-        let mut hidden = self.base.token_embedding()[(token_id as usize)
-            * self.base.config.hidden_dim
-            ..(token_id as usize + 1) * self.base.config.hidden_dim]
-            .to_vec();
+        let mut hidden = self.embedding.row(token_id as usize)?;
 
         let mut normed = vec![0.0; self.base.config.hidden_dim];
         let mut post_attn_normed = vec![0.0; self.base.config.hidden_dim];
@@ -1234,11 +1270,9 @@ impl<'a> Qwen35Model<'a> {
         let hd = self.base.config.hidden_dim;
         let eps = self.base.config.eps;
         let b = chunk.len();
-        let emb = self.base.token_embedding();
         let mut hidden = vec![0.0; b * hd];
         for (t, &tok) in chunk.iter().enumerate() {
-            let at = tok as usize * hd;
-            hidden[t * hd..(t + 1) * hd].copy_from_slice(&emb[at..at + hd]);
+            hidden[t * hd..(t + 1) * hd].copy_from_slice(&self.embedding.row(tok as usize)?);
         }
         let mut normed = vec![0.0; b * hd];
 

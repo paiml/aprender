@@ -204,6 +204,11 @@ fn deltanet_layer(dims: Dims, seed: u64) -> Qwen35OwnedDeltaNetLayer {
 fn model(base: &OwnedQuantizedModel, dims: Dims, layers: Vec<Qwen35OwnedLayer>) -> Qwen35Model<'_> {
     Qwen35Model {
         base,
+        embedding: super::qwen35_embedding::Qwen35Embedding::from_f32(
+            &base.token_embedding,
+            dims.hidden,
+        )
+        .expect("embedding table"),
         layers,
         head_dim: dims.attn_head_dim,
         num_kv_heads: dims.num_kv_heads,

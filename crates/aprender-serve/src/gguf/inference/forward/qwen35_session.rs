@@ -375,11 +375,9 @@ impl Qwen35Forward {
         )?;
         let base = Qwen35Model::create_base_model(&mapped.model, mapped.data())?;
         let base: &'static OwnedQuantizedModel = Box::leak(Box::new(base));
-        Ok(Box::leak(Box::new(Qwen35Model::from_model_and_layers(
-            base,
-            &mapped.model,
-            mapped.data(),
-        )?)))
+        // #4991: drop the pages each copy came from, so the build never holds
+        // the file twice.
+        Ok(Box::leak(Box::new(Qwen35Model::from_mapped(base, mapped)?)))
     }
 
     /// [`Self::leak_host`] once per file per process: `apr qa`/`eval` call

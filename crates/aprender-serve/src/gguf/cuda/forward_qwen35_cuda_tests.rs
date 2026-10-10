@@ -334,9 +334,7 @@ fn qwen35_cuda_deltanet_layers_match_cpu_on_the_real_file() {
     let mut compared = 0usize;
 
     for (pos, &token) in PROMPT.iter().enumerate() {
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
 
         for (il, layer) in qwen.layers.iter().enumerate() {
             match layer {
@@ -464,9 +462,7 @@ fn qwen35_cuda_gdn_ops_match_cpu_given_the_same_inputs() {
             "pos {pos}: the recurrent state must be non-zero after the first token"
         );
 
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
         gpu.upload_layer(il, &conv0, &ssm0).expect("seed");
         let dev =
             GpuBuffer::from_host(gpu.executor_mut().context(), &hidden).expect("upload hidden");
@@ -691,9 +687,7 @@ fn qwen35_cuda_attention_layers_match_cpu_on_the_real_file() {
     let mut worst_linf = 0.0f32;
 
     for (pos, &token) in PROMPT.iter().enumerate() {
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
 
         for (il, layer) in qwen.layers.iter().enumerate() {
             match layer {
@@ -874,9 +868,7 @@ fn qwen35_cuda_attention_ops_match_cpu_given_the_same_inputs() {
     for (pos, &token) in PROMPT.iter().enumerate() {
         let k_before = cpu_state.kv_cache.get_k(il).to_vec();
         let v_before = cpu_state.kv_cache.get_v(il).to_vec();
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
         gpu.upload_attention_kv(il, &k_before, &v_before)
             .expect("seed");
         let dev =
@@ -1462,9 +1454,7 @@ fn qwen35_cuda_4b_deltanet_layers_match_cpu_on_the_real_file() {
     let mut worst_where = String::new();
 
     for (pos, &token) in tokens.iter().enumerate() {
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
 
         for (il, layer) in qwen.layers.iter().enumerate() {
             match layer {

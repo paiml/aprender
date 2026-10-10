@@ -132,6 +132,42 @@ impl MappedGGUFModel {
         &self.mmap
     }
 
+    /// Drop this process's resident pages of the map (#4991). The map is
+    /// populated and locked at open, so a caller that COPIES the weights out
+    /// (the Qwen3.5 host build) holds the file twice unless it lets them go.
+    /// The file is opened read-only, so a later read faults the bytes back in
+    /// from the page cache; nothing it returns changes.
+    ///
+    /// # Errors
+    /// `munlock` or `madvise(MADV_DONTNEED)` refused the range.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn release_resident_pages(&self) -> std::io::Result<()> {
+        let (ptr, len) = (self.mmap.as_ptr(), self.mmap.len());
+        // SAFETY: the range is exactly this live mapping. `munlock` only undoes the
+        // `mlock` taken at open, and `MADV_DONTNEED` on a read-only file-backed
+        // mapping discards resident pages that are re-read from the file on the next
+        // access, so every slice already handed out stays valid and reads the same bytes.
+        let rc = unsafe {
+            libc::munlock(ptr.cast::<libc::c_void>(), len);
+            libc::madvise(
+                ptr.cast_mut().cast::<libc::c_void>(),
+                len,
+                libc::MADV_DONTNEED,
+            )
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+
+    /// No resident-page release off Linux.
+    #[cfg(not(target_os = "linux"))]
+    pub(crate) fn release_resident_pages(&self) -> std::io::Result<()> {
+        Ok(())
+    }
+
     /// Get tensor data slice by offset and size
     ///
     /// Returns a slice pointing directly into the memory-mapped file.
