@@ -13,7 +13,7 @@ fn row(tag: &str, cell: &str, apr: f64) -> String {
             "apr_decode_tok_s": apr,
             "receipt_sha256": H,
             "arms": [{"arm": "llama.cpp", "decode_tok_s": 100.0, "comparator": {
-                "command": ["llama-bench", "-m", "m.gguf"],
+                "command": ["apr", "test", "llm", "bench"],
                 "version": "d1d3c3396",
                 "env_sha256": H,
                 "artifact_sha256": H,

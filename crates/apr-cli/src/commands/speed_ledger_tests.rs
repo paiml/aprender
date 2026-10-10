@@ -8,7 +8,7 @@ const H: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde
 
 fn block() -> Value {
     json!({
-        "command": ["llama-bench", "-m", "m.gguf"],
+        "command": ["apr", "test", "llm", "bench"],
         "version": "d1d3c3396",
         "env_sha256": H,
         "artifact_sha256": H,
