@@ -1,0 +1,25 @@
+[package]
+name = "aprender-ci-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "CI and build helpers ported from scripts/**/*.py (C301: no Python in the build)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paiml/aprender"
+authors = ["PAIML Engineering"]
+# Build tooling, never installed or published (contracts/binary-debt-v1.yaml: KEEP).
+publish = false
+
+[dependencies]
+clap = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha1 = { workspace = true }
+toml = { workspace = true }
+
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
+
+[lints]
+workspace = true

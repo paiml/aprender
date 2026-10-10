@@ -269,6 +269,7 @@ fn test_no_unauthorized_binaries() {
         // Build/dev tooling, never user-facing ML surface.
         "aprender-compute-xtask", // aprender-compute-xtask
         "aprender-ptx-debug",     // aprender-ptx-debug
+        "aprender-ci-tools",      // aprender-ci-tools (C301 Python ports; sign-off row 38)
         "aprender-qa-certify",    // aprender-qa-readme-sync
         // Pre-consolidation names still carrying the only access to their
         // capability. These are the migration targets.
@@ -363,7 +364,7 @@ fn test_no_unauthorized_binaries() {
     // migrate, never grow. Deleting a [[bin]] before its capability is reachable
     // through apr removes the capability rather than relocating it, so the
     // ordering is: expose via apr, then drop the bin, then drop the entry here.
-    const ALLOWLIST_BASELINE: usize = 27;
+    const ALLOWLIST_BASELINE: usize = 28;
     assert!(
         allowed_bins.len() <= ALLOWLIST_BASELINE,
         "FALSIFY-MONO-011: the [[bin]] allowlist grew to {} (baseline {ALLOWLIST_BASELINE}). \

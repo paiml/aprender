@@ -11,13 +11,16 @@ The list is DERIVED from `cargo metadata --no-deps` (the workspace members), nev
 hand, so a new crate is reported the day it is added.
 
 Usage: coverage_report_scope.py [--exclude NAME ...]
+
+Kept only as the N-1 gate caller of the Makefile coverage targets, ci.sh and prepare-release.sh
+until a released aprender-ci-tools carries `coverage-report-scope`; retire at 0.71+1.
 """
 import json
 import subprocess
 import sys
 
 
-def main(argv):
+def parse_excludes(argv):
     exclude = set()
     args = iter(argv[1:])
     for a in args:
@@ -25,6 +28,10 @@ def main(argv):
             exclude.add(next(args, ""))
         else:
             sys.exit(__doc__)
+    return exclude
+
+
+def workspace_packages():
     meta = json.loads(
         subprocess.run(
             ["cargo", "metadata", "--no-deps", "--format-version", "1"],
@@ -33,14 +40,19 @@ def main(argv):
             text=True,
         ).stdout
     )
-    names = sorted(p["name"] for p in meta["packages"] if p["name"] not in exclude)
-    unknown = exclude - {p["name"] for p in meta["packages"]}
+    return meta["packages"]
+
+
+def main(argv):
+    exclude = parse_excludes(argv)
+    packages = workspace_packages()
+    names = sorted(p["name"] for p in packages if p["name"] not in exclude)
+    unknown = exclude - {p["name"] for p in packages}
     if unknown:
         sys.exit(f"coverage_report_scope: --exclude names no workspace member: {sorted(unknown)}")
     if not names:
         sys.exit("coverage_report_scope: no workspace members left to report")
     print(" ".join(f"-p {n}" for n in names))
-
 
 if __name__ == "__main__":
     main(sys.argv)
