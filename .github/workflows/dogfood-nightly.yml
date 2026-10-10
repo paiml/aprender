@@ -64,7 +64,7 @@ jobs:
             .github/workflows/dogfood-nightly.yml
           sparse-checkout-cone-mode: false
       - name: The night-commit pick (case table and mutants first)
-        run: bash scripts/release/dogfood_night_sha.sh --self-test
+        run: setsid --wait bash scripts/release/dogfood_night_sha.sh --self-test
       - name: Resolve C
         id: pick
         env:
@@ -106,7 +106,7 @@ jobs:
       - name: No registry token is reachable (case table, then this job)
         run: |
           set -euo pipefail
-          bash scripts/check_no_registry_token.sh
+          setsid --wait bash scripts/check_no_registry_token.sh
           . scripts/lib/no_registry_token.sh
           no_registry_token || { echo "::error::a registry token is reachable; refusing to run"; exit 2; }
           echo "no-token: none reachable (environment, cargo credentials files, cargo config token)"
@@ -133,7 +133,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
-          bash scripts/check_release_train_version.sh
+          setsid --wait bash scripts/check_release_train_version.sh
           . scripts/release/lib_release_params.sh || exit 2
           # A failed read or an empty set leaves the target unset: dogfood's version row is then
           # NOT_MEASURED, which is red. It is never defaulted here.
@@ -160,7 +160,7 @@ jobs:
           dirty=$(git status --porcelain)
           [ -z "$dirty" ] || { echo "::error::tree dirty after dogfood: $(printf '%s' "$dirty" | head -3 | tr '\n' ' ')"; exit 1; }
           # Negative control, run whatever the verdict: a nightly receipt is never a release receipt.
-          bash scripts/check_publish_preflight.sh --receipt-only > "$RUNNER_TEMP/dogfood/dogfood-r5.log" 2>&1; r5=$?
+          setsid --wait bash scripts/check_publish_preflight.sh --receipt-only > "$RUNNER_TEMP/dogfood/dogfood-r5.log" 2>&1; r5=$?
           tail -n 2 "$RUNNER_TEMP/dogfood/dogfood-r5.log"
           if [ "$r5" -eq 0 ] || ! grep -q 'is a --phase nightly receipt' "$RUNNER_TEMP/dogfood/dogfood-r5.log"; then
             echo "::error::R5 did not refuse the nightly receipt (rc=$r5): a nightly receipt would pass a publish"; exit 1
