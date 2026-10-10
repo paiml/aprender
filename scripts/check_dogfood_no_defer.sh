@@ -63,9 +63,10 @@ lift() { # lift <script> -> the obligation list and the three deciding functions
 #                  (#4672: --phase nightly reads a row it cannot measure at H as NOT_MEASURED, never OPEN)
 #   kind dry:      mark_publish_dry_run <rc> <log text>     bad = FAILED after the call (#5079 row 10)
 #   kind dryfx:    the lifted publish_dry_run_at_h, run for real in a two-member fixture workspace that is
-#                  committed (clean) or carries an uncommitted edit (dirty), then mark_publish_dry_run
+#                  committed (clean), committed under a host template whose pre-commit hook refuses (clean-hooked),
+#                  or carrying an uncommitted edit (dirty), then mark_publish_dry_run
 #   kind owes:     nightly_owes <row name> -> OWED or NOT_OWED (#5079: the nightly row set, by phase definition)
-# fixture_workspace <dir> <clean|dirty>: member b depends on member a by path AND version, as the real
+# fixture_workspace <dir> <clean|clean-hooked|dirty>: member b depends on member a by path AND version, as the real
 # workspace does, so a workspace dry-run has to resolve a from local sources, never from a registry.
 fixture_workspace() {
   local d="$1" m
@@ -78,9 +79,19 @@ fixture_workspace() {
   printf 'pub fn a() -> u8 { 1 }\n' > "$d/a/src/lib.rs"
   printf 'pub fn b() -> u8 { dogfood_dryrun_fixture_a_x7q::a() }\n' > "$d/b/src/lib.rs"
   printf 'Cargo.lock\n' > "$d/.gitignore"
-  git -C "$d" init -q && git -C "$d" add -A \
-    && git -C "$d" -c user.name=fixture -c user.email=fixture@invalid commit -q -m fixture || return 2
-  [ "$2" = clean ] || printf '// an edit nobody committed\n' >> "$d/a/src/lib.rs"
+  # clean-hooked: the host's git template (init.templateDir) installs a pre-commit hook that refuses
+  # everything, as a template's hooks would refuse this fixture. The hooks belong to the host's own
+  # repos; the fixture's throwaway repo turns them off for its one commit, and nothing else does.
+  local tpl=()
+  if [ "$2" = clean-hooked ]; then
+    mkdir -p "$d.tpl/hooks" && printf '#!/bin/sh\nexit 1\n' > "$d.tpl/hooks/pre-commit" \
+      && chmod +x "$d.tpl/hooks/pre-commit" || return 2
+    tpl=(--template="$d.tpl")
+  fi
+  git -C "$d" init -q "${tpl[@]}" && git -C "$d" add -A \
+    && git -C "$d" -c core.hooksPath=/dev/null -c user.name=fixture -c user.email=fixture@invalid \
+      commit -q -m fixture || return 2
+  [ "$2" != dirty ] || printf '// an edit nobody committed\n' >> "$d/a/src/lib.rs"
 }
 run_case() {
   local src="$1" kind="$2" phase="$3" name="$4" arg="$5" text="$6" tmp log rc fx=""
@@ -154,6 +165,7 @@ pre-publish-dry-run-stays-open|dry|pre-publish|publish-dry-run|0||OPEN 0
 post-publish-dry-run-fail-stays-fail|dry|post-publish|publish-dry-run|101|error: failed to verify package tarball|FAIL 1
 nightly-clean-tree-dry-run-passes|dryfx|nightly|publish-dry-run|clean||PASS 0
 nightly-dirty-tree-dry-run-fails|dryfx|nightly|publish-dry-run|dirty||FAIL 1
+nightly-clean-tree-under-host-hooks-passes|dryfx|nightly|publish-dry-run|clean-hooked||PASS 0
 nightly-does-not-owe-multiplatform|owes|nightly|declared:check_multiplatform_dogfood|||NOT_OWED
 nightly-owes-every-other-gate|owes|nightly|declared:check_model_ladder|||OWED
 pre-publish-owes-multiplatform|owes|pre-publish|declared:check_multiplatform_dogfood|||OWED
