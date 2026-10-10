@@ -165,9 +165,17 @@ fn a_container_arm_is_digest_pinned_and_offline() {
     let pinned = format!("ghcr.io/ggml-org/llama.cpp@sha256:{H}");
     let out = container_argv(&pinned, &argv, &env, wd).expect("pinned");
     let image_at = out.iter().position(|a| *a == pinned).expect("image");
-    assert!(out[..image_at].contains(&"--network=none".to_string()));
-    assert!(out[..image_at].contains(&"SEED=7".to_string()));
-    assert_eq!(out[image_at + 1..], argv[..]);
+    let before = &out[..image_at];
+    assert!(before.contains(&"--network=none".to_string()));
+    assert!(before.contains(&"SEED=7".to_string()));
+    // argv[0] is the entrypoint, so an image's own ENTRYPOINT cannot prefix it.
+    let ep = before
+        .iter()
+        .position(|a| a == "--entrypoint")
+        .expect("--entrypoint");
+    assert_eq!(before[ep + 1], argv[0]);
+    assert_eq!(out[image_at + 1..], argv[1..]);
+    assert!(container_argv(&pinned, &[], &env, wd).is_err());
 
     let mut v = full();
     v["image"] = json!("llama.cpp:latest");

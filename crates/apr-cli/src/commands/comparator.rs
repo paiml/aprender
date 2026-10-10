@@ -103,7 +103,10 @@ fn check_image(image: &str) -> Result<(), String> {
     }
 }
 
-/// Wrap `argv` to run inside `image` with the network denied (R-1a).
+/// Wrap `argv` to run inside `image` with the network denied (R-1a). `argv[0]` is
+/// the entrypoint, so the image's own ENTRYPOINT cannot prefix the declared
+/// command (the pinned Ollama image's is `/bin/ollama`): the argv the block
+/// records is the one that ran.
 pub(crate) fn container_argv(
     image: &str,
     argv: &[String],
@@ -111,16 +114,18 @@ pub(crate) fn container_argv(
     workdir: &Path,
 ) -> Result<Vec<String>, String> {
     check_image(image)?;
+    let (prog, args) = argv.split_first().ok_or("empty command")?;
     let wd = workdir.display().to_string();
     let mut out: Vec<String> = ["docker", "run", "--rm", "--network=none"]
         .map(String::from)
         .to_vec();
+    out.extend(["--entrypoint".into(), prog.clone()]);
     out.extend(["-v".into(), format!("{wd}:{wd}"), "-w".into(), wd]);
     for (k, v) in env {
         out.extend(["-e".into(), format!("{k}={v}")]);
     }
     out.push(image.to_string());
-    out.extend(argv.iter().cloned());
+    out.extend(args.iter().cloned());
     Ok(out)
 }
 
