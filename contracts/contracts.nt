@@ -18970,7 +18970,6 @@
 <https://ont.paiml.dev/v1alpha1/example/crates/aprender-serve/examples/performance_parity.rs> <https://ont.paiml.dev/v1alpha1/example/modelCurrent> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/example/crates/aprender-serve/examples/performance_parity.rs> <https://ont.paiml.dev/v1alpha1/example/name> "performance_parity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/example/crates/aprender-serve/examples/performance_parity.rs> <https://ont.paiml.dev/v1alpha1/example/namesModel> "llama"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/example/crates/aprender-serve/examples/performance_parity.rs> <https://ont.paiml.dev/v1alpha1/example/namesModel> "tinyllama"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/example/crates/aprender-serve/examples/performance_parity.rs> <https://ont.paiml.dev/v1alpha1/example/namesQwen35> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/example/crates/aprender-serve/examples/pipeline_tui.rs> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/example/crates/aprender-serve/examples/pipeline_tui.rs> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Example> .
