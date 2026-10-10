@@ -313,12 +313,12 @@ stubborn() { # a server that ignores SIGTERM; its pid goes to $1
   printf '%s\n' "$!" > "$1"
   STUBS="${STUBS:-} $1"
 }
-stub_reap() { # <pid file>: KILL and wait the stubborn() server it names, if that pid is still one
+stub_reap() { # <pid file>: KILL and wait the stubborn() server or T3 sleep it names, if that pid is still one
   local p
   p=$(cat "$1" 2> /dev/null) || return 0
   case "$p" in '' | *[!0-9]*) return 0 ;; esac
   case "$(ps -o args= -p "$p" 2> /dev/null)" in
-    *'trap "" TERM; : > "$READY"'*) kill -KILL "$p" 2> /dev/null && wait "$p" 2> /dev/null ;;
+    *'trap "" TERM; : > "$READY"'* | "sleep 30") kill -KILL "$p" 2> /dev/null && wait "$p" 2> /dev/null ;;
   esac
   return 0
 }
@@ -412,8 +412,10 @@ if m_t2b "$TD"; then ok "T2b MUST-RED a pid file naming pid 1 (init; the runner 
 else bad "T2b MUST-RED a pid file naming pid 1 is refused and never signalled (state: $(cat "$TMP/td.state" 2> /dev/null); signals: $(tr '\n' ';' < "$TMP/kill.log"))"; fi
 sleep 30 > /dev/null 2>&1 &
 printf '%s\n' "$!" > "$TMP/srv3.pid"
+STUBS="${STUBS:-} $TMP/srv3.pid"
 printf '%s\n' "$(cat "$TMP/srv3.pid")" > "$TMP/smi-pids"
 tdrow "T3 MUST-RED a pid still in nvidia-smi compute-apps fails the cell" 1 "FAILED: pid" "$TD" "$TMP/srv3.pid"
+stub_reap "$TMP/srv3.pid"
 : > "$TMP/smi-pids"
 mkdir -p "$TMP/tdrows"
 : > "$TMP/tdrows/manifest.jsonl"
@@ -500,7 +502,7 @@ m_t1() { # <teardown>: T1's case. The server is reaped whatever the teardown did
   return "$rc"
 }
 mutant "M10 T1 vs no KILL escalation" "$TD" "$M10_ANCHOR" '    :' m_t1
-m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid"; }
+m_t3() { STUBS="${STUBS:-} $TMP/srv3.pid"; sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; local rc=0; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid" || rc=1; stub_reap "$TMP/srv3.pid"; return "$rc"; }
 mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
 # M20 plants T0's bug in a copy of THIS guard: _cleanup without its main-shell check. The anchor
 # is assembled from T0_ANCHOR so that this line does not match it too (the planter refuses an
