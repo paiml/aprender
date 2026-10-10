@@ -24,7 +24,11 @@ name: dogfood-nightly
 
 on:
   schedule:
-    - cron: '0 21 * * *'   # 21:00 UTC; schedule events on this account fire hours late
+    # 23:05 UTC: five minutes after nightly.yml's 23:00, so both land in the same late dispatch.
+    # The train judges the head of THAT night's scheduled nightly.yml run (C); the `night` job
+    # below resolves C and the dogfood job checks it out, so a merge after 21:00 no longer
+    # leaves the lane measuring some other commit (#5079).
+    - cron: '5 23 * * *'
   workflow_dispatch:
     inputs:
       plant:
@@ -41,9 +45,51 @@ concurrency:
 permissions:
   contents: read
   issues: read   # the open milestones the train target is derived from
+  actions: read  # the night job lists nightly.yml's scheduled runs
 
 jobs:
+  night:
+    # C: the commit the train judges tonight. Scheduled runs wait for tonight's scheduled
+    # nightly.yml run to exist (schedule events land hours late, in no fixed order);
+    # a dispatch measures the ref it was dispatched on.
+    runs-on: [self-hosted, Linux, X64, clean-room, yoga]
+    timeout-minutes: 75
+    outputs:
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/release/dogfood_night_sha.sh
+            .github/workflows/dogfood-nightly.yml
+          sparse-checkout-cone-mode: false
+      - name: The night-commit pick (case table and mutants first)
+        run: bash scripts/release/dogfood_night_sha.sh --self-test
+      - name: Resolve C
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" != schedule ]; then
+            echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"; echo "dispatch: measuring $GITHUB_SHA"; exit 0
+          fi
+          # One read every 5 minutes (GH-1), at most 12: tonight's nightly.yml run is created
+          # within minutes of this one or the lane is not_measured, never a guess.
+          for i in $(seq 1 12); do
+            sha=$(bash scripts/release/dogfood_night_sha.sh); rc=$?
+            [ "$rc" -ne 1 ] && break
+            [ "$i" -lt 12 ] && sleep 300
+          done
+          [ "$rc" -eq 0 ] || { echo "::error::no night commit (rc=$rc); dogfood is not_measured tonight"; exit 1; }
+          if [ "$sha" != "$GITHUB_SHA" ]; then
+            echo "::warning::C=$sha is not this run's commit $GITHUB_SHA (a merge landed between the two dispatches); measuring C"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "C: $sha"
+
   dogfood:
+    needs: night
     # Low-priority pool, like coverage-nightly and examples-nightly: a multi-hour
     # release-protocol run never takes a PR or merge-queue slot.
     runs-on: [self-hosted, Linux, X64, clean-room, yoga]
@@ -53,6 +99,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.night.outputs.sha }}
           fetch-depth: 0
           clean: false
 
