@@ -303,6 +303,11 @@ selftest() {
     jr rehearsal_a_red_newest_night_is_not_ready       1 "not ready: night $D-06 was red (run 106, failure) (streak=0 total=3 need=1)" red_last
     jr rehearsal_no_night_is_not_measured              2 "(streak=0 total=0 need=1)" none
     j  other_checks_still_need_three_after_one_night   1 "(streak=1 total=1 need=3)" one
+    # The one-night need is keyed on the exact name: a sibling check or a near-miss name still needs three.
+    jn() { row "$1" "$2" "$3" -- --check "$4" --history "$tmp/one" --as-of "$D-06"; }
+    jn nightly_train_still_needs_three_after_one_night  1 "(streak=1 total=1 need=3)" nightly-train
+    jn near_miss_release_lanes_needs_three              1 "(streak=1 total=1 need=3)" release-lanes
+    jn near_miss_rehearsal_suffix_needs_three           1 "(streak=1 total=1 need=3)" release-rehearsal-old
     if [ "$REHEARSAL_NEED" = 1 ]; then
         printf '  ok    %-50s REHEARSAL_NEED=1\n' committed_rehearsal_need_is_one; pass=$((pass + 1))
     else
@@ -344,6 +349,9 @@ rehearsal_need_is_three     /^REHEARSAL_NEED=1/s/^REHEARSAL_NEED=1/REHEARSAL_NEE
 rehearsal_need_is_zero      /^REHEARSAL_NEED=1/s/^REHEARSAL_NEED=1/REHEARSAL_NEED=0/
 rehearsal_name_not_keyed    /^need_of() /s/release-rehearsal)/rehearsal)/
 one_night_for_every_check   /^need_of() /s/"\$NEED"/"$REHEARSAL_NEED"/
+rehearsal_and_train_keyed   /^need_of() /s/release-rehearsal)/release-rehearsal|nightly-train)/
+any_release_check_keyed     /^need_of() /s/release-rehearsal)/release-*)/
+rehearsal_prefix_keyed      /^need_of() /s/release-rehearsal)/release-rehearsal*)/
 retried_counts_as_green     /^judge() {$/,/^}$/s/? "green" : "retried"/? "green" : "green"/
 failure_is_not_red          /^judge() {$/,/^}$/s/co == "failure" || co == "timed_out"/co == "never" || co == "timed_out"/
 void_counts_as_green        /^judge() {$/,/^}$/s/) s = "void"/) s = "green"/
