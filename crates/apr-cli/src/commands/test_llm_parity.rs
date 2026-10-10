@@ -58,7 +58,7 @@ pub(crate) fn run(command: &LlmSubcommand) -> Result<()> {
         server_log,
         prompt,
         ladder,
-        json,
+        witness: witness_path,
         host,
         commit,
         binary,
@@ -81,7 +81,7 @@ pub(crate) fn run(command: &LlmSubcommand) -> Result<()> {
         .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
     let witness = witness(&probe, identity, rt.block_on(probe.run(&client)));
     println!("{}", report(&witness));
-    if let Some(path) = json {
+    if let Some(path) = witness_path {
         write(path, &witness)?;
     }
     outcome(&witness)
@@ -504,7 +504,7 @@ mod tests {
             served_model,
             prompt,
             ladder,
-            json,
+            witness,
             host,
             ..
         } = parsed
@@ -515,9 +515,51 @@ mod tests {
         assert_eq!(served_model.as_str(), "q");
         assert_eq!(prompt.as_str(), "Write an essay on compilers.");
         assert_eq!(ladder, vec![1, 4]);
-        assert!(json.is_none());
+        assert!(witness.is_none());
         assert!(host.is_none());
         assert!(parse(&["parity", "--server-log", "x", "--ladder", "0"]).is_err());
         assert!(parse(&["parity"]).is_err());
+    }
+
+    /// Through the whole `apr` parser, not `llm` alone: that is where the
+    /// global `--json` lives, and a parity arg sharing its id parsed fine
+    /// under [`parse`] yet panicked on every real run (gx10 g12, 61f0fa5798).
+    #[test]
+    fn the_witness_flag_parses_beside_the_global_json() {
+        use clap::Parser;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = dir.path().join("w.json");
+        let out = out.to_str().expect("utf-8 path");
+        let parity = ["test", "llm", "parity", "--server-log", "s.log"];
+        let cases: [(&[&str], &[&str], bool); 3] = [
+            (&[], &["--witness", out], false),
+            (&["--json"], &["--witness", out], true),
+            (&[], &["--json"], true),
+        ];
+        for (before, after, global_json) in cases {
+            let argv: Vec<&str> = std::iter::once("apr")
+                .chain(before.iter().copied())
+                .chain(parity)
+                .chain(after.iter().copied())
+                .collect();
+            let cli = crate::Cli::try_parse_from(argv.iter().copied())
+                .unwrap_or_else(|e| panic!("{argv:?} parses: {e}"));
+            assert_eq!(cli.json, global_json, "{argv:?}: the global --json");
+            let crate::Commands::Extended(crate::ExtendedCommands::Test {
+                command:
+                    crate::TestSubcommand::Llm {
+                        command: LlmSubcommand::Parity { witness, .. },
+                    },
+            }) = *cli.command
+            else {
+                panic!("{argv:?}: not `apr test llm parity`");
+            };
+            assert_eq!(
+                witness.as_deref().map(Path::to_path_buf),
+                argv.contains(&"--witness")
+                    .then(|| Path::new(out).to_path_buf()),
+                "{argv:?}: --witness"
+            );
+        }
     }
 }
