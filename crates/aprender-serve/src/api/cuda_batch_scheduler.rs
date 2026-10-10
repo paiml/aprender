@@ -30,10 +30,10 @@ pub struct CudaBatchRequest {
     /// phase split to report and inventing one would put a fabricated numerator
     /// into a gated ratio.
     pub timing_tx: Option<tokio::sync::oneshot::Sender<crate::api::PhaseTimings>>,
-    /// #4971: `Some` when the request asked for logprobs. The single-request
-    /// path sends each token's record here ahead of the token. The batched
-    /// path records none, so the handler meets a token without its record and
-    /// fails the request: never a reply without what it asked for.
+    /// #4971: `Some` when the request asked for logprobs. Each token's record
+    /// is sent here ahead of the token, by the single-request path and by a
+    /// batched slot alike. A token the handler meets without its record fails
+    /// the request: never a reply without what it asked for.
     pub logprobs: Option<RecordSink>,
 }
 
@@ -435,6 +435,19 @@ fn token_callback(token_tx: TokenSender) -> TokenCallback {
     Box::new(move |token_id: u32| -> bool { token_tx.try_send(Ok(token_id)).is_ok() })
 }
 
+/// #4971: a batched slot's recorder, which sends each record to the handler
+/// ahead of the token `token_callback` sends.
+#[cfg(feature = "cuda")]
+fn slot_recorder(sink: RecordSink) -> crate::gguf::SlotRecorder {
+    let RecordSink { top_n, records } = sink;
+    crate::gguf::SlotRecorder {
+        top_n,
+        on_record: Box::new(move |record| {
+            let _ = records.send(record);
+        }),
+    }
+}
+
 #[cfg(feature = "cuda")]
 fn process_cuda_batch(
     model: &Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
@@ -487,6 +500,7 @@ fn process_cuda_batch(
         configs,
         mut error_senders,
         callbacks,
+        recorders,
         mut pending_joins,
     } = phase1_inputs(batch, staggered);
 
@@ -505,6 +519,8 @@ fn process_cuda_batch(
     ) else {
         return;
     };
+    // #4971: one per prompt prefilled, in its slot
+    state.recorders = recorders;
 
     // Phase 2: Decode loop with mid-batch joins (PMAT-073/099) and slot recycling (PMAT-074)
     // Lock per step (~19ms per acquire vs ~660ms total).
@@ -563,11 +579,13 @@ struct Phase1 {
     configs: Vec<QuantizedGenerateConfig>,
     error_senders: Vec<TokenSender>,
     callbacks: Vec<TokenCallback>,
+    /// #4971: each prompt's recorder, `None` when it did not ask for logprobs
+    recorders: Vec<Option<crate::gguf::SlotRecorder>>,
     pending_joins: std::collections::VecDeque<CudaBatchRequest>,
 }
 
 #[cfg(feature = "cuda")]
-fn phase1_inputs(batch: Vec<CudaBatchRequest>, staggered: bool) -> Phase1 {
+fn phase1_inputs(mut batch: Vec<CudaBatchRequest>, staggered: bool) -> Phase1 {
     if staggered {
         // Split batch: first → immediate prefill, rest → pending joins
         let mut batch_iter = batch.into_iter();
@@ -584,6 +602,7 @@ fn phase1_inputs(batch: Vec<CudaBatchRequest>, staggered: bool) -> Phase1 {
             configs: vec![first_req.config.clone()],
             error_senders: vec![first_req.token_tx.clone()],
             callbacks: vec![token_callback(first_req.token_tx)],
+            recorders: vec![first_req.logprobs.map(slot_recorder)],
             pending_joins,
         }
     } else {
@@ -592,6 +611,10 @@ fn phase1_inputs(batch: Vec<CudaBatchRequest>, staggered: bool) -> Phase1 {
             prompts: batch.iter().map(|r| r.prompt_ids.clone()).collect(),
             configs: batch.iter().map(|r| r.config.clone()).collect(),
             error_senders: batch.iter().map(|r| r.token_tx.clone()).collect(),
+            recorders: batch
+                .iter_mut()
+                .map(|r| r.logprobs.take().map(slot_recorder))
+                .collect(),
             callbacks: batch
                 .into_iter()
                 .map(|req| token_callback(req.token_tx))
@@ -720,9 +743,11 @@ fn join_slot(
 ) {
     let error_tx = req.token_tx.clone();
     let on_token = token_callback(req.token_tx);
+    let recorder = req.logprobs.map(slot_recorder);
     match cuda_model.add_slot_to_batch(state, req.prompt_ids, req.config, on_token) {
         Ok(()) => {
             error_senders.push(error_tx);
+            state.recorders[state.m - 1] = recorder;
         },
         Err(e) => {
             eprintln!("{failed}: {e}");
@@ -751,9 +776,11 @@ fn recycle_done_slots(
         };
         let error_tx = req.token_tx.clone();
         let on_token = token_callback(req.token_tx);
+        let recorder = req.logprobs.map(slot_recorder);
         match cuda_model.recycle_slot(state, slot_idx, req.prompt_ids, req.config, on_token) {
             Ok(()) => {
                 error_senders[slot_idx] = error_tx;
+                state.recorders[slot_idx] = recorder;
             },
             Err(e) => {
                 eprintln!("[PMAT-074] Slot recycle FAILED (slot {slot_idx}): {e}");

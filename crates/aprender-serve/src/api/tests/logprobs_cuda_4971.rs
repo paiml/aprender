@@ -1,6 +1,7 @@
 //! FALSIFY-LOGPROBS-CUDA-4971: chat `logprobs` on the dense CUDA backend
 //! (ASOC-INV-021), through the real router, on the direct path and through the
-//! batch scheduler (one request at a time, so its m=1 path).
+//! batch scheduler: one request at a time (its m=1 path), and two at once in
+//! one m=2 batch.
 //!
 //! Before this the CUDA backend answered a request for logprobs with 501. It
 //! needs a CUDA device and tinyllama; without either the test prints SKIP,
@@ -63,6 +64,24 @@ fn scheduled(state: &AppState) -> AppState {
     state.clone().with_cuda_batch_tx(tx)
 }
 
+/// The same model behind a batch scheduler that holds its first request until
+/// a second fills a batch of two, and the counter whose peak shows the pair
+/// decoded as one m=2 batch.
+fn batch_of_two(state: &AppState) -> (AppState, std::sync::Arc<crate::api::InFlightCounter>) {
+    use crate::api::cuda_batch_scheduler::{spawn_cuda_batch_scheduler, CudaBatchConfig};
+    let model = state.cuda_model().expect("a CUDA state").clone();
+    let counter = crate::api::InFlightCounter::new();
+    let config = CudaBatchConfig {
+        max_batch: 2,
+        window_ms: 10_000,
+    };
+    let tx = spawn_cuda_batch_scheduler(model, config, counter.clone());
+    (state.clone().with_cuda_batch_tx(tx), counter)
+}
+
+/// The request fields that ask for logprobs with 3 alternatives a step.
+const WITH: &str = r#","logprobs":true,"top_logprobs":3"#;
+
 fn chat_body(extra: &str) -> String {
     format!(
         r#"{{"model":"default","messages":[{{"role":"user","content":"The capital of France is"}}],"max_tokens":8,"temperature":0{extra}}}"#
@@ -108,11 +127,9 @@ async fn streamed_entries(state: &AppState, extra: &str) -> (Vec<Value>, u64) {
     (entries, completion_tokens)
 }
 
-/// One entry per completion token, each with its best alternatives, the
-/// chosen one a best one (greedy); the same reply as without logprobs; and the
-/// same entries streamed.
-async fn logprobs_are_served(state: &AppState, path: &str) {
-    let reply = chat_json(state, r#","logprobs":true,"top_logprobs":3"#).await;
+/// `reply`'s `logprobs.content`, checked: one entry per completion token, each
+/// with its 3 best alternatives, best first, the chosen one the best (greedy).
+fn checked_entries<'a>(reply: &'a Value, path: &str) -> &'a [Value] {
     let completion_tokens = reply["usage"]["completion_tokens"]
         .as_u64()
         .expect("usage.completion_tokens");
@@ -134,6 +151,24 @@ async fn logprobs_are_served(state: &AppState, path: &str) {
             "{path}: {entry}"
         );
     }
+    content
+}
+
+/// The tokens and logprobs of `a` and `b`, which must be the same.
+fn same_entries(a: &[Value], b: &[Value], path: &str) {
+    assert_eq!(a.len(), b.len(), "{path}: {a:?} vs {b:?}");
+    for (x, y) in a.iter().zip(b) {
+        assert_eq!(x["token"], y["token"], "{path}: {x} vs {y}");
+        assert!((logprob(x) - logprob(y)).abs() < 1e-3, "{path}: {x} vs {y}");
+    }
+}
+
+/// One entry per completion token, each with its best alternatives, the
+/// chosen one a best one (greedy); the same reply as without logprobs; and the
+/// same entries streamed.
+async fn logprobs_are_served(state: &AppState, path: &str) {
+    let reply = chat_json(state, WITH).await;
+    let content = checked_entries(&reply, path);
 
     let without = chat_json(state, "").await;
     assert_eq!(
@@ -147,18 +182,54 @@ async fn logprobs_are_served(state: &AppState, path: &str) {
     let choice = without["choices"][0].as_object().expect("choice object");
     assert!(!choice.contains_key("logprobs"), "{path}: {without}");
 
-    let (streamed, streamed_tokens) =
-        streamed_entries(state, r#","logprobs":true,"top_logprobs":3"#).await;
+    let (streamed, streamed_tokens) = streamed_entries(state, WITH).await;
     assert_eq!(
         streamed.len() as u64,
         streamed_tokens,
         "{path}: {streamed:?}"
     );
-    assert_eq!(streamed.len(), content.len(), "{path}: {streamed:?}");
-    for (s, u) in streamed.iter().zip(content) {
-        assert_eq!(s["token"], u["token"], "{path}: {s} vs {u}");
-        assert!((logprob(s) - logprob(u)).abs() < 1e-3, "{path}: {s} vs {u}");
-    }
+    same_entries(&streamed, content, path);
+}
+
+/// A batched turn (m = 2) records its logprobs too. One slot asking for them
+/// and one not: the same reply, entries only on the one that asked. Both
+/// asking, one streamed: the same entries, and the first pair's.
+async fn batched_logprobs_are_served(state: &AppState) {
+    let (pair, counter) = batch_of_two(state);
+    let (reply, without) = tokio::join!(chat_json(&pair, WITH), chat_json(&pair, ""));
+    assert_eq!(
+        counter.peak_in_flight(),
+        2,
+        "the pair did not decode as one batch"
+    );
+    let content = checked_entries(&reply, "batched");
+    assert_eq!(
+        reply["choices"][0]["message"]["content"], without["choices"][0]["message"]["content"],
+        "batched: asking for logprobs changed the reply"
+    );
+    assert_eq!(
+        reply["usage"]["completion_tokens"], without["usage"]["completion_tokens"],
+        "batched"
+    );
+    let choice = without["choices"][0].as_object().expect("choice object");
+    assert!(!choice.contains_key("logprobs"), "batched: {without}");
+
+    let (pair, counter) = batch_of_two(state);
+    let ((streamed, streamed_tokens), again) =
+        tokio::join!(streamed_entries(&pair, WITH), chat_json(&pair, WITH));
+    assert_eq!(
+        counter.peak_in_flight(),
+        2,
+        "the streamed pair did not decode as one batch"
+    );
+    assert_eq!(
+        streamed.len() as u64,
+        streamed_tokens,
+        "batched: {streamed:?}"
+    );
+    let again = checked_entries(&again, "batched again");
+    same_entries(&streamed, again, "batched streamed");
+    same_entries(again, content, "batched again");
 }
 
 async fn traced_logprobs_are_refused(state: &AppState) {
@@ -188,4 +259,5 @@ async fn the_dense_cuda_backend_serves_chat_logprobs_direct_and_scheduled() {
     logprobs_are_served(&direct, "direct").await;
     traced_logprobs_are_refused(&direct).await;
     logprobs_are_served(&scheduled(&direct), "scheduled").await;
+    batched_logprobs_are_served(&direct).await;
 }
