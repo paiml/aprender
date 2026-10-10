@@ -628,9 +628,10 @@ resolve_scope() {
         rm -f "$meta"; printf 'SCOPE_ERROR'; return 1
     fi
     crate=$(sed -n 's/^name = "\(.*\)"/\1/p' "$REPO_ROOT/Cargo.toml" | head -1)
-    declared=$(CRATE="$crate" python3 "$REPO_ROOT/scripts/lib/dogfood_gates.py" "$meta" \
-        | awk '$1=="GATE"{print $2}')
+    # rc is jq's own status, read before any filter: through a pipe it would be awk's.
+    declared=$(jq -r --arg crate "$crate" -f "$REPO_ROOT/scripts/lib/dogfood_gates.jq" "$meta")
     rc=$?
+    declared=$(printf '%s\n' "$declared" | awk '$1=="GATE"{sub(/^GATE /,""); print}')
     rm -f "$meta"
     # NOPKG/NODECL/EMPTY/BADSHAPE all yield no GATE lines: the declaration
     # verifies nothing, and a scan over an empty universe would report clean.

@@ -58,6 +58,10 @@ REPO_DIR="${REPO_DIR:-$PWD}"
 REPO_DIR=$(realpath -e -- "$REPO_DIR" 2>/dev/null) || { echo "dogfood: no such dir: ${1:-$PWD}" >&2; exit 2; }
 cd -- "$REPO_DIR" 2>/dev/null || { echo "dogfood: no such dir: $REPO_DIR" >&2; exit 2; }
 [ -f Cargo.toml ] || { echo "dogfood: not a Rust crate (no Cargo.toml) in $REPO_DIR" >&2; exit 2; }
+# jq reads every JSON this script consumes and writes the receipt (#4377: python3
+# did, and the gate path may not need Python). Without jq no row means anything,
+# so it is a setup error before any gate runs, not a red row.
+command -v jq >/dev/null 2>&1 || { echo "dogfood: jq is not installed; it parses every tool's JSON and writes the receipt" >&2; exit 2; }
 
 # Resolve identity from cargo itself, NOT by grepping Cargo.toml.
 #
@@ -74,19 +78,27 @@ cd -- "$REPO_DIR" 2>/dev/null || { echo "dogfood: no such dir: $REPO_DIR" >&2; e
 # `cargo metadata --no-deps` lists EVERY workspace member regardless of cwd, so
 # it must be filtered by manifest_path — picking ps[0], or requiring len==1,
 # silently yields nothing for any member of a workspace.
+# _pkg_json prints, as one JSON object, the package whose manifest_path is
+# ./Cargo.toml. Both sides go through realpath, so a symlinked checkout still
+# matches. Status 1, and no output, when there is no such package or the
+# metadata is unreadable (#4377: these readers were python3).
+_pkg_json() {
+  local here meta mp i=0
+  here=$(realpath Cargo.toml 2>/dev/null) || return 1
+  meta=$(cargo metadata --no-deps --format-version 1 2>/dev/null) || return 1
+  while IFS= read -r mp; do
+    if [ "$(realpath "$mp" 2>/dev/null)" = "$here" ]; then
+      printf '%s' "$meta" | jq -c ".packages[$i]" 2>/dev/null
+      return
+    fi
+    i=$((i + 1))
+  done < <(printf '%s' "$meta" | jq -r '.packages[]? | (.manifest_path // "")' 2>/dev/null)
+  return 1
+}
 _meta() {
-  cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c '
-import json,os,sys
-field=sys.argv[1]
-here=os.path.realpath("Cargo.toml")
-try:
-    d=json.load(sys.stdin)
-except Exception:
-    print(""); raise SystemExit
-for p in d.get("packages",[]):
-    if os.path.realpath(p.get("manifest_path","")) == here:
-        print(p.get(field,"")); raise SystemExit
-print("")' "$1" 2>/dev/null
+  local pj
+  pj=$(_pkg_json) || { echo ""; return 0; }
+  printf '%s' "$pj" | jq -r --arg f "$1" '(.[$f] // "") | tostring' 2>/dev/null || echo ""
 }
 CRATE=$(_meta name)
 VERSION=$(_meta version)
@@ -153,10 +165,14 @@ RECEIPT_DIR="$PWD/.dogfood"
 mkdir -p "$RECEIPT_DIR"
 # The receipt's stamp honours SOURCE_DATE_EPOCH (the reproducible-build
 # convention, DET002) and falls back to the clock: a receipt records when it
-# ran, and a caller that wants a pinned stamp sets the epoch. Formatted by
-# python3 (already a hard dependency of this script) rather than `date -d`,
-# which is GNU-only and fails on the macOS host of the multi-platform sweep.
-TS=$(python3 -c 'import datetime, os, time; e = int(os.environ.get("SOURCE_DATE_EPOCH") or time.time()); print(datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))')
+# ran, and a caller that wants a pinned stamp sets the epoch. `date -d @E` is
+# GNU-only and fails on the macOS host of the multi-platform sweep, so BSD
+# `date -r E` is the fallback (#4377: this was python3, which the gate path
+# may no longer need).
+TS_EPOCH=${SOURCE_DATE_EPOCH:-$(date -u +%s)}
+TS=$(date -u -d "@$TS_EPOCH" +%Y%m%dT%H%M%SZ 2>/dev/null \
+  || date -u -r "$TS_EPOCH" +%Y%m%dT%H%M%SZ 2>/dev/null) \
+  || { echo "dogfood: cannot format the receipt stamp from epoch '$TS_EPOCH'" >&2; exit 2; }
 # The commit the evidence describes, stamped INTO the receipt: a consumer that
 # globs for the newest receipt after a crashed run would otherwise read a
 # previous verdict as current with nothing to expose it (#2644, DF-12). With
@@ -401,18 +417,18 @@ fi
 run_to "$WORKLOG/meta-dogfood.json" cargo metadata --no-deps --format-version 1
 DG_META_RC=$RUN_RC
 # ONE parser, shared with scripts/check_verifier_pinning.sh — see
-# scripts/lib/dogfood_gates.py. This used to be an embedded heredoc while the
+# scripts/lib/dogfood_gates.jq (#4377: ported from Python). This used to be an embedded heredoc while the
 # guard scraped the same TOML with awk+grep, so the guard's scan universe could
 # be strictly smaller than the set the runner EXECUTES (#2644 audit, CI-3/VP-05).
-DG_PLAN=$(CRATE="$CRATE" python3 "$SKILL_DIR/lib/dogfood_gates.py" \
+DG_PLAN=$(jq -r --arg crate "$CRATE" -f "$SKILL_DIR/lib/dogfood_gates.jq" \
   "$WORKLOG/meta-dogfood.json" 2>/dev/null || echo "META_ERROR")
 if [ "$DG_META_RC" -ne 0 ]; then
   mark dogfood-gates FAIL "\`cargo metadata\` failed (exit=$DG_META_RC) — the release gates this crate declares could not be discovered, so none of them ran"
 elif [ "$DG_PLAN" = "META_ERROR" ]; then
-  # cargo succeeded; the python step died. The old message blamed cargo with
+  # cargo succeeded; the jq step died. The old message blamed cargo with
   # "failed (exit=0)" attached — an operator sent to the wrong component
   # (#2644, CI-4).
-  mark dogfood-gates FAIL "gate discovery's python3 step failed (cargo metadata itself exited 0) — \`$SKILL_DIR/lib/dogfood_gates.py\` could not parse the declaration (or is missing), so no declared gate ran"
+  mark dogfood-gates FAIL "gate discovery's jq step failed (cargo metadata itself exited 0) — \`$SKILL_DIR/lib/dogfood_gates.jq\` could not parse the declaration (or is missing), so no declared gate ran"
 elif [ "$DG_PLAN" = "NOPKG" ]; then
   mark dogfood-gates FAIL "no package named '$CRATE' in cargo metadata — run dogfood from the crate dir, not the virtual workspace root"
 elif [ "$DG_PLAN" = "NODECL" ]; then
@@ -524,21 +540,15 @@ index_version_state() {
   # error page behind a 200, a captive portal). Only 1 is "absent"; 2 is
   # UNKNOWN -- a gate that read `unparseable` as `absent` was fail-open
   # (fourth review of #2859, dogfood-index-decode-bypass).
-  python3 -c '
-import json, sys
-want = sys.argv[1]
-seen = 0
-try:
-    for line in open(sys.argv[2], encoding="utf-8"):
-        line = line.strip()
-        if not line: continue
-        rec = json.loads(line)
-        if not isinstance(rec, dict) or "vers" not in rec: sys.exit(2)
-        seen += 1
-        if rec.get("vers") == want: sys.exit(0)
-except (ValueError, OSError, UnicodeDecodeError):
-    sys.exit(2)
-sys.exit(1 if seen else 2)' "$2" "$WORKLOG/registry.ndjson"; parse=$?
+  # jq reads every record before it answers, so one malformed line anywhere is
+  # 2 (unknown), even after a match. That is stricter than the python3 it
+  # replaced (#4377), never looser. A jq that dies prints nothing, which is also 2.
+  parse=$(jq -n --arg want "$2" '[inputs] as $r
+    | if ($r | length) == 0 then 2
+      elif any($r | .[]; (type != "object") or ((has("vers")) | not)) then 2
+      elif any($r | .[]; .vers == $want) then 0
+      else 1 end' "$WORKLOG/registry.ndjson" 2>/dev/null) || parse=2
+  case "$parse" in 0|1) ;; *) parse=2 ;; esac
   case "$parse" in
     0) printf 'present\n' ;;
     1) printf 'absent\n' ;;
@@ -1070,25 +1080,16 @@ if command -v bashrs >/dev/null 2>&1; then
       # Classify by CODE PREFIX from the JSON, not by grepping rendered text.
       # (`--format json` prepends an ANSI tracing line when exactly ONE file is
       # linted; the sentinel guarantees >=2, and the parser skips it anyway.)
-      BR_CLASS=$(python3 - "$BR_DIR/out.json" <<'PY' 2>/dev/null || echo "PARSE_ERROR"
-import json, sys
-raw = open(sys.argv[1]).read()
-i = raw.find('{')
-raw = raw[i:] if i >= 0 else ''
-dec, pos, gating, soft, other, rules = json.JSONDecoder(), 0, 0, 0, 0, set()
-while pos < len(raw):
-    while pos < len(raw) and raw[pos] in ' \t\r\n': pos += 1
-    if pos >= len(raw): break
-    obj, pos = dec.raw_decode(raw, pos)
-    for d in obj.get('diagnostics', []):
-        if d.get('severity') != 'error': continue
-        c = d.get('code', '')
-        if c.startswith(('SEC', 'DET', 'IDEM')): gating += 1; rules.add(c)
-        elif c in ('SC1020', 'SC1035', 'SC1140'): soft += 1
-        else: other += 1
-print(f"{gating} {soft} {other} {' '.join(sorted(rules))}")
-PY
-)
+      # jq -s reads the stream of concatenated objects; everything before the first
+      # `{` (the ANSI line) is cut off first. jq is the LAST command of the pipe, so
+      # `|| PARSE_ERROR` sees jq's status (#4377: this was python3).
+      BR_OFF=$(grep -bo '{' "$BR_DIR/out.json" 2>/dev/null | head -n 1 | cut -d: -f1)
+      BR_CLASS=$( { [ -n "$BR_OFF" ] && tail -c +"$((BR_OFF + 1))" "$BR_DIR/out.json"; } \
+        | jq -rs '[.[] | (.diagnostics // [])[] | select(.severity == "error") | (.code // "")] as $c
+          | ($c | map(select(test("^(SEC|DET|IDEM)")))) as $g
+          | ($c | map(select(. == "SC1020" or . == "SC1035" or . == "SC1140")) | length) as $soft
+          | "\($g | length) \($soft) \(($c | length) - ($g | length) - $soft) \($g | unique | join(" "))"' \
+        2>/dev/null || echo "PARSE_ERROR")
       BR_GATING=$(printf '%s' "$BR_CLASS" | awk '{print $1}')
       BR_SOFT=$(printf '%s'   "$BR_CLASS" | awk '{print $2}')
       BR_OTHER=$(printf '%s'  "$BR_CLASS" | awk '{print $3}')
@@ -1135,32 +1136,12 @@ if command -v "$PMAT_BIN" >/dev/null 2>&1; then
   #
   # Note pmat-comply below still runs and still gates CB-200, so a bin-only crate
   # is NOT unmeasured — it loses one of two pmat gates, not both.
-  HAS_LIB_TARGET=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
-    | python3 -c '
-import json,os,sys
-here=os.path.realpath("Cargo.toml")
-try:
-    d=json.load(sys.stdin)
-except Exception:
-    print("unknown"); raise SystemExit
-for p in d.get("packages",[]):
-    if os.path.realpath(p.get("manifest_path","")) == here:
-        ks=[k for t in p.get("targets",[]) for k in t["kind"]]
-        print("yes" if ("lib" in ks or "rlib" in ks) else "no"); raise SystemExit
-print("unknown")' 2>/dev/null)
+  HAS_LIB_TARGET=$( { _pkg_json || echo null; } \
+    | jq -r 'if type != "object" then "unknown"
+             elif any(.targets[]?.kind[]?; . == "lib" or . == "rlib") then "yes"
+             else "no" end' 2>/dev/null || echo unknown)
   if [ "$HAS_LIB_TARGET" = "no" ]; then
-    TGTS=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
-      | python3 -c '
-import json,os,sys
-here=os.path.realpath("Cargo.toml")
-try:
-    d=json.load(sys.stdin)
-except Exception:
-    print("?"); raise SystemExit
-for p in d.get("packages",[]):
-    if os.path.realpath(p.get("manifest_path","")) == here:
-        print(",".join(sorted({k for t in p.get("targets",[]) for k in t["kind"]}))); raise SystemExit
-print("?")' 2>/dev/null)
+    TGTS=$(_pkg_json | jq -r '[.targets[]?.kind[]?] | unique | join(",")' 2>/dev/null)
     mark pmat-verify SKIP "package has no lib target (kinds present: ${TGTS:-?}) — \`pmat verify\` requires one and hard-errors otherwise; pmat-comply/CB-200 below still gates this crate"
   else
     gate pmat-verify "$PMAT_BIN" verify --format json
@@ -1195,17 +1176,17 @@ print("?")' 2>/dev/null)
   # report "could not parse" for a run that worked perfectly.
   run_split "$WORKLOG/comply.json" "$WORKLOG/comply.err" timeout 900 "$PMAT_BIN" comply check --format json
   PMAT_COMPLY_RC=$RUN_RC
-  PMAT_SUM=$(python3 - "$WORKLOG/comply.json" <<'PY' 2>/dev/null || echo "PARSE_ERROR"
-import json, sys
-d = json.load(open(sys.argv[1]))
-s = d['summary']
-checks = {c['name']: c for c in d['checks']}
-cb = next((c for n, c in checks.items() if n.startswith('CB-200')), None)
-dark = [n for n, c in checks.items()
-        if c.get('status') == 'Skip' and c.get('severity') == 'Error']
-print(f"{s['fail']} {s['skip']} {cb['status'] if cb else 'ABSENT'} {len(dark)}")
-PY
-)
+  # Checks are keyed by name, last one wins, as before. A missing summary.fail,
+  # summary.skip, check name or CB-200 status is an error, so PARSE_ERROR
+  # (#4377: this was python3).
+  PMAT_SUM=$(jq -r '
+    def need($k): if has($k) then .[$k] else error("missing \($k)") end;
+    (.summary | need("fail")) as $fail | (.summary | need("skip")) as $skip
+    | (reduce .checks[] as $c ({}; .[($c | need("name"))] = $c) | to_entries | map(.value)) as $checks
+    | ([$checks | .[] | select(.name | startswith("CB-200"))] | first) as $cb
+    | ([$checks | .[] | select(.status == "Skip" and .severity == "Error")] | length) as $dark
+    | "\($fail) \($skip) \(if $cb == null then "ABSENT" else ($cb | need("status")) end) \($dark)"' \
+    "$WORKLOG/comply.json" 2>/dev/null || echo "PARSE_ERROR")
   if [ "$PMAT_SUM" = "PARSE_ERROR" ]; then
     mark pmat-comply FAIL "could not parse \`pmat comply check --format json\` (exit=$PMAT_COMPLY_RC, index build exit=$PMAT_IDX_RC) — the fleet gate did not run"
   else
@@ -1269,7 +1250,7 @@ PY
   # sweep of the whole file noticed. `--help` on a stale pmat also decides
   # whether the gate runs AT ALL, so an unpinned probe silently skips it.
   if "$PMAT_BIN" analyze reachability --help >/dev/null 2>&1; then
-    RO=$(timeout 900 "$PMAT_BIN" analyze reachability -p . -f json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['orphan_count'],d['orphan_tests'])" 2>/dev/null || echo "? ?")
+    RO=$(timeout 900 "$PMAT_BIN" analyze reachability -p . -f json 2>/dev/null | jq -r 'if has("orphan_count") and has("orphan_tests") then "\(.orphan_count) \(.orphan_tests)" else error("no orphan counts") end' 2>/dev/null || echo "? ?")
     mark reachability WARN "unreachable files/tests: $RO (a file the build never compiles cannot be tested)"
   else
     # The if-with-no-else made this row VANISH on any pmat without the
@@ -1484,33 +1465,9 @@ fi
 # at least one test that passes. "0 tests, ok" is a vacuous pass and FAILs here.
 run_to "$WORKLOG/meta.json" cargo metadata --no-deps --format-version 1
 META_RC=$RUN_RC
-TP_PLAN=$(CRATE="$CRATE" python3 - "$WORKLOG/meta.json" <<'PY' 2>/dev/null || echo "META_ERROR"
-import json, os, sys
-d = json.load(open(sys.argv[1]))
-name = os.environ.get('CRATE', '')
-pkgs = d.get('packages', [])
-pkg = next((p for p in pkgs if p['name'] == name), None)
-if pkg is None and len(pkgs) == 1:
-    pkg = pkgs[0]
-if pkg is None:
-    print("NOPKG " + ",".join(sorted(p['name'] for p in pkgs))); raise SystemExit
-tp = (pkg.get('metadata') or {}).get('transports')
-tests = {t['name']: t['src_path'] for t in pkg['targets'] if 'test' in t['kind']}
-if not tp:
-    print("NODECL"); raise SystemExit
-man = tp.get('manifest')
-if isinstance(man, dict):
-    print(f"MANIFEST {man.get('path') or '-'} {man.get('regen') or '-'}")
-for k, v in sorted(tp.items()):
-    if k == 'manifest':
-        continue
-    if isinstance(v, bool):
-        print(f"BADSHAPE {k}"); continue
-    tgt = (v or {}).get('e2e', '')
-    feats = ",".join((v or {}).get('features', []))
-    print(f"DECL {k} {tgt or '-'} {feats or '-'} {tests.get(tgt, '-')}")
-PY
-)
+# The parser is scripts/lib/dogfood_transports.jq (#4377: this was python3).
+TP_PLAN=$(jq -r --arg crate "$CRATE" -f "$SKILL_DIR/lib/dogfood_transports.jq" \
+  "$WORKLOG/meta.json" 2>/dev/null || echo "META_ERROR")
 TP_BLOCKED=""
 if [ "$TP_PLAN" = "META_ERROR" ] || [ "$META_RC" -ne 0 ]; then
   mark transport-decl FAIL "\`cargo metadata\` failed (exit=$META_RC) — the transport declaration could not be read"
@@ -1629,28 +1586,24 @@ fi
 #
 # Declare it in Cargo.toml beside [package.metadata.transports]; see SKILL.md.
 #
-# NOT a pipeline: `python3 ... | head` reports head's status, and this gate's
+# NOT a pipeline: `checker ... | head` reports head's status, and this gate's
 # whole value is its own exit code. run_to keeps the command's status in
 # $RUN_RC — see run_to's comment and the two false GREENs that earned it.
-UI_DECL=$(CRATE="$CRATE" python3 - "$WORKLOG/meta.json" <<'UIPY' 2>/dev/null || echo ""
-import json, os, sys
-try:
-    d = json.load(open(sys.argv[1]))
-    pkg = next((p for p in d["packages"] if p["name"] == os.environ["CRATE"]), None)
-    us = ((pkg or {}).get("metadata") or {}).get("unified_surface")
-    print(json.dumps(us) if us else "")
-except Exception:
-    print("")
-UIPY
-)
+# The declaration of the package named $CRATE, compact; "" when absent, empty,
+# or unreadable (#4377: this was python3).
+UI_DECL=$(jq -c --arg crate "$CRATE" '
+  (first(.packages[] | select(.name == $crate)) // {}) | (.metadata // {}).unified_surface
+  | if . == null or . == false or . == 0 or . == "" or . == [] or . == {} then "" else . end' \
+  "$WORKLOG/meta.json" 2>/dev/null) || UI_DECL=""
+[ "$UI_DECL" = '""' ] && UI_DECL=""
 if [ ! -x "$BINPATH" ]; then
   mark transport-invariance FAIL "no release binary at $BINPATH — nothing to invoke"
 elif [ -z "$UI_DECL" ]; then
   mark transport-invariance SKIP "no [package.metadata.unified_surface] — declare list/cli/http/probe to enable the simultaneous cross-transport check"
-elif [ ! -f "$SKILL_DIR/invariance.py" ]; then
-  mark transport-invariance FAIL "invariance.py missing from $SKILL_DIR — a gate that cannot run is not a SKIP"
+elif [ ! -f "$SKILL_DIR/invariance.sh" ]; then
+  mark transport-invariance FAIL "invariance.sh missing from $SKILL_DIR — a gate that cannot run is not a SKIP"
 else
-  run_to "$WORKLOG/invariance.log" python3 "$SKILL_DIR/invariance.py" "$BINPATH" "$UI_DECL"
+  run_to "$WORKLOG/invariance.log" bash "$SKILL_DIR/invariance.sh" "$BINPATH" "$UI_DECL"
   INV_RC=$RUN_RC
   INV_MSG=$(head -1 "$WORKLOG/invariance.log" 2>/dev/null || echo "")
   case "$INV_RC:$INV_MSG" in
@@ -1883,40 +1836,113 @@ mark clean-room MANUAL "run \`make -C ../infra/machines/clean-room clean-room-$C
 # file that exists, looks like evidence, and answers no question. Encoded with
 # a real JSON encoder now, and the result is parsed back before the script will
 # claim it wrote one.
-NAMES_TSV=$(for i in "${!NAMES[@]}"; do
-  printf '%s\t%s\t%s\n' "${NAMES[$i]}" "${RESULTS[$i]}" "$(printf '%s' "${NOTES[$i]}" | tr '\n' '\r')"
-done)
-CRATE="$CRATE" VERSION="$VERSION" TS="$TS" SHA="$RECEIPT_SHA" PHASE="$DOGFOOD_PHASE" \
-VERDICT="$([ $FAILED -eq 0 ] && echo GO || echo NO-GO)" \
-ROWS="$NAMES_TSV" python3 > "$RECEIPT_PARTIAL" <<'PY'
-import json, os
-gates = []
-for line in os.environ.get("ROWS", "").split("\n"):
-    if not line.strip():
-        continue
-    parts = line.split("\t")
-    name, result = parts[0], parts[1] if len(parts) > 1 else ""
-    # rejoin: a literal TAB inside a gate note (log tails carry them) used to
-    # silently drop everything after it (#2644, DF-10)
-    note = "\t".join(parts[2:]).replace("\r", "\n") if len(parts) > 2 else ""
-    gates.append({"gate": name, "result": result, "note": note})
-print(json.dumps({
-    "crate": os.environ["CRATE"], "version": os.environ["VERSION"],
-    "timestamp": os.environ["TS"], "commit": os.environ["SHA"], "gates": gates,
-    "phase": os.environ["PHASE"],
-    "deferred": [g["gate"] for g in gates if g["result"] == "DEFER"],   # always empty since #3957 F1b; R5 refuses any
-    "open_obligations": [g["gate"] for g in gates if g["result"] == "OPEN"],
-    "verdict": os.environ["VERDICT"],
-}, indent=2))
-PY
-if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$RECEIPT_PARTIAL" 2>/dev/null; then
+#
+# Since #4377 the receipt is also a dogfood-receipt/v1 (paiml/infra
+# contracts/dogfood-receipt-v1.yaml): `schema`, `repo`, `tag`, `commit`, `host`,
+# `verdict`, `rows` and `counts` sit beside the fields the release preflight
+# already reads (crate, version, timestamp, gates, phase, deferred,
+# open_obligations), which keep their meaning. One object, one verdict. It is
+# written twice: as receipt-<TS>.json, and as dogfood-receipt-v1.<host>.json,
+# the asset name the tag's release carries. Encoded by jq (#4377: python3 did
+# this, and no step of the gate path may need Python).
+#
+# Two rows the v1 verdict rule needs are added here, BEFORE the verdict is read,
+# so the printed verdict, the legacy fields and the v1 fields cannot disagree:
+#   - a run in which no row PASSed is NO-GO (DFR-INV-003): zero passes is vacuous;
+#   - a status outside mark()'s vocabulary has no v1 meaning, so it is RED.
+DF_PASSES=0 DF_ALIEN=""
+for i in "${!RESULTS[@]}"; do
+  case "${RESULTS[$i]}" in
+    PASS) DF_PASSES=$((DF_PASSES + 1)) ;;
+    FAIL|SKIP|WARN|REPORT|INFO|MANUAL|OPEN) ;;
+    *) DF_ALIEN="$DF_ALIEN ${NAMES[$i]}=${RESULTS[$i]}" ;;
+  esac
+done
+if [ -n "$DF_ALIEN" ]; then
+  mark receipt-statuses FAIL "row status outside mark()'s vocabulary, which has no dogfood-receipt/v1 meaning:${DF_ALIEN}"
+fi
+if [ "$DF_PASSES" -eq 0 ]; then
+  mark receipt-passes FAIL "no row PASSed: a GO over zero measured passes is vacuous (dogfood-receipt/v1 DFR-INV-003)"
+fi
+# repo: DOGFOOD_REPO, else owner/name from origin. A receipt with no owner/name
+# is inadmissible, so a run that cannot name its repo is RED here rather than GO
+# beside a receipt the fleet will refuse.
+# tag: DOGFOOD_TAG, else the tag exactly at HEAD, else the tag this version
+# would carry; tag_source records which. host: DOGFOOD_HOST, else <arch>-<os>,
+# which names the platform and not the machine, because the asset is public.
+DF_REPO=${DOGFOOD_REPO:-$(git remote get-url origin 2>/dev/null \
+  | sed -nE 's#^.*[:/]([^/:]+)/([^/]+)$#\1/\2#p' | sed 's/\.git$//')}
+if ! [[ "$DF_REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+  mark receipt-repo FAIL "no owner/name for this repo (origin unset or not a hosted remote; set DOGFOOD_REPO): got '$DF_REPO', and dogfood-receipt/v1 refuses a receipt without one"
+fi
+if [ -n "${DOGFOOD_TAG:-}" ]; then DF_TAG=$DOGFOOD_TAG DF_TAG_SRC=env
+elif DF_TAG=$(git describe --exact-match --tags HEAD 2>/dev/null); then DF_TAG_SRC=exact-at-head
+else DF_TAG="v$VERSION" DF_TAG_SRC=version
+fi
+DF_HOST=${DOGFOOD_HOST:-$(uname -m)-$(uname -s | tr '[:upper:]' '[:lower:]')}
+DF_HOST=$(printf '%s' "$DF_HOST" | tr -c 'A-Za-z0-9._-' '_')
+RECEIPT_V1="$RECEIPT_DIR/dogfood-receipt-v1.$DF_HOST.json"
+# One JSON line per row first (jq does the string escaping), then one object.
+DF_ENC_OK=1
+: > "$RECEIPT_PARTIAL.rows"
+for i in "${!NAMES[@]}"; do
+  jq -nc --arg g "${NAMES[$i]}" --arg r "${RESULTS[$i]}" --arg n "${NOTES[$i]}" \
+    '{gate: $g, result: $r, note: $n}' >> "$RECEIPT_PARTIAL.rows" || DF_ENC_OK=0
+done
+if [ "$DF_ENC_OK" != 1 ] || ! jq -s \
+  --arg crate "$CRATE" --arg version "$VERSION" --arg ts "$TS" --arg sha "$RECEIPT_SHA" \
+  --arg phase "$DOGFOOD_PHASE" --argjson failed "$FAILED" --arg repo "$DF_REPO" \
+  --arg tag "$DF_TAG" --arg tag_source "$DF_TAG_SRC" --arg host "$DF_HOST" '
+  # legacy status -> v1 status. Only PASS counts as passed. WARN, REPORT and INFO
+  # never gate, so they are SKIP with a reason that says so; MANUAL and OPEN were
+  # not run by this script, so they are NotRun.
+  def v1: {PASS: "PASS", FAIL: "FAIL", SKIP: "SKIP", WARN: "SKIP", REPORT: "SKIP",
+           INFO: "SKIP", MANUAL: "NotRun", OPEN: "NotRun"}[.] // "FAIL";
+  def reason($g):
+    ($g.note | if . == "" then "\($g.result) with no note" else . end) as $n
+    | if ($g.result | IN("WARN", "REPORT", "INFO")) then "non-gating \($g.result): \($n)"
+      elif ($g.result | IN("PASS", "FAIL", "SKIP", "MANUAL", "OPEN")) then $n
+      else "unknown status \($g.result): \($n)" end;
+  . as $gates
+  # a row id is the gate name; a repeated name gets #2, #3 (DFR-INV-004: ids unique)
+  | [foreach ($gates | .[]) as $g ({};
+       .[$g.gate] += 1;
+       {id: (if .[$g.gate] == 1 then $g.gate
+             else "\($g.gate)#\(.[$g.gate])" end),
+        status: ($g.result | v1), reason: reason($g),
+        legacy_result: $g.result})] as $rows
+  | ([$rows | .[] | select(.status == "PASS")] | length) as $passed
+  | ([$rows | .[] | select(.status == "FAIL")] | length) as $red
+  | {schema: "dogfood-receipt/v1", repo: $repo, tag: $tag, tag_source: $tag_source,
+     commit: $sha, host: $host,
+     verdict: (if $failed == 0 and $red == 0 and $passed > 0 then "GO" else "NO-GO" end),
+     rows: $rows,
+     counts: {rows: ($rows | length), passed: $passed, failed: $red,
+              unmeasured: ([$rows | .[] | select(.status == "NotRun" or .status == "SKIP")] | length)},
+     crate: $crate, version: $version, timestamp: $ts, gates: $gates, phase: $phase,
+     deferred: [$gates | .[] | select(.result == "DEFER") | .gate],   # always empty since #3957 F1b; R5 refuses any
+     open_obligations: [$gates | .[] | select(.result == "OPEN") | .gate]}' "$RECEIPT_PARTIAL.rows" > "$RECEIPT_PARTIAL"; then
+  echo "FATAL: the receipt encoder (jq) failed ($RECEIPT_PARTIAL)." >&2
+  echo "       Refusing to report a verdict backed by evidence that was not written." >&2
+  exit 3
+fi
+if ! jq -e 'type == "object" and .schema == "dogfood-receipt/v1"' "$RECEIPT_PARTIAL" >/dev/null 2>&1; then
   echo "FATAL: the receipt this run just wrote is not valid JSON ($RECEIPT_PARTIAL)." >&2
   echo "       Refusing to report a verdict backed by evidence that cannot be read." >&2
   echo "       The .partial is kept as-is; no completed receipt exists for this run." >&2
   exit 3
 fi
+rm -f "${RECEIPT_PARTIAL:?}.rows"
 # Atomic completion: the receipt EXISTS only once it is whole and parseable.
 mv "$RECEIPT_PARTIAL" "$RECEIPT"
+# The same bytes under the release-asset name (one per host, newest run wins).
+# Attach it to the tag's release: gh release upload <tag> "$RECEIPT_V1".
+if cp "$RECEIPT" "$RECEIPT_V1.partial" && mv "$RECEIPT_V1.partial" "$RECEIPT_V1"; then
+  echo "receipt: $RECEIPT_V1 (dogfood-receipt/v1; attach to the release of $DF_TAG)"
+else
+  echo "FATAL: could not write $RECEIPT_V1" >&2
+  exit 3
+fi
 # ROW TIME (#4672) goes in a sidecar beside the receipt, one line per receipt row in run
 # order, so the receipt's schema -- which the release preflight reads -- does not change.
 # dur_s is the time since the previous row closed; closed_at_s is time since the run began.
