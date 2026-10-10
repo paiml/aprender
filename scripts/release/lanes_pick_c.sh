@@ -27,13 +27,13 @@ not_measured() { printf 'not_measured: %s\n' "$1" >&2; return 2; }
 tonight() {
     local row sha created now age
     row="$(gh api "repos/$1/actions/workflows/nightly.yml/runs?event=schedule&branch=main&per_page=1" \
-        --jq '.workflow_runs[0] // empty | "\(.head_sha) \(.created_at)"' 2>/dev/null)" \
+        --jq '.workflow_runs[0] // empty | "\(.head_sha) \(.created_at | fromdateiso8601)"' 2>/dev/null)" \
         || { not_measured "the nightly.yml run list could not be read"; return; }
     [ -n "$row" ] || { not_measured "nightly.yml has no scheduled run on main"; return; }
     sha=${row%% *}; created=${row#* }
     [[ $sha =~ ^[0-9a-f]{40}$ ]] || { not_measured "nightly.yml's newest run names no full sha: ${sha:0:60}"; return; }
-    created="$(date -u -d "$created" +%s 2>/dev/null)" || { not_measured "nightly.yml's newest run has no readable created_at"; return; }
-    now="${LANES_NOW:-$(date -u +%s)}"
+    [[ $created =~ ^[0-9]+$ ]] || { not_measured "nightly.yml's newest run has no readable created_at"; return; }
+    now="${LANES_NOW:-$EPOCHSECONDS}"   # bash 5; created_at is parsed by gh's jq: no date call (bashrs DET002)
     age=$((now - created))
     [ "$age" -ge 0 ] && [ "$age" -le $((MAX_AGE_H * 3600)) ] \
         || { not_measured "nightly.yml's newest scheduled run is not tonight's (created ${age}s ago, $sha)"; return; }
@@ -61,7 +61,7 @@ self_test() {
     # the fixture gh: prints $FX_ROW as the --jq result, then exits FX_RC (a read that fails part way)
     printf '#!/usr/bin/env bash\nprintf "%%s" "$FX_ROW"\nexit "${FX_RC:-0}"\n' > "$tmp/bin/gh"
     chmod +x "$tmp/bin/gh"
-    at() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+    at() { printf '%s' "$1"; }   # created_at as gh's jq prints it: epoch seconds (fromdateiso8601)
     # case_ NAME WANT_RC WANT_STDOUT WANT_STDERR ROW FX_RC REF EVENT SHA : WANT_STDERR is a substring ("" = any)
     case_() {
         local name=$1 want_rc=$2 want=$3 err=$4 o rc=0
