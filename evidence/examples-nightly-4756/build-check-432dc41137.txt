@@ -1,0 +1,15 @@
+head 432dc41137 arch aarch64
+rc=0 check aprender-serve performance_parity
+rc=0 clippy(no -D) aprender-serve performance_parity
+  diag in touched files: 0
+  diag elsewhere:       2 crates/aprender-compute/src/blis/compute.rs       2 crates/aprender-compute/src/brick/quant_ops/mod.rs 
+rc=0 check aprender-core qa_chat
+rc=0 clippy(no -D) aprender-core qa_chat
+  diag in touched files: 0
+  diag elsewhere:       2 crates/aprender-compute/src/blis/compute.rs       2 crates/aprender-compute/src/brick/quant_ops/mod.rs 
+rc=0 check_package_includes.sh (CI m61 section)
+scanned 10 publishable crate(s) containing include!(); 1584 include target(s)
+PASS: every include!() target survives `cargo package` in all 10 crate(s).
+SCANNED 1798 include!d file(s), 1576 misformatted; 1584 grandfathered in scripts/include_fmt_baseline.txt
+PASS
+DONE fail=0 disk 81% 17:09:42Z

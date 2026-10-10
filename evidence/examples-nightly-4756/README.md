@@ -272,10 +272,10 @@ The CI run of this PR at 7049f3584c (run 38059743711, a `pull_request` run, head
 failed two guard rows that the branch caused. The fix commit after it fixes them and applies
 the review findings; it is not in the 36-row run above. It changes two Rust files, `performance_parity.rs` and
 `qa_chat_include_01.rs` (included by the `qa_chat` example). The build receipt is committed after it,
-`build-check-<commit>.txt`: an aarch64 `cargo check` and `cargo clippy` (no `-D`) of the
+`build-check-432dc41137.txt` (at 432dc41137): an aarch64 `cargo check` and `cargo clippy` (no `-D`) of the
 `performance_parity` and `qa_chat` example targets and the CI include-guard script
 `check_package_includes.sh`, all rc 0, with no diagnostic in a touched file. The F12 and
-include-fmt guards and `rustfmt --check`, run locally at that head, are in `guards-<commit>.txt`.
+include-fmt guards and `rustfmt --check`, run locally at that head, are in `guards-432dc41137.txt`.
 
 - **F12 ledger (guard-cargo#m43).** The ledger is keyed `path:line` and shrink-only. The
   branch moved `llama_cpp_reference = 50.0` in `performance_parity.rs`, so the guard saw a new
