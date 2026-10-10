@@ -21,12 +21,12 @@ decide() {
     local tries="$1" wait_s="$2"
     shift 3 # tries, wait-seconds, --
     local n=1 d
-    d=$("$@")
+    d=$("$@") || return
     while [ "$d" = "ci-pending" ] && [ "$n" -lt "$tries" ]; do
         echo "nightly gate: ci-pending (try $n/$tries); asking again in ${wait_s}s" >&2
         sleep "$wait_s"
         n=$((n + 1))
-        d=$("$@")
+        d=$("$@") || return
     done
     echo "nightly gate: $d after $n/$tries tries" >&2
     printf '%s\n' "$d"
@@ -82,6 +82,9 @@ self_test() {
     check "red-ci is final, never retried" "$(decide 3 0 -- stub 2> /dev/null)" "red-ci"
     printf 'reused\n' > "$tmp/seq"
     check "reused needs no retry" "$(decide 3 0 -- stub 2> /dev/null)" "reused"
+    # A gate that cannot answer (fetch error, rate limit) fails the step: no retry, no decision.
+    check "failing gate command -> nonzero, never a decision" \
+        "$( (decide 3 0 -- sh -c 'echo ci-pending; exit 3') 2> /dev/null; echo "rc=$?")" "rc=3"
     check "built -> green" "$(rc verdict built x)" "0"
     check "reused -> green" "$(rc verdict reused x)" "0"
     check "red-ci -> red" "$(rc verdict red-ci x)" "1"
