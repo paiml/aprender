@@ -127,14 +127,15 @@ pub trait ArchForward {
         Ok(None)
     }
 
-    /// Turn per-layer timing on or off for the decode forwards that follow
-    /// (APR-OBS-001 OBS-09). `true` only when the backend WILL time its
-    /// layers; the default times nothing, and says so.
+    /// Turn per-layer timing on or off for the single-token forwards that
+    /// follow: every decode, and a prompt prefilled token by token (APR-OBS-001
+    /// OBS-09). `true` only when the backend WILL time its layers; the default
+    /// times nothing, and says so.
     fn set_layer_timing(&mut self, _on: bool) -> bool {
         false
     }
 
-    /// The per-layer decode time since [`ArchForward::set_layer_timing`] turned
+    /// The per-layer time since [`ArchForward::set_layer_timing`] turned
     /// it on, one `(microseconds, calls, kind)` per layer, or `None` when no
     /// layer was timed. Taking it clears it.
     fn take_layer_timings(&mut self) -> Option<Vec<LayerTiming>> {
@@ -146,11 +147,12 @@ pub trait ArchForward {
 pub struct TurnTrace<'a> {
     /// Receives one event per forward and per `on_token` call.
     pub tracer: &'a mut crate::inference_trace::InferenceTracer,
-    /// Also time every layer of every decode forward.
+    /// Also time every layer of every single-token forward.
     pub layers: bool,
 }
 
-/// One layer's measured decode time over a turn (APR-OBS-001 OBS-09).
+/// One layer's measured time over a turn's single-token forwards
+/// (APR-OBS-001 OBS-09).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LayerTiming {
     /// Microseconds summed over every timed forward through this layer.
@@ -462,11 +464,10 @@ impl<F: ArchForward> Session<F> {
     ) -> Result<Turn> {
         let layer_timing = trace.as_ref().is_some_and(|t| t.layers);
         let mut tracer = trace.map(|t| t.tracer);
-        if layer_timing {
-            self.forward.set_layer_timing(true);
-        }
+        // Only a backend that said it would time its layers has timing to undo.
+        let timing_on = layer_timing && self.forward.set_layer_timing(true);
         let turn = self.generate_inner(prompt, config, on_token, &mut tracer);
-        if layer_timing {
+        if timing_on {
             self.forward.set_layer_timing(false);
         }
         turn
@@ -608,9 +609,6 @@ impl<F: ArchForward> Session<F> {
     }
 }
 
-/// How many tokens a turn may generate: `max_tokens`, or fewer when the
-/// declared context ends first, and whether it did. The caller has already
-/// refused a prompt of `context_length` tokens or more.
 /// File the time since `clock` as one `step` event, when a tracer is attached.
 fn record(
     tracer: &mut Option<&mut crate::inference_trace::InferenceTracer>,
@@ -624,6 +622,9 @@ fn record(
     }
 }
 
+/// How many tokens a turn may generate: `max_tokens`, or fewer when the
+/// declared context ends first, and whether it did. The caller has already
+/// refused a prompt of `context_length` tokens or more.
 pub(crate) fn turn_budget(
     prompt_len: usize,
     max_tokens: usize,

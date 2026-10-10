@@ -4,7 +4,6 @@ metadata:
   author: PAIML Engineering
   registry: true
   references:
-    - "handoff/APR-OBS-001-dogfood-observability.md OBS-09"
     - "aprender#4496"
   description: |
     apr-trace-v1: what an `apr serve` reply may claim about its own timing when a

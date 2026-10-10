@@ -2,9 +2,10 @@
 //! runs `inference_trace`, and the reply says [`TraceProvenance::Measured`] only
 //! when the tracer actually ran (contract `apr-trace-v1`).
 //!
-//! Before this, every serve backend answered a trace header from
-//! [`build_trace_data`]: the request's wall clock, one row, `WallClockTotal`.
-//! That stays the answer whenever there is nothing measured to report — a
+//! Before this, the serve backends answered a trace header from
+//! [`build_trace_data`]: the request's wall clock, one row, `WallClockTotal`;
+//! the Qwen3.5 path passed no header on and answered no trace at all.
+//! The wall-clock row stays the answer whenever nothing was measured — a
 //! header this path does not trace, a CPU turn asked for layers (the CPU
 //! forward times none), or a measurement whose parts add up to MORE than the
 //! request's own wall clock, which cannot be a measurement of that request.
@@ -15,7 +16,7 @@ use crate::session::LayerTiming;
 
 /// The tracer a request's `X-Trace-Level` asks for, or `None` for a level this
 /// path does not trace. Both levels record every forward and every emitted
-/// token; `layer` also times each layer of each decode forward.
+/// token; `layer` also times each layer of each single-token forward.
 pub(crate) fn tracer_for(level: Option<&str>) -> Option<InferenceTracer> {
     match level {
         Some("step" | "layer") => {
@@ -136,7 +137,7 @@ fn layer_trace(layers: Option<&[LayerTiming]>, wall_us: u64) -> Option<TraceData
             .map(|(i, l)| TraceOperation {
                 name: format!("layer[{i}] {}", l.kind),
                 time_us: l.total_us,
-                details: Some(format!("{} decode forwards", l.calls)),
+                details: Some(format!("{} single-token forwards", l.calls)),
             })
             .collect(),
         provenance: TraceProvenance::Measured,

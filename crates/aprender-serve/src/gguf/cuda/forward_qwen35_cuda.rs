@@ -1665,7 +1665,7 @@ impl<'a> Qwen35CudaModel<'a> {
         Ok(())
     }
 
-    /// APR-OBS-001 OBS-09: time every layer of the decode forwards that
+    /// APR-OBS-001 OBS-09: time every layer of the single-token forwards that
     /// follow, or stop. Turning it on starts an empty tally; turning it off
     /// keeps what was measured for [`Self::take_layer_timings`].
     pub fn set_layer_timing(&mut self, on: bool) {
@@ -1690,7 +1690,8 @@ impl<'a> Qwen35CudaModel<'a> {
     }
 
     /// The per-layer tally since timing went on, or `None` when no layer was
-    /// timed (no decode forward ran, or timing was never on). Taking it clears it.
+    /// timed (no single-token forward ran, or timing was never on). Taking it
+    /// clears it.
     pub fn take_layer_timings(&mut self) -> Option<Vec<crate::session::LayerTiming>> {
         self.timing_on = false;
         self.layer_timings

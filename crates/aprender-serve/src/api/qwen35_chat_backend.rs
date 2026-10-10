@@ -90,7 +90,6 @@ async fn try_qwen35_backend(
     start: Instant,
     cancel: &CancelToken,
 ) -> Option<Response> {
-
     let session = state.qwen35_session()?;
     let Some(mapped) = state.mapped_gguf_model() else {
         return Some(fail_response(
@@ -186,7 +185,11 @@ async fn try_qwen35_backend(
                 layers: time_layers,
             });
             let r = s.generate_traced(&input_ids, &gen_config, &mut |_| true, trace);
-            let layers = if time_layers { s.take_layer_timings() } else { None };
+            let layers = if time_layers {
+                s.take_layer_timings()
+            } else {
+                None
+            };
             let measured = TracedTurn {
                 tracer,
                 layers,
