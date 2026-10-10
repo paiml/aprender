@@ -315,6 +315,38 @@ manifest_rows() {
     n=$((n + 1))
     if [ $((t1 - t0)) -lt 15 ]; then printf 'ok   %-58s %ss\n' "timeout returned promptly" $((t1 - t0))
     else printf 'FAIL %-58s %ss\n' "timeout returned promptly" $((t1 - t0)); bad=1; fi
+    # #4919: a step that outlives the JOB is killed by the job's deadline before --step-timeout,
+    # and the log must still say which step was running. The heartbeat names it.
+    mfixture "$repo/ci/sections.yml" good "true" "sleep 4"
+    CI_GUARDS_HEARTBEAT=1 mrun "CI: the heartbeat names the step still running" 0 '^ci_guards: still running: guard-x#[^ ]+ step 7 \([0-9]+s\)$'
+    # Its mutant: the same run with the printf deleted must NOT name it, or the row proves nothing.
+    mkdir -p "$d/hbmut/lib"
+    cp "$(dirname "$LIB")/ci_guard_yaml.awk" "$(dirname "$LIB")/ci_guard_steps.jq" "$d/hbmut/lib/" \
+        && cp "$(dirname "$LIB")/../ci_guards.sh" "$d/hbmut/"
+    sed '/printf .ci_guards: still running: /d' "$LIB" > "$d/hbmut/lib/$(basename "$LIB")"
+    if ! grep -q 'still running' "$d/hbmut/lib/$(basename "$LIB")"; then
+        ( cd "$repo" && GITHUB_ACTIONS=true GITHUB_TOKEN=tok-123 GITHUB_STEP_SUMMARY="$d/msummary" CI_GUARDS_HEARTBEAT=1 \
+            CI_GUARDS_SCRATCH="$d/mscratch" bash "$d/hbmut/lib/$(basename "$LIB")" run guard-x ) > "$d/out" 2>&1
+        n=$((n + 1))
+        if grep -q '^ci_guards: still running:' "$d/out"; then
+            printf 'FAIL %-58s\n' "heartbeat mutant (printf deleted) still named the step"; bad=1
+        else printf 'ok   %-58s\n' "heartbeat mutant (printf deleted) names nothing"; fi
+    else n=$((n + 1)); printf 'FAIL %-58s\n' "heartbeat mutant: the sed did not apply"; bad=1; fi
+    # A daemon the step leaves behind must not hold the heartbeat's FIFO: otherwise the runner
+    # waits on the heartbeat for the daemon's whole life. Read off the daemon's own fd table, not a clock.
+    # shellcheck disable=SC2016 # expanded by the step's bash, not here
+    mfixture "$repo/ci/sections.yml" good 'sleep 30 > /dev/null 2>&1 & echo $! > "$RUNNER_TEMP/daemon.pid"'
+    mkdir -p "$d/rt"; rm -f "${d:?}/rt/daemon.pid"
+    CI_GUARDS_HEARTBEAT=60 RUNNER_TEMP="$d/rt" mrun "CI: a step's daemon does not hold the heartbeat" 0 '^SUMMARY: 0 failed / 2 ran'
+    n=$((n + 1))
+    dpid="$(cat "$d/rt/daemon.pid" 2> /dev/null)"
+    if [ -n "$dpid" ] && [ -d "/proc/$dpid" ]; then
+        hbfd="$(find "/proc/$dpid/fd" -type l -lname '*hb.*' 2> /dev/null)"
+        if [ -n "$hbfd" ]; then
+            printf 'FAIL %-58s\n' "the step's daemon inherited the heartbeat FIFO"; bad=1
+        else printf 'ok   %-58s\n' "the step's daemon holds no heartbeat FIFO"; fi
+        kill "$dpid" 2> /dev/null
+    else printf 'FAIL %-58s\n' "not measured: the daemon was not alive to read (pid '${dpid}')"; bad=1; fi
     # A jq that dies mid-stream must stop the run with rc 2, not end the step loop early
     # and report the steps it never read as nothing (the loop reads jq's records from fd 3).
     mkdir -p "$d/mutlib/lib"

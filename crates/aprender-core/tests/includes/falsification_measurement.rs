@@ -1,7 +1,7 @@
 /// M001: cbtop --headless --simulated exits cleanly with code 0
 #[test]
 fn m001_headless_exits_cleanly() {
-    let output = Command::new("cargo")
+    let output = nested_cargo()
         .args([
             "run",
             "-p",
@@ -38,7 +38,7 @@ fn m001_headless_exits_cleanly() {
 /// M002: JSON output is valid JSON
 #[test]
 fn m002_json_output_valid() {
-    let output = Command::new("cargo")
+    let output = nested_cargo()
         .args([
             "run",
             "-p",
@@ -87,7 +87,7 @@ fn m002_json_output_valid() {
 /// M003: Brick scores present in JSON output
 #[test]
 fn m003_brick_scores_present() {
-    let output = Command::new("cargo")
+    let output = nested_cargo()
         .args([
             "run",
             "-p",
@@ -176,7 +176,7 @@ fn m006_cv_under_five_percent() {
 /// M007: CI mode returns exit code 1 on threshold failure
 #[test]
 fn m007_ci_exit_code_on_failure() {
-    let output = Command::new("cargo")
+    let output = nested_cargo()
         .args([
             "run",
             "-p",
@@ -211,7 +211,7 @@ fn m007_ci_exit_code_on_failure() {
 /// M008: CI mode returns exit code 0 on threshold pass
 #[test]
 fn m008_ci_exit_code_on_pass() {
-    let output = Command::new("cargo")
+    let output = nested_cargo()
         .args([
             "run",
             "-p",
@@ -287,7 +287,7 @@ fn m010_output_file_created() {
 
     let _ = fs::remove_file(output_path);
 
-    let output = Command::new("cargo")
+    let output = nested_cargo()
         .args([
             "run",
             "-p",

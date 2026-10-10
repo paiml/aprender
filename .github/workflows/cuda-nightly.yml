@@ -794,7 +794,7 @@ jobs:
     # in two vocabularies, which is how the fleet lost sight of this runner in
     # the first place.
     runs-on: [self-hosted, gpu, yoga, Linux, X64, cuda, ada]
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       CARGO_TERM_COLOR: always
       # One host GPU lock, shared by CI and agents (operator, 2026-09-26; see
@@ -851,6 +851,36 @@ jobs:
           nice -n 19 cargo test -p aprender-train --features cuda --lib --release -- \
             --nocapture --include-ignored --exact \
             autograd::cuda_forward::cache::prewarm_coverage_falsifier::falsify_cuda_prewarm_covers_runtime_no_jit_001
+
+      # FLAKE #4956 (nightly, never on a PR path). Six gdn device tests are
+      # #[ignore]d in cuda-unit after one intermittent SIGSEGV inside libcuda.
+      # They run here under the same command as cuda-unit (--features cuda
+      # --release, default test threads, so the concurrency that crashed is
+      # kept), each named with --exact (two timing probes in the same files are
+      # also ignored and must not ride along). --ignored means a test that loses
+      # its #[ignore] drops out here instead of running twice. A red here
+      # updates #4956.
+      - name: FLAKE #4956 — gdn device tests (ignored on PRs)
+        if: always()
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/flake-4956.log"
+          rc=0
+          g=kernels::gdn
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release -- \
+            --ignored --exact \
+            $g::decode_attention::gdn_decode_attention_device_tests::gdn_decode_attention_indirect_is_bit_identical_to_direct \
+            $g::decode_attention_split::gdn_decode_attention_split_device_tests::gdn_decode_attention_split_matches_unsplit \
+            $g::delta_rule_scan::gdn_chunk_scan_device_tests::gdn_chunk_scan_is_bitwise_per_token_0_8b_shape \
+            $g::delta_rule_scan::gdn_chunk_scan_device_tests::gdn_chunk_scan_is_bitwise_per_token_9b_grouped_shape \
+            $g::delta_rule_scan::gdn_chunk_scan_device_tests::gdn_chunk_scan_is_bitwise_per_token_27b_grouped_shape \
+            $g::delta_rule_scan::gdn_chunk_scan_device_tests::gdn_chunk_scan_one_token_is_one_per_token_step \
+            > "$log" 2>&1 || rc=$?
+          tail -n 40 "$log"
+          [ "$rc" = 0 ] || { echo "::error::FLAKE #4956 reproduced (rc=$rc)"; exit 1; }
+          # Six selected or the step proved nothing (a filter that matches 0 passes).
+          grep -q '^test result: ok\. 6 passed' "$log" \
+            || { echo "::error::expected exactly 6 ignored gdn device tests to run"; exit 1; }
 
       # VRAM CEILING, not throughput (YOGA-NIGHTLY-001 §6). 8188 MiB is the
       # fleet's tightest x86 CUDA budget, and the cascade's two INDEPENDENT bugs

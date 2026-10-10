@@ -15,7 +15,21 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 2
 WORK=$(mktemp -d) || exit 2
-trap 'rm -rf "${WORK:?}"' EXIT
+# The producer starts each fake `apr serve` with start_new_session (its own process group), so a
+# producer killed by a timeout or a step deadline never takes its serve with it: fake_apr.py then
+# serves forever on the runner (infra saw 11 left on one host, 5 on another, #4919). On exit, kill every
+# process whose argv names a path under this run's own mktemp WORK dir -- matched on that unique dir,
+# never on a name pattern -- then remove it.
+reap_work() {
+  local p cmd
+  for p in /proc/[0-9]*; do
+    [ "${p#/proc/}" = "$$" ] && continue
+    cmd=$(tr '\0' ' ' 2>/dev/null < "$p/cmdline") || continue
+    case "$cmd" in *"$WORK/"*) kill -TERM "${p#/proc/}" 2>/dev/null ;; esac
+  done
+  rm -rf "${WORK:?}"
+}
+trap reap_work EXIT
 FAKE="$ROOT/scripts/lib/model_ladder_cells_produce_cases/fake_apr.py"
 
 cat > "$WORK/ladder.yaml" <<'EOF'

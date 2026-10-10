@@ -103,10 +103,10 @@ touch_check() { # touch_check ROOT BRANCH -> 0 not touched (or train); 1 touched
     res=$(baseline_ratchet_resolve "$root" "$BASELINE_RATCHET_BASE_REF" "$CENSUS_PATH")
     mode=${res%%$'\t'*}; ref=${res##*$'\t'}
     case "$mode" in
-        MERGEBASE | TIP) ;;
+        MERGEBASE | FIRSTPARENT | TIP) ;;
         *)
             printf 'FAIL  comparand %s resolved %s for %s: whether this branch edits the census is UNMEASURED, and that is not "untouched".\n' "$ref" "$mode" "$CENSUS_PATH"
-            printf '      In CI: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'
+            printf '      In CI: %s\n' "$(baseline_ratchet_fetch_hint "$ref")"
             return 1 ;;
     esac
     # Committed changes AND the working tree, so a local run sees an unstaged edit too.

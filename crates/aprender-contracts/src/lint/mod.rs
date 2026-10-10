@@ -571,6 +571,10 @@ pub struct LintConfig<'a> {
     pub min_level: Option<crate::schema::EnforcementLevel>,
     /// Enable Gate 9 (strict test-binding, PV-VER-002). Issue #1510.
     pub strict_test_binding: bool,
+    /// Run only gate 1 (validate, the precondition) and the strict test-binding gate; gates 2-22 do not
+    /// run and nothing is cached (aprender#4974). Every armed gate that did not run meets as `NotRun`,
+    /// so the report can never read as a full-lint pass. Requires `strict_test_binding`.
+    pub strict_test_binding_only: bool,
 }
 
 impl<'a> LintConfig<'a> {
@@ -591,6 +595,7 @@ impl<'a> LintConfig<'a> {
             crate_dir: None,
             min_level: None,
             strict_test_binding: false,
+            strict_test_binding_only: false,
         }
     }
 }
@@ -938,7 +943,8 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     let mut all_findings = Vec::new();
     let mut stats = cache::CacheStats::default();
 
-    let cache_root = if config.no_cache {
+    // A scoped run's findings are a subset; caching them would store a partial answer per contract.
+    let cache_root = if config.no_cache || config.strict_test_binding_only {
         None
     } else {
         Some(cache::cache_dir(config.contract_dir))
@@ -952,20 +958,22 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     let validation_passed = validate_result.passed;
     gates.push(validate_result);
 
-    run_gates_2_to_9(
-        config,
-        &contracts,
-        binding.as_ref(),
-        validation_passed,
-        &mut gates,
-        &mut all_findings,
-    );
-    run_ontology_gates_10_to_22(
-        config.contract_dir,
-        validation_passed,
-        &mut gates,
-        &mut all_findings,
-    );
+    if !config.strict_test_binding_only {
+        run_gates_2_to_9(
+            config,
+            &contracts,
+            binding.as_ref(),
+            validation_passed,
+            &mut gates,
+            &mut all_findings,
+        );
+        run_ontology_gates_10_to_22(
+            config.contract_dir,
+            validation_passed,
+            &mut gates,
+            &mut all_findings,
+        );
+    }
     run_strict_test_binding_gate_if_enabled(
         config,
         &contracts,

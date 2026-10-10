@@ -1,4 +1,5 @@
-# release-gates-nightly.yml — the nightly producers for the `milestone` and `preflight` verdict lanes (#4719).
+# release-gates-nightly.yml — the nightly producers for the `milestone` and `preflight` verdict lanes (#4719), and the nightly run of the
+# no-secrets publish check (`crate-contents`).
 #
 # scripts/release/nightly_train.sh judges 15 verdict lanes; a lane with no producer on main prints not_measured,
 # so the train can never read RELEASABLE. This workflow runs the release-day command of two of them at main HEAD,
@@ -15,6 +16,11 @@
 #              R7 the receipts the bump commits. Faking a tag or a release ref to get past them would be theater.
 #              The measurable rules are produced nightly by their own lanes: R5 = dogfood, R7 = models,
 #              R8 = readiness (readiness-nightly.yml); R1/R3/R4 describe the upload and stay at publish (T-4).
+#   crate-contents  scripts/release/check_crate_contents.sh, the checker of the publish entry that carries
+#              `seven: no-secret-in-crates`: every publishable crate's `cargo package --list`, read for key files,
+#              PEM private-key blocks and token shapes. rc 0 = green; 1 (a finding) and 2 (not measured) = red. Its
+#              own self-test runs first: a red self-test is red. autopilot runs the same command on the release commit.
+#              Not one of the judge's 15 lanes: its green nights are this job's runs on main.
 #
 # The judge's LANES rows (filled once nightly-train.yml is on main):
 #   milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
@@ -84,3 +90,22 @@ jobs:
           rc=0
           setsid --wait bash scripts/check_publish_preflight.sh --graph-only || rc=$?
           [ "$rc" -eq 0 ] || { echo "::error::publish preflight --graph-only refused rc=$rc (1 = a rule refused, 2 = could not answer)"; exit 1; }
+
+  crate-contents:
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: check_crate_contents.sh (nothing secret in the published crates)
+        run: |
+          set -uo pipefail
+          rc=0
+          setsid --wait bash scripts/release/check_crate_contents.sh --selftest || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::check_crate_contents.sh self-test is red rc=$rc: its verdict on the tree would not be evidence"; exit 1; }
+          setsid --wait bash scripts/release/check_crate_contents.sh || rc=$?
+          case $rc in
+            0) echo "CRATE-CONTENTS: every published crate read, no finding (rc=0)" ;;
+            1) echo "::error::a published crate carries a secret-shaped file or line (rc=1): see the FOUND lines"; exit 1 ;;
+            *) echo "::error::the published crates could not be read (rc=$rc): Unknown is not a pass"; exit 1 ;;
+          esac
