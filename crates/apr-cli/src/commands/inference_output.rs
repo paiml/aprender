@@ -188,6 +188,8 @@ struct InferenceOutput {
     token_texts: Option<Vec<String>>,
     /// Prompt and completion counts plus the finish reason (#3718).
     usage: RunUsage,
+    /// #4026: see `RunResult::logprobs`.
+    logprobs: Option<serde_json::Value>,
 }
 
 /// Execute inference on model
@@ -222,6 +224,7 @@ fn execute_inference(
             input_path.map_or_else(|| "stdin".to_string(), |p| p.display().to_string());
 
         Ok(InferenceOutput {
+            logprobs: None,
             text: format!(
                 "[Inference requires --features inference]\nModel: {}\nInput: {}\nFormat: {}\nGPU: {}",
                 model_path.display(),
@@ -335,7 +338,8 @@ pub(crate) fn realizar_config(
         .with_repeat_penalty(options.repeat_penalty)
         .with_repeat_last_n(options.repeat_last_n)
         .with_force_chat_template(options.chat_template)
-        .with_thinking(options.thinking);
+        .with_thinking(options.thinking)
+        .with_logprobs_top_k(options.logprobs_top_k);
 
     if options.no_gpu {
         config = config.without_gpu();
@@ -377,7 +381,19 @@ fn execute_with_realizar(
     // #3718: the report carries what only the decode path knows (finish reason,
     // context window); the prompt count is `input_token_count`, taken after the
     // chat template, so it is the number the model actually read.
+    let _ = realizar::session::take_last_turn_steps(); // #4026: never an earlier run's steps
     let (result, report) = run_inference_report(&config).map_err(inference_error)?;
+    let (prompt_ids, generated_ids) = result
+        .tokens
+        .split_at(result.input_token_count.min(result.tokens.len()));
+    let logprobs = run_logprobs(
+        options.logprobs_top_k,
+        &result.format,
+        prompt_ids,
+        generated_ids,
+        report.finish_reason == Some(realizar::infer::run_report::FinishReason::Stop),
+        realizar::session::take_last_turn_steps(),
+    )?;
 
     // Report performance if benchmarking
     if options.benchmark {
@@ -427,7 +443,61 @@ fn execute_with_realizar(
                 .generation_ms
                 .map(|g| (result.inference_ms - g).max(0.0).round() as u64),
         },
+        logprobs,
     })
+}
+
+/// #4026: the `logprobs` object of `apr run --json`, or a refusal by name when
+/// `--logprobs K` was asked and the path that served the run recorded nothing.
+/// An empty list is never reported for a path that could not see the logits, and
+/// steps whose chosen tokens are not this run's generated tokens (another turn's,
+/// such as a warmup or a retry on the same thread) are refused, never reported.
+///
+/// One exception: a turn that ended on a stop token (`stopped`) may record one
+/// step more than it reports, because the dense GGUF route drops the stop token
+/// from the reply but the session recorded the step that chose it. That trailing
+/// step is dropped, so the steps always cover the reported tokens and nothing
+/// else; the hybrid route keeps the stop token in the reply and matches 1:1.
+#[cfg(feature = "inference")]
+fn run_logprobs(
+    top_k: usize,
+    format: &str,
+    prompt_token_ids: &[u32],
+    generated_token_ids: &[u32],
+    stopped: bool,
+    steps: Option<Vec<realizar::gguf::StepLogprobs>>,
+) -> Result<Option<serde_json::Value>> {
+    if top_k == 0 {
+        return Ok(None);
+    }
+    let steps = steps.ok_or_else(|| {
+        CliError::InvalidInput(format!(
+            "--logprobs {top_k}: the {format} path that served this run does not record \
+             per-step logprobs (only the GGUF session engine does, on CPU and CUDA) — \
+             refused rather than reported empty (#4026)"
+        ))
+    })?;
+    let mut steps = steps;
+    if stopped && steps.len() == generated_token_ids.len() + 1 {
+        steps.pop();
+    }
+    if !steps
+        .iter()
+        .map(|s| s.chosen)
+        .eq(generated_token_ids.iter().copied())
+    {
+        return Err(CliError::InvalidInput(format!(
+            "--logprobs {top_k}: the {} recorded steps do not match the {} tokens this run \
+             generated — refused rather than reported against the wrong tokens (#4026)",
+            steps.len(),
+            generated_token_ids.len()
+        )));
+    }
+    Ok(Some(serde_json::json!({
+        "top_k": top_k,
+        "prompt_token_ids": prompt_token_ids,
+        "steps": steps,
+    })))
 }
 
 #[cfg(all(test, feature = "inference"))]
@@ -454,5 +524,109 @@ mod tests_2403 {
             rendered,
             "Inference failed: Format error: Architecture 'qwen35' uses SSM/Gated Delta Net layers"
         );
+    }
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod tests_4026 {
+    use super::run_logprobs;
+    use realizar::gguf::{StepLogprobs, TopLogprob};
+
+    #[test]
+    fn logprobs_off_reports_nothing_even_without_steps() {
+        assert_eq!(
+            run_logprobs(0, "GGUF", &[1], &[2], false, None).expect("ok"),
+            None
+        );
+    }
+
+    #[test]
+    fn logprobs_on_a_path_that_records_nothing_is_refused_by_name() {
+        let err = run_logprobs(3, "SafeTensors", &[1], &[2], false, None).expect_err("refused");
+        let msg = err.to_string();
+        assert!(msg.contains("SafeTensors"), "{msg}");
+        assert!(msg.contains("--logprobs 3"), "{msg}");
+    }
+
+    fn step(step: usize, chosen: u32) -> StepLogprobs {
+        StepLogprobs {
+            step,
+            chosen,
+            top: vec![TopLogprob {
+                token_id: chosen,
+                logit: 4.0,
+                logprob: -0.25,
+            }],
+            chosen_logprob: -0.25,
+            logsumexp_full: 4.25,
+        }
+    }
+
+    #[test]
+    fn logprobs_report_the_prompt_ids_and_every_step() {
+        let v = run_logprobs(1, "GGUF", &[5, 6], &[17], false, Some(vec![step(0, 17)]))
+            .expect("ok")
+            .expect("some");
+        assert_eq!(v["top_k"], 1);
+        assert_eq!(v["prompt_token_ids"], serde_json::json!([5, 6]));
+        assert_eq!(v["steps"][0]["chosen"], 17);
+        assert_eq!(v["steps"][0]["top"][0]["token_id"], 17);
+        assert_eq!(v["steps"][0]["top"][0]["logprob"], -0.25);
+    }
+
+    /// A step list from another turn on this thread (one step short, or one too
+    /// many) is refused, never reported against this run's tokens.
+    #[test]
+    fn logprobs_from_a_turn_of_another_length_are_refused() {
+        for steps in [
+            vec![step(0, 17)],
+            vec![step(0, 17), step(1, 18), step(2, 19)],
+        ] {
+            let msg = run_logprobs(2, "GGUF", &[5], &[17, 18], false, Some(steps))
+                .expect_err("refused")
+                .to_string();
+            assert!(msg.contains("--logprobs 2"), "{msg}");
+            assert!(msg.contains("do not match the 2 tokens"), "{msg}");
+        }
+    }
+
+    /// Same length, a different chosen token: still another turn's steps.
+    #[test]
+    fn logprobs_whose_chosen_tokens_differ_are_refused() {
+        let steps = vec![step(0, 17), step(1, 99)];
+        let err =
+            run_logprobs(2, "GGUF", &[5], &[17, 18], false, Some(steps)).expect_err("refused");
+        assert!(err.to_string().contains("2 recorded steps"), "{err}");
+    }
+
+    /// B1 (review 2 at 206172a585): a dense GGUF turn that ends on EOS drops the
+    /// stop token from its reply but recorded the step that chose it (2 = EOS
+    /// here). That one trailing step is dropped and the rest are reported.
+    #[test]
+    fn logprobs_of_a_turn_that_ended_on_a_dropped_stop_token_are_reported() {
+        let steps = vec![step(0, 17), step(1, 18), step(2, 2)];
+        let v = run_logprobs(2, "GGUF", &[5], &[17, 18], true, Some(steps))
+            .expect("ok")
+            .expect("some");
+        assert_eq!(v["steps"].as_array().map(Vec::len), Some(2));
+        assert_eq!(v["steps"][1]["chosen"], 18);
+    }
+
+    /// The stop exception covers exactly one trailing step: two too many, one
+    /// short, a wrong chosen token before the stop, or one too many on a turn
+    /// that did not stop (budget) are all still refused.
+    #[test]
+    fn the_stop_exception_still_refuses_a_real_mismatch() {
+        for (stopped, steps) in [
+            (true, vec![step(0, 17), step(1, 18), step(2, 2), step(3, 2)]),
+            (true, vec![step(0, 17)]),
+            (true, vec![step(0, 17), step(1, 99), step(2, 2)]),
+            (false, vec![step(0, 17), step(1, 18), step(2, 2)]),
+        ] {
+            let msg = run_logprobs(2, "GGUF", &[5], &[17, 18], stopped, Some(steps))
+                .expect_err("refused")
+                .to_string();
+            assert!(msg.contains("do not match the 2 tokens"), "{msg}");
+        }
     }
 }

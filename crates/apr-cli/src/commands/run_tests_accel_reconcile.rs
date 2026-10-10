@@ -54,6 +54,7 @@
 #[test]
 fn a_forced_accelerator_that_ran_on_cpu_is_refused() {
     let result = RunResult {
+        logprobs: None,
         text: "Hello".to_string(),
         duration_secs: 33.646,
         cached: true,
@@ -142,6 +143,7 @@ fn a_successful_gpu_run_is_not_labelled_a_fallback() {
 
 fn gpu_result(used_gpu: Option<bool>) -> RunResult {
     RunResult {
+        logprobs: None,
         text: "Hello".to_string(),
         duration_secs: 1.0,
         cached: true,

@@ -216,7 +216,7 @@ fn output_path_and_sha_are_each_checked() {
             sha256: sha,
         });
         let mut bad = Vec::new();
-        execution_problems(&r, &mut bad);
+        check_executed_fields(&r, &mut bad);
         bad
     };
     assert!(problems("raw/i.txt", h('6')).is_empty());

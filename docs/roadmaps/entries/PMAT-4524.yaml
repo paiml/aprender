@@ -1,0 +1,18 @@
+- id: PMAT-4524
+  github_issue: 4524
+  item_type: task
+  title: 'PRM-L land rex/001 C6+C11+C14 on main: merge main, reconcile with #4655 crate snapshot'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-08T12:49:26Z
+  updated: 2026-10-08T12:49:26Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4354

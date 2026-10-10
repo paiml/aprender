@@ -46,6 +46,8 @@ pub(crate) fn run(
     chat_template: bool,
     // #3723: `--thinking on|off` (None: the production default), applied in realizar.
     thinking: Option<bool>,
+    // #4026: `--logprobs K`: the K most likely tokens at every generated step.
+    logprobs_top_k: usize,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -60,6 +62,7 @@ pub(crate) fn run(
     // no banner, no `Source:` line and no generation — the caller sees a named
     // refusal and nothing that looks like a result.
     refuse_forced_accelerator_without_forward(source, accel_forced)?;
+    refuse_logprobs_without_machine_output(logprobs_top_k, stream, output_format, benchmark)?;
 
     // GH-240: Suppress header/source in JSON mode for clean machine-parseable output
     if output_format != "json" {
@@ -118,6 +121,7 @@ pub(crate) fn run(
         split_prompt,
         chat_template,
         thinking,
+        logprobs_top_k,
         stream,
     };
 
@@ -300,6 +304,29 @@ fn refuse_forced_accelerator_without_forward(source: &str, accel_forced: bool) -
 /// either side that does not change the other turns the test red.
 pub(crate) fn emits_machine_output(stream: bool, output_format: &str, benchmark: bool) -> bool {
     !benchmark && (stream || output_format == "json")
+}
+
+/// #4026: `--logprobs K` is reported only in the `--json` and `--stream` documents
+/// ([`emits_machine_output`]). On the text and `--benchmark` surfaces the run would record
+/// them, print none and exit 0, so K > 0 is refused by name there, before the load.
+///
+/// # Errors
+/// [`CliError::InvalidInput`] when `top_k > 0` and the flags select a human surface.
+pub(crate) fn refuse_logprobs_without_machine_output(
+    top_k: usize,
+    stream: bool,
+    output_format: &str,
+    benchmark: bool,
+) -> Result<()> {
+    if top_k == 0 || emits_machine_output(stream, output_format, benchmark) {
+        return Ok(());
+    }
+    let surface = if benchmark { "--benchmark" } else { "text" };
+    Err(CliError::InvalidInput(format!(
+        "--logprobs {top_k}: the {surface} output does not report logprobs; only the \
+         --json and --stream documents do (#4026). Add --json (without --benchmark), \
+         or drop --logprobs."
+    )))
 }
 
 /// Compare the accelerator the user ASKED for against the one that RAN.
@@ -594,6 +621,32 @@ fn print_run_output(
     Ok(())
 }
 
+/// `tok_per_sec` when the inference engine reported one (GH-250); otherwise
+/// derived from `tokens_generated / duration_secs`, or `0.0` on a zero
+/// duration (nothing decoded, so there is no rate to report).
+fn effective_tok_per_sec(result: &RunResult, tokens_generated: usize) -> f64 {
+    result.tok_per_sec.unwrap_or_else(|| {
+        if result.duration_secs > 0.0 {
+            tokens_generated as f64 / result.duration_secs
+        } else {
+            0.0
+        }
+    })
+}
+
+/// #3602/#3826/#3606: the `backend` object distinguishing a deliberate CPU
+/// run from a rejected GPU run. See the long comment on its call site in
+/// [`build_final_json`] for why each field exists and why `accel_forced`
+/// alone cannot be dropped in favor of `gpu_attempted`.
+fn backend_json(result: &RunResult, accel_forced: bool) -> serde_json::Value {
+    serde_json::json!({
+        "requested": if accel_forced { "gpu" } else { "default" },
+        "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
+        "fell_back": result.used_gpu == Some(false)
+            && (accel_forced || result.gpu_attempted == Some(true)),
+    })
+}
+
 /// Build the terminal JSON blob shared by `--json` and `--stream` final events.
 fn build_final_json(
     result: &RunResult,
@@ -602,13 +655,7 @@ fn build_final_json(
     accel_forced: bool,
 ) -> serde_json::Value {
     let tokens_generated = result.tokens_generated.unwrap_or(0);
-    let tok_per_sec = result.tok_per_sec.unwrap_or_else(|| {
-        if result.duration_secs > 0.0 {
-            tokens_generated as f64 / result.duration_secs
-        } else {
-            0.0
-        }
-    });
+    let tok_per_sec = effective_tok_per_sec(result, tokens_generated);
     // GH-250: Include generated token IDs for parity checking
     let tokens_json = result.generated_tokens.as_deref().unwrap_or(&[]);
     serde_json::json!({
@@ -634,6 +681,11 @@ fn build_final_json(
         // is the whole window (load, upload, F2, generation), kept for compatibility.
         "generation_ms": result.usage.generation_ms,
         "setup_ms": result.usage.setup_ms,
+        // #4026: always present, and `null` unless `--logprobs K` asked for it; then
+        // the prompt ids the model read and, per generated step, the K most likely
+        // tokens before any penalty or sampling. A path that cannot record them
+        // refused the run.
+        "logprobs": result.logprobs,
         // #3602: `used_gpu: false` alone collapses two different outcomes — "no
         // accelerator was asked for" and "one was asked for, attempted, and
         // REFUSED at runtime". A consumer cannot tell a CPU run from a rejected
@@ -673,12 +725,7 @@ fn build_final_json(
         // never Fail, so a backend that did not report has not reported a
         // fallback. That is `reconcile_accelerator`'s own rule, and the JSON
         // must not contradict the check that runs beside it.
-        "backend": {
-            "requested": if accel_forced { "gpu" } else { "default" },
-            "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
-            "fell_back": result.used_gpu == Some(false)
-                && (accel_forced || result.gpu_attempted == Some(true)),
-        },
+        "backend": backend_json(result, accel_forced),
     })
 }
 

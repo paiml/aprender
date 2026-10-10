@@ -97,6 +97,7 @@ impl LlmDriver for RealizarDriver {
             use_mock_backend: false,
             force_chat_template: false,
             thinking: None,
+            logprobs_top_k: 0,
             stop_tokens: vec![],
         };
 
@@ -181,54 +182,20 @@ fn parse_tool_calls_envelope(text: &str) -> (String, Vec<ToolCall>) {
 
     let mut cursor = text;
     loop {
-        // Find next tool call start — try <tool_call> first, then ```json
-        let xml_pos = cursor.find("<tool_call>");
-        let md_pos = cursor.find("```json");
-
-        let (start, tag_len, is_markdown) = match (xml_pos, md_pos) {
-            (Some(x), Some(m)) if x <= m => (x, "<tool_call>".len(), false),
-            (Some(x), None) => (x, "<tool_call>".len(), false),
-            (_, Some(m)) => (m, "```json".len(), true),
-            (None, None) => {
-                remaining.push_str(cursor);
-                break;
-            }
+        let Some((start, tag_len, is_markdown)) = next_envelope_start(cursor) else {
+            remaining.push_str(cursor);
+            break;
         };
 
         remaining.push_str(&cursor[..start]);
-        let after_tag = &cursor[start + tag_len..];
+        let (json_str, advance_past) = split_envelope_body(&cursor[start + tag_len..], is_markdown);
 
-        // Find closing tag and extract JSON
-        let (json_str, advance_past) = if is_markdown {
-            // Markdown: ```json\n...\n```
-            if let Some(end) = after_tag.find("```") {
-                (&after_tag[..end], &after_tag[end + "```".len()..])
-            } else {
-                (after_tag, "")
-            }
-        } else if let Some(end) = after_tag.find("</tool_call>") {
-            (&after_tag[..end], &after_tag[end + "</tool_call>".len()..])
-        } else {
-            // PMAT-158: No closing tag — try parsing to end-of-string
-            (after_tag, "")
-        };
-        let json_str = json_str.trim();
-
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
-            // Must have "name" field to be a tool call (not just any JSON)
-            if let Some(name) = parsed.get("name").and_then(|n| n.as_str()) {
-                let name = name.to_string();
-                let input = parsed.get("input").cloned().unwrap_or(serde_json::json!({}));
-                call_counter += 1;
-                tool_calls.push(ToolCall { id: format!("local-{call_counter}"), name, input });
-            } else {
-                remaining.push_str(&cursor[start..]);
-                break;
-            }
-        } else {
+        let Some((name, input)) = envelope_tool_call(json_str) else {
             remaining.push_str(&cursor[start..]);
             break;
-        }
+        };
+        call_counter += 1;
+        tool_calls.push(ToolCall { id: format!("local-{call_counter}"), name, input });
 
         cursor = advance_past;
         if cursor.is_empty() {
@@ -237,6 +204,41 @@ fn parse_tool_calls_envelope(text: &str) -> (String, Vec<ToolCall>) {
     }
 
     (remaining.trim().to_string(), tool_calls)
+}
+
+/// Find the next tool call start: `<tool_call>` when it comes first, else ```json.
+/// Returns its byte offset, the opening tag's length, and whether it is the
+/// markdown fence; `None` when neither occurs. Split out of
+/// [`parse_tool_calls_envelope`], whose cognitive complexity was 32 against the
+/// pre-commit ceiling of 25.
+fn next_envelope_start(cursor: &str) -> Option<(usize, usize, bool)> {
+    match (cursor.find("<tool_call>"), cursor.find("```json")) {
+        (Some(x), Some(m)) if x <= m => Some((x, "<tool_call>".len(), false)),
+        (Some(x), None) => Some((x, "<tool_call>".len(), false)),
+        (_, Some(m)) => Some((m, "```json".len(), true)),
+        (None, None) => None,
+    }
+}
+
+/// Split the text after an opening tag into the JSON body and the text past the
+/// closing tag (```` ``` ```` for the markdown fence, `</tool_call>` otherwise).
+/// PMAT-158: no closing tag — the body runs to end-of-string.
+fn split_envelope_body(after_tag: &str, is_markdown: bool) -> (&str, &str) {
+    let close = if is_markdown { "```" } else { "</tool_call>" };
+    match after_tag.find(close) {
+        Some(end) => (&after_tag[..end], &after_tag[end + close.len()..]),
+        None => (after_tag, ""),
+    }
+}
+
+/// The tool call in an envelope body, or `None` when the body is not JSON or has
+/// no string `"name"` field (a tool call, not just any JSON). `"input"` defaults
+/// to `{}`.
+fn envelope_tool_call(json_str: &str) -> Option<(String, serde_json::Value)> {
+    let parsed = serde_json::from_str::<serde_json::Value>(json_str.trim()).ok()?;
+    let name = parsed.get("name").and_then(|n| n.as_str())?.to_string();
+    let input = parsed.get("input").cloned().unwrap_or(serde_json::json!({}));
+    Some((name, input))
 }
 
 /// CCPA-m296 salvage parser: recover a tool call the model emitted OUTSIDE the

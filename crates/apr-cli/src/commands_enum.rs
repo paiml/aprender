@@ -250,6 +250,21 @@ pub enum Commands {
         /// F-CLIPARITY-01 / PMAT-384 / paiml/aprender#571
         #[arg(long, default_value = "64", group = batuta_common::cli_roles::SamplingKind::RepeatLastN.id())]
         repeat_last_n: usize,
+        /// Record the K most likely next tokens (token id, logit, logprob) at every
+        /// generated step, plus the prompt ids actually encoded, in `--json` output
+        /// (#4026). 0 (the default) records nothing; at most 20, as on the HTTP
+        /// `top_logprobs`. Refused by name on a path that cannot record them
+        /// (`--trace`, APR/SafeTensors, wgpu, qwen3_moe) and on an output that does
+        /// not print them (text, `--benchmark`, `--batch-jsonl`). With K > 0 a greedy
+        /// step picks its token on the host from the recorded logits, not by the
+        /// device argmax, so an exact tie may break differently than without it.
+        #[arg(
+            long,
+            value_name = "K",
+            default_value_t = 0,
+            value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(0..=20)
+        )]
+        logprobs: usize,
         /// Process prompt tokens one-by-one instead of batched prefill.
         /// Useful for debugging prefill correctness (comparing per-token attention).
         /// F-CLIPARITY-01 / PMAT-385 / paiml/aprender#572

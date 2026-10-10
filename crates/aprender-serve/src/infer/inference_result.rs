@@ -195,6 +195,7 @@ pub fn run_inference_report(
         validate_model_path(&config.model_path)?;
 
         let format = ModelFormat::SafeTensors;
+        refuse_logprobs_off_gguf(config.logprobs_top_k, format)?;
         let prepared = prepare_tokens(config, &format)?;
         return run_sharded_safetensors_inference(config, &prepared)
             .map(|r| (r, run_report::RunReport::default()));
@@ -229,6 +230,7 @@ pub fn run_inference_report(
     let format = detect_format(&magic).map_err(|e| RealizarError::FormatError {
         reason: format!("Format detection failed: {}", e),
     })?;
+    refuse_logprobs_off_gguf(config.logprobs_top_k, format)?;
 
     // PMAT-236: Prepare tokens with chat template BEFORE format dispatch.
     // This is compile-time enforced - format-specific functions accept
@@ -259,6 +261,55 @@ fn mock_run_report(config: &InferenceConfig, result: &InferenceResult) -> run_re
         )),
         context_length: None,
     }
+}
+
+/// #4026: only a GGUF reaches the session engine that records `--logprobs K`.
+/// The format is known once the header is read, so APR and SafeTensors are
+/// refused by name there, before the load, not after a whole generation.
+fn refuse_logprobs_off_gguf(top_k: usize, format: ModelFormat) -> Result<()> {
+    if top_k == 0 {
+        return Ok(());
+    }
+    let path = match format {
+        ModelFormat::Gguf => return Ok(()),
+        ModelFormat::Apr => "APR",
+        ModelFormat::SafeTensors => "SafeTensors",
+    };
+    Err(RealizarError::UnsupportedOperation {
+        operation: "logprobs".to_string(),
+        reason: format!(
+            "--logprobs {top_k} is not recorded on the {path} path; only the GGUF session \
+             engine records per-step logprobs (#4026) — refused before the load"
+        ),
+    })
+}
+
+/// #4026: `--logprobs K` is recorded by the one engine only. The two GGUF
+/// routes known before the run not to go through it are refused here, by
+/// name, before any forward runs; a route that turns out not to record (the
+/// wgpu decode) is refused by the caller when no steps come back.
+fn refuse_logprobs_off_engine(
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    architecture: &str,
+) -> Result<()> {
+    if gen_config.logprobs_top_k == 0 {
+        return Ok(());
+    }
+    let route = if gen_config.trace {
+        "--trace (the instrumented decode loops, which keep no logits)"
+    } else if crate::gguf::moe_forward_handles(architecture) {
+        "the qwen3_moe decode (not on the session engine)"
+    } else {
+        return Ok(());
+    };
+    Err(RealizarError::UnsupportedOperation {
+        operation: "logprobs".to_string(),
+        reason: format!(
+            "--logprobs {} is not recorded by {route}; only the session engine records \
+             per-step logprobs (#4026) — refused rather than reported empty",
+            gen_config.logprobs_top_k
+        ),
+    })
 }
 
 /// Run GGUF model inference
@@ -337,6 +388,8 @@ fn run_gguf_inference(
     // (M32c.2.2.2.1.2's run_qwen3_moe_generate). The dense path goes through
     // run_gguf_generate as before. This replaces M32c.2.1's
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
+    refuse_logprobs_off_engine(&gen_config, &model.config.architecture)?;
+    let _ = crate::session::take_last_turn_steps(); // #4026: never inherit an earlier turn's steps
     let infer_start = Instant::now();
     let _ = take_generation_start(); // #3981: never inherit a mark from an earlier run
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
@@ -2348,3 +2401,58 @@ mod throughput_3981_tests {
     }
 }
 
+
+#[cfg(test)]
+mod tests_4026_refuse_off_engine {
+    use super::refuse_logprobs_off_engine;
+    use crate::gguf::QuantizedGenerateConfig;
+
+    fn cfg(k: usize, trace: bool) -> QuantizedGenerateConfig {
+        QuantizedGenerateConfig {
+            logprobs_top_k: k,
+            trace,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn logprobs_refusal_case_table() {
+        // (k, trace, arch, refused)
+        let table = [
+            (0, true, "qwen3_moe", false),
+            (3, false, "qwen2", false),
+            (3, false, "qwen35", false),
+            (3, true, "qwen2", true),
+            (3, false, "qwen3_moe", true),
+        ];
+        for (k, trace, arch, refused) in table {
+            let got = refuse_logprobs_off_engine(&cfg(k, trace), arch);
+            assert_eq!(got.is_err(), refused, "k={k} trace={trace} arch={arch}");
+            if let Err(e) = got {
+                assert!(e.to_string().contains("--logprobs 3"), "{e}");
+            }
+        }
+    }
+
+    /// la-0.72 C: the format is refused before the load, not after a full run.
+    #[test]
+    fn logprobs_off_gguf_case_table() {
+        use super::{refuse_logprobs_off_gguf, ModelFormat};
+        // (k, format, refused, named)
+        let table = [
+            (0, ModelFormat::Apr, false, ""),
+            (0, ModelFormat::SafeTensors, false, ""),
+            (2, ModelFormat::Gguf, false, ""),
+            (2, ModelFormat::Apr, true, "APR path"),
+            (2, ModelFormat::SafeTensors, true, "SafeTensors path"),
+        ];
+        for (k, format, refused, named) in table {
+            let got = refuse_logprobs_off_gguf(k, format);
+            assert_eq!(got.is_err(), refused, "k={k} format={format:?}");
+            if let Err(e) = got {
+                let msg = e.to_string();
+                assert!(msg.contains("--logprobs 2") && msg.contains(named), "{msg}");
+            }
+        }
+    }
+}

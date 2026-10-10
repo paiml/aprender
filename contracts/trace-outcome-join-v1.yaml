@@ -1,0 +1,62 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRM-001 v3 PRM-C10 (was PRA T10), gate G-MAT: "gold only after the 14 d outcome window;
+    pending is never a negative; 0 immature gold". Done when: "3-day-old gold refused; weekly
+    matured count". `outcome_join::resolve` (crates/aprender-review-experiment/src/outcome_join.rs)
+    reads a PR's merge / close / revert / escape events into the v3 lifecycle `outcome`
+    {pending, merged, reverted_le14d, regression_escape, closed_unmerged}. A revert at most 14 UTC
+    dates after the merge is reverted_le14d; a later revert or any escape after the merge is
+    regression_escape. The outcome stays `pending`, with no `outcome_matured_at`, until 14 UTC dates
+    after the merge (or close). A revert or escape of a PR never merged, or an unreadable date, is
+    refused. `outcome_join::gold` emits `label_source: outcome` rows for matured outcomes only and
+    refuses a non-pending row with no maturity date; it emits `label_source: hrq_ruling` rows for
+    HRQ rulings as soon as they are made (latest per round wins; no ruler or no date is refused).
+    `outcome_join::matured_between` is the weekly `gold_matured_7d` count.
+  references:
+    - "docs/specifications/research-design-pr-agent-qwen-3.5.md"
+    - "contracts/trace-split-guard-v1.yaml"
+    - "https://github.com/paiml/aprender/issues/4354"
+
+equations:
+  outcome:
+    formula: "m = first merge; outcome = reverted_le14d if ∃ revert r ≥ m with r − m ≤ 14, regression_escape if ∃ revert r > m + 14 or escape ≥ m, merged otherwise; closed_unmerged if closed and never merged"
+  maturity:
+    formula: "matured ⇔ day(now) − day(m or close) ≥ 14; ¬matured ⇒ outcome = pending ∧ outcome_matured_at = None"
+  gold:
+    formula: "gold = { outcome rows : matured } ∪ { latest HRQ ruling per (repo#PR, head) }; pending ∉ gold"
+  weekly:
+    formula: "gold_matured_7d(from, to) = |{ r : from ≤ outcome_matured_at(r) < to }|"
+
+falsification_tests:
+  - id: FALSIFY-TOJ-001
+    name: a_3_day_old_outcome_is_refused_as_gold
+    prediction: "a merge or revert 3 d ago reads pending and yields no gold; 13 UTC dates is still pending; 14 matures with outcome_matured_at = merge + 14"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_toj_001"
+    expected_output: "exit 0"
+    if_fails: "An outcome could be trained on before a revert had time to happen."
+  - id: FALSIFY-TOJ-002
+    name: the_outcome_follows_the_revert_window
+    prediction: "revert on day 14 = reverted_le14d, day 15 = regression_escape, escape = regression_escape, closed = closed_unmerged; the window runs from the merge"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_toj_002"
+    expected_output: "exit 0"
+    if_fails: "A late regression could be labelled a clean merge, or a fast revert an escape."
+  - id: FALSIFY-TOJ-003
+    name: pending_is_never_a_label_and_bad_joins_refuse
+    prediction: "a pending PR yields no gold; a revert or escape with no merge, an unreadable date, and a forged immature row are all errors"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_toj_003"
+    expected_output: "exit 0"
+    if_fails: "A pending PR could be read as a negative label."
+  - id: FALSIFY-TOJ-004
+    name: hrq_rulings_are_gold
+    prediction: "a ruling is gold at once, label_source hrq_ruling (a pool GOLD_SOURCES value); the latest per round wins; no ruler or no date is refused"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_toj_004"
+    expected_output: "exit 0"
+    if_fails: "A superseded or anonymous ruling could become a training label."
+  - id: FALSIFY-TOJ-005
+    name: the_weekly_matured_count
+    prediction: "matured_between counts outcomes whose window closed in [from, to) and no pending PR"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_toj_005"
+    expected_output: "exit 0"
+    if_fails: "The weekly receipt could count immature or out-of-week gold."

@@ -1,0 +1,53 @@
+metadata:
+  version: 2.0.0
+  kind: schema
+  description: |
+    PRM-C13 (was PRA-001 T13) (PRM-001 v3 "PROMETHEUS" H7 §3, S-14; row 2 of §7, was research-design-pr-agent-qwen-3.5 §5 M4).
+    `make lane-kappa SPLIT=val ROWS=F [MANIFEST=M CANDIDATE=F2]` = `rex lane-kappa ROWS --split val (--min-n N | --manifest M --candidate ROWS2)` (crates/aprender-review-experiment: kappa_probe.rs, examples/rex.rs)
+    measures κ_err, Cohen's κ on binary per-item error indicators against GOLD, for every
+    (qwen, counted-lane) pair on matured gold val rows, reusing stats::error_kappa (PRM-001 §3 error
+    overlap). An error is a parsed verdict that disagrees with the gold outcome; unparsed items and
+    silver, pending or quarantined rows are excluded, never counted as errors. A pair with fewer than
+    `min_n` shared items, or with κ undefined, reports `insufficient` (S-14), never a number.
+    2.0.0: the gate is v3's δ-free H7, decided by the prereg-locked stats::h7_holds. On I, the
+    items the shadow lane and EVERY counted lane (voter) scored, κ_err(qwen, V) must be ≤ the
+    largest voter–voter κ_err for each voter V. v2's baseline + δ rule is gone, and a manifest that
+    still carries `delta` is refused, since nothing would read it. The voters and min_n come only from
+    the run manifest, registered before training. Refusal is an andon (non-zero exit), not a warning.
+  references:
+    - "docs/specifications/PRM-001-prometheus.md"
+    - "docs/specifications/review-experiment-protocol.md"
+
+equations:
+  error_indicator:
+    formula: "err(lane, i) = parsed(lane, i) ∧ verdict(lane, i) ≠ gold(i)"
+  kappa_err:
+    formula: "κ_err(a, b) = (p_o − p_e) / (1 − p_e) over items i with gold(i) ∧ matured(i) ∧ split(i) = val ∧ parsed(a, i) ∧ parsed(b, i)"
+  gate:
+    formula: "pass ⇔ |I| ≥ min_n ∧ h7_holds([κ_err_I(qwen, V) : V ∈ voters], [κ_err_I(V_i, V_j) : i < j]) = Some(true), i.e. ∀ V: κ_err_I(qwen, V) ≤ max_{i<j} κ_err_I(V_i, V_j); I = items scored by qwen and every voter, gold agreeing"
+
+falsification_tests:
+  - id: FALSIFY-LIND-001
+    name: only_matured_gold_val_rows_are_scored
+    prediction: "silver, pending, quarantined, train/test-split and immature rows in the planted fixture leave κ_err unchanged"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_lind_001"
+    expected_output: "exit 0"
+    if_fails: "The baseline would mix silver labels into gold and measure agreement with the voters, not error overlap."
+  - id: FALSIFY-LIND-002
+    name: the_gate_refuses_what_it_cannot_decide
+    prediction: "a thin or undefined pair reports insufficient; the gate refuses (S-14) below min_n common items, with one voter (no voter–voter κ), with an undefined κ, and with a voter the rows lack; every κ, the ceiling included, is taken on I, not on each pair's own overlap"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_lind_002"
+    expected_output: "exit 0"
+    if_fails: "A gate could pass on too few rows or on an undecided h7_holds, which is exactly the §10 risk that matured gold is scarce."
+  - id: FALSIFY-LIND-003
+    name: h7_is_qwen_kappa_at_most_max_voter_kappa
+    prediction: "a qwen copying one voter's errors (κ = 1 > voter–voter max) is refused naming that voter; with identical voters (ceiling 1) the same copy passes, since the bound is inclusive"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_lind_003"
+    expected_output: "exit 0"
+    if_fails: "A silver-trained Qwen that copies the voters' blind spots could occupy the dissent lane (R13, PRA-H1)."
+  - id: FALSIFY-LIND-004
+    name: voters_and_min_n_are_pre_registered_and_delta_is_gone
+    prediction: "a manifest with no block, min_n 0, no voters, a registration at or after training start, a non-Z timestamp, or a v2 `delta` is refused"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_lind_004"
+    expected_output: "exit 0"
+    if_fails: "The runner could pick the voters after seeing κ, or believe a δ that the δ-free gate never reads."

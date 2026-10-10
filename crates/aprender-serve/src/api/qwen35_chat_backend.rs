@@ -66,6 +66,107 @@ fn gen_config_from_request(
     }
 }
 
+/// The Qwen3.5 hybrid's prompt for a chat request: the model's own template in the
+/// request's thinking mode (#3723) and with the request's tools (#4650), encoded by
+/// the model.
+///
+/// The chat path and `POST /v1/chat/prompt-ids` both call this, so the ids that
+/// endpoint reports are the ids this path prefills (PRM-S1 v2, #4354).
+fn qwen35_prompt(
+    model: &crate::gguf::GGUFModel,
+    request: &ChatCompletionRequest,
+    architecture: Option<&str>,
+) -> Result<(String, Vec<u32>), String> {
+    // #4650: the template's `# Tools` block is the only place the model learns a tool
+    // exists and the `<tool_call>` format to call it in.
+    let text = crate::api::realize_handlers::format_chat_messages_official_thinking_tools(
+        Some(model),
+        &request.messages,
+        architecture,
+        request.thinking(),
+        request.tools.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+    let ids = model.encode(&text).unwrap_or_default();
+    Ok((text, ids))
+}
+
+/// `POST /v1/chat/prompt-ids`: the rendered prompt and its ids for a chat request
+/// body, without generating (PRM-S1 v2, #4354).
+///
+/// A cross-engine replay must show both engines prefill the same ids before it
+/// compares their speed. llama.cpp answers that with `/apply-template` + `/tokenize`;
+/// apr's `/tokenize` is not the chat path's encoder, so this answers from the chat
+/// path itself. Only the Qwen3.5 hybrid path is covered; any other backend is 501,
+/// never ids some other path might have built.
+pub async fn chat_prompt_ids_handler(
+    State(state): State<AppState>,
+    Json(request): Json<ChatCompletionRequest>,
+) -> Response {
+    let (Some(_), Some(mapped)) = (state.qwen35_session(), state.mapped_gguf_model()) else {
+        return fail_response(
+            &state,
+            StatusCode::NOT_IMPLEMENTED,
+            "prompt ids are reported only for the Qwen3.5 hybrid chat path (#4354)",
+        );
+    };
+    let architecture = state.model_architecture();
+    match qwen35_prompt(&mapped.model, &request, architecture.as_deref()) {
+        Ok((prompt, ids)) => Json(serde_json::json!({
+            "path": "qwen35",
+            "prompt": prompt,
+            "num_tokens": ids.len(),
+            "prompt_ids": ids,
+        }))
+        .into_response(),
+        Err(e) => fail_response(&state, StatusCode::BAD_REQUEST, e),
+    }
+}
+
+/// Encode the request's prompt for the resident Qwen3.5 session and derive
+/// the context-bounded decode budget.
+///
+/// Extracted from `try_qwen35_backend` (complexity ratchet, #4446): the
+/// template render, the empty-prompt guard, and the context-length refusal
+/// are all early-out validation on the way to one `(input_ids,
+/// prompt_token_count, budget)` triple, and don't need the caller's own
+/// nesting. Behaviour (including every error string) is unchanged.
+#[allow(clippy::result_large_err)]
+fn prepare_qwen35_prompt(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    mapped: &crate::gguf::MappedGGUFModel,
+    context_length: usize,
+) -> Result<(Vec<u32>, usize, usize), Response> {
+    let architecture = state.model_architecture();
+    // #3723 thinking mode + template, via the same helper `POST /v1/chat/prompt-ids`
+    // reports from (PRM-S1 v2), so the reported ids are the prefilled ids.
+    let (_, input_ids) = qwen35_prompt(&mapped.model, request, architecture.as_deref())
+        .map_err(|e| fail_response(state, StatusCode::BAD_REQUEST, e))?;
+    if input_ids.is_empty() {
+        return Err(fail_response(
+            state,
+            StatusCode::BAD_REQUEST,
+            "Messages cannot be empty",
+        ));
+    }
+    let prompt_token_count = input_ids.len();
+    if prompt_token_count >= context_length {
+        return Err(fail_response(
+            state,
+            StatusCode::BAD_REQUEST,
+            format!(
+                "the prompt is {prompt_token_count} tokens and this model declares a context of \
+                 {context_length}: it was refused whole rather than truncated (#3571)"
+            ),
+        ));
+    }
+    let max_tokens = request.max_tokens.unwrap_or(256);
+    // What the context leaves — the budget the session will actually decode.
+    let budget = max_tokens.min(context_length - prompt_token_count);
+    Ok((input_ids, prompt_token_count, budget))
+}
+
 /// The Qwen3.5 arm of the chat backend chain (#3571).
 ///
 /// `None` when this state serves no hybrid, so the chain falls through
@@ -104,50 +205,26 @@ async fn try_qwen35_backend(
         Err(r) => return Some(r),
     };
 
-    let architecture = state.model_architecture();
-    // #3723: the request's thinking mode, rendered by the model's own template.
-    // #4650: and the request's tools -- the template's `# Tools` block is the only place the
-    // model learns a tool exists and the `<tool_call>` format to call it in.
-    let prompt_text =
-        match crate::api::realize_handlers::format_chat_messages_official_thinking_tools(
-            Some(&mapped.model),
-            &request.messages,
-            architecture.as_deref(),
-            request.thinking(),
-            request.tools.as_deref(),
-        ) {
-            Ok(p) => p,
-            Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
-        };
-    let input_ids = mapped.model.encode(&prompt_text).unwrap_or_default();
-    if input_ids.is_empty() {
-        return Some(fail_response(
-            state,
-            StatusCode::BAD_REQUEST,
-            "Messages cannot be empty",
-        ));
-    }
-    let prompt_token_count = input_ids.len();
-
     let context_length = session.context_length;
-    if prompt_token_count >= context_length {
-        return Some(fail_response(
-            state,
-            StatusCode::BAD_REQUEST,
-            format!(
-                "the prompt is {prompt_token_count} tokens and this model declares a context of \
-                 {context_length}: it was refused whole rather than truncated (#3571)"
-            ),
-        ));
-    }
-    let max_tokens = request.max_tokens.unwrap_or(256);
-    // What the context leaves — the budget the session will actually decode.
-    let budget = max_tokens.min(context_length - prompt_token_count);
+    let (input_ids, prompt_token_count, budget) =
+        match prepare_qwen35_prompt(state, request, &mapped, context_length) {
+            Ok(v) => v,
+            Err(r) => return Some(r),
+        };
 
     let stop_tokens = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
     // The context-bounded budget, not the request's number: what is decoded and what
     // `finish_reason` is judged against are the same count.
-    let gen_config = gen_config_from_request(request, budget, stop_tokens.clone(), cancel.clone());
+    let mut gen_config =
+        gen_config_from_request(request, budget, stop_tokens.clone(), cancel.clone());
+    // #4026: validated by the handler before any arm ran.
+    let top_logprobs = crate::api::chat_logprobs::requested_top_logprobs(request)
+        .ok()
+        .flatten();
+    if let Some(n) = top_logprobs {
+        // At least one alternative is recorded: `logprobs_top_k` 0 records nothing.
+        gen_config.logprobs_top_k = n.max(1);
+    }
 
     if request.stream {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
@@ -219,6 +296,30 @@ async fn try_qwen35_backend(
 
     let duration = start.elapsed();
     state.metrics.record_success(completion_tokens, duration);
+    if let Some(n) = top_logprobs {
+        // One record per generated id; the popped stop token's record goes too.
+        let steps = &turn.steps[..completion_tokens.min(turn.steps.len())];
+        let decode = |id: u32| decode_mapped.model.decode(&[id]);
+        let mut body = serde_json::to_value(chat_response_body(
+            request_id.to_string(),
+            request.model.clone(),
+            response_text,
+            prompt_token_count,
+            completion_tokens,
+            budget,
+            request.stop.as_deref(),
+            None,
+            duration,
+            request.tools.as_deref(),
+            request_tool_choice(request),
+            None,
+            None,
+        ))
+        .unwrap_or_default();
+        body["choices"][0]["logprobs"] =
+            crate::api::chat_logprobs::chat_logprobs_json(steps, n, &decode);
+        return Some(Json(body).into_response());
+    }
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),
