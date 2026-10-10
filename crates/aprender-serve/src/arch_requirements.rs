@@ -172,4 +172,36 @@ mod tests {
         assert_eq!(ROLES_MOE_NO_QK_NORM_BIAS.len(), 9);
         assert_eq!(ROLES_MOE_QK_NORM_AND_BIAS.len(), 11);
     }
+
+    /// The code after the header comments, from the `use` line on.
+    fn body(src: &str) -> &str {
+        let at = src
+            .find("use crate::gguf::ArchConstraints;")
+            .expect("arch_requirements source has no `use crate::gguf::ArchConstraints;` line");
+        &src[at..]
+    }
+
+    /// #5056 C358 1b: regenerating from the contract leaves no diff. The build regenerates
+    /// `arch_requirements_generated.rs` from contracts/architecture-requirements-v1.yaml; the
+    /// committed fallback snapshot must equal it byte for byte below the header, so a hand
+    /// edit to either the snapshot or the contract alone turns this red.
+    #[test]
+    fn falsify_arch_req_fallback_equals_regenerated() {
+        let generated = include_str!(concat!(env!("OUT_DIR"), "/arch_requirements_generated.rs"));
+        let fallback = include_str!("arch_requirements_fallback.rs");
+        let contract = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/architecture-requirements-v1.yaml");
+        if contract.exists() {
+            assert!(
+                generated.contains("AUTO-GENERATED from architecture-requirements-v1.yaml"),
+                "the contract exists but the build used the fallback, so this comparison would be vacuous"
+            );
+        }
+        assert!(
+            body(generated) == body(fallback),
+            "src/arch_requirements_fallback.rs differs from the code generated from \
+             contracts/architecture-requirements-v1.yaml. Regenerate it: copy \
+             $OUT_DIR/arch_requirements_generated.rs below its header into the fallback"
+        );
+    }
 }
