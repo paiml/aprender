@@ -488,8 +488,10 @@ fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one(
     }
 }
 
-/// #4958: the 4B file whose F2 probe GB10 (sm_121) rejected.
-const MODEL_4B: &str = "/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf";
+/// #4958: the 4B file whose F2 probe GB10 (sm_121) rejected. It sits beside the 0.8B.
+fn model_4b() -> String {
+    MODEL_0_8B.replace("0.8B", "4B")
+}
 
 /// #4958: the apr-code fixture's question. `apr run` prefills it in the GGUF's own
 /// chat template, 83 tokens, and its first forward stops before the generation
@@ -513,7 +515,7 @@ const EVERY_POSITION_COSINE: f64 = 0.999;
 /// #4958: the probe F2 judged — `apr run`'s tokens, the last 64 of its first forward.
 fn probe_4958(mapped: &crate::gguf::MappedGGUFModel) -> Vec<u32> {
     // `apr run`'s own entry point, which applies the template before the encode.
-    let config = crate::infer::InferenceConfig::new(MODEL_4B).with_prompt(PROMPT_4958);
+    let config = crate::infer::InferenceConfig::new(model_4b()).with_prompt(PROMPT_4958);
     let prepared = crate::infer::prepare_tokens(&config, &crate::format::ModelFormat::Gguf)
         .expect("tokenize as `apr run` does");
     let ids = prepared.tokens();
@@ -551,12 +553,13 @@ fn probe_4958(mapped: &crate::gguf::MappedGGUFModel) -> Vec<u32> {
 #[test]
 #[serial_test::serial]
 fn qwen35_prefill_equals_per_token_at_every_position_of_the_4958_probe_4b() {
-    if !std::path::Path::new(MODEL_4B).exists() {
-        eprintln!("SKIP: {MODEL_4B} is absent");
+    let model_4b = model_4b();
+    if !std::path::Path::new(&model_4b).exists() {
+        eprintln!("SKIP: {model_4b} is absent");
         return;
     }
     let executor = crate::cuda_executor_or_skip!(0);
-    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_4B).expect("map the GGUF");
+    let mapped = crate::gguf::MappedGGUFModel::from_path(model_4b.as_str()).expect("map the GGUF");
     let probe = &probe_4958(&mapped)[..];
     let n = probe.len();
     let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
@@ -646,11 +649,12 @@ fn localize_4958(gpu: &mut Qwen35CudaModel<'_>, probe: &[u32], at: usize, want: 
 /// apart (x86's worst Q8_K row was position 0), and no GPU is needed.
 #[test]
 fn f2_cpu_reference_is_the_fp32_activation_forward_on_the_4958_probe_4b() {
-    if !std::path::Path::new(MODEL_4B).exists() {
-        eprintln!("SKIP: {MODEL_4B} is absent");
+    let model_4b = model_4b();
+    if !std::path::Path::new(&model_4b).exists() {
+        eprintln!("SKIP: {model_4b} is absent");
         return;
     }
-    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_4B).expect("map the GGUF");
+    let mapped = crate::gguf::MappedGGUFModel::from_path(model_4b.as_str()).expect("map the GGUF");
     let probe = probe_4958(&mapped);
     let head = &probe[..4];
     let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
@@ -696,12 +700,13 @@ rel L∞ {:.3e}",
 #[test]
 #[serial_test::serial]
 fn f2_reference_and_gpu_agree_at_every_position_of_the_4958_probe_4b() {
-    if !std::path::Path::new(MODEL_4B).exists() {
-        eprintln!("SKIP: {MODEL_4B} is absent");
+    let model_4b = model_4b();
+    if !std::path::Path::new(&model_4b).exists() {
+        eprintln!("SKIP: {model_4b} is absent");
         return;
     }
     let executor = crate::cuda_executor_or_skip!(0);
-    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_4B).expect("map the GGUF");
+    let mapped = crate::gguf::MappedGGUFModel::from_path(model_4b.as_str()).expect("map the GGUF");
     let probe = probe_4958(&mapped);
     let n = probe.len();
     let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
