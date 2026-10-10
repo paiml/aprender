@@ -1151,7 +1151,7 @@ pub(crate) fn live_sse_response(
                     // #4971: the token's entry is held for the chunk that
                     // releases its text, and a token without one ends the stream.
                     let taken = match logprobs.as_mut() {
-                        Some(held) => held.take(&tokenizer, token_id).await,
+                        Some(held) => held.take(&tokenizer, token_id),
                         None => Ok(()),
                     };
                     if let Err(e) = taken {
