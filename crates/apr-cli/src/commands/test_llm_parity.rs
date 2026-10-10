@@ -524,8 +524,20 @@ mod tests {
     /// Through the whole `apr` parser, not `llm` alone: that is where the
     /// global `--json` lives, and a parity arg sharing its id parsed fine
     /// under [`parse`] yet panicked on every real run (gx10 g12, 61f0fa5798).
+    /// On a 16 MB stack, as in run_tests_top_k_default_3754.rs: clap's
+    /// destructuring of the full `Commands` enum overflows the default 2 MiB
+    /// test-thread stack in debug builds (gx10 g13, e1f24a0645).
     #[test]
     fn the_witness_flag_parses_beside_the_global_json() {
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(witness_and_global_json_cases)
+            .expect("spawn parse thread")
+            .join()
+            .expect("every case parses as its row says");
+    }
+
+    fn witness_and_global_json_cases() {
         use clap::Parser;
         let dir = tempfile::tempdir().expect("tempdir");
         let out = dir.path().join("w.json");
