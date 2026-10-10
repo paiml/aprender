@@ -1,0 +1,267 @@
+# 0.71.1 exit criterion V3 (#4971): is a perf041 witness a serving-shape parity receipt?
+# Moved here from the spec branch's draft (la-71/v3-serving-shape-parity @ adf6c4b4aa,
+# docs/lookahead/contracts-draft/serving-shape-parity-v1.yaml, version 0.3.0). The draft's
+# Python checker and fixtures are not carried: the check is perf_gate::v3_shape and its
+# in-code case table, and `apr test llm shape-check` is its front door (C301).
+# The bar below was adopted by the C314 quorum of 2026-10-10 06:48Z, recorded here before
+# any of its code (order step 1). S7, the near-tie cap and the declared_min floor are
+# spec-before-code: their rows are PLANNED until shape-check reads them (condition 1).
+# This is not a gate: no merge, queue or release job runs the check. Wiring V3 into a
+# release gate is a gate change with its own ruling.
+metadata:
+  version: 1.0.0
+  created: '2026-10-10'
+  author: la-0.71.1a (from the draft 0.3.0 by la-0.71, 2026-10-03)
+  kind: schema
+  status: partial
+  description: >
+    A perf041 witness is a V3 serving-shape parity receipt iff it is on the blessed
+    Qwen3.5-4B, measures bands c in {1,4,8,16} each formed at full width, carries
+    identity, agrees with the m=1 reference to declared_min unless a near-tie (top-2
+    margin below epsilon) explains the divergence, and shows per-request decode at c=4
+    at least half of c=1 (S7). V3 holds when one such witness from apr serve with CUDA
+    is admitted on each GPU host class 0.71.1 ships for.
+  references:
+    - crates/aprender-test-lib/src/perf_gate/v3_shape.rs
+    - crates/apr-cli/src/commands/test_llm_shape.rs
+    - crates/apr-cli/src/commands/test_llm_parity.rs
+    - crates/aprender-test-lib/src/llm/parity.rs
+    - 'contracts/apr-serve-openai-compat-v1.yaml FALSIFY-V3-SHAPE-CHECK-4971, FALSIFY-V3-SHAPE-CLI-4971, FALSIFY-PERF041-CLI-4971'
+    - 'Quorum receipt: /mnt/nvme-raid0/cop-inbox/handoff/quorum-la-0.71.1a-v3bar.md (C314, round 2, ADOPTED 2026-10-10 06:48Z)'
+    - 'Spec: docs/lookahead/0.71-v3-serving-shape-parity.md on branch la-71/v3-serving-shape-parity'
+  depends_on:
+    - continuous-batching-v1
+bar:
+  adopted: '2026-10-10T06:48Z, C314 quorum round 2 (Explore sonnet, haiku, sonnet adversarial; degraded: same-family), bound to la-711a/4971-v3a-margin @ 61f0fa5798'
+  statement: >
+    V3 holds when, on each GPU host class 0.71.1 ships for (lambda RTX 4090 sm_89 and gx10
+    GB10), one `apr test llm parity` run against `apr serve` with CUDA on the blessed
+    Qwen3.5-4B at c = 1, 4, 8 and 16 writes a witness that `apr test llm shape-check` admits
+    with exit 0 under S1-S7. In that check S1-S6 are as drafted, with eps = 0.05 logit
+    fixed; at most one of the three batched bands may be admitted through the near-tie
+    exemption; and S7 (CB-004: per-request decode at c=4 at least 50% of c=1) is read from
+    per-request decode timing that the same witness records.
+  falsifier: >
+    From an admitted witness, set c=4 per-request decode to 49% of c=1: shape-check must
+    exit 5 and name CB-004 (FALSIFY-SSP-017). The cap row joins the case table: c=4 and
+    c=8 both near-tie exits 5, naming the cap and both bands (FALSIFY-SSP-018).
+  host_classes:
+    - 'lambda: RTX 4090, sm_89'
+    - 'gx10: GB10'
+  conditions:
+    - 'Until shape-check reads S7 and the cap, both are spec-before-code (rows PLANNED), and the bar cannot be met.'
+    - 'declared_min has a floor: every band declares at least the perf matrix''s witness.min_agree_tokens (64), so a self-declared declared_min of 1 is not admissible (FALSIFY-SSP-019).'
+    - 'The closer''s receipt names the host and its GPU from the witness env block, one per host class above.'
+    - 'The end-to-end plant (a deliberately wrong KV slot in the batched CUDA path must make parity + shape-check give NOT ADMISSIBLE) is a PROPOSE-TICKET with one ticket and one owner, logged 2026-10-10 06:48Z; its state is listed when the row closes.'
+    - 'Witnesses are self-reported and unsigned. The end-to-end plant is the guard against a server that lies; no new rule.'
+    - 'The rationale for the cap is recorded under equations.admissible.cap_rationale.'
+  spec_before_code: [S7, near_tie_cap, declared_min_floor]
+  order:
+    - 'Contract: this file, passing pv validate (la-0.71.1a).'
+    - 'Code: the probe records per-request decode timing; shape-check reads S7, the cap and the declared_min floor (la-0.71.1a).'
+    - 'PROPOSE-TICKET for the end-to-end plant.'
+    - 'A session other than la-0.71.1a runs both host classes and closes the row. The author never closes V3.'
+equations:
+  admissible:
+    formula: |
+      admissible(w) := blessed(w.model) ∧ identity(w) complete
+                       ∧ ∀c ∈ {1,4,8,16}: exactly one band(c) ∈ w
+                       ∧ band(c).result = PASS ∧ band(c).m_formed = c
+                       ∧ band(c).declared_min ≥ 64
+                       ∧ (band(c).divergence_at ≥ band(c).declared_min ∨ 0 ≤ band(c).top2_margin_at_divergence < ε)
+                       ∧ |{c ∈ {4,8,16} : band(c) admitted only by the near-tie clause}| ≤ 1
+                       ∧ decode_tok_s(band(4)) ≥ 0.5 · decode_tok_s(band(1))
+      ε := 0.05 logit (fixed by the bar; no longer [A])
+    domain: 'w is the JSON witness written by `apr test llm parity` (perf041, PP-26 v3.1); decode_tok_s is per-request decode tokens per second, the median over the band''s requests'
+    invariants:
+      - 'a band formed at m < c is never admissible as shape c'
+      - 'a divergence from m=1 without a recorded margin below ε is never explained'
+      - 'an empty, blank, unreadable or bandless witness is RED, never NOT ADMISSIBLE'
+      - 'a witness with no per-request decode timing at c=1 or c=4 is not admissible: S7 is unmeasured, never assumed'
+    cap_rationale: >
+      Author's wording of quorum condition 6. A near-tie explains one early divergence as
+      chance: two candidates within ε of each other at that step, so any reduction-order
+      change may flip the argmax. Bands c=4, 8 and 16 share one batched path, so when more
+      than one of them diverges early the likelier cause is that path, not three
+      independent coin flips at near-ties. Letting every batched band in on a recorded
+      margin would let a systematic batched-path defect pass by recording margins. One of
+      three keeps the chance explanation and refuses it as the shape of the whole run.
+falsification_tests:
+  - id: FALSIFY-SSP-001
+    rule: 'control: full bands on the blessed model are admissible'
+    prediction: 'Case row `admissible` (the in-code control witness) is ADMISSIBLE: library exit 0, `apr test llm shape-check` exit 0, no reason.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'A rule fires on a clean witness: a band, identity or model check misreads a field it should accept.'
+  - id: FALSIFY-SSP-002
+    rule: 'a divergence at 3 with a recorded margin of 0.01 is explained'
+    prediction: 'Case row `near-tie`: a c=4 band that diverges from m=1 at 3 with top-2 margin 0.01 is ADMISSIBLE with no reason.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'The near-tie clause ignores the recorded margin, or compares it against another ε.'
+  - id: FALSIFY-SSP-003
+    rule: 'c=16 with m_formed=14 is not admissible'
+    prediction: 'Case row `short-band` is NOT ADMISSIBLE (library 1, CLI 5) with the single reason `c=16: m_formed 14 != c (shape not served)`.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'The m_formed == c check is missing or reads the wrong field.'
+  - id: FALSIFY-SSP-004
+    rule: 'a model other than the blessed Qwen3.5-4B is not admissible'
+    prediction: 'Case rows `wrong-model` and `prefix, not substring` are NOT ADMISSIBLE with the single reason that the model is not the blessed Qwen3.5-4B. The file name must start with qwen3.5-4b, compared without case; containing it is not enough.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'The blessed-model check reads another field, or matches the prefix anywhere in the name (the draft''s surviving mutant startswith-to-in).'
+  - id: FALSIFY-SSP-005
+    rule: 'a divergence with no recorded margin is not admissible'
+    prediction: 'Case row `unexplained-divergence` is NOT ADMISSIBLE with the single reason `c=4: diverges from m=1 at 3 < 64 with no near-tie margin recorded`.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'A divergence with no recorded margin is treated as explained.'
+  - id: FALSIFY-SSP-006
+    rule: 'an empty, malformed or missing witness is RED (findings F1)'
+    prediction: 'An empty string, malformed JSON, a non-object and a missing file are RED (library 2, CLI 4; a missing path or a directory is CLI 3), never NOT ADMISSIBLE.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'An unreadable witness reads as a verdict about the server.'
+  - id: FALSIFY-SSP-007
+    rule: 'the real lambda witness on main (perf041 PASS) is not a V3 receipt'
+    prediction: >
+      `apr test llm shape-check evidence/perf041/lambda/witness.json` on main exits 5 with
+      four reasons: the model qwen2.5-coder-1.5b-instruct-q4_k_m.gguf is not the blessed
+      Qwen3.5-4B, and c=4, c=8 and c=16 each diverge from m=1 at 3 < 64 with no near-tie
+      margin recorded. The draft's five reasons included c=16 m_formed 14; #4888
+      (8d44b58703, 2026-10-07) refreshed the witness, and c=16 now forms m=16. Once S7
+      lands, a fifth reason names its missing decode timing.
+    test: 'by hand: apr test llm shape-check evidence/perf041/lambda/witness.json'
+    if_fails: 'A perf041 PASS is read as a V3 receipt: a V3 rule is missing, or main''s witness changed again.'
+  - id: FALSIFY-SSP-008
+    rule: 'identity complete: a witness missing any one of binary_sha256, commit, host, prompt_sha256 is not admissible (one case per member)'
+    prediction: 'Case rows `no-identity-binary-sha256`, `no-identity-commit`, `no-identity-host` and `no-identity-prompt-sha256` each give the single reason `identity field <k> missing`; `blank identity` shows a whitespace value counts as missing.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'The identity check is missing or skips a member.'
+  - id: FALSIFY-SSP-009
+    rule: 'a blessed model with no sha256 recorded is not admissible'
+    prediction: 'Case row `no-model-sha256` gives the single reason `model sha256 missing`; `model missing` gives both S1 reasons.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'The sha256 half of S1 is unchecked, so a file name alone admits the model.'
+  - id: FALSIFY-SSP-010
+    rule: 'a margin equal to ε does not explain a divergence (ε is a strict upper bound)'
+    prediction: 'Case row `margin-at-epsilon (F4 wording)`: a margin of exactly 0.05 is not a near-tie, and the reason names the recorded margin and ε (findings F4 closed). `margin just below epsilon` and `margin zero (an exact tie)` are explained; `negative margin` is not.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'ε was raised or the comparison became <=, or a negative margin passes as a near-tie.'
+  - id: FALSIFY-SSP-011
+    rule: 'a band whose perf041 result is not PASS is not admissible'
+    prediction: 'Case row `failed-band` gives the single reason `c=8: perf041 result FAIL`; `result missing` names it as not recorded.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'S6 is unchecked: a band that perf041 failed is admitted.'
+  - id: FALSIFY-SSP-012
+    rule: 'every band c in {1,4,8,16} is measured, exactly once (one case per member; findings F6)'
+    prediction: 'Case rows `missing-band-c1`, `-c4`, `-c8` and `-c16` each give `band c=<c> not measured`; `F6 duplicate c` is not admissible and every copy is checked; `a band outside V3 is ignored`.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'S2 is unchecked or skips a band, or a second copy of a band masks the first.'
+  - id: FALSIFY-SSP-013
+    rule: 'control: a divergence exactly at declared_min is admissible'
+    prediction: 'Case row `divergence-at-min` is ADMISSIBLE; `divergence one below min` is not.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'The divergence comparison moved off the boundary.'
+  - id: FALSIFY-SSP-014
+    rule: 'a witness whose band list is empty is RED'
+    prediction: 'Case row `no-bands` is RED (library 2, CLI 4), never four `not measured` reasons.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'A witness that measured nothing is evaluated instead of RED.'
+  - id: FALSIFY-SSP-015
+    rule: 'an UNMEASURABLE band is not admissible and reports only its result (findings F5)'
+    prediction: 'Case row `unmeasurable-band (F5: its result only)` gives the single reason `c=8: perf041 result UNMEASURABLE`; a PASS band with no divergence_at is not admissible (`PASS band without divergence_at`).'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'A null divergence_at reads as 0, or an UNMEASURABLE band is admitted.'
+  - id: FALSIFY-SSP-016
+    rule: 'a whitespace-only witness is RED'
+    prediction: 'A witness holding only a newline is RED (library 2, CLI 4).'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'The blank witness is parsed and reported as malformed JSON or NOT ADMISSIBLE.'
+  - id: FALSIFY-SSP-017
+    rule: 'S7 (FALSIFY-CB-004): per-request decode at c=4 is at least half of c=1; the bar''s falsifier'
+    status: PLANNED
+    prediction: >
+      From the admissible control, set c=4 per-request decode to 49% of c=1: shape-check
+      exits 5 with a reason naming FALSIFY-CB-004 and both rates. At exactly 50% it is
+      admissible. A witness with no per-request decode timing at c=1 or c=4 is not
+      admissible, with a reason saying S7 is unmeasured.
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'Architectural serialization or lock contention ships as a V3 PASS, or a witness with no timing passes S7 by default.'
+  - id: FALSIFY-SSP-018
+    rule: 'at most one of the bands c=4, 8, 16 is admitted through the near-tie clause'
+    status: PLANNED
+    prediction: 'From the admissible control, make c=4 and c=8 both diverge at 3 with margin 0.01: shape-check exits 5 with a reason naming the near-tie cap and both bands. One near-tie batched band (FALSIFY-SSP-002) stays admissible.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'A systematic batched-path divergence passes by recording a margin in every band.'
+  - id: FALSIFY-SSP-019
+    rule: 'declared_min has a floor of 64 (the perf matrix''s witness.min_agree_tokens)'
+    status: PLANNED
+    prediction: 'From the admissible control, set one band''s declared_min to 1 and its divergence_at to 3: shape-check exits 5 with a reason naming the floor. declared_min 64 stays admissible.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'A witness passes S5 by declaring its own agreement bar.'
+qa_gate:
+  id: F-SSP-QA-001
+  name: A V3 receipt is admitted only when every conjunct holds
+  description: >
+    The in-code case table in perf_gate::v3_shape carries every row of the draft's
+    cases.json that holds a JSON object, plus rows for findings F2, F3 and F6 and for
+    each boundary (divergence at and one below declared_min; margin at, just below and
+    at zero; a negative margin). The RED rows (empty, blank, malformed, non-object,
+    missing file) run in their own test. Each row gives its exit code and its exact
+    reasons, and the test is red on a row whose reasons differ by one. The CLI test
+    maps the verdicts onto apr's exit codes: 0, 5 NOT ADMISSIBLE, 4 RED, 3 no such file.
+  checks:
+    - planted_case_exits_as_its_row_says
+    - not_admissible_case_prints_exactly_its_own_reasons
+    - unreadable_witness_is_red
+    - cli_exit_codes_follow_the_verdict
+    - real_witness_not_admissible
+  pass_criteria: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape and cargo test -p apr-cli --lib test_llm_shape both print test result: ok; FALSIFY-SSP-007 by hand gives its reasons.'
+  falsification: 'The draft''s 32-mutant record (mutation_record) left two survivors; both are killed by rows in the Rust table: startswith-to-in by `prefix, not substring`, declared-min-default-64 by `F3 no declared_min`.'
+findings:
+  - id: F1
+    summary: 'The Python checker exited 1 (NOT ADMISSIBLE) on an unreadable witness.'
+    closed_by: 'v3_shape: unreadable is RED, exit 2 (CLI 4 or 3). FALSIFY-SSP-006.'
+  - id: F2
+    summary: 'A JSON boolean passed the numeric checks.'
+    closed_by: 'v3_shape: typed fields; rows `F2 m_formed true`, `F2 margin false`, `F2 c as a string`.'
+  - id: F3
+    summary: 'A band with no declared_min passed S5 with a default of 0.'
+    closed_by: 'v3_shape: not admissible; row `F3 no declared_min`. The floor of 64 (FALSIFY-SSP-019) tightens it further.'
+  - id: F4
+    summary: 'The S5 reason said no margin was recorded when one was, at or above ε.'
+    closed_by: 'v3_shape: the reason names the margin and ε; row `margin-at-epsilon (F4 wording)`.'
+  - id: F5
+    summary: 'An UNMEASURABLE band also reported a divergence at None.'
+    closed_by: 'v3_shape: only its result; row `unmeasurable-band (F5: its result only)`.'
+  - id: F6
+    summary: 'When two bands shared a c, the last one won.'
+    closed_by: 'v3_shape: a duplicate c is not admissible and every copy is checked; row `F6 duplicate c`.'
+  - id: S7-scope
+    summary: 'The draft did not check S7 and had the receipt cite CB-004 beside the witness.'
+    closed_by: 'Superseded by the bar: S7 is read from the same witness (FALSIFY-SSP-017, PLANNED until the code lands).'
+mutation_record:
+  note: 'History: the draft''s record, measured on the Python checker. The Rust port has not been mutation-tested yet.'
+  date: '2026-10-04'
+  mutants: 32
+  patched_self_test: {killed: 30, killed_by_crash: 4, survived: 2}
+  survived_table: [startswith-to-in, declared-min-default-64]
+verification: >
+  cargo test -p aprender-test-lib --lib perf_gate::v3_shape and cargo test -p apr-cli
+  --lib test_llm_shape, on gx10 at la-711a/4971-v3a-margin. FALSIFY-SSP-007 by hand is
+  not_measured through the Rust port yet; its reasons above are read off main's witness
+  and the code.
