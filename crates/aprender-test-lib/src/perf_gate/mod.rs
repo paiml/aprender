@@ -166,6 +166,7 @@ pub mod ab;
 pub mod bootstrap;
 pub mod drain;
 pub mod join;
+pub mod margin;
 pub mod metrics;
 pub mod protocol;
 pub mod receipt;
@@ -189,6 +190,7 @@ pub use drain::{
     StreamWitness, StreamWitnessSource, DRAIN_SUSPECT_FRACTION, REQUEST_TIMEOUT_MS, SCHEMA_VERSION,
 };
 pub use join::{BandRatios, JoinKey, Ratio, RatioBound, RatioMethod};
+pub use margin::{token_ids, top2_margin, TokenLogprob, TopLogprob, LOGPROBS_SOURCE};
 pub use metrics::{agg_tok_s, aggregate_terms, BandMetrics, RequestSample};
 pub use protocol::{
     min_sampled_requests, warmup_requests, BandConfig, ClientModel, ProtocolParams, ProtocolSource,
