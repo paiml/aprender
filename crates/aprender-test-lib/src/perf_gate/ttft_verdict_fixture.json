@@ -20,7 +20,7 @@
   },
   "client_model": "closed_loop",
   "provenance": {
-    "binary_path": "/mnt/nvme-raid0/tmp/w4664-v1-bin/apr",
+    "binary_path": "<scrubbed>",
     "binary_sha256": "45fbc73f89efa66fb9daa94ef4f99622900ef8695d23e1507004db76fc3d8ac7",
     "resolution": "current_exe",
     "compute_class": "cuda",
@@ -36,7 +36,7 @@
     "started_utc": "2026-10-09T10:21:55.247Z",
     "clock_source": "std::time::SystemTime (CLOCK_REALTIME)",
     "subject": {
-      "path": "/home/noah/.cargo/bin/apr",
+      "path": "<scrubbed>",
       "sha256": "0bf3c6db44bfcb464d683e9dc2204cfc2c6a3a82d3b8db32f2e04b70a7e47f31",
       "commit": "95f64ba14",
       "feature_set": [
@@ -46,7 +46,7 @@
       ]
     },
     "client": {
-      "path": "/mnt/nvme-raid0/tmp/w4664-v1-bin/apr",
+      "path": "<scrubbed>",
       "sha256": "45fbc73f89efa66fb9daa94ef4f99622900ef8695d23e1507004db76fc3d8ac7",
       "commit": "95f64ba1441233ef201e0c4ea7b9fc20aad83bf0",
       "pid": 614283
