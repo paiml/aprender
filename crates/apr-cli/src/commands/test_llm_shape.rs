@@ -10,7 +10,7 @@
 //! | ADMISSIBLE | 0 |
 //! | NOT ADMISSIBLE | 5 (`ValidationFailed`), after every reason is printed |
 //! | RED: no such file, or not a file | 3 (`FileNotFound` / `NotAFile`) |
-//! | RED: unreadable, empty, or no bands | 4 (`InvalidFormat`) |
+//! | RED: unreadable, empty, or no bands | 4 (`InvalidInput`: a JSON witness, not a model) |
 //!
 //! A witness that is not admissible and a witness that cannot be read never
 //! share a code. That is the draft contract's F1, kept across the mapping.
@@ -27,7 +27,7 @@ use crate::error::{CliError, Result};
 ///
 /// # Errors
 /// NOT ADMISSIBLE is `ValidationFailed`. A missing path is `FileNotFound`,
-/// a directory `NotAFile`, and an unreadable or empty witness `InvalidFormat`.
+/// a directory `NotAFile`, and an unreadable or empty witness `InvalidInput`.
 pub(crate) fn run(witness: &Path) -> Result<()> {
     if !witness.exists() {
         return Err(CliError::FileNotFound(witness.to_path_buf()));
@@ -63,7 +63,7 @@ fn outcome(witness: &Path, verdict: ShapeVerdict) -> Result<()> {
             witness.display(),
             reasons.len()
         ))),
-        ShapeVerdict::Red(why) => Err(CliError::InvalidFormat(format!(
+        ShapeVerdict::Red(why) => Err(CliError::InvalidInput(format!(
             "V3 shape witness {}: {why} (#4971)",
             witness.display()
         ))),
@@ -146,7 +146,9 @@ mod tests {
         assert_eq!(code, 0, "{printed}");
     }
 
-    /// F1 across the mapping: RED never shares NOT ADMISSIBLE's code.
+    /// F1 across the mapping: RED never shares NOT ADMISSIBLE's code. And it
+    /// names the input, not a model: `InvalidFormat` would print "Invalid APR
+    /// format" over a JSON witness.
     #[test]
     fn an_unreadable_or_empty_witness_exits_4_never_5() {
         for text in ["", "   \n", "{not json", "[]", r#"{"bands": []}"#] {
@@ -156,6 +158,17 @@ mod tests {
                 "witness {text:?} must be RED (4), never NOT ADMISSIBLE (5)"
             );
         }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("witness.json");
+        std::fs::write(&path, "{not json").expect("write witness");
+        let err = run(&path).expect_err("RED is refused");
+        assert!(matches!(err, CliError::InvalidInput(_)), "{err:?}");
+        let shown = err.to_string();
+        assert!(
+            shown.starts_with("Invalid input: V3 shape witness "),
+            "{shown}"
+        );
+        assert!(!shown.contains("APR"), "{shown}");
     }
 
     #[test]
