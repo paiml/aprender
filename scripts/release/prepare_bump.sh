@@ -90,11 +90,11 @@ pb_carry_cert() {
     echo "CERT carried: $src -> $dst (apr_commit $base)"
 }
 
-# C345 Q9: "No pass starts without its three receipts." pb_streak SCRIPT REPO DIR -> rc 0 the pass may start, 1 it may not
+# C345 Q9, count lowered by C355 item 6 (one night, the check stays). pb_streak SCRIPT REPO DIR -> rc 0 the pass may start, 1 it may not
 # (the reason on stderr). The count is SCRIPT --streak's on REPO's origin/main, made before the bump is cut, with its read
 # cached in DIR and its RECEIPT lines kept in DIR/streak.txt (quorum 09:34Z). The pass start is the release path, so its one
 # read has no rate floor. In a rehearsal night (RELEASE_REHEARSAL=1) the floor stays and a not-ready streak (rc 1) is
-# allowed, since a night cannot need its own three nights; not_measured (2) or a caller error (3) stops it there too.
+# allowed, since a night cannot need its own night; not_measured (2) or a caller error (3) stops it there too.
 pb_streak() {
     local script=$1 repo=$2 dir=$3 rc=0 a
     a=(--commit origin/main --as-of "$(date -u +%F)" --cache "$dir" --repo "$repo")  # bashrs disable-line=DET002
@@ -104,9 +104,16 @@ pb_streak() {
     cat -- "$dir/streak.txt"
     case "$rc:${RELEASE_REHEARSAL:-}" in
         0:*) return 0 ;;
-        1:1) echo "REHEARSAL: the streak is not ready (rc 1), allowed in a night: it cannot need its own three nights"; return 0 ;;
-        *) echo "C345 Q9: no pass starts without its three receipts (--streak rc $rc, $dir/streak.txt)" >&2; return 1 ;;
+        1:1) echo "REHEARSAL: the streak is not ready (rc 1), allowed in a night: it cannot need its own night"; return 0 ;;
+        *) echo "C345 Q9 / C355 item 6: no pass starts without its streak receipt (--streak rc $rc, $dir/streak.txt)" >&2; return 1 ;;
     esac
+}
+
+# pb_streak_wired FILE -> rc 0 when FILE calls pb_streak after the fetch and before the bump worktree is cut, 1 else:
+# no fetch, no call in that window, or no `git worktree add` after the fetch at all.
+pb_streak_wired() {
+    awk '/^  git fetch -q origin main /{ f = 1 } f && /^  pb_streak "\$REPO_ROOT\/scripts\/release\/rehearse.sh" "\$REPO_ROOT" "\$AP\/streak" \\$/{ ok = 1 }
+         f && /^  git worktree add /{ cut = 1; exit } END { exit !(f && ok && cut) }' "$1"
 }
 
 pb_self_test() {
@@ -189,10 +196,15 @@ pb_self_test() {
     got=$(cat "$d/args" 2>/dev/null)
     if [[ $got == *"--commit origin/main"* && $got != *--release-path* ]]; then echo "  ok   streak: a night keeps the rate floor"
     else echo "  FAIL streak: night arguments: $got"; fail=1; fi
-    if awk '/^  git fetch -q origin main /{ f = 1 } f && /^  pb_streak "\$REPO_ROOT\/scripts\/release\/rehearse.sh" "\$REPO_ROOT" "\$AP\/streak" \\$/{ ok = 1 }
-            /^  git worktree add /{ exit !ok } END { if (!f) exit 1 }' "$0"
+    if pb_streak_wired "$0"
     then echo "  ok   streak: wired after the fetch, before the bump worktree is cut"
     else echo "  FAIL streak: pb_streak is not called between the fetch and the bump worktree"; fail=1; fi
+    sed '/^  git worktree add /d' "$0" > "$d/nocut.sh"
+    if ! pb_streak_wired "$d/nocut.sh"; then echo "  ok   streak: a fetch with no bump-worktree line after it -> refused"
+    else echo "  FAIL streak: a file with the fetch but no git worktree add line passed the wiring check"; fail=1; fi
+    sed '/^  pb_streak "\$REPO_ROOT\/scripts\/release\/rehearse.sh"/,+1d' "$0" > "$d/nocall.sh"
+    if ! pb_streak_wired "$d/nocall.sh"; then echo "  ok   streak: the call removed -> refused"
+    else echo "  FAIL streak: a file without the pb_streak call passed the wiring check"; fail=1; fi
     rm -rf -- "${d:?}"
     if [ "$fail" -eq 0 ]; then echo "prepare_bump self-test: PASS"; else echo "prepare_bump self-test: FAIL"; fi
     return "$fail"
@@ -214,7 +226,7 @@ if [ "${2:-}" != "--ship" ]; then
   cd "$REPO_ROOT" || die "no repo"
   git fetch -q origin main || die "fetch failed"
   pb_streak "$REPO_ROOT/scripts/release/rehearse.sh" "$REPO_ROOT" "$AP/streak" \
-    || die "C345 Q9: no pass starts without its three receipts: rehearse.sh --streak on origin/main ($AP/streak/streak.txt)"
+    || die "C345 Q9 / C355 item 6: no pass starts without its streak receipt: rehearse.sh --streak on origin/main ($AP/streak/streak.txt)"
   [ -e "$B" ] && die "$B exists: review it, or 'git worktree remove' it to start over"
   git worktree add -q -b "$BR" "$B" origin/main || die "worktree add failed"
   cd "$B" || die "cd $B"

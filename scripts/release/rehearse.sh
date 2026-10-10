@@ -46,7 +46,7 @@
 #       EXIT 0 · 2 not_measured (a read failed, or no commit both measured: the count resets) · 3.
 #   rehearse.sh --judge DIR      the verdict of a finished night (the --run prints it too)
 #   rehearse.sh --streak --commit REV --as-of YYYY-MM-DD --cache DIR [--repo DIR] [--history FILE] [--release-path]
-#       the three counting nights a pass on REV needs (C345 #4, Q9). Each night records the tree id of
+#       the STREAK_NEED counting nights a pass on REV needs (C345 #4, Q9; one since C355 item 6). Each night records the tree id of
 #       scripts/release and the blob ids of the stop list and the policy file; a night counts only when
 #       its ids equal REV's (release day's), so any change to them resets the count. A night is keyed on
 #       the C its own record names (the release-rehearsal artifact), never on the run's head_sha. The count is
@@ -84,7 +84,8 @@ TRAIN_SCRIPT="$SCRIPT_DIR/nightly_train.sh"
 # A night's own record: the artifact its rehearse job uploads (night.txt, rehearsal/night.env, ...). The streak reads
 # it for the night's C, newest night first, and reads none past the night that makes nightly_greens.sh's NEED.
 RECORD_ARTIFACT=release-rehearsal
-STREAK_NEED=3
+# C355 item 6 (operator, 2026-10-10): the 3-night check goes to one night; the count is lowered, the check stays.
+STREAK_NEED=1
 # B1 Q1: C is the newest first-parent main commit that both the models crux bundle and an infra clean-room run
 # measured. The bundle and its INDEX sit on EVIDENCE_BRANCH under MODELS_DIR; the walk reads main's newest PICK_DEPTH
 # first-parent commits (about five days of main in early October 2026), and a commit further back is no night's C.
@@ -435,8 +436,8 @@ ids_diff() {
     printf '%s differ' "$out"
 }
 
-# streak --commit REV --as-of YYYY-MM-DD --cache DIR [--repo DIR] [--history FILE] -> the three counting nights'
-# receipts a pass on REV needs (C345 #4, Q9). REV's ids are release day's. A scheduled night on main is keyed on its
+# streak --commit REV --as-of YYYY-MM-DD --cache DIR [--repo DIR] [--history FILE] -> the STREAK_NEED counting nights'
+# receipts a pass on REV needs (C345 #4, Q9; one since C355 item 6). REV's ids are release day's. A scheduled night on main is keyed on its
 # own C, the commit its record names, never on the run's head_sha (the pick sets C behind main's head). It counts
 # only when C carries the same ids; any other, and a record that names no C or two, is a reset, judged as a red
 # night. The count is nightly_greens.sh's. The history is FILE (seven columns, as fetch_runs writes) or one read of
@@ -518,13 +519,13 @@ streak() {
     rc=0; o=$(bash "$SCRIPT_DIR/nightly_greens.sh" --check release-rehearsal --history "$cache/history.tsv" --as-of "$asof") || rc=$?
     printf '%s\n' "$o"
     [ "$rc" = 0 ] || return "$rc"
-    # the three receipts: the run IDs nightly_greens.sh printed, each with its night, its C, the run's head and the ids
+    # the STREAK_NEED receipts: the run IDs nightly_greens.sh printed, each with its night, its C, the run's head and the ids
     o=$(printf '%s\n' "$o" | sed -n 's/^ok .* ready: .*: runs\(\( [0-9][0-9]*\)*\) (.*/\1/p')
-    awk -F'\t' -v runs="$o" 'BEGIN { split(runs, r, " "); for (i in r) want[r[i]] = 1 }
+    awk -F'\t' -v runs="$o" -v need="$STREAK_NEED" 'BEGIN { split(runs, r, " "); for (i in r) want[r[i]] = 1 }
         FILENAME == ARGV[1] { c[$1] = $2; ids[$1] = $3; next }
         FNR > 1 && ($1 in want) && ($1 in c) { printf "RECEIPT run %s night %s C %s head %s %s\n", $1, substr($2, 1, 10), c[$1], $7, ids[$1]; n++ }
-        END { exit (n != 3) }' "$cache/nights.tsv" "$hist" \
-        || { echo "not_measured: nightly_greens.sh said ready, but its run IDs are not three keyed nights in $hist"; return 2; }
+        END { exit (n != need) }' "$cache/nights.tsv" "$hist" \
+        || { echo "not_measured: nightly_greens.sh said ready, but its run IDs are not $STREAK_NEED keyed night(s) in $hist"; return 2; }
 }
 
 # ------------------------------------------------------------------ the pick --
@@ -1245,29 +1246,29 @@ GH
         else printf '  BROKE %-48s rc=%s (want %s): %s\n' "$name" "$rc" "$wrc" "$(printf '%s' "$o" | grep -v '^TARGET' | head -3 | tr '\n' '|')"; fail=$((fail + 1)); fi
     }
     local n6="1|2026-10-06|schedule|success|1" n7="2|2026-10-07|schedule|success|1" n8="3|2026-10-08|schedule|success|1"
-    sr three_nights_on_the_same_ids_are_ready 0 "RECEIPT run 1 night 2026-10-06 C $c1 head $c1 tree=" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c2"
+    sr one_night_on_the_same_ids_is_ready 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c2 tree=" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c2"
     sr a_release_scripts_change_after_them_resets 1 "RESET run 3 (night 2026-10-08, C $c2): tree differ" "$c3" "$n6|$c1" "$n7|$c2" "$n8|$c2"
     sr a_stop_list_change_resets 1 "RESET run 3 (night 2026-10-08, C $c2): stop differ" "$c4" "$n6|$c1" "$n7|$c2" "$n8|$c2"
     sr a_policy_file_change_resets 1 "RESET run 3 (night 2026-10-08, C $c2): policy differ" "$c5" "$n6|$c1" "$n7|$c2" "$n8|$c2"
-    sr a_night_on_other_ids_breaks_the_streak 1 "not ready: night 2026-10-07 was red (run 2, failure)" "$c2" "$n6|$c2" "$n7|$c3" "$n8|$c2"
+    sr a_night_on_other_ids_breaks_the_streak 1 "not ready: night 2026-10-08 was red (run 3, failure)" "$c2" "$n6|$c2" "$n7|$c2" "$n8|$c3"
     sr a_night_without_the_stop_list_resets 1 "C $c0): $c0 has no blob $IDS_STOP" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c0"
     sr a_c_not_in_the_repo_is_not_measured 2 "not_measured: night 2026-10-08 run 3: its C $none is not in" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c2|$none"
     sr a_pass_commit_without_the_stop_list_is_not_measured 2 "not_measured: the pass commit's ids cannot be read" "$c0" "$n6|$c0" "$n7|$c0" "$n8|$c0"
     sr a_stop_list_that_is_a_directory_is_not_measured 2 "has no blob $IDS_STOP" "$c6" "$n6|$c2" "$n7|$c2" "$n8|$c2"
-    sr day_runs_do_not_count 1 "not ready" "$c2" "$n6|$c1" "$n7|$c2" "4|2026-10-08|workflow_dispatch|success|1|$none"
+    sr day_runs_do_not_count 1 "not ready: night 2026-10-07 was red (run 2, failure)" "$c2" "$n6|$c1" "2|2026-10-07|schedule|failure|1|$c2|none" "4|2026-10-08|workflow_dispatch|success|1|$none"
     sr a_running_night_on_the_same_ids_waits 0 "RECEIPT run 2 night 2026-10-07" "$c2" "0|2026-10-05|schedule|success|1|$c1" "$n6|$c1" "$n7|$c2" "3|2026-10-08|schedule||1|$c2"
     # keyed on C: the head is the workflow's commit, C the one the night measured
     sr a_night_counts_on_its_c_whatever_its_head 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c3" "$c2" "$n6|$c3|$c1" "$n7|$c3|$c2" "$n8|$c3|$c2"
     sr a_running_night_waits_whatever_its_head 0 "RECEIPT run 2 night 2026-10-07" "$c2" "0|2026-10-05|schedule|success|1|$c1" "$n6|$c1" "$n7|$c2" "3|2026-10-08|schedule||1|$c3|none"
-    sr a_record_without_c_resets 1 "RESET run 2 (night 2026-10-07, C -): its night.env names no C" "$c2" "$n6|$c2" "$n7|$c2|noc" "$n8|$c2"
-    sr sources_that_disagree_reset 1 "RESET run 2 (night 2026-10-07, C -): night.env names C $c2, night.txt $c1" "$c2" "$n6|$c2" "$n7|$c2|$c2/$c1" "$n8|$c2"
-    sr a_missing_record_is_not_measured 2 "not_measured: night 2026-10-07 run 2: release-rehearsal of run 2 cannot be read: no artifact" "$c2" "$n6|$c2" "$n7|$c2|none" "$n8|$c2"
-    sr a_night_past_the_third_is_not_read 0 "(streak=3 total=3" "$c2" "0|2026-10-05|schedule|success|1|$c2|none" "$n6|$c2" "$n7|$c2" "$n8|$c2"
-    sr a_red_night_needs_no_record 1 "not ready: night 2026-10-07 was red (run 2, failure)" "$c2" "$n6|$c2|none" "2|2026-10-07|schedule|failure|1|$c2|none" "$n8|$c2"
-    sr a_green_at_attempt_two_needs_no_record 1 "not ready: night 2026-10-07 was red (run 2, success only at attempt 2" "$c2" "$n6|$c2|none" "2|2026-10-07|schedule|success|2|$c2|none" "$n8|$c2"
-    sr a_reset_ends_the_walk 1 "not ready: night 2026-10-07 was red (run 2, failure)" "$c2" "$n6|$c2|none" "$n7|$c3" "$n8|$c2"
-    SR_RATE="5000 999" sr a_record_read_under_the_floor_is_not_measured 2 "not_measured: night 2026-10-06 run 1: core remaining 999 under 1000" "$c2" "$n6|$c2|art" "$n7|$c2" "$n8|$c2"
-    SR_RATE="5000 999" SR_FLAG="--release-path" sr the_pass_start_reads_a_record_under_the_floor 0 "RECEIPT run 1 night 2026-10-06 C $c2 head $c2" "$c2" "$n6|$c2|art" "$n7|$c2" "$n8|$c2"
+    sr a_record_without_c_resets 1 "RESET run 3 (night 2026-10-08, C -): its night.env names no C" "$c2" "$n6|$c2" "$n7|$c2" "$n8|$c2|noc"
+    sr sources_that_disagree_reset 1 "RESET run 3 (night 2026-10-08, C -): night.env names C $c2, night.txt $c1" "$c2" "$n6|$c2" "$n7|$c2" "$n8|$c2|$c2/$c1"
+    sr a_missing_record_is_not_measured 2 "not_measured: night 2026-10-08 run 3: release-rehearsal of run 3 cannot be read: no artifact" "$c2" "$n6|$c2" "$n7|$c2" "$n8|$c2|none"
+    sr a_night_past_the_need_is_not_read 0 "(streak=1 total=1 need=1)" "$c2" "$n6|$c2|none" "$n7|$c2|none" "$n8|$c2"
+    sr a_red_night_needs_no_record 1 "not ready: night 2026-10-08 was red (run 3, failure)" "$c2" "$n6|$c2|none" "$n7|$c2|none" "3|2026-10-08|schedule|failure|1|$c2|none"
+    sr a_green_at_attempt_two_needs_no_record 1 "not ready: night 2026-10-08 was red (run 3, success only at attempt 2" "$c2" "$n6|$c2|none" "$n7|$c2|none" "3|2026-10-08|schedule|success|2|$c2|none"
+    sr a_reset_ends_the_walk 1 "not ready: night 2026-10-08 was red (run 3, failure)" "$c2" "$n6|$c2|none" "$n7|$c2|none" "$n8|$c3"
+    SR_RATE="5000 999" sr a_record_read_under_the_floor_is_not_measured 2 "not_measured: night 2026-10-08 run 3: core remaining 999 under 1000" "$c2" "$n6|$c2" "$n7|$c2" "$n8|$c2|art"
+    SR_RATE="5000 999" SR_FLAG="--release-path" sr the_pass_start_reads_a_record_under_the_floor 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c2" "$c2" "$n6|$c2" "$n7|$c2" "$n8|$c2|art"
     printf 'run_id\tcreated_at\tbranch\tevent\tconclusion\tattempt\n' > "$tmp/h6col.tsv"
     rc=0; o=$(streak --commit "$c2" --repo "$g" --history "$tmp/h6col.tsv" --as-of 2026-10-08 --cache "$tmp/sc6col" 2>&1) || rc=$?
     if [ "$rc" = 2 ] && [[ $o == *"not a seven-column run history"* ]]; then pass=$((pass + 1))
@@ -1304,11 +1305,11 @@ GH
         if [ "$rc" = "$2" ] && [[ $o == *"$3"* ]] && [ "${runs:-0}" = "$4" ] && [ "${etag:-0}" = "$5" ] && [ "${dl:-0}" = "$6" ]; then pass=$((pass + 1))
         else printf '  BROKE %-48s rc=%s (want %s) runs=%s etag=%s records=%s: %s\n' "$1" "$rc" "$2" "${runs:-0}" "${etag:-0}" "${dl:-0}" "$(printf '%s' "$o" | grep -v '^TARGET' | head -2 | tr '\n' '|')"; fail=$((fail + 1)); fi
     }
-    rd the_first_read_is_one_call_and_a_record_a_night 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c3" 1 0 3
-    rd the_second_read_sends_the_etag_and_keeps_the_records 0 "RECEIPT run 2 night 2026-10-07 C $c2 head $c3" 2 1 3
-    rd a_read_under_the_floor_is_not_measured 2 "not_measured: core remaining 999 under 1000" 2 1 3 "5000 999"
-    rd the_pass_start_reads_under_the_floor 0 "RECEIPT run 1 night 2026-10-06 C $c1 head $c3" 3 2 3 "5000 999" --release-path
-    rd a_refused_read_at_the_pass_start_is_still_not_measured 2 "not_measured: workflow runs read: HTTP 403" 4 3 3 "5000 0" --release-path
+    rd the_first_read_is_one_call_and_one_record 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c3" 1 0 1
+    rd the_second_read_sends_the_etag_and_keeps_the_records 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c3" 2 1 1
+    rd a_read_under_the_floor_is_not_measured 2 "not_measured: core remaining 999 under 1000" 2 1 1 "5000 999"
+    rd the_pass_start_reads_under_the_floor 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c3" 3 2 1 "5000 999" --release-path
+    rd a_refused_read_at_the_pass_start_is_still_not_measured 2 "not_measured: workflow runs read: HTTP 403" 4 3 1 "5000 0" --release-path
     printf '  %s streak rows\n' "$((pass + fail - p0))"
 }
 
@@ -1576,7 +1577,9 @@ record_layout_changed        rehearse.sh         s/"\$1\/rehearsal\/night.env" 2
 record_floor_skipped         rehearse.sh         s/if \[ "\$rated" = 0 \]; then o=\$(rate_ok/if false; then o=$(rate_ok/
 record_floor_off_the_pass_start rehearse.sh         s/o=\$(rate_ok "\$relpath" 2>\&1)/o=$(rate_ok 0 2>\&1)/
 walk_past_the_need           rehearse.sh         s/\[ "\$n" -ge "\$STREAK_NEED" \]/[ "$n" -gt "$STREAK_NEED" ]/
-need_lowered                 rehearse.sh         s/^STREAK_NEED=3$/STREAK_NEED=2/
+need_raised_to_three         rehearse.sh         s/^STREAK_NEED=1$/STREAK_NEED=3/
+need_raised_to_two           rehearse.sh         s/^STREAK_NEED=1$/STREAK_NEED=2/
+receipts_count_three         rehearse.sh         s/END { exit (n != need) }/END { exit (n != 3) }/
 walk_past_a_red              rehearse.sh         s/if \[ "\$red" = 1 \] || \[ "\$n"/if false || [ "$n"/
 reset_not_red                rehearse.sh         s/>> "\$cache\/resets.tsv"; red=1/>> "$cache\/resets.tsv"; red=0/
 failure_does_not_end_walk    rehearse.sh         s/success:\*|failure:\*|timed_out/success:*|timed_out/

@@ -32,6 +32,9 @@
 #   streak, the stricter reading, until the operator answers.
 #   NEED IS A CONSTANT, not an option and not an environment value: a threshold a caller can lower is theater.
 #   Changing it is a reviewed commit, and --selftest pins it.
+#   ONE CHECK IS ONE NIGHT. release-rehearsal, the streak rehearse.sh --streak reads before a release pass starts,
+#   needs REHEARSAL_NEED = 1 green night, not three (operator C355 item 6, 2026-10-10: the 3-night check goes to one
+#   night; the count is lowered, the check stays). Every other check keeps NEED. Also a constant, pinned the same way.
 #
 # HISTORY. A TSV file. Its first line is exactly these six tab-separated names; then one run per line:
 #     run_id  created_at (YYYY-MM-DDTHH:MM:SSZ, UTC)  branch  event  conclusion (empty while running)  attempt
@@ -50,12 +53,16 @@ PROG="${0##*/}"
 SCRIPT_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"
 # C280 item 12: "three times". A constant: never an option, never taken from the environment.
 NEED=3
+# C355 item 6: the release-rehearsal check needs one night. A constant, keyed on the check's name, never an option.
+# An exact string compare, never a glob: no near-miss spelling inherits the one night.
+REHEARSAL_NEED=1
+need_of() { if [ "$1" = release-rehearsal ]; then printf '%s\n' "$REHEARSAL_NEED"; else printf '%s\n' "$NEED"; fi; }
 
 caller_error() { printf 'FAIL  NIGHTLY %s: caller error: %s\n' "$PROG" "$*"; exit 3; }
 
 # judge check history as-of -> the verdict line and one context line on stdout; exits 0/1/2/3 as above
 judge() {
-    awk -v check="$1" -v asof="$3" -v need="$NEED" '
+    awk -v check="$1" -v asof="$3" -v need="$(need_of "$1")" '
     function days(y, m, d,    era, yoe, doy, doe, mp) {    # civil date -> days since 1970-01-01 (H. Hinnant)
         y -= (m <= 2)
         era = int(y / 400)
@@ -290,6 +297,33 @@ selftest() {
     else
         printf '  BROKE %-50s NEED=%s, the ruling says three\n' committed_need_is_three "$NEED"; fail=$((fail + 1))
     fi
+    # C355 item 6: release-rehearsal needs one night; every other check still needs three
+    jr() { row "$1" "$2" "$3" -- --check release-rehearsal --history "$tmp/$4" --as-of "${5:-$D-06}"; }
+    fx one "106 $D-06 success"
+    jr rehearsal_one_green_night_is_ready              0 "ok    NIGHTLY release-rehearsal ready: 1 green nights in a row on main, newest $D-06: runs 106 (streak=1 total=1 need=1)" one
+    jr rehearsal_a_red_newest_night_is_not_ready       1 "not ready: night $D-06 was red (run 106, failure) (streak=0 total=3 need=1)" red_last
+    jr rehearsal_no_night_is_not_measured              2 "(streak=0 total=0 need=1)" none
+    j  other_checks_still_need_three_after_one_night   1 "(streak=1 total=1 need=3)" one
+    # The one-night need is keyed on the exact name: a sibling check or a near-miss name still needs three.
+    jn() { row "$1" "$2" "$3" -- --check "$4" --history "$tmp/one" --as-of "$D-06"; }
+    jn nightly_train_still_needs_three_after_one_night  1 "(streak=1 total=1 need=3)" nightly-train
+    jn near_miss_release_lanes_needs_three              1 "(streak=1 total=1 need=3)" release-lanes
+    jn near_miss_rehearsal_suffix_needs_three           1 "(streak=1 total=1 need=3)" release-rehearsal-old
+    jn near_miss_other_prefix_rehearsal_needs_three     1 "(streak=1 total=1 need=3)" x-rehearsal
+    jn near_miss_capital_release_rehearsal_needs_three  1 "(streak=1 total=1 need=3)" Release-rehearsal
+    jn near_miss_last_letter_needs_three                1 "(streak=1 total=1 need=3)" release-rehearsaX
+    # Nor does a name the compare would only match after rewriting it (a stripped prefix or suffix, a deleted letter).
+    jn near_miss_x_prefixed_needs_three                 1 "(streak=1 total=1 need=3)" x-release-rehearsal
+    jn near_miss_q_prefixed_needs_three                 1 "(streak=1 total=1 need=3)" q-release-rehearsal
+    jn near_miss_dot_suffixed_needs_three               1 "(streak=1 total=1 need=3)" release-rehearsal.old
+    jn near_miss_digit_suffixed_needs_three             1 "(streak=1 total=1 need=3)" release-rehearsal7
+    jn near_miss_letter_suffixed_needs_three            1 "(streak=1 total=1 need=3)" release-rehearsalZ
+    jn near_miss_nightly_dot_train_needs_three          1 "(streak=1 total=1 need=3)" nightly.train
+    if [ "$REHEARSAL_NEED" = 1 ]; then
+        printf '  ok    %-50s REHEARSAL_NEED=1\n' committed_rehearsal_need_is_one; pass=$((pass + 1))
+    else
+        printf '  BROKE %-50s REHEARSAL_NEED=%s, C355 item 6 says one\n' committed_rehearsal_need_is_one "$REHEARSAL_NEED"; fail=$((fail + 1))
+    fi
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
 }
@@ -322,6 +356,22 @@ mutants() {
     done <<'MUTANTS'
 need_is_two                 /^NEED=3/s/^NEED=3/NEED=2/
 need_from_env               /^NEED=3/s/^NEED=3/NEED=${NEED:-3}/
+rehearsal_need_is_three     /^REHEARSAL_NEED=1/s/^REHEARSAL_NEED=1/REHEARSAL_NEED=3/
+rehearsal_need_is_zero      /^REHEARSAL_NEED=1/s/^REHEARSAL_NEED=1/REHEARSAL_NEED=0/
+rehearsal_name_not_keyed    /^need_of() /s/= release-rehearsal ]/= rehearsal ]/
+rehearsal_and_train_keyed   /^need_of() /s/\[ "\$1" = release-rehearsal \]/{ [ "$1" = release-rehearsal ] || [ "$1" = nightly-train ]; }/
+any_release_check_keyed     /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-* ]]/
+rehearsal_prefix_keyed      /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-rehearsal* ]]/
+rehearsal_suffix_keyed      /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == *rehearsal ]]/
+one_letter_glob_keyed       /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-rehearsa? ]]/
+case_glob_keyed             /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == [rR]elease-rehearsal ]]/
+x_prefix_stripped           /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1#x-}" = release-rehearsal ]|
+any_prefix_stripped         /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1#?-}" = release-rehearsal ]|
+dot_suffix_stripped         /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1%.*}" = release-rehearsal ]|
+digit_suffix_stripped       /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1%[0-9]}" = release-rehearsal ]|
+letter_deleted              /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1//Z/}" = release-rehearsal ]|
+nightly_dot_train_keyed     /^need_of() /s|\[ "\$1" = release-rehearsal \]|{ [ "$1" = release-rehearsal ] \|\| [ "$1" = nightly.train ]; }|
+one_night_for_every_check   /^need_of() /s/"\$NEED"/"$REHEARSAL_NEED"/
 retried_counts_as_green     /^judge() {$/,/^}$/s/? "green" : "retried"/? "green" : "green"/
 failure_is_not_red          /^judge() {$/,/^}$/s/co == "failure" || co == "timed_out"/co == "never" || co == "timed_out"/
 void_counts_as_green        /^judge() {$/,/^}$/s/) s = "void"/) s = "green"/
