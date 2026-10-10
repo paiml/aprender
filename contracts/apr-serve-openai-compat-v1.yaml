@@ -676,3 +676,15 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --features cuda --lib api::tests::logprobs_cuda_4971 -- --nocapture'
     expected_output: "test result: ok"
     if_fails: 'apr serve on a CUDA host routes dense chat through this backend, so a 501 or a 200 without entries there leaves the perf041 margin unmeasured on the GPU leg.'
+  - id: FALSIFY-LOGPROBS-SERVERS-4971
+    name: chat_routes_outside_the_router_refuse_logprobs_by_name
+    prediction: 'The apr serve chat routes that realizar''s router does not mount compute no logprobs, so they refuse them the way the router does, with no model loaded. On the APR CPU fallback router and the SafeTensors F32 inference router, `logprobs: true` (alone, or with `top_logprobs: 3`) is 501 and names `APR CPU (AprTransformer)` or `SafeTensors F32 CPU`; `top_logprobs: 3` without `logprobs: true` is 400; `top_logprobs: 21` is 422 and names top_logprobs; `logprobs: "yes"` is 422; and `logprobs: false` is not refused for logprobs. The WGPU route calls the same check (realizar::api::json_logprobs_refusal, named `WGPU`); it has no router test here because its state needs a GPU device, so its falsifier is that check''s case table (api::chat_logprobs tests) and a build with --features wgpu. banco is FALSIFY-LOGPROBS-BANCO-4971.'
+    test_harness: 'cargo test -p apr-cli --lib tests_logprobs_4971'
+    expected_output: "test result: ok"
+    if_fails: 'A client that asks one of these routes for logprobs gets a 200 without them (each parses the body as untyped JSON and ignores keys it does not read), which ASOC-INV-021 forbids.'
+  - id: FALSIFY-LOGPROBS-BANCO-4971
+    name: banco_chat_refuses_logprobs_by_name
+    prediction: 'On banco''s default router with no model loaded, POST /api/v1/chat/completions with `logprobs: true` (alone, or with `top_logprobs: 2`) is 501 and names the banco chat backend; `top_logprobs: 2` alone is 400; `top_logprobs: 21` is 422 and names top_logprobs; `logprobs: false` is served (200, chat.completion).'
+    test_harness: 'cargo test -p aprender-orchestrate --features banco --lib refuse_logprobs'
+    expected_output: "test result: ok"
+    if_fails: 'banco''s request type dropped the two fields as unknown keys, so a client asking for logprobs got a dry-run or model reply without them, a 200 that ASOC-INV-021 forbids.'

@@ -102,6 +102,8 @@ fn generate_completion(state: &BancoState, prompt: &str, request: &CompletionReq
         attachments: vec![],
         tools: None,
         tool_choice: None,
+        logprobs: None,
+        top_logprobs: None,
     };
 
     super::handlers_inference::try_inference(state, &chat_req)
