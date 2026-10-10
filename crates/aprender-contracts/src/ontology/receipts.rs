@@ -521,7 +521,8 @@ fn emit_receipt_node(g: &mut Graph, rec: &Receipt, row: &Row, rung: &Rung) -> St
     node
 }
 
-/// An array of strings at `key`, or `None` when the key is absent (which is not an empty list).
+/// The `u32` entries of the array at `key`, or `None` when the key is absent, is not an array,
+/// or holds an entry that is not a `u32`.
 fn u32_set(r: &serde_json::Value, key: &str) -> Option<std::collections::BTreeSet<u32>> {
     r.get(key)?
         .as_array()?
@@ -530,6 +531,7 @@ fn u32_set(r: &serde_json::Value, key: &str) -> Option<std::collections::BTreeSe
         .collect()
 }
 
+/// An array of strings at `key`, or `None` when the key is absent (which is not an empty list).
 fn strings(r: &serde_json::Value, key: &str) -> Option<Vec<String>> {
     r.get(key).and_then(serde_json::Value::as_array).map(|a| {
         a.iter()

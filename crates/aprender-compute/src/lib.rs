@@ -395,7 +395,8 @@ fn detect_best_backend() -> Backend {
 /// ladder, as aprender-serve's `isa` module, so one forced `apr` process runs one ISA path in
 /// both crates. `scalar` → [`Backend::Scalar`]; `avx2` → nothing above [`Backend::AVX2`];
 /// unset, `native`, `avx512` and `neon` → as detected. Capping only ever lowers the backend,
-/// so it never names one the host lacks.
+/// so it never names one the host lacks. A value naming a level the host cannot run never reaches
+/// it: [`forced_isa`] refuses that first ([`refuse_unrunnable_forced_isa`]).
 ///
 /// # Panics
 /// On a value outside that list: a forced run that silently ran native is the receipt KTEST-001
@@ -411,10 +412,70 @@ pub fn cap_backend_for_forced_isa(forced: Option<&str>, detected: Backend) -> Ba
     }
 }
 
-/// `APR_FORCE_ISA`, read once.
+/// KTEST-001 S-3: refuse an `APR_FORCE_ISA` value naming a level this host cannot run, with the
+/// same table and words as aprender-serve's `isa::parse` (`isa_tests` holds the two to one answer).
+/// Capping alone would run `avx512` on an AVX2 host as AVX2, under a receipt stamped `avx512`.
+///
+/// # Errors
+/// A value outside `native`, `scalar` and this arch's levels, or a level `host_has` lacks.
+pub fn refuse_unrunnable_forced_isa(
+    forced: Option<&str>,
+    host_has: impl Fn(&str) -> bool,
+) -> std::result::Result<(), String> {
+    let v = forced.map(str::trim).unwrap_or("");
+    let need: &[&str] = match (v, cfg!(target_arch = "aarch64")) {
+        ("" | "native" | "scalar", _) => &[],
+        ("avx512", false) => &["avx512f"],
+        ("avx2", false) => &["avx2", "fma"],
+        ("neon", true) => &["neon"],
+        _ => {
+            let levels = if cfg!(target_arch = "aarch64") { "neon" } else { "avx2, avx512" };
+            return Err(format!("APR_FORCE_ISA={v:?} is not one of: native, scalar, {levels}"));
+        }
+    };
+    match need.iter().find(|f| !host_has(f)) {
+        Some(f) => Err(format!(
+            "APR_FORCE_ISA={v}: this host lacks `{f}`, so the {v} path cannot run here (KTEST-001 S-3)"
+        )),
+        None => Ok(()),
+    }
+}
+
+/// The host features [`refuse_unrunnable_forced_isa`] asks about.
+fn host_has(feature: &str) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        match feature {
+            "avx2" => std::arch::is_x86_feature_detected!("avx2"),
+            "fma" => std::arch::is_x86_feature_detected!("fma"),
+            "avx512f" => std::arch::is_x86_feature_detected!("avx512f"),
+            _ => false,
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        feature == "neon" && std::arch::is_aarch64_feature_detected!("neon")
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        let _ = feature;
+        false
+    }
+}
+
+/// `APR_FORCE_ISA`, read and checked against this host once.
+///
+/// # Panics
+/// If [`refuse_unrunnable_forced_isa`] refuses the value.
 fn forced_isa() -> Option<&'static str> {
     static FORCED: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    FORCED.get_or_init(|| std::env::var("APR_FORCE_ISA").ok()).as_deref()
+    FORCED
+        .get_or_init(|| {
+            let v = std::env::var("APR_FORCE_ISA").ok();
+            refuse_unrunnable_forced_isa(v.as_deref(), host_has).unwrap_or_else(|e| panic!("{e}"));
+            v
+        })
+        .as_deref()
 }
 
 /// Select the optimal backend for a specific operation type

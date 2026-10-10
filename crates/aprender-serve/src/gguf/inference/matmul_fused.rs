@@ -374,6 +374,15 @@ impl OwnedQuantizedModel {
     }
 }
 
+/// KREG-001 (aprender#4539): the CPU selector's entry check. The weight's qtype must have a
+/// row in the kernel registry before any arm below dispatches it, then its shape is checked.
+/// A helper, not two lines in `fused_matmul`, so that function's complexity does not rise.
+fn admit_cpu_weight(weight: &OwnedQuantizedTensor) -> Result<()> {
+    use crate::kernel_registry::{admit, Backend, Layout};
+    admit(Backend::Cpu, weight.qtype, Layout::RowMajor)?;
+    validate_matmul_weight_shape(weight)
+}
+
 /// #1789 defensive guard for matmul: validate the weight buffer is
 /// non-empty AND large enough for the declared `(in_dim, out_dim)` shape
 /// (plus the F32 byte layout when `qtype == GGUF_TYPE_F32`). Returns
@@ -388,15 +397,6 @@ impl OwnedQuantizedModel {
 ///
 /// Extracted as a free function so the validation logic is unit-testable
 /// without constructing a full `OwnedQuantizedModel`.
-/// KREG-001 (aprender#4539): the CPU selector's entry check. The weight's qtype must have a
-/// row in the kernel registry before any arm below dispatches it, then its shape is checked.
-/// A helper, not two lines in `fused_matmul`, so that function's complexity does not rise.
-fn admit_cpu_weight(weight: &OwnedQuantizedTensor) -> Result<()> {
-    use crate::kernel_registry::{admit, Backend, Layout};
-    admit(Backend::Cpu, weight.qtype, Layout::RowMajor)?;
-    validate_matmul_weight_shape(weight)
-}
-
 fn validate_matmul_weight_shape(weight: &OwnedQuantizedTensor) -> Result<()> {
     if weight.data.is_empty() {
         return Err(RealizarError::InvalidShape {

@@ -764,11 +764,15 @@ impl Registry {
     /// The row for `(backend, type id, layout)` on the backend's default target: the host CPU
     /// for [`Backend::Cpu`], [`Target::generic`] otherwise.
     pub fn admit(&self, backend: Backend, ggml_type: u32, layout: Layout) -> Result<&KernelRow> {
+        let generic;
         let target = match backend {
-            Backend::Cpu => Target::host().clone(),
-            _ => Target::generic(),
+            Backend::Cpu => Target::host(),
+            _ => {
+                generic = Target::generic();
+                &generic
+            },
         };
-        self.admit_for(backend, &target, ggml_type, layout)
+        self.admit_for(backend, target, ggml_type, layout)
     }
 
     /// The most specific row for `(backend, target, type id, layout)`, or an error naming the

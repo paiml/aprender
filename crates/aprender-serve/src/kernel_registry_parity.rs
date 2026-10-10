@@ -1076,8 +1076,6 @@ fn committed_parity_receipts_hold_on_this_host() {
     }
 }
 
-/// The gguf-py half of FALSIFY-KREG-009: the fixture is the one the receipt measured, the kernel
-/// still lands within `tolerance_rel` of gguf-py, and `precision=f32` means f32-exact against it.
 /// The oracle part the tree says a committed receipt must have been measured against.
 fn oracle_now(rc: &serde_json::Value, row: &KernelRow) -> String {
     if rc["oracle"] == GGUF_PY_ORACLE {
@@ -1203,6 +1201,8 @@ fn committed_parity_receipts_are_fresh_against_this_tree() {
     );
 }
 
+/// The gguf-py half of FALSIFY-KREG-009: the fixture is the one the receipt measured, the kernel
+/// still lands within `tolerance_rel` of gguf-py, and `precision=f32` means f32-exact against it.
 fn check_fixture_receipt(id: &str, path: &str, rc: &serde_json::Value, row: &KernelRow) {
     assert_eq!(
         rc["oracle_independent"], true,

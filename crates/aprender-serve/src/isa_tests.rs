@@ -43,6 +43,44 @@ fn force_isa_values_parse_fail_closed() {
     }
 }
 
+/// FALSIFY-KTEST-04-AGREE: trueno's host check refuses exactly what [`parse`] refuses, so a
+/// forced value this crate panics on cannot run in trueno as a lower backend under its name.
+#[test]
+fn trueno_refuses_the_values_parse_refuses() {
+    let hosts: &[&'static [&'static str]] = &[&[], &["avx2"], AVX2_HOST, AVX512_HOST, &["neon"]];
+    let values = [
+        None,
+        Some(""),
+        Some("native"),
+        Some(" scalar "),
+        Some("avx2"),
+        Some("avx512"),
+        Some("neon"),
+        Some("AVX2"),
+        Some("sse"),
+    ];
+    let (mut accepted, mut refused) = (0, 0);
+    for &feats in hosts {
+        for v in values {
+            let ours = parse(v, host(feats)).is_ok();
+            let theirs = trueno::refuse_unrunnable_forced_isa(v, host(feats)).is_ok();
+            assert_eq!(
+                ours, theirs,
+                "{v:?} on {feats:?}: parse {ours}, trueno {theirs}"
+            );
+            if ours {
+                accepted += 1;
+            } else {
+                refused += 1;
+            }
+        }
+    }
+    assert!(
+        accepted > 0 && refused > 0,
+        "{accepted} accepted, {refused} refused"
+    );
+}
+
 /// FALSIFY-KTEST-04-LADDER: what each ceiling lets through. An unclassified feature is off
 /// below `native`, so a new `cpu_feature!("…")` cannot slip past a forced run.
 #[test]
