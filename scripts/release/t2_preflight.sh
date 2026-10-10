@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# t2_preflight.sh — APR-RELEASE-001 §4 T-0 (operator 2026-09-17): the pre-publish dogfood runs on origin/main HEAD
+# t2_preflight.sh — APR-RELEASE-001 §4 T-0 (operator 2026-09-17): the pre-publish dogfood runs on the newest main commit coverage-nightly measured (#5082; --commit C judges C)
 # BEFORE the bump PR opens; writes preflight-<sha>.verdict = "GO <sha>" or "NO-GO <sha>". prepare_bump.sh --ship refuses without GO.
 #   t2_preflight.sh <version>     the train's state dir AP is derived from it (#3618)
 #   t2_preflight.sh --self-test   decide()'s case table; needs no version
@@ -92,6 +92,15 @@ decide() {
         printf 'GO %s dogfood_rc=%s rows=%s declared=%s fails_excluding_version_row=0%s\n' "$sha" "$rc" "$rows" "$declared" "${deferred:+ deferred_to_T1=$deferred}"; return 0
     fi
     printf 'NO-GO %s dogfood_rc=%s fails=%s\n' "$sha" "$rc" "$fails"; return 1
+}
+
+# t2_pick FP RUNS -> the commit T-2 judges (#5082): the first line of FP (main's first-parent commits, newest
+# first) that RUNS names (one head sha per line: coverage-nightly's completed runs). The coverage row and the CI
+# rows read results produced earlier, on the commit their producer ran on; main's head at read time is usually
+# a later merge that no coverage night measured and whose CI may still run, so judging it was red for the
+# clock, not the code. rc 1 when no commit in FP was measured: that is no verdict, never a fall back to the head.
+t2_pick() {
+    awk 'NR == FNR { if ($1 ~ /^[0-9a-f]{40}$/) m[$1] = 1; next } ($1 in m) { print $1; f = 1; exit } END { exit !f }' "$2" "$1"
 }
 
 # ---------------------------------------------------------------------------
@@ -239,15 +248,57 @@ if [ "${1:-}" = "--self-test" ]; then
       grep '^RED ' "$d/lad.log"; } > "$d/lad20.log"
     v=$(dec "$d/d5.log" "$d/lad20.log"); case "$v" in NO-GO*) ok "a stray FAIL row ahead of 20000 host rows -> NO-GO";; *) nok "case 20 (SIGPIPE) -> '$v'";; esac
 
+    # 21-25. t2_pick (#5082): the commit judged is the one the producer measured, never main's head
+    c1=$(printf 'c%039d' 1); c2=$(printf 'c%039d' 2); c3=$(printf 'c%039d' 3); br=$(printf 'b%039d' 9)
+    printf '%s\n' "$c3" "$c2" "$c1" > "$d/fp"
+    # 21. late start: main moved on after the night (c3 merged later, unmeasured) -> the night's commit c2
+    printf '%s\n' "$c2" "$c1" > "$d/runs"
+    v=$(t2_pick "$d/fp" "$d/runs"); [ "$v" = "$c2" ] && ok "late start: head unmeasured -> the producer's commit" || nok "case 21 -> '$v'"
+    # 22. the head was measured -> the head (the pick is not 'one behind')
+    printf '%s\n' "$c1" "$c3" > "$d/runs"
+    v=$(t2_pick "$d/fp" "$d/runs"); [ "$v" = "$c3" ] && ok "measured head -> the head" || nok "case 22 -> '$v'"
+    # 23. only a run on a commit that is not on main -> rc 1, nothing printed (no fall back to the head)
+    printf '%s\n' "$br" > "$d/runs"
+    v=$(t2_pick "$d/fp" "$d/runs"); r=$?; [ "$r" -eq 1 ] && [ -z "$v" ] && ok "only a branch run -> no commit, rc 1" || nok "case 23 -> '$v' rc=$r"
+    # 24. no runs at all -> rc 1
+    : > "$d/runs"
+    v=$(t2_pick "$d/fp" "$d/runs"); r=$?; [ "$r" -eq 1 ] && [ -z "$v" ] && ok "no runs -> rc 1" || nok "case 24 -> '$v' rc=$r"
+    # 25. a short sha in RUNS names nothing, even when FP carries the same short line first
+    printf '%s\n' "${c3:0:12}" "$c2" > "$d/runs"
+    printf '%s\n' "${c3:0:12}" > "$d/fp2"; cat "$d/fp" >> "$d/fp2"
+    v=$(t2_pick "$d/fp2" "$d/runs"); [ "$v" = "$c2" ] && ok "short sha in runs is no match; the full one is" || nok "case 25 -> '$v'"
+
     [ "$bad" -eq 0 ] && { echo "self-test OK"; exit 0; }
     echo "self-test FAILED: $bad case(s)"; exit 1
 fi
 
 # shellcheck source=scripts/release/lib_release_params.sh
 . "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
-release_params "${1:-}" "$REPO_ROOT" || { echo "usage: t2_preflight.sh <version> | --self-test" >&2; exit 2; }
+release_params "${1:-}" "$REPO_ROOT" || { echo "usage: t2_preflight.sh <version> [--commit C] | --self-test" >&2; exit 2; }
+commit=""
+case "${2:-}" in
+    "") ;;
+    --commit) commit=${3:-}; [ -n "$commit" ] || { echo "usage: t2_preflight.sh <version> [--commit C]" >&2; exit 2; } ;;
+    *) echo "usage: t2_preflight.sh <version> [--commit C]" >&2; exit 2 ;;
+esac
 cd "$REPO_ROOT" || exit 2; git fetch -q origin main || exit 2
-sha=$(git rev-parse origin/main); wt="$AP/preflight-wt"
+# preflight.commit names the commit this run judged; prepare_bump.sh cuts the bump there. A stale one from an
+# earlier run must not outlive a run that judged nothing.
+rm -f -- "${AP:?}/preflight.commit"
+if [ -n "$commit" ]; then
+    # The caller's C (the rehearsal's pick): judged as given, and it must be on main.
+    sha=$(git rev-parse --verify -q "$commit^{commit}") || { echo "t2_preflight: --commit $commit is not a commit here" >&2; exit 2; }
+    git merge-base --is-ancestor "$sha" origin/main || { echo "t2_preflight: --commit $sha is not on origin/main" >&2; exit 2; }
+else
+    git rev-list --first-parent -n 60 origin/main > "$AP/preflight.fp" || exit 2
+    gh run list --repo paiml/aprender --workflow coverage-nightly.yml --branch main --status completed --limit 30 \
+        --json headSha --jq '.[].headSha' > "$AP/preflight.runs" \
+        || { echo "t2_preflight: not_measured: coverage-nightly's runs were not read" >&2; exit 2; }
+    sha=$(t2_pick "$AP/preflight.fp" "$AP/preflight.runs") \
+        || { echo "t2_preflight: not_measured: no commit in main's newest 60 first-parent commits has a completed coverage-nightly run; T-2 judges a measured commit, never main's head (#5082)" >&2; exit 2; }
+    echo "t2_preflight: judging $sha, the newest main commit coverage-nightly measured (main's head: $(git rev-parse origin/main))"
+fi
+wt="$AP/preflight-wt"
 [ -d "$wt" ] && git worktree remove --force "$wt" > /dev/null 2>&1
 git worktree add --detach "$wt" "$sha" > /dev/null 2>&1 || exit 2
 cd "$wt" || exit 2
@@ -259,4 +310,5 @@ bash scripts/check_model_ladder.sh > "$AP/preflight-$sha.ladder.log" 2>&1
 # The verdict is decided by decide() above -- the same function the --self-test case table
 # exercises, so the fixtures judge the code this path actually runs.
 decide "$sha" "$AP/preflight-$sha.log" "$rc" "$AP/preflight-$sha.ladder.log" > "$AP/preflight-$sha.verdict"
+printf '%s\n' "$sha" > "$AP/preflight.commit"
 cat "$AP/preflight-$sha.verdict"; grep -E '^\s*\[FAIL\]' "$AP/preflight-$sha.log" | cut -c1-160

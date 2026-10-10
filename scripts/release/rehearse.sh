@@ -102,7 +102,7 @@ PICK_DEPTH=60
 stages_table() {
     cat <<'STAGES'
 lanes|-|env -u INBOX bash scripts/release/nightly_train.sh --out "$RELEASE_REHEARSAL_TRAIN" --commit "$RELEASE_REHEARSAL_C" ${RELEASE_REHEARSAL_IN_RUN:+--in-run "$RELEASE_REHEARSAL_IN_RUN"}
-t2|-|bash scripts/release/t2_preflight.sh "$V"
+t2|-|bash scripts/release/t2_preflight.sh "$V" --commit "$RELEASE_REHEARSAL_C"
 bump|-|bash scripts/release/prepare_bump.sh "$V"
 summary|bump|stage_summary
 ship|summary|bash scripts/release/prepare_bump.sh "$V" --ship
@@ -1392,7 +1392,8 @@ selftest_lanes_argv() {
     lg() { git -C "$g" -c user.name=t -c user.email=t@invalid "$@"; }
     mkdir -p "$g" && git init -q "$g" || return 2
     printf '%s\n' "printf 'arg %s\\n' \"\$@\"" > "$tmp/ln-train.sh" || return 2
-    b=$(lg hash-object -w -- "$tmp/ln-train.sh") && rl=$(printf '100644 blob %s\tnightly_train.sh\n' "$b" | lg mktree) \
+    b=$(lg hash-object -w -- "$tmp/ln-train.sh") \
+        && rl=$(printf '100644 blob %s\tnightly_train.sh\n100644 blob %s\tt2_preflight.sh\n' "$b" "$b" | lg mktree) \
         && sc=$(printf '040000 tree %s\trelease\n' "$rl" | lg mktree) && rt=$(printf '040000 tree %s\tscripts\n' "$sc" | lg mktree) \
         && c=$(lg commit-tree "$rt" -m lanes) && lg update-ref refs/heads/main "$c" && lg symbolic-ref HEAD refs/heads/main || return 2
     la() { # la NAME RUN -- the lanes stage's arguments, with --in-run RUN when RUN is set
@@ -1407,6 +1408,11 @@ selftest_lanes_argv() {
     }
     la the_lanes_stage_reads_c_in_the_nights_run 4242
     la the_lanes_stage_without_a_run_reads_c ""
+    # #5082: T-2 judges the night's C too, never main's head when the stage starts (the bump is then cut there)
+    o=$( run_night --state "$tmp/ln-t2" --source "$g" --commit "$c" --version 9.9.9 --stages t2 2>&1 )
+    got=$(sed -n 's/^arg //p' "$(realpath -- "$tmp/ln-t2" 2>/dev/null)/logs/t2.log" 2>/dev/null | tr '\n' ' ')
+    if [ "$got" = "9.9.9 --commit $c " ]; then pass=$((pass + 1))
+    else printf '  BROKE %-48s got "%s" want "%s": %s\n' the_t2_stage_judges_c "$got" "9.9.9 --commit $c " "$(printf '%s' "$o" | tail -n 2 | tr '\n' '|')"; fail=$((fail + 1)); fi
     rc=0; o=$( run_night --state "$tmp/ln-bad" --source "$g" --commit "$c" --version 9.9.9 --stages lanes --in-run 12x 2>&1 ) || rc=$?
     if [ "$rc" = 3 ] && [[ $o == *"--in-run must be a run id"* ]] && [ ! -e "$tmp/ln-bad" ]; then pass=$((pass + 1))
     else printf '  BROKE %-48s rc=%s (want 3): %s\n' an_in_run_that_is_not_a_run_id_is_a_caller_error "$rc" "$o"; fail=$((fail + 1)); fi
@@ -1618,7 +1624,8 @@ pick_no_index_read_as_empty  rehearse.sh         s/\/INDEX" > "\$f" 2>\/dev\/nul
 pick_wrong_models_dir        rehearse.sh         s/^MODELS_DIR=models-crux$/MODELS_DIR=models/
 pick_wrong_evidence_branch   rehearse.sh         s/^EVIDENCE_BRANCH=nightly-evidence$/EVIDENCE_BRANCH=evidence/
 pick_receipt_depth_wrong     rehearse.sh         s/"\$sha" "\$k" "\${models\[\$sha\]}"/"$sha" 0 "${models[$sha]}"/
-lanes_stage_no_commit        rehearse.sh         s/ --commit "\$RELEASE_REHEARSAL_C"//
+lanes_stage_no_commit        rehearse.sh         s/ --commit "\$RELEASE_REHEARSAL_C" \${RELEASE/ ${RELEASE/
+t2_stage_no_commit           rehearse.sh         s/t2_preflight.sh "\$V" --commit "\$RELEASE_REHEARSAL_C"$/t2_preflight.sh "$V"/
 lanes_stage_in_run_dropped   rehearse.sh         s/ \${RELEASE_REHEARSAL_IN_RUN:+--in-run "\$RELEASE_REHEARSAL_IN_RUN"}//
 lanes_stage_in_run_always    rehearse.sh         s/\${RELEASE_REHEARSAL_IN_RUN:+--in-run "\$RELEASE_REHEARSAL_IN_RUN"}/--in-run "$RELEASE_REHEARSAL_IN_RUN"/
 guard_env_drops_in_run       rehearse.sh         s/ RELEASE_REHEARSAL_IN_RUN=%q\\n' "\$c" "\$st\/train" "\$run"/\\n' "$c" "$st\/train"/

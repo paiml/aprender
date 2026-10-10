@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # prepare_bump.sh — §4.2 of docs/specifications/06x-release-schedule.md: the bump and the
 # CHANGELOG section. Two invocations, because the section needs a human-quality summary:
-#   prepare_bump.sh <version>          worktree at origin/main, bump-version.sh <version> + --check,
+#   prepare_bump.sh <version>          worktree at the commit T-2 judged (#5082), bump-version.sh <version> + --check,
 #                                      CHANGELOG [<version>] drafted from the PRs merged since the last
 #                                      tag (with a placeholder --ship refuses)
 #   prepare_bump.sh <version> --ship   PR body judged by §6 R-2 (#3699), model-ladder receipts for <version>
@@ -90,14 +90,28 @@ pb_carry_cert() {
     echo "CERT carried: $src -> $dst (apr_commit $base)"
 }
 
-# C345 Q9, count lowered by C355 item 6 (one night, the check stays). pb_streak SCRIPT REPO DIR -> rc 0 the pass may start, 1 it may not
-# (the reason on stderr). The count is SCRIPT --streak's on REPO's origin/main, made before the bump is cut, with its read
+# pb_t2_commit AP REPO -> the commit T-2 judged (AP/preflight.commit, written by t2_preflight.sh), when it is a full sha
+# with its verdict file in AP and an ancestor of REPO's origin/main; rc 1 and the reason on stderr else (#5082). The bump
+# is cut there and the streak is read there: main's head at bump time is a later commit that T-2 never judged, so its
+# --ship lookup found no receipt, and nothing here falls back to it.
+pb_t2_commit() {
+    local c
+    c=$(cat -- "$1/preflight.commit" 2>/dev/null) || { echo "no $1/preflight.commit: T-2 has not judged a commit" >&2; return 1; }
+    [[ $c =~ ^[0-9a-f]{40}$ ]] || { echo "$1/preflight.commit holds no full sha: ${c:0:60}" >&2; return 1; }
+    [ -f "$1/preflight-$c.verdict" ] || { echo "T-2 named $c but wrote no verdict for it ($1/preflight-$c.verdict)" >&2; return 1; }
+    git -C "$2" merge-base --is-ancestor "$c" origin/main 2>/dev/null || { echo "T-2's commit $c is not on origin/main" >&2; return 1; }
+    printf '%s\n' "$c"
+}
+
+# C345 Q9, count lowered by C355 item 6 (one night, the check stays). pb_streak SCRIPT REPO DIR COMMIT -> rc 0 the pass may
+# start, 1 it may not (the reason on stderr). The count is SCRIPT --streak's on COMMIT, T-2's commit the bump is cut at
+# (#5082; it was REPO's origin/main at read time), made before the bump is cut, with its read
 # cached in DIR and its RECEIPT lines kept in DIR/streak.txt (quorum 09:34Z). The pass start is the release path, so its one
 # read has no rate floor. In a rehearsal night (RELEASE_REHEARSAL=1) the floor stays and a not-ready streak (rc 1) is
 # allowed, since a night cannot need its own night; not_measured (2) or a caller error (3) stops it there too.
 pb_streak() {
-    local script=$1 repo=$2 dir=$3 rc=0 a
-    a=(--commit origin/main --as-of "$(date -u +%F)" --cache "$dir" --repo "$repo")  # bashrs disable-line=DET002
+    local script=$1 repo=$2 dir=$3 commit=$4 rc=0 a
+    a=(--commit "$commit" --as-of "$(date -u +%F)" --cache "$dir" --repo "$repo")  # bashrs disable-line=DET002
     [ "${RELEASE_REHEARSAL:-}" = 1 ] || a+=(--release-path)
     mkdir -p -- "$dir" || return 1
     bash "$script" --streak "${a[@]}" > "$dir/streak.txt" 2>&1 || rc=$?
@@ -112,7 +126,7 @@ pb_streak() {
 # pb_streak_wired FILE -> rc 0 when FILE calls pb_streak after the fetch and before the bump worktree is cut, 1 else:
 # no fetch, no call in that window, or no `git worktree add` after the fetch at all.
 pb_streak_wired() {
-    awk '/^  git fetch -q origin main /{ f = 1 } f && /^  pb_streak "\$REPO_ROOT\/scripts\/release\/rehearse.sh" "\$REPO_ROOT" "\$AP\/streak" \\$/{ ok = 1 }
+    awk '/^  git fetch -q origin main /{ f = 1 } f && /^  pb_streak "\$REPO_ROOT\/scripts\/release\/rehearse.sh" "\$REPO_ROOT" "\$AP\/streak" "\$c" \\$/{ ok = 1 }
          f && /^  git worktree add /{ cut = 1; exit } END { exit !(f && ok && cut) }' "$1"
 }
 
@@ -177,24 +191,45 @@ pb_self_test() {
     pb_carry_cert "$r" 0.71.0 base1 > /dev/null 2>&1; rc=$?
     if [ "$rc" = 2 ] && [ ! -e "$r/evidence/crux/0.71.0" ]; then echo "  ok   cert: an unreadable policy is rc 2, not \"no policy\""
     else echo "  FAIL cert: unreadable policy gave rc $rc"; fail=1; fi
+    # pb_t2_commit (#5082): a fixture repo where main moved on after T-2 judged its commit (the late start)
+    local C0 C1 C2 g="$d/g" ap="$d/ap" fx
+    fx() { git -C "$g" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -q --allow-empty -m "$1" && git -C "$g" rev-parse HEAD; }
+    mkdir -p "$ap" && git init -q "$g" && C0=$(fx c0) && C1=$(fx c1) && git -C "$g" update-ref refs/remotes/origin/main "$C1" \
+        && git -C "$g" checkout -q --detach "$C0" && C2=$(fx side) || return 2
+    printf '%s\n' "$C0" > "$ap/preflight.commit"; printf 'GO %s dogfood_rc=0\n' "$C0" > "$ap/preflight-$C0.verdict"
+    got=$(pb_t2_commit "$ap" "$g" 2>/dev/null)
+    if [ "$got" = "$C0" ]; then echo "  ok   t2 commit: main moved on after T-2 -> the bump is cut at T-2's commit, not the head"
+    else echo "  FAIL t2 commit: late start gave '$got' (want $C0, head $C1)"; fail=1; fi
+    for r in none short noverdict side; do
+        rm -f -- "$ap/preflight.commit"
+        case $r in
+            none) : ;;
+            short) printf '%s\n' "${C0:0:12}" > "$ap/preflight.commit" ;;
+            noverdict) printf '%s\n' "$C1" > "$ap/preflight.commit" ;;
+            side) printf '%s\n' "$C2" > "$ap/preflight.commit"; printf 'GO %s\n' "$C2" > "$ap/preflight-$C2.verdict" ;;
+        esac
+        got=0; pb_t2_commit "$ap" "$g" > "$d/t2out" 2>/dev/null || got=$?
+        if [ "$got" = 1 ] && [ ! -s "$d/t2out" ]; then echo "  ok   t2 commit: $r -> refused, nothing printed (no fall back to the head)"
+        else echo "  FAIL t2 commit: $r gave rc $got, printed '$(cat "$d/t2out")'"; fail=1; fi
+    done
     # pb_streak: a planted --streak that records its arguments and exits STUB_RC, both polarities, in and out of a night
     printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "$STUB_ARGS"; echo "RECEIPT planted"; exit "$STUB_RC"\n' > "$d/streak.sh"
     local want mode
     for r in 0:pass:0 1:pass:1 2:pass:1 3:pass:1 0:night:0 1:night:0 2:night:1 3:night:1; do
         IFS=: read -r rc mode want <<< "$r"
-        if [ "$mode" = night ]; then got=0; RELEASE_REHEARSAL=1 STUB_RC=$rc STUB_ARGS="$d/args" pb_streak "$d/streak.sh" "$d" "$d/st" > /dev/null 2>&1 || got=$?
-        else got=0; RELEASE_REHEARSAL='' STUB_RC=$rc STUB_ARGS="$d/args" pb_streak "$d/streak.sh" "$d" "$d/st" > /dev/null 2>&1 || got=$?; fi
+        if [ "$mode" = night ]; then got=0; RELEASE_REHEARSAL=1 STUB_RC=$rc STUB_ARGS="$d/args" pb_streak "$d/streak.sh" "$d" "$d/st" "$C0" > /dev/null 2>&1 || got=$?
+        else got=0; RELEASE_REHEARSAL='' STUB_RC=$rc STUB_ARGS="$d/args" pb_streak "$d/streak.sh" "$d" "$d/st" "$C0" > /dev/null 2>&1 || got=$?; fi
         if [ "$got" = "$want" ]; then echo "  ok   streak: --streak rc $rc in a $mode -> $([ "$want" = 0 ] && echo starts || echo stops)"
         else echo "  FAIL streak: --streak rc $rc in a $mode gave $got (want $want)"; fail=1; fi
     done
-    RELEASE_REHEARSAL='' STUB_RC=0 STUB_ARGS="$d/args" pb_streak "$d/streak.sh" "$d" "$d/st" > /dev/null 2>&1
+    RELEASE_REHEARSAL='' STUB_RC=0 STUB_ARGS="$d/args" pb_streak "$d/streak.sh" "$d" "$d/st" "$C0" > /dev/null 2>&1
     got=$(cat "$d/args" 2>/dev/null)
-    if [[ $got == "--streak --commit origin/main --as-of "????-??-??" --cache $d/st --repo $d --release-path" ]] && grep -q '^RECEIPT planted$' "$d/st/streak.txt"
-    then echo "  ok   streak: the pass reads origin/main with no rate floor and keeps the receipts"
+    if [[ $got == "--streak --commit $C0 --as-of "????-??-??" --cache $d/st --repo $d --release-path" ]] && grep -q '^RECEIPT planted$' "$d/st/streak.txt"
+    then echo "  ok   streak: the pass reads T-2's commit with no rate floor and keeps the receipts"
     else echo "  FAIL streak: pass arguments: $got"; fail=1; fi
-    RELEASE_REHEARSAL=1 STUB_RC=1 STUB_ARGS="$d/args" pb_streak "$d/streak.sh" "$d" "$d/st" > /dev/null 2>&1
+    RELEASE_REHEARSAL=1 STUB_RC=1 STUB_ARGS="$d/args" pb_streak "$d/streak.sh" "$d" "$d/st" "$C0" > /dev/null 2>&1
     got=$(cat "$d/args" 2>/dev/null)
-    if [[ $got == *"--commit origin/main"* && $got != *--release-path* ]]; then echo "  ok   streak: a night keeps the rate floor"
+    if [[ $got == *"--commit $C0 "* && $got != *--release-path* ]]; then echo "  ok   streak: a night keeps the rate floor"
     else echo "  FAIL streak: night arguments: $got"; fail=1; fi
     if pb_streak_wired "$0"
     then echo "  ok   streak: wired after the fetch, before the bump worktree is cut"
@@ -225,10 +260,11 @@ export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 if [ "${2:-}" != "--ship" ]; then
   cd "$REPO_ROOT" || die "no repo"
   git fetch -q origin main || die "fetch failed"
-  pb_streak "$REPO_ROOT/scripts/release/rehearse.sh" "$REPO_ROOT" "$AP/streak" \
-    || die "C345 Q9 / C355 item 6: no pass starts without its streak receipt: rehearse.sh --streak on origin/main ($AP/streak/streak.txt)"
+  c=$(pb_t2_commit "$AP" "$REPO_ROOT") || die "the bump is cut at the commit T-2 judged, never at main's head (#5082): run $REPO_ROOT/scripts/release/t2_preflight.sh $V first"
+  pb_streak "$REPO_ROOT/scripts/release/rehearse.sh" "$REPO_ROOT" "$AP/streak" "$c" \
+    || die "C345 Q9 / C355 item 6: no pass starts without its streak receipt: rehearse.sh --streak on $c ($AP/streak/streak.txt)"
   [ -e "$B" ] && die "$B exists: review it, or 'git worktree remove' it to start over"
-  git worktree add -q -b "$BR" "$B" origin/main || die "worktree add failed"
+  git worktree add -q -b "$BR" "$B" "$c" || die "worktree add failed"
   cd "$B" || die "cd $B"
   bash scripts/bump-version.sh "$V" > "$AP/bump.log" 2>&1 || die "bump-version.sh $V failed ($AP/bump.log)"
   bash scripts/bump-version.sh --check >> "$AP/bump.log" 2>&1 || die "bump-version.sh --check failed after the bump"
@@ -243,8 +279,10 @@ fi
 
 cd "$B" || die "no $B (run without --ship first)"
 # T-2 PREFLIGHT BEFORE THE BUMP (operator 2026-09-17): the bump PR is refused without a GO receipt for its parent sha.
-parent=$(git rev-parse origin/main); rcpt="$AP/preflight-$parent.verdict"
-[ -f "$rcpt" ] && grep -q '^GO ' "$rcpt" || die "no T-2 GO receipt for origin/main $parent ($rcpt) — run: $REPO_ROOT/scripts/release/t2_preflight.sh $V"
+# The parent is what the bump sits on (#5082): where the worktree was cut (T-2's commit), found as its merge-base with
+# origin/main so a re-run after the bump commit still finds it -- never main's head at --ship time.
+parent=$(git merge-base HEAD origin/main) || die "no merge-base of $B and origin/main"; rcpt="$AP/preflight-$parent.verdict"
+[ -f "$rcpt" ] && grep -qE "^GO $parent( |\$)" "$rcpt" || die "no T-2 GO receipt for the bump's parent $parent ($rcpt) — run: $REPO_ROOT/scripts/release/t2_preflight.sh $V"
 grep -qF "$MARK" CHANGELOG.md && die "CHANGELOG [$V] still carries the EDIT placeholder"
 bash scripts/bump-version.sh --check > /dev/null 2>&1 || die "bump-version.sh --check failed"
 awk -v h="## [$V]" 'index($0, h) == 1 {f = 1; next} f && /^## \[/ {exit} f' CHANGELOG.md > "$AP/release_notes.md"
