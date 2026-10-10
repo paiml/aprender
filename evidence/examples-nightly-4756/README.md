@@ -61,17 +61,31 @@ Only a debug build, or a run whose stdout or stdin is not a terminal, takes a sh
   (`run-stage-secs.txt`). A release build still generates 100.
 - **Bare runs with no arguments.** qa_verify, llama2-train and test_mac_worker keep their
   default only in a release build at a terminal (`qa_verify.rs:394`, `llama2/train.rs:236`,
-  `test_mac_worker.rs:16`). Otherwise they print their usage and the row is needs-args.
-  qa_verify has two sections, and each runs cargo commands as child processes
-  (`qa_verify.rs:121`). `qa_verify-sections.txt` runs each one in a debug build with no
-  terminal, the way the nightly row runs, after building the example alone in an empty build
-  directory. Section 2, run first, took 325 s. Run again with its nested builds present, it
-  took 81 s. Section 1 ran third, after section 2 had built its nested test target, and took
-  283 s. Every run exited rc 1 with gates reported FAIL, which the classifier classes fail.
-  The example does not print its nested cargo output, so the file does not show why those
-  gates failed. A default section in a bare run would make the row a timeout from a build
-  directory like the nightly's, and a fail even with the nested builds present. Those gate
-  failures are in every build and are not changed here.
+  `test_mac_worker.rs:16`). Otherwise they print their usage and the row is needs-args. Given
+  its argument, each runs its full workload from any build. None of the three defaults can
+  reach a pass in the nightly, which starts every example from the checkout root
+  (`.github/workflows/examples-nightly.yml:51-55` sets no working directory):
+  - *qa_verify.* Its two sections run cargo commands as child processes with no working
+    directory set (`qa_verify.rs:121`), so from the checkout root they run against the root
+    facade package. `qa_verify-sections.txt` runs each section in a debug build with no
+    terminal, after building the example alone in an empty build directory. Section 2, run
+    first, took 325 s, and 81 s run again with its nested builds present. Section 1 ran
+    third, after section 2 had built its nested test target, and took 283 s. Every run
+    exited rc 1 with gates reported FAIL, and the test-count gate printed `Only 0 tests`.
+    The example does not print its nested cargo output, so the file does not show why those
+    gates failed. A bare run that ran a section would be a fail even when it finished inside
+    the bound. Those gate failures are in every build, and are #5026, not this ticket. The
+    file is the job's output with its colour escape codes removed afterwards, as its first
+    line says. On main the row was a timeout.
+  - *llama2-train.* Its default config, `examples/llama2/configs/124m.toml`, is relative to
+    the crate. The file is at `crates/aprender-train/examples/llama2/configs/124m.toml`, so
+    from the checkout root the default does not resolve. Where it does resolve, a bare run
+    starts a full training run. On main the row was fail.
+  - *test_mac_worker.* Its default is one fixed LAN address, `192.168.50.100:9000`. On main
+    the row was fail, its first line `Connecting to Mac Pro worker at 192.168.50.100:9000...`.
+
+  A quorum asked whether needs-args is the right class for these three bare runs answered
+  yes, 3 of 3 counted lanes, on the condition that this README says why for each one.
 - **Smaller debug workloads.** bug_hunter_demo (`:318`), design_by_contract (`:74`) and
   performance_parity (`:52`, `:373`) shrink only when `cfg!(debug_assertions)` is set. The
   two bug-hunter examples then scan `crates/aprender-orchestrate/src/bug_hunter`, 34 tracked
@@ -145,8 +159,8 @@ On main no build reached them: `bench_quantization_formats` runs first
 `performance_parity-gpu.txt` is the debug binary from the 36-row run, run once more with its
 output kept, because the script keeps no output per example. The file records the commit and
 the binary's sha256. Outside the namespace, it printed `GPU detected and available`, ran
-GPU-001 on the GPU (6.34 GFLOPS on the 4 pinned CPUs at nice 19) and printed the debug-build
-note. It exited rc 0 in 13 s. The script reported the same row as pass in 12 s, build
+GPU-001 on the GPU and printed the debug-build note. GPU-001's row reads 6.34 GFLOPS
+(`performance_parity-gpu.txt:47`); the process ran pinned to 4 CPUs at nice 19. It exited rc 0 in 13 s. The script reported the same row as pass in 12 s, build
 included.
 
 It also printed `Overall: Some benchmarks failed (5/9, 56%)` and exited 0. Its `fn main()`
