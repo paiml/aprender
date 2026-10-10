@@ -296,7 +296,7 @@ stubborn() { # a server that ignores SIGTERM; its pid goes to $1
   (
     for f in /dev/fd/*; do
       n=${f##*/}
-      case "$n" in 0|1|2|*[!0-9]*) ;; *) eval "exec $n>&-" ;; esac
+      case "$n" in 0|1|2|*[!0-9]*) ;; *) exec {n}>&- ;; esac
     done
     READY="$ready" exec bash -c 'trap "" TERM; : > "$READY"; i=0; while kill -0 "$PPID" 2> /dev/null && [ "$i" -lt 600 ]; do sleep 0.2; i=$((i + 1)); done'
   ) < /dev/null > /dev/null 2>&1 &
@@ -489,6 +489,9 @@ mutant "M7 C2 vs no is_error check" "$CODE_PY" 'if env.get("is_error") or env.ge
 mutant "M8 C5 vs no empty-result check" "$CODE_PY" 'if not env.get("result"):' 'if False:' m_c5
 m_c7() { code_case x "$1" ok p1 4 - --backend cpu; }
 mutant "M9 C7 vs the cpu lane run on an apr code that cannot honour it" "$CODE_PY" '    if a.backend == "cpu" and not ctl:' '    if False:' m_c7
+# M17 sits above m_t1: bashrs 7.4.1 reads the quoted `continue` in its anchor as SC2242 when it
+# follows the multi-line m_t1 (#5019).
+mutant "M17 T2b vs pid 1 not refused" "$TD" '    case "$p" in 1) refused="$refused$f "; continue ;; esac' '' m_t2b
 m_t1() { # <teardown>: T1's case. The server is reaped whatever the teardown did (#5019)
   local rc=0
   stubborn "$TMP/srv1.pid" || return 0 # no server, no case: the mutant must not count as killed
@@ -497,7 +500,6 @@ m_t1() { # <teardown>: T1's case. The server is reaped whatever the teardown did
   return "$rc"
 }
 mutant "M10 T1 vs no KILL escalation" "$TD" "$M10_ANCHOR" '    :' m_t1
-mutant "M17 T2b vs pid 1 not refused" "$TD" '    case "$p" in 1) refused="$refused$f "; continue ;; esac' '' m_t2b
 m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid"; }
 mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
 # M20 plants T0's bug in a copy of THIS guard: _cleanup without its main-shell check. The anchor
@@ -508,7 +510,7 @@ mutant "M20 T0 vs an EXIT trap that also runs in a forked child" "$GUARD" "  $T0
 mutant "M21 T0 vs an EXIT trap that never cleans up" "$GUARD" "  $T0_ANCHOR || return 0" '  return 0' t0_case
 # M22/M23 plant #5019's two halves in a copy of THIS guard, their anchors assembled like M20's: a
 # server that keeps its caller's fds (the lock), and an m_t1 that leaves its server running.
-FD_CLOSE='eval "exec $n>&-"'
+FD_CLOSE='exec {n}>&-'
 T1_REAP='stub_reap "$TMP/srv1.pid"'
 m_t1b() { t1b_case "$1" "$TD_NOKILL"; }
 mutant "M22 T1b vs a stubborn server that keeps its caller's fds" "$GUARD" "*) $FD_CLOSE ;;" '*) : ;;' m_t1b
