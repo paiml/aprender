@@ -10,6 +10,8 @@
 # decision lives in scripts/nightly_manifest.py, pinned by its --self-test:
 #   gate    no work (HEAD already holds a verdict) -> reused; required checks
 #           red on HEAD -> red-ci; not finished -> ci-pending; green -> build.
+#           ci-pending is asked again for 2h the same night, then the run
+#           ends RED (scripts/nightly_gate_retry.sh, #5053).
 #   build   each arch builds, runs `--version` on every bin, and records a
 #           fragment -- green, or red with the reason -- even when it fails.
 #   publish ALWAYS runs. Only an arch that came out green at HEAD gets its
@@ -83,9 +85,15 @@ jobs:
         run: |
           python3 scripts/nightly_manifest.py --self-test
           bash scripts/nightly_prune_release.sh --self-test
+          bash scripts/nightly_gate_retry.sh --self-test
 
+      # ci-pending is asked again the same night, for the same sha (#5053): run
+      # 38016007449 gated main 2m after its push, skipped every build and ended
+      # green, and the nightly went 27h unbuilt. 7 tries 20 min apart = 2h of
+      # waiting; still pending after that, the run ends RED (last step).
       - name: Decide (reused | build | red-ci | ci-pending)
         id: gate
+        timeout-minutes: 150
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -94,7 +102,8 @@ jobs:
           echo "sha=$NIGHTLY_SHA" >> "$GITHUB_OUTPUT"
           # A missing manifest (first run) is "no previous verdict", not an error.
           bash scripts/nightly_fetch_manifest.sh prev-manifest.json
-          d=$(python3 scripts/nightly_manifest.py gate --sha "$NIGHTLY_SHA" --prev prev-manifest.json)
+          d=$(bash scripts/nightly_gate_retry.sh decide 7 1200 -- \
+                python3 scripts/nightly_manifest.py gate --sha "$NIGHTLY_SHA" --prev prev-manifest.json)
           echo "decision=$d" >> "$GITHUB_OUTPUT"
           echo "### nightly gate for \`${NIGHTLY_SHA:0:9}\`: **$d**" >> "$GITHUB_STEP_SUMMARY"
 
@@ -346,11 +355,8 @@ jobs:
           DECISION: ${{ steps.merge.outputs.decision }}
         run: |
           echo "### nightly: **$DECISION** at \`${NIGHTLY_SHA:0:9}\`" >> "$GITHUB_STEP_SUMMARY"
-          case "$DECISION" in
-            built|reused) exit 0 ;;
-            ci-pending) echo "::warning::required checks not finished on ${NIGHTLY_SHA:0:9}; last green kept"; exit 0 ;;
-            *) echo "::error::nightly $DECISION at ${NIGHTLY_SHA:0:9}; see nightly-manifest.json"; exit 1 ;;
-          esac
+          # ci-pending here means pending after the gate's last retry: RED, never green (#5053).
+          bash scripts/nightly_gate_retry.sh verdict "$DECISION" "$NIGHTLY_SHA"
 
   # ── Attach the darwin asset to the nightly release ────────
   # `publish`'s manifest system (scripts/nightly_manifest.py) tracks the Linux
