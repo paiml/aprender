@@ -168,6 +168,7 @@ pub mod drain;
 pub mod join;
 pub mod margin;
 pub mod metrics;
+pub mod parity;
 pub mod protocol;
 pub mod receipt;
 pub mod replicate;
@@ -192,6 +193,10 @@ pub use drain::{
 pub use join::{BandRatios, JoinKey, Ratio, RatioBound, RatioMethod};
 pub use margin::{token_ids, top2_margin, TokenLogprob, TopLogprob, LOGPROBS_SOURCE};
 pub use metrics::{agg_tok_s, aggregate_terms, BandMetrics, RequestSample};
+pub use parity::{
+    batch_formed_since, check_reference, evaluate_band, run_verdict, ProbeBand, ProbeModel,
+    ProbePolicy, ProbeReference, ProbeSample, ProbeSampler, ProbeSlot, ProbeWitness, SampleResult,
+};
 pub use protocol::{
     min_sampled_requests, warmup_requests, BandConfig, ClientModel, ProtocolParams, ProtocolSource,
     Sampler, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED, COOLDOWN, INTERLEAVED, MIN_WALL_CLOCK, N_PREDICT,
