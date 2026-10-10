@@ -3,7 +3,8 @@
 Before: CI run 37169058144 (main @316dee2cd4). Of the 36 rows, 29 fail and 7 time out.
 
 After: `examples-36.tsv`, one run of the unchanged `scripts/dogfood_examples.sh` on
-01107666b7, the last code commit on this branch, on 2026-10-10 from 00:30 to 00:34Z.
+73f34268e6, the last code commit on this branch, in a job on 2026-10-10 from 01:23:54Z to
+01:41:20Z.
 
 - Debug builds, `--timeout-secs 180`, and a `--filter` that matched exactly the 36 rows. The
   job stops before the run unless the filter matches 36 example targets.
@@ -30,15 +31,16 @@ means the example ran to the end and exited 0. It checks no figure the example p
 
 ## Build time and the timeout
 
-The run reused the build directory of the run before it, so its `secs` are mostly run time.
-`examples-36-cold-4a79227e9f.tsv` is that run before, on 4a79227e9f from an empty build
-directory: the same 36 classes, exit codes and cites. Its `secs` are build plus run, up to
-293 s (agent_demo) and 235 s (publish_shell_safety). The script bounds only the run
+The job before this one deleted the build directory when it finished (00:34:45Z), so this
+run built every example from an empty build directory. Each row's `secs` is build plus run,
+up to 137 s (agent_demo) and 136 s (publish_shell_safety). The script bounds only the run
 (`scripts/dogfood_examples.sh:226`, "Only the RUN is bounded."), so a cold build cannot time
-a row out.
+a row out. `examples-36-cold-4a79227e9f.tsv` is an earlier cold run, on 4a79227e9f: the same
+36 classes, exit codes and cites, with `secs` up to 293 s (agent_demo).
 
-`run-stage-secs.txt` times the run stage alone (`cargo run -q`, stdout to a file) for the six
-rows with the highest `secs` in the cold run, after the 36-row run on the same tree. None ran longer than 15 s.
+`run-stage-secs.txt` times the run stage alone (`cargo run -q`, stdout to a file) after the
+36-row run on the same tree. It covers the six rows with the highest `secs` in the
+4a79227e9f cold run, plus bug_hunter_demo and design_by_contract. None ran longer than 10 s.
 
 ## What a debug build or a non-terminal run does differently
 
@@ -50,14 +52,20 @@ whose stdout or stdin is not a terminal, takes the shorter path:
   pass. On 4a79227e9f the row's `secs` in the cold run, build included, were 137, and its run
   stage timed alone afterwards on the same tree took 141 s (`run-stage-secs-4a79227e9f.txt`),
   against the 180 s bound. The aprender-serve library had been built for an earlier row, so
-  the row's build was the example alone. A debug build now generates one token
-  (`pipeline_tui.rs:19`, `:458`), and the run stage is 5 s. A release build still generates
-  100.
+  the row's build was the example alone. The two were timed separately on a shared box, so
+  the run stage alone can take longer than the whole row did, and here it did by 4 s. Both
+  put the row within 43 s of the bound. A debug build now generates one token
+  (`pipeline_tui.rs:19`, `:458`), and on 73f34268e6 its run stage alone took 3 s
+  (`run-stage-secs.txt`). A release build still generates 100.
 - **Bare runs with no arguments.** qa_verify, llama2-train and test_mac_worker keep their
   default only in a release build at a terminal (`qa_verify.rs:394`, `llama2/train.rs:236`,
   `test_mac_worker.rs:16`). Otherwise they print their usage and the row is needs-args.
 - **Smaller debug workloads.** bug_hunter_demo (`:318`), design_by_contract (`:74`) and
-  performance_parity (`:52`, `:373`) shrink only when `cfg!(debug_assertions)` is set.
+  performance_parity (`:52`, `:373`) shrink only when `cfg!(debug_assertions)` is set. The
+  two bug-hunter examples then scan `crates/aprender-orchestrate/src/bug_hunter`, 34 tracked
+  files, instead of the whole tree. `bug-hunter-scan.txt` keeps their debug output: the scan
+  path they printed and its result, 0 findings. Both scans in that capture were cache hits,
+  so it shows the path and the result, not a fresh scan.
 - **Non-terminal runs.** api_server (`:103`), buggy_server (`:21`), brick_computer (`:698`)
   and calculator_tui (`:22`) take a bounded or one-shot path only when they are not run at a
   terminal, as each cited line tests it.
@@ -116,8 +124,13 @@ benchmarks.
 `performance_parity-gpu.txt` is the debug binary from the 36-row run, run once more with its
 output kept, because the script keeps no output per example. The file records the commit and
 the binary's sha256. Outside the namespace, it printed `GPU detected and available`, ran
-GPU-001 on the GPU (2.55 GFLOPS on the 4 pinned CPUs at nice 19) and printed the debug-build
-note. It exited rc 0 in 23 s. The script reported the same row as pass in 14 s.
+GPU-001 on the GPU (6.34 GFLOPS on the 4 pinned CPUs at nice 19) and printed the debug-build
+note. It exited rc 0 in 13 s. The script reported the same row as pass in 12 s, build
+included.
+
+It also printed `Overall: Some benchmarks failed (5/9, 56%)` and exited 0. Its `fn main()`
+returns nothing and never calls `process::exit`, on this branch and on main, so it exits 0
+whatever its benchmarks score. That is the smoke-test limit stated above.
 
 On a host with no adapter, the example runs the same 8 CPU benchmarks without GPU-001. They
 are not gated on the GPU (`performance_parity.rs:66` onward).
@@ -135,6 +148,14 @@ are not gated on the GPU (`performance_parity.rs:66` onward).
   `Ollama server not found at http://localhost:11434 ...` and exited rc 1 in 1 s. The
   classifier's `not found at ` pattern makes that needs-data. In the 36-row run a server was
   up without the model, and the row is needs-data on `Model not found`.
+- **parity_035 with a server that answers 500.** `parity_035-500.txt` is the same tree in a
+  private network namespace, with a listener on port 11434 that reads each request and
+  answers `HTTP/1.1 500 Internal Server Error`. The example printed `Error: "Ollama /api/show
+  for phi2:2.7b answered 500 Internal Server Error"` and exited rc 1. The unchanged script,
+  run on that one row, classed it fail (`summary pass=0 fail=1`, exit 1). The listener's log
+  shows, for each of the two runs, the TCP probe's connection with no request and then
+  `POST /api/show`. A broken server is
+  now a failure, not needs-data.
 
 ## Not measured here
 

@@ -1,8 +1,10 @@
-# run stage alone, after the 36-row run on the same tree (cargo run -q, debug, stdout to a file)
-01107666b7cf28fca49520d3b638b8de481160c2
-aprender-orchestrate:agent_demo	rc=0	run_secs=2
-aprender-serve:pipeline_tui	rc=0	run_secs=5
-aprender-serve:api_server	rc=0	run_secs=1
+# run stage alone, after the 36-row run on the same tree (cargo run -q, debug, stdout to a file); job started 01:23:54Z 2026-10-10
+73f34268e616d941f5443b9f289b42804f302280
+aprender-orchestrate:agent_demo	rc=0	run_secs=1
+aprender-serve:pipeline_tui	rc=0	run_secs=3
+aprender-serve:api_server	rc=0	run_secs=2
 aprender-profile:buggy_server	rc=0	run_secs=6
-aprender-core:publish_shell_safety	rc=1	run_secs=15
-aprender-train:finetune_real	rc=101	run_secs=2
+aprender-core:publish_shell_safety	rc=1	run_secs=10
+aprender-train:finetune_real	rc=101	run_secs=1
+aprender-orchestrate:bug_hunter_demo	rc=0	run_secs=1
+aprender-orchestrate:design_by_contract	rc=0	run_secs=1

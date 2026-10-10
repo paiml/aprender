@@ -1,0 +1,52 @@
+# bug_hunter_demo and design_by_contract, debug build, run stage after the 36-row run on the same tree
+# (cargo run -q, stdout to a file). Both scans here are cache hits, so this shows the path a debug build
+# scans and its result, not a fresh scan. The checkout's absolute prefix is cut from the printed path.
+73f34268e616d941f5443b9f289b42804f302280
+# git ls-files crates/aprender-orchestrate/src/bug_hunter: 34 files
+# bug_hunter_demo, section 12 (its last lines)
+======================================================================
+12. PROGRAMMATIC API DEMO
+======================================================================
+
+Running quick scan on crates/aprender-orchestrate/src/bug_hunter...
+
+  [  cache] hit — using cached findings
+Mode: Quick
+Findings: 0
+Duration: 0ms
+# design_by_contract (whole output)
+Design by Contract in Batuta
+==================================================
+
+1. Contract Gap Analysis (BH-26)
+
+   The bug hunter scans provable-contracts binding
+   registries and produces BH-CONTRACT findings:
+
+   not_implemented      [High  ] (0.8) No implementation exists
+   partial              [Medium] (0.6) Binding is incomplete
+   (unbound)            [Medium] (0.5) Contract has no binding
+   (<50% proofs)        [Low   ] (0.4) Insufficient falsification tests
+
+==================================================
+2. Dependency Graph Validation
+
+   Empty graph: acyclic = true
+   Topological order (empty): []
+
+   Expected publish order for the full stack:
+     1. trueno
+     2. aprender
+     3. realizar
+     4. entrenar
+     5. apr-cli
+
+==================================================
+3. Programmatic Contract Gap Hunt
+
+  [  cache] hit — using cached findings
+   Total findings: 0
+   Contract gaps:  0
+
+==================================================
+Done.
