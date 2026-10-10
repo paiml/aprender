@@ -171,6 +171,7 @@ pub mod protocol;
 pub mod receipt;
 pub mod replicate;
 pub mod samples;
+pub mod v3_shape;
 pub mod window;
 pub mod witness;
 
@@ -202,6 +203,9 @@ pub use receipt::{
 };
 pub use replicate::{log_ratio_lcb, t_lower_one_sided_95, ArmOrder, ReplicatePair, MIN_REPLICATES};
 pub use samples::{read_samples_gz, write_samples_gz, SamplesFile};
+pub use v3_shape::{
+    check_v3_shape, check_v3_shape_file, ShapeVerdict, BLESSED_MODEL_PREFIX, NEAR_TIE_EPS, V3_BANDS,
+};
 pub use window::{WindowController, WindowReport};
 pub use witness::{BatchInvariance, BatchInvarianceWitness};
 
