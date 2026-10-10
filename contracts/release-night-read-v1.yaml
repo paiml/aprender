@@ -1,0 +1,112 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-10'
+  author: PAIML Engineering
+  description: "Release day reads the nightly train's verdict lanes for the head it ships, H, and re-runs none of them (#4701, T18 RQ-2). scripts/release/release_night_read.sh is the read: per lane (deep-doctests, deep-nodefault, deep-examples, deep-bins-build, deep-bins-smoke, dogfood, models) it answers GO, RED or NOT_MEASURED over every night whose commit is H, and for models it also checks the sealed models-t1 artifact of the measure H ships on (crux, the CRUX smoke since 0.71.0, or ladder). Its --streak mode counts the three green nights in a row that the switch to this read needs. The read is not wired: putting it in place of release day's own lanes changes what release day accepts, and that switch waits for the streak and a sign-off."
+  kind: pattern
+  references:
+    - "scripts/release/release_night_read.sh — the read, its case table (--self-test) and its planted mutants (--mutants)"
+    - "scripts/check_release_night_read.sh — the guard that runs the case table"
+    - "scripts/release/nightly_train.sh — writes the ledger the read takes: <UTC day>/bundle.tsv, its lane table, its '# C' and '# read' lines"
+    - "scripts/release/models_nightly.sh — seals the models-t1 artifact (verdict, SHA256SUMS, models-t1.log, one receipt per GPU host) for both measures"
+    - "contracts/model-capability-ladder-v1.yaml — release_policy: release day ships on the CRUX smoke since 0.71.0, everything bigger is nightly"
+    - "contracts/nightly-greens-v1.yaml — the same three-green-nights rule for a check enforced at publish"
+
+five_whys:
+  symptom: "Release day runs the deep test lanes, dogfood and the model measure (models_t1.sh on both GPU hosts) for H, although the nightly train already measures each of them on main's head every night. #4701 prices the ladder alone at about 160 min per release."
+  why_1: "Nothing on release day reads the nights: autopilot.sh runs each lane itself."
+  why_2: "A night is only worth reading if the read can tell a night that measured H green from one that measured another commit, a retried run, a failed read of GitHub, or nothing at all."
+  why_3: "The train's bundle carries the lane state and the run's head per lane, and the night's commit in a '# C' line written last, so a cut-short night has no commit line and must not read as H's."
+  why_4: "The models lane's state alone does not prove the receipts release day needs exist: those live in the sealed models-t1 artifact, of one measure, for one commit."
+  why_5: "Two release-day readers existed on unmerged branches, both of the ladder measure only, while release day ships on the CRUX smoke since 0.71.0."
+  root_cause: "Release day had no read of the nights that refuses everything except a green from a run on H at attempt 1, on a night whose read succeeded, with the sealed artifact of the measure H ships on. The remedy is one read with fixed lanes, a required measure, red that no green outvotes, and NOT_MEASURED for every night that cannot be tied to H."
+
+equations:
+  lane_read:
+    formula: "read(lane, H) = RED if some night of H read the lane red, or a night with no readable C read it red from a run on H; else NOT_MEASURED if no night measured H, no night of H read it green, the newest green of H came from a run on another commit or at attempt > 1, a night of H is unreadable or holds two rows of the lane or a state the train never writes, or a night with no readable C may be H's; else GO"
+    domain: "the nights under --ledger: one <UTC day>/bundle.tsv each, columns found by header name (lane, state, run_id, run_head, attempt), the '# C' commit and the '# read' line"
+    codomain: "{GO, RED, NOT_MEASURED} per lane, one NIGHT line each"
+    invariants:
+      - "the lanes are the fixed seven; no option or environment value adds, drops or renames one"
+      - "a red night of H is never outvoted by a green one, older or newer"
+      - "a night of H that read the lane not_measured, had no row of it, or came from a failed read of GitHub neither passes nor fails H"
+      - "a dir under the ledger that is neither a UTC day nor the cache, or a bundle awk cannot read, makes every lane NOT_MEASURED"
+
+  models_artifact:
+    formula: "artifact_ok(H, M) = SHA256SUMS verifies and lists every file present; the verdict's commit = H and its measure = M (a verdict with no measure is ladder); its state is not red; models-t1.log has no NO-GO line and has the GO line of M at H's sha9; every receipt that line names exists (<host>-gpu.json for crux, <host>.json for ladder)"
+    domain: "--artifact DIR, the models-t1 artifact of the run the models lane's green night names; --measure M in {crux, ladder}, required"
+    codomain: "models GO when artifact_ok holds; RED when the verdict is red; NOT_MEASURED otherwise"
+    invariants:
+      - "the measure is never guessed: no --measure is a caller error, and an artifact of the other measure is NOT_MEASURED"
+      - "the artifact is tied to H through the verdict's commit and the GO line's sha9, never through the run id alone"
+
+  release_verdict:
+    formula: "exit 1 if some lane is RED; else exit 2 if some lane is NOT_MEASURED; else exit 0 with the receipts and judge.log copied into --out and the night's MODELS lines printed; exit 3 on a caller error"
+    domain: "lane_read over the seven lanes and models_artifact"
+    codomain: "exit 0 GO | 1 RED | 2 NOT_MEASURED | 3 caller error"
+    invariants:
+      - "receipts reach --out only when every lane is GO"
+      - "exit 2 is never a GO"
+
+  streak:
+    formula: "per lane, count the newest nights, one per UTC day with no day missing, while each read the lane green from a run on that night's C at attempt 1 and its '# read' line is ok; met iff every lane counts >= need and the newest night is --today or the day before"
+    domain: "the ledger, --today YYYY-MM-DD and the constant need = 3"
+    codomain: "exit 0 every lane met | 1 some lane short | 3 caller error; one STREAK line per lane naming its nights and why the walk stopped"
+    invariants:
+      - "need is 3, and neither an option nor an environment value can change it"
+      - "a night dir that is not a calendar day, a failed read of GitHub or a bundle awk cannot read ends the walk"
+
+proof_obligations:
+  - id: RNR-INV-001
+    type: invariant
+    property: "A red night of H is never outvoted"
+    formal: "∀ lane: (∃ n ∈ nights(H): state(n, lane) = red) ⇒ read(lane, H) = RED"
+    applies_to: lane_read
+  - id: RNR-INV-002
+    type: invariant
+    property: "GO needs a green from a run on H at attempt 1 on a night whose read is ok"
+    formal: "read(lane, H) = GO ⇒ ∃ n ∈ nights(H): state(n, lane) = green ∧ run_head(n, lane) = H ∧ attempt(n, lane) = 1 ∧ read_ok(n)"
+    applies_to: lane_read
+  - id: RNR-INV-003
+    type: invariant
+    property: "A night that cannot be tied to H is never H's green"
+    formal: "∀ n: C(n) unreadable ∧ run_head(n, lane) ∈ {H, none} ⇒ read(lane, H) ≠ GO"
+    applies_to: lane_read
+  - id: RNR-INV-004
+    type: invariant
+    property: "The models lane is GO only on the sealed artifact of the measure H ships on"
+    formal: "read(models, H) = GO ⇒ artifact_ok(H, M)"
+    applies_to: models_artifact
+  - id: RNR-INV-005
+    type: invariant
+    property: "Receipts are copied only on a GO of every lane"
+    formal: "files(--out) ≠ ∅ ⇒ ∀ lane: read(lane, H) = GO"
+    applies_to: release_verdict
+  - id: RNR-INV-006
+    type: invariant
+    property: "The streak needs the constant 3, on consecutive days ending today or yesterday"
+    formal: "met ⇒ ∀ lane: count(lane) ≥ 3 ∧ newest ∈ {today, today - 1} ∧ need ≡ 3"
+    applies_to: streak
+
+falsification_tests:
+  - id: FALSIFY-RNR-001
+    rule: "The read is right on every row of its case table"
+    prediction: "Nights written by nightly_train.sh itself (green, red, no producer, not measured), edited one column at a time, read GO, RED or NOT_MEASURED as the table says: a red beside a green is RED; a green from another commit, at attempt 2, from a run that names no commit, or on a night whose read failed is not GO; a header without state or run_id, two rows of a lane, a stray dir or a bundle awk cannot read is NOT_MEASURED; an artifact with a bad checksum, another commit, the other measure, a NO-GO line or a missing receipt is not GO; the streak needs three calendar days ending today or yesterday"
+    test: "bash scripts/release/release_night_read.sh --self-test"
+    if_fails: "Release day could ship H on a night that measured another commit, a retried run, or nothing: the re-runs this read replaces would have caught what the read let through"
+
+  - id: FALSIFY-RNR-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each of the 49 planted mutants (red never set or outvoted, columns read by position, a green from another commit or attempt counted, a failed read counted, an unreadable header or a stray dir passed over, the checksum, commit, measure, NO-GO, sha9 or receipt check skipped, the crux receipt suffix dropped, receipts copied on a non-GO, a stale or gapped or non-calendar streak counted, need 2) turns --self-test RED; a mutant that changes nothing or does not parse is itself a failure"
+    test: "bash scripts/release/release_night_read.sh --mutants"
+    if_fails: "The case table is theater: it would pass a read that lets release day skip a lane on a night that never measured H"
+
+qa_gate:
+  id: F-RNR-001
+  name: "Release day reads H's nights and re-runs none, only on green from a run on H"
+  description: "scripts/release/release_night_read.sh reads the nightly train's ledger for H and the sealed models-t1 artifact of the measure H ships on, and prints GO, RED or NOT_MEASURED per lane. Its case table pins every state, and its planted mutants prove the table can fail. Not wired until three green nights and a sign-off."
+  checks:
+    - "lane_read"
+    - "models_artifact"
+    - "release_verdict"
+    - "streak"
