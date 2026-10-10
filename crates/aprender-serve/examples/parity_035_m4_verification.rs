@@ -216,11 +216,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     // The baseline is a live Ollama server. Probe it first, so a host without one
-    // says so instead of failing inside the HTTP client.
-    let ollama_addr = std::net::SocketAddr::from(([127, 0, 0, 1], 11434));
-    if std::net::TcpStream::connect_timeout(&ollama_addr, std::time::Duration::from_secs(2))
-        .is_err()
-    {
+    // says so instead of failing inside the HTTP client. The benchmark asks for
+    // `localhost`, so every address it resolves to is tried.
+    let listening =
+        std::net::ToSocketAddrs::to_socket_addrs(&("localhost", 11434)).is_ok_and(|mut addrs| {
+            addrs.any(|addr| {
+                std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(2))
+                    .is_ok()
+            })
+        });
+    if !listening {
         eprintln!("Ollama server not found at http://localhost:11434 (run `ollama serve` and `ollama pull phi2:2.7b`)");
         std::process::exit(1);
     }
@@ -228,27 +233,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // object, which the response decoder cannot read. Ollama answers /api/show
     // for a missing model with 404 and {"error":"model '<name>' not found"}; a
     // 404 for a route it does not have is plain text. Only the first means the
-    // model is missing: a failed request, any other 404 or any other status is
-    // a failure of the server, and is reported as one.
-    let show = reqwest::blocking::Client::builder()
+    // model is missing. Any other answer, or a failed request, falls through to
+    // the benchmark, which runs or fails as it did before this probe.
+    let model_missing = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .build()?
-        .post("http://localhost:11434/api/show")
-        .json(&serde_json::json!({ "model": "phi2:2.7b" }))
-        .send()?;
-    let status = show.status();
-    let body = show.text()?;
-    let model_missing = status == reqwest::StatusCode::NOT_FOUND
-        && serde_json::from_str::<serde_json::Value>(&body)
-            .ok()
-            .and_then(|v| v.get("error")?.as_str().map(str::to_owned))
-            .is_some_and(|e| e.contains("phi2:2.7b") && e.contains("not found"));
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://localhost:11434/api/show")
+                .json(&serde_json::json!({ "model": "phi2:2.7b" }))
+                .send()
+        })
+        .ok()
+        .filter(|show| show.status() == reqwest::StatusCode::NOT_FOUND)
+        .and_then(|show| show.text().ok())
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+        .and_then(|v| v.get("error")?.as_str().map(str::to_owned))
+        .is_some_and(|e| e.contains("phi2:2.7b") && e.contains("not found"));
     if model_missing {
         eprintln!("Model not found: phi2:2.7b on the Ollama server (run `ollama pull phi2:2.7b`)");
         std::process::exit(1);
-    }
-    if !status.is_success() {
-        return Err(format!("Ollama /api/show for phi2:2.7b answered {status}").into());
     }
 
     // Benchmark Ollama
