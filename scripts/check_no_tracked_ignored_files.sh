@@ -41,7 +41,7 @@ tracked_ignored() {
   git -C "$1" ls-files -i -c --exclude-standard
 }
 
-# The subset cargo compiles from a packaged crate: Rust sources under src/, the
+# The subset a packaged crate compiles from: Rust sources under src/, the
 # build script and its siblings, and the manifest. One of these that is tracked
 # AND ignored ships from this checkout but vanishes from any tree rebuilt with
 # `git add` (a `git archive` re-import, a vendored copy): the crate then fails
