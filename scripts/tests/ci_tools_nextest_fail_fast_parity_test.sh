@@ -13,9 +13,12 @@
 #     "(no tomllib/tomli on this interpreter)", which the bin has no reason to say);
 #   - the words of a TOML parse error (`TOMLDecodeError: ...`), which are each parser's own.
 # Where a case's verdict is known (the guard's own table), both sides must also give it.
+# Where the two TOML parsers disagree by design (the README's "differs" table), each side
+# must give its own exit status, so a parser upgrade that moves one fails here.
 #
-# Not vacuous (L25): the run fails if fewer cases ran than the table declares, and a
-# planted mismatch must be reported as one before any real case counts.
+# Not vacuous (L25): the run fails if fewer cases ran than the table declares, and two
+# planted mismatches (a wrong exit status; the right one with the wrong words) must each be
+# reported as one before any real case counts.
 #
 # Usage: scripts/tests/ci_tools_nextest_fail_fast_parity_test.sh
 #        CI_TOOLS_BIN=<path> skips the build; PYTHON=<python3.11+> (the library reader is
@@ -26,7 +29,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 GUARD="$ROOT/scripts/check_nextest_ci_profile_no_fail_fast.sh"
-EXPECTED_CASES=90
+EXPECTED_CASES=121
 
 if ! "$PY" -I -c 'import tomllib' 2>/dev/null; then
     echo "FAIL: $PY has no tomllib, so the guard's library reader cannot run here; set PYTHON to python3.11+" >&2
@@ -91,17 +94,41 @@ row() {
     compare "$3" fallback "$2" "$tmp/c.toml"
 }
 
+# differ NAME WANT_JUDGE WANT_BIN BODY: a row of the README's "differs" table, under the
+# library reader, where the two parsers disagree by design. Each side must give its own
+# exit status and a VERDICT line, so the table is measured, not claimed.
+differ() {
+    local prc=0 rrc=0
+    printf '%s' "$4" >"$tmp/c.toml"
+    NEXTEST_GUARD_RUNNER=parity "$PY" -I "$tmp/judge.py" "$tmp/c.toml" >"$tmp/py.out" 2>/dev/null || prc=$?
+    NEXTEST_GUARD_RUNNER=parity "$BIN" nextest-fail-fast --reader library "$tmp/c.toml" \
+        >"$tmp/rs.out" 2>"$tmp/rs.err" || rrc=$?
+    if [[ "$prc" == "$2" && "$rrc" == "$3" ]] && grep -q '^VERDICT ' "$tmp/py.out" \
+        && grep -q '^VERDICT ' "$tmp/rs.out" && [[ ! -s "$tmp/rs.err" ]]; then
+        pass=$((pass + 1))
+    else
+        fail=$((fail + 1))
+        echo "MISMATCH: [differs] $1 (py rc=$prc want $2, rs rc=$rrc want $3)" >&2
+    fi
+}
+
 # --- L25: a planted mismatch must be seen as one. -------------------------------------
+# Two liars: one with the wrong exit status, and one with the right exit status and the
+# wrong words, so neither the status check nor the line check can pass alone.
 printf '[profile.ci]\nfail-fast = true\n' >"$tmp/plant.toml"
 real_bin="$BIN"
 # shellcheck disable=SC2016
 printf '#!/bin/sh\necho "VERDICT ok $4: [profile.ci].fail-fast = false -- a red run still measures everything else (reader=toml crate, runner=parity)"\n' >"$tmp/liar"
-chmod +x "$tmp/liar"
+# shellcheck disable=SC2016
+printf '#!/bin/sh\necho "VERDICT FAIL $4: [profile.ci].fail-fast = true"\nexit 1\n' >"$tmp/liar-text"
+chmod +x "$tmp/liar" "$tmp/liar-text"
 BIN="$tmp/liar"
 compare plant library - "$tmp/plant.toml" 2>/dev/null
+BIN="$tmp/liar-text"
+compare plant-text library 1 "$tmp/plant.toml" 2>/dev/null
 BIN="$real_bin"
-if [[ "$fail" -ne 1 || "$pass" -ne 0 ]]; then
-    echo "FAIL: the planted mismatch was not reported (pass=$pass fail=$fail)" >&2
+if [[ "$fail" -ne 2 || "$pass" -ne 0 ]]; then
+    echo "FAIL: a planted mismatch was not reported (pass=$pass fail=$fail)" >&2
     exit 1
 fi
 pass=0
@@ -158,6 +185,45 @@ row 0 0 "a quoted header part"                     $'["profile".ci]\nfail-fast =
 row 2 2 "[profile.ci] twice"                       $'[profile.ci]\nfail-fast = false\n[profile.ci]\n'
 compare "a missing file" library 2 "$tmp/absent.toml"
 compare "a missing file" fallback 2 "$tmp/absent.toml"
+
+# --- Dates, times and floats both parsers read the same way. --------------------------
+ok=$'[profile.ci]\nfail-fast = false\n'
+row 2 0 "a date tomllib refuses: Feb 30"           "${ok}t = 2021-02-30"$'\n'
+row 2 0 "a time with no seconds"                   "${ok}t = 07:32"$'\n'
+row 2 0 "an offset of +24:00"                      "${ok}t = 1979-05-27T07:32:00+24:00"$'\n'
+row 2 0 "DEL in a comment"                         "${ok}# a"$'\x7f\n'
+row 0 0 "seven fractional-second digits"           "${ok}t = 1979-05-27T07:32:00.1234567Z"$'\n'
+row 1 2 "fail-fast = inf"                          $'[profile.ci]\nfail-fast = inf\n'
+row 1 2 "fail-fast = -nan"                         $'[profile.ci]\nfail-fast = -nan\n'
+
+# --- CPython's 4300-digit int() limit, in the purpose-built reader. -------------------
+# Leading zeros count and the sign does not.
+d4300="$(printf '%*s' 4300 '' | tr ' ' '1')"
+printf '%sx = %s\n' "$ok" "$d4300" >"$tmp/c.toml"
+compare "a 4300-digit key" fallback 0 "$tmp/c.toml"
+printf '%sx = 1%s\n' "$ok" "$d4300" >"$tmp/c.toml"
+compare "a 4301-digit key" fallback 2 "$tmp/c.toml"
+printf '[profile.ci]\nfail-fast = -%s\n' "$d4300" >"$tmp/c.toml"
+compare "fail-fast = -<4300 digits>" fallback 1 "$tmp/c.toml"
+printf '[profile.ci]\nfail-fast = -0%s\n' "$d4300" >"$tmp/c.toml"
+compare "fail-fast = -0<4300 digits>" fallback 2 "$tmp/c.toml"
+
+# --- Where the two TOML parsers disagree (the README's "differs" table). ---------------
+nest() { printf '%*s' "$1" '' | tr ' ' "$2"; printf 1; printf '%*s' "$1" '' | tr ' ' "$3"; }
+differ "a leap second in a datetime"     2 0 "${ok}t = 1979-05-27T07:32:60Z"$'\n'
+differ "a leap second in a time"         2 0 "${ok}t = 07:32:60"$'\n'
+differ "year 0000"                       2 0 "${ok}t = 0000-01-01"$'\n'
+differ "an integer above i64"            0 2 "${ok}x = 9223372036854775808"$'\n'
+differ "an integer below i64"            0 2 "${ok}x = -9223372036854775809"$'\n'
+differ "a hex integer above i64"         0 2 "${ok}x = 0xffffffffffffffff"$'\n'
+differ "fail-fast above i64"             1 2 $'[profile.ci]\nfail-fast = 9223372036854775808\n'
+differ "a 4301-digit integer"            2 2 "${ok}x = 1${d4300}"$'\n'
+differ "a float that overflows to inf"   0 2 "${ok}x = 1e400"$'\n'
+differ "fail-fast = 1e400"               1 2 $'[profile.ci]\nfail-fast = 1e400\n'
+printf '%sx = %s\n' "$ok" "$(nest 79 '[' ']')" >"$tmp/c.toml"
+compare "arrays nested 79 deep" library 0 "$tmp/c.toml"
+differ "arrays nested 80 deep"           0 2 "${ok}x = $(nest 80 '[' ']')"$'\n'
+differ "inline tables nested 81 deep"    0 2 "${ok}x = $(nest 81 '{' '}' | sed 's/{/{a=/g')"$'\n'
 
 total=$((pass + fail))
 echo "nextest-fail-fast parity: $pass of $total equal (judge: $("$PY" -I -c 'import sys; print(sys.version.split()[0])'))"
