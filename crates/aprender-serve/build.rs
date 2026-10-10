@@ -277,6 +277,18 @@ fn watch_if_exists(path: &Path) {
     }
 }
 
+/// #5056 F4: like `watch_if_exists`, but a missing file watches its parent directory
+/// instead of nothing. With no watch at all, a restored contract was never read again
+/// (the fallback stayed in OUT_DIR until build.rs was touched). Watching an existing
+/// directory does not rerun every build; a parent that is also absent (crates.io) is
+/// left unwatched, as before.
+fn watch_file_or_parent(path: &Path) {
+    match path.parent() {
+        Some(dir) if !path.exists() => watch_if_exists(dir),
+        _ => watch_if_exists(path),
+    }
+}
+
 /// Phase 2: Read binding.yaml and emit CONTRACT_* env vars for the proc macro.
 fn emit_contract_bindings() {
     // Re-run if binding.yaml changes
@@ -520,7 +532,7 @@ fn generate_arch_requirements_file() {
         .join("contracts")
         .join("architecture-requirements-v1.yaml");
 
-    watch_if_exists(&yaml_path);
+    watch_file_or_parent(&yaml_path);
 
     if !yaml_path.exists() {
         // Graceful fallback for CI/crates.io — write a stub generated file
