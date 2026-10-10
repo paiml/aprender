@@ -43,12 +43,13 @@ fn main() {
 
     let mut results = Vec::new();
     let mut gpu_results = Vec::new();
+    // GPU-018 is informational (no target, no pass verdict): not in gpu_results or the counts.
+    let mut gpu018_tok_s: Option<Option<f64>> = None;
 
     // Check GPU availability
     let gpu_available = check_gpu_availability();
 
-    // The GPU suite GPU-002..GPU-031 ran past 25 minutes in a debug build on a discrete
-    // GPU, so a debug build smoke-tests the GPU path with GPU-001 alone. Release runs all 31.
+    // A debug build smoke-tests the GPU path with GPU-001 alone; a release build runs all 31.
     let full_gpu_suite = gpu_available && !cfg!(debug_assertions);
 
     // Run all benchmarks with progress
@@ -169,8 +170,8 @@ fn main() {
         gpu_results.push(bench_e2e_text_generation());
         pb.inc(1);
 
-        pb.set_message("GPU-018: Apples-to-Apples (M15)");
-        gpu_results.push(bench_apples_to_apples());
+        pb.set_message("GPU-018: Generate Throughput (M15)");
+        gpu018_tok_s = Some(bench_generate_throughput());
         pb.inc(1);
 
         pb.set_message("GPU-019: KV-Cached Generation (M16)");
@@ -241,6 +242,16 @@ fn main() {
     // Print GPU results table if available
     if !gpu_results.is_empty() {
         print_results_table(&gpu_results, "GPU BENCHMARK RESULTS (M2-M4)");
+    }
+
+    if let Some(tok_s) = gpu018_tok_s {
+        // Informational only: not a row of the results table and not in the pass counts.
+        let line = match tok_s {
+            Some(v) => format!("{v:.2} tok/s, our own median; llama.cpp not run, no parity"),
+            None => "FAILED (model or generation error), not measured; not in the pass counts"
+                .to_string(),
+        };
+        println!("  GPU-018 generate throughput (M15, info): {line}");
     }
 
     // Print summary
@@ -368,8 +379,8 @@ fn bench_fused_attention() -> BenchResult {
     let input =
         Tensor::from_vec(vec![seq_len, hidden_dim], vec![0.1; seq_len * hidden_dim]).expect("test");
 
-    // A debug forward pass is ~3 s at seq_len 128, so the release counts
-    // (10 + 100) take over five minutes. Debug builds only smoke-test the path.
+    // Release builds keep the full counts (10 warmup + 100 timed forward passes).
+    // Debug builds, which are much slower, only smoke-test the path.
     let (warmup, iterations) = if cfg!(debug_assertions) {
         (1, 5)
     } else {
@@ -1677,14 +1688,15 @@ fn bench_e2e_text_generation() -> BenchResult {
     }
 }
 
-/// GPU-018: Apples-to-Apples Benchmark Framework (M15 target)
-/// This benchmark establishes the framework for comparing against llama.cpp
-/// When a real GGUF model is available, this can be extended to load it
-fn bench_apples_to_apples() -> BenchResult {
+/// GPU-018: generate throughput on a small test model (M15). Informational: it returns our own
+/// median tok/s, or None when the model or every generation fails. It has no target and no pass
+/// verdict, so it is printed apart from the results table and is not in the pass counts.
+/// llama.cpp is not run, so no parity is claimed; that needs llama.cpp measured on the same
+/// config and model (a comparator baseline is measured or absent, never asserted: PERF-008, F12).
+fn bench_generate_throughput() -> Option<f64> {
     use realizar::gpu::{GpuGenerateConfig, GpuModel, GpuModelConfig};
 
-    // Benchmark configuration matching llama.cpp defaults
-    // Model: Small test model (would use TinyLlama-1.1B-Q4_K_M for real comparison)
+    // Small synthetic test model (no weights loaded)
     let config = GpuModelConfig {
         vocab_size: 2048,       // Small vocab for speed
         hidden_dim: 512,        // Reasonable hidden dim
@@ -1709,18 +1721,11 @@ fn bench_apples_to_apples() -> BenchResult {
 
     let model_result = GpuModel::from_gguf_config(config);
     if model_result.is_err() {
-        return BenchResult {
-            name: "GPU-018: Apples-to-Apples".to_string(),
-            metric: "Parity".to_string(),
-            value: 0.0,
-            unit: "%".to_string(),
-            target: 80.0,
-            passed: false,
-        };
+        return None;
     }
     let mut model = model_result.expect("test");
 
-    // Warmup (per llama.cpp benchmark methodology)
+    // Warmup: 3 untimed generations
     let prompt = vec![1, 2, 3, 4, 5, 6, 7, 8]; // 8-token prompt
     let gen_config = GpuGenerateConfig::deterministic(32); // Generate 32 tokens
 
@@ -1744,41 +1749,14 @@ fn bench_apples_to_apples() -> BenchResult {
     }
 
     if throughputs.is_empty() {
-        return BenchResult {
-            name: "GPU-018: Apples-to-Apples".to_string(),
-            metric: "Parity".to_string(),
-            value: 0.0,
-            unit: "%".to_string(),
-            target: 80.0,
-            passed: false,
-        };
+        return None;
     }
 
     // Take median throughput
     throughputs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let median_throughput = throughputs[throughputs.len() / 2];
 
-    // Reference: llama.cpp on similar config would achieve ~100+ tok/s
-    // For M15 target of 80% parity, we need ~80 tok/s
-    // Current test model achieves lower due to lack of KV cache optimization
-    // Target adjusted for current architecture
-    let llama_cpp_reference = 50.0; // Conservative reference for small model
-    let parity_percent = (median_throughput / llama_cpp_reference) * 100.0;
-
-    // M15 target: Achieve ≥80% of llama.cpp throughput with real models
-    // With current architecture (no KV cache in generate loop), we target >15%
-    // This establishes the benchmark framework - full parity requires:
-    // 1. KV cache integration in generate loop (avoid full recompute)
-    // 2. Real GGUF model loading with optimized weights
-    // 3. Incremental decoding optimization
-    BenchResult {
-        name: "GPU-018: Apples-to-Apples".to_string(),
-        metric: "Parity".to_string(),
-        value: parity_percent.min(200.0), // Cap at 200% for display
-        unit: "%".to_string(),
-        target: 15.0, // Framework validation target (full parity requires optimization)
-        passed: parity_percent >= 15.0,
-    }
+    Some(median_throughput)
 }
 
 /// GPU-019: KV-Cached Generation Benchmark (M16 target)
@@ -3361,15 +3339,20 @@ fn print_milestones(cpu_results: &[BenchResult], gpu_results: &[BenchResult], gp
                     gt.value
                 );
             }
+        } else {
+            println!(
+                "    {} M3: WGPU Parity   - not measured (no Token Gen result in this build)",
+                style("⏭️").dim()
+            );
         }
     } else {
         println!(
-            "    {} M3: WGPU Parity   - 128 tok/s (50% llama.cpp)",
+            "    {} M3: WGPU Parity   - not measured (Target: 128 tok/s)",
             style("⏳").dim()
         );
     }
     println!(
-        "    {} M4: Full Parity   - 230+ tok/s (90% llama.cpp)",
+        "    {} M4: Full Parity   - not measured (Target: 230+ tok/s)",
         style("⏳").dim()
     );
 }

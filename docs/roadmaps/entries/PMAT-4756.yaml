@@ -11,11 +11,11 @@
   acceptance_criteria:
   - The 36 rows that were fail or timeout in run 37169058144 are pass or a skip class (needs-args, needs-hardware, needs-data, needs-feature), with fail 0 and timeout 0, under scripts/dogfood_examples.sh --timeout-secs 180
   - scripts/dogfood_examples.sh and its classifier are unchanged
-  - Release-build workloads are unchanged; only debug builds or non-terminal runs take a shorter path
+  - Release-build workloads are unchanged, except GPU-018 (#4756), which still runs but reports its own tok/s as an informational line outside the pass counts, and the every-build bug fixes in the receipts README (the Q4_0 and Q8_0 buffer sizes); only debug builds or non-terminal runs take a shorter path
   - Out of scope, on build-kaizen/examples-nightly-queue - the workflow's runs-on, concurrency and runner label
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Receipts: evidence/examples-nightly-4756/. Before (CI run 37169058144): fail 29, timeout 7. After (one debug run of the 36 rows on 22954be7ab, libcuda hidden): pass 9, needs-args 11, needs-hardware 10, needs-data 5, needs-feature 1, fail 0, timeout 0. Receipt of record: the re-enabled nightly. qa_verify''s own gate failures (every section rc 1, 0 tests from the root facade) are #5026, outside this ticket.'
+  notes: 'Receipts: evidence/examples-nightly-4756/. Before (CI run 37169058144): fail 29, timeout 7. After (one debug run of the 36 rows on 22954be7ab, libcuda hidden; the later GPU-018 and include-fmt commits are not in that run): pass 9, needs-args 11, needs-hardware 10, needs-data 5, needs-feature 1, fail 0, timeout 0. Receipt of record: the re-enabled nightly. qa_verify''s own gate failures (every section rc 1, 0 tests from the root facade) are #5026, outside this ticket.'

@@ -3,10 +3,13 @@
 Before: CI run 37169058144 (main @316dee2cd4). Of the 36 rows, 29 fail and 7 time out.
 
 After: `examples-36.tsv`, one run of the unchanged `scripts/dogfood_examples.sh` on
-22954be7ab, the last code commit on this branch, in a job on 2026-10-10 from 09:15:58Z to
+22954be7ab (the branch's last code commit when the run started), in a job on 2026-10-10 from 09:15:58Z to
 09:41:01Z. `qa_verify-sections.txt` and `bug-hunter-scan.txt` were taken on 73f34268e6. The
 three code commits after it, fa3364688c, 819e4132dc and 22954be7ab, change only
 `parity_035_m4_verification.rs`.
+
+The 36-row run predates the code commits after 22954be7ab (see "After the 36-row run" below), and
+every `file:line` cited in this README was taken at 22954be7ab.
 
 - Debug builds, `--timeout-secs 180`, and a `--filter` that matched exactly the 36 rows. The
   job stops before the run unless the filter matches 36 example targets.
@@ -46,7 +49,8 @@ up to 293 s (agent_demo).
 
 ## What a debug build or a non-terminal run does differently
 
-A release build run from a terminal keeps its workload: nothing it ran before is skipped or
+GPU-018 aside (it still runs, as an informational line outside the pass counts; see "After the
+36-row run"), a release build run from a terminal keeps its workload: nothing it ran before is skipped or
 cut down. Its result can still change, through the two bug fixes under "Bug fixes for every
 build", which apply to every build. Only a debug build, or a run without a terminal as each
 example's own gate tests it, takes a shorter path. Each item below names its gate:
@@ -124,6 +128,8 @@ lines cited above.
 
 These change debug and release builds alike. Each one lets a run that stopped on an error
 reach its end. Neither shortens a run.
+One more change reaches release builds with a GPU, in GPU-018; it is not a fix of this kind (see
+"After the 36-row run" below). Debug builds do not run GPU-018.
 
 - **performance_parity.** Its Q4_0 and Q8_0 benchmarks built 20×32 = 640 and 36×32 = 1152
   bytes. The dequantizers take 18-byte and 34-byte blocks and return an error for a length
@@ -193,7 +199,8 @@ code.
 
 Review round 2 found that performance_parity's GPU path ran past 25 minutes in a debug build
 (rc 124 at 1505 s) when wgpu found an adapter. A debug build now runs GPU-001 alone
-(`performance_parity.rs:52`, `:101`, `:107`). A release build runs all 31 GPU benchmarks.
+(`performance_parity.rs:52`, `:101`, `:107`). A release build runs all 31 GPU benchmarks (GPU-018 as an informational line after the fix commit;
+see "After the 36-row run").
 On main no build reached them: `bench_quantization_formats` runs before them, after the
 five IMP benchmarks (`performance_parity.rs:67-83`, `:88`), and panicked on the buffer
 sizes fixed above (`:514`, `:522`).
@@ -258,6 +265,33 @@ whether those runs found an adapter is not recorded.
   `Ollama server not found at http://localhost:11434 ...`, rc 1. On the merge-base, e37e6dec56,
   built and run the same way at a terminal, the output was the same as the first run: `diff`
   of the two terminal outputs, carriage returns removed, exited 0 with no lines.
+
+## After the 36-row run
+
+The CI run of this PR at 7049f3584c (run 38059743711, a `pull_request` run, head 7049f3584c)
+failed two guard rows that the branch caused. The fix commit after it fixes them and applies
+the review findings; it is not in the 36-row run above. It changes two Rust files, `performance_parity.rs` and
+`qa_chat_include_01.rs` (included by the `qa_chat` example). The build receipt is committed after it,
+`build-check-<commit>.txt`: an aarch64 `cargo check` and `cargo clippy` (no `-D`) of the
+`performance_parity` and `qa_chat` example targets and the CI include-guard script
+`check_package_includes.sh`, all rc 0, with no diagnostic in a touched file. The F12 and
+include-fmt guards and `rustfmt --check`, run locally at that head, are in `guards-<commit>.txt`.
+
+- **F12 ledger (guard-cargo#m43).** The ledger is keyed `path:line` and shrink-only. The
+  branch moved `llama_cpp_reference = 50.0` in `performance_parity.rs`, so the guard saw a new
+  site. The literal was a parity comparator that llama.cpp was never run to produce, so it is
+  deleted with its ledger line, not re-keyed.
+- **include-fmt (guard-cargo#m61).** `qa_chat_include_01.rs`, which this branch edits, had new
+  rustfmt debt. It is formatted.
+- **GPU-018, release builds with a GPU** (a debug build runs GPU-001 alone). It divided measured tok/s by that constant and passed at 15%.
+  It now prints only its own median tok/s, as one informational line after the tables, with no
+  target, no pass verdict and no place in the pass counts. A release run therefore counts
+  one GPU benchmark fewer than before. A GPU-018 that fails (no model, or every generation fails)
+  used to count as a failed row; it now prints "FAILED ..., not measured" and is not in the pass counts. The
+  example exits 0 either way, as before. The no-GPU milestone lines for M3 and M4 now say "not
+  measured" with their targets, not a llama.cpp percentage. GPU-010 still frames itself on an
+  unmeasured llama.cpp reference; that predates this branch and is #5072. PERF-003 carries a dated correction withdrawing the
+  20.93% M15 parity figure.
 
 ## Not measured here
 
