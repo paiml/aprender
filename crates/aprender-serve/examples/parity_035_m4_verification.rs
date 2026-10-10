@@ -226,14 +226,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // A running server without the model answers /api/generate with an error
     // object, which the response decoder cannot read. /api/show is 404 then.
-    let has_model = reqwest::blocking::Client::new()
+    // Only a 404 means the model is missing: a failed request or any other
+    // status is a failure of the server, and is reported as one.
+    let show = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?
         .post("http://localhost:11434/api/show")
         .json(&serde_json::json!({ "model": "phi2:2.7b" }))
-        .send()
-        .is_ok_and(|r| r.status().is_success());
-    if !has_model {
+        .send()?;
+    if show.status() == reqwest::StatusCode::NOT_FOUND {
         eprintln!("Model not found: phi2:2.7b on the Ollama server (run `ollama pull phi2:2.7b`)");
         std::process::exit(1);
+    }
+    if !show.status().is_success() {
+        return Err(format!("Ollama /api/show for phi2:2.7b answered {}", show.status()).into());
     }
 
     // Benchmark Ollama
