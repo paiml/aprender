@@ -476,7 +476,7 @@ bindings:
 # --- apr-model-graph-v1 (full LLM forward pass) ---
 - contract: apr-model-graph-v1.yaml
   equation: forward_pass_completeness
-  module_path: realizar::gguf
+  module_path: realizar::gguf::inference::forward::core
   function: OwnedQuantizedModel::forward
   signature: 'fn forward(&self, token_ids: &[u32]) -> Result<Vec<f32>>'
   status: implemented
