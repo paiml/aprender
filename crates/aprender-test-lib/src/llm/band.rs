@@ -641,6 +641,8 @@ mod tests {
             seed: Some(0),
             ignore_eos: Some(true),
             stream_options: None,
+            logprobs: None,
+            top_logprobs: None,
         }]
     }
 
