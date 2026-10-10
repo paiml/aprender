@@ -19,7 +19,8 @@
 # `*\t*` is the only key that covers MISSING or STALE cells -- no data is not green data.
 #
 # Refuses: any unwaived RED cell · a state other than GREEN/RED · no cells · no `# measured`
-# stamp · cells older than FLEET_CELLS_MAX_AGE_H (default 6) hours. EXIT 0 cut · 1 refuse · 2 usage.
+# stamp · cells older than FLEET_CELLS_MAX_AGE_H (default 6) hours · a --now that is not a whole
+# epoch second from 0 to the end of year 9999. EXIT 0 cut · 1 refuse · 2 usage.
 set -uo pipefail
 PROG=fleet_cells_gate
 
@@ -35,7 +36,8 @@ function pystrip(s) { sub("^" pyws() "+", "", s); sub(pyws() "+$", "", s); retur
 '
 
 # fleet_cells_verdict <cells text> <waivers text> <now epoch> -> `ok ...` rc 0 | `refuse ...` rc 1
-# bash + awk only (ARB-AUD-10: no interpreter beyond the shell on the release path). date(1) parses
+# bash + awk only (ARB-AUD-10: no interpreter beyond the shell in this gate; rc_cut.sh, its caller,
+# still runs python3 elsewhere). date(1) parses
 # the stamp; awk gets the texts and the max age through ENVIRON (-v expands backslashes). The judge it replaced was a
 # python3 heredoc, so awk reads the texts as python did, byte for byte under LC_ALL=C: lines break
 # where str.splitlines() breaks (CRLF, CR, VT, FF, FS/GS/RS, NEL, LS, PS), "blank" is str.strip()'s
@@ -43,6 +45,12 @@ function pystrip(s) { sub("^" pyws() "+", "", s); sub(pyws() "+$", "", s); retur
 # decimal number. Where the two can differ, awk refuses and python cut (#4350).
 fleet_cells_verdict() {
     local stamp measured=-1 today
+    # python's int() + fromtimestamp(utc) refused a clock that is not an integer, or past year 9999,
+    # with rc 1; date(1) takes both (1.5, @1000000000000 = year 33658), so refuse them here
+    if ! [[ $3 =~ ^[0-9]{1,12}$ ]] || (( 10#$3 > 253402300799 )); then
+        printf 'refuse clock %q is not a whole epoch second up to 9999-12-31T23:59:59Z\n' "$3"
+        return 1
+    fi
     today=$(date -u -d "@$3" +%F) || return 2
     stamp=$(CELLS=$1 LC_ALL=C awk "$FLEET_CELLS_AWK_LIB"'
     BEGIN {
@@ -157,6 +165,9 @@ self_test() {
     FLEET_CELLS_MAX_AGE_H=abc row 1 'a max age that is not a number refuses' "$S\nh2\tapr\tGREEN\t\n"
     FLEET_CELLS_MAX_AGE_H='\066' row 1 'a max age is not unescaped' "$S\nh2\tapr\tGREEN\t\n"
     FLEET_CELLS_MAX_AGE_H=' 1e3 ' row 0 'a max age python reads as a float is read' '# measured 2026-09-01T00:00:00Z\nh2\tapr\tGREEN\t\n'
+    now=1.5 row 1 'a clock that is not an integer refuses' "$S\nh2\tapr\tGREEN\t\n"
+    now=1000000000000 row 1 'a clock past year 9999 refuses, even under a *\t* waiver to 9999' '# measured 2026-09-24T09:00:00Z\nh2\tapr\tGREEN\t\n' '*\t*\t9999-12-31\tx\n'
+    now=253402300799 row 0 'the last second of year 9999 is still a clock' '# measured 9999-12-31T23:58:00Z\nh2\tapr\tGREEN\t\n'
     # MUTANTS: the refusal made a no-op must let the RED cell through.
     d=$(mktemp -d) || return 2
     for m in 's/                else add(c\[1\] "\/" c\[2\] " RED: "/                else ("\/" " RED: "/' 's/^            exit 1$/            exit 0/'; do
