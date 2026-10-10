@@ -308,6 +308,8 @@ mod contract_falsification {
             ("qwen3", "235b"),  // need to verify
             // Qwen3.5 27B: head_dim=256 fixed, 24*256=6144 != 5120
             ("qwen3_5", "27b"),
+            // Qwen3 MoE 30B-A3B: GGUF key_length=128, 32*128=4096 != 2048
+            ("qwen3_moe", "30b_a3b"),
         ]
         .into_iter()
         .collect();
@@ -1040,4 +1042,136 @@ mod contract_falsification {
     // publish cycle) that `cargo publish` OMITS while publishing this
     // `#[cfg(test)]` code anyway -- so in published form the lib tests could not
     // compile (clean-room GATE B2: 19 x error[E0433]). Same mechanism as #3307.
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN3MOE-001..004 (#5056, E7 #4001): qwen3_moe is the first
+    // MoE family, and its contract lands before the code that reads it.
+    // `pv validate` cannot fail a model-family file (it passed one with
+    // `family:` deleted and one with num_kv_heads > num_heads), so these
+    // tests are the falsifiers. The family loader does not read `moe:` yet,
+    // so 002/003 read the raw YAML.
+    // ========================================================================
+    fn qwen3_moe_raw() -> serde_yaml::Value {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/model-families/qwen3_moe.yaml");
+        let text = std::fs::read_to_string(&path).expect("read qwen3_moe.yaml");
+        serde_yaml::from_str(&text).expect("qwen3_moe.yaml is valid YAML")
+    }
+
+    // Prediction: the 30b_a3b variant carries the dimensions in the GGUF
+    // header of Qwen3-30B-A3B-Instruct-2507-Q4_K_M (read with `apr inspect`).
+    #[test]
+    fn falsify_mf_qwen3moe_001_30b_a3b_dimensions() {
+        let families = load_all_families();
+        let (_, config) = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_moe")
+            .expect("FALSIFIED QWEN3MOE-001: qwen3_moe family not found");
+        let v = config
+            .size_variants
+            .get("30b_a3b")
+            .expect("FALSIFIED QWEN3MOE-001: missing '30b_a3b' size variant");
+
+        let got = (
+            v.hidden_dim,
+            v.num_layers,
+            v.num_heads,
+            v.num_kv_heads,
+            v.head_dim,
+            v.vocab_size,
+            v.max_position_embeddings,
+        );
+        assert_eq!(
+            got,
+            (2048, 48, 32, 4, 128, 151_936, 262_144),
+            "FALSIFIED QWEN3MOE-001: (hidden, layers, heads, kv_heads, head_dim, vocab, ctx)"
+        );
+        assert!(
+            config.architectures.iter().any(|a| a == "Qwen3MoeForCausalLM"),
+            "FALSIFIED QWEN3MOE-001: Qwen3MoeForCausalLM not registered"
+        );
+    }
+
+    // Prediction: the moe block is internally consistent with the GGUF header
+    // (128 experts, top-8, expert width 768, no shared expert) and every expert
+    // template is indexed by both layer {n} and expert {e}.
+    #[test]
+    fn falsify_mf_qwen3moe_002_moe_block() {
+        let raw = qwen3_moe_raw();
+        let moe = &raw["moe"];
+        let n = |k: &str| {
+            moe[k]
+                .as_u64()
+                .unwrap_or_else(|| panic!("FALSIFIED QWEN3MOE-002: moe.{k} missing"))
+        };
+        let (experts, top_k, width) = (
+            n("num_experts"),
+            n("num_experts_per_tok"),
+            n("moe_intermediate_dim"),
+        );
+        assert!(
+            top_k > 0 && top_k <= experts && width > 0,
+            "FALSIFIED QWEN3MOE-002: experts={experts} top_k={top_k} width={width}"
+        );
+        assert_eq!(
+            (experts, top_k, width, n("shared_expert_intermediate_dim")),
+            (128, 8, 768, 0),
+            "FALSIFIED QWEN3MOE-002: drifted from the GGUF header"
+        );
+
+        let tmpl = moe["expert_template"]
+            .as_mapping()
+            .expect("FALSIFIED QWEN3MOE-002: moe.expert_template missing");
+        for role in ["gate_proj", "up_proj", "down_proj"] {
+            let pat = tmpl
+                .get(role)
+                .and_then(serde_yaml::Value::as_str)
+                .unwrap_or_else(|| panic!("FALSIFIED QWEN3MOE-002: expert_template.{role} missing"));
+            assert!(
+                pat.contains("{n}") && pat.contains("{e}"),
+                "FALSIFIED QWEN3MOE-002: expert_template.{role}={pat} lacks {{n}} or {{e}}"
+            );
+        }
+    }
+
+    // Prediction: no per_layer pattern carries the expert index. per_layer is
+    // expanded with {n} only and each name must exist in a real checkpoint, so
+    // an {e} there would make every Qwen3 MoE file fail tensor-name validation.
+    #[test]
+    fn falsify_mf_qwen3moe_003_no_expert_index_in_per_layer() {
+        let families = load_all_families();
+        let (_, config) = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_moe")
+            .expect("FALSIFIED QWEN3MOE-003: qwen3_moe family not found");
+        for (role, pat) in &config.tensor_template.per_layer {
+            if let Some(pat) = pat {
+                assert!(
+                    !pat.contains("{e}"),
+                    "FALSIFIED QWEN3MOE-003: per_layer.{role}={pat} carries {{e}}"
+                );
+            }
+        }
+        assert!(
+            config.tensor_template.per_layer.contains_key("router"),
+            "FALSIFIED QWEN3MOE-003: router is what separates qwen3_moe from dense qwen3 in detect_family"
+        );
+    }
+
+    // Prediction: HF model_type "qwen3_moe" resolves to this family. Before
+    // #5056 it fell through to the substring pass and resolved to DENSE qwen3.
+    // The registry under test is the build.rs-generated one, so this also
+    // proves the codegen picked the file up.
+    #[test]
+    fn falsify_mf_qwen3moe_004_model_type_resolves_to_moe() {
+        let registry = crate::format::model_family::build_default_registry();
+        let fam = registry
+            .detect_from_model_type("qwen3_moe")
+            .expect("FALSIFIED QWEN3MOE-004: qwen3_moe resolved to no family");
+        assert_eq!(fam.config().family, "qwen3_moe", "FALSIFIED QWEN3MOE-004");
+        let dense = registry
+            .detect_from_model_type("qwen3")
+            .expect("FALSIFIED QWEN3MOE-004: qwen3 resolved to no family");
+        assert_eq!(dense.config().family, "qwen3", "FALSIFIED QWEN3MOE-004: dense qwen3 moved");
+    }
 }

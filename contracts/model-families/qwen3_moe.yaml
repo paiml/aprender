@@ -1,0 +1,132 @@
+metadata:
+  version: "1.0"
+  created: "2026-10-10"
+  description: "Model family descriptor: qwen3_moe (E7 #4001 first registry entry, #5056: contract before code)"
+  kind: model-family
+  references:
+    - "https://huggingface.co/Qwen/Qwen3-30B-A3B-Instruct-2507"
+    - "contracts/qwen3moe-shapes-v1.yaml"
+    - "contracts/moe-router-v1.yaml"
+    - "contracts/moe-expert-dispatch-v1.yaml"
+
+# Dimensions below were read from the GGUF header, not from memory:
+#   apr 0.70.3 (b7f0e6109f) inspect --json ~/models/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+#   qwen3moe.{embedding_length=2048, block_count=48, attention.head_count=32,
+#   attention.head_count_kv=4, attention.key_length=128, feed_forward_length=6144,
+#   expert_count=128, expert_used_count=8, expert_feed_forward_length=768,
+#   context_length=262144, rope.freq_base=10000000, layer_norm_rms_epsilon=1e-6};
+#   token_embd [2048, 151936]; output.weight present (untied).
+# Qwen3-Coder-30B-A3B-Instruct (same arch) differs only in feed_forward_length=5472.
+#
+# intermediate_dim is the HF config `intermediate_size` (the dense FFN width).
+# No layer of this checkpoint uses it: every layer is MoE, and each expert is
+# moe_intermediate_dim wide. The family loader and build.rs codegen do NOT read
+# the `moe:` block yet. Deriving that code from this block is the next E7 step,
+# as #3346 did for the Gated DeltaNet keys.
+
+family: qwen3_moe
+display_name: "Qwen3 MoE"
+vendor: Alibaba
+architectures:
+  - Qwen3MoeForCausalLM
+hf_pattern: "Qwen/Qwen3-*A*B*"
+
+size_variants:
+  30b_a3b:
+    parameters: "30.5B"
+    hidden_dim: 2048
+    num_layers: 48
+    num_heads: 32
+    num_kv_heads: 4
+    intermediate_dim: 6144
+    vocab_size: 151936
+    max_position_embeddings: 262144
+    head_dim: 128
+    rope_theta: 10000000.0
+    rms_norm_eps: 0.000001
+
+constraints:
+  attention_type: gqa
+  activation: silu
+  norm_type: rmsnorm
+  has_bias: false
+  tied_embeddings: false
+  positional_encoding: rope
+  mlp_type: swiglu
+  qk_norm: "true"
+  is_moe: true
+
+moe:
+  num_experts: 128
+  num_experts_per_tok: 8
+  moe_intermediate_dim: 768
+  shared_expert_intermediate_dim: 0
+  router: softmax_topk
+  norm_topk_prob: true
+  expert_template:
+    gate_proj: "model.layers.{n}.mlp.experts.{e}.gate_proj.weight"
+    up_proj: "model.layers.{n}.mlp.experts.{e}.up_proj.weight"
+    down_proj: "model.layers.{n}.mlp.experts.{e}.down_proj.weight"
+  expert_shape_template:
+    gate_proj: "[moe_intermediate_dim, hidden_dim]"
+    up_proj: "[moe_intermediate_dim, hidden_dim]"
+    down_proj: "[hidden_dim, moe_intermediate_dim]"
+  gguf_template:
+    router: "blk.{n}.ffn_gate_inp.weight"
+    gate_exps: "blk.{n}.ffn_gate_exps.weight"
+    up_exps: "blk.{n}.ffn_up_exps.weight"
+    down_exps: "blk.{n}.ffn_down_exps.weight"
+
+# Expert tensors carry a second index {e}, so they live in moe.expert_template
+# and not in per_layer: every per_layer pattern is expanded with {n} only and
+# must exist by that name in a real checkpoint.
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj: "model.layers.{n}.self_attn.q_proj.weight"
+    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
+    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
+    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
+    router: "model.layers.{n}.mlp.gate.weight"
+    input_layernorm: "model.layers.{n}.input_layernorm.weight"
+    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
+    q_norm: "model.layers.{n}.self_attn.q_norm.weight"
+    k_norm: "model.layers.{n}.self_attn.k_norm.weight"
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  router: "[num_experts, hidden_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+  q_norm: "[head_dim]"
+  k_norm: "[head_dim]"
+
+quantizations:
+  - q4_k_m
+  - q8_0
+  - f16
+  - f32
+
+chat_template:
+  format: chatml
+  template: "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+  bos_token: ""
+  eos_token: "<|im_end|>"
+  special_tokens:
+    im_start: "<|im_start|>"
+    im_end: "<|im_end|>"
+    endoftext: "<|endoftext|>"
+
+# Falsifiers for this file (crates/aprender-core/src/format/model_family_contract_falsify.rs):
+#   FALSIFY-MF-QWEN3MOE-001 dimensions match the GGUF header read above
+#   FALSIFY-MF-QWEN3MOE-002 moe block: 0 < num_experts_per_tok <= num_experts,
+#                           moe_intermediate_dim > 0, every expert_template has {n} and {e}
+#   FALSIFY-MF-QWEN3MOE-003 no per_layer pattern carries {e}
+#   FALSIFY-MF-QWEN3MOE-004 model_type "qwen3_moe" resolves to this family, not dense qwen3
