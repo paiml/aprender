@@ -1519,6 +1519,225 @@ bindings:
   status: implemented
   notes: SHA-256(record_bytes || 0x1E || streamed pairs) — the header is INSIDE the digest, and a record that does not describe the sampler is refused
 # --- tweet-eval-stance-benchmark-v1 ---
+- contract: laya-finetune-gate-v1.yaml
+  equation: gate_pass
+  module_path: aprender_decide::verify
+  function: check_gate
+  signature: 'fn check_gate(report: &GateReport, recomputed: &Recomputed, n: usize, policy: &VerifyPolicy) -> Result<Vec<GateClause>, VerifyError>'
+  status: implemented
+  notes: 'Pass decided on metrics RECOMPUTED in Rust (recompute_metrics) from probabilities verified against the Rust re-score of the artifact and of the declared base; thresholds read from the contract; a report whose pass disagrees is refused. Implemented by plan 08-09; the median seed''s run since plan 08-15.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: ece_top_label
+  module_path: aprender::calibration
+  function: expected_calibration_error_top_label
+  signature: 'fn expected_calibration_error_top_label(probabilities: &[f32], n_classes: usize, labels: &[usize], n_bins: usize) -> f32'
+  status: implemented
+  notes: 'The house ECE (contracts/calibration-v1.yaml), already implemented in aprender-core crates/aprender-core/src/calibration.rs with frozen cases scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json. The Phase 8 gate declares it rather than re-implementing it (OPS-03); aprender_decide::verify::recompute_metrics calls it.'
+- contract: laya-finetune-gate-v1.yaml
+  equation: split_disjointness
+  module_path: aprender_decide::verify
+  function: check_split
+  signature: 'fn check_split(train: &[DataRow], eval: &[DataRow], calib: &GateCalibration, k: usize, min_per_class: u64) -> Result<(), VerifyError>'
+  status: implemented
+  notes: 'Rust re-derives text-level disjointness (NFC/trim/collapse sha256 groups, conflicting labels refused) from gate-report calibration slice_ids and the data dir. Implemented by plan 08-09 (the Python split landed in 08-08).'
+- contract: laya-finetune-gate-v1.yaml
+  equation: seed_selection_median
+  module_path: aprender_decide::verify
+  function: check_seed_selection
+  signature: 'fn check_seed_selection(inputs: &PackInputs, data: &DataDir, policy: &VerifyPolicy) -> Result<Option<i64>, VerifyError>'
+  status: implemented
+  notes: 'A3 (1.4.0, 2026-09-27): the median-ECE seed ships by floor(ece_post x 10000), ties to the smaller seed; pass is the shipped seed''s pass. Rust re-derives it from seeds/seed-<s>/eval-probs.json (plan 08-15, authoritative: every seed recomputed, the median of the RECOMPUTED ECEs via select_median_seed, the shipped checkpoint and eval file bound by sha256, and any seed whose recomputed rank_key differs from the reported one refused; FALSIFY-LAYA-GATE-011 lib tests); the Python selection is scripts/laya_train/gate.py select_median_seed (plan 08-14).'
+- contract: laya-finetune-gate-v1.yaml
+  equation: shift_probe_reported
+  module_path: aprender_decide::verify
+  function: check_shift_probe
+  signature: 'fn check_shift_probe(inputs: &PackInputs, data: &DataDir, policy: &VerifyPolicy) -> Result<(), VerifyError>'
+  status: implemented
+  notes: 'A2 (1.4.0, 2026-09-27): shift-probe metrics recomputed in Rust from hash-bound files, never re-scored, never a gate clause. Implemented by plan 08-15 (FALSIFY-LAYA-GATE-013 lib tests; the Python writer landed in 08-14).'
+- contract: laya-finetune-gate-v1.yaml
+  equation: synthetic_not_deployable
+  module_path: aprender_decide::verify
+  function: check_variant
+  signature: 'fn check_variant(recipe: &Recipe) -> Result<(), VerifyError>'
+  status: implemented
+  notes: 'Any variant other than production (a synthetic-fixture recipe) is refused with SyntheticNotDeployable; it is the first step of verify.rs cheap_checks, which pack_for_serving, verify_run and verify_path all run before any model is built, and the deploy recipes gate on verify. Implemented by plan 08-09; the 08-01 row named verify_run.'
+- contract: laya-parity-v1.yaml
+  equation: ids_exact
+  module_path: aprender_decide::laya::builder
+  function: Builder::build
+  signature: 'fn build(&self, state: &str, t: &str, ins: &str, options: &[String]) -> Result<BuiltRow, LayaError>'
+  status: implemented
+  notes: 'Laya builder ids EXACT on every fixture row (spike-025 English root: 14/14). Implemented by plan 08-04.'
+- contract: laya-parity-v1.yaml
+  equation: markers_exact
+  module_path: aprender_decide::laya::builder
+  function: Builder::build
+  signature: 'fn build(&self, state: &str, t: &str, ins: &str, options: &[String]) -> Result<BuiltRow, LayaError>'
+  status: implemented
+  notes: '[MASK] marker positions EXACT, option shrink reproduced. Implemented by plan 08-04.'
+- contract: laya-parity-v1.yaml
+  equation: argmax_exact
+  module_path: aprender_decide::laya
+  function: Laya::classify_prepared
+  signature: 'fn classify_prepared(&self, rows: &[PreparedRow]) -> Result<Vec<Decision>, DecideError>'
+  status: implemented
+  notes: 'Argmax label EXACT on every fixture row (English root 14/14). The served path: forward_row, softmax at the bucket temperature, argmax. Implemented by plans 08-04 / 08-09.'
+- contract: laya-parity-v1.yaml
+  equation: probs_abs
+  module_path: aprender_decide::laya
+  function: Laya::classify_prepared
+  signature: 'fn classify_prepared(&self, rows: &[PreparedRow]) -> Result<Vec<Decision>, DecideError>'
+  status: implemented
+  notes: 'D-17 literal 1e-5 on served (temperature-scaled) probabilities; measured max |dp| 3.841e-6 on the spike-025 English root through the .apr path (plan 08-09, aarch64; spike 025: 3.8e-6). Implemented by plans 08-04 / 08-09.'
+- contract: laya-parity-v1.yaml
+  equation: logits_abs
+  module_path: aprender_decide::laya
+  function: Laya::forward_row
+  signature: 'fn forward_row(&self, ids: &[u32], markers: &[usize], qtype: QType, mut tap: impl FnMut(&str, &[f32])) -> Result<Vec<f32>, DecideError>'
+  status: implemented
+  notes: 'Scorer logits before temperature, 1e-4 (measured max |dlogit| 2.146e-5 in plan 08-09). Implemented by plan 08-04.'
+- contract: laya-parity-v1.yaml
+  equation: final_norm_abs
+  module_path: aprender::models::modernbert
+  function: ModernBertEncoder::forward
+  signature: 'fn forward(&self, ids: &[u32], mut tap: impl FnMut(&str, &[f32])) -> Result<Vec<f32>, ModernBertError>'
+  status: implemented
+  notes: 'Encoder final LayerNorm on the 158-token ladder row, 1e-4 (the `final` tap). Implemented by plan 08-03; ladder final measured 9.155e-5 in plan 08-09.'
+- contract: laya-parity-v1.yaml
+  equation: embeddings_abs
+  module_path: aprender::models::modernbert
+  function: ModernBertEmbeddings::forward
+  signature: 'fn forward(&self, ids: &[u32], eps: f64) -> Result<Vec<f32>, ModernBertError>'
+  status: implemented
+  notes: 'Embedding block LayerNorm(tok_embeddings(ids)), no bias, no position embedding, 1e-5 (the `emb` tap; ladder emb measured 9.537e-7 in plan 08-09). The #[contract] attribute for this equation sits on ModernBertEncoder::from_apr, which loads exactly that tensor set. Implemented by plan 08-03.'
+- contract: laya-parity-v1.yaml
+  equation: per_layer_rel_rms
+  module_path: aprender::models::modernbert
+  function: ModernBertEncoder::forward
+  signature: 'fn forward(&self, ids: &[u32], mut tap: impl FnMut(&str, &[f32])) -> Result<Vec<f32>, ModernBertError>'
+  status: implemented
+  notes: 'Every encoder layer within 1e-3 relative rms (the `layer{i}` taps; layer 27 measured 2.145e-6 in plan 08-09, spike 025: 4.4e-4 before the RoPE fix). Implemented by plan 08-03.'
+- contract: laya-parity-v1.yaml
+  equation: pack_rescore_probs_abs
+  module_path: aprender_decide::verify
+  function: rescore
+  signature: 'fn rescore<F>(which: ProbsWhich, classify: F, texts: &[String], probs: &[Vec<f32>], tol: f64) -> Result<RescoreStats, VerifyError> where F: FnOnce(&[String]) -> Result<Vec<Decision>, DecideError>'
+  status: implemented
+  notes: 'Rust re-score of every eval row of the PACKED artifact (and of the base on the zero-shot rows) at pack and verify time, argmax exact. Since plan 08-15 each set is held to ITS OWN bound(c, s) = max(1e-5, pack_rescore_noise_k x noise(c, s)) from verify::rescore_bounds (laya-parity-v1 A1), the floor 1e-5 for both sets when the run carries no rescore-noise.json; RescoreDrift names the bound used. verify.rs verify_loaded (reached from pack_for_serving, verify_run and verify_path) calls it once per set. Implemented by plan 08-09; bound per set by plan 08-15.'
+- contract: laya-parity-v1.yaml
+  equation: rescore_noise_reference
+  module_path: aprender_decide::verify
+  function: rescore_bounds
+  signature: 'fn rescore_bounds(inputs: &PackInputs, ft_probs: &[Vec<f32>], zs_probs: &[Vec<f32>], policy: &VerifyPolicy) -> Result<[RescoreBound; 2], VerifyError>'
+  status: implemented
+  notes: 'A1 (2026-09-27): noise(c, s) = max |p_torch32 - p_f64| per checkpoint and set, from the hash-bound rescore-noise.json record. Plan 08-14 writes the record (train.py float64 forward, control 0.0, every row); plan 08-15 RECOMPUTES it in Rust (bit-for-bit equal to Python''s on a lifecycle run dir, tests/python_records.rs) and derives bound(c, s) = max(floor, k x noise), refusing an edited, mismatched, over-ceiling or argmax-flipping record; no record = the floor. Evidence: FALSIFY-LAYA-PARITY-006 lib tests.'
+- contract: laya-parity-v1.yaml
+  equation: window_mutation
+  module_path: aprender::models::modernbert
+  function: ModernBertEncoder::forward
+  signature: 'fn forward(&self, ids: &[u32], mut tap: impl FnMut(&str, &[f32])) -> Result<Vec<f32>, ModernBertError>'
+  status: implemented
+  notes: 'Window 63/65 (the test-only set_window_override) must fail the first local layer while the first global layer passes. Implemented by plan 08-03.'
+- contract: decide-apr-v1.yaml
+  equation: task_order_is_label_index
+  module_path: aprender_decide::task
+  function: Task::from_slice
+  signature: 'fn from_slice(bytes: &[u8]) -> Result<Self, TaskError>'
+  status: implemented
+  notes: 'Order-preserving map visitor (OrderedCriteria); labels in document order under both serde_json backings. Implemented by plan 08-04 (FALSIFY-DECIDE-APR-007).'
+- contract: decide-apr-v1.yaml
+  equation: marker_preservation
+  module_path: aprender_decide::laya
+  function: Laya::from_parts
+  signature: 'fn from_parts(reader: &AprV2ReaderRef<''_>, prefix: &str, encoder_config_bytes: &[u8], agent_config_bytes: &[u8], tokenizer_bytes: &[u8], task: Task) -> Result<Self, LayaError>'
+  status: implemented
+  notes: 'Refuse only marker LOSS after Laya''s option shrink (LayaError::MarkersLost), checked once at task load. Implemented by plan 08-04.'
+- contract: decide-apr-v1.yaml
+  equation: single_manifest_key
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'Ladder rung 3. load_verified is pub(crate), the only constructor of Decider; Decider::load_bytes / load_path reach it. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: blob_integrity
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'Ladder rung 4 (blob sha256 before any weight is installed). Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: tensor_set_derived
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'Ladder rung 4 (architecture-derived tensor set, per-entry size). Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: bounded_read_and_index_extent
+  module_path: aprender_decide::artifact
+  function: check_index_extent
+  signature: 'fn check_index_extent(tensor_count: u32, tensor_index_offset: u64, data_offset: u64, file_len: u64) -> Result<(), ArtifactError>'
+  status: implemented
+  notes: 'Ladder rungs 1-2: the bounded read at cap + 1 is read_decide_apr_bytes_bounded (the size_cap row); then tensor_count <= max_tensor_count and the index-extent bound in checked arithmetic before any index allocation (reader_impl.rs:95 finding). Implemented by plan 08-05; the 08-01 row named read_decide_apr_bytes_bounded for both halves.'
+- contract: decide-apr-v1.yaml
+  equation: probe_replay
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'Ladder rung 7: replay against the stored PYTHON probe values (probes.json), NaN-visible. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: artifact_identity
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'D-11: artifact_sha256 = whole-file sha256 (artifact_sha256_hex), recipe_id = recipe blob sha256; carried as Decider::identity. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: determinism
+  module_path: aprender_decide::pack
+  function: pack_run_dir
+  signature: 'fn pack_run_dir(run_dir: &Path, data_dir: &Path) -> Result<Vec<u8>, PackError>'
+  status: implemented
+  notes: 'Byte-identical packs across processes and serde_json backings; no timestamp (the writer is artifact::write_decide_apr). Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: size_cap
+  module_path: aprender_decide::artifact
+  function: read_decide_apr_bytes_bounded
+  signature: 'fn read_decide_apr_bytes_bounded<R: std::io::Read>(reader: R, declared_len: Option<u64>) -> Result<Vec<u8>, ArtifactError>'
+  status: implemented
+  notes: 'max_artifact_bytes = 1.25 GiB: a declared length over the cap is refused before reading, and the read stops at cap + 1. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: private_mint
+  module_path: aprender_decide::artifact
+  function: load_verified
+  signature: 'fn load_verified(bytes: &[u8]) -> Result<Decider, ArtifactError>'
+  status: implemented
+  notes: 'The only minting path (pub(crate)); the trybuild compile-fail target `cargo test -p aprender-decide --test ui` proves no second one. Implemented by plan 08-05.'
+- contract: decide-apr-v1.yaml
+  equation: deploy_eligible
+  module_path: aprender_decide::verify
+  function: verify_path
+  signature: 'fn verify_path(apr: &Path, run_dir: &Path, data_dir: &Path, base_dir: &Path, policy: &VerifyPolicy) -> Result<VerifyReport, VerifyError>'
+  status: implemented
+  notes: 'Deployable only when pack_laya verify (verify_path over the exact file: full ladder, production variant, base and input hashes, split, full re-score, recomputed gate, seed selection) accepts it; laya-upload and laya-deploy run it before any AWS call. Implemented by plan 08-09; accepted models/decide/laya-stance-64.apr (sha256 24a44d7e...) in plan 08-16.'
+
+- contract: calibration-v1.yaml
+  equation: expected_calibration_error_top_label
+  module_path: aprender::calibration
+  function: expected_calibration_error_top_label
+  signature: 'fn expected_calibration_error_top_label(probabilities: &[f32], n_classes: usize, labels: &[usize], n_bins: usize) -> f32'
+  status: implemented
+  notes: 'Top-label ECE over the probabilities of the predicted class, the house ECE that laya-finetune-gate-v1 ece_top_label recomputes. Implemented in crates/aprender-core/src/calibration.rs.'
+- contract: calibration-v1.yaml
+  equation: brier_score_multiclass
+  module_path: aprender::calibration
+  function: brier_score_multiclass
+  signature: 'fn brier_score_multiclass(probabilities: &[f32], n_classes: usize, labels: &[usize]) -> f32'
+  status: implemented
+  notes: 'Multiclass Brier score over the probability rows. Implemented in crates/aprender-core/src/calibration.rs.'
+
 critical_path:
 - softmax
 - rmsnorm

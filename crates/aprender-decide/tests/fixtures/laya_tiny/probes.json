@@ -1,0 +1,22 @@
+{
+  "probes": [
+    {
+      "input_index": 0,
+      "tokens": 21,
+      "label": "no",
+      "probabilities_f32_hex": [
+        "3efd96fa",
+        "3f013483"
+      ]
+    },
+    {
+      "input_index": 1,
+      "tokens": 26,
+      "label": "yes",
+      "probabilities_f32_hex": [
+        "3f00be5a",
+        "3efe834c"
+      ]
+    }
+  ]
+}
