@@ -857,6 +857,14 @@ mod tests {
         let unstable = check_reference(&sample(reference()), &sample(early), &POLICY);
         assert!(!unstable.stable);
         assert_eq!(unstable.self_divergence_at, Some(2));
+        let mut at_min = reference();
+        at_min[4] = tok("X", 1.0);
+        let edge = check_reference(&sample(reference()), &sample(at_min), &POLICY);
+        assert!(
+            edge.stable,
+            "agreeing exactly to declared_min is enough: {edge:?}"
+        );
+        assert_eq!(edge.self_divergence_at, Some(4));
         let short = check_reference(
             &sample(reference()[..3].to_vec()),
             &sample(reference()),
