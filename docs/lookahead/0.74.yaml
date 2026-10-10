@@ -17,11 +17,11 @@ baselines:
   - {criterion: A5, note: "anecdote only: apr 0.67.0 (0c6932fd54) CPU '2+2=' -> '2 + 2 = 4', 8 tokens, 1 prompt (moe-e7-options.md). NOT parity", receipt: none}
   - {criterion: A4, plan: "line count of the qwen3moe path today (#3418 cites 1,678 lines vs llama.cpp qwen3moe.cpp 184) measured at a pinned sha", receipt: none}
 contracts:
-  - {row: R1, draft: contracts/model-families/qwen3_moe.yaml, status: written, falsifier: "FALSIFY-MF-QWEN3MOE-001..005 green on intel , two planted mutants red", note: "pv validate/lint cannot fail a family file (planted no-family and kv>heads both valid), so the falsifiers are Rust. Codegen reads the crate-local copy (#701): mirrored, guarded by 005. Root and crate copies of qwen3_5.yaml already differ: finding, not fixed here. moe: block is not read by loader/codegen yet (next derived-code step)"}
+  - {row: R1, draft: contracts/model-families/qwen3_moe.yaml, status: written, falsifier: "FALSIFY-MF-QWEN3MOE-001..005 green on intel @abe4e5fc5b, two planted mutants red", note: "pv validate/lint cannot fail a family file (planted no-family and kv>heads both valid), so the falsifiers are Rust. Codegen reads the crate-local copy (#701): mirrored, guarded by 005. Root and crate copies of qwen3_5.yaml already differ: finding, not fixed here. moe: block is not read by loader/codegen yet (next derived-code step)"}
   - {row: R2, draft: contracts/arch-constraints-v1.yaml, status: unmeasured, falsifier: asked, note: "qwen3_moe aliases include qwen3_5_moe/qwen3_5moe; qwen35moe is hybrid GDN+MoE, so the alias may claim support apr refuses (#4801). Compare TAH-002 on 0.72"}
   - {row: R3, draft: contracts/apr-architecture-schema-v1.yaml, status: exists, note: "MoE invariants present (num_experts_per_tok <= num_experts, 3*num_experts ffn tensors/layer)"}
   - {row: R4, draft: contracts/architecture-requirements-v1.yaml, status: unmeasured, note: "no MoE rows found by grep"}
-  - {row: R5, draft: "E7 #4001 done_when amendment (contract -> derived code -> measured parity)", status: unwritten, note: "rides a3 quorum + C314 sign-off before any PR"}
+  - {row: R5, draft: "E7 #4001 done_when amendment (contract -> derived code -> measured parity)", status: drafted, draft_file: "cop-inbox handoff/la-0.74-e7-done-when-draft.md", note: "rides a3 quorum + C314 sign-off before any PR; QA order, QB pv schema vs Rust falsifiers, QC parity pass line"}
 issues:
   - {issue: 4001, state: open, milestone: "0.74.0", role: epic}
   - {issue: 5056, state: open, milestone: "0.74.0", role: "R1 qwen3_moe contract first (pmat PMAT-5056)"}
