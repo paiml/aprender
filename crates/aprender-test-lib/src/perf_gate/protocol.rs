@@ -323,7 +323,7 @@ pub fn witness_min_agree_tokens() -> u32 {
 }
 
 /// Pull one top-level block out of the matrix, naming what is missing.
-fn matrix_block(source: &str, key: &str) -> Result<serde_yaml_ng::Value, String> {
+pub(super) fn matrix_block(source: &str, key: &str) -> Result<serde_yaml_ng::Value, String> {
     let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(source)
         .map_err(|e| format!("perf-matrix.yaml does not parse as YAML: {e}"))?;
     doc.get(key).cloned().ok_or_else(|| {

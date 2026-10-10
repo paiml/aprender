@@ -469,7 +469,7 @@ use crate::LlmSubcommand;
 
 /// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode;
 /// #4954 ttft-verdict and #4971 shape-check, which read files and need no
-/// runtime).
+/// runtime, and #4971 parity, the perf041 probe).
 ///
 /// # Errors
 /// Propagates whichever mode ran.
@@ -477,8 +477,27 @@ pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
     match command {
         LlmSubcommand::TtftVerdict { runs } => super::test_llm_ttft::run(runs),
         LlmSubcommand::ShapeCheck { witness } => super::test_llm_shape::run(witness),
+        LlmSubcommand::Parity { .. } => dispatch_parity(command),
         LlmSubcommand::Bench { .. } => dispatch_bench(command),
     }
+}
+
+/// `apr test llm parity`: the probe drives its server through tokio.
+#[cfg(feature = "inference")]
+fn dispatch_parity(command: &LlmSubcommand) -> Result<()> {
+    super::test_llm_parity::run(command)
+}
+
+/// As [`dispatch_bench`]'s stub: a minimal build names the missing feature.
+///
+/// # Errors
+/// Always: this build cannot run the probe.
+#[cfg(not(feature = "inference"))]
+fn dispatch_parity(_command: &LlmSubcommand) -> Result<()> {
+    Err(CliError::InferenceFailed(
+        "`apr test llm parity` needs the `inference` feature (this apr was built without it)"
+            .to_string(),
+    ))
 }
 
 /// `apr test llm bench`, in either of its two modes.

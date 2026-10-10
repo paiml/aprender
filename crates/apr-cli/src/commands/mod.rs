@@ -159,6 +159,10 @@ pub(crate) mod test_llm_band;
 pub(crate) mod test_llm_ttft;
 // #4971 V3-d: `apr test llm shape-check`, the CLI over perf_gate::v3_shape.
 pub(crate) mod test_llm_shape;
+// #4971 V3-d: `apr test llm parity`, the CLI over the perf041 probe's Rust
+// port (apr_test::llm::parity). It drives a server through tokio.
+#[cfg(feature = "inference")]
+pub(crate) mod test_llm_parity;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.
