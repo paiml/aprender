@@ -1,0 +1,40 @@
+# Look-ahead kit, train 0.74 (worker la-0.74). Flat: one item per line.
+# Brief: cop-inbox handoff/lookahead-0.74.md. MoE verdict: handoff/quorum-a3-moe-e7.md (a: E7 stays 0.74).
+# RULE 1 (operator, verbatim, relayed by f7 2026-10-10): "confirm this is pv with ontology FIRST architecture".
+#   Order for every new architecture: pv-validated contract first, code derived from it (GH-323 codegen), measured parity last.
+train: "0.74"
+theme: "Any Model"
+epic: 4001
+owner_epic: aprender-a7   # a7 says none of its branches touch E7; never take an a7/* branch; ping a7 before contracts/*binding*
+criteria:
+  - {id: A1, pass: "one quant TRAITS table is the only quant dispatch (#3418)", falsifier: asked, command: asked, ruling: "epics.yaml done_when"}
+  - {id: A2, pass: "GgmlType reconciles with vendored ggml.h ids at a pinned sha; exhaustive matches, no `_ =>` (#3431)", falsifier: "#3431 lists 3 mutation falsifiers", command: asked, ruling: "epics.yaml done_when"}
+  - {id: A3, pass: "typed TensorStorage", falsifier: asked, command: asked, ruling: "epics.yaml done_when"}
+  - {id: A4, pass: "a new architecture lands as config plus a small delta; shared blocks adopted (#3422); new-arch line cost measured on a real addition", falsifier: asked, command: asked, ruling: "epics.yaml done_when"}
+  - {id: A5, pass: "MoE is the first registry entry: contracts/model-families/qwen3_moe.yaml pv-valid, then derived code, then qwen3moe CPU parity vs llama.cpp over >=4 varied prompts with a positive control", falsifier: asked, command: "pv validate / pv lint on the family yaml; parity harness unbuilt", ruling: "RULE 1 + quorum-a3-moe-e7 (a)"}
+baselines:
+  - {criterion: A5, plan: "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf (~/models), CPU, apr vs llama.cpp pinned sha, same prompts, token match + logits cosine", receipt: none}
+  - {criterion: A5, note: "anecdote only: apr 0.67.0 (0c6932fd54) CPU '2+2=' -> '2 + 2 = 4', 8 tokens, 1 prompt (moe-e7-options.md). NOT parity", receipt: none}
+  - {criterion: A4, plan: "line count of the qwen3moe path today (#3418 cites 1,678 lines vs llama.cpp qwen3moe.cpp 184) measured at a pinned sha", receipt: none}
+contracts:
+  - {row: R1, draft: contracts/model-families/qwen3_moe.yaml, status: unwritten, falsifier: asked, note: "no MoE family yaml exists (29 families incl. _schema); arch-constraints-v1 has a qwen3_moe row with is_moe: true"}
+  - {row: R2, draft: contracts/arch-constraints-v1.yaml, status: unmeasured, falsifier: asked, note: "qwen3_moe aliases include qwen3_5_moe/qwen3_5moe; qwen35moe is hybrid GDN+MoE, so the alias may claim support apr refuses (#4801). Compare TAH-002 on 0.72"}
+  - {row: R3, draft: contracts/apr-architecture-schema-v1.yaml, status: exists, note: "MoE invariants present (num_experts_per_tok <= num_experts, 3*num_experts ffn tensors/layer)"}
+  - {row: R4, draft: contracts/architecture-requirements-v1.yaml, status: unmeasured, note: "no MoE rows found by grep"}
+  - {row: R5, draft: "E7 #4001 done_when amendment (contract -> derived code -> measured parity)", status: unwritten, note: "rides a3 quorum + C314 sign-off before any PR"}
+issues:
+  - {issue: 4001, state: open, milestone: "0.74.0", role: epic}
+  - {issue: 3418, state: open, milestone: "0.74.0", role: "TRAITS table (A1)"}
+  - {issue: 3431, state: open, milestone: "0.74.0", role: "ggml.h reconciliation gate (A2)"}
+  - {issue: 3422, state: open, milestone: "0.74.0", role: "shared blocks (A4)"}
+  - {issue: 3423, state: closed, milestone: "0.74.0", role: "absorbed by E7"}
+  - {issue: 4801, state: open, milestone: backlog, role: "qwen35moe, after #3091/#3090/#3714"}
+  - {issue: 4378, state: open, role: "NOT ours: P0 owner:la-0.71"}
+staged: []
+questions:
+  - {id: Q1, text: "R2: keep or drop the qwen3_5_moe aliases on the qwen3_moe arch-constraints row while qwen35moe is refused?", asked: 2026-10-10, answer: open}
+  - {id: Q2, text: "A5 parity pass line: exact greedy-token match for N tokens, or logits cosine >= X?", asked: 2026-10-10, answer: open}
+risks:
+  - {risk: "#3418 touches ~30 hot dispatch files that 0.71 also edits", mechanism: "contract and docs first; code only on branches, rebased after 0.71.0", tripwire: "a 0.71 conflict on any staged branch: hold it"}
+  - {risk: "parity on one prompt is an anecdote (CLAUDE.md rule 6)", mechanism: ">=4 varied prompts + positive control", tripwire: "any single-prompt claim in a report"}
+  - {risk: "budget: look-ahead yields at 5h >= 80%", mechanism: "check rate-limits.json five_hour per item", tripwire: ">=80%: idle"}
