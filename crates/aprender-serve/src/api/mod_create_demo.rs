@@ -169,7 +169,7 @@ pub struct ChatCompletionRequest {
     /// #4971: OpenAI's `top_logprobs`, 0 to 20 alternatives per entry. Only
     /// with `logprobs: true`; alone it is refused with 400.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub top_logprobs: Option<super::TopLogprobs>,
+    pub top_logprobs: Option<TopLogprobs>,
 }
 
 /// The `chat_template_kwargs` apr honours (#3723).
