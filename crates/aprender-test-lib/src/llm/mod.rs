@@ -20,6 +20,10 @@ pub mod experiment;
 pub mod gpu_telemetry;
 #[cfg(feature = "llm")]
 pub mod loadtest;
+/// #4971 V3-d: the perf041 batched-parity probe's requests; the verdicts
+/// live in `crate::perf_gate::parity`.
+#[cfg(feature = "llm")]
+pub mod parity;
 pub mod prompts;
 #[cfg(feature = "llm")]
 pub mod report;
@@ -49,6 +53,8 @@ pub use loadtest::{
     LoadTest, LoadTestConfig, LoadTestResult, QualityFailure, QualityResult, RequestDetail,
     RequestRate, SweepLevel, SweepResult, TailAnalysis, TelemetryStat, ValidationMode,
 };
+#[cfg(feature = "llm")]
+pub use parity::{ParityProbe, ParityRun};
 pub use prompts::{
     assert_prompt_tokens_in_band, load_corpus as load_prompt_corpus,
     load_from_file as load_prompts_from_file, load_profile, Corpus, PromptProfile, PromptTokenBand,
