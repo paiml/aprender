@@ -1987,6 +1987,23 @@ pub enum LlmSubcommand {
         #[arg(long)]
         keyring: Option<ConfigPath>,
     },
+
+    /// #4971 V3: check a perf041 witness against the serving-shape rule.
+    ///
+    /// Reads the `witness.json` that `scripts/perf041_batched_parity_probe.py`
+    /// writes and decides whether it can stand as the V3 Qwen3.5-4B
+    /// serving-parity witness: the blessed model with its sha256, the
+    /// identity fields, one band per c in {1, 4, 8, 16}, perf041 PASS and
+    /// `m_formed == c` in every band, and every divergence from m=1 before
+    /// `declared_min` explained by a recorded top-2 margin below 0.05.
+    ///
+    /// Exits 0 when admissible. A witness that is not admissible exits 5
+    /// after printing every reason; one that cannot be read exits 3 (no such
+    /// file) or 4 (unreadable or empty). Not a gate: no release job runs it.
+    ShapeCheck {
+        /// The perf041 `witness.json` to check.
+        witness: InputFile,
+    },
 }
 
 /// Parse `apr cbtop --iterations`, rejecting 0.
