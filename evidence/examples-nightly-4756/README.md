@@ -73,13 +73,14 @@ shorter path. Each item below names its gate:
   of the three defaults can reach a pass in the nightly, which starts every example from the
   checkout root (`.github/workflows/examples-nightly.yml:51-55` sets no working directory):
   - *qa_verify.* Its two sections run cargo commands as child processes with no working
-    directory set (`qa_verify.rs:121`), so from the checkout root they run against the root
+    directory set (`qa_verify.rs:121-123`), so from the checkout root they run against the root
     facade package. `qa_verify-sections.txt` runs each section in a debug build with no
     terminal, after building the example alone in an empty build directory. Section 2, run
     first, took 325 s, and 81 s run again with its nested builds present. Section 1 ran
     third, after section 2 had built its nested test target, and took 283 s. Every run
-    exited rc 1 with gates reported FAIL. Section 1's test-count gate (`qa_verify.rs:425`)
-    printed `Only 0 tests` (`qa_verify-sections.txt:78`).
+    exited rc 1 with gates reported FAIL. Section 1's test-count gate (`fn test_count`,
+    `qa_verify.rs:161`, called at `:425`) printed `Only 0 tests` (the message at `:172`;
+    `qa_verify-sections.txt:78`).
     The example does not print its nested cargo output, so the file does not show why those
     gates failed. A bare run that ran a section would be a fail even when it finished inside
     the bound. Those gate failures are in every build, and are #5026, not this ticket. The
