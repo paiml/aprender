@@ -1260,7 +1260,10 @@ mod tests {
             .args(["--llama-port", &llama.to_string(), "--dry-run"])
             .current_dir(&root)
             .env("LLAMA_PIN_HOST", pin_host)
-            .env("LLAMA_BENCH_PATH", "/nonexistent/llama-bench")
+            // No named comparator, and the pinned build is looked for in an empty
+            // directory: the pin resolves to nothing on every host.
+            .env_remove("LLAMA_BENCH_PATH")
+            .env("LLAMA_PIN_SRC_ROOT", dir.path())
             .output()
             .expect("bash runs");
         let err = String::from_utf8_lossy(&o.stderr).into_owned();
@@ -1292,6 +1295,14 @@ mod tests {
         let (rc, err) = baseline_script("lambda", out.path(), free_ports());
         assert_eq!(rc, 2, "{err}");
         assert!(err.contains("is not empty"), "{err}");
+    }
+
+    #[test]
+    fn anti_copy_script_refuses_an_out_dir_naming_a_parent() {
+        let out = tempfile::tempdir().expect("tempdir");
+        let (rc, err) = baseline_script("lambda", &out.path().join("a/../b"), free_ports());
+        assert_eq!(rc, 2, "{err}");
+        assert!(err.contains("names a parent directory"), "{err}");
     }
 
     #[test]
