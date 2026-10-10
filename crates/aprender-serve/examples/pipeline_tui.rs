@@ -452,8 +452,12 @@ fn bench_correctness(model: &realizar::layers::Model, config: &realizar::layers:
         if no_nan { GREEN } else { RED }
     );
 
-    // Check generation produces valid tokens
-    let gen_config = GenerationConfig::default();
+    // Check generation produces valid tokens. A debug build generates one token: the
+    // default's steps of the unoptimized forward pass are most of a debug run.
+    let gen_config = GenerationConfig {
+        max_tokens: iters(GenerationConfig::default().max_tokens),
+        ..GenerationConfig::default()
+    };
     let generated = model.generate(&tokens, &gen_config).expect("generate");
     let tokens_valid = generated.iter().all(|&t| t < config.vocab_size);
     println!(
