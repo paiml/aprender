@@ -182,7 +182,7 @@ impl StreamLogprobs {
     ///
     /// It does not wait for the record: one that is not here when its token is
     /// was never sent, and waiting would hang a stream whose engine keeps the
-    /// sender (a batched turn, which records none).
+    /// sender (a turn of the iteration scheduler, which records none).
     ///
     /// # Errors
     /// The engine sent no record for `token`, or the record of another token.

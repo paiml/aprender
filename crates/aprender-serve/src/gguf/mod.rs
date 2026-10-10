@@ -88,7 +88,7 @@ pub use config::*;
 #[cfg(feature = "cuda")]
 pub use cuda::{
     BatchedDecodeState, CudaBackend, CudaInitError, Qwen35CudaModel, Qwen35CudaState,
-    Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape,
+    Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape, SlotRecorder,
 };
 #[cfg(feature = "cuda")]
 pub use cuda_model::*;
