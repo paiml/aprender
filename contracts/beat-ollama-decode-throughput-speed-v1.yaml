@@ -47,6 +47,13 @@ metadata:
     0.8%) and are explicitly NOT a calibration: a threshold comes from samples,
     never from invention.
 
+    2026-10-10 (aprender#5011): sm_121 IS NOW CALIBRATED FROM ITS OWN SAMPLES.
+    Thirteen gx10 nights 2026-08-30..2026-10-10 (ratio 0.561-0.652, ollama within
+    2%) give SILICON_FLOORS["12.1"] = 0.49 = worst 0.561 x 0.88 rounded down, the
+    sm_89 rule. It is a NO-COLLAPSE floor only - it catches the CPU-SIMD collapse
+    (~0.065), not a slide from 0.60 to 0.50, and it is not parity: #2800 closed the
+    GB10 shortfall as a real deficit. The fields below stay the sm_89 numbers.
+
     SCOPE: STEADY-STATE GPU DECODE only — marginal token-generation rate with
     model load + FP8-weight-cache build + CUDA-graph capture + prefill amortized
     out. apr's one-shot CLI has a large (~3.4-3.9s) fixed per-invocation startup
