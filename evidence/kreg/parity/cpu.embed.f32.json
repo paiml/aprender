@@ -1,5 +1,5 @@
 {
-  "build_identity": "ad82594d66",
+  "build_identity": "94be42690a90898641dc47348100fe182a3dee62",
   "host": "mac-server",
   "host_arch": "x86_64",
   "input_set": {
@@ -7,10 +7,10 @@
     "driver": "none",
     "oracle": "f64_definition:embed:E[token*n..(token+1)*n]",
     "row_sha256": "20297cf8e023d329d88f45714d9b06fd9e313fcef2b0b0f4aa9be47cb75b6f55",
-    "source_sha256": "cac832c875d5591e6e1b127c19b299a12be3ebc9dbc45a3c436a916834618c09",
+    "source_sha256": "9b79f97fdee03ad8b2c62e6edbaa3d45119dc520850b220f868c2b05f568d689",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "15a38982cb74aa23fd4948cca5ebcaa345bccec7b5c067a277029fa8cdc4e67f",
+  "input_set_hash": "adfa0d35a945f10cc12b26bc34a91a99ffcd9de3eb9435f7ae52b3790abf9c97",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -20,6 +20,7 @@
     "avx512bw",
     "avx512vnni"
   ],
+  "isa_forced": "native",
   "kernel_id": "cpu.embed.f32",
   "margin": {
     "error_model": "EM-ELEM",
@@ -37,7 +38,7 @@
   },
   "source_fn": "embed_into",
   "tolerance_rel": 2.9999999999999997e-308,
-  "ts": "2026-09-29T06:21:35Z",
+  "ts": "2026-10-10T05:19:34Z",
   "workload": {
     "n": 896,
     "seed": 1161367296,

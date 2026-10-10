@@ -1,5 +1,5 @@
 {
-  "build_identity": "6bc5ad90ea0f605c9eabfc3f2450fd44cbd10298",
+  "build_identity": "94be42690a90898641dc47348100fe182a3dee62",
   "fp32_activations": {
     "max_abs_err": 1.7067602402498494e-6,
     "max_rel_err": 7.356022484897627e-7
@@ -11,10 +11,10 @@
     "driver": "none",
     "oracle": "le_decode_half_f64",
     "row_sha256": "64bc26b83b54d8de3067e9dbe5da399f6d5aed69b3877650a7279804c3d9f010",
-    "source_sha256": "cac832c875d5591e6e1b127c19b299a12be3ebc9dbc45a3c436a916834618c09",
+    "source_sha256": "9b79f97fdee03ad8b2c62e6edbaa3d45119dc520850b220f868c2b05f568d689",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "110b96873173b618eab2d7c44b8e6b93fe54a4f56e5a672e274f3cda1e0de91a",
+  "input_set_hash": "9cafcc8894349723577ec107593f7e2ded449ecf61fd85516e2cba0bd5cbed01",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -24,6 +24,7 @@
     "avx512bw",
     "avx512vnni"
   ],
+  "isa_forced": "native",
   "kernel_id": "cpu.matvec.f32",
   "margin": {
     "acc": "f32",
@@ -44,7 +45,7 @@
   },
   "source_fn": "fused_matmul_f32",
   "tolerance_rel": 2e-6,
-  "ts": "2026-09-29T03:06:57Z",
+  "ts": "2026-10-10T05:19:17Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 256,
