@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
-# workspace_test_nightly.sh -- main's FULL workspace tests, at night, on a clean-room host (#5002).
+# workspace_test_nightly.sh -- main's workspace tests, at night, on a clean-room host (#5002).
 #
 # WHY. A push to main reuses the merge-queue result for workspace-test, and the merge queue
 # tests the crates a PR touches. #4912 broke aprender-core tests without touching
 # aprender-core, so main's tree was red for ~46h and no run said so (#5001). This script runs,
-# on main's head, the FULL-tier test commands of ci/sections.yml's workspace-test-shard
-# section: the workspace lib line, the GPU crates, the compute crate, the explicit commands.
+# on main's head, test commands of ci/sections.yml's workspace-test-shard section: the FULL
+# tier's workspace lib line, GPU crates, compute crate and explicit commands, and the QUICK
+# tier's `--lib --tests` line (lane `tests`).
+#
+# The full tier alone is not enough. Its lib line is `--lib` only, and no explicit command
+# names the integration targets #5001 broke (mutation_testing_tests,
+# falsification_measurement_tests). Measured: those rows were green at #4912's commit, and the
+# quick-tier line, scoped to aprender-core, failed the same five tests #5001 names.
+#
+# SCOPE of the tests lane (quorum q-5002d, Q1 KT). CI binds that line's `$pkgs` to the crates
+# a PR touches. Here it is bound to TESTS_PKGS (aprender-core, the crate #5002 names), printed
+# on every line of the lane. Widening it to the workspace is ticket #5027, after one measured
+# workspace run.
 #
 # LAB, never a gate (operator C324). Only .github/workflows/workspace-test-nightly.yml runs it.
 # That workflow is not "CI" and has no check named "workspace-test" or "ci / gate", and
@@ -14,7 +25,11 @@
 #
 # NO PYTHON (operator C301). The commands run on the runner host, not in the sovereign-ci
 # container (the deep-nightly pattern). A difference that only the host has can make a red
-# night that CI would not have; that opens the ticket like any other red.
+# night that CI would not have; that opens the ticket like any other red. One such difference
+# is closed (q-5002d, Q2 A): CI's container mounts no Hugging Face cache, and
+# rosetta_dangerous_integration.rs reads $HF_HOME, else ~/.cache/huggingface, so the tests lane
+# runs with HF_HOME set to an empty directory of its own (ADDED below). The other lanes run no
+# integration target and get nothing added.
 #
 # DRIFT (quorum q-5002c, Q2). Before anything runs, ROWS and the env tables below are compared
 # with the section. Any difference is NOT MEASURED (exit 2) and nothing runs:
@@ -26,6 +41,10 @@
 #       PASS (the job's own value) or OMIT (container-only, with its reason).
 #   (c) The compute row runs as its CI text, pass rule included (`bash -c "$text"`).
 #   (d) Comment lines (first non-blank character #) never count, as a command or as an env token.
+#   (e) Mounts (q-5002d). For each RUN row, the container side of every -v of its docker run
+#       equals the row's MOUNTS, each with one disposition. A new mount (a model cache, say)
+#       is a difference the env check cannot see, so it stops the run too.
+# A token that CI does not pass and this script adds (ADDED) must not be in the row's -e set.
 # The workflow_dispatch refinement base pin must also appear verbatim. It runs first, as it does
 # in CI, because lint_passes_on_real_contracts reads origin/main when CI is set (aprender-4502).
 #
@@ -34,12 +53,13 @@
 #
 #   bash scripts/ci/workspace_test_nightly.sh --self-test
 #   bash scripts/ci/workspace_test_nightly.sh --drift [--sections FILE]
-#   bash scripts/ci/workspace_test_nightly.sh --run lib|gpu|compute|explicit|all [--sections FILE]
+#   bash scripts/ci/workspace_test_nightly.sh --run lib|gpu|compute|explicit|tests|all [--sections FILE]
 #   bash scripts/ci/workspace_test_nightly.sh --run LANE --only-package PKG     (a proof, never a night)
 #
 # --only-package PKG narrows a run to one package for a pre-merge red/green proof: lib runs
 # `-p PKG --lib`, gpu and compute run only for their own packages, explicit runs only the
-# fragments that name `-p PKG`. Every line it prints says PROOF-SCOPE, and the self-test fails
+# fragments that name `-p PKG`, tests binds `$pkgs` to ` -p PKG`. Every line it prints says
+# PROOF-SCOPE, and the self-test fails
 # if the nightly workflow ever passes it. Commands run in the current directory; --sections
 # defaults to ./ci/sections.yml there.
 set -euo pipefail
@@ -47,7 +67,10 @@ set -euo pipefail
 SELF=$(readlink -f "${BASH_SOURCE[0]}")
 SECTION=workspace-test-shard
 BASE_PIN='git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main'
-LANES='lib gpu compute explicit'
+LANES='lib gpu compute explicit tests'
+# The tests row's `$pkgs` (q-5002d Q1 KT). CI builds it from the crates a PR touches; here it is
+# the crate #5002 names. Widening it to the workspace is #5027, after one measured run.
+TESTS_PKGS=' -p aprender-core'
 
 # ROWS: a header line, RUN <id> or SKIP <reason>, then the section's line, indented 4 spaces.
 rows() {
@@ -74,9 +97,9 @@ SKIP the Σ-executed listing: it lists the tests a step owes and runs none
     bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d > "$sig/explicit.list.txt"
 SKIP shard 3's example build: it compiles the examples and runs no test
     cargo build --examples --workspace --keep-going
-SKIP the quick tier: a selection from the full tier this script runs whole
+RUN tests
     bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
-SKIP the quick tier: a selection from the full tier this script runs whole
+SKIP the tree-reader filterset: a narrowing of targets the tests row runs (its scope: #5027; the registry's gap: #5028)
     cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR"
 SKIP the quick tier's Σ-executed listing: it runs no test
     if [ -n "$SEL" ]; then cargo nextest list --profile ci --lib --tests $SEL --message-format json > /sigma/quick-sel.list.json; fi
@@ -104,13 +127,32 @@ declare -A ENVSET=(
     [compute]="$GH $BUILD"
     [explicit-list]="host"
     [explicit]="$GH $BUILD SHARD SHARDS"
+    [tests]="$SAFE $GH $BUILD $DEBUG CARGO_TERM_COLOR=never"
+)
+
+# Each RUN row's mounts: the container side of every -v of its docker run ("host" outside one).
+VOLS='/workspace /usr/local/cargo/registry /workspace/target /sccache'
+declare -A MOUNTS=(
+    [lib]=$VOLS
+    [gpu]=$VOLS
+    [compute]=$VOLS
+    [explicit-list]=host
+    [explicit]=$VOLS
+    [tests]=$VOLS
+)
+
+# What this script sets for a row that CI does not pass (names only; the value is made per run).
+declare -A ADDED=(
+    [tests]=HF_HOME
 )
 
 # One disposition per token: APPLY (exported for the row), PASS (the job's own value), OMIT
-# (container-only), HOST (the row runs outside any container).
+# (container-only), HOST (the row runs outside any container); for a mount, MAP (what stands
+# for it here) or OMIT; ADDED (set here, never passed by CI).
 dispositions() {
     cat << 'DISP'
 CARGO_INCREMENTAL=0 APPLY as in CI
+CARGO_TERM_COLOR=never APPLY as in CI
 CARGO_BUILD_JOBS=8 APPLY as in CI
 CARGO_PROFILE_TEST_DEBUG=line-tables-only APPLY as in CI
 CARGO_PROFILE_DEV_DEBUG=line-tables-only APPLY as in CI
@@ -132,10 +174,15 @@ GIT_CONFIG_VALUE_0=/workspace OMIT as GIT_CONFIG_COUNT
 SHARD OMIT CI splits the row over 3 shards; here it runs whole, and STRIP drops the argument that reads it
 SHARDS OMIT as SHARD
 host HOST the row runs on the runner in CI too, outside any container
+/workspace MAP the job's checkout, the current directory here
+/usr/local/cargo/registry MAP the runner user's own cargo registry
+/workspace/target MAP the checkout's own target/ (CARGO_TARGET_DIR is OMIT)
+/sccache OMIT the compiler cache's directory; no compiler cache runs here (RUSTC_WRAPPER is OMIT)
+HF_HOME ADDED an empty directory of the run's own: CI's container mounts no Hugging Face cache (MOUNTS), and the host user's cache made rosetta_dangerous red where CI skips it (q-5002d Q2 A)
 DISP
 }
 
-# The section's command lines, as "CMD<TAB>env<TAB>text", then FOUND and PIN counts.
+# The section's command lines, as "CMD<TAB>env<TAB>text<TAB>mounts", then FOUND and PIN counts.
 # shellcheck disable=SC2016 # awk program, not shell
 EXTRACT='
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -144,26 +191,34 @@ BEGIN { sq = sprintf("%c", 39) }
 /^[^ \t#]/ { injobs = 0; insec = 0 }
 injobs && /^  [A-Za-z0-9_-]+:[ \t]*$/ {
     insec = (trim($0) == ENVIRON["WTN_SECTION"] ":"); if (insec) found++
-    blk = 0; cmd = 0; env = ""; next
+    blk = 0; cmd = 0; env = ""; vols = ""; next
 }
 !insec { next }
 /^[ \t]*#/ { next }
 {
     t = trim($0)
-    if (t ~ /^- (name|uses):/) { blk = 0; cmd = 0; env = "" }
-    if (!cmd && t ~ /(^|[ \t])docker run( |$)/) { blk = 1; env = "" }
+    if (t ~ /^- (name|uses):/) { blk = 0; cmd = 0; env = ""; vols = "" }
+    if (!cmd && t ~ /(^|[ \t])docker run( |$)/) { blk = 1; env = ""; vols = "" }
     if (blk && !cmd) {
         n = split(t, f, /[ \t]+/)
-        for (i = 1; i < n; i++) if (f[i] == "-e") env = env " " f[i + 1]
+        for (i = 1; i <= n; i++) {
+            if (f[i] == "-e" && i < n) env = env " " f[i + 1]
+            # A mount is its container side: the host side holds runner paths, and what stands
+            # for it here is a disposition in the table.
+            else if (f[i] == "-v" && i < n) { v = f[i + 1]; gsub(/"/, "", v); sub(/^[^:]*:/, "", v); vols = vols " " v }
+            # A joined or long form neither case reads is a token no table holds, so it drifts.
+            else if (f[i] ~ /^-e=/ || f[i] ~ /^--env(-file)?(=|$)/) env = env " unparsed:" f[i]
+            else if (f[i] ~ /^-v=/ || f[i] ~ /^--(volume|mount|tmpfs)(=|$)/) vols = vols " unparsed:" f[i]
+        }
         if (index(t, "\"$IMAGE\"")) { cmd = 1; q = 0 }
     }
     if (t == ENVIRON["WTN_BASE_PIN"]) pin++
     # A step name is a label, not a command.
     if (t !~ /^(- )?name:/ && (t ~ /(^|[^A-Za-z0-9_.\/-])cargo +[a-z]/ || index(t, "ci_run_explicit_test_commands.sh")))
-        print "CMD\t" (cmd ? (env == "" ? "none" : substr(env, 2)) : "host") "\t" t
+        print "CMD\t" (cmd ? (env == "" ? "none" : substr(env, 2)) : "host") "\t" t "\t" (cmd ? (vols == "" ? "none" : substr(vols, 2)) : "host")
     if (cmd) {
         q += split(t, parts, sq) - 1
-        if (t !~ /\\$/ && q % 2 == 0) { blk = 0; cmd = 0; env = "" }
+        if (t !~ /\\$/ && q % 2 == 0) { blk = 0; cmd = 0; env = ""; vols = "" }
     }
 }
 END { print "FOUND\t" (found + 0); print "PIN\t" (pin + 0) }
@@ -195,9 +250,10 @@ load_tables() {
 }
 
 # table_check: the tables agree with themselves (one disposition per used token, none unused,
-# APPLY carries a value, every STRIP is a suffix of its row, every lane has its rows).
+# APPLY carries a value, every STRIP is a suffix of its row, every lane has its rows, an ADDED
+# name is not in its row's CI env set, the tests row holds `$pkgs` once).
 table_check() {
-    local id tok bad=0
+    local id tok t bad=0
     declare -A used=()
     for id in "${!ENVSET[@]}"; do
         [ -n "${RUNTEXT[$id]:-}" ] || { echo "TABLE: ENVSET names $id, which is not a RUN row"; bad=1; }
@@ -206,22 +262,46 @@ table_check() {
             case "${DISP[$tok]:-}" in
                 "APPLY "*) [[ $tok == *=* ]] || { echo "TABLE: APPLY token $tok has no value"; bad=1; } ;;
                 "PASS "* | "OMIT "?* | "HOST "*) ;;
-                *) echo "TABLE: token $tok ($id) has no disposition"; bad=1 ;;
+                *) echo "TABLE: env token $tok ($id) has no env disposition (APPLY, PASS, OMIT or HOST)"; bad=1 ;;
             esac
+        done
+    done
+    for id in "${!MOUNTS[@]}"; do
+        [ -n "${RUNTEXT[$id]:-}" ] || { echo "TABLE: MOUNTS names $id, which is not a RUN row"; bad=1; }
+        for tok in ${MOUNTS[$id]}; do
+            used[$tok]=1
+            case "$tok:${DISP[$tok]:-}" in
+                /*:"MAP "?* | /*:"OMIT "?* | host:"HOST "*) ;;
+                *) echo "TABLE: mount $tok ($id) has no mount disposition (MAP or OMIT)"; bad=1 ;;
+            esac
+        done
+    done
+    for id in "${!ADDED[@]}"; do
+        [ -n "${RUNTEXT[$id]:-}" ] || { echo "TABLE: ADDED names $id, which is not a RUN row"; bad=1; }
+        for tok in ${ADDED[$id]}; do
+            used[$tok]=1
+            case "${DISP[$tok]:-}" in "ADDED "?*) ;; *) echo "TABLE: added $tok ($id) has no ADDED disposition"; bad=1 ;; esac
+            # CI passing it would make it CI's value, not one this script adds.
+            for t in ${ENVSET[$id]:-}; do [ "${t%%=*}" != "$tok" ] || { echo "TABLE: $tok is ADDED for $id and also in its CI env set"; bad=1; }; done
         done
     done
     for tok in "${!DISP[@]}"; do [ -n "${used[$tok]:-}" ] || { echo "TABLE: disposition for $tok, which no row uses"; bad=1; }; done
     for id in "${!RUNTEXT[@]}"; do
         [ -n "${ENVSET[$id]:-}" ] || { echo "TABLE: RUN row $id has no ENVSET"; bad=1; }
+        [ -n "${MOUNTS[$id]:-}" ] || { echo "TABLE: RUN row $id has no MOUNTS"; bad=1; }
     done
     for id in "${!STRIP[@]}"; do
         [[ ${RUNTEXT[$id]:-} == *"${STRIP[$id]}" ]] || { echo "TABLE: STRIP for $id is not a suffix of its row"; bad=1; }
     done
-    for id in lib gpu compute explicit-list explicit; do [ -n "${RUNTEXT[$id]:-}" ] || { echo "TABLE: no RUN row $id"; bad=1; }; done
+    for id in $LANES explicit-list; do [ -n "${RUNTEXT[$id]:-}" ] || { echo "TABLE: no RUN row $id"; bad=1; }; done
+    # The tests row is CI's text with `$pkgs` left as written; the script binds it once.
+    t=${RUNTEXT[tests]:-}
+    [[ $t == *'$pkgs'* && ${t#*'$pkgs'} != *'$pkgs'* ]] || { echo "TABLE: the tests row does not hold \$pkgs exactly once"; bad=1; }
+    [[ $TESTS_PKGS =~ ^(\ -p\ [a-z0-9_-]+)+$ ]] || { echo "TABLE: TESTS_PKGS '$TESTS_PKGS' is not ' -p CRATE'..."; bad=1; }
     return $((bad * 2))
 }
 
-# drift FILE: 0 when the tables equal the section (a)-(d), else 2 with one DRIFT line per difference.
+# drift FILE: 0 when the tables equal the section (a)-(e), else 2 with one DRIFT line per difference.
 drift() {
     local file=$1 out found pin id t n want got bad=0
     load_tables || return 2
@@ -242,22 +322,47 @@ drift() {
         got=$(TXT=${RUNTEXT[$id]} awk -F'\t' '$1 == "CMD" && $3 == ENVIRON["TXT"] {print $2}' <<< "$out" | sorted)
         want=$(sorted <<< "${ENVSET[$id]}")
         [ "$got" = "$want" ] || { echo "DRIFT: env $id: the section has [$got], the table has [$want]"; bad=1; }
+        got=$(TXT=${RUNTEXT[$id]} awk -F'\t' '$1 == "CMD" && $3 == ENVIRON["TXT"] {print $4}' <<< "$out" | sorted)
+        want=$(sorted <<< "${MOUNTS[$id]}")
+        [ "$got" = "$want" ] || { echo "DRIFT: mounts $id: the section has [$got], the table has [$want]"; bad=1; }
     done
     [ "$bad" = 0 ] || return 2
-    echo "DRIFT ok: ${#TEXT[@]} rows (${#RUNTEXT[@]} run) equal $SECTION in $file; env checked for each run row; base pin present"
+    echo "DRIFT ok: ${#TEXT[@]} rows (${#RUNTEXT[@]} run) equal $SECTION in $file; env and mounts checked for each run row; base pin present"
 }
 
 # lane_env ID: the APPLY tokens of a row, one per line.
 lane_env() { local tok; for tok in ${ENVSET[$1]}; do case "${DISP[$tok]}" in "APPLY "*) echo "$tok" ;; esac; done; }
 
-# run_row ID CMD: run one command with its row's APPLY env; prints RESULT, returns 0, 1 or 2.
+# ltag ID: the scope every line of a lane carries (none for a whole lane).
+ltag() {
+    if [ -n "$ONLY" ]; then echo " PROOF-SCOPE -p $ONLY"
+    elif [ "$1" = tests ]; then echo " SCOPE$TESTS_PKGS"
+    fi
+}
+
+# added_env ID DIR: a row's ADDED values, one per line; DIR is an empty directory of the run's own.
+added_env() {
+    local tok
+    for tok in ${ADDED[$1]:-}; do
+        case "$tok" in
+            HF_HOME) echo "HF_HOME=$2" ;;
+            *) echo "NOT-MEASURED: this script has no value for ADDED $tok"; return 2 ;;
+        esac
+    done
+}
+
+# run_row ID CMD [VAR=VALUE...]: run one command with its row's APPLY env and the given ADDED
+# values; prints RESULT, returns 0, 1 or 2.
 run_row() {
-    local id=$1 cmd=$2 rc=0 tag=${ONLY:+ PROOF-SCOPE -p $ONLY}
+    local id=$1 cmd=$2 rc=0 tag
+    shift 2
+    tag=$(ltag "$id")
     local -a apply
     mapfile -t apply < <(lane_env "$id")
     echo "::group::$id$tag: $cmd"
-    echo "ENV $id: ${apply[*]:-none} (PASS and OMIT tokens: see --drift and this script's table)"
-    env "${apply[@]}" bash -c "$cmd" < /dev/null || rc=$?
+    echo "ENV $id$tag: ${apply[*]:-none} (PASS and OMIT tokens: see --drift and this script's table)"
+    [ $# = 0 ] || echo "ADDED $id$tag: ${*%%=*} (values made for this run; see this script's table)"
+    env "${apply[@]}" "$@" bash -c "$cmd" < /dev/null || rc=$?
     echo "::endgroup::"
     echo "RESULT $id$tag rc=$rc"
     if [ "$rc" = 0 ]; then return 0; fi
@@ -282,7 +387,8 @@ explicit_scoped() {
 }
 
 lane() {
-    local l=$1 rc=0 n tmp
+    local l=$1 rc=0 n tmp pk
+    local -a added
     case "$l" in
         lib)
             if [ -z "$ONLY" ]; then need_nextest lib || return 2; run_row lib "${RUNTEXT[lib]%"${STRIP[lib]}"}" || rc=$?
@@ -312,13 +418,25 @@ lane() {
                 run_row explicit "bash scripts/ci_run_explicit_test_commands.sh --run $tmp" || rc=$?
                 rm -rf "${tmp:?}"
             fi ;;
+        tests)
+            # `$pkgs` stays an unexported shell variable, as in CI's step; both values are
+            # checked (TESTS_PKGS by table_check, ONLY by the argument parser), so quoting is safe.
+            pk=${ONLY:+ -p $ONLY}
+            pk=${pk:-$TESTS_PKGS}
+            need_nextest tests || return 2
+            echo "PKGS tests$(ltag tests): \$pkgs='$pk' (q-5002d Q1 KT: CI binds it to the crates a PR touches; the workspace is #5027)"
+            tmp=$(mktemp -d) || { echo "NOT-MEASURED: mktemp failed"; return 2; }
+            mapfile -t added < <(added_env tests "$tmp")
+            if [[ ${added[*]:-} == *NOT-MEASURED* ]]; then printf '%s\n' "${added[@]}"; rm -rf "${tmp:?}"; return 2; fi
+            run_row tests "pkgs='$pk'; ${RUNTEXT[tests]}" "${added[@]}" || rc=$?
+            rm -rf "${tmp:?}" ;;
         *) echo "usage: unknown lane '$l' (one of: $LANES all)"; return 2 ;;
     esac
     return "$rc"
 }
 
 run() {
-    local which=$1 sections=$2 l rc worst=0
+    local which=$1 sections=$2 l rc vtag worst=0
     drift "$sections" || { echo "VERDICT $which: NOT-MEASURED (drift: the table and $SECTION differ; nothing ran)"; return 2; }
     [ "${CI:-}" = true ] || { echo "VERDICT $which: NOT-MEASURED (CI is '${CI:-}', not 'true'; CI's container gets the runner's CI=true and tests read it)"; return 2; }
     [ -z "$ONLY" ] || echo "PROOF-SCOPE -p $ONLY: a narrowed run for a red/green proof, not a nightly verdict"
@@ -330,17 +448,19 @@ run() {
     echo "refinement base: origin/main tip $(git rev-parse origin/main) (CI's workflow_dispatch arm)"
     for l in $([ "$which" = all ] && echo "$LANES" || echo "$which"); do
         rc=0; lane "$l" || rc=$?
-        echo "LANE $l${ONLY:+ PROOF-SCOPE -p $ONLY}: $(word "$rc")"
+        echo "LANE $l$(ltag "$l"): $(word "$rc")"
         if [ "$rc" = 1 ] || { [ "$rc" = 2 ] && [ "$worst" = 0 ]; }; then worst=$rc; fi
     done
-    echo "VERDICT $which${ONLY:+ PROOF-SCOPE -p $ONLY}: $(word "$worst")"
+    vtag=$(ltag "$which")
+    [ "$which" != all ] || [ -n "$ONLY" ] || vtag=" (tests SCOPE$TESTS_PKGS)"
+    echo "VERDICT $which$vtag: $(word "$worst")"
     return "$worst"
 }
 
 word() { case "$1" in 0) echo GREEN ;; 1) echo RED ;; *) echo NOT-MEASURED ;; esac; }
 
 # ---------------------------------------------------------------------------------------------
-# --self-test: a planted case for each of (a)-(d), the env and table checks, and the run paths
+# --self-test: a planted case for each of (a)-(e), the env and table checks, and the run paths
 # (stub cargo on PATH, a fixture repo with a file:// origin). Run from the repo root.
 self_test() {
     # T is global: the EXIT trap runs after this function returns, when a local T is unset.
@@ -405,6 +525,23 @@ self_test() {
     plant d-env.yml after '-e CARGO_INCREMENTAL=0' '- name: Workspace lib tests' '            # -e RUST_MIN_STACK=8388608 \' \
         && expect "(d) an env var in a comment does not count" 0 '^DRIFT ok' drift_of d-env.yml || bad "(d) plant d-env"
     plant pin.yml del "$BASE_PIN" && expect "the base pin line removed" 2 'base pin line appears 0' drift_of pin.yml || bad "plant pin"
+    # The quick tier's first step: the tests row (q-5002d).
+    local quick='bash -c "cargo nextest run --profile ci --lib --tests$pkgs"' qname='- name: "Quick tier: lib + integration tests'
+    local sc='-v "${SCCACHE_HOST_DIR}:/sccache"'
+    plant a-tests.yml sub "$quick" '' '--lib$pkgs' '--lib --tests$pkgs' \
+        && expect "(a) the tests row edited (--tests dropped)" 2 'absent.*--lib --tests.pkgs"$' drift_of a-tests.yml || bad "(a) plant a-tests"
+    plant b-tests.yml after '-e CARGO_TERM_COLOR=never' "$qname" '            -e HF_HOME=/hf \' \
+        && expect "(b) an env var added to the quick-tier run" 2 'env tests:.*HF_HOME=/hf' drift_of b-tests.yml || bad "(b) plant b-tests"
+    plant e-add.yml after "$sc" "$qname" '            -v "${HF_CACHE}:/root/.cache/huggingface" \' \
+        && expect "(e) a mount added to the quick-tier run" 2 'mounts tests:.*/root/.cache/huggingface' drift_of e-add.yml || bad "(e) plant e-add"
+    plant e-del.yml del "$sc" '- name: Workspace lib tests' && expect "(e) a mount dropped from the lib run" 2 'mounts lib:' drift_of e-del.yml || bad "(e) plant e-del"
+    plant e-long.yml after "$sc" "$qname" '            --mount type=bind,src=/x,dst=/y \' \
+        && expect "(e) a mount in --mount form is not missed" 2 'mounts tests:.*unparsed:--mount' drift_of e-long.yml || bad "(e) plant e-long"
+    plant e-cmt.yml after "$sc" "$qname" '            # -v "${HF_CACHE}:/root/.cache/huggingface" \' \
+        && expect "(d) a mount in a comment does not count" 0 '^DRIFT ok' drift_of e-cmt.yml || bad "(d) plant e-cmt"
+    sed 's/^\(    \[tests\]="\$SAFE \$GH \$BUILD \$DEBUG CARGO_TERM_COLOR=never\)"$/\1 HF_HOME"/' "$SELF" > "$T/added.sh"
+    if cmp -s "$SELF" "$T/added.sh"; then bad "table: plant added.sh did not land"
+    else expect "table: an ADDED name in its row's CI env set" 2 'TABLE: HF_HOME is ADDED for tests and also in its CI env set' bash "$T/added.sh" --drift --sections "$real"; fi
 
     echo "self-test: runs (stub cargo, fixture repo)"
     local R=$T/repo B=$T/bin
@@ -418,7 +555,12 @@ self_test() {
     git -C "$R" remote add origin "file://$T/origin"
     cat > "$B/cargo" << 'STUB'
 #!/usr/bin/env bash
-printf 'ARGV %s | JOBS=%s INCR=%s\n' "$*" "${CARGO_BUILD_JOBS-unset}" "${CARGO_INCREMENTAL-unset}" >> "$STUB_LOG"
+hf=unset
+if [ -n "${HF_HOME+x}" ]; then
+    if [ -d "$HF_HOME" ] && [ -z "$(ls -A "$HF_HOME")" ]; then hf=empty; else hf="not-empty:$HF_HOME"; fi
+    printf 'HFDIR %s\n' "$HF_HOME" >> "$STUB_LOG"
+fi
+printf 'ARGV %s | JOBS=%s INCR=%s HF=%s PKGS=%s\n' "$*" "${CARGO_BUILD_JOBS-unset}" "${CARGO_INCREMENTAL-unset}" "$hf" "${pkgs-unset}" >> "$STUB_LOG"
 if [ "$1 $2" = "nextest --version" ]; then exit "${STUB_NEXTEST_RC:-0}"; fi
 case "${STUB_MODE:-ok}" in
     ok) echo "test result: ok. 3 passed"; exit 0 ;;
@@ -430,10 +572,11 @@ esac
 STUB
     chmod +x "$B/cargo"
     # in_repo ENV... -- CMD...: run CMD in the fixture repo with the stub first on PATH.
-    in_repo() { (cd "$R" && env PATH="$B:$PATH" STUB_LOG="$T/stub.log" "$@"); }
+    # The caller's HF_HOME and pkgs are cleared, so a value the stub sees came from this script.
+    in_repo() { (cd "$R" && env -u HF_HOME -u pkgs PATH="$B:$PATH" STUB_LOG="$T/stub.log" "$@"); }
     : > "$T/stub.log"
     expect "lib runs the CI line without its shard argument" 0 'VERDICT lib: GREEN' in_repo CI=true bash "$SELF" --run lib
-    if grep -qxF 'ARGV nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute | JOBS=8 INCR=0' "$T/stub.log"; then ok "lib argv and APPLY env reach cargo"; else bad "lib argv/env: $(tail -n 1 "$T/stub.log")"; fi
+    if grep -qxF 'ARGV nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute | JOBS=8 INCR=0 HF=unset PKGS=unset' "$T/stub.log"; then ok "lib argv and APPLY env reach cargo; nothing ADDED"; else bad "lib argv/env: $(tail -n 1 "$T/stub.log")"; fi
     expect "a failing lib run is RED" 1 'VERDICT lib: RED' in_repo CI=true STUB_MODE=red bash "$SELF" --run lib
     expect "(c) compute: ok then FAILED is RED" 1 'LANE compute: RED' in_repo CI=true STUB_MODE=okthenfail bash "$SELF" --run compute
     expect "(c) compute: SIGSEGV at exit after ok is GREEN" 0 'LANE compute: GREEN' in_repo CI=true STUB_MODE=segv bash "$SELF" --run compute
@@ -458,10 +601,31 @@ STUB
     expect "proof scope prints PROOF-SCOPE" 0 'VERDICT lib PROOF-SCOPE -p aprender-core: GREEN' in_repo CI=true bash "$SELF" --run lib --only-package aprender-core
     if grep -q '^ARGV nextest run --profile ci -p aprender-core --lib ' "$T/stub.log"; then ok "proof scope narrows lib to -p"; else bad "proof scope argv: $(tail -n 1 "$T/stub.log")"; fi
     expect "proof scope runs only the fragments naming -p" 0 'ran=1 skipped=0 total=1 failed=0' in_repo CI=true bash "$SELF" --run explicit --only-package aprender-core
-    local wf=.github/workflows/workspace-test-nightly.yml
+
+    echo "self-test: the tests lane (q-5002d)"
+    local o r=0 n hfdir tl='^(PKGS|ENV|ADDED|RESULT|LANE|VERDICT) tests'
+    : > "$T/stub.log"
+    o=$(in_repo CI=true bash "$SELF" --run tests 2>&1) || r=$?
+    if [ "$r" = 0 ] && grep -qx 'VERDICT tests SCOPE -p aprender-core: GREEN' <<< "$o"; then ok "tests runs the quick-tier line with \$pkgs bound to TESTS_PKGS"
+    else bad "tests verdict (rc $r)"; printf '%s\n' "$o" | tail -n 8 | sed 's/^/       | /'; fi
+    if grep -qxF 'ARGV nextest run --profile ci --lib --tests -p aprender-core | JOBS=8 INCR=0 HF=empty PKGS=unset' "$T/stub.log"; then ok "tests argv, APPLY env and an empty HF_HOME reach cargo; \$pkgs is not exported"
+    else bad "tests argv/env: $(tail -n 1 "$T/stub.log")"; fi
+    n=$(grep -cE "$tl" <<< "$o" || true)
+    if [ "$n" = 6 ] && ! grep -E "$tl" <<< "$o" | grep -qvE ' tests SCOPE -p aprender-core( |:)'; then ok "every line of the tests lane names its scope"
+    else bad "tests lines: $n of 6, or one without its scope"; fi
+    hfdir=$(sed -n 's/^HFDIR //p' "$T/stub.log" | tail -n 1)
+    if [ -n "$hfdir" ] && [ ! -e "$hfdir" ]; then ok "the tests lane removes its HF_HOME directory"; else bad "HF_HOME directory '$hfdir' never made or left behind"; fi
+    expect "a failing tests run is RED" 1 'LANE tests SCOPE -p aprender-core: RED' in_repo CI=true STUB_MODE=red bash "$SELF" --run tests
+    : > "$T/stub.log"
+    expect "proof scope binds \$pkgs to -p PKG" 0 'VERDICT tests PROOF-SCOPE -p aprender-serve: GREEN' in_repo CI=true bash "$SELF" --run tests --only-package aprender-serve
+    if grep -q '^ARGV nextest run --profile ci --lib --tests -p aprender-serve |' "$T/stub.log"; then ok "proof scope narrows the tests lane"; else bad "tests proof argv: $(tail -n 1 "$T/stub.log")"; fi
+
+    local wf=.github/workflows/workspace-test-nightly.yml l miss=""
     if [ ! -r "$wf" ]; then bad "the nightly workflow $wf is missing"
     elif grep -q -- '--only-package' "$wf"; then bad "the nightly workflow passes --only-package"
     else ok "the nightly workflow never passes --only-package"; fi
+    for l in $LANES; do grep -qE "^ *- \{ lane: $l, timeout: [0-9]+ \}$" "$wf" || miss="$miss $l"; done
+    if [ -z "$miss" ]; then ok "the nightly workflow has a matrix lane for each of: $LANES"; else bad "the nightly workflow has no matrix lane for:$miss"; fi
 
     echo "self-test: $pass ok, $fail failed"
     [ "$fail" = 0 ]
