@@ -246,10 +246,11 @@ fn the_tracked_repo_graph_is_fresh() {
     // ONT-10 rest (#4588, PR-2) adds eight more binary-<bin>-surface shapes (apr, apr-qa, aprender-data,
     // aprender-present, aprender-ptop, aprender-simulate, aprender-train-lora, aprender-train-shell) and
     // binary-aprender-apr-http-mcp: 57 + 9 = 66.
+    // #4455 adds `findings-ledger-v1` (not in `armed_shapes`; it grades zero focus nodes here): 67.
     assert_eq!(
         v["shapes_n"],
-        66,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + 15 binary-*-surface (ONT-10, #4502) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-parity + kernel-timing + kernel-safety (ONT-4c4) + 8 binary-*-surface + binary-aprender-apr-http-mcp (ONT-10 rest, #4588)\n{}",
+        67,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847) + binary-target + surface-audit-ledger + binary-apr-http-mcp + 15 binary-*-surface (ONT-10, #4502) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5) + kernel-parity + kernel-timing + kernel-safety (ONT-4c4) + 8 binary-*-surface + binary-aprender-apr-http-mcp (ONT-10 rest, #4588) + findings-ledger-v1 (#4455)\n{}",
         show(&r)
     );
 }

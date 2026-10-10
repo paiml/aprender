@@ -1,0 +1,22 @@
+- id: PMAT-4788
+  github_issue: 4788
+  item_type: task
+  title: 'PY-PORT-2b: port tarball_shrink_report.py to aprender-ci-tools'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-a7f
+  created: 2026-10-05T12:25:13Z
+  updated: 2026-10-05T12:25:13Z
+  spec: null
+  acceptance_criteria:
+  - crates/aprender-ci-tools has a tarball-shrink-report subcommand ported from scripts/lib/tarball_shrink_report.py
+  - scripts/tests/ci_tools_py_parity_test.sh runs every case through the original (the in-tree .py, as external validator) and the Rust bin. stdout is byte-identical and the exit code agrees, covering empty inputs, a full fixture, missing inputs (exit 2), one bad input (a directory named x.rs, exit 1) and the live crates/ tree. A planted defect in the port turns it red
+  - 'scripts/package_tarball_build.sh, the only caller, stays on the .py: it runs on a CI gate path (check_package_includes.sh --self-test), and gate tools must already be released. The switch and the delete are a follow-up once a released aprender-ci-tools carries the port'
+  - The crate README lists the deliberate differences (usage error exit 1 under clap; Unicode Other_Alphabetic characters as word characters)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Branch-only, no PR. Base is the PMAT-4741 branch.'
+  epic: 4741

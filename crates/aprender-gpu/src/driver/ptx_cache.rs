@@ -13,7 +13,8 @@
 //! SHA-256 implementation follows NIST FIPS 180-4 (2015).
 
 use std::os::raw::c_uint;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // SHA-256 (minimal, dependency-free implementation for cache keys)
@@ -223,27 +224,76 @@ pub(crate) fn ptx_cache_dir() -> Option<PathBuf> {
 
 /// Try to load a cached cubin from disk.
 ///
-/// Returns the raw cubin bytes if the cache file exists and is readable.
+/// Returns the raw cubin bytes if the cache file exists, is readable and is a
+/// whole ELF image (see [`is_whole_elf`]). Anything else is a cache miss.
 pub(crate) fn load_cached_cubin(cache_key: &str) -> Option<Vec<u8>> {
-    let dir = ptx_cache_dir()?;
-    let path = dir.join(format!("{cache_key}.cubin"));
-    std::fs::read(&path).ok()
+    load_cached_cubin_in(&ptx_cache_dir()?, cache_key)
 }
+
+fn load_cached_cubin_in(dir: &Path, cache_key: &str) -> Option<Vec<u8>> {
+    let bytes = std::fs::read(dir.join(format!("{cache_key}.cubin"))).ok()?;
+    is_whole_elf(&bytes).then_some(bytes)
+}
+
+/// Is `bytes` an ELF64 little-endian image whose program and section header
+/// tables both end inside the buffer?
+///
+/// `cuModuleLoadData` takes no length: the driver trusts the image's own
+/// headers. An empty `Vec` hands it the dangling pointer `0x1`, and a truncated
+/// file makes it read past the allocation. Both crashed libcuda (#4956). Every
+/// cubin `cuLinkComplete` produces ends exactly at its program header table, so
+/// this rejects a truncation of even one byte.
+fn is_whole_elf(bytes: &[u8]) -> bool {
+    const EHDR_LEN: usize = 64;
+    if bytes.len() < EHDR_LEN || bytes[..6] != [0x7f, b'E', b'L', b'F', 2, 1] {
+        return false;
+    }
+    let u16_at = |o: usize| u64::from(u16::from_le_bytes([bytes[o], bytes[o + 1]]));
+    let u64_at = |o: usize| {
+        let mut b = [0u8; 8];
+        b.copy_from_slice(&bytes[o..o + 8]);
+        u64::from_le_bytes(b)
+    };
+    let table_end = |off: u64, entsize: u64, num: u64| {
+        entsize
+            .checked_mul(num)
+            .and_then(|size| off.checked_add(size))
+    };
+    let len = bytes.len() as u64;
+    let fits = |end: Option<u64>| end.is_some_and(|e| e <= len);
+    fits(table_end(u64_at(32), u16_at(54), u16_at(56)))
+        && fits(table_end(u64_at(40), u16_at(58), u16_at(60)))
+}
+
+/// Per-process sequence that makes every writer's temp file name unique.
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Save a compiled cubin to the disk cache.
 ///
 /// Creates the cache directory if it doesn't exist.
-/// Uses atomic write (write to .tmp then rename) to prevent partial reads.
+/// Uses atomic write (write to a temp file then rename) to prevent partial reads.
 /// Failures are silently ignored -- caching is best-effort.
 pub(crate) fn save_cached_cubin(cache_key: &str, cubin: &[u8]) {
-    let Some(dir) = ptx_cache_dir() else { return };
-    if std::fs::create_dir_all(&dir).is_err() {
+    if let Some(dir) = ptx_cache_dir() {
+        save_cached_cubin_in(&dir, cache_key, cubin);
+    }
+}
+
+fn save_cached_cubin_in(dir: &Path, cache_key: &str, cubin: &[u8]) {
+    if cubin.is_empty() || std::fs::create_dir_all(dir).is_err() {
         return;
     }
     let path = dir.join(format!("{cache_key}.cubin"));
-    let tmp_path = dir.join(format!("{cache_key}.cubin.tmp"));
-    if std::fs::write(&tmp_path, cubin).is_ok() {
-        let _ = std::fs::rename(&tmp_path, &path);
+    // One temp file per writer. A shared `{key}.cubin.tmp` let a second writer
+    // truncate the inode the first had just renamed into place, so a reader
+    // loaded an empty or partial cubin (#4956).
+    let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp_path = dir.join(format!(
+        "{cache_key}.cubin.{}.{seq}.tmp",
+        std::process::id()
+    ));
+    if std::fs::write(&tmp_path, cubin).is_err() || std::fs::rename(&tmp_path, &path).is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
     }
 }
 
@@ -357,21 +407,49 @@ mod tests {
     // Cache file I/O tests
     // ========================================================================
 
+    /// A fresh directory under the system temp dir, unique per call. Tests
+    /// never touch the real `$HOME` cache.
+    fn scratch_dir(tag: &str) -> PathBuf {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "trueno-ptx-cache-test-{tag}-{}-{seq}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create scratch dir");
+        dir
+    }
+
+    /// A minimal ELF64 little-endian image of `len` bytes filled with `fill`:
+    /// one 56-byte program header at 64, one 64-byte section header ending at
+    /// EOF -- the shape `cuLinkComplete` produces.
+    fn fake_elf(fill: u8, len: usize) -> Vec<u8> {
+        assert!(len >= 184);
+        let mut b = vec![fill; len];
+        b[..6].copy_from_slice(&[0x7f, b'E', b'L', b'F', 2, 1]);
+        b[32..40].copy_from_slice(&64u64.to_le_bytes()); // e_phoff
+        b[40..48].copy_from_slice(&(len as u64 - 64).to_le_bytes()); // e_shoff
+        b[54..56].copy_from_slice(&56u16.to_le_bytes()); // e_phentsize
+        b[56..58].copy_from_slice(&1u16.to_le_bytes()); // e_phnum
+        b[58..60].copy_from_slice(&64u16.to_le_bytes()); // e_shentsize
+        b[60..62].copy_from_slice(&1u16.to_le_bytes()); // e_shnum
+        b
+    }
+
     #[test]
     fn test_cache_roundtrip() {
-        // Test save -> load roundtrip
-        let key = "test_ptx_cache_roundtrip_deadbeef";
-        let data = b"fake cubin data for test";
+        let dir = scratch_dir("roundtrip");
+        let data = fake_elf(0xAB, 4096);
 
-        save_cached_cubin(key, data);
+        save_cached_cubin_in(&dir, "k", &data);
 
-        let loaded = load_cached_cubin(key);
-        assert_eq!(loaded.as_deref(), Some(data.as_slice()));
-
-        // Cleanup
-        if let Some(dir) = ptx_cache_dir() {
-            let _ = std::fs::remove_file(dir.join(format!("{key}.cubin")));
-        }
+        assert_eq!(load_cached_cubin_in(&dir, "k"), Some(data));
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .expect("read scratch dir")
+            .map(|e| e.expect("dir entry").file_name())
+            .collect();
+        assert_eq!(names, ["k.cubin"], "no temp file may be left behind");
+        std::fs::remove_dir_all(&dir).expect("remove scratch dir");
     }
 
     #[test]
@@ -383,31 +461,111 @@ mod tests {
 
     #[test]
     fn test_cache_overwrite() {
-        let key = "test_ptx_cache_overwrite";
-        save_cached_cubin(key, b"version_1");
-        save_cached_cubin(key, b"version_2");
+        let dir = scratch_dir("overwrite");
+        save_cached_cubin_in(&dir, "k", &fake_elf(1, 512));
+        save_cached_cubin_in(&dir, "k", &fake_elf(2, 1024));
 
-        let loaded = load_cached_cubin(key);
-        assert_eq!(loaded.as_deref(), Some(b"version_2".as_slice()));
+        assert_eq!(load_cached_cubin_in(&dir, "k"), Some(fake_elf(2, 1024)));
+        std::fs::remove_dir_all(&dir).expect("remove scratch dir");
+    }
 
-        // Cleanup
-        if let Some(dir) = ptx_cache_dir() {
-            let _ = std::fs::remove_file(dir.join(format!("{key}.cubin")));
-        }
+    /// An empty cubin is never saved, and an empty file is a miss: an empty
+    /// `Vec`'s pointer is the dangling `0x1` that libcuda dereferenced (#4956).
+    #[test]
+    fn test_cache_empty_data() {
+        let dir = scratch_dir("empty");
+        save_cached_cubin_in(&dir, "k", b"");
+        assert!(!dir.join("k.cubin").exists());
+
+        std::fs::write(dir.join("k.cubin"), b"").expect("write empty file");
+        assert_eq!(load_cached_cubin_in(&dir, "k"), None);
+        std::fs::remove_dir_all(&dir).expect("remove scratch dir");
     }
 
     #[test]
-    fn test_cache_empty_data() {
-        let key = "test_ptx_cache_empty";
-        save_cached_cubin(key, b"");
-
-        let loaded = load_cached_cubin(key);
-        assert_eq!(loaded.as_deref(), Some(b"".as_slice()));
-
-        // Cleanup
-        if let Some(dir) = ptx_cache_dir() {
-            let _ = std::fs::remove_file(dir.join(format!("{key}.cubin")));
+    fn test_cache_truncated_or_foreign_file_is_a_miss() {
+        let dir = scratch_dir("truncated");
+        let whole = fake_elf(7, 4096);
+        let cases: [(&str, &[u8], bool); 5] = [
+            ("whole", &whole, true),
+            ("short by one", &whole[..whole.len() - 1], false),
+            ("header only", &whole[..64], false),
+            (
+                "not elf",
+                b"fake cubin data for test, long enough to hold a header......",
+                false,
+            ),
+            (
+                "elf32",
+                &[&whole[..4], &[1u8][..], &whole[5..]].concat(),
+                false,
+            ),
+        ];
+        for (name, bytes, hit) in cases {
+            std::fs::write(dir.join("k.cubin"), bytes).expect("write case");
+            assert_eq!(load_cached_cubin_in(&dir, "k").is_some(), hit, "{name}");
         }
+        std::fs::remove_dir_all(&dir).expect("remove scratch dir");
+    }
+
+    #[test]
+    fn test_is_whole_elf_rejects_overflowing_header_fields() {
+        let mut b = fake_elf(0, 256);
+        b[40..48].copy_from_slice(&u64::MAX.to_le_bytes()); // e_shoff
+        assert!(!is_whole_elf(&b));
+    }
+
+    /// Many writers saving one key while readers read the published file.
+    /// Every read must be one writer's whole payload. With one shared temp
+    /// name, a writer truncated the file another had just renamed into place
+    /// and readers saw empty or partial cubins (#4956).
+    #[test]
+    fn test_concurrent_writers_never_publish_a_partial_cubin() {
+        const WRITERS: u8 = 8;
+        const ROUNDS: usize = 40;
+        const LEN: usize = 256 * 1024;
+        let dir = scratch_dir("race");
+        let path = dir.join("k.cubin");
+        let payloads: Vec<Vec<u8>> = (1..=WRITERS).map(|w| fake_elf(w, LEN)).collect();
+        let done = std::sync::atomic::AtomicBool::new(false);
+        let (hits, bad) = (AtomicU64::new(0), AtomicU64::new(0));
+
+        std::thread::scope(|s| {
+            for _ in 0..4 {
+                s.spawn(|| {
+                    while !done.load(Ordering::Acquire) {
+                        if let Ok(bytes) = std::fs::read(&path) {
+                            if payloads.contains(&bytes) {
+                                hits.fetch_add(1, Ordering::Relaxed);
+                            } else {
+                                bad.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                });
+            }
+            let writers: Vec<_> = payloads
+                .iter()
+                .map(|p| {
+                    let dir = &dir;
+                    s.spawn(move || {
+                        for _ in 0..ROUNDS {
+                            save_cached_cubin_in(dir, "k", p);
+                        }
+                    })
+                })
+                .collect();
+            for w in writers {
+                w.join().expect("writer thread");
+            }
+            done.store(true, Ordering::Release);
+        });
+
+        let (hits, bad) = (hits.into_inner(), bad.into_inner());
+        assert!(hits > 0, "vacuous: no reader ever saw a published cubin");
+        assert_eq!(bad, 0, "{bad} partial reads ({hits} whole)");
+        assert!(payloads.contains(&std::fs::read(&path).expect("final file")));
+        std::fs::remove_dir_all(&dir).expect("remove scratch dir");
     }
 
     #[test]

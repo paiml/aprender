@@ -217,11 +217,16 @@ fn test_reset_counters() {
 ///
 /// Note: This test does NOT assert automatic eviction since no eviction
 /// policy is currently implemented. It tests graceful degradation.
+///
+/// Fills the device, so it takes `device_memory_exclusive()` like
+/// `test_oom_resilience`. Without it, an in-process neighbour OOMed in
+/// `cta64_vs_cta32_vs_cublas_fp16` while this test held the card (#4956).
 #[cfg(feature = "cuda")]
 #[test]
 fn test_gpu_allocation_under_pressure() {
     use crate::driver::CudaContext;
 
+    let _exclusive = crate::driver::device_memory_exclusive();
     let ctx = match CudaContext::new(0) {
         Ok(ctx) => ctx,
         Err(e) => {

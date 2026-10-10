@@ -1,0 +1,18 @@
+- id: PMAT-4797
+  github_issue: 4797
+  item_type: task
+  title: 'PY-PORT-2d: port tarball_build_errors.py to aprender-ci-tools tarball-build-errors (C301)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-0d
+  created: 2026-10-05T13:47:26Z
+  updated: 2026-10-05T13:47:26Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741

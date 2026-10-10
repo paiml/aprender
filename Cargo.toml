@@ -31,6 +31,8 @@ members = [
     "crates/aprender-tensor",
     "crates/aprender-gemm-codegen",
     "crates/aprender-compute-xtask",
+    # --- PY-PORT (C301): CI helpers ported from scripts/**/*.py, publish = false ---
+    "crates/aprender-ci-tools",
     # --- APR-MONO Phase 2b: was provable-contracts ---
     "crates/aprender-contracts",
     "crates/aprender-contracts-macros",
@@ -126,6 +128,7 @@ exclude = [
     # it is not chasing a phantom.
     'crates/aprender-zram/bins/trueno-ublk',
     "tools/ccpa-sft-export",
+    "tools/aprender-crux-judge",
     "fuzz",
     # A real package that ships the `aprender-viz-ttop` binary, NOT a shell;
     # excluded, so cargo metadata cannot see it. scripts/check_binary_debt.sh
@@ -215,6 +218,7 @@ lz4_flex = "0.11"
 zstd = "0.13"
 
 # Crypto
+sha1 = "0.10"  # git_patch_id in aprender-ci-tools: git's patch-id is SHA-1 by definition
 sha2 = "0.10"
 # Compile-fail testing. Already a per-crate dev-dep of aprender-contracts-macros and
 # aprender-test-derive at the same "1"; hoisted so a typestate crate can prove
@@ -668,10 +672,11 @@ gates = [
     # runs this entry. The PR-time half, the comparison helpers' case table, is
     # scripts/check_float16_greedy_parity.sh, which guard_tree.sh dispatches.
     "scripts/float16_greedy_parity.sh",
-    # #3726: apr's token ids against the pinned llama-tokenize, for every GGUF on the
-    # release host and every file in evidence/tokenizer-parity/corpus/. A mismatch, a greedy
-    # fallback on a byte-level vocabulary, a failed round trip or a non-byte-level model is
-    # RED. `apr parity` cannot see a tokenizer defect: both of its sides share the tokenizer.
+    # #3726: apr's token ids against the pinned llama-tokenize, for every GGUF
+    # evidence/release-models.sha256 lists (#4981: read from ${APR_MODEL_DIR:-$HOME/models};
+    # listed and absent, or another sha256, is RED; an unlisted file is never read) and every
+    # file in evidence/tokenizer-parity/corpus/. A mismatch, a greedy fallback on a byte-level
+    # vocabulary, a failed round trip or a non-byte-level model is RED. `apr parity` cannot see a tokenizer defect: both of its sides share the tokenizer.
     # Release time only, like the entry above; the PR-time half (the helpers' case table) is
     # scripts/check_tokenizer_parity.sh, which guard_tree.sh dispatches.
     "scripts/tokenizer_parity.sh",
@@ -917,6 +922,23 @@ debug-assertions = false
 # other crate debuggable. Interleaved A/B on lambda (aprender-e6, 2026-09-26):
 # f_conv_008 67.5s -> 32.2s, f_conv_003 92.7s -> 47.5s, ship_021 63.3s -> 23.1s.
 [profile.dev.package.aprender-compute]
+opt-level = 3
+
+# ----------------------------------------------------------------------------
+# pv runtime: debug builds run the YAML parser unoptimized
+# ----------------------------------------------------------------------------
+# serde_yaml parses through unsafe-libyaml, a C-to-Rust translation that is
+# very slow at opt-level 0. Every pv gate parses all of contracts/, so CI's
+# contracts gate paid that cost on each of its steps (#4974). Optimizing only
+# these two crates keeps every other crate debuggable, and serde_yaml_ng (apr-cli)
+# shares the unsafe-libyaml half. Same pass on intel, debug pv against this
+# profile, with byte-identical output (lint JSON less durations, census, shapes,
+# pv-sat): `pv lint contracts` 315s -> 63s, `--gate shapes` 48s -> 22s,
+# `pv census` 50s -> 22s, pv-sat 9.3s -> 3.7s. The one-off rebuild took 44.5s.
+[profile.dev.package.unsafe-libyaml]
+opt-level = 3
+
+[profile.dev.package.serde_yaml]
 opt-level = 3
 
 

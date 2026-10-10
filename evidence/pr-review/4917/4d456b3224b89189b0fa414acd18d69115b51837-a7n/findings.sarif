@@ -1,0 +1,722 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "judge-binary-has-no-caller",
+          "level": "warning",
+          "message": {
+            "text": "Nothing in the tree runs the new binary. Every .sh/.yml/Makefile that names a CRUX judge at this head names the Python modules (check_crux_inference_judge.sh, check_crux_oracles.sh, crux_inference_dogfood.sh, crux_sweep_shards.sh, lib/crux_cells_serve_code.sh); crux_judge_bin.sh is sourced by none. Two comments state the opposite: crux_judge_bin.sh:8 says the binary \"replaced\" the three .py files and main.rs:10 calls them \"retired\", while the crate README says they stay until N-1. The README is right; the two comments are not."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/crux_judge_bin.sh"
+                },
+                "region": {
+                  "startLine": 8
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "-c",
+              "sed -n \"8p\" scripts/lib/crux_judge_bin.sh; sed -n \"10p\" tools/aprender-crux-judge/src/main.rs; git grep -l -E \"crux_(inference_judge|oracles|prompt_certify)\\.py\" HEAD -- \"*.sh\" \"*.yml\" Makefile"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "df685ddce70e3b98a7ea6a0a39acd7dfe35e68ea538586fd510b48d7b3d258c2",
+            "failure_scenario": "A reader of crux_judge_bin.sh or main.rs believes the Rust judge is the live path and debugs it while the gates run the Python; the Rust judge drifts from the Python and no run notices until a caller is switched."
+          }
+        },
+        {
+          "ruleId": "crate-built-by-no-gate",
+          "level": "warning",
+          "message": {
+            "text": "No workflow, ci/ file or Makefile names crux-judge, crux_judge or CRUX_JUDGE (git grep exits 1), and Cargo.toml excludes tools/aprender-crux-judge from the workspace, so workspace-test and ci / gate never compile it or run its unit tests."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Cargo.toml"
+                },
+                "region": {
+                  "startLine": 129
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "git",
+              "grep",
+              "-n",
+              "-E",
+              "crux-judge|crux_judge|CRUX_JUDGE",
+              "HEAD",
+              "--",
+              ".github/workflows",
+              "ci",
+              "Makefile"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "failure_scenario": "A compile error or a failing unit test in tools/aprender-crux-judge merges green; the first build is the change that switches a caller over."
+          }
+        },
+        {
+          "ruleId": "binary-debt-reason-names-a-nightly-that-does-not-run-it",
+          "level": "note",
+          "message": {
+            "text": "contracts/binary-debt-v1.yaml:117 gives aprender-crux-judge the reason \"run by the nightly only\". No workflow names the binary, its helper or CRUX_JUDGE (git grep -c exits 1)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/binary-debt-v1.yaml"
+                },
+                "region": {
+                  "startLine": 117
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "-c",
+              "sed -n \"117p\" contracts/binary-debt-v1.yaml; git grep -c -E \"aprender-crux-judge|crux_judge_bin|CRUX_JUDGE\" HEAD -- .github/workflows"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "dcaac52b87f69d35a846aedbf3d73d9a96592839ea4aa0a7fcbe0ee629f1a3ae",
+            "failure_scenario": "The binary-debt census reads the row as an exercised tool and never flags an ELF nothing runs."
+          }
+        },
+        {
+          "ruleId": "python-grew-in-a-port-pr",
+          "level": "note",
+          "message": {
+            "text": "The three Python modules the port is to retire changed by +850 / -440 lines in this PR (the helper split for the complexity hook). C301 says the build is Rust only; these files are on gate paths and stay until N-1 per the README, so this is the cost of the N-1 rule, recorded rather than refused."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/crux_inference_judge.py"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "git",
+              "diff",
+              "--stat",
+              "828ccb845fd8f1ac272bc34ef0b346a90a3a2eb9",
+              "4d456b3224b89189b0fa414acd18d69115b51837",
+              "--",
+              "scripts/lib/crux_inference_judge.py",
+              "scripts/lib/crux_oracles.py",
+              "scripts/lib/crux_prompt_certify.py"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4bbba6a0b2319ed46f51a826fabb61887a0b9822809a7ea8581ca5f80a288731",
+            "failure_scenario": "Two implementations of one judge are both edited per change until retirement; a fix that lands in one only splits the receipts."
+          }
+        },
+        {
+          "ruleId": "complexity-over-max-parse-engine-json",
+          "level": "note",
+          "message": {
+            "text": "New function parse_engine_json has cyclomatic 11 (cognitive 24), above .pmat-gates.toml max_complexity = 10. The crate is excluded from the workspace, so no workspace complexity gate reads it. Unchanged since the f7f811b2cf seats: the delta to this head touches no .rs file."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/judge.rs"
+                },
+                "region": {
+                  "startLine": 353
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "tools/aprender-crux-judge"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4167b964c72743e371bf06a0b3b9db3417429fe44891fc42c899af4c3d85884e",
+            "failure_scenario": "A complexity regression in an excluded crate passes every gate the workspace crates face; the next edit to this function lands at 12+ unseen."
+          }
+        },
+        {
+          "ruleId": "complexity-over-max-npy-rows",
+          "level": "note",
+          "message": {
+            "text": "New function npy_rows has cyclomatic 11 (cognitive 18), above .pmat-gates.toml max_complexity = 10. The crate is excluded from the workspace, so no workspace complexity gate reads it. Unchanged since the f7f811b2cf seats: the delta to this head touches no .rs file."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/judge.rs"
+                },
+                "region": {
+                  "startLine": 1325
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "tools/aprender-crux-judge"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4167b964c72743e371bf06a0b3b9db3417429fe44891fc42c899af4c3d85884e",
+            "failure_scenario": "A complexity regression in an excluded crate passes every gate the workspace crates face; the next edit to this function lands at 12+ unseen."
+          }
+        },
+        {
+          "ruleId": "complexity-over-max-float-repr",
+          "level": "note",
+          "message": {
+            "text": "New function float_repr has cyclomatic 12 (cognitive 23), above .pmat-gates.toml max_complexity = 10. The crate is excluded from the workspace, so no workspace complexity gate reads it. Unchanged since the f7f811b2cf seats: the delta to this head touches no .rs file."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/pyval.rs"
+                },
+                "region": {
+                  "startLine": 686
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "tools/aprender-crux-judge"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4167b964c72743e371bf06a0b3b9db3417429fe44891fc42c899af4c3d85884e",
+            "failure_scenario": "A complexity regression in an excluded crate passes every gate the workspace crates face; the next edit to this function lands at 12+ unseen."
+          }
+        },
+        {
+          "ruleId": "complexity-over-max-asks-errs",
+          "level": "note",
+          "message": {
+            "text": "New function asks_errs has cyclomatic 13 (cognitive 16), above .pmat-gates.toml max_complexity = 10. The crate is excluded from the workspace, so no workspace complexity gate reads it. Unchanged since the f7f811b2cf seats: the delta to this head touches no .rs file."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/oracles.rs"
+                },
+                "region": {
+                  "startLine": 403
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "tools/aprender-crux-judge"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "4167b964c72743e371bf06a0b3b9db3417429fe44891fc42c899af4c3d85884e",
+            "failure_scenario": "A complexity regression in an excluded crate passes every gate the workspace crates face; the next edit to this function lands at 12+ unseen."
+          }
+        },
+        {
+          "ruleId": "truncation-row-pruned-but-slice-remains",
+          "level": "warning",
+          "message": {
+            "text": "The one delta since f7f811b2cf prunes the baseline row for crux_inference_judge.py `e[\"why\"] = ... % p[\"answer\"][:24]`. The guard calls it stale and passes (79 candidates). But the slice is not gone: the helper split moved it to line 645 as `return True, \"degenerate output ...: %r\" % p[\"answer\"][:24]`, and that line is no longer a candidate. truncation_scan.py keeps a line only if it also matches STRINGY, and the moved line lost the word `why` and uses `%r`, which STRINGY does not list. So the prune is mechanically right and the enumeration under-counts: a known display-class truncation left the baseline without being removed. Fix: add `%r` to STRINGY (re-baseline the rows it adds), or re-add the row under a key the scan produces."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/crux_inference_judge.py"
+                },
+                "region": {
+                  "startLine": 645
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "-c",
+              "bash scripts/check_no_silent_truncation.sh --list | LC_ALL=C /usr/bin/grep -c \"crux_inference_judge.py:645\"; LC_ALL=C /usr/bin/grep -n \"\\[:24\\]\" scripts/lib/crux_inference_judge.py"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "02034b601891ba957dcbbcf810070ff7a0410924f263019bdde7d1b483dbdc3d",
+            "failure_scenario": "A later edit widens or adds a `return ..., \"...%r\" % x[:N]` truncation in a reason string a human reads in the receipt; the scan never lists it, the guard passes, and the baseline shrank without the truncation it excused being removed."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Not run. The trigger fires on 14 changed paths (13 .rs files and contracts/binary-debt-v1.yaml), but cargo is not run on this reviewer host by fleet rule, the test host is over its cap, and mutants are LAB under C324 since #4912. No mutation result exists for this diff."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "hostname"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "a65f80c35370780d01d4c996561e081ddbe7be99d3fbd3a8e7816834e5312407"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.2"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "judge-binary-has-no-caller",
+          "level": "note",
+          "message": {
+            "text": "Nothing in the tree runs the new binary. scripts/lib/crux_judge_bin.sh is sourced by no .sh, .yml or Makefile."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/crux_judge_bin.sh"
+                },
+                "region": {
+                  "startLine": 8
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "The Rust judge drifts from the Python judge it claims parity with, and no run notices until a caller is switched: 9.8k lines that no gate executes.",
+            "source": "evidence/pr-review/4917/a144e9310bf965aa43f2510eab48316f73391791-6a/findings.sarif",
+            "excerpt": "Nothing in the tree runs the new binary. scripts/lib/crux_judge_bin.sh is sourced by no .sh, .yml or Makefile (git grep exits 1), while 2 drivers (crux_inference_dogfood.sh:826, crux_sweep_shards.sh:171) still run python3 scripts/lib/crux_inference_judge.py collect. The helper header says the binary replaced the three Python files; at this head it replaces none. PMAT-4802 lists caller migration as",
+            "excerpt_sha256": "155583d4c27d5d862b8c3ff9ee1c78b6b6240cc69458f803da254fbbedb3171e",
+            "measured_by": "agy",
+            "note": "agy named the source and returned no excerpt; the primary copied the first 400 chars of the cited ruleId message from that source so the citation can be checked"
+          }
+        },
+        {
+          "ruleId": "crate-built-by-no-gate",
+          "level": "note",
+          "message": {
+            "text": "No workflow, ci/ file or Makefile names crux-judge or crux_judge (git grep exits 1), and the crate is in the workspace exclude list."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Cargo.toml"
+                },
+                "region": {
+                  "startLine": 129
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "A compile error or a failing unit test in tools/aprender-crux-judge merges green; the first build is the nightly that switches a caller over.",
+            "source": "evidence/pr-review/4917/a144e9310bf965aa43f2510eab48316f73391791-6a/findings.sarif",
+            "excerpt": "No workflow, ci/ file or Makefile names crux-judge or crux_judge (git grep exits 1), and the crate is in the workspace exclude list. So cargo test, clippy, and the unwrap ban its own clippy.toml carries never run on it in CI. That ban is the reason PMAT-4802 gives for converting 48 unwraps.",
+            "excerpt_sha256": "6ec9fc78380072e36024d9a3c6d39f19d935ca963880a2170c30e0c2d6dc0241",
+            "measured_by": "agy",
+            "note": "agy named the source and returned no excerpt; the primary copied the first 400 chars of the cited ruleId message from that source so the citation can be checked"
+          }
+        },
+        {
+          "ruleId": "binary-debt-reason-names-a-nightly-that-does-not-run-it",
+          "level": "note",
+          "message": {
+            "text": "The new contracts/binary-debt-v1.yaml row gives the reason 'run by the nightly only'. No nightly runs it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/binary-debt-v1.yaml"
+                },
+                "region": {
+                  "startLine": 117
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "The binary-debt census reads the row as an exercised tool and never flags an ELF nothing runs.",
+            "source": "evidence/pr-review/4917/a144e9310bf965aa43f2510eab48316f73391791-6a/findings.sarif",
+            "excerpt": "The new contracts/binary-debt-v1.yaml row gives the reason \"run by the nightly only\". No nightly runs it: no workflow names the crate, and every CRUX driver calls the Python judge. The ledger row states a fact that is false at this head.",
+            "excerpt_sha256": "39ae61746b33bff6e1ed960e4b260ed45b0a61651285f97069fd5c02005729e0",
+            "measured_by": "agy",
+            "note": "agy named the source and returned no excerpt; the primary copied the first 400 chars of the cited ruleId message from that source so the citation can be checked"
+          }
+        },
+        {
+          "ruleId": "python-grew-in-a-port-pr",
+          "level": "note",
+          "message": {
+            "text": "The three Python files the port retires grew in this PR: +850 / -440 lines (the helper split for the pre-commit complexity hook)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/crux_inference_judge.py"
+                },
+                "region": {
+                  "startLine": 11
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "Two implementations of one judge are both edited per change until retirement; a fix that lands in one only splits the receipts.",
+            "source": "evidence/pr-review/4917/a144e9310bf965aa43f2510eab48316f73391791-6a/findings.sarif",
+            "excerpt": "The three Python files the port retires grew in this PR: +850 / -440 lines (the helper split for the pre-commit complexity hook). No new .py file is added. Both hermetic case tables pass on the head, so the split did not break any row they hold. Under the no-new-Python rule, the growth is the port being kept alive twice until 0.71+1.",
+            "excerpt_sha256": "b289f3311be1c16413e5cf0fea16b7d1b3b9c52eb01cf328d58c916ee97a5be8",
+            "measured_by": "agy",
+            "note": "agy named the source and returned no excerpt; the primary copied the first 400 chars of the cited ruleId message from that source so the citation can be checked"
+          }
+        },
+        {
+          "ruleId": "case-tables-green-at-head",
+          "level": "note",
+          "message": {
+            "text": "scripts/check_crux_oracles.sh prints PASS and scripts/check_crux_inference_judge.sh prints ok at this head."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_crux_inference_judge.sh"
+                },
+                "region": {
+                  "startLine": 30
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "none: a behaviour change in the split that a row covers would make the table exit non-zero.",
+            "source": "evidence/pr-review/4917/a144e9310bf965aa43f2510eab48316f73391791-6a/findings.sarif",
+            "excerpt": "scripts/check_crux_oracles.sh prints PASS and scripts/check_crux_inference_judge.sh prints \"check_crux_inference_judge: 155 ok, 0 broke\" at this head (both against the Python judge, which is what they drive). This is the evidence for the claim that the Python split did not change behaviour.",
+            "excerpt_sha256": "ee0701108dd8cf33d6bda3283bba93932c81def6d3205f5a7859276b0524862f",
+            "measured_by": "agy",
+            "note": "agy named the source and returned no excerpt; the primary copied the first 400 chars of the cited ruleId message from that source so the citation can be checked"
+          }
+        },
+        {
+          "ruleId": "complexity-over-max-parse-engine-json",
+          "level": "note",
+          "message": {
+            "text": "New function parse_engine_json has cyclomatic 11 (cognitive 24), above max_complexity = 10."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/judge.rs"
+                },
+                "region": {
+                  "startLine": 353
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A complexity regression in an excluded crate passes every gate the workspace crates face.",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "tools/aprender-crux-judge"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest"
+          }
+        },
+        {
+          "ruleId": "complexity-over-max-npy-rows",
+          "level": "note",
+          "message": {
+            "text": "New function npy_rows has cyclomatic 11 (cognitive 18), above max_complexity = 10."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/judge.rs"
+                },
+                "region": {
+                  "startLine": 1325
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A complexity regression in an excluded crate passes every gate the workspace crates face.",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "tools/aprender-crux-judge"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest"
+          }
+        },
+        {
+          "ruleId": "complexity-over-max-float-repr",
+          "level": "note",
+          "message": {
+            "text": "New function float_repr has cyclomatic 12 (cognitive 23), above max_complexity = 10."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/pyval.rs"
+                },
+                "region": {
+                  "startLine": 686
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A complexity regression in an excluded crate passes every gate the workspace crates face.",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "tools/aprender-crux-judge"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest"
+          }
+        },
+        {
+          "ruleId": "complexity-over-max-asks-errs",
+          "level": "note",
+          "message": {
+            "text": "New function asks_errs has cyclomatic 13 (cognitive 16), above max_complexity = 10."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/oracles.rs"
+                },
+                "region": {
+                  "startLine": 403
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A complexity regression in an excluded crate passes every gate the workspace crates face.",
+            "command": [
+              "pmat",
+              "analyze",
+              "complexity",
+              "--format",
+              "json",
+              "--path",
+              "tools/aprender-crux-judge"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest"
+          }
+        },
+        {
+          "ruleId": "agy-f1-sandbox-escape",
+          "level": "note",
+          "message": {
+            "text": "Sandbox lacks filesystem isolation (no mount namespace or chroot)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/sandbox.rs"
+                },
+                "region": {
+                  "startLine": 151
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "Malicious code can escape the sandbox to read/write arbitrary host files, as `unshare -rn` only isolates the network and user namespaces but inherits the host's mount namespace.",
+            "command": [
+              "cat",
+              "tools/aprender-crux-judge/src/sandbox.rs"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest"
+          }
+        },
+        {
+          "ruleId": "agy-f4-dead-binary",
+          "level": "note",
+          "message": {
+            "text": "The new Rust binary is completely uncalled in the tree."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/aprender-crux-judge/src/main.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "The PR fails its acceptance criteria because it leaves the Python code as the N-1 gate and provides no execution paths to use the new `aprender-crux-judge` binary or its `crux_judge_bin.sh` script.",
+            "command": [
+              "grep",
+              "-rn",
+              "crux_judge_bin",
+              "."
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest"
+          }
+        }
+      ]
+    }
+  ]
+}
