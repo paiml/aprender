@@ -75,7 +75,7 @@ fn evidence() -> GateEvidence {
 
 fn block(version: &str, n: u8) -> ComparatorBlock {
     ComparatorBlock {
-        command: vec!["llama-bench".into()],
+        command: vec!["apr".into(), "test".into(), "llm".into(), "bench".into()],
         version: version.into(),
         env_sha256: sha(n),
         artifact_sha256: sha(n + 1),
