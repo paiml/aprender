@@ -26,6 +26,9 @@ PIP_WORD="pi""p "
 UV_WORD="uv"" run"
 DIRTY_FLAG="--allow""-dirty"
 SSH_WORD="ss""h "
+# ssh only in command position (line start, or after ; & | ( or a backtick, optionally
+# behind sudo/exec/command/time), so prose that names it is not a hit.
+SSH_RE='(^|[;&|(`])[[:space:]]*((sudo|exec|command|time)[[:space:]]+)?'"ss""h"'[[:space:]]'
 PUBLISH_RE='(cargo|make)[[:space:]]+'"publi""sh"
 
 LT1_RECEIPT="evidence/laya-train/lt-1/receipt.json"
@@ -231,8 +234,8 @@ rule_h12() {
 
 rule_h15() {
     local hits
-    hits=$(added_runner_lines | awk -v a="$DIRTY_FLAG" -v b="$SSH_WORD" -v re="$PUBLISH_RE" \
-        'index($0, a) || index($0, b) || $0 ~ re' | head -n 5 | paste -sd ';' -)
+    hits=$(added_runner_lines | awk -v a="$DIRTY_FLAG" -v s="$SSH_RE" -v re="$PUBLISH_RE" \
+        '{ body = $0; sub(/^[^:]*:/, "", body) } index(body, a) || body ~ s || body ~ re' | head -n 5 | paste -sd ';' -)
     if [ -n "$hits" ]; then
         line H15 RED "forbidden line added: $hits" "runner lines scanned"
     else
@@ -306,6 +309,8 @@ self_test() {
     st_case plant-big-file RED H12 sh -c 'head -c 1048577 /dev/zero > big.bin'
     st_case plant-dirty RED H15 sh -c "echo 'cargo package ${DIRTY_FLAG}' >> scripts/a.sh"
     st_case plant-ssh RED H15 sh -c "echo '${SSH_WORD}host true' >> scripts/a.sh"
+    st_case plant-ssh-chained RED H15 sh -c "echo 'true; sudo ${SSH_WORD}host true' >> scripts/a.sh"
+    st_case ssh-in-prose PASS H15 sh -c "echo '# no ${SSH_WORD}line is added here' >> scripts/a.sh"
 
     # H5 and H10 need LT-1's receipt and LT-9's declaration on the base.
     git -C "$ST" checkout -q base

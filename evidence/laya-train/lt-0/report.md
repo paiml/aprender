@@ -151,7 +151,7 @@ This is not stop 8 by the worker's reading; it is Q4 for the cop.
 
 `scripts/check_laya_train_rules.sh` prints one line per *cmd* rule of §9 (H1, H2, H4, H5,
 H10, H11, H12, H15) for `<base>...<head>`, each with its anti-vacuity arm, and exits 1 on a
-RED. `--self-test` plants 24 cases in a throwaway repository (each rule's mutant must be
+RED. `--self-test` plants 26 cases in a throwaway repository (each rule's mutant must be
 named RED, each clean case PASS) and runs in `workspace-test` through
 `ci/explicit-test-commands.d/795-laya-train-rules-self-test.cmd`. Two readings of the spec,
 stated so they can be overruled:
