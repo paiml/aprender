@@ -37,8 +37,10 @@
 #                                           refuses a crux bundle rather than file it as a known failure.
 #   --publish commits every pending bundle of both modes in one push.
 #
-# NO REGISTRY TOKEN: --run and --publish refuse (exit 3) where one is reachable -- nightly_train.sh's
-# no_token, plus $HOME/.cargo/credentials{,.toml} even when CARGO_HOME points elsewhere.
+# NO REGISTRY TOKEN: --run and --publish refuse (exit 3) where one is reachable -- a token in the env, a
+# READABLE credentials{,.toml} under CARGO_HOME or $HOME/.cargo, or a token line in CARGO_HOME's config.
+# Readable, not present: a sandbox that masks the file (InaccessiblePaths=) leaves an unreadable node at
+# its path, and that is no token (#5062).
 # PLANTED FAILURE: --relay --plant-red (workflow_dispatch plant_red) turns the lane red whatever the
 # bundle says, so the train is shown to read this lane red. A planted run on C IS the newest run on C.
 #
@@ -76,11 +78,12 @@ commit_id() {
     [[ $1 =~ ^[0-9a-f]{40}$ ]]
 }
 
-# nightly_train.sh's no_token, verbatim, plus the default credentials a redirected CARGO_HOME hides
+# Adapted from nightly_train.sh's no_token: the CARGO_HOME credentials are tested readable (-r), not present
+# (-e), so a masked node is not a token (#5062); plus the default credentials a redirected CARGO_HOME hides
 no_token() {
     local ch="${CARGO_HOME:-$HOME/.cargo}"
     env | awk -F '=' '$1 == "CARGO_REGISTRY_TOKEN" || $1 ~ /^CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN$/ { f = 1 } END { exit f }' || return 1
-    [ ! -e "$ch/credentials" ] && [ ! -e "$ch/credentials.toml" ] || return 1
+    [ ! -r "$ch/credentials" ] && [ ! -r "$ch/credentials.toml" ] || return 1
     [ ! -r "$HOME/.cargo/credentials" ] && [ ! -r "$HOME/.cargo/credentials.toml" ] || return 1
     ! grep -qsE '^[[:space:]]*token[[:space:]]*=' "$ch/config" "$ch/config.toml"
 }
@@ -557,6 +560,14 @@ self_test() {
     row home_credentials_refused_under_another_cargo_home 1 "" "" -- env HOME="$tmp/home2" bash -c "$(declare -f no_token); no_token"
     mkdir -p "$tmp/cargo3"; printf '[registry]\ntoken = "x"\n' > "$tmp/cargo3/config.toml"
     row config_token_refused 1 "" "" -- env CARGO_HOME="$tmp/cargo3" bash -c "$(declare -f no_token); no_token"
+    # #5062: a sandbox mask leaves a mode-0 node at the credentials path; present but unreadable is no token.
+    # Root reads a mode-0 file, so under root this row is red: the mask hides nothing from root either.
+    mkdir -p "$tmp/cargo4"; : > "$tmp/cargo4/credentials.toml"; : > "$tmp/cargo4/credentials"; chmod 000 "$tmp/cargo4/credentials.toml" "$tmp/cargo4/credentials"
+    row masked_credentials_node_is_not_a_token 0 "" "" -- env CARGO_HOME="$tmp/cargo4" bash -c "$(declare -f no_token); no_token"
+    mkdir -p "$tmp/cargo5"; : > "$tmp/cargo5/credentials.toml"
+    row readable_cargo_home_credentials_toml_refused 1 "" "" -- env CARGO_HOME="$tmp/cargo5" bash -c "$(declare -f no_token); no_token"
+    mkdir -p "$tmp/cargo6"; : > "$tmp/cargo6/credentials"
+    row readable_cargo_home_credentials_refused 1 "" "" -- env CARGO_HOME="$tmp/cargo6" bash -c "$(declare -f no_token); no_token"
 
     # -- end to end: a fixture repo whose C carries a stub models_t1.sh, a bare origin, --run/--publish/--relay
     bare="$tmp/origin.git"; repo="$tmp/repo"; work="$tmp/work"; clone="$tmp/clone"
@@ -810,7 +821,9 @@ m41_publish_skips_crux	/stage "\$repo" "\$work" pending-crux models-crux/d
 m42_crux_run_measures_the_ladder	s/MODELS_T1_MEASURE=crux &&/MODELS_T1_MEASURE=ladder \&\&/
 m43_publish_takes_a_measure	s/\[ -z "\$MEAS" \] [|][|] \[ "\$MODE" != --publish \] [|][|]/true ||/
 m44_crux_takes_the_ladder_go_line	s/GO_RE=.MODELS GO \\\(CRUX smoke\\\) on./GO_RE="MODELS GO.*on"/
-m45_crux_names_the_ladder_measurer	s/MEASURER_RE=.crux_sweep_shards\\\.sh./MEASURER_RE="model_ladder\\.sh"/'
+m45_crux_names_the_ladder_measurer	s/MEASURER_RE=.crux_sweep_shards\\\.sh./MEASURER_RE="model_ladder\\.sh"/
+m46_masked_node_counted_as_token	s/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/[ ! -e "$ch\/credentials" ] \&\& [ ! -e "$ch\/credentials.toml" ]/
+m47_cargo_home_credentials_ignored	/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/d'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
