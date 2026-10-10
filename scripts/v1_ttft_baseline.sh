@@ -46,6 +46,11 @@ done
 [ -n "$HOST" ] || { printf 'FAIL  --host is required: the receipt names the host\n' >&2; exit 2; }
 [ -f "$MODEL" ] || { printf 'FAIL  --model %s: no such GGUF\n' "${MODEL:-<unset>}" >&2; exit 2; }
 OUT="${OUT:-$ROOT/target/v1-ttft/$HOST}"
+# A receipt directory is named, never reached through a parent: an --out or
+# --host carrying .. would write the receipts outside the directory named.
+case "$OUT" in
+    *..*) printf 'FAIL  --out %s names a parent directory (..): pass the receipt directory itself\n' "$OUT" >&2; exit 2 ;;
+esac
 
 # Every receipt in $OUT is read as this run's evidence, so $OUT starts empty.
 if [ -d "$OUT" ] && [ -n "$(find "$OUT" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
