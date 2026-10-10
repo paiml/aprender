@@ -3,8 +3,10 @@
 //! Each competitor arm is an EXT-26 comparator arm whose artifact is the arm's own
 //! speed output, so the block hashes exactly the bytes the number is read from:
 //!
-//! - `llama.cpp` — the existing oracle, `llama-bench` built at [`LLAMA_CPP_COMMIT`]
-//!   on the host. Its version line must name that commit, or the arm is refused.
+//! - `llama.cpp` — the existing oracle: `llama-server` built at [`LLAMA_CPP_COMMIT`]
+//!   on the host, started and timed by OUR client, `apr test llm bench`, as
+//!   scripts/parity_host_receipt.sh does (PERF-019, APR-PERF-GATE-001 §4.4.8). Its
+//!   version line must name that commit, or the arm is refused.
 //! - `ollama` — the pinned image, run by digest with the network denied; the model
 //!   store lives inside the workdir, pre-populated with the pinned manifest.
 //! - `mistral.rs` — `NotRun`: upstream claims `qwen35` at v0.9.4 but nobody has
@@ -18,6 +20,7 @@
 use super::comparator::{run_arm, ArmSpec, ComparatorBlock};
 use serde::Serialize;
 use serde_json::Value;
+use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 
 /// llama.cpp pin (contracts/pp-llama-001-comparator-pin-v1.yaml).
@@ -31,8 +34,9 @@ pub(crate) const OLLAMA_MODEL: &str = "qwen3.5:4b";
 pub(crate) const MISTRALRS_TAG: &str = "v0.9.4";
 /// Fewest samples an arm's median may be taken over.
 pub(crate) const MIN_SAMPLES: usize = 5;
-/// Tokens generated per sample.
-pub(crate) const N_GEN: u32 = 128;
+/// The client's prompt profile for the llama.cpp arm: 128 prompt and 128 generated
+/// tokens per request.
+pub(crate) const PROFILE: &str = "medium";
 
 /// One arm on one cell: measured, or not run with the reason.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -63,19 +67,66 @@ fn base_env() -> Vec<(String, String)> {
     vec![("PATH".into(), "/usr/local/bin:/usr/bin:/bin".into())]
 }
 
-/// The llama.cpp arm: `llama-bench` in `bin_dir`, decode only, JSON to the artifact.
-pub(crate) fn llama_cpp_arm(bin_dir: &Path, gguf: &Path, workdir: &Path) -> ArmSpec {
-    let bench = quote(&bin_dir.join("llama-bench").display().to_string());
-    let cli = quote(&bin_dir.join("llama-cli").display().to_string());
+/// The llama.cpp arm: `llama-server` in `bin_dir` on `port`, started and measured
+/// by `apr test llm bench` (`apr`), which writes its report to the artifact.
+///
+/// One client for every server: llama.cpp's own bench binary times a different
+/// quantity and is banned on the comparator path
+/// (scripts/check_comparator_one_client.sh). `server_flags` come from the
+/// declaration (scripts/llama_pin.toml through `llama_comparator_server_flags`),
+/// never from a copy here.
+pub(crate) fn llama_cpp_arm(
+    apr: &Path,
+    bin_dir: &Path,
+    gguf: &Path,
+    server_flags: &[String],
+    port: u16,
+    workdir: &Path,
+) -> ArmSpec {
+    let server = quote(&bin_dir.join("llama-server").display().to_string());
+    let flags: String = server_flags
+        .iter()
+        .map(|f| format!(" {}", quote(f)))
+        .collect();
+    // `exec`, so the client's teardown signals the server, not a shell around it.
+    let start = format!(
+        "exec {server} -m {} --port {port}{flags}",
+        quote(&gguf.display().to_string())
+    );
     let artifact = workdir.join("llama.cpp-bench.json");
+    let command = [
+        apr.display().to_string(),
+        "test".into(),
+        "llm".into(),
+        "bench".into(),
+        "--url".into(),
+        format!("http://{}:{port}", Ipv4Addr::LOCALHOST),
+        "--start".into(),
+        start,
+        "--health-timeout".into(),
+        "300".into(),
+        "--profile".into(),
+        PROFILE.into(),
+        "--concurrency".into(),
+        "1".into(),
+        "--stream".into(),
+        "--warmup".into(),
+        "10".into(),
+        "--duration".into(),
+        "30".into(),
+        "--cooldown".into(),
+        "5".into(),
+        "--runs".into(),
+        MIN_SAMPLES.to_string(),
+        "--runtime-name".into(),
+        "llama.cpp".into(),
+        "--output".into(),
+        artifact.display().to_string(),
+    ];
     ArmSpec {
         name: "llama.cpp".into(),
-        command: sh(format!(
-            "{bench} -m {} -p 0 -n {N_GEN} -r {MIN_SAMPLES} -o json > {}",
-            quote(&gguf.display().to_string()),
-            quote(&artifact.display().to_string())
-        )),
-        version_command: sh(format!("{cli} --version 2>&1")),
+        command: command.into(),
+        version_command: sh(format!("{server} --version 2>&1")),
         env: base_env(),
         artifact,
         image: None,
@@ -143,29 +194,26 @@ pub(crate) fn median(samples: &[f64]) -> Result<f64, String> {
     })
 }
 
-/// Decode samples from `llama-bench -o json`: the one test with `n_prompt == 0`
-/// and `n_gen > 0`, its `samples_ts`.
-pub(crate) fn parse_llama_bench(json: &str) -> Result<Vec<f64>, String> {
-    let v: Value = serde_json::from_str(json).map_err(|e| format!("llama-bench json: {e}"))?;
-    let tests: Vec<&Value> = v
-        .as_array()
-        .ok_or("llama-bench json: not a list")?
-        .iter()
-        .filter(|t| t["n_prompt"].as_u64() == Some(0) && t["n_gen"].as_u64().unwrap_or(0) > 0)
-        .collect();
-    let [t] = tests.as_slice() else {
-        return Err(format!(
-            "llama-bench json: {} decode tests, want exactly 1",
-            tests.len()
-        ));
-    };
-    t["samples_ts"]
-        .as_array()
-        .ok_or("llama-bench json: no samples_ts")?
-        .iter()
-        .map(|x| {
-            x.as_f64()
-                .ok_or_else(|| format!("samples_ts: {x} is not a number"))
+/// Decode samples from an `apr test llm bench` report: each run's
+/// `decode_tok_per_sec` (1000 / ITL p50, so time to first token is excluded). A
+/// run with a failed request, or with no successful one, is refused: the client
+/// refuses it too, but the number is read from this file, so the file is checked.
+pub(crate) fn parse_llm_bench(json: &str) -> Result<Vec<f64>, String> {
+    let v: Value = serde_json::from_str(json).map_err(|e| format!("bench report: {e}"))?;
+    let runs = v["runs"].as_array().ok_or("bench report: no `runs` list")?;
+    runs.iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let n = i + 1;
+            let (ok, failed) = (r["successful"].as_u64(), r["failed"].as_u64());
+            if !matches!((ok, failed), (Some(s), Some(0)) if s > 0) {
+                return Err(format!(
+                    "bench report: run {n} has successful {ok:?}, failed {failed:?}"
+                ));
+            }
+            r["decode_tok_per_sec"]
+                .as_f64()
+                .ok_or_else(|| format!("bench report: run {n} has no decode_tok_per_sec"))
         })
         .collect()
 }
@@ -213,7 +261,7 @@ fn read(path: &PathBuf) -> Result<String, String> {
 pub(crate) fn measure_llama_cpp(spec: &ArmSpec, log_dir: &Path) -> Result<ArmOutcome, String> {
     let block = run_arm(spec, log_dir)?;
     check_llama_pin(&block.version)?;
-    let samples = parse_llama_bench(&read(&spec.artifact)?)?;
+    let samples = parse_llm_bench(&read(&spec.artifact)?)?;
     measured(spec, block, &samples)
 }
 
