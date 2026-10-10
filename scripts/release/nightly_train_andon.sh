@@ -228,7 +228,8 @@ M4_empty_owner	s/^    owner="\${owner:-\$DEFAULT_OWNER}"$/    owner="${owner:-}"
 M5_list_failure_read_as_none	s/^\(    num="\$("\$gh" issue list .*)"\) || {$/\1 || : || {/
 M6_job_result_only	s/^    if \[ "\$result" = success \]; then case .*$/    if [ "$result" = success ]; then green=1; fi/
 M7_line_only	s/^    if \[ "\$result" = success \]; then case/    if true; then case/
-M8_drills_write	s/^    if \[ "\$event" != schedule \]; then$/    if false; then/'
+M8_drills_write	s/^    if \[ "\$event" != schedule \]; then$/    if false; then/
+M9_label_failure_read_as_success	s/--force > \/dev\/null || {/--force > \/dev\/null || : || {/'
 
 mutants() {
     local self="$1" tmp survived=0 name expr
