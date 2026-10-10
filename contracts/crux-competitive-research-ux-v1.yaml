@@ -497,15 +497,26 @@ stories:
   - { id: CRUX-O-23, title: "Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Cro", competitor: autogluon, demand_score: 4, status: partial,  contract: crux-O-23-v1.yaml }
   - { id: CRUX-O-24, title: "Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by a", competitor: autogluon, demand_score: 4, status: missing,  contract: crux-O-24-v1.yaml }
 
+  # Category R — SHACL ontologies vs Apache Jena (4) — Jena 5.6.0 (aprender#3598, 2026-10-09).
+  # One story per cell of subspec §14.2: read, write back, validate, report. The
+  # first competitor that is a second engine for a format pv already speaks, not a
+  # model framework. The harness is contracts/crux-shacl-jena-v1.yaml
+  # (tests/oracle/jena/), run on demand and at night, never on a PR. Not a BEAT
+  # pillar. Registry edit: CRUX_COMPETITORS.
+  - { id: CRUX-R-01, title: "Read Turtle and N-Triples ontologies, blank nodes included", competitor: jena, demand_score: 3, status: missing,  contract: crux-R-01-v1.yaml }
+  - { id: CRUX-R-02, title: "Write a graph Jena reads back to the same graph",           competitor: jena, demand_score: 3, status: partial,  contract: crux-R-02-v1.yaml }
+  - { id: CRUX-R-03, title: "Validate SHACL Core to the same verdict as Jena and W3C",   competitor: jena, demand_score: 4, status: partial,  contract: crux-R-03-v1.yaml }
+  - { id: CRUX-R-04, title: "Report SHACL results as a W3C sh:ValidationReport",         competitor: jena, demand_score: 4, status: missing,  contract: crux-R-04-v1.yaml }
+
 # ─────────────────────────────────────────────────────────────
 # Coverage — intake v2.0.0 (verified by awk over §5 of subspec)
 # ─────────────────────────────────────────────────────────────
 coverage_intake:
   supported: 43
-  partial:   77
-  missing:   171
+  partial:   79
+  missing:   173
   unclear:    0
-  total:    291
+  total:    295
   notes: |
     ID gaps at C-14, F-10, H-04, I-05, K-06 are intentional — those
     five stories were dropped pre-v1.0.0 as duplicative (see inline
@@ -517,6 +528,11 @@ coverage_intake:
     Category O (24 rows, aprender#3370) was added 2026-09-16: 19 missing,
     5 partial. Competitor autogluon (1.6.3) — AutoML parity: predictor-level
     tabular AutoML and multi-series forecasting. Same registry edit.
+    Category R (4 rows, aprender#3598) was added 2026-10-09: 2 missing,
+    2 partial. Competitor jena (Apache Jena 5.6.0) — a second SHACL engine
+    pv is compared against on its own ontologies; the statuses come from
+    the first harness run (tests/oracle/jena/receipt.json). Same registry
+    edit.
 
 # ─────────────────────────────────────────────────────────────
 # Falsification conditions

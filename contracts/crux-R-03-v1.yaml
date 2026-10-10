@@ -1,0 +1,100 @@
+# CRUX-R-03 — Validate SHACL Core to the same verdict as Jena (cell R-VALIDATE)
+# CRUX category R: SHACL ontologies vs Apache Jena. Epic aprender#3598.
+# Spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.
+# Harness: contracts/crux-shacl-jena-v1.yaml (tests/oracle/jena/), on demand and
+# at night, never on a PR. This contract states the cell; the harness measures it.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption.
+
+metadata:
+  id: CRUX-R-03
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-10-09"
+  updated: "2026-10-09"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-shacl-jena-v1
+  category: "R — SHACL ontologies vs Apache Jena"
+  competitor: jena
+  demand_score: 4  # 1..5; basis below
+  intake_status: partial
+  github_issue: 3598
+  description: >
+    pv and Jena's `shacl validate` reach the same sh:conforms and the same result
+    count on every case. On W3C's core test suite, W3C's expected report decides
+    where the two engines differ. Partial: pv validates a SHACL Core subset and
+    agrees with W3C on its 19 vendored cases, but on its own corpus Jena finds 743
+    results and pv 730 (2026-10-09). All 13 extra are sh:closed results on rdf:type
+    values, which pv admits on every closed shape (ontology/shapes.rs) and SHACL
+    Core does not: the defect aprender#4837 tracks. Demand 4 (high-traffic verb):
+    no issue-volume count exists for Jena, so the score rates the verb inside pv,
+    where SHACL validation is the shapes gate every contract lint runs.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category R)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.2 (R-VALIDATE), §14.4 (W3C arbitrates), §14.6 (S4)'
+  - 'harness: contracts/crux-shacl-jena-v1.yaml, tests/oracle/jena/ (receipt.json)'
+  - 'defect: https://github.com/paiml/aprender/issues/4837 (sh:closed admits rdf:type)'
+  - 'epic: https://github.com/paiml/aprender/issues/3598'
+  - 'competitor: https://jena.apache.org/documentation/shacl/ (shacl validate)'
+
+equations:
+  same_verdict:
+    formula: |
+      ∀ case c ∈ S-CORPUS:  conforms_pv(c) = conforms_jena(c)  ∧  |results_pv(c)| = |results_jena(c)|
+    domain: "the shipped corpus: contracts/contracts.nt with contracts/shapes.ttl"
+    codomain: "(bool, count) per focus shape"
+    invariants:
+    - "a case pv refuses at parse (exit 3) is RED and named, never skipped"
+  w3c_arbitrates:
+    formula: |
+      ∀ case c ∈ S-W3C:  (conforms, count)_pv(c) = (conforms, count)_w3c(c); Jena differing from W3C is recorded as jena≠w3c, never RED for pv
+    domain: "every case in the core/ manifests of the pinned W3C data-shapes suite"
+    codomain: "(bool, count) per case"
+    invariants:
+    - "agreement with Jena alone is never taken as truth on S-W3C (FALSIFY-CRUXSHACL-011, 012)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-R-03-001
+  rule: "on W3C's core suite pv matches W3C's expected report"
+  prediction: "every core/ case: pv's sh:conforms and result count equal W3C's; a refused case is RED and named"
+  test: >-
+    LIVE-PENDING in the harness - the case S-W3C (comparator pv-vs-w3c) is NOT MEASURED until pv emits a W3C sh:ValidationReport (aprender#3598 S4). On 2026-10-09 the harness subject was the 35 W3C core cases already vendored under tests/oracle/w3c/ (pinned by tests/oracle/jena/w3c.sha256), not yet every case in the core/ manifests; Jena ran all 35 with no jena≠w3c line. In-tree, `ontology::w3c` checks the 19 vendored cases against W3C (every_embedded_case_parses_and_passes); 16 are NOT_VENDORED. The obligation is RECORDED, NOT satisfied for the full suite.
+  if_fails: "rule 'on W3C's core suite pv matches W3C's expected report' is violated — pv's SHACL Core subset reaches a different verdict than the W3C test suite"
+- id: FALSIFY-CRUX-R-03-002
+  rule: "on the shipped corpus pv matches Jena"
+  prediction: "contracts/contracts.nt with contracts/shapes.ttl: pv and Jena report the same sh:conforms and the same number of results"
+  test: >-
+    jena-oracle (tests/oracle/jena/), cell R-VALIDATE case corpus, comparator jena-vs-pv. RED 2026-10-09 at branch commit 62b1cebe99: Jena 743 results, pv 730; 12 focus nodes differ, every one sh:closed with Jena's extra result on an rdf:type value (tests/oracle/jena/receipt.json). Tracked by aprender#4837.
+  if_fails: "rule 'on the shipped corpus pv matches Jena' is violated — pv and Jena disagree on the contracts pv ships"
+- id: FALSIFY-CRUX-R-03-003
+  rule: "pv's shapes graph is well-formed SHACL"
+  prediction: "Jena validates contracts/shapes.ttl against the SHACL-SHACL shapes graph (pinned by sha256) and it conforms"
+  test: >-
+    jena-oracle (tests/oracle/jena/), case S-SHSH, comparator shacl-shacl. GREEN 2026-10-09 at branch commit 62b1cebe99 (tests/oracle/jena/receipt.json). The negative control shsh/minCount-string (FALSIFY-CRUXSHACL-026) was seen.
+  if_fails: "rule 'pv's shapes graph is well-formed SHACL' is violated — pv writes a shape another SHACL engine cannot load as written"
+
+proof_obligations:
+- id: CR03-INV-001
+  type: invariant
+  property: "on W3C's core suite pv matches W3C's expected report"
+- id: CR03-INV-002
+  type: invariant
+  property: "on the shipped corpus pv matches Jena"
+- id: CR03-INV-003
+  type: invariant
+  property: "pv's shapes graph is well-formed SHACL"
+
+qa_gate:
+  id: F-CRUX-R-03-QA-001
+  name: R-VALIDATE agrees with Jena and with W3C, or names the case
+  description: "The harness reports R-VALIDATE GREEN only when every S-W3C case matches W3C and the corpus matches Jena; a refused or differing case is RED and named."
+  checks:
+  - same_verdict_on_corpus
+  - w3c_arbitrates_on_suite
+  - shapes_graph_conforms_to_shacl_shacl
+  pass_criteria: "jena-oracle receipt: cell R-VALIDATE GREEN on S-W3C and corpus, S-SHSH GREEN"
+  falsification: "Change sh:minCount 1 to 2 in W3C core/property/minCount-001 (FALSIFY-CRUXSHACL-009) or plant a pv refusal (010): the cell must turn RED"

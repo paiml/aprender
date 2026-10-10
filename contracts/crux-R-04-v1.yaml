@@ -1,0 +1,89 @@
+# CRUX-R-04 — Report SHACL results with full W3C detail (cell R-FEEDBACK)
+# CRUX category R: SHACL ontologies vs Apache Jena. Epic aprender#3598.
+# Spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.
+# Harness: contracts/crux-shacl-jena-v1.yaml (tests/oracle/jena/), on demand and
+# at night, never on a PR. This contract states the cell; the harness measures it.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption.
+
+metadata:
+  id: CRUX-R-04
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-10-09"
+  updated: "2026-10-09"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-shacl-jena-v1
+  category: "R — SHACL ontologies vs Apache Jena"
+  competitor: jena
+  demand_score: 4  # 1..5; basis below
+  intake_status: missing
+  github_issue: 3598
+  description: >
+    pv reports SHACL results as a W3C sh:ValidationReport, and its results equal
+    Jena's as a multiset of the full tuple (focus, path, value, source-shape key,
+    component IRI, severity), each with a message. Missing: pv's report is lint
+    text or JSON whose result has no sh:value, no sh:sourceShape and no
+    sh:sourceConstraintComponent IRI (ontology/shapes.rs, lint/shapes_gate.rs).
+    Demand 4 (high-traffic verb): no issue-volume count exists for Jena, so the
+    score rates the verb inside pv, where the report is what every shapes-gate
+    failure prints.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category R)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.2 (R-FEEDBACK), §14.6 (S4, S5)'
+  - 'harness: contracts/crux-shacl-jena-v1.yaml, tests/oracle/jena/src/report.rs'
+  - 'epic: https://github.com/paiml/aprender/issues/3598'
+  - 'competitor: https://www.w3.org/TR/shacl/#validation-report'
+
+equations:
+  full_tuple_multiset:
+    formula: |
+      multiset{ key(r) : r ∈ results_pv }  =  multiset{ key(r) : r ∈ results_ref },
+      key(r) = (focus, path, value, source_shape_key, component_iri, severity),
+      ref = W3C's expected report on S-W3C, Jena's report on S-CORPUS
+    domain: "S-W3C and S-CORPUS"
+    codomain: "multiset equality"
+    invariants:
+    - "a blank-node property shape is keyed by its parent node shape's IRI plus sh:path (FALSIFY-CRUXSHACL-013)"
+    - "an absent field never matches a present one (FALSIFY-CRUXSHACL-021)"
+  every_result_explains_itself:
+    formula: |
+      ∀ r ∈ results_pv:  message(r) ≠ ""  ∧  (sh:message declared on shape(r) ⇒ it appears in message(r))
+    domain: "every result pv reports"
+    codomain: "bool"
+
+falsification_tests:
+- id: FALSIFY-CRUX-R-04-001
+  rule: "pv's results equal the reference as a multiset of the full tuple"
+  prediction: "on S-W3C and S-CORPUS, pv's results and the reference's, keyed by (focus, path, value, source-shape key, component IRI, severity), are equal multisets"
+  test: >-
+    LIVE-PENDING - the harness cell R-FEEDBACK (comparator full-tuple, tests/oracle/jena/src/report.rs) is NOT MEASURED until pv emits a W3C sh:ValidationReport (aprender#3598 S4). The comparator is proven by FALSIFY-CRUXSHACL-013..019 and 021, all seen 2026-10-09. The obligation is RECORDED, NOT satisfied.
+  if_fails: "rule 'pv's results equal the reference as a multiset of the full tuple' is violated — pv reports a different focus, path, value, shape, component or severity than the other engine"
+- id: FALSIFY-CRUX-R-04-002
+  rule: "every result has a message, and a declared sh:message appears in it"
+  prediction: "no result in pv's report has an empty message, and every result of a shape that declares sh:message carries that text"
+  test: >-
+    LIVE-PENDING - checked by the harness's message comparator (control feedback/message, FALSIFY-CRUXSHACL-020, seen 2026-10-09) once pv emits the report (S4). The obligation is RECORDED, NOT satisfied.
+  if_fails: "rule 'every result has a message, and a declared sh:message appears in it' is violated — pv reports what failed but not why"
+
+proof_obligations:
+- id: CR04-INV-001
+  type: invariant
+  property: "pv's results equal the reference as a multiset of the full tuple"
+- id: CR04-INV-002
+  type: invariant
+  property: "every result has a message, and a declared sh:message appears in it"
+
+qa_gate:
+  id: F-CRUX-R-04-QA-001
+  name: R-FEEDBACK agrees on the full tuple or says it was not measured
+  description: "The harness reports R-FEEDBACK GREEN only when pv's W3C report equals the reference on every tuple field and every message check holds; before S4 it reports NOT MEASURED, never GREEN."
+  checks:
+  - full_tuple_multiset_equal
+  - every_result_has_a_message
+  pass_criteria: "jena-oracle receipt: cell R-FEEDBACK GREEN on S-W3C and S-CORPUS"
+  falsification: "Change one field of one result in the report under test (FALSIFY-CRUXSHACL-014..019) or remove its sh:value (021): the cell must turn RED"

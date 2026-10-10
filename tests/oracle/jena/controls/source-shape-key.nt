@@ -1,0 +1,28 @@
+<http://ex.org/PersonShape> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> .
+<http://ex.org/PersonShape> <http://www.w3.org/ns/shacl#targetClass> <http://ex.org/Person> .
+<http://ex.org/PersonShape> <http://www.w3.org/ns/shacl#property> _:p1 .
+_:p1 <http://www.w3.org/ns/shacl#path> <http://ex.org/firstName> .
+_:p1 <http://www.w3.org/ns/shacl#minCount> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:p1 <http://www.w3.org/ns/shacl#message> "need a firstName"@en .
+<http://ex.org/PersonShape> <http://www.w3.org/ns/shacl#property> _:p2 .
+_:p2 <http://www.w3.org/ns/shacl#path> <http://ex.org/age> .
+_:p2 <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#integer> .
+_:r <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#ValidationReport> .
+_:r <http://www.w3.org/ns/shacl#conforms> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+_:r <http://www.w3.org/ns/shacl#result> _:x1 .
+_:x1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#ValidationResult> .
+_:x1 <http://www.w3.org/ns/shacl#focusNode> <http://ex.org/Bob> .
+_:x1 <http://www.w3.org/ns/shacl#resultPath> <http://ex.org/firstName> .
+_:x1 <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation> .
+_:x1 <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#MinCountConstraintComponent> .
+_:x1 <http://www.w3.org/ns/shacl#sourceShape> _:p1 .
+_:x1 <http://www.w3.org/ns/shacl#resultMessage> "need a firstName"@en .
+_:r <http://www.w3.org/ns/shacl#result> _:x2 .
+_:x2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#ValidationResult> .
+_:x2 <http://www.w3.org/ns/shacl#focusNode> <http://ex.org/Bob> .
+_:x2 <http://www.w3.org/ns/shacl#resultPath> <http://ex.org/age> .
+_:x2 <http://www.w3.org/ns/shacl#value> "x" .
+_:x2 <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation> .
+_:x2 <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#DatatypeConstraintComponent> .
+_:x2 <http://www.w3.org/ns/shacl#sourceShape> _:p2 .
+_:x2 <http://www.w3.org/ns/shacl#resultMessage> "age is not an xsd:integer" .
