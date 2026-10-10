@@ -37,7 +37,7 @@ equations:
       - "a walk that stops at a red night or at the start of the history is not ready (exit 1)"
       - "a walk that stops at an absent, void or pending night is not_measured (exit 2): a night with no run is never green"
       - "LAST older than the day before --as-of is stale, and stale is not_measured"
-      - "need is 3 for every check but release-rehearsal, which needs 1 (C355 item 6: the count is lowered, the check stays); neither an option nor an environment value can change either"
+      - "need is 3 for every check but release-rehearsal, which needs 1 (C355 item 6: the count is lowered, the check stays); neither an option nor an environment value can change either, and the name is compared exactly, never as a glob"
       - "every verdict prints streak (in a row) and total (every green night), so both readings of 'three times' stay visible"
 
 proof_obligations:
@@ -75,13 +75,13 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-NG-001
     rule: "The count is right on every row of its case table"
-    prediction: "Three green nights are ready (one for release-rehearsal, and one is not enough for any other check: nightly-train, release-lanes and release-rehearsal-old each still need three); a red night, a retried green or the start of the history is not ready; an absent, cancelled or unfinished night, a stale history or an unreadable line is not_measured; a branch run, a manual dispatch and rows after --as-of are not counted; --need is refused and NEED in the environment is ignored; dates cross a year end and a leap day"
+    prediction: "Three green nights are ready (one for release-rehearsal, and one is not enough for any other check: nightly-train and the near-miss names release-lanes, release-rehearsal-old, x-rehearsal, Release-rehearsal and release-rehearsaX each still need three); a red night, a retried green or the start of the history is not ready; an absent, cancelled or unfinished night, a stale history or an unreadable line is not_measured; a branch run, a manual dispatch and rows after --as-of are not counted; --need is refused and NEED in the environment is ignored; dates cross a year end and a leap day"
     test: "bash scripts/release/nightly_greens.sh --selftest"
     if_fails: "The judge can call a check ready on fewer than three green nights, or count a night that measured nothing as green: the condition C280 item 12 exists to stop"
 
   - id: FALSIFY-NG-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (need 2, need from the environment, the release-rehearsal need raised to 3 or set to 0, not keyed on its name, also keyed on nightly-train, on release-* or on a release-rehearsal prefix, or given to every check, a retried green counted, failure not red, void counted green, red or pending ranked below green, the older of two runs kept, every branch counted, rows after --as-of counted, a red newest night skipped, no staleness bound, an absent night read as the start, a streak off by one, leap years ignored) turns --selftest RED; a mutant that changes nothing or does not parse is itself a failure"
+    prediction: "Each planted mutant (need 2, need from the environment, the release-rehearsal need raised to 3 or set to 0, not keyed on its name, also keyed on nightly-train, or keyed by any glob in place of the exact compare (release-*, a release-rehearsal prefix, *rehearsal, release-rehearsa?, [rR]elease-rehearsal), or given to every check, a retried green counted, failure not red, void counted green, red or pending ranked below green, the older of two runs kept, every branch counted, rows after --as-of counted, a red newest night skipped, no staleness bound, an absent night read as the start, a streak off by one, leap years ignored) turns --selftest RED; a mutant that changes nothing or does not parse is itself a failure"
     test: "bash scripts/release/nightly_greens.sh --mutants"
     if_fails: "The case table is theater: it would pass a judge that lets a check be enforced before its inputs were produced green three times"
 

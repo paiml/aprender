@@ -54,8 +54,9 @@ SCRIPT_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0
 # C280 item 12: "three times". A constant: never an option, never taken from the environment.
 NEED=3
 # C355 item 6: the release-rehearsal check needs one night. A constant, keyed on the check's name, never an option.
+# An exact string compare, never a glob: no near-miss spelling inherits the one night.
 REHEARSAL_NEED=1
-need_of() { case $1 in release-rehearsal) printf '%s\n' "$REHEARSAL_NEED" ;; *) printf '%s\n' "$NEED" ;; esac; }
+need_of() { if [ "$1" = release-rehearsal ]; then printf '%s\n' "$REHEARSAL_NEED"; else printf '%s\n' "$NEED"; fi; }
 
 caller_error() { printf 'FAIL  NIGHTLY %s: caller error: %s\n' "$PROG" "$*"; exit 3; }
 
@@ -308,6 +309,9 @@ selftest() {
     jn nightly_train_still_needs_three_after_one_night  1 "(streak=1 total=1 need=3)" nightly-train
     jn near_miss_release_lanes_needs_three              1 "(streak=1 total=1 need=3)" release-lanes
     jn near_miss_rehearsal_suffix_needs_three           1 "(streak=1 total=1 need=3)" release-rehearsal-old
+    jn near_miss_other_prefix_rehearsal_needs_three     1 "(streak=1 total=1 need=3)" x-rehearsal
+    jn near_miss_capital_release_rehearsal_needs_three  1 "(streak=1 total=1 need=3)" Release-rehearsal
+    jn near_miss_last_letter_needs_three                1 "(streak=1 total=1 need=3)" release-rehearsaX
     if [ "$REHEARSAL_NEED" = 1 ]; then
         printf '  ok    %-50s REHEARSAL_NEED=1\n' committed_rehearsal_need_is_one; pass=$((pass + 1))
     else
@@ -347,11 +351,14 @@ need_is_two                 /^NEED=3/s/^NEED=3/NEED=2/
 need_from_env               /^NEED=3/s/^NEED=3/NEED=${NEED:-3}/
 rehearsal_need_is_three     /^REHEARSAL_NEED=1/s/^REHEARSAL_NEED=1/REHEARSAL_NEED=3/
 rehearsal_need_is_zero      /^REHEARSAL_NEED=1/s/^REHEARSAL_NEED=1/REHEARSAL_NEED=0/
-rehearsal_name_not_keyed    /^need_of() /s/release-rehearsal)/rehearsal)/
+rehearsal_name_not_keyed    /^need_of() /s/= release-rehearsal ]/= rehearsal ]/
+rehearsal_and_train_keyed   /^need_of() /s/\[ "\$1" = release-rehearsal \]/{ [ "$1" = release-rehearsal ] || [ "$1" = nightly-train ]; }/
+any_release_check_keyed     /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-* ]]/
+rehearsal_prefix_keyed      /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-rehearsal* ]]/
+rehearsal_suffix_keyed      /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == *rehearsal ]]/
+one_letter_glob_keyed       /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-rehearsa? ]]/
+case_glob_keyed             /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == [rR]elease-rehearsal ]]/
 one_night_for_every_check   /^need_of() /s/"\$NEED"/"$REHEARSAL_NEED"/
-rehearsal_and_train_keyed   /^need_of() /s/release-rehearsal)/release-rehearsal|nightly-train)/
-any_release_check_keyed     /^need_of() /s/release-rehearsal)/release-*)/
-rehearsal_prefix_keyed      /^need_of() /s/release-rehearsal)/release-rehearsal*)/
 retried_counts_as_green     /^judge() {$/,/^}$/s/? "green" : "retried"/? "green" : "green"/
 failure_is_not_red          /^judge() {$/,/^}$/s/co == "failure" || co == "timed_out"/co == "never" || co == "timed_out"/
 void_counts_as_green        /^judge() {$/,/^}$/s/) s = "void"/) s = "green"/
