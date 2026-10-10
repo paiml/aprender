@@ -513,28 +513,24 @@ mod gdn_chunk_scan_device_tests {
     }
 
     #[test]
-    #[ignore = "FLAKE #4956: intermittent SIGSEGV in libcuda; runs nightly in cuda-nightly.yml ada-yoga"]
     fn gdn_chunk_scan_is_bitwise_per_token_0_8b_shape() {
         // 0.8B / 2B: 16 key heads, 16 value heads.
         scan_equals_per_token(16, 16, 128, 128, 37);
     }
 
     #[test]
-    #[ignore = "FLAKE #4956: intermittent SIGSEGV in libcuda; runs nightly in cuda-nightly.yml ada-yoga"]
     fn gdn_chunk_scan_is_bitwise_per_token_9b_grouped_shape() {
         // 4B / 9B: 16 key heads, 32 value heads (tiled h % 16).
         scan_equals_per_token(16, 32, 128, 128, 64);
     }
 
     #[test]
-    #[ignore = "FLAKE #4956: intermittent SIGSEGV in libcuda; runs nightly in cuda-nightly.yml ada-yoga"]
     fn gdn_chunk_scan_is_bitwise_per_token_27b_grouped_shape() {
         // 27B: 16 key heads, 48 value heads.
         scan_equals_per_token(16, 48, 128, 128, 9);
     }
 
     #[test]
-    #[ignore = "FLAKE #4956: intermittent SIGSEGV in libcuda; runs nightly in cuda-nightly.yml ada-yoga"]
     fn gdn_chunk_scan_one_token_is_one_per_token_step() {
         scan_equals_per_token(16, 32, 128, 128, 1);
     }

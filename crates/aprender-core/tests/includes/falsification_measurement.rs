@@ -1,125 +1,65 @@
 /// M001: cbtop --headless --simulated exits cleanly with code 0
 #[test]
 fn m001_headless_exits_cleanly() {
-    let output = nested_cargo()
-        .args([
-            "run",
-            "-p",
-            "apr-cli",
-            "--bin",
-            "apr",
-            "--",
-            "cbtop",
-            "--headless",
-            "--simulated",
-            "--iterations",
-            "10",
-        ])
-        .output();
-
-    match output {
-        Ok(result) => {
-            assert!(
-                result.status.success(),
-                "M001 FALSIFIED: cbtop --headless exited with error: {}",
-                String::from_utf8_lossy(&result.stderr)
-            );
-        }
-        Err(e) => {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                eprintln!("M001 SKIPPED: apr binary not found");
-            } else {
-                panic!("M001 FALSIFIED: Failed to run cbtop: {}", e);
-            }
-        }
-    }
+    let result = run_cbtop("M001", &["--headless", "--simulated", "--iterations", "10"]);
+    assert!(
+        result.status.success(),
+        "M001 FALSIFIED: cbtop --headless exited with error: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
 }
 
 /// M002: JSON output is valid JSON
 #[test]
 fn m002_json_output_valid() {
-    let output = nested_cargo()
-        .args([
-            "run",
-            "-p",
-            "apr-cli",
-            "--bin",
-            "apr",
-            "--",
-            "cbtop",
-            "--headless",
-            "--simulated",
-            "--json",
-            "--iterations",
-            "10",
-        ])
-        .output();
-
-    match output {
-        Ok(result) => {
-            if result.status.success() {
-                let stdout = String::from_utf8_lossy(&result.stdout);
-                let trimmed = stdout.trim();
-                assert!(
-                    trimmed.starts_with('{') && trimmed.ends_with('}'),
-                    "M002 FALSIFIED: Output is not valid JSON object"
-                );
-                assert!(
-                    trimmed.contains("\"model\""),
-                    "M002 FALSIFIED: JSON missing 'model' field"
-                );
-                assert!(
-                    trimmed.contains("\"throughput\""),
-                    "M002 FALSIFIED: JSON missing 'throughput' field"
-                );
-                assert!(
-                    trimmed.contains("\"brick_scores\""),
-                    "M002 FALSIFIED: JSON missing 'brick_scores' field"
-                );
-            }
-        }
-        Err(_) => {
-            eprintln!("M002 SKIPPED: apr binary not found");
-        }
-    }
+    let result = run_cbtop(
+        "M002",
+        &["--headless", "--simulated", "--json", "--iterations", "10"],
+    );
+    assert!(
+        result.status.success(),
+        "M002 FALSIFIED: cbtop --json exited with error: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let trimmed = stdout.trim();
+    assert!(
+        trimmed.starts_with('{') && trimmed.ends_with('}'),
+        "M002 FALSIFIED: Output is not valid JSON object"
+    );
+    assert!(
+        trimmed.contains("\"model\""),
+        "M002 FALSIFIED: JSON missing 'model' field"
+    );
+    assert!(
+        trimmed.contains("\"throughput\""),
+        "M002 FALSIFIED: JSON missing 'throughput' field"
+    );
+    assert!(
+        trimmed.contains("\"brick_scores\""),
+        "M002 FALSIFIED: JSON missing 'brick_scores' field"
+    );
 }
 
 /// M003: Brick scores present in JSON output
 #[test]
 fn m003_brick_scores_present() {
-    let output = nested_cargo()
-        .args([
-            "run",
-            "-p",
-            "apr-cli",
-            "--bin",
-            "apr",
-            "--",
-            "cbtop",
-            "--headless",
-            "--simulated",
-            "--json",
-            "--iterations",
-            "10",
-        ])
-        .output();
-
-    match output {
-        Ok(result) => {
-            if result.status.success() {
-                let stdout = String::from_utf8_lossy(&result.stdout);
-                let brick_count = stdout.matches("\"name\":").count();
-                assert!(
-                    brick_count >= 7,
-                    "M003 FALSIFIED: Expected 7 brick scores, found {}",
-                    brick_count
-                );
-            }
-        }
-        Err(_) => {
-            eprintln!("M003 SKIPPED: apr binary not found");
-        }
-    }
+    let result = run_cbtop(
+        "M003",
+        &["--headless", "--simulated", "--json", "--iterations", "10"],
+    );
+    assert!(
+        result.status.success(),
+        "M003 FALSIFIED: cbtop --json exited with error: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let brick_count = stdout.matches("\"name\":").count();
+    assert!(
+        brick_count >= 7,
+        "M003 FALSIFIED: Expected 7 brick scores, found {}",
+        brick_count
+    );
 }
 
 /// M004: Throughput value is positive
@@ -173,18 +113,15 @@ fn m006_cv_under_five_percent() {
     assert!(cv < 5.0, "M006 FALSIFIED: CV {:.2}% >= 5% threshold", cv);
 }
 
-/// M007: CI mode returns exit code 1 on threshold failure
+/// M007: CI mode fails with "CI thresholds not met" on threshold failure.
+///
+/// cbtop returns `CliError::ValidationFailed`, exit code 5. Asserting only
+/// "non-zero" let a compile error (101) or a panic (101) pass as the verdict.
 #[test]
 fn m007_ci_exit_code_on_failure() {
-    let output = nested_cargo()
-        .args([
-            "run",
-            "-p",
-            "apr-cli",
-            "--bin",
-            "apr",
-            "--",
-            "cbtop",
+    let result = run_cbtop(
+        "M007",
+        &[
             "--headless",
             "--simulated",
             "--ci",
@@ -192,34 +129,26 @@ fn m007_ci_exit_code_on_failure() {
             "999999",
             "--iterations",
             "10",
-        ])
-        .output();
-
-    match output {
-        Ok(result) => {
-            assert!(
-                !result.status.success(),
-                "M007 FALSIFIED: CI mode should return non-zero on threshold failure"
-            );
-        }
-        Err(_) => {
-            eprintln!("M007 SKIPPED: apr binary not found");
-        }
-    }
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("CI thresholds not met"),
+        "M007 FALSIFIED: CI mode did not report the threshold failure:\n{stderr}"
+    );
+    assert_eq!(
+        result.status.code(),
+        Some(5),
+        "M007 FALSIFIED: CI threshold failure must exit 5 (ValidationFailed)"
+    );
 }
 
 /// M008: CI mode returns exit code 0 on threshold pass
 #[test]
 fn m008_ci_exit_code_on_pass() {
-    let output = nested_cargo()
-        .args([
-            "run",
-            "-p",
-            "apr-cli",
-            "--bin",
-            "apr",
-            "--",
-            "cbtop",
+    let result = run_cbtop(
+        "M008",
+        &[
             "--headless",
             "--simulated",
             "--ci",
@@ -227,37 +156,29 @@ fn m008_ci_exit_code_on_pass() {
             "100",
             "--iterations",
             "10",
-        ])
-        .output();
-
-    match output {
-        Ok(result) => {
-            // `--simulated` draws jittered brick timings, so whether the thresholds are met is a
-            // coin flip per run (measured 2026-09-11: "Falsification: 3/7 passed", CV 88 %). The
-            // contract M008 names is that the EXIT CODE follows the verdict: 0 iff the run prints
-            // `Status: PASS`. Assert that equivalence, which is deterministic, instead of assuming
-            // the simulated run passes.
-            let stdout = String::from_utf8_lossy(&result.stdout);
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            let text = format!("{stdout}{stderr}");
-            let verdict_pass = text.contains("Status: PASS");
-            let verdict_fail = text.contains("Status: FAIL");
-            assert!(
-                verdict_pass || verdict_fail,
-                "M008 FALSIFIED: CI mode printed no `Status: PASS|FAIL` verdict:\n{text}"
-            );
-            assert_eq!(
-                result.status.success(),
-                verdict_pass,
-                "M008 FALSIFIED: CI exit code must be 0 exactly when the verdict is PASS (success={}, verdict_pass={})",
-                result.status.success(),
-                verdict_pass
-            );
-        }
-        Err(_) => {
-            eprintln!("M008 SKIPPED: apr binary not found");
-        }
-    }
+        ],
+    );
+    // `--simulated` draws jittered brick timings, so whether the thresholds are met is a
+    // coin flip per run (measured 2026-09-11: "Falsification: 3/7 passed", CV 88 %). The
+    // contract M008 names is that the EXIT CODE follows the verdict: 0 iff the run prints
+    // `Status: PASS`. Assert that equivalence, which is deterministic, instead of assuming
+    // the simulated run passes.
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    let text = format!("{stdout}{stderr}");
+    let verdict_pass = text.contains("Status: PASS");
+    let verdict_fail = text.contains("Status: FAIL");
+    assert!(
+        verdict_pass || verdict_fail,
+        "M008 FALSIFIED: CI mode printed no `Status: PASS|FAIL` verdict:\n{text}"
+    );
+    assert_eq!(
+        result.status.success(),
+        verdict_pass,
+        "M008 FALSIFIED: CI exit code must be 0 exactly when the verdict is PASS (success={}, verdict_pass={})",
+        result.status.success(),
+        verdict_pass
+    );
 }
 
 /// M009: Warmup iterations are not included in measurement
@@ -283,19 +204,19 @@ fn m010_output_file_created() {
     use std::fs;
     use std::path::Path;
 
-    let output_path = "/tmp/m010_test_output.json";
+    // One path per process: with a shared fixed path, a concurrent run on the
+    // same host could delete this run's file or supply one this run never wrote.
+    let output_path = std::env::temp_dir()
+        .join(format!("m010_test_output_{}.json", std::process::id()))
+        .to_string_lossy()
+        .into_owned();
+    let output_path = output_path.as_str();
 
     let _ = fs::remove_file(output_path);
 
-    let output = nested_cargo()
-        .args([
-            "run",
-            "-p",
-            "apr-cli",
-            "--bin",
-            "apr",
-            "--",
-            "cbtop",
+    let result = run_cbtop(
+        "M010",
+        &[
             "--headless",
             "--simulated",
             "--json",
@@ -303,24 +224,19 @@ fn m010_output_file_created() {
             output_path,
             "--iterations",
             "10",
-        ])
-        .output();
-
-    match output {
-        Ok(result) => {
-            if result.status.success() {
-                assert!(
-                    Path::new(output_path).exists(),
-                    "M010 FALSIFIED: Output file not created at {}",
-                    output_path
-                );
-                let _ = fs::remove_file(output_path);
-            }
-        }
-        Err(_) => {
-            eprintln!("M010 SKIPPED: apr binary not found");
-        }
-    }
+        ],
+    );
+    assert!(
+        result.status.success(),
+        "M010 FALSIFIED: cbtop --output exited with error: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        Path::new(output_path).exists(),
+        "M010 FALSIFIED: Output file not created at {}",
+        output_path
+    );
+    let _ = fs::remove_file(output_path);
 }
 
 /// M011: Brick scoring formula is consistent

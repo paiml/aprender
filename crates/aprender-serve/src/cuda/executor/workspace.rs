@@ -286,6 +286,29 @@ impl CudaExecutor {
         self.graph_capture_failed = false;
     }
 
+    /// C14 (qwen3-8b parity): a failed decode-graph capture must also drop the
+    /// graph-mode indirect buffers. Eager kernels pick graph mode by their mere
+    /// presence (`kv_scatter`, RoPE, attention seq_len), so leaving them set froze
+    /// every later token at the capture position: K/V scattered to slot 0, RoPE at
+    /// pos 0, attention over seq_len 1. Position 0 matched CPU, every later one
+    /// diverged. It fired when VRAM was nearly full, so `GraphInstantiate` hit OOM.
+    pub(crate) fn abandon_decode_graph_capture(&mut self) {
+        self.graph_capture_failed = true;
+        self.decode_graph = None;
+        self.graph_input_buf = None;
+        self.position_buf = None;
+        self.seq_len_buf = None;
+    }
+
+    /// Wait for the eager first token of a failed capture, then download its logits.
+    pub(crate) fn sync_first_token_logits(&mut self, logits: &mut [f32]) -> Result<(), GpuError> {
+        self.stream.synchronize()?;
+        if let Some(ref logits_buf) = self.workspace.logits_buf {
+            logits_buf.copy_to_host(logits)?;
+        }
+        Ok(())
+    }
+
     /// PMAT-045: Clear batched decode graphs (stale after workspace reallocation)
     pub fn clear_batched_decode_graphs(&mut self) {
         self.batched_decode_graphs.clear();

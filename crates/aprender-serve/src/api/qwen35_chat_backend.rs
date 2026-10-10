@@ -99,11 +99,10 @@ async fn try_qwen35_backend(
     state: &AppState,
     request: &ChatCompletionRequest,
     request_id: &str,
+    trace_level: Option<&str>,
     start: Instant,
     cancel: &CancelToken,
 ) -> Option<Response> {
-    use crate::gguf::QuantizedGenerateConfig;
-
     let session = state.qwen35_session()?;
     let Some(mapped) = state.mapped_gguf_model() else {
         return Some(fail_response(
@@ -191,20 +190,37 @@ async fn try_qwen35_backend(
     }
 
     let decode_mapped = mapped.clone();
+    // APR-OBS-001 OBS-09: a step|layer header runs the tracer over this turn.
+    let mut tracer = crate::api::serve_trace::tracer_for(trace_level);
+    let time_layers = trace_level == Some("layer");
     let turn = tokio::task::spawn_blocking(move || match session.session.lock() {
         Ok(mut s) => {
-            let r = s.generate(&input_ids, &gen_config, &mut |_| true);
+            let trace = tracer.as_mut().map(|tracer| crate::session::TurnTrace {
+                tracer,
+                layers: time_layers,
+            });
+            let r = s.generate_traced(&input_ids, &gen_config, &mut |_| true, trace);
             let decode_ended = std::time::Instant::now();
+            let layers = if time_layers {
+                s.take_layer_timings()
+            } else {
+                None
+            };
+            let measured = TracedTurn {
+                tracer,
+                layers,
+                num_layers: s.num_layers(),
+            };
             session
                 .on_gpu
                 .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
-            r.map(|turn| (turn, decode_ended))
+            r.map(|turn| (turn, measured, decode_ended))
                 .map_err(|e| e.to_string())
         },
         Err(_) => Err(POISONED.to_string()),
     })
     .await;
-    let (turn, decode_ended) = match turn {
+    let (turn, measured, decode_ended) = match turn {
         Ok(Ok(done)) => done,
         Ok(Err(e)) => {
             state.metrics.record_failure();
@@ -244,7 +260,16 @@ async fn try_qwen35_backend(
     .to_timings_at(prompt_token_count, completion_tokens, start, None);
     let duration = start.elapsed();
     state.metrics.record_success(completion_tokens, duration);
-    Some(build_chat_response(
+    let traces = crate::api::serve_trace::traces_for(&crate::api::serve_trace::ServeTrace {
+        level: trace_level,
+        events: measured.tracer.as_ref().map_or(&[], |t| t.events()),
+        layers: measured.layers.as_deref(),
+        wall_us: u64::try_from(duration.as_micros()).unwrap_or(u64::MAX),
+        prompt_tokens: prompt_token_count,
+        completion_tokens,
+        num_layers: measured.num_layers,
+    });
+    Some(build_chat_response_traced(
         request_id.to_string(),
         request.model.clone(),
         response_text,
@@ -252,8 +277,7 @@ async fn try_qwen35_backend(
         completion_tokens,
         budget,
         request.stop.as_deref(),
-        None,
-        duration,
+        traces,
         request.tools.as_deref(),
         request_tool_choice(request),
         timings,
@@ -262,6 +286,13 @@ async fn try_qwen35_backend(
         // (`apr code`'s document) can tell.
         Some(turn.used_gpu),
     ))
+}
+
+/// What a traced Qwen3.5 turn measured, carried out of the blocking task.
+struct TracedTurn {
+    tracer: Option<crate::inference_trace::InferenceTracer>,
+    layers: Option<Vec<crate::session::LayerTiming>>,
+    num_layers: usize,
 }
 
 const POISONED: &str =

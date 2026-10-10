@@ -20,6 +20,14 @@ struct Scripted {
     restores: usize,
     /// The forward loses its checkpoint (a reallocation, a fallback).
     lose_checkpoint: bool,
+    /// What `set_layer_timing` answers: whether this forward times its layers.
+    times_layers: bool,
+    /// Every `set_layer_timing` argument, in order.
+    timing_log: Vec<bool>,
+    /// What `take_layer_timings` hands back, once.
+    timed: Option<Vec<LayerTiming>>,
+    /// The forward call (0-based) from which every forward errors.
+    fail_from: Option<usize>,
 }
 
 impl Scripted {
@@ -35,6 +43,10 @@ impl Scripted {
             saved: None,
             restores: 0,
             lose_checkpoint: false,
+            times_layers: false,
+            timing_log: Vec::new(),
+            timed: None,
+            fail_from: None,
         }
     }
 
@@ -93,11 +105,23 @@ impl ArchForward for Scripted {
             "forward from {start}, but the state holds {}",
             self.held
         );
+        if self.fail_from.is_some_and(|n| self.calls.len() >= n) {
+            return Err(RealizarError::InvalidShape {
+                reason: "scripted forward failure".to_string(),
+            });
+        }
         self.calls.push((tokens.len(), start));
         self.held = tokens.len();
         let mut logits = vec![0.0; 8];
         logits[self.next as usize] = 1.0;
         Ok(logits)
+    }
+    fn set_layer_timing(&mut self, on: bool) -> bool {
+        self.timing_log.push(on);
+        self.times_layers
+    }
+    fn take_layer_timings(&mut self) -> Option<Vec<LayerTiming>> {
+        self.timed.take()
     }
 }
 
@@ -123,6 +147,125 @@ fn generate_prefills_once_then_decodes_one_token_per_step() {
     // The prompt whole from 0, then each chosen token (not the last) from where it left.
     assert_eq!(s.engine().calls, vec![(3, 0), (4, 3), (5, 4)]);
     assert_eq!(s.processed_len(), 5);
+}
+
+/// A tracer that records what a `step` or `layer` serve trace records.
+fn step_tracer() -> crate::inference_trace::InferenceTracer {
+    use crate::inference_trace::{InferenceTracer, TraceConfig, TraceStep};
+    let mut config = TraceConfig::enabled();
+    config.steps = [TraceStep::TransformerBlock, TraceStep::Decode]
+        .into_iter()
+        .collect();
+    InferenceTracer::new(config)
+}
+
+/// What a traced turn filed, as `(step, iteration)` in order.
+fn filed(
+    tracer: &crate::inference_trace::InferenceTracer,
+) -> Vec<(crate::inference_trace::TraceStep, usize)> {
+    tracer
+        .events()
+        .iter()
+        .map(|e| (e.step, e.iteration))
+        .collect()
+}
+
+const TIMED: LayerTiming = LayerTiming {
+    total_us: 7,
+    calls: 2,
+    kind: "scripted",
+};
+
+/// APR-OBS-001 OBS-09: a traced turn files one `TransformerBlock` per forward,
+/// iteration 0 being the prompt's, and one `Decode` per `on_token` at the
+/// iteration of the token it emits. `serve_trace` splits prefill from decode
+/// on exactly this shape, so a shifted iteration would report a decode as
+/// prefill and still fit under the wall clock.
+#[test]
+fn a_traced_turn_files_one_event_per_forward_and_per_token() {
+    use crate::inference_trace::TraceStep::{Decode, TransformerBlock};
+    let mut s = Session::new(Scripted {
+        times_layers: true,
+        timed: Some(vec![TIMED]),
+        ..Scripted::new(3, 100)
+    });
+    let mut tracer = step_tracer();
+    let turn = s
+        .generate_traced(
+            &[7901, 7902, 7903],
+            &greedy(3),
+            &mut |_| true,
+            Some(TurnTrace {
+                tracer: &mut tracer,
+                layers: true,
+            }),
+        )
+        .expect("turn");
+    assert_eq!(turn.tokens, vec![7901, 7902, 7903, 3, 3, 3]);
+    assert_eq!(
+        filed(&tracer),
+        [
+            (TransformerBlock, 0),
+            (Decode, 0),
+            (TransformerBlock, 1),
+            (Decode, 1),
+            (TransformerBlock, 2),
+            (Decode, 2),
+        ]
+    );
+    assert_eq!(
+        s.engine().timing_log,
+        [true, false],
+        "on for the turn, then off"
+    );
+    assert_eq!(s.take_layer_timings(), Some(vec![TIMED]));
+    assert_eq!(s.take_layer_timings(), None, "taking it clears it");
+}
+
+/// Layer timing is asked for only by a layer trace, and turned off after the
+/// turn, Ok or Err, on every forward that said it would time its layers. A
+/// forward left timing would run every later decode eager, syncing after each
+/// layer, with nothing in any reply to show it.
+#[test]
+fn layer_timing_is_on_for_the_turn_and_off_after_it_ok_or_err() {
+    // (layer trace, forward times layers, first failing forward call,
+    // the set_layer_timing calls the forward sees)
+    let cases: [(bool, bool, Option<usize>, &[bool]); 6] = [
+        (true, true, None, &[true, false]),
+        (true, true, Some(0), &[true, false]), // the prompt's forward errors
+        (true, true, Some(2), &[true, false]), // a decode forward errors
+        (true, false, None, &[true]),          // a CPU forward: nothing to undo
+        (false, true, None, &[]),              // a step trace times no layer
+        (false, true, Some(0), &[]),
+    ];
+    for (layers, times, fail_from, want) in cases {
+        let case = format!("layers={layers} times={times} fail_from={fail_from:?}");
+        let mut s = Session::new(Scripted {
+            times_layers: times,
+            fail_from,
+            ..Scripted::new(3, 100)
+        });
+        let mut tracer = step_tracer();
+        let r = s.generate_traced(
+            &[7911, 7912],
+            &greedy(3),
+            &mut |_| true,
+            Some(TurnTrace {
+                tracer: &mut tracer,
+                layers,
+            }),
+        );
+        assert_eq!(r.is_err(), fail_from.is_some(), "{case}");
+        assert_eq!(s.engine().timing_log, want, "{case}");
+    }
+    // An untraced turn asks nothing of the forward's timing.
+    let mut s = Session::new(Scripted {
+        times_layers: true,
+        ..Scripted::new(3, 100)
+    });
+    s.generate(&[7913], &greedy(2), &mut |_| true)
+        .expect("turn");
+    assert!(s.engine().timing_log.is_empty());
 }
 
 #[test]
@@ -490,6 +633,30 @@ fn the_default_forward_keeps_no_checkpoint() {
         !b.restore_checkpoint().expect("default restore"),
         "the default has nothing to return to"
     );
+}
+
+/// The default times nothing and says so: a layer trace on such a forward
+/// turns no timing on and leaves no per-layer rows (APR-OBS-001 OBS-09).
+#[test]
+fn the_default_forward_times_no_layer() {
+    let mut b = Bare;
+    assert!(!b.set_layer_timing(true), "the default times no layer");
+    assert!(!b.set_layer_timing(false));
+    assert!(b.take_layer_timings().is_none());
+
+    let mut s = Session::new(Bare);
+    let mut tracer = step_tracer();
+    s.generate_traced(
+        &[1, 2],
+        &greedy(2),
+        &mut |_| true,
+        Some(TurnTrace {
+            tracer: &mut tracer,
+            layers: true,
+        }),
+    )
+    .expect("a layer trace on a forward that cannot time layers still runs the turn");
+    assert!(s.take_layer_timings().is_none());
 }
 
 /// A forward that names a fixed checkpoint position whatever the prompt.

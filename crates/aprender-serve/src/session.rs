@@ -127,6 +127,41 @@ pub trait ArchForward {
     fn forward_greedy(&mut self, _tokens: &[u32], _start: usize) -> Result<Option<u32>> {
         Ok(None)
     }
+
+    /// Turn per-layer timing on or off for the single-token forwards that
+    /// follow: every decode, and a prompt prefilled token by token (APR-OBS-001
+    /// OBS-09). `true` only when the backend WILL time its layers; the default
+    /// times nothing, and says so.
+    fn set_layer_timing(&mut self, _on: bool) -> bool {
+        false
+    }
+
+    /// The per-layer time since [`ArchForward::set_layer_timing`] turned
+    /// it on, one `(microseconds, calls, kind)` per layer, or `None` when no
+    /// layer was timed. Taking it clears it.
+    fn take_layer_timings(&mut self) -> Option<Vec<LayerTiming>> {
+        None
+    }
+}
+
+/// What a traced [`Session::generate_traced`] records into (APR-OBS-001 OBS-09).
+pub struct TurnTrace<'a> {
+    /// Receives one event per forward and per `on_token` call.
+    pub tracer: &'a mut crate::inference_trace::InferenceTracer,
+    /// Also time every layer of every single-token forward.
+    pub layers: bool,
+}
+
+/// One layer's measured time over a turn's single-token forwards
+/// (APR-OBS-001 OBS-09).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayerTiming {
+    /// Microseconds summed over every timed forward through this layer.
+    pub total_us: u64,
+    /// Forwards timed through this layer.
+    pub calls: u32,
+    /// What the layer is, e.g. `"deltanet"` or `"attention"`.
+    pub kind: &'static str,
 }
 
 /// What one [`Session::generate`] call did.
@@ -413,6 +448,54 @@ impl<F: ArchForward> Session<F> {
         config: &QuantizedGenerateConfig,
         on_token: &mut dyn FnMut(u32) -> bool,
     ) -> Result<Turn> {
+        self.generate_traced(prompt, config, on_token, None)
+    }
+
+    /// [`Session::generate`], recording into `trace.tracer` what it measured
+    /// (APR-OBS-001 OBS-09): one [`TraceStep::TransformerBlock`] event per
+    /// forward (iteration 0 is the prompt's, each later one a decode) and one
+    /// [`TraceStep::Decode`] event per `on_token` call. `trace.layers` also
+    /// turns on the backend's per-layer timing, which syncs after every layer;
+    /// what the backend measured comes back through
+    /// [`Session::take_layer_timings`].
+    ///
+    /// # Errors
+    /// As [`Session::generate`].
+    ///
+    /// [`TraceStep::TransformerBlock`]: crate::inference_trace::TraceStep::TransformerBlock
+    /// [`TraceStep::Decode`]: crate::inference_trace::TraceStep::Decode
+    pub fn generate_traced(
+        &mut self,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        on_token: &mut dyn FnMut(u32) -> bool,
+        trace: Option<TurnTrace<'_>>,
+    ) -> Result<Turn> {
+        let layer_timing = trace.as_ref().is_some_and(|t| t.layers);
+        let mut tracer = trace.map(|t| t.tracer);
+        // Only a backend that said it would time its layers has timing to undo.
+        let timing_on = layer_timing && self.forward.set_layer_timing(true);
+        let turn = self.generate_inner(prompt, config, on_token, &mut tracer);
+        if timing_on {
+            self.forward.set_layer_timing(false);
+        }
+        turn
+    }
+
+    /// The per-layer time of the single-token forwards the last traced turn
+    /// measured, or `None` when the backend timed no layer.
+    pub fn take_layer_timings(&mut self) -> Option<Vec<LayerTiming>> {
+        self.forward.take_layer_timings()
+    }
+
+    fn generate_inner(
+        &mut self,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        on_token: &mut dyn FnMut(u32) -> bool,
+        tracer: &mut Option<&mut crate::inference_trace::InferenceTracer>,
+    ) -> Result<Turn> {
+        use crate::inference_trace::TraceStep;
         use rand::SeedableRng;
         witness(Entry {
             arch: self.arch(),
@@ -434,6 +517,7 @@ impl<F: ArchForward> Session<F> {
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
         let (mut next, _) = self.advance_and_choose(prompt, config, &mut rng)?;
         let prefill_ended = Instant::now();
+        record(tracer, TraceStep::TransformerBlock, 0, prefill_started);
         let mut tokens = prompt.to_vec();
         let mut context_capped = false;
         for generated in 1..=budget {
@@ -444,10 +528,14 @@ impl<F: ArchForward> Session<F> {
             // forward, run only once the poll has passed, so a cancelled turn
             // never computes a token it throws away (#4325).
             if generated > 1 {
+                let clock = std::time::Instant::now();
                 next = self.advance_and_choose(&tokens, config, &mut rng)?.0;
+                record(tracer, TraceStep::TransformerBlock, generated - 1, clock);
             }
             tokens.push(next);
+            let clock = std::time::Instant::now();
             let keep_going = on_token(next);
+            record(tracer, TraceStep::Decode, generated - 1, clock);
             if !keep_going || config.stop_tokens.contains(&next) {
                 break;
             }
@@ -530,6 +618,19 @@ impl<F: ArchForward> Session<F> {
             }
         }
         Ok(())
+    }
+}
+
+/// File the time since `clock` as one `step` event, when a tracer is attached.
+fn record(
+    tracer: &mut Option<&mut crate::inference_trace::InferenceTracer>,
+    step: crate::inference_trace::TraceStep,
+    iteration: usize,
+    clock: std::time::Instant,
+) {
+    if let Some(t) = tracer.as_deref_mut() {
+        let us = u64::try_from(clock.elapsed().as_micros()).unwrap_or(u64::MAX);
+        t.record_timed(step, iteration, None, us);
     }
 }
 

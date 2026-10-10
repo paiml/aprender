@@ -28,6 +28,7 @@ fn test_stack_unwinding_with_simple_program() {
 }
 
 #[test]
+#[ignore = "FLAKE #5018: exit status failed in merge-queue run 38015871565 (workspace-test shard 3) on a tree that passed it before; fix or remove under FLAKE-0"]
 fn test_stack_unwinding_does_not_crash() {
     // Verify that stack unwinding doesn't crash the tracer
     // even with complex programs

@@ -730,6 +730,34 @@ jobs:
           fi
           echo "#4250 G0: GREEN passed, per-token RED control failed as required (rc=$r)"
 
+      # #4523: the qwen35 CPU/GPU parity module on sm_121. ci.yml's cuda-unit runs it
+      # on yoga-eph with no models, so every test there SKIPs as model-absent: the
+      # whole-forward budgets were only ever read on sm_89 + x86_64, and GB10 +
+      # aarch64 sat 7.105e-2 over a 7e-2 budget with no lane to say so. This lane
+      # runs the module where the model is and refuses a skip or an empty selection.
+      - name: qwen35 CUDA parity module on sm_121 (aprender#4523)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        run: |
+          set -uo pipefail
+          # -e OFF, as in G0 above: under the default `bash -e {0}` a red cargo test
+          # ended the step at `; rc=$?` with no [e2e] reading and no ::error::.
+          set +e
+          m=gguf::cuda::forward_qwen35_cuda::qwen35_cuda_tests::
+          model="$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf"
+          [ -f "$model" ] || { echo "::error::#4523 UNMEASURABLE on ${{ matrix.name }} (provisioning): $model is absent"; exit 1; }
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- \
+            "$m" --test-threads 1 --nocapture > q35-parity.log 2>&1; rc=$?
+          grep -E '^\[e2e\]|^test result' q35-parity.log | tail -n 20
+          if [ "$rc" -ne 0 ]; then echo "::error::#4523 qwen35 parity module failed on sm_121 (rc=$rc)"; exit 1; fi
+          if grep -qE 'is absent|SKIP' q35-parity.log; then
+            grep -E 'is absent|SKIP' q35-parity.log | head -5
+            echo "::error::#4523 a qwen35 parity test skipped on the host that holds the model"; exit 1
+          fi
+          # The libtest summary, not '... ok' lines: --nocapture output can split those.
+          n=$(sed -nE 's/^test result: ok\. ([0-9]+) passed.*/\1/p' q35-parity.log | tail -1)
+          if [ "${n:-0}" -eq 0 ]; then echo "::error::#4523 the module filter selected ZERO tests"; exit 1; fi
+          echo "#4523: ${n} qwen35 parity test(s) passed on sm_121, 0 skips"
+
   # ── ada-yoga: the sm_89 leg, restored ─────────────────────────────────────
   #
   # RESTORING A DELETION, NOT INVENTING A LANE. #2740 removed the x86_64 leg
@@ -851,36 +879,6 @@ jobs:
           nice -n 19 cargo test -p aprender-train --features cuda --lib --release -- \
             --nocapture --include-ignored --exact \
             autograd::cuda_forward::cache::prewarm_coverage_falsifier::falsify_cuda_prewarm_covers_runtime_no_jit_001
-
-      # FLAKE #4956 (nightly, never on a PR path). Six gdn device tests are
-      # #[ignore]d in cuda-unit after one intermittent SIGSEGV inside libcuda.
-      # They run here under the same command as cuda-unit (--features cuda
-      # --release, default test threads, so the concurrency that crashed is
-      # kept), each named with --exact (two timing probes in the same files are
-      # also ignored and must not ride along). --ignored means a test that loses
-      # its #[ignore] drops out here instead of running twice. A red here
-      # updates #4956.
-      - name: FLAKE #4956 — gdn device tests (ignored on PRs)
-        if: always()
-        run: |
-          set -euo pipefail
-          log="$RUNNER_TEMP/flake-4956.log"
-          rc=0
-          g=kernels::gdn
-          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release -- \
-            --ignored --exact \
-            $g::decode_attention::gdn_decode_attention_device_tests::gdn_decode_attention_indirect_is_bit_identical_to_direct \
-            $g::decode_attention_split::gdn_decode_attention_split_device_tests::gdn_decode_attention_split_matches_unsplit \
-            $g::delta_rule_scan::gdn_chunk_scan_device_tests::gdn_chunk_scan_is_bitwise_per_token_0_8b_shape \
-            $g::delta_rule_scan::gdn_chunk_scan_device_tests::gdn_chunk_scan_is_bitwise_per_token_9b_grouped_shape \
-            $g::delta_rule_scan::gdn_chunk_scan_device_tests::gdn_chunk_scan_is_bitwise_per_token_27b_grouped_shape \
-            $g::delta_rule_scan::gdn_chunk_scan_device_tests::gdn_chunk_scan_one_token_is_one_per_token_step \
-            > "$log" 2>&1 || rc=$?
-          tail -n 40 "$log"
-          [ "$rc" = 0 ] || { echo "::error::FLAKE #4956 reproduced (rc=$rc)"; exit 1; }
-          # Six selected or the step proved nothing (a filter that matches 0 passes).
-          grep -q '^test result: ok\. 6 passed' "$log" \
-            || { echo "::error::expected exactly 6 ignored gdn device tests to run"; exit 1; }
 
       # VRAM CEILING, not throughput (YOGA-NIGHTLY-001 §6). 8188 MiB is the
       # fleet's tightest x86 CUDA budget, and the cascade's two INDEPENDENT bugs
