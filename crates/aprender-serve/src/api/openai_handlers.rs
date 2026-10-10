@@ -19,6 +19,7 @@ use axum::{
 };
 use futures::stream::Stream;
 
+use super::chat_logprobs::StreamLogprobs;
 use super::stream_tool_calls::{self, StreamTools, ToolCallDetector};
 use super::{
     build_trace_data, clean_chat_output, format_chat_messages,
@@ -821,6 +822,26 @@ fn sse_event(value: &impl serde::Serialize) -> Option<Result<Event, Infallible>>
         .map(|data| Ok(Event::default().data(data)))
 }
 
+/// #4971: the SSE event of `chunk`, carrying the logprobs entries held until
+/// now. Without any, the chunk serializes exactly as before. A chunk that
+/// cannot carry its entries is not sent without them: an error goes instead.
+// serde_json::json!() uses infallible unwrap
+#[allow(clippy::disallowed_methods)]
+fn chunk_event(
+    chunk: &ChatCompletionChunk,
+    logprobs: Option<&mut StreamLogprobs>,
+) -> Option<Result<Event, Infallible>> {
+    let Some(entries) = logprobs.and_then(StreamLogprobs::release) else {
+        return sse_event(chunk);
+    };
+    match super::chat_logprobs::with_logprobs(chunk, &entries) {
+        Some(value) => sse_event(&value),
+        None => sse_event(&serde_json::json!({
+            "error": "a chunk could not carry its logprobs (#4971)"
+        })),
+    }
+}
+
 /// Live-stream deltas: decoded RAW, and never split inside a character.
 ///
 /// The decode is deliberately RAW. `clean_chat_output()` must never be applied
@@ -1067,6 +1088,41 @@ pub(crate) fn true_streaming_sse_response(
     stops: Option<&[String]>,
     tools: Option<StreamTools>,
 ) -> Response {
+    live_sse_response(
+        rx,
+        tokenizer,
+        request_id,
+        model_name,
+        metrics,
+        start,
+        max_tokens,
+        prompt_tokens,
+        timings_rx,
+        stops,
+        tools,
+        None,
+    )
+}
+
+/// [`true_streaming_sse_response`] whose chunks carry the tokens' logprobs
+/// (#4971): `logprobs` holds each token's entry until a chunk carries text,
+/// and the terminal chunk carries whatever is still held.
+// serde_json::json!() uses infallible unwrap
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn live_sse_response(
+    rx: tokio::sync::mpsc::Receiver<Result<u32, String>>,
+    tokenizer: Arc<BPETokenizer>,
+    request_id: String,
+    model_name: String,
+    metrics: Arc<crate::metrics::MetricsCollector>,
+    start: Instant,
+    max_tokens: usize,
+    prompt_tokens: usize,
+    timings_rx: Option<tokio::sync::oneshot::Receiver<super::PhaseTimings>>,
+    stops: Option<&[String]>,
+    tools: Option<StreamTools>,
+    mut logprobs: Option<StreamLogprobs>,
+) -> Response {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;
 
@@ -1092,6 +1148,18 @@ pub(crate) fn true_streaming_sse_response(
             match result {
                 Ok(token_id) => {
                     completion_tokens += 1;
+                    // #4971: the token's entry is held for the chunk that
+                    // releases its text, and a token without one ends the stream.
+                    let taken = match logprobs.as_mut() {
+                        Some(held) => held.take(&tokenizer, token_id).await,
+                        None => Ok(()),
+                    };
+                    if let Err(e) = taken {
+                        if let Some(evt) = sse_event(&serde_json::json!({ "error": e })) {
+                            yield evt;
+                        }
+                        break;
+                    }
                     // The token is still counted after a stop: the engine
                     // generated it. Draining (not breaking) keeps a stop from
                     // being recorded as an abandoned stream.
@@ -1101,7 +1169,7 @@ pub(crate) fn true_streaming_sse_response(
                         .and_then(|t| stream_tool_calls::detect(&mut detector, t));
                     if let Some(text) = text {
                         let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
-                        if let Some(evt) = sse_event(&chunk) {
+                        if let Some(evt) = chunk_event(&chunk, logprobs.as_mut()) {
                             yield evt;
                         }
                     }
@@ -1137,13 +1205,14 @@ pub(crate) fn true_streaming_sse_response(
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
         };
-        if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_usage(
+        let done = ChatCompletionChunk::done_with_usage(
             &request_id,
             &model_name,
             finish,
             usage,
             timings,
-        )) {
+        );
+        if let Some(evt) = chunk_event(&done, logprobs.as_mut()) {
             yield evt;
         }
 

@@ -550,23 +550,21 @@ pub fn dense_stream<F: crate::session::ArchForward>(
 /// one record per token of the reply.
 ///
 /// # Errors
-/// As [`dense_turn`], and a turn whose records do not cover every token of
-/// the reply: a reply is never handed back with some of its logprobs missing.
+/// As [`dense_stream_with_logprobs`], and a turn whose records do not cover
+/// every token of the reply: a reply is never handed back with some of its
+/// logprobs missing.
 pub fn dense_turn_with_logprobs<F: crate::session::ArchForward>(
     session: &mut crate::session::Session<F>,
     prompt: &[u32],
     config: &crate::gguf::QuantizedGenerateConfig,
     top_n: usize,
 ) -> Result<(Vec<u32>, Vec<crate::gguf::logprobs::StepLogprobs>)> {
-    admit_dense_prompt(session, prompt)?;
     let mut steps = Vec::new();
-    let turn = session.generate_with_logprobs(prompt, config, Some(top_n), &mut |t, record| {
-        if !config.stop_tokens.contains(&t) {
-            steps.extend(record);
-        }
-        true
-    })?;
-    let (tokens, _) = without_stop_token(turn, prompt.len(), config);
+    let (tokens, _) =
+        dense_stream_with_logprobs(session, prompt, config, top_n, &mut |_, step| {
+            steps.push(step);
+            true
+        })?;
     let generated = tokens.len() - prompt.len();
     if steps.len() != generated {
         return Err(RealizarError::UnsupportedOperation {
@@ -578,6 +576,42 @@ pub fn dense_turn_with_logprobs<F: crate::session::ArchForward>(
         });
     }
     Ok((tokens, steps))
+}
+
+/// [`dense_stream`] that hands each generated token on together with the
+/// record of its logprobs and the `top_n` most likely tokens of its step
+/// (#4971). As in [`dense_stream`], the stop token that ends the turn is never
+/// handed on, so neither is its record.
+///
+/// # Errors
+/// As [`dense_turn`], and a step the engine recorded nothing for: a token is
+/// never handed on without its logprobs.
+pub fn dense_stream_with_logprobs<F: crate::session::ArchForward>(
+    session: &mut crate::session::Session<F>,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+    top_n: usize,
+    on_token: &mut dyn FnMut(u32, crate::gguf::logprobs::StepLogprobs) -> bool,
+) -> Result<(Vec<u32>, bool)> {
+    admit_dense_prompt(session, prompt)?;
+    let mut unrecorded = None;
+    let turn = session.generate_with_logprobs(prompt, config, Some(top_n), &mut |t, record| {
+        if config.stop_tokens.contains(&t) {
+            return true;
+        }
+        let Some(record) = record else {
+            unrecorded = Some(t);
+            return false;
+        };
+        on_token(t, record)
+    })?;
+    if let Some(token) = unrecorded {
+        return Err(RealizarError::UnsupportedOperation {
+            operation: "dense_stream_with_logprobs".to_string(),
+            reason: format!("token {token} was generated without its logprobs (#4971)"),
+        });
+    }
+    Ok(without_stop_token(turn, prompt.len(), config))
 }
 
 /// A prompt longer than the model's context keeps the error the old loops
