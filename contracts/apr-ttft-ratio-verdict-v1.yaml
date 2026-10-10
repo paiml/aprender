@@ -1,5 +1,5 @@
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-10-09'
   author: PAIML Engineering
   description: "The time-to-first-token row of the 0.71.1 train, as a verdict. TTFT ratio = reference TTFT / apr TTFT, per GPU host, and the row is green when the lower bound of its 95% interval is at least the floor in scripts/perf-matrix.yaml. The receipts already carry the ratio; this contract owns the reader that turns them into GREEN, RED or NOT MEASURED, and the rule that a receipt which cannot be read, or a host that was not measured, is never GREEN and never RED."
@@ -35,23 +35,24 @@ equations:
       - "NOT MEASURED outranks RED: one unreadable receipt on any host makes the verdict NOT MEASURED, because a RED computed from part of the evidence is a guess"
 
   a_band_counts_only_when_both_sides_were_measured:
-    formula: "countable(band) iff band.comparator_status == MEASURED and band.status in {MEASURED, NONCONFORMANT-VALID}"
+    formula: "countable(band) iff band.comparator_status == MEASURED and band.status in {MEASURED, NONCONFORMANT-VALID} and band.errors == 0 and band.baseline.errors == 0"
     domain: "the band of each receipt that carries ratios.ttft"
     codomain: "readable or NOT MEASURED, with the reason"
     invariants:
       - "INVALID-CORRECTNESS, COMPARATOR_STALE, UNMEASURED and NA bands give NOT MEASURED and name the status"
       - "A NONCONFORMANT-VALID band counts, and the verdict prints its status and its stated reasons beside its number, so the condition the row does not state is visible in the output"
       - "A missing ratios.ttft, or a ratios.ttft with no lcb95, gives NOT MEASURED, never RED"
+      - "A band where either lane lost a request gives NOT MEASURED and names the count: its ratio is formed on the survivors, while ratios.ttft.n counts every request sent"
 
   the_receipt_names_what_was_measured:
-    formula: "readable(run) requires the provenance to name the host, the GGUF sha256, the comparator pin and n, and requires ratios.ttft to name its interval method and n"
+    formula: "readable(run) requires the provenance to name the host, the GGUF sha256, the comparator pin, the subject commit and sha256 and n, and requires ratios.ttft to name its interval method and n"
     domain: "v1-provenance.json and each receipt's ratios.ttft"
     codomain: "readable or NOT MEASURED, naming the missing field"
     invariants:
       - "Each field is checked on its own; the output names the first one missing per receipt"
       - "A provenance host that differs from the host the receipts are filed under is NOT MEASURED"
       - "The provenance n is band.replicates, the number of replicate receipts the run states; more readable receipts than it states is NOT MEASURED"
-      - "A receipt counts once: a duplicate replicate, a host claimed by two runs, a receipt whose run_id does not re-derive from its own provenance, and a receipt measured against a comparator build other than the provenance pin (commit or sha256) are each NOT MEASURED"
+      - "A receipt counts once: a duplicate replicate, a host claimed by two runs, a receipt whose run_id does not re-derive from its own provenance, a receipt measured against a comparator build other than the provenance pin (commit or sha256), and a receipt from a subject build other than the provenance subject (commit or sha256) are each NOT MEASURED"
 
   the_ttft_splits_by_phase:
     formula: "server TTFT = load_ms + prompt_ms + first_token_ms, with load_ms = prefill_started - handler start, prompt_ms = prefill_ended - prefill_started, first_token_ms = first content chunk - prefill_ended; predicted_ms = decode end - prefill_ended"
@@ -89,8 +90,8 @@ proof_obligations:
     applies_to: the_receipt_names_what_was_measured
   - id: APR-TTFT-INV-004
     type: invariant
-    property: "Only a band measured on both sides counts"
-    formal: "status ∈ {INVALID-CORRECTNESS, COMPARATOR_STALE, UNMEASURED, NA} ∨ comparator_status ≠ MEASURED ⇒ exit 2; status = NONCONFORMANT-VALID ⇒ counted ∧ reasons printed"
+    property: "Only a band measured on both sides, with no failed request, counts"
+    formal: "status ∈ {INVALID-CORRECTNESS, COMPARATOR_STALE, UNMEASURED, NA} ∨ comparator_status ≠ MEASURED ∨ errors > 0 ∨ baseline.errors > 0 ⇒ exit 2; status = NONCONFORMANT-VALID ⇒ counted ∧ reasons printed"
     applies_to: a_band_counts_only_when_both_sides_were_measured
   - id: APR-TTFT-INV-005
     type: invariant
@@ -157,8 +158,8 @@ falsification_tests:
     if_fails: "An absent measurement stops the train as if it had failed, or passes it as if it had succeeded"
 
   - id: FALSIFY-APR-TTFT-008
-    rule: "Only MEASURED and NONCONFORMANT-VALID bands with a MEASURED comparator count"
-    prediction: "INVALID-CORRECTNESS, COMPARATOR_STALE, UNMEASURED and NA bands each exit 2 naming the status; comparator_status COMPARATOR_STALE exits 2; a NONCONFORMANT-VALID band counts and its status and reasons are printed beside its number"
+    rule: "Only MEASURED and NONCONFORMANT-VALID bands with a MEASURED comparator and no failed request count"
+    prediction: "INVALID-CORRECTNESS, COMPARATOR_STALE, UNMEASURED and NA bands each exit 2 naming the status; comparator_status COMPARATOR_STALE exits 2; a failed request on the apr lane or on the comparator lane exits 2 naming the count; a NONCONFORMANT-VALID band counts and its status and reasons are printed beside its number"
     test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::band_status_"
     if_fails: "A ratio from a band whose answers were wrong, or whose comparator was stale, decides the row"
 
@@ -175,8 +176,8 @@ falsification_tests:
     if_fails: "NOT MEASURED leaves the CLI as one of apr's error codes, and a caller cannot tell it from a crash"
 
   - id: FALSIFY-APR-TTFT-011
-    rule: "A receipt is counted once, for the host and run it was measured on"
-    prediction: "A lambda receipt filed under gx10, a replicate that appears twice, a host claimed by two runs, a sixth receipt where the provenance states 5, a receipt whose provenance was edited after its run_id was derived, and a receipt whose comparator commit or sha256 is not the provenance pin each exit 2 and name the cause"
+    rule: "A receipt is counted once, for the host, run and builds it was measured on"
+    prediction: "A lambda receipt filed under gx10, a replicate that appears twice, a host claimed by two runs, a sixth receipt where the provenance states 5, a receipt whose provenance was edited after its run_id was derived, a receipt whose comparator commit or sha256 is not the provenance pin, and a receipt whose subject commit or sha256 is not the provenance subject each exit 2 and name the cause; scripts/v1_ttft_baseline.sh --dry-run exits 2 before it starts a server when --host is not the host the pin was resolved for, when --out already holds a file, or when a port already answers"
     test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::anti_copy_"
     if_fails: "One host's receipts, or one good replicate copied five times, make the row GREEN for a host that was never measured"
 

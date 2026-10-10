@@ -17,9 +17,12 @@
 //!
 //! A host's figure is the minimum lcb95 over its replicate receipts, never the
 //! mean and never the point estimate. A band counts when its comparator status
-//! is MEASURED and its own status is MEASURED or NONCONFORMANT-VALID; the
-//! latter is printed with its stated reasons beside its number, because the row
-//! does not name that condition and a reader must be able to see it.
+//! is MEASURED, its own status is MEASURED or NONCONFORMANT-VALID, and neither
+//! lane lost a request; NONCONFORMANT-VALID is printed with its stated reasons
+//! beside its number, because the row does not name that condition and a
+//! reader must be able to see it. A receipt counts for a run only when its
+//! host, comparator build and subject build are the ones its run's provenance
+//! names.
 //!
 //! The floor, the host list and the replicate minimum come from the matrix; no
 //! threshold is written here.
@@ -198,6 +201,7 @@ struct Sidecar {
     host: Option<String>,
     gguf: Option<SidecarGguf>,
     comparator: Option<SidecarComparator>,
+    subject: Option<SidecarSubject>,
     band: Option<SidecarBand>,
     interval: Option<SidecarInterval>,
 }
@@ -210,6 +214,12 @@ struct SidecarGguf {
 #[derive(Debug, Deserialize)]
 struct SidecarComparator {
     pin: Option<String>,
+    sha256: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SidecarSubject {
+    commit: Option<String>,
     sha256: Option<String>,
 }
 
@@ -231,6 +241,8 @@ struct RunIdentity {
     gguf_sha256: String,
     comparator_pin: String,
     comparator_sha256: String,
+    subject_commit: String,
+    subject_sha256: String,
     concurrency: u32,
     replicates: usize,
     method: String,
@@ -244,6 +256,33 @@ fn non_empty(field: Option<String>, name: &str) -> Result<String, String> {
 
 fn is_sha256(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_commit(s: &str) -> bool {
+    (7..=40).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Two commit ids name one commit when the shorter is a prefix of the longer:
+/// the server reports `git rev-parse --short`, the sidecar the full id.
+fn same_commit(a: &str, b: &str) -> bool {
+    let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    is_commit(short) && is_commit(long) && long.starts_with(short)
+}
+
+/// The subject (`apr serve`) the run started: its commit and its sha256.
+fn subject_identity(subject: Option<SidecarSubject>) -> Result<(String, String), String> {
+    let (commit, sha) = subject.map_or((None, None), |x| (x.commit, x.sha256));
+    let commit = non_empty(commit, "subject commit")?;
+    if !is_commit(&commit) {
+        return Err(format!(
+            "provenance subject commit `{commit}` is not a commit id"
+        ));
+    }
+    let sha = non_empty(sha, "subject sha256")?;
+    if !is_sha256(&sha) {
+        return Err(format!("provenance subject sha256 `{sha}` is not a sha256"));
+    }
+    Ok((commit, sha))
 }
 
 impl RunIdentity {
@@ -265,6 +304,7 @@ impl RunIdentity {
                 "provenance comparator sha256 `{comparator_sha256}` is not a sha256"
             ));
         }
+        let (subject_commit, subject_sha256) = subject_identity(s.subject)?;
         let band = s.band.ok_or("provenance names no band")?;
         let concurrency = band
             .concurrency
@@ -279,6 +319,8 @@ impl RunIdentity {
             gguf_sha256,
             comparator_pin,
             comparator_sha256,
+            subject_commit,
+            subject_sha256,
             concurrency,
             replicates,
             method,
@@ -310,6 +352,21 @@ fn countable(band: &ReceiptBand) -> Result<(), String> {
             ok.join(" or ")
         ));
     }
+    // A failed request leaves the band MEASURED: the ratio is formed on the
+    // survivors while `ratios.ttft.n` counts every request sent. So a band
+    // counts only when neither lane lost one.
+    let lanes = [
+        ("apr", Some(band)),
+        ("comparator", band.baseline.as_deref()),
+    ];
+    for (lane, b) in lanes {
+        if let Some(b) = b.filter(|b| b.errors > 0) {
+            return Err(format!(
+                "{lane} lane errors {} of {} requests (only a band with none counts)",
+                b.errors, b.requested
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -337,6 +394,25 @@ fn the_band<'a>(receipt: &'a Receipt, id: &RunIdentity) -> Result<&'a ReceiptBan
     }
 }
 
+/// The ratio's numerator: a receipt left in the run directory by a run of
+/// another subject build is not this run's evidence.
+fn check_subject(receipt: &Receipt, id: &RunIdentity) -> Result<(), String> {
+    let s = &receipt.provenance.subject;
+    if !same_commit(&s.commit, &id.subject_commit) {
+        return Err(format!(
+            "receipt subject commit {} differs from provenance subject commit {}",
+            s.commit, id.subject_commit
+        ));
+    }
+    if s.sha256 != id.subject_sha256 {
+        return Err(format!(
+            "receipt subject sha256 {} differs from provenance subject sha256",
+            s.sha256
+        ));
+    }
+    Ok(())
+}
+
 fn check_identity(receipt: &Receipt, id: &RunIdentity) -> Result<(), String> {
     if receipt.provenance.host != id.host {
         return Err(format!(
@@ -361,6 +437,7 @@ fn check_identity(receipt: &Receipt, id: &RunIdentity) -> Result<(), String> {
             c.sha256
         ));
     }
+    check_subject(receipt, id)?;
     // The baseline script leaves `model_file` null and binds the GGUF in the
     // sidecar, so the model digest is cross-checked only where a receipt has one.
     match &receipt.provenance.model_file {
@@ -653,6 +730,10 @@ mod tests {
     const LAMBDA_R1: &str = include_str!("ttft_verdict_fixture.json");
     const SHA: &str = "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4";
     const LLAMA_SHA: &str = "9aabba99701a9733af68d95db5f0452324a9c84daf49c55afb306d29eb30aa5c";
+    /// The fixture's subject: the server reported `95f64ba14`, the sidecar
+    /// names the full id.
+    const SUBJECT_COMMIT: &str = "95f64ba1441233ef201e0c4ea7b9fc20aad83bf0";
+    const SUBJECT_SHA: &str = "0bf3c6db44bfcb464d683e9dc2204cfc2c6a3a82d3b8db32f2e04b70a7e47f31";
 
     fn policy() -> TtftPolicy {
         TtftPolicy {
@@ -669,6 +750,12 @@ mod tests {
         edit: impl FnOnce(&mut Value),
     ) -> String {
         let mut r: Value = serde_json::from_str(LAMBDA_R1).expect("the fixture is JSON");
+        // The real r1 comparator lane lost 2 of its 79 requests, and a band
+        // with a failed request does not count; the base case clears them and
+        // `band_status_with_a_failed_request_is_not_measured` puts them back.
+        let base = &mut r["bands"][0]["baseline"];
+        base["completed"] = base["requested"].clone();
+        base["errors"] = json!(0);
         r["provenance"]["host"] = json!(host);
         r["bands"][0]["replicate"] = json!(replicate);
         r["bands"][0]["ratios"]["ttft"]["lcb95"] = json!(lcb95);
@@ -699,6 +786,7 @@ mod tests {
             "host": host,
             "gguf": {"sha256": SHA},
             "comparator": {"pin": "d1d3c3396", "sha256": LLAMA_SHA},
+            "subject": {"commit": SUBJECT_COMMIT, "sha256": SUBJECT_SHA},
             "band": {"concurrency": 1, "replicates": 5},
             "interval": {"method": "paired_percentile_bootstrap"}
         });
@@ -757,15 +845,28 @@ mod tests {
         assert!(says(&below, "HOST gx10 min lcb95 0.4900 below the floor"));
     }
 
-    /// The unedited lambda receipt parses, validates, and its own lcb95 is read.
+    /// The unedited lambda receipt parses and validates, but its comparator
+    /// lane lost 2 of 79 requests, so it does not count. With only those
+    /// cleared, its own lcb95 is read.
     #[test]
     fn floor_reads_the_real_lambda_receipt() {
-        let mut lambda = host("lambda", &[2.0; 5]);
-        lambda.receipts[0].1 = LAMBDA_R1.to_string();
         let only = TtftPolicy {
             hosts: vec!["lambda".to_string()],
             ..policy()
         };
+        let mut lambda = host("lambda", &[2.0; 5]);
+        lambda.receipts[0].1 = LAMBDA_R1.to_string();
+        assert_not_measured(
+            &ttft_verdict(&only, &[lambda]),
+            "comparator lane errors 2 of 79 requests",
+        );
+
+        let mut real: Value = serde_json::from_str(LAMBDA_R1).expect("the fixture is JSON");
+        let base = &mut real["bands"][0]["baseline"];
+        base["completed"] = base["requested"].clone();
+        base["errors"] = json!(0);
+        let mut lambda = host("lambda", &[2.0; 5]);
+        lambda.receipts[0].1 = real.to_string();
         let v = ttft_verdict(&only, &[lambda]);
         assert_eq!(v.outcome, TtftOutcome::Green, "{:#?}", v.lines);
         assert!(
@@ -859,6 +960,8 @@ mod tests {
                 "provenance names no replicate count (n)",
             ),
             ("/interval", "method", "provenance names no interval method"),
+            ("/subject", "commit", "provenance names no subject commit"),
+            ("/subject", "sha256", "provenance names no subject sha256"),
         ] {
             let mut runs = green_pair();
             runs[0].provenance = sidecar_with("lambda", |s| {
@@ -872,6 +975,12 @@ mod tests {
         let mut runs = green_pair();
         runs[0].provenance = sidecar_with("lambda", |s| s["gguf"]["sha256"] = json!("abc"));
         assert_not_measured(&ttft_verdict(&policy(), &runs), "is not a sha256");
+        let mut runs = green_pair();
+        runs[0].provenance = sidecar_with("lambda", |s| s["subject"]["commit"] = json!("main"));
+        assert_not_measured(
+            &ttft_verdict(&policy(), &runs),
+            "provenance subject commit `main` is not a commit id",
+        );
     }
 
     /// FALSIFY-APR-TTFT-006, ratio half.
@@ -968,6 +1077,31 @@ mod tests {
         assert!(says(&v, "reason: PP-4 c=1:"), "{:#?}", v.lines);
     }
 
+    /// FALSIFY-APR-TTFT-008: a failed request on either lane leaves the band
+    /// MEASURED, with its ratio formed on the survivors; it does not count.
+    #[test]
+    fn band_status_with_a_failed_request_is_not_measured() {
+        let mut runs = green_pair();
+        runs[0].receipts[1].1 = receipt_with("lambda", 2, 1.2, |r| {
+            r["bands"][0]["completed"] = json!(40);
+            r["bands"][0]["errors"] = json!(1);
+        });
+        assert_not_measured(
+            &ttft_verdict(&policy(), &runs),
+            "apr lane errors 1 of 41 requests",
+        );
+
+        let mut runs = green_pair();
+        runs[1].receipts[3].1 = receipt_with("gx10", 4, 1.2, |r| {
+            r["bands"][0]["baseline"]["completed"] = json!(77);
+            r["bands"][0]["baseline"]["errors"] = json!(2);
+        });
+        assert_not_measured(
+            &ttft_verdict(&policy(), &runs),
+            "comparator lane errors 2 of 79 requests",
+        );
+    }
+
     /// FALSIFY-APR-TTFT-009
     #[test]
     fn not_measured_outranks_red() {
@@ -1047,6 +1181,127 @@ mod tests {
         let mut runs = green_pair();
         runs[0].provenance = sidecar_with("lambda", |s| s["comparator"]["sha256"] = json!("abc"));
         assert_not_measured(&ttft_verdict(&policy(), &runs), "is not a sha256");
+    }
+
+    /// FALSIFY-APR-TTFT-011: a receipt left in the run directory by a run of
+    /// another `apr serve` build is not this run's numerator.
+    #[test]
+    fn anti_copy_receipt_from_another_subject_build() {
+        let mut runs = green_pair();
+        runs[0].receipts[2].1 = receipt_with("lambda", 3, 1.2, |r| {
+            r["provenance"]["subject"]["commit"] = json!("1238c8caa");
+        });
+        assert_not_measured(
+            &ttft_verdict(&policy(), &runs),
+            &format!("receipt subject commit 1238c8caa differs from provenance subject commit {SUBJECT_COMMIT}"),
+        );
+
+        // Same first seven digits, then a different commit.
+        let mut runs = green_pair();
+        runs[1].receipts[0].1 = receipt_with("gx10", 1, 1.2, |r| {
+            r["provenance"]["subject"]["commit"] = json!("95f64ba15");
+        });
+        assert_not_measured(
+            &ttft_verdict(&policy(), &runs),
+            "receipt subject commit 95f64ba15 differs",
+        );
+
+        let mut runs = green_pair();
+        runs[1].receipts[4].1 = receipt_with("gx10", 5, 1.2, |r| {
+            r["provenance"]["subject"]["sha256"] = json!(SHA);
+        });
+        assert_not_measured(
+            &ttft_verdict(&policy(), &runs),
+            "differs from provenance subject sha256",
+        );
+
+        // The server's short id and the sidecar's full id name one commit,
+        // whichever side is short.
+        let mut runs = green_pair();
+        runs[0].provenance = sidecar_with("lambda", |s| s["subject"]["commit"] = json!("95f64ba"));
+        let v = ttft_verdict(&policy(), &runs);
+        assert_eq!(v.outcome, TtftOutcome::Green, "{:#?}", v.lines);
+    }
+
+    // FALSIFY-APR-TTFT-011, the run script's half: `scripts/v1_ttft_baseline.sh`
+    // refuses, before it starts a server, a run whose receipts could name the
+    // wrong host, sit beside an earlier run's, or come from a server it did not
+    // start. LLAMA_BENCH_PATH names no file, so a run past these checks stops
+    // at the pin with exit 1.
+    fn port_of(l: &std::net::TcpListener) -> u16 {
+        l.local_addr().expect("a bound address").port()
+    }
+
+    fn free_ports() -> (u16, u16) {
+        let a = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let b = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        (port_of(&a), port_of(&b))
+    }
+
+    /// `--host lambda --dry-run`; the exit code and stderr.
+    fn baseline_script(pin_host: &str, out: &Path, (apr, llama): (u16, u16)) -> (i32, String) {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let model = dir.path().join("model.gguf");
+        std::fs::write(&model, b"").expect("model");
+        let o = std::process::Command::new("bash")
+            .arg(root.join("scripts/v1_ttft_baseline.sh"))
+            .args(["--host", "lambda", "--model"])
+            .arg(&model)
+            .arg("--out")
+            .arg(out)
+            .args(["--apr-port", &apr.to_string()])
+            .args(["--llama-port", &llama.to_string(), "--dry-run"])
+            .current_dir(&root)
+            .env("LLAMA_PIN_HOST", pin_host)
+            .env("LLAMA_BENCH_PATH", "/nonexistent/llama-bench")
+            .output()
+            .expect("bash runs");
+        let err = String::from_utf8_lossy(&o.stderr).into_owned();
+        (o.status.code().unwrap_or(-1), err)
+    }
+
+    #[test]
+    fn anti_copy_script_refuses_a_host_the_pin_was_not_resolved_for() {
+        let out = tempfile::tempdir().expect("tempdir");
+        let ports = free_ports();
+        let (rc, err) = baseline_script("gx10", out.path(), ports);
+        assert_eq!(rc, 2, "{err}");
+        assert!(
+            err.contains("--host lambda, but scripts/llama_bin.sh resolved the pin for host gx10"),
+            "{err}"
+        );
+        // Control: on the host it names, the run passes the host check and
+        // stops at the pin.
+        let (rc, err) = baseline_script("lambda", out.path(), ports);
+        assert_eq!(rc, 1, "{err}");
+        assert!(err.contains("pinned llama.cpp unresolved"), "{err}");
+        assert!(!err.contains("resolved the pin for host"), "{err}");
+    }
+
+    #[test]
+    fn anti_copy_script_refuses_an_out_dir_holding_an_earlier_receipt() {
+        let out = tempfile::tempdir().expect("tempdir");
+        std::fs::write(out.path().join("receipt.r1.json"), "{}").expect("an earlier receipt");
+        let (rc, err) = baseline_script("lambda", out.path(), free_ports());
+        assert_eq!(rc, 2, "{err}");
+        assert!(err.contains("is not empty"), "{err}");
+    }
+
+    #[test]
+    fn anti_copy_script_refuses_a_port_another_process_holds() {
+        let out = tempfile::tempdir().expect("tempdir");
+        let held = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let apr = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let ports = (port_of(&apr), port_of(&held));
+        drop(apr);
+        let (rc, err) = baseline_script("lambda", out.path(), ports);
+        assert_eq!(rc, 2, "{err}");
+        assert!(
+            err.contains(&format!("port {} already answers", ports.1)),
+            "{err}"
+        );
+        drop(held);
     }
 
     // FALSIFY-APR-TTFT-012: the same verdict from run directories, as the CLI
