@@ -8,9 +8,11 @@ The working claim was that a build-system fix (#4753, then #4912) lifted the mer
 
 | claim | measured |
 |---|---|
-| PRs spent hours in CI before the fix | median PR `ci.yml` run 59.8 min before #4912, 55.8 min after: minutes, not hours |
+| PRs spent hours in CI before the fix | median PR `ci.yml` wall time 54.6–59.8 min before #4912 and 55.8–71.3 min after (two samples): about an hour either side, and it did not fall |
 | #4753 made the merge queue reuse x86-main | sampled merge-group runs after it still ran x86-main |
 | #4912 removed the slow jobs | those jobs were already skipped, or ran under a minute, on sampled PR runs |
+| #4912 caused the jump | #4912 merged 10-08 01:03Z and that UTC day had 8 merges (6h buckets 2/3/1/2). The jump came on 10-09 after #4927 (the 0.70.3 release PR, merged 17:30:21Z): 3 merges in the 12h before it, 17 in the 12h after |
+| #4912 cut per-PR CI cost | median runner-minutes per `pull_request` CI run 88.8 before vs 88.1 after (wall 54.6 vs 71.3 min); `merge_group` 71.6 vs 85.2 runner-min (wall 39.2 vs 38.6). Six PR runs and four merge-group runs each side, ids in #5057 |
 | a queue/CI bottleneck capped the rate | p50 armed→merged was **longest** (5.3h) in the fastest period (15.7 merged/day) |
 | the fix landed 10-05 | #4753 merged 10-04 19:32Z |
 
@@ -33,9 +35,9 @@ On 10-09 and 10-10 they ran 13–18 a day.
 The open→armed and armed→merged medians come from a sample of about 8 PRs per period.
 
 - **Supply.** PRs opened per day against `main` were 1–3 on 09-30..10-03, 34 on 10-04, 21–23 on 10-05/06, 8 on 10-07, then 14–17 from 10-08.
-- **CI time.** The median `ci.yml` pull_request run was 59.8 min before #4912 and 55.8 min after it.
+- **CI time.** The median `ci.yml` pull_request run was 54.6–59.8 min before #4912 and 55.8–71.3 min after it (two samples); runner-minutes per run 88.8 vs 88.1.
 - **#4753** (merge_group reuses the PR head's x86-main result, merged 10-04 19:32Z). The merge-group runs sampled after it still ran x86-main, so the reuse did not show in that sample.
-- **#4912** (mutants and the provable ladder off the PR path, 10-08 00:32Z). The jobs it removed were already skipped, or finished in under a minute, in the sampled PR runs.
+- **#4912** (mutants and the provable ladder off the PR path, merged 10-08 01:03Z; 8 merges that day). The jobs it removed were already skipped, or finished in under a minute, in the sampled PR runs.
 
 ## Five whys
 
@@ -44,8 +46,9 @@ The open→armed and armed→merged medians come from a sample of about 8 PRs pe
    - a release-prep hold, 09-30..10-03;
    - a fleet-wide start, 10-04;
    - a hold that parked PRs and limited pushes, 10-06 10:45Z;
-   - a freeze of `main` until the release tag, 10-07;
-   - the hold lifted, 10-07 ~17:40Z.
+   - a freeze of `main` until the release tag, 10-07 07:23Z: no merge for 18.35h, 10-07 02:19Z to 20:40Z (5 merges that day, against 17 on 10-06);
+   - the hold lifted, 10-07 ~17:40Z;
+   - the 0.70.3 release PR (#4927) merged 10-09 17:30Z: 3 merges in the 12h before it, 17 in the 12h after.
 3. **Why did a hold cut supply, not only merges?** The holds applied to every worker, not only to release-path files. *(Inferred from the hold text and the session log, not measured per PR.)*
 4. **Why every worker?** The release was cut by freezing `main`, so a release stopped all work on `main`. *(Inferred.)*
 5. **Root cause.** The release process stopped work on `main`; this follows from 1–4. The build system, meaning CI time and the merge queue, was not what limited the rate in this window.
