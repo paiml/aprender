@@ -1304,6 +1304,92 @@ mod tests {
         drop(held);
     }
 
+    /// A port that answers every request 200, as a healthy server's does.
+    fn answering_port() -> u16 {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let port = port_of(&l);
+        std::thread::spawn(move || {
+            for mut s in l.incoming().flatten() {
+                let (mut req, mut buf) = (Vec::new(), [0u8; 512]);
+                while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match s.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => req.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let _ = s.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                );
+            }
+        });
+        port
+    }
+
+    /// The script's own `wait_healthy`, cut from the file and run against
+    /// `port` for a started server that is still alive (`sleep`) or has exited
+    /// (`true`); the exit code, stderr and the time it took. `timeout 20` turns a
+    /// hang into exit 124.
+    fn wait_healthy(port: u16, alive: bool, limit: u32) -> (i32, String, std::time::Duration) {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let script =
+            std::fs::read_to_string(root.join("scripts/v1_ttft_baseline.sh")).expect("the script");
+        let start = script
+            .find("\nwait_healthy() {")
+            .expect("wait_healthy in the script");
+        let len = script[start..]
+            .find("\n}\n")
+            .expect("the end of wait_healthy");
+        let started = if alive {
+            "sleep 30 > /dev/null 2>&1 & pid=$!"
+        } else {
+            "true & pid=$!; wait $pid"
+        };
+        let call = format!(
+            "{}\n{started}\nrc=0; wait_healthy {port} $pid {limit} || rc=$?\nkill $pid 2> /dev/null\nexit $rc\n",
+            &script[start..start + len + 2]
+        );
+        let t = std::time::Instant::now();
+        let o = std::process::Command::new("timeout")
+            .args(["20", "bash", "-c", &call])
+            .output()
+            .expect("timeout runs");
+        let err = String::from_utf8_lossy(&o.stderr).into_owned();
+        (o.status.code().unwrap_or(-1), err, t.elapsed())
+    }
+
+    #[test]
+    fn anti_copy_health_check_answers_only_for_the_server_this_run_started() {
+        let answering = answering_port();
+        // Control: the started server is alive and its port answers.
+        let (rc, err, _) = wait_healthy(answering, true, 5);
+        assert_eq!(rc, 0, "{err}");
+        // The port answers, but the server this run started has exited: the
+        // answer comes from another process.
+        let (rc, err, _) = wait_healthy(answering, false, 5);
+        assert_eq!(rc, 1, "{err}");
+        assert!(
+            err.contains(&format!("exited, yet port {answering} answers")),
+            "{err}"
+        );
+        // A started server that exits before its port answers fails at once,
+        // not after the limit.
+        let (closed, _) = free_ports();
+        let (rc, err, took) = wait_healthy(closed, false, 15);
+        assert_eq!(rc, 1, "{err}");
+        assert!(
+            err.contains(&format!("exited before port {closed} answered")),
+            "{err}"
+        );
+        assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+        // A port that accepts and never replies costs one bounded probe, not a hang.
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let (rc, err, took) = wait_healthy(port_of(&silent), true, 1);
+        assert_eq!(rc, 1, "{err}");
+        assert!(took < std::time::Duration::from_secs(15), "{took:?}");
+        drop(silent);
+    }
+
     // FALSIFY-APR-TTFT-012: the same verdict from run directories, as the CLI
     // reads them.
     fn write_dirs(runs: &[TtftRun]) -> (tempfile::TempDir, Vec<std::path::PathBuf>) {
