@@ -1087,7 +1087,10 @@ mod contract_falsification {
             "FALSIFIED QWEN3MOE-001: (hidden, layers, heads, kv_heads, head_dim, vocab, ctx)"
         );
         assert!(
-            config.architectures.iter().any(|a| a == "Qwen3MoeForCausalLM"),
+            config
+                .architectures
+                .iter()
+                .any(|a| a == "Qwen3MoeForCausalLM"),
             "FALSIFIED QWEN3MOE-001: Qwen3MoeForCausalLM not registered"
         );
     }
@@ -1126,7 +1129,9 @@ mod contract_falsification {
             let pat = tmpl
                 .get(role)
                 .and_then(serde_yaml::Value::as_str)
-                .unwrap_or_else(|| panic!("FALSIFIED QWEN3MOE-002: expert_template.{role} missing"));
+                .unwrap_or_else(|| {
+                    panic!("FALSIFIED QWEN3MOE-002: expert_template.{role} missing")
+                });
             assert!(
                 pat.contains("{n}") && pat.contains("{e}"),
                 "FALSIFIED QWEN3MOE-002: expert_template.{role}={pat} lacks {{n}} or {{e}}"
@@ -1172,6 +1177,41 @@ mod contract_falsification {
         let dense = registry
             .detect_from_model_type("qwen3")
             .expect("FALSIFIED QWEN3MOE-004: qwen3 resolved to no family");
-        assert_eq!(dense.config().family, "qwen3", "FALSIFIED QWEN3MOE-004: dense qwen3 moved");
+        assert_eq!(
+            dense.config().family,
+            "qwen3",
+            "FALSIFIED QWEN3MOE-004: dense qwen3 moved"
+        );
+
+        let arch = crate::format::converter_types::Architecture::from_model_type("qwen3_moe");
+        assert_eq!(
+            arch,
+            Some(crate::format::converter_types::Architecture::Qwen3Moe),
+            "FALSIFIED QWEN3MOE-004: Architecture::from_model_type"
+        );
+        assert!(
+            !arch.is_some_and(|a| a.is_inference_verified()),
+            "FALSIFIED QWEN3MOE-004: verified before qwen3moe parity was measured"
+        );
+    }
+
+    // Prediction: build.rs codegen reads the crate-local copy
+    // (crates/aprender-core/contracts/model-families/, #701) before the root
+    // one, so the two qwen3_moe.yaml files are byte-identical. Without this,
+    // an edit to the root contract changes nothing the registry sees.
+    #[test]
+    fn falsify_mf_qwen3moe_005_crate_copy_matches_root() {
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let local = crate_dir.join("contracts/model-families/qwen3_moe.yaml");
+        let root = crate_dir.join("../../contracts/model-families/qwen3_moe.yaml");
+        let local = std::fs::read(&local).expect("FALSIFIED QWEN3MOE-005: crate copy missing");
+        // Published crate: the root tree is absent, and the crate copy is all there is.
+        let Ok(root) = std::fs::read(&root) else {
+            return;
+        };
+        assert!(
+            local == root,
+            "FALSIFIED QWEN3MOE-005: crate copy drifted from root contract"
+        );
     }
 }

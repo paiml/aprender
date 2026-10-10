@@ -10,6 +10,7 @@ impl Architecture {
             Self::Qwen2 => Self::qwen2_map_name(source_name),
             Self::Qwen3 => Self::qwen2_map_name(source_name), // Qwen3 uses same GGUF naming as Qwen2
             Self::Qwen3_5 => Self::qwen2_map_name(source_name), // Qwen3.5 uses same tensor naming as Qwen2
+            Self::Qwen3Moe => Self::qwen2_map_name(source_name), // Same attention/norm naming as Qwen3
             Self::Gpt2 => Self::gpt2_map_name(source_name),
             Self::Phi => Self::llama_map_name(source_name), // Phi uses HuggingFace model.layers naming
             Self::GptNeoX => Self::gpt_neox_map_name(source_name),
@@ -73,6 +74,7 @@ impl Architecture {
                 | Self::Qwen2
                 | Self::Qwen3
                 | Self::Qwen3_5
+                | Self::Qwen3Moe
                 | Self::Gpt2
                 | Self::Phi
                 | Self::GptNeoX
@@ -120,6 +122,7 @@ impl Architecture {
             Self::Qwen2 => "Qwen2",
             Self::Qwen3 => "Qwen3",
             Self::Qwen3_5 => "Qwen3.5",
+            Self::Qwen3Moe => "Qwen3 MoE",
             Self::Gpt2 => "GPT-2",
             Self::Phi => "Phi",
             Self::GptNeoX => "GPT-NeoX",
@@ -148,6 +151,7 @@ impl Architecture {
             "qwen2" | "qwen" | "qwen2.5" => Some(Self::Qwen2),
             "qwen3" => Some(Self::Qwen3),
             "qwen3_5" | "qwen3.5" => Some(Self::Qwen3_5),
+            "qwen3_moe" | "qwen3moe" => Some(Self::Qwen3Moe),
             "llama" | "llama2" | "llama3" => Some(Self::Llama),
             "whisper" => Some(Self::Whisper),
             "bert" => Some(Self::Bert),
@@ -613,86 +617,57 @@ impl Architecture {
             .collect();
 
         for fused_name in fused_keys {
-            let tensor = match tensors.remove(&fused_name) {
-                Some(v) => v,
-                None => continue,
+            let Some(tensor) = tensors.remove(&fused_name) else {
+                continue;
             };
 
             let is_bias = std::path::Path::new(&fused_name)
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("bias"));
 
-            if is_bias {
-                if tensor.data.len() % 3 != 0 || tensor.shape.len() != 1 || tensor.shape[0] % 3 != 0
-                {
-                    tensors.insert(fused_name, tensor);
-                    continue;
-                }
-                let byte_chunk = tensor.data.len() / 3;
-                let elem_chunk = tensor.shape[0] / 3;
-                let base = fused_name.replace("self_attn.query_key_value.bias", "");
-
-                tensors.insert(
-                    format!("{base}self_attn.q_proj.bias"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[..byte_chunk].to_vec(),
-                        shape: vec![elem_chunk],
-                        dtype: tensor.dtype,
-                    },
-                );
-                tensors.insert(
-                    format!("{base}self_attn.k_proj.bias"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[byte_chunk..2 * byte_chunk].to_vec(),
-                        shape: vec![elem_chunk],
-                        dtype: tensor.dtype,
-                    },
-                );
-                tensors.insert(
-                    format!("{base}self_attn.v_proj.bias"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[2 * byte_chunk..].to_vec(),
-                        shape: vec![elem_chunk],
-                        dtype: tensor.dtype,
-                    },
-                );
-            } else {
-                if tensor.shape.len() != 2 || tensor.shape[0] % 3 != 0 || tensor.data.len() % 3 != 0
-                {
-                    tensors.insert(fused_name, tensor);
-                    continue;
-                }
-                let rows_per_proj = tensor.shape[0] / 3;
-                let cols = tensor.shape[1];
-                let byte_chunk = tensor.data.len() / 3;
-                let base = fused_name.replace("self_attn.query_key_value.weight", "");
-
-                tensors.insert(
-                    format!("{base}self_attn.q_proj.weight"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[..byte_chunk].to_vec(),
-                        shape: vec![rows_per_proj, cols],
-                        dtype: tensor.dtype,
-                    },
-                );
-                tensors.insert(
-                    format!("{base}self_attn.k_proj.weight"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[byte_chunk..2 * byte_chunk].to_vec(),
-                        shape: vec![rows_per_proj, cols],
-                        dtype: tensor.dtype,
-                    },
-                );
-                tensors.insert(
-                    format!("{base}self_attn.v_proj.weight"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[2 * byte_chunk..].to_vec(),
-                        shape: vec![rows_per_proj, cols],
-                        dtype: tensor.dtype,
-                    },
-                );
+            if let Some(tensor) = Self::split_fused_qkv_raw_one(
+                tensors,
+                &fused_name,
+                "query_key_value",
+                is_bias,
+                tensor,
+            ) {
+                tensors.insert(fused_name, tensor);
             }
         }
+    }
+
+    /// Split one raw fused QKV tensor named `{base}self_attn.{fused}.{bias|weight}`
+    /// along dim 0 into `{base}self_attn.{q,k,v}_proj.*`, three equal byte parts
+    /// (GGUF row-major: each projection's quantization blocks are contiguous).
+    /// Hands the tensor back, unsplit, when its rank or sizes do not divide by 3.
+    fn split_fused_qkv_raw_one(
+        tensors: &mut BTreeMap<String, crate::format::gguf::GgufRawTensor>,
+        fused_name: &str,
+        fused: &str,
+        is_bias: bool,
+        tensor: crate::format::gguf::GgufRawTensor,
+    ) -> Option<crate::format::gguf::GgufRawTensor> {
+        let (rank, suffix) = if is_bias { (1, "bias") } else { (2, "weight") };
+        if tensor.data.len() % 3 != 0 || tensor.shape.len() != rank || tensor.shape[0] % 3 != 0 {
+            return Some(tensor);
+        }
+        let byte_chunk = tensor.data.len() / 3;
+        let mut shape = tensor.shape.clone();
+        shape[0] /= 3;
+        let base = fused_name.replace(&format!("self_attn.{fused}.{suffix}"), "");
+
+        for (i, proj) in ["q_proj", "k_proj", "v_proj"].into_iter().enumerate() {
+            tensors.insert(
+                format!("{base}self_attn.{proj}.{suffix}"),
+                crate::format::gguf::GgufRawTensor {
+                    data: tensor.data[i * byte_chunk..(i + 1) * byte_chunk].to_vec(),
+                    shape: shape.clone(),
+                    dtype: tensor.dtype,
+                },
+            );
+        }
+        None
     }
 
     /// GH-233: Map GPT-2 tensor names to APR canonical format.
@@ -755,109 +730,112 @@ impl Architecture {
             .collect();
 
         for fused_name in fused_keys {
-            let (data, shape) = match tensors.remove(&fused_name) {
-                Some(v) => v,
-                None => continue,
+            let Some((data, shape)) = tensors.remove(&fused_name) else {
+                continue;
             };
 
-            let is_bias = fused_name
-                .rsplit_once('.')
-                .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("bias"));
-
-            if is_bias {
-                // Bias: 1D tensor of shape [3*hidden] — split into 3 equal parts
-                if data.len() % 3 != 0 {
-                    // Can't split evenly, put it back
-                    tensors.insert(fused_name, (data, shape));
-                    continue;
-                }
-                let chunk = data.len() / 3;
-                let base = fused_name.replace("self_attn.c_attn.bias", "");
-
-                tensors.insert(
-                    format!("{base}self_attn.q_proj.bias"),
-                    (data[..chunk].to_vec(), vec![chunk]),
-                );
-                tensors.insert(
-                    format!("{base}self_attn.k_proj.bias"),
-                    (data[chunk..2 * chunk].to_vec(), vec![chunk]),
-                );
-                tensors.insert(
-                    format!("{base}self_attn.v_proj.bias"),
-                    (data[2 * chunk..].to_vec(), vec![chunk]),
-                );
-            } else {
-                // Weight: 2D tensor — detect fused dimension
-                // SafeTensors/HF: [hidden, 3*hidden] → split columns (dim 1)
-                // GGUF:           [3*hidden, hidden] → split rows (dim 0)
-                if shape.len() != 2 {
-                    tensors.insert(fused_name, (data, shape));
-                    continue;
-                }
-
-                let base = fused_name.replace("self_attn.c_attn.weight", "");
-
-                if shape[1] == 3 * shape[0] {
-                    // GH-255: SafeTensors shape [hidden, 3*hidden] — split columns
-                    let rows = shape[0];
-                    let cols_per_proj = shape[0]; // hidden
-                    let total_cols = shape[1]; // 3*hidden
-
-                    let mut q_data = Vec::with_capacity(rows * cols_per_proj);
-                    let mut k_data = Vec::with_capacity(rows * cols_per_proj);
-                    let mut v_data = Vec::with_capacity(rows * cols_per_proj);
-
-                    for row in 0..rows {
-                        let row_start = row * total_cols;
-                        q_data.extend_from_slice(&data[row_start..row_start + cols_per_proj]);
-                        k_data.extend_from_slice(
-                            &data[row_start + cols_per_proj..row_start + 2 * cols_per_proj],
-                        );
-                        v_data.extend_from_slice(
-                            &data[row_start + 2 * cols_per_proj..row_start + total_cols],
-                        );
-                    }
-
-                    tensors.insert(
-                        format!("{base}self_attn.q_proj.weight"),
-                        (q_data, vec![rows, cols_per_proj]),
-                    );
-                    tensors.insert(
-                        format!("{base}self_attn.k_proj.weight"),
-                        (k_data, vec![rows, cols_per_proj]),
-                    );
-                    tensors.insert(
-                        format!("{base}self_attn.v_proj.weight"),
-                        (v_data, vec![rows, cols_per_proj]),
-                    );
-                } else if shape[0] % 3 == 0 {
-                    // Original path: [3*hidden, hidden] — split rows (dim 0)
-                    let rows_per_proj = shape[0] / 3;
-                    let cols = shape[1];
-                    let chunk = rows_per_proj * cols;
-
-                    tensors.insert(
-                        format!("{base}self_attn.q_proj.weight"),
-                        (data[..chunk].to_vec(), vec![rows_per_proj, cols]),
-                    );
-                    tensors.insert(
-                        format!("{base}self_attn.k_proj.weight"),
-                        (data[chunk..2 * chunk].to_vec(), vec![rows_per_proj, cols]),
-                    );
-                    tensors.insert(
-                        format!("{base}self_attn.v_proj.weight"),
-                        (data[2 * chunk..].to_vec(), vec![rows_per_proj, cols]),
-                    );
-                } else {
-                    // Can't split — put it back
-                    tensors.insert(fused_name, (data, shape));
-                    continue;
-                }
+            if let Some(unsplit) = Self::split_gpt2_fused_one(tensors, &fused_name, data, shape) {
+                // Can't split — put it back
+                tensors.insert(fused_name, unsplit);
+                continue;
             }
 
             eprintln!(
                 "[GH-233] Split fused c_attn tensor: {} → q_proj + k_proj + v_proj",
                 fused_name
+            );
+        }
+    }
+
+    /// Split one f32 GPT-2 `c_attn` tensor. Hands it back, unsplit, when its
+    /// shape does not divide into three projections.
+    fn split_gpt2_fused_one(
+        tensors: &mut BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+        fused_name: &str,
+        data: Vec<f32>,
+        shape: Vec<usize>,
+    ) -> Option<(Vec<f32>, Vec<usize>)> {
+        let is_bias = fused_name
+            .rsplit_once('.')
+            .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("bias"));
+
+        if is_bias {
+            // Bias: 1D tensor of shape [3*hidden] — split into 3 equal parts
+            if data.len() % 3 != 0 {
+                return Some((data, shape));
+            }
+            let chunk = data.len() / 3;
+            let base = fused_name.replace("self_attn.c_attn.bias", "");
+            Self::insert_qkv_f32(
+                tensors,
+                &base,
+                "bias",
+                Self::split3_f32(&data, chunk),
+                &[chunk],
+            );
+            return None;
+        }
+
+        // Weight: 2D tensor — detect fused dimension
+        // SafeTensors/HF: [hidden, 3*hidden] → split columns (dim 1)
+        // GGUF:           [3*hidden, hidden] → split rows (dim 0)
+        if shape.len() != 2 {
+            return Some((data, shape));
+        }
+        let base = fused_name.replace("self_attn.c_attn.weight", "");
+
+        if shape[1] == 3 * shape[0] {
+            // GH-255: SafeTensors shape [hidden, 3*hidden] — split columns
+            let (rows, cols_per_proj) = (shape[0], shape[0]);
+            let parts = Self::split3_cols_f32(&data, rows, cols_per_proj);
+            Self::insert_qkv_f32(tensors, &base, "weight", parts, &[rows, cols_per_proj]);
+        } else if shape[0] % 3 == 0 {
+            // Original path: [3*hidden, hidden] — split rows (dim 0)
+            let (rows_per_proj, cols) = (shape[0] / 3, shape[1]);
+            let parts = Self::split3_f32(&data, rows_per_proj * cols);
+            Self::insert_qkv_f32(tensors, &base, "weight", parts, &[rows_per_proj, cols]);
+        } else {
+            return Some((data, shape));
+        }
+        None
+    }
+
+    /// `[..chunk]`, `[chunk..2*chunk]`, `[2*chunk..]`
+    fn split3_f32(data: &[f32], chunk: usize) -> [Vec<f32>; 3] {
+        [
+            data[..chunk].to_vec(),
+            data[chunk..2 * chunk].to_vec(),
+            data[2 * chunk..].to_vec(),
+        ]
+    }
+
+    /// Split each row of a `[rows, 3*cols_per_proj]` matrix into three column blocks.
+    fn split3_cols_f32(data: &[f32], rows: usize, cols_per_proj: usize) -> [Vec<f32>; 3] {
+        let total_cols = 3 * cols_per_proj;
+        let mut parts: [Vec<f32>; 3] =
+            std::array::from_fn(|_| Vec::with_capacity(rows * cols_per_proj));
+        for row in 0..rows {
+            let row_start = row * total_cols;
+            for (i, part) in parts.iter_mut().enumerate() {
+                let start = row_start + i * cols_per_proj;
+                part.extend_from_slice(&data[start..start + cols_per_proj]);
+            }
+        }
+        parts
+    }
+
+    /// Insert `parts` as `{base}self_attn.{q,k,v}_proj.{suffix}`, each with `shape`.
+    fn insert_qkv_f32(
+        tensors: &mut BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+        base: &str,
+        suffix: &str,
+        parts: [Vec<f32>; 3],
+        shape: &[usize],
+    ) {
+        for (proj, part) in ["q_proj", "k_proj", "v_proj"].into_iter().zip(parts) {
+            tensors.insert(
+                format!("{base}self_attn.{proj}.{suffix}"),
+                (part, shape.to_vec()),
             );
         }
     }
@@ -878,86 +856,20 @@ impl Architecture {
             .collect();
 
         for fused_name in fused_keys {
-            let tensor = match tensors.remove(&fused_name) {
-                Some(v) => v,
-                None => continue,
+            let Some(tensor) = tensors.remove(&fused_name) else {
+                continue;
             };
 
             let is_bias = fused_name
                 .rsplit_once('.')
                 .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("bias"));
 
-            if is_bias {
-                // Bias: 1D shape [3*hidden] — split bytes into 3 equal parts
-                if tensor.data.len() % 3 != 0 || tensor.shape.len() != 1 || tensor.shape[0] % 3 != 0
-                {
-                    tensors.insert(fused_name, tensor);
-                    continue;
-                }
-                let byte_chunk = tensor.data.len() / 3;
-                let elem_chunk = tensor.shape[0] / 3;
-                let base = fused_name.replace("self_attn.c_attn.bias", "");
-
-                tensors.insert(
-                    format!("{base}self_attn.q_proj.bias"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[..byte_chunk].to_vec(),
-                        shape: vec![elem_chunk],
-                        dtype: tensor.dtype,
-                    },
-                );
-                tensors.insert(
-                    format!("{base}self_attn.k_proj.bias"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[byte_chunk..2 * byte_chunk].to_vec(),
-                        shape: vec![elem_chunk],
-                        dtype: tensor.dtype,
-                    },
-                );
-                tensors.insert(
-                    format!("{base}self_attn.v_proj.bias"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[2 * byte_chunk..].to_vec(),
-                        shape: vec![elem_chunk],
-                        dtype: tensor.dtype,
-                    },
-                );
-            } else {
-                // Weight: 2D shape [3*hidden, hidden] — split dim 0
-                if tensor.shape.len() != 2 || tensor.shape[0] % 3 != 0 || tensor.data.len() % 3 != 0
-                {
-                    tensors.insert(fused_name, tensor);
-                    continue;
-                }
-                let rows_per_proj = tensor.shape[0] / 3;
-                let cols = tensor.shape[1];
-                let byte_chunk = tensor.data.len() / 3;
-                let base = fused_name.replace("self_attn.c_attn.weight", "");
-
-                tensors.insert(
-                    format!("{base}self_attn.q_proj.weight"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[..byte_chunk].to_vec(),
-                        shape: vec![rows_per_proj, cols],
-                        dtype: tensor.dtype,
-                    },
-                );
-                tensors.insert(
-                    format!("{base}self_attn.k_proj.weight"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[byte_chunk..2 * byte_chunk].to_vec(),
-                        shape: vec![rows_per_proj, cols],
-                        dtype: tensor.dtype,
-                    },
-                );
-                tensors.insert(
-                    format!("{base}self_attn.v_proj.weight"),
-                    crate::format::gguf::GgufRawTensor {
-                        data: tensor.data[2 * byte_chunk..].to_vec(),
-                        shape: vec![rows_per_proj, cols],
-                        dtype: tensor.dtype,
-                    },
-                );
+            // Bias: 1D shape [3*hidden]; weight: 2D shape [3*hidden, hidden], split dim 0
+            if let Some(tensor) =
+                Self::split_fused_qkv_raw_one(tensors, &fused_name, "c_attn", is_bias, tensor)
+            {
+                tensors.insert(fused_name, tensor);
+                continue;
             }
 
             eprintln!(

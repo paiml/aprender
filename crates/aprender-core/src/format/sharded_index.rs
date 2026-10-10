@@ -108,27 +108,37 @@ impl ShardedIndex {
             })?;
 
         let obj_content = &after_key[obj_start..];
-        let mut weight_map = std::collections::HashMap::new();
-        let mut depth = 0;
-        let mut obj_end = 0;
+        let obj_end = Self::matching_brace_end(obj_content);
+        let weight_map = Self::parse_weight_map_pairs(&obj_content[1..obj_end]);
 
+        Ok(Self {
+            weight_map,
+            total_size: Self::parse_total_size(json),
+        })
+    }
+
+    /// Byte index of the `}` that closes the object opening at index 0,
+    /// or 0 when it never closes.
+    fn matching_brace_end(obj_content: &str) -> usize {
+        let mut depth = 0;
         for (i, c) in obj_content.char_indices() {
             match c {
                 '{' => depth += 1,
                 '}' => {
                     depth -= 1;
                     if depth == 0 {
-                        obj_end = i;
-                        break;
+                        return i;
                     }
                 }
                 _ => {}
             }
         }
+        0
+    }
 
-        let inner = &obj_content[1..obj_end];
-
-        // Parse key-value pairs: "tensor_name": "shard_file"
+    /// Parse key-value pairs: "tensor_name": "shard_file"
+    fn parse_weight_map_pairs(inner: &str) -> std::collections::HashMap<String, String> {
+        let mut weight_map = std::collections::HashMap::new();
         for pair in inner.split(',') {
             let pair = pair.trim();
             if pair.is_empty() {
@@ -144,19 +154,17 @@ impl ShardedIndex {
                 }
             }
         }
+        weight_map
+    }
 
-        // Parse optional total_size from metadata
-        let total_size = json.find("\"total_size\"").and_then(|pos| {
+    /// Parse optional total_size from metadata
+    fn parse_total_size(json: &str) -> Option<u64> {
+        json.find("\"total_size\"").and_then(|pos| {
             let after = &json[pos + 12..];
             let colon = after.find(':')?;
             let after_colon = after[colon + 1..].trim_start();
             let end = after_colon.find(|c: char| !c.is_ascii_digit())?;
             after_colon[..end].parse::<u64>().ok()
-        });
-
-        Ok(Self {
-            weight_map,
-            total_size,
         })
     }
 

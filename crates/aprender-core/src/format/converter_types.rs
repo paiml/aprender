@@ -126,6 +126,10 @@ pub enum Architecture {
     Qwen3,
     /// Alibaba Qwen3.5 (hybrid linear/quadratic attention)
     Qwen3_5,
+    /// Alibaba Qwen3 MoE (`Qwen3MoeForCausalLM`, e.g. Qwen3-30B-A3B), #5056.
+    /// Contract first: `contracts/model-families/qwen3_moe.yaml`. Name mapping
+    /// only until qwen3moe parity is measured (`is_inference_verified()` false).
+    Qwen3Moe,
     /// `OpenAI` GPT-2 (also `StarCoder`, `bigcode` models)
     Gpt2,
     /// Microsoft Phi (Phi-3, Phi-4)
