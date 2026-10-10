@@ -20,6 +20,7 @@
 # not answer" never hangs a section.
 #
 #   bash scripts/ci/fetch_p6.sh <git fetch args...>     # in place of `git fetch`
+#   bash scripts/ci/fetch_p6.sh -C <dir> <args...>      # in place of `git -C <dir> fetch`
 #   bash scripts/ci/fetch_p6.sh --check-wiring          # no bare `git fetch` in ci/sections.yml
 #   bash scripts/ci/fetch_p6.sh --self-test
 set -uo pipefail
@@ -43,13 +44,18 @@ answered() {
   grep -qiE "couldn't find remote ref|not our ref|unadvertised object|Repository not found|does not appear to be a git repository|not a git repository|Authentication failed|could not read Username|The requested URL returned error: 40[134]" "$2"
 }
 
-# p6_fetch <git fetch args...> -> git fetch, read up to P6_READS times.
+# p6_fetch [-C <dir>] <git fetch args...> -> git fetch (in <dir> when -C names one),
+# read up to P6_READS times. -C with no dir is a usage error (rc 129): an answer.
 # rc = the last read's rc. git's stderr reaches the caller's stderr.
 p6_fetch() {
-  local err n rc why
+  local err n rc why at=()
+  if [ "${1:-}" = -C ]; then
+    [ $# -ge 2 ] || { printf 'fetch_p6: -C needs a directory\n' >&2; return 129; }
+    at=(-C "$2"); shift 2
+  fi
   err="$(mktemp)" || return 2
   for ((n = 1; n <= P6_READS; n++)); do
-    LC_ALL=C git -c "http.lowSpeedLimit=$LOW_SPEED_LIMIT" -c "http.lowSpeedTime=$LOW_SPEED_TIME" \
+    LC_ALL=C git "${at[@]}" -c "http.lowSpeedLimit=$LOW_SPEED_LIMIT" -c "http.lowSpeedTime=$LOW_SPEED_TIME" \
       fetch "$@" 2> "$err"
     rc=$?
     cat "$err" >&2
@@ -137,7 +143,7 @@ SHIM
   run() {  # run <mode> <fetch args...> -> rc; reads in $tmp/<mode>/count
     local mode="$1"; shift
     mkdir -p "$tmp/$mode"
-    ( cd "$tmp/client" && SLEEP_S=7 && LC_ALL=POSIX PATH="$tmp/bin:$PATH" SHIM_DIR="$tmp/$mode" SHIM_MODE="$mode" \
+    ( cd "${RUN_CWD:-$tmp/client}" && SLEEP_S=7 && LC_ALL=POSIX PATH="$tmp/bin:$PATH" SHIM_DIR="$tmp/$mode" SHIM_MODE="$mode" \
         SHIM_REAL="$real_git" p6_fetch "$@" ) \
       > "$tmp/$mode/out" 2> "$tmp/$mode/err"
   }
@@ -199,6 +205,24 @@ SHIM
   run real origin +refs/heads/nope:refs/remotes/origin/nope; rc=$?
   row "real git, a missing ref: fails, read once (git's own wording is an answer)" '1 1' \
     "$([ "$rc" -ne 0 ] && echo 1 || echo 0) $(reads real)"
+
+  # -C <dir> (pin_build_base.sh, resolve_base.sh): the read runs in <dir>, from a cwd that is no repo.
+  "$real_git" init -q "$tmp/client-c"
+  "$real_git" -C "$tmp/client-c" remote add origin "$tmp/remote.git"
+  mkdir -p "$tmp/elsewhere"
+  rm -rf -- "${tmp:?}/real"
+  RUN_CWD="$tmp/elsewhere" run real -C "$tmp/client-c" origin +refs/heads/main:refs/remotes/origin/main; rc=$?
+  row 'real git, -C <dir> from a cwd that is no repo: rc 0, read once' '0 1' "$rc $(reads real)"
+  row 'real git, -C <dir>: the ref lands in <dir>' 1 \
+    "$("$real_git" -C "$tmp/client-c" rev-parse -q --verify refs/remotes/origin/main >/dev/null && echo 1 || echo 0)"
+  rm -rf -- "${tmp:?}/cancel-twice"
+  RUN_CWD="$tmp/elsewhere" run cancel-twice -C "$tmp/client-c" origin main; rc=$?
+  row 'curl 92 twice under -C <dir>: rc 0 after 3 reads' '0 3' "$rc $(reads cancel-twice)"
+  row 'curl 92 twice under -C <dir>: every read keeps -C <dir> and the stall cut' 3 \
+    "$(grep -cxF -- "-C $tmp/client-c -c http.lowSpeedLimit=$LOW_SPEED_LIMIT -c http.lowSpeedTime=$LOW_SPEED_TIME fetch origin main" "$tmp/cancel-twice/args")"
+  rm -rf -- "${tmp:?}/ok"
+  run ok -C; rc=$?
+  row '-C with no dir is a usage error: rc 129, git never runs' '129 0' "$rc $(reads ok)"
 
   # Wiring: no bare `git fetch` in the sections file.
   printf '          bash %s --no-tags --depth=1 origin x\n          # git fetch in a comment is prose\n' \

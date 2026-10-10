@@ -79,8 +79,8 @@ resolve_base() {
             if ! git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
                 # Read up to 3 times under P6 (#4936). `>&2 2>/dev/null` applies left to right: the helper's
                 # status lines (its stdout) go to stderr, never into a caller's $(...); git's own stderr is dropped.
-                ( CDPATH='' cd -- "$REPO_ROOT" && bash "$_RESOLVE_BASE_P6" -q --deepen=1 origin ) >&2 2>/dev/null \
-                    || ( CDPATH='' cd -- "$REPO_ROOT" && bash "$_RESOLVE_BASE_P6" -q origin "$p1" ) >&2 2>/dev/null || true
+                bash "$_RESOLVE_BASE_P6" -C "$REPO_ROOT" -q --deepen=1 origin >&2 2>/dev/null \
+                    || bash "$_RESOLVE_BASE_P6" -C "$REPO_ROOT" -q origin "$p1" >&2 2>/dev/null || true
             fi
             if git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
                 BASE_REF="$p1"; BASE_HOW="single parent (stacked merge_group entry: the previous entry's squash, fetched by deepening the shallow checkout)"; return 0
