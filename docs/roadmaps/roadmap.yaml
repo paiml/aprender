@@ -24665,3 +24665,21 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3863
+- id: PMAT-5080
+  github_issue: 5080
+  item_type: task
+  title: nightly_train self-test refuses a registered row with no producer on the judged commit
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-10T17:55:34Z
+  updated: 2026-10-10T17:55:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
