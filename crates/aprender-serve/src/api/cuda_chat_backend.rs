@@ -189,7 +189,7 @@ async fn try_cuda_backend(
         Err(r) => return Some(r),
     };
     // #4971: every record was sent ahead of its token, so all of them are here.
-    // A token without its own (the iteration scheduler records none) fails the request.
+    // A token without its own fails the request.
     let logprobs = match logprobs
         .map(|l| l.collect(&tokenizer, &token_ids))
         .transpose()

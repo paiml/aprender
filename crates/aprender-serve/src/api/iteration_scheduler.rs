@@ -14,7 +14,7 @@
 
 #[cfg(feature = "cuda")]
 use crate::api::cuda_batch_scheduler::{
-    token_callback, CudaBatchRequest, TokenCallback, TokenSender,
+    slot_recorder, token_callback, CudaBatchRequest, TokenCallback, TokenSender,
 };
 #[cfg(feature = "cuda")]
 use crate::gguf::OwnedQuantizedModelCuda;
@@ -263,8 +263,11 @@ struct IterationBatch {
 /// - Waiting queue integration (new requests from waiting queue, not just rx)
 /// - Per-iteration metrics
 /// - Prefill interleaving preparation
+///
+/// #4971: a slot whose request asked for logprobs records them, whether it
+/// was prefilled at setup, joined mid-batch or recycled.
 #[cfg(feature = "cuda")]
-fn process_iteration_batch(
+pub(crate) fn process_iteration_batch(
     model: &Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
     batch: Vec<CudaBatchRequest>,
     rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
@@ -320,7 +323,7 @@ fn process_iteration_batch(
 #[cfg(feature = "cuda")]
 fn iteration_setup(
     model: &Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
-    batch: Vec<CudaBatchRequest>,
+    mut batch: Vec<CudaBatchRequest>,
     max_slots: usize,
 ) -> Option<IterationBatch> {
     use crate::gguf::QuantizedGenerateConfig;
@@ -330,6 +333,10 @@ fn iteration_setup(
     let configs: Vec<QuantizedGenerateConfig> = batch.iter().map(|r| r.config.clone()).collect();
     let error_senders: Vec<Option<TokenSender>> =
         batch.iter().map(|r| Some(r.token_tx.clone())).collect();
+    let recorders: Vec<Option<crate::gguf::SlotRecorder>> = batch
+        .iter_mut()
+        .map(|r| r.logprobs.take().map(slot_recorder))
+        .collect();
     let callbacks: Vec<TokenCallback> = batch
         .into_iter()
         .map(|req| token_callback(req.token_tx))
@@ -340,11 +347,15 @@ fn iteration_setup(
         cuda_model.batched_setup_and_prefill(&prompts, &configs, callbacks, max_slots)
     };
     match setup {
-        Ok(state) => Some(IterationBatch {
-            state,
-            error_senders,
-            phase_timer: PhaseTimer::from_env("PMAT_283_TIMING", "PMAT-283"),
-        }),
+        Ok(mut state) => {
+            // #4971: one per prompt prefilled, in its slot
+            state.recorders = recorders;
+            Some(IterationBatch {
+                state,
+                error_senders,
+                phase_timer: PhaseTimer::from_env("PMAT_283_TIMING", "PMAT-283"),
+            })
+        },
         Err(e) => {
             eprintln!("[PMAT-088] Setup+prefill ERROR (m={m}): {e}");
             for tx in error_senders.iter().flatten() {
@@ -480,7 +491,9 @@ fn recycle_done_slots(
         crate::gguf::QuantizedGenerateConfig,
         TokenCallback,
     )> = Vec::new();
-    let mut recycle_error_txs: Vec<(usize, TokenSender)> = Vec::new();
+    // #4971: each recycled slot's error sender, and its recorder
+    let mut recycle_error_txs: Vec<(usize, TokenSender, Option<crate::gguf::SlotRecorder>)> =
+        Vec::new();
 
     for slot_idx in 0..running.state.m {
         if !running.state.done[slot_idx] {
@@ -489,7 +502,11 @@ fn recycle_done_slots(
         let Some(req) = waiting.pop_front().or_else(|| rx.try_recv().ok()) else {
             break; // No more waiting requests
         };
-        recycle_error_txs.push((slot_idx, req.token_tx.clone()));
+        recycle_error_txs.push((
+            slot_idx,
+            req.token_tx.clone(),
+            req.logprobs.map(slot_recorder),
+        ));
         recycle_pairs.push((
             slot_idx,
             req.prompt_ids,
@@ -503,13 +520,14 @@ fn recycle_done_slots(
     }
     match cuda_model.recycle_slots_batch(&mut running.state, recycle_pairs) {
         Ok(()) => {
-            for (slot_idx, error_tx) in recycle_error_txs {
+            for (slot_idx, error_tx, recorder) in recycle_error_txs {
                 running.error_senders[slot_idx] = Some(error_tx);
+                running.state.recorders[slot_idx] = recorder;
             }
         },
         Err(e) => {
             eprintln!("[PMAT-088d] Batch recycle FAILED: {e}");
-            for (_, error_tx) in &recycle_error_txs {
+            for (_, error_tx, _) in &recycle_error_txs {
                 let _ = error_tx.try_send(Err(e.to_string()));
             }
         },
@@ -528,13 +546,17 @@ fn join_waiting_slot(
         return;
     };
     let error_tx = req.token_tx.clone();
+    let recorder = req.logprobs.map(slot_recorder);
     match cuda_model.add_slot_to_batch(
         &mut running.state,
         req.prompt_ids,
         req.config,
         token_callback(req.token_tx),
     ) {
-        Ok(()) => running.error_senders.push(Some(error_tx)),
+        Ok(()) => {
+            running.state.recorders[running.state.m - 1] = recorder;
+            running.error_senders.push(Some(error_tx));
+        },
         Err(e) => {
             eprintln!("[PMAT-088c] Mid-batch join FAILED: {e}");
             let _ = error_tx.try_send(Err(e.to_string()));
