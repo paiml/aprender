@@ -335,11 +335,6 @@ name = "wgpu_eval"
 path = "examples/wgpu_eval.rs"
 required-features = ["gpu"]
 
-[[example]]
-name = "laya_engine_probe"
-path = "examples/laya_engine_probe.rs"
-required-features = []
-
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--generate-link-to-definition"]
