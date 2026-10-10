@@ -213,14 +213,14 @@ bindings:
   notes: function not found in source
 - contract: cma-es-kernel-v1.yaml
   equation: sample
-  module_path: entrenar
-  function: sample
+  module_path: aprender::metaheuristics::cmaes
+  function: CmaEs::sample
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: temperature
-  module_path: entrenar
-  function: temperature
+  module_path: realizar::generate
+  function: apply_temperature
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: silu-kernel-v1.yaml
@@ -231,8 +231,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: random-forest-v1.yaml
   equation: predict
-  module_path: entrenar
-  function: predict
+  module_path: aprender::tree::random_forest
+  function: RandomForestClassifier::predict
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-classification-v1.yaml
@@ -267,14 +267,14 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: kmeans-kernel-v1.yaml
   equation: update
-  module_path: entrenar
-  function: update
+  module_path: aprender::cluster::kmeans
+  function: KMeans::fit
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: sampling-algorithms-v1.yaml
   equation: top_k
-  module_path: entrenar
-  function: top_k
+  module_path: realizar::generate
+  function: sample_top_k
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: metrics-regression-v1.yaml
@@ -285,8 +285,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: int8-symmetric-quant-v1.yaml
   equation: quantize
-  module_path: entrenar
-  function: quantize
+  module_path: entrenar::quant::gguf_quant::q8_0
+  function: Q8_0::quantize
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: model-config-algebra-v1.yaml
@@ -297,14 +297,14 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: gated-delta-net-v1.yaml
   equation: output
-  module_path: entrenar
-  function: output
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_rule_step
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: q4k-q6k-superblock-v1.yaml
   equation: total_bytes
-  module_path: entrenar
-  function: total_bytes
+  module_path: trueno::contracts
+  function: QuantFormat::expected_bytes
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: attention-kernel-v1.yaml

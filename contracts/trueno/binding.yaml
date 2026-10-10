@@ -90,20 +90,20 @@ bindings:
     have tiled_unrolled constructors.'
 - contract: activation-kernel-v1.yaml
   equation: relu
-  module_path: trueno
-  function: relu
+  module_path: trueno::activations
+  function: relu_scalar
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: silu-kernel-v1.yaml
   equation: sigmoid
-  module_path: trueno
-  function: sigmoid
+  module_path: trueno::activations
+  function: sigmoid_scalar
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: gelu
-  module_path: trueno
-  function: gelu
+  module_path: trueno::activations
+  function: gelu_scalar
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: softmax-kernel-v1.yaml
@@ -144,20 +144,20 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: activation-kernel-v1.yaml
   equation: silu
-  module_path: trueno
-  function: silu
+  module_path: trueno::activations
+  function: silu_scalar
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: random-forest-v1.yaml
   equation: predict
-  module_path: trueno
-  function: predict
+  module_path: aprender::tree::random_forest
+  function: RandomForestClassifier::predict
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: kmeans-kernel-v1.yaml
   equation: update
-  module_path: trueno
-  function: update
+  module_path: aprender::cluster::kmeans
+  function: KMeans::fit
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: quantization-ordering-v1.yaml
@@ -174,14 +174,14 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: graph-centrality-v1.yaml
   equation: eigenvector
-  module_path: trueno
-  function: eigenvector
+  module_path: aprender::graph::centrality
+  function: Graph::eigenvector_centrality
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: tensor-inventory-v1.yaml
   equation: tensor_count
-  module_path: trueno::cbtop::quantize::gguf
-  function: GgufReader::tensor_count
+  module_path: aprender::format::model_family
+  function: DynModelFamily::expected_tensor_count
   signature: 'pub fn tensor_count(&self) -> u64'
   status: implemented
   notes: 'In crates/cbtop/src/quantize/gguf.rs. Counts tensors in GGUF model files.'

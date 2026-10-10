@@ -284,14 +284,14 @@ bindings:
     '
 - contract: tensor-inventory-v1.yaml
   equation: tensor_count
-  module_path: realizar
-  function: tensor_count
+  module_path: aprender::format::model_family
+  function: DynModelFamily::expected_tensor_count
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: q4k-q6k-superblock-v1.yaml
   equation: total_bytes
-  module_path: realizar
-  function: total_bytes
+  module_path: trueno::contracts
+  function: QuantFormat::expected_bytes
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: int8-symmetric-quant-v1.yaml
@@ -350,8 +350,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: kmeans-kernel-v1.yaml
   equation: update
-  module_path: realizar
-  function: update
+  module_path: aprender::cluster::kmeans
+  function: KMeans::fit
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: gqa-kernel-v1.yaml
@@ -386,8 +386,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: random-forest-v1.yaml
   equation: predict
-  module_path: realizar
-  function: predict
+  module_path: aprender::tree::random_forest
+  function: RandomForestClassifier::predict
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: flash-attention-v1.yaml
@@ -428,8 +428,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: cma-es-kernel-v1.yaml
   equation: sample
-  module_path: realizar
-  function: sample
+  module_path: aprender::metaheuristics::cmaes
+  function: CmaEs::sample
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: rope-extrapolation-v1.yaml
