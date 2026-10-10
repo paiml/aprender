@@ -338,6 +338,20 @@ bindings:
   signature: 'fn reliability_diagram(predictions: &[f32], labels: &[bool], n_bins: usize) -> Vec<(f32, f32, usize)>'
   status: implemented
   notes: Bin-level (confidence, accuracy, count) tuples
+- contract: calibration-v1.yaml
+  equation: platt_scaling
+  module_path: aprender::calibration
+  function: PlattScaling::fit
+  signature: 'fn fit(&mut self, logits: &[f32], labels: &[bool])'
+  status: implemented
+  notes: Fits A and B by 1000 steps of gradient descent on the logistic loss; predict_proba returns σ(A·f + B)
+- contract: calibration-v1.yaml
+  equation: isotonic_regression
+  module_path: aprender::calibration
+  function: IsotonicRegression::fit
+  signature: 'fn fit(&mut self, predictions: &[f32], labels: &[bool])'
+  status: implemented
+  notes: Pool Adjacent Violators fit; predict interpolates linearly between the fitted blocks
 - contract: decision-tree-v1.yaml
   equation: gini_impurity
   module_path: aprender::tree::helpers

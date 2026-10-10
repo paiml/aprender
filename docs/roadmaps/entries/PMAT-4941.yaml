@@ -1,0 +1,18 @@
+- id: PMAT-4941
+  github_issue: 4941
+  item_type: task
+  title: '#4941 feat(decide): the Laya ModernBERT encoder and decision library (carry)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-10T08:24:58Z
+  updated: 2026-10-10T08:24:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4381

@@ -746,7 +746,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-decide"
-version = "0.70.2"
+version = "0.70.3"
 dependencies = [
  "aprender-contracts-macros",
  "aprender-core",

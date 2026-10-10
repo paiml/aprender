@@ -1,6 +1,6 @@
 contract: laya-finetune-gate
 metadata:
-  version: 5.0.0
+  version: 6.0.0
   created: '2026-09-25'
   author: PAIML Engineering
   kind: kernel
@@ -90,6 +90,18 @@ metadata:
     sweeps it, and `rescore_noise_schema.k` now says what both readers do: a float64 compared bit for
     bit (the trainer used to write int(k)). `pv diff` classifies the formula and invariant edit
     MAJOR, so this is published as 5.0.0; the 1.4.0 naming above is unchanged.
+
+    LIBRARY SLICE 6.0.0 (2026-10-10, the carry of #4941; no threshold, constant, recipe value, seed,
+    schema field or recorded outcome moved). This tree carries the decision library and its Rust
+    verifier, not the Python trainer. Seven training-side equations had no binding row here, because
+    the trainer computes them: calibration_fit_bounded, declared_seed_ships,
+    eval_set_in_distribution, recipe_before_scores, device_recorded, f16_reload_scoring and
+    early_stopping_train_side. They moved to the training slice (#4634) and return with the code that
+    binds them. Where this file or aprender-decide still names one of them, it names that training-side
+    equation. aprender-decide's check_report_record re-checks the recorded relation for two of them
+    (device_recorded, calibration_fit_bounded) on load; their binding rows return with the training slice.
+    The six equations kept here are each bound in contracts/aprender/binding.yaml.
+    `pv diff` classifies removed equations MAJOR, so this is published as 6.0.0.
 
     THE GATE IS DECIDED ON RECOMPUTED METRICS, NOT REPORTED ONES. A gate report is a file a
     training run wrote; an edited report must not pass. So the metrics that DECIDE pass are
@@ -721,15 +733,6 @@ equations:
       - 'recorded deviation: spike 024 binned right-closed (lo, hi]; the two differ only for a confidence exactly on a bin edge. One Rust ECE implementation (OPS-03) outweighs byte-matching an informational spike number'
       - 'the Python trainer (metrics.py ece_top_label, math.fsum) returns the SAME BITS as the Rust verifier on every input (numeric_agreement); the Rust verifier is the authority'
 
-  calibration_fit_bounded:
-    formula: 'T_fitted = argmin_{T in [calibration_temp_min, calibration_temp_max]} NLL(softmax(z / T), y) over the calibration slice; T_applied = clamp(T_fitted, calibration_temp_min, calibration_temp_max); clamp_hit = (T_fitted at a bound)'
-    domain: 'the fine-tuned model''s logits on the calibration slice (F16 reload)'
-    codomain: 'T_applied written into rl_agent_config.json temperature_by_options[bucket]; clamp_hit recorded'
-    invariants:
-      - 'Laya''s loader clamps T to [0.5, 5.0] at every load (Pitfall 6), so a T outside the range would be served as the bound; fitting within the range makes the reported and served T identical'
-      - 'ece_post is computed with T_APPLIED; if the clamp is hit and ECE still fails, the gate fails — the fail-closed design'
-      - 'the calibration slice is stratified, seeded, at least calibration_slice_fraction of the shots and at least calibration_slice_min_per_class rows per class (D-06, RESEARCH A9)'
-
   split_disjointness:
     formula: 'normsha(eval) ∩ normsha(train) = ∅ AND calib ⊂ train AND fit = train \ calib AND forall group g of train rows with equal normsha: g ⊂ fit OR g ⊂ calib AND forall g: |labels(g)| == 1, where normsha(t) = sha256(collapse_ws(trim(NFC(t))))'
     domain: 'data dir train.jsonl / eval.jsonl and gate-report calibration.slice_ids'
@@ -739,15 +742,6 @@ equations:
       - 'a group whose copies carry different labels is REFUSED, not resolved'
       - 'the calibration slice is stratified and seeded (declared_seed), per D-06'
       - 'the Rust verifier re-derives all of this from slice_ids (row indices only) and the data dir, plan 08-09'
-
-  declared_seed_ships:
-    formula: 'under the legacy rule (recipe.json has no seed_selection): shipped_checkpoint.seed == seed_policy.declared_seed'
-    domain: 'a legacy (1.x) run dir, possibly with variance seeds'
-    codomain: 'the declared-seed checkpoint in run_dir/checkpoint'
-    invariants:
-      - 'never the best seed on eval: choosing the best of N on the eval split is selection on the test set (D-08)'
-      - 'variance seeds produce variance-report.json only'
-      - 'since 1.4.0 production runs carry seed_selection and ship the median seed per seed_selection_median; a legacy run is judged under this equation and is never deploy-eligible (seed_policy.legacy_rule)'
 
   seed_selection_median:
     formula: 'for recipe.json carrying seed_selection: rank_key(s) = floor(ece_post(s) x rank_scale) for s in variance_seeds; order = sort by (rank_key ascending, seed ascending); shipped = order[(N - 1) / 2] (= order[1] for N = 3); pass == ((ft_shipped.macro_f1 - zs.macro_f1 >= gate_min_macro_f1_margin) AND (ft_shipped.ece_post <= gate_max_ece)), zs the shared zero-shot baseline'
@@ -760,15 +754,6 @@ equations:
       - 'the median is selected WITH eval labels and is recorded as a selection on the gate eval set (seed_policy.honesty); median, never best'
       - 'the non-shipped seeds are recomputed but never re-scored (seed_policy.retention_rule)'
 
-  eval_set_in_distribution:
-    formula: 'E = dedup_first_nfc_trim_ws( [r in validation ++ train (file order) : r.id not in shots(s64-seed13) AND r.id not in exclusions.excluded_train_ids AND (split(r), r.id) not in union(exclusions.groups[*].members)] ), with normsha(E) ∩ normsha(shots) = ∅ REQUIRED (overlap refused, not dropped); |E| == demo_s64.eval_rows (459) AND class_counts(E) == demo_s64.eval_class_counts ([111, 291, 57])'
-    domain: 'the TweetEval stance_abortion validation and train splits, the s64-seed13 selection manifest'
-    codomain: 'the demo_s64 eval.jsonl, or a refusal naming the overlapping text or the count mismatch'
-    invariants:
-      - 'CLAIM: a gate passed on this set certifies margin and calibration on held-out data drawn like the shots, NOT robustness to a shifted input population (eval_set.claim)'
-      - 'the set was chosen AFTER the SemEval test split failed the gate twice; spike 027 is the evidence (eval_set.history)'
-      - 'order and dedup rule are part of the definition: first occurrence kept in validation-then-train file order'
-
   shift_probe_reported:
     formula: 'shift metrics (zs and ft macro_f1, f_avg, ece) = recompute(shift-probs.json, shift-zero-shot-probs.json, shift.jsonl labels), each file hash-bound in gate-report shift_probe; gate_clause == false; shift metrics never appear in gate_pass'
     domain: 'a run dir whose data dir carries the optional shift.jsonl'
@@ -777,46 +762,6 @@ equations:
       - 'RECOMPUTED in Rust from the hash-bound files; a reported shift metric further than gate_metric_recompute_abs from its recomputation is refused'
       - 'NEVER re-scored (no laya-parity-v1 bound applies to it) and NEVER a gate clause: gate_pass is identical with and without shift.jsonl'
       - 'shift.jsonl text overlapping train.jsonl is refused'
-
-  recipe_before_scores:
-    formula: 'mtime_order: write(recipe.json) precedes every eval score; recipe_id = sha256(recipe.json bytes)'
-    domain: 'a training run'
-    codomain: 'recipe.json on disk and its recipe_id, before any score exists'
-    invariants:
-      - 'D-04: the recipe is fixed before the run is judged, so it cannot be tuned against eval'
-      - 'recipe_id is the sha256 of the exact file bytes; the Rust side never re-serializes to compute it'
-
-  device_recorded:
-    formula: 'device_used = device_of(next(model.parameters())) AFTER the move; device_is_cpu = (device_used == "cpu")'
-    domain: 'a training run on the first available device of device_order'
-    codomain: 'gate-report device_used and device_is_cpu'
-    invariants:
-      - 'read from the model parameters, NEVER from an env var or from the requested device (D-03, CLAUDE.md Verification #2: prove the mechanism engaged)'
-      - 'CPU is allowed and FLAGGED'
-
-  f16_reload_scoring:
-    formula: 'forall artefact a in {gate metrics, calibration fit, eval-probs.json, zero-shot-probs.json, probes.json}: a is computed on a checkpoint saved as F16 and RELOADED in fp32'
-    domain: 'a training run after fine-tuning'
-    codomain: 'every scored file describes the model that is served'
-    invariants:
-      - 'Pitfall 5: training leaves fp32 weights while D-17 serves F16; scoring the fp32 weights would describe a model that is never served'
-      - 'the zero-shot baseline is the declared base loaded the same way'
-
-  early_stopping_train_side:
-    # plan 08-29 (V13-c): the formula used to state a RUNNING-MINIMUM rule (m_e < min_{j < e} m_j -
-    # min_delta), which disagrees with early_stopping.improvement_rule and with the trainer on traces
-    # such as [1.0, 0.9993, 0.9988]. It now states the best-anchored rule verbatim from improvement_rule,
-    # the rule the 08-16 run of record used: a description fix to the rule of record, not a rule change.
-    formula: 'BEST-ANCHORED (early_stopping.improvement_rule, implemented by gate.EarlyStopper): m_best := +inf and best_epoch := none; for each evaluated epoch e >= first_candidate_epoch in order, epoch e improves iff m_e is finite AND m_e < m_best - min_delta (strict), and only then m_best := m_e and best_epoch := e (m_best is updated ONLY on improvement, so best_epoch is the last improving epoch and an epoch within min_delta of the current m_best never replaces it); m_e = calibration_nll_at_fitted_t on the CALIBRATION slice; epoch 0 (the untrained base) is never a candidate; a non-finite m_e never improves; stop after epoch e when e - best_epoch >= patience_epochs (best_epoch read as first_candidate_epoch - 1 before any improvement) or e == max_epochs; shipped weights = weights after best_epoch; no finite m_e at all is REFUSED early-stopping (nothing to restore)'
-    domain: 'a training run whose recipe.json carries the `early_stopping` object (the early_stopping block)'
-    codomain: 'the restored best-epoch weights and the training.stopping record in rl_agent_config.json, both fixed BEFORE any eval probability exists'
-    invariants:
-      - 'the monitor reads the calibration slice only; eval.jsonl rows never reach the training function, the monitor, the restored epoch or the temperature fit'
-      - 'no eval probability is computed before the stopping record and the checkpoint are on disk (ordering assertion in train.py; mtime(checkpoint/model.safetensors) <= mtime(eval-probs.json))'
-      - 'epoch 0 (the untrained base) is never a candidate; an epoch within min_delta of the current best (an exact tie included) never replaces it, so the earlier best is kept; a non-finite monitor never improves'
-      - 'the cosine schedule is the fixed_epochs one over max_epochs; stopping truncates it'
-    preconditions:
-      - 'split_disjointness holds for the run (the calibration slice is text-group-disjoint from fit)'
 
   synthetic_not_deployable:
     formula: 'recipe.variant == "synthetic-fixture" implies refuse(pack_for_serving) AND refuse(verify) AND refuse(deploy)'
