@@ -538,7 +538,7 @@ fn type_value(n: usize, key: &str, v: &str) -> Result<Typed, PyError> {
     } else if v == "false" {
         Typed::Bool(false)
     } else if INT.is_match(v) {
-        Typed::Int(py_int_repr(v))
+        Typed::Int(py_int_repr(v)?)
     } else if v.len() >= 2 && v.starts_with(['"', '\'']) && v.ends_with(&v[..1]) {
         Typed::Str(v[1..v.len() - 1].to_owned())
     } else if key == "fail-fast" {
@@ -552,17 +552,28 @@ fn type_value(n: usize, key: &str, v: &str) -> Result<Typed, PyError> {
     Ok(typed)
 }
 
+/// `sys.get_int_max_str_digits()`: the most digits `int()` converts from a string, on
+/// CPython 3.11+ and the 3.10.7, 3.9.14 and 3.8.14 security releases.
+const PY_INT_MAX_STR_DIGITS: usize = 4300;
+
 /// `repr(int(s))` for an `s` matching `^-?\d+$`: any Unicode decimal digit counts, leading
-/// zeros drop, and `-0` is `0`.
-fn py_int_repr(s: &str) -> String {
+/// zeros drop, and `-0` is `0`. Past 4300 digits, leading zeros included, `int()` raises.
+fn py_int_repr(s: &str) -> Result<String, PyError> {
     let (neg, digits) = s.strip_prefix('-').map_or((false, s), |d| (true, d));
+    let count = digits.chars().count();
+    if count > PY_INT_MAX_STR_DIGITS {
+        return Err(PyError::value(format!(
+            "Exceeds the limit ({PY_INT_MAX_STR_DIGITS} digits) for integer string conversion: \
+             value has {count} digits; use sys.set_int_max_str_digits() to increase the limit"
+        )));
+    }
     let value: String = digits.chars().map(digit_value).collect();
     let value = value.trim_start_matches('0');
-    match (value.is_empty(), neg) {
+    Ok(match (value.is_empty(), neg) {
         (true, _) => "0".to_owned(),
         (false, true) => format!("-{value}"),
         (false, false) => value.to_owned(),
-    }
+    })
 }
 
 /// The ASCII digit for a Unicode decimal digit. Unicode encodes every decimal digit set as
@@ -819,6 +830,59 @@ mod tests {
         let bad = load(b"[profile.ci\n", Reader::Library).expect_err("bad");
         assert_eq!(bad.class, "TOMLDecodeError");
         assert!(!bad.msg.contains('\n'), "one line: {}", bad.msg);
+    }
+
+    /// The README's rows where tomllib and the `toml` crate disagree, pinned on the crate's
+    /// side, so an upgrade that moves one is seen here and not on a runner.
+    #[test]
+    fn library_reader_follows_the_toml_crate() {
+        let ok = "[profile.ci]\nfail-fast = false\n";
+        let nest = |n: usize| format!("x = {}1{}", "[".repeat(n), "]".repeat(n));
+        let reads = [
+            "t = 1979-05-27T07:32:60Z".to_owned(),
+            "t = 07:32:60".to_owned(),
+            "t = 0000-01-01".to_owned(),
+            nest(79),
+        ];
+        for line in &reads {
+            let (rc, out) = judge(&format!("{ok}{line}\n"), Reader::Library);
+            assert_eq!(rc, 0, "{line}: {out}");
+        }
+        let refuses = [
+            "x = 9223372036854775808".to_owned(),
+            "x = -9223372036854775809".to_owned(),
+            "x = 0xffffffffffffffff".to_owned(),
+            "x = 1e400".to_owned(),
+            nest(80),
+        ];
+        for line in &refuses {
+            let (rc, out) = judge(&format!("{ok}{line}\n"), Reader::Library);
+            assert_eq!(rc, 2, "{line}: {out}");
+            assert!(out.contains("(TOMLDecodeError: "), "{line}: {out}");
+        }
+    }
+
+    #[test]
+    fn fallback_has_cpythons_int_digit_limit() {
+        let d4300 = "1".repeat(4300);
+        for val in [
+            d4300.clone(),
+            format!("-{d4300}"),
+            format!("0{}", &d4300[1..]),
+        ] {
+            let body = format!("[profile.ci]\nfail-fast = false\nx = {val}\n");
+            let (rc, out) = judge(&body, Reader::Fallback);
+            assert_eq!(rc, 0, "{} digits: {out}", val.len());
+        }
+        for (val, n) in [(format!("1{d4300}"), 4301), (format!("-0{d4300}"), 4301)] {
+            let body = format!("[profile.ci]\nfail-fast = {val}\n");
+            let got = load(body.as_bytes(), Reader::Fallback).expect_err(&val[..8]);
+            let want = format!(
+                "Exceeds the limit (4300 digits) for integer string conversion: value has {n} \
+                 digits; use sys.set_int_max_str_digits() to increase the limit"
+            );
+            assert_eq!((got.class, got.msg.as_str()), ("ValueError", want.as_str()));
+        }
     }
 
     #[test]
