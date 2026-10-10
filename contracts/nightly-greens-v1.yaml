@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-10-03'
   author: PAIML Engineering
   description: "A check may be enforced at publish only after its inputs were produced green on main, nightly, three times (operator ruling C280 item 12, the P0 for 0.70.2). scripts/release/nightly_greens.sh is the count: it reads one producer's run history and answers ready, not ready or not_measured, and prints the run IDs of the three green nights. A night with no run, a cancelled run or a run still going is never green, and a retried green is not a green."
@@ -30,14 +30,14 @@ equations:
       - "an unknown conclusion, a short line or an impossible date is not_measured, never skipped"
 
   streak_verdict:
-    formula: "LAST = the newest night that is green or red; streak = the green nights in a row walking back from LAST; ready iff streak >= 3 and LAST is --as-of or the day before"
-    domain: "night_state over every date up to --as-of, and the constant need = 3"
-    codomain: "exit 0 ready (with the three run IDs) | 1 not ready | 2 not_measured | 3 caller error"
+    formula: "LAST = the newest night that is green or red; streak = the green nights in a row walking back from LAST; ready iff streak >= need(check) and LAST is --as-of or the day before; need(release-rehearsal) = 1 (operator C355 item 6), need(any other check) = 3"
+    domain: "night_state over every date up to --as-of, and the constant need(check): 1 for release-rehearsal, 3 for every other check"
+    codomain: "exit 0 ready (with need(check) run IDs) | 1 not ready | 2 not_measured | 3 caller error"
     invariants:
       - "a walk that stops at a red night or at the start of the history is not ready (exit 1)"
       - "a walk that stops at an absent, void or pending night is not_measured (exit 2): a night with no run is never green"
       - "LAST older than the day before --as-of is stale, and stale is not_measured"
-      - "need is 3, and neither an option nor an environment value can change it"
+      - "need is 3 for every check but release-rehearsal, which needs 1 (C355 item 6: the count is lowered, the check stays); neither an option nor an environment value can change either"
       - "every verdict prints streak (in a row) and total (every green night), so both readings of 'three times' stay visible"
 
 proof_obligations:
@@ -48,8 +48,8 @@ proof_obligations:
     applies_to: night_state
   - id: NG-INV-002
     type: invariant
-    property: "Ready needs three green nights in a row, the newest no older than the day before --as-of"
-    formal: "ready ⇒ streak ≥ 3 ∧ LAST ≥ as_of - 1"
+    property: "Ready needs need(check) green nights in a row (three; one for release-rehearsal), the newest no older than the day before --as-of"
+    formal: "ready ⇒ streak ≥ need(check) ∧ LAST ≥ as_of - 1"
     applies_to: streak_verdict
   - id: NG-INV-003
     type: invariant
@@ -63,8 +63,8 @@ proof_obligations:
     applies_to: night_state
   - id: NG-INV-005
     type: invariant
-    property: "The threshold is the constant 3"
-    formal: "need ≡ 3"
+    property: "The threshold is a constant per check: 3, and 1 for release-rehearsal"
+    formal: "need(release-rehearsal) ≡ 1 ∧ ∀ c ≠ release-rehearsal: need(c) ≡ 3"
     applies_to: streak_verdict
   - id: NG-INV-006
     type: invariant
@@ -75,13 +75,13 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-NG-001
     rule: "The count is right on every row of its case table"
-    prediction: "Three green nights are ready; a red night, a retried green or the start of the history is not ready; an absent, cancelled or unfinished night, a stale history or an unreadable line is not_measured; a branch run, a manual dispatch and rows after --as-of are not counted; --need is refused and NEED in the environment is ignored; dates cross a year end and a leap day"
+    prediction: "Three green nights are ready (one for release-rehearsal, and one is not enough for any other check); a red night, a retried green or the start of the history is not ready; an absent, cancelled or unfinished night, a stale history or an unreadable line is not_measured; a branch run, a manual dispatch and rows after --as-of are not counted; --need is refused and NEED in the environment is ignored; dates cross a year end and a leap day"
     test: "bash scripts/release/nightly_greens.sh --selftest"
     if_fails: "The judge can call a check ready on fewer than three green nights, or count a night that measured nothing as green: the condition C280 item 12 exists to stop"
 
   - id: FALSIFY-NG-002
     rule: "The case table can still fail on the defects it names"
-    prediction: "Each planted mutant (need 2, need from the environment, a retried green counted, failure not red, void counted green, red or pending ranked below green, the older of two runs kept, every branch counted, rows after --as-of counted, a red newest night skipped, no staleness bound, an absent night read as the start, a streak off by one, leap years ignored) turns --selftest RED; a mutant that changes nothing or does not parse is itself a failure"
+    prediction: "Each planted mutant (need 2, need from the environment, the release-rehearsal need raised to 3 or set to 0, not keyed on its name, or given to every check, a retried green counted, failure not red, void counted green, red or pending ranked below green, the older of two runs kept, every branch counted, rows after --as-of counted, a red newest night skipped, no staleness bound, an absent night read as the start, a streak off by one, leap years ignored) turns --selftest RED; a mutant that changes nothing or does not parse is itself a failure"
     test: "bash scripts/release/nightly_greens.sh --mutants"
     if_fails: "The case table is theater: it would pass a judge that lets a check be enforced before its inputs were produced green three times"
 
