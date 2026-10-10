@@ -31,12 +31,12 @@ means the example ran to the end and exited 0. It checks no figure the example p
 
 ## Build time and the timeout
 
-The job before this one deleted the build directory when it finished (00:34:45Z), so this
-run built every example from an empty build directory. Each row's `secs` is build plus run,
-up to 137 s (agent_demo) and 136 s (publish_shell_safety). The script bounds only the run
-(`scripts/dogfood_examples.sh:226`, "Only the RUN is bounded."), so a cold build cannot time
-a row out. `examples-36-cold-4a79227e9f.tsv` is an earlier cold run, on 4a79227e9f: the same
-36 classes, exit codes and cites, with `secs` up to 293 s (agent_demo).
+Each row's `secs` is build plus run. agent_demo's row took 137 s, and its run stage timed
+alone afterwards on the same tree took 1 s (`run-stage-secs.txt`), so nearly all of that row
+was build. The script bounds only the run (`scripts/dogfood_examples.sh:226`, "Only the RUN
+is bounded."), so a long build cannot time a row out. `examples-36-cold-4a79227e9f.tsv` is
+an earlier cold run, on 4a79227e9f: the same 36 classes, exit codes and cites, with `secs`
+up to 293 s (agent_demo).
 
 `run-stage-secs.txt` times the run stage alone (`cargo run -q`, stdout to a file) after the
 36-row run on the same tree. It covers the six rows with the highest `secs` in the
@@ -76,24 +76,32 @@ on the gate lines cited above.
 ## Bug fixes for every build
 
 These change debug and release builds alike. Each one lets a run that stopped on an error
-reach its end. None of them shortens a run.
+reach its end. Neither shortens a run.
 
 - **performance_parity.** Its Q4_0 and Q8_0 benchmarks built 20×32 = 640 and 36×32 = 1152
   bytes. The dequantizers take 18-byte and 34-byte blocks and return an error for a length
   that is not a multiple (`crates/aprender-serve/src/quantize/dequant.rs:49`, `:111`). 640
   and 1152 are not multiples, so `.expect` panicked, and the failing nightly row was fail. The
   sizes are now 18×32 and 34×32 (`performance_parity.rs:514`, `:522`).
-- **agent_demo.** Its fallback driver's context window was 4096 tokens. The runtime builds the
+- **agent_demo.** Demo 10's primary driver, `FailingPrimary` (`agent_demo.rs:385`), reported
+  a context window of 4096 tokens. The demo wraps it in a `RoutingDriver` with the default
+  strategy, which reports the primary's window
+  (`crates/aprender-orchestrate/src/agent/driver/router.rs:238`). The runtime builds the
   window with the manifest's `max_tokens` as the output reserve
   (`crates/aprender-orchestrate/src/agent/runtime.rs:340`), the default manifest's
   `max_tokens` is 4096 (`agent/manifest.rs:110`), and the input budget is the window minus
   the reserve (`serve/context.rs:32`). That left 0 input tokens, so every run stopped on
   `ContextOverflow`. The window is now 32 768 (`agent_demo.rs:399`).
-- **parity_035.** With a server up and the model not pulled, `/api/generate` answers with an
-  error object that the response decoder cannot read, and the run failed on the decode. The
-  example now asks `/api/show` first. Only a 404 there is reported as `Model not found` (exit
-  1). A failed request or any other status is returned as an error, a failure of the server
-  (`parity_035_m4_verification.rs`, the block after the TCP probe).
+
+## A probe in every build: parity_035
+
+This is not a bug fix and does not let a run reach its end. It changes how a missing model
+or a broken server is reported, in every build. The failing nightly's log shows only the
+row's first line (the banner), so it does not show why that run failed. The example now
+asks the server's `/api/show` for the model before the benchmark. Only a 404 there is
+reported as `Model not found` (exit 1). A failed request or any other status is returned
+as an error, a failure of the server (`parity_035_m4_verification.rs`, the block after the
+TCP probe). With the model present, the benchmark runs as before.
 
 ## Every other change, by kind
 
@@ -118,8 +126,9 @@ reach its end. None of them shortens a run.
 
 Review round 2 found that performance_parity's GPU path ran past 25 minutes in a debug build
 (rc 124 at 1505 s) when wgpu found an adapter. A debug build now runs GPU-001 alone
-(`performance_parity.rs:52`, `:101`, `:107`). A release build still runs all 31 GPU
-benchmarks.
+(`performance_parity.rs:52`, `:101`, `:107`). A release build runs all 31 GPU benchmarks.
+On main no build reached them: `bench_quantization_formats` runs first
+(`performance_parity.rs:88`) and panicked on the buffer sizes fixed above (`:514`, `:522`).
 
 `performance_parity-gpu.txt` is the debug binary from the 36-row run, run once more with its
 output kept, because the script keeps no output per example. The file records the commit and
