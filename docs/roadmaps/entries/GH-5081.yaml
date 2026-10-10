@@ -1,0 +1,16 @@
+- id: GH-5081
+  github_issue: 5081
+  item_type: task
+  title: 'nightly train: a red night opens a ticket with an owner within 60 min'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-10T17:56:26.522678124+00:00
+  updated: 2026-10-10T17:56:26.522678124+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

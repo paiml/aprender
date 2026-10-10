@@ -28,6 +28,8 @@ jobs:
           bash scripts/tests/models_lane_row_test.sh --mutants
           bash scripts/tests/nightly_lanes_rows_test.sh
           bash scripts/tests/nightly_lanes_rows_test.sh --mutants
+          bash scripts/release/nightly_train_andon.sh --self-test
+          bash scripts/release/nightly_train_andon.sh --mutants
       - name: RELEASABLE or NOT RELEASABLE for main's head
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,3 +47,30 @@ jobs:
           name: nightly-train
           path: ${{ runner.temp }}/nt
           retention-days: 30
+
+  # #5081 (B1 P2, C324 item 5): a red or not_measured night opens or updates ONE ticket with ONE owner. Its own job, so
+  # it runs whatever the train's result (failed part-way, timed out, cancelled) and the train keeps a read-only token.
+  # Green only when the train job succeeded AND its line is RELEASABLE. A workflow_dispatch drill prints, never writes.
+  andon:
+    needs: train
+    if: always()
+    runs-on: [self-hosted, Linux, X64, clean-room]   # check_runner_labels.sh: a bare X64 job is refused
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/download-artifact@v4
+        continue-on-error: true   # a missing artifact is the andon's "no verdict line" case, never a skip
+        with:
+          name: nightly-train
+          path: ${{ runner.temp }}/nt
+      - name: A red or not_measured night opens or updates the nightly-train-red ticket
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.train.result }}
+          EVENT: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash scripts/release/nightly_train_andon.sh --nt "$RUNNER_TEMP/nt" --result "$RESULT" --event "$EVENT" --run-url "$RUN_URL"
