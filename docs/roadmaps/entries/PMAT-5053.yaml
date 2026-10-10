@@ -1,0 +1,18 @@
+- id: PMAT-5053
+  github_issue: 5053
+  item_type: task
+  title: Nightly ci-pending retry same night, else red
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-10T11:53:27Z
+  updated: 2026-10-10T11:53:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
