@@ -314,6 +314,7 @@ mod tests {
             declared_min: 64,
             max_constant_run_declared: 16,
             reason: reason.map(str::to_string),
+            decode_tok_s: None,
             slots: vec![],
         }
     }

@@ -24,11 +24,13 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::margin::{token_ids, TokenLogprob};
+use super::metrics::percentile;
 use super::protocol::{matrix_block, ProtocolParams, PERF_MATRIX_SOURCE};
 use super::witness::{BatchInvariance, BatchInvarianceWitness};
 
@@ -76,6 +78,31 @@ pub struct ProbeSample {
     pub completion_tokens: Option<u32>,
     /// The terminal chunk's `finish_reason`.
     pub finish_reason: Option<String>,
+    /// S7: this request's decode rate, from [`live_decode_tok_s`].
+    pub decode_tok_s: Option<f64>,
+}
+
+/// §4.4.3 `decode_tok_s` for one streamed request, as
+/// [`RequestSample::decode_tok_s`](super::metrics::RequestSample::decode_tok_s)
+/// defines it: `(completion tokens − 1) / (last token arrival − first)`, from
+/// the client's arrival times.
+///
+/// `None` unless the server declared the stream `live` (PP-27): a replayed
+/// stream's arrival times time the replay, not the decode, and an undeclared
+/// stream is not assumed live. `None` too with fewer than two tokens or
+/// arrivals, or no time between them, where the rate is undefined, not zero.
+/// The server's own `timings` cannot stand in: the batched path drops them
+/// (`cuda_batch_scheduler.rs`), and S7 is a claim about that path.
+#[must_use]
+pub fn live_decode_tok_s(live: bool, arrivals: &[Duration], completion_tokens: u32) -> Option<f64> {
+    if !live || arrivals.len() < 2 || completion_tokens < 2 {
+        return None;
+    }
+    let span = arrivals
+        .last()?
+        .saturating_sub(*arrivals.first()?)
+        .as_secs_f64();
+    (span > 0.0).then(|| f64::from(completion_tokens - 1) / span)
 }
 
 /// A request that came back, or why it did not.
@@ -178,6 +205,9 @@ pub struct ProbeSlot {
     pub finish_reason: Option<String>,
     /// Why the slot could not be compared.
     pub refused: Option<String>,
+    /// S7: the request's decode rate, `null` when it was not timed.
+    #[serde(default)]
+    pub decode_tok_s: Option<f64>,
 }
 
 impl ProbeSlot {
@@ -188,6 +218,7 @@ impl ProbeSlot {
             completion_tokens: ok.and_then(|s| s.completion_tokens),
             finish_reason: ok.and_then(|s| s.finish_reason.clone()),
             refused: accepted(sample, n_predict).err(),
+            decode_tok_s: ok.and_then(|s| s.decode_tok_s),
         }
     }
 }
@@ -218,8 +249,25 @@ pub struct ProbeBand {
     pub max_constant_run_declared: u32,
     /// Why the band is not PASS.
     pub reason: Option<String>,
+    /// S7: the median of the slots' decode rates, from [`band_decode_tok_s`].
+    #[serde(default)]
+    pub decode_tok_s: Option<f64>,
     /// Every slot fired.
     pub slots: Vec<ProbeSlot>,
+}
+
+/// §4.4.3 — a band's per-request decode rate: the median of its slots'.
+/// `None` when the band has no slot or any slot was not timed: the median of
+/// the slots that happened to be timed is not the band's, and V3 reads `None`
+/// as S7 unmeasured, never assumed.
+#[must_use]
+pub fn band_decode_tok_s(slots: &[ProbeSlot]) -> Option<f64> {
+    let mut rates = slots
+        .iter()
+        .map(|s| s.decode_tok_s)
+        .collect::<Option<Vec<f64>>>()?;
+    rates.sort_by(f64::total_cmp);
+    percentile(&rates, 0.50)
 }
 
 impl ProbeBand {
@@ -235,6 +283,7 @@ impl ProbeBand {
             declared_min: policy.declared_min,
             max_constant_run_declared: policy.max_constant_run,
             reason: None,
+            decode_tok_s: band_decode_tok_s(&slots),
             slots,
         }
     }
@@ -590,11 +639,19 @@ mod tests {
         words.iter().map(|w| tok(w, 1.0)).collect()
     }
 
+    /// The decode rate every [`sample`] was timed at.
+    const RATE: f64 = 40.0;
+
     fn sample(tokens: Vec<TokenLogprob>) -> SampleResult {
+        timed(tokens, Some(RATE))
+    }
+
+    fn timed(tokens: Vec<TokenLogprob>, decode_tok_s: Option<f64>) -> SampleResult {
         Ok(ProbeSample {
             completion_tokens: u32::try_from(tokens.len()).ok(),
             finish_reason: Some("length".to_string()),
             logprobs: tokens,
+            decode_tok_s,
         })
     }
 
@@ -619,6 +676,53 @@ mod tests {
         assert_eq!(band.divergence_at, Some(8));
         assert_eq!(band.top2_margin_at_divergence, None);
         assert_eq!(band.reason, None);
+        assert_eq!(band.decode_tok_s, Some(RATE));
+    }
+
+    /// S7's rate, as `RequestSample::decode_tok_s` defines it, and every case
+    /// where it is undefined rather than zero.
+    #[test]
+    fn live_decode_tok_s_times_only_a_live_stream_with_two_arrivals() {
+        let ms = Duration::from_millis;
+        let arrivals = [ms(100), ms(150), ms(300)];
+        let near = |got: Option<f64>, want: f64| got.is_some_and(|r| (r - want).abs() < 1e-9);
+        assert!(
+            near(live_decode_tok_s(true, &arrivals, 9), 40.0),
+            "8 tokens over 0.2 s"
+        );
+        assert!(
+            near(live_decode_tok_s(true, &arrivals, 2), 5.0),
+            "1 token over 0.2 s"
+        );
+        assert_eq!(
+            live_decode_tok_s(false, &arrivals, 9),
+            None,
+            "a replay is not timed"
+        );
+        assert_eq!(live_decode_tok_s(true, &arrivals[..1], 9), None);
+        assert_eq!(live_decode_tok_s(true, &[], 9), None);
+        assert_eq!(live_decode_tok_s(true, &arrivals, 1), None);
+        assert_eq!(
+            live_decode_tok_s(true, &[ms(5), ms(5)], 9),
+            None,
+            "no time between"
+        );
+    }
+
+    #[test]
+    fn a_band_rate_is_the_slots_median_and_unmeasured_if_any_slot_is() {
+        let slot = |decode_tok_s| ProbeSlot {
+            i: 0,
+            completion_tokens: Some(8),
+            finish_reason: None,
+            refused: None,
+            decode_tok_s,
+        };
+        let odd = [slot(Some(10.0)), slot(Some(30.0)), slot(Some(20.0))];
+        assert_eq!(band_decode_tok_s(&odd), Some(20.0));
+        assert_eq!(band_decode_tok_s(&odd[..2]), Some(20.0));
+        assert_eq!(band_decode_tok_s(&[slot(Some(10.0)), slot(None)]), None);
+        assert_eq!(band_decode_tok_s(&[]), None);
     }
 
     /// The script's `witness_constant_token_m3`: #2753, one id forever.
@@ -673,6 +777,7 @@ mod tests {
             logprobs: Vec::new(),
             completion_tokens: Some(8),
             finish_reason: None,
+            decode_tok_s: None,
         });
         let band = band_of(2, 2, &slots);
         assert_eq!(band.result, BatchInvariance::Unmeasurable);
@@ -688,6 +793,10 @@ mod tests {
         slots[0] = Err("connection refused".to_string());
         let band = band_of(2, 2, &slots);
         assert_eq!(band.result, BatchInvariance::Unmeasurable);
+        assert_eq!(
+            band.decode_tok_s, None,
+            "a slot that never came back was not timed"
+        );
         assert!(band
             .reason
             .unwrap_or_default()
@@ -820,6 +929,41 @@ mod tests {
         assert_eq!(max_batch_formed("Batch m=12"), 0);
     }
 
+    /// What V3's floor admits: `declared_min` at the perf matrix's 64.
+    const V3_POLICY: ProbePolicy = ProbePolicy {
+        declared_min: 64,
+        n_predict: 96,
+        max_constant_run: 5,
+    };
+
+    /// `n_predict` distinct tokens, every step decided by a margin of 1.
+    fn v3_reference() -> Vec<TokenLogprob> {
+        (0..V3_POLICY.n_predict)
+            .map(|i| tok(&format!("t{i} "), 1.0))
+            .collect()
+    }
+
+    /// A band of `c` slots streaming `slot` against `m1`, each timed at `rate`.
+    fn v3_band(c: u32, m1: &[TokenLogprob], slot: &[TokenLogprob], rate: Option<f64>) -> ProbeBand {
+        let slots: Vec<SampleResult> = (0..c).map(|_| timed(slot.to_vec(), rate)).collect();
+        evaluate_band(c, c, m1, &slots, &V3_POLICY)
+    }
+
+    fn v3_passed(c: u32, rate: f64) -> ProbeBand {
+        v3_band(c, &v3_reference(), &v3_reference(), Some(rate))
+    }
+
+    /// A clean run whose c=4 band decodes at `c4_rate` and the rest at 40.
+    fn v3_bands(c4_rate: Option<f64>) -> Vec<ProbeBand> {
+        let m1 = v3_reference();
+        vec![
+            v3_passed(1, RATE),
+            v3_band(4, &m1, &m1, c4_rate),
+            v3_passed(8, RATE),
+            v3_passed(16, RATE),
+        ]
+    }
+
     fn witness(bands: Vec<ProbeBand>) -> ProbeWitness {
         let reference = ProbeReference {
             stable: true,
@@ -840,10 +984,10 @@ mod tests {
                 temperature: 0.0,
                 seed: 0,
                 ignore_eos: true,
-                max_tokens: POLICY.n_predict,
+                max_tokens: V3_POLICY.n_predict,
                 top_logprobs: 2,
             },
-            declared_min: POLICY.declared_min,
+            declared_min: V3_POLICY.declared_min,
             env: env_block(),
             result: run_verdict(&reference, &bands),
             reference,
@@ -856,7 +1000,7 @@ mod tests {
     /// still record `divergence_at`, or V3 reads it as unmeasured.
     #[test]
     fn a_clean_run_writes_a_witness_the_v3_shape_check_admits() {
-        let w = witness(vec![passed(1), passed(4), passed(8), passed(16)]);
+        let w = witness(v3_bands(Some(RATE)));
         assert_eq!(w.result, BatchInvariance::Pass);
         let text = serde_json::to_string_pretty(&w).expect("serialize");
         assert_eq!(check_v3_shape(&text), ShapeVerdict::Admissible, "{text}");
@@ -868,12 +1012,14 @@ mod tests {
     /// the margin. Without the margin it would not be.
     #[test]
     fn a_near_tie_divergence_is_admitted_by_v3_only_with_its_margin() {
-        let mut m1 = reference();
-        m1[1] = tok("b", 0.01);
-        let mut flipped = reference();
+        let mut m1 = v3_reference();
+        m1[1] = tok("t1 ", 0.01);
+        let mut flipped = v3_reference();
         flipped[1] = tok("~", 0.01);
-        let flip = evaluate_band(8, 8, &m1, &copies(8, &flipped), &POLICY);
-        let mut w = witness(vec![passed(1), passed(4), flip, passed(16)]);
+        let flip = v3_band(8, &m1, &flipped, Some(RATE));
+        assert_eq!(flip.divergence_at, Some(1), "{flip:?}");
+        let mut w = witness(v3_bands(Some(RATE)));
+        w.bands[2] = flip;
         let text = serde_json::to_string(&w).expect("serialize");
         assert_eq!(check_v3_shape(&text), ShapeVerdict::Admissible, "{text}");
         w.bands[2].top2_margin_at_divergence = None;
@@ -886,7 +1032,7 @@ mod tests {
 
     #[test]
     fn missing_identity_stays_null_and_v3_names_it() {
-        let mut w = witness(vec![passed(1), passed(4), passed(8), passed(16)]);
+        let mut w = witness(v3_bands(Some(RATE)));
         w.commit = None;
         let text = serde_json::to_string(&w).expect("serialize");
         assert!(text.contains("\"commit\":null"), "{text}");
@@ -894,6 +1040,34 @@ mod tests {
             check_v3_shape(&text),
             ShapeVerdict::NotAdmissible(vec!["identity field commit missing".to_string()])
         );
+    }
+
+    /// FALSIFY-SSP-017 through the producer: the rates the probe records are
+    /// the rates V3 reads. c=4 at 49% of c=1 is refused by name; at 50% it is
+    /// admitted; one untimed c=4 slot leaves S7 unmeasured.
+    #[test]
+    fn the_band_rates_the_probe_writes_are_what_v3_s7_reads() {
+        let check = |c4_rate| {
+            check_v3_shape(&serde_json::to_string(&witness(v3_bands(c4_rate))).expect("serialize"))
+        };
+        assert_eq!(
+            check(Some(19.6)),
+            ShapeVerdict::NotAdmissible(vec![
+                "S7 (FALSIFY-CB-004): per-request decode at c=4 is 19.6 tok/s, 49.0% of c=1's 40 tok/s; needs at least 50%".to_string()
+            ])
+        );
+        assert_eq!(check(Some(20.0)), ShapeVerdict::Admissible);
+        let unmeasured = ShapeVerdict::NotAdmissible(vec![
+            "S7 (FALSIFY-CB-004) is unmeasured: no positive per-request decode_tok_s at c=4"
+                .to_string(),
+        ]);
+        assert_eq!(check(None), unmeasured);
+        let mut w = witness(v3_bands(Some(RATE)));
+        w.bands[1].slots[2].decode_tok_s = None;
+        w.bands[1].decode_tok_s = band_decode_tok_s(&w.bands[1].slots);
+        let text = serde_json::to_string(&w).expect("serialize");
+        assert!(text.contains("\"decode_tok_s\":null"), "{text}");
+        assert_eq!(check_v3_shape(&text), unmeasured);
     }
 
     #[test]
