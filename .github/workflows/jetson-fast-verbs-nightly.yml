@@ -80,9 +80,9 @@ jobs:
         run: |
           set -euo pipefail
           export CARGO_TARGET_DIR="$HOME/.cache/aprender-jetson-target"
-          # -j 4: a 4B-capable Orin still runs out of RAM linking the cuda
-          # crates at full parallelism.
-          cargo build --release --features cuda --bin apr -j 4
+          # -j 2: the jetson-edge Orin has 8 GB shared by CPU and GPU; wider
+          # parallelism risks the OOM killer while linking the cuda crates.
+          cargo build --release --features cuda --bin apr -j 2
 
       - name: Fetch the pinned 4B GGUF and verify size and sha256
         shell: bash
