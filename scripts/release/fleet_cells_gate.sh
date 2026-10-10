@@ -35,10 +35,32 @@ function pylines(s) {
 function pystrip(s) { sub("^" pyws() "+", "", s); sub(pyws() "+$", "", s); return s }
 '
 
+# The two conversions the verdict needs, in bash arithmetic: proleptic Gregorian, as python's
+# datetime is (Hinnant's days_from_civil / civil_from_days). Not date(1): bashrs 7.4.1, the CI pin,
+# reads every date(1) call as DET002, even one that only converts a time it was given. Fields are
+# read 10#, because bash reads a leading 0 as octal.
+fleet_cells_day() {  # <epoch seconds, 0 or more> -> YYYY-MM-DD
+    local z=$(( 10#$1 / 86400 + 719468 )) era doe yoe doy mp m
+    era=$(( z / 146097 )); doe=$(( z - era * 146097 ))
+    yoe=$(( (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365 ))
+    doy=$(( doe - (365 * yoe + yoe / 4 - yoe / 100) )); mp=$(( (5 * doy + 2) / 153 ))
+    m=$(( mp < 10 ? mp + 3 : mp - 9 ))
+    printf '%04d-%02d-%02d\n' "$(( era * 400 + yoe + (m <= 2) ))" "$m" "$(( doy - (153 * mp + 2) / 5 + 1 ))"
+}
+fleet_cells_epoch() {  # <YYYY-MM-DDTHH:MM:SSZ, fields in range> -> epoch seconds, or -1 for a day the month lacks
+    local s=$1 y m d era yoe days
+    local -a mdays=(0 31 28 31 30 31 30 31 31 30 31 30 31)
+    y=$(( 10#${s:0:4} )); m=$(( 10#${s:5:2} )); d=$(( 10#${s:8:2} ))
+    if (( d > mdays[m] + (m == 2 && ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0)) )); then echo -1; return; fi
+    y=$(( y - (m <= 2) )); era=$(( (y >= 0 ? y : y - 399) / 400 )); yoe=$(( y - era * 400 ))
+    days=$(( era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1 - 719468 ))
+    echo $(( days * 86400 + 10#${s:11:2} * 3600 + 10#${s:14:2} * 60 + 10#${s:17:2} ))
+}
+
 # fleet_cells_verdict <cells text> <waivers text> <now epoch> -> `ok ...` rc 0 | `refuse ...` rc 1
 # bash + awk only (ARB-AUD-10: no interpreter beyond the shell in this gate; rc_cut.sh, its caller,
-# still runs python3 elsewhere). date(1) parses
-# the stamp; awk gets the texts and the max age through ENVIRON (-v expands backslashes). The judge it replaced was a
+# still runs python3 elsewhere). The two helpers above convert
+# the stamp and the clock; awk gets the texts and the max age through ENVIRON (-v expands backslashes). The judge it replaced was a
 # python3 heredoc, so awk reads the texts as python did, byte for byte under LC_ALL=C: lines break
 # where str.splitlines() breaks (CRLF, CR, VT, FF, FS/GS/RS, NEL, LS, PS), "blank" is str.strip()'s
 # whitespace, fields compare as strings, never as numbers, and FLEET_CELLS_MAX_AGE_H must be a
@@ -46,12 +68,12 @@ function pystrip(s) { sub("^" pyws() "+", "", s); sub(pyws() "+$", "", s); retur
 fleet_cells_verdict() {
     local stamp measured=-1 today
     # python's int() + fromtimestamp(utc) refused a clock that is not an integer, or past year 9999,
-    # with rc 1; date(1) takes both (1.5, @1000000000000 = year 33658), so refuse them here
+    # with rc 1; refuse both here (1.5, 1000000000000 = year 33658)
     if ! [[ $3 =~ ^[0-9]{1,12}$ ]] || (( 10#$3 > 253402300799 )); then
         printf 'refuse clock %q is not a whole epoch second up to 9999-12-31T23:59:59Z\n' "$3"
         return 1
     fi
-    today=$(date -u -d "@$3" +%F) || return 2
+    today=$(fleet_cells_day "$3")
     stamp=$(CELLS=$1 LC_ALL=C awk "$FLEET_CELLS_AWK_LIB"'
     BEGIN {
         nl = split(pylines(ENVIRON["CELLS"]), L, "\n")
@@ -60,8 +82,9 @@ fleet_cells_verdict() {
             s = L[i]; sub(/^# measured/, "", s); print pystrip(s); exit
         }
     }')
-    if [[ $stamp =~ ^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$ ]] && [ "${stamp:0:4}" != 0000 ]; then
-        measured=$(date -u -d "$stamp" +%s 2>/dev/null) || measured=-1
+    if [[ $stamp =~ ^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$ ]]; then
+        # a stamp before 1970, year 0000 included (python had no year 0), is negative: no stamp
+        measured=$(fleet_cells_epoch "$stamp")
     fi
     CELLS=$1 WAIVERS=$2 STAMP=$stamp MAX_AGE_H=${FLEET_CELLS_MAX_AGE_H:-6} LC_ALL=C \
         awk -v now="$3" -v measured="$measured" -v today="$today" "$FLEET_CELLS_AWK_LIB"'
@@ -168,6 +191,14 @@ self_test() {
     now=1.5 row 1 'a clock that is not an integer refuses' "$S\nh2\tapr\tGREEN\t\n"
     now=1000000000000 row 1 'a clock past year 9999 refuses, even under a *\t* waiver to 9999' '# measured 2026-09-24T09:00:00Z\nh2\tapr\tGREEN\t\n' '*\t*\t9999-12-31\tx\n'
     now=253402300799 row 0 'the last second of year 9999 is still a clock' '# measured 9999-12-31T23:58:00Z\nh2\tapr\tGREEN\t\n'
+    # The calendar arithmetic that replaced date(1): each row flips if a leap or month rule is dropped.
+    now=1835442000 row 0 'a leap day is a stamp (2028-02-29)' '# measured 2028-02-29T12:00:00Z\nh2\tapr\tGREEN\t\n'
+    now=951829200 row 0 'a leap day in a year divisible by 400 is a stamp (2000-02-29)' '# measured 2000-02-29T12:00:00Z\nh2\tapr\tGREEN\t\n'
+    now=1772366400 row 1 'a day the year lacks is no stamp (2026-02-29)' '# measured 2026-02-29T12:00:00Z\nh2\tapr\tGREEN\t\n'
+    now=4107585600 row 1 'a century year is not a leap year (2100-02-29)' '# measured 2100-02-29T12:00:00Z\nh2\tapr\tGREEN\t\n'
+    now=1777636800 row 1 'a day a 30-day month lacks is no stamp (2026-04-31)' '# measured 2026-04-31T12:00:00Z\nh2\tapr\tGREEN\t\n'
+    now=4107542400 row 0 'the clock 2100-03-01 is that day: a waiver to it covers' '# measured 2100-02-28T23:00:00Z\nh2\tapr\tRED\told\n' 'h2\tapr\t2100-03-01\tx\n'
+    now=4107542400 row 1 'and is not 2100-02-29: a waiver to that day has expired' '# measured 2100-02-28T23:00:00Z\nh2\tapr\tRED\told\n' 'h2\tapr\t2100-02-29\tx\n'
     # MUTANTS: the refusal made a no-op must let the RED cell through.
     d=$(mktemp -d) || return 2
     for m in 's/                else add(c\[1\] "\/" c\[2\] " RED: "/                else ("\/" " RED: "/' 's/^            exit 1$/            exit 0/'; do
