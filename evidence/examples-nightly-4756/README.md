@@ -47,9 +47,12 @@ whose stdout or stdin is not a terminal, takes the shorter path:
 
 - **pipeline_tui.** Its correctness check generated `GenerationConfig::default()`'s 100
   tokens (`crates/aprender-serve/src/generate/mod.rs:154`) through the unoptimized forward
-  pass. On 4a79227e9f that took a 141 s run stage, out of the 180 s bound. A debug build now
-  generates one token (`pipeline_tui.rs:19`, `:458`), and the run stage is 5 s. A release
-  build still generates 100.
+  pass. On 4a79227e9f the row's `secs` in the cold run, build included, were 137, and its run
+  stage timed alone afterwards on the same tree took 141 s (`run-stage-secs-4a79227e9f.txt`),
+  against the 180 s bound. The aprender-serve library had been built for an earlier row, so
+  the row's build was the example alone. A debug build now generates one token
+  (`pipeline_tui.rs:19`, `:458`), and the run stage is 5 s. A release build still generates
+  100.
 - **Bare runs with no arguments.** qa_verify, llama2-train and test_mac_worker keep their
   default only in a release build at a terminal (`qa_verify.rs:394`, `llama2/train.rs:236`,
   `test_mac_worker.rs:16`). Otherwise they print their usage and the row is needs-args.
@@ -62,13 +65,46 @@ whose stdout or stdin is not a terminal, takes the shorter path:
 Release builds of the 36 rows were not run here. That their workloads are unchanged rests
 on the gate lines cited above.
 
-## A bug fix for every build
+## Bug fixes for every build
 
-performance_parity's Q4_0 and Q8_0 benchmarks built 20×32 = 640 and 36×32 = 1152 bytes. The
-dequantizers take 18-byte and 34-byte blocks and return an error for a length that is not a
-multiple (`crates/aprender-serve/src/quantize/dequant.rs:49`, `:111`). 640 and 1152 are not
-multiples, so `.expect` panicked in debug and release builds alike, and the failing nightly
-row was fail. The sizes are now 18×32 and 34×32 (`performance_parity.rs:514`, `:522`).
+These change debug and release builds alike. Each one lets a run that stopped on an error
+reach its end. None of them shortens a run.
+
+- **performance_parity.** Its Q4_0 and Q8_0 benchmarks built 20×32 = 640 and 36×32 = 1152
+  bytes. The dequantizers take 18-byte and 34-byte blocks and return an error for a length
+  that is not a multiple (`crates/aprender-serve/src/quantize/dequant.rs:49`, `:111`). 640
+  and 1152 are not multiples, so `.expect` panicked, and the failing nightly row was fail. The
+  sizes are now 18×32 and 34×32 (`performance_parity.rs:514`, `:522`).
+- **agent_demo.** Its fallback driver's context window was 4096 tokens. The runtime builds the
+  window with the manifest's `max_tokens` as the output reserve
+  (`crates/aprender-orchestrate/src/agent/runtime.rs:340`), the default manifest's
+  `max_tokens` is 4096 (`agent/manifest.rs:110`), and the input budget is the window minus
+  the reserve (`serve/context.rs:32`). That left 0 input tokens, so every run stopped on
+  `ContextOverflow`. The window is now 32 768 (`agent_demo.rs:399`).
+- **parity_035.** With a server up and the model not pulled, `/api/generate` answers with an
+  error object that the response decoder cannot read, and the run failed on the decode. The
+  example now asks `/api/show` first. Only a 404 there is reported as `Model not found` (exit
+  1). A failed request or any other status is returned as an error, a failure of the server
+  (`parity_035_m4_verification.rs`, the block after the TCP probe).
+
+## Every other change, by kind
+
+- **A usage line and exit 2 for a missing required argument**, where the example panicked or
+  returned an error: check_layer4, constrain_mask_overhead, qwen35_parity, ssc_eval,
+  ssc_preflight. rex, qwen35_prefill_parity and think_ab already printed a usage line and now
+  start it with `Usage`, the word the classifier's needs-args pattern matches
+  (`^(Usage|...)`).
+- **A message naming what is missing**: qa_chat and qa_serve (`Model not found: pass --model
+  PATH ...`), publish_shell_safety (`[MISSING] <name> not found at <path>`), finetune_real
+  (`No tokenizer found in HF cache`), profile_cuda_trainer (`requires the 'cuda' feature`),
+  aprender-gpu's driver loader (`CUDA driver not found (libcuda.so)`), and parity_035's
+  `Ollama server not found at ...` when nothing listens on the port.
+- **Optional arguments.** `qa_verify -- --all` and `test_mac_worker <host:port>` run the full
+  workload from any build, `api_server -- --serve` keeps serving with no terminal, and
+  buggy_server takes an iteration count as its bound. The book pages for qa_verify now show
+  `--all`.
+- **The gated shorter paths** listed under "What a debug build or a non-terminal run does
+  differently".
 
 ## performance_parity on a GPU
 
@@ -90,10 +126,10 @@ are not gated on the GPU (`performance_parity.rs:66` onward).
 
 - **The 10 CUDA rows with no libcuda.** All 10 are needs-hardware. aprender-gpu reports
   `CUDA driver not found (libcuda.so)` (`crates/aprender-gpu/src/driver/context.rs:48`), and
-  the classifier's `libcuda\.so` pattern matches it. In run 37169058144 these rows got
-  `CUDA driver not found` with no `(libcuda.so)`. test_gemv_correctness showed that text on
-  its row, and the other nine showed only their first output line. No pattern matched, so all
-  ten were fail.
+  the classifier's `libcuda\.so` pattern matches it. In run 37169058144 all ten were fail, so
+  no pattern matched any of their output. test_gemv_correctness's row shows `CUDA driver not
+  found` with no `(libcuda.so)`. The other nine rows show only their first output line, so
+  that log does not show what they printed after it.
 - **parity_035 with no Ollama server.** `parity_035-no-server.txt` is the same tree in a
   private network namespace with loopback up and nothing listening. The example printed
   `Ollama server not found at http://localhost:11434 ...` and exited rc 1 in 1 s. The
