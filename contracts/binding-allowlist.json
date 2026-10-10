@@ -3,17 +3,17 @@
     {
       "symbol": "realizar::arch_requirements_fallback::WeightRole::field_name",
       "reason": "ghost: no `mod arch_requirements_fallback` or `use \u2026 arch_requirements_fallback` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
+      "ticket": "#5008"
     },
     {
       "symbol": "realizar::arch_requirements_fallback::required_roles",
       "reason": "ghost: no `mod arch_requirements_fallback` or `use \u2026 arch_requirements_fallback` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4502"
+      "ticket": "#5008"
     },
     {
       "symbol": "realizar::cuda::executor::layers::prefill::CudaExecutor::chunked_prefill",
       "reason": "ghost: no `fn chunked_prefill` in an `impl CudaExecutor` or `trait CudaExecutor` in `crates/aprender-serve/src/cuda/executor/layers/prefill.rs`",
-      "ticket": "#4502"
+      "ticket": "#5007"
     }
   ]
 }
