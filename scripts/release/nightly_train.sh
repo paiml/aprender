@@ -690,6 +690,8 @@ self_test() {
     # row NAME EXPECT-RC NEEDLE FORBID -- CMD...
     row() {
         local name="$1" expect="$2" needle="$3" forbid="$4"; shift 5
+        # under --mutants one broken row is the kill: the rest of the table is skipped (it cannot turn the run green)
+        if [ "$fail" -gt 0 ] && [ -n "${NT_MUTANT_RUN:-}" ]; then return 0; fi
         o="$("$@" 2>&1)"; rc=$?
         if [ "$rc" != "$expect" ]; then printf '  BROKE %-44s expected exit %s got %s\n%s\n' "$name" "$expect" "$rc" "$o"; fail=$((fail + 1)); return 0; fi
         case "$o" in *"$needle"*) ;; *) printf '  BROKE %-44s never said: %s\n%s\n' "$name" "$needle" "$o"; fail=$((fail + 1)); return 0 ;; esac
@@ -1202,10 +1204,10 @@ mutants() {
         sed -e "$expr" "$SCRIPT_PATH" > "$tmp/nightly_train.sh"
         if cmp -s "$SCRIPT_PATH" "$tmp/nightly_train.sh"; then printf '  BROKE %-44s changed nothing: its pattern no longer matches\n' "$name"; fail=$((fail + 1)); continue; fi
         if ! bash -n "$tmp/nightly_train.sh" 2>/dev/null; then printf '  BROKE %-44s does not parse\n' "$name"; fail=$((fail + 1)); continue; fi
-        o="$(bash "$tmp/nightly_train.sh" --self-test 2>&1)"; rc=$?
+        o="$(NT_MUTANT_RUN=1 bash "$tmp/nightly_train.sh" --self-test 2>&1)"; rc=$?
         case "$rc:$o" in
             0:*) printf '  BROKE %-44s SURVIVED: the case table stayed green\n' "$name"; fail=$((fail + 1)) ;;
-            *"  BROKE "*) printf '  ok    %-44s killed, %s row(s) broke\n' "$name" "$(printf '%s\n' "$o" | awk '/^  BROKE /{n++} END{print n+0}')"; pass=$((pass + 1)) ;;
+            *"  BROKE "*) printf '  ok    %-44s killed at %s\n' "$name" "$(printf '%s\n' "$o" | awk '/^  BROKE /{print $2; exit}')"; pass=$((pass + 1)) ;;
             *) printf '  BROKE %-44s exit %s with no broken row: not a kill\n' "$name" "$rc"; fail=$((fail + 1)) ;;
         esac
     done < <(printf '%s\n' "$NT_MUTANTS")
