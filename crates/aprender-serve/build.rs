@@ -200,6 +200,7 @@ fn generate_arch_requirements(req: &ArchRequirements) -> String {
          /// a contract whose constraint matrix leaves one of the eight triples out.\n\
          #[must_use]\n\
          pub fn required_roles(arch: &ArchConstraints) -> &'static [WeightRole] {\n\
+         \x20   contract_pre_constraint_matrix_exhaustiveness!();\n\
          \x20   match (arch.has_qk_norm, arch.has_bias, arch.is_moe) {\n",
     );
     for (cell_name, cell) in &cells {
