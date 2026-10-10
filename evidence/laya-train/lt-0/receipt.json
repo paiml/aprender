@@ -1,0 +1,19 @@
+{
+  "row": "LT-0",
+  "spec": "APR-LAYA-TRAIN-001",
+  "state": "measured",
+  "main_sha": "e39f91a65e",
+  "pr4941_head": "e7730a3a4c",
+  "pr4634_head": "dad7f6a5e0",
+  "host": "noah-Lambda-Vector",
+  "measured_utc": "2026-10-10T11:00Z",
+  "report": "evidence/laya-train/lt-0/report.md",
+  "enforcing": ["scripts/check_laya_train_rules.sh --self-test"],
+  "ci_fragment": "ci/explicit-test-commands.d/795-laya-train-rules-self-test.cmd",
+  "command": "bash scripts/check_laya_train_rules.sh --base origin/main --head HEAD",
+  "self_test_cases": 21,
+  "py_added": 0,
+  "ops_absent_core": 9,
+  "carry_on_main": false,
+  "questions": ["Q1 surface", "Q2 CPU pool host", "Q3 E8 coupling", "Q4 dataset licence"]
+}
