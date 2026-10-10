@@ -556,6 +556,10 @@ jobs:
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/gpu.junit.xml"
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
+        # #5048: the pass rule needs at least one passing test. `test result: ok. 0
+        # passed` (every test cfg-gated out) used to pass. cargo's exit status is
+        # still not read, on purpose: the SIGSEGV at exit makes it non-zero on a
+        # good run, so the grep on the result line is the verdict.
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -571,7 +575,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
+            bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -Eq "test result: ok\. [1-9][0-9]* passed" /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
         if: steps.tier.outputs.tier == 'full'
         # #2465: the four FALSIFY-AUTH targets were appended here because they
