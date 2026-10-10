@@ -41,6 +41,16 @@ tracked_ignored() {
   git -C "$1" ls-files -i -c --exclude-standard
 }
 
+# The subset cargo compiles from a packaged crate: Rust sources under src/, the
+# build script and its siblings, and the manifest. One of these that is tracked
+# AND ignored ships from this checkout but vanishes from any tree rebuilt with
+# `git add` (a `git archive` re-import, a vendored copy): the crate then fails
+# its own package verify with E0583 (#5093, three crates at once). No baseline:
+# the count of these is zero and must stay zero.
+packaged_sources() {
+  grep -E '^(crates/[^/]+/)?(src/.*\.rs|build[a-z_]*\.rs|Cargo\.toml)$' || true
+}
+
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--self-test" ]; then
   TD="$(mktemp -d)"; [ -d "$TD" ] || { printf 'FAIL: no temp dir\n' >&2; exit 1; }
@@ -75,8 +85,37 @@ if [ "${1:-}" = "--self-test" ]; then
     printf 'FAIL  row 2 still reports: %s\n' "$(tracked_ignored "$TD")"; fails=1
   fi
 
+  # Row 3: the #5093 shape. A crate-local .gitignore claims a tracked source
+  # file; the packaged-source filter must name it.
+  mkdir -p "$TD/crates/c/src"
+  printf 'mod g;\n' > "$TD/crates/c/src/lib.rs"
+  printf '\n' > "$TD/crates/c/src/g.rs"
+  printf 'src/g.rs\n' > "$TD/crates/c/.gitignore"
+  git -C "$TD" add -f crates 2>/dev/null
+  git -C "$TD" commit -qm z 2>/dev/null
+  got="$(tracked_ignored "$TD" | packaged_sources)"
+  if [ "$got" = "crates/c/src/g.rs" ]; then
+    printf 'ok    row 3 tracked-but-ignored crate source reported as packaged\n'
+  else
+    printf 'FAIL  row 3 got [%s], expected [crates/c/src/g.rs]\n' "$got"; fails=1
+  fi
+
+  # Row 4: scratch that is tracked and ignored is NOT a packaged source, so
+  # the hard row stays quiet on what the ratchet alone governs.
+  printf '{}\n' > "$TD/crates/c/src/notes.json"
+  printf 'src/g.rs\nsrc/notes.json\n' > "$TD/crates/c/.gitignore"
+  git -C "$TD" rm --cached -q crates/c/src/g.rs 2>/dev/null
+  git -C "$TD" add -f crates/c/.gitignore crates/c/src/notes.json 2>/dev/null
+  git -C "$TD" commit -qm w 2>/dev/null
+  got="$(tracked_ignored "$TD" | packaged_sources)"
+  if [ -z "$got" ] && [ -n "$(tracked_ignored "$TD")" ]; then
+    printf 'ok    row 4 tracked-ignored non-source not reported as packaged\n'
+  else
+    printf 'FAIL  row 4 got [%s], expected empty\n' "$got"; fails=1
+  fi
+
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-  printf '\nSELF-TEST PASSED (2/2)\n'
+  printf '\nSELF-TEST PASSED (4/4)\n'
   exit 0
 fi
 
@@ -89,6 +128,17 @@ total_tracked="$(git -C "${REPO_ROOT}" ls-files | grep -c . || true)"
 # Vacuity: `ls-files` returning nothing would make any count trivially zero.
 if [ "$total_tracked" -lt 1000 ]; then
   printf '\nFAIL (vacuity): only %s tracked file(s) seen; git is not reporting the repo.\n' "$total_tracked"
+  exit 1
+fi
+
+# Hard row, before the ratchet and outside it: a packaged source that is
+# tracked AND ignored fails at any count (#5093).
+SRC="$(printf '%s\n' "$FOUND" | packaged_sources)"
+if [ -n "$SRC" ]; then
+  printf '\nFAIL: a packaged crate source is tracked AND ignored. A tree rebuilt\n'
+  printf 'with `git add` drops it and the crate fails its package verify (E0583).\n'
+  printf 'Delete the ignore rule that claims it:\n\n'
+  printf '%s\n' "$SRC" | sed 's|^|  |'
   exit 1
 fi
 
