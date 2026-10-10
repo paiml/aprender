@@ -51,11 +51,6 @@
       "ticket": "#4502"
     },
     {
-      "symbol": "entrenar::statistics",
-      "reason": "ghost: no `fn statistics` (free or in an impl) or item `statistics` in `crates/aprender-train/src/lib.rs`",
-      "ticket": "#4502"
-    },
-    {
       "symbol": "realizar::apr::cuda_part_02_part_03::AprV2ModelCuda::upload_quantized_weights_to_gpu",
       "reason": "ghost: no `mod cuda_part_02_part_03` or `use \u2026 cuda_part_02_part_03` in `crates/aprender-serve/src/apr/mod.rs`",
       "ticket": "#4502"

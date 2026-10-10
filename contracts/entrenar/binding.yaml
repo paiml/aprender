@@ -261,8 +261,8 @@ bindings:
   notes: Auto-inferred by pv infer
 - contract: layernorm-kernel-v1.yaml
   equation: statistics
-  module_path: entrenar
-  function: statistics
+  module_path: entrenar::autograd::ops::normalize
+  function: layer_norm
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: kmeans-kernel-v1.yaml
