@@ -556,12 +556,13 @@ SHIM
 
 st_iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }  # bashrs disable-line=DET002
 st_route() { printf '%s\t%s\n' "$1" "$2" >> "$ST/u/routes.tsv"; }
-# st_fail_jobs <run id>: that run's jobs page answers with a gh error (HTTP 502).
-st_fail_jobs() {
-    awk -F'\t' -v OFS='\t' -v p="repos/$ST_REPO/actions/runs/$1/jobs?per_page=100" \
-        '$1 == p { $2 = "@ERROR" } { print }' "$ST/u/routes.tsv" > "$ST/u/routes.new" \
-        && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
+# st_fail_route <route key>: that call answers with a gh error (HTTP 502).
+st_fail_route() {
+    awk -F'\t' -v OFS='\t' -v p="$1" '$1 == p { $2 = "@ERROR" } { print }' \
+        "$ST/u/routes.tsv" > "$ST/u/routes.new" && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
 }
+# st_fail_jobs <run id>: that run's jobs page answers with a gh error.
+st_fail_jobs() { st_fail_route "repos/$ST_REPO/actions/runs/$1/jobs?per_page=100"; }
 
 st_reset() {
     rm -rf "${ST:?}/u"
@@ -881,6 +882,18 @@ selftest_rows() {
     _rows=$((_rows + 1))
     st_check l-real-gap 1 '^  (UNCOVERED|STALE) +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
 
+    # (m) the org runner listing fails (a repo token cannot read it) and the
+    # repo listing serves the same runners: the verdict stands (rc 0), and
+    # gh's own words are in the output.
+    st_reset
+    cp "$ST/u/pages/org-runners.json" "$ST/u/pages/repo-runners.json"
+    st_fail_route "orgs/shimorg/actions/runners?per_page=100"
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check m-runners-stderr 0 '^runner listing FAILED: orgs/shimorg/actions/runners: .*HTTP 502' \
+        || _rows_bad=$((_rows_bad + 1))
+
     # (e2) a listing read that fails keeps gh's stderr too.
     st_reset; ST_ERROR=1
     st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
@@ -950,13 +963,20 @@ fi
 # ── the runners: org-scoped AND repo-scoped ─────────────────────────────────
 if [ "$MODE" = "live" ]; then
     RUNNERS="$(mktemp)"; JOBS="$(mktemp)"; LISTINGS="$(mktemp)"; AXIS_WF="$(mktemp)"
-    trap 'rm -f "$RUNNERS" "$JOBS" "$LISTINGS" "$AXIS_WF"' EXIT
+    RUNNERS_ERR="$(mktemp)"
+    trap 'rm -f "$RUNNERS" "$JOBS" "$LISTINGS" "$AXIS_WF" "$RUNNERS_ERR"' EXIT
     : > "$RUNNERS"
+    # One scope may fail while the other serves (a repo token cannot read the org
+    # listing). A failed scope is not a refusal by itself (the zero-runner probe
+    # below refuses when nothing is visible), but gh's own words stay in the
+    # output, so a short count says why it is short.
     for src in "orgs/$ORG/actions/runners" "repos/$REPO/actions/runners"; do
         api_calls=$((api_calls + 1))
-        gh api --paginate "$src?per_page=100" \
+        if ! gh api --paginate "$src?per_page=100" \
             --jq '.runners[] | select(.status=="online") | (.name) + "\t" + ([.labels[].name] | join(","))' \
-            2>/dev/null >> "$RUNNERS" || true
+            2> "$RUNNERS_ERR" >> "$RUNNERS"; then
+            printf 'runner listing FAILED: %s: %s\n' "$src" "$(gh_err "$RUNNERS_ERR")"
+        fi
     done
     sort -u -o "$RUNNERS" "$RUNNERS"
 fi
