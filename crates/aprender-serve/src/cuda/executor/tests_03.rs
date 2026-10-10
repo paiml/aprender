@@ -229,6 +229,8 @@ fn test_c14_abandoned_capture_drops_indirect_buffers() {
         Some(GpuBuffer::from_host(&executor.context, &[0u32]).expect("position_buf"));
     executor.seq_len_buf =
         Some(GpuBuffer::from_host(&executor.context, &[1u32]).expect("seq_len_buf"));
+    executor.graph_input_buf =
+        Some(GpuBuffer::from_host(&executor.context, &[0.0f32]).expect("graph_input_buf"));
 
     executor.abandon_decode_graph_capture();
 
@@ -244,7 +246,10 @@ fn test_c14_abandoned_capture_drops_indirect_buffers() {
         executor.seq_len_buf.is_none(),
         "stale seq_len_buf pins attention to seq_len 1"
     );
-    assert!(!executor.has_decode_graph());
+    assert!(
+        executor.graph_input_buf.is_none(),
+        "graph_input_buf belongs to the abandoned graph"
+    );
 }
 
 /// C14 wiring: every decode-capture failure path must go through

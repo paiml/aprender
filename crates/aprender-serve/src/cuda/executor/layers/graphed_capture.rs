@@ -68,12 +68,17 @@ impl CudaExecutor {
             eprintln!("[trueno#243] Eager forward during recording failed: {:?}", eager_err);
             // Re-prepare buffers and fall back to non-recorded eager
             let _ = self.stream.synchronize();
-            self.prepare_graph_buffers(input, position, hidden_dim, vocab_size)?;
-            let r = self.forward_all_layers_gpu_to_logits(
-                input, logits, position, num_layers, hidden_dim,
-                intermediate_dim, vocab_size, epsilon,
-            );
-            // This token used the buffers; later tokens must not (C14).
+            let r = self
+                .prepare_graph_buffers(input, position, hidden_dim, vocab_size)
+                .and_then(|()| {
+                    self.forward_all_layers_gpu_to_logits(
+                        input, logits, position, num_layers, hidden_dim,
+                        intermediate_dim, vocab_size, epsilon,
+                    )
+                });
+            // This token used the buffers; later tokens must not (C14), even when the
+            // re-prepare or the fallback failed. Wait for kernels still reading them first.
+            let _ = self.stream.synchronize();
             self.abandon_decode_graph_capture();
             return r;
         }
