@@ -181,8 +181,8 @@ impl StreamLogprobs {
     /// Holds the entry of `token`, which the stream has just received.
     ///
     /// It does not wait for the record: one that is not here when its token is
-    /// was never sent, and waiting would hang a stream whose engine keeps the
-    /// sender (a turn of the iteration scheduler, which records none).
+    /// was never sent, and waiting would hang the stream if an engine kept the
+    /// sender and recorded nothing.
     ///
     /// # Errors
     /// The engine sent no record for `token`, or the record of another token.

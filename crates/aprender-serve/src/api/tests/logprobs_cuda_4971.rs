@@ -1,7 +1,8 @@
 //! FALSIFY-LOGPROBS-CUDA-4971: chat `logprobs` on the dense CUDA backend
 //! (ASOC-INV-021), through the real router, on the direct path and through the
 //! batch scheduler: one request at a time (its m=1 path), and two at once in
-//! one m=2 batch.
+//! one m=2 batch; and on the iteration scheduler's batched path, driven
+//! directly, where requests join and recycle into slots mid-batch.
 //!
 //! Before this the CUDA backend answered a request for logprobs with 501. It
 //! needs a CUDA device and tinyllama; without either the test prints SKIP,
@@ -232,6 +233,113 @@ async fn batched_logprobs_are_served(state: &AppState) {
     same_entries(again, content, "batched again");
 }
 
+/// One request to the iteration scheduler, and the ends its tokens and (when
+/// it asks) its records arrive on.
+struct Turn {
+    max_tokens: usize,
+    tokens: tokio::sync::mpsc::Receiver<Result<u32, String>>,
+    records: Option<tokio::sync::mpsc::UnboundedReceiver<crate::gguf::logprobs::StepLogprobs>>,
+}
+
+fn turn(
+    prompt_ids: &[u32],
+    max_tokens: usize,
+    asks: bool,
+) -> (crate::api::cuda_batch_scheduler::CudaBatchRequest, Turn) {
+    use crate::api::cuda_batch_scheduler::{CudaBatchRequest, RecordSink};
+    let (token_tx, tokens) = tokio::sync::mpsc::channel(64);
+    let (logprobs, records) = if asks {
+        let (records, rx) = tokio::sync::mpsc::unbounded_channel();
+        (Some(RecordSink { top_n: 3, records }), Some(rx))
+    } else {
+        (None, None)
+    };
+    let request = CudaBatchRequest {
+        prompt_ids: prompt_ids.to_vec(),
+        // temperature 0 and no stop tokens: each turn runs to its max_tokens
+        config: crate::gguf::QuantizedGenerateConfig::deterministic(max_tokens),
+        token_tx,
+        non_streaming: false,
+        enqueue_time: std::time::Instant::now(),
+        timing_tx: None,
+        logprobs,
+    };
+    let turn = Turn {
+        max_tokens,
+        tokens,
+        records,
+    };
+    (request, turn)
+}
+
+/// The turn ran to the end, and if it asked, one record per token: steps from
+/// 0, each naming its token, the best 3 first, every logprob <= 0, and at
+/// temperature 0 the chosen one as likely as the best.
+fn turn_is_served(mut turn: Turn, path: &str) {
+    let mut tokens = Vec::new();
+    while let Ok(token) = turn.tokens.try_recv() {
+        tokens.push(token.unwrap_or_else(|e| panic!("{path}: {e}")));
+    }
+    assert_eq!(tokens.len(), turn.max_tokens, "{path}: tokens {tokens:?}");
+    let Some(mut rx) = turn.records else {
+        return;
+    };
+    let mut records = Vec::new();
+    while let Ok(record) = rx.try_recv() {
+        records.push(record);
+    }
+    assert_eq!(records.len(), tokens.len(), "{path}: one record per token");
+    for (i, (record, &token)) in records.iter().zip(&tokens).enumerate() {
+        assert_eq!(record.step, i, "{path}");
+        assert_eq!(record.chosen, token, "{path}: step {i}");
+        assert_eq!(record.top.len(), 3, "{path}: step {i}");
+        assert!(
+            record.top.windows(2).all(|w| w[0].logprob >= w[1].logprob),
+            "{path}: step {i} not best first"
+        );
+        assert!(
+            record.chosen_logprob <= 0.0 && record.top.iter().all(|t| t.logprob <= 0.0),
+            "{path}: step {i}"
+        );
+        assert!(
+            (record.chosen_logprob - record.top[0].logprob).abs() < 1e-4,
+            "{path}: step {i} chose below the best at temperature 0"
+        );
+    }
+}
+
+/// The iteration scheduler's batched path, driven directly so the path is not
+/// a race: two prompts set up together (one asking, one not), a third that
+/// joins a free slot (or recycles one, if only two fit) and a fourth that
+/// recycles the slot of whichever finishes first. Each that asked gets its own
+/// records, and the one that did not gets its tokens.
+fn iteration_scheduler_records(state: &AppState) {
+    use std::collections::VecDeque;
+    let model = state.cuda_model().expect("a CUDA state");
+    // "The capital of France is", "Hello,", "What is", "Once upon a time"
+    let (first, one) = turn(&[1, 450, 7483, 310, 3444, 338], 6, true);
+    let (second, two) = turn(&[1, 15043, 29892], 10, false);
+    let (third, three) = turn(&[1, 1724, 338], 8, true);
+    let (fourth, four) = turn(&[1, 9038, 2501, 263, 931], 8, true);
+    let (_open, mut rx) = tokio::sync::mpsc::channel(4);
+    let mut waiting = VecDeque::from([third, fourth]);
+    let mut iterations = 0;
+    crate::api::iteration_scheduler::process_iteration_batch(
+        model,
+        vec![first, second],
+        &mut rx,
+        &mut waiting,
+        3,
+        &mut iterations,
+    );
+    assert!(waiting.is_empty(), "iteration: {} never ran", waiting.len());
+    assert!(iterations > 1, "iteration: the batched path did not run");
+    turn_is_served(one, "iteration set up");
+    turn_is_served(two, "iteration set up, not asking");
+    turn_is_served(three, "iteration joined");
+    turn_is_served(four, "iteration recycled");
+}
+
 async fn traced_logprobs_are_refused(state: &AppState) {
     let request = Request::builder()
         .method("POST")
@@ -260,4 +368,5 @@ async fn the_dense_cuda_backend_serves_chat_logprobs_direct_and_scheduled() {
     traced_logprobs_are_refused(&direct).await;
     logprobs_are_served(&scheduled(&direct), "scheduled").await;
     batched_logprobs_are_served(&direct).await;
+    iteration_scheduler_records(&direct);
 }

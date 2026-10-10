@@ -438,7 +438,7 @@ pub(crate) fn token_callback(token_tx: TokenSender) -> TokenCallback {
 /// #4971: a batched slot's recorder, which sends each record to the handler
 /// ahead of the token `token_callback` sends.
 #[cfg(feature = "cuda")]
-fn slot_recorder(sink: RecordSink) -> crate::gguf::SlotRecorder {
+pub(crate) fn slot_recorder(sink: RecordSink) -> crate::gguf::SlotRecorder {
     let RecordSink { top_n, records } = sink;
     crate::gguf::SlotRecorder {
         top_n,
