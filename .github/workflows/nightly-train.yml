@@ -34,6 +34,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/release/nightly_train.sh --out "$RUNNER_TEMP/nt" --exit-verdict | tee "$RUNNER_TEMP/line"
+      - name: Every registered lane names a producer workflow on this commit (existence only)
+        if: always()
+        run: bash scripts/release/nightly_train.sh --producers
       - name: Summary
         if: always()
         run: |
