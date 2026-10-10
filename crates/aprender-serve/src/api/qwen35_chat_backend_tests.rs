@@ -1022,3 +1022,135 @@ fn second_chat_turn_resumes_from_the_first_turns_checkpoint_4274() {
         );
     }
 }
+
+/// #4971: the chat body asking for `logprobs` with two alternatives a step.
+fn logprobs_body_4971(stream: bool) -> serde_json::Value {
+    let mut body = chat_body(stream, 16);
+    body["logprobs"] = true.into();
+    body["top_logprobs"] = 2.into();
+    body
+}
+
+/// What a fresh hybrid server answers `body`: the reply, or each `data:` chunk
+/// of the stream. `None` when the model file is absent.
+async fn chat_json_4971(no_gpu: bool, body: serde_json::Value) -> Option<Vec<serde_json::Value>> {
+    let (state, _) = state_or_skip(no_gpu)?;
+    let stream = body["stream"] == true;
+    let (status, text) = post(create_router(state), "/v1/chat/completions", body).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    if !stream {
+        return Some(vec![serde_json::from_str(&text).expect("JSON")]);
+    }
+    Some(
+        text.lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .filter(|data| *data != "[DONE]")
+            .map(|data| serde_json::from_str(data).expect("SSE chunk"))
+            .collect(),
+    )
+}
+
+/// The logprobs entries across `chunks`, in order.
+fn entries_4971(chunks: &[serde_json::Value]) -> Vec<&serde_json::Value> {
+    chunks
+        .iter()
+        .filter_map(|c| c["choices"][0]["logprobs"]["content"].as_array())
+        .flatten()
+        .collect()
+}
+
+/// `usage.completion_tokens` of the reply, or of the stream's terminal chunk.
+fn completion_tokens_4971(chunks: &[serde_json::Value]) -> u64 {
+    chunks
+        .iter()
+        .find_map(|c| c["usage"]["completion_tokens"].as_u64())
+        .expect("usage.completion_tokens")
+}
+
+fn logprob_4971(entry: &serde_json::Value) -> f64 {
+    entry["logprob"].as_f64().expect("logprob")
+}
+
+/// Each entry is a greedy step's: two alternatives, every logprob <= 0, and
+/// the chosen token's logprob the best one (compared by logprob: tied logits
+/// make the token alone ambiguous).
+fn assert_greedy_entries_4971(entries: &[&serde_json::Value]) {
+    assert!(!entries.is_empty(), "the reply carries no logprobs entries");
+    for entry in entries {
+        let tops = entry["top_logprobs"].as_array().expect("top_logprobs");
+        assert_eq!(tops.len(), 2, "{entry}");
+        assert!(logprob_4971(entry) <= 0.0, "{entry}");
+        assert!(tops.iter().all(|t| logprob_4971(t) <= 0.0), "{entry}");
+        assert!(
+            (logprob_4971(entry) - logprob_4971(&tops[0])).abs() < 1e-4,
+            "{entry}"
+        );
+    }
+}
+
+/// #4971 (ASOC-INV-021) on the hybrid: one entry per reply token, asking for
+/// them changes no token, and a reply that did not ask has no `logprobs` key.
+async fn assert_logprobs_served_and_no_token_changed_4971(no_gpu: bool) {
+    let Some(with) = chat_json_4971(no_gpu, logprobs_body_4971(false)).await else {
+        return;
+    };
+    let Some(without) = chat_json_4971(no_gpu, chat_body(false, 16)).await else {
+        return;
+    };
+    assert_eq!(
+        with[0]["choices"][0]["message"]["content"],
+        without[0]["choices"][0]["message"]["content"]
+    );
+    let entries = entries_4971(&with);
+    assert_eq!(
+        entries.len() as u64,
+        completion_tokens_4971(&with),
+        "{with:?}"
+    );
+    assert_greedy_entries_4971(&entries);
+    let choice = without[0]["choices"][0].as_object().expect("choice");
+    assert!(!choice.contains_key("logprobs"), "{without:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn logprobs_4971_one_entry_per_reply_token_and_no_token_changes() {
+    assert_logprobs_served_and_no_token_changed_4971(true).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn logprobs_4971_a_stream_carries_the_entries_of_the_same_reply_unstreamed() {
+    let Some(chunks) = chat_json_4971(true, logprobs_body_4971(true)).await else {
+        return;
+    };
+    let Some(reply) = chat_json_4971(true, logprobs_body_4971(false)).await else {
+        return;
+    };
+    let streamed = entries_4971(&chunks);
+    assert_eq!(
+        streamed.len() as u64,
+        completion_tokens_4971(&chunks),
+        "{chunks:?}"
+    );
+    assert_greedy_entries_4971(&streamed);
+    let unstreamed = entries_4971(&reply);
+    assert_eq!(streamed.len(), unstreamed.len(), "{reply:?}");
+    for (s, u) in streamed.iter().zip(&unstreamed) {
+        assert_eq!(s["token"], u["token"], "{s} vs {u}");
+        assert!(
+            (logprob_4971(s) - logprob_4971(u)).abs() < 1e-4,
+            "{s} vs {u}"
+        );
+    }
+}
+
+/// The V3 witness model serves from the GPU session; its logprobs come from the
+/// same logits the step chose from.
+#[cfg(feature = "cuda")]
+#[tokio::test(flavor = "multi_thread")]
+async fn gpu_logprobs_4971_the_gpu_session_serves_them_and_changes_no_token() {
+    if !crate::cuda::CudaExecutor::is_available() {
+        eprintln!("SKIP: no CUDA device");
+        return;
+    }
+    assert_logprobs_served_and_no_token_changed_4971(false).await;
+}
