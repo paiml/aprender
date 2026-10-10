@@ -86,9 +86,9 @@ deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-feat
 deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^schedule$;^examples$
 deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^schedule$;-unknown-linux-gnu on 
 deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;.github/workflows/deep-nightly.yml;^schedule$;^deep-bins-smoke$
-dogfood;verdict;dogfood.sh --phase pre-publish + preflight R5;-;-;-
+dogfood;verdict;dogfood.sh --phase pre-publish + preflight R5;.github/workflows/dogfood-nightly.yml;^schedule$;^dogfood$
 models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^schedule$;^models$
-readiness;verdict;release_readiness.sh, preflight R8;-;-;-
+readiness;verdict;release_readiness.sh, preflight R8;.github/workflows/readiness-nightly.yml;^workflow_run$;^readiness$
 milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
 cleanroom-cpu;verdict;clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-cpu$
 cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-gpu$

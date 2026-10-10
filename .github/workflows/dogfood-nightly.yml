@@ -77,7 +77,7 @@ jobs:
           cp build.log "out/report_$STAMP.log"
           PLANT
           git add scripts/planted/det002.sh
-          git -c core.hooksPath=/dev/null -c user.name=dogfood-nightly -c user.email=noreply@paiml.com \
+          git -c user.name=dogfood-nightly -c user.email=noreply@paiml.com \
             commit -q -m "planted: DET002 falsifier (job-local, never pushed)"
           echo "planted at $(git rev-parse --short HEAD)"
 
@@ -122,6 +122,5 @@ jobs:
           name: dogfood-receipt
           path: |
             .dogfood/receipt-*.json
-            .dogfood/receipt-*.rows.tsv
             ${{ runner.temp }}/dogfood/*.log
           if-no-files-found: error
