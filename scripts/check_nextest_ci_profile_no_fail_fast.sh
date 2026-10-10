@@ -125,7 +125,11 @@ def load_minimal(path):
             if bare.count('"') % 2 or bare.count("'") % 2:
                 raise ValueError("line %d: unterminated string" % n)
             if cur is None:
-                raise ValueError("line %d: top-level key %r is outside this reader's scope" % (n, key))
+                # nextest's own top-level keys (`experimental`, `nextest-version`) cannot
+                # reach [profile.ci]; a top-level `profile` can, as an inline table.
+                if key == "profile":
+                    raise ValueError("line %d: top-level key %r is outside this reader's scope" % (n, key))
+                continue
             if cur != "profile.ci":
                 continue
             v = bare.split("#", 1)[0].strip() if not val.lstrip().startswith(('"', "'")) else val.strip()
@@ -216,6 +220,10 @@ if [ "${1:-}" = "--self-test" ]; then
             $'[profile.ci]\nretries = 2\nfail-fast = false\nslow-timeout = { period = "60s", terminate-after = 20 }\nstatus-level = "slow"\n[profile.ci.junit]\npath = "junit.xml"\n'
         row 2 "[[profile.ci]] (an array of tables, not the profile) -> ENV rc=2, never a pass" $'[[profile.ci]]\nfail-fast = false\n'
         row 2 "unparseable TOML -> ENV rc=2, never a pass"                $'[profile.ci\nfail-fast = false\n'
+        row 0 "a top-level nextest key before [profile.ci] -> PASS (EXT-02's experimental = setup-scripts)" \
+            $'experimental = ["setup-scripts"]\n[profile.ci]\nretries = 2\nfail-fast = false\n'
+        row 2 "an inline top-level profile that redefines [profile.ci] -> ENV rc=2, never a pass" \
+            $'profile = { ci = { "fail-fast" = true } }\n[profile.ci]\nfail-fast = false\n'
         # and the real config, so a red tree cannot hide behind green fixtures
         n=$((n + 1)); rc=0; judge "$CONF" > /dev/null 2>&1 || rc=$?
         [ "$rc" -eq 0 ] && printf 'ok    row %-2s rc=0  [%s] the real %s is GREEN\n' "$n" "$READER" "${CONF#"$ROOT/"}" \
