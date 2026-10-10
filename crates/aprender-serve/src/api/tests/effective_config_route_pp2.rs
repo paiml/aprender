@@ -529,7 +529,8 @@ async fn qwen35_cpu_session_reports_cpu_on_both_routes_4254() {
     let mapped = Arc::new(MappedGGUFModel::from_path(&model_path).expect("map the GGUF"));
     let vocab = mapped.model.vocabulary().expect("vocabulary");
     // `no_gpu = true`: the CPU path, which is what the v0.69.1 CPU asset ran.
-    let session = Qwen35Session::load(&mapped, true).expect("load the hybrid");
+    let session = Qwen35Session::load_cached(std::path::Path::new(&model_path), &mapped, true)
+        .expect("load the hybrid");
     let state = AppState::with_qwen35_session(session, mapped, vocab).expect("app state");
 
     let (status, cfg) = get_json(state.clone(), "/v1/effective-config").await;

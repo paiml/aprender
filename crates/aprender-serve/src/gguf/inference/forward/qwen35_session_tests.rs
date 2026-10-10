@@ -103,7 +103,8 @@ fn a_prompt_the_declared_context_cannot_hold_is_refused_whole() {
 #[test]
 fn cpu_a_turn_that_extends_the_last_one_reuses_the_state_and_matches_one_shot() {
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     assert!(!session.on_gpu(), "--no-gpu is the CPU route");
     let config = greedy(6);
 
@@ -143,7 +144,8 @@ fn cpu_a_turn_that_extends_the_last_one_reuses_the_state_and_matches_one_shot() 
 #[test]
 fn cpu_a_turn_that_does_not_extend_resets_in_place_and_matches_one_shot() {
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     let config = greedy(6);
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
     session
@@ -162,7 +164,8 @@ fn cpu_a_turn_that_does_not_extend_resets_in_place_and_matches_one_shot() {
 #[test]
 fn on_token_returning_false_ends_the_turn_after_that_token() {
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
     let mut seen = Vec::new();
     let t = session
@@ -207,7 +210,8 @@ fn re_rendered_turn_two(mapped: &MappedGGUFModel, p1: &[u32]) -> Vec<u32> {
 fn cpu_an_identical_prompt_again_resumes_at_its_generation_header_and_matches_one_shot() {
     // #4214: the same prompt twice cost the whole prefill twice.
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     let config = greedy(6);
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
     let t1 = session
@@ -230,7 +234,8 @@ fn cpu_an_identical_prompt_again_resumes_at_its_generation_header_and_matches_on
 fn cpu_a_re_rendered_turn_two_resumes_at_turn_ones_header_and_matches_one_shot() {
     // #4274: serve re-renders the history, so turn 2 never extended turn 1.
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     let config = greedy(6);
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
     session
@@ -282,7 +287,8 @@ mod gpu {
             eprintln!("SKIP: no CUDA device");
             return None;
         }
-        let session = Qwen35Session::load(mapped, false).expect("load");
+        let session = Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), mapped, false)
+            .expect("load");
         assert!(
             session.on_gpu(),
             "a CUDA build on a CUDA host serves from the GPU"

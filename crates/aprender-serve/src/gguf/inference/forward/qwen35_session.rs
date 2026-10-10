@@ -241,6 +241,26 @@ impl crate::session::Session<Qwen35Forward> {
         Ok(Self::new(Qwen35Forward::load(mapped, no_gpu)?))
     }
 
+    /// Test-only [`Self::load`] on the one host model this process caches for
+    /// `path` ([`Qwen35Forward::cached_host`]). `load` leaks a host build per
+    /// call, which is right for `apr serve` (one per process) and wrong for a
+    /// test binary: the `--lib` binary held one ~1.75 GB copy per test until a
+    /// host OOM killed it (#4988).
+    ///
+    /// # Errors
+    /// As [`Self::load`].
+    #[cfg(test)]
+    pub(crate) fn load_cached(
+        path: &std::path::Path,
+        mapped: &MappedGGUFModel,
+        no_gpu: bool,
+    ) -> Result<Self> {
+        let qwen = Qwen35Forward::cached_host(path, mapped)?;
+        Ok(Self::new(Qwen35Forward::from_host(
+            qwen, mapped, no_gpu, None,
+        )?))
+    }
+
     /// `apr run`'s load: one call of at most `positions` positions, on the
     /// host model `qwen` (see [`Qwen35Forward::leak_host`]). The device memory
     /// is planned for `positions` before the upload and a context that cannot

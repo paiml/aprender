@@ -180,7 +180,8 @@ async fn every_serve_route_enters_the_one_engine() {
     }
     let mapped = Arc::new(MappedGGUFModel::from_path(&model).expect("map the GGUF"));
     let vocab = mapped.model.vocabulary().expect("vocabulary");
-    let session = Qwen35Session::load(&mapped, true).expect("load the hybrid");
+    let session = Qwen35Session::load_cached(std::path::Path::new(&model), &mapped, true)
+        .expect("load the hybrid");
     let id = session.id();
     let app =
         create_router(AppState::with_qwen35_session(session, mapped, vocab).expect("app state"));
