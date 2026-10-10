@@ -34,6 +34,13 @@ done
 TMP=$(mktemp -d) || exit 2
 SRV=""
 _cleanup() {
+  # Only the guard's own shell cleans up (#5012). A child forked for `cmd &` keeps this trap
+  # until it execs, and bash runs the EXIT trap when a TERM kills it. T3 TERMs its server the
+  # moment the pid is written; on a loaded merge queue that TERM landed before the exec, so
+  # _cleanup ran IN THE CHILD and removed $TMP under T3 and T4. In a forked child $$ is still
+  # the guard's pid and BASHPID is the child's own. A bash without BASHPID (3.2) falls back to
+  # cleaning up everywhere, as before.
+  [ "${BASHPID:-$$}" = "$$" ] || return 0
   [ -n "$SRV" ] && kill "$SRV" 2> /dev/null
   case "${TMP:-}" in
     /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
@@ -286,6 +293,23 @@ stubborn() { # a server that ignores SIGTERM; its pid goes to $1
   fi
   printf '%s\n' "$!" > "$1"
 }
+# T0 (#5012): a TERM that reaches a child forked for `cmd &` before it execs must not run this
+# guard's EXIT trap in that child (the T3/T4 merge-queue flake). t0_case loads _cleanup from
+# <guard> into a fresh shell whose $TMP is a scratch dir under /tmp (where _cleanup acts),
+# forks `sleep`, TERMs it at once (nearly always before the exec) and passes only if the dir
+# survived. Exit 3: <guard> has no _cleanup to load.
+GUARD="$ROOT/scripts/check_crux_serve_code.sh"
+t0_case() { # <guard file>
+  local d rc
+  d=$(mktemp -d /tmp/crux-t0.XXXXXX) || return 1
+  TMP="$d" SRV="" bash -c '. <(sed -n "/^_cleanup() {/,/^}/p" "$1"); declare -F _cleanup > /dev/null || exit 3
+    trap _cleanup EXIT; sleep 30 > /dev/null 2>&1 & kill -TERM "$!"; wait "$!"; [ -d "$TMP" ]' t0 "$1" > /dev/null 2>&1
+  rc=$?
+  case "$d" in /tmp/crux-t0.?*) rm -rf -- "${d:?}" ;; esac
+  return "$rc"
+}
+if t0_case "$GUARD"; then ok "T0 a TERM to a just-forked child never runs the guard's EXIT trap there (#5012)"
+else bad "T0 a TERM to a just-forked child ran the guard's EXIT trap there (#5012)"; fi
 : > "$TMP/smi-pids"
 stubborn "$TMP/srv1.pid"
 tdrow "T1 a server that ignores TERM is KILLed, then proven gone" 0 clean "$TD" "$TMP/srv1.pid" "$TMP/absent.pid"
@@ -396,6 +420,11 @@ mutant "M10 T1 vs no KILL escalation" "$TD" '    sig -KILL $left 2> /dev/null' '
 mutant "M17 T2b vs pid 1 not refused" "$TD" '    case "$p" in 1) refused="$refused$f "; continue ;; esac' '' m_t2b
 m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid"; }
 mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
+# M20 plants T0's bug in a copy of THIS guard: _cleanup without its main-shell check. The anchor
+# is assembled from T0_ANCHOR so that this line does not match it too (the planter refuses an
+# anchor it finds twice).
+T0_ANCHOR='[ "${BASHPID:-$$}" = "$$" ]'
+mutant "M20 T0 vs an EXIT trap that also runs in a forked child" "$GUARD" "  $T0_ANCHOR || return 0" '  :' t0_case
 m_t4() { : > "$TMP/tdrows/manifest.jsonl"; python3 "$1" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: x" > /dev/null 2>&1; python3 -c 'import json,sys; g=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; g=[r for r in g if r["kind"]=="gen"]; assert g and all(r["refused"] for r in g)' "$TMP/tdrows/manifest.jsonl" 2> /dev/null; }
 mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" '        if a.cell_fault:' '        if False:' m_t4
 mutant "M18 R5 vs plan.json written only at the end" "$ROUTES_PY" '                save_plan(a.out_dir, p, cells, not_applicable)
