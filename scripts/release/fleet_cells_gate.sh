@@ -23,67 +23,107 @@
 set -uo pipefail
 PROG=fleet_cells_gate
 
+# python's str.splitlines() and str.strip()/split() whitespace, as bytes (awk runs under LC_ALL=C)
+FLEET_CELLS_AWK_LIB='
+function pyws() { return "([ \t\n\v\f\r\034\035\036\037]|\302\205|\302\240|\341\232\200|\342\200[\200\201\202\203\204\205\206\207\210\211\212\250\251\257]|\342\201\237|\343\200\200)" }
+function pylines(s) {
+    gsub(/\r\n/, "\n", s)
+    gsub(/[\r\v\f\034\035\036]|\302\205|\342\200\250|\342\200\251/, "\n", s)
+    return s
+}
+function pystrip(s) { sub("^" pyws() "+", "", s); sub(pyws() "+$", "", s); return s }
+'
+
 # fleet_cells_verdict <cells text> <waivers text> <now epoch> -> `ok ...` rc 0 | `refuse ...` rc 1
+# bash + awk only (ARB-AUD-10: no interpreter beyond the shell on the release path). date(1) parses
+# the stamp; awk gets the texts and the max age through ENVIRON (-v expands backslashes). The judge it replaced was a
+# python3 heredoc, so awk reads the texts as python did, byte for byte under LC_ALL=C: lines break
+# where str.splitlines() breaks (CRLF, CR, VT, FF, FS/GS/RS, NEL, LS, PS), "blank" is str.strip()'s
+# whitespace, fields compare as strings, never as numbers, and FLEET_CELLS_MAX_AGE_H must be a
+# decimal number. Where the two can differ, awk refuses and python cut (#4350).
 fleet_cells_verdict() {
-    CELLS=$1 WAIVERS=$2 NOW=$3 MAX_AGE_H=${FLEET_CELLS_MAX_AGE_H:-6} python3 - <<'EOF'
-import datetime as dt, os, sys
-now = dt.datetime.fromtimestamp(int(os.environ["NOW"]), dt.timezone.utc)
-today = now.date().isoformat()
-def waived(host, binary):  # host "*" asks for the `*\t*` key only (missing/stale cells)
-    for line in os.environ["WAIVERS"].splitlines():
-        f = line.split("\t")
-        if not line.strip() or line.lstrip().startswith("#") or len(f) < 4 or not f[3].strip():
-            continue
-        if host == "*":
-            hit = f[0] == "*" and f[1] == "*"
-        else:
-            hit = f[0] in (host, "*") and f[1] in (binary, "*")
-        if hit and f[2] >= today:
-            return f"{f[0]}/{f[1]} until {f[2]}: {f[3]}"
-    return None
-lines = os.environ["CELLS"].splitlines()
-stamp = next((l.split(None, 2)[2] for l in lines if l.startswith("# measured ") and len(l.split()) >= 3), "")
-bad, notes, n = [], [], 0
-try:
-    measured = dt.datetime.strptime(stamp.strip(), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
-    age_h = (now - measured).total_seconds() / 3600
-    if age_h > float(os.environ["MAX_AGE_H"]):
-        bad.append(f"cells are stale: measured {stamp.strip()}, {age_h:.1f} h ago (max {os.environ['MAX_AGE_H']} h)")
-except ValueError:
-    bad.append("cells carry no '# measured <YYYY-MM-DDTHH:MM:SSZ>' stamp")
-for l in lines:
-    if not l.strip() or l.startswith("#"):
-        continue
-    f = l.split("\t")
-    if len(f) < 3:
-        bad.append(f"malformed cell: {l!r}")
-        continue
-    n += 1
-    host, binary, state = f[0], f[1], f[2]
-    reason = f[3] if len(f) > 3 else ""
-    if state == "GREEN":
-        continue
-    if state == "RED":
-        w = waived(host, binary)
-        if w:
-            notes.append(f"{host}/{binary} RED waived ({w})")
-        else:
-            bad.append(f"{host}/{binary} RED: {reason or 'no reason given'}")
-        continue
-    bad.append(f"{host}/{binary} state {state!r} is neither GREEN nor RED")
-if n == 0:
-    bad.append("no fleet cells")
-data_bad = [b for b in bad if b.startswith(("cells ", "no fleet cells"))]
-if data_bad and len(data_bad) == len(bad):
-    w = waived("*", "*")
-    if w:
-        notes.append(f"cells unusable, waived ({w}): " + "; ".join(data_bad))
-        bad = []
-if bad:
-    print("refuse " + "; ".join(bad))
-    sys.exit(1)
-print(f"ok {n} fleet cells, none RED unwaived" + ("; " + "; ".join(notes) if notes else ""))
-EOF
+    local stamp measured=-1 today
+    today=$(date -u -d "@$3" +%F) || return 2
+    stamp=$(CELLS=$1 LC_ALL=C awk "$FLEET_CELLS_AWK_LIB"'
+    BEGIN {
+        nl = split(pylines(ENVIRON["CELLS"]), L, "\n")
+        for (i = 1; i <= nl; i++) {
+            if (index(L[i], "# measured ") != 1 || split(pystrip(L[i]), p, pyws() "+") < 3) continue
+            s = L[i]; sub(/^# measured/, "", s); print pystrip(s); exit
+        }
+    }')
+    if [[ $stamp =~ ^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$ ]] && [ "${stamp:0:4}" != 0000 ]; then
+        measured=$(date -u -d "$stamp" +%s 2>/dev/null) || measured=-1
+    fi
+    CELLS=$1 WAIVERS=$2 STAMP=$stamp MAX_AGE_H=${FLEET_CELLS_MAX_AGE_H:-6} LC_ALL=C \
+        awk -v now="$3" -v measured="$measured" -v today="$today" "$FLEET_CELLS_AWK_LIB"'
+    # waived(host, binary): host "*" asks for the `*\t*` key only (missing/stale cells)
+    function waived(host, binary,    nw, w, i, f, hit) {
+        nw = split(pylines(ENVIRON["WAIVERS"]), w, "\n")
+        for (i = 1; i <= nw; i++) {
+            if (pystrip(w[i]) == "" || substr(pystrip(w[i]), 1, 1) == "#") continue
+            if (split(w[i], f, "\t") < 4 || pystrip(f[4]) == "") continue
+            if (host == "*") hit = (f[1] == "*" && f[2] == "*")
+            else hit = (((f[1] "") == (host "") || f[1] == "*") && ((f[2] "") == (binary "") || f[2] == "*"))
+            if (hit && (f[3] "") >= today) return f[1] "/" f[2] " until " f[3] ": " f[4]
+        }
+        return ""
+    }
+    function add(msg) { bad[++nb] = msg }
+    # repr(): how python quoted a malformed line or an unknown state
+    function pyrepr(s,    q, out, i, ch, k) {
+        q = (index(s, "\x27") && !index(s, "\"")) ? "\"" : "\x27"
+        out = q
+        for (i = 1; i <= length(s); i++) {
+            ch = substr(s, i, 1); k = ORD[ch]
+            if (ch == "\\" || ch == q) out = out "\\" ch
+            else if (ch == "\t") out = out "\\t"
+            else if (k < 32 || k == 127) out = out sprintf("\\x%02x", k)
+            else out = out ch
+        }
+        return out q
+    }
+    BEGIN {
+        for (i = 1; i < 256; i++) ORD[sprintf("%c", i)] = i
+        max_age = ENVIRON["MAX_AGE_H"]
+        # python: a float() ValueError fell into the same except as a bad stamp
+        if (max_age !~ /^[ \t\n\v\f\r]*[+-]?([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][+-]?[0-9]+)?[ \t\n\v\f\r]*$/) measured = -1
+        # Data faults (stale, unstamped, empty) are the only ones `*\t*` may waive.
+        if (measured < 0) { add("cells carry no \x27# measured <YYYY-MM-DDTHH:MM:SSZ>\x27 stamp"); nd++ }
+        else if ((now - measured) / 3600 > max_age + 0) {
+            add(sprintf("cells are stale: measured %s, %.1f h ago (max %s h)", ENVIRON["STAMP"], (now - measured) / 3600, max_age)); nd++
+        }
+        nl = split(pylines(ENVIRON["CELLS"]), L, "\n")
+        for (l = 1; l <= nl; l++) {
+            if (pystrip(L[l]) == "" || substr(L[l], 1, 1) == "#") continue
+            if (split(L[l], c, "\t") < 3) { add("malformed cell: " pyrepr(L[l])); continue }
+            n++
+            if (c[3] == "GREEN") continue
+            if (c[3] == "RED") {
+                w = waived(c[1], c[2])
+                if (w != "") notes[++nn] = c[1] "/" c[2] " RED waived (" w ")"
+                else add(c[1] "/" c[2] " RED: " (c[4] != "" ? c[4] : "no reason given"))
+                continue
+            }
+            add(c[1] "/" c[2] " state " pyrepr(c[3]) " is neither GREEN nor RED")
+        }
+        if (n == 0) { add("no fleet cells"); nd++ }
+        if (nd > 0 && nd == nb) {
+            w = waived("*", "*")
+            if (w != "") {
+                msg = bad[1]; for (i = 2; i <= nb; i++) msg = msg "; " bad[i]
+                notes[++nn] = "cells unusable, waived (" w "): " msg
+                nb = 0
+            }
+        }
+        if (nb > 0) {
+            msg = bad[1]; for (i = 2; i <= nb; i++) msg = msg "; " bad[i]
+            print "refuse " msg
+            exit 1
+        }
+        msg = ""; for (i = 1; i <= nn; i++) msg = msg "; " notes[i]
+        print "ok " n + 0 " fleet cells, none RED unwaived" msg
+    }'
 }
 
 self_test() {
@@ -109,9 +149,17 @@ self_test() {
     row 0 'only *\t* waives missing cells' '' '*\t*\t2026-09-24\tC3 not publishing yet, cop 2026-09-24\n'
     row 1 'a host waiver does not waive missing cells' '' 'intel\t*\t2026-09-30\tx\n'
     row 1 'a waiver for another binary covers nothing' "$S\nintel\tapr\tRED\told\n" '*\tpv\t2026-09-30\tx\n'
+    # #4350: the cases where a naive awk port cut and the python judge refused.
+    row 1 'a CRLF waiver with no reason is not recorded' "$S\nh1\tapr\tRED\told\n" 'h1\tapr\t2026-12-31\t\r\n'
+    row 1 'a no-break-space reason is no reason' "$S\nh1\tapr\tRED\told\n" 'h1\tapr\t2026-12-31\t\0302\0240\n'
+    row 1 'hosts compare as strings: waiver 01 is not host 1' "$S\n1\tapr\tRED\told\n" '01\tapr\t2026-12-31\tx\n'
+    row 1 'a vertical tab ends a line: what follows is a malformed cell' "$S\nh2\tapr\tGREEN\tok\vjunk\n"
+    FLEET_CELLS_MAX_AGE_H=abc row 1 'a max age that is not a number refuses' "$S\nh2\tapr\tGREEN\t\n"
+    FLEET_CELLS_MAX_AGE_H='\066' row 1 'a max age is not unescaped' "$S\nh2\tapr\tGREEN\t\n"
+    FLEET_CELLS_MAX_AGE_H=' 1e3 ' row 0 'a max age python reads as a float is read' '# measured 2026-09-01T00:00:00Z\nh2\tapr\tGREEN\t\n'
     # MUTANTS: the refusal made a no-op must let the RED cell through.
     d=$(mktemp -d) || return 2
-    for m in 's/            bad.append(f"{host}\/{binary} RED: /            pass  # /' 's/^    sys.exit(1)$/    sys.exit(0)/'; do
+    for m in 's/                else add(c\[1\] "\/" c\[2\] " RED: "/                else ("\/" " RED: "/' 's/^            exit 1$/            exit 0/'; do
         mut=$d/m.sh; sed "$m" "${BASH_SOURCE[0]}" > "$mut"
         if cmp -s "$mut" "${BASH_SOURCE[0]}"; then echo "  FAIL mutant '$m' not built: the anchor moved"; fail=1; continue; fi
         got=$(bash -c ". '$mut' --source-only; fleet_cells_verdict \"\$(printf '%b' '$S\nintel\tapr\tRED\told\n')\" '' $now" 2>&1); rc=$?
