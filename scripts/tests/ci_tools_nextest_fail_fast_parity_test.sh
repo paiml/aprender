@@ -29,7 +29,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
 GUARD="$ROOT/scripts/check_nextest_ci_profile_no_fail_fast.sh"
-EXPECTED_CASES=121
+EXPECTED_CASES=123
 
 if ! "$PY" -I -c 'import tomllib' 2>/dev/null; then
     echo "FAIL: $PY has no tomllib, so the guard's library reader cannot run here; set PYTHON to python3.11+" >&2
@@ -216,6 +216,8 @@ differ "year 0000"                       2 0 "${ok}t = 0000-01-01"$'\n'
 differ "an integer above i64"            0 2 "${ok}x = 9223372036854775808"$'\n'
 differ "an integer below i64"            0 2 "${ok}x = -9223372036854775809"$'\n'
 differ "a hex integer above i64"         0 2 "${ok}x = 0xffffffffffffffff"$'\n'
+differ "an octal integer above i64"      0 2 "${ok}x = 0o1000000000000000000000"$'\n'
+differ "a binary integer above i64"      0 2 "${ok}x = 0b1$(printf '%*s' 63 '' | tr ' ' 0)"$'\n'
 differ "fail-fast above i64"             1 2 $'[profile.ci]\nfail-fast = 9223372036854775808\n'
 differ "a 4301-digit integer"            2 2 "${ok}x = 1${d4300}"$'\n'
 differ "a float that overflows to inf"   0 2 "${ok}x = 1e400"$'\n'
