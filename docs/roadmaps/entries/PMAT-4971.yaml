@@ -1,0 +1,18 @@
+- id: PMAT-4971
+  github_issue: 4971
+  item_type: task
+  title: 'V3 serving-shape parity: lambda perf041 witness for Qwen3.5-4B at c in {1,4,8,16}'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-10T01:35:02Z
+  updated: 2026-10-10T01:35:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3597
