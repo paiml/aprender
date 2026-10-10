@@ -225,21 +225,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
     // A running server without the model answers /api/generate with an error
-    // object, which the response decoder cannot read. /api/show is 404 then.
-    // Only a 404 means the model is missing: a failed request or any other
-    // status is a failure of the server, and is reported as one.
+    // object, which the response decoder cannot read. Ollama answers /api/show
+    // for a missing model with 404 and {"error":"model '<name>' not found"}; a
+    // 404 for a route it does not have is plain text. Only the first means the
+    // model is missing: a failed request, any other 404 or any other status is
+    // a failure of the server, and is reported as one.
     let show = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()?
         .post("http://localhost:11434/api/show")
         .json(&serde_json::json!({ "model": "phi2:2.7b" }))
         .send()?;
-    if show.status() == reqwest::StatusCode::NOT_FOUND {
+    let status = show.status();
+    let body = show.text()?;
+    let model_missing = status == reqwest::StatusCode::NOT_FOUND
+        && serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("error")?.as_str().map(str::to_owned))
+            .is_some_and(|e| e.contains("phi2:2.7b") && e.contains("not found"));
+    if model_missing {
         eprintln!("Model not found: phi2:2.7b on the Ollama server (run `ollama pull phi2:2.7b`)");
         std::process::exit(1);
     }
-    if !show.status().is_success() {
-        return Err(format!("Ollama /api/show for phi2:2.7b answered {}", show.status()).into());
+    if !status.is_success() {
+        return Err(format!("Ollama /api/show for phi2:2.7b answered {status}").into());
     }
 
     // Benchmark Ollama
