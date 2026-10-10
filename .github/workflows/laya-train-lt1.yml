@@ -1,0 +1,71 @@
+# laya-train-lt1 — APR-LAYA-TRAIN-001 row LT-1: engine measurement and choice.
+#
+# Measures the proxy layer (crates/aprender-train/examples/laya_engine_probe.rs) on
+# each autograd engine, aprender-core and aprender-train, on ONE CPU pool host:
+# forward wall, backward wall, peak memory and the projected wall of the declared
+# cell. The host is mini-m4 (macOS ARM64, neither GPU nor clean-room), named by the
+# cop's quorum ruling (handoff/quorum-a3-laya-q2-lt1-host-r2.md).
+#
+# It starts ONLY on workflow_dispatch: never on a PR, a push or a schedule, never
+# during a release pass, and it is not a required check. The worker records the
+# printed JSON in evidence/laya-train/lt-1/receipt.json.
+name: laya-train-lt1
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: commit to measure
+        required: true
+      steps:
+        description: optimizer steps of the declared cell, for the projection
+        required: true
+        default: "180"
+      reps:
+        description: timed repetitions per engine, after one warmup
+        required: true
+        default: "3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: laya-train-lt1
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Build the probe (release)
+        run: cargo build --release --locked -p aprender-train --example laya_engine_probe
+      - name: Measure both engines, one process each
+        env:
+          APR_PROBE_SHA: ${{ inputs.ref }}
+          STEPS: ${{ inputs.steps }}
+          REPS: ${{ inputs.reps }}
+        run: |
+          set -euo pipefail
+          mkdir -p lt1-out
+          tdir=$(cargo metadata --format-version 1 --no-deps | grep -o "\"target_directory\":\"[^\"]*\"" | cut -d\" -f4)
+          bin="$tdir/release/examples/laya_engine_probe"
+          for engine in core train; do
+            /usr/bin/time -l "$bin" --engine "$engine" --reps "$REPS" --steps "$STEPS" \
+              > "lt1-out/$engine.json" 2> "lt1-out/$engine.time"
+            rss=$(awk '/maximum resident set size/ {print $1}' "lt1-out/$engine.time")
+            printf '%s max_rss_bytes=%s\n' "$engine" "${rss:-unmeasured}"
+            cat "lt1-out/$engine.json"; echo
+          done
+          sysctl -n hw.ncpu machdep.cpu.brand_string hw.memsize > lt1-out/host.txt
+          cat lt1-out/host.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: laya-train-lt1-${{ inputs.ref }}
+          path: lt1-out/
