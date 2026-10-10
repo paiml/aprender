@@ -312,6 +312,13 @@ selftest() {
     jn near_miss_other_prefix_rehearsal_needs_three     1 "(streak=1 total=1 need=3)" x-rehearsal
     jn near_miss_capital_release_rehearsal_needs_three  1 "(streak=1 total=1 need=3)" Release-rehearsal
     jn near_miss_last_letter_needs_three                1 "(streak=1 total=1 need=3)" release-rehearsaX
+    # Nor does a name the compare would only match after rewriting it (a stripped prefix or suffix, a deleted letter).
+    jn near_miss_x_prefixed_needs_three                 1 "(streak=1 total=1 need=3)" x-release-rehearsal
+    jn near_miss_q_prefixed_needs_three                 1 "(streak=1 total=1 need=3)" q-release-rehearsal
+    jn near_miss_dot_suffixed_needs_three               1 "(streak=1 total=1 need=3)" release-rehearsal.old
+    jn near_miss_digit_suffixed_needs_three             1 "(streak=1 total=1 need=3)" release-rehearsal7
+    jn near_miss_letter_suffixed_needs_three            1 "(streak=1 total=1 need=3)" release-rehearsalZ
+    jn near_miss_nightly_dot_train_needs_three          1 "(streak=1 total=1 need=3)" nightly.train
     if [ "$REHEARSAL_NEED" = 1 ]; then
         printf '  ok    %-50s REHEARSAL_NEED=1\n' committed_rehearsal_need_is_one; pass=$((pass + 1))
     else
@@ -358,6 +365,12 @@ rehearsal_prefix_keyed      /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1
 rehearsal_suffix_keyed      /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == *rehearsal ]]/
 one_letter_glob_keyed       /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-rehearsa? ]]/
 case_glob_keyed             /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == [rR]elease-rehearsal ]]/
+x_prefix_stripped           /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1#x-}" = release-rehearsal ]|
+any_prefix_stripped         /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1#?-}" = release-rehearsal ]|
+dot_suffix_stripped         /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1%.*}" = release-rehearsal ]|
+digit_suffix_stripped       /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1%[0-9]}" = release-rehearsal ]|
+letter_deleted              /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1//Z/}" = release-rehearsal ]|
+nightly_dot_train_keyed     /^need_of() /s|\[ "\$1" = release-rehearsal \]|{ [ "$1" = release-rehearsal ] \|\| [ "$1" = nightly.train ]; }|
 one_night_for_every_check   /^need_of() /s/"\$NEED"/"$REHEARSAL_NEED"/
 retried_counts_as_green     /^judge() {$/,/^}$/s/? "green" : "retried"/? "green" : "green"/
 failure_is_not_red          /^judge() {$/,/^}$/s/co == "failure" || co == "timed_out"/co == "never" || co == "timed_out"/
