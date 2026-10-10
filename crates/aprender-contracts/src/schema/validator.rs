@@ -190,7 +190,7 @@ pub(crate) const CRUX_COMPETITORS: [&str; 16] = [
     // engine reads back (`riot --output`), validate SHACL Core (`shacl
     // validate`), and report a W3C sh:ValidationReport. NOT a BEAT pillar and
     // not a model framework: Jena is the second engine the detached oracle
-    // under tests/oracle/jena/ compares pv against, on demand and at night,
+    // under tests/oracle/jena/ compares pv against, on demand only,
     // never on a PR (R-13: no JVM reachable from pv). Epic aprender#3598.
     "jena",
     // linfa (rust-ml/linfa) — the Rust classical-ML toolkit, 0.8.1 / 18

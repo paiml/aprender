@@ -501,7 +501,7 @@ stories:
   # One story per cell of subspec §14.2: read, write back, validate, report. The
   # first competitor that is a second engine for a format pv already speaks, not a
   # model framework. The harness is contracts/crux-shacl-jena-v1.yaml
-  # (tests/oracle/jena/), run on demand and at night, never on a PR. Not a BEAT
+  # (tests/oracle/jena/), run on demand only, never on a PR. Not a BEAT
   # pillar. Registry edit: CRUX_COMPETITORS.
   - { id: CRUX-R-01, title: "Read Turtle and N-Triples ontologies, blank nodes included", competitor: jena, demand_score: 3, status: missing,  contract: crux-R-01-v1.yaml }
   - { id: CRUX-R-02, title: "Write a graph Jena reads back to the same graph",           competitor: jena, demand_score: 3, status: partial,  contract: crux-R-02-v1.yaml }

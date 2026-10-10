@@ -1,8 +1,8 @@
 # CRUX-R-03 — Validate SHACL Core to the same verdict as Jena (cell R-VALIDATE)
 # CRUX category R: SHACL ontologies vs Apache Jena. Epic aprender#3598.
 # Spec: docs/specifications/crux-competitive-research-ux-workflows.md §14.
-# Harness: contracts/crux-shacl-jena-v1.yaml (tests/oracle/jena/), on demand and
-# at night, never on a PR. This contract states the cell; the harness measures it.
+# Harness: contracts/crux-shacl-jena-v1.yaml (tests/oracle/jena/), on demand only,
+# never on a PR. This contract states the cell; the harness measures it.
 # registry: false — this contract carries real falsification gates and claims no
 # exemption.
 

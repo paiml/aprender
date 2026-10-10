@@ -1,7 +1,7 @@
 # CRUX category R harness: pv against Apache Jena on SHACL ontologies.
 # The four story contracts (crux-R-01..04-v1.yaml, one per cell) state each cell's claim; this
 # contract states the harness that measures them: its verdict, its comparators and its planted
-# controls. Runner: tests/oracle/jena/ (detached crate, `make oracle-jena`), on demand and at night,
+# controls. Runner: tests/oracle/jena/ (detached crate, `make oracle-jena`), on demand only,
 # never on a PR, a merge queue or a release job (R-13: no JVM reachable from pv). Exit codes follow
 # the OWL oracle: 0 GREEN, 1 RED, 2 NOT MEASURED. A host without a JVM is NOT MEASURED, never a pass.
 # registry: false: this contract carries real falsification gates and claims no exemption.
@@ -246,4 +246,4 @@ qa_gate:
   falsification: "Mutate the comparator (blank-node labels as strings, literals by value, each tuple field dropped in turn) and the verdict logic (no JVM gives 0, the pin check skipped, a partial run gives 0, self-comparison allowed). Each mutant must turn the self-test RED."
 mutation_record: "not run yet: the harness exists (tests/oracle/jena/, 2026-10-09) but no mutant of it has been run. Until one is, the self-test proves that each control fires on the current code, not that each control would catch its defect."
 initial_state: "Branch la-711b/v7-crux-shacl, harness at 62b1cebe99, receipt tests/oracle/jena/receipt.json (committed in 48725d2f45), 2026-10-09, Jena 5.6.0 on OpenJDK 17: self-test 26/26; exit 1. R-RETURN: riot reads pv's contracts.nt (32701 triples) and shapes.ttl (4166 triples, no WARN) GREEN; the round trip NOT MEASURED (S3). R-INPUT NOT MEASURED (S3). R-VALIDATE on S-CORPUS RED: Jena 743 results, pv 730; all 13 extra are sh:closed results on rdf:type values, the defect #4837 tracks. R-VALIDATE on S-W3C: the subject is the 35 W3C core cases vendored under tests/oracle/w3c/, not yet the full core/ manifests; Jena ran all 35 with no jena≠w3c note; pv against W3C NOT MEASURED in the harness (S4). R-FEEDBACK NOT MEASURED (S4). S-SHSH GREEN. Before the harness (origin/main 316dee2cd4, 2026-10-04): no Jena run; the rudof oracle compares (focus, component) only. Detail in docs/lookahead/0.71-crux-shacl-baseline.md"
-verification: "make oracle-jena (tests/oracle/jena/, detached crate, needs a JVM and the pinned Jena archive), on demand and at night only. The self-test runs first and a failed control stops the run."
+verification: "make oracle-jena (tests/oracle/jena/, detached crate, needs a JVM and the pinned Jena archive), on demand only; no night lane is wired. The self-test runs first and a failed control stops the run."

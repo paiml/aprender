@@ -537,7 +537,7 @@ always `contracts/crux-{ID}-v1.yaml` unless noted.
 
 ### Category R — SHACL ontologies vs Apache Jena (4 stories)
 
-> Added v2.4 (2026-10-09). Competitor: [Apache Jena](https://jena.apache.org/) 5.6.0, the Java RDF toolkit, pinned by sha256 in `tests/oracle/jena/src/jena.rs`. One story per cell of §14.2; §14 is the design. The stories are measured by the harness `contracts/crux-shacl-jena-v1.yaml` (`tests/oracle/jena/`), on demand and at night, never on a PR: no JVM is reachable from pv (R-13). Each status comes from the harness's first run, `tests/oracle/jena/receipt.json`. Epic aprender#3598. Not a BEAT pillar. Demand scores rate each verb's traffic inside pv, because no issue-volume count exists for Jena.
+> Added v2.4 (2026-10-09). Competitor: [Apache Jena](https://jena.apache.org/) 5.6.0, the Java RDF toolkit, pinned by sha256 in `tests/oracle/jena/src/jena.rs`. One story per cell of §14.2; §14 is the design. The stories are measured by the harness `contracts/crux-shacl-jena-v1.yaml` (`tests/oracle/jena/`), on demand only, never on a PR: no JVM is reachable from pv (R-13). Each status comes from the harness's first run, `tests/oracle/jena/receipt.json`. Epic aprender#3598. Not a BEAT pillar. Demand scores rate each verb's traffic inside pv, because no issue-volume count exists for Jena.
 
 | ID | Story | Competitor verb | S | D |
 |----|-------|----------------|---|---|
@@ -1252,8 +1252,9 @@ Exit codes follow the ELK oracle (`tests/oracle/owl/src/main.rs`): 0 GREEN,
   It admits a third-party RDF engine only as a pinned out-of-gate oracle in
   `tests/oracle/`, outside the workspace. The harness is therefore its own
   detached crate there, like the OWL oracle.
-- **It cannot block a merge or a release.** It runs on demand and at night,
-  never in a PR, merge-queue or release job. A RED opens or updates one ticket
+- **It cannot block a merge or a release.** It runs on demand only,
+  never in a PR, merge-queue or release job. No night lane is wired yet; wiring
+  one is a separate change. A RED opens or updates one ticket
   with one owner. NOT MEASURED stays NOT MEASURED; it is never read as a pass.
   Making it blocking is a separate decision this section does not propose.
 
