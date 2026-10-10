@@ -136,6 +136,8 @@ aprender-core	--lib	format::ship_004
 aprender-core	--lib	format::ship_010
 aprender-core	--lib	format::special_tokens_contract_falsify
 aprender-core	--lib	format::tokenizer_vocab_contract_falsify
+aprender-core	--lib	models::modernbert
+aprender-core	--lib	models::modernbert::config
 aprender-core	--lib	qa::docs
 aprender-core	--lib	qa::velocity
 aprender-core	--lib	release_section
@@ -154,6 +156,9 @@ aprender-core	--test	falsification_spec_v10_tests
 aprender-core	--test	monorepo_invariants
 aprender-core	--test	readme_contract
 aprender-core	--test	setfit_conformance
+aprender-decide	--lib	<root>
+aprender-decide	--lib	test_support
+aprender-decide	--test	laya_parity
 aprender-distribute	--lib	executor::tls
 aprender-orchestrate	--lib	agent::contracts
 aprender-orchestrate	--lib	agent::driver::chat_template
