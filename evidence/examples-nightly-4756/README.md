@@ -3,11 +3,10 @@
 Before: CI run 37169058144 (main @316dee2cd4). Of the 36 rows, 29 fail and 7 time out.
 
 After: `examples-36.tsv`, one run of the unchanged `scripts/dogfood_examples.sh` on
-fa3364688c, the last code commit on this branch, in a job on 2026-10-10 from 06:47:34Z to
-07:10:54Z. An earlier job on the same commit is not used: its own load watchdog interrupted
-one build, so constrain_mask_overhead came back fail with `compilation was interrupted`.
-`qa_verify-sections.txt` and `bug-hunter-scan.txt` were taken on 73f34268e6. The one code
-commit after it, fa3364688c, changes only `parity_035_m4_verification.rs`.
+819e4132dc, the last code commit on this branch, in a job on 2026-10-10 from 07:53:48Z to
+08:11:21Z. `qa_verify-sections.txt` and `bug-hunter-scan.txt` were taken on 73f34268e6. The
+two code commits after it, fa3364688c and 819e4132dc, change only
+`parity_035_m4_verification.rs`.
 
 - Debug builds, `--timeout-secs 180`, and a `--filter` that matched exactly the 36 rows. The
   job stops before the run unless the filter matches 36 example targets.
@@ -34,7 +33,7 @@ means the example ran to the end and exited 0. It checks no figure the example p
 
 ## Build time and the timeout
 
-Each row's `secs` is build plus run. agent_demo's row took 264 s, and its run stage timed
+Each row's `secs` is build plus run. agent_demo's row took 150 s, and its run stage timed
 alone afterwards on the same tree took 1 s (`run-stage-secs.txt`), so nearly all of that row
 was build. The script bounds only the run (`scripts/dogfood_examples.sh:226`, "Only the RUN
 is bounded."), so a long build cannot time a row out. `examples-36-cold-4a79227e9f.tsv` is
@@ -43,7 +42,7 @@ up to 293 s (agent_demo).
 
 `run-stage-secs.txt` times the run stage alone (`cargo run -q`, stdout to a file) after the
 36-row run on the same tree. It covers the six rows with the highest `secs` in the
-4a79227e9f cold run, plus bug_hunter_demo and design_by_contract. None ran longer than 8 s.
+4a79227e9f cold run, plus bug_hunter_demo and design_by_contract. None ran longer than 7 s.
 
 ## What a debug build or a non-terminal run does differently
 
@@ -61,7 +60,7 @@ shorter path. Each item below names its gate:
   the row's build was the example alone. The two were timed separately on a shared box, so
   the run stage alone can take longer than the whole row did, and here it did by 4 s. Both
   put the row within 43 s of the bound. A debug build now generates one token
-  (`pipeline_tui.rs:19`, `:458`), and on fa3364688c its run stage alone took 2 s
+  (`pipeline_tui.rs:19`, `:458`), and on 819e4132dc its run stage alone took 3 s
   (`run-stage-secs.txt`). A release build still generates 100. The same debug-only flag,
   `REDUCED` (`:19`), also cuts the other stages: 1 iteration each (`:23`), the Medium model
   skipped (`:132`), sequence lengths 1, 5 and 10 instead of up to 50 (`:164`). The run prints
@@ -105,7 +104,9 @@ shorter path. Each item below names its gate:
   two bug-hunter examples then scan `crates/aprender-orchestrate/src/bug_hunter`, 34 tracked
   files, instead of the whole tree. `bug-hunter-scan.txt` keeps their debug output: the scan
   path they printed and its result, 0 findings. Both scans in that capture were cache hits,
-  so it shows the path and the result, not a fresh scan.
+  so it shows the path and the result, not a fresh scan. The debug pass is a smoke test
+  that the scan path runs, not a measure of contract coverage in the workspace; a release
+  build scans the whole tree as before.
 - **Non-terminal runs.** Four examples take a bounded or one-shot path when their gate finds
   no terminal, and the gates differ. api_server (`:103`) takes it only when neither stdin nor
   stdout is a terminal. buggy_server (`:21`) and brick_computer (`:698`) take it when stdout
@@ -139,22 +140,27 @@ reach its end. Neither shortens a run.
 
 ## A probe in every build: parity_035
 
-This is not a bug fix and does not let a run reach its end. It changes how a missing model
-or a broken server is reported, in every build. The failing nightly's log shows only the
-row's first line (the banner), so it does not show why that run failed. The example now
-asks the server's `/api/show` for the model before the benchmark. Ollama answers that for a
-model it does not have with a 404 whose JSON body is `{"error":"model 'phi2:2.7b' not
-found"}`, and a route it does not have with a 404 whose body is the plain text `404 page not
-found` (`ollama-404-bodies.txt`). Only the first is reported as `Model not found` (exit 1):
-a 404 whose JSON `error` names phi2:2.7b and says `not found`. A failed request, any other
-404 and any other status are returned as an error, a failure of the server, and the error
-does not carry the body (`parity_035_m4_verification.rs`, the block after the TCP probe).
+This is not a bug fix and does not let a run reach its end. It changes how a missing server
+or a missing model is reported, in every build. The failing nightly's log shows only the
+row's first line (the banner), so it does not show why that run failed. Before the benchmark
+the example now makes two checks (`parity_035_m4_verification.rs`, the block after the
+Warmup and Measurement lines):
 
-So `/api/show` is now part of the server contract the example tests, next to
-`/api/generate`, in a release build too. A server whose `/api/show` answers an error while
-its `/api/generate` works now stops before the benchmark. Ollama answers `/api/show` with
-the model's details when it has the model, and the benchmark then runs as before. No run
-here had a server with the model, so that path rests on the code.
+- It tries a TCP connection to port 11434 on every address `localhost` resolves to, the name
+  the benchmark asks for. If none connects, it prints `Ollama server not found at
+  http://localhost:11434 ...` and exits 1.
+- It asks the server's `/api/show` for phi2:2.7b. Ollama answers that for a model it does
+  not have with a 404 whose JSON body is `{"error":"model 'phi2:2.7b' not found"}`, and for
+  a route it does not have with a 404 whose body is the plain text `404 page not found`
+  (`ollama-404-bodies.txt`). Only the first is reported as `Model not found` (exit 1): a 404
+  whose JSON `error` names phi2:2.7b and says `not found`.
+
+Any other answer from `/api/show`, or a failed request, falls through to the benchmark,
+which runs or fails as it did before the probe. So a server whose `/api/show` fails while its
+`/api/generate` works still runs the benchmark, in a release build too, and a server that is
+broken or is not Ollama fails inside the benchmark, not as a missing model. When the server
+has the model, the benchmark runs as before. No run here had a server with the model, so
+that path rests on the code.
 
 ## Every other change, by kind
 
@@ -165,7 +171,9 @@ here had a server with the model, so that path rests on the code.
   (`^(Usage|...)`).
 - **A message naming what is missing**: qa_chat and qa_serve (`Model not found: pass --model
   PATH ...`), publish_shell_safety (`[MISSING] <name> not found at <path>`), finetune_real
-  (`No tokenizer found in HF cache`), profile_cuda_trainer (`requires the 'cuda' feature`),
+  (`No tokenizer found in HF cache`; the run still ends in the existing `.expect` on the
+  tokenizer load, `finetune_real.rs:2016-2017`, rc 101, and the row is classed by that
+  message), profile_cuda_trainer (`requires the 'cuda' feature`),
   aprender-gpu's driver loader (`CUDA driver not found (libcuda.so)`), and parity_035's
   `Ollama server not found at ...` when nothing listens on the port.
 - **Optional arguments.** `qa_verify -- --all` and `test_mac_worker <host:port>` run the full
@@ -187,9 +195,9 @@ sizes fixed above (`:514`, `:522`).
 `performance_parity-gpu.txt` is the debug binary from the 36-row run, run once more with its
 output kept, because the script keeps no output per example. The file records the commit and
 the binary's sha256. Outside the namespace, it printed `GPU detected and available`, ran
-GPU-001 on the GPU and printed the debug-build note. GPU-001's row reads 14.03 GFLOPS
+GPU-001 on the GPU and printed the debug-build note. GPU-001's row reads 13.70 GFLOPS
 (`performance_parity-gpu.txt:47`); the process ran pinned to 4 CPUs at nice 19. It exited
-rc 0 in 9 s. The script reported the same row as pass in 25 s, build included.
+rc 0 in 8 s. The script reported the same row as pass in 12 s, build included.
 
 It also printed `Overall: Some benchmarks failed (5/9, 56%)` and exited 0. Its `fn main()`
 returns nothing and never calls `process::exit`, on this branch and on main, so it exits 0
@@ -216,19 +224,24 @@ whether those runs found an adapter is not recorded.
   up without the model, and the row is needs-data on `Model not found`.
 - **parity_035 with a server that answers 500.** `parity_035-500.txt` is the same tree in a
   private network namespace, with a listener on port 11434 that reads each request and
-  answers `HTTP/1.1 500 Internal Server Error`. The example printed `Error: "Ollama /api/show
-  for phi2:2.7b answered 500 Internal Server Error"` and exited rc 1. The unchanged script,
-  run on that one row, classed it fail (`summary pass=0 fail=1`, exit 1). The listener's log
-  shows, for each of the two runs, the TCP probe's connection with no request and then
-  `POST /api/show`. A broken server is
-  now a failure, not needs-data.
+  answers `HTTP/1.1 500 Internal Server Error`. A 500 from `/api/show` is not the
+  model-missing 404, so the example went on to the benchmark. That failed on the first
+  measured response it could not decode (`parity_035_m4_verification.rs:81`, a line the
+  branch does not change): it printed `Error: reqwest::Error { kind: Decode, source:
+  Error("EOF while parsing a value", ...) }` and exited rc 1. The unchanged script, run on
+  that one row, classed it fail (`summary pass=0 fail=1`, exit 1). The listener's log shows,
+  for each of the two runs, the TCP probe's connection with no request, then `POST
+  /api/show`, then three `POST /api/generate`: the two warmup requests and the first measured
+  one. A broken server is a failure, not needs-data.
 - **parity_035 with a server that answers a plain-text 404.** `parity_035-404.txt` is the same
   setup with a listener that answers `HTTP/1.1 404 Not Found`, Content-Type text/plain and the
   body `404 page not found`, which is what Ollama sends for a route it does not have
-  (`ollama-404-bodies.txt`). The example printed `Error: "Ollama /api/show for phi2:2.7b
-  answered 404 Not Found"` and exited rc 1. The unchanged script, run on that one row, classed
-  it fail (`summary pass=0 fail=1`, exit 1). A 404 that does not say the model is missing is a
-  failure of the server, not needs-data.
+  (`ollama-404-bodies.txt`). That is not the JSON 404 naming the model, so the example went
+  on to the benchmark, which failed the same way: `Error: reqwest::Error { kind: Decode, ...
+  }`, whose source says the body parsed as the integer 404, not as an `OllamaResponse`, and
+  rc 1. The unchanged script, run on that one row, classed it fail (`summary pass=0 fail=1`,
+  exit 1). The listener's log shows the same requests as in the 500 case. A 404 that does not
+  say the model is missing is a failure, not needs-data.
 
 ## Not measured here
 
