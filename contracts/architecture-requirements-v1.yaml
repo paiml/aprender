@@ -1,6 +1,7 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-19'
+  updated: '2026-10-10'
   author: PAIML Engineering
   description: Per-architecture tensor weight requirements — source of truth for required/optional
     roles
@@ -17,6 +18,7 @@ metadata:
   - 'Gemma Team (2024) Gemma: Open Models Based on Gemini Research'
   - Radford et al. (2023) Robust Speech Recognition via Large-Scale Weak Supervision
     (Whisper)
+  - contracts/model-families/qwen3_moe.yaml — is_moe axis (1.1.0, #5056)
 weight_roles:
   attn_norm:
     description: Pre-attention layer normalization gamma
@@ -89,6 +91,18 @@ role_sets:
     - gate_proj
     - up_proj
     - down_proj
+  attn_core:
+    description: Required by MoE architectures in place of base (base minus the dense
+      FFN projections; the router and expert tensors are not per-layer dense roles
+      and are required by the model-family contract's moe block)
+    count: 6
+    roles:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
   qk_norm:
     description: Per-head QK normalization weights
     count: 2
@@ -106,12 +120,14 @@ constraint_matrix:
   no_qk_norm_no_bias:
     has_qk_norm: false
     has_bias: false
+    is_moe: false
     required_sets:
     - base
     total_required: 9
   qk_norm_no_bias:
     has_qk_norm: true
     has_bias: false
+    is_moe: false
     required_sets:
     - base
     - qk_norm
@@ -119,6 +135,7 @@ constraint_matrix:
   no_qk_norm_bias:
     has_qk_norm: false
     has_bias: true
+    is_moe: false
     required_sets:
     - base
     - attention_bias
@@ -126,11 +143,44 @@ constraint_matrix:
   qk_norm_and_bias:
     has_qk_norm: true
     has_bias: true
+    is_moe: false
     required_sets:
     - base
     - qk_norm
     - attention_bias
     total_required: 14
+  moe_no_qk_norm_no_bias:
+    has_qk_norm: false
+    has_bias: false
+    is_moe: true
+    required_sets:
+    - attn_core
+    total_required: 6
+  moe_qk_norm_no_bias:
+    has_qk_norm: true
+    has_bias: false
+    is_moe: true
+    required_sets:
+    - attn_core
+    - qk_norm
+    total_required: 8
+  moe_no_qk_norm_bias:
+    has_qk_norm: false
+    has_bias: true
+    is_moe: true
+    required_sets:
+    - attn_core
+    - attention_bias
+    total_required: 9
+  moe_qk_norm_and_bias:
+    has_qk_norm: true
+    has_bias: true
+    is_moe: true
+    required_sets:
+    - attn_core
+    - qk_norm
+    - attention_bias
+    total_required: 11
 architectures:
   llama:
     aliases:
@@ -207,6 +257,33 @@ architectures:
     - gate_proj
     - up_proj
     - down_proj
+    required_bias: []
+    required_qk_norm:
+    - attn_q_norm
+    - attn_k_norm
+    optional: []
+  qwen3_moe:
+    # GGUF general.architecture is "qwen3moe". Further aliases (qwen3_5_moe, ...) that
+    # arch-constraints-v1 lists are kit question Q1 (docs/lookahead/0.74.yaml), open.
+    aliases:
+    - qwen3moe
+    constraint_cell: moe_qk_norm_no_bias
+    has_qk_norm: true
+    has_bias: false
+    is_moe: true
+    tied_embeddings: false
+    norm_type: rmsnorm
+    activation: silu
+    positional_encoding: rope
+    mlp_type: swiglu
+    default_eps: 1.0e-06
+    required_weights:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
     required_bias: []
     required_qk_norm:
     - attn_q_norm
@@ -325,16 +402,22 @@ architectures:
     optional: []
 equations:
   weight_completeness:
-    formula: 'required(arch) = base_roles ∪ (qk_norm_roles if has_qk_norm) ∪ (bias_roles
-      if has_bias); complete(model, arch) = ∀ role ∈ required(arch): role.ptr ≠ 0
-      ∧ role.len > 0
+    formula: 'required(arch) = (attn_core_roles if is_moe else base_roles) ∪ (qk_norm_roles
+      if has_qk_norm) ∪ (bias_roles if has_bias); complete(model, arch) = ∀ role ∈
+      required(arch): role.ptr ≠ 0 ∧ role.len > 0
 
       '
-    domain: arch ∈ {llama, qwen2, qwen3, phi, mistral, gemma, whisper, ...}
+    domain: arch ∈ {llama, qwen2, qwen3, qwen3_moe, phi, mistral, gemma, whisper,
+      ...}
     codomain: complete ∈ {true, false}
     invariants:
-    - base_roles ⊆ required(arch) for all arch (base is always required)
-    - '|required(arch)| ∈ {9, 11, 12, 14} (only four possible cardinalities)'
+    - attn_core_roles ⊆ required(arch) for all arch
+    - base_roles ⊆ required(arch) for every arch with is_moe = false
+    - required(arch) ∩ {gate_proj, up_proj, down_proj} = ∅ for every arch with is_moe
+      = true (a MoE layer has no dense FFN; its router and experts are required by
+      the model-family moe block)
+    - '|required(arch)| ∈ {9, 11, 12, 14} when is_moe = false, ∈ {6, 8, 9, 11} when
+      is_moe = true'
     - complete(model, arch) = true => model produces correct output
     - complete(model, arch) = false => model MUST NOT run (Jidoka stop)
     preconditions:
@@ -356,13 +439,13 @@ equations:
     - 'input.len() > 0'
     lean_theorem: Theorems.Role_Mapping
   constraint_matrix_exhaustiveness:
-    formula: "∀ (qk: bool, bias: bool): ∃! cell ∈ constraint_matrix such that\n  cell.has_qk_norm\
-      \ = qk ∧ cell.has_bias = bias\n"
-    domain: (has_qk_norm, has_bias) ∈ {true, false}^2
+    formula: "∀ (qk: bool, bias: bool, moe: bool): ∃! cell ∈ constraint_matrix such that\n\
+      \  cell.has_qk_norm = qk ∧ cell.has_bias = bias ∧ cell.is_moe = moe\n"
+    domain: (has_qk_norm, has_bias, is_moe) ∈ {true, false}^3
     codomain: Exactly one constraint cell
     invariants:
-    - Four cells cover all four (bool, bool) combinations
-    - No two cells share the same (has_qk_norm, has_bias) pair
+    - Eight cells cover all eight (bool, bool, bool) combinations
+    - No two cells share the same (has_qk_norm, has_bias, is_moe) triple
     - Adding a new boolean axis requires 2^(n+1) cells
     preconditions:
     - 'input.len() > 0'
@@ -371,19 +454,21 @@ equations:
 proof_obligations:
 - id: ARCH-INV-001
   type: invariant
-  property: Base roles always required
-  formal: '∀ arch: base_roles ⊆ required_roles(arch)'
+  property: Base roles always required (attn_core for MoE)
+  formal: '∀ arch: attn_core_roles ⊆ required_roles(arch) ∧ (¬arch.is_moe ⇒ base_roles
+    ⊆ required_roles(arch))'
   applies_to: all
 - id: ARCH-INV-002
   type: invariant
   property: Constraint matrix exhaustive
-  formal: '∀ (qk, bias) ∈ {true,false}^2: ∃! cell matching (qk, bias)'
+  formal: '∀ (qk, bias, moe) ∈ {true,false}^3: ∃! cell matching (qk, bias, moe)'
   applies_to: all
 - id: ARCH-INV-003
   type: invariant
   property: Role count correctness
   formal: '|base| = 9 ∧ |base ∪ qk| = 11 ∧ |base ∪ bias| = 12 ∧ |base ∪ qk ∪ bias|
-    = 14'
+    = 14 ∧ |attn_core| = 6 ∧ |attn_core ∪ qk| = 8 ∧ |attn_core ∪ bias| = 9 ∧ |attn_core
+    ∪ qk ∪ bias| = 11'
   applies_to: all
 - id: ARCH-CMP-004
   type: completeness
@@ -403,7 +488,15 @@ proof_obligations:
 - id: ARCH-MON-007
   type: monotonicity
   property: Adding features only adds roles
-  formal: required(arch_with_feature) ⊇ required(arch_without_feature)
+  formal: 'required(arch_with_feature) ⊇ required(arch_without_feature), for feature
+    ∈ {has_qk_norm, has_bias} at fixed is_moe. is_moe is a substitution, not a feature:
+    it replaces the dense FFN roles (ARCH-SUB-008)'
+  applies_to: all
+- id: ARCH-SUB-008
+  type: invariant
+  property: MoE substitutes exactly the dense FFN roles
+  formal: '∀ (qk, bias): required(qk, bias, moe=false) = required(qk, bias, moe=true)
+    ⊎ {gate_proj, up_proj, down_proj}'
   applies_to: all
 falsification_tests:
 - id: FALSIFY-ARCH-001
@@ -553,8 +646,8 @@ falsification_tests:
     '
 - id: FALSIFY-ARCH-012
   rule: Monotonicity — features only add roles
-  prediction: 'For any architecture A and any superset of its boolean features, required_roles(superset)
-    ⊇ required_roles(A).
+  prediction: 'For any architecture A and any superset of its boolean features (has_qk_norm,
+    has_bias) at the same is_moe, required_roles(superset) ⊇ required_roles(A).
 
     '
   test: 'For each architecture, enable additional feature flags one at a time. Verify
@@ -562,6 +655,23 @@ falsification_tests:
 
     '
   if_fails: 'A feature flag accidentally removes roles instead of adding them.
+
+    '
+- id: FALSIFY-ARCH-013
+  rule: MoE substitution — is_moe removes exactly the dense FFN roles
+  prediction: 'For each (has_qk_norm, has_bias), required_roles with is_moe=true contains
+    none of FfnGate/FfnUp/FfnDown, and adding those three to it gives exactly required_roles
+    with is_moe=false. ArchConstraints::from_architecture("qwen3_moe") selects the moe_qk_norm_no_bias
+    cell (8 roles).
+
+    '
+  test: 'Deterministic: all four (qk, bias) pairs over the generated required_roles();
+    plus the qwen3_moe lookup. A MoE layer with no dense FFN tensors must validate
+    and a dense layer missing ffn_gate must still be refused.
+
+    '
+  if_fails: 'The is_moe axis is not in the constraint matrix, or a loader still keeps
+    its own hand-written dense-FFN skip instead of the contract (#5056).
 
     '
 kani_harnesses:
@@ -630,16 +740,22 @@ enforcement:
     check: contract_tests::FALSIFY-ARCH-008
     severity: CRITICAL
   base_roles_universal:
-    description: Every architecture includes the 9 base roles
+    description: Every dense architecture includes the 9 base roles; every MoE architecture
+      the 6 attn_core roles
     check: contract_tests::FALSIFY-ARCH-002
     severity: ERROR
   constraint_matrix_coverage:
-    description: The (has_qk_norm, has_bias) matrix has no gaps
+    description: The (has_qk_norm, has_bias, is_moe) matrix has no gaps
     check: contract_tests::FALSIFY-ARCH-003
     severity: ERROR
   alias_consistency:
     description: Architecture aliases produce identical constraints
     check: contract_tests::FALSIFY-ARCH-011
+    severity: ERROR
+  moe_substitution:
+    description: An is_moe architecture requires no dense FFN role and nothing else
+      changes (#5056)
+    check: contract_tests::FALSIFY-ARCH-013
     severity: ERROR
 qa_gate:
   id: F-ARCH-001
@@ -653,6 +769,7 @@ qa_gate:
   - weight_completeness
   - alias_consistency
   - monotonicity
-  pass_criteria: All 12 falsification tests pass + 3 Kani harnesses verify
+  - moe_substitution
+  pass_criteria: All 13 falsification tests pass + 3 Kani harnesses verify
   falsification: Remove attn_q_norm from Qwen3 required set to reproduce GH-279 garbage
     output

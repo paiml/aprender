@@ -753,26 +753,12 @@ impl ValidatedLayerWeights {
         arch: &ArchConstraints,
         layer_idx: usize,
     ) -> Result<Self, WeightValidationError> {
+        // M-GPU-MOE-1.3: a MoE layer has no dense FfnGate/FfnUp/FfnDown (its experts
+        // load into `moe_layers`). The contract's is_moe cells leave those roles out
+        // (architecture-requirements-v1 1.1.0, FALSIFY-ARCH-013, #5056), so no skip here.
         let roles = required_roles(arch);
 
         for &role in roles {
-            // M-GPU-MOE-1.3 (qwen3-moe-forward-gpu-v1 v1.3.0): for MoE
-            // architectures, the per-layer dense FFN tensor names
-            // (FfnGate, FfnUp, FfnDown) DO NOT EXIST — MoE has 128
-            // expert tensors per layer loaded into the `moe_layers`
-            // parameter at forward-time. Skip these role checks; the
-            // MoE forward path uses moe_layers directly and never
-            // reads FfnGate/FfnUp/FfnDown from the indexed weights.
-            // See: evidence/m-gpu-moe-1-2-blocked-by-preload-bug-2026-05-04/findings.md
-            if arch.is_moe
-                && matches!(
-                    role,
-                    WeightRole::FfnGate | WeightRole::FfnUp | WeightRole::FfnDown
-                )
-            {
-                continue;
-            }
-
             let (ptr, len) = Self::get_field(&raw, role);
             if ptr == 0 && len == 0 {
                 return Err(WeightValidationError {

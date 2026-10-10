@@ -117,4 +117,59 @@ mod tests {
             assert!(seen.insert(role), "Duplicate role: {:?}", role);
         }
     }
+
+    const DENSE_FFN: [WeightRole; 3] =
+        [WeightRole::FfnGate, WeightRole::FfnUp, WeightRole::FfnDown];
+
+    /// FALSIFY-ARCH-013 (#5056): for every (qk_norm, bias), the MoE cell is the dense
+    /// cell minus exactly the three dense FFN roles.
+    #[test]
+    fn falsify_arch_013_moe_substitutes_exactly_dense_ffn() {
+        let mut arch = ArchConstraints::from_architecture("llama");
+        for (qk, bias) in [(false, false), (true, false), (false, true), (true, true)] {
+            arch.has_qk_norm = qk;
+            arch.has_bias = bias;
+            arch.is_moe = false;
+            let dense = required_roles(&arch);
+            arch.is_moe = true;
+            let moe = required_roles(&arch);
+            for role in DENSE_FFN {
+                assert!(
+                    !moe.contains(&role),
+                    "({qk}, {bias}) MoE cell requires {role:?}"
+                );
+                assert!(
+                    dense.contains(&role),
+                    "({qk}, {bias}) dense cell lacks {role:?}"
+                );
+            }
+            assert!(
+                moe.iter().all(|r| dense.contains(r)),
+                "({qk}, {bias}) MoE adds a role"
+            );
+            assert_eq!(dense.len(), moe.len() + DENSE_FFN.len(), "({qk}, {bias})");
+        }
+    }
+
+    /// FALSIFY-ARCH-013: qwen3_moe selects moe_qk_norm_no_bias (8 roles), and so does
+    /// its GGUF architecture string.
+    #[test]
+    fn falsify_arch_013_qwen3_moe_cell() {
+        for name in ["qwen3_moe", "qwen3moe"] {
+            let arch = ArchConstraints::from_architecture(name);
+            assert!(arch.is_moe, "{name}");
+            let roles = required_roles(&arch);
+            assert_eq!(roles, ROLES_MOE_QK_NORM_NO_BIAS, "{name}");
+            assert_eq!(roles.len(), 8, "{name}");
+            assert!(roles.contains(&WeightRole::AttnQNorm), "{name}");
+        }
+    }
+
+    #[test]
+    fn test_moe_role_counts() {
+        assert_eq!(ROLES_MOE_NO_QK_NORM_NO_BIAS.len(), 6);
+        assert_eq!(ROLES_MOE_QK_NORM_NO_BIAS.len(), 8);
+        assert_eq!(ROLES_MOE_NO_QK_NORM_BIAS.len(), 9);
+        assert_eq!(ROLES_MOE_QK_NORM_AND_BIAS.len(), 11);
+    }
 }

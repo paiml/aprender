@@ -83,6 +83,9 @@ struct RoleSetDef {
 struct ConstraintCell {
     has_qk_norm: bool,
     has_bias: bool,
+    /// #5056: MoE axis. Absent in a pre-1.1.0 contract, which had only dense cells.
+    #[serde(default)]
+    is_moe: bool,
     required_sets: Vec<String>,
     total_required: usize,
 }
@@ -122,7 +125,7 @@ fn generate_arch_requirements(req: &ArchRequirements) -> String {
         "// Per-architecture required weight roles.\n\
          //\n\
          // AUTO-GENERATED from architecture-requirements-v1.yaml by build.rs — DO NOT EDIT.\n\
-         // See: provable-contracts/contracts/architecture-requirements-v1.yaml\n\
+         // See: contracts/architecture-requirements-v1.yaml\n\
          //\n\
          // UCBD §4 / GH-279: Compile-time enforcement that every loader\n\
          // provides all tensors required by the target architecture.\n\
@@ -163,17 +166,17 @@ fn generate_arch_requirements(req: &ArchRequirements) -> String {
     out.push_str("        }\n    }\n}\n\n");
 
     // Const arrays for each constraint cell
-    // Sort cells by (has_qk_norm, has_bias) for deterministic output
+    // Sort cells by (is_moe, has_qk_norm, has_bias) for deterministic output
     let mut cells: Vec<_> = req.constraint_matrix.iter().collect();
-    cells.sort_by_key(|(_, c)| (c.has_qk_norm, c.has_bias));
+    cells.sort_by_key(|(_, c)| (c.is_moe, c.has_qk_norm, c.has_bias));
 
     for (cell_name, cell) in &cells {
         let const_name = cell_const_name(cell_name);
         let roles = expand_role_sets(&cell.required_sets, &req.role_sets);
         let _ = writeln!(
             out,
-            "/// Roles for constraint cell: {cell_name} (has_qk_norm={}, has_bias={}).",
-            cell.has_qk_norm, cell.has_bias
+            "/// Roles for constraint cell: {cell_name} (has_qk_norm={}, has_bias={}, is_moe={}).",
+            cell.has_qk_norm, cell.has_bias, cell.is_moe
         );
         let _ = writeln!(out, "const {const_name}: &[WeightRole] = &[");
         for role in &roles {
@@ -193,19 +196,18 @@ fn generate_arch_requirements(req: &ArchRequirements) -> String {
     out.push_str(
         "/// Returns the required weight roles for a given architecture.\n\
          ///\n\
-         /// Exhaustive match on `(has_qk_norm, has_bias)` — adding a new architecture\n\
-         /// combination without updating this function will still match one of the\n\
-         /// four arms, but the contract test FALSIFY-ARCH-001 will catch mismatches.\n\
+         /// Exhaustive match on `(has_qk_norm, has_bias, is_moe)`: the compiler refuses\n\
+         /// a contract whose constraint matrix leaves one of the eight triples out.\n\
          #[must_use]\n\
          pub fn required_roles(arch: &ArchConstraints) -> &'static [WeightRole] {\n\
-         \x20   match (arch.has_qk_norm, arch.has_bias) {\n",
+         \x20   match (arch.has_qk_norm, arch.has_bias, arch.is_moe) {\n",
     );
     for (cell_name, cell) in &cells {
         let const_name = cell_const_name(cell_name);
         let _ = writeln!(
             out,
-            "        ({}, {}) => {const_name},",
-            cell.has_qk_norm, cell.has_bias
+            "        ({}, {}, {}) => {const_name},",
+            cell.has_qk_norm, cell.has_bias, cell.is_moe
         );
     }
     out.push_str("    }\n}\n");
