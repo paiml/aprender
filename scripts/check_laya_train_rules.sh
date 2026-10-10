@@ -29,6 +29,9 @@ SSH_WORD="ss""h "
 PUBLISH_RE='(cargo|make)[[:space:]]+'"publi""sh"
 
 LT1_RECEIPT="evidence/laya-train/lt-1/receipt.json"
+# The ONE path H4 exempts (Q5 ruling, handoff/quorum-a3-laya-q5-lt1-order.md): the LT-1
+# proxy-layer probe is measurement, not model code, and must merge before its receipt.
+LT1_PROBE="crates/aprender-train/examples/laya_engine_probe.rs"
 LT9_DECL="evidence/laya-train/lt-9/declaration.json"
 LT10_DIR="evidence/laya-train/lt-10"
 NEW_CRATE="crates/aprender-decide-train"
@@ -99,8 +102,10 @@ rule_h4() {
     local on_base=absent on_head=absent touches
     g cat-file -e "$BASE:$LT1_RECEIPT" 2>/dev/null && on_base=present
     g cat-file -e "$HEAD_REF:$LT1_RECEIPT" 2>/dev/null && on_head=present
-    touches=$(changed_names | awk '/^crates\//' | wc -l)
-    local arm="$LT1_RECEIPT base=$on_base head=$on_head; crates/ paths=$touches"
+    local exempt
+    touches=$(changed_names | awk -v p="$LT1_PROBE" '/^crates\// && $0 != p' | wc -l)
+    exempt=$(changed_names | awk -v p="$LT1_PROBE" '$0 == p' | wc -l)
+    local arm="$LT1_RECEIPT base=$on_base head=$on_head; crates/ paths=$touches; exempt $LT1_PROBE=$exempt"
     if [ "$touches" -gt 0 ] && [ "$on_base" = absent ] && [ "$on_head" = absent ]; then
         line H4 RED "touches crates/ before LT-1's receipt" "$arm"
     else
@@ -291,6 +296,9 @@ self_test() {
     st_case plant-judge-edit RED H2 sh -c 'echo "// x" >> crates/aprender-decide/src/verify.rs'
     st_case plant-crates-early RED H4 sh -c 'mkdir -p crates/x && echo "[package]" > crates/x/Cargo.toml'
     st_case lt1-own-receipt PASS H4 sh -c "mkdir -p crates/x evidence/laya-train/lt-1 && echo '[package]' > crates/x/Cargo.toml && echo '{\"engine\": \"core\"}' > $LT1_RECEIPT"
+    st_case lt1-probe-only PASS H4 sh -c "mkdir -p crates/aprender-train/examples && echo 'fn main() {}' > $LT1_PROBE"
+    st_case plant-probe-plus-crate RED H4 sh -c "mkdir -p crates/aprender-train/examples crates/x && echo 'fn main() {}' > $LT1_PROBE && echo '[package]' > crates/x/Cargo.toml"
+    st_case plant-probe-lookalike RED H4 sh -c "mkdir -p crates/aprender-train/examples && echo 'fn main() {}' > crates/aprender-train/examples/laya_engine_probe2.rs"
     st_case plant-cli-contract RED H11 sh -c 'mkdir -p contracts && echo "x: 1" > contracts/apr-cli-commands-v1.yaml'
     st_case plant-two-crates RED H11 sh -c 'mkdir -p crates/a crates/b && echo "[package]" > crates/a/Cargo.toml && echo "[package]" > crates/b/Cargo.toml'
     st_case plant-push-trigger RED H11 sh -c 'mkdir -p .github/workflows && printf "on:\n  push:\n  workflow_dispatch:\njobs: {}\n" > .github/workflows/w.yml'
