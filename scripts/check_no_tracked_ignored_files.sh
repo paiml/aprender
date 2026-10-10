@@ -151,7 +151,7 @@ if [ "${1:-}" = "--self-test" ]; then
   git -C "$TD" add -f crates/c/src/g.rs 2>/dev/null
   git -C "$TD" commit -qm v 2>/dev/null
   out="$(bash "$TD/scripts/check_no_tracked_ignored_files.sh" 2>&1)"; rc=$?
-  if [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q '^  crates/c/src/g.rs$'; then
+  if [ "$rc" -eq 1 ] && grep -q '^  crates/c/src/g.rs$' <<<"$out"; then
     printf 'ok    row 6 main path exits 1 and names crates/c/src/g.rs\n'
   else
     printf 'FAIL  row 6 rc=%s, expected 1 naming crates/c/src/g.rs\n' "$rc"; fails=1
@@ -159,7 +159,7 @@ if [ "${1:-}" = "--self-test" ]; then
   git -C "$TD" rm --cached -q crates/c/src/g.rs 2>/dev/null
   git -C "$TD" commit -qm u 2>/dev/null
   out="$(bash "$TD/scripts/check_no_tracked_ignored_files.sh" 2>&1)"; rc=$?
-  if ! printf '%s\n' "$out" | grep -q 'packaged crate source'; then
+  if ! grep -q 'packaged crate source' <<<"$out"; then
     printf 'ok    row 7 control: no packaged source, no hard-row FAIL (rc=%s, vacuity)\n' "$rc"
   else
     printf 'FAIL  row 7 hard row fired without a packaged source\n'; fails=1
