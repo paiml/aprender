@@ -95,9 +95,10 @@ pub struct ProbeSample {
 /// (`cuda_batch_scheduler.rs`), and S7 is a claim about that path.
 #[must_use]
 pub fn live_decode_tok_s(live: bool, arrivals: &[Duration], completion_tokens: u32) -> Option<f64> {
-    if !live || arrivals.len() < 2 || completion_tokens < 2 {
+    if !live || completion_tokens < 2 {
         return None;
     }
+    // Fewer than two arrivals: no first (`?`) or no time between them (`span`).
     let span = arrivals
         .last()?
         .saturating_sub(*arrivals.first()?)
@@ -694,6 +695,10 @@ mod tests {
             near(live_decode_tok_s(true, &arrivals, 2), 5.0),
             "1 token over 0.2 s"
         );
+        assert!(
+            near(live_decode_tok_s(true, &[ms(100), ms(300)], 9), 40.0),
+            "two arrivals are enough"
+        );
         assert_eq!(
             live_decode_tok_s(false, &arrivals, 9),
             None,
@@ -846,6 +851,7 @@ mod tests {
         let ok = check_reference(&sample(reference()), &sample(reference()), &POLICY);
         assert!(ok.stable, "{ok:?}");
         assert_eq!(ok.self_divergence_at, Some(8));
+        assert_eq!(ok.tokens, Some(8), "the first decode's completion_tokens");
         let mut early = reference();
         early[2] = tok("X", 1.0);
         let unstable = check_reference(&sample(reference()), &sample(early), &POLICY);
@@ -857,6 +863,11 @@ mod tests {
             &POLICY,
         );
         assert!(!short.stable);
+        assert_eq!(
+            short.tokens,
+            Some(3),
+            "recorded when the first decode is refused"
+        );
         assert!(short
             .reason
             .unwrap_or_default()
