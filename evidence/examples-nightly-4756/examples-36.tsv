@@ -1,39 +1,39 @@
 # dogfood_examples.sh version=0.70.3 examples=36 timeout_secs=180
 # pkg	example	class	rc	secs	cite
-aprender-core	publish_shell_safety	needs-data	1	160	  [MISSING] model.safetensors not found at /tmp/shell-safety-model/model.safetensors
-aprender-core	qa_chat	needs-data	2	2	[0;31mERROR: Model not found: pass --model PATH or cache a default model.[0m
-aprender-core	qa_serve	needs-data	2	1	[0;31mERROR: Model not found: pass --model PATH or cache a default model.[0m
+aprender-core	publish_shell_safety	needs-data	1	9	  [MISSING] model.safetensors not found at /tmp/shell-safety-model/model.safetensors
+aprender-core	qa_chat	needs-data	2	1	[0;31mERROR: Model not found: pass --model PATH or cache a default model.[0m
+aprender-core	qa_serve	needs-data	2	2	[0;31mERROR: Model not found: pass --model PATH or cache a default model.[0m
 aprender-core	qa_verify	needs-args	2	2	Usage: cargo run --example qa_verify -- --all | --section N [--json] [--verbose]
-aprender-train	finetune_real	needs-data	101	117	   ⚠ No tokenizer found in HF cache
-aprender-train	llama2-train	needs-args	2	46	Usage: llama2-train --config <path.toml>   (e.g. crates/aprender-train/examples/llama2/configs/124m.toml)
+aprender-train	finetune_real	needs-data	101	43	   ⚠ No tokenizer found in HF cache
+aprender-train	llama2-train	needs-args	2	9	Usage: llama2-train --config <path.toml>   (e.g. crates/aprender-train/examples/llama2/configs/124m.toml)
 aprender-train	profile_cuda_trainer	needs-feature	1	1	This example requires the 'cuda' feature (--features cuda)
 aprender-train	ssc_eval	needs-args	2	2	Usage: ssc_eval --model-dir <dir> --data <conversations.jsonl> [--samples N]
 aprender-train	ssc_preflight	needs-args	2	2	Usage: ssc_preflight --model-dir <dir>
-aprender-serve	api_server	pass	0	92	
-aprender-serve	bench_gemv	needs-hardware	101	64	CUDA init: GpuError { reason: "Failed to create CudaExecutor: CUDA device initialization failed: cuInit failed during CUDA driver initialization" }
-aprender-serve	check_layer4	needs-args	2	1	Usage: check_layer4 <model.gguf>
-aprender-serve	constrain_mask_overhead	needs-args	2	54	Usage: constrain_mask_overhead <model.gguf> [schema | @schema.json]
-aprender-serve	debug_q4k_controlled	needs-hardware	1	2	Error: DeviceInit("cuInit failed during CUDA driver initialization")
-aprender-serve	debug_q6k_controlled	needs-hardware	1	2	Error: DeviceInit("cuInit failed during CUDA driver initialization")
-aprender-serve	parity_035_m4_verification	needs-data	1	2	Model not found: phi2:2.7b on the Ollama server (run `ollama pull phi2:2.7b`)
-aprender-serve	parity_036_gpu_attention	needs-hardware	1	2	Failed to initialize CUDA: CUDA device initialization failed: cuInit failed during CUDA driver initialization
-aprender-serve	parity_038_async_streams	needs-hardware	1	2	Failed to initialize CUDA: CUDA device initialization failed: cuInit failed during CUDA driver initialization
-aprender-serve	parity_039_flash_attention	needs-hardware	1	2	Failed to initialize CUDA: CUDA device initialization failed: cuInit failed during CUDA driver initialization
-aprender-serve	parity_040_fp16_attention	needs-hardware	1	2	Failed to initialize CUDA: CUDA device initialization failed: cuInit failed during CUDA driver initialization
-aprender-serve	performance_parity	pass	0	11	
-aprender-serve	pipeline_tui	pass	0	134	
+aprender-serve	api_server	pass	0	9	
+aprender-serve	bench_gemv	needs-hardware	101	8	CUDA init: GpuError { reason: "Failed to create CudaExecutor: CUDA not available: CUDA driver not found (libcuda.so)" }
+aprender-serve	check_layer4	needs-args	2	2	Usage: check_layer4 <model.gguf>
+aprender-serve	constrain_mask_overhead	needs-args	2	8	Usage: constrain_mask_overhead <model.gguf> [schema | @schema.json]
+aprender-serve	debug_q4k_controlled	needs-hardware	1	2	Error: CudaNotAvailable("CUDA driver not found (libcuda.so)")
+aprender-serve	debug_q6k_controlled	needs-hardware	1	3	Error: CudaNotAvailable("CUDA driver not found (libcuda.so)")
+aprender-serve	parity_035_m4_verification	needs-data	1	1	Model not found: phi2:2.7b on the Ollama server (run `ollama pull phi2:2.7b`)
+aprender-serve	parity_036_gpu_attention	needs-hardware	1	2	Failed to initialize CUDA: CUDA not available: CUDA driver not found (libcuda.so)
+aprender-serve	parity_038_async_streams	needs-hardware	1	3	Failed to initialize CUDA: CUDA not available: CUDA driver not found (libcuda.so)
+aprender-serve	parity_039_flash_attention	needs-hardware	1	2	Failed to initialize CUDA: CUDA not available: CUDA driver not found (libcuda.so)
+aprender-serve	parity_040_fp16_attention	needs-hardware	1	2	Failed to initialize CUDA: CUDA not available: CUDA driver not found (libcuda.so)
+aprender-serve	performance_parity	pass	0	14	
+aprender-serve	pipeline_tui	pass	0	6	
 aprender-serve	qwen35_parity	needs-args	2	3	Usage: qwen35_parity <model.gguf> [tokens.txt]
-aprender-serve	qwen35_prefill_parity	needs-args	2	2	Usage: qwen35_prefill_parity <model.gguf> <n_tokens> <stride> <out.json> [ids.txt]
-aprender-serve	test_gemv_correctness	needs-hardware	1	2	Error: GpuError { reason: "Failed to create CudaExecutor: CUDA device initialization failed: cuInit failed during CUDA driver initialization" }
-aprender-serve	test_tc_attention	needs-hardware	101	2	CUDA init failed: DeviceInit("cuInit failed during CUDA driver initialization")
-aprender-serve	think_ab	needs-args	2	2	Usage: think_ab <model.gguf> <budget> <cpu|gpu>
-aprender-serve	verify_attention_kernel	needs-hardware	1	2	Error: DeviceInit("cuInit failed during CUDA driver initialization")
-aprender-profile	buggy_server	pass	0	71	
-aprender-orchestrate	agent_demo	pass	0	156	
-aprender-orchestrate	bug_hunter_demo	pass	0	4	
-aprender-orchestrate	design_by_contract	pass	0	3	
-aprender-distribute	test_mac_worker	needs-args	2	37	Usage: test_mac_worker <host:port>   (e.g. 192.168.50.100:9000)
-aprender-review-experiment	rex	needs-args	2	10	Usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check> (see the example docs)
-aprender-present-lib	brick_computer	pass	0	44	
-aprender-test-showcase	calculator_tui	pass	0	44	
+aprender-serve	qwen35_prefill_parity	needs-args	2	3	Usage: qwen35_prefill_parity <model.gguf> <n_tokens> <stride> <out.json> [ids.txt]
+aprender-serve	test_gemv_correctness	needs-hardware	1	3	Error: GpuError { reason: "Failed to create CudaExecutor: CUDA not available: CUDA driver not found (libcuda.so)" }
+aprender-serve	test_tc_attention	needs-hardware	101	3	CUDA init failed: CudaNotAvailable("CUDA driver not found (libcuda.so)")
+aprender-serve	think_ab	needs-args	2	3	Usage: think_ab <model.gguf> <budget> <cpu|gpu>
+aprender-serve	verify_attention_kernel	needs-hardware	1	2	Error: CudaNotAvailable("CUDA driver not found (libcuda.so)")
+aprender-profile	buggy_server	pass	0	9	
+aprender-orchestrate	agent_demo	pass	0	18	
+aprender-orchestrate	bug_hunter_demo	pass	0	3	
+aprender-orchestrate	design_by_contract	pass	0	4	
+aprender-distribute	test_mac_worker	needs-args	2	2	Usage: test_mac_worker <host:port>   (e.g. 192.168.50.100:9000)
+aprender-review-experiment	rex	needs-args	2	2	Usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check> (see the example docs)
+aprender-present-lib	brick_computer	pass	0	4	
+aprender-test-showcase	calculator_tui	pass	0	4	
 # summary pass=9 fail=0 timeout=0 needs-args=11 needs-hardware=10 needs-data=5
