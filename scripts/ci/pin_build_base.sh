@@ -182,6 +182,14 @@ self_test() {
     row "a tip fetch that fails refuses, says why, and pins nothing" \
         "$rc $PINNED $(said "cannot fetch main's tip")" "1 unset says-cause"
 
+    # A push needs the tip's first parent, so the pin deepens by one. An origin that serves
+    # the tip fetch and refuses the next connection makes that deepen fail: the pin refuses.
+    d=$(clone_at nodeepen "$c2"); rc=0
+    printf '#!/bin/sh\n[ -e "%s" ] && exit 1\ntouch "%s"\nexec git upload-pack "$@"\n' "$TD/served" "$TD/served" > "$TD/upload-once.sh" \
+        && git -C "$d" config remote.origin.uploadpack "sh '$TD/upload-once.sh'" || rc=99
+    [ "$rc" -eq 0 ] && { run_pin "$d" push "" "" || rc=$?; }
+    row "a push whose deepen fails refuses and says why" "$rc $(said "cannot deepen main's tip")" "1 says-cause"
+
     # A tag or branch NAMED origin/main outranks refs/remotes/origin/main when git resolves
     # `origin/main`, so every reader would compare against it, not the pin. The read-back sees it.
     d=$(clone_at shadow "$m"); rc=0
@@ -228,7 +236,7 @@ self_test() {
         "$rc $PINNED $r" "0 $c0 $c2"
 
     printf 'pin_build_base self-test: %s ok, %s bad\n' "$ok" "$bad"
-    [ "$bad" -eq 0 ] && [ "$ok" -ge 28 ]
+    [ "$bad" -eq 0 ] && [ "$ok" -ge 29 ]
 }
 
 case "${1:-}" in
