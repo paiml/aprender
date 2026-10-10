@@ -17,9 +17,11 @@ use crate::api::create_router;
 
 const CHAT: &str = "/v1/chat/completions";
 
+/// `ignore_eos`: the fixture model's greedy first token is a stop token, so
+/// without it every reply here is empty and the per-token checks see nothing.
 fn chat_body(extra: &str) -> String {
     format!(
-        r#"{{"model":"default","messages":[{{"role":"user","content":"Hi"}}],"max_tokens":4,"temperature":0{extra}}}"#
+        r#"{{"model":"default","messages":[{{"role":"user","content":"Hi"}}],"max_tokens":4,"temperature":0,"ignore_eos":true{extra}}}"#
     )
 }
 
