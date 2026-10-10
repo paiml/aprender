@@ -34,7 +34,8 @@
 #   not_measured: the verdict is NOT RELEASABLE until a producer exists for each. The other lanes are information
 #   only, coverage included (operator ruling C291.1: the coverage floor does not gate this release). The lane table is a
 #   constant in this file, never an option or an environment value: a verdict set a caller can shrink is theater.
-#   --self-test pins it. Report-only: this script blocks nothing and no release script reads it.
+#   --self-test pins it. Who reads it: rehearse.sh runs it as its `lanes` stage (--commit), and the release-day steps
+#   that dispatch a producer read that bundle (lib_rehearsal.sh); with --exit-verdict its exit status is the verdict.
 #
 # OUTPUTS under --out DIR (or $OUT), per UTC date D:
 #     D/line         the line;
@@ -646,7 +647,7 @@ install_timer() {
     unitdir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
     mkdir -p "$unitdir" || caller_error "cannot create $unitdir"
     {
-        printf '[Unit]\nDescription=aprender nightly evidence train (BLD-002 R4), report-only\n\n[Service]\nType=oneshot\nNice=10\nTimeoutStartSec=900\n'
+        printf '[Unit]\nDescription=aprender nightly evidence train (BLD-002 R4)\n\n[Service]\nType=oneshot\nNice=10\nTimeoutStartSec=900\n'
         printf '%s\n' "${sb[@]}"
         printf 'Environment=OUT=%s\nEnvironment=INBOX=%s\nEnvironment=PATH=%s\nExecStart=/bin/bash %s/nightly_train.sh --pinned\n' "$out" "$inbox" "$p" "$dir"
     } > "$unitdir/$UNIT.service"
