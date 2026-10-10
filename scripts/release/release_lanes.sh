@@ -9,7 +9,8 @@
 #   bash scripts/release/release_lanes.sh assert-head REF               # a lane job's proof that it ran on REF
 #   bash scripts/release/release_lanes.sh --self-test | --mutants
 #
-# WHO READS THIS. nightly_train.sh reads a lane as the newest completed run of its producer on C (main's head):
+# WHO READS THIS. nightly_train.sh reads a lane as the newest completed run of its producer on C (the head of the
+# night's scheduled nightly.yml run):
 # green when every job whose name matches the lane ran to success at attempt 1, red when one failed, and
 # not_measured when the matched job was skipped or cancelled, or there is no run on C. This script is the
 # producer half, run by .github/workflows/release-lanes-nightly.yml, where each lane has two jobs:

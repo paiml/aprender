@@ -8,7 +8,14 @@
 #     NOT RELEASABLE: <lane>, <run id|not_measured>     the first failing verdict lane, then (+N more)
 #     NOT RELEASABLE: nightly-train, <step> ...         the train itself failed part-way (the EXIT trap prints it)
 #   and every line ends with [C=<sha10> pin=<train>.<greens>.<redage>]: the commit judged and the shas of the three
-#   scripts that judged it. H is the commit id of C, main's head at the moment of the read.
+#   scripts that judged it. H is the commit id of C: the head of that night's SCHEDULED nightly.yml run (B1), the
+#   commit the night's producers ran on. Main's head at the moment of the read is not C: on a late night main has moved
+#   past the producers, and every lane would read "no run on C". C comes from the scheduled run only: no option or
+#   environment value sets it outside --commit, and a dispatched run never counts. The newest scheduled run on main
+#   created in the 24 h before --now must be completed; none, an incomplete one, or an unreadable list fails the read
+#   (every producer lane not_measured), never a fallback to main's head.
+#   A lane whose runs are all on another commit than C is a setup fault: its row says "setup fault: run head is not C"
+#   and carries that run's head, and the lane stays not_measured. The bundle prints the read C and the run it came from.
 #
 # READ, DON'T RE-RUN. Night 1 runs nothing. Each lane takes the result its existing scheduled producer (a workflow on
 #   main and, optionally, a job-name pattern) recorded for C. A lane is
@@ -44,7 +51,7 @@
 #   run read per green verdict-lane candidate for run_attempt (GraphQL has no attempt field). Core remaining under
 #   min(RATE_FLOOR, limit/5) makes no further call: the read failed, every producer lane is not_measured.
 #
-# --commit C judges C (40-hex) in place of main's head: the one GraphQL query reads C by object(oid:), and a read of any
+# --commit C judges C (40-hex) in place of the night's scheduled run: the one GraphQL query reads C by object(oid:), and a read of any
 #   other commit fails (every producer lane not_measured). The nightly rehearsal passes its pick C (B1 Q1).
 # --in-run RUN (needs --commit) reads the cleanroom and publish-dryrun lanes from the rehearsal's own run RUN, whose job
 #   INRUN_CALLER calls INRUN_WF at C (B1 Q3), in place of INRUN_WF's scheduled runs: two more calls (the run, and its
@@ -157,13 +164,13 @@ evaluate() {
         WHY = "run " r ": matched job(s) skipped or cancelled"; return "void"
     }
     function out(i, state, r, att, why) {
-        print L[i], K[i], state, (WF[i] == "-" ? "none" : WF[i] " " RE[i]), (r == "" ? "not_measured" : r), (r == "" ? "" : RH[r]), (r == "" ? "" : tolower(RCO[r])), att, ST, EN, why
+        print L[i], K[i], state, (WF[i] == "-" ? "none" : WF[i] " " RE[i]), (r == "" ? "not_measured" : r), (r == "" ? OH : RH[r]), (r == "" ? "" : tolower(RCO[r])), att, ST, EN, why
     }
     END {
         if (MODE == "final") print "check", "run_id", "created_at", "branch", "event", "conclusion", "attempt" > HIST
         readok = (RD == "ok" && C ~ /^[0-9a-f]{40}$/)
         for (i = 1; i <= n; i++) {
-            ST = ""; EN = ""
+            ST = ""; EN = ""; OH = ""
             if (WF[i] == "-") { if (MODE == "final") out(i, "not_measured", "", "", "no nightly producer on main yet"); continue }
             if (!readok) { if (MODE == "final") out(i, "not_measured", "", "", "read " RD); continue }
             # this lane'"'"'s runs on main, newest first
@@ -178,12 +185,14 @@ evaluate() {
                     hc = (s == "green" ? "success" : (s == "red" ? "failure" : "cancelled"))
                     print L[i], r, RC[r], "main", REV[r], hc, ha > HIST
                 }
-                if (RH[r] != C) { if (other == "") other = r " on " substr(RH[r], 1, 10); continue }
+                if (RH[r] != C) { if (other == "") { other = r " on " substr(RH[r], 1, 10); OH = RH[r] }; continue }
                 if (pick == "" && s != "void") { pick = r; pst = s; pwhy = WHY; pS = ST; pE = EN; pD = DUP }
                 else if (pick == "" && pwhy == "") pwhy = WHY
             }
+            # every run of the lane is on another commit than the read C: a setup fault (the night and the read disagree),
+            #   printed as one, with the head of that run in the row; it stays not_measured, never a pass and never a third state
             if (pick == "") {
-                if (MODE == "final") out(i, "not_measured", "", "", (pwhy != "" ? pwhy : "no run on C") (other != "" ? "; newest run " other : (m == 0 ? "; no run on main" : "")))
+                if (MODE == "final") out(i, "not_measured", "", "", (pwhy == "" && other != "" ? "setup fault: run head is not C " substr(C, 1, 10) "; " : "") (pwhy != "" ? pwhy : "no run on C") (other != "" ? "; newest run " other : (m == 0 ? "; no run on main" : "")))
                 continue
             }
             ST = pS; EN = pE
@@ -306,9 +315,10 @@ normalize() {
 # fetch RAW CACHE -> RAW/{C,tree,read,runs.tsv,attempts.tsv,graphql.json,workflows.json}; never fails: a failed read
 #   is recorded in RAW/read and makes every producer lane not_measured
 fetch() {
-    local raw="$1" cache="$2" lim rem fl hdr st q a ids r
+    local raw="$1" cache="$2" lim rem fl hdr st q a ids r want="$COMMIT"
     [ -z "$INRUN" ] || MAX_CALLS=$((MAX_CALLS + 2))   # --in-run: the run, and its attempt's job list
-    printf 'failed: not read\n' > "$raw/read"; : > "$raw/C"; : > "$raw/tree"; : > "$raw/runs.tsv"; : > "$raw/attempts.tsv"
+    [ -n "$COMMIT" ] || MAX_CALLS=$((MAX_CALLS + 1))   # no --commit: the night's scheduled nightly.yml run (B1)
+    printf 'failed: not read\n' > "$raw/read"; : > "$raw/C"; : > "$raw/tree"; : > "$raw/runs.tsv"; : > "$raw/attempts.tsv"; : > "$raw/night"
     read -r lim rem <<< "$(gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
     case "$lim:$rem" in *[!0-9:]*|:*|*:) printf 'failed: rate_limit unreadable\n' > "$raw/read"; return 0 ;; esac
     # the floor is a fifth of the token's own hourly limit, capped at RATE_FLOOR: the fleet PAT (5000) keeps its 1000
@@ -327,21 +337,17 @@ fetch() {
     elif [ "$st" = "304" ]; then CALLS=$((CALLS - 1))
     else printf 'failed: workflow list HTTP %s\n' "${st:-none}" > "$raw/read"; return 0; fi
     cp "$cache/workflows.json" "$raw/workflows.json" 2>/dev/null || { printf 'failed: no workflow list\n' > "$raw/read"; return 0; }
-    # one GraphQL query: every producer workflow's recent runs, and main's head (or --commit's C) with its check rollup
-    q="$(gql_query "$LANES" "$raw/workflows.json" "$COMMIT")"
+    if [ -z "$COMMIT" ]; then night_head "$raw" || return 0; want="$(cut -f 3 "$raw/night")"; fi
+    # one GraphQL query: every producer workflow's recent runs, and C (the night's, or --commit's) with its check rollup
+    q="$(gql_query "$LANES" "$raw/workflows.json" "$want")"
     [ -n "$q" ] || { printf 'failed: a producer workflow is not in the workflow list\n' > "$raw/read"; return 0; }
     call_ok || { printf 'failed: call budget\n' > "$raw/read"; return 0; }
     gh api graphql -f query="$q" > "$raw/graphql.json" 2>/dev/null || { printf 'failed: GraphQL call\n' > "$raw/read"; return 0; }
     if jq -e '(.errors // []) | length > 0' "$raw/graphql.json" > /dev/null 2>&1; then printf 'failed: GraphQL errors\n' > "$raw/read"; return 0; fi
-    if [ -n "$COMMIT" ]; then
-        jq -r '.data.repository.object.oid // empty' "$raw/graphql.json" > "$raw/C" 2>/dev/null
-        jq -r '.data.repository.object.tree.oid // empty' "$raw/graphql.json" > "$raw/tree" 2>/dev/null
-    else
-        jq -r '.data.repository.defaultBranchRef | select(.name == "main") | .target.oid // empty' "$raw/graphql.json" > "$raw/C" 2>/dev/null
-        jq -r '.data.repository.defaultBranchRef.target.tree.oid // empty' "$raw/graphql.json" > "$raw/tree" 2>/dev/null
-    fi
-    grep -q -E '^[0-9a-f]{40}$' "$raw/C" || { printf 'failed: no %s in the response\n' "${COMMIT:+commit }${COMMIT:-head of main}" > "$raw/read"; return 0; }
-    commit_ok "$raw" || return 0
+    jq -r '(.data.repository.object // .data.repository.defaultBranchRef.target) | .oid // empty' "$raw/graphql.json" > "$raw/C" 2>/dev/null
+    jq -r '(.data.repository.object // .data.repository.defaultBranchRef.target) | .tree.oid // empty' "$raw/graphql.json" > "$raw/tree" 2>/dev/null
+    grep -q -E '^[0-9a-f]{40}$' "$raw/C" || { printf 'failed: no commit %s in the response\n' "$want" > "$raw/read"; return 0; }
+    commit_ok "$raw" "$want" || return 0
     normalize "$raw/graphql.json" "$raw/workflows.json" > "$raw/runs.tsv" 2>/dev/null || { printf 'failed: response did not normalize\n' > "$raw/read"; return 0; }
     if [ -n "$INRUN" ]; then inrun_read "$raw" "$INRUN" && inrun_rows "$raw" || return 0; fi
     printf 'ok\n' > "$raw/read"
@@ -355,10 +361,41 @@ fetch() {
         printf '%s\t%s\n' "$r" "$a" >> "$raw/attempts.tsv"
     done
 }
-# commit_ok RAW -> 1, with RAW/read saying why, when --commit names a commit the read is not of
+# commit_ok RAW [WANT] -> 1, with RAW/read saying why, when the read is not of WANT (default --commit's C)
 commit_ok() {
-    [ -z "$COMMIT" ] || [ "$(cat "$1/C" 2>/dev/null)" = "$COMMIT" ] \
-        || { printf 'failed: the read is of %s, not of --commit %s\n' "$(cat "$1/C" 2>/dev/null)" "$COMMIT" > "$1/read"; return 1; }
+    local w="${2-$COMMIT}" lab="the night C"
+    [ -z "$COMMIT" ] || lab="--commit"
+    [ -z "$w" ] || [ "$(cat "$1/C" 2>/dev/null)" = "$w" ] \
+        || { printf 'failed: the read is of %s, not of %s %s\n' "$(cat "$1/C" 2>/dev/null)" "$lab" "$w" > "$1/read"; return 1; }
+}
+NIGHT_WF="nightly.yml"
+# night_pick RUNS.json NOW -> "id<TAB>created<TAB>sha" of that night's scheduled NIGHT_WF run: the newest run on main
+#   with event schedule created at or before NOW and less than 24 h before it, which must be completed; else
+#   "none<TAB>why". A dispatched or other-branch run is never picked, and an incomplete newest run is not skipped for
+#   an older one: the night has no C yet.
+night_pick() {
+    jq -r --arg now "$2" '
+        ($now | fromdateiso8601) as $t
+        | [(.workflow_runs // [])[] | select(.event == "schedule" and .head_branch == "main" and ((.created_at | fromdateiso8601) <= $t))]
+        | (sort_by(.created_at) | last) as $r
+        | if $r == null then "none\tno scheduled \($ENV.NIGHT_WF) run on main by \($now)"
+          elif ($t - ($r.created_at | fromdateiso8601)) >= 86400 then "none\tthe newest scheduled \($ENV.NIGHT_WF) run \($r.id) (\($r.created_at)) is 24 h or more before \($now)"
+          elif $r.status != "completed" then "none\tthe scheduled \($ENV.NIGHT_WF) run \($r.id) is \($r.status)"
+          elif (($r.head_sha // "") | test("^[0-9a-f]{40}$") | not) then "none\tthe scheduled \($ENV.NIGHT_WF) run \($r.id) has no head sha"
+          else "\($r.id)\t\($r.created_at)\t\($r.head_sha)" end' "$1" 2>/dev/null
+}
+# night_head RAW -> RAW/night (id, created, sha); 1, with RAW/read saying why, on no C
+night_head() {
+    local n
+    call_ok || { printf 'failed: call budget\n' > "$1/read"; return 1; }
+    gh api "repos/$REPO/actions/workflows/$NIGHT_WF/runs?event=schedule&branch=main&per_page=10" > "$1/night.json" 2>/dev/null \
+        || { printf 'failed: the %s run list\n' "$NIGHT_WF" > "$1/read"; return 1; }
+    n="$(NIGHT_WF="$NIGHT_WF" night_pick "$1/night.json" "${NOW:-}")"
+    case "$n" in
+        [1-9]*) printf '%s\n' "$n" > "$1/night" ;;
+        none*) printf 'failed: %s\n' "${n#none	}" > "$1/read"; return 1 ;;
+        *) printf 'failed: the %s run list did not parse\n' "$NIGHT_WF" > "$1/read"; return 1 ;;
+    esac
 }
 # ---------------------------------------------------------------- the rehearsal's own lanes (--in-run) ------------
 # INRUN_FROM's run calls INRUN_WF as its job INRUN_CALLER, at the pick C (B1 Q3). GitHub names each called job
@@ -507,7 +544,7 @@ run_train() {
     mkdir -p "$raw" || exit 1
     step read
     if [ -n "$from" ]; then
-        for f in C read runs.tsv attempts.tsv tree ${INRUN:+inrun.run inrun.jobs.tsv}; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
+        for f in C read runs.tsv attempts.tsv tree night ${INRUN:+inrun.run inrun.jobs.tsv}; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
         # with --commit a replay judges only a read of that commit; with --in-run it re-reads the run's jobs from the copied files
         if [ "$(cat "$raw/read" 2>/dev/null)" = ok ] && commit_ok "$raw" && [ -n "$INRUN" ]; then inrun_rows "$raw" || :; fi
     else fetch "$raw" "$OUTDIR/cache"; fi
@@ -535,6 +572,8 @@ run_train() {
         printf '# budget\tfirst start %s, last end %s, %s (6 h budget; info only, not in the verdict)\n' "${budget%%	*}" "${budget##*	}" "$(span "${budget%%	*}" "${budget##*	}")"
         printf '# github calls\t%s\n# greens in a row\t%s\n# as of\t%s\n' "$CALLS" "$g" "$NOW"
         [ -z "$INRUN" ] || printf '# in-run\t%s\n' "$INRUN"
+        # the read C, and where it came from: the night's scheduled run (id, created, head), or --commit
+        printf '# read C\t%s\t%s\n' "${CSHA:-none}" "$(if [ -n "$COMMIT" ]; then printf -- '--commit'; elif [ -s "$raw/night" ]; then printf 'scheduled %s run %s' "$NIGHT_WF" "$(tr '\t' ' ' < "$raw/night")"; else printf 'no night read'; fi)"
     } > "$OUTDIR/$DAY/bundle.tsv" || exit 1
     step print
     printf '%s\n' "$line" > "$OUTDIR/$DAY/line" || exit 1
@@ -751,10 +790,21 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
         normalize "$tmp/rcut.json" "$tmp/wf.json"
     }
     row normalize_marks_a_cut_rollup 0 "$(printf 'rollup\t.github/workflows/c.yml\t301\tpush\tmain\t%s\tc\tCOMPLETED\tSUCCESS\t#truncated\tCOMPLETED\tTRUNCATED' "$ST_C")" "" -- st_rcut
+    st_nr() { printf '{"id":%s,"event":"%s","head_branch":"%s","created_at":"%s","status":"%s","head_sha":"%s"}' "$@"; }
+    st_night() { local f="$tmp/night-$1.json"; shift; printf '{"workflow_runs":[%s]}\n' "$(IFS=,; echo "$*")" > "$f"; }
+    st_night ok "$(st_nr 900 schedule main 2026-10-04T04:00:00Z completed "$ST_C")"
+    st_night dispatch "$(st_nr 905 workflow_dispatch main 2026-10-04T05:00:00Z completed "$ST_X")"
+    st_night running "$(st_nr 901 schedule main 2026-10-04T05:00:00Z in_progress "$ST_X")" "$(st_nr 900 schedule main 2026-10-04T04:00:00Z completed "$ST_C")"
+    st_night stale "$(st_nr 800 schedule main 2026-10-03T05:59:59Z completed "$ST_C")"
+    st_night future "$(st_nr 902 schedule main 2026-10-04T07:00:00Z completed "$ST_X")" "$(st_nr 900 schedule main 2026-10-04T04:00:00Z completed "$ST_C")"
+    st_night branch "$(st_nr 903 schedule release/x 2026-10-04T05:00:00Z completed "$ST_X")" "$(st_nr 900 schedule main 2026-10-04T04:00:00Z completed "$ST_C")"
+    st_night nosha "$(st_nr 900 schedule main 2026-10-04T04:00:00Z completed "")"
+    printf 'not json\n' > "$tmp/night-garbage.json"
     # fetch against a stub gh: the refusals happen before any real call could be made
     mkdir -p "$tmp/bin"
     printf '%s\n' '#!/bin/bash' 'case "$*" in' \
         '  *rate_limit*) echo "${STUB_LIM-5000} ${STUB_REM:-5000}" ;;' \
+        '  *nightly.yml/runs*) cat "$STUB_NIGHT" ;;' \
         '  *actions/workflows*) printf "HTTP/2.0 200 OK\r\netag: \"e1\"\r\n\r\n"; cat "$STUB_WF" ;;' \
         '  *graphql*) echo "{\"errors\":[{\"message\":\"stub\"}]}" ;;' \
         '  *) echo 1 ;;' 'esac' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
@@ -762,7 +812,7 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     st_fetch() {
         local f; f="$(realpath -m -s -- "$tmp/f$1")"
         mkdir -p "$f"
-        PATH="$tmp/bin:$PATH" STUB_WF="$tmp/wfall.json" LANES="$ST_LANES" fetch "$f" "$f/cache"
+        PATH="$tmp/bin:$PATH" STUB_WF="$tmp/wfall.json" STUB_NIGHT="${STUB_NIGHT:-$tmp/night-ok.json}" NOW=2026-10-04T06:00:00Z LANES="$ST_LANES" fetch "$f" "$f/cache"
         cat "$f/read"
     }
     st_fetch_refuses_under_the_rate_floor() { STUB_REM=999 st_fetch 1; }
@@ -777,6 +827,53 @@ v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.ts
     row fetch_refuses_past_the_call_budget 0 "failed: call budget" "" -- st_fetch_refuses_past_the_call_budget
     st_fetch_refuses_a_graphql_error() { CALLS=0; st_fetch 3; }
     row fetch_refuses_a_graphql_error 0 "failed: GraphQL errors" "" -- st_fetch_refuses_a_graphql_error
+    # B1: C is the head of the night's SCHEDULED nightly.yml run, never main's head at read time
+    st_pick() { NIGHT_WF=nightly.yml night_pick "$tmp/night-$1.json" 2026-10-04T06:00:00Z; }
+    row night_pick_takes_the_scheduled_run 0 "$(printf '900\t2026-10-04T04:00:00Z\t%s' "$ST_C")" "none" -- st_pick ok
+    row night_pick_never_counts_a_dispatched_run 0 "none	no scheduled nightly.yml run on main by" "$ST_X" -- st_pick dispatch
+    row night_pick_never_skips_a_running_night 0 "none	the scheduled nightly.yml run 901 is in_progress" "$ST_C" -- st_pick running
+    row night_pick_refuses_a_run_24h_old 0 "is 24 h or more before" "$ST_C" -- st_pick stale
+    row night_pick_ignores_a_run_after_now 0 "$(printf '900\t2026-10-04T04:00:00Z\t%s' "$ST_C")" "$ST_X" -- st_pick future
+    row night_pick_ignores_another_branch 0 "$(printf '900\t2026-10-04T04:00:00Z\t%s' "$ST_C")" "$ST_X" -- st_pick branch
+    row night_pick_refuses_a_run_without_a_sha 0 "has no head sha" "" -- st_pick nosha
+    st_fetch_night() { CALLS=0; STUB_NIGHT="$tmp/night-$1.json" st_fetch "n$1"; }
+    row a_dispatched_only_night_fails_the_read 0 "failed: no scheduled nightly.yml run on main" "GraphQL" -- st_fetch_night dispatch
+    row a_running_night_fails_the_read 0 "failed: the scheduled nightly.yml run 901 is in_progress" "GraphQL" -- st_fetch_night running
+    row an_unparsed_night_list_fails_the_read 0 "failed: the nightly.yml run list did not parse" "GraphQL" -- st_fetch_night garbage
+    row an_unread_night_list_fails_the_read 0 "failed: the nightly.yml run list" "GraphQL" -- st_fetch_night absent
+    # the late-start night: the producers ran on C1, main moved on to C2 before the read. The line judges C1, and a lane whose
+    #   only run is on C2 is a setup fault, not_measured, with C2 in its row
+    mkdir -p "$tmp/ls/bin"
+    st_ls_commit() { printf '{"oid":"%s","tree":{"oid":"t"},"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}' "$1"; }
+    st_ls_run() { printf '{"databaseId":%s,"createdAt":"2026-10-04T0%s:00:00Z","event":"schedule","checkSuite":{"status":"COMPLETED","conclusion":"SUCCESS","branch":{"name":"main"},"commit":{"oid":"%s"},"checkRuns":{"pageInfo":{"hasNextPage":false},"nodes":[{"name":"%s","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-10-04T0%s:00:30Z","completedAt":"2026-10-04T0%s:20:00Z"}]}}}' "$1" "$2" "$3" "$4" "$2" "$2"; }
+    st_ls_runs='"w0":{"id":"WA","runs":{"nodes":['"$(st_ls_run 101 4 "$ST_C" job-a)"']}},"w1":{"id":"WB","runs":{"nodes":['"$(st_ls_run 201 5 "$ST_X" job-b)"']}},"w2":{"id":"WC","runs":{"nodes":[]}},"w3":{"id":"WD","runs":{"nodes":[]}}'
+    printf '{"data":{"repository":{"defaultBranchRef":{"name":"main"},"object":%s},%s}}\n' "$(st_ls_commit "$ST_C")" "$st_ls_runs" > "$tmp/ls/c1.json"
+    printf '{"data":{"repository":{"defaultBranchRef":{"name":"main","target":%s}},%s}}\n' "$(st_ls_commit "$ST_X")" "$st_ls_runs" > "$tmp/ls/c2.json"
+    printf '%s\n' '#!/bin/bash' 'case "$*" in' \
+        '  *rate_limit*) echo "5000 5000" ;;' \
+        '  *nightly.yml/runs*) cat "$STUB_NIGHT" ;;' \
+        '  *actions/workflows*) printf "HTTP/2.0 200 OK\r\netag: \"e1\"\r\n\r\n"; cat "$STUB_WF" ;;' \
+        "  *graphql*object\\(oid:*$ST_C*) cat \"\$STUB_LS/c1.json\" ;;" \
+        '  *graphql*) cat "$STUB_LS/c2.json" ;;' \
+        '  *) echo 1 ;;' 'esac' > "$tmp/ls/bin/gh"; chmod +x "$tmp/ls/bin/gh"
+    st_late_start() {
+        local f="$tmp/fls"; mkdir -p "$f"; CALLS=0
+        PATH="$tmp/ls/bin:$PATH" STUB_WF="$tmp/wfall.json" STUB_NIGHT="$tmp/night-ok.json" STUB_LS="$tmp/ls" NOW=2026-10-04T06:00:00Z LANES="$ST_LANES" fetch "$f" "$f/cache"
+        printf 'read=%s C=%s\n' "$(cat "$f/read")" "$(cat "$f/C")"
+        decide "$ST_LANES" "$f" 2026-10-04T06:00:00Z; cat "$f/line" "$f/lanes.tsv"
+    }
+    st_late_start > "$tmp/ls.out" 2>&1
+    row a_late_start_night_judges_the_night_c 0 "read=ok C=$ST_C" "C=$ST_X" -- cat "$tmp/ls.out"
+    row a_late_start_night_lane_a_is_green 0 "$(printf 'v-a\tverdict\tgreen\t.github/workflows/a.yml ^job-a$\t101\t%s' "$ST_C")" "" -- cat "$tmp/ls.out"
+    row a_lane_only_on_c2_prints_c2_in_its_row 0 "$(printf 'v-b\tverdict\tnot_measured\t.github/workflows/b.yml \tnot_measured\t%s\t' "$ST_X")" "$(printf 'v-b\tverdict\tgreen')" -- cat "$tmp/ls.out"
+    row a_lane_only_on_c2_is_a_setup_fault 0 "$(printf '\tsetup fault: run head is not C aaaaaaaaaa; no run on C; newest run 201 on bbbbbbbbbb')" "$(printf 'v-b\tverdict\tgreen')" -- cat "$tmp/ls.out"
+    st_late_start_line() {
+        bash "$SCRIPT_PATH" --from "$tmp/fls" --out "$tmp/ols" --now 2026-10-04T06:00:00Z > /dev/null
+        cat "$tmp/ols/2026-10-04/line"; command grep '^# read C' "$tmp/ols/2026-10-04/bundle.tsv"
+    }
+    st_late_start_line > "$tmp/lsl.out" 2>&1
+    row a_late_start_night_prints_c1_on_the_line 0 "[C=aaaaaaaaaa pin=" "[C=bbbbbbbbbb" -- cat "$tmp/lsl.out"
+    row the_receipt_prints_the_read_c_and_its_night 0 "$(printf '# read C\t%s\tscheduled nightly.yml run 900 2026-10-04T04:00:00Z %s' "$ST_C" "$ST_C")" "" -- cat "$tmp/lsl.out"
     row an_inbox_read_back_mismatch_exits_non_zero 1 "inbox: read-back mismatch" "" -- \
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o9" --inbox /dev/null --now 2026-10-04T06:00:00Z
     row a_closed_stdout_keeps_the_real_verdict 0 "NOT RELEASABLE: ci-main, not_measured (+14 more) [C=aaaaaaaaaa pin=" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
@@ -1043,7 +1140,7 @@ m42_floor_ignores_the_limit	s/fl=\$((lim \/ 5))/fl=$RATE_FLOOR/
 m45_commit_ok_always_passes	s/^commit_ok() {$/commit_ok() { return 0/
 m46_normalize_reads_the_head	s/(.data.repository.object \/\/ .data.repository.defaultBranchRef.target) as \$c/.data.repository.defaultBranchRef.target as $c/
 m47_query_ignores_the_commit	s/(if \$commit == "" then/(if true then/
-m48_commit_read_from_the_head	s/jq -r .\.data\.repository\.object\.oid \/\/ empty. /jq -r ".data.repository.defaultBranchRef.target.oid \/\/ empty" /
+m48_commit_read_from_the_head	s/(.data.repository.object \/\/ .data.repository.defaultBranchRef.target) | .oid/.data.repository.defaultBranchRef.target.oid/
 m49_inrun_never_read	s/^    if \[ -n "\$INRUN" \]; then inrun_read "\$raw" "\$INRUN" && inrun_rows "\$raw" || return 0; fi$/    :/
 m50_assert_not_required	s/on = (\$6 == C) }/on = 1 }/
 m51_prefix_kept	s/{ nm = substr(\$1, length(P) + 1);/{ nm = $1;/
@@ -1081,6 +1178,15 @@ m82_failed_relay_counts	s/select(.conclusion == "success") | (.name \/\/ "") | c
 m83_models_unrun_row_dropped	/if (!(MW in got)) print/d
 m84_lanes_unrun_row_dropped	/if (!(W in got)) print/d
 m85_models_job_misnamed	s/^INRUN_MODELS="models"$/INRUN_MODELS="rehearse"/
+m86_night_c_is_main_head	s/want="\$(cut -f 3 "\$raw\/night")"/want=""/
+m87_dispatched_night_counts	s/select(.event == "schedule" and /select(/
+m88_running_night_counts	s/elif \$r.status != "completed" then/elif false then/
+m89_stale_night_counts	s/>= 86400 then/>= 864000000 then/
+m90_setup_fault_unprinted	s/(pwhy == "" \&\& other != "" ? "setup fault: /(0 ? "setup fault: /
+m91_receipt_drops_read_c	/# read C\\t%s\\t%s\\n/d
+m92_after_now_night_counts	s/ and ((.created_at | fromdateiso8601) <= \$t))\]/)]/
+m93_other_branch_night_counts	s/ and .head_branch == "main"//
+m94_setup_fault_row_drops_its_c	s/(r == "" ? OH : RH\[r\])/(r == "" ? "" : RH[r])/
 '
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
