@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "py-refactor-behaviour-preserved",
+          "level": "note",
+          "message": {
+            "text": "The two edited Python helpers behave as their pre-PR blobs on 13 cases (fixture cargo metadata, exclude forms, name, target-dir, empty dir, written Cargo.toml). The only difference is the usage text printed for an unknown flag, which is the docstring this PR edits."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/tarball_workspace.py"
+                },
+                "region": {
+                  "startLine": 45
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "scratch",
+              "compare-original-blobs-vs-head",
+              "13-cases"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "69871f6dbe9b43e6e4008071f9e2bbc8b4169fd557ec7e6e7bfda8a1de182c87",
+            "failure_scenario": "none: the single difference is the edited docstring.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "stale-deleted-claim",
+          "level": "note",
+          "message": {
+            "text": "The parity test header and section 4 say the Python originals are deleted and their callers switched, and the coverage-report-scope help says the .py was deleted once callers moved. At this head both .py files still exist and Makefile, scripts/ci.sh, prepare-release.sh and package_tarball_build.sh still call them; the edited docstrings say they are kept until 0.71+1. Comment drift only; the test reads the originals by blob id, so no result changes."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/ci_tools_py_parity_test.sh"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of the test header, main.rs help text and git grep over callers at the head.",
+            "failure_scenario": "A reader trusts the header and deletes the still-called .py, breaking make coverage targets.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "tests-not-in-ci",
+          "level": "note",
+          "message": {
+            "text": "No workflow references the three ci_tools parity tests or scripts/ci_tools_bin.sh; the new crate unit tests run only through workspace-test (--workspace --lib). Acceptable for split 1 of 2 if split 2 wires them; until then the 201-case parity table is dark in CI."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/ci_tools_bin.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Search of .github/workflows for ci_tools found no reference.",
+            "failure_scenario": "The parity tables regress unnoticed between the two splits.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "rc-parity-gaps-on-malformed-input",
+          "level": "note",
+          "message": {
+            "text": "The delta makes every refusal in tarball-workspace exit 2 (and a manifest that is not UTF-8, or a [package] lacking name or version under DIR, exit 1), and tarball-shrink-report usage exit 2. Compared with the original on inputs the case table does not carry: --target-dir with JSON that is not an object (a list, null, a string) exits 1 in the original and 2 here; --target-dir or --name with a non-string value, or --name where [package] is a string, are accepted or exit 1 in the original and exit 2 here. Callers treat any non-zero as failure and cargo metadata always yields an object, so no caller sees it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-ci-tools/src/tarball_workspace.rs"
+                },
+                "region": {
+                  "startLine": 36
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Original exit codes measured by running the pre-PR blob on those inputs; the Rust codes are read from the head source, since no binary could be built here.",
+            "failure_scenario": "A caller that branches on exit 1 versus 2 would misread a malformed cargo metadata document.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "readme-exit-code-rows-stale",
+          "level": "note",
+          "message": {
+            "text": "The crate README still says a tarball-shrink-report usage error exits 1 and that a usage error exits 1 on both sides; the head now exits 2 for tarball-shrink-report and tarball-workspace usage errors."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-ci-tools/README.md"
+                },
+                "region": {
+                  "startLine": 51
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Read of README rows 50 to 53 against the new main.rs usage mapping.",
+            "failure_scenario": "A reader relies on the table and writes a caller that tests for exit 1.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "python-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "mutant-killed-exact-rc-compare",
+          "level": "note",
+          "message": {
+            "text": "Mutant: the exact-exit-code branch of the parity harness run_side was disabled in a scratch copy. With the branch, a pair exiting 2 and 1 is reported as a mismatch; with it disabled the same pair is reported as agreeing, so the exact-code switch is what turns the case red."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/ci_tools_py_parity_test.sh"
+                },
+                "region": {
+                  "startLine": 67
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "scratch",
+              "run_side-exact-rc-pair-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d2937b55f2d0fa86cebbb8812dcba22b70a57545ddc8fabedfe6d6f987437b15",
+            "failure_scenario": "none: the mutant is detected.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "No agy call was made by this lane: the host rule for subagent lanes is Claude Code only, and this lane was run shell-only."
+              },
+              "properties": {
+                "grounding": "asserted",
+                "rationale": "The lane brief limited it to shell tools and the standing fallback rule uses Claude lanes in place of agy."
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
