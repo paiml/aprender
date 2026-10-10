@@ -688,3 +688,15 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-orchestrate --features banco --lib refuse_logprobs'
     expected_output: "test result: ok"
     if_fails: 'banco''s request type dropped the two fields as unknown keys, so a client asking for logprobs got a dry-run or model reply without them, a 200 that ASOC-INV-021 forbids.'
+  - id: FALSIFY-WITNESS-MARGIN-4971
+    name: the_pp26_witness_carries_the_top2_margin_it_was_given
+    prediction: 'BatchInvarianceWitness has an optional top2_margin_at_divergence (master §12 row 22). A recorded margin survives the receipt round trip; a witness without one serialises byte-identical to before (the field stays off the wire); a non-number there does not deserialise; and apr test llm bench --witness-json reads it from the perf041 band, refusing a value that is not a number or null by name.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::witness && cargo test -p apr-cli --lib test_llm_band'
+    expected_output: "test result: ok"
+    if_fails: 'The margin the logprobs routes now put on the wire is dropped between the probe and the receipt, so a near-tie flip at c > 1 still cannot be told from a wrong-KV divergence.'
+  - id: FALSIFY-V3-SHAPE-CHECK-4971
+    name: a_v3_receipt_check_refuses_every_planted_shape_defect
+    prediction: 'perf_gate::v3_shape::check_v3_shape is ADMISSIBLE (exit 0) only for a perf041 witness of the blessed Qwen3.5-4B (path prefix, sha256) with identity fields, bands c in {1,4,8,16} each once with m_formed == c and perf041 PASS, and agreement with m=1 to declared_min unless a recorded top-2 margin m with 0 <= m < 0.05 explains the divergence. Its in-code case table (the 19 object rows of the spec branch cases.json plus the F2, F3, F6, prefix-not-substring, boundary and negative-margin rows) gets each exit and exact reason; an empty, blank, malformed, non-object or missing witness is RED (exit 2), never NOT ADMISSIBLE (F1). This is not a gate: no merge, queue or release job runs it.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'A witness that served a shape other than the one advertised (c=16 forming m=14), measured another model, or diverged from m=1 with no near-tie to explain it is read as a V3 receipt; or an unreadable witness reads as a verdict about the server.'
