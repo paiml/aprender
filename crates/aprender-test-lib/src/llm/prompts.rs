@@ -572,6 +572,8 @@ impl PromptRecord {
             // PP-27: `LlmClient::wire_request` sets this when the request
             // actually streams; a corpus record never asks for it.
             stream_options: None,
+            logprobs: None,
+            top_logprobs: None,
         }
     }
 }
@@ -601,6 +603,8 @@ fn micro_prompt() -> ChatRequest {
         // PP-27: set on the wire by `LlmClient::wire_request` when (and only
         // when) the request actually streams; a profile never asks for it.
         stream_options: None,
+        logprobs: None,
+        top_logprobs: None,
     }
 }
 
@@ -620,6 +624,8 @@ fn short_prompt() -> ChatRequest {
         // PP-27: set on the wire by `LlmClient::wire_request` when (and only
         // when) the request actually streams; a profile never asks for it.
         stream_options: None,
+        logprobs: None,
+        top_logprobs: None,
     }
 }
 
@@ -646,6 +652,8 @@ fn medium_prompt() -> ChatRequest {
         // PP-27: set on the wire by `LlmClient::wire_request` when (and only
         // when) the request actually streams; a profile never asks for it.
         stream_options: None,
+        logprobs: None,
+        top_logprobs: None,
     }
 }
 
@@ -693,6 +701,8 @@ fn long_prompt() -> ChatRequest {
         // PP-27: set on the wire by `LlmClient::wire_request` when (and only
         // when) the request actually streams; a profile never asks for it.
         stream_options: None,
+        logprobs: None,
+        top_logprobs: None,
     }
 }
 

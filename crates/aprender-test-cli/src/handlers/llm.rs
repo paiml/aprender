@@ -1545,6 +1545,8 @@ fn parse_dataset_line(
         // rejects it outright. `None` is the only correct value; the field was
         // simply never added because nothing builds this crate with `llm`.
         stream_options: None,
+        logprobs: None,
+        top_logprobs: None,
     };
     Ok((prompt, estimated_tokens, max_tokens))
 }
