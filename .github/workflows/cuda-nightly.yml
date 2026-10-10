@@ -11,17 +11,19 @@ name: CUDA Nightly (GPU QLoRA falsifiers)
 #      UTC+1) — deep night year-round, and clear of the other nightlies
 #      (coverage 03:00 UTC, nightly/binary 04:00 UTC, beat-speed 05:45 UTC).
 #   2. YIELDS TO TRAINING. These falsifiers are LOW priority. Before doing any
-#      work, each leg checks its GPU; if a training (or any) job is already
-#      using it, the leg skips for the night (green no-op) so it never contends
-#      with overnight training. A manual dispatch can force-override.
-#   3. NEVER ON *REGULAR* PULL REQUESTS — opt-in only. There is no `push` trigger
-#      and no unconditional `pull_request` trigger, so an ordinary PR never fires
-#      this lane. The ONLY PR path is explicit targeting: a maintainer adds the
-#      `cuda-check` label to a training-path PR, and the job gate below runs the
-#      falsifiers against that PR's head exactly once (any other label is a
-#      green no-op). This lets us build the green track record needed to later
-#      promote the lane to a required gate on training-path PRs, without
-#      auto-firing on every PR. It is NOT a required check — labeling is manual.
+#      work, the `decide` job checks the GPU; if a training (or any) job is
+#      already using it, `falsifiers` is SKIPPED for the night so it never
+#      contends with overnight training. A manual dispatch can force-override.
+#      A yielded night is NOT green: the job that measures is skipped, and
+#      scripts/release/nightly_train.sh reads a skipped job as not_measured
+#      (#5030). It used to be a step-level skip inside one job, which left the
+#      job SUCCESS, so a night that measured nothing read as a pass.
+#   3. NEVER ON PULL REQUESTS. This is a LAB lane: it cannot block a merge or a
+#      release, and a LAB lane never runs inside a PR job (C324 rule 5). There
+#      is no `push` and no `pull_request` trigger of any kind. The `cuda-check`
+#      label path that used to run the falsifiers on a labeled PR is gone
+#      (#5030); a training-path change is exercised by the next night on main,
+#      or by a manual dispatch.
 #
 # SINGLE-SILICON, BY POLICY (paiml/infra#359).
 #   - blackwell-gb10: gx10, GB10, sm_121, aarch64, CUDA 13.0
@@ -65,12 +67,6 @@ on:
         description: "Run even if the GPU is busy with training (bypass the yield)"
         required: false
         default: "false"
-  # OPT-IN PR path: fires only when a label is added, and the job gate below
-  # runs ONLY for the `cuda-check` label. A regular PR (no label / any other
-  # label) is a green no-op — this never auto-fires on PRs. Yield-to-training
-  # still applies, so a labeled run defers if the GPU is busy.
-  pull_request:
-    types: [labeled]
 
 permissions:
   contents: read
@@ -84,18 +80,28 @@ permissions:
 # at job level. Enforced by scripts/check_perf_concurrency_groups.sh.
 
 jobs:
-  falsifiers:
-    # PP-19: one group per HOST, never per workflow and never per ref, and
-    # cancel-in-progress false so a queued run cannot kill a measurement
-    # mid-window.
+  # YIELD-TO-TRAINING IS ITS OWN JOB (#5030). It used to be the first step of
+  # `falsifiers`, and a step cannot skip its own job: on a yielded night every
+  # later step was skipped and the JOB concluded SUCCESS, so a night that
+  # measured nothing read green to GitHub and to
+  # scripts/release/nightly_train.sh (lane `cuda`). Now `falsifiers` needs this
+  # job and runs only on `proceed == 'true'`; on a yield it is SKIPPED, and
+  # nightly_train.sh reads a skipped job as not_measured, never green.
+  #
+  # Same box, same group: the GPU check has to read that box's own nvidia-smi, and
+  # check_perf_concurrency_groups.sh requires every job on a GPU label to hold
+  # the host's group. `falsifiers` enqueues on the same group the moment this
+  # job ends, so the gap between the check and the run is one queue hop.
+  #
+  # ONE matrix leg, so `outputs.proceed` is that leg's value. A second leg
+  # would make it last-writer-wins across legs; split the outputs per leg
+  # before adding one (scripts/ci/cuda_nightly_yield_not_green.sh refuses a
+  # second leg here).
+  decide:
     concurrency:
       group: perf-gx10
       cancel-in-progress: false
-    # Run on schedule/manual-dispatch as before; on a PR run ONLY when the
-    # triggering label is exactly `cuda-check` (explicit opt-in targeting).
-    if: >-
-      ${{ vars.CUDA_RUNNER_READY == 'true' &&
-      (github.event_name != 'pull_request' || github.event.label.name == 'cuda-check') }}
+    if: ${{ vars.CUDA_RUNNER_READY == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -103,27 +109,26 @@ jobs:
           - name: blackwell-gb10
             arch: ARM64
             select: blackwell
-    # LITERAL, not an expression: a guard can only check labels it can see, and labels
-    # hidden behind a matrix expression are invisible to it.
-    #
-    # NAMES THE BOX. infra#352 asked a GPU selector to name `gpu`; infra#494/#495
-    # superseded that when yoga arrived and registered `gpu,yoga,cuda,ada` beside gx10's
-    # `gpu,gx10,cuda,blackwell,gb10` -- `gpu` stopped naming one machine, so a selector
-    # built on it resolves to aarch64 GB10 or x86_64 Ada at compile time. The opt-in
-    # label must name ONE BOX, and gx10 declares exactly one:
-    #   machines/gx10/forjar.yaml  params.runner_opt_in_labels: "gx10"
-    # `blackwell` is a capability, not that label -- it is unambiguous only for as long
-    # as gx10 is the fleet's only Blackwell box, which is the assumption `gpu` was
-    # making right up until it broke.
+    # LITERAL and the same box as `falsifiers`; see the NAMES THE BOX note there.
     runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell, gx10]
-    timeout-minutes: 90
+    timeout-minutes: 10
+    outputs:
+      proceed: ${{ steps.decide.outputs.proceed }}
     env:
-      APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
-      CARGO_TERM_COLOR: always
       # JOB level, not step level: the yield branch of `decide` writes a
       # NOT_RUN marker here before any step-scoped env exists.
       PERF041_OUT: ${{ github.workspace }}/perf041-witness
     steps:
+      # A self-hosted job runs the preflight right after its checkout
+      # (scripts/tests/ci_self_hosted_preflight_test.sh row 9). Here it also
+      # guards the yield: without a visible device nvidia-smi prints nothing,
+      # the busy test reads 0 MiB / 0 procs and says proceed. --cuda turns a
+      # missing driver or device into a RED `decide`, never a run or a yield.
+      - uses: actions/checkout@v7
+
+      - name: Preflight — this box has the tools this job assumes
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
+
       - name: Decide whether to run (silicon filter + yield-to-training)
         id: decide
         run: |
@@ -158,11 +163,11 @@ jobs:
           fi
           if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
             echo "::notice::${{ matrix.name }}: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping falsifiers tonight"
-            # A YIELDED NIGHT MUST BE VISIBLE. Every later step is skipped and
-            # the job goes GREEN, so without this line "the witness did not run"
-            # and "the witness passed" look identical from outside. The marker
-            # is what scripts/check_perf041_marker.sh reads at release, and
-            # NOT_RUN is not PASS.
+            # A YIELDED NIGHT MUST BE VISIBLE. `falsifiers` is skipped, so
+            # without this line "the witness did not run" and "the witness
+            # passed" look identical to the release reader. The marker is what
+            # scripts/check_perf041_marker.sh reads at release, and NOT_RUN is
+            # not PASS.
             mkdir -p "$PERF041_OUT"
             printf '{"host":"%s","status":"NOT_RUN","reason":"yield to training (%s MiB, %s procs)","started_utc":"%s","commit":"%s","exit":null,"max_m":null,"cc":null,"sha256":null}\n' \
               "${{ matrix.name }}" "${used:-?}" "${procs:-?}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${{ github.sha }}" \
@@ -171,8 +176,63 @@ jobs:
           fi
           echo "proceed=true" >> "$GITHUB_OUTPUT"
 
+      # A YIELDED NIGHT MUST LEAVE ITS MARKER. `falsifiers` does not run on a
+      # yield, so its upload step never ships this file; this one does. Only
+      # on proceed != 'true', so the artifact name is never uploaded twice in
+      # one run. A dispatch that filtered this leg out writes no marker, and
+      # `ignore` keeps that from warning.
+      - name: PP-26 - upload the NOT_RUN marker
+        if: ${{ !cancelled() && steps.decide.outputs.proceed != 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pp26-witness-${{ matrix.name }}
+          path: ${{ github.workspace }}/perf041-witness/marker.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  falsifiers:
+    # PP-19: one group per HOST, never per workflow and never per ref, and
+    # cancel-in-progress false so a queued run cannot kill a measurement
+    # mid-window.
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
+    # Schedule and manual dispatch only; there is no PR trigger (#5030). And
+    # only when `decide` did not yield: a yielded night skips this job, which
+    # is what makes it read not_measured instead of green.
+    needs: decide
+    if: >-
+      ${{ vars.CUDA_RUNNER_READY == 'true' &&
+      needs.decide.outputs.proceed == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: blackwell-gb10
+            arch: ARM64
+            select: blackwell
+    # LITERAL, not an expression: a guard can only check labels it can see, and labels
+    # hidden behind a matrix expression are invisible to it.
+    #
+    # NAMES THE BOX. infra#352 asked a GPU selector to name `gpu`; infra#494/#495
+    # superseded that when yoga arrived and registered `gpu,yoga,cuda,ada` beside gx10's
+    # `gpu,gx10,cuda,blackwell,gb10` -- `gpu` stopped naming one machine, so a selector
+    # built on it resolves to aarch64 GB10 or x86_64 Ada at compile time. The opt-in
+    # label must name ONE BOX, and gx10 declares exactly one:
+    #   machines/gx10/forjar.yaml  params.runner_opt_in_labels: "gx10"
+    # `blackwell` is a capability, not that label -- it is unambiguous only for as long
+    # as gx10 is the fleet's only Blackwell box, which is the assumption `gpu` was
+    # making right up until it broke.
+    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell, gx10]
+    timeout-minutes: 90
+    env:
+      APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
+      CARGO_TERM_COLOR: always
+      # JOB level: every PP-26 step below writes its witness here.
+      PERF041_OUT: ${{ github.workspace }}/perf041-witness
+    steps:
       - uses: actions/checkout@v7
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
 
       # The first thing gx10 does once it has a tree. NOT before `decide` and
       # NOT before the checkout, for the reason the comment below spells out:
@@ -184,7 +244,7 @@ jobs:
       # after a 21 MB CUDA build. Everything below this line assumes cargo,
       # rustup and a visible device; this is where that assumption is checked.
       - name: Preflight — this box has the tools this job assumes
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
         run: bash scripts/ci_self_hosted_preflight.sh --cuda
 
       # PP-26's release-phase marker gate (scripts/check_perf041_marker.sh, a
@@ -203,11 +263,11 @@ jobs:
       # guard runs on every night the lane runs, and on a yielded night the
       # NOT_RUN marker `decide` already wrote is the record.
       - name: PP-26 marker gate can still go RED (case table, no GPU)
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
         run: setsid --wait bash scripts/check_perf041_marker.sh --selftest
 
       - name: Preflight — CUDA device + parity model present
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
         run: |
           set -euo pipefail
           echo "runner: ${{ matrix.name }} ($(uname -m))"
@@ -220,7 +280,7 @@ jobs:
           echo "parity model: $APR_PARITY_MODEL ($(du -h "$APR_PARITY_MODEL" | cut -f1))"
 
       - name: GPU QLoRA training-correctness falsifiers (--features cuda)
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
         # `nice` so the build never starves any CPU-side work of a job that
         # started after our yield check. --include-ignored runs BOTH the
         # #[ignore]-gated eval falsifiers and the non-ignored deadlock/NaN/
@@ -249,14 +309,14 @@ jobs:
       # --release` in the step above, so this is one more test binary invocation
       # against a warm target dir.
       - name: Pre-warm covers runtime — zero JIT compiles on the pass (sm_121)
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
         run: |
           nice -n 19 cargo test -p aprender-train --features cuda --lib --release -- \
             --nocapture --include-ignored --exact \
             autograd::cuda_forward::cache::prewarm_coverage_falsifier::falsify_cuda_prewarm_covers_runtime_no_jit_001
 
       - name: CUDA loss-window falsifier suite
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
         run: |
           nice -n 19 cargo test -p aprender-train --features cuda --lib --release cuda_loss_window
 
@@ -269,7 +329,7 @@ jobs:
       # checked HERE. A skip would be a green that proves nothing, which is the exact failure
       # mode this whole nightly exists to remove.
       - name: PERF-053 - batched decode determinism falsifier (aprender#2767)
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
         env:
           # Keep m >= 4 off the cuBLAS decode route, whose divergence at m >= 4 is a separate
           # named defect (contracts/continuous-batching-v1.yaml, CB-006 round 9).
@@ -308,7 +368,7 @@ jobs:
       # crosses that threshold and covers both decode GEMM routes. CB-006's divergence at
       # m >= 4 is a separate defect and is not a freeze, so it cannot confound this verdict.
       - name: FALSIFY-CB-008 - no frozen slots in batched decode (aprender#2753)
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
         run: |
           set -euo pipefail
           gguf="${{ vars.APR_STREAM_FALSIFY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' }}"
@@ -334,7 +394,7 @@ jobs:
       # run that is not exactly `1 passed` is RED. `!cancelled()` so an earlier red falsifier
       # cannot hide this one.
       - name: aprender#4251 - every serve route prefills through the batched prefill (Qwen3.5)
-        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        if: ${{ !cancelled() && needs.decide.outputs.proceed == 'true' }}
         env:
           APR_QWEN35_MODEL_VAR: ${{ vars.APR_QWEN35_MODEL }}
         run: |
@@ -370,7 +430,7 @@ jobs:
       # probe existed and was wired to nothing.
       #
       # IT SITS BEFORE THE PILLAR-4 BEAT, AND CARRIES `!cancelled()`. Every other
-      # step here is `if: steps.decide.outputs.proceed == 'true'` with no
+      # step here is `if: needs.decide.outputs.proceed == 'true'` with no
       # `!cancelled()`, so the first red step aborts every later one — and the
       # Pillar-4 beat has been red since 2026-08-30. A step appended after it
       # would never execute; a step before it still needs `!cancelled()` so a red
@@ -384,7 +444,7 @@ jobs:
       # the scheduler's default window is 0 ms, so on a quiet box batches form
       # only by chance — the probe writes every value into witness.json `env`.
       - name: PP-26 - batch-invariance witness (perf041)
-        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        if: ${{ !cancelled() && needs.decide.outputs.proceed == 'true' }}
         env:
           PERF041_MODEL: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
           CUDA_BATCH_WINDOW_MS: "200"
@@ -502,7 +562,7 @@ jobs:
       #     WHICH of the two files was empty. Checked explicitly below so
       #     the failure names the file before `witness_diff.sh` ever runs.
       - name: PP-26 - witness byte-compare against the previous run (BSE-11)
-        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        if: ${{ !cancelled() && needs.decide.outputs.proceed == 'true' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -642,7 +702,7 @@ jobs:
       # to be — it is the incumbent under measurement, and a comparative beat
       # cannot run without its competitor.
       - name: Pillar-4 - apr vs ollama decode throughput beat
-        if: steps.decide.outputs.proceed == 'true'
+        if: needs.decide.outputs.proceed == 'true'
         env:
           # The beat's built-in APR_BIN default points at a hand-built artifact
           # that goes stale SILENTLY - on 2026-07-28 it was a day behind #2323,
@@ -686,7 +746,7 @@ jobs:
       # above nor hides behind their failures. Its non-cuda `apr` rebuild comes
       # after the beat that measures the cuda one.
       - name: F-QW3-MOE-C22214-001 - apr run emits on the Qwen3-Coder-30B MoE (aprender#4179)
-        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        if: ${{ !cancelled() && needs.decide.outputs.proceed == 'true' }}
         env:
           # The repo var wins; otherwise the runner user's pacha cache. $HOME, not a
           # literal /home/<user>, so the hardcoded-path ratchet stays flat (#4315).
@@ -704,7 +764,7 @@ jobs:
       # The per-token run is the RED control, and it is ASSERTED to fail *on the
       # batched-prefill assert*: a build error or a skip there is not a pass.
       - name: G0 - serve routes prefill through the batched prefill (aprender#4250)
-        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        if: ${{ !cancelled() && needs.decide.outputs.proceed == 'true' }}
         run: |
           set -uo pipefail
           # -e OFF, as in the perf041 step: the default shell is `bash -e {0}`, so the
@@ -736,7 +796,7 @@ jobs:
       # aarch64 sat 7.105e-2 over a 7e-2 budget with no lane to say so. This lane
       # runs the module where the model is and refuses a skip or an empty selection.
       - name: qwen35 CUDA parity module on sm_121 (aprender#4523)
-        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        if: ${{ !cancelled() && needs.decide.outputs.proceed == 'true' }}
         run: |
           set -uo pipefail
           # -e OFF, as in G0 above: under the default `bash -e {0}` a red cargo test
@@ -799,9 +859,8 @@ jobs:
   # is the only GPU box in the fleet with nothing else on it.
   ada-yoga:
     name: ada-yoga (x86_64, sm_89)
-    if: >-
-      ${{ vars.CUDA_RUNNER_READY == 'true' &&
-      (github.event_name != 'pull_request' || github.event.label.name == 'cuda-check') }}
+    # Schedule and manual dispatch only; there is no PR trigger (#5030).
+    if: ${{ vars.CUDA_RUNNER_READY == 'true' }}
     # PP-19 HOST ISOLATION. scripts/check_perf_concurrency_groups.sh found this
     # job ungrouped the hour it was written: a GPU job with no job-level group
     # serialises against nothing, and yoga now has two consumers in this repo
