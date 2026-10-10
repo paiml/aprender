@@ -126,6 +126,12 @@ rw_self_test() {
     row "C357 1e: a job waiting 11 min holds, logged once as job + minutes" "1:held:1:j1:11" \
         "$rc:$(held "$d/a"):$(grep -c . "$d/a/runner-wait.tsv"):$(cut -f2,3 "$d/a/runner-wait.tsv" | head -n1 | tr '\t' :)"
     [[ $out == "RUNNER-WAIT HOLD job j1 (1) waited 11 min"* ]] || { echo "  FAIL hold line: $out"; fail=1; }
+    # C354 3b boundary: "more than 10 minutes" -- exactly 600 s does not hold, 601 s does
+    rw_start "$d/g" "$t0"; jobs "$d/w3" 0:-
+    rw_tick "$d/g" "$d/w3" $((t0 + 600)) > /dev/null; rc=$?
+    row "C354 3b: a job waiting exactly 600 s does not hold" "0:free" "$rc:$(held "$d/g")"
+    rw_tick "$d/g" "$d/w3" $((t0 + 601)) > /dev/null; rc=$?
+    row "C354 3b: a job waiting 601 s holds" "1:held" "$rc:$(held "$d/g")"
     # C357 1e, row 3: the hold lifts when the job starts
     jobs "$d/s" 0:700 0:30
     out=$(rw_tick "$d/a" "$d/s" $((t0 + 960))); rc=$?
@@ -181,6 +187,8 @@ rw_mutants() {
     local -a M=(
         's/^RW_WAIT_S=600 /RW_WAIT_S=720 /'                          # 11 min would not hold
         's/select(\$w > \$lim)/select($w >= 0)/'                    # 9 min would hold
+        's/^RW_WAIT_S=600 /RW_WAIT_S=540 /'                          # a 10-min threshold read as 9 min: 600 s would hold
+        's/select(\$w > \$lim)/select($w >= $lim)/'                 # exactly 600 s would hold
         's/select(.started_at == null)/select(true)/'                # a started job would still hold
         's/^RW_HOLD_S=3600 /RW_HOLD_S=360000 /'                      # no 60-min lift
         's/-ge "\$RW_HOLD_S"/-gt "$RW_HOLD_S"/'                      # lifts a second late
