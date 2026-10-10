@@ -591,6 +591,8 @@ fn a_device_argmax_from_below_the_checkpoint_drops_it() {
         inner: Scripted::checkpointing(3, 100, MARK),
         greedy_answer: 5,
         greedy_calls: 0,
+        reads: Vec::new(),
+        read_back: None,
     });
     let prompt = [7861, 7862, MARK, 7863];
     s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
