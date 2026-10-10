@@ -288,7 +288,7 @@ per docs/specifications/06x-release-schedule.md §4.2. After this merges, script
 deep (T-1, local), pre-publish dogfood, tag + release, clean-room.yml dispatched on the tag (T-3, run id recorded), assets by command, preflight, cascade (T-4, automated), install, host + installer receipts, close.
 
 Pmat-Ticket: PMAT-$EPIC
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 MSG
 # REHEARSAL (APR-071 B1, H10; scripts/release/rehearse.sh): every gate above ran for real and the bump
 # commit exists in the rehearsal's own clone. The push, the PR and the arm are WOULD lines; the commit

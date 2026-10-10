@@ -107,6 +107,24 @@ export PATH="$CARGO_BIN:$PATH"
 unset CARGO_REGISTRY_TOKEN
 WT="$AP/wt"
 say "START autopilot pid=$$ pr=#$PR from=$FROM to=$TO"
+# #4929, the runner-wait rule (C354 3b-3f, C357 1): it reads and prints, inside the waits below; its rc never
+# stops the pass and it gates no publish. A pass job waiting >10 min for a runner prints a HOLD line (a3 arms
+# nothing, no PR push), lifted when the job starts or after 60 min; every exit prints the PASS-REPORT line.
+PRW="$REPO_ROOT/scripts/release/pass_runner_wait.sh"
+bash "$PRW" start "$AP" >> "$LOG" 2>&1 || say "RUNNER-WAIT no pass start recorded in $AP: the rule cannot judge this pass"
+rw_read() { # rw_read <repo> <run>: the wait's one read of the run's jobs, judged by the rule (prints only)
+  local l
+  mkdir -p -- "$AP/runner-jobs" && bash "$PRW" jobs "$1" "$2" "$AP/runner-jobs/$2.json" 2>> "$LOG" || return 1
+  while IFS= read -r l; do say "$l"; done < <(bash "$PRW" tick "$AP" "$AP/runner-jobs/$2.json")
+}
+rw_end() { # the end-of-pass print: merges to main since the pass start, runner wait p50/p90, trigger count
+  local s m
+  s=$(cat -- "$AP/pass-start" 2> /dev/null) || return 0
+  git -C "$REPO_ROOT" fetch -q origin main >> "$LOG" 2>&1 || :
+  m=$(git -C "$REPO_ROOT" rev-list --count --first-parent --since="@$s" origin/main 2>> "$LOG") || m=unknown
+  say "$(bash "$PRW" report "$AP" "$m")"
+}
+trap rw_end EXIT
 
 # 1. wait: the bump PR merges; its merge commit is the release commit
 if run_step wait && rehearsal; then
@@ -462,7 +480,9 @@ if run_step cleanroom; then
   # the JOB conclusion, not the run status: a sibling job that can never start must not hold the verdict hostage
   jc=""; for _ in $(seq 1 48); do
     jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | .conclusion' | head -1)
-    [ -n "$jc" ] && break; sleep "$AP_POLL"
+    [ -n "$jc" ] && break
+    rw_read "$INFRA" "$crun" || :  # #4929: the runner-wait rule's read, inside this wait, at its cadence
+    sleep "$AP_POLL"
   done
   [ "$jc" = success ] || die "clean-room (aprender) on $T concluded '${jc:-absent}' (run $crun)"
   say "B2-CPU GREEN on $T (infra run $crun)"
@@ -488,6 +508,7 @@ if run_step assets; then
   for _ in $(seq 1 48); do
     s=$(gh run view "$run" --repo $REPO --json status -q .status)
     [ "$s" = completed ] && break
+    rw_read "$REPO" "$run" || :  # #4929: the runner-wait rule's read, inside this wait, at its cadence
     sleep "$AP_POLL"
   done
   c=$(gh run view "$run" --repo $REPO --json conclusion -q .conclusion)
