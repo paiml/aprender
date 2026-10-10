@@ -171,8 +171,9 @@ here had a server with the model, so that path rests on the code.
 Review round 2 found that performance_parity's GPU path ran past 25 minutes in a debug build
 (rc 124 at 1505 s) when wgpu found an adapter. A debug build now runs GPU-001 alone
 (`performance_parity.rs:52`, `:101`, `:107`). A release build runs all 31 GPU benchmarks.
-On main no build reached them: `bench_quantization_formats` runs first
-(`performance_parity.rs:88`) and panicked on the buffer sizes fixed above (`:514`, `:522`).
+On main no build reached them: `bench_quantization_formats` runs before them, after the
+five IMP benchmarks (`performance_parity.rs:67-83`, `:88`), and panicked on the buffer
+sizes fixed above (`:514`, `:522`).
 
 `performance_parity-gpu.txt` is the debug binary from the 36-row run, run once more with its
 output kept, because the script keeps no output per example. The file records the commit and
@@ -188,7 +189,8 @@ returns nothing and never calls `process::exit`, on this branch and on main, so 
 whatever its benchmarks score. That is the smoke-test limit stated above.
 
 On a host with no adapter, the example runs the same 8 CPU benchmarks without GPU-001. They
-are not gated on the GPU (`performance_parity.rs:66` onward).
+are not gated on the GPU (`performance_parity.rs:66` onward). That path was not run here:
+every run of this example in these receipts found an adapter.
 
 ## Measured since review round 3
 
@@ -215,5 +217,12 @@ are not gated on the GPU (`performance_parity.rs:66` onward).
 ## Not measured here
 
 The issue's done-when is the nightly itself: the same 36 rows with fail 0 and timeout 0.
-examples-nightly stays disabled until this lands on main. Then it is re-enabled for one green
-night, and that run is the receipt of record.
+examples-nightly is disabled in the repository's Actions settings, not in its file, which
+keeps its schedule: the Actions API gave its state as `disabled_manually`, last changed
+2026-10-07T09:35:50Z, when read at 2026-10-10T05:35Z. It stays disabled until this lands on
+main. Then it is re-enabled for one green night, and that run is the receipt of record.
+
+The job that made `examples-36.tsv` ended with a clippy step over the 36 examples. It did not
+run: cargo stopped at once (rc 101, 1 s) because finetune_real needs the `hub` feature, so
+its count of 0 warnings and 0 errors is from no run. Clippy on these examples is not
+measured here.
