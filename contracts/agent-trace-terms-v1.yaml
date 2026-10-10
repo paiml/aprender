@@ -13,9 +13,12 @@ metadata:
     an untagged row cannot be shown not to come from an excluded source. The public-release
     default keeps local rows only (§2.11). This records the governing terms. It is not
     legal advice; S-6 governs. Implementation: crates/aprender-review-experiment/src/terms.rs.
+    The PRA-001 spec whose sections are cited here is not on main: it rode on rex/001
+    (#4459, closed unmerged). The four fields and their wire spellings are pinned by this
+    contract and by terms.rs (#4446).
   references:
-    - "docs/specifications/research-design-pr-agent-qwen-3.5.md"
-    - "contracts/training-pool-admission-v1.yaml"
+    - "crates/aprender-review-experiment/src/terms.rs — tags(), Exclude (from_args, public_release) and rebuild()"
+    - "crates/aprender-review-experiment/src/terms_tests.rs — FALSIFY-TERMS-001..004 and the identity case table"
 
 equations:
   rebuild:

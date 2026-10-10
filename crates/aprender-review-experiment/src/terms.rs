@@ -9,6 +9,10 @@
 //! A row whose tags are missing or inconsistent is REFUSED by every rebuild, even
 //! one that excludes nothing: an untagged row cannot be shown not to come from an
 //! excluded source.
+//!
+//! The PRA-001 spec the § numbers below cite is not on main (it rode on rex/001,
+//! #4459, closed unmerged); the wire spellings here and in the contract are the
+//! reference until it lands.
 
 use serde_json::Value;
 
