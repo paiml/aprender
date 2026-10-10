@@ -140,9 +140,14 @@ self_test() {
   # 1. drift gate: the two rule tuples must be byte-identical to dogfood.sh's bashrs row,
   #    or the PR gate and the release gate will disagree — which is the defect this fixes.
   local df; df=$(dirname "$SELF")/dogfood.sh
+  #    dogfood.sh classifies in jq since #4377, so its forms are derived from the SAME two
+  #    tuples here, never typed a second time: SEC|DET|IDEM and `. == "SC1020" or ...`.
+  local df_gating df_soft
+  df_gating="test(\"^($(printf '%s' "$GATING_PREFIXES" | tr -d "()' " | tr ',' '|'))\")"
+  df_soft=$(printf '%s' "$SOFT_CODES" | tr -d "()' " | tr ',' '\n' | sed 's/.*/. == "&"/' | paste -sd'|' | sed 's/|/ or /g')
   if [ -f "$df" ]; then
-    grep -qF "c.startswith($GATING_PREFIXES)" "$df" && ok "dogfood.sh gates the same prefixes $GATING_PREFIXES" || bad "dogfood.sh gating prefixes differ from $GATING_PREFIXES"
-    grep -qF "c in $SOFT_CODES" "$df" && ok "dogfood.sh suppresses the same soft codes $SOFT_CODES" || bad "dogfood.sh soft codes differ from $SOFT_CODES"
+    grep -qF "$df_gating" "$df" && ok "dogfood.sh gates the same prefixes $GATING_PREFIXES ($df_gating)" || bad "dogfood.sh gating prefixes differ from $GATING_PREFIXES (want $df_gating)"
+    grep -qF "select($df_soft)" "$df" && ok "dogfood.sh suppresses the same soft codes $SOFT_CODES" || bad "dogfood.sh soft codes differ from $SOFT_CODES (want select($df_soft))"
     grep -qF "c.startswith($GATING_PREFIXES)" "$SELF" && grep -qF "c in $SOFT_CODES" "$SELF" && ok "this script's classifier carries both tuples verbatim" || bad "this script's classifier drifted from its own header"
   else
     bad "dogfood.sh not found beside this script - drift gate cannot run"

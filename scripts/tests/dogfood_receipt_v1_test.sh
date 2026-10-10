@@ -80,14 +80,14 @@ check() {
     (if .commit != $sha then "commit \(.commit)" else empty end),
     (if (.commit | test("^[0-9a-f]{40}$")) | not then "commit not 40-hex" else empty end),
     (.rows as $r
-     | {rows: ($r | length), passed: ([$r[] | select(.status == "PASS")] | length),
-        failed: ([$r[] | select(.status == "FAIL")] | length),
-        unmeasured: ([$r[] | select(.status == "NotRun" or .status == "SKIP")] | length)} as $re
+     | {rows: ($r | length), passed: ([$r | .[] | select(.status == "PASS")] | length),
+        failed: ([$r | .[] | select(.status == "FAIL")] | length),
+        unmeasured: ([$r | .[] | select(.status == "NotRun" or .status == "SKIP")] | length)} as $re
      | (if .counts != $re then "DFR-INV-001 counts \(.counts|tojson) recount \($re|tojson)" else empty end),
-       ($r[] | select(.status | IN("PASS","FAIL","NotRun","SKIP") | not) | "status \(.status) outside v1"),
-       ($r[] | select((.status == "NotRun" or .status == "SKIP") and ((.reason // "") == "")) | "DFR-INV-002 \(.id) has no reason"),
+       ($r | .[] | select(.status | IN("PASS","FAIL","NotRun","SKIP") | not) | "status \(.status) outside v1"),
+       ($r | .[] | select((.status == "NotRun" or .status == "SKIP") and ((.reason // "") == "")) | "DFR-INV-002 \(.id) has no reason"),
        (if .verdict == "GO" and ($re.failed > 0 or $re.passed == 0) then "DFR-INV-003 GO with \($re|tojson)" else empty end),
-       (if ([$r[].id] | length) != ([$r[].id] | unique | length) then "DFR-INV-004 duplicate row ids" else empty end)),
+       (if ([$r | .[].id] | length) != ([$r | .[].id] | unique | length) then "DFR-INV-004 duplicate row ids" else empty end)),
     (if .verdict != $v then "verdict \(.verdict), want \($v)" else empty end),
     (if [.counts.rows, .counts.passed, .counts.failed, .counts.unmeasured] != [$n, $p, $fl, $u]
      then "counts \(.counts|tojson), want [\($n),\($p),\($fl),\($u)]" else empty end),
@@ -169,7 +169,7 @@ mutant() { # mutant <name> <old text> <new text>
 }
 mutant warn-passes 'WARN: "SKIP"' 'WARN: "PASS"'
 mutant no-zero-pass-row 'if [ "$DF_PASSES" -eq 0 ]; then' 'if false; then'
-mutant ids-not-unique 'else "\($gates[$i].gate)#\(.[$gates[$i].gate])" end)' 'else $gates[$i].gate end)'
+mutant ids-not-unique 'else "\($g.gate)#\(.[$g.gate])" end)' 'else $g.gate end)'
 mutant no-asset-copy 'cp "$RECEIPT" "$RECEIPT_V1.partial" && mv "$RECEIPT_V1.partial" "$RECEIPT_V1"' 'true'
 # no-repo-row: the repo cases above are the only ones that can see it, so it runs them
 a='if ! [[ "$DF_REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then'

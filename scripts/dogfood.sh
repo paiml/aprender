@@ -545,8 +545,8 @@ index_version_state() {
   # replaced (#4377), never looser. A jq that dies prints nothing, which is also 2.
   parse=$(jq -n --arg want "$2" '[inputs] as $r
     | if ($r | length) == 0 then 2
-      elif any($r[]; (type != "object") or ((has("vers")) | not)) then 2
-      elif any($r[]; .vers == $want) then 0
+      elif any($r | .[]; (type != "object") or ((has("vers")) | not)) then 2
+      elif any($r | .[]; .vers == $want) then 0
       else 1 end' "$WORKLOG/registry.ndjson" 2>/dev/null) || parse=2
   case "$parse" in 0|1) ;; *) parse=2 ;; esac
   case "$parse" in
@@ -1183,8 +1183,8 @@ if command -v "$PMAT_BIN" >/dev/null 2>&1; then
     def need($k): if has($k) then .[$k] else error("missing \($k)") end;
     (.summary | need("fail")) as $fail | (.summary | need("skip")) as $skip
     | (reduce .checks[] as $c ({}; .[($c | need("name"))] = $c) | to_entries | map(.value)) as $checks
-    | ([$checks[] | select(.name | startswith("CB-200"))] | first) as $cb
-    | ([$checks[] | select(.status == "Skip" and .severity == "Error")] | length) as $dark
+    | ([$checks | .[] | select(.name | startswith("CB-200"))] | first) as $cb
+    | ([$checks | .[] | select(.status == "Skip" and .severity == "Error")] | length) as $dark
     | "\($fail) \($skip) \(if $cb == null then "ABSENT" else ($cb | need("status")) end) \($dark)"' \
     "$WORKLOG/comply.json" 2>/dev/null || echo "PARSE_ERROR")
   if [ "$PMAT_SUM" = "PARSE_ERROR" ]; then
@@ -1905,23 +1905,23 @@ if [ "$DF_ENC_OK" != 1 ] || ! jq -s \
       else "unknown status \($g.result): \($n)" end;
   . as $gates
   # a row id is the gate name; a repeated name gets #2, #3 (DFR-INV-004: ids unique)
-  | [foreach range(0; $gates | length) as $i ({};
-       .[$gates[$i].gate] += 1;
-       {id: (if .[$gates[$i].gate] == 1 then $gates[$i].gate
-             else "\($gates[$i].gate)#\(.[$gates[$i].gate])" end),
-        status: ($gates[$i].result | v1), reason: reason($gates[$i]),
-        legacy_result: $gates[$i].result})] as $rows
-  | ([$rows[] | select(.status == "PASS")] | length) as $passed
-  | ([$rows[] | select(.status == "FAIL")] | length) as $red
+  | [foreach ($gates | .[]) as $g ({};
+       .[$g.gate] += 1;
+       {id: (if .[$g.gate] == 1 then $g.gate
+             else "\($g.gate)#\(.[$g.gate])" end),
+        status: ($g.result | v1), reason: reason($g),
+        legacy_result: $g.result})] as $rows
+  | ([$rows | .[] | select(.status == "PASS")] | length) as $passed
+  | ([$rows | .[] | select(.status == "FAIL")] | length) as $red
   | {schema: "dogfood-receipt/v1", repo: $repo, tag: $tag, tag_source: $tag_source,
      commit: $sha, host: $host,
      verdict: (if $failed == 0 and $red == 0 and $passed > 0 then "GO" else "NO-GO" end),
      rows: $rows,
      counts: {rows: ($rows | length), passed: $passed, failed: $red,
-              unmeasured: ([$rows[] | select(.status == "NotRun" or .status == "SKIP")] | length)},
+              unmeasured: ([$rows | .[] | select(.status == "NotRun" or .status == "SKIP")] | length)},
      crate: $crate, version: $version, timestamp: $ts, gates: $gates, phase: $phase,
-     deferred: [$gates[] | select(.result == "DEFER") | .gate],   # always empty since #3957 F1b; R5 refuses any
-     open_obligations: [$gates[] | select(.result == "OPEN") | .gate]}' "$RECEIPT_PARTIAL.rows" > "$RECEIPT_PARTIAL"; then
+     deferred: [$gates | .[] | select(.result == "DEFER") | .gate],   # always empty since #3957 F1b; R5 refuses any
+     open_obligations: [$gates | .[] | select(.result == "OPEN") | .gate]}' "$RECEIPT_PARTIAL.rows" > "$RECEIPT_PARTIAL"; then
   echo "FATAL: the receipt encoder (jq) failed ($RECEIPT_PARTIAL)." >&2
   echo "       Refusing to report a verdict backed by evidence that was not written." >&2
   exit 3
