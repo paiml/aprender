@@ -414,14 +414,11 @@ fn yaml_to_config(yaml: &YamlValue, source: &Path) -> Result<ModelFamilyConfig> 
         .unwrap_or_default();
 
     // Parse shape_template
-    let shape_yaml = yaml.get("shape_template");
-    let shape_template = if let Some(sy) = shape_yaml {
-        parse_shape_template(sy)
-    } else {
-        ShapeTemplate {
-            shapes: HashMap::new(),
-        }
-    };
+    // #5056: required by contracts/model-families/_schema.yaml; it used to default to empty.
+    let shape_yaml = yaml
+        .get("shape_template")
+        .ok_or_else(|| err("missing required field: shape_template"))?;
+    let shape_template = parse_shape_template(shape_yaml);
 
     // Parse quantizations
     let quantizations = yaml

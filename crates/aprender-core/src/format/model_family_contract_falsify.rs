@@ -1217,37 +1217,49 @@ mod contract_falsification {
 
     // ========================================================================
     // FALSIFY-MF-014 (#5056, C358 1a): deleting ANY required field turns red.
-    // Every family file, every field the loader requires; plus a control that
-    // deleting an optional key still loads, so the test can tell the two apart.
+    // "Required" is read from the contract (_schema.yaml), not copied here. Every
+    // family file, every required field; plus a control that deleting an optional
+    // key still loads, so the test can tell the two apart.
     // ========================================================================
 
-    /// Top-level keys `yaml_to_config` requires.
-    const MF_REQUIRED_TOP: [&str; 8] = [
-        "family",
-        "display_name",
-        "vendor",
-        "hf_pattern",
-        "architectures",
-        "size_variants",
-        "constraints",
-        "tensor_template",
-    ];
-    /// Keys `parse_size_config` requires in every size variant.
-    const MF_REQUIRED_SIZE: [&str; 7] = [
-        "parameters",
-        "hidden_dim",
-        "num_layers",
-        "num_heads",
-        "num_kv_heads",
-        "intermediate_dim",
-        "vocab_size",
-    ];
+    fn families_dir() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/model-families")
+    }
+
+    /// The comma list after the last `:` of the `marker` line, plus its `#   ` continuations.
+    fn schema_list(text: &str, marker: &str) -> Vec<String> {
+        let mut lines = text.lines().skip_while(|l| !l.starts_with(marker));
+        let first = lines
+            .next()
+            .unwrap_or_else(|| panic!("_schema.yaml has no `{marker}` line"));
+        let mut joined = first.rsplit_once(':').map_or("", |(_, rest)| rest).to_string();
+        for cont in lines.take_while(|l| l.starts_with("#   ")) {
+            joined.push(',');
+            joined.push_str(cont.trim_start_matches('#'));
+        }
+        joined
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect()
+    }
+
+    /// (required top-level keys, required size-variant keys as alias groups).
+    fn schema_required() -> (Vec<String>, Vec<Vec<String>>) {
+        let text = std::fs::read_to_string(families_dir().join("_schema.yaml")).expect("read _schema.yaml");
+        let top = schema_list(&text, "# Required fields:");
+        let size = schema_list(&text, "# Required size_variant fields")
+            .iter()
+            .map(|g| g.split('|').map(String::from).collect())
+            .collect();
+        (top, size)
+    }
 
     /// Raw text of every family file `load_all_families` loads, same skips.
     fn raw_family_files() -> Vec<(String, String)> {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/model-families");
         let mut out = Vec::new();
-        for entry in std::fs::read_dir(&dir).expect("read model-families dir") {
+        for entry in std::fs::read_dir(families_dir()).expect("read model-families dir") {
             let path = entry.expect("read dir entry").path();
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
             if !name.ends_with(".yaml") || name.starts_with('_') {
@@ -1281,6 +1293,20 @@ mod contract_falsification {
         Some(kept.join("\n") + "\n")
     }
 
+    /// Delete every spelling of an alias group from the first size variant.
+    fn delete_size_group(text: &str, group: &[String]) -> Option<String> {
+        let (from, indent) = first_size_variant_fields(text)?;
+        let mut cut = text.to_string();
+        let mut hit = false;
+        for key in group {
+            if let Some(next) = delete_key(&cut, from, indent, key) {
+                cut = next;
+                hit = true;
+            }
+        }
+        hit.then_some(cut)
+    }
+
     /// (first line, indent) of the first size variant's fields.
     fn first_size_variant_fields(text: &str) -> Option<(usize, usize)> {
         let lines: Vec<&str> = text.lines().collect();
@@ -1294,7 +1320,8 @@ mod contract_falsification {
         Some((field, indent_of(lines[field])))
     }
 
-    fn assert_deletion_rejected(cut: &str, file: &str, key: &str) {
+    fn assert_deletion_rejected(cut: &str, file: &str, group: &[String]) {
+        let key = &group[0];
         match parse_family_yaml(cut, Path::new(file)) {
             Ok(_) => panic!("FALSIFIED MF-014: {file} loads with required `{key}` deleted"),
             Err(e) => {
@@ -1310,22 +1337,22 @@ mod contract_falsification {
 
     #[test]
     fn falsify_mf_014_every_required_field_is_required() {
+        let (top, size) = schema_required();
+        assert!(top.len() >= 8 && size.len() >= 6, "MF-014: schema lists too short: {top:?} {size:?}");
         let files = raw_family_files();
         assert!(!files.is_empty(), "MF-014: no family files found");
         let mut red = 0usize;
         for (file, text) in &files {
             assert!(parse_family_yaml(text, Path::new(file)).is_ok(), "MF-014: {file} control must load");
-            for key in MF_REQUIRED_TOP {
+            for key in &top {
                 let cut = delete_key(text, 0, 0, key).unwrap_or_else(|| panic!("{file}: no top-level `{key}:`"));
-                assert_deletion_rejected(&cut, file, key);
+                assert_deletion_rejected(&cut, file, std::slice::from_ref(key));
                 red += 1;
             }
-            let (from, indent) =
-                first_size_variant_fields(text).unwrap_or_else(|| panic!("{file}: no size variant"));
-            for key in MF_REQUIRED_SIZE {
-                let cut = delete_key(text, from, indent, key)
-                    .unwrap_or_else(|| panic!("{file}: first size variant has no `{key}:`"));
-                assert_deletion_rejected(&cut, file, key);
+            for group in &size {
+                let cut = delete_size_group(text, group)
+                    .unwrap_or_else(|| panic!("{file}: first size variant has none of {group:?}"));
+                assert_deletion_rejected(&cut, file, group);
                 red += 1;
             }
             if let Some(cut) = delete_key(text, 0, 0, "quantizations") {
@@ -1335,8 +1362,13 @@ mod contract_falsification {
                 );
             }
         }
-        let want = files.len() * (MF_REQUIRED_TOP.len() + MF_REQUIRED_SIZE.len());
-        eprintln!("MF-014: {red} of {want} required-field deletions red across {} families", files.len());
+        let want = files.len() * (top.len() + size.len());
+        eprintln!(
+            "MF-014: {red} of {want} required-field deletions red across {} families ({} top-level + {} size-variant fields, from _schema.yaml)",
+            files.len(),
+            top.len(),
+            size.len()
+        );
         assert_eq!(red, want);
     }
 }

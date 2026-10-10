@@ -16,6 +16,9 @@ metadata:
 # Required fields: family, display_name, vendor, architectures, hf_pattern,
 #   size_variants, constraints, tensor_template, shape_template
 # Optional fields: quantizations, chat_template, certification
+# Required size_variant fields (a|b = either spelling; #5056, FALSIFY-MF-014 reads both lines):
+#   parameters, hidden_dim|d_model, num_layers|encoder_layers,
+#   num_heads|encoder_attention_heads, intermediate_dim|encoder_ffn_dim, vocab_size
 #
 # -------------------------------------------------------------------------
 # Field Descriptions
