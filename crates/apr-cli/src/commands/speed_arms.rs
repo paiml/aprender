@@ -8,7 +8,8 @@
 //!   scripts/parity_host_receipt.sh does (PERF-019, APR-PERF-GATE-001 §4.4.8). Its
 //!   version line must name that commit, or the arm is refused.
 //! - `ollama` — the pinned image, run by digest with the network denied; the model
-//!   store lives inside the workdir, pre-populated with the pinned manifest.
+//!   store lives inside the workdir, pre-populated with the pinned manifest. It is
+//!   timed by Ollama's own client, so it feeds no ratio (see [`ollama_arm`]).
 //! - `mistral.rs` — `NotRun`: upstream claims `qwen35` at v0.9.4 but nobody has
 //!   measured it (EXT-24 bind receipt). It is recorded, never silently dropped.
 //!
@@ -136,6 +137,10 @@ pub(crate) fn llama_cpp_arm(
 
 /// The Ollama arm: the pinned image, offline, `MIN_SAMPLES` verbose runs whose
 /// stats go to the artifact. `workdir/ollama-models` must hold the pinned model.
+///
+/// Its number is Ollama's own client timing itself (`eval rate`), not our client,
+/// so it is not PERF-019's one client (PP-25) and never enters a ratio: the ledger
+/// takes ratios against the llama.cpp arm only.
 pub(crate) fn ollama_arm(prompt: &str, workdir: &Path) -> ArmSpec {
     let artifact = workdir.join("ollama-verbose.txt");
     let a = quote(&artifact.display().to_string());
