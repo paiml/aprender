@@ -2,6 +2,20 @@
 
 Refs #5057. Every number here is measured. The query and the time are given for each, and inferences are marked as such.
 
+## Verdict: the build-system cause is falsified
+
+The working claim was that a build-system fix (#4753, then #4912) lifted the merge rate. The measurements refute it:
+
+| claim | measured |
+|---|---|
+| PRs spent hours in CI before the fix | median PR `ci.yml` run 59.8 min before #4912, 55.8 min after: minutes, not hours |
+| #4753 made the merge queue reuse x86-main | sampled merge-group runs after it still ran x86-main |
+| #4912 removed the slow jobs | those jobs were already skipped, or ran under a minute, on sampled PR runs |
+| a queue/CI bottleneck capped the rate | p50 armed→merged was **longest** (5.3h) in the fastest period (15.7 merged/day) |
+| the fix landed 10-05 | #4753 merged 10-04 19:32Z |
+
+What did move with the rate is supply: PRs opened per day, 10.2 → 24.3 → 7.7 → 18.2.
+
 ## What was asked
 
 The question was: what caused the build-system slowdown that we fixed? Merges to `main` ran 1–2 a day in early October.
@@ -44,7 +58,7 @@ The first answer named #4912, then #4753, as the cause. It rested on before/afte
 
 | row | countermeasure | guard (red when) |
 |---|---|---|
-| 1 | Never freeze `main` for a release: cut a release branch, and keep `main` merging. *(Proposed; needs a ruling.)* | `main` has 0 merges for 12h while any PR is armed |
+| 1 | Never freeze `main` for a release: cut a release branch, and keep `main` merging. *(Proposed. Review on 2026-10-10 did not adopt it unconditionally: it would replace standing release-hold rulings, and every push to a release branch must be named by a ruling.)* | `main` has 0 merges for 12h while any PR is armed |
 | 2 | Keep #4912's state: heavy checks stay off the PR and merge-queue path. | any `mutants*` or `*ladder*` job appears in a `merge_group` run |
 | 3 | Watch the rate, not anecdotes. | 3-day merges/day < 8 while armed PRs exist |
 | 4 | Decompose before attributing. A throughput claim names its stage: supply, decision wait, or queue+CI. | — (review rule) |
