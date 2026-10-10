@@ -151,12 +151,13 @@ This is not stop 8 by the worker's reading; it is Q4 for the cop.
 
 `scripts/check_laya_train_rules.sh` prints one line per *cmd* rule of §9 (H1, H2, H4, H5,
 H10, H11, H12, H15) for `<base>...<head>`, each with its anti-vacuity arm, and exits 1 on a
-RED. `--self-test` plants 21 cases in a throwaway repository (each rule's mutant must be
+RED. `--self-test` plants 24 cases in a throwaway repository (each rule's mutant must be
 named RED, each clean case PASS) and runs in `workspace-test` through
 `ci/explicit-test-commands.d/795-laya-train-rules-self-test.cmd`. Two readings of the spec,
 stated so they can be overruled:
-- H4: a head that adds LT-1's own receipt may touch `crates/`, so LT-1's PR can carry its
-  proxy measurement code.
+- H4: a head that adds LT-1's own receipt may touch `crates/`. One path is exempt by the Q5
+  ruling (handoff/quorum-a3-laya-q5-lt1-order.md): `crates/aprender-train/examples/laya_engine_probe.rs`,
+  the proxy probe, which must merge before its receipt can exist; the arm prints the exempt count.
 - H5: the chosen engine is read from `"engine"` in LT-1's receipt on the base.
 
 ## (h) Questions to the cop
