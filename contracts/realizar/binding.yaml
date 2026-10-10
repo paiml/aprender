@@ -272,8 +272,9 @@ bindings:
   equation: tensor_count
   module_path: aprender::format::model_family
   function: DynModelFamily::expected_tensor_count
+  signature: 'fn expected_tensor_count(&self, size: &str) -> Option<usize>'
   status: implemented
-  notes: Auto-inferred by pv infer
+  notes: 'Expected tensor count for a model family and size (crates/aprender-core/src/format/model_family.rs).'
 - contract: q4k-q6k-superblock-v1.yaml
   equation: total_bytes
   module_path: trueno::contracts
@@ -368,12 +369,6 @@ bindings:
   equation: predict
   module_path: aprender::tree::random_forest
   function: RandomForestClassifier::predict
-  status: implemented
-  notes: Auto-inferred by pv infer
-- contract: flash-attention-v1.yaml
-  equation: flash_attention
-  module_path: realizar::gguf::inference::attention
-  function: flash_attention_tiled
   status: implemented
   notes: Auto-inferred by pv infer
 - contract: rmsnorm-kernel-v1.yaml
@@ -704,8 +699,8 @@ bindings:
   module_path: apr_cli::commands::cbtop
   function: generate_headless_report_simulated
   signature: 'fn generate_headless_report_simulated(model_name: &str, pipeline: &PipelineState, _config: &CbtopConfig) -> HeadlessReport'
-  status: implemented
-  notes: 'PMAT-403: metadata fields must be measured or zero. No hardcoded nonzero constants (137, 173.9, etc.)'
+  status: partial
+  notes: 'PMAT-403: metadata fields must be measured or zero. No hardcoded nonzero constants (137, 173.9, etc.). Bound to the simulated report path only.'
 critical_path:
 - forward
 - flash_attention

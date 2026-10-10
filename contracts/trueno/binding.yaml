@@ -176,9 +176,9 @@ bindings:
   equation: tensor_count
   module_path: aprender::format::model_family
   function: DynModelFamily::expected_tensor_count
-  signature: 'pub fn tensor_count(&self) -> u64'
+  signature: 'fn expected_tensor_count(&self, size: &str) -> Option<usize>'
   status: implemented
-  notes: 'In crates/cbtop/src/quantize/gguf.rs. Counts tensors in GGUF model files.'
+  notes: 'Expected tensor count for a model family and size (crates/aprender-core/src/format/model_family.rs).'
 - contract: metrics-classification-v1.yaml
   equation: precision
   module_path: cbtop::adaptive_ml::types

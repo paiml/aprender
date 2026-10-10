@@ -124,16 +124,16 @@ bindings:
   equation: effective_batch_size
   module_path: entrenar::finetune::classify_pipeline
   function: ClassifyConfig::validate_hyperparameters
-  signature: fn effective_batch_size(&self) -> usize
-  status: implemented
-  notes: function not found in source
+  signature: 'pub fn validate_hyperparameters(&self, model_params: u64) -> HyperparamDiagnostics'
+  status: partial
+  notes: 'Checks the hyperparameters and returns diagnostics; it warns and does not enforce the equation.'
 - contract: qlora-hyperparameters-v1.yaml
   equation: lora_alpha_ratio
   module_path: entrenar::finetune::classify_pipeline
   function: ClassifyConfig::validate_hyperparameters
-  signature: fn lora_alpha(&self) -> f32
-  status: implemented
-  notes: function not found in source
+  signature: 'pub fn validate_hyperparameters(&self, model_params: u64) -> HyperparamDiagnostics'
+  status: partial
+  notes: 'Checks the hyperparameters and returns diagnostics; it warns and does not enforce the equation.'
 - contract: qlora-hyperparameters-v1.yaml
   equation: seq_len_from_data
   module_path: entrenar::hf_pipeline::dataset::batch
@@ -146,15 +146,15 @@ bindings:
   module_path: entrenar::finetune::classify_trainer
   function: ClassifyTrainer::train
   signature: 'pub fn train(&mut self) -> TrainResult'
-  status: implemented
+  status: partial
   notes: 'warmup_steps = (warmup_fraction * total_steps) as usize, computed inline in train'
 - contract: qlora-hyperparameters-v1.yaml
   equation: gradient_clip_bound
   module_path: entrenar::optim::clip
   function: clip_grad_norm
-  signature: fn gradient_clip_norm(&self) -> f32
+  signature: 'pub fn clip_grad_norm(params: &mut [Tensor], max_norm: f32) -> f32'
   status: implemented
-  notes: function not found in source
+  notes: 'Scales the gradients so their global L2 norm is at most max_norm; returns the norm before clipping.'
 - contract: qlora-hyperparameters-v1.yaml
   equation: epoch_count_imbalanced
   module_path: entrenar::finetune::classify_pipeline
@@ -260,8 +260,9 @@ bindings:
   equation: rmse
   module_path: entrenar::quant::error_analysis
   function: QuantErrorStats::rmse
-  status: implemented
-  notes: Auto-inferred by pv infer
+  signature: 'pub fn rmse(&self) -> f32'
+  status: partial
+  notes: 'RMSE of quantization error, not of a regression; the regression metric is bound as aprender::metrics::rmse.'
 - contract: int8-symmetric-quant-v1.yaml
   equation: quantize
   module_path: entrenar::quant::gguf_quant::q8_0
