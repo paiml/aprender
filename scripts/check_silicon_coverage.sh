@@ -95,6 +95,17 @@
 # A page cap that is reached before the listing is exhausted is NOT a negative.
 # An axis not found in a truncated read scores TRUNCATED (unknown, exit 2) with
 # the counts it did read — never UNCOVERED, STALE or MISSING.
+#
+# AN API READ THAT FAILS IS NOT_MEASURED, AND GH'S OWN WORDS ARE KEPT (#5031).
+# On merge-queue run 38024320873 (2026-10-10 04:56Z) one run's jobs page could
+# not be read. The guard went NO-GO, scored two deferred axes TRUNCATED, and
+# explained it as a page cap or an inconsistent listing — neither had happened.
+# gh's stderr went to /dev/null, so nothing said why the read failed; the same
+# page read cleanly afterwards. Now every gh read keeps its stderr: a failed
+# read prints a `... FAILED` line carrying gh's message, and an axis whose
+# only hole is an unread jobs page scores NOT_MEASURED (unknown, exit 2). That
+# is still a refusal: a failed read is no evidence either way, so it is never
+# a coverage gap and never a pass.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -192,6 +203,15 @@ iso_epoch() {
 # epoch_day <epoch> -> YYYY-MM-DD (UTC) of that instant. Deterministic: $1.
 epoch_day() {
     date -u -d "@$1" +%Y-%m-%d 2>/dev/null  # bashrs disable-line=DET002
+}
+
+# gh_err <stderr file> -> what a failed gh call printed on stderr, as one line
+# (lines joined by " | ", at most 300 bytes). A failed read's own message is the
+# only record of WHY it failed; run 38024320873 threw it away (#5031).
+gh_err() {
+    awk 'NF { sub(/[[:space:]]+$/, ""); s = s (s == "" ? "" : " | ") $0 }
+         END { if (s == "") s = "(gh printed nothing on stderr)"; print substr(s, 1, 300) }' "$1" 2>/dev/null \
+        || printf '(stderr of the failed call could not be read)\n'
 }
 # ── THE RUN PROBE ───────────────────────────────────────────────────────────
 # axis_evidence <jobs-tsv> <selector> <job-name glob>
@@ -307,14 +327,16 @@ list_window() {
             break
         fi
         _lw_pf="$(mktemp)" || return 1
+        _lw_ef="$(mktemp)" || { rm -f "${_lw_pf:?}"; return 1; }
         api_calls=$((api_calls + 1))
         if ! gh api "repos/$REPO/actions/workflows/${_lw_wf}/runs?event=${_lw_ev}&created=%3E%3D${_bj_since}&per_page=${PAGE_SIZE}&page=${_bj_page}" \
             --jq '"#total\t\(.total_count)", (.workflow_runs[] | [(.id|tostring), .created_at, .name] | @tsv)' \
-            > "$_lw_pf" 2>/dev/null; then
-            printf 'listing FAILED: %s %s page %s\n' "$_lw_wf" "$_lw_ev" "$_bj_page"
-            rm -f "${_lw_pf:?}"
+            > "$_lw_pf" 2> "$_lw_ef"; then
+            printf 'listing FAILED: %s %s page %s: %s\n' "$_lw_wf" "$_lw_ev" "$_bj_page" "$(gh_err "$_lw_ef")"
+            rm -f "${_lw_pf:?}" "${_lw_ef:?}"
             return 1
         fi
+        rm -f "${_lw_ef:?}"
         _bj_total="$(awk -F'\t' '$1 == "#total" { print $2; exit }' "$_lw_pf")"
         case "$_bj_total" in ''|*[!0-9]*)
             printf 'listing UNREADABLE: %s %s page %s has no total_count\n' "$_lw_wf" "$_lw_ev" "$_bj_page"
@@ -390,12 +412,14 @@ build_jobs() {
             _bj_ptotal="-"; _bj_pnewest="-"
             if [ "$_bj_state" = ok ]; then
                 api_calls=$((api_calls + 1)); probe_calls=$((probe_calls + 1))
+                _bj_pef="$(mktemp)" || { rm -f "${_bj_one:?}" "${_bj_runs:?}"; return 1; }
                 if ! _bj_probe="$(gh api "repos/$REPO/actions/workflows/${_bj_wf}/runs?event=${_bj_ev}&per_page=1" \
-                    --jq '"\(.total_count)\t\(.workflow_runs[0].created_at // "")"' 2>/dev/null)"; then
-                    printf 'listing FAILED: %s %s unfiltered cross-check\n' "$_bj_wf" "$_bj_ev"
-                    rm -f "${_bj_one:?}" "${_bj_runs:?}"
+                    --jq '"\(.total_count)\t\(.workflow_runs[0].created_at // "")"' 2> "$_bj_pef")"; then
+                    printf 'listing FAILED: %s %s unfiltered cross-check: %s\n' "$_bj_wf" "$_bj_ev" "$(gh_err "$_bj_pef")"
+                    rm -f "${_bj_one:?}" "${_bj_runs:?}" "${_bj_pef:?}"
                     return 1
                 fi
+                rm -f "${_bj_pef:?}"
                 _bj_ptotal="${_bj_probe%%"$TAB"*}"; _bj_pnewest="${_bj_probe#*"$TAB"}"
                 if listing_is_short "$_bj_one" "$_bj_pnewest" "$_bj_cut"; then
                     reread_calls=$((reread_calls + 1))
@@ -421,18 +445,22 @@ build_jobs() {
         if [ "$_bj_ts" -lt "$_bj_cut" ]; then runs_old=$((runs_old + 1)); continue; fi
         runs_scanned=$((runs_scanned + 1))
         _bj_jf="$(mktemp)" || return 1
+        _bj_ef="$(mktemp)" || { rm -f "${_bj_jf:?}"; return 1; }
         api_calls=$((api_calls + 1))
         if gh api "repos/$REPO/actions/runs/${_bj_id}/jobs?per_page=100" \
             --jq '.jobs[] | select(.conclusion=="success" or .conclusion=="failure")
                           | [.completed_at, .conclusion, ([.labels[]] | join(",")), .name] | @tsv' \
-            > "$_bj_jf" 2>/dev/null; then
+            > "$_bj_jf" 2> "$_bj_ef"; then
             awk -v wf="$_bj_name" -v rid="$_bj_id" -F'\t' 'NF >= 4 { print $0 "\t" wf "\t" rid }' \
                 "$_bj_jf" >> "$_bj_out"
         else
-            # An unread run is a hole in the window, not a run without the job.
+            # An unread run is a hole in the window, not a run without the job:
+            # not_measured, and gh's message says why (#5031).
+            printf 'jobs read FAILED (not_measured): run %s (%s): %s\n' \
+                "$_bj_id" "$_bj_name" "$(gh_err "$_bj_ef")"
             printf '%s\tjobs\t%s\t0\tunread\n' "$_bj_name" "$_bj_id" >> "$_bj_lst"
         fi
-        rm -f "$_bj_jf"
+        rm -f "$_bj_jf" "$_bj_ef"
     done < "$_bj_runs"
     rm -f "$_bj_runs"
     return 0
@@ -459,9 +487,14 @@ window_holes() {
             $1 == wf && $5 == "truncated" { printf "%s %s: read %s of %s in-window runs (page cap %sx%s); ", $1, $2, $3, $4, cap, sz }
         ' "$_wh_lst"
     done
-    # Unread job pages are keyed by the workflow's display name; the listing
-    # does not map file -> name, so any unread page is a hole for every axis.
-    awk -F'\t' '$5 == "unread" { n++ } END { if (n) printf "%s run(s) whose jobs could not be read; ", n }' "$_wh_lst"
+}
+
+# window_unread <listings-tsv> -> one line counting the runs whose jobs page
+# could not be read, or nothing. Unread job pages are keyed by the workflow's
+# display name; the listing does not map file -> name, so any unread page is a
+# hole for every axis. A failed read is NOT_MEASURED, not a page cap (#5031).
+window_unread() {
+    awk -F'\t' '$5 == "unread" { n++ } END { if (n) printf "%s run(s) whose jobs page could not be read (API read failed; gh error on the jobs read FAILED line above)", n }' "$1"
 }
 
 # ── SELF-TEST ROWS: the whole script against a PATH-shimmed gh ──────────────
@@ -523,6 +556,12 @@ SHIM
 
 st_iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }  # bashrs disable-line=DET002
 st_route() { printf '%s\t%s\n' "$1" "$2" >> "$ST/u/routes.tsv"; }
+# st_fail_jobs <run id>: that run's jobs page answers with a gh error (HTTP 502).
+st_fail_jobs() {
+    awk -F'\t' -v OFS='\t' -v p="repos/$ST_REPO/actions/runs/$1/jobs?per_page=100" \
+        '$1 == p { $2 = "@ERROR" } { print }' "$ST/u/routes.tsv" > "$ST/u/routes.new" \
+        && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
+}
 
 st_reset() {
     rm -rf "${ST:?}/u"
@@ -818,6 +857,37 @@ selftest_rows() {
     st_check j-short-always 2 '^  NO-GO +x86_64-cpu +REQUIRED: inconsistent listing .*listed 4 of 4.*total 13' \
         || _rows_bad=$((_rows_bad + 1))
 
+    # (k) merge-queue run 38024320873: the listing reads, one run's jobs page
+    # does not. That is NOT_MEASURED (rc 2), never TRUNCATED and never UNCOVERED.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_fail_jobs 9101
+    _rows=$((_rows + 1))
+    st_check k-jobs-unread 2 '^  NOT_MEASURED +gpu-axis +REQUIRED: .*1 run\(s\) whose jobs page could not be read' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (k2) the same read keeps gh's own words: the failed call's stderr is in
+    # the output, next to the run id.
+    _rows=$((_rows + 1))
+    st_check k2-jobs-stderr 2 '^jobs read FAILED \(not_measured\): run 9101 .*HTTP 502' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (l) the control for (k): the jobs page reads, and the job did not succeed.
+    # A real gap stays a real gap (rc 1), not NOT_MEASURED.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"
+    st_run 9101 gpu.yml schedule 20 1 "gpu-leg (x86, shim)|cancelled|self-hosted,shimgpu"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check l-real-gap 1 '^  (UNCOVERED|STALE) +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
+
+    # (e2) a listing read that fails keeps gh's stderr too.
+    st_reset; ST_ERROR=1
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check e2-list-stderr 2 '^listing FAILED: .*HTTP 502' || _rows_bad=$((_rows_bad + 1))
+
     # (e) the API errors: refuse, exactly as before.
     st_reset; ST_ERROR=1
     st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
@@ -939,6 +1009,12 @@ printf -- '\n-- runs --\n'
 if [ "$MODE" = "live" ]; then
     while IFS="$TAB" read -r _l_wf _l_ev _l_read _l_total _l_state _; do
         [ -n "$_l_wf" ] || continue
+        # An unread jobs page carries the run id in the "read" column; it is
+        # one run, not a listing (run 38024320873 printed "<id> of 0").
+        if [ "$_l_state" = unread ]; then
+            printf 'unread  %-24s run %s: jobs page not read  not_measured\n' "$_l_wf" "$_l_read"
+            continue
+        fi
         printf 'listing %-24s %-18s %s of %s in-window run(s) read  %s\n' \
             "$_l_wf" "$_l_ev" "$_l_read" "$_l_total" "$_l_state"
     done < "$LISTINGS"
@@ -965,7 +1041,7 @@ fi
 # ── the axes ────────────────────────────────────────────────────────────────
 printf -- '\n-- axes --\n'
 axes=0; required=0; covered=0; uncovered=0; stale=0; missing=0
-deferred=0; promotable=0; ready=0; unknown=0; inconsistent=0
+deferred=0; promotable=0; ready=0; unknown=0; inconsistent=0; notmeasured=0
 fail=0
 while IFS= read -r line; do
     line="${line%%#*}"
@@ -1021,11 +1097,14 @@ while IFS= read -r line; do
 
     # (c) Was the window READ to its edge? A non-fresh axis whose workflow
     # listing stopped at the page cap is unknown, not absent.
-    holes=""; contradiction=""
+    holes=""; contradiction=""; unread=""
     if [ "$MODE" = "live" ] && [ "$fresh" -eq 0 ]; then
         # shellcheck disable=SC2046
         holes="$(window_holes "$LISTINGS" $(awk -F'\t' -v a="$axis" '$1 == a { print $2 }' "$AXIS_WF"))"
         holes="${holes%; }"
+        unread="$(window_unread "$LISTINGS")"
+        # Both kinds of hole: NOT_MEASURED names the failed read and keeps the cap.
+        if [ -n "$unread" ] && [ -n "$holes" ]; then unread="$unread; also $holes"; fi
         # shellcheck disable=SC2046
         contradiction="$(window_contradictions "$LISTINGS" $(awk -F'\t' -v a="$axis" '$1 == a { print $2 }' "$AXIS_WF"))"
         contradiction="${contradiction%; }"
@@ -1041,6 +1120,10 @@ while IFS= read -r line; do
             elif [ -n "$contradiction" ]; then
                 unknown=$((unknown + 1)); inconsistent=$((inconsistent + 1))
                 printf '  NO-GO     %-20s REQUIRED: inconsistent listing — %s\n' "$axis" "$contradiction"
+            elif [ -n "$unread" ]; then
+                unknown=$((unknown + 1)); notmeasured=$((notmeasured + 1))
+                printf '  NOT_MEASURED %-17s REQUIRED: unknown — no fresh job named %s in what was read: %s\n' \
+                    "$axis" "$jobglob" "$unread"
             elif [ -n "$holes" ]; then
                 unknown=$((unknown + 1))
                 printf '  TRUNCATED %-20s REQUIRED: unknown — no fresh job named %s in what was read: %s\n' \
@@ -1068,6 +1151,10 @@ while IFS= read -r line; do
             elif [ -n "$contradiction" ]; then
                 unknown=$((unknown + 1)); inconsistent=$((inconsistent + 1))
                 printf '  NO-GO     %-20s %s: inconsistent listing — %s\n' "$axis" "$status" "$contradiction"
+            elif [ -n "$unread" ]; then
+                unknown=$((unknown + 1)); notmeasured=$((notmeasured + 1))
+                printf '  NOT_MEASURED %-17s %s: unknown — a PROMOTE could hide in the unread part: %s\n' \
+                    "$axis" "$status" "$unread"
             elif [ -n "$holes" ]; then
                 unknown=$((unknown + 1))
                 printf '  TRUNCATED %-20s %s: unknown — a PROMOTE could hide in the unread part: %s\n' \
@@ -1088,8 +1175,11 @@ while IFS= read -r line; do
 done < "$POLICY"
 
 printf -- '\n-- denominators --\n'
-printf 'axes declared: %s  (required %s: covered %s, STALE %s, UNCOVERED %s, MISSING %s, TRUNCATED %s;' \
-    "$axes" "$required" "$covered" "$stale" "$uncovered" "$missing" "$unknown"
+# TRUNCATED keeps its old meaning (page cap or inconsistent listing) minus the
+# failed reads, which are counted on their own.
+truncated=$(( unknown - notmeasured ))
+printf 'axes declared: %s  (required %s: covered %s, STALE %s, UNCOVERED %s, MISSING %s, TRUNCATED %s, NOT_MEASURED %s;' \
+    "$axes" "$required" "$covered" "$stale" "$uncovered" "$missing" "$truncated" "$notmeasured"
 printf ' deferred %s: PROMOTABLE %s, ready %s)\n' "$deferred" "$promotable" "$ready"
 printf 'evidence: %s online runner(s), %s concluded job(s), floor %sd\n' \
     "$n_runners" "$n_jobs" "$STALE_DAYS"
@@ -1117,8 +1207,11 @@ fi
     if [ "$ready" -gt 0 ]; then
         printf -- '- %s deferred axis/axes have a runner but no run yet\n' "$ready"
     fi
-    if [ "$unknown" -gt 0 ]; then
-        printf -- '- **%s axis/axes UNKNOWN: the page cap was reached before the lookback edge**\n' "$unknown"
+    if [ "$truncated" -gt 0 ]; then
+        printf -- '- **%s axis/axes UNKNOWN: the page cap was reached before the lookback edge, or a listing was inconsistent**\n' "$truncated"
+    fi
+    if [ "$notmeasured" -gt 0 ]; then
+        printf -- '- **%s axis/axes NOT_MEASURED: an API read failed, which is no evidence either way**\n' "$notmeasured"
     fi
     printf -- '- runners inspected: %s; concluded jobs inspected: %s\n' "$n_runners" "$n_jobs"
 } >> "$SUMMARY"
@@ -1136,10 +1229,13 @@ if [ "$fail" -ne 0 ]; then
     exit 1
 fi
 if [ "$unknown" -gt 0 ]; then
-    printf '\nNO-GO: %s axis/axes could not be judged (%s from an inconsistent listing).\n' "$unknown" "$inconsistent"
+    printf '\nNO-GO: %s axis/axes could not be judged (%s from an inconsistent listing, %s NOT_MEASURED).\n' \
+        "$unknown" "$inconsistent" "$notmeasured"
     printf 'Either a workflow listing stopped at the page cap before the %sd lookback\n' "$LOOKBACK_DAYS"
     printf 'edge without the job, or an empty created>=lookback listing was contradicted\n'
-    printf 'by the unfiltered one. An unread window is Unknown, never UNCOVERED.\n'
+    printf 'by the unfiltered one, or a jobs page could not be read: NOT_MEASURED, with\n'
+    printf 'the gh error on its jobs read FAILED line above. An unread window is Unknown,\n'
+    printf 'never UNCOVERED, and a failed read is never a pass.\n'
     exit 2
 fi
 printf '\nOK: every required axis has RUN inside its cadence window, and no deferred\n'
