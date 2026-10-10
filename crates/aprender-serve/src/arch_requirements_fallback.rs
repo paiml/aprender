@@ -65,7 +65,7 @@ impl WeightRole {
     }
 }
 
-/// Roles for constraint cell: no_qk_norm_no_bias (has_qk_norm=false, has_bias=false).
+/// Roles for constraint cell: no_qk_norm_no_bias (has_qk_norm=false, has_bias=false, is_moe=false).
 const ROLES_NO_QK_NORM_NO_BIAS: &[WeightRole] = &[
     WeightRole::AttnNorm,
     WeightRole::FfnNorm,
@@ -80,7 +80,7 @@ const ROLES_NO_QK_NORM_NO_BIAS: &[WeightRole] = &[
 
 const _: () = assert!(ROLES_NO_QK_NORM_NO_BIAS.len() == 9, "YAML declares 9 roles");
 
-/// Roles for constraint cell: no_qk_norm_bias (has_qk_norm=false, has_bias=true).
+/// Roles for constraint cell: no_qk_norm_bias (has_qk_norm=false, has_bias=true, is_moe=false).
 const ROLES_NO_QK_NORM_BIAS: &[WeightRole] = &[
     WeightRole::AttnNorm,
     WeightRole::FfnNorm,
@@ -98,7 +98,7 @@ const ROLES_NO_QK_NORM_BIAS: &[WeightRole] = &[
 
 const _: () = assert!(ROLES_NO_QK_NORM_BIAS.len() == 12, "YAML declares 12 roles");
 
-/// Roles for constraint cell: qk_norm_no_bias (has_qk_norm=true, has_bias=false).
+/// Roles for constraint cell: qk_norm_no_bias (has_qk_norm=true, has_bias=false, is_moe=false).
 const ROLES_QK_NORM_NO_BIAS: &[WeightRole] = &[
     WeightRole::AttnNorm,
     WeightRole::FfnNorm,
@@ -115,7 +115,7 @@ const ROLES_QK_NORM_NO_BIAS: &[WeightRole] = &[
 
 const _: () = assert!(ROLES_QK_NORM_NO_BIAS.len() == 11, "YAML declares 11 roles");
 
-/// Roles for constraint cell: qk_norm_and_bias (has_qk_norm=true, has_bias=true).
+/// Roles for constraint cell: qk_norm_and_bias (has_qk_norm=true, has_bias=true, is_moe=false).
 const ROLES_QK_NORM_AND_BIAS: &[WeightRole] = &[
     WeightRole::AttnNorm,
     WeightRole::FfnNorm,
@@ -135,14 +135,79 @@ const ROLES_QK_NORM_AND_BIAS: &[WeightRole] = &[
 
 const _: () = assert!(ROLES_QK_NORM_AND_BIAS.len() == 14, "YAML declares 14 roles");
 
+/// Roles for constraint cell: moe_no_qk_norm_no_bias (has_qk_norm=false, has_bias=false, is_moe=true).
+const ROLES_MOE_NO_QK_NORM_NO_BIAS: &[WeightRole] = &[
+    WeightRole::AttnNorm,
+    WeightRole::FfnNorm,
+    WeightRole::QProj,
+    WeightRole::KProj,
+    WeightRole::VProj,
+    WeightRole::OProj,
+];
+
+const _: () = assert!(ROLES_MOE_NO_QK_NORM_NO_BIAS.len() == 6, "YAML declares 6 roles");
+
+/// Roles for constraint cell: moe_no_qk_norm_bias (has_qk_norm=false, has_bias=true, is_moe=true).
+const ROLES_MOE_NO_QK_NORM_BIAS: &[WeightRole] = &[
+    WeightRole::AttnNorm,
+    WeightRole::FfnNorm,
+    WeightRole::QProj,
+    WeightRole::KProj,
+    WeightRole::VProj,
+    WeightRole::OProj,
+    WeightRole::AttnQBias,
+    WeightRole::AttnKBias,
+    WeightRole::AttnVBias,
+];
+
+const _: () = assert!(ROLES_MOE_NO_QK_NORM_BIAS.len() == 9, "YAML declares 9 roles");
+
+/// Roles for constraint cell: moe_qk_norm_no_bias (has_qk_norm=true, has_bias=false, is_moe=true).
+const ROLES_MOE_QK_NORM_NO_BIAS: &[WeightRole] = &[
+    WeightRole::AttnNorm,
+    WeightRole::FfnNorm,
+    WeightRole::QProj,
+    WeightRole::KProj,
+    WeightRole::VProj,
+    WeightRole::OProj,
+    WeightRole::AttnQNorm,
+    WeightRole::AttnKNorm,
+];
+
+const _: () = assert!(ROLES_MOE_QK_NORM_NO_BIAS.len() == 8, "YAML declares 8 roles");
+
+/// Roles for constraint cell: moe_qk_norm_and_bias (has_qk_norm=true, has_bias=true, is_moe=true).
+const ROLES_MOE_QK_NORM_AND_BIAS: &[WeightRole] = &[
+    WeightRole::AttnNorm,
+    WeightRole::FfnNorm,
+    WeightRole::QProj,
+    WeightRole::KProj,
+    WeightRole::VProj,
+    WeightRole::OProj,
+    WeightRole::AttnQNorm,
+    WeightRole::AttnKNorm,
+    WeightRole::AttnQBias,
+    WeightRole::AttnKBias,
+    WeightRole::AttnVBias,
+];
+
+const _: () = assert!(ROLES_MOE_QK_NORM_AND_BIAS.len() == 11, "YAML declares 11 roles");
+
 /// Returns the required weight roles for a given architecture.
+///
+/// Exhaustive match on `(has_qk_norm, has_bias, is_moe)`: the compiler refuses
+/// a contract whose constraint matrix leaves one of the eight triples out.
 #[must_use]
 pub fn required_roles(arch: &ArchConstraints) -> &'static [WeightRole] {
     contract_pre_constraint_matrix_exhaustiveness!();
-    match (arch.has_qk_norm, arch.has_bias) {
-        (false, false) => ROLES_NO_QK_NORM_NO_BIAS,
-        (false, true) => ROLES_NO_QK_NORM_BIAS,
-        (true, false) => ROLES_QK_NORM_NO_BIAS,
-        (true, true) => ROLES_QK_NORM_AND_BIAS,
+    match (arch.has_qk_norm, arch.has_bias, arch.is_moe) {
+        (false, false, false) => ROLES_NO_QK_NORM_NO_BIAS,
+        (false, true, false) => ROLES_NO_QK_NORM_BIAS,
+        (true, false, false) => ROLES_QK_NORM_NO_BIAS,
+        (true, true, false) => ROLES_QK_NORM_AND_BIAS,
+        (false, false, true) => ROLES_MOE_NO_QK_NORM_NO_BIAS,
+        (false, true, true) => ROLES_MOE_NO_QK_NORM_BIAS,
+        (true, false, true) => ROLES_MOE_QK_NORM_NO_BIAS,
+        (true, true, true) => ROLES_MOE_QK_NORM_AND_BIAS,
     }
 }
