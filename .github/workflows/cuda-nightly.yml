@@ -739,6 +739,9 @@ jobs:
         if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
         run: |
           set -uo pipefail
+          # -e OFF, as in G0 above: under the default `bash -e {0}` a red cargo test
+          # ended the step at `; rc=$?` with no [e2e] reading and no ::error::.
+          set +e
           m=gguf::cuda::forward_qwen35_cuda::qwen35_cuda_tests::
           model="$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf"
           [ -f "$model" ] || { echo "::error::#4523 UNMEASURABLE on ${{ matrix.name }} (provisioning): $model is absent"; exit 1; }
