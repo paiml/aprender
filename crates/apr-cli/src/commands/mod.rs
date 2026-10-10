@@ -157,6 +157,8 @@ pub(crate) mod test_llm;
 pub(crate) mod test_llm_band;
 // #4954: `apr test llm ttft-verdict`, the TTFT ratio row as an exit code.
 pub(crate) mod test_llm_ttft;
+// #4971 V3-d: `apr test llm shape-check`, the CLI over perf_gate::v3_shape.
+pub(crate) mod test_llm_shape;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.

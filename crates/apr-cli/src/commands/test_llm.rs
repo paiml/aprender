@@ -467,15 +467,23 @@ mod tests {
 // ===========================================================================
 use crate::LlmSubcommand;
 
-/// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode).
+/// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode;
+/// #4954 ttft-verdict and #4971 shape-check, which read files and need no
+/// runtime).
 ///
 /// # Errors
 /// Propagates whichever mode ran.
-#[cfg(feature = "inference")]
 pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
-    if let LlmSubcommand::TtftVerdict { runs } = command {
-        return super::test_llm_ttft::run(runs);
+    match command {
+        LlmSubcommand::TtftVerdict { runs } => super::test_llm_ttft::run(runs),
+        LlmSubcommand::ShapeCheck { witness } => super::test_llm_shape::run(witness),
+        LlmSubcommand::Bench { .. } => dispatch_bench(command),
     }
+}
+
+/// `apr test llm bench`, in either of its two modes.
+#[cfg(feature = "inference")]
+fn dispatch_bench(command: &LlmSubcommand) -> Result<()> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
     match command {
@@ -486,19 +494,23 @@ pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
 
 /// #4041: the benchmark drives its server through tokio, which only the `inference` feature brings. A minimal
 /// build (`--no-default-features`) names the missing feature instead of failing to compile.
-/// `ttft-verdict` reads files only, so it runs in every build (#4954).
+/// `ttft-verdict` and `shape-check` read files only and never reach here, so
+/// they run in every build (#4954, #4971).
 ///
 /// # Errors
 /// `bench`, always: this build cannot run the benchmark.
 #[cfg(not(feature = "inference"))]
-pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
-    if let LlmSubcommand::TtftVerdict { runs } = command {
-        return super::test_llm_ttft::run(runs);
-    }
+fn dispatch_bench(_command: &LlmSubcommand) -> Result<()> {
     Err(CliError::InferenceFailed(
         "`apr test llm bench` needs the `inference` feature (this apr was built without it)"
             .to_string(),
     ))
+}
+
+/// The refusal of a `bench` mode handed another subcommand. `dispatch` routes
+/// only `bench` to them, so this names a routing defect if it ever prints.
+fn not_bench() -> CliError {
+    CliError::InvalidInput("`apr test llm`: only `bench` routes to a benchmark mode".to_string())
 }
 
 /// TWO MODES, ONE ENTRYPOINT — the §4.4-conformant one.
@@ -544,9 +556,7 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         ..
     } = command
     else {
-        return Err(CliError::InvalidInput(
-            "the band mode runs `bench` only".to_string(),
-        ));
+        return Err(not_bench());
     };
     // Unreachable: clap's `requires = "receipt"` enforces it. Stated rather
     // than unwrapped, because a receipt-less band run would measure for
@@ -622,9 +632,7 @@ async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
         ..
     } = command
     else {
-        return Err(CliError::InvalidInput(
-            "the legacy mode runs `bench` only".to_string(),
-        ));
+        return Err(not_bench());
     };
     run_bench(BenchArgs {
         url,
