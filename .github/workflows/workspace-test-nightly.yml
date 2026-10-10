@@ -1,0 +1,86 @@
+# workspace-test-nightly -- main's FULL workspace tests, every night (#5002).
+#
+# WHY. A push to main reuses the merge-queue result for workspace-test, and the merge queue tests
+# the crates a PR touches, so a PR that breaks another crate's tests can leave main's tree red
+# with every run green (#5001: about 46h). This runs, on main's head, the full-tier commands of
+# ci/sections.yml's workspace-test-shard section through scripts/ci/workspace_test_nightly.sh,
+# which runs nothing (NOT-MEASURED) when its commands or their env drift from that section.
+#
+# LAB, never a gate (operator C324). The workflow is not named CI, no job is named workspace-test
+# or ci / gate, and scripts/release/nightly_train.sh's LANES does not list it, so no merge or
+# release reader sees it. A night on main that is not green opens or updates one ticket, and
+# 7 days with no green night stop this workflow until its owner re-enables it: both are
+# workspace-test-nightly-ticket.yml.
+#
+# NO PYTHON (operator C301): bash on the runner host, the deep-nightly pattern, not the
+# sovereign-ci container. #3073: no hosted runners.
+
+name: Workspace test (nightly)
+
+on:
+  schedule:
+    # Schedules land 3h51m-6h49m late on this account (guards-nightly.yml), so the 21:13Z slot
+    # lands about 01:04-04:02Z, inside the clean-room pool's 20:00-06:00Z window (ci-unwedge.yml).
+    - cron: '13 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-test-nightly
+  cancel-in-progress: false
+
+jobs:
+  # The planted cases run first, in their own job: the run cases write the compute lane's
+  # /tmp/compute-test.log through a stub, and that file must never meet a real lane's.
+  nightly-self-test:
+    name: nightly self-test
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: The nightly and ticket scripts' planted cases
+        run: |
+          set -uo pipefail
+          rc=0
+          bash scripts/ci/workspace_test_nightly.sh --self-test || rc=1
+          bash scripts/ci/workspace_test_nightly_ticket.sh --self-test || rc=1
+          exit "$rc"
+
+  nightly-lane:
+    name: nightly ${{ matrix.lane }}
+    needs: nightly-self-test
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { lane: lib, timeout: 360 }
+          - { lane: gpu, timeout: 120 }
+          - { lane: compute, timeout: 120 }
+          - { lane: explicit, timeout: 300 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: The lane's CI commands, unsharded (0 green, 1 red, 2 not measured)
+        env:
+          LANE: ${{ matrix.lane }}
+        run: |
+          set -uo pipefail
+          mkdir -p wtn
+          rc=0
+          bash scripts/ci/workspace_test_nightly.sh --run "$LANE" > "wtn/$LANE.log" 2>&1 || rc=$?
+          sed -n -E '/^(DRIFT|RESULT|LANE|VERDICT|NOT-MEASURED|PROOF-SCOPE)/p' "wtn/$LANE.log"
+          tail -n 60 "wtn/$LANE.log"
+          exit "$rc"
+
+      - name: Publish the log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workspace-test-nightly-${{ matrix.lane }}-log
+          path: wtn/${{ matrix.lane }}.log
+          if-no-files-found: error

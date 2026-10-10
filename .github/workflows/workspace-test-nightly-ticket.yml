@@ -1,0 +1,83 @@
+# workspace-test-nightly-ticket -- the workspace-test nightly's one ticket and its 7-day stop (#5002).
+#
+# LAB (operator C324 5): a night on main that is not green opens or updates ONE ticket with one
+# owner, and 7 days with no green night on main stop the nightly until its owner re-enables it.
+# The nightly holds no credential, so both are written here, by
+# scripts/ci/workspace_test_nightly_ticket.sh, whose planted cases run first in each job. Neither
+# job checks out or runs the nightly's head: they check out the default branch and read the event
+# only through env. Wired into no PR, merge-queue or release job.
+
+name: Workspace test (nightly) tickets
+
+on:
+  workflow_run:
+    workflows: ["Workspace test (nightly)"]
+    types: [completed]
+  schedule:
+    # The daily 7-day check. Schedules land 3h51m-6h49m late on this account (guards-nightly.yml),
+    # so the 20:07Z slot lands about 23:58-02:56Z.
+    - cron: '7 20 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+# One writer at a time: the search-then-create of the ticket is not atomic. Never cancelled;
+# GitHub keeps one waiting run, so a third event inside that window replaces the second.
+concurrency:
+  group: workspace-test-nightly-ticket
+  cancel-in-progress: false
+
+jobs:
+  ticket:
+    name: Open or update the nightly's ticket
+    # Only a nightly of main in this repository speaks for main: a dispatch on a proof branch
+    # that fails must not open main's ticket.
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.conclusion != 'skipped' &&
+      github.event.workflow_run.conclusion != 'neutral'
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write   # open or comment on the one ticket
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: The ticket script's planted cases
+        run: bash scripts/ci/workspace_test_nightly_ticket.sh --self-test
+
+      - name: Open or update the ticket
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: setsid --wait bash scripts/ci/workspace_test_nightly_ticket.sh ticket "$CONCLUSION" "$RUN_SHA" "$RUN_URL"
+
+  stale:
+    name: Stop the nightly after 7 days without a green night
+    if: github.event_name != 'workflow_run'
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write   # the note on the one ticket
+      actions: write  # read the nightly's runs, and disable it
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: The ticket script's planted cases
+        run: bash scripts/ci/workspace_test_nightly_ticket.sh --self-test
+
+      - name: The 7-day check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: setsid --wait bash scripts/ci/workspace_test_nightly_ticket.sh stale
