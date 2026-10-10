@@ -47,7 +47,8 @@ up to 293 s (agent_demo).
 A release build run from a terminal keeps its workload: nothing it ran before is skipped or
 cut down. Its result can still change, through the two bug fixes and the parity_035 probe
 under "Bug fixes for every build" and "A probe in every build", which apply to every build.
-Only a debug build, or a run whose stdout or stdin is not a terminal, takes a shorter path:
+Only a debug build, or a run without a terminal as each example's own gate tests it, takes a
+shorter path. Each item below names its gate:
 
 - **pipeline_tui.** Its correctness check generated `GenerationConfig::default()`'s 100
   tokens (`crates/aprender-serve/src/generate/mod.rs:154`) through the unoptimized forward
@@ -58,31 +59,40 @@ Only a debug build, or a run whose stdout or stdin is not a terminal, takes a sh
   the run stage alone can take longer than the whole row did, and here it did by 4 s. Both
   put the row within 43 s of the bound. A debug build now generates one token
   (`pipeline_tui.rs:19`, `:458`), and on 73f34268e6 its run stage alone took 3 s
-  (`run-stage-secs.txt`). A release build still generates 100.
+  (`run-stage-secs.txt`). A release build still generates 100. The same debug-only flag,
+  `REDUCED` (`:19`), also cuts the other stages: 1 iteration each (`:23`), the Medium model
+  skipped (`:132`), sequence lengths 1, 5 and 10 instead of up to 50 (`:164`). The run prints
+  a line that says so (`:551`).
 - **Bare runs with no arguments.** qa_verify, llama2-train and test_mac_worker keep their
-  default only in a release build at a terminal (`qa_verify.rs:394`, `llama2/train.rs:236`,
-  `test_mac_worker.rs:16`). Otherwise they print their usage and the row is needs-args. Given
-  its argument, each runs its full workload from any build. None of the three defaults can
-  reach a pass in the nightly, which starts every example from the checkout root
-  (`.github/workflows/examples-nightly.yml:51-55` sets no working directory):
+  default only in a release build whose stdout is a terminal (`qa_verify.rs:394`,
+  `llama2/train.rs:236`, `test_mac_worker.rs:16`). Otherwise they print their usage and
+  the row is needs-args. Given its argument, each runs its full workload from any build. None
+  of the three defaults can reach a pass in the nightly, which starts every example from the
+  checkout root (`.github/workflows/examples-nightly.yml:51-55` sets no working directory):
   - *qa_verify.* Its two sections run cargo commands as child processes with no working
     directory set (`qa_verify.rs:121`), so from the checkout root they run against the root
     facade package. `qa_verify-sections.txt` runs each section in a debug build with no
     terminal, after building the example alone in an empty build directory. Section 2, run
     first, took 325 s, and 81 s run again with its nested builds present. Section 1 ran
     third, after section 2 had built its nested test target, and took 283 s. Every run
-    exited rc 1 with gates reported FAIL, and the test-count gate printed `Only 0 tests`.
+    exited rc 1 with gates reported FAIL. Section 1's test-count gate (`qa_verify.rs:425`)
+    printed `Only 0 tests` (`qa_verify-sections.txt:78`).
     The example does not print its nested cargo output, so the file does not show why those
     gates failed. A bare run that ran a section would be a fail even when it finished inside
     the bound. Those gate failures are in every build, and are #5026, not this ticket. The
     file is the job's output with its colour escape codes removed afterwards, as its first
     line says. On main the row was a timeout.
   - *llama2-train.* Its default config, `examples/llama2/configs/124m.toml`, is relative to
-    the crate. The file is at `crates/aprender-train/examples/llama2/configs/124m.toml`, so
-    from the checkout root the default does not resolve. Where it does resolve, a bare run
-    starts a full training run. On main the row was fail.
-  - *test_mac_worker.* Its default is one fixed LAN address, `192.168.50.100:9000`. On main
-    the row was fail, its first line `Connecting to Mac Pro worker at 192.168.50.100:9000...`.
+    the crate. `git ls-files` finds it tracked at
+    `crates/aprender-train/examples/llama2/configs/124m.toml` and nothing at the default path
+    from the checkout root, so from there the default does not resolve. Where it does
+    resolve, a bare run starts a full training run. On main the row was fail.
+  - *test_mac_worker.* Its default is one fixed LAN address, `192.168.50.100:9000`. The nightly
+    job checks out the tree, runs the script's self-test and the script, and uploads the
+    ledger (`examples-nightly.yml:43-63`). Nothing in it starts a worker at that address.
+    Whether the runner can reach that address was not measured. On main the row was fail;
+    the log shows only its first line,
+    `Connecting to Mac Pro worker at 192.168.50.100:9000...`.
 
   A quorum asked whether needs-args is the right class for these three bare runs answered
   yes, 3 of 3 counted lanes, on the condition that this README says why for each one.
@@ -92,9 +102,11 @@ Only a debug build, or a run whose stdout or stdin is not a terminal, takes a sh
   files, instead of the whole tree. `bug-hunter-scan.txt` keeps their debug output: the scan
   path they printed and its result, 0 findings. Both scans in that capture were cache hits,
   so it shows the path and the result, not a fresh scan.
-- **Non-terminal runs.** api_server (`:103`), buggy_server (`:21`), brick_computer (`:698`)
-  and calculator_tui (`:22`) take a bounded or one-shot path only when they are not run at a
-  terminal, as each cited line tests it.
+- **Non-terminal runs.** Four examples take a bounded or one-shot path when their gate finds
+  no terminal, and the gates differ. api_server (`:103`) takes it only when neither stdin nor
+  stdout is a terminal. buggy_server (`:21`) and brick_computer (`:698`) take it when stdout
+  is not a terminal. calculator_tui (`:22`) takes it when either stdin or stdout is not one.
+  Run with both at a terminal, all four keep their full path.
 
 Release builds of the 36 rows were not run here. That their workloads are unchanged rests
 on the gate lines cited above.
@@ -127,7 +139,13 @@ row's first line (the banner), so it does not show why that run failed. The exam
 asks the server's `/api/show` for the model before the benchmark. Only a 404 there is
 reported as `Model not found` (exit 1). A failed request or any other status is returned
 as an error, a failure of the server (`parity_035_m4_verification.rs`, the block after the
-TCP probe). With the model present, the benchmark runs as before.
+TCP probe).
+
+So `/api/show` is now part of the server contract the example tests, next to
+`/api/generate`, in a release build too. A server whose `/api/show` answers an error while
+its `/api/generate` works now stops before the benchmark. Ollama answers `/api/show` with
+the model's details when it has the model, and the benchmark then runs as before. No run
+here had a server with the model, so that path rests on the code.
 
 ## Every other change, by kind
 
@@ -160,8 +178,10 @@ On main no build reached them: `bench_quantization_formats` runs first
 output kept, because the script keeps no output per example. The file records the commit and
 the binary's sha256. Outside the namespace, it printed `GPU detected and available`, ran
 GPU-001 on the GPU and printed the debug-build note. GPU-001's row reads 6.34 GFLOPS
-(`performance_parity-gpu.txt:47`); the process ran pinned to 4 CPUs at nice 19. It exited rc 0 in 13 s. The script reported the same row as pass in 12 s, build
-included.
+(`performance_parity-gpu.txt:47`); the process ran pinned to 4 CPUs at nice 19. It exited
+rc 0 in 13 s. The script reported the same row as pass in 12 s, build included. As with
+pipeline_tui, the two were timed separately on a shared box, so the run alone can take
+longer than the whole row did, and here it did by 1 s.
 
 It also printed `Overall: Some benchmarks failed (5/9, 56%)` and exited 0. Its `fn main()`
 returns nothing and never calls `process::exit`, on this branch and on main, so it exits 0
