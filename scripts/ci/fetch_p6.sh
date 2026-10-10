@@ -103,6 +103,8 @@ self_test() {
   local tmp fails=0 rc real_git
   tmp="$(mktemp -d)" || return 1
   trap 'rm -rf "${tmp:?}"' RETURN
+  # #4936: git finds no repository above tmp, so a read that lost its -C never reaches a checkout.
+  export GIT_CEILING_DIRECTORIES="$tmp"
   real_git="$(command -v git)"
   row() {  # row <label> <want> <got>
     if [ "$2" = "$3" ]; then
@@ -210,6 +212,8 @@ SHIM
   "$real_git" init -q "$tmp/client-c"
   "$real_git" -C "$tmp/client-c" remote add origin "$tmp/remote.git"
   mkdir -p "$tmp/elsewhere"
+  row 'the cwd those reads start from is no repo, even when tmp sits inside a checkout' none \
+    "$(if "$real_git" -C "$tmp/elsewhere" rev-parse --git-dir >/dev/null 2>&1; then echo repo; else echo none; fi)"
   rm -rf -- "${tmp:?}/real"
   RUN_CWD="$tmp/elsewhere" run real -C "$tmp/client-c" origin +refs/heads/main:refs/remotes/origin/main; rc=$?
   row 'real git, -C <dir> from a cwd that is no repo: rc 0, read once' '0 1' "$rc $(reads real)"

@@ -86,6 +86,11 @@ self_test() {
     local lib="$here/scripts/lib_baseline_ratchet.sh"
     [ -f "$lib" ] || { printf 'FAIL  self-test: %s is missing\n' "$lib"; return 1; }
     TD=$(mktemp -d); trap 'rm -rf "${TD:?}"' EXIT
+    # #4936: the table runs in TD, and git finds no repository above it. A fetch that lost its -C (a
+    # mutant, a slip) then reads "not a git repository" here, never the caller's checkout.
+    # The ceiling is TD's parent: git never stops at the directory it starts in.
+    cd -- "$TD" || return 1
+    export GIT_CEILING_DIRECTORIES="${TD%/*}"
     local o="$TD/origin.git" w="$TD/w" u="file://$TD/origin.git"
     local c0 prh m c2 grh m2 ok=0 bad=0
     g() { git -C "$w" -c user.name=st -c user.email=st@example.invalid -c commit.gpgsign=false "$@"; }
@@ -225,8 +230,13 @@ self_test() {
     row "P6: a read that answered (origin has no such base) is read once, never again" \
         "$rc $PINNED $READS $(said 'cannot fetch the build base')" "1 unset 1 says-cause"
 
+    row "the table runs in a cwd that is no repository, so a fetch without -C reaches no checkout" \
+        "$(if git rev-parse --git-dir >/dev/null 2>&1; then printf repo; else printf none; fi)" none
+    row "git looks no higher than TD, even if TD sits inside a checkout" \
+        "${GIT_CEILING_DIRECTORIES:-unset}" "${TD%/*}"
+
     printf 'pin_build_base self-test: %s ok, %s bad\n' "$ok" "$bad"
-    [ "$bad" -eq 0 ] && [ "$ok" -ge 28 ]
+    [ "$bad" -eq 0 ] && [ "$ok" -ge 30 ]
 }
 
 case "${1:-}" in
