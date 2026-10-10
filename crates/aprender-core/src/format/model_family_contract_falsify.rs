@@ -1214,4 +1214,129 @@ mod contract_falsification {
             "FALSIFIED QWEN3MOE-005: crate copy drifted from root contract"
         );
     }
+
+    // ========================================================================
+    // FALSIFY-MF-014 (#5056, C358 1a): deleting ANY required field turns red.
+    // Every family file, every field the loader requires; plus a control that
+    // deleting an optional key still loads, so the test can tell the two apart.
+    // ========================================================================
+
+    /// Top-level keys `yaml_to_config` requires.
+    const MF_REQUIRED_TOP: [&str; 8] = [
+        "family",
+        "display_name",
+        "vendor",
+        "hf_pattern",
+        "architectures",
+        "size_variants",
+        "constraints",
+        "tensor_template",
+    ];
+    /// Keys `parse_size_config` requires in every size variant.
+    const MF_REQUIRED_SIZE: [&str; 7] = [
+        "parameters",
+        "hidden_dim",
+        "num_layers",
+        "num_heads",
+        "num_kv_heads",
+        "intermediate_dim",
+        "vocab_size",
+    ];
+
+    /// Raw text of every family file `load_all_families` loads, same skips.
+    fn raw_family_files() -> Vec<(String, String)> {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/model-families");
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("read model-families dir") {
+            let path = entry.expect("read dir entry").path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+            if !name.ends_with(".yaml") || name.starts_with('_') {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("read family file");
+            if !text.lines().any(|l| l.starts_with("contract_id:")) {
+                out.push((path.display().to_string(), text));
+            }
+        }
+        out.sort();
+        out
+    }
+
+    fn indent_of(line: &str) -> usize {
+        line.len() - line.trim_start().len()
+    }
+
+    /// Delete the first `key:` line at exactly `indent`, at or after line `from`,
+    /// with its more-indented block. `None` when there is no such line.
+    fn delete_key(text: &str, from: usize, indent: usize, key: &str) -> Option<String> {
+        let lines: Vec<&str> = text.lines().collect();
+        let prefix = format!("{key}:");
+        let at = (from..lines.len())
+            .find(|&i| indent_of(lines[i]) == indent && lines[i].trim_start().starts_with(&prefix))?;
+        let end = (at + 1..lines.len())
+            .find(|&i| !lines[i].trim().is_empty() && indent_of(lines[i]) <= indent)
+            .unwrap_or(lines.len());
+        let mut kept = lines[..at].to_vec();
+        kept.extend_from_slice(&lines[end..]);
+        Some(kept.join("\n") + "\n")
+    }
+
+    /// (first line, indent) of the first size variant's fields.
+    fn first_size_variant_fields(text: &str) -> Option<(usize, usize)> {
+        let lines: Vec<&str> = text.lines().collect();
+        let content = |i: &usize| {
+            let t = lines[*i].trim();
+            !t.is_empty() && !t.starts_with('#')
+        };
+        let sv = lines.iter().position(|l| l.starts_with("size_variants:"))?;
+        let variant = (sv + 1..lines.len()).find(content)?;
+        let field = (variant + 1..lines.len()).find(content)?;
+        Some((field, indent_of(lines[field])))
+    }
+
+    fn assert_deletion_rejected(cut: &str, file: &str, key: &str) {
+        match parse_family_yaml(cut, Path::new(file)) {
+            Ok(_) => panic!("FALSIFIED MF-014: {file} loads with required `{key}` deleted"),
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains(&format!("missing required field: {key}"))
+                        || msg.contains(&format!("missing {key}")),
+                    "MF-014: {file} with `{key}` deleted failed for another reason: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn falsify_mf_014_every_required_field_is_required() {
+        let files = raw_family_files();
+        assert!(!files.is_empty(), "MF-014: no family files found");
+        let mut red = 0usize;
+        for (file, text) in &files {
+            assert!(parse_family_yaml(text, Path::new(file)).is_ok(), "MF-014: {file} control must load");
+            for key in MF_REQUIRED_TOP {
+                let cut = delete_key(text, 0, 0, key).unwrap_or_else(|| panic!("{file}: no top-level `{key}:`"));
+                assert_deletion_rejected(&cut, file, key);
+                red += 1;
+            }
+            let (from, indent) =
+                first_size_variant_fields(text).unwrap_or_else(|| panic!("{file}: no size variant"));
+            for key in MF_REQUIRED_SIZE {
+                let cut = delete_key(text, from, indent, key)
+                    .unwrap_or_else(|| panic!("{file}: first size variant has no `{key}:`"));
+                assert_deletion_rejected(&cut, file, key);
+                red += 1;
+            }
+            if let Some(cut) = delete_key(text, 0, 0, "quantizations") {
+                assert!(
+                    parse_family_yaml(&cut, Path::new(file)).is_ok(),
+                    "MF-014: {file} must still load with optional `quantizations` deleted"
+                );
+            }
+        }
+        let want = files.len() * (MF_REQUIRED_TOP.len() + MF_REQUIRED_SIZE.len());
+        eprintln!("MF-014: {red} of {want} required-field deletions red across {} families", files.len());
+        assert_eq!(red, want);
+    }
 }
