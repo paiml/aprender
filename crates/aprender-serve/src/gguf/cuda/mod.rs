@@ -41,6 +41,8 @@ mod forward_qwen35_cuda;
 mod forward_qwen3_moe_resident;
 mod generation;
 mod speculative;
+/// #4971: a greedy decode step that also hands back the logits its argmax read.
+mod token_logits;
 mod weights;
 
 // Re-export types for public API
@@ -54,6 +56,8 @@ pub use forward_qwen35_cuda::{
 pub use forward_qwen3_moe_resident::{Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape};
 // PMAT-072: Step-wise batched decode state for lock-releasing scheduler
 pub use generation::BatchedDecodeState;
+// #4971: what a prefill extracts for the session's first token.
+pub(crate) use generation::FirstToken;
 
 use crate::error::{RealizarError, Result};
 

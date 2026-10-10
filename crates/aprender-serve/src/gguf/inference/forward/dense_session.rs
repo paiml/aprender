@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use crate::error::{RealizarError, Result};
 use crate::gguf::{OwnedQuantizedKVCache, OwnedQuantizedModel};
+use crate::session::GreedyStep;
 
 /// The prefix of every line that reports a dense CUDA forward giving up for the
 /// CPU. A log scan keys on it.
@@ -301,7 +302,8 @@ impl DenseForward {
         &mut self,
         tokens: &[u32],
         start: usize,
-    ) -> std::result::Result<Option<u32>, Step> {
+        read_logits: bool,
+    ) -> std::result::Result<Option<GreedyStep>, Step> {
         #[cfg(feature = "cuda")]
         if matches!(self.backend, Backend::Cuda { .. }) {
             let start = self.resume_at(start)?;
@@ -309,16 +311,22 @@ impl DenseForward {
                 unreachable!("matched above");
             };
             let cache = cache.as_mut().ok_or_else(|| never_reserved("CUDA"))?;
-            let Some(next) =
-                cuda_forward_greedy(model, cache, tokens, start, &mut self.batched_prefills)
-                    .map_err(Step::Gpu)?
+            let Some(next) = cuda_forward_greedy(
+                model,
+                cache,
+                tokens,
+                start,
+                &mut self.batched_prefills,
+                read_logits,
+            )
+            .map_err(Step::Gpu)?
             else {
                 return Ok(None);
             };
             self.held = tokens.len();
             return Ok(Some(next));
         }
-        let _ = (tokens, start);
+        let _ = (tokens, start, read_logits);
         Ok(None)
     }
 }
@@ -380,10 +388,10 @@ pub(crate) fn cuda_forward(
 }
 
 /// [`cuda_forward`] for a greedy step: the argmax is chosen on the device, so
-/// no logits cross to the host. A whole prompt goes through one batched
-/// prefill that extracts the first token (PMAT-083). `None`: the prefill ran
-/// but chose nothing, and the caller must [`cuda_reset`] and take the logits
-/// path.
+/// no logits cross to the host unless `read_logits` asks for the ones it read
+/// (#4971), copied after it. A whole prompt goes through one batched prefill
+/// that extracts the first token (PMAT-083). `None`: the prefill ran but chose
+/// nothing, and the caller must [`cuda_reset`] and take the logits path.
 ///
 /// # Errors
 /// As [`cuda_forward`].
@@ -394,14 +402,23 @@ pub(crate) fn cuda_forward_greedy(
     tokens: &[u32],
     start: usize,
     batched_prefills: &mut usize,
-) -> std::result::Result<Option<u32>, String> {
+    read_logits: bool,
+) -> std::result::Result<Option<GreedyStep>, String> {
+    use crate::gguf::cuda::FirstToken;
+    // #4971: the device argmax chooses either way; the logits it read are
+    // copied after it only when asked for.
+    let mut logits = read_logits.then(Vec::new);
     let last = tokens.len() - 1;
     if start == 0 && last > 0 {
+        let extract = match logits.as_mut() {
+            Some(out) => FirstToken::TokenAndLogits(out),
+            None => FirstToken::Token,
+        };
         let first = model
-            .run_prefill(tokens, cache, tokens.len(), false, true)
+            .run_prefill_extracting(tokens, cache, tokens.len(), false, extract)
             .map_err(|e| gpu_failed("batched prefill", tokens.len(), e))?;
         *batched_prefills += 1;
-        return Ok(first);
+        return Ok(first.map(|token| GreedyStep { token, logits }));
     }
     for (pos, &token) in tokens.iter().enumerate().take(last).skip(start) {
         model
@@ -409,8 +426,8 @@ pub(crate) fn cuda_forward_greedy(
             .map_err(|e| gpu_failed("forward", pos, e))?;
     }
     model
-        .forward_gpu_resident_to_token_id(tokens[last], cache, last)
-        .map(Some)
+        .forward_gpu_resident_to_token_id_reading(tokens[last], cache, last, logits.as_mut())
+        .map(|token| Some(GreedyStep { token, logits }))
         .map_err(|e| gpu_failed("forward", last, e))
 }
 
@@ -470,8 +487,13 @@ impl crate::session::ArchForward for DenseForward {
         }
     }
 
-    fn forward_greedy(&mut self, tokens: &[u32], start: usize) -> Result<Option<u32>> {
-        match self.try_forward_greedy(tokens, start) {
+    fn forward_greedy(
+        &mut self,
+        tokens: &[u32],
+        start: usize,
+        read_logits: bool,
+    ) -> Result<Option<GreedyStep>> {
+        match self.try_forward_greedy(tokens, start, read_logits) {
             Ok(next) => Ok(next),
             Err(step) => {
                 self.held = 0;
