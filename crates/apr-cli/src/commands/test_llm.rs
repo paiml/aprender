@@ -410,17 +410,26 @@ mod tests {
 // ===========================================================================
 use crate::LlmSubcommand;
 
-/// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode).
+/// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode;
+/// #4971 shape-check, which reads a file and needs no runtime).
 ///
 /// # Errors
 /// Propagates whichever mode ran.
-#[cfg(feature = "inference")]
 pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
+    match command {
+        LlmSubcommand::ShapeCheck { witness } => super::test_llm_shape::run(witness),
+        LlmSubcommand::Bench { .. } => dispatch_bench(command),
+    }
+}
+
+/// `apr test llm bench`, in either of its two modes.
+#[cfg(feature = "inference")]
+fn dispatch_bench(command: &LlmSubcommand) -> Result<()> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
     match command {
         LlmSubcommand::Bench { band, .. } if *band => rt.block_on(dispatch_band(command)),
-        LlmSubcommand::Bench { .. } => rt.block_on(dispatch_legacy(command)),
+        _ => rt.block_on(dispatch_legacy(command)),
     }
 }
 
@@ -430,10 +439,17 @@ pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
 /// # Errors
 /// Always: this build cannot run the benchmark.
 #[cfg(not(feature = "inference"))]
-pub fn dispatch(_command: &LlmSubcommand) -> Result<()> {
+fn dispatch_bench(_command: &LlmSubcommand) -> Result<()> {
     Err(CliError::InferenceFailed(
-        "`apr test llm` needs the `inference` feature (this apr was built without it)".to_string(),
+        "`apr test llm bench` needs the `inference` feature (this apr was built without it)"
+            .to_string(),
     ))
+}
+
+/// The refusal of a `bench` mode handed another subcommand. `dispatch` routes
+/// only `bench` to them, so this names a routing defect if it ever prints.
+fn not_bench() -> CliError {
+    CliError::InvalidInput("`apr test llm`: only `bench` routes to a benchmark mode".to_string())
 }
 
 /// TWO MODES, ONE ENTRYPOINT — the §4.4-conformant one.
@@ -477,7 +493,10 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         key_id,
         keyring,
         ..
-    } = command;
+    } = command
+    else {
+        return Err(not_bench());
+    };
     // Unreachable: clap's `requires = "receipt"` enforces it. Stated rather
     // than unwrapped, because a receipt-less band run would measure for
     // minutes and then discard the measurement.
@@ -547,7 +566,10 @@ async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
         profile,
         prompts,
         ..
-    } = command;
+    } = command
+    else {
+        return Err(not_bench());
+    };
     run_bench(BenchArgs {
         url,
         model,

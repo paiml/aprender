@@ -155,6 +155,8 @@ pub(crate) mod test_llm;
 // `test_llm.rs`'s complexity is untouched by it -- the PMAT pre-commit gate
 // blocks a FILE with any pre-existing violation, not a function.
 pub(crate) mod test_llm_band;
+// #4971 V3-d: `apr test llm shape-check`, the CLI over perf_gate::v3_shape.
+pub(crate) mod test_llm_shape;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.
