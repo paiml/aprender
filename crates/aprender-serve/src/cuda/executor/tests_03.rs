@@ -215,6 +215,65 @@ fn test_cov008_clear_decode_graph() {
     );
 }
 
+/// C14: eager kernels switch to graph-mode indirect addressing when `position_buf` /
+/// `seq_len_buf` exist. A failed capture that left them behind froze every later
+/// token at the capture position (qwen3-8b parity: pos 0 ok, then cos < 0).
+#[test]
+#[serial]
+fn test_c14_abandoned_capture_drops_indirect_buffers() {
+    if !CudaExecutor::is_available() {
+        return;
+    }
+    let mut executor = crate::cuda_executor_or_skip!(0);
+    executor.position_buf =
+        Some(GpuBuffer::from_host(&executor.context, &[0u32]).expect("position_buf"));
+    executor.seq_len_buf =
+        Some(GpuBuffer::from_host(&executor.context, &[1u32]).expect("seq_len_buf"));
+
+    executor.abandon_decode_graph_capture();
+
+    assert!(
+        executor.graph_capture_failed,
+        "later tokens must take eager"
+    );
+    assert!(
+        executor.position_buf.is_none(),
+        "stale position_buf selects indirect scatter/RoPE"
+    );
+    assert!(
+        executor.seq_len_buf.is_none(),
+        "stale seq_len_buf pins attention to seq_len 1"
+    );
+    assert!(!executor.has_decode_graph());
+}
+
+/// C14 wiring: every decode-capture failure path must go through
+/// `abandon_decode_graph_capture`. Setting only the flag reintroduces the frozen-position
+/// bug, and the helper test above cannot see a call site that stopped using it.
+#[test]
+fn test_c14_decode_capture_failures_all_abandon() {
+    for (file, src) in [
+        (
+            "graphed_capture.rs",
+            include_str!("layers/graphed_capture.rs"),
+        ),
+        (
+            "forward_graphed_decode.rs",
+            include_str!("layers/forward_graphed_decode.rs"),
+        ),
+    ] {
+        assert!(
+            !src.contains("self.graph_capture_failed = true"),
+            "{file}: a capture failure sets only the flag; call abandon_decode_graph_capture()"
+        );
+        assert_eq!(
+            src.matches("self.abandon_decode_graph_capture()").count(),
+            3,
+            "{file}: expected the eager-error, no-kernels and build-error paths"
+        );
+    }
+}
+
 #[test]
 #[serial]
 fn test_cov008_gemv_buffer_stats_initial() {
