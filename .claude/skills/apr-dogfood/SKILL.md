@@ -25,7 +25,7 @@ and the runner promptly grew one):
 `.claude/skills/dogfood/SKILL.md` is its ONE prose. This skill layers aprender's
 surface-coverage ledger ON TOP of it and must not restate a gate the runner owns.
 The `invariance.sh` transport gate likewise belongs to the runner
-(`scripts/invariance.sh`; `invariance.py` until #4377), not to this file.
+(`scripts/invariance.sh`), not to this file.
 
 Three documents describe overlapping release work; each owns exactly one scope:
 
@@ -1714,7 +1714,7 @@ Written 2026-08-22 against `paiml/aprender` `main`.
 **Sections I authored from full sources:** Phase 0 (from `dogfood.sh` — its inline
 post-mortems are quoted, not paraphrased), Phase 2 (from `surface_audit.csv`, 830
 rows, all tallies computed not estimated), Phase 4 (from `dogfood.sh` transport
-sections and `invariance.py` in full), the mutation registry, the anti-pattern
+sections and `invariance.py`, since ported to `invariance.sh`, in full), the mutation registry, the anti-pattern
 table.
 
 **The carry-over is COMPLETE.** Tier 0 (Gates 4–7), Tier 1 (Gates 2–3 / P1–P12),

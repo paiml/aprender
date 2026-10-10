@@ -620,6 +620,13 @@ PY
 # quotes, was RUN by the release and never SCANNED for unpinned verifiers —
 # a guard universe strictly smaller than the surface it guards, which is the
 # failure class this guard exists to catch (#2644 audit, CI-3 / VP-05 / F2).
+# The path is the WHOLE rest of a GATE line, as dogfood.sh reads it
+# (`read -r dg_kind dg_path`): a path with a space in it runs in full, so it
+# must be scanned in full. awk $2 kept only its first word.
+gate_paths() {
+    awk '$1=="GATE"{sub(/^[ \t]*GATE[ \t]+/, ""); print}'
+}
+
 resolve_scope() {
     local declared meta crate rc
     meta=$(mktemp) || { printf 'SCOPE_ERROR'; return 1; }
@@ -631,7 +638,7 @@ resolve_scope() {
     # rc is jq's own status, read before any filter: through a pipe it would be awk's.
     declared=$(jq -r --arg crate "$crate" -f "$REPO_ROOT/scripts/lib/dogfood_gates.jq" "$meta")
     rc=$?
-    declared=$(printf '%s\n' "$declared" | awk '$1=="GATE"{print $2}')
+    declared=$(printf '%s\n' "$declared" | gate_paths)
     rm -f "$meta"
     # NOPKG/NODECL/EMPTY/BADSHAPE all yield no GATE lines: the declaration
     # verifies nothing, and a scan over an empty universe would report clean.
@@ -903,6 +910,15 @@ EOF
         printf 'ok    CLASSIFIER    cargo_classify.sh case table passes in THIS guard scope\n'
     else
         printf 'FAIL  CLASSIFIER    cargo_classify.sh case table is red here\n'; fails=1
+    fi
+
+    # The scope must name every declared gate exactly as dogfood.sh runs it.
+    local gp
+    gp=$(printf 'GATE scripts/a.sh\nNODECL\nGATE scripts/a b.sh\n' | gate_paths | paste -sd'|' -)
+    if [ "$gp" = 'scripts/a.sh|scripts/a b.sh' ]; then
+        printf 'ok    GATE-PATHS    a declared path with a space is scoped whole\n'
+    else
+        printf 'FAIL  GATE-PATHS    got [%s], want [scripts/a.sh|scripts/a b.sh]\n' "$gp"; fails=1
     fi
 
     # The two logs. The ENV one is from the #3212 job; the CODE one is a real

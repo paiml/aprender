@@ -12,7 +12,8 @@
 #   DFR-INV-003 GO needs no FAIL and at least one PASS
 #   DFR-INV-004 row ids are unique
 # and when `arbiter` is on PATH, `arbiter receipt lint` must also exit 0 on it.
-# Then four mutants of the block are replayed; each must turn a case RED.
+# The exit after it is lifted too: it must follow the receipt's verdict. Then the
+# mutants are replayed; each must turn a case RED.
 #
 # Usage: bash scripts/tests/dogfood_receipt_v1_test.sh
 #   exit 0 every case and every mutant behaved, 1 one did not, 2 the test could not run.
@@ -31,6 +32,11 @@ awk 'index($0, "VERDICT=\"$([ $FAILED -eq 0 ]") == 1 {on=1}
      tail && /^fi$/ {exit}' "$DOGFOOD" > "$TMP/block.sh"
 grep -q 'RECEIPT_V1' "$TMP/block.sh" && [ "$(tail -n 1 "$TMP/block.sh")" = fi ] \
   || { echo "ENV  could not lift the receipt block from $DOGFOOD (anchors moved?)" >&2; exit 2; }
+# ...and the exit, which must follow the receipt's verdict, not VERDICT alone.
+awk '/^# The exit follows the receipt.s verdict/ {on=1} on {print} on && /^fi$/ {exit}' "$DOGFOOD" > "$TMP/exit.sh"
+grep -q 'DF_V1_VERDICT' "$TMP/exit.sh" && [ "$(tail -n 1 "$TMP/exit.sh")" = fi ] \
+  || { echo "ENV  could not lift the verdict exit from $DOGFOOD (anchors moved?)" >&2; exit 2; }
+cat "$TMP/block.sh" "$TMP/exit.sh" > "$TMP/full.sh"
 
 # A repo with a known origin and one commit, so repo/commit/tag are deterministic.
 REPO="$TMP/repo"
@@ -154,6 +160,33 @@ git -C "$REPO" remote remove origin
 repocheck NO-GO 1 || fails=$((fails + 1))
 git -C "$REPO" remote add origin https://github.com/acme/widget.git
 
+# refusals: each refusal names its cause, and a clean run has none
+refcheck() { # refcheck <case> <refusal prefix> <want count> [env...]
+  local o="$TMP/out-ref-$((SEQ += 1))" t
+  run_case "$B" "$1" "$o" "${@:4}"
+  t=$(jq -r --arg p "$2" '[.refusals[] | select(startswith($p))] | length' "$o"/dogfood-receipt-v1.*.json)
+  if [ "$t" = "$3" ]; then echo "ok    refusal  $1 [$2] x$t"; return 0; fi
+  echo "FAIL  refusal  $1 [$2] got $t, want $3"; return 1
+}
+refcheck green "" 0 || fails=$((fails + 1))
+refcheck nopass "no row PASSed" 1 || fails=$((fails + 1))
+refcheck alien "row status outside" 1 || fails=$((fails + 1))
+
+# the exit: 0 only on a GO receipt. nopass and a refused repo are the cases where
+# VERDICT alone says GO and the receipt does not.
+exitcheck() { # exitcheck <case> <want rc> [env...]
+  local o="$TMP/out-exit-$((SEQ += 1))" rc=0
+  run_case "${XB:-$TMP/full.sh}" "$1" "$o" "${@:3}" || rc=$?
+  if [ "$rc" = "$2" ]; then echo "ok    exit     $1 ${*:3} -> $rc"; return 0; fi
+  echo "FAIL  exit     $1 ${*:3} got rc $rc, want $2"; return 1
+}
+exitcheck green 0 || fails=$((fails + 1))
+exitcheck open 0 || fails=$((fails + 1))
+exitcheck red 1 || fails=$((fails + 1))
+exitcheck nopass 1 || fails=$((fails + 1))
+exitcheck alien 1 || fails=$((fails + 1))
+exitcheck green 1 DOGFOOD_REPO=widget || fails=$((fails + 1))
+
 # ── mutants: each must turn at least one case RED ───────────────────────────
 mutant() { # mutant <name> <old text> <new text>
   local name=$1 old=$2 new=$3 src n red=0 k
@@ -171,15 +204,23 @@ mutant warn-passes 'WARN: "SKIP"' 'WARN: "PASS"'
 mutant no-zero-pass-refusal 'if $passed == 0 then' 'if false then'
 mutant ids-not-unique 'else "\($g.gate)#\(.[$g.gate])" end)' 'else $g.gate end)'
 mutant no-asset-copy 'cp "$RECEIPT" "$RECEIPT_V1.partial" && mv "$RECEIPT_V1.partial" "$RECEIPT_V1"' 'true'
-# no-repo-refusal: the repo cases above are the only ones that can see it, so it runs them
-a='if ($repo | test("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")) then empty'
-if [ "$(grep -cF -- "$a" "$B")" = 1 ]; then
-  src=$(cat "$B") z='if true then empty'
-  printf '%s\n' "${src/"$a"/"$z"}" > "$TMP/m-no-repo-refusal.sh"
-  if B="$TMP/m-no-repo-refusal.sh" repocheck NO-GO 1 DOGFOOD_REPO=widget > /dev/null 2>&1; then
-    echo "FAIL  mutant no-repo-refusal survived"; fails=$((fails + 1))
-  else echo "ok    mutant no-repo-refusal turns RED"; fi
-else echo "FAIL  mutant no-repo-refusal: anchor not found once"; fails=$((fails + 1)); fi
+# Targeted mutants: only the named check can see them, so each runs that check.
+mutant_on() { # mutant_on <name> <file> <old> <new> <B|XB: the block the check reads> <check...>
+  local name=$1 file=$2 old=$3 new=$4 var=$5 src m; shift 5
+  [ "$(grep -cF -- "$old" "$file")" = 1 ] || { echo "FAIL  mutant $name: anchor not found once"; fails=$((fails + 1)); return; }
+  src=$(cat "$file") m="$TMP/m-$name.sh"
+  printf '%s\n' "${src/"$old"/"$new"}" > "$m"
+  if ( case "$var" in B) B=$m ;; XB) XB=$m ;; esac; "$@" ) > /dev/null 2>&1; then
+    echo "FAIL  mutant $name survived"; fails=$((fails + 1))
+  else echo "ok    mutant $name turns RED"; fi
+}
+mutant_on no-repo-refusal "$B" 'if ($repo | test("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")) then empty' \
+  'if true then empty' B repocheck NO-GO 1 DOGFOOD_REPO=widget
+# BOGUS already maps to FAIL, so the verdict alone cannot see this one: the refusal can.
+mutant_on no-alien-refusal "$B" 'if ($alien | length) > 0 then' 'if false then' \
+  B refcheck alien "row status outside" 1
+mutant_on exit-on-legacy-verdict "$TMP/full.sh" 'if [ "$DF_V1_VERDICT" = GO ]; then' \
+  'if [ "$VERDICT" = GO ]; then' XB exitcheck nopass 1
 
 if [ "$fails" -ne 0 ]; then echo "FAIL  $fails check(s)"; exit 1; fi
 echo "PASS  receipt block writes an admissible dogfood-receipt/v1 and every mutant turns RED"

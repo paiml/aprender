@@ -252,7 +252,7 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
 # receipt as OPEN and never as passed. In any other phase an OPEN row is an unmet obligation
 # and FAILs, which is what makes the post-publish dogfood discharge it. The list is closed.
 POST_PUBLISH_OBLIGATIONS="publish-dry-run declared:check_multiplatform_dogfood"
-mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
+mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|INFO|MANUAL|OPEN> <note>
   local st="$2" note="$3"
   if [ "$st" = DEFER ]; then
     st=FAIL; note="DEFER is abolished (operator 2026-09-23, \"no defer\"): a row is measured or it is RED -- $note"

@@ -17,7 +17,7 @@
 #   GATE <path> one per declared gate, in declaration order
 #
 # Usage:  jq -r --arg crate "$CRATE" -f scripts/lib/dogfood_gates.jq <cargo-metadata.json>
-# Case table: scripts/check_dogfood_gates_parser.sh --self-test.
+# Case table: scripts/tests/dogfood_jq_parsers_test.sh.
 
 def select_package($name):
   (.packages // []) as $ps
