@@ -173,7 +173,11 @@ fn the_boundary_is_exact() {
     let needs = [(360 * MIB, 0), (0, 990 * MIB), (200 * MIB, 440 * MIB)];
     for (file, embedding) in needs {
         assert_eq!(host_build_need(file, embedding), 990 * MIB);
-        let kinds: [fn(u64) -> HostMemory; 2] = [HostMemory::Available, HostMemory::TotalOnly];
+        let kinds: [fn(u64) -> HostMemory; 3] = [
+            HostMemory::Available,
+            HostMemory::CgroupHeadroom,
+            HostMemory::TotalOnly,
+        ];
         for memory in kinds {
             assert!(
                 host_build_verdict(file, embedding, memory(1100 * MIB)).is_ok(),
@@ -217,7 +221,7 @@ fn unknown_memory_refuses_even_an_empty_build() {
 #[test]
 fn linux_measures_mem_available() {
     assert!(
-        matches!(HostMemory::measure(), HostMemory::Available(b) if b > 0),
+        matches!(HostMemory::measure(), HostMemory::Available(b) | HostMemory::CgroupHeadroom(b) if b > 0),
         "/proc/meminfo has MemAvailable on Linux"
     );
 }
@@ -264,4 +268,106 @@ fn admission_counts_the_models_embedding() {
         HostMemory::Available(142),
     ));
     refusal(admit_qwen35_host_build(&model, 0, HostMemory::Unknown));
+}
+
+/// One cgroup v2 level under `root`: its `memory.max` and `memory.current`.
+fn cgroup_level(root: &std::path::Path, relative: &str, max: &str, current: &str) {
+    let dir = root.join(relative);
+    std::fs::create_dir_all(&dir).expect("cgroup dir");
+    std::fs::write(dir.join("memory.max"), format!("{max}\n")).expect("memory.max");
+    std::fs::write(dir.join("memory.current"), format!("{current}\n")).expect("memory.current");
+}
+
+#[test]
+fn a_cgroup_level_bounds_by_max_minus_current_and_max_means_unlimited() {
+    assert_eq!(
+        cgroup_level_headroom("8589934592\n", "1073741824\n"),
+        Some(7_516_192_768)
+    );
+    assert_eq!(cgroup_level_headroom("max\n", "1073741824\n"), None);
+    // Over its limit (reclaim pending): no headroom, never a wrapped huge one.
+    assert_eq!(cgroup_level_headroom("100", "150"), Some(0));
+    assert_eq!(cgroup_level_headroom("garbage", "1"), None);
+    assert_eq!(cgroup_level_headroom("100", "garbage"), None);
+}
+
+/// #4992 done_when, case 1: a limited cgroup (the container root itself, as a
+/// container sees `/sys/fs/cgroup/memory.max`) bounds below `MemAvailable`.
+#[test]
+fn a_capped_cgroup_lowers_the_bound_below_mem_available() {
+    let root = tempfile::tempdir().expect("tempdir");
+    cgroup_level(
+        root.path(),
+        "",
+        &(4096 * MIB).to_string(),
+        &(1024 * MIB).to_string(),
+    );
+    let headroom = cgroup_headroom_under(root.path(), "/");
+    assert_eq!(headroom, Some(3072 * MIB));
+    let memory = HostMemory::bound(60 * 1024 * MIB, headroom);
+    assert_eq!(memory, HostMemory::CgroupHeadroom(3072 * MIB));
+    // The 2B fits a 60 GiB host and is refused in this 4 GiB container.
+    assert!(verdict(
+        measured("2B Q4_K_M"),
+        HostMemory::Available(60 * 1024 * MIB)
+    )
+    .is_ok());
+    let msg = refusal(verdict(measured("2B Q4_K_M"), memory));
+    assert!(msg.contains("cgroup memory.max"), "{msg}");
+    assert!(msg.contains("3072 MiB"), "{msg}");
+}
+
+/// #4992 done_when, case 2: `memory.max` is "max" at every level, so
+/// `MemAvailable` alone bounds the build exactly as before.
+#[test]
+fn an_unlimited_cgroup_leaves_mem_available_as_the_bound() {
+    let root = tempfile::tempdir().expect("tempdir");
+    cgroup_level(root.path(), "", "max", "5");
+    cgroup_level(root.path(), "user.slice", "max", "5");
+    assert_eq!(cgroup_headroom_under(root.path(), "/user.slice"), None);
+    assert_eq!(
+        HostMemory::bound(3910 * MIB, None),
+        HostMemory::Available(3910 * MIB)
+    );
+    // A cgroup with more headroom than MemAvailable does not loosen the bound.
+    assert_eq!(
+        HostMemory::bound(3910 * MIB, Some(8000 * MIB)),
+        HostMemory::Available(3910 * MIB)
+    );
+}
+
+/// The limit can sit on an ancestor (this dev host caps `agent.slice`, not the
+/// scope the process runs in): every level on the path counts, the tightest wins,
+/// and a level whose files are missing is skipped.
+#[test]
+fn the_tightest_level_on_the_path_wins_even_on_an_ancestor() {
+    let root = tempfile::tempdir().expect("tempdir");
+    cgroup_level(
+        root.path(),
+        "a",
+        &(2000 * MIB).to_string(),
+        &(500 * MIB).to_string(),
+    );
+    std::fs::create_dir_all(root.path().join("a/b")).expect("level without files");
+    cgroup_level(root.path(), "a/b/c", "max", "1");
+    assert_eq!(
+        cgroup_headroom_under(root.path(), "/a/b/c"),
+        Some(1500 * MIB)
+    );
+    cgroup_level(
+        root.path(),
+        "a/b/c",
+        &(900 * MIB).to_string(),
+        &(100 * MIB).to_string(),
+    );
+    assert_eq!(
+        cgroup_headroom_under(root.path(), "/a/b/c"),
+        Some(800 * MIB)
+    );
+    // A sibling's limit is not on the path.
+    cgroup_level(root.path(), "a/x", "1", "0");
+    assert_eq!(
+        cgroup_headroom_under(root.path(), "/a/b/c"),
+        Some(800 * MIB)
+    );
 }

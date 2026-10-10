@@ -13,6 +13,10 @@
 //! need = 2.75 × file_bytes + f32 token-embedding bytes  >  90% × MemAvailable
 //! ```
 //!
+//! where `MemAvailable` is lowered to `memory.max − memory.current` of the tightest
+//! cgroup v2 limit on this process's path when that is smaller (#4992): in a capped
+//! container or systemd slice the cgroup OOM killer fires at its own limit.
+//!
 //! The host build holds the mapped file, an owned quantized copy of the weights and
 //! `token_embd.weight` dequantized to f32 (`vocab × hidden × 4` bytes, whatever the
 //! file's quantization). That last term is fixed per architecture, so `k × file`
@@ -55,6 +59,10 @@ pub const AVAILABLE_PERCENT: u64 = 90;
 pub enum HostMemory {
     /// `MemAvailable` from `/proc/meminfo`: what can be allocated without swapping.
     Available(u64),
+    /// `memory.max − memory.current` of the tightest cgroup v2 limit this process
+    /// runs under, where that is below `MemAvailable` (#4992): a container or a
+    /// systemd slice with a cap is OOM-killed at its own limit, not the host's.
+    CgroupHeadroom(u64),
     /// No `MemAvailable` here (macOS, Windows): total RAM, a looser bound.
     TotalOnly(u64),
     /// Nothing could be measured. The verdict refuses (#2568: an unknown memory
@@ -63,7 +71,8 @@ pub enum HostMemory {
 }
 
 impl HostMemory {
-    /// Measure this host: `MemAvailable` where `/proc/meminfo` has it, else total RAM
+    /// Measure this host: the tighter of `MemAvailable` and this process's cgroup
+    /// headroom where `/proc/meminfo` has it, else total RAM
     /// from [`crate::contract_gate::system_memory_bytes`], else [`Self::Unknown`].
     #[must_use]
     pub fn measure() -> Self {
@@ -71,10 +80,61 @@ impl HostMemory {
         if let Some((available, _total)) =
             meminfo.as_deref().and_then(crate::capacity::parse_meminfo)
         {
-            return Self::Available(available);
+            return Self::bound(available, cgroup_headroom_here());
         }
         crate::contract_gate::system_memory_bytes().map_or(Self::Unknown, Self::TotalOnly)
     }
+
+    /// `min(MemAvailable, cgroup headroom)`, naming which of the two bounds the build.
+    #[must_use]
+    pub fn bound(available: u64, cgroup_headroom: Option<u64>) -> Self {
+        match cgroup_headroom {
+            Some(headroom) if headroom < available => Self::CgroupHeadroom(headroom),
+            _ => Self::Available(available),
+        }
+    }
+}
+
+/// Headroom of one cgroup v2 level: `memory.max − memory.current`, or `None` when
+/// the level is unlimited (`max`) or its files cannot be read or parsed.
+#[must_use]
+pub fn cgroup_level_headroom(max: &str, current: &str) -> Option<u64> {
+    let max = max.trim();
+    if max == "max" {
+        return None;
+    }
+    let current = current.trim().parse::<u64>().ok()?;
+    Some(max.parse::<u64>().ok()?.saturating_sub(current))
+}
+
+/// The tightest headroom on the path from `root` down to `root/relative` (each
+/// ancestor's limit caps everything under it, so the leaf alone is not enough).
+/// `None` when no level on the path carries a limit.
+#[must_use]
+pub fn cgroup_headroom_under(root: &std::path::Path, relative: &str) -> Option<u64> {
+    let mut dir = root.to_path_buf();
+    let levels = std::iter::once(String::new()).chain(
+        relative
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
+    );
+    levels
+        .filter_map(|part| {
+            dir.push(part);
+            let read = |f: &str| std::fs::read_to_string(dir.join(f)).ok();
+            cgroup_level_headroom(&read("memory.max")?, &read("memory.current")?)
+        })
+        .min()
+}
+
+/// [`cgroup_headroom_under`] for this process: its cgroup v2 path from the `0::`
+/// line of `/proc/self/cgroup`, under `/sys/fs/cgroup`. `None` on cgroup v1 or
+/// off Linux, where `MemAvailable` alone bounds the build as before.
+fn cgroup_headroom_here() -> Option<u64> {
+    let cgroup = std::fs::read_to_string("/proc/self/cgroup").ok()?;
+    let relative = cgroup.lines().find_map(|l| l.strip_prefix("0::"))?;
+    cgroup_headroom_under(std::path::Path::new("/sys/fs/cgroup"), relative)
 }
 
 /// Bytes the host build is predicted to need: 2.75 × the file plus the f32 embedding.
@@ -122,6 +182,10 @@ pub fn host_build_verdict(
     );
     let (measured, what) = match memory {
         HostMemory::Available(bytes) => (bytes, "available"),
+        HostMemory::CgroupHeadroom(bytes) => (
+            bytes,
+            "left under this process's cgroup memory.max (below MemAvailable)",
+        ),
         HostMemory::TotalOnly(bytes) => (
             bytes,
             "of total RAM (this platform reports no MemAvailable)",
