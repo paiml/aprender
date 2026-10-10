@@ -261,6 +261,32 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
 # receipt as OPEN and never as passed. In any other phase an OPEN row is an unmet obligation
 # and FAILs, which is what makes the post-publish dogfood discharge it. The list is closed.
 POST_PUBLISH_OBLIGATIONS="publish-dry-run declared:check_multiplatform_dogfood"
+# #5079, what --phase nightly owes. It has no OPEN state, so each of the two obligations above gets a
+# phase definition instead of a permanent red:
+#   · publish-dry-run is MEASURED at H, as the whole workspace (`cargo publish --workspace --dry-run`),
+#     which packages and verifies every member against the others' local sources, so it does not wait
+#     on the registry. PASS or FAIL on its exit code; never --allow-dirty.
+#   · declared:check_multiplatform_dogfood installs the PUBLISHED version on each host. Before a publish
+#     there is nothing to install, so it is not in the nightly row set: not a SKIP row, no row at all.
+#     The pre-publish and post-publish phases still owe it.
+NIGHTLY_NOT_OWED="declared:check_multiplatform_dogfood"
+nightly_owes() { # nightly_owes <row> -> 1 when --phase nightly does not owe <row>, by phase definition
+  [ "$DOGFOOD_PHASE" = nightly ] || return 0
+  case " $NIGHTLY_NOT_OWED " in *" $1 "*) return 1 ;; esac
+  return 0
+}
+publish_dry_run_at_h() { # the workspace dry-run at H; the caller reads its exit code
+  env -u CARGO_REGISTRY_TOKEN cargo publish --workspace --dry-run
+}
+mark_publish_dry_run() { # mark_publish_dry_run <rc> <output> -- row 10
+  if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+    mark publish-dry-run OPEN "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
+  elif [ "$1" -eq 0 ]; then
+    mark publish-dry-run PASS "packages cleanly$([ "$DOGFOOD_PHASE" = nightly ] && printf ' (cargo publish --workspace --dry-run at H)')"
+  else
+    mark publish-dry-run FAIL "$(printf '%s' "$2" | grep -iE 'error' | head -1)"
+  fi
+}
 mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|INFO|MANUAL|OPEN> <note>
   local st="$2" note="$3"
   if [ "$st" = DEFER ]; then
@@ -484,6 +510,11 @@ else
     [ "$dg_kind" = "GATE" ] || continue
     DG_N=$((DG_N + 1))
     dg_name="declared:$(basename "$dg_path" .sh)"
+    if ! nightly_owes "$dg_name"; then
+      DG_N=$((DG_N - 1))
+      printf '  not in the nightly row set (phase definition, #5079): %s needs the published crate\n' "$dg_name"
+      continue
+    fi
     if [ ! -f "$dg_path" ]; then
       mark "$dg_name" FAIL "declared in [package.metadata.dogfood] but no such file: $dg_path — a declared gate that does not exist is a deleted gate, not an absent requirement"
       DG_BAD=$((DG_BAD + 1)); continue
@@ -674,6 +705,9 @@ if [ "$DOGFOOD_PHASE" = pre-publish ] || [ "$DOGFOOD_PHASE" = nightly ]; then
   # says nothing about the version. The question this row exists to answer --
   # "is $VERSION already on crates.io?" -- is asked of the registry directly.
   DRY=""; DRC=0
+  # --phase nightly measures the packaging at H (row 10, #5079): the WORKSPACE dry-run resolves the
+  # members against each other's local sources, so the registry reason above does not apply to it.
+  if [ "$DOGFOOD_PHASE" = nightly ]; then DRY=$(publish_dry_run_at_h 2>&1); DRC=$?; fi
   mark_version_row "$DOGFOOD_PHASE"
 else
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
@@ -1365,10 +1399,7 @@ else
 fi
 
 # ── 10. publish dry-run (already run above; verdict is its exit code) ───────
-if [ "$DOGFOOD_PHASE" = pre-publish ] || [ "$DOGFOOD_PHASE" = nightly ]; then
-  mark publish-dry-run OPEN "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
-elif [ $DRC -eq 0 ]; then mark publish-dry-run PASS "packages cleanly"
-else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -1)"; fi
+mark_publish_dry_run "$DRC" "$DRY"
 
 # ── 10b. the four apr binaries the tag owes (row 67-A1, PMAT-1098, #3082) ───
 # v0.66.0 shipped eight `pv` tarballs and ZERO `apr` binaries, and no gate said

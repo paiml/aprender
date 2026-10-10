@@ -41,7 +41,11 @@ lift() { # lift <script> -> the obligation list and the three deciding functions
   out=$(grep -m1 '^POST_PUBLISH_OBLIGATIONS=' "$src") || { echo "  $src declares no POST_PUBLISH_OBLIGATIONS" >&2; return 2; }
   out="$out
 "
-  for fn in strip_ansi mark classify_declared; do
+  # #5079: what --phase nightly owes, lifted the same way.
+  out="$out$(grep -m1 '^NIGHTLY_NOT_OWED=' "$src")" || { echo "  $src declares no NIGHTLY_NOT_OWED" >&2; return 2; }
+  out="$out
+"
+  for fn in strip_ansi mark classify_declared nightly_owes publish_dry_run_at_h mark_publish_dry_run; do
     body=$(awk -v F="^$fn\\\\(\\\\) \\\\{" '$0 ~ F {f=1} f{print} f && (/^\}$/ || /; }$/){exit}' "$src")
     [ -n "$body" ] || { echo "  $src defines no $fn() -- the rule this checks is gone" >&2; return 2; }
     out="$out$body
@@ -57,16 +61,48 @@ lift() { # lift <script> -> the obligation list and the three deciding functions
 #                  `SCOPED: <name>` line (#4086: a recorded-scope verdict must never read as a bare pass)
 #   kind marknm / declnm: as mark / declared, plus NM|MEASURED -- whether the row's note says NOT_MEASURED
 #                  (#4672: --phase nightly reads a row it cannot measure at H as NOT_MEASURED, never OPEN)
+#   kind dry:      mark_publish_dry_run <rc> <log text>     bad = FAILED after the call (#5079 row 10)
+#   kind dryfx:    the lifted publish_dry_run_at_h, run for real in a two-member fixture workspace that is
+#                  committed (clean) or carries an uncommitted edit (dirty), then mark_publish_dry_run
+#   kind owes:     nightly_owes <row name> -> OWED or NOT_OWED (#5079: the nightly row set, by phase definition)
+# fixture_workspace <dir> <clean|dirty>: member b depends on member a by path AND version, as the real
+# workspace does, so a workspace dry-run has to resolve a from local sources, never from a registry.
+fixture_workspace() {
+  local d="$1" m
+  mkdir -p "$d/a/src" "$d/b/src" || return 2
+  printf '[workspace]\nmembers = ["a", "b"]\nresolver = "2"\n' > "$d/Cargo.toml"
+  for m in a b; do
+    printf '[package]\nname = "dogfood-dryrun-fixture-%s-x7q"\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\ndescription = "fixture"\n' "$m" > "$d/$m/Cargo.toml"
+  done
+  printf '[dependencies]\ndogfood-dryrun-fixture-a-x7q = { path = "../a", version = "0.1.0" }\n' >> "$d/b/Cargo.toml"
+  printf 'pub fn a() -> u8 { 1 }\n' > "$d/a/src/lib.rs"
+  printf 'pub fn b() -> u8 { dogfood_dryrun_fixture_a_x7q::a() }\n' > "$d/b/src/lib.rs"
+  printf 'Cargo.lock\n' > "$d/.gitignore"
+  git -C "$d" init -q && git -C "$d" add -A \
+    && git -C "$d" -c user.name=fixture -c user.email=fixture@invalid commit -q -m fixture || return 2
+  [ "$2" = clean ] || printf '// an edit nobody committed\n' >> "$d/a/src/lib.rs"
+}
 run_case() {
-  local src="$1" kind="$2" phase="$3" name="$4" arg="$5" text="$6" tmp log rc
+  local src="$1" kind="$2" phase="$3" name="$4" arg="$5" text="$6" tmp log rc fx=""
   tmp=$(mktemp) || return 2; log=$(mktemp) || { rm -f "$tmp"; return 2; }
   lift "$src" > "$tmp" || { rm -f "$tmp" "$log"; return 2; }
+  if [ "$kind" = dryfx ]; then
+    command -v cargo > /dev/null || { echo "  ENV  no cargo for the dry-run fixture" >&2; rm -f "$tmp" "$log"; return 2; }
+    fx=$(mktemp -d) || { rm -f "$tmp" "$log"; return 2; }
+    fixture_workspace "$fx/w" "$arg" || { rm -f "$tmp" "$log"; rm -rf -- "${fx:?}"; return 2; }
+  fi
   # declnote rows spell a multi-line log with \n (a red gate's SCOPED: line sits ABOVE the 3-line tail the
   # FAIL note quotes, as in check_model_ladder.sh's real output). Every other kind is written verbatim.
   if [ "$kind" = declnote ]; then printf '%b\n' "$text" > "$log"; else printf '%s\n' "$text" > "$log"; fi
   cat >> "$tmp" <<'RUN'
 NAMES=(); RESULTS=(); NOTES=(); FAILED=0
-if [ "$KIND" = mark ] || [ "$KIND" = marknm ]; then mark "$NAME" "$ARG" "note" > /dev/null; bad=$FAILED
+if [ "$KIND" = owes ]; then
+  if nightly_owes "$NAME"; then echo OWED; else echo NOT_OWED; fi; exit 0
+elif [ "$KIND" = mark ] || [ "$KIND" = marknm ]; then mark "$NAME" "$ARG" "note" > /dev/null; bad=$FAILED
+elif [ "$KIND" = dry ]; then mark_publish_dry_run "$ARG" "$(cat "$LOG")" > /dev/null; bad=$FAILED
+elif [ "$KIND" = dryfx ]; then
+  out=$(cd "$FX/w" && CARGO_TARGET_DIR="$FX/target" publish_dry_run_at_h 2>&1)
+  mark_publish_dry_run "$?" "$out" > /dev/null; bad=$FAILED
 else classify_declared "$NAME" gate.sh "$ARG" "$LOG" > /dev/null; bad=$?; fi
 if [ "$KIND" = declnote ]; then
   # #4086: does the ROW carry the gate's scope? SCOPED iff the note names it, else UNSCOPED.
@@ -77,8 +113,9 @@ elif [ "$KIND" = marknm ] || [ "$KIND" = declnm ]; then
   printf '%s %s %s\n' "${RESULTS[${#RESULTS[@]}-1]:-NONE}" "$bad" "$nm"
 else printf '%s %s\n' "${RESULTS[${#RESULTS[@]}-1]:-NONE}" "$bad"; fi
 RUN
-  KIND="$kind" DOGFOOD_PHASE="$phase" NAME="$name" ARG="$arg" LOG="$log" bash "$tmp" 2> /dev/null; rc=$?
+  KIND="$kind" DOGFOOD_PHASE="$phase" NAME="$name" ARG="$arg" LOG="$log" FX="$fx" bash "$tmp" 2> /dev/null; rc=$?
   rm -f "$tmp" "$log"
+  [ -z "$fx" ] || rm -rf -- "${fx:?}"
   return $rc
 }
 
@@ -111,6 +148,16 @@ nightly-real-red-stays-measured|declnm|nightly|declared:check_model_ladder|1|RED
 nightly-green-stays-green|declnm|nightly|declared:check_model_ladder|0|ok    every required rung green|PASS 0 MEASURED
 pre-publish-stale-by-sha-stays-a-fail|declnm|pre-publish|declared:check_model_ladder|1|FAIL  lambda  receipt measured at apr_sha 04332f838c00 -- STALE BY SHA: re-measure at the cut (#3957 F2)|FAIL 1 MEASURED
 pre-publish-open-stays-open|marknm|pre-publish|publish-dry-run|OPEN||OPEN 0 MEASURED
+nightly-dry-run-rc0-is-pass|dry|nightly|publish-dry-run|0||PASS 0
+nightly-dry-run-rc101-is-fail|dry|nightly|publish-dry-run|101|error: failed to verify package tarball|FAIL 1
+pre-publish-dry-run-stays-open|dry|pre-publish|publish-dry-run|0||OPEN 0
+post-publish-dry-run-fail-stays-fail|dry|post-publish|publish-dry-run|101|error: failed to verify package tarball|FAIL 1
+nightly-clean-tree-dry-run-passes|dryfx|nightly|publish-dry-run|clean||PASS 0
+nightly-dirty-tree-dry-run-fails|dryfx|nightly|publish-dry-run|dirty||FAIL 1
+nightly-does-not-owe-multiplatform|owes|nightly|declared:check_multiplatform_dogfood|||NOT_OWED
+nightly-owes-every-other-gate|owes|nightly|declared:check_model_ladder|||OWED
+pre-publish-owes-multiplatform|owes|pre-publish|declared:check_multiplatform_dogfood|||OWED
+post-publish-owes-multiplatform|owes|post-publish|declared:check_multiplatform_dogfood|||OWED
 CASES
 }
 
@@ -137,6 +184,16 @@ static_rules() { # <dogfood.sh> -> 0 when no row is DEFERred and no declared gat
     if grep -qE "^[^#]*printf[^#]*'DEFERRED: " "$g"; then printf '  FAIL  %s prints a DEFERRED: line\n' "$g"; rc=1; fi
   done
   [ "$rc" = 0 ] && printf '  ok    no gate script prints a DEFERRED: line\n'
+  # #5079: the lifted functions decide nothing unless dogfood.sh calls them where the rows are made.
+  local site
+  while IFS= read -r site; do
+    if grep -qxF "$site" "$src"; then printf '  ok    calls: %s\n' "$site"
+    else printf '  FAIL  %s no longer has the line: %s\n' "$(basename "$src")" "$site"; rc=1; fi
+  done <<'SITES'
+    if ! nightly_owes "$dg_name"; then
+  if [ "$DOGFOOD_PHASE" = nightly ]; then DRY=$(publish_dry_run_at_h 2>&1); DRC=$?; fi
+mark_publish_dry_run "$DRC" "$DRY"
+SITES
   return $rc
 }
 
@@ -165,7 +222,16 @@ if [ "$SELF_TEST" = 1 ]; then
   mut scope-dropped-pass table  's/^    mark "\$name" PASS "\$path exit=0\$scoped"$/    mark "$name" PASS "$path exit=0"/'
   mut scope-dropped-fail table  's/^    mark "\$name" FAIL "\$path exit=\$rc\$scoped — \$tail"$/    mark "$name" FAIL "$path exit=$rc — $tail"/'
   mut scope-anywhere     table  "s/grep -m1 '^SCOPED: '/grep -m1 'SCOPED: '/"
-  [ "$bad" = 0 ] && echo "self-test: PASS -- red when the hatch returns, when DEFER is legal, when any row may be OPEN, when OPEN outlives pre-publish, when nightly loses NOT_MEASURED (OPEN or stale by sha) or stale-by-sha leaks out of nightly, when coverage defers, and when a scoped verdict loses its scope"
+  # #5079 ruling D: nightly measures the workspace dry-run, and never multiplatform
+  mut dry-run-fail-reads-green table 's/^  elif \[ "\$1" -eq 0 \]; then$/  elif true; then/'
+  mut nightly-dry-run-open     table 's/^  if \[ "\$DOGFOOD_PHASE" = pre-publish \]; then$/  if [ "$DOGFOOD_PHASE" = pre-publish ] || [ "$DOGFOOD_PHASE" = nightly ]; then/'
+  mut dry-run-allow-dirty      table 's/cargo publish --workspace --dry-run$/cargo publish --workspace --dry-run --allow-dirty/'
+  mut not-owed-any-phase       table 's/^  \[ "\$DOGFOOD_PHASE" = nightly \] || return 0$/  true/'
+  mut nightly-owes-everything  table 's/\*" \$1 "\*) return 1 ;; esac/*" $1 "*) return 0 ;; esac/'
+  mut owes-call-dropped        static 's/^    if ! nightly_owes "\$dg_name"; then$/    if false; then/'
+  mut nightly-dry-run-dropped  static 's/^  if \[ "\$DOGFOOD_PHASE" = nightly \]; then DRY=\$(publish_dry_run_at_h 2>&1); DRC=\$?; fi$/  :/'
+  mut row10-call-dropped       static 's/^mark_publish_dry_run "\$DRC" "\$DRY"$/mark publish-dry-run PASS "packages cleanly"/'
+  [ "$bad" = 0 ] && echo "self-test: PASS -- red when the hatch returns, when DEFER is legal, when any row may be OPEN, when OPEN outlives pre-publish, when nightly loses NOT_MEASURED (OPEN or stale by sha) or stale-by-sha leaks out of nightly, when coverage defers, when a scoped verdict loses its scope, and when nightly stops measuring the workspace dry-run (or lets a dirty tree pass it) or owes a gate its phase definition excludes"
   exit "$bad"
 fi
 
