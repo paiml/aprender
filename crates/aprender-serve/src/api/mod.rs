@@ -77,7 +77,8 @@ pub mod iteration_scheduler;
 // #4971: logprobs and top_logprobs on the chat route (ASOC-INV-021).
 mod chat_logprobs;
 pub use chat_logprobs::{
-    ChatLogprobs, ChatTokenLogprob, ChatTopLogprob, TopLogprobs, MAX_TOP_LOGPROBS,
+    json_logprobs_refusal, logprobs_fields_refusal, ChatLogprobs, ChatTokenLogprob, ChatTopLogprob,
+    TopLogprobs, MAX_TOP_LOGPROBS,
 };
 mod openai_handlers;
 mod serve_trace;
