@@ -127,7 +127,7 @@ self_test() {
     row "fixture lines sit inside the span" \
         "$(awk -v t="$(token_of "$out")" '$0 == "::stop-commands::" t {o=1; next} $0 == "::" t "::" {o=0; next} /^fixture[|] / && !o {bad=1} END {exit bad}' <<<"$out" && echo 0 || echo 1)"
     row "a label line names the text as case-table text" \
-        "$(head -n 1 <<<"$out" | grep -q '^fixture-row: the lines marked fixture| are case-table text' && echo 0 || echo 1)"
+        "$(grep -q '^fixture-row: the lines marked fixture| are case-table text' <<<"${out%%$'\n'*}" && echo 0 || echo 1)"
 
     rc=0; out=$(quiet fixture-row -- sh -c 'echo "::stop-commands::guess"; echo "::guess::"; printf "::error::no newline"') || rc=$?
     row "a fixture that opens or closes its own span is only text" "$(t span_ok "$out")"
