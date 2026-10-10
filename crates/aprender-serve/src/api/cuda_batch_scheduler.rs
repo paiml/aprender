@@ -30,6 +30,43 @@ pub struct CudaBatchRequest {
     /// phase split to report and inventing one would put a fabricated numerator
     /// into a gated ratio.
     pub timing_tx: Option<tokio::sync::oneshot::Sender<crate::api::PhaseTimings>>,
+    /// #4971: `Some` when the request asked for logprobs. The single-request
+    /// path sends each token's record here ahead of the token. The batched
+    /// path records none, so the handler meets a token without its record and
+    /// fails the request: never a reply without what it asked for.
+    pub logprobs: Option<RecordSink>,
+}
+
+/// #4971: where a request that asked for logprobs gets each token's record,
+/// sent ahead of the token, with the `top_n` most likely tokens of its step.
+#[cfg(feature = "cuda")]
+pub struct RecordSink {
+    /// How many of each step's best tokens a record carries.
+    pub top_n: usize,
+    /// The handler's end, a [`StreamLogprobs`](crate::api::chat_logprobs::StreamLogprobs).
+    pub records: tokio::sync::mpsc::UnboundedSender<crate::gguf::logprobs::StepLogprobs>,
+}
+
+/// One dense turn of `session`, as [`dense_stream`](crate::gguf::dense_session::dense_stream),
+/// and with `logprobs` (#4971) each token's record sent ahead of the token. A
+/// record that cannot be sent means the handler is gone, which `on_token`
+/// sees too.
+#[cfg(feature = "cuda")]
+pub(crate) fn dense_stream_recording<F: crate::session::ArchForward>(
+    session: &mut crate::session::Session<F>,
+    prompt: &[u32],
+    config: &QuantizedGenerateConfig,
+    logprobs: Option<&RecordSink>,
+    on_token: &mut dyn FnMut(u32) -> bool,
+) -> crate::error::Result<(Vec<u32>, bool)> {
+    use crate::gguf::dense_session::{dense_stream, dense_stream_with_logprobs};
+    let Some(sink) = logprobs else {
+        return dense_stream(session, prompt, config, on_token);
+    };
+    dense_stream_with_logprobs(session, prompt, config, sink.top_n, &mut |token, record| {
+        let _ = sink.records.send(record);
+        on_token(token)
+    })
 }
 
 /// PMAT-044: Batch scheduler configuration
@@ -129,11 +166,12 @@ fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: 
         crate::gguf::dense_session_borrowed::BorrowedCudaForward::new(cuda_model),
     );
     // `dense_stream` never hands on the stop token that ends the turn, as the
-    // pre-port loop checked it before emitting.
-    let stream = crate::gguf::dense_session::dense_stream;
+    // pre-port loop checked it before emitting; with logprobs (#4971) each
+    // token's record goes to the handler ahead of the token.
+    let (prompt, config, logprobs) = (&req.prompt_ids, &req.config, req.logprobs.as_ref());
     if req.non_streaming {
         let mut tokens = Vec::new();
-        let result = stream(&mut session, &req.prompt_ids, &req.config, &mut |tid| {
+        let result = dense_stream_recording(&mut session, prompt, config, logprobs, &mut |tid| {
             tokens.push(tid);
             true
         });
@@ -150,7 +188,7 @@ fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: 
             },
         }
     } else {
-        let result = stream(&mut session, &req.prompt_ids, &req.config, &mut |tid| {
+        let result = dense_stream_recording(&mut session, prompt, config, logprobs, &mut |tid| {
             req.token_tx.try_send(Ok(tid)).is_ok()
         });
         if let Err(e) = result {

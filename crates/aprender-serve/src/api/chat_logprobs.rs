@@ -161,9 +161,10 @@ impl ChatTokenLogprob {
 
 /// #4971: the logprobs of a live stream. The engine sends each token's record
 /// ahead of the token, so the record is here by the time the stream receives
-/// the token. The entries are held until a chunk carries text, and that chunk
-/// carries all of them; what is still held when the stream ends goes on its
-/// terminal chunk. So every entry is sent once, in the order of the tokens.
+/// the token, and taking it never waits. The entries are held until a chunk
+/// carries text, and that chunk carries all of them; what is still held when
+/// the stream ends goes on its terminal chunk. So every entry is sent once, in
+/// the order of the tokens. A finished turn's entries are [`Self::collect`]ed.
 pub(crate) struct StreamLogprobs {
     records: tokio::sync::mpsc::UnboundedReceiver<StepLogprobs>,
     held: Vec<ChatTokenLogprob>,
@@ -179,29 +180,45 @@ impl StreamLogprobs {
 
     /// Holds the entry of `token`, which the stream has just received.
     ///
+    /// It does not wait for the record: one that is not here when its token is
+    /// was never sent, and waiting would hang a stream whose engine keeps the
+    /// sender (a batched turn, which records none).
+    ///
     /// # Errors
     /// The engine sent no record for `token`, or the record of another token.
     /// The stream then ends with an error rather than go on with entries that
     /// do not match its tokens.
-    pub(crate) async fn take(
-        &mut self,
-        tokenizer: &BPETokenizer,
-        token: u32,
-    ) -> Result<(), String> {
-        match self.records.recv().await {
-            Some(step) if step.chosen == token => {
+    pub(crate) fn take(&mut self, tokenizer: &BPETokenizer, token: u32) -> Result<(), String> {
+        match self.records.try_recv() {
+            Ok(step) if step.chosen == token => {
                 self.held
                     .push(ChatTokenLogprob::from_step(tokenizer, &step));
                 Ok(())
             },
-            Some(step) => Err(format!(
+            Ok(step) => Err(format!(
                 "token {token} arrived with the logprobs of token {} (#4971)",
                 step.chosen
             )),
-            None => Err(format!(
+            Err(_) => Err(format!(
                 "token {token} arrived without its logprobs (#4971)"
             )),
         }
+    }
+
+    /// The entries of a finished turn's reply `tokens`, whose records were all
+    /// sent ahead of them.
+    ///
+    /// # Errors
+    /// As [`Self::take`], for the first token without its own record.
+    pub(crate) fn collect(
+        mut self,
+        tokenizer: &BPETokenizer,
+        tokens: &[u32],
+    ) -> Result<ChatLogprobs, String> {
+        for &token in tokens {
+            self.take(tokenizer, token)?;
+        }
+        Ok(ChatLogprobs { content: self.held })
     }
 
     /// The entries held until now, for the chunk about to be sent, or `None`
@@ -276,17 +293,19 @@ pub(crate) fn logprobs_refusal(request: &ChatCompletionRequest, backend: &str) -
     })
 }
 
-/// [`logprobs_refusal`] for the quantized CPU backend, which computes them on
-/// its dense turn, streamed or not: only its traced loop refuses.
+/// [`logprobs_refusal`] for a backend that computes them on its dense turn,
+/// streamed or not (the quantized CPU and dense CUDA backends): only its
+/// traced loop refuses, as `{backend} (traced)`.
 #[must_use]
-pub(crate) fn quantized_logprobs_refusal(
+pub(crate) fn traced_logprobs_refusal(
     request: &ChatCompletionRequest,
+    backend: &str,
     traced: bool,
 ) -> Option<String> {
     if !traced {
         return None;
     }
-    logprobs_refusal(request, "quantized (traced)")
+    logprobs_refusal(request, &format!("{backend} (traced)"))
 }
 
 #[cfg(test)]
@@ -473,29 +492,63 @@ mod tests {
     }
 
     #[test]
-    fn the_quantized_backend_refuses_only_its_traced_loop() {
+    fn a_dense_backend_refuses_only_its_traced_loop() {
         let mut asks = request(r#","logprobs":true"#).expect("valid");
-        // (stream, traced, refused as)
-        let table: &[(bool, bool, Option<&str>)] = &[
-            (false, false, None),
-            (true, false, None),
-            (false, true, Some("quantized (traced)")),
-            (true, true, Some("quantized (traced)")),
+        // (backend, stream, traced, refused as)
+        let table: &[(&str, bool, bool, Option<&str>)] = &[
+            ("quantized", false, false, None),
+            ("quantized", true, false, None),
+            ("quantized", false, true, Some("quantized (traced)")),
+            ("quantized", true, true, Some("quantized (traced)")),
+            ("CUDA", false, false, None),
+            ("CUDA", true, false, None),
+            ("CUDA", false, true, Some("CUDA (traced)")),
+            ("CUDA", true, true, Some("CUDA (traced)")),
         ];
-        for &(stream, traced, want) in table {
+        for &(backend, stream, traced, want) in table {
             asks.stream = stream;
-            let got = quantized_logprobs_refusal(&asks, traced);
+            let got = traced_logprobs_refusal(&asks, backend, traced);
             match want {
-                None => assert_eq!(got, None, "stream={stream} traced={traced}"),
+                None => assert_eq!(got, None, "{backend} stream={stream} traced={traced}"),
                 Some(path) => assert!(
                     got.as_deref().is_some_and(|r| r.contains(path)),
-                    "stream={stream} traced={traced}: {got:?}"
+                    "{backend} stream={stream} traced={traced}: {got:?}"
                 ),
             }
         }
         let mut plain = request("").expect("valid");
         plain.stream = true;
-        assert_eq!(quantized_logprobs_refusal(&plain, true), None);
+        assert_eq!(traced_logprobs_refusal(&plain, "CUDA", true), None);
+    }
+
+    #[test]
+    fn a_finished_turn_collects_one_entry_per_token_from_records_sent_ahead() {
+        let (records, logprobs) = StreamLogprobs::channel();
+        for (chosen, logits) in [(1, [0.0, 2.0, 1.0]), (2, [0.0, 1.0, 3.0])] {
+            records.send(step(chosen, &logits, 2)).expect("open");
+        }
+        let lp = logprobs.collect(&tokenizer(), &[1, 2]).expect("collected");
+        assert_eq!(lp.content.len(), 2);
+        assert!(lp.content.iter().all(|e| e.top_logprobs.len() == 2));
+        // The sender is still held: collect read what was sent and did not wait.
+        drop(records);
+    }
+
+    #[test]
+    fn a_token_without_its_own_record_is_an_error_and_never_a_wait() {
+        // The engine keeps its sender and sends nothing, as a batched turn
+        // would: the first token is refused at once.
+        let (records, logprobs) = StreamLogprobs::channel();
+        let err = logprobs.collect(&tokenizer(), &[1]).expect_err("no record");
+        assert!(err.contains("without its logprobs"), "{err}");
+        drop(records);
+        let (other, mut held) = StreamLogprobs::channel();
+        other.send(step(2, &[0.0, 1.0, 3.0], 1)).expect("open");
+        let err = held
+            .take(&tokenizer(), 1)
+            .expect_err("another token's record");
+        assert!(err.contains("logprobs of token 2"), "{err}");
+        assert_eq!(held.release(), None, "a refused entry is never held");
     }
 
     #[test]
