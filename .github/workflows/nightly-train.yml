@@ -24,8 +24,12 @@ jobs:
         run: |
           bash scripts/release/nightly_train.sh --self-test
           bash scripts/release/nightly_train.sh --mutants
-          bash scripts/tests/models_gate_lab_test.sh
-          bash scripts/tests/models_gate_lab_test.sh --mutants
+          # the gate/LAB test reads the workflows with yq; the clean-room image has none, so fetch the pinned one
+          curl -sSfL -o "$RUNNER_TEMP/yq" https://github.com/mikefarah/yq/releases/download/v4.52.2/yq_linux_amd64
+          echo "a74bd266990339e0c48a2103534aef692abf99f19390d12c2b0ce6830385c459  $RUNNER_TEMP/yq" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/yq"
+          PATH="$RUNNER_TEMP:$PATH" bash scripts/tests/models_gate_lab_test.sh
+          PATH="$RUNNER_TEMP:$PATH" bash scripts/tests/models_gate_lab_test.sh --mutants
           bash scripts/tests/models_lane_row_test.sh
           bash scripts/tests/models_lane_row_test.sh --mutants
           bash scripts/tests/nightly_lanes_rows_test.sh
