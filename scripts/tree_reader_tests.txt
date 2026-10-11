@@ -161,6 +161,7 @@ aprender-decide	--lib	test_support
 aprender-decide	--test	demo_run
 aprender-decide	--test	fail_closed_vectors
 aprender-decide	--test	laya_parity
+aprender-decide	--test	pack_laya_smoke
 aprender-distribute	--lib	executor::tls
 aprender-orchestrate	--lib	agent::contracts
 aprender-orchestrate	--lib	agent::driver::chat_template
