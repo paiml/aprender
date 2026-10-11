@@ -43,10 +43,11 @@ owner_of() { # LANE -> its owner, or empty
     printf '%s\n' "$OWNERS" | awk -F '\t' -v L="$1" '$1 == L { print $2; exit }'
 }
 
-# newest_day DIR -> DIR/<newest day>, or empty
+# newest_day DIR -> DIR/<newest day>, or empty. Day-named dirs only: the artifact also carries cache/, which sorts
+# after every day, so a bare */ read cache/ and reported a printed line as missing (run 38133969253, #5081).
 newest_day() {
     local d last=""
-    for d in "$1"/*/; do [ -d "$d" ] && last="${d%/}"; done
+    for d in "$1"/*/; do case "${d%/}" in */[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) last="${d%/}" ;; esac; done
     printf '%s' "$last"
 }
 
@@ -206,6 +207,9 @@ self_test() {
     plant "$tmp/nt" 2026-10-10 "$NR" "$RD"
     check j_newest_day_dir_is_read 0 failure schedule "" "" '+^issue create ' '+owner: aprender-78'
     plant "$tmp/nt" 2026-10-10 "$NR" "$RD"
+    mkdir -p "$tmp/nt/cache"
+    check j2_cache_dir_is_not_a_day 0 failure schedule "" "" '+^issue create ' '+line: `NOT RELEASABLE' '+owner: aprender-78' '-no verdict line'
+    plant "$tmp/nt" 2026-10-10 "$NR" "$RD"
     check k_success_job_red_line_writes 0 success schedule "" "" '+^issue create '
     plant "$tmp/nt" 2026-10-10 "$OK" none
     check l_failed_job_green_line_writes 0 failure schedule "" "" '+^issue create '
@@ -229,7 +233,8 @@ M5_list_failure_read_as_none	s/^\(    num="\$("\$gh" issue list .*)"\) || {$/\1 
 M6_job_result_only	s/^    if \[ "\$result" = success \]; then case .*$/    if [ "$result" = success ]; then green=1; fi/
 M7_line_only	s/^    if \[ "\$result" = success \]; then case/    if true; then case/
 M8_drills_write	s/^    if \[ "\$event" != schedule \]; then$/    if false; then/
-M9_label_failure_read_as_success	s/--force > \/dev\/null || {/--force > \/dev\/null || : || {/'
+M9_label_failure_read_as_success	s/--force > \/dev\/null || {/--force > \/dev\/null || : || {/
+M10_any_dir_is_a_day	s/ in \*\/\[0-9\]\[0-9\]\[0-9\]\[0-9\]-\[0-9\]\[0-9\]-\[0-9\]\[0-9\]) last=/ in *) last=/'
 
 mutants() {
     local self="$1" tmp survived=0 name expr
