@@ -103,7 +103,7 @@ readiness;verdict;release_readiness.sh, preflight R8;.github/workflows/readiness
 milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
 cleanroom-cpu;verdict;clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-cpu$
 cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-gpu$
-assets;verdict;binary-release.yml + check_release_assets.sh;.github/workflows/assets-rehearsal-nightly.yml;^schedule$;^The rehearsal built every asset the release owes$
+assets;verdict;binary-release.yml + check_release_assets.sh;.github/workflows/assets-rehearsal-nightly.yml;^schedule$;^(Rehearsal tag, and the rehearsal is still the release.s build|The rehearsal built every asset the release owes)$;2
 preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^schedule$;^preflight$
 publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^schedule$;^publish-dryrun$
 coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^schedule$;^coverage$
@@ -789,6 +789,22 @@ self_test() {
         normalize "$tmp/cut.json" "$tmp/wf.json"
     }
     row normalize_marks_a_cut_job_list 0 "$(printf '#truncated\tCOMPLETED\tTRUNCATED')" "" -- st_cut
+    # the assets row reads the rehearsal's first job too: its verify job is skipped when that job fails, and a night
+    #   of only skipped jobs is void, so a failed rehearsal would fall to an older green run on C (#5080 seat 2)
+    st_assets_row() {
+        local w=.github/workflows/assets-rehearsal-nightly.yml t="Rehearsal tag, and the rehearsal is still the release's build" v="The rehearsal built every asset the release owes"
+        printf '%s\n' "$ST_C" > "$d/C"; printf 'ok\n' > "$d/read"
+        {
+            printf 'wf\t%s\t501\tschedule\tmain\t%s\t2026-10-04T00:37:00Z\tCOMPLETED\tSUCCESS\t%s\tCOMPLETED\tSUCCESS\t2026-10-04T00:38:00Z\t2026-10-04T00:40:00Z\t1\n' "$w" "$ST_C" "$t"
+            printf 'wf\t%s\t501\tschedule\tmain\t%s\t2026-10-04T00:37:00Z\tCOMPLETED\tSUCCESS\t%s\tCOMPLETED\tSUCCESS\t2026-10-04T02:00:00Z\t2026-10-04T02:05:00Z\t1\n' "$w" "$ST_C" "$v"
+            printf 'wf\t%s\t502\tschedule\tmain\t%s\t2026-10-05T00:37:00Z\tCOMPLETED\tFAILURE\t%s\tCOMPLETED\tFAILURE\t2026-10-05T00:38:00Z\t2026-10-05T00:40:00Z\t1\n' "$w" "$ST_C" "$t"
+            printf 'wf\t%s\t502\tschedule\tmain\t%s\t2026-10-05T00:37:00Z\tCOMPLETED\tFAILURE\t%s\tCOMPLETED\tSKIPPED\t\t\t1\n' "$w" "$ST_C" "$v"
+        } > "$d/runs.tsv"
+        printf '501\t1\n502\t1\n' > "$d/attempts.tsv"
+        decide "$(printf '%s\n' "$LANES" | awk -F ';' '$1 == "assets"')" "$d" 2026-10-05T06:00:00Z; cat "$d/line" "$d/lanes.tsv"
+    }
+    d="$tmp/assets"; mkdir -p "$d"
+    row a_failed_rehearsal_tag_job_is_red_not_older_green 0 "$(printf 'assets\tverdict\tred')" "RELEASABLE H=" -- st_assets_row
     d="$tmp/noprod"; fixture "$d"
     st_a_lane_without_a_producer_is_not_measured() { decide "$ST_LANES
 v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.tsv"; }
