@@ -16,6 +16,7 @@
 #   3. llama.cpp unavailable (HAVE_LLAMA=0) → llama rows refused with LLAMA_WHY; apr OFF refused naming why
 #   4. apr prints no `tokens`  → apr OFF refused by name
 #   5. MUTANT: the apr-ON refusal dropped from the lib → the no-flag row goes missing, and that is caught
+#   6. the EXIT reap kills the stub pids this run recorded, never a name match or a recycled pid (#5108)
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -44,8 +45,22 @@ mkdir -p "$TMP/shim"
 printf '#!/bin/sh\nwhile [ $# -gt 0 ] && [ "$1" != -- ]; do shift; done\n[ $# -gt 0 ] && shift\nexec "$@"\n' > "$TMP/shim/choom"
 chmod +x "$TMP/shim/choom"
 export PATH="$TMP/shim:$PATH"
+# Reap only what this run recorded at spawn: every llama-server.pid under a root (the lib writes one per cell) and
+# the helper case's own server. Never a name pattern (#5108): `pkill -f "$TMP/bin/llama-server"` matched nothing
+# here, since the stub execs `python3 - PORT`, while it could match any other process naming that path. A pid is
+# signalled only while its args are still the stub's, so a recycled pid is left alone.
+stub_reap() { # stub_reap <pid>
+  case "${1:-}" in ''|*[!0-9]*) return 0 ;; esac
+  [[ "$(ps -o args= -p "$1" 2>/dev/null)" =~ ^python3\ -\ [0-9]+$ ]] || return 0
+  kill -KILL "$1" 2>/dev/null; wait "$1" 2>/dev/null
+  return 0
+}
+reap_recorded() { # reap_recorded <root>: stub_reap every pid in a llama-server.pid under <root>
+  local f
+  while IFS= read -r f; do stub_reap "$(cat "$f" 2>/dev/null)"; done < <(find "$1" -name llama-server.pid -type f 2>/dev/null)
+}
 _rm_tmp() {
-  pkill -f "$TMP/bin/llama-server" 2>/dev/null
+  reap_recorded "$TMP"; stub_reap "${hsp:-}"
   case "${TMP:-}" in
     /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
     *) : ;;
@@ -264,6 +279,26 @@ PY
 run_case mutant "$TMP/mutant-lib.sh"
 got=$(rows mutant | grep -c '^row apr on')
 [ "$got" = 0 ] && ok "MUTANT (apr ON refusal dropped) is caught: the no-flag table's ON row is gone" || broke "MUTANT not caught ($got apr-ON rows)"
+
+# Row 6 (#5108): the EXIT reap signals only what this run recorded. A recorded stub dies; a process whose args match
+# the old name pattern lives; a recorded pid whose args are no longer the stub's (a recycled pid) lives.
+R="$TMP/reap"; mkdir -p "$R/cell"
+rp=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
+"$stub_srv" -m /stub --port "$rp" > "$R/srv.log" 2>&1 &
+echo $! > "$R/cell/llama-server.pid"
+bash -c 'exec -a "$0" sleep 60' "$TMP/bin/llama-server decoy" & decoy=$!
+sleep 60 & recycled=$!
+mkdir -p "$R/recycled"; echo "$recycled" > "$R/recycled/llama-server.pid"
+for _ in $(seq 1 50); do [[ "$(ps -o args= -p "$(cat "$R/cell/llama-server.pid")" 2>/dev/null)" =~ ^python3\ - ]] && break; sleep 0.1; done
+reap_recorded "$R"
+gone() { [ -z "$(ps -o stat= -p "$1" 2>/dev/null)" ] || [[ "$(ps -o stat= -p "$1" 2>/dev/null)" == Z* ]]; }
+srv=$(cat "$R/cell/llama-server.pid")
+if gone "$srv" && ! gone "$decoy" && ! gone "$recycled"; then
+  ok "EXIT reap: the recorded stub is dead; a name-pattern match and a recycled pid are untouched (#5108)"
+else
+  broke "EXIT reap: stub gone=$(gone "$srv" && echo y || echo n) decoy gone=$(gone "$decoy" && echo y || echo n) recycled gone=$(gone "$recycled" && echo y || echo n); want y n n"
+fi
+stub_reap "$srv"; kill -KILL "$decoy" "$recycled" 2>/dev/null; wait "$decoy" "$recycled" 2>/dev/null
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

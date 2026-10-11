@@ -47,9 +47,19 @@ skip() { log "SKIP: $1 - $2"; RESULTS[$1]="SKIP: $2"; ((SKIPPED++)); }
 # ============================================================================
 # Test Helpers
 # ============================================================================
+# A daemon's pid is recorded at spawn in $RESULTS_DIR/dev-<id>.pid (start_device runs in a command substitution, so
+# a variable would not survive it). cleanup_device kills that pid, never a name match (#5108).
+record_device_pid() { # record_device_pid <dev_id> <pid>
+    printf '%s\n' "$2" > "$RESULTS_DIR/dev-$1.pid"
+}
+
 cleanup_device() {
-    local dev_id="${1:-0}"
-    pkill -f "trueno-ublk.*dev-id $dev_id" 2>/dev/null || true
+    local dev_id="${1:-0}" pidfile="$RESULTS_DIR/dev-${1:-0}.pid" pid
+    if [ -f "$pidfile" ]; then
+        pid=$(cat "$pidfile")
+        case "$pid" in ''|*[!0-9]*) ;; *) kill "$pid" 2>/dev/null || true ;; esac
+        rm -f -- "$pidfile"
+    fi
     "$TRUENO_UBLK" reset "$dev_id" 2>/dev/null || true
     sleep 0.5
 }
@@ -63,6 +73,7 @@ start_device() {
 
     "$TRUENO_UBLK" create --size "$size" --dev-id "$dev_id" --foreground &
     local pid=$!
+    record_device_pid "$dev_id" "$pid"
 
     local attempts=0
     while [ ! -b "/dev/ublkb${dev_id}" ] && [ $attempts -lt $((timeout * 2)) ]; do
@@ -94,42 +105,39 @@ test_F001() {
 
 test_F002() {
     log "F002: Device creation with size=0 (should fail)"
-    if "$TRUENO_UBLK" create --size 0 --dev-id 1 --foreground 2>/dev/null &
-       sleep 2
-       [ -b /dev/ublkb1 ]; then
+    "$TRUENO_UBLK" create --size 0 --dev-id 1 --foreground 2>/dev/null &
+    record_device_pid 1 "$!"
+    sleep 2
+    if [ -b /dev/ublkb1 ]; then
         fail "F002" "Device created with size=0"
-        cleanup_device 1
     else
         pass "F002"
-        pkill -f "dev-id 1" 2>/dev/null || true
     fi
+    cleanup_device 1
 }
 
 test_F003() {
     log "F003: Device creation with size > physical RAM"
     # Try 1PB - should fail or be handled
-    if "$TRUENO_UBLK" create --size 1P --dev-id 2 --foreground 2>/dev/null &
-       sleep 3
-       [ -b /dev/ublkb2 ]; then
-        # If it creates, that's actually OK (virtual size)
-        pass "F003"
-        cleanup_device 2
-    else
-        pass "F003"
-        pkill -f "dev-id 2" 2>/dev/null || true
-    fi
+    "$TRUENO_UBLK" create --size 1P --dev-id 2 --foreground 2>/dev/null &
+    record_device_pid 2 "$!"
+    sleep 3
+    # Created or refused, both are OK (a created device has a virtual size)
+    pass "F003"
+    cleanup_device 2
 }
 
 test_F004() {
     log "F004: Device ID -1 auto-assigns"
-    if "$TRUENO_UBLK" create --size 1G --foreground 2>/dev/null &
-       sleep 2
-       grep -q ublkb <<< "$(ls /dev/ublkb* 2>/dev/null)" ; then
+    "$TRUENO_UBLK" create --size 1G --foreground 2>/dev/null &
+    local pid=$!
+    sleep 2
+    if grep -q ublkb <<< "$(ls /dev/ublkb* 2>/dev/null)" ; then
         pass "F004"
-        pkill -f "trueno-ublk.*foreground" 2>/dev/null || true
     else
         fail "F004" "Auto-assign failed"
     fi
+    kill "$pid" 2>/dev/null || true
 }
 
 test_F005() {

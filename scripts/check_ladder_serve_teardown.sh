@@ -70,7 +70,14 @@ extract_teardown() {
 }
 
 TMP=$(mktemp -d)
-cleanup() { pkill -f "$TMP/fake_server.py" 2>/dev/null || true; rm -rf "$TMP"; }
+# Every fake process writes its own pid at start (*.pid under $TMP); cleanup signals those pids and nothing found by
+# name (#5108). A pid is signalled only while its args still name this run's fake, so a recycled pid is left alone.
+reap_pidfile() { # reap_pidfile <file>
+  local p; p=$(cat "$1" 2>/dev/null) || return 0
+  case "$p" in ''|*[!0-9]*) return 0 ;; esac
+  case "$(ps -o args= -p "$p" 2>/dev/null)" in *"$TMP/fake_"*) kill -9 "$p" 2>/dev/null || true ;; esac
+}
+cleanup() { local f; for f in "$TMP"/*.pid; do [ -f "$f" ] && reap_pidfile "$f"; done; rm -rf "$TMP"; }
 trap cleanup EXIT
 
 cat > "$TMP/fake_server.py" <<'PY'
@@ -89,7 +96,8 @@ PY
 
 cat > "$TMP/fake_loader.py" <<'PY'
 import http.server, os, socketserver, sys, time
-port, mode, secs = int(sys.argv[1]), sys.argv[2], float(sys.argv[3])
+port, mode, secs, pidfile = int(sys.argv[1]), sys.argv[2], float(sys.argv[3]), sys.argv[4]
+open(pidfile, "w").write(str(os.getpid()))
 t0 = time.time()
 while time.time() - t0 < secs or mode == "forever":
     if mode in ("slow-log", "forever"):
@@ -180,10 +188,10 @@ extract_wait() {
 wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-seconds>
   local name="$1" mode="$2" secs="$3" stall="$4" ceil="$5" want="$6" maxs="$7" port pid out verdict took
   port=$(( 20000 + (RANDOM % 20000) ))
-  flock -w 5 "$LOCK" python3 "$TMP/fake_loader.py" "$port" "$mode" "$secs" > "$TMP/$name.log" 2>&1 & pid=$!
+  flock -w 5 "$LOCK" python3 "$TMP/fake_loader.py" "$port" "$mode" "$secs" "$TMP/$name.loader.pid" > "$TMP/$name.log" 2>&1 & pid=$!
   out=$(ladder_serve_wait_health "$pid" "$port" "$TMP/$name.log" "$stall" "$ceil") || true
   verdict=${out%% *}; took=${out##* }
-  pkill -9 -f "$TMP/fake_loader.py $port " 2>/dev/null || true; kill -9 "$pid" 2>/dev/null || true
+  reap_pidfile "$TMP/$name.loader.pid"; kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
   if [ "$verdict" != "$want" ] || [ "$took" -gt "$maxs" ]; then
     echo "  FAIL $name: '$out' — want '$want' within ${maxs}s"; return 1
   fi
@@ -232,5 +240,13 @@ fi
 rc=0
 run_cases "$body" || rc=1
 run_wait_cases "$wbody" || rc=1
+# #5108: each case ends what it started, by the pid that process recorded; none outlives its case.
+sleep 0.5; left=""
+for f in "$TMP"/*.pid; do
+  [ -f "$f" ] || continue; p=$(cat "$f")
+  case "$(ps -o stat= -p "$p" 2>/dev/null)" in ''|Z*) ;; *) left="$left ${f##*/}=$p" ;; esac
+done
+if [ -n "$left" ]; then echo "  FAIL leftover: a fake process outlived its case:$left"; rc=1
+else echo "  ok   leftover: no fake process outlives its case (each ended by its recorded pid)"; fi
 if [ "$rc" -eq 0 ]; then echo "PASS: teardown never reports clean while a launched process lives; the health wait ends on the server's state, not a clock"; exit 0; fi
 echo "FAIL"; exit 1

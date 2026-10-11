@@ -255,27 +255,30 @@ run_component_tests() {
 
     # F002: Device creation fails with size=0
     log_info "F002: Device creation with size=0 (should fail)"
-    if "$TRUENO_UBLK" create --size 0 --dev-id 1 --foreground 2>/dev/null &
-       sleep 2 && [ -b /dev/ublkb1 ]; then
+    "$TRUENO_UBLK" create --size 0 --dev-id 1 --foreground 2>/dev/null &
+    local f002_pid=$!
+    sleep 2
+    if [ -b /dev/ublkb1 ]; then
         log_fail "F002: Device created with size=0 (should have failed)"
         ((failed++))
     else
         log_pass "F002: Correctly rejected size=0"
         ((passed++))
     fi
-    pkill -f "trueno-ublk.*dev-id 1" 2>/dev/null || true
+    kill "$f002_pid" 2>/dev/null || true
 
     # F004: Device ID -1 auto-assigns
     log_info "F004: Auto-assign device ID"
-    if "$TRUENO_UBLK" create --size 1G --foreground &
-       grep -q ublkb <<< "$(sleep 2 && ls /dev/ublkb* 2>/dev/null)" ; then
+    "$TRUENO_UBLK" create --size 1G --foreground &
+    local f004_pid=$!
+    if grep -q ublkb <<< "$(sleep 2 && ls /dev/ublkb* 2>/dev/null)" ; then
         log_pass "F004: Auto-assign worked"
         ((passed++))
     else
         log_fail "F004: Auto-assign failed"
         ((failed++))
     fi
-    pkill -f "trueno-ublk.*foreground" 2>/dev/null || true
+    kill "$f004_pid" 2>/dev/null || true
     sleep 1
 
     # F006: Device reset removes block device

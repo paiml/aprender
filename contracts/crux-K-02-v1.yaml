@@ -180,13 +180,15 @@ falsification_tests:
   prediction: "port 11434 matches ollama default so ollama-python requires no config change"
   test: |
     set -euo pipefail
-    # Fresh start, no --port flag override
-    pkill -f 'apr serve --ollama-compat' 2>/dev/null || true
+    # Fresh start, no --port flag override. A listener already on :11434 is not ours to kill (#5108):
+    # refuse, since an answer from it would say nothing about this apr's default port.
+    if curl -sf http://127.0.0.1:11434/api/tags >/dev/null; then echo "port 11434 is already answering: not started by this test" >&2; exit 1; fi
     apr serve --ollama-compat --model evidence/crux/ollama/tiny.gguf &
     APR_PID=$!
     trap 'kill $APR_PID 2>/dev/null || true' EXIT
     for _ in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
     curl -sf http://127.0.0.1:11434/api/tags >/dev/null
+    kill -0 "$APR_PID"
   if_fails: "apr serve --ollama-compat does not default to :11434 — ollama-python must be reconfigured to reach it"
 
 proof_obligations:
