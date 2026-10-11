@@ -844,8 +844,8 @@ fn leak_host_refuses_on_host_ram_before_building() {
     }
 }
 
-/// #4947 F2 on the real 0.8B: its embedding is the 970 MiB f32 term, a Jetson's
-/// 3910 MiB available admits it, and a host below its need is refused unbuilt.
+/// #4947 F2 on the real 0.8B: its embedding is the 970 MiB f32 term, its need is
+/// 1140.6 MiB (admitted from 1268 MiB), and a host below that is refused unbuilt.
 #[test]
 fn the_real_08b_is_admitted_on_a_jetson_and_refused_below_its_need() {
     use crate::host_capacity::{admit_qwen35_host_build, qwen35_embedding_f32_bytes, HostMemory};
@@ -858,12 +858,12 @@ fn the_real_08b_is_admitted_on_a_jetson_and_refused_below_its_need() {
     let file_bytes = mapped.data().len() as u64;
     let mib = 1024 * 1024;
     assert!(
-        admit_qwen35_host_build(&mapped.model, file_bytes, HostMemory::Available(3910 * mib))
+        admit_qwen35_host_build(&mapped.model, file_bytes, HostMemory::Available(1300 * mib))
             .is_ok()
     );
-    match Qwen35Forward::leak_host_within(&mapped, HostMemory::Available(2000 * mib)) {
+    match Qwen35Forward::leak_host_within(&mapped, HostMemory::Available(1200 * mib)) {
         Err(RealizarError::HostRamRefused(_)) => {},
         Err(other) => panic!("expected HostRamRefused, got {other}"),
-        Ok(_) => panic!("2000 MiB admitted a build that peaks at 2121 MiB"),
+        Ok(_) => panic!("1200 MiB admitted a build whose need is 1141 MiB"),
     }
 }
