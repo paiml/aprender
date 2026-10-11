@@ -56,6 +56,9 @@
 #   and, when that is not the pin, a compare. A pin that does not contain it makes the line
 #   `NOT RELEASABLE: nightly-train, stale-pin (pin=<sha> main=<sha> <script>)`; a script not read makes it
 #   `stale-pin not_measured (...)`, never green. The lanes' own line is kept in bundle.tsv as `# judged`.
+# LANES RUN. The scheduled release-lanes run checks out C (its pick job), not its own head. Without --in-run, one more
+#   call reads the newest such run's jobs when its head is not C: a job counts for C only through its succeeded
+#   `Assert HEAD is <C>` step. An unread list, or no job that asserted C, leaves the run on its head: not_measured.
 #
 # --commit C judges C (40-hex) in place of the night's scheduled run: the one GraphQL query reads C by object(oid:), and a read of any
 #   other commit fails (every producer lane not_measured). The nightly rehearsal passes its pick C (B1 Q1).
@@ -359,6 +362,7 @@ fetch() {
     commit_ok "$raw" "$want" || return 0
     normalize "$raw/graphql.json" "$raw/workflows.json" > "$raw/runs.tsv" 2>/dev/null || { printf 'failed: response did not normalize\n' > "$raw/read"; return 0; }
     if [ -n "$INRUN" ]; then inrun_read "$raw" "$INRUN" && inrun_rows "$raw" || return 0; fi
+    [ -n "$INRUN" ] || lanes_rows "$raw"
     printf 'ok\n' > "$raw/read"
     # run_attempt for each green verdict candidate (GraphQL has none); an unread attempt stays unread -> not_measured
     ids="$(evaluate "$LANES" "$raw" cand | sort -u)"
@@ -536,6 +540,40 @@ inrun_rows() {
         }' "$raw/inrun.jobs.tsv" >> "$raw/runs.next" || return 1
     mv -- "$raw/runs.next" "$raw/runs.tsv" || return 1
     { awk -F '\t' -v R="$id" '$1 != R' "$raw/attempts.tsv" 2>/dev/null; printf '%s\t%s\n' "$id" "$att"; } > "$raw/attempts.next" && mv -- "$raw/attempts.next" "$raw/attempts.tsv"
+}
+# lanes_rows RAW -> (no --in-run) RAW/runs.tsv with the newest scheduled INRUN_WF run whose head is not C re-read: its
+#   pick job chose C (the night's commit), not the run's own head, so its lane jobs check out C and assert it. One REST
+#   read of that run's latest attempt; a job is a row of C only when its own `Assert HEAD is <C>` step succeeded, the
+#   rest of the run votes on nothing. A failed read, or no job that asserted C, leaves the run's rows as they were: on
+#   another commit, so its lanes read not_measured, never green (#5087).
+lanes_rows() {
+    local raw="$1" c id
+    c="$(cat "$raw/C" 2>/dev/null)"
+    id="$(awk -F '\t' -v W="$INRUN_WF" -v C="$c" '$2 == W && $4 == "schedule" && $7 > t { t = $7; id = $3; h = $6 } END { if (id != "" && h != C) print id }' "$raw/runs.tsv")"
+    case "$id" in ''|*[!0-9]*) return 0 ;; esac
+    MAX_CALLS=$((MAX_CALLS + 1))
+    call_ok || return 0
+    gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '
+        (.jobs // []) as $j
+        | ($j[] | [.name, .status, (.conclusion // ""), (.started_at // ""), (.completed_at // ""),
+             ([(.steps // [])[] | select(.conclusion == "success") | (.name // "") | capture("^Assert HEAD is (?<s>[0-9a-f]{40})$") | .s] | first // "")]
+             | map(tostring) | join("\t")),
+          (if (.total_count // 0) > ($j | length) then "#truncated\tcompleted\ttruncated\t\t\t" else empty end)' > "$raw/lanes.jobs.tsv" 2>/dev/null \
+        || { : > "$raw/lanes.jobs.tsv"; return 0; }
+    awk -F '\t' -v OFS='\t' -v C="$c" -v R="$id" '
+        FILENAME == ARGV[1] { if ($1 == "#truncated" || $6 == C) { n++; J[n] = $0 }; next }
+        $3 == R { if (!(R in got)) { got[R] = 1; for (i = 1; i <= 9; i++) H[i] = $i } ; old[++o] = $0; next }
+        { print }
+        END {
+            if (n == 0) { for (i = 1; i <= o; i++) print old[i]; exit }
+            for (k = 1; k <= n; k++) {
+                split(J[k], a, "\t"); cnt[a[1]]++
+            }
+            for (k = 1; k <= n; k++) {
+                split(J[k], a, "\t")
+                print H[1], H[2], H[3], H[4], H[5], C, H[7], H[8], H[9], a[1], toupper(a[2]), toupper(a[3]), a[4], a[5], cnt[a[1]]
+            }
+        }' "$raw/lanes.jobs.tsv" "$raw/runs.tsv" > "$raw/runs.next" && mv -- "$raw/runs.next" "$raw/runs.tsv"
 }
 # ---------------------------------------------------------------- the run -----------------------------------------
 STEP="start"; PRINTED=""; HISTDONE=""; OUTDIR=""; INBOXF=""; DAY=""; CSHA=""; PIN=""; PINNED=""; EXIT_VERDICT=""; COMMIT=""; INRUN=""
@@ -1129,6 +1167,7 @@ l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
         '  *actions/workflows*) printf "HTTP/2.0 200 OK\r\netag: \"e1\"\r\n\r\n"; cat "$STUB_WF" ;;' \
         '  *graphql*) cat "$STUB_GQL" ;;' \
         '  *actions/runs/7001/attempts/*) jq -r "$q" "$STUB_JOBS" ;;' \
+        '  *actions/runs/900/jobs*) [ -n "${STUB_LJOBS:-}" ] || exit 1; echo "$*" >> "$STUB_LJOBS.log"; jq -r "$q" "$STUB_LJOBS" ;;' \
         '  *"actions/runs/7001 "*) jq -r "$q" "$STUB_RUN" ;;' \
         '  *) echo 1 ;;' 'esac' > "$tmp/ir/bin/gh"; chmod +x "$tmp/ir/bin/gh"
     printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WL","path":"%s"},{"node_id":"WM","path":"%s"}]}\n' "$INRUN_WF" "$INRUN_MODELS_WF" > "$tmp/ir/wf.json"
@@ -1231,6 +1270,26 @@ l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
     row inrun_a_cut_job_list_leaves_the_models_lane_unmeasured 0 "run 7001: its job list was cut" "green" -- st_ir_lane cut l-mod
     row inrun_a_run_on_no_c_is_named_for_the_models_lane 0 "no run on C; newest run 7001 on bbbbbbbbbb" "" -- st_ir_lane otherc l-mod
     row inrun_a_run_on_no_c_is_named_for_a_called_lane 0 "no run on C; newest run 7001 on bbbbbbbbbb" "" -- st_ir_lane otherc l-gpu
+    # st_lr NAME [GPU-ASSERT GPU-CONCLUSION [DRY-ASSERT]] -> (no --in-run) fetch with --commit C, where INRUN_WF's own scheduled run
+    #   900 picked C but ran on X, then judge ST_IR_LANES; NAME "noread" has no job list, "onc" leaves run 900 on C
+    st_lr() {
+        local f="$tmp/lr/$1"; mkdir -p "$f"; : > "$f/jobs.json.log"
+        if [ "$1" = onc ]; then cp "$tmp/ir/gql.json" "$f/gql.json"
+        else jq -c '(.. | objects | select(.databaseId? == 900) | .checkSuite.commit.oid) |= "'"$ST_X"'"' "$tmp/ir/gql.json" > "$f/gql.json"; fi
+        printf '{"total_count":3,"jobs":[%s,%s,%s]}\n' "$(ir_job pick completed '"success"')" \
+            "$(ir_job cleanroom-gpu completed "\"${3:-success}\"" "${2:-$ST_C}" success)" "$(ir_job publish-dryrun completed '"success"' "${4:-$ST_C}" success)" > "$f/jobs.json"
+        local lj="$f/jobs.json"; [ "$1" != noread ] || lj=""
+        COMMIT="$ST_C"; INRUN=""; CALLS=0
+        PATH="$tmp/ir/bin:$PATH" STUB_WF="$tmp/ir/wf.json" STUB_GQL="$f/gql.json" STUB_LJOBS="$lj" LANES="$ST_IR_LANES" fetch "$f" "$f/cache"
+        printf 'read=%s calls=%s jobreads=%s\n' "$(cat "$f/read")" "$CALLS" "$(wc -l < "$f/jobs.json.log")"
+        decide "$ST_IR_LANES" "$f" 2026-10-04T06:00:00Z; cat "$f/line" "$f/lanes.tsv"
+    }
+    row lanes_a_scheduled_run_that_asserted_c_counts_for_c 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_lr base
+    row lanes_a_run_already_on_c_reads_no_job_list 0 "jobreads=0" "" -- st_lr onc
+    row lanes_a_job_that_asserted_another_commit_votes_on_nothing 0 "NOT RELEASABLE" "" -- st_lr other "$ST_X" success
+    row lanes_a_red_job_that_asserted_c_is_red 0 "run 900: cleanroom-gpu=failure" "" -- st_lr red "$ST_C" failure
+    row lanes_an_unread_job_list_leaves_the_run_on_its_head 0 "newest run 900 on ${ST_X:0:10}" "RELEASABLE H=" -- st_lr noread
+    row lanes_a_run_where_no_job_asserted_c_stays_on_its_head 0 "newest run 900 on ${ST_X:0:10}" "RELEASABLE H=" -- st_lr none "$ST_X" success "$ST_X"
     # without --in-run the models lane is INRUN_MODELS_WF's own scheduled run, as before
     st_noir() {
         local f="$tmp/ir/noir"; mkdir -p "$f"; COMMIT="$ST_C"; INRUN=""; CALLS=0
@@ -1391,6 +1450,10 @@ m101_stale_pin_never_replaces_the_line	s/^    \[ -z "\$fresh" \] || line=/    : 
 m102_bundle_line_unprinted	s/bundle=%s sums=/bundle-off=%s sums=/
 m103_pinned_freshness_skipped	s/^    if \[ "\$PIN" != unpinned \]; then$/    if false; then/
 m104_empty_fresh_read_is_fresh	s/^    \[ -s "\$1\/fresh" \] || {/    true || {/
+m105_lanes_run_never_reread	s/^    \[ -n "\$INRUN" \] || lanes_rows "\$raw"$/    :/
+m106_lanes_assert_ignored	s/if (\$1 == "#truncated" || \$6 == C) { n++/if (1) { n++/
+m107_lanes_unread_run_dropped	s/if (n == 0) { for (i = 1; i <= o; i++) print old\[i\]; exit }/if (n == 0) exit/
+m108_lanes_run_on_c_reread	s/if (id != "" \&\& h != C) print id/if (id != "") print id/
 '
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
