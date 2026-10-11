@@ -31,7 +31,10 @@ const DEQUANT_PTX_HEADER: &str = r"
 
 /// A generated `.global` table: `decl` is e.g. `.align 4 .u32 iq3s_dq_grid[512]`, the
 /// values are written eight per line.
-fn dequant_ptx_table<T: std::fmt::Display>(decl: &str, vals: impl IntoIterator<Item = T>) -> String {
+fn dequant_ptx_table<T: std::fmt::Display>(
+    decl: &str,
+    vals: impl IntoIterator<Item = T>,
+) -> String {
     let mut body = String::new();
     for (i, v) in vals.into_iter().enumerate() {
         if i > 0 {

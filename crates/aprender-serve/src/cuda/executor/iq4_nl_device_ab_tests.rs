@@ -1042,7 +1042,10 @@ mod iq4_nl_device_ab_tests {
                 n * k,
                 first.map(|i| (i, got[i], want[i]))
             );
-            eprintln!("#3953 dequant {name} k={k} n={n}: {} values bit-exact", n * k);
+            eprintln!(
+                "#3953 dequant {name} k={k} n={n}: {} values bit-exact",
+                n * k
+            );
         });
     }
 
@@ -1181,35 +1184,44 @@ mod iq4_nl_device_ab_tests {
             eprintln!("SKIP: no CUDA device");
             return;
         };
-        for_each_real_tensor_of(ggml_type, block_bytes, scale_at, expected, |name, k, n, bytes| {
-            let want = oracle(bytes);
-            assert_eq!(want.len(), n * k, "{name}: k={k} is whole super-blocks");
-            let nan = vec![f32::NAN; n * k];
-            exec.dequant_scratch = Some(GpuBuffer::from_host(&exec.context, &nan).unwrap());
-            exec.dequant_scratch_size = nan.len();
-            let w = GpuBuffer::from_host(&exec.context, bytes).unwrap();
-            let p = exec
-                .qwen35_dequant_f32(qtype, w.as_ptr(), n as u32, k as u32)
-                .unwrap_or_else(|e| panic!("#4952 {name}: {qtype:?} dequant: {e:?}"));
-            exec.stream.synchronize().unwrap();
-            let scratch = exec.dequant_scratch.as_ref().unwrap();
-            assert_eq!(p, scratch.as_ptr(), "the result is the dequant scratch");
-            let mut got = vec![0.0f32; n * k];
-            scratch.copy_to_host(&mut got).unwrap();
-            let bad = (0..n * k)
-                .filter(|&i| got[i].to_bits() != want[i].to_bits())
-                .count();
-            let first = (0..n * k).find(|&i| got[i].to_bits() != want[i].to_bits());
-            assert_eq!(
-                bad,
-                0,
-                "#4952 {name} k={k} n={n}: {bad} of {} dequantized values differ from the CPU \
+        for_each_real_tensor_of(
+            ggml_type,
+            block_bytes,
+            scale_at,
+            expected,
+            |name, k, n, bytes| {
+                let want = oracle(bytes);
+                assert_eq!(want.len(), n * k, "{name}: k={k} is whole super-blocks");
+                let nan = vec![f32::NAN; n * k];
+                exec.dequant_scratch = Some(GpuBuffer::from_host(&exec.context, &nan).unwrap());
+                exec.dequant_scratch_size = nan.len();
+                let w = GpuBuffer::from_host(&exec.context, bytes).unwrap();
+                let p = exec
+                    .qwen35_dequant_f32(qtype, w.as_ptr(), n as u32, k as u32)
+                    .unwrap_or_else(|e| panic!("#4952 {name}: {qtype:?} dequant: {e:?}"));
+                exec.stream.synchronize().unwrap();
+                let scratch = exec.dequant_scratch.as_ref().unwrap();
+                assert_eq!(p, scratch.as_ptr(), "the result is the dequant scratch");
+                let mut got = vec![0.0f32; n * k];
+                scratch.copy_to_host(&mut got).unwrap();
+                let bad = (0..n * k)
+                    .filter(|&i| got[i].to_bits() != want[i].to_bits())
+                    .count();
+                let first = (0..n * k).find(|&i| got[i].to_bits() != want[i].to_bits());
+                assert_eq!(
+                    bad,
+                    0,
+                    "#4952 {name} k={k} n={n}: {bad} of {} dequantized values differ from the CPU \
                  oracle; first {:?}",
-                n * k,
-                first.map(|i| (i, got[i], want[i]))
-            );
-            eprintln!("#4952 dequant {qtype:?} {name} k={k} n={n}: {} values bit-exact", n * k);
-        });
+                    n * k,
+                    first.map(|i| (i, got[i], want[i]))
+                );
+                eprintln!(
+                    "#4952 dequant {qtype:?} {name} k={k} n={n}: {} values bit-exact",
+                    n * k
+                );
+            },
+        );
     }
 
     /// The expected counts are the model's `apr tensors --json` census (320 tensors):
@@ -1217,33 +1229,53 @@ mod iq4_nl_device_ab_tests {
     #[test]
     fn the_iq2_xxs_dequant_is_bit_exact_on_every_real_type16_tensor_on_device() {
         use crate::quantize::iq2_xxs::{GGML_TYPE_IQ2_XXS as T, IQ2_XXS_BLOCK_BYTES as B};
-        assert_real_dequant_bit_exact(crate::cuda::types::WeightQuantType::IQ2XXS, T, B, &[0], 95, |b| {
-            crate::quantize::iq_dispatch::dequantize_iq_tensor(T, b).expect("CPU oracle")
-        });
+        assert_real_dequant_bit_exact(
+            crate::cuda::types::WeightQuantType::IQ2XXS,
+            T,
+            B,
+            &[0],
+            95,
+            |b| crate::quantize::iq_dispatch::dequantize_iq_tensor(T, b).expect("CPU oracle"),
+        );
     }
 
     #[test]
     fn the_iq3_s_dequant_is_bit_exact_on_every_real_type21_tensor_on_device() {
         use crate::quantize::iq3_s::{GGML_TYPE_IQ3_S as T, IQ3_S_BLOCK_BYTES as B};
-        assert_real_dequant_bit_exact(crate::cuda::types::WeightQuantType::IQ3S, T, B, &[0], 5, |b| {
-            crate::quantize::iq_dispatch::dequantize_iq_tensor(T, b).expect("CPU oracle")
-        });
+        assert_real_dequant_bit_exact(
+            crate::cuda::types::WeightQuantType::IQ3S,
+            T,
+            B,
+            &[0],
+            5,
+            |b| crate::quantize::iq_dispatch::dequantize_iq_tensor(T, b).expect("CPU oracle"),
+        );
     }
 
     #[test]
     fn the_iq3_xxs_dequant_is_bit_exact_on_every_real_type18_tensor_on_device() {
         use crate::quantize::iq3_xxs::{GGML_TYPE_IQ3_XXS as T, IQ3_XXS_BLOCK_BYTES as B};
-        assert_real_dequant_bit_exact(crate::cuda::types::WeightQuantType::IQ3XXS, T, B, &[0], 24, |b| {
-            crate::quantize::iq_dispatch::dequantize_iq_tensor(T, b).expect("CPU oracle")
-        });
+        assert_real_dequant_bit_exact(
+            crate::cuda::types::WeightQuantType::IQ3XXS,
+            T,
+            B,
+            &[0],
+            24,
+            |b| crate::quantize::iq_dispatch::dequantize_iq_tensor(T, b).expect("CPU oracle"),
+        );
     }
 
     /// Q2_K: `d` at +80 and `dmin` at +82 must both be plausible.
     #[test]
     fn the_q2_k_dequant_is_bit_exact_on_every_real_type10_tensor_on_device() {
-        assert_real_dequant_bit_exact(crate::cuda::types::WeightQuantType::Q2K, 10, 84, &[80, 82], 3, |b| {
-            crate::quantize::dequantize_q2_k(b).expect("CPU oracle")
-        });
+        assert_real_dequant_bit_exact(
+            crate::cuda::types::WeightQuantType::Q2K,
+            10,
+            84,
+            &[80, 82],
+            3,
+            |b| crate::quantize::dequantize_q2_k(b).expect("CPU oracle"),
+        );
     }
 
     /// The same comparison at a shape whose rows do NOT divide evenly, so the

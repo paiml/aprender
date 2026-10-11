@@ -1392,10 +1392,16 @@ mod gemv_entry_name_tests_3477 {
                 .iter()
                 .position(|m| *m == format!("{target}:"))
                 .unwrap_or_else(|| panic!("{want}: branch to undefined label {target}"));
-            assert!(at > i, "{want}: backward branch `{l}` -- the dequant must be loop-free");
+            assert!(
+                at > i,
+                "{want}: backward branch `{l}` -- the dequant must be loop-free"
+            );
             branches += 1;
         }
-        assert!(branches >= 2, "{want}: found {branches} branches; the scan broke");
+        assert!(
+            branches >= 2,
+            "{want}: found {branches} branches; the scan broke"
+        );
         let target = crate::test_ptxas::declared_target(&ptx);
         if let Err(e) = crate::test_ptxas::assemble(&ptx, name, &[target.as_str()]) {
             panic!("the {want} PTX does not assemble: {e}");
@@ -1411,7 +1417,11 @@ mod gemv_entry_name_tests_3477 {
             .and_then(|t| t.split("};").next())
             .unwrap_or_else(|| panic!("no table {decl}"))
             .split(',')
-            .map(|v| v.trim().parse().unwrap_or_else(|e| panic!("{decl}: {v:?}: {e}")))
+            .map(|v| {
+                v.trim()
+                    .parse()
+                    .unwrap_or_else(|e| panic!("{decl}: {v:?}: {e}"))
+            })
             .collect()
     }
 
@@ -1428,7 +1438,11 @@ mod gemv_entry_name_tests_3477 {
                 .to_string()
         };
         let gemv = CudaKernels::new().generate_ptx(&KernelType::Iq2SGemv { k: 3584, n: 1024 });
-        assert_eq!(table(&ptx), table(&gemv), "the dequant must read the GEMV's grid");
+        assert_eq!(
+            table(&ptx),
+            table(&gemv),
+            "the dequant must read the GEMV's grid"
+        );
         assert_eq!(table(&ptx).split(',').count(), 2048);
     }
 
@@ -1450,7 +1464,10 @@ mod gemv_entry_name_tests_3477 {
             .flat_map(|&v| [v & 0xffff_ffff, v >> 32])
             .collect();
         assert_eq!(dequant_ptx_table_values(&ptx, "iq2xxs_dq_grid[512]"), words);
-        assert_eq!(dequant_ptx_table_values(&ptx, "ksigns_iq2xs_dq[128]"), ksigns);
+        assert_eq!(
+            dequant_ptx_table_values(&ptx, "ksigns_iq2xs_dq[128]"),
+            ksigns
+        );
 
         let ptx = dequant_ptx_named_ascii_loop_free_and_assembling(
             &KernelType::Iq3SDequant { k, n },
@@ -1465,7 +1482,10 @@ mod gemv_entry_name_tests_3477 {
         );
         let grid: Vec<u64> = IQ3XXS_GRID.iter().map(|&v| u64::from(v)).collect();
         assert_eq!(dequant_ptx_table_values(&ptx, "iq3xxs_dq_grid[256]"), grid);
-        assert_eq!(dequant_ptx_table_values(&ptx, "ksigns_iq2xs_dq[128]"), ksigns);
+        assert_eq!(
+            dequant_ptx_table_values(&ptx, "ksigns_iq2xs_dq[128]"),
+            ksigns
+        );
 
         let ptx = dequant_ptx_named_ascii_loop_free_and_assembling(
             &KernelType::Q2KDequant { k, n },
