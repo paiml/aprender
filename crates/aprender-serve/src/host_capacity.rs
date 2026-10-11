@@ -15,12 +15,15 @@
 //!
 //! where `MemAvailable` is lowered to `memory.max − memory.current` of the tightest
 //! cgroup v2 limit on this process's path when that is smaller (#4992): in a capped
-//! container or systemd slice the cgroup OOM killer fires at its own limit. Both are
-//! read before the file is mapped ([`MappedGGUFModel::host_memory_before_map`]): the
-//! map is populated and, where `RLIMIT_MEMLOCK` allows, locked at open, so a reading
-//! taken after it has already spent the file that the need counts in full. Under a
-//! 6 GiB cgroup on GB10 a post-map reading left 3432 MiB and refused the 4B, whose
-//! build peaks at 3708 MiB.
+//! container or systemd slice the cgroup OOM killer fires at its own limit; the
+//! level's evictable page cache (`active_file + inactive_file`) counts as headroom,
+//! as `MemAvailable` counts cache. Both are read before the file is mapped
+//! ([`MappedGGUFModel::host_memory_before_map`]): the map is populated and, where
+//! `RLIMIT_MEMLOCK` allows, locked at open, and a locked page is not reclaimable, so
+//! a reading taken after it has already spent the file the need counts in full.
+//! Without the two, a 6 GiB cgroup on GB10 refused the 4B, whose build peaks at
+//! 3708 MiB, with 3433 MiB "left": `apr run` maps the file once and drops it before
+//! the map the build uses, and that first map's cache was charged as used.
 //!
 //! Since #4991 the host build holds one owned quantized copy of the weights (the map's
 //! pages are dropped as each tensor is copied out) and keeps `token_embd.weight` in its
@@ -114,16 +117,36 @@ impl HostMemory {
     }
 }
 
-/// Headroom of one cgroup v2 level: `memory.max − memory.current`, or `None` when
-/// the level is unlimited (`max`) or its files cannot be read or parsed.
+/// Headroom of one cgroup v2 level: `memory.max − (memory.current − reclaimable
+/// page cache)`, or `None` when the level is unlimited (`max`) or `max` or
+/// `current` cannot be read or parsed. `stat` is the level's `memory.stat`
+/// (empty when unreadable).
+///
+/// `memory.current` charges page cache as used, but the cgroup reclaims it before
+/// it OOM-kills, and `MemAvailable` counts it as available. Uncounted, a file this
+/// process read and dropped, as `apr run` does before it maps the model, refused
+/// the 4B under a 6 GiB cap (#4947, review on #5134).
 #[must_use]
-pub fn cgroup_level_headroom(max: &str, current: &str) -> Option<u64> {
+pub fn cgroup_level_headroom(max: &str, current: &str, stat: &str) -> Option<u64> {
     let max = max.trim();
     if max == "max" {
         return None;
     }
     let current = current.trim().parse::<u64>().ok()?;
-    Some(max.parse::<u64>().ok()?.saturating_sub(current))
+    let used = current.saturating_sub(cgroup_reclaimable_file(stat));
+    Some(max.parse::<u64>().ok()?.saturating_sub(used))
+}
+
+/// `active_file + inactive_file` from a cgroup v2 `memory.stat`, in bytes: the
+/// level's evictable page cache. Locked pages sit on the unevictable list, so a
+/// populated and locked map is not counted. A missing or unparsable line is 0.
+#[must_use]
+pub fn cgroup_reclaimable_file(stat: &str) -> u64 {
+    stat.lines()
+        .filter_map(|line| line.split_once(' '))
+        .filter(|(key, _)| matches!(*key, "active_file" | "inactive_file"))
+        .filter_map(|(_, value)| value.trim().parse::<u64>().ok())
+        .fold(0, u64::saturating_add)
 }
 
 /// The tightest headroom on the path from `root` down to `root/relative` (each
@@ -142,7 +165,11 @@ pub fn cgroup_headroom_under(root: &std::path::Path, relative: &str) -> Option<u
         .filter_map(|part| {
             dir.push(part);
             let read = |f: &str| std::fs::read_to_string(dir.join(f)).ok();
-            cgroup_level_headroom(&read("memory.max")?, &read("memory.current")?)
+            cgroup_level_headroom(
+                &read("memory.max")?,
+                &read("memory.current")?,
+                &read("memory.stat").unwrap_or_default(),
+            )
         })
         .min()
 }

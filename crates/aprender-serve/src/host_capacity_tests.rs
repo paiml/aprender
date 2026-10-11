@@ -344,14 +344,84 @@ fn cgroup_level(root: &std::path::Path, relative: &str, max: &str, current: &str
 #[test]
 fn a_cgroup_level_bounds_by_max_minus_current_and_max_means_unlimited() {
     assert_eq!(
-        cgroup_level_headroom("8589934592\n", "1073741824\n"),
+        cgroup_level_headroom("8589934592\n", "1073741824\n", ""),
         Some(7_516_192_768)
     );
-    assert_eq!(cgroup_level_headroom("max\n", "1073741824\n"), None);
+    assert_eq!(cgroup_level_headroom("max\n", "1073741824\n", ""), None);
     // Over its limit (reclaim pending): no headroom, never a wrapped huge one.
-    assert_eq!(cgroup_level_headroom("100", "150"), Some(0));
-    assert_eq!(cgroup_level_headroom("garbage", "1"), None);
-    assert_eq!(cgroup_level_headroom("100", "garbage"), None);
+    assert_eq!(cgroup_level_headroom("100", "150", ""), Some(0));
+    assert_eq!(cgroup_level_headroom("garbage", "1", ""), None);
+    assert_eq!(cgroup_level_headroom("100", "garbage", ""), None);
+}
+
+/// #4947, review on #5134: page cache the cgroup can reclaim is headroom. `apr
+/// run` reads the 4B and drops it before it maps it; under a 6 GiB cap the
+/// dropped file's 2613 MiB of cache left 3448 MiB "free" and refused the build.
+#[test]
+fn a_cgroup_levels_reclaimable_page_cache_is_headroom() {
+    let stat = "anon 7000000\nfile 2740000000\nactive_file 40000000\n\
+                inactive_file 2700000000\nunevictable 0\nshmem 0\n";
+    assert_eq!(cgroup_reclaimable_file(stat), 2_740_000_000);
+    // Locked pages are on the unevictable list, not in either file list.
+    assert_eq!(
+        cgroup_reclaimable_file("active_file 0\ninactive_file 0\nunevictable 2740000000\n"),
+        0
+    );
+    for (stat, expected) in [
+        ("", 0),
+        ("active_file x\ninactive_file 5\n", 5),
+        ("inactive_file_extra 9\nactive_file 3\n", 3),
+        (
+            "active_file 18446744073709551615\ninactive_file 1\n",
+            u64::MAX,
+        ),
+    ] {
+        assert_eq!(cgroup_reclaimable_file(stat), expected, "{stat:?}");
+    }
+    let six_gib = (6 * 1024 * MIB).to_string();
+    let current = (2620 * MIB + 7 * MIB).to_string();
+    assert_eq!(
+        cgroup_level_headroom(&six_gib, &current, ""),
+        Some(6 * 1024 * MIB - 2627 * MIB)
+    );
+    let cached = format!("active_file 0\ninactive_file {}\n", 2620 * MIB);
+    assert_eq!(
+        cgroup_level_headroom(&six_gib, &current, &cached),
+        Some(6 * 1024 * MIB - 7 * MIB)
+    );
+    // Reclaimable cache never lifts a level above its own max.
+    assert_eq!(
+        cgroup_level_headroom("100", "40", "inactive_file 90\n"),
+        Some(100)
+    );
+}
+
+/// The same, through the tree: a level's `memory.stat` is read beside its
+/// `memory.current`, and the 4B is admitted under 6 GiB once its dropped cache
+/// is counted as reclaimable.
+#[test]
+fn a_capped_cgroup_counts_its_reclaimable_cache_as_headroom() {
+    // The 4B Q4_K_M as gx10 ran it: its file, and 248320 x 2560 x 4.
+    const FILE_4B: u64 = 2_740_937_888;
+    const EMBD_4B: u64 = 248_320 * 2560 * 4;
+    let root = tempfile::tempdir().expect("tempdir");
+    let six_gib = 6 * 1024 * MIB;
+    cgroup_level(
+        root.path(),
+        "",
+        &six_gib.to_string(),
+        &(2627 * MIB).to_string(),
+    );
+    let tight = cgroup_headroom_under(root.path(), "/").expect("capped");
+    assert!(host_build_verdict(FILE_4B, EMBD_4B, HostMemory::CgroupHeadroom(tight)).is_err());
+    std::fs::write(
+        root.path().join("memory.stat"),
+        format!("active_file 0\ninactive_file {}\n", 2620 * MIB),
+    )
+    .expect("memory.stat");
+    let headroom = cgroup_headroom_under(root.path(), "/").expect("capped");
+    assert_eq!(headroom, six_gib - 7 * MIB);
+    assert!(host_build_verdict(FILE_4B, EMBD_4B, HostMemory::CgroupHeadroom(headroom)).is_ok());
 }
 
 /// #4992 done_when, case 1: a limited cgroup (the container root itself, as a
