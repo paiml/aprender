@@ -74,9 +74,9 @@ gate_needs_lab() {
         while IFS=$'\t' read -r id name; do
             [[ $name =~ $re ]] || continue
             g=$((g + 1))
-            if printf '%s\n' "$lab" | grep -qxF "$wf:$id"; then printf 'GATE %s (%s) is a LAB job\n' "$id" "$wf"; bad=1; fi
+            if grep -qxF "$wf:$id" <<<"$lab"; then printf 'GATE %s (%s) is a LAB job\n' "$id" "$wf"; bad=1; fi
             while IFS= read -r n; do
-                if printf '%s\n' "$lab" | grep -qxF "$wf:$n"; then printf 'GATE %s (%s) needs LAB %s\n' "$id" "$wf" "$n"; bad=1; fi
+                if grep -qxF "$wf:$n" <<<"$lab"; then printf 'GATE %s (%s) needs LAB %s\n' "$id" "$wf" "$n"; bad=1; fi
             done < <(needs "$r" "$wf" "$id")
         done < <(jobs "$r" "$wf")
     done < <(lanes "$t" verdict)
