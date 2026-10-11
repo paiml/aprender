@@ -833,6 +833,10 @@ st_decide() { decide "$ST_LANES" "$1" 2026-10-04T06:00:00Z; cat "$1/line" "$1/la
 self_test() {
     local tmp pass=0 fail=0 d o rc v
     tmp="$(mktemp -d)" || exit 3
+    # the rows run an unpinned copy: --install runs this self-test from inside the bundle, where the PIN beside the
+    #   script would make every unpinned row a pinned run (bundle= line, stale-pin read) and nothing would install
+    mkdir -p "$tmp/self" && cp "$SCRIPT_PATH" "$tmp/self/" && SCRIPT_PATH="$tmp/self/${SCRIPT_PATH##*/}" || exit 3
+    cp "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/self/" 2>/dev/null
     export INBOX="$tmp/inbox.md"   # whatever INBOX the caller set: a self-test never writes a real inbox
     # and no registry token: the rows run the train, which refuses to start where one is reachable
     export CARGO_HOME="$tmp/cargo" HOME="$tmp/home"; mkdir -p "$CARGO_HOME" "$HOME"; unset CARGO_REGISTRY_TOKEN
@@ -1454,6 +1458,7 @@ m105_lanes_run_never_reread	s/^    \[ -n "\$INRUN" \] || lanes_rows "\$raw"$/   
 m106_lanes_assert_ignored	s/if (\$1 == "#truncated" || \$6 == C) { n++/if (1) { n++/
 m107_lanes_unread_run_dropped	s/if (n == 0) { for (i = 1; i <= o; i++) print old\[i\]; exit }/if (n == 0) exit/
 m108_lanes_run_on_c_reread	s/if (id != "" \&\& h != C) print id/if (id != "") print id/
+m109_self_test_runs_the_bundle	s/ \&\& SCRIPT_PATH="\$tmp\/self\/\${SCRIPT_PATH##\*\/}" || exit 3/ || exit 3/
 '
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
@@ -1463,6 +1468,9 @@ mutants() {
     cp "$HERE/red_age.sh" "$HERE/nightly_greens.sh" "$tmp/" 2>/dev/null
     # baseline: the unmutated copy must be green here, or every kill below proves nothing
     cp "$SCRIPT_PATH" "$tmp/nightly_train.sh"; chmod u+w "$tmp"/*.sh   # an installed bundle is 0555
+    # the mutant dir is bundle-shaped, a PIN beside the script, as where --install runs the self-test
+    printf 'train %s\ngreens %s\nredage %s\n' "$ST_C" "$ST_C" "$ST_C" > "$tmp/PIN"
+    (cd "$tmp" && sha256sum nightly_train.sh nightly_greens.sh red_age.sh PIN > SHA256SUMS 2>/dev/null)
     if ! bash "$tmp/nightly_train.sh" --self-test > /dev/null 2>&1; then printf '  BROKE %-44s the unmutated script is not green in the mutant dir\n' baseline; rm -rf -- "${tmp:?}"; return 1; fi
     while IFS='	' read -r name expr; do
         [ -n "$name" ] || continue
