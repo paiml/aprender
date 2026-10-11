@@ -717,9 +717,10 @@ wiring() {
     from=$(wr_tv INRUN_FROM); caller=$(wr_tv INRUN_CALLER); wfl=$(wr_tv INRUN_WF); models=$(wr_tv INRUN_MODELS)
     { [ -n "$caller" ] && [ -n "$wfl" ] && [ -n "$models" ]; } || { printf 'miswired: the train names no INRUN_CALLER, INRUN_WF or INRUN_MODELS'; return 1; }
     [ "$from" = ".github/workflows/$WORKFLOW" ] || bad="$bad train(INRUN_FROM=$from)"
-    # the train's capture prefixes, in its column order: the assert, then the relay
-    mapfile -t caps < <(grep -o 'capture("^[^"(]*(?<s>\[0-9a-f\]{40})\$")' "$tr" | sed 's/^capture("^//; s/(?<s>.*$//')
-    [ "${#caps[@]}" -eq 2 ] || { printf 'miswired: the train has %s step-name captures, not 2' "${#caps[@]}"; return 1; }
+    # the train's distinct capture prefixes, in its column order: the assert, then the relay. The in-run read captures
+    #   both; the lanes read (#5087) captures the assert again, which is the same step name, so it counts once
+    mapfile -t caps < <(grep -o 'capture("^[^"(]*(?<s>\[0-9a-f\]{40})\$")' "$tr" | sed 's/^capture("^//; s/(?<s>.*$//' | awk '!s[$0]++')
+    [ "${#caps[@]}" -eq 2 ] || { printf 'miswired: the train has %s distinct step-name captures, not 2' "${#caps[@]}"; return 1; }
     # wr_named NAME -> the key of each job whose name: is NAME; wr_with ERE -> the key of each job with a line matching ERE
     wr_named() { awk -v n="$1" '/^jobs:$/ { j = 1; next } !j { next } /^  [A-Za-z0-9_-]+:$/ { k = substr($1, 1, length($1) - 1); next }
         /^    name: / { v = $0; sub(/^    name: /, "", v); sub(/[ \t]+#.*$/, "", v); if (v == n || (P != "" && index(v, P) == 1)) print k }' P="${2:-}" "$wf"; }
@@ -1495,6 +1496,7 @@ selftest_wiring() {
     wrow a_second_job_named_models_is_refused wf 'models(name)' 's/^    name: rehearse$/    name: models/'
     wrow a_workflow_that_runs_no_night_is_refused wf 'night(run)' 's/bash scripts\/release\/rehearse\.sh --run /bash scripts\/release\/rehearse.sh --judge /'
     wrow a_train_with_one_capture_is_refused train 'step-name captures, not 2' 's/capture("^Relayed the models-crux bundle of (?<s>\[0-9a-f\]{40})\$")/test("^Relayed")/'
+    wrow a_lanes_read_capturing_another_assert_is_refused train '3 distinct step-name captures' '/^lanes_rows() {$/,/^}$/s/capture("^Assert HEAD is (?<s>/capture("^Asserted (?<s>/'
     wrow a_train_naming_no_models_job_is_refused train 'names no INRUN' 's/^INRUN_MODELS="models"$/INRUN_MODELS=models/'
     if o=$(wiring "$tmp/no-such.yml" "$TRAIN_SCRIPT" 2>&1); then printf '  BROKE %-48s accepted: %s\n' a_missing_workflow_is_refused "$o"; fail=$((fail + 1))
     elif [[ $o == *"no-such.yml is missing"* ]]; then pass=$((pass + 1)); else printf '  BROKE %-48s %s\n' a_missing_workflow_is_refused "$o"; fail=$((fail + 1)); fi
@@ -1672,6 +1674,7 @@ wiring_missing_train_unnamed rehearse.sh         s/\[ -f "\$tr" \] || { printf '
 wiring_train_names_unchecked rehearse.sh         s/|| { printf 'miswired: the train names no INRUN_CALLER/|| true || { printf 'x/
 wiring_train_from_unchecked  rehearse.sh         s/\[ "\$from" = ".github\/workflows\/\$WORKFLOW" \] || bad=/true || bad=/
 wiring_capture_count_free    rehearse.sh         s/\[ "\${#caps\[@\]}" -eq 2 \] || {/true || {/
+wiring_captures_not_deduped  rehearse.sh         s/ | awk '!s\[\$0\]++')$/)/
 wiring_names_keep_comments   rehearse.sh         s/ sub(\/\[ \\t\]+#\.\*\$\/, "", v);//
 wiring_step_runs_past_its_end rehearse.sh        s/{ if (hit) exit; s = "" }/{ s = "" }/
 wiring_one_takes_two_jobs    rehearse.sh         s/wr_one() { .*/wr_one() { [ -n "$1" ]; }/
