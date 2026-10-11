@@ -5,7 +5,14 @@
 //! pack_laya verify FILE  --run DIR --data DIR --base DIR
 //! pack_laya inspect FILE
 //! pack_laya pack-fixture --run DIR --data DIR --out FILE
+//! pack_laya
 //! ```
+//!
+//! With no arguments it runs a smoke path on the committed synthetic `laya_tiny` run: it
+//! reads the policy from the contracts, packs the run with `pack-fixture` into a temporary
+//! file, checks the sha256 against `tests/fixtures/laya_tiny.apr.sha256`, then `inspect`s
+//! the file. Every input is in this crate, so the output is the same on every run; it prints
+//! `SMOKE ...` and the `inspect` line and exits 0, or one `REFUSED ...` line and exits 2.
 //!
 //! `pack` verifies the run BEFORE anything is written (`aprender_decide::verify::pack_for_serving`):
 //! production variant, the contract's recipe block, the contract's base (every declared identity
@@ -267,8 +274,45 @@ fn cmd_pack_fixture(a: &Args) -> Result<ExitCode, String> {
     })
 }
 
+/// The no-argument smoke path. Its inputs are resolved from this crate's manifest dir at
+/// compile time, like the contracts, and the temporary path is never printed, so two runs
+/// print the same bytes.
+fn smoke() -> Result<ExitCode, String> {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let run = fixtures.join("laya_tiny");
+    let golden_path = fixtures.join("laya_tiny.apr.sha256");
+    let golden = std::fs::read_to_string(&golden_path)
+        .map_err(|e| format!("{}: {e}", golden_path.display()))?;
+    let golden = golden
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| format!("{} is empty", golden_path.display()))?;
+    // Read exactly as pack and verify read it, so a contract that stops parsing fails here.
+    policy()?;
+    let tmp = tempfile::tempdir().map_err(|e| format!("temp dir: {e}"))?;
+    let out = tmp.path().join("laya_tiny.apr");
+    let sha = match verify::pack_fixture(&run, &run.join("data"), &out) {
+        Ok(sha) => sha,
+        Err(e) => return Ok(refused(&e)),
+    };
+    if sha != golden {
+        println!("REFUSED Smoke laya_tiny packed to sha256={sha}, golden {golden} (nothing kept)");
+        return Ok(ExitCode::from(2));
+    }
+    println!(
+        "SMOKE pack-fixture laya_tiny sha256={sha} variant={} golden=match (not deployable)",
+        verify::SYNTHETIC_FIXTURE_VARIANT
+    );
+    cmd_inspect(&Args {
+        operand: Some(out),
+        ..Args::default()
+    })
+}
+
 fn run(argv: &[String]) -> Result<ExitCode, String> {
-    let (cmd, rest) = argv.split_first().ok_or(USAGE)?;
+    let Some((cmd, rest)) = argv.split_first() else {
+        return smoke();
+    };
     let args = Args::parse(rest)?;
     match cmd.as_str() {
         "pack" => cmd_pack(&args),
