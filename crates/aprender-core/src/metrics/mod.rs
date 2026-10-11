@@ -625,6 +625,27 @@ mod tests_clustering_extra {
             "DB must match sklearn 0.4150, got {db_gapped}"
         );
     }
+
+    /// #5105 falsifier: labels past the last row are ignored, as they were before the
+    /// split. The extra labels reuse existing ids, so the partition of the 5 rows is
+    /// unchanged and both scores must be bit-identical to the truncated labels.
+    /// RED (split without the row bound): indexing row 5 of a 5-row matrix panics.
+    #[test]
+    fn clustering_metrics_ignore_labels_past_rows_5105() {
+        let data = Matrix::from_vec(5, 2, vec![1.0, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 7.0, 3.5, 5.0])
+            .expect("valid");
+        let exact = [0usize, 0, 1, 1, 1];
+        let extra = [0usize, 0, 1, 1, 1, 1, 0, 1];
+
+        assert_eq!(
+            davies_bouldin_score(&data, &extra).to_bits(),
+            davies_bouldin_score(&data, &exact).to_bits()
+        );
+        assert_eq!(
+            calinski_harabasz_score(&data, &extra).to_bits(),
+            calinski_harabasz_score(&data, &exact).to_bits()
+        );
+    }
 }
 
 /// Adjusted Rand Index — similarity between two clusterings corrected for chance,
