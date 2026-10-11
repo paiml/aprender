@@ -88,10 +88,13 @@ RECORD_ARTIFACT=release-rehearsal
 STREAK_NEED=1
 # B1 Q1: C is the newest first-parent main commit that both the models crux bundle and an infra clean-room run
 # measured. The bundle and its INDEX sit on EVIDENCE_BRANCH under MODELS_DIR; the walk reads main's newest PICK_DEPTH
-# first-parent commits (about five days of main in early October 2026), and a commit further back is no night's C.
+# first-parent commits, and a commit further back is no night's C. The bound is in commits, sized from main's merge rate:
+# 60 was about five days of main in early October 2026, and on 2026-10-11 main merged 34 first-parent commits in 24 hours
+# (64 in 72), so 60 was under two days. A crux bundle written at night is first read by the next morning's rehearsal, and
+# its C was measured by the clean-room a day or more before, so the walk fell short (#5062). 200 is about six days at that rate.
 EVIDENCE_BRANCH=nightly-evidence
 MODELS_DIR=models-crux
-PICK_DEPTH=60
+PICK_DEPTH=200
 
 # shellcheck source=scripts/release/lib_write_guard.sh
 . "$SCRIPT_DIR/lib_write_guard.sh" || exit 2
@@ -1382,6 +1385,13 @@ selftest_pick() {
     rc=0; o=$( pick_c --repo "$p/clone" 2>&1 ) || rc=$?
     if [ "$rc" = 3 ] && [[ $o == *"--pick-c needs --cache DIR"* ]]; then pass=$((pass + 1))
     else printf '  BROKE %-48s rc=%s (want 3): %s\n' a_pick_without_a_cache_is_a_caller_error "$rc" "$o"; fail=$((fail + 1)); fi
+    # #5062: main merges ~34 first-parent commits a day, so the night's C is often 60+ commits back by the morning the
+    # rehearsal reads it. C 70 merges back is still in the walk (the old 60 refused it).
+    local h=$m5 n
+    for n in $(seq 1 70); do h=$(cm $((700 + n)) "n$n" "$h") || return 2; done
+    pg update-ref refs/heads/main "$h" || return 2
+    ev "$(printf '%s green\n' "$m5")" "$m5:green" || return 2
+    CPU=$(printf '%s\tgreen\t31' "$m5") pk a_c_seventy_merges_back_is_in_the_walk 0 "$m5" "pick: C $m5 (main~70): models-crux green, cleanroom-cpu green run 31"
     printf '  %s pick rows\n' "$((pass + fail - p0))"
 }
 
@@ -1605,6 +1615,7 @@ pick_not_measured_line_counts rehearse.sh         s/\[ "\$state" != not_measured
 pick_bundle_unchecked        rehearse.sh         s/\[ "\$v" = "\$state" \] || {/true || {/
 pick_not_first_parent        rehearse.sh         s/rev-list --first-parent -n "\$PICK_DEPTH"/rev-list -n "$PICK_DEPTH"/
 pick_unbounded               rehearse.sh         s/ -n "\$PICK_DEPTH" refs\/rehearsal\/main/ refs\/rehearsal\/main/
+pick_depth_two_days          rehearse.sh         s/^PICK_DEPTH=200$/PICK_DEPTH=60/
 pick_models_red_refused      rehearse.sh         s/ (green|red|not_measured)\$'/ (green|not_measured)$'/
 pick_cpu_red_refused         rehearse.sh         s/\\t(green|red)\\t/\\t(green)\\t/
 pick_models_side_unchecked   rehearse.sh         s/if \[ -n "\${models\[\$sha\]:-}" \] && /if /
