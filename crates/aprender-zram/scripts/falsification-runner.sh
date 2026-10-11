@@ -57,7 +57,13 @@ cleanup_device() {
     local dev_id="${1:-0}" pidfile="$RESULTS_DIR/dev-${1:-0}.pid" pid
     if [ -f "$pidfile" ]; then
         pid=$(cat "$pidfile")
-        case "$pid" in ''|*[!0-9]*) ;; *) kill "$pid" 2>/dev/null || true ;; esac
+        # A pid file a crashed earlier run left behind may name a pid the kernel has since reused:
+        # signal it only while its args are still this device's daemon.
+        case "$pid" in ''|*[!0-9]*) ;; *)
+            case "$(ps -o args= -p "$pid" 2>/dev/null)" in
+                *trueno-ublk\ create*--dev-id\ "$dev_id"\ *) kill "$pid" 2>/dev/null || true ;;
+            esac ;;
+        esac
         rm -f -- "$pidfile"
     fi
     "$TRUENO_UBLK" reset "$dev_id" 2>/dev/null || true

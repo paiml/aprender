@@ -301,7 +301,13 @@ kill_recorded_daemon() {
     local f="$RESULTS_DIR/trueno-ublk.pid" pid
     [ -f "$f" ] || return 0
     pid=$(cat "$f")
-    case "$pid" in ''|*[!0-9]*) ;; *) kill -9 "$pid" 2>/dev/null || true ;; esac
+    # A pid file a crashed earlier run left behind may name a pid the kernel has since reused:
+    # signal it only while its args are still a trueno-ublk daemon.
+    case "$pid" in ''|*[!0-9]*) ;; *)
+        case "$(ps -o args= -p "$pid" 2>/dev/null)" in
+            *trueno-ublk\ create*) kill -9 "$pid" 2>/dev/null || true ;;
+        esac ;;
+    esac
     rm -f -- "$f"
 }
 
