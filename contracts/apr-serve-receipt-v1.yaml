@@ -1,0 +1,217 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-10-09'
+  author: PAIML Engineering
+  references:
+  - 'aprender#4953 — V2: apr serve keeps the model loaded; Rust receipt reports load_ms and TTFT beside pp512/tg128'
+  - 'aprender#3598 — E2, the epic V2 is a row of (APR-071 Train B)'
+  - 'crates/aprender-test-lib/src/llm/serve_receipt.rs — the ONE builder; it refuses rather than reports'
+  - 'crates/aprender-test-lib/src/llm/serve_receipt_tests.rs — the case table'
+  - 'crates/aprender-test-lib/src/llm/benchmark.rs — load_ms (spawn to first healthy answer, 50 ms poll), server_alive_after, and the server''s own /health uptime_sec after the last run'
+  - 'crates/apr-cli/src/commands/test_llm.rs — `apr test llm bench --serve-receipt` writes it'
+  - 'aprender#4958 — the Qwen3.5 hybrid falls back to CPU when it refuses its GPU path; its /health compute_mode then reads cpu'
+  description: >
+    A serve receipt says one thing: ONE `apr serve` process loaded the model ONCE,
+    and then served N pp512/tg128 requests from memory. It carries load_ms (server
+    spawn to first healthy answer) beside TTFT, the prefill rate (pp512) and the
+    decode rate (tg128), all taken from that one process by one Rust producer.
+
+    The producer it replaces was a Python OpenAI client that recorded none of the
+    four numbers, so "the model stays loaded" was asserted, never measured. The
+    builder here refuses to write a receipt that cannot carry the claim, and names
+    the missing measurement in the refusal.
+
+equations:
+  one_load:
+    formula: |
+      REQUIRE: load_ms observed by the producer that spawned the server
+      REQUIRE: server alive after the last measured request
+      REQUIRE: server_uptime_s + 1 >= ready_to_end_s   (the server's own clock)
+      REQUIRE: forall request i: ttft_ms(i) < load_ms
+    domain: 'a serve receipt'
+    codomain: bool
+    invariants:
+    - 'The proof against a restart is the server''s own /health uptime_sec,
+       which counts from the moment it finished loading. Read after the last
+       run, it must cover the whole span since ready; a wrapper or supervisor
+       that restarts the server keeps the spawned child alive but resets it.'
+    - 'ttft_ms.max < load_ms is a BOUND, not a proof: a warm in-process reload
+       can be faster than the cold load. It refuses a run whose slowest first
+       token took a whole load; it does not by itself show one load.'
+    - 'A server already answering before --start ran makes load_ms measure
+       nothing, so the producer refuses to start.'
+    - 'A SIGINT or SIGTERM during a run kills the started server''s process
+       group and writes no receipt: the group keeps the terminal''s Ctrl-C from
+       the server, so the producer must take it down itself.'
+    - 'A server the producer did not start has no observed load, so no receipt.'
+    - 'A server that died during the run could have been restarted between
+       requests, hiding a per-request load, so no receipt.'
+
+  workload_is_pp512_tg128:
+    formula: |
+      REQUIRE: forall request i: completion_tokens(i) = 128
+      REQUIRE: |median(prompt_tokens) - 512| / 512 <= 0.05
+    domain: 'a serve receipt'
+    codomain: bool
+    invariants:
+    - 'The rates are only named pp512 and tg128 when the server counted those
+       token totals. The prompt side allows 5% for a corpus cut under one
+       tokenizer and served under another; the completion side allows none,
+       because max_tokens 128 with ignore_eos fixes it exactly.'
+
+  device_is_reported:
+    formula: |
+      REQUIRE: compute_mode = /health compute_mode, read after the last run
+    domain: 'a serve receipt'
+    codomain: '{gpu, cpu}'
+    invariants:
+    - 'The device is what the server reports, not what the build or the
+       command line asked for. The Qwen3.5 hybrid reports its live backend: a
+       GPU path it refused at the first request falls back to CPU and reads
+       cpu, where without this field the run reads as a GPU number. Other
+       model paths report the device of the resident model.'
+    - 'A cpu answer is recorded as cpu. It is never refused and never relabelled.'
+
+  rates_are_per_request_medians:
+    formula: |
+      pp512 = median_i( prompt_tokens(i) / ttft(i) )
+      tg128 = median_i( (completion_tokens(i) - 1) / (latency(i) - ttft(i)) )
+    domain: 'the measured requests of one serve receipt, warmup excluded'
+    codomain: 'tok/s'
+    invariants:
+    - 'No failed request, no unstreamed request (ttft 0 or latency <= ttft): a
+       median over survivors is a measurement of the survivors.'
+
+falsification_tests:
+- id: FALSIFY-SERVE-001
+  rule: no observed load, no receipt
+  prediction: 'A report with no load_ms, or a load_ms that is <= 0, NaN or infinite, is REFUSED.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- serve_receipt::tests::red_no_load_ms_when_the_server_was_not_started_here serve_receipt::tests::red_zero_load_ms serve_receipt::tests::red_negative_or_nan_load_ms'
+  if_fails: 'a receipt claims a one-load serve for a server whose load nobody saw'
+  mutation: 'replace the load_ms ok_or with unwrap_or(1.0); red_no_load_ms_... must turn RED'
+- id: FALSIFY-SERVE-002
+  rule: a dead or untracked server is no receipt
+  prediction: 'server_alive_after = Some(false) or None is REFUSED.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- serve_receipt::tests::red_the_server_died serve_receipt::tests::red_the_server_was_never_tracked'
+  if_fails: 'a server restarted per request passes as one that stayed loaded'
+  mutation: 'delete the server_alive_after check; the row must turn RED'
+- id: FALSIFY-SERVE-003
+  rule: every first token arrives before a whole load would
+  prediction: 'A request with ttft_ms >= load_ms is REFUSED.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- serve_receipt::tests::red_a_request_that_waited_a_whole_load'
+  if_fails: 'a per-request load is reported as a slow but loaded server'
+  mutation: 'compare ttft.p50 instead of ttft.max against load_ms; the row must turn RED'
+- id: FALSIFY-SERVE-004
+  rule: the rates are named only for the workload they measured
+  prediction: 'A completion that is not 128 tokens, or a median prompt outside
+    512 +- 5%, is REFUSED; 487 and 537 are inside.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- serve_receipt::tests::red_a_completion_that_is_not_128 serve_receipt::tests::red_a_prompt_that_is_not_512_and_its_edges'
+  if_fails: 'a 32/32 profile run is published as pp512/tg128'
+  mutation: 'widen PROMPT_TOLERANCE to 0.10; the 486 and 538 rows must turn RED'
+- id: FALSIFY-SERVE-005
+  rule: a receipt over survivors is not one
+  prediction: 'A failed request, zero requests, an unstreamed request, or a request
+    whose TTFT or latency is not a finite number, is REFUSED.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- serve_receipt::tests::red_a_failed_request serve_receipt::tests::red_zero_requests serve_receipt::tests::red_no_streamed_ttft serve_receipt::tests::red_latency_not_above_ttft'
+  if_fails: 'a median over the requests that survived is reported as the runtime'
+  mutation: 'drop the failed-request sum; red_a_failed_request must turn RED'
+- id: FALSIFY-SERVE-006
+  rule: the GREEN row computes the stated formulas
+  prediction: 'TTFT 100/120/140 ms on 512 tokens and 1270 ms of decode for 127
+    tokens gives ttft p50 120, p95 140, pp512 512/0.120, tg128 100.0.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- serve_receipt::tests::green_a_loaded_once_pp512_tg128_run_is_a_receipt'
+  if_fails: 'a builder that refuses everything looks exactly like a strict one'
+  mutation: 'use completion_tokens instead of completion_tokens - 1 in tg128; the
+    GREEN row must turn RED'
+- id: FALSIFY-SERVE-007
+  rule: the server''s own clock shows no restart
+  prediction: 'No /health uptime_sec after the last run, an uptime or span that is
+    not a finite number, or an uptime more than 1 s short of the span since ready,
+    is REFUSED: 28.9 s after a 30 s run is refused, 29.5 s is inside.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- serve_receipt::tests::red_no_server_uptime serve_receipt::tests::red_an_uptime_or_span_that_is_not_finite serve_receipt::tests::red_a_server_that_restarted_after_ready'
+  if_fails: 'a supervisor that restarts the server per request passes as one load'
+  mutation: 'delete the uptime comparison (red_a_server_that_restarted_after_ready
+    turns RED on its 5.0 and 28.9 rows), or widen UPTIME_SLACK_S to 2.0 (it turns
+    RED on its 28.9 row)'
+- id: FALSIFY-SERVE-008
+  rule: the receipt names the device the server reports after the runs
+  prediction: 'No /health compute_mode after the last run is REFUSED; a cpu
+    answer is written as cpu.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- serve_receipt::tests::red_no_compute_mode serve_receipt::tests::a_cpu_fallback_is_recorded_as_cpu'
+  if_fails: 'a GPU host whose first request fell back to CPU publishes CPU numbers as GPU numbers'
+  mutation: 'drop the missing-compute_mode refusal (red_no_compute_mode must turn
+    RED), or write "gpu" whatever the server said (a_cpu_fallback_is_recorded_as_cpu
+    must turn RED)'
+- id: FALSIFY-SERVE-009
+  rule: a server that already answers is refused before --start runs
+  prediction: 'With a listener already answering 200 at --url, the run returns
+    an "already answers" error and never spawns the start command.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- benchmark::tests::a_server_already_answering_is_refused_before_start'
+  if_fails: 'a stale server makes the readiness poll return at once, and load_ms
+    measures nothing'
+  mutation: 'delete the pre-start probe; the run then returns a report and the
+    test turns RED'
+- id: FALSIFY-SERVE-010
+  rule: a signal mid-run kills the started server
+  prediction: 'A SIGINT, and then a SIGTERM, sent to this process while the run
+    waits for readiness returns "interrupted by SIG..." and the server, a
+    grandchild of sh, has exited within 5 s.'
+  test: 'cargo test -p aprender-test-lib --features llm --lib -- benchmark::tests::a_signal_mid_run_kills_the_started_server'
+  if_fails: 'Ctrl-C ends apr without Drop and the server keeps its port and its GPU'
+  mutation: 'run measure() without the signal race (the test process dies), make
+    kill_group a no-op, drop process_group(0), or skip teardown on a signal; each
+    turns the test RED'
+
+proof_obligations:
+- id: ASR-INV-001
+  type: invariant
+  property: 'Every written receipt has an observed load, a server alive at the end
+    whose own uptime covers the run, and every TTFT below load_ms
+    (FALSIFY-SERVE-001..003, FALSIFY-SERVE-007, FALSIFY-SERVE-009)'
+  formal: '∀ r: r.load_ms > 0 ∧ r.server_uptime_s > 0 ∧ r.ttft_ms.max < r.load_ms'
+- id: ASR-INV-002
+  type: invariant
+  property: 'Every written receipt measured pp512/tg128 (FALSIFY-SERVE-004)'
+  formal: '∀ r: abs(r.prompt_tokens_p50 - 512) ≤ 25.6 ∧ ∀ c ∈ completions(r): c = 128'
+- id: ASR-SND-003
+  type: soundness
+  property: 'The rates are per-request medians over successful streamed requests
+    only (FALSIFY-SERVE-005, FALSIFY-SERVE-006)'
+  formal: '∀ r: r.n ≥ 1 ∧ failed = 0 ∧ r.pp512_tok_s = median(p_i / ttft_i)'
+- id: ASR-INV-004
+  type: invariant
+  property: 'Every written receipt names the device the server reported after
+    the last run (FALSIFY-SERVE-008)'
+  formal: '∀ r: r.compute_mode = health_after(r).compute_mode'
+
+qa_gate:
+  id: FALSIFY-SERVE-GATE-001
+  name: 'a serve receipt is evidence that one process loaded once'
+  description: >
+    The receipt is a measurement artifact for APR-071 Train B row V2. It is
+    evidence, not a merge or release check: a RED refuses the receipt, it does
+    not block a merge on a timing value.
+  checks:
+  - load_observed
+  - server_alive_after
+  - server_uptime_covers_run
+  - ttft_below_load
+  - completion_is_128
+  - prompt_is_512
+  - no_failed_or_unstreamed_request
+  - compute_mode_reported
+  pass_criteria: >
+    `cargo test -p aprender-test-lib --features llm --lib serve_receipt` passes:
+    one GREEN row and one RED row per refusal, each RED row breaking exactly one
+    input of the GREEN fixture.
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 4
+  status: proposed
+  notes: >
+    All four obligations are TESTED by the case table in serve_receipt_tests.rs.
+    Nothing is PROVEN in the L4/L5 sense. The named mutations are declared here;
+    the observed RED for each is recorded in the PR that lands this contract.

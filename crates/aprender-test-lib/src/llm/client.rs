@@ -484,6 +484,10 @@ pub enum LlmClientError {
         /// The parse failure.
         source: serde_json::Error,
     },
+    /// A benchmark that started its own server was stopped by a signal. The
+    /// server's process group was killed before this was returned (#4953).
+    #[error("interrupted by {0}: the started server's process group was killed")]
+    Interrupted(&'static str),
 }
 
 /// OpenAI-compatible HTTP client for LLM inference.

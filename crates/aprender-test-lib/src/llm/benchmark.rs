@@ -54,6 +54,31 @@ pub struct BenchmarkReport {
     pub aggregate: AggregateStats,
     /// Regressions detected vs. baseline.
     pub regressions: Vec<Regression>,
+    /// Server spawn → first healthy answer, ms (V2, #4953). Present only when
+    /// this benchmark started the server (`start_command`); a server it did
+    /// not start has no observed load.
+    #[serde(default)]
+    pub load_ms: Option<f64>,
+    /// Whether the server this benchmark started was still alive after the
+    /// last measured run. `None` when it started none. A restart between
+    /// requests would hide a per-request load.
+    #[serde(default)]
+    pub server_alive_after: Option<bool>,
+    /// The server's own `/health` `uptime_sec`, read after the last run. `None`
+    /// when this run started no server, or the server does not report it.
+    #[serde(default)]
+    pub server_uptime_after_s: Option<f64>,
+    /// Seconds from ready to that read, on this producer's clock. A server
+    /// that never restarted has `server_uptime_after_s >= ready_to_end_s`.
+    #[serde(default)]
+    pub ready_to_end_s: Option<f64>,
+    /// The server's own `/health` `compute_mode` (`gpu`/`cpu`), read after the
+    /// last run: what the server reports, not what the build or the command
+    /// line asked for. The Qwen3.5 hybrid reports its live backend, so a GPU
+    /// path it refused at the first request reads `cpu` here; other model
+    /// paths report the device of the resident model.
+    #[serde(default)]
+    pub server_compute_mode_after: Option<String>,
 }
 
 /// Cross-run aggregate statistics with confidence intervals.
@@ -126,28 +151,90 @@ impl Benchmark {
     }
 
     /// Run the full benchmark lifecycle.
+    ///
+    /// With `start_command`, the server runs in its own process group, so the
+    /// terminal's Ctrl-C reaches only this process, and a default SIGINT or
+    /// SIGTERM would end it without `Drop`, leaving the server holding its
+    /// port and its GPU. So the run listens for both: on either, it kills the
+    /// server's group and returns [`LlmClientError::Interrupted`] (#4953).
+    /// tokio keeps a handler installed for the life of the process, so after
+    /// this returns, a SIGINT or SIGTERM no longer ends the process by default.
     pub async fn run(&mut self) -> Result<BenchmarkReport, LlmClientError> {
-        // Phase 1: Start server (if configured)
+        if self.config.start_command.is_none() {
+            return self.measure().await;
+        }
+        let stop = stop_signals();
+        self.run_until(stop).await
+    }
+
+    /// [`Self::measure`], unless `stop` resolves first: then tear the started
+    /// server down and name what stopped the run.
+    async fn run_until(
+        &mut self,
+        stop: impl std::future::Future<Output = &'static str>,
+    ) -> Result<BenchmarkReport, LlmClientError> {
+        let stopped_by = tokio::select! {
+            r = self.measure() => return r,
+            why = stop => why,
+        };
+        self.teardown().await;
+        Err(LlmClientError::Interrupted(stopped_by))
+    }
+
+    async fn measure(&mut self) -> Result<BenchmarkReport, LlmClientError> {
+        let client = LlmClient::new(&self.config.url, &self.config.model);
+
+        // Phase 1: Start server (if configured). A server that ALREADY answers
+        // before we spawn ours would make the readiness poll return at once and
+        // load_ms measure nothing (#4953), so that is an error, not a fast load.
+        // The probe gets a 5 s timeout: a refused connect returns at once, but a
+        // blackholed --url would otherwise hold the run for 3 × 120 s.
+        let probe = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .map(|c| LlmClient::with_client(&self.config.url, &self.config.model, c))
+            .unwrap_or_else(|_| client.clone());
+        if self.config.start_command.is_some() && matches!(probe.health_check().await, Ok(true)) {
+            return Err(LlmClientError::HealthCheckFailed(format!(
+                "a server already answers at {} before --start ran; its load is not this run's",
+                self.config.url
+            )));
+        }
+        let spawned_at = std::time::Instant::now();
         if let Some(ref cmd) = self.config.start_command {
-            let child = tokio::process::Command::new("sh")
+            let mut command = tokio::process::Command::new("sh");
+            command
                 .arg("-c")
                 .arg(cmd)
                 .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .map_err(|e| {
-                    LlmClientError::HealthCheckFailed(format!("Failed to start server: {e}"))
-                })?;
+                .stderr(std::process::Stdio::null());
+            // Its own process group, so teardown reaches the server and not only
+            // the `sh` that started it (#4953). The terminal's Ctrl-C then
+            // reaches only this process; `run` handles it.
+            #[cfg(unix)]
+            command.process_group(0);
+            let child = command.spawn().map_err(|e| {
+                LlmClientError::HealthCheckFailed(format!("Failed to start server: {e}"))
+            })?;
             self.child = Some(child);
         }
 
-        let client = LlmClient::new(&self.config.url, &self.config.model);
-
         // Phase 1b: Wait for server readiness
-        let ready_time = client
-            .wait_ready(self.config.health_timeout, Duration::from_secs(2))
-            .await?;
+        // A 2 s poll is fine for "is it up", not for a load time: it rounds a
+        // load up to the next poll. When this run owns the server, poll at
+        // 50 ms and record spawn → ready as load_ms (V2, #4953).
+        let poll = if self.child.is_some() {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_secs(2)
+        };
+        let ready_time = client.wait_ready(self.config.health_timeout, poll).await?;
+        let load_ms = self
+            .child
+            .is_some()
+            .then(|| spawned_at.elapsed().as_secs_f64() * 1000.0);
         eprintln!("Server ready in {:.1}s", ready_time.as_secs_f64());
+        let ready_at = std::time::Instant::now();
 
         // Phase 2: Warmup (excluded from metrics)
         if self.config.warmup > Duration::ZERO {
@@ -218,20 +305,49 @@ impl Benchmark {
             Vec::new()
         };
 
-        // Phase 5: Teardown
+        // Process continuity (#4953): `/health` `uptime_sec` counts from the
+        // moment the server finished loading. Read now, it must cover the whole
+        // span since ready; a restart in between (a supervisor, a wrapper)
+        // resets it, which a liveness check on our own child cannot see.
+        // The same read names the device that served the runs.
+        let (server_uptime_after_s, ready_to_end_s, server_compute_mode_after) =
+            if self.child.is_some() {
+                let span = ready_at.elapsed().as_secs_f64();
+                let health = client.get_json("/health").await.ok().flatten();
+                let field = |k: &str| health.as_ref().and_then(|v| v.get(k)).cloned();
+                (
+                    field("uptime_sec").and_then(|v| v.as_f64()),
+                    Some(span),
+                    field("compute_mode").and_then(|v| v.as_str().map(str::to_string)),
+                )
+            } else {
+                (None, None, None)
+            };
+
+        // Phase 5: Teardown. Read liveness FIRST: `try_wait` is Ok(None) while
+        // the process we spawned is still running.
+        let server_alive_after = self
+            .child
+            .as_mut()
+            .map(|c| matches!(c.try_wait(), Ok(None)));
         self.teardown().await;
 
         Ok(BenchmarkReport {
             runs: run_results,
             aggregate,
             regressions,
+            load_ms,
+            server_alive_after,
+            server_uptime_after_s,
+            ready_to_end_s,
+            server_compute_mode_after,
         })
     }
 
     /// Kill the server process if we started one.
     async fn teardown(&mut self) {
         if let Some(ref mut child) = self.child {
-            // Send SIGKILL and wait for exit
+            kill_group(child);
             let _ = child.kill().await;
             let _ = child.wait().await;
             eprintln!("Server process terminated");
@@ -240,9 +356,67 @@ impl Benchmark {
     }
 }
 
+/// SIGKILL the started command's whole process group. Killing `sh` alone
+/// orphans the server it started, which keeps the port and the GPU (#4953).
+/// A server that calls `setsid` or daemonizes leaves the group and escapes
+/// this; `apr serve` does neither.
+fn kill_group(child: &tokio::process::Child) {
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", "--", &format!("-{pid}")])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    #[cfg(not(unix))]
+    let _ = child;
+}
+
+/// Resolves with the name of the first SIGINT or SIGTERM. Both handlers are
+/// installed by this call, before the server is spawned, so no signal falls
+/// in a gap. A handler that cannot be installed never resolves. SIGHUP is not
+/// handled.
+#[cfg(unix)]
+fn stop_signals() -> impl std::future::Future<Output = &'static str> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut int = signal(SignalKind::interrupt()).ok();
+    let mut term = signal(SignalKind::terminate()).ok();
+    async move {
+        tokio::select! {
+            Some(()) = next_signal(&mut int) => "SIGINT",
+            Some(()) = next_signal(&mut term) => "SIGTERM",
+            else => std::future::pending().await,
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn next_signal(s: &mut Option<tokio::signal::unix::Signal>) -> Option<()> {
+    match s {
+        Some(s) => s.recv().await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Resolves on the first Ctrl-C; never, if its handler cannot be installed.
+#[cfg(not(unix))]
+fn stop_signals() -> impl std::future::Future<Output = &'static str> {
+    async {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            "Ctrl-C"
+        } else {
+            std::future::pending().await
+        }
+    }
+}
+
 impl Drop for Benchmark {
     fn drop(&mut self) {
+        // Also on an early return (a readiness timeout) or a panic, which skip
+        // teardown: the group, not only `sh`.
         if let Some(ref mut child) = self.child {
+            kill_group(child);
             let _ = child.start_kill();
         }
     }
@@ -449,6 +623,11 @@ mod tests {
                 change_pct: -16.7,
                 exceeds_threshold: true,
             }],
+            load_ms: Some(4000.0),
+            server_alive_after: Some(true),
+            server_uptime_after_s: Some(60.0),
+            ready_to_end_s: Some(30.0),
+            server_compute_mode_after: Some("gpu".to_string()),
         };
         let json = serde_json::to_string_pretty(&report).unwrap();
         assert!(json.contains("throughput_rps"));
@@ -457,5 +636,200 @@ mod tests {
         assert_eq!(back.runs.len(), 1);
         assert_eq!(back.regressions.len(), 1);
         assert!(back.regressions[0].exceeds_threshold);
+        assert_eq!(back.load_ms, Some(4000.0));
+        assert_eq!(back.server_alive_after, Some(true));
+        assert_eq!(back.server_uptime_after_s, Some(60.0));
+        assert_eq!(back.ready_to_end_s, Some(30.0));
+        assert_eq!(back.server_compute_mode_after.as_deref(), Some("gpu"));
+    }
+
+    /// A report written before V2 (#4953) carries neither field and must still
+    /// load as a baseline, with both absent rather than invented.
+    #[test]
+    fn a_pre_v2_report_loads_with_no_load_ms() {
+        let runs = vec![sample_run(10.0, 100.0, 200.0)];
+        let mut v = serde_json::to_value(BenchmarkReport {
+            aggregate: compute_aggregate(&runs),
+            runs,
+            regressions: Vec::new(),
+            load_ms: Some(1.0),
+            server_alive_after: Some(true),
+            server_uptime_after_s: Some(1.0),
+            ready_to_end_s: Some(1.0),
+            server_compute_mode_after: Some("gpu".to_string()),
+        })
+        .unwrap();
+        let o = v.as_object_mut().unwrap();
+        o.remove("load_ms");
+        o.remove("server_alive_after");
+        o.remove("server_uptime_after_s");
+        o.remove("ready_to_end_s");
+        o.remove("server_compute_mode_after");
+        let back: BenchmarkReport = serde_json::from_value(v).unwrap();
+        assert_eq!(back.load_ms, None);
+        assert_eq!(back.server_alive_after, None);
+        assert_eq!(back.server_uptime_after_s, None);
+        assert_eq!(back.ready_to_end_s, None);
+        assert_eq!(back.server_compute_mode_after, None);
+    }
+
+    /// The two tests below run `Benchmark::run` with `start_command`, which
+    /// installs this process's SIGINT and SIGTERM handlers, and one of them
+    /// sends those signals to this process. One at a time, so no run sees a
+    /// signal meant for another.
+    static SIGNAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn owned_server_config(url: String, start: &str, health_timeout: Duration) -> BenchmarkConfig {
+        BenchmarkConfig {
+            url,
+            model: "m".to_string(),
+            start_command: Some(start.to_string()),
+            health_timeout,
+            warmup: Duration::ZERO,
+            duration: Duration::from_secs(1),
+            concurrency: 1,
+            runs: 0,
+            cooldown: Duration::ZERO,
+            prompts: Vec::new(),
+            runtime_name: "test".to_string(),
+            baseline: None,
+            fail_on_regression: None,
+            stream: false,
+            trace_level: None,
+            num_layers: None,
+        }
+    }
+
+    fn current_thread_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// A listener that answers every request with 200 and `{}`: a server that
+    /// is already up.
+    fn stub_health_server() -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut conn in listener.incoming().flatten() {
+                let mut req = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match conn.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => req.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let _ = conn.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                      Content-Length: 2\r\nConnection: close\r\n\r\n{}",
+                );
+            }
+        });
+        url
+    }
+
+    /// A server already answering before `--start` would make the readiness
+    /// poll return at once and load_ms measure nothing, so the run refuses
+    /// before it spawns anything (#4953, FALSIFY-SERVE-009).
+    #[test]
+    fn a_server_already_answering_is_refused_before_start() {
+        let _serial = SIGNAL_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let url = stub_health_server();
+        let mut bench = Benchmark::new(owned_server_config(url, "true", Duration::from_secs(5)));
+        let result = current_thread_runtime().block_on(bench.run());
+        let Err(e) = result else {
+            panic!("a run against a server that already answers must be refused");
+        };
+        assert!(e.to_string().contains("already answers"), "{e}");
+        assert!(bench.child.is_none(), "the start command ran anyway");
+    }
+
+    /// True once `pid` has exited (gone, or a zombie not yet reaped).
+    #[cfg(target_os = "linux")]
+    fn exited(pid: u32) -> bool {
+        match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Err(_) => true,
+            Ok(stat) => stat
+                .rsplit_once(") ")
+                .is_some_and(|(_, rest)| rest.starts_with('Z')),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn read_pid(path: &std::path::Path) -> u32 {
+        for _ in 0..500 {
+            let pid = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|s| s.trim().parse().ok());
+            if let Some(pid) = pid {
+                return pid;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("the start command never wrote {}", path.display());
+    }
+
+    /// The started server is in its own process group, so the terminal's
+    /// Ctrl-C reaches only this process. A SIGINT or SIGTERM mid-run must still
+    /// kill the server, here a grandchild of `sh` as `apr serve` is under
+    /// `--start`, and end the run with Interrupted (#4953, FALSIFY-SERVE-010).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_signal_mid_run_kills_the_started_server() {
+        let _serial = SIGNAL_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let rt = current_thread_runtime();
+        for sig in ["SIGINT", "SIGTERM"] {
+            let dir = tempfile::tempdir().unwrap();
+            let pidfile = dir.path().join("server.pid");
+            // A port nothing answers on: the run waits for readiness until the signal.
+            let url = format!(
+                "http://{}",
+                std::net::TcpListener::bind("127.0.0.1:0")
+                    .unwrap()
+                    .local_addr()
+                    .unwrap()
+            );
+            let start = format!("sleep 60 & echo $! > '{}'; wait", pidfile.display());
+            let mut bench =
+                Benchmark::new(owned_server_config(url, &start, Duration::from_secs(20)));
+            let signal_this_process = async {
+                let server = read_pid(&pidfile).await;
+                assert!(
+                    !exited(server),
+                    "{sig}: server {server} not running before the signal"
+                );
+                let sent = tokio::process::Command::new("kill")
+                    .arg(format!("-{}", &sig[3..]))
+                    .arg(std::process::id().to_string())
+                    .status()
+                    .await
+                    .unwrap();
+                assert!(sent.success(), "{sig}: kill failed");
+                server
+            };
+            let (result, server) =
+                rt.block_on(async { tokio::join!(bench.run(), signal_this_process) });
+            let Err(e) = result else {
+                panic!("{sig}: an interrupted run returned a report");
+            };
+            assert!(
+                e.to_string().contains(&format!("interrupted by {sig}")),
+                "{e}"
+            );
+            assert!(bench.child.is_none(), "{sig}: the server was not torn down");
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !exited(server) && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            assert!(exited(server), "{sig}: server {server} outlived the run");
+        }
     }
 }

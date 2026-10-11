@@ -425,9 +425,9 @@ apr,apr sim verify,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate
 apr,apr sim version,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:119,low
 apr,apr stamp,2,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:628,high
 apr,apr tensors,4,x86_64-linux;nvidia-cuda,safetensors,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:352,high
-apr,apr test llm bench,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1671 (dispatch crates/apr-cli/src/commands/test_llm.rs:399),medium
-apr,apr test llm bench --band,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1786 (protocol crates/apr-cli/src/commands/test_llm_band.rs:348),medium
-apr,apr test tensor,4,x86_64-linux,NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1623,high
+apr,apr test llm bench,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1696 (dispatch crates/apr-cli/src/commands/test_llm.rs:482),medium
+apr,apr test llm bench --band,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1831 (protocol crates/apr-cli/src/commands/test_llm_band.rs:348),medium
+apr,apr test tensor,4,x86_64-linux,NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1648,high
 apr,apr tokenize apply,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:38,low
 apr,apr tokenize encode,6,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:125,high
 apr,apr tokenize encode-corpus,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:149,low

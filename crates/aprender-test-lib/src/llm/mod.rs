@@ -26,6 +26,9 @@ pub mod report;
 #[cfg(feature = "llm")]
 #[allow(missing_docs)]
 pub mod score;
+/// V2 serve receipt: load_ms and TTFT beside pp512 and tg128 (#4953).
+#[cfg(feature = "llm")]
+pub mod serve_receipt;
 pub mod training_scorecard;
 
 pub use assertion::{LlmAssertion, LlmAssertionError, LlmAssertionResult};

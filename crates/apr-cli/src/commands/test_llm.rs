@@ -75,10 +75,25 @@ pub struct BenchArgs<'a> {
     pub profile: &'a str,
     /// Prompt file, overriding the profile.
     pub prompts: Option<&'a Path>,
+    /// Where to write the V2 serve receipt (#4953).
+    pub serve_receipt: Option<&'a Path>,
+    /// The model file the started server loads, hashed into the receipt.
+    pub model_file: Option<&'a Path>,
+    /// Host label for the receipt.
+    pub host_label: &'a str,
 }
 
 /// Run the benchmark lifecycle and report.
 pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
+    // A serve receipt from an earlier run must not survive this one failing
+    // or being refused (#4953).
+    if let Some(path) = args.serve_receipt {
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
     let prompts = resolve_prompts(args.profile, args.prompts)?;
     let workload = describe_workload(args.profile, args.prompts, prompts.len());
     let baseline = load_baseline(args.baseline)?;
@@ -181,6 +196,10 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
         )));
     }
 
+    if let Some(path) = args.serve_receipt {
+        write_serve_receipt(&report, path, &args)?;
+    }
+
     // A benchmark that detects a regression past its declared threshold and
     // then exits 0 is a gate that cannot fail.
     let failed: Vec<&str> = report
@@ -236,6 +255,44 @@ pub(crate) fn describe_workload(profile: &str, file: Option<&Path>, count: usize
         Some(p) => format!("{} prompt(s) from {}", count, p.display()),
         None => format!("profile {profile} ({count} prompt(s))"),
     }
+}
+
+/// V2 (#4953): build the serve receipt from this run, or refuse with the
+/// measurement it lacks. A refusal is an error, so a run that cannot carry
+/// the claim exits non-zero and writes no receipt.
+fn write_serve_receipt(report: &BenchmarkReport, path: &Path, args: &BenchArgs<'_>) -> Result<()> {
+    let model = args.model_file.ok_or_else(|| {
+        CliError::ValidationFailed("--serve-receipt needs --model-file".to_string())
+    })?;
+    // Hash the model only once the cheap refusals have passed: build with the
+    // sha left empty, then fill it in.
+    let meta = apr_test::llm::serve_receipt::ReceiptMeta {
+        apr_version: env!("CARGO_PKG_VERSION").to_string(),
+        apr_commit: env!("APR_GIT_SHA").to_string(),
+        model_sha256: String::new(),
+        host: args.host_label.to_string(),
+        workload: args.prompts.map_or_else(
+            || format!("profile {}", args.profile),
+            |p| p.display().to_string(),
+        ),
+    };
+    let mut receipt = apr_test::llm::serve_receipt::build(report, meta)
+        .map_err(|e| CliError::ValidationFailed(format!("serve receipt refused: {e}")))?;
+    receipt.meta.model_sha256 = super::manifest::sha256_of_file(model)?.1;
+    let json = serde_json::to_string_pretty(&receipt)
+        .map_err(|e| CliError::InvalidFormat(format!("serialising serve receipt: {e}")))?;
+    std::fs::write(path, json)?;
+    println!(
+        "\nserve receipt  {} · load {:.0} ms · ttft p50 {:.1} ms · pp512 {:.1} tok/s · tg128 {:.1} tok/s · n {}",
+        receipt.compute_mode,
+        receipt.load_ms,
+        receipt.ttft_ms.p50,
+        receipt.pp512_tok_s,
+        receipt.tg128_tok_s,
+        receipt.n
+    );
+    println!("serve receipt written to {}", path.display());
+    Ok(())
 }
 
 /// Accept either a full report or a bare run as the baseline.
@@ -559,6 +616,9 @@ async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
         stream,
         profile,
         prompts,
+        serve_receipt,
+        model_file,
+        host_label,
         ..
     } = command
     else {
@@ -583,6 +643,9 @@ async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
         stream: *stream,
         profile,
         prompts: prompts.as_deref(),
+        serve_receipt: serve_receipt.as_deref(),
+        model_file: model_file.as_deref(),
+        host_label,
     })
     .await
 }
