@@ -352,10 +352,11 @@ impl Qwen35Forward {
     /// it got, rather than leaking a copy per call.
     ///
     /// # Errors
-    /// [`RealizarError::HostRamRefused`] when this host's RAM cannot hold the
-    /// build (#4947), or the base or a hybrid layer would not load.
+    /// [`RealizarError::HostRamRefused`] when this host's RAM, as read before the
+    /// file was mapped, cannot hold the build (#4947), or the base or a hybrid
+    /// layer would not load.
     pub fn leak_host(mapped: &MappedGGUFModel) -> Result<&'static Qwen35Model<'static>> {
-        Self::leak_host_within(mapped, crate::host_capacity::HostMemory::measure())
+        Self::leak_host_within(mapped, mapped.host_memory_before_map())
     }
 
     /// [`Self::leak_host`] against a given measurement of host RAM: the admission

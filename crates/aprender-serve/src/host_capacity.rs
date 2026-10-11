@@ -15,7 +15,12 @@
 //!
 //! where `MemAvailable` is lowered to `memory.max − memory.current` of the tightest
 //! cgroup v2 limit on this process's path when that is smaller (#4992): in a capped
-//! container or systemd slice the cgroup OOM killer fires at its own limit.
+//! container or systemd slice the cgroup OOM killer fires at its own limit. Both are
+//! read before the file is mapped ([`MappedGGUFModel::host_memory_before_map`]): the
+//! map is populated and, where `RLIMIT_MEMLOCK` allows, locked at open, so a reading
+//! taken after it has already spent the file that the need counts in full. Under a
+//! 6 GiB cgroup on GB10 a post-map reading left 3432 MiB and refused the 4B, whose
+//! build peaks at 3708 MiB.
 //!
 //! Since #4991 the host build holds one owned quantized copy of the weights (the map's
 //! pages are dropped as each tensor is copied out) and keeps `token_embd.weight` in its
@@ -40,8 +45,9 @@
 //! | 9B Q4_K_M | 5417.4 | 6855.2 | 6148.1 | 3880 | 1.27 | 8287.1 | +20.9% |
 //! | 27B Q4_K_M | 15965.3 | — | 17741.3 | 4850 | 1.11 | 20471.8 | +15.4% |
 //!
-//! The margin is over the larger of the two hosts' peaks; every row clears 13%. The
-//! 27B was not used to set 1.10 and 0.60: it was measured afterwards, under this rule.
+//! The margin is over the larger peak where both hosts ran, else over the one peak;
+//! every row clears 13%. The 27B was not used to set 1.10 and 0.60: it was measured
+//! afterwards, under this rule.
 //! The 90% keeps a tenth of `MemAvailable` free at the predicted need, above
 //! earlyoom's 5%-of-total floor on the Jetson. On GB10 (`MemAvailable` 90.3 GiB)
 //! every row is admitted; on the Jetson (3910 MiB available) the 0.8B and the 2B are
@@ -51,6 +57,7 @@
 //! with 8–20 GiB free.
 //!
 //! [`Qwen35Forward::leak_host`]: crate::gguf::qwen35_session::Qwen35Forward::leak_host
+//! [`MappedGGUFModel::host_memory_before_map`]: crate::gguf::MappedGGUFModel::host_memory_before_map
 
 use crate::error::{RealizarError, Result};
 use crate::gguf::GGUFModel;

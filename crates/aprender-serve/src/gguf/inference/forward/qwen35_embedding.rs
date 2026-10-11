@@ -35,7 +35,8 @@ impl Qwen35Embedding {
             data,
             "token_embd.weight",
         )?;
-        let bytes = data.get(r.offset..r.offset + r.byte_size).ok_or_else(|| {
+        let end = r.offset.checked_add(r.byte_size);
+        let bytes = end.and_then(|end| data.get(r.offset..end)).ok_or_else(|| {
             RealizarError::FormatError {
                 reason: format!(
                     "qwen35: token_embd.weight at byte {} (+{}) lies outside the file",
@@ -237,11 +238,20 @@ mod tests {
             assert_eq!(table.rows(), rows);
             for t in 0..rows {
                 assert!(whole.iter().all(|v| v.is_finite()), "type {qtype}");
-                assert_eq!(
-                    table.row(t).expect("row"),
-                    whole[t * row_len..(t + 1) * row_len],
-                    "type {qtype} row {t}"
-                );
+                // The row paths are scalar and the whole-table path may be SIMD (with
+                // FMA), so the two agree to rounding, not bit for bit.
+                let row = table.row(t).expect("row");
+                for (i, (a, b)) in row
+                    .iter()
+                    .zip(&whole[t * row_len..(t + 1) * row_len])
+                    .enumerate()
+                {
+                    let tol = 4.0 * f32::EPSILON * a.abs().max(b.abs()).max(1.0);
+                    assert!(
+                        (a - b).abs() <= tol,
+                        "type {qtype} row {t} value {i}: {a} vs {b}"
+                    );
+                }
             }
         }
     }

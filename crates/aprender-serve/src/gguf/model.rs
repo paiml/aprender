@@ -45,6 +45,8 @@ pub struct MappedGGUFModel {
     pub model: GGUFModel,
     /// Memory-mapped file contents
     pub(crate) mmap: Mmap,
+    /// [`Self::host_memory_before_map`].
+    host_memory_before_map: crate::host_capacity::HostMemory,
 }
 
 impl MappedGGUFModel {
@@ -79,6 +81,8 @@ impl MappedGGUFModel {
             operation: "open_model_file".to_string(),
             reason: format!("Failed to open {}: {}", path.as_ref().display(), e),
         })?;
+
+        let host_memory_before_map = crate::host_capacity::HostMemory::measure();
 
         // PMAT-304: MAP_POPULATE + MADV_RANDOM (matching llama.cpp's llama-mmap.cpp)
         // MAP_POPULATE: synchronously pre-fault ALL pages at mmap time.
@@ -120,7 +124,19 @@ impl MappedGGUFModel {
         // Parse the memory-mapped data
         let model = GGUFModel::from_bytes(&mmap)?;
 
-        Ok(Self { model, mmap })
+        Ok(Self {
+            model,
+            mmap,
+            host_memory_before_map,
+        })
+    }
+
+    /// Host RAM as measured just before this file was mapped (#4947). The map is
+    /// populated and locked at open, so a measurement taken after it has already
+    /// spent the file, while the host-build need counts the file in full.
+    #[must_use]
+    pub fn host_memory_before_map(&self) -> crate::host_capacity::HostMemory {
+        self.host_memory_before_map
     }
 
     /// Get the raw memory-mapped file data

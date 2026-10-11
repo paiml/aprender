@@ -297,6 +297,29 @@ fn embedding_bytes_are_the_f32_size_of_token_embd() {
     assert_eq!(qwen35_embedding_f32_bytes(&overflow), u64::MAX);
 }
 
+/// e3a on #5134: the reading the guard uses is taken at open, before the map is
+/// populated and locked. On Linux it is a real measurement, never `Unknown`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_mapped_model_carries_the_reading_taken_before_its_map() {
+    let file = GGUFBuilder::new()
+        .architecture("qwen35")
+        .add_f32_tensor("token_embd.weight", &[4, 8], &[0.0; 32])
+        .build();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("m.gguf");
+    std::fs::write(&path, &file).expect("write the synthetic GGUF");
+    let mapped = crate::gguf::MappedGGUFModel::from_path(&path).expect("map it");
+    assert!(
+        matches!(
+            mapped.host_memory_before_map(),
+            HostMemory::Available(b) | HostMemory::CgroupHeadroom(b) if b > 0
+        ),
+        "{:?}",
+        mapped.host_memory_before_map()
+    );
+}
+
 #[test]
 fn admission_counts_the_models_embedding() {
     // token_embd [10, 10] f32 = 400 bytes, and no file term: the need is 60% of it, 240.
