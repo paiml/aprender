@@ -27,6 +27,12 @@
 #
 # Any check that fails is not_measured, never green.
 #
+# TWO MEASURES (#5147). `models-evidence` relays the crux bundle (`--measure
+# crux`, release day's own call): the `models` column is a gate on crux, and
+# a red crux makes it red. The full ladder is LAB: `models-ladder` relays it
+# on the schedule, files its red rows as issues, and nothing needs it, so a
+# red ladder leaves `models` green.
+#
 #   bundle verdict   `models` job   train reads
 #   --------------   ------------   -----------
 #   green            success        green
@@ -120,17 +126,16 @@ jobs:
         run: |
           plant=()
           case "$PLANT_RED" in true) plant=(--plant-red) ;; esac
-          setsid --wait bash scripts/release/models_nightly.sh --relay --commit "$GITHUB_SHA" --out "$RUNNER_TEMP/models-relay" "${plant[@]}"
-      - name: Publish the verified receipts for readiness-nightly (models-t1)
-        # readiness-nightly.yml reads artifact models-t1 from a run on main at
-        # its head and globs *.json at the artifact root, so the upload is the
-        # bundle dir itself. The relay names it only for a verified green or
-        # red with no plant: a not_measured bundle proved nothing, and a planted
-        # red is not a measurement.
+          # crux: release day's own call (CRUX smoke), the measure the release ships on (#5147)
+          setsid --wait bash scripts/release/models_nightly.sh --relay --measure crux --commit "$GITHUB_SHA" --out "$RUNNER_TEMP/models-relay" "${plant[@]}"
+      - name: Keep the verified crux receipts (models-crux)
+        # The relay names the bundle only for a verified green or red with no
+        # plant: a not_measured bundle proved nothing, and a planted red is not
+        # a measurement.
         if: steps.relay.outputs.bundle != ''
         uses: actions/upload-artifact@v7
         with:
-          name: models-t1
+          name: models-crux
           path: ${{ steps.relay.outputs.bundle }}
           if-no-files-found: error
           retention-days: 30
@@ -153,33 +158,56 @@ jobs:
           echo "models lane: $STATE -- $REASON"
           [ "$STATE" = green ]
 
-  # The standing release policy (contracts/model-capability-ladder-v1.yaml,
-  # ladder.release_policy): a red nightly row cannot stop a release. Each red
-  # row opens or updates its own issue here, and the release notes list it
-  # with that issue. Only a verified, unplanted red reaches this job (bundle
-  # is set for nothing else), and its failure never touches the models column.
-  models-tickets:
-    name: models-tickets
-    needs: models-evidence
-    if: needs.models-evidence.outputs.state == 'red' && needs.models-evidence.outputs.bundle != ''
+  # LAB (#5147): the full GPU-host ladder. The standing release policy
+  # (contracts/model-capability-ladder-v1.yaml, ladder.release_policy) says a
+  # red ladder row cannot stop a release, so this job is not a verdict lane:
+  # no job needs it, its name is no lane the train reads, and it runs on the
+  # schedule only. It relays the ladder bundle and, on a verified unplanted
+  # red, opens or updates the issue of each red row. That is its only output.
+  # It also uploads the ladder receipts as models-t1 for readiness-nightly.yml.
+  models-ladder:
+    name: models-ladder-tickets
+    if: github.event_name == 'schedule'
     runs-on: [self-hosted, Linux, X64, clean-room]
-    timeout-minutes: 15
+    timeout-minutes: 25
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
     permissions:
       contents: read
       actions: read
       issues: write   # open or comment on one issue per red row
     steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
-      - uses: actions/download-artifact@v4
+      - name: Relay the GPU-host ladder of this commit
+        id: ladder
+        run: setsid --wait bash scripts/release/models_nightly.sh --relay --measure ladder --commit "$GITHUB_SHA" --out "$RUNNER_TEMP/models-ladder"
+      - name: Publish the verified ladder receipts for readiness-nightly (models-t1)
+        # readiness-nightly.yml reads artifact models-t1 from a run on main at
+        # its head and globs *.json at the artifact root, so the upload is the
+        # bundle dir itself.
+        if: steps.ladder.outputs.bundle != ''
+        uses: actions/upload-artifact@v7
         with:
           name: models-t1
-          path: ${{ runner.temp }}/models-t1
+          path: ${{ steps.ladder.outputs.bundle }}
+          if-no-files-found: error
+          retention-days: 30
       - name: Open or update the issue of each red row
+        if: steps.ladder.outputs.state == 'red' && steps.ladder.outputs.bundle != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ steps.ladder.outputs.bundle }}
         run: |
           setsid --wait bash scripts/release/models_nightly.sh --tickets --commit "$GITHUB_SHA" \
-            --evidence "$RUNNER_TEMP/models-t1" --out "$RUNNER_TEMP/models-tickets.tsv"
+            --evidence "$BUNDLE" --out "$RUNNER_TEMP/models-tickets.tsv"
           cat -- "$RUNNER_TEMP/models-tickets.tsv"

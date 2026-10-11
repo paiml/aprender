@@ -33,7 +33,9 @@
 #   dogfood + preflight R5, the model matrix R7, readiness R8, the milestone cut, clean-room on the tag, the release
 #   assets, preflight R1-R8, the publish dry run). Lanes nobody produces nightly yet are listed, so they print
 #   not_measured: the verdict is NOT RELEASABLE until a producer exists for each. The other lanes are information
-#   only, coverage included (operator ruling C291.1: the coverage floor does not gate this release). The lane table is a
+#   only, coverage included (operator ruling C291.1: the coverage floor does not gate this release). LAB lanes
+#   (kind lab, #5147) are the release-day checks with no last green and no measured duration: each names its one
+#   ticket and owner in its check column, votes like info, and never makes a night NOT RELEASABLE. The lane table is a
 #   constant in this file, never an option or an environment value: a verdict set a caller can shrink is theater.
 #   --self-test pins it. Who reads it: rehearse.sh runs it as its `lanes` stage (--commit), and the release-day steps
 #   that dispatch a producer read that bundle (lib_rehearsal.sh); with --exit-verdict its exit status is the verdict.
@@ -105,16 +107,16 @@ deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;.github/workf
 deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;.github/workflows/deep-nightly.yml;^(schedule|workflow_dispatch)$;^deep-nodefault$
 deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^(schedule|workflow_dispatch)$;^examples$
 deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^(schedule|workflow_dispatch)$;-unknown-linux-gnu on 
-deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;.github/workflows/deep-nightly.yml;^(schedule|workflow_dispatch)$;^deep-bins-smoke$
-dogfood;verdict;dogfood.sh --phase nightly (R5 refuses its receipt);.github/workflows/dogfood-nightly.yml;^(schedule|workflow_dispatch)$;^dogfood$
+deep-bins-smoke;lab;LAB #5148, owner aprender-cd: autopilot deep: nightly_manifest.py smoke;.github/workflows/deep-nightly.yml;^(schedule|workflow_dispatch)$;^deep-bins-smoke$
+dogfood;lab;LAB #5149, owner aprender-cd: dogfood.sh --phase nightly (R5 refuses its receipt);.github/workflows/dogfood-nightly.yml;^(schedule|workflow_dispatch)$;^dogfood$
 models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^(schedule|workflow_dispatch)$;^models$
-readiness;verdict;release_readiness.sh, preflight R8;.github/workflows/readiness-nightly.yml;^workflow_run$;^readiness$
+readiness;lab;LAB #5150, owner aprender-cd: release_readiness.sh, preflight R8;.github/workflows/readiness-nightly.yml;^workflow_run$;^readiness$
 milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^(schedule|workflow_dispatch)$;^milestone$
-cleanroom-cpu;verdict;clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^cleanroom-cpu$
+cleanroom-cpu;lab;LAB #5151, owner aprender-cd: clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^cleanroom-cpu$
 cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^cleanroom-gpu$
-assets;verdict;binary-release.yml + check_release_assets.sh;.github/workflows/assets-rehearsal-nightly.yml;^(schedule|workflow_dispatch)$;^(Rehearsal tag, and the rehearsal is still the release.s build|The rehearsal built every asset the release owes)$;2
+assets;lab;LAB #5152, owner aprender-cd: binary-release.yml + check_release_assets.sh;.github/workflows/assets-rehearsal-nightly.yml;^(schedule|workflow_dispatch)$;^(Rehearsal tag, and the rehearsal is still the release.s build|The rehearsal built every asset the release owes)$;2
 preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^(schedule|workflow_dispatch)$;^preflight$
-publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^publish-dryrun$
+publish-dryrun;lab;LAB #5153, owner aprender-cd: rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^publish-dryrun$
 coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^(schedule|workflow_dispatch)$;^coverage$
 guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^(schedule|workflow_dispatch)$;
 mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^(schedule|workflow_dispatch)$;
@@ -869,6 +871,10 @@ self_test() {
     row unread_attempt_is_not_measured 0 "attempt not read" "RELEASABLE H=" -- st_decide "$d"
     d="$tmp/info"; fixture "$d"; sed -i '/\t401\t/s/\tCOMPLETED\tSUCCESS\t2026-10-04T03:01/\tCOMPLETED\tFAILURE\t2026-10-04T03:01/' "$d/runs.tsv"
     row info_lane_red_leaves_the_verdict 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_decide "$d"
+    # LAB (#5147): a lane moved off the verdict votes like info -- its red is a ticket, never NOT RELEASABLE
+    st_lab() { decide "${ST_LANES/i-d;info;/i-d;lab;}" "$1" 2026-10-04T06:00:00Z; cat "$1/line"; grep "^i-d" "$1/lanes.tsv" | cut -f1-3; }
+    d="$tmp/lab"; fixture "$d"; sed -i '/\t401\t/s/\tCOMPLETED\tSUCCESS\t2026-10-04T03:01/\tCOMPLETED\tFAILURE\t2026-10-04T03:01/' "$d/runs.tsv"
+    row lab_lane_red_leaves_the_verdict 0 "$(printf 'RELEASABLE H=%s\ni-d\tlab\tred' "$ST_C")" "NOT RELEASABLE" -- st_lab "$d"
     d="$tmp/rank"; fixture "$d"
     sed -i -e '/\t101\t/s/2026-10-04T01:00:00Z/2026-10-02T01:00:00Z/' -e '/\t101\t/s/\tSUCCESS\tjob-a\tCOMPLETED\tSUCCESS/\tFAILURE\tjob-a\tCOMPLETED\tFAILURE/' \
         -e '/\t201\t/s/\tCOMPLETED\tSUCCESS\tx\tCOMPLETED\tSUCCESS/\tCOMPLETED\tFAILURE\tx\tCOMPLETED\tFAILURE/' "$d/runs.tsv"
@@ -888,8 +894,8 @@ self_test() {
     row failure_part_way_prints_the_trap_line 2 "NOT RELEASABLE: nightly-train, judge (planted fault) failed" "RELEASABLE H=" -- \
         env NIGHTLY_TRAIN_FAULT=judge bash "$SCRIPT_PATH" --from "$d" --out "$tmp/out" --now 2026-10-04T06:00:00Z
     row the_trap_line_is_recorded 0 "NOT RELEASABLE: nightly-train, judge" "" -- cat "$tmp/out/2026-10-04/line"
-    st_verdict_lanes_are_release_day_checks() { printf "verdict=%s;coverage=%s\n" "$(printf "%s\n" "$LANES" | awk -F ";" "\$2 == \"verdict\" { printf \"%s%s\", s, \$1; s = \" \" }")" "$(printf "%s\n" "$LANES" | awk -F ";" "\$1 == \"coverage\" { print \$2 }")"; }
-    row verdict_lanes_are_release_day_checks 0 "verdict=ci-main deep-doctests deep-nodefault deep-examples deep-bins-build deep-bins-smoke dogfood models readiness milestone cleanroom-cpu cleanroom-gpu assets preflight publish-dryrun;coverage=info" "" -- \
+    st_verdict_lanes_are_release_day_checks() { printf "verdict=%s;lab=%s;coverage=%s\n" "$(printf "%s\n" "$LANES" | awk -F ";" "\$2 == \"verdict\" { printf \"%s%s\", s, \$1; s = \" \" }")" "$(printf "%s\n" "$LANES" | awk -F ";" "\$2 == \"lab\" { printf \"%s%s\", s, \$1; s = \" \" }")" "$(printf "%s\n" "$LANES" | awk -F ";" "\$1 == \"coverage\" { print \$2 }")"; }
+    row verdict_lanes_are_release_day_checks 0 "verdict=ci-main deep-doctests deep-nodefault deep-examples deep-bins-build models milestone cleanroom-gpu preflight;lab=deep-bins-smoke dogfood readiness cleanroom-cpu assets publish-dryrun;coverage=info" "" -- \
         st_verdict_lanes_are_release_day_checks
     st_norm() {
         printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WC","path":".github/workflows/c.yml"}]}\n' > "$tmp/wf.json"
@@ -928,7 +934,7 @@ self_test() {
         decide "$(printf '%s\n' "$LANES" | awk -F ';' '$1 == "assets"')" "$d" 2026-10-05T06:00:00Z; cat "$d/line" "$d/lanes.tsv"
     }
     d="$tmp/assets"; mkdir -p "$d"
-    row a_failed_rehearsal_tag_job_is_red_not_older_green 0 "$(printf 'assets\tverdict\tred')" "RELEASABLE H=" -- st_assets_row
+    row a_failed_rehearsal_tag_job_is_red_not_older_green 0 "$(printf 'assets\tlab\tred')" "RELEASABLE H=" -- st_assets_row
     d="$tmp/noprod"; fixture "$d"
     st_a_lane_without_a_producer_is_not_measured() { decide "$ST_LANES
 v-e;verdict;check E;-;-;-" "$d" 2026-10-04T06:00:00Z; cat "$d/line" "$d/lanes.tsv"; }
@@ -1080,7 +1086,7 @@ v-e;verdict;check E;-;-;-" "$d"
     row the_receipt_prints_the_read_c_and_its_night 0 "$(printf '# read C\t%s\tnight nightly.yml run 900 2026-10-04T04:00:00Z %s' "$ST_C" "$ST_C")" "" -- cat "$tmp/lsl.out"
     row an_inbox_read_back_mismatch_exits_non_zero 1 "inbox: read-back mismatch" "" -- \
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o9" --inbox /dev/null --now 2026-10-04T06:00:00Z
-    row a_closed_stdout_keeps_the_real_verdict 0 "NOT RELEASABLE: ci-main, not_measured (+14 more) [C=aaaaaaaaaa pin=" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
+    row a_closed_stdout_keeps_the_real_verdict 0 "NOT RELEASABLE: ci-main, not_measured (+8 more) [C=aaaaaaaaaa pin=" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
     row a_registry_token_refuses_to_start 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
         env CARGO_REGISTRY_TOKEN=x bash "$SCRIPT_PATH" --from "$d" --out "$tmp/ot1" --now 2026-10-04T06:00:00Z
     row an_empty_named_registry_token_refuses 2 "NOT RELEASABLE: nightly-train, no-token failed" "RELEASABLE H=" -- \
@@ -1143,7 +1149,7 @@ v-e;verdict;check E;-;-;-" "$d"
         bash "$tmp/pe/nightly_train.sh" --pinned --from "$tmp/fr-unread" --out "$tmp/ou" --now 2026-10-04T06:00:00Z
     row no_freshness_read_is_not_measured 0 "stale-pin not_measured (no freshness read)" "RELEASABLE H=" -- \
         bash "$tmp/pe/nightly_train.sh" --pinned --from "$tmp/fr-empty" --out "$tmp/oy" --now 2026-10-04T06:00:00Z
-    row an_unpinned_run_reads_no_freshness 0 "NOT RELEASABLE: ci-main, not_measured (+14 more) [C=aaaaaaaaaa pin=unpinned]" "stale-pin" -- \
+    row an_unpinned_run_reads_no_freshness 0 "NOT RELEASABLE: ci-main, not_measured (+8 more) [C=aaaaaaaaaa pin=unpinned]" "stale-pin" -- \
         bash "$SCRIPT_PATH" --from "$tmp/fr-stale" --out "$tmp/oz" --now 2026-10-04T06:00:00Z
     mkdir -p "$tmp/fb"
     printf '%s\n' '#!/bin/bash' 'case "$*" in' \
@@ -1450,7 +1456,7 @@ m85_models_job_misnamed	s/^INRUN_MODELS="models"$/INRUN_MODELS="rehearse"/
 m86_night_c_is_main_head	s/want="\$(cut -f 3 "\$raw\/night")"/want=""/
 m87_any_event_is_a_night	s/select((.event == "schedule" or .event == "workflow_dispatch") and /select(/
 m110_dispatched_night_dropped	s/select((.event == "schedule" or .event == "workflow_dispatch") and /select(.event == "schedule" and /
-m111_lanes_schedule_only	/^dogfood;verdict;/s/;\^(schedule|workflow_dispatch)\$;/;^schedule$;/
+m111_lanes_schedule_only	/^dogfood;lab;/s/;\^(schedule|workflow_dispatch)\$;/;^schedule$;/
 m112_lanes_run_pick_schedule_only	s/(\$4 == "schedule" || \$4 == "workflow_dispatch") \&\& \$7 > t/\$4 == "schedule" \&\& \$7 > t/
 m88_running_night_counts	s/elif \$r.status != "completed" then/elif false then/
 m89_stale_night_counts	s/>= 86400 then/>= 864000000 then/
@@ -1474,6 +1480,7 @@ m106_lanes_assert_ignored	s/if (\$1 == "#truncated" || \$6 == C) { n++/if (1) { 
 m107_lanes_unread_run_dropped	s/if (n == 0) { for (i = 1; i <= o; i++) print old\[i\]; exit }/if (n == 0) exit/
 m108_lanes_run_on_c_reread	s/if (id != "" \&\& h != C) print id/if (id != "") print id/
 m109_self_test_runs_the_bundle	s/ \&\& SCRIPT_PATH="\$tmp\/self\/\${SCRIPT_PATH##\*\/}" || exit 3/ || exit 3/
+m110_lab_lanes_vote	s/\$2 == "verdict" { nv++/($2 == "verdict" || $2 == "lab") { nv++/
 '
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {

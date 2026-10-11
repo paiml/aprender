@@ -262,11 +262,13 @@ t1_models() {
 # log) is read into $AP/models-t1, where release day's step writes, and its own MODELS line is the
 # verdict. It stands in for release day only when it measured in release day's mode.
 t1_models_rehearsal() {
-  local measure=$1 crun line sha9=${RELEASE_REHEARSAL_C:0:9}
+  local measure=$1 crun line sha9=${RELEASE_REHEARSAL_C:0:9} art=models-t1
+  # #5147: the models job relays crux and uploads it as models-crux; the LAB ladder job of the same run uploads models-t1
+  [ "$measure" = ladder ] || art=models-crux
   crun=$(rehearsal_lane models) || die "REHEARSAL lane models on C: $crun"
   rm -rf -- "${AP:?}/models-t1"
-  gh run download "$crun" --repo "$REPO" -n models-t1 -D "$AP/models-t1" >> "$LOG" 2>&1 \
-    || die "REHEARSAL models-nightly run $crun on C has no readable models-t1 artifact"
+  gh run download "$crun" --repo "$REPO" -n "$art" -D "$AP/models-t1" >> "$LOG" 2>&1 \
+    || die "REHEARSAL models-nightly run $crun on C has no readable $art artifact"
   cp -- "$AP/models-t1/models-t1.log" "$AP/models-t1.log" \
     || die "REHEARSAL models-nightly run $crun: its bundle holds no models-t1.log"
   grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
@@ -448,16 +450,12 @@ fi
 # 3b. cleanroom (T-3): dispatch paiml/infra clean-room.yml ON THE TAG (infra#621 ref input), record the
 #     run id, wait, require the `clean-room (aprender)` job green. The run's own first step asserts
 #     HEAD == the ref; cascade-publish.sh re-derives all of this fail-closed before T-4.
-# Rehearsal: there is no tag to dispatch on. release-lanes-nightly's cleanroom-cpu job measured C, the
-# bump's parent, that night; it must read green on C. Its run id is this repo's (not paiml/infra's), so
-# publish_release re-reads it through the same lane reader. b2-gpu is not read: as on release day, it
-# is a nightly lane, not a stop of this step.
+# Rehearsal: there is no tag to dispatch on. The night's cleanroom-cpu lane is LAB (#5147, #5151): it has no
+# last green and no measured duration, so the rehearsal does not read it and records no run id. Release day
+# is unchanged: clean-room on the tag stays a stop of this step and of the publish and cascade steps.
 cleanroom_rehearsal() {
-  local crun
   say "WOULD gh workflow run clean-room.yml --repo $INFRA -f repos=aprender -f ref=$T"
-  crun=$(rehearsal_lane cleanroom-cpu) || die "REHEARSAL lane cleanroom-cpu on C: $crun"
-  printf '%s\n' "$crun" > "$AP/cleanroom-run-id"
-  say "CLEANROOM GREEN on C ${RELEASE_REHEARSAL_C:0:9} (rehearsal: release-lanes-nightly cleanroom-cpu run $crun, on the bump's parent)"
+  say "CLEANROOM not rehearsed: the nightly cleanroom-cpu lane is LAB (#5151); release day runs clean-room on the tag"
 }
 if run_step cleanroom; then
   if rehearsal; then
@@ -494,10 +492,9 @@ fi
 # 4. assets: the release run completes and all sixteen assets are on the release, checked by command
 if run_step assets; then
   if rehearsal; then
-  # no tag, so no binary-release run on it: the night's asset build of C is the lane (Q1 (a) of the B1
-  # quorum: not_measured, so red, until #4720 P3b gives the lane a producer)
-  arun=$(rehearsal_lane assets) || die "REHEARSAL lane assets on C: $arun (#4720 P3b: no nightly asset build of C)"
-  say "ASSETS green on C ${RELEASE_REHEARSAL_C:0:9} (rehearsal: the nightly asset build, run $arun)"
+  # no tag, so no binary-release run on it. The night's asset lane is LAB (#5147, #5152): it has no last
+  # green and no measured duration, so the rehearsal does not read it. Release day checks the assets on the tag.
+  say "ASSETS not rehearsed: the nightly assets lane is LAB (#5152); release day checks every asset on the tag"
   else
   run=""; for _ in 1 2 3 4 5; do
     run=$(gh run list --repo $REPO --workflow binary-release.yml --event workflow_dispatch --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)
@@ -554,19 +551,15 @@ fi
 # records the call order, plus a mutant per refusal.
 publish_release() {
     local t=$1 mc=$2 crun="" jc d rc=0
-    IFS= read -r crun < "$AP/cleanroom-run-id" 2>/dev/null || crun=""
-    [ -n "$crun" ] || die "no clean-room run id recorded for $t -- the release stays a draft"
-    # Rehearsal: the same facts, re-read for the night -- (a) the recorded clean-room run is the night's
-    # green cleanroom-cpu lane on C, (b) the preflight PASS names this tag and commit, (c) the night's
-    # asset lane is green on C -- and (d) the edit is a WOULD line: there is no draft to publish.
+    # Rehearsal: the preflight PASS names this tag and commit, and the edit is a WOULD line: there is no draft
+    # to publish. The night's cleanroom-cpu and assets lanes are LAB (#5147: #5151, #5152) and are not read.
     if rehearsal; then
-        jc=$(rehearsal_lane cleanroom-cpu) || die "REHEARSAL lane cleanroom-cpu on C: $jc -- the release stays a draft"
-        [ "$jc" = "$crun" ] || die "the recorded clean-room run $crun is not the night's cleanroom-cpu run $jc -- the release stays a draft"
         grep -qxF "PASS $t $mc" "$AP/preflight-pass" 2>/dev/null || die "no preflight PASS for $t at $mc -- the release stays a draft"
-        d=$(rehearsal_lane assets) || die "REHEARSAL lane assets on C: $d (#4720 P3b: no nightly asset build of C) -- the release stays a draft"
         say "WOULD gh release edit $t --repo $REPO --draft=false"
         return
     fi
+    IFS= read -r crun < "$AP/cleanroom-run-id" 2>/dev/null || crun=""
+    [ -n "$crun" ] || die "no clean-room run id recorded for $t -- the release stays a draft"
     jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | .conclusion' | head -n 1) || jc=""
     [ "$jc" = success ] || die "clean-room (aprender) run $crun reads '${jc:-unreadable}' -- the release stays a draft"
     grep -qxF "PASS $t $mc" "$AP/preflight-pass" 2>/dev/null || die "no preflight PASS for $t at $mc -- the release stays a draft"
@@ -579,7 +572,7 @@ publish_release() {
 if run_step publish; then
   publish_release "$T" "$MC"
   if rehearsal; then
-    say "REHEARSED the publish step for $T: clean-room, assets and preflight green; nothing made public"
+    say "REHEARSED the publish step for $T: preflight green (clean-room and assets are LAB nightly, #5151 #5152); nothing made public"
   else
   say "RELEASED $(gh release view "$T" --repo "$REPO" --json url -q .url) (clean-room, assets and preflight green before it went public)"
   fi
