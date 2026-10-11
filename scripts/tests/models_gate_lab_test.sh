@@ -155,9 +155,10 @@ case "${1:-}" in
         R=$ROOT T="$ROOT/scripts/release/nightly_train.sh"
         while [ $# -gt 0 ]; do
             case "$1" in
-                --workflow) [ -n "${2:-}" ] || { echo "caller error: --workflow FILE"; exit 3; }
+                --workflow) [ -n "${2:-}" ] && [ -f "$2" ] || { echo "caller error: --workflow FILE"; exit 3; }
+                    case "$2" in *..*) echo "caller error: --workflow takes a path without .."; exit 3 ;; esac
                     tmp=$(mktemp -d) || exit 3; trap 'rm -rf -- "${tmp:?}"' EXIT
-                    mkdir -p "$tmp/.github/workflows"; cp -r -- "$ROOT/.github/workflows/." "$tmp/.github/workflows/"; cp -- "$2" "$tmp/$WFREL"; R=$tmp; shift 2 ;;
+                    mkdir -p "$tmp/.github/workflows"; cp -r -- "$ROOT/.github/workflows/." "$tmp/.github/workflows/"; cat -- "$2" > "$tmp/$WFREL"; R=$tmp; shift 2 ;;
                 --train) [ -n "${2:-}" ] || { echo "caller error: --train FILE"; exit 3; }; T=$2; shift 2 ;;
                 *) echo "caller error: $1"; exit 3 ;;
             esac
