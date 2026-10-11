@@ -1024,3 +1024,104 @@ fn falsify_ggml_003_extractor_case_table_passes() {
         .unwrap_or_else(|| panic!("the self-test did not report a case count:\n{stdout}"));
     assert!(ran >= 7, "the extractor case table ran only {ran} case(s)");
 }
+
+/// Whether a path dependency's version requirement `req` still names the crate
+/// it points at, `target` (that crate's own version), the way
+/// `scripts/release/stamp_rc_version.sh` reads it: one optional `=`/`^`/`~`, then
+/// one to three numeric components that equal `target`'s leading components.
+/// `*` (a path-only dependency, no requirement) has nothing to drift.
+///
+/// The rc stamp rewrites only a pin that matches this rule. A pin that does not,
+/// like aprender-decide's `"0.70.2"` under a 0.70.3 workspace, is left alone, and
+/// cargo then refuses the stamped tree (`^0.70.2` cannot match `0.70.3-rc.0`).
+/// That failed every build in assets rehearsal 38117742405.
+fn path_pin_names_target(req: &str, target: &str) -> bool {
+    if req == "*" {
+        return true;
+    }
+    let num = req.strip_prefix(['=', '^', '~']).unwrap_or(req);
+    let pin: Vec<&str> = num.split('.').collect();
+    let have: Vec<&str> = target.split('.').collect();
+    (1..=3).contains(&pin.len())
+        && pin.len() <= have.len()
+        && pin.iter().zip(&have).all(|(p, h)| p == h)
+}
+
+/// The rule's case table. Each row is (req, target, names it?).
+#[test]
+fn falsify_mono_014_path_pin_rule_case_table() {
+    let rows = [
+        ("^0.70.3", "0.70.3", true),
+        ("=0.70.3", "0.70.3", true),
+        ("~0.70.3", "0.70.3", true),
+        ("^0.70", "0.70.3", true),
+        ("^0", "0.70.3", true),
+        ("*", "0.70.3", true),
+        // The defect: a pin one patch behind.
+        ("^0.70.2", "0.70.3", false),
+        ("^0.69", "0.70.3", false),
+        ("^1", "0.70.3", false),
+        ("^0.70.30", "0.70.3", false),
+        ("^0.7", "0.70.3", false),
+        ("^0.70.3.1", "0.70.3", false),
+        (">=0.70.3", "0.70.3", false),
+        ("^0.70.3, <0.71", "0.70.3", false),
+        ("^0..3", "0.70.3", false),
+    ];
+    let wrong: Vec<String> = rows
+        .iter()
+        .filter(|(req, target, want)| path_pin_names_target(req, target) != *want)
+        .map(|(req, target, want)| format!("{req:?} vs {target}: want {want}"))
+        .collect();
+    assert!(wrong.is_empty(), "path pin rule rows wrong: {wrong:?}");
+}
+
+/// FALSIFY-MONO-014: every in-workspace path dependency pins the version of the
+/// crate it points at, so the rc stamp can carry it to X.Y.Z-rc.N.
+#[test]
+fn falsify_mono_014_path_pins_name_their_target_version() {
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(workspace_root())
+        .output()
+        .expect("cargo metadata failed");
+    assert!(output.status.success(), "cargo metadata failed");
+    let metadata: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+            .expect("failed to parse cargo metadata");
+    let packages = metadata["packages"].as_array().expect("no packages");
+    let version_at: std::collections::HashMap<&str, &str> = packages
+        .iter()
+        .filter_map(|p| {
+            let dir = p["manifest_path"].as_str()?.strip_suffix("/Cargo.toml")?;
+            Some((dir, p["version"].as_str()?))
+        })
+        .collect();
+
+    let mut checked = 0usize;
+    let mut stale = Vec::new();
+    for pkg in packages {
+        let name = pkg["name"].as_str().unwrap_or("?");
+        for dep in pkg["dependencies"].as_array().into_iter().flatten() {
+            let Some(target) = dep["path"].as_str().and_then(|p| version_at.get(p)) else {
+                continue;
+            };
+            let req = dep["req"].as_str().unwrap_or("");
+            checked += 1;
+            if !path_pin_names_target(req, target) {
+                let dn = dep["name"].as_str().unwrap_or("?");
+                stale.push(format!("{name} -> {dn} pins {req:?}, {dn} is {target}"));
+            }
+        }
+    }
+    // Zero edges checked would pass vacuously (a metadata shape change, say).
+    assert!(
+        checked >= 100,
+        "only {checked} in-workspace path deps checked"
+    );
+    assert!(
+        stale.is_empty(),
+        "path pins that the rc stamp cannot carry (inherit the root \
+         [workspace.dependencies] entry instead): {stale:#?}"
+    );
+}

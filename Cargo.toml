@@ -245,6 +245,10 @@ tokenizers = { version = "0.23.1", default-features = false, features = ["fancy-
 # [workspace.dependencies] entry, so every consumer had to re-declare the path.
 # It is the counter-based Philox RNG behind the SetFit encoder's dropout masks.
 aprender-rand = { path = "crates/aprender-rand", version = "0.70.3" }
+# aprender-core (lib name `aprender`): a consumer that hand-pins it falls behind the
+# workspace version, and the rc stamp then cannot resolve it (aprender-decide pinned
+# 0.70.2 under a 0.70.3 workspace). Inherit this entry instead.
+aprender-core = { path = "crates/aprender-core", version = "0.70.3" }
 
 # Chat templates
 minijinja = { version = "2.14", features = ["loader", "serde"] }

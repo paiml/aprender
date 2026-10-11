@@ -35,7 +35,7 @@ serde-preserve-order = ["serde_json/preserve_order"]
 # The reusable ModernBERT encoder and its primitives (D-13, OPS-03): Linear,
 # layer_norm, gelu_exact, attention and the prefix-aware `.apr` loader. Default
 # features, so `parallel` (and with it `models::modernbert`) is on.
-aprender = { path = "../aprender-core", version = "0.70.2", package = "aprender-core" }
+aprender-core = { workspace = true }
 # Byte-identical tokenizer.json via Tokenizer::from_bytes (0.23.1, the pin Laya's
 # Python side runs).
 tokenizers = { workspace = true }
