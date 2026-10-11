@@ -452,7 +452,7 @@ fn mean_scatter(
     counts: &[usize],
 ) -> Vec<f64> {
     let mut scatter = vec![0.0f64; centroids.len()];
-    for (i, &c) in labels.iter().enumerate() {
+    for (i, &c) in labels.iter().take(data.shape().0).enumerate() {
         scatter[c] += sq_dist_row(data, i, &centroids[c]).sqrt();
     }
     for (s, &count) in scatter.iter_mut().zip(counts) {
@@ -521,7 +521,7 @@ fn overall_mean(data: &Matrix<f32>) -> Vec<f64> {
 /// Within-cluster sum of squares `W`, one running sum over every row and column.
 fn within_ss(data: &Matrix<f32>, labels: &[usize], centroids: &[Vec<f64>]) -> f64 {
     let mut w = 0.0f64;
-    for (i, &c) in labels.iter().enumerate() {
+    for (i, &c) in labels.iter().take(data.shape().0).enumerate() {
         for (j, m) in centroids[c].iter().enumerate() {
             let diff = f64::from(data.get(i, j)) - m;
             w += diff * diff;
