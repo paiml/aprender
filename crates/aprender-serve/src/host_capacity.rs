@@ -7,39 +7,48 @@
 //! [`host_build_verdict`] is the admission rule as a pure function of numbers, so a
 //! case table pins it; [`admit_qwen35_host_build`] measures the host and applies it.
 //!
-//! The rule, quorum-ruled on #4947 (Q8b, 3/3), refusing when
+//! The rule refuses when
 //!
 //! ```text
-//! need = 2.75 × file_bytes + f32 token-embedding bytes  >  90% × MemAvailable
+//! need = 1.10 × file_bytes + 0.60 × vocab × hidden × 4  >  90% × MemAvailable
 //! ```
 //!
 //! where `MemAvailable` is lowered to `memory.max − memory.current` of the tightest
 //! cgroup v2 limit on this process's path when that is smaller (#4992): in a capped
 //! container or systemd slice the cgroup OOM killer fires at its own limit.
 //!
-//! The host build holds the mapped file, an owned quantized copy of the weights and
-//! `token_embd.weight` dequantized to f32 (`vocab × hidden × 4` bytes, whatever the
-//! file's quantization). That last term is fixed per architecture, so `k × file`
-//! alone cannot fit: a 0.8B IQ2_XXS file peaks at 5.47× its size and a 27B Q4_K_M at
-//! 2.59×. Subtracting the embedding leaves a tight band. Passing-run peaks
-//! (`/usr/bin/time -v`, `apr run --no-gpu`, apr 0.70.3, x86_64, MiB):
+//! Since #4991 the host build holds one owned quantized copy of the weights (the map's
+//! pages are dropped as each tensor is copied out) and keeps `token_embd.weight` in its
+//! GGUF encoding. What remains above the file is per-architecture state that scales
+//! with `vocab × hidden`, not with the file's quantization, so `k × file` alone cannot
+//! fit: a 0.8B IQ2_XXS peaks at 2.35× its file and a 27B Q4_K_M at 1.11×. The second
+//! term is sized as a share of the f32 token-embedding size, the `vocab × hidden`
+//! measure the model already carries. Passing-run peaks after #4991 (`/usr/bin/time -v`
+//! maximum resident set, `apr run <gguf> --no-gpu -p "What is 2+2?" -n 8`, apr 0.70.3
+//! @ 1ec5fe3b31; x86_64 is noah-Lambda-Vector, aarch64 is GB10; MiB). A dash is a run
+//! not taken there: the 2.75× rule this replaces refused the 4B rows under the dev
+//! host's agent cgroup, and the 27B runs on GB10 only. The 9B x86_64 peak is the
+//! 16-token run #4991 recorded:
 //!
-//! | model | file | peak | f32 embd | (peak − embd) / file | need | margin |
-//! |-------|------|------|----------|----------------------|------|--------|
-//! | 0.8B Q4_K_M | 507.8 | 2120.8 | 970 | 2.27 | 2366.6 | +11.6% |
-//! | 0.8B UD-IQ2_XXS | 322.6 | 1764.6 | 970 | 2.46 | 1857.0 | +5.2% |
-//! | 2B Q4_K_M | 1221.5 | 4518.4 | 1940 | 2.11 | 5299.1 | +17.3% |
-//! | 4B Q4_K_M | 2614.0 | 7872.1 | 2425 | 2.08 | 9613.4 | +22.1% |
-//! | 4B UD-Q4_K_XL | 2777.2 | 8199.0 | 2425 | 2.08 | 10062.3 | +22.7% |
-//! | 9B Q4_K_M | 5417.4 | 17280.3 | 3880 | 2.47 | 18777.8 | +8.7% |
-//! | 27B Q4_K_M | 15965.3 | 41331.0 | 4850 | 2.29 | 48754.5 | +18.0% |
+//! | model | file | x86_64 peak | aarch64 peak | f32 embd | peak / file | need | margin |
+//! |-------|------|-------------|--------------|----------|-------------|------|--------|
+//! | 0.8B Q4_K_M | 507.8 | 1007.0 | 1005.0 | 970 | 1.98 | 1140.6 | +13.3% |
+//! | 0.8B UD-IQ2_XXS | 322.6 | 758.5 | 755.3 | 970 | 2.35 | 936.8 | +23.5% |
+//! | 2B Q4_K_M | 1221.5 | 2120.0 | 2115.1 | 1940 | 1.74 | 2507.7 | +18.3% |
+//! | 4B Q4_K_M | 2614.0 | — | 3707.7 | 2425 | 1.42 | 4330.4 | +16.8% |
+//! | 4B UD-Q4_K_XL | 2777.2 | — | 3870.3 | 2425 | 1.39 | 4509.9 | +16.5% |
+//! | 9B Q4_K_M | 5417.4 | 6855.2 | 6148.1 | 3880 | 1.27 | 8287.1 | +20.9% |
+//! | 27B Q4_K_M | 15965.3 | — | 17741.3 | 4850 | 1.11 | 20471.8 | +15.4% |
 //!
-//! 2.75 covers the worst residual (9B, whose Q4_K embedding is briefly held twice by
-//! the dequant's collect) and every row by at least 5.2%. The 90% keeps a tenth of
-//! `MemAvailable` free at the predicted need, above earlyoom's 5%-of-total floor on the
-//! Jetson. On GB10 (`MemAvailable` 90.3 GiB) the 27B needs 47.6 GiB and is admitted
-//! as before; on the Jetson (3910 MiB available) the 0.8B is admitted and the 2B, whose
-//! real peak of 4518 MiB is more than the device has, is refused.
+//! The margin is over the larger of the two hosts' peaks; every row clears 13%. The
+//! 27B was not used to set 1.10 and 0.60: it was measured afterwards, under this rule.
+//! The 90% keeps a tenth of `MemAvailable` free at the predicted need, above
+//! earlyoom's 5%-of-total floor on the Jetson. On GB10 (`MemAvailable` 90.3 GiB)
+//! every row is admitted; on the Jetson (3910 MiB available) the 0.8B and the 2B are
+//! admitted and the 4B is refused. The 2.75 × file + f32 embedding rule this replaces
+//! fitted the pre-#4991 build, which held the f32 embedding and every page of the
+//! map. After #4991 it predicted 2.3–3.1× the real peak and refused the 9B on hosts
+//! with 8–20 GiB free.
 //!
 //! [`Qwen35Forward::leak_host`]: crate::gguf::qwen35_session::Qwen35Forward::leak_host
 
@@ -48,8 +57,11 @@ use crate::gguf::GGUFModel;
 
 const MIB: u64 = 1024 * 1024;
 
-/// The need's multiple of the GGUF file size, in percent (2.75×).
-pub const FILE_FACTOR_PERCENT: u64 = 275;
+/// The need's multiple of the GGUF file size, in percent (1.10×).
+pub const FILE_FACTOR_PERCENT: u64 = 110;
+
+/// The need's share of the f32 token-embedding size (`vocab × hidden × 4`), in percent.
+pub const EMBEDDING_FACTOR_PERCENT: u64 = 60;
 
 /// The share of the measured memory the need may take, in percent.
 pub const AVAILABLE_PERCENT: u64 = 90;
@@ -137,13 +149,15 @@ fn cgroup_headroom_here() -> Option<u64> {
     cgroup_headroom_under(std::path::Path::new("/sys/fs/cgroup"), relative)
 }
 
-/// Bytes the host build is predicted to need: 2.75 × the file plus the f32 embedding.
+/// Bytes the host build is predicted to need: 1.10 × the file plus 0.60 × the f32
+/// embedding size, each term rounded down.
 #[must_use]
 pub fn host_build_need(file_bytes: u64, embedding_f32_bytes: u64) -> u64 {
-    let scaled = u128::from(file_bytes) * u128::from(FILE_FACTOR_PERCENT) / 100;
-    u64::try_from(scaled)
-        .unwrap_or(u64::MAX)
-        .saturating_add(embedding_f32_bytes)
+    let percent_of = |bytes: u64, percent: u64| {
+        u64::try_from(u128::from(bytes) * u128::from(percent) / 100).unwrap_or(u64::MAX)
+    };
+    percent_of(file_bytes, FILE_FACTOR_PERCENT)
+        .saturating_add(percent_of(embedding_f32_bytes, EMBEDDING_FACTOR_PERCENT))
 }
 
 /// Bytes of `token_embd.weight` once dequantized to f32. A model without one has
@@ -175,7 +189,7 @@ pub fn host_build_verdict(
 ) -> Result<()> {
     let need = host_build_need(file_bytes, embedding_f32_bytes);
     let terms = format!(
-        "~{} MiB (2.75 x file {} MiB + f32 token embedding {} MiB)",
+        "~{} MiB (1.10 x file {} MiB + 0.60 x f32 token-embedding size {} MiB)",
         need / MIB,
         file_bytes / MIB,
         embedding_f32_bytes / MIB

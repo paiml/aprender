@@ -19,57 +19,63 @@ struct Measured {
     maxrss_kb: u64,
 }
 
-/// Every passing run the rule was set from: `/usr/bin/time -v` maximum resident
-/// set, `apr run <gguf> --no-gpu -p "What is 2+2?" -n 8`, apr 0.70.3 (95f64ba14),
-/// x86_64. File bytes and kB exactly as recorded.
-const MEASURED: [Measured; 7] = [
+/// Every passing run the rule was set from, after #4991: `/usr/bin/time -v` maximum
+/// resident set, `apr run <gguf> --no-gpu -p "What is 2+2?" -n 8`, apr 0.70.3
+/// (1ec5fe3b31). Each row is the larger of x86_64 (noah-Lambda-Vector) and aarch64
+/// (GB10); the 4B rows ran on GB10 only, and the 9B row is the x86_64 16-token run
+/// #4991 recorded. File bytes and kB exactly as recorded.
+const MEASURED: [Measured; 6] = [
     Measured {
         model: "0.8B Q4_K_M",
         file_bytes: 532_517_120,
         hidden: 1024,
-        maxrss_kb: 2_171_716,
+        maxrss_kb: 1_031_204,
     },
     Measured {
         model: "2B Q4_K_M",
         file_bytes: 1_280_835_840,
         hidden: 2048,
-        maxrss_kb: 4_626_876,
+        maxrss_kb: 2_170_920,
     },
     Measured {
         model: "4B Q4_K_M",
         file_bytes: 2_740_937_888,
         hidden: 2560,
-        maxrss_kb: 8_061_068,
+        maxrss_kb: 3_796_724,
     },
     Measured {
         model: "9B Q4_K_M",
         file_bytes: 5_680_522_464,
         hidden: 4096,
-        maxrss_kb: 17_694_984,
+        maxrss_kb: 7_019_736,
     },
     Measured {
         model: "0.8B UD-IQ2_XXS",
         file_bytes: 338_227_456,
         hidden: 1024,
-        maxrss_kb: 1_806_964,
+        maxrss_kb: 776_700,
     },
     Measured {
         model: "4B UD-Q4_K_XL",
         file_bytes: 2_912_109_728,
         hidden: 2560,
-        maxrss_kb: 8_395_756,
-    },
-    Measured {
-        model: "27B Q4_K_M",
-        file_bytes: 16_740_812_704,
-        hidden: 5120,
-        maxrss_kb: 42_322_916,
+        maxrss_kb: 3_963_208,
     },
 ];
+
+/// The 27B, measured on GB10 under this rule after 1.10 and 0.60 were set: the
+/// out-of-sample row.
+const MEASURED_27B: Measured = Measured {
+    model: "27B Q4_K_M",
+    file_bytes: 16_740_812_704,
+    hidden: 5120,
+    maxrss_kb: 18_167_088,
+};
 
 fn measured(model: &str) -> &'static Measured {
     MEASURED
         .iter()
+        .chain(std::iter::once(&MEASURED_27B))
         .find(|m| m.model == model)
         .expect("a measured model")
 }
@@ -92,13 +98,13 @@ const JETSON_AVAILABLE_MIB: [u64; 2] = [3910, 4789];
 const GB10_AVAILABLE: u64 = 94_661_632 * KIB;
 
 #[test]
-fn need_covers_every_measured_peak_with_at_least_five_percent() {
-    for m in &MEASURED {
+fn need_covers_every_measured_peak_with_at_least_ten_percent() {
+    for m in MEASURED.iter().chain(std::iter::once(&MEASURED_27B)) {
         let need = host_build_need(m.file_bytes, embd(m.hidden));
         let peak = m.maxrss_kb * KIB;
         assert!(
-            u128::from(need) * 100 > u128::from(peak) * 105,
-            "{}: need {need} B is within 5% of the measured peak {peak} B",
+            u128::from(need) * 100 > u128::from(peak) * 110,
+            "{}: need {need} B is within 10% of the measured peak {peak} B",
             m.model
         );
     }
@@ -108,7 +114,7 @@ fn need_covers_every_measured_peak_with_at_least_five_percent() {
 fn a_host_whose_limit_is_the_measured_peak_is_refused() {
     // 90% of this memory is (at most) the peak the run really reached, so the
     // rule must not admit it: every admitted run has headroom above its peak.
-    for m in &MEASURED {
+    for m in MEASURED.iter().chain(std::iter::once(&MEASURED_27B)) {
         let memory = HostMemory::Available(m.maxrss_kb * KIB * 100 / 90);
         assert!(
             matches!(verdict(m, memory), Err(RealizarError::HostRamRefused(_))),
@@ -118,17 +124,49 @@ fn a_host_whose_limit_is_the_measured_peak_is_refused() {
     }
 }
 
+/// C314 on #5124: the 2.75 × file + f32 embedding rule refused all of these, though
+/// each host holds the measured peak with room to spare.
 #[test]
-fn jetson_admits_the_08b_models_and_refuses_2b_and_4b() {
+fn hosts_that_hold_the_post_4991_peak_are_not_refused() {
+    let admitted = [
+        // The 0.8B under the 2174 MiB of cgroup headroom the serve tests had.
+        ("0.8B Q4_K_M", HostMemory::CgroupHeadroom(2174 * MIB)),
+        ("2B Q4_K_M", HostMemory::Available(3 * 1024 * MIB)),
+        ("4B Q4_K_M", HostMemory::Available(5 * 1024 * MIB)),
+        ("9B Q4_K_M", HostMemory::Available(10 * 1024 * MIB)),
+        ("9B Q4_K_M", HostMemory::CgroupHeadroom(16 * 1024 * MIB)),
+        ("27B Q4_K_M", HostMemory::Available(24 * 1024 * MIB)),
+    ];
+    for (model, memory) in admitted {
+        let m = measured(model);
+        let bytes = match memory {
+            HostMemory::Available(b) | HostMemory::CgroupHeadroom(b) | HostMemory::TotalOnly(b) => {
+                b
+            },
+            HostMemory::Unknown => 0,
+        };
+        assert!(
+            bytes > m.maxrss_kb * KIB,
+            "{model}: the host must hold the measured peak"
+        );
+        assert!(
+            verdict(m, memory).is_ok(),
+            "{model} refused with {memory:?}, which holds its measured peak"
+        );
+    }
+}
+
+#[test]
+fn jetson_admits_the_08b_and_2b_models_and_refuses_4b_and_9b() {
     for mib in JETSON_AVAILABLE_MIB {
         let jetson = HostMemory::Available(mib * MIB);
-        for model in ["0.8B Q4_K_M", "0.8B UD-IQ2_XXS"] {
+        for model in ["0.8B Q4_K_M", "0.8B UD-IQ2_XXS", "2B Q4_K_M"] {
             assert!(
                 verdict(measured(model), jetson).is_ok(),
                 "{model} refused on a Jetson with {mib} MiB available"
             );
         }
-        for model in ["2B Q4_K_M", "4B Q4_K_M", "4B UD-Q4_K_XL", "9B Q4_K_M"] {
+        for model in ["4B Q4_K_M", "4B UD-Q4_K_XL", "9B Q4_K_M"] {
             refusal(verdict(measured(model), jetson));
         }
     }
@@ -136,7 +174,7 @@ fn jetson_admits_the_08b_models_and_refuses_2b_and_4b() {
 
 #[test]
 fn gb10_admits_every_measured_model_as_before() {
-    for m in &MEASURED {
+    for m in MEASURED.iter().chain(std::iter::once(&MEASURED_27B)) {
         assert!(
             verdict(m, HostMemory::Available(GB10_AVAILABLE)).is_ok(),
             "{} refused on GB10, whose result must not change",
@@ -148,13 +186,13 @@ fn gb10_admits_every_measured_model_as_before() {
 #[test]
 fn the_refusal_states_its_arithmetic() {
     let msg = refusal(verdict(
-        measured("2B Q4_K_M"),
+        measured("4B Q4_K_M"),
         HostMemory::Available(3910 * MIB),
     ));
     for part in [
-        "~5299 MiB",
-        "file 1221 MiB",
-        "f32 token embedding 1940 MiB",
+        "~4330 MiB",
+        "1.10 x file 2613 MiB",
+        "0.60 x f32 token-embedding size 2425 MiB",
         "3910 MiB available",
         "(3519 MiB)",
         "#4947",
@@ -167,10 +205,10 @@ fn the_refusal_states_its_arithmetic() {
 
 /// Three ways to need exactly 990 MiB: all file, all embedding, and both. 90% of
 /// 1100 MiB is exactly 990 MiB, so one byte less memory turns admit into refuse.
-/// These rows kill a changed 275 or 90, `>` as `>=`, and a dropped term.
+/// These rows kill a changed 110, 60 or 90, `>` as `>=`, and a dropped term.
 #[test]
 fn the_boundary_is_exact() {
-    let needs = [(360 * MIB, 0), (0, 990 * MIB), (200 * MIB, 440 * MIB)];
+    let needs = [(900 * MIB, 0), (0, 1650 * MIB), (300 * MIB, 1100 * MIB)];
     for (file, embedding) in needs {
         assert_eq!(host_build_need(file, embedding), 990 * MIB);
         let kinds: [fn(u64) -> HostMemory; 3] = [
@@ -190,11 +228,13 @@ fn the_boundary_is_exact() {
 
 #[test]
 fn the_need_rounds_down_and_saturates_instead_of_wrapping() {
-    assert_eq!(host_build_need(4, 0), 11);
-    assert_eq!(host_build_need(1, 0), 2);
-    assert_eq!(host_build_need(0, 7), 7);
+    assert_eq!(host_build_need(10, 0), 11);
+    assert_eq!(host_build_need(9, 0), 9);
+    assert_eq!(host_build_need(0, 10), 6);
+    assert_eq!(host_build_need(0, 7), 4);
+    assert_eq!(host_build_need(9, 7), 13);
     assert_eq!(host_build_need(u64::MAX, 0), u64::MAX);
-    assert_eq!(host_build_need(u64::MAX / 2, u64::MAX / 2), u64::MAX);
+    assert_eq!(host_build_need(u64::MAX / 2, u64::MAX), u64::MAX);
     refusal(host_build_verdict(
         u64::MAX,
         u64::MAX,
@@ -205,8 +245,8 @@ fn the_need_rounds_down_and_saturates_instead_of_wrapping() {
 #[test]
 fn total_ram_is_the_fallback_bound_and_says_so() {
     let sixteen_gib = HostMemory::TotalOnly(16 * 1024 * MIB);
-    assert!(verdict(measured("0.8B Q4_K_M"), sixteen_gib).is_ok());
-    let msg = refusal(verdict(measured("9B Q4_K_M"), sixteen_gib));
+    assert!(verdict(measured("9B Q4_K_M"), sixteen_gib).is_ok());
+    let msg = refusal(verdict(measured("27B Q4_K_M"), sixteen_gib));
     assert!(msg.contains("of total RAM"), "{msg}");
 }
 
@@ -259,13 +299,13 @@ fn embedding_bytes_are_the_f32_size_of_token_embd() {
 
 #[test]
 fn admission_counts_the_models_embedding() {
-    // token_embd [4, 8] f32 = 128 bytes, and no file term: the need is 128.
-    let model = model_with_embedding(&[4, 8]);
-    assert!(admit_qwen35_host_build(&model, 0, HostMemory::Available(143)).is_ok());
+    // token_embd [10, 10] f32 = 400 bytes, and no file term: the need is 60% of it, 240.
+    let model = model_with_embedding(&[10, 10]);
+    assert!(admit_qwen35_host_build(&model, 0, HostMemory::Available(267)).is_ok());
     refusal(admit_qwen35_host_build(
         &model,
         0,
-        HostMemory::Available(142),
+        HostMemory::Available(266),
     ));
     refusal(admit_qwen35_host_build(&model, 0, HostMemory::Unknown));
 }
@@ -306,13 +346,13 @@ fn a_capped_cgroup_lowers_the_bound_below_mem_available() {
     assert_eq!(headroom, Some(3072 * MIB));
     let memory = HostMemory::bound(60 * 1024 * MIB, headroom);
     assert_eq!(memory, HostMemory::CgroupHeadroom(3072 * MIB));
-    // The 2B fits a 60 GiB host and is refused in this 4 GiB container.
+    // The 4B fits a 60 GiB host and is refused in this 4 GiB container.
     assert!(verdict(
-        measured("2B Q4_K_M"),
+        measured("4B Q4_K_M"),
         HostMemory::Available(60 * 1024 * MIB)
     )
     .is_ok());
-    let msg = refusal(verdict(measured("2B Q4_K_M"), memory));
+    let msg = refusal(verdict(measured("4B Q4_K_M"), memory));
     assert!(msg.contains("cgroup memory.max"), "{msg}");
     assert!(msg.contains("3072 MiB"), "{msg}");
 }
