@@ -9,8 +9,9 @@
 #   prints their run IDs.
 #
 # A NIGHT is a UTC date: schedule the producer well away from 00:00 UTC, since a run created after midnight counts for
-#   the next night. Only rows with branch `main` and event `schedule` count: a push, a pull request, a manual dispatch
-#   or a run on another branch never does. Rows dated after --as-of are not counted, so a replay over a longer history
+#   the next night. Only rows with branch `main` and event `schedule` or `workflow_dispatch` count (operator, relayed
+#   verbatim 2026-10-11: "\"tonight\" is a concept we control"): a push, a pull request or a run on another branch
+#   never does. Rows dated after --as-of are not counted, so a replay over a longer history
 #   gives the same answer. A night is
 #     red      a run ended failure, timed_out or startup_failure, or succeeded only at attempt 2 or later (a retried
 #              green is not a green: docs/specifications/FLOW-003-queue-and-release-cycle-model.md, G4, plans CI
@@ -115,7 +116,7 @@ judge() {
         else if (co == "failure" || co == "timed_out" || co == "startup_failure") s = "red"
         else if (co == "cancelled" || co == "skipped" || co == "neutral" || co == "stale" || co == "action_required") s = "void"
         else { bad = "line " NR " conclusion \"" co "\""; exit }
-        if ($3 != "main" || $4 != "schedule") { other++; next }
+        if ($3 != "main" || ($4 != "schedule" && $4 != "workflow_dispatch")) { other++; next }
         n = dayno(ts)
         if (n > asof_n) { later++; next }
         runs++
@@ -134,7 +135,7 @@ judge() {
             if (st[k] == "green") total++
             if ((st[k] == "green" || st[k] == "red" || st[k] == "retried") && (last == "" || k > last)) last = k
         }
-        info = sprintf("      NIGHTLY %s counted %d scheduled run(s) on main up to %s; not counted: %d other row(s), %d after --as-of", check, runs, asof, other, later)
+        info = sprintf("      NIGHTLY %s counted %d scheduled or dispatched run(s) on main up to %s; not counted: %d other row(s), %d after --as-of", check, runs, asof, other, later)
         npend = 0; pmax = 0
         for (k in st) if (st[k] == "pending" && (last == "" || k + 0 > last)) { npend++; if (k + 0 > pmax) pmax = k + 0 }
         if (npend > 0) info = info sprintf("; still running: %d night(s), newest %s", npend, civil(pmax))
@@ -225,7 +226,7 @@ selftest() {
 
     fx three "104 $D-04 success" "105 $D-05 success" "106 $D-06 success"
     j three_green_nights_are_ready                     0 "ok    NIGHTLY R7 ready: 3 green nights in a row on main, newest $D-06: runs 106 105 104 (streak=3 total=3 need=3)" three
-    j the_context_line_counts_what_was_read            0 "NIGHTLY R7 counted 3 scheduled run(s) on main up to $D-06; not counted: 0 other row(s), 0 after --as-of" three
+    j the_context_line_counts_what_was_read            0 "NIGHTLY R7 counted 3 scheduled or dispatched run(s) on main up to $D-06; not counted: 0 other row(s), 0 after --as-of" three
     fx shuffled "105 $D-05 success" "106 $D-06 success" "104 $D-04 success"
     j row_order_does_not_matter                        0 "runs 106 105 104 (streak=3" shuffled
     fx red_then_two "104 $D-04 failure" "105 $D-05 success" "106 $D-06 success"
@@ -246,7 +247,12 @@ selftest() {
     j a_green_on_another_branch_does_not_count         2 "night $D-04 has no completed run on main (no run)" branch
     j the_branch_row_is_reported_as_not_counted        2 "not counted: 1 other row(s), 0 after --as-of" branch
     fx dispatch "103 $D-03 success" "104 $D-04 success 1 main workflow_dispatch" "105 $D-05 success" "106 $D-06 success"
-    j a_manual_dispatch_does_not_count                 2 "night $D-04 has no completed run on main (no run)" dispatch
+    j a_manual_dispatch_on_main_counts                 0 "runs 106 105 104 (streak=4 total=4 need=3)" dispatch
+    fx dispatch_branch "103 $D-03 success" "104 $D-04 success 1 feature workflow_dispatch" "105 $D-05 success" "106 $D-06 success"
+    j a_dispatch_on_another_branch_does_not_count      2 "night $D-04 has no completed run on main (no run)" dispatch_branch
+    fx push "103 $D-03 success" "104 $D-04 success 1 main push" "105 $D-05 success" "106 $D-06 success"
+    j a_push_on_main_does_not_count                    2 "night $D-04 has no completed run on main (no run)" push
+    j the_push_row_is_reported_as_not_counted          2 "not counted: 1 other row(s), 0 after --as-of" push
     fx red_last "103 $D-03 success" "104 $D-04 success" "105 $D-05 success" "106 $D-06 failure"
     j a_red_newest_night_is_not_ready                  1 "not ready: night $D-06 was red (run 106, failure) (streak=0 total=3 need=3)" red_last
     j rows_after_as_of_are_not_counted                 0 "runs 105 104 103 (streak=3 total=3 need=3)" red_last "$D-05"
@@ -385,7 +391,10 @@ void_counts_as_green        /^judge() {$/,/^}$/s/) s = "void"/) s = "green"/
 red_ranks_below_green       /^judge() {$/,/^}$/s/rank\["red"\] = 4/rank["red"] = 0/
 pending_ranks_below_green   /^judge() {$/,/^}$/s/rank\["pending"\] = 3/rank["pending"] = 0/
 tie_keeps_the_older_run     /^judge() {$/,/^}$/s/ts > tsof\[n\]/ts < tsof[n]/
-every_branch_counts         /^judge() {$/,/^}$/s/if (\$3 != "main" || \$4 != "schedule")/if (0)/
+every_branch_counts         /^judge() {$/,/^}$/s/if (\$3 != "main" || (\$4 != "schedule" && \$4 != "workflow_dispatch"))/if (0)/
+dispatch_never_counts       /^judge() {$/,/^}$/s/ && \$4 != "workflow_dispatch"))/))/
+every_event_counts          /^judge() {$/,/^}$/s/(\$4 != "schedule" && \$4 != "workflow_dispatch")/0/
+any_branch_dispatch_counts  /^judge() {$/,/^}$/s/if (\$3 != "main" || (/if (\$4 != "workflow_dispatch" && (\$3 != "main" || /
 later_rows_count            /^judge() {$/,/^}$/s/if (n > asof_n)/if (0)/
 newest_red_is_skipped       /^judge() {$/,/^}$/s/st\[k\] == "green" || st\[k\] == "red" || st\[k\] == "retried"/st[k] == "green"/
 no_staleness_bound          /^judge() {$/,/^}$/s/if (last < asof_n - 1)/if (0)/

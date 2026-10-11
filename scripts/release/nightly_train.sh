@@ -10,8 +10,9 @@
 #   and every line ends with [C=<sha10> pin=<train>.<greens>.<redage>]: the commit judged and the shas of the three
 #   scripts that judged it. H is the commit id of C: the head of that night's SCHEDULED nightly.yml run (B1), the
 #   commit the night's producers ran on. Main's head at the moment of the read is not C: on a late night main has moved
-#   past the producers, and every lane would read "no run on C". C comes from the scheduled run only: no option or
-#   environment value sets it outside --commit, and a dispatched run never counts. The newest scheduled run on main
+#   past the producers, and every lane would read "no run on C". C comes from the night's run only: no option or
+#   environment value sets it outside --commit. A scheduled or dispatched run on main is a night ("\"tonight\" is a
+#   concept we control", operator, relayed verbatim 2026-10-11); a push or another branch never is. The newest night run on main
 #   created in the 24 h before --now must be completed; none, an incomplete one, or an unreadable list fails the read
 #   (every producer lane not_measured), never a fallback to main's head.
 #   A lane whose runs are all on another commit than C is a setup fault: its row says "setup fault: run head is not C"
@@ -45,7 +46,7 @@
 #     D/raw/         the normalized read, so `--from D/raw` replays the judgement with no network;
 #     history.tsv    one row per run in nightly_greens.sh's format; greens in a row = its streak for nightly-train.
 #   With --inbox FILE (or $INBOX) one line of at most 300 bytes is appended and read back.
-#   Rows carry event "${GITHUB_EVENT_NAME:-timer}": a user timer's runs never count as scheduled nights.
+#   Rows carry event "${GITHUB_EVENT_NAME:-timer}": a user timer's runs never count as nights.
 #
 # GITHUB. At most MAX_CALLS REST/GraphQL calls per run: rate_limit (free), the workflow list (ETag; a 304 is free), ONE
 #   GraphQL query (every producer's recent runs with their check runs, plus main's head and its check rollup), and one
@@ -100,35 +101,35 @@ UNIT="aprender-nightly-train"
 # ('-' producer: none yet; --producers is RED while any row has one, or names a workflow not on the commit: #5080).
 # A run with fewer distinct matched job names than required measures nothing (void).
 LANES='ci-main;verdict;ci / gate + workspace-test (merge, autopilot wait);.github/workflows/ci.yml;^push$;^(ci / gate|workspace-test)$;2
-deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;.github/workflows/deep-nightly.yml;^schedule$;^deep-doctests$
-deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;.github/workflows/deep-nightly.yml;^schedule$;^deep-nodefault$
-deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^schedule$;^examples$
-deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^schedule$;-unknown-linux-gnu on 
-deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;.github/workflows/deep-nightly.yml;^schedule$;^deep-bins-smoke$
-dogfood;verdict;dogfood.sh --phase nightly (R5 refuses its receipt);.github/workflows/dogfood-nightly.yml;^schedule$;^dogfood$
-models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^schedule$;^models$
+deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;.github/workflows/deep-nightly.yml;^(schedule|workflow_dispatch)$;^deep-doctests$
+deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;.github/workflows/deep-nightly.yml;^(schedule|workflow_dispatch)$;^deep-nodefault$
+deep-examples;verdict;autopilot deep: cargo build --workspace --examples;.github/workflows/examples-nightly.yml;^(schedule|workflow_dispatch)$;^examples$
+deep-bins-build;verdict;autopilot deep: all-bins cargo build --locked --release;.github/workflows/nightly.yml;^(schedule|workflow_dispatch)$;-unknown-linux-gnu on 
+deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;.github/workflows/deep-nightly.yml;^(schedule|workflow_dispatch)$;^deep-bins-smoke$
+dogfood;verdict;dogfood.sh --phase nightly (R5 refuses its receipt);.github/workflows/dogfood-nightly.yml;^(schedule|workflow_dispatch)$;^dogfood$
+models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^(schedule|workflow_dispatch)$;^models$
 readiness;verdict;release_readiness.sh, preflight R8;.github/workflows/readiness-nightly.yml;^workflow_run$;^readiness$
-milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
-cleanroom-cpu;verdict;clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-cpu$
-cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-gpu$
-assets;verdict;binary-release.yml + check_release_assets.sh;.github/workflows/assets-rehearsal-nightly.yml;^schedule$;^(Rehearsal tag, and the rehearsal is still the release.s build|The rehearsal built every asset the release owes)$;2
-preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^schedule$;^preflight$
-publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^schedule$;^publish-dryrun$
-coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^schedule$;^coverage$
-guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^schedule$;
-mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^schedule$;
-toolchain-ceiling;info;toolchain-ceiling;.github/workflows/toolchain-ceiling.yml;^schedule$;
-cuda;info;cuda-nightly;.github/workflows/cuda-nightly.yml;^schedule$;
-silicon;info;silicon-nightly;.github/workflows/silicon-nightly.yml;^schedule$;
-qwen-story;info;qwen-story-daily;.github/workflows/qwen-story-daily.yml;^schedule$;
-beat-speed;info;beat-speed-nightly;.github/workflows/beat-speed-nightly.yml;^schedule$;
-conleche;info;conleche-nightly;.github/workflows/conleche-nightly.yml;^schedule$;
-bench;info;nightly-bench;.github/workflows/nightly-bench.yml;^schedule$;
-book;info;book;.github/workflows/book.yml;^schedule$;
-book-contracts;info;book-contracts;.github/workflows/book-contracts.yml;^schedule$;
-install-script;info;install-script;.github/workflows/install-script.yml;^schedule$;
-fleet-toolset;info;fleet-toolset;.github/workflows/fleet-toolset.yml;^schedule$;
-provable-ladder;info;provable-ladder full run, pv discharge run (#4578: info until green 3 nights);.github/workflows/provable-ladder-nightly.yml;^schedule$;^provable-ladder-nightly$'
+milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^(schedule|workflow_dispatch)$;^milestone$
+cleanroom-cpu;verdict;clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^cleanroom-cpu$
+cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^cleanroom-gpu$
+assets;verdict;binary-release.yml + check_release_assets.sh;.github/workflows/assets-rehearsal-nightly.yml;^(schedule|workflow_dispatch)$;^(Rehearsal tag, and the rehearsal is still the release.s build|The rehearsal built every asset the release owes)$;2
+preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^(schedule|workflow_dispatch)$;^preflight$
+publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^publish-dryrun$
+coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^(schedule|workflow_dispatch)$;^coverage$
+guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^(schedule|workflow_dispatch)$;
+mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^(schedule|workflow_dispatch)$;
+toolchain-ceiling;info;toolchain-ceiling;.github/workflows/toolchain-ceiling.yml;^(schedule|workflow_dispatch)$;
+cuda;info;cuda-nightly;.github/workflows/cuda-nightly.yml;^(schedule|workflow_dispatch)$;
+silicon;info;silicon-nightly;.github/workflows/silicon-nightly.yml;^(schedule|workflow_dispatch)$;
+qwen-story;info;qwen-story-daily;.github/workflows/qwen-story-daily.yml;^(schedule|workflow_dispatch)$;
+beat-speed;info;beat-speed-nightly;.github/workflows/beat-speed-nightly.yml;^(schedule|workflow_dispatch)$;
+conleche;info;conleche-nightly;.github/workflows/conleche-nightly.yml;^(schedule|workflow_dispatch)$;
+bench;info;nightly-bench;.github/workflows/nightly-bench.yml;^(schedule|workflow_dispatch)$;
+book;info;book;.github/workflows/book.yml;^(schedule|workflow_dispatch)$;
+book-contracts;info;book-contracts;.github/workflows/book-contracts.yml;^(schedule|workflow_dispatch)$;
+install-script;info;install-script;.github/workflows/install-script.yml;^(schedule|workflow_dispatch)$;
+fleet-toolset;info;fleet-toolset;.github/workflows/fleet-toolset.yml;^(schedule|workflow_dispatch)$;
+provable-ladder;info;provable-ladder full run, pv discharge run (#4578: info until green 3 nights);.github/workflows/provable-ladder-nightly.yml;^(schedule|workflow_dispatch)$;^provable-ladder-nightly$'
 caller_error() { printf 'NOT RELEASABLE: nightly-train, caller error: %s\n' "$*"; exit 3; }
 # ---------------------------------------------------------------- judgement (pure: files in, files out) ----------
 # evaluate LANESFILE RAW MODE -> MODE=cand: run ids of green verdict candidates; MODE=final: lanes.tsv rows and
@@ -443,26 +444,26 @@ commit_ok() {
         || { printf 'failed: the read is of %s, not of %s %s\n' "$(cat "$1/C" 2>/dev/null)" "$lab" "$w" > "$1/read"; return 1; }
 }
 NIGHT_WF="nightly.yml"
-# night_pick RUNS.json NOW -> "id<TAB>created<TAB>sha" of that night's scheduled NIGHT_WF run: the newest run on main
-#   with event schedule created at or before NOW and less than 24 h before it, which must be completed; else
-#   "none<TAB>why". A dispatched or other-branch run is never picked, and an incomplete newest run is not skipped for
+# night_pick RUNS.json NOW -> "id<TAB>created<TAB>sha" of that night's NIGHT_WF run: the newest run on main
+#   with event schedule or workflow_dispatch created at or before NOW and less than 24 h before it, which must be completed; else
+#   "none<TAB>why". A push or other-branch run is never picked, and an incomplete newest run is not skipped for
 #   an older one: the night has no C yet.
 night_pick() {
     jq -r --arg now "$2" '
         ($now | fromdateiso8601) as $t
-        | [(.workflow_runs // [])[] | select(.event == "schedule" and .head_branch == "main" and ((.created_at | fromdateiso8601) <= $t))]
+        | [(.workflow_runs // [])[] | select((.event == "schedule" or .event == "workflow_dispatch") and .head_branch == "main" and ((.created_at | fromdateiso8601) <= $t))]
         | (sort_by(.created_at) | last) as $r
-        | if $r == null then "none\tno scheduled \($ENV.NIGHT_WF) run on main by \($now)"
-          elif ($t - ($r.created_at | fromdateiso8601)) >= 86400 then "none\tthe newest scheduled \($ENV.NIGHT_WF) run \($r.id) (\($r.created_at)) is 24 h or more before \($now)"
-          elif $r.status != "completed" then "none\tthe scheduled \($ENV.NIGHT_WF) run \($r.id) is \($r.status)"
-          elif (($r.head_sha // "") | test("^[0-9a-f]{40}$") | not) then "none\tthe scheduled \($ENV.NIGHT_WF) run \($r.id) has no head sha"
+        | if $r == null then "none\tno scheduled or dispatched \($ENV.NIGHT_WF) run on main by \($now)"
+          elif ($t - ($r.created_at | fromdateiso8601)) >= 86400 then "none\tthe newest night \($ENV.NIGHT_WF) run \($r.id) (\($r.created_at)) is 24 h or more before \($now)"
+          elif $r.status != "completed" then "none\tthe night \($ENV.NIGHT_WF) run \($r.id) is \($r.status)"
+          elif (($r.head_sha // "") | test("^[0-9a-f]{40}$") | not) then "none\tthe night \($ENV.NIGHT_WF) run \($r.id) has no head sha"
           else "\($r.id)\t\($r.created_at)\t\($r.head_sha)" end' "$1" 2>/dev/null
 }
 # night_head RAW -> RAW/night (id, created, sha); 1, with RAW/read saying why, on no C
 night_head() {
     local n
     call_ok || { printf 'failed: call budget\n' > "$1/read"; return 1; }
-    gh api "repos/$REPO/actions/workflows/$NIGHT_WF/runs?event=schedule&branch=main&per_page=10" > "$1/night.json" 2>/dev/null \
+    gh api "repos/$REPO/actions/workflows/$NIGHT_WF/runs?branch=main&per_page=10" > "$1/night.json" 2>/dev/null \
         || { printf 'failed: the %s run list\n' "$NIGHT_WF" > "$1/read"; return 1; }
     n="$(NIGHT_WF="$NIGHT_WF" night_pick "$1/night.json" "${NOW:-}")"
     case "$n" in
@@ -541,7 +542,7 @@ inrun_rows() {
     mv -- "$raw/runs.next" "$raw/runs.tsv" || return 1
     { awk -F '\t' -v R="$id" '$1 != R' "$raw/attempts.tsv" 2>/dev/null; printf '%s\t%s\n' "$id" "$att"; } > "$raw/attempts.next" && mv -- "$raw/attempts.next" "$raw/attempts.tsv"
 }
-# lanes_rows RAW -> (no --in-run) RAW/runs.tsv with the newest scheduled INRUN_WF run whose head is not C re-read: its
+# lanes_rows RAW -> (no --in-run) RAW/runs.tsv with the newest night (scheduled or dispatched) INRUN_WF run whose head is not C re-read: its
 #   pick job chose C (the night's commit), not the run's own head, so its lane jobs check out C and assert it. One REST
 #   read of that run's latest attempt; a job is a row of C only when its own `Assert HEAD is <C>` step succeeded, the
 #   rest of the run votes on nothing. A failed read, or no job that asserted C, leaves the run's rows as they were: on
@@ -549,7 +550,7 @@ inrun_rows() {
 lanes_rows() {
     local raw="$1" c id
     c="$(cat "$raw/C" 2>/dev/null)"
-    id="$(awk -F '\t' -v W="$INRUN_WF" -v C="$c" '$2 == W && $4 == "schedule" && $7 > t { t = $7; id = $3; h = $6 } END { if (id != "" && h != C) print id }' "$raw/runs.tsv")"
+    id="$(awk -F '\t' -v W="$INRUN_WF" -v C="$c" '$2 == W && ($4 == "schedule" || $4 == "workflow_dispatch") && $7 > t { t = $7; id = $3; h = $6 } END { if (id != "" && h != C) print id }' "$raw/runs.tsv")"
     case "$id" in ''|*[!0-9]*) return 0 ;; esac
     MAX_CALLS=$((MAX_CALLS + 1))
     call_ok || return 0
@@ -695,7 +696,7 @@ run_train() {
             awk -F '\t' '{ print "# fresh\t" $1 "\tpin=" $2 "\tmain=" $3 "\t" $4 }' "$raw/fresh" 2>/dev/null
         fi
         # the read C, and where it came from: the night's scheduled run (id, created, head), or --commit
-        printf '# read C\t%s\t%s\n' "${CSHA:-none}" "$(if [ -n "$COMMIT" ]; then printf -- '--commit'; elif [ -s "$raw/night" ]; then printf 'scheduled %s run %s' "$NIGHT_WF" "$(tr '\t' ' ' < "$raw/night")"; else printf 'no night read'; fi)"
+        printf '# read C\t%s\t%s\n' "${CSHA:-none}" "$(if [ -n "$COMMIT" ]; then printf -- '--commit'; elif [ -s "$raw/night" ]; then printf 'night %s run %s' "$NIGHT_WF" "$(tr '\t' ' ' < "$raw/night")"; else printf 'no night read'; fi)"
     } > "$OUTDIR/$DAY/bundle.tsv" || exit 1
     step print
     printf '%s\n' "$line" > "$OUTDIR/$DAY/line" || exit 1
@@ -807,10 +808,10 @@ producers_report() {
     [ -z "$o" ]
 }
 # ---------------------------------------------------------------- the case table ----------------------------------
-ST_LANES='v-a;verdict;check A;.github/workflows/a.yml;^schedule$;^job-a$
-v-b;verdict;check B;.github/workflows/b.yml;^schedule$;
+ST_LANES='v-a;verdict;check A;.github/workflows/a.yml;^(schedule|workflow_dispatch)$;^job-a$
+v-b;verdict;check B;.github/workflows/b.yml;^(schedule|workflow_dispatch)$;
 v-c;verdict;check C;.github/workflows/c.yml;^push$;^(gate|test)$;2
-i-d;info;check D;.github/workflows/d.yml;^schedule$;'
+i-d;info;check D;.github/workflows/d.yml;^(schedule|workflow_dispatch)$;'
 ST_C="$(printf 'a%.0s' $(seq 40))"
 ST_X="$(printf 'b%.0s' $(seq 40))"
 # fixture DIR -> every lane green on C, attempt 1
@@ -990,6 +991,8 @@ v-e;verdict;check E;-;-;-" "$d"
     st_night() { local f="$tmp/night-$1.json"; shift; printf '{"workflow_runs":[%s]}\n' "$(IFS=,; echo "$*")" > "$f"; }
     st_night ok "$(st_nr 900 schedule main 2026-10-04T04:00:00Z completed "$ST_C")"
     st_night dispatch "$(st_nr 905 workflow_dispatch main 2026-10-04T05:00:00Z completed "$ST_X")"
+    st_night push "$(st_nr 906 push main 2026-10-04T05:00:00Z completed "$ST_X")"
+    st_night dbranch "$(st_nr 907 workflow_dispatch release/x 2026-10-04T05:00:00Z completed "$ST_X")" "$(st_nr 900 schedule main 2026-10-04T04:00:00Z completed "$ST_C")"
     st_night running "$(st_nr 901 schedule main 2026-10-04T05:00:00Z in_progress "$ST_X")" "$(st_nr 900 schedule main 2026-10-04T04:00:00Z completed "$ST_C")"
     st_night stale "$(st_nr 800 schedule main 2026-10-03T05:59:59Z completed "$ST_C")"
     st_night future "$(st_nr 902 schedule main 2026-10-04T07:00:00Z completed "$ST_X")" "$(st_nr 900 schedule main 2026-10-04T04:00:00Z completed "$ST_C")"
@@ -1025,16 +1028,21 @@ v-e;verdict;check E;-;-;-" "$d"
     row fetch_refuses_a_graphql_error 0 "failed: GraphQL errors" "" -- st_fetch_refuses_a_graphql_error
     # B1: C is the head of the night's SCHEDULED nightly.yml run, never main's head at read time
     st_pick() { NIGHT_WF=nightly.yml night_pick "$tmp/night-$1.json" 2026-10-04T06:00:00Z; }
+    # every lane whose producer runs at night takes its dispatched run on main too: one rule, schedule|workflow_dispatch
+    st_lane_events() { printf '%s\n' "$LANES" | awk -F ';' '$5 == "^schedule$" { n++; print $1 } END { printf "schedule-only=%d\n", n }'; }
+    row every_night_lane_takes_a_dispatched_run 0 "schedule-only=0" "" -- st_lane_events
     row night_pick_takes_the_scheduled_run 0 "$(printf '900\t2026-10-04T04:00:00Z\t%s' "$ST_C")" "none" -- st_pick ok
-    row night_pick_never_counts_a_dispatched_run 0 "none	no scheduled nightly.yml run on main by" "$ST_X" -- st_pick dispatch
-    row night_pick_never_skips_a_running_night 0 "none	the scheduled nightly.yml run 901 is in_progress" "$ST_C" -- st_pick running
+    row night_pick_takes_a_dispatched_run 0 "$(printf '905\t2026-10-04T05:00:00Z\t%s' "$ST_X")" "none" -- st_pick dispatch
+    row night_pick_never_counts_a_push 0 "none	no scheduled or dispatched nightly.yml run on main by" "$ST_X" -- st_pick push
+    row night_pick_never_counts_a_dispatch_on_another_branch 0 "$(printf '900\t2026-10-04T04:00:00Z\t%s' "$ST_C")" "$ST_X" -- st_pick dbranch
+    row night_pick_never_skips_a_running_night 0 "none	the night nightly.yml run 901 is in_progress" "$ST_C" -- st_pick running
     row night_pick_refuses_a_run_24h_old 0 "is 24 h or more before" "$ST_C" -- st_pick stale
     row night_pick_ignores_a_run_after_now 0 "$(printf '900\t2026-10-04T04:00:00Z\t%s' "$ST_C")" "$ST_X" -- st_pick future
     row night_pick_ignores_another_branch 0 "$(printf '900\t2026-10-04T04:00:00Z\t%s' "$ST_C")" "$ST_X" -- st_pick branch
     row night_pick_refuses_a_run_without_a_sha 0 "has no head sha" "" -- st_pick nosha
     st_fetch_night() { CALLS=0; STUB_NIGHT="$tmp/night-$1.json" st_fetch "n$1"; }
-    row a_dispatched_only_night_fails_the_read 0 "failed: no scheduled nightly.yml run on main" "GraphQL" -- st_fetch_night dispatch
-    row a_running_night_fails_the_read 0 "failed: the scheduled nightly.yml run 901 is in_progress" "GraphQL" -- st_fetch_night running
+    row a_push_only_night_fails_the_read 0 "failed: no scheduled or dispatched nightly.yml run on main" "GraphQL" -- st_fetch_night push
+    row a_running_night_fails_the_read 0 "failed: the night nightly.yml run 901 is in_progress" "GraphQL" -- st_fetch_night running
     row an_unparsed_night_list_fails_the_read 0 "failed: the nightly.yml run list did not parse" "GraphQL" -- st_fetch_night garbage
     row an_unread_night_list_fails_the_read 0 "failed: the nightly.yml run list" "GraphQL" -- st_fetch_night absent
     # the late-start night: the producers ran on C1, main moved on to C2 before the read. The line judges C1, and a lane whose
@@ -1069,7 +1077,7 @@ v-e;verdict;check E;-;-;-" "$d"
     }
     st_late_start_line > "$tmp/lsl.out" 2>&1
     row a_late_start_night_prints_c1_on_the_line 0 "[C=aaaaaaaaaa pin=" "[C=bbbbbbbbbb" -- cat "$tmp/lsl.out"
-    row the_receipt_prints_the_read_c_and_its_night 0 "$(printf '# read C\t%s\tscheduled nightly.yml run 900 2026-10-04T04:00:00Z %s' "$ST_C" "$ST_C")" "" -- cat "$tmp/lsl.out"
+    row the_receipt_prints_the_read_c_and_its_night 0 "$(printf '# read C\t%s\tnight nightly.yml run 900 2026-10-04T04:00:00Z %s' "$ST_C" "$ST_C")" "" -- cat "$tmp/lsl.out"
     row an_inbox_read_back_mismatch_exits_non_zero 1 "inbox: read-back mismatch" "" -- \
         bash "$SCRIPT_PATH" --from "$d" --out "$tmp/o9" --inbox /dev/null --now 2026-10-04T06:00:00Z
     row a_closed_stdout_keeps_the_real_verdict 0 "NOT RELEASABLE: ci-main, not_measured (+14 more) [C=aaaaaaaaaa pin=" "nightly-train" -- cat "$tmp/o5/2026-10-04/line"
@@ -1161,10 +1169,10 @@ v-e;verdict;check E;-;-;-" "$d"
     row fresh_read_a_cached_pair_reads_no_compare 0 "compares=0" "state=[]" -- st_fresh_cached
     # ---- --commit C and --in-run RUN (B1 Q1, Q3): C by oid, and the rehearsal's own lane jobs, each on C only where it
     #      asserted C. Against a stub gh (no network); the replay rows read a jobs TSV fixture.
-    ST_IR_LANES='v-a;verdict;check A;.github/workflows/a.yml;^schedule$;^job-a$
-l-gpu;verdict;check G;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-gpu$
-l-dry;verdict;check P;.github/workflows/release-lanes-nightly.yml;^schedule$;^publish-dryrun$
-l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
+    ST_IR_LANES='v-a;verdict;check A;.github/workflows/a.yml;^(schedule|workflow_dispatch)$;^job-a$
+l-gpu;verdict;check G;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^cleanroom-gpu$
+l-dry;verdict;check P;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^publish-dryrun$
+l-mod;verdict;check M;.github/workflows/models-nightly.yml;^(schedule|workflow_dispatch)$;^models$'
     mkdir -p "$tmp/ir/bin"
     printf '%s\n' '#!/bin/bash' 'q=""; n=""; for a in "$@"; do [ -z "$n" ] || q="$a"; n=""; [ "$a" != --jq ] || n=1; done' 'case "$*" in' \
         '  *rate_limit*) echo "5000 5000" ;;' \
@@ -1241,7 +1249,9 @@ l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
     ir_case retry schedule 2 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_rerun_rehearsal_is_red 0 "success only at attempt 2" "RELEASABLE H=" -- st_ir retry
     ir_case dispatch workflow_dispatch 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
-    row inrun_a_dispatched_rehearsal_is_not_measured 0 "NOT RELEASABLE: l-gpu, not_measured" "RELEASABLE H=" -- st_ir dispatch
+    row inrun_a_dispatched_rehearsal_on_main_is_measured 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_ir dispatch
+    ir_case push push 1 7001 "$IRP" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
+    row inrun_a_pushed_rehearsal_is_not_measured 0 "NOT RELEASABLE: l-gpu, not_measured" "RELEASABLE H=" -- st_ir push
     ir_case cut schedule 1 7001 "$IRP" 10 "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
     row inrun_a_cut_job_list_is_not_measured 0 "its job list was cut" "RELEASABLE H=" -- st_ir cut
     ir_case path schedule 1 7001 "$INRUN_WF" = "$J_PICK" "$J_CASE" "$J_MGPU" "$J_GPU" "$J_DRY" "$J_MOD" "$J_SELF"
@@ -1279,6 +1289,7 @@ l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
     st_lr() {
         local f="$tmp/lr/$1"; mkdir -p "$f"; : > "$f/jobs.json.log"
         if [ "$1" = onc ]; then cp "$tmp/ir/gql.json" "$f/gql.json"
+        elif [ "$1" = disp ]; then jq -c --argjson id 900 --arg x "$ST_X" '(.. | objects | select(.databaseId? == $id)) |= (.checkSuite.commit.oid = $x | .event = "workflow_dispatch")' "$tmp/ir/gql.json" > "$f/gql.json"
         else jq -c --argjson id 900 --arg x "$ST_X" '(.. | objects | select(.databaseId? == $id) | .checkSuite.commit.oid) |= $x' "$tmp/ir/gql.json" > "$f/gql.json"; fi
         printf '{"total_count":3,"jobs":[%s,%s,%s]}\n' "$(ir_job pick completed '"success"')" \
             "$(ir_job cleanroom-gpu completed "\"${3:-success}\"" "${2:-$ST_C}" success)" "$(ir_job publish-dryrun completed '"success"' "${4:-$ST_C}" success)" > "$f/jobs.json"
@@ -1289,6 +1300,7 @@ l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
         decide "$ST_IR_LANES" "$f" 2026-10-04T06:00:00Z; cat "$f/line" "$f/lanes.tsv"
     }
     row lanes_a_scheduled_run_that_asserted_c_counts_for_c 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_lr base
+    row lanes_a_dispatched_run_that_asserted_c_counts_for_c 0 "RELEASABLE H=$ST_C" "NOT RELEASABLE" -- st_lr disp
     row lanes_a_run_already_on_c_reads_no_job_list 0 "jobreads=0" "" -- st_lr onc
     row lanes_a_job_that_asserted_another_commit_votes_on_nothing 0 "NOT RELEASABLE" "" -- st_lr other "$ST_X" success
     row lanes_a_red_job_that_asserted_c_is_red 0 "run 900: cleanroom-gpu=failure" "" -- st_lr red "$ST_C" failure
@@ -1436,7 +1448,10 @@ m83_models_unrun_row_dropped	/if (!(MW in got)) print/d
 m84_lanes_unrun_row_dropped	/if (!(W in got)) print/d
 m85_models_job_misnamed	s/^INRUN_MODELS="models"$/INRUN_MODELS="rehearse"/
 m86_night_c_is_main_head	s/want="\$(cut -f 3 "\$raw\/night")"/want=""/
-m87_dispatched_night_counts	s/select(.event == "schedule" and /select(/
+m87_any_event_is_a_night	s/select((.event == "schedule" or .event == "workflow_dispatch") and /select(/
+m110_dispatched_night_dropped	s/select((.event == "schedule" or .event == "workflow_dispatch") and /select(.event == "schedule" and /
+m111_lanes_schedule_only	/^dogfood;verdict;/s/;\^(schedule|workflow_dispatch)\$;/;^schedule$;/
+m112_lanes_run_pick_schedule_only	s/(\$4 == "schedule" || \$4 == "workflow_dispatch") \&\& \$7 > t/\$4 == "schedule" \&\& \$7 > t/
 m88_running_night_counts	s/elif \$r.status != "completed" then/elif false then/
 m89_stale_night_counts	s/>= 86400 then/>= 864000000 then/
 m90_setup_fault_unprinted	s/(pwhy == "" \&\& other != "" ? "setup fault: /(0 ? "setup fault: /

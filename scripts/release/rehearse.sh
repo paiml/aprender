@@ -4,7 +4,7 @@
 # B1 (rule a, C332): every night on main's head, the same script and the same policy file as release
 # day run everything except the tag push and the uploads. Green means exit 0, every lane measured on
 # that night's commit, no rerun. The 3 nights before release day are green; a red night resets the
-# count (nightly_greens.sh counts this job's scheduled runs on main).
+# count (nightly_greens.sh counts this job's scheduled and dispatched runs on main).
 #
 # H10: a rehearsal makes no write outside its own state directory. Enforced, not promised:
 #   * every stage runs with the write guard (lib_write_guard.sh) first on PATH. A write is refused
@@ -50,7 +50,8 @@
 #       scripts/release and the blob ids of the stop list and the policy file; a night counts only when
 #       its ids equal REV's (release day's), so any change to them resets the count. A night is keyed on
 #       the C its own record names (the release-rehearsal artifact), never on the run's head_sha. The count is
-#       nightly_greens.sh's over this workflow's scheduled runs on main: a dispatched day run never counts.
+#       nightly_greens.sh's over this workflow's scheduled and dispatched runs on main: a dispatched run on main is a
+#       night ("\"tonight\" is a concept we control", operator, relayed verbatim 2026-10-11).
 #       Ready prints one RECEIPT line per counting night. EXIT 0 ready · 1 not ready · 2 · 3 as below.
 #   rehearse.sh --classify TOOL CWD [ARG...]   READ or WRITE <why>, as the guard decides it
 #   rehearse.sh --selftest       the case table: guard must-refuse/must-pass, the stub end to end,
@@ -75,7 +76,7 @@ SUMMARY='Release rehearsal (B1): no train summary. This bump is never pushed.'
 IDS_TREE=scripts/release
 IDS_STOP=contracts/release-ready-v1.yaml
 IDS_POLICY=contracts/model-capability-ladder-v1.yaml
-# The workflow whose scheduled runs on main are the counting nights, and the floor its REST reads keep.
+# The workflow whose scheduled and dispatched runs on main are the counting nights, and the floor its REST reads keep.
 WORKFLOW=release-rehearsal-nightly.yml
 RATE_FLOOR=1000
 # That workflow's file, and the train that reads its run (--in-run): wiring() holds the one to the other.
@@ -391,14 +392,14 @@ rate_ok() {
     [ "$rem" -ge "$fl" ] || { echo "core remaining $rem under $fl" >&2; return 2; }
 }
 
-# fetch_runs CACHE OUT -> OUT: the workflow's scheduled runs on main, nightly_greens.sh's six columns then head_sha.
+# fetch_runs CACHE OUT -> OUT: the workflow's runs on main (every event: the judge keeps schedule and workflow_dispatch), nightly_greens.sh's six columns then head_sha.
 # One REST read, sent with the cached ETag (a 304 reuses CACHE/runs.json). rc 2 and the reason on stderr when
 # GitHub cannot be read or the floor is reached: not_measured, never "no nights".
 fetch_runs() {
     local cache=$1 out=$2 relpath=${3:-0} st hdr=()
     rate_ok "$relpath" || return 2
     [ -s "$cache/runs.etag" ] && [ -s "$cache/runs.json" ] && hdr=(-H "If-None-Match: $(cat "$cache/runs.etag")")
-    gh api -i "${hdr[@]}" "repos/$REPO/actions/workflows/$WORKFLOW/runs?branch=main&event=schedule&per_page=60" > "$cache/runs.http" 2>/dev/null
+    gh api -i "${hdr[@]}" "repos/$REPO/actions/workflows/$WORKFLOW/runs?branch=main&per_page=60" > "$cache/runs.http" 2>/dev/null
     st=$(awk 'NR == 1 { print $2; exit }' "$cache/runs.http")
     case $st in
         200) awk 'f { print } /^\r?$/ { f = 1 }' "$cache/runs.http" > "$cache/runs.json" || return 2
@@ -448,7 +449,7 @@ ids_diff() {
 }
 
 # streak --commit REV --as-of YYYY-MM-DD --cache DIR [--repo DIR] [--history FILE] -> the STREAK_NEED counting nights'
-# receipts a pass on REV needs (C345 #4, Q9; one since C355 item 6). REV's ids are release day's. A scheduled night on main is keyed on its
+# receipts a pass on REV needs (C345 #4, Q9; one since C355 item 6). REV's ids are release day's. A night on main (scheduled or dispatched) is keyed on its
 # own C, the commit its record names, never on the run's head_sha (the pick sets C behind main's head). It counts
 # only when C carries the same ids; any other, and a record that names no C or two, is a reset, judged as a red
 # night. The count is nightly_greens.sh's. The history is FILE (seven columns, as fetch_runs writes) or one read of
@@ -518,13 +519,13 @@ streak() {
         # a night whose C is not on the target's ids is a reset: its run is judged failure, whatever it ended as
         printf 'RESET run %s (night %s, C %s): %s\n' "$id" "$day" "$c" "$why"
         printf '%s\n' "$id" >> "$cache/resets.tsv"; red=1
-    done < <(awk -F'\t' -v OFS='\t' -v asof="$asof" 'NR > 1 && $3 == "main" && $4 == "schedule" && substr($2, 1, 10) <= asof {
+    done < <(awk -F'\t' -v OFS='\t' -v asof="$asof" 'NR > 1 && $3 == "main" && ($4 == "schedule" || $4 == "workflow_dispatch") && substr($2, 1, 10) <= asof {
                  print $2, $1, substr($2, 1, 10), ($5 == "" ? "-" : $5), $6, $7 }' "$hist" | LC_ALL=C sort -r | cut -f 2-)
     awk -F'\t' -v OFS='\t' -v cut="$cut" '
         FILENAME == ARGV[1] { reset[$1] = 1; next }
         FNR == 1 { print $1, $2, $3, $4, $5, $6; next }
-        $3 == "main" && $4 == "schedule" && cut != "" && substr($2, 1, 10) <= cut { next }
-        $3 == "main" && $4 == "schedule" && ($1 in reset) { $5 = "failure" }
+        $3 == "main" && ($4 == "schedule" || $4 == "workflow_dispatch") && cut != "" && substr($2, 1, 10) <= cut { next }
+        $3 == "main" && ($4 == "schedule" || $4 == "workflow_dispatch") && ($1 in reset) { $5 = "failure" }
         { print $1, $2, $3, $4, $5, $6 }' "$cache/resets.tsv" "$hist" > "$cache/history.tsv" \
         || { echo "not_measured: the history could not be read"; return 2; }
     rc=0; o=$(bash "$SCRIPT_DIR/nightly_greens.sh" --check release-rehearsal --history "$cache/history.tsv" --as-of "$asof") || rc=$?
@@ -1268,7 +1269,11 @@ GH
     sr a_c_not_in_the_repo_is_not_measured 2 "not_measured: night 2026-10-08 run 3: its C $none is not in" "$c2" "$n6|$c1" "$n7|$c2" "$n8|$c2|$none"
     sr a_pass_commit_without_the_stop_list_is_not_measured 2 "not_measured: the pass commit's ids cannot be read" "$c0" "$n6|$c0" "$n7|$c0" "$n8|$c0"
     sr a_stop_list_that_is_a_directory_is_not_measured 2 "has no blob $IDS_STOP" "$c6" "$n6|$c2" "$n7|$c2" "$n8|$c2"
-    sr day_runs_do_not_count 1 "not ready: night 2026-10-07 was red (run 2, failure)" "$c2" "$n6|$c1" "2|2026-10-07|schedule|failure|1|$c2|none" "4|2026-10-08|workflow_dispatch|success|1|$none"
+    # a dispatched run on main is a night (operator, relayed verbatim 2026-10-11: "\"tonight\" is a concept we control"); a push is not
+    sr a_dispatched_night_counts 0 "RECEIPT run 4 night 2026-10-08 C $c2 head $c2" "$c2" "$n6|$c1" "$n7|$c2" "4|2026-10-08|workflow_dispatch|success|1|$c2"
+    sr a_red_dispatched_night_is_red 1 "not ready: night 2026-10-08 was red (run 4, failure)" "$c2" "$n6|$c2|none" "$n7|$c2|none" "4|2026-10-08|workflow_dispatch|failure|1|$c2|none"
+    sr a_dispatched_night_on_other_ids_resets 1 "RESET run 4 (night 2026-10-08, C $c3)" "$c2" "$n6|$c2" "$n7|$c2" "4|2026-10-08|workflow_dispatch|success|1|$c3"
+    sr push_runs_do_not_count 1 "not ready: night 2026-10-07 was red (run 2, failure)" "$c2" "$n6|$c1" "2|2026-10-07|schedule|failure|1|$c2|none" "4|2026-10-08|push|success|1|$none"
     sr a_running_night_on_the_same_ids_waits 0 "RECEIPT run 2 night 2026-10-07" "$c2" "0|2026-10-05|schedule|success|1|$c1" "$n6|$c1" "$n7|$c2" "3|2026-10-08|schedule||1|$c2"
     # keyed on C: the head is the workflow's commit, C the one the night measured
     sr a_night_counts_on_its_c_whatever_its_head 0 "RECEIPT run 3 night 2026-10-08 C $c2 head $c3" "$c2" "$n6|$c3|$c1" "$n7|$c3|$c2" "$n8|$c3|$c2"
@@ -1324,7 +1329,7 @@ GH
     rd() { # rd NAME WANT_RC WANT_OUT WANT_RUNS_CALLS WANT_ETAG_CALLS WANT_RECORD_READS [RATE [FLAG]]
         rc=0; o=$(PATH="$gs/bin:$PATH" GHS="$gs" GHS_RATE="${7:-5000 4000}" streak --commit "$c2" --repo "$g" --as-of 2026-10-08 --cache "$gs/cache" ${8:+"$8"} 2>&1) || rc=$?
         local runs etag dl
-        runs=$(grep -c 'actions/workflows/release-rehearsal-nightly.yml/runs?branch=main&event=schedule' "$gs/calls" 2>/dev/null)
+        runs=$(grep -c 'actions/workflows/release-rehearsal-nightly.yml/runs?branch=main&per_page=60' "$gs/calls" 2>/dev/null)
         etag=$(grep -c 'If-None-Match: "e1"' "$gs/calls" 2>/dev/null)
         dl=$(grep -c '^run download ' "$gs/calls" 2>/dev/null)
         if [ "$rc" = "$2" ] && [[ $o == *"$3"* ]] && [ "${runs:-0}" = "$4" ] && [ "${etag:-0}" = "$5" ] && [ "${dl:-0}" = "$6" ]; then pass=$((pass + 1))
@@ -1603,7 +1608,9 @@ ids_policy_is_the_stop_list  rehearse.sh         s/^IDS_POLICY=contracts\/model-
 ids_type_unchecked           rehearse.sh         s/ \&\& \[ "\$(git -C "\$g" cat-file -t "\$id")" = "\$want" \]//
 ids_reset_names_nothing      rehearse.sh         s/\[ "\${a\[i\]}" = "\${b\[i\]}" \] ||/true ||/
 missing_c_is_a_reset         rehearse.sh         s/^                1) why=\$ids ;;/                1|2) why=$ids ;;/
-day_runs_get_ids             rehearse.sh         s/NR > 1 \&\& \$3 == "main" \&\& \$4 == "schedule" \&\& substr(\$2, 1, 10) <= asof {/NR > 1 \&\& substr($2, 1, 10) <= asof {/
+day_runs_get_ids             rehearse.sh         s/NR > 1 \&\& \$3 == "main" \&\& (\$4 == "schedule" || \$4 == "workflow_dispatch") \&\& substr(\$2, 1, 10) <= asof {/NR > 1 \&\& substr($2, 1, 10) <= asof {/
+dispatch_skipped_by_walk     rehearse.sh         s/NR > 1 \&\& \$3 == "main" \&\& (\$4 == "schedule" || \$4 == "workflow_dispatch")/NR > 1 \&\& \$3 == "main" \&\& (\$4 == "schedule")/
+dispatch_reset_not_judged    rehearse.sh         s/        \$3 == "main" \&\& (\$4 == "schedule" || \$4 == "workflow_dispatch") \&\& (\$1 in reset)/        \$3 == "main" \&\& \$4 == "schedule" \&\& (\$1 in reset)/
 c_keyed_on_head              rehearse.sh         s/ids=\$(release_ids "\$repo" "\$c" 2>\&1)/ids=$(release_ids "$repo" "$hd" 2>\&1)/
 record_without_c_counts      rehearse.sh         s/\[\[ \$e =~ \^\[0-9a-f\]{40}\$ \]\] ||/true ||/
 sources_not_compared         rehearse.sh         s/\[ "\$t" = "\$e" \] ||/true ||/
