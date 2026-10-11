@@ -1275,7 +1275,7 @@ l-mod;verdict;check M;.github/workflows/models-nightly.yml;^schedule$;^models$'
     st_lr() {
         local f="$tmp/lr/$1"; mkdir -p "$f"; : > "$f/jobs.json.log"
         if [ "$1" = onc ]; then cp "$tmp/ir/gql.json" "$f/gql.json"
-        else jq -c '(.. | objects | select(.databaseId? == 900) | .checkSuite.commit.oid) |= "'"$ST_X"'"' "$tmp/ir/gql.json" > "$f/gql.json"; fi
+        else jq -c --argjson id 900 --arg x "$ST_X" '(.. | objects | select(.databaseId? == $id) | .checkSuite.commit.oid) |= $x' "$tmp/ir/gql.json" > "$f/gql.json"; fi
         printf '{"total_count":3,"jobs":[%s,%s,%s]}\n' "$(ir_job pick completed '"success"')" \
             "$(ir_job cleanroom-gpu completed "\"${3:-success}\"" "${2:-$ST_C}" success)" "$(ir_job publish-dryrun completed '"success"' "${4:-$ST_C}" success)" > "$f/jobs.json"
         local lj="$f/jobs.json"; [ "$1" != noread ] || lj=""
