@@ -140,8 +140,8 @@ pub(crate) fn dequantize_q4_k_superblock(sb_data: &[u8]) -> Vec<f32> {
 ///
 /// # Performance
 ///
-/// AVX2: ~4x speedup over scalar per super-block
-/// Combined with rayon: ~40x speedup on 16-core system
+/// Uses AVX2 per super-block where the CPU has it, and rayon across
+/// super-blocks.
 pub fn dequantize_q4_k_simd(data: &[u8]) -> Result<Vec<f32>> {
     #[cfg(target_arch = "x86_64")]
     {

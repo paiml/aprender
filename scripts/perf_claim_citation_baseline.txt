@@ -147,8 +147,6 @@ crates/aprender-serve/src/quantize/fused_k.rs:266
 crates/aprender-serve/src/quantize/fused_q4_0_q8_0.rs:5
 crates/aprender-serve/src/quantize/fused_q5k_q6k.rs:135
 crates/aprender-serve/src/quantize/fused_q8_0_q8_0.rs:230
-crates/aprender-serve/src/quantize/parallel_dequant.rs:144
-crates/aprender-serve/src/quantize/parallel_dequant.rs:145
 crates/aprender-serve/src/quantize/parallel_dequant.rs:35
 crates/aprender-serve/src/quantize/parallel_k.rs:182
 crates/aprender-serve/src/quantize/product.rs:388
