@@ -7,6 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-10-11
+
+The 0.71.0 train: release checks move into code with a fixed stage budget, checks that cannot block a merge or a release run nightly instead of on the PR path, a nightly release rehearsal and nightly train judge one commit end to end, the CI helpers and the CRUX judge are ported to Rust, the Laya ModernBERT encoder lands, and Qwen3.5 hybrid GGUF export loads in llama.cpp. From this release on, a release ships on CRUX smoke; larger model rows run nightly and each red row is a ticket.
+
+### Added
+
+- feat(release): nightly assets rehearsal — build every release asset on a schedule, unable to upload (#4806) (#4813)
+- feat(ci-tools): aprender-ci-tools crate — Rust ports of the CI helpers (PY-PORT-2, split 1/2 of #4847) (#4916)
+- feat(crux-judge): Rust CRUX judge (PMAT-4802, split 2/2 of #4847) (#4917)
+- feat(hooks): pre-push tag guard, accepting a release tag at exactly its release branch head (#4944)
+- feat(release): the stage list lives in code - one data file, one reader, a budget self-test (merge 9, tag 5, publish 5) (#4967)
+- feat(release): nightly release rehearsal on one commit, with the three-night streak (#4997)
+- feat(export): Qwen3.5 hybrid GGUF export that llama.cpp loads (#4998)
+- feat(code): apr code's JSON document reports the device it ran on (Refs #3719) (#5005)
+- feat(contracts): findings-ledger-v1, a findings line under contract (#4455) (#5006)
+- feat(serve): X-Trace-Level step|layer runs the tracer, and says measured only when it ran (#4496) (#5015)
+- feat(ttft): the V1 TTFT ratio verdict, the TTFT split by phase, and a baseline script that refuses an untrustworthy run (Refs #4954) (#5037)
+- feat(dogfood): write a dogfood-receipt/v1 and run the gate path with no Python (#4377) (#5065)
+- feat(release): the pass's runner-wait rule reads and prints inside its own waits (#4929) (#5078)
+- feat(nightly-train): a red or not_measured night opens or updates one ticket with one owner (#5081) (#5085)
+- feat(decide): carry #4941, the Laya ModernBERT encoder and decision library (#5101)
+- feat(nightly): dogfood and readiness lanes get their producers on main (#5103)
+- feat(bench): V2 serve receipt — load_ms + TTFT beside pp512/tg128 (Refs #4953) (#5106)
+
+### Fixed
+
+- fix(release): deep-nodefault no longer reads green on a failing cargo exit (#4874)
+- fix(release): T-2 can return GO on main's head — defer only the pre-bump CRUX ladder row (D5) (#4931)
+- fix(release): the coverage version-only rule admits the carried CRUX prompt certification (P7 D3) (#4932)
+- fix(release): T-1 dogfood ladder gate waits for the models lane and reads its CRUX receipts (#4930) (#4933)
+- fix(release): the models lane's remote leg fetched only main, so a patch release could not build there (#4938)
+- fix(gpu): a shared cubin temp file let a reader load a partial cubin (#4956) (#4964)
+- fix(gpu): cuBLAS tests synchronized the context inside another test's capture (#4956) (#4966)
+- fix(gpu): a test filling the device let neighbours' allocations OOM in-process (#4956) (#4970)
+- fix(guards): pin origin/main to the run's build base, so a re-run judges the main it was built on (#4996)
+- fix(dogfood): the release model gates read a declared model list, not the model dir (#5000)
+- fix(test): MUT-05/06/07 assert the nightly mutants job; m001/m008 nested build drops CONTRACT_* env (#5004)
+- fix(ci): libm-ban-live prints clippy's output when clippy fails for another reason (#5020)
+- fix(ci): fat_driver case-table fixture lines never reach the runner as annotations (Refs #4596, #4610) (#5029)
+- fix(flake): disable test_stack_unwinding_does_not_crash under FLAKE-0 (#5035)
+- fix(guards): crux serve guard's EXIT trap runs only in its own shell (#5012) (#5036)
+- fix(#4523): per-arch qwen35 LOGITS_BUDGET + a nightly sm_121 lane for the parity module (#5038)
+- fix(tests): four cbtop tests passed while apr-cli did not compile (#5042)
+- fix(cuda): drop graph-mode buffers after a failed decode-graph capture (C14) (#5043)
+- fix(release): the fleet cells gate judges in bash and awk, not python (#4350) (#5049)
+- fix(nightly): ci-pending is asked again the same night, then ends RED (#5053) (#5054)
+- fix(ci): section git fetches read up to 3 times through fetch_p6.sh (P6) (#4936) (#5066)
+- fix(ont): rebind or delete the ghost binding rows; allowlist 163 -> 3 (#4470) (#5067)
+- fix(examples): examples-nightly 36 rows to pass or a skip class, fail 0 timeout 0 (#4756) (#5068)
+- fix(guards): crux serve guard's stub server holds no caller fd and never outlives its case (#5019) (#5073)
+- fix(ont): binding rows after the ghost rebind — dup row, stale signatures, partial fits (#4470 follow-up) (#5077)
+- fix(train): judge the commit of the night's scheduled nightly.yml run, not main's head at read time (#5086)
+- fix(dogfood): pinning guard scopes a gate path whole; receipt test covers the exit (#4377 follow-up) (#5090)
+- fix(release): gates and train judge the producer's commit, not main's head (#5082 hits 2,3,4,5,8,12) (#5094)
+- fix(package): three crates gitignored a source file they ship (#5095)
+- fix(models-nightly): no_token tests the credentials readable, not present (#5062) (#5097)
+- fix(nightly): every registered lane names a producer on the commit, as its own check (#5080) (#5104)
+- fix(scripts): kill only the pid recorded at spawn, never a name pattern (#5112)
+- fix(run): qwen35 --gpu tok/s no longer bills the F2 guard as generation (#4342) (#5115)
+- fix(nightly): the assets lane names its producer, the nightly assets rehearsal (#5116)
+- fix(rehearse): pick walks 200 first-parent commits, and the verdict prints C's age (#5062) (#5129)
+- fix(silicon): an API read failure is NOT_MEASURED, and gh's stderr is kept (#5031) (#5130)
+- fix(cuda): Qwen3.5 batched prefill f32 dequants for IQ2_S, IQ2_XXS, IQ3_S, IQ3_XXS and Q2_K (#5131)
+- fix(train): a stale pin is RED, and the lanes run counts for the commit it asserted (Refs #5083, #5087) (#5132)
+- fix(train): the self-test runs an unpinned copy, so it is green inside an installed bundle (Refs #5083) (#5136)
+- fix(decide): inherit aprender-core from the workspace; guard that path pins name their target version (#5121) (#5137)
+- fix(andon): read the day dir, not cache/: a printed verdict was reported as missing (#5141)
+- fix(night): a dispatched run on main counts as the night, one rule at every site (#5142)
+- fix(rehearse): wiring counts the train's distinct capture names, so the lanes read no longer fails pick (Refs #5062) (#5143)
+- fix(serve): Qwen3.5 host-RAM guard + 1.27x host footprint, recalibrated (Refs #4947) (#5146)
+- fix(decide): pack_laya runs a deterministic smoke path with no arguments (#5157)
+- fix(release): models gates on crux; ladder and six night rows go to LAB (#5158)
+
+### Changed
+
+- release: policy reader refuses an unquoted #; nightly rows match inside the entry (#4923)
+- release: 0.70.3 — streaming tool calls (#4927)
+- ci: remove a fat job's section containers when its run is cancelled (#4962)
+- perf(pv): cut guard-cargo's pv runtime (scoped binding lint, optimized YAML parser in dev builds) (#4993)
+- ci(receipts): judge receipt presence nightly over merged PRs, off the PR path (#4999)
+- test(gpu): run the six gdn device tests in the CUDA unit job again (#4956) (#5044)
+- release: the pass-start streak needs one night, not three (#5061)
+- release: close the last strip spellings of the rehearsal name (#5061 follow-up) (#5071)
+- ci: move three non-blocking PR-path rows to nightly LAB (#5076)
+- refactor(metrics): split davies_bouldin_score and calinski_harabasz_score under the complexity limits (#5111)
+- test(metrics): pin that cluster scores ignore labels past the last row (#5113)
+
 ### Known issues
 - **Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) on GB10 is not claimed for 0.70 (#3715); planned for 0.70.1.**
   On GB10 (sm_121) every verb (run, chat, serve, code) times out at 600 s on the 20k-token rung. The 0.69.1
