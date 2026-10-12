@@ -166,6 +166,9 @@ export CARGO_TARGET_DIR="$REPO_ROOT/target"
 # The standing release policy, judged ONCE from the release commit: it picks the models lane mode and
 # whether readiness runs. cut_tag re-judges it itself (a log is not the gate).
 AP_POLICY=$(ap_policy_applies "$V" 2>> "$LOG") || die "the standing release policy cannot be judged for $V (see $LOG): nothing is measured"
+# #5174: under the policy the pre-publish dogfood is not run, so no receipt this run prints may claim a dogfood GO
+# (check_release_t1_lanes_joined.sh refuses any line that prints one without this swap).
+AP_DF_RECEIPT="dogfood GO"; AP_DF_CLOSE="pre-publish dogfood GO at \`$MC\`"; [ "$AP_POLICY" != 1 ] || { AP_DF_RECEIPT="dogfood not run (policy)"; AP_DF_CLOSE="pre-publish dogfood not run (standing release policy)"; }
 [ "$AP_POLICY" != 1 ] || say "POLICY: the standing release policy covers $V -- CRUX smoke on lambda and gx10 is the release gate, the pre-publish dogfood (R5) and readiness (R8) are not run, the larger ladder rows are nightly"
 
 # #4950: the cascade publishes to crates.io, which cannot be undone, so it re-proves its own premise
@@ -586,7 +589,7 @@ if run_step dryrun; then
   behind=$(grep -cE "\(want ${V//./\\.}\)" "$AP/cascade-check.log" || true)
   tail -3 "$AP/cascade-check.log" >> "$STATUS"
   say "DRYRUN cascade-publish.sh --check rc=$rc crates_behind=$behind ($AP/cascade-check.log)"
-  say "DRYRUN-RECEIPT T-4 proceeds unattended (standing authorization 2026-09-17, reconfirmed by the operator 2026-09-20 \"never wait for me\"); receipts: dogfood GO, tag $T, clean-room run $(cat "$AP/cleanroom-run-id" 2>/dev/null), assets, preflight, dry-run"
+  say "DRYRUN-RECEIPT T-4 proceeds unattended (standing authorization 2026-09-17, reconfirmed by the operator 2026-09-20 \"never wait for me\"); receipts: $AP_DF_RECEIPT, tag $T, clean-room run $(cat "$AP/cleanroom-run-id" 2>/dev/null), assets, preflight, dry-run"
 fi
 
 # 6. crates.io cascade: multi-pass drain, then the check is the verdict (pass 1 exiting 1 is normal)
@@ -830,7 +833,7 @@ if run_step close; then
   # SEC010 (bashrs-gate): read the run id with the read builtin, not $(cat "$AP/…") -- AP is derived
   # now (#3655), so a cat over it inside the message is flagged as a path-traversal risk.
   cleanroom_run_id=unknown; IFS= read -r cleanroom_run_id < "$AP/cleanroom-run-id" 2>/dev/null || cleanroom_run_id=unknown
-  gh issue comment "$EPIC" --repo $REPO --body "$T released: $(gh release view "$T" --repo $REPO --json url -q .url). Receipts: pre-publish dogfood GO at \`$MC\`, all release assets verified by \`scripts/check_release_assets.sh $T\`, crates.io cascade complete, the CUDA asset downloaded, verified and run on gx10 and yoga. clean-room (aprender) green on the tag (run ${cleanroom_run_id}), install.sh receipts on intel and gx10, post-publish dogfood GO over the host receipts of every host in the multi-platform matrix. Logs: $AP on $(hostname)." >> "$LOG" 2>&1 || say "WARN epic comment failed"
+  gh issue comment "$EPIC" --repo $REPO --body "$T released: $(gh release view "$T" --repo $REPO --json url -q .url). Receipts: $AP_DF_CLOSE, all release assets verified by \`scripts/check_release_assets.sh $T\`, crates.io cascade complete, the CUDA asset downloaded, verified and run on gx10 and yoga. clean-room (aprender) green on the tag (run ${cleanroom_run_id}), install.sh receipts on intel and gx10, post-publish dogfood GO over the host receipts of every host in the multi-platform matrix. Logs: $AP on $(hostname)." >> "$LOG" 2>&1 || say "WARN epic comment failed"
   # The epic is IN the milestone, so "0 open items" could never hold while it was open, and nothing
   # here closed it: 0.68.2's #3477 was closed by hand (#3708). Every OTHER item must be closed first;
   # then the epic, then the milestone. Any other open item refuses both.

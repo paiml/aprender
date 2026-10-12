@@ -154,15 +154,25 @@ dirs() {
     [ -z "$m" ] || { echo "models moved off CARGO_TARGET_DIR, which readiness reads: $m"; return 1; }
 }
 
+# nogo AUTOPILOT -> 0 when every line that can print "dogfood GO" swaps it out under the policy (#5174):
+# the dogfood is not run then, so a receipt that names a dogfood GO would be a green nothing measured.
+# The post-publish dogfood still runs after the publish, so its GO is struck out before the match.
+nogo() {
+    local bad
+    bad=$(sed 's/post-publish dogfood GO//g' "$1" | grep -n 'dogfood GO' | grep -v '^[0-9]*:[[:space:]]*#' \
+        | grep -vF '[ "$AP_POLICY" != 1 ] || { AP_DF_RECEIPT="dogfood not run (policy)"; AP_DF_CLOSE="pre-publish dogfood not run' || true)
+    [ -z "$bad" ] || { echo "a line prints dogfood GO with no policy swap: $(printf '%s\n' "$bad" | head -n 1 | cut -c1-100)"; return 1; }
+}
+
 # check AUTOPILOT TAG -> 0 when the join and the dirs hold
 check() {
     awk '/^# The join\./{p=1} p{print} p&&/^fi$/{exit}' "$1" > "$TMP/$2.join"
     grep -q 'wait -n' "$TMP/$2.join" || { echo "no join block (\"# The join.\" .. fi with wait -n)"; return 1; }
-    dirs "$1" && locked "${3:-$PARITY}" && table "$TMP/$2.join" "$2"
+    dirs "$1" && nogo "$1" && locked "${3:-$PARITY}" && table "$TMP/$2.join" "$2"
 }
 
 bad=0
-if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (12 cases), the dogfood lane is not started under the policy, dogfood's target dir is its own, parity takes the GPU lock"
+if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (12 cases), the dogfood lane is not started under the policy and no line claims a dogfood GO then, dogfood's target dir is its own, parity takes the GPU lock"
 else echo "FAIL  the autopilot's T-1 lanes: $why"; bad=1; fi
 
 # The mutants run whatever the real tree did, so report mode prints every line before its verdict.
@@ -186,6 +196,9 @@ mutant stopped-any-rc 's/ \&\& \[ "\$rc" -eq "\$t1_term_rc" \]; then v=STOPPED/;
 mutant policy-runs-dogfood 's/ \&\& \[ "\$s:\$AP_POLICY" != dogfood:1 \]//'
 mutant policy-drops-every-lane 's/\[ "\$s:\$AP_POLICY" != dogfood:1 \]/[ "$AP_POLICY" != 1 ]/'
 mutant no-not-run-line '/^\[ "\$AP_POLICY" != 1 \] || ! run_step dogfood || say /d'
+mutant dryrun-claims-go 's/receipts: \$AP_DF_RECEIPT, tag/receipts: dogfood GO, tag/'
+mutant close-claims-go 's/Receipts: \$AP_DF_CLOSE, all/Receipts: pre-publish dogfood GO, all/'
+mutant no-policy-swap 's/; \[ "\$AP_POLICY" != 1 \] || { AP_DF_RECEIPT="dogfood not run (policy)".*$//'
 nm=$((nm + 1))
 sed -e 's/flock -E 75 -w "\${MODEL_LADDER_LOCK_WAIT:-1800}" "\${MODEL_LADDER_GPU_LOCK:-\/tmp\/apr-gpu.lock}"/env/' "$PARITY" > "$TMP/m-parity.sh"
 if cmp -s "$PARITY" "$TMP/m-parity.sh"; then echo "FAIL  mutant parity-unlocked did not apply (anchor moved)"; fails=$((fails + 1))
@@ -193,5 +206,5 @@ elif why=$(check "$AUTOPILOT" m-parity "$TMP/m-parity.sh"); then echo "FAIL  mut
 else echo "ok    mutant parity-unlocked killed ($why)"; fi
 [ "$fails" -eq 0 ] || { echo "FAIL  $fails of $nm mutant(s)"; finish 1; }
 [ "$bad" = 0 ] || finish 1
-echo "PASS  12 case(s) + target dirs + parity lock, $nm mutant(s) killed: dogfood and models start together (under the policy models runs alone, #5174), join before readiness, and a red in either stops the pass"
+echo "PASS  12 case(s) + target dirs + no dogfood GO under the policy + parity lock, $nm mutant(s) killed: dogfood and models start together (under the policy models runs alone, #5174), join before readiness, and a red in either stops the pass"
 finish 0

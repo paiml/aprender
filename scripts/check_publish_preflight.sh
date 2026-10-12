@@ -457,6 +457,7 @@ gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref r4_ref r4_on
     local fails=0 status version tags head
     R8_SCOPED=""
+    R5_SCOPED=""
     for t in git cargo python3; do
         command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
     done
@@ -577,7 +578,7 @@ gate() {
     if [ -n "${SCOPE:-}" ]; then
         echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, $([ -n "${R5_SCOPED:-}" ] && echo "the dogfood was NOT the gate" || echo "dogfood GO"), OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate${R8_SCOPED:+; release-readiness was NOT the gate})"
     else
-        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, model matrix green"
+        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, $([ -n "${R5_SCOPED:-}" ] && echo "the dogfood was NOT the gate" || echo "dogfood GO"), model matrix green"
     fi
     return 0
 }
