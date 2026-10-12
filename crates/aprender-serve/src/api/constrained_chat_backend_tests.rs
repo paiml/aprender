@@ -502,6 +502,12 @@ async fn a_budget_too_small_for_the_document_is_422_with_no_partial_text() {
     let (status, body) = post(state, constrained_body(schema, 1)).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["type"], "constraint_truncated");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("budget of 1 tokens")),
+        "the refusal names the request's budget: {body}"
+    );
     assert!(body.get("choices").is_none(), "{body}");
 }
 
