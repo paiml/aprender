@@ -80,8 +80,8 @@ fn try_gpu_completions(
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
     // PMAT-755: apply OpenAI stop sequences (this GPU backend previously ignored them).
     // PMAT-795: and compute finish_reason instead of hardcoding "stop" — this backend
-    // passes an empty `stop_tokens` to `generate`, so generation always runs the full
-    // `max_tokens` budget and every token-limited completion was mislabeled "stop".
+    // used to pass an empty `stop_tokens` to `generate` (aprender#4345 gave it the
+    // EOS + EOG set), and every token-limited completion was mislabeled "stop".
     // #2465(2): both halves now come from the shared `apply_stop_sequences`, the same
     // one `completion_resp` and the chat path use.
     let (text, finish_reason) =
@@ -852,8 +852,8 @@ mod pmat795_finish_reason_tests {
             .to_string()
     }
 
-    /// FALSIFIER (PMAT-795): the GPU `/v1/completions` backend passes an empty
-    /// `stop_tokens` to `generate`, so a token-limited request runs to `max_tokens`.
+    /// FALSIFIER (PMAT-795): a GPU `/v1/completions` request that no stop token
+    /// ends runs to `max_tokens`.
     /// The handler previously HARDCODED `finish_reason: "stop"` for this case — wrong.
     /// OpenAI requires "length" when the token budget is exhausted with no stop match.
     #[test]

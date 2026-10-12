@@ -94,7 +94,7 @@ fn try_cuda_stream_tokens(
         } else {
             request.top_k
         },
-        stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
+        stop_tokens: generate_stop_tokens(&tokenizer, state.model_eos_token_id()),
         trace: false,
         cancel: cancel.clone(),
         ..Default::default()

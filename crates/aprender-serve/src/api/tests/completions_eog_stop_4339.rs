@@ -274,3 +274,26 @@ fn the_logprobs_config_stops_on_the_eos_and_every_eog_marker() {
     assert!(config.logprobs);
     assert_eq!((config.temperature, config.top_k), (0.0, 1), "greedy for perplexity");
 }
+
+/// aprender#4345: the CUDA backend of `/stream/generate` and `/realize/generate`
+/// stopped on the EOS alone. It needs a CUDA model, so the stop set it shares
+/// with the quantized `/generate` config is checked directly.
+#[test]
+fn the_native_generate_stop_set_is_the_eos_plus_every_eog_marker() {
+    use crate::api::gpu_handlers::generate_stop_tokens;
+    let vocab: Vec<String> = ["<unk>", "<|endoftext|>", "a", "<|im_end|>"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let tok = crate::tokenizer::BPETokenizer::new(vocab, vec![], "<unk>").expect("tokenizer");
+    assert_eq!(
+        generate_stop_tokens(&tok, Some(3)),
+        vec![3, 1],
+        "EOS <|im_end|>, then <|endoftext|>: a raw prompt ends on the second"
+    );
+    assert_eq!(
+        generate_stop_tokens(&tok, None),
+        vec![3, 1],
+        "no recorded EOS: the vocabulary's <|im_end|> stands in, <|endoftext|> still stops"
+    );
+}
