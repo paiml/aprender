@@ -124,10 +124,12 @@ fn generate_gguf_constrained(
     if let Some((path, removed_by)) =
         unconstrained_gguf_path(config, gen_config, model, qwen35_host.is_some())
     {
-        return Err(RealizarError::Constraint(ConstraintError::UnsupportedPath {
-            path: path.to_string(),
-            removed_by: removed_by.to_string(),
-        }));
+        return Err(RealizarError::Constraint(
+            ConstraintError::UnsupportedPath {
+                path: path.to_string(),
+                removed_by: removed_by.to_string(),
+            },
+        ));
     }
     let env = mapped.constraint_env().map_err(RealizarError::Constraint)?;
     let mut constraint = request.compile(&env).map_err(RealizarError::Constraint)?;

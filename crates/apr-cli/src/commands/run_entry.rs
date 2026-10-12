@@ -196,10 +196,9 @@ fn reconcile_and_emit(
     // follows the same rule: the machine surfaces emit it beside the refusal, the human one
     // stays silent, and the run exits non-zero
     let reconciled = reconcile_accelerator(accel_forced, result).and_then(|()| {
-        result
-            .constraint_refusal
-            .clone()
-            .map_or(Ok(()), |r| Err(crate::error::CliError::ConstraintRefused(r)))
+        result.constraint_refusal.clone().map_or(Ok(()), |r| {
+            Err(crate::error::CliError::ConstraintRefused(r))
+        })
     });
     if reconciled.is_ok() || emits_machine_output(stream, output_format, benchmark) {
         print_run_output(
@@ -313,7 +312,10 @@ fn refuse_forced_accelerator_without_forward(source: &str, accel_forced: bool) -
 
 /// [`run_model`], where a constrained run refused before it produced output (#3793) still
 /// answers a machine-readable request: the refusal document on stdout, then the error.
-fn run_model_answering_refusals(source: &str, options: &RunOptions) -> Result<super::run::RunResult> {
+fn run_model_answering_refusals(
+    source: &str,
+    options: &RunOptions,
+) -> Result<super::run::RunResult> {
     match run_model(source, options) {
         Err(crate::error::CliError::ConstraintRefused(refusal)) => {
             if emits_machine_output(options.stream, &options.output_format, options.benchmark) {
@@ -333,7 +335,7 @@ fn run_model_answering_refusals(source: &str, options: &RunOptions) -> Result<su
                 );
             }
             Err(crate::error::CliError::ConstraintRefused(refusal))
-        },
+        }
         other => other,
     }
 }
@@ -828,7 +830,9 @@ pub(crate) fn run_batch(
                           not apply a constraint yet, so it refuses rather than running \
                           unconstrained"
                     .to_string(),
-                removed_by: Some("not scheduled: #3568 constrains `apr run` on one prompt".to_string()),
+                removed_by: Some(
+                    "not scheduled: #3568 constrains `apr run` on one prompt".to_string(),
+                ),
                 finish_reason: None,
             },
         ));
