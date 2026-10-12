@@ -249,20 +249,21 @@ rule_h15() {
 run_rules() {
     g rev-parse -q --verify "$BASE^{commit}" >/dev/null || { echo "base $BASE not found" >&2; exit 2; }
     g rev-parse -q --verify "$HEAD_REF^{commit}" >/dev/null || { echo "head $HEAD_REF not found" >&2; exit 2; }
-    # A pull request's CI clone is shallow: HEAD is the merge commit and the base is its
-    # first parent, fetched alone, so `base...head` has no merge base. Then, and only
-    # when the base IS head's first parent (read from the raw commit, which a shallow
-    # graft does not hide), the tree diff base..head is the pull request's diff.
+    # A pull request's CI clone is shallow: HEAD is the merge commit (or, in the merge
+    # queue, the squashed commit) and the base is its first parent, fetched alone, so
+    # `base...head` has no merge base. Then, and only when the base IS head's first
+    # parent (read from the raw commit, which a shallow graft does not hide), the tree
+    # diff base..head is the pull request's diff.
     # Anything else has no defined diff and stops (exit 2).
     local how=merge-base p1
     RANGE="$BASE...$HEAD_REF"
     if ! g merge-base "$BASE" "$HEAD_REF" >/dev/null 2>&1; then
-        p1=$(g cat-file -p "$(g rev-parse "$HEAD_REF")" | awk '/^parent /{n++; if (n == 1) p = $2} /^$/{exit} END{if (n >= 2) print p}')
+        p1=$(g cat-file -p "$(g rev-parse "$HEAD_REF")" | awk '/^parent /{n++; if (n == 1) p = $2} /^$/{exit} END{if (n >= 1) print p}')
         if [ -n "$p1" ] && [ "$p1" = "$(g rev-parse "$BASE^{commit}")" ]; then
             RANGE="$BASE..$HEAD_REF"
             how=first-parent
         else
-            echo "no merge base for $BASE...$HEAD_REF and $BASE is not the first parent of a merge head" >&2
+            echo "no merge base for $BASE...$HEAD_REF and $BASE is not the first parent of the head" >&2
             exit 2
         fi
     fi
@@ -297,16 +298,23 @@ st_case() {
 }
 
 st_shallow() {
-    # st_shallow <name> <expect> <pr-setup>: main moves on (adding a .py the PR does not
-    # own), the PR runs <pr-setup>, and the check runs on a shallow clone of the merge.
-    local name=$1 expect=$2 setup=$3 out rc=0 got p1 sc
+    # st_shallow <name> <expect> <merge|squash> <pr-setup>: main moves on (adding a .py the
+    # PR does not own), the PR runs <pr-setup> and lands as a merge commit (a pull request
+    # run) or a single squashed commit (a merge queue run), and the check runs on a shallow
+    # clone of that head.
+    local name=$1 expect=$2 how=$3 setup=$4 out rc=0 got p1 sc
     git -C "$ST" checkout -q -B "$name-pr" base
     (cd "$ST" && sh -c "$setup")
     git -C "$ST" add -A; st_commit "$name pr"
     git -C "$ST" checkout -q -B "$name-main" base
     echo "y = 1" >"$ST/main_only.py"
     git -C "$ST" add -A; st_commit "$name main"
-    git -C "$ST" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit "$name-pr" >/dev/null
+    if [ "$how" = squash ]; then
+        git -C "$ST" merge -q --squash "$name-pr" >/dev/null
+        st_commit "$name squash"
+    else
+        git -C "$ST" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit "$name-pr" >/dev/null
+    fi
     sc="$ST/shallow-$name"
     git clone -q --no-local --depth 1 --branch "$name-main" "$ST" "$sc" 2>/dev/null
     p1=$(git -C "$sc" cat-file -p HEAD | awk '/^parent /{print $2; exit}')
@@ -371,8 +379,10 @@ self_test() {
 
     # A pull request's CI clone: a depth-1 merge head plus its first parent fetched
     # alone, so there is no merge base. Only the pull request's side is judged.
-    st_shallow plant-py-shallow RED 'echo "x = 1" > x.py'
-    st_shallow clean-shallow PASS 'echo "# docs" > notes.md'
+    st_shallow plant-py-shallow RED merge 'echo "x = 1" > x.py'
+    st_shallow clean-shallow PASS merge 'echo "# docs" > notes.md'
+    st_shallow plant-py-squash RED squash 'echo "x = 1" > x.py'
+    st_shallow clean-squash PASS squash 'echo "# docs" > notes.md'
 
     # H5 and H10 need LT-1's receipt and LT-9's declaration on the base.
     git -C "$ST" checkout -q base
