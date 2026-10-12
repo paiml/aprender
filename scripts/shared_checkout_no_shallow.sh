@@ -121,8 +121,8 @@ self_test() {
     row "refused: --deepen=1" "$(fetch_in_wt --deepen=1 origin)" "rc=nz/full"
     row "refused: --shallow-since" "$(fetch_in_wt --shallow-since=2000-01-01 origin)" "rc=nz/full"
     l="$( (cd -- "$m" && g fetch -q --depth=1 origin main 2>&1) || true)"; rm -f -- "$m/.git/shallow"
-    row "refused in the main checkout as well, and git names the lock" \
-        "$(case "$l" in *shallow.lock*) echo named ;; *) echo "$l" ;; esac)" named
+    case "$l" in *shallow.lock*) l=named ;; esac
+    row "refused in the main checkout as well, and git names the lock" "$l" named
 
     # must-pass: ordinary work is untouched.
     row "passes: a plain fetch" "$(fetch_in_wt origin)" "rc=0/full"
@@ -163,9 +163,9 @@ mutants() {
     done <<'MUTANTS'
 m1_lock_in_worktree_gitdir	s/rev-parse --git-common-dir/rev-parse --absolute-git-dir/
 m2_lock_is_a_file	s/^    mkdir -p -- "\$cd\/shallow.lock"$/    : > "$cd\/shallow.lock.x"/
-m3_check_ignores_shallow	s/if \[ -f "\$cd\/shallow" \]/if false/
-m4_check_ignores_missing_lock	s/if ! \[ -d "\$cd\/shallow.lock" \]; then/if false; then/
-m5_install_accepts_shallow	s/if \[ -e "\$cd\/shallow" \]; then/if false; then/
+m3_check_ignores_shallow	s/if [[] -f "\$cd\/shallow" []]/if false/
+m4_check_ignores_missing_lock	s/if ! [[] -d "\$cd\/shallow.lock" []]; then/if false; then/
+m5_install_accepts_shallow	s/if [[] -e "\$cd\/shallow" []]; then/if false; then/
 MUTANTS
     echo "--- $((n - bad))/$n mutants killed ---"
     [ "$bad" = 0 ] && [ "$n" -gt 0 ]
