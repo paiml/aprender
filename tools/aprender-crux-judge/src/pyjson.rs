@@ -554,6 +554,16 @@ mod tests {
     }
 
     #[test]
+    fn bare_word_literals_decode() {
+        let v = loads("[null, true, false, NaN, Infinity, -Infinity, -1, -1.5]")
+            .expect("every bare word decodes");
+        assert_eq!(
+            dumps(&v, true).expect("the literals dump"),
+            "[null, true, false, NaN, Infinity, -Infinity, -1, -1.5]"
+        );
+    }
+
+    #[test]
     fn surrogate_pair_joins() {
         let v = loads("\"\\ud83d\\ude00x\"").expect("a surrogate pair decodes");
         assert_eq!(v.as_str(), Some("😀x"));
