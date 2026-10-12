@@ -16,6 +16,18 @@ enum ScanErr {
 
 type Scan<T> = Result<T, ScanErr>;
 
+/// The value of one of `Doc::scan_literal`'s bare words.
+fn literal_value(lit: &str) -> Val {
+    match lit {
+        "true" => Val::Bool(true),
+        "false" => Val::Bool(false),
+        "NaN" => Val::Float(f64::NAN),
+        "Infinity" => Val::Float(f64::INFINITY),
+        "-Infinity" => Val::Float(f64::NEG_INFINITY),
+        _ => Val::None,
+    }
+}
+
 /// Where a container scan goes after an item.
 enum Step {
     /// At the closing bracket.
@@ -56,14 +68,18 @@ impl Doc<'_> {
             '"' => self.scanstring(idx + 1).map(|(v, e)| (Val::Str(v), e)),
             '{' => self.parse_object(idx + 1),
             '[' => self.parse_array(idx + 1),
-            'n' if self.starts(idx, "null") => Ok((Val::None, idx + 4)),
-            't' if self.starts(idx, "true") => Ok((Val::Bool(true), idx + 4)),
-            'f' if self.starts(idx, "false") => Ok((Val::Bool(false), idx + 5)),
-            'N' if self.starts(idx, "NaN") => Ok((Val::Float(f64::NAN), idx + 3)),
-            'I' if self.starts(idx, "Infinity") => Ok((Val::Float(f64::INFINITY), idx + 8)),
-            '-' if self.starts(idx, "-Infinity") => Ok((Val::Float(f64::NEG_INFINITY), idx + 9)),
-            _ => self.match_number(idx),
+            _ => self
+                .scan_literal(idx)
+                .map_or_else(|| self.match_number(idx), Ok),
         }
+    }
+
+    /// The bare-word constants Python's scanner accepts, tried before a number so `-Infinity` is not read as `-`.
+    fn scan_literal(&self, idx: usize) -> Option<(Val, usize)> {
+        ["null", "true", "false", "NaN", "Infinity", "-Infinity"]
+            .into_iter()
+            .find(|lit| self.starts(idx, lit))
+            .map(|lit| (literal_value(lit), idx + lit.len()))
     }
 
     fn is_at(&self, i: usize, c: char) -> bool {

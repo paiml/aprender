@@ -196,47 +196,57 @@ fn sandbox_report(probed: Result<&sandbox::Sandbox, &str>) -> (String, u8) {
     }
 }
 
-fn main() -> ExitCode {
-    let mut argv = Vec::new();
-    for a in std::env::args_os().skip(1) {
-        match a.into_string() {
-            Ok(s) => argv.push(s),
-            Err(a) => {
-                return ExitCode::from(usage_error(&format!(
-                    "argument is not UTF-8: {}",
-                    a.to_string_lossy()
-                )));
-            }
-        }
+/// The arguments after the program name, or the usage exit code for the first one that is not UTF-8.
+fn utf8_args() -> Result<Vec<String>, u8> {
+    std::env::args_os()
+        .skip(1)
+        .map(|a| {
+            a.into_string().map_err(|a| {
+                usage_error(&format!("argument is not UTF-8: {}", a.to_string_lossy()))
+            })
+        })
+        .collect()
+}
+
+/// `sandbox`: print the probe's one line; it takes no arguments.
+fn sandbox_cmd(argv: &[String]) -> u8 {
+    if let Some(extra) = argv.get(1) {
+        return usage_error(&format!("unrecognized arguments: {extra}"));
     }
-    match argv.first().map(String::as_str) {
-        Some("eval" | "extract" | "lint") => return ExitCode::from(oracles::cli(&argv)),
-        Some("certify" | "check") => return ExitCode::from(certify::cli(&argv)),
-        _ => {}
-    }
-    if argv.first().map(String::as_str) == Some("sandbox") {
-        if let Some(extra) = argv.get(1) {
-            return ExitCode::from(usage_error(&format!("unrecognized arguments: {extra}")));
-        }
-        let (line, rc) = sandbox_report(sandbox::sandbox());
-        println!("{line}");
-        return ExitCode::from(rc);
-    }
-    let args = match parse(&argv) {
-        Parsed::Run(args) => args,
-        Parsed::Exit(rc) => return ExitCode::from(rc),
-    };
-    match collect::collect(&args) {
-        Ok(rc) => ExitCode::from(u8::try_from(rc).unwrap_or(1)),
+    let (line, rc) = sandbox_report(sandbox::sandbox());
+    println!("{line}");
+    rc
+}
+
+/// The default command: collect, with a decline exiting 2 and a crash 1.
+fn collect_cmd(args: &collect::Args) -> u8 {
+    match collect::collect(args) {
+        Ok(rc) => u8::try_from(rc).unwrap_or(1),
         Err(e) if e.declines() => {
             eprintln!("decline: {}: {e}", e.kind);
-            ExitCode::from(2)
+            2
         }
         Err(e) => {
             eprintln!("crash: {}: {e}", e.kind);
-            ExitCode::from(1)
+            1
         }
     }
+}
+
+fn run(argv: &[String]) -> u8 {
+    match argv.first().map(String::as_str) {
+        Some("eval" | "extract" | "lint") => oracles::cli(argv),
+        Some("certify" | "check") => certify::cli(argv),
+        Some("sandbox") => sandbox_cmd(argv),
+        _ => match parse(argv) {
+            Parsed::Run(args) => collect_cmd(&args),
+            Parsed::Exit(rc) => rc,
+        },
+    }
+}
+
+fn main() -> ExitCode {
+    ExitCode::from(utf8_args().map_or_else(|rc| rc, |argv| run(&argv)))
 }
 
 #[cfg(test)]
