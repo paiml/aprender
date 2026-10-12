@@ -153,7 +153,10 @@ async fn a_chat_request_answers_what_apr_run_answers() {
         "serve must hand the model apr run's tokens: {body}"
     );
     // #3719: the chat route says what this turn ran on; a --no-gpu session ran the CPU.
-    assert_eq!(json["used_gpu"], false, "the chat response reports its device: {body}");
+    assert_eq!(
+        json["used_gpu"], false,
+        "the chat response reports its device: {body}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -399,7 +402,10 @@ async fn gpu_a_chat_request_answers_from_the_gpu_session() {
         "the GPU session answers what apr run --gpu answers: {body}"
     );
     // #3719: the response itself says the GPU ran it, so a client needs no /health probe.
-    assert_eq!(json["used_gpu"], true, "the chat response reports its device: {body}");
+    assert_eq!(
+        json["used_gpu"], true,
+        "the chat response reports its device: {body}"
+    );
     assert!(
         served.session.lock().expect("lock").on_gpu(),
         "no fallback during the request"

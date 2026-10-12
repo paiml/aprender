@@ -308,7 +308,14 @@ async fn try_qwen35_backend(
     let tracer = crate::api::serve_trace::tracer_for(trace_level);
     let time_layers = trace_level == Some("layer");
     let turn = tokio::task::spawn_blocking(move || {
-        qwen35_turn(&session, &input_ids, &gen_config, top_n, tracer, time_layers)
+        qwen35_turn(
+            &session,
+            &input_ids,
+            &gen_config,
+            top_n,
+            tracer,
+            time_layers,
+        )
     })
     .await;
     let reply = match turn {
