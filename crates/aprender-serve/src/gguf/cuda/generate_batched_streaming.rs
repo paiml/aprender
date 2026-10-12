@@ -548,8 +548,10 @@ impl OwnedQuantizedModelCuda {
     /// embeddings and positions already in `state`.
     ///
     /// #4971: a live slot that records logprobs gets this step's record from the
-    /// same logits its token came from. The graphed path (BATCHED_GRAPH=1)
-    /// replays into its own buffers, so a recording step runs eager.
+    /// same logits its token came from. Both the eager and the graphed path
+    /// (BATCHED_GRAPH=1) leave this step's logits in `workspace.logits_buf`: the
+    /// graph is captured against that buffer (`init_batched_graph_buffers`), so a
+    /// recording step stays on the path the batch was already taking.
     fn batched_step_token_ids(&mut self, state: &mut BatchedDecodeState) -> Result<Vec<u32>> {
         // PMAT-056: Multi-stream root cause fixed (scatter moved to self.stream),
         // but graph replay still 25% slower than eager due to capture overhead.
@@ -599,9 +601,8 @@ impl OwnedQuantizedModelCuda {
             }
             return Ok(token_ids);
         }
-        if use_graph && !recording {
-            return self
-                .executor
+        let token_ids = if use_graph {
+            self.executor
                 .forward_batched_to_token_ids_graphed(
                     &state.embed_buf,
                     &state.pos_buf,
@@ -614,23 +615,23 @@ impl OwnedQuantizedModelCuda {
                 .map_err(|e| RealizarError::UnsupportedOperation {
                     operation: "forward_batched_to_token_ids_graphed".to_string(),
                     reason: format!("Batched forward failed: {e}"),
-                });
-        }
-        let token_ids = self
-            .executor
-            .forward_batched_to_token_ids(
-                &state.embed_buf,
-                &state.pos_buf,
-                state.num_layers,
-                state.hidden_dim as u32,
-                state.intermediate_dim as u32,
-                state.vocab_size as u32,
-                state.eps,
-            )
-            .map_err(|e| RealizarError::UnsupportedOperation {
-                operation: "forward_batched_to_token_ids".to_string(),
-                reason: format!("Batched forward failed: {e}"),
-            })?;
+                })?
+        } else {
+            self.executor
+                .forward_batched_to_token_ids(
+                    &state.embed_buf,
+                    &state.pos_buf,
+                    state.num_layers,
+                    state.hidden_dim as u32,
+                    state.intermediate_dim as u32,
+                    state.vocab_size as u32,
+                    state.eps,
+                )
+                .map_err(|e| RealizarError::UnsupportedOperation {
+                    operation: "forward_batched_to_token_ids".to_string(),
+                    reason: format!("Batched forward failed: {e}"),
+                })?
+        };
         if recording {
             let logits = self
                 .executor

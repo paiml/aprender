@@ -465,7 +465,8 @@ impl CudaExecutor {
         Self::download_logits_at(logits_ptr, len)
     }
 
-    /// #4971: the logits the last `forward_batched_to_token_ids` argmaxed (m × vocab_size,
+    /// #4971: the logits the last `forward_batched_to_token_ids` (or its graphed replay,
+    /// captured against the same buffer) argmaxed (m × vocab_size,
     /// slot s at s*vocab_size), downloaded after it, so a slot that records logprobs keeps
     /// the token the device argmax chose. `batched_gpu_argmax` only reads `logits_buf` and
     /// syncs the stream before it returns.
