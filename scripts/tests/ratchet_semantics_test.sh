@@ -135,6 +135,7 @@ fi
 
 WORK="$(mktemp -d -t ratchet_semantics_test.XXXXXX)" || die "mktemp -d failed"
 trap 'rm -rf "${WORK:?}"' EXIT
+cd -- "$WORK" || die "cannot cd into $WORK"; export GIT_CEILING_DIRECTORIES="${WORK%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
 mkdir -p "$WORK/empty-template" || die "cannot create the empty git template dir"
 
 # --- fixture ---------------------------------------------------------------

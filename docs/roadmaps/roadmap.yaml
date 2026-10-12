@@ -24681,6 +24681,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3998
+- id: PMAT-5025
+  github_issue: 5025
+  item_type: task
+  title: 'guard: refuse a shallow fetch into the shared common git dir (#5025)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:32:41Z
+  updated: 2026-10-12T12:32:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
 - id: PMAT-5053
   github_issue: 5053
   item_type: task

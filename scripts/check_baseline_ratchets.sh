@@ -1,3 +1,4 @@
+    cd -- "$TD" || exit 1; export GIT_CEILING_DIRECTORIES="${TD%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
 #!/usr/bin/env bash
 # check_baseline_ratchets.sh — every baseline in scripts/ is classified, and
 # every one classified as shrink-only is compared against a ref this branch
