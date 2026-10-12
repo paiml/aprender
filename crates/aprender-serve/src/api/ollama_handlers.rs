@@ -288,6 +288,10 @@ pub struct OllamaEmbeddingsRequest {
     pub model: Option<String>,
     /// Text to embed.
     pub prompt: String,
+    /// Images sent with the prompt. Read only to refuse them (EG-3 I-7): no model this
+    /// server loads has an image encoder, and an ignored field would drop them silently.
+    #[serde(default)]
+    pub images: Option<serde_json::Value>,
 }
 
 /// Ollama `/api/embeddings` response: one flat vector, no envelope.
@@ -819,11 +823,18 @@ pub async fn ollama_embeddings_handler(
     State(state): State<AppState>,
     Json(request): Json<OllamaEmbeddingsRequest>,
 ) -> Result<Json<OllamaEmbeddingsResponse>, (StatusCode, Json<super::ErrorResponse>)> {
-    let input = super::EmbeddingInput::Single(request.prompt);
+    // EG-3 I-7: images are refused, never dropped.
+    let input = match request.images {
+        Some(images) if !(images.is_null() || images.as_array().is_some_and(Vec::is_empty)) => {
+            super::EmbeddingInput::Unsupported(serde_json::json!({ "images": images }))
+        },
+        _ => super::EmbeddingInput::Single(request.prompt),
+    };
     let (embeddings, _prompt_tokens) = super::realize_handlers::embed_inputs(
         &state,
         request.model.as_deref(),
         &input,
+        None,
         "/api/embeddings",
     )?;
 

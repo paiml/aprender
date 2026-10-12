@@ -395,6 +395,7 @@ fn test_clean_chat_output_double_newline_user() {
 fn test_embedding_request_serde() {
     use crate::api::realize_handlers::EmbeddingInput;
     let req = EmbeddingRequest {
+        dimensions: None,
         input: "test".to_string().into(),
         model: Some("default".to_string()),
     };

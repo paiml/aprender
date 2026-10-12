@@ -750,6 +750,31 @@ pub fn truncate_to(vector: &[f32], dim: usize) -> Result<Vec<f32>> {
     unit_length(prefix.to_vec())
 }
 
+/// One text through the whole EmbeddingGemma 2 path: the file's tokenizer under `prompt`,
+/// the forward, and, when `dim` is given, [`truncate_to`]. Returns the token count and the
+/// vector.
+///
+/// `apr embed` and `apr serve` both call this, so the CLI and the HTTP routes hand the
+/// model the same tokens and return the same vector for the same text (EG-3, #4902).
+///
+/// # Errors
+/// The forward refuses the tokens, or `dim` is not a width the vector truncates to.
+pub fn embed_text(
+    encoder: &EmbeddingGemma2,
+    tokenizer: &crate::gguf::embedding_gemma2_input::EmbedTokenizer,
+    prompt: &crate::gguf::embedding_gemma2_input::Prompt<'_>,
+    text: &str,
+    dim: Option<usize>,
+) -> Result<(usize, Vec<f32>)> {
+    let tokens = tokenizer.tokens(prompt, text);
+    let full = encoder.embed(&tokens)?;
+    let vector = match dim {
+        None => full,
+        Some(dim) => truncate_to(&full, dim)?,
+    };
+    Ok((tokens.len(), vector))
+}
+
 #[cfg(test)]
 #[path = "forward_embedding_gemma2_tests.rs"]
-mod tests;
+pub(crate) mod tests;
