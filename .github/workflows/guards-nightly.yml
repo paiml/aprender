@@ -237,6 +237,28 @@ jobs:
           # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
           DR_ENV=()
           dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
+      # #5182 (GATE/LAB). The two ratchets that left the PR path. On a schedule
+      # run HEAD *is* origin/main, so merge-base(HEAD, origin/main) is HEAD and a
+      # shrink-only comparison against it can never fail. The comparand is
+      # therefore main as it was 24 h earlier: what grew on main since the last
+      # nightly turns this red. Fetched shallow (3 days), resolved, printed.
+      - name: Main as it was 24 h earlier, the comparand for the nightly ratchets (#5182)
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --shallow-since='3 days ago' origin +refs/heads/main:refs/remotes/origin/main
+          base=$(git rev-list -1 --before='24 hours ago' origin/main)
+          if [ -z "$base" ]; then
+            base=$(git rev-list origin/main | tail -1)
+            echo "no main commit older than 24 h in the fetched window; comparand = oldest fetched"
+          fi
+          printf 'comparand %s  %s\n' "$base" "$(git log -1 --format=%cI "$base")"
+          echo "RATCHET_24H_BASE=$base" >> "$GITHUB_ENV"
+      - name: Per-function complexity may only fall (shrink-only)
+        run: |
+          setsid --wait bash scripts/check_complexity_ratchet.sh --selftest
+          BASELINE_RATCHET_BASE_REF="$RATCHET_24H_BASE" setsid --wait bash scripts/check_complexity_ratchet.sh
+      - name: No shrink-only baseline in scripts/ grew (check_baseline_ratchets --ratchet)
+        run: BASELINE_RATCHET_BASE_REF="$RATCHET_24H_BASE" setsid --wait bash scripts/check_baseline_ratchets.sh --ratchet
       - name: Summary
         if: always()
         run: |
