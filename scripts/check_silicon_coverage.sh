@@ -987,6 +987,37 @@ selftest_rows() {
     st_check m5-pr-missing 1 '^  MISSING +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
     ST_EVENT=""
 
+    # (m6) #5237: a push run on main reads with the same job token. Not read
+    # (0 calls); the verdict comes from job evidence (rc 0).
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=push
+    if st_check m6-push-no-runners 0 '^runners: not read on a push run' \
+        && [ "$(st_calls 'actions/runners')" = 0 ]; then :
+    else printf '  FAIL %-14s runner listing read %s time(s), want 0\n' m6-push-no-runners "$(st_calls 'actions/runners')"
+        _rows_bad=$((_rows_bad + 1))
+    fi
+
+    # (m7) #5237: on a push run a missing axis still fails.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=push
+    st_check m7-push-missing 1 '^  MISSING +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
+
+    # (m8) #5237: workflow_dispatch is silicon-nightly with host auth: the
+    # listing is read, and both 403s with nothing visible are NO-GO.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=workflow_dispatch
+    st_check m8-dispatch-403 2 '^NO-GO: zero online runners' || _rows_bad=$((_rows_bad + 1))
+    ST_EVENT=""
+
     # (e2) a listing read that fails keeps gh's stderr too.
     st_reset; ST_ERROR=1
     st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
@@ -1112,10 +1143,16 @@ fi
 # run). Probe 2a has never measured anything there, so on those events the
 # runner listing and probe 2a are not run at all; the scheduled nightly,
 # with org auth, keeps both. The axis verdict below comes from job evidence.
+# #5237: a push run on main reads with the same job token. Before #5220 the
+# 403 body counted as a runner, so the push run "passed" probe 2a without
+# reading one. So the probe runs only where the listing has ever been
+# readable: schedule and workflow_dispatch (silicon-nightly.yml, host auth)
+# and a local run (no event). Every other event is the job token.
 RUNNER_PROBE=1
 if [ "$MODE" = "live" ]; then
     case "${GITHUB_EVENT_NAME:-}" in
-        pull_request|pull_request_target|merge_group) RUNNER_PROBE=0 ;;
+        ''|schedule|workflow_dispatch) ;;
+        *) RUNNER_PROBE=0 ;;
     esac
 fi
 if [ "$MODE" = "live" ] && [ "$RUNNER_PROBE" = 1 ]; then
