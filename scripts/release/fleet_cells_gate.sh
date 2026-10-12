@@ -16,7 +16,9 @@
 #
 # WAIVERS are recorded in git, dated, and expire: scripts/release/fleet-waivers.tsv
 #   <host|*>\t<binary|*>\t<until YYYY-MM-DD>\t<reason>
-# `*\t*` is the only key that covers MISSING or STALE cells -- no data is not green data.
+# `*\t*` is the only key that covers MISSING or STALE cells -- no data is not green data -- and it
+# covers nothing else: a RED cell needs a key naming its host or its binary (#5034). An `until`
+# that is not a YYYY-MM-DD date is no waiver at all.
 #
 # Refuses: any unwaived RED cell · a state other than GREEN/RED · no cells · no `# measured`
 # stamp · cells older than FLEET_CELLS_MAX_AGE_H (default 6) hours · a --now that is not a whole
@@ -91,14 +93,18 @@ fleet_cells_verdict() {
     fi
     CELLS=$1 WAIVERS=$2 STAMP=$stamp MAX_AGE_H=${FLEET_CELLS_MAX_AGE_H:-6} LC_ALL=C \
         awk -v now="$3" -v measured="$measured" -v today="$today" "$FLEET_CELLS_AWK_LIB"'
-    # waived(host, binary): host "*" asks for the `*\t*` key only (missing/stale cells)
+    # waived(host, binary): host "*" asks for the `*\t*` key only (missing/stale cells), and
+    # `*\t*` answers nothing else: it waives data faults, never a RED cell (#5034). An `until`
+    # that is not a YYYY-MM-DD date is no waiver -- compared as a string, "never" outlived every day.
     function waived(host, binary,    nw, w, i, f, hit) {
         nw = split(pylines(ENVIRON["WAIVERS"]), w, "\n")
         for (i = 1; i <= nw; i++) {
             if (pystrip(w[i]) == "" || substr(pystrip(w[i]), 1, 1) == "#") continue
             if (split(w[i], f, "\t") < 4 || pystrip(f[4]) == "") continue
+            # a YYYY-MM-DD until, or no waiver (awk runs under LC_ALL=C: [0-9] is ASCII only)
+            if (f[3] !~ /^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/) continue
             if (host == "*") hit = (f[1] == "*" && f[2] == "*")
-            else hit = (((f[1] "") == (host "") || f[1] == "*") && ((f[2] "") == (binary "") || f[2] == "*"))
+            else hit = !(f[1] == "*" && f[2] == "*") && (((f[1] "") == (host "") || f[1] == "*") && ((f[2] "") == (binary "") || f[2] == "*"))
             if (hit && (f[3] "") >= today) return f[1] "/" f[2] " until " f[3] ": " f[4]
         }
         return ""
@@ -183,6 +189,12 @@ self_test() {
     row 0 'only *\t* waives missing cells' '' '*\t*\t2026-09-24\tC3 not publishing yet, cop 2026-09-24\n'
     row 1 'a host waiver does not waive missing cells' '' 'intel\t*\t2026-09-30\tx\n'
     row 1 'a waiver for another binary covers nothing' "$S\nintel\tapr\tRED\told\n" '*\tpv\t2026-09-30\tx\n'
+    # #5034: `*\t*` waives data faults only, and an `until` that is not a date never covers.
+    row 1 'the *\t* waiver does not waive a RED cell' "$S\nintel\tapr\tRED\told\n" '*\t*\t2026-09-30\tx\n'
+    row 0 'a binary-wide waiver still covers that binary on any host' "$S\nintel\tapr\tRED\told\n" '*\tapr\t2026-09-30\tx\n'
+    row 1 'an until that is not a date covers nothing (it never expired as a string)' "$S\nintel\tapr\tRED\told\n" 'intel\tapr\tnever\tx\n'
+    row 1 'an until with no month 13 covers nothing' "$S\nintel\tapr\tRED\told\n" 'intel\tapr\t2026-13-01\tx\n'
+    row 1 'an until that is not a date does not waive missing cells' '' '*\t*\tforever\tx\n'
     # #4350: the cases where a naive awk port cut and the python judge refused.
     row 1 'a CRLF waiver with no reason is not recorded' "$S\nh1\tapr\tRED\told\n" 'h1\tapr\t2026-12-31\t\r\n'
     row 1 'a no-break-space reason is no reason' "$S\nh1\tapr\tRED\told\n" 'h1\tapr\t2026-12-31\t\0302\0240\n'
@@ -224,6 +236,16 @@ self_test() {
         if [ "$rc" = 0 ]; then echo "  ok   mutant lets the RED cell through: the refusal is load-bearing"
         else echo "  FAIL mutant still refuses (rc $rc): $got"; fail=1; fi
     done
+    # #5034 MUTANTS: drop either new check and its waiver must cover the RED cell again.
+    m5034() {  # m5034 <sed expr> <waiver line>
+        mut=$d/m5034.sh; sed "$1" "${BASH_SOURCE[0]}" > "$mut"
+        if cmp -s "$mut" "${BASH_SOURCE[0]}"; then echo "  FAIL mutant '$1' not built: the anchor moved"; fail=1; return; fi
+        got=$(bash -c ". '$mut' --source-only; fleet_cells_verdict \"\$(printf '%b' '$S\nintel\tapr\tRED\told\n')\" \"\$(printf '%b' '$2')\" $now" 2>&1); rc=$?
+        if [ "$rc" = 0 ]; then echo "  ok   #5034 mutant lets the RED cell through: the check is load-bearing"
+        else echo "  FAIL #5034 mutant still refuses (rc $rc): $got"; fail=1; fi
+    }
+    m5034 's/            else hit = !(f\[1\] == "\*" \&\& f\[2\] == "\*") \&\& /            else hit = /' '*\t*\t2026-09-30\tx\n'
+    m5034 's/^            if (f\[3\] !~ .*) continue$/            if (0) continue/' 'intel\tapr\tnever\tx\n'
     # WIRING: rc_cut.sh runs this gate before it writes the tag, and dies on a refusal.
     local cut; cut="$(dirname -- "${BASH_SOURCE[0]}")/rc_cut.sh"
     local call tagline
