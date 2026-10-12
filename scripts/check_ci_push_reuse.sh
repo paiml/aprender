@@ -12,6 +12,7 @@
 #
 #   L rows  the lookup, against a stub `gh` serving canned JSON (no network)
 #   D rows  the decision, scripts/ci_test_tier.sh --event push on throwaway repositories
+#   T rows  a tag push (#5172) is full: never reused, never refined
 #   W rows  the tier step in ci/sections.yml calls the lookup on push, and survives its failure
 #   A rows  the workspace-test aggregator in ci.yml still refuses a split tier
 #   P rows  decide-push for x86-main + determinism, on a throwaway repository and canned lists
@@ -28,7 +29,7 @@ LOOKUP="${PUSH_REUSE_LOOKUP:-$ROOT/scripts/ci_mg_workspace_result.sh}"
 TIER="${PUSH_REUSE_TIER:-$ROOT/scripts/ci_test_tier.sh}"
 MG="${PUSH_REUSE_MG:-$ROOT/scripts/ci_mg_reuse.sh}"
 
-case "${1:-}" in -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
 
 if [ "${1:-}" = "--self-test" ]; then
   # A red table kills every mutant for free: the unmutated table must be green first.
@@ -220,7 +221,7 @@ mkrepo() { # mkrepo <dir> -> a two-commit repo whose push diff is docs-only (tod
   git -C "$1" add docs; git -C "$1" -c user.name=t -c user.email=t@t commit -q -m docs
 }
 mkrepo "$T/r"; H="$(git -C "$T/r" rev-parse HEAD)"
-tier() { (cd "$ROOT" && env -u GITHUB_SHA ${GSHA:+GITHUB_SHA=$GSHA} bash "$TIER" --event push --repo-root "$T/r" "$@" 2>&1); }
+tier() { (cd "$ROOT" && env -u GITHUB_SHA -u GITHUB_REF ${GSHA:+GITHUB_SHA=$GSHA} ${GREF:+GITHUB_REF=$GREF} bash "$TIER" --event push --repo-root "$T/r" "$@" 2>&1); }
 BASE="$(tier)"
 want "D0 push with no merge_group result -> today's tier (docs-only: none)" "tier=none" "$(grep '^tier=' <<<"$BASE")"
 hasnt "D0 and no note about a merge_group (no --mg-* given: as before)" "merge_group" "$BASE"
@@ -251,6 +252,16 @@ OUT="$(tier --mg-run 'x7' --mg-sha "$H" --mg-conclusion success)"
 want "D6 a run id that is not a number -> today's tier" "tier=none" "$(grep '^tier=' <<<"$OUT")"
 OUT="$(tier --mg-sha "$H" --mg-conclusion success)"
 want "D7 no run id at all -> today's tier" "tier=none" "$(grep '^tier=' <<<"$OUT")"
+
+# #5172: a tag push (the release tag) runs the whole workspace: never reused, never refined.
+# The v0.71.0 tag push reused the queue result on its commit and ran no workspace test.
+OUT="$(GREF=refs/tags/v9.9.9 GSHA=$H tier --mg-run 7001 --mg-sha "$H" --mg-conclusion success)"
+want "T1 a tag push with a merge_group success on its commit -> full, never reuse" "tier=full" "$(grep '^tier=' <<<"$OUT")"
+has "T1 the reason names the tag" "push of tag v9.9.9" "$OUT"
+OUT="$(GREF=refs/tags/v9.9.9 tier)"
+want "T2 a tag push with no merge_group result -> full, never the docs-only diff tier" "tier=full" "$(grep '^tier=' <<<"$OUT")"
+OUT="$(GREF=refs/heads/main GSHA=$H tier --mg-run 7001 --mg-sha "$H" --mg-conclusion success)"
+want "T3 a branch push (refs/heads/main) still reuses" "tier=reuse" "$(grep '^tier=' <<<"$OUT")"
 
 # a root commit: today's tier is full (no diff can be derived); a refused result keeps it full
 git init -q -b main "$T/root"; git -C "$T/root" -c user.name=t -c user.email=t@t commit -q --allow-empty -m only
