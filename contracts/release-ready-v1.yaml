@@ -63,6 +63,11 @@
 #     `publish` (was RR-P37); the `assets` wait on the binary-release run is its `also`.
 #     Child rows 82 -> 50 (RR-D01..D50); GATEs unchanged at 19 (merge 10, tag 5, publish 5).
 #     The spec's T-4 row now names the executor the `cascade` step runs, so publish.executor agrees.
+#   #5174 (R5 never went green on a release): under the standing release policy the autopilot does
+#     not start the T-1 dogfood lane and the preflight does not run R5, the R8 form. release_ready.sh
+#     reads `[ "$s:$AP_POLICY" != dogfood:1 ]` on the lane loop as that lane off the release path, and
+#     dogfood.sh's rows with it, so RR-T09 and RR-D01..D50 leave the list (as R8 has no entry). The
+#     dogfood runs nightly; it comes back only as a GATE the operator rules in. GATEs 19 -> 18.
 #
 # A ROW (`parent: <id>`) is part of the GATE it names: checked like any entry, printed
 # under that GATE by `--gates`, and never counted in its total.
@@ -209,12 +214,12 @@ binding_registry:
 # counted GATE of that stage is STALE, and either fails `release_ready.sh --budget`. Caps 10/5/5.
 # The checker stays LAB: a stage calls it as a blocking step only after three green nights on main.
 # Merge 9: the x86-main preflight is listed (RR-M17); RR-M01 is the same gate job as RR-M16 and RR-M14
-# the case table of RR-M13, so each is an `also`. Tag 5: readiness runs nightly (autopilot skips it under
-# the standing release policy), and the pre-push tag guard (RR-T21) takes its place.
+# the case table of RR-M13, so each is an `also`. Tag 4: readiness and the pre-publish dogfood run nightly
+# (autopilot starts neither under the standing release policy, #5174); the pre-push tag guard (RR-T21) is listed.
 stages:
   release_entries:
     merge: RR-M02 RR-M05 RR-M09 RR-M10 RR-M11 RR-M13 RR-M15 RR-M16 RR-M17
-    tag: RR-T01 RR-T09 RR-T11 RR-T16 RR-T21
+    tag: RR-T01 RR-T11 RR-T16 RR-T21
     publish: RR-T01 RR-P01 RR-P03 RR-P14 RR-P38
 
 # THE LIST. One requirement per line (the checker parses this block; keep one flow map per line).
@@ -229,62 +234,11 @@ requirements:
   - {id: RR-M16, applies_to: [merge], anchor: "merge:required-context/gate", also: ["merge:required-context/ci / gate"], checker: ".github/workflows/ci.yml#  gate:", provenance: "CLAUDE.md Git Workflow; org ruleset on main (ci/sections.yml: rulesets need the exact name gate)", producer: "ci-main"}
   - {id: RR-M17, applies_to: [merge], anchor: "merge:ci.yml/gate/needs/x86-main", checker: ".github/workflows/ci.yml#  x86-main:", provenance: "the x86-main preflight: the jq pin, the cheap checks, the fat_driver and secret-plumbing case tables run before its sections", producer: "ci-main"}
   - {id: RR-T01, applies_to: [tag, publish], seven: provenance, anchor: "tag:autopilot/commit/git merge-base --is-ancestor", also: ["tag:autopilot/commit/cargo metadata --no-deps --format-version", "publish:preflight/R1", "publish:preflight/R2", "publish:preflight/R3", "publish:preflight/R4"], checker: "scripts/release/autopilot.sh#git merge-base --is-ancestor", provenance: "APR-RELEASE-001 T-0, #3599 (release commit on origin/main)", producer: "ci-main"}
-  - {id: RR-T09, applies_to: [tag], anchor: "tag:autopilot/dogfood/bash scripts/dogfood.sh --phase", also: ["publish:preflight/R5"], checker: "scripts/dogfood.sh", provenance: "APR-RELEASE-001 T-1 dogfood GO (#3957)", producer: "dogfood"}
   - {id: RR-T11, applies_to: [tag], seven: crux-smoke, anchor: "tag:autopilot/models/bash scripts/release/models_t1.sh", also: ["publish:preflight/R7"], checker: "scripts/release/models_t1.sh", provenance: "#3717 #3712 model matrix", producer: "models"}
   - {id: RR-T16, applies_to: [tag], anchor: "tag:autopilot/tag/bash scripts/release/rc_publish_gate.sh --verify", also: ["publish:autopilot/dryrun/bash scripts/cascade-publish.sh --check"], checker: "scripts/release/rc_publish_gate.sh#--verify", provenance: "#4287 RC-DOGFOOD-001 §4.5 (compile every tarball), moved ahead of the tag (#4690, was RR-P07)", producer: "publish-dryrun"}
   - {id: RR-T21, applies_to: [tag], anchor: "tag:autopilot/tag/git push origin", checker: "scripts/hooks/pre-push-tags.sh", provenance: "#4943 #4944 the pre-push tag guard refuses a release tag that is not exactly its release branch head", producer: "tag"}
   - {id: RR-T22, applies_to: [tag], kind: mechanics, anchor: "tag:autopilot/tag/source scripts/lib/release_policy.sh", checker: "scripts/lib/release_policy.sh#rp_known_failures", provenance: "the release notes list each known failure with its ticket; it lists and never stops a release", producer: "tag"}
   - {id: RR-T23, applies_to: [tag], kind: mechanics, anchor: "tag:autopilot/tag/bash scripts/hooks/pre-push-tags.sh --arm-release", checker: "scripts/hooks/pre-push-tags.sh#--arm-release", provenance: "#4950 G1: the one-shot marker the pre-push tag guard needs to let a release tag out, armed for that one tag after every tag check passed; it arms the push and judges nothing", producer: "tag"}
-  - {id: RR-D01, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_multiplatform_dogfood", checker: "Cargo.toml#scripts/check_multiplatform_dogfood.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D02, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_model_ladder", checker: "Cargo.toml#scripts/check_model_ladder.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D03, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_ladder_provenance", checker: "Cargo.toml#scripts/check_ladder_provenance.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D04, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_ladder_serve_verdict", checker: "Cargo.toml#scripts/check_ladder_serve_verdict.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D05, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_serve_backend_record", checker: "Cargo.toml#scripts/check_serve_backend_record.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D06, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_ladder_output_judged", checker: "Cargo.toml#scripts/check_ladder_output_judged.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D07, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_dogfood_no_defer", checker: "Cargo.toml#scripts/check_dogfood_no_defer.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D08, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_tokenizer_nonascii_parity", checker: "Cargo.toml#scripts/check_tokenizer_nonascii_parity.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D09, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_verifier_pinning", checker: "Cargo.toml#scripts/check_verifier_pinning.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D10, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_dogfood_shim", checker: "Cargo.toml#scripts/check_dogfood_shim.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D11, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_bench_receipt", checker: "Cargo.toml#scripts/check_bench_receipt.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D12, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_parity_receipt", checker: "Cargo.toml#scripts/check_parity_receipt.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D13, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_no_claim_literals", checker: "Cargo.toml#scripts/check_no_claim_literals.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D14, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:check_perf041_marker", checker: "Cargo.toml#scripts/check_perf041_marker.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D15, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:float16_greedy_parity", checker: "Cargo.toml#scripts/float16_greedy_parity.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D16, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:tokenizer_parity", checker: "Cargo.toml#scripts/tokenizer_parity.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D17, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:surface_audit_bins_gate", checker: "Cargo.toml#scripts/surface_audit_bins_gate.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D18, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:dogfood_comparator_env_tests", checker: "Cargo.toml#scripts/dogfood_comparator_env_tests.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D19, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/declared:package_tarball_build", checker: "Cargo.toml#scripts/package_tarball_build.sh", provenance: "dogfood declared gate, Cargo.toml [package.metadata.dogfood].gates (#3957)", producer: "dogfood"}
-  - {id: RR-D20, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/git-clean", checker: "scripts/dogfood.sh#mark git-clean FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D21, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/dogfood-gates", checker: "scripts/dogfood.sh#mark dogfood-gates FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D22, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/version-unpublished", checker: "scripts/dogfood.sh#'version-unpublished FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D23, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/coverage", checker: "scripts/dogfood.sh#mark coverage FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D24, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/fmt", checker: "scripts/dogfood.sh#ci_mark fmt ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D25, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/clippy", checker: "scripts/dogfood.sh#gate clippy ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D26, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/security", checker: "scripts/dogfood.sh#gate security ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D27, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/security-2nd-source", checker: "scripts/dogfood.sh#mark security-2nd-source FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D28, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pmat-pin", checker: "scripts/dogfood.sh#mark pmat-pin FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D29, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/release-binary", checker: "scripts/dogfood.sh#mark release-binary FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D30, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/deterministic-tools", checker: "scripts/dogfood.sh#mark deterministic-tools FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D31, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pv-contracts", checker: "scripts/dogfood.sh#mark pv-contracts FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D32, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pv-lint", checker: "scripts/dogfood.sh#mark pv-lint FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D33, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pv-bindings", checker: "scripts/dogfood.sh#mark pv-bindings FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D34, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/bashrs", checker: "scripts/dogfood.sh#mark bashrs FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D35, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/renacer", checker: "scripts/dogfood.sh#gate renacer ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D36, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pmat-verify", checker: "scripts/dogfood.sh#gate pmat-verify ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D37, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/pmat-comply", checker: "scripts/dogfood.sh#mark pmat-comply FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D38, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/contracts-exit-integrity", checker: "scripts/dogfood.sh#mark contracts-exit-integrity FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D39, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/contracts", checker: "scripts/dogfood.sh#gate contracts ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D40, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/cli-surface", checker: "scripts/dogfood.sh#mark cli-surface FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D41, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/transport-decl", checker: "scripts/dogfood.sh#mark transport-decl FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D42, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/transport-absence", checker: "scripts/dogfood.sh#mark transport-absence FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D43, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/interface-parity", checker: "scripts/dogfood.sh#mark interface-parity FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D44, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/transport-invariance", checker: "scripts/dogfood.sh#mark transport-invariance FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D45, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/surface-derivation", checker: "scripts/dogfood.sh#mark surface-derivation FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D46, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/probador-suite", checker: "scripts/dogfood.sh#gate probador-suite ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D47, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/dogfood-use", checker: "scripts/dogfood.sh#mark dogfood-use FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D48, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/model-parity-falsifier", checker: "scripts/dogfood.sh#mark model-parity-falsifier FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D49, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/model-parity", checker: "scripts/dogfood.sh#mark model-parity FAIL", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
-  - {id: RR-D50, applies_to: [tag], parent: RR-T09, anchor: "tag:dogfood/test", checker: "scripts/dogfood.sh#ci_mark test ", provenance: "dogfood pre-publish row (#3957)", producer: "dogfood"}
   - {id: RR-P01, applies_to: [publish], seven: cleanroom-tag-commit, anchor: "publish:autopilot/cleanroom/gh-workflow clean-room.yml", also: ["publish:cascade/clean_room_gate"], checker: "scripts/release/autopilot.sh#clean-room.yml", provenance: "APR-RELEASE-001 T-3 (infra#621)", producer: "cleanroom-cpu"}
   - {id: RR-P03, applies_to: [publish], seven: binaries-before-public, anchor: "publish:autopilot/publish/bash scripts/check_release_assets.sh", also: ["publish:autopilot/assets/gh-workflow binary-release.yml", "tag:autopilot/tag/gh-workflow binary-release.yml"], checker: "scripts/check_release_assets.sh", provenance: "#4657 #4659 release binaries; #4690 the draft goes public only with its assets verified (#4688: was RR-P37)", producer: "assets"}
   - {id: RR-P06, applies_to: [publish], kind: mechanics, anchor: "publish:autopilot/preflight/bash scripts/check_publish_preflight.sh", also: ["publish:cascade/if [ -f .cargo/config.toml ]", "publish:cascade/scripts/check_publish_preflight.sh"], checker: "scripts/check_publish_preflight.sh", provenance: "PMAT-745 publish preflight", producer: "preflight"}

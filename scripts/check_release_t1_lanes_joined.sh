@@ -16,12 +16,12 @@
 #   overlap    two 3 s lanes      -> rc 0 in under 5 s (in series they need 6)
 #   interrupt  TERM to the run    -> rc 1 within seconds, nothing after the join, dogfood's child gone
 #   self-red   models red; dogfood, signalled, exits 1 by itself -> dogfood RED (not STOPPED), both named
-# and under the standing release policy (D2, #4930), where dogfood's ladder gate reads models' receipts:
-#   policy-order       both green  -> dogfood starts no earlier than models ends
-#   policy-models-red  models red  -> rc 1, dogfood NOT-RUN and never started
-#   policy-solo        dogfood alone -> not held, rc 0
-# and, on the autopilot text itself, that t1_dogfood exports MODEL_LADDER_CRUX_DIR and CRUX_CERT under
-# the policy (the pair the T-4 preflight reads), that dogfood builds into its own target dir under
+# and under the standing release policy, where the pre-publish dogfood is not run (#5174):
+#   policy-both        both selected -> rc 0, models alone runs (one GO row), dogfood never started,
+#                                       one NOT-RUN line
+#   policy-models-red  models red    -> rc 1, dogfood never started
+#   policy-solo        dogfood alone -> rc 0, no lane started, the NOT-RUN line
+# and, on the autopilot text itself, that dogfood builds into its own target dir under
 # $REPO_ROOT/target while models keeps CARGO_TARGET_DIR (readiness reads the apr models built), and
 # that scripts/check_model_parity.sh runs every apr parity under the ladder's GPU lock (dogfood's C14
 # parity and the ladder now share the GPU).
@@ -84,6 +84,7 @@ case_run() {
 verdict() { awk -F'\t' -v s="$2" '$1==s {print $5}' "$TMP/$1/t1-steps.tsv" 2>/dev/null; }
 col() { awk -F'\t' -v s="$2" -v c="$3" '$1==s {print $c}' "$TMP/$1/t1-steps.tsv" 2>/dev/null; }
 ran() { [ -f "$TMP/$1/dogfood-ran" ]; }
+notrun() { [ "$(grep -c 'STEP dogfood NOT-RUN: the standing release policy' "$TMP/$1/STATUS" 2>/dev/null)" = 1 ]; }
 rows() { tail -n +2 "$TMP/$1/t1-steps.tsv" 2>/dev/null | wc -l; }
 after() { grep -q 'AFTER-JOIN' "$TMP/$1/STATUS" 2>/dev/null; }
 child_gone() { local c; c=$(cat "$TMP/$1/dogfood-child" 2>/dev/null); [ -n "$c" ] && ! kill -0 "$c" 2>/dev/null; }
@@ -122,20 +123,17 @@ table() {
     DT=1 case_run "$j" "$t-self" "dogfood models" 0 0 1 1
     [ "$C_RC" = 1 ] && [ "$(verdict "$t-self" dogfood)" = RED ] && grep -q 'STOP .*models dogfood RED' "$TMP/$t-self/STATUS" \
         || { echo "self-red: rc=$C_RC dogfood=$(verdict "$t-self" dogfood) (want dogfood RED: it exited 1 by itself, not by the signal)"; return 1; }
-    # D2 (P7 WIRE): under the standing release policy the dogfood's ladder gate reads the CRUX receipts
-    # the models lane writes, so dogfood starts only once models is GO.
-    AP_POLICY=1 case_run "$j" "$t-p-order" "dogfood models" 1 0 2 0
-    [ "$C_RC" = 0 ] && after "$t-p-order" \
-        && [ "$(verdict "$t-p-order" dogfood)$(verdict "$t-p-order" models)" = GOGO ] \
-        && [ "$(col "$t-p-order" dogfood 2)" -ge "$(col "$t-p-order" models 3)" ] \
-        || { echo "policy-order: rc=$C_RC dogfood start=$(col "$t-p-order" dogfood 2) models end=$(col "$t-p-order" models 3) (want rc 0, 2 GO, dogfood started after models ended)"; return 1; }
+    # #5174: under the standing release policy the pre-publish dogfood is not run -- models runs alone.
+    AP_POLICY=1 case_run "$j" "$t-p-both" "dogfood models" 1 0 1 0
+    [ "$C_RC" = 0 ] && after "$t-p-both" && ! ran "$t-p-both" && [ "$(rows "$t-p-both")" = 1 ] \
+        && [ "$(verdict "$t-p-both" models)" = GO ] && notrun "$t-p-both" \
+        || { echo "policy-both: rc=$C_RC rows=$(rows "$t-p-both") models=$(verdict "$t-p-both" models) (want rc 0, models GO alone, dogfood never started, one NOT-RUN line)"; return 1; }
     AP_POLICY=1 case_run "$j" "$t-p-mred" "dogfood models" 1 0 1 1
-    [ "$C_RC" = 1 ] && ! after "$t-p-mred" && ! ran "$t-p-mred" && [ "$(verdict "$t-p-mred" dogfood)" = NOT-RUN ] \
-        && [ "$(verdict "$t-p-mred" models)" = RED ] \
-        || { echo "policy-models-red: rc=$C_RC dogfood=$(verdict "$t-p-mred" dogfood) (want rc 1, models RED, dogfood NOT-RUN and never started)"; return 1; }
+    [ "$C_RC" = 1 ] && ! after "$t-p-mred" && ! ran "$t-p-mred" && [ "$(verdict "$t-p-mred" models)" = RED ] \
+        || { echo "policy-models-red: rc=$C_RC models=$(verdict "$t-p-mred" models) (want rc 1, models RED, dogfood never started)"; return 1; }
     AP_POLICY=1 case_run "$j" "$t-p-solo" "dogfood" 1 0 0 0
-    [ "$C_RC" = 0 ] && ran "$t-p-solo" && [ "$(rows "$t-p-solo")" = 1 ] \
-        || { echo "policy-solo: rc=$C_RC rows=$(rows "$t-p-solo") (want rc 0: dogfood alone is not held)"; return 1; }
+    [ "$C_RC" = 0 ] && after "$t-p-solo" && ! ran "$t-p-solo" && [ "$(rows "$t-p-solo")" = 0 ] && notrun "$t-p-solo" \
+        || { echo "policy-solo: rc=$C_RC rows=$(rows "$t-p-solo") (want rc 0, no lane started, the NOT-RUN line)"; return 1; }
     return 0
 }
 
@@ -156,25 +154,15 @@ dirs() {
     [ -z "$m" ] || { echo "models moved off CARGO_TARGET_DIR, which readiness reads: $m"; return 1; }
 }
 
-# crux AUTOPILOT -> 0 when t1_dogfood points the ladder gate at models' receipts under the policy
-crux() {
-    local e
-    e=$(awk '/^t1_dogfood\(\) \{/{p=1} p&&/MODEL_LADDER_CRUX_DIR=/{print; exit} p&&/^\}/{exit}' "$1")
-    case "$e" in
-        *'[ "$AP_POLICY" != 1 ] || export MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json"'*) ;;
-        *) echo "t1_dogfood does not export the models lane's CRUX receipts under the policy: '$e'"; return 1 ;;
-    esac
-}
-
 # check AUTOPILOT TAG -> 0 when the join and the dirs hold
 check() {
     awk '/^# The join\./{p=1} p{print} p&&/^fi$/{exit}' "$1" > "$TMP/$2.join"
     grep -q 'wait -n' "$TMP/$2.join" || { echo "no join block (\"# The join.\" .. fi with wait -n)"; return 1; }
-    dirs "$1" && crux "$1" && locked "${3:-$PARITY}" && table "$TMP/$2.join" "$2"
+    dirs "$1" && locked "${3:-$PARITY}" && table "$TMP/$2.join" "$2"
 }
 
 bad=0
-if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (12 cases), dogfood reads models' CRUX receipts under the policy, dogfood's target dir is its own, parity takes the GPU lock"
+if why=$(check "$AUTOPILOT" real); then echo "ok    the join holds (12 cases), the dogfood lane is not started under the policy, dogfood's target dir is its own, parity takes the GPU lock"
 else echo "FAIL  the autopilot's T-1 lanes: $why"; bad=1; fi
 
 # The mutants run whatever the real tree did, so report mode prints every line before its verdict.
@@ -195,9 +183,9 @@ mutant first-red   's/t1_red="\${t1_red:+\$t1_red }\$s"/t1_red=${t1_red:-$s}/'
 mutant no-trap     "/^  trap 'for p in/d"
 mutant shared-dogfood '/^  export CARGO_TARGET_DIR="\$REPO_ROOT\/target\/t1-dogfood"$/d'
 mutant stopped-any-rc 's/ \&\& \[ "\$rc" -eq "\$t1_term_rc" \]; then v=STOPPED/; then v=STOPPED/'
-mutant no-hold     's/ || t1_held=dogfood ;; esac$/ || : ;; esac/'
-mutant held-after-red 's/^      if \[ "\$v" = GO \] && \[ -z "\$t1_red" \]; then$/      if :; then/'
-mutant no-crux-env '/export MODEL_LADDER_CRUX_DIR="\$AP\/models-t1"/d'
+mutant policy-runs-dogfood 's/ \&\& \[ "\$s:\$AP_POLICY" != dogfood:1 \]//'
+mutant policy-drops-every-lane 's/\[ "\$s:\$AP_POLICY" != dogfood:1 \]/[ "$AP_POLICY" != 1 ]/'
+mutant no-not-run-line '/^\[ "\$AP_POLICY" != 1 \] || ! run_step dogfood || say /d'
 nm=$((nm + 1))
 sed -e 's/flock -E 75 -w "\${MODEL_LADDER_LOCK_WAIT:-1800}" "\${MODEL_LADDER_GPU_LOCK:-\/tmp\/apr-gpu.lock}"/env/' "$PARITY" > "$TMP/m-parity.sh"
 if cmp -s "$PARITY" "$TMP/m-parity.sh"; then echo "FAIL  mutant parity-unlocked did not apply (anchor moved)"; fails=$((fails + 1))
@@ -205,5 +193,5 @@ elif why=$(check "$AUTOPILOT" m-parity "$TMP/m-parity.sh"); then echo "FAIL  mut
 else echo "ok    mutant parity-unlocked killed ($why)"; fi
 [ "$fails" -eq 0 ] || { echo "FAIL  $fails of $nm mutant(s)"; finish 1; }
 [ "$bad" = 0 ] || finish 1
-echo "PASS  12 case(s) + CRUX env + target dirs + parity lock, $nm mutant(s) killed: dogfood and models start together (dogfood held for models under the policy), join before readiness, and a red in either stops the pass"
+echo "PASS  12 case(s) + target dirs + parity lock, $nm mutant(s) killed: dogfood and models start together (under the policy models runs alone, #5174), join before readiness, and a red in either stops the pass"
 finish 0

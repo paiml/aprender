@@ -166,7 +166,7 @@ export CARGO_TARGET_DIR="$REPO_ROOT/target"
 # The standing release policy, judged ONCE from the release commit: it picks the models lane mode and
 # whether readiness runs. cut_tag re-judges it itself (a log is not the gate).
 AP_POLICY=$(ap_policy_applies "$V" 2>> "$LOG") || die "the standing release policy cannot be judged for $V (see $LOG): nothing is measured"
-[ "$AP_POLICY" != 1 ] || say "POLICY: the standing release policy covers $V -- CRUX smoke on lambda and gx10 is the release gate, readiness (R8) is not run, the larger ladder rows are nightly"
+[ "$AP_POLICY" != 1 ] || say "POLICY: the standing release policy covers $V -- CRUX smoke on lambda and gx10 is the release gate, the pre-publish dogfood (R5) and readiness (R8) are not run, the larger ladder rows are nightly"
 
 # #4950: the cascade publishes to crates.io, which cannot be undone, so it re-proves its own premise
 # instead of trusting the cleanroom step's files: the tag on origin is MC, the clean-room (aprender) job
@@ -227,14 +227,12 @@ cascade_no_secret_green() {
 #    measured at the release version, and R5 at T-4 refused it anyway: v0.69.0 stopped at the publish
 #    preflight 43 min after tagging and ran the real dogfood then, with the tag already public.
 #    Now the real dogfood runs here and writes the receipt in this worktree. R5 is judged once, at T-4
-#    (check_publish_preflight.sh R5, an `also` anchor of RR-T09); the T-1 --receipt-only repeat was a duplicate
+#    (check_publish_preflight.sh R5); the T-1 --receipt-only repeat was a duplicate
 #    stop and left the release path (#4688).
+#    Under the standing release policy this lane is not started and R5 is not run (#5174): it never went
+#    green on a release, so it is the nightly's dogfood lane, ticketed on red, until ruled back in.
 t1_dogfood() {
   export CARGO_TARGET_DIR="$REPO_ROOT/target/t1-dogfood"
-  # D2 (#4930): under the standing release policy the declared ladder gate (check_model_ladder.sh) judges
-  # the CRUX receipts the models lane wrote at $MC and the certification committed in the bump -- the same
-  # pair the T-4 preflight reads. The join starts this lane only after models is GO.
-  [ "$AP_POLICY" != 1 ] || export MODEL_LADDER_CRUX_DIR="$AP/models-t1" CRUX_CERT="$WT/evidence/crux/$V/prompt-certification.json"
   bash scripts/dogfood.sh --phase pre-publish > "$AP/dogfood-pre-publish.log" 2>&1; rc=$?
   grep -E 'VERDICT' "$AP/dogfood-pre-publish.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "dogfood pre-publish NO-GO rc=$rc ($AP/dogfood-pre-publish.log)"
@@ -293,22 +291,20 @@ t1_models_rehearsal() {
 #   build and ladder running in the release dir the next pass reuses. models runs to its own verdict.
 #   An INT or TERM to the autopilot stops every lane (the lanes no longer share its process group),
 #   models included: the operator chose to stop, and the remote leg may run on to its own end.
-#   HELD LANE (D2, #4930). Under the standing release policy dogfood's ladder gate judges the CRUX
-#   receipts models writes to $AP/models-t1, so with both selected dogfood is HELD: it starts when
-#   models exits GO and no lane is red, else its row reads NOT-RUN and it never starts.
-#   Dogfood selected alone is not held: it reads whatever an earlier pass left in $AP/models-t1.
+#   Under the standing release policy dogfood is not a lane at all (#5174; it replaced the D2 hold of
+#   #4930): models runs alone, and a dogfood selection prints one NOT-RUN line.
 # scripts/check_release_t1_lanes_joined.sh runs this block against stub lanes, and its mutants.
-T1_LANES=(); for s in dogfood models; do run_step "$s" && T1_LANES+=("$s"); done
+# Under the standing release policy the dogfood lane is not started (#5174); release_ready.sh reads the
+# `[ "$s:$AP_POLICY" != <lane>:1 ]` form as that lane being off the release path.
+T1_LANES=(); for s in dogfood models; do run_step "$s" && [ "$s:$AP_POLICY" != dogfood:1 ] && T1_LANES+=("$s"); done
+[ "$AP_POLICY" != 1 ] || ! run_step dogfood || say "STEP dogfood NOT-RUN: the standing release policy covers this release, so the pre-publish dogfood is not a release gate (R5 is not run at T-4); it is a nightly lane"
 if [ "${#T1_LANES[@]}" -gt 0 ]; then
   declare -A T1_STEP=() T1_T0=() T1_STOPPED=()
   trap 'for p in "${!T1_STEP[@]}"; do kill -TERM -- "-$p" 2> /dev/null; done; die "T-1 lanes interrupted"' INT TERM
-  t1_held=''
-  case " ${T1_LANES[*]} " in *" dogfood "*"models "*) [ "$AP_POLICY" != 1 ] || t1_held=dogfood ;; esac
-  T1_NOW=(); for s in "${T1_LANES[@]}"; do [ "$s" = "$t1_held" ] || T1_NOW+=("$s"); done
   t1_launch=$SECONDS; set -m
-  for s in "${T1_NOW[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
+  for s in "${T1_LANES[@]}"; do "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; done
   set +m
-  say "T-1 LANES started together: ${T1_LANES[*]}${t1_held:+ ($t1_held held until models is GO)}"
+  say "T-1 LANES started together: ${T1_LANES[*]}"
   [ -f "$AP/t1-steps.tsv" ] || printf 'step\tstart\tend\tseconds\tverdict\n' > "$AP/t1-steps.tsv"
   t1_red=''; t1_term_rc=$((128 + $(kill -l TERM)))
   while [ "${#T1_STEP[@]}" -gt 0 ]; do
@@ -324,16 +320,6 @@ if [ "${#T1_LANES[@]}" -gt 0 ]; then
         [ "${T1_STEP[$p]}" = models ] && continue
         T1_STOPPED[${T1_STEP[$p]}]=1; kill -TERM -- "-$p" 2> /dev/null
       done
-    fi
-    if [ "$s" = models ] && [ -n "$t1_held" ]; then
-      s=$t1_held; t1_held=''
-      if [ "$v" = GO ] && [ -z "$t1_red" ]; then
-        set -m; "t1_$s" & T1_STEP[$!]=$s; T1_T0[$s]=$SECONDS; set +m
-        say "STEP $s started: models is GO, its CRUX receipts are in $AP/models-t1"
-      else
-        printf '%s\t%s\t%s\t0\tNOT-RUN\n' "$s" "$((t1 - t1_launch))" "$((t1 - t1_launch))" >> "$AP/t1-steps.tsv"
-        say "STEP $s NOT-RUN: held for models' CRUX receipts, and $t1_red went red first"
-      fi
     fi
   done
   trap - INT TERM

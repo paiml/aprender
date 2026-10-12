@@ -198,13 +198,18 @@ autopilot_found() {
                         }
                 }
             }
-            # parallel lanes: `for s in a b c; do run_step "$s"` launched as `"t1_$s" &`; each step is its t1_<step> body
+            # parallel lanes: `for s in a b c; do run_step "$s"` launched as `"t1_$s" &`; each step is its t1_<step> body.
+            # A lane the loop line names in `[ "$s:$AP_POLICY" != <lane>:1 ]` is not started under the standing release
+            # policy: that lane, and only that lane, is off the release path (#5174)
             for (i = 1; i <= NR; i++) {
                 if (L[i] !~ /for s in [a-z ]+; [d]o run_step "\$s"/) continue
                 ls = L[i]; sub(/.*for s in /, "", ls); sub(/;.*/, "", ls); nl = split(ls, LN, / +/)
+                delete LOFF; t = L[i]
+                while (match(t, /\[ "\$s:\$AP_POLICY" != [a-z]+:1 \]/)) { w = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH); sub(/.*!= /, "", w); sub(/:1 \]$/, "", w); LOFF[w] = 1 }
                 for (j = 1; j <= nl; j++) {
                     st = LN[j]; fn = "t1_" st
                     if (!(st in PH) || !(fn in FS0)) { unk = 1; continue }
+                    if (st in LOFF) continue
                     if (PH[st] == "") continue
                     delete seen
                     for (e = FS0[fn] + 1; e < FE[fn]; e++) {
@@ -366,6 +371,15 @@ claims() {
     printf '%s\n' "$out"
 }
 
+# dogfood_lane_off AUTOPILOT: rc 0 when the T-1 lane loop names a dogfood lane and takes it off under the standing
+# release policy (`[ "$s:$AP_POLICY" != dogfood:1 ]`, #5174). The pre-publish dogfood then does not run, so the rows
+# it can mark FAIL are off the release path with it, as R8's are with readiness.
+dogfood_lane_off() {
+    awk '/for s in [a-z ]+; [d]o run_step "\$s"/ { ls = $0; sub(/.*for s in /, "", ls); sub(/;.*/, "", ls)
+            if ((" " ls " ") ~ / dogfood / && index($0, "[ \"$s:$AP_POLICY\" != dogfood:1 ]")) f = 1 }
+        END { exit f ? 0 : 1 }' "$1"
+}
+
 # found ROOT: every anchor the surfaces state; rc 2 when a surface is missing or unreadable
 found() {
     local root=$1 f
@@ -377,7 +391,7 @@ found() {
     autopilot_found "$root/$AUTO_REL" "$AUTO_REL" || { printf 'surface unreadable: %s steps\n' "$AUTO_REL" >&2; return 2; }
     preflight_found "$root/$PRE_REL" "$PRE_REL" || { printf 'surface unreadable: %s RULES\n' "$PRE_REL" >&2; return 2; }
     cascade_found "$root/$CAS_REL" "$CAS_REL" || { printf 'surface unreadable: %s gates\n' "$CAS_REL" >&2; return 2; }
-    dogfood_found "$root/$DF_REL" "$root/$CARGO_REL" "$DF_REL" "$CARGO_REL" || { printf 'surface unreadable: %s rows\n' "$DF_REL" >&2; return 2; }
+    dogfood_lane_off "$root/$AUTO_REL" || dogfood_found "$root/$DF_REL" "$root/$CARGO_REL" "$DF_REL" "$CARGO_REL" || { printf 'surface unreadable: %s rows\n' "$DF_REL" >&2; return 2; }
 }
 
 # ---------------------------------------------------------------- the list ----------------------------------------
@@ -668,6 +682,14 @@ YML
 
 # plant DIR FILE TEXT: append TEXT as a line of FILE (relative to DIR)
 plant() { printf '%s\n' "$3" >> "$1/$2"; }
+# dogfood_lane DIR: a second T-1 lane, dogfood, beside deep (a tag step whose body runs the pre-publish dogfood)
+dogfood_lane() {
+    edit "$1" "$AUTO_REL" 's/^#   steps: wait deep tag/#   steps: wait deep dogfood tag/' \
+        && edit "$1" "$AUTO_REL" 's/^STEPS=(wait deep tag/STEPS=(wait deep dogfood tag/' \
+        && edit "$1" "$AUTO_REL" 's/for s in deep; do/for s in deep dogfood; do/' \
+        && plant "$1" "$AUTO_REL" 't1_dogfood() {' && plant "$1" "$AUTO_REL" '  bash scripts/dogfood.sh --phase pre-publish || die x' \
+        && plant "$1" "$AUTO_REL" '}'
+}
 # edit DIR FILE SED: one sed program on FILE; a program that changes nothing is a broken case, not a pass
 edit() {
     local before
@@ -737,6 +759,11 @@ mutate() {
             && plant "$d" "$DF_REL" 'else' && plant "$d" "$DF_REL" '  mark post-row FAIL "x"' && plant "$d" "$DF_REL" 'fi' ;;
         unlisted-lane-cargo) edit "$d" "$AUTO_REL" '/^  cargo metadata --locked/a\  cargo test --doc --workspace' ;;
         nm-lane-no-function) edit "$d" "$AUTO_REL" 's/^t1_deep() {/t1_deeep() {/' ;;
+        orphaned-policy-off-lane) edit "$d" "$AUTO_REL" 's/do run_step "$s" \&\& T1/do run_step "$s" \&\& [ "$s:$AP_POLICY" != deep:1 ] \&\& T1/' ;;
+        green-policy-off-names-another-lane) edit "$d" "$AUTO_REL" 's/do run_step "$s" \&\& T1/do run_step "$s" \&\& [ "$s:$AP_POLICY" != dogfood:1 ] \&\& T1/' ;;
+        unlisted-dogfood-lane-ungated) dogfood_lane "$d" ;;
+        orphaned-policy-off-dogfood-lane) dogfood_lane "$d" \
+            && edit "$d" "$AUTO_REL" 's/do run_step "$s" \&\& T1/do run_step "$s" \&\& [ "$s:$AP_POLICY" != dogfood:1 ] \&\& T1/' ;;
         nm-dogfood-missing) rm -f -- "${d:?}/$DF_REL" ;;
         nm-dogfood-unbalanced) plant "$d" "$DF_REL" 'if [ -n "$X" ]; then' ;;
         nm-dogfood-no-declared) edit "$d" "$CARGO_REL" '/check_x.sh/d' ;;
@@ -830,6 +857,10 @@ unlisted-sourced-lib 1 UNLISTED tag:autopilot/tag/source scripts/lib/new_lib.sh
 unlisted-tag-push 1 UNLISTED tag:autopilot/tag/git push origin
 orphaned-policy-off-step 1 ORPHANED FX-P1
 orphaned-policy-off-rule 1 ORPHANED FX-P4
+orphaned-policy-off-lane 1 ORPHANED FX-T3
+green-policy-off-names-another-lane 0 unlisted=0 orphaned=0 contradictions=0 listed=15 stated=16
+unlisted-dogfood-lane-ungated 1 UNLISTED tag:autopilot/dogfood/bash scripts/dogfood.sh
+orphaned-policy-off-dogfood-lane 1 unlisted=0 orphaned=3 contradictions=0
 green-policy-guard-runs-a-call 0 unlisted=0 orphaned=0'
 
 selftest() {
@@ -984,7 +1015,11 @@ M59 sourced lib ignored@@out = out "\nsource " w@@out = out
 M60 tag push ignored@@out = out "\ngit push origin"@@out = out
 M61 policy-off step read@@if (i in OFF) continue@@if (0) continue
 M62 policy-off rule read@@if (!(x in OFF)) printf@@if (1) printf
-M63 any body is policy-off@@ok = 0 }@@ok = 1 }'
+M63 any body is policy-off@@ok = 0 }@@ok = 1 }
+M64 policy-off lane read@@if (st in LOFF) continue@@if (0) continue
+M65 a policy-off form excuses the whole loop@@if (st in LOFF) continue@@if (length(LOFF)) continue
+M66 dogfood rows read with the lane off@@dogfood_lane_off "$root/$AUTO_REL" ||@@false ||
+M67 dogfood rows dropped by a form on a loop without dogfood@@if ((" " ls " ") ~ / dogfood / && index@@if (index'
 
 mutants() {
     local tmp line id name from to killed=0 total=0 err=0

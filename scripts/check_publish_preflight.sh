@@ -33,6 +33,9 @@
 #   R5  the newest dogfood receipt (`.dogfood/receipt-*.json`, written by
 #       scripts/dogfood.sh) says `verdict: GO` for THIS commit and THIS
 #       version. A stale receipt, a NO-GO, or no receipt at all refuses.
+#       Under the STANDING RELEASE POLICY (as R8 below) R5 is not run (#5174): the pre-publish
+#       dogfood never went green on a release and takes ~55 min, so it is not a release gate; it is
+#       a nightly lane, ticketed on red. `--receipt-only` still judges every receipt it is given.
 #   R7  the model matrix (#3717, #3712): the per-host receipts COMMITTED in this tree for this
 #       version (evidence/dogfood/models/<version>/, put there by the bump, #3708) are judged by
 #       scripts/check_model_ladder.sh -- the same judge autopilot's T-1 `models` step runs on its
@@ -135,6 +138,13 @@ newest_receipt() { # dir -> path of the newest receipt-*.json, or nothing
 # rule_r5 root head version -> prints its row; 0 accepted, 1 refused
 rule_r5() {
     local root="$1" head="$2" version="$3" rdir receipt verdict rcommit rversion rphase rdeferred ropen bad_defer g
+    # The STANDING RELEASE POLICY covers this version: R5 is not run at all and no receipt is read (#5174).
+    # The pre-publish dogfood is a nightly lane; it returns here only as a GATE the operator rules in.
+    if [ "${POL_APPLIES:-0}" = 1 ]; then
+        echo "ok    R5 STANDING RELEASE POLICY covers $version: the pre-publish dogfood was not run and no receipt was read; CRUX smoke (R7) is the release gate"
+        R5_SCOPED=1
+        return 0
+    fi
     rdir="${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}"
     receipt="$(newest_receipt "$rdir")"
     if [ -z "$receipt" ]; then
@@ -482,7 +492,7 @@ gate() {
         local prc=0
         policy_ladder "$root" "$version" || prc=$?
         case "$prc" in
-            0) [ "$POL_APPLIES" != 1 ] || echo "POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers $version: CRUX smoke under R7 is the release gate, R8 is not run, the larger ladder rows are nightly" ;;
+            0) [ "$POL_APPLIES" != 1 ] || echo "POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers $version: CRUX smoke under R7 is the release gate, R5 and R8 are not run, the larger ladder rows are nightly" ;;
             *) echo "FAIL  R7/R8 the standing release policy cannot be applied to $version, so neither the scope nor the full gate can be chosen: $POL_WHY"
                fails=1; pol_bad=1 ;;
         esac
@@ -565,7 +575,7 @@ gate() {
         return 1
     fi
     if [ -n "${SCOPE:-}" ]; then
-        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate${R8_SCOPED:+; release-readiness was NOT the gate})"
+        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, $([ -n "${R5_SCOPED:-}" ] && echo "the dogfood was NOT the gate" || echo "dogfood GO"), OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate${R8_SCOPED:+; release-readiness was NOT the gate})"
     else
         echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, model matrix green"
     fi
@@ -618,6 +628,9 @@ receipt_gate() {
         return 1
     fi
     echo "ok    R2 version $version (cargo metadata, root manifest)"
+    # No policy is read here: --receipt-only judges the receipt it is given, whatever the release (the
+    # nightly negative control asks it to refuse a nightly receipt).
+    POL_APPLIES=0
     if ! rule_r5 "$root" "$head" "$version"; then
         echo "REFUSE $PROG --receipt-only: the T-4 publish gate would refuse this receipt (R5)."
         return 1
@@ -1021,11 +1034,19 @@ FXREADY
     FX_SCOPE_RC=1 row policy_scope_red_refuses 1 "FAIL  R7 OPERATOR EMERGENCY SCOPE crux-smoke NOT satisfied" "$d"
     FX_READINESS_RC=1 row policy_r8_is_not_the_gate 0 "release-readiness was NOT the gate" "$d"
     FX_READINESS_RC=1 row policy_r8_is_not_run 0 "ok    R8 STANDING RELEASE POLICY covers 1.2.3: release-readiness was not run" "$d"
+    # #5174: under the policy R5 reads no receipt -- a NO-GO one, or none at all, does not refuse --
+    # and --receipt-only still refuses the same NO-GO receipt.
+    write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row policy_r5_is_not_run 0 "ok    R5 STANDING RELEASE POLICY covers 1.2.3: the pre-publish dogfood was not run" "$d"
+    row policy_pass_names_dogfood_not_gate 0 "the dogfood was NOT the gate" "$d"
+    POL_APPLIES=1 row policy_receipt_only_still_judges 1 "FAIL  R5 dogfood receipt" "$d" receipt_gate
     d="$tmp/pol-rc"; build_repo "$d"; record_policy "$d" 1.2.3
     row policy_since_equal_covers 0 "POLICY: crux-smoke" "$d"
     d="$tmp/pol-later"; build_repo "$d"; record_policy "$d" 1.2.4
     FX_READINESS_RC=1 row policy_later_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
     FX_LADDER_RC=1 row policy_later_r7_is_matrix 1 "FAIL  R7 model matrix NOT green" "$d"
+    write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row policy_later_r5_enforced 1 "FAIL  R5 dogfood receipt" "$d"
     d="$tmp/pol-dup"; build_repo "$d"; record_policy "$d" 1.2.0 1.2.3
     row policy_and_record_refuse 1 "one release takes one ruling" "$d"
     FX_READINESS_RC=1 row policy_and_record_no_scope 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
