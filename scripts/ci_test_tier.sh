@@ -294,6 +294,11 @@ decide() {
             # landing paid an hour for work the PR and the queue had both already
             # measured.
             local base how why=""
+            # #5172: a TAG push (the release tag) runs the whole workspace. The queue result on
+            # the tagged commit is never cited and no diff is refined: v0.71.0's tag push reused
+            # it and ran no workspace test at all.
+            local gref; gref=$(printenv GITHUB_REF || true)
+            case "$gref" in refs/tags/*) printf 'tier=full\nreason=push of tag %s: a release tag runs the whole workspace -- never a reused merge_group result, never a refined diff (#5172)\n' "${gref#refs/tags/}"; return 0 ;; esac # R-TAGREF
             if [ "$MG_GIVEN" = 1 ]; then
                 why=$(push_reuse_why)
                 if [ -z "$why" ]; then
@@ -393,6 +398,8 @@ self_test() {
     if [ -n "${CI_TEST_TIER_SELF_TEST_PID:-}" ]; then
         printf 'ci_test_tier: refusing a nested self-test (outer self-test pid %s)\n' "$CI_TEST_TIER_SELF_TEST_PID" >&2; return 2
     fi
+    # #5172: a tag-push run's own GITHUB_REF would turn every push row below full.
+    unset GITHUB_REF
     export CI_TEST_TIER_SELF_TEST_PID=$$
     td=$(mktemp -d "${TMPDIR:-/tmp}/ci-tier.XXXXXX"); trap 'rm -rf "${td:?}"' RETURN
     # One decision, many rows. Each full decision re-runs check_tree_reader_tests.sh
@@ -538,6 +545,7 @@ self_test() {
     row 0 "merge_group on a SQUASH queue ref, roadmap entry only -> none: workspace-test has nothing to measure" '^tier=none$' bash -c "$(replay sq-docs)"
     row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
     row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" bash "$T" --event push --repo-root "$td/s-leaf"
+    row 0 "push of a TAG (#5172) -> ONE tier line, full, over the same squash repo: never the refined diff" '^tier=full 1$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf'); printf '%s %s\\n' \"\$(printf '%s\\n' \"\$o\" | grep '^tier=' | head -n1)\" \"\$(printf '%s\\n' \"\$o\" | grep -c '^tier=')\""
     # MUTANT: restore the HEAD^2 gate -- the squash rows above must go back to full.
     sed "s|^\( *\)# IS this PR's diff on the new base. A failed diff still falls closed.|&\n\1if ! git -C \"\$ROOT\" rev-parse -q --verify 'HEAD^2' >/dev/null 2>\&1; then printf 'tier=full\\\\nreason=MUTANT-HEAD2\\\\n'; return 0; fi|" "$T" > "$td/mutant-head2.sh"
     row 0 "mutant with the HEAD^2 gate restored sends the squash group back to full -- the rows discriminate" 'MUTANT-FULL' bash -c "o=\$(bash '$td/mutant-head2.sh' --event merge_group --repo-root '$td/s-leaf' --pr-head '$(qh "$td/s-leaf")' --pr-head-conclusion success 2>&1); case \"\$o\" in *reason=MUTANT-HEAD2*) echo MUTANT-FULL ;; *) echo MUTANT-NOT-APPLIED ;; esac"

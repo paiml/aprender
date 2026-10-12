@@ -18,8 +18,10 @@
 use super::classification::{f1_score, Average};
 use crate::calibration::expected_calibration_error_top_label;
 
-const ECE_FIXTURES: &str =
-    include_str!("../../../../scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json");
+/// The frozen ECE cases: a workspace file outside this crate, so it is read at RUN time
+/// (`crate::test_support::workspace_fixture_or_skip`, #4130/#4175). An `include_str!` of it kept the
+/// published .crate from compiling this module (#5171).
+const ECE_FIXTURES: &str = "scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json";
 
 /// Seeded random cases in the snapshot.
 const N_RANDOM: u64 = 24;
@@ -175,9 +177,11 @@ fn f1_inputs() -> Vec<(String, Vec<usize>, Vec<usize>)> {
     out
 }
 
-/// Every top-label ECE input in snapshot order: `(name, probs, k, labels, bins)`.
-fn ece_inputs() -> Vec<(String, Vec<f32>, usize, Vec<usize>, usize)> {
-    let doc: serde_json::Value = serde_json::from_str(ECE_FIXTURES).expect("fixture JSON parses");
+/// Every top-label ECE input in snapshot order: `(name, probs, k, labels, bins)`. `None` (after a
+/// named SKIP) only out of tree; in tree a missing fixture panics.
+fn ece_inputs(test: &str) -> Option<Vec<(String, Vec<f32>, usize, Vec<usize>, usize)>> {
+    let text = crate::test_support::workspace_fixture_or_skip(test, ECE_FIXTURES)?;
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("fixture JSON parses");
     let mut out = Vec::new();
     for case in doc["cases"].as_array().expect("cases array") {
         let rows = case["probabilities"].as_array().expect("probabilities");
@@ -208,7 +212,7 @@ fn ece_inputs() -> Vec<(String, Vec<f32>, usize, Vec<usize>, usize)> {
         let c = random_case(i);
         out.push((format!("rand_{i:02}"), c.probs, c.k, c.y_true, RANDOM_BINS));
     }
-    out
+    Some(out)
 }
 
 fn f1_bits(y_true: &[usize], y_pred: &[usize]) -> [u32; 3] {
@@ -345,7 +349,9 @@ fn f32_metrics_are_bit_identical_to_the_frozen_snapshot() {
         }
     }
 
-    let ece = ece_inputs();
+    let Some(ece) = ece_inputs("f32_metrics_are_bit_identical_to_the_frozen_snapshot") else {
+        return;
+    };
     assert_eq!(
         ece.len(),
         ECE_SNAPSHOT.len(),
@@ -381,7 +387,7 @@ fn print_f32_snapshot() {
     }
     println!("];");
     println!("const ECE_SNAPSHOT: &[(&str, u32)] = &[");
-    for (name, probs, k, labels, bins) in ece_inputs() {
+    for (name, probs, k, labels, bins) in ece_inputs("print_f32_snapshot").unwrap_or_default() {
         let bits = expected_calibration_error_top_label(&probs, k, &labels, bins).to_bits();
         println!("    (\"{name}\", {bits:#010x}),");
     }
