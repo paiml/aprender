@@ -57,7 +57,7 @@ scan() {
         esac
     done < <(git -C "$root" ls-files -- 'scripts/*.sh')
     if [ "$red" -gt 0 ]; then
-        echo "RED: $red of $n depth-fetching self-tests are not confined (cd into the scratch root + GIT_CEILING_DIRECTORIES, #5025)"
+        echo "RED: $red of $n depth-fetching self-tests are not confined (change into the scratch root + GIT_CEILING_DIRECTORIES, #5025)"
         return 1
     fi
     if [ "$n" -eq 0 ]; then echo "RED: no depth-fetching self-test found under $root/scripts -- the scan read nothing"; return 1; fi

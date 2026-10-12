@@ -32,7 +32,7 @@ common_dir() { # common_dir DIR -> the absolute common git dir of DIR
 
 install_lock() {
     local cd
-    cd="$(common_dir "$1")" || { echo "not_installed: $1 is not a git checkout" >&2; return 3; }
+    cd="$(realpath -e -- "$(common_dir "$1")")" || { echo "not_installed: $1 is not a git checkout" >&2; return 3; }
     if [ -e "$cd/shallow" ]; then
         echo "not_installed: $cd/shallow exists (boundaries: $(tr '\n' ' ' < "$cd/shallow")); unshallow it first" >&2
         return 1
@@ -48,7 +48,7 @@ install_lock() {
 
 uninstall_lock() {
     local cd
-    cd="$(common_dir "$1")" || { echo "not_uninstalled: $1 is not a git checkout" >&2; return 3; }
+    cd="$(realpath -e -- "$(common_dir "$1")")" || { echo "not_uninstalled: $1 is not a git checkout" >&2; return 3; }
     if ! [ -f "$cd/shallow.lock/README" ] || [ "$(cat "$cd/shallow.lock/README")" != "$MARK" ]; then
         echo "not_uninstalled: $cd/shallow.lock is not one --install wrote; nothing changed" >&2
         return 1
@@ -60,7 +60,7 @@ uninstall_lock() {
 
 check_lock() {
     local cd
-    cd="$(common_dir "$1")" || { echo "RED: $1 is not a git checkout" >&2; return 3; }
+    cd="$(realpath -e -- "$(common_dir "$1")")" || { echo "RED: $1 is not a git checkout" >&2; return 3; }
     if [ -f "$cd/shallow" ]; then
         echo "RED: $cd/shallow exists -- every worktree of this checkout is shallow (boundaries: $(tr '\n' ' ' < "$cd/shallow"))"
         return 1
