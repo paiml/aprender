@@ -228,6 +228,10 @@ pub(crate) fn run(
     raw_logit: bool,
     json: bool,
 ) -> Result<()> {
+    // APR-EMBED-001 EG-5 (I-3): a GGUF file of either kind is refused first, naming the verb that
+    // serves it, before a vocabulary or a token id is read.
+    crate::commands::model_kind_gate::refuse_gguf_path(model, "rerank")?;
+
     let config = BertConfig {
         hidden_dim,
         num_layers,
@@ -781,5 +785,42 @@ mod tests {
         let err = parse_rerank_with_pooler(&["--with-pooler", "sometimes"])
             .expect_err("non-boolean value must be rejected");
         assert!(err.contains("sometimes"), "{err}");
+    }
+
+    /// APR-EMBED-001 EG-5 (I-3): an EmbeddingGemma 2 GGUF is refused by kind, naming `apr embed`,
+    /// before the vocabulary is read. EG-0 measured exit 5 on a missing `vocab.txt` naming no verb.
+    #[test]
+    fn falsify_eg5_rerank_refuses_embedding_gguf_before_the_vocab() {
+        use std::io::Write;
+        let bytes = crate::commands::model_kind_gate::tests::eg1_gguf("gemma-embedding2", None);
+        let mut file = tempfile::NamedTempFile::new().expect("temp file");
+        file.write_all(&bytes).expect("write");
+        let err = run(
+            file.path(),
+            None,
+            None,
+            Some("query"),
+            Some("passage"),
+            &[],
+            false,
+            0,
+            Some(Path::new("/nonexistent/eg5/vocab.txt")),
+            384,
+            6,
+            12,
+            1536,
+            30522,
+            512,
+            2,
+            1,
+            true,
+            false,
+            false,
+        )
+        .expect_err("an embedding GGUF must be refused");
+        assert_eq!(err.exit_code_value(), 6, "{err}");
+        let msg = err.to_string();
+        assert!(msg.contains("Use `apr embed`"), "{msg}");
+        assert!(!msg.contains("vocab"), "{msg}");
     }
 }
