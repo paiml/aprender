@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.1] - 2026-10-12
+
+A patch release on 0.71.0: the published aprender-core crate compiles again, a tag push runs the full workspace, the CLI-tools bin has its surface row, the CRUX judge's two new definitions are back at grade B, and under the standing release policy the pre-publish dogfood (R5) leaves the release path the way readiness (R8) did, with CRUX smoke (R7) the release gate.
+
+### Fixed
+
+- fix(core): f32_bits_tests reads its ECE fixture at run time, so the published crate compiles (#5179)
+- fix(ci): a tag push runs the full workspace and pins its first parent as the base (Fixes #5172) (#5178)
+- fix(ledger): aprender-ci-tools shipped with no surface row, so the bin gate read 29/30 (#5170) (#5175)
+- fix(crux-judge): scan_once and main back at grade B — CB-200 616 again (#5173) (#5180)
+- fix(release): R5 never went green — not run under the standing policy, R8's form (#5174) (#5177)
+
+### Known issues
+- **Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) on GB10 is not claimed for 0.70 (#3715); planned for 0.70.1.**
+  On GB10 (sm_121) every verb (run, chat, serve, code) times out at 600 s on the 20k-token rung. The 0.69.1
+  pre-load refusal is gone in 0.70.0, so these models now load and run, but too slowly to be claimed. The
+  release gate does not owe the qwen3moe x GB10 cells (`cells.declaimed` in
+  `contracts/model-capability-ladder-v1.yaml`), and the ladder gate is RED if any rung or long-rung
+  representative still claims them. Withdrawn, not waived: lambda holds both files and still owes every
+  qwen3moe cell.
+- **GB10 dense models: prompt processing unbatched; planned for 0.70.1 (#4590).** Widens the Qwen3 entry below to every dense model on GB10 (operator ruling 2026-09-28
+  16:15Z): the serial prefill is the sm_12x default for every non-hybrid arch, so dense Qwen2.5 on GB10
+  is de-claimed too (`cells.declaimed`: qwen2 and qwen3 on gx10). Output is correct; only prefill speed
+  is affected. Withdrawn, not waived: lambda still owes every dense cell, gx10 still owes every Qwen3.5 cell.
+- **Qwen3 on GB10 (sm_121, and the sm_12x family) is correct but very slow, and is not claimed for
+  0.70 (#4590).** Dense Qwen3 on sm_12x prefills one token at a time, the sm_12x default, because the
+  generic batched prefill corrupts the KV cache there (FALSIFY-CPU-GPU-009). Measured on 0.70.0
+  (8d021f61e) at an 8k think-on prompt: Qwen3-1.7B 967 s, Qwen3-8B 2163 s, against 63-80 s for
+  Qwen3.5-9B on the same host (Qwen3.5 has its own batched prefill, #3596). `apr` prints a
+  `[KNOWN-ISSUE #4590]` warning when it loads Qwen3 on sm_12x. The release gate does not owe the
+  Qwen3 x GB10 cells (`cells.declaimed` in `contracts/model-capability-ladder-v1.yaml`); every other
+  host still owes every Qwen3 cell. Planned for 0.70.1: native sm_121 SASS, then a re-test of batched
+  prefill on GB10.
+
 ## [0.71.0] - 2026-10-11
 
 The 0.71.0 train: release checks move into code with a fixed stage budget, checks that cannot block a merge or a release run nightly instead of on the PR path, a nightly release rehearsal and nightly train judge one commit end to end, the CI helpers and the CRUX judge are ported to Rust, the Laya ModernBERT encoder lands, and Qwen3.5 hybrid GGUF export loads in llama.cpp. From this release on, a release ships on CRUX smoke; larger model rows run nightly and each red row is a ticket.
