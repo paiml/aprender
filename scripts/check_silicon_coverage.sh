@@ -600,6 +600,12 @@ st_fail_route() {
     awk -F'\t' -v OFS='\t' -v p="$1" '$1 == p { $2 = "@ERROR" } { print }' \
         "$ST/u/routes.tsv" > "$ST/u/routes.new" && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
 }
+# st_deny_runners: both runner listings answer 403 with gh's error body on
+# stdout, exactly as the job token's do on a pull_request run (#5213).
+st_deny_runners() {
+    awk -F'\t' -v OFS='\t' '$1 ~ /actions[/]runners[?]/ { $2 = "@E403" } { print }' \
+        "$ST/u/routes.tsv" > "$ST/u/routes.new" && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
+}
 # st_fail_jobs <run id>: that run's jobs page answers with a gh error.
 st_fail_jobs() { st_fail_route "repos/$ST_REPO/actions/runs/$1/jobs?per_page=100"; }
 # st_flaky_route <route ERE> <first answer>: the FIRST route matching the ERE gives
@@ -764,6 +770,7 @@ st_check() {
         SILICON_LOOKBACK_DAYS=30 SILICON_STALE_DAYS=3 \
         SILICON_PAGE_SIZE="$ST_PAGE_SIZE" SILICON_PAGE_CAP="$ST_PAGE_CAP" \
         SILICON_RUN_CAP="$ST_RUN_CAP" SILICON_GH_RETRY_SLEEP=0 \
+        GITHUB_EVENT_NAME="${ST_EVENT:-schedule}" \
         bash "$ST_SUBJECT" > "$_sc_out" 2>&1
     _sc_got=$?
     _sc_why=""
@@ -941,6 +948,45 @@ selftest_rows() {
     st_check m-runners-stderr 0 '^runner listing FAILED: orgs/shimorg/actions/runners: .*HTTP 502' \
         || _rows_bad=$((_rows_bad + 1))
 
+    # (m2) #5213: both runner listings 403 with gh's error body on stdout. The
+    # body is not a runner: 0 visible, and probe 2a refuses on a scheduled run.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check m2-403-body 2 '^NO-GO: zero online runners' || _rows_bad=$((_rows_bad + 1))
+
+    # (m3) #5213: the same 403s on a pull_request run. The runner listing is
+    # not read at all (0 calls), and the verdict comes from job evidence (rc 0).
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=pull_request
+    if st_check m3-pr-no-runners 0 '^runners: not read on a pull_request run' \
+        && [ "$(st_calls 'actions/runners')" = 0 ]; then :
+    else printf '  FAIL %-14s runner listing read %s time(s), want 0\n' m3-pr-no-runners "$(st_calls 'actions/runners')"
+        _rows_bad=$((_rows_bad + 1))
+    fi
+
+    # (m4) #5213: a merge_group run is the same path as a pull_request run.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=merge_group
+    st_check m4-mq-no-runners 0 '^runners: not read on a merge_group run' || _rows_bad=$((_rows_bad + 1))
+
+    # (m5) #5213: on a pull_request run a missing axis still fails; only the
+    # runner probe is off the path, never the axis verdict.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=pull_request
+    st_check m5-pr-missing 1 '^  MISSING +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
+    ST_EVENT=""
+
     # (e2) a listing read that fails keeps gh's stderr too.
     st_reset; ST_ERROR=1
     st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
@@ -1057,27 +1103,52 @@ if [ "$MODE" = "live" ]; then
     RUNNERS="$(mktemp)"; JOBS="$(mktemp)"; LISTINGS="$(mktemp)"; AXIS_WF="$(mktemp)"
     RUNNERS_ERR="$(mktemp)"
     trap 'rm -f "$RUNNERS" "$JOBS" "$LISTINGS" "$AXIS_WF" "$RUNNERS_ERR"' EXIT
+    RUNNERS_OUT="$(mktemp)"
+    trap 'rm -f "$RUNNERS" "$JOBS" "$LISTINGS" "$AXIS_WF" "$RUNNERS_ERR" "$RUNNERS_OUT"' EXIT
     : > "$RUNNERS"
+fi
+# #5213: a pull_request or merge_group run reads with the job token, and that
+# token can never list self-hosted runners (HTTP 403 on both scopes, every
+# run). Probe 2a has never measured anything there, so on those events the
+# runner listing and probe 2a are not run at all; the scheduled nightly,
+# with org auth, keeps both. The axis verdict below comes from job evidence.
+RUNNER_PROBE=1
+if [ "$MODE" = "live" ]; then
+    case "${GITHUB_EVENT_NAME:-}" in
+        pull_request|pull_request_target|merge_group) RUNNER_PROBE=0 ;;
+    esac
+fi
+if [ "$MODE" = "live" ] && [ "$RUNNER_PROBE" = 1 ]; then
     # One scope may fail while the other serves (a repo token cannot read the org
     # listing). A failed scope is not a refusal by itself (the zero-runner probe
     # below refuses when nothing is visible), but gh's own words stay in the
-    # output, so a short count says why it is short.
+    # output, so a short count says why it is short. On an HTTP error gh prints
+    # the error body on stdout, so a failed scope's stdout is discarded: it was
+    # once counted as one online runner, and probe 2a could not fire (#5213).
     for src in "orgs/$ORG/actions/runners" "repos/$REPO/actions/runners"; do
         api_calls=$((api_calls + 1))
-        if ! gh api --paginate "$src?per_page=100" \
+        if gh api --paginate "$src?per_page=100" \
             --jq '.runners[] | select(.status=="online") | (.name) + "\t" + ([.labels[].name] | join(","))' \
-            2> "$RUNNERS_ERR" >> "$RUNNERS"; then
+            2> "$RUNNERS_ERR" > "$RUNNERS_OUT"; then
+            cat "$RUNNERS_OUT" >> "$RUNNERS"
+        else
             printf 'runner listing FAILED: %s: %s\n' "$src" "$(gh_err "$RUNNERS_ERR")"
         fi
     done
     sort -u -o "$RUNNERS" "$RUNNERS"
 fi
 n_runners="$(grep -cve '^[[:space:]]*$' "$RUNNERS" || true)"
+runners_shown="${n_runners:-0}"; [ "$RUNNER_PROBE" = 1 ] || runners_shown="not read"
 
 printf -- '\n-- runners --\n'
-printf 'online runners visible (org + this repo): %s\n' "${n_runners:-0}"
+if [ "$RUNNER_PROBE" = 0 ]; then
+    printf 'runners: not read on a %s run (the job token cannot list runners; the scheduled nightly reads them)\n' \
+        "$GITHUB_EVENT_NAME"
+else
+    printf 'online runners visible (org + this repo): %s\n' "${n_runners:-0}"
+fi
 # Probe 2a: the positive control on the runner listing.
-if [ "${n_runners:-0}" -eq 0 ]; then
+if [ "$RUNNER_PROBE" = 1 ] && [ "${n_runners:-0}" -eq 0 ]; then
     printf 'NO-GO: zero online runners. That looks identical whether the fleet is\n'
     printf 'down or this token lost its scope, and GPU runners are REPO-scoped and\n'
     printf 'invisible in the org listing. Blind is a NO-GO, not a pass.\n'
@@ -1294,7 +1365,7 @@ printf 'axes declared: %s  (required %s: covered %s, STALE %s, UNCOVERED %s, MIS
     "$axes" "$required" "$covered" "$stale" "$uncovered" "$missing" "$truncated" "$notmeasured"
 printf ' deferred %s: PROMOTABLE %s, ready %s)\n' "$deferred" "$promotable" "$ready"
 printf 'evidence: %s online runner(s), %s concluded job(s), floor %sd\n' \
-    "$n_runners" "$n_jobs" "$STALE_DAYS"
+    "$runners_shown" "$n_jobs" "$STALE_DAYS"
 if [ "$MODE" = "live" ]; then
     printf 'api calls: %s (listing cross-checks: %s, re-reads of a short listing: %s, 5xx retries: %s)\n' \
         "$api_calls" "$probe_calls" "$reread_calls" "$retry_calls"
@@ -1325,7 +1396,7 @@ fi
     if [ "$notmeasured" -gt 0 ]; then
         printf -- '- **%s axis/axes NOT_MEASURED: an API read failed, which is no evidence either way**\n' "$notmeasured"
     fi
-    printf -- '- runners inspected: %s; concluded jobs inspected: %s\n' "$n_runners" "$n_jobs"
+    printf -- '- runners inspected: %s; concluded jobs inspected: %s\n' "$runners_shown" "$n_jobs"
 } >> "$SUMMARY"
 
 if [ "$fail" -ne 0 ]; then
