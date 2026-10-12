@@ -421,7 +421,8 @@ jobs:
       # workflow_dispatch / merge_group / push shard had no base and the test panicked
       # "the refinement gate declined". Operator ruling (2026-09-28 09:41): compare HEAD
       # with the EVENT's base commit -- pull_request.base.sha, merge_group.base_sha,
-      # push's `before` (a tag push: the tagged commit's first parent, #5172) -- and fall back to the origin/main tip only for
+      # push's `before` (a tag push: the tagged commit's first parent, #5172) -- and
+      # fall back to the origin/main tip only for
       # workflow_dispatch. That commit is pinned as refs/remotes/origin/main, so at
       # depth 1 (no merge-base) the gate's tip fallback compares against exactly it.
       # AFTER the tier step: its pull_request arm fetches main's CURRENT tip into
@@ -440,17 +441,17 @@ jobs:
             push)
               base="${PUSH_BEFORE:-}"
               # #5172: a push that CREATES a ref carries before=0000..., and a release tag
-              # push always does, so v0.71.0's tag run failed here. A tag's base is the
-              # tagged commit's first parent (the tier step deepened to it, best effort;
-              # fetched again here). A branch push with a zero `before` still fails.
+              # push always does, so v0.71.0's tag run failed here. A tag push's base is
+              # ALWAYS the tagged commit's first parent, never `before` (on a moved tag that
+              # is the old target, not this commit's base). The tier step's merge_group|push
+              # arm deepened to depth 2, best effort; if that missed, fetch it here. A
+              # branch push with a zero `before` still fails below.
               case "${GITHUB_REF:-}" in
                 refs/tags/*)
-                  if [ "$base" = 0000000000000000000000000000000000000000 ]; then
-                    git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1 \
-                      || bash scripts/ci/fetch_p6.sh --no-tags --depth=2 origin "${GITHUB_SHA}"
-                    base="$(git rev-parse -q --verify 'HEAD^1^{commit}' || true)"
-                    printf 'refinement base: tag push %s has no before; using its first parent %s\n' "${GITHUB_REF#refs/tags/}" "${base:-<none>}"
-                  fi
+                  git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1 \
+                    || bash scripts/ci/fetch_p6.sh --no-tags --depth=2 origin "${GITHUB_SHA}"
+                  base="$(git rev-parse -q --verify 'HEAD^1^{commit}' || true)"
+                  printf 'refinement base: tag push %s (before %s); using its first parent %s\n' "${GITHUB_REF#refs/tags/}" "${PUSH_BEFORE:-<none>}" "${base:-<none>}"
                   ;;
               esac
               ;;
