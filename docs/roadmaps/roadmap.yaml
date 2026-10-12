@@ -24699,6 +24699,42 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3998
+- id: PMAT-5034
+  github_issue: 5034
+  item_type: task
+  title: 'fleet_cells_gate: wildcard waiver covers only data faults; non-date until expires'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:33:33Z
+  updated: 2026-10-12T12:33:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5047
+  github_issue: 5047
+  item_type: task
+  title: 'check_roadmap_diff_additive: history row not_measured, self-test row floor (#5047)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:47:51Z
+  updated: 2026-10-12T12:47:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
 - id: PMAT-5053
   github_issue: 5053
   item_type: task
@@ -24708,6 +24744,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   assigned_to: null
   created: 2026-10-10T11:53:27Z
   updated: 2026-10-10T11:53:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5064
+  github_issue: 5064
+  item_type: task
+  title: 'fleet_cells_gate: self-test rows for DEL, locale, day guards; run --self-test nightly'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:40:21Z
+  updated: 2026-10-12T12:40:21Z
   spec: null
   acceptance_criteria: []
   phases: []
