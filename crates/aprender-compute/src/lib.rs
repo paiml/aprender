@@ -359,33 +359,123 @@ pub fn select_best_available_backend() -> Backend {
     // This eliminates 3-5% overhead from calling is_x86_feature_detected!() repeatedly
     static BEST_BACKEND: std::sync::OnceLock<Backend> = std::sync::OnceLock::new();
 
-    *BEST_BACKEND.get_or_init(|| {
-        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-        {
-            detect_x86_backend()
-        }
+    *BEST_BACKEND.get_or_init(|| cap_backend_for_forced_isa(forced_isa(), detect_best_backend()))
+}
 
-        #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
-        {
-            detect_arm_backend()
-        }
+/// Uncapped platform detection behind [`select_best_available_backend`].
+fn detect_best_backend() -> Backend {
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    {
+        detect_x86_backend()
+    }
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            detect_wasm_backend()
-        }
+    #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
+    {
+        detect_arm_backend()
+    }
 
-        #[cfg(not(any(
-            target_arch = "x86_64",
-            target_arch = "x86",
-            target_arch = "aarch64",
-            target_arch = "arm",
-            target_arch = "wasm32"
-        )))]
-        {
-            Backend::Scalar
+    #[cfg(target_arch = "wasm32")]
+    {
+        detect_wasm_backend()
+    }
+
+    #[cfg(not(any(
+        target_arch = "x86_64",
+        target_arch = "x86",
+        target_arch = "aarch64",
+        target_arch = "arm",
+        target_arch = "wasm32"
+    )))]
+    {
+        Backend::Scalar
+    }
+}
+
+/// KTEST-04: the `APR_FORCE_ISA` cap on a detected backend — the same variable, and the same
+/// ladder, as aprender-serve's `isa` module, so one forced `apr` process runs one ISA path in
+/// both crates. `scalar` → [`Backend::Scalar`]; `avx2` → nothing above [`Backend::AVX2`];
+/// unset, `native`, `avx512` and `neon` → as detected. Capping only ever lowers the backend,
+/// so it never names one the host lacks. A value naming a level the host cannot run never reaches
+/// it: [`forced_isa`] refuses that first ([`refuse_unrunnable_forced_isa`]).
+///
+/// # Panics
+/// On a value outside that list: a forced run that silently ran native is the receipt KTEST-001
+/// S-2 forbids.
+#[must_use]
+pub fn cap_backend_for_forced_isa(forced: Option<&str>, detected: Backend) -> Backend {
+    match forced.map(str::trim).unwrap_or("") {
+        "" | "native" | "avx512" | "neon" => detected,
+        "scalar" => Backend::Scalar,
+        "avx2" if detected == Backend::AVX512 => Backend::AVX2,
+        "avx2" => detected,
+        v => panic!("APR_FORCE_ISA={v:?} is not one of: native, scalar, avx2, avx512, neon"),
+    }
+}
+
+/// KTEST-001 S-3: refuse an `APR_FORCE_ISA` value naming a level this host cannot run, with the
+/// same table and words as aprender-serve's `isa::parse` (`isa_tests` holds the two to one answer).
+/// Capping alone would run `avx512` on an AVX2 host as AVX2, under a receipt stamped `avx512`.
+///
+/// # Errors
+/// A value outside `native`, `scalar` and this arch's levels, or a level `host_has` lacks.
+pub fn refuse_unrunnable_forced_isa(
+    forced: Option<&str>,
+    host_has: impl Fn(&str) -> bool,
+) -> std::result::Result<(), String> {
+    let v = forced.map(str::trim).unwrap_or("");
+    let need: &[&str] = match (v, cfg!(target_arch = "aarch64")) {
+        ("" | "native" | "scalar", _) => &[],
+        ("avx512", false) => &["avx512f"],
+        ("avx2", false) => &["avx2", "fma"],
+        ("neon", true) => &["neon"],
+        _ => {
+            let levels = if cfg!(target_arch = "aarch64") { "neon" } else { "avx2, avx512" };
+            return Err(format!("APR_FORCE_ISA={v:?} is not one of: native, scalar, {levels}"));
         }
-    })
+    };
+    match need.iter().find(|f| !host_has(f)) {
+        Some(f) => Err(format!(
+            "APR_FORCE_ISA={v}: this host lacks `{f}`, so the {v} path cannot run here (KTEST-001 S-3)"
+        )),
+        None => Ok(()),
+    }
+}
+
+/// The host features [`refuse_unrunnable_forced_isa`] asks about.
+fn host_has(feature: &str) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        match feature {
+            "avx2" => std::arch::is_x86_feature_detected!("avx2"),
+            "fma" => std::arch::is_x86_feature_detected!("fma"),
+            "avx512f" => std::arch::is_x86_feature_detected!("avx512f"),
+            _ => false,
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        feature == "neon" && std::arch::is_aarch64_feature_detected!("neon")
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        let _ = feature;
+        false
+    }
+}
+
+/// `APR_FORCE_ISA`, read and checked against this host once.
+///
+/// # Panics
+/// If [`refuse_unrunnable_forced_isa`] refuses the value.
+fn forced_isa() -> Option<&'static str> {
+    static FORCED: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    FORCED
+        .get_or_init(|| {
+            let v = std::env::var("APR_FORCE_ISA").ok();
+            refuse_unrunnable_forced_isa(v.as_deref(), host_has).unwrap_or_else(|e| panic!("{e}"));
+            v
+        })
+        .as_deref()
 }
 
 /// Select the optimal backend for a specific operation type
@@ -454,6 +544,11 @@ pub fn select_best_available_backend() -> Backend {
 /// - sub with AVX-512: 0.87x → 1.0x (use AVX2 instead)
 /// - dot with AVX-512: 7.89x (keep AVX-512)
 pub fn select_backend_for_operation(op_type: OperationType) -> Backend {
+    cap_backend_for_forced_isa(forced_isa(), detect_backend_for_operation(op_type))
+}
+
+/// Uncapped per-operation detection behind [`select_backend_for_operation`].
+fn detect_backend_for_operation(op_type: OperationType) -> Backend {
     // Allow unused on non-x86 architectures
     let _ = &op_type;
 
@@ -515,6 +610,9 @@ fn select_x86_backend_for_operation(op_type: OperationType) -> Backend {
 
 #[cfg(test)]
 mod contract_tests;
+
+#[cfg(test)]
+mod force_isa_tests;
 
 #[cfg(test)]
 mod contract_tests_image;

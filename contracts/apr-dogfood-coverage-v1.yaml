@@ -69,6 +69,10 @@ metadata:
     # variants inserted since 2026-08-22, never re-audited). Every row now cites the line of
     # its own `Commands::<Variant>` declaration, checked by reading that line back; 22 were
     # already exact. `pv census` and `pv extract` ship with no row at all -- not added here.
+    # PARTIAL RE-AUDIT, #4539 (G2.1). Same rule. #4539 inserts 11 lines into
+    # crates/aprender-contracts-cli/src/cli.rs (`ReleaseArgs` v2 flags), all before line 735.
+    # Every cited line of that file was compared with main: only 735 (`Export`) and 747
+    # (`Tbox`) moved, now 746 and 758 in 4 rows, each read back; the rest are unchanged.
     ledger: docs/audits/surface_audit.csv
 
     overall:

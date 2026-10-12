@@ -331,3 +331,43 @@ fn test_fused_q4k_q8_dot_two_superblocks() {
     assert!(result.is_ok());
     assert_eq!(result.expect("test value should be present"), 0.0);
 }
+
+// ============================================================================
+// trueno's row-major Q6_K kernel reads the super-block as realizar's does
+// ============================================================================
+
+/// trueno's public row-major Q6_K GEMV (scalar and dispatch) and realizar's production kernel
+/// (`fused_q6k_parallel_matvec`, registry row `cpu.matvec.q6_k`) compute the same product on
+/// pseudo-random GGUF super-blocks. They once disagreed by up to 9×: trueno packed `ql`/`qh` linearly.
+#[test]
+fn trueno_rowmajor_q6k_matches_realizar() {
+    let (in_dim, out_dim) = (512usize, 8usize);
+    let x: Vec<f32> = (0..in_dim).map(|i| ((i as f32) * 0.019).sin() * 0.4).collect();
+    for seed in [7u64, 19, 101] {
+        let mut s = seed;
+        let mut w = Vec::with_capacity(out_dim * 2 * 210);
+        for _ in 0..out_dim * 2 {
+            for i in 0..210 {
+                s = s.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+                w.push(match i {
+                    208 => 0x66,
+                    209 => 0x2E,
+                    _ => (s >> 33) as u8,
+                });
+            }
+        }
+        let want = crate::quantize::fused_q6k_parallel_matvec(&w, &x, in_dim, out_dim)
+            .expect("realizar q6k");
+        for (name, got) in [
+            ("scalar", trueno::backends::q6k::matmul_q6k_f32_scalar(&w, &x, out_dim, in_dim)),
+            ("dispatch", trueno::backends::q6k::matmul_q6k_f32_dispatch(&w, &x, out_dim, in_dim)),
+        ] {
+            for (r, (g, v)) in got.iter().zip(&want).enumerate() {
+                assert!(
+                    (g - v).abs() <= 1e-2 * v.abs().max(1.0),
+                    "seed {seed} {name} row {r}: trueno {g} vs realizar {v}"
+                );
+            }
+        }
+    }
+}
