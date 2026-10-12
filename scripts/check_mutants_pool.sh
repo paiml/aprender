@@ -84,6 +84,9 @@ if [ "${1:-}" = "--self-test" ]; then
     [ "$rc" = 2 ] && echo "ok    empty runs-on is ENV rc=2" || { echo "FAIL  empty runs-on gave rc=$rc"; bad=1; }
     printf 'jobs: {}\n' > "$d/none.yml"; rc=0; table "$d/none.yml" > /dev/null 2>&1 || rc=$?
     [ "$rc" = 2 ] && echo "ok    no job is ENV rc=2" || { echo "FAIL  no job gave rc=$rc"; bad=1; }
+    # The same workflow's C324 stop decision (#5228): its own case table, run here so the existing CI step covers it.
+    if bash "$ROOT/scripts/mutants_weekly_stop.sh" --self-test > /dev/null 2>&1; then echo "ok    weekly stop decision table passes"
+    else echo "FAIL  scripts/mutants_weekly_stop.sh --self-test"; bad=1; fi
     [ "$bad" = 0 ] && { echo "SELF-TEST PASSED"; exit 0; }
     echo "SELF-TEST FAILED" >&2; exit 1
 fi

@@ -7,7 +7,7 @@ name: Mutants Nightly
 # names itself.
 #
 # #5228 (operator, relayed by the cop 2026-10-12: "stop and move to weekly"): 0 green in the last 10 daily runs, so
-# weekly, and it is LAB (C324 item 5): a red or unmeasured scheduled run with no green run in the 7 days before it
+# weekly, and it is LAB (C324 item 5): a red or unmeasured scheduled run whose previous week had no green run
 # DISABLES this workflow (job `stop`). Its owner brings it back: `gh workflow enable mutants-nightly.yml`, then a dispatch.
 
 on:
@@ -125,33 +125,24 @@ jobs:
           path: mutants-gate/
 
   # #5228, C324 item 5: a LAB check red or unmeasured for 7 days stops running until its owner brings it back. On a
-  # weekly schedule a non-green run with no green run in the 7 days before it is exactly that, so this job DISABLES
-  # the workflow; `gh workflow enable mutants-nightly.yml` is the owner's way back. Its own job, so it runs whatever
-  # the mutants job did (red, timed out, cancelled) and the mutants job keeps a read-only token. A dispatch never stops.
+  # weekly schedule that is this run AND last week's both non-green, so this job DISABLES the workflow then
+  # (scripts/mutants_weekly_stop.sh: an 8-day window, its case table and why 7 days is wrong); `gh workflow enable
+  # mutants-nightly.yml` is the owner's way back. Its own job, so it runs whatever the mutants job did (red, timed out,
+  # cancelled) and the mutants job keeps a read-only token. A dispatch never stops.
   stop:
     needs: mutants
     if: always() && github.event_name == 'schedule'
     runs-on: [self-hosted, Linux, X64, mutants]
     timeout-minutes: 5
     permissions:
+      contents: read
       actions: write # PUT .../workflows/mutants-nightly.yml/disable
     steps:
-      - name: Red or unmeasured with no green run in 7 days disables this workflow
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - name: Red or unmeasured with last week's run also not green disables this workflow
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ needs.mutants.result }}
-        run: |
-          set -euo pipefail
-          if [ "$RESULT" = success ]; then echo "mutants: success -- no stop"; exit 0; fi
-          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/mutants-nightly.yml"
-          SINCE=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
-          # A listing that FAILS, or one with no total_count, is red: never read as "no green run" (#4142's rule).
-          J=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-                "$API/runs?branch=main&status=success&created=%3E%3D${SINCE}&per_page=1") \
-            || { echo "::error::could not list green mutants-nightly runs since $SINCE -- no stop decision"; exit 1; }
-          N=$(printf '%s' "$J" | grep -m1 -oE '"total_count": *[0-9]+' | grep -oE '[0-9]+$' || true)
-          [ -n "$N" ] || { echo "::error::no total_count in the run listing -- no stop decision"; exit 1; }
-          if [ "$N" -gt 0 ]; then echo "mutants: $RESULT, but $N green run(s) since $SINCE -- keeps running"; exit 0; fi
-          curl -sSf -X PUT -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/disable" \
-            || { echo "::error::could not disable mutants-nightly.yml"; exit 1; }
-          echo "::warning::C324 7-day stop: mutants $RESULT and no green run since $SINCE -- mutants-nightly.yml DISABLED; owner: gh workflow enable mutants-nightly.yml, then a dispatch"
+        run: bash scripts/mutants_weekly_stop.sh --run
