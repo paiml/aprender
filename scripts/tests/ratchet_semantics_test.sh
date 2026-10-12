@@ -629,6 +629,7 @@ run_complexity() {
 exe_from_log() { # exe_from_log <cargo --no-run log>
   sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\r$//' "$1" \
     | sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' | tail -1
+  case "$bin" in /*|"") ;; *) bin="$ROOT/$bin" ;; esac   # cargo names it relative to its cwd, $ROOT; this script runs in $WORK (#5025)
 }
 satd_run() { # satd_run <binary> <filter> [VAR=value...] -> output; rc is the test rc
   local bin="$1" filter="$2"
