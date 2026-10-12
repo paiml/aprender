@@ -19,7 +19,7 @@ use super::classification::{f1_score, Average};
 use crate::calibration::expected_calibration_error_top_label;
 
 /// The frozen ECE cases: a workspace file outside this crate, so it is read at RUN time
-/// (`provable_contracts::workspace_file_or_skip!`, #4130/#4175). An `include_str!` of it kept the
+/// (`crate::test_support::workspace_fixture_or_skip`, #4130/#4175). An `include_str!` of it kept the
 /// published .crate from compiling this module (#5171).
 const ECE_FIXTURES: &str = "scripts/setfit_fixtures/claims_stats/ece_top_label_cases.json";
 
@@ -180,7 +180,7 @@ fn f1_inputs() -> Vec<(String, Vec<usize>, Vec<usize>)> {
 /// Every top-label ECE input in snapshot order: `(name, probs, k, labels, bins)`. `None` (after a
 /// named SKIP) only out of tree; in tree a missing fixture panics.
 fn ece_inputs(test: &str) -> Option<Vec<(String, Vec<f32>, usize, Vec<usize>, usize)>> {
-    let text = provable_contracts::workspace_file_or_skip!(test, ECE_FIXTURES)?;
+    let text = crate::test_support::workspace_fixture_or_skip(test, ECE_FIXTURES)?;
     let doc: serde_json::Value = serde_json::from_str(&text).expect("fixture JSON parses");
     let mut out = Vec::new();
     for case in doc["cases"].as_array().expect("cases array") {
