@@ -1,6 +1,6 @@
 //! `apr test llm parity`, the front door of `apr_test::llm::parity`
 //! (#4971 V3-d): the perf041 batched-parity probe, ported from
-//! `scripts/perf041_batched_parity_probe.py` (C301).
+//! `scripts/perf041_batched_parity_probe.py`, so no Python runs it.
 //!
 //! It decodes one prompt twice alone (`m = 1`, the reference), then as `c`
 //! identical concurrent requests for each `c` of the ladder, reads the batch

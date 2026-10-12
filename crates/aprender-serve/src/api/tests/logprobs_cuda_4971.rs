@@ -20,20 +20,19 @@ use crate::api::{create_router, AppState};
 
 const CHAT: &str = "/v1/chat/completions";
 
-const TINYLLAMA: [&str; 2] = [
-    "/home/noah/.apr/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-    "/mnt/nvme-raid0/cache/apr-home/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-];
+/// `$HOME/.apr/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf`.
+fn tinyllama_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let path = std::path::Path::new(&home)
+        .join(".apr/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
+    path.exists().then_some(path)
+}
 
 /// tinyllama on CUDA device 0 behind the direct path, or `None` (and a SKIP
 /// line) when the model or the device is missing.
 fn cuda_state() -> Option<AppState> {
     use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
-    let Some(path) = TINYLLAMA
-        .iter()
-        .map(std::path::Path::new)
-        .find(|p| p.exists())
-    else {
+    let Some(path) = tinyllama_path() else {
         eprintln!("SKIP: tinyllama not present");
         return None;
     };

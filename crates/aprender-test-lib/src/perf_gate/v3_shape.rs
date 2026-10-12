@@ -4,7 +4,7 @@
 //! itself? A V3 receipt asks more of the same witness, and this module is the
 //! check. It ports the hand-run `v3_shape_check.py` from the spec branch
 //! (`docs/lookahead/0.71-v3-serving-shape-parity.md`, draft contract
-//! `serving-shape-parity-v1`, branch `la-71/v3-serving-shape-parity`) and
+//! `serving-shape-parity-v1`) and
 //! carries its case table. No Python ships with it.
 //!
 //! | Rule | The witness holds |
@@ -19,7 +19,7 @@
 //! | floor | every band's `declared_min` is at least 64, the perf matrix's `witness.min_agree_tokens` |
 //! | cap | at most one of c=4, 8, 16 is admitted through the near-tie clause |
 //!
-//! S7, the floor and the cap are the V3 bar's (C314 round 2, contract
+//! S7, the floor and the cap are the V3 bar's (adopted in review, contract
 //! `serving-shape-parity-v1`), as is ε = 0.05 logit, now fixed. A witness
 //! with no per-request decode timing at c=1 or c=4 is not admissible: S7 is
 //! unmeasured, never assumed. The probe times a request only on a stream the
@@ -678,7 +678,7 @@ mod tests {
             check_v3_shape("{}"),
             ShapeVerdict::Red("RED: the witness measured no bands".to_string())
         );
-        let missing = Path::new("/nonexistent/la-0.71.1a/v3-shape/witness.json");
+        let missing = Path::new("/nonexistent/v3-shape/witness.json");
         let verdict = check_v3_shape_file(missing);
         assert_eq!(verdict.exit_code(), 2, "{verdict:?}");
         assert!(verdict.reasons()[0].starts_with("RED: cannot read witness "));

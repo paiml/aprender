@@ -1,9 +1,9 @@
 # 0.71.1 exit criterion V3 (#4971): is a perf041 witness a serving-shape parity receipt?
-# Moved here from the spec branch's draft (la-71/v3-serving-shape-parity @ adf6c4b4aa,
+# Moved here from the spec branch's draft (adf6c4b4aa,
 # docs/lookahead/contracts-draft/serving-shape-parity-v1.yaml, version 0.3.0). The draft's
 # Python checker and fixtures are not carried: the check is perf_gate::v3_shape and its
-# in-code case table, and `apr test llm shape-check` is its front door (C301).
-# The bar below was adopted by the C314 quorum of 2026-10-10 06:48Z, recorded here before
+# in-code case table, and `apr test llm shape-check` is its front door (the build is Rust only).
+# The bar below was adopted in review on 2026-10-10 06:48Z, recorded here before
 # any of its code (order step 1). S7, the near-tie cap and the declared_min floor were
 # spec-before-code; shape-check reads them since order step 2 (FALSIFY-SSP-017..019).
 # This is not a gate: no merge, queue or release job runs the check. Wiring V3 into a
@@ -11,7 +11,7 @@
 metadata:
   version: 1.0.0
   created: '2026-10-10'
-  author: la-0.71.1a (from the draft 0.3.0 by la-0.71, 2026-10-03)
+  author: 'aprender maintainers (from the draft 0.3.0 of 2026-10-03)'
   kind: schema
   status: partial
   description: >
@@ -27,12 +27,11 @@ metadata:
     - crates/apr-cli/src/commands/test_llm_parity.rs
     - crates/aprender-test-lib/src/llm/parity.rs
     - 'contracts/apr-serve-openai-compat-v1.yaml FALSIFY-V3-SHAPE-CHECK-4971, FALSIFY-V3-SHAPE-CLI-4971, FALSIFY-PERF041-CLI-4971'
-    - 'Quorum receipt: /mnt/nvme-raid0/cop-inbox/handoff/quorum-la-0.71.1a-v3bar.md (C314, round 2, ADOPTED 2026-10-10 06:48Z)'
-    - 'Spec: docs/lookahead/0.71-v3-serving-shape-parity.md on branch la-71/v3-serving-shape-parity'
+    - 'Spec: docs/lookahead/0.71-v3-serving-shape-parity.md on the spec branch'
   depends_on:
     - continuous-batching-v1
 bar:
-  adopted: '2026-10-10T06:48Z, C314 quorum round 2 (Explore sonnet, haiku, sonnet adversarial; degraded: same-family), bound to la-711a/4971-v3a-margin @ 61f0fa5798'
+  adopted: '2026-10-10T06:48Z, in review, bound to commit 61f0fa5798'
   statement: >
     V3 holds when, on each GPU host class 0.71.1 ships for (lambda RTX 4090 sm_89 and gx10
     GB10), one `apr test llm parity` run against `apr serve` with CUDA on the blessed
@@ -57,10 +56,10 @@ bar:
     - 'The rationale for the cap is recorded under equations.admissible.cap_rationale.'
   spec_before_code: []  # S7, near_tie_cap and declared_min_floor landed in order step 2
   order:
-    - 'Contract: this file, passing pv validate (la-0.71.1a).'
-    - 'Code: the probe records per-request decode timing; shape-check reads S7, the cap and the declared_min floor (la-0.71.1a).'
+    - 'Contract: this file, passing pv validate.'
+    - 'Code: the probe records per-request decode timing; shape-check reads S7, the cap and the declared_min floor.'
     - 'PROPOSE-TICKET for the end-to-end plant.'
-    - 'A session other than la-0.71.1a runs both host classes and closes the row. The author never closes V3.'
+    - 'Someone other than the author runs both host classes and closes the row. The author never closes V3.'
 equations:
   admissible:
     formula: |
@@ -79,7 +78,7 @@ equations:
       - 'an empty, blank, unreadable or bandless witness is RED, never NOT ADMISSIBLE'
       - 'a witness with no per-request decode timing at c=1 or c=4 is not admissible: S7 is unmeasured, never assumed'
     cap_rationale: >
-      Author's wording of quorum condition 6. A near-tie explains one early divergence as
+      Review condition 6, in the author's words. A near-tie explains one early divergence as
       chance: two candidates within ε of each other at that step, so any reduction-order
       change may flip the argmax. Bands c=4, 8 and 16 share one batched path, so when more
       than one of them diverges early the likelier cause is that path, not three
@@ -267,7 +266,7 @@ mutation_record:
   python_draft: {date: '2026-10-04', mutants: 32, killed: 30, killed_by_crash: 4, survived: 2, survived_table: [startswith-to-in, declared-min-default-64]}
 verification: >
   cargo test -p aprender-test-lib --lib perf_gate::v3_shape and cargo test -p apr-cli
-  --lib test_llm_shape, on gx10 at la-711a/4971-v3a-margin. At 72283efd5e (2026-10-10
+  --lib test_llm_shape, on gx10 at the V3 branch. At 72283efd5e (2026-10-10
   08:11Z, gx10 aarch64, CPU only): perf_gate 251 passed, llm::parity 7 passed, apr-cli
   test_llm 89 passed, and FALSIFY-SSP-007 by hand gave exit 5 with its five reasons,
   S7 unmeasured among them. No GPU host class has run the probe yet.

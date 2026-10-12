@@ -4,7 +4,7 @@
 //! (`m = 1`, the reference), then as `c` identical concurrent requests for each
 //! `c` of the ladder, and writes a witness whose bands the V3 shape check
 //! ([`super::v3_shape`]) reads. This module is that probe's judgement, ported
-//! (C301): what makes a sample comparable, when the reference is stable, how a
+//! to Rust: what makes a sample comparable, when the reference is stable, how a
 //! band is scored, and the run's verdict. Every function here is pure in what
 //! came back over the wire, so it compiles and is tested under default
 //! features. The requests themselves are fired behind the `llm` feature.
