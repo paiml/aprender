@@ -531,3 +531,38 @@ async fn a_server_without_the_gguf_refuses_by_name() {
         "{body}"
     );
 }
+
+/// #3568: a `response_format.type` apr does not serve is a 422 that names the field and the
+/// types it serves, not the sanitizer's "Invalid request body"; a known type still parses.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unknown_response_format_type_is_refused_naming_the_field() {
+    for (format, got) in [
+        (serde_json::json!({"type": "xml"}), "got xml"),
+        (serde_json::json!({"type": 12}), "got 12"),
+        (serde_json::json!({}), "got no type"),
+    ] {
+        let (_f, state) = cpu_state(false);
+        let body = serde_json::json!({
+            "model": "default",
+            "messages": [{"role": "user", "content": "hi"}],
+            "response_format": format,
+        });
+        let (status, body) = post(state, body).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        let error = body["error"].as_str().expect("an error message");
+        assert!(
+            error.contains("response_format.type must be one of text, json_object, json_schema"),
+            "{error}"
+        );
+        assert!(error.ends_with(got), "{error}");
+    }
+    assert_eq!(
+        format(serde_json::json!({"type": "json_object"})),
+        ResponseFormat::JsonObject
+    );
+    // A known type goes through the request's own deserializer, the hook under test
+    let request = chat_request(serde_json::json!({"response_format": {"type": "json_object"}}));
+    assert_eq!(request.response_format, Some(ResponseFormat::JsonObject));
+    let request = chat_request(serde_json::json!({"response_format": null}));
+    assert_eq!(request.response_format, None);
+}
