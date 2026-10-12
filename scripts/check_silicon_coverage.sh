@@ -138,6 +138,10 @@ TAB="$(printf '\t')"
 api_calls=0
 probe_calls=0
 reread_calls=0
+retry_calls=0
+# A 5xx read is retried up to this many reads in all, this many seconds apart (#5212).
+GH_READ_TRIES="${SILICON_GH_TRIES:-3}"
+GH_RETRY_SLEEP="${SILICON_GH_RETRY_SLEEP:-5}"
 
 # labels_contain <runner-label-csv> <required-label-csv>
 # 0 when every required label is present in the runner's set. Case-insensitive:
@@ -212,6 +216,34 @@ gh_err() {
     awk 'NF { sub(/[[:space:]]+$/, ""); s = s (s == "" ? "" : " | ") $0 }
          END { if (s == "") s = "(gh printed nothing on stderr)"; print substr(s, 1, 300) }' "$1" 2>/dev/null \
         || printf '(stderr of the failed call could not be read)\n'
+}
+
+# gh_read <stderr file> <gh args>... -> one API read, retried while gh says the
+# SERVER failed (HTTP 5xx), at most GH_READ_TRIES reads in all (#5212). One
+# [run] is ~75 reads, and a single 502 on any of them turned x86-main red on
+# runs 38222226230, 38241398316 and 38246271098. A retried read that answers is
+# a measured read. One that is still failing after the last try fails exactly as
+# before: rc 1, gh's words from the last try in <stderr file>, plus the number of
+# reads made. A 4xx is never retried, because asking again gets the same answer.
+# stdout comes only from the read that succeeded. On an error, gh writes the
+# error body to stdout too, and a failed try must not leave it in the output.
+# Callers run this in the guard's own shell, never in $( ), so the counters hold.
+gh_read() {
+    _gr_ef="$1"; shift
+    _gr_n=1
+    _gr_of="$(mktemp)" || return 1
+    while :; do
+        if gh "$@" > "$_gr_of" 2> "$_gr_ef"; then
+            cat "$_gr_of"; rm -f "${_gr_of:?}"; return 0
+        fi
+        if [ "$_gr_n" -ge "$GH_READ_TRIES" ] || ! grep -Eq 'HTTP 5[0-9][0-9]' "$_gr_ef"; then
+            [ "$_gr_n" -gt 1 ] && printf '(failed on all %s reads)\n' "$_gr_n" >> "$_gr_ef"
+            rm -f "${_gr_of:?}"; return 1
+        fi
+        _gr_n=$((_gr_n + 1))
+        api_calls=$((api_calls + 1)); retry_calls=$((retry_calls + 1))
+        sleep "$GH_RETRY_SLEEP"
+    done
 }
 # ── THE RUN PROBE ───────────────────────────────────────────────────────────
 # axis_evidence <jobs-tsv> <selector> <job-name glob>
@@ -329,9 +361,9 @@ list_window() {
         _lw_pf="$(mktemp)" || return 1
         _lw_ef="$(mktemp)" || { rm -f "${_lw_pf:?}"; return 1; }
         api_calls=$((api_calls + 1))
-        if ! gh api "repos/$REPO/actions/workflows/${_lw_wf}/runs?event=${_lw_ev}&created=%3E%3D${_bj_since}&per_page=${PAGE_SIZE}&page=${_bj_page}" \
+        if ! gh_read "$_lw_ef" api "repos/$REPO/actions/workflows/${_lw_wf}/runs?event=${_lw_ev}&created=%3E%3D${_bj_since}&per_page=${PAGE_SIZE}&page=${_bj_page}" \
             --jq '"#total\t\(.total_count)", (.workflow_runs[] | [(.id|tostring), .created_at, .name] | @tsv)' \
-            > "$_lw_pf" 2> "$_lw_ef"; then
+            > "$_lw_pf"; then
             printf 'listing FAILED: %s %s page %s: %s\n' "$_lw_wf" "$_lw_ev" "$_bj_page" "$(gh_err "$_lw_ef")"
             rm -f "${_lw_pf:?}" "${_lw_ef:?}"
             return 1
@@ -413,13 +445,15 @@ build_jobs() {
             if [ "$_bj_state" = ok ]; then
                 api_calls=$((api_calls + 1)); probe_calls=$((probe_calls + 1))
                 _bj_pef="$(mktemp)" || { rm -f "${_bj_one:?}" "${_bj_runs:?}"; return 1; }
-                if ! _bj_probe="$(gh api "repos/$REPO/actions/workflows/${_bj_wf}/runs?event=${_bj_ev}&per_page=1" \
-                    --jq '"\(.total_count)\t\(.workflow_runs[0].created_at // "")"' 2> "$_bj_pef")"; then
+                _bj_pof="$(mktemp)" || { rm -f "${_bj_one:?}" "${_bj_runs:?}" "${_bj_pef:?}"; return 1; }
+                if ! gh_read "$_bj_pef" api "repos/$REPO/actions/workflows/${_bj_wf}/runs?event=${_bj_ev}&per_page=1" \
+                    --jq '"\(.total_count)\t\(.workflow_runs[0].created_at // "")"' > "$_bj_pof"; then
                     printf 'listing FAILED: %s %s unfiltered cross-check: %s\n' "$_bj_wf" "$_bj_ev" "$(gh_err "$_bj_pef")"
-                    rm -f "${_bj_one:?}" "${_bj_runs:?}" "${_bj_pef:?}"
+                    rm -f "${_bj_one:?}" "${_bj_runs:?}" "${_bj_pef:?}" "${_bj_pof:?}"
                     return 1
                 fi
-                rm -f "${_bj_pef:?}"
+                _bj_probe="$(cat "$_bj_pof")"
+                rm -f "${_bj_pef:?}" "${_bj_pof:?}"
                 _bj_ptotal="${_bj_probe%%"$TAB"*}"; _bj_pnewest="${_bj_probe#*"$TAB"}"
                 if listing_is_short "$_bj_one" "$_bj_pnewest" "$_bj_cut"; then
                     reread_calls=$((reread_calls + 1))
@@ -447,10 +481,10 @@ build_jobs() {
         _bj_jf="$(mktemp)" || return 1
         _bj_ef="$(mktemp)" || { rm -f "${_bj_jf:?}"; return 1; }
         api_calls=$((api_calls + 1))
-        if gh api "repos/$REPO/actions/runs/${_bj_id}/jobs?per_page=100" \
+        if gh_read "$_bj_ef" api "repos/$REPO/actions/runs/${_bj_id}/jobs?per_page=100" \
             --jq '.jobs[] | select(.conclusion=="success" or .conclusion=="failure")
                           | [.completed_at, .conclusion, ([.labels[]] | join(",")), .name] | @tsv' \
-            > "$_bj_jf" 2> "$_bj_ef"; then
+            > "$_bj_jf"; then
             awk -v wf="$_bj_name" -v rid="$_bj_id" -F'\t' 'NF >= 4 { print $0 "\t" wf "\t" rid }' \
                 "$_bj_jf" >> "$_bj_out"
         else
@@ -549,6 +583,11 @@ if [ "$f" = "@ERROR" ]; then
     printf 'gh: Server Error (HTTP 502)\n' >&2
     exit 1
 fi
+if [ "$f" = "@E403" ]; then
+    printf '{"message":"Resource not accessible by integration","status":"403"}'
+    printf 'gh: Resource not accessible by integration (HTTP 403)\n' >&2
+    exit 1
+fi
 jq -r "$expr" "$d/$f"
 SHIM
     chmod +x "$ST/bin/gh"
@@ -563,6 +602,14 @@ st_fail_route() {
 }
 # st_fail_jobs <run id>: that run's jobs page answers with a gh error.
 st_fail_jobs() { st_fail_route "repos/$ST_REPO/actions/runs/$1/jobs?per_page=100"; }
+# st_flaky_route <route ERE> <first answer>: the FIRST route matching the ERE gives
+# <first answer> (@ERROR = a 502, @E403 = a 403) on its first call, then its page.
+st_flaky_route() {
+    awk -F'\t' -v OFS='\t' -v re="$1" -v a="$2" '!d && $1 ~ re { $2 = "@SEQ:" a "," $2; d = 1 } { print }' \
+        "$ST/u/routes.tsv" > "$ST/u/routes.new" && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
+}
+# st_calls <route ERE>: how many times the shim was asked for a matching path.
+st_calls() { grep -Ec -- "$1" "$ST/u/calls.log" || true; }
 
 st_reset() {
     rm -rf "${ST:?}/u"
@@ -716,7 +763,7 @@ st_check() {
         SILICON_WORKFLOWS_DIR="$ST/u/workflows" SILICON_NOW="$ST_NOW" \
         SILICON_LOOKBACK_DAYS=30 SILICON_STALE_DAYS=3 \
         SILICON_PAGE_SIZE="$ST_PAGE_SIZE" SILICON_PAGE_CAP="$ST_PAGE_CAP" \
-        SILICON_RUN_CAP="$ST_RUN_CAP" \
+        SILICON_RUN_CAP="$ST_RUN_CAP" SILICON_GH_RETRY_SLEEP=0 \
         bash "$ST_SUBJECT" > "$_sc_out" 2>&1
     _sc_got=$?
     _sc_why=""
@@ -907,6 +954,51 @@ selftest_rows() {
     st_finish
     _rows=$((_rows + 1))
     st_check e-api-error 2 '^NO-GO' || _rows_bad=$((_rows_bad + 1))
+
+    # (n) #5212: one 502 on a jobs page, then the page. The retry gets a real
+    # answer, so the run is measured (rc 0), the retry is counted, and the page
+    # was asked for exactly twice.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_flaky_route 'runs/9101/jobs' @ERROR
+    _rows=$((_rows + 1))
+    if st_check n-5xx-once 0 '^api calls: .*5xx retries: 1\)$' \
+        && [ "$(st_calls 'runs/9101/jobs')" = 2 ]; then :
+    else printf '  FAIL %-14s the jobs page was read %s time(s), want 2\n' n-5xx-once "$(st_calls 'runs/9101/jobs')"
+        _rows_bad=$((_rows_bad + 1)); fi
+
+    # (n2) the same for a run LISTING page, which is a NO-GO when it stays unread.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_flaky_route 'workflows/gpu[.]yml/runs[?]event=schedule[&]created=' @ERROR
+    _rows=$((_rows + 1))
+    if st_check n2-list-once 0 '^api calls: .*5xx retries: 1\)$' \
+        && [ "$(st_calls 'workflows/gpu[.]yml/runs[?]event=schedule[&]created=')" = 2 ]; then :
+    else printf '  FAIL %-14s the listing page was read %s time(s), want 2\n' n2-list-once \
+            "$(st_calls 'workflows/gpu[.]yml/runs[?]event=schedule[&]created=')"
+        _rows_bad=$((_rows_bad + 1)); fi
+
+    # (n3) a 502 on EVERY read is still a failed read: the retries stop at the
+    # cap, the run is NOT_MEASURED (rc 2), and the output says how many reads.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_fail_jobs 9101
+    _rows=$((_rows + 1))
+    if st_check n3-5xx-always 2 '^jobs read FAILED \(not_measured\): run 9101 .*HTTP 502.*failed on all 3 reads' \
+        && [ "$(st_calls 'runs/9101/jobs')" = 3 ]; then :
+    else printf '  FAIL %-14s the jobs page was read %s time(s), want 3\n' n3-5xx-always "$(st_calls 'runs/9101/jobs')"
+        _rows_bad=$((_rows_bad + 1)); fi
+
+    # (n4) a 403 is never retried, even though the next read would answer:
+    # asked once, NOT_MEASURED. The error body gh writes to stdout stays out.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_flaky_route 'runs/9101/jobs' @E403
+    _rows=$((_rows + 1))
+    if st_check n4-4xx-once 2 '^jobs read FAILED \(not_measured\): run 9101 .*HTTP 403' \
+        && [ "$(st_calls 'runs/9101/jobs')" = 1 ]; then :
+    else printf '  FAIL %-14s the jobs page was read %s time(s), want 1\n' n4-4xx-once "$(st_calls 'runs/9101/jobs')"
+        _rows_bad=$((_rows_bad + 1)); fi
 
     rm -rf "${ST:?}"
     if [ "$_rows_bad" -gt 0 ]; then
@@ -1204,8 +1296,8 @@ printf ' deferred %s: PROMOTABLE %s, ready %s)\n' "$deferred" "$promotable" "$re
 printf 'evidence: %s online runner(s), %s concluded job(s), floor %sd\n' \
     "$n_runners" "$n_jobs" "$STALE_DAYS"
 if [ "$MODE" = "live" ]; then
-    printf 'api calls: %s (listing cross-checks: %s, re-reads of a short listing: %s)\n' \
-        "$api_calls" "$probe_calls" "$reread_calls"
+    printf 'api calls: %s (listing cross-checks: %s, re-reads of a short listing: %s, 5xx retries: %s)\n' \
+        "$api_calls" "$probe_calls" "$reread_calls" "$retry_calls"
 fi
 
 # THE DENOMINATOR. A policy that parsed nothing must not read as clean.
