@@ -10,6 +10,7 @@
 #   scripts/tests/ -- and that runs `git ... fetch` with --depth, --deepen or --shallow-* must contain BOTH
 #     - an assignment of GIT_CEILING_DIRECTORIES, and
 #     - a `cd` command.
+#   and the first ceiling assignment must not come before the file's first mktemp (the #5025 slip).
 #   It is a file-level check: it cannot prove the `cd` targets the scratch root or runs before the fetch. The
 #   runtime half of #5025 (shared_checkout_no_shallow.sh) refuses the write itself whatever a script does.
 #
@@ -35,6 +36,12 @@ verdict() {
     esac
     command grep -Fq -- "$CEILING" "$f" || miss+=("no $CEILING")
     command grep -Eq -- "$CD_CMD" "$f" || miss+=("no cd")
+    # #5025 slipped past the two greps above: its confinement line sat at line 1, above the shebang and the
+    # mktemp that sets its scratch var, where `cd -- ""` is a silent no-op. The ceiling must follow a mktemp.
+    local cl ml
+    cl="$(awk -v p="$CEILING" 'index($0, p) { print NR; exit }' "$f")"
+    ml="$(awk '/mktemp/ { print NR; exit }' "$f")"
+    if [ -n "$cl" ] && [ -n "$ml" ] && [ "$cl" -lt "$ml" ]; then miss+=("$CEILING above the first mktemp"); fi
     if [ "${#miss[@]}" -eq 0 ]; then echo ok; else echo "red: ${miss[*]}"; fi
 }
 
@@ -89,18 +96,25 @@ self_test() {
     row "a word that only contains 'fetch' is not a fetch" "$(v scripts/h.sh)" skip
     put scripts/i.sh '--self-test' 'echo "cdrom"; export GIT_CEILING_DIRECTORIES=x' 'git fetch --depth=1 o'
     row "a word that only starts with 'cd' is not a cd" "$(v scripts/i.sh)" "red: no cd"
+    put scripts/j.sh '    cd -- "$TD" || exit 1; export GIT_CEILING_DIRECTORIES="${TD%/*}"' '#!/usr/bin/env bash' \
+        'if [ "$1" = --self-test ]; then' '  TD=$(mktemp -d)' '  git fetch -q --depth=1 origin main' 'fi'
+    row "the #5025 slip: cd + ceiling above the shebang and the mktemp is RED" "$(v scripts/j.sh)" \
+        "red: $CEILING above the first mktemp"
+    put scripts/k.sh '#!/usr/bin/env bash' 'if [ "$1" = --self-test ]; then' '  TD=$(mktemp -d)' \
+        '  cd -- "$TD" || exit 1; export GIT_CEILING_DIRECTORIES="${TD%/*}"' '  git fetch -q --depth=1 origin main' 'fi'
+    row "the same line moved below its mktemp is ok" "$(v scripts/k.sh)" ok
 
     git init -q "$td"
     git -C "$td" add -A
     row "scan: the tree with slips is RED" "$(scan "$td" > /dev/null 2>&1; echo $?)" 1
     row "scan names the planted slip" "$(scan "$td" 2>&1 | command grep -c '^RED: scripts/a.sh ')" 1
-    git -C "$td" rm -q --cached scripts/a.sh scripts/c.sh scripts/d.sh scripts/i.sh scripts/tests/e_test.sh
+    git -C "$td" rm -q --cached scripts/a.sh scripts/c.sh scripts/d.sh scripts/i.sh scripts/j.sh scripts/tests/e_test.sh
     row "scan: only confined self-tests left is GREEN" "$(scan "$td" > /dev/null 2>&1; echo $?)" 0
-    git -C "$td" rm -q --cached scripts/b.sh
+    git -C "$td" rm -q --cached scripts/b.sh scripts/k.sh
     row "scan: no self-test in scope is RED, never a vacuous GREEN" "$(scan "$td" > /dev/null 2>&1; echo $?)" 1
 
     printf 'check_selftest_fetch_confined self-test: %s ok, %s bad\n' "$ok" "$bad"
-    [ "$bad" -eq 0 ] && [ "$ok" -ge 13 ]
+    [ "$bad" -eq 0 ] && [ "$ok" -ge 15 ]
 }
 
 mutants() {
@@ -122,6 +136,7 @@ m3_tests_dir_not_in_scope	s/^        scripts\/tests\/\*\) : ;;$/        scripts\
 m4_deepen_not_a_depth	s/--\(depth\|deepen\|shallow-\)/--(depth|shallow-)/
 m5_vacuous_green	s/^    if \[ "\$n" -eq 0 \]; then echo "RED/    if false; then echo "RED/
 m6_any_fetch_counts	s/^DEPTH_FETCH=.*/DEPTH_FETCH='fetch'/
+m7_ceiling_placement_unchecked	s/^    if \[ -n "\$cl" \]/    if false \&\& [ -n "\$cl" ]/
 MUTANTS
     echo "--- $((n - bad))/$n mutants killed ---"
     [ "$bad" = 0 ] && [ "$n" -gt 0 ]
