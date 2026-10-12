@@ -88,16 +88,16 @@ fn meta_f32(model: &GGUFModel, arch: &str, suffix: &str) -> Result<f32> {
 
 /// The model-wide hyperparameters, read and checked once.
 #[derive(Debug, Clone, Copy)]
-struct Hparams {
-    hidden: usize,
-    per_layer: usize,
-    layers: usize,
-    heads: usize,
-    ff: usize,
-    out: usize,
-    eps: f32,
-    half_window: usize,
-    context: Option<usize>,
+pub(crate) struct Hparams {
+    pub(crate) hidden: usize,
+    pub(crate) per_layer: usize,
+    pub(crate) layers: usize,
+    pub(crate) heads: usize,
+    pub(crate) ff: usize,
+    pub(crate) out: usize,
+    pub(crate) eps: f32,
+    pub(crate) half_window: usize,
+    pub(crate) context: Option<usize>,
 }
 
 impl Hparams {
@@ -166,10 +166,10 @@ impl Hparams {
 
 /// The head width, rotated width and RoPE base of one attention kind.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct AttentionShape {
-    head_dim: usize,
-    n_rot: usize,
-    rope_base: f32,
+pub(crate) struct AttentionShape {
+    pub(crate) head_dim: usize,
+    pub(crate) n_rot: usize,
+    pub(crate) rope_base: f32,
 }
 
 impl AttentionShape {
@@ -287,7 +287,7 @@ fn vector(model: &GGUFModel, data: &[u8], name: &str, len: usize) -> Result<Vec<
 }
 
 /// Row `row` of `table`, dequantized: `in_dim` values from its own bytes.
-fn table_row(table: &OwnedQuantizedTensor, row: usize) -> Result<Vec<f32>> {
+pub(crate) fn table_row(table: &OwnedQuantizedTensor, row: usize) -> Result<Vec<f32>> {
     if row >= table.out_dim {
         return Err(refuse(format!(
             "token {row} is outside the vocabulary of {}",
@@ -333,43 +333,43 @@ fn check_swa_pattern(model: &GGUFModel, arch: &str, kinds: &[LayerAttention]) ->
 }
 
 #[derive(Debug, Clone)]
-struct AttnWeights {
-    norm: Vec<f32>,
-    q: OwnedQuantizedTensor,
-    k: OwnedQuantizedTensor,
-    v: OwnedQuantizedTensor,
-    o: OwnedQuantizedTensor,
-    q_norm: Vec<f32>,
-    k_norm: Vec<f32>,
-    post_norm: Vec<f32>,
+pub(crate) struct AttnWeights {
+    pub(crate) norm: Vec<f32>,
+    pub(crate) q: OwnedQuantizedTensor,
+    pub(crate) k: OwnedQuantizedTensor,
+    pub(crate) v: OwnedQuantizedTensor,
+    pub(crate) o: OwnedQuantizedTensor,
+    pub(crate) q_norm: Vec<f32>,
+    pub(crate) k_norm: Vec<f32>,
+    pub(crate) post_norm: Vec<f32>,
 }
 
 #[derive(Debug, Clone)]
-struct FfnWeights {
-    norm: Vec<f32>,
-    gate: OwnedQuantizedTensor,
-    up: OwnedQuantizedTensor,
-    down: OwnedQuantizedTensor,
-    post_norm: Vec<f32>,
+pub(crate) struct FfnWeights {
+    pub(crate) norm: Vec<f32>,
+    pub(crate) gate: OwnedQuantizedTensor,
+    pub(crate) up: OwnedQuantizedTensor,
+    pub(crate) down: OwnedQuantizedTensor,
+    pub(crate) post_norm: Vec<f32>,
 }
 
 #[derive(Debug, Clone)]
-struct PerLayerWeights {
-    inp_gate: OwnedQuantizedTensor,
-    proj: OwnedQuantizedTensor,
-    post_norm: Vec<f32>,
-    out_scale: f32,
+pub(crate) struct PerLayerWeights {
+    pub(crate) inp_gate: OwnedQuantizedTensor,
+    pub(crate) proj: OwnedQuantizedTensor,
+    pub(crate) post_norm: Vec<f32>,
+    pub(crate) out_scale: f32,
 }
 
 #[derive(Debug, Clone)]
-struct Layer {
-    heads: usize,
-    kv_heads: usize,
-    shape: AttentionShape,
-    half_window: Option<usize>,
-    attn: AttnWeights,
-    ffn: FfnWeights,
-    per_layer: PerLayerWeights,
+pub(crate) struct Layer {
+    pub(crate) heads: usize,
+    pub(crate) kv_heads: usize,
+    pub(crate) shape: AttentionShape,
+    pub(crate) half_window: Option<usize>,
+    pub(crate) attn: AttnWeights,
+    pub(crate) ffn: FfnWeights,
+    pub(crate) per_layer: PerLayerWeights,
 }
 
 /// The tensors and hyperparameters a layer is loaded from.
@@ -472,13 +472,13 @@ impl Source<'_> {
 /// An EmbeddingGemma 2 model, loaded for the CPU forward.
 #[derive(Debug, Clone)]
 pub struct EmbeddingGemma2 {
-    hp: Hparams,
-    token_embd: OwnedQuantizedTensor,
-    per_layer_model_proj: OwnedQuantizedTensor,
-    per_layer_proj_norm: Vec<f32>,
-    layers: Vec<Layer>,
-    output_norm: Vec<f32>,
-    output: OwnedQuantizedTensor,
+    pub(crate) hp: Hparams,
+    pub(crate) token_embd: OwnedQuantizedTensor,
+    pub(crate) per_layer_model_proj: OwnedQuantizedTensor,
+    pub(crate) per_layer_proj_norm: Vec<f32>,
+    pub(crate) layers: Vec<Layer>,
+    pub(crate) output_norm: Vec<f32>,
+    pub(crate) output: OwnedQuantizedTensor,
 }
 
 impl EmbeddingGemma2 {
@@ -713,7 +713,7 @@ fn mean_rows(x: &[f32], width: usize) -> Vec<f32> {
 }
 
 /// `v / |v|`, the norm summed in f64 as llama.cpp's `common_embd_normalize` does.
-fn unit_length(mut v: Vec<f32>) -> Result<Vec<f32>> {
+pub(crate) fn unit_length(mut v: Vec<f32>) -> Result<Vec<f32>> {
     let norm = v
         .iter()
         .map(|&x| f64::from(x) * f64::from(x))

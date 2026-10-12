@@ -640,3 +640,17 @@ fn pooling_is_the_mean_over_tokens_eg2() {
     let u = unit_length(vec![3.0, 4.0]).expect("non-zero");
     assert!((u[0] - 0.6).abs() < 1e-7 && (u[1] - 0.8).abs() < 1e-7);
 }
+
+/// The unit-test file with a longer context and window (APR-EMBED-001 EG-4, #4903), for the
+/// long-input GPU cells; the token rows cycle through the five-row vocabulary.
+pub(crate) fn long_fixture(context: u32, window: u32) -> Vec<u8> {
+    Fixture::new()
+        .set("context_length", Meta::U32(context))
+        .set("attention.sliding_window", Meta::U32(window))
+        .bytes()
+}
+
+/// The unit-test file itself (EG-4): the tokens [`TOKENS`] embed with it.
+pub(crate) fn small_fixture() -> (Vec<u8>, [u32; 4]) {
+    (Fixture::new().bytes(), TOKENS)
+}
