@@ -12,7 +12,7 @@
 #        lambda  this worktree, into autopilot's CARGO_TARGET_DIR
 #        gx10    a detached worktree at the release commit and a PER-RUN target dir,
 #                $HOME/.cache/aprender-release/rel-<v>-<run> on gx10, derived there at run time (#3618:
-#                no host path is a literal under scripts/release/). Every other rel-* is deleted
+#                no host path is a literal under scripts/release/). Every rel-* (this pid's too) is deleted
 #                first, and only under that host's lock (below). NEVER ~/src/aprender/target: a shared
 #                cache under an old checkout is how a stale instrument agrees with itself (#3600).
 #                A run never reuses another run's dir, so it pays a fresh build every time (#5264).
@@ -30,7 +30,7 @@
 #            out dir or either host is touched; models_nightly.sh probes the same file before it starts
 #            a run, so neither order of the two runs. Held: "MODELS NO-GO: another models_t1.sh
 #            holds ...", exit 2.
-#     gx10   $HOME/.cache/aprender-release/.lock there, taken before the sweep of the other rel-*;
+#     gx10   $HOME/.cache/aprender-release/.lock there, taken before the sweep of every rel-*;
 #            held: "MODELS-LEG gx10 ENV: busy ...", so exit 2.
 #      The receipt's apr_version must be the line proved in step 2.
 #   Both legs pass --cells (#3715 B1): the receipts carry cells[], the unit release-readiness-v1 grades at
@@ -249,8 +249,8 @@ LOCK=${MODELS_T1_LOCK:-$HOME/.cache/aprender-release/models-t1.lock}
 mkdir -p -- "${LOCK%/*}" || { echo "MODELS NO-GO: cannot create the directory of the run lock $LOCK"; exit 2; }
 exec 7>> "$LOCK" || { echo "MODELS NO-GO: cannot open the run lock $LOCK"; exit 2; }
 flock -n 7 || { echo "MODELS NO-GO: another models_t1.sh holds $LOCK -- refused before touching either host (#5264)"; exit 2; }
-# names this run's gx10 dir: two runs never share one (#5264)
-run=$(date -u +%Y%m%dT%H%M%SZ)-$$
+# names this run's gx10 dir: this pid, never a clock (bashrs DET002). Every rel-* is swept under the lock below, so a pid reused across runs still builds into a fresh dir (#5264)
+run=$$
 mkdir -p "$out" || exit 2
 if [ "$MEASURE" = crux ]; then
     # the judge globs every *.json in $out: a ladder receipt left by an earlier pass would read as a bad CRUX one
@@ -286,7 +286,7 @@ mkdir -p "\$base" || exit 3
 exec 8>> "\$base/.lock" || exit 3
 flock -n 8 || { echo "MODELS-LEG $REMOTE_HOST ENV: busy -- another models_t1 leg holds \$base/.lock there; refused before the sweep and the build"; exit 3; }
 for d in "\$base"/rel-*; do
-  [ -d "\$d" ] && [ "\$d" != "\$dir" ] || continue
+  [ -d "\$d" ] || continue
   git -C "\$repo" worktree remove --force "\$d/wt" > /dev/null 2>&1
   rm -rf -- "\$d"
 done
