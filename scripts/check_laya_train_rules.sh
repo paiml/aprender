@@ -430,6 +430,11 @@ self_test() {
     st_case plant-probe-plus-crate RED H4 sh -c "mkdir -p crates/aprender-train/examples $NEW_CRATE && echo 'fn main() {}' > $LT1_PROBE && echo '[package]' > $NEW_CRATE/Cargo.toml"
     st_case plant-probe-lookalike RED H4 sh -c "mkdir -p crates/aprender-train/examples && echo 'fn main() {}' > crates/aprender-train/examples/laya_engine_probe2.rs"
     st_case plant-cli-contract RED H11 sh -c 'mkdir -p contracts && echo "x: 1" > contracts/apr-cli-commands-v1.yaml'
+    # SIGPIPE falsifier: the publish line comes first and the diff runs ~240 KB past it, far
+    # beyond a pipe buffer. A reader that exits on the first match kills git diff with
+    # SIGPIPE every time, so the checker dies rc=141 before its H11 line; one that reads to
+    # EOF prints H11 RED.
+    st_case plant-publish-big-diff RED H11 sh -c "mkdir -p crates/aprender-db && { echo 'publish = false'; awk 'BEGIN {for (i = 0; i < 20000; i++) print \"# pad \" i}'; } > crates/aprender-db/Cargo.toml"
     st_case plant-two-crates RED H11 sh -c 'mkdir -p crates/a crates/b && echo "[package]" > crates/a/Cargo.toml && echo "[package]" > crates/b/Cargo.toml'
     st_case plant-push-trigger RED H11 sh -c 'mkdir -p .github/workflows && printf "on:\n  push:\n  workflow_dispatch:\njobs: {}\n" > .github/workflows/w.yml'
     st_case dispatch-only PASS H11 sh -c 'mkdir -p .github/workflows && printf "on:\n  workflow_dispatch:\njobs: {}\n" > .github/workflows/w.yml'
