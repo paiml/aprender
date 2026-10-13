@@ -256,7 +256,7 @@ rule_h15() {
 # laya-train/ branch (the ref named by --head, or GITHUB_HEAD_REF in a pull request
 # run), or a diff touching one of the spec's own paths. guard_tree runs this checker
 # bare on every pull request; any other diff gets one SCOPE n/a line and passes.
-SCOPE_RE='^crates/aprender-decide-train/|^evidence/laya-train/|^scripts/laya_train/|^scripts/check_laya_train_rules\.sh$|^crates/aprender-train/examples/laya_engine_probe|^docs/specifications/APR-LAYA-TRAIN-001'
+SCOPE_RE='^crates/aprender-decide-train/|^evidence/laya-train/|^scripts/laya_train/|^scripts/check_laya_train_rules\.sh$|^crates/aprender-train/examples/laya_engine_probe|^docs/specifications/APR-LAYA-TRAIN-001|^crates/.*laya'
 
 in_scope() {
     local b n hit
@@ -272,7 +272,7 @@ in_scope() {
         return 0
     fi
     n=$(changed_names | awk 'END {print NR}')
-    hit=$(changed_names | awk -v re="$SCOPE_RE" '$0 ~ re {print; exit}')
+    hit=$(changed_names | SCOPE_RE="$SCOPE_RE" awk 'BEGIN {re = ENVIRON["SCOPE_RE"]} $0 ~ re {print; exit}')
     if [ -n "$hit" ]; then
         line SCOPE in "path $hit" "$n changed paths scanned"
         return 0
@@ -399,6 +399,11 @@ self_test() {
     st_case scope-out-no-rules none H11 sh -c 'mkdir -p .github/workflows && printf "on:\n  push:\njobs: {}\n" > .github/workflows/w.yml'
     st_case scope-in-by-path RED H4 sh -c "mkdir -p $NEW_CRATE && echo '[package]' > $NEW_CRATE/Cargo.toml"
     st_case scope-in-by-path-line in SCOPE sh -c "mkdir -p $NEW_CRATE && echo '[package]' > $NEW_CRATE/Cargo.toml"
+    # laya model code outside the new crate is in scope on any branch, and judged by H4.
+    st_case scope-in-by-laya-crate-path RED H4 sh -c "mkdir -p crates/aprender-train/src/laya && echo 'pub fn f() {}' > crates/aprender-train/src/laya/mod.rs"
+    st_case scope-in-by-laya-crate-path-line in SCOPE sh -c "mkdir -p crates/aprender-train/src/laya && echo 'pub fn f() {}' > crates/aprender-train/src/laya/mod.rs"
+    # SCOPE_RE reaches awk through ENVIRON, so its "\." stays a literal dot.
+    st_case scope-out-dot-lookalike n/a SCOPE sh -c "mkdir -p scripts && echo x > scripts/check_laya_train_rulesXsh"
     ST_PREFIX=
     st_case plant-py-file RED H1 sh -c 'echo "x = 1" > x.py'
     st_case plant-py-line RED H1 sh -c "echo '${PY_WORD}3 run.py' >> scripts/a.sh"
