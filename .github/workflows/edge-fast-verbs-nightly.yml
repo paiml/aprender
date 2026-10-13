@@ -40,12 +40,16 @@ jobs:
         run: |
           export PATH="$HOME/.cargo/bin:/usr/local/cuda/bin:$PATH"
           # A persistent target dir: the cold build takes ~18 min on this device.
-          CARGO_TARGET_DIR="$HOME/data/edge-target" cargo build --release --features cuda --bin apr
+          export CARGO_TARGET_DIR="$HOME/data/edge-target"
+          cargo build --release --features cuda --bin apr
       - name: Measure
         id: measure
         run: |
           export PATH="$HOME/.cargo/bin:/usr/local/cuda/bin:$PATH"
-          APR="$HOME/data/edge-target/release/apr" bash scripts/edge_fast_verbs_nightly.sh \
+          # The same target dir; apr_bin.sh reads it back through cargo metadata.
+          export CARGO_TARGET_DIR="$HOME/data/edge-target"
+          . scripts/apr_bin.sh || exit 1   # exports $APR, built from this tree at HEAD
+          bash scripts/edge_fast_verbs_nightly.sh \
             --model "$HOME/models/$MODEL_FILE" --out "$RUNNER_TEMP/edge" --host jetson
       - name: Post the gap list on #5254
         if: always()

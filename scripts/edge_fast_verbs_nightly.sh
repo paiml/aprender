@@ -4,8 +4,10 @@
 #
 #   1. CRUX smoke   scripts/crux_inference_dogfood.sh, apr + ollama, every verb
 #   2. apr decode   `apr bench --fast --json`, tok/s as apr reports it
-#   3. ollama       the SAME file through /api/generate, raw, temperature 0,
-#                   tok/s = eval_count / eval_duration as ollama reports it
+#   3. ollama       the in-tree comparator, `apr qa`'s ollama_parity gate. This
+#                   script times no engine itself (PERF-009: one harness); when
+#                   that gate cannot measure the model, its stated reason is
+#                   the gap
 #
 # LAB, never a gate: no PR, merge-queue or release job runs this. A CRUX RED
 # cell or a slow decode is a GAP and goes on the list; it is not a failure.
@@ -13,7 +15,7 @@
 # list missing a row cannot be told apart from a list with nothing to say.
 #
 # Usage: bash scripts/edge_fast_verbs_nightly.sh --model <gguf> --out <dir>
-#          [--host <id>] [--ollama-url <url>]
+#          [--host <id>]   (ollama: apr qa probes localhost:11434)
 #   $APR  the apr binary under test (default target/release/apr)
 #
 # Writes <out>/gaps.md (the comment body) and <out>/nightly.json.
@@ -30,20 +32,19 @@ die() { printf 'edge-nightly: %s\n' "$*" >&2; exit 2; }
 MODEL=""
 OUT=""
 HOST_ID="edge"
-OLLAMA_URL="http://localhost:11434"
 while [ $# -gt 0 ]; do
     case "$1" in
         --model) MODEL="${2:-}"; shift 2 ;;
         --out) OUT="${2:-}"; shift 2 ;;
         --host) HOST_ID="${2:-}"; shift 2 ;;
-        --ollama-url) OLLAMA_URL="${2:-}"; shift 2 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
 [ -n "$MODEL" ] || die "--model is required"
 [ -f "$MODEL" ] || die "no model file: $MODEL"
 [ -n "$OUT" ] || die "--out is required"
-for t in jq curl sha256sum ollama; do
+case "$OUT" in *..*) die "--out must not contain '..': $OUT" ;; esac
+for t in jq sha256sum ollama; do
     command -v "$t" >/dev/null 2>&1 || die "missing tool: $t"
 done
 APR="${APR:-$ROOT/target/release/apr}"
@@ -82,29 +83,20 @@ APR_BACKEND=$(command grep -m1 -oE 'Backend: [^)]*\)?' "$OUT/apr-bench.err" || t
 APR_BACKEND=${APR_BACKEND#Backend: }
 GPU_REFUSALS=$(command grep -c 'would not fit' "$OUT/apr-bench.err" || true)
 
-# 3. ollama on the same file. The model is imported under a name this run owns
-# and removed on every exit path.
-OL_NAME="edge-nightly-${MODEL_SHA:0:12}"
-cleanup() { ollama rm "$OL_NAME" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
-printf 'FROM %s\n' "$MODEL" > "$OUT/Modelfile"
-OL_TPS=""
-if ollama create "$OL_NAME" -f "$OUT/Modelfile" > "$OUT/ollama-create.log" 2>&1; then
-    body=$(jq -cn --arg m "$OL_NAME" '{model: $m, prompt: "Count from 1 to 40 separated by spaces.",
-        raw: true, stream: false, options: {num_predict: 64, temperature: 0}}')
-    for i in 1 2 3; do
-        curl -s -m 300 "$OLLAMA_URL/api/generate" -d "$body" > "$OUT/ollama-$i.json"
-    done
-    OL_TPS=$(jq -s -r '[.[] | select(.eval_duration > 0) | .eval_count / (.eval_duration / 1e9)]
-        | sort | if length == 3 then .[1] * 10 | round / 10 else empty end' \
-        "$OUT"/ollama-[123].json 2>/dev/null || true)
-fi
-[ -n "$OL_TPS" ] || missing+=("ollama raw decode (no 3 measured generations; see ollama-*.json)")
-
-RATIO=""
-if [ -n "$APR_TPS" ] && [ -n "$OL_TPS" ]; then
-    RATIO=$(jq -n --argjson a "$APR_TPS" --argjson o "$OL_TPS" '[$a, $o] | .[0] / .[1] | . * 100 | round / 100')
-fi
+# 3. ollama, through `apr qa`'s ollama_parity gate and nothing else. Every
+# other qa gate is skipped: this asks one question. A skip or a failure is a
+# gap; only a qa JSON with no ollama_parity gate in it is "not measured".
+"$APR" qa "$MODEL" --json --skip-golden --skip-throughput \
+    --skip-gpu-speedup --skip-contract --skip-format-parity --skip-ptx-parity \
+    --skip-gpu-state --skip-metadata --skip-capability \
+    > "$OUT/apr-qa.json" 2> "$OUT/apr-qa.err"
+qa_rc=$?
+OL_STATE=$(jq -r '.gates[] | select(.name == "ollama_parity")
+    | if .skipped then "skipped" elif .passed then "passed" else "failed" end' \
+    "$OUT/apr-qa.json" 2>/dev/null || true)
+OL_MSG=$(jq -r '.gates[] | select(.name == "ollama_parity") | .message // "" | .[:200]' \
+    "$OUT/apr-qa.json" 2>/dev/null || true)
+[ -n "$OL_STATE" ] || missing+=("ollama parity (qa rc $qa_rc, no ollama_parity gate in its JSON; see apr-qa.err)")
 
 # The ranked list: what costs the most cells first, then decode, then refusals.
 {
@@ -114,8 +106,7 @@ fi
         "$APR_VERSION" "${APR_SHA:0:12}" "${APR_BACKEND:-not reported}"
     printf '| measure | value |\n|---|---|\n'
     printf '| apr decode (`apr bench --fast`) | %s tok/s |\n' "${APR_TPS:-not_measured}"
-    printf '| ollama decode, same file, raw | %s tok/s |\n' "${OL_TPS:-not_measured}"
-    printf '| apr / ollama | %s |\n' "${RATIO:-not_measured}"
+    printf '| ollama parity (`apr qa`) | %s |\n' "${OL_STATE:-not_measured}"
     printf '| batched prefill refusals in the bench | %s |\n' "${GPU_REFUSALS:-0}"
     if [ -n "$CRUX" ]; then
         jq -r '"| CRUX smoke verdict | \(.summary.verdict): \(.summary.GREEN // 0) GREEN, \(.summary.RED // 0) RED of \(.summary.cells) cells |"' "$CRUX"
@@ -133,9 +124,9 @@ fi
             printf '%d. %s\n' "$n" "$line"
         done < <(jq -r -f "$ROOT/scripts/lib/edge_nightly_gaps.jq" "$CRUX")
     fi
-    if [ -n "$RATIO" ] && jq -e -n --argjson r "$RATIO" '$r < 1' >/dev/null; then
+    if [ -n "$OL_STATE" ] && [ "$OL_STATE" != passed ]; then
         n=$((n + 1))
-        printf '%d. decode at %s× ollama (%s vs %s tok/s)\n' "$n" "$RATIO" "$APR_TPS" "$OL_TPS"
+        printf '%d. ollama comparison: `apr qa` ollama_parity %s (%s)\n' "$n" "$OL_STATE" "$OL_MSG"
     fi
     if [ "${GPU_REFUSALS:-0}" -gt 0 ]; then
         n=$((n + 1))
@@ -151,10 +142,11 @@ fi
 
 jq -n --arg model "$MODEL_NAME" --arg quant "${QUANT:-}" --arg sha "$MODEL_SHA" \
     --arg apr "$APR_VERSION" --arg apr_sha "$APR_SHA" --arg backend "${APR_BACKEND:-}" \
-    --arg apr_tps "${APR_TPS:-}" --arg ol_tps "${OL_TPS:-}" --arg ratio "${RATIO:-}" \
+    --arg apr_tps "${APR_TPS:-}" --arg ol_state "${OL_STATE:-}" --arg ol_msg "${OL_MSG:-}" \
     --argjson missing "$(printf '%s\n' "${missing[@]+"${missing[@]}"}" | jq -R . | jq -s 'map(select(. != ""))')" \
     '{model: $model, quant: $quant, model_sha256: $sha, apr: $apr, apr_sha256: $apr_sha,
-      backend: $backend, apr_tok_s: $apr_tps, ollama_tok_s: $ol_tps, ratio: $ratio,
+      backend: $backend, apr_tok_s: $apr_tps,
+      ollama_parity: {state: $ol_state, message: $ol_msg},
       not_measured: $missing}' > "$OUT/nightly.json"
 
 cat "$OUT/gaps.md"
