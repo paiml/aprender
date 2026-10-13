@@ -632,8 +632,7 @@ mod tests {
             } else {
                 assert!(served.is_err(), "{qtype}: served with no cpu row");
                 assert!(
-                    model
-                        .dequant_fallback_or_refuse(&input, &t, in_dim, out_dim, 1)
+                    OwnedQuantizedModel::dequant_fallback_or_refuse(&input, &t, in_dim, out_dim, 1)
                         .is_err(),
                     "{qtype}: the CPU has a kernel for it but the registry has no row"
                 );
