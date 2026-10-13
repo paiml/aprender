@@ -107,12 +107,17 @@ rule_h4() {
     local on_base=absent on_head=absent touches
     g cat-file -e "$BASE:$LT1_RECEIPT" 2>/dev/null && on_base=present
     g cat-file -e "$HEAD_REF:$LT1_RECEIPT" 2>/dev/null && on_head=present
-    local exempt
-    touches=$(changed_names | awk -v p="$LT1_PROBE" '/^crates\// && $0 != p' | wc -l)
+    # Model code of this spec: the new crate, or a crates/ path naming laya. A crates/
+    # path of other work carried in the same diff (a dependency bump) is not this
+    # spec's model code; it is counted in the arm and not judged.
+    local exempt all
+    all=$(changed_names | awk '/^crates\//' | wc -l)
+    touches=$(changed_names | awk -v p="$LT1_PROBE" -v nc="$NEW_CRATE/" \
+        '/^crates\// && $0 != p && (index($0, nc) == 1 || /laya/)' | wc -l)
     exempt=$(changed_names | awk -v p="$LT1_PROBE" '$0 == p' | wc -l)
-    local arm="$LT1_RECEIPT base=$on_base head=$on_head; crates/ paths=$touches; exempt=$exempt ($LT1_PROBE)"
+    local arm="$LT1_RECEIPT base=$on_base head=$on_head; laya crates/ paths=$touches of $all crates/ paths; exempt=$exempt ($LT1_PROBE)"
     if [ "$touches" -gt 0 ] && [ "$on_base" = absent ] && [ "$on_head" = absent ]; then
-        line H4 RED "touches crates/ before LT-1's receipt" "$arm"
+        line H4 RED "touches laya model code under crates/ before LT-1's receipt" "$arm"
     else
         line H4 PASS "measure-first holds" "$arm"
     fi
@@ -398,10 +403,15 @@ self_test() {
     st_case plant-py-file RED H1 sh -c 'echo "x = 1" > x.py'
     st_case plant-py-line RED H1 sh -c "echo '${PY_WORD}3 run.py' >> scripts/a.sh"
     st_case plant-judge-edit RED H2 sh -c 'echo "// x" >> crates/aprender-decide/src/verify.rs'
-    st_case plant-crates-early RED H4 sh -c 'mkdir -p crates/x && echo "[package]" > crates/x/Cargo.toml'
-    st_case lt1-own-receipt PASS H4 sh -c "mkdir -p crates/x evidence/laya-train/lt-1 && echo '[package]' > crates/x/Cargo.toml && echo '{\"engine\": \"core\"}' > $LT1_RECEIPT"
+    st_case plant-crates-early RED H4 sh -c "mkdir -p $NEW_CRATE && echo '[package]' > $NEW_CRATE/Cargo.toml"
+    st_case plant-laya-path-early RED H4 sh -c "mkdir -p crates/aprender-train/src/laya && echo 'pub fn f() {}' > crates/aprender-train/src/laya/mod.rs"
+    st_case other-crate-not-judged PASS H4 sh -c 'mkdir -p crates/aprender-db && echo "[package]" > crates/aprender-db/Cargo.toml'
+    ST_PREFIX=other/
+    st_case carried-bump-not-judged PASS H4 sh -c "mkdir -p crates/aprender-db && echo '[package]' > crates/aprender-db/Cargo.toml && echo '# carried' >> $H15_SELF"
+    ST_PREFIX=
+    st_case lt1-own-receipt PASS H4 sh -c "mkdir -p $NEW_CRATE evidence/laya-train/lt-1 && echo '[package]' > $NEW_CRATE/Cargo.toml && echo '{\"engine\": \"core\"}' > $LT1_RECEIPT"
     st_case lt1-probe-only PASS H4 sh -c "mkdir -p crates/aprender-train/examples && echo 'fn main() {}' > $LT1_PROBE"
-    st_case plant-probe-plus-crate RED H4 sh -c "mkdir -p crates/aprender-train/examples crates/x && echo 'fn main() {}' > $LT1_PROBE && echo '[package]' > crates/x/Cargo.toml"
+    st_case plant-probe-plus-crate RED H4 sh -c "mkdir -p crates/aprender-train/examples $NEW_CRATE && echo 'fn main() {}' > $LT1_PROBE && echo '[package]' > $NEW_CRATE/Cargo.toml"
     st_case plant-probe-lookalike RED H4 sh -c "mkdir -p crates/aprender-train/examples && echo 'fn main() {}' > crates/aprender-train/examples/laya_engine_probe2.rs"
     st_case plant-cli-contract RED H11 sh -c 'mkdir -p contracts && echo "x: 1" > contracts/apr-cli-commands-v1.yaml'
     st_case plant-two-crates RED H11 sh -c 'mkdir -p crates/a crates/b && echo "[package]" > crates/a/Cargo.toml && echo "[package]" > crates/b/Cargo.toml'
