@@ -129,6 +129,43 @@ pub fn parse_header(file: &str, bytes: &[u8]) -> Result<GgufHeader, ExtractError
     })
 }
 
+/// The distinct ggml tensor types a GGUF declares (#3715 v2: the model's static kernel set is these types,
+/// each admitted by the kernel registry). Walks the whole KV stream, then every tensor info (name, n_dims,
+/// dims, type, offset); the tensor data is never read, so a prefix holding the header suffices. A stream that
+/// ends inside the tensor infos is refused: a partial set would under-state the kernels a model needs.
+pub fn tensor_types(file: &str, bytes: &[u8]) -> Result<BTreeSet<u32>, ExtractError> {
+    let h = parse_header(file, bytes)?;
+    let mut cur = Cursor {
+        bytes,
+        pos: 24,
+        file,
+    };
+    for _ in 0..h.kv_count {
+        cur.string()?;
+        let ty = cur.u32()?;
+        cur.skip_value(ty)?;
+    }
+    let mut types = BTreeSet::new();
+    for _ in 0..h.tensor_count {
+        cur.string()?;
+        let n_dims = cur.u32()?;
+        if n_dims == 0 || n_dims > GGML_MAX_DIMS {
+            return Err(cur.err(&format!(
+                "tensor with {n_dims} dims (ggml allows 1..={GGML_MAX_DIMS})"
+            )));
+        }
+        for _ in 0..n_dims {
+            cur.u64()?;
+        }
+        types.insert(cur.u32()?);
+        cur.u64()?;
+    }
+    Ok(types)
+}
+
+/// `GGML_MAX_DIMS` in ggml.h.
+pub const GGML_MAX_DIMS: u32 = 4;
+
 struct Cursor<'a> {
     bytes: &'a [u8],
     pos: usize,
@@ -289,6 +326,9 @@ pub fn emit_file(g: &mut Graph, stem: &str, rel: &str, bytes: &[u8]) -> Result<(
     if let Some(ft) = h.file_type {
         g.insert(s.clone(), model("fileType"), Term::integer(u64::from(ft)));
     }
+    for t in tensor_types(rel, bytes)? {
+        g.insert(s.clone(), model("tensorType"), Term::integer(u64::from(t)));
+    }
     g.insert(s, model("contract"), Term::iri(iri("contract", stem)));
     Ok(())
 }
@@ -357,6 +397,27 @@ pub fn minimal_header(arch: &str, file_type: u32) -> Vec<u8> {
     put_str(&mut b, "general.file_type");
     b.extend_from_slice(&4u32.to_le_bytes());
     b.extend_from_slice(&file_type.to_le_bytes());
+    b
+}
+
+/// A valid GGUF carrying `general.architecture`, `general.file_type` and one tensor info per
+/// `(name, dims, ggml_type)` (data section omitted: nothing here reads it). For fixtures.
+#[must_use]
+pub fn header_with_tensors(arch: &str, file_type: u32, tensors: &[(&str, &[u64], u32)]) -> Vec<u8> {
+    let mut b = minimal_header(arch, file_type);
+    b[8..16].copy_from_slice(&(tensors.len() as u64).to_le_bytes());
+    let mut offset = 0u64;
+    for (name, dims, ty) in tensors {
+        b.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        b.extend_from_slice(name.as_bytes());
+        b.extend_from_slice(&(dims.len() as u32).to_le_bytes());
+        for d in *dims {
+            b.extend_from_slice(&d.to_le_bytes());
+        }
+        b.extend_from_slice(&ty.to_le_bytes());
+        b.extend_from_slice(&offset.to_le_bytes());
+        offset += 32;
+    }
     b
 }
 
@@ -455,5 +516,50 @@ mod tests {
                 .map(|l| l.0),
             Some("0")
         );
+    }
+
+    #[test]
+    fn tensor_types_are_the_distinct_ggml_types_of_every_tensor_info() {
+        let b = header_with_tensors(
+            "qwen2",
+            15,
+            &[
+                ("token_embd.weight", &[896, 151_936], 14),
+                ("blk.0.attn_q.weight", &[896, 896], 12),
+                ("blk.0.attn_norm.weight", &[896], 0),
+                ("blk.0.ffn_down.weight", &[4864, 896], 14),
+            ],
+        );
+        let t = tensor_types("m.gguf", &b).expect("parses");
+        assert_eq!(t.into_iter().collect::<Vec<_>>(), vec![0, 12, 14]);
+        assert!(tensor_types("e.gguf", &minimal_header("qwen2", 15))
+            .expect("no tensors")
+            .is_empty());
+    }
+
+    #[test]
+    fn tensor_infos_cut_short_or_malformed_are_refused_not_read_as_a_smaller_set() {
+        let b = header_with_tensors("qwen2", 15, &[("a", &[32], 2), ("b", &[32], 12)]);
+        // Drop the last tensor's type+offset: a truncated set would omit ggml type 12.
+        let e = tensor_types("t.gguf", &b[..b.len() - 12]).expect_err("truncated");
+        assert!(e.to_string().starts_with("t.gguf: "), "{e}");
+        let mut bad = header_with_tensors("qwen2", 15, &[("a", &[32], 2)]);
+        let n_dims_at = bad.len() - 8 - 4 - 8 - 4;
+        bad[n_dims_at..n_dims_at + 4].copy_from_slice(&5u32.to_le_bytes());
+        let e = tensor_types("d.gguf", &bad).expect_err("5 dims");
+        assert!(e.what.contains("5 dims"), "{e}");
+    }
+
+    #[test]
+    fn a_file_node_carries_one_tensor_type_per_distinct_ggml_type() {
+        let b = header_with_tensors(
+            "qwen2",
+            15,
+            &[("a", &[32], 12), ("b", &[32], 12), ("c", &[32], 14)],
+        );
+        let mut g = Graph::default();
+        emit_file(&mut g, "c", "m.gguf", &b).expect("emits");
+        let nt = g.to_ntriples();
+        assert_eq!(nt.matches("model/tensorType>").count(), 2, "{nt}");
     }
 }

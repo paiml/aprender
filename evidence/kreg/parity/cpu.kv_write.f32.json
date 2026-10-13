@@ -1,0 +1,47 @@
+{
+  "build_identity": "5c9341007d7ea1ebeff29c0aad3133311dc4d8e2",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:kv_write:cache[l][p*kv..(p+1)*kv]=k_p|v_p",
+    "row_sha256": "7607eefa7582a68411a1b8a8cf3e64edb366bcc5a2dc6bef8dee6aa31805206b",
+    "source_sha256": "4f471ef6cca0c5caa9ad8e465b5c9806dc3b1a85089efc30c1ddf2e0bfed824d",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "1495875f244381bd45d0e699e26632a2ad89acb569414171daf302e60bba9bb8",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "isa_forced": "native",
+  "kernel_id": "cpu.kv_write.f32",
+  "margin": {
+    "error_model": "EM-ELEM",
+    "verdict": "not_modelled",
+    "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "kv_write:cache[l][p*kv..(p+1)*kv]=k_p|v_p",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.0,
+    "max_rel_err": 0.0
+  },
+  "source_fn": "append",
+  "tolerance_rel": 2.9999999999999997e-308,
+  "ts": "2026-10-04T10:35:05Z",
+  "workload": {
+    "n": 128,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}

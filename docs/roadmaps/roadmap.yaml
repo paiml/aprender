@@ -24022,6 +24022,29 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4539
+  github_issue: 4539
+  item_type: task
+  title: 'KREG-001: SHACL kernel registry, selector refuses unregistered kernels (aprender#4539)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-27T11:28:55Z
+  updated: 2026-09-27T11:28:55Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 1: registry rows + shape contract + runtime admit gate + coverage test. Refs #4539'
+  - 'AC-1 (key): the admission key includes arch, isa_features and backend; admit() matches on them (issue #4539 body)'
+  - 'AC-2 (arch-generic): no field or enum is valid for only one of x86 or CUDA; aarch64, Metal and wgpu rows validate with no schema change (issue #4539 body)'
+  - 'AC-3 (receipt-gated admission): a row without a parity receipt from a host of its arch is a violation. Every cpu row carries a receipt, and every receipt names its row, once, from a host of its arch, at the row''s tolerance path (FALSIFY-KREG-008, no allowance count). GPU rows may be unmeasured: their receipt coverage is a LAB check, off the merge path (#4574) (issue #4539 body)'
+  - 'AC-4 (stable id): every row has a stable kernel_id plus shape_class and precision, for OBS-15 kernel_path (issue #4539 body)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3994
 - id: PMAT-4594
   github_issue: 4594
   item_type: task
@@ -24681,6 +24704,60 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3998
+- id: PMAT-5025
+  github_issue: 5025
+  item_type: task
+  title: 'guard: refuse a shallow fetch into the shared common git dir (#5025)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:32:41Z
+  updated: 2026-10-12T12:32:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5034
+  github_issue: 5034
+  item_type: task
+  title: 'fleet_cells_gate: wildcard waiver covers only data faults; non-date until expires'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:33:33Z
+  updated: 2026-10-12T12:33:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5047
+  github_issue: 5047
+  item_type: task
+  title: 'check_roadmap_diff_additive: history row not_measured, self-test row floor (#5047)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:47:51Z
+  updated: 2026-10-12T12:47:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
 - id: PMAT-5053
   github_issue: 5053
   item_type: task
@@ -24690,6 +24767,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   assigned_to: null
   created: 2026-10-10T11:53:27Z
   updated: 2026-10-10T11:53:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5064
+  github_issue: 5064
+  item_type: task
+  title: 'fleet_cells_gate: self-test rows for DEL, locale, day guards; run --self-test nightly'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:40:21Z
+  updated: 2026-10-12T12:40:21Z
   spec: null
   acceptance_criteria: []
   phases: []
