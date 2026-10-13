@@ -142,6 +142,13 @@ fn read_metadata_array(data: &[u8], offset: usize) -> Result<(GgufValue, usize)>
             }
             Ok((GgufValue::ArrayFloat32(values), consumed))
         }
+        7 => {
+            let bools = data[offset + consumed..offset + consumed + count]
+                .iter()
+                .map(|&b| b != 0)
+                .collect();
+            Ok((GgufValue::ArrayBool(bools), consumed + count))
+        }
         _ => {
             consumed += count * min_elem;
             Ok((GgufValue::ArrayUint32(vec![]), consumed))

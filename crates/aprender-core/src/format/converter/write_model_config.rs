@@ -198,9 +198,15 @@ pub(crate) fn write_apr_file_raw(
     _options: &ImportOptions,
     tokenizer: Option<&GgufTokenizer>,
     model_config: Option<&GgufModelConfig>,
+    gguf_kv: Option<&BTreeMap<String, crate::format::gguf::GgufValue>>,
 ) -> Result<()> {
-    // GH-202: Handle tied embeddings (common in Qwen2.5, LLaMA, etc.)
-    let (tensors, has_tied_embeddings) = resolve_tied_embeddings(tensors);
+    // GH-202: Handle tied embeddings (common in Qwen2.5, LLaMA, etc.).
+    // APR-EMBED-001 EG-6b: a file recorded for verbatim GGUF export keeps
+    // exactly the source tensors, so no lm_head is synthesized.
+    let (tensors, has_tied_embeddings) = match gguf_kv {
+        Some(_) => (std::borrow::Cow::Borrowed(tensors), false),
+        None => resolve_tied_embeddings(tensors),
+    };
 
     // Calculate total parameter count (approximate - based on shapes)
     let param_count: u64 = tensors
@@ -238,6 +244,11 @@ pub(crate) fn write_apr_file_raw(
     // Add model config if available
     if let Some(cfg) = model_config {
         insert_model_config_metadata(cfg, &mut custom);
+    }
+
+    // APR-EMBED-001 EG-6b: the typed source header, for verbatim GGUF export
+    if let Some(kv) = gguf_kv {
+        crate::format::converter::export::insert_gguf_kv_metadata(kv, &mut custom);
     }
 
     // ROSETTA-003: Record tied embeddings for round-trip export fidelity
