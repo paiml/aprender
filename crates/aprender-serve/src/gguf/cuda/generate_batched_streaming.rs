@@ -250,7 +250,7 @@ impl BatchedDecodeState {
 /// # Performance Target
 ///
 /// Jetson Orin Nano Super (c=4):
-/// - Current (sequential): 34.3 tok/s aggregate
+/// - Current (sequential): one request per decode step
 /// - Target (batched): 50-80 tok/s via weight amortization
 impl OwnedQuantizedModelCuda {
     /// Generate tokens for M requests with per-request streaming callbacks.

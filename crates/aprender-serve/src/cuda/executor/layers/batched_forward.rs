@@ -515,7 +515,7 @@ impl CudaExecutor {
     ///
     /// Note for aprender#2758: `check_no_claim_literals.sh` did NOT flag these
     /// two lines. `TARGET_RE` exempts the line carrying "Target", and the bare
-    /// `404.6 tok/s` on the line above it rode along unflagged. The exemption is
+    /// bare measured figure on the line above it rode along unflagged. The exemption is
     /// right in principle -- a target is a bar, not a claim -- but it should not
     /// cover a measured figure sitting beside one.
     #[allow(clippy::too_many_arguments)]

@@ -210,7 +210,6 @@ crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:7
 crates/aprender-qa-runner/src/executor_serve_battery.rs:38
 crates/aprender-serve/src/bench/gemm_performance.rs:259
 crates/aprender-serve/src/cuda/executor/cached.rs:6
-crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:492
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
@@ -221,7 +220,6 @@ crates/aprender-serve/src/gguf/cuda/clone_layer_weights.rs:294
 crates/aprender-serve/src/gguf/cuda/cuda.rs:363
 crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs:65
 crates/aprender-serve/src/gguf/cuda/generate_2.rs:158
-crates/aprender-serve/src/gguf/cuda/generate_batched_streaming.rs:191
 crates/aprender-serve/src/gguf/cuda/speculative.rs:244
 crates/aprender-serve/src/gguf/cuda/speculative.rs:246
 crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs:25
