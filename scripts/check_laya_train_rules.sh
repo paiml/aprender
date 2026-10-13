@@ -322,6 +322,7 @@ st_case() {
     # The branch is laya-train/<name>, in scope by its name, unless ST_PREFIX says otherwise.
     local name=$1 expect=$2 rule=$3 out rc=0 br
     shift 3
+    ST_ROW=$name
     br="${ST_PREFIX:-laya-train/}$name"
     git -C "$ST" checkout -q -B "$br" base
     (cd "$ST" && "$@")
@@ -344,6 +345,7 @@ st_shallow() {
     # run) or a single squashed commit (a merge queue run), and the check runs on a shallow
     # clone of that head.
     local name=$1 expect=$2 how=$3 setup=$4 out rc=0 got p1 sc
+    ST_ROW=$name
     git -C "$ST" checkout -q -B "laya-train/$name-pr" base
     (cd "$ST" && sh -c "$setup")
     git -C "$ST" add -A; st_commit "$name pr"
@@ -378,7 +380,13 @@ self_test() {
     SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
     ST=$(mktemp -d)
     case "$ST" in /tmp/*|"${TMPDIR:-/tmp}"/*) ;; *) echo "mktemp gave $ST" >&2; exit 2 ;; esac
-    trap 'rm -rf -- "${ST:?}"' EXIT
+    # A self-test that dies mid-row names the row and how it ended; a runner kill or
+    # a set -e exit otherwise leaves only the rows before it.
+    ST_ROW=setup
+    trap 'st_rc=$?; [ "$st_rc" -eq 0 ] || [ "$ST_ROW" = summary ] || printf "SELF-TEST DIED in row %s rc=%s\n" "$ST_ROW" "$st_rc"; rm -rf -- "${ST:?}"' EXIT
+    trap 'printf "SELF-TEST KILLED by SIGTERM in row %s\n" "$ST_ROW"; exit 143' TERM
+    trap 'printf "SELF-TEST KILLED by SIGHUP in row %s\n" "$ST_ROW"; exit 129' HUP
+    trap 'printf "SELF-TEST KILLED by SIGINT in row %s\n" "$ST_ROW"; exit 130' INT
     # A pull request run's own branch name must not decide a fixture's scope.
     unset GITHUB_HEAD_REF
     export GIT_CEILING_DIRECTORIES
@@ -464,6 +472,7 @@ self_test() {
     st_case plant-outcome-before RED H10 sh -c "mkdir -p $LT10_DIR && echo '{\"run_started_utc\": \"2000-01-01T00:00:00Z\"}' > $LT10_DIR/outcome.json"
     st_case plant-two-outcomes RED H10 sh -c "mkdir -p $LT10_DIR && echo '{\"run_started_utc\": \"2999-01-01T00:00:00Z\"}' > $LT10_DIR/outcome.json && cp $LT10_DIR/outcome.json $LT10_DIR/outcome-2.json"
 
+    ST_ROW=summary
     if [ "$ST_FAIL" -eq 0 ]; then echo "SELF-TEST PASS"; else echo "SELF-TEST FAIL"; exit 1; fi
 }
 
