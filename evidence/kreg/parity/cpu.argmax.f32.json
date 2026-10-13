@@ -1,0 +1,46 @@
+{
+  "build_identity": "9fe053979b",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:argmax:[max(x),min{i:x_i=max(x)}]",
+    "row_sha256": "ed05f3a8cd0f705e7102687d3dd5e484109e772c48aa945c0d7b9c4d3bc5ee34",
+    "source_sha256": "85824a73a4917c2292772990345e1e459bc1170e6037a8eaf5b3c22608e680f5",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "1e4b83241c93b0ad3a73e38e6bdde56f54c2c9209c9dedba8a09f47312cdaa9c",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.argmax.f32",
+  "margin": {
+    "error_model": "EM-RED",
+    "verdict": "not_modelled",
+    "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "argmax:[max(x),min{i:x_i=max(x)}]",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.0,
+    "max_rel_err": 0.0
+  },
+  "source_fn": "argmax",
+  "tolerance_rel": 2.9999999999999997e-308,
+  "ts": "2026-09-29T05:33:31Z",
+  "workload": {
+    "n": 896,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}

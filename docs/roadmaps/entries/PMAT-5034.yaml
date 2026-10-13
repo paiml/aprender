@@ -1,0 +1,18 @@
+- id: PMAT-5034
+  github_issue: 5034
+  item_type: task
+  title: 'fleet_cells_gate: wildcard waiver covers only data faults; non-date until expires'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:33:33Z
+  updated: 2026-10-12T12:33:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863

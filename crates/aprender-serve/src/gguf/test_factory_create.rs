@@ -196,14 +196,16 @@ pub fn build_minimal_llama_gguf(
     let embed_data = create_f32_embedding_data(vocab_size, hidden_dim);
     let norm_data = create_f32_norm_weights(hidden_dim);
 
-    // Q4_K weights for layer 0 - use row-padded layout for 2D tensors
+    // Q4_K weights for layer 0, row-padded. Every 2-D weight is shaped [out, in], the order the
+    // reader hands back after undoing GGML order, and sized out rows of in columns (#4985).
+    // Sizing from the in dim instead gave a non-square FFN tensor half the bytes its out dim needs.
     let q_data = create_q4_k_data_2d(hidden_dim, hidden_dim);
-    let k_data = create_q4_k_data_2d(hidden_dim, kv_dim);
-    let v_data = create_q4_k_data_2d(hidden_dim, kv_dim);
+    let k_data = create_q4_k_data_2d(kv_dim, hidden_dim);
+    let v_data = create_q4_k_data_2d(kv_dim, hidden_dim);
     let attn_out_data = create_q4_k_data_2d(hidden_dim, hidden_dim);
-    let ffn_up_data = create_q4_k_data_2d(hidden_dim, intermediate_dim);
-    let ffn_down_data = create_q4_k_data_2d(intermediate_dim, hidden_dim);
-    let ffn_gate_data = create_q4_k_data_2d(hidden_dim, intermediate_dim);
+    let ffn_up_data = create_q4_k_data_2d(intermediate_dim, hidden_dim);
+    let ffn_down_data = create_q4_k_data_2d(hidden_dim, intermediate_dim);
+    let ffn_gate_data = create_q4_k_data_2d(intermediate_dim, hidden_dim);
 
     GGUFBuilder::new()
         // Metadata
@@ -231,12 +233,12 @@ pub fn build_minimal_llama_gguf(
         )
         .add_q4_k_tensor(
             "blk.0.attn_k.weight",
-            &[hidden_dim as u64, kv_dim as u64],
+            &[kv_dim as u64, hidden_dim as u64],
             &k_data,
         )
         .add_q4_k_tensor(
             "blk.0.attn_v.weight",
-            &[hidden_dim as u64, kv_dim as u64],
+            &[kv_dim as u64, hidden_dim as u64],
             &v_data,
         )
         .add_q4_k_tensor(
@@ -248,17 +250,17 @@ pub fn build_minimal_llama_gguf(
         .add_f32_tensor("blk.0.ffn_norm.weight", &[hidden_dim as u64], &norm_data)
         .add_q4_k_tensor(
             "blk.0.ffn_up.weight",
-            &[hidden_dim as u64, intermediate_dim as u64],
+            &[intermediate_dim as u64, hidden_dim as u64],
             &ffn_up_data,
         )
         .add_q4_k_tensor(
             "blk.0.ffn_down.weight",
-            &[intermediate_dim as u64, hidden_dim as u64],
+            &[hidden_dim as u64, intermediate_dim as u64],
             &ffn_down_data,
         )
         .add_q4_k_tensor(
             "blk.0.ffn_gate.weight",
-            &[hidden_dim as u64, intermediate_dim as u64],
+            &[intermediate_dim as u64, hidden_dim as u64],
             &ffn_gate_data,
         )
         // Output norm and head

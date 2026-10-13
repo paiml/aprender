@@ -76,7 +76,7 @@ pub fn fused_q4k_q8k_multirow_matmul_into(
 
     #[cfg(target_arch = "x86_64")]
     {
-        if m > 1 && is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if m > 1 && crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
             use rayon::prelude::*;
 
             // Per-token i16 bsums, the same values the matvec's lean path precomputes.

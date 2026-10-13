@@ -2021,6 +2021,76 @@ pub enum LlmSubcommand {
         #[arg(long = "run", required = true)]
         runs: Vec<DirPath>,
     },
+
+    /// #4971 V3: check a perf041 witness against the serving-shape rule.
+    ///
+    /// Reads the `witness.json` that `scripts/perf041_batched_parity_probe.py`
+    /// writes and decides whether it can stand as the V3 Qwen3.5-4B
+    /// serving-parity witness: the blessed model with its sha256, the
+    /// identity fields, one band per c in {1, 4, 8, 16}, perf041 PASS and
+    /// `m_formed == c` in every band, and every divergence from m=1 before
+    /// `declared_min` explained by a recorded top-2 margin below 0.05.
+    ///
+    /// Exits 0 when admissible. A witness that is not admissible exits 5
+    /// after printing every reason; one that cannot be read exits 3 (no such
+    /// file) or 4 (unreadable or empty). Not a gate: no release job runs it.
+    ShapeCheck {
+        /// The perf041 `witness.json` to check.
+        witness: InputFile,
+    },
+
+    /// #4971 V3: run the perf041 batched-parity probe against a server.
+    ///
+    /// The Rust port of `scripts/perf041_batched_parity_probe.py`. It decodes
+    /// one prompt twice alone (m=1), then as c identical concurrent requests
+    /// for each c of the ladder, reads the batch each band formed from the
+    /// server's log, and writes the witness `apr test llm shape-check` reads,
+    /// with the reference's top-2 margin at every divergence. The thresholds,
+    /// sampler and ladder come from `scripts/perf-matrix.yaml`, compiled in.
+    ///
+    /// Exits 0 on PASS, 5 on FAIL (a batch's slots parted before
+    /// `declared_min`, or a slot froze), and 8 on UNMEASURABLE; the witness
+    /// is written first either way. A server log, binary or model that is not
+    /// a file exits 3 before any request. Not a gate: no release job runs it.
+    Parity {
+        /// The server's base URL; requests go to `/v1/chat/completions`.
+        #[arg(long, default_value = "http://127.0.0.1:8080")]
+        url: FreeText,
+        /// Model name sent in the request body, as the script sends it.
+        #[arg(long, default_value = "q")]
+        served_model: FreeText,
+        /// The server's log, where the scheduler writes `Batch m=N done`.
+        /// Read from where it ended before each band, so a band counts only
+        /// the batches it formed.
+        #[arg(long)]
+        server_log: InputFile,
+        /// The prompt every request carries. Recorded by its sha256.
+        #[arg(long, default_value = "Write an essay on compilers.")]
+        prompt: FreeText,
+        /// Concurrencies to fire, comma-separated, replacing the matrix's
+        /// `ladder.declared`. The V3 shape check admits only {1, 4, 8, 16}.
+        #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(u32).range(1..))]
+        ladder: Vec<u32>,
+        /// Write the witness JSON here. Not `--json`: that is `apr`'s global
+        /// flag, and a second arg with its id made clap downcast one to the
+        /// other's type and panic on every `apr test llm parity` run.
+        #[arg(long, value_name = "FILE")]
+        witness: Option<OutputPath>,
+        /// Host recorded in the witness. Defaults to `PERF041_HOST`, then
+        /// this host's name.
+        #[arg(long)]
+        host: Option<FreeText>,
+        /// Commit the server was built from. Defaults to `PERF041_COMMIT`.
+        #[arg(long)]
+        commit: Option<FreeText>,
+        /// The serving binary; its sha256 is recorded.
+        #[arg(long)]
+        binary: Option<InputFile>,
+        /// The served model file; its file name and sha256 are recorded. The
+        /// probe hashes it and never loads it.
+        #[arg(long)]
+        model: Option<InputFile>,
+    },
 }
 
 /// Parse `apr cbtop --iterations`, rejecting 0.

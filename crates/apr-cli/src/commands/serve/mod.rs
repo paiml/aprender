@@ -29,6 +29,9 @@ mod tests;
 mod tests_contract_enforcement;
 #[cfg(all(test, feature = "inference"))]
 mod tests_route_index_3979;
+// #4971: the chat routes outside realizar's router refuse logprobs (ASOC-INV-021).
+#[cfg(all(test, feature = "inference"))]
+mod tests_logprobs_4971;
 // PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process
 // publishes. `inference`-gated because the report type comes from realizar.
 #[cfg(test)]
@@ -594,6 +597,38 @@ mod accelerator_guard_tests {
             "REALIZR_MAX_SEQ_LEN is now written by the CLI; it takes precedence \
              over --context-length, so writing it re-creates #2762"
         );
+    }
+
+    /// #4971 (ASOC-INV-021): the APR CUDA chat route computes no logprobs, so a
+    /// request for them must be refused before generation, never answered 200
+    /// without them. The handler is cuda-only and has no router test without a
+    /// GPU, so this reads its shipping source: comments dropped, `#[cfg(test)]` cut.
+    #[test]
+    fn the_cuda_chat_route_refuses_logprobs_before_it_generates() {
+        let whole = include_str!("handler_gpu_completion.rs");
+        let shipping = whole.split("#[cfg(test)]").next().unwrap_or(whole);
+        let src: String = shipping
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let start = src
+            .find("async fn handle_gpu_chat_completion(")
+            .expect("the APR CUDA chat handler is gone");
+        let body = &src[start..];
+        let body = &body[..body.find("\nfn ").unwrap_or(body.len())];
+        let refuse = body.find(&format!("{}(&req,", "logprobs_refusal_response"));
+        let generate = body.find(&format!("{}(", "run_gpu_generation"));
+        match (refuse, generate) {
+            (Some(r), Some(g)) => assert!(
+                r < g,
+                "handle_gpu_chat_completion generates before it refuses logprobs"
+            ),
+            _ => panic!(
+                "handle_gpu_chat_completion does not refuse logprobs \
+                 (refusal {refuse:?}, generation {generate:?}): it answers 200 without them"
+            ),
+        }
     }
 
     #[test]

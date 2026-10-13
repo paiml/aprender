@@ -89,6 +89,26 @@ if [ "${1:-}" = "--self-test" ]; then
     trap 'rm -rf -- "${TD:?}"' EXIT
     row=0
     fails=0
+    not_measured=0
+    # The case table has exactly this many rows; a run that reaches fewer, or more, is RED, never "n/n"
+    # (#5047). Raise it with every row added. The two summary rows at the end are not counted.
+    SELFTEST_MIN_ROWS=27
+
+    # selftest_verdict ROWS FAILS NOT_MEASURED MIN -> prints the summary; rc 0 all rows ran and
+    # passed, 1 a row failed or other than MIN ran, 2 every row that ran passed but one was not measured.
+    selftest_verdict() {
+        if [ "$2" -ne 0 ]; then printf '\nSELF-TEST FAILED (%s rows ran)\n' "$1"; return 1; fi
+        if [ "$1" -lt "$4" ]; then
+            printf '\nSELF-TEST FAILED: %s rows ran, below the floor of %s; a row was lost\n' "$1" "$4"; return 1
+        fi
+        if [ "$1" -gt "$4" ]; then
+            printf '\nSELF-TEST FAILED: %s rows ran, above the floor of %s; raise SELFTEST_MIN_ROWS with the row\n' "$1" "$4"; return 1
+        fi
+        if [ "$3" -ne 0 ]; then
+            printf '\nnot_measured: %s of %s rows were not measured on this box; not a pass\n' "$3" "$1"; return 2
+        fi
+        printf '\n%s/%s rows\n' "$1" "$1"
+    }
 
     write_base() {
         cat >"$TD/base.yaml" <<'EOF'
@@ -269,11 +289,14 @@ EOF
     # Row 9: the real history, if this checkout's object store can reach it.
     # `git cat-file -e` never MUTATES the repo, so this is safe to run
     # unconditionally; a shallow clone that never fetched the commit reports
-    # it absent, and that is reported as SKIP, not silently counted as a
-    # pass or a fail.
+    # it absent. That row is NOT_MEASURED and the whole self-test exits 2 (the
+    # box cannot answer), never 0: a SKIP that exits 0 is a third state (C324
+    # rule 6, #5047). ROADMAP_DIFF_HIST_SHA exists only so the case table can
+    # point the row at an absent commit; any other commit fails the row.
+    HIST="${ROADMAP_DIFF_HIST_SHA:-6d9ba274a}"
     row=$((row + 1))
-    if git -C "$REPO_ROOT" cat-file -e 6d9ba274a^{commit} 2>/dev/null; then
-        hist_out=$(run_check 6d9ba274a~1 6d9ba274a 2>&1)
+    if git -C "$REPO_ROOT" cat-file -e "$HIST^{commit}" 2>/dev/null; then
+        hist_out=$(run_check "$HIST~1" "$HIST" 2>&1)
         hist_rc=$?
         hist_reserial=$(printf '%s\n' "$hist_out" | grep -oE 'reserialised=[0-9]+' | tail -1 | cut -d= -f2)
         if [ "$hist_rc" -eq 1 ] && [ -n "$hist_reserial" ] && [ "$hist_reserial" -ge 100 ]; then
@@ -284,29 +307,30 @@ EOF
             # worktree, removed again below. Read-only w.r.t. repo history:
             # it only checks out an existing commit.
             hist_wt="$TD/hist-wt"
-            if git -C "$REPO_ROOT" worktree add --detach "$hist_wt" 6d9ba274a -q \
+            if git -C "$REPO_ROOT" worktree add --detach "$hist_wt" "$HIST" -q \
                     >"$TD/hist.err" 2>&1 \
-                && (cd "$hist_wt" && python3 "$PY_LIB" trim --base 6d9ba274a~1 --write) \
+                && (cd "$hist_wt" && python3 "$PY_LIB" trim --base "$HIST~1" --write) \
                     >"$TD/hist_trim.out" 2>&1 \
-                && (cd "$hist_wt" && python3 "$PY_LIB" check --base 6d9ba274a~1 --head "$ROADMAP_FILE") \
+                && (cd "$hist_wt" && python3 "$PY_LIB" check --base "$HIST~1" --head "$ROADMAP_FILE") \
                     >"$TD/hist_check.out" 2>&1
             then
-                printf 'ok    row %-2s the real 6d9ba274a re-serialisation (reserialised=%s), trimmed -> PASS\n' \
-                    "$row" "$hist_reserial"
+                printf 'ok    row %-2s the real %s re-serialisation (reserialised=%s), trimmed -> PASS\n' \
+                    "$row" "$HIST" "$hist_reserial"
             else
-                printf 'FAIL  row %-2s the trimmed 6d9ba274a result did not re-check clean\n' "$row"
+                printf 'FAIL  row %-2s the trimmed %s result did not re-check clean\n' "$row" "$HIST"
                 cat "$TD/hist.err" "$TD/hist_trim.out" "$TD/hist_check.out" 2>/dev/null | sed 's|^|             |'
                 fails=1
             fi
             git -C "$REPO_ROOT" worktree remove --force "$hist_wt" >/dev/null 2>&1 || true
         else
-            printf 'FAIL  row %-2s 6d9ba274a: wanted FAIL reserialised>=100, got rc=%s reserialised=%s\n' \
-                "$row" "$hist_rc" "${hist_reserial:-<none>}"
+            printf 'FAIL  row %-2s %s: wanted FAIL reserialised>=100, got rc=%s reserialised=%s\n' \
+                "$row" "$HIST" "$hist_rc" "${hist_reserial:-<none>}"
             fails=1
         fi
     else
-        printf 'SKIP  row %-2s history row (6d9ba274a unreachable in this object store)\n' "$row"
-        row=$((row - 1))
+        printf 'NOT_MEASURED  row %-2s history row: %s is not in this object store, so the real re-serialisation was not re-checked\n' \
+            "$row" "$HIST"
+        not_measured=$((not_measured + 1))
     fi
 
     # Rows 10-12: a duplicate id already in BASE is baselined, not this PR's
@@ -527,12 +551,31 @@ EOF
         *) printf 'FAIL  row %-2s --staged: wanted rc=0 with base=%s, got rc=%s\n%s\n' "$row" "$tip" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
     esac
 
-    if [ "$fails" -ne 0 ]; then
-        printf '\nSELF-TEST FAILED (%s/%s rows)\n' "$((row - fails + fails))" "$row"
-        exit 1
+    # The summary's own rows (#5047). A nested run, which the second row starts, skips both.
+    if [ -z "${ROADMAP_DIFF_SELFTEST_NESTED:-}" ]; then
+        got=""
+        for c in "27 0 0 27:0" "26 0 0 27:1" "27 0 1 27:2" "27 1 1 27:1" "28 0 0 27:1"; do
+            # shellcheck disable=SC2086 # the four numbers are meant to split
+            rc=0; selftest_verdict ${c%%:*} >/dev/null || rc=$?
+            got="$got${got:+ }$rc"
+        done
+        if [ "$got" = "0 1 2 1 1" ]; then
+            printf 'ok    sum S1 verdict: all ran -> 0; one row short of the floor -> 1; a row not measured -> 2; a failure beats not_measured -> 1; one row above the floor -> 1\n'
+        else
+            printf 'FAIL  sum S1 verdict: wanted rc "0 1 2 1 1", got "%s"\n' "$got"; fails=1
+        fi
+        rc=0; out=$( ROADMAP_DIFF_SELFTEST_NESTED=1 ROADMAP_DIFF_HIST_SHA=0000000000000000000000000000000000000001 \
+            bash "$SELF" --self-test 2>&1 ) || rc=$?
+        case "$rc:$out" in
+            2:*"NOT_MEASURED  row"*"not_measured: 1 of"*)
+                printf 'ok    sum S2 an absent history commit -> NOT_MEASURED and the self-test exits 2, never 0\n' ;;
+            *) printf 'FAIL  sum S2 absent history commit: wanted rc=2 and not_measured, got rc=%s\n%s\n' "$rc" "$out" \
+                | tail -6 | sed 's|^|             |'; fails=1 ;;
+        esac
     fi
-    printf '\n%s/%s rows\n' "$row" "$row"
-    exit 0
+
+    selftest_verdict "$row" "$fails" "$not_measured" "$SELFTEST_MIN_ROWS"
+    exit $?
 fi
 
 # ---------------------------------------------------------------------------
