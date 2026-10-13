@@ -88,9 +88,6 @@ proptest = "1.5"           # Property-based testing
 quickcheck = "1"           # Property-based testing (backend equivalence)
 rand = "0.9"               # Random data generation for examples
 
-# Coverage
-cargo-llvm-cov = "0.6"
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # WASM support
 wasm-bindgen = "0.2"
