@@ -132,7 +132,7 @@ jobs:
   stop:
     needs: mutants
     if: always() && github.event_name == 'schedule'
-    runs-on: [self-hosted, Linux, X64, mutants]
+    runs-on: [self-hosted, Linux, X64, clean-room] # a 5-min curl, not a mutation run: the PR pool serves it today
     timeout-minutes: 5
     permissions:
       contents: read
