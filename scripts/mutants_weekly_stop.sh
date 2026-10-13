@@ -12,8 +12,10 @@
 set -uo pipefail
 WINDOW_DAYS=8
 
-# since_iso <now, epoch s> -> the window's start as the listing's created>= value. --run and --self-test both call it.
-since_iso() { date -u -d "@$(($1 - WINDOW_DAYS * 86400))" +%Y-%m-%dT%H:%M:%SZ; }
+# since_epoch <now, epoch s> -> the window's start (epoch s). --self-test checks it; since_iso formats it for --run.
+since_epoch() { echo $(($1 - WINDOW_DAYS * 86400)); }
+# since_iso <now, epoch s> -> the window's start as the listing's created>= value.
+since_iso() { date -u -d "@$(since_epoch "$1")" +%Y-%m-%dT%H:%M:%SZ; }
 # now_epoch -> the one wall-clock read; MUTANTS_STOP_NOW pins it (epoch s) for a reproducible run.
 now_epoch() { echo "${MUTANTS_STOP_NOW:-$(date -u +%s)}"; }  # bashrs disable-line=DET002
 
@@ -49,7 +51,7 @@ failure|0|-1|error
 CASES
     # The window must hold last Sunday's run as read by this job up to 185 min after its own run was created
     # (mutants timeout 180 + stop 5), and must not reach the run two Sundays back.
-    now=$(now_epoch); since=$(date -u -d "$(since_iso "$now")" +%s) || since=$now
+    now=$(now_epoch); since=$(since_epoch "$now")
     if [ $((now - 7 * 86400 - 185 * 60)) -ge "$since" ] && [ $((now - 14 * 86400)) -lt "$since" ]; then
         echo "ok    ${WINDOW_DAYS}-day window holds last week's run, not the one before"
     else echo "FAIL  ${WINDOW_DAYS}-day window misses last week's run or reaches two weeks back" >&2; bad=1; fi
