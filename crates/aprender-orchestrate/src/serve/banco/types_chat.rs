@@ -37,6 +37,12 @@ pub struct BancoChatRequest {
     /// Tool choice: "auto", "none", or specific tool name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<String>,
+    /// OpenAI `logprobs`. Banco computes none, so `true` is refused (#4971).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logprobs: Option<bool>,
+    /// OpenAI `top_logprobs`, 0 to 20; anything else is refused when parsed (#4971).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_logprobs: Option<realizar::api::TopLogprobs>,
 }
 
 /// File attachment in a chat request — text extracted and injected as context.

@@ -13,10 +13,20 @@ fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
             TestSubcommand::Tensor { file, .. } => {
                 vec![file.to_path_buf()]
             },
-            // `llm` measures an HTTP endpoint, not a local model file. Listed
-            // explicitly so a future subcommand that DOES name a file has to
-            // be handled here rather than absorbed by a wildcard.
-            TestSubcommand::Llm { .. } => vec![],
+            // `llm bench` measures an HTTP endpoint, not a local model file,
+            // `llm ttft-verdict` reads receipt directories (#4954) and
+            // `llm shape-check` reads a perf041 witness JSON, not a model.
+            // `llm parity` drives an endpoint too: its `--model` is hashed
+            // for the witness and never loaded, so the gate has nothing to
+            // refuse.
+            // Listed explicitly so a future subcommand that DOES name a model
+            // has to be handled here rather than absorbed by a wildcard.
+            TestSubcommand::Llm { command } => match command {
+                LlmSubcommand::Bench { .. }
+                | LlmSubcommand::TtftVerdict { .. }
+                | LlmSubcommand::ShapeCheck { .. }
+                | LlmSubcommand::Parity { .. } => vec![],
+            },
         },
         ExtendedCommands::CompareHf { file, .. }
         | ExtendedCommands::Chat { file, .. }

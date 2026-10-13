@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.19.0"
+  version: "1.21.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -390,6 +390,32 @@ proof_obligations:
       AppState::demo() / AppState::new() again. (AppState::with_registry stays
       permitted: ERROR-MESSAGES-NAME-A-REAL-REMEDY names it deliberately as the
       embedder API that enables registry mode.)
+  - id: ASOC-INV-021
+    type: invariant
+    property: >
+      LOGPROBS-HONOURED-OR-REFUSED (#4971, V3-a of the 0.71 serving-shape
+      parity work; ASOC-INV-020 is #3568's). /v1/chat/completions takes the
+      OpenAI `logprobs` (bool) and `top_logprobs` (0..=20). With `logprobs:
+      true` the reply carries `choices[0].logprobs.content`: one entry per
+      generated token, in order, so its length equals
+      `usage.completion_tokens`. Each entry is {token, logprob, bytes,
+      top_logprobs}. `top_logprobs` holds the N best tokens of that step, best
+      first, ties to the lower id. Every logprob is <= 0. On a stream the
+      entries ride on the chunk that releases their text, and anything still
+      held is released on the finishing chunk, so the entries of all chunks
+      concatenate to the same list. REQUESTING THEM NEVER CHANGES THE TOKEN.
+      The engine reads the logits buffer that its own choice read: on a
+      device-argmax backend the device still picks the token and the buffer
+      is copied out after it. So at temperature 0 the ids with and without
+      `logprobs` are identical, and the chosen token is top_logprobs[0]. The
+      top-2 margin V3 needs is top_logprobs[0].logprob -
+      top_logprobs[1].logprob, which equals the logit margin because both
+      share one log-sum-exp. REFUSED, never dropped: `top_logprobs` above 20,
+      or `top_logprobs` without `logprobs: true`, is a client error that
+      names the field. A backend that cannot compute them answers 501 and
+      names itself; it never answers 200 without them. NO-REGRESSION: a
+      request without `logprobs` is served as before, and its reply has no
+      `logprobs` key.
 
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
@@ -620,3 +646,81 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib -- chat_stream_route_2375::stream_route_with_no_model_is_503_not_404 chat_stream_route_2375::stream_route_with_an_unknown_model_name_is_still_404'
     expected_output: "test result: ok"
     if_fails: 'A client retry policy keyed on status treats "the server has not loaded a model yet" as permanent (404 = this route does not exist) and stops retrying, on the two most-used routes of the OpenAI surface. Mutation-verified in both directions: forcing NOT_FOUND reds the 503 half, forcing SERVICE_UNAVAILABLE reds the 404 half.'
+  - id: FALSIFY-LOGPROBS-TOPK-4971
+    name: top_k_logprobs_rank_like_the_argmax
+    prediction: 'top_k_logprobs(logits, k) returns min(k, vocab) entries, best first, ties to the lower id, so entry 0 is the token gguf::ops::argmax picks. Case table: logits [0.5, 2.0, -1.0, 2.0, 1.0] give ids [] / [1] / [1,3] / [1,3,4] / [1,3,4,0,2] for k 0/1/2/3/5, and k 99 gives all five. Each logprob equals logprob_of for its id, and the exp of all five sums to 1. NaN is never ranked, and a 1e30 logit stays finite. StepLogprobs::of records the chosen token''s own logprob even when it is not in the top N.'
+    test_harness: 'cargo test -p aprender-serve --lib gguf::logprobs::'
+    expected_output: "test result: ok"
+    if_fails: 'top_logprobs[0] is not the token the greedy engine chose, so the V3 margin (top[0] - top[1]) is measured between the wrong two tokens.'
+  - id: FALSIFY-LOGPROBS-SAME-TOKEN-4971
+    name: requesting_logprobs_never_changes_the_token
+    prediction: 'A Session over a backend with a device-argmax path generates the same ids with and without logprobs. With them it takes the device path every step (forward_greedy with read_logits), never the host forward, and the id it returns is the device''s, even when a planted host argmax would pick another token. Each step''s StepLogprobs has top[0] == chosen. A planted near-tie (two logits 0.01 apart) reads as a margin below 0.05, and a clear winner reads as a margin above 1. Without logprobs the device path is called with read_logits false, so no logits are copied.'
+    test_harness: 'cargo test -p aprender-serve --lib session::tests::logprobs_4971'
+    expected_output: "test result: ok"
+    if_fails: 'Asking for the margin changes the kernels that choose the token. The witness then measures a different run from the one it claims, which is the defect V3 exists to rule out.'
+  - id: FALSIFY-LOGPROBS-WIRE-4971
+    name: chat_logprobs_are_served_or_refused_by_name
+    prediction: 'On a dense CPU server, `logprobs: true, top_logprobs: 3` at temperature 0 answers 200. choices[0].logprobs.content has usage.completion_tokens entries, each with 3 top_logprobs, every logprob <= 0, and the entry logprob equal to top_logprobs[0].logprob (compared by logprob: tied logits make the token alone ambiguous). `logprobs: true` alone gives entries with empty top_logprobs. The same request without `logprobs` gives the same text and no `logprobs` key. `top_logprobs: 21` or `-1`, and `top_logprobs: 2` without `logprobs: true`, are 4xx and name top_logprobs. Streamed, the same request answers 200 with the entries on its chunks: their count over the chunks equals the terminal chunk''s usage.completion_tokens, and their tokens and logprobs equal the unstreamed reply''s. A stream without `logprobs` has no `logprobs` key on any chunk. A path with no logprobs answers 501 and names itself: the traced quantized loop (`quantized (traced)`), the traced CUDA loop (`CUDA (traced)`), and every other chat backend but the Qwen3.5 hybrid (FALSIFY-LOGPROBS-QWEN35-4971) and the dense CUDA one (FALSIFY-LOGPROBS-CUDA-4971).'
+    test_harness: 'cargo test -p aprender-serve --lib api::tests::logprobs_4971'
+    expected_output: "test result: ok"
+    if_fails: 'A client that asks for logprobs gets a 200 without them (serde ignores unknown keys, which was main''s behaviour before #4971). The perf041 witness then records no margin and S5 can never pass.'
+  - id: FALSIFY-LOGPROBS-QWEN35-4971
+    name: the_hybrid_serves_chat_logprobs
+    prediction: 'On a Qwen3.5-0.8B Q4_K_M server (APR_QWEN35_MODEL, else ~/models), `logprobs: true, top_logprobs: 2` at temperature 0 answers 200. choices[0].logprobs.content has usage.completion_tokens entries, each with 2 top_logprobs, every logprob <= 0, and the entry logprob equal to top_logprobs[0].logprob. The same request without `logprobs` gives the same text and no `logprobs` key. Streamed, the entries over the chunks number the terminal chunk''s usage.completion_tokens and equal the unstreamed reply''s, token and logprob. With --features cuda on a CUDA host the GPU session gives the same (gpu_logprobs_4971_*). The stop token that ends a turn has no entry, as it has no text. An absent model file prints a SKIP line, which is not_measured and never a pass.'
+    test_harness: 'cargo test -p aprender-serve --lib qwen35_serve_tests::logprobs_4971 -- --nocapture'
+    expected_output: "test result: ok"
+    if_fails: 'The V3 witness model is served by the Qwen3.5 backend, so a 501 or a 200 without entries there leaves the perf041 margin unmeasured on the model it is specified against.'
+  - id: FALSIFY-LOGPROBS-CUDA-4971
+    name: the_dense_cuda_backend_serves_chat_logprobs
+    prediction: 'With --features cuda, tinyllama Q4_K_M on CUDA device 0 behind the router, first on the direct path, then behind a running batch scheduler one request at a time (its m=1 path), then two at once in one batch: `logprobs: true, top_logprobs: 3` at temperature 0 answers 200 with usage.completion_tokens entries, each with 3 top_logprobs, best first, every logprob <= 0, and the entry logprob equal to top_logprobs[0].logprob. The same request without `logprobs` gives the same text and completion_tokens and no `logprobs` key. Streamed, the entries over the chunks number the terminal chunk''s usage.completion_tokens and equal the unstreamed reply''s, token and logprob, and no chunk is an error. On the direct path a traced request (X-Trace-Level) for logprobs answers 501 naming `CUDA (traced)`. Behind a scheduler that holds a request until a second fills a batch of two, the scheduler''s in-flight peak is 2, so the pair decoded as one m=2 batch. Of a pair where one asks for logprobs and one does not, the one asking gets the same well-formed entries, and both get the same text and completion_tokens, with no `logprobs` key on the one not asking. Of a pair that both ask, one streamed, the streamed entries equal the unstreamed ones and the first pair''s, token and logprob. On the iteration scheduler''s batched path, driven directly with slots for 3, two prompts set up together (one asking for 3 top logprobs, one not) and two waiting: every turn runs to its max_tokens, the waiting queue ends empty, and each turn that asked, whether set up, joined into a free slot or recycled into a finished one, gets one record per token, its steps counted from 0, each naming the token sent, 3 top logprobs best first, every logprob <= 0, and the chosen logprob equal to the best one. A token that arrives without its record still never answers 200: it ends the stream with an error chunk and fails an unstreamed reply with 500 (chat_logprobs tests). No device or no model file prints a SKIP line, which is not_measured and never a pass.'
+    test_harness: 'cargo test -p aprender-serve --features cuda --lib api::tests::logprobs_cuda_4971 -- --nocapture'
+    expected_output: "test result: ok"
+    if_fails: 'apr serve on a CUDA host routes dense chat through this backend, so a 501 or a 200 without entries there leaves the perf041 margin unmeasured on the GPU leg.'
+  - id: FALSIFY-LOGPROBS-SERVERS-4971
+    name: chat_routes_outside_the_router_refuse_logprobs_by_name
+    prediction: 'The apr serve chat routes that realizar''s router does not mount compute no logprobs, so they refuse them the way the router does, with no model loaded. On the APR CPU fallback router and the SafeTensors F32 inference router, `logprobs: true` (alone, or with `top_logprobs: 3`) is 501 and names `APR CPU (AprTransformer)` or `SafeTensors F32 CPU`; `top_logprobs: 3` without `logprobs: true` is 400; `top_logprobs: 21` is 422 and names top_logprobs; `logprobs: "yes"` is 422; and `logprobs: false` is not refused for logprobs. The WGPU route calls the same check (realizar::api::json_logprobs_refusal, named `WGPU`); it has no router test here because its state needs a GPU device, so its falsifier is that check''s case table (api::chat_logprobs tests) and a build with --features wgpu. banco is FALSIFY-LOGPROBS-BANCO-4971.'
+    test_harness: 'cargo test -p apr-cli --lib tests_logprobs_4971'
+    expected_output: "test result: ok"
+    if_fails: 'A client that asks one of these routes for logprobs gets a 200 without them (each parses the body as untyped JSON and ignores keys it does not read), which ASOC-INV-021 forbids.'
+  - id: FALSIFY-LOGPROBS-BANCO-4971
+    name: banco_chat_refuses_logprobs_by_name
+    prediction: 'On banco''s default router with no model loaded, POST /api/v1/chat/completions with `logprobs: true` (alone, or with `top_logprobs: 2`) is 501 and names the banco chat backend; `top_logprobs: 2` alone is 400; `top_logprobs: 21` is 422 and names top_logprobs; `logprobs: false` is served (200, chat.completion).'
+    test_harness: 'cargo test -p aprender-orchestrate --features banco --lib refuse_logprobs'
+    expected_output: "test result: ok"
+    if_fails: 'banco''s request type dropped the two fields as unknown keys, so a client asking for logprobs got a dry-run or model reply without them, a 200 that ASOC-INV-021 forbids.'
+  - id: FALSIFY-WITNESS-MARGIN-4971
+    name: the_pp26_witness_carries_the_top2_margin_it_was_given
+    prediction: 'BatchInvarianceWitness has an optional top2_margin_at_divergence (master §12 row 22). A recorded margin survives the receipt round trip; a witness without one serialises byte-identical to before (the field stays off the wire); a non-number there does not deserialise; and apr test llm bench --witness-json reads it from the perf041 band, refusing a value that is not a number or null by name.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::witness && cargo test -p apr-cli --lib test_llm_band'
+    expected_output: "test result: ok"
+    if_fails: 'The margin the logprobs routes now put on the wire is dropped between the probe and the receipt, so a near-tie flip at c > 1 still cannot be told from a wrong-KV divergence.'
+  - id: FALSIFY-V3-SHAPE-CHECK-4971
+    name: a_v3_receipt_check_refuses_every_planted_shape_defect
+    prediction: 'perf_gate::v3_shape::check_v3_shape is ADMISSIBLE (exit 0) only for a perf041 witness of the blessed Qwen3.5-4B (path prefix, sha256) with identity fields, bands c in {1,4,8,16} each once with m_formed == c and perf041 PASS, and agreement with m=1 to declared_min unless a recorded top-2 margin m with 0 <= m < 0.05 explains the divergence. Its in-code case table (the 19 object rows of the spec branch cases.json plus the F2, F3, F6, prefix-not-substring, boundary and negative-margin rows) gets each exit and exact reason; an empty, blank, malformed, non-object or missing witness is RED (exit 2), never NOT ADMISSIBLE (F1). This is not a gate: no merge, queue or release job runs it.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::v3_shape'
+    expected_output: "test result: ok"
+    if_fails: 'A witness that served a shape other than the one advertised (c=16 forming m=14), measured another model, or diverged from m=1 with no near-tie to explain it is read as a V3 receipt; or an unreadable witness reads as a verdict about the server.'
+  - id: FALSIFY-V3-SHAPE-CLI-4971
+    name: apr_test_llm_shape_check_exits_by_the_verdict
+    prediction: 'apr test llm shape-check <witness.json> runs perf_gate::v3_shape on the file and maps its verdict onto apr''s exit codes: ADMISSIBLE exits 0; NOT ADMISSIBLE prints every reason and exits 5 (ValidationFailed); a missing path or a directory exits 3; an empty, blank, malformed or bandless witness exits 4 (InvalidInput, naming the witness and never an APR format) and never 5 (F1 across the mapping). #4971''s falsifier rows hold through the CLI: one band at m_formed = c - 1, or one divergence before declared_min with no margin, exits 5 and names the band; the same divergence with a recorded margin of 0.01 exits 0. This is not a gate: no merge, queue or release job runs it.'
+    test_harness: 'cargo test -p apr-cli --lib test_llm_shape'
+    expected_output: "test result: ok"
+    if_fails: 'The Rust check exists but #4971''s "exits non-zero" has no front door: an operator runs the Python reference by hand, or a NOT ADMISSIBLE witness and an unreadable one leave the same exit code.'
+  - id: FALSIFY-WITNESS-LOGPROBS-MARGIN-4971
+    name: the_witness_margin_is_computed_from_the_m1_logprob_entries
+    prediction: 'perf_gate::margin turns OpenAI logprob entries into the PP-26 witness. Entries are the same token when text and bytes agree, interned across every stream before compare_batch, so divergence_at is the one the id path gives. The top-2 margin is the gap between the two largest finite logprobs of the m=1 entry at divergence_at, which equals the logit gap at temperature 0 (shared log-sum-exp); it is read from m=1, never from a batch slot, and does not depend on the listed order. A step with fewer than two finite logprobs (null, -inf, NaN, truncated or empty top_logprobs) records no margin, never 0. Identical streams record no divergence and no margin. The served wire shapes (realizar, OpenAI with bytes null, a null logprob, llama.cpp with id) parse. The llm client puts logprobs and top_logprobs on the socket only when the request sets them and collects every streamed entry in order, including a null on a chunk and an entry held to the terminal chunk.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::margin && cargo test -p aprender-test-lib --features llm --lib -- llm::client::tests::a_logprobs_request llm::client::tests::a_request_without_logprobs'
+    expected_output: "test result: ok"
+    if_fails: 'A V3 witness can only carry a margin someone typed in: a near-tie flip at c > 1 reads as NOT ADMISSIBLE, or a margin from the wrong stream or step (or a 0.0 for a step with no runner-up) makes a wrong-KV divergence read as a near-tie.'
+  - id: FALSIFY-PERF041-PORT-4971
+    name: the_perf041_probe_decides_in_rust_as_the_script_does
+    prediction: 'perf_gate::parity ports the perf041 probe''s judgement, in Rust. The m=1 reference is stable only when its two decodes agree to declared_min; a c > 1 band whose log shows no batch of m >= 2 formed since the band''s offset is UNMEASURABLE, never PASS; a slot whose completion_tokens or logprob entries differ from n_predict makes its band UNMEASURABLE by name; a band FAILs when its slots part before declared_min or one emits a token max_constant_run times; and a run with no measured c > 1 band, or an unstable reference, is UNMEASURABLE. Each band records the m=1 reference''s top-2 margin at its divergence, so a clean run writes a witness the V3 shape check admits and a near-tie flip carries its margin. ProbeMatrix reads declared_min, max_constant_run, n_predict, the sampler and the ladder from perf-matrix.yaml and refuses, by name, a missing key, an empty ladder or a 0 in it, max_constant_run 0, and declared_min above n_predict. llm::parity fires the requests against a canned SSE server: identical streams with batches formed PASS every band, a box that never batches is UNMEASURABLE, frozen slots FAIL, a flip at a near-tie PASSes with its margin, and an untrustworthy reference ends the run with no bands. This is not a gate: no merge, queue or release job runs it.'
+    test_harness: 'cargo test -p aprender-test-lib --lib perf_gate::parity && cargo test -p aprender-test-lib --features llm --lib llm::parity'
+    expected_output: "test result: ok"
+    if_fails: 'The V3 witness can only come from the Python script, or the Rust probe reads a box that never batched, or a reference that disagrees with itself, as batch-invariant.'
+  - id: FALSIFY-PERF041-CLI-4971
+    name: apr_test_llm_parity_exits_by_the_verdict_and_writes_the_witness
+    prediction: 'apr test llm parity runs the Rust perf041 probe against --url, reading --server-log, configured by the compiled-in perf-matrix.yaml (--ladder replaces only the ladder; 0 is refused by clap). It prints the verdict, the reference and one line per band, writes the witness to --witness before exiting (not --json, which is apr''s global flag: a parity arg with that id panicked on every run, and a parse through the whole apr parser holds the two apart), and exits 0 on PASS, 5 (ValidationFailed) on FAIL and 8 (InferenceFailed) on UNMEASURABLE, naming the first reason; FAIL and UNMEASURABLE never share a code. A server log, binary or model that is not a file exits 3 before any request. The witness records the model by file name only beside its sha256, the binary''s sha256, the host (flag, PERF041_HOST, then this host, else null) and the commit (flag, then PERF041_COMMIT, else null), and reads back whole. This is not a gate: no merge, queue or release job runs it.'
+    test_harness: 'cargo test -p apr-cli --lib test_llm_parity'
+    expected_output: "test result: ok"
+    if_fails: 'The Rust probe has no front door, so the V3 witness is still produced by the Python script by hand; or a FAIL and an UNMEASURABLE leave the same exit code; or a witness records a host path or a made-up host.'
