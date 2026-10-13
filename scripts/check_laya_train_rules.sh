@@ -357,9 +357,12 @@ st_shallow() {
         git -C "$ST" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit "laya-train/$name-pr" >/dev/null
     fi
     sc="$ST/shallow-$name"
-    git clone -q --no-local --depth 1 --branch "laya-train/$name-main" "$ST" "$sc" 2>/dev/null
+    # A runner whose git speaks protocol v0 refuses to fetch an unadvertised sha (the
+    # first parent is not a branch tip); allow it on the throwaway source repo.
+    git -C "$ST" config uploadpack.allowReachableSHA1InWant true
+    git clone -q --no-local --depth 1 --branch "laya-train/$name-main" "$ST" "$sc"
     p1=$(git -C "$sc" cat-file -p HEAD | awk '/^parent /{print $2; exit}')
-    git -C "$sc" fetch -q --depth 1 origin "$p1" 2>/dev/null
+    git -C "$sc" fetch -q --depth 1 origin "$p1"
     out=$("$SELF" --repo "$sc" --base "$p1" --head HEAD) || rc=$?
     got=$(printf '%s\n' "$out" | awk '$1 == "H1" {print $2; exit}')
     if [ "$got" = "$expect" ] && printf '%s\n' "$out" | awk '/diff first-parent/ {f=1} END {exit !f}'; then
