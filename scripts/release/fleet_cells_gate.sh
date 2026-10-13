@@ -16,7 +16,9 @@
 #
 # WAIVERS are recorded in git, dated, and expire: scripts/release/fleet-waivers.tsv
 #   <host|*>\t<binary|*>\t<until YYYY-MM-DD>\t<reason>
-# `*\t*` is the only key that covers MISSING or STALE cells -- no data is not green data.
+# `*\t*` is the only key that covers MISSING or STALE cells -- no data is not green data -- and it
+# covers nothing else: a RED cell needs a key naming its host or its binary (#5034). An `until`
+# that is not a YYYY-MM-DD date is no waiver at all.
 #
 # Refuses: any unwaived RED cell · a state other than GREEN/RED · no cells · no `# measured`
 # stamp · cells older than FLEET_CELLS_MAX_AGE_H (default 6) hours · a --now that is not a whole
@@ -91,14 +93,18 @@ fleet_cells_verdict() {
     fi
     CELLS=$1 WAIVERS=$2 STAMP=$stamp MAX_AGE_H=${FLEET_CELLS_MAX_AGE_H:-6} LC_ALL=C \
         awk -v now="$3" -v measured="$measured" -v today="$today" "$FLEET_CELLS_AWK_LIB"'
-    # waived(host, binary): host "*" asks for the `*\t*` key only (missing/stale cells)
+    # waived(host, binary): host "*" asks for the `*\t*` key only (missing/stale cells), and
+    # `*\t*` answers nothing else: it waives data faults, never a RED cell (#5034). An `until`
+    # that is not a YYYY-MM-DD date is no waiver -- compared as a string, "never" outlived every day.
     function waived(host, binary,    nw, w, i, f, hit) {
         nw = split(pylines(ENVIRON["WAIVERS"]), w, "\n")
         for (i = 1; i <= nw; i++) {
             if (pystrip(w[i]) == "" || substr(pystrip(w[i]), 1, 1) == "#") continue
             if (split(w[i], f, "\t") < 4 || pystrip(f[4]) == "") continue
+            # a YYYY-MM-DD until, or no waiver (awk runs under LC_ALL=C: [0-9] is ASCII only)
+            if (f[3] !~ /^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/) continue
             if (host == "*") hit = (f[1] == "*" && f[2] == "*")
-            else hit = (((f[1] "") == (host "") || f[1] == "*") && ((f[2] "") == (binary "") || f[2] == "*"))
+            else hit = !(f[1] == "*" && f[2] == "*") && (((f[1] "") == (host "") || f[1] == "*") && ((f[2] "") == (binary "") || f[2] == "*"))
             if (hit && (f[3] "") >= today) return f[1] "/" f[2] " until " f[3] ": " f[4]
         }
         return ""
@@ -183,6 +189,12 @@ self_test() {
     row 0 'only *\t* waives missing cells' '' '*\t*\t2026-09-24\tC3 not publishing yet, cop 2026-09-24\n'
     row 1 'a host waiver does not waive missing cells' '' 'intel\t*\t2026-09-30\tx\n'
     row 1 'a waiver for another binary covers nothing' "$S\nintel\tapr\tRED\told\n" '*\tpv\t2026-09-30\tx\n'
+    # #5034: `*\t*` waives data faults only, and an `until` that is not a date never covers.
+    row 1 'the *\t* waiver does not waive a RED cell' "$S\nintel\tapr\tRED\told\n" '*\t*\t2026-09-30\tx\n'
+    row 0 'a binary-wide waiver still covers that binary on any host' "$S\nintel\tapr\tRED\told\n" '*\tapr\t2026-09-30\tx\n'
+    row 1 'an until that is not a date covers nothing (it never expired as a string)' "$S\nintel\tapr\tRED\told\n" 'intel\tapr\tnever\tx\n'
+    row 1 'an until with no month 13 covers nothing' "$S\nintel\tapr\tRED\told\n" 'intel\tapr\t2026-13-01\tx\n'
+    row 1 'an until that is not a date does not waive missing cells' '' '*\t*\tforever\tx\n'
     # #4350: the cases where a naive awk port cut and the python judge refused.
     row 1 'a CRLF waiver with no reason is not recorded' "$S\nh1\tapr\tRED\told\n" 'h1\tapr\t2026-12-31\t\r\n'
     row 1 'a no-break-space reason is no reason' "$S\nh1\tapr\tRED\told\n" 'h1\tapr\t2026-12-31\t\0302\0240\n'
@@ -215,8 +227,39 @@ self_test() {
     # 1788000000 in Arabic-Indic digits, no 9 among them: [0-9] matched it under en_US.UTF-8
     now=$(printf '\331\241\331\247\331\250\331\250\331\240\331\240\331\240\331\240\331\240\331\240') \
         row 1 'a clock in digits that are not ASCII refuses' '# measured 2026-08-01T00:00:00Z\nh2\tapr\tGREEN\t\n'
-    # MUTANTS: the refusal made a no-op must let the RED cell through.
+    # #5064 DAY GUARDS: a stamp before 1970 converts to a negative epoch, which is no stamp. Without
+    # that guard the cells read as measured a second ago and the cut goes ahead.
+    now=0 row 1 'a stamp before 1970 is no stamp, not a fresh one' '# measured 1969-12-31T23:59:59Z\nh2\tapr\tGREEN\t\n'
+    # #5064 DEL (127): a state carrying DEL refuses, and the refusal shows it escaped, never raw.
+    row 1 'a state with a DEL byte is neither GREEN nor RED' "$S\nh2\tapr\tGREEN\0177\t\n"
+    got=$(fleet_cells_verdict "$(printf '%b' "$S\nh2\tapr\tGREEN\0177\t\n")" '' "$now")
+    case "$got" in
+        *"'GREEN\\x7f'"*) echo "  ok   the DEL byte is printed as \\x7f" ;;
+        *) printf '  FAIL the DEL byte is not printed as \\x7f: %q\n' "$got"; fail=1 ;;
+    esac
     d=$(mktemp -d) || return 2
+    # #5064 LOCALE: under a UTF-8 locale bash's [0-9] also matches other scripts' digits, so no `=~`
+    # in this file may use a range. The scan must find one planted in a copy of this file.
+    no_range() { ! grep -nE '=~.*\[0-9\]' "$1" | grep -vE '^[0-9]+:[[:space:]]*#|no_range|grep -nE|planted-range'; }
+    if no_range "${BASH_SOURCE[0]}"; then echo "  ok   no =~ in this file uses a [0-9] range"
+    else echo "  FAIL a =~ in this file uses a [0-9] range:"; grep -nE '=~.*\[0-9\]' "${BASH_SOURCE[0]}" | grep -vE 'no_range|grep -nE|planted-range'; fail=1; fi
+    sed '0,/\[\[ \$today =~ ^\[0123456789\]{4}/s//[[ $today =~ ^[0-9]{4}/' "${BASH_SOURCE[0]}" > "$d/range.sh"  # planted-range
+    if cmp -s "$d/range.sh" "${BASH_SOURCE[0]}"; then echo "  FAIL planted [0-9] not built: the anchor moved"; fail=1
+    elif no_range "$d/range.sh" >/dev/null; then echo "  FAIL the scan missed a planted [0-9] range"; fail=1
+    else echo "  ok   the scan finds a planted [0-9] range"; fi
+    # #5064 DAY GUARDS: an empty today would let every dated waiver cover, so it is rc 2, and the
+    # guard that says so must be load-bearing: drop it and the same input cuts.
+    sed 's/^    printf .%04d-%02d-%02d\\n. /    printf "" /' "${BASH_SOURCE[0]}" > "$d/noday.sh"
+    sed 's/^    \[\[ \$today =~ .* || return 2$/    :/' "$d/noday.sh" > "$d/noguard.sh"
+    for m in noday:2 noguard:0; do
+        if cmp -s "$d/${m%%:*}.sh" "${BASH_SOURCE[0]}" || { [ "${m%%:*}" = noguard ] && cmp -s "$d/noguard.sh" "$d/noday.sh"; }; then
+            echo "  FAIL day-guard mutant ${m%%:*} not built: the anchor moved"; fail=1; continue
+        fi
+        bash "$d/${m%%:*}.sh" --cells <(printf '%b' "$S\nintel\tapr\tRED\told\n") --waivers <(printf '%b' 'intel\tapr\t2026-09-24\tx\n') --now "$now" >/dev/null 2>&1; rc=$?
+        if [ "$rc" = "${m#*:}" ]; then echo "  ok   day-guard mutant ${m%%:*} -> rc $rc"
+        else echo "  FAIL day-guard mutant ${m%%:*}: want rc ${m#*:}, got $rc"; fail=1; fi
+    done
+    # MUTANTS: the refusal made a no-op must let the RED cell through.
     for m in 's/                else add(c\[1\] "\/" c\[2\] " RED: "/                else ("\/" " RED: "/' 's/^            exit 1$/            exit 0/'; do
         mut=$d/m.sh; sed "$m" "${BASH_SOURCE[0]}" > "$mut"
         if cmp -s "$mut" "${BASH_SOURCE[0]}"; then echo "  FAIL mutant '$m' not built: the anchor moved"; fail=1; continue; fi
@@ -224,6 +267,16 @@ self_test() {
         if [ "$rc" = 0 ]; then echo "  ok   mutant lets the RED cell through: the refusal is load-bearing"
         else echo "  FAIL mutant still refuses (rc $rc): $got"; fail=1; fi
     done
+    # #5034 MUTANTS: drop either new check and its waiver must cover the RED cell again.
+    m5034() {  # m5034 <sed expr> <waiver line>
+        mut=$d/m5034.sh; sed "$1" "${BASH_SOURCE[0]}" > "$mut"
+        if cmp -s "$mut" "${BASH_SOURCE[0]}"; then echo "  FAIL mutant '$1' not built: the anchor moved"; fail=1; return; fi
+        got=$(bash -c ". '$mut' --source-only; fleet_cells_verdict \"\$(printf '%b' '$S\nintel\tapr\tRED\told\n')\" \"\$(printf '%b' '$2')\" $now" 2>&1); rc=$?
+        if [ "$rc" = 0 ]; then echo "  ok   #5034 mutant lets the RED cell through: the check is load-bearing"
+        else echo "  FAIL #5034 mutant still refuses (rc $rc): $got"; fail=1; fi
+    }
+    m5034 's/            else hit = !(f\[1\] == "\*" \&\& f\[2\] == "\*") \&\& /            else hit = /' '*\t*\t2026-09-30\tx\n'
+    m5034 's/^            if (f\[3\] !~ .*) continue$/            if (0) continue/' 'intel\tapr\tnever\tx\n'
     # WIRING: rc_cut.sh runs this gate before it writes the tag, and dies on a refusal.
     local cut; cut="$(dirname -- "${BASH_SOURCE[0]}")/rc_cut.sh"
     local call tagline

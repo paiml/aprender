@@ -405,6 +405,7 @@ self_test() {
     local _ONT_MEASURE_SETS=0
     t="$(mktemp -d)"
     case "$t" in /tmp/*|/var/tmp/*|"${TMPDIR:-/nonexistent}"/*) : ;; *) printf 'NO-GO: odd mktemp path %s\n' "$t" >&2; return 2 ;; esac
+    cd -- "$t" || return 2; export GIT_CEILING_DIRECTORIES="${t%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
     row() { # row NAME GOT WANT
         if [ "$2" = "$3" ]; then pass=$((pass+1)); printf '  ok    %-44s %s\n' "$1" "$3"
         else fail=$((fail+1)); printf '  FAIL  %-44s want=%s got=%s\n' "$1" "$3" "$2"; fi

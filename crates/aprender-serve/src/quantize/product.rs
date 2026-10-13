@@ -106,7 +106,7 @@ impl InterleavedQ4K {
         }
 
         // Use SIMD if available
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
             // SAFETY: Memory safety ensured by bounds checking and alignment
             return unsafe { self.dot_avx2(activations) };
         }
@@ -357,14 +357,14 @@ pub(crate) fn fused_q4_0_q8_0_dot_simd(
     {
         // Try AVX-512 VNNI first (2x vector width + native u8×i8 MAC)
         // ~2x faster than AVX2 path on supported CPUs (Zen4+, Sapphire Rapids+)
-        if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+        if crate::isa::cpu_feature!("avx512vnni") && crate::isa::cpu_feature!("avx512bw") {
             // SAFETY: AVX-512 VNNI verified at runtime
             return unsafe {
                 fused_q4_0_q8_0_dot_avx512_vnni(q4_data, q8_scales, q8_quants, in_dim)
             };
         }
 
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             // Use 4-block unrolling for larger vectors (8+ blocks = 256+ elements)
             // 4-block provides ~1.3x speedup over 2-block due to better ILP
             if in_dim >= 256 {

@@ -455,7 +455,6 @@ crates/aprender-serve/src/cuda/executor/layers/rope.rs::workspace_qkv_rope_phase
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_indexed.rs::transformer_layer_indexed 11 30
 crates/aprender-serve/src/gguf/cuda/clone_layer_weights.rs::forward_single_full_cuda_with_cache 16 31
 crates/aprender-serve/src/gguf/cuda/cuda.rs::forward_single_cuda_with_cache 22 51
-crates/aprender-serve/src/gguf/cuda/cuda_layer_weights.rs::forward_single_full_cuda_with_cache 16 31
 crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs::forward_qwen3_moe_cuda 27 60
 crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda_traced.rs::forward_qwen3_moe_cuda_traced_with_plan 34 76
 crates/aprender-serve/src/gguf/cuda/speculative.rs::generate_speculative_cuda 20 60
@@ -511,7 +510,6 @@ crates/aprender-serve/src/layers/errors.rs::flash_forward 25 60
 crates/aprender-serve/src/layers/errors.rs::flash_forward_v2 21 41
 crates/aprender-serve/src/layers/errors.rs::forward 17 28
 crates/aprender-serve/src/layers/fused_qkv_attention.rs::forward 19 51
-crates/aprender-serve/src/layers/multi_head_attention.rs::forward 19 51
 crates/aprender-serve/src/layers/product.rs::flash_forward_parallel 18 30
 crates/aprender-serve/src/layers/sliding_window.rs::forward 19 36
 crates/aprender-serve/src/layers/sliding_window.rs::forward_with_mask 20 39

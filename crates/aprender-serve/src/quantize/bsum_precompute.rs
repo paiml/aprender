@@ -225,7 +225,7 @@ pub fn fused_q4k_q8k_dot_with_bsums_simd(
 ) -> Result<f32> {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             // SAFETY: AVX2 detected, bounds checked inside function
             return unsafe {
                 fused_q4k_q8k_dot_with_bsums_avx2(q4k_data, q8k_scales, q8k_quants, bsums)

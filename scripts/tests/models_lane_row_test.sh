@@ -5,7 +5,7 @@
 #   lane's producer workflow on main's head C. This is the models lane's row in the train's lane table. The test pins
 #   it byte for byte:
 #
-#     models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^schedule$;^models$
+#     models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^(schedule|workflow_dispatch)$;^models$
 #
 #   The producer, models-nightly.yml, relays the GPU-host bundle for C in two scheduled slots a night. Its job
 #   `models` succeeds on a green bundle, fails on a red one, and is skipped when nothing was measured. Its job
@@ -20,9 +20,9 @@
 #     the relay failed (models-evidence failure, models      not_measured, never red: ^models$ does not match the
 #       skipped)                                             relay job
 #     one slot measured, the other skipped (either order)    green, from the slot that measured
-#     a planted workflow_dispatch red, newer than the        green: a dispatch is not a night, so a plant never
-#       scheduled green                                      reaches the verdict
-#     only a workflow_dispatch run on C                      not_measured
+#     a planted workflow_dispatch red, newer than the        red, that run: a dispatched run on main counts as the
+#       scheduled green                                      night (#5142), so the newest run on C is read
+#     only a workflow_dispatch run on C                      green, that run (#5142)
 #     the scheduled run is on another commit                 not_measured
 #     green only at attempt 2                                red (the train's retry rule)
 #   The table also checks that the producer is in this tree: the workflow is there, is scheduled, and has a job
@@ -38,7 +38,7 @@
 set -uo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$HERE/../.." && pwd)"
-ROW='models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^schedule$;^models$'
+ROW='models;verdict;models_t1.sh GPU-host ladder legs, preflight R7;.github/workflows/models-nightly.yml;^(schedule|workflow_dispatch)$;^models$'
 WF=.github/workflows/models-nightly.yml
 C=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 X=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -131,9 +131,9 @@ cases() {
     d="$base/c7"; fresh "$d"
     run "$d" 501 schedule 2026-10-05T23:40:00Z "$C" SUCCESS SUCCESS
     run "$d" 503 workflow_dispatch 2026-10-06T03:10:00Z "$C" SUCCESS FAILURE
-    row planted_dispatch_never_reaches_verdict "lane=green run=501 " "lane=red" -- lane "$train" "$d"
+    row newer_dispatch_red_is_the_night "lane=red run=503 " "lane=green" -- lane "$train" "$d"
     d="$base/c8"; fresh "$d"; run "$d" 503 workflow_dispatch 2026-10-06T03:10:00Z "$C" SUCCESS SUCCESS
-    row dispatch_alone_is_not_measured "lane=not_measured " "lane=green" -- lane "$train" "$d"
+    row dispatch_alone_is_the_night "lane=green run=503 " "lane=not_measured" -- lane "$train" "$d"
     d="$base/c9"; fresh "$d"; run "$d" 501 schedule 2026-10-05T23:40:00Z "$X" SUCCESS SUCCESS
     row other_commit_is_not_measured "newest run 501 on bbbbbbbbbb" "lane=green" -- lane "$train" "$d"
     d="$base/c10"; fresh "$d"; run "$d" 501 schedule 2026-10-05T23:40:00Z "$C" SUCCESS SUCCESS 2
@@ -157,7 +157,7 @@ mutants() {
         else printf '  BROKE %-36s survived\n' "$name"; show "${mt%/*}.log"; fi
     done <<'EOF'
 m1_job_pattern_unanchored	s/^(models;.*;)\^models\$$/\1^models/
-m2_dispatch_counts_as_a_night	s/^(models;.*;)\^schedule\$(;\^models\$)$/\1^(schedule|workflow_dispatch)$\2/
+m2_dispatch_not_a_night	s/^(models;.*;)\^\(schedule\|workflow_dispatch\)\$(;\^models\$)$/\1^schedule$\2/
 m3_wrong_producer	s#^(models;[^;]*;[^;]*;)[^;]*#\1.github/workflows/nightly.yml#
 m4_info_lane_does_not_vote	s/^models;verdict;/models;info;/
 m5_no_producer	s/^(models;verdict;[^;]*;).*$/\1-;-;-/

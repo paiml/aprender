@@ -316,10 +316,27 @@ impl OwnedQuantizedModel {
         }
 
         // Residual
-        for i in 0..hidden_dim {
-            scratch.hidden[i] += scratch.attn_proj[i];
-        }
+        Self::residual_add_into(&mut scratch.hidden[..hidden_dim], &scratch.attn_proj[..hidden_dim]);
         Ok(())
+    }
+
+    /// Residual connection: `hidden[i] += delta[i]`, the registry's `cpu.residual_add.f32`.
+    ///
+    /// The one CPU residual add of the scratch forward (after attention and after the FFN), named
+    /// so its parity receipt measures exactly the code the forward runs.
+    pub(crate) fn residual_add_into(hidden: &mut [f32], delta: &[f32]) {
+        for (h, d) in hidden.iter_mut().zip(delta) {
+            *h += *d;
+        }
+    }
+
+    /// SwiGLU's elementwise stage: `gate[i] = silu(gate[i]) * up[i]`, the registry's
+    /// `cpu.swiglu.f32`. The projections either side are the dense kernels' rows, not this one.
+    pub(crate) fn swiglu_gate_into(gate: &mut [f32], up: &[f32]) {
+        ops::silu(gate);
+        for (g, u) in gate.iter_mut().zip(up) {
+            *g *= *u;
+        }
     }
 
     /// SwiGLU FFN path with Q8K acceleration for scratch-buffer forward pass
@@ -352,10 +369,10 @@ impl OwnedQuantizedModel {
         }
 
         // SiLU on gate, multiply with up
-        ops::silu(&mut scratch.ffn_gate[..intermediate_dim]);
-        for i in 0..intermediate_dim {
-            scratch.ffn_gate[i] *= scratch.ffn_up[i];
-        }
+        Self::swiglu_gate_into(
+            &mut scratch.ffn_gate[..intermediate_dim],
+            &scratch.ffn_up[..intermediate_dim],
+        );
 
         // Down projection (Q8K or F32)
         self.scratch_q8k_down_projection(layer_idx, scratch, intermediate_dim, hidden_dim)
@@ -611,9 +628,7 @@ impl OwnedQuantizedModel {
             }
 
             // 2h. FFN residual
-            for i in 0..hidden_dim {
-                scratch.hidden[i] += scratch.ffn_down[i];
-            }
+            Self::residual_add_into(&mut scratch.hidden[..hidden_dim], &scratch.ffn_down[..hidden_dim]);
         }
 
         // 3. Final layer norm -> scratch.normed

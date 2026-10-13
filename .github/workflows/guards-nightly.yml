@@ -164,6 +164,12 @@ jobs:
       # ─────────────────────────────────────────────────────────────────────
       - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
         run: bash scripts/ci_test_tier.sh --self-test
+      - name: Fleet-cells gate case table and mutants (#5064, LAB)
+        run: setsid --wait bash scripts/release/fleet_cells_gate.sh --self-test
+      - name: compute row zero-tests case table and mutants (#5048, LAB)
+        run: setsid --wait bash scripts/tests/compute_row_zero_tests_test.sh --mutants
+      - name: shared-checkout shallow lock case table and mutants (#5025, LAB)
+        run: setsid --wait bash scripts/shared_checkout_no_shallow.sh --mutants
       - name: aprender-core builds for wasm32
         run: setsid --wait bash scripts/check_wasm32_core_builds.sh
       - name: No test may assert about the fd 0 it inherited

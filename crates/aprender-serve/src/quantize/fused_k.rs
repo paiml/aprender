@@ -198,7 +198,7 @@ pub fn fused_q4k_dot_simd(q4k_data: &[u8], activations: &[f32]) -> Result<f32> {
         // PAR-126: AVX-512 VNNI requires pre-quantized activations (Q4K×Q8K format)
         // For now, use AVX2 which works with f32 activations directly.
         // Future optimization: pre-quantize activations to Q8_0 format once per matmul.
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
             // SAFETY: We've verified AVX2 and FMA are available at runtime
             // The unsafe function performs the same logical operation as scalar
             // SAFETY: Memory safety ensured by bounds checking and alignment
