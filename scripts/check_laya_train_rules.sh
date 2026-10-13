@@ -124,7 +124,8 @@ rule_h5() {
         line H5 n/a "$NEW_CRATE absent on head" "crate looked up at $HEAD_REF"
         return
     fi
-    engine=$(g show "$BASE:$LT1_RECEIPT" 2>/dev/null \
+    # An absent receipt is an empty engine, not a pipefail exit.
+    engine=$({ g show "$BASE:$LT1_RECEIPT" 2>/dev/null || true; } \
         | awk -F'"' '/"engine"[[:space:]]*:/ {print $4; exit}')
     case "$engine" in
         core) other='aprender_train::autograd|entrenar::autograd|^[[:space:]]*aprender-train[[:space:]]*=|package[[:space:]]*=[[:space:]]*"aprender-train"' ;;
