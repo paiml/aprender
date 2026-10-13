@@ -246,6 +246,35 @@ rule_h15() {
     fi
 }
 
+# The rules are this spec's, so they judge only a laya-train diff: a head on a
+# laya-train/ branch (the ref named by --head, or GITHUB_HEAD_REF in a pull request
+# run), or a diff touching one of the spec's own paths. guard_tree runs this checker
+# bare on every pull request; any other diff gets one SCOPE n/a line and passes.
+SCOPE_RE='^crates/aprender-decide-train/|^evidence/laya-train/|^scripts/laya_train/|^scripts/check_laya_train_rules\.sh$|^crates/aprender-train/examples/laya_engine_probe|^docs/specifications/APR-LAYA-TRAIN-001'
+
+in_scope() {
+    local b n hit
+    b=$(g rev-parse -q --symbolic-full-name "$HEAD_REF" 2>/dev/null || true)
+    b=${b#refs/heads/}
+    b=${b#refs/remotes/origin/}
+    if [[ "$b" == laya-train/* ]]; then
+        line SCOPE in "branch $b" "head ref read"
+        return 0
+    fi
+    if [[ "${GITHUB_HEAD_REF:-}" == laya-train/* ]]; then
+        line SCOPE in "branch $GITHUB_HEAD_REF" "GITHUB_HEAD_REF read"
+        return 0
+    fi
+    n=$(changed_names | awk 'END {print NR}')
+    hit=$(changed_names | awk -v re="$SCOPE_RE" '$0 ~ re {print; exit}')
+    if [ -n "$hit" ]; then
+        line SCOPE in "path $hit" "$n changed paths scanned"
+        return 0
+    fi
+    line SCOPE n/a "not a laya-train diff" "branch ${b:-detached}, GITHUB_HEAD_REF ${GITHUB_HEAD_REF:-unset}, $n changed paths scanned, none under the spec's paths"
+    return 1
+}
+
 run_rules() {
     g rev-parse -q --verify "$BASE^{commit}" >/dev/null || { echo "base $BASE not found" >&2; exit 2; }
     g rev-parse -q --verify "$HEAD_REF^{commit}" >/dev/null || { echo "head $HEAD_REF not found" >&2; exit 2; }
@@ -269,6 +298,10 @@ run_rules() {
     fi
     printf 'laya-train rules | base %s | head %s | diff %s\n' \
         "$(g rev-parse --short "$BASE")" "$(g rev-parse --short "$HEAD_REF")" "$how"
+    if ! in_scope; then
+        echo "RESULT PASS"
+        return 0
+    fi
     rule_h1; rule_h2; rule_h4; rule_h5; rule_h10; rule_h11; rule_h12; rule_h15
     if [ "$RED" -eq 0 ]; then echo "RESULT PASS"; else echo "RESULT RED"; fi
     return "$RED"
@@ -280,16 +313,18 @@ st_commit() { git -C "$ST" -c core.hooksPath=/dev/null -c user.name=t -c user.em
 
 st_case() {
     # st_case <name> <expect: PASS|RED> <rule> <setup...>: setup runs in $ST on a fresh branch.
-    local name=$1 expect=$2 rule=$3 out rc=0
+    # The branch is laya-train/<name>, in scope by its name, unless ST_PREFIX says otherwise.
+    local name=$1 expect=$2 rule=$3 out rc=0 br
     shift 3
-    git -C "$ST" checkout -q -B "$name" base
+    br="${ST_PREFIX:-laya-train/}$name"
+    git -C "$ST" checkout -q -B "$br" base
     (cd "$ST" && "$@")
     git -C "$ST" add -A
     st_commit "$name"
-    out=$("$SELF" --repo "$ST" --base base --head "$name") || rc=$?
+    out=$("$SELF" --repo "$ST" --base base --head "$br") || rc=$?
     local got
     got=$(printf '%s\n' "$out" | awk -v r="$rule" '$1 == r {print $2; exit}')
-    if [ "$got" = "$expect" ] && { [ "$expect" = RED ] && [ "$rc" -eq 1 ] || [ "$expect" != RED ]; }; then
+    if [ "${got:-none}" = "$expect" ] && { [ "$expect" = RED ] && [ "$rc" -eq 1 ] || [ "$expect" != RED ]; }; then
         printf 'ok   %-22s %s %s\n' "$name" "$rule" "$got"
     else
         printf 'FAIL %-22s %s want %s got %s rc=%s\n%s\n' "$name" "$rule" "$expect" "${got:-none}" "$rc" "$out"
@@ -303,20 +338,20 @@ st_shallow() {
     # run) or a single squashed commit (a merge queue run), and the check runs on a shallow
     # clone of that head.
     local name=$1 expect=$2 how=$3 setup=$4 out rc=0 got p1 sc
-    git -C "$ST" checkout -q -B "$name-pr" base
+    git -C "$ST" checkout -q -B "laya-train/$name-pr" base
     (cd "$ST" && sh -c "$setup")
     git -C "$ST" add -A; st_commit "$name pr"
-    git -C "$ST" checkout -q -B "$name-main" base
+    git -C "$ST" checkout -q -B "laya-train/$name-main" base
     echo "y = 1" >"$ST/main_only.py"
     git -C "$ST" add -A; st_commit "$name main"
     if [ "$how" = squash ]; then
-        git -C "$ST" merge -q --squash "$name-pr" >/dev/null
+        git -C "$ST" merge -q --squash "laya-train/$name-pr" >/dev/null
         st_commit "$name squash"
     else
-        git -C "$ST" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit "$name-pr" >/dev/null
+        git -C "$ST" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit "laya-train/$name-pr" >/dev/null
     fi
     sc="$ST/shallow-$name"
-    git clone -q --no-local --depth 1 --branch "$name-main" "$ST" "$sc" 2>/dev/null
+    git clone -q --no-local --depth 1 --branch "laya-train/$name-main" "$ST" "$sc" 2>/dev/null
     p1=$(git -C "$sc" cat-file -p HEAD | awk '/^parent /{print $2; exit}')
     git -C "$sc" fetch -q --depth 1 origin "$p1" 2>/dev/null
     out=$("$SELF" --repo "$sc" --base "$p1" --head HEAD) || rc=$?
@@ -335,6 +370,8 @@ self_test() {
     ST=$(mktemp -d)
     case "$ST" in /tmp/*|"${TMPDIR:-/tmp}"/*) ;; *) echo "mktemp gave $ST" >&2; exit 2 ;; esac
     trap 'rm -rf -- "${ST:?}"' EXIT
+    # A pull request run's own branch name must not decide a fixture's scope.
+    unset GITHUB_HEAD_REF
     export GIT_CEILING_DIRECTORIES
     GIT_CEILING_DIRECTORIES=$(dirname "$ST")
     ST_FAIL=0
@@ -348,6 +385,15 @@ self_test() {
     git -C "$ST" branch -q -M base
 
     st_case clean PASS H1 sh -c 'echo "# docs" > notes.md'
+
+    # Scope: another branch's diff is not judged (the H11 mutant passes there), but it
+    # is judged once it touches a path of the spec (the H4 mutant reds there).
+    ST_PREFIX=other/
+    st_case scope-out-push-trigger n/a SCOPE sh -c 'mkdir -p .github/workflows && printf "on:\n  push:\njobs: {}\n" > .github/workflows/w.yml'
+    st_case scope-out-no-rules none H11 sh -c 'mkdir -p .github/workflows && printf "on:\n  push:\njobs: {}\n" > .github/workflows/w.yml'
+    st_case scope-in-by-path RED H4 sh -c "mkdir -p $NEW_CRATE && echo '[package]' > $NEW_CRATE/Cargo.toml"
+    st_case scope-in-by-path-line in SCOPE sh -c "mkdir -p $NEW_CRATE && echo '[package]' > $NEW_CRATE/Cargo.toml"
+    ST_PREFIX=
     st_case plant-py-file RED H1 sh -c 'echo "x = 1" > x.py'
     st_case plant-py-line RED H1 sh -c "echo '${PY_WORD}3 run.py' >> scripts/a.sh"
     st_case plant-judge-edit RED H2 sh -c 'echo "// x" >> crates/aprender-decide/src/verify.rs'
