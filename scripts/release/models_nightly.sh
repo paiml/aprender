@@ -456,6 +456,7 @@ self_test() {
     local tmp pass=0 fail=0 d o rc c1 c2 c3 work repo bare clone
     tmp=$(mktemp -d) || exit 3
     tmp=$(cd "$tmp" && pwd -P)
+    cd -- "$tmp" || exit 3; export GIT_CEILING_DIRECTORIES="${tmp%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
     export HOME="$tmp/home" CARGO_HOME="$tmp/cargo"; mkdir -p "$HOME" "$CARGO_HOME"; unset CARGO_REGISTRY_TOKEN GITHUB_OUTPUT
     while read -r o; do unset "$o"; done < <(env | awk -F "=" '$1 ~ /^CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN$/ { print $1 }')
     export GIT_AUTHOR_NAME=st GIT_AUTHOR_EMAIL=st@invalid GIT_COMMITTER_NAME=st GIT_COMMITTER_EMAIL=st@invalid GIT_CONFIG_NOSYSTEM=1

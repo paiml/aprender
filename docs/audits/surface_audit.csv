@@ -288,8 +288,8 @@ apr,apr pv lint,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-
 apr,apr pv migrate,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:481,low
 apr,apr pv mirai,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:333,low
 apr,apr pv obligations,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:409,high
-apr,apr pv ontology export,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:735,high
-apr,apr pv ontology tbox,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:747,high
+apr,apr pv ontology export,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:746,high
+apr,apr pv ontology tbox,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:758,high
 apr,apr pv pipeline,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:397,low
 apr,apr pv probar,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:55,low
 apr,apr pv proof-status,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:194,low
@@ -337,8 +337,8 @@ pv,pv lint,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/s
 pv,pv migrate,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:481,low
 pv,pv mirai,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:333,low
 pv,pv obligations,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:409,high
-pv,pv ontology export,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:735,high
-pv,pv ontology tbox,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:747,high
+pv,pv ontology export,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:746,high
+pv,pv ontology tbox,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:758,high
 pv,pv pipeline,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:397,low
 pv,pv probar,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:55,low
 pv,pv proof-status,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:194,low

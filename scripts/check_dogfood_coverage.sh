@@ -536,6 +536,7 @@ if [ "${1:-}" = "--self-test" ]; then
   TD="$(mktemp -d)"
   [ -n "${TD:-}" ] && [ -d "$TD" ] || fail "could not create a scratch dir"
   trap 'rm -rf "${TD:?}" "${TD:?}-shallow"' EXIT
+  cd -- "$TD" || fail "cannot cd into the scratch dir"; export GIT_CEILING_DIRECTORIES="${TD%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
   FAILED=0
 
   printf 'check_dogfood_coverage.sh --self-test\n'
