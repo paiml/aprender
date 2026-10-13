@@ -351,7 +351,7 @@ st_shallow() {
     echo "y = 1" >"$ST/main_only.py"
     git -C "$ST" add -A; st_commit "$name main"
     if [ "$how" = squash ]; then
-        git -C "$ST" merge -q --squash "laya-train/$name-pr" >/dev/null
+        git -C "$ST" -c user.name=t -c user.email=t@t merge -q --squash "laya-train/$name-pr" >/dev/null
         st_commit "$name squash"
     else
         git -C "$ST" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit "laya-train/$name-pr" >/dev/null
