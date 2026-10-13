@@ -801,9 +801,9 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
     # fail it, or the PR path would keep no gate at all.
     CO="$TD/classify_only"
     if mkdir -p "$CO/scripts" \
-       && cp "$REPO_ROOT"/scripts/*.txt "$0" "$REPO_ROOT/scripts/lib_baseline_ratchet.sh" "$CO/scripts/" \
+       && cp "$REPO_ROOT"/scripts/*.txt "$REPO_ROOT/scripts/${BASH_SOURCE[0]##*/}" "$REPO_ROOT/scripts/lib_baseline_ratchet.sh" "$CO/scripts/" \
        && git -C "$CO" init -q >/dev/null 2>&1; then
-        co_self="$CO/scripts/$(basename "$0")"
+        co_self="$CO/scripts/${BASH_SOURCE[0]##*/}"
         ( GIT_CEILING_DIRECTORIES="$TD" bash "$co_self" --classify-only ) >/dev/null 2>&1
         say_row 'classify-only: no comparand, every file classified' 0 $?
         printf 'x\n' > "$CO/scripts/zz_unclassified_baseline.txt"
