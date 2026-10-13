@@ -14,6 +14,8 @@ WINDOW_DAYS=8
 
 # since_iso <now, epoch s> -> the window's start as the listing's created>= value. --run and --self-test both call it.
 since_iso() { date -u -d "@$(($1 - WINDOW_DAYS * 86400))" +%Y-%m-%dT%H:%M:%SZ; }
+# now_epoch -> the one wall-clock read; MUTANTS_STOP_NOW pins it (epoch s) for a reproducible run.
+now_epoch() { echo "${MUTANTS_STOP_NOW:-$(date -u +%s)}"; }  # bashrs disable-line=DET002
 
 # decide <result> <listing rc> <green runs in the window> -> prints keep|stop|error; rc 0 keep/stop, 1 error
 decide() {
@@ -47,7 +49,7 @@ failure|0|-1|error
 CASES
     # The window must hold last Sunday's run as read by this job up to 185 min after its own run was created
     # (mutants timeout 180 + stop 5), and must not reach the run two Sundays back.
-    now=$(date -u +%s); since=$(date -u -d "$(since_iso "$now")" +%s) || since=$now
+    now=$(now_epoch); since=$(date -u -d "$(since_iso "$now")" +%s) || since=$now
     if [ $((now - 7 * 86400 - 185 * 60)) -ge "$since" ] && [ $((now - 14 * 86400)) -lt "$since" ]; then
         echo "ok    ${WINDOW_DAYS}-day window holds last week's run, not the one before"
     else echo "FAIL  ${WINDOW_DAYS}-day window misses last week's run or reaches two weeks back" >&2; bad=1; fi
@@ -60,7 +62,7 @@ fi
 [ "$RESULT" = success ] && { echo "mutants: success -- no stop"; exit 0; }
 : "${GH_TOKEN:?}" "${GITHUB_REPOSITORY:?}"
 API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/mutants-nightly.yml"
-SINCE=$(since_iso "$(date -u +%s)") || exit 1
+SINCE=$(since_iso "$(now_epoch)") || exit 1
 lrc=0
 J=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
       "$API/runs?branch=main&status=success&created=%3E%3D${SINCE}&per_page=1") || lrc=$?
