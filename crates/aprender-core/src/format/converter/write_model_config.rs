@@ -131,12 +131,14 @@ fn insert_model_config_metadata(
 
 /// Map GGUF dtype code to APR `TensorDType`, or return an error for unsupported formats.
 ///
-/// Supported passthrough: F32 (0), F16 (1), Q4_K (12), Q6_K (14).
+/// Supported passthrough: F32 (0), F16 (1), Q4_K (12), Q6_K (14), BF16 (30).
 /// All other dtypes fail with a clear error directing users to `apr convert`.
 fn map_gguf_dtype(dtype: u32, tensor_name: &str) -> Result<TensorDType> {
     match dtype {
         0 => Ok(TensorDType::F32),
         1 => Ok(TensorDType::F16),
+        // APR-EMBED-001 EG-6: elementwise like F16, so the bytes pass through.
+        30 => Ok(TensorDType::BF16),
         12 => Ok(TensorDType::Q4K),
         14 => Ok(TensorDType::Q6K),
         2 | 3 | 6 | 8 | 13 => {

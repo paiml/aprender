@@ -179,3 +179,30 @@ fn test_gguf_raw_load_result_debug() {
     };
     assert!(format!("{result:?}").contains("GgufRawLoadResult"));
 }
+
+/// APR-EMBED-001 EG-6: the per-arch keys of an EmbeddingGemma 2 header reach
+/// the config accessors through the real parser, not just the display map.
+/// Before the fix `apr import` read hidden_dim 0 and refused the file.
+#[test]
+fn eg6_reader_parses_gemma_embedding2_config_keys() {
+    let metadata = vec![
+        (
+            "general.architecture".to_string(),
+            GgufValue::String("gemma-embedding2".into()),
+        ),
+        (
+            "gemma-embedding2.embedding_length".to_string(),
+            GgufValue::Uint32(512),
+        ),
+        (
+            "gemma-embedding2.block_count".to_string(),
+            GgufValue::Uint32(24),
+        ),
+    ];
+    let mut buffer = Vec::new();
+    export_tensors_to_gguf(&mut buffer, &[], &metadata).expect("export");
+    let reader = GgufReader::from_bytes(buffer).expect("parse");
+    assert_eq!(reader.architecture(), Some("gemma-embedding2".into()));
+    assert_eq!(reader.hidden_size(), Some(512));
+    assert_eq!(reader.num_layers(), Some(24));
+}
