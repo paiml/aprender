@@ -107,12 +107,17 @@ rule_h4() {
     local on_base=absent on_head=absent touches
     g cat-file -e "$BASE:$LT1_RECEIPT" 2>/dev/null && on_base=present
     g cat-file -e "$HEAD_REF:$LT1_RECEIPT" 2>/dev/null && on_head=present
-    local exempt
-    touches=$(changed_names | awk -v p="$LT1_PROBE" '/^crates\// && $0 != p' | wc -l)
+    # Model code of this spec: the new crate, or a crates/ path naming laya. A crates/
+    # path of other work carried in the same diff (a dependency bump) is not this
+    # spec's model code; it is counted in the arm and not judged.
+    local exempt all
+    all=$(changed_names | awk '/^crates\//' | wc -l)
+    touches=$(changed_names | awk -v p="$LT1_PROBE" -v nc="$NEW_CRATE/" \
+        '/^crates\// && $0 != p && (index($0, nc) == 1 || /laya/)' | wc -l)
     exempt=$(changed_names | awk -v p="$LT1_PROBE" '$0 == p' | wc -l)
-    local arm="$LT1_RECEIPT base=$on_base head=$on_head; crates/ paths=$touches; exempt=$exempt ($LT1_PROBE)"
+    local arm="$LT1_RECEIPT base=$on_base head=$on_head; laya crates/ paths=$touches of $all crates/ paths; exempt=$exempt ($LT1_PROBE)"
     if [ "$touches" -gt 0 ] && [ "$on_base" = absent ] && [ "$on_head" = absent ]; then
-        line H4 RED "touches crates/ before LT-1's receipt" "$arm"
+        line H4 RED "touches laya model code under crates/ before LT-1's receipt" "$arm"
     else
         line H4 PASS "measure-first holds" "$arm"
     fi
@@ -124,7 +129,8 @@ rule_h5() {
         line H5 n/a "$NEW_CRATE absent on head" "crate looked up at $HEAD_REF"
         return
     fi
-    engine=$(g show "$BASE:$LT1_RECEIPT" 2>/dev/null \
+    # An absent receipt is an empty engine, not a pipefail exit.
+    engine=$({ g show "$BASE:$LT1_RECEIPT" 2>/dev/null || true; } \
         | awk -F'"' '/"engine"[[:space:]]*:/ {print $4; exit}')
     case "$engine" in
         core) other='aprender_train::autograd|entrenar::autograd|^[[:space:]]*aprender-train[[:space:]]*=|package[[:space:]]*=[[:space:]]*"aprender-train"' ;;
@@ -246,6 +252,35 @@ rule_h15() {
     fi
 }
 
+# The rules are this spec's, so they judge only a laya-train diff: a head on a
+# laya-train/ branch (the ref named by --head, or GITHUB_HEAD_REF in a pull request
+# run), or a diff touching one of the spec's own paths. guard_tree runs this checker
+# bare on every pull request; any other diff gets one SCOPE n/a line and passes.
+SCOPE_RE='^crates/aprender-decide-train/|^evidence/laya-train/|^scripts/laya_train/|^scripts/check_laya_train_rules\.sh$|^crates/aprender-train/examples/laya_engine_probe|^docs/specifications/APR-LAYA-TRAIN-001|^crates/.*laya'
+
+in_scope() {
+    local b n hit
+    b=$(g rev-parse -q --symbolic-full-name "$HEAD_REF" 2>/dev/null || true)
+    b=${b#refs/heads/}
+    b=${b#refs/remotes/origin/}
+    if [[ "$b" == laya-train/* ]]; then
+        line SCOPE in "branch $b" "head ref read"
+        return 0
+    fi
+    if [[ "${GITHUB_HEAD_REF:-}" == laya-train/* ]]; then
+        line SCOPE in "branch $GITHUB_HEAD_REF" "GITHUB_HEAD_REF read"
+        return 0
+    fi
+    n=$(changed_names | awk 'END {print NR}')
+    hit=$(changed_names | SCOPE_RE="$SCOPE_RE" awk 'BEGIN {re = ENVIRON["SCOPE_RE"]} $0 ~ re {print; exit}')
+    if [ -n "$hit" ]; then
+        line SCOPE in "path $hit" "$n changed paths scanned"
+        return 0
+    fi
+    line SCOPE n/a "not a laya-train diff" "branch ${b:-detached}, GITHUB_HEAD_REF ${GITHUB_HEAD_REF:-unset}, $n changed paths scanned, none under the spec's paths"
+    return 1
+}
+
 run_rules() {
     g rev-parse -q --verify "$BASE^{commit}" >/dev/null || { echo "base $BASE not found" >&2; exit 2; }
     g rev-parse -q --verify "$HEAD_REF^{commit}" >/dev/null || { echo "head $HEAD_REF not found" >&2; exit 2; }
@@ -269,6 +304,10 @@ run_rules() {
     fi
     printf 'laya-train rules | base %s | head %s | diff %s\n' \
         "$(g rev-parse --short "$BASE")" "$(g rev-parse --short "$HEAD_REF")" "$how"
+    if ! in_scope; then
+        echo "RESULT PASS"
+        return 0
+    fi
     rule_h1; rule_h2; rule_h4; rule_h5; rule_h10; rule_h11; rule_h12; rule_h15
     if [ "$RED" -eq 0 ]; then echo "RESULT PASS"; else echo "RESULT RED"; fi
     return "$RED"
@@ -280,16 +319,18 @@ st_commit() { git -C "$ST" -c core.hooksPath=/dev/null -c user.name=t -c user.em
 
 st_case() {
     # st_case <name> <expect: PASS|RED> <rule> <setup...>: setup runs in $ST on a fresh branch.
-    local name=$1 expect=$2 rule=$3 out rc=0
+    # The branch is laya-train/<name>, in scope by its name, unless ST_PREFIX says otherwise.
+    local name=$1 expect=$2 rule=$3 out rc=0 br
     shift 3
-    git -C "$ST" checkout -q -B "$name" base
+    br="${ST_PREFIX:-laya-train/}$name"
+    git -C "$ST" checkout -q -B "$br" base
     (cd "$ST" && "$@")
     git -C "$ST" add -A
     st_commit "$name"
-    out=$("$SELF" --repo "$ST" --base base --head "$name") || rc=$?
+    out=$("$SELF" --repo "$ST" --base base --head "$br") || rc=$?
     local got
     got=$(printf '%s\n' "$out" | awk -v r="$rule" '$1 == r {print $2; exit}')
-    if [ "$got" = "$expect" ] && { [ "$expect" = RED ] && [ "$rc" -eq 1 ] || [ "$expect" != RED ]; }; then
+    if [ "${got:-none}" = "$expect" ] && { [ "$expect" = RED ] && [ "$rc" -eq 1 ] || [ "$expect" != RED ]; }; then
         printf 'ok   %-22s %s %s\n' "$name" "$rule" "$got"
     else
         printf 'FAIL %-22s %s want %s got %s rc=%s\n%s\n' "$name" "$rule" "$expect" "${got:-none}" "$rc" "$out"
@@ -303,22 +344,25 @@ st_shallow() {
     # run) or a single squashed commit (a merge queue run), and the check runs on a shallow
     # clone of that head.
     local name=$1 expect=$2 how=$3 setup=$4 out rc=0 got p1 sc
-    git -C "$ST" checkout -q -B "$name-pr" base
+    git -C "$ST" checkout -q -B "laya-train/$name-pr" base
     (cd "$ST" && sh -c "$setup")
     git -C "$ST" add -A; st_commit "$name pr"
-    git -C "$ST" checkout -q -B "$name-main" base
+    git -C "$ST" checkout -q -B "laya-train/$name-main" base
     echo "y = 1" >"$ST/main_only.py"
     git -C "$ST" add -A; st_commit "$name main"
     if [ "$how" = squash ]; then
-        git -C "$ST" merge -q --squash "$name-pr" >/dev/null
+        git -C "$ST" -c user.name=t -c user.email=t@t merge -q --squash "laya-train/$name-pr" >/dev/null
         st_commit "$name squash"
     else
-        git -C "$ST" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit "$name-pr" >/dev/null
+        git -C "$ST" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit "laya-train/$name-pr" >/dev/null
     fi
     sc="$ST/shallow-$name"
-    git clone -q --no-local --depth 1 --branch "$name-main" "$ST" "$sc" 2>/dev/null
+    # A runner whose git speaks protocol v0 refuses to fetch an unadvertised sha (the
+    # first parent is not a branch tip); allow it on the throwaway source repo.
+    git -C "$ST" config uploadpack.allowReachableSHA1InWant true
+    git clone -q --no-local --depth 1 --branch "laya-train/$name-main" "$ST" "$sc"
     p1=$(git -C "$sc" cat-file -p HEAD | awk '/^parent /{print $2; exit}')
-    git -C "$sc" fetch -q --depth 1 origin "$p1" 2>/dev/null
+    git -C "$sc" fetch -q --depth 1 origin "$p1"
     out=$("$SELF" --repo "$sc" --base "$p1" --head HEAD) || rc=$?
     got=$(printf '%s\n' "$out" | awk '$1 == "H1" {print $2; exit}')
     if [ "$got" = "$expect" ] && printf '%s\n' "$out" | awk '/diff first-parent/ {f=1} END {exit !f}'; then
@@ -335,6 +379,8 @@ self_test() {
     ST=$(mktemp -d)
     case "$ST" in /tmp/*|"${TMPDIR:-/tmp}"/*) ;; *) echo "mktemp gave $ST" >&2; exit 2 ;; esac
     trap 'rm -rf -- "${ST:?}"' EXIT
+    # A pull request run's own branch name must not decide a fixture's scope.
+    unset GITHUB_HEAD_REF
     export GIT_CEILING_DIRECTORIES
     GIT_CEILING_DIRECTORIES=$(dirname "$ST")
     ST_FAIL=0
@@ -348,13 +394,32 @@ self_test() {
     git -C "$ST" branch -q -M base
 
     st_case clean PASS H1 sh -c 'echo "# docs" > notes.md'
+
+    # Scope: another branch's diff is not judged (the H11 mutant passes there), but it
+    # is judged once it touches a path of the spec (the H4 mutant reds there).
+    ST_PREFIX=other/
+    st_case scope-out-push-trigger n/a SCOPE sh -c 'mkdir -p .github/workflows && printf "on:\n  push:\njobs: {}\n" > .github/workflows/w.yml'
+    st_case scope-out-no-rules none H11 sh -c 'mkdir -p .github/workflows && printf "on:\n  push:\njobs: {}\n" > .github/workflows/w.yml'
+    st_case scope-in-by-path RED H4 sh -c "mkdir -p $NEW_CRATE && echo '[package]' > $NEW_CRATE/Cargo.toml"
+    st_case scope-in-by-path-line in SCOPE sh -c "mkdir -p $NEW_CRATE && echo '[package]' > $NEW_CRATE/Cargo.toml"
+    # laya model code outside the new crate is in scope on any branch, and judged by H4.
+    st_case scope-in-by-laya-crate-path RED H4 sh -c "mkdir -p crates/aprender-train/src/laya && echo 'pub fn f() {}' > crates/aprender-train/src/laya/mod.rs"
+    st_case scope-in-by-laya-crate-path-line in SCOPE sh -c "mkdir -p crates/aprender-train/src/laya && echo 'pub fn f() {}' > crates/aprender-train/src/laya/mod.rs"
+    # SCOPE_RE reaches awk through ENVIRON, so its "\." stays a literal dot.
+    st_case scope-out-dot-lookalike n/a SCOPE sh -c "mkdir -p scripts && echo x > scripts/check_laya_train_rulesXsh"
+    ST_PREFIX=
     st_case plant-py-file RED H1 sh -c 'echo "x = 1" > x.py'
     st_case plant-py-line RED H1 sh -c "echo '${PY_WORD}3 run.py' >> scripts/a.sh"
     st_case plant-judge-edit RED H2 sh -c 'echo "// x" >> crates/aprender-decide/src/verify.rs'
-    st_case plant-crates-early RED H4 sh -c 'mkdir -p crates/x && echo "[package]" > crates/x/Cargo.toml'
-    st_case lt1-own-receipt PASS H4 sh -c "mkdir -p crates/x evidence/laya-train/lt-1 && echo '[package]' > crates/x/Cargo.toml && echo '{\"engine\": \"core\"}' > $LT1_RECEIPT"
+    st_case plant-crates-early RED H4 sh -c "mkdir -p $NEW_CRATE && echo '[package]' > $NEW_CRATE/Cargo.toml"
+    st_case plant-laya-path-early RED H4 sh -c "mkdir -p crates/aprender-train/src/laya && echo 'pub fn f() {}' > crates/aprender-train/src/laya/mod.rs"
+    st_case other-crate-not-judged PASS H4 sh -c 'mkdir -p crates/aprender-db && echo "[package]" > crates/aprender-db/Cargo.toml'
+    ST_PREFIX=other/
+    st_case carried-bump-not-judged PASS H4 sh -c "mkdir -p crates/aprender-db && echo '[package]' > crates/aprender-db/Cargo.toml && echo '# carried' >> $H15_SELF"
+    ST_PREFIX=
+    st_case lt1-own-receipt PASS H4 sh -c "mkdir -p $NEW_CRATE evidence/laya-train/lt-1 && echo '[package]' > $NEW_CRATE/Cargo.toml && echo '{\"engine\": \"core\"}' > $LT1_RECEIPT"
     st_case lt1-probe-only PASS H4 sh -c "mkdir -p crates/aprender-train/examples && echo 'fn main() {}' > $LT1_PROBE"
-    st_case plant-probe-plus-crate RED H4 sh -c "mkdir -p crates/aprender-train/examples crates/x && echo 'fn main() {}' > $LT1_PROBE && echo '[package]' > crates/x/Cargo.toml"
+    st_case plant-probe-plus-crate RED H4 sh -c "mkdir -p crates/aprender-train/examples $NEW_CRATE && echo 'fn main() {}' > $LT1_PROBE && echo '[package]' > $NEW_CRATE/Cargo.toml"
     st_case plant-probe-lookalike RED H4 sh -c "mkdir -p crates/aprender-train/examples && echo 'fn main() {}' > crates/aprender-train/examples/laya_engine_probe2.rs"
     st_case plant-cli-contract RED H11 sh -c 'mkdir -p contracts && echo "x: 1" > contracts/apr-cli-commands-v1.yaml'
     st_case plant-two-crates RED H11 sh -c 'mkdir -p crates/a crates/b && echo "[package]" > crates/a/Cargo.toml && echo "[package]" > crates/b/Cargo.toml'
