@@ -328,6 +328,27 @@ async fn a_streamed_constrained_request_is_400_over_http() {
     assert_eq!(body["type"], "schema_unsupported_path");
 }
 
+/// #4971: the constrained turn computes no logprobs, so a request for them with a
+/// `response_format` is refused 501 before any model work, never answered without them.
+#[cfg(feature = "structured-output")]
+#[tokio::test]
+async fn a_constrained_request_asking_for_logprobs_is_501_over_http() {
+    let state = AppState::demo().expect("demo state");
+    let (status, body) = post(
+        state,
+        serde_json::json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": "hi"}],
+            "logprobs": true,
+            "response_format": {"type": "json_object"},
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{body}");
+    let error = body["error"].as_str().expect("an error message");
+    assert!(error.contains("logprobs") && error.contains("constrained"), "{body}");
+}
+
 // ---------------------------------------------------------------------------------------------
 // The route: the chain's own backend when it runs the engine, else that backend's refusal
 // ---------------------------------------------------------------------------------------------

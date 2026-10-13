@@ -232,6 +232,7 @@ universe() {
 if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
     TD=$(mktemp -d) || exit 1
     trap 'rm -rf "${TD:?}"' EXIT
+    cd -- "$TD" || exit 1; export GIT_CEILING_DIRECTORIES="${TD%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
     bad=0
     rows=0
 

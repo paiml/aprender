@@ -248,7 +248,6 @@ pub fn dequant_model_weights_except<S: std::hash::BuildHasher>(
 /// PMAT-364: Extract raw Q4K weight bytes for fused dequant+GEMV on GPU.
 /// Returns (name, raw_bytes, rows, cols) for Q4K tensors only. Other types skipped.
 pub fn raw_q4k_weights(model: &OwnedQuantizedModel) -> Vec<(String, Vec<u8>, usize, usize)> {
-    const GGUF_TYPE_Q4_K: u32 = 12;
     let config = &model.config;
     let hidden = config.hidden_dim;
     let num_heads = config.num_heads;
@@ -267,33 +266,54 @@ pub fn raw_q4k_weights(model: &OwnedQuantizedModel) -> Vec<(String, Vec<u8>, usi
             ("up_proj", &layer.ffn_up_weight, intermediate, hidden),
             ("down_proj", &layer.ffn_down_weight, hidden, intermediate),
         ];
+        // KREG-001 (#4539): gate_proj used to be pushed whatever its qtype, so a Q6_K gate was
+        // uploaded to the Q4_K kernel as raw bytes (df-2378-8b). It now passes the same gate.
         if let Some(ref gate) = layer.ffn_gate_weight {
-            raw.push((
-                format!("{prefix}.gate_proj"),
-                gate.data.clone(),
-                intermediate,
-                hidden,
-            ));
+            if wgpu_takes_raw_q4k(gate) {
+                raw.push((
+                    format!("{prefix}.gate_proj"),
+                    gate.data.clone(),
+                    intermediate,
+                    hidden,
+                ));
+            }
         }
         for (name, tensor, rows, cols) in projections {
-            if tensor.qtype == GGUF_TYPE_Q4_K {
+            if wgpu_takes_raw_q4k(tensor) {
                 raw.push((format!("{prefix}.{name}"), tensor.data.clone(), rows, cols));
             }
         }
         // QKV: handle separate weights
         if let crate::gguf::OwnedQKVWeights::Separate { q, k, v } = &layer.qkv_weight {
-            if q.qtype == GGUF_TYPE_Q4_K {
+            if wgpu_takes_raw_q4k(q) {
                 raw.push((format!("{prefix}.q_proj"), q.data.clone(), q_dim, hidden));
             }
-            if k.qtype == GGUF_TYPE_Q4_K {
+            if wgpu_takes_raw_q4k(k) {
                 raw.push((format!("{prefix}.k_proj"), k.data.clone(), kv_dim, hidden));
             }
-            if v.qtype == GGUF_TYPE_Q4_K {
+            if wgpu_takes_raw_q4k(v) {
                 raw.push((format!("{prefix}.v_proj"), v.data.clone(), kv_dim, hidden));
             }
         }
     }
     raw
+}
+
+/// Whether `tensor` may go to the wgpu raw-Q4_K GEMV: it must be Q4_K AND the kernel registry must
+/// admit `(wgpu, Q4_K, row_major)` (KREG-001, #4539). Anything else stays on the F32 dequant path.
+fn wgpu_takes_raw_q4k(tensor: &crate::gguf::OwnedQuantizedTensor) -> bool {
+    crate::kernel_registry::registry().is_ok_and(|r| raw_q4k_admitted_by(r, tensor))
+}
+
+fn raw_q4k_admitted_by(
+    registry: &crate::kernel_registry::Registry,
+    tensor: &crate::gguf::OwnedQuantizedTensor,
+) -> bool {
+    use crate::kernel_registry::{Backend, Layout};
+    tensor.qtype == crate::gguf::GGUF_TYPE_Q4_K
+        && registry
+            .admit(Backend::Wgpu, tensor.qtype, Layout::RowMajor)
+            .is_ok()
 }
 
 /// Dequantize a single OwnedQuantizedTensor to F32
@@ -502,5 +522,126 @@ mod dequant_skip_2378 {
         let b = dequant_model_weights_except(&model, &std::collections::HashSet::new()).expect("b");
         assert_eq!(a.len(), b.len());
         assert_eq!(f32_elements(&a), f32_elements(&b));
+    }
+}
+
+#[cfg(test)]
+mod kreg_wgpu_raw_q4k_gate {
+    //! FALSIFY-KREG-006 (#4539, df-2378-8b): only a registered Q4_K tensor reaches the wgpu
+    //! raw-Q4_K upload. A gate_proj of any other qtype was uploaded as Q4_K bytes.
+
+    use super::*;
+    use crate::gguf::test_helpers::create_test_model_with_config;
+    use crate::gguf::{GGUFConfig, GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K};
+
+    fn config() -> GGUFConfig {
+        GGUFConfig {
+            architecture: "test".to_string(),
+            constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+            hidden_dim: 256,
+            intermediate_dim: 512,
+            num_layers: 1,
+            num_heads: 4,
+            num_kv_heads: 4,
+            vocab_size: 100,
+            context_length: 1024,
+            rope_theta: 10000.0,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        }
+    }
+
+    fn raw_names_with_gate(qtype: u32) -> Vec<String> {
+        let mut model = create_test_model_with_config(&config());
+        let mut gate = model.layers[0].ffn_up_weight.clone();
+        assert_eq!(gate.qtype, GGUF_TYPE_Q4_K, "fixture up_proj is not Q4_K");
+        gate.qtype = qtype;
+        model.layers[0].ffn_gate_weight = Some(gate);
+        raw_q4k_weights(&model)
+            .into_iter()
+            .map(|(n, ..)| n)
+            .collect()
+    }
+
+    #[test]
+    fn falsify_kreg_006_a_non_q4k_gate_is_not_uploaded_as_raw_q4k() {
+        let names = raw_names_with_gate(GGUF_TYPE_Q6_K);
+        assert!(
+            !names.iter().any(|n| n.ends_with("gate_proj")),
+            "a Q6_K gate_proj went to the Q4_K kernel: {names:?}"
+        );
+        assert!(names.iter().any(|n| n.ends_with("up_proj")), "{names:?}");
+    }
+
+    #[test]
+    fn a_q4k_gate_is_still_uploaded_raw() {
+        let names = raw_names_with_gate(GGUF_TYPE_Q4_K);
+        assert!(names.iter().any(|n| n.ends_with("gate_proj")), "{names:?}");
+    }
+
+    /// The registry is the authority: with no wgpu Q4_K row, not even a Q4_K tensor is raw.
+    #[test]
+    fn with_no_wgpu_row_no_tensor_is_uploaded_raw() {
+        use crate::kernel_registry::Registry;
+        let model = create_test_model_with_config(&config());
+        let up = &model.layers[0].ffn_up_weight;
+        let mut doc: serde_json::Value =
+            serde_json::from_str(include_str!("../../../kernel-registry.json")).expect("json");
+        let full = Registry::parse(&doc.to_string()).expect("full");
+        assert!(raw_q4k_admitted_by(&full, up));
+        doc["kernels"]
+            .as_array_mut()
+            .expect("kernels")
+            .retain(|k| k["backend"] != "wgpu");
+        let no_wgpu = Registry::parse(&doc.to_string()).expect("no wgpu");
+        assert!(!raw_q4k_admitted_by(&no_wgpu, up));
+    }
+
+    /// This path feeds the Q4_K GEMV only: a wgpu row for another qtype (a future Q6_K kernel)
+    /// must not route that qtype's bytes here.
+    #[test]
+    fn a_wgpu_row_for_another_qtype_does_not_open_the_q4k_path() {
+        use crate::kernel_registry::Registry;
+        let model = create_test_model_with_config(&config());
+        let mut q6k = model.layers[0].ffn_up_weight.clone();
+        q6k.qtype = GGUF_TYPE_Q6_K;
+        let mut doc: serde_json::Value =
+            serde_json::from_str(include_str!("../../../kernel-registry.json")).expect("json");
+        let kernels = doc["kernels"].as_array_mut().expect("kernels");
+        let mut row = kernels
+            .iter()
+            .find(|k| k["kernel_id"] == "wgpu.gemv.q4_k")
+            .expect("wgpu q4_k row")
+            .clone();
+        row["kernel_id"] = "wgpu.gemv.q6_k".into();
+        row["qtype"] = "Q6_K".into();
+        row["ggml_type"] = GGUF_TYPE_Q6_K.into();
+        kernels.push(row);
+        let with_q6k = Registry::parse(&doc.to_string()).expect("parses");
+        assert!(with_q6k
+            .admit(
+                crate::kernel_registry::Backend::Wgpu,
+                GGUF_TYPE_Q6_K,
+                crate::kernel_registry::Layout::RowMajor
+            )
+            .is_ok());
+        assert!(!raw_q4k_admitted_by(&with_q6k, &q6k));
+    }
+
+    #[test]
+    fn every_raw_tensor_is_admitted_by_the_registry() {
+        use crate::kernel_registry::{admit, Backend, Layout};
+        let model = create_test_model_with_config(&config());
+        assert!(!raw_q4k_weights(&model).is_empty());
+        assert!(admit(Backend::Wgpu, GGUF_TYPE_Q4_K, Layout::RowMajor).is_ok());
+        assert!(!wgpu_takes_raw_q4k(&{
+            let mut t = model.layers[0].ffn_up_weight.clone();
+            t.qtype = GGUF_TYPE_Q6_K;
+            t
+        }));
     }
 }

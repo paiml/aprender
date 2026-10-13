@@ -38,6 +38,7 @@ mod config;
 mod imp_115a;
 mod imp_121a;
 mod loader_tests_build_minimal;
+mod minimal_llama_fixture_shapes; // #4985 fixture weights are [out, in], sized out rows
 mod parity005a_contiguous;
 mod parity011a_bench;
 mod parity035a_chunked;

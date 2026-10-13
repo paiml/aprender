@@ -120,7 +120,7 @@ pub fn fused_q6k_dot_simd(q6k_data: &[u8], activations: &[f32]) -> Result<f32> {
     // Critical optimization: Q6_K scalar was 9x slower than Q4_K SIMD
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
             // SAFETY: We've verified AVX2 and FMA are available at runtime
             return unsafe { fused_q6k_dot_avx2(q6k_data, activations) };
         }

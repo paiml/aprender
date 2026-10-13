@@ -231,6 +231,11 @@ pub(crate) async fn safetensors_chat_completions_handler(
     ) {
         return refusal;
     }
+    if let Some(refused) =
+        super::handlers::logprobs_refusal_response(&request, "SafeTensors F32 CPU")
+    {
+        return refused;
+    }
 
     // Parse request - try structured first, fallback to raw JSON (GH-160)
     let parsed_request = match parse_chat_completion_request(&request) {

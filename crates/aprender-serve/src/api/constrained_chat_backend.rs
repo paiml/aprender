@@ -434,6 +434,10 @@ async fn try_constrained_chat(
         Ok(None) => return None,
         Err(e) => return Some(constraint_refusal(state, &e)),
     };
+    // #4971: the constrained turn computes no logprobs, so a request for them is refused.
+    if let Some(reason) = super::chat_logprobs::logprobs_refusal(request, "constrained") {
+        return Some(fail_response(state, StatusCode::NOT_IMPLEMENTED, reason));
+    }
     let answered = constrained_chat(state, request, constraint, request_id, start, cancel).await;
     Some(answered.unwrap_or_else(|refusal| refusal))
 }

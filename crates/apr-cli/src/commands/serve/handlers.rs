@@ -363,6 +363,9 @@ async fn wgpu_chat_completion(
     {
         return refusal;
     }
+    if let Some(refused) = logprobs_refusal_response(&body, "WGPU") {
+        return refused;
+    }
     // GH-665: Cap max_tokens to prevent hangs on large values
     let max_tokens = body["max_tokens"].as_u64().unwrap_or(64).min(4096) as usize;
     let stream = body["stream"].as_bool().unwrap_or(false);

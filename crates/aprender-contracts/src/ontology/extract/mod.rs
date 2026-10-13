@@ -25,6 +25,7 @@ pub mod example;
 pub mod gguf;
 pub mod json;
 pub mod kernel;
+pub mod kernel_cells;
 pub mod lean;
 pub mod llm_context;
 pub mod parity_receipt;

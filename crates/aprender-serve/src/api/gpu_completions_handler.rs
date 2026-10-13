@@ -419,6 +419,8 @@ async fn try_cuda_gguf_completions(
         // so there is nothing for the engine's measurement to reach. Dropped
         // rather than measured-and-discarded.
         timing_tx: None,
+        // #4971: `/v1/completions` serves no logprobs.
+        logprobs: None,
     };
 
     batch_tx.try_send(batch_req).map_err(|_| {
