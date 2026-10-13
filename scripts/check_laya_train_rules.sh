@@ -83,7 +83,7 @@ rule_h1() {
     files=$(added_names | awk '/\.py$|(^|\/)pyproject\.toml$|(^|\/)uv\.lock$/')
     lines=$(added_runner_lines | awk -v a="$PY_WORD" -v b="$UV_WORD" -v c="$PIP_WORD" \
         'index($0, a) || index($0, b) || index($0, c)')
-    hits=$(printf '%s\n%s\n' "$files" "$lines" | awk 'NF' | head -n 5 | paste -sd ';' -)
+    hits=$(printf '%s\n%s\n' "$files" "$lines" | awk 'NF' | awk 'NR <= 5' | paste -sd ';' -)
     if [ -n "$hits" ]; then
         line H1 RED "Python added: $hits" "files and runner lines scanned"
     else
@@ -95,7 +95,7 @@ rule_h1() {
 rule_h2() {
     local hits
     hits=$(changed_names | awk '/^crates\/aprender-decide\/|^crates\/aprender-core\/src\/models\/modernbert\/|^scripts\/laya_train\/numeric_cases\.json$|\/fixtures\/(modernbert_tiny|laya_tiny)\//' \
-        | head -n 5 | paste -sd ';' -)
+        | awk 'NR <= 5' | paste -sd ';' -)
     if [ -n "$hits" ]; then
         line H2 RED "judge path changed: $hits" "name-only diff"
     else
@@ -131,7 +131,7 @@ rule_h5() {
     fi
     # An absent receipt is an empty engine, not a pipefail exit.
     engine=$({ g show "$BASE:$LT1_RECEIPT" 2>/dev/null || true; } \
-        | awk -F'"' '/"engine"[[:space:]]*:/ {print $4; exit}')
+        | awk -F'"' '!d && /"engine"[[:space:]]*:/ {print $4; d = 1}')
     case "$engine" in
         core) other='aprender_train::autograd|entrenar::autograd|^[[:space:]]*aprender-train[[:space:]]*=|package[[:space:]]*=[[:space:]]*"aprender-train"' ;;
         train) other='aprender::autograd|aprender_core::autograd' ;;
@@ -186,7 +186,7 @@ rule_h10() {
     n=$(printf '%s\n' "$outcomes" | awk 'NF' | wc -l)
     while IFS= read -r f; do
         [ -n "$f" ] || continue
-        started=$(g show "$HEAD_REF:$f" | awk -F'"' '/"run_started_utc"[[:space:]]*:/ {print $4; exit}')
+        started=$(g show "$HEAD_REF:$f" | awk -F'"' '!d && /"run_started_utc"[[:space:]]*:/ {print $4; d = 1}')
         if [ -z "$started" ] || [[ "$started" < "${decl%% *}" ]]; then bad="$bad $f(${started:-no run_started_utc})"; fi
     done <<<"$outcomes"
     if [ "$n" -gt 1 ] || [ -n "$bad" ]; then
@@ -200,10 +200,10 @@ rule_h11() {
     local cli pub new_crates n_new wf bad_wf="" p
     cli=$(changed_names | awk '$0 == "contracts/apr-cli-commands-v1.yaml"')
     pub=$(changed_names | awk '/(^|\/)Cargo\.toml$/' | while IFS= read -r p; do
-        g diff -U0 "$RANGE" -- "$p" | awk -v p="$p" '/^[+-][[:space:]]*publish[[:space:]]*=/ {print p; exit}'
+        g diff -U0 "$RANGE" -- "$p" | awk -v p="$p" '!d && /^[+-][[:space:]]*publish[[:space:]]*=/ {print p; d = 1}'
     done | paste -sd ';' -)
     new_crates=$(added_names | awk '/^crates\/[^\/]+\/Cargo\.toml$/' | paste -sd ';' -)
-    n_new=$(printf '%s' "$new_crates" | awk -F';' 'NF {print NF; exit} END {if (!NR) print 0}')
+    n_new=$(printf '%s' "$new_crates" | awk -F';' '!d && NF {print NF; d = 1} END {if (!NR) print 0}')
     wf=$(changed_names | awk '/^\.github\/workflows\/.*\.ya?ml$/')
     while IFS= read -r p; do
         [ -n "$p" ] || continue
@@ -243,7 +243,7 @@ rule_h12() {
 rule_h15() {
     local hits
     hits=$(added_runner_lines | awk -v a="$DIRTY_FLAG" -v b="$SSH_WORD" -v re="$PUBLISH_RE" -v self="$H15_SELF:" \
-        'index($0, self) == 1 {next} { body = $0; sub(/^[^:]*:/, "", body) } index(body, a) || index(body, b) || body ~ re' | head -n 5 | paste -sd ';' -)
+        'index($0, self) == 1 {next} { body = $0; sub(/^[^:]*:/, "", body) } index(body, a) || index(body, b) || body ~ re' | awk 'NR <= 5' | paste -sd ';' -)
     if [ -n "$hits" ]; then
         line H15 RED "forbidden line added: $hits" "runner lines scanned; path skipped: $H15_SELF"
     else
@@ -272,7 +272,7 @@ in_scope() {
         return 0
     fi
     n=$(changed_names | awk 'END {print NR}')
-    hit=$(changed_names | SCOPE_RE="$SCOPE_RE" awk 'BEGIN {re = ENVIRON["SCOPE_RE"]} $0 ~ re {print; exit}')
+    hit=$(changed_names | SCOPE_RE="$SCOPE_RE" awk 'BEGIN {re = ENVIRON["SCOPE_RE"]} !d && $0 ~ re {print; d = 1}')
     if [ -n "$hit" ]; then
         line SCOPE in "path $hit" "$n changed paths scanned"
         return 0
@@ -293,7 +293,7 @@ run_rules() {
     local how=merge-base p1
     RANGE="$BASE...$HEAD_REF"
     if ! g merge-base "$BASE" "$HEAD_REF" >/dev/null 2>&1; then
-        p1=$(g cat-file -p "$(g rev-parse "$HEAD_REF")" | awk '/^parent /{n++; if (n == 1) p = $2} /^$/{exit} END{if (n >= 1) print p}')
+        p1=$(g cat-file -p "$(g rev-parse "$HEAD_REF")" | awk '!h && /^parent /{n++; if (n == 1) p = $2} /^$/{h = 1} END{if (n >= 1) print p}')
         if [ -n "$p1" ] && [ "$p1" = "$(g rev-parse "$BASE^{commit}")" ]; then
             RANGE="$BASE..$HEAD_REF"
             how=first-parent
@@ -330,7 +330,7 @@ st_case() {
     st_commit "$name"
     out=$("$SELF" --repo "$ST" --base base --head "$br") || rc=$?
     local got
-    got=$(printf '%s\n' "$out" | awk -v r="$rule" '$1 == r {print $2; exit}')
+    got=$(printf '%s\n' "$out" | awk -v r="$rule" '!d && $1 == r {print $2; d = 1}')
     if [ "${got:-none}" = "$expect" ] && { [ "$expect" = RED ] && [ "$rc" -eq 1 ] || [ "$expect" != RED ]; }; then
         printf 'ok   %-22s %s %s\n' "$name" "$rule" "$got"
     else
@@ -363,10 +363,10 @@ st_shallow() {
     # first parent is not a branch tip); allow it on the throwaway source repo.
     git -C "$ST" config uploadpack.allowReachableSHA1InWant true
     git clone -q --no-local --depth 1 --branch "laya-train/$name-main" "$ST" "$sc"
-    p1=$(git -C "$sc" cat-file -p HEAD | awk '/^parent /{print $2; exit}')
+    p1=$(git -C "$sc" cat-file -p HEAD | awk '!d && /^parent /{print $2; d = 1}')
     git -C "$sc" fetch -q --depth 1 origin "$p1"
     out=$("$SELF" --repo "$sc" --base "$p1" --head HEAD) || rc=$?
-    got=$(printf '%s\n' "$out" | awk '$1 == "H1" {print $2; exit}')
+    got=$(printf '%s\n' "$out" | awk '!d && $1 == "H1" {print $2; d = 1}')
     if [ "$got" = "$expect" ] && printf '%s\n' "$out" | awk '/diff first-parent/ {f=1} END {exit !f}'; then
         printf 'ok   %-22s %s %s\n' "$name" H1 "$got"
     else
