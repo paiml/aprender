@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use crate::error::{RealizarError, Result};
 use crate::gguf::{OwnedQuantizedKVCache, OwnedQuantizedModel};
+use crate::session::GreedyStep;
 
 /// The prefix of every line that reports a dense CUDA forward giving up for the
 /// CPU. A log scan keys on it.
@@ -301,7 +302,8 @@ impl DenseForward {
         &mut self,
         tokens: &[u32],
         start: usize,
-    ) -> std::result::Result<Option<u32>, Step> {
+        read_logits: bool,
+    ) -> std::result::Result<Option<GreedyStep>, Step> {
         #[cfg(feature = "cuda")]
         if matches!(self.backend, Backend::Cuda { .. }) {
             let start = self.resume_at(start)?;
@@ -309,16 +311,22 @@ impl DenseForward {
                 unreachable!("matched above");
             };
             let cache = cache.as_mut().ok_or_else(|| never_reserved("CUDA"))?;
-            let Some(next) =
-                cuda_forward_greedy(model, cache, tokens, start, &mut self.batched_prefills)
-                    .map_err(Step::Gpu)?
+            let Some(next) = cuda_forward_greedy(
+                model,
+                cache,
+                tokens,
+                start,
+                &mut self.batched_prefills,
+                read_logits,
+            )
+            .map_err(Step::Gpu)?
             else {
                 return Ok(None);
             };
             self.held = tokens.len();
             return Ok(Some(next));
         }
-        let _ = (tokens, start);
+        let _ = (tokens, start, read_logits);
         Ok(None)
     }
 }
@@ -380,10 +388,10 @@ pub(crate) fn cuda_forward(
 }
 
 /// [`cuda_forward`] for a greedy step: the argmax is chosen on the device, so
-/// no logits cross to the host. A whole prompt goes through one batched
-/// prefill that extracts the first token (PMAT-083). `None`: the prefill ran
-/// but chose nothing, and the caller must [`cuda_reset`] and take the logits
-/// path.
+/// no logits cross to the host unless `read_logits` asks for the ones it read
+/// (#4971), copied after it. A whole prompt goes through one batched prefill
+/// that extracts the first token (PMAT-083). `None`: the prefill ran but chose
+/// nothing, and the caller must [`cuda_reset`] and take the logits path.
 ///
 /// # Errors
 /// As [`cuda_forward`].
@@ -394,14 +402,23 @@ pub(crate) fn cuda_forward_greedy(
     tokens: &[u32],
     start: usize,
     batched_prefills: &mut usize,
-) -> std::result::Result<Option<u32>, String> {
+    read_logits: bool,
+) -> std::result::Result<Option<GreedyStep>, String> {
+    use crate::gguf::cuda::FirstToken;
+    // #4971: the device argmax chooses either way; the logits it read are
+    // copied after it only when asked for.
+    let mut logits = read_logits.then(Vec::new);
     let last = tokens.len() - 1;
     if start == 0 && last > 0 {
+        let extract = match logits.as_mut() {
+            Some(out) => FirstToken::TokenAndLogits(out),
+            None => FirstToken::Token,
+        };
         let first = model
-            .run_prefill(tokens, cache, tokens.len(), false, true)
+            .run_prefill_extracting(tokens, cache, tokens.len(), false, extract)
             .map_err(|e| gpu_failed("batched prefill", tokens.len(), e))?;
         *batched_prefills += 1;
-        return Ok(first);
+        return Ok(first.map(|token| GreedyStep { token, logits }));
     }
     for (pos, &token) in tokens.iter().enumerate().take(last).skip(start) {
         model
@@ -409,8 +426,8 @@ pub(crate) fn cuda_forward_greedy(
             .map_err(|e| gpu_failed("forward", pos, e))?;
     }
     model
-        .forward_gpu_resident_to_token_id(tokens[last], cache, last)
-        .map(Some)
+        .forward_gpu_resident_to_token_id_reading(tokens[last], cache, last, logits.as_mut())
+        .map(|token| Some(GreedyStep { token, logits }))
         .map_err(|e| gpu_failed("forward", last, e))
 }
 
@@ -470,8 +487,13 @@ impl crate::session::ArchForward for DenseForward {
         }
     }
 
-    fn forward_greedy(&mut self, tokens: &[u32], start: usize) -> Result<Option<u32>> {
-        match self.try_forward_greedy(tokens, start) {
+    fn forward_greedy(
+        &mut self,
+        tokens: &[u32],
+        start: usize,
+        read_logits: bool,
+    ) -> Result<Option<GreedyStep>> {
+        match self.try_forward_greedy(tokens, start, read_logits) {
             Ok(next) => Ok(next),
             Err(step) => {
                 self.held = 0;
@@ -515,6 +537,89 @@ pub fn dense_stream<F: crate::session::ArchForward>(
     config: &crate::gguf::QuantizedGenerateConfig,
     on_token: &mut dyn FnMut(u32) -> bool,
 ) -> Result<(Vec<u32>, bool)> {
+    admit_dense_prompt(session, prompt)?;
+    let turn = session.generate(prompt, config, &mut |t| {
+        config.stop_tokens.contains(&t) || on_token(t)
+    })?;
+    Ok(without_stop_token(turn, prompt.len(), config))
+}
+
+/// [`dense_turn`] that also records each generated token's logprobs, with
+/// the `top_n` most likely tokens of its step (#4971). The record of the stop
+/// token that ends the turn is dropped with the token, so there is exactly
+/// one record per token of the reply.
+///
+/// # Errors
+/// As [`dense_stream_with_logprobs`], and a turn whose records do not cover
+/// every token of the reply: a reply is never handed back with some of its
+/// logprobs missing.
+pub fn dense_turn_with_logprobs<F: crate::session::ArchForward>(
+    session: &mut crate::session::Session<F>,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+    top_n: usize,
+) -> Result<(Vec<u32>, Vec<crate::gguf::logprobs::StepLogprobs>)> {
+    let mut steps = Vec::new();
+    let (tokens, _) =
+        dense_stream_with_logprobs(session, prompt, config, top_n, &mut |_, step| {
+            steps.push(step);
+            true
+        })?;
+    let generated = tokens.len() - prompt.len();
+    if steps.len() != generated {
+        return Err(RealizarError::UnsupportedOperation {
+            operation: "dense_turn_with_logprobs".to_string(),
+            reason: format!(
+                "{generated} tokens were generated but {} have logprobs (#4971)",
+                steps.len()
+            ),
+        });
+    }
+    Ok((tokens, steps))
+}
+
+/// [`dense_stream`] that hands each generated token on together with the
+/// record of its logprobs and the `top_n` most likely tokens of its step
+/// (#4971). As in [`dense_stream`], the stop token that ends the turn is never
+/// handed on, so neither is its record.
+///
+/// # Errors
+/// As [`dense_turn`], and a step the engine recorded nothing for: a token is
+/// never handed on without its logprobs.
+pub fn dense_stream_with_logprobs<F: crate::session::ArchForward>(
+    session: &mut crate::session::Session<F>,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+    top_n: usize,
+    on_token: &mut dyn FnMut(u32, crate::gguf::logprobs::StepLogprobs) -> bool,
+) -> Result<(Vec<u32>, bool)> {
+    admit_dense_prompt(session, prompt)?;
+    let mut unrecorded = None;
+    let turn = session.generate_with_logprobs(prompt, config, Some(top_n), &mut |t, record| {
+        if config.stop_tokens.contains(&t) {
+            return true;
+        }
+        let Some(record) = record else {
+            unrecorded = Some(t);
+            return false;
+        };
+        on_token(t, record)
+    })?;
+    if let Some(token) = unrecorded {
+        return Err(RealizarError::UnsupportedOperation {
+            operation: "dense_stream_with_logprobs".to_string(),
+            reason: format!("token {token} was generated without its logprobs (#4971)"),
+        });
+    }
+    Ok(without_stop_token(turn, prompt.len(), config))
+}
+
+/// A prompt longer than the model's context keeps the error the old loops
+/// raised, [`RealizarError::ContextLimitExceeded`].
+fn admit_dense_prompt<F: crate::session::ArchForward>(
+    session: &crate::session::Session<F>,
+    prompt: &[u32],
+) -> Result<()> {
     let maximum = session.context_length();
     if prompt.len() > maximum {
         return Err(RealizarError::ContextLimitExceeded {
@@ -522,18 +627,25 @@ pub fn dense_stream<F: crate::session::ArchForward>(
             maximum,
         });
     }
-    let turn = session.generate(prompt, config, &mut |t| {
-        config.stop_tokens.contains(&t) || on_token(t)
-    })?;
+    Ok(())
+}
+
+/// The turn's prompt and reply without the stop token that ended it (the old
+/// loops never kept it; the engine does), and whether the GPU served it.
+fn without_stop_token(
+    turn: crate::session::Turn,
+    prompt_len: usize,
+    config: &crate::gguf::QuantizedGenerateConfig,
+) -> (Vec<u32>, bool) {
     let mut tokens = turn.tokens;
-    if tokens.len() > prompt.len()
+    if tokens.len() > prompt_len
         && tokens
             .last()
             .is_some_and(|t| config.stop_tokens.contains(t))
     {
         tokens.pop();
     }
-    Ok((tokens, turn.used_gpu))
+    (tokens, turn.used_gpu)
 }
 
 /// Grow `cache` in place to `target` (what it holds stays held), or build a new one

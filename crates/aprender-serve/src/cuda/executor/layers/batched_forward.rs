@@ -462,6 +462,32 @@ impl CudaExecutor {
     ) -> Result<Vec<f32>, GpuError> {
         let (logits_ptr, len) =
             self.batched_output_norm_lm_head_into_logits(m, hidden_dim, vocab_size, epsilon)?;
+        Self::download_logits_at(logits_ptr, len)
+    }
+
+    /// #4971: the logits the last `forward_batched_to_token_ids` (or its graphed replay,
+    /// captured against the same buffer) argmaxed (m × vocab_size,
+    /// slot s at s*vocab_size), downloaded after it, so a slot that records logprobs keeps
+    /// the token the device argmax chose. `batched_gpu_argmax` only reads `logits_buf` and
+    /// syncs the stream before it returns.
+    pub fn download_batched_logits(&mut self, m: usize, vocab_size: u32) -> Result<Vec<f32>, GpuError> {
+        let len = m * vocab_size as usize;
+        let logits_ptr = self
+            .workspace
+            .logits_buf
+            .as_ref()
+            .filter(|buf| buf.len() >= len)
+            .ok_or_else(|| {
+                GpuError::InvalidLaunchConfig(format!(
+                    "#4971: no batched logits of {len} elements to download"
+                ))
+            })?
+            .as_ptr();
+        Self::download_logits_at(logits_ptr, len)
+    }
+
+    /// Copies `len` logits from workspace.logits_buf at `logits_ptr` to the host.
+    fn download_logits_at(logits_ptr: u64, len: usize) -> Result<Vec<f32>, GpuError> {
         // SAFETY: logits_ptr is workspace.logits_buf (valid, `len` elements); non-owning wrapper.
         let logits_buf = unsafe { GpuBuffer::<f32>::from_raw_parts(logits_ptr, len) };
         let mut host = vec![0.0f32; len];
@@ -489,7 +515,7 @@ impl CudaExecutor {
     ///
     /// Note for aprender#2758: `check_no_claim_literals.sh` did NOT flag these
     /// two lines. `TARGET_RE` exempts the line carrying "Target", and the bare
-    /// `404.6 tok/s` on the line above it rode along unflagged. The exemption is
+    /// bare measured figure on the line above it rode along unflagged. The exemption is
     /// right in principle -- a target is a bar, not a claim -- but it should not
     /// cover a measured figure sitting beside one.
     #[allow(clippy::too_many_arguments)]

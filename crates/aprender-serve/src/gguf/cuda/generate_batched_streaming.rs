@@ -134,9 +134,64 @@ pub struct BatchedDecodeState {
     pub embed_buf: Vec<f32>,
     /// PMAT-086: Pre-allocated position buffer `[m]` (avoids Vec alloc per decode step)
     pub pos_buf: Vec<u32>,
+    /// #4971: per slot, where its logprobs go, `None` when it did not ask.
+    /// Every slot starts `None`, joined and recycled ones too; the caller sets
+    /// it after the slot is in.
+    pub recorders: Vec<Option<SlotRecorder>>,
+    /// #4971: each recording slot's record from the last decode step, handed
+    /// to its recorder by `distribute_tokens` just before the token.
+    pub records: Vec<Option<crate::gguf::logprobs::StepLogprobs>>,
+}
+
+/// #4971: a slot that asked for logprobs: how many alternatives each step
+/// records, and where the record goes.
+pub struct SlotRecorder {
+    /// The `top_logprobs` the request asked for
+    pub top_n: usize,
+    /// Called with each step's record, before the step's token callback
+    pub on_record: Box<dyn FnMut(crate::gguf::logprobs::StepLogprobs) + Send>,
 }
 
 impl BatchedDecodeState {
+    /// #4971: whether a live slot asked for logprobs, so this step's logits
+    /// must reach the host.
+    pub fn recording(&self) -> bool {
+        (0..self.m).any(|slot| !self.done[slot] && self.recorders[slot].is_some())
+    }
+
+    /// #4971: each live recording slot's record of this step: `token_ids` are
+    /// the chosen tokens and `logits` the `m × vocab_size` they were chosen
+    /// from, slot `s` at `s * vocab_size`.
+    pub fn record(&mut self, token_ids: &[u32], logits: &[f32]) {
+        let vocab = self.vocab_size;
+        for slot in 0..self.m {
+            let top_n = self.recorders[slot].as_ref().map(|r| r.top_n);
+            let Some(top_n) = top_n.filter(|_| !self.done[slot]) else {
+                continue;
+            };
+            let step = self.sequences[slot].len() - self.prompts[slot].len();
+            let slot_logits = &logits[slot * vocab..(slot + 1) * vocab];
+            self.records[slot] = Some(crate::gguf::logprobs::StepLogprobs::of(
+                step,
+                token_ids[slot],
+                slot_logits,
+                top_n,
+            ));
+        }
+    }
+
+    /// #4971: a slot just added or recycled starts with no recorder and no
+    /// held record.
+    fn clear_recording(&mut self, slot: usize) {
+        if slot == self.recorders.len() {
+            self.recorders.push(None);
+            self.records.push(None);
+        } else {
+            self.recorders[slot] = None;
+            self.records[slot] = None;
+        }
+    }
+
     /// Distribute generated tokens to SSE callbacks. No model lock needed.
     ///
     /// Returns true if all slots are done.
@@ -147,6 +202,9 @@ impl BatchedDecodeState {
             }
 
             let next_token = token_ids[slot_idx];
+            // #4971: the record goes ahead of its token, as on the m=1 path; a
+            // stop token is never sent, so neither is its record.
+            let record = self.records[slot_idx].take();
 
             if self.configs[slot_idx].stop_tokens.contains(&next_token) {
                 self.done[slot_idx] = true;
@@ -154,6 +212,10 @@ impl BatchedDecodeState {
             }
 
             self.sequences[slot_idx].push(next_token);
+
+            if let (Some(record), Some(recorder)) = (record, self.recorders[slot_idx].as_mut()) {
+                (recorder.on_record)(record);
+            }
 
             if !self.on_tokens[slot_idx](next_token) {
                 self.done[slot_idx] = true;
@@ -188,7 +250,7 @@ impl BatchedDecodeState {
 /// # Performance Target
 ///
 /// Jetson Orin Nano Super (c=4):
-/// - Current (sequential): 34.3 tok/s aggregate
+/// - Current (sequential): one request per decode step
 /// - Target (batched): 50-80 tok/s via weight amortization
 impl OwnedQuantizedModelCuda {
     /// Generate tokens for M requests with per-request streaming callbacks.
@@ -394,6 +456,8 @@ impl OwnedQuantizedModelCuda {
             done,
             embed_buf,
             pos_buf,
+            recorders: (0..m).map(|_| None).collect(),
+            records: (0..m).map(|_| None).collect(),
         })
     }
 
@@ -454,6 +518,41 @@ impl OwnedQuantizedModelCuda {
 
         timer.mark("prep");
 
+        let token_ids = self.batched_step_token_ids(state)?;
+
+        timer.mark("fwd+sync+argmax");
+        timer.emit(state.gen_idx as u64, state.m);
+
+        if state.gen_idx < 3 {
+            eprintln!(
+                "[PMAT-072] decode step {}: token_ids={token_ids:?}, done={:?}",
+                state.gen_idx, state.done
+            );
+        }
+
+        // FALSIFY-CB-008 evidence, every step rather than the first three.
+        if batched_decode_trace() {
+            eprintln!(
+                "[CB-008] step={} m={} token_ids={token_ids:?} positions={:?} done={:?}",
+                state.gen_idx,
+                state.m,
+                &state.pos_buf[..state.m],
+                state.done
+            );
+        }
+
+        Ok(token_ids)
+    }
+
+    /// The decode step's tokens, by the path the batch needs, from the
+    /// embeddings and positions already in `state`.
+    ///
+    /// #4971: a live slot that records logprobs gets this step's record from the
+    /// same logits its token came from. Both the eager and the graphed path
+    /// (BATCHED_GRAPH=1) leave this step's logits in `workspace.logits_buf`: the
+    /// graph is captured against that buffer (`init_batched_graph_buffers`), so a
+    /// recording step stays on the path the batch was already taking.
+    fn batched_step_token_ids(&mut self, state: &mut BatchedDecodeState) -> Result<Vec<u32>> {
         // PMAT-056: Multi-stream root cause fixed (scatter moved to self.stream),
         // but graph replay still 25% slower than eager due to capture overhead.
         // Keep eager by default until graph replay is optimized.
@@ -470,7 +569,9 @@ impl OwnedQuantizedModelCuda {
             .take(state.m)
             .any(|c| c.temperature > 0.0);
 
-        let token_ids: Vec<u32> = if any_sampling {
+        let recording = state.recording();
+
+        if any_sampling {
             let vocab = state.vocab_size;
             let logits = self
                 .executor
@@ -487,15 +588,20 @@ impl OwnedQuantizedModelCuda {
                     operation: "forward_batched_to_logits".to_string(),
                     reason: format!("Batched forward failed: {e}"),
                 })?;
-            (0..state.m)
+            let token_ids: Vec<u32> = (0..state.m)
                 .map(|slot| {
                     let cfg = &state.configs[slot];
                     let base = slot * vocab;
                     let slot_logits = &logits[base..base + vocab];
                     select_batched_token(slot_logits, cfg.temperature, cfg.top_k, cfg.top_p)
                 })
-                .collect()
-        } else if use_graph {
+                .collect();
+            if recording {
+                state.record(&token_ids, &logits);
+            }
+            return Ok(token_ids);
+        }
+        let token_ids = if use_graph {
             self.executor
                 .forward_batched_to_token_ids_graphed(
                     &state.embed_buf,
@@ -526,28 +632,16 @@ impl OwnedQuantizedModelCuda {
                     reason: format!("Batched forward failed: {e}"),
                 })?
         };
-
-        timer.mark("fwd+sync+argmax");
-        timer.emit(state.gen_idx as u64, state.m);
-
-        if state.gen_idx < 3 {
-            eprintln!(
-                "[PMAT-072] decode step {}: token_ids={token_ids:?}, done={:?}",
-                state.gen_idx, state.done
-            );
+        if recording {
+            let logits = self
+                .executor
+                .download_batched_logits(state.m, state.vocab_size as u32)
+                .map_err(|e| RealizarError::UnsupportedOperation {
+                    operation: "download_batched_logits".to_string(),
+                    reason: format!("#4971 logprobs: {e}"),
+                })?;
+            state.record(&token_ids, &logits);
         }
-
-        // FALSIFY-CB-008 evidence, every step rather than the first three.
-        if batched_decode_trace() {
-            eprintln!(
-                "[CB-008] step={} m={} token_ids={token_ids:?} positions={:?} done={:?}",
-                state.gen_idx,
-                state.m,
-                &state.pos_buf[..state.m],
-                state.done
-            );
-        }
-
         Ok(token_ids)
     }
 
@@ -711,6 +805,8 @@ impl OwnedQuantizedModelCuda {
         state.positions.push(seq_len);
         state.last_tokens.push(last_token);
         state.done.push(false);
+        // #4971: the joined slot records nothing until its caller says so
+        state.clear_recording(state.m);
         state.m = new_m;
         state.embed_buf.resize(new_m * state.hidden_dim, 0.0);
         state.pos_buf.resize(new_m, 0);
@@ -814,6 +910,8 @@ impl OwnedQuantizedModelCuda {
         state.positions[slot_idx] = seq_len;
         state.last_tokens[slot_idx] = last_token;
         state.done[slot_idx] = false;
+        // #4971: the new request records nothing until its caller says so
+        state.clear_recording(slot_idx);
 
         // Extend max_tokens_max to cover gen_idx + new request's max_tokens
         state.max_tokens_max = state
@@ -981,6 +1079,8 @@ impl OwnedQuantizedModelCuda {
             state.positions[slot_idx] = seq_len;
             state.last_tokens[slot_idx] = last_token;
             state.done[slot_idx] = false;
+            // #4971: the new request records nothing until its caller says so
+            state.clear_recording(slot_idx);
             state.max_tokens_max = state
                 .max_tokens_max
                 .max(state.gen_idx + state.configs[slot_idx].max_tokens);

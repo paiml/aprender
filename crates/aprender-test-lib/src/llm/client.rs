@@ -9,6 +9,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use crate::perf_gate::drain::StreamMode;
+use crate::perf_gate::margin::TokenLogprob;
 
 /// SSE streaming chunk from an OpenAI-compatible chat completion endpoint.
 #[derive(Debug, Clone, Deserialize)]
@@ -47,6 +48,9 @@ struct StreamAccum {
     finish_reason: Option<String>,
     stream_mode: Option<StreamMode>,
     timings: Option<ServerTimings>,
+    /// #4971: every `logprobs.content[]` entry, in order, whichever chunk
+    /// carried it, the terminal one included.
+    logprobs: Vec<TokenLogprob>,
 }
 
 impl StreamAccum {
@@ -72,6 +76,9 @@ impl StreamAccum {
             if choice.finish_reason.is_some() {
                 self.finish_reason.clone_from(&choice.finish_reason);
             }
+            if let Some(entries) = choice.logprobs.as_ref().and_then(|lp| lp.content.as_ref()) {
+                self.logprobs.extend(entries.iter().cloned());
+            }
         }
         // PP-27: the server declares the mechanism on the FIRST chunk. Later
         // chunks do not carry it, and a later one that did must not overwrite
@@ -96,6 +103,18 @@ pub struct StreamChoice {
     pub delta: StreamDelta,
     /// Finish reason (present on final chunk).
     pub finish_reason: Option<String>,
+    /// OpenAI `logprobs`, present only when the request asked for them (#4971).
+    #[serde(default)]
+    pub logprobs: Option<ChoiceLogprobs>,
+}
+
+/// `choices[].logprobs` of a streamed chunk: the entries of the tokens this
+/// chunk delivers, which need not be one per chunk (#4971).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ChoiceLogprobs {
+    /// One entry per token, in order. `null` reads as none.
+    #[serde(default)]
+    pub content: Option<Vec<TokenLogprob>>,
 }
 
 /// PP-LLAMA-001 v3.0 §3 — the phase timings the SERVER measured.
@@ -189,6 +208,10 @@ pub struct StreamedChatResponse {
     pub timings: Option<ServerTimings>,
     /// Why generation stopped (e.g., "stop", "length").
     pub finish_reason: Option<String>,
+    /// #4971: every `logprobs.content[]` entry of the stream, in order,
+    /// whichever chunk carried it. Empty when the server sent none, as it
+    /// does when the request did not set `logprobs`.
+    pub logprobs: Vec<TokenLogprob>,
 }
 
 /// Chat message role.
@@ -270,6 +293,14 @@ pub struct ChatRequest {
     /// set on the blocking path would turn a working lane into a 400.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_options: Option<StreamOptions>,
+    /// OpenAI `logprobs`: return each generated token's logprob (#4971).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logprobs: Option<bool>,
+    /// OpenAI `top_logprobs`: also return each step's best N tokens, 0 to 20.
+    /// Servers refuse it without `logprobs: true`. The V3 witness asks for 2,
+    /// the fewest that carry a top-2 margin.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_logprobs: Option<u8>,
 }
 
 /// OpenAI `stream_options` — the ask that makes a server emit terminal usage.
@@ -314,6 +345,8 @@ impl ChatRequest {
             seed: None,
             ignore_eos: None,
             stream_options: None,
+            logprobs: None,
+            top_logprobs: None,
         }
     }
 }
@@ -829,6 +862,7 @@ impl LlmClient {
             stream_mode: acc.stream_mode,
             timings: acc.timings,
             finish_reason: acc.finish_reason,
+            logprobs: acc.logprobs,
         })
     }
 
@@ -898,6 +932,8 @@ mod tests {
             seed: None,
             ignore_eos: None,
             stream_options: None,
+            logprobs: None,
+            top_logprobs: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"temperature\":0.0"));
@@ -917,6 +953,8 @@ mod tests {
             seed: None,
             ignore_eos: None,
             stream_options: None,
+            logprobs: None,
+            top_logprobs: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(!json.contains("temperature"));
@@ -1166,6 +1204,8 @@ mod tests {
             seed: None,
             ignore_eos: None,
             stream_options: None,
+            logprobs: None,
+            top_logprobs: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"stream\":true"));
@@ -1262,7 +1302,8 @@ mod tests {
 
     /// What one SSE probe should emit. Each field is a separate defect shape:
     /// a stream with no `usage`, a stream with no content, a stream that
-    /// declares nothing.
+    /// declares nothing. `logprobs` adds one entry per content chunk, a
+    /// `null` on the role chunk and one held entry on the terminal chunk.
     #[cfg(feature = "llm")]
     #[derive(Clone, Copy)]
     struct SseScript {
@@ -1270,6 +1311,7 @@ mod tests {
         declare_mode: Option<&'static str>,
         terminal_usage: bool,
         timings: bool,
+        logprobs: bool,
     }
 
     #[cfg(feature = "llm")]
@@ -1282,8 +1324,80 @@ mod tests {
                 declare_mode: Some("live"),
                 terminal_usage: true,
                 timings: true,
+                logprobs: false,
             }
         }
+
+        /// The terminal chunk's `timings` field, or nothing.
+        fn timings_field(self) -> &'static str {
+            if self.timings {
+                ",\"timings\":{\"prompt_n\":512,\"prompt_ms\":40.0,\"prompt_per_second\":12800.0,\
+                 \"predicted_n\":4,\"predicted_ms\":20.0,\"predicted_per_second\":200.0,\
+                 \"clock\":\"server std::time::Instant (CLOCK_MONOTONIC)\"}"
+            } else {
+                ""
+            }
+        }
+
+        /// The role chunk's `logprobs` field: a `null`, as OpenAI sends on a
+        /// chunk with no token, or nothing.
+        fn role_logprobs(self) -> &'static str {
+            if self.logprobs {
+                ",\"logprobs\":null"
+            } else {
+                ""
+            }
+        }
+
+        /// Content chunk `i`'s `logprobs` field (margin `0.5 * (i + 1)`), or
+        /// nothing.
+        fn chunk_logprobs(self, i: usize) -> String {
+            if self.logprobs {
+                scripted_logprobs(&format!("t{i} "), 0.5 * (i + 1) as f64)
+            } else {
+                String::new()
+            }
+        }
+
+        /// The terminal chunk: `finish_reason`, then (when scripted) the
+        /// `usage` block with `timings`, and the held `logprobs` entry.
+        fn terminal_chunk(self) -> String {
+            let timings = self.timings_field();
+            let held = self.held_logprobs();
+            if self.terminal_usage {
+                format!(
+                    "data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"length\"{held}}}],\
+                     \"usage\":{{\"prompt_tokens\":512,\"completion_tokens\":128,\"total_tokens\":640}}\
+                     {timings}}}\n\n"
+                )
+            } else {
+                "data: {\"choices\":[{\"index\":0,\"delta\":{},\
+                 \"finish_reason\":\"length\"}]}\n\n"
+                    .to_string()
+            }
+        }
+
+        /// The terminal chunk's `logprobs` field: one entry the server held
+        /// back to the end (margin 0.01), or nothing.
+        fn held_logprobs(self) -> String {
+            if self.logprobs {
+                scripted_logprobs("held", 0.01)
+            } else {
+                String::new()
+            }
+        }
+    }
+
+    /// One scripted `logprobs` field: `token` at logprob -0.25, the runner-up
+    /// `gap` below it, so the entry's top-2 margin is `gap`.
+    #[cfg(feature = "llm")]
+    fn scripted_logprobs(token: &str, gap: f64) -> String {
+        let runner_up = -0.25 - gap;
+        format!(
+            ",\"logprobs\":{{\"content\":[{{\"token\":\"{token}\",\"logprob\":-0.25,\
+             \"bytes\":null,\"top_logprobs\":[{{\"token\":\"{token}\",\"logprob\":-0.25,\
+             \"bytes\":null}},{{\"token\":\"x\",\"logprob\":{runner_up},\"bytes\":null}}]}}]}}"
+        )
     }
 
     /// Read one HTTP request off `sock` and return its body, or `None` if the
@@ -1334,38 +1448,22 @@ mod tests {
         let mode = script
             .declare_mode
             .map_or(String::new(), |m| format!(",\"stream_mode\":\"{m}\""));
+        let none = script.role_logprobs();
         let first = format!(
-            "data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"role\":\"assistant\"}}}}]{mode}}}\n\n"
+            "data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"role\":\"assistant\"}}{none}}}]{mode}}}\n\n"
         );
         let _ = sock.write_all(first.as_bytes()).await;
         for i in 0..script.content_chunks {
             tokio::time::sleep(Duration::from_millis(5)).await;
+            let lp = script.chunk_logprobs(i);
             let chunk = format!(
-                "data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"t{i} \"}}}}]}}\n\n"
+                "data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"t{i} \"}}{lp}}}]}}\n\n"
             );
             if sock.write_all(chunk.as_bytes()).await.is_err() {
                 return;
             }
         }
-        let timings = if script.timings {
-            ",\"timings\":{\"prompt_n\":512,\"prompt_ms\":40.0,\"prompt_per_second\":12800.0,\
-             \"predicted_n\":4,\"predicted_ms\":20.0,\"predicted_per_second\":200.0,\
-             \"clock\":\"server std::time::Instant (CLOCK_MONOTONIC)\"}"
-        } else {
-            ""
-        };
-        if script.terminal_usage {
-            let terminal = format!(
-                "data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"length\"}}],\
-                 \"usage\":{{\"prompt_tokens\":512,\"completion_tokens\":128,\"total_tokens\":640}}\
-                 {timings}}}\n\n"
-            );
-            let _ = sock.write_all(terminal.as_bytes()).await;
-        } else {
-            let terminal = "data: {\"choices\":[{\"index\":0,\"delta\":{},\
-                            \"finish_reason\":\"length\"}]}\n\n";
-            let _ = sock.write_all(terminal.as_bytes()).await;
-        }
+        let _ = sock.write_all(script.terminal_chunk().as_bytes()).await;
         let _ = sock.write_all(b"data: [DONE]\n\n").await;
         let _ = sock.flush().await;
         let _ = sock.shutdown().await;
@@ -1500,6 +1598,61 @@ mod tests {
             body.contains("\"stream_options\":{\"include_usage\":true}"),
             "stream_options missing from wire: {body}"
         );
+    }
+
+    /// #4971: a request that sets `logprobs` asks for them on the socket, and
+    /// the stream's entries come back in order, whichever chunk carried them:
+    /// one per content chunk, none from a `null`, and the one held to the
+    /// terminal chunk. Each keeps its runner-up, so the top-2 margin survives.
+    #[cfg(feature = "llm")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_logprobs_request_asks_on_the_wire_and_collects_every_entry_in_order() {
+        use crate::perf_gate::margin::top2_margin;
+        let script = SseScript {
+            logprobs: true,
+            ..SseScript::conformant()
+        };
+        let (url, bodies) = spawn_scripted_sse(script).await;
+        let request = ChatRequest {
+            logprobs: Some(true),
+            top_logprobs: Some(2),
+            ..pinned_request()
+        };
+        let response = LlmClient::new(&url, "qwen-coder")
+            .chat_completion_stream(&request)
+            .await
+            .expect("a conformant stream is accepted");
+
+        let received = bodies.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let body = received.first().expect("the probe recorded one body");
+        assert!(body.contains("\"logprobs\":true"), "{body}");
+        assert!(body.contains("\"top_logprobs\":2"), "{body}");
+
+        let tokens: Vec<&str> = response.logprobs.iter().map(|e| e.token.as_str()).collect();
+        assert_eq!(tokens, ["t0 ", "t1 ", "t2 ", "t3 ", "held"]);
+        let margins: Vec<f64> = response.logprobs.iter().filter_map(top2_margin).collect();
+        let want = [0.5, 1.0, 1.5, 2.0, 0.01];
+        assert_eq!(margins.len(), want.len(), "{margins:?}");
+        for (got, want) in margins.iter().zip(want) {
+            assert!((got - want).abs() < 1e-9, "{margins:?}");
+        }
+    }
+
+    /// MUST-NOT-FIRE for #4971: a request that does not set `logprobs` sends
+    /// neither key, so a server that refuses them (a 501 naming the backend)
+    /// is never asked, and the response collects nothing.
+    #[cfg(feature = "llm")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_request_without_logprobs_sends_neither_key_and_collects_none() {
+        let (url, bodies) = spawn_scripted_sse(SseScript::conformant()).await;
+        let response = LlmClient::new(&url, "qwen-coder")
+            .chat_completion_stream(&pinned_request())
+            .await
+            .expect("a conformant stream is accepted");
+        let received = bodies.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let body = received.first().expect("the probe recorded one body");
+        assert!(!body.contains("logprobs"), "{body}");
+        assert!(response.logprobs.is_empty(), "{:?}", response.logprobs);
     }
 
     /// MUST-FIRE for PP-27: a stream whose terminal chunk carries no `usage` is

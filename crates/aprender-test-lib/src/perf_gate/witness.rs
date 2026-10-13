@@ -29,7 +29,9 @@
 //! kernel family is batch-size invariant to the end while the families differ
 //! from each other (`evidence/perf041/lambda/`). Without a top-2 margin on the
 //! wire a near-tie flip and a wrong-KV divergence are indistinguishable, so that
-//! comparison stays a report until master §12 row 22 lands.
+//! comparison stays a report here. Master §12 row 22 adds the margin as
+//! `top2_margin_at_divergence`; the V3 shape check ([`super::v3_shape`], #4971)
+//! reads it to tell a near-tie flip from a defect, and is not a gate either.
 //!
 //! Three verdicts, not two. "The slots agree but every stream stopped at 32
 //! tokens" is **not** a pass — it is [`BatchInvariance::Unmeasurable`], because
@@ -69,7 +71,7 @@ impl BatchInvariance {
 }
 
 /// PP-26 — one band's correctness witness, as it appears in the receipt.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BatchInvarianceWitness {
     /// The verdict.
@@ -86,6 +88,13 @@ pub struct BatchInvarianceWitness {
     /// on a witness written before v3.1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_constant_run: Option<u32>,
+    /// Master §12 row 22: the `m = 1` stream's top-2 logit margin at
+    /// `divergence_at`, when the probe recorded one (#4971). Below
+    /// [`super::v3_shape::NEAR_TIE_EPS`] it marks the divergence a near-tie
+    /// flip, not a defect (V3 S5). Token comparison cannot measure it, so
+    /// [`Self::compare_batch`] leaves it `None`, and `None` stays off the wire.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top2_margin_at_divergence: Option<f64>,
     /// Tokens that had to agree, from `perf-matrix.yaml`.
     pub declared_min: u32,
     /// The batch size the batched arm actually formed. `0` when the caller has
@@ -134,6 +143,7 @@ impl BatchInvarianceWitness {
                 divergence_at: None,
                 intra_agree_to: None,
                 max_constant_run: None,
+                top2_margin_at_divergence: None,
                 declared_min,
                 m_formed: 0,
                 source: source.to_string(),
@@ -168,6 +178,7 @@ impl BatchInvarianceWitness {
             divergence_at,
             intra_agree_to: Some(intra),
             max_constant_run: Some(run),
+            top2_margin_at_divergence: None,
             declared_min,
             m_formed: 0,
             source: source.to_string(),
@@ -330,6 +341,23 @@ mod tests {
             BatchInvarianceWitness::compare_batch(&[1, 2, 3], &[&[1, 2, 3], &[1, 2, 3]], 2, 16);
         let j = serde_json::to_string(&new).expect("serialises");
         assert!(j.contains("\"intra_agree_to\":3"), "{j}");
+        assert!(!j.contains("top2_margin_at_divergence"), "{j}");
+    }
+
+    /// #4971: a recorded margin survives the receipt round trip, and a witness
+    /// with a margin that is not a number does not read.
+    #[test]
+    fn a_recorded_top2_margin_round_trips_and_must_be_a_number() {
+        let mut w = BatchInvarianceWitness::compare(&[1, 2, 3], &[1, 9, 3], 1);
+        assert_eq!(w.divergence_at, Some(1));
+        assert_eq!(w.top2_margin_at_divergence, None);
+        w.top2_margin_at_divergence = Some(0.0125);
+        let j = serde_json::to_string(&w).expect("serialises");
+        assert!(j.contains("\"top2_margin_at_divergence\":0.0125"), "{j}");
+        let back: BatchInvarianceWitness = serde_json::from_str(&j).expect("reads back");
+        assert_eq!(back, w);
+        let wrong = j.replace("0.0125", "true");
+        assert!(serde_json::from_str::<BatchInvarianceWitness>(&wrong).is_err());
     }
 
     /// Two identical but SHORT streams prove nothing. Reading that as a pass is
