@@ -43,3 +43,10 @@ falsification:
     description: "Q3_K dequant of a non-trivial block equals the GGML reference. Discharges C-Q3K-001/002."
     test: "test_dequantize_q3_k_ggml_golden — seed-7 deterministic 110-byte block, d=1.0: RED pre-fix out[1]=12 / maxabs ~28, GREEN post-fix out[1]=-84 / maxabs 124 (numpy GGML oracle). All-zero-input tests cannot distinguish (both yield zeros)."
     evidence: "cargo test -p aprender-core --lib test_dequantize_q3_k_ggml_golden"
+
+falsification_tests:
+  - id: FALSIFY-Q3K_DEQUANT_CORRECTNESS-001
+    description: "C-Q3K-001 / C-Q3K-002: Q3_K dequant of a seeded non-zero block equals the GGML reference with full six-bit signed scales"
+    test: "cargo test -p aprender-core --lib test_dequantize_q3_k_ggml_golden"
+    prediction: "256 outputs; the asserted elements match the numpy GGML reference (kmask aux-shuffle, -32 offset) for d=f16(1.0)"
+    if_fails: "scales are clipped to four bits or quant/high-bit addressing is wrong (~252/256 elements off)"
