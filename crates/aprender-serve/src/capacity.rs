@@ -36,6 +36,19 @@ pub const OVERHEAD_BYTES: u64 = 512 * 1024 * 1024;
 /// until one is measured; shared with the qwen3moe resident path (#3714).
 pub const UNIFIED_HEADROOM_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 
+/// The headroom a unified device of `total` bytes keeps back: [`UNIFIED_HEADROOM_BYTES`],
+/// capped at a quarter of `MemTotal`. The fixed 16 GiB was sized on a 128 GB GB10; on an
+/// 8 GB Orin it is twice the whole device, so every plan saw 0 MiB free (#5260).
+#[must_use]
+pub const fn unified_headroom_bytes(total: u64) -> u64 {
+    let quarter = total / 4;
+    if quarter < UNIFIED_HEADROOM_BYTES {
+        quarter
+    } else {
+        UNIFIED_HEADROOM_BYTES
+    }
+}
+
 /// How a device's memory is shaped, as a plan needs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "class", rename_all = "snake_case")]
@@ -63,7 +76,7 @@ pub enum DeviceMemory {
 
 impl DeviceMemory {
     /// `(free, total)` a plan compares against: a unified device keeps
-    /// [`UNIFIED_HEADROOM_BYTES`] back from both — from `MemAvailable` for the rest of
+    /// [`unified_headroom_bytes`] back from both — from `MemAvailable` for the rest of
     /// the host now, and from `MemTotal` because an idle host would keep it too, so
     /// "fits the total" means "an idle host could serve it".
     #[must_use]
@@ -73,8 +86,8 @@ impl DeviceMemory {
             Self::Unified {
                 available, total, ..
             } => (
-                available.saturating_sub(UNIFIED_HEADROOM_BYTES),
-                total.saturating_sub(UNIFIED_HEADROOM_BYTES),
+                available.saturating_sub(unified_headroom_bytes(total)),
+                total.saturating_sub(unified_headroom_bytes(total)),
             ),
         }
     }
@@ -271,10 +284,10 @@ fn budget(i: &CapacityInputs, dtype: KvDtype) -> (CapacityBudget, u64) {
 
 fn arithmetic(b: &CapacityBudget) -> String {
     let source = match b.memory {
-        Some(DeviceMemory::Unified { available, cuda_free, .. }) => format!(
+        Some(DeviceMemory::Unified { available, total, cuda_free }) => format!(
             " (unified memory: MemAvailable {:.0} MiB less a {:.0} MiB headroom; cuMemGetInfo said {:.0} MiB free)",
             available as f64 / MIB,
-            UNIFIED_HEADROOM_BYTES as f64 / MIB,
+            unified_headroom_bytes(total) as f64 / MIB,
             cuda_free as f64 / MIB
         ),
         Some(DeviceMemory::Discrete { .. }) => " (discrete GPU: cuMemGetInfo)".to_string(),
@@ -629,6 +642,34 @@ mod tests {
         assert!(!r.reason.contains("  "), "a run of spaces in: {}", r.reason);
         let discrete = DeviceMemory::Discrete { free: 5, total: 9 };
         assert_eq!(discrete.plan_free_total(), (5, 9));
+    }
+
+    /// #5260: the headroom scales with `MemTotal` below 64 GiB and is the fixed 16 GiB
+    /// at and above it, so a large unified host plans exactly as before.
+    #[test]
+    fn capacity_unified_headroom_scales_with_mem_total() {
+        let cases: [(u64, u64); 5] = [
+            (7_607 * MIB_U, 7_607 * MIB_U / 4), // 8 GB Orin
+            (16 * GIB, 4 * GIB),
+            (63 * GIB, 63 * GIB / 4),
+            (64 * GIB, UNIFIED_HEADROOM_BYTES), // the boundary
+            (124_958_720 * 1024, UNIFIED_HEADROOM_BYTES), // 128 GB GB10, unchanged
+        ];
+        for (total, want) in cases {
+            assert_eq!(unified_headroom_bytes(total), want, "MemTotal {total}");
+        }
+        assert_eq!(unified_headroom_bytes(0), 0);
+        // The Orin measured on #5254: 6944 MiB available out of 7607. The fixed 16 GiB
+        // left 0 to plan with; a quarter of MemTotal leaves the rest.
+        let orin = DeviceMemory::Unified {
+            available: 6_944 * MIB_U,
+            total: 7_607 * MIB_U,
+            cuda_free: 6_000 * MIB_U,
+        };
+        let (free, t) = orin.plan_free_total();
+        assert_eq!(free, 6_944 * MIB_U - 7_607 * MIB_U / 4);
+        assert_eq!(t, 7_607 * MIB_U - 7_607 * MIB_U / 4);
+        assert!(free > 4 * GIB, "an 8 GB Orin has room to plan: {free}");
     }
 
     /// #3596 lambda 262k, forced f32: the gap `cuMemGetInfo` leaves is not all other

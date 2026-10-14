@@ -62,28 +62,8 @@ impl GgufReader {
                     .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                     .collect()
             }
-            1 => {
-                // F16 - convert to F32
-                // BUG-GGUF-002 FIX: Use checked_mul for byte size calculation
-                let byte_size =
-                    num_elements
-                        .checked_mul(2)
-                        .ok_or_else(|| AprenderError::FormatError {
-                            message: format!("Tensor '{}' byte size calculation overflow", name),
-                        })?;
-                if tensor_start + byte_size > self.data.len() {
-                    return Err(AprenderError::FormatError {
-                        message: format!("Tensor '{name}' data exceeds file size"),
-                    });
-                }
-                let bytes = &self.data[tensor_start..tensor_start + byte_size];
-                bytes
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|c| f16_to_f32(u16::from_le_bytes([c[0], c[1]])))
-                    .collect()
-            }
+            // F16 (1) and BF16 (30): two bytes per element, each widened exactly.
+            1 | 30 => widen_half(&self.data, tensor_start, num_elements, name, meta.dtype)?,
             // GGML dtype values (from ggml.h):
             // 0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 9=Q8_1
             // 10=Q2_K, 11=Q3_K, 12=Q4_K, 13=Q5_K, 14=Q6_K
@@ -306,4 +286,39 @@ fn unsized_ggml_type_error(tensor: &str, e: &trueno_quant::GgmlTypeError) -> Apr
              contracts/ggml-type-v1.yaml"
         ),
     }
+}
+
+/// F16 (ggml type 1) or BF16 (ggml type 30) data widened to F32. Both widen exactly: F16
+/// through `f16_to_f32`, BF16 by being the top 16 bits of an F32 (APR-EMBED-001 EG-1, #4900:
+/// `apr validate` refused every BF16 tensor of the EmbeddingGemma 2 files).
+fn widen_half(
+    data: &[u8],
+    start: usize,
+    num_elements: usize,
+    name: &str,
+    dtype: u32,
+) -> Result<Vec<f32>> {
+    // BUG-GGUF-002 FIX: Use checked_mul for byte size calculation
+    let byte_size = num_elements
+        .checked_mul(2)
+        .ok_or_else(|| AprenderError::FormatError {
+            message: format!("Tensor '{name}' byte size calculation overflow"),
+        })?;
+    let bytes = start
+        .checked_add(byte_size)
+        .and_then(|end| data.get(start..end))
+        .ok_or_else(|| AprenderError::FormatError {
+            message: format!("Tensor '{name}' data exceeds file size"),
+        })?;
+    let widen: fn(u16) -> f32 = if dtype == 30 {
+        |bits| f32::from_bits(u32::from(bits) << 16)
+    } else {
+        f16_to_f32
+    };
+    Ok(bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| widen(u16::from_le_bytes(*c)))
+        .collect())
 }

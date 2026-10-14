@@ -9,7 +9,9 @@
 #     $HOME whose ~/src/aprender is a clone checked out at the OLD parent commit, with a stale
 #     rel-9.9.7 dir beside it;
 #   - a build stub that writes an `apr` whose --version is baked from the tree it was built IN
-#     (Cargo.toml version + `git rev-parse --short=9 HEAD`), so a build of the wrong tree is visible;
+#     (Cargo.toml version + `git rev-parse --short=10 HEAD`, the length build.rs's auto --short had
+#     reached at 0.71.2, one longer than models_t1's sha9: every GO case proves the prefix bind, #5256),
+#     so a build of the wrong tree is visible;
 #   - committed stubs for scripts/model_ladder.sh (writes <out>/<host>.json with the apr_version it
 #     measured by) and scripts/check_model_ladder.sh (the judge: 0 green, 1 red/missing, 2 decline).
 #   The measuring and the judging are #3712's side (a frozen interface); this table proves the
@@ -103,7 +105,7 @@ A_BUILD='        || { echo "MODELS-LEG $LOCAL_HOST BUILD-FAILED"; return 3; }'
 A_NORCPT='        echo "MODELS $h NO-GO: no receipt -- $(leg_reason "$h" "$rc")"; nogo=1; continue'
 A_RED='    *) echo "MODELS NO-GO: the judge found red or missing cells (rc $jrc):"'
 A_DECLINE='    2) echo "MODELS NO-GO: the judge DECLINED (rc 2)'
-A_PROOF='[ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE'
+A_PROOF='mt_version_is "\$got" "$ver" "$sha" || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE'
 A_DISK='if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ]; then'
 A_DIE='  [ $rc -eq 0 ] || die "T-1 model matrix NO-GO'
 A_RDIE='  [ $rc -eq 0 ] || die "T-1 release-readiness-v1'
@@ -194,7 +196,7 @@ case "${1:-}" in
   build)
     printf 'build host=%s oom=%s flock=%s\n' "$host" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
     [ "${FX_BUILD_FAIL_HOST:-}" = "$host" ] && { echo "error: could not compile (fixture)"; exit 101; }
-    s=$(git rev-parse --short=9 HEAD); [ "${FX_STALE_HOST:-}" = "$host" ] && s=deadbeef0
+    s=$(git rev-parse --short=10 HEAD); [ "${FX_STALE_HOST:-}" = "$host" ] && s=deadbeef00
     mkdir -p "$tdir/release"
     printf '#!/usr/bin/env bash\nprintf "apr %s (%s)\\n"\n' "$v" "$s" > "$tdir/release/apr"
     chmod +x "$tdir/release/apr"
@@ -404,7 +406,7 @@ green_pair() {
     models "$n" "$2" "$3" "${@:4}" || return 2
     [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(tail -n 1 "$d/ap/STATUS" 2>/dev/null)"; return 1; }
     grep -qF "MODELS GO at $(cat "$d/mc") on lambda and gx10" "$d/ap/STATUS" || { printf 'no "MODELS GO" line\n'; return 1; }
-    grep -qF "apr 9.9.9 ($(cut -c1-9 "$d/mc"))" "$d/ap/models-t1/gx10.json" 2>/dev/null \
+    grep -qF "apr 9.9.9 ($(cut -c1-10 "$d/mc"))" "$d/ap/models-t1/gx10.json" 2>/dev/null \
         || { printf 'gx10 was not measured by the release binary: %s\n' "$(cat "$d/ap/models-t1/gx10.json" 2>/dev/null)"; return 1; }
     [ -f "$d/gx10/.cache/aprender-release/rel-9.9.9/target/BUILT_FROM" ] || { printf 'gx10 did not build into the per-release dir\n'; return 1; }
     [ ! -e "$d/gx10/src/aprender/target/BUILT_FROM" ] || { printf 'gx10 built into ~/src/aprender/target\n'; return 1; }
@@ -458,7 +460,7 @@ crux_green() {
     grep -qF "MODELS GO (CRUX smoke) on lambda and gx10 at ${mc:0:9}: the judge passed both receipts (apr 9.9.9 (${mc:0:9}))" "$d/ap/STATUS" \
         || { printf 'no "MODELS GO (CRUX smoke)" line\n'; return 1; }
     for h in lambda gx10; do
-        [ "$(jq -r .apr.version_line "$d/ap/models-t1/$h-gpu.json" 2>/dev/null)" = "apr 9.9.9 (${mc:0:9})" ] \
+        [ "$(jq -r .apr.version_line "$d/ap/models-t1/$h-gpu.json" 2>/dev/null)" = "apr 9.9.9 (${mc:0:10})" ] \
             || { printf '%s-gpu.json was not measured by the release binary\n' "$h"; return 1; }
         grep -qx "crux host=$h v=9.9.9 oom=1000 flock=0 cert=evidence/crux/9.9.9/prompt-certification.json" "$d/wrap.log" \
             || { printf '%s crux sweep did not run under choom -n 1000 with the certification: %s\n' "$h" "$(grep "^crux host=$h" "$d/wrap.log" | tr '\n' ' ')"; return 1; }

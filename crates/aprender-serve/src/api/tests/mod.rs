@@ -78,3 +78,7 @@ mod completions_eog_stop_4339; // aprender#4339: raw /v1/completions stops on EO
 #[cfg(feature = "gpu")]
 mod completions_eog_stop_4345; // aprender#4345: the wgpu GpuModel /v1/completions path stops on EOS + EOG too
 mod stream_tool_calls_4918; // aprender#4918: streamed tool calls arrive as delta.tool_calls, finish tool_calls (T1-T12)
+#[cfg(feature = "gpu")] // create_test_quantized_model is gpu-gated
+mod logprobs_4971; // aprender#4971: chat logprobs/top_logprobs honoured on the quantized CPU path, refused 4xx/501 elsewhere (ASOC-INV-021)
+#[cfg(feature = "cuda")]
+mod logprobs_cuda_4971; // aprender#4971: chat logprobs on the dense CUDA backend, direct, through the batch scheduler and on the iteration scheduler (needs a device + tinyllama; SKIP = not_measured)

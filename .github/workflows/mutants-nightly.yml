@@ -1,14 +1,18 @@
 name: Mutants Nightly
 
 # #4142 (operator ruling via the cop, 2026-09-24): the PR `mutants` job caps a diff at MUTANTS_CAP mutants and is
-# RED "too many to judge" above it. This run is the other half: every night it mutates everything merged to main
-# since the newest SUCCESSFUL nightly (the last 24 hours on a first run) across the WORKSPACE with no cap, through
+# RED "too many to judge" above it. This run is the other half: once a week it mutates everything merged to main
+# since the newest SUCCESSFUL run (the last 7 days on a first run) across the WORKSPACE with no cap, through
 # the same scripts/mutants_diff_gate.sh, so nothing that merged is left unjudged. A survivor turns this run red and
 # names itself.
+#
+# #5228 (operator, relayed by the cop 2026-10-12: "stop and move to weekly"): 0 green in the last 10 daily runs, so
+# weekly, and it is LAB (C324 item 5): a red or unmeasured scheduled run whose previous week had no green run
+# DISABLES this workflow (job `stop`). Its owner brings it back: `gh workflow enable mutants-nightly.yml`, then a dispatch.
 
 on:
   schedule:
-    - cron: '0 3 * * *'   # 03:00 UTC: the quietest PR hours (03-05Z, 10 of 300 PR CI runs 2026-09-29..10-06), so the PR gpu job on the same runner waits least (infra#1468)
+    - cron: '0 3 * * 0'   # Sunday 03:00 UTC: the quietest PR hours (03-05Z, 10 of 300 PR CI runs 2026-09-29..10-06) on the quietest day
   workflow_dispatch: {}
 
 permissions:
@@ -21,11 +25,8 @@ concurrency:
 
 jobs:
   mutants:
-    runs-on: [self-hosted, Linux, ARM64, gpu, docker] # infra#1468: no runner carries `mutants` yet; the ARM64 GPU docker pool, off the main CI pool (C100). Back to `mutants` when infra builds that pool. Guard: scripts/check_mutants_pool.sh
-    concurrency: # PP-19: the gpu runner is a perf host; serialise against every other consumer of it (check_perf_concurrency_groups.sh)
-      group: perf-gx10
-      cancel-in-progress: false
-    timeout-minutes: 180   # ends by 06:00Z, before PR traffic rises; a run cut off is red and the next night re-judges from the last success
+    runs-on: [self-hosted, Linux, X64, mutants] # #5228: the X64 `mutants` pool (infra#1468), never the ARM64 gpu runner (a PR + perf host). Guard: scripts/check_mutants_pool.sh
+    timeout-minutes: 180   # ends by 06:00Z, before PR traffic rises; a run cut off is red, and job `stop` judges it
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       MUTANTS_JOBS: ${{ vars.MUTANTS_NIGHTLY_JOBS || '8' }}
@@ -44,10 +45,10 @@ jobs:
           fetch-depth: 0
       - name: Everything merged since the last nightly that JUDGED main, as a diff
         id: day
-        # Not a rolling "24 hours ago" window: that has no memory, so one missed or failed run would drop a day of
+        # Not a rolling "7 days ago" window: that has no memory, so one missed or failed run would drop a week of
         # merges for good (degraded quorum, Sonnet, #4142). The base is the head of the newest SUCCESSFUL run of
         # this workflow, if it is an ancestor of HEAD; otherwise (first run, or a rewritten main) it is the last
-        # 24 hours, and the log says which base was used and why.
+        # 7 days, and the log says which base was used and why.
         # REST with curl + python3, never `gh`: the fleet boxes carry no gh (scripts/ci_self_hosted_preflight.sh,
         # #3074), and a missing gh swallowed by `|| true` would read as "no prior run" every night (Sonnet, #4142).
         # A listing that FAILS is red; only a listing that SUCCEEDS with zero runs means "first run".
@@ -65,8 +66,8 @@ jobs:
           if [ -n "$LAST" ] && git merge-base --is-ancestor "$LAST" HEAD 2>/dev/null; then
             SINCE=$LAST; WHY="the newest successful mutants-nightly run judged ${LAST:0:9}"
           else
-            SINCE=$(git rev-list -n1 --before='24 hours ago' HEAD)
-            WHY="no successful prior run whose head is an ancestor of HEAD (got '${LAST:0:9}'): falling back to 24 hours"
+            SINCE=$(git rev-list -n1 --before='7 days ago' HEAD)
+            WHY="no successful prior run whose head is an ancestor of HEAD (got '${LAST:0:9}'): falling back to 7 days"
           fi
           if [ -z "$SINCE" ]; then
             echo "::error::no base commit for the nightly diff ($WHY) -- refusing rather than judging nothing"
@@ -122,3 +123,26 @@ jobs:
         with:
           name: mutants-nightly
           path: mutants-gate/
+
+  # #5228, C324 item 5: a LAB check red or unmeasured for 7 days stops running until its owner brings it back. On a
+  # weekly schedule that is this run AND last week's both non-green, so this job DISABLES the workflow then
+  # (scripts/mutants_weekly_stop.sh: an 8-day window, its case table and why 7 days is wrong); `gh workflow enable
+  # mutants-nightly.yml` is the owner's way back. Its own job, so it runs whatever the mutants job did (red, timed out,
+  # cancelled) and the mutants job keeps a read-only token. A dispatch never stops.
+  stop:
+    needs: mutants
+    if: always() && github.event_name == 'schedule'
+    runs-on: [self-hosted, Linux, X64, clean-room] # a 5-min curl, not a mutation run: the PR pool serves it today
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write # PUT .../workflows/mutants-nightly.yml/disable
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - name: Red or unmeasured with last week's run also not green disables this workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.mutants.result }}
+        run: bash scripts/mutants_weekly_stop.sh --run
