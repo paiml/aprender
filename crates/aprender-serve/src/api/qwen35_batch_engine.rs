@@ -4,23 +4,28 @@
 //! [`Qwen35Session`](crate::gguf::qwen35_session::Qwen35Session). A lone
 //! request is one turn of the session, exactly as the unbatched server served
 //! it. A batch of m > 1 gives each request a device state of its own beside
-//! the session's, prefilled from its prompt and stepped together: the greedy
-//! slots through [`Qwen35CudaModel::forward_batch_greedy`], a sampled slot
-//! through its own logits. The session's state, and the prefix it keeps for
-//! its next turn, are never touched by a batch.
+//! the session's, prefilled from its prompt and stepped together: the plain
+//! greedy slots through [`Qwen35CudaModel::forward_batch_greedy`], and a slot
+//! with logprobs (#4971), a repetition penalty or sampling through its own
+//! logits, in the session's order. The session's state, and the prefix it
+//! keeps for its next turn, are never touched by a batch.
 //!
-//! What a batched slot does not do, as on the dense batched path: `seed`,
-//! `repeat_penalty` and logprobs. The chat handler keeps a request that asks
-//! for logprobs or a trace on the session.
+//! What a batched slot does not do, as on the dense batched path: `seed`. A
+//! batch the session serves from the CPU records no logprobs. The chat
+//! handler keeps a request that asks for a trace on the session.
 
 use std::sync::Arc;
 
-use super::cuda_batch_scheduler::{BatchEngine, CudaBatchConfig, CudaBatchRequest, TokenCallback};
+use super::cuda_batch_scheduler::{
+    BatchEngine, CudaBatchConfig, CudaBatchRequest, RecordSink, TokenCallback,
+};
 use crate::api::{AppState, Qwen35Served};
 use crate::error::{RealizarError, Result};
+use crate::gguf::logprobs::StepLogprobs;
 use crate::gguf::qwen35_session::Qwen35Session;
-use crate::gguf::{select_batched_token, Qwen35CudaModel, Qwen35CudaState};
+use crate::gguf::{select_batched_token, OwnedQuantizedModel, Qwen35CudaModel, Qwen35CudaState};
 use crate::gguf::{BatchedDecodeState, QuantizedGenerateConfig};
+use crate::session::penalty_active;
 
 /// The batch engine over a served Qwen3.5 session.
 pub struct Qwen35BatchEngine {
@@ -123,15 +128,24 @@ fn left_the_gpu(operation: &str) -> RealizarError {
 }
 
 /// One session turn for `prompt`, its tokens to `on_token` without the stop
-/// token that ends it. `false` from `on_token` ends the turn.
+/// token that ends it. `false` from `on_token` ends the turn. With `logprobs`
+/// (#4971) each token's record goes to its sink ahead of the token.
 fn session_turn(
     session: &mut Qwen35Session,
     prompt: &[u32],
     config: &QuantizedGenerateConfig,
+    logprobs: Option<&RecordSink>,
     on_token: &mut dyn FnMut(u32) -> bool,
 ) -> Result<crate::session::Turn> {
-    session.generate_with_logprobs(prompt, config, None, &mut |token, _| {
-        config.stop_tokens.contains(&token) || on_token(token)
+    let top_n = logprobs.map(|sink| sink.top_n);
+    session.generate_with_logprobs(prompt, config, top_n, &mut |token, record| {
+        if config.stop_tokens.contains(&token) {
+            return true;
+        }
+        if let (Some(sink), Some(record)) = (logprobs, record) {
+            let _ = sink.records.send(record);
+        }
+        on_token(token)
     })
 }
 
@@ -149,14 +163,21 @@ impl BatchEngine for Qwen35BatchEngine {
             },
         };
         let mut tokens = Vec::new();
-        let result = session_turn(&mut session, &req.prompt_ids, &req.config, &mut |t| {
-            if req.non_streaming {
-                tokens.push(t);
-                true
-            } else {
-                req.token_tx.try_send(Ok(t)).is_ok()
-            }
-        });
+        let logprobs = req.logprobs.as_ref();
+        let result = session_turn(
+            &mut session,
+            &req.prompt_ids,
+            &req.config,
+            logprobs,
+            &mut |t| {
+                if req.non_streaming {
+                    tokens.push(t);
+                    true
+                } else {
+                    req.token_tx.try_send(Ok(t)).is_ok()
+                }
+            },
+        );
         let decode_ended = std::time::Instant::now();
         served
             .on_gpu
@@ -214,7 +235,7 @@ impl BatchEngine for Qwen35BatchEngine {
             // The GPU was rejected (or never held): the batch is served one
             // request after another by the session, and is over before Phase 2.
             for ((prompt, config), on_token) in prompts.iter().zip(configs).zip(&mut on_tokens) {
-                session_turn(&mut session, prompt, config, &mut **on_token)?;
+                session_turn(&mut session, prompt, config, None, &mut **on_token)?;
             }
             vec![true; m]
         };
@@ -248,9 +269,13 @@ impl BatchEngine for Qwen35BatchEngine {
         let mut session = lock(&served)?;
         let model = device_model(&mut session, &served, &[])?
             .ok_or_else(|| left_the_gpu("qwen35_batch_decode"))?;
+        // A slot that needs its logits on the host (logprobs, a repetition
+        // penalty or sampling) steps alone, as its session turn does.
         let live = (0..state.m).filter(|&i| !state.done[i]);
-        let (greedy, sampled): (Vec<usize>, Vec<usize>) =
-            live.partition(|&i| is_greedy(&state.configs[i]));
+        let (greedy, host): (Vec<usize>, Vec<usize>) = live.partition(|&i| {
+            let c = &state.configs[i];
+            is_greedy(c) && !penalty_active(c) && state.recorders[i].is_none()
+        });
         let mut next = state.last_tokens.clone();
 
         // The greedy slots step together; their states are lent to the batch
@@ -273,13 +298,30 @@ impl BatchEngine for Qwen35BatchEngine {
             next[i] = t;
         }
 
-        for i in sampled {
+        for i in host {
             let s = self.states[i]
                 .as_mut()
                 .expect("a live slot holds its state");
-            let logits = model.forward_single(state.last_tokens[i], s, state.positions[i])?;
+            let mut logits = model.forward_single(state.last_tokens[i], s, state.positions[i])?;
             let c = &state.configs[i];
-            next[i] = select_batched_token(&logits, c.temperature, c.top_k, c.top_p);
+            // The session's order: the penalty over everything the slot holds,
+            // then argmax (greedy) or a sample; a record reads the logits after
+            // the penalty, before temperature.
+            OwnedQuantizedModel::apply_repeat_penalty(
+                &mut logits,
+                &state.sequences[i],
+                c.repeat_penalty,
+                c.repeat_last_n,
+            );
+            next[i] = if is_greedy(c) {
+                crate::gguf::ops::argmax(&logits)
+            } else {
+                select_batched_token(&logits, c.temperature, c.top_k, c.top_p)
+            };
+            if let Some(top_n) = state.recorders[i].as_ref().map(|r| r.top_n) {
+                let step = state.sequences[i].len() - state.prompts[i].len();
+                state.records[i] = Some(StepLogprobs::of(step, next[i], &logits, top_n));
+            }
         }
         Ok(next)
     }

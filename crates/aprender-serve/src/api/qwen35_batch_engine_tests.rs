@@ -19,12 +19,21 @@ const PROMPTS: [&[u32]; 4] = [
     &[16, 10],
 ];
 
-/// Send `prompts` to the scheduler at once and wait for every reply.
-fn band(tx: &tokio::sync::mpsc::Sender<CudaBatchRequest>, prompts: &[&[u32]]) -> Vec<Vec<u32>> {
+/// What one request got: its tokens, and with logprobs one record per token.
+type Reply = (Vec<u32>, Vec<StepLogprobs>);
+
+/// Send `prompts` to the scheduler at once, each asking for `top_n` logprobs
+/// when `Some`, and wait for every reply.
+fn band(
+    tx: &tokio::sync::mpsc::Sender<CudaBatchRequest>,
+    prompts: &[&[u32]],
+    top_n: Option<usize>,
+) -> Vec<Reply> {
     let receivers: Vec<_> = prompts
         .iter()
         .map(|p| {
             let (token_tx, rx) = tokio::sync::mpsc::channel(64);
+            let (records, records_rx) = tokio::sync::mpsc::unbounded_channel();
             let config = QuantizedGenerateConfig {
                 max_tokens: STEPS,
                 temperature: 0.0,
@@ -39,37 +48,66 @@ fn band(tx: &tokio::sync::mpsc::Sender<CudaBatchRequest>, prompts: &[&[u32]]) ->
                 non_streaming: false,
                 enqueue_time: std::time::Instant::now(),
                 timing_tx: None,
-                logprobs: None,
+                logprobs: top_n.map(|top_n| RecordSink { top_n, records }),
             })
             .unwrap_or_else(|e| panic!("queue {p:?}: {e}"));
-            rx
+            (rx, records_rx)
         })
         .collect();
     receivers
         .into_iter()
-        .map(|mut rx| {
+        .map(|(mut rx, mut records_rx)| {
             let mut got = Vec::new();
             while let Some(t) = rx.blocking_recv() {
                 got.push(t.expect("no error"));
             }
-            got
+            let mut steps = Vec::new();
+            while let Ok(step) = records_rx.try_recv() {
+                steps.push(step);
+            }
+            (got, steps)
         })
         .collect()
 }
 
-/// FALSIFY (#5293): four concurrent greedy requests form one batch of m = 4
-/// on the GPU, and each gets exactly the tokens it got when it was served
-/// alone (one turn of the session).
-#[test]
-#[serial_test::serial]
-fn four_concurrent_requests_batch_and_match_their_solo_turns() {
+/// The scheduler over the real 0.8B file on the GPU, with its in-flight
+/// counter.
+struct Scheduler {
+    tx: Option<tokio::sync::mpsc::Sender<CudaBatchRequest>>,
+    counter: Arc<crate::api::InFlightCounter>,
+    /// The session, so the test can wait for the scheduler to let it go.
+    served: std::sync::Weak<Qwen35Served>,
+}
+
+impl Scheduler {
+    fn tx(&self) -> &tokio::sync::mpsc::Sender<CudaBatchRequest> {
+        self.tx.as_ref().expect("held until drop")
+    }
+}
+
+impl Drop for Scheduler {
+    /// Close the queue and wait for the scheduler thread to drop the session.
+    /// A test that returned first would race that drop (`cublasDestroy`)
+    /// against the process's exit handlers unloading cuBLAS: SIGSEGV after
+    /// every test passed (gx10).
+    fn drop(&mut self) {
+        drop(self.tx.take());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while self.served.strong_count() > 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+}
+
+/// The scheduler, or `None` (the test skips) without the file or a device.
+fn scheduler() -> Option<Scheduler> {
     if !std::path::Path::new(MODEL_PATH).exists() {
         eprintln!("SKIP: {MODEL_PATH} is absent");
-        return;
+        return None;
     }
     if crate::cuda::CudaExecutor::new(0).is_err() {
         eprintln!("SKIP: no CUDA device");
-        return;
+        return None;
     }
     let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
     let session = Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, false)
@@ -83,17 +121,41 @@ fn four_concurrent_requests_batch_and_match_their_solo_turns() {
         session: std::sync::Mutex::new(session),
         on_gpu: std::sync::atomic::AtomicBool::new(true),
     });
-    let engine = Arc::new(std::sync::RwLock::new(Qwen35BatchEngine::new(served)));
+    let engine = Arc::new(std::sync::RwLock::new(Qwen35BatchEngine::new(Arc::clone(
+        &served,
+    ))));
     let counter = crate::api::InFlightCounter::new();
     let config = CudaBatchConfig {
         max_batch: 4,
         window_ms: 200,
     };
-    let tx = spawn_cuda_batch_scheduler(engine, config, counter.clone());
+    Some(Scheduler {
+        tx: Some(spawn_cuda_batch_scheduler(engine, config, counter.clone())),
+        counter,
+        served: Arc::downgrade(&served),
+    })
+}
 
-    let alone: Vec<Vec<u32>> = PROMPTS.iter().map(|p| band(&tx, &[p])[0].clone()).collect();
+/// Each prompt served alone, one band per prompt.
+fn solo(tx: &tokio::sync::mpsc::Sender<CudaBatchRequest>, top_n: Option<usize>) -> Vec<Reply> {
+    PROMPTS
+        .iter()
+        .map(|p| band(tx, &[p], top_n).remove(0))
+        .collect()
+}
+
+/// FALSIFY (#5293): four concurrent greedy requests form one batch of m = 4
+/// on the GPU, and each gets exactly the tokens it got when it was served
+/// alone (one turn of the session).
+#[test]
+#[serial_test::serial]
+fn four_concurrent_requests_batch_and_match_their_solo_turns() {
+    let Some(s) = scheduler() else {
+        return;
+    };
+    let alone: Vec<Vec<u32>> = solo(s.tx(), None).into_iter().map(|r| r.0).collect();
     assert!(
-        counter.peak_in_flight() <= 1,
+        s.counter.peak_in_flight() <= 1,
         "a lone request is never batched"
     );
     assert!(
@@ -105,16 +167,79 @@ fn four_concurrent_requests_batch_and_match_their_solo_turns() {
         "the solo streams are all equal, so they cannot tell slots apart: {alone:?}"
     );
 
-    let together = band(&tx, &PROMPTS);
+    let together = band(s.tx(), &PROMPTS, None);
     assert_eq!(
-        counter.peak_in_flight(),
+        s.counter.peak_in_flight(),
         4,
         "the band of 4 formed one batch of m = 4"
     );
-    for (i, got) in together.iter().enumerate() {
+    for (i, (got, _)) in together.iter().enumerate() {
         assert_eq!(got, &alone[i], "request {i} diverged from its solo turn");
     }
     eprintln!("[#5293] m=4: 4 requests x {STEPS} tokens equal their solo turns");
+}
+
+/// How far a batched slot's logprob may sit from its solo turn's. The solo
+/// turn reads step 0 from the session's batched prefill and the batch from the
+/// single-token forward of the prompt's last token, so their logits differ in
+/// the last bits (2e-4 measured on gx10); the tokens may not differ at all.
+const LOGPROB_TOLERANCE: f32 = 1e-2;
+
+/// FALSIFY (#5293/#4971): four concurrent requests that ask for logprobs still
+/// form one batch of m = 4, and each gets the tokens it got alone, and records
+/// with the same steps, chosen tokens and top 3, logprobs within
+/// [`LOGPROB_TOLERANCE`].
+#[test]
+#[serial_test::serial]
+fn logprobs_requests_batch_and_record_what_their_solo_turns_record() {
+    let Some(s) = scheduler() else {
+        return;
+    };
+    let alone = solo(s.tx(), Some(3));
+    assert!(
+        alone
+            .iter()
+            .all(|(t, r)| t.len() == STEPS && r.len() == STEPS),
+        "each solo turn decodes and records its whole budget"
+    );
+
+    let together = band(s.tx(), &PROMPTS, Some(3));
+    assert_eq!(
+        s.counter.peak_in_flight(),
+        4,
+        "the band of 4 asking for logprobs formed one batch of m = 4"
+    );
+    let mut drift = 0.0_f32;
+    for (i, (tokens, records)) in together.iter().enumerate() {
+        assert_eq!(tokens, &alone[i].0, "request {i}'s tokens diverged");
+        assert_eq!(
+            records.len(),
+            alone[i].1.len(),
+            "request {i}'s record count"
+        );
+        for (got, want) in records.iter().zip(&alone[i].1) {
+            let ids = |r: &StepLogprobs| r.top.iter().map(|t| t.token_id).collect::<Vec<_>>();
+            assert_eq!(
+                (got.step, got.chosen, ids(got)),
+                (want.step, want.chosen, ids(want)),
+                "request {i}'s record diverged"
+            );
+            let pairs = std::iter::once((got.chosen_logprob, want.chosen_logprob)).chain(
+                got.top
+                    .iter()
+                    .zip(&want.top)
+                    .map(|(g, w)| (g.logprob, w.logprob)),
+            );
+            for (g, w) in pairs {
+                drift = drift.max((g - w).abs());
+            }
+        }
+    }
+    assert!(
+        drift <= LOGPROB_TOLERANCE,
+        "a batched logprob sits {drift} from its solo turn's"
+    );
+    eprintln!("[#5293] m=4 with logprobs: tokens equal their solo turns, logprob drift {drift:e}");
 }
 
 /// A greedy slot is one that temperature 0 or `top_k` 1 makes argmax.

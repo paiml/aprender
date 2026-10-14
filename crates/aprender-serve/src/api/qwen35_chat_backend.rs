@@ -285,16 +285,14 @@ async fn try_qwen35_backend(
     let top_n = request.logprobs_top_n();
 
     // #5293: with a batch scheduler running, concurrent requests decode as one
-    // batch. One that asks for logprobs or a trace stays on the session, which
-    // records them.
+    // batch, logprobs and all. One that asks for a trace stays on the session,
+    // which traces it.
     #[cfg(feature = "cuda")]
-    if let Some(batch_tx) = state
-        .cuda_batch_tx()
-        .filter(|_| top_n.is_none() && trace_level.is_none())
-    {
+    if let Some(batch_tx) = state.cuda_batch_tx().filter(|_| trace_level.is_none()) {
         let turn = Qwen35BatchTurn {
             input_ids,
             gen_config,
+            top_n,
             budget,
             mapped,
             tokenizer,
@@ -404,6 +402,8 @@ async fn try_qwen35_backend(
 struct Qwen35BatchTurn {
     input_ids: Vec<u32>,
     gen_config: crate::gguf::QuantizedGenerateConfig,
+    /// #4971: the `top_logprobs` asked for, `None` when logprobs were not.
+    top_n: Option<usize>,
     /// The context-bounded budget, as on the session path.
     budget: usize,
     mapped: Arc<crate::gguf::MappedGGUFModel>,
@@ -428,6 +428,21 @@ async fn qwen35_batched(
     let capacity = if request.stream { 64 } else { turn.budget + 1 };
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(capacity);
     let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
+    // #4971: the engine's end of the logprobs records; a stream reads them as
+    // its tokens go out, a reply collects them with its tokens.
+    let (sink, stream_logprobs, mut collected) = match (turn.top_n, request.stream) {
+        (None, _) => (None, None, None),
+        (Some(top_n), true) => {
+            let (records, logprobs) = super::chat_logprobs::StreamLogprobs::channel();
+            let sink = super::cuda_batch_scheduler::RecordSink { top_n, records };
+            (Some(sink), Some(logprobs), None)
+        },
+        (Some(top_n), false) => {
+            let (records, collected) = tokio::sync::mpsc::unbounded_channel();
+            let sink = super::cuda_batch_scheduler::RecordSink { top_n, records };
+            (Some(sink), None, Some(collected))
+        },
+    };
     let batch_req = super::cuda_batch_scheduler::CudaBatchRequest {
         prompt_ids: turn.input_ids,
         config: turn.gen_config,
@@ -435,7 +450,7 @@ async fn qwen35_batched(
         non_streaming: false,
         enqueue_time: std::time::Instant::now(),
         timing_tx: Some(timing_tx),
-        logprobs: None,
+        logprobs: sink,
     };
     if let Err(e) = batch_tx.try_send(batch_req) {
         state.record_admission_rejected();
@@ -458,7 +473,7 @@ async fn qwen35_batched(
             Some(timing_rx),
             request.stop.as_deref(),
             crate::api::stream_tool_calls::StreamTools::from_request(request),
-            None,
+            stream_logprobs,
         );
     }
     let mut tokens = Vec::new();
@@ -477,6 +492,14 @@ async fn qwen35_batched(
     }
     let completion_tokens = tokens.len();
     let response_text = clean_chat_output(&turn.mapped.model.decode(&tokens));
+    // Every record went ahead of its token, so all are here once the tokens are.
+    let logprobs = collected.as_mut().map(|records| {
+        let mut steps = Vec::new();
+        while let Ok(step) = records.try_recv() {
+            steps.push(step);
+        }
+        super::ChatLogprobs::from_steps(&turn.tokenizer, &steps)
+    });
     // A batched turn sends no phase split: there is none per request.
     let timings = timing_rx.await.ok().and_then(|phases| {
         phases.to_timings_at(prompt_token_count, completion_tokens, start, None)
@@ -497,7 +520,7 @@ async fn qwen35_batched(
         request_tool_choice(request),
         timings,
         Some(turn.session.on_gpu.load(std::sync::atomic::Ordering::Relaxed)),
-        None,
+        logprobs,
     )
 }
 
