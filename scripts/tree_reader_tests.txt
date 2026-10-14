@@ -83,6 +83,7 @@ aprender-contracts	--lib	query::index
 aprender-contracts	--lib	query::persist
 aprender-contracts	--lib	readme_gen
 aprender-contracts	--lib	schema
+aprender-contracts	--lib	schema::no_test_debt
 aprender-contracts	--lib	scoring::drift
 aprender-contracts	--lib	tree
 aprender-contracts	--test	apr_serve_api_key_auth_contract
