@@ -494,6 +494,32 @@ impl CudaExecutor {
         )
     }
 
+    /// #5279: [`Self::gdn_kv_row_scatter_indirect_into`] for `m` slots in one
+    /// launch: row `r` of `src` goes into the cache at `table[r]` (a device array
+    /// of `m` u64 pointers), at position `pos[r]`.
+    pub fn gdn_kv_row_scatter_slots_into(
+        &mut self,
+        src: &GpuBuffer<f32>,
+        table: u64,
+        pos: &GpuBuffer<u32>,
+        row: u32,
+        m: u32,
+    ) -> Result<(), GpuError> {
+        let kernel = trueno_gpu::kernels::gdn::KvRowScatterIndirectKernel::new(row).slots();
+        let kernel_type = KernelType::GdnKvRowScatterSlots { row };
+        let cache_key = module_key!(self, "gdn_kv_row_scatter_slots_{}", row);
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, m, bx, 1);
+        self.gdn_launch(
+            &cache_key,
+            kernel_name,
+            config,
+            &[src.as_ptr(), table, pos.as_ptr()],
+        )
+    }
+
     /// aprender#4273: [`Self::gdn_decode_attention_into`] split over the sequence —
     /// grid `(num_heads, ceil(seq_len / split_len))` writing per-split partials, then
     /// a per-head reduce. The unsplit kernel runs 16 blocks on Qwen3.5-4B whatever

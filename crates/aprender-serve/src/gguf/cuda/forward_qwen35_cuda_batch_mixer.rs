@@ -276,7 +276,45 @@ impl Qwen35CudaModel<'_> {
                 rows,
             )?;
         }
-        let slots = CudaExecutor::gdn_decode_attention_has_slots(d.attn_head_dim);
+        if CudaExecutor::gdn_decode_attention_has_slots(d.attn_head_dim) {
+            // Every slot's K/V row goes into its cache, and all m attend, in
+            // two pairs of launches through this layer's entries of the state
+            // table.
+            let max_pos = positions.iter().copied().max().unwrap_or(0);
+            let entry = |col: usize| b.state_table.as_ptr() + ((il * 2 + col) * m * 8) as u64;
+            ex.gdn_kv_row_scatter_slots_into(&x.k_normed, entry(0), &b.positions, kv_dim, rows)?;
+            ex.gdn_kv_row_scatter_slots_into(&x.v_raw, entry(1), &b.positions, kv_dim, rows)?;
+            ex.gdn_decode_attention_slots_into(
+                &x.q_normed,
+                entry(0),
+                entry(1),
+                &x.attn_out_in,
+                &b.positions,
+                u32::try_from(max_pos).unwrap_or(u32::MAX),
+                rows,
+                (d.num_heads, d.num_kv_heads, d.attn_head_dim),
+            )?;
+        } else {
+            Self::attend_each_slot(ex, x, states, positions, il, (q_dim, kv_dim), d)?;
+        }
+        // Elementwise, so one launch for all rows.
+        ex.gdn_sigmoid_gate_into(&x.attn_out_in, &x.attn_gate, rows * q_dim)?;
+        project(ex, &w.attn_output, &x.attn_out_in, &x.out, m)?;
+        ex.residual_add_into(&b.hidden, &x.out, &b.hidden, m as u32 * d.hidden_dim)
+    }
+
+    /// The attention of [`Self::batched_attention_mixer`] one slot at a time,
+    /// for a head dim the slots kernels do not take: each slot's K/V row is
+    /// copied into its cache, then it attends alone.
+    fn attend_each_slot(
+        ex: &mut CudaExecutor,
+        x: &Qwen35MixerBufs,
+        states: &[Qwen35CudaState],
+        positions: &[usize],
+        il: usize,
+        (q_dim, kv_dim): (u32, u32),
+        d: Qwen35CudaDims,
+    ) -> std::result::Result<(), GpuError> {
         let bufs = [&x.q_normed, &x.k_normed, &x.v_raw, &x.attn_out_in];
         let widths = [q_dim, kv_dim, kv_dim, q_dim];
         for (i, (state, &position)) in states.iter().zip(positions).enumerate() {
@@ -304,9 +342,6 @@ impl Qwen35CudaModel<'_> {
                         k_row.copy_from_buffer_async(k_normed, ex.exec_stream())?;
                         v_row.copy_from_buffer_async(v_raw, ex.exec_stream())
                     }?;
-                    if slots {
-                        return Ok(());
-                    }
                     ex.gdn_decode_attention_into(
                         q_normed,
                         k_cache,
@@ -323,25 +358,6 @@ impl Qwen35CudaModel<'_> {
             std::mem::forget(v_row);
             run?;
         }
-        if slots {
-            // Every slot's K/V row is in its cache: all m attend in one pair
-            // of launches, through this layer's entries of the state table.
-            let max_pos = positions.iter().copied().max().unwrap_or(0);
-            let entry = |col: usize| b.state_table.as_ptr() + ((il * 2 + col) * m * 8) as u64;
-            ex.gdn_decode_attention_slots_into(
-                &x.q_normed,
-                entry(0),
-                entry(1),
-                &x.attn_out_in,
-                &b.positions,
-                u32::try_from(max_pos).unwrap_or(u32::MAX),
-                rows,
-                (d.num_heads, d.num_kv_heads, d.attn_head_dim),
-            )?;
-        }
-        // Elementwise, so one launch for all rows.
-        ex.gdn_sigmoid_gate_into(&x.attn_out_in, &x.attn_gate, rows * q_dim)?;
-        project(ex, &w.attn_output, &x.attn_out_in, &x.out, m)?;
-        ex.residual_add_into(&b.hidden, &x.out, &b.hidden, m as u32 * d.hidden_dim)
+        Ok(())
     }
 }

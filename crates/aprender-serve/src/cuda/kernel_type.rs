@@ -764,6 +764,9 @@ pub enum KernelType {
     },
     /// aprender#4233: `cache[*pos * row ..][..row] = src`, the graph-safe KV append.
     GdnKvRowScatterIndirect { row: u32 },
+    /// #5279: the KV append for `m` slots, row `r` of `src` into the cache
+    /// named by `table[r]` at `pos[r]`.
+    GdnKvRowScatterSlots { row: u32 },
     /// aprender#4273: decode attention split over the sequence, one block per
     /// (head, `split_len` positions); writes per-split partials.
     GdnDecodeAttentionSplit {

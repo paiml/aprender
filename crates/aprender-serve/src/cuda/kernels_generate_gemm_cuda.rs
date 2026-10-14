@@ -385,6 +385,9 @@ impl CudaKernels {
             KernelType::GdnKvRowScatterIndirect { row } => {
                 KvRowScatterIndirectKernel::new(*row).emit_ptx_for_target(target)
             },
+            KernelType::GdnKvRowScatterSlots { row } => {
+                KvRowScatterIndirectKernel::new(*row).slots().emit_ptx_for_target(target)
+            },
             KernelType::GdnDecodeAttentionSplit { num_heads, num_kv_heads, head_dim, split_len } => {
                 DecodeAttentionSplitKernel::new(*num_heads, *num_kv_heads, *head_dim)
                     .with_split_len(*split_len)
