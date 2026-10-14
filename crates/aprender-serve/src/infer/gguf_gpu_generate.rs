@@ -156,6 +156,27 @@ fn wgpu_greedy_decode<E>(
     Ok(output_tokens)
 }
 
+/// The text of a [`wgpu_greedy_decode`] reply, and why it ended (#4984).
+///
+/// The loop keeps the stop token as its last token. It ends the reply and is
+/// not part of it, so it is not decoded. An APR tokenizer holds only the base
+/// vocabulary, so it rendered `<|im_end|>` as `[151645]`, which
+/// `clean_model_output` cannot strip: "30.[151645]".
+#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+fn wgpu_reply(
+    generated: &[u32],
+    stop_tokens: &[u32],
+    max_tokens: usize,
+    decode: impl FnOnce(&[u32]) -> String,
+) -> (String, run_report::FinishReason) {
+    let text_tokens = match generated.split_last() {
+        Some((&last, head)) if crate::sampling::is_stop(last, stop_tokens) => head,
+        _ => generated,
+    };
+    let why = run_report::FinishReason::from_decode(generated, stop_tokens, max_tokens);
+    (decode(text_tokens), why)
+}
+
 /// The CPU tail both wgpu paths share: the output RMSNorm with the model's gamma,
 /// then the LM head. Split out of `try_wgpu_generate` and `try_apr_wgpu_inference`
 /// (#3568 PR 3, the pre-commit complexity cap); the arithmetic is theirs, unchanged.
@@ -665,10 +686,11 @@ fn run_gguf_generate(
 /// AprTransformer (CPU with proper RoPE and SwiGLU) otherwise.
 /// PMAT-237: APR inference now uses PreparedTokens (compile-time enforced chat template).
 /// Previously bypassed PreparedTokens entirely via prepare_apr_input_tokens().
+/// #4984: only the wgpu path reports why it stopped; CUDA and CPU report `None`.
 fn run_apr_inference(
     config: &InferenceConfig,
     prepared: &PreparedTokens,
-) -> Result<InferenceResult> {
+) -> Result<(InferenceResult, run_report::RunReport)> {
     if config.verbose {
         eprintln!("Loading APR model: {}", config.model_path.display());
     }
@@ -683,7 +705,7 @@ fn run_apr_inference(
         if let Some(result) =
             try_apr_cuda_inference(config, input_tokens, input_token_count, load_start)
         {
-            return result;
+            return result.map(|r| (r, run_report::RunReport::default()));
         }
     }
 
@@ -694,7 +716,7 @@ fn run_apr_inference(
         && wgpu_can_serve(config.temperature, config.top_k)
     {
         match try_apr_wgpu_inference(config, input_tokens, input_token_count, load_start) {
-            Some(Ok(result)) => return Ok(result),
+            Some(Ok(reported)) => return Ok(reported),
             Some(Err(e)) => {
                 if config.verbose {
                     eprintln!("Backend: CPU (wgpu failed: {})", e);
@@ -710,6 +732,7 @@ fn run_apr_inference(
 
     // CPU fallback: AprTransformer with RoPE and SwiGLU
     run_apr_cpu_inference(config, input_tokens, input_token_count, load_start)
+        .map(|r| (r, run_report::RunReport::default()))
 }
 
 /// The APR wgpu path's generate config: stop tokens from the model config plus the
@@ -745,7 +768,7 @@ fn try_apr_wgpu_inference(
     input_tokens: &[u32],
     input_token_count: usize,
     load_start: Instant,
-) -> Option<Result<InferenceResult>> {
+) -> Option<Result<(InferenceResult, run_report::RunReport)>> {
     use crate::apr::MappedAprModel;
     use crate::gpu::adapters::wgpu_adapter;
     use trueno::backends::gpu::GpuDevice;
@@ -843,10 +866,15 @@ fn try_apr_wgpu_inference(
     let inference_ms = infer_start.elapsed().as_millis() as f64;
     let tokens_generated = output_tokens.len() - input_token_count;
 
-    // Decode tokens
-    let text = crate::infer::decode_apr_tokens(&config.model_path, &output_tokens[input_token_count..]);
+    // Decode the reply: the stop token ends it and is not text (#4984).
+    let (text, why) = wgpu_reply(
+        &output_tokens[input_token_count..],
+        &gen_config.stop_tokens,
+        gen_config.max_tokens,
+        |t| crate::infer::decode_apr_tokens(&config.model_path, t),
+    );
 
-    Some(Ok(InferenceResult {
+    let result = InferenceResult {
         text,
         tokens: output_tokens,
         input_token_count,
@@ -858,7 +886,10 @@ fn try_apr_wgpu_inference(
         format: "APR".to_string(),
         used_gpu: true,
         gpu_attempted: true,
-    }))
+    };
+    // `context_length` stays `None`: this path never reads the model's window.
+    let report = run_report::RunReport { finish_reason: Some(why), context_length: None };
+    Some(Ok((result, report)))
 }
 
 /// GH-318: Map APR architecture string to chat template hint using contract.
@@ -1350,7 +1381,8 @@ fn try_safetensors_cuda_inference(
 
 #[cfg(test)]
 mod tests {
-    use super::{wgpu_greedy_decode, CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX};
+    use super::run_report::FinishReason;
+    use super::{wgpu_greedy_decode, wgpu_reply, CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX};
 
     /// #4264: a fake KV-cached forward that records every (token, position) it
     /// is fed and returns the position as the "hidden state".
@@ -1390,6 +1422,32 @@ mod tests {
         assert!(decode_trace(&[1, 2], 0, &[]).1.is_empty(), "max_tokens 0 runs no forward");
         let err = wgpu_greedy_decode(&[1, 2], 1, &[], |_, p| if p == 0 { Err("boom") } else { Ok(vec![]) }, |_| 0);
         assert_eq!(err, Err("boom"), "a prefill failure is returned, not skipped");
+    }
+
+    /// #4984: an APR model on wgpu printed "5x6 equals 30.[151645]" with no
+    /// finish_reason. The loop keeps `<|im_end|>` as its last token, and the APR
+    /// decode renders an id outside its base vocabulary as `[id]`.
+    #[test]
+    fn wgpu_reply_ends_at_the_stop_token_and_says_why() {
+        const IM_END: u32 = 151_645;
+        let vocab = ["30".to_string(), ".".to_string()];
+        let decode = |t: &[u32]| crate::apr::AprV2Model::decode_tokens(&vocab, t);
+        let mut picks = [0, 1, IM_END].into_iter();
+        let out = wgpu_greedy_decode::<()>(&[9], 8, &[IM_END], |_, _| Ok(vec![]), |_| {
+            picks.next().expect("the loop stops at the third pick")
+        })
+        .expect("the fake forward never fails");
+        assert_eq!(out, [9, 0, 1, IM_END]);
+        assert_eq!(
+            wgpu_reply(&out[1..], &[IM_END], 8, decode),
+            ("30.".to_string(), FinishReason::Stop),
+            "the stop token ends the reply, it is not text"
+        );
+        assert_eq!(
+            wgpu_reply(&[0, 1], &[IM_END], 2, decode),
+            ("30.".to_string(), FinishReason::Length),
+            "a spent budget cuts nothing and says so"
+        );
     }
 
     /// A message the user can act on names the backend and says something went

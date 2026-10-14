@@ -24930,6 +24930,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3597
+- id: PMAT-4984
+  github_issue: 4984
+  item_type: task
+  title: APR wgpu path leaks the EOS id into text and reports no finish_reason
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-09T18:43:36Z
+  updated: 2026-10-09T18:43:36Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3597
 - id: PMAT-5025
   github_issue: 5025
   item_type: task
