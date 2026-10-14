@@ -126,7 +126,8 @@ pub(crate) struct Qwen35BatchBufs {
     mixer: mixer::Qwen35MixerBufs,
     /// `[layers × 2 × m]` device pointers, uploaded at the start of each step:
     /// entry `(il * 2) * m + i` is slot `i`'s conv window at layer `il`, entry
-    /// `(il * 2 + 1) * m + i` its recurrent state.
+    /// `(il * 2 + 1) * m + i` its recurrent state; at a full-attention layer the
+    /// two are its K and V caches.
     state_table: GpuBuffer<u64>,
     /// `[m]` the slots' positions, uploaded with `state_table`.
     positions: GpuBuffer<u32>,
@@ -217,8 +218,15 @@ impl Qwen35CudaModel<'_> {
         // and the previous step ended in a sync, so nothing in flight reads it.
         let mut table = Vec::with_capacity(2 * self.layers.len() * tokens.len());
         for il in 0..self.layers.len() {
-            table.extend(states.iter().map(|s| s.conv[il].as_ptr()));
-            table.extend(states.iter().map(|s| s.ssm[il].as_ptr()));
+            // An attention layer's pair is its K and V caches instead.
+            table.extend(states.iter().map(|s| match &s.kv[il] {
+                Some((k, _)) => k.as_ptr(),
+                None => s.conv[il].as_ptr(),
+            }));
+            table.extend(states.iter().map(|s| match &s.kv[il] {
+                Some((_, v)) => v.as_ptr(),
+                None => s.ssm[il].as_ptr(),
+            }));
         }
         b.state_table
             .copy_from_host_at(&table, 0)

@@ -778,4 +778,17 @@ pub enum KernelType {
         head_dim: u32,
         split_len: u32,
     },
+    /// #5279: [`Self::GdnDecodeAttentionSplit`] for m decode slots in one launch.
+    GdnDecodeAttentionSplitSlots {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        split_len: u32,
+    },
+    /// #5279: [`Self::GdnDecodeAttentionReduce`] for m decode slots in one launch.
+    GdnDecodeAttentionReduceSlots {
+        num_heads: u32,
+        head_dim: u32,
+        split_len: u32,
+    },
 }

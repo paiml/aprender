@@ -276,6 +276,7 @@ impl Qwen35CudaModel<'_> {
                 rows,
             )?;
         }
+        let slots = CudaExecutor::gdn_decode_attention_has_slots(d.attn_head_dim);
         let bufs = [&x.q_normed, &x.k_normed, &x.v_raw, &x.attn_out_in];
         let widths = [q_dim, kv_dim, kv_dim, q_dim];
         for (i, (state, &position)) in states.iter().zip(positions).enumerate() {
@@ -303,6 +304,9 @@ impl Qwen35CudaModel<'_> {
                         k_row.copy_from_buffer_async(k_normed, ex.exec_stream())?;
                         v_row.copy_from_buffer_async(v_raw, ex.exec_stream())
                     }?;
+                    if slots {
+                        return Ok(());
+                    }
                     ex.gdn_decode_attention_into(
                         q_normed,
                         k_cache,
@@ -318,6 +322,22 @@ impl Qwen35CudaModel<'_> {
             std::mem::forget(k_row);
             std::mem::forget(v_row);
             run?;
+        }
+        if slots {
+            // Every slot's K/V row is in its cache: all m attend in one pair
+            // of launches, through this layer's entries of the state table.
+            let max_pos = positions.iter().copied().max().unwrap_or(0);
+            let entry = |col: usize| b.state_table.as_ptr() + ((il * 2 + col) * m * 8) as u64;
+            ex.gdn_decode_attention_slots_into(
+                &x.q_normed,
+                entry(0),
+                entry(1),
+                &x.attn_out_in,
+                &b.positions,
+                u32::try_from(max_pos).unwrap_or(u32::MAX),
+                rows,
+                (d.num_heads, d.num_kv_heads, d.attn_head_dim),
+            )?;
         }
         // Elementwise, so one launch for all rows.
         ex.gdn_sigmoid_gate_into(&x.attn_out_in, &x.attn_gate, rows * q_dim)?;

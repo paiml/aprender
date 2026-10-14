@@ -598,6 +598,118 @@ impl CudaExecutor {
         )
     }
 
+    /// #5279: whether [`Self::gdn_decode_attention_slots_into`] can stand in
+    /// for per-slot [`Self::gdn_decode_attention_into`] calls: the single call
+    /// takes the split pair for this `head_dim`.
+    #[must_use]
+    pub fn gdn_decode_attention_has_slots(head_dim: u32) -> bool {
+        head_dim % 128 == 0 && !decode_attention_unsplit()
+    }
+
+    /// #5279: decode attention for `m` slots in one split and one reduce
+    /// launch. `k_table` and `v_table` are device addresses of `[m]` cache
+    /// pointers, `pos` the slots' positions, `max_pos` the largest of them;
+    /// row `r` of `output` is bitwise [`Self::gdn_decode_attention_into`] on
+    /// row `r` of `q` against slot `r`'s caches at `pos[r] + 1` positions.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_decode_attention_slots_into(
+        &mut self,
+        q: &GpuBuffer<f32>,
+        k_table: u64,
+        v_table: u64,
+        output: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        max_pos: u32,
+        m: u32,
+        heads: (u32, u32, u32),
+    ) -> Result<(), GpuError> {
+        let (num_heads, num_kv_heads, head_dim) = heads;
+        let split = trueno_gpu::kernels::gdn::DecodeAttentionSplitKernel::new(
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        )
+        .slots();
+        let split_len = split.split_len;
+        let max_splits = split.n_splits(max_pos + 1);
+        let (slot_acc, slot_ml) = split.partial_floats(max_pos + 1);
+        let acc_floats = slot_acc * m as usize;
+        let need = acc_floats + slot_ml * m as usize;
+        if self.decode_attn_partials.as_ref().map_or(0, GpuBuffer::len) < need {
+            // As in the single pair: grow in steps, drain the in-flight reads first.
+            let rows_step = (num_heads * 64) as usize * (head_dim as usize + 2);
+            let grown = need.div_ceil(rows_step) * rows_step;
+            self.stream.synchronize()?;
+            self.decode_attn_partials = Some(GpuBuffer::new(&self.context, grown)?);
+        }
+        let part_acc = self
+            .decode_attn_partials
+            .as_ref()
+            .expect("allocated just above")
+            .as_ptr();
+        let part_ml = part_acc + (acc_floats * 4) as u64;
+
+        let split_type = KernelType::GdnDecodeAttentionSplitSlots {
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            split_len,
+        };
+        let split_key = module_key!(
+            self,
+            "gdn_decode_attention_split_slots_{}_{}_{}_{}",
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            split_len
+        );
+        let split_name = self.gdn_prepare(&split_type, &split_key)?;
+        let (bx, _, _) = split.block();
+        let config = LaunchConfig {
+            grid: (num_heads, max_splits, m),
+            block: (bx, 1, 1),
+            shared_mem: 0,
+        };
+        let tables = [
+            q.as_ptr(),
+            k_table,
+            v_table,
+            part_acc,
+            part_ml,
+            pos.as_ptr(),
+        ];
+        self.gdn_launch_mixed(
+            &split_key,
+            split_name,
+            config,
+            &tables,
+            &[u64::from(max_splits)],
+        )?;
+
+        let reduce = split.reduce();
+        let reduce_type = KernelType::GdnDecodeAttentionReduceSlots {
+            num_heads,
+            head_dim,
+            split_len,
+        };
+        let reduce_key = module_key!(
+            self,
+            "gdn_decode_attention_reduce_slots_{}_{}_{}",
+            num_heads,
+            head_dim,
+            split_len
+        );
+        let reduce_name = self.gdn_prepare(&reduce_type, &reduce_key)?;
+        let (rbx, _, _) = reduce.block();
+        self.gdn_launch_mixed(
+            &reduce_key,
+            reduce_name,
+            LaunchConfig::grid_2d(num_heads, m, rbx, 1),
+            &[part_acc, part_ml, output.as_ptr(), pos.as_ptr()],
+            &[u64::from(max_splits)],
+        )
+    }
+
     /// Fused causal depthwise conv1d + SiLU for one decode step (`causal_conv1d`
     /// plus the SiLU loop that follows it in `forward_deltanet`).
     ///
