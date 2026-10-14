@@ -1,7 +1,7 @@
 {
-  "census_id_set_sha256": "49c0f490f309629e9dadb3369cbca9f659f15c174dc2b9639e34f54aab5ebef3",
+  "census_id_set_sha256": "64c12fae300c8ae702444a8f6a213c294fb235bc1d65062309c196448488ff54",
   "relations_sha256": "463293732b5c66b490c0a6795e8d2ba9fbbd2a25e76f998326c7f670806f3fe6",
-  "reasoner_git_sha": null,
+  "reasoner_git_sha": "fb997071f77b47e17aa8d542e43c95210f7c0aa8",
   "checkable_n": 86,
   "result": {
     "kind": "model",
@@ -10,5 +10,5 @@
     }
   },
   "pc_reasoner": "fired",
-  "cpu_ms": 2
+  "cpu_ms": 0
 }

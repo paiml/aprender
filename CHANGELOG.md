@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.3] - 2026-10-14
+
+A patch release on 0.71.2: `apr embed` loads EmbeddingGemma 2 from GGUF, the chat route returns logprobs, CRUX gains category R (SHACL ontologies against Apache Jena), the regression tree's split search sorts once instead of rescanning per candidate, the release model run binds its binary by sha prefix under one run lock, memory headroom scales with the device instead of assuming 16 GiB, and the shrink-only ratchets, the weekly mutants run and a new edge-device fast-verbs run all live on nightly LAB lanes, off the PR path.
+
+### Added
+
+- feat(embed): EmbeddingGemma 2 load and apr embed on GGUF (APR-EMBED-001 EG-0..EG-2) (#5160)
+- feat(serve): logprobs on the chat route, and the V3 serving-shape probe that reads them (PMAT-4971) (#5188)
+- feat(contracts): CRUX category R, SHACL ontologies vs Apache Jena (Refs #3598) (#5246)
+
+### Performance
+
+- perf(tree): regression split search sorts once instead of rescanning per candidate (Refs #3859) (#5267)
+
+### Fixed
+
+- fix(kreg): pinned toolchain readable without rust-toolchain.toml (Refs #4539) (#5271)
+- fix(release): models_t1 takes one run lock the nightly probes, and a per-run remote dir (Refs #5264) (#5266)
+- fix(release): models_t1 binds the release binary by sha prefix, not a fixed 9 chars (Refs #5256) (#5257)
+- fix(capacity): unified headroom scales with MemTotal — 16 GiB is twice an 8 GB device (#5261)
+- fix(guards): ladder teardown guard's EXIT trap runs only in its own shell (#5017) (#5224)
+
+### Changed
+
+- fix(gate): shrink-only ratchets move off the PR path to guards-nightly (#5203)
+- ci(mutants): weekly nightly on the X64 mutants pool, with the 7-day stop (#5229)
+- ci(edge): LAB nightly for fast verbs on the 8 GB ARM64 CUDA edge device (#5254) (#5263)
+
+### Known issues
+- **Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) on GB10 is not claimed for 0.70 (#3715); planned for 0.70.1.**
+  On GB10 (sm_121) every verb (run, chat, serve, code) times out at 600 s on the 20k-token rung. The 0.69.1
+  pre-load refusal is gone in 0.70.0, so these models now load and run, but too slowly to be claimed. The
+  release gate does not owe the qwen3moe x GB10 cells (`cells.declaimed` in
+  `contracts/model-capability-ladder-v1.yaml`), and the ladder gate is RED if any rung or long-rung
+  representative still claims them. Withdrawn, not waived: lambda holds both files and still owes every
+  qwen3moe cell.
+- **GB10 dense models: prompt processing unbatched; planned for 0.70.1 (#4590).** Widens the Qwen3 entry below to every dense model on GB10 (operator ruling 2026-09-28
+  16:15Z): the serial prefill is the sm_12x default for every non-hybrid arch, so dense Qwen2.5 on GB10
+  is de-claimed too (`cells.declaimed`: qwen2 and qwen3 on gx10). Output is correct; only prefill speed
+  is affected. Withdrawn, not waived: lambda still owes every dense cell, gx10 still owes every Qwen3.5 cell.
+- **Qwen3 on GB10 (sm_121, and the sm_12x family) is correct but very slow, and is not claimed for
+  0.70 (#4590).** Dense Qwen3 on sm_12x prefills one token at a time, the sm_12x default, because the
+  generic batched prefill corrupts the KV cache there (FALSIFY-CPU-GPU-009). Measured on 0.70.0
+  (8d021f61e) at an 8k think-on prompt: Qwen3-1.7B 967 s, Qwen3-8B 2163 s, against 63-80 s for
+  Qwen3.5-9B on the same host (Qwen3.5 has its own batched prefill, #3596). `apr` prints a
+  `[KNOWN-ISSUE #4590]` warning when it loads Qwen3 on sm_12x. The release gate does not owe the
+  Qwen3 x GB10 cells (`cells.declaimed` in `contracts/model-capability-ladder-v1.yaml`); every other
+  host still owes every Qwen3 cell. Planned for 0.70.1: native sm_121 SASS, then a re-test of batched
+  prefill on GB10.
+
 ## [0.71.2] - 2026-10-12
 
 A patch release on 0.71.1: five new RustSec advisories against quinn-proto are fixed by the upgrade, `apr-cli` builds again without the `inference` feature, the silicon-coverage read survives transient 5xx answers and a push run's token, a batch of cargo-free guards moves from the PR path to the nightly LAB lane, and 28 dark source files whose code already lived in a compiled file are deleted.

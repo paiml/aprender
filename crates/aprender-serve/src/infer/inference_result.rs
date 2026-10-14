@@ -266,10 +266,8 @@ pub fn run_inference_report(
 
     match format {
         ModelFormat::Gguf => run_gguf_inference(config, &prepared),
-        // Not reported on these paths yet: `None`, never a guess.
-        ModelFormat::Apr => {
-            run_apr_inference(config, &prepared).map(|r| (r, run_report::RunReport::default()))
-        },
+        ModelFormat::Apr => run_apr_inference(config, &prepared),
+        // Not reported on this path yet: `None`, never a guess.
         ModelFormat::SafeTensors => run_safetensors_inference(config, &prepared)
             .map(|r| (r, run_report::RunReport::default())),
     }
