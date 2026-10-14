@@ -681,6 +681,10 @@ pub enum KernelType {
     ArgMaxFinal {
         num_blocks: u32,
     },
+    /// #5279: [`Self::ArgMax`] over `m` rows, one per `%ctaid.y`.
+    ArgMaxRows { length: u32 },
+    /// #5279: [`Self::ArgMaxFinal`] over `m` rows, one per `%ctaid.y`.
+    ArgMaxFinalRows { num_blocks: u32 },
     /// QWEN-007: Q8 dequantization kernel for KV cache
     Q8Dequant {
         n: u32,

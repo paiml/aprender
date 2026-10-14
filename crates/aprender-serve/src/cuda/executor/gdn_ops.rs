@@ -494,6 +494,47 @@ impl CudaExecutor {
         )
     }
 
+    /// #5279: [`Self::gpu_argmax`] for `m` rows of `vocab` logits in one pair of
+    /// launches, row `r`'s token id written to `out[r]` — and nothing synced or
+    /// downloaded, so the caller downloads all `m` ids at once. `vals` and
+    /// `idxs` hold `m * argmax_blocks(vocab)` block results.
+    pub fn argmax_rows_into(
+        &mut self,
+        logits: &GpuBuffer<f32>,
+        (vals, idxs): (&GpuBuffer<f32>, &GpuBuffer<u32>),
+        out: &GpuBuffer<u32>,
+        vocab: u32,
+        m: u32,
+    ) -> Result<(), GpuError> {
+        let blocks = Self::argmax_blocks(vocab);
+        let first = KernelType::ArgMaxRows { length: vocab };
+        let first_key = module_key!(self, "argmax_rows_{}", vocab);
+        let first_name = self.gdn_prepare(&first, &first_key)?;
+        self.gdn_launch_mixed(
+            &first_key,
+            first_name,
+            LaunchConfig::grid_2d(blocks, m, 256, 1),
+            &[logits.as_ptr(), vals.as_ptr(), idxs.as_ptr()],
+            &[u64::from(vocab)],
+        )?;
+        let last = KernelType::ArgMaxFinalRows { num_blocks: blocks };
+        let last_key = module_key!(self, "argmax_final_rows_{}", blocks);
+        let last_name = self.gdn_prepare(&last, &last_key)?;
+        self.gdn_launch_mixed(
+            &last_key,
+            last_name,
+            LaunchConfig::grid_2d(1, m, 256, 1),
+            &[vals.as_ptr(), idxs.as_ptr(), out.as_ptr()],
+            &[u64::from(blocks)],
+        )
+    }
+
+    /// The first argmax pass's block count for `vocab` logits.
+    #[must_use]
+    pub fn argmax_blocks(vocab: u32) -> u32 {
+        trueno_gpu::kernels::ArgMaxKernel::new(vocab).num_blocks()
+    }
+
     /// #5279: [`Self::gdn_kv_row_scatter_indirect_into`] for `m` slots in one
     /// launch: row `r` of `src` goes into the cache at `table[r]` (a device array
     /// of `m` u64 pointers), at position `pos[r]`.

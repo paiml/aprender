@@ -206,6 +206,8 @@ impl CudaKernels {
             KernelType::PackedDp4aQ4KQ8 { .. } => "packed_dp4a_q4k_q8",
             KernelType::ArgMax { .. } => "argmax_block_reduce",
             KernelType::ArgMaxFinal { .. } => "argmax_final_reduce",
+            KernelType::ArgMaxRows { .. } => "argmax_block_reduce_rows",
+            KernelType::ArgMaxFinalRows { .. } => "argmax_final_reduce_rows",
             KernelType::Q8Dequant { .. } => "q8_dequant",
             _ => return None,
         };

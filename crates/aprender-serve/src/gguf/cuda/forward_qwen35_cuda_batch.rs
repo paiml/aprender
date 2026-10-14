@@ -134,6 +134,11 @@ pub(crate) struct Qwen35BatchBufs {
     /// `[m × hidden_dim]` on the host: the slots' embedding rows, uploaded
     /// to `hidden` in one copy.
     host_hidden: Vec<f32>,
+    /// `[m × argmax_blocks]` first-pass argmax results, values and indices.
+    argmax_vals: GpuBuffer<f32>,
+    argmax_idxs: GpuBuffer<u32>,
+    /// `[m]` the slots' greedy token ids, downloaded in one copy.
+    argmax_out: GpuBuffer<u32>,
 }
 
 impl Qwen35BatchBufs {
@@ -141,6 +146,7 @@ impl Qwen35BatchBufs {
         let hidden = rows * d.hidden_dim as usize;
         let inter = rows * d.intermediate_dim as usize;
         let zeros = |len| Qwen35CudaModel::zeros(executor, len);
+        let blocks = rows * CudaExecutor::argmax_blocks(d.vocab_size) as usize;
         Ok(Self {
             rows,
             hidden: zeros(hidden)?,
@@ -157,6 +163,11 @@ impl Qwen35BatchBufs {
             positions: GpuBuffer::new(executor.context(), rows)
                 .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?,
             host_hidden: vec![0.0; hidden],
+            argmax_vals: zeros(blocks)?,
+            argmax_idxs: GpuBuffer::new(executor.context(), blocks)
+                .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?,
+            argmax_out: GpuBuffer::new(executor.context(), rows)
+                .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?,
         })
     }
 }
@@ -330,23 +341,35 @@ impl Qwen35CudaModel<'_> {
             self.lm_head.n,
             self.lm_head.k,
         )?;
-        if host_logits.contains(&true) {
-            // The one sync in front of the downloads, as `forward_single`.
-            ex.sync_stream()?;
+        let mut tokens = vec![0u32; m];
+        if host_logits.contains(&false) {
+            // Every row's greedy id in one pair of launches; the rows that
+            // return logits ignore theirs.
+            ex.argmax_rows_into(
+                &b.logits,
+                (&b.argmax_vals, &b.argmax_idxs),
+                &b.argmax_out,
+                d.vocab_size,
+                m as u32,
+            )?;
+        }
+        // The one sync in front of the downloads, as `forward_single`.
+        ex.sync_stream()?;
+        if host_logits.contains(&false) {
+            b.argmax_out.copy_to_host_at(&mut tokens, 0)?;
         }
         let vocab = d.vocab_size as usize;
         host_logits
             .iter()
+            .zip(tokens)
             .enumerate()
-            .map(|(i, &host)| {
+            .map(|(i, (&host, token))| {
                 if host {
                     let mut logits = vec![0.0f32; vocab];
                     b.logits.copy_to_host_at(&mut logits, i * vocab)?;
                     Ok(Qwen35StepOut::Logits(logits))
                 } else {
-                    let offset = u64::from(i as u32 * d.vocab_size) * 4;
-                    ex.gpu_argmax(b.logits.as_ptr() + offset, d.vocab_size)
-                        .map(Qwen35StepOut::Token)
+                    Ok(Qwen35StepOut::Token(token))
                 }
             })
             .collect()

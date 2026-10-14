@@ -450,6 +450,10 @@ impl CudaKernels {
             KernelType::PackedDp4aQ4KQ8 { k, n } => PackedDp4aQ4KQ8Kernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::ArgMax { length } => ArgMaxKernel::new(*length).emit_ptx_for_target(target),
             KernelType::ArgMaxFinal { num_blocks } => ArgMaxFinalKernel::new(*num_blocks).emit_ptx_for_target(target),
+            KernelType::ArgMaxRows { length } => ArgMaxKernel::new(*length).rows().emit_ptx_for_target(target),
+            KernelType::ArgMaxFinalRows { num_blocks } => {
+                ArgMaxFinalKernel::new(*num_blocks).rows().emit_ptx_for_target(target)
+            },
             KernelType::Q8Dequant { n } => generate_q8_dequant_ptx(*n),
             _ => return None,
         };
