@@ -7,6 +7,8 @@
 //!
 //! - **SCHEMA-026**: a contract under `contracts/` with no tests is refused
 //!   unless its path is on [`NO_TEST_DEBT`]. No new contract joins the debt.
+//!   Scoped to the census tree ([`in_census_tree`]): the list names paths in
+//!   this repo's `contracts/`, not in every directory of that name.
 //! - **stale lines**: a listed contract that now has tests, or no longer
 //!   exists, fails [`measure`], so a fix must delete its line.
 //! - **the cap**: the list's length may not exceed [`debt_cap`] for the
@@ -21,7 +23,7 @@
 use std::collections::BTreeSet;
 use std::path::{Component, Path};
 
-use super::{parse_contract, Contract};
+use super::{is_contract_yaml, parse_contract, Contract};
 use crate::error::{Severity, Violation};
 use crate::lint::{collect_yaml_files, UNWALKED_DIRS};
 
@@ -64,10 +66,14 @@ pub fn debt_cap(version: &str) -> Option<usize> {
 }
 
 /// `path` relative to its last `contracts` component, `/`-joined; `None` when
-/// the path is not inside a `contracts/` tree or sits in a directory the
-/// walker skips.
+/// the path is not inside a `contracts/` tree, is a file the walker does not
+/// read as a contract (`ontology.yaml`, `binding.yaml`, …), or sits in a
+/// directory the walker skips.
 #[must_use]
 pub fn rel_to_contracts(path: &Path) -> Option<String> {
+    if !is_contract_yaml(path) {
+        return None;
+    }
     let parts: Vec<&str> = path
         .components()
         .filter_map(|c| match c {
@@ -84,9 +90,36 @@ pub fn rel_to_contracts(path: &Path) -> Option<String> {
     Some(rel.join("/"))
 }
 
-/// SCHEMA-026 for one contract read from `path`.
+/// The census marker: the `contracts/` root the debt list describes is the one
+/// the release train writes `census.json` into. Another project's `contracts/`
+/// (pmat's corpus fixture) or a scratch `contracts/` has none, and the list
+/// says nothing about it.
+pub const CENSUS_MARKER: &str = "census.json";
+
+/// Is `path` inside the `contracts/` tree [`NO_TEST_DEBT`] describes? Its
+/// deepest `contracts` ancestor must hold [`CENSUS_MARKER`].
+#[must_use]
+pub fn in_census_tree(path: &Path) -> bool {
+    path.ancestors()
+        .skip(1)
+        .find(|a| a.file_name().and_then(|n| n.to_str()) == Some("contracts"))
+        .is_some_and(|root| root.join(CENSUS_MARKER).is_file())
+}
+
+/// SCHEMA-026 for one contract read from `path`: [`check_in_tree`] when `path`
+/// is [`in_census_tree`], otherwise nothing.
 #[must_use]
 pub fn check(path: &Path, contract: &Contract) -> Option<Violation> {
+    if !in_census_tree(path) {
+        return None;
+    }
+    check_in_tree(path, contract)
+}
+
+/// SCHEMA-026 on the path alone, for a `path` already known to be in the
+/// census tree.
+#[must_use]
+pub fn check_in_tree(path: &Path, contract: &Contract) -> Option<Violation> {
     if !contract.falsification_tests.is_empty() {
         return None;
     }

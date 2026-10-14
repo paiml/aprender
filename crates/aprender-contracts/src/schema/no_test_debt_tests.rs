@@ -50,7 +50,7 @@ fn debt_cap_case_table() {
 
 #[test]
 fn rel_to_contracts_case_table() {
-    let rows: [(&str, Option<&str>); 8] = [
+    let rows: [(&str, Option<&str>); 11] = [
         ("contracts/a-v1.yaml", Some("a-v1.yaml")),
         ("/x/y/contracts/sub/a-v1.yaml", Some("sub/a-v1.yaml")),
         ("/x/contracts/y/contracts/a.yaml", Some("a.yaml")),
@@ -62,6 +62,10 @@ fn rel_to_contracts_case_table() {
         ("contracts/quarantine/a.yaml", None),
         ("/tmp/fixture/a.yaml", None),
         ("contracts", None),
+        // Files the walker never reads as contracts, by name or extension.
+        ("contracts/ontology.yaml", None),
+        ("contracts/x/binding.yaml", None),
+        ("contracts/a-v1.yml", None),
     ];
     for (path, want) in rows {
         assert_eq!(rel_to_contracts(Path::new(path)).as_deref(), want, "{path}");
@@ -114,7 +118,7 @@ fn schema_026_case_table() {
         ),
     ];
     for (row, path, contract, fires) in rows {
-        let v = check(Path::new(path), contract);
+        let v = check_in_tree(Path::new(path), contract);
         assert_eq!(v.is_some(), fires, "{row}: {v:?}");
         if let Some(v) = v {
             assert_eq!(v.rule, "SCHEMA-026", "{row}");
@@ -124,21 +128,54 @@ fn schema_026_case_table() {
 }
 
 /// SCHEMA-026 reaches `pv validate` through `validate_artifact`, not only the
-/// helper: a zero-test file written at `contracts/<new>.yaml` is refused.
+/// helper: a zero-test file written at `contracts/<new>.yaml` of a census tree
+/// is refused, and the same file in a `contracts/` with no census is not
+/// (another project's corpus, a scratch fixture).
 #[test]
-fn validate_artifact_refuses_unlisted_zero_test_contract() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let dir = tmp.path().join("contracts");
-    std::fs::create_dir_all(&dir).expect("mkdir");
-    let path = dir.join("brand-new-v1.yaml");
-    std::fs::write(&path, ZERO_TESTS).expect("write");
-    let (_, violations) = crate::schema::validate_artifact(&path).expect("validates");
-    assert!(
-        violations
-            .iter()
-            .any(|v| v.rule == "SCHEMA-026" && v.severity == Severity::Error),
-        "{violations:?}"
-    );
+fn validate_artifact_refuses_unlisted_zero_test_contract_in_census_tree_only() {
+    for (census, fires) in [(true, true), (false, false)] {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dir = tmp.path().join("contracts");
+        std::fs::create_dir_all(dir.join("sub")).expect("mkdir");
+        if census {
+            std::fs::write(dir.join(CENSUS_MARKER), "{}\n").expect("write census");
+        }
+        for rel in ["brand-new-v1.yaml", "sub/nested-new-v1.yaml"] {
+            let path = dir.join(rel);
+            std::fs::write(&path, ZERO_TESTS).expect("write");
+            let (_, violations) = crate::schema::validate_artifact(&path).expect("validates");
+            let fired = violations
+                .iter()
+                .any(|v| v.rule == "SCHEMA-026" && v.severity == Severity::Error);
+            assert_eq!(fired, fires, "census={census} {rel}: {violations:?}");
+        }
+    }
+}
+
+/// The scope is not vacuous on this repo: the real `contracts/` carries the
+/// census marker, so an unlisted zero-test contract there is refused, at the
+/// top level and nested.
+#[test]
+fn the_repo_contracts_dir_is_a_census_tree() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+    let zero = parse_contract_str(ZERO_TESTS).expect("parses");
+    for rel in [
+        "brand-new-never-written-v1.yaml",
+        "never-written-dir/brand-new-v1.yaml",
+    ] {
+        let new = root.join(rel);
+        assert!(
+            in_census_tree(&new),
+            "{} has no {CENSUS_MARKER}",
+            root.display()
+        );
+        assert!(
+            check(&new, &zero).is_some_and(|v| v.rule == "SCHEMA-026"),
+            "{rel}"
+        );
+    }
+    let listed = root.join(a_listed_path());
+    assert!(check(&listed, &zero).is_none(), "{}", listed.display());
 }
 
 #[test]
