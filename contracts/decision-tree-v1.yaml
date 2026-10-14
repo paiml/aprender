@@ -255,5 +255,5 @@ qa_gate:
   - fit_predict_class_range
   - split_search_rescan_equivalent
   - split_search_subquadratic
-  pass_criteria: All 9 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 11 falsification tests pass + Kani harnesses verify
   falsification: Use entropy instead of Gini or omit class count normalization
