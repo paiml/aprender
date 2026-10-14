@@ -72,6 +72,11 @@ run_wrapped() {
     # as stdin, and the binary must see the same stdin nextest gave this script.
     "$@" 0<&0 &
     pid=$!
+    # After the spawn, so the binary keeps the default SIGPIPE. If nextest is gone,
+    # the dump writes to a stderr with no reader; with SIGPIPE at its default that
+    # write would end this script before stop_child and orphan the binary. Ignored,
+    # the write fails with EPIPE and the kill still runs.
+    trap '' PIPE
     # Poll every 0.1 s rather than run a background watchdog: a watchdog `sleep`
     # would inherit the stdout/stderr pipes and hold them open after the binary
     # exits, so nextest would wait on EOF. The poll adds at most 0.1 s per listing.
@@ -132,6 +137,13 @@ if [ "${1:-}" = "--self-test" ]; then
     check "row 6 a TERM to the wrapper exits 143" "$rc" "143"
     if kill -0 "$(cat "$SD/cpid")" 2>/dev/null; then alive=yes; kill -KILL "$(cat "$SD/cpid")"; else alive=no; fi
     check "row 6 the TERM reaches the binary, which is gone (no orphan)" "$alive" "no"
+
+    # stderr is a pipe whose reader (`true`) has already exited, as when nextest is
+    # gone: the dump write must not end the wrapper before it kills the binary.
+    { NEXTEST_LIST_TIMEOUT_S=1 bash "$self" bash -c 'echo $$ > "$1"; exec sleep 600' _ "$SD/cpid7" 2>&1 >/dev/null; echo "$?" > "$SD/rc7"; } | true
+    check "row 7 a dump to a closed stderr still exits 124" "$(cat "$SD/rc7")" "124"
+    if kill -0 "$(cat "$SD/cpid7")" 2>/dev/null; then alive=yes; kill -KILL "$(cat "$SD/cpid7")"; else alive=no; fi
+    check "row 7 the binary is gone after a dump to a closed stderr (no orphan)" "$alive" "no"
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
     printf '\nSELF-TEST PASSED\n'
