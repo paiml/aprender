@@ -45,6 +45,14 @@ pub(super) struct Qwen35MixerBufs {
     k_raw: GpuBuffer<f32>,
     /// `kv_dim` wide: `attn_v . normed`, copied into each slot's cache row.
     v_raw: GpuBuffer<f32>,
+    /// `q_dim` wide: the query half of `q_full`.
+    attn_q: GpuBuffer<f32>,
+    /// `q_dim` wide: the gate half of `q_full`.
+    attn_gate: GpuBuffer<f32>,
+    /// `q_dim` wide: `attn_q` normed per head, then roped in place.
+    q_normed: GpuBuffer<f32>,
+    /// `kv_dim` wide: `k_raw` normed per head, copied into each slot's cache row.
+    k_normed: GpuBuffer<f32>,
     /// `q_dim` wide: the gated attention output, the `attn_output` input.
     attn_out_in: GpuBuffer<f32>,
 }
@@ -69,6 +77,10 @@ impl Qwen35MixerBufs {
             q_full: zeros(q_dim * 2)?,
             k_raw: zeros(kv_dim)?,
             v_raw: zeros(kv_dim)?,
+            attn_q: zeros(q_dim)?,
+            attn_gate: zeros(q_dim)?,
+            q_normed: zeros(q_dim)?,
+            k_normed: zeros(kv_dim)?,
             attn_out_in: zeros(q_dim)?,
         })
     }
@@ -225,7 +237,6 @@ impl Qwen35CudaModel<'_> {
         let CudaLayer::Attention(w) = &self.layers[il] else {
             unreachable!("the caller matched an attention layer")
         };
-        let a = &self.attn_scratch;
         let x = &b.mixer;
         let ex = &mut self.executor;
         let q_dim = d.num_heads * d.attn_head_dim;
@@ -238,68 +249,77 @@ impl Qwen35CudaModel<'_> {
         ] {
             project(ex, proj, &x.normed, out, m)?;
         }
-        let bufs = [&x.q_full, &x.k_raw, &x.v_raw, &x.attn_out_in];
-        let widths = [q_dim * 2, kv_dim, kv_dim, q_dim];
+        // The split and both per-head norms treat each head alone, so the m
+        // rows run as m times the heads in one launch each.
+        let rows = m as u32;
+        ex.gdn_split_interleaved_into(
+            &x.q_full,
+            &x.attn_q,
+            &x.attn_gate,
+            rows * d.num_heads,
+            d.attn_head_dim,
+        )?;
+        for (input, norm, output, heads) in [
+            (&x.attn_q, &w.attn_q_norm, &x.q_normed, d.num_heads),
+            (&x.k_raw, &w.attn_k_norm, &x.k_normed, d.num_kv_heads),
+        ] {
+            ex.per_head_rmsnorm_into(input, norm, output, d.attn_head_dim, rows * heads, d.eps)?;
+        }
+        let bufs = [&x.q_normed, &x.k_normed, &x.v_raw, &x.attn_out_in];
+        let widths = [q_dim, kv_dim, kv_dim, q_dim];
         for (i, (state, &position)) in states.iter().zip(positions).enumerate() {
             let (k_cache, v_cache) = state.kv[il]
                 .as_ref()
                 .expect("an attention layer owns a KV cache");
             let row_off = u32::try_from(position).unwrap_or(0) * kv_dim;
             let pos32 = u32::try_from(position).unwrap_or(u32::MAX);
-            let k_row = Self::view(k_cache, row_off, kv_dim);
+            let mut k_row = Self::view(k_cache, row_off, kv_dim);
             let mut v_row = Self::view(v_cache, row_off, kv_dim);
-            let run = with_rows(bufs, i, widths, |[q_full, k_raw, v_raw, attn_out_in]| {
-                // The single-row mixer's `attn_v` GEMV writes this row in
-                // place; here the batched GEMV's row is copied in, on the
-                // stream the kernels around it are enqueued on.
-                // SAFETY: both are live device buffers of `kv_dim` elements
-                // (the copy checks the lengths), and neither is freed before
-                // the stream runs the copy: `v_raw` is the batch buffer and
-                // `v_row` is the slot's KV cache.
-                unsafe { v_row.copy_from_buffer_async(v_raw, ex.exec_stream()) }?;
-                ex.gdn_split_interleaved_into(q_full, &a.q, &a.gate, d.num_heads, d.attn_head_dim)?;
-                ex.per_head_rmsnorm_into(
-                    &a.q,
-                    &w.attn_q_norm,
-                    &a.q_normed,
-                    d.attn_head_dim,
-                    d.num_heads,
-                    d.eps,
-                )?;
-                ex.per_head_rmsnorm_into(
-                    k_raw,
-                    &w.attn_k_norm,
-                    &k_row,
-                    d.attn_head_dim,
-                    d.num_kv_heads,
-                    d.eps,
-                )?;
-                for (rows, heads) in [(&a.q_normed, d.num_heads), (&k_row, d.num_kv_heads)] {
-                    ex.gdn_partial_neox_rope_into(
-                        rows,
-                        heads,
+            let run = with_rows(
+                bufs,
+                i,
+                widths,
+                |[q_normed, k_normed, v_raw, attn_out_in]| {
+                    // The single-row mixer writes the normed K and the `attn_v`
+                    // GEMV straight into the cache row; here the batch rows are
+                    // copied in, on the stream the kernels around them are
+                    // enqueued on.
+                    // SAFETY: all four are live device buffers of `kv_dim`
+                    // elements (the copy checks the lengths), and none is freed
+                    // before the stream runs the copies: `k_normed` and `v_raw`
+                    // are batch buffers, `k_row` and `v_row` the slot's KV cache.
+                    unsafe {
+                        k_row.copy_from_buffer_async(k_normed, ex.exec_stream())?;
+                        v_row.copy_from_buffer_async(v_raw, ex.exec_stream())
+                    }?;
+                    for (rows, heads) in [(q_normed, d.num_heads), (&k_row, d.num_kv_heads)] {
+                        ex.gdn_partial_neox_rope_into(
+                            rows,
+                            heads,
+                            d.attn_head_dim,
+                            d.n_rot,
+                            pos32,
+                            d.theta_scale,
+                        )?;
+                    }
+                    ex.gdn_decode_attention_into(
+                        q_normed,
+                        k_cache,
+                        v_cache,
+                        attn_out_in,
+                        d.num_heads,
+                        d.num_kv_heads,
                         d.attn_head_dim,
-                        d.n_rot,
-                        pos32,
-                        d.theta_scale,
-                    )?;
-                }
-                ex.gdn_decode_attention_into(
-                    &a.q_normed,
-                    k_cache,
-                    v_cache,
-                    attn_out_in,
-                    d.num_heads,
-                    d.num_kv_heads,
-                    d.attn_head_dim,
-                    pos32 + 1,
-                )?;
-                ex.gdn_sigmoid_gate_into(attn_out_in, &a.gate, q_dim)
-            });
+                        pos32 + 1,
+                    )
+                },
+            );
             std::mem::forget(k_row);
             std::mem::forget(v_row);
             run?;
         }
+        // Elementwise, so one launch for all rows.
+        ex.gdn_sigmoid_gate_into(&x.attn_out_in, &x.attn_gate, rows * q_dim)?;
         project(ex, &w.attn_output, &x.attn_out_in, &x.out, m)?;
         ex.residual_add_into(&b.hidden, &x.out, &b.hidden, m as u32 * d.hidden_dim)
     }
