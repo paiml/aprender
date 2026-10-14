@@ -161,7 +161,7 @@ fn run_plan_pretrain(config_path: Option<&std::path::Path>, format: PlanFormat) 
         );
     } else if format == PlanFormat::Yaml {
         let plan = pretrain_plan_manifest(config_path, &spec);
-        let rendered = serde_yaml::to_string(&plan).map_err(|e| {
+        let rendered = serde_saphyr::to_string(&plan).map_err(|e| {
             CliError::ValidationFailed(format!("Could not render plan as YAML: {e}"))
         })?;
         print!("{rendered}");
@@ -250,34 +250,41 @@ pub(crate) fn run_apply(
     }
 }
 
+/// The standard stage options (#5205).
+fn yaml_from_str<T: serde::de::DeserializeOwned>(
+    s: &str,
+) -> std::result::Result<T, serde_saphyr::Error> {
+    serde_saphyr::from_str_with_options(
+        s,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
+}
+
 /// Build a YAML distributed config section from CLI flags.
 fn build_distributed_yaml(
     world_size: Option<usize>,
     rank: Option<usize>,
     coordinator_addr: Option<&str>,
-) -> serde_yaml::Value {
-    let mut m = serde_yaml::Mapping::new();
+) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
     let ws = world_size.unwrap_or(2);
     m.insert(
-        serde_yaml::Value::String("world_size".into()),
-        serde_yaml::Value::Number(serde_yaml::Number::from(ws as u64)),
+        "world_size".into(),
+        serde_json::Value::Number(serde_json::Number::from(ws as u64)),
     );
     let r = rank.unwrap_or(0);
     m.insert(
-        serde_yaml::Value::String("rank".into()),
-        serde_yaml::Value::Number(serde_yaml::Number::from(r as u64)),
+        "rank".into(),
+        serde_json::Value::Number(serde_json::Number::from(r as u64)),
     );
     let addr = coordinator_addr.unwrap_or("0.0.0.0:9000");
     m.insert(
-        serde_yaml::Value::String("coordinator_addr".into()),
-        serde_yaml::Value::String(addr.into()),
+        "coordinator_addr".into(),
+        serde_json::Value::String(addr.into()),
     );
     let role = if r == 0 { "coordinator" } else { "worker" };
-    m.insert(
-        serde_yaml::Value::String("role".into()),
-        serde_yaml::Value::String(role.into()),
-    );
-    serde_yaml::Value::Mapping(m)
+    m.insert("role".into(), serde_json::Value::String(role.into()));
+    serde_json::Value::Object(m)
 }
 
 /// Patch a YAML training config with CLI overrides (distributed, deterministic, seed).
@@ -293,36 +300,33 @@ fn patch_yaml_config(
 ) -> Result<std::path::PathBuf> {
     let yaml_content = std::fs::read_to_string(config_path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
-    let mut yaml_val: serde_yaml::Value = serde_yaml::from_str(&yaml_content)
+    let mut yaml_val: serde_json::Value = yaml_from_str(&yaml_content)
         .map_err(|e| CliError::ValidationFailed(format!("Invalid YAML: {e}")))?;
 
     let training = yaml_val
         .get_mut("training")
         .ok_or_else(|| CliError::ValidationFailed("Missing 'training' section".into()))?;
 
-    if let serde_yaml::Value::Mapping(training_map) = training {
+    if let serde_json::Value::Object(training_map) = training {
         // -o/--output overrides training.output_dir. Until this existed the flag
         // was accepted, documented, and silently discarded.
         if let Some(dir) = output_dir {
             training_map.insert(
-                serde_yaml::Value::String("output_dir".into()),
-                serde_yaml::Value::String(dir.display().to_string()),
+                "output_dir".into(),
+                serde_json::Value::String(dir.display().to_string()),
             );
         }
         if distributed {
             let dist = build_distributed_yaml(world_size, rank, coordinator_addr);
-            training_map.insert(serde_yaml::Value::String("distributed".into()), dist);
+            training_map.insert("distributed".into(), dist);
         }
         if deterministic {
-            training_map.insert(
-                serde_yaml::Value::String("deterministic".into()),
-                serde_yaml::Value::Bool(true),
-            );
+            training_map.insert("deterministic".into(), serde_json::Value::Bool(true));
         }
         if let Some(s) = seed {
             training_map.insert(
-                serde_yaml::Value::String("seed".into()),
-                serde_yaml::Value::Number(serde_yaml::Number::from(s)),
+                "seed".into(),
+                serde_json::Value::Number(serde_json::Number::from(s)),
             );
         }
     }
@@ -335,7 +339,7 @@ fn patch_yaml_config(
             .map(|d| d.as_nanos())
             .unwrap_or(0)
     ));
-    let patched_yaml = serde_yaml::to_string(&yaml_val)
+    let patched_yaml = serde_saphyr::to_string(&yaml_val)
         .map_err(|e| CliError::ValidationFailed(format!("YAML serialize error: {e}")))?;
     std::fs::write(&temp_path, &patched_yaml)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write temp config: {e}")))?;
@@ -831,7 +835,7 @@ pub(crate) fn run_sweep(
 
     let base_content = std::fs::read_to_string(config_path)
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read config: {e}")))?;
-    let base: serde_yaml::Value = serde_yaml::from_str(&base_content)
+    let base: serde_json::Value = yaml_from_str(&base_content)
         .map_err(|e| CliError::ValidationFailed(format!("Invalid YAML: {e}")))?;
 
     std::fs::create_dir_all(output_dir)
@@ -855,7 +859,7 @@ pub(crate) fn run_sweep(
     let mut results = Vec::new();
     for (i, config) in configs.iter().enumerate() {
         let filename = output_dir.join(format!("sweep-{i:03}.yaml"));
-        let yaml_str = serde_yaml::to_string(config)
+        let yaml_str = serde_saphyr::to_string(config)
             .map_err(|e| CliError::ValidationFailed(format!("YAML serialize error: {e}")))?;
         std::fs::write(&filename, &yaml_str).map_err(|e| {
             CliError::ValidationFailed(format!("Cannot write {}: {e}", filename.display()))
@@ -913,7 +917,7 @@ pub(crate) fn run_sweep(
 }
 
 /// Generate grid search configs over LR x batch_size x weight_decay.
-fn generate_grid_configs(base: &serde_yaml::Value, max_configs: usize) -> Vec<serde_yaml::Value> {
+fn generate_grid_configs(base: &serde_json::Value, max_configs: usize) -> Vec<serde_json::Value> {
     let lr_values = [1e-5, 3e-5, 1e-4, 3e-4, 1e-3];
     let bs_values: &[u64] = &[2, 4, 8];
     let wd_values = [0.0, 0.01, 0.1];
@@ -938,10 +942,10 @@ fn generate_grid_configs(base: &serde_yaml::Value, max_configs: usize) -> Vec<se
 
 /// Generate random search configs using LCG PRNG.
 fn generate_random_configs(
-    base: &serde_yaml::Value,
+    base: &serde_json::Value,
     num_configs: usize,
     seed: u64,
-) -> Vec<serde_yaml::Value> {
+) -> Vec<serde_json::Value> {
     let mut rng_state = seed;
     let mut configs = Vec::new();
 
@@ -982,14 +986,15 @@ fn lcg_f64(state: &mut u64) -> f64 {
 }
 
 /// Set a nested YAML value (f64).
-fn set_yaml_f64(root: &mut serde_yaml::Value, path: &[&str], val: f64) {
+fn set_yaml_f64(root: &mut serde_json::Value, path: &[&str], val: f64) {
     let mut node = root;
     for (i, key) in path.iter().enumerate() {
         if i == path.len() - 1 {
-            node[*key] = serde_yaml::Value::Number(serde_yaml::Number::from(val));
+            node[*key] = serde_json::Number::from_f64(val)
+                .map_or(serde_json::Value::Null, serde_json::Value::Number);
         } else {
             if node.get(*key).is_none() {
-                node[*key] = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+                node[*key] = serde_json::Value::Object(serde_json::Map::new());
             }
             node = &mut node[*key];
         }
@@ -997,14 +1002,14 @@ fn set_yaml_f64(root: &mut serde_yaml::Value, path: &[&str], val: f64) {
 }
 
 /// Set a nested YAML value (u64).
-fn set_yaml_u64(root: &mut serde_yaml::Value, path: &[&str], val: u64) {
+fn set_yaml_u64(root: &mut serde_json::Value, path: &[&str], val: u64) {
     let mut node = root;
     for (i, key) in path.iter().enumerate() {
         if i == path.len() - 1 {
-            node[*key] = serde_yaml::Value::Number(serde_yaml::Number::from(val));
+            node[*key] = serde_json::Value::Number(serde_json::Number::from(val));
         } else {
             if node.get(*key).is_none() {
-                node[*key] = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+                node[*key] = serde_json::Value::Object(serde_json::Map::new());
             }
             node = &mut node[*key];
         }
@@ -1507,7 +1512,7 @@ fn parse_sweep_config_params(configs: &[std::path::PathBuf]) -> Result<Vec<Halvi
     for c in configs {
         let content = std::fs::read_to_string(c)
             .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", c.display())))?;
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+        let yaml: serde_json::Value = yaml_from_str(&content).map_err(|e| {
             CliError::ValidationFailed(format!("Invalid YAML {}: {e}", c.display()))
         })?;
         entries.push(HalvingEntry {
@@ -1576,12 +1581,12 @@ fn run_halving_round(
     for &idx in survivors {
         let path = &results[idx].path;
         let content = std::fs::read_to_string(path).unwrap_or_default();
-        if let Ok(mut yaml) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
+        if let Ok(mut yaml) = yaml_from_str::<serde_json::Value>(&content) {
             set_yaml_u64(&mut yaml, &["training", "max_steps"], steps as u64);
             let stem = path.file_stem().unwrap_or_default().to_string_lossy();
             let out_dir = format!("./checkpoints/halving-{stem}");
-            yaml["training"]["output_dir"] = serde_yaml::Value::String(out_dir);
-            if let Ok(s) = serde_yaml::to_string(&yaml) {
+            yaml["training"]["output_dir"] = serde_json::Value::String(out_dir);
+            if let Ok(s) = serde_saphyr::to_string(&yaml) {
                 let dest = trials_dir.join(format!("round{round_idx}-{stem}.yaml"));
                 if std::fs::write(&dest, s).is_ok() {
                     trial_paths.insert(idx, dest);

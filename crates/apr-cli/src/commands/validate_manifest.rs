@@ -44,6 +44,9 @@ use std::path::{Path, PathBuf};
 // gate enforces — they used to accept anything (issue #2391).
 use crate::commands::spdx::is_accepted as spdx_accepted;
 
+/// A parsed YAML mapping; keys are strings.
+type Mapping = serde_json::Map<String, serde_json::Value>;
+
 // Field names authoritative per contracts/publish-manifest-v1.yaml §schema.
 const REQUIRED_TOP: &[&str] = &[
     "model_id",
@@ -93,17 +96,20 @@ pub(crate) fn run(
 ) -> Result<(), CliError> {
     let contents = fs::read_to_string(manifest_path)
         .map_err(|e| CliError::ValidationFailed(format!("read manifest: {e}")))?;
-    let yaml: serde_yaml::Value = serde_yaml::from_str(&contents)
-        .map_err(|e| CliError::ValidationFailed(format!("parse yaml: {e}")))?;
+    let yaml: serde_json::Value = serde_saphyr::from_str_with_options(
+        &contents,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("parse yaml: {e}")))?;
 
     let top = yaml
-        .as_mapping()
+        .as_object()
         .ok_or_else(|| CliError::ValidationFailed("manifest is not a YAML mapping".into()))?;
 
     let mut results: Vec<FalsifyResult> = Vec::new();
 
     let prov_value = get_str_key(top, "provenance");
-    let prov = prov_value.and_then(serde_yaml::Value::as_mapping);
+    let prov = prov_value.and_then(serde_json::Value::as_object);
 
     results.push(check_schema(top, prov));
     results.push(check_sha256(top, artifact));
@@ -170,11 +176,11 @@ pub(crate) fn run(
     Ok(())
 }
 
-fn check_schema(top: &serde_yaml::Mapping, prov: Option<&serde_yaml::Mapping>) -> FalsifyResult {
+fn check_schema(top: &Mapping, prov: Option<&Mapping>) -> FalsifyResult {
     let mut missing_top: Vec<&str> = Vec::new();
     for k in REQUIRED_TOP {
         match get_str_key(top, k) {
-            None | Some(serde_yaml::Value::Null) => missing_top.push(k),
+            None | Some(serde_json::Value::Null) => missing_top.push(k),
             _ => {}
         }
     }
@@ -183,7 +189,7 @@ fn check_schema(top: &serde_yaml::Mapping, prov: Option<&serde_yaml::Mapping>) -
             .iter()
             .copied()
             .filter(|k| match get_str_key(pm, k) {
-                None | Some(serde_yaml::Value::Null) => true,
+                None | Some(serde_json::Value::Null) => true,
                 _ => false,
             })
             .collect(),
@@ -208,7 +214,7 @@ fn check_schema(top: &serde_yaml::Mapping, prov: Option<&serde_yaml::Mapping>) -
     }
 }
 
-fn check_sha256(top: &serde_yaml::Mapping, artifact: Option<&Path>) -> FalsifyResult {
+fn check_sha256(top: &Mapping, artifact: Option<&Path>) -> FalsifyResult {
     let declared = get_str(top, "sha256").unwrap_or_default();
     match artifact {
         None => FalsifyResult {
@@ -246,7 +252,7 @@ fn defer_url_liveness() -> FalsifyResult {
 
 /// FALSIFY-PM-003 via HEAD. Requires HTTP 200 and content-length == declared
 /// `size_bytes`. Implements F-PUBLISH-EXTRA-001::dogfood_ex05 — no Python.
-fn check_url_head_live(top: &serde_yaml::Mapping) -> FalsifyResult {
+fn check_url_head_live(top: &Mapping) -> FalsifyResult {
     let Some(url) = get_str(top, "artifact_url") else {
         return FalsifyResult {
             id: "FALSIFY-PM-003",
@@ -255,7 +261,7 @@ fn check_url_head_live(top: &serde_yaml::Mapping) -> FalsifyResult {
         };
     };
     let declared_size: Option<u64> =
-        get_str_key(top, "size_bytes").and_then(serde_yaml::Value::as_u64);
+        get_str_key(top, "size_bytes").and_then(serde_json::Value::as_u64);
 
     let resp = match ureq::head(&url).call() {
         Ok(r) => r,
@@ -312,7 +318,7 @@ fn check_url_head_live(top: &serde_yaml::Mapping) -> FalsifyResult {
 /// FALSIFY-PM-002-live: streaming GET and sha256 verification against the
 /// declared `sha256`. Equivalent to the former `uv run python3` block.
 /// Performs a full download — can be expensive for large artifacts.
-fn check_sha256_live(top: &serde_yaml::Mapping) -> FalsifyResult {
+fn check_sha256_live(top: &Mapping) -> FalsifyResult {
     let Some(url) = get_str(top, "artifact_url") else {
         return FalsifyResult {
             id: "FALSIFY-PM-002-live",
@@ -382,7 +388,7 @@ fn check_sha256_live(top: &serde_yaml::Mapping) -> FalsifyResult {
     }
 }
 
-fn check_spdx(top: &serde_yaml::Mapping, prov: Option<&serde_yaml::Mapping>) -> FalsifyResult {
+fn check_spdx(top: &Mapping, prov: Option<&Mapping>) -> FalsifyResult {
     let license = get_str(top, "license").unwrap_or_default();
     let parent_license = prov
         .and_then(|pm| get_str(pm, "parent_license"))
@@ -423,7 +429,7 @@ fn check_spdx(top: &serde_yaml::Mapping, prov: Option<&serde_yaml::Mapping>) -> 
     }
 }
 
-fn check_recipe(prov: Option<&serde_yaml::Mapping>, manifest_path: &Path) -> FalsifyResult {
+fn check_recipe(prov: Option<&Mapping>, manifest_path: &Path) -> FalsifyResult {
     let Some(pm) = prov else {
         return FalsifyResult {
             id: "FALSIFY-PM-005",
@@ -460,7 +466,7 @@ fn check_recipe(prov: Option<&serde_yaml::Mapping>, manifest_path: &Path) -> Fal
     }
 }
 
-fn check_parent_chain(prov: Option<&serde_yaml::Mapping>) -> FalsifyResult {
+fn check_parent_chain(prov: Option<&Mapping>) -> FalsifyResult {
     let Some(pm) = prov else {
         return FalsifyResult {
             id: "FALSIFY-PM-006",
@@ -507,10 +513,7 @@ fn check_parent_chain(prov: Option<&serde_yaml::Mapping>) -> FalsifyResult {
 /// F32 — that's the canonical fp16 export shape. Weight tensors must match.
 ///
 /// Would have caught the 30.46 GiB F32 fp16-manifest bug at publish time.
-fn check_safetensors_header_dtype(
-    top: &serde_yaml::Mapping,
-    artifact: Option<&Path>,
-) -> FalsifyResult {
+fn check_safetensors_header_dtype(top: &Mapping, artifact: Option<&Path>) -> FalsifyResult {
     let format = get_str(top, "format").unwrap_or_default();
     if format != "safetensors" {
         return FalsifyResult {
@@ -640,7 +643,7 @@ fn read_safetensors_header_dtypes(path: &Path) -> Result<Vec<(String, String)>, 
 // against a file whose file_type != 15 is lying about the artifact —
 // catch it before upload.
 
-fn check_gguf_file_type(top: &serde_yaml::Mapping, artifact: Option<&Path>) -> FalsifyResult {
+fn check_gguf_file_type(top: &Mapping, artifact: Option<&Path>) -> FalsifyResult {
     let format = get_str(top, "format").unwrap_or_default();
     if format != "gguf" {
         return FalsifyResult {
@@ -1068,7 +1071,7 @@ fn skip_gguf_value<R: std::io::Read + std::io::Seek>(
 
 const APR_MAGICS: &[&[u8; 4]] = &[b"APR\0", b"APRN", b"APR1", b"APR2"];
 
-fn check_apr_magic(top: &serde_yaml::Mapping, artifact: Option<&Path>) -> FalsifyResult {
+fn check_apr_magic(top: &Mapping, artifact: Option<&Path>) -> FalsifyResult {
     let format = get_str(top, "format").unwrap_or_default();
     if format != "apr" {
         return FalsifyResult {
@@ -1144,13 +1147,13 @@ fn ascii_or_hex(bytes: &[u8; 4]) -> String {
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-fn get_str_key<'a>(map: &'a serde_yaml::Mapping, key: &str) -> Option<&'a serde_yaml::Value> {
-    map.get(serde_yaml::Value::String(key.to_string()))
+fn get_str_key<'a>(map: &'a Mapping, key: &str) -> Option<&'a serde_json::Value> {
+    map.get(key)
 }
 
-fn get_str(map: &serde_yaml::Mapping, key: &str) -> Option<String> {
+fn get_str(map: &Mapping, key: &str) -> Option<String> {
     get_str_key(map, key)
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(serde_json::Value::as_str)
         .map(str::to_string)
 }
 
@@ -1219,10 +1222,10 @@ mod tests {
 
     #[test]
     fn parent_chain_hf_id_passes() {
-        let mut pm = serde_yaml::Mapping::new();
+        let mut pm = Mapping::new();
         pm.insert(
-            serde_yaml::Value::String("parent".into()),
-            serde_yaml::Value::String("Qwen/Qwen2.5-Coder-7B-Instruct".into()),
+            "parent".into(),
+            serde_json::Value::String("Qwen/Qwen2.5-Coder-7B-Instruct".into()),
         );
         let r = check_parent_chain(Some(&pm));
         assert_eq!(r.verdict, "PASS", "{}", r.detail);
@@ -1230,35 +1233,29 @@ mod tests {
 
     #[test]
     fn parent_chain_base_passes() {
-        let mut pm = serde_yaml::Mapping::new();
-        pm.insert(
-            serde_yaml::Value::String("parent".into()),
-            serde_yaml::Value::String("base".into()),
-        );
+        let mut pm = Mapping::new();
+        pm.insert("parent".into(), serde_json::Value::String("base".into()));
         assert_eq!(check_parent_chain(Some(&pm)).verdict, "PASS");
     }
 
     #[test]
     fn parent_chain_bareword_fails() {
-        let mut pm = serde_yaml::Mapping::new();
-        pm.insert(
-            serde_yaml::Value::String("parent".into()),
-            serde_yaml::Value::String("qwen".into()),
-        );
+        let mut pm = Mapping::new();
+        pm.insert("parent".into(), serde_json::Value::String("qwen".into()));
         assert_eq!(check_parent_chain(Some(&pm)).verdict, "FAIL");
     }
 
     #[test]
     fn spdx_apache_mit_pass() {
-        let mut top = serde_yaml::Mapping::new();
+        let mut top = Mapping::new();
         top.insert(
-            serde_yaml::Value::String("license".into()),
-            serde_yaml::Value::String("Apache-2.0".into()),
+            "license".into(),
+            serde_json::Value::String("Apache-2.0".into()),
         );
-        let mut prov = serde_yaml::Mapping::new();
+        let mut prov = Mapping::new();
         prov.insert(
-            serde_yaml::Value::String("parent_license".into()),
-            serde_yaml::Value::String("MIT".into()),
+            "parent_license".into(),
+            serde_json::Value::String("MIT".into()),
         );
         let r = check_spdx(&top, Some(&prov));
         assert_eq!(r.verdict, "PASS");
@@ -1266,10 +1263,10 @@ mod tests {
 
     #[test]
     fn spdx_invalid_fails() {
-        let mut top = serde_yaml::Mapping::new();
+        let mut top = Mapping::new();
         top.insert(
-            serde_yaml::Value::String("license".into()),
-            serde_yaml::Value::String("WTFPL-99".into()),
+            "license".into(),
+            serde_json::Value::String("WTFPL-99".into()),
         );
         let r = check_spdx(&top, None);
         assert_eq!(r.verdict, "FAIL");
@@ -1278,7 +1275,7 @@ mod tests {
     #[test]
     fn head_live_missing_url_fails() {
         // F-PUBLISH-EXTRA-001::dogfood_ex05 — precondition: artifact_url is required.
-        let top = serde_yaml::Mapping::new();
+        let top = Mapping::new();
         let r = check_url_head_live(&top);
         assert_eq!(r.verdict, "FAIL");
         assert!(
@@ -1291,7 +1288,7 @@ mod tests {
 
     #[test]
     fn sha256_live_missing_url_fails() {
-        let top = serde_yaml::Mapping::new();
+        let top = Mapping::new();
         let r = check_sha256_live(&top);
         assert_eq!(r.verdict, "FAIL");
         assert_eq!(r.id, "FALSIFY-PM-002-live");
@@ -1301,10 +1298,10 @@ mod tests {
     #[test]
     fn sha256_live_missing_sha256_fails() {
         // artifact_url present but no declared sha256 → cannot verify.
-        let mut top = serde_yaml::Mapping::new();
+        let mut top = Mapping::new();
         top.insert(
-            serde_yaml::Value::String("artifact_url".into()),
-            serde_yaml::Value::String("https://example.test/file.bin".into()),
+            "artifact_url".into(),
+            serde_json::Value::String("https://example.test/file.bin".into()),
         );
         let r = check_sha256_live(&top);
         assert_eq!(r.verdict, "FAIL");
@@ -1326,7 +1323,7 @@ mod tests {
 
     #[test]
     fn schema_missing_top_fails() {
-        let top = serde_yaml::Mapping::new();
+        let top = Mapping::new();
         let r = check_schema(&top, None);
         assert_eq!(r.verdict, "FAIL");
         assert!(r.detail.contains("model_id"));
@@ -1347,15 +1344,12 @@ mod tests {
         p
     }
 
-    fn top_with(format: &str, quant: &str) -> serde_yaml::Mapping {
-        let mut top = serde_yaml::Mapping::new();
+    fn top_with(format: &str, quant: &str) -> Mapping {
+        let mut top = Mapping::new();
+        top.insert("format".into(), serde_json::Value::String(format.into()));
         top.insert(
-            serde_yaml::Value::String("format".into()),
-            serde_yaml::Value::String(format.into()),
-        );
-        top.insert(
-            serde_yaml::Value::String("quantization".into()),
-            serde_yaml::Value::String(quant.into()),
+            "quantization".into(),
+            serde_json::Value::String(quant.into()),
         );
         top
     }

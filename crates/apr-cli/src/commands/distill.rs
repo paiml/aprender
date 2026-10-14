@@ -297,8 +297,11 @@ impl DistillYamlConfig {
     fn load(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
-        serde_yaml::from_str(&content)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse YAML: {e}")))
+        serde_saphyr::from_str_with_options(
+            &content,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse YAML: {e}")))
     }
 
     fn validate(&self) -> Result<()> {
@@ -1076,11 +1079,17 @@ fn run_config_mode(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
 
     // Detect config type: text-based (has synthetic_data) vs logit KD (has distillation/dataset)
-    let raw: serde_json::Value = serde_yaml::from_str(&content)
+    let raw: serde_json::Value = serde_saphyr::from_str_with_options(
+        &content,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse YAML: {e}")))?;
 
     if raw.get("synthetic_data").is_some() {
-        let config: TextDistillConfig = serde_yaml::from_str(&content)
+        let config: TextDistillConfig = serde_saphyr::from_str_with_options(
+            &content,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )
             .map_err(|e| CliError::ValidationFailed(format!("Config error: {e}")))?;
         return run_text_config_mode(&config, config_path, stage, plan_only, json_output);
     }
