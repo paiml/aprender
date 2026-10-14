@@ -1,4 +1,7 @@
-#!/usr/bin/env bash
+    # pv_bin.sh leaves PV set to the binary it REJECTED (stale, wrong tree) and says so only by its
+    # status: a failed source is no pv, never a measurement by an unproven one
+    . "$REPO_ROOT/scripts/pv_bin.sh" > /dev/null 2>&1 || { unset PV; return 1; }
+    [ -n "${PV:-}" ]#!/usr/bin/env bash
 # census_ratchet.sh -- the pv census ratchet (#4709, C303): the bound share of contracts/ only rises.
 #
 # Measured at both ends with ONE pv in ONE run, never against a stored number:
@@ -36,7 +39,9 @@ PROG=census_ratchet
 resolve_pv() {
     if [ -n "${PV:-}" ]; then return 0; fi
     # shellcheck source=scripts/pv_bin.sh
-    . "$REPO_ROOT/scripts/pv_bin.sh" > /dev/null 2>&1 || true
+    # pv_bin.sh leaves PV set to a binary it REJECTED (stale, wrong tree) and says so only by its
+    # status: a failed source is no pv, never a measurement by an unproven one
+    . "$REPO_ROOT/scripts/pv_bin.sh" > /dev/null 2>&1 || { unset PV; return 1; }
     [ -n "${PV:-}" ]
 }
 
@@ -171,6 +176,10 @@ self_test() {
     stub "echo '{\"n_parsed\":1,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":1,\"class\":0,\"instance\":0}}'"; stub_case "a pv without no_falsification_tests (pre-#5295): NOT_MEASURED"
     printf '#!/usr/bin/env bash\necho lint\n' > "$d/pv-stub"; stub_case "pv without census: NOT_MEASURED"
     printf '#!/usr/bin/env bash\ncase "$1" in --help) echo lint;; *) echo '"'"'{"n_parsed":1,"n_parse_errors":0,"by_anchoring":{"unanchored":1,"class":0,"instance":0},"no_falsification_tests":0}'"'"';; esac\n' > "$d/pv-stub"; stub_case "census JSON from a pv whose --help lists no census: NOT_MEASURED"
+    # a pv_bin.sh that rejects its binary but leaves PV set to it: resolve_pv must refuse it, not measure with it
+    stub "echo '{\"n_parsed\":1,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":0,\"class\":1,\"instance\":0},\"no_falsification_tests\":0}'"
+    mkdir -p "$d/rr/scripts"; printf 'PV=%s\nreturn 1\n' "$d/pv-stub" > "$d/rr/scripts/pv_bin.sh"
+    got=0; (unset PV; REPO_ROOT=$d/rr; resolve_pv) || got=$?; row "pv_bin.sh rejecting its pv: no pv" 1 "$got"
     rm -rf "${d:?}"
     [ "$bad" = 0 ] && { echo "SELF-TEST PASSED"; return 0; }
     echo "SELF-TEST FAILED"; return 1
