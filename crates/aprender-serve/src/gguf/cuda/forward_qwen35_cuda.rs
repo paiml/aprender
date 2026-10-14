@@ -1975,6 +1975,7 @@ mod graph;
 /// #5289: one greedy decode step for m sequences.
 #[path = "forward_qwen35_cuda_batch.rs"]
 mod batch;
+pub use batch::Qwen35StepOut;
 
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]

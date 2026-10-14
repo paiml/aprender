@@ -49,7 +49,7 @@ mod weights;
 pub use backend::CudaBackend;
 // PMAT-3477 (#3090): the Gated DeltaNet GPU model and its device state.
 pub use forward_qwen35_cuda::{
-    PrefillAttention, Qwen35CudaCheckpoint, Qwen35CudaModel, Qwen35CudaState,
+    PrefillAttention, Qwen35CudaCheckpoint, Qwen35CudaModel, Qwen35CudaState, Qwen35StepOut,
     PREFILL_MAX_CHUNK_ROWS, UNIFIED_PREFILL_CHUNK_ROWS,
 };
 // #3714: the Qwen3-MoE GPU model, its device state, and the MoE shape it is built for.

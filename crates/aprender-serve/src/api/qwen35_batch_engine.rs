@@ -4,10 +4,11 @@
 //! [`Qwen35Session`](crate::gguf::qwen35_session::Qwen35Session). A lone
 //! request is one turn of the session, exactly as the unbatched server served
 //! it. A batch of m > 1 gives each request a device state of its own beside
-//! the session's, prefilled from its prompt and stepped together: the plain
-//! greedy slots through [`Qwen35CudaModel::forward_batch_greedy`], and a slot
-//! with logprobs (#4971), a repetition penalty or sampling through its own
-//! logits, in the session's order. The session's state, and the prefix it
+//! the session's, prefilled from its prompt and stepped together through
+//! [`Qwen35CudaModel::forward_batch`]. A plain greedy slot gets its token
+//! from the device; a slot with logprobs (#4971), a repetition penalty or
+//! sampling gets its logits from the same step and picks its token from
+//! them, in the session's order. The session's state, and the prefix it
 //! keeps for its next turn, are never touched by a batch.
 //!
 //! What a batched slot does not do, as on the dense batched path: `seed`. A
@@ -23,7 +24,9 @@ use crate::api::{AppState, Qwen35Served};
 use crate::error::{RealizarError, Result};
 use crate::gguf::logprobs::StepLogprobs;
 use crate::gguf::qwen35_session::Qwen35Session;
-use crate::gguf::{select_batched_token, OwnedQuantizedModel, Qwen35CudaModel, Qwen35CudaState};
+use crate::gguf::{
+    select_batched_token, OwnedQuantizedModel, Qwen35CudaModel, Qwen35CudaState, Qwen35StepOut,
+};
 use crate::gguf::{BatchedDecodeState, QuantizedGenerateConfig};
 use crate::session::penalty_active;
 
@@ -269,40 +272,44 @@ impl BatchEngine for Qwen35BatchEngine {
         let mut session = lock(&served)?;
         let model = device_model(&mut session, &served, &[])?
             .ok_or_else(|| left_the_gpu("qwen35_batch_decode"))?;
-        // A slot that needs its logits on the host (logprobs, a repetition
-        // penalty or sampling) steps alone, as its session turn does.
-        let live = (0..state.m).filter(|&i| !state.done[i]);
-        let (greedy, host): (Vec<usize>, Vec<usize>) = live.partition(|&i| {
-            let c = &state.configs[i];
-            is_greedy(c) && !penalty_active(c) && state.recorders[i].is_none()
-        });
+        // Every live slot steps in the batch. A slot that needs its logits on
+        // the host (logprobs, a repetition penalty or sampling) gets them from
+        // the batched step, and picks its token as its session turn does.
+        let live: Vec<usize> = (0..state.m).filter(|&i| !state.done[i]).collect();
+        let host: Vec<bool> = live
+            .iter()
+            .map(|&i| {
+                let c = &state.configs[i];
+                !(is_greedy(c) && !penalty_active(c) && state.recorders[i].is_none())
+            })
+            .collect();
         let mut next = state.last_tokens.clone();
 
-        // The greedy slots step together; their states are lent to the batch
-        // and returned before any error is passed on.
-        let mut lent: Vec<Qwen35CudaState> = greedy
+        // The states are lent to the batch and returned before any error is
+        // passed on.
+        let mut lent: Vec<Qwen35CudaState> = live
             .iter()
             .map(|&i| self.states[i].take().expect("a live slot holds its state"))
             .collect();
-        let tokens: Vec<u32> = greedy.iter().map(|&i| state.last_tokens[i]).collect();
-        let positions: Vec<usize> = greedy.iter().map(|&i| state.positions[i]).collect();
-        let stepped = if greedy.is_empty() {
+        let tokens: Vec<u32> = live.iter().map(|&i| state.last_tokens[i]).collect();
+        let positions: Vec<usize> = live.iter().map(|&i| state.positions[i]).collect();
+        let stepped = if live.is_empty() {
             Ok(Vec::new())
         } else {
-            model.forward_batch_greedy(&tokens, &mut lent, &positions)
+            model.forward_batch(&tokens, &mut lent, &positions, &host)
         };
-        for (&i, s) in greedy.iter().zip(lent) {
+        for (&i, s) in live.iter().zip(lent) {
             self.states[i] = Some(s);
         }
-        for (&i, t) in greedy.iter().zip(stepped?) {
-            next[i] = t;
-        }
 
-        for i in host {
-            let s = self.states[i]
-                .as_mut()
-                .expect("a live slot holds its state");
-            let mut logits = model.forward_single(state.last_tokens[i], s, state.positions[i])?;
+        for (&i, out) in live.iter().zip(stepped?) {
+            let mut logits = match out {
+                Qwen35StepOut::Token(t) => {
+                    next[i] = t;
+                    continue;
+                },
+                Qwen35StepOut::Logits(logits) => logits,
+            };
             let c = &state.configs[i];
             // The session's order: the penalty over everything the slot holds,
             // then argmax (greedy) or a sample; a record reads the logits after

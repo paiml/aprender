@@ -108,10 +108,22 @@ impl CudaBatchConfig {
 #[cfg(feature = "cuda")]
 impl Default for CudaBatchConfig {
     fn default() -> Self {
+        Self::from_env_or(4)
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl CudaBatchConfig {
+    /// `CUDA_MAX_BATCH` and `CUDA_BATCH_WINDOW_MS` from the environment, with
+    /// `max_batch` slots when the first is unset. A model whose batched step
+    /// serves more slots than the dense default of 4 (#5279: Qwen3.5 to 16)
+    /// passes its own.
+    #[must_use]
+    pub fn from_env_or(max_batch: usize) -> Self {
         let max_batch = std::env::var("CUDA_MAX_BATCH")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(4);
+            .unwrap_or(max_batch);
         // PMAT-068: Default 0ms window — zero-latency c=1, requests batch naturally
         // at c>1 from queue contention. Saves ~1ms TTFT at c=1.
         // Override with CUDA_BATCH_WINDOW_MS=10 for throughput-optimized batching.

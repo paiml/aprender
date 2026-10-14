@@ -27,6 +27,17 @@ pub(crate) fn check_batch_shape(tokens: usize, states: usize, positions: usize) 
     Ok(())
 }
 
+/// One slot's result of a decode step.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Qwen35StepOut {
+    /// The token temperature 0 picks, chosen on the device.
+    Token(u32),
+    /// The slot's logits on the host, for a caller that samples, penalizes or
+    /// records them; bitwise the ones [`Qwen35CudaModel::forward_single`]
+    /// returns.
+    Logits(Vec<f32>),
+}
+
 impl Qwen35CudaModel<'_> {
     /// The token temperature 0 picks for each of m slots: slot `i` runs
     /// `tokens[i]` at `positions[i]` against `states[i]`, which is updated in
@@ -42,15 +53,49 @@ impl Qwen35CudaModel<'_> {
         states: &mut [Qwen35CudaState],
         positions: &[usize],
     ) -> Result<Vec<u32>> {
+        let host = vec![false; tokens.len()];
+        let outs = self.forward_batch(tokens, states, positions, &host)?;
+        Ok(outs
+            .into_iter()
+            .map(|out| match out {
+                Qwen35StepOut::Token(t) => t,
+                Qwen35StepOut::Logits(_) => unreachable!("no slot asked for its logits"),
+            })
+            .collect())
+    }
+
+    /// One decode step for m slots, as [`Self::forward_batch_greedy`]; slot
+    /// `i` gets its logits on the host when `host_logits[i]`, and its greedy
+    /// token otherwise. A slot that needs its logits steps with the others,
+    /// so logprobs, a penalty or sampling do not take it out of the batch.
+    ///
+    /// # Errors
+    /// As [`Self::forward_batch_greedy`]; `host_logits` must be as long as
+    /// `tokens`.
+    pub fn forward_batch(
+        &mut self,
+        tokens: &[u32],
+        states: &mut [Qwen35CudaState],
+        positions: &[usize],
+        host_logits: &[bool],
+    ) -> Result<Vec<Qwen35StepOut>> {
         check_batch_shape(tokens.len(), states.len(), positions.len())?;
+        check_batch_shape(tokens.len(), host_logits.len(), positions.len())?;
         if tokens.len() > 1 && !self.timing_on {
-            return self.batched_step(tokens, states, positions);
+            return self.batched_step(tokens, states, positions, host_logits);
         }
         tokens
             .iter()
             .zip(states.iter_mut())
             .zip(positions)
-            .map(|((&token, state), &position)| self.forward_single_greedy(token, state, position))
+            .zip(host_logits)
+            .map(|(((&token, state), &position), &host)| {
+                Ok(if host {
+                    Qwen35StepOut::Logits(self.forward_single(token, state, position)?)
+                } else {
+                    Qwen35StepOut::Token(self.forward_single_greedy(token, state, position)?)
+                })
+            })
             .collect()
     }
 }
@@ -120,13 +165,14 @@ impl Qwen35CudaModel<'_> {
         tokens: &[u32],
         states: &mut [Qwen35CudaState],
         positions: &[usize],
-    ) -> Result<Vec<u32>> {
+        host_logits: &[bool],
+    ) -> Result<Vec<Qwen35StepOut>> {
         let m = tokens.len();
         let mut b = match self.batch_bufs.take() {
             Some(b) if b.rows >= m => b,
             _ => Qwen35BatchBufs::new(&self.executor, self.dims, m)?,
         };
-        let run = self.batched_step_in(&mut b, tokens, states, positions);
+        let run = self.batched_step_in(&mut b, tokens, states, positions, host_logits);
         self.batch_bufs = Some(b);
         let next = run?;
         for (state, &position) in states.iter_mut().zip(positions) {
@@ -141,7 +187,8 @@ impl Qwen35CudaModel<'_> {
         tokens: &[u32],
         states: &mut [Qwen35CudaState],
         positions: &[usize],
-    ) -> Result<Vec<u32>> {
+        host_logits: &[bool],
+    ) -> Result<Vec<Qwen35StepOut>> {
         let width = self.dims.hidden_dim as usize;
         for (i, (&token, state)) in tokens.iter().zip(states.iter()).enumerate() {
             let row = self.embedding_row(token, state, positions[i])?;
@@ -153,7 +200,7 @@ impl Qwen35CudaModel<'_> {
             self.batched_layer(b, il, states, positions)
                 .map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
         }
-        self.batched_head(b, tokens.len())
+        self.batched_head(b, host_logits)
             .map_err(|e| gpu_err("qwen35_cuda_batch", &e))
     }
 
@@ -221,13 +268,15 @@ impl Qwen35CudaModel<'_> {
         ex.residual_add_into(&b.hidden, &b.ffn_down, &b.hidden, rows * d.hidden_dim)
     }
 
-    /// The output norm per row, the `lm_head` once, and each row's argmax.
+    /// The output norm per row, the `lm_head` once, then each row's argmax,
+    /// or its logits on the host where `host_logits` asks for them.
     fn batched_head(
         &mut self,
         b: &Qwen35BatchBufs,
-        m: usize,
-    ) -> std::result::Result<Vec<u32>, GpuError> {
+        host_logits: &[bool],
+    ) -> std::result::Result<Vec<Qwen35StepOut>, GpuError> {
         let d = self.dims;
+        let m = host_logits.len();
         let ex = &mut self.executor;
         for i in 0..m {
             let hidden = row_view(&b.hidden, i, d.hidden_dim);
@@ -246,10 +295,24 @@ impl Qwen35CudaModel<'_> {
             self.lm_head.n,
             self.lm_head.k,
         )?;
-        (0..m)
-            .map(|i| {
-                let offset = u64::from(i as u32 * d.vocab_size) * 4;
-                ex.gpu_argmax(b.logits.as_ptr() + offset, d.vocab_size)
+        if host_logits.contains(&true) {
+            // The one sync in front of the downloads, as `forward_single`.
+            ex.sync_stream()?;
+        }
+        let vocab = d.vocab_size as usize;
+        host_logits
+            .iter()
+            .enumerate()
+            .map(|(i, &host)| {
+                if host {
+                    let mut logits = vec![0.0f32; vocab];
+                    b.logits.copy_to_host_at(&mut logits, i * vocab)?;
+                    Ok(Qwen35StepOut::Logits(logits))
+                } else {
+                    let offset = u64::from(i as u32 * d.vocab_size) * 4;
+                    ex.gpu_argmax(b.logits.as_ptr() + offset, d.vocab_size)
+                        .map(Qwen35StepOut::Token)
+                }
             })
             .collect()
     }
