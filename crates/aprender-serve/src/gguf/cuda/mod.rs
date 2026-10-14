@@ -57,6 +57,7 @@ pub use forward_qwen3_moe_resident::{Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3
 // PMAT-072: Step-wise batched decode state for lock-releasing scheduler
 pub use generation::{BatchedDecodeState, SlotRecorder};
 // #4971: what a prefill extracts for the session's first token.
+pub(crate) use generation::select_batched_token;
 pub(crate) use generation::FirstToken;
 
 use crate::error::{RealizarError, Result};

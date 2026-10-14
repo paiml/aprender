@@ -74,6 +74,9 @@ pub mod batch_admission;
 pub mod cuda_batch_scheduler;
 #[cfg(feature = "cuda")]
 pub mod iteration_scheduler;
+// #5293: the Qwen3.5 hybrid behind the CUDA batch scheduler.
+#[cfg(feature = "cuda")]
+pub mod qwen35_batch_engine;
 // #4971: logprobs and top_logprobs on the chat route (ASOC-INV-021).
 mod chat_logprobs;
 pub use chat_logprobs::{

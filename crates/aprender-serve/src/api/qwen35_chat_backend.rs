@@ -284,6 +284,26 @@ async fn try_qwen35_backend(
     // #4971: the session records each step's logprobs when they were asked for.
     let top_n = request.logprobs_top_n();
 
+    // #5293: with a batch scheduler running, concurrent requests decode as one
+    // batch. One that asks for logprobs or a trace stays on the session, which
+    // records them.
+    #[cfg(feature = "cuda")]
+    if let Some(batch_tx) = state
+        .cuda_batch_tx()
+        .filter(|_| top_n.is_none() && trace_level.is_none())
+    {
+        let turn = Qwen35BatchTurn {
+            input_ids,
+            gen_config,
+            budget,
+            mapped,
+            tokenizer,
+            session,
+        };
+        let batch_tx = batch_tx.clone();
+        return Some(qwen35_batched(state, request, request_id, start, batch_tx, turn).await);
+    }
+
     if request.stream {
         let (rx, logprobs, timing_rx) =
             spawn_streaming_generate(session, input_ids, gen_config, state.metrics.clone(), top_n);
@@ -377,6 +397,108 @@ async fn try_qwen35_backend(
         Some(reply.used_gpu),
         logprobs,
     ))
+}
+
+/// #5293: a Qwen3.5 chat turn bound for the batch scheduler.
+#[cfg(feature = "cuda")]
+struct Qwen35BatchTurn {
+    input_ids: Vec<u32>,
+    gen_config: crate::gguf::QuantizedGenerateConfig,
+    /// The context-bounded budget, as on the session path.
+    budget: usize,
+    mapped: Arc<crate::gguf::MappedGGUFModel>,
+    tokenizer: Arc<BPETokenizer>,
+    session: Arc<crate::api::Qwen35Served>,
+}
+
+/// #5293: `turn` through the batch scheduler (`try_qwen35_backend`'s batched
+/// arm). A streamed reply goes out as its tokens arrive; otherwise every token
+/// is collected first, through a channel with room for the whole budget, so
+/// none is ever dropped. A full queue is the 503 the dense path gives.
+#[cfg(feature = "cuda")]
+async fn qwen35_batched(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    start: Instant,
+    batch_tx: tokio::sync::mpsc::Sender<super::cuda_batch_scheduler::CudaBatchRequest>,
+    turn: Qwen35BatchTurn,
+) -> Response {
+    let prompt_token_count = turn.input_ids.len();
+    let capacity = if request.stream { 64 } else { turn.budget + 1 };
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(capacity);
+    let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
+    let batch_req = super::cuda_batch_scheduler::CudaBatchRequest {
+        prompt_ids: turn.input_ids,
+        config: turn.gen_config,
+        token_tx: tx,
+        non_streaming: false,
+        enqueue_time: std::time::Instant::now(),
+        timing_tx: Some(timing_tx),
+        logprobs: None,
+    };
+    if let Err(e) = batch_tx.try_send(batch_req) {
+        state.record_admission_rejected();
+        return fail_response(
+            state,
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("Batch queue full: {e}"),
+        );
+    }
+    if request.stream {
+        return crate::api::openai_handlers::live_sse_response(
+            rx,
+            turn.tokenizer,
+            request_id.to_string(),
+            request.model.clone(),
+            state.metrics.clone(),
+            start,
+            turn.budget,
+            prompt_token_count,
+            Some(timing_rx),
+            request.stop.as_deref(),
+            crate::api::stream_tool_calls::StreamTools::from_request(request),
+            None,
+        );
+    }
+    let mut tokens = Vec::new();
+    while let Some(result) = rx.recv().await {
+        match result {
+            Ok(token) => tokens.push(token),
+            Err(e) => {
+                state.metrics.record_failure();
+                return fail_response(
+                    state,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Qwen3.5 generation failed: {e}"),
+                );
+            },
+        }
+    }
+    let completion_tokens = tokens.len();
+    let response_text = clean_chat_output(&turn.mapped.model.decode(&tokens));
+    // A batched turn sends no phase split: there is none per request.
+    let timings = timing_rx.await.ok().and_then(|phases| {
+        phases.to_timings_at(prompt_token_count, completion_tokens, start, None)
+    });
+    state
+        .metrics
+        .record_success(completion_tokens, start.elapsed());
+    build_chat_response_traced(
+        request_id.to_string(),
+        request.model.clone(),
+        response_text,
+        prompt_token_count,
+        completion_tokens,
+        turn.budget,
+        request.stop.as_deref(),
+        (None, None, None),
+        request.tools.as_deref(),
+        request_tool_choice(request),
+        timings,
+        Some(turn.session.on_gpu.load(std::sync::atomic::Ordering::Relaxed)),
+        None,
+    )
 }
 
 /// What a traced Qwen3.5 turn measured, carried out of the blocking task.
