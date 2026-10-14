@@ -499,7 +499,6 @@ version = "0.71.3"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
- "bashrs",
  "clap",
  "colored 2.2.0",
  "regex",
@@ -940,7 +939,6 @@ dependencies = [
  "async-trait",
  "axum 0.7.9",
  "base64 0.22.1",
- "bashrs",
  "blake3",
  "cargo_metadata",
  "chrono",
@@ -1823,7 +1821,7 @@ dependencies = [
  "clap",
  "dirs 5.0.1",
  "proptest",
- "rustyline 14.0.0",
+ "rustyline",
  "serde",
  "serde_json",
  "tempfile",
@@ -3301,58 +3299,6 @@ name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
-
-[[package]]
-name = "bashrs"
-version = "6.66.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15b3d105292ab7e5634aa9d5c3b391af5828a9f021cd0c6b5cc1990823bdc060"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "batuta-common",
- "blake3",
- "chrono",
- "clap",
- "flate2",
- "glob",
- "lazy_static",
- "notify",
- "notify-debouncer-mini",
- "once_cell",
- "phf",
- "proc-macro2",
- "quote",
- "rand 0.9.4",
- "rand_chacha 0.9.0",
- "rayon",
- "regex",
- "rustyline 17.0.2",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "static_assertions",
- "syn 2.0.118",
- "sysinfo 0.31.4",
- "tar",
- "thiserror 2.0.18",
- "tokio",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
- "zstd",
-]
-
-[[package]]
-name = "batuta-common"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97eb4c76189d694d880ab9affaf6087fb88bc7afe2de7c7e9c9452745788f478"
-dependencies = [
- "lz4_flex 0.11.6",
- "zstd",
-]
 
 [[package]]
 name = "bincode"
@@ -8843,18 +8789,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "notify-debouncer-mini"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaa5a66d07ed97dce782be94dcf5ab4d1b457f4243f7566c7557f15cabc8c799"
-dependencies = [
- "log",
- "notify",
- "notify-types",
- "tempfile",
-]
-
-[[package]]
 name = "notify-types"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9560,49 +9494,6 @@ checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
  "fixedbitset",
  "indexmap 2.14.0",
-]
-
-[[package]]
-name = "phf"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
-dependencies = [
- "phf_macros",
- "phf_shared",
- "serde",
-]
-
-[[package]]
-name = "phf_generator"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "135ace3a761e564ec88c03a77317a7c6b80bb7f7135ef2544dbe054243b89737"
-dependencies = [
- "fastrand",
- "phf_shared",
-]
-
-[[package]]
-name = "phf_macros"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "812f032b54b1e759ccd5f8b6677695d5268c588701effba24601f6932f8269ef"
-dependencies = [
- "phf_generator",
- "phf_shared",
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
-name = "phf_shared"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
-dependencies = [
- "siphasher",
 ]
 
 [[package]]
@@ -11222,28 +11113,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustyline"
-version = "17.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e902948a25149d50edc1a8e0141aad50f54e22ba83ff988cf8f7c9ef07f50564"
-dependencies = [
- "bitflags 2.13.0",
- "cfg-if 1.0.4",
- "clipboard-win",
- "fd-lock",
- "home",
- "libc",
- "log",
- "memchr",
- "nix 0.30.1",
- "radix_trie",
- "unicode-segmentation",
- "unicode-width 0.2.0",
- "utf8parse",
- "windows-sys 0.60.2",
-]
-
-[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12223,20 +12092,6 @@ dependencies = [
  "once_cell",
  "rayon",
  "windows 0.52.0",
-]
-
-[[package]]
-name = "sysinfo"
-version = "0.31.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "355dbe4f8799b304b05e1b0f05fc59b2a18d36645cf169607da45bde2f69a1be"
-dependencies = [
- "core-foundation-sys",
- "libc",
- "memchr",
- "ntapi",
- "rayon",
- "windows 0.57.0",
 ]
 
 [[package]]
