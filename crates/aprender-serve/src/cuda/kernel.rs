@@ -159,6 +159,8 @@ impl CudaKernels {
         let name = match kernel_type {
             KernelType::RmsNorm { .. } => "rmsnorm",
             KernelType::VectorizedRmsNorm { .. } => "rmsnorm_vectorized",
+            KernelType::RowsRmsNorm { vectorized: true, .. } => "rmsnorm_vectorized_rows",
+            KernelType::RowsRmsNorm { vectorized: false, .. } => "rmsnorm_rows",
             KernelType::BatchedVectorizedRmsNorm { .. } => "batched_rmsnorm_vectorized",
             KernelType::BatchedFusedResidualRmsNorm { .. } => "batched_fused_residual_rmsnorm",
             KernelType::PreciseRmsNorm { .. } => "rmsnorm_precise",

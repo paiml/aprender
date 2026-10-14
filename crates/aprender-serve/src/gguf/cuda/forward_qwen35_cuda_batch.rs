@@ -246,15 +246,8 @@ impl Qwen35CudaModel<'_> {
         let d = self.dims;
         let w = self.layers[il].ffn();
         let ex = &mut self.executor;
-        for i in 0..m {
-            let hidden = row_view(&b.hidden, i, d.hidden_dim);
-            let normed = row_view(&b.post_normed, i, d.hidden_dim);
-            let run = ex.rmsnorm_into(&hidden, w.norm, &normed, d.hidden_dim, d.eps);
-            std::mem::forget(hidden);
-            std::mem::forget(normed);
-            run?;
-        }
         let rows = m as u32;
+        ex.rmsnorm_rows_into(&b.hidden, w.norm, &b.post_normed, d.hidden_dim, rows, d.eps)?;
         for (proj, out) in [(w.gate, &b.ffn_gate), (w.up, &b.ffn_up)] {
             ex.batched_gemv_dispatch(
                 proj.qtype,
@@ -294,14 +287,14 @@ impl Qwen35CudaModel<'_> {
         let d = self.dims;
         let m = host_logits.len();
         let ex = &mut self.executor;
-        for i in 0..m {
-            let hidden = row_view(&b.hidden, i, d.hidden_dim);
-            let normed = row_view(&b.out_normed, i, d.hidden_dim);
-            let run = ex.rmsnorm_into(&hidden, &self.output_norm, &normed, d.hidden_dim, d.eps);
-            std::mem::forget(hidden);
-            std::mem::forget(normed);
-            run?;
-        }
+        ex.rmsnorm_rows_into(
+            &b.hidden,
+            &self.output_norm,
+            &b.out_normed,
+            d.hidden_dim,
+            m as u32,
+            d.eps,
+        )?;
         ex.batched_gemv_dispatch(
             self.lm_head.qtype,
             self.lm_head.ptr,

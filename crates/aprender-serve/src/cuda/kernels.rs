@@ -39,9 +39,9 @@ use trueno_gpu::kernels::{
     Q4KDequantKernel, Q4KGemvKernel, Q4KQ8DotKernel, Q4_0GemvKernel, Q4_1GemvKernel, Q5KGemvKernel,
     Q5KKernel, Q5_0GemvKernel, Q6KDequantKernel, Q6KGemvKernel, Q6KKernel, Q8QuantizeKernel,
     Q8_0GemvKernel, QuantizeKernel, ResidualAddKernel, RmsNormKernel, RopeIndirectKernel,
-    RopeKernel, RopeNeoxIndirectKernel, RopeNeoxKernel, SiluKernel, SoftmaxKernel,
-    TensorCoreQ4KGemmKernel, TiledQ4KGemvKernel, TrueDp4aQ4KGemvKernel, VectorizedQ4KGemvKernel,
-    VectorizedRmsNormKernel, WideQ4KGemvKernel,
+    RopeKernel, RopeNeoxIndirectKernel, RopeNeoxKernel, RowsRmsNormKernel, SiluKernel,
+    SoftmaxKernel, TensorCoreQ4KGemmKernel, TiledQ4KGemvKernel, TrueDp4aQ4KGemvKernel,
+    VectorizedQ4KGemvKernel, VectorizedRmsNormKernel, WideQ4KGemvKernel,
 };
 // GH-143: WMMA kernel types only available on x86_64 (not on aarch64/Blackwell GB10)
 #[cfg(target_arch = "x86_64")]

@@ -112,7 +112,7 @@ fn with_rows<const N: usize, R>(
     out
 }
 
-/// `rms_norm(hidden, norm)` for each of the m rows of `b.hidden`.
+/// `rms_norm(hidden, norm)` for each of the m rows of `b.hidden`, in one launch.
 fn norm_rows(
     ex: &mut CudaExecutor,
     b: &Qwen35BatchBufs,
@@ -120,15 +120,14 @@ fn norm_rows(
     d: Qwen35CudaDims,
     m: usize,
 ) -> std::result::Result<(), GpuError> {
-    for i in 0..m {
-        with_rows(
-            [&b.hidden, &b.mixer.normed],
-            i,
-            [d.hidden_dim; 2],
-            |[h, n]| ex.rmsnorm_into(h, norm, n, d.hidden_dim, d.eps),
-        )?;
-    }
-    Ok(())
+    ex.rmsnorm_rows_into(
+        &b.hidden,
+        norm,
+        &b.mixer.normed,
+        d.hidden_dim,
+        m as u32,
+        d.eps,
+    )
 }
 
 impl Qwen35CudaModel<'_> {

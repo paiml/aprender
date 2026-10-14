@@ -510,6 +510,12 @@ pub enum KernelType {
         hidden_size: u32,
         epsilon: f32,
     },
+    /// #5279: `RmsNorm` or `VectorizedRmsNorm` over m rows, row on grid y
+    RowsRmsNorm {
+        hidden_size: u32,
+        epsilon: f32,
+        vectorized: bool,
+    },
     /// PAR-112: Batched Vectorized RMSNorm kernel
     BatchedVectorizedRmsNorm {
         hidden_size: u32,

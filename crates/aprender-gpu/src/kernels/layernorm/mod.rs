@@ -16,7 +16,7 @@ mod tests;
 
 pub use batched::{BatchedVectorizedRmsNormKernel, PreciseRmsNormKernel};
 pub use per_head_rmsnorm::PerHeadRmsNormKernel;
-pub use rmsnorm::{RmsNormKernel, VectorizedRmsNormKernel};
+pub use rmsnorm::{RmsNormKernel, RowsRmsNormKernel, VectorizedRmsNormKernel};
 
 use super::Kernel;
 use crate::ptx::builder::{PtxArithmetic, PtxComparison, PtxControl, PtxMemory};

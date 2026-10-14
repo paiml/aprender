@@ -245,6 +245,12 @@ impl CudaKernels {
             KernelType::VectorizedRmsNorm { hidden_size, epsilon } => {
                 VectorizedRmsNormKernel::new(*hidden_size).with_epsilon(*epsilon).emit_ptx_for_target(target)
             },
+            KernelType::RowsRmsNorm { hidden_size, epsilon, vectorized } => RowsRmsNormKernel {
+                hidden_size: *hidden_size,
+                epsilon: *epsilon,
+                vectorized: *vectorized,
+            }
+            .emit_ptx_for_target(target),
             KernelType::BatchedVectorizedRmsNorm { hidden_size, batch_size, epsilon } => {
                 BatchedVectorizedRmsNormKernel::new(*hidden_size, *batch_size).with_epsilon(*epsilon).emit_ptx_for_target(target)
             },

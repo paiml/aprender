@@ -96,7 +96,7 @@ pub use gemm::{
 pub use gemv::{CoalescedGemvKernel, GemvKernel};
 pub use layernorm::{
     BatchedVectorizedRmsNormKernel, LayerNormKernel, PerHeadRmsNormKernel, PreciseRmsNormKernel,
-    RmsNormKernel, VectorizedRmsNormKernel,
+    RmsNormKernel, RowsRmsNormKernel, VectorizedRmsNormKernel,
 };
 pub use lz4::{Lz4WarpCompressKernel, Lz4WarpDecompressKernel};
 pub use megakernel::TransformerBlockMegakernel;
