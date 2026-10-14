@@ -1,0 +1,48 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRM-C13 G-PROV (PRM-001 v3 "PROMETHEUS"): no hosted-model output enters the training pool.
+    `pool::admit` (crates/aprender-review-experiment: pool.rs, reusing PRM-C12 terms.rs `tags`/`Provider`)
+    decides each candidate row's eligibility by provenance BEFORE the secret scan, so a hosted row
+    never reaches the quarantine, whose rows may be released after review. A row is eligible only if
+    it is local: provider `local` with a weights-sha model_id and a full terms tag (terms.rs), or it
+    carries a `label_source` in the gold set {outcome, hrq_ruling, sealed_corpus}. A row from a hosted
+    provider (anthropic, google) is Ineligible(Hosted) whatever else it claims; a row with no or a
+    malformed provenance tag is Ineligible(Untagged); any other label_source is Ineligible(NotGold).
+    `label_source` is a provisional gold marker until PRM-C10 fixes the label schema.
+  references:
+    - "docs/specifications/PRM-001-prometheus.md"
+    - "contracts/agent-trace-terms-v1.yaml"
+
+equations:
+  eligible:
+    formula: "eligible(r) ⇔ json(r) ∧ provider(r) ∉ {anthropic, google} ∧ (label_source(r) ∈ {outcome, hrq_ruling, sealed_corpus} ∨ (label_source(r) absent ∧ tags(r) = Ok ∧ provider(r) = local))"
+  order:
+    formula: "verdict(r) = Refused(sealed) if sealed hit; else Ineligible(p) if ¬eligible(r); else Quarantined if secret(r); else Admitted"
+
+falsification_tests:
+  - id: FALSIFY-TAP-001
+    name: planted_hosted_row_is_ineligible
+    prediction: "anthropic and google rows planted in a pool beside a local row are Ineligible(Hosted); the rebuilt pool holds only the local row"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tap_001"
+    expected_output: "exit 0"
+    if_fails: "Hosted-model outputs would train the shadow lane, breaching the provider terms and making it a copy of the voters."
+  - id: FALSIFY-TAP-002
+    name: hosted_row_is_ineligible_whatever_it_claims
+    prediction: "a hosted row claiming label_source outcome, or carrying a secret, is still Ineligible(Hosted) and never Quarantined"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tap_002"
+    expected_output: "exit 0"
+    if_fails: "A gold claim or the quarantine's later release would be a path for hosted output into the pool."
+  - id: FALSIFY-TAP-003
+    name: untagged_row_is_ineligible
+    prediction: "a bare row, a misspelt provider (\"Anthropic\") and a non-JSON row are Ineligible(Untagged)"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tap_003"
+    expected_output: "exit 0"
+    if_fails: "A row with unknown provenance would be admitted by default; admission must fail closed."
+  - id: FALSIFY-TAP-004
+    name: gold_labels_are_eligible_and_only_gold
+    prediction: "each gold label_source is admitted; quorum_majority is Ineligible(NotGold)"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tap_004"
+    expected_output: "exit 0"
+    if_fails: "Silver (voter-majority) labels would pass as gold and train the shadow lane on the voters' errors."

@@ -1377,10 +1377,14 @@ dependencies = [
 name = "aprender-review-experiment"
 version = "0.71.2"
 dependencies = [
+ "half",
+ "regex",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "toml 0.8.23",
  "ureq 2.12.1",
+ "zstd",
 ]
 
 [[package]]

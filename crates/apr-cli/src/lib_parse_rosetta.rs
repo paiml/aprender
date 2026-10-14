@@ -320,6 +320,7 @@
             seed: 299_792_458,
             repeat_penalty: 1.0,
             repeat_last_n: 64,
+            logprobs: 0,
             split_prompt: false,
             batch_jsonl: None,
             verbose: false,

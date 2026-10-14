@@ -8,6 +8,7 @@
     #[test]
     fn inference_output_fields() {
         let output = InferenceOutput {
+            logprobs: None,
             text: "hello".to_string(),
             tokens_generated: Some(5),
             inference_ms: Some(10.0),
@@ -28,6 +29,7 @@
     #[test]
     fn inference_output_no_metrics() {
         let output = InferenceOutput {
+            logprobs: None,
             text: "result".to_string(),
             tokens_generated: None,
             inference_ms: None,
