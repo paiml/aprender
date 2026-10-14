@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   mutants:
-    runs-on: [self-hosted, Linux, X64, mutants] # #5228: the X64 `mutants` pool (infra#1468), never the ARM64 gpu runner (a PR + perf host). Guard: scripts/check_mutants_pool.sh
+    runs-on: [self-hosted, Linux, X64, clean-room, yoga] # the yoga X64 clean-room pool, as the other LAB nightlies (coverage, dogfood, examples). Never intel (C100: PR CI capacity), never a gpu runner (#5228). The `mutants` label of infra#1468 is on no runner (infra#1468 closed). Guard: scripts/check_mutants_pool.sh
     timeout-minutes: 180   # ends by 06:00Z, before PR traffic rises; a run cut off is red, and job `stop` judges it
     env:
       IMAGE: localhost:5000/sovereign-ci:stable

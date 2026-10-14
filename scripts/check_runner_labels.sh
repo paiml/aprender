@@ -24,9 +24,7 @@ cd "$(dirname "$0")/.."
 # review-light (#4729): one runner on intel-clean-room-15, same unit and isolation as the
 # clean-room pool, deliberately WITHOUT clean-room so build jobs cannot queue in front of
 # pr-review-quorum `present` (a seconds-long check). A one-box label, like perf-solo.
-# mutants (#5228, infra#1468): the dedicated X64 pool for mutants-nightly, so the weekly run never lands on
-# a PR or perf host. A pool label provisioned for one job, like review-light.
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light|mutants'
+DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light'
 fail=0
 
 while IFS=: read -r file line sel; do
