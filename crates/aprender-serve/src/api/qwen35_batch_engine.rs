@@ -16,7 +16,8 @@
 //! its last token). A later prompt that begins with a kept copy's tokens is
 //! resumed from it and prefills only the rest (#5279 P7).
 //!
-//! What a batched slot does not do, as on the dense batched path: `seed`. A
+//! A sampled slot draws from its own sampler, seeded from its request's
+//! `seed` as its session turn's is, so it samples what it would alone. A
 //! batch the session serves from the CPU records no logprobs. The chat
 //! handler keeps a request that asks for a trace on the session.
 
@@ -30,11 +31,11 @@ use crate::error::{RealizarError, Result};
 use crate::gguf::logprobs::StepLogprobs;
 use crate::gguf::qwen35_session::Qwen35Session;
 use crate::gguf::Qwen35CudaCheckpoint;
-use crate::gguf::{
-    select_batched_token, OwnedQuantizedModel, Qwen35CudaModel, Qwen35CudaState, Qwen35StepOut,
-};
 use crate::gguf::{BatchedDecodeState, QuantizedGenerateConfig};
-use crate::session::penalty_active;
+use crate::gguf::{OwnedQuantizedModel, Qwen35CudaModel, Qwen35CudaState, Qwen35StepOut};
+use crate::session::{choose_token, penalty_active};
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 /// #5279 P7: finished slots' states kept for later admissions, at most.
 const POOL_MAX: usize = 16;
@@ -62,6 +63,9 @@ pub struct Qwen35BatchEngine {
     /// #5279 P7: finished slots' states, for a later prompt that repeats the
     /// prefix one of them holds.
     pool: Vec<Held>,
+    /// Slot `i`'s sampler, seeded from its request's `seed` as its session
+    /// turn's is, so a sampled slot draws what it would draw alone.
+    rngs: Vec<StdRng>,
     /// A decode step failed, so the batch's states are unknown: none is pooled.
     poisoned: bool,
     /// Prompt rows that admissions resumed from a kept copy instead of
@@ -78,6 +82,7 @@ impl Qwen35BatchEngine {
             states: Vec::new(),
             copies: Vec::new(),
             pool: Vec::new(),
+            rngs: Vec::new(),
             poisoned: false,
             reused_rows: 0,
         }
@@ -226,10 +231,15 @@ fn lock(served: &Qwen35Served) -> Result<std::sync::MutexGuard<'_, Qwen35Session
         })
 }
 
-/// A slot that picks its token by argmax, the choice `select_batched_token`
-/// makes for it too.
+/// A slot that picks its token by argmax, the choice [`choose_token`] makes
+/// for it too.
 fn is_greedy(config: &QuantizedGenerateConfig) -> bool {
     config.temperature == 0.0 || config.top_k == 1
+}
+
+/// A slot's sampler, seeded as its session turn's is.
+fn seeded(config: &QuantizedGenerateConfig) -> StdRng {
+    StdRng::seed_from_u64(config.seed)
 }
 
 /// `held` advanced to hold `head`, a prompt's every token but the last: the
@@ -389,6 +399,7 @@ impl BatchEngine for Qwen35BatchEngine {
         let served = Arc::clone(&self.served);
         let mut session = lock(&served)?;
         self.pool_all();
+        self.rngs = configs.iter().map(seeded).collect();
         let splits: Vec<_> = prompts
             .iter()
             .map(|p| session.batch_checkpoint_at(p))
@@ -486,11 +497,7 @@ impl BatchEngine for Qwen35BatchEngine {
                 c.repeat_penalty,
                 c.repeat_last_n,
             );
-            next[i] = if is_greedy(c) {
-                crate::gguf::ops::argmax(&logits)
-            } else {
-                select_batched_token(&logits, c.temperature, c.top_k, c.top_p)
-            };
+            next[i] = choose_token(&logits, c, &mut self.rngs[i]);
             if let Some(top_n) = state.recorders[i].as_ref().map(|r| r.top_n) {
                 let step = state.sequences[i].len() - state.prompts[i].len();
                 state.records[i] = Some(StepLogprobs::of(step, next[i], &logits, top_n));
@@ -519,6 +526,7 @@ impl BatchEngine for Qwen35BatchEngine {
             .ok_or_else(|| left_the_gpu("add_slot_to_batch"))?;
         let held = self.admit(model, &prompt, &config, split)?;
         self.seat(None, held);
+        self.rngs.push(seeded(&config));
         state.max_tokens_max = state.max_tokens_max.max(state.gen_idx + config.max_tokens);
         state.positions.push(prompt.len() - 1);
         state.last_tokens.push(prompt[prompt.len() - 1]);
@@ -559,6 +567,7 @@ impl BatchEngine for Qwen35BatchEngine {
         }
         let held = self.admit(model, &prompt, &config, split)?;
         self.seat(Some(slot_idx), held);
+        self.rngs[slot_idx] = seeded(&config);
         state.max_tokens_max = state.max_tokens_max.max(state.gen_idx + config.max_tokens);
         state.positions[slot_idx] = prompt.len() - 1;
         state.last_tokens[slot_idx] = prompt[prompt.len() - 1];
@@ -581,6 +590,7 @@ impl BatchEngine for Qwen35BatchEngine {
         self.states.clear();
         self.copies.clear();
         self.pool.clear();
+        self.rngs.clear();
         self.poisoned = false;
     }
 }

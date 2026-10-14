@@ -22,6 +22,17 @@ const PROMPTS: [&[u32]; 4] = [
 /// What one request got: its tokens, and with logprobs one record per token.
 type Reply = (Vec<u32>, Vec<StepLogprobs>);
 
+/// The greedy config every band but the sampled one asks with.
+fn greedy() -> QuantizedGenerateConfig {
+    QuantizedGenerateConfig {
+        max_tokens: STEPS,
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: Vec::new(),
+        ..QuantizedGenerateConfig::default()
+    }
+}
+
 /// Send `prompts` to the scheduler at once, each asking for `top_n` logprobs
 /// when `Some`, and wait for every reply.
 fn band(
@@ -29,18 +40,22 @@ fn band(
     prompts: &[&[u32]],
     top_n: Option<usize>,
 ) -> Vec<Reply> {
+    band_with(tx, prompts, top_n, &greedy())
+}
+
+/// [`band`], every request asking with `config`.
+fn band_with(
+    tx: &tokio::sync::mpsc::Sender<CudaBatchRequest>,
+    prompts: &[&[u32]],
+    top_n: Option<usize>,
+    config: &QuantizedGenerateConfig,
+) -> Vec<Reply> {
     let receivers: Vec<_> = prompts
         .iter()
         .map(|p| {
             let (token_tx, rx) = tokio::sync::mpsc::channel(64);
             let (records, records_rx) = tokio::sync::mpsc::unbounded_channel();
-            let config = QuantizedGenerateConfig {
-                max_tokens: STEPS,
-                temperature: 0.0,
-                top_k: 1,
-                stop_tokens: Vec::new(),
-                ..QuantizedGenerateConfig::default()
-            };
+            let config = config.clone();
             tx.try_send(CudaBatchRequest {
                 prompt_ids: p.to_vec(),
                 config,
@@ -306,4 +321,45 @@ fn greedy_is_temperature_zero_or_top_k_one() {
     assert!(is_greedy(&at(0.0, 40)));
     assert!(is_greedy(&at(0.8, 1)));
     assert!(!is_greedy(&at(0.8, 40)));
+}
+
+/// FALSIFY (#5312): four concurrent requests that sample (temperature 0.8,
+/// top 40, one fixed seed) form one batch of m = 4, and each draws exactly
+/// the tokens its solo turn draws with that seed; a second seed draws other
+/// tokens, so the seed is what decides them.
+#[test]
+#[serial_test::serial]
+fn sampled_requests_batch_and_draw_what_their_seeded_solo_turns_draw() {
+    let Some(s) = scheduler() else {
+        return;
+    };
+    let sampled = |seed| QuantizedGenerateConfig {
+        temperature: 0.8,
+        top_k: 40,
+        seed,
+        ..greedy()
+    };
+    let solo_at = |seed| -> Vec<Vec<u32>> {
+        PROMPTS
+            .iter()
+            .map(|p| band_with(s.tx(), &[p], None, &sampled(seed)).remove(0).0)
+            .collect()
+    };
+    let alone = solo_at(7);
+    assert!(
+        alone.iter().all(|t| t.len() == STEPS),
+        "each solo turn draws its whole budget: {alone:?}"
+    );
+    assert_ne!(alone, solo_at(8), "a second seed draws other tokens");
+
+    let together = band_with(s.tx(), &PROMPTS, None, &sampled(7));
+    assert_eq!(
+        s.counter.peak_in_flight(),
+        4,
+        "the sampled band of 4 formed one batch of m = 4"
+    );
+    for (i, (got, _)) in together.iter().enumerate() {
+        assert_eq!(got, &alone[i], "request {i} drew other tokens than alone");
+    }
+    eprintln!("[#5312] m=4 sampled: 4 requests x {STEPS} tokens equal their seeded solo turns");
 }
