@@ -499,30 +499,14 @@ impl CrateAnalyzer {
             .current_dir(&self.path)
             .output();
 
-        if let Ok(out) = output {
-            if out.status.success() {
-                // Parse JSON output for line coverage
-                if let Ok(text) = String::from_utf8(out.stdout) {
-                    // Simple extraction - look for "lines" coverage
-                    if let Some(start) = text.find("\"lines\"") {
-                        if let Some(pct_start) = text[start..].find("\"percent\"") {
-                            let search = &text[start + pct_start..];
-                            if let Some(colon) = search.find(':') {
-                                let num_start = colon + 1;
-                                if let Some(end) =
-                                    search[num_start..].find(|c: char| !c.is_numeric() && c != '.')
-                                {
-                                    if let Ok(pct) =
-                                        search[num_start..num_start + end].trim().parse::<f64>()
-                                    {
-                                        return pct;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if let Some(pct) = output
+            .ok()
+            .filter(|out| out.status.success())
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .as_deref()
+            .and_then(lines_percent)
+        {
+            return pct;
         }
 
         // Estimate based on test count
@@ -796,13 +780,32 @@ fn print_text_report(report: &QualityReport, verbose: bool, no_color: bool) {
     }
 }
 
+/// The line-coverage percent in `cargo llvm-cov --json` output: the first `"percent"`
+/// after `"lines"`, read up to the first character that is neither a digit nor `.`.
+fn lines_percent(text: &str) -> Option<f64> {
+    let start = text.find("\"lines\"")?;
+    let search = &text[start + text[start..].find("\"percent\"")?..];
+    let rest = &search[search.find(':')? + 1..];
+    let end = rest.find(|c: char| !c.is_numeric() && c != '.')?;
+    rest[..end].trim().parse().ok()
+}
+
+/// Parses a scoring config. A config that does not parse falls back to the defaults.
+fn read_config(content: &str) -> ScoringConfig {
+    serde_saphyr::from_str_with_options(
+        content,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
+    .unwrap_or_default()
+}
+
 fn main() {
     let cli = Cli::parse();
 
     // Load config (F-PMAT-018)
     let config = if let Some(config_path) = &cli.config {
         match std::fs::read_to_string(config_path) {
-            Ok(content) => serde_yaml_ng::from_str(&content).unwrap_or_default(),
+            Ok(content) => read_config(&content),
             Err(_) => ScoringConfig::default(),
         }
     } else {
@@ -833,7 +836,7 @@ fn main() {
                         std::process::exit(1);
                     }
                 },
-                OutputFormat::Yaml => match serde_yaml_ng::to_string(&report) {
+                OutputFormat::Yaml => match serde_saphyr::to_string(&report) {
                     Ok(yaml) => println!("{yaml}"),
                     Err(e) => {
                         eprintln!("YAML serialization error: {e}");
@@ -865,6 +868,26 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A config that fails to parse falls back to defaults silently, so pin that a real
+    // one is read: an integer weight, a threshold and a pattern list all take effect.
+    #[test]
+    fn test_lines_percent_reads_llvm_cov_json() {
+        let json = r#"{"totals":{"lines":{"count":10,"covered":9,"percent":90.5},"regions":{"percent":1}}}"#;
+        assert_eq!(lines_percent(json), Some(90.5));
+        assert_eq!(lines_percent(r#"{"regions":{"percent":1}}"#), None);
+    }
+
+    #[test]
+    fn test_read_config_applies_values() {
+        let c = read_config(
+            "weights:\n  performance: 1\n  testing: 0.5\n  widget_reuse: 0\n  code_coverage: 0\n  quality_metrics: 0\n  falsifiability: 0\nthresholds:\n  pass: 42\nperformance:\n  simd_patterns: [\"wide::\"]\n",
+        );
+        assert!((c.weights.performance - 1.0).abs() < f64::EPSILON);
+        assert!((c.weights.testing - 0.5).abs() < f64::EPSILON);
+        assert_eq!(c.thresholds.pass, 42);
+        assert_eq!(c.performance.simd_patterns, vec!["wide::".to_string()]);
+    }
 
     // F-PMAT-005: Score range valid
     #[test]
@@ -1093,7 +1116,7 @@ mod tests {
             threshold: 80,
             analysis_time_ms: Some(100),
         };
-        let yaml = serde_yaml_ng::to_string(&report);
+        let yaml = serde_saphyr::to_string(&report);
         assert!(yaml.is_ok());
     }
 }
