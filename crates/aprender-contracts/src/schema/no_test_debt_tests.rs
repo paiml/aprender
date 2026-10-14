@@ -29,13 +29,13 @@ fn a_listed_path() -> &'static str {
 #[test]
 fn debt_cap_case_table() {
     let rows = [
-        ("0.70.3", Some(763)),
-        ("0.71.0", Some(763)),
-        ("0.71.2", Some(763)),
-        ("0.72.0", Some(572)),
-        ("0.72.0-rc.1", Some(572)),
-        ("0.73.4", Some(381)),
-        ("0.74.0", Some(190)),
+        ("0.70.3", Some(803)),
+        ("0.71.0", Some(803)),
+        ("0.71.2", Some(803)),
+        ("0.72.0", Some(602)),
+        ("0.72.0-rc.1", Some(602)),
+        ("0.73.4", Some(401)),
+        ("0.74.0", Some(200)),
         ("0.75.0", Some(0)),
         ("0.80.1", Some(0)),
         ("1.0.0", Some(0)),
@@ -54,7 +54,10 @@ fn rel_to_contracts_case_table() {
         ("contracts/a-v1.yaml", Some("a-v1.yaml")),
         ("/x/y/contracts/sub/a-v1.yaml", Some("sub/a-v1.yaml")),
         ("/x/contracts/y/contracts/a.yaml", Some("a.yaml")),
-        ("contracts/entrenar/kaizen/a.yaml", None),
+        (
+            "contracts/entrenar/kaizen/a.yaml",
+            Some("entrenar/kaizen/a.yaml"),
+        ),
         ("contracts/publish-manifests/a.yaml", None),
         ("contracts/quarantine/a.yaml", None),
         ("/tmp/fixture/a.yaml", None),
@@ -71,7 +74,7 @@ fn schema_026_case_table() {
     let one = parse_contract_str(&with_one_test()).expect("parses");
     let listed = format!("contracts/{}", a_listed_path());
     // (row, path, contract, fires)
-    let rows: [(&str, &str, &Contract, bool); 6] = [
+    let rows: [(&str, &str, &Contract, bool); 7] = [
         (
             "new contract, no tests",
             "contracts/brand-new-v1.yaml",
@@ -92,6 +95,12 @@ fn schema_026_case_table() {
             false,
         ),
         (
+            "new kaizen contract, no tests (pv walks kaizen/)",
+            "contracts/trueno/kaizen/new-v1.yaml",
+            &zero,
+            true,
+        ),
+        (
             "outside contracts/",
             "/tmp/fixture/new-v1.yaml",
             &zero,
@@ -99,7 +108,7 @@ fn schema_026_case_table() {
         ),
         (
             "walker-skipped dir",
-            "contracts/trueno/kaizen/new-v1.yaml",
+            "contracts/pipelines/new-v1.yaml",
             &zero,
             false,
         ),
@@ -147,8 +156,14 @@ fn measure_reports_unlisted_stale_and_unwalked() {
     write("quarantine/q-v1.yaml", ZERO_TESTS);
     write("x/old-v1.yml", ZERO_TESTS);
     let r = measure(&dir);
-    assert_eq!(r.no_falsification_tests, 1);
-    assert_eq!(r.unlisted, vec!["new-zero-v1.yaml".to_string()]);
+    assert_eq!(r.no_falsification_tests, 2);
+    assert_eq!(
+        r.unlisted,
+        vec![
+            "new-zero-v1.yaml".to_string(),
+            "x/kaizen/k-v1.yaml".to_string()
+        ]
+    );
     assert_eq!(
         r.stale.len(),
         debt_entries().len(),
@@ -156,8 +171,8 @@ fn measure_reports_unlisted_stale_and_unwalked() {
     );
     assert!(r.unparsed.is_empty(), "{:?}", r.unparsed);
     assert_eq!(
-        r.unwalked, 3,
-        "binding.yaml + kaizen/ + a .yml; quarantine/ excluded"
+        r.unwalked, 2,
+        "binding.yaml + a .yml; kaizen/ is walked, quarantine/ excluded"
     );
 }
 

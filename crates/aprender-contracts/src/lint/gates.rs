@@ -60,21 +60,16 @@ pub(crate) fn load_contracts(dir: &Path) -> (Vec<(String, Contract)>, Vec<(Strin
     (contracts, parse_errors)
 }
 
+/// Directories [`collect_yaml_files`] never descends into, at any depth. Named
+/// once so the #5291 `unwalked` count and SCHEMA-026 skip exactly what the
+/// walker skips. `kaizen/` is not here: those are contracts (`metadata.kind:
+/// kaizen`) and count (#5291).
+pub const UNWALKED_DIRS: [&str; 4] = ["legacy", "pipelines", "publish-manifests", "quarantine"];
+
 /// Recursively collect `.yaml` contract files, skipping non-contract directories.
 ///
 /// Emits entries in `read_dir` order, which is UNSPECIFIED. Every caller must
 /// impose its own total order before deriving a verdict from the result.
-/// Directories [`collect_yaml_files`] never descends into, at any depth. Named
-/// once so the #5291 `unwalked` count and SCHEMA-026 skip exactly what the
-/// walker skips.
-pub const UNWALKED_DIRS: [&str; 5] = [
-    "kaizen",
-    "legacy",
-    "pipelines",
-    "publish-manifests",
-    "quarantine",
-];
-
 pub fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;

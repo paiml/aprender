@@ -85,7 +85,7 @@ proof_obligations:
   - id: VL-INV-002
     type: invariant
     property: "Atomic write crash safety"
-    formal: "If process crashes during write_ledger(), the on-disk file is either the old state or the new state, never partial"
+    formal: "process crashes during write_ledger() ⇒ on-disk file ∈ {old state, new state}, never partial"
     applies_to: all
 
   - id: VL-BND-003
@@ -97,19 +97,19 @@ proof_obligations:
   - id: VL-INV-004
     type: invariant
     property: "Dead PID cleanup correctness"
-    formal: "prune_dead() removes exactly those reservations where !alive(pid) || expired(r)"
+    formal: "prune_dead() removes exactly {r : ¬alive(r.pid) ∨ expired(r)}"
     applies_to: all
 
   - id: VL-INV-005
     type: invariant
     property: "GPU UUID stability"
-    formal: "GPU UUID does not change across reboots or driver reloads (nvidia-smi -L)"
+    formal: "∀ reboot or driver reload: GPU UUID unchanged (nvidia-smi -L)"
     applies_to: all
 
   - id: VL-BND-006
     type: bound
     property: "Flock acquisition bounded"
-    formal: "flock(LOCK_EX) returns within O(1) contention time for N<=10 concurrent processes"
+    formal: "N ≤ 10 concurrent processes ⇒ flock(LOCK_EX) returns within O(1) contention time"
     applies_to: all
 
 falsification_tests:

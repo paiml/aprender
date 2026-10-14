@@ -1,8 +1,9 @@
 # #5291 no-test debt: contracts (paths relative to contracts/) that carried ZERO
-# falsification_tests on d97936f470. pv refuses a zero-test contract that is not
+# falsification_tests on d97936f470 (763), plus the 40 kaizen contracts pv began
+# walking after #5295 (803). pv refuses a zero-test contract that is not
 # listed here (SCHEMA-026), and a line whose contract now has tests or is gone
 # fails the corpus test, so this list only shrinks. Its length is capped per
-# release by schema::no_test_debt::debt_cap: 763 / 572 / 381 / 190 / 0.
+# release by schema::no_test_debt::debt_cap: 803 / 602 / 401 / 200 / 0.
 apr-antigravity-parity-v1.yaml
 apr-book-build-v1.yaml
 apr-book-ch01-v1.yaml
@@ -375,6 +376,39 @@ dimension-independent-kernels-v1.yaml
 distributed-training-v1.yaml
 dry-penalty-repeat-len-v1.yaml
 encoder-roundtrip-v1.yaml
+entrenar/kaizen/backward-cpu-staging-v1.yaml
+entrenar/kaizen/backward-scratch-prealloc-v1.yaml
+entrenar/kaizen/batched-norm-reduction-v1.yaml
+entrenar/kaizen/classify-fwd-scratch-v1.yaml
+entrenar/kaizen/cpu-forward-zero-alloc-v1.yaml
+entrenar/kaizen/d2h-staging-buffer-v1.yaml
+entrenar/kaizen/data-parallel-zero-copy-v1.yaml
+entrenar/kaizen/embed-grad-zero-copy-v1.yaml
+entrenar/kaizen/embed-original-gpu-resident-v1.yaml
+entrenar/kaizen/fused-cross-entropy-v1.yaml
+entrenar/kaizen/fused-optimizer-kernel-v1.yaml
+entrenar/kaizen/gpu-l2-norm-reduction-v1.yaml
+entrenar/kaizen/gpu-rmsnorm-forward-v1.yaml
+entrenar/kaizen/gpu-workspace-clip-v1.yaml
+entrenar/kaizen/grad-hidden-gpu-resident-v1.yaml
+entrenar/kaizen/gradient-scaling-zero-alloc-v1.yaml
+entrenar/kaizen/host-buffer-reuse-v1.yaml
+entrenar/kaizen/inplace-cross-entropy-v1.yaml
+entrenar/kaizen/instruct-buffer-prealloc-v1.yaml
+entrenar/kaizen/instruct-fused-causal-xent-v1.yaml
+entrenar/kaizen/lazy-ptx-cache-v1.yaml
+entrenar/kaizen/lora-grad-zero-reuse-v1.yaml
+entrenar/kaizen/pre-tokenize-corpus-v1.yaml
+entrenar/kaizen/pre-tokenize-instruct-v1.yaml
+entrenar/kaizen/step-profiler-v1.yaml
+entrenar/kaizen/training-alloc-reduction-v1.yaml
+entrenar/kaizen/wgpu-attention-stability-v1.yaml
+entrenar/kaizen/wgpu-burn-canary-v1.yaml
+entrenar/kaizen/wgpu-eval-ensemble-v1.yaml
+entrenar/kaizen/wgpu-model-improvement-v1.yaml
+entrenar/kaizen/wgpu-production-training-kaizen-v1.yaml
+entrenar/kaizen/wgpu-training-quality-v1.yaml
+entrenar/kaizen/wgpu-transformer-trainer-v1.yaml
 eval-passk-single-sample-v1.yaml
 export-user-metadata-roundtrip-v1.yaml
 f16-to-f32-subnormal-v1.yaml
@@ -457,6 +491,13 @@ train-test-split-ceil-v1.yaml
 trainer-grad-clip-v1.yaml
 training-loop-pretrain-v1.yaml
 tree-feature-importances-mdi-v1.yaml
+trueno/kaizen/batched-matmul-zero-copy-v1.yaml
+trueno/kaizen/blis-profiling-guard-v1.yaml
+trueno/kaizen/blis-safe-alloc-v1.yaml
+trueno/kaizen/matrix-transpose-blis-v1.yaml
+trueno/kaizen/vecmat-blis-gemv-v1.yaml
+trueno/kaizen/wgpu-backward-training-v1.yaml
+trueno/kaizen/wgpu-batched-eval-v1.yaml
 ttest-exact-pvalue-v1.yaml
 ward-linkage-v1.yaml
 work/APR-ANTIGRAVITY-INTEGRATION-001.yaml

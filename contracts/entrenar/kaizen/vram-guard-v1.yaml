@@ -80,7 +80,7 @@ proof_obligations:
   - id: VG-INV-002
     type: invariant
     property: "Post-init actual tracking"
-    formal: "After CudaTrainer::new() succeeds, ledger contains actual_mb measured via cuMemGetInfo"
+    formal: "CudaTrainer::new() succeeds ⇒ ledger contains actual_mb measured via cuMemGetInfo"
     applies_to: all
 
   - id: VG-BND-003
@@ -92,7 +92,7 @@ proof_obligations:
   - id: VG-INV-004
     type: invariant
     property: "Guard is checked before first GPU allocation"
-    formal: "No cuMemAlloc call occurs before budget_check returns true"
+    formal: "∀ cuMemAlloc call: budget_check returned true before it"
     applies_to: all
 
   - id: VG-INV-005

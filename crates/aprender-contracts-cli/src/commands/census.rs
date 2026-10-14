@@ -547,11 +547,11 @@ mod tests {
     /// The walker's own rule, not a second one: `binding.yaml` is not a contract.
     #[test]
     fn the_shared_walker_decides_what_a_contract_file_is() {
-        let tmp = corpus(&["a.yaml", "binding.yaml", "kaizen/k.yaml"]);
+        let tmp = corpus(&["a.yaml", "binding.yaml", "pipelines/p.yaml"]);
         let c = census_of(tmp.path()).expect("a valid corpus censuses");
         assert_eq!(
             c.n_files, 1,
-            "binding.yaml and kaizen/ are excluded by provable_contracts::lint's walker"
+            "binding.yaml and pipelines/ are excluded by provable_contracts::lint's walker"
         );
     }
 

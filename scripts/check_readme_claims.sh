@@ -328,13 +328,13 @@ check_crate_count() {
 # ONE definition of "a contract file", the one `provable_contracts::lint`'s walker
 # applies and `pv census` (ONT-001 ONT-1) counts: *.yaml, no dotfile, not the
 # binding registry, not ONT-1's external-corpora declaration, not ONT-2b's Σ, and nothing under
-# kaizen/, legacy/, pipelines/, publish-manifests/ or quarantine/. Reading a tar
+# legacy/, pipelines/, publish-manifests/ or quarantine/ (kaizen/ counts, #5291). Reading a tar
 # listing with a SECOND definition is how the README came to state 1841 while
 # every gate measured 1790 — the on-disk reading, the two revisions and the
 # README claim are now one instrument.
 contract_files_only() {
   grep -E '\.yaml$' \
-    | grep -Ev '(^|/)(kaizen|legacy|pipelines|publish-manifests|quarantine)/' \
+    | grep -Ev '(^|/)(legacy|pipelines|publish-manifests|quarantine)/' \
     | grep -Ev '(^|/)(binding\.yaml|binding\.yml|external-corpora\.yaml|ontology\.yaml)$' \
     | grep -Ev '(^|/)\.[^/]*$'
 }

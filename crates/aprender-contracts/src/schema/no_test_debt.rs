@@ -1,7 +1,8 @@
 //! #5291: the no-test debt, as a list that only shrinks and a cap per release.
 //!
-//! On d97936f470, 763 of the 1913 contracts pv walks carried ZERO falsification
-//! tests and every pv gate passed them. SCHEMA-024/025 refuse the written-empty
+//! On d97936f470, 763 of the 1913 contracts pv walked carried ZERO falsification
+//! tests and every pv gate passed them. Walking the 46 kaizen contracts too
+//! (operator ruling via the cop) made it 803 of 1959. SCHEMA-024/025 refuse the written-empty
 //! shapes; this module owns the rest:
 //!
 //! - **SCHEMA-026**: a contract under `contracts/` with no tests is refused
@@ -9,12 +10,13 @@
 //! - **stale lines**: a listed contract that now has tests, or no longer
 //!   exists, fails [`measure`], so a fix must delete its line.
 //! - **the cap**: the list's length may not exceed [`debt_cap`] for the
-//!   release being built (operator's four-part split: 763 → 572 → 381 → 190
-//!   → 0, one part per release 0.71 to 0.74).
-//! - **unwalked**: `.yaml` files under `contracts/` that the walker never
-//!   reads ([`crate::lint::UNWALKED_DIRS`], the binding/ontology/corpora
+//!   release being built (operator's four-part split: 803 → 602 → 401 → 200
+//!   → 0, one part per release 0.72 to 0.75).
+//! - **unwalked**: `.yaml`/`.yml` files under `contracts/` that the walker
+//!   never reads ([`crate::lint::UNWALKED_DIRS`], the binding/ontology/corpora
 //!   files) are counted and capped at [`UNWALKED_CAP`], so nothing leaves the
-//!   count by moving out of the walker's sight.
+//!   count by moving out of the walker's sight. All 15 are NOT contracts,
+//!   pending a move out of `contracts/` (#5291); the number never rises.
 
 use std::collections::BTreeSet;
 use std::path::{Component, Path};
@@ -26,9 +28,11 @@ use crate::lint::{collect_yaml_files, UNWALKED_DIRS};
 /// One path per line, relative to `contracts/`; `#` lines are comments.
 pub const NO_TEST_DEBT: &str = include_str!("no_test_debt.txt");
 
-/// `.yaml` files under `contracts/` outside the walker's universe on
-/// d97936f470 (`quarantine/` excluded: the census counts it as `quarantined_n`).
-pub const UNWALKED_CAP: usize = 61;
+/// `.yaml` files under `contracts/` outside the walker's universe once kaizen
+/// is walked: 10 `binding.yaml`, `ontology.yaml`, `external-corpora.yaml` and
+/// 3 `publish-manifests/` (`quarantine/` excluded: the census counts it as
+/// `quarantined_n`). Lower it with each one moved out.
+pub const UNWALKED_CAP: usize = 15;
 
 /// The listed paths.
 #[must_use]
@@ -51,10 +55,10 @@ pub fn debt_cap(version: &str) -> Option<usize> {
         return Some(0);
     }
     Some(match minor {
-        0..=71 => 763,
-        72 => 572,
-        73 => 381,
-        74 => 190,
+        0..=71 => 803,
+        72 => 602,
+        73 => 401,
+        74 => 200,
         _ => 0,
     })
 }
