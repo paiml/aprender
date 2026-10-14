@@ -675,17 +675,21 @@ resources_by_band() {
             pfx=apr; [ "$lane" = comparator ] && pfx=llama
             for k in $(seq 1 "$REPLICATES"); do
                 if [ -s "$WORK/res-$pfx-$tag-r$k.json" ]; then
-                    # Raw CPU-seconds are not comparable across lanes: the two
-                    # windows complete different token counts. Per token is.
+                    # completion_tokens is the measured runs' count only. The
+                    # window also spans the bench's --warmup, so no per-token
+                    # CPU figure is derived here: it would charge warmup CPU
+                    # to measured tokens, unequally across the two lanes.
                     local toks
                     toks=$(jq '[.runs[]?.completion_tokens_total] | if length == 0 then null else add end' \
                         "$WORK/$pfx-$tag-r$k.json" 2>/dev/null) || toks=null
                     [ -n "$toks" ] || toks=null
                     jq -c --arg t "$tag" --arg l "$lane" --argjson k "$k" --argjson toks "$toks" \
                         '{band: $t, lane: $l, replicate: $k, window: (. + {completion_tokens: $toks,
-                          cpu_s_per_token: (if ($toks // 0) > 0 and .cpu_s != null
-                                            then (.cpu_s / $toks * 10000 | round / 10000) else null end)})}' \
-                        "$WORK/res-$pfx-$tag-r$k.json"
+                          completion_tokens_scope: "measured runs only; the window also includes warmup"})}' \
+                        "$WORK/res-$pfx-$tag-r$k.json" \
+                    || { echo "parity_host_receipt: unreadable resource file res-$pfx-$tag-r$k.json" >&2
+                         jq -cn --arg t "$tag" --arg l "$lane" --argjson k "$k" \
+                            '{band: $t, lane: $l, replicate: $k, window: {absent: "resource file unreadable"}}'; }
                 else
                     jq -cn --arg t "$tag" --arg l "$lane" --argjson k "$k" \
                         '{band: $t, lane: $l, replicate: $k, window: {absent: "no resource file written"}}'
