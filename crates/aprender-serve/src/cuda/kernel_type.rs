@@ -171,6 +171,14 @@ pub enum KernelType {
         n: u32,
         num_warps: u32,
     },
+    /// #5303: MWV Q4_K GEMV over `m` activation rows, each row bitwise equal
+    /// to [`KernelType::MwvQ4KGemv`] on that row alone
+    BatchedMwvQ4KGemv {
+        k: u32,
+        n: u32,
+        m: u32,
+        num_warps: u32,
+    },
     /// PAR-082-V4: Multi-warp DP4A Q4_K GEMV with Q8_1-quantized activations
     MwvDp4aQ4KGemv {
         k: u32,
@@ -312,6 +320,14 @@ pub enum KernelType {
     MwvQ6KGemv {
         k: u32,
         n: u32,
+        num_warps: u32,
+    },
+    /// #5303: MWV Q6_K GEMV over `m` activation rows, each row bitwise equal
+    /// to [`KernelType::MwvQ6KGemv`] on that row alone
+    BatchedMwvQ6KGemv {
+        k: u32,
+        n: u32,
+        m: u32,
         num_warps: u32,
     },
     /// DP4A Q6_K GEMV with vectorized int32 loads and dp4a.u32.s32

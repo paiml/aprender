@@ -70,8 +70,8 @@ pub use nf4_tensor_core::Nf4TensorCoreGemmKernel;
 pub use q4k::interleaved::repack_q4k_interleaved;
 pub use q4k::w4a16::repack_q4k_w4a16;
 pub use q4k::{
-    BatchedHwDp4aQ4KGemvKernel, BatchedQ4KGemvKernel, ChunkedTiledQ4KGemvKernel,
-    CoalescedQ4KGemvKernel, Dp4aQ4KGemvKernel, FusedFp32Q4KGemvKernel,
+    BatchedHwDp4aQ4KGemvKernel, BatchedMwvQ4KGemvKernel, BatchedQ4KGemvKernel,
+    ChunkedTiledQ4KGemvKernel, CoalescedQ4KGemvKernel, Dp4aQ4KGemvKernel, FusedFp32Q4KGemvKernel,
     FusedGateUpSwigluHwDp4aQ4KGemvKernel, FusedQKVHwDp4aQ4KGemvKernel, HalfWarpDp4aQ4KGemvKernel,
     InlineQ8Dp4aQ4KGemvKernel, MultiWarpVectorizedQ4KGemvKernel, MwvDp4aQ4KGemvKernel,
     Q4KDequantFp16Kernel, Q4KDequantKernel, Q4KGemvKernel, TiledQ4KGemvKernel,
@@ -79,8 +79,8 @@ pub use q4k::{
 };
 pub use q5k::{Q5KDequantKernel, Q5KGemvKernel, Q5KKernel};
 pub use q6k::{
-    BatchedQ6KGemvKernel, CoalescedQ6KGemvKernel, Dp4aQ6KGemvKernel, HalfWarpDp4aQ6KGemvKernel,
-    MultiWarpQ6KGemvKernel, Q6KDequantKernel, Q6KGemvKernel, Q6KKernel,
+    BatchedMwvQ6KGemvKernel, BatchedQ6KGemvKernel, CoalescedQ6KGemvKernel, Dp4aQ6KGemvKernel,
+    HalfWarpDp4aQ6KGemvKernel, MultiWarpQ6KGemvKernel, Q6KDequantKernel, Q6KGemvKernel, Q6KKernel,
 };
 pub use q8::Q8QuantizeKernel;
 pub use q8_0_dequant::Q8_0DequantKernel;

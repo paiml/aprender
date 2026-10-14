@@ -33,4 +33,4 @@ pub use dp4a::Dp4aQ6KGemvKernel;
 pub use gemm::Q6KKernel;
 pub use gemv::Q6KGemvKernel;
 pub use hw_dp4a::HalfWarpDp4aQ6KGemvKernel;
-pub use multi_warp::MultiWarpQ6KGemvKernel;
+pub use multi_warp::{BatchedMwvQ6KGemvKernel, MultiWarpQ6KGemvKernel};

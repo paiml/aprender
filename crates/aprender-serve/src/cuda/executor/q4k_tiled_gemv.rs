@@ -297,3 +297,5 @@ impl CudaExecutor {
 include!("q4k_gemv_cached.rs");
 include!("q6k_gemv_indexed.rs");
 include!("q4k_mwv_gemv.rs");
+include!("q4k_mwv_batched_gemv.rs");
+include!("q6k_mwv_batched_gemv.rs");

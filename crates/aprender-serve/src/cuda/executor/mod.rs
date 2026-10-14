@@ -362,6 +362,10 @@ mod tests_q5k_ggml;
 #[cfg(test)]
 mod tests_q8_activation_staleness;
 
+// FALSIFY (#5303): the batched MWV Q4_K and Q6_K GEMVs are bitwise the single-row ones, row by row
+#[cfg(test)]
+mod tests_batched_mwv;
+
 // COV-003 through COV-006 (layer preload, kv_cache, attention, quantized)
 #[cfg(test)]
 #[path = "tests_cov003_preload.rs"]

@@ -75,6 +75,9 @@ impl CudaKernels {
             KernelType::MwvQ6KGemv { k, n, num_warps } => {
                 MultiWarpQ6KGemvKernel::with_warps(*k, *n, *num_warps).emit_ptx_for_target(target)
             },
+            KernelType::BatchedMwvQ6KGemv { k, n, m, num_warps } => {
+                BatchedMwvQ6KGemvKernel { k: *k, n: *n, m: *m, num_warps: *num_warps }.emit_ptx_for_target(target)
+            },
             KernelType::Dp4aQ6KGemv { k, n, num_warps } => {
                 Dp4aQ6KGemvKernel::with_warps(*k, *n, *num_warps).emit_ptx_for_target(target)
             },
@@ -118,6 +121,9 @@ impl CudaKernels {
                 let mut kernel = MultiWarpVectorizedQ4KGemvKernel::new(*k, *n);
                 kernel.num_warps = *num_warps;
                 kernel.emit_ptx_for_target(target)
+            },
+            KernelType::BatchedMwvQ4KGemv { k, n, m, num_warps } => {
+                BatchedMwvQ4KGemvKernel { k: *k, n: *n, m: *m, num_warps: *num_warps }.emit_ptx_for_target(target)
             },
             KernelType::MwvDp4aQ4KGemv { k, n, num_warps } => {
                 let mut kernel = MwvDp4aQ4KGemvKernel::new(*k, *n);
