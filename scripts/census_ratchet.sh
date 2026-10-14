@@ -12,7 +12,7 @@
 #   or if missing rises.
 # --release <ver> --commit <sha>: the comparand is the previous v* tag before <sha>.
 #   RED if bound(sha) < bound(prev) + min(100, unbound(prev)), or if missing rises. The per-release
-#   caps on missing (763 -> 572/381/190/0) live in pv (corpus_no_test_debt_within_release_cap), never here.
+#   caps on missing live in pv (corpus_no_test_debt_within_release_cap), never here, and so do their numbers.
 #
 # NEVER VACUOUS: pv missing or without `census`, a non-zero exit, unparseable JSON, a census without
 # no_falsification_tests (a pv before #5295), 0 contracts, a parse error, or anchoring counts that do not
