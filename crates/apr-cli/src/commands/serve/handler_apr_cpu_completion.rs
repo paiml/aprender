@@ -358,6 +358,12 @@ async fn handle_apr_cpu_chat_completion(
     if let Some(err_response) = validate_request_model(req, &s.model_name) {
         return err_response;
     }
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(req, super::response_format::APR_CPU)
+    {
+        return refusal;
+    }
     if let Some(refused) = logprobs_refusal_response(req, "APR CPU (AprTransformer)") {
         return refused;
     }

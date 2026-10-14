@@ -1,0 +1,79 @@
+# Edge fast-verbs LAB nightly (#5254). CRUX smoke plus apr-vs-ollama decode on
+# the 8 GB ARM64 CUDA edge device, posted as ONE ranked gap list on #5254.
+#
+# LAB, by the GATE/LAB rule: it cannot block a merge or a release, so it never
+# runs in a PR, merge-queue or release job. No pull_request, merge_group or
+# push trigger, on purpose. A night that could not measure is red; after 7
+# consecutive red nights the workflow disables itself until its owner brings
+# it back.
+name: Edge fast-verbs LAB nightly
+
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'GGUF file name under ~/models on the edge runner'
+        required: false
+        default: 'Qwen3.5-2B-Q4_K_M.gguf'
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+jobs:
+  edge:
+    runs-on: [self-hosted, Linux, ARM64, gpu, cuda, jetson]
+    timeout-minutes: 180
+    # PP-19: one GPU job on the box at a time.
+    concurrency:
+      group: perf-jetson
+      cancel-in-progress: false
+    env:
+      MODEL_FILE: ${{ inputs.model || 'Qwen3.5-2B-Q4_K_M.gguf' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build apr (cuda)
+        run: |
+          export PATH="$HOME/.cargo/bin:/usr/local/cuda/bin:$PATH"
+          # A persistent target dir: the cold build takes ~18 min on this device.
+          export CARGO_TARGET_DIR="$HOME/data/edge-target"
+          cargo build --release --features cuda --bin apr
+      - name: Measure
+        id: measure
+        run: |
+          export PATH="$HOME/.cargo/bin:/usr/local/cuda/bin:$PATH"
+          # The same target dir; apr_bin.sh reads it back through cargo metadata.
+          export CARGO_TARGET_DIR="$HOME/data/edge-target"
+          . scripts/apr_bin.sh || exit 1   # exports $APR, built from this tree at HEAD
+          bash scripts/edge_fast_verbs_nightly.sh \
+            --model "$HOME/models/$MODEL_FILE" --out "$RUNNER_TEMP/edge" --host jetson
+      - name: Post the gap list on #5254
+        if: always()
+        run: |
+          f="$RUNNER_TEMP/edge/gaps.md"
+          if [ ! -s "$f" ]; then
+            printf '**Edge nightly** · model %s · not_measured: no gap list (build or tooling failed)\n' "$MODEL_FILE" > "$RUNNER_TEMP/gaps-fallback.md"
+            f="$RUNNER_TEMP/gaps-fallback.md"
+          fi
+          printf '\nRun: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$f"
+          jq -Rs '{body: .}' "$f" > "$RUNNER_TEMP/comment.json"
+          curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/5254/comments" \
+            --data @"$RUNNER_TEMP/comment.json" > /dev/null
+      - name: Disable after 7 consecutive red nights
+        if: failure()
+        run: |
+          api="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/edge-fast-verbs-nightly.yml"
+          curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$api/runs?status=completed&per_page=6" > "$RUNNER_TEMP/runs.json"
+          # This run is still in progress, so 6 completed failures plus this one is 7.
+          red=$(jq '[.workflow_runs[] | select(.conclusion == "failure")] | length' "$RUNNER_TEMP/runs.json")
+          if [ "$red" -eq 6 ]; then
+            curl -sSf -X PUT -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "$api/disable"
+            echo "7 consecutive red nights: workflow disabled until its owner re-enables it"
+          fi

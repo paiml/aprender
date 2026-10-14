@@ -357,6 +357,12 @@ async fn wgpu_chat_completion(
     state: Arc<WgpuInferenceState>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> axum::response::Response {
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(&body, super::response_format::GGUF_WGPU)
+    {
+        return refusal;
+    }
     if let Some(refused) = logprobs_refusal_response(&body, "WGPU") {
         return refused;
     }

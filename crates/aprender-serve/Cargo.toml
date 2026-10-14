@@ -112,6 +112,10 @@ sha2 = { workspace = true }
 # grammar; it sits behind `constrain::TokenConstraint`, so the engine stays swappable. Optional, enabled
 # by `structured-output`, which apr-cli's `inference` feature turns on (cop ruling, 2026-09-21).
 llguidance = { version = "1.8.0", optional = true, default-features = false, features = ["lark", "rayon", "ahash"] }
+# #3568: the SECOND READER, a JSON Schema validator that shares nothing with llguidance. It checks a
+# schema before the model loads and the finished text after the turn (`constrain::second_reader`), for
+# `apr run` and `apr serve` alike. No default features: it fetches nothing (`NoFetch` retriever).
+jsonschema = { version = "0.28", optional = true, default-features = false }
 
 # Lock-free concurrent data structures
 arc-swap = { version = "1.7", optional = true }
@@ -247,7 +251,7 @@ visualization = ["dep:trueno-viz"]  # Terminal/PNG benchmark visualization
 registry = ["dep:pacha"]  # Model registry with Pacha (pull/push/cache)
 tui = ["dep:presentar-terminal", "dep:crossterm", "dep:ureq", "dep:clap"]  # PARITY-107: Real-time monitoring TUI (presentar-terminal)
 bench-http = ["dep:reqwest"]  # Real HTTP benchmarking of external model servers
-structured-output = ["dep:llguidance"]  # #3568: schema-constrained decoding (`constrain` module)
+structured-output = ["dep:llguidance", "dep:jsonschema"]  # #3568: schema-constrained decoding (`constrain` module) and its second reader
 
 # Testing features
 load-test-enabled = ["server"]  # Enable load tests (requires running server)

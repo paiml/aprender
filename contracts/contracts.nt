@@ -26444,6 +26444,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::compute_mse> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::compute_mse> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Code> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::compute_mse> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/attribute> "cfg_attr"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/crate> "aprender"^^<http://www.w3.org/2001/XMLSchema#string> .

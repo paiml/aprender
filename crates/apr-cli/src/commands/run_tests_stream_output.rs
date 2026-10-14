@@ -18,6 +18,7 @@ fn stream_output_emits_n_plus_one_json_lines() {
             "!".to_string(),
         ]),
         usage: Default::default(),
+        constraint_refusal: None,
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -89,6 +90,7 @@ fn stream_token_events_carry_their_own_decoded_text() {
             " to help".to_string(),
         ]),
         usage: Default::default(),
+        constraint_refusal: None,
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -131,6 +133,7 @@ fn stream_token_events_degrade_to_empty_text_without_a_tokenizer() {
         generated_tokens: Some(vec![7, 9]),
         token_texts: None,
         usage: Default::default(),
+        constraint_refusal: None,
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -158,6 +161,7 @@ fn stream_output_no_tokens_emits_only_final() {
         generated_tokens: Some(Vec::new()),
         token_texts: None,
         usage: Default::default(),
+        constraint_refusal: None,
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -185,6 +189,7 @@ fn stream_output_none_tokens_emits_only_final() {
         generated_tokens: None,
         token_texts: None,
         usage: Default::default(),
+        constraint_refusal: None,
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -211,6 +216,7 @@ fn build_final_json_matches_legacy_json_shape() {
         generated_tokens: Some(vec![1, 2, 3]),
         token_texts: None,
         usage: Default::default(),
+        constraint_refusal: None,
     };
     let v = build_final_json(&result, "src.apr", 100, false);
     assert_eq!(v["model"], "src.apr");

@@ -19966,18 +19966,19 @@ roadmap:
   github_issue: 3568
   item_type: task
   title: Schema-constrained decoding in apr (--json-schema or grammar) — thre
-  status: planned
+  status: in_progress
   priority: medium
   assigned_to: null
   created: 2026-09-20T10:27:59Z
-  updated: 2026-09-20T10:27:59Z
+  updated: 2026-10-10T00:55:00Z
   spec: null
   acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
+  labels:
+  - kind:code
+  notes: 'Refs #3568, #3826. Schema-constrained decoding (--json-schema, --grammar, response_format) runs through one engine: Session::generate_constrained masks host logits before the repetition penalty and the sampler, so the constraint applies identically on the CPU and on CUDA. A constrained run takes CUDA where an unconstrained one does (dense and hybrid), and reports gpu_attempted, used_gpu and fell_back as an unconstrained run does (#3826). apr serve''s /v1/chat/completions response_format (json_schema, json_object) goes through the same engine on the GGUF CPU and CUDA routes; every other route refuses it by name (ASOC-INV-020, FALSIFY-RESPONSE-FORMAT-3568). Evidence (tests, plants, RTX 4090 and GB10 runs) is in the pull request.'
 - id: PMAT-3569
   github_issue: 3569
   item_type: task
@@ -21910,6 +21911,33 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'The cop (aprender-04) requested this, verbatim: "Please land a pure-refactor commit on a branch OFF release/0.69.1-batch-1 (not your old branch) that brings it under threshold with no behaviour change. Proof: `bash scripts/check_complexity_ratchet.sh` rc 0, `cargo test -p aprender-contracts --lib` green, and `pv lint contracts --gate shapes` 8/8 controls fired." SCOPE: this ticket IS the refactor. It is NOT #3715''s feature, which was already folded at ded8a932a; the diff against ded8a932a is only this refactor plus this fragment and receipt. The ratchet was RED on release/0.69.1-batch-1 (ded8a932a) vs main a9502d992: run_shapes_gate_with cyclomatic 13 cognitive 28 (the limit is 25). The fix moves the preamble (collect -> empty -> arming -> family, same order), the family ordering, the verdict rule and the two report maps into prepare / order_by_family / needs_receipts / verdict_of / by_shape / by_entity_type. MEASURED at 2a40dda85: the ratchet no longer lists run_shapes_gate_with (rc stays 1 only for crates/aprender-serve/src/constrain/tests.rs::generate_intent, not in this diff and not this ticket''s); cargo test -p aprender-contracts --lib 1701 passed; pv lint contracts --gate shapes Pass, 8/8 pc_extract fired; ont_release_readiness / ont4b / ont4c1 / ont4c3 CLI targets 34/11/12/10 passed; clippy -D warnings clean. A prior round under PMAT-3715 had a lane FAIL on SCOPE because it judged this delta against the #3715 feature ticket; the cop ruled that this refactor gets its own ticket.'
+- id: PMAT-3793
+  github_issue: 3793
+  item_type: task
+  title: '#3568 PR 2/4: apr run --json-schema / --grammar on the CPU paths (dense GGUF + Qwen3.5) — the named refusals, a second-reader validator, finish_reason + prompt_tokens'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T23:26:26Z
+  updated: 2026-10-09T12:42:18Z
+  spec: null
+  acceptance_criteria:
+  - 'THIS PR IS #3568 PR 2 of 4 (#3793), per the design note https://github.com/paiml/aprender/issues/3568#issuecomment-5763921678, split item 2 verbatim: "`apr run` on the CPU paths (dense and Qwen3.5), with the flags, the refusals, the second reader and the `--json` fields." CUDA is PR 3; `apr serve` is PR 4.'
+  - 'Issue #3793 done_when 1, verbatim: **Flags:** "`apr run --json-schema <inline JSON | @path>` and `--grammar <inline | @path>` (Lark). Both are validated **before the first token**. `--format json` is not overloaded."'
+  - 'Issue #3793 done_when 2, verbatim: **The CPU loops:** "**Dense GGUF, CPU:** apply it in the per-step sampler of `generate_with_cache`." and "**Qwen3.5 hybrid:** apply it in `run_qwen35_generate` on CPU". The mask only removes candidates: "Greedy / temperature 0 stays deterministic".'
+  - 'Issue #3793 done_when 3, verbatim: **Every path not wired is refused:** "Every other generation path **refuses** the flag by name until it is wired. A constraint that is silently ignored is decoration." In this PR that includes the CUDA paths (PR 3), with the refusal `SchemaUnsupportedPath{path}` and "an exit code and a `removed_by`".'
+  - 'Issue #3793 done_when 4, verbatim: **The refusals**, "each one line on stderr with a non-zero exit code": `SchemaInvalid`, `SchemaUnsupported{keyword, path}` with a `removed_by`, `SchemaUnsupportedPath{path}`, `SchemaWithThinking`, `SchemaViolation`, `Truncated`. "Per rmedia, a cut or empty completion is an error, never an empty success."'
+  - 'Issue #3793 done_when 5, verbatim: **Thinking:** the ruling (2): "`--json-schema` + a thinking template: refused by name (SchemaWithThinking) in 0.69.1." The 0.70 follow-up is #3735.'
+  - 'Issue #3793 done_when 6, verbatim: **A second reader:** "The final text is validated against the schema by a validator independent of the engine … before exit 0. Masking is one reader; this is the other."'
+  - 'Issue #3793 done_when 7, verbatim: **`--json` fields:** "`apr run --json` gains `finish_reason` (`stop | length | constraint_complete | dead_end`) and `prompt_tokens`."'
+  - 'Issue #3793 done_when 8, verbatim: **Positive controls:** "A malformed schema gives `SchemaInvalid` and a non-zero exit **before generation**, with no tokens emitted." "A valid schema with a violating prompt still gives conforming output." "A **mutant** that makes the constraint a no-op turns the corpus test RED."'
+  - 'Issue #3793 done_when 9, verbatim (amended by the author before review): **The corpus is the real consumer schemas:** a review tool''s output schema, and rmedia''s quiz, outline and key-terms schemas from #3716. The prompts include ones that ask the model to violate the schema, run here on the CPU paths. Every sample that exits 0 validates with the second reader, and every sample the budget cuts is refused (`Truncated`, non-zero), never reported as a success. *(Amended by the author before review, 2026-09-22: the design note''s "every sample validates" cannot hold for a sample that never completes. A greedy model can loop inside an unbounded string or number, and no budget completes that document. This was measured: the review schema''s `summary` and rmedia''s `seconds`, details in the comment below. The guarantee that holds, and that this PR tests, is that nothing non-conforming is ever reported as a success.)*'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Refs #3568 (PR 2 of 4), #3793. apr run --json-schema / --grammar on the CPU paths (dense GGUF and Qwen3.5) through the one engine (#4263): Session::generate_constrained is Session::generate with the constraint masking host logits, never the greedy fast path. The named refusals (SchemaInvalid, SchemaUnsupported, SchemaUnsupportedPath, SchemaWithThinking, SchemaViolation, Truncated) exit non-zero with one stderr line; a second, independent validator checks the final text before exit 0; apr run --json gains finish_reason and prompt_tokens. Evidence is in the pull request.'
 - id: PMAT-3795
   github_issue: 3795
   item_type: task

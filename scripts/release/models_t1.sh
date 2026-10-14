@@ -10,18 +10,28 @@
 # PER HOST -- the measuring itself is scripts/model_ladder.sh (#3712's side, a frozen interface):
 #   1. build `apr --features cuda` (binary-release.yml's command) FROM THE RELEASE COMMIT:
 #        lambda  this worktree, into autopilot's CARGO_TARGET_DIR
-#        gx10    a detached worktree at the release commit and a PER-RELEASE target dir,
-#                $HOME/.cache/aprender-release/rel-<v> on gx10, derived there at run time (#3618:
-#                no host path is a literal under scripts/release/). Every other rel-* is deleted
-#                first. NEVER ~/src/aprender/target: a shared cache under an old checkout is how
-#                a stale instrument agrees with itself (#3600).
+#        gx10    a detached worktree at the release commit and a PER-RUN target dir,
+#                $HOME/.cache/aprender-release/rel-<v>-<run> on gx10, derived there at run time (#3618:
+#                no host path is a literal under scripts/release/). Every rel-* (this pid's too) is deleted
+#                first, and only under that host's lock (below). NEVER ~/src/aprender/target: a shared
+#                cache under an old checkout is how a stale instrument agrees with itself (#3600).
+#                A run never reuses another run's dir, so it pays a fresh build every time (#5264).
 #   2. prove the binary before measuring: `apr --version` must read "apr <v> (<release sha9>)"
 #   3. `choom -n 1000 -- bash scripts/model_ladder.sh --host <id> --out <dir>`: the fleet GPU rule
 #      (cop, 2026-09-21, after gx10's 15:56Z global OOM killed 18 CI containers) makes THIS run,
 #      never the CI pool, the OOM victim; oom_score_adj is inherited across fork, so every apr the
 #      ladder starts is covered. The GPU LOCK is model_ladder.sh's own, per apr call (#3712 row B):
-#      this wrapper takes NO flock -- a second flock on the same file here would deadlock the
-#      ladder's inner one (cop ruling, one owner). The build runs under neither.
+#      this wrapper wraps NOTHING in a flock -- a second flock on the same file here would deadlock
+#      the ladder's inner one (cop ruling, one owner). The build runs under neither.
+# ONE RUN AT A TIME (#5264): a nightly's gx10 leg once removed a live release window's worktree,
+#   because both ran rel-<v> for the same version. Two locks, both refusals (never a wait), neither the
+#   GPU lock's file, and neither fd reaches the build or the measurer:
+#     here   MODELS_T1_LOCK (default $HOME/.cache/aprender-release/models-t1.lock), taken before the
+#            out dir or either host is touched; models_nightly.sh probes the same file before it starts
+#            a run, so neither order of the two runs. Held: "MODELS NO-GO: another models_t1.sh
+#            holds ...", exit 2.
+#     gx10   $HOME/.cache/aprender-release/.lock there, taken before the sweep of every rel-*;
+#            held: "MODELS-LEG gx10 ENV: busy ...", so exit 2.
 #      The receipt's apr_version must be the line proved in step 2.
 #   Both legs pass --cells (#3715 B1): the receipts carry cells[], the unit release-readiness-v1 grades at
 #   the readiness step. A leg without it measures rungs only and every owed cell is a violation there.
@@ -52,8 +62,8 @@ set -uo pipefail
 LOCAL_HOST=lambda
 REMOTE_HOST=gx10
 # A fresh `cargo build --release -p apr-cli --bin apr --features cuda --locked` target, in KiB: the
-# gx10 leg REFUSES up front, as ENV, when its filesystem has less free (an existing rel-<v> dir for
-# this same version counts, since it is reused). Half-building on a 97-99% disk fails later and
+# gx10 leg REFUSES up front, as ENV, when its filesystem has less free (after the sweep; the run's
+# own dir is always new, so nothing in it counts). Half-building on a 97-99% disk fails later and
 # worse. MEASURED 2026-09-21 on lambda (x86_64) at 629143eeb: a fresh target is 5,285,126,283 bytes
 # (5,161,257 KiB, 244 s) and the worktree checkout 363,372 KiB, so 5,524,629 KiB. gx10 is aarch64 and
 # was not measured; re-measure when the tree grows. MODELS_T1_NEED_KIB overrides it (the seam
@@ -235,6 +245,12 @@ if [ "$MEASURE" = crux ]; then
     git cat-file -e "$sha:$CERT" 2>/dev/null \
         || { echo "MODELS NO-GO: no prompt certification for $ver at $CERT -- CRUX smoke cannot be planned"; exit 2; }
 fi
+LOCK=${MODELS_T1_LOCK:-$HOME/.cache/aprender-release/models-t1.lock}
+mkdir -p -- "${LOCK%/*}" || { echo "MODELS NO-GO: cannot create the directory of the run lock $LOCK"; exit 2; }
+exec 7>> "$LOCK" || { echo "MODELS NO-GO: cannot open the run lock $LOCK"; exit 2; }
+flock -n 7 || { echo "MODELS NO-GO: another models_t1.sh holds $LOCK -- refused before touching either host (#5264)"; exit 2; }
+# names this run's gx10 dir: this pid, never a clock (bashrs DET002). Every rel-* is swept under the lock below, so a pid reused across runs still builds into a fresh dir (#5264)
+run=$$
 mkdir -p "$out" || exit 2
 if [ "$MEASURE" = crux ]; then
     # the judge globs every *.json in $out: a ladder receipt left by an earlier pass would read as a bad CRUX one
@@ -265,17 +281,18 @@ remote_leg() {
     # mt_fetch_commit and mt_version_is go first on the stream, so the remote leg runs the code the self-test ran
     { declare -f mt_fetch_commit mt_version_is; cat <<HOST
 set -u
-repo="\$HOME/src/aprender"; base="\$HOME/.cache/aprender-release"; dir="\$base/rel-$ver"
+repo="\$HOME/src/aprender"; base="\$HOME/.cache/aprender-release"; dir="\$base/rel-$ver-$run"
 mkdir -p "\$base" || exit 3
+exec 8>> "\$base/.lock" || exit 3
+flock -n 8 || { echo "MODELS-LEG $REMOTE_HOST ENV: busy -- another models_t1 leg holds \$base/.lock there; refused before the sweep and the build"; exit 3; }
 for d in "\$base"/rel-*; do
-  [ -d "\$d" ] && [ "\$d" != "\$dir" ] || continue
+  [ -d "\$d" ] || continue
   git -C "\$repo" worktree remove --force "\$d/wt" > /dev/null 2>&1
   rm -rf -- "\$d"
 done
 free_kib=\$(df -Pk "\$base" | awk 'NR == 2 {print \$4}')
-have_kib=0; [ -d "\$dir" ] && have_kib=\$(du -sk "\$dir" | awk '{print \$1}')
-if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ]; then
-  echo "MODELS-LEG $REMOTE_HOST ENV: \$(( (free_kib + have_kib) / 1048576 )) GiB usable under \$base, a fresh cuda release target needs \$(( $NEED_KIB / 1048576 )) GiB -- refused before building"
+if [ -z "\$free_kib" ] || [ "\$free_kib" -lt $NEED_KIB ]; then
+  echo "MODELS-LEG $REMOTE_HOST ENV: \$(( free_kib / 1048576 )) GiB usable under \$base, a fresh cuda release target needs \$(( $NEED_KIB / 1048576 )) GiB -- refused before building"
   exit 4
 fi
 mt_fetch_commit "\$repo" "$ver" "$sha" \
@@ -285,14 +302,14 @@ git -C "\$repo" worktree prune
 git -C "\$repo" worktree add -q --detach "\$dir/wt" "$sha" || { echo "MODELS-LEG $REMOTE_HOST WORKTREE-FAILED"; exit 3; }
 cd "\$dir/wt" || exit 3
 export CARGO_TARGET_DIR="\$dir/target"
-cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/build.log" 2>&1 \
+cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/build.log" 2>&1 8>&- \
   || { tail -n 20 "\$dir/build.log"; echo "MODELS-LEG $REMOTE_HOST BUILD-FAILED"; exit 3; }
 got=\$("\$CARGO_TARGET_DIR/release/apr" --version 2>/dev/null | head -n 1)
 mt_version_is "\$got" "$ver" "$sha" || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
 rm -rf -- "\$dir/out"
 case $MEASURE in
-crux) choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host $REMOTE_HOST --apr "\$CARGO_TARGET_DIR/release/apr" --out "\$dir/out" --backend gpu --certification "$CERT" ;;
-*) choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out "\$dir/out" ;;
+crux) choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host $REMOTE_HOST --apr "\$CARGO_TARGET_DIR/release/apr" --out "\$dir/out" --backend gpu --certification "$CERT" 8>&- ;;
+*) choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out "\$dir/out" 8>&- ;;
 esac; lrc=\$?
 if [ -f "\$dir/out/$RREC" ]; then
   echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$RREC"; echo "---END RECEIPT---"
@@ -312,8 +329,9 @@ leg_reason() {
     else printf '%s wrote no receipt (rc %s)' "$MEASURER" "$2"; fi
 }
 
-local_leg > "$out/$LOCAL_HOST.log" 2>&1 & lpid=$!
-remote_leg > "$out/$REMOTE_HOST.log" 2>&1 & rpid=$!
+# the legs never hold the run lock: only this shell does, so a process a leg leaves behind cannot keep it
+local_leg > "$out/$LOCAL_HOST.log" 2>&1 7>&- & lpid=$!
+remote_leg > "$out/$REMOTE_HOST.log" 2>&1 7>&- & rpid=$!
 wait "$lpid"; lrc=$?
 wait "$rpid"; rrc=$?
 sed -n "/^---RECEIPT $REMOTE_HOST---\$/,/^---END RECEIPT---\$/p" "$out/$REMOTE_HOST.log" | sed '1d;$d' > "$out/$RREC.part"

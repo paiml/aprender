@@ -304,12 +304,19 @@ already_measured() {
 }
 
 run() { # run REPO WORK COMMIT TIMEOUT
-    local repo=$1 work=$2 c=$3 tmo=$4 wt out b ver sha9 blob tpid spid rc f cls
+    local repo=$1 work=$2 c=$3 tmo=$4 wt out b ver sha9 blob tpid spid rc f cls t1lock
     no_token || refuse "a registry token is reachable (env, CARGO_HOME or \$HOME/.cargo): this producer holds none"
     exec 9> "$work/.lock" || die "cannot open $work/.lock"
     flock -n 9 || refuse "another models_nightly.sh holds $work/.lock"
     f=$(ps_table | foreign_t1 0 | head -n 1)
     [ -z "$f" ] || refuse "another models_t1.sh is running (a release's models step shares the GPU hosts): $f"
+    # the run lock every models_t1.sh takes (#5264), the same file models_t1.sh defaults to: probed and let go,
+    # never held -- the models_t1.sh started below takes it, and would refuse a lock held here
+    t1lock=${MODELS_T1_LOCK:-$HOME/.cache/aprender-release/models-t1.lock}
+    mkdir -p -- "${t1lock%/*}" || die "cannot create ${t1lock%/*}"
+    exec 7>> "$t1lock" || die "cannot open $t1lock"
+    flock -n 7 || refuse "another models_t1.sh holds $t1lock (a release's models step shares the GPU hosts)"
+    exec 7>&-
     git -C "$repo" fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main || die "git fetch of main failed in $repo"
     git -C "$repo" fetch -q --no-tags origin "+refs/heads/$EV_BRANCH:refs/remotes/origin/$EV_BRANCH" 2> /dev/null || :
     [ -n "$c" ] || c=$(git -C "$repo" rev-parse refs/remotes/origin/main) || die "origin/main does not resolve"
@@ -457,7 +464,7 @@ self_test() {
     tmp=$(mktemp -d) || exit 3
     tmp=$(cd "$tmp" && pwd -P)
     cd -- "$tmp" || exit 3; export GIT_CEILING_DIRECTORIES="${tmp%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
-    export HOME="$tmp/home" CARGO_HOME="$tmp/cargo"; mkdir -p "$HOME" "$CARGO_HOME"; unset CARGO_REGISTRY_TOKEN GITHUB_OUTPUT
+    export HOME="$tmp/home" CARGO_HOME="$tmp/cargo"; mkdir -p "$HOME" "$CARGO_HOME"; unset CARGO_REGISTRY_TOKEN GITHUB_OUTPUT MODELS_T1_LOCK
     while read -r o; do unset "$o"; done < <(env | awk -F "=" '$1 ~ /^CARGO_REGISTRIES_[A-Za-z0-9_]+_TOKEN$/ { print $1 }')
     export GIT_AUTHOR_NAME=st GIT_AUTHOR_EMAIL=st@invalid GIT_COMMITTER_NAME=st GIT_COMMITTER_EMAIL=st@invalid GIT_CONFIG_NOSYSTEM=1
     # row NAME EXPECT-RC NEEDLE FORBID -- CMD...
@@ -579,6 +586,9 @@ self_test() {
     cat > "$tmp/src/scripts/release/models_t1.sh" <<'STUB'
 #!/usr/bin/env bash
 ver=$1; out=$3; sha9=$(git rev-parse --short=9 HEAD); want="apr $ver ($sha9)"
+# the run lock, as models_t1.sh takes it (#5264): every green e2e row proves the nightly probed it and let go
+lock=${MODELS_T1_LOCK:-$HOME/.cache/aprender-release/models-t1.lock}; mkdir -p -- "${lock%/*}" && exec 7>> "$lock" || exit 2
+flock -n 7 || { echo "MODELS NO-GO: another models_t1.sh holds $lock"; exit 2; }
 [ -z "${STUB_MARK:-}" ] || : > "$STUB_MARK"
 echo "MODELS_T1_SCOPE=${MODELS_T1_SCOPE-unset}"
 echo "MODELS_T1_MEASURE=${MODELS_T1_MEASURE-unset}"
@@ -664,6 +674,12 @@ STUB
     (exec 9> "$work/.lock"; flock 9; : > "$tmp/locked"; exec sleep 30) > /dev/null 2>&1 & bg=$!
     for _ in 1 2 3 4 5 6 7 8 9 10; do [ -e "$tmp/locked" ] && break; sleep 1; done
     row e2e_lock_held_refused 3 "REFUSED: another models_nightly.sh holds" "RUN " -- nightly --run --repo "$repo" --work "$work" --commit "$c2"
+    kill "$bg" 2> /dev/null; wait "$bg" 2> /dev/null
+    # a release window's models_t1.sh holds the run lock (#5264): the nightly never starts a second one
+    mkdir -p "$HOME/.cache/aprender-release" || exit 3
+    (exec 7>> "$HOME/.cache/aprender-release/models-t1.lock"; flock 7; : > "$tmp/t1locked"; exec sleep 30) > /dev/null 2>&1 & bg=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do [ -e "$tmp/t1locked" ] && break; sleep 1; done
+    row e2e_t1_lock_held_refused 3 "REFUSED: another models_t1.sh holds $HOME/.cache/aprender-release/models-t1.lock" "RUN " -- nightly --run --repo "$repo" --work "$work" --commit "$c2"
     kill "$bg" 2> /dev/null; wait "$bg" 2> /dev/null
 
     # -- verify: the relay's checks on a sealed bundle (the clone holds C1..C3)

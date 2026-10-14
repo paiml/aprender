@@ -262,6 +262,12 @@ async fn handle_gpu_chat_completion(
             return err_response;
         }
     }
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(&req, super::response_format::APR_CUDA)
+    {
+        return refusal;
+    }
     // #4971: run_gpu_generation computes no logprobs, so a request for them is refused.
     if let Some(refused) = logprobs_refusal_response(&req, "APR CUDA (AprV2ModelCuda)") {
         return refused;

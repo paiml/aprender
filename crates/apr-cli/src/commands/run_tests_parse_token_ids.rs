@@ -70,6 +70,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         let result_zero = RunResult {
             text: String::new(),
@@ -82,6 +83,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         assert_ne!(
             result_none.tokens_generated, result_zero.tokens_generated,
@@ -104,6 +106,7 @@
             generated_tokens: Some(vec![10, 20, 30]),
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         assert_eq!(result.text, "output");
         assert!((result.duration_secs - 1.234).abs() < f64::EPSILON);
