@@ -615,3 +615,52 @@ fn test_append_tokenizer_json_path_writes_chat_template() {
     append_tokenizer_to_metadata(&mut metadata, Some(&tok), Some(&apr), "qwen2", "m", 0, &input);
     assert_eq!(template_of(&metadata).as_deref(), Some("from-apr"));
 }
+
+/// #5254: the qwen35 export wrote `tokenizer.chat_template` twice, once in
+/// `append_tokenizer_to_metadata` and again in its own block. The key must
+/// appear exactly once on every source path.
+#[test]
+fn test_qwen35_tokenizer_metadata_writes_chat_template_exactly_once() {
+    use crate::format::gguf::{GgufTokenizer, GgufValue};
+
+    let count = |metadata: &[(String, GgufValue)]| {
+        metadata
+            .iter()
+            .filter(|(k, _)| k == "tokenizer.chat_template")
+            .count()
+    };
+    let tok = |tpl: Option<&str>| GgufTokenizer {
+        vocabulary: vec!["a".into(), "b".into()],
+        merges: vec![],
+        model_type: Some("gpt2".into()),
+        bos_token_id: Some(0),
+        eos_token_id: Some(1),
+        architecture: None,
+        model_name: None,
+        token_type: vec![],
+        padding_token_id: None,
+        add_bos_token: None,
+        chat_template: tpl.map(str::to_string),
+        pre_type: None,
+        scores: Vec::new(),
+    };
+    let dir = tempfile::tempdir().expect("temp dir");
+    let input = dir.path().join("model.safetensors");
+    std::fs::write(dir.path().join("chat_template.jinja"), "from-jinja")
+        .expect("write chat_template.jinja");
+    let mut apr = crate::format::v2::AprV2Metadata::new("test");
+    apr.chat_template = Some("from-apr".into());
+
+    let cases = [
+        ("tokenizer.json with template + apr", Some(tok(Some("from-tok"))), Some(&apr)),
+        ("tokenizer.json without template + apr", Some(tok(None)), Some(&apr)),
+        ("tokenizer.json, jinja only", Some(tok(None)), None),
+        ("apr fallback, no tokenizer.json", None, Some(&apr)),
+        ("jinja only, no tokenizer.json", None, None),
+    ];
+    for (case, tokenizer, apr) in cases {
+        let mut metadata = Vec::new();
+        append_qwen35_tokenizer_metadata(&mut metadata, tokenizer.as_ref(), apr, "m", 0, &input);
+        assert_eq!(count(&metadata), 1, "{case}: tokenizer.chat_template count");
+    }
+}
