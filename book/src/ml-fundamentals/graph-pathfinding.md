@@ -147,7 +147,7 @@ let g = Graph::from_weighted_edges(&[(0, 1, -1.0)], false);
 
 For graphs with negative weights, use Bellman-Ford algorithm (not yet implemented in aprender).
 
-## A\* Search Algorithm
+## A* Search Algorithm
 
 ### Algorithm
 
