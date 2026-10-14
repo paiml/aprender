@@ -30,8 +30,9 @@
 //!    with `lda = kv_dim`. cuBLAS has no `head_dim <= 128` limit, which is what keeps
 //!    the 256-wide Qwen3.5 heads off every other prefill attention kernel.
 //!
-//! None of these launches is recorded for graph replay: prefill never runs under a
-//! decode-graph capture, and a recording here would be replayed on every decode step.
+//! Every launch here records itself while a graph is being recorded, as every GDN
+//! decode op does: the batched decode step (#5279) runs the `_rows`/`_slots`
+//! kernels under its capture. Prefill never runs while a recording is on.
 
 use super::*;
 use trueno_gpu::kernels::gdn::{
@@ -78,6 +79,16 @@ impl CudaExecutor {
         // for the launch it describes, and the slot order is the kernel's `.param` order.
         unsafe {
             self.stream.launch_kernel(module, name, &config, &mut raw)?;
+        }
+        // trueno#243: a manual graph is rebuilt ONLY from `graph_recorded_kernels`;
+        // a launch that skips this push runs during capture and never on replay.
+        if self.graph_recording {
+            let func = module.get_function(name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: args.to_vec(),
+            });
         }
         Ok(())
     }

@@ -196,7 +196,12 @@ impl Qwen35CudaModel<'_> {
         let m = tokens.len();
         let mut b = match self.batch_bufs.take() {
             Some(b) if b.rows >= m => b,
-            _ => Qwen35BatchBufs::new(&self.executor, self.dims, m, self.layers.len())?,
+            _ => {
+                // #5279: a graph captured on the old buffers must never match the
+                // new ones, even at a reused address.
+                self.batch_graphs.clear();
+                Qwen35BatchBufs::new(&self.executor, self.dims, m, self.layers.len())?
+            },
         };
         let run = self.batched_step_in(&mut b, tokens, states, positions, host_logits);
         self.batch_bufs = Some(b);
@@ -249,12 +254,31 @@ impl Qwen35CudaModel<'_> {
         b.positions
             .copy_from_host_at(&pos32, 0)
             .map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
-        for il in 0..self.layers.len() {
-            self.batched_layer(b, il, states, positions)
+        let argmax = if self.batched_graphed(b, states, positions)? {
+            true
+        } else {
+            let argmax = host_logits.contains(&false);
+            self.batched_body(b, states, positions, argmax)
                 .map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
-        }
-        self.batched_head(b, host_logits)
+            argmax
+        };
+        self.batched_head_read(b, host_logits, argmax)
             .map_err(|e| gpu_err("qwen35_cuda_batch", &e))
+    }
+
+    /// Every layer, the output norm and the `lm_head` for every slot, then
+    /// each row's argmax when `argmax`: the whole step up to its downloads.
+    fn batched_body(
+        &mut self,
+        b: &Qwen35BatchBufs,
+        states: &[Qwen35CudaState],
+        positions: &[usize],
+        argmax: bool,
+    ) -> std::result::Result<(), GpuError> {
+        for il in 0..self.layers.len() {
+            self.batched_layer(b, il, states, positions)?;
+        }
+        self.batched_head_launch(b, states.len(), argmax)
     }
 
     /// Layer `il` for every slot: the mixer, then the FFN.
@@ -314,15 +338,15 @@ impl Qwen35CudaModel<'_> {
         ex.residual_add_into(&b.hidden, &b.ffn_down, &b.hidden, rows * d.hidden_dim)
     }
 
-    /// The output norm per row, the `lm_head` once, then each row's argmax,
-    /// or its logits on the host where `host_logits` asks for them.
-    fn batched_head(
+    /// The output norm per row, the `lm_head` once, then each row's argmax
+    /// when `argmax`.
+    fn batched_head_launch(
         &mut self,
         b: &Qwen35BatchBufs,
-        host_logits: &[bool],
-    ) -> std::result::Result<Vec<Qwen35StepOut>, GpuError> {
+        m: usize,
+        argmax: bool,
+    ) -> std::result::Result<(), GpuError> {
         let d = self.dims;
-        let m = host_logits.len();
         let ex = &mut self.executor;
         ex.rmsnorm_rows_into(
             &b.hidden,
@@ -341,8 +365,7 @@ impl Qwen35CudaModel<'_> {
             self.lm_head.n,
             self.lm_head.k,
         )?;
-        let mut tokens = vec![0u32; m];
-        if host_logits.contains(&false) {
+        if argmax {
             // Every row's greedy id in one pair of launches; the rows that
             // return logits ignore theirs.
             ex.argmax_rows_into(
@@ -353,9 +376,23 @@ impl Qwen35CudaModel<'_> {
                 m as u32,
             )?;
         }
+        Ok(())
+    }
+
+    /// Each row's greedy token, or its logits on the host where `host_logits`
+    /// asks for them; `argmax` says the step ran the argmax.
+    fn batched_head_read(
+        &mut self,
+        b: &Qwen35BatchBufs,
+        host_logits: &[bool],
+        argmax: bool,
+    ) -> std::result::Result<Vec<Qwen35StepOut>, GpuError> {
+        let d = self.dims;
+        let m = host_logits.len();
         // The one sync in front of the downloads, as `forward_single`.
-        ex.sync_stream()?;
-        if host_logits.contains(&false) {
+        self.executor.sync_stream()?;
+        let mut tokens = vec![0u32; m];
+        if argmax && host_logits.contains(&false) {
             b.argmax_out.copy_to_host_at(&mut tokens, 0)?;
         }
         let vocab = d.vocab_size as usize;
@@ -377,6 +414,10 @@ impl Qwen35CudaModel<'_> {
 }
 #[path = "forward_qwen35_cuda_batch_mixer.rs"]
 mod mixer;
+
+#[path = "forward_qwen35_cuda_batch_graph.rs"]
+mod graph;
+pub(crate) use graph::Qwen35BatchGraphs;
 
 #[cfg(test)]
 #[path = "forward_qwen35_cuda_batch_tests.rs"]

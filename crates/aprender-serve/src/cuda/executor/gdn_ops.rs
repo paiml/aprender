@@ -673,6 +673,48 @@ impl CudaExecutor {
         head_dim % 128 == 0 && !decode_attention_unsplit()
     }
 
+    /// #5279: the partials stride and buffer [`Self::gdn_decode_attention_slots_into`]
+    /// launches with at `max_pos` for `m` slots, grown first if they would not
+    /// fit: `(max_splits, part_acc)`.
+    ///
+    /// `max_splits` is only the stride between slots' partial rows (each slot
+    /// derives its own split count from its position on the device, and a split
+    /// past it exits), so it is rounded up to a power of two: a step keeps its
+    /// launch arguments, and a captured graph stays valid, until the longest
+    /// slot doubles.
+    pub(crate) fn reserve_attention_slots(
+        &mut self,
+        heads: (u32, u32, u32),
+        max_pos: u32,
+        m: u32,
+    ) -> Result<(u32, u64), GpuError> {
+        let (num_heads, num_kv_heads, head_dim) = heads;
+        let split = trueno_gpu::kernels::gdn::DecodeAttentionSplitKernel::new(
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        )
+        .slots();
+        let max_splits = split
+            .n_splits(max_pos.saturating_add(1))
+            .next_power_of_two();
+        let (slot_acc, slot_ml) = split.partial_floats(max_splits * split.split_len);
+        let need = (slot_acc + slot_ml) * m as usize;
+        if self.decode_attn_partials.as_ref().map_or(0, GpuBuffer::len) < need {
+            // As in the single pair: grow in steps, drain the in-flight reads first.
+            let rows_step = (num_heads * 64) as usize * (head_dim as usize + 2);
+            let grown = need.div_ceil(rows_step) * rows_step;
+            self.stream.synchronize()?;
+            self.decode_attn_partials = Some(GpuBuffer::new(&self.context, grown)?);
+        }
+        let part_acc = self
+            .decode_attn_partials
+            .as_ref()
+            .expect("allocated just above")
+            .as_ptr();
+        Ok((max_splits, part_acc))
+    }
+
     /// #5279: decode attention for `m` slots in one split and one reduce
     /// launch. `k_table` and `v_table` are device addresses of `[m]` cache
     /// pointers, `pos` the slots' positions, `max_pos` the largest of them;
@@ -698,23 +740,9 @@ impl CudaExecutor {
         )
         .slots();
         let split_len = split.split_len;
-        let max_splits = split.n_splits(max_pos + 1);
-        let (slot_acc, slot_ml) = split.partial_floats(max_pos + 1);
-        let acc_floats = slot_acc * m as usize;
-        let need = acc_floats + slot_ml * m as usize;
-        if self.decode_attn_partials.as_ref().map_or(0, GpuBuffer::len) < need {
-            // As in the single pair: grow in steps, drain the in-flight reads first.
-            let rows_step = (num_heads * 64) as usize * (head_dim as usize + 2);
-            let grown = need.div_ceil(rows_step) * rows_step;
-            self.stream.synchronize()?;
-            self.decode_attn_partials = Some(GpuBuffer::new(&self.context, grown)?);
-        }
-        let part_acc = self
-            .decode_attn_partials
-            .as_ref()
-            .expect("allocated just above")
-            .as_ptr();
-        let part_ml = part_acc + (acc_floats * 4) as u64;
+        let (max_splits, part_acc) = self.reserve_attention_slots(heads, max_pos, m)?;
+        let (slot_acc, _) = split.partial_floats(max_splits * split_len);
+        let part_ml = part_acc + (slot_acc * m as usize * 4) as u64;
 
         let split_type = KernelType::GdnDecodeAttentionSplitSlots {
             num_heads,

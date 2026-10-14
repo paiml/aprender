@@ -326,6 +326,8 @@ pub struct Qwen35CudaModel<'a> {
     /// #5303: the m-row buffers of [`Self::forward_batch_greedy`], allocated
     /// by the first batch of more than one slot and grown with the batch.
     batch_bufs: Option<batch::Qwen35BatchBufs>,
+    /// #5279: the batched step captured as one CUDA graph per batch shape.
+    batch_graphs: batch::Qwen35BatchGraphs,
 }
 
 /// Why a projection cannot go on the GPU, stated so the user can act on it
@@ -716,6 +718,7 @@ impl<'a> Qwen35CudaModel<'a> {
             layer_timings: None,
             timing_on: false,
             batch_bufs: None,
+            batch_graphs: batch::Qwen35BatchGraphs::default(),
         };
         m.warm_prefill_weights();
         Ok(m)
