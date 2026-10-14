@@ -56,6 +56,7 @@ mod partial_rope;
 mod prefill_flash_attention;
 mod rows;
 mod sigmoid_gate;
+mod slots;
 mod split_interleave;
 
 #[cfg(test)]
@@ -77,6 +78,7 @@ pub use partial_rope::PartialNeoxRopeKernel;
 pub use prefill_flash_attention::{PrefillFlashAttention256Kernel, FLASH_HEAD_DIM};
 pub use rows::{GdnGatesRowsKernel, PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel};
 pub use sigmoid_gate::SigmoidGateKernel;
+pub use slots::{CausalConv1dSiluSlotsKernel, DeltaRuleSlotsKernel};
 pub use split_interleave::SplitInterleavedKernel;
 
 use crate::ptx::builder::{KernelBuilder, PtxArithmetic, PtxComparison, PtxControl};

@@ -124,10 +124,14 @@ pub(crate) struct Qwen35BatchBufs {
     logits: GpuBuffer<f32>,
     /// The m-row buffers the token mixers write.
     mixer: mixer::Qwen35MixerBufs,
+    /// `[layers × 2 × m]` device pointers, uploaded at the start of each step:
+    /// entry `(il * 2) * m + i` is slot `i`'s conv window at layer `il`, entry
+    /// `(il * 2 + 1) * m + i` its recurrent state.
+    state_table: GpuBuffer<u64>,
 }
 
 impl Qwen35BatchBufs {
-    fn new(executor: &CudaExecutor, d: Qwen35CudaDims, rows: usize) -> Result<Self> {
+    fn new(executor: &CudaExecutor, d: Qwen35CudaDims, rows: usize, layers: usize) -> Result<Self> {
         let hidden = rows * d.hidden_dim as usize;
         let inter = rows * d.intermediate_dim as usize;
         let zeros = |len| Qwen35CudaModel::zeros(executor, len);
@@ -142,6 +146,8 @@ impl Qwen35BatchBufs {
             out_normed: zeros(hidden)?,
             logits: zeros(rows * d.vocab_size as usize)?,
             mixer: mixer::Qwen35MixerBufs::new(executor, d, rows)?,
+            state_table: GpuBuffer::new(executor.context(), 2 * layers * rows)
+                .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?,
         })
     }
 }
@@ -170,7 +176,7 @@ impl Qwen35CudaModel<'_> {
         let m = tokens.len();
         let mut b = match self.batch_bufs.take() {
             Some(b) if b.rows >= m => b,
-            _ => Qwen35BatchBufs::new(&self.executor, self.dims, m)?,
+            _ => Qwen35BatchBufs::new(&self.executor, self.dims, m, self.layers.len())?,
         };
         let run = self.batched_step_in(&mut b, tokens, states, positions, host_logits);
         self.batch_bufs = Some(b);
@@ -196,6 +202,16 @@ impl Qwen35CudaModel<'_> {
             self.embed_row = row;
             up.map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
         }
+        // Every kernel that reads the table is queued after this blocking copy,
+        // and the previous step ended in a sync, so nothing in flight reads it.
+        let mut table = Vec::with_capacity(2 * self.layers.len() * tokens.len());
+        for il in 0..self.layers.len() {
+            table.extend(states.iter().map(|s| s.conv[il].as_ptr()));
+            table.extend(states.iter().map(|s| s.ssm[il].as_ptr()));
+        }
+        b.state_table
+            .copy_from_host_at(&table, 0)
+            .map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
         for il in 0..self.layers.len() {
             self.batched_layer(b, il, states, positions)
                 .map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;

@@ -35,9 +35,9 @@
 
 use super::*;
 use trueno_gpu::kernels::gdn::{
-    CausalConv1dSiluSeqKernel, DeltaRuleChunkScanKernel, GdnGatesRowsKernel,
-    PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel, PrefillFlashAttention256Kernel,
-    FLASH_HEAD_DIM,
+    CausalConv1dSiluSeqKernel, CausalConv1dSiluSlotsKernel, DeltaRuleChunkScanKernel,
+    DeltaRuleSlotsKernel, GdnGatesRowsKernel, PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel,
+    PrefillFlashAttention256Kernel, FLASH_HEAD_DIM,
 };
 use trueno_gpu::kernels::{
     F16DequantKernel, Iq4XsDequantKernel, Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel,
@@ -410,6 +410,74 @@ impl CudaExecutor {
             LaunchConfig::grid_2d(gx, 1, bx, 1),
             &mut args,
             6,
+        )
+    }
+
+    /// Causal conv1d + SiLU for one decode step of each of `slots` slots: slot `s`
+    /// reads and writes its row `s * row_stride` and advances the window whose
+    /// pointer is entry `s` of the u64 table at `states`.
+    ///
+    /// # Errors
+    /// Compile/launch failure or a null pointer.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn qwen35_conv1d_slots(
+        &mut self,
+        input: u64,
+        states: u64,
+        weight: u64,
+        output: u64,
+        channels: u32,
+        kernel_size: u32,
+        row_stride: u32,
+        slots: u32,
+    ) -> Result<(), GpuError> {
+        let kern = CausalConv1dSiluSlotsKernel::new(channels, kernel_size, row_stride);
+        let key = format!("qp_conv_slots_{channels}_{kernel_size}_{row_stride}");
+        self.qp_prepare(&key, &kern)?;
+        let (gx, gy, _) = kern.grid(slots);
+        let (bx, _, _) = kern.block();
+        let mut args = [input, states, weight, output];
+        self.qp_launch(
+            &key,
+            kern.name(),
+            LaunchConfig::grid_2d(gx, gy, bx, 1),
+            &mut args,
+            4,
+        )
+    }
+
+    /// The delta-rule recurrence for one decode step of each of `slots` slots:
+    /// slot `s` reads `q`/`k`/`v` at `s * qkv_stride` past slot 0's, its gates and
+    /// output rows, and updates the state whose pointer is entry `s` of `states`.
+    ///
+    /// # Errors
+    /// Compile/launch failure or a null pointer.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn qwen35_delta_rule_slots(
+        &mut self,
+        qkv: [u64; 3],
+        beta: u64,
+        gate: u64,
+        states: u64,
+        output: u64,
+        heads: [u32; 4],
+        qkv_stride: u32,
+        slots: u32,
+    ) -> Result<(), GpuError> {
+        let [nk, dk, nv, dv] = heads;
+        let kern = DeltaRuleSlotsKernel::new(nk, dk, nv, dv, qkv_stride);
+        let key = format!("qp_delta_slots_{nk}_{dk}_{nv}_{dv}_{qkv_stride}");
+        self.qp_prepare(&key, &kern)?;
+        let (gx, gy, _) = kern.grid(slots);
+        let (bx, _, _) = kern.block();
+        let [q, k, v] = qkv;
+        let mut args = [q, k, v, beta, gate, states, output];
+        self.qp_launch(
+            &key,
+            kern.name(),
+            LaunchConfig::grid_2d(gx, gy, bx, 1),
+            &mut args,
+            7,
         )
     }
 

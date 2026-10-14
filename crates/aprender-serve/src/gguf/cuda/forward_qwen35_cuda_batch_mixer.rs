@@ -27,6 +27,14 @@ pub(super) struct Qwen35MixerBufs {
     alpha_raw: GpuBuffer<f32>,
     /// `num_v_heads` wide: `ssm_beta . normed`.
     beta_raw: GpuBuffer<f32>,
+    /// `conv_dim` wide: the conv1d + SiLU output, `[q | k | v]` per row.
+    conv_out: GpuBuffer<f32>,
+    /// `num_v_heads` wide: the decay gate.
+    dt: GpuBuffer<f32>,
+    /// `num_v_heads` wide: `sigmoid(beta_raw)`.
+    beta: GpuBuffer<f32>,
+    /// `v_dim` wide: the delta rule's output.
+    out_h: GpuBuffer<f32>,
     /// `v_dim` wide: `attn_gate . normed`.
     gate: GpuBuffer<f32>,
     /// `v_dim` wide: the gated norm, the `ssm_out` input.
@@ -52,6 +60,10 @@ impl Qwen35MixerBufs {
             conv_in: zeros(d.conv_dim as usize)?,
             alpha_raw: zeros(d.num_v_heads as usize)?,
             beta_raw: zeros(d.num_v_heads as usize)?,
+            conv_out: zeros(d.conv_dim as usize)?,
+            dt: zeros(d.num_v_heads as usize)?,
+            beta: zeros(d.num_v_heads as usize)?,
+            out_h: zeros(d.v_dim as usize)?,
             gate: zeros(d.v_dim as usize)?,
             ssm_out_in: zeros(d.v_dim as usize)?,
             q_full: zeros(q_dim * 2)?,
@@ -108,7 +120,11 @@ fn norm_rows(
 }
 
 impl Qwen35CudaModel<'_> {
-    /// [`Self::deltanet_mixer_inner`] for every slot of `b.hidden`.
+    /// [`Self::deltanet_mixer_inner`] for every slot of `b.hidden`. The conv
+    /// window and the recurrent state are the slot's own, so the conv1d and
+    /// the delta rule run per slot; the L2 norms, the gates and the gated
+    /// norm hold no state and run once over the m rows, each with the row
+    /// twin of its single-row kernel, which matches it op for op.
     pub(super) fn batched_deltanet_mixer(
         &mut self,
         b: &Qwen35BatchBufs,
@@ -117,10 +133,10 @@ impl Qwen35CudaModel<'_> {
     ) -> std::result::Result<(), GpuError> {
         let d = self.dims;
         let m = states.len();
+        let rows = m as u32;
         let CudaLayer::DeltaNet(w) = &self.layers[il] else {
             unreachable!("the caller matched a DeltaNet layer")
         };
-        let s = &self.scratch;
         let x = &b.mixer;
         let ex = &mut self.executor;
         norm_rows(ex, b, &w.attn_norm, d, m)?;
@@ -132,75 +148,67 @@ impl Qwen35CudaModel<'_> {
         ] {
             project(ex, proj, &x.normed, out, m)?;
         }
-        let bufs = [
-            &x.conv_in,
-            &x.alpha_raw,
-            &x.beta_raw,
-            &x.gate,
-            &x.ssm_out_in,
-        ];
-        let widths = [d.conv_dim, d.num_v_heads, d.num_v_heads, d.v_dim, d.v_dim];
-        for (i, state) in states.iter().enumerate() {
-            with_rows(
-                bufs,
-                i,
-                widths,
-                |[conv_in, alpha_raw, beta_raw, gate, ssm_out_in]| {
-                    ex.gdn_causal_conv1d_silu_into(
-                        conv_in,
-                        &state.conv[il],
-                        &w.conv1d_weight,
-                        &s.conv_out,
-                        d.conv_dim,
-                        d.conv_kernel,
-                    )?;
-                    let q_view = Self::view(&s.conv_out, 0, d.k_dim);
-                    let k_view = Self::view(&s.conv_out, d.k_dim, d.k_dim);
-                    let v_view = Self::view(&s.conv_out, d.k_dim * 2, d.v_dim);
-                    let run = (|| {
-                        ex.gdn_per_head_l2_norm_into(&q_view, d.head_k_dim, d.num_k_heads, d.eps)?;
-                        ex.gdn_per_head_l2_norm_into(&k_view, d.head_k_dim, d.num_k_heads, d.eps)?;
-                        ex.gdn_gates_into(
-                            alpha_raw,
-                            &w.ssm_dt_bias,
-                            &w.ssm_a,
-                            beta_raw,
-                            &s.dt,
-                            &s.beta,
-                            d.num_v_heads,
-                        )?;
-                        ex.gdn_delta_rule_into(
-                            &q_view,
-                            &k_view,
-                            &v_view,
-                            &s.beta,
-                            &s.dt,
-                            &state.ssm[il],
-                            &s.out_h,
-                            d.num_k_heads,
-                            d.head_k_dim,
-                            d.num_v_heads,
-                            d.head_v_dim,
-                        )
-                    })();
-                    std::mem::forget(q_view);
-                    std::mem::forget(k_view);
-                    std::mem::forget(v_view);
-                    run?;
-                    ex.gdn_gated_rmsnorm_into(
-                        &s.out_h,
-                        gate,
-                        &w.ssm_norm_weight,
-                        ssm_out_in,
-                        d.head_v_dim,
-                        d.num_v_heads,
-                        d.eps,
-                    )
-                },
+        // Slot i's conv window and recurrent state at this layer, from the table
+        // the step uploaded.
+        let table = |kind: usize| b.state_table.as_ptr() + ((il * 2 + kind) * m * 8) as u64;
+        ex.qwen35_conv1d_slots(
+            x.conv_in.as_ptr(),
+            table(0),
+            w.conv1d_weight.as_ptr(),
+            x.conv_out.as_ptr(),
+            d.conv_dim,
+            d.conv_kernel,
+            d.conv_dim,
+            rows,
+        )?;
+        // q then k of every row: each `num_k_heads` heads, `conv_dim` apart.
+        for offset in [0, d.k_dim] {
+            ex.qwen35_l2_norm_rows(
+                x.conv_out.as_ptr() + u64::from(offset) * 4,
+                d.head_k_dim,
+                d.num_k_heads,
+                d.eps,
+                d.conv_dim,
+                rows,
             )?;
         }
+        ex.qwen35_gates_rows(
+            x.alpha_raw.as_ptr(),
+            w.ssm_dt_bias.as_ptr(),
+            w.ssm_a.as_ptr(),
+            x.beta_raw.as_ptr(),
+            x.dt.as_ptr(),
+            x.beta.as_ptr(),
+            d.num_v_heads,
+            rows,
+        )?;
+        let qkv = x.conv_out.as_ptr();
+        ex.qwen35_delta_rule_slots(
+            [
+                qkv,
+                qkv + u64::from(d.k_dim) * 4,
+                qkv + u64::from(d.k_dim * 2) * 4,
+            ],
+            x.beta.as_ptr(),
+            x.dt.as_ptr(),
+            table(1),
+            x.out_h.as_ptr(),
+            [d.num_k_heads, d.head_k_dim, d.num_v_heads, d.head_v_dim],
+            d.conv_dim,
+            rows,
+        )?;
+        // Every head of every row: the norm weight is shared across heads.
+        ex.gdn_gated_rmsnorm_into(
+            &x.out_h,
+            &x.gate,
+            &w.ssm_norm_weight,
+            &x.ssm_out_in,
+            d.head_v_dim,
+            rows * d.num_v_heads,
+            d.eps,
+        )?;
         project(ex, &w.ssm_out, &x.ssm_out_in, &x.out, m)?;
-        ex.residual_add_into(&b.hidden, &x.out, &b.hidden, m as u32 * d.hidden_dim)
+        ex.residual_add_into(&b.hidden, &x.out, &b.hidden, rows * d.hidden_dim)
     }
 
     /// [`Self::attention_mixer_inner`] (ungraphed) for every slot of
