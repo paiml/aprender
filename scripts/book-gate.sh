@@ -113,7 +113,8 @@ fi
 # Gate 9: Section cross-check (L2 fix)
 # Contract sections must appear as H2 headings in page
 if [ -f "$PAGE_PATH" ]; then
-    CONTRACT_SECTIONS=$(grep "heading:" "$CONTRACT" 2>/dev/null | sed 's/.*heading: *"//' | tr -d '"' | head -20)
+    # grep exits 1 on a contract with no headings; under pipefail that killed the script (rc 1, no G9 line)
+    CONTRACT_SECTIONS=$({ grep "heading:" "$CONTRACT" 2>/dev/null || true; } | sed 's/.*heading: *"//' | tr -d '"' | head -20)
     if [ -n "$CONTRACT_SECTIONS" ]; then
         PAGE_H2S=$(grep "^## " "$PAGE_PATH" 2>/dev/null | sed 's/^## //')
         MISSING_SECTIONS=0
@@ -135,7 +136,7 @@ if [ -f "$PAGE_PATH" ]; then
             echo "  G9  PASS: all contract sections present"
         fi
     else
-        echo "  G9  SKIP: no sections in contract"
+        echo "  G9  SKIP: contract declares no section headings"
     fi
 fi
 
