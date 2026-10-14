@@ -1,5 +1,5 @@
-//! #5303: the batched MWV Q4_K and Q6_K GEMVs against the single-row MWV
-//! GEMVs, row by row. A batched decode step may replace `m` single steps only
+//! #5303, #5279: the batched Q4_K, Q5_K and Q6_K GEMVs against their
+//! single-row GEMVs, row by row. A batched decode step may replace `m` single steps only
 //! if every row it produces is the single step's output to the bit.
 
 use super::CudaExecutor;
@@ -12,7 +12,7 @@ const ROWS: [u32; 6] = [1, 2, 3, 4, 8, 16];
 
 /// Warps per block. The per-row sum order depends on it, so each count is
 /// checked against the single-row kernel at the same count.
-const WARPS: [u32; 3] = [2, 3, 4];
+const WARPS: &[u32] = &[2, 3, 4];
 
 /// One quant type: its super-block, its two GEMVs, and the shapes to check.
 struct Quant {
@@ -25,6 +25,8 @@ struct Quant {
     head: bool,
     /// (n, k) pairs.
     shapes: &'static [(u32, u32)],
+    /// Warp counts to check. The HW DP4A kernel is built for 3 warps only.
+    warps: &'static [u32],
     single: fn(
         &mut CudaExecutor,
         u64,
@@ -53,6 +55,7 @@ const Q4K: Quant = Quant {
     scales: [0x66, 0x2E, 0x66, 0x22],
     head: true,
     shapes: &[(64, 256), (48, 1024), (17, 3584), (40, 1000)],
+    warps: WARPS,
     single: CudaExecutor::mwv_q4k_gemv_into,
     batched: CudaExecutor::batched_mwv_q4k_gemv_into,
 };
@@ -65,9 +68,61 @@ const Q6K: Quant = Quant {
     scales: [0x66, 0x1E, 0, 0],
     head: false,
     shapes: &[(64, 256), (48, 1024), (17, 3584), (40, 512)],
+    warps: WARPS,
     single: CudaExecutor::mwv_q6k_gemv_into,
     batched: CudaExecutor::batched_mwv_q6k_gemv_into,
 };
+
+/// Q5_K: d and dmin (f16 0.0999 and 0.0125) lead the 176-byte block. The
+/// kernel has no warp count; the last shape's k is not a multiple of 256.
+const Q5K: Quant = Quant {
+    name: "q5k",
+    block_bytes: 176,
+    scales: [0x66, 0x2E, 0x66, 0x22],
+    head: true,
+    shapes: &[(64, 256), (48, 1024), (17, 3584), (40, 1000)],
+    warps: &[3],
+    single: CudaExecutor::q5k_gemv_into,
+    batched: CudaExecutor::batched_q5k_gemv_into,
+};
+
+/// Q6_K on the HW DP4A kernel, which quantizes activations to Q8_1 first.
+/// The kernel is built for 3 warps, so that is the only count launched.
+const Q6K_HW_DP4A: Quant = Quant {
+    name: "q6k_hw_dp4a",
+    block_bytes: 210,
+    scales: [0x66, 0x1E, 0, 0],
+    head: false,
+    shapes: &[(64, 256), (48, 1024), (17, 3584), (40, 512)],
+    warps: &[3],
+    single: hw_dp4a_q6k_single,
+    batched: CudaExecutor::batched_hw_dp4a_q6k_gemv_into,
+};
+
+/// The single-row HW DP4A Q6_K GEMV with a Q8 buffer for the largest shape,
+/// quantizing afresh: a new row buffer may reuse a freed one's address,
+/// which the Q8 cache would take for the old row.
+fn hw_dp4a_q6k_single(
+    ex: &mut CudaExecutor,
+    w: u64,
+    x: &GpuBuffer<f32>,
+    y: &GpuBuffer<f32>,
+    n: u32,
+    k: u32,
+) -> Result<(), GpuError> {
+    let bytes = (k / 32 * 36) as usize;
+    if ex
+        .workspace
+        .q8_activation_buf
+        .as_ref()
+        .map_or(0, GpuBuffer::len)
+        < bytes
+    {
+        ex.workspace.q8_activation_buf = Some(GpuBuffer::new(ex.context(), bytes)?);
+    }
+    ex.q8_activation_valid = false;
+    ex.hw_dp4a_q6k_gemv_into(w, x, y, n, k)
+}
 
 /// xorshift32, never 0.
 fn next(seed: &mut u32) -> u32 {
@@ -162,7 +217,7 @@ fn check_quant(ex: &mut CudaExecutor, q: &Quant) -> usize {
         ex.load_quantized_weights(&name, &weights(q, n, k, 0x9E37 + i))
             .expect("load weights");
         let w = ex.get_quantized_weight_ptr(&name).expect("weight ptr");
-        for warps in WARPS {
+        for &warps in q.warps {
             ex.gpu_profile.mwv_warps = warps;
             for m in ROWS {
                 let x = activations(m, k, n ^ k ^ m ^ warps);
@@ -184,7 +239,7 @@ fn check_quant(ex: &mut CudaExecutor, q: &Quant) -> usize {
 fn batched_mwv_q4k_rows_are_bitwise_the_single_row_gemv() {
     let mut ex = crate::cuda_executor_or_skip!(0);
     let checked = check_quant(&mut ex, &Q4K);
-    assert_eq!(checked, Q4K.shapes.len() * WARPS.len() * ROWS.len());
+    assert_eq!(checked, Q4K.shapes.len() * Q4K.warps.len() * ROWS.len());
 }
 
 /// FALSIFY (#5303): the same for the batched MWV Q6_K GEMV, which serves
@@ -194,7 +249,30 @@ fn batched_mwv_q4k_rows_are_bitwise_the_single_row_gemv() {
 fn batched_mwv_q6k_rows_are_bitwise_the_single_row_gemv() {
     let mut ex = crate::cuda_executor_or_skip!(0);
     let checked = check_quant(&mut ex, &Q6K);
-    assert_eq!(checked, Q6K.shapes.len() * WARPS.len() * ROWS.len());
+    assert_eq!(checked, Q6K.shapes.len() * Q6K.warps.len() * ROWS.len());
+}
+
+/// FALSIFY (#5279): the same for the batched Q5_K GEMV, which serves the
+/// DeltaNet qkv and output projections.
+#[test]
+#[serial]
+fn batched_q5k_rows_are_bitwise_the_single_row_gemv() {
+    let mut ex = crate::cuda_executor_or_skip!(0);
+    let checked = check_quant(&mut ex, &Q5K);
+    assert_eq!(checked, Q5K.shapes.len() * Q5K.warps.len() * ROWS.len());
+}
+
+/// FALSIFY (#5279): the same for the batched HW DP4A Q6_K GEMV, the Q6_K
+/// kernel on GPUs with DP4A.
+#[test]
+#[serial]
+fn batched_hw_dp4a_q6k_rows_are_bitwise_the_single_row_gemv() {
+    let mut ex = crate::cuda_executor_or_skip!(0);
+    let checked = check_quant(&mut ex, &Q6K_HW_DP4A);
+    assert_eq!(
+        checked,
+        Q6K_HW_DP4A.shapes.len() * Q6K_HW_DP4A.warps.len() * ROWS.len()
+    );
 }
 
 /// The rows of a batch are distinct inputs, so a kernel that read row 0 for

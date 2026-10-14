@@ -294,6 +294,13 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// #5279: Q5_K GEMV over `m` activation rows, each row bitwise equal to
+    /// [`KernelType::Q5KGemv`] on that row alone
+    BatchedQ5KGemv {
+        k: u32,
+        n: u32,
+        m: u32,
+    },
     /// Q6_K quantized GEMV (fused dequantization) - PAR-003
     Q6KGemv {
         k: u32,
@@ -343,6 +350,14 @@ pub enum KernelType {
     HwDp4aQ6KGemv {
         k: u32,
         n: u32,
+        num_warps: u32,
+    },
+    /// #5279: HW DP4A Q6_K GEMV over `m` Q8_1 activation rows, each row
+    /// bitwise equal to [`KernelType::HwDp4aQ6KGemv`] on that row alone
+    BatchedHwDp4aQ6KGemv {
+        k: u32,
+        n: u32,
+        m: u32,
         num_warps: u32,
     },
     /// PAR-053: FP16 Q4_K GEMV - 2x bandwidth savings vs FP32

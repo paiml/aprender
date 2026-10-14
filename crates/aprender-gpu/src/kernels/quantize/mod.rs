@@ -77,10 +77,11 @@ pub use q4k::{
     Q4KDequantFp16Kernel, Q4KDequantKernel, Q4KGemvKernel, TiledQ4KGemvKernel,
     TrueDp4aQ4KGemvKernel, VectorizedQ4KGemvKernel, WideQ4KGemvKernel,
 };
-pub use q5k::{Q5KDequantKernel, Q5KGemvKernel, Q5KKernel};
+pub use q5k::{BatchedQ5KGemvKernel, Q5KDequantKernel, Q5KGemvKernel, Q5KKernel};
 pub use q6k::{
-    BatchedMwvQ6KGemvKernel, BatchedQ6KGemvKernel, CoalescedQ6KGemvKernel, Dp4aQ6KGemvKernel,
-    HalfWarpDp4aQ6KGemvKernel, MultiWarpQ6KGemvKernel, Q6KDequantKernel, Q6KGemvKernel, Q6KKernel,
+    BatchedHwDp4aQ6KGemvKernel, BatchedMwvQ6KGemvKernel, BatchedQ6KGemvKernel,
+    CoalescedQ6KGemvKernel, Dp4aQ6KGemvKernel, HalfWarpDp4aQ6KGemvKernel, MultiWarpQ6KGemvKernel,
+    Q6KDequantKernel, Q6KGemvKernel, Q6KKernel,
 };
 pub use q8::Q8QuantizeKernel;
 pub use q8_0_dequant::Q8_0DequantKernel;

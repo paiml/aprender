@@ -77,6 +77,8 @@ impl CudaKernels {
             KernelType::BatchedQ6KGemv { .. } => "batched_q6k_gemv_warp_reduce",
             KernelType::MwvQ6KGemv { .. } => "mwv_q6k_gemv",
             KernelType::BatchedMwvQ6KGemv { .. } => "batched_mwv_q6k_gemv",
+            KernelType::BatchedQ5KGemv { .. } => "batched_q5k_gemv",
+            KernelType::BatchedHwDp4aQ6KGemv { .. } => "batched_hw_dp4a_q6k_gemv",
             KernelType::Dp4aQ6KGemv { .. } => "dp4a_q6k_gemv",
             KernelType::HwDp4aQ6KGemv { .. } => "hw_dp4a_q6k_gemv",
             KernelType::Fp16Q4KGemv { .. } => "fp16_q4k_gemv",

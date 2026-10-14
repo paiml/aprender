@@ -67,6 +67,9 @@ impl CudaKernels {
             KernelType::Gemv { k, n } => GemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::CoalescedGemv { k, n } => CoalescedGemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::Q5KGemv { k, n } => Q5KGemvKernel::new(*k, *n).emit_ptx_for_target(target),
+            KernelType::BatchedQ5KGemv { k, n, m } => {
+                BatchedQ5KGemvKernel { k: *k, n: *n, m: *m }.emit_ptx_for_target(target)
+            },
             KernelType::Q6KGemv { k, n } => Q6KGemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::CoalescedQ6KGemv { k, n } => CoalescedQ6KGemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::BatchedQ6KGemv { k, n, m } => {
@@ -83,6 +86,9 @@ impl CudaKernels {
             },
             KernelType::HwDp4aQ6KGemv { k, n, num_warps: _ } => {
                 HalfWarpDp4aQ6KGemvKernel::new(*k, *n).emit_ptx_for_target(target)
+            },
+            KernelType::BatchedHwDp4aQ6KGemv { k, n, m, num_warps: _ } => {
+                BatchedHwDp4aQ6KGemvKernel::new(*k, *n, *m).emit_ptx_for_target(target)
             },
             KernelType::Fp16Q4KGemv { k, n } => Fp16Q4KGemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::Q8_0Gemv { k, n } => Q8_0GemvKernel::new(*k, *n).emit_ptx_for_target(target),
