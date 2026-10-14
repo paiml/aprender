@@ -224,6 +224,7 @@
             skip_metadata: true,
             skip_capability: true,
             assert_classifier_head: false,
+            ollama_from_file: false,
         }));
         let result = execute_command(&cli);
         assert!(
@@ -260,6 +261,7 @@
             skip_metadata: true,
             skip_capability: true,
             assert_classifier_head: false,
+            ollama_from_file: false,
         }));
         let result = execute_command(&cli);
         assert!(

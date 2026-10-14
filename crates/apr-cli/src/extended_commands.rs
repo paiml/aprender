@@ -290,6 +290,10 @@ pub enum ExtendedCommands {
         /// Skip Ollama parity comparison
         #[arg(long)]
         skip_ollama: bool,
+        /// Ollama parity runs ollama on THIS GGUF (imported for the run, then
+        /// removed) instead of the size-matched qwen2.5-coder tag (#5254)
+        #[arg(long)]
+        ollama_from_file: bool,
         /// Skip GPU vs CPU speedup test (F-PERF-042)
         #[arg(long)]
         skip_gpu_speedup: bool,

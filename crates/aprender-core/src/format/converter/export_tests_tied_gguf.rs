@@ -562,3 +562,56 @@ fn test_append_tokenizer_no_metadata_when_neither_source() {
 }
 
 include!("export_tests_detect_quant.rs");
+
+/// #5254: the tokenizer.json path wrote every tokenizer key except the chat
+/// template, so ollama imported such a GGUF with TEMPLATE {{ .Prompt }}.
+#[test]
+fn test_append_tokenizer_json_path_writes_chat_template() {
+    use crate::format::gguf::{GgufTokenizer, GgufValue};
+
+    let tok = GgufTokenizer {
+        vocabulary: vec!["a".into(), "b".into()],
+        merges: vec![],
+        model_type: Some("gpt2".into()),
+        bos_token_id: Some(0),
+        eos_token_id: Some(1),
+        architecture: None,
+        model_name: None,
+        token_type: vec![],
+        padding_token_id: None,
+        add_bos_token: None,
+        chat_template: None,
+        pre_type: None,
+        scores: Vec::new(),
+    };
+    let template_of = |metadata: &[(String, GgufValue)]| {
+        metadata.iter().find_map(|(k, v)| match v {
+            GgufValue::String(s) if k == "tokenizer.chat_template" => Some(s.clone()),
+            _ => None,
+        })
+    };
+    let dir = tempfile::tempdir().expect("temp dir");
+    let input = dir.path().join("model.safetensors");
+
+    // No source anywhere: no key, never an empty one.
+    let mut metadata = Vec::new();
+    append_tokenizer_to_metadata(&mut metadata, Some(&tok), None, "qwen2", "m", 0, &input);
+    assert_eq!(template_of(&metadata), None);
+
+    // tokenizer_config.json beside the input, as an HF checkout ships it.
+    std::fs::write(
+        dir.path().join("tokenizer_config.json"),
+        r#"{"chat_template": "{{ '<|im_start|>' }}"}"#,
+    )
+    .expect("write tokenizer_config.json");
+    let mut metadata = Vec::new();
+    append_tokenizer_to_metadata(&mut metadata, Some(&tok), None, "qwen2", "m", 0, &input);
+    assert_eq!(template_of(&metadata).as_deref(), Some("{{ '<|im_start|>' }}"));
+
+    // APR metadata wins over the sibling file.
+    let mut apr = crate::format::v2::AprV2Metadata::new("test");
+    apr.chat_template = Some("from-apr".into());
+    let mut metadata = Vec::new();
+    append_tokenizer_to_metadata(&mut metadata, Some(&tok), Some(&apr), "qwen2", "m", 0, &input);
+    assert_eq!(template_of(&metadata).as_deref(), Some("from-apr"));
+}

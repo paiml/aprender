@@ -191,6 +191,8 @@ pub struct QaConfig {
     pub skip_capability: bool,
     /// Assert classifier head presence and shape (F-CLASS-004)
     pub assert_classifier_head: bool,
+    /// Ollama parity runs ollama on this GGUF, not a size-matched tag (#5254)
+    pub ollama_from_file: bool,
 }
 
 impl Default for QaConfig {
@@ -219,6 +221,7 @@ impl Default for QaConfig {
             skip_metadata: false,
             skip_capability: false,
             assert_classifier_head: false,
+            ollama_from_file: false,
         }
     }
 }
@@ -477,6 +480,7 @@ pub fn run(
     skip_metadata: bool,
     skip_capability: bool,
     assert_classifier_head: bool,
+    ollama_from_file: bool,
 ) -> Result<()> {
     contract_pre_qa_gate_composition!();
     // GH-2391: every QA gate is `observed >= asserted`. A NaN or negative
@@ -520,6 +524,7 @@ pub fn run(
         skip_metadata,
         skip_capability,
         assert_classifier_head,
+        ollama_from_file,
     };
 
     // `run_qa(...)?` used to propagate straight past the `if json` block below, so
