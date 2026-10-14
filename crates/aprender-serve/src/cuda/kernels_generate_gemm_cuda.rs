@@ -372,6 +372,11 @@ impl CudaKernels {
                     .indirect()
                     .emit_ptx_for_target(target)
             },
+            KernelType::GdnPartialNeoxRopeSlots { num_heads, head_dim, n_rot } => {
+                PartialNeoxRopeKernel::new(*num_heads, *head_dim, *n_rot)
+                    .slots()
+                    .emit_ptx_for_target(target)
+            },
             KernelType::GdnDecodeAttentionIndirect { num_heads, num_kv_heads, head_dim } => {
                 DecodeAttention256Kernel::new(*num_heads, *num_kv_heads, *head_dim)
                     .indirect()

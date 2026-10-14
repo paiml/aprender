@@ -367,6 +367,52 @@ impl CudaExecutor {
         )
     }
 
+    /// #5279: [`Self::gdn_partial_neox_rope_indirect_into`] over `m` decode
+    /// slots in one launch: row `r` of `x` (`num_heads * head_dim` wide) is
+    /// rotated at the device position `pos[r]`, bitwise the single kernel on
+    /// that row at that position.
+    ///
+    /// # Errors
+    /// PTX compilation or kernel launch failure, or a null device pointer.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_partial_neox_rope_slots_into(
+        &mut self,
+        x: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+        theta_scale: f32,
+        m: u32,
+    ) -> Result<(), GpuError> {
+        let kernel =
+            trueno_gpu::kernels::gdn::PartialNeoxRopeKernel::new(num_heads, head_dim, n_rot)
+                .slots();
+        let kernel_type = KernelType::GdnPartialNeoxRopeSlots {
+            num_heads,
+            head_dim,
+            n_rot,
+        };
+        let cache_key = module_key!(
+            self,
+            "gdn_partial_neox_rope_slots_{}_{}_{}",
+            num_heads,
+            head_dim,
+            n_rot
+        );
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, m, bx, 1);
+        self.gdn_launch_mixed(
+            &cache_key,
+            kernel_name,
+            config,
+            &[x.as_ptr(), pos.as_ptr()],
+            &[u64::from(theta_scale.to_bits())],
+        )
+    }
+
     /// aprender#4233: [`Self::gdn_decode_attention_into`] attending over
     /// `*pos + 1` positions, read on the device.
     ///

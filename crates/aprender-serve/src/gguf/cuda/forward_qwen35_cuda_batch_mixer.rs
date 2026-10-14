@@ -264,6 +264,18 @@ impl Qwen35CudaModel<'_> {
         ] {
             ex.per_head_rmsnorm_into(input, norm, output, d.attn_head_dim, rows * heads, d.eps)?;
         }
+        // Every row at its own position, before K goes into the caches.
+        for (buf, heads) in [(&x.q_normed, d.num_heads), (&x.k_normed, d.num_kv_heads)] {
+            ex.gdn_partial_neox_rope_slots_into(
+                buf,
+                &b.positions,
+                heads,
+                d.attn_head_dim,
+                d.n_rot,
+                d.theta_scale,
+                rows,
+            )?;
+        }
         let bufs = [&x.q_normed, &x.k_normed, &x.v_raw, &x.attn_out_in];
         let widths = [q_dim, kv_dim, kv_dim, q_dim];
         for (i, (state, &position)) in states.iter().zip(positions).enumerate() {
@@ -291,16 +303,6 @@ impl Qwen35CudaModel<'_> {
                         k_row.copy_from_buffer_async(k_normed, ex.exec_stream())?;
                         v_row.copy_from_buffer_async(v_raw, ex.exec_stream())
                     }?;
-                    for (rows, heads) in [(q_normed, d.num_heads), (&k_row, d.num_kv_heads)] {
-                        ex.gdn_partial_neox_rope_into(
-                            rows,
-                            heads,
-                            d.attn_head_dim,
-                            d.n_rot,
-                            pos32,
-                            d.theta_scale,
-                        )?;
-                    }
                     ex.gdn_decode_attention_into(
                         q_normed,
                         k_cache,

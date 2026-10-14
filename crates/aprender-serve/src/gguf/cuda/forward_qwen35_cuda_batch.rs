@@ -128,6 +128,8 @@ pub(crate) struct Qwen35BatchBufs {
     /// entry `(il * 2) * m + i` is slot `i`'s conv window at layer `il`, entry
     /// `(il * 2 + 1) * m + i` its recurrent state.
     state_table: GpuBuffer<u64>,
+    /// `[m]` the slots' positions, uploaded with `state_table`.
+    positions: GpuBuffer<u32>,
 }
 
 impl Qwen35BatchBufs {
@@ -147,6 +149,8 @@ impl Qwen35BatchBufs {
             logits: zeros(rows * d.vocab_size as usize)?,
             mixer: mixer::Qwen35MixerBufs::new(executor, d, rows)?,
             state_table: GpuBuffer::new(executor.context(), 2 * layers * rows)
+                .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?,
+            positions: GpuBuffer::new(executor.context(), rows)
                 .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?,
         })
     }
@@ -211,6 +215,13 @@ impl Qwen35CudaModel<'_> {
         }
         b.state_table
             .copy_from_host_at(&table, 0)
+            .map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
+        let pos32: Vec<u32> = positions
+            .iter()
+            .map(|&p| u32::try_from(p).unwrap_or(u32::MAX))
+            .collect();
+        b.positions
+            .copy_from_host_at(&pos32, 0)
             .map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
         for il in 0..self.layers.len() {
             self.batched_layer(b, il, states, positions)

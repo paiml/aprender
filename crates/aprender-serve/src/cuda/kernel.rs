@@ -31,6 +31,7 @@ impl CudaKernels {
             KernelType::GdnPartialNeoxRope { .. } => "gdn_partial_neox_rope",
             KernelType::GdnDecodeAttention { .. } => "gdn_decode_attention",
             KernelType::GdnPartialNeoxRopeIndirect { .. } => "gdn_partial_neox_rope_indirect",
+            KernelType::GdnPartialNeoxRopeSlots { .. } => "gdn_partial_neox_rope_slots",
             KernelType::GdnDecodeAttentionIndirect { .. } => "gdn_decode_attention_indirect",
             KernelType::GdnKvRowScatterIndirect { .. } => "gdn_kv_row_scatter_indirect",
             KernelType::GdnDecodeAttentionSplit { .. } => "gdn_decode_attention_split",

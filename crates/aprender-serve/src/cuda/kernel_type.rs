@@ -748,6 +748,13 @@ pub enum KernelType {
         head_dim: u32,
         n_rot: u32,
     },
+    /// #5279: [`Self::GdnPartialNeoxRopeIndirect`] over m decode slots, row
+    /// `r` at the device position `pos[r]`.
+    GdnPartialNeoxRopeSlots {
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+    },
     /// aprender#4233: [`Self::GdnDecodeAttention`] with `seq_len = *pos + 1`
     /// read on the device.
     GdnDecodeAttentionIndirect {
