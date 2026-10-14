@@ -28,7 +28,5 @@ self-hosted-runner:
     - mini-builder
     # #4729 / infra#1388: one-box lane for pr-review-quorum `present` (intel-clean-room-15)
     - review-light
-    # #5228 / infra#1468: the X64 pool for the weekly mutants-nightly
-    - mutants
     # #5254: the 8 GB ARM64 CUDA edge device's LAB nightly (edge-fast-verbs-nightly)
     - jetson
