@@ -550,4 +550,21 @@ impl CudaExecutor {
 
         Ok(gpu_result)
     }
+
+    /// #4971: copy the first `out.len()` logits the last forward left in the
+    /// workspace to the host. Called after the device argmax has read them,
+    /// so asking for the logits never changes the token or the kernels that
+    /// chose it. The batched forward leaves `m × vocab` there, row by row.
+    ///
+    /// # Errors
+    /// No logits buffer was allocated, or `out` is longer than it.
+    pub fn download_workspace_logits(&self, out: &mut [f32]) -> Result<(), GpuError> {
+        let buf = self
+            .workspace
+            .logits_buf
+            .as_ref()
+            .ok_or_else(|| GpuError::InvalidParameter("logits_buf not allocated".into()))?;
+        self.stream.synchronize()?;
+        buf.copy_to_host(out)
+    }
 }

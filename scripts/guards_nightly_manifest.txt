@@ -41,3 +41,7 @@
 130	Publish safety (binary/oversize files in published packages)
 94	aprender-core builds for wasm32
 1	Release surfaces may not hand-list apr verbs or flags; the ladder owes every model-cell command (#3745 S3, #5231)
+# #5182 (GATE/LAB): two ratchets that may not sit on a PR path. Seconds are a
+# local wall-clock sample (2026-10-12, not a CI run); the first nightly replaces them.
+19	Per-function complexity may only fall (shrink-only)
+2	No shrink-only baseline in scripts/ grew (check_baseline_ratchets --ratchet)

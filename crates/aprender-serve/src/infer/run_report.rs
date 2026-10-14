@@ -38,6 +38,12 @@ pub enum FinishReason {
     /// `tool_calls` (#4918: the streaming terminal chunk, which used to be able
     /// to say only `stop` or `length`).
     ToolCalls,
+    /// A constrained generation (#3793) produced a complete document. Only `apr run
+    /// --json-schema` / `--grammar` reports it; no server path is constrained yet.
+    ConstraintComplete,
+    /// A constrained generation reached a position where the constraint allows no token.
+    /// Reported with the refusal, never as a success.
+    DeadEnd,
 }
 
 impl FinishReason {
@@ -84,6 +90,8 @@ impl FinishReason {
             Self::Stop => "stop",
             Self::Length => "length",
             Self::ToolCalls => "tool_calls",
+            Self::ConstraintComplete => "constraint_complete",
+            Self::DeadEnd => "dead_end",
         }
     }
 }
@@ -119,7 +127,8 @@ pub fn decode_budget(
 /// What a run reports beyond [`super::InferenceResult`].
 ///
 /// Each field is `None` on a path that does not know it, never a default that
-/// reads as a measurement. The APR and SafeTensors paths report neither today.
+/// reads as a measurement. The SafeTensors path and the APR CUDA and CPU paths
+/// report neither today; the APR wgpu path reports `finish_reason` (#4984).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RunReport {
     /// Why generation ended.

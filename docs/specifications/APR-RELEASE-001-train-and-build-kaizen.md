@@ -88,6 +88,7 @@ item**, declared here, which the tag must carry:
 | Tag | Must carry | Ticket(s) | Evidence to cut |
 |---|---|---|---|
 | **0.68** | **Qwen 3.5 support** — model load, tokenizer, inference parity against `aprender-canonical-benchmark-rfc.md`, `apr` CLI surface | 0.68 epic in `docs/roadmaps/roadmap.yaml` (`pmat work add` it if absent) | contract `contracts/apr-qwen35-v1.yaml` `N obligations, 0 failed`; `apr-dogfood` go receipt on the cut sha; provenance marks on every perf figure, `[X]` for third-party |
+| **0.72** | **EmbeddingGemma 2 support (APR-EMBED-001)**: EG-0 measure, EG-1 load, EG-2 embed on CPU, EG-3 serve, EG-4 CUDA, EG-5 refusals and `apr qa`, EG-6 model ops round trip | epic #4898 (`docs/roadmaps/epics.yaml` E10); rows #4899..#4905 | each row's done_when in `docs/specifications/APR-EMBED-001-embeddinggemma-2-support.md` §3 and §5; the verb totality guard green in `ci / gate`; `apr-dogfood` go receipt on the cut sha |
 
 Rules: a train for a tag with unmerged §1.5 scope is **not cut** (T-0 waits) — this is the one
 exception to §3.1, and if it holds > 72 h it is a §8 andon with the ticket named. Work on §1.5

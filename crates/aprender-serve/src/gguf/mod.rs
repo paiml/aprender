@@ -69,6 +69,8 @@ mod wgpu_model;
 /// #3726: canonical byte-level BPE (pre-tokenizer + ranked merges) for `gpt2` vocabularies.
 pub mod byte_level_bpe;
 pub mod ops;
+/// APR-EMBED-001 EG-1: canonical SPM-style BPE (ranked merges over raw UTF-8) for `gemma4` vocabularies.
+pub mod spm_bpe;
 
 // Test helpers module - shared utilities for GGUF tests
 #[cfg(test)]
@@ -88,7 +90,7 @@ pub use config::*;
 #[cfg(feature = "cuda")]
 pub use cuda::{
     BatchedDecodeState, CudaBackend, CudaInitError, Qwen35CudaModel, Qwen35CudaState,
-    Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape,
+    Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape, SlotRecorder,
 };
 #[cfg(feature = "cuda")]
 pub use cuda_model::*;
@@ -129,6 +131,9 @@ mod quantized_tests;
 #[cfg(test)]
 mod tests;
 
+/// APR-EMBED-001 EG-2 (#4901): bidirectional windowed attention (I-10).
+#[path = "inference/forward/attention_windowed.rs"]
+pub mod attention_windowed;
 /// The dense (llama/qwen2/qwen3/...) forward behind the one engine (#4268):
 /// `apr run`, `run --batch`, `chat` and `serve` drive a dense GGUF through
 /// [`crate::session::Session`] on the CPU or the CUDA backend.
@@ -138,10 +143,16 @@ pub mod dense_session;
 #[cfg(feature = "cuda")]
 #[path = "inference/forward/dense_session_borrowed.rs"]
 pub mod dense_session_borrowed;
+/// APR-EMBED-001 EG-2 (#4901): the task prompts and framed token ids of an embedding input.
+#[path = "inference/forward/embedding_gemma2_input.rs"]
+pub mod embedding_gemma2_input;
 /// #3604: the F2 hybrid guard's receipt. CUDA-free on purpose, so its decision
 /// table is tested on every build.
 #[path = "inference/forward/f2_receipt.rs"]
 pub mod f2_receipt;
+/// APR-EMBED-001 EG-2 (#4901): the EmbeddingGemma 2 CPU forward.
+#[path = "inference/forward/forward_embedding_gemma2.rs"]
+pub mod forward_embedding_gemma2;
 /// Qwen3.5 / Qwen3.8 hybrid (Gated `DeltaNet` + gated attention) CPU forward (#3091).
 #[path = "inference/forward/forward_qwen35.rs"]
 pub mod forward_qwen35;

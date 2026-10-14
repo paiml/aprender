@@ -1494,6 +1494,8 @@ fn default_prompt() -> ChatRequest {
         // PP-27: set on the wire by `LlmClient::wire_request` when (and only
         // when) the request actually streams; a profile never asks for it.
         stream_options: None,
+        logprobs: None,
+        top_logprobs: None,
     }
 }
 

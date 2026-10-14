@@ -46,6 +46,7 @@ fn scheduled(
             non_streaming,
             enqueue_time: std::time::Instant::now(),
             timing_tx: None,
+            logprobs: None,
         },
     );
     let mut out = Vec::new();

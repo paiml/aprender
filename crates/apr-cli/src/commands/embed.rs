@@ -209,6 +209,22 @@ fn load_text_file(path: &Path) -> Result<Vec<String>> {
     Ok(out)
 }
 
+/// The texts to embed: `--text` (in CLI order), then the `--text-file` rows. Phase 7
+/// supports both modes simultaneously so callers can mix a query (`--text "$Q"`) with a
+/// passage corpus (`--text-file docs.txt`). The BERT and GGUF paths both read them here.
+pub(super) fn collect_texts(texts: &[String], text_file: Option<&Path>) -> Result<Vec<String>> {
+    let mut all_texts: Vec<String> = texts.to_vec();
+    if let Some(path) = text_file {
+        all_texts.extend(load_text_file(path)?);
+    }
+    if all_texts.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "apr embed requires at least one --text or --text-file row".to_string(),
+        ));
+    }
+    Ok(all_texts)
+}
+
 /// Entry point. Loads the encoder once + processes all texts.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
@@ -227,20 +243,8 @@ pub(crate) fn run(
     type_vocab_size: usize,
     json: bool,
 ) -> Result<()> {
-    // Concat `--text` (in CLI order) with `--text-file` rows. Phase 7
-    // supports both modes simultaneously so callers can mix a query
-    // (`--text "$Q"`) with a passage corpus (`--text-file docs.txt`).
-    let mut all_texts: Vec<String> = texts.to_vec();
-    if let Some(path) = text_file {
-        all_texts.extend(load_text_file(path)?);
-    }
+    let all_texts = collect_texts(texts, text_file)?;
     let texts = all_texts.as_slice();
-
-    if texts.is_empty() {
-        return Err(CliError::ValidationFailed(
-            "apr embed requires at least one --text or --text-file row".to_string(),
-        ));
-    }
 
     let model_bytes = std::fs::read(model).map_err(|e| {
         CliError::ValidationFailed(format!("Failed to read {}: {e}", model.display()))

@@ -226,6 +226,8 @@ fn run_batch_jsonl(
     top_k: usize,
     no_gpu: bool,
     verbose: bool,
+    // #3793: the batch path refuses a constraint by name
+    constraint: &commands::run::ConstraintArgs,
 ) -> Result<(), CliError> {
     if thinking_requested {
         return Err(CliError::ValidationFailed(
@@ -242,7 +244,39 @@ renders its own prompts. Run the prompts through `apr run --thinking` instead."
         top_k,
         no_gpu,
         verbose,
+        constraint,
     )
+}
+
+/// `apr run`'s accelerator checks, before anything loads: the backend, PERF-021's refusal,
+/// and the resulting `(effective_no_gpu, accel_forced)`.
+fn run_accel_plan(
+    gpu: bool,
+    no_gpu: bool,
+    backend: Option<&str>,
+) -> Result<(bool, bool), CliError> {
+    // GH-614: --backend cpu forces CPU-only inference
+    let backend_forces_cpu = backend == Some("cpu");
+    check_run_backend(backend)?;
+    // PERF-021: `apr run` is the surface #2696 was MEASURED through —
+    // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
+    // no guard. The jidoka refusal landed only on `apr serve`, one
+    // command over from where the defect was recorded.
+    //
+    // Placed ABOVE `effective_no_gpu` and above the `batch_jsonl` early
+    // return in the caller: that return bypasses `dispatch_run` entirely, so a
+    // check any lower is skipped by `apr run --gpu --batch-jsonl f.jsonl`.
+    crate::accel::ensure_available(gpu && !no_gpu, &crate::accel::asked_flag(gpu, backend))?;
+
+    let accel_forced = run_accelerator_forced(gpu, no_gpu, backend);
+
+    // GH-326: --gpu overrides --no-gpu when both specified
+    let effective_no_gpu = if gpu {
+        false
+    } else {
+        no_gpu || backend_forces_cpu
+    };
+    Ok((effective_no_gpu, accel_forced))
 }
 
 /// Dispatch runtime commands: check, run, serve.
@@ -543,6 +577,50 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(result)
 }
 
+/// `apr trace --save-tensor` on `r`: the end-to-end save-tensor wrapper for a .apr or a
+/// .gguf (`Some`), else a note on stderr and `None`, so the caller falls through to the
+/// trace path.
+#[cfg(feature = "inference")]
+fn dispatch_trace_save_tensor(
+    r: &Path,
+    stages: &str,
+    save_tensor_dir: Option<&Path>,
+    save_tensor_layers: &str,
+) -> Option<Result<(), CliError>> {
+    let ext_lower = r
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    match ext_lower.as_deref() {
+        Some("apr") => Some(crate::commands::trace_save_tensor::run_save_tensor_apr(
+            r,
+            stages,
+            save_tensor_dir,
+            save_tensor_layers,
+        )),
+        // M-MOE-SUB-2 step (a) CLI completion: GGUF dispatches
+        // to the MoE-traced wireup if the arch is qwen3_moe;
+        // dense-GGUF will be wired in SHIP-007 PR-E.
+        Some("gguf") => Some(
+            crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(
+                r,
+                stages,
+                save_tensor_dir,
+                save_tensor_layers,
+            ),
+        ),
+        _ => {
+            eprintln!(
+                "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
+                 supported today; .safetensors will be wired in SHIP-007 PR-E \
+                 (got {})",
+                r.display()
+            );
+            None
+        }
+    }
+}
+
 /// Dispatch diagnostic commands: trace, tensors, diff.
 
 /// `apr run`: split out of [`dispatch_runtime_commands`] to keep each function under the
@@ -582,40 +660,25 @@ fn dispatch_run_command(cli: &Cli) -> Option<Result<(), CliError>> {
         verbose,
         backend: BackendArg { backend },
         thinking,
+        json_schema,
+        grammar,
     } = cli.command.as_ref()
     else {
         return None;
     };
     Some({
-        request_f2_revalidate(*revalidate);
-        // GH-614: --backend cpu forces CPU-only inference
-        let backend_forces_cpu = backend.as_deref() == Some("cpu");
-        if let Err(e) = check_run_backend(backend.as_deref()) {
-            return Some(Err(e));
-        }
-        // PERF-021: `apr run` is the surface #2696 was MEASURED through —
-        // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
-        // no guard. The jidoka refusal landed only on `apr serve`, one
-        // command over from where the defect was recorded.
-        //
-        // Placed ABOVE `effective_no_gpu` and above the `batch_jsonl` early
-        // return below: that return bypasses `dispatch_run` entirely, so a
-        // check any lower is skipped by `apr run --gpu --batch-jsonl f.jsonl`.
-        if let Err(e) = crate::accel::ensure_available(
-            *gpu && !*no_gpu,
-            &crate::accel::asked_flag(*gpu, backend.as_deref()),
-        ) {
-            return Some(Err(e));
-        }
-
-        let accel_forced = run_accelerator_forced(*gpu, *no_gpu, backend.as_deref());
-
-        // GH-326: --gpu overrides --no-gpu when both specified
-        let effective_no_gpu = if *gpu {
-            false
-        } else {
-            *no_gpu || backend_forces_cpu
+        // #3793: --json-schema / --grammar, as given; read and checked before the model loads
+        let constraint = commands::run::ConstraintArgs {
+            json_schema: json_schema.as_deref().map(str::to_owned),
+            grammar: grammar.as_deref().map(str::to_owned),
         };
+        request_f2_revalidate(*revalidate);
+        // Above the `batch_jsonl` early return below (see `run_accel_plan`).
+        let (effective_no_gpu, accel_forced) =
+            match run_accel_plan(*gpu, *no_gpu, backend.as_deref()) {
+                Ok(plan) => plan,
+                Err(e) => return Some(Err(e)),
+            };
 
         // Batch JSONL mode: load model once, process all prompts
         #[cfg(feature = "inference")]
@@ -629,6 +692,7 @@ fn dispatch_run_command(cli: &Cli) -> Option<Result<(), CliError>> {
                 *top_k,
                 effective_no_gpu,
                 *verbose || cli.verbose,
+                &constraint,
             ));
         }
 
@@ -669,6 +733,7 @@ fn dispatch_run_command(cli: &Cli) -> Option<Result<(), CliError>> {
             *repeat_last_n,
             *split_prompt,
             thinking.mode(),
+            constraint,
         )
     })
 }
@@ -695,9 +760,12 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             // to the existing trace path.
             #[cfg(feature = "inference")]
             if let Some(stages) = save_tensor.as_deref() {
-                if let Some(done) =
-                    trace_save_tensor(&r, stages, save_tensor_dir.as_deref(), save_tensor_layers)
-                {
+                if let Some(done) = dispatch_trace_save_tensor(
+                    &r,
+                    stages,
+                    save_tensor_dir.as_deref(),
+                    save_tensor_layers,
+                ) {
                     return done;
                 }
             }
@@ -1164,53 +1232,6 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         _ => return None,
     })
-}
-
-/// `apr trace --save-tensor`: the end-to-end save-tensor wrapper for `.apr` and
-/// `.gguf` (qwen3_moe). `None` falls through to the ordinary trace path. Split
-/// out of [`dispatch_diagnostic_commands`] to keep it under the complexity
-/// threshold (#5227).
-#[cfg(feature = "inference")]
-fn trace_save_tensor(
-    r: &Path,
-    stages: &str,
-    save_tensor_dir: Option<&Path>,
-    save_tensor_layers: &str,
-) -> Option<Result<(), CliError>> {
-    let ext_lower = r
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase);
-    match ext_lower.as_deref() {
-        Some("apr") => Some(crate::commands::trace_save_tensor::run_save_tensor_apr(
-            r,
-            stages,
-            save_tensor_dir,
-            save_tensor_layers,
-        )),
-        Some("gguf") => {
-            // M-MOE-SUB-2 step (a) CLI completion: GGUF dispatches
-            // to the MoE-traced wireup if the arch is qwen3_moe;
-            // dense-GGUF will be wired in SHIP-007 PR-E.
-            Some(
-                crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(
-                    r,
-                    stages,
-                    save_tensor_dir,
-                    save_tensor_layers,
-                ),
-            )
-        }
-        _ => {
-            eprintln!(
-                "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
-                 supported today; .safetensors will be wired in SHIP-007 PR-E \
-                 (got {})",
-                r.display()
-            );
-            None
-        }
-    }
 }
 
 /// `apr diff`: split out of [`dispatch_diagnostic_commands`] to keep it under the

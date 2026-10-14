@@ -262,6 +262,16 @@ async fn handle_gpu_chat_completion(
             return err_response;
         }
     }
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(&req, super::response_format::APR_CUDA)
+    {
+        return refusal;
+    }
+    // #4971: run_gpu_generation computes no logprobs, so a request for them is refused.
+    if let Some(refused) = logprobs_refusal_response(&req, "APR CUDA (AprV2ModelCuda)") {
+        return refused;
+    }
 
     let messages = req.get("messages").and_then(|m| m.as_array());
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
@@ -463,6 +473,9 @@ fn build_serve_model(
     mapped_model: &realizar::gguf::MappedGGUFModel,
 ) -> Result<realizar::gguf::OwnedQuantizedModel> {
     use realizar::gguf::OwnedQuantizedModel;
+    // APR-EMBED-001 EG-1 (I-3): every GGUF route comes through here, so an embedding model is refused
+    // by kind once, naming the verb that serves it.
+    crate::commands::model_kind_gate::refuse_non_generative(&mapped_model.model, "serve")?;
     // #3571: the Qwen3.5 hybrid (Gated Delta Net) has no dense layers, so `from_mapped` refuses
     // it by name and `apr serve` could not load the architecture the last release shipped — while
     // `apr run` loaded it fine, because `run_gguf_inference` has carried exactly this branch since
@@ -920,6 +933,27 @@ mod zero_layer_refusal_tests {
             }
             Err(other) => panic!("refused for the wrong reason: {other}"),
             Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
+        }
+    }
+
+    /// FALSIFY-EG2L-007 (APR-EMBED-001 EG-1, I-3): every GGUF serve route refuses an embedding
+    /// model by kind, naming `apr embed`. Delete the call in `build_serve_model` and this goes RED.
+    #[test]
+    fn falsify_eg2l_007_serve_refuses_embedding_by_kind() {
+        let file = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp file");
+        std::fs::write(
+            file.path(),
+            crate::commands::model_kind_gate::tests::eg1_gguf("gemma-embedding2", Some(false)),
+        )
+        .expect("write");
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(file.path()).expect("map");
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => {
+                assert!(msg.contains("`apr serve`"), "{msg}");
+                assert!(msg.contains("Use `apr embed`"), "{msg}");
+            }
+            Err(other) => panic!("refused for the wrong reason: {other}"),
+            Ok(model) => panic!("an embedding file reached the serve routes ({} layers)", model.layers().len()),
         }
     }
 

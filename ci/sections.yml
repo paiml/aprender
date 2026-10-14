@@ -571,6 +571,9 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/gpu.junit.xml"
+      # #5048: the pass rule needs at least one passing test. A run of 0 tests prints "test result: ok. 0 passed",
+      # which the old rule accepted. cargo's status stays unread on purpose: the step name says why (SIGSEGV at harness exit).
+      # Case table: scripts/tests/compute_row_zero_tests_test.sh.
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         run: |
@@ -588,7 +591,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
+            bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -Eq "test result: ok\. [1-9][0-9]* passed" /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
         if: steps.tier.outputs.tier == 'full'
         # #2465: the four FALSIFY-AUTH targets were appended here because they
@@ -766,6 +769,17 @@ jobs:
       # BSE-17 quick tier, part 1: the selected crates' unit and integration
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
+      #
+      # #5210 — "default features" was not true. Cargo unifies features across
+      # every -p of one call, and this step ran the whole selection as one call:
+      # on #5188 aprender-test-cli (default = ["browser"]) switched on
+      # aprender-test-lib's `browser`, which compiled its two chromium falsifiers,
+      # and 11 tests failed "Browser not found" on a host with no Chromium (run
+      # 38241534849). scripts/ci/quick_tier_groups.sh now splits the selection into
+      # as few calls as keep every crate away from one that raises its features
+      # (its own --self-test is the case table). Nothing is filtered: every
+      # selected crate still runs, each call writes its own junit, and the
+      # Σ-executed step below re-derives the same split from CRATES.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
         if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
         # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
@@ -785,8 +799,23 @@ jobs:
         run: |
           set -euo pipefail
           read -ra crates <<< "$CRATES"
-          pkgs=""; for c in "${crates[@]}"; do pkgs="$pkgs -p $c"; done
           printf 'quick tier crates: %s\n' "$CRATES"
+          docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -w /workspace "$IMAGE" cargo metadata --no-deps --format-version 1 > "$RUNNER_TEMP/quick-meta.json"
+          bash scripts/ci/quick_tier_groups.sh --metadata "$RUNNER_TEMP/quick-meta.json" "${crates[@]}" > "$RUNNER_TEMP/quick-calls.txt"
+          mapfile -t calls < "$RUNNER_TEMP/quick-calls.txt"
+          printf 'nextest calls: %s\n' "${#calls[@]}"
+          # CRATES is set here (the step's if:), so zero calls would run zero tests green
+          [ "${#calls[@]}" -gt 0 ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/quick-sel"
+          tgt="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          rc=0
+          for i in "${!calls[@]}"; do
+          read -ra group <<< "${calls[$i]}"
+          pkgs=""; for c in "${group[@]}"; do pkgs="$pkgs -p $c"; done
+          printf 'call %s:%s\n' "$i" "$pkgs"
+          touch "$RUNNER_TEMP/quick-sel/stamp"
           docker run --rm \
           -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -805,7 +834,14 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
+            bash -c "cargo nextest run --profile ci --lib --tests$pkgs" || rc=1
+          # each call overwrites nextest/ci/junit.xml; keep this one under its index, and
+          # only if this call wrote it (a stale file from the call before is not this one)
+          if [ "${tgt}/nextest/ci/junit.xml" -nt "$RUNNER_TEMP/quick-sel/stamp" ]; then
+            cp "${tgt}/nextest/ci/junit.xml" "$RUNNER_TEMP/quick-sel/$i.junit.xml"
+          else printf '::error::call %s left no junit of its own\n' "$i"; rc=1; fi
+          done
+          exit "$rc"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
       # registry equals the sources in this run).
@@ -841,8 +877,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/sigma"
-          cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-sel.junit.xml"
+          mkdir -p "$RUNNER_TEMP/sigma/quick-sel"
+          cp "$RUNNER_TEMP"/quick-sel/*.junit.xml "$RUNNER_TEMP/sigma/quick-sel/"
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
@@ -930,7 +966,16 @@ jobs:
           mkdir -p "$sig"
           python3 scripts/ci/sigma_executed.py --self-test
           read -ra crates <<< "$CRATES"
-          sel=""; for c in "${crates[@]}"; do sel="$sel -p $c"; done
+          # #5210: the same split as the run step, derived again here from CRATES
+          # (one list per call, so each call's junit is held to its own universe).
+          mkdir -p "$sig/quick-sel"
+          : > "$sig/quick-sel.calls"
+          if [ -n "$CRATES" ]; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" \
+              -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+              -w /workspace "$IMAGE" cargo metadata --no-deps --format-version 1 > "$sig/quick-meta.json"
+            bash scripts/ci/quick_tier_groups.sh --metadata "$sig/quick-meta.json" "${crates[@]}" > "$sig/quick-sel.calls"
+          fi
           read -ra targets <<< "$TARGETS"
           tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
                   | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
@@ -949,14 +994,20 @@ jobs:
             -e CARGO_BUILD_JOBS=8 \
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
-            -e SEL="$sel" -e TREE="$tree" -e EXPR="$EXPR" \
+            -e TREE="$tree" -e EXPR="$EXPR" \
             "$IMAGE" \
             bash -c 'set -euo pipefail
-              if [ -n "$SEL" ]; then cargo nextest list --profile ci --lib --tests $SEL --message-format json > /sigma/quick-sel.list.json; fi
+              i=0; while read -r g; do p=""; for c in $g; do p="$p -p $c"; done
+                cargo nextest list --profile ci --lib --tests $p --message-format json > "/sigma/quick-sel/$i.list.json"; i=$((i + 1))
+              done < /sigma/quick-sel.calls
               cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /sigma/quick-tree.list.json'
           rc=0
           if [ -n "$CRATES" ]; then
-            python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates" --junit "$sig/quick-sel.junit.xml" --list-json "$sig/quick-sel.list.json" || rc=1
+            n="$(wc -l < "$sig/quick-sel.calls")"
+            [ "$n" -gt 0 ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; rc=1; }
+            for ((i = 0; i < n; i++)); do
+              python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates, call $i" --junit "$sig/quick-sel/$i.junit.xml" --list-json "$sig/quick-sel/$i.list.json" || rc=1
+            done
           fi
           python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
           exit "$rc"
@@ -1404,8 +1455,8 @@ jobs:
         run: setsid --wait bash scripts/check_mutants_memory_cap.sh
       - name: memory-cap guard can still go RED (C137)
         run: setsid --wait bash scripts/check_mutants_memory_cap.sh --self-test
-      # The nightly full mutation job runs on the mutants pool, never the
-      # clean-room pool (C108). Same reason, same place: text only.
+      # The nightly full mutation job runs on the yoga clean-room pool, never the
+      # intel clean-room pool (C108). Same reason, same place: text only.
       - name: The nightly mutation job runs on the mutants pool (C108)
         run: setsid --wait bash scripts/check_mutants_pool.sh
       - name: mutants-pool guard can still go RED (C108)
@@ -1964,19 +2015,18 @@ jobs:
         run: |
           setsid --wait bash scripts/check_bashrs_gate.sh --self-test
           setsid --wait bash scripts/check_bashrs_gate.sh
-      # PMAT-746. The ONLY complexity gate in this repository was the LOCAL pmat
-      # pre-commit hook (cyclomatic <= 30, cognitive <= 25, staged files only);
-      # this workflow ran none. So the merge queue LANDS the debt and the
-      # individual developer pays it, on unrelated work, at the moment they try
-      # to commit: serve/handlers.rs sits at cognitive 69, tokenize.rs at 34/89.
-      # 715 offenders are recorded, shrink-only against origin/main, and the
-      # numbers may only fall. Case table FIRST, per the convention above: the
-      # 9s scan is only worth its cost if the comparator it feeds can still turn
-      # RED. Reads no clock and compiles nothing.
-      - name: Per-function complexity may only fall (shrink-only)
+      # #5182 (GATE/LAB). The per-function complexity ratchet (PMAT-746) and the
+      # shrink-only comparison of check_baseline_ratchets.sh left the PR path:
+      # a ratchet may not sit on a PR, merge-queue or release job. Both run
+      # nightly in guards-nightly.yml against main as it was 24 h earlier, and a
+      # red there opens or updates one ticket with one owner. What stays here is
+      # a fixed bound: every scripts/*.txt is classified (an unclassified
+      # baseline fails), plus the guard's own case table. Reads no clock, compares
+      # nothing, 0.1 s.
+      - name: Every baseline in scripts/ is classified (fixed bound; the ratchet runs nightly)
         run: |
-          setsid --wait bash scripts/check_complexity_ratchet.sh --selftest
-          setsid --wait bash scripts/check_complexity_ratchet.sh
+          setsid --wait bash scripts/check_baseline_ratchets.sh --self-test
+          setsid --wait bash scripts/check_baseline_ratchets.sh --classify-only
       # BSE-03 phase C (PMAT-1068): a ratchet verdict is a function of the
       # (comparand SHA, merge SHA) pair and of nothing else -- not of a file a
       # PR can rewrite, not of which pmat happened to be on PATH. The case

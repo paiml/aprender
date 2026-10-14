@@ -166,12 +166,15 @@ pub mod ab;
 pub mod bootstrap;
 pub mod drain;
 pub mod join;
+pub mod margin;
 pub mod metrics;
+pub mod parity;
 pub mod protocol;
 pub mod receipt;
 pub mod replicate;
 pub mod samples;
 pub mod ttft_verdict;
+pub mod v3_shape;
 pub mod window;
 pub mod witness;
 
@@ -189,7 +192,13 @@ pub use drain::{
     StreamWitness, StreamWitnessSource, DRAIN_SUSPECT_FRACTION, REQUEST_TIMEOUT_MS, SCHEMA_VERSION,
 };
 pub use join::{BandRatios, JoinKey, Ratio, RatioBound, RatioMethod};
+pub use margin::{token_ids, top2_margin, TokenLogprob, TopLogprob, LOGPROBS_SOURCE};
 pub use metrics::{agg_tok_s, aggregate_terms, BandMetrics, RequestSample};
+pub use parity::{
+    band_decode_tok_s, batch_formed_since, check_reference, evaluate_band, live_decode_tok_s,
+    run_verdict, ProbeBand, ProbeMatrix, ProbeModel, ProbePolicy, ProbeReference, ProbeSample,
+    ProbeSampler, ProbeSlot, ProbeWitness, SampleResult,
+};
 pub use protocol::{
     min_sampled_requests, warmup_requests, BandConfig, ClientModel, ProtocolParams, ProtocolSource,
     Sampler, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED, COOLDOWN, INTERLEAVED, MIN_WALL_CLOCK, N_PREDICT,
@@ -203,6 +212,10 @@ pub use receipt::{
 };
 pub use replicate::{log_ratio_lcb, t_lower_one_sided_95, ArmOrder, ReplicatePair, MIN_REPLICATES};
 pub use samples::{read_samples_gz, write_samples_gz, SamplesFile};
+pub use v3_shape::{
+    check_v3_shape, check_v3_shape_file, ShapeVerdict, BLESSED_MODEL_PREFIX, DECLARED_MIN_FLOOR,
+    NEAR_TIE_CAP, NEAR_TIE_EPS, S7_MIN_RATIO, V3_BANDS,
+};
 pub use window::{WindowController, WindowReport};
 pub use witness::{BatchInvariance, BatchInvarianceWitness};
 

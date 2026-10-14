@@ -2,6 +2,13 @@
 # Deployed from paiml/infra — CHANGED HERE deliberately; fold back upstream.
 # Spec: docs/specifications/unified-ci-pipeline.md
 #
+# Turns on wrapper scripts, which the list-phase timeout at the bottom needs. The
+# table form, not the top-level `experimental = [...]` array: nextest accepts both,
+# and scripts/check_nextest_ci_profile_no_fail_fast.sh's fallback reader refuses a
+# top-level key.
+[experimental]
+wrapper-scripts = true
+
 # `slow-warning` was not a nextest key. nextest does not reject an unknown key,
 # it prints `ignoring unknown configuration key: profile.ci.slow-warning` and
 # carries on -- so this profile had NO per-test timeout at all, and the warning
@@ -163,3 +170,20 @@ threads-required = "num-test-threads"
 filter = "test(/test_gpu_allocation_under_pressure/)"
 test-group = "gpu-exclusive"
 threads-required = "num-test-threads"
+
+# List-phase timeout (#5294). nextest has a per-test timeout (slow-timeout above)
+# but none for the phase that runs each test binary with `--list` before any test
+# starts. Merge-group run 38534258555: `realizar-<hash> --list --format terse` sat
+# at 0% CPU for 72 min and the shard ran 82 min until it was cancelled by hand,
+# naming nothing. A list-wrapper runs only the `--list` invocations through
+# `timeout`; test runs are untouched. Listing the largest binary (realizar, 16,543
+# tests, 1.18 MB of output) takes about 0.1 s, so 300 s cannot cut a real listing.
+# A hang now fails in 5 minutes with rc 104, naming the binary and exit code 124.
+# Measured on cargo-nextest 0.9.143 and 0.9.146 with a test binary that hangs at
+# `--list`: wrapped, rc 104 at the bound; unwrapped, it hangs until killed.
+[scripts.wrapper.list-timeout]
+command = "timeout --kill-after=10s 300s"
+
+[[profile.ci.scripts]]
+platform = { host = "cfg(all())" }
+list-wrapper = "list-timeout"

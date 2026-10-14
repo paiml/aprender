@@ -3,7 +3,8 @@
 //! The ids come from `GGUFModel::encode`, the function `apr run`, `apr serve` and
 //! `apr parity` tokenize prompts with, so a regression in how that function routes a
 //! vocabulary shows up here too. The output names the path that produced the ids: the
-//! canonical byte-level BPE (pre-tokenizer plus ranked merges, identical to llama.cpp), or the
+//! canonical byte-level BPE (pre-tokenizer plus ranked merges, identical to llama.cpp) or SPM-style
+//! BPE (`gemma4`, APR-EMBED-001 EG-1), or the
 //! greedy longest-match fallback and why it was taken. `scripts/tokenizer_parity.sh` compares
 //! these ids with the pinned llama.cpp's and refuses a fallback.
 //!
@@ -62,9 +63,14 @@ pub(crate) fn run_encode(
             Ok(_) => "canonical".to_string(),
             Err(refusal) => format!("greedy-fallback: {refusal}"),
         }
+    } else if realizar::gguf::spm_bpe::is_spm_bpe(&mapped.model.metadata) {
+        match realizar::gguf::spm_bpe::SpmBpe::from_gguf(&mapped.model.metadata, &vocab) {
+            Ok(_) => "canonical".to_string(),
+            Err(refusal) => format!("greedy-fallback: {refusal}"),
+        }
     } else {
         format!(
-            "greedy-fallback: tokenizer.ggml.model is {:?}, not a byte-level vocabulary",
+            "greedy-fallback: tokenizer.ggml.model is {:?}, not a byte-level or SPM-style BPE vocabulary",
             tokenizer_model.as_deref().unwrap_or("absent")
         )
     };

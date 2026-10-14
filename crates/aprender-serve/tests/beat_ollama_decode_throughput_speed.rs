@@ -40,6 +40,15 @@
 //! opposite fixes, and this gate must not pick one by accident — which is exactly what
 //! inheriting 0.90 did.
 //!
+//! ## 2026-10-10: SM_121 IS CALIBRATED FROM ITS OWN SAMPLES (aprender#5011)
+//!
+//! #2835 and #2800 are closed: the GB10 shortfall is a real deficit. Thirteen nights
+//! on gx10 (ratio 0.561-0.652, ollama within 2%) are now a sample set, so sm_121 gets
+//! its own NO-COLLAPSE floor, 0.49, derived by the sm_89 rule (12% under the worst
+//! observed median). It asserts that apr has not fallen off the GPU, nothing more:
+//! not parity, and not a guard against a slide from 0.60 to 0.50. Any OTHER silicon
+//! still yields UNCALIBRATED-SILICON.
+//!
 //! The unit tests below now DO run in CI: this target was added to `ci.yml`'s beat
 //! chain (since PMAT-3313, its fragment in `ci/explicit-test-commands.d/`). The
 //! header's own admission that they did not was still true today.
@@ -181,32 +190,62 @@ struct SiliconFloor {
 /// One entry per silicon this gate has been calibrated on. **Absence is meaningful**
 /// and is handled explicitly — see `UNCALIBRATED` in the assertion below. Adding a
 /// silicon here requires the derivation, not just the number.
-const SILICON_FLOORS: &[SiliconFloor] = &[SiliconFloor {
-    compute_cap: "8.9",
-    arch: "sm_89 (RTX 4090)",
-    floor: 0.90,
-    derived_from: "four measurements 2026-06-15..2026-07-31 on lambda-vector; worst \
-                   observed median 1.015, and 0.90 sits 12% under it so it does not \
-                   flake, while still catching the CPU-SIMD collapse at ratio ~0.065",
-}];
+const SILICON_FLOORS: &[SiliconFloor] = &[
+    SiliconFloor {
+        compute_cap: "8.9",
+        arch: "sm_89 (RTX 4090)",
+        floor: 0.90,
+        derived_from: "four measurements 2026-06-15..2026-07-31 on lambda-vector; worst \
+                       observed median 1.015, and 0.90 sits ~11% under it so it does not \
+                       flake, while still catching the CPU-SIMD collapse at ratio ~0.065",
+    },
+    SiliconFloor {
+        compute_cap: "12.1",
+        arch: "sm_121 (GB10)",
+        floor: GB10_FLOOR,
+        derived_from: "thirteen nightly executions on gx10 2026-08-30..2026-10-10 \
+                       (GB10_OBSERVED), ollama stable within 2%; worst observed median \
+                       0.561, and 0.49 is 0.561 x 0.88 rounded down, the same 12%-under-worst \
+                       rule as sm_89. A NO-COLLAPSE floor only: it catches the CPU-SIMD \
+                       collapse (~0.065), not a 0.60 -> 0.50 slide, and it is not parity - \
+                       the GB10 shortfall is a real deficit (#2800)",
+    },
+];
 
-/// The four GB10 executions, recorded as DATA and deliberately not turned into a
-/// floor. ollama is stable within 0.8% across them, so this is a reproducible
-/// measurement of apr on this silicon and not a noisy rig:
+/// The sm_121 no-collapse floor. See its `SILICON_FLOORS` derivation and
+/// `gb10_floor_is_derived_from_its_observations` below.
+const GB10_FLOOR: f64 = 0.49;
+
+/// Every GB10 execution of this beat in the nightly history (aprender#5011), as ratio of
+/// medians. The first four are the 2026-09-01 record that refused to become a floor
+/// ("four nights is not a sample set"); nine more nights later it is one. ollama is
+/// stable within 2% across all thirteen, so this measures apr on this silicon, not a
+/// noisy rig:
 ///
 /// ```text
-///   date        apr median-of-7   ollama median   ratio
-///   2026-08-30      105.6             182.3       0.579
-///   2026-08-30      117.9             182.3       0.647
-///   2026-08-31      116.0             181.8       0.638
-///   2026-09-01      112.0             180.9       0.619
+///   date        run          apr median-of-7   ollama median   ratio
+///   2026-08-30  33292383055      105.6             182.3       0.579
+///   2026-08-30  33298580389      117.9             182.3       0.647
+///   2026-08-31  33368225844      116.0             181.8       0.638
+///   2026-09-01  33478429326      112.0             180.9       0.619
+///   2026-09-02  33597985001      118.9             182.3       0.652
+///   2026-09-26  36278352788      100.4             178.8       0.561
+///   2026-09-29  36503343576      111.8             182.1       0.614
+///   2026-10-03  37161229337      108.3             181.7       0.596
+///   2026-10-04  37244001649      118.3             181.5       0.652
+///   2026-10-06  37398914871      114.7             181.8       0.631
+///   2026-10-07  37549659271      104.1             181.8       0.572
+///   2026-10-08  37707301146      102.6             181.4       0.565
+///   2026-10-10  38008296149      106.1             178.9       0.593
 /// ```
 ///
-/// Whether that is an honest GB10 number or a real sm_121 decode deficit is OPEN
-/// (aprender#2835, and #2800 argues the GB10 shortfall on #2786 is a real deficit).
-/// The two answers imply opposite fixes — recalibrate, or fix the kernel — and this
-/// gate must not pick one by accident, which is exactly what inheriting 0.90 did.
-const GB10_OBSERVED: &[f64] = &[0.579, 0.647, 0.638, 0.619];
+/// #2835 asked whether this is an honest GB10 number or a real sm_121 decode deficit;
+/// #2800 answered "real deficit". The floor does not contradict that: it asserts only
+/// that apr has not collapsed off the GPU, which is the failure this gate exists for.
+/// Closing the deficit is kernel work and would show up here as a higher band.
+const GB10_OBSERVED: &[f64] = &[
+    0.579, 0.647, 0.638, 0.619, 0.652, 0.561, 0.614, 0.596, 0.652, 0.631, 0.572, 0.565, 0.593,
+];
 
 /// Retained as the sm_89 floor's spelling for the contract mirror and the unit test
 /// below. Reading it directly in an assertion is what this fix removes.
@@ -574,15 +613,39 @@ fn every_floor_states_what_it_was_derived_from() {
 }
 
 #[test]
-fn gb10_is_deliberately_uncalibrated() {
-    // GB10 reports compute_cap 12.1. If someone adds an entry for it, this test must be
-    // the thing that makes them justify it — deleting this test is the visible act.
+fn gb10_floor_is_derived_from_its_observations() {
+    // This replaced `gb10_is_deliberately_uncalibrated`, whose own message set the price
+    // of adding a 12.1 entry: "bring the derivation and update GB10_OBSERVED". The
+    // derivation is now checked, not just written down (aprender#5011).
+    let f = floor_for("12.1").expect("GB10/sm_121 is calibrated from GB10_OBSERVED");
     assert!(
-        floor_for("12.1").is_none(),
-        "GB10/sm_121 has no derived floor. Four nights is data, not a calibration (S8: a \
-         threshold comes from samples, never from invention). If you are adding one, bring \
-         the derivation and update GB10_OBSERVED and aprender#2835."
+        GB10_OBSERVED.len() >= 13,
+        "the sm_121 floor was derived from 13 nights; it must not lose its samples"
     );
+    let worst = GB10_OBSERVED.iter().copied().fold(f64::INFINITY, f64::min);
+    // Same rule as sm_89: 12% under the worst observed median, rounded DOWN to 2 places.
+    let derived = (worst * 0.88 * 100.0).floor() / 100.0;
+    assert!(
+        (f.floor - derived).abs() < 1e-9,
+        "sm_121 floor {} is not worst-observed {worst} x 0.88 rounded down ({derived})",
+        f.floor
+    );
+    assert!(
+        f.floor < worst,
+        "a floor at or above an observed night would have failed that night"
+    );
+    assert!(
+        f.floor > CPU_FALLBACK_RATIO_CEILING,
+        "the floor must still catch the CPU-SIMD collapse it exists for"
+    );
+    assert!(
+        f.floor < ENFORCED_THRESHOLD,
+        "the sm_121 floor must not be the sm_89 one inherited again"
+    );
+}
+
+#[test]
+fn an_unanswered_probe_never_resolves_to_a_floor() {
     assert!(
         floor_for("<nvidia-smi did not answer>").is_none(),
         "an unanswered probe must never resolve to a floor"
