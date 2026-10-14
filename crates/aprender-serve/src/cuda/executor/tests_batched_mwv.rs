@@ -1,4 +1,4 @@
-//! #5303, #5279: the batched Q4_K, Q5_K and Q6_K GEMVs against their
+//! #5303, #5279: the batched Q4_K, Q5_K, Q6_K and Q8_0 GEMVs against their
 //! single-row GEMVs, row by row. A batched decode step may replace `m` single steps only
 //! if every row it produces is the single step's output to the bit.
 
@@ -17,8 +17,10 @@ const WARPS: &[u32] = &[2, 3, 4];
 /// One quant type: its super-block, its two GEMVs, and the shapes to check.
 struct Quant {
     name: &'static str,
-    /// Bytes per 256-value super-block.
+    /// Bytes per block of `block_values` weights.
     block_bytes: usize,
+    /// Weights per block: 256 for the K-quants, 32 for Q8_0.
+    block_values: u32,
     /// Bytes at the start of a block written as fixed f16 scales, then the
     /// rest pseudo-random; or, if `head` is false, the scales go at the end.
     scales: [u8; 4],
@@ -52,6 +54,7 @@ struct Quant {
 const Q4K: Quant = Quant {
     name: "q4k",
     block_bytes: 144,
+    block_values: 256,
     scales: [0x66, 0x2E, 0x66, 0x22],
     head: true,
     shapes: &[(64, 256), (48, 1024), (17, 3584), (40, 1000)],
@@ -65,6 +68,7 @@ const Q4K: Quant = Quant {
 const Q6K: Quant = Quant {
     name: "q6k",
     block_bytes: 210,
+    block_values: 256,
     scales: [0x66, 0x1E, 0, 0],
     head: false,
     shapes: &[(64, 256), (48, 1024), (17, 3584), (40, 512)],
@@ -78,6 +82,7 @@ const Q6K: Quant = Quant {
 const Q5K: Quant = Quant {
     name: "q5k",
     block_bytes: 176,
+    block_values: 256,
     scales: [0x66, 0x2E, 0x66, 0x22],
     head: true,
     shapes: &[(64, 256), (48, 1024), (17, 3584), (40, 1000)],
@@ -86,11 +91,27 @@ const Q5K: Quant = Quant {
     batched: CudaExecutor::batched_q5k_gemv_into,
 };
 
+/// Q8_0: d (f16 0.0062) leads the 34-byte block of 32 int8 weights. The
+/// kernel has no warp count; the last shape's k is not a multiple of 32, and
+/// (32, 2560) is the DeltaNet ba projection.
+const Q8_0: Quant = Quant {
+    name: "q8_0",
+    block_bytes: 34,
+    block_values: 32,
+    scales: [0x66, 0x1E, 0, 0],
+    head: true,
+    shapes: &[(64, 256), (32, 2560), (17, 3584), (40, 1000)],
+    warps: &[3],
+    single: CudaExecutor::q8_0_gemv_into,
+    batched: CudaExecutor::batched_q8_0_gemv_into,
+};
+
 /// Q6_K on the HW DP4A kernel, which quantizes activations to Q8_1 first.
 /// The kernel is built for 3 warps, so that is the only count launched.
 const Q6K_HW_DP4A: Quant = Quant {
     name: "q6k_hw_dp4a",
     block_bytes: 210,
+    block_values: 256,
     scales: [0x66, 0x1E, 0, 0],
     head: false,
     shapes: &[(64, 256), (48, 1024), (17, 3584), (40, 512)],
@@ -135,8 +156,13 @@ fn next(seed: &mut u32) -> u32 {
 /// `n` rows of super-blocks for `k` inputs: fixed small finite scales,
 /// pseudo-random everything else.
 fn weights(q: &Quant, n: u32, k: u32, mut seed: u32) -> Vec<u8> {
-    let blocks = (k.div_ceil(256) * n) as usize;
-    let fixed = if q.head { 4 } else { 2 };
+    let blocks = (k.div_ceil(q.block_values) * n) as usize;
+    // d and dmin lead a Q4_K or Q5_K block; Q6_K and Q8_0 carry d alone.
+    let fixed = if q.head && q.block_values == 256 {
+        4
+    } else {
+        2
+    };
     let mut out = Vec::with_capacity(blocks * q.block_bytes);
     for _ in 0..blocks {
         if q.head {
@@ -286,4 +312,14 @@ fn the_batch_rows_differ() {
             assert_ne!(row_a, row_b);
         }
     }
+}
+
+/// FALSIFY (#5279): the same for the batched Q8_0 GEMV, which serves the
+/// DeltaNet ba projections.
+#[test]
+#[serial]
+fn batched_q8_0_rows_are_bitwise_the_single_row_gemv() {
+    let mut ex = crate::cuda_executor_or_skip!(0);
+    let checked = check_quant(&mut ex, &Q8_0);
+    assert_eq!(checked, Q8_0.shapes.len() * Q8_0.warps.len() * ROWS.len());
 }

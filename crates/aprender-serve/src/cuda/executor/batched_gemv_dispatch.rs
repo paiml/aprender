@@ -4,7 +4,7 @@ impl CudaExecutor {
     ///
     /// Row `r` is bitwise what [`Self::gemv_dispatch`] gives for `input[r]`
     /// alone. Where the single-row kernel has a batched twin (Q4_K on `Mwv`,
-    /// Q5_K, and aligned Q6_K on `Mwv` or `HwDp4a`), the twin reads each
+    /// Q5_K, Q8_0, and aligned Q6_K on `Mwv` or `HwDp4a`), the twin reads each
     /// weight once for all rows; every other type and variant runs the
     /// single-row kernel once per row. One row is always the single-row call.
     #[allow(clippy::too_many_arguments)]
@@ -32,6 +32,7 @@ impl CudaExecutor {
                 self.batched_mwv_q6k_gemv_into(weight_ptr, input, output, m, n, k)
             },
             WeightQuantType::Q5K => self.batched_q5k_gemv_into(weight_ptr, input, output, m, n, k),
+            WeightQuantType::Q8_0 => self.batched_q8_0_gemv_into(weight_ptr, input, output, m, n, k),
             WeightQuantType::Q6K
                 if k.is_multiple_of(256) && self.gpu_profile.q6k == Q6kVariant::HwDp4a =>
             {

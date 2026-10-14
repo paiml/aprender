@@ -92,6 +92,7 @@ impl CudaKernels {
             },
             KernelType::Fp16Q4KGemv { k, n } => Fp16Q4KGemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::Q8_0Gemv { k, n } => Q8_0GemvKernel::new(*k, *n).emit_ptx_for_target(target),
+            KernelType::BatchedQ8_0Gemv { k, n } => BatchedQ8_0GemvKernel { k: *k, n: *n }.emit_ptx_for_target(target),
             KernelType::Q5_0Gemv { k, n } => generate_q5_0_candle_ptx(*k, *n),
             KernelType::Q4_0Gemv { k, n } => generate_q4_0_candle_ptx(*k, *n),
             KernelType::Q4_1Gemv { k, n } => generate_q4_1_candle_ptx(*k, *n),

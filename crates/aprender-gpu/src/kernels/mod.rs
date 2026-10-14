@@ -110,7 +110,7 @@ pub use quantize::{
     dequantize_nf4, pack_nf4_for_gpu, quantize_nf4, repack_q4k_interleaved, repack_q4k_w4a16,
     unpack_nf4_from_gpu, BatchedHwDp4aQ4KGemvKernel, BatchedHwDp4aQ6KGemvKernel,
     BatchedMwvQ4KGemvKernel, BatchedMwvQ6KGemvKernel, BatchedQ4KGemvKernel, BatchedQ5KGemvKernel,
-    BatchedQ6KGemvKernel, ChunkedTiledQ4KGemvKernel, CoalescedQ4KGemvKernel,
+    BatchedQ6KGemvKernel, BatchedQ8_0GemvKernel, ChunkedTiledQ4KGemvKernel, CoalescedQ4KGemvKernel,
     CoalescedQ6KGemvKernel, Dp4aQ4KGemmKernel, Dp4aQ4KGemvKernel, Dp4aQ6KGemvKernel,
     F16DequantKernel, Fp16Q4KGemvKernel, FusedFp32Q4KGemvKernel, FusedGateUpQ4KGemvKernel,
     FusedGateUpSwigluHwDp4aQ4KGemvKernel, FusedNf4GateUpGemmKernel, FusedQKVHwDp4aQ4KGemvKernel,

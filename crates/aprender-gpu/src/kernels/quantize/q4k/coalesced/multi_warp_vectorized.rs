@@ -38,7 +38,7 @@ impl Kernel for MultiWarpVectorizedQ4KGemvKernel {
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        build_mwv_q4k("mwv_q4k_gemv", self.num_warps, 1)
+        build_mwv_q4k("mwv_q4k_gemv", self.num_warps, 1, false)
     }
 }
 
@@ -69,13 +69,15 @@ impl Kernel for BatchedMwvQ4KGemvKernel {
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        build_mwv_q4k("batched_mwv_q4k_gemv", self.num_warps, self.m)
+        // #5279: with whole super-blocks no activation load can run past k.
+        let aligned = self.k.is_multiple_of(Q4K_SUPER_BLOCK_SIZE);
+        build_mwv_q4k("batched_mwv_q4k_gemv", self.num_warps, self.m, aligned)
     }
 }
 
 /// The MWV Q4_K GEMV over `rows` activation rows. With `rows == 1` it emits
 /// the single-row kernel's PTX unchanged.
-fn build_mwv_q4k(name: &str, num_warps: u32, rows: u32) -> PtxKernel {
+fn build_mwv_q4k(name: &str, num_warps: u32, rows: u32, aligned: bool) -> PtxKernel {
     let smem_size = (num_warps * rows * 4) as usize;
 
     PtxKernel::new(name)
@@ -411,79 +413,103 @@ fn build_mwv_q4k(name: &str, num_warps: u32, rows: u32) -> PtxKernel {
 
             // Each row reads its own activations against the same dequantized
             // weights; its partial sum adds in the single-row order.
-            for (&x_ptr, &acc) in x_rows.iter().zip(&accs) {
-                let pt = ctx.mov_f32_imm(0.0);
-
-                // GH-215 FIX: Bounds-check activation loads for non-256-aligned K.
-                // When K is not a multiple of 256, the last super-block has
-                // padding elements that would cause OOB reads into uninitialized
-                // GPU memory, producing garbage output.
-
-                // LOW nibbles
+            if aligned {
+                // #5279: lb and hb are multiples of 4 below k, so each run of
+                // four activations is one 16-byte vector load per row. The
+                // values, and the fma order below, are the predicated path's.
                 let lb64 = ctx.cvt_u64_u32(lb);
-                let xo = ctx.mul_u64(lb64, 4);
-                let xa = ctx.add_u64(x_ptr, xo);
-                let p_lb0 = ctx.setp_lt_u32(lb, k_dim);
-                let xv = ctx.ld_global_f32_predicated(xa, p_lb0, 0.0);
-                ctx.fma_f32_inplace(pt, xv, dq0);
-
-                let v = ctx.add_u32(lb, 1);
-                let v64 = ctx.cvt_u64_u32(v);
-                let xo = ctx.mul_u64(v64, 4);
-                let xa = ctx.add_u64(x_ptr, xo);
-                let p_lb1 = ctx.setp_lt_u32(v, k_dim);
-                let xv = ctx.ld_global_f32_predicated(xa, p_lb1, 0.0);
-                ctx.fma_f32_inplace(pt, xv, dq2);
-
-                let v = ctx.add_u32(lb, 2);
-                let v64 = ctx.cvt_u64_u32(v);
-                let xo = ctx.mul_u64(v64, 4);
-                let xa = ctx.add_u64(x_ptr, xo);
-                let p_lb2 = ctx.setp_lt_u32(v, k_dim);
-                let xv = ctx.ld_global_f32_predicated(xa, p_lb2, 0.0);
-                ctx.fma_f32_inplace(pt, xv, dq4);
-
-                let v = ctx.add_u32(lb, 3);
-                let v64 = ctx.cvt_u64_u32(v);
-                let xo = ctx.mul_u64(v64, 4);
-                let xa = ctx.add_u64(x_ptr, xo);
-                let p_lb3 = ctx.setp_lt_u32(v, k_dim);
-                let xv = ctx.ld_global_f32_predicated(xa, p_lb3, 0.0);
-                ctx.fma_f32_inplace(pt, xv, dq6);
-
-                // HIGH nibbles
+                let lo_off = ctx.mul_u64(lb64, 4);
                 let hb64 = ctx.cvt_u64_u32(hb);
-                let xo = ctx.mul_u64(hb64, 4);
-                let xa = ctx.add_u64(x_ptr, xo);
-                let p_hb0 = ctx.setp_lt_u32(hb, k_dim);
-                let xv = ctx.ld_global_f32_predicated(xa, p_hb0, 0.0);
-                ctx.fma_f32_inplace(pt, xv, dq1);
+                let hi_off = ctx.mul_u64(hb64, 4);
+                for (&x_ptr, &acc) in x_rows.iter().zip(&accs) {
+                    let pt = ctx.mov_f32_imm(0.0);
+                    let xa = ctx.add_u64(x_ptr, lo_off);
+                    let lo = ctx.ld_global_f32_v4(xa);
+                    let xa = ctx.add_u64(x_ptr, hi_off);
+                    let hi = ctx.ld_global_f32_v4(xa);
+                    for (xv, dq) in lo.into_iter().zip([dq0, dq2, dq4, dq6]) {
+                        ctx.fma_f32_inplace(pt, xv, dq);
+                    }
+                    for (xv, dq) in hi.into_iter().zip([dq1, dq3, dq5, dq7]) {
+                        ctx.fma_f32_inplace(pt, xv, dq);
+                    }
+                    ctx.add_f32_inplace(acc, pt);
+                }
+            } else {
+                for (&x_ptr, &acc) in x_rows.iter().zip(&accs) {
+                    let pt = ctx.mov_f32_imm(0.0);
 
-                let v = ctx.add_u32(hb, 1);
-                let v64 = ctx.cvt_u64_u32(v);
-                let xo = ctx.mul_u64(v64, 4);
-                let xa = ctx.add_u64(x_ptr, xo);
-                let p_hb1 = ctx.setp_lt_u32(v, k_dim);
-                let xv = ctx.ld_global_f32_predicated(xa, p_hb1, 0.0);
-                ctx.fma_f32_inplace(pt, xv, dq3);
+                    // GH-215 FIX: Bounds-check activation loads for non-256-aligned K.
+                    // When K is not a multiple of 256, the last super-block has
+                    // padding elements that would cause OOB reads into uninitialized
+                    // GPU memory, producing garbage output.
 
-                let v = ctx.add_u32(hb, 2);
-                let v64 = ctx.cvt_u64_u32(v);
-                let xo = ctx.mul_u64(v64, 4);
-                let xa = ctx.add_u64(x_ptr, xo);
-                let p_hb2 = ctx.setp_lt_u32(v, k_dim);
-                let xv = ctx.ld_global_f32_predicated(xa, p_hb2, 0.0);
-                ctx.fma_f32_inplace(pt, xv, dq5);
+                    // LOW nibbles
+                    let lb64 = ctx.cvt_u64_u32(lb);
+                    let xo = ctx.mul_u64(lb64, 4);
+                    let xa = ctx.add_u64(x_ptr, xo);
+                    let p_lb0 = ctx.setp_lt_u32(lb, k_dim);
+                    let xv = ctx.ld_global_f32_predicated(xa, p_lb0, 0.0);
+                    ctx.fma_f32_inplace(pt, xv, dq0);
 
-                let v = ctx.add_u32(hb, 3);
-                let v64 = ctx.cvt_u64_u32(v);
-                let xo = ctx.mul_u64(v64, 4);
-                let xa = ctx.add_u64(x_ptr, xo);
-                let p_hb3 = ctx.setp_lt_u32(v, k_dim);
-                let xv = ctx.ld_global_f32_predicated(xa, p_hb3, 0.0);
-                ctx.fma_f32_inplace(pt, xv, dq7);
+                    let v = ctx.add_u32(lb, 1);
+                    let v64 = ctx.cvt_u64_u32(v);
+                    let xo = ctx.mul_u64(v64, 4);
+                    let xa = ctx.add_u64(x_ptr, xo);
+                    let p_lb1 = ctx.setp_lt_u32(v, k_dim);
+                    let xv = ctx.ld_global_f32_predicated(xa, p_lb1, 0.0);
+                    ctx.fma_f32_inplace(pt, xv, dq2);
 
-                ctx.add_f32_inplace(acc, pt);
+                    let v = ctx.add_u32(lb, 2);
+                    let v64 = ctx.cvt_u64_u32(v);
+                    let xo = ctx.mul_u64(v64, 4);
+                    let xa = ctx.add_u64(x_ptr, xo);
+                    let p_lb2 = ctx.setp_lt_u32(v, k_dim);
+                    let xv = ctx.ld_global_f32_predicated(xa, p_lb2, 0.0);
+                    ctx.fma_f32_inplace(pt, xv, dq4);
+
+                    let v = ctx.add_u32(lb, 3);
+                    let v64 = ctx.cvt_u64_u32(v);
+                    let xo = ctx.mul_u64(v64, 4);
+                    let xa = ctx.add_u64(x_ptr, xo);
+                    let p_lb3 = ctx.setp_lt_u32(v, k_dim);
+                    let xv = ctx.ld_global_f32_predicated(xa, p_lb3, 0.0);
+                    ctx.fma_f32_inplace(pt, xv, dq6);
+
+                    // HIGH nibbles
+                    let hb64 = ctx.cvt_u64_u32(hb);
+                    let xo = ctx.mul_u64(hb64, 4);
+                    let xa = ctx.add_u64(x_ptr, xo);
+                    let p_hb0 = ctx.setp_lt_u32(hb, k_dim);
+                    let xv = ctx.ld_global_f32_predicated(xa, p_hb0, 0.0);
+                    ctx.fma_f32_inplace(pt, xv, dq1);
+
+                    let v = ctx.add_u32(hb, 1);
+                    let v64 = ctx.cvt_u64_u32(v);
+                    let xo = ctx.mul_u64(v64, 4);
+                    let xa = ctx.add_u64(x_ptr, xo);
+                    let p_hb1 = ctx.setp_lt_u32(v, k_dim);
+                    let xv = ctx.ld_global_f32_predicated(xa, p_hb1, 0.0);
+                    ctx.fma_f32_inplace(pt, xv, dq3);
+
+                    let v = ctx.add_u32(hb, 2);
+                    let v64 = ctx.cvt_u64_u32(v);
+                    let xo = ctx.mul_u64(v64, 4);
+                    let xa = ctx.add_u64(x_ptr, xo);
+                    let p_hb2 = ctx.setp_lt_u32(v, k_dim);
+                    let xv = ctx.ld_global_f32_predicated(xa, p_hb2, 0.0);
+                    ctx.fma_f32_inplace(pt, xv, dq5);
+
+                    let v = ctx.add_u32(hb, 3);
+                    let v64 = ctx.cvt_u64_u32(v);
+                    let xo = ctx.mul_u64(v64, 4);
+                    let xa = ctx.add_u64(x_ptr, xo);
+                    let p_hb3 = ctx.setp_lt_u32(v, k_dim);
+                    let xv = ctx.ld_global_f32_predicated(xa, p_hb3, 0.0);
+                    ctx.fma_f32_inplace(pt, xv, dq7);
+
+                    ctx.add_f32_inplace(acc, pt);
+                }
             }
 
             // Stride by num_warps

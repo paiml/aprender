@@ -370,6 +370,12 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// #5279: Q8_0 GEMV over activation rows on grid y, each row bitwise
+    /// equal to [`KernelType::Q8_0Gemv`] on that row alone
+    BatchedQ8_0Gemv {
+        k: u32,
+        n: u32,
+    },
     /// Q5_0 quantized GEMV (fused dequantization) - PAR-058
     Q5_0Gemv {
         k: u32,
