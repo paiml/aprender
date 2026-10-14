@@ -1,5 +1,3 @@
-    if [ -n "${CENSUS_BASE_REF:-}" ]; then BASE_REF=$CENSUS_BASE_REF; BASE_HOW="CENSUS_BASE_REF (the nightly 24 h comparand)"
-    else resolve_base HEAD || { printf 'NOT_MEASURED no base to compare against\n' >&2; return 2; }; fi
 #!/usr/bin/env bash
 # census_ratchet.sh -- the pv census ratchet (#4709, C303): the bound share of contracts/ only rises.
 #
@@ -7,24 +5,23 @@
 #
 #   bound    = by_anchoring.class + by_anchoring.instance   (pv census --format json)
 #   unbound  = by_anchoring.unanchored
-#   missing  = contract YAMLs with no non-empty top-level falsification_tests
+#   missing  = .no_falsification_tests (pv census; its release caps are a pv lib test, not here)
 #
 # PR mode (default): the comparand is scripts/lib/resolve_base.sh's base, extracted with `git archive`.
 #   RED if bound falls, if the unbound SHARE rises (integer cross-multiplication, never a float),
 #   or if missing rises.
 # --release <ver> --commit <sha>: the comparand is the previous v* tag before <sha>.
-#   RED if bound(sha) < bound(prev) + min(100, unbound(prev)), or if missing rises, or if missing is
-#   over the release's cap. The caps are the operator's four-part split (2026-10-14): 763 at
-#   d97936f470 (pv's own walker) -> <=572 at 0.72, <=381 at 0.73, <=190 at 0.74, 0 from 0.75.
+#   RED if bound(sha) < bound(prev) + min(100, unbound(prev)), or if missing rises. The per-release
+#   caps on missing (763 -> 572/381/190/0) live in pv (corpus_no_test_debt_within_release_cap), never here.
 #
-# NEVER VACUOUS: pv missing or without `census`, a non-zero exit, unparseable JSON, 0 contracts,
-# a parse error, or anchoring counts that do not sum to n_parsed is NOT_MEASURED, rc 2, never a pass.
+# NEVER VACUOUS: pv missing or without `census`, a non-zero exit, unparseable JSON, a census without
+# no_falsification_tests (a pv before #5295), 0 contracts, a parse error, or anchoring counts that do not
+# sum to n_parsed is NOT_MEASURED, rc 2, never a pass.
 #
 # This is a LAB check (C324): it runs nightly and on demand, never on a PR, merge-queue or release
 # path, and it is deliberately not named check_*.sh, so guard-tree does not pick it up.
 #
 #   bash scripts/census_ratchet.sh                                   # base -> working tree
-#   CENSUS_BASE_REF=<ref> bash scripts/census_ratchet.sh              # an explicit comparand (the nightly)
 #   CENSUS_BASE_REF=<ref> bash scripts/census_ratchet.sh             # an explicit comparand (the nightly)
 #   bash scripts/census_ratchet.sh --print [dir]                   # one measurement
 #   bash scripts/census_ratchet.sh --release 0.72.0 --commit <sha>
@@ -43,31 +40,20 @@ resolve_pv() {
     [ -n "${PV:-}" ]
 }
 
-# count_missing_ft <contracts dir> -> YAMLs whose top-level falsification_tests is absent or `[]`.
-# Interim instrument until pv reports the count itself (#4709 / the pv P0); awk, never grep, so the
-# count is the same under GNU grep and ugrep. It walks every YAML, 55 more than pv's universe, so it
-# reads 818 where pv's own walker reads 763: sound for never-rise, too strict for a release cap.
-count_missing_ft() {
-    find "$1" -name '*.yaml' -type f -exec awk '
-        FNR == 1 { if (f != "" && !ok) m++; f = FILENAME; ok = 0 }
-        /^falsification_tests:/ { if ($0 !~ /^falsification_tests:[ ]*\[\][ ]*$/) ok = 1 }
-        END { if (f != "" && !ok) m++; print m + 0 }' {} + | awk '{ s += $1 } END { print s + 0 }'
-}
-
 # measure <tree> -> prints "n bound unbound missing", or NOT_MEASURED <reason> on stderr and rc 2
 measure() {
-    local tree=$1 out rc line n errs un cl inst
+    local tree=$1 out rc line n errs un cl inst miss
     [ -d "$tree/contracts" ] || { printf 'NOT_MEASURED no contracts/ under %s\n' "$tree" >&2; return 2; }
     "$PV" --help 2> /dev/null | grep -q census || { printf 'NOT_MEASURED pv %s has no census\n' "$PV" >&2; return 2; }
     rc=0; out=$("$PV" census --format json "$tree/contracts" 2> /dev/null) || rc=$?
     [ "$rc" = 0 ] || { printf 'NOT_MEASURED pv census exited %s on %s\n' "$rc" "$tree" >&2; return 2; }
-    line=$(printf '%s' "$out" | jq -r '[.n_parsed, .n_parse_errors, .by_anchoring.unanchored, .by_anchoring.class, .by_anchoring.instance] | map(if type == "number" then . else error("not a number") end) | @tsv' 2> /dev/null) \
+    line=$(printf '%s' "$out" | jq -r '[.n_parsed, .n_parse_errors, .by_anchoring.unanchored, .by_anchoring.class, .by_anchoring.instance, .no_falsification_tests] | map(if type == "number" then . else error("not a number") end) | @tsv' 2> /dev/null) \
         || { printf 'NOT_MEASURED pv census printed no usable JSON on %s\n' "$tree" >&2; return 2; }
-    read -r n errs un cl inst <<< "$line"
+    read -r n errs un cl inst miss <<< "$line"
     [ "$n" -gt 0 ] || { printf 'NOT_MEASURED 0 contracts parsed on %s\n' "$tree" >&2; return 2; }
     [ "$errs" = 0 ] || { printf 'NOT_MEASURED %s parse errors on %s\n' "$errs" "$tree" >&2; return 2; }
     [ $((un + cl + inst)) = "$n" ] || { printf 'NOT_MEASURED anchoring %s+%s+%s != n_parsed %s on %s\n' "$un" "$cl" "$inst" "$n" "$tree" >&2; return 2; }
-    printf '%s %s %s %s\n' "$n" $((cl + inst)) "$un" "$(count_missing_ft "$tree/contracts")"
+    printf '%s %s %s %s\n' "$n" $((cl + inst)) "$un" "$miss"
 }
 
 # extract <ref> <dir> -> contracts/ at <ref> into <dir>
@@ -75,25 +61,15 @@ extract() {
     mkdir -p "$2" && git -C "$REPO_ROOT" archive --format=tar "$1" -- contracts | tar -xf - -C "$2"
 }
 
-# missing_cap <ver> -> the release's cap on missing, or empty for a release before the split
-missing_cap() {
-    local major minor
-    IFS=. read -r major minor _ <<< "${1#v}"
-    if [ "$major" != 0 ] || [ "$minor" -ge 75 ]; then echo 0; return; fi
-    case "$minor" in 72) echo 572 ;; 73) echo 381 ;; 74) echo 190 ;; *) echo "" ;; esac
-}
-
 # judge <base "n b u m"> <head "n b u m"> <mode pr|release> [ver] -> rc 0 GREEN / 1 RED, one line per rule
 judge() {
-    local bn bb bu bm hn hb hu hm need cap rc=0
+    local bn bb bu bm hn hb hu hm need rc=0
     read -r bn bb bu bm <<< "$1"; read -r hn hb hu hm <<< "$2"
     printf '  base n=%s bound=%s unbound=%s missing_ft=%s\n  head n=%s bound=%s unbound=%s missing_ft=%s\n' \
         "$bn" "$bb" "$bu" "$bm" "$hn" "$hb" "$hu" "$hm"
     if [ "$3" = release ]; then
         need=$((bb + (bu < 100 ? bu : 100)))
         [ "$hb" -ge "$need" ] || { printf 'RED   bound %s < %s (prev %s + step min(100, %s))\n' "$hb" "$need" "$bb" "$bu"; rc=1; }
-        cap=$(missing_cap "$4")
-        if [ -n "$cap" ] && [ "$hm" -gt "$cap" ]; then printf 'RED   missing_ft %s > %s, the cap for %s\n' "$hm" "$cap" "$4"; rc=1; fi
     else
         [ "$hb" -ge "$bb" ] || { printf 'RED   bound fell %s -> %s\n' "$bb" "$hb"; rc=1; }
         # unbound share rose: hu/hn > bu/bn  <=>  hu*bn > bu*hn
@@ -174,23 +150,22 @@ self_test() {
     pr_case "drop a bound and an unbound contract: RED (bound fell)" 1
     reset; printf 'not: [valid\n' > "$d/head/contracts/z.yaml"; pr_case "a parse error: NOT_MEASURED" 2
     reset; rm -f "${d:?}"/head/contracts/*.yaml; pr_case "0 contracts: NOT_MEASURED" 2
-    # release rows: judge only (the step arithmetic and the caps), no tags needed
+    # release rows: judge only (the step arithmetic), no tags needed
     got=0; judge "100 10 90 50" "120 20 100 50" release 0.71.9 > /dev/null || got=$?; row "release short of the step: RED" 1 "$got"
     got=0; judge "100 10 90 50" "120 100 20 50" release 0.71.9 > /dev/null || got=$?; row "release meets the step: GREEN" 0 "$got"
     got=0; judge "100 10 5 50" "100 15 0 50" release 0.71.9 > /dev/null || got=$?; row "step capped at unbound(prev): GREEN" 0 "$got"
-    got=0; judge "1913 50 1863 763" "2000 160 1840 573" release 0.72.0 > /dev/null || got=$?; row "0.72.0 at missing 573 (cap 572): RED" 1 "$got"
-    got=0; judge "1913 50 1863 763" "2000 160 1840 572" release 0.72.0 > /dev/null || got=$?; row "0.72.0 at missing 572: GREEN" 0 "$got"
-    got=0; judge "1974 500 1474 1" "2000 600 1400 1" release 0.75.0 > /dev/null || got=$?; row "0.75.0 at missing 1 (cap 0): RED" 1 "$got"
+    got=0; judge "100 10 90 50" "120 100 20 51" release 0.71.9 > /dev/null || got=$?; row "release with missing risen: RED" 1 "$got"
     # stub pv rows: each refusal of the instrument is NOT_MEASURED
     reset
     stub() { printf '#!/usr/bin/env bash\ncase "$1" in --help) echo "census lint";; *) %s;; esac\n' "$1" > "$d/pv-stub"; chmod +x "$d/pv-stub"; }
     stub_case() { local rc=0 save=$PV; PV=$d/pv-stub; measure "$d/head" > /dev/null 2>&1 || rc=$?; PV=$save; row "$1" 2 "$rc"; }
     stub 'echo garbage'; stub_case "stub pv printing garbage: NOT_MEASURED"
     stub 'exit 3'; stub_case "stub pv exiting 3: NOT_MEASURED"
-    stub "echo '{\"n_parsed\":2,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":1,\"class\":0,\"instance\":0}}'"; stub_case "anchoring short of n_parsed: NOT_MEASURED"
-    stub "echo '{\"n_parsed\":2,\"n_parse_errors\":1,\"by_anchoring\":{\"unanchored\":2,\"class\":0,\"instance\":0}}'"; stub_case "a parse error reported with exit 0: NOT_MEASURED"
-    stub "echo '{\"n_parsed\":0,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":0,\"class\":0,\"instance\":0}}'"; stub_case "0 contracts reported with exit 0: NOT_MEASURED"
-    stub "echo '{\"n_parsed\":1,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":1,\"class\":0,\"instance\":0}}'; exit 3"; stub_case "good JSON but exit 3: NOT_MEASURED"
+    stub "echo '{\"n_parsed\":2,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":1,\"class\":0,\"instance\":0},\"no_falsification_tests\":0}'"; stub_case "anchoring short of n_parsed: NOT_MEASURED"
+    stub "echo '{\"n_parsed\":2,\"n_parse_errors\":1,\"by_anchoring\":{\"unanchored\":2,\"class\":0,\"instance\":0},\"no_falsification_tests\":0}'"; stub_case "a parse error reported with exit 0: NOT_MEASURED"
+    stub "echo '{\"n_parsed\":0,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":0,\"class\":0,\"instance\":0},\"no_falsification_tests\":0}'"; stub_case "0 contracts reported with exit 0: NOT_MEASURED"
+    stub "echo '{\"n_parsed\":1,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":1,\"class\":0,\"instance\":0},\"no_falsification_tests\":0}'; exit 3"; stub_case "good JSON but exit 3: NOT_MEASURED"
+    stub "echo '{\"n_parsed\":1,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":1,\"class\":0,\"instance\":0}}'"; stub_case "a pv without no_falsification_tests (pre-#5295): NOT_MEASURED"
     printf '#!/usr/bin/env bash\necho lint\n' > "$d/pv-stub"; stub_case "pv without census: NOT_MEASURED"
     rm -rf "${d:?}"
     [ "$bad" = 0 ] && { echo "SELF-TEST PASSED"; return 0; }
