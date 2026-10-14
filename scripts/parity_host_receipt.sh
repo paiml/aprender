@@ -696,7 +696,10 @@ resources_by_band() {
             subject: [.[] | select(.lane == "subject") | .window],
             comparator: [.[] | select(.lane == "comparator") | .window]}}) | from_entries'
 }
-resources=$(resources_by_band) || resources='{}'
+if ! resources=$(resources_by_band); then
+    echo "parity_host_receipt: resources_by_band failed; .parity.resources records it as absent" >&2
+    resources='{"absent": "resources_by_band failed on this host; see the run log"}'
+fi
 if [ "$OUT" = "-" ]; then
     jq --argjson r "$resources" '.parity.resources = $r' "$WORK/parity.json"
 else

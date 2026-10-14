@@ -11,7 +11,8 @@
 #                             counters at this instant, read from /proc
 #   proc_window BEFORE AFTER  one JSON object: what the process spent between
 #                             two snapshots (CPU seconds, faults, IO bytes) and
-#                             the peak RSS it had reached by AFTER
+#                             VmHWM at AFTER: the lifetime peak RSS so far, which
+#                             includes every earlier window, not this one alone
 #
 # What it does NOT claim:
 #   - energy is the CPU PACKAGE's (RAPL), host-wide, never the process's. It is
@@ -81,7 +82,8 @@ proc_window() {
           cpu_sys_s: (d("stime_ticks") / $b.clk_tck),
           minflt: d("minflt"), majflt: d("majflt"),
           read_bytes: d("read_bytes"), write_bytes: d("write_bytes"),
-          peak_rss_mib: (if $b.vm_hwm_kb == null then null else ($b.vm_hwm_kb / 1024 | floor) end),
+          vm_hwm_mib: (if $b.vm_hwm_kb == null then null else ($b.vm_hwm_kb / 1024 | floor) end),
+          vm_hwm_scope: "process-lifetime high-water at window end (VmHWM), cumulative over earlier replicates, not this window alone",
           rss_end_mib: (if $b.vm_rss_kb == null then null else ($b.vm_rss_kb / 1024 | floor) end),
           threads: $b.threads,
           vram_mib: $b.vram_mib, vram_why: $b.vram_why,
