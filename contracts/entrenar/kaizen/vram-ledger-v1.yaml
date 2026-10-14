@@ -33,7 +33,6 @@ metadata:
 equations:
   capacity_invariant:
     formula: "sum(active[i].budget_mb) + new_budget <= total_mb × reserve_factor"
-    lean_theorem: Theorems.Capacity_Invariant
     domain: "active: Vec<Reservation> where pid_alive(r.pid) && !lease_expired(r)"
     codomain: "bool"
     invariants:
@@ -43,7 +42,6 @@ equations:
 
   atomic_write:
     formula: "write(tmp_path, data) → fsync(tmp) → rename(tmp_path, ledger_path)"
-    lean_theorem: Theorems.Atomic_Write
     domain: "tmp_path and ledger_path on same filesystem"
     invariants:
       - "rename(2) is atomic on POSIX — no partial reads"
@@ -52,7 +50,6 @@ equations:
 
   lease_expiry:
     formula: "expired(r) := now() > r.started + lease_duration"
-    lean_theorem: Theorems.Lease_Expiry
     domain: "lease_duration = 24h (default, configurable)"
     invariants:
       - "Expired reservations treated as dead — pruned on next access"
@@ -61,7 +58,6 @@ equations:
 
   pid_liveness:
     formula: "alive(pid) := exists(/proc/{pid}/stat)"
-    lean_theorem: Theorems.Pid_Liveness
     domain: "Linux only (procfs)"
     invariants:
       - "PID reuse: 32-bit PID space, reuse after ~32K PIDs — acceptable risk"
@@ -69,7 +65,6 @@ equations:
 
   reservation_id:
     formula: "id = hash(gpu_uuid, pid, started_ns)"
-    lean_theorem: Theorems.Reservation_Id
     domain: "gpu_uuid from nvidia-smi -L, pid from getpid(), started_ns from clock_monotonic"
     invariants:
       - "Unique within a single GPU's ledger"
