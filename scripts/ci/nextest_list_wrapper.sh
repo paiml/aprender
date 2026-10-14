@@ -41,8 +41,33 @@ dump_proc() {
     fi
 }
 
+# Stop the binary and reap it: signal, up to 10 s grace, then KILL.
+stop_child() {
+    local sig="$1" grace=0
+    kill -"$sig" "$pid" 2>/dev/null
+    while kill -0 "$pid" 2>/dev/null && [ "$grace" -lt 100 ]; do
+        sleep 0.1
+        grace=$((grace + 1))
+    done
+    kill -KILL "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+}
+
+# `timeout` killed its child when it was itself signalled; without this, a TERM
+# from nextest (cancel, its own timeout) would end only this script and leave
+# the binary running on the runner, the leftover process this file exists to
+# stop. A KILL cannot be caught, here or by `timeout`.
+forward() {
+    [ -n "$pid" ] && stop_child "$1"
+    exit "$2"
+}
+
+pid=""
 run_wrapped() {
-    local limit="${NEXTEST_LIST_TIMEOUT_S:-300}" pid ticks=0 grace=0
+    local limit="${NEXTEST_LIST_TIMEOUT_S:-300}" ticks=0
+    trap 'forward TERM 143' TERM
+    trap 'forward INT 130' INT
+    trap 'forward HUP 129' HUP
     # 0<&0: a background job in a non-interactive shell otherwise gets /dev/null
     # as stdin, and the binary must see the same stdin nextest gave this script.
     "$@" 0<&0 &
@@ -58,13 +83,7 @@ run_wrapped() {
                 dump_proc reader "$PPID"
                 printf '=== end dump ===\n'
             } >&2
-            kill -TERM "$pid" 2>/dev/null
-            while kill -0 "$pid" 2>/dev/null && [ "$grace" -lt 100 ]; do
-                sleep 0.1
-                grace=$((grace + 1))
-            done
-            kill -KILL "$pid" 2>/dev/null
-            wait "$pid" 2>/dev/null
+            stop_child TERM
             return 124
         fi
         sleep 0.1
@@ -104,6 +123,15 @@ if [ "${1:-}" = "--self-test" ]; then
 
     printf 'in\n' | bash "$self" cat > "$SD/in" 2>/dev/null
     check "row 5 the binary sees the caller's stdin, not /dev/null" "$(cat "$SD/in")" "in"
+
+    bash "$self" bash -c 'echo $$ > "$1"; exec sleep 600' _ "$SD/cpid" 2>/dev/null &
+    wpid=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [ -s "$SD/cpid" ] && break; sleep 0.1; done
+    kill -TERM "$wpid"
+    wait "$wpid"; rc=$?
+    check "row 6 a TERM to the wrapper exits 143" "$rc" "143"
+    if kill -0 "$(cat "$SD/cpid")" 2>/dev/null; then alive=yes; kill -KILL "$(cat "$SD/cpid")"; else alive=no; fi
+    check "row 6 the TERM reaches the binary, which is gone (no orphan)" "$alive" "no"
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
     printf '\nSELF-TEST PASSED\n'
