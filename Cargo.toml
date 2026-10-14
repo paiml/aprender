@@ -172,6 +172,12 @@ keywords = ["machine-learning", "inference", "training", "gpu", "simd"]
 categories = ["science", "algorithms"]
 homepage = "https://github.com/paiml/aprender"
 
+# The rust-toolchain.toml channel, repeated: a consumer build (the release clean room) deletes
+# rust-toolchain.toml, and the kernel-registry input set still needs the pin. The two must
+# agree; aprender-serve's kernel_registry tests fail naming both when they do not.
+[workspace.metadata.toolchain]
+channel = "1.93.0"
+
 [workspace.dependencies]
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
