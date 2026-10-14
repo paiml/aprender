@@ -311,6 +311,14 @@ impl crate::session::Session<Qwen35Forward> {
             Backend::Cpu(_) => None,
         })
     }
+
+    /// #5279 P7: where a batched slot copies its state while prefilling
+    /// `prompt`, as this session's own turn would
+    /// ([`crate::session::ArchForward::checkpoint_at`]).
+    #[cfg(feature = "cuda")]
+    pub(crate) fn batch_checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
+        crate::session::ArchForward::checkpoint_at(self.engine(), prompt)
+    }
 }
 
 /// The Qwen3.5 hybrid's forward: the only Qwen3.5 code a verb reaches, and

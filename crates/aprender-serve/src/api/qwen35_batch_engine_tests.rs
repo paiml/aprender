@@ -77,11 +77,23 @@ struct Scheduler {
     counter: Arc<crate::api::InFlightCounter>,
     /// The session, so the test can wait for the scheduler to let it go.
     served: std::sync::Weak<Qwen35Served>,
+    /// The engine, for its counters; weak, so it never outlives the scheduler.
+    engine: std::sync::Weak<std::sync::RwLock<Qwen35BatchEngine>>,
 }
 
 impl Scheduler {
     fn tx(&self) -> &tokio::sync::mpsc::Sender<CudaBatchRequest> {
         self.tx.as_ref().expect("held until drop")
+    }
+
+    /// Prompt rows the engine resumed from kept copies so far.
+    fn reused(&self) -> u64 {
+        let engine = self
+            .engine
+            .upgrade()
+            .expect("the scheduler holds its engine");
+        let rows = engine.read().expect("the engine lock").reused_rows();
+        rows
     }
 }
 
@@ -130,9 +142,14 @@ fn scheduler() -> Option<Scheduler> {
         window_ms: 200,
     };
     Some(Scheduler {
-        tx: Some(spawn_cuda_batch_scheduler(engine, config, counter.clone())),
+        tx: Some(spawn_cuda_batch_scheduler(
+            Arc::clone(&engine),
+            config,
+            counter.clone(),
+        )),
         counter,
         served: Arc::downgrade(&served),
+        engine: Arc::downgrade(&engine),
     })
 }
 
@@ -177,6 +194,42 @@ fn four_concurrent_requests_batch_and_match_their_solo_turns() {
         assert_eq!(got, &alone[i], "request {i} diverged from its solo turn");
     }
     eprintln!("[#5293] m=4: 4 requests x {STEPS} tokens equal their solo turns");
+}
+
+/// FALSIFY (#5279 P7): a band whose prompts extend an earlier band's resumes
+/// each slot from the copy the earlier slot kept, so the shared rows (the
+/// earlier prompts but their last tokens: 0 + 3 + 6 + 1) are not prefilled
+/// again, and every request still gets exactly the tokens its solo turn got.
+#[test]
+#[serial_test::serial]
+fn a_band_extending_an_earlier_one_resumes_its_prefixes_and_matches_solo() {
+    let Some(s) = scheduler() else {
+        return;
+    };
+    let longer: Vec<Vec<u32>> = PROMPTS
+        .iter()
+        .map(|p| [p, &[11, 13][..]].concat())
+        .collect();
+    let longer: Vec<&[u32]> = longer.iter().map(Vec::as_slice).collect();
+    let alone: Vec<Vec<u32>> = longer
+        .iter()
+        .map(|p| band(s.tx(), &[p], None).remove(0).0)
+        .collect();
+    assert_eq!(s.reused(), 0, "a lone request is the session's turn");
+
+    let _ = band(s.tx(), &PROMPTS, None);
+    assert_eq!(s.reused(), 0, "the first band has nothing to resume");
+    let together = band(s.tx(), &longer, None);
+    assert_eq!(s.counter.peak_in_flight(), 4, "both bands formed m = 4");
+    assert_eq!(
+        s.reused(),
+        3 + 6 + 1,
+        "each slot resumed its earlier prompt's head"
+    );
+    for (i, (got, _)) in together.iter().enumerate() {
+        assert_eq!(got, &alone[i], "request {i} diverged from its solo turn");
+    }
+    eprintln!("[#5279] P7: 10 shared rows resumed, 4 requests equal their solo turns");
 }
 
 /// How far a batched slot's logprob may sit from its solo turn's. The solo

@@ -11,6 +11,11 @@
 //! them, in the session's order. The session's state, and the prefix it
 //! keeps for its next turn, are never touched by a batch.
 //!
+//! A finished slot's state is kept, with a copy of its recurrent half taken
+//! where the session would take one (a chat's history, else the prompt but
+//! its last token). A later prompt that begins with a kept copy's tokens is
+//! resumed from it and prefills only the rest (#5279 P7).
+//!
 //! What a batched slot does not do, as on the dense batched path: `seed`. A
 //! batch the session serves from the CPU records no logprobs. The chat
 //! handler keeps a request that asks for a trace on the session.
@@ -24,17 +29,44 @@ use crate::api::{AppState, Qwen35Served};
 use crate::error::{RealizarError, Result};
 use crate::gguf::logprobs::StepLogprobs;
 use crate::gguf::qwen35_session::Qwen35Session;
+use crate::gguf::Qwen35CudaCheckpoint;
 use crate::gguf::{
     select_batched_token, OwnedQuantizedModel, Qwen35CudaModel, Qwen35CudaState, Qwen35StepOut,
 };
 use crate::gguf::{BatchedDecodeState, QuantizedGenerateConfig};
 use crate::session::penalty_active;
 
+/// #5279 P7: finished slots' states kept for later admissions, at most.
+const POOL_MAX: usize = 16;
+
+/// #5279 P7: a slot's state is allocated for a whole number of these
+/// positions, so a later, slightly longer prompt still fits it.
+const STATE_GRANULE: usize = 256;
+
+/// A device state and the prefix it can resume from: `copy` holds its
+/// recurrent half after `tokens` (empty: no usable copy), and its KV rows
+/// below `tokens.len()` still hold those tokens.
+struct Held {
+    state: Qwen35CudaState,
+    tokens: Vec<u32>,
+    copy: Option<Qwen35CudaCheckpoint>,
+}
+
 /// The batch engine over a served Qwen3.5 session.
 pub struct Qwen35BatchEngine {
     served: Arc<Qwen35Served>,
     /// Slot `i`'s device state. `None` only while a decode step has it out.
     states: Vec<Option<Qwen35CudaState>>,
+    /// Slot `i`'s prefix copy, `(tokens, copy)` as in [`Held`].
+    copies: Vec<(Vec<u32>, Option<Qwen35CudaCheckpoint>)>,
+    /// #5279 P7: finished slots' states, for a later prompt that repeats the
+    /// prefix one of them holds.
+    pool: Vec<Held>,
+    /// A decode step failed, so the batch's states are unknown: none is pooled.
+    poisoned: bool,
+    /// Prompt rows that admissions resumed from a kept copy instead of
+    /// prefilling.
+    reused_rows: u64,
 }
 
 impl Qwen35BatchEngine {
@@ -44,8 +76,121 @@ impl Qwen35BatchEngine {
         Self {
             served,
             states: Vec::new(),
+            copies: Vec::new(),
+            pool: Vec::new(),
+            poisoned: false,
+            reused_rows: 0,
         }
     }
+
+    /// #5279 P7: prompt rows that admissions resumed from a kept prefix
+    /// instead of prefilling.
+    #[must_use]
+    pub fn reused_rows(&self) -> u64 {
+        self.reused_rows
+    }
+
+    /// Take slot `i`'s state out, with its copy; `None` when it has none.
+    fn release(&mut self, i: usize) -> Option<Held> {
+        let state = self.states.get_mut(i)?.take()?;
+        let (tokens, copy) = std::mem::take(&mut self.copies[i]);
+        Some(Held {
+            state,
+            tokens,
+            copy,
+        })
+    }
+
+    /// Keep `held` for a later admission, dropping the oldest past
+    /// [`POOL_MAX`].
+    fn keep(&mut self, held: Held) {
+        self.pool.push(held);
+        if self.pool.len() > POOL_MAX {
+            self.pool.remove(0);
+        }
+    }
+
+    /// Pool every slot's state, unless a failed step left them unknown.
+    fn pool_all(&mut self) {
+        let poisoned = std::mem::take(&mut self.poisoned);
+        for i in 0..self.states.len() {
+            if let (Some(held), false) = (self.release(i), poisoned) {
+                self.keep(held);
+            }
+        }
+        self.states.clear();
+        self.copies.clear();
+    }
+
+    /// A state holding every token of `prompt` but the last, resumed from
+    /// the pooled state that holds the longest prefix of it, or allocated.
+    /// With `split`, the state's recurrent half is copied after
+    /// `prompt[..split]` on the way.
+    fn admit(
+        &mut self,
+        model: &mut Qwen35CudaModel<'static>,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        split: Option<usize>,
+    ) -> Result<Held> {
+        if prompt.is_empty() {
+            return Err(RealizarError::InvalidShape {
+                reason: "qwen35_batch: an empty prompt has no token to decode from".to_string(),
+            });
+        }
+        let head = &prompt[..prompt.len() - 1];
+        let need = prompt.len() + config.max_tokens;
+        let held = match take_best(&mut self.pool, head, need) {
+            Some(held) => held,
+            None => {
+                let len = need
+                    .next_multiple_of(STATE_GRANULE)
+                    .min(self.served.context_length)
+                    .max(need);
+                Held {
+                    state: model.new_state_with_len(len)?,
+                    tokens: Vec::new(),
+                    copy: None,
+                }
+            },
+        };
+        let (held, reused) = prefilled_state(model, head, held, split)?;
+        self.reused_rows += reused as u64;
+        Ok(held)
+    }
+
+    /// Seat `held` in slot `i`, or in a new last slot.
+    fn seat(&mut self, i: Option<usize>, held: Held) {
+        let Held {
+            state,
+            tokens,
+            copy,
+        } = held;
+        if let Some(i) = i {
+            self.states[i] = Some(state);
+            self.copies[i] = (tokens, copy);
+        } else {
+            self.states.push(Some(state));
+            self.copies.push((tokens, copy));
+        }
+    }
+}
+
+/// Take from `pool` the state that resumes `head` furthest and has room for
+/// `need` positions; else the one with room whose copy is worth least. `None`
+/// when none has room.
+fn take_best(pool: &mut Vec<Held>, head: &[u32], need: usize) -> Option<Held> {
+    let rank = |h: &Held| {
+        if !h.tokens.is_empty() && head.starts_with(&h.tokens) {
+            (1, h.tokens.len())
+        } else {
+            (0, usize::MAX - h.tokens.len())
+        }
+    };
+    let best = (0..pool.len())
+        .filter(|&i| pool[i].state.max_seq_len() >= need)
+        .max_by_key(|&i| rank(&pool[i]))?;
+    Some(pool.remove(best))
 }
 
 impl AppState {
@@ -87,25 +232,41 @@ fn is_greedy(config: &QuantizedGenerateConfig) -> bool {
     config.temperature == 0.0 || config.top_k == 1
 }
 
-/// A device state for `prompt` and its whole budget, holding every prompt
-/// token but the last: the first decode step runs the last one, at position
-/// `prompt.len() - 1`, as the dense batched path does.
+/// `held` advanced to hold `head`, a prompt's every token but the last: the
+/// first decode step runs the last one, at position `head.len()`, as the
+/// dense batched path does. A copy whose tokens begin `head` is restored and
+/// only the rest is prefilled (#5279 P7); otherwise the state starts from
+/// zero. With `split`, the recurrent half is copied after `head[..split]`.
+/// Returns the state and the rows it resumed instead of prefilling.
 fn prefilled_state(
     model: &mut Qwen35CudaModel<'static>,
-    prompt: &[u32],
-    config: &QuantizedGenerateConfig,
-) -> Result<Qwen35CudaState> {
-    if prompt.is_empty() {
-        return Err(RealizarError::InvalidShape {
-            reason: "qwen35_batch: an empty prompt has no token to decode from".to_string(),
-        });
+    head: &[u32],
+    mut held: Held,
+    split: Option<usize>,
+) -> Result<(Held, usize)> {
+    let resumes = !held.tokens.is_empty() && head.starts_with(&held.tokens);
+    let restored = match (&held.copy, resumes) {
+        (Some(copy), true) => model.restore_checkpoint(copy, &mut held.state)?,
+        _ => false,
+    };
+    let start = if restored {
+        held.tokens.len()
+    } else {
+        model.reset_state(&mut held.state)?;
+        held.tokens.clear();
+        0
+    };
+    let mut pos = start;
+    if let Some(k) = split.filter(|&k| k > start && k <= head.len()) {
+        model.prefill(&head[start..k], &mut held.state, start)?;
+        model.save_checkpoint(&held.state, &mut held.copy)?;
+        held.tokens = head[..k].to_vec();
+        pos = k;
     }
-    let mut state = model.new_state_with_len(prompt.len() + config.max_tokens)?;
-    let head = &prompt[..prompt.len() - 1];
-    if !head.is_empty() {
-        model.prefill(head, &mut state, 0)?;
+    if pos < head.len() {
+        model.prefill(&head[pos..], &mut held.state, pos)?;
     }
-    Ok(state)
+    Ok((held, start))
 }
 
 /// The device model, or `None` when the session serves from the CPU.
@@ -227,11 +388,15 @@ impl BatchEngine for Qwen35BatchEngine {
         }
         let served = Arc::clone(&self.served);
         let mut session = lock(&served)?;
-        self.states.clear();
+        self.pool_all();
+        let splits: Vec<_> = prompts
+            .iter()
+            .map(|p| session.batch_checkpoint_at(p))
+            .collect();
         let done = if let Some(model) = device_model(&mut session, &served, &prompts[0])? {
-            for (prompt, config) in prompts.iter().zip(configs) {
-                self.states
-                    .push(Some(prefilled_state(model, prompt, config)?));
+            for ((prompt, config), &split) in prompts.iter().zip(configs).zip(&splits) {
+                let held = self.admit(model, prompt, config, split)?;
+                self.seat(None, held);
             }
             vec![false; m]
         } else {
@@ -301,6 +466,7 @@ impl BatchEngine for Qwen35BatchEngine {
         for (&i, s) in live.iter().zip(lent) {
             self.states[i] = Some(s);
         }
+        self.poisoned |= stepped.is_err();
 
         for (&i, out) in live.iter().zip(stepped?) {
             let mut logits = match out {
@@ -348,10 +514,11 @@ impl BatchEngine for Qwen35BatchEngine {
         }
         let served = Arc::clone(&self.served);
         let mut session = lock(&served)?;
+        let split = session.batch_checkpoint_at(&prompt);
         let model = device_model(&mut session, &served, &[])?
             .ok_or_else(|| left_the_gpu("add_slot_to_batch"))?;
-        self.states
-            .push(Some(prefilled_state(model, &prompt, &config)?));
+        let held = self.admit(model, &prompt, &config, split)?;
+        self.seat(None, held);
         state.max_tokens_max = state.max_tokens_max.max(state.gen_idx + config.max_tokens);
         state.positions.push(prompt.len() - 1);
         state.last_tokens.push(prompt[prompt.len() - 1]);
@@ -382,11 +549,16 @@ impl BatchEngine for Qwen35BatchEngine {
         }
         let served = Arc::clone(&self.served);
         let mut session = lock(&served)?;
+        let split = session.batch_checkpoint_at(&prompt);
         let model = device_model(&mut session, &served, &[])?
             .ok_or_else(|| left_the_gpu("recycle_slot"))?;
-        // The finished slot's state is dropped before the new one is allocated.
-        self.states[slot_idx] = None;
-        self.states[slot_idx] = Some(prefilled_state(model, &prompt, &config)?);
+        // The finished slot's state goes to the pool first, so the new prompt
+        // can resume from it or reuse its buffers.
+        if let Some(held) = self.release(slot_idx) {
+            self.keep(held);
+        }
+        let held = self.admit(model, &prompt, &config, split)?;
+        self.seat(Some(slot_idx), held);
         state.max_tokens_max = state.max_tokens_max.max(state.gen_idx + config.max_tokens);
         state.positions[slot_idx] = prompt.len() - 1;
         state.last_tokens[slot_idx] = prompt[prompt.len() - 1];
@@ -401,11 +573,15 @@ impl BatchEngine for Qwen35BatchEngine {
     }
 
     fn batched_cleanup(&mut self, _state: &BatchedDecodeState) {
-        self.states.clear();
+        self.pool_all();
     }
 
+    /// A failed setup may have left the device in any state: nothing is kept.
     fn reset_batched_state(&mut self) {
         self.states.clear();
+        self.copies.clear();
+        self.pool.clear();
+        self.poisoned = false;
     }
 }
 
