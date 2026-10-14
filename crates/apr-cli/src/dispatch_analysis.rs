@@ -1524,6 +1524,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             skip_metadata,
             skip_capability,
             assert_classifier_head,
+            ollama_from_file,
         } => qa::run(
             file,
             *assert_tps,
@@ -1549,6 +1550,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *skip_metadata,
             *skip_capability,
             *assert_classifier_head,
+            *ollama_from_file,
         ),
 
         ExtendedCommands::Parity {

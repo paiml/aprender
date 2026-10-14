@@ -182,7 +182,10 @@ threads-required = "num-test-threads"
 # Measured on cargo-nextest 0.9.143 and 0.9.146 with a test binary that hangs at
 # `--list`: wrapped, rc 104 at the bound; unwrapped, it hangs until killed.
 [scripts.wrapper.list-timeout]
-command = "timeout --kill-after=10s 300s"
+# Before the kill, scripts/ci/nextest_list_wrapper.sh writes the binary's and
+# nextest's per-thread state, wchan, syscall and stack to stderr, which nextest
+# prints for a failed listing, so the next hang names where it was blocked.
+command = { command-line = "scripts/ci/nextest_list_wrapper.sh", relative-to = "workspace-root" }
 
 [[profile.ci.scripts]]
 platform = { host = "cfg(all())" }

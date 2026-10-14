@@ -193,6 +193,7 @@
                 skip_metadata: false,
                 skip_capability: false,
                 assert_classifier_head: false,
+                ollama_from_file: false,
             }),
             Commands::Extended(ExtendedCommands::Hex {
                 file: PathBuf::from("m.apr").into(),

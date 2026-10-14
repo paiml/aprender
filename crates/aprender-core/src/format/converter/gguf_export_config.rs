@@ -639,25 +639,14 @@ fn export_qwen35_to_gguf(
         .and_then(|(_, (_, s))| s.first().copied())
         .unwrap_or(0);
     let tokenizer = super::import::load_tokenizer_from_json(input);
-    append_tokenizer_to_metadata(
+    append_qwen35_tokenizer_metadata(
         &mut metadata,
         tokenizer.as_ref(),
         apr_metadata.as_ref(),
-        "qwen35",
         &name,
         vocab,
         input,
     );
-    let added = qwen35_added_tokens(input);
-    q35::fill_added_token_holes(&mut metadata, &added);
-    q35::fix_qwen35_tokenizer_metadata(&mut metadata);
-    q35::apply_added_token_types(&mut metadata, &added);
-    if let Some(tpl) = qwen35_chat_template(apr_metadata.as_ref(), input) {
-        metadata.push((
-            "tokenizer.chat_template".to_string(),
-            crate::format::gguf::GgufValue::String(tpl),
-        ));
-    }
 
     let gguf_tensors = q35::build_qwen35_tensors(tensors, hp.dims, hp.n_layer, use_q4k)?;
     eprintln!(
@@ -740,13 +729,34 @@ fn qwen35_added_tokens(input: &Path) -> Vec<super::qwen35_gguf::AddedToken> {
         .unwrap_or_default()
 }
 
-/// Chat template: APR metadata, else `chat_template.jinja` beside the input.
-fn qwen35_chat_template(
+/// Tokenizer metadata for a qwen35 GGUF, with `tokenizer.chat_template`
+/// written exactly once (#5254). `append_tokenizer_to_metadata` writes it on
+/// the tokenizer.json path and, from APR metadata, on the fallback path; the
+/// qwen35 block used to push it a second time. Only when neither wrote it is
+/// the template looked up here (`chat_template.jinja` beside the input).
+fn append_qwen35_tokenizer_metadata(
+    metadata: &mut Vec<(String, crate::format::gguf::GgufValue)>,
+    tokenizer: Option<&crate::format::gguf::GgufTokenizer>,
     apr: Option<&crate::format::v2::AprV2Metadata>,
+    name: &str,
+    vocab: usize,
     input: &Path,
-) -> Option<String> {
-    apr.and_then(|m| m.chat_template.clone())
-        .or_else(|| fs::read_to_string(input.with_file_name("chat_template.jinja")).ok())
+) {
+    use super::qwen35_gguf as q35;
+
+    append_tokenizer_to_metadata(metadata, tokenizer, apr, "qwen35", name, vocab, input);
+    let added = qwen35_added_tokens(input);
+    q35::fill_added_token_holes(metadata, &added);
+    q35::fix_qwen35_tokenizer_metadata(metadata);
+    q35::apply_added_token_types(metadata, &added);
+    if !metadata.iter().any(|(k, _)| k == "tokenizer.chat_template") {
+        if let Some(tpl) = export_chat_template(apr, input) {
+            metadata.push((
+                "tokenizer.chat_template".to_string(),
+                crate::format::gguf::GgufValue::String(tpl),
+            ));
+        }
+    }
 }
 
 #[cfg(test)]
