@@ -2,9 +2,12 @@
 # Deployed from paiml/infra — CHANGED HERE deliberately; fold back upstream.
 # Spec: docs/specifications/unified-ci-pipeline.md
 #
-# `experimental` is a top-level key, so it sits above the first table. It turns on
-# wrapper scripts, which the list-phase timeout at the bottom of [profile.ci] needs.
-experimental = ["wrapper-scripts"]
+# Turns on wrapper scripts, which the list-phase timeout at the bottom needs. The
+# table form, not the top-level `experimental = [...]` array: nextest accepts both,
+# and scripts/check_nextest_ci_profile_no_fail_fast.sh's fallback reader refuses a
+# top-level key.
+[experimental]
+wrapper-scripts = true
 
 # `slow-warning` was not a nextest key. nextest does not reject an unknown key,
 # it prints `ignoring unknown configuration key: profile.ci.slow-warning` and
