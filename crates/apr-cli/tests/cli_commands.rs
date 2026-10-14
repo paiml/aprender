@@ -1137,7 +1137,7 @@ fn verdict_of(cmd: &serde_json::Value, kind: &str) -> Option<String> {
 /// The registry's `commands:` list, or the violation that stops the scan.
 fn registry_commands(yaml: &str) -> Result<Vec<serde_json::Value>, String> {
     let doc: serde_json::Value =
-        serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false }).map_err(|e| format!("registry does not parse: {e}"))?;
+        serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(|e| format!("registry does not parse: {e}"))?;
     let commands = doc
         .get("commands")
         .and_then(|c| c.as_array())
