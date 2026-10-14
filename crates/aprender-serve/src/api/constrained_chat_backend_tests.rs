@@ -511,6 +511,29 @@ async fn a_budget_too_small_for_the_document_is_422_with_no_partial_text() {
     assert!(body.get("choices").is_none(), "{body}");
 }
 
+/// The disconnect path end to end: a turn whose token is already cancelled is answered 499,
+/// never as the document or as a budget cut.
+#[cfg(feature = "structured-output")]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_the_client_cancelled_is_answered_499_not_truncated() {
+    let (_f, state) = cpu_state(true);
+    let schema = serde_json::json!({"type": "boolean"});
+    let request: ChatCompletionRequest =
+        serde_json::from_value(constrained_body(schema, 8)).expect("a chat request");
+    let cancel = CancelToken::new();
+    cancel.cancel();
+    let response = try_constrained_chat(&state, &request, "id", None, Instant::now(), &cancel)
+        .await
+        .expect("a constrained request is answered here");
+    assert_eq!(response.status().as_u16(), 499);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("a body");
+    let body: serde_json::Value = serde_json::from_slice(&bytes).expect("a JSON body");
+    assert!(body.get("choices").is_none(), "{body}");
+    assert_ne!(body["type"], "constraint_truncated", "{body}");
+}
+
 /// A server that retains no GGUF has no vocabulary to compile against: refused by name, never
 /// answered unconstrained.
 #[cfg(feature = "structured-output")]
