@@ -77,6 +77,8 @@ pub(crate) struct Qwen35BatchBufs {
     out_normed: GpuBuffer<f32>,
     /// `[rows × vocab_size]`
     logits: GpuBuffer<f32>,
+    /// The m-row buffers the token mixers write.
+    mixer: mixer::Qwen35MixerBufs,
 }
 
 impl Qwen35BatchBufs {
@@ -94,6 +96,7 @@ impl Qwen35BatchBufs {
             ffn_down: zeros(hidden)?,
             out_normed: zeros(hidden)?,
             logits: zeros(rows * d.vocab_size as usize)?,
+            mixer: mixer::Qwen35MixerBufs::new(executor, d, rows)?,
         })
     }
 }
@@ -108,9 +111,10 @@ impl Qwen35CudaModel<'_> {
     /// One decode step for m > 1 slots, each slot's tokens bitwise the ones
     /// [`Self::forward_single_greedy`] gives it: every op is the single-row op
     /// on that slot's row, or a batched kernel whose row `r` is bitwise the
-    /// single-row kernel on row `r`. Each layer's mixer runs per slot against
-    /// its own state; the FFN and the `lm_head` run once for all m rows, so
-    /// their weights are read once per step instead of m times.
+    /// single-row kernel on row `r`. Every projection, the FFN and the
+    /// `lm_head` run once for all m rows, so their weights are read once per
+    /// step instead of m times; the ops on a slot's own conv window,
+    /// recurrent state and KV cache run per slot.
     fn batched_step(
         &mut self,
         tokens: &[u32],
@@ -153,24 +157,18 @@ impl Qwen35CudaModel<'_> {
             .map_err(|e| gpu_err("qwen35_cuda_batch", &e))
     }
 
-    /// Layer `il` for every slot: the mixer per slot, then the FFN once.
+    /// Layer `il` for every slot: the mixer, then the FFN.
     fn batched_layer(
         &mut self,
         b: &Qwen35BatchBufs,
         il: usize,
-        states: &mut [Qwen35CudaState],
+        states: &[Qwen35CudaState],
         positions: &[usize],
     ) -> std::result::Result<(), GpuError> {
-        let attention = matches!(self.layers[il], CudaLayer::Attention(_));
-        for (i, state) in states.iter_mut().enumerate() {
-            let hidden = row_view(&b.hidden, i, self.dims.hidden_dim);
-            let run = if attention {
-                self.attention_mixer_inner(state, il, &hidden, positions[i], None)
-            } else {
-                self.deltanet_mixer_inner(state, il, &hidden)
-            };
-            std::mem::forget(hidden);
-            run?;
+        if matches!(self.layers[il], CudaLayer::Attention(_)) {
+            self.batched_attention_mixer(b, il, states, positions)?;
+        } else {
+            self.batched_deltanet_mixer(b, il, states)?;
         }
         self.batched_ffn(b, il, states.len())
     }
@@ -256,6 +254,9 @@ impl Qwen35CudaModel<'_> {
             .collect()
     }
 }
+#[path = "forward_qwen35_cuda_batch_mixer.rs"]
+mod mixer;
+
 #[cfg(test)]
 #[path = "forward_qwen35_cuda_batch_tests.rs"]
 mod tests;

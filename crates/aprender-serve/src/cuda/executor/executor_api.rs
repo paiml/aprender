@@ -488,6 +488,14 @@ impl CudaExecutor {
         &self.compute_stream
     }
 
+    /// The stream the kernel launches and GEMVs are enqueued on, which is not
+    /// [`Self::compute_stream`]. A device copy that must be ordered between
+    /// two of those kernels is enqueued here.
+    #[must_use]
+    pub(crate) fn exec_stream(&self) -> &CudaStream {
+        &self.stream
+    }
+
     /// Synchronize the execution stream (wait for all pending operations)
     pub fn synchronize(&self) -> Result<(), GpuError> {
         self.stream.synchronize()
