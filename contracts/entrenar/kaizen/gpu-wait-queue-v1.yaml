@@ -31,7 +31,6 @@ metadata:
 equations:
   poll_interval:
     formula: "interval = min(base_interval × 2^attempt, max_interval)"
-    lean_theorem: Theorems.Poll_Interval
     domain: "base_interval = 30s, max_interval = 300s, attempt ∈ [0, ∞)"
     codomain: "interval ∈ [30s, 300s]"
     invariants:
@@ -41,7 +40,6 @@ equations:
 
   timeout_bound:
     formula: "total_wait <= timeout"
-    lean_theorem: Theorems.Timeout_Bound
     domain: "timeout = 3600s (default), configurable via --timeout"
     codomain: "Result<Reservation, GpuError::Timeout>"
     invariants:
@@ -51,7 +49,6 @@ equations:
 
   fairness_via_expiry:
     formula: "If job A waits, job B holds reservation with lease L, then A succeeds within max(L, timeout)"
-    lean_theorem: Theorems.Fairness_Via_Expiry
     domain: "A: waiting job, B: holding job, L: lease_duration"
     invariants:
       - "Not strict FIFO — first job to poll after VRAM frees wins"
@@ -60,7 +57,6 @@ equations:
 
   progress_report:
     formula: "report every poll: needed_mb, available_mb, reserved_mb, wait_elapsed, timeout_remaining"
-    lean_theorem: Theorems.Progress_Report
     domain: "stderr"
     invariants:
       - "Human-readable format with time elapsed and remaining"
@@ -70,13 +66,13 @@ proof_obligations:
   - id: GWQ-BND-001
     type: bound
     property: "Timeout guarantee"
-    formal: "wait_for_vram() returns within timeout + max_interval (worst case: sleep starts just before timeout)"
+    formal: "elapsed(wait_for_vram()) ≤ timeout + max_interval (worst case: sleep starts just before timeout)"
     applies_to: all
 
   - id: GWQ-INV-002
     type: invariant
     property: "Progress under lease expiry"
-    formal: "If total free VRAM >= budget_mb after all expired leases pruned, wait_for_vram() succeeds"
+    formal: "free_vram(after pruning all expired leases) ≥ budget_mb ⇒ wait_for_vram() succeeds"
     applies_to: all
 
   - id: GWQ-BND-003
@@ -88,19 +84,19 @@ proof_obligations:
   - id: GWQ-INV-004
     type: invariant
     property: "Dead PID cleanup on each poll"
-    formal: "Each poll iteration calls ledger.prune_dead() before checking capacity"
+    formal: "∀ poll iteration: ledger.prune_dead() is called before the capacity check"
     applies_to: all
 
   - id: GWQ-INV-005
     type: invariant
     property: "No busy-wait"
-    formal: "CPU usage during wait < 1% (sleeping between polls)"
+    formal: "∀ t ∈ wait: cpu_usage(t) < 1% (sleeping between polls)"
     applies_to: all
 
   - id: GWQ-INV-006
     type: invariant
     property: "Graceful interrupt"
-    formal: "SIGINT during wait_for_vram() propagates — no zombie wait loops"
+    formal: "SIGINT during wait_for_vram() ⇒ it propagates ∧ ¬∃ zombie wait loop"
     applies_to: all
 
 falsification_tests:
