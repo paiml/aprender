@@ -130,6 +130,9 @@ pub(crate) struct Qwen35BatchBufs {
     state_table: GpuBuffer<u64>,
     /// `[m]` the slots' positions, uploaded with `state_table`.
     positions: GpuBuffer<u32>,
+    /// `[m × hidden_dim]` on the host: the slots' embedding rows, uploaded
+    /// to `hidden` in one copy.
+    host_hidden: Vec<f32>,
 }
 
 impl Qwen35BatchBufs {
@@ -152,6 +155,7 @@ impl Qwen35BatchBufs {
                 .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?,
             positions: GpuBuffer::new(executor.context(), rows)
                 .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?,
+            host_hidden: vec![0.0; hidden],
         })
     }
 }
@@ -200,12 +204,15 @@ impl Qwen35CudaModel<'_> {
         host_logits: &[bool],
     ) -> Result<Vec<Qwen35StepOut>> {
         let width = self.dims.hidden_dim as usize;
+        let m = tokens.len();
         for (i, (&token, state)) in tokens.iter().zip(states.iter()).enumerate() {
             let row = self.embedding_row(token, state, positions[i])?;
-            let up = b.hidden.copy_from_host_at(&row, i * width);
+            b.host_hidden[i * width..(i + 1) * width].copy_from_slice(&row);
             self.embed_row = row;
-            up.map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
         }
+        b.hidden
+            .copy_from_host_at(&b.host_hidden[..m * width], 0)
+            .map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
         // Every kernel that reads the table is queued after this blocking copy,
         // and the previous step ended in a sync, so nothing in flight reads it.
         let mut table = Vec::with_capacity(2 * self.layers.len() * tokens.len());
