@@ -105,6 +105,12 @@ fn batched_greedy_streams_equal_each_slot_decoded_alone() {
                 "m={m}: slot {i} diverged from its solo stream"
             );
         }
+        // #5303: past one slot the step is the batched one, not the loop.
+        assert_eq!(
+            gpu.batch_bufs.is_some(),
+            m > 1,
+            "m={m}: the batched step ran iff m > 1"
+        );
         eprintln!("[batch] m={m}: {m} slots x {STEPS} tokens equal their solo streams");
     }
 }

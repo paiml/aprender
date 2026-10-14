@@ -7,8 +7,11 @@
 //! slot-dimensioned `DeltaNet`/attention kernels behind the same signature,
 //! and are held bitwise to this one.
 
-use super::{Qwen35CudaModel, Qwen35CudaState, Result};
+use super::{gpu_err, CudaLayer, Qwen35CudaDims, Qwen35CudaModel, Qwen35CudaState, Result};
+use crate::cuda::CudaExecutor;
 use crate::error::RealizarError;
+use trueno_gpu::driver::GpuBuffer;
+use trueno_gpu::GpuError;
 
 /// Refuse a batch whose three per-slot inputs disagree in length, or that has
 /// no slots, before any device work.
@@ -40,6 +43,9 @@ impl Qwen35CudaModel<'_> {
         positions: &[usize],
     ) -> Result<Vec<u32>> {
         check_batch_shape(tokens.len(), states.len(), positions.len())?;
+        if tokens.len() > 1 && !self.timing_on {
+            return self.batched_step(tokens, states, positions);
+        }
         tokens
             .iter()
             .zip(states.iter_mut())
@@ -49,6 +55,207 @@ impl Qwen35CudaModel<'_> {
     }
 }
 
+/// #5303: the m-row device buffers one batched decode step works in: the m
+/// residual streams side by side, and an m-row twin of every buffer the FFN
+/// and the `lm_head` write.
+pub(crate) struct Qwen35BatchBufs {
+    /// Rows every buffer holds.
+    rows: usize,
+    /// `[rows × hidden_dim]`, slot `i`'s residual stream at row `i`.
+    hidden: GpuBuffer<f32>,
+    /// `[rows × hidden_dim]`
+    post_normed: GpuBuffer<f32>,
+    /// `[rows × intermediate_dim]`
+    ffn_gate: GpuBuffer<f32>,
+    /// `[rows × intermediate_dim]`
+    ffn_up: GpuBuffer<f32>,
+    /// `[rows × intermediate_dim]`
+    ffn_act: GpuBuffer<f32>,
+    /// `[rows × hidden_dim]`
+    ffn_down: GpuBuffer<f32>,
+    /// `[rows × hidden_dim]`
+    out_normed: GpuBuffer<f32>,
+    /// `[rows × vocab_size]`
+    logits: GpuBuffer<f32>,
+}
+
+impl Qwen35BatchBufs {
+    fn new(executor: &CudaExecutor, d: Qwen35CudaDims, rows: usize) -> Result<Self> {
+        let hidden = rows * d.hidden_dim as usize;
+        let inter = rows * d.intermediate_dim as usize;
+        let zeros = |len| Qwen35CudaModel::zeros(executor, len);
+        Ok(Self {
+            rows,
+            hidden: zeros(hidden)?,
+            post_normed: zeros(hidden)?,
+            ffn_gate: zeros(inter)?,
+            ffn_up: zeros(inter)?,
+            ffn_act: zeros(inter)?,
+            ffn_down: zeros(hidden)?,
+            out_normed: zeros(hidden)?,
+            logits: zeros(rows * d.vocab_size as usize)?,
+        })
+    }
+}
+
+/// Row `row` of an m-row buffer whose rows are `width` wide. The view must be
+/// `std::mem::forget`-ed: it does not own the allocation.
+fn row_view(buf: &GpuBuffer<f32>, row: usize, width: u32) -> GpuBuffer<f32> {
+    Qwen35CudaModel::view(buf, row as u32 * width, width)
+}
+
+impl Qwen35CudaModel<'_> {
+    /// One decode step for m > 1 slots, each slot's tokens bitwise the ones
+    /// [`Self::forward_single_greedy`] gives it: every op is the single-row op
+    /// on that slot's row, or a batched kernel whose row `r` is bitwise the
+    /// single-row kernel on row `r`. Each layer's mixer runs per slot against
+    /// its own state; the FFN and the `lm_head` run once for all m rows, so
+    /// their weights are read once per step instead of m times.
+    fn batched_step(
+        &mut self,
+        tokens: &[u32],
+        states: &mut [Qwen35CudaState],
+        positions: &[usize],
+    ) -> Result<Vec<u32>> {
+        let m = tokens.len();
+        let mut b = match self.batch_bufs.take() {
+            Some(b) if b.rows >= m => b,
+            _ => Qwen35BatchBufs::new(&self.executor, self.dims, m)?,
+        };
+        let run = self.batched_step_in(&mut b, tokens, states, positions);
+        self.batch_bufs = Some(b);
+        let next = run?;
+        for (state, &position) in states.iter_mut().zip(positions) {
+            state.kv_len = state.kv_len.max(position + 1);
+        }
+        Ok(next)
+    }
+
+    fn batched_step_in(
+        &mut self,
+        b: &mut Qwen35BatchBufs,
+        tokens: &[u32],
+        states: &mut [Qwen35CudaState],
+        positions: &[usize],
+    ) -> Result<Vec<u32>> {
+        let width = self.dims.hidden_dim as usize;
+        for (i, (&token, state)) in tokens.iter().zip(states.iter()).enumerate() {
+            let row = self.embedding_row(token, state, positions[i])?;
+            let up = b.hidden.copy_from_host_at(&row, i * width);
+            self.embed_row = row;
+            up.map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
+        }
+        for il in 0..self.layers.len() {
+            self.batched_layer(b, il, states, positions)
+                .map_err(|e| gpu_err("qwen35_cuda_batch", &e))?;
+        }
+        self.batched_head(b, tokens.len())
+            .map_err(|e| gpu_err("qwen35_cuda_batch", &e))
+    }
+
+    /// Layer `il` for every slot: the mixer per slot, then the FFN once.
+    fn batched_layer(
+        &mut self,
+        b: &Qwen35BatchBufs,
+        il: usize,
+        states: &mut [Qwen35CudaState],
+        positions: &[usize],
+    ) -> std::result::Result<(), GpuError> {
+        let attention = matches!(self.layers[il], CudaLayer::Attention(_));
+        for (i, state) in states.iter_mut().enumerate() {
+            let hidden = row_view(&b.hidden, i, self.dims.hidden_dim);
+            let run = if attention {
+                self.attention_mixer_inner(state, il, &hidden, positions[i], None)
+            } else {
+                self.deltanet_mixer_inner(state, il, &hidden)
+            };
+            std::mem::forget(hidden);
+            run?;
+        }
+        self.batched_ffn(b, il, states.len())
+    }
+
+    /// [`Self::ffn_inner`] over m rows of `b.hidden`.
+    fn batched_ffn(
+        &mut self,
+        b: &Qwen35BatchBufs,
+        il: usize,
+        m: usize,
+    ) -> std::result::Result<(), GpuError> {
+        let d = self.dims;
+        let w = self.layers[il].ffn();
+        let ex = &mut self.executor;
+        for i in 0..m {
+            let hidden = row_view(&b.hidden, i, d.hidden_dim);
+            let normed = row_view(&b.post_normed, i, d.hidden_dim);
+            let run = ex.rmsnorm_into(&hidden, w.norm, &normed, d.hidden_dim, d.eps);
+            std::mem::forget(hidden);
+            std::mem::forget(normed);
+            run?;
+        }
+        let rows = m as u32;
+        for (proj, out) in [(w.gate, &b.ffn_gate), (w.up, &b.ffn_up)] {
+            ex.batched_gemv_dispatch(
+                proj.qtype,
+                proj.ptr,
+                &b.post_normed,
+                out,
+                rows,
+                proj.n,
+                proj.k,
+            )?;
+        }
+        ex.fused_swiglu_into(
+            &b.ffn_gate,
+            &b.ffn_up,
+            &b.ffn_act,
+            rows * d.intermediate_dim,
+        )?;
+        ex.batched_gemv_dispatch(
+            w.down.qtype,
+            w.down.ptr,
+            &b.ffn_act,
+            &b.ffn_down,
+            rows,
+            w.down.n,
+            w.down.k,
+        )?;
+        ex.residual_add_into(&b.hidden, &b.ffn_down, &b.hidden, rows * d.hidden_dim)
+    }
+
+    /// The output norm per row, the `lm_head` once, and each row's argmax.
+    fn batched_head(
+        &mut self,
+        b: &Qwen35BatchBufs,
+        m: usize,
+    ) -> std::result::Result<Vec<u32>, GpuError> {
+        let d = self.dims;
+        let ex = &mut self.executor;
+        for i in 0..m {
+            let hidden = row_view(&b.hidden, i, d.hidden_dim);
+            let normed = row_view(&b.out_normed, i, d.hidden_dim);
+            let run = ex.rmsnorm_into(&hidden, &self.output_norm, &normed, d.hidden_dim, d.eps);
+            std::mem::forget(hidden);
+            std::mem::forget(normed);
+            run?;
+        }
+        ex.batched_gemv_dispatch(
+            self.lm_head.qtype,
+            self.lm_head.ptr,
+            &b.out_normed,
+            &b.logits,
+            m as u32,
+            self.lm_head.n,
+            self.lm_head.k,
+        )?;
+        (0..m)
+            .map(|i| {
+                let offset = u64::from(i as u32 * d.vocab_size) * 4;
+                ex.gpu_argmax(b.logits.as_ptr() + offset, d.vocab_size)
+            })
+            .collect()
+    }
+}
 #[cfg(test)]
 #[path = "forward_qwen35_cuda_batch_tests.rs"]
 mod tests;
