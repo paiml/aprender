@@ -42,9 +42,12 @@ resolve_pv() {
 
 # measure <tree> -> prints "n bound unbound missing", or NOT_MEASURED <reason> on stderr and rc 2
 measure() {
-    local tree=$1 out rc line n errs un cl inst miss
+    local tree=$1 out rc line n errs un cl inst miss help
     [ -d "$tree/contracts" ] || { printf 'NOT_MEASURED no contracts/ under %s\n' "$tree" >&2; return 2; }
-    "$PV" --help 2> /dev/null | grep -q census || { printf 'NOT_MEASURED pv %s has no census\n' "$PV" >&2; return 2; }
+    # a here-string, never a pipe into a quiet grep: grep -q exits on the first match, pv takes SIGPIPE, and
+    # under pipefail a pv WITH census would read as one without it (check_ont_ratchet.sh, #3679)
+    help=$("$PV" --help 2> /dev/null) || help=""
+    grep -q census <<< "$help" || { printf 'NOT_MEASURED pv %s has no census\n' "$PV" >&2; return 2; }
     rc=0; out=$("$PV" census --format json "$tree/contracts" 2> /dev/null) || rc=$?
     [ "$rc" = 0 ] || { printf 'NOT_MEASURED pv census exited %s on %s\n' "$rc" "$tree" >&2; return 2; }
     line=$(printf '%s' "$out" | jq -r '[.n_parsed, .n_parse_errors, .by_anchoring.unanchored, .by_anchoring.class, .by_anchoring.instance, .no_falsification_tests] | map(if type == "number" then . else error("not a number") end) | @tsv' 2> /dev/null) \
@@ -167,6 +170,7 @@ self_test() {
     stub "echo '{\"n_parsed\":1,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":1,\"class\":0,\"instance\":0},\"no_falsification_tests\":0}'; exit 3"; stub_case "good JSON but exit 3: NOT_MEASURED"
     stub "echo '{\"n_parsed\":1,\"n_parse_errors\":0,\"by_anchoring\":{\"unanchored\":1,\"class\":0,\"instance\":0}}'"; stub_case "a pv without no_falsification_tests (pre-#5295): NOT_MEASURED"
     printf '#!/usr/bin/env bash\necho lint\n' > "$d/pv-stub"; stub_case "pv without census: NOT_MEASURED"
+    printf '#!/usr/bin/env bash\ncase "$1" in --help) echo lint;; *) echo '"'"'{"n_parsed":1,"n_parse_errors":0,"by_anchoring":{"unanchored":1,"class":0,"instance":0},"no_falsification_tests":0}'"'"';; esac\n' > "$d/pv-stub"; stub_case "census JSON from a pv whose --help lists no census: NOT_MEASURED"
     rm -rf "${d:?}"
     [ "$bad" = 0 ] && { echo "SELF-TEST PASSED"; return 0; }
     echo "SELF-TEST FAILED"; return 1
