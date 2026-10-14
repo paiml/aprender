@@ -1385,8 +1385,9 @@ mod thinking_budget_resolution {
     /// sorts after `*`, so a sorted map would pick `*`.
     #[test]
     fn overlapping_patterns_resolve_in_file_order() {
-        let rows: ModelRows = serde_saphyr::from_str(
+        let rows: ModelRows = serde_saphyr::from_str_with_options(
             "models:\n  \"zeta-*\":\n    budget: 7\n    basis: z\n  \"*\":\n    budget: 9\n    basis: a\n",
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false },
         )
         .expect("parses");
         let hit =
