@@ -1,7 +1,4 @@
-    # pv_bin.sh leaves PV set to the binary it REJECTED (stale, wrong tree) and says so only by its
-    # status: a failed source is no pv, never a measurement by an unproven one
-    . "$REPO_ROOT/scripts/pv_bin.sh" > /dev/null 2>&1 || { unset PV; return 1; }
-    [ -n "${PV:-}" ]#!/usr/bin/env bash
+#!/usr/bin/env bash
 # census_ratchet.sh -- the pv census ratchet (#4709, C303): the bound share of contracts/ only rises.
 #
 # Measured at both ends with ONE pv in ONE run, never against a stored number:
