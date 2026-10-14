@@ -16,6 +16,6 @@ def top_reason: group_by(.) | max_by(length) | .[0] // null;
  | .[]
  | select(.miss > 0)
  | "CRUX `\(.verb)`: apr correct on \(.ok) of \(.n); \(.wrong) wrong, \(.unans) unanswered"
-   + (if .why then " (top reason: \(.why[:160]))" else "" end)),
+   + (if .why then " (top reason: \(.why))" else "" end)),
 ([.cells[] | .engines.ollama // empty | select(.answered != true) | .why // "no reason given"]
- | if length > 0 then "comparator ollama refused \(length) cells: \(top_reason[:160])" else empty end)
+ | if length > 0 then "comparator ollama refused \(length) cells: \(top_reason)" else empty end)

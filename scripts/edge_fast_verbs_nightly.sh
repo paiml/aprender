@@ -94,7 +94,7 @@ qa_rc=$?
 OL_STATE=$(jq -r '.gates[] | select(.name == "ollama_parity")
     | if .skipped then "skipped" elif .passed then "passed" else "failed" end' \
     "$OUT/apr-qa.json" 2>/dev/null || true)
-OL_MSG=$(jq -r '.gates[] | select(.name == "ollama_parity") | .message // "" | .[:200]' \
+OL_MSG=$(jq -r '.gates[] | select(.name == "ollama_parity") | .message // ""' \
     "$OUT/apr-qa.json" 2>/dev/null || true)
 [ -n "$OL_STATE" ] || missing+=("ollama parity (qa rc $qa_rc, no ollama_parity gate in its JSON; see apr-qa.err)")
 
