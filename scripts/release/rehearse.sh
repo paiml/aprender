@@ -130,7 +130,7 @@ dledger_table() {
 D1|ap:preflight,cascade|FAIL +R4 HEAD .* is not an ancestor of origin/release/|preflight R4 requires origin/release/<V>, which no script creates
 D2|t2,ap:dogfood|\[FAIL\] declared:check_model_ladder|the dogfood ladder gate runs with no CRUX receipt dir, beside the models lane that writes them
 D4|cascade|FAIL +R7 |the cascade's own preflight runs without the CRUX receipts
-D5|ship|no T-2 GO receipt for origin/main|prepare_bump.sh --ship needs a T-2 GO that cannot exist
+D5|ship|no T-2 GO receipt for |prepare_bump.sh --ship needs a T-2 GO that cannot exist
 D7|ship|-|the bump commit's trailer names a model the fleet does not use
 DLEDGER
 }
@@ -1174,6 +1174,8 @@ selftest_judge() {
         'printf "FAIL  R7 model matrix: no receipt\n" > "$d/logs/cascade.log"'
     j d5_line_names_d5 1 "RED   D5 OPEN in ship" \
         'printf "STOP no T-2 GO receipt for origin/main c0ffee (x) -- run: t2\n" > "$d/logs/ship.log"'
+    j d5_parent_line_names_d5 1 "RED   D5 OPEN in ship: STOP no T-2 GO receipt for the bump's parent" \
+        'printf "STOP no T-2 GO receipt for the bump'"'"'s parent c0ffee (x) -- run: t2\n" > "$d/logs/ship.log"'
     j d7_fable_trailer_is_open 1 "RED   D7 OPEN in the bump commit: Co-Authored-By: Claude Fable 5.1" \
         'sed -i "s/Claude Opus 5.5/Claude Fable 5.1/" "$d/bump.msg"'
     j d7_no_trailer_is_open 1 "RED   D7 OPEN in the bump commit: no Co-Authored-By" \
