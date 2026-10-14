@@ -1,0 +1,9 @@
+name	query_template	document_template
+SearchQuery	task: search result | query: {content}	title: {title} | text: {content}
+QuestionAnswering	task: question answering | query: {content}	title: {title} | text: {content}
+FactChecking	task: fact checking | query: {content}	title: {title} | text: {content}
+CodeRetrieval	task: code retrieval | query: {content}	title: {title} | text: {content}
+Classification	task: classification | query: {content}	-
+Clustering	task: clustering | query: {content}	-
+SentenceSimilarity	task: sentence similarity | query: {content}	-
+Document	-	title: none | text: {content}

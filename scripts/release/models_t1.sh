@@ -98,6 +98,19 @@ mt_fetch_commit() {
     git -C "$1" cat-file -e "$3^{commit}" 2> /dev/null
 }
 
+# mt_version_is LINE VER SHA -> rc 0 when LINE is exactly "apr VER (<h>)" and <h>, 7 to 40 hex digits,
+# is a prefix of the full SHA. build.rs embeds `git rev-parse --short HEAD`, whose length git picks and
+# grows with the object count (9 until 0.71.2, 10 there); a fixed --short=9 string compared exactly
+# refused the release's own binary as NOT-THE-RELEASE (#5256). deep_bins_smoke.sh binds the same way.
+# Sent ahead of the remote leg with `declare -f`, like mt_fetch_commit.
+mt_version_is() {
+    local h
+    case $1 in "apr $2 ("*")") ;; *) return 1 ;; esac
+    h=${1#"apr $2 ("}; h=${h%")"}
+    [[ $h =~ ^[0-9a-f]{7,40}$ ]] || return 1
+    case $3 in "$h"*) return 0 ;; *) return 1 ;; esac
+}
+
 mt_self_test() {
     local d fail=0 want got
     d=$(mktemp -d) || return 2
@@ -134,6 +147,32 @@ EOF
     printf '\xef\xbb\xbf{"apr":{"version_line":"apr 1.0.0 (abc)"}}' > "$d/c.json"
     got=$(mt_crux_fields "$d/c.json" | tr '\t' '|')
     if [ "$got" = "UNREADABLE|-|-" ]; then echo "  ok   a BOM-prefixed crux receipt is UNREADABLE"; else echo "  FAIL BOM crux receipt gave '$got'"; fail=1; fi
+    # mt_version_is: the binary's `apr --version` line against the release (#5256). F is a full sha;
+    # git's auto --short grew to 10 at 0.71.2, so 9, 10 and 12 must all bind, and nothing else may.
+    local F=42b9873da7c1e0f3a6b5d4c3b2a1f0e9d8c7b6a5
+    while IFS='~' read -r want line what; do
+        [ -n "$want" ] || continue
+        if mt_version_is "$line" 9.9.9 "$F"; then got=match; else got=refused; fi
+        if [ "$got" = "$want" ]; then echo "  ok   version: $what -> $want"; else echo "  FAIL version: $what wanted $want, got $got"; fail=1; fi
+    done <<VERSION
+match~apr 9.9.9 (42b9873da)~a 9-char sha, the old fixed length
+match~apr 9.9.9 (42b9873da7)~a 10-char sha, git's auto length at 0.71.2
+match~apr 9.9.9 (42b9873da7c1)~a 12-char sha
+match~apr 9.9.9 ($F)~the full sha
+match~apr 9.9.9 (42b9873)~a 7-char sha, git's floor
+match~apr 9.9.9 (42b9873d)~an 8-char sha
+refused~apr 9.9.9 (42b987)~a 6-char sha, below git's floor
+refused~apr 9.9.9 (42b9873da8)~a 10-char sha that diverges at its last char
+refused~apr 9.9.9 (52b9873da7)~a 10-char sha of another commit
+refused~apr 9.9.8 (42b9873da7)~the right sha, the wrong version
+refused~apr 9.9.90 (42b9873da7)~a version with 9.9.9 as its prefix
+refused~apr 9.9.9 (42B9873DA7)~an upper-case sha (build.rs prints lower case)
+refused~apr 9.9.9 (42b9873da7) dirty~trailing text after the sha
+refused~apr 9.9.9 (42b9873da7~no closing paren
+refused~apr 9.9.9 ()~an empty sha
+refused~ apr 9.9.9 (42b9873da7)~leading space
+refused~~an empty line (no binary, or --version failed)
+VERSION
     # mt_fetch_commit against a local origin: a commit on main or on release/VER is found, one on
     # another branch or on the release branch of another version is not
     local o="$d/origin" c n=0 which sha s_main s_rel s_other
@@ -212,7 +251,7 @@ local_leg() {
         || { echo "MODELS-LEG $LOCAL_HOST BUILD-FAILED"; return 3; }
     tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)}
     got=$("$tdir/release/apr" --version 2>/dev/null | head -n 1)
-    [ "$got" = "$want" ] || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: '$got' (want '$want')"; return 3; }
+    mt_version_is "$got" "$ver" "$sha" || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: '$got' (want '$want')"; return 3; }
     if [ "$MEASURE" = crux ]; then
         local lrc cdir="$out/$LOCAL_HOST-crux"
         choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host "$LOCAL_HOST" --apr "$tdir/release/apr" --out "$cdir" --backend gpu --certification "$CERT"; lrc=$?
@@ -223,8 +262,8 @@ local_leg() {
 }
 
 remote_leg() {
-    # mt_fetch_commit goes first on the stream, so the remote leg runs the code the self-test ran
-    { declare -f mt_fetch_commit; cat <<HOST
+    # mt_fetch_commit and mt_version_is go first on the stream, so the remote leg runs the code the self-test ran
+    { declare -f mt_fetch_commit mt_version_is; cat <<HOST
 set -u
 repo="\$HOME/src/aprender"; base="\$HOME/.cache/aprender-release"; dir="\$base/rel-$ver"
 mkdir -p "\$base" || exit 3
@@ -249,7 +288,7 @@ export CARGO_TARGET_DIR="\$dir/target"
 cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/build.log" 2>&1 \
   || { tail -n 20 "\$dir/build.log"; echo "MODELS-LEG $REMOTE_HOST BUILD-FAILED"; exit 3; }
 got=\$("\$CARGO_TARGET_DIR/release/apr" --version 2>/dev/null | head -n 1)
-[ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
+mt_version_is "\$got" "$ver" "$sha" || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
 rm -rf -- "\$dir/out"
 case $MEASURE in
 crux) choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host $REMOTE_HOST --apr "\$CARGO_TARGET_DIR/release/apr" --out "\$dir/out" --backend gpu --certification "$CERT" ;;
@@ -292,14 +331,14 @@ for hr in "$LOCAL_HOST $lrc" "$REMOTE_HOST $rrc"; do
     fi
     if [ "$MEASURE" = crux ]; then
         IFS=$'\t' read -r av cells red < <(mt_crux_fields "$receipt")
-        if [ "$av" != "$want" ]; then
+        if ! mt_version_is "$av" "$ver" "$sha"; then
             echo "MODELS $h NO-GO: the receipt was measured by '$av', not '$want'"; nogo=1; continue
         fi
         echo "MODELS $h measured by $want: cells=$cells red=$red (crux_sweep_shards rc $rc)"; continue
     fi
     # tab-separated: apr_version itself contains spaces ("apr <v> (<sha9>)")
     IFS=$'\t' read -r av executed red < <(mt_receipt_fields "$receipt")
-    if [ "$av" != "$want" ]; then
+    if ! mt_version_is "$av" "$ver" "$sha"; then
         echo "MODELS $h NO-GO: the receipt was measured by '$av', not '$want'"; nogo=1; continue
     fi
     echo "MODELS $h measured by $want: executed=$executed red=$red (model_ladder rc $rc)"

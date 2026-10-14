@@ -425,6 +425,18 @@ impl GGUFBuilder {
         self
     }
 
+    /// Add a bool array metadata value (type 9, element_type 7), e.g.
+    /// `gemma-embedding2.attention.sliding_window_pattern`
+    #[must_use]
+    pub fn add_bool_array(mut self, key: &str, values: &[bool]) -> Self {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&7u32.to_le_bytes()); // element type = bool
+        bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
+        bytes.extend(values.iter().map(|&v| u8::from(v)));
+        self.metadata.push((key.to_string(), 9, bytes));
+        self
+    }
+
     // =========================================================================
     // Build
     // =========================================================================

@@ -58,6 +58,7 @@ pub(crate) mod devices;
 pub(crate) mod dry_sampling_classifier;
 pub(crate) mod dry_sampling_lint;
 pub(crate) mod embed;
+pub(crate) mod embed_gguf;
 pub(crate) mod embed_viz;
 pub(crate) mod embed_viz_classifier;
 pub(crate) mod embed_viz_lint;
@@ -110,6 +111,7 @@ pub(crate) mod mcp;
 pub(crate) mod merge;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;
+pub(crate) mod model_kind_gate;
 // #3661: a model parse failure names the format its magic bytes identify.
 #[cfg(test)]
 mod model_file_error_tests_3661;

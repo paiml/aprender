@@ -1,24 +1,21 @@
 {
-  "build_identity": "458cd0a1b1abcedf3a4df085a50228d1e0f1640a",
-  "host": "mac-server",
+  "build_identity": "1cd1634d4851eb380481c442682fd5974aef134b",
+  "host": "yoga",
   "host_arch": "x86_64",
   "input_set": {
-    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "device": "x86_64+sse4.2+avx+avx2+fma",
     "driver": "none",
     "oracle": "f64_definition:embed:E[token*n..(token+1)*n]",
     "row_sha256": "20297cf8e023d329d88f45714d9b06fd9e313fcef2b0b0f4aa9be47cb75b6f55",
-    "source_sha256": "f0c26e37d6d77b89d47b6234bedee6231a901ced6db3ff77c029c6be084fd997",
+    "source_sha256": "8e02ab0033044cbce9ef5f0e9348b6225f96465eaf3490b13d1322a453cfb624",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "855cc9d92d637fc1e5d15061f47285bbec7e97949d370779ee5c77c49992f8ce",
+  "input_set_hash": "b68a271a6b5652406177ffb933db8f05e6504b0506742e7dc6d4061cbe2aa417",
   "isa_detected": [
     "sse4.2",
     "avx",
     "avx2",
-    "fma",
-    "avx512f",
-    "avx512bw",
-    "avx512vnni"
+    "fma"
   ],
   "isa_forced": "native",
   "kernel_id": "cpu.embed.f32",
@@ -38,7 +35,7 @@
   },
   "source_fn": "embed_into",
   "tolerance_rel": 2.9999999999999997e-308,
-  "ts": "2026-10-12T12:51:34Z",
+  "ts": "2026-10-13T11:12:26Z",
   "workload": {
     "n": 896,
     "seed": 1161367296,

@@ -19,6 +19,8 @@ mod traced;
 pub use encoder_decoder::EncoderOutput;
 
 #[cfg(test)]
+mod attention_windowed_tests;
+#[cfg(test)]
 mod batch_tests;
 #[cfg(test)]
 mod core_tests;

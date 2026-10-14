@@ -2015,19 +2015,18 @@ jobs:
         run: |
           setsid --wait bash scripts/check_bashrs_gate.sh --self-test
           setsid --wait bash scripts/check_bashrs_gate.sh
-      # PMAT-746. The ONLY complexity gate in this repository was the LOCAL pmat
-      # pre-commit hook (cyclomatic <= 30, cognitive <= 25, staged files only);
-      # this workflow ran none. So the merge queue LANDS the debt and the
-      # individual developer pays it, on unrelated work, at the moment they try
-      # to commit: serve/handlers.rs sits at cognitive 69, tokenize.rs at 34/89.
-      # 715 offenders are recorded, shrink-only against origin/main, and the
-      # numbers may only fall. Case table FIRST, per the convention above: the
-      # 9s scan is only worth its cost if the comparator it feeds can still turn
-      # RED. Reads no clock and compiles nothing.
-      - name: Per-function complexity may only fall (shrink-only)
+      # #5182 (GATE/LAB). The per-function complexity ratchet (PMAT-746) and the
+      # shrink-only comparison of check_baseline_ratchets.sh left the PR path:
+      # a ratchet may not sit on a PR, merge-queue or release job. Both run
+      # nightly in guards-nightly.yml against main as it was 24 h earlier, and a
+      # red there opens or updates one ticket with one owner. What stays here is
+      # a fixed bound: every scripts/*.txt is classified (an unclassified
+      # baseline fails), plus the guard's own case table. Reads no clock, compares
+      # nothing, 0.1 s.
+      - name: Every baseline in scripts/ is classified (fixed bound; the ratchet runs nightly)
         run: |
-          setsid --wait bash scripts/check_complexity_ratchet.sh --selftest
-          setsid --wait bash scripts/check_complexity_ratchet.sh
+          setsid --wait bash scripts/check_baseline_ratchets.sh --self-test
+          setsid --wait bash scripts/check_baseline_ratchets.sh --classify-only
       # BSE-03 phase C (PMAT-1068): a ratchet verdict is a function of the
       # (comparand SHA, merge SHA) pair and of nothing else -- not of a file a
       # PR can rewrite, not of which pmat happened to be on PATH. The case

@@ -69,6 +69,11 @@ pub(crate) fn run(
         .inspect(apr_path)
         .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect: {e}")))?;
 
+    // APR-EMBED-001 EG-1: an embedding model is drawn by kind, never as a decoder with an LM head.
+    if let Some(embedding) = embedding_flow(&report)? {
+        return run_embedding_flow(apr_path, &report, &embedding, component, json_output);
+    }
+
     let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
     let arch = detect_architecture(&tensor_names);
 
@@ -562,5 +567,7 @@ fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
 }
 
 include!("flow_print_cross.rs");
+include!("flow_embedding.rs");
+include!("flow_embedding_tests.rs");
 include!("flow_coverage_tests.rs");
 include!("flow_03.rs");
