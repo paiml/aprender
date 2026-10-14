@@ -66,7 +66,10 @@ nu-ansi-term = { version = "0.50", optional = true }
 tokio = { version = "1", features = ["rt", "fs", "sync", "rt-multi-thread"], optional = true }
 
 # S3 (feature-gated)
-aws-sdk-s3 = { version = "1", optional = true }
+# default-features off: the default `rustls` feature is aws-smithy-runtime/tls-rustls,
+# the legacy hyper 0.14 + rustls 0.21 client (RUSTSEC-2026-0346/0349). The other
+# four defaults are kept; default-https-client is the rustls 0.23 client.
+aws-sdk-s3 = { version = "1", optional = true, default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
 aws-config = { version = "1", optional = true }
 
 # HTTP (feature-gated)
