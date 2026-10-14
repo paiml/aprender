@@ -14,8 +14,8 @@
 #   or if missing rises.
 # --release <ver> --commit <sha>: the comparand is the previous v* tag before <sha>.
 #   RED if bound(sha) < bound(prev) + min(100, unbound(prev)), or if missing rises, or if missing is
-#   over the release's cap. The caps are the operator's four-part split (2026-10-14): 818 at
-#   d97936f470 -> <=613 at 0.72, <=408 at 0.73, <=203 at 0.74, 0 from 0.75.
+#   over the release's cap. The caps are the operator's four-part split (2026-10-14): 763 at
+#   d97936f470 (pv's own walker) -> <=572 at 0.72, <=381 at 0.73, <=190 at 0.74, 0 from 0.75.
 #
 # NEVER VACUOUS: pv missing or without `census`, a non-zero exit, unparseable JSON, 0 contracts,
 # a parse error, or anchoring counts that do not sum to n_parsed is NOT_MEASURED, rc 2, never a pass.
@@ -45,7 +45,8 @@ resolve_pv() {
 
 # count_missing_ft <contracts dir> -> YAMLs whose top-level falsification_tests is absent or `[]`.
 # Interim instrument until pv reports the count itself (#4709 / the pv P0); awk, never grep, so the
-# count is the same under GNU grep and ugrep.
+# count is the same under GNU grep and ugrep. It walks every YAML, 55 more than pv's universe, so it
+# reads 818 where pv's own walker reads 763: sound for never-rise, too strict for a release cap.
 count_missing_ft() {
     find "$1" -name '*.yaml' -type f -exec awk '
         FNR == 1 { if (f != "" && !ok) m++; f = FILENAME; ok = 0 }
@@ -79,7 +80,7 @@ missing_cap() {
     local major minor
     IFS=. read -r major minor _ <<< "${1#v}"
     if [ "$major" != 0 ] || [ "$minor" -ge 75 ]; then echo 0; return; fi
-    case "$minor" in 72) echo 613 ;; 73) echo 408 ;; 74) echo 203 ;; *) echo "" ;; esac
+    case "$minor" in 72) echo 572 ;; 73) echo 381 ;; 74) echo 190 ;; *) echo "" ;; esac
 }
 
 # judge <base "n b u m"> <head "n b u m"> <mode pr|release> [ver] -> rc 0 GREEN / 1 RED, one line per rule
@@ -177,8 +178,8 @@ self_test() {
     got=0; judge "100 10 90 50" "120 20 100 50" release 0.71.9 > /dev/null || got=$?; row "release short of the step: RED" 1 "$got"
     got=0; judge "100 10 90 50" "120 100 20 50" release 0.71.9 > /dev/null || got=$?; row "release meets the step: GREEN" 0 "$got"
     got=0; judge "100 10 5 50" "100 15 0 50" release 0.71.9 > /dev/null || got=$?; row "step capped at unbound(prev): GREEN" 0 "$got"
-    got=0; judge "1974 50 1913 818" "2000 160 1840 614" release 0.72.0 > /dev/null || got=$?; row "0.72.0 at missing 614 (cap 613): RED" 1 "$got"
-    got=0; judge "1974 50 1913 818" "2000 160 1840 613" release 0.72.0 > /dev/null || got=$?; row "0.72.0 at missing 613: GREEN" 0 "$got"
+    got=0; judge "1913 50 1863 763" "2000 160 1840 573" release 0.72.0 > /dev/null || got=$?; row "0.72.0 at missing 573 (cap 572): RED" 1 "$got"
+    got=0; judge "1913 50 1863 763" "2000 160 1840 572" release 0.72.0 > /dev/null || got=$?; row "0.72.0 at missing 572: GREEN" 0 "$got"
     got=0; judge "1974 500 1474 1" "2000 600 1400 1" release 0.75.0 > /dev/null || got=$?; row "0.75.0 at missing 1 (cap 0): RED" 1 "$got"
     # stub pv rows: each refusal of the instrument is NOT_MEASURED
     reset
