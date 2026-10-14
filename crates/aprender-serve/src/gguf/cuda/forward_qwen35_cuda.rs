@@ -1947,6 +1947,10 @@ pub use prefill::{
 #[path = "forward_qwen35_cuda_graph.rs"]
 mod graph;
 
+/// #5289: one greedy decode step for m sequences.
+#[path = "forward_qwen35_cuda_batch.rs"]
+mod batch;
+
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]
 #[path = "forward_qwen35_cuda_tests.rs"]
