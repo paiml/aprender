@@ -72,10 +72,10 @@ apr,POST /stream/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/a
 apr,POST /tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:96,high
 apr,POST /v1/batch/completions,9,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:158,medium
 apr,POST /v1/chat/completions,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:134,high
-apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/openai_handlers.rs:920-990,1059-1241 (stream:true branches 1337,1436; cuda stream branches crates/aprender-serve/src/api/cuda_chat_backend.rs:154,636,772,930,1543,1574; ignore_eos fail-closed 16,731,883)",high
+apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/openai_handlers.rs:955-1025,1094-1276 (stream:true branches 1372,1471; cuda stream branches crates/aprender-serve/src/api/cuda_chat_backend.rs:155,637,773,931,1549,1580; ignore_eos fail-closed 16,732,884)",high
 apr,POST /v1/chat/completions/stream,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:142,high
 apr,POST /v1/completions,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:131,high
-apr,"POST /v1/completions (stream:true, SSE)",2,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/gpu_completions_handler.rs:405 (SSE :340-378),high
+apr,"POST /v1/completions (stream:true, SSE)",2,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/gpu_completions_handler.rs:406 (SSE :341-379),high
 apr,POST /v1/embeddings,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:145,high
 apr,POST /v1/explain,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:148,high
 apr,POST /v1/gpu/warmup,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:151,medium
