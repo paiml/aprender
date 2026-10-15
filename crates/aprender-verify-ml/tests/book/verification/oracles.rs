@@ -3,11 +3,23 @@
 use verificar::oracle::{Executor, IoOracle, PythonExecutor};
 use verificar::Language;
 
+/// The same skip the lib tests in `src/oracle/executor.rs` use: these examples need python3.
+fn python_unavailable(executor: &PythonExecutor) -> bool {
+    if executor.is_available() {
+        return false;
+    }
+    eprintln!("Python not available, skipping test");
+    true
+}
+
 #[test]
 fn test_io_oracle_example() {
     // Example: Using I/O oracle for verification
     let oracle = IoOracle::new();
-    let _executor = PythonExecutor::new();
+    let executor = PythonExecutor::new();
+    if python_unavailable(&executor) {
+        return;
+    }
 
     let source_code = "print(2 + 2)";
     let target_code = "println!(\"{}\", 2 + 2);";
@@ -28,6 +40,9 @@ fn test_io_oracle_example() {
 fn test_python_executor_example() {
     // Example: Executing Python code
     let executor = PythonExecutor::new();
+    if python_unavailable(&executor) {
+        return;
+    }
     let code = "print('Hello, World!')";
     let input = "";
 
@@ -43,6 +58,9 @@ fn test_python_executor_example() {
 fn test_verification_with_input_example() {
     // Example: Verification with stdin input
     let executor = PythonExecutor::new();
+    if python_unavailable(&executor) {
+        return;
+    }
 
     let code = "name = input()\nprint(f'Hello, {name}!')";
     let input = "Alice";
