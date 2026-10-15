@@ -293,8 +293,7 @@ pub(crate) mod test_support {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/laya-parity-v1.yaml");
         let text = std::fs::read_to_string(&path).expect("read laya-parity-v1.yaml");
-        let y: serde_json::Value =
-            serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).expect("parse laya-parity-v1.yaml");
+        let y: serde_yaml::Value = serde_yaml::from_str(&text).expect("parse laya-parity-v1.yaml");
         y["equations"][equation]["float_tolerance"]
             .as_f64()
             .unwrap_or_else(|| panic!("laya-parity-v1 equations.{equation}.float_tolerance"))
