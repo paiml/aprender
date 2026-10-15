@@ -319,3 +319,20 @@ fn an_eos_list_gains_every_eog_marker_once() {
     assert_eq!(eos_ids_with_eog(&tok, vec![1, 1]), vec![1, 1, 3, 4], "input kept as given");
     assert_eq!(eos_ids_with_eog(&tok, Vec::new()), vec![3, 1, 4]);
 }
+
+/// aprender#4345: the Qwen3.5 `/v1/completions` arm stopped on the declared
+/// EOS alone, so a raw prompt that ended on `<|endoftext|>` ran to the budget.
+/// It tokenizes through the GGUF, so the stop set reads the state's tokenizer
+/// when there is one, and keeps the bare EOS when there is not.
+#[test]
+fn the_qwen35_completion_stop_set_gains_the_eog_markers() {
+    use crate::api::realize_handlers::qwen35_completion_stop_tokens;
+    let vocab: Vec<String> = ["<unk>", "<|endoftext|>", "a", "<|im_end|>"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let tok = crate::tokenizer::BPETokenizer::new(vocab, vec![], "<unk>").expect("tokenizer");
+    assert_eq!(qwen35_completion_stop_tokens(Some(&tok), Some(3)), vec![3, 1]);
+    assert_eq!(qwen35_completion_stop_tokens(None, Some(3)), vec![3]);
+    assert_eq!(qwen35_completion_stop_tokens(None, None), Vec::<u32>::new());
+}

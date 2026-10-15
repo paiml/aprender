@@ -114,9 +114,7 @@ pub(crate) fn preflight_context(context: Option<usize>, prompt_tokens: usize) ->
 ///
 /// The model's EOS, or the vocabulary's fallback for it, plus every
 /// end-of-generation marker the vocabulary has. A Qwen instruct GGUF declares
-/// `<|im_end|>` as EOS, yet a raw prompt ends with `<|    // Qwen3 uses 151643 (<|endoftext|>), not the default 0/2. aprender#4345:
-    // plus every EOG marker the vocabulary has.
-    let eos_ids = crate::api::realize_handlers::eos_ids_with_eog(&tokenizer, state.model_eos_ids());|>`, so a route
+/// `<|im_end|>` as EOS, yet a raw prompt ends with `<|endoftext|>`, so a route
 /// that stopped on the EOS alone ran past the answer to `max_tokens`. One
 /// function, so the quantized and the CUDA backends cannot drift apart again.
 pub(crate) fn generate_stop_tokens(tokenizer: &BPETokenizer, model_eos: Option<u32>) -> Vec<u32> {
@@ -245,8 +243,10 @@ async fn try_apr_q4k_generate(
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
     // ALB-109: Get EOS token IDs from model config or tokenizer.
-    // Qwen3 uses 151643 (<|endoftext|>), not the default 0/2.
-    let eos_ids = state.model_eos_ids();
+    // Qwen3 uses 151643 (<|endoftext|>), not the default 0/2. aprender#4345:
+    // plus every EOG marker the vocabulary has.
+    let eos_ids =
+        crate::api::realize_handlers::eos_ids_with_eog(&tokenizer, state.model_eos_ids());
 
     q4k_tx
         .send(AprQ4kRequest {
