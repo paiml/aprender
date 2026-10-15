@@ -103,3 +103,14 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-PRE-TOKENIZE-INSTRUCT-001
+    description: "C-PRETOK-INST-002: with no BPE tokenizer, ids are the UTF-8 bytes as u32"
+    test: "cargo test -p aprender-train --lib test_tokenize_byte_fallback_no_tokenizer"
+    prediction: "A pipeline without a tokenizer tokenizes \"AB\" to [65, 66]"
+    if_fails: "The byte-level fallback is broken or panics when no tokenizer is configured"
+  - id: FALSIFY-PRE-TOKENIZE-INSTRUCT-002
+    description: "C-PRETOK-INST-002: full InstructTrainer training loop runs without a BPE tokenizer"
+    test: "cargo test -p aprender-train --lib instruct_trainer::tests::test_trainer_train"
+    prediction: "InstructTrainer on a tiny model without BPE completes training and records one epoch_metrics entry per epoch"
+    if_fails: "Sample preparation without a tokenizer panics or produces unusable samples, so the training loop fails"

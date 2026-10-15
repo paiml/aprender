@@ -73,6 +73,10 @@ metadata:
     # crates/aprender-contracts-cli/src/cli.rs (`ReleaseArgs` v2 flags), all before line 735.
     # Every cited line of that file was compared with main: only 735 (`Export`) and 747
     # (`Tbox`) moved, now 746 and 758 in 4 rows, each read back; the rest are unchanged.
+    # PARTIAL RE-AUDIT, #5032 (G2.1). Same rule. #5032 adds one import line to
+    # crates/aprender-ci-tools/src/main.rs (line 4), so all 10 citations of that file shift
+    # by +1; each new line was read back identical to its old line on main. The new
+    # `aprender-ci-tools nextest-fail-fast` subcommand ships with no row -- not added here.
     ledger: docs/audits/surface_audit.csv
 
     overall:

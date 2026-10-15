@@ -138,3 +138,15 @@ status_history:
       falsification unit tests added in model_selection/tests.rs
       (test_train_test_split_ceil_sklearn_parity,
       test_train_test_split_ceil_preserves_exact_cases).
+
+falsification_tests:
+  - id: FALSIFY-TRAIN_TEST_SPLIT_CEIL-001
+    description: "C-NTEST-CEIL / C-SKLEARN-PARITY: float test_size sizes the test set by ceil (n=7,0.3 -> 4/3; n=11,0.1 -> 9/2)"
+    test: "cargo test -p aprender-core --lib test_train_test_split_ceil_sklearn_parity"
+    prediction: "x_test rows == 3 for n=7,test_size=0.3 and == 2 for n=11,test_size=0.1, matching scikit-learn"
+    if_fails: "n_test is computed with .round() (5/2 and 10/1 splits), diverging from scikit-learn _validate_shuffle_split"
+  - id: FALSIFY-TRAIN_TEST_SPLIT_CEIL-002
+    description: "C-EPSILON-GUARD: exact products are not inflated by ceil (n=10,0.2 -> 2; n=100,0.5 -> 50)"
+    test: "cargo test -p aprender-core --lib test_train_test_split_ceil_preserves_exact_cases"
+    prediction: "x_test rows == 2 for n=10,test_size=0.2 and == 50 for n=100,test_size=0.5"
+    if_fails: "f32->f64 widening error makes ceil overshoot an exact product by one sample"

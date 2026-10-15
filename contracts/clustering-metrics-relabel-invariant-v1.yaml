@@ -81,3 +81,10 @@ falsification:
     description: "CH and DB are relabeling-invariant and match the sklearn oracle for a gapped (non-contiguous) labeling. Discharges C-CLUSTER-RELABEL-001/002/003."
     test: "clustering_metrics_relabel_invariant_pmat_871 — CH: gapped RED 3.4380 → GREEN 10.3140 == contiguous; DB: gapped RED 0.3721 → GREEN 0.4150 == contiguous. sklearn reference: CH=10.3140, DB=0.4150 for both [0,0,1,1,1] and [0,0,2,2,2]."
     evidence: "cargo test -p aprender-core --lib clustering_metrics_relabel_invariant_pmat_871"
+
+falsification_tests:
+  - id: FALSIFY-CLUSTERING_METRICS_RELABEL_INVARIANT-001
+    description: "C-CLUSTER-RELABEL-001/002: CH and DB scores are equal for labels [0,0,1,1,1] and the gapped [0,0,2,2,2], and match sklearn (CH 10.3140, DB 0.4150)"
+    test: "cargo test -p aprender-core --lib clustering_metrics_relabel_invariant_pmat_871"
+    prediction: "|CH_contig - CH_gapped| < 1e-2, |DB_contig - DB_gapped| < 1e-3, both equal the sklearn oracle"
+    if_fails: "k = max+1 creates a phantom empty cluster (gapped CH 3.4380)"

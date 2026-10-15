@@ -65,3 +65,24 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-FUSED-OPTIMIZER-KERNEL-001
+    description: "C-ADAMW-FUSED-001: fused SIMD AdamW m, v, param match the scalar reference for all i"
+    test: "cargo test -p aprender-train --lib prop_simd_adamw_matches_scalar"
+    prediction: "Across proptest cases, SIMD AdamW m and v match the scalar update within 1e-4 and param within 1e-3"
+    if_fails: "The fused single-pass AdamW deviates from the reference update rule (moment, bias correction or decoupled weight decay is wrong)"
+  - id: FALSIFY-FUSED-OPTIMIZER-KERNEL-002
+    description: "C-ADAM-FUSED-001: fused SIMD Adam m, v, param match the scalar reference for all i"
+    test: "cargo test -p aprender-train --lib prop_simd_adam_matches_scalar"
+    prediction: "Across proptest cases, SIMD Adam m and v match the scalar update within 1e-4 and param within 1e-3"
+    if_fails: "The fused single-pass Adam deviates from the reference update rule"
+  - id: FALSIFY-FUSED-OPTIMIZER-KERNEL-003
+    description: "C-ADAMW-FUSED-001: v[i] >= 0 for all i after repeated steps"
+    test: "cargo test -p aprender-train --lib falsify_aw_002e_second_moment_non_negative"
+    prediction: "After 50 AdamW steps every second-moment entry is >= 0"
+    if_fails: "The second-moment accumulation no longer squares the gradient, so v can go negative and sqrt(v) yields NaN"
+  - id: FALSIFY-FUSED-OPTIMIZER-KERNEL-004
+    description: "C-ADAMW-FUSED-001: all outputs finite for finite inputs"
+    test: "cargo test -p aprender-train --lib falsify_aw_004e_update_finiteness"
+    prediction: "With gradients of magnitude 1e6, every updated parameter is finite"
+    if_fails: "The fused update overflows or divides by a near-zero denominator; epsilon handling is broken"

@@ -37,3 +37,10 @@ falsification:
     description: "Single-sample pass@k collapses to pass@1. Discharges C-PASSK-001/002."
     test: "single_sample_pass_at_k_collapses_to_pass_at_1 — 164 problems, 50 solved, num_samples=1, k=[1,10,100]: RED pre-fix 0.305/0.977/1.0, GREEN post-fix 0.305 for all."
     evidence: "cargo test -p apr-cli --lib single_sample_pass_at_k_collapses_to_pass_at_1"
+
+falsification_tests:
+  - id: FALSIFY-EVAL_PASSK_SINGLE_SAMPLE-001
+    description: "C-PASSK-001: with one greedy sample per problem, pass@1, pass@10 and pass@100 all equal the solved fraction (50/164)"
+    test: "cargo test -p apr-cli --lib single_sample_pass_at_k_collapses_to_pass_at_1"
+    prediction: "every pass@k == 50/164 within 1e-9"
+    if_fails: "problem/solved counts are fed into the per-sample (n, c) slots, inflating pass@10 to ~0.98"

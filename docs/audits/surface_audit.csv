@@ -828,7 +828,7 @@ aprender-ptop,aprender-ptop --render-once --explode <PANEL>,6,UNKNOWN,NONE,no,0,
 pv-sat,pv-sat [CONTRACT_DIR] (SAT witness write),6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-sat/main.rs:44-45,high
 pv-sat,pv-sat --self-test,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-sat/main.rs:39,high
 aprender-score,"aprender-score --ci --threshold <N> (gate mode, exit 1 below threshold)",6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/score.rs:49,high
-aprender-score,aprender-score [PATH] (TUI-crate quality scoring),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/score.rs:30-64,high
+aprender-score,aprender-score [PATH] (TUI-crate quality scoring),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/score.rs:30-64 (config read 794-800),high
 aprender-simulate,unserved: GET / (visualization UI; library feature web; no aprender-simulate command starts the server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:88,medium
 aprender-simulate,unserved: GET /health (visualization; library feature web; no aprender-simulate command starts the server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:89,medium
 aprender-simulate,unserved: GET /ws (visualization WebSocket; library feature web; no aprender-simulate command starts the server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:82,medium
@@ -895,13 +895,13 @@ aprender-train-shell,aprender-train-shell --version,7,x86_64-linux,NONE,no,12,te
 aprender-verify,aprender-verify --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-verify-ml/src/bin/verificar.rs:20,high
 aprender-zram,aprender-zram --version,7,x86_64-linux,NONE,no,8,rag-eval,crates/aprender-zram-cli/src/lib.rs:23,high
 aprender-zram-generator,aprender-zram-generator --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-zram-generator/src/main.rs:33,high
-aprender-ci-tools,aprender-ci-tools publishable-crates,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:27,high
-aprender-ci-tools,aprender-ci-tools package-include-diff,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:30,high
-aprender-ci-tools,aprender-ci-tools coverage-report-scope,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:38,high
-aprender-ci-tools,aprender-ci-tools tarball-shrink-report,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:45,high
-aprender-ci-tools,aprender-ci-tools tarball-workspace,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:54,high
-aprender-ci-tools,aprender-ci-tools tarball-build-errors,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:67,high
-aprender-ci-tools,aprender-ci-tools dag-status,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:76,high
-aprender-ci-tools,aprender-ci-tools git-patch-id,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:83,high
-aprender-ci-tools,aprender-ci-tools llama-fit-verdict,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:92,high
-aprender-ci-tools,aprender-ci-tools --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:15,high
+aprender-ci-tools,aprender-ci-tools publishable-crates,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:28,high
+aprender-ci-tools,aprender-ci-tools package-include-diff,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:31,high
+aprender-ci-tools,aprender-ci-tools coverage-report-scope,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:39,high
+aprender-ci-tools,aprender-ci-tools tarball-shrink-report,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:46,high
+aprender-ci-tools,aprender-ci-tools tarball-workspace,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:55,high
+aprender-ci-tools,aprender-ci-tools tarball-build-errors,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:68,high
+aprender-ci-tools,aprender-ci-tools dag-status,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:77,high
+aprender-ci-tools,aprender-ci-tools git-patch-id,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:84,high
+aprender-ci-tools,aprender-ci-tools llama-fit-verdict,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:93,high
+aprender-ci-tools,aprender-ci-tools --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:16,high
