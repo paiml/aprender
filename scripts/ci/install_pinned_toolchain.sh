@@ -15,7 +15,7 @@
 #
 # EXIT 0 installed or nothing to install; 1 the pinned install failed (--self-test: 1 on a failed row).
 
-set -uo pipefail
+set -euo pipefail
 
 install_pin() {
     local ws=${1:-.} f ch comps args=() c
@@ -59,7 +59,7 @@ self_test() {
     install_pin "$ws" >/dev/null
     chk "floating channel: no rustup call" "$(called)" none
     printf '[toolchain]\nchannel = "1.93.0"\n' >"$ws/rust-toolchain.toml"
-    out=$(STUB_FAIL=1 install_pin "$ws"; echo "rc=$?")
+    out=$(STUB_FAIL=1 install_pin "$ws" && echo rc=0 || echo rc=1)
     chk "failed install: error and rc 1" "$(echo "$out" | grep -c "^::error::")$(echo "$out" | tail -n 1)" "1rc=1"
     rm -rf -- "${t:?}"
     [ "$fails" -eq 0 ] && echo "self-test: all ok" || echo "self-test: $fails FAILED"
