@@ -30,13 +30,23 @@ fn unreadable_trained_adapter_refuses_the_load_4698() {
         .expect("no adapter file means fresh adapters");
     assert_eq!(snapshot(&layers), before, "no adapter file must leave the layers untouched");
 
+    // A valid adapter_config.json beside the junk weights, so the refusal comes from the
+    // safetensors parser and not from a missing or bad config.
+    let config = r#"{"peft_type":"LORA","r":4,"lora_alpha":8.0,"target_modules":["q_proj","v_proj"],"lora_dropout":0.0,"bias":"none"}"#;
+    crate::lora::PeftAdapterConfig::from_json(config).expect("fixture config must parse");
+    std::fs::write(dir.path().join("adapter_config.json"), config).expect("write config");
     std::fs::write(dir.path().join("adapter_model.safetensors"), b"not a safetensors file")
         .expect("write adapter");
     let err = InstructPipeline::load_trained_adapter(dir.path(), &mut layers, num_layers)
         .expect_err("an unreadable trained adapter must refuse the load");
+    let msg = err.to_string();
     assert!(
-        err.to_string().contains("adapter_model.safetensors"),
-        "the refusal must name the file, got: {err}"
+        msg.contains("Failed to load adapter_model.safetensors"),
+        "the refusal must come from the safetensors parser, got: {msg}"
+    );
+    assert!(
+        msg.contains(&dir.path().join("adapter_model.safetensors").display().to_string()),
+        "the refusal must name the file, got: {msg}"
     );
     assert_eq!(snapshot(&layers), before, "a refused load must leave the layers untouched");
 }
