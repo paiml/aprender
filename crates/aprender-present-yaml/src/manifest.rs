@@ -159,7 +159,81 @@ pub struct WidgetConfig {
     pub acceleration: Option<String>,
     /// Additional properties
     #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
+    pub extra: HashMap<String, ExtraValue>,
+}
+
+/// One `extra` property value. serde_yaml_ng kept any YAML node here, but
+/// `serde_json::Value` has no `.inf`/`.nan` and would turn them into null. This
+/// reads any node, and a non-finite float keeps its YAML spelling as a string.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct ExtraValue(pub serde_json::Value);
+
+impl<'de> Deserialize<'de> for ExtraValue {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(ExtraVisitor).map(ExtraValue)
+    }
+}
+
+struct ExtraVisitor;
+
+impl<'de> serde::de::Visitor<'de> for ExtraVisitor {
+    type Value = serde_json::Value;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("any YAML node")
+    }
+    fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> {
+        Ok(v.into())
+    }
+    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
+        Ok(v.into())
+    }
+    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+        Ok(v.into())
+    }
+    fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> {
+        Ok(serde_json::Number::from_f64(v).map_or_else(
+            || serde_json::Value::String(yaml_non_finite(v).to_string()),
+            serde_json::Value::Number,
+        ))
+    }
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
+        Ok(v.into())
+    }
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(serde_json::Value::Null)
+    }
+    fn visit_none<E>(self) -> Result<Self::Value, E> {
+        Ok(serde_json::Value::Null)
+    }
+    fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        d.deserialize_any(ExtraVisitor)
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut s: A) -> Result<Self::Value, A::Error> {
+        let mut items = Vec::new();
+        while let Some(ExtraValue(v)) = s.next_element()? {
+            items.push(v);
+        }
+        Ok(serde_json::Value::Array(items))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
+        let mut map = serde_json::Map::new();
+        while let Some((k, ExtraValue(v))) = m.next_entry::<String, ExtraValue>()? {
+            map.insert(k, v);
+        }
+        Ok(serde_json::Value::Object(map))
+    }
+}
+
+/// The YAML spelling of a non-finite float.
+fn yaml_non_finite(v: f64) -> &'static str {
+    if v.is_nan() {
+        ".nan"
+    } else if v > 0.0 {
+        ".inf"
+    } else {
+        "-.inf"
+    }
 }
 
 /// Interaction configuration.
@@ -266,7 +340,8 @@ layout:
 
     /// serde_yaml loaded `.inf`/`.nan` in the flattened `extra` map; serde-saphyr
     /// refuses a non-finite float in a typeless slot unless
-    /// `reject_non_finite_typeless_float` is off (#5205). RED without it.
+    /// `reject_non_finite_typeless_float` is off (#5205), and `serde_json::Value`
+    /// would hold them as null. `ExtraValue` keeps the YAML spelling. RED without either.
     #[test]
     fn test_widget_extra_keeps_non_finite() {
         let yaml = EXAMPLE_YAML.replace(
@@ -275,9 +350,23 @@ layout:
         );
         let manifest = Manifest::from_yaml(&yaml).expect("a non-finite float in extra parses");
         let extra = &manifest.layout.sections[0].widgets[0].extra;
-        for key in ["max", "floor", "gap_value"] {
-            assert!(extra.contains_key(key), "extra lost {key}: {extra:?}");
+        for (key, spelled) in [("max", ".inf"), ("floor", "-.inf"), ("gap_value", ".nan")] {
+            assert_eq!(
+                extra.get(key),
+                Some(&ExtraValue(serde_json::Value::String(spelled.to_string()))),
+                "extra lost the value of {key}: {extra:?}"
+            );
         }
+        // A finite float is still a number, not a string.
+        let yaml = EXAMPLE_YAML.replace(
+            "          style: \"heading-1\"\n",
+            "          style: \"heading-1\"\n          ratio: 0.5\n",
+        );
+        let manifest = Manifest::from_yaml(&yaml).expect("a finite float in extra parses");
+        assert_eq!(
+            manifest.layout.sections[0].widgets[0].extra.get("ratio"),
+            Some(&ExtraValue(serde_json::json!(0.5)))
+        );
     }
 
     #[test]
