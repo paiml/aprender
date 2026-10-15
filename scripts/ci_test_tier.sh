@@ -598,9 +598,9 @@ self_test() {
     mkmoved "$td/s-moved"
     PTP="$(cd "$TREE" && pwd)/scripts/ci/pr_touched_paths.sh"  # rows cd into the fixture; TREE may be "."
     row 0 "#5391 PR touched list: the PR's own crate is listed (merge-base diff)" "^crates/$leaf/src/lib\.rs\$" bash -c "cd '$td/s-moved' && bash '$PTP' main HEAD 2>/dev/null"
-    row 0 "#5391 ...and a crate only main's later commit touched is NOT listed (own crate present, so not vacuous)" '^NOT-LISTED$' bash -c "cd '$td/s-moved' && o=\$(bash '$PTP' main HEAD 2>/dev/null); if printf '%s' \"\$o\" | grep -q other-crate || ! printf '%s' \"\$o\" | grep -q 'crates/$leaf/'; then echo LISTED-OR-EMPTY; else echo NOT-LISTED; fi"
+    row 0 "#5391 ...and a crate only main's later commit touched is NOT listed (own crate present, so not vacuous)" '^NOT-LISTED$' bash -c "cd '$td/s-moved' && o=\$(bash '$PTP' main HEAD 2>/dev/null); case \"\$o\" in *other-crate*) echo LISTED-OR-EMPTY;; *crates/$leaf/*) echo NOT-LISTED;; *) echo LISTED-OR-EMPTY;; esac"
     sed 's|git diff --no-renames --name-only "\$mb" "\$head"|git diff --no-renames --name-only "$base" "$head"|' "$TREE/scripts/ci/pr_touched_paths.sh" > "$td/mutant-tipvstip.sh"
-    row 0 "#5391 mutant (tip vs tip, the old behaviour) lists main's crate -- the rows discriminate" '^MUTANT-LISTS-IT$' bash -c "cd '$td/s-moved' && if bash '$td/mutant-tipvstip.sh' main HEAD 2>/dev/null | grep -q other-crate; then echo MUTANT-LISTS-IT; else echo MUTANT-SURVIVES; fi"
+    row 0 "#5391 mutant (tip vs tip, the old behaviour) lists main's crate -- the rows discriminate" '^MUTANT-LISTS-IT$' bash -c "cd '$td/s-moved' && m=\$(bash '$td/mutant-tipvstip.sh' main HEAD 2>/dev/null); case \"\$m\" in *other-crate*) echo MUTANT-LISTS-IT;; *) echo MUTANT-SURVIVES;; esac"
     # MUTANT: a copy whose queue branch ignores the re-derived diff and always
     # says full is exactly today's behaviour — the rows above must lose the crates.
     sed 's|^\( *\)selection "merge_group|\1printf "tier=full\\nreason=MUTANT\\n"; return 0; selection "merge_group|' "$T" > "$td/mutant-queue.sh"

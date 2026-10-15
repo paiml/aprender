@@ -23,7 +23,7 @@ if mb=$(git merge-base "$base" "$head" 2>/dev/null); then :; else
   mb=""
   # shallow clone: deepen both sides a bounded number of times, then give up
   for _ in 1 2 3 4; do
-    git rev-parse --is-shallow-repository 2>/dev/null | grep -q true || break
+    sh=$(git rev-parse --is-shallow-repository 2>/dev/null); [ "$sh" = true ] || break
     git fetch -q --no-tags --deepen=100 origin 2>/dev/null || break
     if mb=$(git merge-base "$base" "$head" 2>/dev/null); then break; fi
     mb=""
