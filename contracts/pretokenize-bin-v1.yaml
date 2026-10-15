@@ -396,3 +396,10 @@ equations:
     invariants:
       - "Declared total must equal recomputed sum from shard byte lengths"
       - "Mismatch indicates manifest was not regenerated after shard rewrite"
+
+falsification_tests:
+  - id: FALSIFY-PRETOKENIZE_BIN-001
+    description: "INV-PRETOK-005: encode-corpus produces byte-identical shards (same names, same bytes) on two runs, num_workers=1 vs num_workers=N"
+    test: "cargo test -p apr-cli --lib encode_corpus_num_workers_1_matches_num_workers_n_byte_for_byte"
+    prediction: "shard count, shard filenames and every shard's bytes are equal"
+    if_fails: "shard output depends on run or scheduling, breaking pretokenize determinism"

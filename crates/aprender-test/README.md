@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/paiml/probar/main/docs/assets/probar-hero.svg?v=2" alt="Probar - Playwright-Compatible Testing for WASM + TUI" width="800"/>
+  <img src="https://raw.githubusercontent.com/paiml/aprender/main/crates/aprender-test/docs/assets/probar-hero.svg" alt="Probar - Playwright-Compatible Testing for WASM + TUI" width="800"/>
 </p>
 
 <h1 align="center">Probar</h1>
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/jugar-probar">
-    <img src="https://img.shields.io/crates/v/jugar-probar.svg" alt="Crates.io">
+  <a href="https://crates.io/crates/aprender-test-lib">
+    <img src="https://img.shields.io/crates/v/aprender-test-lib.svg" alt="Crates.io">
   </a>
 </p>
 
@@ -23,8 +23,8 @@
 
 | Crate | Purpose | Install |
 |-------|---------|---------|
-| **[jugar-probar](https://crates.io/crates/jugar-probar)** | Library for writing tests | `cargo add jugar-probar --dev` |
-| **[probador](https://crates.io/crates/probador)** | CLI tool for running tests | `cargo install probador` |
+| **[jugar-probar](https://crates.io/crates/aprender-test-lib)** | Library for writing tests | `cargo add aprender-test-lib --dev` |
+| **[probador](https://crates.io/crates/aprender-test-cli)** | CLI tool for running tests | `cargo install aprender-test-cli` |
 
 ### Library (jugar-probar)
 
@@ -32,7 +32,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-jugar-probar = "1.0"
+aprender-test-lib = "0.71"
 ```
 
 ```rust
@@ -42,7 +42,7 @@ use jugar_probar::prelude::*;
 ### CLI (probador)
 
 ```bash
-cargo install probador
+cargo install aprender-test-cli
 ```
 
 ```bash
@@ -410,10 +410,10 @@ Probar is built on pragmatic testing principles:
 
 ## Documentation
 
-- **[Book](https://paiml.github.io/probar/)** - Comprehensive guide
-- **[API Docs](https://docs.rs/jugar-probar)** - Rust documentation
+- **[Book](https://github.com/paiml/aprender/tree/main/crates/aprender-test/book)** - Comprehensive guide
+- **[API Docs](https://docs.rs/aprender-test-lib)** - Rust documentation
 - **[GUI Coverage Guide](book/src/probar/ux-coverage.md)** - GUI coverage tutorial
-- **[Examples](crates/probar/examples/)** - 20+ runnable examples
+- **[Examples](../aprender-test-lib/examples/)** - 20+ runnable examples
 - 🤖 [Coursera Hugging Face AI Development Specialization](https://www.coursera.org/specializations/hugging-face-ai-development) - Build Production AI systems with Hugging Face in Pure Rust
 
 ## Examples
@@ -466,8 +466,8 @@ Contributions are welcome! Please follow these guidelines:
 ### Development Setup
 
 ```bash
-git clone https://github.com/paiml/probar.git
-cd probar
+git clone https://github.com/paiml/aprender.git
+cd aprender/crates/aprender-test
 cargo build
 cargo test
 ```

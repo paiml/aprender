@@ -55,3 +55,39 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-VECMAT_BLIS_GEMV_V1-001
+    description: "Matrix::vecmat gives result[j] == sum_i(v[i] * m[i, j]) for all j"
+    test: "cargo test -p aprender-compute --lib test_vecmat_basic"
+    prediction: "v = [1, 2] times the 2x3 matrix [[1,2,3],[4,5,6]] returns exactly [9, 12, 15]"
+    if_fails: "the delegation to blis::gemv computes the wrong product (wrong layout or stride), so vecmat no longer equals v^T M"
+  - id: FALSIFY-VECMAT_BLIS_GEMV_V1-002
+    description: "precondition v.len() == m.rows is enforced"
+    test: "cargo test -p aprender-compute --lib test_vecmat_dimension_mismatch"
+    prediction: "a length-3 vector against a 2x3 matrix returns Err"
+    if_fails: "vecmat calls gemv with mismatched lengths, panicking or reading out of bounds instead of returning InvalidInput"
+  - id: FALSIFY-VECMAT_BLIS_GEMV_V1-003
+    description: "the N-tiled accumulator path for N > 4096 matches the scalar GEMV"
+    test: "cargo test -p aprender-compute --lib blis::gemv::tests::test_gemv_tiled_large_n"
+    prediction: "for (k, n) = (64, 8192), every gemv output is within 1e-2 of gemv_scalar"
+    if_fails: "the tiled path drops or double-counts a tile, so large-N vecmat is wrong"
+  - id: FALSIFY-VECMAT_BLIS_GEMV_V1-004
+    description: "the tiled path at an LLM FFN width matches the scalar GEMV"
+    test: "cargo test -p aprender-compute --lib blis::gemv::tests::test_gemv_tiled_llm_size"
+    prediction: "for (k, n) = (256, 11008), every gemv output is within 1e-1 of gemv_scalar"
+    if_fails: "accumulation over many tiles drifts or skips a tile at real model widths"
+  - id: FALSIFY-VECMAT_BLIS_GEMV_V1-005
+    description: "the tiled path handles an N remainder that is not a multiple of the tile"
+    test: "cargo test -p aprender-compute --lib blis::gemv::tests::test_gemv_tiled_remainder"
+    prediction: "for (k, n) = (32, 5000), every gemv output is within 1e-2 of gemv_scalar"
+    if_fails: "the trailing N columns after the last full tile are dropped or miscomputed"
+  - id: FALSIFY-VECMAT_BLIS_GEMV_V1-006
+    description: "the tiled path handles a K that is not a multiple of the unroll"
+    test: "cargo test -p aprender-compute --lib blis::gemv::tests::test_gemv_tiled_k_remainder"
+    prediction: "for (k, n) = (67, 8192), every gemv output is within 1e-2 of gemv_scalar"
+    if_fails: "the K remainder rows are skipped, so outputs miss the last rows' contribution"
+  - id: FALSIFY-VECMAT_BLIS_GEMV_V1-007
+    description: "the AVX2 VFMADD path with an N remainder matches the scalar reference"
+    test: "cargo test -p aprender-compute --lib blis::gemv::tests::test_gemv_large_n"
+    prediction: "for k=2, n=17, each c[j] equals a[0]*b[j] + a[1]*b[n+j] within 1e-4, covering two 8-wide chunks plus one scalar element"
+    if_fails: "the AVX2 kernel mishandles 8-wide chunks or the scalar tail, so some output columns are wrong"

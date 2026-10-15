@@ -166,6 +166,11 @@ pub enum Architecture {
     /// GH-1586: tensor name mapping only — full ALiBi runtime inference is
     /// a separate concern (`is_inference_verified()` returns false).
     Bloom,
+    /// Google EmbeddingGemma 2 (GGUF `gemma-embedding2`): a bidirectional
+    /// encoder that returns one pooled vector, not a causal LM. APR-EMBED-001
+    /// EG-6: tensor names pass through unchanged so GGUF → APR → GGUF is
+    /// name-exact; the forward stays in realizar's GGUF path.
+    EmbeddingGemma2,
 }
 
 include!("tensor_expectation.rs");

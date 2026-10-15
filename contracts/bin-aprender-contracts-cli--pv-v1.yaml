@@ -99,6 +99,7 @@ shapes:
           - "obligations"
           - "ontology export"
           - "ontology tbox"
+          - "ontology readme"
           - "pipeline"
           - "probar"
           - "proof-status"

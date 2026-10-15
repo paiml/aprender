@@ -313,6 +313,7 @@ fn test_clean_chat_output_with_end_tag() {
 #[test]
 fn test_embedding_request_serialization() {
     let req = EmbeddingRequest {
+        dimensions: None,
         input: "Test text".to_string().into(),
         model: Some("test-model".to_string()),
     };
@@ -332,6 +333,7 @@ fn test_embedding_request_serialization() {
 #[test]
 fn test_embedding_request_without_model() {
     let req = EmbeddingRequest {
+        dimensions: None,
         input: "Text only".to_string().into(),
         model: None,
     };

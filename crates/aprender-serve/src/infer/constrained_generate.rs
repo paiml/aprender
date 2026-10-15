@@ -99,6 +99,23 @@ fn unconstrained_gguf_path(
     gen_config.trace.then_some(("gguf-trace", TRACE_REMOVED_BY))
 }
 
+/// `gen_config` with the constraint vocabulary's end-of-sequence id among its stop tokens, as
+/// `apr serve`'s constrained route adds it (#3568). Once the document is whole the mask admits
+/// only that id; a stop list built from the model config's EOS alone, when the two ids differ,
+/// would take it as text and keep going past the end of the document.
+fn with_constraint_eos(
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    eos: Option<u32>,
+) -> crate::gguf::QuantizedGenerateConfig {
+    let mut config = gen_config.clone();
+    if let Some(eos) = eos {
+        if !config.stop_tokens.contains(&eos) {
+            config.stop_tokens.push(eos);
+        }
+    }
+    config
+}
+
 /// Generate under `request` through the one engine (#3793): `(tokens, used_gpu,
 /// gpu_attempted, stop)`, the GPU pair as the unconstrained run reports it (#3826). The schema
 /// or grammar is compiled against the model's vocabulary here, after load and before the first
@@ -133,6 +150,7 @@ fn generate_gguf_constrained(
     }
     let env = mapped.constraint_env().map_err(RealizarError::Constraint)?;
     let mut constraint = request.compile(&env).map_err(RealizarError::Constraint)?;
+    let gen_config = &with_constraint_eos(gen_config, mapped.model.eos_token_id());
     let context_length = model.config.context_length;
     let (turn, stop, gpu_attempted) = if let Some(qwen) = qwen35_host {
         crate::gguf::forward_qwen35::qwen35_check_context(input_tokens.len(), context_length)?;

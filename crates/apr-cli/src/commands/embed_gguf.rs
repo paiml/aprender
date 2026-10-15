@@ -12,7 +12,7 @@ use super::model_header::read_prefix;
 use crate::error::{CliError, Result};
 use crate::EmbedTask;
 use realizar::gguf::embedding_gemma2_input::{EmbedTokenizer, Prompt, Task};
-use realizar::gguf::forward_embedding_gemma2::{truncate_to, EmbeddingGemma2, MATRYOSHKA_DIMS};
+use realizar::gguf::forward_embedding_gemma2::{embed_text, EmbeddingGemma2, MATRYOSHKA_DIMS};
 use realizar::gguf::{GGUFModel, MappedGGUFModel};
 use realizar::model_kind::{gguf_model_kind, ModelKind};
 use std::path::Path;
@@ -211,17 +211,13 @@ fn run_gguf(model: &Path, flags: &EmbedFlags<'_>) -> Result<()> {
     }
     let mut results = Vec::with_capacity(texts.len());
     for text in &texts {
-        let tokens = tokenizer.tokens(&prompt, text);
-        let full = encoder
-            .embed(&tokens)
+        // The same call `apr serve` makes for an embedding model (EG-3), so both answer
+        // with the same vector for the same text.
+        let (tokens, vector) = embed_text(&encoder, &tokenizer, &prompt, text, flags.dim)
             .map_err(|e| CliError::InferenceFailed(format!("{text:?}: {e}")))?;
-        let vector = match flags.dim {
-            None => full,
-            Some(dim) => truncate_to(&full, dim).map_err(|e| refused(e.to_string()))?,
-        };
         results.push(Embedded {
             text,
-            tokens: tokens.len(),
+            tokens,
             vector,
         });
     }

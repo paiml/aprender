@@ -41,3 +41,10 @@ falsification:
     description: "--sparsity below the target-ratio default is honored, not raised. Discharges C-PRUNE-001/002."
     test: "test_magnitude_sparsity_below_target_ratio_not_overridden — 64 distinct magnitudes, --sparsity 0.25 (target_ratio default 0.5): RED pre-fix 32/64 zeroed (50%), GREEN post-fix 16/64 (25%)."
     evidence: "cargo test -p apr-cli --lib test_magnitude_sparsity_below_target_ratio_not_overridden"
+
+falsification_tests:
+  - id: FALSIFY-PRUNE_SPARSITY_CORRECTNESS-001
+    description: "C-PRUNE-001/002: magnitude prune with --sparsity 0.25 and the default target_ratio 0.5 zeros exactly 25% of 64 distinct weights"
+    test: "cargo test -p apr-cli --lib test_magnitude_sparsity_below_target_ratio_not_overridden"
+    prediction: "16 of 64 weights are zero in the output tensor"
+    if_fails: "sparsity.max(target_ratio) silently raises the request to 50% (32 zeros)"

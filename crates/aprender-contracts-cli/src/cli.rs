@@ -763,4 +763,10 @@ pub enum OntologyCommand {
         #[arg(long)]
         write: bool,
     },
+    /// Published READMEs and manifest URLs name the monorepo, never an archived repo (#5382). Exit 1 on a finding
+    Readme {
+        /// Workspace root: its README.md, and every README.md and Cargo.toml under crates/
+        #[arg(default_value = ".")]
+        root: PathBuf,
+    },
 }

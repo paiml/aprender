@@ -56,3 +56,19 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-BLIS_PROFILING_GUARD_V1-001
+    description: "when profiler.is_some(), gemm_blis still takes Instant timings and records them"
+    test: "cargo test -p aprender-compute --lib test_falsification_55_profiler_works"
+    prediction: "a 64x64 gemm_blis with BlisProfiler::enabled() leaves macro_stats.flops > 0, macro_stats.total_ns > 0, and a summary containing 'GFLOP/s'"
+    if_fails: "the track_time gate is inverted or dropped, so an active profiler records zero time and profiling silently breaks"
+  - id: FALSIFY-BLIS_PROFILING_GUARD_V1-002
+    description: "when profiler.is_some(), record_prof still records macroblock stats per gemm_blis call"
+    test: "cargo test -p aprender-compute --lib blis::tests::profiler_heijunka::test_profiler_records_timing"
+    prediction: "a 128x128 gemm_blis with BlisProfiler::enabled() leaves macro_stats.count > 0 and macro_stats.flops > 0"
+    if_fails: "record_prof becomes a no-op even when given Some(Instant), so enabled profiling reports no macroblocks"
+  - id: FALSIFY-BLIS_PROFILING_GUARD_V1-003
+    description: "with profiler = None (no Instant::now calls), gemm_blis output is still numerically correct"
+    test: "cargo test -p aprender-compute --lib blis::tests::blis_gemm::test_gemm_blis_medium"
+    prediction: "a 64x64 gemm_blis(..., None) matches gemm_reference element-wise within 1e-3"
+    if_fails: "gating the timing code on the profiler changed the compute path, so the unprofiled (common) case returns wrong results"

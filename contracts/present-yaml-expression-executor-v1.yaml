@@ -129,3 +129,55 @@ open_obligations:
     apply_join, apply_pivot, apply_group_by, apply_rank and apply_suggest are
     NOT covered by this contract. They need fixture documents rather than unit
     inputs and remain at 0%.
+
+falsification_tests:
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-001
+    description: "alias_equivalence: every spelling of an operator decides the same way"
+    test: "cargo test -p aprender-present-yaml --lib every_spelling_of_an_operator_decides_the_same_way"
+    prediction: "all aliases of eq, ne, gt, lt, gte and lte return the same bool on every probe value"
+    if_fails: "an operator alias was dropped or drifted from its sibling spellings"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-002
+    description: "alias_equivalence: eq and ne are exact complements on every Value variant"
+    test: "cargo test -p aprender-present-yaml --lib equality_and_inequality_are_exact_complements"
+    prediction: "compare(v,'eq',t) != compare(v,'ne',t) for every variant and target"
+    if_fails: "ne is no longer the negation of eq"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-003
+    description: "an unrecognised operator fails closed"
+    test: "cargo test -p aprender-present-yaml --lib an_unrecognised_operator_matches_nothing"
+    prediction: "compare_values returns false for every operator not in the table"
+    if_fails: "a typo'd filter operator matches every row"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-004
+    description: "ordering needs two numbers: gt, lt, gte and lte are false against a non-number"
+    test: "cargo test -p aprender-present-yaml --lib ordering_against_a_non_number_is_false_in_both_directions"
+    prediction: "all four orderings are false for a string value or a non-numeric target"
+    if_fails: "ordering comparison coerces non-numbers"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-005
+    description: "window_units: the ms suffix is read before the bare s"
+    test: "cargo test -p aprender-present-yaml --lib the_ms_suffix_is_read_before_the_bare_s"
+    prediction: "parse_window('500ms') == 500 and parse_window('500s') == 500000"
+    if_fails: "the suffix ladder strips 's' first and destroys the millisecond unit"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-006
+    description: "window_units: units convert by their exact multiple"
+    test: "cargo test -p aprender-present-yaml --lib window_units_convert_by_their_exact_multiple"
+    prediction: "ms=1, s=1000, m=60000, h=3600000, d=86400000; a bare number is ms"
+    if_fails: "a unit factor is wrong and rescales every window"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-007
+    description: "window_units: an empty or unparseable window is refused, never defaulted"
+    test: "cargo test -p aprender-present-yaml --lib an_empty_or_unparseable_window_is_refused"
+    prediction: "parse_window returns Err for empty, whitespace, unit-only, fractional and negative input"
+    if_fails: "a malformed window is silently accepted"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-008
+    description: "readable_rows_only: aggregates drop rows that cannot be read"
+    test: "cargo test -p aprender-present-yaml --lib rows_that_cannot_be_read_are_dropped_from_an_aggregate"
+    prediction: "sum == 4 and mean == 2 over four rows of which two are unreadable"
+    if_fails: "unreadable rows are zero-filled or abort the aggregate"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-009
+    description: "readable_rows_only: the mean of nothing is 0, never NaN"
+    test: "cargo test -p aprender-present-yaml --lib the_mean_of_nothing_is_zero_rather_than_not_a_number"
+    prediction: "the mean of an empty or all-unreadable set is 0.0"
+    if_fails: "the empty-set guard was removed and the mean is NaN"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-010
+    description: "a transform that needs an array refuses anything else"
+    test: "cargo test -p aprender-present-yaml --lib a_transform_that_needs_an_array_refuses_anything_else"
+    prediction: "require_array is Err for Null, Number, String and Object, and Ok for an empty Array"
+    if_fails: "transforms coerce non-array input"
