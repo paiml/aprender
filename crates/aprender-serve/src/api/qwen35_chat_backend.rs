@@ -280,7 +280,10 @@ async fn try_qwen35_backend(
     // aprender#4345: the EOS and every EOG marker the vocabulary has.
     let stop_tokens = stop_tokens_unless_ignore_eos(
         request,
-        crate::api::realize_handlers::completion_stop_tokens(&tokenizer, state.model_eos_token_id()),
+        crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            state.model_eos_token_id(),
+        ),
     );
     // The context-bounded budget, not the request's number: what is decoded and what
     // `finish_reason` is judged against are the same count.
