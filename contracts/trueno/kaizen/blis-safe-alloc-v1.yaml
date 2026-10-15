@@ -62,3 +62,24 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-BLIS_SAFE_ALLOC_V1-001
+    description: "add_alloc returns a Vec of the input length with every element written by the BLIS add"
+    test: "cargo test -p aprender-compute --lib coverage_contract::falsify_blis_003_elementwise_add"
+    prediction: "for lengths 1,7,8,15,16,31,32,100,255,256,1000, add_alloc(0..len, len..0) has length len and every element equals len within 1e-5"
+    if_fails: "add_alloc returns a wrong-length Vec or leaves elements unwritten (zero or garbage) on a SIMD remainder"
+  - id: FALSIFY-BLIS_SAFE_ALLOC_V1-002
+    description: "relu_alloc overwrites every output element with max(x, 0)"
+    test: "cargo test -p aprender-compute --lib coverage_contract::falsify_blis_010_relu"
+    prediction: "for 100 inputs in [-5.0, 4.9], each output is exactly 0.0 for negative x and exactly x otherwise"
+    if_fails: "relu_alloc leaves positive positions at the initial zero or returns uninitialized values"
+  - id: FALSIFY-BLIS_SAFE_ALLOC_V1-003
+    description: "rms_norm_alloc returns a fully written, finite Vec of the input length"
+    test: "cargo test -p aprender-compute --lib coverage_contract::falsify_blis_004_rms_norm"
+    prediction: "rms_norm_alloc on [1..8] with unit gamma returns 8 finite values whose absolute sum is > 0"
+    if_fails: "rms_norm_alloc returns the zero-filled buffer unwritten, a wrong length, or non-finite values from uninitialized memory"
+  - id: FALSIFY-BLIS_SAFE_ALLOC_V1-004
+    description: "softmax pass 2 writes every element of its allocated output, including SIMD remainders"
+    test: "cargo test -p aprender-compute --lib blis::softmax::tests::test_softmax_remainder_sizes"
+    prediction: "for n in [1,2,7,8,15,31,33,63,65,127,255], softmax_1d_alloc returns n elements that sum to 1.0 within 1e-5"
+    if_fails: "a remainder element of the softmax output is left at zero or garbage, so the length or the sum to 1 breaks"

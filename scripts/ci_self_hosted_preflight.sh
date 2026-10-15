@@ -321,7 +321,8 @@ self_test() {
 
     row() { # row LABEL WANT_RC GOT_RC PATTERN OUTPUT
         rows=$((rows + 1))
-        if [ "$3" = "$2" ] && { [ -z "$4" ] || printf '%s\n' "$5" | grep -q -- "$4"; }; then
+        # Here-string: `printf | grep -q` under pipefail can read a match as a miss (#4780).
+        if [ "$3" = "$2" ] && { [ -z "$4" ] || grep -q -- "$4" <<<"$5"; }; then
             printf 'ok  %s\n' "$1"
         else
             printf 'FAIL  %s — rc=%s (want %s), pattern [%s]\n' "$1" "$3" "$2" "$4"

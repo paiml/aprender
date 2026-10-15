@@ -97,3 +97,19 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-PRE-TOKENIZE-CORPUS-001
+    description: "C-PRETOK-001: TokenizedSample.token_ids.len() <= max_seq_len"
+    test: "cargo test -p aprender-train --lib test_cov_pretok_truncate"
+    prediction: "pre_tokenize with max_seq_len=4 on a longer input yields token_ids of length exactly 4"
+    if_fails: "pre_tokenize does not truncate to max_seq_len, so cached token ids exceed the model context"
+  - id: FALSIFY-PRE-TOKENIZE-CORPUS-002
+    description: "C-PRETOK-001: token_ids.len() >= 1 even for empty input"
+    test: "cargo test -p aprender-train --lib test_cov_pretok_empty"
+    prediction: "pre_tokenize on an empty-text sample yields non-empty token_ids"
+    if_fails: "pre_tokenize emits zero-length samples that later break the forward pass"
+  - id: FALSIFY-PRE-TOKENIZE-CORPUS-003
+    description: "C-PRETOK-001: one TokenizedSample per input sample with labels preserved"
+    test: "cargo test -p aprender-train --lib test_cov_pretok_basic"
+    prediction: "pre_tokenize returns as many TokenizedSamples as input samples, each with its source label and non-empty token_ids"
+    if_fails: "Pre-tokenization drops, reorders or mislabels samples, so train_tokens.len() != train_data.len()"

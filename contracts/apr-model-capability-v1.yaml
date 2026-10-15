@@ -608,3 +608,20 @@ equations:
     codomain: "{true, false}"
     invariants:
       - "FALSIFY-CAP-002: every row agrees with the one predicate the GPU dispatch uses"
+
+falsification_tests:
+  - id: FALSIFY-APR_MODEL_CAPABILITY-001
+    description: "FALSIFY-CAP-001: the ops marked gpu_supported:true in the contract equal gpu_supported_ops()"
+    test: "cargo test -p aprender-serve --lib the_contract_and_gpu_supported_ops_are_the_same_set"
+    prediction: "the declared gpu_supported:true op set equals gpu_supported_ops(), in both directions"
+    if_fails: "an op was added to or dropped from the Rust GPU-supported set or the contract without the other"
+  - id: FALSIFY-APR_MODEL_CAPABILITY-002
+    description: "FALSIFY-CAP-002: every quant row's gpu_supported agrees with the GPU dispatch predicate, keyed on ggml id"
+    test: "cargo test -p aprender-serve --lib every_quant_row_agrees_with_the_gpu_dispatch_predicate"
+    prediction: "for every quant_types row, gpu_supported == !gpu_unsupported_quant_qtype(ggml_type)"
+    if_fails: "the contract's quant GPU-support table diverges from the dispatch predicate"
+  - id: FALSIFY-APR_MODEL_CAPABILITY-003
+    description: "FALSIFY-CAP-004: the quant_types table is exhaustive over the upstream ggml_type enum"
+    test: "cargo test -p aprender-serve --lib the_quant_table_is_exhaustive_over_the_ggml_enum"
+    prediction: "every aprender-quant ggml_type id has a row in quant_types"
+    if_fails: "a ggml type exists upstream but is undeclared in the contract, so an unknown quant can be decoded as another"

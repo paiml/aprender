@@ -915,6 +915,7 @@ selftest() {
     selftest_streak
     selftest_pick
     selftest_lanes_argv
+    selftest_after_c
     selftest_wiring
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
@@ -1459,6 +1460,63 @@ selftest_lanes_argv() {
     printf '  %s night rows\n' "$((pass + fail - p0))"
 }
 
+# #5060: a red planted AFTER C -- in the bump commit, the only commit past C a rehearsal holds -- is seen by the
+# release steps, because they run on the bump commit and not on C. Two nights over one fixture source at C whose
+# stub release scripts cut and ship a bump; one plants a RED file in it. The stub autopilot.sh reads the release
+# commit as the steps do (RELEASE_REHEARSAL_MC, origin's main, the bump worktree) and stops on RED there. The
+# planted night's steps must stop on the bump commit and the judge must name them; the unplanted twin's steps
+# must pass on the same kind of commit, so a step that never ran, or ran on C, cannot read as the falsifier.
+selftest_after_c() {
+    local g="$tmp/ac" p0=$((pass + fail)) c o
+    mkdir -p "$g/scripts/release" && git -c init.defaultBranch=main init -q "$g" || return 2
+    printf '%s\n' 'exit 0' > "$g/scripts/release/nightly_train.sh"
+    printf '%s\n' 'exit 0' > "$g/scripts/release/t2_preflight.sh"
+    cat > "$g/scripts/release/prepare_bump.sh" <<'FX'
+if [ "${2:-}" = --ship ]; then
+    cd "$RELEASE_AP/bump" || exit 2
+    [ -z "${FX_PLANT:-}" ] || printf 'planted after C\n' > RED
+    git add -A && git commit -q -m "release: $1" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>' || exit 1
+    echo "shipped $(git rev-parse HEAD)"
+else
+    git worktree add -q --detach "$RELEASE_AP/bump" "$RELEASE_REHEARSAL_C" || exit 1
+    printf '%s\n' '<!-- one-paragraph summary of the train: EDIT BEFORE --ship -->' > "$RELEASE_AP/bump/CHANGELOG.md"
+fi
+FX
+    cat > "$g/scripts/release/autopilot.sh" <<'FX'
+step=$3
+git fetch -q origin || exit 2
+m=$(git rev-parse origin/main) && b=$(git -C "$RELEASE_AP/bump" rev-parse HEAD) || exit 2
+[ -n "${RELEASE_REHEARSAL_MC:-}" ] && [ "$m" = "$RELEASE_REHEARSAL_MC" ] && [ "$b" = "$m" ] \
+    || { echo "STOP $step: not on the release commit (MC=${RELEASE_REHEARSAL_MC:-unset} main=$m bump=$b)"; exit 1; }
+if git cat-file -e "$m:RED" 2>/dev/null; then echo "STOP $step: red on the release commit $m"; exit 1; fi
+echo "ok $step on $m"
+FX
+    git -C "$g" add -A && git -C "$g" -c user.name=t -c user.email=t@invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+        commit -q -m C && c=$(git -C "$g" rev-parse HEAD) || return 2
+    ac() { # ac NAME PLANT WANT_RC -- the release steps' rows of one night: WANT_RC each, all on the bump commit on C
+        local name=$1 plant=$2 wrc=$3 st="$tmp/ac-$1" s row bad="" bc
+        o=$( FX_PLANT="$plant" run_night --state "$st" --source "$g" --commit "$c" --version 9.9.9 \
+            --stages bump,summary,ship,ap:dogfood,ap:models,ap:tag 2>&1 )
+        st=$(realpath -- "$st") || st="$tmp/ac-$1"
+        bc=$(cat -- "$st/bump.commit" 2>/dev/null)
+        [ -n "$bc" ] && [ "$bc" != "$c" ] && [ "$(cat -- "$st/bump.parent" 2>/dev/null)" = "$c" ] || bad="no bump commit on C;"
+        row=$(awk -F'\t' '$1 == "ship" { print $2 }' "$st/stages.tsv" 2>/dev/null); [ "$row" = 0 ] || bad="$bad ship rc=${row:-none};"
+        for s in ap:dogfood ap:models ap:tag; do
+            row=$(awk -F'\t' -v s="$s" '$1 == s { print $2 "@" $3 }' "$st/stages.tsv" 2>/dev/null)
+            [ "$row" = "$wrc@$bc" ] || bad="$bad $s=${row:-none};"
+            if [ "$wrc" != 0 ]; then
+                grep -q "^RED   stage $s " <<< "$o" && grep -q "STOP ${s#ap:}: red on the release commit $bc" "$st/logs/${s/:/_}.log" \
+                    || bad="$bad $s not named red on $bc;"
+            fi
+        done
+        if [ -z "$bad" ]; then pass=$((pass + 1))
+        else printf '  BROKE %-48s %s %s\n' "$name" "$bad" "$(printf '%s' "$o" | grep -m 3 '^RED' | tr '\n' '|')"; fail=$((fail + 1)); fi
+    }
+    ac a_red_planted_after_c_stops_the_release_steps 1 1
+    ac the_same_night_unplanted_passes_them_on_the_bump_commit "" 0
+    printf '  %s after-c rows\n' "$((pass + fail - p0))"
+}
+
 # The rehearsal workflow against the train that reads its run: the real pair is wired, and each miswiring is refused
 # for its own reason.
 selftest_wiring() {
@@ -1719,6 +1777,9 @@ cascade_stage_from_clone     rehearse.sh         s/^cascade|ap:preflight|stage_c
 cascade_stage_as_text        rehearse.sh         s/stage_summary|stage_cascade) "\$cmd" ;;/stage_summary) "$cmd" ;;/
 ap_policy_fn_renamed         autopilot.sh        s/^ap_policy_applies() {$/ap_policy_judge() {/
 ap_cascade_other_receipts    autopilot.sh        /^if run_step cascade; then$/,/^fi$/s/models-t1/models-x/
+after_c_mc_is_c              rehearse.sh         s|printf 'export RELEASE_REHEARSAL_MC=%q\\n' "\$h" >> "\$env"|printf 'export RELEASE_REHEARSAL_MC=%q\\n' "$c" >> "$env"|
+after_c_main_stays_c         rehearse.sh         s|git -C "\$st/origin.git" fetch -q "\$st/clone" "+refs/rehearsal/bump:refs/heads/main" \|\| return 1|:|
+after_c_steps_recorded_on_c  rehearse.sh         s|\*) git -C "\$1/ap/bump" rev-parse HEAD 2>/dev/null \|\| printf '%s' - ;;|*) printf '%s' "$3" ;;|
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
