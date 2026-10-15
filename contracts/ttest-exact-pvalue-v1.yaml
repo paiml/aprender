@@ -80,3 +80,10 @@ falsification:
     green: "0.047992 (2*scipy.stats.t.sf(2.04, 40), the exact incomplete-beta tail) at df=40, t=2.04"
     scipy_reference: "2*scipy.stats.t.sf(2.04, 40) = 0.0479916; 2*scipy.stats.t.sf(2.02, 40) = 0.0501163; 2*scipy.stats.t.sf(2.0, 5) = 0.1019395"
     evidence: "cargo test -p aprender-core --lib test_t_distribution_pvalue_exact_all_df_matches_scipy"
+
+falsification_tests:
+  - id: FALSIFY-TTEST_EXACT_PVALUE-001
+    description: "C-TTEST-001..004 / TEP-EQ-001: two-tailed t p-value is the exact I_x(df/2,1/2) tail for df>30, differs from the normal approximation, keeps the df=40,t=2.02 decision non-significant, and leaves df<=30 unchanged"
+    test: "cargo test -p aprender-core --lib test_t_distribution_pvalue_exact_all_df_matches_scipy"
+    prediction: "t_distribution_pvalue(2.04,40)=0.047992 and (2.02,40)=0.050116 > 0.05 within 1e-3; |exact - 2*normal_cdf(-|t|)| > 5e-3"
+    if_fails: "the df>30 normal-approximation shortcut is back (or the beta path regressed), understating t-tails and flipping significance near alpha"

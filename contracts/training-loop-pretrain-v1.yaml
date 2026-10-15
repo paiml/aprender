@@ -583,3 +583,15 @@ references:
   - "docs/specifications/aprender-train/ship-two-models-spec.md §5 (AC-SHIP2-003, -011)"
   - "memory/project_ship_two_001_model1_qlora_divergence.md"
   - "Loshchilov & Hutter (2019) arXiv:1711.05101"
+
+falsification_tests:
+  - id: FALSIFY-TRAINING_LOOP_PRETRAIN-001
+    description: "INV-TRAIN-006/GATE-TRAIN-006: two seed-0 runs over 100 rotating steps give identical finite losses and identical AdamW optimizer-state sha256 (INV-TRAIN-003/007)"
+    test: "cargo test -p aprender-train --lib falsify_ship_021_seed_0_100_step_reproducibility"
+    prediction: "|loss_a - loss_b| <= 1e-6 at every step and optimizer_state_sha256 matches"
+    if_fails: "nondeterminism leaked into init, optimizer or loss reduction"
+  - id: FALSIFY-TRAINING_LOOP_PRETRAIN-002
+    description: "Negative control for INV-TRAIN-006: seeds 0 and 1 must give a different loss trajectory"
+    test: "cargo test -p aprender-train --lib falsify_ship_021_different_seeds_do_diverge"
+    prediction: "some step in 10 has |loss_a - loss_b| > 1e-4"
+    if_fails: "the seed is ignored, so the parity test passes vacuously"

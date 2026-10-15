@@ -6,7 +6,7 @@ rust-version = "1.91"
 authors = ["Pragmatic AI Labs"]
 license = "MIT"
 description = "Compute-GPU-Profile: Unified performance analysis CLI for scalar, SIMD, wgpu, and CUDA workloads"
-repository = "https://github.com/paiml/trueno"
+repository = "https://github.com/paiml/aprender"
 keywords = ["profiling", "gpu", "simd", "cuda", "performance"]
 categories = ["command-line-utilities", "development-tools::profiling"]
 

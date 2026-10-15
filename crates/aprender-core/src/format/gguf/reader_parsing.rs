@@ -30,6 +30,28 @@ impl GgufReader {
     /// `metadata`; otherwise only `tokenizer.` / `general.` / known-arch keys do,
     /// and the rest go to `display_only_metadata` (#3733). No key is dropped.
     pub fn from_bytes_keep(data: Vec<u8>, keep_all: bool) -> Result<Self> {
+        let (version, tensor_count, metadata_kv_count) = Self::parse_header(&data)?;
+        let (metadata, display_only_metadata, offset) =
+            Self::parse_metadata(&data, 24, metadata_kv_count, keep_all)?;
+        let (tensors, offset) = Self::parse_tensor_infos(&data, offset, tensor_count)?;
+
+        // Align to GGUF_DEFAULT_ALIGNMENT for tensor data
+        let padding = padding_for_alignment(offset, GGUF_DEFAULT_ALIGNMENT);
+        let data_offset = offset + padding;
+
+        Ok(Self {
+            data,
+            version,
+            tensor_count,
+            tensors,
+            data_offset,
+            metadata,
+            display_only_metadata,
+        })
+    }
+
+    /// Check size and magic, then read `(version, tensor_count, metadata_kv_count)`.
+    fn parse_header(data: &[u8]) -> Result<(u32, u64, u64)> {
         if data.len() < 24 {
             return Err(AprenderError::FormatError {
                 message: "GGUF file too small (< 24 bytes)".to_string(),
@@ -37,7 +59,7 @@ impl GgufReader {
         }
 
         // Check magic (GH-183: Enhanced error message for debugging)
-        let magic = read_u32(&data, 0)?;
+        let magic = read_u32(data, 0)?;
         if magic != GGUF_MAGIC {
             // Show both hex and ASCII for easier debugging
             let magic_bytes = &data[0..4.min(data.len())];
@@ -53,9 +75,9 @@ impl GgufReader {
             });
         }
 
-        let version = read_u32(&data, 4)?;
-        let tensor_count = read_u64(&data, 8)?;
-        let metadata_kv_count = read_u64(&data, 16)?;
+        let version = read_u32(data, 4)?;
+        let tensor_count = read_u64(data, 8)?;
+        let metadata_kv_count = read_u64(data, 16)?;
 
         // BUG-GGUF-001 FIX: Validate counts before allocation to prevent OOM attacks
         if tensor_count > MAX_TENSOR_COUNT {
@@ -74,53 +96,77 @@ impl GgufReader {
                 ),
             });
         }
+        Ok((version, tensor_count, metadata_kv_count))
+    }
 
-        // Parse metadata section (extract vocabulary and other tokenizer data)
-        let mut offset = 24;
+    /// Keys the config accessors read: tokenizer, general and per-arch keys
+    /// for full model config.
+    fn is_config_key(key: &str) -> bool {
+        const PREFIXES: [&str; 9] = [
+            "tokenizer.",
+            "general.",
+            "llama.",
+            "qwen2.",
+            "qwen3.",
+            "phi.",
+            "mistral.",
+            "gpt2.",
+            // APR-EMBED-001 EG-6: else `apr import` reads hidden_dim 0.
+            "gemma-embedding2.",
+        ];
+        PREFIXES.iter().any(|p| key.starts_with(p))
+    }
+
+    /// Parse the metadata section. Returns `(metadata, display_only, end_offset)`.
+    #[allow(clippy::type_complexity)]
+    fn parse_metadata(
+        data: &[u8],
+        mut offset: usize,
+        metadata_kv_count: u64,
+        keep_all: bool,
+    ) -> Result<(
+        BTreeMap<String, GgufValue>,
+        BTreeMap<String, GgufValue>,
+        usize,
+    )> {
         let mut metadata = BTreeMap::new();
         let mut display_only_metadata = BTreeMap::new();
         for _ in 0..metadata_kv_count {
             // Read key
-            let (key, key_len) = read_string(&data, offset)?;
+            let (key, key_len) = read_string(data, offset)?;
             offset += key_len;
 
             // Read value type
-            let value_type = read_u32(&data, offset)?;
+            let value_type = read_u32(data, offset)?;
             offset += 4;
 
-            // Parse value for tokenizer, general, and model architecture keys
-            // We parse: tokenizer.*, general.*, and per-arch keys for full model config
-            if keep_all
-                || key.starts_with("tokenizer.")
-                || key.starts_with("general.")
-                || key.starts_with("llama.")
-                || key.starts_with("qwen2.")
-                || key.starts_with("qwen3.")
-                || key.starts_with("phi.")
-                || key.starts_with("mistral.")
-                || key.starts_with("gpt2.")
-            {
-                let (value, value_len) = read_metadata_value(&data, offset, value_type)?;
+            let (value, value_len) = read_metadata_value(data, offset, value_type)?;
+            offset += value_len;
+            if keep_all || Self::is_config_key(&key) {
                 metadata.insert(key, value);
-                offset += value_len;
             } else {
                 // #3733: kept, not skipped. `apr inspect` must show every key the
                 // header carries; only the config accessors are kept to the list.
-                let (value, value_len) = read_metadata_value(&data, offset, value_type)?;
                 display_only_metadata.insert(key, value);
-                offset += value_len;
             }
         }
+        Ok((metadata, display_only_metadata, offset))
+    }
 
-        // Parse tensor infos
+    /// Parse the tensor info section. Returns `(tensors, end_offset)`.
+    fn parse_tensor_infos(
+        data: &[u8],
+        mut offset: usize,
+        tensor_count: u64,
+    ) -> Result<(Vec<GgufTensorMeta>, usize)> {
         let mut tensors = Vec::with_capacity(tensor_count as usize);
         for _ in 0..tensor_count {
             // Read name
-            let (name, name_len) = read_string(&data, offset)?;
+            let (name, name_len) = read_string(data, offset)?;
             offset += name_len;
 
             // Read n_dims
-            let n_dims = read_u32(&data, offset)?;
+            let n_dims = read_u32(data, offset)?;
             offset += 4;
 
             // BUG-GGUF-001 FIX: Validate n_dims to prevent allocation attacks
@@ -136,16 +182,16 @@ impl GgufReader {
             // Read dimensions
             let mut dims = Vec::with_capacity(n_dims as usize);
             for _ in 0..n_dims {
-                dims.push(read_u64(&data, offset)?);
+                dims.push(read_u64(data, offset)?);
                 offset += 8;
             }
 
             // Read dtype
-            let dtype = read_u32(&data, offset)?;
+            let dtype = read_u32(data, offset)?;
             offset += 4;
 
             // Read offset
-            let tensor_offset = read_u64(&data, offset)?;
+            let tensor_offset = read_u64(data, offset)?;
             offset += 8;
 
             tensors.push(GgufTensorMeta {
@@ -155,20 +201,7 @@ impl GgufReader {
                 offset: tensor_offset,
             });
         }
-
-        // Align to GGUF_DEFAULT_ALIGNMENT for tensor data
-        let padding = padding_for_alignment(offset, GGUF_DEFAULT_ALIGNMENT);
-        let data_offset = offset + padding;
-
-        Ok(Self {
-            data,
-            version,
-            tensor_count,
-            tensors,
-            data_offset,
-            metadata,
-            display_only_metadata,
-        })
+        Ok((tensors, offset))
     }
 
     /// Get vocabulary tokens from metadata

@@ -247,6 +247,10 @@ pub struct AppState {
     /// request is served from this session or refused, never decoded through
     /// the base (embeddings, norm, `lm_head`) alone.
     qwen35_session: Option<Arc<Qwen35Served>>,
+    /// APR-EMBED-001 EG-3: an EmbeddingGemma 2 encoder, resident for the server's
+    /// lifetime. When present, the embedding routes answer from it and the
+    /// generative routes refuse by kind; there is no dense model to decode with.
+    embedding_model: Option<Arc<EmbeddingServed>>,
     /// GH-330: Cached EOS token ID (avoids RwLock in hot path)
     cached_eos_token_id: Option<u32>,
     /// D5 (ruling-3715-2010): positions a dense CUDA serve turn can reach, the
@@ -418,6 +422,7 @@ pub(crate) fn serve_context_refusal(
 
 include!("mod_app_state_gpu.rs");
 include!("mod_app_state_qwen35.rs");
+include!("mod_app_state_embedding.rs");
 include!("mod_create_demo.rs");
 include!("router.rs");
 include!("dispatch_metrics.rs");

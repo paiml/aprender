@@ -360,6 +360,7 @@
     fn test_embedding_request_empty_input() {
         // A single empty string is still ONE input (len 1); round-trips as a JSON string.
         let request = EmbeddingRequest {
+            dimensions: None,
             input: String::new().into(),
             model: None,
         };
@@ -372,6 +373,7 @@
     fn test_embedding_request_long_input() {
         // input.len() is the NUMBER OF INPUTS (OpenAI semantics), not the char count.
         let request = EmbeddingRequest {
+            dimensions: None,
             input: "word ".repeat(1000).into(),
             model: Some("ada".to_string()),
         };
@@ -381,6 +383,7 @@
     #[test]
     fn test_embedding_request_debug() {
         let request = EmbeddingRequest {
+            dimensions: None,
             input: "test".to_string().into(),
             model: None,
         };
@@ -392,6 +395,7 @@
     fn test_embedding_request_clone() {
         use crate::api::realize_handlers::EmbeddingInput;
         let request = EmbeddingRequest {
+            dimensions: None,
             input: "clone test".to_string().into(),
             model: Some("model-a".to_string()),
         };

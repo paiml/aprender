@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.22.0"
+  version: "1.23.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -23,12 +23,16 @@ metadata:
     input in request order (data[i].index == i) — AND each batch element is embedded
     via the SAME real model-backed path as the single-input form (forward_hidden →
     mean-pool → hidden_size dim → L2-norm), never the old token-ID hash. So a batch of
-    N inputs yields N real model-backed embeddings.
+    N inputs yields N real model-backed embeddings. APR-EMBED-001 EG-3 (1.23.0,
+    #4902) splits the dimension obligation by model kind: dim == hidden_size for the
+    generative kind; dim == the declared output width (or a requested Matryoshka
+    width) for the embedding kind, served from its encoder (ASOC-INV-022).
   references:
   - "crates/aprender-serve/src/api/chat_completions_stream.rs (fixed)"
   - "crates/aprender-serve/src/api/openai_handlers.rs (correct SSE-framing reference)"
   - "crates/aprender-serve/src/api/realize_handlers_embed_completion.rs (PMAT-803: real embeddings)"
   - "crates/aprender-serve/src/layers/model_model.rs (PMAT-803: Model::forward_hidden — pre-lm_head hidden state)"
+  - "crates/aprender-serve/src/api/realize_handlers_embed_kind.rs (EG-3: kind-aware embeddings, media refused)"
   - "evidence/serve-api-openai-fidelity-audit-2026-06-14/findings.md (full 12-bug audit)"
   - "crates/aprender-serve/src/api/constrained_chat_backend.rs (#3568 PR 4: response_format through the one constrained engine, and the status map)"
   - "crates/apr-cli/src/commands/serve/response_format.rs (#3568 PR 4: apr-cli's own chat servers refuse a constraint by name)"
@@ -178,7 +182,12 @@ proof_obligations:
       similarity than two inputs from different clusters — a property the prior hash
       (embedding[token_id % 384] += 1/(1+pos)) provably could not satisfy (disjoint IDs
       land in disjoint buckets → cosine 0.0 for both pairs, so it cannot rank them). The
-      endpoint must never silently return a non-model-backed vector.
+      endpoint must never silently return a non-model-backed vector. EG-3 (1.23.0)
+      amends the dimension clause by model kind: dim == hidden_size for the generative
+      kind (a `dimensions` field naming any other width is a 400, since a pooled hidden
+      state is not a Matryoshka embedding); dim == the declared output width
+      (embedding_length_out) for the embedding kind, or the requested `dimensions`
+      when it is a trained Matryoshka width no wider than that (ASOC-INV-022).
   - id: ASOC-INV-009
     type: invariant
     property: >
@@ -445,6 +454,20 @@ proof_obligations:
       names itself; it never answers 200 without them. NO-REGRESSION: a
       request without `logprobs` is served as before, and its reply has no
       `logprobs` key.
+  - id: ASOC-INV-022
+    type: invariant
+    property: >
+      EMBEDDING-KIND-SERVE (APR-EMBED-001 EG-3, #4902): a server loaded with an
+      embedding model (ModelKind::Embedding, EmbeddingGemma 2) answers
+      /v1/embeddings, /api/embeddings and /realize/embed from its encoder, with the
+      vector `apr embed` returns for the same text: both call the one function
+      embed_text (the file's tokenizer, Prompt::Raw, the forward, truncate_to). The
+      request's `dimensions` is the CLI's --dim. Every generative route stays
+      mounted and answers 400 naming the embedding kind and the embedding routes.
+      I-7, on every server: media is refused, never dropped. An image, audio or
+      video input (a data: URI, an OpenAI image_url / input_audio / video part, or
+      Ollama's images field) is a 422 naming the encoder the model lacks, never a
+      200 with a vector of the base64 text.
 
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
@@ -759,3 +782,9 @@ falsification_tests:
     test_harness: 'cargo test -p apr-cli --lib test_llm_parity'
     expected_output: "test result: ok"
     if_fails: 'The Rust probe has no front door, so the V3 witness is still produced by the Python script by hand; or a FAIL and an UNMEASURABLE leave the same exit code; or a witness records a host path or a made-up host.'
+  - id: FALSIFY-EMBED-KIND-SERVE-4902
+    name: embed_kind_eg3_4902
+    prediction: 'On an AppState built from a served EmbeddingGemma 2 fixture (768 wide, with its SPM vocabulary): (a) /v1/embeddings, /realize/embed and /api/embeddings return, for three texts, exactly the vector embed_text computes on its own load of the same file with Prompt::Raw (the apr embed call), and a batch returns one per input in order; (b) dimensions 768/512/256/128 return that width and equal the CLI --dim vector, while 0, 6, 300 and 1024 are 400s naming the width; (c) all eleven generative routes answer 400 naming the embedding model and /v1/embeddings; (d) I-7 plant: three different images (a data:image string, an image_url part, an upper-case data URI inside a batch), an input_audio part and a video_url part to /v1/embeddings and /realize/embed, plus Ollama images and a data:image prompt to /api/embeddings, are 422s naming the missing encoder on BOTH the embedding server and a generative (demo) server; any 200 is RED; (e) a generative model answers dimensions only at its hidden size; (f) the embedding state refuses a generative file by kind.'
+    test_harness: 'cargo test -p aprender-serve --lib embed_kind_eg3_4902'
+    expected_output: "test result: ok"
+    if_fails: 'An embedding model is refused by `apr serve` or answers with a vector the CLI does not produce; a generative route on it fails with something other than a 4xx naming the kind; or an image reaches the tokenizer as text and comes back as a 200 embedding of its base64 (media dropped, I-7).'

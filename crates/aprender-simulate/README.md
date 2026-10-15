@@ -4,14 +4,14 @@
 
 **Unified Simulation Engine for Deterministic, Reproducible Simulations**
 
-[![CI](https://github.com/paiml/simular/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/simular/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/simular.svg)](https://crates.io/crates/simular)
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/aprender-simulate.svg)](https://crates.io/crates/aprender-simulate)
 [![Tests](https://img.shields.io/badge/tests-1846%20passing-brightgreen)]()
 [![Version](https://img.shields.io/badge/version-0.3.1-blue)]()
-[![Documentation](https://docs.rs/simular/badge.svg)](https://docs.rs/simular)
+[![Documentation](https://docs.rs/aprender-simulate/badge.svg)](https://docs.rs/aprender-simulate)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-[Live Demo](https://interactive.paiml.com/simular-orbit/) | [Documentation](https://docs.rs/simular) | [Crates.io](https://crates.io/crates/simular)
+[Live Demo](https://interactive.paiml.com/simular-orbit/) | [Documentation](https://docs.rs/aprender-simulate) | [Crates.io](https://crates.io/crates/aprender-simulate)
 
 </div>
 
@@ -52,12 +52,12 @@ Simular provides a unified framework for physics, Monte Carlo, and optimization 
 ## Installation
 
 ```bash
-cargo add simular
+cargo add aprender-simulate
 ```
 
 With WebAssembly support:
 ```bash
-cargo add simular --features wasm
+cargo add aprender-simulate --features wasm
 ```
 
 ## Quick Start
@@ -209,9 +209,9 @@ Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) 
 - [Cookbook](examples/) — 13 runnable examples
 
 - **Live Demo**: https://interactive.paiml.com/simular-orbit/
-- **Crates.io**: https://crates.io/crates/simular
-- **Documentation**: https://docs.rs/simular
-- **GitHub**: https://github.com/paiml/simular
+- **Crates.io**: https://crates.io/crates/aprender-simulate
+- **Documentation**: https://docs.rs/aprender-simulate
+- **GitHub**: https://github.com/paiml/aprender/tree/main/crates/aprender-simulate
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ## License

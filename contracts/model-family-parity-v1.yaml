@@ -75,3 +75,25 @@ falsification:
     description: "is_llm() classification matches model-family contract constraints"
     test: "tests in converter_types_tests_parity.rs: test_is_llm_matches_contract"
     evidence: "cargo test -p aprender-core --lib test_is_llm_matches_contract"
+
+falsification_tests:
+  - id: FALSIFY-MODEL_FAMILY_PARITY-001
+    description: "Enum->YAML parity: every non-Auto Architecture variant has contracts/model-families/<key>.yaml"
+    test: "cargo test -p aprender-core --lib test_every_architecture_has_model_family_yaml"
+    prediction: "no variant is missing its model-family YAML"
+    if_fails: "an Architecture variant was added without a model-family contract"
+  - id: FALSIFY-MODEL_FAMILY_PARITY-002
+    description: "YAML->Enum parity: every model-family YAML is recognized by Architecture::from_model_type()"
+    test: "cargo test -p aprender-core --lib test_every_model_family_yaml_has_architecture"
+    prediction: "from_model_type(family) is Some for every YAML"
+    if_fails: "a model-family YAML exists that no Architecture variant resolves"
+  - id: FALSIFY-MODEL_FAMILY_PARITY-003
+    description: "Every non-Auto variant is explicitly classified as LLM or non-LLM (audio/encoder-only are not LLM)"
+    test: "cargo test -p aprender-core --lib test_is_llm_matches_contract"
+    prediction: "is_llm() matches the contract table for every listed variant"
+    if_fails: "is_llm() misclassifies a variant (e.g. Whisper or BERT as LLM)"
+  - id: FALSIFY-MODEL_FAMILY_PARITY-004
+    description: "from_model_type() returns the correct variant for the new architectures (falcon_h1, mamba, moonshine, openelm, rwkv7)"
+    test: "cargo test -p aprender-core --lib test_from_model_type_new_variants"
+    prediction: "each alias maps to its declared variant"
+    if_fails: "an alias falls through to None or to the wrong variant"

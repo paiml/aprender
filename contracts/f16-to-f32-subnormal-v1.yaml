@@ -77,3 +77,15 @@ falsification:
     description: "Full-range bit-exact conversion vs the half oracle (onnx + safetensors readers). Discharges C-F16SUB-002 / C-F16SUB-003 / PO-F16SUB-001 / PO-F16SUB-003."
     test: "all_bit_patterns_match_golden (in both format::onnx::f16_tests and format::tensors::f16_tests) — loops 0..=u16::MAX, skips NaN, compares against a self-contained golden oracle bit-verified against half::f16. RED mismatch count = 2046 (all subnormals); GREEN = 0."
     evidence: "cargo test -p aprender-core --lib f16_tests::all_bit_patterns_match_golden"
+
+falsification_tests:
+  - id: FALSIFY-F16_TO_F32_SUBNORMAL-001
+    description: "C-F16SUB-001: f16_to_f32(0x0001) == 0x33800000 (5.9604645e-8) in both the onnx and safetensors readers (same-named tests in both modules)"
+    test: "cargo test -p aprender-core --lib smallest_subnormal_not_halved"
+    prediction: "bits == 0x33800000, not the halved 0x33000000"
+    if_fails: "subnormal exponent off by one halves every subnormal"
+  - id: FALSIFY-F16_TO_F32_SUBNORMAL-002
+    description: "C-F16SUB-002/003: every non-NaN binary16 bit pattern converts bit-exactly to the golden oracle (both readers)"
+    test: "cargo test -p aprender-core --lib all_bit_patterns_match_golden"
+    prediction: "0 mismatches over all 65536 patterns minus NaNs (buggy code gives 2046)"
+    if_fails: "some subnormal or normal pattern converts to the wrong f32"

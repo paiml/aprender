@@ -56,3 +56,10 @@ falsification:
       dry_base ^ (repeat_len - dry_allowed_length). No sibling DRY test asserted an exact penalty
       magnitude (existing tests only check penalty direction / config fields), so none encoded the
       off-by-one. Full aprender-serve lib suite passes with 0 failures.
+
+falsification_tests:
+  - id: FALSIFY-DRY_PENALTY_REPEAT_LEN-001
+    description: "C-DRY-001 / C-DRY-002: DRY penalty = multiplier * base^(repeat_len - allowed_length) with repeat_len excluding the candidate (llama.cpp parity)"
+    test: "cargo test -p aprender-serve --lib test_dry_penalty_exponent_matches_llama_cpp_repeat_len"
+    prediction: "for context [7,7], allowed_length 1, multiplier 1.0, base 1.75, candidate 7's logit drops by exactly 1.0 (5.0 -> 4.0)"
+    if_fails: "match_len is off by one (penalty base-times too strong, logit 3.25)"

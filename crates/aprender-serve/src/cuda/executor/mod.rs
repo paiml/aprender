@@ -312,6 +312,8 @@ mod activations;
 mod attention;
 mod bound_dispatch;
 mod core;
+/// APR-EMBED-001 EG-4 (#4903): the EmbeddingGemma 2 encoder's device ops.
+pub(crate) mod embedding_gemma2_ops;
 // #3727: PMAT-084 FP8 activation reuse, opt-in per shared-input group.
 mod fp8_activation_cache;
 // #3759: one module-cache key, one PTX text (debug builds prove it).

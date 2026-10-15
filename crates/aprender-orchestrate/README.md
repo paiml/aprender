@@ -5,16 +5,16 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/batuta">
-    <img src="https://img.shields.io/crates/v/batuta.svg" alt="crates.io">
+  <a href="https://crates.io/crates/aprender-orchestrate">
+    <img src="https://img.shields.io/crates/v/aprender-orchestrate.svg" alt="crates.io">
   </a>
-  <a href="https://docs.rs/batuta">
-    <img src="https://docs.rs/batuta/badge.svg" alt="docs.rs">
+  <a href="https://docs.rs/aprender-orchestrate">
+    <img src="https://docs.rs/aprender-orchestrate/badge.svg" alt="docs.rs">
   </a>
-  <a href="https://github.com/paiml/batuta/actions">
-    <img src="https://github.com/paiml/batuta/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml">
+    <img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI">
   </a>
-  <a href="https://paiml.github.io/batuta/">
+  <a href="https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book">
     <img src="https://img.shields.io/badge/book-online-brightgreen" alt="Book">
   </a>
   <a href="LICENSE">
@@ -70,10 +70,10 @@ batuta code --prompt "Summarize this codebase"
 
 ```bash
 # From crates.io
-cargo install batuta
+cargo install aprender-orchestrate
 
 # With autonomous agents
-cargo install batuta --features agents
+cargo install aprender-orchestrate --features agents
 ```
 
 ## Quick Start
@@ -156,7 +156,7 @@ Agents are configured via TOML manifests with capability-gated tools
 circuit-breaker guards.
 
 See the [Agent Runtime Book
-Chapter](https://paiml.github.io/batuta/part3/agent-runtime.html) for
+Chapter](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book) for
 details.
 
 ## Stack Components
@@ -181,16 +181,16 @@ details.
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| [trueno](https://crates.io/crates/trueno) | 0.16 | SIMD/GPU compute (AVX2/AVX-512/NEON, wgpu, LZ4) |
-| [aprender](https://crates.io/crates/aprender) | 0.27 | ML algorithms: regression, trees, clustering, NLP |
-| [entrenar](https://crates.io/crates/entrenar) | 0.7 | Training: autograd, LoRA/QLoRA, quantization |
-| [realizar](https://crates.io/crates/realizar) | 0.8 | LLM inference for GGUF/SafeTensors/APR models |
-| [repartir](https://crates.io/crates/repartir) | 2.0 | Distributed compute (CPU/GPU/Remote executors) |
+| [aprender-compute](https://crates.io/crates/aprender-compute) | 0.71 | SIMD/GPU compute (AVX2/AVX-512/NEON, wgpu, LZ4) |
+| [aprender](https://crates.io/crates/aprender) | 0.71 | ML algorithms: regression, trees, clustering, NLP |
+| [aprender-train](https://crates.io/crates/aprender-train) | 0.71 | Training: autograd, LoRA/QLoRA, quantization |
+| [aprender-serve](https://crates.io/crates/aprender-serve) | 0.71 | LLM inference for GGUF/SafeTensors/APR models |
+| [aprender-distribute](https://crates.io/crates/aprender-distribute) | 0.71 | Distributed compute (CPU/GPU/Remote executors) |
 | [whisper-apr](https://crates.io/crates/whisper-apr) | 0.2 | Pure Rust Whisper ASR (WASM-first) |
-| [ttop](https://crates.io/crates/ttop) | 2.0 | Sovereign system monitor (14 panels, GPU support) |
-| [presentar-terminal](https://crates.io/crates/presentar-terminal) | 0.3 | Zero-alloc TUI rendering |
-| [pacha](https://crates.io/crates/pacha) | 0.2 | Model registry with Ed25519 signatures |
-| [renacer](https://crates.io/crates/renacer) | 0.10 | Syscall tracing with semantic validation |
+| [aprender-viz-ttop](https://crates.io/crates/aprender-viz-ttop) | 0.71 | Sovereign system monitor (14 panels, GPU support) |
+| [aprender-present-terminal](https://crates.io/crates/aprender-present-terminal) | 0.71 | Zero-alloc TUI rendering |
+| [aprender-registry](https://crates.io/crates/aprender-registry) | 0.71 | Model registry with Ed25519 signatures |
+| [aprender-profile](https://crates.io/crates/aprender-profile) | 0.71 | Syscall tracing with semantic validation |
 | [pmat](https://crates.io/crates/pmat) | 3.x | Code quality analysis and TDG scoring |
 
 ## CLI Reference
@@ -239,8 +239,8 @@ batuta hf             HuggingFace Hub integration
 ## Development
 
 ```bash
-git clone https://github.com/paiml/batuta.git
-cd batuta
+git clone https://github.com/paiml/aprender.git
+cd aprender/crates/aprender-orchestrate
 
 cargo build --release          # Build
 cargo test --lib               # Unit tests
@@ -250,9 +250,9 @@ make book                      # Build documentation
 
 ## Documentation
 
-- [The Batuta Book](https://paiml.github.io/batuta/) -- Comprehensive
+- [The Batuta Book](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book) -- Comprehensive
   guide
-- [API Documentation](https://docs.rs/batuta) -- Rust API reference
+- [API Documentation](https://docs.rs/aprender-orchestrate) -- Rust API reference
 - [Sovereign AI Stack
   Book](https://paiml.github.io/sovereign-ai-stack-book/) -- Full
   stack tutorial

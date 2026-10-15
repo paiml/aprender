@@ -5,7 +5,7 @@ edition = "2024"
 authors = ["Noah Gift <noah@paiml.com>"]
 description = "Shared utilities for the Batuta stack: formatting, system info, display helpers"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/paiml/batuta-common"
+repository = "https://github.com/paiml/aprender"
 keywords = ["formatting", "utilities", "terminal", "display"]
 categories = ["command-line-utilities", "text-processing"]
 

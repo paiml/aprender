@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Pragmatic AI Labs"]
 description = "CLI for Trueno-RAG pipeline"
 license = "MIT"
-repository = "https://github.com/paiml/trueno-rag"
+repository = "https://github.com/paiml/aprender"
 readme = "../aprender-rag/README.md"
 
 [[bin]]

@@ -47,7 +47,7 @@ use trueno_gpu::kernels::{
 
 impl CudaExecutor {
     /// Compile `kernel` for this device's target once, cached under `key`.
-    fn qp_prepare<K: Kernel>(&mut self, key: &str, kernel: &K) -> Result<(), GpuError> {
+    pub(super) fn qp_prepare<K: Kernel>(&mut self, key: &str, kernel: &K) -> Result<(), GpuError> {
         if !self.modules.contains_key(key) {
             let ptx = kernel.emit_ptx_for_target(&self.kernels.sm_target);
             let module = self.compile_ptx(&ptx)?;
@@ -59,7 +59,7 @@ impl CudaExecutor {
     /// Launch a prepared kernel. The first `n_ptrs` slots are device pointers and are
     /// checked non-null; the rest are scalars in the low half of their slot, which is
     /// how the driver reads a declared `u32`/`f32` parameter.
-    fn qp_launch(
+    pub(super) fn qp_launch(
         &mut self,
         key: &str,
         name: &str,

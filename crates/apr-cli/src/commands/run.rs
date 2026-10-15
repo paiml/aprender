@@ -359,6 +359,10 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         return Err(CliError::FileNotFound(model_path));
     }
 
+    // APR-EMBED-001 EG-5 (I-3): an embedding model is refused by kind, naming `apr embed`, before a
+    // tokenizer or backend is built.
+    crate::commands::model_kind_gate::refuse_non_generative_path(&model_path, "run")?;
+
     // Check if input is required
     let input_path = options.input.as_ref();
 

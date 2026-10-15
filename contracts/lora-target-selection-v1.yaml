@@ -33,3 +33,10 @@ falsification:
     description: "default selection = {q_proj, v_proj} for decoder-only LLMs"
     test: "Related tests in crates/aprender-train/src/finetune/"
     evidence: "cargo test --lib"
+
+falsification_tests:
+  - id: FALSIFY-LORA_TARGET_SELECTION-001
+    description: "default_targets: the default selection is {q_proj, v_proj}"
+    test: "cargo test -p aprender-train --lib lora::config::tests::test_default_config"
+    prediction: "LoRAConfig::default() applies to q_proj and v_proj, not k_proj, with exactly 2 target modules"
+    if_fails: "the default LoRA target selection drifted from {q_proj, v_proj}"

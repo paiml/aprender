@@ -5,14 +5,14 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/trueno">
-    <img src="https://img.shields.io/crates/v/trueno.svg" alt="crates.io">
+  <a href="https://crates.io/crates/aprender-compute">
+    <img src="https://img.shields.io/crates/v/aprender-compute.svg" alt="crates.io">
   </a>
-  <a href="https://docs.rs/trueno">
-    <img src="https://docs.rs/trueno/badge.svg" alt="docs.rs">
+  <a href="https://docs.rs/aprender-compute">
+    <img src="https://docs.rs/aprender-compute/badge.svg" alt="docs.rs">
   </a>
-  <a href="https://github.com/paiml/trueno/actions">
-    <img src="https://github.com/paiml/trueno/actions/workflows/ci.yml/badge.svg"
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml">
+    <img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg"
          alt="CI">
   </a>
   <a href="LICENSE">
@@ -69,13 +69,13 @@ kernels in pure Rust with no external toolchain.
 
 ```toml
 [dependencies]
-trueno = "0.17"
+aprender-compute = "0.71"
 
 # Optional: wgpu GPU support for large matrices
-trueno = { version = "0.17", features = ["gpu"] }
+aprender-compute = { version = "0.71", features = ["gpu"] }
 
 # Optional: pure Rust CUDA PTX generation
-trueno-gpu = "0.4"
+aprender-gpu = "0.71"
 ```
 
 ## Usage
@@ -312,26 +312,26 @@ trueno is the compute foundation for the PAIML Sovereign AI Stack.
 
 | Layer | Crate | Relationship |
 |-------|-------|-------------|
-| Orchestration | [batuta](https://crates.io/crates/batuta) | Stack coordinator, uses trueno for analysis |
+| Orchestration | [batuta](https://crates.io/crates/aprender-orchestrate) | Stack coordinator, uses trueno for analysis |
 | ML | [aprender](https://crates.io/crates/aprender) | ML algorithms built on trueno SIMD |
-| Training | [entrenar](https://crates.io/crates/entrenar) | Autograd and LoRA training on trueno tensors |
-| Inference | [realizar](https://crates.io/crates/realizar) | LLM inference using trueno quantization kernels |
-| Distribution | [repartir](https://crates.io/crates/repartir) | Distributed compute with trueno tensor integration |
-| Database | [trueno-db](https://crates.io/crates/trueno-db) | GPU-first analytics database |
-| Graph | [trueno-graph](https://crates.io/crates/trueno-graph) | Graph algorithms for code analysis |
-| RAG | [trueno-rag](https://crates.io/crates/trueno-rag) | RAG pipeline (chunking, BM25+vector, RRF) |
-| Visualization | [trueno-viz](https://crates.io/crates/trueno-viz) | Terminal and PNG visualization |
-| Compression | [trueno-zram-core](https://crates.io/crates/trueno-zram-core) | SIMD/GPU memory compression |
+| Training | [entrenar](https://crates.io/crates/aprender-train) | Autograd and LoRA training on trueno tensors |
+| Inference | [realizar](https://crates.io/crates/aprender-serve) | LLM inference using trueno quantization kernels |
+| Distribution | [repartir](https://crates.io/crates/aprender-distribute) | Distributed compute with trueno tensor integration |
+| Database | [trueno-db](https://crates.io/crates/aprender-db) | GPU-first analytics database |
+| Graph | [trueno-graph](https://crates.io/crates/aprender-graph) | Graph algorithms for code analysis |
+| RAG | [aprender-rag](https://crates.io/crates/aprender-rag) | RAG pipeline (chunking, BM25+vector, RRF) |
+| Visualization | [trueno-viz](https://crates.io/crates/aprender-viz) | Terminal and PNG visualization |
+| Compression | [trueno-zram-core](https://crates.io/crates/aprender-zram-core) | SIMD/GPU memory compression |
 | Block Device | [trueno-ublk](https://crates.io/crates/trueno-ublk) | GPU-accelerated ZRAM replacement |
-| PTX Codegen | [trueno-gpu](https://crates.io/crates/trueno-gpu) | Pure Rust CUDA PTX generation |
+| PTX Codegen | [trueno-gpu](https://crates.io/crates/aprender-gpu) | Pure Rust CUDA PTX generation |
 | Contracts | [provable-contracts](https://crates.io/crates/provable-contracts) | YAML contract verification |
 
 ## Documentation
 
-- **API Reference**: [docs.rs/trueno](https://docs.rs/trueno)
+- **API Reference**: [docs.rs/aprender-compute](https://docs.rs/aprender-compute)
 - **Examples**: [`examples/`](examples/) -- 34 runnable examples
 - **Benchmarks**: [`benches/`](benches/) -- criterion benchmarks
-- **trueno-gpu docs**: [docs.rs/trueno-gpu](https://docs.rs/trueno-gpu)
+- **trueno-gpu docs**: [docs.rs/aprender-gpu](https://docs.rs/aprender-gpu)
 
 ## Contributing
 
