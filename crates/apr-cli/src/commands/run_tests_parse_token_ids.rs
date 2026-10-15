@@ -60,6 +60,7 @@
     #[test]
     fn run_result_tokens_generated_none_vs_zero() {
         let result_none = RunResult {
+            logprobs: None,
             text: String::new(),
             duration_secs: 0.0,
             cached: false,
@@ -73,6 +74,7 @@
             constraint_refusal: None,
         };
         let result_zero = RunResult {
+            logprobs: None,
             text: String::new(),
             duration_secs: 0.0,
             cached: false,
@@ -96,6 +98,7 @@
     #[test]
     fn run_result_field_independence() {
         let result = RunResult {
+            logprobs: None,
             text: "output".to_string(),
             duration_secs: 1.234,
             cached: true,

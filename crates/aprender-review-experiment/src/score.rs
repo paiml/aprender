@@ -5,9 +5,9 @@
 //! scored as `NotRun{Inadmissible}`, so dropping or corrupting a row can only
 //! lower a score. The statistics themselves are the frozen `stats.rs`.
 
-use crate::corpus::Item;
+use crate::corpus::{Class, Item};
 use crate::receipt::{admissible, localized, parse_verdict, Expect, NotRun, Receipt, Verdict};
-use crate::stats::{self, Paired};
+use crate::stats::{self, Paired, VsVoters};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -40,6 +40,8 @@ impl Ratio {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scored {
     pub id: String,
+    /// Corpus class; H5 reads class R only (spec v2 §3).
+    pub class: Class,
     pub defect: bool,
     pub verdict: Verdict,
     /// A finding names the defect file (only set on a FAIL of a defect).
@@ -161,6 +163,7 @@ where
         .map(|i| {
             got.remove(&i.id).unwrap_or_else(|| Scored {
                 id: i.id.clone(),
+                class: i.class,
                 defect: i.class.is_defect(),
                 verdict: Verdict::NotRun(NotRun::Inadmissible),
                 localized: false,
@@ -188,6 +191,7 @@ where
     let Some(out) = &r.output else {
         return Ok(Scored {
             id: r.item_id.clone(),
+            class: item.class,
             defect,
             verdict: r.verdict,
             localized: false,
@@ -213,6 +217,7 @@ where
     };
     Ok(Scored {
         id: r.item_id.clone(),
+        class: item.class,
         defect,
         verdict,
         localized: verdict == Verdict::Fail && defect && localized(&text, &item.defect),
@@ -220,21 +225,35 @@ where
     })
 }
 
-/// H1/H2 input: items whose verdict or output bytes differ between two runs,
-/// and items that did not run on both (reported, not silently dropped).
-#[must_use]
-pub fn divergence(a: &[Scored], b: &[Scored]) -> (u64, u64) {
+fn divergence_by(a: &[Scored], b: &[Scored], bytes: bool) -> (u64, u64) {
     let bm: BTreeMap<&str, &Scored> = b.iter().map(|s| (s.id.as_str(), s)).collect();
     let (mut divergent, mut missing) = (0, 0);
     for s in a {
         match bm.get(s.id.as_str()) {
             Some(t) if s.verdict.executed() && t.verdict.executed() => {
-                divergent += u64::from(s.verdict != t.verdict || s.output_sha != t.output_sha);
+                let differs = s.verdict != t.verdict || (bytes && s.output_sha != t.output_sha);
+                divergent += u64::from(differs);
             }
             _ => missing += 1,
         }
     }
     (divergent, missing)
+}
+
+/// H2 input (and the descriptive H1 byte count): items whose verdict or
+/// output bytes differ between two runs, and items that did not run on both
+/// (reported, not silently dropped).
+#[must_use]
+pub fn divergence(a: &[Scored], b: &[Scored]) -> (u64, u64) {
+    divergence_by(a, b, true)
+}
+
+/// H1 input (spec v2 §3): items whose VERDICT differs across cells. Output
+/// bytes are descriptive for H1 (`divergence`); a byte-only difference does
+/// not reject it.
+#[must_use]
+pub fn verdict_divergence(a: &[Scored], b: &[Scored]) -> (u64, u64) {
+    divergence_by(a, b, false)
 }
 
 /// H4/H5 input: items where BOTH arms parsed a verdict, paired; the rest are
@@ -256,6 +275,52 @@ pub fn paired_parsed(a: &[Scored], b: &[Scored]) -> (Vec<Paired>, u64) {
         }
     }
     (out, dropped)
+}
+
+/// H5 input (spec v2 §3): `paired_parsed` restricted to items of `class` in
+/// `a`. H5 decides on class R; class P is reported beside it (mutant confound).
+#[must_use]
+pub fn paired_parsed_class(a: &[Scored], b: &[Scored], class: Class) -> (Vec<Paired>, u64) {
+    let only: Vec<Scored> = a.iter().filter(|s| s.class == class).cloned().collect();
+    paired_parsed(&only, b)
+}
+
+/// H4 input (spec v2 §3): items where apr AND both voters parsed a verdict;
+/// the rest are dropped and counted.
+#[must_use]
+pub fn vs_voters_parsed(apr: &[Scored], voters: [&[Scored]; 2]) -> (Vec<VsVoters>, u64) {
+    let maps = voters.map(|v| {
+        v.iter()
+            .map(|s| (s.id.as_str(), s))
+            .collect::<BTreeMap<_, _>>()
+    });
+    let parsed = |v: Verdict| matches!(v, Verdict::Pass | Verdict::Fail);
+    let mut out = Vec::new();
+    let mut dropped = 0;
+    for s in apr {
+        match (maps[0].get(s.id.as_str()), maps[1].get(s.id.as_str())) {
+            (Some(h), Some(g)) if parsed(s.verdict) && parsed(h.verdict) && parsed(g.verdict) => {
+                out.push(VsVoters {
+                    defect: s.defect,
+                    apr_fail: s.verdict == Verdict::Fail,
+                    voter_fail: [h.verdict == Verdict::Fail, g.verdict == Verdict::Fail],
+                });
+            }
+            _ => dropped += 1,
+        }
+    }
+    (out, dropped)
+}
+
+/// κ input (spec v2 §3, descriptive): per-item error indicators of (a, b)
+/// over items both lanes parsed. Error = not correct.
+#[must_use]
+pub fn error_pairs(a: &[Scored], b: &[Scored]) -> (Vec<bool>, Vec<bool>) {
+    paired_parsed(a, b)
+        .0
+        .iter()
+        .map(|p| (p.a_fail != p.defect, p.b_fail != p.defect))
+        .unzip()
 }
 
 /// H3 input: per-item correctness of (challenger, champion) over the
