@@ -296,6 +296,19 @@ fn the_native_generate_stop_set_is_the_eos_plus_every_eog_marker() {
         vec![3, 1],
         "no recorded EOS: the vocabulary's <|im_end|> stands in, <|endoftext|> still stops"
     );
+    // The CUDA `/stream/generate` config itself, so its call site cannot fall
+    // back to the EOS alone without this test going red.
+    let request: crate::api::GenerateRequest =
+        serde_json::from_value(serde_json::json!({"prompt": "a", "max_tokens": 5, "temperature": 0.0}))
+            .expect("request");
+    let config = crate::api::gpu_handlers::cuda_stream_config(
+        &request,
+        &tok,
+        Some(3),
+        &crate::generate::CancelToken::new(),
+    );
+    assert_eq!(config.stop_tokens, vec![3, 1], "CUDA /stream/generate stop set");
+    assert_eq!((config.max_tokens, config.top_k), (5, 1), "greedy at temperature 0");
 }
 
 /// aprender#4345: the APR Q4K CUDA routes (`/v1/completions` and
