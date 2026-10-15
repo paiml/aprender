@@ -282,6 +282,12 @@ pub fn decide(report_json: &str, prereg_sha: &str, current: Mode) -> Decision {
         Err(d) => (d, false),
     };
     if devbox && current > Mode::Tripwire {
+        if !d.reasons.iter().any(|r| r.starts_with("S-4:")) {
+            d.reasons.push(format!(
+                "S-4: {current:?} lane on a devbox or unnamed primary cell is capped at Tripwire at once; the report alone gives {:?} (R-9)",
+                d.mode
+            ));
+        }
         d.mode = Mode::Tripwire;
         return d;
     }
