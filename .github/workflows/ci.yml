@@ -40,9 +40,17 @@ on:
 # healthy run's `gate` red in four seconds). Narrowed to the one event where
 # superseding is what we mean; `merge_group`, `push` and `workflow_dispatch`
 # evaluate to false and QUEUE.
+#
+# #5381 widens it to `merge_group`, measured 2026-10-15: a kicked entry re-enqueued
+# on the same base gets the SAME queue ref (`pr-<N>-<base oid>`), so its new run
+# queued ~31 min behind the dead run 38693636752. Only a newer run in the SAME group
+# cancels, and a queue ref names one (PR, base) entry, so the run it cancels is
+# always one the queue already discarded; distinct stacked entries have distinct
+# refs and never meet. `push` and `workflow_dispatch` still QUEUE. The case table
+# is scripts/check_ci_concurrency_cancel.sh.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
 
 jobs:
   # ==========================================================================
