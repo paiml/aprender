@@ -383,10 +383,10 @@ jobs:
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
               bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
-              # --no-renames (#3664): a rename must list BOTH paths, or a source
-              # moved into docs/ reads as docs-only and runs zero tests.
-              git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
-              printf 'touched (tip vs tip): %s path(s)\n' "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
+              # #5391: the PR's change is the diff from merge-base(base, HEAD), not the
+              # base tip -- main's later commits are not the PR's. --no-renames (#3664)
+              # lives in the helper.
+              bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
               args+=(--diff-from "$RUNNER_TEMP/touched.txt")
               ;;
             merge_group)
