@@ -22,14 +22,16 @@ fn build_embedding_state(
     use realizar::api::AppState;
 
     if config.wants_accelerator() {
-        config.refuse_unengaged_accelerator(
-            "the EmbeddingGemma 2 encoder runs on the CPU only",
-        )?;
+        config.refuse_unengaged_accelerator("the EmbeddingGemma 2 encoder runs on the CPU only")?;
     }
     let state = AppState::with_embedding_gemma2(mapped_model).map_err(|e| {
         CliError::ModelLoadFailed(format!("Failed to load the embedding model: {e}"))
     })?;
-    let architecture = mapped_model.model.architecture().unwrap_or_default().to_string();
+    let architecture = mapped_model
+        .model
+        .architecture()
+        .unwrap_or_default()
+        .to_string();
     let width = state
         .embedding_model()
         .map_or(0, |served| served.encoder.output_dim());

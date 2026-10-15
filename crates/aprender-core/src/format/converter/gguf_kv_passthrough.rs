@@ -16,7 +16,11 @@ const GGUF_KV_FROM_TOKENIZER: [(&str, &str, &str); 4] = [
     ("tokenizer.ggml.tokens", "tokenizer.vocabulary", "arr_str"),
     ("tokenizer.ggml.merges", "tokenizer.merges", "arr_str"),
     ("tokenizer.ggml.scores", "tokenizer.scores", "arr_f32"),
-    ("tokenizer.ggml.token_type", "tokenizer.token_type", "arr_i32"),
+    (
+        "tokenizer.ggml.token_type",
+        "tokenizer.token_type",
+        "arr_i32",
+    ),
 ];
 
 fn json_f32(x: f32) -> Option<serde_json::Value> {
@@ -66,7 +70,10 @@ fn json_vec<T>(
 /// Decode a value written by `gguf_value_to_json`. `None` when the tag is
 /// unknown or the value does not fit it.
 #[allow(clippy::cast_possible_truncation)]
-fn gguf_value_from_json(tag: &str, v: &serde_json::Value) -> Option<crate::format::gguf::GgufValue> {
+fn gguf_value_from_json(
+    tag: &str,
+    v: &serde_json::Value,
+) -> Option<crate::format::gguf::GgufValue> {
     use crate::format::gguf::GgufValue;
     Some(match tag {
         "u8" => GgufValue::Uint8(u8::try_from(v.as_u64()?).ok()?),
@@ -114,7 +121,10 @@ fn gguf_kv_reference(
     let mut entry = serde_json::Map::new();
     entry.insert("t".to_string(), serde_json::Value::from("custom"));
     entry.insert("custom".to_string(), serde_json::Value::from(*custom_key));
-    entry.insert("len".to_string(), serde_json::Value::from(gguf_value_len(value)));
+    entry.insert(
+        "len".to_string(),
+        serde_json::Value::from(gguf_value_len(value)),
+    );
     let entry = serde_json::Value::Object(entry);
     let rebuilt = gguf_kv_from_tokenizer(key, &entry, custom).ok()?;
     (rebuilt == *value).then_some(entry)
@@ -128,7 +138,8 @@ pub(crate) fn insert_gguf_kv_metadata(
 ) {
     let mut record = serde_json::Map::new();
     for (key, value) in kv {
-        let Some(entry) = gguf_kv_reference(key, value, custom).or_else(|| gguf_value_to_json(value))
+        let Some(entry) =
+            gguf_kv_reference(key, value, custom).or_else(|| gguf_value_to_json(value))
         else {
             eprintln!("[EG-6] GGUF key '{key}' holds a non-finite float; not recorded");
             continue;
@@ -166,7 +177,10 @@ fn gguf_kv_from_tokenizer(
     if want != Some(gguf_value_len(&value) as u64) {
         return Err(gguf_kv_err(
             key,
-            &format!("length {want:?} != {} in '{custom_key}'", gguf_value_len(&value)),
+            &format!(
+                "length {want:?} != {} in '{custom_key}'",
+                gguf_value_len(&value)
+            ),
         ));
     }
     Ok(value)
@@ -301,7 +315,9 @@ fn try_gguf_kv_verbatim_export(input: &Path, output: &Path) -> Result<Option<Exp
 #[cfg(test)]
 mod gguf_kv_passthrough_tests {
     use super::*;
-    use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufReader, GgufTensor, GgufValue};
+    use crate::format::gguf::{
+        export_tensors_to_gguf, GgmlType, GgufReader, GgufTensor, GgufValue,
+    };
 
     fn kv(key: &str, value: GgufValue) -> (String, GgufValue) {
         (key.to_string(), value)
@@ -366,22 +382,54 @@ mod gguf_kv_passthrough_tests {
         let out = dir.path().join("eg2-rt.gguf");
 
         let header = vec![
-            kv("general.architecture", GgufValue::String("gemma-embedding2".into())),
+            kv(
+                "general.architecture",
+                GgufValue::String("gemma-embedding2".into()),
+            ),
             kv("general.name", GgufValue::String("tiny".into())),
             kv("gemma-embedding2.block_count", GgufValue::Uint32(1)),
             kv("gemma-embedding2.context_length", GgufValue::Uint32(64)),
             kv("gemma-embedding2.embedding_length", GgufValue::Uint32(8)),
-            kv("gemma-embedding2.feed_forward_length", GgufValue::Uint32(16)),
-            kv("gemma-embedding2.attention.head_count", GgufValue::Uint32(2)),
-            kv("gemma-embedding2.attention.head_count_kv", GgufValue::ArrayInt32(vec![1])),
-            kv("gemma-embedding2.attention.sliding_window_pattern", GgufValue::ArrayBool(vec![true])),
+            kv(
+                "gemma-embedding2.feed_forward_length",
+                GgufValue::Uint32(16),
+            ),
+            kv(
+                "gemma-embedding2.attention.head_count",
+                GgufValue::Uint32(2),
+            ),
+            kv(
+                "gemma-embedding2.attention.head_count_kv",
+                GgufValue::ArrayInt32(vec![1]),
+            ),
+            kv(
+                "gemma-embedding2.attention.sliding_window_pattern",
+                GgufValue::ArrayBool(vec![true]),
+            ),
             kv("gemma-embedding2.attention.causal", GgufValue::Bool(false)),
-            kv("gemma-embedding2.rope.freq_base_swa", GgufValue::Float32(10_000.0)),
+            kv(
+                "gemma-embedding2.rope.freq_base_swa",
+                GgufValue::Float32(10_000.0),
+            ),
             kv("gemma-embedding2.pooling_type", GgufValue::Uint32(1)),
             kv("tokenizer.ggml.model", GgufValue::String("llama".into())),
-            kv("tokenizer.ggml.tokens", GgufValue::ArrayString(vec!["<pad>".into(), "<eos>".into(), "<bos>".into(), "a".into()])),
-            kv("tokenizer.ggml.scores", GgufValue::ArrayFloat32(vec![0.0, 0.0, 0.0, -1.5])),
-            kv("tokenizer.ggml.token_type", GgufValue::ArrayInt32(vec![3, 3, 3, 1])),
+            kv(
+                "tokenizer.ggml.tokens",
+                GgufValue::ArrayString(vec![
+                    "<pad>".into(),
+                    "<eos>".into(),
+                    "<bos>".into(),
+                    "a".into(),
+                ]),
+            ),
+            kv(
+                "tokenizer.ggml.scores",
+                GgufValue::ArrayFloat32(vec![0.0, 0.0, 0.0, -1.5]),
+            ),
+            kv(
+                "tokenizer.ggml.token_type",
+                GgufValue::ArrayInt32(vec![3, 3, 3, 1]),
+            ),
             kv("tokenizer.ggml.bos_token_id", GgufValue::Uint32(2)),
             kv("tokenizer.ggml.eos_token_id", GgufValue::Uint32(1)),
             kv("tokenizer.ggml.add_eos_token", GgufValue::Bool(true)),
@@ -410,8 +458,12 @@ mod gguf_kv_passthrough_tests {
         export_tensors_to_gguf(&mut f, &tensors, &header).expect("write source GGUF");
         drop(f);
 
-        crate::format::converter::import::apr_import_gguf_raw(&src, &apr, &crate::format::converter::ImportOptions::default())
-            .expect("import");
+        crate::format::converter::import::apr_import_gguf_raw(
+            &src,
+            &apr,
+            &crate::format::converter::ImportOptions::default(),
+        )
+        .expect("import");
         let report = try_gguf_kv_verbatim_export(&apr, &out)
             .expect("export")
             .expect("APR carries gguf.kv");
@@ -423,7 +475,10 @@ mod gguf_kv_passthrough_tests {
         let want = source.get_all_tensors_raw().expect("source tensors");
         let got = back.get_all_tensors_raw().expect("round-tripped tensors");
         assert_eq!(got.len(), tensors.len());
-        assert_eq!(got, want, "names, shapes, dtypes and bytes as in the source");
+        assert_eq!(
+            got, want,
+            "names, shapes, dtypes and bytes as in the source"
+        );
     }
 
     #[test]
@@ -435,12 +490,17 @@ mod gguf_kv_passthrough_tests {
     #[test]
     fn eg6b_tokenizer_reference_length_mismatch_is_refused() {
         let mut custom = std::collections::HashMap::new();
-        custom.insert("tokenizer.vocabulary".to_string(), serde_json::json!(["a", "b"]));
+        custom.insert(
+            "tokenizer.vocabulary".to_string(),
+            serde_json::json!(["a", "b"]),
+        );
         custom.insert(
             GGUF_KV_CUSTOM_KEY.to_string(),
             serde_json::json!({ "tokenizer.ggml.tokens": { "t": "custom", "custom": "tokenizer.vocabulary", "len": 3 } }),
         );
-        let err = gguf_kv_from_custom(&custom).expect("present").expect_err("length mismatch");
+        let err = gguf_kv_from_custom(&custom)
+            .expect("present")
+            .expect_err("length mismatch");
         assert!(err.to_string().contains("length"), "{err}");
     }
 }

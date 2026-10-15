@@ -779,10 +779,7 @@ impl Architecture {
     /// Weight: 2D tensor — detect fused dimension.
     /// SafeTensors/HF: [hidden, 3*hidden] → split columns (dim 1)
     /// GGUF:           [3*hidden, hidden] → split rows (dim 0)
-    fn split_gpt2_f32_weight(
-        data: &[f32],
-        shape: &[usize],
-    ) -> Option<[(Vec<f32>, Vec<usize>); 3]> {
+    fn split_gpt2_f32_weight(data: &[f32], shape: &[usize]) -> Option<[(Vec<f32>, Vec<usize>); 3]> {
         if shape.len() != 2 {
             return None;
         }

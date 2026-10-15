@@ -22,7 +22,9 @@ impl AppState {
     /// # Errors
     /// The file is not an EmbeddingGemma 2 model, or its tensors or vocabulary do
     /// not load.
-    pub fn with_embedding_gemma2(mapped: &crate::gguf::MappedGGUFModel) -> Result<Self, RealizarError> {
+    pub fn with_embedding_gemma2(
+        mapped: &crate::gguf::MappedGGUFModel,
+    ) -> Result<Self, RealizarError> {
         match crate::model_kind::gguf_model_kind(&mapped.model) {
             Ok(crate::model_kind::ModelKind::Embedding) => {},
             Ok(crate::model_kind::ModelKind::Generative) => {
@@ -43,7 +45,8 @@ impl AppState {
             },
         }
         let encoder = crate::gguf::forward_embedding_gemma2::EmbeddingGemma2::from_mapped(mapped)?;
-        let tokenizer = crate::gguf::embedding_gemma2_input::EmbedTokenizer::from_gguf(&mapped.model)?;
+        let tokenizer =
+            crate::gguf::embedding_gemma2_input::EmbedTokenizer::from_gguf(&mapped.model)?;
         let architecture = mapped.model.architecture().map(str::to_string);
 
         let (audit_logger, audit_sink) = create_audit_state();

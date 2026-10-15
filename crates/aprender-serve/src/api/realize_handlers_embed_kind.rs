@@ -41,7 +41,10 @@ fn media_kind_of_value(v: &serde_json::Value) -> Option<&'static str> {
             }
             if let Some(serde_json::Value::String(t)) = map.get("type") {
                 let t = t.to_ascii_lowercase();
-                if let Some(kind) = ["image", "audio", "video"].into_iter().find(|k| t.contains(k)) {
+                if let Some(kind) = ["image", "audio", "video"]
+                    .into_iter()
+                    .find(|k| t.contains(k))
+                {
                     return Some(kind);
                 }
             }
@@ -131,7 +134,10 @@ fn embed_with_gemma2(
             return Err(bad_request(format!(
                 "dimensions {dim}: this embedding model returns {width} values and truncates to \
                  {:?}",
-                MATRYOSHKA_DIMS.iter().filter(|d| **d <= width).collect::<Vec<_>>()
+                MATRYOSHKA_DIMS
+                    .iter()
+                    .filter(|d| **d <= width)
+                    .collect::<Vec<_>>()
             )));
         }
     }
@@ -140,19 +146,26 @@ fn embed_with_gemma2(
     let mut prompt_tokens = 0usize;
     for (index, text) in inputs.iter().enumerate() {
         if text.is_empty() {
-            return Err(bad_request(format!("Input at index {index} cannot be empty")));
+            return Err(bad_request(format!(
+                "Input at index {index} cannot be empty"
+            )));
         }
-        let (tokens, vector) =
-            embed_text(&served.encoder, &served.tokenizer, &Prompt::Raw, text, dimensions)
-                .map_err(|e| {
-                    let status = super::generation_error_status(&e);
-                    let error = if status == StatusCode::BAD_REQUEST {
-                        e.to_string()
-                    } else {
-                        format!("Embedding forward pass failed: {e}")
-                    };
-                    (status, Json(ErrorResponse { error }))
-                })?;
+        let (tokens, vector) = embed_text(
+            &served.encoder,
+            &served.tokenizer,
+            &Prompt::Raw,
+            text,
+            dimensions,
+        )
+        .map_err(|e| {
+            let status = super::generation_error_status(&e);
+            let error = if status == StatusCode::BAD_REQUEST {
+                e.to_string()
+            } else {
+                format!("Embedding forward pass failed: {e}")
+            };
+            (status, Json(ErrorResponse { error }))
+        })?;
         prompt_tokens += tokens;
         out.push(vector);
     }

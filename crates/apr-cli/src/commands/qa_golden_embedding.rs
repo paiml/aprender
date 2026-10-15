@@ -27,7 +27,11 @@ fn embedding_gate_skip(embedding: bool, skip: bool, reason: &'static str) -> (bo
 }
 
 /// Skip decision for `golden_embedding`: only an embedding model runs it.
-fn golden_embedding_skip(embedding: bool, skip: bool, reason: &'static str) -> (bool, &'static str) {
+fn golden_embedding_skip(
+    embedding: bool,
+    skip: bool,
+    reason: &'static str,
+) -> (bool, &'static str) {
     if embedding {
         (skip, reason)
     } else {
@@ -58,7 +62,11 @@ fn golden_embedding_triples() -> [(&'static str, &'static str, &'static str); 3]
 
 /// Cosine of two vectors (the encoder's vectors are unit length, but the gate does not assume it).
 fn golden_cosine(a: &[f32], b: &[f32]) -> f64 {
-    let dot: f64 = a.iter().zip(b).map(|(x, y)| f64::from(*x) * f64::from(*y)).sum();
+    let dot: f64 = a
+        .iter()
+        .zip(b)
+        .map(|(x, y)| f64::from(*x) * f64::from(*y))
+        .sum();
     let na: f64 = a.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
     let nb: f64 = b.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
     dot / (na * nb)
@@ -67,12 +75,19 @@ fn golden_cosine(a: &[f32], b: &[f32]) -> f64 {
 /// The first defect of one output vector, if any: its width, a non-finite value, or its norm.
 fn golden_vector_defect(text: &str, vector: &[f32], width: usize) -> Option<String> {
     if vector.len() != width {
-        return Some(format!("{text:?}: {} values, the file declares {width}", vector.len()));
+        return Some(format!(
+            "{text:?}: {} values, the file declares {width}",
+            vector.len()
+        ));
     }
     if let Some(i) = vector.iter().position(|v| !v.is_finite()) {
         return Some(format!("{text:?}: value {i} is {}", vector[i]));
     }
-    let norm = vector.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
+    let norm = vector
+        .iter()
+        .map(|x| f64::from(*x).powi(2))
+        .sum::<f64>()
+        .sqrt();
     if (norm - 1.0).abs() > GOLDEN_EMBEDDING_NORM_TOL {
         return Some(format!("{text:?}: norm {norm:.6}, not unit length"));
     }
@@ -116,7 +131,8 @@ fn run_golden_embedding_gate(path: &Path, config: &QaConfig) -> Result<GateResul
     if !config.json && config.verbose {
         println!("{}", "Running golden embedding test...".yellow());
     }
-    let load = |e: realizar::RealizarError| CliError::ValidationFailed(format!("Model failed: {e}"));
+    let load =
+        |e: realizar::RealizarError| CliError::ValidationFailed(format!("Model failed: {e}"));
     let mapped = MappedGGUFModel::from_path(path).map_err(load)?;
     let encoder = EmbeddingGemma2::from_mapped(&mapped).map_err(load)?;
     let tokenizer = EmbedTokenizer::from_gguf(&mapped.model).map_err(load)?;
@@ -132,10 +148,15 @@ fn run_golden_embedding_gate(path: &Path, config: &QaConfig) -> Result<GateResul
         vectors.push([embed(a)?, embed(n)?, embed(f)?]);
     }
     let width = encoder.output_dim();
-    let fail = |msg: &str, value| GateResult::failed("golden_embedding", msg, value, Some(0.0), start.elapsed());
+    let fail = |msg: &str, value| {
+        GateResult::failed("golden_embedding", msg, value, Some(0.0), start.elapsed())
+    };
     // Determinism: the same text gives the same bits.
     if embed(triples[0].0)? != vectors[0][0] {
-        return Ok(fail("Repeat of the same text gave a different vector", None));
+        return Ok(fail(
+            "Repeat of the same text gave a different vector",
+            None,
+        ));
     }
     Ok(match judge_golden_embeddings(&triples, &vectors, width) {
         Ok(gap) => GateResult::passed(
@@ -204,13 +225,19 @@ mod golden_embedding_tests {
 
     #[test]
     fn falsify_eg5_embedding_gate_skip_names_the_kind() {
-        assert_eq!(embedding_gate_skip(true, false, "x"), (true, EMBEDDING_KIND_SKIP));
+        assert_eq!(
+            embedding_gate_skip(true, false, "x"),
+            (true, EMBEDDING_KIND_SKIP)
+        );
         assert_eq!(embedding_gate_skip(false, false, "x"), (false, "x"));
     }
 
     #[test]
     fn falsify_eg5_golden_embedding_skips_a_generative_model() {
-        assert_eq!(golden_embedding_skip(false, false, "x"), (true, GENERATIVE_KIND_SKIP));
+        assert_eq!(
+            golden_embedding_skip(false, false, "x"),
+            (true, GENERATIVE_KIND_SKIP)
+        );
         assert_eq!(golden_embedding_skip(true, true, "x"), (true, "x"));
         assert_eq!(golden_embedding_skip(true, false, "x"), (false, "x"));
     }
