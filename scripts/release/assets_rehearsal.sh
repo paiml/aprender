@@ -90,7 +90,9 @@ run: |
   # cargo also sends a token key from config or config.toml ([registry] token, [registries.<name>] token,
   # dotted or inline): measured on cargo 1.93.0 against a local fake registry (#4844). Comments do not count.
   for f in "$ch/config" "$ch/config.toml"; do
-    if [ -f "$f" ] && sed 's/#.*//' "$f" | grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*="; then
+    [ -f "$f" ] || continue
+    body=$(sed 's/#.*//' "$f")
+    if grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*=" <<<"$body"; then
       echo "::error::refusing to rehearse: a registry token key is in cargo config: $f"; bad=1
     fi
   done
