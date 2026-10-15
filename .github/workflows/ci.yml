@@ -274,6 +274,12 @@ jobs:
         continue-on-error: true
         with:
           subject-path: ${{ runner.temp }}/fat/sov.provenance/ws/${{ github.event.repository.name }}/Cargo.toml
+      # #5397: free this job's own target dir (`<PR>/run-<id>`), never the PR parent.
+      # Last step, so nothing after it reads the dir; always() so a failed or
+      # cancelled run frees it too.
+      - name: Free this job's own cargo target dir
+        if: always()
+        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}" "$GITHUB_RUN_ID"; fi
 
   # T43: x86-main's RustSec advisory steps, verbatim from ci/sections.yml
   # guard-cargo, for a merge_group run where mg-reuse skipped x86-main. Their input
@@ -441,6 +447,12 @@ jobs:
           name: sigma-shard-${{ matrix.shard }}
           path: ${{ runner.temp }}/fat/artifacts/sigma-shard-${{ matrix.shard }}/
           if-no-files-found: ignore
+      # #5397: free this job's own target dir (`<PR>-s<shard>/run-<id>`), never the
+      # PR parent. Last step, so nothing after it reads the dir; always() so a
+      # failed or cancelled shard frees it too.
+      - name: Free this job's own cargo target dir
+        if: always()
+        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}-s${{ matrix.shard }}" "$GITHUB_RUN_ID"; fi
 
   workspace-test:
     runs-on: [self-hosted, Linux, clean-room]
