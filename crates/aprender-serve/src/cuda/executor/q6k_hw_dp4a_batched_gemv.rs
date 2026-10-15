@@ -32,7 +32,11 @@ impl CudaExecutor {
 
         // m rows of k / 32 Q8_1 blocks, 36 bytes each.
         let q8_bytes = (m * (k / 32) * 36) as usize;
-        let have = self.workspace.batched_q8_buf.as_ref().map_or(0, GpuBuffer::len);
+        let have = self
+            .workspace
+            .batched_q8_buf
+            .as_ref()
+            .map_or(0, GpuBuffer::len);
         if have < q8_bytes {
             self.workspace.batched_q8_buf = Some(GpuBuffer::new(&self.context, q8_bytes)?);
         }
@@ -55,8 +59,14 @@ impl CudaExecutor {
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::BatchedHwDp4aQ6KGemv { k, n, m, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key =
-            module_key!(self, "batched_hw_dp4a_q6k_gemv_{}_{}_{}_{}", k, n, m, num_warps);
+        let cache_key = module_key!(
+            self,
+            "batched_hw_dp4a_q6k_gemv_{}_{}_{}_{}",
+            k,
+            n,
+            m,
+            num_warps
+        );
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 

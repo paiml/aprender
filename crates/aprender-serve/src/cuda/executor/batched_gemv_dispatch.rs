@@ -32,7 +32,9 @@ impl CudaExecutor {
                 self.batched_mwv_q6k_gemv_into(weight_ptr, input, output, m, n, k)
             },
             WeightQuantType::Q5K => self.batched_q5k_gemv_into(weight_ptr, input, output, m, n, k),
-            WeightQuantType::Q8_0 => self.batched_q8_0_gemv_into(weight_ptr, input, output, m, n, k),
+            WeightQuantType::Q8_0 => {
+                self.batched_q8_0_gemv_into(weight_ptr, input, output, m, n, k)
+            },
             WeightQuantType::Q6K
                 if k.is_multiple_of(256) && self.gpu_profile.q6k == Q6kVariant::HwDp4a =>
             {

@@ -158,7 +158,7 @@ fn build_rmsnorm(name: &str, hidden_size: u32, epsilon: f32, row_on_grid_y: bool
 
 /// PAR-081: Vectorized RMSNorm kernel with 256 threads
 ///
-/// Achieves ~10x speedup over single-warp RmsNormKernel by:
+/// Differs from the single-warp RmsNormKernel by:
 /// 1. Using 256 threads (8 warps) instead of 32
 /// 2. Shared memory for cross-warp reduction
 /// 3. Better memory coalescing

@@ -519,7 +519,11 @@ async fn qwen35_batched(
         request.tools.as_deref(),
         request_tool_choice(request),
         timings,
-        Some(turn.session.on_gpu.load(std::sync::atomic::Ordering::Relaxed)),
+        Some(
+            turn.session
+                .on_gpu
+                .load(std::sync::atomic::Ordering::Relaxed),
+        ),
         logprobs,
     )
 }
