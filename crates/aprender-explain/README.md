@@ -2,7 +2,7 @@
 
 PTX/SIMD/wgpu visualization and tracing CLI for Trueno.
 
-[![CI](https://github.com/paiml/trueno/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/trueno/actions)
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 
 ## Features
 
@@ -14,7 +14,7 @@ PTX/SIMD/wgpu visualization and tracing CLI for Trueno.
 ## Installation
 
 ```bash
-cargo install trueno-explain
+cargo install aprender-explain
 ```
 
 ## Usage
@@ -63,7 +63,7 @@ MIT License - see [LICENSE](../LICENSE)
 
 ## Part of Trueno
 
-This crate is part of [Trueno](https://github.com/paiml/trueno).
+This crate is part of [Trueno](https://github.com/paiml/aprender/tree/main/crates/aprender-compute).
 
 ---
 
