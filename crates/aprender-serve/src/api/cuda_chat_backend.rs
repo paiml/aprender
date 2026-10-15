@@ -1065,7 +1065,8 @@ async fn try_apr_q4k_chat_backend(
     let eos_ids = if request.ignore_eos.unwrap_or(false) {
         Vec::new()
     } else {
-        state.model_eos_ids()
+        // aprender#4345: and every EOG marker the vocabulary has.
+        crate::api::realize_handlers::eos_ids_with_eog(&tokenizer, state.model_eos_ids())
     };
 
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();

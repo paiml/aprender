@@ -313,8 +313,9 @@ async fn try_apr_q4k_completions(
     let prompt_tokens = prompt_ids.len();
 
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-    // ALB-109: Get EOS token IDs from model config or tokenizer.
-    let eos_ids = state.model_eos_ids();
+    // ALB-109: Get EOS token IDs from model config or tokenizer, plus every
+    // EOG marker the vocabulary has (aprender#4345).
+    let eos_ids = crate::api::realize_handlers::eos_ids_with_eog(&tokenizer, state.model_eos_ids());
 
     q4k_tx
         .send(AprQ4kRequest {

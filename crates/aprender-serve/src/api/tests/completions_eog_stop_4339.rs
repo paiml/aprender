@@ -297,3 +297,25 @@ fn the_native_generate_stop_set_is_the_eos_plus_every_eog_marker() {
         "no recorded EOS: the vocabulary's <|im_end|> stands in, <|endoftext|> still stops"
     );
 }
+
+/// aprender#4345: the APR Q4K CUDA routes (`/v1/completions` and
+/// `/v1/chat/completions`) stopped on `model_eos_ids()` alone, the model's one
+/// EOS or the `[0, 2]` fallback. Whatever EOS list a route starts from, every
+/// EOG marker the vocabulary has joins it once, after it and in order.
+#[test]
+fn an_eos_list_gains_every_eog_marker_once() {
+    use crate::api::realize_handlers::eos_ids_with_eog;
+    let vocab: Vec<String> = ["<unk>", "<|endoftext|>", "a", "<|im_end|>", "<|eot_id|>"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let tok = crate::tokenizer::BPETokenizer::new(vocab, vec![], "<unk>").expect("tokenizer");
+    assert_eq!(eos_ids_with_eog(&tok, vec![3]), vec![3, 1, 4]);
+    assert_eq!(
+        eos_ids_with_eog(&tok, vec![0, 2]),
+        vec![0, 2, 3, 1, 4],
+        "the no-EOS fallback keeps its ids and gains the markers"
+    );
+    assert_eq!(eos_ids_with_eog(&tok, vec![1, 1]), vec![1, 1, 3, 4], "input kept as given");
+    assert_eq!(eos_ids_with_eog(&tok, Vec::new()), vec![3, 1, 4]);
+}
