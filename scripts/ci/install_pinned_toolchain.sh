@@ -7,13 +7,13 @@
 # merge group. Installing the pin up front takes that download out of the test.
 #
 # Only an exact release (1.93.0) is installed; a floating channel is what the toolchain
-# step already installs. A failed install is a warning: the test-time download it
-# replaces still happens, so the job is no worse off.
+# step already installs. A failed install FAILS the step (C324: no fail-open state):
+# the job would otherwise download the same release at test time and fail there.
 #
 #   install_pinned_toolchain.sh [workspace-dir]
 #   install_pinned_toolchain.sh --self-test
 #
-# EXIT 0 always, except --self-test (1 on a failed row).
+# EXIT 0 installed or nothing to install; 1 the pinned install failed (--self-test: 1 on a failed row).
 
 set -uo pipefail
 
@@ -34,7 +34,7 @@ install_pin() {
     if rustup toolchain install "$ch" --profile minimal --no-self-update "${args[@]}"; then
         echo "install_pinned_toolchain: $ch installed (${comps:-no components})"
     else
-        echo "::warning::install_pinned_toolchain: $ch did not install; the test-time download remains"
+        echo "::error::install_pinned_toolchain: $ch did not install"; return 1
     fi
     return 0
 }
@@ -60,7 +60,7 @@ self_test() {
     chk "floating channel: no rustup call" "$(called)" none
     printf '[toolchain]\nchannel = "1.93.0"\n' >"$ws/rust-toolchain.toml"
     out=$(STUB_FAIL=1 install_pin "$ws"; echo "rc=$?")
-    chk "failed install: warning, rc 0" "$(echo "$out" | grep -c '^::warning::')$(echo "$out" | tail -n 1)" "1rc=0"
+    chk "failed install: error and rc 1" "$(echo "$out" | grep -c "^::error::")$(echo "$out" | tail -n 1)" "1rc=1"
     rm -rf -- "${t:?}"
     [ "$fails" -eq 0 ] && echo "self-test: all ok" || echo "self-test: $fails FAILED"
     return $((fails > 0))
