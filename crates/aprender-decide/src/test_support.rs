@@ -119,10 +119,10 @@ pub(crate) fn f32_b64(v: &serde_json::Value) -> Vec<f32> {
         .collect()
 }
 
-pub(crate) fn contract_yaml(name: &str) -> serde_json::Value {
+pub(crate) fn contract_yaml(name: &str) -> serde_yaml::Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../contracts/{name}"));
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
-    serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_or_else(|e| panic!("parse {name}: {e}"))
+    serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("parse {name}: {e}"))
 }
 
 /// `equations.<equation>.float_tolerance` from `contracts/laya-parity-v1.yaml`.
@@ -144,91 +144,6 @@ pub(crate) use crate::artifact::within;
 
 /// `max |a - b|` in f64; NaN-propagating, and NaN on a length mismatch: the verifier's own.
 pub(crate) use crate::verify::row_max_abs as max_abs;
-
-/// The keys of the mapping at `path` in contract `name`, in DOCUMENT order.
-/// `contract_yaml` reads into `serde_json::Value`, whose map is sorted (decide never
-/// turns `preserve_order` on), so a test that pins key order reads through this.
-pub(crate) fn contract_keys_in_order(name: &str, path: &[&str]) -> Vec<String> {
-    let path_buf = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../contracts/{name}"));
-    let text = std::fs::read_to_string(&path_buf).unwrap_or_else(|e| panic!("read {name}: {e}"));
-    let mut node: OrderedNode = serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_or_else(|e| panic!("parse {name}: {e}"));
-    for key in path {
-        let OrderedNode::Map(entries) = node else {
-            panic!("{name}: {key} is not under a mapping");
-        };
-        node = entries
-            .into_iter()
-            .find_map(|(k, v)| (k == *key).then_some(v))
-            .unwrap_or_else(|| panic!("{name}: no key {key}"));
-    }
-    match node {
-        OrderedNode::Map(entries) => entries.into_iter().map(|(k, _)| k).collect(),
-        OrderedNode::Other => panic!("{name}: {path:?} is not a mapping"),
-    }
-}
-
-/// A YAML node that keeps mapping entries in document order; non-mappings are dropped.
-enum OrderedNode {
-    Map(Vec<(String, OrderedNode)>),
-    Other,
-}
-
-impl<'de> serde::Deserialize<'de> for OrderedNode {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        struct V;
-        impl<'de> serde::de::Visitor<'de> for V {
-            type Value = OrderedNode;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("any YAML node")
-            }
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                mut m: A,
-            ) -> Result<OrderedNode, A::Error> {
-                let mut entries = Vec::new();
-                while let Some((k, v)) = m.next_entry::<String, OrderedNode>()? {
-                    entries.push((k, v));
-                }
-                Ok(OrderedNode::Map(entries))
-            }
-            fn visit_seq<A: serde::de::SeqAccess<'de>>(
-                self,
-                mut s: A,
-            ) -> Result<OrderedNode, A::Error> {
-                while s.next_element::<serde::de::IgnoredAny>()?.is_some() {}
-                Ok(OrderedNode::Other)
-            }
-            fn visit_bool<E>(self, _: bool) -> Result<OrderedNode, E> {
-                Ok(OrderedNode::Other)
-            }
-            fn visit_i64<E>(self, _: i64) -> Result<OrderedNode, E> {
-                Ok(OrderedNode::Other)
-            }
-            fn visit_u64<E>(self, _: u64) -> Result<OrderedNode, E> {
-                Ok(OrderedNode::Other)
-            }
-            fn visit_f64<E>(self, _: f64) -> Result<OrderedNode, E> {
-                Ok(OrderedNode::Other)
-            }
-            fn visit_str<E>(self, _: &str) -> Result<OrderedNode, E> {
-                Ok(OrderedNode::Other)
-            }
-            fn visit_unit<E>(self) -> Result<OrderedNode, E> {
-                Ok(OrderedNode::Other)
-            }
-            fn visit_none<E>(self) -> Result<OrderedNode, E> {
-                Ok(OrderedNode::Other)
-            }
-            fn visit_some<D2: serde::Deserializer<'de>>(
-                self,
-                d: D2,
-            ) -> Result<OrderedNode, D2::Error> {
-                <OrderedNode as serde::Deserialize>::deserialize(d)
-            }
-        }
-        d.deserialize_any(V)
-    }
-}
 
 #[cfg(test)]
 mod tests {

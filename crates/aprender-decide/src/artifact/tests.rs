@@ -218,7 +218,7 @@ fn contract_mirror() {
 
     // Probe inputs verbatim, and the synthetic probe task field by field.
     let inputs: Vec<&str> = c["probe_policy"]["inputs"]
-        .as_array()
+        .as_sequence()
         .expect("probe inputs")
         .iter()
         .map(|v| v.as_str().expect("probe input string"))
@@ -228,22 +228,21 @@ fn contract_mirror() {
     let task = Task::from_slice(PROBE_TASK.as_bytes()).expect("PROBE_TASK parses");
     assert_eq!(pt["type"].as_str(), Some("choice"));
     assert_eq!(pt["instructions"].as_str(), Some(task.instructions()));
-    let criteria = pt["criteria"].as_object().expect("probe criteria");
-    assert!(
-        criteria.values().all(serde_json::Value::is_null),
-        "probe criteria carry no description"
-    );
-    let names = crate::test_support::contract_keys_in_order(
-        "decide-apr-v1.yaml",
-        &["probe_policy", "probe_task", "criteria"],
-    );
+    let criteria = pt["criteria"].as_mapping().expect("probe criteria");
+    let names: Vec<&str> = criteria
+        .iter()
+        .map(|(key, v)| {
+            assert!(v.is_null(), "probe criteria carry no description");
+            key.as_str().expect("criterion name")
+        })
+        .collect();
     assert_eq!(names, task.labels(), "criteria in document order");
     assert!(task.criteria().iter().all(|c| c.description.is_none()));
     assert_eq!(pt["k"].as_u64(), Some(task.labels().len() as u64));
 
     // Blob set, model type, the single key, schema and method.
     let blobs: Vec<&str> = c["blob_tensors"]
-        .as_array()
+        .as_sequence()
         .expect("blob_tensors")
         .iter()
         .map(|v| v.as_str().expect("blob name"))
@@ -267,10 +266,10 @@ fn contract_mirror() {
 
     // The manifest's field SET equals the contract's.
     let mut want: Vec<&str> = fields
-        .as_object()
+        .as_mapping()
         .expect("manifest.fields")
         .keys()
-        .map(|key| key.as_str())
+        .map(|key| key.as_str().expect("field name"))
         .collect();
     want.sort_unstable();
     let packed = super::inspect_manifest(&pack_tiny()).expect("manifest");

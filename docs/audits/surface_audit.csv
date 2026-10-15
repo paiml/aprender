@@ -524,7 +524,7 @@ aprender-compute-xtask,aprender-compute-xtask validate-examples,6,UNKNOWN,NONE,n
 aprender-db,GET /health (aprender-db),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:144,high
 aprender-db,GET /status (aprender-db),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:146,high
 aprender-db,POST /query (aprender-db),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:145,high
-aprender-db,aprender-db --config <PATH> (single-mode DB server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:24-30,high
+aprender-db,aprender-db --config <PATH> (single-mode DB server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:24-30 (config parse 118-121),high
 aprender-explain,aprender-explain bugs,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-explain/src/main.rs:148,high
 aprender-explain,aprender-explain compare,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-explain/src/main.rs:114,high
 aprender-explain,aprender-explain diff,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-explain/src/main.rs:129,high
