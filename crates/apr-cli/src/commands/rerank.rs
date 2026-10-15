@@ -228,6 +228,10 @@ pub(crate) fn run(
     raw_logit: bool,
     json: bool,
 ) -> Result<()> {
+    // APR-EMBED-001 EG-5 (I-3): a GGUF file of either kind is refused first, naming the verb that
+    // serves it, before a vocabulary or a token id is read.
+    crate::commands::model_kind_gate::refuse_gguf_path(model, "rerank")?;
+
     let config = BertConfig {
         hidden_dim,
         num_layers,
@@ -252,43 +256,14 @@ pub(crate) fn run(
     // Single-pair mode: resolve and check the (input_ids, token_type_ids)
     // pair BEFORE the model is read, so a bad id also costs no I/O.
     let single_pair = if passages.is_empty() {
-        let (input_ids, token_type_ids) =
-            match (input_ids_str, token_type_ids_str, query, passage, vocab) {
-                (Some(id_str), Some(tt_str), None, None, None) => {
-                    let input_ids = parse_id_list(id_str, "input-ids")?;
-                    let token_type_ids = parse_id_list(tt_str, "token-type-ids")?;
-                    (input_ids, token_type_ids)
-                }
-                (None, None, Some(q), Some(p), Some(vp)) => tokenize_query_passage(q, p, vp)?,
-                _ => {
-                    return Err(CliError::ValidationFailed(
-                        "apr rerank requires EITHER \
-                     (--input-ids AND --token-type-ids) \
-                     OR (--query AND --passage AND --vocab) \
-                     OR (--query AND --passages... AND --vocab)"
-                            .to_string(),
-                    ));
-                }
-            };
-
-        if input_ids.is_empty() {
-            return Err(CliError::ValidationFailed(
-                "--input-ids must be non-empty".to_string(),
-            ));
-        }
-        if input_ids.len() != token_type_ids.len() {
-            return Err(CliError::ValidationFailed(format!(
-                "--input-ids ({}) and --token-type-ids ({}) must have the same length",
-                input_ids.len(),
-                token_type_ids.len()
-            )));
-        }
-        // `BertEmbeddings::forward` slices the embedding tables unchecked, so
-        // an id past the end of a table aborts the process. Reject it here.
-        config
-            .validate_ids(&input_ids, &token_type_ids)
-            .map_err(|e| CliError::ValidationFailed(format!("invalid tokens: {e}")))?;
-        Some((input_ids, token_type_ids))
+        Some(resolve_single_pair(
+            &config,
+            input_ids_str,
+            token_type_ids_str,
+            query,
+            passage,
+            vocab,
+        )?)
     } else {
         None
     };
@@ -329,6 +304,68 @@ pub(crate) fn run(
     let logit_tensor = cross_encoder.forward(&input_ids, &token_type_ids);
     let logits: &[f32] = logit_tensor.data();
 
+    print_single_pair(model, &input_ids, &token_type_ids, logits, raw_logit, json);
+    Ok(())
+}
+
+/// Single-pair mode: the (input_ids, token_type_ids) pair from the id flags or from the text
+/// flags, checked against `config` before the model is read, so a bad id costs no I/O.
+fn resolve_single_pair(
+    config: &BertConfig,
+    input_ids_str: Option<&str>,
+    token_type_ids_str: Option<&str>,
+    query: Option<&str>,
+    passage: Option<&str>,
+    vocab: Option<&Path>,
+) -> Result<(Vec<u32>, Vec<u32>)> {
+    let (input_ids, token_type_ids) =
+        match (input_ids_str, token_type_ids_str, query, passage, vocab) {
+            (Some(id_str), Some(tt_str), None, None, None) => {
+                let input_ids = parse_id_list(id_str, "input-ids")?;
+                let token_type_ids = parse_id_list(tt_str, "token-type-ids")?;
+                (input_ids, token_type_ids)
+            }
+            (None, None, Some(q), Some(p), Some(vp)) => tokenize_query_passage(q, p, vp)?,
+            _ => {
+                return Err(CliError::ValidationFailed(
+                    "apr rerank requires EITHER \
+                 (--input-ids AND --token-type-ids) \
+                 OR (--query AND --passage AND --vocab) \
+                 OR (--query AND --passages... AND --vocab)"
+                        .to_string(),
+                ));
+            }
+        };
+
+    if input_ids.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "--input-ids must be non-empty".to_string(),
+        ));
+    }
+    if input_ids.len() != token_type_ids.len() {
+        return Err(CliError::ValidationFailed(format!(
+            "--input-ids ({}) and --token-type-ids ({}) must have the same length",
+            input_ids.len(),
+            token_type_ids.len()
+        )));
+    }
+    // `BertEmbeddings::forward` slices the embedding tables unchecked, so
+    // an id past the end of a table aborts the process. Reject it here.
+    config
+        .validate_ids(&input_ids, &token_type_ids)
+        .map_err(|e| CliError::ValidationFailed(format!("invalid tokens: {e}")))?;
+    Ok((input_ids, token_type_ids))
+}
+
+/// Single-pair output: logits or sigmoid scores, as JSON or one line each.
+fn print_single_pair(
+    model: &Path,
+    input_ids: &[u32],
+    token_type_ids: &[u32],
+    logits: &[f32],
+    raw_logit: bool,
+    json: bool,
+) {
     if json {
         #[allow(clippy::disallowed_methods)]
         {
@@ -353,7 +390,7 @@ pub(crate) fn run(
                 serde_json::to_string_pretty(&payload).unwrap_or_default()
             );
         }
-        return Ok(());
+        return;
     }
 
     // Single-pair text-mode output (continues below).
@@ -367,7 +404,6 @@ pub(crate) fn run(
             println!("score[{i}] = {score:.6}");
         }
     }
-    Ok(())
 }
 
 /// Phase 5 — batch ranking. Score each passage in `passages` against
@@ -749,5 +785,42 @@ mod tests {
         let err = parse_rerank_with_pooler(&["--with-pooler", "sometimes"])
             .expect_err("non-boolean value must be rejected");
         assert!(err.contains("sometimes"), "{err}");
+    }
+
+    /// APR-EMBED-001 EG-5 (I-3): an EmbeddingGemma 2 GGUF is refused by kind, naming `apr embed`,
+    /// before the vocabulary is read. EG-0 measured exit 5 on a missing `vocab.txt` naming no verb.
+    #[test]
+    fn falsify_eg5_rerank_refuses_embedding_gguf_before_the_vocab() {
+        use std::io::Write;
+        let bytes = crate::commands::model_kind_gate::tests::eg1_gguf("gemma-embedding2", None);
+        let mut file = tempfile::NamedTempFile::new().expect("temp file");
+        file.write_all(&bytes).expect("write");
+        let err = run(
+            file.path(),
+            None,
+            None,
+            Some("query"),
+            Some("passage"),
+            &[],
+            false,
+            0,
+            Some(Path::new("/nonexistent/eg5/vocab.txt")),
+            384,
+            6,
+            12,
+            1536,
+            30522,
+            512,
+            2,
+            1,
+            true,
+            false,
+            false,
+        )
+        .expect_err("an embedding GGUF must be refused");
+        assert_eq!(err.exit_code_value(), 6, "{err}");
+        let msg = err.to_string();
+        assert!(msg.contains("Use `apr embed`"), "{msg}");
+        assert!(!msg.contains("vocab"), "{msg}");
     }
 }

@@ -223,6 +223,7 @@ fn try_gguf_q4k_passthrough(
         &import_opts,
         Some(&raw_result.tokenizer),
         Some(&raw_result.model_config),
+        None,
     )?;
 
     Ok(Some(ConvertReport::build(

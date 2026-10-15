@@ -281,6 +281,9 @@ pub struct GgufRawLoadResult {
     /// Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
     /// Keys are on-disk GGUF names (e.g., qwen2.embedding_length) — never fabricated.
     pub raw_metadata: BTreeMap<String, String>,
+    /// Every GGUF header key with its typed value (APR-EMBED-001 EG-6b), so
+    /// an import can record the header for a verbatim GGUF export.
+    pub typed_metadata: BTreeMap<String, super::types::GgufValue>,
 }
 
 /// Load GGUF with raw quantized tensors (preserves Q4K for GPU inference)
@@ -353,12 +356,19 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         .chain(&reader.display_only_metadata)
         .map(|(k, v)| (k.clone(), gguf_value_display(v)))
         .collect();
+    let typed_metadata: BTreeMap<String, super::types::GgufValue> = reader
+        .metadata
+        .iter()
+        .chain(&reader.display_only_metadata)
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
 
     Ok(GgufRawLoadResult {
         tensors,
         tokenizer,
         model_config,
         raw_metadata,
+        typed_metadata,
     })
 }
 
@@ -384,6 +394,7 @@ fn gguf_value_display(v: &crate::format::gguf::types::GgufValue) -> String {
         GgufValue::ArrayInt32(a) => format!("[len={}]", a.len()),
         GgufValue::ArrayFloat32(a) => format!("[len={}]", a.len()),
         GgufValue::ArrayString(a) => format!("[len={}]", a.len()),
+        GgufValue::ArrayBool(a) => format!("[len={}]", a.len()),
     }
 }
 

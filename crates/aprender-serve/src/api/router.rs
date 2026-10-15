@@ -134,6 +134,9 @@ fn metrics_routes() -> Vec<Route> {
 pub struct RouteCapabilities {
     /// `cached_model` is present, so `/v1/batch/completions` can answer.
     pub gpu_batch: bool,
+    /// APR-EMBED-001 EG-3: the state serves an EmbeddingGemma 2 encoder, so the
+    /// generative routes answer a 4xx that names the kind instead of generating.
+    pub embedding_kind: bool,
 }
 
 impl RouteCapabilities {
@@ -148,13 +151,19 @@ impl RouteCapabilities {
             let _ = state;
             false
         };
-        Self { gpu_batch }
+        Self {
+            gpu_batch,
+            embedding_kind: state.embedding_model().is_some(),
+        }
     }
 
     /// Every capability present: the largest surface any state can mount.
     #[must_use]
     pub fn all() -> Self {
-        Self { gpu_batch: true }
+        Self {
+            gpu_batch: true,
+            embedding_kind: false,
+        }
     }
 }
 
@@ -224,6 +233,40 @@ fn cuda_routes() -> Vec<Route> {
     ]
 }
 
+/// The routes that decode tokens from a language-model head (EG-3).
+///
+/// An embedding model has no such head. With one loaded these paths stay mounted and
+/// listed, so a client gets an answer that names the kind rather than the 404 index.
+const GENERATIVE_PATHS: [&str; 11] = [
+    "/generate",
+    "/batch/generate",
+    "/stream/generate",
+    "/realize/generate",
+    "/realize/batch",
+    "/v1/completions",
+    "/v1/chat/completions",
+    "/v1/chat/completions/stream",
+    "/v1/batch/completions",
+    "/api/chat",
+    "/api/generate",
+];
+
+/// EG-3 (I-3 on the wire): a generative route on a server that loaded an embedding
+/// model refuses by kind and names the routes that serve it.
+async fn embedding_kind_refusal(State(state): State<AppState>) -> (StatusCode, Json<ErrorResponse>) {
+    let architecture = state.cached_architecture.clone().unwrap_or_default();
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: format!(
+                "'{architecture}' is an embedding model (ModelKind::Embedding): it has no \
+                 language-model head, so this route cannot generate. Use POST /v1/embeddings, \
+                 /api/embeddings or /realize/embed."
+            ),
+        }),
+    )
+}
+
 /// Every route this configuration mounts for a state with `caps`, in advertised order.
 fn route_table(config: &RouterConfig, caps: RouteCapabilities) -> Vec<Route> {
     let mut table = native_routes();
@@ -235,6 +278,13 @@ fn route_table(config: &RouterConfig, caps: RouteCapabilities) -> Vec<Route> {
     }
     #[cfg(feature = "cuda")]
     table.extend(cuda_routes());
+    if caps.embedding_kind {
+        for (_, path, handler) in &mut table {
+            if GENERATIVE_PATHS.contains(path) {
+                *handler = post(embedding_kind_refusal);
+            }
+        }
+    }
     table
 }
 

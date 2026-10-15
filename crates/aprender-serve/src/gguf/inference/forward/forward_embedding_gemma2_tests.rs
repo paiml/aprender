@@ -181,6 +181,10 @@ impl Fixture {
     }
 
     fn bytes(&self) -> Vec<u8> {
+        self.builder().build()
+    }
+
+    fn builder(&self) -> GGUFBuilder {
         let mut b = GGUFBuilder::new().architecture(self.arch);
         for (key, value) in &self.meta {
             b = match value {
@@ -195,7 +199,7 @@ impl Fixture {
         for (name, dims, data) in &self.tensors {
             b = b.add_f32_tensor(name, dims, data);
         }
-        b.build()
+        b
     }
 
     fn load(&self) -> Result<EmbeddingGemma2> {
@@ -220,6 +224,48 @@ impl Fixture {
             "refusal {text:?} does not name {needle:?}"
         );
     }
+}
+
+/// The vocabulary of [`served_fixture`]: `embedding_gemma2_input`'s test vocabulary, the four
+/// specials at the ids the real files use, then pieces.
+const SERVED_TOKENS: [&str; 10] = [
+    "<pad>",
+    "<eos>",
+    "<bos>",
+    "<unk>",
+    "a",
+    "b",
+    "ab",
+    "\u{2581}",
+    "\u{2581}a",
+    "\u{2581}ab",
+];
+
+/// A whole file `apr serve` and `apr embed` can load (APR-EMBED-001 EG-3, #4902): this
+/// module's forward with an `out`-wide projection and a token table as long as
+/// [`SERVED_TOKENS`], plus the SPM tokenizer metadata the input layer reads.
+pub(crate) fn served_fixture(out: usize) -> Vec<u8> {
+    let types: Vec<i32> = SERVED_TOKENS
+        .iter()
+        .map(|t| if t.starts_with('<') { 3 } else { 1 })
+        .collect();
+    Fixture::new()
+        .set("embedding_length_out", Meta::U32(out as u32))
+        .weight("token_embd.weight", H, SERVED_TOKENS.len(), 11.3)
+        .weight("output.weight", H, out, 12.7)
+        .builder()
+        .add_string("tokenizer.ggml.model", "gemma4")
+        .add_string_array("tokenizer.ggml.tokens", &SERVED_TOKENS)
+        .add_i32_array("tokenizer.ggml.token_type", &types)
+        .add_string_array(
+            "tokenizer.ggml.merges",
+            &["\u{2581} a", "a b", "\u{2581}a b"],
+        )
+        .add_bool("tokenizer.ggml.add_bos_token", true)
+        .add_bool("tokenizer.ggml.add_eos_token", true)
+        .add_u32("tokenizer.ggml.bos_token_id", 2)
+        .add_u32("tokenizer.ggml.eos_token_id", 1)
+        .build()
 }
 
 fn length(v: &[f32]) -> f32 {
@@ -593,4 +639,18 @@ fn pooling_is_the_mean_over_tokens_eg2() {
     assert!(unit_length(vec![f32::NAN, 1.0]).is_err());
     let u = unit_length(vec![3.0, 4.0]).expect("non-zero");
     assert!((u[0] - 0.6).abs() < 1e-7 && (u[1] - 0.8).abs() < 1e-7);
+}
+
+/// The unit-test file with a longer context and window (APR-EMBED-001 EG-4, #4903), for the
+/// long-input GPU cells; the token rows cycle through the five-row vocabulary.
+pub(crate) fn long_fixture(context: u32, window: u32) -> Vec<u8> {
+    Fixture::new()
+        .set("context_length", Meta::U32(context))
+        .set("attention.sliding_window", Meta::U32(window))
+        .bytes()
+}
+
+/// The unit-test file itself (EG-4): the tokens [`TOKENS`] embed with it.
+pub(crate) fn small_fixture() -> (Vec<u8>, [u32; 4]) {
+    (Fixture::new().bytes(), TOKENS)
 }

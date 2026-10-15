@@ -148,6 +148,16 @@ falsification_tests:
   prediction: Merges apply by text, lowest rank first and leftmost on ties; stale pairs are skipped; a space becomes U+2581 with no prefix; words split at newline runs; unknown symbols become <0xXX> tokens; specials split out first; a gemma4 file without merges is refused by name
   test: gguf::spm_bpe::tests
   if_fails: The gemma4 vocabulary fell back to greedy longest-match, or a merge order, space or byte rule departs from llama.cpp; scripts/tokenizer_parity.sh reports the first id mismatch on a real file
+- id: FALSIFY-EG2L-009
+  rule: Every verb that opens a model by path refuses an embedding model by name (EG-5, I-3)
+  prediction: apr run, apr code and apr showcase on a gemma-embedding2 GGUF fail with ModelLoadFailed (exit 6) naming apr embed, from the header alone and before any tokenizer, backend or child process; apr rerank refuses every GGUF and names the verb for its kind before reading a vocabulary; a header past the first 16 MiB prefix is still read; generative, missing and non-GGUF files pass through to the loaders
+  test: falsify_eg5_
+  if_fails: A verb reached its loader first and failed on the vocabulary, the APR magic or a generative assumption without naming apr embed, or the refusal read only a fixed prefix
+- id: FALSIFY-EG2L-010
+  rule: apr qa judges an embedding model by its vectors, never by generated text (EG-5)
+  prediction: On an embedding model golden_embedding runs and golden_output plus every token-stream gate skips by kind; on a generative model golden_embedding skips by kind. golden_embedding fails on a wrong width, a non-finite value, a norm off 1 by more than 1e-3, a repeat that is not bit-equal, or a golden triple whose paraphrase is not nearer the anchor than the unrelated sentence
+  test: falsify_eg5_golden_embedding_
+  if_fails: An embedding model was judged on golden_output and failed, or golden_embedding passed a vector set with a defect it names
 qa_gate:
   id: F-EG2L-001
   name: embeddinggemma2-load-v1 Contract

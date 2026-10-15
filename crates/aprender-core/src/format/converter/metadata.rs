@@ -739,3 +739,5 @@ fn hf_to_gguf_name(name: &str) -> String {
     let mapper = build_legacy_mapper();
     mapper.map_name(name).unwrap_or_else(|| name.to_string())
 }
+
+include!("gguf_kv_passthrough.rs");

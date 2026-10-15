@@ -470,6 +470,11 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
     {
         print_code_help_and_exit();
     }
+    // APR-EMBED-001 EG-5 (I-3): a named embedding model is refused by kind before the serve child
+    // is spawned. A discovered model reaches `apr serve`, which refuses it the same way.
+    if let Some(model) = args.model {
+        crate::commands::model_kind_gate::refuse_non_generative_path(model, "code")?;
+    }
     // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001: forward as
     // `&str` so the orchestrate crate need not depend on the apr-cli
     // ValueEnum types.
