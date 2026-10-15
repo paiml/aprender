@@ -258,10 +258,18 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         "Skipped by --skip-ollama"
     };
     let (s, r) = get_skip(orig_skip_ollama, orig_reason_ollama);
-    let (s, r) = dense_gate_skip(cpu_only || hybrid, s, r);
-    let (s, r) = moe_gate_skip(moe, s, r);
+    // #5254: against ollama on THIS file, the runtime entry point measures the
+    // hybrid and MoE models the dense loader refuses. Against the size-matched
+    // qwen2.5-coder tag they stay skipped: that tag is a different model.
+    let runtime = config.ollama_from_file && (cpu_only || hybrid || moe);
+    let (s, r) = if config.ollama_from_file {
+        (s, r)
+    } else {
+        let (s, r) = dense_gate_skip(cpu_only || hybrid, s, r);
+        moe_gate_skip(moe, s, r)
+    };
     dispatch_gate(&mut gates, config.json, s, "ollama_parity", r, || {
-        run_ollama_parity_gate(path, config)
+        run_ollama_parity_gate(path, config, runtime)
     })?;
 
     let (s, r) = get_skip(config.skip_gpu_speedup, "Skipped by --skip-gpu-speedup");

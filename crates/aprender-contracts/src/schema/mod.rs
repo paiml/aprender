@@ -4,6 +4,7 @@ pub mod composition;
 pub mod external_corpora;
 pub mod kaizen;
 mod kind;
+pub mod no_test_debt;
 mod parser;
 mod types;
 mod validator;

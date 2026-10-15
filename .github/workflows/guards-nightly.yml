@@ -287,6 +287,30 @@ jobs:
           set -euo pipefail
           exec > >(tee -a "$RUNNER_TEMP/ratchets.log") 2>&1
           BASELINE_RATCHET_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/check_baseline_ratchets.sh --ratchet
+      # #4709 (C303): the pv census ratchet. LAB, never on a PR path (C324): the bound
+      # count never falls, the unbound share and the contracts with no falsification
+      # tests never rise, measured by one pv on main 24 h ago and on main now. Its case
+      # table (the real pv on fixture trees, stub pvs for every NOT_MEASURED) runs first.
+      - name: The pv census bound share may only rise (#4709)
+        id: ratchet_census
+        if: ${{ !cancelled() }}   # a red elsewhere in this job must not leave the census unmeasured
+        env:
+          RATCHET_24H_BASE: ${{ steps.ratchet_base.outputs.base }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/census.log") 2>&1
+          setsid --wait bash scripts/census_ratchet.sh --self-test
+          CENSUS_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/census_ratchet.sh
+      - name: A red census night opens or updates the one LAB ticket (#4709)
+        if: failure() && steps.ratchet_census.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-census-ratchet --title "LAB: nightly pv census ratchet red (#4709)" \
+            --owner la-0.72 --log "$RUNNER_TEMP/census.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       # The GATE/LAB rule: a red opens or updates ONE ticket with ONE owner, then stays
       # silent. Only a red ratchet step calls this (a green night never does);
       # a red elsewhere in this job is not a ratchet red and writes nothing here.

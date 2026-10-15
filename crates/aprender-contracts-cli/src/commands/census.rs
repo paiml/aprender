@@ -118,6 +118,13 @@ pub struct Census {
     pub n_parse_errors: usize,
     pub parse_errors: Vec<String>,
     pub quarantined_n: usize,
+    /// #5291: parsed contracts with zero `falsification_tests`. Capped per
+    /// release by `schema::no_test_debt::debt_cap`; ratchets read it here.
+    pub no_falsification_tests: usize,
+    /// #5291: `.yaml` files under the directory the walker never reads
+    /// (quarantine excluded, it is `quarantined_n`). Capped at
+    /// `schema::no_test_debt::UNWALKED_CAP`.
+    pub unwalked: usize,
     pub by_kind: BTreeMap<String, usize>,
     pub by_entity_type: BTreeMap<String, usize>,
     /// ONT-4d: instances per Σ concept in the extracted graph AFTER the subsumption closure, so a concept
@@ -274,6 +281,7 @@ pub fn census_of(dir: &Path) -> Result<Census, Box<dyn std::error::Error>> {
         }
         .into());
     }
+    census.unwalked = provable_contracts::schema::no_test_debt::unwalked(dir);
     census.id_set_sha256 = id_set_sha256(&ids);
     census.declared_external = declared_external(dir)?;
     census.by_concept = by_concept(dir);
@@ -328,6 +336,8 @@ fn empty_census(n_files: usize, quarantined_n: usize) -> Census {
         n_parse_errors: 0,
         parse_errors: Vec::new(),
         quarantined_n,
+        no_falsification_tests: 0,
+        unwalked: 0,
         by_kind: BTreeMap::new(),
         by_entity_type: BTreeMap::new(),
         by_concept: BTreeMap::new(),
@@ -356,6 +366,9 @@ fn tally(
         }
     };
     census.n_parsed += 1;
+    if contract.falsification_tests.is_empty() {
+        census.no_falsification_tests += 1;
+    }
     ids.insert(stem_of(path));
     *census
         .by_kind
@@ -395,6 +408,11 @@ fn render_table(census: &Census) -> String {
         census.n_parsed, census.n_files, census.n_parse_errors, census.quarantined_n
     );
     let _ = writeln!(out, "id_set_sha256: {}", census.id_set_sha256);
+    let _ = writeln!(
+        out,
+        "no_falsification_tests: {}   unwalked: {}   (#5291)",
+        census.no_falsification_tests, census.unwalked
+    );
     let _ = writeln!(out, "\nby_anchoring");
     let _ = writeln!(
         out,
@@ -529,11 +547,11 @@ mod tests {
     /// The walker's own rule, not a second one: `binding.yaml` is not a contract.
     #[test]
     fn the_shared_walker_decides_what_a_contract_file_is() {
-        let tmp = corpus(&["a.yaml", "binding.yaml", "kaizen/k.yaml"]);
+        let tmp = corpus(&["a.yaml", "binding.yaml", "pipelines/p.yaml"]);
         let c = census_of(tmp.path()).expect("a valid corpus censuses");
         assert_eq!(
             c.n_files, 1,
-            "binding.yaml and kaizen/ are excluded by provable_contracts::lint's walker"
+            "binding.yaml and pipelines/ are excluded by provable_contracts::lint's walker"
         );
     }
 
@@ -630,6 +648,8 @@ mod tests {
             "n_parse_errors",
             "parse_errors",
             "quarantined_n",
+            "no_falsification_tests",
+            "unwalked",
             "by_kind",
             "by_entity_type",
             "by_anchoring",
