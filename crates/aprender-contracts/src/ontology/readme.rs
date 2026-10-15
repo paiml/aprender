@@ -60,7 +60,7 @@ fn is_archived(name: &str) -> bool {
 }
 
 fn retired_crate(name: &str, retired: &BTreeSet<String>) -> bool {
-    retired.contains(&name.to_ascii_lowercase())
+    retired.contains(&name.to_ascii_lowercase().replace('_', "-"))
 }
 
 /// The crate names a published doc must not point at: every [`ARCHIVED_REPOS`] name, plus every `[lib] name`
@@ -207,12 +207,9 @@ fn section_name(toml: &str, section: &str) -> Option<String> {
         }
         if inside {
             if let Some(rest) = t.strip_prefix("name") {
-                let v = rest
-                    .trim_start()
-                    .strip_prefix('=')?
-                    .trim()
-                    .trim_matches('"');
-                return Some(v.to_ascii_lowercase());
+                if let Some(v) = rest.trim_start().strip_prefix('=') {
+                    return Some(v.trim().trim_matches('"').to_ascii_lowercase());
+                }
             }
         }
     }

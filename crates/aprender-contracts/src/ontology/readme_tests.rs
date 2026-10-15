@@ -42,6 +42,7 @@ fn falsify_readme_ont_001_must_flag() {
         ("https://docs.rs/crate/pacha", RULE_RETIRED_CRATE),
         ("![docs](https://img.shields.io/docsrs/renacer)", RULE_RETIRED_CRATE),
         ("https://lib.rs/crates/simular", RULE_RETIRED_CRATE),
+        ("https://docs.rs/trueno_gpu/latest/trueno_gpu/", RULE_RETIRED_CRATE),
         ("[![c](https://img.shields.io/crates/v/trueno-gpu.svg)](https://crates.io/crates/trueno-gpu)", RULE_RETIRED_CRATE),
         ("trueno-gpu = \"0.4\"", RULE_RETIRED_INSTALL),
         ("cargo install batuta", RULE_RETIRED_INSTALL),
@@ -107,6 +108,10 @@ fn falsify_readme_ont_004_manifest_keys() {
         Some(("aprender-verify".to_string(), None))
     );
     assert_eq!(package_and_lib("[workspace]\nmembers = []\n"), None);
+    assert_eq!(
+        package_and_lib("[package]\nnamespace-ish = 1\nname = \"aprender-x\"\n"),
+        Some(("aprender-x".to_string(), None))
+    );
 }
 
 /// FALSIFY-README-ONT-005: line numbers are 1-based and every hit on a line is reported.
