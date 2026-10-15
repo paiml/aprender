@@ -168,7 +168,7 @@ If you use these benchmarks, please cite:
 @software{realizar,
   title = {Realizar: Pure Rust ML Inference Engine},
   author = {Pragmatic AI Labs},
-  url = {https://github.com/paiml/realizar},
+  url = {https://github.com/paiml/aprender/tree/main/crates/aprender-serve},
   year = {2025}
 }
 

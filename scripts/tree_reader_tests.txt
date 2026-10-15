@@ -74,6 +74,7 @@ aprender-contracts	--lib	ontology::extract::pv_contract
 aprender-contracts	--lib	ontology::extract::readme
 aprender-contracts	--lib	ontology::liskov
 aprender-contracts	--lib	ontology::owl
+aprender-contracts	--lib	ontology::readme
 aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	ontology::w3c
 aprender-contracts	--lib	ontology::witness

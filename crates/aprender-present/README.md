@@ -7,9 +7,9 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/presentar"><img src="https://img.shields.io/crates/v/presentar.svg" alt="Crates.io"></a>
-  <a href="https://docs.rs/presentar"><img src="https://docs.rs/presentar/badge.svg" alt="Documentation"></a>
-  <a href="https://github.com/paiml/presentar/actions/workflows/ci.yml"><img src="https://github.com/paiml/presentar/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://crates.io/crates/aprender-present-lib"><img src="https://img.shields.io/crates/v/aprender-present-lib.svg" alt="Crates.io"></a>
+  <a href="https://docs.rs/aprender-present-lib"><img src="https://docs.rs/aprender-present-lib/badge.svg" alt="Documentation"></a>
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml"><img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://img.shields.io/badge/coverage-95%25-brightgreen"><img src="https://img.shields.io/badge/coverage-95%25-brightgreen" alt="Coverage"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
 </p>
@@ -52,8 +52,8 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-presentar = "0.2"
-presentar-widgets = "0.2"
+aprender-present-lib = "0.71"
+aprender-present-widgets = "0.71"
 ```
 
 ## Usage
@@ -289,20 +289,20 @@ cargo bench -p presentar-core
 ## Documentation
 
 - [Book](book/) - Comprehensive documentation
-- [API Docs](https://docs.rs/presentar) - Rustdoc API reference
+- [API Docs](https://docs.rs/aprender-present-lib) - Rustdoc API reference
 
 ## Related Crates
 
 | Crate | Description |
 |-------|-------------|
-| [`ttop`](https://crates.io/crates/ttop) | **v2.0** — Sovereign system monitor (built on presentar-terminal) |
-| [`trueno`](https://crates.io/crates/trueno) | SIMD-accelerated tensor operations |
-| [`trueno-viz`](https://crates.io/crates/trueno-viz) | GPU rendering primitives |
+| [`aprender-viz-ttop`](https://crates.io/crates/aprender-viz-ttop) | **v2.0** — Sovereign system monitor (built on presentar-terminal) |
+| [`trueno`](https://crates.io/crates/aprender-compute) | SIMD-accelerated tensor operations |
+| [`trueno-viz`](https://crates.io/crates/aprender-viz) | GPU rendering primitives |
 | [`aprender`](https://crates.io/crates/aprender) | Machine learning algorithms |
-| [`presentar-core`](https://crates.io/crates/presentar-core) | Core types and traits |
-| [`presentar-widgets`](https://crates.io/crates/presentar-widgets) | Widget library |
-| [`presentar-layout`](https://crates.io/crates/presentar-layout) | Layout engine |
-| [`presentar-terminal`](https://crates.io/crates/presentar-terminal) | Zero-alloc terminal backend (powers ttop v2) |
+| [`presentar-core`](https://crates.io/crates/aprender-present-core) | Core types and traits |
+| [`presentar-widgets`](https://crates.io/crates/aprender-present-widgets) | Widget library |
+| [`presentar-layout`](https://crates.io/crates/aprender-present-layout) | Layout engine |
+| [`presentar-terminal`](https://crates.io/crates/aprender-present-terminal) | Zero-alloc terminal backend (powers ttop v2) |
 
 ## See Also
 

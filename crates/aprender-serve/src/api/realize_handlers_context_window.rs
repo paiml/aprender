@@ -264,6 +264,7 @@
     fn test_embedding_request_basic() {
         use crate::api::realize_handlers::EmbeddingInput;
         let request = EmbeddingRequest {
+            dimensions: None,
             input: "Hello world".to_string().into(),
             model: Some("text-embedding-ada-002".to_string()),
         };
@@ -274,6 +275,7 @@
     #[test]
     fn test_embedding_request_serialization() {
         let request = EmbeddingRequest {
+            dimensions: None,
             input: "test".to_string().into(),
             model: None,
         };

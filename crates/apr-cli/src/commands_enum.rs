@@ -132,7 +132,10 @@ pub enum CodeOutputFormat {
     /// Plain assistant text on stdout (default; existing behavior).
     #[default]
     Text,
-    /// Structured JSON envelope: `{type:"result", subtype:"success", result, session_id, duration_ms}`.
+    /// Structured JSON envelope: `{type:"result", subtype:"success"|"error", is_error, status,
+    /// duration_ms, result, session_id, num_turns, tokens_in, tokens_out, total_cost_usd,
+    /// backend:{requested, ran, fell_back}|null}`, plus `error:{kind, message, exit_code}`
+    /// when `subtype` is `"error"`.
     Json,
 }
 
@@ -911,8 +914,11 @@ pub enum Commands {
 
         /// Output format for non-interactive (`-p`) mode (PMAT-CODE-OUTPUT-FORMAT-001).
         /// `text` (default): plain assistant text.
-        /// `json`: structured `{type:"result", subtype:"success", result, session_id, duration_ms}`
-        /// envelope matching Claude Code's `claude -p --output-format json` shape.
+        /// `json`: structured `{type:"result", subtype:"success"|"error", is_error, status,
+        /// duration_ms, result, session_id, num_turns, tokens_in, tokens_out, total_cost_usd,
+        /// backend:{requested, ran, fell_back}|null}` envelope, plus
+        /// `error:{kind, message, exit_code}` when `subtype` is `"error"`. The shape matches
+        /// Claude Code's `claude -p --output-format json`; `backend` names the device that ran.
         #[arg(long, value_enum, default_value_t = CodeOutputFormat::Text)]
         output_format: CodeOutputFormat,
 
@@ -1042,3 +1048,7 @@ pub enum DebugCommands {
         force: bool,
     },
 }
+
+#[cfg(all(test, feature = "training"))]
+#[path = "code_output_format_help_tests.rs"]
+mod code_output_format_help_tests;

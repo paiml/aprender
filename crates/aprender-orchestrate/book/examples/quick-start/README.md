@@ -5,7 +5,7 @@ This example demonstrates basic Batuta usage for analyzing and orchestrating a p
 ## Prerequisites
 
 ```bash
-cargo install batuta
+cargo install aprender-orchestrate
 ```
 
 ## Usage
@@ -51,6 +51,6 @@ Detected Frameworks:
 
 ## Next Steps
 
-- Read the [full documentation](https://paiml.github.io/batuta/)
-- Explore the [5-phase workflow](https://paiml.github.io/batuta/part2/workflow-overview.html)
-- Learn about [Toyota Way principles](https://paiml.github.io/batuta/part1/toyota-way.html)
+- Read the [full documentation](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book)
+- Explore the [5-phase workflow](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book)
+- Learn about [Toyota Way principles](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book)

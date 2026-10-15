@@ -89,9 +89,9 @@ pub use batch_scheduler::*;
 pub use config::*;
 #[cfg(feature = "cuda")]
 pub use cuda::{
-    BatchedDecodeState, CudaBackend, CudaInitError, Qwen35CudaCheckpoint, Qwen35CudaModel,
-    Qwen35CudaState, Qwen35StepOut, Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape,
-    SlotRecorder,
+    BatchedDecodeState, CudaBackend, CudaInitError, EmbeddingGemma2Cuda, Qwen35CudaCheckpoint,
+    Qwen35CudaModel, Qwen35CudaState, Qwen35StepOut, Qwen3MoeCudaModel, Qwen3MoeCudaState,
+    Qwen3MoeShape, SlotRecorder,
 };
 // #5293: the batched sampler, for the Qwen3.5 batch engine's sampled slots.
 #[cfg(feature = "cuda")]

@@ -181,6 +181,8 @@ async fn no_silent_hash() {
     let state = AppState::new(model, tokenizer);
 
     let req = EmbeddingRequest {
+
+        dimensions: None,
         // PMAT-802 stacked: `input` is now `EmbeddingInput` (single OR batch); the
         // single-string form converts via `From<String>`.
         input: "tok1 tok2 tok3".to_string().into(),
@@ -238,6 +240,7 @@ async fn batch_inputs_each_real_model_backed() {
 
     // Batch of 3 inputs (OpenAI array form, PMAT-802).
     let req = EmbeddingRequest {
+        dimensions: None,
         input: EmbeddingInput::Batch(vec![
             "tok1".to_string(),
             "tok2 tok3".to_string(),

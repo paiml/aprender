@@ -408,6 +408,7 @@ fn test_tokenize_response_large_ext_cov() {
 #[test]
 fn test_embedding_request_serialize_ext_cov() {
     let req = EmbeddingRequest {
+        dimensions: None,
         input: "Embed this text".to_string().into(),
         model: Some("text-embedding-ada-002".to_string()),
     };

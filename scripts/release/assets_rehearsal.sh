@@ -43,7 +43,8 @@
 # run artifact. The upload pattern (gh release, uploads.github.com, -X POST, ...) is a
 # tripwire, not the guarantee. The guard covers what lint cannot see, a credential on
 # the runner (a flag is not a guard): it refuses to run when GH_TOKEN, GITHUB_TOKEN, a
-# cargo registry token, an OIDC request token or a cargo credentials file is present.
+# cargo registry token, an OIDC request token, a cargo credentials file or a token key in
+# cargo config(.toml) is present.
 # The case table runs lint and the guard over a fixture workflow built from the real
 # step bodies.
 #
@@ -86,8 +87,17 @@ run: |
   for f in "$ch/credentials" "$ch/credentials.toml"; do
     if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
   done
+  # cargo also sends a token key from config or config.toml ([registry] token, [registries.<name>] token,
+  # dotted or inline): measured on cargo 1.93.0 against a local fake registry (#4844). Comments do not count.
+  for f in "$ch/config" "$ch/config.toml"; do
+    [ -f "$f" ] || continue
+    body=$(sed 's/#.*//' "$f")
+    if grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*=" <<<"$body"; then
+      echo "::error::refusing to rehearse: a registry token key is in cargo config: $f"; bad=1
+    fi
+  done
   if [ "$bad" -ne 0 ]; then exit 1; fi
-  echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token or cargo credential file"
+  echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token, cargo credential file or config token"
 EOF
 }
 
@@ -623,6 +633,15 @@ self_test() {
     out=$(gr HOME="$d/credhome"); row "guard: planted credentials.toml -> refuses" 1 $? 'credential file' "$out"
     out=$(gr CARGO_HOME="$d/credhome/.cargo"); row "guard: CARGO_HOME credentials -> refuses" 1 $? 'credential file' "$out"
     out=$(gr HOME="$d/credhome" CARGO_HOME=); row "guard: CARGO_HOME set but empty, home credentials.toml -> refuses" 1 $? 'credential file' "$out"
+    # A token key in cargo config: cargo 1.93.0 sends it (#4844). Each row plants one config file.
+    cfg() { rm -rf "${d:?}/cfg"; mkdir -p "$d/cfg"; printf '%b' "$2" > "$d/cfg/$1"; gr CARGO_HOME="$d/cfg"; }
+    out=$(cfg config.toml '[registry]\ntoken = "x"\n'); row "guard: [registry] token in config.toml -> refuses" 1 $? 'token key is in cargo config' "$out"
+    out=$(cfg config.toml '[registries.m]\nindex = "file:///i"\ntoken="x"\n'); row "guard: [registries.m] token in config.toml -> refuses" 1 $? 'token key is in cargo config' "$out"
+    out=$(cfg config '[registries.m]\ntoken = "x"\n'); row "guard: token in legacy config -> refuses" 1 $? 'token key is in cargo config' "$out"
+    out=$(cfg config.toml 'registries.m.token = "x"\n'); row "guard: dotted registries.m.token -> refuses" 1 $? 'token key is in cargo config' "$out"
+    out=$(cfg config.toml '[registries]\nm = { index = "file:///i", token = "x" }\n'); row "guard: inline-table token -> refuses" 1 $? 'token key is in cargo config' "$out"
+    out=$(cfg config.toml '[build]\njobs = 2\n# token = "x"\n'); row "guard: config with only a commented token -> runs" 0 $? 'no upload credential' "$out"
+    out=$(cfg config.toml '[registry]\nglobal-credential-providers = ["cargo:token"]\n'); row "guard: config naming a provider, no token key -> runs" 0 $? 'no upload credential' "$out"
 
     # The verdict, over a fixture of the release's own list.
     full='{"assets":{"result":"success"},"build":{"result":"success"},"build-all-bins":{"result":"success"},"build-apr-cuda":{"result":"success"},"build-apr-cpu":{"result":"success"},"build-apr-darwin":{"result":"success"}}'

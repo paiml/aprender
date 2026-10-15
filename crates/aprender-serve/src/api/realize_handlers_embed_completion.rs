@@ -163,12 +163,21 @@ fn resolve_embed_backend(
 /// return the same numbers for the same text on the same server.
 ///
 /// Returns the embeddings in request order plus the total prompt-token count.
+///
+/// APR-EMBED-001 EG-3: media inputs are refused first, whatever is loaded (I-7). An
+/// EmbeddingGemma 2 server answers from its encoder, truncated to `dimensions`; a
+/// generative server accepts only `dimensions` == its hidden size.
 pub(super) fn embed_inputs(
     state: &AppState,
     model_id: Option<&str>,
     inputs: &EmbeddingInput,
+    dimensions: Option<usize>,
     route: &str,
 ) -> Result<(Vec<Vec<f32>>, usize), RErr> {
+    refuse_unsupported_input(inputs, route)?;
+    if let Some(served) = state.embedding_model() {
+        return embed_with_gemma2(&served, inputs, dimensions);
+    }
     let (backend, tokenizer) = resolve_embed_backend(state, model_id, route)?;
 
     // PMAT-802 × PMAT-803 (stacked): `input` may be a single string OR an array of
@@ -176,6 +185,7 @@ pub(super) fn embed_inputs(
     // hidden states → mean-pool over non-special tokens → L2-normalize — NOT a
     // positional token-hash. Dimension is the model's hidden size, never a constant.
     let hidden_dim = backend.hidden_dim();
+    check_generative_dimensions(dimensions, hidden_dim)?;
 
     let mut out = Vec::with_capacity(inputs.len());
     let mut prompt_tokens = 0usize;
@@ -249,7 +259,7 @@ pub(super) fn embed_for_route(
     route: &str,
 ) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
     let (embeddings, prompt_tokens) =
-        embed_inputs(&state, request.model.as_deref(), &request.input, route)?;
+        embed_inputs(&state, request.model.as_deref(), &request.input, request.dimensions, route)?;
 
     let data = embeddings
         .into_iter()

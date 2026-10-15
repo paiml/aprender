@@ -1,4 +1,4 @@
-//! `pv ontology export --owl` / `pv ontology tbox` — ONT-001 §3.8, row ONT-2c.
+//! `pv ontology export --owl` / `pv ontology tbox` / `pv ontology readme` — ONT-001 §3.8, row ONT-2c; #5382.
 //!
 //! `export --owl` writes Σ as OWL 2 functional syntax with the in-house writer, byte-deterministic, so CI can
 //! `cmp` a fresh export against the tracked `contracts/ontology.ofn` (R-18). `tbox` writes the told-closure
@@ -11,6 +11,7 @@
 use std::path::Path;
 
 use provable_contracts::ontology::owl;
+use provable_contracts::ontology::readme;
 use provable_contracts::ontology::sigma::Sigma;
 
 use crate::cli::OntologyCommand;
@@ -46,7 +47,31 @@ pub fn run(command: &OntologyCommand) -> Result<(), Box<dyn std::error::Error>> 
             }
             Ok(())
         }
+        OntologyCommand::Readme { root } => readme(root),
     }
+}
+
+/// `pv ontology readme` — one line per finding, a summary line, exit 1 on any finding.
+fn readme(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let audit = readme::audit_tree(root);
+    if audit.readmes.is_empty() {
+        eprintln!("error: no README.md under {} — wrong root?", root.display());
+        std::process::exit(3);
+    }
+    for (path, v) in &audit.findings {
+        println!("{}:{}: {}: {}", path.display(), v.line, v.rule, v.message);
+    }
+    println!(
+        "pv ontology readme: {} finding(s) in {} README(s) + {} manifest(s), {} package(s)",
+        audit.findings.len(),
+        audit.readmes.len(),
+        audit.manifests.len(),
+        audit.packages.len()
+    );
+    if !audit.findings.is_empty() {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 fn load_export(sigma_path: &Path) -> owl::OwlExport {
