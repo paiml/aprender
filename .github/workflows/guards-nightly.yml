@@ -77,6 +77,13 @@ jobs:
     # a nightly on a shared 32-core host pays contention a PR job does not and
     # nothing is blocked while it waits.
     timeout-minutes: 60
+    # PP-19: this job runs `--ignored` tests on the shared X64 clean-room host,
+    # so it joins the repo-wide `perf-intel` group (the one nightly-bench's
+    # `measure` and beat-speed-nightly declare) and serialises against them.
+    # Enforced by scripts/check_perf_concurrency_groups.sh.
+    concurrency:
+      group: perf-intel
+      cancel-in-progress: false
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       # Same shape as guard-cargo (ci.yml). On a schedule/dispatch run there is
