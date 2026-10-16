@@ -547,7 +547,7 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
-            cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition "hash:${SHARD}/${SHARDS}"
+            bash -c 'cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition "hash:${SHARD}/${SHARDS}"; rc=$?; echo "::group::sccache stats"; sccache --show-stats || true; echo "::endgroup::"; exit "$rc"'
       - name: "Σ-executed: keep the workspace lib junit (the next nextest run overwrites it)"
         if: steps.tier.outputs.tier == 'full'
         # #4433: nextest writes <target>/nextest/ci/junit.xml and every invocation
