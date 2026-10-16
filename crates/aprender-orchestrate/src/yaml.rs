@@ -23,3 +23,7 @@ pub(crate) fn from_str<'de, T: serde::Deserialize<'de>>(
         },
     )
 }
+
+#[cfg(test)]
+#[path = "yaml_tests.rs"]
+mod tests;

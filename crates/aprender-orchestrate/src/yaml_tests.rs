@@ -1,0 +1,39 @@
+//! Pins the reader/writer behaviour the serde-saphyr port chose (#5209), so a later
+//! option change shows up as a red test and not as a silent change in playbooks.
+
+use super::from_str;
+use serde_json::{json, Value};
+
+#[test]
+fn yes_and_no_stay_strings() {
+    let v: Value = from_str("a: yes\nb: no\nc: true\n").expect("parses");
+    assert_eq!(v["a"], json!("yes"));
+    assert_eq!(v["b"], json!("no"));
+    assert_eq!(v["c"], json!(true));
+}
+
+#[test]
+fn merge_key_is_an_ordinary_key() {
+    let v: Value = from_str("base: &b\n  x: 1\nd:\n  <<: *b\n  y: 2\n").expect("parses");
+    assert_eq!(v["d"]["y"], json!(2));
+    assert_eq!(v["d"]["<<"]["x"], json!(1), "<< is kept as a key, not merged");
+    assert!(v["d"].get("x").is_none(), "no merge into the parent map");
+}
+
+#[test]
+fn non_finite_floats_load_and_become_null() {
+    let v: Value = from_str("p: .inf\nq: .nan\nr: 1.5\n").expect("loads, not a budget refusal");
+    assert_eq!(v["p"], Value::Null);
+    assert_eq!(v["q"], Value::Null);
+    assert_eq!(v["r"], json!(1.5));
+}
+
+#[test]
+fn writer_layout_for_scalars_and_nesting() {
+    let v = json!({"a": "x", "n": 3, "t": {"f": true, "l": [1, 2]}});
+    let text = serde_saphyr::to_string(&v).expect("renders");
+    let back: Value = from_str(&text).expect("reads back what it wrote");
+    assert_eq!(back, v, "round trip through the writer is lossless: {text}");
+    assert!(text.contains("a: x\n"), "plain scalars stay unquoted: {text}");
+    assert!(text.contains("n: 3\n"), "integers stay bare: {text}");
+}
