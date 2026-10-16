@@ -545,14 +545,16 @@ jobs:
     }
 
     #[test]
-    fn test_parse_workflow_non_string_job_key() {
-        // serde-saphyr -> serde_json::Value (S2): a non-string map key is refused, not coerced.
+    fn test_parse_workflow_integer_job_key_is_text() {
+        // serde-saphyr into serde_json::Value coerces an integer key to its text: the job is kept as "1".
         let temp = TempDir::new().unwrap();
         let file = temp.path().join("ci.yml");
         std::fs::write(&file, "jobs:\n  1:\n    steps: []\n  test:\n    steps: []\n").unwrap();
 
         let rule = CiWorkflowRule::new();
-        assert!(rule.parse_workflow(&file).is_err());
+        let data = rule.parse_workflow(&file).expect("integer key reads as text");
+        assert!(data.jobs.contains(&"1".to_string()), "{:?}", data.jobs);
+        assert!(data.jobs.contains(&"test".to_string()), "{:?}", data.jobs);
     }
 
     #[test]
