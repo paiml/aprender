@@ -701,6 +701,7 @@ jobs:
           set -euo pipefail
           sig="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
+          bash scripts/ci/quick_tier_shard.sh --self-test
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
@@ -800,7 +801,7 @@ jobs:
       # selected crate still runs, each call writes its own junit, and the
       # Σ-executed step below re-derives the same split from CRATES.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
         # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
         # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
         # (run 34449608126) before dying at the cap under fleet load on #3063
@@ -822,11 +823,13 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -w /workspace "$IMAGE" cargo metadata --no-deps --format-version 1 > "$RUNNER_TEMP/quick-meta.json"
-          bash scripts/ci/quick_tier_groups.sh --metadata "$RUNNER_TEMP/quick-meta.json" "${crates[@]}" > "$RUNNER_TEMP/quick-calls.txt"
+          bash scripts/ci/quick_tier_groups.sh --metadata "$RUNNER_TEMP/quick-meta.json" "${crates[@]}" > "$RUNNER_TEMP/quick-calls-all.txt"
+          # CRATES is set here (the step's if:), so zero calls would run zero tests green
+          [ -s "$RUNNER_TEMP/quick-calls-all.txt" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
+          # this shard's share of the calls: every crate on exactly one shard (quick_tier_shard.sh)
+          bash scripts/ci/quick_tier_shard.sh "$SHARD" 3 < "$RUNNER_TEMP/quick-calls-all.txt" > "$RUNNER_TEMP/quick-calls.txt"
           mapfile -t calls < "$RUNNER_TEMP/quick-calls.txt"
           printf 'nextest calls: %s\n' "${#calls[@]}"
-          # CRATES is set here (the step's if:), so zero calls would run zero tests green
-          [ "${#calls[@]}" -gt 0 ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
           mkdir -p "$RUNNER_TEMP/quick-sel"
           tgt="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
           rc=0
@@ -890,14 +893,17 @@ jobs:
       # reads this exclude list out of this file and drops their targets), so the
       # exclusion removes nothing the filterset asks for.
       - name: "Σ-executed: keep the quick selected-crates junit (the next nextest run overwrites it)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
         # #4433: a PR merges on its QUICK tier (a merge_group whose tree equals the
         # PR head's reuses that result), so the quick tier's own runs are checked too.
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sigma/quick-sel"
-          cp "$RUNNER_TEMP"/quick-sel/*.junit.xml "$RUNNER_TEMP/sigma/quick-sel/"
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/quick-sel/*.junit.xml)
+          # a shard whose share is empty has no junit; one that owes a call and has none fails in the Σ step
+          [ "${#files[@]}" -eq 0 ] || cp "${files[@]}" "$RUNNER_TEMP/sigma/quick-sel/"
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick' && matrix.shard == 2
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
@@ -970,7 +976,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-tree.junit.xml"
       - name: "Σ-executed (quick tier): the tests this job ran are exactly the tests it owes (#4433)"
-        if: steps.tier.outputs.tier == 'quick' && (matrix.shard == 1 || matrix.shard == 2)
+        if: steps.tier.outputs.tier == 'quick'
         # The quick tier's universe is its SELECTION (BSE-17): the tier step's crates
         # and tree-reader targets. The filters are written out again HERE from those
         # outputs, never read back from the run steps -- an added --exclude or a
@@ -989,11 +995,13 @@ jobs:
           # (one list per call, so each call's junit is held to its own universe).
           mkdir -p "$sig/quick-sel"
           : > "$sig/quick-sel.calls"
-          if [ "$SHARD" = 1 ] && [ -n "$CRATES" ]; then
+          if [ -n "$CRATES" ]; then
             docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" \
               -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
               -w /workspace "$IMAGE" cargo metadata --no-deps --format-version 1 > "$sig/quick-meta.json"
-            bash scripts/ci/quick_tier_groups.sh --metadata "$sig/quick-meta.json" "${crates[@]}" > "$sig/quick-sel.calls"
+            bash scripts/ci/quick_tier_groups.sh --metadata "$sig/quick-meta.json" "${crates[@]}" > "$sig/quick-sel.all"
+            [ -s "$sig/quick-sel.all" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
+            bash scripts/ci/quick_tier_shard.sh "$SHARD" 3 < "$sig/quick-sel.all" > "$sig/quick-sel.calls"
           fi
           read -ra targets <<< "$TARGETS"
           tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
@@ -1023,9 +1031,8 @@ jobs:
               if [ "$SHARD" = 2 ]; then
                 cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /sigma/quick-tree.list.json; fi'
           rc=0
-          if [ "$SHARD" = 1 ] && [ -n "$CRATES" ]; then
+          if [ -n "$CRATES" ]; then
             n="$(wc -l < "$sig/quick-sel.calls")"
-            [ "$n" -gt 0 ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; rc=1; }
             for ((i = 0; i < n; i++)); do
               python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates, call $i" --junit "$sig/quick-sel/$i.junit.xml" --list-json "$sig/quick-sel/$i.list.json" || rc=1
             done
