@@ -151,11 +151,13 @@ resolve() {
   fi
   # 20X sign-off r2: the PR head ran the QUICK pool, so a queue entry never skips x86-main or
   # determinism on its green and cites nothing: x86=0 det=0 cite= pr_head= whatever decide said.
-  # mac-check keeps its own verdict. This is the ONE place the override lives (the case table below).
+  # mac-check keeps its own verdict. This is the ONE place the override lives (this sed over decide, then pinned by the resolve rows in --self-test).
+  local rc=0
   decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" \
     --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root" \
-    | sed -e 's/^x86=.*/x86=0/' -e 's/^det=.*/det=0/' -e 's/^cite=.*/cite=/' -e 's/^pr_head=.*/pr_head=/'
+    | sed -e 's/^x86=.*/x86=0/' -e 's/^det=.*/det=0/' -e 's/^cite=.*/cite=/' -e 's/^pr_head=.*/pr_head=/' || rc=$?
   rm -rf "${w:?}"
+  return "$rc"
 }
 
 # ---------------------------------------------------------------- the push arm
