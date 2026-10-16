@@ -586,13 +586,17 @@ verify-bindings, migrate`.
 
 **NEVER use grep/glob for code search. ALWAYS use `pmat query`.** The full decision tree, enrichment flags
 (`-G`, `--churn`, `--duplicates`, `--entropy`, `--faults`), search modes (`--regex`, `--literal`) and coverage-gap
-workflow are in the global `~/.claude/CLAUDE.md` Code Search Policy; this repo adds only the cross-project index
-note and the coverage + contracts rule below.
+workflow are in the author-local `~/.claude/CLAUDE.md`; the commands every contributor needs are kept here, plus the coverage + contracts rule below.
 
 ```bash
 pmat query "<intent>" --limit 10 --include-source   # semantic search with quality annotations
 pmat query "<intent>" --rank-by pagerank            # most important functions
-# Siblings (aprender, trueno, realizar) auto-merge into the index; build once per project:
+pmat query "<intent>" --rank-by indegree          # most-called utilities
+pmat query "<intent>" --path src/api/            # restrict to a path
+pmat query "<intent>" --format json              # or markdown; default is text
+pmat query "<intent>" --min-grade B --max-complexity 15 --exclude-tests
+pmat query "<intent>" -G                         # fuse git-history intent (also --churn --duplicates --entropy --faults)
+# Siblings (aprender, trueno, realizar; 60k+ functions) auto-merge into the index; build once per project:
 pmat query "init" --rebuild-index --limit 1
 ```
 
