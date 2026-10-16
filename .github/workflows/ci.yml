@@ -146,8 +146,8 @@ jobs:
         run: bash scripts/ci_mg_reuse.sh --self-test
       - name: The fat wait is cancel-aware and the teardown still runs on cancel
         run: |
-          bash scripts/check_ci_wait_cancel.sh
           bash scripts/check_ci_wait_cancel.sh --self-test
+          bash scripts/check_ci_wait_cancel.sh
 
   x86-main:
     needs: [mg-reuse]
