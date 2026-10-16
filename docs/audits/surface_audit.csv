@@ -472,8 +472,8 @@ apr,mcp:apr.tensors,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprend
 apr,mcp:apr.trace,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/trace.rs:20,high
 apr,mcp:apr.validate,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/validate.rs:18,high
 apr,mcp:apr.version,7,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/version.rs:8,high
-aprender-corpus-ingest,aprender-corpus-ingest plan,6,UNKNOWN,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/bin/apr-corpus-ingest.rs:67,high
-aprender-corpus-ingest,aprender-corpus-ingest validate-contract,6,UNKNOWN,huggingface-transformers,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:79,high
+aprender-corpus-ingest,aprender-corpus-ingest plan,6,UNKNOWN,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/bin/apr-corpus-ingest.rs:75,high
+aprender-corpus-ingest,aprender-corpus-ingest validate-contract,6,UNKNOWN,huggingface-transformers,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:87,high
 apr-qa,apr-qa bootstrap,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:378,high
 apr-qa,apr-qa certify,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:47,high
 apr-qa,apr-qa export-csv,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:326,high
@@ -869,7 +869,7 @@ aprender-verify,aprender-verify mutate,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,cr
 aprender-verify,aprender-verify stats,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-verify-ml/src/bin/verificar.rs:56,high
 aprender-verify,aprender-verify train,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-verify-ml/src/bin/verificar.rs:120,high
 aprender-verify,aprender-verify verify,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-verify-ml/src/bin/verificar.rs:105,high
-aprender-corpus-ingest,aprender-corpus-ingest --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:55,high
+aprender-corpus-ingest,aprender-corpus-ingest --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:63,high
 aprender-cbtop,aprender-cbtop --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:21,high
 aprender-cgp,aprender-cgp --version,7,x86_64-linux,NONE,no,9,profiling,crates/aprender-cgp/src/cli.rs:27,high
 aprender-compute-xtask,aprender-compute-xtask --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-compute-xtask/src/main.rs:27,high
