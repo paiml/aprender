@@ -375,8 +375,8 @@ OUT="$(bash "$MG" resolve-push --event pull_request --ref refs/heads/main --sha 
 has "R5 a non-push event refuses without a call" "x86=0" "$OUT"
 
 # -- X: the ci.yml wiring for the push arm (its verdict and job wiring also run in ci_mg_reuse.sh --self-test)
-want "X1 mg-reuse runs on a push to main" 1 \
-     "$(grep -cF "if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')" "$CI")"
+want "X1 mg-reuse runs on a push to main only (S1: skipped on merge_group, x86-main asks for its runner at t=0)" 1 \
+     "$(grep -cF "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" "$CI")"
 want "X2 the push calls resolve-push with the pushed sha and before" 1 \
      "$(grep -cF 'bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE"' "$CI")"
 want "X3 both verdict copies (ci / gate and gate) accept a push reuse only with the advisories green" 2 \

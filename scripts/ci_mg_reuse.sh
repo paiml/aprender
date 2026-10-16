@@ -452,7 +452,7 @@ STUB
     if grep -qF -- "$2" <<<"$t"; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL wiring: job '$1' lacks: $2"; fi
   }
-  wire mg-reuse "if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')"
+  wire mg-reuse "if: github.event_name == 'push' && github.ref == 'refs/heads/main'"
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh --self-test'
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF"'
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE"'
