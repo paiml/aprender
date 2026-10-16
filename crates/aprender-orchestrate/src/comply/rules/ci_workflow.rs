@@ -546,17 +546,13 @@ jobs:
 
     #[test]
     fn test_parse_workflow_non_string_job_key() {
-        // serde-saphyr -> serde_json::Value: a non-string map key is either refused
-        // or read back as text; it is never dropped silently beside a valid job.
+        // serde-saphyr -> serde_json::Value (S2): a non-string map key is refused, not coerced.
         let temp = TempDir::new().unwrap();
         let file = temp.path().join("ci.yml");
         std::fs::write(&file, "jobs:\n  1:\n    steps: []\n  test:\n    steps: []\n").unwrap();
 
         let rule = CiWorkflowRule::new();
-        if let Ok(data) = rule.parse_workflow(&file) {
-            assert!(data.jobs.contains(&"test".to_string()), "valid job kept: {:?}", data.jobs);
-            assert!(data.jobs.iter().all(|j| j == "test" || j == "1"), "{:?}", data.jobs);
-        }
+        assert!(rule.parse_workflow(&file).is_err());
     }
 
     #[test]
