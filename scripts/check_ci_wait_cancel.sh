@@ -26,31 +26,41 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-# steps_of <file> <substring>: "<line>|<if or NONE>" per step whose non-comment text holds it.
+# steps_of <file> <substring>: "<line>|<if or NONE>|<flags>" per step whose non-comment text holds it.
+# flags is "-", or "coe" (a continue-on-error that is not false) and/or "mask" (`|| true`, `|| :`,
+# `exit 0`, `set +e` in the step), joined by "+". A record ends at the first line indented less than
+# a step, so the next job's keys are never read as this step's.
 steps_of() {
     awk -v pat="$2" '
-        function flush() {
-            if (rec != "" && index(rec, pat)) print first "|" cond
+        function flush(   fl) {
+            if (rec != "" && index(rec, pat)) {
+                fl = ""
+                if (rec ~ /continue-on-error:[ \t]*[^ \t\n]/ && rec !~ /continue-on-error:[ \t]*false/) fl = "coe"
+                if (rec ~ /\|\|[ \t]*(true|:)|exit[ \t]+0|set[ \t]+\+e/) fl = fl (fl == "" ? "" : "+") "mask"
+                print first "|" cond "|" (fl == "" ? "-" : fl)
+            }
             rec = ""; cond = "NONE"
         }
         function ifval(s) { sub(/^[ \t-]*if:[ \t]*/, "", s); sub(/[ \t]+$/, "", s); return s }
         /^[ \t]*#/ { next }
-        /^      - / { flush(); first = NR; rec = $0 "\n"; if ($0 ~ /^      - if:/) cond = ifval($0); next }
-        /^        if:/ { cond = ifval($0) }
-        { rec = rec $0 "\n" }
+        /^ {0,5}[^ ]/ { flush(); live = 0; next }
+        /^      - / { flush(); live = 1; first = NR; rec = $0 "\n"; if ($0 ~ /^      - if:/) cond = ifval($0); next }
+        /^        if:/ { if (live) cond = ifval($0) }
+        live { rec = rec $0 "\n" }
         END { flush() }
     ' "$1"
 }
 
 check() { # <file>
-    local f=$1 rc=0 spec pat want label want_n k row ln cond
+    local f=$1 rc=0 spec pat want label want_n k row ln cond flg
     for spec in 'fat_driver.py wait|!cancelled()|wait|WAITS' 'fat_teardown.sh|always()|teardown|TEARDOWNS'; do
         IFS='|' read -r pat want label want_n <<< "$spec"
         case "$want_n" in WAITS) want_n=${CI_WAIT_STEPS:-2} ;; *) want_n=${CI_TEARDOWN_STEPS:-3} ;; esac
         k=0
         while IFS= read -r row; do
             [ -n "$row" ] || continue
-            k=$((k + 1)); ln=${row%%|*}; cond=${row#*|}
+            k=$((k + 1)); ln=${row%%|*}; cond=${row#*|}; flg=${cond##*|}; cond=${cond%|*}
+            if [ "$flg" != - ]; then echo "FAIL $label step at line $ln is neutered ($flg): continue-on-error or a masked exit status lets it pass when it should fail"; rc=1; fi
             if [ "$want" = '!cancelled()' ]; then
                 if [ "$cond" = '${{ !cancelled() }}' ]; then echo "ok   $label step at line $ln is cancel-aware"
                 else echo "FAIL $label step at line $ln has if: '$cond', wanted exactly \${{ !cancelled() }}"; rc=1; fi
@@ -105,6 +115,39 @@ self_test() {
     row 1 "a '- if:' first-key layout with always() is caught" x x iffirst "$A" "$C" "$A" "$A"
     row 0 "a 'run: |' block layout parses and passes" x x block "$C" "$C" "$A" "$A"
     row 1 "a 'run: |' block layout with always() is caught" x x block "$A" "$C" "$A" "$A"
+    # sign-off r2 fixes: neutered steps, the real 3-teardown count, the job boundary
+    fx() { # <want-rc> <label> <wait-extra-line> <teardown-extra-line> <third-teardown-if|NONE-STEP> [<env CI_TEARDOWN_STEPS unset>]
+        { printf '    steps:\n'
+          printf '      - name: W1\n        if: %s\n        run: %s\n%s' "$C" "$W" "$3"
+          printf '      - name: W2\n        if: %s\n        run: %s\n' "$C" "$W"
+          printf '      - name: T1\n        if: %s\n        run: %s\n%s' "$A" "$T" "$4"
+          printf '      - name: T2\n        if: %s\n        run: %s\n' "$A" "$T"
+          [ "$5" = NONE-STEP ] || printf '      - name: T3\n        if: %s\n        run: %s\n' "$5" "$T"; } > "$td/f.yml"
+        r=0; out=$(env -u CI_TEARDOWN_STEPS -u CI_WAIT_STEPS bash "$0" "$td/f.yml" 2>&1) || r=$?
+        if [ "$r" = "$1" ]; then echo "ok   self-test: $2"; else echo "FAIL self-test: $2 (rc $r, wanted $1): $out"; rc=1; fi
+    }
+    fx 0 "the real shape: 2 waits + 3 teardowns under the DEFAULT counts passes" "" "" "$A"
+    fx 1 "MUTANT: only 2 teardowns under the default count of 3 is caught" "" "" NONE-STEP
+    fx 1 "MUTANT: the THIRD teardown (ARM64 determinism) loses always() is caught" "" "" "$C"
+    fx 1 "MUTANT: continue-on-error: true on a wait is caught" "        continue-on-error: true
+" "" "$A"
+    fx 1 "MUTANT: continue-on-error: \${{ true }} on a teardown is caught" "" "        continue-on-error: \${{ true }}
+" "$A"
+    fx 0 "continue-on-error: false is not a defect" "        continue-on-error: false
+" "" "$A"
+    fx 1 "MUTANT: '|| true' on a wait is caught" "        shell: bash || true
+" "" "$A"
+    fx 1 "MUTANT: 'exit 0' on a teardown is caught" "" "        # not a comment-proof: below is real text
+        env: { X: 'exit 0' }
+" "$A"
+    fx 1 "MUTANT: 'set +e' on a wait is caught" "        run2: set +e
+" "" "$A"
+    { printf '    steps:\n      - name: W1\n        run: %s\n  other:\n    env:\n        if: %s\n' "$W" "$C"
+      printf '      - name: W2\n        if: %s\n        run: %s\n' "$C" "$W"
+      printf '      - name: T1\n        if: %s\n        run: %s\n      - name: T2\n        if: %s\n        run: %s\n' "$A" "$T" "$A" "$T"
+      printf '      - name: T3\n        if: %s\n        run: %s\n' "$A" "$T"; } > "$td/f.yml"
+    r=0; out=$(env -u CI_TEARDOWN_STEPS -u CI_WAIT_STEPS bash "$0" "$td/f.yml" 2>&1) || r=$?
+    if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT: a step record ends at the job boundary (next job's if: is not its own)"; else echo "FAIL self-test: job boundary (rc $r, wanted 1): $out"; rc=1; fi
     rm -f "${td:?}/f.yml"; rmdir "${td:?}"
     return "$rc"
 }
