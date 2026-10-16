@@ -57,7 +57,7 @@ jobs:
   pick:
     name: pick
     # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]   # #5435: pure shell+gh, arch-neutral
     environment: infra-read   # holds INFRA_ACTIONS_READ; only main may use it
     # rehearse.sh --mutants ran 145 mutants in 18.4 and 20.3 min on 2026-10-09; a timed-out pick is a not_measured night
     timeout-minutes: 45
