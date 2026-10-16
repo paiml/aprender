@@ -588,7 +588,13 @@ pub(crate) fn ollama_ndjson_stream_ending(
                 // Channel closed (generation done) or backend error: emit the
                 // terminal object and stop. We drop the receiver (None) so the
                 // next poll ends the stream.
-                Some(Err(_)) | None => {
+                ended @ (Some(Err(_)) | None) => {
+                    // A backend error is not a cap hit: only a clean close can be "length".
+                    let reason = if matches!(ended, Some(Err(_))) {
+                        "stop"
+                    } else {
+                        end.done_reason(count)
+                    };
                     let final_obj = ollama_stream_final(
                         kind,
                         &model,
@@ -596,7 +602,7 @@ pub(crate) fn ollama_ndjson_stream_ending(
                         prompt_eval_count,
                         count,
                         started.elapsed().as_nanos() as u64,
-                        end.done_reason(count),
+                        reason,
                     );
                     let mut line = final_obj.to_string();
                     line.push('\n');
@@ -1000,6 +1006,32 @@ mod tests {
                 "cap {cap}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn live_stream_error_at_the_cap_reports_stop_not_length() {
+        let (tx, rx) = tokio::sync::mpsc::channel(4);
+        tx.send(Ok("a".to_string())).await.expect("send");
+        tx.send(Err("boom".to_string())).await.expect("send");
+        drop(tx);
+        let resp = ollama_ndjson_stream_ending(
+            OllamaStreamKind::Chat,
+            "m".to_string(),
+            1,
+            StreamEnd::LengthAt(1),
+            rx,
+        );
+        assert_eq!(last_ndjson_line(resp).await["done_reason"], "stop");
+    }
+
+    #[tokio::test]
+    async fn reshaped_bodies_with_a_natural_stop_report_stop() {
+        let body = r#"{"choices":[{"message":{"content":"ab"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2}}"#;
+        let upstream = || Response::new(axum::body::Body::from(body));
+        let chat = reshape_openai_to_ollama_chat("m".to_string(), upstream()).await;
+        assert_eq!(last_ndjson_line(chat).await["done_reason"], "stop");
+        let generate = reshape_openai_to_ollama_generate("m".to_string(), upstream()).await;
+        assert_eq!(last_ndjson_line(generate).await["done_reason"], "stop");
     }
 
     /// Drive `ollama_ndjson_stream` over a 3-token channel and assert the body
