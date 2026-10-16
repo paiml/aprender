@@ -412,6 +412,12 @@ STUB
       *) fail=$((fail + 1)); echo "FAIL resolve-reached-decide: '$ref' answered 0 0 0 without decide's reason: $(kv reason "$out")" ;;
     esac
   done
+  # r5: K1-K5 hold is emitted only by decide (above); a refused lookup must NOT carry it.
+  out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="pulls" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$QREF" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
+  case "$(kv reason "$out")" in
+    "K1-K5 hold"*) fail=$((fail + 1)); echo "FAIL refusal carries decide's K1-K5 reason: $(kv reason "$out")" ;;
+    *) pass=$((pass + 1)) ;;
+  esac
   out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$QREF" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
   if [ -z "$(kv cite "$out")" ] && [ -z "$(kv pr_head "$out")" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL resolve-no-cite: a queue entry cites no PR head (cite=$(kv cite "$out") pr_head=$(kv pr_head "$out"))"; fi
   rrow no-pr-number      "0 0 0" ""        "$H" "refs/heads/main"

@@ -415,8 +415,9 @@ self_test() {
     # (crates=/targets=/check_workspace=) rides along. Empty or failed output is NOT a pass: it prints
     # BAD-EMPTY, never the OK token (the old `| grep -c || true` printed 0 on an empty capture).
     full_only() { # full_only <capture-name-or-script...> -> prints OK-FULL-ONLY or BAD-*
-        local o
-        o=$(bash -c "$1" 2>&1) || true
+        local o r=0
+        o=$(bash -c "$1" 2>&1) || r=$?
+        [ "$r" = 0 ] || { echo "BAD-RC-$r"; return 0; }
         [ -n "$o" ] || { echo BAD-EMPTY; return 0; }
         grep -qx 'tier=full' <<< "$o" || { echo BAD-NOT-FULL; return 0; }
         if grep -qE '^(crates|targets|check_workspace)=' <<< "$o"; then echo BAD-QUICK-LINE-LEAK; else echo OK-FULL-ONLY; fi
@@ -491,7 +492,7 @@ self_test() {
     # #3658: this row USED to want 'not a merge commit' -> full. That was the bug:
     # the queue is SQUASH, so a one-parent queue ref is the NORMAL shape and
     # HEAD^1..HEAD is still the PR's diff. It now re-derives instead of paying the hour.
-    row 0 "merge_group, different tree on a ONE-PARENT (squash-shaped) ref -> re-derived from HEAD^1..HEAD, not full (this fixture's queue commit is empty -> full, never none: r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
+    row 0 "merge_group, different tree on a ONE-PARENT (squash-shaped) ref -> FULL owed (this fixture queue commit is empty -> full, never none: r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
     row 0 "merge_group without a PR head -> the queue no longer needs one (empty diff is FULL too, r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo"
     # PMAT-1098 67-E2 (#3084): THE QUEUE MIRRORS THE PR. A rebase is not new
     # evidence about the PR's diff, it is the same diff on a new base — so a
@@ -522,13 +523,15 @@ self_test() {
     row 0 "  ...and the reason names the re-derivation, not a guess" 're-derived on the queue ref' bash -c "$(replay mg-leaf)"
     row 0 "  ...and a full tier carries NO crates= line, so the quick-only steps read nothing (r2 item 5)" '^OK-FULL-ONLY$' full_only "$(replay mg-leaf)"
     cap mg-root bash "$T" --event merge_group --repo-root "$td/q-root" --pr-head "$(qh "$td/q-root")" --pr-head-conclusion success
-    row 0 "merge_group, the PR touched a ROOT manifest -> full at the queue too (rule (ii))" '^tier=full' bash -c "$(replay mg-root)"
+    row 0 "merge_group, the PR touched a ROOT manifest -> full at the queue too (rule (ii))" '^tier=full$' bash -c "$(replay mg-root)"
     row 0 "  ...citing the root-manifest rule, so the escalation is auditable" 'root Cargo.toml' bash -c "$(replay mg-root)"
     cap mg-root-same bash "$T" --event merge_group --repo-root "$td/q-root" --pr-head "$(git -C "$td/q-root" rev-parse HEAD)" --pr-head-conclusion success
     row 0 "merge_group, SAME tree as the PR head, non-empty diff (root manifest), head green -> full, never reuse (sign-off r1 item 4)" "^tier=full$" bash -c "$(replay mg-root-same)"
     cap mg-cap bash "$T" --event merge_group --repo-root "$td/q-cap" --pr-head "$(qh "$td/q-cap")" --pr-head-conclusion success
     row 0 "merge_group over the cap -> owed FULL; NO quick line (crates=/targets=/check_workspace=) leaks" '^OK-FULL-ONLY$' full_only "$(replay mg-cap)"
-    row 0 "MUTANT: an over-cap merge_group that leaks crates=/check_workspace=1 beside tier=full goes RED" '^BAD-QUICK-LINE-LEAK$' full_only "( $(replay mg-cap) ); echo crates=aprender-core; echo check_workspace=1"
+    sed "s|^    printf .tier=full.nreason=queue owes FULL.*|&; printf 'crates=aprender-core\\\\ncheck_workspace=1\\\\n'|" "$T" > "$td/mutant-leak.sh"
+    row 0 "MUTANT: a real owe_full that leaks crates=/check_workspace=1 beside tier=full goes RED (BAD-QUICK-LINE-LEAK)" '^BAD-QUICK-LINE-LEAK$' full_only "bash '$td/mutant-leak.sh' --event merge_group --repo-root '$td/q-cap' --pr-head '$(qh "$td/q-cap")' --pr-head-conclusion success"
+    row 0 "MUTANT: a nonzero replay rc cannot pass full_only (BAD-RC-3)" '^BAD-RC-3$' full_only "echo tier=full; exit 3"
     row 0 "MUTANT: an empty capture is BAD-EMPTY, never a pass" '^BAD-EMPTY$' full_only "true"
     row 0 "MUTANT: a quick tier on an over-cap merge_group is BAD-NOT-FULL" '^BAD-NOT-FULL$' full_only "echo tier=quick; echo crates=aprender-core"
     cap push-leaf bash "$T" --event push --repo-root "$td/q-leaf"
@@ -561,7 +564,7 @@ self_test() {
     row 0 "merge_group on a SQUASH queue ref, leaf crate -> FULL owed, not the PR's quick" '^tier=full$' bash -c "$(replay sq-leaf)"
     row 0 "  ...exactly tier=full and no quick line, for the PR crate ($leaf)" '^OK-FULL-ONLY$' full_only "$(replay sq-leaf)"
     cap sq-docs bash "$T" --event merge_group --repo-root "$td/s-docs" --pr-head "$(qh "$td/s-docs")" --pr-head-conclusion success
-    row 0 "merge_group on a SQUASH queue ref, roadmap entry only -> FULL owed: only a provably EMPTY diff stays none (sign-off r1)" '^tier=full$' bash -c "$(replay sq-docs)"
+    row 0 "merge_group on a SQUASH queue ref, roadmap entry only -> FULL owed, never none (sign-off r1)" '^tier=full$' bash -c "$(replay sq-docs)"
     row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
     row 0 "owe_full on empty or tier-less output falls CLOSED to full (sign-off r1 item 3)" '^tier=full$' bash -c "source <(sed -n '/^owe_full()/,/^}/p' '$T'); owe_full ''"
     row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" bash "$T" --event push --repo-root "$td/s-leaf"
