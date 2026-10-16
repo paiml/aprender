@@ -642,6 +642,6 @@ batuta oracle --rag-index                   # Reindex (the command prints the do
 Use proactively for trueno SIMD patterns, cross-language equivalents, and stack best practices.
 
 
-## SSC Training Infrastructure Status
+## SSC Training Infrastructure Status (snapshot 2026-03-22 — STALE, re-verify before acting)
 
 Moved to `docs/ssc-training-status-2026-03-22.md` (a 2026-03-22 snapshot, stale; re-verify before acting).
