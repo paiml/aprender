@@ -1,0 +1,18 @@
+- id: PMAT-3745
+  github_issue: 3745
+  item_type: task
+  title: '#3745 S3: hand-list guard (LAB nightly) + hand-list migration'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-12T16:14:06Z
+  updated: 2026-10-12T16:14:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
