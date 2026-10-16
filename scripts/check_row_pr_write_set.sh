@@ -58,27 +58,28 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
     esac
     git -C "$repo" cat-file -e "$base:$dag" 2>/dev/null || { printf '%s: ENV - %s is missing at the base %.9s (the box cannot answer)\n' "$PROG" "$dag" "$base" >&2; return 2; }
     local changed; changed=$(git -C "$repo" diff --no-renames --name-only "$base" "$head" --) || { printf '%s: ENV - git diff %s %s failed\n' "$PROG" "$base" "$head" >&2; return 2; }
-    if printf '%s' "$branch" | grep -qE -- "$ORCHESTRATOR_RE"; then
+    if grep -qE -- "$ORCHESTRATOR_RE" <<<"$branch"; then
         printf 'ok    %s: `%s` is an orchestrator branch; it owns the DAG, the spec block, the roadmap and the README counts\n' "$PROG" "$branch"; return 0
     fi
     # rule 1: the DAG and the spec are orchestrator-only on EVERY branch
     for f in docs/specifications/pp-066-dag.yaml docs/specifications/PP-066-release-spec.md; do
-        if printf '%s\n' "$changed" | grep -qxF -- "$f"; then
+        if grep -qxF -- "$f" <<<"$changed"; then
             printf 'FAIL  %s: branch %s writes %s — orchestrator-only (agent/pp-066-*); the status of a row is derived from its receipt and the spec block is rendered\n' "$PROG" "${branch:-<none>}" "$f"; rc=1
         fi
     done
     # rule 2: a ROW PR (agent/<id>, <id> a DAG row) may not write the roadmap or a README count line
     case "$branch" in
-        agent/*) id=${branch#agent/} ;;
+        agent/?*) id=${branch#agent/} ;;
         *) [ "$rc" = 0 ] && printf 'ok    %s: `%s` is not an agent/<row> branch; the roadmap/README-count rule binds row PRs only\n' "$PROG" "${branch:-<none>}"; return "$rc" ;;
     esac
-    if ! row_ids "$repo" "$base" "$dag" | grep -qxF -- "$id"; then
+    local ids; ids=$(row_ids "$repo" "$base" "$dag") || { printf '%s: ENV - the rows of %s at %.9s cannot be read (the box cannot answer)\n' "$PROG" "$dag" "$base" >&2; return 2; }
+    if ! grep -qxF -- "$id" <<<"$ids"; then
         [ "$rc" = 0 ] && printf 'ok    %s: `%s` names no DAG row; the roadmap/README-count rule binds row PRs only\n' "$PROG" "$branch"; return "$rc"
     fi
-    if printf '%s\n' "$changed" | grep -qxF -- docs/roadmaps/roadmap.yaml; then
+    if grep -qxF -- docs/roadmaps/roadmap.yaml <<<"$changed"; then
         printf 'FAIL  %s: row PR %s writes docs/roadmaps/roadmap.yaml — pmat work complete and the ticket edits belong to the orchestrator docs commit\n' "$PROG" "$branch"; rc=1
     fi
-    if printf '%s\n' "$changed" | grep -qxF -- "$readme"; then
+    if grep -qxF -- "$readme" <<<"$changed"; then
         local hits; hits=$(git -C "$repo" diff "$base" "$head" -- "$readme" | grep -E '^[-+][^-+]' | grep -E -- "$COUNT_RE" || true)
         if [ -n "$hits" ]; then
             printf 'FAIL  %s: row PR %s edits a README count line (the orchestrator docs commit regenerates counts; check_readme_claims.sh lets the README lag, never overstate):\n' "$PROG" "$branch"
@@ -113,6 +114,7 @@ if [ "${1:-}" = "--self-test" ]; then
     printf '# spec\n' > "$R/docs/specifications/PP-066-release-spec.md"
     printf '# apr\n\n**78** workspace crates and **1812** provable contracts across 111 CLI commands.\n\nprose line\n' > "$R/README.md"
     printf 'fn main() {}\n' > "$R/crates/x/src/lib.rs"
+    printf 'rows: [\n' > "$R/docs/specifications/bad-dag.yaml"
     ( cd "$R" && git add -A && git commit -qm base )
     BASE=$(git -C "$R" rev-parse HEAD)
     n=0; red=0
@@ -141,6 +143,9 @@ if [ "${1:-}" = "--self-test" ]; then
     grep -q 'pp-066-dag.yaml' "$TD/out.11" || { printf 'FAIL  row 11 did not name the renamed file\n'; red=1; }
     n2=$((n + 1)); rc=0; judge "$R" "$BASE" "$BASE" agent/G-11 pull_request docs/specifications/nope.yaml README.md >"$TD/out.$n2" 2>&1 || rc=$?
     if [ "$rc" = 2 ]; then printf 'ok    row %-2s rc=2  a DAG missing at the base is ENV (exit 2), never a pass\n' "$n2"; else printf 'FAIL  row %-2s rc=%s (wanted 2)  a missing DAG\n' "$n2" "$rc"; red=1; fi
+    n3=$((n2 + 1)); rc=0; judge "$R" "$BASE" "$BASE" agent/G-11 pull_request docs/specifications/bad-dag.yaml README.md >"$TD/out.$n3" 2>&1 || rc=$?
+    if [ "$rc" = 2 ]; then printf 'ok    row %-2s rc=2  an unreadable DAG is ENV (exit 2), never "names no DAG row"\n' "$n3"; else printf 'FAIL  row %-2s rc=%s (wanted 2)  an unreadable DAG\n' "$n3" "$rc"; red=1; fi
+    n2=$n3
     printf '%s/%s rows\n' "$((n2 - red))" "$n2"
     [ "$red" = 0 ] || exit 1
     exit 0
