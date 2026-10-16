@@ -1071,18 +1071,22 @@ mod tests {
 
     #[test]
     fn patched_config_does_not_keep_a_non_finite_float() {
-        // The read path of `patch_yaml_config`: `.inf` and `.nan` pass the reader (non-finite typeless
-        // floats are allowed) but `serde_json::Value` cannot hold them as a number.
-        for src in ["lr: .inf\n", "lr: .nan\n", "lr: -.inf\n"] {
-            let v: serde_json::Value = yaml_from_str(src).expect("non-finite float reads");
-            assert!(
-                v["lr"].as_f64().is_none(),
-                "{src} must not be kept as a number: {v}"
+        // Behaviour delta vs serde_yaml_ng (#5209), measured on the PR head by a seat: the read path of
+        // `patch_yaml_config` (train.rs) reads `lr: .inf` as the STRING ".inf", and the patched config
+        // writes it back quoted. It is neither a number, null nor an error. (`set_yaml_f64` is the
+        // setter path and stores null; see the test above.)
+        for lit in [".inf", ".nan", "-.inf"] {
+            let src = format!("lr: {lit}\n");
+            let v: serde_json::Value = yaml_from_str(&src).expect("non-finite float reads");
+            assert_eq!(
+                v["lr"],
+                serde_json::json!(lit),
+                "{src} reads as a string: {v}"
             );
             let out = serde_saphyr::to_string(&v).expect("serialises");
             assert!(
-                !out.contains(".inf") || out.contains("\".inf\"") || out.contains("'.inf'"),
-                "{out}"
+                out.contains(&format!("lr: \"{lit}\"")),
+                "written config was: {out}"
             );
         }
     }
