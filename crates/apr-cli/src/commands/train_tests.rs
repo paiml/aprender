@@ -1071,15 +1071,23 @@ mod tests {
 
     #[test]
     fn written_config_keeps_the_value_key_order() {
-        // This build has serde_json `preserve_order` on, so a config is written in the order
-        // its keys were inserted (not sorted). If that ever flips, this test fails loudly.
+        // A config is written in `serde_json::Map` order: sorted, or insertion order when some
+        // crate in the build turns on `preserve_order`. Pin that the writer follows the map.
         let root: serde_json::Value = yaml_from_str("zeta: 1\nalpha: 2\n").expect("parses");
+        let want_zeta_first =
+            root.as_object().expect("map").keys().next().map(String::as_str) == Some("zeta");
         let out = serde_saphyr::to_string(&root).expect("serialises");
         let zeta = out.find("zeta").expect("zeta written");
         let alpha = out.find("alpha").expect("alpha written");
-        assert!(zeta < alpha, "insertion order lost: {out}");
+        assert_eq!(zeta < alpha, want_zeta_first, "writer must follow the Map order: {out}");
         // And the written text reads back to the same value.
         let back: serde_json::Value = yaml_from_str(&out).expect("round-trips");
         assert_eq!(back, root);
+    }
+
+    #[test]
+    fn non_string_mapping_key_is_refused() {
+        // serde_json::Value refuses a non-string key where serde_yaml accepted it (PR body, S2).
+        assert!(yaml_from_str::<serde_json::Value>("0: x\n").is_err());
     }
 }

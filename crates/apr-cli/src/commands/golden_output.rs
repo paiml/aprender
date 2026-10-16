@@ -384,7 +384,7 @@ fn thinking_on_budget_row(
     Ok((usize::try_from(b).unwrap_or(0), format!("{pat}: {basis}")))
 }
 
-/// A YAML mapping read in file order. `serde_json::Map` sorts its keys, and
+/// A YAML mapping read in file order. `serde_json::Map` is sorted unless the build turns on `preserve_order` (not relied on here), and
 /// "the first pattern that matches" must mean the first one written (#5209).
 #[cfg(feature = "inference")]
 #[derive(Default)]
