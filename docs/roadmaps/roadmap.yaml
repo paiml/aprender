@@ -18576,6 +18576,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-5426
+  github_issue: 5426
+  item_type: task
+  kind: code
+  title: 'pr-review: update stale agy/Claude model ids to current quorum lanes (gemini-4-argon-high, claude-sonnet-5-5, claude-haiku-5-5)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-16T10:38:47.453979621+00:00
+  updated: 2026-10-16T10:38:47.453979621+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
