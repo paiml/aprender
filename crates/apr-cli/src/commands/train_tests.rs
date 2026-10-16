@@ -1051,4 +1051,35 @@ mod tests {
             1
         );
     }
+
+    // ========================================================================
+    // serde_yaml_ng -> serde-saphyr (#5209): pin the two write-path deltas
+    // ========================================================================
+
+    #[test]
+    fn set_yaml_f64_non_finite_writes_null() {
+        // serde_json::Number cannot hold NaN or an infinity, so the setter stores Null and the
+        // written config says `lr: null` instead of a non-finite float.
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut root = serde_json::Value::Object(serde_json::Map::new());
+            set_yaml_f64(&mut root, &["optimizer", "lr"], bad);
+            assert!(root["optimizer"]["lr"].is_null(), "{bad} must store Null");
+            let out = serde_saphyr::to_string(&root).expect("serialises");
+            assert!(out.contains("lr: null"), "written config was: {out}");
+        }
+    }
+
+    #[test]
+    fn written_config_keeps_the_value_key_order() {
+        // This build has serde_json `preserve_order` on, so a config is written in the order
+        // its keys were inserted (not sorted). If that ever flips, this test fails loudly.
+        let root: serde_json::Value = yaml_from_str("zeta: 1\nalpha: 2\n").expect("parses");
+        let out = serde_saphyr::to_string(&root).expect("serialises");
+        let zeta = out.find("zeta").expect("zeta written");
+        let alpha = out.find("alpha").expect("alpha written");
+        assert!(zeta < alpha, "insertion order lost: {out}");
+        // And the written text reads back to the same value.
+        let back: serde_json::Value = yaml_from_str(&out).expect("round-trips");
+        assert_eq!(back, root);
+    }
 }
