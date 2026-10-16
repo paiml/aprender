@@ -56,7 +56,16 @@ proc_snapshot() {
     else
         vram_why="no nvidia-smi on this host"
     fi
-    jq -cn --argjson pid "$pid" --argjson t_ns "$(date +%s%N)" --argjson tck "${tck:-100}" \
+    # t_ns only ever feeds wall_s (b - a), so any monotonic clock does. EPOCHREALTIME
+    # (bash >= 5) keeps this free of a `date` call (bashrs DET002); older bash falls
+    # back to /proc/uptime, which is 10 ms coarse but still a difference clock.
+    if [ -n "${EPOCHREALTIME:-}" ]; then
+        t_ns="${EPOCHREALTIME/./}000"
+    else
+        read -r up _ < /proc/uptime
+        t_ns="${up/./}0000000"
+    fi
+    jq -cn --argjson pid "$pid" --argjson t_ns "$t_ns" --argjson tck "${tck:-100}" \
         --argjson utime "$utime" --argjson stime "$stime" \
         --argjson minflt "$minflt" --argjson majflt "$majflt" --argjson threads "$threads" \
         --argjson hwm "${hwm:-null}" --argjson rss "${rss:-null}" \
