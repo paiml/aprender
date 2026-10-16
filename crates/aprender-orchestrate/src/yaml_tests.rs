@@ -37,3 +37,12 @@ fn writer_layout_for_scalars_and_nesting() {
     assert!(text.contains("a: x\n"), "plain scalars stay unquoted: {text}");
     assert!(text.contains("\"n\": 3\n"), "integers stay bare, the key n is quoted: {text}");
 }
+
+#[test]
+fn writer_key_order_follows_the_value_map_order() {
+    let v = json!({"zeta": 1, "alpha": 2, "mid": 3});
+    let text = serde_saphyr::to_string(&v).expect("renders");
+    let keys: Vec<&String> = v.as_object().expect("object").keys().collect();
+    let at: Vec<usize> = keys.iter().map(|k| text.find(k.as_str()).expect("key written")).collect();
+    assert!(at.windows(2).all(|w| w[0] < w[1]), "written order == Map order {keys:?}: {text}");
+}
