@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 
+#[path = "ladder_cells_fake_apr.rs"]
+mod fake_apr;
+
 const LADDER: &str = "ladder:
   hosts: [{id: t, required: true}]
   cells:
@@ -44,14 +47,26 @@ impl Fx {
     fn new(name: &str, mode: &str) -> Self {
         let dir = std::env::temp_dir().join(format!("lcp-e2e-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("fixture dir");
-        let fake =
-            manifest().join("../../scripts/lib/model_ladder_cells_produce_cases/fake_apr.py");
         let apr = dir.join("apr");
-        // A test killed mid-run (a timeout, a mutant that hangs) never drops its Serve, and
-        // the serve has a process group of its own: `timeout` bounds such an orphan.
+        // The fake is this test binary re-executed (`fake_apr_entry`): the CI test image has no
+        // python3. A test killed mid-run (a timeout, a mutant that hangs) never drops its Serve,
+        // and the serve has a process group of its own: `timeout` bounds such an orphan.
+        let exe = std::env::current_exe().expect("test binary");
+        let entry = fake_apr::entry_name();
+        let run = format!(
+            "timeout -s KILL 120 \"{}\" --exact {entry} --nocapture",
+            exe.display()
+        );
         let script = format!(
-            "#!/bin/sh\nFAKE_APR_MODE={mode} exec timeout -s KILL 120 \"{}\" \"$@\"\n",
-            fake.display()
+            "#!/bin/sh\nFAKE_APR_MODE={mode}; export FAKE_APR_MODE\n\
+             FAKE_APR_ARGV=$(printf '%s\\n' \"$@\"); export FAKE_APR_ARGV\n\
+             FAKE_APR_ACT=\"$0.act.$$\"; export FAKE_APR_ACT\n\
+             case \"$1\" in serve) exec {run} >/dev/null 2>&1;; esac\n\
+             {run} >/dev/null 2>&1\n\
+             cat \"$FAKE_APR_ACT\"; cat \"$FAKE_APR_ACT.err\" >&2\n\
+             rc=$(cat \"$FAKE_APR_ACT.rc\" 2>/dev/null || echo 99)\n\
+             rm -f \"${{FAKE_APR_ACT:?}}\" \"${{FAKE_APR_ACT:?}}.err\" \"${{FAKE_APR_ACT:?}}.rc\"\n\
+             exit \"$rc\"\n"
         );
         std::fs::write(&apr, script).expect("apr wrapper");
         let mut perm = std::fs::metadata(&apr).expect("apr meta").permissions();
