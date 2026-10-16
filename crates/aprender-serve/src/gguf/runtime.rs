@@ -41,6 +41,11 @@ pub struct QuantizedGenerateConfig {
     pub trace: bool,
     /// Return per-token log probabilities (realizr#191, F-QUALITY-01)
     pub logprobs: bool,
+    /// Record the `K` most likely next tokens at every generated step
+    /// (`apr run --logprobs K`, #4026). 0 records nothing. Only the one
+    /// engine ([`crate::session::Session`]) records; a path without it
+    /// refuses a non-zero `K` by name rather than returning an empty list.
+    pub logprobs_top_k: usize,
     /// Cooperative cancellation signal, polled once per decode step.
     ///
     /// aprender#2376(3): without this, an abandoned HTTP request kept decoding to
@@ -63,6 +68,7 @@ impl Default for QuantizedGenerateConfig {
             stop_tokens: Vec::new(),
             trace: false,
             logprobs: false,
+            logprobs_top_k: 0,
             cancel: CancelToken::never(),
         }
     }

@@ -1,0 +1,44 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001, was REX-001) REX-05 pilot projection, spec §2.2/§7. `rex score
+    --pilot --split dev` (crates/aprender-review-experiment: pilot.rs) projects the
+    test-split Wilson 95 % half-width on recall at the pilot's point estimate (or at the
+    §2.2 design p = 0.5 when the pilot has no defect item in its denominator) and applies
+    the sample-size rule: above 0.12 the corpus grows and the hypotheses do not change.
+    An uncomputable width (no test defect items) also grows the corpus. The runtime
+    projection counts the 10 % determinism re-run and is None, never zero, when nothing
+    warm ran. The spec's "about 0.117" at 70 defects is the Wald width; the frozen
+    stats.rs Wilson width the rule reads is about 0.114.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "https://github.com/paiml/aprender/issues/4360"
+
+equations:
+  half_width:
+    formula: "h = wilson_half_width(round(p · n_def), n_def), p = recall_pilot if defined else 0.5"
+  rule:
+    formula: "grow_corpus ⇔ h undefined ∨ h > 0.12"
+  runtime:
+    formula: "requests = n_test + ⌈n_test / 10⌉; runtime_s = requests · mean(warm_ms) / 1000, undefined if no warm sample"
+
+falsification_tests:
+  - id: FALSIFY-RXP-001
+    name: a_wide_projection_grows_the_corpus
+    prediction: "a projected half-width above 0.12, or one that cannot be computed, sets grow_corpus"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxp_001"
+    expected_output: "exit 0"
+    if_fails: "The full run would start on a corpus too small to resolve the §2.2 interval."
+  - id: FALSIFY-RXP-002
+    name: the_projection_uses_the_pilot_estimate
+    prediction: "the rule reads the pilot's recall, not a fixed p; 9/10 at n=50 keeps the corpus and 5/10 grows it"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxp_002"
+    expected_output: "exit 0"
+    if_fails: "The sample-size decision would ignore the pilot it exists to read."
+  - id: FALSIFY-RXP-003
+    name: runtime_counts_the_rerun_and_nothing_warm_is_unknown
+    prediction: "145 test items project 160 requests; no warm sample or a non-finite one projects None"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxp_003"
+    expected_output: "exit 0"
+    if_fails: "The runtime budget would under-count the re-run or report zero seconds for a cell that never ran."

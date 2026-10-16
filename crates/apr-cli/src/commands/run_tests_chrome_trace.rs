@@ -16,6 +16,7 @@
     #[test]
     fn test_chrome_trace_event_categories() {
         let result = RunResult {
+            logprobs: None,
             text: "test".to_string(),
             duration_secs: 2.0,
             cached: false,
@@ -49,6 +50,7 @@
     #[test]
     fn test_chrome_trace_zero_tokens() {
         let result = RunResult {
+            logprobs: None,
             text: String::new(),
             duration_secs: 0.5,
             cached: true,
@@ -71,6 +73,7 @@
     #[test]
     fn test_chrome_trace_no_tokens_generated_field() {
         let result = RunResult {
+            logprobs: None,
             text: "output".to_string(),
             duration_secs: 1.0,
             cached: false,
@@ -93,6 +96,7 @@
     #[test]
     fn test_chrome_trace_metadata_source() {
         let result = RunResult {
+            logprobs: None,
             text: "hi".to_string(),
             duration_secs: 0.1,
             cached: false,
@@ -115,6 +119,7 @@
     #[test]
     fn test_chrome_trace_event_format() {
         let result = RunResult {
+            logprobs: None,
             text: "test".to_string(),
             duration_secs: 1.0,
             cached: false,
@@ -147,6 +152,7 @@
     #[test]
     fn test_chrome_trace_token_count() {
         let result = RunResult {
+            logprobs: None,
             text: "test".to_string(),
             duration_secs: 5.0,
             cached: false,
@@ -169,6 +175,7 @@
     #[test]
     fn test_chrome_trace_display_time_unit() {
         let result = RunResult {
+            logprobs: None,
             text: "t".to_string(),
             duration_secs: 1.0,
             cached: false,
@@ -191,6 +198,7 @@
         // This test writes to CWD. Use a unique tempdir and set_current_dir.
         // May conflict with parallel tests, but the function itself should not panic.
         let result = RunResult {
+            logprobs: None,
             text: "Hello world".to_string(),
             duration_secs: 1.0,
             cached: false,
@@ -226,6 +234,7 @@
         let target = dir.join("requested.json");
 
         let result = RunResult {
+            logprobs: None,
             text: "Hello world".to_string(),
             duration_secs: 1.0,
             cached: false,
@@ -258,6 +267,7 @@
     #[test]
     fn test_print_benchmark_results_text() {
         let result = RunResult {
+            logprobs: None,
             text: "test output".to_string(),
             duration_secs: 2.0,
             cached: false,
@@ -276,6 +286,7 @@
     #[test]
     fn test_print_benchmark_results_json() {
         let result = RunResult {
+            logprobs: None,
             text: "test".to_string(),
             duration_secs: 1.0,
             cached: false,
@@ -294,6 +305,7 @@
     #[test]
     fn test_print_benchmark_zero_duration() {
         let result = RunResult {
+            logprobs: None,
             text: "".to_string(),
             duration_secs: 0.0,
             cached: false,

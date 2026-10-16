@@ -77,6 +77,12 @@ metadata:
     # crates/aprender-ci-tools/src/main.rs (line 4), so all 10 citations of that file shift
     # by +1; each new line was read back identical to its old line on main. The new
     # `aprender-ci-tools nextest-fail-fast` subcommand ships with no row -- not added here.
+    # PARTIAL RE-AUDIT, #5386 (G2.1). Same rule: `measured_commit` does not move. The PR adds
+    # lines to three cited files in crates/aprender-serve/src/api/: openai_handlers.rs (+35 net
+    # before line 920), cuda_chat_backend.rs (+1 at 44, +1 at 1069, +4 at 1414) and
+    # gpu_completions_handler.rs (+1 at 317). The 2 rows that cite them (POST /v1/chat/completions
+    # stream, POST /v1/completions stream) were re-derived: all 18 cited lines moved, and each
+    # new line was read back text-identical to its old line on main.
     ledger: docs/audits/surface_audit.csv
 
     overall:

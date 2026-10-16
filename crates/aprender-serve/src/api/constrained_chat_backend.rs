@@ -280,7 +280,14 @@ fn constrained_config(
                 .max_tokens
                 .unwrap_or(256)
                 .min(context_length - prompt.len());
-            let stop = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
+            // aprender#4345: the EOS plus every EOG marker the vocabulary has.
+            let stop = stop_tokens_unless_ignore_eos(
+                request,
+                crate::api::realize_handlers::qwen35_completion_stop_tokens(
+                    state.tokenizer.as_deref(),
+                    state.model_eos_token_id(),
+                ),
+            );
             gen_config_from_request(request, budget, stop, cancel.clone())
         },
         #[cfg(feature = "cuda")]

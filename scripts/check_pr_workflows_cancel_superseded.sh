@@ -15,7 +15,8 @@
 #   (github.event.pull_request.number) and whose `cancel-in-progress` is true
 #   (a `${{ }}` expression reading github.event.pull_request.number, never a
 #   literal) and whose `cancel-in-progress` is `true` or exactly
-#   `${{ github.event_name == 'pull_request' }}` -- no looser match, since
+#   `${{ github.event_name == 'pull_request' }}` (or that `|| github.event_name ==
+#   'merge_group'`, #5381) -- no looser match, since
 #   `!= 'pull_request'` would never cancel on a PR and still contains the word.
 #   pull_request_target counts as pull_request. A trigger whose `types:` omit
 #   `synchronize` is skipped by structure: no push can supersede its run (the
@@ -46,6 +47,8 @@ if not files:
 ALLOW = {}
 GROUP = re.compile(r"\$\{\{[^}]*github\.event\.pull_request\.number[^}]*\}\}")
 CANCEL = "${{ github.event_name == 'pull_request' }}"
+# #5381: ci.yml also cancels a dead merge-queue run on the same queue ref.
+CANCEL_MQ = "${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}"
 bad = n = 0
 seen = set()
 for f in files:
@@ -69,7 +72,7 @@ for f in files:
         why = "has no workflow-level concurrency: a superseded push runs to completion"
     elif not GROUP.search(g):
         why = "group %r is not a ${{ }} expression keyed to the PR number: PRs share one queue" % g
-    elif not (cip is True or (isinstance(cip, str) and " ".join(cip.split()) == CANCEL)):
+    elif not (cip is True or (isinstance(cip, str) and " ".join(cip.split()) in (CANCEL, CANCEL_MQ))):
         why = "cancel-in-progress is %r, not true or %s: a superseded PR run is not cancelled" % (cip, CANCEL)
     else:
         why = None
@@ -93,7 +96,7 @@ sys.exit(bad)
 PY
 }
 
-case "${1:-}" in -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
 
 if [ "${1:-}" = "--dir" ]; then
     [ -n "${2:-}" ] || { echo "usage: $0 --dir DIR" >&2; exit 1; }
@@ -114,6 +117,8 @@ if [ "${1:-}" = "--self-test" ]; then
     mk none         "$hdr$job"
     mk global_group "${hdr}concurrency:\n  group: \"pages\"\n  cancel-in-progress: false\n$job"
     mk cancel_false "${hdr}concurrency:\n  group: x-\${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: false\n$job"
+    mk with_mq      "${hdr}concurrency:\n  group: x-\${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: \${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}\n$job"
+    mk mq_only      "${hdr}concurrency:\n  group: x-\${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: \${{ github.event_name == 'merge_group' }}\n$job"
     mk inverted     "${hdr}concurrency:\n  group: x-\${{ github.event.pull_request.number }}\n  cancel-in-progress: \${{ github.event_name != '"'"'pull_request'"'"' }}\n$job"
     mk literal_grp  "${hdr}concurrency:\n  group: x-github.event.pull_request.number\n  cancel-in-progress: true\n$job"
     mk pr_target    "on:\n  pull_request_target:\n    branches: [main]\n$job"
@@ -130,6 +135,8 @@ if [ "${1:-}" = "--self-test" ]; then
     done <<'ROWS'
 good          0
 literal_true  0
+with_mq       0
+mq_only       1
 none          1
 global_group  1
 cancel_false  1
