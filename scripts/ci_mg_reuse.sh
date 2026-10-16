@@ -424,6 +424,7 @@ STUB
   }
   vrow reuse-ok             1   merge_group success 1 1 success
   vrow live-pull_request    0   pull_request skipped "" "" skipped
+  vrow live-mg-skipped      0   merge_group skipped "" "" skipped
   vrow live-mg-said-run     0   merge_group success 0 0 skipped
   vrow live-mg-job-failed   0   merge_group failure "" "" skipped
   vrow red-advisories-fail  red merge_group success 1 1 failure
@@ -476,6 +477,34 @@ STUB
   wire gate 'MG-REUSE-VERDICT-BEGIN'
   wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test]'
   wire gate '[ "$MST" = success ]'
+
+  # S1 (20X): mg-reuse runs on push only, so on merge_group it is SKIPPED and every dependent
+  # runs only because its own `if:` carries !cancelled()/always() (a skipped need otherwise skips
+  # the job). Scoped to the job: the `if:` is mg-reuse's own 4-space key, never a string found
+  # anywhere in the file; a merge_group in it would let a queue entry reuse. Each check has a
+  # mutant that must go RED (the same-string-in-another-job mutant is the unanchored-grep hole).
+  mgshape() { # mgshape FILE -> one line per violation
+    awk -v want="if: github.event_name == 'push' && github.ref == 'refs/heads/main'" '
+      /^  [A-Za-z0-9_-]+:$/ { j = $1; sub(/:$/, "", j); seen[j] = 1; next }
+      /^    if:/    { jif[j] = $0; sub(/^    /, "", jif[j]) }
+      /^    needs:/ { if ($0 ~ /mg-reuse/) dep[j] = 1 }
+      END {
+        if (jif["mg-reuse"] != want) print "mg-reuse job-level if is not the push-only key: [" jif["mg-reuse"] "]"
+        if (jif["mg-reuse"] ~ /merge_group/) print "mg-reuse if names merge_group: a queue entry could reuse"
+        for (k in dep) if (jif[k] !~ /!cancelled\(\)|always\(\)/) print "job " k " needs mg-reuse but its if lacks !cancelled()/always(): skipped with it on merge_group"
+      }' "$1" 2> /dev/null
+  }
+  local ms; ms=$(mgshape "$wf")
+  if [ -z "$ms" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: $ms"; fi
+  mgmut() { # mgmut NAME SED_EXPR: the mutant of the real ci.yml must be RED
+    sed -E "$2" "$wf" > "$T/mut.yml"
+    if [ -n "$(mgshape "$T/mut.yml")" ]; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL mutant $1: mgshape stayed green"; fi
+  }
+  mgmut mg-if-old-merge_group "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
+  mgmut mg-if-removed-string-elsewhere "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
+  mgmut x86-main-if-loses-cancelled "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
+  mgmut gate-if-loses-always "/^  gate:\$/,/^    steps:/{s/^    if: always\(\)/    if: success()/}"
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
   # wanted line comes first. A pipe from job into grep -q takes SIGPIPE on this every

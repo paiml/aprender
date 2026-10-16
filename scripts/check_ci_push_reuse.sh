@@ -375,8 +375,15 @@ OUT="$(bash "$MG" resolve-push --event pull_request --ref refs/heads/main --sha 
 has "R5 a non-push event refuses without a call" "x86=0" "$OUT"
 
 # -- X: the ci.yml wiring for the push arm (its verdict and job wiring also run in ci_mg_reuse.sh --self-test)
-want "X1 mg-reuse runs on a push to main only (S1: skipped on merge_group, x86-main asks for its runner at t=0)" 1 \
-     "$(grep -cF "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" "$CI")"
+# X1 is scoped to the job: mg-reuse's own 4-space `if:` key, never a string found anywhere in the file.
+mgif() { awk '/^  [A-Za-z0-9_-]+:$/ {j = $1} j == "mg-reuse:" && /^    if:/ {sub(/^    /, ""); print; exit}' "$1"; }
+X1WANT="if: github.event_name == 'push' && github.ref == 'refs/heads/main'"
+want "X1 mg-reuse's own job-level if is push-to-main only (S1: skipped on merge_group, x86-main asks for its runner at t=0)" "$X1WANT" "$(mgif "$CI")"
+# RED mutants: the string only in another job (the unanchored-grep hole), and the old merge_group form.
+sed "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/d" "$CI" | sed "s|^  x86-main:\$|  x86-main:\n    # $X1WANT|" > "$T/x1a.yml"
+hasnt "X1m1 the string in a comment of another job does not satisfy X1" "$X1WANT" "$(mgif "$T/x1a.yml")"
+sed "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/" "$CI" > "$T/x1b.yml"
+hasnt "X1m2 the old merge_group form does not satisfy X1" "$X1WANT" "$(mgif "$T/x1b.yml")"
 want "X2 the push calls resolve-push with the pushed sha and before" 1 \
      "$(grep -cF 'bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE"' "$CI")"
 want "X3 both verdict copies (ci / gate and gate) accept a push reuse only with the advisories green" 2 \
