@@ -275,7 +275,7 @@ in_scope() {
     # The judge crate's own laya-named files (pack_laya.rs, src/laya/) are not laya-train
     # model code: a diff there is judged by its branch name (laya-train/), never by `laya`
     # in a path. H2 still reds any judge edit on a laya-train/ branch or beside a spec path.
-    hit=$(changed_names | awk '$0 !~ /^crates\/aprender-decide\//' \
+    hit=$(changed_names | awk '$0 !~ /^crates\/aprender-decide\/.*laya/' \
         | SCOPE_RE="$SCOPE_RE" awk 'BEGIN {re = ENVIRON["SCOPE_RE"]} !d && $0 ~ re {print; d = 1}')
     if [ -n "$hit" ]; then
         line SCOPE in "path $hit" "$n changed paths scanned"
