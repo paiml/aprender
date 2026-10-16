@@ -44,6 +44,19 @@ struct Qwen35CompletionPlan {
     gen_config: crate::gguf::QuantizedGenerateConfig,
 }
 
+/// aprender#4345: the EOS plus every EOG marker the state's tokenizer has, as
+/// the other `/v1/completions` arms stop on. The prompt goes through the GGUF's
+/// own tokenizer, so a state without a `BPETokenizer` keeps the bare EOS.
+pub(crate) fn qwen35_completion_stop_tokens(
+    tokenizer: Option<&crate::tokenizer::BPETokenizer>,
+    model_eos: Option<u32>,
+) -> Vec<u32> {
+    match tokenizer {
+        Some(t) => completion_stop_tokens(t, model_eos),
+        None => model_eos.into_iter().collect(),
+    }
+}
+
 /// `None` when this state serves no Qwen3.5 hybrid.
 fn qwen35_completion_plan(
     state: &AppState,
@@ -98,7 +111,8 @@ fn qwen35_completion_plan(
     // judged against are the same number.
     let budget = max_tokens.min(context_length - prompt_tokens);
 
-    let stop_tokens: Vec<u32> = state.model_eos_token_id().into_iter().collect();
+    let stop_tokens =
+        qwen35_completion_stop_tokens(state.tokenizer.as_deref(), state.model_eos_token_id());
     let gen_config = QuantizedGenerateConfig {
         max_tokens: budget,
         temperature,

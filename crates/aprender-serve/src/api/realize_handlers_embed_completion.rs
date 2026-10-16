@@ -824,6 +824,15 @@ async fn try_cached_completions(
     )))
 }
 
+/// End-of-generation markers a decode stops on when the vocabulary has them.
+const EOG_MARKERS: [&str; 5] = [
+    "<|im_end|>",
+    "<|endoftext|>",
+    "<|eot_id|>",
+    "<|end_of_text|>",
+    "<end_of_turn>",
+];
+
 /// aprender#4339: token ids a raw `/v1/completions` decode stops on.
 ///
 /// Both CPU GGUF completion backends passed `stop_tokens: Vec::new()`, so a raw
@@ -839,14 +848,19 @@ pub(crate) fn completion_stop_tokens(
     tokenizer: &crate::tokenizer::BPETokenizer,
     model_eos: Option<u32>,
 ) -> Vec<u32> {
-    const EOG_MARKERS: [&str; 5] = [
-        "<|im_end|>",
-        "<|endoftext|>",
-        "<|eot_id|>",
-        "<|end_of_text|>",
-        "<end_of_turn>",
-    ];
-    let mut ids: Vec<u32> = model_eos.into_iter().collect();
+    eos_ids_with_eog(tokenizer, model_eos.into_iter().collect())
+}
+
+/// aprender#4345: `eos_ids` followed by every EOG marker of
+/// [`completion_stop_tokens`] the vocabulary has and the list lacks.
+///
+/// For a route whose EOS list is not a single id, such as the APR Q4K
+/// `model_eos_ids()` with its `[0, 2]` fallback.
+pub(crate) fn eos_ids_with_eog(
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    eos_ids: Vec<u32>,
+) -> Vec<u32> {
+    let mut ids = eos_ids;
     for id in EOG_MARKERS.iter().filter_map(|m| tokenizer.get_token_id(m)) {
         if !ids.contains(&id) {
             ids.push(id);
