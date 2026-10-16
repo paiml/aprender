@@ -251,7 +251,7 @@ apr,apr pretrain,6,x86_64-linux,pytorch,yes,1,apr-lint-diag,crates/apr-cli/src/e
 apr,apr profile,3,x86_64-linux;nvidia-cuda,llama.cpp,yes,9,profiling,crates/apr-cli/src/extended_commands.rs:186,high
 apr,apr prometheus-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1138,high
 apr,apr prune,4,x86_64-linux,unsloth,yes,10,apr-core-commands,crates/apr-cli/src/model_ops_commands.rs:113,high
-apr,apr ptx,4,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:387,high
+apr,apr ptx,4,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:407,high
 apr,apr ptx-map,6,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:355,high
 apr,apr publish,6,x86_64-linux,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/tool_commands.rs:46,high
 apr,apr pull,4,x86_64-linux,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:552,high
@@ -453,7 +453,7 @@ apr,apr train sweep,6,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cl
 apr,apr train watch,6,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:172,low
 apr,apr tree,4,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:691,high
 apr,apr tui,9,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:820,medium
-apr,apr tune,4,x86_64-linux,pytorch,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:409,high
+apr,apr tune,4,x86_64-linux,pytorch,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:429,high
 apr,apr typical-p-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1162,high
 apr,apr unified-search-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1215,high
 apr,apr unshard,9,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1254,medium
