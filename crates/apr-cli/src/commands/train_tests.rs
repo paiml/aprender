@@ -1053,7 +1053,7 @@ mod tests {
     }
 
     // ========================================================================
-    // serde_yaml_ng -> serde-saphyr (#5209): pin the two write-path deltas
+    // serde_yaml_ng -> serde-saphyr (#5209): pin the write-path and non-finite-float deltas, and the integer-key read delta
     // ========================================================================
 
     #[test]
@@ -1066,6 +1066,24 @@ mod tests {
             assert!(root["optimizer"]["lr"].is_null(), "{bad} must store Null");
             let out = serde_saphyr::to_string(&root).expect("serialises");
             assert!(out.contains("lr: null"), "written config was: {out}");
+        }
+    }
+
+    #[test]
+    fn patched_config_does_not_keep_a_non_finite_float() {
+        // The read path of `patch_yaml_config`: `.inf` and `.nan` pass the reader (non-finite typeless
+        // floats are allowed) but `serde_json::Value` cannot hold them as a number.
+        for src in ["lr: .inf\n", "lr: .nan\n", "lr: -.inf\n"] {
+            let v: serde_json::Value = yaml_from_str(src).expect("non-finite float reads");
+            assert!(
+                v["lr"].as_f64().is_none(),
+                "{src} must not be kept as a number: {v}"
+            );
+            let out = serde_saphyr::to_string(&v).expect("serialises");
+            assert!(
+                !out.contains(".inf") || out.contains("\".inf\"") || out.contains("'.inf'"),
+                "{out}"
+            );
         }
     }
 
