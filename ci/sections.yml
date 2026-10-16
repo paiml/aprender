@@ -905,7 +905,7 @@ jobs:
           # a shard whose share is empty has no junit; one that owes a call and has none fails in the Σ step
           [ "${#files[@]}" -eq 0 ] || cp "${files[@]}" "$RUNNER_TEMP/sigma/quick-sel/"
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 2
+        if: steps.tier.outputs.tier == 'quick'
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
         # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
         # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
@@ -950,7 +950,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR"
+            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR" --partition "hash:${SHARD}/3"
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -967,7 +967,7 @@ jobs:
       # --locked: a quick tier that silently rewrites Cargo.lock would be a
       # different dependency graph from the one the PR is proposing.
       - name: "Σ-executed: keep the quick tree-reader junit (the next nextest run overwrites it)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 2
+        if: steps.tier.outputs.tier == 'quick'
         # #4433: a PR merges on its QUICK tier (a merge_group whose tree equals the
         # PR head's reuses that result), so the quick tier's own runs are checked too.
         shell: bash
@@ -1028,8 +1028,7 @@ jobs:
               i=0; while read -r g; do p=""; for c in $g; do p="$p -p $c"; done
                 cargo nextest list --profile ci --lib --tests $p --message-format json > "/sigma/quick-sel/$i.list.json"; i=$((i + 1))
               done < /sigma/quick-sel.calls
-              if [ "$SHARD" = 2 ]; then
-                cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /sigma/quick-tree.list.json; fi'
+              cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${SHARD}/3" --message-format json > /sigma/quick-tree.list.json'
           rc=0
           if [ -n "$CRATES" ]; then
             n="$(wc -l < "$sig/quick-sel.calls")"
@@ -1037,9 +1036,7 @@ jobs:
               python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates, call $i" --junit "$sig/quick-sel/$i.junit.xml" --list-json "$sig/quick-sel/$i.list.json" || rc=1
             done
           fi
-          if [ "$SHARD" = 2 ]; then
-            python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
-          fi
+          python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
           exit "$rc"
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
         if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 1
