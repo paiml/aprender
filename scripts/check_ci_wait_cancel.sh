@@ -31,12 +31,13 @@ ifs_of() {
 }
 
 check() { # <file>
-    local f=$1 rc=0 n=0 row ln cond
+    local f=$1 rc=0 n=0 row ln cond k
+    local WAITS=${CI_WAIT_STEPS:-2} TEARDOWNS=${CI_TEARDOWN_STEPS:-3} # x86-main + determinism; x86-main + determinism + ARM64
     for kind in 'fat_driver.py wait:!cancelled():wait' 'fat_teardown.sh:always():teardown'; do
-        pat=${kind%%:*}; rest=${kind#*:}; want=${rest%%:*}; label=${rest#*:}
+        pat=${kind%%:*}; rest=${kind#*:}; want=${rest%%:*}; label=${rest#*:}; k=0
         while IFS= read -r row; do
             [ -n "$row" ] || continue
-            n=$((n + 1)); ln=${row%%|*}; cond=${row#*|}
+            n=$((n + 1)); k=$((k + 1)); ln=${row%%|*}; cond=${row#*|}
             case "$want|$cond" in
                 '!cancelled()|'*always\(\)*) echo "FAIL $label step at line $ln is always(): a cancel cannot stop it ($cond)"; rc=1 ;;
                 '!cancelled()|'*'!cancelled()'*) echo "ok   $label step at line $ln is cancel-aware" ;;
@@ -44,6 +45,8 @@ check() { # <file>
                 *) echo "FAIL $label step at line $ln has if: '$cond', wanted $want"; rc=1 ;;
             esac
         done < <(ifs_of "$f" "$pat")
+        want_n=$WAITS; [ "$label" = wait ] || want_n=$TEARDOWNS
+        if [ "$k" -ne "$want_n" ]; then echo "FAIL $k $label step(s) found, $want_n expected: a step that was deleted or renamed escapes the check (update CI_WAIT_STEPS/CI_TEARDOWN_STEPS with the step)"; rc=1; fi
     done
     if [ "$n" -eq 0 ]; then echo "ENV: no wait or teardown step in $f" >&2; return 2; fi
     return "$rc"
@@ -65,6 +68,7 @@ self_test() {
             step Remove2 "$4" 'bash scripts/ci/fat_teardown.sh a b'
         } > "$td/f.yml"
     }
+    export CI_WAIT_STEPS=2 CI_TEARDOWN_STEPS=2
     row() { # <want-rc> <label> <w1> <t1> <w2> <t2>
         mk "$3" "$4" "$5" "$6"; r=0; out=$(check "$td/f.yml" 2>&1) || r=$?
         if [ "$r" = "$1" ]; then echo "ok   self-test: $2"; else echo "FAIL self-test: $2 (rc $r, wanted $1): $out"; rc=1; fi
@@ -78,6 +82,8 @@ self_test() {
     row 1 "MUTANT: first teardown loses always() is caught" "$C" "$C" "$C" "$A"
     row 1 "MUTANT: the SECOND teardown loses always() is caught" "$C" "$A" "$C" "$C"
     row 1 "MUTANT: a teardown with NO if: is caught" "$C" NONE "$C" "$A"
+    mk "$C" "$A" "$C" "$A"; sed -i "/Compare/,\$d" "$td/f.yml"; r=0; out=$(check "$td/f.yml" 2>&1) || r=$?
+    if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT: a deleted step (1 wait, 1 teardown left) is caught"; else echo "FAIL self-test: deleted step not caught (rc $r): $out"; rc=1; fi
     rm -f "${td:?}/f.yml"; rmdir "${td:?}"
     return "$rc"
 }
