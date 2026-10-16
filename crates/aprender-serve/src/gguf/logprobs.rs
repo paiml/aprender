@@ -60,6 +60,10 @@ pub struct StepLogprobs {
     pub chosen_logprob: f32,
     /// The `K` most likely tokens, most likely first
     pub top: Vec<TopLogprob>,
+    /// ln(sum(exp(logits))) over the whole vocabulary, so a reader holding only
+    /// `top` can still turn any logit into a logprob. It cannot be recovered
+    /// from the top K, so it is carried rather than guessed (#4026)
+    pub logsumexp_full: f32,
 }
 
 impl StepLogprobs {
@@ -77,6 +81,7 @@ impl StepLogprobs {
             chosen,
             chosen_logprob,
             top: top_k_logprobs(logits, n),
+            logsumexp_full: max_logit + log_sum_exp,
         }
     }
 
@@ -89,6 +94,14 @@ impl StepLogprobs {
             _ => None,
         }
     }
+}
+
+/// ln(sum(exp(logits))) over every non-NaN logit (#4026): the normaliser
+/// [`StepLogprobs::logsumexp_full`] records.
+#[must_use]
+pub fn logsumexp_full(logits: &[f32]) -> f32 {
+    let (max_logit, log_sum_exp) = max_and_log_sum_exp(logits);
+    max_logit + log_sum_exp
 }
 
 /// The largest non-NaN logit and the log-sum-exp of the rest relative to it,
