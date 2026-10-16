@@ -102,6 +102,9 @@ pub mod mcp;
 // Autonomous Agent Runtime (perceive-reason-act loop)
 #[cfg(feature = "agents")]
 pub mod agent;
+// The one YAML reader (serde-saphyr, #5205), native-only like its dependency.
+#[cfg(feature = "native")]
+mod yaml;
 
 // Re-export key types for convenience
 pub use backend::{Backend, BackendSelector, OpComplexity};

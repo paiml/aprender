@@ -9,8 +9,8 @@ use crate::comply::rule::{
 use std::path::Path;
 
 /// Extract string values from a YAML sequence into a vec.
-fn extract_string_seq(node: Option<&serde_yaml_ng::Value>, out: &mut Vec<String>) {
-    if let Some(seq) = node.and_then(|n| n.as_sequence()) {
+fn extract_string_seq(node: Option<&serde_json::Value>, out: &mut Vec<String>) {
+    if let Some(seq) = node.and_then(|n| n.as_array()) {
         for item in seq {
             if let Some(s) = item.as_str() {
                 out.push(s.to_string());
@@ -71,7 +71,7 @@ impl CiWorkflowRule {
     /// Parse workflow and extract jobs
     fn parse_workflow(&self, path: &Path) -> anyhow::Result<WorkflowData> {
         let content = std::fs::read_to_string(path)?;
-        let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_str(&content)?;
+        let yaml: serde_json::Value = crate::yaml::from_str(&content)?;
 
         let mut jobs = Vec::new();
         let mut matrix_os = Vec::new();
@@ -79,9 +79,9 @@ impl CiWorkflowRule {
         let mut uses_nextest = false;
         let mut uses_llvm_cov = false;
 
-        if let Some(jobs_map) = yaml.get("jobs").and_then(|j| j.as_mapping()) {
+        if let Some(jobs_map) = yaml.get("jobs").and_then(|j| j.as_object()) {
             for (job_name, job_value) in jobs_map {
-                if let Some(name) = job_name.as_str() {
+                if let Some(name) = Some(job_name.as_str()) {
                     jobs.push(name.to_string());
 
                     // Check for matrix
@@ -94,7 +94,7 @@ impl CiWorkflowRule {
                     // Check steps for specific tools
                     let run_cmds = job_value
                         .get("steps")
-                        .and_then(|s| s.as_sequence())
+                        .and_then(|s| s.as_array())
                         .into_iter()
                         .flatten()
                         .filter_map(|step| step.get("run").and_then(|r| r.as_str()));

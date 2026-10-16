@@ -19,7 +19,7 @@ pub fn parse_playbook_file(path: &Path) -> Result<Playbook> {
 
 /// Parse a playbook from a YAML string
 pub fn parse_playbook(yaml: &str) -> Result<Playbook> {
-    let pb: Playbook = serde_yaml_ng::from_str(yaml).context("invalid playbook YAML")?;
+    let pb: Playbook = crate::yaml::from_str(yaml).context("invalid playbook YAML")?;
     Ok(pb)
 }
 
@@ -88,7 +88,7 @@ fn validate_stage(
 /// Validate a single template reference (e.g. "params.model", "deps[0].path")
 fn validate_single_ref(
     ref_str: &str,
-    global_params: &std::collections::HashMap<String, serde_yaml_ng::Value>,
+    global_params: &std::collections::HashMap<String, serde_json::Value>,
     deps: &[Dependency],
     outs: &[Output],
 ) -> Result<()> {
@@ -119,7 +119,7 @@ fn validate_single_ref(
 /// Validate template references without resolving them (UTF-8 safe)
 fn validate_template_refs(
     cmd: &str,
-    global_params: &std::collections::HashMap<String, serde_yaml_ng::Value>,
+    global_params: &std::collections::HashMap<String, serde_json::Value>,
     deps: &[Dependency],
     outs: &[Output],
 ) -> Result<()> {

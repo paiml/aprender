@@ -689,10 +689,10 @@ aprender-orchestrate,aprender-orchestrate pacha stats,6,UNKNOWN,claude-code,no,1
 aprender-orchestrate,aprender-orchestrate pacha unpin,6,UNKNOWN,claude-code,no,13,orchestrate-pacha-secrets,crates/aprender-orchestrate/src/pacha/commands.rs:118,high
 aprender-orchestrate,aprender-orchestrate pacha verify,6,UNKNOWN,claude-code,no,13,orchestrate-pacha-secrets,crates/aprender-orchestrate/src/pacha/commands.rs:190,high
 aprender-orchestrate,aprender-orchestrate parf,6,UNKNOWN,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/main_cli.rs:184,high
-aprender-orchestrate,aprender-orchestrate playbook lock,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:42,high
-aprender-orchestrate,aprender-orchestrate playbook run,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:12,high
-aprender-orchestrate,aprender-orchestrate playbook status,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:36,high
-aprender-orchestrate,aprender-orchestrate playbook validate,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:30,high
+aprender-orchestrate,aprender-orchestrate playbook lock,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:101,high
+aprender-orchestrate,aprender-orchestrate playbook run,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:55,high
+aprender-orchestrate,aprender-orchestrate playbook status,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:100,high
+aprender-orchestrate,aprender-orchestrate playbook validate,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:82,high
 aprender-orchestrate,aprender-orchestrate report,6,UNKNOWN,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/main_cli.rs:163,high
 aprender-orchestrate,aprender-orchestrate reset,6,UNKNOWN,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/main_cli.rs:177,high
 aprender-orchestrate,aprender-orchestrate serve,6,UNKNOWN,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/main_cli.rs:275,high
