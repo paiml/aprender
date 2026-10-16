@@ -330,6 +330,17 @@ fn falsify_rxg_008_never_skips_a_rung_and_demotes_one() {
         decide(&devbox_h4_fail.to_string(), PREREG, Mode::Shadow).mode,
         Mode::Shadow
     );
+    // ...and a devbox vote lane whose report alone is shadow is still capped
+    // at tripwire, with S-4 named as the reason exactly once
+    for current in [Mode::Vote, Mode::TieBreaker] {
+        let d = decide(&devbox_h4_fail.to_string(), PREREG, current);
+        assert_eq!(d.mode, Mode::Tripwire, "{:?}", d.reasons);
+        let s4 = d.reasons.iter().filter(|r| r.starts_with("S-4:")).count();
+        assert_eq!(s4, 1, "{:?}", d.reasons);
+    }
+    let d = decide(&devbox, PREREG, Mode::Vote);
+    let s4 = d.reasons.iter().filter(|r| r.starts_with("S-4:")).count();
+    assert_eq!(s4, 1, "{:?}", d.reasons);
     // a tripwire-only report demotes a vote lane one rung, not two
     let h4_only = drop_h(drop_h(full(), "H5"), "H7").to_string();
     assert_eq!(decide(&h4_only, PREREG, Mode::Vote).mode, Mode::TieBreaker);
