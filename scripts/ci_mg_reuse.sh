@@ -149,8 +149,12 @@ resolve() {
   if [ -z "$rid" ] || ! gh api "repos/$repo/actions/runs/$rid/jobs?filter=latest&per_page=100" > "$w/jobs.json" 2> /dev/null; then
     refuse "lookup failed: the jobs of run '${rid:-none}'"; rm -rf "${w:?}"; return 0
   fi
+  # 20X sign-off r2: the PR head ran the QUICK pool, so a queue entry never skips x86-main or
+  # determinism on its green and cites nothing: x86=0 det=0 cite= pr_head= whatever decide said.
+  # mac-check keeps its own verdict. This is the ONE place the override lives (the case table below).
   decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" \
-    --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root"
+    --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root" \
+    | sed -e 's/^x86=.*/x86=0/' -e 's/^det=.*/det=0/' -e 's/^cite=.*/cite=/' -e 's/^pr_head=.*/pr_head=/'
   rm -rf "${w:?}"
 }
 
@@ -395,8 +399,10 @@ STUB
       fail=$((fail + 1)); echo "FAIL resolve-$n: want '$want' got '$got' -- $(kv reason "$out")"; fi
   }
   local QREF="refs/heads/gh-readonly-queue/main/pr-4655-${B}"
-  rrow positive          "1 1 1" ""        "$H" "$QREF"
-  rrow short-ref         "1 1 1" ""        "$H" "gh-readonly-queue/main/pr-4655-${B}"
+  rrow positive          "0 0 1" ""        "$H" "$QREF"
+  rrow short-ref         "0 0 1" ""        "$H" "gh-readonly-queue/main/pr-4655-${B}"
+  out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$QREF" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
+  if [ -z "$(kv cite "$out")" ] && [ -z "$(kv pr_head "$out")" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL resolve-no-cite: a queue entry cites no PR head (cite=$(kv cite "$out") pr_head=$(kv pr_head "$out"))"; fi
   rrow no-pr-number      "0 0 0" ""        "$H" "refs/heads/main"
   rrow gh-pulls-fails    "0 0 0" "pulls/"  "$H" "$QREF"
   rrow gh-runs-fails     "0 0 0" "head_sha=" "$H" "$QREF"
