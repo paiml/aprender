@@ -300,6 +300,8 @@ required-features = ["inference"]
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [dev-dependencies]
+# #3745 S3 — the hand-list guard reads the dogfood gate list from the root Cargo.toml
+toml = { workspace = true }
 jsonschema = "0.28"  # apr devices --json validated against contracts/schemas/apr-devices-v1.schema.json (PP-066 R-0a)
 assert_cmd = "2.0"
 predicates = "3.1"
