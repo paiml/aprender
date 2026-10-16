@@ -321,13 +321,49 @@ pub(crate) fn qwen35_q4km_type(
 
 /// Encode one tensor. 1-D tensors, the conv kernel, and any matrix whose row
 /// is not a multiple of the 256-element super-block stay F32.
+#[deny(clippy::wildcard_enum_match_arm)]
 fn encode(data: &[f32], shape: &[usize], want: GgmlType) -> (GgmlType, Vec<u8>) {
     let quantizable = shape.len() == 2 && shape[1] % 256 == 0;
     match want {
         GgmlType::Q4K if quantizable => (want, super::quantize_q4_k_matrix(data, shape)),
         GgmlType::Q5K if quantizable => (want, trueno_quant::quantize_q5_k_matrix(data, shape)),
         GgmlType::Q6K if quantizable => (want, trueno_quant::quantize_q6_k_matrix(data, shape)),
-        _ => (
+        // Named, not `_` (#3431): a new upstream ggml id must fail to compile here.
+        GgmlType::Q4K
+        | GgmlType::Q5K
+        | GgmlType::Q6K
+        | GgmlType::F32
+        | GgmlType::F16
+        | GgmlType::Q4_0
+        | GgmlType::Q4_1
+        | GgmlType::Q5_0
+        | GgmlType::Q5_1
+        | GgmlType::Q8_0
+        | GgmlType::Q8_1
+        | GgmlType::Q2K
+        | GgmlType::Q3K
+        | GgmlType::Q8K
+        | GgmlType::IQ2XXS
+        | GgmlType::IQ2XS
+        | GgmlType::IQ3XXS
+        | GgmlType::IQ1S
+        | GgmlType::IQ4NL
+        | GgmlType::IQ3S
+        | GgmlType::IQ2S
+        | GgmlType::IQ4XS
+        | GgmlType::I8
+        | GgmlType::I16
+        | GgmlType::I32
+        | GgmlType::I64
+        | GgmlType::F64
+        | GgmlType::IQ1M
+        | GgmlType::BF16
+        | GgmlType::TQ1_0
+        | GgmlType::TQ2_0
+        | GgmlType::MXFP4
+        | GgmlType::NVFP4
+        | GgmlType::Q1_0
+        | GgmlType::Q2_0 => (
             GgmlType::F32,
             data.iter().flat_map(|f| f.to_le_bytes()).collect(),
         ),

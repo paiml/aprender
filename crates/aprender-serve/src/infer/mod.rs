@@ -708,18 +708,23 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     }
 
     if config.verbose {
-        eprintln!(
-            "[DEBUG] add_bos={}, encoded {} tokens: {:?}",
-            add_bos,
-            tokens.len(),
-            &tokens[..tokens.len().min(30)]
-        );
+        eprintln!("{}", encoded_tokens_debug_line(add_bos, &tokens));
     }
 
     Ok(PreparedTokens {
         input_count: tokens.len(),
         tokens,
     })
+}
+
+/// #5056: the `-v` line naming every prompt id `apr run` encoded. It printed
+/// only the first 30, so a parity harness that feeds a reference engine the
+/// ids it reads here gave that engine a cut prompt on any longer prompt.
+fn encoded_tokens_debug_line(add_bos: bool, tokens: &[u32]) -> String {
+    format!(
+        "[DEBUG] add_bos={add_bos}, encoded {} tokens: {tokens:?}",
+        tokens.len()
+    )
 }
 
 /// Prepare tokens for SafeTensors format (chat template from config.json)
@@ -989,6 +994,10 @@ mod tests_sampling_default_3754;
 #[cfg(test)]
 #[path = "tests_dense_session_4268.rs"]
 mod tests_dense_session_4268;
+// #5056: `-v` prints every encoded prompt id.
+#[cfg(test)]
+#[path = "tests_encoded_ids_5056.rs"]
+mod tests_encoded_ids_5056;
 
 #[cfg(test)]
 mod sibling_tokenizer_config_3990 {
