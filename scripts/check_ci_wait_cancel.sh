@@ -91,12 +91,44 @@ sig_probe() { # <fat_driver.py> -> ok/FAIL lines, returns 1 on a defect
     return "$rc"
 }
 
+# r4 item 3: the gate job must itself run on a cancel/skip (`if: always()`) and need both fat jobs,
+# otherwise a cancelled x86-main/determinism would skip the gate and leave the check unreported.
+gate_wiring() { # <file>
+    local blk rc=0 n
+    blk=$(awk '$0 == "  gate:" {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1")
+    if grep -qE '^    if: always\(\)[[:space:]]*$' <<< "$blk"; then echo "ok   gate job runs under if: always()"; else echo "FAIL gate job has no 'if: always()'"; rc=1; fi
+    for n in x86-main determinism; do
+        if grep -E '^    needs: \[' <<< "$blk" | grep -qE "[\[ ,]${n}[],]"; then echo "ok   gate job needs $n"; else echo "FAIL gate job does not need $n"; rc=1; fi
+    done
+    return "$rc"
+}
+
+# r4 item 4: behavioural proof, not a grep. A real `fat_driver.py wait` is polling a live driver; a
+# SIGTERM to it (what a cancelled run sends) must make it exit within 20 s AND take the driver down.
+cancel_run_probe() { # <fat_driver.py> -> ok/FAIL, returns 1 on a defect
+    local d=$1 b wp dp i alive=1 rc=0
+    b=$(mktemp -d "${TMPDIR:-/tmp}/fat-cancel.XXXXXX")
+    printf '{}' > "$b/results.json"; : > "$b/driver.out"
+    sleep 300 & dp=$!
+    printf '%s' "$dp" > "$b/driver.pid"
+    python3 "$d" wait --base "$b" --results "$b/results.json" > /dev/null 2>&1 & wp=$!
+    sleep 1
+    kill -TERM "$wp" 2> /dev/null || true
+    for i in $(seq 1 20); do kill -0 "$wp" 2> /dev/null || { alive=0; break; }; sleep 1; done
+    if [ "$alive" = 0 ]; then echo "ok   a SIGTERMed running wait exited"; else echo "FAIL a SIGTERMed running wait is still polling after 20 s"; rc=1; kill -KILL "$wp" 2> /dev/null || true; fi
+    wait "$wp" 2> /dev/null || true
+    if kill -0 "$dp" 2> /dev/null; then echo "FAIL the driver survived the cancelled wait (no reap)"; rc=1; kill -KILL "$dp" 2> /dev/null || true; else echo "ok   the driver was taken down by the cancelled wait"; fi
+    wait "$dp" 2> /dev/null || true
+    rm -f "${b:?}/results.json" "${b:?}/driver.out" "${b:?}/driver.pid"; rmdir "${b:?}"
+    return "$rc"
+}
+
 check() { # <file>
     local f=$1 rc=0 spec pat want label want_n k row ln cond flg
     for spec in 'fat_driver.py wait|!cancelled()|wait|WAITS' 'fat_teardown.sh|always()|teardown|TEARDOWNS'; do
         IFS='|' read -r pat want label want_n <<< "$spec"
-        case "$want_n" in WAITS) want_n=${CI_WAIT_STEPS:-2} ;; *) want_n=${CI_TEARDOWN_STEPS:-3} ;; esac
-        case "$want_n" in ''|*[!0-9]*|0) echo "ENV: the expected $label step count '$want_n' is not a positive integer (CI_WAIT_STEPS/CI_TEARDOWN_STEPS): refusing to run the check without one" >&2; return 2 ;; esac
+        case "$want_n" in WAITS) want_n=${CI_WAIT_STEPS-2} ;; *) want_n=${CI_TEARDOWN_STEPS-3} ;; esac
+        case "$want_n" in ''|*[!0-9]*|0|???*) echo "ENV: the expected $label step count '$want_n' is not a positive integer (CI_WAIT_STEPS/CI_TEARDOWN_STEPS): refusing to run the check without one" >&2; return 2 ;; esac
         k=0
         while IFS= read -r row; do
             [ -n "$row" ] || continue
@@ -164,7 +196,7 @@ self_test() {
           printf '      - name: T1\n        if: %s\n        run: %s\n%s' "$A" "$T" "$4"
           printf '      - name: T2\n        if: %s\n        run: %s\n' "$A" "$T"
           [ "$5" = NONE-STEP ] || printf '      - name: T3\n        if: %s\n        run: %s\n' "$5" "$T"; } > "$td/f.yml"
-        r=0; out=$(env -u CI_TEARDOWN_STEPS -u CI_WAIT_STEPS GATE_PROBE=0 bash "$0" "$td/f.yml" 2>&1) || r=$?
+        r=0; out=$( (unset CI_TEARDOWN_STEPS CI_WAIT_STEPS; check "$td/f.yml") 2>&1) || r=$?
         if [ "$r" = "$1" ]; then echo "ok   self-test: $2"; else echo "FAIL self-test: $2 (rc $r, wanted $1): $out"; rc=1; fi
     }
     fx 0 "the real shape: 2 waits + 3 teardowns under the DEFAULT counts passes" "" "" "$A"
@@ -187,14 +219,14 @@ self_test() {
       printf '      - name: W2\n        if: %s\n        run: %s\n' "$C" "$W"
       printf '      - name: T1\n        if: %s\n        run: %s\n      - name: T2\n        if: %s\n        run: %s\n' "$A" "$T" "$A" "$T"
       printf '      - name: T3\n        if: %s\n        run: %s\n' "$A" "$T"; } > "$td/f.yml"
-    r=0; out=$(env -u CI_TEARDOWN_STEPS -u CI_WAIT_STEPS GATE_PROBE=0 bash "$0" "$td/f.yml" 2>&1) || r=$?
+    r=0; out=$( (unset CI_TEARDOWN_STEPS CI_WAIT_STEPS; check "$td/f.yml") 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT: a step record ends at the job boundary (next job's if: is not its own)"; else echo "FAIL self-test: job boundary (rc $r, wanted 1): $out"; rc=1; fi
     # r3 item 1: an invalid expected count fails closed (exit 2), never silently skips the count check
-    for v in abc 0 "-1" "2x" " 2"; do
-        r=0; out=$(GATE_PROBE=0 CI_WAIT_STEPS=$v bash "$0" "$td/f.yml" 2>&1) || r=$?
+    for v in abc 0 "-1" "2x" " 2" "" 100 99999999999999999999; do
+        r=0; out=$( (unset CI_TEARDOWN_STEPS; export CI_WAIT_STEPS="$v"; check "$td/f.yml") 2>&1) || r=$?
         if [ "$r" = 2 ] && grep -q "not a positive integer" <<< "$out"; then echo "ok   self-test: CI_WAIT_STEPS='$v' is refused (exit 2)"; else echo "FAIL self-test: CI_WAIT_STEPS='$v' (rc $r, wanted 2): $out"; rc=1; fi
     done
-    r=0; out=$(GATE_PROBE=0 CI_TEARDOWN_STEPS=many bash "$0" "$td/f.yml" 2>&1) || r=$?
+    r=0; out=$( (unset CI_WAIT_STEPS; export CI_TEARDOWN_STEPS=many; check "$td/f.yml") 2>&1) || r=$?
     if [ "$r" = 2 ] && grep -q "not a positive integer" <<< "$out"; then echo "ok   self-test: CI_TEARDOWN_STEPS='many' is refused (exit 2)"; else echo "FAIL self-test: CI_TEARDOWN_STEPS=many (rc $r, wanted 2): $out"; rc=1; fi
     # r3 item 2: the gate itself, from the real ci.yml, is RED on a cancelled fat need; a mutant gate that skips the check is caught
     out=$(gate_probe "$ROOT/.github/workflows/ci.yml" 2>&1) || r=$?
@@ -208,11 +240,25 @@ self_test() {
     r=0; out=$(sig_probe "$td/mut-fd.py" 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT driver without a SIGTERM handler is caught"; else echo "FAIL self-test: mutant driver not caught (rc $r)"; rc=1; fi
     rm -f "${td:?}/mut-fd.py"
+    # r4: gate wiring and the behavioural cancel proof each have a mutant that must go RED
+    out=$(gate_wiring "$ROOT/.github/workflows/ci.yml" 2>&1) || r=$?; echo "$out"; case "$out" in *FAIL*) rc=1 ;; esac
+    sed 's/^    if: always()[[:space:]]*$/    if: success()/' "$ROOT/.github/workflows/ci.yml" > "$td/mut-gw.yml"
+    r=0; out=$(gate_wiring "$td/mut-gw.yml" 2>&1) || r=$?
+    if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT gate without if: always() is caught"; else echo "FAIL self-test: mutant gate wiring not caught (rc $r)"; rc=1; fi
+    sed 's/^    needs: \[x86-main, workspace-test, determinism,/    needs: [workspace-test,/' "$ROOT/.github/workflows/ci.yml" > "$td/mut-gw.yml"
+    r=0; out=$(gate_wiring "$td/mut-gw.yml" 2>&1) || r=$?
+    if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT gate that no longer needs the fat jobs is caught"; else echo "FAIL self-test: mutant gate needs not caught (rc $r)"; rc=1; fi
+    rm -f "${td:?}/mut-gw.yml"
+    out=$(cancel_run_probe "$ROOT/scripts/ci/fat_driver.py" 2>&1) || r=$?; echo "$out"; case "$out" in *FAIL*) rc=1 ;; esac
+    sed '/signal.signal(signal.SIGTERM, lambda/d; /signal.signal(signal.SIGINT, lambda/d' "$ROOT/scripts/ci/fat_driver.py" > "$td/mut-wait.py"
+    r=0; out=$(cancel_run_probe "$td/mut-wait.py" 2>&1) || r=$?
+    if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT wait that does not forward the cancel is caught"; else echo "FAIL self-test: mutant wait not caught (rc $r): $out"; rc=1; fi
+    rm -f "${td:?}/mut-wait.py"
     rm -f "${td:?}/f.yml"; rmdir "${td:?}"
     return "$rc"
 }
 
 case "${1:-}" in
     --self-test) self_test ;;
-    *) wf=${1:-$ROOT/.github/workflows/ci.yml}; rc=0; check "$wf" || rc=$?; [ "${GATE_PROBE:-1}" = 0 ] || { gate_probe "$wf" || { r=$?; [ "$rc" -ge "$r" ] || rc=$r; }; sig_probe "$ROOT/scripts/ci/fat_driver.py" || { [ "$rc" -ge 1 ] || rc=1; }; }; exit "$rc" ;;
+    *) wf=${1:-$ROOT/.github/workflows/ci.yml}; rc=0; check "$wf" || rc=$?; { gate_probe "$wf" || { r=$?; [ "$rc" -ge "$r" ] || rc=$r; }; sig_probe "$ROOT/scripts/ci/fat_driver.py" || { [ "$rc" -ge 1 ] || rc=1; }; gate_wiring "$wf" || { [ "$rc" -ge 1 ] || rc=1; }; cancel_run_probe "$ROOT/scripts/ci/fat_driver.py" || { [ "$rc" -ge 1 ] || rc=1; }; }; exit "$rc" ;;
 esac
