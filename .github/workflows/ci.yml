@@ -95,7 +95,7 @@ jobs:
   # this workflow, so its `mac` key is no longer an output here; ci_mg_reuse.sh
   # still computes it (its case table and check_ci_push_reuse.sh read it).
   mg-reuse:
-    # S1 (20X r6): a queue entry never reuses (x86=0 det=0 are constant, see the last step), so
+    # S1 (20X r6): a queue entry never reuses (x86=0 det=0 are constant: the queue owes the FULL tier), so
     # reading the key on merge_group only made x86-main wait for an X64 runner before it asked for
     # its own. It runs on push only; on merge_group it is skipped at t=0, which the verdict blocks
     # below read as `skipped:::skipped` = "x86-main + determinism ran".
