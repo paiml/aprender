@@ -29,6 +29,9 @@
 # and fails closed if a line here names a step nothing runs), and it is also
 # what keeps scripts/check_guards_are_wired.sh finding these guards wired --
 # that guard greps every file under .github/workflows/, not ci.yml alone.
+#
+# The last two lines are the hand-list guard tree scan (#3745 S3) and the ladder-gap requirement (#5231), LAB checks. Their seconds are a
+# warm local run, 2026-10-12, not a CI run; the build is shared with the steps above.
 586	Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV
 405	Perf gate can still discriminate (APR-PERF-GATE-001, case table)
 256	model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
@@ -37,6 +40,8 @@
 135	No test may assert about the fd 0 it inherited
 130	Publish safety (binary/oversize files in published packages)
 94	aprender-core builds for wasm32
+1	Release surfaces may not hand-list apr verbs or flags (#3745 S3)
+1	The model ladder owes cells to every model-cell command (#5231)
 # #5182 (GATE/LAB): two ratchets that may not sit on a PR path. Seconds are a
 # local wall-clock sample (2026-10-12, not a CI run); the first nightly replaces them.
 19	Per-function complexity may only fall (shrink-only)
