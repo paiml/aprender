@@ -21,10 +21,10 @@ fn merge_key_is_an_ordinary_key() {
 }
 
 #[test]
-fn non_finite_floats_load_and_become_null() {
+fn non_finite_floats_load_as_plain_strings() {
     let v: Value = from_str("p: .inf\nq: .nan\nr: 1.5\n").expect("loads, not a budget refusal");
-    assert_eq!(v["p"], Value::Null);
-    assert_eq!(v["q"], Value::Null);
+    assert_eq!(v["p"], json!(".inf"), "kept as text, not a float");
+    assert_eq!(v["q"], json!(".nan"), "kept as text, not a float");
     assert_eq!(v["r"], json!(1.5));
 }
 
@@ -35,5 +35,5 @@ fn writer_layout_for_scalars_and_nesting() {
     let back: Value = from_str(&text).expect("reads back what it wrote");
     assert_eq!(back, v, "round trip through the writer is lossless: {text}");
     assert!(text.contains("a: x\n"), "plain scalars stay unquoted: {text}");
-    assert!(text.contains("n: 3\n"), "integers stay bare: {text}");
+    assert!(text.contains("\"n\": 3\n"), "integers stay bare, the key n is quoted: {text}");
 }
