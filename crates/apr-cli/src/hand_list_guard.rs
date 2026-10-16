@@ -379,7 +379,6 @@ fn yaml_lists(text: &str) -> Result<Vec<(String, Vec<String>)>, String> {
             }
             serde_json::Value::Object(m) => {
                 for (key, x) in m {
-                    let key = key.clone();
                     go(
                         x,
                         &if path.is_empty() {

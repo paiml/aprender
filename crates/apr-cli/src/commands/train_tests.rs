@@ -1070,7 +1070,7 @@ mod tests {
     }
 
     #[test]
-    fn written_config_keeps_the_value_key_order() {
+    fn written_config_follows_the_value_map_order() {
         // A config is written in `serde_json::Map` order: sorted, or insertion order when some
         // crate in the build turns on `preserve_order`. Pin that the writer follows the map.
         let root: serde_json::Value = yaml_from_str("zeta: 1\nalpha: 2\n").expect("parses");
