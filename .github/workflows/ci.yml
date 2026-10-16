@@ -144,6 +144,10 @@ jobs:
       - uses: actions/checkout@v7
       - name: The reuse key's case table (hermetic)
         run: bash scripts/ci_mg_reuse.sh --self-test
+      - name: The fat wait is cancel-aware and the teardown still runs on cancel
+        run: |
+          bash scripts/check_ci_wait_cancel.sh
+          bash scripts/check_ci_wait_cancel.sh --self-test
 
   x86-main:
     needs: [mg-reuse]
@@ -251,7 +255,9 @@ jobs:
           if-no-files-found: error
       - name: Sections (wait for every one to finish)
         id: wait
-        if: always()
+        # A cancel must stop this poll (orphan queue runs held runners, 2026-10-16);
+        # the teardown below keeps always() and still reaps the containers.
+        if: ${{ !cancelled() }}
         run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
       # #4948: a cancelled run never reaches a section's own container removal,
       # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
