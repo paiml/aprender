@@ -94,11 +94,12 @@ sig_probe() { # <fat_driver.py> -> ok/FAIL lines, returns 1 on a defect
 # r4 item 3: the gate job must itself run on a cancel/skip (`if: always()`) and need both fat jobs,
 # otherwise a cancelled x86-main/determinism would skip the gate and leave the check unreported.
 gate_wiring() { # <file>
-    local blk rc=0 n
+    local blk needs rc=0 n
     blk=$(awk '$0 == "  gate:" {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1")
     if grep -qE '^    if: always\(\)[[:space:]]*$' <<< "$blk"; then echo "ok   gate job runs under if: always()"; else echo "FAIL gate job has no 'if: always()'"; rc=1; fi
+    needs=$(grep -E '^    needs: \[' <<< "$blk" || true)
     for n in x86-main determinism; do
-        if grep -E '^    needs: \[' <<< "$blk" | grep -qE "[\[ ,]${n}[],]"; then echo "ok   gate job needs $n"; else echo "FAIL gate job does not need $n"; rc=1; fi
+        if grep -qE "[\[ ,]${n}[],]" <<< "$needs"; then echo "ok   gate job needs $n"; else echo "FAIL gate job does not need $n"; rc=1; fi
     done
     return "$rc"
 }
