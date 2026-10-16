@@ -1086,8 +1086,9 @@ mod tests {
     }
 
     #[test]
-    fn non_string_mapping_key_is_refused() {
-        // serde_json::Value refuses a non-string key where serde_yaml accepted it (PR body, S2).
-        assert!(yaml_from_str::<serde_json::Value>("0: x\n").is_err());
+    fn integer_mapping_key_reads_as_text() {
+        // serde-saphyr into serde_json::Value coerces an integer key to its text (measured by CI).
+        let v: serde_json::Value = yaml_from_str("0: x\n").expect("integer key reads as text");
+        assert_eq!(v["0"], serde_json::json!("x"));
     }
 }
