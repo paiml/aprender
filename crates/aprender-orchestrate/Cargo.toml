@@ -132,7 +132,7 @@ pacha = { workspace = true, optional = true }
 realizar = { workspace = true, optional = true }
 
 # ML algorithms and training (native-only)
-aprender = { path = "../aprender-core", version = "0.71.2", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.71.3", package = "aprender-core", optional = true }
 entrenar = { workspace = true, optional = true }
 alimentar = { workspace = true, optional = true }
 
@@ -155,7 +155,7 @@ simular = { workspace = true, optional = true }
 
 # Transpilers (native-only)
 # depyler = { version = "3.20", optional = true }  # blocked: serde version conflict (1.0.200-1.0.219)
-bashrs = { version = "6.65", optional = true }
+# bashrs: dropped (#5205). Nothing here calls into it; batuta runs the bashrs binary found on PATH.
 
 # Testing and quality (native-only).
 # NOTE: the `probar = { workspace = true, optional = true }` alias that used to
@@ -274,7 +274,9 @@ simulation = ["simular", "native"]
 
 # Transpilers (native-only)
 # depyler blocked until serde versions aligned
-transpilers = ["bashrs", "native"]
+# #5205: the bashrs crate was never called (tools are discovered on PATH), and it pulled
+# unsafe-libyaml (RUSTSEC-2024-0449) into the lock. The feature name stays for its users.
+transpilers = ["native"]
 
 # Testing and quality (see the dependency note: `probar` -> `jugar-probar`,
 # the same in-tree package under its other alias)

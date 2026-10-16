@@ -40,8 +40,9 @@ fn try_safetensors_cuda_backend(
     let input_ids = tokenizer.encode(&prompt);
     let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
 
-    // Qwen2 EOS: 151645 (<|endoftext|>)
-    let eos_id = 151645u32;
+    // Qwen2 EOS: 151645 (<|im_end|>). aprender#4345: plus every EOG marker the
+    // vocabulary has, `<|endoftext|>` among them, as llama-server stops on.
+    let stop_ids = crate::api::realize_handlers::completion_stop_tokens(&tokenizer, Some(151645));
 
     let mut model = match model_lock.lock() {
         Ok(m) => m,
@@ -56,7 +57,7 @@ fn try_safetensors_cuda_backend(
         }
     };
 
-    let output_ids = match model.generate(&input_ids, max_tokens, eos_id) {
+    let output_ids = match model.generate_until(&input_ids, max_tokens, &stop_ids) {
         Ok(ids) => ids,
         Err(e) => {
             let msg = format!("SafeTensors CUDA generation failed: {e}");
@@ -1065,7 +1066,8 @@ async fn try_apr_q4k_chat_backend(
     let eos_ids = if request.ignore_eos.unwrap_or(false) {
         Vec::new()
     } else {
-        state.model_eos_ids()
+        // aprender#4345: and every EOG marker the vocabulary has.
+        crate::api::realize_handlers::eos_ids_with_eog(&tokenizer, state.model_eos_ids())
     };
 
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
@@ -1146,6 +1148,41 @@ async fn try_apr_q4k_chat_backend(
     ))
 }
 
+/// GH-152: Verbose request logging
+fn log_chat_request(state: &AppState, request: &ChatCompletionRequest) {
+    if !state.is_verbose() {
+        return;
+    }
+    let msg_count = request.messages.len();
+    let last_msg = request
+        .messages
+        .last()
+        .map(|m| m.content.chars().take(50).collect::<String>())
+        .unwrap_or_default();
+    eprintln!(
+        "[VERBOSE] POST /v1/chat/completions model={} messages={} last={:?}",
+        request.model, msg_count, last_msg
+    );
+}
+
+/// What is answered before any backend is tried. #3723: two spellings of the thinking toggle
+/// that disagree are refused, never picked between. #4971: so is `top_logprobs`
+/// without `logprobs: true`. #3568 PR 4: a `response_format` is
+/// answered through the one engine, or refused by name.
+async fn answered_before_the_chain(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    trace_level: Option<&str>,
+    start: Instant,
+    cancel: &CancelToken,
+) -> Option<Response> {
+    if let Some(reason) = request.field_conflict() {
+        return Some(fail_response(state, StatusCode::BAD_REQUEST, reason));
+    }
+    try_constrained_chat(state, request, request_id, trace_level, start, cancel).await
+}
+
 /// OpenAI-compatible /v1/chat/completions endpoint (supports streaming)
 pub async fn openai_chat_completions_handler(
     State(state): State<AppState>,
@@ -1154,19 +1191,7 @@ pub async fn openai_chat_completions_handler(
     Json(request): Json<ChatCompletionRequest>,
 ) -> Response {
     let start = Instant::now();
-    // GH-152: Verbose request logging
-    if state.is_verbose() {
-        let msg_count = request.messages.len();
-        let last_msg = request
-            .messages
-            .last()
-            .map(|m| m.content.chars().take(50).collect::<String>())
-            .unwrap_or_default();
-        eprintln!(
-            "[VERBOSE] POST /v1/chat/completions model={} messages={} last={:?}",
-            request.model, msg_count, last_msg
-        );
-    }
+    log_chat_request(&state, &request);
 
     let trace_level = headers
         .get("X-Trace-Level")
@@ -1181,10 +1206,17 @@ pub async fn openai_chat_completions_handler(
             .as_millis()
     );
 
-    // #3723: two spellings of the thinking toggle that disagree are refused, never picked between.
-    // #4971: so is `top_logprobs` without `logprobs: true`.
-    if let Some(reason) = request.field_conflict() {
-        return fail_response(&state, StatusCode::BAD_REQUEST, reason);
+    if let Some(r) = answered_before_the_chain(
+        &state,
+        &request,
+        &request_id,
+        trace_level.as_deref(),
+        start,
+        &cancel,
+    )
+    .await
+    {
+        return r;
     }
 
     // #3571: a Qwen3.5 hybrid is answered from its resident session or not at all.
@@ -1379,7 +1411,11 @@ fn moe_gen_config(
             .get_token_id("<|im_end|>")
             .or_else(|| tokenizer.get_token_id("<|endoftext|>"))
     });
-    let stop_tokens: Vec<u32> = stop_tokens_unless_ignore_eos(request, eos_id);
+    // aprender#4345: and every EOG marker the vocabulary has, not the first alone.
+    let stop_tokens: Vec<u32> = stop_tokens_unless_ignore_eos(
+        request,
+        crate::api::realize_handlers::completion_stop_tokens(tokenizer, eos_id),
+    );
     QuantizedGenerateConfig {
         max_tokens,
         temperature: request.temperature.unwrap_or(defaults.temperature),

@@ -182,6 +182,11 @@ pub enum RealizarError {
     /// with the arithmetic, rather than leaving the OOM killer to end the process.
     #[error("host RAM refused: {0}")]
     HostRamRefused(String),
+    /// A constrained generation refused (#3793), with the constraint's own error kept TYPED,
+    /// so a caller tells a dead end from a truncation from an unsupported path without
+    /// reading message text.
+    #[error("{0}")]
+    Constraint(crate::constrain::ConstraintError),
 }
 
 #[cfg(test)]

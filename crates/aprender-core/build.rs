@@ -150,12 +150,9 @@ fn enforce_all_implemented(unallowed_gaps: &[String]) {
     );
 }
 
-/// Read provable-contracts binding.yaml and set CONTRACT_* env vars.
-///
-/// Policy: AllImplemented (Step 6.7). Any `not_implemented` binding not in
-/// `ALLOWED_GAPS` fails the build. This ensures all algorithm contracts
-/// have working implementations before code compiles.
-fn emit_provable_contract_bindings() {
+/// Read and parse binding.yaml. `None` (after a warning and
+/// `CONTRACT_BINDING_SOURCE=none`) when it is absent, unreadable or not YAML.
+fn load_bindings() -> Option<BindingFile> {
     let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../contracts/aprender/binding.yaml");
 
@@ -170,7 +167,7 @@ fn emit_provable_contract_bindings() {
             binding_path.display()
         );
         println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
-        return;
+        return None;
     }
 
     let yaml_content = match std::fs::read_to_string(&binding_path) {
@@ -181,20 +178,34 @@ fn emit_provable_contract_bindings() {
                  CONTRACT_* env vars will not be set"
             );
             println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
-            return;
+            return None;
         }
     };
 
-    let bindings: BindingFile = match serde_yaml_ng::from_str(&yaml_content) {
-        Ok(b) => b,
+    match serde_saphyr::from_str_with_options(
+        &yaml_content,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    ) {
+        Ok(b) => Some(b),
         Err(e) => {
             println!(
                 "cargo:warning=Failed to parse binding.yaml: {e}; \
                  CONTRACT_* env vars will not be set"
             );
             println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
-            return;
+            None
         }
+    }
+}
+
+/// Read provable-contracts binding.yaml and set CONTRACT_* env vars.
+///
+/// Policy: AllImplemented (Step 6.7). Any `not_implemented` binding not in
+/// `ALLOWED_GAPS` fails the build. This ensures all algorithm contracts
+/// have working implementations before code compiles.
+fn emit_provable_contract_bindings() {
+    let Some(bindings) = load_bindings() else {
+        return;
     };
 
     let (seen, seen_raw) = dedup_bindings(&bindings.bindings);
@@ -245,71 +256,7 @@ fn emit_provable_contract_bindings() {
          {partial} partial, {not_implemented} allowed gaps"
     );
 
-    // ── Layer 2: Verify bound functions exist in source ──
-    {
-        let mut expected: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for b in &bindings.bindings {
-            if b.status == "implemented" {
-                if let Some(ref func) = b.function {
-                    let short = func.rsplit("::").next().unwrap_or(func).to_lowercase();
-                    expected.insert(short);
-                }
-            }
-        }
-        if !expected.is_empty() {
-            let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
-            fn scan_rs(dir: &std::path::Path, found: &mut std::collections::HashSet<String>) {
-                let Ok(entries) = std::fs::read_dir(dir) else {
-                    return;
-                };
-                for e in entries.flatten() {
-                    let p = e.path();
-                    if p.is_dir() {
-                        let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                        if n != "target" && n != ".git" {
-                            scan_rs(&p, found);
-                        }
-                    } else if p.extension().and_then(|e| e.to_str()) == Some("rs") {
-                        if let Ok(c) = std::fs::read_to_string(&p) {
-                            for line in c.lines() {
-                                let t = line.trim();
-                                if t.starts_with("pub fn ")
-                                    || t.starts_with("pub async fn ")
-                                    || t.starts_with("pub(crate) fn ")
-                                {
-                                    let part = t
-                                        .trim_start_matches("pub async fn ")
-                                        .trim_start_matches("pub(crate) fn ")
-                                        .trim_start_matches("pub fn ");
-                                    let name = part
-                                        .split('(')
-                                        .next()
-                                        .unwrap_or("")
-                                        .split('<')
-                                        .next()
-                                        .unwrap_or("")
-                                        .trim()
-                                        .to_lowercase();
-                                    if !name.is_empty() {
-                                        found.insert(name);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            scan_rs(std::path::Path::new("src"), &mut found);
-            scan_rs(std::path::Path::new("crates"), &mut found);
-            let missing: Vec<_> = expected
-                .iter()
-                .filter(|n| !found.contains(n.as_str()))
-                .collect();
-            if !missing.is_empty() {
-                println!("cargo:warning=[contract] L2: {} bound function(s) not found in source (soft warning)", missing.len());
-            }
-        }
-    }
+    warn_unbound_functions(&bindings);
 
     // Set metadata env vars for the proc macro
     println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=binding.yaml");
@@ -321,6 +268,75 @@ fn emit_provable_contract_bindings() {
     println!("cargo:rustc-env=CONTRACT_IMPLEMENTED={implemented}");
     println!("cargo:rustc-env=CONTRACT_PARTIAL={partial}");
     println!("cargo:rustc-env=CONTRACT_GAPS={not_implemented}");
+}
+
+/// The lowercased name a `pub fn` / `pub async fn` / `pub(crate) fn` line declares.
+fn pub_fn_name(line: &str) -> Option<String> {
+    let t = line.trim();
+    if !(t.starts_with("pub fn ")
+        || t.starts_with("pub async fn ")
+        || t.starts_with("pub(crate) fn "))
+    {
+        return None;
+    }
+    let part = t
+        .trim_start_matches("pub async fn ")
+        .trim_start_matches("pub(crate) fn ")
+        .trim_start_matches("pub fn ");
+    let name = part
+        .split('(')
+        .next()
+        .unwrap_or("")
+        .split('<')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Every public fn name under `dir` (recursive, skipping `target` and `.git`).
+fn scan_rs(dir: &std::path::Path, found: &mut std::collections::HashSet<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if n != "target" && n != ".git" {
+                scan_rs(&p, found);
+            }
+        } else if p.extension().and_then(|e| e.to_str()) == Some("rs") {
+            if let Ok(c) = std::fs::read_to_string(&p) {
+                found.extend(c.lines().filter_map(pub_fn_name));
+            }
+        }
+    }
+}
+
+/// Layer 2: warn (soft) when an `implemented` binding names a function no source file defines.
+fn warn_unbound_functions(bindings: &BindingFile) {
+    let expected: std::collections::HashSet<String> = bindings
+        .bindings
+        .iter()
+        .filter(|b| b.status == "implemented")
+        .filter_map(|b| b.function.as_deref())
+        .map(|func| func.rsplit("::").next().unwrap_or(func).to_lowercase())
+        .collect();
+    if expected.is_empty() {
+        return;
+    }
+    let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
+    scan_rs(std::path::Path::new("src"), &mut found);
+    scan_rs(std::path::Path::new("crates"), &mut found);
+    let missing = expected
+        .iter()
+        .filter(|n| !found.contains(n.as_str()))
+        .count();
+    if missing > 0 {
+        println!("cargo:warning=[contract] L2: {missing} bound function(s) not found in source (soft warning)");
+    }
 }
 
 fn main() {

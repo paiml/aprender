@@ -60,3 +60,10 @@ falsification:
     description: "Non-256-aligned in_dim: the AVX-512 GEMV reads only [0,in_dim) (no heap over-read) and matches the scalar reference exactly (no skipped/garbage high-nibble tail). Discharges the previously-unwired C-AVX512-Q4K-003."
     test: "falsify_avx512_q4k_003_non_aligned_in_dim_no_oob — activation buffer carries a non-zero sentinel tail past in_dim inside the allocation; pre-fix over-read injects the sentinel (RED, e.g. in_dim=32 → SIMD 7.4e9 vs scalar 532), masked-load fix matches scalar (GREEN). Covers in_dim ∈ {32,48,96,160,224} (mod-256 mid-chunk cases) + 256 control."
     evidence: "cargo test -p aprender-compute --lib falsify_avx512_q4k_003"
+
+falsification_tests:
+  - id: FALSIFY-AVX512_Q4K-001
+    description: "C-AVX512-Q4K-003 (and -001 parity): for non-256-aligned in_dim with a non-zero sentinel past in_dim, the dispatched Q4K matmul equals the scalar reference"
+    test: "cargo test -p aprender-compute --lib falsify_avx512_q4k_003_non_aligned_in_dim_no_oob"
+    prediction: "|simd - scalar| < 1e-2 for in_dim in {32,48,96,160,224,256}"
+    if_fails: "the AVX-512 kernel over-reads past in_dim (sentinel leaks in) or drops the high-nibble tail"

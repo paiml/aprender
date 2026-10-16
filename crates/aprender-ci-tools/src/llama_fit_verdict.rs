@@ -279,7 +279,7 @@ pub struct Record {
 }
 
 /// `json.dumps(str)` with the default `ensure_ascii=True`.
-fn json_str(s: &str) -> String {
+pub(crate) fn json_str(s: &str) -> String {
     let mut out = String::from("\"");
     for c in s.chars() {
         match c {

@@ -135,15 +135,15 @@ fn contract_copy_matches_workspace_root() {
     );
 }
 
-/// Parse the YAML contract and return the `tools` list as a `serde_yaml::Value`.
-fn load_contract_tools() -> Vec<serde_yaml::Value> {
+/// Parse the YAML contract and return the `tools` list as a `serde_json::Value`.
+fn load_contract_tools() -> Vec<serde_json::Value> {
     let path = contract_path();
     let yaml =
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let root: serde_yaml::Value = serde_yaml::from_str(&yaml)
+    let root: serde_json::Value = serde_saphyr::from_str_with_options(&yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
         .unwrap_or_else(|e| panic!("parse {} as YAML: {e}", path.display()));
     root.get("tools")
-        .and_then(|v| v.as_sequence())
+        .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_else(|| panic!("{} has no `tools:` sequence", path.display()))
 }
@@ -156,11 +156,11 @@ fn load_contract_tools() -> Vec<serde_yaml::Value> {
 /// ```
 /// Empty `properties` and empty `required` are omitted (InputSchema marks
 /// both with `skip_serializing_if`).
-fn expected_schema_from_yaml(tool: &serde_yaml::Value) -> Value {
+fn expected_schema_from_yaml(tool: &serde_json::Value) -> Value {
     let mut schema = Map::new();
     schema.insert("type".to_string(), Value::String("object".to_string()));
 
-    if let Some(args) = tool.get("args").and_then(|v| v.as_sequence()) {
+    if let Some(args) = tool.get("args").and_then(|v| v.as_array()) {
         if !args.is_empty() {
             let mut props = Map::new();
             for arg in args {
@@ -185,7 +185,7 @@ fn expected_schema_from_yaml(tool: &serde_yaml::Value) -> Value {
         }
     }
 
-    if let Some(req) = tool.get("required").and_then(|v| v.as_sequence()) {
+    if let Some(req) = tool.get("required").and_then(|v| v.as_array()) {
         if !req.is_empty() {
             let list: Vec<Value> = req
                 .iter()

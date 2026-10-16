@@ -1,16 +1,16 @@
 # probador
 
-[![Crates.io](https://img.shields.io/crates/v/probador.svg)](https://crates.io/crates/probador)
-[![CI](https://github.com/paiml/probar/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/probar/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/aprender-test-cli.svg)](https://crates.io/crates/aprender-test-cli)
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 
-**probador** (Spanish: "tester") is the CLI tool for [Probar](https://github.com/paiml/probar) - a Playwright-compatible testing framework for WASM games and applications.
+**probador** (Spanish: "tester") is the CLI tool for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
 
-> **Note:** The library is published separately as [jugar-probar](https://crates.io/crates/jugar-probar).
+> **Note:** The library is published separately as [jugar-probar](https://crates.io/crates/aprender-test-lib).
 
 ## Installation
 
 ```bash
-cargo install probador
+cargo install aprender-test-cli
 ```
 
 ## Quick Start
@@ -108,7 +108,7 @@ probador playbook login.yaml --mutate
 For programmatic usage in Rust tests, add the library crate:
 
 ```bash
-cargo add jugar-probar --dev
+cargo add aprender-test-lib --dev
 ```
 
 ```rust
@@ -130,9 +130,9 @@ fn test_game() {
 
 ## Documentation
 
-- [Book](https://paiml.github.io/probar/) - Comprehensive guide
-- [API Docs](https://docs.rs/jugar-probar) - Library documentation
-- [CLI Reference](https://paiml.github.io/probar/probar/cli-reference.html) - Full command reference
+- [Book](https://github.com/paiml/aprender/tree/main/crates/aprender-test/book) - Comprehensive guide
+- [API Docs](https://docs.rs/aprender-test-lib) - Library documentation
+- [CLI Reference](https://github.com/paiml/aprender/tree/main/crates/aprender-test/book) - Full command reference
 
 ## License
 

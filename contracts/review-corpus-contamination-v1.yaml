@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   kind: schema
   description: |
     PROMETHEUS (PRM-001) sealed-test contamination check, spec §2.2 and rule R-2. A sealed
@@ -8,14 +8,28 @@ metadata:
     JSON string values, so a diff stored in a JSONL field is seen unescaped. Training
     roots: docs/audits/review-corpus/train/ (contamination::TRAIN_ROOTS). Any hit is
     a hard FAIL (S-3).
+    v1.1 (PRA-001 T7, gate G-CON, spec §2.9.4): the exact checks miss a sealed diff that
+    was re-indented or had identifiers renamed, so a sealed item is also hit by CLUSTER.
+    Tokens drop all whitespace and blank lines, keep a +/- line marker, keep Rust
+    keywords and literals, and replace every identifier with $ (MOSS normalisation).
+    Diff header lines are skipped. A sealed item's sketch is the 64 smallest 12-token
+    shingle hashes (bottom-k MinHash; items under 32 shingles have none). A text holds
+    the item when >= 0.7 of that sketch is among its own shingles (containment, so a
+    diff inside a longer prompt counts). Sketches live in test-sketch-v1.txt, written by
+    `rex corpus-build` beside the prereg-locked manifest, which is unchanged.
+    False-positive measurement, 2026-09-25: 391 real .rs commit diffs from origin/main,
+    all 152,490 ordered pairs. At k=5, 469 pairs cluster; at k=12, 7 do (0.005%), all
+    inside one family of templated "beat" test files that are copies with renamed
+    identifiers, so over-refusing them fails safe. k=16 gives the same 7.
   references:
     - "docs/specifications/review-experiment-protocol.md"
     - "docs/audits/review-corpus/test-manifest-v1.txt"
     - "https://github.com/paiml/aprender/issues/4357"
+    - "https://github.com/paiml/aprender/issues/4354"
 
 equations:
   leak:
-    formula: "leak(f) = exists t in sealed: t.diff_sha256 in text(f) or hunks(t) ∩ hunks(text(f) ∪ json_strings(f)) != {}"
+    formula: "leak(f) = exists t in sealed: t.diff_sha256 in text(f) or hunks(t) ∩ hunks(text(f) ∪ json_strings(f)) != {} or |sketch(t) ∩ shingles(s)| / |sketch(t)| >= 0.7 for some s in text(f) ∪ json_strings(f)"
 
 falsification_tests:
   - id: FALSIFY-RCC-001
@@ -36,3 +50,21 @@ falsification_tests:
     test_harness: "cargo test -p aprender-review-experiment --lib falsify_rcc_003"
     expected_output: "exit 0"
     if_fails: "S-3: a sealed test item is in training data. STOP; rotate the leaked items out."
+  - id: FALSIFY-RCC-004
+    name: perturbed_sealed_item_is_a_cluster_hit
+    prediction: "a sealed diff re-indented with tabs, re-spaced, with blank lines added, a partial identifier rename and a re-based header passes the exact checks, and with sketches is a cluster hit and a Refused pool row (also inside a JSONL prompt field, and with one line added as in a backport)"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rcc_004"
+    expected_output: "exit 0"
+    if_fails: "G-CON: a whitespace or rename perturbation smuggles a sealed test item into a training pool."
+  - id: FALSIFY-RCC-005
+    name: unrelated_diffs_are_not_clustered
+    prediction: "unrelated diffs, including one with the sealed item's loop skeleton, stay below 0.7 containment; a diff under 32 shingles has no sketch"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rcc_005"
+    expected_output: "exit 0"
+    if_fails: "The cluster check refuses ordinary training rows, so the pool shrinks for no reason."
+  - id: FALSIFY-RCC-006
+    name: sketch_file_round_trips_and_fails_closed
+    prediction: "render/parse round-trips; a wrong scheme line, bad hex or an empty sketch parses to None"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rcc_006"
+    expected_output: "exit 0"
+    if_fails: "A corrupt sketch file is read as sealing nothing."

@@ -17,6 +17,15 @@ fn append_tokenizer_to_metadata(
 ) {
     if let Some(tok) = tokenizer {
         metadata.extend(build_tokenizer_gguf_metadata(tok, arch, model_name, vocab_size));
+        // #5254: this path wrote every tokenizer key but the chat template, so a
+        // runtime that reads the GGUF alone (ollama) had nothing to chat with.
+        let tpl = tok.chat_template.clone().filter(|t| !t.trim().is_empty());
+        if let Some(tpl) = tpl.or_else(|| export_chat_template(apr_metadata, input)) {
+            metadata.push((
+                "tokenizer.chat_template".to_string(),
+                crate::format::gguf::GgufValue::String(tpl),
+            ));
+        }
         return;
     }
 
@@ -85,4 +94,32 @@ fn build_tied_output_weight(
         dtype: GgmlType::Q4K,
         data: q4k_bytes,
     })
+}
+
+/// The model's own chat template for a GGUF export: APR metadata (field, then
+/// custom key), else `chat_template.jinja` beside the input, else the
+/// `chat_template` string in `tokenizer_config.json` beside it (#5254).
+fn export_chat_template(
+    apr_metadata: Option<&crate::format::v2::AprV2Metadata>,
+    input: &Path,
+) -> Option<String> {
+    apr_metadata
+        .and_then(|m| {
+            m.chat_template.clone().or_else(|| {
+                m.custom
+                    .get("tokenizer.chat_template")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
+        })
+        .or_else(|| std::fs::read_to_string(input.with_file_name("chat_template.jinja")).ok())
+        .or_else(|| {
+            let cfg = std::fs::read_to_string(input.with_file_name("tokenizer_config.json")).ok()?;
+            serde_json::from_str::<serde_json::Value>(&cfg)
+                .ok()?
+                .get("chat_template")?
+                .as_str()
+                .map(str::to_string)
+        })
+        .filter(|t| !t.trim().is_empty())
 }

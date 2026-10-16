@@ -262,6 +262,12 @@ async fn handle_gpu_chat_completion(
             return err_response;
         }
     }
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(&req, super::response_format::APR_CUDA)
+    {
+        return refusal;
+    }
     // #4971: run_gpu_generation computes no logprobs, so a request for them is refused.
     if let Some(refused) = logprobs_refusal_response(&req, "APR CUDA (AprV2ModelCuda)") {
         return refused;
@@ -398,6 +404,11 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     // single-stream `apr run` (#3555).
     if realizar::gguf::hybrid_forward_handles(mapped_model.model.architecture().unwrap_or_default()) {
         return start_qwen35_server(mapped_model, config);
+    }
+    // APR-EMBED-001 EG-3 (#4902): an embedding model is served from its encoder, routed here
+    // BEFORE `build_serve_model`, whose generative loader refuses it by kind (I-3).
+    if serve_route_is_embedding(&mapped_model.model)? {
+        return start_embedding_server(&mapped_model, config);
     }
 
     println!("{}", "Building quantized inference model...".dimmed());

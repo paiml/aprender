@@ -29,7 +29,8 @@
 //!
 //! # The witness
 //!
-//! [`Session::generate`] and [`Session::score`] each record an [`Entry`].
+//! [`Session::generate`], [`Session::generate_constrained`] and [`Session::score`] each
+//! record an [`Entry`].
 //! `tests_engine_identity` checks that each verb × arch produced its entry. A
 //! verb that decodes through its own loop, or calls an [`ArchForward`]
 //! directly, leaves no entry and turns the guard RED.
@@ -40,6 +41,10 @@ use std::time::Instant;
 
 use crate::error::{RealizarError, Result};
 use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig, StepLogprobs};
+
+#[path = "session_constrained.rs"]
+mod constrained;
+pub use constrained::ConstrainedStop;
 
 /// One architecture's forward on one backend: the only per-arch code a verb
 /// reaches, and only through a [`Session`].
@@ -201,6 +206,20 @@ impl GreedyStep {
 struct Choice {
     token: u32,
     logits: Option<Vec<f32>>,
+}
+
+// #4026: the steps of the last turn a session generated on this thread with
+// `config.logprobs_top_k` set, for a caller (`apr run --logprobs`) whose
+// generate path returns only text.
+std::thread_local! {
+    static LAST_TURN_STEPS: std::cell::RefCell<Option<Vec<StepLogprobs>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Take the steps [`Session::generate`] last recorded on this thread (#4026).
+#[must_use]
+pub fn take_last_turn_steps() -> Option<Vec<StepLogprobs>> {
+    LAST_TURN_STEPS.with(std::cell::RefCell::take)
 }
 
 /// What one [`Session::generate`] call did.
@@ -531,13 +550,24 @@ impl<F: ArchForward> Session<F> {
         on_token: &mut dyn FnMut(u32) -> bool,
         trace: Option<TurnTrace<'_>>,
     ) -> Result<Turn> {
-        self.generate_traced_with_logprobs(
+        // #4026: `config.logprobs_top_k` asks for the turn's records without a
+        // record-taking `on_token`; they are left for `take_last_turn_steps`.
+        let top_n = (config.logprobs_top_k > 0).then_some(config.logprobs_top_k);
+        let mut steps = Vec::new();
+        let turn = self.generate_traced_with_logprobs(
             prompt,
             config,
-            None,
-            &mut |token, _| on_token(token),
+            top_n,
+            &mut |token, record| {
+                steps.extend(record);
+                on_token(token)
+            },
             trace,
-        )
+        )?;
+        if top_n.is_some() {
+            LAST_TURN_STEPS.with(|c| c.replace(Some(steps)));
+        }
+        Ok(turn)
     }
 
     /// [`Session::generate_traced`] and [`Session::generate_with_logprobs`] in
@@ -918,3 +948,7 @@ pub fn entries_of_session(id: u64) -> Vec<Entry> {
 #[cfg(test)]
 #[path = "session_tests.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "structured-output"))]
+#[path = "session_constrained_tests.rs"]
+mod constrained_tests;

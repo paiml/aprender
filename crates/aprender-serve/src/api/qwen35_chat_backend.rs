@@ -200,6 +200,63 @@ fn gen_config_from_request(
     }
 }
 
+/// The Qwen3.5 hybrid's prompt for a chat request: the model's own template in the
+/// request's thinking mode (#3723) and with the request's tools (#4650), encoded by
+/// the model.
+///
+/// The chat path and `POST /v1/chat/prompt-ids` both call this, so the ids that
+/// endpoint reports are the ids this path prefills (PRM-S1 v2, #4354).
+fn qwen35_prompt(
+    model: &crate::gguf::GGUFModel,
+    request: &ChatCompletionRequest,
+    architecture: Option<&str>,
+) -> Result<(String, Vec<u32>), String> {
+    // #4650: the template's `# Tools` block is the only place the model learns a tool
+    // exists and the `<tool_call>` format to call it in.
+    let text = crate::api::realize_handlers::format_chat_messages_official_thinking_tools(
+        Some(model),
+        &request.messages,
+        architecture,
+        request.thinking(),
+        request.tools.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+    let ids = model.encode(&text).unwrap_or_default();
+    Ok((text, ids))
+}
+
+/// `POST /v1/chat/prompt-ids`: the rendered prompt and its ids for a chat request
+/// body, without generating (PRM-S1 v2, #4354).
+///
+/// A cross-engine replay must show both engines prefill the same ids before it
+/// compares their speed. llama.cpp answers that with `/apply-template` + `/tokenize`;
+/// apr's `/tokenize` is not the chat path's encoder, so this answers from the chat
+/// path itself. Only the Qwen3.5 hybrid path is covered; any other backend is 501,
+/// never ids some other path might have built.
+pub async fn chat_prompt_ids_handler(
+    State(state): State<AppState>,
+    Json(request): Json<ChatCompletionRequest>,
+) -> Response {
+    let (Some(_), Some(mapped)) = (state.qwen35_session(), state.mapped_gguf_model()) else {
+        return fail_response(
+            &state,
+            StatusCode::NOT_IMPLEMENTED,
+            "prompt ids are reported only for the Qwen3.5 hybrid chat path (#4354)",
+        );
+    };
+    let architecture = state.model_architecture();
+    match qwen35_prompt(&mapped.model, &request, architecture.as_deref()) {
+        Ok((prompt, ids)) => Json(serde_json::json!({
+            "path": "qwen35",
+            "prompt": prompt,
+            "num_tokens": ids.len(),
+            "prompt_ids": ids,
+        }))
+        .into_response(),
+        Err(e) => fail_response(&state, StatusCode::BAD_REQUEST, e),
+    }
+}
+
 /// The Qwen3.5 arm of the chat backend chain (#3571).
 ///
 /// `None` when this state serves no hybrid, so the chain falls through
@@ -238,21 +295,12 @@ async fn try_qwen35_backend(
     };
 
     let architecture = state.model_architecture();
-    // #3723: the request's thinking mode, rendered by the model's own template.
-    // #4650: and the request's tools -- the template's `# Tools` block is the only place the
-    // model learns a tool exists and the `<tool_call>` format to call it in.
-    let prompt_text =
-        match crate::api::realize_handlers::format_chat_messages_official_thinking_tools(
-            Some(&mapped.model),
-            &request.messages,
-            architecture.as_deref(),
-            request.thinking(),
-            request.tools.as_deref(),
-        ) {
-            Ok(p) => p,
-            Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
-        };
-    let input_ids = mapped.model.encode(&prompt_text).unwrap_or_default();
+    // #3723 thinking mode + template, via the same helper `POST /v1/chat/prompt-ids`
+    // reports from (PRM-S1 v2), so the reported ids are the prefilled ids.
+    let input_ids = match qwen35_prompt(&mapped.model, request, architecture.as_deref()) {
+        Ok((_, ids)) => ids,
+        Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e)),
+    };
     if input_ids.is_empty() {
         return Some(fail_response(
             state,
@@ -277,12 +325,37 @@ async fn try_qwen35_backend(
     // What the context leaves — the budget the session will actually decode.
     let budget = max_tokens.min(context_length - prompt_token_count);
 
-    let stop_tokens = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
+    // aprender#4345: the EOS and every EOG marker the vocabulary has.
+    let stop_tokens = stop_tokens_unless_ignore_eos(
+        request,
+        crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            state.model_eos_token_id(),
+        ),
+    );
     // The context-bounded budget, not the request's number: what is decoded and what
     // `finish_reason` is judged against are the same count.
     let gen_config = gen_config_from_request(request, budget, stop_tokens, cancel.clone());
     // #4971: the session records each step's logprobs when they were asked for.
     let top_n = request.logprobs_top_n();
+
+    // #5293: with a batch scheduler running, concurrent requests decode as one
+    // batch, logprobs and all. One that asks for a trace stays on the session,
+    // which traces it.
+    #[cfg(feature = "cuda")]
+    if let Some(batch_tx) = state.cuda_batch_tx().filter(|_| trace_level.is_none()) {
+        let turn = Qwen35BatchTurn {
+            input_ids,
+            gen_config,
+            top_n,
+            budget,
+            mapped,
+            tokenizer,
+            session,
+        };
+        let batch_tx = batch_tx.clone();
+        return Some(qwen35_batched(state, request, request_id, start, batch_tx, turn).await);
+    }
 
     if request.stream {
         let (rx, logprobs, timing_rx) =
@@ -377,6 +450,137 @@ async fn try_qwen35_backend(
         Some(reply.used_gpu),
         logprobs,
     ))
+}
+
+/// #5293: a Qwen3.5 chat turn bound for the batch scheduler.
+#[cfg(feature = "cuda")]
+struct Qwen35BatchTurn {
+    input_ids: Vec<u32>,
+    gen_config: crate::gguf::QuantizedGenerateConfig,
+    /// #4971: the `top_logprobs` asked for, `None` when logprobs were not.
+    top_n: Option<usize>,
+    /// The context-bounded budget, as on the session path.
+    budget: usize,
+    mapped: Arc<crate::gguf::MappedGGUFModel>,
+    tokenizer: Arc<BPETokenizer>,
+    session: Arc<crate::api::Qwen35Served>,
+}
+
+/// #5293: `turn` through the batch scheduler (`try_qwen35_backend`'s batched
+/// arm). A streamed reply goes out as its tokens arrive; otherwise every token
+/// is collected first, through a channel with room for the whole budget, so
+/// none is ever dropped. A full queue is the 503 the dense path gives.
+#[cfg(feature = "cuda")]
+async fn qwen35_batched(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    start: Instant,
+    batch_tx: tokio::sync::mpsc::Sender<super::cuda_batch_scheduler::CudaBatchRequest>,
+    turn: Qwen35BatchTurn,
+) -> Response {
+    let prompt_token_count = turn.input_ids.len();
+    let capacity = if request.stream { 64 } else { turn.budget + 1 };
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(capacity);
+    let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
+    // #4971: the engine's end of the logprobs records; a stream reads them as
+    // its tokens go out, a reply collects them with its tokens.
+    let (sink, stream_logprobs, mut collected) = match (turn.top_n, request.stream) {
+        (None, _) => (None, None, None),
+        (Some(top_n), true) => {
+            let (records, logprobs) = super::chat_logprobs::StreamLogprobs::channel();
+            let sink = super::cuda_batch_scheduler::RecordSink { top_n, records };
+            (Some(sink), Some(logprobs), None)
+        },
+        (Some(top_n), false) => {
+            let (records, collected) = tokio::sync::mpsc::unbounded_channel();
+            let sink = super::cuda_batch_scheduler::RecordSink { top_n, records };
+            (Some(sink), None, Some(collected))
+        },
+    };
+    let batch_req = super::cuda_batch_scheduler::CudaBatchRequest {
+        prompt_ids: turn.input_ids,
+        config: turn.gen_config,
+        token_tx: tx,
+        non_streaming: false,
+        enqueue_time: std::time::Instant::now(),
+        timing_tx: Some(timing_tx),
+        logprobs: sink,
+    };
+    if let Err(e) = batch_tx.try_send(batch_req) {
+        state.record_admission_rejected();
+        return fail_response(
+            state,
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("Batch queue full: {e}"),
+        );
+    }
+    if request.stream {
+        return crate::api::openai_handlers::live_sse_response(
+            rx,
+            turn.tokenizer,
+            request_id.to_string(),
+            request.model.clone(),
+            state.metrics.clone(),
+            start,
+            turn.budget,
+            prompt_token_count,
+            Some(timing_rx),
+            request.stop.as_deref(),
+            crate::api::stream_tool_calls::StreamTools::from_request(request),
+            stream_logprobs,
+        );
+    }
+    let mut tokens = Vec::new();
+    while let Some(result) = rx.recv().await {
+        match result {
+            Ok(token) => tokens.push(token),
+            Err(e) => {
+                state.metrics.record_failure();
+                return fail_response(
+                    state,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Qwen3.5 generation failed: {e}"),
+                );
+            },
+        }
+    }
+    let completion_tokens = tokens.len();
+    let response_text = clean_chat_output(&turn.mapped.model.decode(&tokens));
+    // Every record went ahead of its token, so all are here once the tokens are.
+    let logprobs = collected.as_mut().map(|records| {
+        let mut steps = Vec::new();
+        while let Ok(step) = records.try_recv() {
+            steps.push(step);
+        }
+        super::ChatLogprobs::from_steps(&turn.tokenizer, &steps)
+    });
+    // A batched turn sends no phase split: there is none per request.
+    let timings = timing_rx.await.ok().and_then(|phases| {
+        phases.to_timings_at(prompt_token_count, completion_tokens, start, None)
+    });
+    state
+        .metrics
+        .record_success(completion_tokens, start.elapsed());
+    build_chat_response_traced(
+        request_id.to_string(),
+        request.model.clone(),
+        response_text,
+        prompt_token_count,
+        completion_tokens,
+        turn.budget,
+        request.stop.as_deref(),
+        (None, None, None),
+        request.tools.as_deref(),
+        request_tool_choice(request),
+        timings,
+        Some(
+            turn.session
+                .on_gpu
+                .load(std::sync::atomic::Ordering::Relaxed),
+        ),
+        logprobs,
+    )
 }
 
 /// What a traced Qwen3.5 turn measured, carried out of the blocking task.

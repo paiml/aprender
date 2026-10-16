@@ -14,6 +14,8 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `dag-status --root DIR` (reads `[id, row]` JSON pairs on stdin) | `scripts/lib/dag_status.py` (kept for now, see below) |
 | `git-patch-id [--stable\|--unstable\|--verbatim]` (reads a diff on stdin) | `scripts/lib/git_patch_id.py` (kept: callers `scripts/lib/pr_review_patch_id.sh` and `scripts/check_pr_review_arm4.sh` not yet switched) |
 | `llama-fit-verdict TOOL_FOUND PIN RC FREE_MIB VERSION_FILE STDOUT_FILE MODEL` | `scripts/lib/llama_fit_verdict.py` (kept: `scripts/model_ladder.sh` calls it on the certification path, and `scripts/check_model_ladder.sh` mutates copies of it) |
+| `ladder-cells-produce gpumem` · `enrich --apr --inventory --models --out` · `measure ...` (same flags as the original) | `scripts/lib/model_ladder_cells_produce.py` (kept: `scripts/model_ladder.sh` calls it on the certification path and `scripts/check_ladder_cells_producer.sh` checks it; the judge functions it imports are ported too, and `scripts/lib/model_ladder_cells_judge.py` stays) |
+| `nextest-fail-fast [--reader library\|fallback] TOML` | the inline Python judge in `scripts/check_nextest_ci_profile_no_fail_fast.sh` (kept: the guard runs it inline and switches once a released `aprender-ci-tools` carries the port, N-1) |
 
 Each port must print the same stdout as its original and agree with it on success
 or failure. `scripts/tests/ci_tools_py_parity_test.sh` checks this. The Python
@@ -64,6 +66,33 @@ are what the ladder's hosts run. Under 3.10 or 3.14 the original itself answers 
 edges differently, so the parity test refuses any interpreter but 3.12/3.13 for this
 section (`LFV_PYTHON=`).
 
+## Where `nextest-fail-fast` differs (by design)
+
+`scripts/tests/ci_tools_nextest_fail_fast_parity_test.sh` cuts the judge out of the
+guard and runs it under tomllib and under its purpose-built reader
+(`NEXTEST_GUARD_FORCE_FALLBACK=1`), against `--reader library` and `--reader fallback`.
+It needs Python 3.11+ (tomllib) and counts its cases on its own. The original took the
+purpose-built reader only where `tomllib`/`tomli` were missing; `--reader` picks it here.
+Every verdict, exit status and ENV/FAIL reason is the original's, except the rows below.
+The test maps the first three rows. For each row where the two TOML parsers disagree, it
+checks that each side gives its own exit status, so a parser upgrade that moves one fails it.
+
+| Case | Original | Port |
+|------|----------|------|
+| the library reader's name in `reader=` | `tomllib` or `tomli` | `toml crate` |
+| the purpose-built reader's name | `purpose-built reader (no tomllib/tomli on this interpreter)` | `purpose-built reader` |
+| the words and position of a TOML parse error | tomllib's | the `toml` crate's, on one line, in tomllib's `(at line L, column C)` form |
+| a file tomllib refuses and the `toml` crate reads, anywhere in it: a leap second (`07:32:60`) or year `0000` in a date or time | ENV, exit 2 | the verdict on `fail-fast` |
+| a file tomllib reads and the `toml` crate refuses, anywhere in it: an integer outside `i64` (decimal, hex, octal or binary), a float that overflows to `inf` (`1e400`), arrays or inline tables nested past the crate's recursion limit (an array 80 deep is refused, 79 is read) | the verdict on `fail-fast` (an integer or `inf` there is a FAIL) | ENV, exit 2 |
+| a decimal integer longer than 4300 digits, under the library reader | ENV: `int()`'s `ValueError` (CPython 3.11+) | ENV: the `toml` crate's parse error |
+| a date or time as `fail-fast`, in a FAIL line | its Python `repr()` | its TOML text |
+| an inline table with two or more keys as `fail-fast`, in a FAIL line | keys in file order | keys in the `toml` crate's map order (sorted unless its `preserve_order` feature is on) |
+| `repr()` of a non-printable, non-ASCII character in a FAIL line | `\x..`/`\u....` escapes | the character itself |
+| an invalid UTF-8 byte past the first 8 KiB, or a truncated sequence at the end, in the purpose-built reader | the position within the chunk text mode was decoding | the position in the file |
+| a line the purpose-built reader refuses, then an invalid UTF-8 byte in a later 8 KiB chunk | the line's `ValueError` (text mode decodes chunk by chunk) | the byte's `UnicodeDecodeError` (the file is decoded whole first) |
+| which characters `\d` and `int()` take as digits | the interpreter's Unicode version | the `regex` crate's |
+| a decimal integer longer than 4300 digits (leading zeros count, the sign does not) under `[profile.ci]`, in the purpose-built reader | ENV on CPython 3.11+ and the 3.10.7/3.9.14/3.8.14 security releases; typed on older patch levels | ENV, as CPython 3.11+ |
+
 ## Where `tarball-workspace` output differs (by design; the parity test maps or skips each)
 
 | Case | Original | Port |
@@ -71,5 +100,18 @@ section (`LFV_PYTHON=`).
 | first line of the written `DIR/Cargo.toml` | names `scripts/lib/tarball_workspace.py` | names `aprender-ci-tools tarball-workspace` (the parity test maps this one line, nothing else) |
 | a refusal | exit 2 | exit 1 (parity compares success vs failure; every caller tests only that) |
 | a non-string `name`/`version`/`target_directory` | printed via `str()` | refused: cargo rejects such a manifest before it is packaged |
+
+## Where `ladder-cells-produce` differs (by design; no caller passes these inputs)
+
+| Case | Original | Port |
+|------|----------|------|
+| a usage error | argparse's message, exit 2 | clap's message, exit 2 |
+| an abbreviated long flag (`--inv`) | accepted when unambiguous | accepted when unambiguous (clap `infer_long_args`); clap's ambiguity text |
+| the ladder or rungs YAML | PyYAML, YAML 1.1 (`yes`/`on` are booleans, `0o`/sexagesimal ints) | serde_yaml, YAML 1.2 core |
+| a non-UTF-8 byte in a child's stdout or stderr, or in a text file | `UnicodeDecodeError` traceback | read lossily (U+FFFD); a non-UTF-8 serve body still fails |
+| an int past 128 bits in an input document | a Python int | a JSON decode error |
+| a traceback (a malformed envelope, a non-string template or answer) | the traceback, exit 1 | one `Err` line on stderr, exit 1 |
+| the serve child's own session | `start_new_session=True` (`setsid`) | its own process group; the group is killed on drop |
+| HTTP redirects, proxy variables, a short read | followed / honoured / `IncompleteRead` | not followed / ignored / the bytes read |
 
 Part of the [aprender monorepo](https://github.com/paiml/aprender).

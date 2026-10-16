@@ -73,6 +73,11 @@ pub struct TransformerWorkspace {
     /// Eliminates per-GEMV cudaMalloc (was 280 mallocs/token → 0)
     /// Size: ceil(hidden_dim / 32) × 36 bytes (Q8_1 format)
     pub q8_activation_buf: Option<GpuBuffer<u8>>,
+    /// #5279: Q8_1 rows for the batched HW DP4A Q6_K GEMV, m rows of
+    /// `ceil(k / 256) × 288` bytes. Kept apart from `q8_activation_buf`, whose
+    /// address a captured decode graph holds; this one grows to the largest
+    /// batch seen.
+    pub batched_q8_buf: Option<GpuBuffer<u8>>,
 }
 
 // ============================================================================

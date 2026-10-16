@@ -497,4 +497,59 @@ mod forward_error_tests {
             gate.message
         );
     }
+
+    // ========================================================================
+    // #5254: ollama's own counters, summed and turned into rates
+    // ========================================================================
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn ollama_counters_sum_decode_and_prefill_separately() {
+        let mut sums = [0u64; 4];
+        let a = serde_json::json!({"eval_count": 64, "eval_duration": 2_000_000_000u64,
+            "prompt_eval_count": 10, "prompt_eval_duration": 100_000_000u64});
+        let b = serde_json::json!({"eval_count": 64, "eval_duration": 2_000_000_000u64});
+        add_ollama_counters(&a, &mut sums);
+        add_ollama_counters(&b, &mut sums);
+        assert_eq!(sums, [128, 4_000_000_000, 10, 100_000_000]);
+        assert_eq!(rate(sums[0], sums[1]), Some(32.0));
+        assert_eq!(rate(sums[2], sums[3]), Some(100.0));
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn ollama_rate_is_none_without_a_measurement() {
+        let mut sums = [0u64; 4];
+        // An error body (model not found) carries no counters at all.
+        add_ollama_counters(&serde_json::json!({"error": "model not found"}), &mut sums);
+        assert_eq!(sums, [0; 4]);
+        assert_eq!(rate(0, 5), None);
+        assert_eq!(rate(5, 0), None);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn ollama_ps_size_found_by_name_or_latest_tag() {
+        let ps = serde_json::json!({"models": [
+            {"name": "other:latest", "size": 1u64 << 30},
+            {"name": "apr-qa-7:latest", "size": 3u64 << 20}
+        ]});
+        assert_eq!(resident_mb_in_ps(&ps, "apr-qa-7"), Some(3.0));
+        assert_eq!(resident_mb_in_ps(&ps, "other:latest"), Some(1024.0));
+        assert_eq!(resident_mb_in_ps(&ps, "absent"), None);
+        assert_eq!(resident_mb_in_ps(&serde_json::json!({}), "apr-qa-7"), None);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn stale_import_names_only_dead_apr_qa_pids() {
+        let list = "NAME                ID      SIZE    MODIFIED\n\
+                    apr-qa-11:latest    abc     1.3 GB  now\n\
+                    apr-qa-22:latest    def     1.3 GB  now\n\
+                    apr-qa-x:latest     ghi     1.3 GB  now\n\
+                    qwen2.5-coder:1.5b  jkl     1.0 GB  now\n";
+        assert_eq!(stale_import_names(list, |pid| pid == 22), vec!["apr-qa-11"]);
+        assert!(stale_import_names(list, |_| true).is_empty());
+        assert!(stale_import_names("", |_| false).is_empty());
+    }
 }

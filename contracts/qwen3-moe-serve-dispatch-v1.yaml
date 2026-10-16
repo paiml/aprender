@@ -216,3 +216,20 @@ status_history:
       `moe_kv_cache_equivalence.rs` (correctness) +
       `m32d_perf.rs` (≥ 5 tok/s floor). V1_004 prerequisite MET;
       companion-side bench discharge pending operator dispatch.
+
+falsification_tests:
+  - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH-001
+    description: "arch_detection: the canonical qwen3_moe architecture routes to the MoE path"
+    test: "cargo test -p aprender-serve --lib canonical_qwen3_moe_matches"
+    prediction: "is_qwen3_moe_arch('qwen3_moe') is true"
+    if_fails: "the MoE arch is not detected and the request falls to the dense path"
+  - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH-002
+    description: "arch_detection: HuggingFace class names canonicalize to qwen3_moe"
+    test: "cargo test -p aprender-serve --lib huggingface_class_names_canonicalize"
+    prediction: "Qwen3Moe, Qwen3Coder and Qwen3_5Moe class names all classify as qwen3_moe"
+    if_fails: "a MoE model with an HF-style arch string is routed through the dense path"
+  - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH-003
+    description: "arch_detection: dense architectures are not routed to the MoE path"
+    test: "cargo test -p aprender-serve --lib dense_archs_do_not_match"
+    prediction: "qwen2, qwen3, llama, mistral, phi and gemma do not classify as qwen3_moe"
+    if_fails: "the MoE guard fires for dense models"

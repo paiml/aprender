@@ -224,6 +224,13 @@ pub(crate) async fn safetensors_chat_completions_handler(
     use axum::response::{sse::Event, IntoResponse, Sse};
     use futures_util::stream;
 
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) = super::response_format::refuse_response_format(
+        &request,
+        super::response_format::SAFETENSORS_CPU,
+    ) {
+        return refusal;
+    }
     if let Some(refused) =
         super::handlers::logprobs_refusal_response(&request, "SafeTensors F32 CPU")
     {

@@ -68,7 +68,11 @@ pub enum Error {
 
     /// YAML error
     #[error("YAML error: {0}")]
-    YamlError(#[from] serde_yaml::Error),
+    YamlError(#[from] serde_saphyr::Error),
+
+    /// YAML serialization error
+    #[error("YAML error: {0}")]
+    YamlSerializeError(#[from] serde_saphyr::SerializeError),
 
     /// Generator error
     #[error("Generator error: {0}")]

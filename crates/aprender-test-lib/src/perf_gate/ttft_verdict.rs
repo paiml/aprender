@@ -99,19 +99,19 @@ impl TtftPolicy {
     /// The matrix does not parse, has no `arms.L3.v1` or `protocol.replicates_min`,
     /// or holds a floor that is not a positive finite number or an empty host list.
     pub fn from_matrix(source: &str) -> Result<Self, String> {
-        let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(source)
+        let doc: serde_json::Value = serde_saphyr::from_str_with_options(source, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
             .map_err(|e| format!("perf-matrix.yaml does not parse as YAML: {e}"))?;
         let block = doc
             .get("arms")
             .and_then(|a| a.get("L3"))
             .and_then(|l| l.get("v1"))
             .ok_or("perf-matrix.yaml has no `arms.L3.v1` block (ttft_floor, hosts)")?;
-        let MatrixTtftBlock { ttft_floor, hosts } = serde_yaml_ng::from_value(block.clone())
+        let MatrixTtftBlock { ttft_floor, hosts } = serde_json::from_value(block.clone())
             .map_err(|e| format!("perf-matrix.yaml `arms.L3.v1`: {e}"))?;
         let replicates_min = doc
             .get("protocol")
             .and_then(|p| p.get("replicates_min"))
-            .and_then(serde_yaml_ng::Value::as_u64)
+            .and_then(serde_json::Value::as_u64)
             .ok_or("perf-matrix.yaml has no `protocol.replicates_min`")?;
         if !(ttft_floor.is_finite() && ttft_floor > 0.0) {
             return Err(format!(

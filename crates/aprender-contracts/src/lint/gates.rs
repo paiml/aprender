@@ -60,6 +60,12 @@ pub(crate) fn load_contracts(dir: &Path) -> (Vec<(String, Contract)>, Vec<(Strin
     (contracts, parse_errors)
 }
 
+/// Directories [`collect_yaml_files`] never descends into, at any depth. Named
+/// once so the #5291 `unwalked` count and SCHEMA-026 skip exactly what the
+/// walker skips. `kaizen/` is not here: those are contracts (`metadata.kind:
+/// kaizen`) and count (#5291).
+pub const UNWALKED_DIRS: [&str; 4] = ["legacy", "pipelines", "publish-manifests", "quarantine"];
+
 /// Recursively collect `.yaml` contract files, skipping non-contract directories.
 ///
 /// Emits entries in `read_dir` order, which is UNSPECIFIED. Every caller must
@@ -75,13 +81,10 @@ pub fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
             // `publish-manifests/` holds PublishManifest artifacts (model
             // ship metadata keyed by `model_id:`), not Contract schemas;
             // validating them here would fail on missing `metadata.` root.
-            if matches!(
-                dirname,
-                // `quarantine/` holds contracts ONT-001 ONT-1 pulled OUT of the
-                // corpus precisely because they do not parse; walking them would
-                // make every gate reject on the files quarantine exists to hold.
-                "kaizen" | "legacy" | "pipelines" | "publish-manifests" | "quarantine"
-            ) {
+            // `quarantine/` holds contracts ONT-001 ONT-1 pulled OUT of the
+            // corpus precisely because they do not parse; walking them would
+            // make every gate reject on the files quarantine exists to hold.
+            if UNWALKED_DIRS.contains(&dirname) {
                 continue;
             }
             collect_yaml_files(&path, out);

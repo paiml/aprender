@@ -256,3 +256,189 @@ fn falsify_dt_009_root_split_search_is_subquadratic() {
          — split search is quadratic in row count again"
     );
 }
+
+/// FALSIFY-DT-010: The regression split search scores the rescan's partitions
+///
+/// #3859 replaced the per-candidate rescan with one sort and a forward-only
+/// cursor over f64 prefix sums. Unlike #3815's classifier this cannot be bit
+/// for bit: the rescan scores in f32 as `variance - mse`, the cursor scores the
+/// same variance reduction in its between-groups form. So the oracle judges
+/// the fast path's choice by the oracle's own score: the threshold it picks
+/// must score, under the rescan, within `tol` of the rescan's best, and its
+/// reported gain within `tol` of that score. `tol` is the rescan's own f32
+/// rounding scale, `4 (n + 4) eps var(y)`. A wrong partition, a dropped
+/// candidate or a wrong formula misses by the size of a real gain, not by
+/// `tol`.
+#[test]
+fn falsify_dt_010_regression_split_matches_rescan() {
+    use crate::tree::helpers::{
+        evaluate_split_gain, find_best_regression_split_for_feature,
+        find_best_regression_split_for_feature_rescan, split_by_threshold, variance_f32,
+    };
+
+    fn check(xs: &[f32], y: &[f32], case: &str) {
+        let n = y.len();
+        let x = Matrix::from_vec(n, 1, xs.to_vec()).expect("valid matrix");
+        let var = variance_f32(y);
+        let tol = 4.0 * (n as f32 + 4.0) * f32::EPSILON * var.max(f32::MIN_POSITIVE);
+        let oracle_at = |t: f32| {
+            let (l, r) = split_by_threshold(&x, y, 0, t);
+            evaluate_split_gain(&l, &r, var).unwrap_or(0.0)
+        };
+
+        let fast = find_best_regression_split_for_feature(&x, y, 0, n);
+        let oracle = find_best_regression_split_for_feature_rescan(&x, y, 0, n, var);
+        let best = oracle.map_or(0.0, |(_, g)| g);
+
+        match fast {
+            Some((t, g)) => {
+                let at = oracle_at(t);
+                assert!(
+                    at >= best - tol,
+                    "FALSIFIED DT-010 [{case}]: cursor chose {t} (rescan scores it {at}), \
+                     rescan's best is {oracle:?}, tol {tol}"
+                );
+                assert!(
+                    (g - at).abs() <= tol,
+                    "FALSIFIED DT-010 [{case}]: cursor reports gain {g} at {t}, rescan scores {at}, tol {tol}"
+                );
+            }
+            None => assert!(
+                best <= tol,
+                "FALSIFIED DT-010 [{case}]: cursor found no split, rescan found {oracle:?}, tol {tol}"
+            ),
+        }
+    }
+
+    let up = |v: f32| f32::from_bits(v.to_bits() + 1);
+
+    check(&[1.0], &[3.0], "single sample");
+    check(&[2.0, 2.0, 2.0], &[1.0, 2.0, 3.0], "one distinct value");
+    check(&[1.0, 2.0, 3.0], &[5.0, 5.0, 5.0], "constant target");
+    check(
+        &[1.0, 2.0, 3.0, 4.0],
+        &[1.0, 1.0, 10.0, 10.0],
+        "clean two-way split",
+    );
+    check(
+        &[1.0, 1.0, 2.0, 2.0],
+        &[1.0, 5.0, 5.0, 1.0],
+        "equal child means",
+    );
+    check(
+        &[3.0, 1.0, 2.0, 1.0, 3.0],
+        &[9.0, 1.0, 4.0, 2.0, 8.0],
+        "unsorted with ties",
+    );
+    check(
+        &[f32::NAN, 1.0, 2.0, f32::NAN, 3.0],
+        &[50.0, 1.0, 2.0, 60.0, 3.0],
+        "NaN rows go right",
+    );
+    check(
+        &[f32::NAN, f32::NAN, 1.0],
+        &[1.0, 2.0, 3.0],
+        "one non-NaN value",
+    );
+    check(
+        &[-0.0, 0.0, 1.0, -1.0],
+        &[1.0, 2.0, 7.0, -4.0],
+        "signed zeros",
+    );
+    check(
+        &[f32::NEG_INFINITY, 0.0, f32::INFINITY, 1.0],
+        &[-5.0, 0.0, 5.0, 1.0],
+        "infinite feature values",
+    );
+    check(
+        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        &[
+            10_000.0, 10_000.01, 10_000.02, 10_000.5, 10_000.51, 10_000.52,
+        ],
+        "small spread on a large offset",
+    );
+
+    // Adjacent floats: their midpoint rounds back onto the lower one, so a row
+    // sits exactly ON the threshold. Only here do `<=` and `<` disagree.
+    check(
+        &[1.0, up(1.0), up(1.0), 2.0],
+        &[0.0, 10.0, 10.0, 10.0],
+        "row on the threshold",
+    );
+    check(
+        &[1.0, 1.0, up(1.0), 2.0],
+        &[0.0, 0.0, 10.0, 10.0],
+        "row on the threshold, duplicated",
+    );
+
+    // Randomised columns: half on a coarse integer grid (many ties), half
+    // continuous; targets either noise or a step plus noise.
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f32 / (1u64 << 53) as f32
+    };
+    for case in 0..500 {
+        let n = 2 + (next() * 80.0) as usize;
+        let grid = case % 2 == 0;
+        let xs: Vec<f32> = (0..n)
+            .map(|_| {
+                let v = next();
+                if grid {
+                    (v * 6.0).floor()
+                } else {
+                    v * 20.0 - 10.0
+                }
+            })
+            .collect();
+        let step = next() * 10.0;
+        let ys: Vec<f32> = xs
+            .iter()
+            .map(|&v| if case % 3 == 0 { 0.0 } else { step * f32::from(v > 0.5) } + next())
+            .collect();
+        check(&xs, &ys, &format!("random #{case} n={n} grid={grid}"));
+    }
+}
+
+/// FALSIFY-DT-011: One regression root split over 200k rows is fast
+///
+/// The rescan cost `O(n^2)` per feature per node, so a 200k-row root alone
+/// was out of reach (#3859). `max_depth = 1` makes the measurement the split
+/// search and nothing else.
+#[test]
+fn falsify_dt_011_regression_root_split_is_subquadratic() {
+    use crate::primitives::Vector;
+    use crate::tree::DecisionTreeRegressor;
+    use std::time::{Duration, Instant};
+
+    const N: usize = 200_000;
+    const BUDGET: Duration = Duration::from_secs(60);
+
+    let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f32 / (1u64 << 53) as f32
+    };
+
+    let values: Vec<f32> = (0..N).map(|_| next()).collect();
+    let y: Vec<f32> = values
+        .iter()
+        .map(|&v| 3.0 * f32::from(v > 0.6) + next())
+        .collect();
+    let x = Matrix::from_vec(N, 1, values).expect("valid matrix");
+
+    let mut dt = DecisionTreeRegressor::new().with_max_depth(1);
+    let started = Instant::now();
+    dt.fit(&x, &Vector::from_vec(y)).expect("fit");
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < BUDGET,
+        "FALSIFIED DT-011: one regression root split over {N} rows took {elapsed:?} \
+         (budget {BUDGET:?}) — split search is quadratic in row count again"
+    );
+}

@@ -44,3 +44,10 @@ falsification:
   - condition: "Legacy name in page text"
     severity: P0
     action: delete_from_summary
+
+falsification_tests:
+  - id: FALSIFY-PAGE-EXAMPLES_DESIGN_BY_CONTRACT-001
+    description: "book/src/examples/design-by-contract.md exists, is enforced, carries PCU frontmatter and no placeholders, keeps all 2 section headings this contract lists, and its example design_by_contract compiles and runs"
+    test: "bash scripts/book-gate.sh examples-design-by-contract --strict"
+    prediction: "book-gate exits 0 with G2 (enforced), G3 (page exists), G5 (example compiles), G6 (example runs) and G9 (all contract sections present) PASS"
+    if_fails: "The example design_by_contract stopped compiling or exits non-zero, a listed section heading was dropped or renamed, the page moved off its declared path, or a placeholder crept in"

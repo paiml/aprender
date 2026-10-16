@@ -122,7 +122,7 @@ fn generate_arch_requirements(req: &ArchRequirements) -> String {
         "// Per-architecture required weight roles.\n\
          //\n\
          // AUTO-GENERATED from architecture-requirements-v1.yaml by build.rs — DO NOT EDIT.\n\
-         // See: provable-contracts/contracts/architecture-requirements-v1.yaml\n\
+         // See: contracts/architecture-requirements-v1.yaml\n\
          //\n\
          // UCBD §4 / GH-279: Compile-time enforcement that every loader\n\
          // provides all tensors required by the target architecture.\n\
@@ -198,6 +198,7 @@ fn generate_arch_requirements(req: &ArchRequirements) -> String {
          /// four arms, but the contract test FALSIFY-ARCH-001 will catch mismatches.\n\
          #[must_use]\n\
          pub fn required_roles(arch: &ArchConstraints) -> &'static [WeightRole] {\n\
+         \x20   contract_pre_constraint_matrix_exhaustiveness!();\n\
          \x20   match (arch.has_qk_norm, arch.has_bias) {\n",
     );
     for (cell_name, cell) in &cells {
@@ -308,7 +309,10 @@ fn emit_contract_bindings() {
         },
     };
 
-    let bindings: BindingFile = match serde_yaml_ng::from_str(&yaml_content) {
+    let bindings: BindingFile = match serde_saphyr::from_str_with_options(
+        &yaml_content,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    ) {
         Ok(b) => b,
         Err(e) => {
             println!(
@@ -493,15 +497,23 @@ fn find_binding_note<'a>(bindings: &'a BindingFile, var_name: &str) -> &'a str {
 
 /// PMAT-228: Read architecture-requirements-v1.yaml and generate `arch_requirements.rs`.
 fn generate_arch_requirements_file() {
+    // #4380: in-tree since APR-MONO. This read ../../../provable-contracts/…,
+    // a sibling checkout that no longer exists, so every monorepo build used
+    // the hand-written fallback and the YAML never reached the generated table.
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("architecture-requirements-v1.yaml");
+        .join("../../contracts/architecture-requirements-v1.yaml");
 
     watch_if_exists(&yaml_path);
+
+    let in_monorepo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts")
+        .is_dir();
+    if !yaml_path.exists() && in_monorepo {
+        panic!(
+            "architecture-requirements-v1.yaml missing: {} -- restore it or fix the path (#4380)",
+            yaml_path.display()
+        );
+    }
 
     if !yaml_path.exists() {
         // Graceful fallback for CI/crates.io — write a stub generated file
@@ -519,6 +531,10 @@ fn generate_arch_requirements_file() {
     let yaml_content = match std::fs::read_to_string(&yaml_path) {
         Ok(s) => s,
         Err(e) => {
+            assert!(
+                !in_monorepo,
+                "[PMAT-228] Failed to read architecture-requirements-v1.yaml: {e} (#4380)"
+            );
             println!(
                 "cargo:warning=[PMAT-228] Failed to read architecture-requirements-v1.yaml: {e}"
             );
@@ -526,9 +542,16 @@ fn generate_arch_requirements_file() {
         },
     };
 
-    let req: ArchRequirements = match serde_yaml_ng::from_str(&yaml_content) {
+    let req: ArchRequirements = match serde_saphyr::from_str_with_options(
+        &yaml_content,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    ) {
         Ok(r) => r,
         Err(e) => {
+            assert!(
+                !in_monorepo,
+                "[PMAT-228] Failed to parse architecture-requirements-v1.yaml: {e} (#4380)"
+            );
             println!(
                 "cargo:warning=[PMAT-228] Failed to parse architecture-requirements-v1.yaml: {e}"
             );
@@ -626,7 +649,10 @@ fn generate_arch_constraints_file() {
         },
     };
 
-    let contract: ArchConstraintsContract = match serde_yaml_ng::from_str(&yaml_content) {
+    let contract: ArchConstraintsContract = match serde_saphyr::from_str_with_options(
+        &yaml_content,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    ) {
         Ok(c) => c,
         Err(e) => {
             println!(
@@ -751,7 +777,7 @@ fn generate_arch_constraints(contract: &ArchConstraintsContract) -> String {
         "// Per-architecture inference constraints.\n\
          //\n\
          // AUTO-GENERATED from arch-constraints-v1.yaml by build.rs — DO NOT EDIT.\n\
-         // See: provable-contracts/contracts/arch-constraints-v1.yaml\n\
+         // See: contracts/arch-constraints-v1.yaml\n\
          //\n\
          // GH-323: Compile-time enforcement of architecture constraints.\n\
          \n",
@@ -804,13 +830,9 @@ fn generate_tensor_names_file() {
 
     // For now, always use the fallback file.
     // YAML-to-codegen pipeline from tensor-names-v1.yaml is planned (GH-311).
-    let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("tensor-names-v1.yaml");
+    // #4380: in-tree since APR-MONO; this watched the pre-monorepo sibling path.
+    let yaml_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/tensor-names-v1.yaml");
 
     watch_if_exists(&yaml_path);
 
@@ -855,7 +877,10 @@ fn emit_contract_assertions() {
         let Ok(c) = std::fs::read_to_string(&p) else {
             continue;
         };
-        let Ok(y): Result<ContractYaml, _> = serde_yaml_ng::from_str(&c) else {
+        let Ok(y): Result<ContractYaml, _> = serde_saphyr::from_str_with_options(
+            &c,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        ) else {
             continue;
         };
         for (eq, e) in &y.equations {

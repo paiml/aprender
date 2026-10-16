@@ -367,6 +367,52 @@ impl CudaExecutor {
         )
     }
 
+    /// #5279: [`Self::gdn_partial_neox_rope_indirect_into`] over `m` decode
+    /// slots in one launch: row `r` of `x` (`num_heads * head_dim` wide) is
+    /// rotated at the device position `pos[r]`, bitwise the single kernel on
+    /// that row at that position.
+    ///
+    /// # Errors
+    /// PTX compilation or kernel launch failure, or a null device pointer.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_partial_neox_rope_slots_into(
+        &mut self,
+        x: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+        theta_scale: f32,
+        m: u32,
+    ) -> Result<(), GpuError> {
+        let kernel =
+            trueno_gpu::kernels::gdn::PartialNeoxRopeKernel::new(num_heads, head_dim, n_rot)
+                .slots();
+        let kernel_type = KernelType::GdnPartialNeoxRopeSlots {
+            num_heads,
+            head_dim,
+            n_rot,
+        };
+        let cache_key = module_key!(
+            self,
+            "gdn_partial_neox_rope_slots_{}_{}_{}",
+            num_heads,
+            head_dim,
+            n_rot
+        );
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, m, bx, 1);
+        self.gdn_launch_mixed(
+            &cache_key,
+            kernel_name,
+            config,
+            &[x.as_ptr(), pos.as_ptr()],
+            &[u64::from(theta_scale.to_bits())],
+        )
+    }
+
     /// aprender#4233: [`Self::gdn_decode_attention_into`] attending over
     /// `*pos + 1` positions, read on the device.
     ///
@@ -445,6 +491,73 @@ impl CudaExecutor {
             kernel_name,
             config,
             &[src.as_ptr(), cache.as_ptr(), pos.as_ptr()],
+        )
+    }
+
+    /// #5279: [`Self::gpu_argmax`] for `m` rows of `vocab` logits in one pair of
+    /// launches, row `r`'s token id written to `out[r]` — and nothing synced or
+    /// downloaded, so the caller downloads all `m` ids at once. `vals` and
+    /// `idxs` hold `m * argmax_blocks(vocab)` block results.
+    pub fn argmax_rows_into(
+        &mut self,
+        logits: &GpuBuffer<f32>,
+        (vals, idxs): (&GpuBuffer<f32>, &GpuBuffer<u32>),
+        out: &GpuBuffer<u32>,
+        vocab: u32,
+        m: u32,
+    ) -> Result<(), GpuError> {
+        let blocks = Self::argmax_blocks(vocab);
+        let first = KernelType::ArgMaxRows { length: vocab };
+        let first_key = module_key!(self, "argmax_rows_{}", vocab);
+        let first_name = self.gdn_prepare(&first, &first_key)?;
+        self.gdn_launch_mixed(
+            &first_key,
+            first_name,
+            LaunchConfig::grid_2d(blocks, m, 256, 1),
+            &[logits.as_ptr(), vals.as_ptr(), idxs.as_ptr()],
+            &[u64::from(vocab)],
+        )?;
+        let last = KernelType::ArgMaxFinalRows { num_blocks: blocks };
+        let last_key = module_key!(self, "argmax_final_rows_{}", blocks);
+        let last_name = self.gdn_prepare(&last, &last_key)?;
+        self.gdn_launch_mixed(
+            &last_key,
+            last_name,
+            LaunchConfig::grid_2d(1, m, 256, 1),
+            &[vals.as_ptr(), idxs.as_ptr(), out.as_ptr()],
+            &[u64::from(blocks)],
+        )
+    }
+
+    /// The first argmax pass's block count for `vocab` logits.
+    #[must_use]
+    pub fn argmax_blocks(vocab: u32) -> u32 {
+        trueno_gpu::kernels::ArgMaxKernel::new(vocab).num_blocks()
+    }
+
+    /// #5279: [`Self::gdn_kv_row_scatter_indirect_into`] for `m` slots in one
+    /// launch: row `r` of `src` goes into the cache at `table[r]` (a device array
+    /// of `m` u64 pointers), at position `pos[r]`.
+    pub fn gdn_kv_row_scatter_slots_into(
+        &mut self,
+        src: &GpuBuffer<f32>,
+        table: u64,
+        pos: &GpuBuffer<u32>,
+        row: u32,
+        m: u32,
+    ) -> Result<(), GpuError> {
+        let kernel = trueno_gpu::kernels::gdn::KvRowScatterIndirectKernel::new(row).slots();
+        let kernel_type = KernelType::GdnKvRowScatterSlots { row };
+        let cache_key = module_key!(self, "gdn_kv_row_scatter_slots_{}", row);
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, m, bx, 1);
+        self.gdn_launch(
+            &cache_key,
+            kernel_name,
+            config,
+            &[src.as_ptr(), table, pos.as_ptr()],
         )
     }
 
@@ -549,6 +662,146 @@ impl CudaExecutor {
             LaunchConfig::grid_2d(rx, 1, rbx, 1),
             &[part_acc, part_ml, output.as_ptr()],
             &[u64::from(seq_len)],
+        )
+    }
+
+    /// #5279: whether [`Self::gdn_decode_attention_slots_into`] can stand in
+    /// for per-slot [`Self::gdn_decode_attention_into`] calls: the single call
+    /// takes the split pair for this `head_dim`.
+    #[must_use]
+    pub fn gdn_decode_attention_has_slots(head_dim: u32) -> bool {
+        head_dim % 128 == 0 && !decode_attention_unsplit()
+    }
+
+    /// #5279: the partials stride and buffer [`Self::gdn_decode_attention_slots_into`]
+    /// launches with at `max_pos` for `m` slots, grown first if they would not
+    /// fit: `(max_splits, part_acc)`.
+    ///
+    /// `max_splits` is only the stride between slots' partial rows (each slot
+    /// derives its own split count from its position on the device, and a split
+    /// past it exits), so it is rounded up to a power of two: a step keeps its
+    /// launch arguments, and a captured graph stays valid, until the longest
+    /// slot doubles.
+    pub(crate) fn reserve_attention_slots(
+        &mut self,
+        heads: (u32, u32, u32),
+        max_pos: u32,
+        m: u32,
+    ) -> Result<(u32, u64), GpuError> {
+        let (num_heads, num_kv_heads, head_dim) = heads;
+        let split = trueno_gpu::kernels::gdn::DecodeAttentionSplitKernel::new(
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        )
+        .slots();
+        let max_splits = split
+            .n_splits(max_pos.saturating_add(1))
+            .next_power_of_two();
+        let (slot_acc, slot_ml) = split.partial_floats(max_splits * split.split_len);
+        let need = (slot_acc + slot_ml) * m as usize;
+        if self.decode_attn_partials.as_ref().map_or(0, GpuBuffer::len) < need {
+            // As in the single pair: grow in steps, drain the in-flight reads first.
+            let rows_step = (num_heads * 64) as usize * (head_dim as usize + 2);
+            let grown = need.div_ceil(rows_step) * rows_step;
+            self.stream.synchronize()?;
+            self.decode_attn_partials = Some(GpuBuffer::new(&self.context, grown)?);
+        }
+        let part_acc = self
+            .decode_attn_partials
+            .as_ref()
+            .expect("allocated just above")
+            .as_ptr();
+        Ok((max_splits, part_acc))
+    }
+
+    /// #5279: decode attention for `m` slots in one split and one reduce
+    /// launch. `k_table` and `v_table` are device addresses of `[m]` cache
+    /// pointers, `pos` the slots' positions, `max_pos` the largest of them;
+    /// row `r` of `output` is bitwise [`Self::gdn_decode_attention_into`] on
+    /// row `r` of `q` against slot `r`'s caches at `pos[r] + 1` positions.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_decode_attention_slots_into(
+        &mut self,
+        q: &GpuBuffer<f32>,
+        k_table: u64,
+        v_table: u64,
+        output: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        max_pos: u32,
+        m: u32,
+        heads: (u32, u32, u32),
+    ) -> Result<(), GpuError> {
+        let (num_heads, num_kv_heads, head_dim) = heads;
+        let split = trueno_gpu::kernels::gdn::DecodeAttentionSplitKernel::new(
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        )
+        .slots();
+        let split_len = split.split_len;
+        let (max_splits, part_acc) = self.reserve_attention_slots(heads, max_pos, m)?;
+        let (slot_acc, _) = split.partial_floats(max_splits * split_len);
+        let part_ml = part_acc + (slot_acc * m as usize * 4) as u64;
+
+        let split_type = KernelType::GdnDecodeAttentionSplitSlots {
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            split_len,
+        };
+        let split_key = module_key!(
+            self,
+            "gdn_decode_attention_split_slots_{}_{}_{}_{}",
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            split_len
+        );
+        let split_name = self.gdn_prepare(&split_type, &split_key)?;
+        let (bx, _, _) = split.block();
+        let config = LaunchConfig {
+            grid: (num_heads, max_splits, m),
+            block: (bx, 1, 1),
+            shared_mem: 0,
+        };
+        let tables = [
+            q.as_ptr(),
+            k_table,
+            v_table,
+            part_acc,
+            part_ml,
+            pos.as_ptr(),
+        ];
+        self.gdn_launch_mixed(
+            &split_key,
+            split_name,
+            config,
+            &tables,
+            &[u64::from(max_splits)],
+        )?;
+
+        let reduce = split.reduce();
+        let reduce_type = KernelType::GdnDecodeAttentionReduceSlots {
+            num_heads,
+            head_dim,
+            split_len,
+        };
+        let reduce_key = module_key!(
+            self,
+            "gdn_decode_attention_reduce_slots_{}_{}_{}",
+            num_heads,
+            head_dim,
+            split_len
+        );
+        let reduce_name = self.gdn_prepare(&reduce_type, &reduce_key)?;
+        let (rbx, _, _) = reduce.block();
+        self.gdn_launch_mixed(
+            &reduce_key,
+            reduce_name,
+            LaunchConfig::grid_2d(num_heads, m, rbx, 1),
+            &[part_acc, part_ml, output.as_ptr(), pos.as_ptr()],
+            &[u64::from(max_splits)],
         )
     }
 

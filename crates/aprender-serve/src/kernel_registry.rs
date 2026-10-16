@@ -551,16 +551,68 @@ fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-/// The `channel` of `rust-toolchain.toml`, the toolchain every gate we own builds with.
+/// The table in the root `Cargo.toml` that repeats the pinned channel.
+const TOOLCHAIN_META: &str = "[workspace.metadata.toolchain]";
+
+/// The pinned toolchain channel, the toolchain every gate we own builds with.
+///
+/// It is read from `rust-toolchain.toml` and repeated in the root `Cargo.toml` under
+/// [`TOOLCHAIN_META`], because a consumer build (the release clean room) deletes
+/// `rust-toolchain.toml` and keeps `Cargo.toml`. When both are present they must agree, so a
+/// pin bump edits both. When only one is present it is the pin. Neither is an error, never
+/// an exemption: the input set's `toolchain` part is always judged.
 fn pinned_toolchain(root: &std::path::Path) -> std::result::Result<String, String> {
-    let text = std::fs::read_to_string(root.join("rust-toolchain.toml"))
-        .map_err(|e| format!("input set: rust-toolchain.toml: {e}"))?;
-    text.lines()
-        .filter_map(|l| l.trim().strip_prefix("channel"))
-        .filter_map(|rest| rest.trim().strip_prefix('='))
-        .map(|v| v.trim().trim_matches('"').to_string())
-        .find(|v| !v.is_empty())
-        .ok_or_else(|| "input set: rust-toolchain.toml has no channel".to_string())
+    let file = read_if_present(&root.join("rust-toolchain.toml"))?;
+    let meta = read_if_present(&root.join("Cargo.toml"))?
+        .and_then(|text| channel_in(&text, TOOLCHAIN_META));
+    match (file, meta) {
+        (Some(text), meta) => {
+            let pin = channel_in(&text, "[toolchain]")
+                .ok_or_else(|| "input set: rust-toolchain.toml has no channel".to_string())?;
+            match meta {
+                Some(m) if m != pin => Err(format!(
+                    "input set: rust-toolchain.toml channel {pin} != Cargo.toml \
+                     {TOOLCHAIN_META} channel {m}; a pin bump edits both"
+                )),
+                _ => Ok(pin),
+            }
+        },
+        (None, Some(m)) => Ok(m),
+        (None, None) => Err(format!(
+            "input set: no rust-toolchain.toml and no {TOOLCHAIN_META} channel in Cargo.toml"
+        )),
+    }
+}
+
+/// The file's text, `None` only when it does not exist; any other read error is an error.
+fn read_if_present(path: &std::path::Path) -> std::result::Result<Option<String>, String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("input set: {}: {e}", path.display())),
+    }
+}
+
+/// The non-empty `channel = "..."` value inside `table` (a `[header]` line), if any.
+fn channel_in(text: &str, table: &str) -> Option<String> {
+    let mut inside = false;
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            inside = line == table;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        let value = line
+            .strip_prefix("channel")
+            .and_then(|rest| rest.trim().strip_prefix('='))
+            .map(|v| v.trim().trim_matches('"'));
+        if let Some(v) = value.filter(|v| !v.is_empty()) {
+            return Some(v.to_string());
+        }
+    }
+    None
 }
 
 /// The parsed registry and its `(backend, type id) -> rows` table.
@@ -1020,9 +1072,113 @@ mod tests {
 
     #[test]
     fn the_pinned_toolchain_is_read_from_the_tree() {
+        // Holds with rust-toolchain.toml (every checkout) and without it (the release clean
+        // room deletes it): the Cargo.toml copy is in both trees, and equals the file when the
+        // file is there, which `pinned_toolchain` itself enforces.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let t = pinned_toolchain(&root).expect("rust-toolchain.toml has a channel");
+        let t = pinned_toolchain(&root).unwrap_or_else(|e| panic!("{e}"));
         assert!(t.chars().next().is_some_and(|c| c.is_ascii_digit()), "{t}");
+        let cargo = std::fs::read_to_string(root.join("Cargo.toml")).expect("root Cargo.toml");
+        assert_eq!(
+            channel_in(&cargo, TOOLCHAIN_META).as_deref(),
+            Some(t.as_str()),
+            "Cargo.toml {TOOLCHAIN_META} must carry the pin, or a tree without \
+             rust-toolchain.toml has none"
+        );
+    }
+
+    /// The case table: rust-toolchain.toml present or absent, the Cargo.toml copy present or
+    /// absent, agreeing or not. `Ok` names the pin; every `Err` names its cause.
+    #[test]
+    fn the_pinned_toolchain_case_table() {
+        const FILE: &str = "[toolchain]\nchannel = \"1.93.0\"\ncomponents = [\"clippy\"]\n";
+        const FILE_BUMPED: &str = "[toolchain]\nchannel = \"1.94.0\"\n";
+        const FILE_NO_CHANNEL: &str = "[toolchain]\ncomponents = [\"clippy\"]\n";
+        const META: &str = "[workspace]\nmembers = []\n\n[workspace.metadata.toolchain]\n\
+                            channel = \"1.93.0\"\n\n[workspace.dependencies]\n";
+        // A `channel` key in another table is not the pin.
+        const META_ELSEWHERE: &str = "[workspace]\nmembers = []\n\n[workspace.metadata.other]\n\
+                                      channel = \"1.93.0\"\n";
+        enum Toolchain {
+            Absent,
+            File(&'static str),
+            Dir,
+        }
+        type Case = (
+            &'static str,
+            Toolchain,
+            Option<&'static str>,
+            std::result::Result<&'static str, &'static str>,
+        );
+        let cases: [Case; 9] = [
+            (
+                "file + copy agree",
+                Toolchain::File(FILE),
+                Some(META),
+                Ok("1.93.0"),
+            ),
+            ("file only", Toolchain::File(FILE), None, Ok("1.93.0")),
+            (
+                "copy only (clean room)",
+                Toolchain::Absent,
+                Some(META),
+                Ok("1.93.0"),
+            ),
+            (
+                "file bumped, copy not",
+                Toolchain::File(FILE_BUMPED),
+                Some(META),
+                Err("a pin bump edits both"),
+            ),
+            (
+                "neither",
+                Toolchain::Absent,
+                None,
+                Err("no rust-toolchain.toml and no"),
+            ),
+            (
+                "Cargo.toml without the copy",
+                Toolchain::Absent,
+                Some(META_ELSEWHERE),
+                Err("no rust-toolchain.toml and no"),
+            ),
+            (
+                "file without channel",
+                Toolchain::File(FILE_NO_CHANNEL),
+                Some(META),
+                Err("has no channel"),
+            ),
+            (
+                "file without channel, no copy",
+                Toolchain::File(FILE_NO_CHANNEL),
+                None,
+                Err("has no channel"),
+            ),
+            (
+                "unreadable file (a directory)",
+                Toolchain::Dir,
+                Some(META),
+                Err("rust-toolchain.toml"),
+            ),
+        ];
+        for (name, toolchain, cargo, want) in cases {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("rust-toolchain.toml");
+            match toolchain {
+                Toolchain::Absent => {},
+                Toolchain::File(text) => std::fs::write(&path, text).expect("write"),
+                Toolchain::Dir => std::fs::create_dir(&path).expect("mkdir"),
+            }
+            if let Some(text) = cargo {
+                std::fs::write(dir.path().join("Cargo.toml"), text).expect("write");
+            }
+            let got = pinned_toolchain(dir.path());
+            match (want, &got) {
+                (Ok(pin), Ok(t)) => assert_eq!(t, pin, "{name}"),
+                (Err(cause), Err(e)) => assert!(e.contains(cause), "{name}: {e}"),
+                _ => panic!("{name}: want {want:?}, got {got:?}"),
+            }
+        }
     }
 
     #[test]

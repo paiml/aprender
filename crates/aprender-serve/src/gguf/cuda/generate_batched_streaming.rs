@@ -14,7 +14,7 @@
 /// The pipeline (temperature → top-k truncate → top-p nucleus → softmax → sample) matches the
 /// canonical `sample_advanced` nucleus logic. With `top_p >= 1.0` the nucleus step is a no-op,
 /// so all-default and top_k-only requests behave exactly as the pre-fix `sample_topk` path.
-fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize, top_p: f32) -> u32 {
+pub(crate) fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize, top_p: f32) -> u32 {
     use rand::Rng;
 
     if temperature == 0.0 {

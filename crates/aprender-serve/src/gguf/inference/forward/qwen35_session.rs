@@ -289,6 +289,36 @@ impl crate::session::Session<Qwen35Forward> {
     pub fn num_layers(&self) -> usize {
         self.engine().qwen.layers.len()
     }
+
+    /// #5279 P2 (#5293): the device model, for a batch engine that decodes
+    /// sequences of its own beside the session's. The F2 guard judges the GPU
+    /// on `probe` first, as it would before the session's first turn, and a
+    /// rejection moves the session to the CPU, loudly. `None` when the session
+    /// serves from the CPU. The session's own state, and the prefix it holds
+    /// for its next turn, are not touched.
+    ///
+    /// # Errors
+    /// The move to the CPU after a rejection failed.
+    #[cfg(feature = "cuda")]
+    pub(crate) fn batch_device_model(
+        &mut self,
+        probe: &[u32],
+    ) -> Result<Option<&mut crate::gguf::cuda::Qwen35CudaModel<'static>>> {
+        let forward = self.engine_mut();
+        crate::session::ArchForward::validate(forward, probe)?;
+        Ok(match &mut forward.backend {
+            Backend::Gpu(gpu) => Some(&mut gpu.model),
+            Backend::Cpu(_) => None,
+        })
+    }
+
+    /// #5279 P7: where a batched slot copies its state while prefilling
+    /// `prompt`, as this session's own turn would
+    /// ([`crate::session::ArchForward::checkpoint_at`]).
+    #[cfg(feature = "cuda")]
+    pub(crate) fn batch_checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
+        crate::session::ArchForward::checkpoint_at(self.engine(), prompt)
+    }
 }
 
 /// The Qwen3.5 hybrid's forward: the only Qwen3.5 code a verb reaches, and

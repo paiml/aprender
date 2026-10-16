@@ -1,0 +1,27 @@
+- id: PMAT-3793
+  github_issue: 3793
+  item_type: task
+  title: '#3568 PR 2/4: apr run --json-schema / --grammar on the CPU paths (dense GGUF + Qwen3.5) — the named refusals, a second-reader validator, finish_reason + prompt_tokens'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T23:26:26Z
+  updated: 2026-10-09T12:42:18Z
+  spec: null
+  acceptance_criteria:
+  - 'THIS PR IS #3568 PR 2 of 4 (#3793), per the design note https://github.com/paiml/aprender/issues/3568#issuecomment-5763921678, split item 2 verbatim: "`apr run` on the CPU paths (dense and Qwen3.5), with the flags, the refusals, the second reader and the `--json` fields." CUDA is PR 3; `apr serve` is PR 4.'
+  - 'Issue #3793 done_when 1, verbatim: **Flags:** "`apr run --json-schema <inline JSON | @path>` and `--grammar <inline | @path>` (Lark). Both are validated **before the first token**. `--format json` is not overloaded."'
+  - 'Issue #3793 done_when 2, verbatim: **The CPU loops:** "**Dense GGUF, CPU:** apply it in the per-step sampler of `generate_with_cache`." and "**Qwen3.5 hybrid:** apply it in `run_qwen35_generate` on CPU". The mask only removes candidates: "Greedy / temperature 0 stays deterministic".'
+  - 'Issue #3793 done_when 3, verbatim: **Every path not wired is refused:** "Every other generation path **refuses** the flag by name until it is wired. A constraint that is silently ignored is decoration." In this PR that includes the CUDA paths (PR 3), with the refusal `SchemaUnsupportedPath{path}` and "an exit code and a `removed_by`".'
+  - 'Issue #3793 done_when 4, verbatim: **The refusals**, "each one line on stderr with a non-zero exit code": `SchemaInvalid`, `SchemaUnsupported{keyword, path}` with a `removed_by`, `SchemaUnsupportedPath{path}`, `SchemaWithThinking`, `SchemaViolation`, `Truncated`. "Per rmedia, a cut or empty completion is an error, never an empty success."'
+  - 'Issue #3793 done_when 5, verbatim: **Thinking:** the ruling (2): "`--json-schema` + a thinking template: refused by name (SchemaWithThinking) in 0.69.1." The 0.70 follow-up is #3735.'
+  - 'Issue #3793 done_when 6, verbatim: **A second reader:** "The final text is validated against the schema by a validator independent of the engine … before exit 0. Masking is one reader; this is the other."'
+  - 'Issue #3793 done_when 7, verbatim: **`--json` fields:** "`apr run --json` gains `finish_reason` (`stop | length | constraint_complete | dead_end`) and `prompt_tokens`."'
+  - 'Issue #3793 done_when 8, verbatim: **Positive controls:** "A malformed schema gives `SchemaInvalid` and a non-zero exit **before generation**, with no tokens emitted." "A valid schema with a violating prompt still gives conforming output." "A **mutant** that makes the constraint a no-op turns the corpus test RED."'
+  - 'Issue #3793 done_when 9, verbatim (amended by the author before review): **The corpus is the real consumer schemas:** a review tool''s output schema, and rmedia''s quiz, outline and key-terms schemas from #3716. The prompts include ones that ask the model to violate the schema, run here on the CPU paths. Every sample that exits 0 validates with the second reader, and every sample the budget cuts is refused (`Truncated`, non-zero), never reported as a success. *(Amended by the author before review, 2026-09-22: the design note''s "every sample validates" cannot hold for a sample that never completes. A greedy model can loop inside an unbounded string or number, and no budget completes that document. This was measured: the review schema''s `summary` and rmedia''s `seconds`, details in the comment below. The guarantee that holds, and that this PR tests, is that nothing non-conforming is ever reported as a success.)*'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Refs #3568 (PR 2 of 4), #3793. apr run --json-schema / --grammar on the CPU paths (dense GGUF and Qwen3.5) through the one engine (#4263): Session::generate_constrained is Session::generate with the constraint masking host logits, never the greedy fast path. The named refusals (SchemaInvalid, SchemaUnsupported, SchemaUnsupportedPath, SchemaWithThinking, SchemaViolation, Truncated) exit non-zero with one stderr line; a second, independent validator checks the final text before exit 0; apr run --json gains finish_reason and prompt_tokens. Evidence is in the pull request.'

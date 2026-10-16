@@ -24,6 +24,11 @@ pub(super) fn variance_f32(y: &[f32]) -> f32 {
 }
 
 /// Compute Mean Squared Error for a split.
+///
+/// Bound to `decision-tree-v1` equation `mse_split` (`contracts/binding.yaml`).
+/// Since #3859 the production split search scores candidates from prefix sums
+/// instead, so outside tests only the binding refers to this.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32 {
     contract_pre_mse_split!();
     let n_left = y_left.len() as f32;
@@ -41,6 +46,9 @@ pub(super) fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32 {
 }
 
 /// Get unique sorted feature values for splitting.
+///
+/// Oracle-only since #3859 — see [`find_best_regression_split_for_feature_rescan`].
+#[cfg(test)]
 pub(super) fn get_unique_feature_values(
     x: &crate::primitives::Matrix<f32>,
     feature_idx: usize,
@@ -53,6 +61,10 @@ pub(super) fn get_unique_feature_values(
 }
 
 /// Split y values by a threshold on a feature.
+///
+/// Oracle-only since #3859. This full rescan of all `n` rows, once per
+/// candidate threshold, was the quadratic term.
+#[cfg(test)]
 pub(super) fn split_by_threshold(
     x: &crate::primitives::Matrix<f32>,
     y: &[f32],
@@ -73,6 +85,9 @@ pub(super) fn split_by_threshold(
 }
 
 /// Evaluate a single split and return gain if valid.
+///
+/// Oracle-only since #3859 — see [`find_best_regression_split_for_feature_rescan`].
+#[cfg(test)]
 pub(super) fn evaluate_split_gain(
     y_left: &[f32],
     y_right: &[f32],
@@ -86,8 +101,13 @@ pub(super) fn evaluate_split_gain(
     (gain > 0.0).then_some(gain)
 }
 
-/// Find the best split for a single feature.
-pub(super) fn find_best_regression_split_for_feature(
+/// The pre-#3859 split search, kept verbatim as the oracle for
+/// `FALSIFY-DT-010`.
+///
+/// `O(n)` candidate thresholds x `O(n)` rescan per candidate = `O(n^2)` per
+/// feature per node, the same shape #3815 removed from the classifier.
+#[cfg(test)]
+pub(super) fn find_best_regression_split_for_feature_rescan(
     x: &crate::primitives::Matrix<f32>,
     y: &[f32],
     feature_idx: usize,
@@ -113,6 +133,89 @@ pub(super) fn find_best_regression_split_for_feature(
     (best_gain > 0.0).then_some((best_threshold, best_gain))
 }
 
+/// Find the best split for a single feature.
+///
+/// Sorts the rows by feature value once, then walks the candidate thresholds
+/// in ascending order with a forward-only cursor carrying running sums of the
+/// targets, so each candidate is scored in `O(1)` instead of re-partitioning
+/// all `n` rows. `O(n log n)` per feature per node, against the `O(n^2)` of
+/// the rescan it replaces (#3859).
+///
+/// Candidates and partitions are the rescan's exactly: the same midpoints
+/// between adjacent values distinct under `==`, and the same `value <=
+/// threshold` test, so a NaN feature value always goes right. The score is the
+/// same quantity, the variance reduction, computed in its between-groups form
+/// `(n_L n_R / n^2) (mean_L - mean_R)^2` from f64 sums of mean-centred targets.
+/// That form is never negative and has no `variance - mse` cancellation, so it
+/// is not bit-identical to the rescan's f32 arithmetic; `FALSIFY-DT-010` bounds
+/// the difference against [`find_best_regression_split_for_feature_rescan`].
+/// It equals the rescan's `current_variance - mse` only when `current_variance`
+/// is the variance of `y`, which is the one value the caller ever passed.
+pub(super) fn find_best_regression_split_for_feature(
+    x: &crate::primitives::Matrix<f32>,
+    y: &[f32],
+    feature_idx: usize,
+    n_samples: usize,
+) -> Option<(f32, f32)> {
+    debug_assert_eq!(n_samples, y.len(), "one target per row");
+    let n = n_samples;
+    if n < 2 {
+        return None;
+    }
+
+    // NaN never satisfies `<=`, so a NaN row is on the right of every
+    // candidate and never enters the cursor's order.
+    let mut order: Vec<usize> = (0..n)
+        .filter(|&row| !x.get(row, feature_idx).is_nan())
+        .collect();
+    order.sort_by(|&a, &b| x.get(a, feature_idx).total_cmp(&x.get(b, feature_idx)));
+
+    let mut candidates: Vec<f32> = order.iter().map(|&row| x.get(row, feature_idx)).collect();
+    candidates.dedup();
+    if candidates.len() < 2 {
+        return None;
+    }
+
+    let n_f = n as f64;
+    let mean = y.iter().map(|&v| f64::from(v)).sum::<f64>() / n_f;
+    let total: f64 = y.iter().map(|&v| f64::from(v) - mean).sum();
+
+    let mut best_gain = 0.0_f64;
+    let mut best_threshold = 0.0_f32;
+    let mut sum_left = 0.0_f64;
+    let mut n_left = 0usize;
+    let mut cursor = 0usize;
+
+    for pair in candidates.windows(2) {
+        let threshold = f32::midpoint(pair[0], pair[1]);
+
+        // Sorted order makes `value <= threshold` a prefix, and thresholds are
+        // non-decreasing, so the cursor only moves forward: O(n) in total.
+        while cursor < order.len() && x.get(order[cursor], feature_idx) <= threshold {
+            sum_left += f64::from(y[order[cursor]]) - mean;
+            n_left += 1;
+            cursor += 1;
+        }
+
+        // The rescan skipped a threshold that left either side empty.
+        if n_left == 0 || n_left == n {
+            continue;
+        }
+
+        let (nl, nr) = (n_left as f64, (n - n_left) as f64);
+        let diff = sum_left / nl - (total - sum_left) / nr;
+        let gain = nl * nr / (n_f * n_f) * diff * diff;
+
+        if gain > best_gain {
+            best_gain = gain;
+            best_threshold = threshold;
+        }
+    }
+
+    let best_gain = best_gain as f32;
+    (best_gain > 0.0).then_some((best_threshold, best_gain))
+}
+
 /// Find the best split for regression using MSE criterion.
 pub(super) fn find_best_regression_split(
     x: &crate::primitives::Matrix<f32>,
@@ -124,14 +227,13 @@ pub(super) fn find_best_regression_split(
         return None;
     }
 
-    let current_variance = variance_f32(y);
     let mut best_gain = 0.0;
     let mut best_feature = 0;
     let mut best_threshold = 0.0;
 
     for feature_idx in 0..n_features {
         if let Some((threshold, gain)) =
-            find_best_regression_split_for_feature(x, y, feature_idx, n_samples, current_variance)
+            find_best_regression_split_for_feature(x, y, feature_idx, n_samples)
         {
             if gain > best_gain {
                 best_gain = gain;

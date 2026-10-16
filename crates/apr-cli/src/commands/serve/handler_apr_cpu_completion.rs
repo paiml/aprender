@@ -358,6 +358,12 @@ async fn handle_apr_cpu_chat_completion(
     if let Some(err_response) = validate_request_model(req, &s.model_name) {
         return err_response;
     }
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(req, super::response_format::APR_CPU)
+    {
+        return refusal;
+    }
     if let Some(refused) = logprobs_refusal_response(req, "APR CPU (AprTransformer)") {
         return refused;
     }
@@ -466,10 +472,11 @@ async fn handle_apr_cpu_ollama_chat(
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
         let top_p = req.options.as_ref().and_then(|o| o.top_p);
         spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, top_p, tx);
-        return super::ollama::ollama_ndjson_stream(
+        return super::ollama::ollama_ndjson_stream_ending(
             super::ollama::OllamaStreamKind::Chat,
             model,
             prompt_eval_count,
+            super::ollama::StreamEnd::LengthAt(max_tokens),
             rx,
         );
     }
@@ -510,10 +517,11 @@ async fn handle_apr_cpu_ollama_generate(
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
         let top_p = req.options.as_ref().and_then(|o| o.top_p);
         spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, top_p, tx);
-        return super::ollama::ollama_ndjson_stream(
+        return super::ollama::ollama_ndjson_stream_ending(
             super::ollama::OllamaStreamKind::Generate,
             model,
             prompt_eval_count,
+            super::ollama::StreamEnd::LengthAt(max_tokens),
             rx,
         );
     }

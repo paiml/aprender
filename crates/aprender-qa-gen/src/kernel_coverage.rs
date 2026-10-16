@@ -367,7 +367,10 @@ impl CoverageContext {
     pub fn load(contracts_path: &Path, bindings_path: &Path) -> crate::Result<Self> {
         let arch_path = contracts_path.join("arch-constraints-v1.yaml");
         let arch_content = std::fs::read_to_string(&arch_path)?;
-        let arch_file: ArchConstraintsFile = serde_yaml::from_str(&arch_content)?;
+        let arch_file: ArchConstraintsFile = serde_saphyr::from_str_with_options(
+            &arch_content,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )?;
 
         let default_constraints = yaml_entry_to_constraints(&arch_file.default);
 
@@ -384,7 +387,10 @@ impl CoverageContext {
         architectures.sort_by(|a, b| a.0.cmp(&b.0));
 
         let bindings_content = std::fs::read_to_string(bindings_path)?;
-        let bindings_file: KernelBindingsFile = serde_yaml::from_str(&bindings_content)?;
+        let bindings_file: KernelBindingsFile = serde_saphyr::from_str_with_options(
+            &bindings_content,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )?;
 
         Ok(Self {
             architectures,
@@ -400,7 +406,10 @@ impl CoverageContext {
     /// Returns an error if the YAML is malformed or missing required fields.
     #[cfg(test)]
     pub fn from_yaml_str(arch_yaml: &str, bindings_yaml: &str) -> crate::Result<Self> {
-        let arch_file: ArchConstraintsFile = serde_yaml::from_str(arch_yaml)?;
+        let arch_file: ArchConstraintsFile = serde_saphyr::from_str_with_options(
+            arch_yaml,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )?;
         let default_constraints = yaml_entry_to_constraints(&arch_file.default);
 
         let mut architectures = Vec::new();
@@ -415,7 +424,10 @@ impl CoverageContext {
         }
         architectures.sort_by(|a, b| a.0.cmp(&b.0));
 
-        let bindings_file: KernelBindingsFile = serde_yaml::from_str(bindings_yaml)?;
+        let bindings_file: KernelBindingsFile = serde_saphyr::from_str_with_options(
+            bindings_yaml,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )?;
 
         Ok(Self {
             architectures,

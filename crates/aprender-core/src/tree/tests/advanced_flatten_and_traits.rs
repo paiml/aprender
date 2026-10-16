@@ -169,9 +169,7 @@ fn test_find_best_regression_split_for_feature() {
     let x =
         Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).expect("Matrix creation should succeed");
     let y = vec![1.0, 2.0, 10.0, 11.0];
-    let variance = variance_f32(&y);
-
-    let result = find_best_regression_split_for_feature(&x, &y, 0, 4, variance);
+    let result = find_best_regression_split_for_feature(&x, &y, 0, 4);
     assert!(result.is_some());
     let (threshold, gain) = result.expect("Expected split");
     assert!(threshold > 2.0 && threshold < 5.0);

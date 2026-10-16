@@ -41,3 +41,6 @@
 # local wall-clock sample (2026-10-12, not a CI run); the first nightly replaces them.
 19	Per-function complexity may only fall (shrink-only)
 2	No shrink-only baseline in scripts/ grew (check_baseline_ratchets --ratchet)
+# #4709 (C303): the pv census ratchet, LAB from its first night (never on a PR path, C324).
+# Seconds are a local wall-clock sample (2026-10-14, pv prebuilt); the first nightly replaces them.
+6	The pv census bound share may only rise (#4709)

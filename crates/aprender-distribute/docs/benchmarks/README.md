@@ -169,9 +169,9 @@ Workers | Time (relative)
 ## Reproducing Results
 
 ```bash
-# Install repartir
-git clone https://github.com/paiml/repartir
-cd repartir
+# Build aprender-distribute
+git clone https://github.com/paiml/aprender
+cd aprender/crates/aprender-distribute
 
 # Run benchmarks
 cargo bench --features cpu

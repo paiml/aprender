@@ -96,9 +96,9 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cgp::cli::dispatch(command.clone(), cli.json)
                 .map_err(|e| CliError::ValidationFailed(format!("cgp: {e}"))),
         ),
-        Commands::PtxDebug(command) => Some(ptx_debug_result(
-            trueno_ptx_debug::run::run(command.clone()),
-        )),
+        Commands::PtxDebug(command) => Some(ptx_debug_result(trueno_ptx_debug::run::run(
+            command.clone(),
+        ))),
         Commands::Pv(command) => Some(
             aprender_contracts_cli::dispatch(command.clone())
                 .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),
@@ -214,18 +214,22 @@ or drop `--backend`."
 
 /// Batch JSONL mode: load the model once and process every prompt. #3723: the batch path
 /// renders its own prompts, so `--thinking`, which it cannot honour, is refused by name
-/// rather than ignored. Extracted from `dispatch_runtime_commands` unchanged.
+/// rather than ignored. Extracted from `dispatch_runtime_commands` unchanged. #4026: the
+/// batch path records no per-step logprobs, so `--logprobs K` > 0 is refused the same way.
 #[cfg(feature = "inference")]
 #[allow(clippy::too_many_arguments)]
 fn run_batch_jsonl(
     source: &str,
     batch_file: &std::path::Path,
     thinking_requested: bool,
+    logprobs_top_k: usize,
     max_tokens: usize,
     temperature: f32,
     top_k: usize,
     no_gpu: bool,
     verbose: bool,
+    // #3793: the batch path refuses a constraint by name
+    constraint: &commands::run::ConstraintArgs,
 ) -> Result<(), CliError> {
     if thinking_requested {
         return Err(CliError::ValidationFailed(
@@ -233,6 +237,13 @@ fn run_batch_jsonl(
 renders its own prompts. Run the prompts through `apr run --thinking` instead."
                 .to_string(),
         ));
+    }
+    if logprobs_top_k > 0 {
+        return Err(CliError::ValidationFailed(format!(
+            "--logprobs {logprobs_top_k} is not supported with --batch-jsonl (#4026): the \
+batch path records no per-step logprobs. Run each prompt through \
+`apr run --json --logprobs {logprobs_top_k}` instead."
+        )));
     }
     run::run_batch(
         source,
@@ -242,7 +253,39 @@ renders its own prompts. Run the prompts through `apr run --thinking` instead."
         top_k,
         no_gpu,
         verbose,
+        constraint,
     )
+}
+
+/// `apr run`'s accelerator checks, before anything loads: the backend, PERF-021's refusal,
+/// and the resulting `(effective_no_gpu, accel_forced)`.
+fn run_accel_plan(
+    gpu: bool,
+    no_gpu: bool,
+    backend: Option<&str>,
+) -> Result<(bool, bool), CliError> {
+    // GH-614: --backend cpu forces CPU-only inference
+    let backend_forces_cpu = backend == Some("cpu");
+    check_run_backend(backend)?;
+    // PERF-021: `apr run` is the surface #2696 was MEASURED through —
+    // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
+    // no guard. The jidoka refusal landed only on `apr serve`, one
+    // command over from where the defect was recorded.
+    //
+    // Placed ABOVE `effective_no_gpu` and above the `batch_jsonl` early
+    // return in the caller: that return bypasses `dispatch_run` entirely, so a
+    // check any lower is skipped by `apr run --gpu --batch-jsonl f.jsonl`.
+    crate::accel::ensure_available(gpu && !no_gpu, &crate::accel::asked_flag(gpu, backend))?;
+
+    let accel_forced = run_accelerator_forced(gpu, no_gpu, backend);
+
+    // GH-326: --gpu overrides --no-gpu when both specified
+    let effective_no_gpu = if gpu {
+        false
+    } else {
+        no_gpu || backend_forces_cpu
+    };
+    Ok((effective_no_gpu, accel_forced))
 }
 
 /// Dispatch runtime commands: check, run, serve.
@@ -251,123 +294,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         // GH-685: forward cli.verbose to check
         Commands::Check { file, no_gpu, json } => crate::error::resolve_model_path(file)
             .and_then(|r| commands::check::run(&r, *no_gpu, *json || cli.json, cli.verbose)),
-        Commands::Run {
-            source,
-            positional_prompt,
-            input,
-            prompt,
-            max_tokens,
-            stream,
-            language,
-            task,
-            format,
-            no_gpu,
-            gpu,
-            revalidate,
-            offline,
-            benchmark,
-            trace,
-            trace_steps,
-            trace_verbose,
-            trace_output,
-            trace_level,
-            trace_payload,
-            profile,
-            temperature,
-            top_k,
-            top_p,
-            seed,
-            repeat_penalty,
-            repeat_last_n,
-            chat,
-            split_prompt,
-            batch_jsonl,
-            verbose,
-            backend: BackendArg { backend },
-            thinking,
-        } => {
-            request_f2_revalidate(*revalidate);
-            // GH-614: --backend cpu forces CPU-only inference
-            let backend_forces_cpu = backend.as_deref() == Some("cpu");
-            if let Err(e) = check_run_backend(backend.as_deref()) {
-                return Some(Err(e));
-            }
-            // PERF-021: `apr run` is the surface #2696 was MEASURED through —
-            // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
-            // no guard. The jidoka refusal landed only on `apr serve`, one
-            // command over from where the defect was recorded.
-            //
-            // Placed ABOVE `effective_no_gpu` and above the `batch_jsonl` early
-            // return below: that return bypasses `dispatch_run` entirely, so a
-            // check any lower is skipped by `apr run --gpu --batch-jsonl f.jsonl`.
-            if let Err(e) = crate::accel::ensure_available(
-                *gpu && !*no_gpu,
-                &crate::accel::asked_flag(*gpu, backend.as_deref()),
-            ) {
-                return Some(Err(e));
-            }
-
-            let accel_forced = run_accelerator_forced(*gpu, *no_gpu, backend.as_deref());
-
-            // GH-326: --gpu overrides --no-gpu when both specified
-            let effective_no_gpu = if *gpu {
-                false
-            } else {
-                *no_gpu || backend_forces_cpu
-            };
-
-            // Batch JSONL mode: load model once, process all prompts
-            #[cfg(feature = "inference")]
-            if let Some(ref batch_file) = batch_jsonl {
-                return Some(run_batch_jsonl(
-                    source,
-                    batch_file,
-                    thinking.mode().is_some(),
-                    *max_tokens,
-                    *temperature,
-                    *top_k,
-                    effective_no_gpu,
-                    *verbose || cli.verbose,
-                ));
-            }
-
-            // GH-240: merge global --json flag into output format
-            let effective_format = if cli.json { "json" } else { format.as_str() };
-            let trace_steps = trace_steps.as_deref().map(batuta_common::cli_roles::strings);
-            dispatch_run(
-                source,
-                positional_prompt.as_ref().map(PromptText::as_string),
-                input.as_deref(),
-                prompt.as_ref().map(PromptText::as_string),
-                *max_tokens,
-                *stream,
-                language.as_deref(),
-                task.as_deref(),
-                effective_format,
-                effective_no_gpu,
-                accel_forced,
-                *offline,
-                *benchmark,
-                *verbose || cli.verbose,
-                *trace,
-                *trace_payload,
-                trace_steps.as_deref(),
-                *trace_verbose,
-                trace_output.as_deref().map(Path::to_path_buf),
-                trace_level.as_str(),
-                *profile,
-                *chat,
-                // PMAT-496: Sampling parameters — no longer silently dropped
-                *temperature,
-                *top_k,
-                *top_p,
-                *seed,
-                *repeat_penalty,
-                *repeat_last_n,
-                *split_prompt,
-                thinking.mode(),
-            )
-        }
+        Commands::Run { .. } => return dispatch_run_command(cli),
 
         Commands::Serve { command } => dispatch_serve_command(command, cli),
 
@@ -405,6 +332,122 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         _ => return None,
     })
+}
+
+/// `apr run`, split out of [`dispatch_runtime_commands`] unchanged except that the batch
+/// path now gets `--logprobs` to refuse (#4026): inline, this arm held that function's
+/// cognitive complexity at 34 against the pre-commit ceiling of 25. `None` for any other
+/// command.
+fn dispatch_run_command(cli: &Cli) -> Option<Result<(), CliError>> {
+    let Commands::Run {
+        source,
+            positional_prompt,
+            input,
+            prompt,
+            max_tokens,
+            stream,
+            language,
+            task,
+            format,
+            no_gpu,
+            gpu,
+            revalidate,
+            offline,
+            benchmark,
+            trace,
+            trace_steps,
+            trace_verbose,
+            trace_output,
+            trace_level,
+            trace_payload,
+            profile,
+            temperature,
+            top_k,
+            top_p,
+            seed,
+            repeat_penalty,
+            repeat_last_n,
+            logprobs,
+            chat,
+            split_prompt,
+            batch_jsonl,
+            verbose,
+        backend: BackendArg { backend },
+        thinking,
+        json_schema,
+        grammar,
+    } = cli.command.as_ref()
+    else {
+        return None;
+    };
+    // #3793: --json-schema / --grammar, as given; read and checked before the model loads
+    let constraint = commands::run::ConstraintArgs {
+        json_schema: json_schema.as_deref().map(str::to_owned),
+        grammar: grammar.as_deref().map(str::to_owned),
+    };
+    request_f2_revalidate(*revalidate);
+    // Above the `batch_jsonl` early return below (see `run_accel_plan`).
+    let (effective_no_gpu, accel_forced) =
+        match run_accel_plan(*gpu, *no_gpu, backend.as_deref()) {
+            Ok(plan) => plan,
+            Err(e) => return Some(Err(e)),
+        };
+
+    // Batch JSONL mode: load model once, process all prompts
+    #[cfg(feature = "inference")]
+    if let Some(ref batch_file) = batch_jsonl {
+        return Some(run_batch_jsonl(
+            source,
+            batch_file,
+            thinking.mode().is_some(),
+            *logprobs,
+            *max_tokens,
+            *temperature,
+            *top_k,
+            effective_no_gpu,
+            *verbose || cli.verbose,
+            &constraint,
+        ));
+    }
+
+    // GH-240: merge global --json flag into output format
+    let effective_format = if cli.json { "json" } else { format.as_str() };
+    let trace_steps = trace_steps.as_deref().map(batuta_common::cli_roles::strings);
+    Some(dispatch_run(
+        source,
+        positional_prompt.as_ref().map(PromptText::as_string),
+        input.as_deref(),
+        prompt.as_ref().map(PromptText::as_string),
+        *max_tokens,
+        *stream,
+        language.as_deref(),
+        task.as_deref(),
+        effective_format,
+        effective_no_gpu,
+        accel_forced,
+        *offline,
+        *benchmark,
+        *verbose || cli.verbose,
+        *trace,
+        *trace_payload,
+        trace_steps.as_deref(),
+        *trace_verbose,
+        trace_output.as_deref().map(Path::to_path_buf),
+        trace_level.as_str(),
+        *profile,
+        *chat,
+        // PMAT-496: Sampling parameters — no longer silently dropped
+        *temperature,
+        *top_k,
+        *top_p,
+        *seed,
+        *repeat_penalty,
+        *repeat_last_n,
+        *split_prompt,
+        thinking.mode(),
+        *logprobs,
+        constraint,
+    ))
 }
 
 /// Borrowed view of the parsed `apr code` flags, so [`dispatch_code_command`]
@@ -446,6 +489,11 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
     .wants_help()
     {
         print_code_help_and_exit();
+    }
+    // APR-EMBED-001 EG-5 (I-3): a named embedding model is refused by kind before the serve child
+    // is spawned. A discovered model reaches `apr serve`, which refuses it the same way.
+    if let Some(model) = args.model {
+        crate::commands::model_kind_gate::refuse_non_generative_path(model, "code")?;
     }
     // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001: forward as
     // `&str` so the orchestrate crate need not depend on the apr-cli
@@ -627,7 +675,11 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         Commands::Manifest { files, output } => {
             // CRUX-G-05 — SHA-256 manifest of the input file set.
-            commands::manifest::run(&batuta_common::cli_roles::path_bufs(files), output, cli.json)
+            commands::manifest::run(
+                &batuta_common::cli_roles::path_bufs(files),
+                output,
+                cli.json,
+            )
         }
         Commands::Explain {
             code_or_file,
@@ -655,6 +707,50 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(result)
 }
 
+/// `apr trace --save-tensor` on `r`: the end-to-end save-tensor wrapper for a .apr or a
+/// .gguf (`Some`), else a note on stderr and `None`, so the caller falls through to the
+/// trace path.
+#[cfg(feature = "inference")]
+fn dispatch_trace_save_tensor(
+    r: &Path,
+    stages: &str,
+    save_tensor_dir: Option<&Path>,
+    save_tensor_layers: &str,
+) -> Option<Result<(), CliError>> {
+    let ext_lower = r
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    match ext_lower.as_deref() {
+        Some("apr") => Some(crate::commands::trace_save_tensor::run_save_tensor_apr(
+            r,
+            stages,
+            save_tensor_dir,
+            save_tensor_layers,
+        )),
+        // M-MOE-SUB-2 step (a) CLI completion: GGUF dispatches
+        // to the MoE-traced wireup if the arch is qwen3_moe;
+        // dense-GGUF will be wired in SHIP-007 PR-E.
+        Some("gguf") => Some(
+            crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(
+                r,
+                stages,
+                save_tensor_dir,
+                save_tensor_layers,
+            ),
+        ),
+        _ => {
+            eprintln!(
+                "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
+                 supported today; .safetensors will be wired in SHIP-007 PR-E \
+                 (got {})",
+                r.display()
+            );
+            None
+        }
+    }
+}
+
 /// Dispatch diagnostic commands: trace, tensors, diff.
 fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
@@ -671,45 +767,15 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             save_tensor_dir,
             save_tensor_layers,
         } => crate::error::resolve_model_path(file).and_then(|r| {
-            // SHIP-007 layer-0 stage diff: when --save-tensor is set on a
-            // .apr file, dispatch to the end-to-end save-tensor wrapper
-            // (PR-A clap → PR-B plan → PR-C-real step1+2 wrapper). For
-            // .gguf/.safetensors and the common no-flag case, fall through
-            // to the existing trace path.
             #[cfg(feature = "inference")]
             if let Some(stages) = save_tensor.as_deref() {
-                let ext_lower = r
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(str::to_ascii_lowercase);
-                match ext_lower.as_deref() {
-                    Some("apr") => {
-                        return crate::commands::trace_save_tensor::run_save_tensor_apr(
-                            &r,
-                            stages,
-                            save_tensor_dir.as_deref(),
-                            save_tensor_layers,
-                        );
-                    }
-                    Some("gguf") => {
-                        // M-MOE-SUB-2 step (a) CLI completion: GGUF dispatches
-                        // to the MoE-traced wireup if the arch is qwen3_moe;
-                        // dense-GGUF will be wired in SHIP-007 PR-E.
-                        return crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(
-                            &r,
-                            stages,
-                            save_tensor_dir.as_deref(),
-                            save_tensor_layers,
-                        );
-                    }
-                    _ => {
-                        eprintln!(
-                            "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
-                             supported today; .safetensors will be wired in SHIP-007 PR-E \
-                             (got {})",
-                            r.display()
-                        );
-                    }
+                if let Some(done) = dispatch_trace_save_tensor(
+                    &r,
+                    stages,
+                    save_tensor_dir.as_deref(),
+                    save_tensor_layers,
+                ) {
+                    return done;
                 }
             }
             trace::run(
@@ -753,35 +819,24 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             threshold,
             no_threshold,
         } => {
-            if *quant_roundtrip {
-                // CRUX-B-20: per-tensor quant roundtrip error report.
-                crate::error::resolve_model_path(file1).and_then(|r1| {
-                    crate::error::resolve_model_path(file2).and_then(|r2| {
-                        dispatch_quant_roundtrip(
-                            &r1,
-                            &r2,
-                            *threshold,
-                            *no_threshold,
-                            *json || cli.json,
-                        )
-                    })
-                })
-            } else {
-                crate::error::resolve_model_path(file1).and_then(|r1| {
-                    crate::error::resolve_model_path(file2).and_then(|r2| {
-                        diff::run(
-                            &r1,
-                            &r2,
-                            *weights,
-                            *values,
-                            filter.as_deref(),
-                            *limit,
-                            *transpose_aware,
-                            *json || cli.json,
-                        )
-                    })
-                })
-            }
+            let json = *json || cli.json;
+            crate::error::resolve_model_path(file1).and_then(|r1| {
+                let r2 = crate::error::resolve_model_path(file2)?;
+                if *quant_roundtrip {
+                    // CRUX-B-20: per-tensor quant roundtrip error report.
+                    return dispatch_quant_roundtrip(&r1, &r2, *threshold, *no_threshold, json);
+                }
+                diff::run(
+                    &r1,
+                    &r2,
+                    *weights,
+                    *values,
+                    filter.as_deref(),
+                    *limit,
+                    *transpose_aware,
+                    json,
+                )
+            })
         }
 
         _ => return None,
@@ -1217,4 +1272,52 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         _ => return None,
     })
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod batch_jsonl_logprobs_4026 {
+    use super::run_batch_jsonl;
+    use std::path::Path;
+
+    /// #4026: the batch path records no per-step logprobs, so `--logprobs K` > 0 is
+    /// refused by name before anything is read. Neither path needs to exist.
+    #[test]
+    fn logprobs_under_batch_jsonl_is_refused_by_name() {
+        let err = run_batch_jsonl(
+            "/nonexistent-4026/model.gguf",
+            Path::new("/nonexistent-4026/prompts.jsonl"),
+            false,
+            4,
+            8,
+            0.0,
+            1,
+            true,
+            false,
+            &super::commands::run::ConstraintArgs::default(),
+        )
+        .expect_err("refused");
+        let msg = err.to_string();
+        assert!(msg.contains("--logprobs 4"), "{msg}");
+        assert!(msg.contains("--batch-jsonl"), "{msg}");
+    }
+
+    /// K = 0 is not refused: the call reaches the batch path and fails there, on the
+    /// missing files, with an error that does not name `--logprobs`.
+    #[test]
+    fn logprobs_off_is_not_refused_under_batch_jsonl() {
+        let err = run_batch_jsonl(
+            "/nonexistent-4026/model.gguf",
+            Path::new("/nonexistent-4026/prompts.jsonl"),
+            false,
+            0,
+            8,
+            0.0,
+            1,
+            true,
+            false,
+            &super::commands::run::ConstraintArgs::default(),
+        )
+        .expect_err("missing files");
+        assert!(!err.to_string().contains("--logprobs"), "{err}");
+    }
 }

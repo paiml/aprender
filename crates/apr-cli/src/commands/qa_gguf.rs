@@ -138,14 +138,21 @@ fn throughput_gate_for(
 /// Skip decision for the cross-format parity gate.
 ///
 /// It loads the GGUF side with the dense loader, so a CPU-only architecture
-/// skips for the same reason the Ollama parity gate does.
+/// skips for the same reason the Ollama parity gate does. An embedding model
+/// (APR-EMBED-001 EG-5) and a MoE model skip by kind.
 fn format_parity_skip(
     capability_match_failed: bool,
-    cpu_only: bool,
+    (embedding, moe, cpu_only): (bool, bool, bool),
     config: &QaConfig,
 ) -> (bool, &str) {
     if capability_match_failed {
         return (true, "Skipped due to capability match failure");
+    }
+    if embedding {
+        return (true, EMBEDDING_KIND_SKIP);
+    }
+    if moe {
+        return (true, MOE_DENSE_SKIP);
     }
     if cpu_only {
         return (true, DENSE_LOADER_SKIP);
@@ -230,6 +237,10 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     // through the runtime entry point, and dense-instrument gates skip.
     let moe = super::qa_capability::moe_loader_architecture(path);
 
+    // APR-EMBED-001 EG-5: an embedding model generates no text, so golden_embedding judges it
+    // and every token-stream gate skips by kind.
+    let embedding = super::model_kind_gate::is_embedding_path(path);
+
     let get_skip = |skip: bool, reason: &'static str| -> (bool, &'static str) {
         if capability_match_failed {
             (true, "Skipped due to capability match failure")
@@ -241,11 +252,19 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     // The CPU gates run for real on a CPU-only architecture — through the same
     // entry point `apr run` uses, because the dense loader refuses the model.
     let (s, r) = get_skip(config.skip_golden, "Skipped by --skip-golden");
+    let (s, r) = embedding_gate_skip(embedding, s, r);
     dispatch_gate(&mut gates, config.json, s, "golden_output", r, || {
         golden_gate_for(cpu_only, hybrid || moe, path, config)
     })?;
 
+    let (s, r) = get_skip(config.skip_golden, "Skipped by --skip-golden");
+    let (s, r) = golden_embedding_skip(embedding, s, r);
+    dispatch_gate(&mut gates, config.json, s, "golden_embedding", r, || {
+        run_golden_embedding_gate(path, config)
+    })?;
+
     let (s, r) = get_skip(config.skip_throughput, "Skipped by --skip-throughput");
+    let (s, r) = embedding_gate_skip(embedding, s, r);
     dispatch_gate(&mut gates, config.json, s, "throughput", r, || {
         throughput_gate_for(cpu_only, hybrid || moe, path, config)
     })?;
@@ -258,27 +277,38 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         "Skipped by --skip-ollama"
     };
     let (s, r) = get_skip(orig_skip_ollama, orig_reason_ollama);
-    let (s, r) = dense_gate_skip(cpu_only || hybrid, s, r);
-    let (s, r) = moe_gate_skip(moe, s, r);
+    // #5254: against ollama on THIS file, the runtime entry point measures the
+    // hybrid and MoE models the dense loader refuses. Against the size-matched
+    // qwen2.5-coder tag they stay skipped: that tag is a different model.
+    let runtime = config.ollama_from_file && (cpu_only || hybrid || moe);
+    let (s, r) = if config.ollama_from_file {
+        (s, r)
+    } else {
+        let (s, r) = dense_gate_skip(cpu_only || hybrid, s, r);
+        moe_gate_skip(moe, s, r)
+    };
+    // An embedding file has no generation to compare on either route.
+    let (s, r) = embedding_gate_skip(embedding, s, r);
     dispatch_gate(&mut gates, config.json, s, "ollama_parity", r, || {
-        run_ollama_parity_gate(path, config)
+        run_ollama_parity_gate(path, config, runtime)
     })?;
 
     let (s, r) = get_skip(config.skip_gpu_speedup, "Skipped by --skip-gpu-speedup");
     let (s, r) = gpu_gate_skip(cpu_only, s, r);
     let (s, r) = hybrid_gpu_gate_skip(hybrid, s, r);
     let (s, r) = moe_gate_skip(moe, s, r);
+    let (s, r) = embedding_gate_skip(embedding, s, r);
     dispatch_gate(&mut gates, config.json, s, "gpu_speedup", r, || {
         run_gpu_speedup_gate(path, config)
     })?;
 
     // get_skip expects &'static str, but the format-parity reason is &str, so
-    // the three-way decision lives in its own function.
-    let (s, r) = if moe && !capability_match_failed {
-        (true, MOE_DENSE_SKIP)
-    } else {
-        format_parity_skip(capability_match_failed, cpu_only || hybrid, config)
-    };
+    // the decision lives in its own function.
+    let (s, r) = format_parity_skip(
+        capability_match_failed,
+        (embedding, moe, cpu_only || hybrid),
+        config,
+    );
     dispatch_gate(&mut gates, config.json, s, "format_parity", r, || {
         run_format_parity_gate(path, config)
     })?;
@@ -287,6 +317,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     // runs it for real (#3477).
     let (s, r) = get_skip(config.skip_ptx_parity, "Skipped by --skip-ptx-parity");
     let (s, r) = gpu_gate_skip(cpu_only, s, r);
+    let (s, r) = embedding_gate_skip(embedding, s, r);
     dispatch_gate(&mut gates, config.json, s, "ptx_parity", r, || {
         run_ptx_parity_gate(path, config)
     })?;
@@ -295,6 +326,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let (s, r) = gpu_gate_skip(cpu_only, s, r);
     let (s, r) = hybrid_gpu_gate_skip(hybrid, s, r);
     let (s, r) = moe_gate_skip(moe, s, r);
+    let (s, r) = embedding_gate_skip(embedding, s, r);
     dispatch_gate(&mut gates, config.json, s, "gpu_state_isolation", r, || {
         run_gpu_state_isolation_gate(path, config)
     })?;

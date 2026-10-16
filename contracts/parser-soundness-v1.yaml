@@ -55,3 +55,25 @@ falsification:
     description: "APR file with wrong magic bytes ('GGUF') is rejected as UnknownMagic"
     test: "Write APR magic field as GGUF bytes; assert FormatError::UnknownMagic"
     evidence: "cargo test -p aprender-core --lib parser_soundness"
+
+falsification_tests:
+  - id: FALSIFY-PARSER_SOUNDNESS-001
+    description: "malformed_rejection: a truncated GGUF buffer returns a typed error, not a panic"
+    test: "cargo test -p aprender-core --lib test_from_bytes_file_too_small"
+    prediction: "GgufReader::from_bytes on a 10-byte buffer returns Err containing 'too small'"
+    if_fails: "the GGUF parser accepts or panics on a truncated header"
+  - id: FALSIFY-PARSER_SOUNDNESS-002
+    description: "header_integrity: a GGUF one byte short of its 24-byte header is rejected"
+    test: "cargo test -p aprender-core --lib test_from_bytes_file_exactly_23_bytes"
+    prediction: "GgufReader::from_bytes on a 23-byte buffer returns Err"
+    if_fails: "the GGUF header-size bound is off by one or unchecked"
+  - id: FALSIFY-PARSER_SOUNDNESS-003
+    description: "header_integrity: a SafeTensors header_len larger than the file is rejected"
+    test: "cargo test -p aprender-core --lib test_safetensors_truncated_header"
+    prediction: "a 20-byte file claiming header_len 1000 returns Err containing 'truncated'"
+    if_fails: "the SafeTensors parser trusts header_len beyond the file size"
+  - id: FALSIFY-PARSER_SOUNDNESS-004
+    description: "magic_byte_detection: unrecognised magic bytes are rejected"
+    test: "cargo test -p aprender-core --lib test_list_tensors_unknown_magic_4_bytes"
+    prediction: "bytes DE AD BE EF return Err containing 'Unknown model format'"
+    if_fails: "magic dispatch accepts unknown bytes as a model format"
