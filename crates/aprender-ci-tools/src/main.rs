@@ -1,9 +1,9 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, llama_fit_verdict, nextest_fail_fast,
-    package_include_diff, publishable_crates, tarball_build_errors, tarball_shrink_report,
-    tarball_workspace,
+    coverage_report_scope, dag_status, git_patch_id, ladder_cells_produce, llama_fit_verdict,
+    nextest_fail_fast, package_include_diff, publishable_crates, tarball_build_errors,
+    tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -95,6 +95,13 @@ enum Cmd {
         /// empty path reads as empty. Any other count exits 1, as the original's unpacking did.
         #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
+    },
+    /// Measure the model-ladder cells: `gpumem`, `enrich` and `measure` (was
+    /// scripts/lib/model_ladder_cells_produce.py, kept while scripts/model_ladder.sh calls it).
+    /// Exit 2 on a usage error or an `--only` that names no model.
+    LadderCellsProduce {
+        #[command(subcommand)]
+        cmd: Box<ladder_cells_produce::Sub>,
     },
     /// `VERDICT <tag> <path>: <msg>` for `[profile.ci].fail-fast` in a nextest config (was
     /// the inline Python judge in scripts/check_nextest_ci_profile_no_fail_fast.sh). Exit 0
@@ -212,6 +219,9 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             dag_status::run(&root, &rows).map_err(nothing_printed)
         }
         Cmd::LlamaFitVerdict { args } => llama_fit_verdict::run(&args).map_err(nothing_printed),
+        Cmd::LadderCellsProduce { cmd } => {
+            ladder_cells_produce::run(&cmd).map_err(|(code, reason)| (String::new(), code, reason))
+        }
         Cmd::NextestFailFast { reader, toml } => {
             // clap's value_parser admits only the two names parse() knows.
             let reader = nextest_fail_fast::Reader::parse(&reader)
@@ -233,10 +243,11 @@ fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         // --help/--version exit 0. A usage error exits as its original did: 2 for the two
-        // tarball tools (their argv-length checks return 2), 1 for the rest.
+        // tarball tools (their argv-length checks return 2) and for ladder-cells-produce
+        // (argparse), 1 for the rest.
         Err(e) => {
             let usage = match std::env::args().nth(1).as_deref() {
-                Some("tarball-shrink-report" | "tarball-workspace") => 2,
+                Some("tarball-shrink-report" | "tarball-workspace" | "ladder-cells-produce") => 2,
                 _ => 1,
             };
             let code = if e.use_stderr() { usage } else { 0 };

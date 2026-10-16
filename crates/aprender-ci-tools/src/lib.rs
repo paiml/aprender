@@ -6,10 +6,14 @@
 pub mod coverage_report_scope;
 pub mod dag_status;
 pub mod git_patch_id;
+pub mod ladder_cells_io;
+pub mod ladder_cells_judge;
+pub mod ladder_cells_produce;
 pub mod llama_fit_verdict;
 pub mod nextest_fail_fast;
 pub mod package_include_diff;
 pub mod publishable_crates;
+pub mod pyjson;
 pub mod pystr;
 pub mod tarball_build_errors;
 pub mod tarball_shrink_report;

@@ -14,6 +14,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `dag-status --root DIR` (reads `[id, row]` JSON pairs on stdin) | `scripts/lib/dag_status.py` (kept for now, see below) |
 | `git-patch-id [--stable\|--unstable\|--verbatim]` (reads a diff on stdin) | `scripts/lib/git_patch_id.py` (kept: callers `scripts/lib/pr_review_patch_id.sh` and `scripts/check_pr_review_arm4.sh` not yet switched) |
 | `llama-fit-verdict TOOL_FOUND PIN RC FREE_MIB VERSION_FILE STDOUT_FILE MODEL` | `scripts/lib/llama_fit_verdict.py` (kept: `scripts/model_ladder.sh` calls it on the certification path, and `scripts/check_model_ladder.sh` mutates copies of it) |
+| `ladder-cells-produce gpumem` · `enrich --apr --inventory --models --out` · `measure ...` (same flags as the original) | `scripts/lib/model_ladder_cells_produce.py` (kept: `scripts/model_ladder.sh` calls it on the certification path and `scripts/check_ladder_cells_producer.sh` checks it; the judge functions it imports are ported too, and `scripts/lib/model_ladder_cells_judge.py` stays) |
 | `nextest-fail-fast [--reader library\|fallback] TOML` | the inline Python judge in `scripts/check_nextest_ci_profile_no_fail_fast.sh` (kept: the guard runs it inline and switches once a released `aprender-ci-tools` carries the port, N-1) |
 
 Each port must print the same stdout as its original and agree with it on success
@@ -99,5 +100,18 @@ checks that each side gives its own exit status, so a parser upgrade that moves 
 | first line of the written `DIR/Cargo.toml` | names `scripts/lib/tarball_workspace.py` | names `aprender-ci-tools tarball-workspace` (the parity test maps this one line, nothing else) |
 | a refusal | exit 2 | exit 1 (parity compares success vs failure; every caller tests only that) |
 | a non-string `name`/`version`/`target_directory` | printed via `str()` | refused: cargo rejects such a manifest before it is packaged |
+
+## Where `ladder-cells-produce` differs (by design; no caller passes these inputs)
+
+| Case | Original | Port |
+|------|----------|------|
+| a usage error | argparse's message, exit 2 | clap's message, exit 2 |
+| an abbreviated long flag (`--inv`) | accepted when unambiguous | accepted when unambiguous (clap `infer_long_args`); clap's ambiguity text |
+| the ladder or rungs YAML | PyYAML, YAML 1.1 (`yes`/`on` are booleans, `0o`/sexagesimal ints) | serde_yaml, YAML 1.2 core |
+| a non-UTF-8 byte in a child's stdout or stderr, or in a text file | `UnicodeDecodeError` traceback | read lossily (U+FFFD); a non-UTF-8 serve body still fails |
+| an int past 128 bits in an input document | a Python int | a JSON decode error |
+| a traceback (a malformed envelope, a non-string template or answer) | the traceback, exit 1 | one `Err` line on stderr, exit 1 |
+| the serve child's own session | `start_new_session=True` (`setsid`) | its own process group; the group is killed on drop |
+| HTTP redirects, proxy variables, a short read | followed / honoured / `IncompleteRead` | not followed / ignored / the bytes read |
 
 Part of the [aprender monorepo](https://github.com/paiml/aprender).
