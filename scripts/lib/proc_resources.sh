@@ -26,7 +26,7 @@
 
 # proc_snapshot PID
 proc_snapshot() {
-    local pid="$1" stat rest io_r io_w hwm rss tck energy energy_why vram vram_why
+    local pid="$1" stat rest io_r io_w hwm rss tck energy energy_why vram vram_why t_ns up
     [ -n "$pid" ] && [ -r "/proc/$pid/stat" ] || return 1
     stat=$(cat "/proc/$pid/stat" 2>/dev/null) || return 1
     # Field 2 (comm) may contain spaces and parentheses; everything after the
@@ -56,11 +56,13 @@ proc_snapshot() {
     else
         vram_why="no nvidia-smi on this host"
     fi
-    # t_ns only ever feeds wall_s (b - a), so any monotonic clock does. EPOCHREALTIME
-    # (bash >= 5) keeps this free of a `date` call (bashrs DET002); older bash falls
-    # back to /proc/uptime, which is 10 ms coarse but still a difference clock.
+    # t_ns only ever feeds wall_s (b - a), so a clock that differs between two reads
+    # does. EPOCHREALTIME (bash >= 5, wall clock like the old `date`) keeps this free
+    # of a `date` call (bashrs DET002); non-digits are stripped because the radix
+    # follows the locale (a comma under en_DK). Older bash falls back to
+    # /proc/uptime, which is monotonic but 10 ms coarse.
     if [ -n "${EPOCHREALTIME:-}" ]; then
-        t_ns="${EPOCHREALTIME/./}000"
+        t_ns="${EPOCHREALTIME//[!0-9]/}000"
     else
         read -r up _ < /proc/uptime
         t_ns="${up/./}0000000"
