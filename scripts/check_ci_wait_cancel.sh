@@ -106,20 +106,39 @@ gate_wiring() { # <file>
 # r4 item 4: behavioural proof, not a grep. A real `fat_driver.py wait` is polling a live driver; a
 # SIGTERM to it (what a cancelled run sends) must make it exit within 20 s AND take the driver down.
 cancel_run_probe() { # <fat_driver.py> -> ok/FAIL, returns 1 on a defect
-    local d=$1 b wp dp i alive=1 rc=0
+    # The fake driver is isolated in its OWN session (`setsid`), so a driver that kills by process
+    # group cannot take the checker down with it; an EXIT trap reaps both children on any exit path.
+    # Readiness is the wait process's own SIGTERM-handler bit (SigCgt in /proc), never a fixed sleep.
+    local d=$1 b wp dp i alive=1 rc=0 ready=0 caught
     b=$(mktemp -d "${TMPDIR:-/tmp}/fat-cancel.XXXXXX")
     printf '{}' > "$b/results.json"; : > "$b/driver.out"
-    sleep 300 & dp=$!
+    setsid sleep 300 > /dev/null 2>&1 & dp=$!
     printf '%s' "$dp" > "$b/driver.pid"
-    python3 "$d" wait --base "$b" --results "$b/results.json" > /dev/null 2>&1 & wp=$!
-    sleep 1
-    kill -TERM "$wp" 2> /dev/null || true
-    for i in $(seq 1 20); do kill -0 "$wp" 2> /dev/null || { alive=0; break; }; sleep 1; done
-    if [ "$alive" = 0 ]; then echo "ok   a SIGTERMed running wait exited"; else echo "FAIL a SIGTERMed running wait is still polling after 20 s"; rc=1; kill -KILL "$wp" 2> /dev/null || true; fi
-    wait "$wp" 2> /dev/null || true
-    if kill -0 "$dp" 2> /dev/null; then echo "FAIL the driver survived the cancelled wait (no reap)"; rc=1; kill -KILL "$dp" 2> /dev/null || true; else echo "ok   the driver was taken down by the cancelled wait"; fi
-    wait "$dp" 2> /dev/null || true
-    rm -f "${b:?}/results.json" "${b:?}/driver.out" "${b:?}/driver.pid"; rmdir "${b:?}"
+    python3 "$d" wait --base "$b" --results "$b/results.json" > "$b/wait.err" 2>&1 & wp=$!
+    # shellcheck disable=SC2064
+    trap "kill -KILL $wp $dp 2> /dev/null || true" EXIT
+    for i in $(seq 1 100); do
+        kill -0 "$wp" 2> /dev/null || break
+        caught=$(awk '/^SigCgt:/ {print $2}' "/proc/$wp/status" 2> /dev/null || true)
+        if [ -n "$caught" ] && [ $(( 0x$caught & 0x4000 )) -ne 0 ]; then ready=1; break; fi
+        sleep 0.1
+    done
+    if ! kill -0 "$wp" 2> /dev/null; then
+        echo "FAIL the wait process died before it was polling ($(head -c 200 "$b/wait.err" | tr '\n' ' '))"; rc=1
+    elif [ "$ready" = 0 ]; then
+        echo "FAIL the wait process never installed a SIGTERM handler (a cancel would not be forwarded)"; rc=1
+    else
+        kill -TERM "$wp" 2> /dev/null || true
+        for i in $(seq 1 200); do kill -0 "$wp" 2> /dev/null || { alive=0; break; }; sleep 0.1; done
+        if [ "$alive" = 0 ]; then echo "ok   a SIGTERMed running wait exited"; else echo "FAIL a SIGTERMed running wait is still polling after 20 s"; rc=1; fi
+    fi
+    kill -KILL "$wp" 2> /dev/null || true; wait "$wp" 2> /dev/null || true
+    if [ "$rc" = 0 ]; then
+        if kill -0 "$dp" 2> /dev/null && [ "$(awk '{print $3}' "/proc/$dp/stat" 2> /dev/null)" != Z ]; then echo "FAIL the driver survived the cancelled wait (no reap)"; rc=1; else echo "ok   the driver was taken down by the cancelled wait"; fi
+    fi
+    kill -KILL "$dp" 2> /dev/null || true; wait "$dp" 2> /dev/null || true
+    trap - EXIT
+    rm -f "${b:?}/results.json" "${b:?}/driver.out" "${b:?}/driver.pid" "${b:?}/wait.err"; rmdir "${b:?}"
     return "$rc"
 }
 
@@ -229,19 +248,19 @@ self_test() {
     r=0; out=$( (unset CI_WAIT_STEPS; export CI_TEARDOWN_STEPS=many; check "$td/f.yml") 2>&1) || r=$?
     if [ "$r" = 2 ] && grep -q "not a positive integer" <<< "$out"; then echo "ok   self-test: CI_TEARDOWN_STEPS='many' is refused (exit 2)"; else echo "FAIL self-test: CI_TEARDOWN_STEPS=many (rc $r, wanted 2): $out"; rc=1; fi
     # r3 item 2: the gate itself, from the real ci.yml, is RED on a cancelled fat need; a mutant gate that skips the check is caught
-    out=$(gate_probe "$ROOT/.github/workflows/ci.yml" 2>&1) || r=$?
+    r=0; out=$(gate_probe "$ROOT/.github/workflows/ci.yml" 2>&1) || r=$?; echo "$out"; { [ "$r" = 0 ] && case "$out" in *FAIL*) false ;; esac; } || { echo "FAIL self-test: control gate_probe (rc $r)"; rc=1; }
     echo "$out"; case "$out" in *FAIL*) rc=1 ;; esac
     sed 's/\[ "\$r" != success \]/[ "\$r" != success ] && false/' "$ROOT/.github/workflows/ci.yml" > "$td/mut-ci.yml"
     r=0; out=$(gate_probe "$td/mut-ci.yml" 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT gate that no longer fails a missing section is caught"; else echo "FAIL self-test: mutant gate not caught (rc $r): $out"; rc=1; fi
     rm -f "${td:?}/mut-ci.yml"
-    out=$(sig_probe "$ROOT/scripts/ci/fat_driver.py" 2>&1) || r=$?; echo "$out"; case "$out" in *FAIL*) rc=1 ;; esac
+    r=0; out=$(sig_probe "$ROOT/scripts/ci/fat_driver.py" 2>&1) || r=$?; echo "$out"; { [ "$r" = 0 ] && case "$out" in *FAIL*) false ;; esac; } || { echo "FAIL self-test: control sig_probe (rc $r)"; rc=1; }
     sed '/signal.signal(signal.SIGTERM, on_signal)/d' "$ROOT/scripts/ci/fat_driver.py" > "$td/mut-fd.py"
     r=0; out=$(sig_probe "$td/mut-fd.py" 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT driver without a SIGTERM handler is caught"; else echo "FAIL self-test: mutant driver not caught (rc $r)"; rc=1; fi
     rm -f "${td:?}/mut-fd.py"
     # r4: gate wiring and the behavioural cancel proof each have a mutant that must go RED
-    out=$(gate_wiring "$ROOT/.github/workflows/ci.yml" 2>&1) || r=$?; echo "$out"; case "$out" in *FAIL*) rc=1 ;; esac
+    r=0; out=$(gate_wiring "$ROOT/.github/workflows/ci.yml" 2>&1) || r=$?; echo "$out"; { [ "$r" = 0 ] && case "$out" in *FAIL*) false ;; esac; } || { echo "FAIL self-test: control gate_wiring (rc $r)"; rc=1; }
     sed 's/^    if: always()[[:space:]]*$/    if: success()/' "$ROOT/.github/workflows/ci.yml" > "$td/mut-gw.yml"
     r=0; out=$(gate_wiring "$td/mut-gw.yml" 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT gate without if: always() is caught"; else echo "FAIL self-test: mutant gate wiring not caught (rc $r)"; rc=1; fi
@@ -249,10 +268,11 @@ self_test() {
     r=0; out=$(gate_wiring "$td/mut-gw.yml" 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT gate that no longer needs the fat jobs is caught"; else echo "FAIL self-test: mutant gate needs not caught (rc $r)"; rc=1; fi
     rm -f "${td:?}/mut-gw.yml"
-    out=$(cancel_run_probe "$ROOT/scripts/ci/fat_driver.py" 2>&1) || r=$?; echo "$out"; case "$out" in *FAIL*) rc=1 ;; esac
+    r=0; out=$(cancel_run_probe "$ROOT/scripts/ci/fat_driver.py" 2>&1) || r=$?; echo "$out"; { [ "$r" = 0 ] && case "$out" in *FAIL*) false ;; esac; } || { echo "FAIL self-test: control cancel_run_probe (rc $r)"; rc=1; }
     sed '/signal.signal(signal.SIGTERM, lambda/d; /signal.signal(signal.SIGINT, lambda/d' "$ROOT/scripts/ci/fat_driver.py" > "$td/mut-wait.py"
+    if cmp -s "$ROOT/scripts/ci/fat_driver.py" "$td/mut-wait.py" || ! python3 -I -c "import sys; compile(open(sys.argv[1]).read(), sys.argv[1], 'exec')" "$td/mut-wait.py" 2> /dev/null; then echo "FAIL self-test: the wait mutant is a no-op or does not compile"; rc=1; fi
     r=0; out=$(cancel_run_probe "$td/mut-wait.py" 2>&1) || r=$?
-    if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT wait that does not forward the cancel is caught"; else echo "FAIL self-test: mutant wait not caught (rc $r): $out"; rc=1; fi
+    if [ "$r" = 1 ] && grep -q "never installed a SIGTERM handler" <<< "$out"; then echo "ok   self-test: MUTANT wait that does not forward the cancel is caught (it never installs the handler)"; else echo "FAIL self-test: mutant wait not caught (rc $r): $out"; rc=1; fi
     rm -f "${td:?}/mut-wait.py"
     rm -f "${td:?}/f.yml"; rmdir "${td:?}"
     return "$rc"
