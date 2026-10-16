@@ -403,6 +403,15 @@ STUB
   local QREF="refs/heads/gh-readonly-queue/main/pr-4655-${B}"
   rrow positive          "0 0 0" ""        "$H" "$QREF"
   rrow short-ref         "0 0 0" ""        "$H" "gh-readonly-queue/main/pr-4655-${B}"
+  # r4: "0 0 0" is also what a refusal answers, so the positive rows must prove resolve REACHED decide:
+  # decide's own reason (K1-K5 hold ...) is present and no refusal text ("lookup failed", "refus") is.
+  for ref in "$QREF" "gh-readonly-queue/main/pr-4655-${B}"; do
+    out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$ref" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
+    case "$(kv reason "$out")" in
+      "K1-K5 hold"*) pass=$((pass + 1)) ;;
+      *) fail=$((fail + 1)); echo "FAIL resolve-reached-decide: '$ref' answered 0 0 0 without decide's reason: $(kv reason "$out")" ;;
+    esac
+  done
   out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$QREF" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
   if [ -z "$(kv cite "$out")" ] && [ -z "$(kv pr_head "$out")" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL resolve-no-cite: a queue entry cites no PR head (cite=$(kv cite "$out") pr_head=$(kv pr_head "$out"))"; fi
   rrow no-pr-number      "0 0 0" ""        "$H" "refs/heads/main"
