@@ -199,8 +199,7 @@ def fail_reason(row, rc, answer, closed, stderr):
     if closed is False:
         return f"thinking never closed within max_tokens {row['max_tokens']}: no </think> in the output"
     if NEEDLE_WORD not in answer:
-        more = f" ... and {len(answer) - 120} more chars" if len(answer) > 120 else ""
-        return f"answer does not contain the needle planted at token 0: {answer[:120]!r}" + more
+        return f"answer does not contain the needle planted at token 0: {answer[:120]!r}" + (f" ... and {len(answer) - 120} more chars" if len(answer) > 120 else "")
     return None
 
 

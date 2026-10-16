@@ -846,6 +846,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ci-tools coverage-report-scope"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ci-tools dag-status"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ci-tools git-patch-id"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ci-tools ladder-cells-produce"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ci-tools llama-fit-verdict"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ci-tools package-include-diff"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-ci-tools publishable-crates"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -859,6 +860,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "6fd04d873b6672953a624dd01eaeb3f310d983ab50e4e79994a38b690b6be057"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "dag-status"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "git-patch-id"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "ladder-cells-produce"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "llama-fit-verdict"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "tarball-build-errors"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "tarball-shrink-report"^^<http://www.w3.org/2001/XMLSchema#string> .

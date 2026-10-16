@@ -13,6 +13,8 @@ use serde_json::{json, Value};
 
 const NEEDLE: &str = "TANGERINE-4417";
 const TMPL: &str = "{% if enable_thinking %}<think>{% endif %}{% if add_generation_prompt %}<|im_start|>assistant{% endif %}";
+const REFUSED_BODY: &str =
+    "{\"error\": \"GPU capacity refused: = 29612 MiB, against 24000 MiB free of 24564 MiB\"}";
 const REFUSAL: &str = "error: GPU capacity refused: weights 20000 MiB + KV 9000 MiB (8192 positions x 4 B at F32) \
                        + workspace 100 MiB + overhead 512 MiB = 29612 MiB, against 24000 MiB free of 24564 MiB \
                        (discrete GPU: cuMemGetInfo). Pass --no-gpu to run the CPU forward instead\n";
@@ -139,9 +141,9 @@ fn verb(mode: &str, args: &[String], stdin: &str) -> Called {
 }
 
 /// The reply to one request on the fake serve: `(status, JSON body)`.
-fn reply(mode: &str, method: &str, body: &[u8]) -> (u16, Value) {
+fn reply(mode: &str, method: &str, body: &[u8]) -> (u16, String) {
     if method == "GET" {
-        return (200, json!({"status": "ok"}));
+        return (200, json!({"status": "ok"}).to_string());
     }
     let req: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
     let on = req["chat_template_kwargs"]["enable_thinking"]
@@ -149,14 +151,13 @@ fn reply(mode: &str, method: &str, body: &[u8]) -> (u16, Value) {
         .unwrap_or(false);
     let content = req["messages"][0]["content"].as_str().unwrap_or("");
     match answer(mode, content, if on { "on" } else { "off" }) {
-        Err(_) => (
-            503,
-            json!({"error": "GPU capacity refused: = 29612 MiB, against 24000 MiB free of 24564 MiB"}),
-        ),
+        // json.dumps spelled this body with ": ", and the producer keeps it verbatim as the reason.
+        Err(_) => (503, REFUSED_BODY.to_owned()),
         Ok((tok, text)) => (
             200,
             json!({"choices": [{"message": {"role": "assistant", "content": text}}],
-                "usage": {"prompt_tokens": tok}, "used_gpu": mode != "fellback"}),
+                "usage": {"prompt_tokens": tok}, "used_gpu": mode != "fellback"})
+            .to_string(),
         ),
     }
 }
@@ -200,8 +201,7 @@ fn serve(mode: &str, port: u16) {
     let listener = std::net::TcpListener::bind(("127.0.0.1", port)).expect("bind the fake serve");
     for mut conn in listener.incoming().flatten() {
         let (method, body) = read_request(&mut conn);
-        let (status, obj) = reply(mode, &method, &body);
-        let text = obj.to_string();
+        let (status, text) = reply(mode, &method, &body);
         let head = format!(
             "HTTP/1.0 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
             text.len()
