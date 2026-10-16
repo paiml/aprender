@@ -4,6 +4,7 @@ use verificar::oracle::{Executor, IoOracle, PythonExecutor};
 use verificar::Language;
 
 #[test]
+#[ignore = "needs python3, absent from the CI test image; see #5373"]
 fn test_io_oracle_example() {
     // Example: Using I/O oracle for verification
     let oracle = IoOracle::new();
@@ -25,6 +26,7 @@ fn test_io_oracle_example() {
 }
 
 #[test]
+#[ignore = "needs python3, absent from the CI test image; see #5373"]
 fn test_python_executor_example() {
     // Example: Executing Python code
     let executor = PythonExecutor::new();
@@ -40,6 +42,7 @@ fn test_python_executor_example() {
 }
 
 #[test]
+#[ignore = "needs python3, absent from the CI test image; see #5373"]
 fn test_verification_with_input_example() {
     // Example: Verification with stdin input
     let executor = PythonExecutor::new();

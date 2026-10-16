@@ -309,12 +309,13 @@ impl GateResult {
 /// drift from the pipeline silently. It is published in the report as
 /// `gates_registered`, so a JSON consumer derives what to expect from the binary
 /// it ran instead of from a number it once counted.
-pub(crate) const QA_GATES: [&str; 12] = [
+pub(crate) const QA_GATES: [&str; 13] = [
     "capability_match",
     "tensor_contract",
     "metadata_plausibility",
     "classifier_head",
     "golden_output",
+    "golden_embedding",
     "throughput",
     "ollama_parity",
     "gpu_speedup",
@@ -712,6 +713,7 @@ fn gate_display_name(name: &str) -> &str {
         "capability_match" => "Capability Match",
         "tensor_contract" => "Tensor Contract",
         "golden_output" => "Golden Output",
+        "golden_embedding" => "Golden Embedding",
         "throughput" => "Throughput",
         "ollama_parity" => "Ollama Parity",
         "gpu_speedup" => "GPU Speedup",
@@ -778,6 +780,7 @@ include!("qa_gguf.rs");
 include!("output_verification.rs");
 include!("gpu_correct_subject.rs");
 include!("golden_output.rs");
+include!("qa_golden_embedding.rs");
 include!("speedup.rs");
 include!("forward_error.rs");
 include!("gpu_isolation_result.rs");

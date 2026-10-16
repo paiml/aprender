@@ -76,3 +76,10 @@ falsification:
   - condition: "Legacy name in page text"
     severity: P0
     action: delete_from_summary
+
+falsification_tests:
+  - id: FALSIFY-PAGE-EXAMPLES_APR_FORMAT_DEEP_DIVE-001
+    description: "book/src/examples/apr-format-deep-dive.md exists, is enforced, carries PCU frontmatter and no placeholders, keeps all 10 section headings this contract lists, and its example apr_with_metadata compiles and runs"
+    test: "bash scripts/book-gate.sh examples-apr-format-deep-dive --strict"
+    prediction: "book-gate exits 0 with G2 (enforced), G3 (page exists), G5 (example compiles), G6 (example runs) and G9 (all contract sections present) PASS"
+    if_fails: "The example apr_with_metadata stopped compiling or exits non-zero, a listed section heading was dropped or renamed, the page moved off its declared path, or a placeholder crept in"

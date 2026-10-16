@@ -126,7 +126,7 @@ pub use quantize::{
     TrueDp4aQ4KGemvKernel, VectorizedQ4KGemvKernel, W4a16WmmaQ4KGemmKernel, WideQ4KGemvKernel,
     NF4_BLOCK_BYTES, NF4_BLOCK_SIZE, NF4_LUT,
 };
-pub use softmax::{LongRowSoftmaxKernel, SoftmaxKernel};
+pub use softmax::{BandSoftmaxKernel, LongRowSoftmaxKernel, SoftmaxKernel, BAND_UNBOUNDED};
 
 use crate::ptx::optimize::barrier_safety::{self, BarrierSafetyResult};
 use crate::ptx::parity::{self, ParityResult};

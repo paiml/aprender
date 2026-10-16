@@ -219,7 +219,9 @@ if [ "${1:-}" = "--self-test" ]; then
                 git -C "$R.shallow" config core.hooksPath /dev/null; git -C "$R.shallow" update-ref refs/remotes/origin/main HEAD; root="$R.shallow" ;;
         esac
         out=$(HP_REPO_ROOT="$root" PMAT_BIN_OVERRIDE="${FAKE_BIN:-$FAKE}" PMAT_BIN_NO_FALLBACK=1 MIN_FILES_SCANNED=1 bash "${BASH_SOURCE[0]}" --full-if-capable 2>&1) || rc=$?
-        if [ "$rc" = "$want" ] && { [ -z "$sub" ] || printf '%s' "$out" | grep -qF -- "$sub"; }; then printf 'ok    ratchet %s (rc=%s)\n' "$label" "$rc"
+        # A here-string, not `printf | grep -q`: under pipefail grep's early exit SIGPIPEs
+        # printf and a MATCHED row reads FAIL (#5374, mg 38693636752; epic #4780).
+        if [ "$rc" = "$want" ] && { [ -z "$sub" ] || grep -qF -- "$sub" <<<"$out"; }; then printf 'ok    ratchet %s (rc=%s)\n' "$label" "$rc"
         else printf 'FAIL  ratchet %s (rc=%s, wanted %s%s)\n' "$label" "$rc" "$want" "${sub:+; wanted text: $sub}"; printf '%s\n' "$out" | tail -6 | sed 's|^|        |'; fails=1; fi
     }
     hp_row 0 "R1 stamp == pin, 8 <= 8: PASS by the absolute compare"                   8 "$(bl 8 "$pin")" 8 "$(bl 8 "$pin")" "matches the pin"

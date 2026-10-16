@@ -244,3 +244,52 @@ fn a_dense_constrained_run_reports_the_attempt_the_dispatch_made() {
         assert!(matches!(tokens.get(1), Some(2 | 3)), "{tokens:?}");
     }
 }
+
+#[test]
+fn the_constraint_eos_joins_the_stop_tokens_once() {
+    let gen_config = crate::gguf::QuantizedGenerateConfig {
+        stop_tokens: vec![7],
+        ..Default::default()
+    };
+    assert_eq!(
+        with_constraint_eos(&gen_config, Some(1)).stop_tokens,
+        vec![7, 1]
+    );
+    assert_eq!(
+        with_constraint_eos(&gen_config, Some(7)).stop_tokens,
+        vec![7]
+    );
+    assert_eq!(with_constraint_eos(&gen_config, None).stop_tokens, vec![7]);
+}
+
+/// #3568: a caller whose stop list lacks the vocabulary's EOS (the model config names another
+/// id, or none) still ends a whole document at it. The mask admits only EOS once "a" or "b" is
+/// out; without it among the stops the turn would take it as a token of the reply.
+#[cfg(feature = "structured-output")]
+#[test]
+fn a_constrained_run_stops_at_the_vocabulary_eos_the_caller_did_not_list() {
+    let (_f, mapped) = q4k_model_with_vocab();
+    let request = ConstraintRequest::Lark(r#"start: "a" | "b""#.to_string());
+    let gen_config = crate::gguf::QuantizedGenerateConfig {
+        max_tokens: 4,
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: vec![],
+        ..Default::default()
+    };
+    let model = crate::gguf::OwnedQuantizedModel::from_mapped(&mapped).expect("load");
+    let config = InferenceConfig::new("m.gguf").without_gpu();
+    let (tokens, _, _, stop) = generate_gguf_constrained(
+        &request,
+        &config,
+        &mapped,
+        Some(model),
+        None,
+        &[2],
+        &gen_config,
+    )
+    .expect("a constrained turn");
+    assert_eq!(stop, ConstrainedStop::Complete);
+    assert_eq!(tokens.len(), 2, "prompt plus one token, no EOS: {tokens:?}");
+    assert!(matches!(tokens[1], 2 | 3), "{tokens:?}");
+}

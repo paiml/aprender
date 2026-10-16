@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2021"
 description = "NASA/DO-178B-grade Rust DSL for type-safe JavaScript generation"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/paiml/probar"
+repository = "https://github.com/paiml/aprender"
 keywords = ["javascript", "codegen", "dsl", "wasm", "webworker"]
 categories = ["development-tools", "wasm"]
 

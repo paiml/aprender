@@ -33,3 +33,10 @@ falsification:
     description: "extract_user_metadata reads source_metadata from a real v2 header. Discharges C-EXPORT-META-001."
     test: "reads_source_metadata_from_real_v2_header — 64-byte header (metadata_offset=64, size=len) + JSON {source_metadata:{foo:bar,baz:qux}}: RED pre-fix empty, GREEN post-fix {foo:bar, baz:qux}."
     evidence: "cargo test -p aprender-core --lib reads_source_metadata_from_real_v2_header"
+
+falsification_tests:
+  - id: FALSIFY-EXPORT_USER_METADATA_ROUNDTRIP-001
+    description: "C-EXPORT-META-001: extract_user_metadata reads source_metadata from a real APR v2 header (offset u64 @12, size u32 @20)"
+    test: "cargo test -p aprender-core --lib reads_source_metadata_from_real_v2_header"
+    prediction: "returned map has foo=bar and baz=qux"
+    if_fails: "wrong header offsets make the bounds guard fail and user metadata is silently dropped on export"

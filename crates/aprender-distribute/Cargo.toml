@@ -5,12 +5,12 @@ version.workspace = true
 edition = "2021"
 authors = ["Pragmatic AI Labs"]
 description = "Sovereign AI-grade distributed computing primitives for Rust (CPU, GPU, HPC)"
-repository = "https://github.com/paiml/repartir"
+repository = "https://github.com/paiml/aprender"
 license = "MIT"
 keywords = ["distributed", "hpc", "gpu", "cpu", "sovereign-ai"]
 categories = ["concurrency", "science"]
 readme = "README.md"
-documentation = "https://docs.rs/repartir"
+documentation = "https://docs.rs/aprender-distribute"
 
 [features]
 default = ["cpu"]

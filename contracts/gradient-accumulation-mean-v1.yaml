@@ -39,3 +39,10 @@ falsification:
     description: "Accumulation steps on the mean, not the sum. Discharges C-GRADACC-001/002."
     test: "falsify_gradient_accumulation_is_mean_not_sum — SGD(lr=1), clip off: accum=2 over two identical batches vs accum=1 over one. RED b=[3,4] (2× move), GREEN b=[2,3]==a."
     evidence: "cargo test -p aprender-train --lib falsify_gradient_accumulation_is_mean_not_sum"
+
+falsification_tests:
+  - id: FALSIFY-GRADIENT_ACCUMULATION_MEAN-001
+    description: "C-GRADACC-001/002: accum=2 over two identical micro-batches under SGD(lr=1), clip off, equals accum=1 over one batch"
+    test: "cargo test -p aprender-train --lib falsify_gradient_accumulation_is_mean_not_sum"
+    prediction: "final params of run(2,2) == run(1,1) within 1e-5"
+    if_fails: "accumulation steps on the SUM of micro-batch grads (K-fold effective LR inflation)"

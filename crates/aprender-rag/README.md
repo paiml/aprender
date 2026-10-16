@@ -1,5 +1,5 @@
 <div align="center">
-<h1 align="center">trueno-rag</h1>
+<h1 align="center">aprender-rag</h1>
 
 <img src=".github/trueno-rag-hero.svg" alt="trueno-rag" width="600">
 
@@ -18,16 +18,16 @@
 
 **Pure-Rust Retrieval-Augmented Generation Pipeline**
 
-[![Crates.io](https://img.shields.io/crates/v/trueno-rag.svg)](https://crates.io/crates/trueno-rag)
-[![Documentation](https://docs.rs/trueno-rag/badge.svg)](https://docs.rs/trueno-rag)
-[![CI](https://github.com/paiml/trueno-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/trueno-rag/actions)
+[![Crates.io](https://img.shields.io/crates/v/aprender-rag.svg)](https://crates.io/crates/aprender-rag)
+[![Documentation](https://docs.rs/aprender-rag/badge.svg)](https://docs.rs/aprender-rag)
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 </div>
 
 ---
 
-SIMD-accelerated RAG pipeline built on [Trueno](https://crates.io/crates/trueno) compute primitives. Part of the [Sovereign AI Stack](https://github.com/paiml).
+SIMD-accelerated RAG pipeline built on [Trueno](https://crates.io/crates/aprender-compute) compute primitives. Part of the [Sovereign AI Stack](https://github.com/paiml).
 
 ## Features
 
@@ -46,13 +46,13 @@ SIMD-accelerated RAG pipeline built on [Trueno](https://crates.io/crates/trueno)
 
 ```toml
 [dependencies]
-trueno-rag = "0.2.4"
+aprender-rag = "0.71"
 ```
 
 ## Usage
 
 ```rust
-use trueno_rag::{
+use aprender_rag::{
     pipeline::RagPipelineBuilder,
     chunk::RecursiveChunker,
     embed::MockEmbedder,
@@ -100,11 +100,11 @@ NEMOTRON_MODEL_PATH=/path/to/model.gguf cargo run --example nemotron_embeddings 
 Production-quality vector embeddings via FastEmbed (ONNX Runtime):
 
 ```toml
-trueno-rag = { version = "0.2.4", features = ["embeddings"] }
+aprender-rag = { version = "0.71", features = ["embeddings"] }
 ```
 
 ```rust
-use trueno_rag::embed::{FastEmbedder, EmbeddingModelType, Embedder};
+use aprender_rag::embed::{FastEmbedder, EmbeddingModelType, Embedder};
 
 let embedder = FastEmbedder::new(EmbeddingModelType::AllMiniLmL6V2)?;
 let embedding = embedder.embed("Hello, world!")?;
@@ -123,11 +123,11 @@ Available models:
 High-quality 4096-dimensional embeddings via GGUF model inference:
 
 ```toml
-trueno-rag = { version = "0.2.4", features = ["nemotron"] }
+aprender-rag = { version = "0.71", features = ["nemotron"] }
 ```
 
 ```rust
-use trueno_rag::embed::{NemotronEmbedder, NemotronConfig, Embedder};
+use aprender_rag::embed::{NemotronEmbedder, NemotronConfig, Embedder};
 
 let config = NemotronConfig::new("models/NV-Embed-v2-Q4_K.gguf")
     .with_gpu(true)
@@ -144,11 +144,11 @@ let doc_emb = embedder.embed_document("Machine learning is a branch of AI...")?;
 LZ4/ZSTD compressed index persistence:
 
 ```toml
-trueno-rag = { version = "0.2.4", features = ["compression"] }
+aprender-rag = { version = "0.71", features = ["compression"] }
 ```
 
 ```rust
-use trueno_rag::{compressed::Compression, BM25Index};
+use aprender_rag::{compressed::Compression, BM25Index};
 
 let bytes = index.to_compressed_bytes(Compression::Zstd)?;
 // 4-6x compression ratio
@@ -194,13 +194,13 @@ make lint                 # Clippy lints
 
 ## Stack Dependencies
 
-trueno-rag is part of the Sovereign AI Stack:
+aprender-rag (formerly trueno-rag) is part of the Sovereign AI Stack:
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
-| [trueno](https://crates.io/crates/trueno) | 0.15 | SIMD/GPU compute primitives |
-| [trueno-db](https://crates.io/crates/trueno-db) | 0.3.14 | GPU-first analytics database |
-| [realizar](https://crates.io/crates/realizar) | 0.7 | GGUF/APR model inference |
+| [aprender-compute](https://crates.io/crates/aprender-compute) | 0.71 | SIMD/GPU compute primitives |
+| [aprender-db](https://crates.io/crates/aprender-db) | 0.71 | GPU-first analytics database |
+| [aprender-serve](https://crates.io/crates/aprender-serve) | 0.71 | GGUF/APR model inference |
 | [fastembed](https://crates.io/crates/fastembed) | 5.x | ONNX embeddings |
 
 ## Development
@@ -214,8 +214,8 @@ make book       # Build documentation book
 
 ## Documentation
 
-- [API Documentation](https://docs.rs/trueno-rag)
-- [User Guide](https://paiml.github.io/trueno-rag/)
+- [API Documentation](https://docs.rs/aprender-rag)
+- [User Guide](https://github.com/paiml/aprender/tree/main/crates/aprender-rag/book)
 
 ## Contributing
 

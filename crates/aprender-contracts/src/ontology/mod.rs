@@ -4,6 +4,7 @@
 //! - [`capability_cells`] — ONT-4c5: every required ladder cell is Pass or Fail at the current release; NotRun is RED.
 //! - [`extract`] — extractors: each entity type becomes RDF (§3.7; ONT-4b implements `pv_contract`).
 //! - [`owl`] — Σ as OWL 2 EL functional syntax, in-house, and its told-closure TBox, advisory (§3.8; ONT-2c).
+//! - [`readme`] — published READMEs and manifest URLs point at the monorepo, never an archived repo (#5382).
 //! - [`rdf`] — the deterministic graph and its N-Triples writer (R-15; no blank nodes).
 //! - [`shapes`] — the in-house SHACL-Core-subset validator and the Turtle export (§3.6; ONT-4b).
 //! - [`sigma`] — Σ, the ontology's own declaration (`contracts/ontology.yaml`; §4.1).
@@ -17,6 +18,7 @@ pub mod liskov;
 pub mod measured_sets;
 pub mod owl;
 pub mod rdf;
+pub mod readme;
 pub mod receipts;
 pub mod shapes;
 pub mod sigma;

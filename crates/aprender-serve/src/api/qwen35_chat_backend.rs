@@ -277,7 +277,14 @@ async fn try_qwen35_backend(
     // What the context leaves — the budget the session will actually decode.
     let budget = max_tokens.min(context_length - prompt_token_count);
 
-    let stop_tokens = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
+    // aprender#4345: the EOS and every EOG marker the vocabulary has.
+    let stop_tokens = stop_tokens_unless_ignore_eos(
+        request,
+        crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            state.model_eos_token_id(),
+        ),
+    );
     // The context-bounded budget, not the request's number: what is decoded and what
     // `finish_reason` is judged against are the same count.
     let gen_config = gen_config_from_request(request, budget, stop_tokens, cancel.clone());
