@@ -53,6 +53,11 @@ proc_snapshot() {
         vram=$(nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2>/dev/null \
             | awk -F', *' -v p="$pid" '$1 == p {print $2; exit}')
         if [ -z "$vram" ]; then vram=null; vram_why="pid not in nvidia-smi compute apps"; fi
+        case $vram in
+            null|*[!0-9]*)
+                [ "$vram" = null ] || vram_why="nvidia-smi reported a non-numeric value: $vram"
+                vram=null ;;
+        esac
     else
         vram_why="no nvidia-smi on this host"
     fi
