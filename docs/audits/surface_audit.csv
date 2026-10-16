@@ -34,7 +34,7 @@ aprender-data,aprender-data registry show-info,6,UNKNOWN,huggingface-transformer
 aprender-data,aprender-data repl,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:175,high
 aprender-data,aprender-data schema,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:66,high
 aprender-data,aprender-data view,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:140,high
-apr,DELETE /api/delete,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:654,medium
+apr,DELETE /api/delete,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:730,medium
 apr,GET /,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:317,high
 apr,GET /api/tags,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:183,high
 apr,GET /api/version,9,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:185,medium
@@ -58,7 +58,7 @@ apr,"POST /api/chat (stream:true, NDJSON)",3,x86_64-linux,ollama,no,3,http-apr-s
 apr,POST /api/embeddings,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:188,high
 apr,POST /api/generate,3,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:179,high
 apr,"POST /api/generate (stream:true, NDJSON)",3,x86_64-linux,ollama,no,3,http-apr-serve,crates/aprender-serve/src/api/ollama_handlers.rs:742 (framing :397-437),high
-apr,POST /api/pull,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:650,medium
+apr,POST /api/pull,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:726,medium
 apr,POST /api/show,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:184,high
 apr,POST /batch/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:99,high
 apr,POST /batch/tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:98,high
