@@ -492,15 +492,18 @@ STUB
         if (jif["mg-reuse"] != want) print "mg-reuse job-level if is not the push-only key: [" jif["mg-reuse"] "]"
         if (jif["mg-reuse"] ~ /merge_group/) print "mg-reuse if names merge_group: a queue entry could reuse"
         for (k in dep) if (jif[k] !~ /!cancelled\(\)|always\(\)/) print "job " k " needs mg-reuse but its if lacks !cancelled()/always(): skipped with it on merge_group"
-      }' "$1" 2> /dev/null
+      }' "$1" || echo "mgshape: awk failed on $1 (fail closed)"
   }
-  local ms; ms=$(mgshape "$wf")
+  local ms; ms=$(mgshape "$wf"); [ -s "$wf" ] || ms="${ms:+$ms; }mgshape: $wf is missing or empty"
   if [ -z "$ms" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: $ms"; fi
   mgmut() { # mgmut NAME SED_EXPR: the mutant of the real ci.yml must be RED
     sed -E "$2" "$wf" > "$T/mut.yml"
     if [ -n "$(mgshape "$T/mut.yml")" ]; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL mutant $1: mgshape stayed green"; fi
   }
+  wire mg-reuse '[ "$EVT" != merge_group ] || printf '"'"'x86=0\ndet=0\n'"'"' >> "$GITHUB_OUTPUT"'
+  if [ -n "$(mgshape /nonexistent/ci.yml 2>/dev/null)" ]; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL mutant mgshape-unreadable: an unreadable workflow passed green (fails open)"; fi
   mgmut mg-if-old-merge_group "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
   mgmut mg-if-removed-string-elsewhere "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
   mgmut x86-main-if-loses-cancelled "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
