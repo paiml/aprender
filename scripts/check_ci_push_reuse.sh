@@ -272,7 +272,7 @@ want "D8 a refused result on a root commit keeps today's full" "tier=full" "$(gr
 git -C "$T/r" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "queue, same tree"
 P="$(git -C "$T/r" rev-parse HEAD~1)"; Q="$(git -C "$T/r" rev-parse HEAD)"
 OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
-want "D9 merge_group same tree + PR head success -> reuse citing the PR head (unchanged)" "cite=$P" "$(grep '^cite=' <<<"$OUT")"
+hasnt "D9 merge_group same tree + PR head success -> NEVER reuse: the queue owes the full tier (BSE-17 reuse hole closed)" "tier=reuse" "$OUT"
 OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion failure --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
 hasnt "D10 merge_group ignores --mg-*: a PR-head failure never reuses" "tier=reuse" "$OUT"
 printf 'docs/audits/a.md\n' >"$T/d.txt"

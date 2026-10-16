@@ -283,6 +283,17 @@ push_reuse_why() {
     [ "$MG_CONCLUSION" = success ] || { echo "merge_group run $MG_RUN's workspace-test concluded ${MG_CONCLUSION:-nothing}, not success"; return; } # R-MGCONCL
 }
 
+# owe_full: the queue's answer over a selection. A PR head runs QUICK, so a quick
+# selection is promoted to FULL (every other line rides along); none (nothing to
+# measure) and full stay as they are. $1 = the selection's KEY=VALUE output.
+owe_full() {
+    local out=$1
+    case $(printf '%s\n' "$out" | sed -n 's/^tier=//p') in
+        quick) printf '%s\n' "$out" | sed -e 's/^tier=quick$/tier=full/' -e 's/^reason=/reason=queue owes FULL (the PR head ran quick, never reused): /' ;;
+        *) printf '%s\n' "$out" ;;
+    esac
+}
+
 decide() {
     local df rc=0
     case "$EVENT" in
@@ -326,27 +337,20 @@ decide() {
             selection "push: $how" "$df" || rc=$?
             rm -f "$df"; return $rc ;;
         merge_group)
-            if [ -z "$PR_HEAD" ]; then printf 'tier=full\nreason=merge_group without a PR head to compare against\n'; return 0; fi
-            local ht pt
-            ht=$(git -C "$ROOT" rev-parse 'HEAD^{tree}' 2>/dev/null || true)
-            pt=$(git -C "$ROOT" rev-parse "${PR_HEAD}^{tree}" 2>/dev/null || true)
-            if [ -z "$ht" ] || [ -z "$pt" ]; then printf 'tier=full\nreason=merge_group: a tree could not be resolved (HEAD=%s pr-head=%s)\n' "${ht:-?}" "${pt:-?}"; return 0; fi
-            if [ "$ht" != "$pt" ]; then
-                # THE QUEUE MIRRORS THE PR: main moved, the PR's diff did not.
-                # #3658: the queue is SQUASH (mergeQueue.configuration.mergeMethod),
-                # so a queue ref has ONE parent and HEAD^2 never exists. This used to
-                # demand HEAD^2 and fall closed to full on every group -- 10 of 10
-                # sampled groups paid the full hour, text-only PRs included. For a
-                # squash AND for a merge, HEAD^1 is the base the entry was built on
-                # (main's tip, or the previous entry in the group), so HEAD^1..HEAD
-                # IS this PR's diff on the new base. A failed diff still falls closed.
-                df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
-                if ! diff_into "$df" 'HEAD^1'; then rm -f "$df"; printf 'tier=full\nreason=merge_group: main moved under the PR but git diff HEAD^1..HEAD failed, so the PR diff cannot be re-derived -- fail closed\n'; return 0; fi
-                selection "merge_group: main moved under the PR (queue tree ${ht:0:9} != PR head tree ${pt:0:9}); the PR's own selection re-derived on the queue ref from HEAD^1..HEAD" "$df" || rc=$?
-                rm -f "$df"; return $rc
-            fi
-            if [ "$PR_CONCLUSION" != "success" ]; then printf 'tier=full\nreason=merge_group: same tree but the PR head'"'"'s workspace-test concluded %s, not success\n' "${PR_CONCLUSION:-unknown}"; return 0; fi
-            printf 'tier=reuse\ncite=%s\nreason=merge_group: HEAD^{tree} %s equals PR head %s^{tree}, whose workspace-test succeeded — the same tree measured twice\n' "$PR_HEAD" "${ht:0:9}" "${PR_HEAD:0:9}" ;;
+            # 20X (structural-pr-flow-1016 s10): the PR head ran QUICK, so the queue OWES
+            # the FULL tier. A PR head's green is never reused here: its recorded tier is
+            # quick or none, never full, and the old same-tree `reuse` let a quick green
+            # stand in for the full run (the BSE-17 reuse hole). The queue ref is built on
+            # main's tip, so HEAD^1..HEAD IS this PR's diff on the new base (squash queue,
+            # #3658); a diff that cannot be derived falls closed to full. `none` (empty or
+            # docs-only) stays none: there is nothing to measure.
+            local df sel_out
+            df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
+            if ! diff_into "$df" 'HEAD^1'; then rm -f "${df:?}"; printf 'tier=full\nreason=merge_group: git diff HEAD^1..HEAD failed, so the PR diff cannot be derived -- fail closed to full\n'; return 0; fi
+            sel_out=$(selection "merge_group: the queue owes the full tier; the PR's own selection re-derived on the queue ref from HEAD^1..HEAD" "$df") || rc=$?
+            rm -f "${df:?}"
+            [ "$rc" = 0 ] || { printf '%s\n' "$sel_out"; return "$rc"; }
+            owe_full "$sel_out" ;;
         pull_request)
             selection "pull_request" "$DIFF_FROM" || return $? ;;
         *) printf 'ENV: unknown event "%s" — refusing to guess a tier\n' "$EVENT" >&2; return 2 ;;
@@ -472,14 +476,14 @@ self_test() {
     # merge_group rows on a throwaway repo: same tree (empty commit) vs different tree
     git init -q "$td/repo"; ( cd "$td/repo" && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m base && printf 'a\n' > f && git add f && git -c user.name=t -c user.email=t@t commit -q -m one && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "queue merge, same tree" )
     same=$(git -C "$td/repo" rev-parse HEAD~1)
-    row 0 "merge_group, same tree + PR head workspace-test success -> reuse, citing the head" "^cite=$same" bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion success
-    row 0 "merge_group, same tree but PR head conclusion failure -> full" 'concluded failure' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion failure
+    row 0 "merge_group, same tree + PR head success -> NEVER reused: the queue re-derives from HEAD^1..HEAD (this fixture's queue commit is empty -> none)" '^tier=none$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion success
+    row 0 "merge_group, same tree but PR head conclusion failure -> the conclusion is not read either; same empty diff -> none" '^tier=none$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion failure
     diff1=$(git -C "$td/repo" rev-parse HEAD~2)
     # #3658: this row USED to want 'not a merge commit' -> full. That was the bug:
     # the queue is SQUASH, so a one-parent queue ref is the NORMAL shape and
     # HEAD^1..HEAD is still the PR's diff. It now re-derives instead of paying the hour.
     row 0 "merge_group, different tree on a ONE-PARENT (squash-shaped) ref -> re-derived from HEAD^1..HEAD, not full (this fixture's queue commit is empty -> none)" '^tier=none$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
-    row 0 "merge_group without a PR head -> full" 'without a PR head' bash "$T" --event merge_group --repo-root "$td/repo"
+    row 0 "merge_group without a PR head -> the queue no longer needs one (empty diff -> none)" '^tier=none$' bash "$T" --event merge_group --repo-root "$td/repo"
     # PMAT-1098 67-E2 (#3084): THE QUEUE MIRRORS THE PR. A rebase is not new
     # evidence about the PR's diff, it is the same diff on a new base — so a
     # merge_group whose tree moved re-derives the PR's OWN selection from the
@@ -503,7 +507,8 @@ self_test() {
     mkqueue "$td/q-cap"  "crates/aprender-core/src/lib.rs"
     qh() { git -C "$1" rev-parse pr; }
     cap mg-leaf bash "$T" --event merge_group --repo-root "$td/q-leaf" --pr-head "$(qh "$td/q-leaf")" --pr-head-conclusion success
-    row 0 "merge_group, different tree, the PR ran quick -> quick, not full (main moved is not new evidence)" '^tier=quick' bash -c "$(replay mg-leaf)"
+    row 0 "merge_group, different tree, the PR ran quick -> the queue OWES FULL, never a reused quick" '^tier=full$' bash -c "$(replay mg-leaf)"
+    row 0 "  ...and the reason says the queue owes full, so the promotion is auditable" 'queue owes FULL' bash -c "$(replay mg-leaf)"
     row 0 "  ...with the SAME crates the PR ran ($leaf), re-derived from HEAD^1..HEAD on the queue ref" "^crates=.*$leaf" bash -c "$(replay mg-leaf)"
     row 0 "  ...and the reason names the re-derivation, not a guess" 're-derived on the queue ref' bash -c "$(replay mg-leaf)"
     row 0 "  ...and the tree-reader targets ride along (readme_contract, the reader that bit #3039)" 'aprender-core:--test:readme_contract' bash -c "$(replay mg-leaf)"
@@ -539,7 +544,7 @@ self_test() {
     row 0 "  ...and its reason still names the re-derivation, so the path taken is auditable" 're-derived on the queue ref from HEAD\^1\.\.HEAD: empty diff' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
     row 0 "  (fixture) the squash queue ref really has ONE parent" '^ONE-PARENT$' bash -c "if git -C '$td/s-leaf' rev-parse -q --verify 'HEAD^2' >/dev/null; then echo TWO; else echo ONE-PARENT; fi"
     cap sq-leaf bash "$T" --event merge_group --repo-root "$td/s-leaf" --pr-head "$(qh "$td/s-leaf")" --pr-head-conclusion success
-    row 0 "merge_group on a SQUASH queue ref, leaf crate -> quick, NOT full (#3658: 10/10 groups paid the hour)" '^tier=quick' bash -c "$(replay sq-leaf)"
+    row 0 "merge_group on a SQUASH queue ref, leaf crate -> FULL owed, not the PR's quick" '^tier=full$' bash -c "$(replay sq-leaf)"
     row 0 "  ...with the PR's own crate ($leaf), re-derived from HEAD^1..HEAD" "^crates=.*$leaf" bash -c "$(replay sq-leaf)"
     cap sq-docs bash "$T" --event merge_group --repo-root "$td/s-docs" --pr-head "$(qh "$td/s-docs")" --pr-head-conclusion success
     row 0 "merge_group on a SQUASH queue ref, roadmap entry only -> none: workspace-test has nothing to measure" '^tier=none$' bash -c "$(replay sq-docs)"
@@ -547,7 +552,7 @@ self_test() {
     row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" bash "$T" --event push --repo-root "$td/s-leaf"
     row 0 "push of a TAG (#5172) -> ONE tier line, full, over the same squash repo: never the refined diff" '^tier=full 1$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf'); printf '%s %s\\n' \"\$(printf '%s\\n' \"\$o\" | grep '^tier=' | head -n1)\" \"\$(printf '%s\\n' \"\$o\" | grep -c '^tier=')\""
     # MUTANT: restore the HEAD^2 gate -- the squash rows above must go back to full.
-    sed "s|^\( *\)# IS this PR's diff on the new base. A failed diff still falls closed.|&\n\1if ! git -C \"\$ROOT\" rev-parse -q --verify 'HEAD^2' >/dev/null 2>\&1; then printf 'tier=full\\\\nreason=MUTANT-HEAD2\\\\n'; return 0; fi|" "$T" > "$td/mutant-head2.sh"
+    sed "s|^\( *\)# docs-only) stays none: there is nothing to measure.|&\n\1if ! git -C \"\$ROOT\" rev-parse -q --verify 'HEAD^2' >/dev/null 2>\&1; then printf 'tier=full\\\\nreason=MUTANT-HEAD2\\\\n'; return 0; fi|" "$T" > "$td/mutant-head2.sh"
     row 0 "mutant with the HEAD^2 gate restored sends the squash group back to full -- the rows discriminate" 'MUTANT-FULL' bash -c "o=\$(bash '$td/mutant-head2.sh' --event merge_group --repo-root '$td/s-leaf' --pr-head '$(qh "$td/s-leaf")' --pr-head-conclusion success 2>&1); case \"\$o\" in *reason=MUTANT-HEAD2*) echo MUTANT-FULL ;; *) echo MUTANT-NOT-APPLIED ;; esac"
     # #3658 DOCS-ONLY on a pull_request (paths that exist in this tree).
     printf 'docs/roadmaps/roadmap.yaml\ndocs/audits/pp-066-plan-quorum.md\n' > "$td/d-docs.txt"
@@ -575,7 +580,7 @@ self_test() {
     mkrename "$td/s-rename" "crates/$leaf/src/lib.rs" "docs/audits/lib.rs"
     row 0 "  (fixture) default git diff --name-only on the rename lists ONLY the new docs path -- the trap is real" '^docs/audits/lib\.rs$' git -C "$td/s-rename" diff --name-only HEAD^1 HEAD
     cap sq-rename bash "$T" --event merge_group --repo-root "$td/s-rename" --pr-head "$(qh "$td/s-rename")" --pr-head-conclusion success
-    row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path)" '^tier=quick$' bash -c "$(replay sq-rename)"
+    row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path)" '^tier=full$' bash -c "$(replay sq-rename)"
     row 0 "  ...and the crate it left is in the selection" "^crates=.*$leaf" bash -c "$(replay sq-rename)"
     sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
     row 0 "mutant without --no-renames reads the rename as docs-only (tier=none) -- the rows discriminate" 'MUTANT-NONE' bash -c "o=\$(bash '$td/mutant-renames.sh' --event merge_group --repo-root '$td/s-rename' --pr-head '$(qh "$td/s-rename")' --pr-head-conclusion success 2>&1); case \"\$o\" in *tier=none*) echo MUTANT-NONE ;; *) echo MUTANT-NOT-NONE ;; esac"
@@ -603,8 +608,8 @@ self_test() {
     row 0 "#5391 mutant (tip vs tip, the old behaviour) lists main's crate -- the rows discriminate" '^MUTANT-LISTS-IT$' bash -c "cd '$td/s-moved' && m=\$(bash '$td/mutant-tipvstip.sh' main HEAD 2>/dev/null); case \"\$m\" in *other-crate*) echo MUTANT-LISTS-IT;; *) echo MUTANT-SURVIVES;; esac"
     # MUTANT: a copy whose queue branch ignores the re-derived diff and always
     # says full is exactly today's behaviour — the rows above must lose the crates.
-    sed 's|^\( *\)selection "merge_group|\1printf "tier=full\\nreason=MUTANT\\n"; return 0; selection "merge_group|' "$T" > "$td/mutant-queue.sh"
-    row 0 "mutant queue branch (always full on a moved main) loses the crates — the rows discriminate" 'MUTANT-FULL' bash -c "if bash '$td/mutant-queue.sh' --event merge_group --repo-root '$td/q-leaf' --pr-head '$(qh "$td/q-leaf")' --pr-head-conclusion success | grep -q '^tier=quick'; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
+    sed 's|owe_full "\$sel_out" ;;|printf "%s\\n" "\$sel_out" ;;|' "$T" > "$td/mutant-queue.sh"
+    row 0 "mutant queue that reuses the PR's quick (no promotion) leaks tier=quick -- the rows discriminate" 'MUTANT-QUICK' bash -c "if bash '$td/mutant-queue.sh' --event merge_group --repo-root '$td/q-leaf' --pr-head '$(qh "$td/q-leaf")' --pr-head-conclusion success | grep -q '^tier=quick'; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     # --filterset (PMAT-1098, #3084): the quick tier's 26-way `&&` chain of
     # per-crate cargo invocations became ONE build graph + one nextest run over a
     # filterset. These rows pin the token->clause translation in BOTH polarities:
