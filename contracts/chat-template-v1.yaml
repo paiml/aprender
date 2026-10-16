@@ -190,3 +190,25 @@ qa_gate:
   - validation
   - falsification
   pass_criteria: All falsification tests pass; render output byte-equivalent to HuggingFace reference
+
+falsification_tests:
+  - id: FALSIFY-CHAT_TEMPLATE-001
+    description: "FALSIFY-CHAT-762: Llama2 [system,user] renders the exact HF prefix with exactly one BOS"
+    test: "cargo test -p aprender-serve --lib falsify_ct_762_llama2_system_user_still_correct"
+    prediction: "starts with '<s>[INST] <<SYS>>\\nBe helpful.\\n<</SYS>>\\n\\n2+2? [/INST]' and '<s>' count == 1"
+    if_fails: "system message triggers a double BOS or the rendered prefix diverges from HF"
+  - id: FALSIFY-CHAT_TEMPLATE-002
+    description: "Role mapping: a system-only message and multiple system messages are preserved, never silently dropped"
+    test: "cargo test -p aprender-serve --lib falsify_ct_762_llama2_system_only_not_dropped"
+    prediction: "output contains the system text and <<SYS>> markers"
+    if_fails: "system-only request renders as just '<s>' (system content dropped)"
+  - id: FALSIFY-CHAT_TEMPLATE-003
+    description: "Multi-turn Llama2: a new round after an assistant turn opens with <s> (BOS placement)"
+    test: "cargo test -p aprender-serve --lib falsify_ct_762_llama2_multiturn_round_separator_preserved"
+    prediction: "'<s>' count == 2 and output contains '</s><s>[INST] q2 [/INST]'"
+    if_fails: "round boundary loses its BOS/EOS pair"
+  - id: FALSIFY-CHAT_TEMPLATE-004
+    description: "FALSIFY-CHAT-763: RawTemplate fallback newline-separates messages instead of bare concatenation"
+    test: "cargo test -p aprender-serve --lib falsify_ct_763_rawtemplate_separates_messages"
+    prediction: "no 'HelloWorld'; contains 'Hello\\n' and 'World\\n'"
+    if_fails: "unknown-model prompts merge turns into an unparseable string"

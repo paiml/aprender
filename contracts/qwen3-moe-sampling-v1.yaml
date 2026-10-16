@@ -195,3 +195,25 @@ status_history:
       (env-gated on QWEN3_MOE_GGUF_PATH, `#[ignore]` by default).
       Repetition penalty intentionally excluded — separate contract
       qwen3-moe-repetition-penalty-v1 still pending.
+
+falsification_tests:
+  - id: FALSIFY-QWEN3_MOE_SAMPLING-001
+    description: "Backwards compat: temperature == 0 returns argmax deterministically"
+    test: "cargo test -p aprender-serve --lib v1_001_temperature_zero_is_argmax_deterministic"
+    prediction: "sample_from_logits returns the argmax token on every run"
+    if_fails: "greedy path consumes the RNG or picks a non-max token"
+  - id: FALSIFY-QWEN3_MOE_SAMPLING-002
+    description: "temperature > 0 with a fixed seed is reproducible (seeded RNG)"
+    test: "cargo test -p aprender-serve --lib v1_002_seeded_rng_is_reproducible"
+    prediction: "same seed gives the same token sequence"
+    if_fails: "sampling draws from an unseeded/global RNG"
+  - id: FALSIFY-QWEN3_MOE_SAMPLING-003
+    description: "temperature > 0 with different seeds produces different outputs"
+    test: "cargo test -p aprender-serve --lib v1_003_different_seeds_diverge"
+    prediction: "32 seeds produce >= 3 distinct tokens"
+    if_fails: "sampler is secretly greedy or ignores the seed"
+  - id: FALSIFY-QWEN3_MOE_SAMPLING-004
+    description: "top_k = 1 with temperature 50 equals pure greedy (top-k truncation restricts the sampling space)"
+    test: "cargo test -p aprender-serve --lib v1_004_top_k_one_equals_pure_greedy"
+    prediction: "both configs return token 5 (the argmax)"
+    if_fails: "top-k filter does not mask the non-top logits"

@@ -440,11 +440,11 @@ mod ship_001_tests {
             return;
         };
 
-        let doc: serde_yaml::Value = serde_yaml::from_str(contract_yaml.as_str())
+        let doc: serde_json::Value = serde_saphyr::from_str_with_options(contract_yaml.as_str(), serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
             .expect("qwen2-e2e-verification-v1.yaml must parse as YAML");
 
         let falsifications = doc["falsification_tests"]
-            .as_sequence()
+            .as_array()
             .expect("falsification_tests must be a sequence in qwen2-e2e-verification-v1");
         let block = falsifications
             .iter()
@@ -462,7 +462,7 @@ mod ship_001_tests {
             "FALSIFY-QW2E-SHIP-001 must be ship_blocking=true",
         );
         assert!(
-            block["discharged_evidence"].is_mapping(),
+            block["discharged_evidence"].is_object(),
             "FALSIFY-QW2E-SHIP-001 DISCHARGED status requires a discharged_evidence \
              block documenting host, command, file size, tensor count, and live verdict",
         );
@@ -487,7 +487,7 @@ mod ship_001_tests {
             "discharged_evidence.total_params must equal 7,615,616,512 (Qwen2.5-Coder-7B canonical)",
         );
         let live_evidence = block["discharged_evidence"]["evidence_discharged_by_live"]
-            .as_sequence()
+            .as_array()
             .expect(
                 "FALSIFY-QW2E-SHIP-001 DISCHARGED requires \
                  discharged_evidence.evidence_discharged_by_live (live RTX 4090 evidence list)",

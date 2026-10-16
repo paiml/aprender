@@ -592,11 +592,33 @@ PY
       "$OLLAMA" show "$OL_NAME" --modelfile > "$WORK/$SHA12/ollama-modelfile.txt" 2>/dev/null
       OL_BLOB=$(sed -n 's/^FROM .*sha256[-:]\([0-9a-f]\{64\}\).*/\1/p' "$WORK/$SHA12/ollama-modelfile.txt" | head -1)
       OL_TEMPLATE_SHA=$(sha256sum "$WORK/$SHA12/ollama-template.txt" | cut -d' ' -f1)
-      # ollama 0.5.7 imports a GGUF with TEMPLATE {{ .Prompt }}: no chat template
-      # at all, so it would complete the raw prompt while the others chat. That is
-      # not an answer to the same question, and it is refused by name.
+      # ollama (0.5.7, and 0.17.6 on a Qwen3.5 GGUF) imports with TEMPLATE
+      # {{ .Prompt }}: it could not translate the file's Jinja, so it would
+      # complete the raw prompt while the others chat. Build the template from
+      # the GGUF's OWN tokenizer.chat_template and import again (#5254); a
+      # template of a shape the translation does not know stays refused by name.
       if [ "$(tr -d ' \n' < "$WORK/$SHA12/ollama-template.txt")" = "{{.Prompt}}" ]; then
         OL_REFUSED="ollama $OLLAMA_SERVER imported the GGUF with no chat template (TEMPLATE {{ .Prompt }}), so it would complete the raw text rather than chat"
+        "$APR" inspect "$M" --json > "$WORK/$SHA12/apr-inspect.json" 2>/dev/null
+        if jq -j --arg think "$THINKING_CAPABLE" -f "$ROOT/scripts/lib/ollama_template_from_chatml.jq" \
+            "$WORK/$SHA12/apr-inspect.json" > "$WORK/$SHA12/ollama-template-built.txt" 2>/dev/null \
+          && [ -s "$WORK/$SHA12/ollama-template-built.txt" ]; then
+          {
+            printf 'TEMPLATE """%s"""\n' "$(cat "$WORK/$SHA12/ollama-template-built.txt")"
+            printf 'PARAMETER stop "<|im_end|>"\n'
+          } >> "$WORK/$SHA12/Modelfile"
+          "$OLLAMA" create "$OL_NAME" -f "$WORK/$SHA12/Modelfile" >> "$WORK/$SHA12/ollama-create.log" 2>&1
+          rc=$?
+          "$OLLAMA" show "$OL_NAME" --template > "$WORK/$SHA12/ollama-template.txt" 2>/dev/null
+          OL_TEMPLATE_SHA=$(sha256sum "$WORK/$SHA12/ollama-template.txt" | cut -d' ' -f1)
+          if [ "$rc" -eq 0 ] && cmp -s "$WORK/$SHA12/ollama-template.txt" "$WORK/$SHA12/ollama-template-built.txt"; then
+            OL_REFUSED=""
+          else
+            OL_REFUSED="ollama $OLLAMA_SERVER did not keep the chat template built from the GGUF's own tokenizer.chat_template (create rc $rc; see ollama-create.log)"
+          fi
+        else
+          OL_REFUSED="$OL_REFUSED; the GGUF's own tokenizer.chat_template is not a ChatML shape scripts/lib/ollama_template_from_chatml.jq translates"
+        fi
       fi
     fi
   fi

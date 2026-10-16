@@ -11,8 +11,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/paiml/renacer/actions/workflows/ci.yml"><img src="https://github.com/paiml/renacer/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-[![Documentation](https://docs.rs/renacer/badge.svg)](https://docs.rs/renacer)
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml"><img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+[![Documentation](https://docs.rs/aprender-profile/badge.svg)](https://docs.rs/aprender-profile)
 </p>
 
 </div>
@@ -247,11 +247,11 @@ Renacer (Spanish: "to be reborn") is a next-generation binary inspection and tra
 
 ```bash
 # From crates.io
-cargo install renacer
+cargo install aprender-profile
 
 # From source
-git clone https://github.com/paiml/renacer
-cd renacer
+git clone https://github.com/paiml/aprender
+cd aprender/crates/aprender-profile
 cargo install --path .
 ```
 
@@ -259,7 +259,7 @@ cargo install --path .
 
 ```bash
 # Install
-cargo install --git https://github.com/paiml/renacer
+cargo install --git https://github.com/paiml/aprender/tree/main/crates/aprender-profile
 
 # Basic tracing
 renacer -- ls -la
@@ -576,8 +576,8 @@ Following [paiml-mcp-agent-toolkit](https://github.com/paiml/paiml-mcp-agent-too
 
 ### Setup
 ```bash
-git clone https://github.com/paiml/renacer
-cd renacer
+git clone https://github.com/paiml/aprender
+cd aprender/crates/aprender-profile
 cargo build
 ```
 
@@ -766,7 +766,7 @@ Built with:
 - Toyota Way quality principles
 - EXTREME TDD methodology
 - [paiml-mcp-agent-toolkit](https://github.com/paiml/paiml-mcp-agent-toolkit) workflows
-- [Trueno](https://github.com/paiml/trueno) SIMD library
+- [Trueno](https://github.com/paiml/aprender/tree/main/crates/aprender-compute) SIMD library
 
 Developed by [Pragmatic AI Labs](https://paiml.com)
 

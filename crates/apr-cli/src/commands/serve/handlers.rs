@@ -1758,3 +1758,4 @@ pub fn build_demo_streaming_apr_cpu_router_for_test() -> axum::Router {
 include!("handler_apr_cpu_completion.rs");
 include!("handler_gpu_completion.rs");
 include!("server.rs");
+include!("server_embedding.rs");

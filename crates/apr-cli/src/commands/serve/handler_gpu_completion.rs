@@ -405,6 +405,11 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     if realizar::gguf::hybrid_forward_handles(mapped_model.model.architecture().unwrap_or_default()) {
         return start_qwen35_server(mapped_model, config);
     }
+    // APR-EMBED-001 EG-3 (#4902): an embedding model is served from its encoder, routed here
+    // BEFORE `build_serve_model`, whose generative loader refuses it by kind (I-3).
+    if serve_route_is_embedding(&mapped_model.model)? {
+        return start_embedding_server(&mapped_model, config);
+    }
 
     println!("{}", "Building quantized inference model...".dimmed());
     let quantized_model = build_serve_model(&mapped_model)?;

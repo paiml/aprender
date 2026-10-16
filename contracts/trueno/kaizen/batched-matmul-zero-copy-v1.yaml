@@ -58,3 +58,19 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-BATCHED_MATMUL_ZERO_COPY_V1-001
+    description: "output[b] == gemm(a_data[b], b_data[b]) for every batch element b, computed on sub-slices"
+    test: "cargo test -p aprender-compute --lib test_batched_matmul_basic"
+    prediction: "for batch=2, m=2, k=3, n=2 the 8 outputs are [22,28,49,64] for batch 0 and [220,244,301,334] for batch 1, each within 1e-5"
+    if_fails: "a batch element reads the wrong A/B sub-slice or writes into the wrong output stride, so batched results no longer equal per-batch GEMM"
+  - id: FALSIFY-BATCHED_MATMUL_ZERO_COPY_V1-002
+    description: "batched_matmul_4d treats batch * heads as one flat batch dimension"
+    test: "cargo test -p aprender-compute --lib embedding_batched::test_batched_matmul_4d_basic"
+    prediction: "with batch=1, heads=2 and identity B per head, head 0 returns [1,2,3,4] and head 1 returns [5,6,7,8] at output offsets 0..4 and 4..8"
+    if_fails: "the 4D path mis-strides heads, so one head's attention output lands in or is computed from another head's slice"
+  - id: FALSIFY-BATCHED_MATMUL_ZERO_COPY_V1-003
+    description: "precondition a_data.len() == batch * m * k is enforced before any sub-slice is taken"
+    test: "cargo test -p aprender-compute --lib embedding_batched::test_batched_matmul_a_size_mismatch"
+    prediction: "a_data of length 10 for batch=2, m=2, k=3 returns Err whose message contains 'A data size mismatch'"
+    if_fails: "a short A buffer is sliced without a length check, panicking out of bounds or reading the wrong data instead of returning InvalidInput"

@@ -53,7 +53,7 @@ fn load_beat() -> Option<BeatParams> {
         "contracts/beat-sklearn-iris-v1.yaml"
     )?;
     let contract: BeatContract =
-        serde_yaml::from_str(&yaml).expect("parse contracts/beat-sklearn-iris-v1.yaml");
+        serde_saphyr::from_str_with_options(&yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).expect("parse contracts/beat-sklearn-iris-v1.yaml");
     Some(contract.beat)
 }
 

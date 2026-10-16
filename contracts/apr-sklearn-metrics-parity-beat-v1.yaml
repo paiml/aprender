@@ -46,3 +46,30 @@ beat:
   baseline_sourced_date: "2026-07-04"
   approved_compute: CPU
   ci_gate_name: "beat_sklearn_metrics_parity"
+
+falsification_tests:
+  - id: FALSIFY-APR_SKLEARN_METRICS_PARITY_BEAT-001
+    description: "roc_auc_score equals the scikit-learn oracle on the pinned 8-sample fixture"
+    test: "cargo test -p aprender-core --lib roc_auc_matches_sklearn"
+    prediction: "roc_auc_score == 0.875 within 1e-4; the tie case is 0.75; one-class input is NaN"
+    if_fails: "roc_auc_score diverges from scikit-learn"
+  - id: FALSIFY-APR_SKLEARN_METRICS_PARITY_BEAT-002
+    description: "log_loss equals the scikit-learn oracle on the pinned fixture"
+    test: "cargo test -p aprender-core --lib log_loss_matches_sklearn"
+    prediction: "log_loss == 0.421605 within 1e-4"
+    if_fails: "log_loss diverges from scikit-learn"
+  - id: FALSIFY-APR_SKLEARN_METRICS_PARITY_BEAT-003
+    description: "average_precision_score equals the scikit-learn oracle on the pinned fixture"
+    test: "cargo test -p aprender-core --lib average_precision_matches_sklearn"
+    prediction: "average_precision_score == 0.916667 within 1e-4"
+    if_fails: "average_precision_score diverges from scikit-learn"
+  - id: FALSIFY-APR_SKLEARN_METRICS_PARITY_BEAT-004
+    description: "roc_curve fpr, tpr and thresholds match scikit-learn element-wise, including the leading +inf threshold"
+    test: "cargo test -p aprender-core --lib roc_curve_matches_sklearn"
+    prediction: "fpr, tpr and thresholds equal the pinned oracle within 1e-4"
+    if_fails: "roc_curve diverges from scikit-learn in values, length or the inf sentinel"
+  - id: FALSIFY-APR_SKLEARN_METRICS_PARITY_BEAT-005
+    description: "precision_recall_curve matches scikit-learn element-wise, ending at the (1,0) sentinel"
+    test: "cargo test -p aprender-core --lib precision_recall_curve_matches_sklearn"
+    prediction: "precision, recall and thresholds equal the pinned oracle within 1e-4; len(P) == len(R) == len(thr)+1"
+    if_fails: "precision_recall_curve diverges from scikit-learn in values or the terminal sentinel"

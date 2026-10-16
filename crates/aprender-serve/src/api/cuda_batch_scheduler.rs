@@ -108,10 +108,22 @@ impl CudaBatchConfig {
 #[cfg(feature = "cuda")]
 impl Default for CudaBatchConfig {
     fn default() -> Self {
+        Self::from_env_or(4)
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl CudaBatchConfig {
+    /// `CUDA_MAX_BATCH` and `CUDA_BATCH_WINDOW_MS` from the environment, with
+    /// `max_batch` slots when the first is unset. A model whose batched step
+    /// serves more slots than the dense default of 4 (#5279: Qwen3.5 to 16)
+    /// passes its own.
+    #[must_use]
+    pub fn from_env_or(max_batch: usize) -> Self {
         let max_batch = std::env::var("CUDA_MAX_BATCH")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(4);
+            .unwrap_or(max_batch);
         // PMAT-068: Default 0ms window — zero-latency c=1, requests batch naturally
         // at c>1 from queue contention. Saves ~1ms TTFT at c=1.
         // Override with CUDA_BATCH_WINDOW_MS=10 for throughput-optimized batching.
@@ -197,12 +209,124 @@ fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: 
     }
 }
 
+/// #5279: what the scheduler needs from a model. These are the seven calls the
+/// loop below makes, so a second architecture (the Qwen3.5 hybrid) can be
+/// scheduled by the same admission, join, recycle and in-flight logic rather
+/// than a copy of it. The batch bookkeeping, [`BatchedDecodeState`](crate::gguf::BatchedDecodeState),
+/// lives on the host and is shared by every engine.
+#[cfg(feature = "cuda")]
+pub trait BatchEngine {
+    /// The m = 1 fast path: one whole turn for `req`.
+    fn generate_single(&mut self, req: CudaBatchRequest);
+
+    /// Phase 1: prefill `prompts` into slots `0..m` of a batch with room for
+    /// `max_kv_slots`.
+    fn batched_setup_and_prefill(
+        &mut self,
+        prompts: &[Vec<u32>],
+        configs: &[QuantizedGenerateConfig],
+        on_tokens: Vec<TokenCallback>,
+        max_kv_slots: usize,
+    ) -> crate::error::Result<crate::gguf::BatchedDecodeState>;
+
+    /// One decode step over every live slot: the next token per slot.
+    fn batched_decode_step(
+        &mut self,
+        state: &mut crate::gguf::BatchedDecodeState,
+    ) -> crate::error::Result<Vec<u32>>;
+
+    /// A new slot at `state.m` for a request that joined mid-batch.
+    fn add_slot_to_batch(
+        &mut self,
+        state: &mut crate::gguf::BatchedDecodeState,
+        prompt: Vec<u32>,
+        config: QuantizedGenerateConfig,
+        on_token: TokenCallback,
+    ) -> crate::error::Result<()>;
+
+    /// Reuse the finished slot `slot_idx` for a waiting request.
+    fn recycle_slot(
+        &mut self,
+        state: &mut crate::gguf::BatchedDecodeState,
+        slot_idx: usize,
+        prompt: Vec<u32>,
+        config: QuantizedGenerateConfig,
+        on_token: TokenCallback,
+    ) -> crate::error::Result<()>;
+
+    /// Phase 3: release what the batch held.
+    fn batched_cleanup(&mut self, state: &crate::gguf::BatchedDecodeState);
+
+    /// Forget a batch that failed in Phase 1, so the next one starts clean.
+    fn reset_batched_state(&mut self);
+}
+
+/// #5279: the dense CUDA model, by plain delegation to its own methods.
+#[cfg(feature = "cuda")]
+impl BatchEngine for OwnedQuantizedModelCuda {
+    fn generate_single(&mut self, req: CudaBatchRequest) {
+        generate_single_request(self, req);
+    }
+
+    fn batched_setup_and_prefill(
+        &mut self,
+        prompts: &[Vec<u32>],
+        configs: &[QuantizedGenerateConfig],
+        on_tokens: Vec<TokenCallback>,
+        max_kv_slots: usize,
+    ) -> crate::error::Result<crate::gguf::BatchedDecodeState> {
+        OwnedQuantizedModelCuda::batched_setup_and_prefill(
+            self,
+            prompts,
+            configs,
+            on_tokens,
+            max_kv_slots,
+        )
+    }
+
+    fn batched_decode_step(
+        &mut self,
+        state: &mut crate::gguf::BatchedDecodeState,
+    ) -> crate::error::Result<Vec<u32>> {
+        OwnedQuantizedModelCuda::batched_decode_step(self, state)
+    }
+
+    fn add_slot_to_batch(
+        &mut self,
+        state: &mut crate::gguf::BatchedDecodeState,
+        prompt: Vec<u32>,
+        config: QuantizedGenerateConfig,
+        on_token: TokenCallback,
+    ) -> crate::error::Result<()> {
+        OwnedQuantizedModelCuda::add_slot_to_batch(self, state, prompt, config, on_token)
+    }
+
+    fn recycle_slot(
+        &mut self,
+        state: &mut crate::gguf::BatchedDecodeState,
+        slot_idx: usize,
+        prompt: Vec<u32>,
+        config: QuantizedGenerateConfig,
+        on_token: TokenCallback,
+    ) -> crate::error::Result<()> {
+        OwnedQuantizedModelCuda::recycle_slot(self, state, slot_idx, prompt, config, on_token)
+    }
+
+    fn batched_cleanup(&mut self, state: &crate::gguf::BatchedDecodeState) {
+        OwnedQuantizedModelCuda::batched_cleanup(self, state);
+    }
+
+    fn reset_batched_state(&mut self) {
+        OwnedQuantizedModelCuda::reset_batched_state(self);
+    }
+}
+
 /// Spawn the batch scheduler background task.
 ///
 /// Returns a sender for submitting requests.
 #[cfg(feature = "cuda")]
-pub fn spawn_cuda_batch_scheduler(
-    model: Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
+pub fn spawn_cuda_batch_scheduler<E: BatchEngine + Send + Sync + 'static>(
+    model: Arc<std::sync::RwLock<E>>,
     config: CudaBatchConfig,
     in_flight: Arc<crate::api::InFlightCounter>,
 ) -> tokio::sync::mpsc::Sender<CudaBatchRequest> {
@@ -258,8 +382,8 @@ impl Drop for BatchInFlight<'_> {
 }
 
 #[cfg(feature = "cuda")]
-async fn cuda_batch_scheduler_loop(
-    model: Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
+async fn cuda_batch_scheduler_loop<E: BatchEngine>(
+    model: Arc<std::sync::RwLock<E>>,
     config: CudaBatchConfig,
     mut rx: tokio::sync::mpsc::Receiver<CudaBatchRequest>,
     in_flight: Arc<crate::api::InFlightCounter>,
@@ -449,8 +573,8 @@ pub(crate) fn slot_recorder(sink: RecordSink) -> crate::gguf::SlotRecorder {
 }
 
 #[cfg(feature = "cuda")]
-fn process_cuda_batch(
-    model: &Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
+fn process_cuda_batch<E: BatchEngine>(
+    model: &Arc<std::sync::RwLock<E>>,
     batch: Vec<CudaBatchRequest>,
     rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
     max_batch: usize,
@@ -552,11 +676,11 @@ fn process_cuda_batch(
 
 /// PMAT-044: the m=1 fast path, holding the model lock for the whole turn.
 #[cfg(feature = "cuda")]
-fn run_fast_path(model: &Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>, req: CudaBatchRequest) {
+fn run_fast_path<E: BatchEngine>(model: &Arc<std::sync::RwLock<E>>, req: CudaBatchRequest) {
     ttft_trace("queue_latency", &req);
     let mut cuda_model = model.write().expect("PMAT-044: model lock poisoned");
     ttft_trace("lock_acquired", &req);
-    generate_single_request(&mut cuda_model, req);
+    cuda_model.generate_single(req);
 }
 
 /// TTFT_TRACE: how long `req` has waited by `stage`.
@@ -627,8 +751,8 @@ fn phase1_inputs(mut batch: Vec<CudaBatchRequest>, staggered: bool) -> Phase1 {
 /// Phase 1 under the model lock. `None` when it failed: every caller has
 /// been told, and the batched state reset.
 #[cfg(feature = "cuda")]
-fn setup_and_prefill(
-    model: &Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
+fn setup_and_prefill<E: BatchEngine>(
+    model: &Arc<std::sync::RwLock<E>>,
     prompts: &[Vec<u32>],
     configs: &[QuantizedGenerateConfig],
     callbacks: Vec<TokenCallback>,
@@ -672,8 +796,8 @@ fn fail_all(
 /// `None` when the step failed: every caller has been told, and the batch
 /// cleaned up.
 #[cfg(feature = "cuda")]
-fn decode_step(
-    model: &Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
+fn decode_step<E: BatchEngine>(
+    model: &Arc<std::sync::RwLock<E>>,
     state: &mut crate::gguf::BatchedDecodeState,
     rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
     pending_joins: &mut std::collections::VecDeque<CudaBatchRequest>,
@@ -687,7 +811,7 @@ fn decode_step(
     if !pending_joins.is_empty() && state.m < state.max_kv_slots {
         let req = pending_joins.pop_front().unwrap();
         join_slot(
-            &mut cuda_model,
+            &mut *cuda_model,
             state,
             req,
             error_senders,
@@ -699,7 +823,7 @@ fn decode_step(
     while state.m < state.max_kv_slots {
         match rx.try_recv() {
             Ok(req) => join_slot(
-                &mut cuda_model,
+                &mut *cuda_model,
                 state,
                 req,
                 error_senders,
@@ -713,7 +837,7 @@ fn decode_step(
     // and recycle path above has run and before the step decodes it.
     in_flight.sync(state.m);
 
-    recycle_done_slots(&mut cuda_model, state, rx, pending_joins, error_senders);
+    recycle_done_slots(&mut *cuda_model, state, rx, pending_joins, error_senders);
 
     match cuda_model.batched_decode_step(state) {
         Ok(ids) => Some(ids),
@@ -734,8 +858,8 @@ fn decode_step(
 /// PMAT-073/099: a new slot in the running batch for `req`; on failure its
 /// caller hears why, and `failed` heads the log line.
 #[cfg(feature = "cuda")]
-fn join_slot(
-    cuda_model: &mut OwnedQuantizedModelCuda,
+fn join_slot<E: BatchEngine>(
+    cuda_model: &mut E,
     state: &mut crate::gguf::BatchedDecodeState,
     req: CudaBatchRequest,
     error_senders: &mut Vec<TokenSender>,
@@ -760,8 +884,8 @@ fn join_slot(
 /// Staggered pending joins go first (they arrived with the initial batch),
 /// then the channel.
 #[cfg(feature = "cuda")]
-fn recycle_done_slots(
-    cuda_model: &mut OwnedQuantizedModelCuda,
+fn recycle_done_slots<E: BatchEngine>(
+    cuda_model: &mut E,
     state: &mut crate::gguf::BatchedDecodeState,
     rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
     pending_joins: &mut std::collections::VecDeque<CudaBatchRequest>,
@@ -793,3 +917,7 @@ fn recycle_done_slots(
 #[cfg(all(test, feature = "cuda"))]
 #[path = "cuda_batch_scheduler_tests.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "cuda"))]
+#[path = "cuda_batch_scheduler_engine_tests.rs"]
+mod engine_tests;

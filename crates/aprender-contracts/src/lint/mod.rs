@@ -18,7 +18,7 @@ pub mod duplicate_stems;
 pub mod evidence_gate;
 pub mod finding;
 mod gates;
-pub use gates::collect_yaml_files;
+pub use gates::{collect_yaml_files, UNWALKED_DIRS};
 pub mod bindings_gate;
 mod gates_extended;
 pub mod ratchet_gates;

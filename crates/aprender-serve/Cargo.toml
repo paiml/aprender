@@ -9,9 +9,9 @@ rust-version = "1.91"
 authors = ["Pragmatic AI Labs <contact@paiml.com>"]
 license = "MIT"
 description = "Pure Rust ML inference engine built from scratch - model serving for GGUF and safetensors"
-repository = "https://github.com/paiml/realizar"
-homepage = "https://github.com/paiml/realizar"
-documentation = "https://docs.rs/realizar"
+repository = "https://github.com/paiml/aprender"
+homepage = "https://github.com/paiml/aprender"
+documentation = "https://docs.rs/aprender-serve"
 readme = "README.md"
 keywords = ["machine-learning", "inference", "model-serving", "gguf", "transformer"]
 categories = ["science", "web-programming::http-server"]
@@ -179,7 +179,7 @@ uuid = { version = "1", features = ["v4", "serde", "js"] }
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 # Parsing provable-contracts binding.yaml for CONTRACT_* env vars (build.rs)
 serde = { version = "1", features = ["derive"] }
-serde_yaml_ng = "0.10"
+serde-saphyr = { workspace = true }
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
@@ -188,7 +188,7 @@ provable-contracts = { workspace = true }  # versioned (#4175): tests call its i
 # the contract is the ORIGIN of the capability facts and capability.rs is its
 # consumer. Already a build-dependency (build.rs parses binding.yaml); a
 # build-dependency is not linked into the test binary, so it is declared here too.
-serde_yaml_ng = "0.10"
+serde-saphyr = { workspace = true }
 
 # Visual regression testing framework (playbooks, TUI testing, GPU pixel verification)
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib", features = ["tui", "gpu"] }

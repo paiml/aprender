@@ -827,7 +827,52 @@ fn validate_obligation_parent_link(
     });
 }
 
+/// SCHEMA-024 / SCHEMA-025 (#5291): a test block that cannot run a test.
+///
+/// Runs on every kind, from both branches of [`validate_contract`]. That is
+/// the point: the #5290 contract declares `kind: kernel` and the legacy
+/// `registry: true`, which makes it a registry, so PROVABILITY-001 never ran
+/// and `pv validate` passed it with `falsification_tests: []` and with every
+/// `test_harness` blanked (rc 0, 0 errors, measured on pv 0.71.1).
+///
+/// * **SCHEMA-024**: `falsification_tests:` is written and empty. An ABSENT
+///   key is not this rule's business: a registry may carry no tests, and a
+///   kernel without them is PROVABILITY-001.
+/// * **SCHEMA-025**: a test whose `test_harness:` or `test:` is written but
+///   blank. A test that never named a harness is a different gap and is not
+///   refused here.
+fn validate_test_block_runs(contract: &Contract, violations: &mut Vec<Violation>) {
+    if contract.falsification_tests_declared && contract.falsification_tests.is_empty() {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SCHEMA-024".to_string(),
+            message: "falsification_tests is written but empty — a contract that \
+                      declares a test block must put at least one test in it, or \
+                      drop the key"
+                .to_string(),
+            location: Some("falsification_tests".to_string()),
+        });
+    }
+    for test in &contract.falsification_tests {
+        for (field, value) in [("test_harness", &test.test_harness), ("test", &test.test)] {
+            if value.as_deref().is_some_and(|s| s.trim().is_empty()) {
+                violations.push(Violation {
+                    severity: Severity::Error,
+                    rule: "SCHEMA-025".to_string(),
+                    message: format!(
+                        "falsification_tests.{}.{field} is written but blank — \
+                         it names no way to run the test",
+                        test.id
+                    ),
+                    location: Some(format!("falsification_tests.{}.{field}", test.id)),
+                });
+            }
+        }
+    }
+}
+
 fn validate_falsification_tests(contract: &Contract, violations: &mut Vec<Violation>) {
+    validate_test_block_runs(contract, violations);
     let mut ids = HashSet::new();
     for test in &contract.falsification_tests {
         if !ids.insert(&test.id) {

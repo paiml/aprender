@@ -41,3 +41,10 @@ beat:
   baseline_sourced_date: "2026-06-14"
   approved_compute: CPU
   ci_gate_name: "beat_lora_merge_forward_equivalence"
+
+falsification_tests:
+  - id: FALSIFY-APR_LORA_MERGE_EQUIVALENCE_BEAT-001
+    description: "Beat gate: forward through merged W' = W + scale*B@A equals the independent factored forward base(x) + scale*(x A^T B^T)"
+    test: "cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence"
+    prediction: "max|y_merged - y_factored| < 1e-4 (beat_threshold)"
+    if_fails: "merge uses a wrong scale, a transpose, or drops the delta"

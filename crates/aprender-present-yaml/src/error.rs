@@ -6,7 +6,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum ParseError {
     /// YAML parsing error
-    Yaml(serde_yaml_ng::Error),
+    Yaml(serde_saphyr::Error),
     /// Expression parsing error
     Expression(crate::expression::ExpressionError),
     /// Validation error
@@ -46,8 +46,8 @@ impl std::error::Error for ParseError {
     }
 }
 
-impl From<serde_yaml_ng::Error> for ParseError {
-    fn from(e: serde_yaml_ng::Error) -> Self {
+impl From<serde_saphyr::Error> for ParseError {
+    fn from(e: serde_saphyr::Error) -> Self {
         Self::Yaml(e)
     }
 }
@@ -84,8 +84,8 @@ mod tests {
     #[test]
     fn test_parse_error_yaml_display() {
         // Create a YAML error by parsing invalid YAML
-        let yaml_err: serde_yaml_ng::Error =
-            serde_yaml_ng::from_str::<serde_yaml_ng::Value>("{{").unwrap_err();
+        let yaml_err: serde_saphyr::Error =
+            serde_saphyr::from_str_with_options::<serde_json::Value>("{{", serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_err();
         let err = ParseError::Yaml(yaml_err);
         assert!(err.to_string().contains("YAML error"));
     }
@@ -100,8 +100,8 @@ mod tests {
 
     #[test]
     fn test_parse_error_from_yaml() {
-        let yaml_err: serde_yaml_ng::Error =
-            serde_yaml_ng::from_str::<serde_yaml_ng::Value>("{{").unwrap_err();
+        let yaml_err: serde_saphyr::Error =
+            serde_saphyr::from_str_with_options::<serde_json::Value>("{{", serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_err();
         let err: ParseError = yaml_err.into();
         assert!(matches!(err, ParseError::Yaml(_)));
     }
@@ -116,8 +116,8 @@ mod tests {
 
     #[test]
     fn test_parse_error_source_yaml() {
-        let yaml_err: serde_yaml_ng::Error =
-            serde_yaml_ng::from_str::<serde_yaml_ng::Value>("{{").unwrap_err();
+        let yaml_err: serde_saphyr::Error =
+            serde_saphyr::from_str_with_options::<serde_json::Value>("{{", serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_err();
         let err = ParseError::Yaml(yaml_err);
         assert!(err.source().is_some());
     }

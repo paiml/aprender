@@ -183,11 +183,11 @@ fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
         return;
     };
 
-    let doc: serde_yaml::Value = serde_yaml::from_str(contract_yaml.as_str())
+    let doc: serde_json::Value = serde_saphyr::from_str_with_options(contract_yaml.as_str(), serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
         .expect("apr-provenance-v1.yaml must parse as YAML");
 
     let gates = doc["gates"]
-        .as_sequence()
+        .as_array()
         .expect("gates must be a sequence in apr-provenance-v1");
     let gate = gates
         .iter()
@@ -212,7 +212,7 @@ fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
          artifact at v1.2.0; previous PARTIAL_ALGORITHM_LEVEL at v1.1.0)",
     );
     assert!(
-        gate["discharged_evidence"].is_mapping(),
+        gate["discharged_evidence"].is_object(),
         "GATE-APR-PROV-004 DISCHARGED status requires a discharged_evidence \
          block documenting the host, pre/post sha256, and tooling chain",
     );
@@ -232,14 +232,14 @@ fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
         "GATE-APR-PROV-004 must be ship_blocking=true",
     );
     let evidence = gate["evidence_discharged_by"]
-        .as_sequence()
+        .as_array()
         .expect("GATE-APR-PROV-004 must have evidence_discharged_by");
     assert!(
         !evidence.is_empty(),
         "GATE-APR-PROV-004 evidence_discharged_by must list at least one test",
     );
     let live_evidence = gate["discharged_evidence"]["evidence_discharged_by_live"]
-        .as_sequence()
+        .as_array()
         .expect(
             "GATE-APR-PROV-004 DISCHARGED requires \
              discharged_evidence.evidence_discharged_by_live (live RTX 4090 evidence list)",

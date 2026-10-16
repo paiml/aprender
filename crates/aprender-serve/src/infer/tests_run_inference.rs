@@ -366,6 +366,7 @@
             use_mock_backend: false,
             force_chat_template: false,
             thinking: None,
+            logprobs_top_k: 0,
             constraint: None,
         };
 
@@ -402,6 +403,7 @@
             use_mock_backend: false,
             force_chat_template: false,
             thinking: None,
+            logprobs_top_k: 0,
             constraint: None,
         };
 

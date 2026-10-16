@@ -474,6 +474,99 @@ fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
         "a repeat penalty needs the logits"
     );
 }
+
+/// #4026: `logprobs_top_k` on a greedy config.
+fn greedy_logprobs(max_tokens: usize, k: usize) -> QuantizedGenerateConfig {
+    QuantizedGenerateConfig {
+        logprobs_top_k: k,
+        ..greedy(max_tokens)
+    }
+}
+
+#[test]
+fn logprobs_record_one_step_per_generated_token_whose_top1_is_the_choice() {
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s
+        .generate(&[7801, 7802], &greedy_logprobs(3, 2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(turn.tokens, vec![7801, 7802, 3, 3, 3]);
+    let steps = take_last_turn_steps().expect("recorded");
+    assert_eq!(steps.len(), 3, "one record per generated token");
+    for (i, step) in steps.iter().enumerate() {
+        assert_eq!(step.step, i);
+        assert_eq!(step.chosen, turn.tokens[2 + i]);
+        assert_eq!(step.top.len(), 2);
+        assert_eq!(
+            step.top[0].token_id, step.chosen,
+            "greedy: top-1 is the choice"
+        );
+        assert_eq!(step.top[0].logit, 1.0);
+        assert!(step.top[0].logprob > step.top[1].logprob);
+    }
+    assert_eq!(take_last_turn_steps(), None, "a take clears it");
+}
+
+#[test]
+fn logprobs_zero_records_nothing_and_publishes_nothing() {
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    s.generate(&[7811], &greedy(2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(take_last_turn_steps(), None);
+}
+
+#[test]
+fn logprobs_carry_the_full_vocabulary_logsumexp() {
+    // PRM C11: the chosen token's logprob and the log-sum-exp come from the
+    // same logits as `top` (3 → 1.0, the other 7 of the 8 → 0.0). The LSE is
+    // carried, never recovered from top-K (#4026).
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    s.generate(&[7821], &greedy_logprobs(1, 2), &mut |_| true)
+        .expect("turn");
+    let steps = take_last_turn_steps().expect("recorded");
+    let lse = (1.0_f64.exp() + 7.0).ln();
+    let s0 = &steps[0];
+    assert!(
+        (f64::from(s0.logsumexp_full) - lse).abs() < 1e-5,
+        "{}",
+        s0.logsumexp_full
+    );
+    assert!(
+        (f64::from(s0.chosen_logprob) - (1.0 - lse)).abs() < 1e-5,
+        "{}",
+        s0.chosen_logprob
+    );
+    assert!((f64::from(s0.top[1].logprob) + lse).abs() < 1e-5);
+}
+
+#[test]
+fn logprobs_follow_the_logits_a_planted_change_moves_the_record() {
+    // Negative control: the same prompt against a forward whose argmax was
+    // moved must record a different top-1, or the record is not reading them.
+    let run = |next| {
+        let _ = take_last_turn_steps();
+        let mut s = Session::new(Scripted::new(next, 100));
+        s.generate(&[7831], &greedy_logprobs(1, 1), &mut |_| true)
+            .expect("turn");
+        take_last_turn_steps().expect("recorded")[0].top[0].token_id
+    };
+    assert_eq!(run(3), 3);
+    assert_eq!(run(6), 6);
+}
+
+#[test]
+fn logprobs_stop_on_a_stop_token_with_its_own_record() {
+    let _ = take_last_turn_steps();
+    let mut cfg = greedy_logprobs(4, 1);
+    cfg.stop_tokens = vec![3];
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s.generate(&[7841], &cfg, &mut |_| true).expect("turn");
+    assert_eq!(turn.tokens, vec![7841, 3]);
+    assert_eq!(take_last_turn_steps().expect("recorded").len(), 1);
+}
+
 // #4445: `apr bench` repeats one prompt and must time a whole prefill each time.
 // An extending prompt would resume the held state; after forget_prefix it may not.
 #[test]

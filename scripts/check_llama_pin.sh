@@ -319,7 +319,7 @@ if [ -z "$expiry" ]; then
     printf '      no expiry is a pin nobody revisits: the denominator freezes to a\n'
     printf '      llama.cpp no user runs, and nothing can ever emit COMPARATOR_STALE.\n'
     rc=1
-elif ! printf '%s' "$expiry" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+elif ! grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' <<<"$expiry"; then  # here-string, no pipe (#4780)
     printf 'FAIL  pin_expiry = %s is not YYYY-MM-DD; an unparseable expiry must not\n' "$expiry"
     printf '      read as "not expired" (the fail-open-blacklist shape).\n'
     rc=1

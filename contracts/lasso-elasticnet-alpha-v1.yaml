@@ -92,3 +92,15 @@ falsification:
     description: "ElasticNet(1.0, 0.5) matches scikit-learn (coef 1.4, intercept 1.8). Discharges C-LASSO-ALPHA-002 / C-LASSO-ALPHA-003 / PO-LASSO-ALPHA-002."
     test: "test_elastic_net_sklearn_alpha_parity (crates/aprender-core/src/linear_model/tests_lasso.rs) — RED coef=1.857 -> GREEN coef=1.4, intercept=1.8."
     evidence: "cargo test -p aprender-core --lib test_elastic_net_sklearn_alpha_parity"
+
+falsification_tests:
+  - id: FALSIFY-LASSO_ELASTICNET_ALPHA-001
+    description: "C-LASSO-ALPHA-001 / C-LASSO-ALPHA-003 / PO-LASSO-ALPHA-001: Lasso soft-threshold at n_samples*alpha matches scikit-learn on y=2x"
+    test: "cargo test -p aprender-core --lib test_lasso_sklearn_alpha_parity"
+    prediction: "Lasso(1.0) coef == 1.5 and intercept == 1.5 within 0.05"
+    if_fails: "Lasso penalty is not scaled by n_samples (scikit-learn alpha convention broken)"
+  - id: FALSIFY-LASSO_ELASTICNET_ALPHA-002
+    description: "C-LASSO-ALPHA-002 / PO-LASSO-ALPHA-002: ElasticNet scales both L1 and L2 by n_samples*alpha, matching scikit-learn"
+    test: "cargo test -p aprender-core --lib test_elastic_net_sklearn_alpha_parity"
+    prediction: "ElasticNet(1.0, 0.5) coef == 1.4 and intercept == 1.8 within 0.05"
+    if_fails: "ElasticNet L1 or L2 penalty scaling diverges from scikit-learn"

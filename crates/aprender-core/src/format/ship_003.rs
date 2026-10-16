@@ -436,11 +436,11 @@ mod ship_003_tests {
             return;
         };
 
-        let doc: serde_yaml::Value = serde_yaml::from_str(contract_yaml.as_str())
+        let doc: serde_json::Value = serde_saphyr::from_str_with_options(contract_yaml.as_str(), serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
             .expect("qwen2-e2e-verification-v1.yaml must parse as YAML");
 
         let falsifications = doc["falsification_tests"]
-            .as_sequence()
+            .as_array()
             .expect("falsification_tests must be a sequence");
         let block = falsifications
             .iter()
@@ -455,7 +455,7 @@ mod ship_003_tests {
               previous PARTIAL_ALGORITHM_LEVEL at v1.4.0)",
         );
         assert!(
-            block["discharged_evidence"].is_mapping(),
+            block["discharged_evidence"].is_object(),
             "FALSIFY-QW2E-SHIP-003 DISCHARGED status requires a discharged_evidence \
              block documenting host, command, cosine summary, and live verdicts",
         );
@@ -481,7 +481,7 @@ mod ship_003_tests {
              (zero tensors below the 0.999 floor)",
         );
         let live_evidence = block["discharged_evidence"]["evidence_discharged_by_live"]
-            .as_sequence()
+            .as_array()
             .expect(
                 "FALSIFY-QW2E-SHIP-003 DISCHARGED requires \
                  discharged_evidence.evidence_discharged_by_live (live RTX 4090 evidence list)",

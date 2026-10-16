@@ -1,0 +1,121 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# readme-ontology-v1 — published docs name the monorepo, never a retired repo (#5382)
+#
+# APR-MONO merged 20 repos into paiml/aprender and archived every one. crates.io
+# renders a crate's README.md and its manifest's repository / homepage /
+# documentation at publish time, so a pointer at an archived repo, or at the
+# crates.io / docs.rs page of a crate that no longer ships, is frozen into the
+# published page. Measured 2026-10-15 before the fix: 337 findings in 38 READMEs
+# and 39 Cargo.toml files.
+#
+# ARMED: FALSIFY-README-ONT-007 reads the repo's own tree in CI's --lib run, so
+#   a new pointer at a retired repo or crate is RED on the PR that adds it.
+#   `pv ontology readme [ROOT]` prints the same findings, one per line.
+# NOT CLAIMED: README prose that invokes an old binary name (`renacer trace`,
+#   `batuta analyze`); that is a separate row.
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-10-15'
+  last_modified: '2026-10-15'
+  author: PAIML Engineering
+  description: >
+    The crate names a published doc may point a reader at are the packages in this tree. A name in
+    ARCHIVED_REPOS is retired as a repository always; as a crate it, and every old crate name the tree
+    still uses as a [lib] name, is retired unless a package still carries it (the provable-contracts
+    facades do). Every README.md at the root and under crates/, and every Cargo.toml's crates.io-rendered
+    URL keys, is scanned.
+  references:
+    - 'paiml/aprender#5382 (README ontology: no README links an archived pre-monorepo repo)'
+    - 'paiml/aprender#3269 (ONT-001)'
+    - 'docs/specifications/aprender-monorepo-consolidation.md (Phase 6: the 20 archived repos)'
+    - 'crates/aprender-contracts/src/ontology/readme.rs, readme_tests.rs'
+    - 'crates/aprender-contracts-cli/src/commands/ontology.rs (pv ontology readme)'
+
+relations:
+  depends_on: [ont-docs-corpus-v1]
+
+equations:
+  retired_crates:
+    formula: "retired(tree) = (ARCHIVED_REPOS ∪ { kebab(lib(m)) | m ∈ manifests(tree), lib(m) ≠ ⊥ }) \\ { package(m) | m ∈ manifests(tree) }"
+    domain: "every Cargo.toml at the root and under crates/, skipping dot dirs, target/ and node_modules/"
+    codomain: "a set of lowercase crate names"
+    invariants:
+      - "a facade package that still carries an old name keeps that name live"
+      - "an old name kept only as a [lib] name (trueno_gpu in aprender-gpu) is retired as a crate"
+    preconditions:
+      - "ARCHIVED_REPOS equals the consolidation spec's `gh api -X PATCH ... -f archived=true` list"
+    postconditions:
+      - "retired(tree) ∩ packages(tree) = ∅"
+    lean_theorem: none — L4 not declared
+  findings:
+    formula: "findings(tree) = ⋃_{r ∈ readmes(tree)} scan_text(r) ∪ ⋃_{m ∈ manifests(tree)} scan_manifest(m)"
+    domain: "root README.md and every README.md under crates/; the repository, homepage and documentation keys of every manifest"
+    codomain: "(path, line, rule, message) with rule ∈ {readme-archived-repo, readme-retired-crate, readme-retired-install}"
+    invariants:
+      - "readme-archived-repo: github.com/paiml/<a>, raw.githubusercontent.com/paiml/<a>, paiml.github.io/<a> for a ∈ ARCHIVED_REPOS"
+      - "readme-retired-crate: crates.io/crates, docs.rs, docs.rs/crate, lib.rs/crates, shields.io crates/docsrs badges naming c ∈ retired"
+      - "readme-retired-install: cargo install|add c, or a `c = \"x\"` / `c = { ... }` dependency line without package or path, for c ∈ retired"
+      - "every hit on a line is reported, with its 1-based line"
+    preconditions:
+      - "the root holds at least one README.md, else pv exits 3"
+    postconditions:
+      - "findings(repo) = ∅"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: README-ONT-INV-001
+    property: no published doc points at an archived repo or a retired crate
+    formal: 'findings(repo) = ∅'
+    prose: false
+  - id: README-ONT-INV-002
+    property: the archive list is the spec's, not a second list
+    formal: 'set(ARCHIVED_REPOS) = archived(consolidation spec) ∧ |ARCHIVED_REPOS| = 20'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-README-ONT-001
+    rule: the must-flag table
+    prediction: every row, each a pointer the 2026-10-15 tree carried, yields its rule
+    test: cargo test -p aprender-contracts --lib ontology::readme::tests::falsify_readme_ont_001_must_flag
+    if_fails: a retired pointer passes the check
+  - id: FALSIFY-README-ONT-002
+    rule: the must-pass table
+    prediction: live packages, prose naming a lib, renamed deps with package or path, other paiml repos and cookbooks yield nothing
+    test: cargo test -p aprender-contracts --lib ontology::readme::tests::falsify_readme_ont_002_must_pass
+    if_fails: the check flags a correct doc and gets routed around
+  - id: FALSIFY-README-ONT-003
+    rule: a facade name is live only while packaged
+    prediction: crates.io/crates/provable-contracts passes with the facade package and is flagged without it
+    test: cargo test -p aprender-contracts --lib ontology::readme::tests::falsify_readme_ont_003_facade_is_live_only_while_packaged
+    if_fails: liveness is a hand list instead of the tree
+  - id: FALSIFY-README-ONT-004
+    rule: manifests are scanned on the crates.io-rendered keys only
+    prediction: repository and documentation lines are flagged, a comment and a live homepage are not
+    test: cargo test -p aprender-contracts --lib ontology::readme::tests::falsify_readme_ont_004_manifest_keys
+    if_fails: a crates.io page links an archived repo, or a comment is flagged
+  - id: FALSIFY-README-ONT-005
+    rule: every hit is counted at its line
+    prediction: two archived links on line 2 give two findings on line 2
+    test: cargo test -p aprender-contracts --lib ontology::readme::tests::falsify_readme_ont_005_counts_every_hit
+    if_fails: a fix of one link hides another
+  - id: FALSIFY-README-ONT-006
+    rule: the tree walk
+    prediction: the root README, a nested crate README and a manifest are read; target/ is skipped
+    test: cargo test -p aprender-contracts --lib ontology::readme::tests::falsify_readme_ont_006_audit_tree
+    if_fails: a published README is never read, or build output is graded
+  - id: FALSIFY-README-ONT-007
+    rule: the gate — the repo's own tree is clean
+    prediction: more than 100 READMEs and 50 packages are read and there are no findings
+    test: cargo test -p aprender-contracts --lib ontology::readme::tests::falsify_readme_ont_007_repo_readmes_name_no_retired_repo
+    if_fails: a README or manifest points at a retired repo or crate (the message lists each one), or the walk read nothing
+  - id: FALSIFY-README-ONT-008
+    rule: the archive list is the spec's
+    prediction: ARCHIVED_REPOS equals the 20 repos the consolidation spec archives
+    test: cargo test -p aprender-contracts --lib ontology::readme::tests::falsify_readme_ont_008_archived_list_matches_the_spec
+    if_fails: the code and the spec disagree about which repos are archived
+
+qa_gate:
+  required_checks:
+    - "cargo test -p aprender-contracts --lib ontology::readme"

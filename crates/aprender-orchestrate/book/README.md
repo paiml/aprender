@@ -2,16 +2,16 @@
 
 # The Batuta Book
 
-[![Build Book](https://github.com/paiml/batuta/actions/workflows/book.yml/badge.svg)](https://github.com/paiml/batuta/actions/workflows/book.yml)
+[![Build Book](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![mdBook](https://img.shields.io/badge/mdBook-0.4-blue.svg)](https://rust-lang.github.io/mdBook/)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![Book Online](https://img.shields.io/badge/📚_book-online-brightgreen)](https://paiml.github.io/batuta/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/paiml/batuta/pulls)
+[![Book Online](https://img.shields.io/badge/📚_book-online-brightgreen)](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/paiml/aprender/pulls)
 
 **Orchestrating ANY Project to Modern Rust - A Philosophy-Driven Guide**
 
-[📚 Read Online](https://paiml.github.io/batuta/) • [🔧 Batuta CLI](https://github.com/paiml/batuta) • [🦀 crates.io](https://crates.io/crates/batuta)
+[📚 Read Online](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book) • [🔧 Batuta CLI](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate) • [🦀 crates.io](https://crates.io/crates/aprender-orchestrate)
 
 </div>
 
@@ -33,7 +33,7 @@
 
 ## Overview
 
-This book provides comprehensive documentation for [Batuta](https://github.com/paiml/batuta), the orchestration framework for converting projects to modern Rust. It covers the Toyota Way philosophy, the five-phase orchestration pipeline, and practical examples for multiple source languages.
+This book provides comprehensive documentation for [Batuta](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate), the orchestration framework for converting projects to modern Rust. It covers the Toyota Way philosophy, the five-phase orchestration pipeline, and practical examples for multiple source languages.
 
 ## Quick Start
 
@@ -119,6 +119,6 @@ MIT License - See [LICENSE](../LICENSE) for details.
 
 ## Resources
 
-- [Batuta Repository](https://github.com/paiml/batuta)
+- [Batuta Repository](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate)
 - [Sovereign AI Stack](https://github.com/paiml/sovereign-ai-stack-book)
 - [Pragmatic AI Labs](https://paiml.com)

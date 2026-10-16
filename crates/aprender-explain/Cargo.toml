@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2021"
 description = "PTX/SIMD/wgpu visualization and tracing CLI for Trueno"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/paiml/trueno"
+repository = "https://github.com/paiml/aprender"
 keywords = ["ptx", "simd", "gpu", "analysis", "visualization"]
 categories = ["development-tools", "command-line-utilities"]
 

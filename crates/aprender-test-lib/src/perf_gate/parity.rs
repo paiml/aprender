@@ -489,10 +489,9 @@ impl ProbeMatrix {
     /// `n_predict`, so no run could pass.
     pub fn from_matrix_source(source: &str) -> Result<Self, String> {
         let protocol = ProtocolParams::from_matrix_source(source)?;
-        let witness: MatrixProbeWitness =
-            serde_yaml_ng::from_value(matrix_block(source, "witness")?)
-                .map_err(|e| format!("perf-matrix.yaml `witness:` block: {e}"))?;
-        let ladder: MatrixLadder = serde_yaml_ng::from_value(matrix_block(source, "ladder")?)
+        let witness: MatrixProbeWitness = serde_json::from_value(matrix_block(source, "witness")?)
+            .map_err(|e| format!("perf-matrix.yaml `witness:` block: {e}"))?;
+        let ladder: MatrixLadder = serde_json::from_value(matrix_block(source, "ladder")?)
             .map_err(|e| format!("perf-matrix.yaml `ladder:` block: {e}"))?;
         let policy = ProbePolicy {
             declared_min: witness.min_agree_tokens,

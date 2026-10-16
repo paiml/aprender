@@ -131,12 +131,14 @@ fn insert_model_config_metadata(
 
 /// Map GGUF dtype code to APR `TensorDType`, or return an error for unsupported formats.
 ///
-/// Supported passthrough: F32 (0), F16 (1), Q4_K (12), Q6_K (14).
+/// Supported passthrough: F32 (0), F16 (1), Q4_K (12), Q6_K (14), BF16 (30).
 /// All other dtypes fail with a clear error directing users to `apr convert`.
 fn map_gguf_dtype(dtype: u32, tensor_name: &str) -> Result<TensorDType> {
     match dtype {
         0 => Ok(TensorDType::F32),
         1 => Ok(TensorDType::F16),
+        // APR-EMBED-001 EG-6: elementwise like F16, so the bytes pass through.
+        30 => Ok(TensorDType::BF16),
         12 => Ok(TensorDType::Q4K),
         14 => Ok(TensorDType::Q6K),
         2 | 3 | 6 | 8 | 13 => {
@@ -196,9 +198,15 @@ pub(crate) fn write_apr_file_raw(
     _options: &ImportOptions,
     tokenizer: Option<&GgufTokenizer>,
     model_config: Option<&GgufModelConfig>,
+    gguf_kv: Option<&BTreeMap<String, crate::format::gguf::GgufValue>>,
 ) -> Result<()> {
-    // GH-202: Handle tied embeddings (common in Qwen2.5, LLaMA, etc.)
-    let (tensors, has_tied_embeddings) = resolve_tied_embeddings(tensors);
+    // GH-202: Handle tied embeddings (common in Qwen2.5, LLaMA, etc.).
+    // APR-EMBED-001 EG-6b: a file recorded for verbatim GGUF export keeps
+    // exactly the source tensors, so no lm_head is synthesized.
+    let (tensors, has_tied_embeddings) = match gguf_kv {
+        Some(_) => (std::borrow::Cow::Borrowed(tensors), false),
+        None => resolve_tied_embeddings(tensors),
+    };
 
     // Calculate total parameter count (approximate - based on shapes)
     let param_count: u64 = tensors
@@ -236,6 +244,11 @@ pub(crate) fn write_apr_file_raw(
     // Add model config if available
     if let Some(cfg) = model_config {
         insert_model_config_metadata(cfg, &mut custom);
+    }
+
+    // APR-EMBED-001 EG-6b: the typed source header, for verbatim GGUF export
+    if let Some(kv) = gguf_kv {
+        crate::format::converter::export::insert_gguf_kv_metadata(kv, &mut custom);
     }
 
     // ROSETTA-003: Record tied embeddings for round-trip export fidelity

@@ -222,3 +222,25 @@ status_history:
       companion-side bench with APR_AGENT_REPEAT_PENALTY=1.2 +
       APR_AGENT_REPEAT_LAST_N=64 once #1843's bench plumbing
       (Phase 3) lands.
+
+falsification_tests:
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY-001
+    description: "repeat_penalty == 1.0 is a no-op (backwards compat)"
+    test: "cargo test -p aprender-serve --lib rep_penalty_v1_001_no_op_at_one"
+    prediction: "greedy token is unchanged by penalty 1.0"
+    if_fails: "a neutral penalty changes sampling"
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY-002
+    description: "repeat_penalty > 1.0 down-weights a repeated token: logit 5.0 halved to 2.5 moves argmax to token 3"
+    test: "cargo test -p aprender-serve --lib rep_penalty_v1_002_down_weights_repeated"
+    prediction: "sampled token == 3"
+    if_fails: "penalty is not applied in sample_from_logits"
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY-003
+    description: "A token repeated k times is penalised once (llama.cpp/Candle convention), not compounded"
+    test: "cargo test -p aprender-serve --lib rep_penalty_v1_002_repeats_penalise_once"
+    prediction: "apply_repeat_penalty([1,10,10,4], [2,2,2], 2.0) == [1,10,5,4]; four repeats of token 1 at 1.5 still pick token 1"
+    if_fails: "penalty compounds per occurrence"
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY-004
+    description: "repeat_last_n bounds the penalty window"
+    test: "cargo test -p aprender-serve --lib rep_penalty_v1_003_window_bounds"
+    prediction: "with n=2 token 1 (outside window) stays argmax; with n=3 it is penalised"
+    if_fails: "window ignores repeat_last_n"

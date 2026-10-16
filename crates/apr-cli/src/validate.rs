@@ -383,6 +383,16 @@ fn dispatch_showcase(
         _ => showcase::ModelTier::Small,
     };
 
+    // APR-EMBED-001 EG-5 (I-3): the showcase serves the model it finds at `--model-dir` (a file, or
+    // the tier's file in that directory). An embedding model there is refused by kind, naming
+    // `apr embed`, before a step runs; a missing file is left to the download step.
+    let showcase_model = if model_dir.is_file() {
+        model_dir.to_path_buf()
+    } else {
+        model_dir.join(tier.gguf_filename())
+    };
+    crate::commands::model_kind_gate::refuse_non_generative_path(&showcase_model, "showcase")?;
+
     let baselines: Vec<showcase::Baseline> = baseline
         .split(',')
         .filter_map(|b| match b.trim() {

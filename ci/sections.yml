@@ -383,19 +383,38 @@ jobs:
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
               bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
-              # --no-renames (#3664): a rename must list BOTH paths, or a source
-              # moved into docs/ reads as docs-only and runs zero tests.
-              git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
-              printf 'touched (tip vs tip): %s path(s)\n' "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
+              # #5391: the PR's change is the diff from merge-base(base, HEAD), not the
+              # base tip -- main's later commits are not the PR's. --no-renames (#3664)
+              # lives in the helper.
+              bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
               args+=(--diff-from "$RUNNER_TEMP/touched.txt")
               ;;
             merge_group)
               pr=$(printf '%s' "${GITHUB_REF_NAME}" | sed -n 's|^gh-readonly-queue/[^/]*/pr-\([0-9]*\)-.*|\1|p')
               if [ -n "$pr" ]; then
-                head=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .head.sha)
-                bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "$head"
-                concl=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head}/check-runs?check_name=workspace-test&per_page=20" --jq '[.check_runs[]|select(.status=="completed")]|sort_by(.completed_at)|last|.conclusion // "none"')
-                args+=(--pr-head "$head" --pr-head-conclusion "${concl:-none}")
+                # #5399: a non-JSON GitHub reply (a 5xx or rate-limit body) used to
+                # kill this step under `set -e` and lose a whole merge group. Each
+                # lookup is tried 3 times; a lookup that still fails leaves out
+                # --pr-head, and ci_test_tier.sh answers `full` without a PR head --
+                # the same fall-closed the push arm takes, never a reuse, never a red.
+                gh_try() { # <jq-filter> <gh api path>: prints the value; rc 1 after 3 tries
+                  local n out
+                  for n in 1 2 3; do
+                    if out=$(gh api "$2" --jq "$1" 2>/dev/null) && [ -n "$out" ]; then
+                      printf '%s' "$out"
+                      return 0
+                    fi
+                    sleep "$((n * 5))"
+                  done
+                  return 1
+                }
+                if head=$(gh_try .head.sha "repos/${GITHUB_REPOSITORY}/pulls/${pr}") \
+                  && concl=$(gh_try '[.check_runs[]|select(.status=="completed")]|sort_by(.completed_at)|last|.conclusion // "none"' "repos/${GITHUB_REPOSITORY}/commits/${head}/check-runs?check_name=workspace-test&per_page=20") \
+                  && bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "$head"; then
+                  args+=(--pr-head "$head" --pr-head-conclusion "${concl:-none}")
+                else
+                  printf '::warning::merge_group: the PR head lookup failed after 3 tries -- the tier falls closed to full\n'
+                fi
               fi
               ;;
             push)
