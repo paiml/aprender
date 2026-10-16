@@ -394,6 +394,7 @@ fn test_context_window_config_default_cov() {
 #[test]
 fn test_embedding_request_fields_cov() {
     let req = EmbeddingRequest {
+        dimensions: None,
         input: "Some text to embed".to_string().into(),
         model: Some("text-embedding".to_string()),
     };

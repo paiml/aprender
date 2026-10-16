@@ -2,7 +2,7 @@
 
 **10X Better Than btop** - A pure Rust system monitor with NVIDIA + AMD GPU support, zero-allocation rendering, and sovereign stack architecture.
 
-[![Crates.io](https://img.shields.io/crates/v/ttop.svg)](https://crates.io/crates/ttop)
+[![Crates.io](https://img.shields.io/crates/v/aprender-viz-ttop.svg)](https://crates.io/crates/aprender-viz-ttop)
 [![License](https://img.shields.io/crates/l/ttop.svg)](LICENSE)
 
 ## Installation
@@ -116,10 +116,10 @@ No ratatui. No tui-rs. Zero-allocation steady-state rendering via `CompactString
 ## Building from Source
 
 ```bash
-git clone https://github.com/paiml/trueno-viz
-cd trueno-viz/crates/ttop
-cargo build --release
-./target/release/ttop
+git clone https://github.com/paiml/aprender
+cd aprender
+cargo build --release -p aprender-viz-ttop
+./target/release/aprender-viz-ttop
 ```
 
 ## License

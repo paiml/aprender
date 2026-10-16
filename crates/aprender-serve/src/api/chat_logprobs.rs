@@ -100,12 +100,20 @@ pub struct ChatLogprobs {
 pub struct ChatTokenLogprob {
     /// The chosen token's text.
     pub token: String,
+    /// apr extension (#4026): the chosen token id, which `sparse-logits-v1` keys on.
+    #[serde(default)]
+    pub token_id: u32,
     /// ln P(token) under the logits the choice read.
     pub logprob: f32,
     /// The token's own bytes, which can be part of one character.
     pub bytes: Vec<u8>,
     /// The `top_logprobs` best tokens of this step, best first.
     pub top_logprobs: Vec<ChatTopLogprob>,
+    /// apr extension (#4026): ln(sum(exp(logits))) over the whole vocabulary.
+    /// The tail mass outside `top_logprobs` follows from it and cannot be
+    /// recovered from the top K, so it is carried rather than guessed.
+    #[serde(default)]
+    pub logsumexp_full: f32,
 }
 
 /// One of a step's best tokens.
@@ -113,6 +121,9 @@ pub struct ChatTokenLogprob {
 pub struct ChatTopLogprob {
     /// The token's text.
     pub token: String,
+    /// apr extension (#4026): the token id.
+    #[serde(default)]
+    pub token_id: u32,
     /// ln P(token) at this step.
     pub logprob: f32,
     /// The token's own bytes.
@@ -143,6 +154,7 @@ impl ChatTokenLogprob {
                 let (token, bytes) = token_text(tokenizer, top.token_id);
                 ChatTopLogprob {
                     token,
+                    token_id: top.token_id,
                     logprob: top.logprob,
                     bytes,
                 }
@@ -150,9 +162,11 @@ impl ChatTokenLogprob {
             .collect();
         Self {
             token,
+            token_id: step.chosen,
             logprob: step.chosen_logprob,
             bytes,
             top_logprobs,
+            logsumexp_full: step.logsumexp_full,
         }
     }
 }
@@ -687,8 +701,12 @@ mod tests {
                 logit: 4.0,
                 logprob: -0.25,
             }],
+            logsumexp_full: 4.25,
         };
         let lp = ChatLogprobs::from_steps(&tokenizer(), &[s]);
+        assert_eq!(lp.content[0].token_id, 1);
+        assert_eq!(lp.content[0].logsumexp_full, 4.25);
+        assert_eq!(lp.content[0].top_logprobs[0].token_id, 1);
         assert_eq!(lp.content[0].logprob, -0.25);
         assert_eq!(lp.content[0].top_logprobs[0].logprob, -0.25);
     }

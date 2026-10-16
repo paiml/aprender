@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """A fake `apr` for check_ladder_cells_producer.sh: the envelopes of run / chat / code / serve / inspect,
 shaped as crates/apr-cli prints them, with ONE defect switched on by FAKE_APR_MODE:
-  good | fellback (run+chat ran on cpu after asking for gpu) | noneedle (answers without the needle)
+  good | fellback (run+chat+code ran on cpu after asking for gpu) | noneedle (answers without the needle)
   | refuse (a pre-load capacity refusal at >= 8192 tokens) | noclose (a think block never closes)
-  | undercount (the tokenizer is denser than the producer's first guess: 1 token per 6 chars)."""
+  | undercount (the tokenizer is denser than the producer's first guess: 1 token per 6 chars)
+  | codenull (apr code's envelope carries backend null: nothing was measured).
+fellback covers code too: since #3719 its envelope reports the device its serve child ran on."""
 import http.server, json, os, sys
 
 MODE = os.environ.get("FAKE_APR_MODE", "good")
@@ -28,56 +30,73 @@ def opt(args, name, default=None):
     return args[args.index(name) + 1] if name in args else default
 
 
+GPU = MODE != "fellback"
+BACKEND = {"requested": "gpu", "ran": "gpu" if GPU else "cpu", "fell_back": not GPU}
+
+
+def inspect(a):
+    md = {"general.architecture": "qwen2", "qwen2.context_length": "32768", "qwen2.block_count": "28",
+          "qwen2.attention.head_count": "12", "qwen2.attention.head_count_kv": "2",
+          "qwen2.embedding_length": "1536", "tokenizer.chat_template": TMPL, "general.file_type": "15"}
+    print(json.dumps({"architecture": "qwen2", "metadata": md}))
+    return 0
+
+
+def run(a):
+    tok, text = answer(open(opt(a, "--input")).read(), opt(a, "--thinking", "off"))
+    print(json.dumps({"text": text, "prompt_tokens": tok, "used_gpu": GPU, "backend": BACKEND}))
+    return 0
+
+
+def chat(a):
+    lines = sys.stdin.read().split("\n")
+    _, text = answer(lines[0], opt(a, "--thinking", "off"))
+    print(text)
+    print(json.dumps({"backend": BACKEND}))
+    return 0
+
+
+def code(a):
+    _, text = answer(sys.stdin.read(), opt(a, "--thinking", "off"))
+    print(json.dumps({"type": "result", "subtype": "success", "result": text, "session_id": "x", "duration_ms": 1,
+                      "backend": None if MODE == "codenull" else BACKEND}))
+    return 0
+
+
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def _send(self, code, obj):
+        b = json.dumps(obj).encode()
+        self.send_response(code); self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+
+    def do_GET(self):
+        self._send(200, {"status": "ok"})
+
+    def do_POST(self):
+        req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        on = (req.get("chat_template_kwargs") or {}).get("enable_thinking")
+        try:
+            tok, text = answer(req["messages"][0]["content"], "on" if on else "off")
+        except SystemExit:
+            return self._send(503, {"error": "GPU capacity refused: = 29612 MiB, against 24000 MiB free of 24564 MiB"})
+        self._send(200, {"choices": [{"message": {"role": "assistant", "content": text}}],
+                         "usage": {"prompt_tokens": tok}, "used_gpu": GPU})
+
+
+def serve(a):
+    http.server.HTTPServer(("127.0.0.1", int(opt(a, "--port"))), H).serve_forever()
+
+
+VERBS = {"inspect": inspect, "run": run, "chat": chat, "code": code, "serve": serve}
+
+
 def main(a):
-    verb = a[0]
-    if verb == "inspect":
-        md = {"general.architecture": "qwen2", "qwen2.context_length": "32768", "qwen2.block_count": "28",
-              "qwen2.attention.head_count": "12", "qwen2.attention.head_count_kv": "2",
-              "qwen2.embedding_length": "1536", "tokenizer.chat_template": TMPL, "general.file_type": "15"}
-        print(json.dumps({"architecture": "qwen2", "metadata": md})); return 0
-    gpu = MODE != "fellback"
-    if verb == "run":
-        tok, text = answer(open(opt(a, "--input")).read(), opt(a, "--thinking", "off"))
-        print(json.dumps({"text": text, "prompt_tokens": tok, "used_gpu": gpu,
-                          "backend": {"requested": "gpu", "ran": "gpu" if gpu else "cpu", "fell_back": not gpu}}))
-        return 0
-    if verb == "chat":
-        lines = sys.stdin.read().split("\n")
-        _, text = answer(lines[0], opt(a, "--thinking", "off"))
-        print(text)
-        print(json.dumps({"backend": {"requested": "gpu", "ran": "gpu" if gpu else "cpu", "fell_back": not gpu}}))
-        return 0
-    if verb == "code":
-        _, text = answer(sys.stdin.read(), opt(a, "--thinking", "off"))
-        print(json.dumps({"type": "result", "subtype": "success", "result": text, "session_id": "x", "duration_ms": 1}))
-        return 0
-    if verb == "serve":
-        port = int(opt(a, "--port"))
-
-        class H(http.server.BaseHTTPRequestHandler):
-            def log_message(self, *_):
-                pass
-
-            def _send(self, code, obj):
-                b = json.dumps(obj).encode()
-                self.send_response(code); self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
-
-            def do_GET(self):
-                self._send(200, {"status": "ok"})
-
-            def do_POST(self):
-                req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                on = (req.get("chat_template_kwargs") or {}).get("enable_thinking")
-                try:
-                    tok, text = answer(req["messages"][0]["content"], "on" if on else "off")
-                except SystemExit:
-                    return self._send(503, {"error": "GPU capacity refused: = 29612 MiB, against 24000 MiB free of 24564 MiB"})
-                self._send(200, {"choices": [{"message": {"role": "assistant", "content": text}}],
-                                 "usage": {"prompt_tokens": tok}, "used_gpu": gpu})
-
-        http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
-    sys.stderr.write(f"fake apr: unknown verb {verb}\n"); return 2
+    if a[0] in VERBS:
+        return VERBS[a[0]](a)
+    sys.stderr.write(f"fake apr: unknown verb {a[0]}\n"); return 2
 
 
 sys.exit(main(sys.argv[1:]))

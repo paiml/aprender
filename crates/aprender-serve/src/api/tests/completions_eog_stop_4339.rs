@@ -274,3 +274,78 @@ fn the_logprobs_config_stops_on_the_eos_and_every_eog_marker() {
     assert!(config.logprobs);
     assert_eq!((config.temperature, config.top_k), (0.0, 1), "greedy for perplexity");
 }
+
+/// aprender#4345: the CUDA backend of `/stream/generate` and `/realize/generate`
+/// stopped on the EOS alone. It needs a CUDA model, so the stop set it shares
+/// with the quantized `/generate` config is checked directly.
+#[test]
+fn the_native_generate_stop_set_is_the_eos_plus_every_eog_marker() {
+    use crate::api::gpu_handlers::generate_stop_tokens;
+    let vocab: Vec<String> = ["<unk>", "<|endoftext|>", "a", "<|im_end|>"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let tok = crate::tokenizer::BPETokenizer::new(vocab, vec![], "<unk>").expect("tokenizer");
+    assert_eq!(
+        generate_stop_tokens(&tok, Some(3)),
+        vec![3, 1],
+        "EOS <|im_end|>, then <|endoftext|>: a raw prompt ends on the second"
+    );
+    assert_eq!(
+        generate_stop_tokens(&tok, None),
+        vec![3, 1],
+        "no recorded EOS: the vocabulary's <|im_end|> stands in, <|endoftext|> still stops"
+    );
+    // The CUDA `/stream/generate` config itself, so its call site cannot fall
+    // back to the EOS alone without this test going red.
+    let request: crate::api::GenerateRequest =
+        serde_json::from_value(serde_json::json!({"prompt": "a", "max_tokens": 5, "temperature": 0.0}))
+            .expect("request");
+    let config = crate::api::gpu_handlers::cuda_stream_config(
+        &request,
+        &tok,
+        Some(3),
+        &crate::generate::CancelToken::new(),
+    );
+    assert_eq!(config.stop_tokens, vec![3, 1], "CUDA /stream/generate stop set");
+    assert_eq!((config.max_tokens, config.top_k), (5, 1), "greedy at temperature 0");
+}
+
+/// aprender#4345: the APR Q4K CUDA routes (`/v1/completions` and
+/// `/v1/chat/completions`) stopped on `model_eos_ids()` alone, the model's one
+/// EOS or the `[0, 2]` fallback. Whatever EOS list a route starts from, every
+/// EOG marker the vocabulary has joins it once, after it and in order.
+#[test]
+fn an_eos_list_gains_every_eog_marker_once() {
+    use crate::api::realize_handlers::eos_ids_with_eog;
+    let vocab: Vec<String> = ["<unk>", "<|endoftext|>", "a", "<|im_end|>", "<|eot_id|>"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let tok = crate::tokenizer::BPETokenizer::new(vocab, vec![], "<unk>").expect("tokenizer");
+    assert_eq!(eos_ids_with_eog(&tok, vec![3]), vec![3, 1, 4]);
+    assert_eq!(
+        eos_ids_with_eog(&tok, vec![0, 2]),
+        vec![0, 2, 3, 1, 4],
+        "the no-EOS fallback keeps its ids and gains the markers"
+    );
+    assert_eq!(eos_ids_with_eog(&tok, vec![1, 1]), vec![1, 1, 3, 4], "input kept as given");
+    assert_eq!(eos_ids_with_eog(&tok, Vec::new()), vec![3, 1, 4]);
+}
+
+/// aprender#4345: the Qwen3.5 `/v1/completions` arm stopped on the declared
+/// EOS alone, so a raw prompt that ended on `<|endoftext|>` ran to the budget.
+/// It tokenizes through the GGUF, so the stop set reads the state's tokenizer
+/// when there is one, and keeps the bare EOS when there is not.
+#[test]
+fn the_qwen35_completion_stop_set_gains_the_eog_markers() {
+    use crate::api::realize_handlers::qwen35_completion_stop_tokens;
+    let vocab: Vec<String> = ["<unk>", "<|endoftext|>", "a", "<|im_end|>"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let tok = crate::tokenizer::BPETokenizer::new(vocab, vec![], "<unk>").expect("tokenizer");
+    assert_eq!(qwen35_completion_stop_tokens(Some(&tok), Some(3)), vec![3, 1]);
+    assert_eq!(qwen35_completion_stop_tokens(None, Some(3)), vec![3]);
+    assert_eq!(qwen35_completion_stop_tokens(None, None), Vec::<u32>::new());
+}

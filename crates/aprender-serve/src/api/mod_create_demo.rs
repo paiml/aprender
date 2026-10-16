@@ -163,8 +163,13 @@ pub struct ChatCompletionRequest {
     pub think: Option<bool>,
     /// #3568 PR 4: OpenAI's structured output. `json_schema` and `json_object` run the turn
     /// under a constraint and a second reader; `text` (or absent) is today's turn. A `type`
-    /// apr does not know is refused at deserialization, never dropped.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// apr does not know is refused at deserialization, never dropped, with a message that
+    /// names the field and the types apr serves.
+    #[serde(
+        default,
+        deserialize_with = "response_format_of_known_type",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub response_format: Option<ResponseFormat>,
     /// #4971: OpenAI's `logprobs`. When true the reply carries
     /// `choices[0].logprobs`, one entry per generated token, or the backend
@@ -190,6 +195,43 @@ pub enum ResponseFormat {
         /// The schema and its name.
         json_schema: JsonSchemaFormat,
     },
+}
+
+/// The `type`s [`ResponseFormat`] serves, in the order a refusal lists them.
+const RESPONSE_FORMAT_TYPES: [&str; 3] = ["text", "json_object", "json_schema"];
+
+/// `deserialize_with` for `response_format` (#3568): a `type` apr does not serve is refused
+/// with a client-visible reason naming the field, where serde's own "unknown variant" text is
+/// hidden by the rejection sanitizer and the caller read only "Invalid request body".
+fn response_format_of_known_type<'de, D>(
+    deserializer: D,
+) -> Result<Option<ResponseFormat>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if value.is_null() {
+        return Ok(None);
+    }
+    let kind = value.get("type").and_then(serde_json::Value::as_str);
+    if !kind.is_some_and(|k| RESPONSE_FORMAT_TYPES.contains(&k)) {
+        return Err(D::Error::custom(format!(
+            "{}response_format.type must be one of {}, got {}",
+            crate::api::CLIENT_VISIBLE_MARKER,
+            RESPONSE_FORMAT_TYPES.join(", "),
+            // Unquoted: the sanitizer trims a trailing `"` off a client-visible reason
+            match kind {
+                Some(k) => k.to_string(),
+                None => value
+                    .get("type")
+                    .map_or_else(|| "no type".to_string(), ToString::to_string),
+            }
+        )));
+    }
+    ResponseFormat::deserialize(value)
+        .map(Some)
+        .map_err(D::Error::custom)
 }
 
 /// The `json_schema` object of a `response_format` (#3568 PR 4).

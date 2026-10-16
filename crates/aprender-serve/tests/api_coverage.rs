@@ -776,6 +776,7 @@ fn test_predict_response_classification() {
 #[test]
 fn test_embedding_request_serialization() {
     let request = EmbeddingRequest {
+        dimensions: None,
         input: "test input text".to_string().into(),
         model: Some("text-embedding-ada".to_string()),
     };
@@ -3744,6 +3745,7 @@ fn test_shap_explanation_edge_cases() {
 fn test_embedding_request_variations() {
     // Single input string
     let request = EmbeddingRequest {
+        dimensions: None,
         input: "single string".to_string().into(),
         model: None,
     };
@@ -3752,6 +3754,7 @@ fn test_embedding_request_variations() {
 
     // With model specified
     let request2 = EmbeddingRequest {
+        dimensions: None,
         input: "test input".to_string().into(),
         model: Some("text-embedding-ada-002".to_string()),
     };
@@ -5227,6 +5230,7 @@ fn test_openai_models_response_roundtrip() {
 #[test]
 fn test_embedding_request_roundtrip() {
     let original = EmbeddingRequest {
+        dimensions: None,
         input: "Text to embed".to_string().into(),
         model: Some("text-embedding-3-small".to_string()),
     };

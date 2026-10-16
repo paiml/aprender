@@ -2,7 +2,7 @@
 
 Pure Rust PTX generation for NVIDIA CUDA - no LLVM, no nvcc, no external dependencies.
 
-[![CI](https://github.com/paiml/trueno/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/trueno/actions)
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 
 ## Philosophy
 
@@ -96,7 +96,7 @@ MIT License - see [LICENSE](../LICENSE) for details.
 
 ## Part of Trueno
 
-This crate is part of the [Trueno](https://github.com/paiml/trueno) high-performance compute library.
+This crate is part of the [Trueno](https://github.com/paiml/aprender/tree/main/crates/aprender-compute) high-performance compute library.
 
 ---
 

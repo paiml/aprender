@@ -190,6 +190,40 @@ fn rfc3339_by_hand() {
     assert_eq!(rfc3339(4_107_542_399), "2100-02-28T23:59:59Z");
 }
 
+/// A bounded read refuses a body past its cap instead of truncating it (#4459
+/// quorum r2, 3/3 lanes): a cut-off reply returned as `Ok` would be scored as
+/// if it were the whole one.
+#[test]
+fn read_bounded_refuses_past_its_cap_and_never_truncates() {
+    let table: &[(&[u8], u64, Result<&str, ()>)] = &[
+        (b"", 4, Ok("")),
+        (b"abc", 4, Ok("abc")),
+        (b"abcd", 4, Ok("abcd")),
+        (b"abcde", 4, Err(())),
+        (b"abcdefgh", 4, Err(())),
+    ];
+    for &(input, cap, ref want) in table {
+        let got = read_bounded(input, cap);
+        match want {
+            Ok(s) => assert_eq!(got.as_deref(), Ok(*s), "input={input:?} cap={cap}"),
+            Err(()) => assert!(
+                got.as_ref().is_err_and(|e| e.contains("cap")),
+                "input={input:?} cap={cap} got={got:?}"
+            ),
+        }
+    }
+}
+
+/// Invalid UTF-8 inside the cap is refused, never returned lossily; a body that
+/// ends exactly at the cap is whole, whatever the cap (#4459 quorum r3).
+#[test]
+fn read_bounded_refuses_invalid_utf8_and_takes_a_body_ending_at_any_cap() {
+    assert!(read_bounded(&[0x61, 0xff][..], 4).is_err());
+    assert_eq!(read_bounded(&b"abcd"[..], u64::MAX).as_deref(), Ok("abcd"));
+    assert_eq!(read_bounded(&b""[..], 0).as_deref(), Ok(""));
+    assert!(read_bounded(&b"a"[..], 0).is_err_and(|e| e.contains("cap")));
+}
+
 #[test]
 fn request_body_carries_the_fixed_decoding_and_composed_message() {
     let b = request_body("m", "P\n", "d\n");

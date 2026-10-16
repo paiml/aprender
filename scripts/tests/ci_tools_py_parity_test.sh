@@ -18,6 +18,9 @@
 #   llama-fit-verdict       vs scripts/lib/llama_fit_verdict.py (kept: model_ladder.sh's
 #                           certification path still calls it), exact exit code too, run
 #                           under CPython 3.12/3.13 (LFV_PYTHON=) whose Unicode it follows.
+#   ladder-cells-produce    vs scripts/lib/model_ladder_cells_produce.py (kept: model_ladder.sh
+#                           still calls it), against its fake apr; exact exit code, stdout and
+#                           the written --out file.
 #
 # coverage_report_scope.py runs `cargo metadata` itself, so its fixture cases put a
 # fake `cargo` first on PATH that prints the fixture; both sides then read the same
@@ -36,7 +39,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 PY="${PYTHON:-python3}"
-EXPECTED_CASES=201
+EXPECTED_CASES=221
 
 BIN="${CI_TOOLS_BIN:-}"
 if [[ -z "$BIN" ]]; then
@@ -675,6 +678,119 @@ lfv "eight args (raises)" 1 "$PIN" 0 1 "$g/ver" "$g/fits" - extra
 lfv "--help alone (raises)" --help
 lfv "-h among seven" 1 "$PIN" 0 1 "$g/ver" "$g/fits" -h
 lfv "--version alone (raises)" --version
+
+# --- ladder-cells-produce vs scripts/lib/model_ladder_cells_produce.py --------------
+# Both sides drive the fake `apr` of check_ladder_cells_producer.sh (one defect per
+# FAKE_APR_MODE). Each case compares the exact exit code, stdout and the file written
+# to `--out` (absent on both sides is a match). `@W` in an argument is each side's own
+# work dir, so neither reads what the other wrote. gpumem is not a case: it reads the
+# live GPU, whose free bytes move between the two calls.
+LCP_PY=scripts/lib/model_ladder_cells_produce.py
+LCP_FAKE="$ROOT/scripts/lib/model_ladder_cells_produce_cases/fake_apr.py"
+lc="$tmp/lcp"
+mkdir -p "$lc"
+cat >"$lc/ladder.yaml" <<'YAML'
+ladder:
+  hosts: [{id: t, required: true}]
+  cells:
+    verbs: [run, chat, serve, code]
+    long_rungs_for: {families: [qwen2], representatives: {}}
+YAML
+cat >"$lc/ladder-declaimed.yaml" <<'YAML'
+ladder:
+  hosts: [{id: t, required: true}, {id: u, required: true}]
+  cells:
+    declaimed: [{arch: qwen2, host: t, issue: 4590, until: "0.70.1", why: fixture}]
+    verbs: [run, chat, serve, code]
+    long_rungs_for: {families: [qwen2], representatives: {}}
+YAML
+cat >"$lc/rungs.json" <<'JSON'
+{"schema": "apr-release-context-rungs/v1",
+ "consumers": [{"consumer": "c", "max_prompt_tokens": 7000}],
+ "rungs": [{"id": "4k", "tokens": 4096}, {"id": "8k", "tokens": 8192}]}
+JSON
+printf '{"schema": "apr-release-context-rungs/v1", "rungs": []}\n' >"$lc/rungs-empty.json"
+printf '{"file":"m.gguf","sha256":"%064d","bytes":1000}\n' 0 >"$lc/inventory.jsonl"
+printf '{"file":"m.gguf","sha256":"%064d","bytes":1000,"note":"\\u00e9"}\n\n  \n' 0 \
+    >"$lc/inventory-extra.jsonl"
+printf 'm.gguf|%s/m.gguf\n' "$lc" >"$lc/models.txt"
+printf 'no bar here\n' >"$lc/models-none.txt"
+printf 'gguf body' >"$lc/m.gguf"
+if ! FAKE_APR_MODE=good "$PY" "$LCP_PY" enrich --apr "$LCP_FAKE" --inventory "$lc/inventory.jsonl" \
+    --models "$lc/models.txt" --out "$lc/inv.jsonl" >/dev/null 2>&1; then
+    echo "FAIL: the original's enrich could not build the measure fixture" >&2
+    exit 1
+fi
+# Every fake serve's argv names $lc/m.gguf: end the ones a side left, by that unique path.
+lcp_reap() {
+    local p cmd
+    for p in /proc/[0-9]*; do
+        [[ "${p#/proc/}" == "$$" ]] && continue
+        cmd="$(tr '\0' ' ' 2>/dev/null <"$p/cmdline")" || continue
+        case "$cmd" in *"$lc/m.gguf"*) kill -TERM "${p#/proc/}" 2>/dev/null || true ;; esac
+    done
+}
+lcp() { # NAME MODE -- ARGS... (the same args on both sides, @W mapped to each side's dir)
+    local name="$1" mode="$2" side a rc py_rc=x rs_rc=y same=1
+    shift 3
+    for side in py rs; do
+        rm -rf "${lc:?}/${side:?}"
+        mkdir -p "$lc/$side"
+        local args=()
+        for a in "$@"; do args+=("${a//@W/$lc/$side}"); done
+        if [[ "$side" == py ]]; then
+            FAKE_APR_MODE="$mode" "$PY" "$LCP_PY" "${args[@]}" </dev/null \
+                >"$lc/py.stdout" 2>/dev/null && rc=0 || rc=$?
+            py_rc=$rc
+        else
+            FAKE_APR_MODE="$mode" "$BIN" ladder-cells-produce "${args[@]}" </dev/null \
+                >"$lc/rs.stdout" 2>/dev/null && rc=0 || rc=$?
+            rs_rc=$rc
+        fi
+        lcp_reap
+    done
+    [[ "$py_rc" == "$rs_rc" ]] || same=0
+    cmp -s "$lc/py.stdout" "$lc/rs.stdout" || same=0
+    if [[ -e "$lc/py/out" || -e "$lc/rs/out" ]]; then
+        cmp -s "$lc/py/out" "$lc/rs/out" 2>/dev/null || same=0
+    fi
+    if [[ "$same" == 1 ]]; then
+        pass=$((pass + 1))
+    else
+        fail=$((fail + 1))
+        echo "MISMATCH: ladder-cells-produce $name (py rc $py_rc, rust rc $rs_rc)" >&2
+        diff "$lc/py.stdout" "$lc/rs.stdout" 2>&1 | head -4 >&2 || true
+        diff "$lc/py/out" "$lc/rs/out" 2>&1 | head -8 >&2 || true
+    fi
+}
+ENR=(enrich --apr "$LCP_FAKE" --models "$lc/models.txt" --out @W/out)
+MEA=(measure --apr "$LCP_FAKE" --inventory "$lc/inv.jsonl" --models "$lc/models.txt"
+    --ladder "$lc/ladder.yaml" --work @W --timeout 60 --serve-ceiling 30 --out @W/out)
+RJ="$lc/rungs.json"
+lcp "enrich good" good -- "${ENR[@]}" --inventory "$lc/inventory.jsonl"
+lcp "enrich keeps extra keys, skips blank lines" good -- "${ENR[@]}" \
+    --inventory "$lc/inventory-extra.jsonl"
+lcp "enrich a model with no path" good -- enrich --apr "$LCP_FAKE" \
+    --models "$lc/models-none.txt" --inventory "$lc/inventory.jsonl" --out @W/out
+lcp "enrich missing inventory (raises)" good -- "${ENR[@]}" --inventory "$lc/no-such.jsonl"
+lcp "measure good" good -- "${MEA[@]}" --rungs "$RJ"
+lcp "measure fellback" fellback -- "${MEA[@]}" --rungs "$RJ"
+lcp "measure noneedle" noneedle -- "${MEA[@]}" --rungs "$RJ"
+lcp "measure noclose" noclose -- "${MEA[@]}" --rungs "$RJ"
+lcp "measure refuse" refuse -- "${MEA[@]}" --rungs "$RJ"
+lcp "measure undercount" undercount -- "${MEA[@]}" --rungs "$RJ"
+lcp "measure codenull (code reports a null backend, #4986)" codenull -- "${MEA[@]}" --rungs "$RJ"
+lcp "measure off budget leaves room" good -- "${MEA[@]}" --rungs "$RJ" --max-tokens-thinking 30000
+lcp "measure --only a rung id (refuses, 2)" good -- "${MEA[@]}" --rungs "$RJ" --only 4k
+lcp "measure --only inv:model" good -- "${MEA[@]}" --rungs "$RJ" --only inv:m.gguf
+lcp "measure rungs the judge fails (refuses, 1)" good -- "${MEA[@]}" --rungs "$lc/rungs-empty.json"
+lcp "measure declaimed on this host" good -- "${MEA[@]}" --rungs "$RJ" \
+    --ladder "$lc/ladder-declaimed.yaml" --host t
+lcp "measure declaimed on another host" good -- "${MEA[@]}" --rungs "$RJ" \
+    --ladder "$lc/ladder-declaimed.yaml" --host u
+lcp "usage: no subcommand (2)" good --
+lcp "usage: measure without --rungs (2)" good -- "${MEA[@]}"
+lcp "usage: --timeout not an int (2)" good -- "${MEA[@]}" --rungs "$RJ" --timeout soon
 
 ran=$((pass + fail))
 echo "ci_tools_py_parity: $pass/$ran identical (declared $EXPECTED_CASES)"

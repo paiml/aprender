@@ -98,7 +98,7 @@ let labels = model.predict(&data)?;
 - [API docs (docs.rs)](https://docs.rs/aprender-core)
 - [Full monorepo](https://github.com/paiml/aprender)
 - [APR format specification](https://github.com/paiml/aprender/blob/main/contracts/tensor-layout-v1.yaml)
-- [EXTREME TDD book](https://github.com/paiml/aprender/tree/main/docs/book)
+- [EXTREME TDD book](https://github.com/paiml/aprender/tree/main/book)
 
 ## License
 

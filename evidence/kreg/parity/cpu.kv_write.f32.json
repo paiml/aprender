@@ -1,5 +1,5 @@
 {
-  "build_identity": "5c9341007d7ea1ebeff29c0aad3133311dc4d8e2",
+  "build_identity": "bc3edfb56c45c323cc5c2be0eacac36d1d10467e",
   "host": "mac-server",
   "host_arch": "x86_64",
   "input_set": {
@@ -7,10 +7,10 @@
     "driver": "none",
     "oracle": "f64_definition:kv_write:cache[l][p*kv..(p+1)*kv]=k_p|v_p",
     "row_sha256": "7607eefa7582a68411a1b8a8cf3e64edb366bcc5a2dc6bef8dee6aa31805206b",
-    "source_sha256": "4f471ef6cca0c5caa9ad8e465b5c9806dc3b1a85089efc30c1ddf2e0bfed824d",
+    "source_sha256": "cd66e5e70cf71de99ec128fc22bd7f4233a35af4b99f359dac3d6a8cd61c5d11",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "1495875f244381bd45d0e699e26632a2ad89acb569414171daf302e60bba9bb8",
+  "input_set_hash": "2e6d1b41aa2a06ce37d602dae9734d2a0f430e4a36e6c15c05b030cd0cc147d0",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -38,7 +38,7 @@
   },
   "source_fn": "append",
   "tolerance_rel": 2.9999999999999997e-308,
-  "ts": "2026-10-04T10:35:05Z",
+  "ts": "2026-10-13T19:08:24Z",
   "workload": {
     "n": 128,
     "seed": 1161367296,

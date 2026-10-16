@@ -81,6 +81,7 @@ impl AppState {
                 on_gpu: std::sync::atomic::AtomicBool::new(session.on_gpu()),
                 session: std::sync::Mutex::new(session),
             })),
+            embedding_model: None,
             cached_eos_token_id: eos_token_id,
             cached_serving_context: None,
             verbose: false,

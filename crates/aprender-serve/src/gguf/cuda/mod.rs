@@ -35,6 +35,8 @@
 
 mod backend;
 mod forward;
+/// APR-EMBED-001 EG-4 (#4903): the EmbeddingGemma 2 encoder on the GPU.
+mod forward_embedding_gemma2_cuda;
 /// PMAT-3477 (#3090): Qwen3.5's Gated `DeltaNet` block on the GPU.
 mod forward_qwen35_cuda;
 /// #3714: the Qwen3-MoE decoder resident on the GPU.
@@ -47,6 +49,8 @@ mod weights;
 
 // Re-export types for public API
 pub use backend::CudaBackend;
+// APR-EMBED-001 EG-4 (#4903): the EmbeddingGemma 2 GPU encoder.
+pub use forward_embedding_gemma2_cuda::EmbeddingGemma2Cuda;
 // PMAT-3477 (#3090): the Gated DeltaNet GPU model and its device state.
 pub use forward_qwen35_cuda::{
     PrefillAttention, Qwen35CudaCheckpoint, Qwen35CudaModel, Qwen35CudaState, Qwen35StepOut,

@@ -280,7 +280,14 @@ fn constrained_config(
                 .max_tokens
                 .unwrap_or(256)
                 .min(context_length - prompt.len());
-            let stop = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
+            // aprender#4345: the EOS plus every EOG marker the vocabulary has.
+            let stop = stop_tokens_unless_ignore_eos(
+                request,
+                crate::api::realize_handlers::qwen35_completion_stop_tokens(
+                    state.tokenizer.as_deref(),
+                    state.model_eos_token_id(),
+                ),
+            );
             gen_config_from_request(request, budget, stop, cancel.clone())
         },
         #[cfg(feature = "cuda")]
@@ -356,6 +363,11 @@ fn constrained_turn(
             dense_cpu_session(&model).generate_constrained(prompt, config, constraint)
         },
     }
+}
+
+/// 499, "client closed request": the status a turn cancelled by a disconnect is logged with.
+fn client_closed_status() -> StatusCode {
+    StatusCode::from_u16(499).expect("499 is a valid status code")
 }
 
 /// The verdict on a finished constrained reply: `Ok` when it ships. A reply the budget cut is
@@ -496,6 +508,15 @@ async fn constrained_chat(
             ))
         },
     };
+    if cancel.peek_cancelled() {
+        // The client went away mid-turn: no budget cut it, so it is not `Truncated`, and no
+        // one reads this reply
+        return Err(fail_response(
+            state,
+            client_closed_status(),
+            "the client closed the request before the constrained turn ended",
+        ));
+    }
     let reply = &turn.tokens[prompt_tokens..];
     let text = mapped.model.decode(reply);
     constrained_verdict(&constraint, stop, &text, reply.len())
