@@ -550,8 +550,8 @@ jobs:
           # from a failed mg-reuse is RED.
           REUSE=0
           case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
-            merge_group:success:1:1:success | push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
-            merge_group:success:1:1:* | push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
             *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
             *) echo "::error::reuse flags split, off merge_group/push or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
           esac
@@ -597,8 +597,8 @@ jobs:
           # from a failed mg-reuse is RED.
           REUSE=0
           case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
-            merge_group:success:1:1:success | push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
-            merge_group:success:1:1:* | push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
             *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
             *) echo "::error::reuse flags split, off merge_group/push or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
           esac

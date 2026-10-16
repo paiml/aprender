@@ -149,8 +149,11 @@ resolve() {
   if [ -z "$rid" ] || ! gh api "repos/$repo/actions/runs/$rid/jobs?filter=latest&per_page=100" > "$w/jobs.json" 2> /dev/null; then
     refuse "lookup failed: the jobs of run '${rid:-none}'"; rm -rf "${w:?}"; return 0
   fi
+  # 20X: the PR head ran the QUICK pool, so a queue entry never reuses its green. The key is still
+  # computed (its case table lives here) but x86 and det are clamped to 0 on merge_group.
   decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" \
-    --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root"
+    --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root" \
+    | sed -e 's/^x86=1$/x86=0/' -e 's/^det=1$/det=0/'
   rm -rf "${w:?}"
 }
 
@@ -395,8 +398,8 @@ STUB
       fail=$((fail + 1)); echo "FAIL resolve-$n: want '$want' got '$got' -- $(kv reason "$out")"; fi
   }
   local QREF="refs/heads/gh-readonly-queue/main/pr-4655-${B}"
-  rrow positive          "1 1 1" ""        "$H" "$QREF"
-  rrow short-ref         "1 1 1" ""        "$H" "gh-readonly-queue/main/pr-4655-${B}"
+  rrow positive          "0 0 1" ""        "$H" "$QREF"
+  rrow short-ref         "0 0 1" ""        "$H" "gh-readonly-queue/main/pr-4655-${B}"
   rrow no-pr-number      "0 0 0" ""        "$H" "refs/heads/main"
   rrow gh-pulls-fails    "0 0 0" "pulls/"  "$H" "$QREF"
   rrow gh-runs-fails     "0 0 0" "head_sha=" "$H" "$QREF"
@@ -422,7 +425,7 @@ STUB
       red) [ "${got##*:}" != 0 ] ;;
     esac && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL verdict-$n: want $want got '$got'"; }
   }
-  vrow reuse-ok             1   merge_group success 1 1 success
+  vrow red-mg-reuse-never   red merge_group success 1 1 success
   vrow live-pull_request    0   pull_request skipped "" "" skipped
   vrow live-mg-skipped      0   merge_group skipped "" "" skipped
   vrow live-mg-said-run     0   merge_group success 0 0 skipped
@@ -487,10 +490,17 @@ STUB
     awk -v want="if: github.event_name == 'push' && github.ref == 'refs/heads/main'" '
       /^  [A-Za-z0-9_-]+:$/ { j = $1; sub(/:$/, "", j); seen[j] = 1; next }
       /^    if:/    { jif[j] = $0; sub(/^    /, "", jif[j]) }
-      /^    needs:/ { if ($0 ~ /mg-reuse/) dep[j] = 1 }
+      /^    needs:/ { inn = 1; if ($0 ~ /mg-reuse/) dep[j] = 1; next }
+      inn && /^      - / { if ($0 ~ /mg-reuse/) dep[j] = 1; next }
+      /^    [A-Za-z]/ { inn = 0 }
       END {
         if (jif["mg-reuse"] != want) print "mg-reuse job-level if is not the push-only key: [" jif["mg-reuse"] "]"
         if (jif["mg-reuse"] ~ /merge_group/) print "mg-reuse if names merge_group: a queue entry could reuse"
+        n = split("x86-main determinism x86-main-advisories ci-gate gate", must, " ")
+        for (i = 1; i <= n; i++) {
+          if (!(must[i] in seen)) print "job " must[i] " is missing from the workflow"
+          else if (!(must[i] in dep)) print "job " must[i] " no longer needs mg-reuse (its position in the chain is unproven)"
+        }
         for (k in dep) if (jif[k] !~ /!cancelled\(\)|always\(\)/) print "job " k " needs mg-reuse but its if lacks !cancelled()/always(): skipped with it on merge_group"
       }' "$1" || echo "mgshape: awk failed on $1 (fail closed)"
   }
@@ -507,6 +517,8 @@ STUB
   mgmut mg-if-old-merge_group "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
   mgmut mg-if-removed-string-elsewhere "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
   mgmut x86-main-if-loses-cancelled "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
+  mgmut determinism-if-loses-cancelled '/^  determinism:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: ${{ /}'
+  mgmut x86-main-drops-needs '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'
   mgmut gate-if-loses-always "/^  gate:\$/,/^    steps:/{s/^    if: always\(\)/    if: success()/}"
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
