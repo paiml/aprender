@@ -438,6 +438,8 @@ STUB
   vrow red-mg-failed-flag1  red merge_group failure 1 1 success
   vrow red-advisories-ran-live red merge_group success 0 0 success
   vrow reuse-push-ok        1   push success 1 1 success
+  vrow red-push-det-not-1   red push success 1 0 success
+  vrow red-push-x86-not-1   red push success 0 1 success
   vrow live-push-said-run   0   push success 0 0 skipped
   vrow live-push-mg-failed  0   push failure "" "" skipped
   vrow live-push-pre-t43    0   push skipped "" "" skipped
@@ -487,11 +489,11 @@ STUB
   # anywhere in the file; a merge_group in it would let a queue entry reuse. Each check has a
   # mutant that must go RED (the same-string-in-another-job mutant is the unanchored-grep hole).
   mgshape() { # mgshape FILE -> one line per violation
-    awk -v want="if: github.event_name == 'push' && github.ref == 'refs/heads/main'" '
+    awk -v tok='(^|[^A-Za-z0-9_-])mg-reuse($|[^A-Za-z0-9_-])' -v want="if: github.event_name == 'push' && github.ref == 'refs/heads/main'" '
       /^  [A-Za-z0-9_-]+:$/ { j = $1; sub(/:$/, "", j); seen[j] = 1; next }
       /^    if:/    { jif[j] = $0; sub(/^    /, "", jif[j]) }
-      /^    needs:/ { inn = 1; if ($0 ~ /mg-reuse/) dep[j] = 1; next }
-      inn && /^      - / { if ($0 ~ /mg-reuse/) dep[j] = 1; next }
+      /^    needs:/ { inn = 1; if ($0 ~ tok) dep[j] = 1; next }
+      inn && /^      / { if ($0 ~ tok) dep[j] = 1; next }
       /^    [A-Za-z]/ { inn = 0 }
       END {
         if (jif["mg-reuse"] != want) print "mg-reuse job-level if is not the push-only key: [" jif["mg-reuse"] "]"
@@ -506,20 +508,24 @@ STUB
   }
   local ms; ms=$(mgshape "$wf"); [ -s "$wf" ] || ms="${ms:+$ms; }mgshape: $wf is missing or empty"
   if [ -z "$ms" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: $ms"; fi
-  mgmut() { # mgmut NAME SED_EXPR: the mutant of the real ci.yml must be RED
-    sed -E "$2" "$wf" > "$T/mut.yml"
-    if [ -n "$(mgshape "$T/mut.yml")" ]; then pass=$((pass + 1)); else
-      fail=$((fail + 1)); echo "FAIL mutant $1: mgshape stayed green"; fi
+  mgmut() { # mgmut NAME EXPECTED_VIOLATION SED_EXPR: the mutant must differ from ci.yml and mgshape must name the violation
+    sed -E "$3" "$wf" > "$T/mut.yml"
+    if [ ! -s "$T/mut.yml" ] || cmp -s "$wf" "$T/mut.yml"; then
+      fail=$((fail + 1)); echo "FAIL mutant $1: the sed did not change ci.yml (a mutant that cannot fail)"; return
+    fi
+    if mgshape "$T/mut.yml" | grep -qF -- "$2"; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL mutant $1: mgshape did not report '$2'"; fi
   }
   wire mg-reuse '[ "$EVT" != merge_group ] || printf '"'"'x86=0\ndet=0\n'"'"' >> "$GITHUB_OUTPUT"'
   if [ -n "$(mgshape /nonexistent/ci.yml 2>/dev/null)" ]; then pass=$((pass + 1)); else
     fail=$((fail + 1)); echo "FAIL mutant mgshape-unreadable: an unreadable workflow passed green (fails open)"; fi
-  mgmut mg-if-old-merge_group "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
-  mgmut mg-if-removed-string-elsewhere "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
-  mgmut x86-main-if-loses-cancelled "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
-  mgmut determinism-if-loses-cancelled '/^  determinism:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: ${{ /}'
-  mgmut x86-main-drops-needs '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'
-  mgmut gate-if-loses-always "/^  gate:\$/,/^    steps:/{s/^    if: always\(\)/    if: success()/}"
+  mgmut mg-if-old-merge_group "mg-reuse if names merge_group" "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
+  mgmut mg-if-removed-string-elsewhere "is not the push-only key" "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
+  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
+  mgmut determinism-if-loses-cancelled "job determinism needs mg-reuse but its if lacks" '/^  determinism:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: ${{ /}'
+  mgmut x86-main-needs-lookalike "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{s/^    needs: \[mg-reuse\]$/    needs: [mg-reuse-self-test]/}'
+  mgmut x86-main-drops-needs "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'
+  mgmut gate-if-loses-always "job gate needs mg-reuse but its if lacks" "/^  gate:\$/,/^    steps:/{s/^    if: always\(\)/    if: success()/}"
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
   # wanted line comes first. A pipe from job into grep -q takes SIGPIPE on this every

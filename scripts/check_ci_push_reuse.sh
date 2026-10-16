@@ -390,7 +390,8 @@ want "X1m2 the old merge_group form does not satisfy X1" 1 "$([ "$(mgif "$T/x1b.
 want "X2 the push calls resolve-push with the pushed sha and before" 1 \
      "$(grep -cF 'bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE"' "$CI")"
 want "X3 both verdict copies (ci / gate and gate) accept a push reuse only, never a merge_group one" 2 \
-     "$(grep -cF 'push:success:1:1:success) REUSE=1' "$CI")"
+     "$(grep -cE '^ +push:success:1:1:success\) REUSE=1' "$CI")"
+want "X3b no verdict copy still names merge_group:success:1:1" 0 "$(grep -cF 'merge_group:success:1:1' "$CI")"
 bash "$ROOT/scripts/ci_mg_reuse.sh" --self-test >"$T/mgst" 2>&1; rc=$?
 want "X4 ci_mg_reuse.sh --self-test (verdict rows incl. push, job wiring) is green" 0 "$rc"
 
