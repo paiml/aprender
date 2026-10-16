@@ -41,3 +41,10 @@ beat:
   baseline_sourced_date: "2026-06-13"
   approved_compute: CPU
   ci_gate_name: "beat_nf4_bitsandbytes_equivalence"
+
+falsification_tests:
+  - id: FALSIFY-APR_NF4_BITSANDBYTES_EQUIVALENCE_BEAT-001
+    description: "Beat gate: apr NF4 reconstruction matches the pinned bitsandbytes 0.49.2 (bs=64) reconstruction element-wise, and its MSE matches bnb's"
+    test: "cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence"
+    prediction: "max|apr - bnb| < 1e-3 (beat_threshold) and round-trip MSE matches"
+    if_fails: "NF4 codebook, absmax scaling or block size diverges from bitsandbytes"

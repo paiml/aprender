@@ -1,0 +1,18 @@
+- id: PMAT-5064
+  github_issue: 5064
+  item_type: task
+  title: 'fleet_cells_gate: self-test rows for DEL, locale, day guards; run --self-test nightly'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:40:21Z
+  updated: 2026-10-12T12:40:21Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863

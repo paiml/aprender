@@ -152,11 +152,15 @@ fn explain_kind_default(caused: &mut [Violation]) {
 /// `linfa` (10), the two Rust-native ML frameworks. Neither is substring-matched
 /// by `BEAT_INCUMBENTS`, so neither could be named by reusing that list.
 ///
+/// Extended 2026-10-09 (aprender#3598): category R adds `jena` (4 stories), the
+/// first source that is a second implementation of a format pv already speaks
+/// (SHACL) rather than a model or training framework.
+///
 /// So this registry is the corpus vocabulary, exactly. Every member is
 /// exercised by at least one contract in `contracts/`; adding a competitor is a
 /// deliberate one-line edit here plus a test, which is the point — an open
 /// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
-pub(crate) const CRUX_COMPETITORS: [&str; 15] = [
+pub(crate) const CRUX_COMPETITORS: [&str; 16] = [
     "apr-qa-playbook",
     // AutoGluon (autogluon/autogluon) — the AutoML library, 1.6.3 at admission
     // (../autogluon @ 77946149). Added 2026-09-16 with 24 category-O stories
@@ -179,6 +183,16 @@ pub(crate) const CRUX_COMPETITORS: [&str; 15] = [
     "ecosystem",
     "hf-kernels-community",
     "huggingface",
+    // Apache Jena (apache/jena) — the Java RDF toolkit, 5.6.0 at admission
+    // (apache-jena-5.6.0.zip, sha256 pinned in tests/oracle/jena/src/jena.rs). Added
+    // 2026-10-09 with 4 category-R stories, one per verb pv shares with it on
+    // SHACL ontologies: read Turtle/N-Triples (`riot`), write a graph the other
+    // engine reads back (`riot --output`), validate SHACL Core (`shacl
+    // validate`), and report a W3C sh:ValidationReport. NOT a BEAT pillar and
+    // not a model framework: Jena is the second engine the detached oracle
+    // under tests/oracle/jena/ compares pv against, on demand only,
+    // never on a PR (R-13: no JVM reachable from pv). Epic aprender#3598.
+    "jena",
     // linfa (rust-ml/linfa) — the Rust classical-ML toolkit, 0.8.1 / 18
     // algorithm sub-crates at admission. Added 2026-09-12 with 10 category-N
     // stories: linfa-nn (spatial index), linfa-pls, linfa-lars, linfa-kernel,
@@ -813,7 +827,52 @@ fn validate_obligation_parent_link(
     });
 }
 
+/// SCHEMA-024 / SCHEMA-025 (#5291): a test block that cannot run a test.
+///
+/// Runs on every kind, from both branches of [`validate_contract`]. That is
+/// the point: the #5290 contract declares `kind: kernel` and the legacy
+/// `registry: true`, which makes it a registry, so PROVABILITY-001 never ran
+/// and `pv validate` passed it with `falsification_tests: []` and with every
+/// `test_harness` blanked (rc 0, 0 errors, measured on pv 0.71.1).
+///
+/// * **SCHEMA-024**: `falsification_tests:` is written and empty. An ABSENT
+///   key is not this rule's business: a registry may carry no tests, and a
+///   kernel without them is PROVABILITY-001.
+/// * **SCHEMA-025**: a test whose `test_harness:` or `test:` is written but
+///   blank. A test that never named a harness is a different gap and is not
+///   refused here.
+fn validate_test_block_runs(contract: &Contract, violations: &mut Vec<Violation>) {
+    if contract.falsification_tests_declared && contract.falsification_tests.is_empty() {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SCHEMA-024".to_string(),
+            message: "falsification_tests is written but empty — a contract that \
+                      declares a test block must put at least one test in it, or \
+                      drop the key"
+                .to_string(),
+            location: Some("falsification_tests".to_string()),
+        });
+    }
+    for test in &contract.falsification_tests {
+        for (field, value) in [("test_harness", &test.test_harness), ("test", &test.test)] {
+            if value.as_deref().is_some_and(|s| s.trim().is_empty()) {
+                violations.push(Violation {
+                    severity: Severity::Error,
+                    rule: "SCHEMA-025".to_string(),
+                    message: format!(
+                        "falsification_tests.{}.{field} is written but blank — \
+                         it names no way to run the test",
+                        test.id
+                    ),
+                    location: Some(format!("falsification_tests.{}.{field}", test.id)),
+                });
+            }
+        }
+    }
+}
+
 fn validate_falsification_tests(contract: &Contract, violations: &mut Vec<Violation>) {
+    validate_test_block_runs(contract, violations);
     let mut ids = HashSet::new();
     for test in &contract.falsification_tests {
         if !ids.insert(&test.id) {

@@ -68,3 +68,10 @@ falsification:
   - condition: "Client config snippet missing required MCP v2024-11-05 fields"
     severity: P0
     action: delete_from_summary
+
+falsification_tests:
+  - id: FALSIFY-PAGE-TOOLS_MCP_SERVER-001
+    description: "book/src/tools/mcp-server.md exists, is enforced, carries PCU frontmatter and no placeholders, and keeps all 8 section headings this contract lists"
+    test: "bash scripts/book-gate.sh tools-mcp-server --strict"
+    prediction: "book-gate exits 0 with G2 (enforced), G3 (page exists) and G9 (all contract sections present) PASS"
+    if_fails: "A listed section heading was dropped or renamed on the page, the page moved off its declared path, or a placeholder crept in"

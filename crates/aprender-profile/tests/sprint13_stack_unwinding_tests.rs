@@ -28,15 +28,27 @@ fn test_stack_unwinding_with_simple_program() {
 }
 
 #[test]
-#[ignore = "FLAKE #5018: exit status failed in merge-queue run 38015871565 (workspace-test shard 3) on a tree that passed it before; fix or remove under FLAKE-0"]
 fn test_stack_unwinding_does_not_crash() {
     // Verify that stack unwinding doesn't crash the tracer
-    // even with complex programs
+    // even with complex programs.
+    // #5018: `ls -la` lists a directory this test owns. It used to list the
+    // working directory (the crate dir), which CI shares with everything else
+    // on the checkout, so its contents were an input from outside the test.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("file.txt"), b"fixed contents\n").expect("write file");
+    std::fs::create_dir(dir.path().join("subdir")).expect("create subdir");
+
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
-    cmd.arg("--function-time").arg("--source").arg("--").arg("ls").arg("-la");
+    cmd.arg("--function-time").arg("--source").arg("--").arg("ls").arg("-la").arg(dir.path());
 
     let output = cmd.output().expect("test");
-    assert!(output.status.success());
+    // On failure, say which exit it was: the tracee's own status, the tracer's
+    // "Error: ..." (exit 1), a panic (101) or a signal. The bare assert that
+    // failed in #5018 said none of these.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<&str> = stderr.lines().collect();
+    let tail = lines[lines.len().saturating_sub(20)..].join("\n");
+    assert!(output.status.success(), "{}; last 20 stderr lines:\n{tail}", output.status);
 }
 
 #[test]

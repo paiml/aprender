@@ -341,7 +341,10 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
     Ok(tps)
 }
 
-fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
+/// `runtime`: measure our side through the runtime entry point (`apr run`'s
+/// path) because the dense loader refuses this architecture (#5254). Only set
+/// with `--ollama-from-file`, where ollama runs the same file.
+fn run_ollama_parity_gate(path: &Path, config: &QaConfig, runtime: bool) -> Result<GateResult> {
     let start = Instant::now();
 
     if !config.json && config.verbose {
@@ -358,7 +361,27 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(feature = "inference")]
     {
         let tracer = TracerImpl::new_local();
-        let ollama_tps = measure_ollama_throughput(path, config)?;
+        // #5254: the same GGUF on both sides, or the size-matched tag.
+        let import = if config.ollama_from_file {
+            match OllamaImport::create(path) {
+                Ok(import) => Some(import),
+                Err(why) => {
+                    return Ok(GateResult::skipped(
+                        "ollama_parity",
+                        &format!("Could not import this GGUF into ollama: {why}"),
+                    ))
+                }
+            }
+        } else {
+            None
+        };
+        let (model, against) = match &import {
+            Some(import) => (import.name.clone(), "ollama on this file"),
+            None => (detect_ollama_model_from_path(path), "Ollama"),
+        };
+        let rates = measure_ollama_throughput(&model, import.is_some(), config)?;
+        drop(import);
+        let ollama_tps = rates.decode_tps;
 
         if ollama_tps <= 0.0 {
             return Ok(GateResult::skipped(
@@ -367,16 +390,33 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             ));
         }
 
-        let our_tps = measure_our_gguf_tps(path, config, &tracer)?;
+        let (our_tps, backend) = if runtime {
+            let (tps, backend) = throughput_runtime(path, config)?;
+            (tps, Some(backend))
+        } else {
+            (measure_our_gguf_tps(path, config, &tracer)?, None)
+        };
         let speedup = our_tps / ollama_tps;
         let grade = ollama_parity_grade(speedup);
         let duration = start.elapsed();
+        // The extra figures only with --ollama-from-file: the default message
+        // keeps its shape for anything that reads it.
+        let mut detail = String::new();
+        if let (true, Some(prefill)) = (config.ollama_from_file, rates.prefill_tps) {
+            detail.push_str(&format!(", ollama prefill {prefill:.0} tok/s"));
+        }
+        if let (true, Some(mb)) = (config.ollama_from_file, rates.resident_mb) {
+            detail.push_str(&format!(", ollama resident {mb:.0} MiB"));
+        }
+        if let Some(backend) = backend {
+            detail.push_str(&format!(", ours: {backend}"));
+        }
 
         if speedup >= config.min_speedup {
             Ok(GateResult::passed(
                 "ollama_parity",
                 &format!(
-                    "{:.1}x Ollama ({:.0} vs {:.0} tok/s) Grade {grade} >= {:.1}x threshold",
+                    "{:.1}x {against} ({:.0} vs {:.0} tok/s{detail}) Grade {grade} >= {:.1}x threshold",
                     speedup, our_tps, ollama_tps, config.min_speedup
                 ),
                 Some(speedup),
@@ -387,7 +427,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             Ok(GateResult::failed(
                 "ollama_parity",
                 &format!(
-                    "{:.2}x Ollama ({:.0} vs {:.0} tok/s) Grade {grade} < {:.1}x threshold",
+                    "{:.2}x {against} ({:.0} vs {:.0} tok/s{detail}) Grade {grade} < {:.1}x threshold",
                     speedup, our_tps, ollama_tps, config.min_speedup
                 ),
                 Some(speedup),
@@ -399,7 +439,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
     #[cfg(not(feature = "inference"))]
     {
-        let _ = (path, config);
+        let _ = (path, config, runtime);
         Ok(GateResult::skipped(
             "ollama_parity",
             "Requires 'inference' feature",

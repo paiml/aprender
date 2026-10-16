@@ -180,7 +180,7 @@ ollama_parity:
   prompts: ["What is 2+2?"]
   temperature: 0.0
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
     let (passed, failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     // F-OLLAMA-001 + F-OLLAMA-003 (TTFT) + F-OLLAMA-005 + F-OLLAMA-004
     assert!(
@@ -214,7 +214,7 @@ ollama_parity:
   enabled: true
   prompts: ["test"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
     let (passed, failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     // F-OLLAMA-001 (output match), F-OLLAMA-005 (GGUF loadability), F-OLLAMA-004 (API)
     // F-OLLAMA-001 may now FAIL if APR and Ollama produce different text (Bug #32 fix)
@@ -251,7 +251,7 @@ ollama_parity:
   enabled: true
   prompts: ["test"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
     let (_passed, failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert!(
         failed >= 1,
@@ -290,7 +290,7 @@ ollama_parity:
   enabled: true
   prompts: ["test"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
     let (passed, _failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert!(passed >= 1);
     let evidence = executor.evidence().all();
@@ -320,7 +320,7 @@ ollama_parity:
   enabled: true
   prompts: ["test"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
     let (_passed, failed) = executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert!(failed >= 1);
     let evidence = executor.evidence().all();
@@ -360,7 +360,7 @@ profile_ci:
   formats: [safetensors]
   backends: [cpu, gpu]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
     let model_id = playbook.model_id();
     let (passed, _failed) = executor.run_perf_gates(Path::new("/mock/model"), &model_id, &playbook);
     // F-PERF-006 (GPU/CPU ratio) + F-PERF-005 (memory profiling)
@@ -397,7 +397,7 @@ profile_ci:
   measure: 2
   backends: [cpu]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
     let model_id = playbook.model_id();
     let (_passed, failed) = executor.run_perf_gates(Path::new("/mock/model"), &model_id, &playbook);
     assert!(failed >= 1);
@@ -688,7 +688,7 @@ ollama_parity:
   model_tag: "test:latest"
   prompts: ["What is 2+2?"]
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
     let (passed, failed) =
         executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert_eq!(passed, 0, "Expected 0 passed when pull fails");
@@ -727,7 +727,7 @@ test_matrix:
   backends: [cpu]
   scenario_count: 1
 "#;
-    let playbook: Playbook = serde_yaml::from_str(yaml).unwrap();
+    let playbook: Playbook = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
     let (passed, failed) =
         executor.run_ollama_parity_tests(Path::new("/mock/model"), &playbook);
     assert_eq!(passed, 0);

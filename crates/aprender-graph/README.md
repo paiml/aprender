@@ -16,9 +16,9 @@
 
 **GPU-First Embedded Graph Database for Code Analysis**
 
-[![CI](https://github.com/paiml/trueno-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/trueno-graph/actions)
-[![Crates.io](https://img.shields.io/crates/v/trueno-graph.svg)](https://crates.io/crates/trueno-graph)
-[![Documentation](https://docs.rs/trueno-graph/badge.svg)](https://docs.rs/trueno-graph)
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/aprender-graph.svg)](https://crates.io/crates/aprender-graph)
+[![Documentation](https://docs.rs/aprender-graph/badge.svg)](https://docs.rs/aprender-graph)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)]()
 
 </div>
@@ -40,10 +40,10 @@ Call graphs, dependencies, AST traversals with 10-250x GPU acceleration.
 
 ```toml
 [dependencies]
-trueno-graph = "0.1"
+aprender-graph = "0.71"
 
 # Optional: GPU acceleration
-trueno-graph = { version = "0.1", features = ["gpu"] }
+aprender-graph = { version = "0.71", features = ["gpu"] }
 ```
 
 ## Quick Start

@@ -366,11 +366,34 @@ fn digest_separates_order_and_length() {
 }
 
 /// Scripted with a device argmax: counts `forward_greedy` calls and answers
-/// `greedy_answer` without logits.
+/// `greedy_answer`, with `read_back` as the logits when they are asked for.
 struct DeviceGreedy {
     inner: Scripted,
     greedy_answer: u32,
     greedy_calls: usize,
+    /// Each call's `read_logits` (#4971).
+    reads: Vec<bool>,
+    /// The logits a read hands back; `None` plays a backend that drops them.
+    read_back: Option<Vec<f32>>,
+}
+
+impl DeviceGreedy {
+    fn new(greedy_answer: u32) -> Self {
+        Self {
+            inner: Scripted::new(3, 100),
+            greedy_answer,
+            greedy_calls: 0,
+            reads: Vec::new(),
+            read_back: None,
+        }
+    }
+
+    fn reading(greedy_answer: u32, read_back: Vec<f32>) -> Self {
+        Self {
+            read_back: Some(read_back),
+            ..Self::new(greedy_answer)
+        }
+    }
 }
 
 impl ArchForward for DeviceGreedy {
@@ -404,21 +427,30 @@ impl ArchForward for DeviceGreedy {
     fn restore_checkpoint(&mut self) -> Result<bool> {
         self.inner.restore_checkpoint()
     }
-    fn forward_greedy(&mut self, tokens: &[u32], start: usize) -> Result<Option<u32>> {
+    fn forward_greedy(
+        &mut self,
+        tokens: &[u32],
+        start: usize,
+        read_logits: bool,
+    ) -> Result<Option<GreedyStep>> {
         self.inner.calls.push((tokens.len(), start));
         self.inner.held = tokens.len();
         self.greedy_calls += 1;
-        Ok(Some(self.greedy_answer))
+        self.reads.push(read_logits);
+        Ok(Some(GreedyStep {
+            token: self.greedy_answer,
+            logits: if read_logits {
+                self.read_back.clone()
+            } else {
+                None
+            },
+        }))
     }
 }
 
 #[test]
 fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
-    let device = |answer| DeviceGreedy {
-        inner: Scripted::new(3, 100),
-        greedy_answer: answer,
-        greedy_calls: 0,
-    };
+    let device = DeviceGreedy::new;
     let mut s = Session::new(device(5));
     let turn = s
         .generate(&[7701, 7702], &greedy(2), &mut |_| true)
@@ -442,6 +474,99 @@ fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
         "a repeat penalty needs the logits"
     );
 }
+
+/// #4026: `logprobs_top_k` on a greedy config.
+fn greedy_logprobs(max_tokens: usize, k: usize) -> QuantizedGenerateConfig {
+    QuantizedGenerateConfig {
+        logprobs_top_k: k,
+        ..greedy(max_tokens)
+    }
+}
+
+#[test]
+fn logprobs_record_one_step_per_generated_token_whose_top1_is_the_choice() {
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s
+        .generate(&[7801, 7802], &greedy_logprobs(3, 2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(turn.tokens, vec![7801, 7802, 3, 3, 3]);
+    let steps = take_last_turn_steps().expect("recorded");
+    assert_eq!(steps.len(), 3, "one record per generated token");
+    for (i, step) in steps.iter().enumerate() {
+        assert_eq!(step.step, i);
+        assert_eq!(step.chosen, turn.tokens[2 + i]);
+        assert_eq!(step.top.len(), 2);
+        assert_eq!(
+            step.top[0].token_id, step.chosen,
+            "greedy: top-1 is the choice"
+        );
+        assert_eq!(step.top[0].logit, 1.0);
+        assert!(step.top[0].logprob > step.top[1].logprob);
+    }
+    assert_eq!(take_last_turn_steps(), None, "a take clears it");
+}
+
+#[test]
+fn logprobs_zero_records_nothing_and_publishes_nothing() {
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    s.generate(&[7811], &greedy(2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(take_last_turn_steps(), None);
+}
+
+#[test]
+fn logprobs_carry_the_full_vocabulary_logsumexp() {
+    // PRM C11: the chosen token's logprob and the log-sum-exp come from the
+    // same logits as `top` (3 → 1.0, the other 7 of the 8 → 0.0). The LSE is
+    // carried, never recovered from top-K (#4026).
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    s.generate(&[7821], &greedy_logprobs(1, 2), &mut |_| true)
+        .expect("turn");
+    let steps = take_last_turn_steps().expect("recorded");
+    let lse = (1.0_f64.exp() + 7.0).ln();
+    let s0 = &steps[0];
+    assert!(
+        (f64::from(s0.logsumexp_full) - lse).abs() < 1e-5,
+        "{}",
+        s0.logsumexp_full
+    );
+    assert!(
+        (f64::from(s0.chosen_logprob) - (1.0 - lse)).abs() < 1e-5,
+        "{}",
+        s0.chosen_logprob
+    );
+    assert!((f64::from(s0.top[1].logprob) + lse).abs() < 1e-5);
+}
+
+#[test]
+fn logprobs_follow_the_logits_a_planted_change_moves_the_record() {
+    // Negative control: the same prompt against a forward whose argmax was
+    // moved must record a different top-1, or the record is not reading them.
+    let run = |next| {
+        let _ = take_last_turn_steps();
+        let mut s = Session::new(Scripted::new(next, 100));
+        s.generate(&[7831], &greedy_logprobs(1, 1), &mut |_| true)
+            .expect("turn");
+        take_last_turn_steps().expect("recorded")[0].top[0].token_id
+    };
+    assert_eq!(run(3), 3);
+    assert_eq!(run(6), 6);
+}
+
+#[test]
+fn logprobs_stop_on_a_stop_token_with_its_own_record() {
+    let _ = take_last_turn_steps();
+    let mut cfg = greedy_logprobs(4, 1);
+    cfg.stop_tokens = vec![3];
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s.generate(&[7841], &cfg, &mut |_| true).expect("turn");
+    assert_eq!(turn.tokens, vec![7841, 3]);
+    assert_eq!(take_last_turn_steps().expect("recorded").len(), 1);
+}
+
 // #4445: `apr bench` repeats one prompt and must time a whole prefill each time.
 // An extending prompt would resume the held state; after forget_prefix it may not.
 #[test]
@@ -566,6 +691,8 @@ fn a_device_argmax_from_below_the_checkpoint_drops_it() {
         inner: Scripted::checkpointing(3, 100, MARK),
         greedy_answer: 5,
         greedy_calls: 0,
+        reads: Vec::new(),
+        read_back: None,
     });
     let prompt = [7861, 7862, MARK, 7863];
     s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
@@ -938,4 +1065,109 @@ fn prepare_turn_probes_what_the_first_forward_covers() {
         (1, 0),
         "the first forward covers the probe"
     );
+}
+
+// #4971: logprobs come from the logits the choice read, and asking for them
+// never changes the token or the path that chose it.
+mod logprobs_4971 {
+    use super::*;
+
+    fn collect(
+        s: &mut Session<impl ArchForward>,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        top_n: Option<usize>,
+    ) -> Result<(Turn, Vec<Option<StepLogprobs>>)> {
+        let mut records = Vec::new();
+        let turn = s.generate_with_logprobs(prompt, config, top_n, &mut |_, r| {
+            records.push(r);
+            true
+        })?;
+        Ok((turn, records))
+    }
+
+    #[test]
+    fn the_host_path_records_each_step_and_chooses_the_same_tokens() {
+        let mut plain = Session::new(Scripted::new(3, 100));
+        let want = plain
+            .generate(&[7901, 7902], &greedy(3), &mut |_| true)
+            .expect("plain");
+        let mut s = Session::new(Scripted::new(3, 100));
+        let (turn, records) = collect(&mut s, &[7901, 7902], &greedy(3), Some(2)).expect("turn");
+        assert_eq!(turn.tokens, want.tokens);
+        assert_eq!(records.len(), 3);
+        for (i, r) in records.iter().enumerate() {
+            let r = r.as_ref().expect("a record per step");
+            assert_eq!(r.step, i);
+            assert_eq!(r.chosen, 3);
+            assert_eq!(r.top[0].token_id, 3, "greedy: top-1 is the choice");
+            assert_eq!(r.chosen_logprob, r.top[0].logprob);
+            assert_eq!(r.top.len(), 2);
+            assert!(r.top2_margin().is_some_and(|m| (m - 1.0).abs() < 1e-6));
+        }
+        // Without top_n nothing is recorded.
+        let mut s = Session::new(Scripted::new(3, 100));
+        let (_, none) = collect(&mut s, &[7901, 7902], &greedy(3), None).expect("turn");
+        assert!(none.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn the_device_argmax_is_kept_and_its_logits_are_reported_as_read() {
+        // The read-back logits rank token 2 first; the device chose 5. The
+        // record must keep the device's token and report the distribution.
+        let read_back = vec![0.0, 0.0, 3.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let mut s = Session::new(DeviceGreedy::reading(5, read_back.clone()));
+        let (turn, records) = collect(&mut s, &[7911, 7912], &greedy(2), Some(2)).expect("turn");
+        assert_eq!(turn.tokens, vec![7911, 7912, 5, 5]);
+        assert_eq!(s.engine().greedy_calls, 2, "the device path, every step");
+        assert_eq!(s.engine().reads, vec![true, true]);
+        for r in records.iter().map(|r| r.as_ref().expect("record")) {
+            assert_eq!(r.chosen, 5);
+            assert_eq!(r.top[0].token_id, 2);
+            let want = crate::gguf::logprob_of(&read_back, 5);
+            assert!((r.chosen_logprob - want).abs() < 1e-6);
+        }
+
+        // The same turn without logprobs: same tokens, same path, no read.
+        let mut s = Session::new(DeviceGreedy::reading(5, read_back));
+        let (plain, _) = collect(&mut s, &[7911, 7912], &greedy(2), None).expect("turn");
+        assert_eq!(plain.tokens, turn.tokens);
+        assert_eq!(s.engine().greedy_calls, 2);
+        assert_eq!(s.engine().reads, vec![false, false]);
+    }
+
+    #[test]
+    fn a_near_tie_and_a_clear_winner_read_as_their_margins() {
+        let near = vec![0.0, 1.0, 1.01, -3.0, 0.0, 0.0, 0.0, 0.0];
+        let mut s = Session::new(DeviceGreedy::reading(2, near));
+        let (_, records) = collect(&mut s, &[7921], &greedy(1), Some(2)).expect("turn");
+        let margin = records[0].as_ref().and_then(StepLogprobs::top2_margin);
+        assert!(margin.is_some_and(|m| m < 0.05), "{margin:?}");
+
+        let clear = vec![0.0, 5.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let mut s = Session::new(DeviceGreedy::reading(1, clear));
+        let (_, records) = collect(&mut s, &[7922], &greedy(1), Some(2)).expect("turn");
+        let margin = records[0].as_ref().and_then(StepLogprobs::top2_margin);
+        assert!(margin.is_some_and(|m| m > 1.0), "{margin:?}");
+    }
+
+    #[test]
+    fn a_device_path_that_drops_the_logits_fails_loudly() {
+        let mut s = Session::new(DeviceGreedy::new(5));
+        let err = collect(&mut s, &[7931, 7932], &greedy(2), Some(2))
+            .expect_err("asked for logits, got none");
+        assert!(err.to_string().contains("returned none"), "{err}");
+    }
+
+    #[test]
+    fn a_penalized_step_reports_the_logits_after_the_penalty() {
+        let mut config = greedy(2);
+        config.repeat_penalty = 2.0;
+        let mut s = Session::new(Scripted::new(3, 100));
+        let (_, records) = collect(&mut s, &[7941], &config, Some(1)).expect("turn");
+        let logit = |i: usize| records[i].as_ref().expect("record").top[0].logit;
+        // Step 0: token 3 is not yet in the context; step 1: it is, halved.
+        assert_eq!(logit(0), 1.0);
+        assert_eq!(logit(1), 0.5);
+    }
 }

@@ -1,0 +1,50 @@
+{
+  "spec": "PRM-001",
+  "version": 4,
+  "prereg_sha": "be2085c058b7e76130f249692914c901f672adcbe253130274cebfa631823041",
+  "lane": {
+    "rung": "shadow",
+    "availability_7d": 0.97
+  },
+  "speed": {
+    "within_budget": true
+  },
+  "results": {
+    "hypotheses": [
+      {
+        "id": "H4",
+        "ci": [
+          0.01,
+          0.2
+        ],
+        "p_holm": 0.01,
+        "verdict": "holds"
+      },
+      {
+        "id": "H5",
+        "ci": [
+          0.01,
+          0.2
+        ],
+        "p_holm": 0.04,
+        "verdict": "holds"
+      },
+      {
+        "id": "H7",
+        "verdict": "holds"
+      },
+      {
+        "id": "H1",
+        "verdict": "holds"
+      },
+      {
+        "id": "H2",
+        "verdict": "holds"
+      }
+    ]
+  },
+  "hardware_ruling": {
+    "primary": "arm64-cpu",
+    "rung_eligible": "vote"
+  }
+}

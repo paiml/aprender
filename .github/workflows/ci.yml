@@ -40,9 +40,17 @@ on:
 # healthy run's `gate` red in four seconds). Narrowed to the one event where
 # superseding is what we mean; `merge_group`, `push` and `workflow_dispatch`
 # evaluate to false and QUEUE.
+#
+# #5381 widens it to `merge_group`, measured 2026-10-15: a kicked entry re-enqueued
+# on the same base gets the SAME queue ref (`pr-<N>-<base oid>`), so its new run
+# queued ~31 min behind the dead run 38693636752. Only a newer run in the SAME group
+# cancels, and a queue ref names one (PR, base) entry, so the run it cancels is
+# always one the queue already discarded; distinct stacked entries have distinct
+# refs and never meet. `push` and `workflow_dispatch` still QUEUE. The case table
+# is scripts/check_ci_concurrency_cancel.sh.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
 
 jobs:
   # ==========================================================================
@@ -222,6 +230,13 @@ jobs:
         run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
       - name: every section secret is plumbed under its full name
         run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
+      # #5403: the toolchain step installs `stable`; guard-cargo#m60 runs cargo without
+      # RUSTUP_TOOLCHAIN, so cargo read rust-toolchain.toml and downloaded the pinned
+      # release at test time (one network blip failed a merge group). Install the pin first.
+      - name: install the toolchain rust-toolchain.toml pins (case table)
+        run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh --self-test
+      - name: install the toolchain rust-toolchain.toml pins
+        run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
@@ -274,6 +289,12 @@ jobs:
         continue-on-error: true
         with:
           subject-path: ${{ runner.temp }}/fat/sov.provenance/ws/${{ github.event.repository.name }}/Cargo.toml
+      # #5397: free this job's own target dir (`<PR>/run-<id>`), never the PR parent.
+      # Last step, so nothing after it reads the dir; always() so a failed or
+      # cancelled run frees it too.
+      - name: Free this job's own cargo target dir
+        if: always()
+        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}" "$GITHUB_RUN_ID"; fi
 
   # T43: x86-main's RustSec advisory steps, verbatim from ci/sections.yml
   # guard-cargo, for a merge_group run where mg-reuse skipped x86-main. Their input
@@ -441,6 +462,12 @@ jobs:
           name: sigma-shard-${{ matrix.shard }}
           path: ${{ runner.temp }}/fat/artifacts/sigma-shard-${{ matrix.shard }}/
           if-no-files-found: ignore
+      # #5397: free this job's own target dir (`<PR>-s<shard>/run-<id>`), never the
+      # PR parent. Last step, so nothing after it reads the dir; always() so a
+      # failed or cancelled shard frees it too.
+      - name: Free this job's own cargo target dir
+        if: always()
+        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}-s${{ matrix.shard }}" "$GITHUB_RUN_ID"; fi
 
   workspace-test:
     runs-on: [self-hosted, Linux, clean-room]

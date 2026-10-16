@@ -151,45 +151,38 @@ impl DatasetCardValidator {
         };
 
         // Parse YAML
-        let Ok(yaml) = serde_yaml::from_str::<serde_yaml::Value>(&yaml_content) else {
+        let Ok(yaml) = serde_saphyr::from_str_with_options::<serde_json::Value>(
+            &yaml_content,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        ) else {
             return errors;
         };
 
-        // Validate task_categories
-        if let Some(categories) = yaml.get("task_categories") {
-            if let Some(arr) = categories.as_sequence() {
-                for cat in arr {
-                    if let Some(cat_str) = cat.as_str() {
-                        if !VALID_TASK_CATEGORIES.contains(&cat_str) {
-                            errors.push(ValidationError {
-                                field: "task_categories".to_string(),
-                                value: cat_str.to_string(),
-                                suggestions: Self::suggest_similar(cat_str, VALID_TASK_CATEGORIES),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        // Validate size_categories
-        if let Some(sizes) = yaml.get("size_categories") {
-            if let Some(arr) = sizes.as_sequence() {
-                for size in arr {
-                    if let Some(size_str) = size.as_str() {
-                        if !VALID_SIZE_CATEGORIES.contains(&size_str) {
-                            errors.push(ValidationError {
-                                field: "size_categories".to_string(),
-                                value: size_str.to_string(),
-                                suggestions: Self::suggest_similar(size_str, VALID_SIZE_CATEGORIES),
-                            });
-                        }
-                    }
-                }
-            }
-        }
+        Self::check_field(&yaml, "task_categories", VALID_TASK_CATEGORIES, &mut errors);
+        Self::check_field(&yaml, "size_categories", VALID_SIZE_CATEGORIES, &mut errors);
 
         errors
+    }
+
+    /// Pushes one error for every string in the `field` sequence that is not in `valid`.
+    fn check_field(
+        yaml: &serde_json::Value,
+        field: &str,
+        valid: &[&str],
+        errors: &mut Vec<ValidationError>,
+    ) {
+        let Some(arr) = yaml.get(field).and_then(serde_json::Value::as_array) else {
+            return;
+        };
+        for value in arr.iter().filter_map(serde_json::Value::as_str) {
+            if !valid.contains(&value) {
+                errors.push(ValidationError {
+                    field: field.to_string(),
+                    value: value.to_string(),
+                    suggestions: Self::suggest_similar(value, valid),
+                });
+            }
+        }
     }
 
     /// Validates a README file and returns a Result.

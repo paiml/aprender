@@ -189,7 +189,7 @@ impl ProtocolParams {
     /// As [`Self::from_matrix`].
     pub fn from_matrix_source(source: &str) -> Result<Self, String> {
         let block = matrix_block(source, "protocol")?;
-        let raw: MatrixProtocolBlock = serde_yaml_ng::from_value(block)
+        let raw: MatrixProtocolBlock = serde_json::from_value(block)
             .map_err(|e| format!("perf-matrix.yaml `protocol:` block: {e}"))?;
         Ok(Self {
             window_ms: raw.window_ms,
@@ -292,7 +292,7 @@ impl ProtocolSource {
 /// When the matrix has no `stream:` block or no `live_ttft_over_e2e_max` key.
 pub fn stream_live_ttft_over_e2e_max_from(source: &str) -> Result<f64, String> {
     let block = matrix_block(source, "stream")?;
-    let raw: MatrixStreamBlock = serde_yaml_ng::from_value(block)
+    let raw: MatrixStreamBlock = serde_json::from_value(block)
         .map_err(|e| format!("perf-matrix.yaml `stream:` block: {e}"))?;
     Ok(raw.live_ttft_over_e2e_max)
 }
@@ -310,7 +310,7 @@ pub fn stream_live_ttft_over_e2e_max() -> f64 {
 /// When the matrix has no `witness:` block or no `min_agree_tokens` key.
 pub fn witness_min_agree_tokens_from(source: &str) -> Result<u32, String> {
     let block = matrix_block(source, "witness")?;
-    let raw: MatrixWitnessBlock = serde_yaml_ng::from_value(block)
+    let raw: MatrixWitnessBlock = serde_json::from_value(block)
         .map_err(|e| format!("perf-matrix.yaml `witness:` block: {e}"))?;
     Ok(raw.min_agree_tokens)
 }
@@ -323,8 +323,8 @@ pub fn witness_min_agree_tokens() -> u32 {
 }
 
 /// Pull one top-level block out of the matrix, naming what is missing.
-fn matrix_block(source: &str, key: &str) -> Result<serde_yaml_ng::Value, String> {
-    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(source)
+pub(super) fn matrix_block(source: &str, key: &str) -> Result<serde_json::Value, String> {
+    let doc: serde_json::Value = serde_saphyr::from_str_with_options(source, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
         .map_err(|e| format!("perf-matrix.yaml does not parse as YAML: {e}"))?;
     doc.get(key).cloned().ok_or_else(|| {
         format!(

@@ -138,6 +138,10 @@ TAB="$(printf '\t')"
 api_calls=0
 probe_calls=0
 reread_calls=0
+retry_calls=0
+# A 5xx read is retried up to this many reads in all, this many seconds apart (#5212).
+GH_READ_TRIES="${SILICON_GH_TRIES:-3}"
+GH_RETRY_SLEEP="${SILICON_GH_RETRY_SLEEP:-5}"
 
 # labels_contain <runner-label-csv> <required-label-csv>
 # 0 when every required label is present in the runner's set. Case-insensitive:
@@ -212,6 +216,34 @@ gh_err() {
     awk 'NF { sub(/[[:space:]]+$/, ""); s = s (s == "" ? "" : " | ") $0 }
          END { if (s == "") s = "(gh printed nothing on stderr)"; print substr(s, 1, 300) }' "$1" 2>/dev/null \
         || printf '(stderr of the failed call could not be read)\n'
+}
+
+# gh_read <stderr file> <gh args>... -> one API read, retried while gh says the
+# SERVER failed (HTTP 5xx), at most GH_READ_TRIES reads in all (#5212). One
+# [run] is ~75 reads, and a single 502 on any of them turned x86-main red on
+# runs 38222226230, 38241398316 and 38246271098. A retried read that answers is
+# a measured read. One that is still failing after the last try fails exactly as
+# before: rc 1, gh's words from the last try in <stderr file>, plus the number of
+# reads made. A 4xx is never retried, because asking again gets the same answer.
+# stdout comes only from the read that succeeded. On an error, gh writes the
+# error body to stdout too, and a failed try must not leave it in the output.
+# Callers run this in the guard's own shell, never in $( ), so the counters hold.
+gh_read() {
+    _gr_ef="$1"; shift
+    _gr_n=1
+    _gr_of="$(mktemp)" || return 1
+    while :; do
+        if gh "$@" > "$_gr_of" 2> "$_gr_ef"; then
+            cat "$_gr_of"; rm -f "${_gr_of:?}"; return 0
+        fi
+        if [ "$_gr_n" -ge "$GH_READ_TRIES" ] || ! grep -Eq 'HTTP 5[0-9][0-9]' "$_gr_ef"; then
+            [ "$_gr_n" -gt 1 ] && printf '(failed on all %s reads)\n' "$_gr_n" >> "$_gr_ef"
+            rm -f "${_gr_of:?}"; return 1
+        fi
+        _gr_n=$((_gr_n + 1))
+        api_calls=$((api_calls + 1)); retry_calls=$((retry_calls + 1))
+        sleep "$GH_RETRY_SLEEP"
+    done
 }
 # ── THE RUN PROBE ───────────────────────────────────────────────────────────
 # axis_evidence <jobs-tsv> <selector> <job-name glob>
@@ -329,9 +361,9 @@ list_window() {
         _lw_pf="$(mktemp)" || return 1
         _lw_ef="$(mktemp)" || { rm -f "${_lw_pf:?}"; return 1; }
         api_calls=$((api_calls + 1))
-        if ! gh api "repos/$REPO/actions/workflows/${_lw_wf}/runs?event=${_lw_ev}&created=%3E%3D${_bj_since}&per_page=${PAGE_SIZE}&page=${_bj_page}" \
+        if ! gh_read "$_lw_ef" api "repos/$REPO/actions/workflows/${_lw_wf}/runs?event=${_lw_ev}&created=%3E%3D${_bj_since}&per_page=${PAGE_SIZE}&page=${_bj_page}" \
             --jq '"#total\t\(.total_count)", (.workflow_runs[] | [(.id|tostring), .created_at, .name] | @tsv)' \
-            > "$_lw_pf" 2> "$_lw_ef"; then
+            > "$_lw_pf"; then
             printf 'listing FAILED: %s %s page %s: %s\n' "$_lw_wf" "$_lw_ev" "$_bj_page" "$(gh_err "$_lw_ef")"
             rm -f "${_lw_pf:?}" "${_lw_ef:?}"
             return 1
@@ -413,13 +445,15 @@ build_jobs() {
             if [ "$_bj_state" = ok ]; then
                 api_calls=$((api_calls + 1)); probe_calls=$((probe_calls + 1))
                 _bj_pef="$(mktemp)" || { rm -f "${_bj_one:?}" "${_bj_runs:?}"; return 1; }
-                if ! _bj_probe="$(gh api "repos/$REPO/actions/workflows/${_bj_wf}/runs?event=${_bj_ev}&per_page=1" \
-                    --jq '"\(.total_count)\t\(.workflow_runs[0].created_at // "")"' 2> "$_bj_pef")"; then
+                _bj_pof="$(mktemp)" || { rm -f "${_bj_one:?}" "${_bj_runs:?}" "${_bj_pef:?}"; return 1; }
+                if ! gh_read "$_bj_pef" api "repos/$REPO/actions/workflows/${_bj_wf}/runs?event=${_bj_ev}&per_page=1" \
+                    --jq '"\(.total_count)\t\(.workflow_runs[0].created_at // "")"' > "$_bj_pof"; then
                     printf 'listing FAILED: %s %s unfiltered cross-check: %s\n' "$_bj_wf" "$_bj_ev" "$(gh_err "$_bj_pef")"
-                    rm -f "${_bj_one:?}" "${_bj_runs:?}" "${_bj_pef:?}"
+                    rm -f "${_bj_one:?}" "${_bj_runs:?}" "${_bj_pef:?}" "${_bj_pof:?}"
                     return 1
                 fi
-                rm -f "${_bj_pef:?}"
+                _bj_probe="$(cat "$_bj_pof")"
+                rm -f "${_bj_pef:?}" "${_bj_pof:?}"
                 _bj_ptotal="${_bj_probe%%"$TAB"*}"; _bj_pnewest="${_bj_probe#*"$TAB"}"
                 if listing_is_short "$_bj_one" "$_bj_pnewest" "$_bj_cut"; then
                     reread_calls=$((reread_calls + 1))
@@ -447,10 +481,10 @@ build_jobs() {
         _bj_jf="$(mktemp)" || return 1
         _bj_ef="$(mktemp)" || { rm -f "${_bj_jf:?}"; return 1; }
         api_calls=$((api_calls + 1))
-        if gh api "repos/$REPO/actions/runs/${_bj_id}/jobs?per_page=100" \
+        if gh_read "$_bj_ef" api "repos/$REPO/actions/runs/${_bj_id}/jobs?per_page=100" \
             --jq '.jobs[] | select(.conclusion=="success" or .conclusion=="failure")
                           | [.completed_at, .conclusion, ([.labels[]] | join(",")), .name] | @tsv' \
-            > "$_bj_jf" 2> "$_bj_ef"; then
+            > "$_bj_jf"; then
             awk -v wf="$_bj_name" -v rid="$_bj_id" -F'\t' 'NF >= 4 { print $0 "\t" wf "\t" rid }' \
                 "$_bj_jf" >> "$_bj_out"
         else
@@ -549,6 +583,11 @@ if [ "$f" = "@ERROR" ]; then
     printf 'gh: Server Error (HTTP 502)\n' >&2
     exit 1
 fi
+if [ "$f" = "@E403" ]; then
+    printf '{"message":"Resource not accessible by integration","status":"403"}'
+    printf 'gh: Resource not accessible by integration (HTTP 403)\n' >&2
+    exit 1
+fi
 jq -r "$expr" "$d/$f"
 SHIM
     chmod +x "$ST/bin/gh"
@@ -561,8 +600,22 @@ st_fail_route() {
     awk -F'\t' -v OFS='\t' -v p="$1" '$1 == p { $2 = "@ERROR" } { print }' \
         "$ST/u/routes.tsv" > "$ST/u/routes.new" && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
 }
+# st_deny_runners: both runner listings answer 403 with gh's error body on
+# stdout, exactly as the job token's do on a pull_request run (#5213).
+st_deny_runners() {
+    awk -F'\t' -v OFS='\t' '$1 ~ /actions[/]runners[?]/ { $2 = "@E403" } { print }' \
+        "$ST/u/routes.tsv" > "$ST/u/routes.new" && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
+}
 # st_fail_jobs <run id>: that run's jobs page answers with a gh error.
 st_fail_jobs() { st_fail_route "repos/$ST_REPO/actions/runs/$1/jobs?per_page=100"; }
+# st_flaky_route <route ERE> <first answer>: the FIRST route matching the ERE gives
+# <first answer> (@ERROR = a 502, @E403 = a 403) on its first call, then its page.
+st_flaky_route() {
+    awk -F'\t' -v OFS='\t' -v re="$1" -v a="$2" '!d && $1 ~ re { $2 = "@SEQ:" a "," $2; d = 1 } { print }' \
+        "$ST/u/routes.tsv" > "$ST/u/routes.new" && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
+}
+# st_calls <route ERE>: how many times the shim was asked for a matching path.
+st_calls() { grep -Ec -- "$1" "$ST/u/calls.log" || true; }
 
 st_reset() {
     rm -rf "${ST:?}/u"
@@ -716,7 +769,8 @@ st_check() {
         SILICON_WORKFLOWS_DIR="$ST/u/workflows" SILICON_NOW="$ST_NOW" \
         SILICON_LOOKBACK_DAYS=30 SILICON_STALE_DAYS=3 \
         SILICON_PAGE_SIZE="$ST_PAGE_SIZE" SILICON_PAGE_CAP="$ST_PAGE_CAP" \
-        SILICON_RUN_CAP="$ST_RUN_CAP" \
+        SILICON_RUN_CAP="$ST_RUN_CAP" SILICON_GH_RETRY_SLEEP=0 \
+        GITHUB_EVENT_NAME="${ST_EVENT:-schedule}" \
         bash "$ST_SUBJECT" > "$_sc_out" 2>&1
     _sc_got=$?
     _sc_why=""
@@ -894,6 +948,76 @@ selftest_rows() {
     st_check m-runners-stderr 0 '^runner listing FAILED: orgs/shimorg/actions/runners: .*HTTP 502' \
         || _rows_bad=$((_rows_bad + 1))
 
+    # (m2) #5213: both runner listings 403 with gh's error body on stdout. The
+    # body is not a runner: 0 visible, and probe 2a refuses on a scheduled run.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check m2-403-body 2 '^NO-GO: zero online runners' || _rows_bad=$((_rows_bad + 1))
+
+    # (m3) #5213: the same 403s on a pull_request run. The runner listing is
+    # not read at all (0 calls), and the verdict comes from job evidence (rc 0).
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=pull_request
+    if st_check m3-pr-no-runners 0 '^runners: not read on a pull_request run' \
+        && [ "$(st_calls 'actions/runners')" = 0 ]; then :
+    else printf '  FAIL %-14s runner listing read %s time(s), want 0\n' m3-pr-no-runners "$(st_calls 'actions/runners')"
+        _rows_bad=$((_rows_bad + 1))
+    fi
+
+    # (m4) #5213: a merge_group run is the same path as a pull_request run.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=merge_group
+    st_check m4-mq-no-runners 0 '^runners: not read on a merge_group run' || _rows_bad=$((_rows_bad + 1))
+
+    # (m5) #5213: on a pull_request run a missing axis still fails; only the
+    # runner probe is off the path, never the axis verdict.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=pull_request
+    st_check m5-pr-missing 1 '^  MISSING +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
+    ST_EVENT=""
+
+    # (m6) #5237: a push run on main reads with the same job token. Not read
+    # (0 calls); the verdict comes from job evidence (rc 0).
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=push
+    if st_check m6-push-no-runners 0 '^runners: not read on a push run' \
+        && [ "$(st_calls 'actions/runners')" = 0 ]; then :
+    else printf '  FAIL %-14s runner listing read %s time(s), want 0\n' m6-push-no-runners "$(st_calls 'actions/runners')"
+        _rows_bad=$((_rows_bad + 1))
+    fi
+
+    # (m7) #5237: on a push run a missing axis still fails.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=push
+    st_check m7-push-missing 1 '^  MISSING +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
+
+    # (m8) #5237: workflow_dispatch is silicon-nightly with host auth: the
+    # listing is read, and both 403s with nothing visible are NO-GO.
+    st_reset; st_deny_runners
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    ST_EVENT=workflow_dispatch
+    st_check m8-dispatch-403 2 '^NO-GO: zero online runners' || _rows_bad=$((_rows_bad + 1))
+    ST_EVENT=""
+
     # (e2) a listing read that fails keeps gh's stderr too.
     st_reset; ST_ERROR=1
     st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
@@ -907,6 +1031,51 @@ selftest_rows() {
     st_finish
     _rows=$((_rows + 1))
     st_check e-api-error 2 '^NO-GO' || _rows_bad=$((_rows_bad + 1))
+
+    # (n) #5212: one 502 on a jobs page, then the page. The retry gets a real
+    # answer, so the run is measured (rc 0), the retry is counted, and the page
+    # was asked for exactly twice.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_flaky_route 'runs/9101/jobs' @ERROR
+    _rows=$((_rows + 1))
+    if st_check n-5xx-once 0 '^api calls: .*5xx retries: 1\)$' \
+        && [ "$(st_calls 'runs/9101/jobs')" = 2 ]; then :
+    else printf '  FAIL %-14s the jobs page was read %s time(s), want 2\n' n-5xx-once "$(st_calls 'runs/9101/jobs')"
+        _rows_bad=$((_rows_bad + 1)); fi
+
+    # (n2) the same for a run LISTING page, which is a NO-GO when it stays unread.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_flaky_route 'workflows/gpu[.]yml/runs[?]event=schedule[&]created=' @ERROR
+    _rows=$((_rows + 1))
+    if st_check n2-list-once 0 '^api calls: .*5xx retries: 1\)$' \
+        && [ "$(st_calls 'workflows/gpu[.]yml/runs[?]event=schedule[&]created=')" = 2 ]; then :
+    else printf '  FAIL %-14s the listing page was read %s time(s), want 2\n' n2-list-once \
+            "$(st_calls 'workflows/gpu[.]yml/runs[?]event=schedule[&]created=')"
+        _rows_bad=$((_rows_bad + 1)); fi
+
+    # (n3) a 502 on EVERY read is still a failed read: the retries stop at the
+    # cap, the run is NOT_MEASURED (rc 2), and the output says how many reads.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_fail_jobs 9101
+    _rows=$((_rows + 1))
+    if st_check n3-5xx-always 2 '^jobs read FAILED \(not_measured\): run 9101 .*HTTP 502.*failed on all 3 reads' \
+        && [ "$(st_calls 'runs/9101/jobs')" = 3 ]; then :
+    else printf '  FAIL %-14s the jobs page was read %s time(s), want 3\n' n3-5xx-always "$(st_calls 'runs/9101/jobs')"
+        _rows_bad=$((_rows_bad + 1)); fi
+
+    # (n4) a 403 is never retried, even though the next read would answer:
+    # asked once, NOT_MEASURED. The error body gh writes to stdout stays out.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_flaky_route 'runs/9101/jobs' @E403
+    _rows=$((_rows + 1))
+    if st_check n4-4xx-once 2 '^jobs read FAILED \(not_measured\): run 9101 .*HTTP 403' \
+        && [ "$(st_calls 'runs/9101/jobs')" = 1 ]; then :
+    else printf '  FAIL %-14s the jobs page was read %s time(s), want 1\n' n4-4xx-once "$(st_calls 'runs/9101/jobs')"
+        _rows_bad=$((_rows_bad + 1)); fi
 
     rm -rf "${ST:?}"
     if [ "$_rows_bad" -gt 0 ]; then
@@ -965,27 +1134,58 @@ if [ "$MODE" = "live" ]; then
     RUNNERS="$(mktemp)"; JOBS="$(mktemp)"; LISTINGS="$(mktemp)"; AXIS_WF="$(mktemp)"
     RUNNERS_ERR="$(mktemp)"
     trap 'rm -f "$RUNNERS" "$JOBS" "$LISTINGS" "$AXIS_WF" "$RUNNERS_ERR"' EXIT
+    RUNNERS_OUT="$(mktemp)"
+    trap 'rm -f "$RUNNERS" "$JOBS" "$LISTINGS" "$AXIS_WF" "$RUNNERS_ERR" "$RUNNERS_OUT"' EXIT
     : > "$RUNNERS"
+fi
+# #5213: a pull_request or merge_group run reads with the job token, and that
+# token can never list self-hosted runners (HTTP 403 on both scopes, every
+# run). Probe 2a has never measured anything there, so on those events the
+# runner listing and probe 2a are not run at all; the scheduled nightly,
+# with org auth, keeps both. The axis verdict below comes from job evidence.
+# #5237: a push run on main reads with the same job token. Before #5220 the
+# 403 body counted as a runner, so the push run "passed" probe 2a without
+# reading one. So the probe runs only where the listing has ever been
+# readable: schedule and workflow_dispatch (silicon-nightly.yml, host auth)
+# and a local run (no event). Every other event is the job token.
+RUNNER_PROBE=1
+if [ "$MODE" = "live" ]; then
+    case "${GITHUB_EVENT_NAME:-}" in
+        ''|schedule|workflow_dispatch) ;;
+        *) RUNNER_PROBE=0 ;;
+    esac
+fi
+if [ "$MODE" = "live" ] && [ "$RUNNER_PROBE" = 1 ]; then
     # One scope may fail while the other serves (a repo token cannot read the org
     # listing). A failed scope is not a refusal by itself (the zero-runner probe
     # below refuses when nothing is visible), but gh's own words stay in the
-    # output, so a short count says why it is short.
+    # output, so a short count says why it is short. On an HTTP error gh prints
+    # the error body on stdout, so a failed scope's stdout is discarded: it was
+    # once counted as one online runner, and probe 2a could not fire (#5213).
     for src in "orgs/$ORG/actions/runners" "repos/$REPO/actions/runners"; do
         api_calls=$((api_calls + 1))
-        if ! gh api --paginate "$src?per_page=100" \
+        if gh api --paginate "$src?per_page=100" \
             --jq '.runners[] | select(.status=="online") | (.name) + "\t" + ([.labels[].name] | join(","))' \
-            2> "$RUNNERS_ERR" >> "$RUNNERS"; then
+            2> "$RUNNERS_ERR" > "$RUNNERS_OUT"; then
+            cat "$RUNNERS_OUT" >> "$RUNNERS"
+        else
             printf 'runner listing FAILED: %s: %s\n' "$src" "$(gh_err "$RUNNERS_ERR")"
         fi
     done
     sort -u -o "$RUNNERS" "$RUNNERS"
 fi
 n_runners="$(grep -cve '^[[:space:]]*$' "$RUNNERS" || true)"
+runners_shown="${n_runners:-0}"; [ "$RUNNER_PROBE" = 1 ] || runners_shown="not read"
 
 printf -- '\n-- runners --\n'
-printf 'online runners visible (org + this repo): %s\n' "${n_runners:-0}"
+if [ "$RUNNER_PROBE" = 0 ]; then
+    printf 'runners: not read on a %s run (the job token cannot list runners; the scheduled nightly reads them)\n' \
+        "$GITHUB_EVENT_NAME"
+else
+    printf 'online runners visible (org + this repo): %s\n' "${n_runners:-0}"
+fi
 # Probe 2a: the positive control on the runner listing.
-if [ "${n_runners:-0}" -eq 0 ]; then
+if [ "$RUNNER_PROBE" = 1 ] && [ "${n_runners:-0}" -eq 0 ]; then
     printf 'NO-GO: zero online runners. That looks identical whether the fleet is\n'
     printf 'down or this token lost its scope, and GPU runners are REPO-scoped and\n'
     printf 'invisible in the org listing. Blind is a NO-GO, not a pass.\n'
@@ -1202,10 +1402,10 @@ printf 'axes declared: %s  (required %s: covered %s, STALE %s, UNCOVERED %s, MIS
     "$axes" "$required" "$covered" "$stale" "$uncovered" "$missing" "$truncated" "$notmeasured"
 printf ' deferred %s: PROMOTABLE %s, ready %s)\n' "$deferred" "$promotable" "$ready"
 printf 'evidence: %s online runner(s), %s concluded job(s), floor %sd\n' \
-    "$n_runners" "$n_jobs" "$STALE_DAYS"
+    "$runners_shown" "$n_jobs" "$STALE_DAYS"
 if [ "$MODE" = "live" ]; then
-    printf 'api calls: %s (listing cross-checks: %s, re-reads of a short listing: %s)\n' \
-        "$api_calls" "$probe_calls" "$reread_calls"
+    printf 'api calls: %s (listing cross-checks: %s, re-reads of a short listing: %s, 5xx retries: %s)\n' \
+        "$api_calls" "$probe_calls" "$reread_calls" "$retry_calls"
 fi
 
 # THE DENOMINATOR. A policy that parsed nothing must not read as clean.
@@ -1233,7 +1433,7 @@ fi
     if [ "$notmeasured" -gt 0 ]; then
         printf -- '- **%s axis/axes NOT_MEASURED: an API read failed, which is no evidence either way**\n' "$notmeasured"
     fi
-    printf -- '- runners inspected: %s; concluded jobs inspected: %s\n' "$n_runners" "$n_jobs"
+    printf -- '- runners inspected: %s; concluded jobs inspected: %s\n' "$runners_shown" "$n_jobs"
 } >> "$SUMMARY"
 
 if [ "$fail" -ne 0 ]; then

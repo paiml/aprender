@@ -1,0 +1,85 @@
+verb	file	rc	verdict	check
+pull	BF16	0	PASS	rc 0; the cached file's sha256 equals SHA256SUMS
+list	BF16	0	PASS	rc 0; lists the pulled file by its cache path
+rm	BF16	0	PASS	rc 0; no gguf left; list no longer shows its cache path
+tokenize	BF16	0	PASS	rc 0; roundtrip: true; no greedy fallback
+capability	BF16	0	PASS	rc 0; the 8 embedding ops listed (file-independent)
+inspect	BF16	0	PASS	rc 0; architecture gemma-embedding2; causal false
+debug	BF16	0	PASS	rc 0; GGUF gemma-embedding2; health OK
+validate	BF16	0	PASS	rc 0; VALID, 0 contract violations
+lint	BF16	0	PASS	rc 0; lint passed, 0 errors
+tensors	BF16	0	PASS	rc 0; tensor table with the file's tensors
+diff	BF16	0	PASS	rc 0 vs embeddinggemma-2-F16.gguf
+hex	BF16	0	PASS	rc 0; GGUF v3 header
+tree	BF16	0	PASS	rc 0; root line with the tensor count
+flow	BF16	0	PASS	rc 0; embedding path (pool, projection, L2), no LM head; --json kind embedding
+pull	F16	0	PASS	rc 0; the cached file's sha256 equals SHA256SUMS
+list	F16	0	PASS	rc 0; lists the pulled file by its cache path
+rm	F16	0	PASS	rc 0; no gguf left; list no longer shows its cache path
+tokenize	F16	0	PASS	rc 0; roundtrip: true; no greedy fallback
+capability	F16	0	PASS	rc 0; the 8 embedding ops listed (file-independent)
+inspect	F16	0	PASS	rc 0; architecture gemma-embedding2; causal false
+debug	F16	0	PASS	rc 0; GGUF gemma-embedding2; health OK
+validate	F16	0	PASS	rc 0; VALID, 0 contract violations
+lint	F16	0	PASS	rc 0; lint passed, 0 errors
+tensors	F16	0	PASS	rc 0; tensor table with the file's tensors
+diff	F16	0	PASS	rc 0 vs embeddinggemma-2-BF16.gguf
+hex	F16	0	PASS	rc 0; GGUF v3 header
+tree	F16	0	PASS	rc 0; root line with the tensor count
+flow	F16	0	PASS	rc 0; embedding path (pool, projection, L2), no LM head; --json kind embedding
+pull	Q8_0	0	PASS	rc 0; the cached file's sha256 equals SHA256SUMS
+list	Q8_0	0	PASS	rc 0; lists the pulled file by its cache path
+rm	Q8_0	0	PASS	rc 0; no gguf left; list no longer shows its cache path
+tokenize	Q8_0	0	PASS	rc 0; roundtrip: true; no greedy fallback
+capability	Q8_0	0	PASS	rc 0; the 8 embedding ops listed (file-independent)
+inspect	Q8_0	0	PASS	rc 0; architecture gemma-embedding2; causal false
+debug	Q8_0	0	PASS	rc 0; GGUF gemma-embedding2; health OK
+validate	Q8_0	0	PASS	rc 0; VALID, 0 contract violations
+lint	Q8_0	0	PASS	rc 0; lint passed, 0 errors
+tensors	Q8_0	0	PASS	rc 0; tensor table with the file's tensors
+diff	Q8_0	0	PASS	rc 0 vs embeddinggemma-2-BF16.gguf
+hex	Q8_0	0	PASS	rc 0; GGUF v3 header
+tree	Q8_0	0	PASS	rc 0; root line with the tensor count
+flow	Q8_0	0	PASS	rc 0; embedding path (pool, projection, L2), no LM head; --json kind embedding
+pull	UD-Q4_K_XL	0	PASS	rc 0; the cached file's sha256 equals SHA256SUMS
+list	UD-Q4_K_XL	0	PASS	rc 0; lists the pulled file by its cache path
+rm	UD-Q4_K_XL	0	PASS	rc 0; no gguf left; list no longer shows its cache path
+tokenize	UD-Q4_K_XL	0	PASS	rc 0; roundtrip: true; no greedy fallback
+capability	UD-Q4_K_XL	0	PASS	rc 0; the 8 embedding ops listed (file-independent)
+inspect	UD-Q4_K_XL	0	PASS	rc 0; architecture gemma-embedding2; causal false
+debug	UD-Q4_K_XL	0	PASS	rc 0; GGUF gemma-embedding2; health OK
+validate	UD-Q4_K_XL	0	PASS	rc 0; VALID, 0 contract violations
+lint	UD-Q4_K_XL	0	PASS	rc 0; lint passed, 0 errors
+tensors	UD-Q4_K_XL	0	PASS	rc 0; tensor table with the file's tensors
+diff	UD-Q4_K_XL	0	PASS	rc 0 vs embeddinggemma-2-BF16.gguf
+hex	UD-Q4_K_XL	0	PASS	rc 0; GGUF v3 header
+tree	UD-Q4_K_XL	0	PASS	rc 0; root line with the tensor count
+flow	UD-Q4_K_XL	0	PASS	rc 0; embedding path (pool, projection, L2), no LM head; --json kind embedding
+pull	UD-Q5_K_XL	0	PASS	rc 0; the cached file's sha256 equals SHA256SUMS
+list	UD-Q5_K_XL	0	PASS	rc 0; lists the pulled file by its cache path
+rm	UD-Q5_K_XL	0	PASS	rc 0; no gguf left; list no longer shows its cache path
+tokenize	UD-Q5_K_XL	0	PASS	rc 0; roundtrip: true; no greedy fallback
+capability	UD-Q5_K_XL	0	PASS	rc 0; the 8 embedding ops listed (file-independent)
+inspect	UD-Q5_K_XL	0	PASS	rc 0; architecture gemma-embedding2; causal false
+debug	UD-Q5_K_XL	0	PASS	rc 0; GGUF gemma-embedding2; health OK
+validate	UD-Q5_K_XL	0	PASS	rc 0; VALID, 0 contract violations
+lint	UD-Q5_K_XL	0	PASS	rc 0; lint passed, 0 errors
+tensors	UD-Q5_K_XL	0	PASS	rc 0; tensor table with the file's tensors
+diff	UD-Q5_K_XL	0	PASS	rc 0 vs embeddinggemma-2-BF16.gguf
+hex	UD-Q5_K_XL	0	PASS	rc 0; GGUF v3 header
+tree	UD-Q5_K_XL	0	PASS	rc 0; root line with the tensor count
+flow	UD-Q5_K_XL	0	PASS	rc 0; embedding path (pool, projection, L2), no LM head; --json kind embedding
+pull	UD-Q6_K_XL	0	PASS	rc 0; the cached file's sha256 equals SHA256SUMS
+list	UD-Q6_K_XL	0	PASS	rc 0; lists the pulled file by its cache path
+rm	UD-Q6_K_XL	0	PASS	rc 0; no gguf left; list no longer shows its cache path
+tokenize	UD-Q6_K_XL	0	PASS	rc 0; roundtrip: true; no greedy fallback
+capability	UD-Q6_K_XL	0	PASS	rc 0; the 8 embedding ops listed (file-independent)
+inspect	UD-Q6_K_XL	0	PASS	rc 0; architecture gemma-embedding2; causal false
+debug	UD-Q6_K_XL	0	PASS	rc 0; GGUF gemma-embedding2; health OK
+validate	UD-Q6_K_XL	0	PASS	rc 0; VALID, 0 contract violations
+lint	UD-Q6_K_XL	0	PASS	rc 0; lint passed, 0 errors
+tensors	UD-Q6_K_XL	0	PASS	rc 0; tensor table with the file's tensors
+diff	UD-Q6_K_XL	0	PASS	rc 0 vs embeddinggemma-2-BF16.gguf
+hex	UD-Q6_K_XL	0	PASS	rc 0; GGUF v3 header
+tree	UD-Q6_K_XL	0	PASS	rc 0; root line with the tensor count
+flow	UD-Q6_K_XL	0	PASS	rc 0; embedding path (pool, projection, L2), no LM head; --json kind embedding

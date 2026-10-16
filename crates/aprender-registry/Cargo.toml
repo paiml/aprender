@@ -6,7 +6,7 @@ edition = "2021"
 authors = ["Pragmatic AI Labs <info@paiml.com>"]
 license = "MIT"
 description = "Model, Data and Recipe Registry with full lineage tracking"
-repository = "https://github.com/paiml/pacha"
+repository = "https://github.com/paiml/aprender"
 keywords = ["ml", "registry", "mlops", "lineage", "reproducibility"]
 categories = ["science", "database"]
 rust-version = "1.75"
@@ -42,7 +42,7 @@ zstd = { version = "0.13", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 
 # Ecosystem integration
-aprender = { path = "../aprender-core", version = "0.71.1", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.71.3", package = "aprender-core", optional = true }
 alimentar = { workspace = true, optional = true }
 
 # HTTP client (optional)

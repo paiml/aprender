@@ -357,6 +357,15 @@ async fn wgpu_chat_completion(
     state: Arc<WgpuInferenceState>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> axum::response::Response {
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(&body, super::response_format::GGUF_WGPU)
+    {
+        return refusal;
+    }
+    if let Some(refused) = logprobs_refusal_response(&body, "WGPU") {
+        return refused;
+    }
     // GH-665: Cap max_tokens to prevent hangs on large values
     let max_tokens = body["max_tokens"].as_u64().unwrap_or(64).min(4096) as usize;
     let stream = body["stream"].as_bool().unwrap_or(false);
@@ -1749,3 +1758,4 @@ pub fn build_demo_streaming_apr_cpu_router_for_test() -> axum::Router {
 include!("handler_apr_cpu_completion.rs");
 include!("handler_gpu_completion.rs");
 include!("server.rs");
+include!("server_embedding.rs");

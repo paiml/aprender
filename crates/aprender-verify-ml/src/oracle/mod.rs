@@ -389,15 +389,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_io_oracle_verify_python() {
         let oracle = IoOracle::new();
-        let executor = PythonExecutor::new();
-
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let result = oracle
             .verify_python("print('hello')", "hello\n")
             .expect("verification should succeed");
@@ -406,15 +400,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_io_oracle_verify_python_mismatch() {
         let oracle = IoOracle::new();
-        let executor = PythonExecutor::new();
-
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let result = oracle
             .verify_python("print('hello')", "world\n")
             .expect("verification should succeed");
@@ -423,15 +411,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_io_oracle_execute_python() {
         let oracle = IoOracle::new();
-        let executor = PythonExecutor::new();
-
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let result = oracle
             .execute_python("print(2 + 2)", "")
             .expect("execution should succeed");
@@ -451,15 +433,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_io_oracle_same_code_verification() {
         let oracle = IoOracle::new();
-        let executor = PythonExecutor::new();
-
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         // Verify same code produces same output
         let code = "x = 5\nprint(x * 2)";
         let result = oracle
@@ -490,12 +466,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_io_oracle_with_target_executor() {
-        let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            return;
-        }
-
         let oracle = IoOracle::new().with_target_executor(Box::new(PythonExecutor::new()));
         assert!(oracle.target_executor.is_some());
 
@@ -505,15 +477,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_io_oracle_verify_python_with_input() {
         let oracle = IoOracle::new();
-        let executor = PythonExecutor::new();
-
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let code = "x = input()\nprint(f'Hello {x}')";
         let result = oracle
             .verify_python_with_input(code, "World", "Hello World\n")
@@ -523,12 +489,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_io_oracle_verify_with_target_executor() {
-        let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            return;
-        }
-
         let oracle = IoOracle::new().with_target_executor(Box::new(PythonExecutor::new()));
 
         let code = "print(42)";

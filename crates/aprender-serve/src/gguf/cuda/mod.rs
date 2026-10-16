@@ -35,25 +35,34 @@
 
 mod backend;
 mod forward;
+/// APR-EMBED-001 EG-4 (#4903): the EmbeddingGemma 2 encoder on the GPU.
+mod forward_embedding_gemma2_cuda;
 /// PMAT-3477 (#3090): Qwen3.5's Gated `DeltaNet` block on the GPU.
 mod forward_qwen35_cuda;
 /// #3714: the Qwen3-MoE decoder resident on the GPU.
 mod forward_qwen3_moe_resident;
 mod generation;
 mod speculative;
+/// #4971: a greedy decode step that also hands back the logits its argmax read.
+mod token_logits;
 mod weights;
 
 // Re-export types for public API
 pub use backend::CudaBackend;
+// APR-EMBED-001 EG-4 (#4903): the EmbeddingGemma 2 GPU encoder.
+pub use forward_embedding_gemma2_cuda::EmbeddingGemma2Cuda;
 // PMAT-3477 (#3090): the Gated DeltaNet GPU model and its device state.
 pub use forward_qwen35_cuda::{
-    PrefillAttention, Qwen35CudaCheckpoint, Qwen35CudaModel, Qwen35CudaState,
+    PrefillAttention, Qwen35CudaCheckpoint, Qwen35CudaModel, Qwen35CudaState, Qwen35StepOut,
     PREFILL_MAX_CHUNK_ROWS, UNIFIED_PREFILL_CHUNK_ROWS,
 };
 // #3714: the Qwen3-MoE GPU model, its device state, and the MoE shape it is built for.
 pub use forward_qwen3_moe_resident::{Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape};
 // PMAT-072: Step-wise batched decode state for lock-releasing scheduler
-pub use generation::BatchedDecodeState;
+pub use generation::{BatchedDecodeState, SlotRecorder};
+// #4971: what a prefill extracts for the session's first token.
+pub(crate) use generation::select_batched_token;
+pub(crate) use generation::FirstToken;
 
 use crate::error::{RealizarError, Result};
 

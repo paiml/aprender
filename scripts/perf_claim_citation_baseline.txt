@@ -109,7 +109,6 @@ crates/aprender-gpu/src/driver/cublas_sys.rs:95
 crates/aprender-gpu/src/kernels/attention/flash/mod.rs:143
 crates/aprender-gpu/src/kernels/attention/flash/mod.rs:85
 crates/aprender-gpu/src/kernels/layernorm/batched.rs:14
-crates/aprender-gpu/src/kernels/layernorm/rmsnorm.rs:155
 crates/aprender-graph/src/lib.rs:39
 crates/aprender-orchestrate/src/oracle/rag/fingerprint.rs:96
 crates/aprender-orchestrate/src/oracle/rag/quantization/mod.rs:6

@@ -13,10 +13,20 @@ fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
             TestSubcommand::Tensor { file, .. } => {
                 vec![file.to_path_buf()]
             },
-            // `llm` measures an HTTP endpoint, not a local model file. Listed
-            // explicitly so a future subcommand that DOES name a file has to
-            // be handled here rather than absorbed by a wildcard.
-            TestSubcommand::Llm { .. } => vec![],
+            // `llm bench` measures an HTTP endpoint, not a local model file,
+            // `llm ttft-verdict` reads receipt directories (#4954) and
+            // `llm shape-check` reads a perf041 witness JSON, not a model.
+            // `llm parity` drives an endpoint too: its `--model` is hashed
+            // for the witness and never loaded, so the gate has nothing to
+            // refuse.
+            // Listed explicitly so a future subcommand that DOES name a model
+            // has to be handled here rather than absorbed by a wildcard.
+            TestSubcommand::Llm { command } => match command {
+                LlmSubcommand::Bench { .. }
+                | LlmSubcommand::TtftVerdict { .. }
+                | LlmSubcommand::ShapeCheck { .. }
+                | LlmSubcommand::Parity { .. } => vec![],
+            },
         },
         ExtendedCommands::CompareHf { file, .. }
         | ExtendedCommands::Chat { file, .. }
@@ -372,6 +382,16 @@ fn dispatch_showcase(
         "large" => showcase::ModelTier::Large,
         _ => showcase::ModelTier::Small,
     };
+
+    // APR-EMBED-001 EG-5 (I-3): the showcase serves the model it finds at `--model-dir` (a file, or
+    // the tier's file in that directory). An embedding model there is refused by kind, naming
+    // `apr embed`, before a step runs; a missing file is left to the download step.
+    let showcase_model = if model_dir.is_file() {
+        model_dir.to_path_buf()
+    } else {
+        model_dir.join(tier.gguf_filename())
+    };
+    crate::commands::model_kind_gate::refuse_non_generative_path(&showcase_model, "showcase")?;
 
     let baselines: Vec<showcase::Baseline> = baseline
         .split(',')

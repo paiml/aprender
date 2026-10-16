@@ -55,6 +55,24 @@ async fn handle_apr_cpu_completion(
     }
 }
 
+/// #4971 (ASOC-INV-021): `backend` does not compute logprobs, so a request for
+/// them is refused rather than served without them: 501 naming `backend`, or
+/// 400/422 for a bad `logprobs`/`top_logprobs`, as realizar's router answers.
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
+pub(crate) fn logprobs_refusal_response(
+    req: &serde_json::Value,
+    backend: &str,
+) -> Option<axum::response::Response> {
+    use axum::{response::IntoResponse, Json};
+
+    let (status, reason) = realizar::api::json_logprobs_refusal(req, backend)?;
+    let error = serde_json::json!({
+        "error": {"message": reason, "type": "invalid_request_error", "param": "logprobs"}
+    });
+    Some((status, Json(error)).into_response())
+}
+
 /// GH-283: Validate the "model" field in the request matches the loaded model.
 ///
 /// Returns an error response if the model name doesn't match. Accepts "apr" as
@@ -340,6 +358,15 @@ async fn handle_apr_cpu_chat_completion(
     if let Some(err_response) = validate_request_model(req, &s.model_name) {
         return err_response;
     }
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(req, super::response_format::APR_CPU)
+    {
+        return refusal;
+    }
+    if let Some(refused) = logprobs_refusal_response(req, "APR CPU (AprTransformer)") {
+        return refused;
+    }
 
     let messages = req.get("messages").and_then(|m| m.as_array());
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
@@ -445,10 +472,11 @@ async fn handle_apr_cpu_ollama_chat(
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
         let top_p = req.options.as_ref().and_then(|o| o.top_p);
         spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, top_p, tx);
-        return super::ollama::ollama_ndjson_stream(
+        return super::ollama::ollama_ndjson_stream_ending(
             super::ollama::OllamaStreamKind::Chat,
             model,
             prompt_eval_count,
+            super::ollama::StreamEnd::LengthAt(max_tokens),
             rx,
         );
     }
@@ -489,10 +517,11 @@ async fn handle_apr_cpu_ollama_generate(
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
         let top_p = req.options.as_ref().and_then(|o| o.top_p);
         spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, top_p, tx);
-        return super::ollama::ollama_ndjson_stream(
+        return super::ollama::ollama_ndjson_stream_ending(
             super::ollama::OllamaStreamKind::Generate,
             model,
             prompt_eval_count,
+            super::ollama::StreamEnd::LengthAt(max_tokens),
             rx,
         );
     }

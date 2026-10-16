@@ -30,6 +30,27 @@ pub enum EmbedProjection {
     Umap,
 }
 
+/// The prompt `apr embed --task` puts around each text for an EmbeddingGemma 2 GGUF file.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum EmbedTask {
+    /// `task: search result | query: {text}`
+    SearchQuery,
+    /// `task: question answering | query: {text}`
+    QuestionAnswering,
+    /// `task: fact checking | query: {text}`
+    FactChecking,
+    /// `task: code retrieval | query: {text}`
+    CodeRetrieval,
+    /// `task: classification | query: {text}`
+    Classification,
+    /// `task: clustering | query: {text}`
+    Clustering,
+    /// `task: sentence similarity | query: {text}`
+    SentenceSimilarity,
+    /// `title: {--title or none} | text: {text}`: a document to be retrieved.
+    Document,
+}
+
 /// Extended CLI commands (analysis, profiling, QA, benchmarks, and advanced tools).
 ///
 /// Flattened into `Commands` via `#[command(flatten)]` so all subcommands remain
@@ -269,6 +290,10 @@ pub enum ExtendedCommands {
         /// Skip Ollama parity comparison
         #[arg(long)]
         skip_ollama: bool,
+        /// Ollama parity runs ollama on THIS GGUF (imported for the run, then
+        /// removed) instead of the size-matched qwen2.5-coder tag (#5254)
+        #[arg(long)]
+        ollama_from_file: bool,
         /// Skip GPU vs CPU speedup test (F-PERF-042)
         #[arg(long)]
         skip_gpu_speedup: bool,
@@ -1369,9 +1394,12 @@ pub enum ExtendedCommands {
         #[arg(long)]
         json: bool,
     },
-    /// Produce sentence embeddings from a BERT bi-encoder (GH-326 Phase 6).
+    /// Produce sentence embeddings from a BERT APR file or an EmbeddingGemma 2 GGUF file.
     ///
-    /// First-stage dense retrieval companion to `apr rerank`. Loads an
+    /// First-stage dense retrieval companion to `apr rerank`. The file's
+    /// magic bytes pick the path.
+    ///
+    /// An APR file (GH-326 Phase 6) loads an
     /// encoder-only BertModel (e.g. `sentence-transformers/all-MiniLM-L6-v2`),
     /// tokenises the input text with WordPiece, runs the full encoder
     /// forward, then pools the hidden states with one of:
@@ -1380,8 +1408,15 @@ pub enum ExtendedCommands {
     ///                   sentence-transformers convention)
     /// Optionally L2-normalises the result (`--normalize`, default true,
     /// matches sentence-transformers).
+    ///
+    /// A GGUF file (APR-EMBED-001) is an EmbeddingGemma 2 model: its
+    /// tokenizer, sizes and pooling come from the file, and its vectors are
+    /// unit length. `--task` puts the model card's prompt around each text,
+    /// `--title` names a `--task document`, and `--dim` keeps the leading
+    /// 512, 256 or 128 values, re-normalised.
     Embed {
-        /// Path to the APR file containing the encoder weights (BertModel).
+        /// The model: an APR file holding BertModel encoder weights, or an
+        /// EmbeddingGemma 2 GGUF file.
         #[arg(value_name = "MODEL")]
         model: ModelPath,
         /// Text to encode. Repeatable: `apr embed model.apr --text "a" --text "b" --vocab tok.json`.
@@ -1395,9 +1430,11 @@ pub enum ExtendedCommands {
         /// (50-100 documents) is the embed input.
         #[arg(long, value_name = "FILE")]
         text_file: Option<InputFile>,
-        /// Path to a WordPiece `vocab.txt` or HF `tokenizer.json`.
+        /// Path to a WordPiece `vocab.txt` or HF `tokenizer.json`. Required
+        /// for an APR file; refused for a GGUF file, which carries its own
+        /// tokenizer.
         #[arg(long, value_name = "FILE")]
-        vocab: InputFile,
+        vocab: Option<InputFile>,
         /// Pooling strategy (`cls` or `mean`). Default: `mean`
         /// (matches sentence-transformers convention).
         #[arg(long, default_value = "mean")]
@@ -1422,27 +1459,39 @@ pub enum ExtendedCommands {
             action = clap::ArgAction::Set,
         )]
         normalize: bool,
-        /// Override hidden_dim (default: 384 / MiniLM).
-        #[arg(long, default_value_t = 384)]
-        hidden_dim: usize,
-        /// Override num_layers (default: 6 / MiniLM-L-6).
-        #[arg(long, default_value_t = 6)]
-        num_layers: usize,
-        /// Override num_heads.
-        #[arg(long, default_value_t = 12)]
-        num_heads: usize,
-        /// Override intermediate_dim.
-        #[arg(long, default_value_t = 1536)]
-        intermediate_dim: usize,
-        /// Override vocab_size.
-        #[arg(long, default_value_t = 30522)]
-        vocab_size: usize,
-        /// Override max_position_embeddings.
-        #[arg(long, default_value_t = 512)]
-        max_position_embeddings: usize,
-        /// Override type_vocab_size.
-        #[arg(long, default_value_t = 2)]
-        type_vocab_size: usize,
+        /// GGUF only: the model card's task prompt around each text. Omitted,
+        /// the text is embedded as given, which the model card says lowers
+        /// quality.
+        #[arg(long, value_enum)]
+        task: Option<EmbedTask>,
+        /// GGUF only, with `--task document`: the document's title (default `none`).
+        #[arg(long, value_name = "TITLE")]
+        title: Option<FreeText>,
+        /// GGUF only: keep the leading 512, 256 or 128 values, re-normalised
+        /// (default: the full 768).
+        #[arg(long, value_name = "N")]
+        dim: Option<usize>,
+        /// Override hidden_dim (APR only; default: 384 / MiniLM).
+        #[arg(long)]
+        hidden_dim: Option<usize>,
+        /// Override num_layers (APR only; default: 6 / MiniLM-L-6).
+        #[arg(long)]
+        num_layers: Option<usize>,
+        /// Override num_heads (APR only; default: 12).
+        #[arg(long)]
+        num_heads: Option<usize>,
+        /// Override intermediate_dim (APR only; default: 1536).
+        #[arg(long)]
+        intermediate_dim: Option<usize>,
+        /// Override vocab_size (APR only; default: 30522).
+        #[arg(long)]
+        vocab_size: Option<usize>,
+        /// Override max_position_embeddings (APR only; default: 512).
+        #[arg(long)]
+        max_position_embeddings: Option<usize>,
+        /// Override type_vocab_size (APR only; default: 2).
+        #[arg(long)]
+        type_vocab_size: Option<usize>,
         /// Output as JSON.
         #[arg(long)]
         json: bool,
@@ -2020,6 +2069,76 @@ pub enum LlmSubcommand {
         /// `v1-provenance.json` and `receipt.r<N>.json`. Once per host.
         #[arg(long = "run", required = true)]
         runs: Vec<DirPath>,
+    },
+
+    /// #4971 V3: check a perf041 witness against the serving-shape rule.
+    ///
+    /// Reads the `witness.json` that `scripts/perf041_batched_parity_probe.py`
+    /// writes and decides whether it can stand as the V3 Qwen3.5-4B
+    /// serving-parity witness: the blessed model with its sha256, the
+    /// identity fields, one band per c in {1, 4, 8, 16}, perf041 PASS and
+    /// `m_formed == c` in every band, and every divergence from m=1 before
+    /// `declared_min` explained by a recorded top-2 margin below 0.05.
+    ///
+    /// Exits 0 when admissible. A witness that is not admissible exits 5
+    /// after printing every reason; one that cannot be read exits 3 (no such
+    /// file) or 4 (unreadable or empty). Not a gate: no release job runs it.
+    ShapeCheck {
+        /// The perf041 `witness.json` to check.
+        witness: InputFile,
+    },
+
+    /// #4971 V3: run the perf041 batched-parity probe against a server.
+    ///
+    /// The Rust port of `scripts/perf041_batched_parity_probe.py`. It decodes
+    /// one prompt twice alone (m=1), then as c identical concurrent requests
+    /// for each c of the ladder, reads the batch each band formed from the
+    /// server's log, and writes the witness `apr test llm shape-check` reads,
+    /// with the reference's top-2 margin at every divergence. The thresholds,
+    /// sampler and ladder come from `scripts/perf-matrix.yaml`, compiled in.
+    ///
+    /// Exits 0 on PASS, 5 on FAIL (a batch's slots parted before
+    /// `declared_min`, or a slot froze), and 8 on UNMEASURABLE; the witness
+    /// is written first either way. A server log, binary or model that is not
+    /// a file exits 3 before any request. Not a gate: no release job runs it.
+    Parity {
+        /// The server's base URL; requests go to `/v1/chat/completions`.
+        #[arg(long, default_value = "http://127.0.0.1:8080")]
+        url: FreeText,
+        /// Model name sent in the request body, as the script sends it.
+        #[arg(long, default_value = "q")]
+        served_model: FreeText,
+        /// The server's log, where the scheduler writes `Batch m=N done`.
+        /// Read from where it ended before each band, so a band counts only
+        /// the batches it formed.
+        #[arg(long)]
+        server_log: InputFile,
+        /// The prompt every request carries. Recorded by its sha256.
+        #[arg(long, default_value = "Write an essay on compilers.")]
+        prompt: FreeText,
+        /// Concurrencies to fire, comma-separated, replacing the matrix's
+        /// `ladder.declared`. The V3 shape check admits only {1, 4, 8, 16}.
+        #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(u32).range(1..))]
+        ladder: Vec<u32>,
+        /// Write the witness JSON here. Not `--json`: that is `apr`'s global
+        /// flag, and a second arg with its id made clap downcast one to the
+        /// other's type and panic on every `apr test llm parity` run.
+        #[arg(long, value_name = "FILE")]
+        witness: Option<OutputPath>,
+        /// Host recorded in the witness. Defaults to `PERF041_HOST`, then
+        /// this host's name.
+        #[arg(long)]
+        host: Option<FreeText>,
+        /// Commit the server was built from. Defaults to `PERF041_COMMIT`.
+        #[arg(long)]
+        commit: Option<FreeText>,
+        /// The serving binary; its sha256 is recorded.
+        #[arg(long)]
+        binary: Option<InputFile>,
+        /// The served model file; its file name and sha256 are recorded. The
+        /// probe hashes it and never loads it.
+        #[arg(long)]
+        model: Option<InputFile>,
     },
 }
 

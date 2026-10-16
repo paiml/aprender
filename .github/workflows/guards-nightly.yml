@@ -66,6 +66,9 @@ permissions:
 jobs:
   guards-nightly:
     runs-on: [self-hosted, Linux, X64, clean-room]
+    permissions:
+      contents: read
+      issues: write   # #5182: a red ratchet night opens or updates the one LAB ticket
     # 60: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over the measured
     # cost of the steps this job carries -- 26.8 min of guard-cargo's own
     # 43.8-min run 34449608126, plus checkout and the cargo-home heal. With
@@ -164,6 +167,12 @@ jobs:
       # ─────────────────────────────────────────────────────────────────────
       - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
         run: bash scripts/ci_test_tier.sh --self-test
+      - name: Fleet-cells gate case table and mutants (#5064, LAB)
+        run: setsid --wait bash scripts/release/fleet_cells_gate.sh --self-test
+      - name: compute row zero-tests case table and mutants (#5048, LAB)
+        run: setsid --wait bash scripts/tests/compute_row_zero_tests_test.sh --mutants
+      - name: shared-checkout shallow lock case table and mutants (#5025, LAB)
+        run: setsid --wait bash scripts/shared_checkout_no_shallow.sh --mutants
       - name: aprender-core builds for wasm32
         run: setsid --wait bash scripts/check_wasm32_core_builds.sh
       - name: No test may assert about the fd 0 it inherited
@@ -237,6 +246,86 @@ jobs:
           # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
           DR_ENV=()
           dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
+      # #5182 (GATE/LAB). The two ratchets that left the PR path. On a schedule
+      # run HEAD *is* origin/main, so merge-base(HEAD, origin/main) is HEAD and a
+      # shrink-only comparison against it can never fail. The comparand is
+      # therefore main as it was 24 h earlier: what grew on main since the last
+      # nightly turns this red. Fetched shallow (3 days), resolved, printed.
+      - name: Main as it was 24 h earlier, the comparand for the nightly ratchets (#5182)
+        id: ratchet_base
+        if: ${{ !cancelled() }}   # a red elsewhere in this job must not leave the ratchets unmeasured
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/ratchets.log") 2>&1
+          git fetch --no-tags --shallow-since='3 days ago' origin +refs/heads/main:refs/remotes/origin/main
+          base=$(git rev-list -1 --before='24 hours ago' origin/main)
+          if [ -z "$base" ]; then
+            base=$(git rev-list origin/main | tail -1)
+            echo "no main commit older than 24 h in the fetched window; comparand = oldest fetched"
+          fi
+          printf 'comparand %s  %s\n' "$base" "$(git log -1 --format=%cI "$base")"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+      # The comparand reaches the two ratchets as a declared step output. When the step
+      # above did not finish green it is empty, and `:?` turns that into a red ratchet
+      # night instead of a comparison against nothing.
+      - name: Per-function complexity may only fall (shrink-only)
+        id: ratchet_cx
+        if: ${{ !cancelled() }}   # a red elsewhere in this job must not leave the ratchets unmeasured
+        env:
+          RATCHET_24H_BASE: ${{ steps.ratchet_base.outputs.base }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/ratchets.log") 2>&1
+          setsid --wait bash scripts/check_complexity_ratchet.sh --selftest
+          BASELINE_RATCHET_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/check_complexity_ratchet.sh
+      - name: No shrink-only baseline in scripts/ grew (check_baseline_ratchets --ratchet)
+        id: ratchet_br
+        if: ${{ !cancelled() }}   # a red elsewhere in this job must not leave the ratchets unmeasured
+        env:
+          RATCHET_24H_BASE: ${{ steps.ratchet_base.outputs.base }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/ratchets.log") 2>&1
+          BASELINE_RATCHET_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/check_baseline_ratchets.sh --ratchet
+      # #4709 (C303): the pv census ratchet. LAB, never on a PR path (C324): the bound
+      # count never falls, the unbound share and the contracts with no falsification
+      # tests never rise, measured by one pv on main 24 h ago and on main now. Its case
+      # table (the real pv on fixture trees, stub pvs for every NOT_MEASURED) runs first.
+      - name: The pv census bound share may only rise (#4709)
+        id: ratchet_census
+        if: ${{ !cancelled() }}   # a red elsewhere in this job must not leave the census unmeasured
+        env:
+          RATCHET_24H_BASE: ${{ steps.ratchet_base.outputs.base }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/census.log") 2>&1
+          setsid --wait bash scripts/census_ratchet.sh --self-test
+          CENSUS_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/census_ratchet.sh
+      - name: A red census night opens or updates the one LAB ticket (#4709)
+        if: failure() && steps.ratchet_census.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-census-ratchet --title "LAB: nightly pv census ratchet red (#4709)" \
+            --owner la-0.72 --log "$RUNNER_TEMP/census.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      # The GATE/LAB rule: a red opens or updates ONE ticket with ONE owner, then stays
+      # silent. Only a red ratchet step calls this (a green night never does);
+      # a red elsewhere in this job is not a ratchet red and writes nothing here.
+      # The opener's case table (a planted red included) runs first.
+      - name: A red ratchet night opens or updates the one LAB ticket (#5182)
+        if: failure() && (steps.ratchet_base.outcome == 'failure' || steps.ratchet_cx.outcome == 'failure' || steps.ratchet_br.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --self-test
+          bash scripts/lab_ticket.sh --label lab-nightly-ratchets --title "LAB: nightly shrink-only ratchets red (#5182)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/ratchets.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: Summary
         if: always()
         run: |

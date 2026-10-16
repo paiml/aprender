@@ -324,6 +324,8 @@
             use_mock_backend: false,
             force_chat_template: false,
             thinking: None,
+            logprobs_top_k: 0,
+            constraint: None,
         };
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("trace_verbose"));
@@ -355,6 +357,8 @@
             use_mock_backend: false,
             force_chat_template: false,
             thinking: None,
+            logprobs_top_k: 0,
+            constraint: None,
         };
         let cloned = config.clone();
         assert_eq!(cloned.trace_verbose, config.trace_verbose);

@@ -19,6 +19,7 @@ use axum::{
 };
 use futures::stream::Stream;
 
+use super::chat_logprobs::StreamLogprobs;
 use super::stream_tool_calls::{self, StreamTools, ToolCallDetector};
 use super::{
     build_trace_data, clean_chat_output, format_chat_messages,
@@ -63,6 +64,21 @@ fn require_tokenizer(state: &AppState) -> Result<Arc<BPETokenizer>, Response> {
             "No tokenizer available",
         )
     })
+}
+
+/// [`require_tokenizer`] for a chat backend that does not compute logprobs:
+/// a request that asked for them is refused with 501 naming `backend`, never
+/// served without them (#4971, ASOC-INV-021).
+#[allow(clippy::result_large_err)]
+fn require_tokenizer_refusing_logprobs(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    backend: &str,
+) -> Result<Arc<BPETokenizer>, Response> {
+    match super::chat_logprobs::logprobs_refusal(request, backend) {
+        Some(reason) => Err(fail_response(state, StatusCode::NOT_IMPLEMENTED, reason)),
+        None => require_tokenizer(state),
+    }
 }
 
 /// D5 (ruling-3715-2010): pass a tokenized turn through, or refuse it with a 400
@@ -143,11 +159,17 @@ fn chat_gen_params(
 /// APR-PERF-GATE-001 v2.2 §4.3.1 pins W1 at `max_tokens = 128` with ignore-EOS
 /// precisely so the work per band is fixed. `max_tokens` still bounds the loop,
 /// so `ignore_eos` cannot produce an unbounded generation.
-fn chat_stop_tokens(request: &ChatCompletionRequest, eos_token_id: u32) -> Vec<u32> {
+fn chat_stop_tokens(
+    request: &ChatCompletionRequest,
+    tokenizer: &BPETokenizer,
+    eos_token_id: u32,
+) -> Vec<u32> {
     if request.ignore_eos.unwrap_or(false) {
         Vec::new()
     } else {
-        vec![eos_token_id]
+        // aprender#4345: the EOS plus every EOG marker the vocabulary has, as
+        // /v1/completions and /generate stop on.
+        crate::api::realize_handlers::completion_stop_tokens(tokenizer, Some(eos_token_id))
     }
 }
 
@@ -267,7 +289,7 @@ fn chat_quantized_config(
         repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
         repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
         seed: request.seed.unwrap_or(defaults.seed),
-        stop_tokens: chat_stop_tokens(request, eos_token_id),
+        stop_tokens: chat_stop_tokens(request, tokenizer, eos_token_id),
         trace,
         cancel: cancel.clone(),
         ..defaults
@@ -312,18 +334,21 @@ mod perf039_ignore_eos_tests {
 
     #[test]
     fn absent_ignore_eos_keeps_eos_stopping() {
-        assert_eq!(chat_stop_tokens(&request(None), 7), vec![7]);
+        assert_eq!(chat_stop_tokens(&request(None), &tokenizer(), 7), vec![7]);
     }
 
     #[test]
     fn explicit_false_keeps_eos_stopping() {
-        assert_eq!(chat_stop_tokens(&request(Some(false)), 7), vec![7]);
+        assert_eq!(
+            chat_stop_tokens(&request(Some(false)), &tokenizer(), 7),
+            vec![7]
+        );
     }
 
     #[test]
     fn ignore_eos_empties_the_stop_set() {
         assert!(
-            chat_stop_tokens(&request(Some(true)), 7).is_empty(),
+            chat_stop_tokens(&request(Some(true)), &tokenizer(), 7).is_empty(),
             "an empty stop set is what every decode loop reads as ignore-EOS"
         );
     }
@@ -345,6 +370,32 @@ mod perf039_ignore_eos_tests {
             off.stop_tokens,
             vec![7],
             "default behaviour must not change"
+        );
+    }
+
+    /// FALSIFIER (aprender#4345): llama-server stops a chat on every
+    /// end-of-generation marker, not only the declared EOS. A Qwen instruct
+    /// GGUF declares `<|im_end|>` (3 here) as EOS, yet the model can end a turn
+    /// with `<|endoftext|>` (1) or a Llama-3 `<|eot_id|>` (4); a stop set of
+    /// `[eos]` alone ran those past the answer to `max_tokens`. `ignore_eos`
+    /// still empties the whole set.
+    #[test]
+    fn chat_stops_on_every_eog_marker_the_vocabulary_has() {
+        let tok = BPETokenizer::new(
+            ["<unk>", "<|endoftext|>", "a", "<|im_end|>", "<|eot_id|>"]
+                .map(String::from)
+                .to_vec(),
+            vec![],
+            "<unk>",
+        )
+        .expect("test tokenizer");
+        let cancel = crate::generate::CancelToken::never();
+        let off = chat_quantized_config(&request(None), &tok, Some(3), false, &cancel);
+        assert_eq!(off.stop_tokens, vec![3, 1, 4]);
+        let on = chat_quantized_config(&request(Some(true)), &tok, Some(3), false, &cancel);
+        assert!(
+            on.stop_tokens.is_empty(),
+            "ignore_eos empties every marker too"
         );
     }
 
@@ -477,7 +528,10 @@ mod pmat821_chat_handler_threading_tests {
             tool_choice: None,
             chat_template_kwargs: None,
             think: None,
+            response_format: None,
             stream_options: None,
+            logprobs: None,
+            top_logprobs: None,
         }
     }
 
@@ -710,6 +764,7 @@ pub(crate) fn build_chat_response(
     tool_choice: Option<crate::grammar::ToolChoice>,
     timings: Option<super::Timings>,
     used_gpu: Option<bool>,
+    logprobs: Option<super::ChatLogprobs>,
 ) -> Response {
     let traces = build_trace_data(
         trace_level,
@@ -731,6 +786,7 @@ pub(crate) fn build_chat_response(
         tool_choice,
         timings,
         used_gpu,
+        logprobs,
     )
 }
 
@@ -751,6 +807,7 @@ pub(crate) fn build_chat_response_traced(
     tool_choice: Option<crate::grammar::ToolChoice>,
     timings: Option<super::Timings>,
     used_gpu: Option<bool>,
+    logprobs: Option<super::ChatLogprobs>,
 ) -> Response {
     let (brick_trace, step_trace, layer_trace) = traces;
     let (text, finish_reason) = finalize_chat_text(text, stops, completion_tokens, max_tokens);
@@ -770,7 +827,7 @@ pub(crate) fn build_chat_response_traced(
         ),
     };
 
-    Json(ChatCompletionResponse {
+    let response = ChatCompletionResponse {
         used_gpu,
         id: request_id,
         object: "chat.completion".to_string(),
@@ -790,8 +847,8 @@ pub(crate) fn build_chat_response_traced(
         step_trace,
         layer_trace,
         timings,
-    })
-    .into_response()
+    };
+    super::chat_logprobs::chat_reply(response, logprobs)
 }
 
 /// Serialize a value to an SSE event, returning `None` if serialization fails.
@@ -799,6 +856,26 @@ fn sse_event(value: &impl serde::Serialize) -> Option<Result<Event, Infallible>>
     serde_json::to_string(value)
         .ok()
         .map(|data| Ok(Event::default().data(data)))
+}
+
+/// #4971: the SSE event of `chunk`, carrying the logprobs entries held until
+/// now. Without any, the chunk serializes exactly as before. A chunk that
+/// cannot carry its entries is not sent without them: an error goes instead.
+// serde_json::json!() uses infallible unwrap
+#[allow(clippy::disallowed_methods)]
+fn chunk_event(
+    chunk: &ChatCompletionChunk,
+    logprobs: Option<&mut StreamLogprobs>,
+) -> Option<Result<Event, Infallible>> {
+    let Some(entries) = logprobs.and_then(StreamLogprobs::release) else {
+        return sse_event(chunk);
+    };
+    match super::chat_logprobs::with_logprobs(chunk, &entries) {
+        Some(value) => sse_event(&value),
+        None => sse_event(&serde_json::json!({
+            "error": "a chunk could not carry its logprobs (#4971)"
+        })),
+    }
 }
 
 /// Live-stream deltas: decoded RAW, and never split inside a character.
@@ -1063,6 +1140,41 @@ pub(crate) fn true_streaming_sse_response(
     stops: Option<&[String]>,
     tools: Option<StreamTools>,
 ) -> Response {
+    live_sse_response(
+        rx,
+        tokenizer,
+        request_id,
+        model_name,
+        metrics,
+        start,
+        max_tokens,
+        prompt_tokens,
+        timings_rx,
+        stops,
+        tools,
+        None,
+    )
+}
+
+/// [`true_streaming_sse_response`] whose chunks carry the tokens' logprobs
+/// (#4971): `logprobs` holds each token's entry until a chunk carries text,
+/// and the terminal chunk carries whatever is still held.
+// serde_json::json!() uses infallible unwrap
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn live_sse_response(
+    rx: tokio::sync::mpsc::Receiver<Result<u32, String>>,
+    tokenizer: Arc<BPETokenizer>,
+    request_id: String,
+    model_name: String,
+    metrics: Arc<crate::metrics::MetricsCollector>,
+    start: Instant,
+    max_tokens: usize,
+    prompt_tokens: usize,
+    timings_rx: Option<tokio::sync::oneshot::Receiver<super::PhaseTimings>>,
+    stops: Option<&[String]>,
+    tools: Option<StreamTools>,
+    mut logprobs: Option<StreamLogprobs>,
+) -> Response {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;
 
@@ -1091,6 +1203,18 @@ pub(crate) fn true_streaming_sse_response(
             match result {
                 Ok(token_id) => {
                     completion_tokens += 1;
+                    // #4971: the token's entry is held for the chunk that
+                    // releases its text, and a token without one ends the stream.
+                    let taken = match logprobs.as_mut() {
+                        Some(held) => held.take(&tokenizer, token_id),
+                        None => Ok(()),
+                    };
+                    if let Err(e) = taken {
+                        if let Some(evt) = sse_event(&serde_json::json!({ "error": e })) {
+                            yield evt;
+                        }
+                        break;
+                    }
                     // The token is still counted after a stop: the engine
                     // generated it. Draining (not breaking) keeps a stop from
                     // being recorded as an abandoned stream.
@@ -1100,7 +1224,7 @@ pub(crate) fn true_streaming_sse_response(
                         .and_then(|t| stream_tool_calls::detect(&mut detector, t));
                     if let Some(text) = text {
                         let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
-                        if let Some(evt) = sse_event(&chunk) {
+                        if let Some(evt) = chunk_event(&chunk, logprobs.as_mut()) {
                             first_content_at.get_or_insert_with(Instant::now);
                             yield evt;
                         }
@@ -1140,13 +1264,14 @@ pub(crate) fn true_streaming_sse_response(
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
         };
-        if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_usage(
+        let done = ChatCompletionChunk::done_with_usage(
             &request_id,
             &model_name,
             finish,
             usage,
             timings,
-        )) {
+        );
+        if let Some(evt) = chunk_event(&done, logprobs.as_mut()) {
             yield evt;
         }
 
@@ -1180,7 +1305,7 @@ fn try_gpu_backend(
     use crate::gpu::GpuGenerateConfig;
 
     let gpu_model_lock = state.gpu_model()?;
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "GPU") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -1208,7 +1333,7 @@ fn try_gpu_backend(
         top_k: resolve_chat_top_k(temperature, request.top_k),
         // #3760: the OpenAI `seed` reaches the GpuModel sampler, as it does the others.
         seed: request.seed.unwrap_or(crate::sampling::DEFAULT_SEED),
-        stop_tokens: chat_stop_tokens(request, eos_token_id)
+        stop_tokens: chat_stop_tokens(request, &tokenizer, eos_token_id)
             .into_iter()
             .map(|t| t as usize)
             .collect(),
@@ -1283,6 +1408,7 @@ fn try_gpu_backend(
         // absent rather than zero.
         None,
         None,
+        None,
     ))
 }
 
@@ -1299,7 +1425,7 @@ fn try_cached_backend(
     use crate::gguf::QuantizedGenerateConfig;
 
     let cached_model = state.cached_model()?;
-    let tokenizer = match require_tokenizer(state) {
+    let tokenizer = match require_tokenizer_refusing_logprobs(state, request, "cached quantized") {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
@@ -1324,7 +1450,7 @@ fn try_cached_backend(
         max_tokens,
         temperature,
         top_k: resolve_chat_top_k(temperature, request.top_k),
-        stop_tokens: chat_stop_tokens(request, eos_token_id),
+        stop_tokens: chat_stop_tokens(request, &tokenizer, eos_token_id),
         trace: state.should_trace(trace_level),
         cancel: cancel.clone(),
         ..Default::default()
@@ -1379,6 +1505,7 @@ fn try_cached_backend(
         request_tool_choice(request),
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
+        None,
         None,
         None,
     ))
@@ -1756,6 +1883,7 @@ mod pmat801_tool_calling_tests {
 include!("cuda_chat_backend.rs");
 include!("qwen35_chat_backend.rs");
 include!("chat_completions_stream.rs");
+include!("constrained_chat_backend.rs");
 
 /// #3990 WIRING: the OpenAI chat path tokenizes the GGUF's OWN template when the server
 /// retained one -- not the hand-coded family template. Without this, the helper could be

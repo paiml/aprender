@@ -84,3 +84,10 @@ status_history:
       that lack an explicit rope.freq_base key no longer fall through to the
       10K default. Falsifier qwen3moe_raw_arch_uses_1m_rope_base verified
       RED (10000.0) pre-fix and GREEN (1_000_000.0) post-fix.
+
+falsification_tests:
+  - id: FALSIFY-QWEN3MOE_ROPE_THETA-001
+    description: "C-QWEN3MOE-ROPE-001/002/003: raw 'qwen3moe' and 'qwen3_moe', qwen3, qwen2 map to 1e6; llama and mistral keep 10_000"
+    test: "cargo test -p aprender-serve --lib qwen3moe_raw_arch_uses_1m_rope_base"
+    prediction: "default_rope_theta_for_architecture returns 1e6 for the Qwen family and 1e4 otherwise"
+    if_fails: "raw 'qwen3moe' falls through to 10K, giving wrong RoPE encodings"

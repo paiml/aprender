@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2021"
 description = "PTX/SIMD/wgpu visualization and tracing CLI for Trueno"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/paiml/trueno"
+repository = "https://github.com/paiml/aprender"
 keywords = ["ptx", "simd", "gpu", "analysis", "visualization"]
 categories = ["development-tools", "command-line-utilities"]
 
@@ -25,7 +25,7 @@ presentar-terminal = { workspace = true }
 crossterm = "0.28"
 
 # Internal dependency for PTX generation
-trueno-gpu = { version = "0.71.1", path = "../aprender-gpu", package = "aprender-gpu", features = ["cuda"] }
+trueno-gpu = { version = "0.71.3", path = "../aprender-gpu", package = "aprender-gpu", features = ["cuda"] }
 
 [build-dependencies]
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version

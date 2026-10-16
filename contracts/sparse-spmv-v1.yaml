@@ -93,3 +93,25 @@ falsification:
     description: "Property: SpMV is linear (matches dense for random inputs)"
     test: "prop_spmv_matches_dense"
     evidence: "cargo test -p aprender-sparse --lib prop_spmv_matches_dense"
+
+falsification_tests:
+  - id: FALSIFY-SPARSE_SPMV-001
+    description: "format_validation invariant 3: CSR construction rejects non-monotonic row offsets"
+    test: "cargo test -p aprender-sparse --lib test_reject_non_monotonic_offsets"
+    prediction: "CsrMatrix::new with offsets [0,2,1,3] returns Err(NonMonotonicOffsets { index: 1 })"
+    if_fails: "invalid CSR can be constructed; downstream SpMV may read out of row bounds"
+  - id: FALSIFY-SPARSE_SPMV-002
+    description: "spmv equation: y = alpha*A*x + beta*y_prev"
+    test: "cargo test -p aprender-sparse --lib test_spmv_alpha_beta"
+    prediction: "2.0*I*[1,2,3] + 0.5*[10,20,30] == [7,14,21] within 1e-5"
+    if_fails: "SpMV mishandles alpha/beta scaling of the accumulator"
+  - id: FALSIFY-SPARSE_SPMV-003
+    description: "spmv equation on a non-identity sparse matrix matches the dense product"
+    test: "cargo test -p aprender-sparse --lib test_spmv_sparse_matrix"
+    prediction: "SpMV of the 3x3 CSR matrix equals the hand-computed dense product"
+    if_fails: "SpMV row/column indexing is wrong for general sparsity patterns"
+  - id: FALSIFY-SPARSE_SPMV-004
+    description: "coo_to_csr: COO->CSR conversion preserves every entry (to_dense roundtrip)"
+    test: "cargo test -p aprender-sparse --lib test_to_dense_roundtrip"
+    prediction: "CsrMatrix::from_coo(coo).to_dense() equals [[1,0,2],[0,3,0]]"
+    if_fails: "COO->CSR conversion drops, misplaces or corrupts entries"

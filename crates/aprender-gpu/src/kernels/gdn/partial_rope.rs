@@ -71,6 +71,9 @@ pub struct PartialNeoxRopeKernel {
     /// #4233: read the position from a device `u32` (`pos_ptr`) instead of a
     /// `u32` argument, so a captured CUDA graph replays at any position.
     pub indirect: bool,
+    /// #5279: [`Self::indirect`] over `m` rows on grid y: row `r` is
+    /// `x[r]` (`num_heads * head_dim` wide) at the position `pos_ptr[r]`.
+    pub slots: bool,
 }
 
 impl PartialNeoxRopeKernel {
@@ -82,6 +85,7 @@ impl PartialNeoxRopeKernel {
             head_dim,
             n_rot,
             indirect: false,
+            slots: false,
         }
     }
 
@@ -90,6 +94,16 @@ impl PartialNeoxRopeKernel {
     #[must_use]
     pub const fn indirect(mut self) -> Self {
         self.indirect = true;
+        self
+    }
+
+    /// #5279: [`Self::indirect`] for `m` decode slots, each at its own
+    /// position: launch it on a `num_heads × m` grid, row `r` of `x` rotated
+    /// at `pos_ptr[r]` with the indirect kernel's arithmetic.
+    #[must_use]
+    pub const fn slots(mut self) -> Self {
+        self.indirect = true;
+        self.slots = true;
         self
     }
 
@@ -146,7 +160,9 @@ pub(super) fn emit_sin_cos(
 
 impl Kernel for PartialNeoxRopeKernel {
     fn name(&self) -> &str {
-        if self.indirect {
+        if self.slots {
+            "gdn_partial_neox_rope_slots"
+        } else if self.indirect {
             "gdn_partial_neox_rope_indirect"
         } else {
             "gdn_partial_neox_rope"
@@ -157,6 +173,8 @@ impl Kernel for PartialNeoxRopeKernel {
         let head_dim = self.head_dim;
         let half = self.half();
         let indirect = self.indirect;
+        let slots = self.slots;
+        let row_bytes = self.num_heads * head_dim * 4;
 
         let kernel = PtxKernel::new(self.name()).param(PtxType::U64, "x_ptr"); // [num_heads * head_dim], rotated in place
         let kernel = if indirect {
@@ -175,9 +193,16 @@ impl Kernel for PartialNeoxRopeKernel {
                 let in_bounds = ctx.setp_lt_u32(j, half_r);
                 ctx.branch_if_not(in_bounds, "gdn_rope_exit");
 
-                let x_ptr = ctx.load_param_u64("x_ptr");
+                let mut x_ptr = ctx.load_param_u64("x_ptr");
                 let position = if indirect {
-                    let pos_ptr = ctx.load_param_u64("pos_ptr");
+                    let mut pos_ptr = ctx.load_param_u64("pos_ptr");
+                    if slots {
+                        let row = ctx.special_reg(PtxReg::CtaIdY);
+                        let pos_off = ctx.mul_wide_u32(row, 4);
+                        pos_ptr = ctx.add_u64(pos_ptr, pos_off);
+                        let x_off = ctx.mul_wide_u32(row, row_bytes);
+                        x_ptr = ctx.add_u64(x_ptr, x_off);
+                    }
                     ctx.ld_global_u32(pos_ptr)
                 } else {
                     ctx.load_param_u32("position")
@@ -466,5 +491,33 @@ mod gdn_partial_rope_device_tests {
             moved != host,
             "position 3 must rotate the first n_rot dimensions"
         );
+    }
+}
+
+#[cfg(test)]
+mod slots_tests {
+    use super::*;
+
+    /// The arithmetic of a PTX listing: every float instruction in order.
+    fn float_ops(ptx: &str) -> Vec<String> {
+        ptx.lines()
+            .map(str::trim)
+            .filter(|l| l.contains(".f32") && !l.starts_with("ld.") && !l.starts_with("st."))
+            .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
+            .collect()
+    }
+
+    #[test]
+    fn rope_slots_has_the_indirect_kernels_arithmetic() {
+        let one = PartialNeoxRopeKernel::new(16, 256, 64).indirect();
+        let slots = PartialNeoxRopeKernel::new(16, 256, 64).slots();
+        let (one_ptx, slots_ptx) = (one.emit_ptx(), slots.emit_ptx());
+        assert!(!one_ptx.contains("%ctaid.y"), "{one_ptx}");
+        assert!(slots_ptx.contains("%ctaid.y"), "{slots_ptx}");
+        assert!(
+            slots_ptx.contains(".entry gdn_partial_neox_rope_slots"),
+            "{slots_ptx}"
+        );
+        assert_eq!(float_ops(&one_ptx), float_ops(&slots_ptx));
     }
 }

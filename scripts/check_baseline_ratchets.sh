@@ -36,8 +36,18 @@
 # WHAT IT DOES NOT DO. It does not decide whether a finding is real; the owning
 # guard does that. It decides only whether the recorded set grew.
 #
-#   bash scripts/check_baseline_ratchets.sh              # check
-#   bash scripts/check_baseline_ratchets.sh --self-test  # case table
+#   bash scripts/check_baseline_ratchets.sh --classify-only  # classification only (PR path)
+#   bash scripts/check_baseline_ratchets.sh --ratchet        # classify + compare (nightly)
+#   bash scripts/check_baseline_ratchets.sh                  # same as --ratchet
+#   bash scripts/check_baseline_ratchets.sh --self-test      # case table
+#
+# TWO MODES, ONE PER PATH (#5182, GATE/LAB). The classification rows are a
+# fixed bound -- every scripts/*.txt is classified, and there are 10+ of them --
+# and run on every PR (`--classify-only`). The shrink-only COMPARISON is a
+# ratchet, and a ratchet may not sit on a PR, merge-queue or release path, so it
+# runs nightly in guards-nightly.yml (`--ratchet`), where a red opens or updates
+# one ticket with one owner. Both CI invocations carry an argument, so
+# guard_tree.sh skips its bare run of this guard (wired-with-args).
 #
 # Refs: paiml/aprender#2706 (APR-PERF-GATE-001), PERF-008, PERF-028.
 
@@ -232,6 +242,7 @@ universe() {
 if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
     TD=$(mktemp -d) || exit 1
     trap 'rm -rf "${TD:?}"' EXIT
+    cd -- "$TD" || exit 1; export GIT_CEILING_DIRECTORIES="${TD%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
     bad=0
     rows=0
 
@@ -783,6 +794,30 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
         fi
     done
 
+    # --classify-only (#5182), through the public entry point, on a copy of
+    # this tree's baselines in a repository with NO comparand. A mode that
+    # compared anything would fail to resolve origin/main and exit 1, so rc 0
+    # here is the proof it compared nothing; an unclassified file must still
+    # fail it, or the PR path would keep no gate at all.
+    CO="$TD/classify_only"
+    if mkdir -p "$CO/scripts" \
+       && cp "$REPO_ROOT"/scripts/*.txt "$REPO_ROOT/scripts/${BASH_SOURCE[0]##*/}" "$REPO_ROOT/scripts/lib_baseline_ratchet.sh" "$CO/scripts/" \
+       && git -C "$CO" init -q >/dev/null 2>&1; then
+        co_self="$CO/scripts/${BASH_SOURCE[0]##*/}"
+        ( GIT_CEILING_DIRECTORIES="$TD" bash "$co_self" --classify-only ) >/dev/null 2>&1
+        say_row 'classify-only: no comparand, every file classified' 0 $?
+        printf 'x\n' > "$CO/scripts/zz_unclassified_baseline.txt"
+        ( GIT_CEILING_DIRECTORIES="$TD" bash "$co_self" --classify-only ) >/dev/null 2>&1
+        say_row 'classify-only: an unclassified baseline still fails' 1 $?
+        rm -f "$CO/scripts/zz_unclassified_baseline.txt"
+        ( GIT_CEILING_DIRECTORIES="$TD" bash "$co_self" --no-such-mode ) >/dev/null 2>&1
+        say_row 'unknown argument is a usage error' 2 $?
+    else
+        printf 'FAIL  classify-only: the scratch tree could not be built, so the PR-path\n'
+        printf '      mode is UNTESTED. Not a skip.\n'
+        bad=1
+    fi
+
     if [ "$bad" -ne 0 ]; then
         printf '\nSELF-TEST FAILED\n'
         exit 1
@@ -794,7 +829,21 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-printf '=== every baseline in scripts/ is classified and ratcheted (check_baseline_ratchets.sh) ===\n'
+case "${1:-}" in
+    -h|--help)
+        printf 'usage: bash scripts/check_baseline_ratchets.sh [--classify-only|--ratchet|--self-test]\n'
+        exit 0 ;;
+    --classify-only) MODE=classify ;;
+    --ratchet|'')    MODE=ratchet ;;
+    *)  printf 'check_baseline_ratchets.sh: unknown argument %s (want --classify-only, --ratchet or --self-test)\n' "$1" >&2
+        exit 2 ;;
+esac
+
+if [ "$MODE" = classify ]; then
+    printf '=== every baseline in scripts/ is classified; nothing compared (check_baseline_ratchets.sh --classify-only) ===\n'
+else
+    printf '=== every baseline in scripts/ is classified and ratcheted (check_baseline_ratchets.sh) ===\n'
+fi
 
 rc=0
 n_total=0
@@ -829,6 +878,10 @@ while IFS= read -r f; do
         continue
     fi
     n_ratchet=$((n_ratchet + 1))
+    if [ "$MODE" = classify ]; then # CLASSIFY-ONLY-MUTATION-POINT
+        printf 'ok    %-8s %s\n' "$kind" "scripts/$f"
+        continue
+    fi
     # THE INSTRUMENT, BEFORE THE COMPARISON. lib_baseline_ratchet.sh has shipped
     # baseline_require_tool_version since BSE-10a and NOTHING has ever called it
     # (aprender#3217) -- a facility with a self-test and no caller. It is in
@@ -860,6 +913,17 @@ if [ "$n_total" -lt 10 ]; then
     printf '\nFAIL (vacuity): only %s baseline file(s) found under scripts/, expected 10+.\n' "$n_total"
     printf 'The universe is broken, not the tree. Fix the scan rather than this number.\n'
     exit 1
+fi
+
+if [ "$MODE" = classify ]; then
+    printf '\n%s baseline file(s): %s classified shrink-only, %s exempt with a stated reason\n' \
+        "$n_total" "$n_ratchet" "$n_none"
+    if [ "$rc" -ne 0 ]; then
+        printf 'FAIL  see rows above: a baseline is unclassified.\n'
+    else
+        printf 'PASS  every baseline is classified. The shrink-only comparison runs nightly (--ratchet).\n'
+    fi
+    exit "$rc"
 fi
 
 printf '\n%s baseline file(s): %s ratcheted, %s exempt with a stated reason\n' \

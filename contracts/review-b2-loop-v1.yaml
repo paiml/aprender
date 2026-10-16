@@ -1,0 +1,47 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001, was REX-001) REX-12 B2 loop, spec §5.3 B2a..B2d. Each B2 tier waits
+    on one apr verb accepting qwen35 (B2a distill, B2b finetune, B2c merge, B2d quantize).
+    `rex b2 status` reads the in-tree refusal ledger (evidence/verbs/refusals.json,
+    refusal-receipt-v1) and writes one row per tier: ready only on a positive acceptance
+    receipt, verb_refused{removed_by} on a ledger row, and unledgered when neither exists.
+    A missing refusal row is not acceptance, so an unmeasured verb is NotRun and never
+    silently ready. It exits 11 while any row is NotRun. Ready tiers feed the REX-11 §5.4
+    gate (review-champion-challenger-v1). `rex b2 teacher-receipt` receipts the 27B
+    teacher's top-k logits at m = 1 over the train pool (every non-test item): sha, count,
+    k, the size of the sealed index, and 0 test hits. Any test item, unknown item,
+    duplicate row, wrong-k or non-finite position, sealed diff sha or hunk in any string
+    field, or an empty sealed index refuses the whole file. At HEAD all four rows are
+    unledgered; the qwen35 fine-tune/distill verbs are EPIC #4002 (0.75.0).
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "contracts/refusal-receipt-v1.yaml"
+    - "https://github.com/paiml/aprender/issues/4367"
+
+equations:
+  row:
+    formula: "ready(v) ⇔ accepted(v) ∧ ¬refused(v);  accepted(v) ∧ refused(v) ⇒ error;  ¬accepted(v) ∧ ¬refused(v) ⇒ unledgered"
+  teacher:
+    formula: "receipt ⇔ |sealed| > 0 ∧ ∀ row: split(id) = dev ∧ once(id) ∧ ∀ pos: |pos| = k ∧ finite ∧ scan(file) = ∅"
+
+falsification_tests:
+  - id: FALSIFY-RXB-001
+    name: no_b2_row_is_ready_without_an_acceptance_receipt
+    prediction: "on the in-tree ledger no B2 row is ready; a ledger row reads verb_refused with its removed_by; no row plus no acceptance reads unledgered; accepted and refused at once is an error"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxb_001"
+    expected_output: "exit 0"
+    if_fails: "A B2 tier whose verb nobody measured could read as ready and enter §5.4."
+  - id: FALSIFY-RXB-002
+    name: the_ledger_is_refusal_receipt_v1_or_rejected
+    prediction: "removed_by accepts v<major>.<minor>, never and unscheduled; tbd, a bare or patch version, a sha and empty are rejected; duplicate verbs, exit 0 and a foreign schema reject the file"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxb_002"
+    expected_output: "exit 0"
+    if_fails: "A decorative removed_by would read as a validated refusal."
+  - id: FALSIFY-RXB-003
+    name: the_teacher_dataset_is_receipted_with_zero_test_hashes
+    prediction: "two dev rows at k = 4 are receipted with sha, count 2, m 1 and 0 test hits; a test item, a duplicate, an unknown id, wrong k, NaN, a sealed diff in a string field, a sealed diff sha, no rows and an empty index are each refused"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxb_003"
+    expected_output: "exit 0"
+    if_fails: "Distillation could train the student on the sealed test split."

@@ -57,6 +57,31 @@ fn dense_stream_tokens(
     Ok((token_ids, prompt_len, tokenizer))
 }
 
+/// The engine config of the CUDA `/stream/generate` backend. aprender#4345: it
+/// stops on the EOS plus every EOG marker the vocabulary has, as `/generate`
+/// does. Outside the `cuda` gate so a test can pin it without a device.
+#[cfg(any(feature = "cuda", test))]
+pub(crate) fn cuda_stream_config(
+    request: &GenerateRequest,
+    tokenizer: &BPETokenizer,
+    model_eos: Option<u32>,
+    cancel: &CancelToken,
+) -> crate::gguf::QuantizedGenerateConfig {
+    crate::gguf::QuantizedGenerateConfig {
+        max_tokens: request.max_tokens,
+        temperature: request.temperature,
+        top_k: if request.temperature == 0.0 {
+            1
+        } else {
+            request.top_k
+        },
+        stop_tokens: generate_stop_tokens(tokenizer, model_eos),
+        trace: false,
+        cancel: cancel.clone(),
+        ..Default::default()
+    }
+}
+
 /// CUDA GGUF backend for `POST /stream/generate` and `/realize/generate` (#3991).
 ///
 /// `apr serve --gpu model.gguf` holds a `cuda_model` and no `quantized_model`, so
@@ -70,8 +95,6 @@ fn try_cuda_stream_tokens(
     request: &GenerateRequest,
     cancel: &CancelToken,
 ) -> Result<Option<(Vec<u32>, usize, std::sync::Arc<BPETokenizer>)>, ApiErr> {
-    use crate::gguf::QuantizedGenerateConfig;
-
     let Some(cuda_model_lock) = state.cuda_model() else {
         return Ok(None);
     };
@@ -86,19 +109,7 @@ fn try_cuda_stream_tokens(
         return Err(api_err(StatusCode::BAD_REQUEST, msg));
     }
 
-    let q_config = QuantizedGenerateConfig {
-        max_tokens: request.max_tokens,
-        temperature: request.temperature,
-        top_k: if request.temperature == 0.0 {
-            1
-        } else {
-            request.top_k
-        },
-        stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
-        trace: false,
-        cancel: cancel.clone(),
-        ..Default::default()
-    };
+    let q_config = cuda_stream_config(request, &tokenizer, state.model_eos_token_id(), cancel);
 
     let mut cuda_model = cuda_model_lock.write().map_err(|_| {
         api_err(

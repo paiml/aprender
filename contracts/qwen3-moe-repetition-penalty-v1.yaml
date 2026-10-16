@@ -1,10 +1,11 @@
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-05-20"
-  updated: "2026-05-20"
+  updated: "2026-09-29"
   author: PAIML Engineering
   registry: true
   references:
+    - "1.2.0 (2026-09-29): once per DISTINCT token. 1.1.0's V1_003 said the penalty compounds per occurrence, contradicting its own V1_002 ([2, 2, 2] halved once) and every reference: llama.cpp llama_sampler_penalties_apply (b11240, 680a03628) counts tokens and applies repeat_penalty once per counted token; Candle candle_transformers::utils::apply_repeat_penalty skips already_seen; HF RepetitionPenaltyLogitsProcessor gathers/scatters each index once"
     - "paiml/aprender#1832 — M32d KV cache (the prerequisite that makes sampling cost matter)"
     - "paiml/aprender#1837 — qwen3-moe-sampling-v1 (sibling contract: temperature/top_k/top_p)"
     - "paiml/aprender#1835 — qwen3-moe-streaming-sse-v1 (sibling contract: per-token SSE)"
@@ -12,7 +13,7 @@ metadata:
   description: "Repetition penalty (repeat_penalty / repeat_last_n) for the qwen3_moe inference path"
 
 name: qwen3-moe-repetition-penalty
-version: "1.1.0"
+version: "1.2.0"
 scope: "crates/aprender-serve/src/infer/qwen3_moe_generate.rs::sample_from_logits"
 
 description: |
@@ -56,9 +57,9 @@ description: |
 
 equations:
   penalty_application:
-    description: "Repetition penalty applied per Candle convention"
+    description: "Repetition penalty applied once per distinct token (Candle / llama.cpp / HF convention)"
     formula: |
-      for each token in recent_tokens[len-repeat_last_n..]:
+      for each DISTINCT token in set(recent_tokens[len-repeat_last_n..]):
         if logits[token] > 0:
           logits[token] /= repeat_penalty
         else:
@@ -105,10 +106,12 @@ falsification:
     test: |
       Unit test: same logits; recent_tokens = [2, 2, 2, 2, 2, 2, 2, 2];
       repeat_penalty=10.0; repeat_last_n=2 (only last 2 tokens count;
-      both are token 2). Equivalent to a single penalty application on
-      token 2. With repeat_last_n=8 (all 8 tokens), token 2 gets
-      penalized 8× — penalty compounds. The two cases produce different
-      logit transformations.
+      both are token 2) and repeat_last_n=8 both apply the penalty to
+      token 2 exactly ONCE — a repeated token never compounds (1.1.0
+      said it compounded; see references). The window bound itself is
+      falsified with recent_tokens = [1, 3, 3], logits [1, 10, 9, 3],
+      repeat_penalty=1.5: repeat_last_n=2 leaves token 1 unpenalized
+      (argmax 1), repeat_last_n=3 penalizes it (10/1.5 < 9, argmax 2).
     evidence: "cargo test -p aprender-serve --lib sample_from_logits_tests::repetition_penalty"
 
   - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY_V1_004
@@ -219,3 +222,25 @@ status_history:
       companion-side bench with APR_AGENT_REPEAT_PENALTY=1.2 +
       APR_AGENT_REPEAT_LAST_N=64 once #1843's bench plumbing
       (Phase 3) lands.
+
+falsification_tests:
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY-001
+    description: "repeat_penalty == 1.0 is a no-op (backwards compat)"
+    test: "cargo test -p aprender-serve --lib rep_penalty_v1_001_no_op_at_one"
+    prediction: "greedy token is unchanged by penalty 1.0"
+    if_fails: "a neutral penalty changes sampling"
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY-002
+    description: "repeat_penalty > 1.0 down-weights a repeated token: logit 5.0 halved to 2.5 moves argmax to token 3"
+    test: "cargo test -p aprender-serve --lib rep_penalty_v1_002_down_weights_repeated"
+    prediction: "sampled token == 3"
+    if_fails: "penalty is not applied in sample_from_logits"
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY-003
+    description: "A token repeated k times is penalised once (llama.cpp/Candle convention), not compounded"
+    test: "cargo test -p aprender-serve --lib rep_penalty_v1_002_repeats_penalise_once"
+    prediction: "apply_repeat_penalty([1,10,10,4], [2,2,2], 2.0) == [1,10,5,4]; four repeats of token 1 at 1.5 still pick token 1"
+    if_fails: "penalty compounds per occurrence"
+  - id: FALSIFY-QWEN3_MOE_REPETITION_PENALTY-004
+    description: "repeat_last_n bounds the penalty window"
+    test: "cargo test -p aprender-serve --lib rep_penalty_v1_003_window_bounds"
+    prediction: "with n=2 token 1 (outside window) stays argmax; with n=3 it is penalised"
+    if_fails: "window ignores repeat_last_n"

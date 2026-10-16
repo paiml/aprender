@@ -136,6 +136,17 @@ impl OwnedQuantizedModel {
         input: &[f32],
         weight: &OwnedQuantizedTensor,
     ) -> Result<Vec<f32>> {
+        Self::matmul_any(input, weight)
+    }
+
+    /// The one CPU quant dispatcher behind [`Self::fused_matmul`], as an associated
+    /// function: it reads no model field, so a forward that is not an
+    /// `OwnedQuantizedModel` (APR-EMBED-001 EG-2, the embedding forward) runs the same
+    /// arms instead of a second quant match (I-10).
+    ///
+    /// # Errors
+    /// An empty or undersized weight buffer, or a type with no arm here.
+    pub(crate) fn matmul_any(input: &[f32], weight: &OwnedQuantizedTensor) -> Result<Vec<f32>> {
         use crate::quantize::{dequantize_q4_1, dequantize_q5_0, dequantize_q5_1};
 
         let in_dim = weight.in_dim;
@@ -149,7 +160,7 @@ impl OwnedQuantizedModel {
         // tensor was registered with empty data because the actual weights
         // live in per-expert slices the loader hasn't wired in. Bail early
         // with an actionable error instead of letting rayon workers crash.
-        validate_matmul_weight_shape(weight)?;
+        admit_cpu_weight(weight)?;
 
         // #3975: the `cuda_executor` dispatch that stood here was deleted. Nothing
         // ever set `cuda_executor` to Some, and its dequant + `gemm` fallback read
@@ -167,7 +178,9 @@ impl OwnedQuantizedModel {
         //              arm, the IQ*/Q2_K/Q3_K dequant fallback (PMAT-3477 / #3091)
         let data = &weight.data;
         match weight.qtype {
-            GGUF_TYPE_F32 => Ok(self.fused_matmul_f32(input, data, in_dim, out_dim, seq_len)),
+            GGUF_TYPE_F32 => Ok(Self::fused_matmul_f32(
+                input, data, in_dim, out_dim, seq_len,
+            )),
             GGUF_TYPE_BF16 => Ok(float16_matmul(
                 input,
                 data,
@@ -185,7 +198,7 @@ impl OwnedQuantizedModel {
                 Float16Kind::F16,
             )),
             GGUF_TYPE_Q4_0 | GGUF_TYPE_Q8_0 => {
-                self.fused_matmul_q4_q8(input, weight, in_dim, out_dim, seq_len)
+                Self::fused_matmul_q4_q8(input, weight, in_dim, out_dim, seq_len)
             },
             GGUF_TYPE_Q4_1 => dequant_f32_matmul(
                 input,
@@ -230,13 +243,12 @@ impl OwnedQuantizedModel {
                 let w = crate::apr::dequant::dequantize_apr_q8(data, in_dim * out_dim);
                 dequant_f32_matmul(input, w, "APR-Q8", in_dim, out_dim, seq_len)
             },
-            _ => self.fused_matmul_k_quants(input, weight, in_dim, out_dim, seq_len),
+            _ => Self::fused_matmul_k_quants(input, weight, in_dim, out_dim, seq_len),
         }
     }
 
     /// F32 zero-copy rayon matmul (extracted for complexity)
     fn fused_matmul_f32(
-        &self,
         input: &[f32],
         data: &[u8],
         in_dim: usize,
@@ -307,7 +319,6 @@ impl OwnedQuantizedModel {
 
     /// Fused integer SIMD matmul for Q4_0 and Q8_0
     fn fused_matmul_q4_q8(
-        &self,
         input: &[f32],
         weight: &OwnedQuantizedTensor,
         in_dim: usize,
@@ -336,7 +347,6 @@ impl OwnedQuantizedModel {
 
     /// Fused K-quant kernels for Q4_K, Q5_K, Q6_K
     fn fused_matmul_k_quants(
-        &self,
         input: &[f32],
         weight: &OwnedQuantizedTensor,
         in_dim: usize,
@@ -358,7 +368,7 @@ impl OwnedQuantizedModel {
                     // PMAT-3477 / #3091: the IQ formats real unsloth GGUFs ship (and
                     // Q2_K/Q3_K) take the dequantize-then-dot path; anything else is
                     // refused by name, in the same default arm as before.
-                    _ => self.dequant_fallback_or_refuse(x, weight, in_dim, out_dim, 1)?,
+                    _ => Self::dequant_fallback_or_refuse(x, weight, in_dim, out_dim, 1)?,
                 };
                 output.extend_from_slice(&row_output);
             }
@@ -368,10 +378,19 @@ impl OwnedQuantizedModel {
                 GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(&weight.data, input, in_dim, out_dim),
                 GGUF_TYPE_Q5_K => fused_q5k_parallel_matvec(&weight.data, input, in_dim, out_dim),
                 GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(&weight.data, input, in_dim, out_dim),
-                _ => self.dequant_fallback_or_refuse(input, weight, in_dim, out_dim, 1),
+                _ => Self::dequant_fallback_or_refuse(input, weight, in_dim, out_dim, 1),
             }
         }
     }
+}
+
+/// KREG-001 (aprender#4539): the CPU selector's entry check. The weight's qtype must have a
+/// row in the kernel registry before any arm below dispatches it, then its shape is checked.
+/// A helper, not two lines in `fused_matmul`, so that function's complexity does not rise.
+fn admit_cpu_weight(weight: &OwnedQuantizedTensor) -> Result<()> {
+    use crate::kernel_registry::{admit, Backend, Layout};
+    admit(Backend::Cpu, weight.qtype, Layout::RowMajor)?;
+    validate_matmul_weight_shape(weight)
 }
 
 /// #1789 defensive guard for matmul: validate the weight buffer is
@@ -538,5 +557,95 @@ mod tests {
         let err = validate_matmul_weight_shape(&t).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("overflows usize"), "got: {msg}");
+    }
+
+    /// KREG-001: the CPU selector refuses an unregistered qtype before any arm runs, even when
+    /// the weight's shape is fine — and still runs the shape check for a registered one.
+    #[test]
+    fn admit_cpu_weight_refuses_an_unregistered_qtype_by_the_registry() {
+        let t = mk_tensor(vec![0u8; 64], 4, 4, 99);
+        let msg = format!("{}", admit_cpu_weight(&t).unwrap_err());
+        assert!(msg.contains("kernel_registry::admit"), "got: {msg}");
+        assert!(msg.contains("ggml_type=99"), "got: {msg}");
+
+        let t = mk_tensor(vec![0u8; 64], 4, 4, GGUF_TYPE_F32);
+        assert!(admit_cpu_weight(&t).is_ok());
+        let t = mk_tensor(vec![], 4, 4, GGUF_TYPE_F32);
+        assert!(format!("{}", admit_cpu_weight(&t).unwrap_err()).contains("EMPTY"));
+    }
+
+    /// KREG coverage (CPU): over every upstream qtype (ids and byte sizes from
+    /// `docs/kernel-registry/upstream-reference-v1.json`, so no hand-kept list), a type with a
+    /// `cpu` registry row is served by `fused_matmul`, and a type without one is refused by
+    /// the gate AND by the ungated dequant fallback — otherwise a CPU kernel exists with no row.
+    #[test]
+    fn cpu_rows_equal_the_types_the_cpu_matmul_serves() {
+        let reference: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../docs/kernel-registry/upstream-reference-v1.json"
+        ))
+        .expect("reference json");
+        let reg = crate::kernel_registry::registry().expect("registry");
+        let model =
+            crate::gguf::test_helpers::create_test_model_with_config(&crate::gguf::GGUFConfig {
+                architecture: "test".to_string(),
+                constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+                hidden_dim: 256,
+                intermediate_dim: 512,
+                num_heads: 4,
+                num_kv_heads: 4,
+                num_layers: 1,
+                vocab_size: 100,
+                rope_theta: 10000.0,
+                context_length: 512,
+                eps: 1e-5,
+                rope_type: 0,
+                explicit_head_dim: None,
+                query_pre_attn_scalar: None,
+                bos_token_id: None,
+                eos_token_id: None,
+            });
+        let (in_dim, out_dim) = (256usize, 2usize);
+        let input = vec![0.5f32; in_dim];
+        let mut served_rows = 0;
+        for u in reference["rows"].as_array().expect("rows") {
+            let qtype = u["qtype"].as_str().expect("qtype");
+            let id = u32::try_from(u["ggml_type"].as_u64().expect("id")).expect("u32 id");
+            let block = usize::try_from(u["block_elems"].as_u64().expect("block")).expect("usize");
+            let size = usize::try_from(u["type_size"].as_u64().expect("size")).expect("usize");
+            let t = mk_tensor(
+                vec![0u8; in_dim / block * size * out_dim],
+                in_dim,
+                out_dim,
+                id,
+            );
+            let has_row = reg
+                .rows()
+                .iter()
+                .any(|r| r.backend == "cpu" && r.ggml_type == id);
+            let served = model.fused_matmul(&input, &t);
+            if has_row {
+                assert!(
+                    served.is_ok(),
+                    "{qtype}: has a cpu row but is not served: {served:?}"
+                );
+                served_rows += 1;
+            } else {
+                assert!(served.is_err(), "{qtype}: served with no cpu row");
+                assert!(
+                    OwnedQuantizedModel::dequant_fallback_or_refuse(&input, &t, in_dim, out_dim, 1)
+                        .is_err(),
+                    "{qtype}: the CPU has a kernel for it but the registry has no row"
+                );
+            }
+        }
+        let upstream_cpu_rows = reg
+            .rows()
+            .iter()
+            .filter(|r| r.backend == "cpu" && r.ggml_type < 128)
+            .count();
+        assert_eq!(
+            served_rows, upstream_cpu_rows,
+            "a cpu row names a type with no upstream reference"
+        );
     }
 }

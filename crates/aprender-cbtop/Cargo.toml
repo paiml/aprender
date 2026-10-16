@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2021"
 description = "Compute Block Top - Real-time load testing and hardware monitoring TUI"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/paiml/trueno"
+repository = "https://github.com/paiml/aprender"
 keywords = ["gpu", "cuda", "simd", "monitoring", "tui"]
 categories = ["command-line-utilities", "hardware-support", "visualization"]
 exclude = [
@@ -32,7 +32,7 @@ presentar-terminal = { workspace = true }
 
 # Compute backends
 trueno = { workspace = true }
-trueno-gpu = { version = "0.71.1", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
+trueno-gpu = { version = "0.71.3", path = "../aprender-gpu", package = "aprender-gpu", optional = true }
 
 # Terminal handling
 crossterm = "0.28"

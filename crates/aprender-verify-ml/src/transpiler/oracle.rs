@@ -629,14 +629,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_transpiler_oracle_verify_pass() {
-        use crate::oracle::PythonExecutor;
-        let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         // Create a mock transpiler that produces working code
         struct PassingTranspiler;
 
@@ -669,14 +663,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_transpiler_oracle_verify_mismatch() {
-        use crate::oracle::PythonExecutor;
-        let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         // Create a transpiler that produces different output
         struct MismatchTranspiler;
 
@@ -706,14 +694,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_transpiler_oracle_verify_target_execution_error() {
-        use crate::oracle::PythonExecutor;
-        let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         // Transpiler that returns invalid Python for target
         struct TargetErrorTranspiler;
 
@@ -748,14 +730,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_transpiler_oracle_verify_batch() {
-        use crate::oracle::PythonExecutor;
-        let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         // Simple pass-through transpiler
         struct PassthroughTranspiler;
 
@@ -830,14 +806,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_transpiler_oracle_verify_generated() {
-        use crate::oracle::PythonExecutor;
-        let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         struct GeneratedTranspiler;
 
         impl Transpiler for GeneratedTranspiler {

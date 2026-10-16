@@ -588,6 +588,7 @@
             skip_metadata: true,
             skip_capability: true,
             assert_classifier_head: false,
+            ollama_from_file: false,
         }));
         let result = dispatch_profiling_commands(&cli);
         assert!(result.is_some(), "QA should be handled by profiling dispatcher");

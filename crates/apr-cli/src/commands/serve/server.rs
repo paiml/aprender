@@ -234,6 +234,20 @@ fn build_qwen35_state(
         .with_model_source(model_source)
         .with_verbose(config.verbose)
         .with_offload_report(offload);
+    // #5293: on the GPU, concurrent chat requests decode as one batch; a lone
+    // request is still one turn of the session. The batched step serves up to
+    // 16 slots (#5279), the top of the serving-shape ladder.
+    #[cfg(feature = "cuda")]
+    let state = if on_gpu {
+        let batch_config = realizar::api::cuda_batch_scheduler::CudaBatchConfig::from_env_or(16);
+        println!(
+            "  CONTINUOUS BATCHING: max_batch={}, window={}ms (#5293)",
+            batch_config.max_batch, batch_config.window_ms
+        );
+        state.with_qwen35_batch_scheduler(batch_config)
+    } else {
+        state
+    };
     Ok(state)
 }
 

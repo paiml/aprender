@@ -292,6 +292,9 @@ pub(crate) fn apr_import_gguf_raw(
         options,
         Some(&effective_tokenizer),
         Some(&raw_result.model_config),
+        // APR-EMBED-001 EG-6b: its forward reads GGUF only, so the file must
+        // export back to the GGUF it came from.
+        (effective_arch == Architecture::EmbeddingGemma2).then_some(&raw_result.typed_metadata),
     )?;
 
     Ok(validation_result)

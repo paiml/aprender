@@ -72,14 +72,14 @@ pub fn apply_rope_rotation_simd(
 
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx512f") {
+        if crate::isa::cpu_feature!("avx512f") {
             // SAFETY: Memory safety ensured by bounds checking and alignment
             unsafe {
                 apply_rope_rotation_avx512(x1, x2, cos_vals, sin_vals);
             }
             return;
         }
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
             // SAFETY: Memory safety ensured by bounds checking and alignment
             unsafe {
                 apply_rope_rotation_avx2(x1, x2, cos_vals, sin_vals);

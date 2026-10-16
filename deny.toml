@@ -15,6 +15,11 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "paste: transitive via simba/nalgebra/parquet, use pastey when upstream migrates" },
     { id = "RUSTSEC-2025-0119", reason = "number_prefix: transitive via indicatif, no replacement available" },
     { id = "RUSTSEC-2025-0141", reason = "bincode: transitive, widely used, no drop-in replacement" },
+    # unsafe-libyaml 0.2.11 — unmaintained, no patched release exists. Enters via
+    # serde_yaml 0.9 (deprecated), serde_yaml_ng 0.10 and the registry bashrs crate.
+    # Interim only (#5205): delete this entry after the serde-saphyr swap and a bashrs
+    # release without serde_yaml_ng leave unsafe-libyaml out of Cargo.lock.
+    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml: unmaintained, no fix; via serde_yaml/serde_yaml_ng/bashrs. Delete after the serde-saphyr swap + bashrs release (#5205)" },
     # rustls-pemfile 1.x exemption removed: the reqwest 0.11 -> 0.12 bump in
     # aprender-serve dropped its last consumer, so the advisory is no longer
     # reachable and the entry was dead. Deliberately not naming the id here --
@@ -29,13 +34,6 @@ ignore = [
     # 0.7->0.8 is a large API migration), tonic 0.12 `channel` -> tower 0.4.13, and the
     # published trueno-ublk/pacha/renacer stack (block-device/registry features). Each
     # needs an upstream major bump; no safe drop-in exists yet.
-    # quick-xml 0.37.5 quadratic parse of duplicate-attribute start tags (DoS, not
-    # RCE). Advisory: affected ONLY via `NsReader`; aprender-orchestrate's sole use
-    # (oracle/arxiv.rs) is `quick_xml::Reader`, never `NsReader`, so we do not hit
-    # the vulnerable path. Patched >=0.41.0 is a 0.37->0.41 API break deferred past
-    # v0.57.0; provably not-affected in the interim.
-    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.37.5: DoS via NsReader only; orchestrate uses Reader (arxiv.rs), not the affected path. Bump to 0.41 deferred." },
-    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.37.5: NsReader namespace-alloc DoS; orchestrate uses Reader (arxiv.rs), not NsReader. Same not-affected + deferred-bump rationale as -0194." },
     # rustls-webpki 0.101.7 — transitive via aws-smithy-http-client (rustls 0.21).
     # Direct 0.103.x path already patched to >=0.103.12; 0.101.7 is pinned inside
     # the AWS SDK graph and can only move via a major SDK bump.

@@ -68,7 +68,7 @@ tp_apr_status() {
     printf '%s|%s' "$path" "$rt"
 }
 
-# tp_is_canonical PATH -> status 0 iff the encoder took the canonical byte-level BPE path.
+# tp_is_canonical PATH -> status 0 iff the encoder took a canonical path (byte-level BPE, or SPM-style BPE for gemma4).
 tp_is_canonical() {
     [ "${1-}" = "canonical" ]
 }

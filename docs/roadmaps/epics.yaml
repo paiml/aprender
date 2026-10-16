@@ -11,6 +11,7 @@ epics:
   - {id: E3, issue: 3994, name: "Don't Leave Behind", train: "0.71", budget: 9, successor: E7, absorbs: [3062, 3597]}
   - {id: E4, issue: 4381, name: "Dogfood Model Lifecycle", train: "0.71", budget: 9, successor: E8, absorbs: [4354, 4252]}  # #4354 stays a one-level sub-epic
   - {id: E5, issue: 4000, name: "Agent Ready", train: "0.72", budget: 5, successor: E6, absorbs: []}
+  - {id: E10, issue: 4898, name: "Embeddings (APR-EMBED-001)", train: "0.72", budget: 6, successor: E7, absorbs: []}  # EG-0..EG-6 #4899..#4905; EG-7..EG-9 ride later trains
   - {id: E6, issue: 3999, name: "llama.cpp Parity", train: "0.73", budget: 5, successor: E7, absorbs: [2728, 2880, 3144]}
   - {id: E7, issue: 4001, name: "Any Model", train: "0.74", budget: 3, successor: S3, absorbs: [3421, 3423, 3428]}
   - {id: E8, issue: 4002, name: "CRUX Fine-Tune/Distill", train: "0.75", budget: 3, successor: E9, absorbs: []}

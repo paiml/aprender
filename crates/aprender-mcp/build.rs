@@ -24,7 +24,7 @@
 
 // PMAT-3954: the codegen serves apr's OWN tools, so it exists only under the
 // `apr-tools` feature (build scripts see the package's feature cfgs, and
-// serde_yaml is an optional build-dependency enabled by that feature). With the
+// serde-saphyr is an optional build-dependency enabled by that feature). With the
 // feature off — a caller serving its own tools — the build script does nothing.
 fn main() {
     #[cfg(feature = "apr-tools")]
@@ -76,7 +76,7 @@ mod codegen {
                 contract_path.display()
             )
         });
-        let parsed: ContractRoot = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+        let parsed: ContractRoot = serde_saphyr::from_str_with_options(&yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_or_else(|e| {
             panic!(
                 "FALSIFY-MCP-008: failed to parse {} as YAML: {e}",
                 contract_path.display()

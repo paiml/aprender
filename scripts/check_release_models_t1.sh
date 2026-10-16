@@ -7,9 +7,12 @@
 #   - a local bare origin whose main holds a parent (9.9.8) and the release commit (9.9.9);
 #   - the "gx10" leg through an ssh stub that runs the remote script locally, under a fake gx10
 #     $HOME whose ~/src/aprender is a clone checked out at the OLD parent commit, with a stale
-#     rel-9.9.7 dir beside it;
+#     rel-9.9.7 dir and a stale same-version rel-9.9.9 dir beside it (an earlier run's, #5264);
+#   - MODELS_T1_LOCK pointed at the fixture's own t1.lock, so a real run on this host never refuses a row;
 #   - a build stub that writes an `apr` whose --version is baked from the tree it was built IN
-#     (Cargo.toml version + `git rev-parse --short=9 HEAD`), so a build of the wrong tree is visible;
+#     (Cargo.toml version + `git rev-parse --short=10 HEAD`, the length build.rs's auto --short had
+#     reached at 0.71.2, one longer than models_t1's sha9: every GO case proves the prefix bind, #5256),
+#     so a build of the wrong tree is visible;
 #   - committed stubs for scripts/model_ladder.sh (writes <out>/<host>.json with the apr_version it
 #     measured by) and scripts/check_model_ladder.sh (the judge: 0 green, 1 red/missing, 2 decline).
 #   The measuring and the judging are #3712's side (a frozen interface); this table proves the
@@ -18,7 +21,8 @@
 # THE ROWS
 #   green-pair       both hosts green: "MODELS GO"; gx10's receipt was measured by
 #                    "apr 9.9.9 (<release sha9>)" although its checkout sat at the parent; the gx10
-#                    build went to the PER-RELEASE dir, never ~/src/aprender/target; rel-9.9.7 is gone.
+#                    build went to this run's own rel-9.9.9-<run> dir, never ~/src/aprender/target
+#                    nor the stale rel-9.9.9; rel-9.9.7 and rel-9.9.9 are gone (#5264).
 #   gx10-unreachable ssh rc 255: STOP, "unreachable over SSH".
 #   build-fails      lambda's build fails: STOP, "BUILD-FAILED".
 #   missing-receipt  lambda's model_ladder writes nothing: STOP, "wrote no receipt".
@@ -27,6 +31,9 @@
 #   stale-binary     gx10 builds an apr that is not the release: STOP, "NOT-THE-RELEASE", before
 #                    any measuring.
 #   disk-refusal     gx10 has less free space than a fresh target needs: STOP, "ENV:", nothing built.
+#   t1-lock-held     another models_t1.sh holds the run lock (a nightly, a release window): exit 2,
+#                    "another models_t1.sh holds", nothing built on either host, gx10's rel-* untouched (#5264).
+#   gx10-lock-held   another leg holds gx10's lock: exit 2, "ENV: busy", gx10 swept and built nothing.
 #   oom-victim       the fleet GPU rule (cop ruling, one lock owner): both hosts' ladders run under
 #                    `choom -n 1000`, and this wrapper takes NO flock -- the GPU lock is the
 #                    ladder's own, per apr call, and a second one here would deadlock it. No build
@@ -65,6 +72,9 @@
 #   decline-is-go    the judge's rc 2 read as GO                             -> judge-decline
 #   no-version-proof gx10's pre-measure `apr --version` proof deleted        -> stale-binary
 #   no-disk-check    gx10's free-space refusal deleted                       -> disk-refusal
+#   no-run-lock      models_t1.sh's own run lock not taken                   -> t1-lock-held
+#   no-gx10-lock     gx10's lock not taken before its sweep                  -> gx10-lock-held
+#   shared-rel-dir   gx10's dir is rel-<v> again, shared by every run of <v>  -> green-pair
 #   autopilot-no-die the autopilot `models` step no longer dies on NO-GO     -> red-cell
 #   no-choom         gx10's ladder runs without `choom -n 1000`              -> oom-victim
 #   wrapper-flock    lambda's ladder wrapped in `flock /tmp/apr-gpu.lock`    -> oom-victim
@@ -103,8 +113,14 @@ A_BUILD='        || { echo "MODELS-LEG $LOCAL_HOST BUILD-FAILED"; return 3; }'
 A_NORCPT='        echo "MODELS $h NO-GO: no receipt -- $(leg_reason "$h" "$rc")"; nogo=1; continue'
 A_RED='    *) echo "MODELS NO-GO: the judge found red or missing cells (rc $jrc):"'
 A_DECLINE='    2) echo "MODELS NO-GO: the judge DECLINED (rc 2)'
-A_PROOF='[ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE'
-A_DISK='if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ]; then'
+A_PROOF='mt_version_is "\$got" "$ver" "$sha" || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE'
+A_DISK='if [ -z "\$free_kib" ] || [ "\$free_kib" -lt $NEED_KIB ]; then'
+A_LLOCK='flock -n 7 || { echo "MODELS NO-GO: another models_t1.sh holds $LOCK'
+A_RLOCK='flock -n 8 || { echo "MODELS-LEG $REMOTE_HOST ENV: busy'
+A_RUNDIR='dir="\$base/rel-$ver-$run"'
+# models_nightly.sh probes the same lock file before it starts a run (#5264): the default must be one literal
+A_LOCKDEF='${MODELS_T1_LOCK:-$HOME/.cache/aprender-release/models-t1.lock}'
+NIGHTLY="$ROOT/scripts/release/models_nightly.sh"
 A_DIE='  [ $rc -eq 0 ] || die "T-1 model matrix NO-GO'
 A_RDIE='  [ $rc -eq 0 ] || die "T-1 release-readiness-v1'
 A_RNODR='  [ -n "$DR" ] || die "T-1 readiness: no dogfood receipt'
@@ -139,11 +155,13 @@ C_RRCPT='if [ -f "\$dir/out/$RREC" ]; then'
 
 env_die() { printf 'ENV   %s -- the table judged nothing, not a pass\n' "$*" >&2; exit 2; }
 for f in "$AUTOPILOT" "$MODELS" "$PARAMS" "$PREFLIGHT"; do [ -r "$f" ] || env_die "no $f"; done
-for t in git python3; do command -v "$t" > /dev/null 2>&1 || env_die "no $t"; done
-for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_CHOOM_R" "$A_CHOOM_L" "$A_CELLS_R" "$A_CELLS_L" \
+for t in git python3 flock; do command -v "$t" > /dev/null 2>&1 || env_die "no $t"; done
+FX_REAL_FLOCK=$(command -v flock); export FX_REAL_FLOCK
+for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_LLOCK" "$A_RLOCK" "$A_RUNDIR" "$A_LOCKDEF" "$A_CHOOM_R" "$A_CHOOM_L" "$A_CELLS_R" "$A_CELLS_L" \
          "$C_BOGUS" "$C_CERT" "$C_VER" "$C_POLICY" "$C_LOCAL" "$C_CHOOM_R" "$C_SUBDIR" "$C_JCRUX" "$C_CUT" "$C_NAME" "$C_RRCPT"; do
     grep -qF -- "$a" "$MODELS" || env_die "models_t1.sh has no '$a' line -- the subject moved"
 done
+grep -qF -- "$A_LOCKDEF" "$NIGHTLY" || env_die "models_nightly.sh does not probe '$A_LOCKDEF' -- the two scripts lock different files"
 for a in "$A_DIE" "$A_RDIE" "$A_RNODR"; do
     grep -qF -- "$a" "$AUTOPILOT" || env_die "autopilot.sh has no '$a' line -- the subject moved"
 done
@@ -194,7 +212,7 @@ case "${1:-}" in
   build)
     printf 'build host=%s oom=%s flock=%s\n' "$host" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
     [ "${FX_BUILD_FAIL_HOST:-}" = "$host" ] && { echo "error: could not compile (fixture)"; exit 101; }
-    s=$(git rev-parse --short=9 HEAD); [ "${FX_STALE_HOST:-}" = "$host" ] && s=deadbeef0
+    s=$(git rev-parse --short=10 HEAD); [ "${FX_STALE_HOST:-}" = "$host" ] && s=deadbeef00
     mkdir -p "$tdir/release"
     printf '#!/usr/bin/env bash\nprintf "apr %s (%s)\\n"\n' "$v" "$s" > "$tdir/release/apr"
     chmod +x "$tdir/release/apr"
@@ -211,8 +229,14 @@ n=$2; shift 2; [ "${1:-}" = -- ] && shift
 printf 'choom host=%s n=%s %s\n' "${FX_HOST:-lambda}" "$n" "$*" >> "$FX_LOG"
 FX_OOM=$n exec "$@"
 STUB
+# An fd lock (`flock [-n] FD`, the run locks of #5264) is the real flock, logged as `fdlock`; only the
+# wrapping form (`flock ... FILE CMD`) is the GPU-lock shape oom-victim forbids.
 cat > "$TMP/bin/flock" <<'STUB'
 #!/usr/bin/env bash
+a=("$@"); while [ "${#a[@]}" -gt 0 ] && [ "${a[0]#-}" != "${a[0]}" ]; do [ "${a[0]}" = -w ] && a=("${a[@]:1}"); a=("${a[@]:1}"); done
+if [ "${#a[@]}" -eq 1 ] && [[ ${a[0]} =~ ^[0-9]+$ ]]; then
+    printf 'fdlock host=%s %s\n' "${FX_HOST:-lambda}" "$*" >> "$FX_LOG"; exec "$FX_REAL_FLOCK" "$@"
+fi
 printf 'flock host=%s %s\n' "${FX_HOST:-lambda}" "$*" >> "$FX_LOG"
 while [ "${1#-}" != "${1:-}" ]; do [ "$1" = -w ] && shift; shift; done
 shift
@@ -345,7 +369,7 @@ STUB
         && git -C "$r" fetch -q origin || return 2
     git -C "$r" rev-parse HEAD > "$d/mc"
     # the fake gx10: its checkout sits at the PARENT, with a stale release dir beside it
-    mkdir -p "$d/gx10/src" "$d/gx10/.cache/aprender-release/rel-9.9.7/target" || return 2
+    mkdir -p "$d/gx10/src" "$d/gx10/.cache/aprender-release/rel-9.9.7/target" "$d/gx10/.cache/aprender-release/rel-9.9.9/target" || return 2
     git clone -q "$d/origin.git" "$d/gx10/src/aprender" && git -C "$d/gx10/src/aprender" checkout -q --detach HEAD^ || return 2
 }
 
@@ -356,9 +380,14 @@ models() {
     : > "$d/wrap.log"
     shift 2
     ( export RELEASE_AP="$d/ap" RELEASE_EPIC=9002 CARGO_HOME="$TMP/cargo-home" PATH="$TMP/bin:$PATH" \
-          FX_MC="$(cat "$d/mc")" FX_GX10_HOME="$d/gx10" MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log"
+          FX_MC="$(cat "$d/mc")" FX_GX10_HOME="$d/gx10" MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_LOCK="$d/t1.lock"
       for kv in "$@"; do export "${kv?}"; done
-      bash "$d/repo/scripts/release/autopilot.sh" 9.9.9 99 models models ) > "$d/out.log" 2>&1
+      # FX_HOLD=t1|gx10: another run holds that lock for the whole step (an fd of this subshell, not the step's)
+      case "${FX_HOLD:-}" in
+          t1)   exec 6>> "$d/t1.lock" && "$FX_REAL_FLOCK" -n 6 || exit 97 ;;
+          gx10) exec 6>> "$d/gx10/.cache/aprender-release/.lock" && "$FX_REAL_FLOCK" -n 6 || exit 97 ;;
+      esac
+      bash "$d/repo/scripts/release/autopilot.sh" 9.9.9 99 models models 6>&- ) > "$d/out.log" 2>&1
     printf '%s\n' "$?" > "$d/rc"
 }
 
@@ -399,14 +428,23 @@ row() { # row NAME RC MESSAGE
 }
 
 # ---- row bodies: TAG AUTOPILOT MODELS_T1 -> 0 green, 1 red (prints why), 2 fixture --------------
+# run_dir_built D -> 0 when gx10 built into exactly one rel-9.9.9-<run> dir of its own, and the stale
+# same-version rel-9.9.9 an earlier run left was swept, not reused (#5264)
+run_dir_built() {
+    local b="$1/gx10/.cache/aprender-release" f n=0
+    for f in "$b"/rel-9.9.9-*/target/BUILT_FROM; do [ -f "$f" ] && n=$((n + 1)); done
+    [ "$n" = 1 ] || { printf 'gx10 built into %s rel-9.9.9-<run> dir(s), not one of its own\n' "$n"; return 1; }
+    [ ! -e "$b/rel-9.9.9" ] || { printf 'the stale same-version dir rel-9.9.9 was reused or left, not swept\n'; return 1; }
+    return 0
+}
 green_pair() {
     local n="green-$1" d; d="$TMP/green-$1"
     models "$n" "$2" "$3" "${@:4}" || return 2
     [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(tail -n 1 "$d/ap/STATUS" 2>/dev/null)"; return 1; }
     grep -qF "MODELS GO at $(cat "$d/mc") on lambda and gx10" "$d/ap/STATUS" || { printf 'no "MODELS GO" line\n'; return 1; }
-    grep -qF "apr 9.9.9 ($(cut -c1-9 "$d/mc"))" "$d/ap/models-t1/gx10.json" 2>/dev/null \
+    grep -qF "apr 9.9.9 ($(cut -c1-10 "$d/mc"))" "$d/ap/models-t1/gx10.json" 2>/dev/null \
         || { printf 'gx10 was not measured by the release binary: %s\n' "$(cat "$d/ap/models-t1/gx10.json" 2>/dev/null)"; return 1; }
-    [ -f "$d/gx10/.cache/aprender-release/rel-9.9.9/target/BUILT_FROM" ] || { printf 'gx10 did not build into the per-release dir\n'; return 1; }
+    run_dir_built "$d" || return 1
     [ ! -e "$d/gx10/src/aprender/target/BUILT_FROM" ] || { printf 'gx10 built into ~/src/aprender/target\n'; return 1; }
     [ ! -e "$d/gx10/.cache/aprender-release/rel-9.9.7" ] || { printf 'the previous release dir rel-9.9.7 was not deleted\n'; return 1; }
     return 0
@@ -428,8 +466,27 @@ stale()         { stops "stale-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- N
 disk() {
     local rc; stops "disk-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- ENV:" MODELS_T1_NEED_KIB=999999999999; rc=$?
     [ "$rc" = 0 ] || return "$rc"
-    [ ! -e "$TMP/disk-$1/gx10/.cache/aprender-release/rel-9.9.9/target/BUILT_FROM" ] || { printf 'gx10 built despite the refusal\n'; return 1; }
+    ! grep -q '^build host=gx10' "$TMP/disk-$1/wrap.log" || { printf 'gx10 built despite the refusal\n'; return 1; }
     grep -q 'rc=2' "$TMP/disk-$1/ap/STATUS" || { printf 'models_t1.sh did not exit 2 (ENV)\n'; return 1; }
+    return 0
+}
+
+t1_held() { # another models_t1.sh (a nightly, a release window) holds the run lock: refused before either host
+    local rc d="$TMP/t1held-$1"; stops "t1held-$1" "$2" "$3" "MODELS NO-GO: another models_t1.sh holds $d/t1.lock" FX_HOLD=t1; rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    grep -q 'rc=2' "$d/ap/STATUS" || { printf 'models_t1.sh did not exit 2\n'; return 1; }
+    ! grep -q '^build ' "$d/wrap.log" || { printf 'a leg built under a held run lock: %s\n' "$(grep '^build ' "$d/wrap.log" | tr '\n' ' ')"; return 1; }
+    [ -d "$d/gx10/.cache/aprender-release/rel-9.9.7" ] && [ -d "$d/gx10/.cache/aprender-release/rel-9.9.9" ] \
+        || { printf "gx10's rel-* were swept under a held run lock\n"; return 1; }
+    return 0
+}
+gx10_held() { # another leg holds gx10's lock: that leg refuses as ENV before its sweep and its build
+    local rc d="$TMP/gx10held-$1"; stops "gx10held-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- ENV: busy" FX_HOLD=gx10; rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    grep -q 'rc=2' "$d/ap/STATUS" || { printf 'models_t1.sh did not exit 2 (ENV)\n'; return 1; }
+    ! grep -q '^build host=gx10' "$d/wrap.log" || { printf 'gx10 built under a held lock\n'; return 1; }
+    [ -d "$d/gx10/.cache/aprender-release/rel-9.9.7" ] && [ -d "$d/gx10/.cache/aprender-release/rel-9.9.9" ] \
+        || { printf "gx10's rel-* were swept under another leg's lock\n"; return 1; }
     return 0
 }
 
@@ -458,7 +515,7 @@ crux_green() {
     grep -qF "MODELS GO (CRUX smoke) on lambda and gx10 at ${mc:0:9}: the judge passed both receipts (apr 9.9.9 (${mc:0:9}))" "$d/ap/STATUS" \
         || { printf 'no "MODELS GO (CRUX smoke)" line\n'; return 1; }
     for h in lambda gx10; do
-        [ "$(jq -r .apr.version_line "$d/ap/models-t1/$h-gpu.json" 2>/dev/null)" = "apr 9.9.9 (${mc:0:9})" ] \
+        [ "$(jq -r .apr.version_line "$d/ap/models-t1/$h-gpu.json" 2>/dev/null)" = "apr 9.9.9 (${mc:0:10})" ] \
             || { printf '%s-gpu.json was not measured by the release binary\n' "$h"; return 1; }
         grep -qx "crux host=$h v=9.9.9 oom=1000 flock=0 cert=evidence/crux/9.9.9/prompt-certification.json" "$d/wrap.log" \
             || { printf '%s crux sweep did not run under choom -n 1000 with the certification: %s\n' "$h" "$(grep "^crux host=$h" "$d/wrap.log" | tr '\n' ' ')"; return 1; }
@@ -466,7 +523,7 @@ crux_green() {
     ! grep -q '^ladder ' "$d/wrap.log" || { printf 'crux mode ran the ladder\n'; return 1; }
     grep -qF -- "--version 9.9.9 --crux $d/ap/models-t1 --cut-commit $mc" "$d/wrap.log" \
         || { printf 'the judge was not asked about the CRUX receipts at the cut: %s\n' "$(grep '^judge' "$d/wrap.log" | tr '\n' ' ')"; return 1; }
-    [ -f "$d/gx10/.cache/aprender-release/rel-9.9.9/target/BUILT_FROM" ] || { printf 'gx10 did not build into the per-release dir\n'; return 1; }
+    run_dir_built "$d" || return 1
     return 0
 }
 crux_nocert() {
@@ -485,7 +542,7 @@ measure_bogus() { # models_t1.sh's own refusal: autopilot never hands it a mode 
     fixture "bogus-$1" "$2" "$3" || return 2
     : > "$d/wrap.log"; mc=$(cat "$d/mc")
     ( cd "$d/repo" && export CARGO_HOME="$TMP/cargo-home" PATH="$TMP/bin:$PATH" FX_MC="$mc" FX_GX10_HOME="$d/gx10" \
-          MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_MEASURE=bogus
+          MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_MEASURE=bogus MODELS_T1_LOCK="$d/t1.lock"
       bash scripts/release/models_t1.sh 9.9.9 "$mc" "$d/ap/models-t1" ) > "$d/ap/models-t1.log" 2>&1; rc=$?
     [ "$rc" = 2 ] || { printf 'models_t1.sh exited %s, not 2\n' "$rc"; return 1; }
     grep -qF "MODELS_T1_MEASURE='bogus' is neither ladder nor crux" "$d/ap/models-t1.log" || { printf 'the usage refusal never named the value\n'; return 1; }
@@ -537,7 +594,7 @@ r_stale()   { # an apr built from another commit: its surface would derive anoth
 # ---- the rows ---------------------------------------------------------------------------------
 for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
-            "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim" \
+            "stale-binary stale" "disk-refusal disk" "t1-lock-held t1_held" "gx10-lock-held gx10_held" "oom-victim oom_victim" \
             "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "crux-green-pair crux_green" \
             "crux-no-certification crux_nocert" "crux-wrong-binary crux_wrongbin" \
             "crux-missing-gx10-receipt crux_missing" "crux-red-receipt crux_red" "crux-judge-no-policy crux_nopolicy" \
@@ -616,6 +673,9 @@ mutant red-is-go        "$MODELS" "$A_RED" '    *) ;; 99) echo' red_cell
 mutant decline-is-go    "$MODELS" "$A_DECLINE" '    2) ;; 98) echo "' decline
 mutant no-version-proof "$MODELS" "$A_PROOF" 'true || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE' stale
 mutant no-disk-check    "$MODELS" "$A_DISK" 'if false; then' disk
+mutant no-run-lock      "$MODELS" "$A_LLOCK" 'true || { echo "MODELS NO-GO: another models_t1.sh holds $LOCK' t1_held
+mutant no-gx10-lock     "$MODELS" "$A_RLOCK" 'true || { echo "MODELS-LEG $REMOTE_HOST ENV: busy' gx10_held
+mutant shared-rel-dir   "$MODELS" "$A_RUNDIR" 'dir="\$base/rel-$ver"' green_pair
 mutant autopilot-no-die "$AUTOPILOT" "$A_DIE" '  [ $rc -eq $rc ] || die "T-1 model matrix NO-GO' red_cell autopilot
 mutant readiness-no-die  "$AUTOPILOT" "$A_RDIE" '  [ $rc -eq $rc ] || die "T-1 release-readiness-v1' r_fail autopilot
 mutant readiness-no-dr   "$AUTOPILOT" "$A_RNODR" '  true || die "T-1 readiness: no dogfood receipt' r_no_dr autopilot

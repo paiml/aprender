@@ -122,6 +122,8 @@ pub(crate) struct OllamaChatResponse {
     pub message: OllamaMessage,
     /// Terminal flag — always true for the coalesced response.
     pub done: bool,
+    /// Why generation ended: `"length"` when the turn hit `num_predict`, else `"stop"`.
+    pub done_reason: &'static str,
     /// Prompt token count.
     pub prompt_eval_count: usize,
     /// Generated token count.
@@ -139,6 +141,8 @@ pub(crate) struct OllamaGenerateResponse {
     pub response: String,
     /// Terminal flag — always true for the coalesced response.
     pub done: bool,
+    /// Why generation ended: `"length"` when the turn hit `num_predict`, else `"stop"`.
+    pub done_reason: &'static str,
     /// Prompt token count.
     pub prompt_eval_count: usize,
     /// Generated token count.
@@ -337,6 +341,50 @@ fn openai_response_to_parts(status: StatusCode, body: &[u8]) -> (String, usize, 
     ("generation unavailable".to_string(), 0, 0)
 }
 
+/// Ollama `done_reason` for an OpenAI-chat response: `"length"` when the first
+/// choice's `finish_reason` is `"length"` (the turn hit its token cap), else `"stop"`.
+fn openai_done_reason(status: StatusCode, body: &[u8]) -> &'static str {
+    if !status.is_success() {
+        return "stop";
+    }
+    let hit_cap = serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| {
+            v.get("choices")?
+                .get(0)?
+                .get("finish_reason")?
+                .as_str()
+                .map(|r| r == "length")
+        })
+        .unwrap_or(false);
+    if hit_cap {
+        "length"
+    } else {
+        "stop"
+    }
+}
+
+/// How a streamed turn's terminal `done_reason` is decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StreamEnd {
+    /// Always `"stop"`.
+    Stop,
+    /// `"length"` once this many tokens were streamed (the turn's `num_predict`).
+    LengthAt(usize),
+    /// Always `"length"` (the upstream reply already said it hit the cap).
+    Length,
+}
+
+impl StreamEnd {
+    fn done_reason(self, emitted: usize) -> &'static str {
+        match self {
+            Self::LengthAt(cap) if emitted >= cap => "length",
+            Self::Length => "length",
+            _ => "stop",
+        }
+    }
+}
+
 /// Read an axum [`Response`] into `(status, body bytes)`.
 async fn split_response(resp: Response) -> (StatusCode, axum::body::Bytes) {
     let status = resp.status();
@@ -350,6 +398,7 @@ async fn split_response(resp: Response) -> (StatusCode, axum::body::Bytes) {
 pub(crate) async fn reshape_openai_to_ollama_chat(model: String, inner: Response) -> Response {
     let (status, body) = split_response(inner).await;
     let (content, prompt_tokens, eval_count) = openai_response_to_parts(status, &body);
+    let done_reason = openai_done_reason(status, &body);
     Json(OllamaChatResponse {
         model,
         created_at: created_at_now(),
@@ -358,6 +407,7 @@ pub(crate) async fn reshape_openai_to_ollama_chat(model: String, inner: Response
             content,
         },
         done: true,
+        done_reason,
         prompt_eval_count: prompt_tokens,
         eval_count,
     })
@@ -369,11 +419,13 @@ pub(crate) async fn reshape_openai_to_ollama_chat(model: String, inner: Response
 pub(crate) async fn reshape_openai_to_ollama_generate(model: String, inner: Response) -> Response {
     let (status, body) = split_response(inner).await;
     let (content, prompt_tokens, eval_count) = openai_response_to_parts(status, &body);
+    let done_reason = openai_done_reason(status, &body);
     Json(OllamaGenerateResponse {
         model,
         created_at: created_at_now(),
         response: content,
         done: true,
+        done_reason,
         prompt_eval_count: prompt_tokens,
         eval_count,
     })
@@ -432,6 +484,7 @@ pub(crate) fn ollama_stream_final(
     prompt_eval_count: usize,
     eval_count: usize,
     total_duration_ns: u64,
+    done_reason: &str,
 ) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
     obj.insert("model".to_string(), serde_json::json!(model));
@@ -448,7 +501,7 @@ pub(crate) fn ollama_stream_final(
         }
     }
     obj.insert("done".to_string(), serde_json::json!(true));
-    obj.insert("done_reason".to_string(), serde_json::json!("stop"));
+    obj.insert("done_reason".to_string(), serde_json::json!(done_reason));
     obj.insert(
         "total_duration".to_string(),
         serde_json::json!(total_duration_ns),
@@ -484,6 +537,17 @@ pub(crate) fn ollama_ndjson_stream(
     prompt_eval_count: usize,
     rx: tokio::sync::mpsc::Receiver<std::result::Result<String, String>>,
 ) -> Response {
+    ollama_ndjson_stream_ending(kind, model, prompt_eval_count, StreamEnd::Stop, rx)
+}
+
+/// [`ollama_ndjson_stream`] with an explicit rule for the terminal `done_reason`.
+pub(crate) fn ollama_ndjson_stream_ending(
+    kind: OllamaStreamKind,
+    model: String,
+    prompt_eval_count: usize,
+    end: StreamEnd,
+    rx: tokio::sync::mpsc::Receiver<std::result::Result<String, String>>,
+) -> Response {
     use axum::body::Body;
 
     let created_at = created_at_now();
@@ -501,7 +565,7 @@ pub(crate) fn ollama_ndjson_stream(
             prompt_eval_count,
             started,
         ),
-        |(maybe_rx, count, kind, model, created_at, prompt_eval_count, started)| async move {
+        move |(maybe_rx, count, kind, model, created_at, prompt_eval_count, started)| async move {
             let mut rx = maybe_rx?;
             match rx.recv().await {
                 Some(Ok(token_text)) => {
@@ -524,7 +588,13 @@ pub(crate) fn ollama_ndjson_stream(
                 // Channel closed (generation done) or backend error: emit the
                 // terminal object and stop. We drop the receiver (None) so the
                 // next poll ends the stream.
-                Some(Err(_)) | None => {
+                ended @ (Some(Err(_)) | None) => {
+                    // A backend error is not a cap hit: only a clean close can be "length".
+                    let reason = if matches!(ended, Some(Err(_))) {
+                        "stop"
+                    } else {
+                        end.done_reason(count)
+                    };
                     let final_obj = ollama_stream_final(
                         kind,
                         &model,
@@ -532,6 +602,7 @@ pub(crate) fn ollama_ndjson_stream(
                         prompt_eval_count,
                         count,
                         started.elapsed().as_nanos() as u64,
+                        reason,
                     );
                     let mut line = final_obj.to_string();
                     line.push('\n');
@@ -590,7 +661,12 @@ pub(crate) async fn reshape_openai_to_ollama_ndjson(
     }
     drop(tx);
     let _ = eval_count; // eval_count is recomputed from emitted chunks downstream
-    ollama_ndjson_stream(kind, model, prompt_tokens, rx)
+    let end = if openai_done_reason(status, &body) == "length" {
+        StreamEnd::Length
+    } else {
+        StreamEnd::Stop
+    };
+    ollama_ndjson_stream_ending(kind, model, prompt_tokens, end, rx)
 }
 
 /// `GET /api/tags` — Ollama model-list endpoint.
@@ -785,6 +861,7 @@ mod tests {
                 content: "hello".to_string(),
             },
             done: true,
+            done_reason: "stop",
             prompt_eval_count: 1,
             eval_count: 2,
         };
@@ -801,6 +878,7 @@ mod tests {
             created_at: created_at_now(),
             response: "hi".to_string(),
             done: true,
+            done_reason: "stop",
             prompt_eval_count: 0,
             eval_count: 1,
         };
@@ -857,12 +935,103 @@ mod tests {
 
     #[test]
     fn stream_final_is_terminal_with_stats() {
-        let fin = ollama_stream_final(OllamaStreamKind::Chat, "m", "t0", 3, 4, 1_000);
+        let fin = ollama_stream_final(OllamaStreamKind::Chat, "m", "t0", 3, 4, 1_000, "stop");
         assert_eq!(fin["done"], true, "terminal object carries done:true");
         assert_eq!(fin["prompt_eval_count"], 3);
         assert_eq!(fin["eval_count"], 4);
         assert_eq!(fin["eval_duration"], 1_000);
         assert_eq!(fin["done_reason"], "stop");
+        let cut = ollama_stream_final(OllamaStreamKind::Chat, "m", "t0", 3, 4, 1_000, "length");
+        assert_eq!(cut["done_reason"], "length");
+    }
+
+    #[test]
+    fn openai_done_reason_is_length_only_for_a_successful_length_finish() {
+        let cut = br#"{"choices":[{"message":{"content":"ab"},"finish_reason":"length"}]}"#;
+        let stop = br#"{"choices":[{"message":{"content":"ab"},"finish_reason":"stop"}]}"#;
+        assert_eq!(openai_done_reason(StatusCode::OK, cut), "length");
+        assert_eq!(openai_done_reason(StatusCode::OK, stop), "stop");
+        assert_eq!(openai_done_reason(StatusCode::OK, b"not json"), "stop");
+        assert_eq!(openai_done_reason(StatusCode::BAD_REQUEST, cut), "stop");
+    }
+
+    #[test]
+    fn stream_end_reports_length_at_the_cap_and_not_before() {
+        assert_eq!(StreamEnd::LengthAt(3).done_reason(2), "stop");
+        assert_eq!(StreamEnd::LengthAt(3).done_reason(3), "length");
+        assert_eq!(StreamEnd::Length.done_reason(0), "length");
+        assert_eq!(StreamEnd::Stop.done_reason(99), "stop");
+    }
+
+    async fn last_ndjson_line(resp: Response) -> serde_json::Value {
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let text = String::from_utf8(bytes.to_vec()).expect("utf8");
+        let line = text.lines().last().expect("a terminal line");
+        serde_json::from_str(line).expect("terminal line is JSON")
+    }
+
+    #[tokio::test]
+    async fn reshaped_bodies_carry_the_upstream_done_reason() {
+        let body = r#"{"choices":[{"message":{"content":"ab"},"finish_reason":"length"}],"usage":{"prompt_tokens":1,"completion_tokens":2}}"#;
+        let upstream = || Response::new(axum::body::Body::from(body));
+        let chat = reshape_openai_to_ollama_chat("m".to_string(), upstream()).await;
+        assert_eq!(last_ndjson_line(chat).await["done_reason"], "length");
+        let generate = reshape_openai_to_ollama_generate("m".to_string(), upstream()).await;
+        assert_eq!(last_ndjson_line(generate).await["done_reason"], "length");
+        let batch =
+            reshape_openai_to_ollama_ndjson(OllamaStreamKind::Chat, "m".to_string(), upstream())
+                .await;
+        assert_eq!(last_ndjson_line(batch).await["done_reason"], "length");
+    }
+
+    #[tokio::test]
+    async fn live_stream_reports_length_when_the_cap_is_reached() {
+        for (cap, want) in [(2usize, "length"), (3, "stop")] {
+            let (tx, rx) = tokio::sync::mpsc::channel(4);
+            tx.send(Ok("a".to_string())).await.expect("send");
+            tx.send(Ok("b".to_string())).await.expect("send");
+            drop(tx);
+            let resp = ollama_ndjson_stream_ending(
+                OllamaStreamKind::Chat,
+                "m".to_string(),
+                1,
+                StreamEnd::LengthAt(cap),
+                rx,
+            );
+            assert_eq!(
+                last_ndjson_line(resp).await["done_reason"],
+                want,
+                "cap {cap}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn live_stream_error_at_the_cap_reports_stop_not_length() {
+        let (tx, rx) = tokio::sync::mpsc::channel(4);
+        tx.send(Ok("a".to_string())).await.expect("send");
+        tx.send(Err("boom".to_string())).await.expect("send");
+        drop(tx);
+        let resp = ollama_ndjson_stream_ending(
+            OllamaStreamKind::Chat,
+            "m".to_string(),
+            1,
+            StreamEnd::LengthAt(1),
+            rx,
+        );
+        assert_eq!(last_ndjson_line(resp).await["done_reason"], "stop");
+    }
+
+    #[tokio::test]
+    async fn reshaped_bodies_with_a_natural_stop_report_stop() {
+        let body = r#"{"choices":[{"message":{"content":"ab"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2}}"#;
+        let upstream = || Response::new(axum::body::Body::from(body));
+        let chat = reshape_openai_to_ollama_chat("m".to_string(), upstream()).await;
+        assert_eq!(last_ndjson_line(chat).await["done_reason"], "stop");
+        let generate = reshape_openai_to_ollama_generate("m".to_string(), upstream()).await;
+        assert_eq!(last_ndjson_line(generate).await["done_reason"], "stop");
     }
 
     /// Drive `ollama_ndjson_stream` over a 3-token channel and assert the body
@@ -970,6 +1139,7 @@ mod tests {
                 content: "hello".to_string(),
             },
             done: true,
+            done_reason: "stop",
             prompt_eval_count: 1,
             eval_count: 2,
         })
@@ -979,6 +1149,7 @@ mod tests {
             created_at: created_at_now(),
             response: "hi".to_string(),
             done: true,
+            done_reason: "stop",
             prompt_eval_count: 0,
             eval_count: 1,
         })

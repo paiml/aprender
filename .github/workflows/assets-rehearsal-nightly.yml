@@ -36,8 +36,17 @@ jobs:
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
+          # cargo also sends a token key from config or config.toml ([registry] token, [registries.<name>] token,
+          # dotted or inline): measured on cargo 1.93.0 against a local fake registry (#4844). Comments do not count.
+          for f in "$ch/config" "$ch/config.toml"; do
+            [ -f "$f" ] || continue
+            body=$(sed 's/#.*//' "$f")
+            if grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*=" <<<"$body"; then
+              echo "::error::refusing to rehearse: a registry token key is in cargo config: $f"; bad=1
+            fi
+          done
           if [ "$bad" -ne 0 ]; then exit 1; fi
-          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token or cargo credential file"
+          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token, cargo credential file or config token"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: The workflow is binary-release.yml's build, regenerated, and cannot upload
         run: |
@@ -91,8 +100,17 @@ jobs:
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
+          # cargo also sends a token key from config or config.toml ([registry] token, [registries.<name>] token,
+          # dotted or inline): measured on cargo 1.93.0 against a local fake registry (#4844). Comments do not count.
+          for f in "$ch/config" "$ch/config.toml"; do
+            [ -f "$f" ] || continue
+            body=$(sed 's/#.*//' "$f")
+            if grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*=" <<<"$body"; then
+              echo "::error::refusing to rehearse: a registry token key is in cargo config: $f"; bad=1
+            fi
+          done
           if [ "$bad" -ne 0 ]; then exit 1; fi
-          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token or cargo credential file"
+          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token, cargo credential file or config token"
       - name: Resolve release tag
         id: tag
         run: |
@@ -238,8 +256,17 @@ jobs:
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
+          # cargo also sends a token key from config or config.toml ([registry] token, [registries.<name>] token,
+          # dotted or inline): measured on cargo 1.93.0 against a local fake registry (#4844). Comments do not count.
+          for f in "$ch/config" "$ch/config.toml"; do
+            [ -f "$f" ] || continue
+            body=$(sed 's/#.*//' "$f")
+            if grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*=" <<<"$body"; then
+              echo "::error::refusing to rehearse: a registry token key is in cargo config: $f"; bad=1
+            fi
+          done
           if [ "$bad" -ne 0 ]; then exit 1; fi
-          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token or cargo credential file"
+          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token, cargo credential file or config token"
       - name: Resolve release tag
         id: tag
         run: |
@@ -391,8 +418,17 @@ jobs:
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
+          # cargo also sends a token key from config or config.toml ([registry] token, [registries.<name>] token,
+          # dotted or inline): measured on cargo 1.93.0 against a local fake registry (#4844). Comments do not count.
+          for f in "$ch/config" "$ch/config.toml"; do
+            [ -f "$f" ] || continue
+            body=$(sed 's/#.*//' "$f")
+            if grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*=" <<<"$body"; then
+              echo "::error::refusing to rehearse: a registry token key is in cargo config: $f"; bad=1
+            fi
+          done
           if [ "$bad" -ne 0 ]; then exit 1; fi
-          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token or cargo credential file"
+          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token, cargo credential file or config token"
       - name: Resolve release tag
         id: tag
         run: |
@@ -534,8 +570,17 @@ jobs:
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
+          # cargo also sends a token key from config or config.toml ([registry] token, [registries.<name>] token,
+          # dotted or inline): measured on cargo 1.93.0 against a local fake registry (#4844). Comments do not count.
+          for f in "$ch/config" "$ch/config.toml"; do
+            [ -f "$f" ] || continue
+            body=$(sed 's/#.*//' "$f")
+            if grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*=" <<<"$body"; then
+              echo "::error::refusing to rehearse: a registry token key is in cargo config: $f"; bad=1
+            fi
+          done
           if [ "$bad" -ne 0 ]; then exit 1; fi
-          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token or cargo credential file"
+          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token, cargo credential file or config token"
       - name: Resolve release tag
         id: tag
         run: |
@@ -682,8 +727,17 @@ jobs:
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
+          # cargo also sends a token key from config or config.toml ([registry] token, [registries.<name>] token,
+          # dotted or inline): measured on cargo 1.93.0 against a local fake registry (#4844). Comments do not count.
+          for f in "$ch/config" "$ch/config.toml"; do
+            [ -f "$f" ] || continue
+            body=$(sed 's/#.*//' "$f")
+            if grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*=" <<<"$body"; then
+              echo "::error::refusing to rehearse: a registry token key is in cargo config: $f"; bad=1
+            fi
+          done
           if [ "$bad" -ne 0 ]; then exit 1; fi
-          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token or cargo credential file"
+          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token, cargo credential file or config token"
       - name: Resolve release tag
         id: tag
         run: |
@@ -779,8 +833,17 @@ jobs:
           for f in "$ch/credentials" "$ch/credentials.toml"; do
             if [ -s "$f" ]; then echo "::error::refusing to rehearse: a cargo registry credential file exists: $f"; bad=1; fi
           done
+          # cargo also sends a token key from config or config.toml ([registry] token, [registries.<name>] token,
+          # dotted or inline): measured on cargo 1.93.0 against a local fake registry (#4844). Comments do not count.
+          for f in "$ch/config" "$ch/config.toml"; do
+            [ -f "$f" ] || continue
+            body=$(sed 's/#.*//' "$f")
+            if grep -qE "(^|[^A-Za-z0-9_-])token[\"']?[[:space:]]*=" <<<"$body"; then
+              echo "::error::refusing to rehearse: a registry token key is in cargo config: $f"; bad=1
+            fi
+          done
           if [ "$bad" -ne 0 ]; then exit 1; fi
-          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token or cargo credential file"
+          echo "no upload credential here: no GH_TOKEN, GITHUB_TOKEN, registry token, OIDC request token, cargo credential file or config token"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Fetch the kept checksums
         continue-on-error: true
