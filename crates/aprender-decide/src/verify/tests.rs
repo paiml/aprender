@@ -42,7 +42,7 @@ fn sha(path: &Path) -> String {
 fn view<T: serde::de::DeserializeOwned>(name: &str) -> T {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../contracts/{name}"));
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
-    serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("parse {name} into its view: {e}"))
+    serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_or_else(|e| panic!("parse {name} into its view: {e}"))
 }
 
 /// The CONTRACT policy, through the library's one mapping (`from_contract_views`).
@@ -754,7 +754,7 @@ fn policy_views_refuse_non_integer_ece_bins() {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/laya-finetune-gate-v1.yaml");
     let text = std::fs::read_to_string(&path).expect("read gate contract");
-    let honest: GateContractView = serde_yaml::from_str(&text).expect("the contract parses");
+    let honest: GateContractView = serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).expect("the contract parses");
     assert_eq!(honest.constants.ece_bins, 15);
     assert_eq!(
         text.matches("\n  ece_bins: 15\n").count(),
@@ -762,7 +762,7 @@ fn policy_views_refuse_non_integer_ece_bins() {
         "one ece_bins line"
     );
     let forged = text.replace("\n  ece_bins: 15\n", "\n  ece_bins: 15.0\n");
-    let e = serde_yaml::from_str::<GateContractView>(&forged)
+    let e = serde_saphyr::from_str_with_options::<GateContractView>(&forged, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
         .expect_err("a non-integer ece_bins must not deserialize");
     assert!(e.to_string().contains("ece_bins"), "{e}");
 }
@@ -2427,19 +2427,19 @@ fn verdict(r: &Result<VerifyReport, VerifyError>) -> String {
 }
 
 /// The contract's run_field_bindings rows, keyed `(file, leaf pattern)`.
-fn binding_rows() -> Vec<serde_yaml::Value> {
+fn binding_rows() -> Vec<serde_json::Value> {
     contract_yaml("laya-finetune-gate-v1.yaml")["run_field_bindings"]["rows"]
-        .as_sequence()
+        .as_array()
         .expect("run_field_bindings.rows")
         .clone()
 }
 
-fn row_str<'a>(row: &'a serde_yaml::Value, key: &str) -> Option<&'a str> {
+fn row_str<'a>(row: &'a serde_json::Value, key: &str) -> Option<&'a str> {
     row[key].as_str()
 }
 
 /// A `bound_by` naming a plan after this one (`(plan 08-NN)`, NN > 21) is EXPECTED-OPEN.
-fn later_plan(row: &serde_yaml::Value) -> bool {
+fn later_plan(row: &serde_json::Value) -> bool {
     row_str(row, "bound_by")
         .and_then(|b| b.split("(plan 08-").nth(1))
         .and_then(|t| t.get(..2))
@@ -2617,7 +2617,7 @@ fn every_run_field_is_bound_or_report_only() {
         };
         failures.extend(failure);
     }
-    let count = |f: &dyn Fn(&serde_yaml::Value) -> bool| rows.iter().filter(|r| f(r)).count();
+    let count = |f: &dyn Fn(&serde_json::Value) -> bool| rows.iter().filter(|r| f(r)).count();
     let expected_open = count(&later_plan);
     let report_only = count(&|r| row_str(r, "report_only").is_some());
     let bound = count(&|r| row_str(r, "bound_by").is_some() && !later_plan(r));

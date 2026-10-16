@@ -69,13 +69,13 @@ fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn contract() -> serde_yaml::Value {
+fn contract() -> serde_json::Value {
     let path = workspace_root().join("contracts/laya-parity-v1.yaml");
     let text = std::fs::read_to_string(&path).expect("read laya-parity-v1.yaml");
-    serde_yaml::from_str(&text).expect("parse laya-parity-v1.yaml")
+    serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).expect("parse laya-parity-v1.yaml")
 }
 
-fn bar(c: &serde_yaml::Value, equation: &str) -> f64 {
+fn bar(c: &serde_json::Value, equation: &str) -> f64 {
     c["equations"][equation]["float_tolerance"]
         .as_f64()
         .unwrap_or_else(|| panic!("laya-parity-v1 equations.{equation}.float_tolerance"))
@@ -120,7 +120,7 @@ fn argmax<T: PartialOrd + Copy>(a: &[T]) -> usize {
 fn ladder_rung(
     model: &aprender_decide::laya::Laya,
     fx: &Fixture,
-    c: &serde_yaml::Value,
+    c: &serde_json::Value,
     ladder_bin: &Path,
 ) {
     let (l, d) = (fx.ladder.n_tokens, fx.ladder.d);

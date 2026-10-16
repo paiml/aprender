@@ -205,7 +205,7 @@ pub struct RecipePins {
 /// laya-finetune-gate-v1, as much of it as the verifier reads. NOT `deny_unknown_fields`: the
 /// contract carries prose and other blocks; a view takes only what it needs, and every value it
 /// takes is typed, so a malformed one (a non-integer `ece_bins`) fails to deserialize for every
-/// caller alike. The caller parses the YAML (`serde_yaml`, a dev/example dependency) into this
+/// caller alike. The caller parses the YAML (`serde-saphyr`, a dev/example dependency) into this
 /// type; the library stays YAML-free.
 #[derive(Debug, Clone, Deserialize)]
 pub struct GateContractView {
