@@ -173,12 +173,12 @@ derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--l
         # ci_test_tier.sh calls this once per tier decision (the push_reuse table: 30 times).
         # The same files are selected: a file is kept iff it matches ORACLE (tests/) or both
         # `#[cfg(test)]` and ORACLE (src/); module_of still decides each src file's module.
-        while IFS= read -r f; do
+        while IFS= read -r -d '' f; do
             [ -f "$f" ] || continue
             c=$(basename "$(dirname "$(dirname "$f")")"); t=$(basename "$f" .rs)
             printf '%s\t--test\t%s\n' "$c" "$t"
-        done < <(grep -lE -- "$ORACLE" "$root"/crates/*/tests/*.rs 2>/dev/null)
-        while IFS= read -r f; do
+        done < <(grep -lZE -- "$ORACLE" "$root"/crates/*/tests/*.rs 2>/dev/null)
+        while IFS= read -r -d '' f; do
             c=$(printf '%s' "$f" | sed "s|^$root/crates/||; s|/.*||")
             # `--lib` on a crate with NO library target is a hard error, never a
             # passable gate: `error: no library targets found in package X`.
@@ -193,7 +193,7 @@ derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--l
             else
                 printf '%s\t--lib\n' "$c"
             fi
-        done < <(find "$root"/crates/*/src -name '*.rs' 2>/dev/null | xargs -r grep -l '#\[cfg(test)\]' | xargs -r grep -lE -- "$ORACLE")
+        done < <(find "$root"/crates/*/src -name '*.rs' -print0 2>/dev/null | xargs -0 -r grep -lZ '#\[cfg(test)\]' | xargs -0 -r grep -lZE -- "$ORACLE")
     ) | LC_ALL=C sort -u
 }
 
