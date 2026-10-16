@@ -151,13 +151,13 @@ resolve() {
   fi
   # 20X sign-off r2: the PR head ran the QUICK pool, so a queue entry never skips x86-main or
   # determinism on its green and cites nothing: x86=0 det=0 cite= pr_head= whatever decide said.
-  # mac-check keeps its own verdict. This is the ONE place the override lives (this sed over decide, then pinned by the resolve rows in --self-test).
-  local rc=0
-  decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" \
-    --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root" \
-    | sed -e 's/^x86=.*/x86=0/' -e 's/^det=.*/det=0/' -e 's/^cite=.*/cite=/' -e 's/^pr_head=.*/pr_head=/' || rc=$?
+  # mac-check is not reused either (mac=0): the queue entry runs it itself. This is the ONE place the override lives (this sed over decide, then pinned by the resolve rows in --self-test).
+  local rc=0 res
+  res=$(decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" \
+    --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root") || rc=$?
   rm -rf "${w:?}"
-  return "$rc"
+  [ "$rc" -eq 0 ] || return "$rc"
+  sed -e 's/^x86=.*/x86=0/' -e 's/^det=.*/det=0/' -e 's/^mac=.*/mac=0/' -e 's/^cite=.*/cite=/' -e 's/^pr_head=.*/pr_head=/' <<< "$res"
 }
 
 # ---------------------------------------------------------------- the push arm
@@ -401,8 +401,8 @@ STUB
       fail=$((fail + 1)); echo "FAIL resolve-$n: want '$want' got '$got' -- $(kv reason "$out")"; fi
   }
   local QREF="refs/heads/gh-readonly-queue/main/pr-4655-${B}"
-  rrow positive          "0 0 1" ""        "$H" "$QREF"
-  rrow short-ref         "0 0 1" ""        "$H" "gh-readonly-queue/main/pr-4655-${B}"
+  rrow positive          "0 0 0" ""        "$H" "$QREF"
+  rrow short-ref         "0 0 0" ""        "$H" "gh-readonly-queue/main/pr-4655-${B}"
   out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$QREF" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
   if [ -z "$(kv cite "$out")" ] && [ -z "$(kv pr_head "$out")" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL resolve-no-cite: a queue entry cites no PR head (cite=$(kv cite "$out") pr_head=$(kv pr_head "$out"))"; fi
   rrow no-pr-number      "0 0 0" ""        "$H" "refs/heads/main"
@@ -484,6 +484,25 @@ STUB
   wire gate 'MG-REUSE-VERDICT-BEGIN'
   wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test]'
   wire gate '[ "$MST" = success ]'
+  # sign-off r3 item 4: only a pull_request may land on the pr-only pool; every other event
+  # (merge_group, push) takes the else-branch, which must be the clean-room pool. Evaluated per event.
+  lane() { # lane JOB EVENT -> the pool labels the job's runs-on picks for EVENT
+    local ro; ro=$(job "$1" | grep -m1 '^    runs-on:')
+    case "$ro" in
+      *"github.event_name == 'pull_request' &&"*)
+        if [ "$2" = pull_request ]; then ro=${ro%%||*}; else ro=${ro#*||}; fi ;;
+    esac
+    printf '%s' "$ro"
+  }
+  for j in x86-main x86-main-advisories workspace-test-shard; do
+    for ev in merge_group push; do
+      l=$(lane "$j" "$ev")
+      if grep -qF clean-room <<< "$l" && ! grep -qF pr-only <<< "$l"; then pass=$((pass + 1)); else
+        fail=$((fail + 1)); echo "FAIL wiring: $j on $ev does not land on clean-room (runs-on: $l)"; fi
+    done
+    if grep -qF pr-only <<< "$(lane "$j" pull_request)"; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL wiring: $j on pull_request no longer takes the pr-only pool"; fi
+  done
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
   # wanted line comes first. A pipe from job into grep -q takes SIGPIPE on this every

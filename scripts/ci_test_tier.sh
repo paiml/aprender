@@ -508,7 +508,7 @@ self_test() {
     cap mg-leaf bash "$T" --event merge_group --repo-root "$td/q-leaf" --pr-head "$(qh "$td/q-leaf")" --pr-head-conclusion success
     row 0 "merge_group, different tree, the PR ran quick -> the queue OWES FULL, never a reused quick" '^tier=full$' bash -c "$(replay mg-leaf)"
     row 0 "  ...and the reason says the queue owes full, so the promotion is auditable" 'queue owes FULL' bash -c "$(replay mg-leaf)"
-    row 0 "  ...with the SAME crates the PR ran ($leaf), re-derived from HEAD^1..HEAD on the queue ref (r2: full carries no crates= line)" '^tier=full$' bash -c "$(replay mg-leaf)"
+    row 0 "  ...with the SAME crates the PR ran ($leaf), re-derived from HEAD^1..HEAD on the queue ref (r2: full carries no crates= line)" "^0$" bash -c "$(replay mg-leaf) | grep -cE '^(crates|targets|check_workspace)=' || true"
     row 0 "  ...and the reason names the re-derivation, not a guess" 're-derived on the queue ref' bash -c "$(replay mg-leaf)"
     row 0 "  ...and a full tier carries NO crates= line, so the quick-only steps read nothing (r2 item 5)" "^0$" bash -c "$(replay mg-leaf) | grep -c '^crates=' || true"
     cap mg-root bash "$T" --event merge_group --repo-root "$td/q-root" --pr-head "$(qh "$td/q-root")" --pr-head-conclusion success
@@ -517,7 +517,7 @@ self_test() {
     cap mg-root-same bash "$T" --event merge_group --repo-root "$td/q-root" --pr-head "$(git -C "$td/q-root" rev-parse HEAD)" --pr-head-conclusion success
     row 0 "merge_group, SAME tree as the PR head, non-empty diff (root manifest), head green -> full, never reuse (sign-off r1 item 4)" "^tier=full$" bash -c "$(replay mg-root-same)"
     cap mg-cap bash "$T" --event merge_group --repo-root "$td/q-cap" --pr-head "$(qh "$td/q-cap")" --pr-head-conclusion success
-    row 0 "merge_group over the cap -> owed FULL; the quick lines are dropped" '^tier=full$' bash -c "$(replay mg-cap)"
+    row 0 "merge_group over the cap -> owed FULL; NO quick line (crates=/targets=/check_workspace=) leaks" "^0$" bash -c "$(replay mg-cap) | grep -cE '^(crates|targets|check_workspace)=' || true"
     cap push-leaf bash "$T" --event push --repo-root "$td/q-leaf"
     row 0 "push (a queue merge of one PR) -> quick with the PUSH own diff, not the whole workspace" "^crates=.*$leaf" bash -c "$(replay push-leaf)"
     row 0 "  ...and the reason names HEAD^1..HEAD, so the diff is auditable" 'HEAD\^1' bash -c "$(replay push-leaf)"
@@ -546,7 +546,7 @@ self_test() {
     row 0 "  (fixture) the squash queue ref really has ONE parent" '^ONE-PARENT$' bash -c "if git -C '$td/s-leaf' rev-parse -q --verify 'HEAD^2' >/dev/null; then echo TWO; else echo ONE-PARENT; fi"
     cap sq-leaf bash "$T" --event merge_group --repo-root "$td/s-leaf" --pr-head "$(qh "$td/s-leaf")" --pr-head-conclusion success
     row 0 "merge_group on a SQUASH queue ref, leaf crate -> FULL owed, not the PR's quick" '^tier=full$' bash -c "$(replay sq-leaf)"
-    row 0 "  ...with the PR's own crate ($leaf), re-derived from HEAD^1..HEAD (r2: full carries no crates= line)" '^tier=full$' bash -c "$(replay sq-leaf)"
+    row 0 "  ...with the PR's own crate ($leaf), re-derived from HEAD^1..HEAD (r2: full carries no crates= line)" "^0$" bash -c "$(replay sq-leaf) | grep -cE '^(crates|targets|check_workspace)=' || true"
     cap sq-docs bash "$T" --event merge_group --repo-root "$td/s-docs" --pr-head "$(qh "$td/s-docs")" --pr-head-conclusion success
     row 0 "merge_group on a SQUASH queue ref, roadmap entry only -> FULL owed: only a provably EMPTY diff stays none (sign-off r1)" '^tier=full$' bash -c "$(replay sq-docs)"
     row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
@@ -583,9 +583,11 @@ self_test() {
     row 0 "  (fixture) default git diff --name-only on the rename lists ONLY the new docs path -- the trap is real" '^docs/audits/lib\.rs$' git -C "$td/s-rename" diff --name-only HEAD^1 HEAD
     cap sq-rename bash "$T" --event merge_group --repo-root "$td/s-rename" --pr-head "$(qh "$td/s-rename")" --pr-head-conclusion success
     row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path)" '^tier=full$' bash -c "$(replay sq-rename)"
-    row 0 "  ...and the crate it left is in the selection (r2: full carries no crates= line)" '^tier=full$' bash -c "$(replay sq-rename)"
+    row 0 "  ...and the crate it left is in the selection (r2: full carries no crates= line)" "^0$" bash -c "$(replay sq-rename) | grep -cE '^(crates|targets|check_workspace)=' || true"
     sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
-    row 0 "mutant without --no-renames reads the rename as docs-only -- the rows discriminate" 'MUTANT-NONE' bash -c "o=\$(bash '$td/mutant-renames.sh' --event merge_group --repo-root '$td/s-rename' --pr-head '$(qh "$td/s-rename")' --pr-head-conclusion success 2>&1); case \"\$o\" in *docs-only*) echo MUTANT-NONE ;; *) echo MUTANT-NOT-NONE ;; esac"
+    cap push-rename bash "$T" --event push --repo-root "$td/s-rename"
+    row 0 "push, a crate source RENAMED into docs/audits/ -> the crate it left IS selected (--no-renames; the merge_group arm is always full, so the push arm carries this guard)" "^crates=.*$leaf" bash -c "$(replay push-rename)"
+    row 0 "mutant without --no-renames on the push arm drops the left crate -- the rename rows go RED" 'MUTANT-DROPPED' bash -c "o=\$(bash '$td/mutant-renames.sh' --event push --repo-root '$td/s-rename' 2>&1); case \"\$o\" in *\"crates=\"*$leaf*) echo MUTANT-KEPT ;; *) echo MUTANT-DROPPED ;; esac"
     row 0 "ci/sections.yml (#4433) lists the pull_request touched paths through pr_touched_paths.sh, which keeps --no-renames" '^ALL-PRESENT$' contains_all "$TREE/ci/sections.yml" 'bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
     row 0 "  ...and the helper diffs with --no-renames" '^ALL-PRESENT$' contains_all "$TREE/scripts/ci/pr_touched_paths.sh" 'git diff --no-renames --name-only "$mb" "$head"'
     # #5391: main moves AFTER the PR branched. The PR touches crates/<leaf>; main's later commit
