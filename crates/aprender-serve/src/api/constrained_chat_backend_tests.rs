@@ -502,7 +502,36 @@ async fn a_budget_too_small_for_the_document_is_422_with_no_partial_text() {
     let (status, body) = post(state, constrained_body(schema, 1)).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["type"], "constraint_truncated");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("budget of 1 tokens")),
+        "the refusal names the request's budget: {body}"
+    );
     assert!(body.get("choices").is_none(), "{body}");
+}
+
+/// The disconnect path end to end: a turn whose token is already cancelled is answered 499,
+/// never as the document or as a budget cut.
+#[cfg(feature = "structured-output")]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_the_client_cancelled_is_answered_499_not_truncated() {
+    let (_f, state) = cpu_state(true);
+    let schema = serde_json::json!({"type": "boolean"});
+    let request: ChatCompletionRequest =
+        serde_json::from_value(constrained_body(schema, 8)).expect("a chat request");
+    let cancel = CancelToken::new();
+    cancel.cancel();
+    let response = try_constrained_chat(&state, &request, "id", None, Instant::now(), &cancel)
+        .await
+        .expect("a constrained request is answered here");
+    assert_eq!(response.status().as_u16(), 499);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("a body");
+    let body: serde_json::Value = serde_json::from_slice(&bytes).expect("a JSON body");
+    assert!(body.get("choices").is_none(), "{body}");
+    assert_ne!(body["type"], "constraint_truncated", "{body}");
 }
 
 /// A server that retains no GGUF has no vocabulary to compile against: refused by name, never
@@ -524,4 +553,39 @@ async fn a_server_without_the_gguf_refuses_by_name() {
             .is_some_and(|e| e.contains("serve-without-gguf")),
         "{body}"
     );
+}
+
+/// #3568: a `response_format.type` apr does not serve is a 422 that names the field and the
+/// types it serves, not the sanitizer's "Invalid request body"; a known type still parses.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unknown_response_format_type_is_refused_naming_the_field() {
+    for (format, got) in [
+        (serde_json::json!({"type": "xml"}), "got xml"),
+        (serde_json::json!({"type": 12}), "got 12"),
+        (serde_json::json!({}), "got no type"),
+    ] {
+        let (_f, state) = cpu_state(false);
+        let body = serde_json::json!({
+            "model": "default",
+            "messages": [{"role": "user", "content": "hi"}],
+            "response_format": format,
+        });
+        let (status, body) = post(state, body).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        let error = body["error"].as_str().expect("an error message");
+        assert!(
+            error.contains("response_format.type must be one of text, json_object, json_schema"),
+            "{error}"
+        );
+        assert!(error.ends_with(got), "{error}");
+    }
+    assert_eq!(
+        format(serde_json::json!({"type": "json_object"})),
+        ResponseFormat::JsonObject
+    );
+    // A known type goes through the request's own deserializer, the hook under test
+    let request = chat_request(serde_json::json!({"response_format": {"type": "json_object"}}));
+    assert_eq!(request.response_format, Some(ResponseFormat::JsonObject));
+    let request = chat_request(serde_json::json!({"response_format": null}));
+    assert_eq!(request.response_format, None);
 }

@@ -310,7 +310,7 @@ Current Realizar support (as of BATUTA-010):
 ## References
 
 - [PyTorch Documentation](https://pytorch.org/docs/)
-- [Realizar Inference Library](https://github.com/paiml/realizar)
+- [Realizar Inference Library](https://github.com/paiml/aprender/tree/main/crates/aprender-serve)
 - [SafeTensors Format](https://github.com/huggingface/safetensors)
 - [ONNX Runtime](https://onnxruntime.ai/)
 - [Batuta Specification](../../../docs/specifications/sovereign-ai-spec.md)

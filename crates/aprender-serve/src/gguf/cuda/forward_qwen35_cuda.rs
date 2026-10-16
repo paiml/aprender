@@ -96,6 +96,33 @@ enum CudaLayer {
     Attention(Box<CudaAttentionLayer>),
 }
 
+/// The SwiGLU FFN both layer kinds end with.
+struct CudaFfn<'w> {
+    norm: &'w GpuBuffer<f32>,
+    gate: &'w CudaQuantWeight,
+    up: &'w CudaQuantWeight,
+    down: &'w CudaQuantWeight,
+}
+
+impl CudaLayer {
+    fn ffn(&self) -> CudaFfn<'_> {
+        match self {
+            CudaLayer::DeltaNet(w) => CudaFfn {
+                norm: &w.post_attention_norm,
+                gate: &w.ffn_gate,
+                up: &w.ffn_up,
+                down: &w.ffn_down,
+            },
+            CudaLayer::Attention(w) => CudaFfn {
+                norm: &w.post_attention_norm,
+                gate: &w.ffn_gate,
+                up: &w.ffn_up,
+                down: &w.ffn_down,
+            },
+        }
+    }
+}
+
 /// Per-sequence Qwen3.5 decode state on the device: one causal-conv window and
 /// one recurrent state per Gated `DeltaNet` layer, one K/V cache per
 /// full-attention layer, all sized from the config.
@@ -296,6 +323,11 @@ pub struct Qwen35CudaModel<'a> {
     layer_timings: Option<Vec<crate::session::LayerTiming>>,
     /// Whether [`Self::layer_timings`] is being filled right now.
     timing_on: bool,
+    /// #5303: the m-row buffers of [`Self::forward_batch_greedy`], allocated
+    /// by the first batch of more than one slot and grown with the batch.
+    batch_bufs: Option<batch::Qwen35BatchBufs>,
+    /// #5279: the batched step captured as one CUDA graph per batch shape.
+    batch_graphs: batch::Qwen35BatchGraphs,
 }
 
 /// Why a projection cannot go on the GPU, stated so the user can act on it
@@ -685,6 +717,8 @@ impl<'a> Qwen35CudaModel<'a> {
             use_decode_graph: graph::graph_enabled(),
             layer_timings: None,
             timing_on: false,
+            batch_bufs: None,
+            batch_graphs: batch::Qwen35BatchGraphs::default(),
         };
         m.warm_prefill_weights();
         Ok(m)
@@ -1172,8 +1206,22 @@ impl<'a> Qwen35CudaModel<'a> {
     }
 
     /// The op-for-op attention body; every error here is a GPU error.
-    #[allow(clippy::too_many_lines)]
     fn attention_layer_inner(
+        &mut self,
+        state: &mut Qwen35CudaState,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+        position: usize,
+        graph_io: Option<&graph::Qwen35GraphIo>,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        self.attention_mixer_inner(state, il, hidden, position, graph_io)?;
+        self.ffn_inner(il, hidden)
+    }
+
+    /// The attention mixer up to and including the first residual: everything
+    /// of the layer but its FFN. The KV row it writes is counted in `kv_len`.
+    #[allow(clippy::too_many_lines)]
+    fn attention_mixer_inner(
         &mut self,
         state: &mut Qwen35CudaState,
         il: usize,
@@ -1343,41 +1391,6 @@ impl<'a> Qwen35CudaModel<'a> {
         )?;
         ex.residual_add_into(hidden, &a.attn_out, hidden, d.hidden_dim)?;
 
-        // post_attention_norm -> SwiGLU FFN -> the second residual
-        ex.rmsnorm_into(
-            hidden,
-            &w.post_attention_norm,
-            &s.post_normed,
-            d.hidden_dim,
-            d.eps,
-        )?;
-        ex.gemv_dispatch(
-            w.ffn_gate.qtype,
-            w.ffn_gate.ptr,
-            &s.post_normed,
-            &s.ffn_gate,
-            w.ffn_gate.n,
-            w.ffn_gate.k,
-        )?;
-        ex.gemv_dispatch(
-            w.ffn_up.qtype,
-            w.ffn_up.ptr,
-            &s.post_normed,
-            &s.ffn_up,
-            w.ffn_up.n,
-            w.ffn_up.k,
-        )?;
-        ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
-        ex.gemv_dispatch(
-            w.ffn_down.qtype,
-            w.ffn_down.ptr,
-            &s.ffn_act,
-            &s.ffn_down,
-            w.ffn_down.n,
-            w.ffn_down.k,
-        )?;
-        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
-
         // NO sync here (#3090 review). Every op above is enqueued on the one
         // stream this model uses, so the next layer's first kernel is already
         // ordered after this layer's last one; a sync inside the per-token loop
@@ -1507,9 +1520,10 @@ impl<'a> Qwen35CudaModel<'a> {
             .map_err(|e| gpu_err("qwen35_cuda_deltanet", &e))
     }
 
-    /// The op-for-op body; every error here is a GPU error.
+    /// The token mixer up to and including the first residual: everything of
+    /// the layer but its FFN.
     #[allow(clippy::too_many_lines)]
-    fn deltanet_layer_inner(
+    fn deltanet_mixer_inner(
         &mut self,
         state: &Qwen35CudaState,
         il: usize,
@@ -1627,46 +1641,60 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ssm_out.n,
             w.ssm_out.k,
         )?;
-        ex.residual_add_into(hidden, &s.ssm_out, hidden, d.hidden_dim)?;
+        ex.residual_add_into(hidden, &s.ssm_out, hidden, d.hidden_dim)
+    }
 
-        // post_attention_norm -> SwiGLU FFN -> the second residual
-        ex.rmsnorm_into(
-            hidden,
-            &w.post_attention_norm,
-            &s.post_normed,
-            d.hidden_dim,
-            d.eps,
-        )?;
+    /// The op-for-op body; every error here is a GPU error.
+    fn deltanet_layer_inner(
+        &mut self,
+        state: &Qwen35CudaState,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        self.deltanet_mixer_inner(state, il, hidden)?;
+        self.ffn_inner(il, hidden)
+        // NO sync here — see `attention_layer_inner`. Stream order IS the
+        // dependency; the host only has to wait where it reads.
+    }
+
+    /// post_attention_norm -> SwiGLU FFN -> the second residual, the tail both
+    /// layer kinds share, in place on one row of the residual stream.
+    fn ffn_inner(
+        &mut self,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        let d = self.dims;
+        let w = self.layers[il].ffn();
+        let s = &self.scratch;
+        let ex = &mut self.executor;
+        ex.rmsnorm_into(hidden, w.norm, &s.post_normed, d.hidden_dim, d.eps)?;
         ex.gemv_dispatch(
-            w.ffn_gate.qtype,
-            w.ffn_gate.ptr,
+            w.gate.qtype,
+            w.gate.ptr,
             &s.post_normed,
             &s.ffn_gate,
-            w.ffn_gate.n,
-            w.ffn_gate.k,
+            w.gate.n,
+            w.gate.k,
         )?;
         ex.gemv_dispatch(
-            w.ffn_up.qtype,
-            w.ffn_up.ptr,
+            w.up.qtype,
+            w.up.ptr,
             &s.post_normed,
             &s.ffn_up,
-            w.ffn_up.n,
-            w.ffn_up.k,
+            w.up.n,
+            w.up.k,
         )?;
         ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
         ex.gemv_dispatch(
-            w.ffn_down.qtype,
-            w.ffn_down.ptr,
+            w.down.qtype,
+            w.down.ptr,
             &s.ffn_act,
             &s.ffn_down,
-            w.ffn_down.n,
-            w.ffn_down.k,
+            w.down.n,
+            w.down.k,
         )?;
-        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
-
-        // NO sync here — see `attention_layer_inner`. Stream order IS the
-        // dependency; the host only has to wait where it reads.
-        Ok(())
+        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)
     }
 
     /// APR-OBS-001 OBS-09: time every layer of the single-token forwards that
@@ -1946,6 +1974,11 @@ pub use prefill::{
 /// #4233: the decode step captured as one CUDA graph.
 #[path = "forward_qwen35_cuda_graph.rs"]
 mod graph;
+
+/// #5289: one greedy decode step for m sequences.
+#[path = "forward_qwen35_cuda_batch.rs"]
+mod batch;
+pub use batch::Qwen35StepOut;
 
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]

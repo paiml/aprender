@@ -389,6 +389,11 @@ fn print_bench_json(path: &Path, result: &BenchResult, percentiles: &[f64]) -> R
         // token-count inconstancy, so a zero-invariant would contradict the
         // only correct implementation we have.
         obj.insert("runs_discarded".to_string(), serde_json::json!(0));
+        // #5254: the memory row of the edge parity nightly. The kernel's own
+        // high-water mark for this process (VmHWM), null where there is no
+        // /proc. On a unified-memory device a CUDA allocation need not count
+        // toward it, so it is labelled RSS and never called "memory".
+        obj.insert("peak_rss_mb".to_string(), serde_json::json!(peak_rss_mb()));
         obj.insert("provenance".to_string(), provenance_json());
         obj.insert(
             "model_sha256".to_string(),
@@ -923,5 +928,49 @@ mod parity_001_receipt_tests {
             "a missing model must yield no digest — never a placeholder"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// #5254: this process's peak resident set (`VmHWM` in `/proc/self/status`),
+/// in MiB. `None` where the kernel does not report it.
+fn peak_rss_mb() -> Option<f64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    parse_vm_hwm_mb(&status)
+}
+
+/// The `VmHWM:` line of a `/proc/<pid>/status` body, kB to MiB.
+fn parse_vm_hwm_mb(status: &str) -> Option<f64> {
+    let kb: f64 = status
+        .lines()
+        .find_map(|l| l.strip_prefix("VmHWM:"))?
+        .trim()
+        .strip_suffix("kB")?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(kb / 1024.0)
+}
+
+#[cfg(test)]
+mod peak_rss_tests {
+    use super::parse_vm_hwm_mb;
+
+    #[test]
+    fn vm_hwm_parses_kb_to_mib() {
+        let status = "Name:\tapr\nVmPeak:\t 999 kB\nVmHWM:\t    2048 kB\nVmRSS:\t 1 kB\n";
+        assert_eq!(parse_vm_hwm_mb(status), Some(2.0));
+    }
+
+    #[test]
+    fn vm_hwm_absent_or_malformed_is_none() {
+        assert_eq!(parse_vm_hwm_mb("Name:\tapr\nVmRSS:\t 1 kB\n"), None);
+        assert_eq!(parse_vm_hwm_mb("VmHWM:\t 12 MB\n"), None);
+        assert_eq!(parse_vm_hwm_mb("VmHWM:\t abc kB\n"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn vm_hwm_of_this_process_is_positive() {
+        assert!(super::peak_rss_mb().is_some_and(|mb| mb > 0.0));
     }
 }

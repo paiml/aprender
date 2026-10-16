@@ -26,13 +26,24 @@ use crate::ptx::{PtxKernel, PtxReg, PtxType};
 pub struct KvRowScatterIndirectKernel {
     /// Floats per cache row (`num_kv_heads * head_dim`).
     pub row: u32,
+    /// #5279: write `m` slots' rows in one launch; see [`Self::slots`].
+    pub slots: bool,
 }
 
 impl KvRowScatterIndirectKernel {
     /// Create the kernel.
     #[must_use]
     pub const fn new(row: u32) -> Self {
-        Self { row }
+        Self { row, slots: false }
+    }
+
+    /// #5279: the scatter for `m` decode slots on a `ceil(row / 256) × m`
+    /// grid: `dst_ptr` is then an `[m]` table of cache pointers, and slot `r`
+    /// writes row `r` of `src` into its cache at `pos_ptr[r]`.
+    #[must_use]
+    pub const fn slots(mut self) -> Self {
+        self.slots = true;
+        self
     }
 
     /// Launch grid.
@@ -50,11 +61,15 @@ impl KvRowScatterIndirectKernel {
 
 impl Kernel for KvRowScatterIndirectKernel {
     fn name(&self) -> &str {
-        "gdn_kv_row_scatter_indirect"
+        if self.slots {
+            "gdn_kv_row_scatter_slots"
+        } else {
+            "gdn_kv_row_scatter_indirect"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        let row = self.row;
+        let (row, slots) = (self.row, self.slots);
 
         PtxKernel::new(self.name())
             .param(PtxType::U64, "src_ptr") // [row]
@@ -71,9 +86,20 @@ impl Kernel for KvRowScatterIndirectKernel {
                 let go = ctx.setp_lt_u32(i, row_r);
                 ctx.branch_if_not(go, "gdn_kv_row_scatter_exit");
 
-                let src_ptr = ctx.load_param_u64("src_ptr");
-                let dst_ptr = ctx.load_param_u64("dst_ptr");
-                let pos_ptr = ctx.load_param_u64("pos_ptr");
+                let mut src_ptr = ctx.load_param_u64("src_ptr");
+                let mut dst_ptr = ctx.load_param_u64("dst_ptr");
+                let mut pos_ptr = ctx.load_param_u64("pos_ptr");
+                if slots {
+                    // Slot `r`: its row of `src`, its cache, its position.
+                    let r = ctx.special_reg(PtxReg::CtaIdY);
+                    let src_row = ctx.mul_wide_u32(r, row * 4);
+                    src_ptr = ctx.add_u64(src_ptr, src_row);
+                    let entry_off = ctx.mul_wide_u32(r, 8);
+                    let entry = ctx.add_u64(dst_ptr, entry_off);
+                    dst_ptr = ctx.ld_global_u64(entry);
+                    let pos_off = ctx.mul_wide_u32(r, 4);
+                    pos_ptr = ctx.add_u64(pos_ptr, pos_off);
+                }
                 let pos = ctx.ld_global_u32(pos_ptr);
 
                 let four = ctx.mov_u32_imm(4);
@@ -109,6 +135,20 @@ mod ptx_tests {
         assert!(ptx.contains("mul.wide.u32"), "64-bit row offset:\n{ptx}");
         assert_eq!(ptx.matches("st.global.f32").count(), 1, "{ptx}");
         assert_eq!(kernel.grid(), (2, 1, 1));
+    }
+
+    #[test]
+    fn gdn_kv_row_scatter_slots_reads_its_cache_from_the_table() {
+        let one = KvRowScatterIndirectKernel::new(512).emit_ptx();
+        let rows = KvRowScatterIndirectKernel::new(512).slots().emit_ptx();
+        assert!(rows.contains(".entry gdn_kv_row_scatter_slots"), "{rows}");
+        assert!(!one.contains("%ctaid.y"), "{one}");
+        assert!(rows.contains("%ctaid.y"), "{rows}");
+        assert!(
+            rows.contains("ld.global.u64"),
+            "cache pointer load:\n{rows}"
+        );
+        assert_eq!(rows.matches("st.global.f32").count(), 1, "{rows}");
     }
 }
 
@@ -154,6 +194,44 @@ mod gdn_kv_row_scatter_device_tests {
                 cache.copy_to_host(&mut got).expect("download");
                 assert_eq!(got, want, "row {row}, pos {pos}");
             }
+        }
+    }
+
+    /// FALSIFY (#5279): the slots scatter writes row `r` of `src` into slot
+    /// `r`'s cache at `pos[r]`, and nothing else in any cache moves.
+    #[test]
+    fn gdn_kv_row_scatter_slots_write_each_slot_row_at_its_position() {
+        let Ok(ctx) = CudaContext::new(0) else {
+            println!("gdn_kv_row_scatter_slots: no CUDA device — SKIPPED.");
+            return;
+        };
+        let stream = CudaStream::new(&ctx).expect("stream");
+        let (row, max_len) = (300usize, 8usize);
+        let positions = [3u32, 0, 7];
+        let kernel = KvRowScatterIndirectKernel::new(row as u32).slots();
+        let mut rng = Lcg::new(0x5279_0002);
+        let mut want: Vec<Vec<f32>> = (0..positions.len())
+            .map(|_| rng.vec(max_len * row, 1.0))
+            .collect();
+        let caches: Vec<GpuBuffer<f32>> = want
+            .iter()
+            .map(|c| GpuBuffer::from_host(&ctx, c).expect("cache"))
+            .collect();
+        let src_host = rng.vec(positions.len() * row, 1.0);
+        let src = GpuBuffer::from_host(&ctx, &src_host).expect("src");
+        let table: Vec<u64> = caches.iter().map(GpuBuffer::as_ptr).collect();
+        let table = GpuBuffer::from_host(&ctx, &table).expect("table");
+        let pos = GpuBuffer::from_host(&ctx, &positions).expect("pos");
+        let mut args = [src.as_ptr(), table.as_ptr(), pos.as_ptr()];
+        let (gx, _, _) = kernel.grid();
+        let grid = (gx, positions.len() as u32, 1);
+        run_kernel(&ctx, &stream, &kernel, grid, kernel.block(), &mut args);
+        for (r, (cache, &p)) in caches.iter().zip(&positions).enumerate() {
+            let p = p as usize;
+            want[r][p * row..(p + 1) * row].copy_from_slice(&src_host[r * row..(r + 1) * row]);
+            let mut got = vec![0.0f32; max_len * row];
+            cache.copy_to_host(&mut got).expect("download");
+            assert_eq!(got, want[r], "slot {r}, pos {p}");
         }
     }
 }

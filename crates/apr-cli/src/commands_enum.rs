@@ -132,7 +132,10 @@ pub enum CodeOutputFormat {
     /// Plain assistant text on stdout (default; existing behavior).
     #[default]
     Text,
-    /// Structured JSON envelope: `{type:"result", subtype:"success", result, session_id, duration_ms}`.
+    /// Structured JSON envelope: `{type:"result", subtype:"success"|"error", is_error, status,
+    /// duration_ms, result, session_id, num_turns, tokens_in, tokens_out, total_cost_usd,
+    /// backend:{requested, ran, fell_back}|null}`, plus `error:{kind, message, exit_code}`
+    /// when `subtype` is `"error"`.
     Json,
 }
 
@@ -250,6 +253,21 @@ pub enum Commands {
         /// F-CLIPARITY-01 / PMAT-384 / paiml/aprender#571
         #[arg(long, default_value = "64", group = batuta_common::cli_roles::SamplingKind::RepeatLastN.id())]
         repeat_last_n: usize,
+        /// Record the K most likely next tokens (token id, logit, logprob) at every
+        /// generated step, plus the prompt ids actually encoded, in `--json` output
+        /// (#4026). 0 (the default) records nothing; at most 20, as on the HTTP
+        /// `top_logprobs`. Refused by name on a path that cannot record them
+        /// (`--trace`, APR/SafeTensors, wgpu, qwen3_moe) and on an output that does
+        /// not print them (text, `--benchmark`, `--batch-jsonl`). With K > 0 a greedy
+        /// step picks its token on the host from the recorded logits, not by the
+        /// device argmax, so an exact tie may break differently than without it.
+        #[arg(
+            long,
+            value_name = "K",
+            default_value_t = 0,
+            value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(0..=20)
+        )]
+        logprobs: usize,
         /// Process prompt tokens one-by-one instead of batched prefill.
         /// Useful for debugging prefill correctness (comparing per-token attention).
         /// F-CLIPARITY-01 / PMAT-385 / paiml/aprender#572
@@ -911,8 +929,11 @@ pub enum Commands {
 
         /// Output format for non-interactive (`-p`) mode (PMAT-CODE-OUTPUT-FORMAT-001).
         /// `text` (default): plain assistant text.
-        /// `json`: structured `{type:"result", subtype:"success", result, session_id, duration_ms}`
-        /// envelope matching Claude Code's `claude -p --output-format json` shape.
+        /// `json`: structured `{type:"result", subtype:"success"|"error", is_error, status,
+        /// duration_ms, result, session_id, num_turns, tokens_in, tokens_out, total_cost_usd,
+        /// backend:{requested, ran, fell_back}|null}` envelope, plus
+        /// `error:{kind, message, exit_code}` when `subtype` is `"error"`. The shape matches
+        /// Claude Code's `claude -p --output-format json`; `backend` names the device that ran.
         #[arg(long, value_enum, default_value_t = CodeOutputFormat::Text)]
         output_format: CodeOutputFormat,
 
@@ -1042,3 +1063,7 @@ pub enum DebugCommands {
         force: bool,
     },
 }
+
+#[cfg(all(test, feature = "training"))]
+#[path = "code_output_format_help_tests.rs"]
+mod code_output_format_help_tests;

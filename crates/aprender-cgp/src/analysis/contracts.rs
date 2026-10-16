@@ -24,7 +24,7 @@ pub struct PerformanceContract {
     pub falsification: Vec<FalsificationCheck>,
     /// Absorb any extra fields from domain-specific contract schemas
     #[serde(flatten, default)]
-    pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    pub extra: std::collections::HashMap<String, ExtraValue>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -48,7 +48,97 @@ pub struct PerformanceBound {
     pub min_bandwidth_gbps: Option<f64>,
     /// Absorb domain-specific bound fields (operation, competitor, etc.)
     #[serde(flatten, default)]
-    pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    pub extra: std::collections::HashMap<String, ExtraValue>,
+}
+
+/// One absorbed `extra` field value. serde_yaml_ng accepted any YAML node here, but
+/// serde_json::Value refuses a non-string mapping key and has no .inf/.nan. This reads any
+/// node: scalar keys become strings and a non-finite float keeps its YAML spelling.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct ExtraValue(pub serde_json::Value);
+
+impl<'de> Deserialize<'de> for ExtraValue {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(ExtraVisitor).map(ExtraValue)
+    }
+}
+
+struct ExtraVisitor;
+
+impl<'de> serde::de::Visitor<'de> for ExtraVisitor {
+    type Value = serde_json::Value;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("any YAML node")
+    }
+    fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> {
+        Ok(v.into())
+    }
+    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
+        Ok(v.into())
+    }
+    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+        Ok(v.into())
+    }
+    fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> {
+        Ok(serde_json::Number::from_f64(v).map_or_else(
+            || serde_json::Value::String(yaml_non_finite(v).to_string()),
+            serde_json::Value::Number,
+        ))
+    }
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
+        Ok(v.into())
+    }
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(serde_json::Value::Null)
+    }
+    fn visit_none<E>(self) -> Result<Self::Value, E> {
+        Ok(serde_json::Value::Null)
+    }
+    fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        d.deserialize_any(ExtraVisitor)
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut s: A) -> Result<Self::Value, A::Error> {
+        let mut items = Vec::new();
+        while let Some(ExtraValue(v)) = s.next_element()? {
+            items.push(v);
+        }
+        Ok(serde_json::Value::Array(items))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
+        let mut map = serde_json::Map::new();
+        while let Some((ExtraKey(k), ExtraValue(v))) = m.next_entry()? {
+            map.insert(k, v);
+        }
+        Ok(serde_json::Value::Object(map))
+    }
+}
+
+/// The YAML spelling of a non-finite float.
+fn yaml_non_finite(v: f64) -> &'static str {
+    if v.is_nan() {
+        ".nan"
+    } else if v > 0.0 {
+        ".inf"
+    } else {
+        "-.inf"
+    }
+}
+
+/// A mapping key inside an `extra` value: any scalar, as a string.
+struct ExtraKey(String);
+
+impl<'de> Deserialize<'de> for ExtraKey {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match d.deserialize_any(ExtraVisitor)? {
+            serde_json::Value::String(s) => Ok(ExtraKey(s)),
+            serde_json::Value::Null => Ok(ExtraKey("~".to_string())),
+            v @ (serde_json::Value::Bool(_) | serde_json::Value::Number(_)) => {
+                Ok(ExtraKey(v.to_string()))
+            }
+            _ => Err(serde::de::Error::custom("a mapping key must be a scalar")),
+        }
+    }
 }
 
 /// Accept both `size: 1024` (single int) and `size: [1024, 1024, 1024]` (sequence).
@@ -101,7 +191,7 @@ pub struct FalsificationCheck {
     #[serde(default)]
     pub check: String,
     #[serde(flatten, default)]
-    pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    pub extra: std::collections::HashMap<String, ExtraValue>,
 }
 
 /// Result of verifying a single contract.
@@ -123,7 +213,7 @@ impl ContractVerification {
 pub fn load_contract(path: &Path) -> Result<PerformanceContract> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read contract: {}", path.display()))?;
-    let contract: PerformanceContract = serde_yaml_ng::from_str(&content)
+    let contract: PerformanceContract = serde_saphyr::from_str_with_options(&content, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
         .with_context(|| format!("Failed to parse contract: {}", path.display()))?;
     Ok(contract)
 }
@@ -627,11 +717,65 @@ mod tests {
         assert!(!result.skipped.is_empty());
     }
 
+    /// Haiku C314 Q1 (#5326): the three flatten `extra` maps are serde_json::Value now.
+    /// A contract carrying .inf/.nan, a tagged node or a non-string key in an extra field
+    /// must still load, as it did under serde_yaml_ng.
+    /// A tagged value keeps its tag as a one-key map.
+    #[test]
+    fn test_extra_fields_keep_loading_yaml_only_values() {
+        let yaml = r#"
+kind: PerformanceContract
+name: hazards
+version: "1.0.0"
+kernel: k
+ceiling: .inf
+floor: -.inf
+undefined: .nan
+tagged: !custom value
+by_id:
+  1: one
+  2.5: two
+  true: three
+bounds:
+  - size: 512
+    max_time_us: 30.0
+    headroom: .inf
+    note: !tag text
+    table: {7: seven}
+falsification:
+  - name: FALSIFY-HAZ-001
+    limit: .nan
+    marker: !m x
+    keyed: {3: three}
+"#;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("hazards.yaml");
+        std::fs::write(&path, yaml).expect("write");
+        let c = load_contract(&path).expect("a contract with YAML-only extras still loads");
+        let s = |m: &std::collections::HashMap<String, ExtraValue>, k: &str| m[k].0.clone();
+        assert_eq!(s(&c.extra, "ceiling"), ".inf");
+        assert_eq!(s(&c.extra, "floor"), "-.inf");
+        assert_eq!(s(&c.extra, "undefined"), ".nan");
+        assert_eq!(s(&c.extra, "tagged")["custom"], "value");
+        let by_id = s(&c.extra, "by_id");
+        assert_eq!(by_id["1"], "one");
+        assert_eq!(by_id["2.5"], "two");
+        assert_eq!(by_id["true"], "three");
+        let b = &c.bounds[0].extra;
+        assert_eq!(s(b, "headroom"), ".inf");
+        assert_eq!(s(b, "note")["tag"], "text");
+        assert_eq!(s(b, "table")["7"], "seven");
+        let f = &c.falsification[0].extra;
+        assert_eq!(s(f, "limit"), ".nan");
+        assert_eq!(s(f, "marker")["m"], "x");
+        assert_eq!(s(f, "keyed")["3"], "three");
+    }
+
     #[test]
     fn test_contract_yaml_roundtrip() {
         let contract = sample_contract();
-        let yaml = serde_yaml_ng::to_string(&contract).unwrap();
-        let parsed: PerformanceContract = serde_yaml_ng::from_str(&yaml).unwrap();
+        let yaml = serde_saphyr::to_string(&contract).unwrap();
+        let parsed: PerformanceContract = serde_saphyr::from_str_with_options(&yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
         assert_eq!(parsed.name, contract.name);
         assert_eq!(parsed.kernel, contract.kernel);
         assert_eq!(parsed.bounds.len(), 1);

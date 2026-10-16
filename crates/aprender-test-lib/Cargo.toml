@@ -65,7 +65,7 @@ sha2 = { workspace = true }
 # its tests must RUN) under default features, because CI is
 # `cargo nextest run --profile ci --workspace --lib` with no --features.
 flate2 = "1"
-serde_yaml_ng = { workspace = true }
+serde-saphyr = { workspace = true }
 
 # Tracing and UUID (available on all targets)
 tracing = { workspace = true }

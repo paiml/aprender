@@ -48,17 +48,15 @@ fn show_metadata(contracts_dir: &Path) {
             continue;
         }
         let content = std::fs::read_to_string(&path).expect("read contract");
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&content).expect("parse YAML");
+        let yaml: serde_json::Value = serde_saphyr::from_str_with_options(&content, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).expect("parse YAML");
 
         let metadata = &yaml["metadata"];
         let version = metadata["version"].as_str().unwrap_or("?");
         let description = metadata["description"].as_str().unwrap_or("?");
         let registry = metadata["registry"].as_bool().unwrap_or(false);
 
-        let obligations = yaml["proof_obligations"].as_sequence().map_or(0, Vec::len);
-        let tests = yaml["falsification_tests"]
-            .as_sequence()
-            .map_or(0, Vec::len);
+        let obligations = yaml["proof_obligations"].as_array().map_or(0, Vec::len);
+        let tests = yaml["falsification_tests"].as_array().map_or(0, Vec::len);
 
         println!("  {name}");
         println!("    version:     {version}");
@@ -75,9 +73,9 @@ fn show_bindings(binding_path: &Path) {
 
     if binding_path.exists() {
         let content = std::fs::read_to_string(binding_path).expect("read binding");
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&content).expect("parse YAML");
+        let yaml: serde_json::Value = serde_saphyr::from_str_with_options(&content, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).expect("parse YAML");
 
-        if let Some(bindings) = yaml["bindings"].as_sequence() {
+        if let Some(bindings) = yaml["bindings"].as_array() {
             for binding in bindings {
                 let contract = binding["contract"].as_str().unwrap_or("?");
                 let equation = binding["equation"].as_str().unwrap_or("?");

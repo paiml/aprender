@@ -46,3 +46,20 @@ falsification:
     description: "RoPE backward matches finite-difference gradients (graph not severed at RoPE)"
     test: "crates/aprender-train/src/transformer/attention.rs::tests::falsify_pmat805_rope_backward_matches_finite_difference"
     evidence: "cargo test -p aprender-train --lib falsify_pmat805_rope_backward_matches_finite_difference"
+
+falsification_tests:
+  - id: FALSIFY-LORA_GRADIENT_FLOW-001
+    description: "Base weight stays frozen while the adapter trains: 400 SGD steps leave W_base byte-identical while A and B get finite non-zero gradients and loss falls"
+    test: "cargo test -p aprender-train --lib falsify_lora_adapter_trains_to_decreasing_loss_base_frozen"
+    prediction: "base_final == base_snapshot, A/B saw non-zero grads, final loss < initial loss"
+    if_fails: "base weight receives updates, or the LoRA branch is severed from autograd"
+  - id: FALSIFY-LORA_GRADIENT_FLOW-002
+    description: "Grad of A and B is non-zero for BOTH q_proj (through RoPE) and v_proj: overfit-one-batch moves both B params and strictly decreases loss"
+    test: "cargo test -p aprender-train --lib falsify_pmat805_cpu_train_step_trains_lora_overfit_one_batch"
+    prediction: "q_delta > 1e-6, v_delta > 1e-6, last_loss < first_loss - 1e-3"
+    if_fails: "CPU train_step bypasses LoRA layers or RoPE cuts the Q-path graph"
+  - id: FALSIFY-LORA_GRADIENT_FLOW-003
+    description: "RoPE is autograd-connected: RopeBackward matches finite differences of L = sum(rope(x) * w)"
+    test: "cargo test -p aprender-train --lib falsify_pmat805_rope_backward_matches_finite_difference"
+    prediction: "analytic grad_x equals the finite-difference grad within tolerance"
+    if_fails: "RoPE backward is missing or uses the forward (not transpose) rotation"

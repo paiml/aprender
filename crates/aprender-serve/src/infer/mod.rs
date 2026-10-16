@@ -234,6 +234,11 @@ pub struct InferenceConfig {
     /// removes the empty `<think>` prefill so the model reasons, and is refused by name on a
     /// template with no thinking mode ([`crate::chat_template::apply_thinking_mode`]).
     pub thinking: Option<bool>,
+    /// #4026: `apr run --logprobs K` — record the `K` most likely next tokens at
+    /// every generated step. 0 records nothing. Only the one engine records
+    /// ([`crate::session::take_last_turn_steps`]); a run served by any other
+    /// path is refused by name by the caller, never reported with an empty list.
+    pub logprobs_top_k: usize,
     /// #3793: constrain generation to a JSON Schema or a Lark grammar (`apr run --json-schema`
     /// / `--grammar`), read and checked before the model loads. A path that cannot apply it
     /// refuses by name; it never runs unconstrained.
@@ -292,8 +297,16 @@ impl InferenceConfig {
             use_mock_backend: false,
             force_chat_template: false,
             thinking: None,
+            logprobs_top_k: 0,
             constraint: None,
         }
+    }
+
+    /// #4026: record the `k` most likely next tokens at every generated step.
+    #[must_use]
+    pub fn with_logprobs_top_k(mut self, k: usize) -> Self {
+        self.logprobs_top_k = k;
+        self
     }
 
     /// Set the text prompt
@@ -437,6 +450,7 @@ impl InferenceConfig {
         gen_config.seed = self.seed;
         gen_config.repeat_penalty = self.repeat_penalty;
         gen_config.repeat_last_n = self.repeat_last_n;
+        gen_config.logprobs_top_k = self.logprobs_top_k;
     }
 }
 

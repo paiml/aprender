@@ -171,6 +171,14 @@ pub enum KernelType {
         n: u32,
         num_warps: u32,
     },
+    /// #5303: MWV Q4_K GEMV over `m` activation rows, each row bitwise equal
+    /// to [`KernelType::MwvQ4KGemv`] on that row alone
+    BatchedMwvQ4KGemv {
+        k: u32,
+        n: u32,
+        m: u32,
+        num_warps: u32,
+    },
     /// PAR-082-V4: Multi-warp DP4A Q4_K GEMV with Q8_1-quantized activations
     MwvDp4aQ4KGemv {
         k: u32,
@@ -286,6 +294,13 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// #5279: Q5_K GEMV over `m` activation rows, each row bitwise equal to
+    /// [`KernelType::Q5KGemv`] on that row alone
+    BatchedQ5KGemv {
+        k: u32,
+        n: u32,
+        m: u32,
+    },
     /// Q6_K quantized GEMV (fused dequantization) - PAR-003
     Q6KGemv {
         k: u32,
@@ -314,6 +329,14 @@ pub enum KernelType {
         n: u32,
         num_warps: u32,
     },
+    /// #5303: MWV Q6_K GEMV over `m` activation rows, each row bitwise equal
+    /// to [`KernelType::MwvQ6KGemv`] on that row alone
+    BatchedMwvQ6KGemv {
+        k: u32,
+        n: u32,
+        m: u32,
+        num_warps: u32,
+    },
     /// DP4A Q6_K GEMV with vectorized int32 loads and dp4a.u32.s32
     ///
     /// ~4x instruction reduction vs MWV Q6K. Pre-quantizes activations to Q8_1.
@@ -329,6 +352,14 @@ pub enum KernelType {
         n: u32,
         num_warps: u32,
     },
+    /// #5279: HW DP4A Q6_K GEMV over `m` Q8_1 activation rows, each row
+    /// bitwise equal to [`KernelType::HwDp4aQ6KGemv`] on that row alone
+    BatchedHwDp4aQ6KGemv {
+        k: u32,
+        n: u32,
+        m: u32,
+        num_warps: u32,
+    },
     /// PAR-053: FP16 Q4_K GEMV - 2x bandwidth savings vs FP32
     Fp16Q4KGemv {
         k: u32,
@@ -336,6 +367,12 @@ pub enum KernelType {
     },
     /// Q8_0 quantized GEMV (fused dequantization) - PAR-058
     Q8_0Gemv {
+        k: u32,
+        n: u32,
+    },
+    /// #5279: Q8_0 GEMV over activation rows on grid y, each row bitwise
+    /// equal to [`KernelType::Q8_0Gemv`] on that row alone
+    BatchedQ8_0Gemv {
         k: u32,
         n: u32,
     },
@@ -472,6 +509,12 @@ pub enum KernelType {
     VectorizedRmsNorm {
         hidden_size: u32,
         epsilon: f32,
+    },
+    /// #5279: `RmsNorm` or `VectorizedRmsNorm` over m rows, row on grid y
+    RowsRmsNorm {
+        hidden_size: u32,
+        epsilon: f32,
+        vectorized: bool,
     },
     /// PAR-112: Batched Vectorized RMSNorm kernel
     BatchedVectorizedRmsNorm {
@@ -638,6 +681,10 @@ pub enum KernelType {
     ArgMaxFinal {
         num_blocks: u32,
     },
+    /// #5279: [`Self::ArgMax`] over `m` rows, one per `%ctaid.y`.
+    ArgMaxRows { length: u32 },
+    /// #5279: [`Self::ArgMaxFinal`] over `m` rows, one per `%ctaid.y`.
+    ArgMaxFinalRows { num_blocks: u32 },
     /// QWEN-007: Q8 dequantization kernel for KV cache
     Q8Dequant {
         n: u32,
@@ -705,6 +752,13 @@ pub enum KernelType {
         head_dim: u32,
         n_rot: u32,
     },
+    /// #5279: [`Self::GdnPartialNeoxRopeIndirect`] over m decode slots, row
+    /// `r` at the device position `pos[r]`.
+    GdnPartialNeoxRopeSlots {
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+    },
     /// aprender#4233: [`Self::GdnDecodeAttention`] with `seq_len = *pos + 1`
     /// read on the device.
     GdnDecodeAttentionIndirect {
@@ -714,6 +768,9 @@ pub enum KernelType {
     },
     /// aprender#4233: `cache[*pos * row ..][..row] = src`, the graph-safe KV append.
     GdnKvRowScatterIndirect { row: u32 },
+    /// #5279: the KV append for `m` slots, row `r` of `src` into the cache
+    /// named by `table[r]` at `pos[r]`.
+    GdnKvRowScatterSlots { row: u32 },
     /// aprender#4273: decode attention split over the sequence, one block per
     /// (head, `split_len` positions); writes per-split partials.
     GdnDecodeAttentionSplit {
@@ -724,6 +781,19 @@ pub enum KernelType {
     },
     /// aprender#4273: combine the partials of [`Self::GdnDecodeAttentionSplit`].
     GdnDecodeAttentionReduce {
+        num_heads: u32,
+        head_dim: u32,
+        split_len: u32,
+    },
+    /// #5279: [`Self::GdnDecodeAttentionSplit`] for m decode slots in one launch.
+    GdnDecodeAttentionSplitSlots {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        split_len: u32,
+    },
+    /// #5279: [`Self::GdnDecodeAttentionReduce`] for m decode slots in one launch.
+    GdnDecodeAttentionReduceSlots {
         num_heads: u32,
         head_dim: u32,
         split_len: u32,

@@ -175,6 +175,8 @@ pub(crate) struct RunOptions {
     /// #3723: `--thinking on|off`. `None` renders the production default; realizar applies it
     /// to the rendered prompt and refuses `on` for a template with no thinking mode.
     pub thinking: Option<bool>,
+    /// #4026: `--logprobs K`. 0 records nothing.
+    pub logprobs_top_k: usize,
     /// `--stream`: emit one NDJSON event per generated token.
     ///
     /// Known here (not only at the print site) because streaming is the one
@@ -230,6 +232,7 @@ impl Default for RunOptions {
             split_prompt: false,
             chat_template: false,
             thinking: None,
+            logprobs_top_k: 0,
             stream: false,
             constraint: ConstraintArgs::default(),
         }
@@ -293,6 +296,8 @@ pub(crate) struct RunResult {
     pub token_texts: Option<Vec<String>>,
     /// Prompt and completion counts plus the finish reason (#3718).
     pub usage: RunUsage,
+    /// #4026: `{top_k, prompt_token_ids, steps}` when `--logprobs K` > 0, else `None`.
+    pub logprobs: Option<serde_json::Value>,
     /// #3793: a constrained run whose output was produced and then refused (`Truncated`, or
     /// `SchemaViolation` from the second reader). The output is still emitted in `--json`,
     /// beside the refusal; the run then exits non-zero.
@@ -359,6 +364,10 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         return Err(CliError::FileNotFound(model_path));
     }
 
+    // APR-EMBED-001 EG-5 (I-3): an embedding model is refused by kind, naming `apr embed`, before a
+    // tokenizer or backend is built.
+    crate::commands::model_kind_gate::refuse_non_generative_path(&model_path, "run")?;
+
     // Check if input is required
     let input_path = options.input.as_ref();
 
@@ -385,6 +394,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         generated_tokens: output.generated_tokens,
         token_texts: output.token_texts,
         usage: output.usage,
+        logprobs: output.logprobs,
         constraint_refusal: output.constraint_refusal,
     })
 }
@@ -412,8 +422,9 @@ pub(crate) fn resolve_model(source: &ModelSource, force: bool, offline: bool) ->
     }
 }
 
-/// [`resolve_model`] for `hf://org/repo[/file]`: the cache, else the offline refusal,
-/// else a download.
+/// The `hf://` arm of [`resolve_model`], split out unchanged: inline, the two
+/// remote arms held its cognitive complexity at 29 against the pre-commit
+/// ceiling of 25.
 fn resolve_hf_source(
     org: &str,
     repo: &str,
@@ -460,8 +471,7 @@ fn resolve_hf_source(
     download_hf_model(org, repo, file)
 }
 
-/// [`resolve_model`] for a URL: the cache (allowed even offline), else the offline
-/// refusal, else a download.
+/// The URL arm of [`resolve_model`], split out unchanged (see [`resolve_hf_source`]).
 fn resolve_url_source(
     source: &ModelSource,
     url: &str,

@@ -1673,6 +1673,24 @@ size_categories:
 }
 
 #[test]
+fn test_validate_readme_non_string_key_does_not_skip_checks() {
+    // A refused frontmatter parse returns no errors, so a card with non-string keys must
+    // still parse: serde-saphyr hands serde_json::Value scalar keys as strings.
+    let readme = r"---
+7: seven
+configs:
+  - {1: one, true: yes}
+task_categories:
+  - invalid-task-1
+size_categories:
+  - invalid-size
+---
+";
+    let errors = DatasetCardValidator::validate_readme(readme);
+    assert_eq!(errors.len(), 2, "both bad categories reported: {errors:?}");
+}
+
+#[test]
 fn test_suggest_similar_with_exact_threshold() {
     // Test edge case where distance equals threshold
     let suggestions = DatasetCardValidator::suggest_similar("text-gen", VALID_TASK_CATEGORIES);

@@ -256,7 +256,7 @@ pub fn compute_playbook_hash(path: impl AsRef<Path>) -> Result<String> {
 /// Returns an error if the file cannot be read or parsed.
 pub fn load_lock_file(path: impl AsRef<Path>) -> Result<PlaybookLockFile> {
     let content = std::fs::read_to_string(path)?;
-    serde_yaml::from_str(&content).map_err(Error::from)
+    serde_saphyr::from_str_with_options(&content, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(Error::from)
 }
 
 /// Save a lock file to YAML
@@ -265,7 +265,7 @@ pub fn load_lock_file(path: impl AsRef<Path>) -> Result<PlaybookLockFile> {
 ///
 /// Returns an error if serialization or writing fails.
 pub fn save_lock_file(lock: &PlaybookLockFile, path: impl AsRef<Path>) -> Result<()> {
-    let yaml = serde_yaml::to_string(lock).map_err(Error::from)?;
+    let yaml = serde_saphyr::to_string(lock).map_err(Error::from)?;
     std::fs::write(path, yaml)?;
     Ok(())
 }
@@ -367,7 +367,7 @@ pub fn find_skip_files(playbook_dir: &Path, name: &str) -> Vec<SkipReason> {
         return Vec::new();
     };
 
-    match serde_yaml::from_str(&content) {
+    match serde_saphyr::from_str_with_options(&content, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }) {
         Ok(reasons) => reasons,
         Err(e) => {
             eprintln!(

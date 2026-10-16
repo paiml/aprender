@@ -59,7 +59,9 @@ pub use fused::{
     FusedGateUpQ4KGemvKernel, FusedNf4GateUpGemmKernel, FusedRmsNormGateUpSwigluQ4KKernel,
     FusedRmsNormNf4GemvKernel, FusedRmsNormQ4KGemvKernel,
 };
-pub use legacy::{Q4_0GemvKernel, Q4_1GemvKernel, Q5_0GemvKernel, Q8_0GemvKernel};
+pub use legacy::{
+    BatchedQ8_0GemvKernel, Q4_0GemvKernel, Q4_1GemvKernel, Q5_0GemvKernel, Q8_0GemvKernel,
+};
 pub(crate) use nf4::nf4_register_lut_lookup;
 pub use nf4::{Nf4GemmKernel, Nf4GemmTransposeKernel};
 pub use nf4_cpu::{
@@ -70,17 +72,18 @@ pub use nf4_tensor_core::Nf4TensorCoreGemmKernel;
 pub use q4k::interleaved::repack_q4k_interleaved;
 pub use q4k::w4a16::repack_q4k_w4a16;
 pub use q4k::{
-    BatchedHwDp4aQ4KGemvKernel, BatchedQ4KGemvKernel, ChunkedTiledQ4KGemvKernel,
-    CoalescedQ4KGemvKernel, Dp4aQ4KGemvKernel, FusedFp32Q4KGemvKernel,
+    BatchedHwDp4aQ4KGemvKernel, BatchedMwvQ4KGemvKernel, BatchedQ4KGemvKernel,
+    ChunkedTiledQ4KGemvKernel, CoalescedQ4KGemvKernel, Dp4aQ4KGemvKernel, FusedFp32Q4KGemvKernel,
     FusedGateUpSwigluHwDp4aQ4KGemvKernel, FusedQKVHwDp4aQ4KGemvKernel, HalfWarpDp4aQ4KGemvKernel,
     InlineQ8Dp4aQ4KGemvKernel, MultiWarpVectorizedQ4KGemvKernel, MwvDp4aQ4KGemvKernel,
     Q4KDequantFp16Kernel, Q4KDequantKernel, Q4KGemvKernel, TiledQ4KGemvKernel,
     TrueDp4aQ4KGemvKernel, VectorizedQ4KGemvKernel, WideQ4KGemvKernel,
 };
-pub use q5k::{Q5KDequantKernel, Q5KGemvKernel, Q5KKernel};
+pub use q5k::{BatchedQ5KGemvKernel, Q5KDequantKernel, Q5KGemvKernel, Q5KKernel};
 pub use q6k::{
-    BatchedQ6KGemvKernel, CoalescedQ6KGemvKernel, Dp4aQ6KGemvKernel, HalfWarpDp4aQ6KGemvKernel,
-    MultiWarpQ6KGemvKernel, Q6KDequantKernel, Q6KGemvKernel, Q6KKernel,
+    BatchedHwDp4aQ6KGemvKernel, BatchedMwvQ6KGemvKernel, BatchedQ6KGemvKernel,
+    CoalescedQ6KGemvKernel, Dp4aQ6KGemvKernel, HalfWarpDp4aQ6KGemvKernel, MultiWarpQ6KGemvKernel,
+    Q6KDequantKernel, Q6KGemvKernel, Q6KKernel,
 };
 pub use q8::Q8QuantizeKernel;
 pub use q8_0_dequant::Q8_0DequantKernel;

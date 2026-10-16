@@ -108,7 +108,7 @@ fn write_mock_apr_bin(dir: &std::path::Path) -> PathBuf {
 ///
 /// We intentionally keep this small and inline rather than pulling in a
 /// test-only dep — the MCP crate currently has zero test-only crates
-/// outside jsonschema + serde_yaml.
+/// outside jsonschema + serde-saphyr.
 struct PathGuard {
     prior: Option<String>,
 }

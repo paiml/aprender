@@ -39,6 +39,7 @@ apr-format	--lib	falsifiers
 apr-format	--test	golden_fixtures
 aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
+aprender-ci-tools	--lib	nextest_fail_fast
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
 aprender-contracts	--lib	build_helper
@@ -73,6 +74,7 @@ aprender-contracts	--lib	ontology::extract::pv_contract
 aprender-contracts	--lib	ontology::extract::readme
 aprender-contracts	--lib	ontology::liskov
 aprender-contracts	--lib	ontology::owl
+aprender-contracts	--lib	ontology::readme
 aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	ontology::w3c
 aprender-contracts	--lib	ontology::witness
@@ -83,6 +85,7 @@ aprender-contracts	--lib	query::index
 aprender-contracts	--lib	query::persist
 aprender-contracts	--lib	readme_gen
 aprender-contracts	--lib	schema
+aprender-contracts	--lib	schema::no_test_debt
 aprender-contracts	--lib	scoring::drift
 aprender-contracts	--lib	tree
 aprender-contracts	--test	apr_serve_api_key_auth_contract

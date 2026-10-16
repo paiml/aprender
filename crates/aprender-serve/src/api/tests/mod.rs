@@ -82,3 +82,4 @@ mod stream_tool_calls_4918; // aprender#4918: streamed tool calls arrive as delt
 mod logprobs_4971; // aprender#4971: chat logprobs/top_logprobs honoured on the quantized CPU path, refused 4xx/501 elsewhere (ASOC-INV-021)
 #[cfg(feature = "cuda")]
 mod logprobs_cuda_4971; // aprender#4971: chat logprobs on the dense CUDA backend, direct, through the batch scheduler and on the iteration scheduler (needs a device + tinyllama; SKIP = not_measured)
+mod embed_kind_eg3_4902; // APR-EMBED-001 EG-3 (#4902): embedding routes serve the CLI vector, generative routes name the kind, media refused (I-7)

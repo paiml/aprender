@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["PAIML <hello@paiml.com>"]
 description = "SafeTensors model inspection and format conversion"
 license = "MIT"
-repository = "https://github.com/paiml/entrenar"
+repository = "https://github.com/paiml/aprender"
 
 [lib]
 name = "entrenar_inspect"

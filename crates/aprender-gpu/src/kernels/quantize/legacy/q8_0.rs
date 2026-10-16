@@ -40,7 +40,37 @@ impl Kernel for Q8_0GemvKernel {
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        PtxKernel::new("q8_0_gemv_warp_reduce")
+        build_q8_0("q8_0_gemv_warp_reduce", false)
+    }
+}
+
+/// #5279: Q8_0 GEMV over `m` activation rows, row `r` of the output bitwise
+/// equal to [`Q8_0GemvKernel`] run on `x[r]` alone.
+///
+/// Layout: `x` is `m × k` and `y` is `m × n`, both row-major f32. Launch it on
+/// an `n × m` grid of 32-thread blocks: block `(i, r)` computes `y[r][i]`.
+#[derive(Debug, Clone)]
+pub struct BatchedQ8_0GemvKernel {
+    /// K dimension (input dimension)
+    pub k: u32,
+    /// N dimension (output dimension)
+    pub n: u32,
+}
+
+impl Kernel for BatchedQ8_0GemvKernel {
+    fn name(&self) -> &str {
+        "batched_q8_0_gemv"
+    }
+
+    fn build_ptx(&self) -> PtxKernel {
+        build_q8_0("batched_q8_0_gemv", true)
+    }
+}
+
+/// The Q8_0 GEMV. With `row_on_grid_y` the activation and output rows are
+/// picked by `%ctaid.y`; the arithmetic is the single-row kernel's.
+fn build_q8_0(name: &str, row_on_grid_y: bool) -> PtxKernel {
+    PtxKernel::new(name)
             .param(PtxType::U64, "y_ptr") // Output vector (N)
             .param(PtxType::U64, "w_ptr") // Q8_0 weights (N x K/32 blocks)
             .param(PtxType::U64, "x_ptr") // Input vector (K)
@@ -59,9 +89,18 @@ impl Kernel for Q8_0GemvKernel {
                 ctx.branch_if(oob, "exit");
 
                 let k_dim = ctx.load_param_u32("k_dim");
-                let y_ptr = ctx.load_param_u64("y_ptr");
+                let mut y_ptr = ctx.load_param_u64("y_ptr");
                 let w_ptr = ctx.load_param_u64("w_ptr");
-                let x_ptr = ctx.load_param_u64("x_ptr");
+                let mut x_ptr = ctx.load_param_u64("x_ptr");
+                if row_on_grid_y {
+                    let row = ctx.special_reg(PtxReg::CtaIdY);
+                    let x_row = ctx.mul_wide_u32_reg(row, k_dim);
+                    let x_row_bytes = ctx.mul_u64(x_row, 4);
+                    x_ptr = ctx.add_u64(x_ptr, x_row_bytes);
+                    let y_row = ctx.mul_wide_u32_reg(row, n_dim);
+                    let y_row_bytes = ctx.mul_u64(y_row, 4);
+                    y_ptr = ctx.add_u64(y_ptr, y_row_bytes);
+                }
 
                 let acc = ctx.mov_f32_imm(0.0);
 
@@ -150,5 +189,28 @@ impl Kernel for Q8_0GemvKernel {
                 ctx.label("exit");
                 ctx.ret();
             })
+}
+
+#[cfg(test)]
+mod batched_tests {
+    use super::*;
+
+    /// The arithmetic of a PTX listing: every float instruction in order.
+    fn float_ops(ptx: &str) -> Vec<String> {
+        ptx.lines()
+            .map(str::trim)
+            .filter(|l| l.contains(".f32") && !l.starts_with("ld.") && !l.starts_with("st."))
+            .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
+            .collect()
+    }
+
+    #[test]
+    fn batched_q8_0_has_the_single_kernels_arithmetic() {
+        let one = Q8_0GemvKernel::new(2560, 32).emit_ptx();
+        let rows = BatchedQ8_0GemvKernel { k: 2560, n: 32 }.emit_ptx();
+        assert!(!one.contains("%ctaid.y"), "{one}");
+        assert!(rows.contains("%ctaid.y"), "{rows}");
+        assert!(rows.contains(".entry batched_q8_0_gemv"), "{rows}");
+        assert_eq!(float_ops(&one), float_ops(&rows));
     }
 }

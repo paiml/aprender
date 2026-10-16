@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["PAIML <hello@paiml.com>"]
 description = "LoRA/QLoRA configuration optimizer and memory planner"
 license = "MIT"
-repository = "https://github.com/paiml/entrenar"
+repository = "https://github.com/paiml/aprender"
 
 [lib]
 name = "entrenar_lora"

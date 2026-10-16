@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Pragmatic AI Labs"]
 license = "MIT"
 description = "GPU edge-case test framework — null fuzzing, shared memory probing, lifecycle chaos, quantization parity, PTX poison trapping"
-repository = "https://github.com/paiml/trueno"
+repository = "https://github.com/paiml/aprender"
 keywords = ["cuda", "gpu", "testing", "edge-case", "fuzzing"]
 categories = ["development-tools::testing"]
 

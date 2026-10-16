@@ -85,3 +85,25 @@ falsification:
     description: "Discharges OBLIG-HYPOTHESIS-PVALUE-FINITE (C-IBETA-004): one-way ANOVA F p-value is finite and scipy-accurate for df2 in {72,100,200}."
     test: "cargo test -p aprender-core --lib falsify_ht_f_pvalue_finite_large_df"
     evidence: "cargo test -p aprender-core --lib falsify_ht_f_pvalue_finite_large_df"
+
+falsification_tests:
+  - id: FALSIFY-INCOMPLETE_BETA_CORRECTNESS-001
+    description: "C-IBETA-001 / C-IBETA-002: I_x(a,b) matches scipy.special.betainc for a != 1 and satisfies I_0.5(a,a)=0.5"
+    test: "cargo test -p aprender-core --lib test_incomplete_beta_matches_scipy_oracle"
+    prediction: "I_0.4(2,3)=0.5248, I_0.5(4,0.5)=0.022204, I_0.5(2.5,2.5)=0.5, I_0.2(1,1)=0.2 within tolerance"
+    if_fails: "the extra /a prefactor (or another continued-fraction defect) is back in incomplete_beta"
+  - id: FALSIFY-INCOMPLETE_BETA_CORRECTNESS-002
+    description: "C-IBETA-003: one-sample t-test p-value (df<=30 beta path) matches scipy.stats.ttest_1samp"
+    test: "cargo test -p aprender-core --lib test_ttest_1samp_pvalue_matches_scipy"
+    prediction: "ttest_1samp([2.3,2.5,2.7,2.9,3.1], 2.5) has df=4 and p=0.2302 within 3e-3"
+    if_fails: "the downstream t-test p-value is wrong because incomplete_beta is wrong"
+  - id: FALSIFY-INCOMPLETE_BETA_CORRECTNESS-003
+    description: "C-IBETA-004 / IBC-INV-001: chi-square survival p-value is finite and scipy-accurate at large df"
+    test: "cargo test -p aprender-core --lib falsify_ht_chi2_pvalue_finite_large_df"
+    prediction: "chi-square p-values for df in {72,100,200} are finite and match scipy"
+    if_fails: "raw-space gamma prefactors overflow f32 at large df (PMAT-904 regression)"
+  - id: FALSIFY-INCOMPLETE_BETA_CORRECTNESS-004
+    description: "C-IBETA-004 / IBC-INV-002: two-tailed t p-value is finite and scipy-accurate at large df"
+    test: "cargo test -p aprender-core --lib falsify_ht_t_pvalue_finite_large_df"
+    prediction: "t p-values for df in {72,100,200} are finite and match scipy"
+    if_fails: "the beta prefactor overflows f32 at large df (PMAT-904 regression)"

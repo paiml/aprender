@@ -5,14 +5,14 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/entrenar">
-    <img src="https://img.shields.io/crates/v/entrenar.svg" alt="crates.io">
+  <a href="https://crates.io/crates/aprender-train">
+    <img src="https://img.shields.io/crates/v/aprender-train.svg" alt="crates.io">
   </a>
-  <a href="https://docs.rs/entrenar">
-    <img src="https://docs.rs/entrenar/badge.svg" alt="docs.rs">
+  <a href="https://docs.rs/aprender-train">
+    <img src="https://docs.rs/aprender-train/badge.svg" alt="docs.rs">
   </a>
-  <a href="https://github.com/paiml/entrenar/actions">
-    <img src="https://github.com/paiml/entrenar/actions/workflows/ci.yml/badge.svg"
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml">
+    <img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg"
          alt="CI">
   </a>
   <a href="LICENSE">
@@ -26,7 +26,7 @@
 A pure Rust training framework providing autograd, LoRA/QLoRA
 fine-tuning, quantization (Int4/Int8), model merging, knowledge
 distillation, and Compiler-in-the-Loop (CITL) training. Built on
-[trueno](https://crates.io/crates/trueno) for SIMD-accelerated compute
+[trueno](https://crates.io/crates/aprender-compute) for SIMD-accelerated compute
 and [aprender](https://crates.io/crates/aprender) for ML algorithms.
 
 ---
@@ -77,21 +77,21 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-entrenar = "0.7"
+aprender-train = "0.71"
 ```
 
 ### CLI
 
 ```bash
-cargo install entrenar
+cargo install aprender   # installs `apr`; this crate ships no binary of its own
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/paiml/entrenar
-cd entrenar
-cargo install --path .
+git clone https://github.com/paiml/aprender
+cd aprender/crates/aprender-train
+cargo build --release   # library only; the CLI is `apr` (cargo install aprender)
 ```
 
 ## Usage
@@ -302,18 +302,18 @@ entrenar/
 
 | Crate | Purpose | Version |
 |-------|---------|---------|
-| [trueno](https://crates.io/crates/trueno) | SIMD/GPU compute primitives | 0.16.x |
+| [trueno](https://crates.io/crates/aprender-compute) | SIMD/GPU compute primitives | 0.16.x |
 | [aprender](https://crates.io/crates/aprender) | ML algorithms, APR v2 format | 0.27.x |
 | **entrenar** | **Training and optimization** | **0.7.x** |
-| [realizar](https://crates.io/crates/realizar) | Inference engine (APR/GGUF/SafeTensors) | 0.8.x |
-| [repartir](https://crates.io/crates/repartir) | Distributed compute (CPU/GPU/Remote) | 2.0.x |
+| [realizar](https://crates.io/crates/aprender-serve) | Inference engine (APR/GGUF/SafeTensors) | 0.8.x |
+| [repartir](https://crates.io/crates/aprender-distribute) | Distributed compute (CPU/GPU/Remote) | 2.0.x |
 | [whisper-apr](https://crates.io/crates/whisper-apr) | Pure Rust Whisper ASR | 0.2.x |
-| [simular](https://crates.io/crates/simular) | Simulation engine | 0.3.x |
-| [batuta](https://crates.io/crates/batuta) | Stack orchestration | 0.7.x |
+| [simular](https://crates.io/crates/aprender-simulate) | Simulation engine | 0.3.x |
+| [batuta](https://crates.io/crates/aprender-orchestrate) | Stack orchestration | 0.7.x |
 
 ## Documentation
 
-- [API Reference](https://docs.rs/entrenar) -- Generated from source
+- [API Reference](https://docs.rs/aprender-train) -- Generated from source
 - [Book](book/) -- Comprehensive guide with examples
 - [Examples](examples/) -- Runnable training, merging, and monitoring examples
 
