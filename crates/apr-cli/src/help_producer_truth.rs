@@ -61,78 +61,102 @@ fn resolve(root: &clap::Command, quoted: &str) -> Result<(), String> {
 
     for tok in tokens {
         if let Some(flag) = tok.strip_prefix("--") {
-            awaiting_value = false;
-            let name = flag.split('=').next().unwrap_or(flag);
-            if name.is_empty() {
-                continue; // bare `--`
-            }
-            let matches_long = |a: &clap::Arg| {
-                a.get_long() == Some(name)
-                    || a.get_all_aliases()
-                        .is_some_and(|al| al.iter().any(|x| *x == name))
-            };
-            // clap propagates `global = true` args from the root to every
-            // subcommand, so `--json` is legal on any of them.
-            let Some(arg) = cmd
-                .get_arguments()
-                .find(|a| matches_long(a))
-                .or_else(|| root.get_arguments().find(|a| a.is_global_set() && matches_long(a)))
-            else {
-                return Err(format!("`{path}` has no flag `--{name}`"));
-            };
-            awaiting_value = !flag.contains('=')
-                && arg
-                    .get_num_args()
-                    .is_none_or(|r| r.takes_values())
-                && arg.get_action().takes_values();
+            awaiting_value = long_flag_takes_value(root, cmd, &path, flag)?;
             continue;
         }
         if let Some(short) = tok.strip_prefix('-') {
-            // Short flags are not name-checked (help text uses them rarely),
-            // but a short flag that takes a value consumes the next word.
-            let c = short.chars().next();
-            awaiting_value = c.is_some_and(|c| {
-                cmd.get_arguments()
-                    .chain(root.get_arguments().filter(|a| a.is_global_set()))
-                    .any(|a| a.get_short() == Some(c) && a.get_action().takes_values())
-            }) && short.len() == 1;
+            awaiting_value = short_flag_takes_value(root, cmd, short);
             continue;
         }
-        if tok.starts_with('<') || tok.starts_with('"') {
+        if tok.starts_with('<') || tok.starts_with('"') || awaiting_value {
+            // placeholders are not checked; a bare word after a value-taking
+            // flag is that flag's value
             awaiting_value = false;
-            continue; // placeholders are not checked
-        }
-        if awaiting_value {
-            awaiting_value = false;
-            continue; // this bare word is the previous flag's value
-        }
-        // A bare word is a subcommand while the command still has subcommands
-        // and has not started consuming positionals; otherwise it is a
-        // positional VALUE — and there are only so many of those.
-        let sub = if positionals_used == 0 {
-            cmd.get_subcommands()
-                .find(|s| s.get_name() == tok || s.get_all_aliases().any(|a| a == tok))
-        } else {
-            None
-        };
-        if let Some(sub) = sub {
-            cmd = sub;
-            path = format!("{path} {tok}");
             continue;
         }
-        if positionals_used < positional_capacity(cmd) {
-            positionals_used += 1;
-            continue;
+        match bare_word(cmd, &path, tok, positionals_used)? {
+            Some(sub) => {
+                cmd = sub;
+                path = format!("{path} {tok}");
+            }
+            None => positionals_used += 1,
         }
-        if cmd.get_subcommands().next().is_some() {
-            return Err(format!("`{path}` has no subcommand `{tok}`"));
-        }
-        return Err(format!(
-            "`{path}` takes {} positional(s); `{tok}` is one too many",
-            positional_capacity(cmd)
-        ));
     }
     Ok(())
+}
+
+/// Check a `--flag[=value]` against `cmd` (and the root's global args); returns
+/// whether the NEXT word is its value.
+fn long_flag_takes_value(
+    root: &clap::Command,
+    cmd: &clap::Command,
+    path: &str,
+    flag: &str,
+) -> Result<bool, String> {
+    let name = flag.split('=').next().unwrap_or(flag);
+    if name.is_empty() {
+        return Ok(false); // bare `--`
+    }
+    let matches_long = |a: &clap::Arg| {
+        a.get_long() == Some(name)
+            || a.get_all_aliases()
+                .is_some_and(|al| al.iter().any(|x| *x == name))
+    };
+    // clap propagates `global = true` args from the root to every
+    // subcommand, so `--json` is legal on any of them.
+    let Some(arg) = cmd
+        .get_arguments()
+        .find(|a| matches_long(a))
+        .or_else(|| root.get_arguments().find(|a| a.is_global_set() && matches_long(a)))
+    else {
+        return Err(format!("`{path}` has no flag `--{name}`"));
+    };
+    Ok(!flag.contains('=')
+        && arg
+            .get_num_args()
+            .is_none_or(|r| r.takes_values())
+        && arg.get_action().takes_values())
+}
+
+/// Short flags are not name-checked (help text uses them rarely), but a short
+/// flag that takes a value consumes the next word.
+fn short_flag_takes_value(root: &clap::Command, cmd: &clap::Command, short: &str) -> bool {
+    let c = short.chars().next();
+    c.is_some_and(|c| {
+        cmd.get_arguments()
+            .chain(root.get_arguments().filter(|a| a.is_global_set()))
+            .any(|a| a.get_short() == Some(c) && a.get_action().takes_values())
+    }) && short.len() == 1
+}
+
+/// A bare word is a subcommand while the command still has subcommands and has
+/// not started consuming positionals (`Ok(Some(sub))`); otherwise it is a
+/// positional VALUE (`Ok(None)`) — and there are only so many of those.
+fn bare_word<'a>(
+    cmd: &'a clap::Command,
+    path: &str,
+    tok: &str,
+    positionals_used: usize,
+) -> Result<Option<&'a clap::Command>, String> {
+    let sub = if positionals_used == 0 {
+        cmd.get_subcommands()
+            .find(|s| s.get_name() == tok || s.get_all_aliases().any(|a| a == tok))
+    } else {
+        None
+    };
+    if sub.is_some() {
+        return Ok(sub);
+    }
+    if positionals_used < positional_capacity(cmd) {
+        return Ok(None);
+    }
+    if cmd.get_subcommands().next().is_some() {
+        return Err(format!("`{path}` has no subcommand `{tok}`"));
+    }
+    Err(format!(
+        "`{path}` takes {} positional(s); `{tok}` is one too many",
+        positional_capacity(cmd)
+    ))
 }
 
 /// How many bare words this command can swallow as positional values.
