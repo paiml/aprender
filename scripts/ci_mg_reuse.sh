@@ -118,6 +118,13 @@ decide() {
     "K1-K5 hold; x86-main+determinism: $([ "$x" = 1 ] && echo reuse || echo "run ($why)"); mac-check: $([ "$mc" = 1 ] && echo reuse || echo "run ($(concl "$jobs" mac-check))")"
 }
 
+# The queue-entry override, FORCED: drop whatever decide said for these keys (or omitted) and write
+# the values explicitly, so a decide that leaves a key out cannot fail open (r6).
+force_no_reuse() {
+  { grep -v -E '^(x86|det|mac|cite|pr_head)=' || true; }
+  printf 'x86=0\ndet=0\nmac=0\ncite=\npr_head=\n'
+}
+
 resolve() {
   local ev="" ref="" m="" b="" repo="" root="."
   while [ $# -gt 0 ]; do
@@ -157,7 +164,7 @@ resolve() {
     --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root") || rc=$?
   rm -rf "${w:?}"
   [ "$rc" -eq 0 ] || return "$rc"
-  sed -e 's/^x86=.*/x86=0/' -e 's/^det=.*/det=0/' -e 's/^mac=.*/mac=0/' -e 's/^cite=.*/cite=/' -e 's/^pr_head=.*/pr_head=/' <<< "$res"
+  force_no_reuse <<< "$res"
 }
 
 # ---------------------------------------------------------------- the push arm
@@ -412,6 +419,19 @@ STUB
       *) fail=$((fail + 1)); echo "FAIL resolve-reached-decide: '$ref' answered 0 0 0 without decide's reason: $(kv reason "$out")" ;;
     esac
   done
+  # r7 (a): the override FORCES the five keys, so a decide that omits one cannot fail open.
+  local fo
+  fo=$(force_no_reuse <<< $'reason=kept\nx86=1\ndet=1')
+  if [ "$(kv x86 "$fo")$(kv det "$fo")$(kv mac "$fo")" = "000" ] && [ "$(kv reason "$fo")" = kept ] \
+    && [ "$(grep -c -E '^(x86|det|mac|cite|pr_head)=' <<< "$fo")" = 5 ]; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL force-no-reuse: omitted/over-asserted keys not forced: $fo"; fi
+  # r7 (b): the "K1-K5 hold" prefix the reached-decide rows key on is emitted by decide() itself.
+  local dbody
+  dbody=$(sed -n '/^decide() {/,/^}/p' "${BASH_SOURCE[0]}")
+  case "$dbody" in
+    *'"K1-K5 hold; '*) pass=$((pass + 1)) ;;
+    *) fail=$((fail + 1)); echo "FAIL decide-source: decide() no longer emits the K1-K5 hold prefix" ;;
+  esac
   # r5: K1-K5 hold is emitted only by decide (above); a refused lookup must NOT carry it.
   out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="pulls" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$QREF" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
   case "$(kv reason "$out")" in
