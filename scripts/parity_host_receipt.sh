@@ -150,6 +150,9 @@ PIN="$(dirname "$0")/llama_pin.toml"
 # 1% GPU utilisation while release cells queued (2026-09-21).
 # shellcheck source=scripts/lib/gpu_band_lock.sh
 . "$(dirname "$0")/lib/gpu_band_lock.sh"
+# MEAS-001 (#4522): per-replicate CPU, RSS, faults and IO of each lane's server.
+# shellcheck source=scripts/lib/proc_resources.sh
+. "$(dirname "$0")/lib/proc_resources.sh" || exit 2
 ISOLATION="$(dirname "$0")/perf_isolation.sh"
 
 # The three ports this harness binds. Declared BEFORE the EXIT trap, because
@@ -372,6 +375,7 @@ run_band() {
 run_band_body() { # run_band_body <klass> <apr-gpu-layers> <llama-ngl> <c>
     local klass="$1" gl="$2" ngl="$3" c="$4"
     local tag="$klass-c$c"
+    local lpid="" apid=""
     local lflags
     lflags=$(llama_comparator_server_flags "$ngl" "$c" "$PIN") || {
         printf 'FAIL  band %s: cannot build the comparator invocation from %s (rc=%s).\n' \
@@ -428,6 +432,7 @@ run_band_body() { # run_band_body <klass> <apr-gpu-layers> <llama-ngl> <c>
     # shellcheck disable=SC2086
     "$LLAMA_SERVER" -m "$MODEL" --port "$LPORT" $lflags \
         > "$WORK/llama-$tag.log" 2>&1 &
+    lpid=$!
     SERVER_PIDS="$SERVER_PIDS $!"; gpu_band_track "$!"
     wait_healthy "$LPORT" 300 || {
         printf 'FAIL  band %s: llama-server did not become healthy\n' "$tag" >&2
@@ -464,6 +469,7 @@ run_band_body() { # run_band_body <klass> <apr-gpu-layers> <llama-ngl> <c>
     # shellcheck disable=SC2086
     "$APR" serve run "$MODEL" --gpu-layers "$gl" --port "$APORT" --context-length "$CTX" \
         > "$WORK/apr-$tag.log" 2>&1 &
+    apid=$!
     SERVER_PIDS="$SERVER_PIDS $!"; gpu_band_track "$!"
     wait_healthy "$APORT" 300 || {
         printf 'FAIL  band %s: apr did not become healthy\n' "$tag" >&2
@@ -494,15 +500,19 @@ run_band_body() { # run_band_body <klass> <apr-gpu-layers> <llama-ngl> <c>
     # cancelled is between the two measurements being divided.
     local k
     for k in $(seq 1 "$REPLICATES"); do
+        res_begin "$apid"
         "$APR" test llm bench --url "http://127.0.0.1:$APORT" --model "$MODEL_NAME" \
             --profile "$PROFILE" --warmup "$WARMUP" --duration "$DURATION" --runs 1 \
             --cooldown "$COOLDOWN" --concurrency "$c" --stream --runtime-name "apr-$tag" \
             --output "$WORK/apr-$tag-r$k.json" >/dev/null 2>&1 || true
+        res_end "$apid" "$WORK/res-apr-$tag-r$k.json"
         sleep "$COOLDOWN"
+        res_begin "$lpid"
         "$APR" test llm bench --url "http://127.0.0.1:$LPORT" --model "$MODEL_NAME" \
             --profile "$PROFILE" --warmup "$WARMUP" --duration "$DURATION" --runs 1 \
             --cooldown "$COOLDOWN" --concurrency "$c" --stream --runtime-name "llamacpp-$tag" \
             --output "$WORK/llama-$tag-r$k.json" >/dev/null 2>&1 || true
+        res_end "$lpid" "$WORK/res-llama-$tag-r$k.json"
         sleep "$COOLDOWN"
     done
 
@@ -546,6 +556,10 @@ run_band_body() { # run_band_body <klass> <apr-gpu-layers> <llama-ngl> <c>
   "replicate_files": {
     "subject": "apr-$tag-r{k}.json",
     "comparator": "llama-$tag-r{k}.json"
+  },
+  "resource_files": {
+    "subject": "res-apr-$tag-r{k}.json",
+    "comparator": "res-llama-$tag-r{k}.json"
   }
 }
 JSON
@@ -644,5 +658,54 @@ python3 "$(dirname "$0")/lib/parity_block.py" \
     --llama "$LLAMA_SERVER" --llama-sha "$(sha256_of "$LLAMA_SERVER")" \
     --llama-build "$(printf '%s' "$LLAMA_BUILD" | sed 's/.*(\(.*\)).*/\1/')" \
     --pin-expiry "${LLAMA_PIN_EXPIRY:-}" \
-    --model "$MODEL" --install-source "$SRC" --out "$OUT" \
+    --model "$MODEL" --install-source "$SRC" --out "$WORK/parity.json" \
     ${WITNESS_JSON:+--witness-json "$WITNESS_JSON"}
+
+# MEAS-001 (#4522): the block carries what each lane's server SPENT per
+# replicate, beside the ratio, so a speed claim says what it cost. parity_block.py
+# builds the gated keys and is left alone; `resources` is attached here, keyed
+# by band, one entry per replicate in k order, from the res-*.json files each
+# band named under `resource_files`.
+resources_by_band() {
+    local band tag lane pfx k
+    for band in "$WORK"/band-*.json; do
+        [ -e "$band" ] || continue
+        tag=${band##*/band-}; tag=${tag%.json}
+        for lane in subject comparator; do
+            pfx=apr; [ "$lane" = comparator ] && pfx=llama
+            for k in $(seq 1 "$REPLICATES"); do
+                if [ -s "$WORK/res-$pfx-$tag-r$k.json" ]; then
+                    # completion_tokens is the measured runs' count only. The
+                    # window also spans the bench's --warmup, so no per-token
+                    # CPU figure is derived here: it would charge warmup CPU
+                    # to measured tokens, unequally across the two lanes.
+                    local toks
+                    toks=$(jq '[.runs[]?.completion_tokens_total] | if length == 0 then null else add end' \
+                        "$WORK/$pfx-$tag-r$k.json" 2>/dev/null) || toks=null
+                    [ -n "$toks" ] || toks=null
+                    jq -c --arg t "$tag" --arg l "$lane" --argjson k "$k" --argjson toks "$toks" \
+                        '{band: $t, lane: $l, replicate: $k, window: (. + {completion_tokens: $toks,
+                          completion_tokens_scope: "measured runs only; the window also includes warmup"})}' \
+                        "$WORK/res-$pfx-$tag-r$k.json" \
+                    || { echo "parity_host_receipt: unreadable resource file res-$pfx-$tag-r$k.json" >&2
+                         jq -cn --arg t "$tag" --arg l "$lane" --argjson k "$k" \
+                            '{band: $t, lane: $l, replicate: $k, window: {absent: "resource file unreadable"}}'; }
+                else
+                    jq -cn --arg t "$tag" --arg l "$lane" --argjson k "$k" \
+                        '{band: $t, lane: $l, replicate: $k, window: {absent: "no resource file written"}}'
+                fi
+            done
+        done
+    done | jq -s 'group_by(.band) | map({key: .[0].band, value: {
+            subject: [.[] | select(.lane == "subject") | .window],
+            comparator: [.[] | select(.lane == "comparator") | .window]}}) | from_entries'
+}
+if ! resources=$(resources_by_band); then
+    echo "parity_host_receipt: resources_by_band failed; .parity.resources records it as absent" >&2
+    resources='{"absent": "resources_by_band failed on this host; see the run log"}'
+fi
+if [ "$OUT" = "-" ]; then
+    jq --argjson r "$resources" '.parity.resources = $r' "$WORK/parity.json"
+else
+    jq --argjson r "$resources" '.parity.resources = $r' "$WORK/parity.json" > "$OUT"
+fi
