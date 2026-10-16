@@ -345,9 +345,8 @@ jobs:
       # the touched crates + direct reverse dependents (BSE-16's selection, cap
       # -> full) plus EVERY test target that reads the tree, derived and
       # registry-checked (drift is ENV, never a quick tier over a stale list);
-      # full on push/schedule/dispatch and on a merge_group whose tree is not
-      # the tree a green PR head already ran; reuse on a merge_group whose
-      # HEAD^{tree} equals the PR head's and whose workspace-test succeeded.
+      # full on push/schedule/dispatch and on EVERY merge_group (the queue owes the
+      # full tier; a quick PR green is never reused -- structural-pr-flow-1016 s10).
       # The touched set is the TIP diff against the base (shallow checkout: no
       # merge-base; tip-vs-tip is a superset, the safe direction) and the diff
       # command itself must succeed — an empty diff from a failed git would

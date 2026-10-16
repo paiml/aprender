@@ -269,12 +269,12 @@ OUT="$(cd "$ROOT" && env -u GITHUB_SHA bash "$TIER" --event push --repo-root "$T
 want "D8 a refused result on a root commit keeps today's full" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 
 # merge_group and pull_request never read --mg-*; merge_group's own reuse is unchanged
-git -C "$T/r" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "queue, same tree"
+printf "[workspace]\n" > "$T/r/Cargo.toml"; git -C "$T/r" add Cargo.toml; git -C "$T/r" -c user.name=t -c user.email=t@t commit -q -m "queue, root manifest (non-empty diff)"
 P="$(git -C "$T/r" rev-parse HEAD~1)"; Q="$(git -C "$T/r" rev-parse HEAD)"
 OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
-hasnt "D9 merge_group same tree + PR head success -> NEVER reuse: the queue owes the full tier (BSE-17 reuse hole closed)" "tier=reuse" "$OUT"
+want "D9 merge_group + PR head success, NON-EMPTY diff (root manifest) -> full: a PR green is never reused, BSE-17 reuse hole closed" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion failure --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
-hasnt "D10 merge_group ignores --mg-*: a PR-head failure never reuses" "tier=reuse" "$OUT"
+want "D10 merge_group ignores --mg-*: a PR-head failure is full too, never reuse" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 printf 'docs/audits/a.md\n' >"$T/d.txt"
 OUT="$(cd "$ROOT" && bash "$TIER" --event pull_request --repo-root "$T/r" --diff-from "$T/d.txt" --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
 hasnt "D11 pull_request ignores --mg-*: never reuse" "tier=reuse" "$OUT"

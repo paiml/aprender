@@ -132,6 +132,9 @@ jobs:
           esac
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -E '^(x86|det|cite|pr_head)=' >> "$GITHUB_OUTPUT"
+          # 20X sign-off r1: the PR head ran the QUICK pool, so a queue entry never skips
+          # x86-main or determinism on its green; the last write of a key wins.
+          [ "$EVT" != merge_group ] || printf 'x86=0\ndet=0\n' >> "$GITHUB_OUTPUT"
 
   # The same case table on every event, so a change that breaks the key is RED on
   # its own PR, not first in the queue. gate requires it.
