@@ -168,17 +168,15 @@ derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--l
     INDEX_DIR=$(mktemp -d "${TMPDIR:-/tmp}/tree-reader-idx.XXXXXX")
     trap 'rm -rf "${INDEX_DIR:?}"' RETURN
     (
-        # #5427: ONE grep over all the candidates, not one fork per file. The old per-file
-        # `grep -q` pair (8,000 files, 2 forks each) was 42 s of system time per call, and
-        # ci_test_tier.sh calls this once per tier decision (the push_reuse table: 30 times).
-        # The same files are selected: a file is kept iff it matches ORACLE (tests/) or both
-        # `#[cfg(test)]` and ORACLE (src/); module_of still decides each src file's module.
-        while IFS= read -r -d '' f; do
+        for f in "$root"/crates/*/tests/*.rs; do
             [ -f "$f" ] || continue
+            grep -qE "$ORACLE" "$f" || continue
             c=$(basename "$(dirname "$(dirname "$f")")"); t=$(basename "$f" .rs)
             printf '%s\t--test\t%s\n' "$c" "$t"
-        done < <(grep -lZE -- "$ORACLE" "$root"/crates/*/tests/*.rs 2>/dev/null)
-        while IFS= read -r -d '' f; do
+        done
+        for f in $(find "$root"/crates/*/src -name '*.rs' 2>/dev/null); do
+            grep -q '#\[cfg(test)\]' "$f" || continue
+            grep -qE "$ORACLE" "$f" || continue
             c=$(printf '%s' "$f" | sed "s|^$root/crates/||; s|/.*||")
             # `--lib` on a crate with NO library target is a hard error, never a
             # passable gate: `error: no library targets found in package X`.
@@ -193,7 +191,7 @@ derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--l
             else
                 printf '%s\t--lib\n' "$c"
             fi
-        done < <(find "$root"/crates/*/src -name '*.rs' -print0 2>/dev/null | xargs -0 -r grep -lZ '#\[cfg(test)\]' | xargs -0 -r grep -lZE -- "$ORACLE")
+        done
     ) | LC_ALL=C sort -u
 }
 

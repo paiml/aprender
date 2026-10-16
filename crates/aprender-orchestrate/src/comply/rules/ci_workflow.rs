@@ -81,27 +81,26 @@ impl CiWorkflowRule {
 
         if let Some(jobs_map) = yaml.get("jobs").and_then(|j| j.as_object()) {
             for (job_name, job_value) in jobs_map {
-                if let Some(name) = Some(job_name.as_str()) {
-                    jobs.push(name.to_string());
+                let name = job_name.as_str();
+                jobs.push(name.to_string());
 
-                    // Check for matrix
-                    if let Some(matrix) = job_value.get("strategy").and_then(|s| s.get("matrix")) {
-                        extract_string_seq(matrix.get("os"), &mut matrix_os);
-                        let rust = matrix.get("rust").or_else(|| matrix.get("toolchain"));
-                        extract_string_seq(rust, &mut matrix_rust);
-                    }
+                // Check for matrix
+                if let Some(matrix) = job_value.get("strategy").and_then(|s| s.get("matrix")) {
+                    extract_string_seq(matrix.get("os"), &mut matrix_os);
+                    let rust = matrix.get("rust").or_else(|| matrix.get("toolchain"));
+                    extract_string_seq(rust, &mut matrix_rust);
+                }
 
-                    // Check steps for specific tools
-                    let run_cmds = job_value
-                        .get("steps")
-                        .and_then(|s| s.as_array())
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|step| step.get("run").and_then(|r| r.as_str()));
-                    for run in run_cmds {
-                        uses_nextest |= run.contains("nextest");
-                        uses_llvm_cov |= run.contains("llvm-cov");
-                    }
+                // Check steps for specific tools
+                let run_cmds = job_value
+                    .get("steps")
+                    .and_then(|s| s.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|step| step.get("run").and_then(|r| r.as_str()));
+                for run in run_cmds {
+                    uses_nextest |= run.contains("nextest");
+                    uses_llvm_cov |= run.contains("llvm-cov");
                 }
             }
         }
@@ -543,6 +542,21 @@ jobs:
         let rule = CiWorkflowRule::new();
         let result = rule.parse_workflow(&file);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_workflow_non_string_job_key() {
+        // serde-saphyr -> serde_json::Value: a non-string map key is either refused
+        // or read back as text; it is never dropped silently beside a valid job.
+        let temp = TempDir::new().unwrap();
+        let file = temp.path().join("ci.yml");
+        std::fs::write(&file, "jobs:\n  1:\n    steps: []\n  test:\n    steps: []\n").unwrap();
+
+        let rule = CiWorkflowRule::new();
+        if let Ok(data) = rule.parse_workflow(&file) {
+            assert!(data.jobs.contains(&"test".to_string()), "valid job kept: {:?}", data.jobs);
+            assert!(data.jobs.iter().all(|j| j == "test" || j == "1"), "{:?}", data.jobs);
+        }
     }
 
     #[test]
