@@ -65,8 +65,13 @@ pub struct ChatCompletionRequest {
     pub model: String,
     /// Chat messages
     pub messages: Vec<ChatMessage>,
-    /// Maximum tokens to generate
-    #[serde(default)]
+    /// Maximum tokens to generate.
+    ///
+    /// `max_completion_tokens` is accepted as an alias: it is the newer OpenAI
+    /// name for the same cap (sent by OpenAI SDK >= 1.40 clients). A body that
+    /// carries BOTH names is refused by serde with a `duplicate field` error
+    /// rather than silently preferring one.
+    #[serde(default, alias = "max_completion_tokens")]
     pub max_tokens: Option<usize>,
     /// Sampling temperature.
     ///
@@ -181,6 +186,10 @@ pub struct ChatCompletionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_logprobs: Option<TopLogprobs>,
 }
+
+#[cfg(test)]
+#[path = "tests/max_completion_tokens_alias.rs"]
+mod max_completion_tokens_alias_tests;
 
 /// OpenAI's `response_format` (#3568 PR 4).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
