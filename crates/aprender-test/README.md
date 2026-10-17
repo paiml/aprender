@@ -345,7 +345,7 @@ cargo watch -x test
 ### Using probador CLI
 
 ```bash
-# Run tests with probador
+# Run tests with aprender-test-cli
 aprender-test-cli test
 
 # Generate coverage reports

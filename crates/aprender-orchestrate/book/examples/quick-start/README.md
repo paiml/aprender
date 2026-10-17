@@ -23,7 +23,7 @@ aprender-orchestrate analyze --tdg
 ### 2. Initialize Orchestration
 
 ```bash
-# Initialize batuta configuration
+# Initialize aprender-orchestrate configuration
 aprender-orchestrate init
 ```
 
