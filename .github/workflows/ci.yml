@@ -95,7 +95,11 @@ jobs:
   # this workflow, so its `mac` key is no longer an output here; ci_mg_reuse.sh
   # still computes it (its case table and check_ci_push_reuse.sh read it).
   mg-reuse:
-    if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # S1 (20X r6): a queue entry never reuses (x86=0 det=0 are constant: the queue owes the FULL tier), so
+    # reading the key on merge_group only made x86-main wait for an X64 runner before it asked for
+    # its own. It runs on push only; on merge_group it is skipped at t=0, which the verdict blocks
+    # below read as `skipped:::skipped` = "x86-main + determinism ran".
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     permissions:
@@ -551,8 +555,8 @@ jobs:
           # from a failed mg-reuse is RED.
           REUSE=0
           case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
-            merge_group:success:1:1:success | push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
-            merge_group:success:1:1:* | push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
             *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
             *) echo "::error::reuse flags split, off merge_group/push or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
           esac
@@ -598,8 +602,8 @@ jobs:
           # from a failed mg-reuse is RED.
           REUSE=0
           case "$EVT:$MG:${MG_X86:-}:${MG_DET:-}:$ADV" in
-            merge_group:success:1:1:success | push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
-            merge_group:success:1:1:* | push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
+            push:success:1:1:success) REUSE=1; echo "x86-main + determinism reused: ${MG_CITE:-}" ;;
+            push:success:1:1:*) echo "::error::x86-main was reused, but the RustSec advisory job is '$ADV'"; exit 1 ;;
             *:0:0:skipped | *:::skipped) echo "x86-main + determinism ran (event=$EVT mg-reuse=$MG)" ;;
             *) echo "::error::reuse flags split, off merge_group/push or from a failed mg-reuse: event=$EVT mg-reuse=$MG x86=${MG_X86:-} det=${MG_DET:-} advisories=$ADV"; exit 1 ;;
           esac

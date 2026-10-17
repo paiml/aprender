@@ -70,52 +70,81 @@ pub(crate) fn extract_constraints(yaml_text: &str) -> Constraints {
     }
 }
 
+/// Constraint axes the class rules look at, borrowed from `Constraints`.
+struct Axes<'a> {
+    attn: &'a str,
+    norm: &'a str,
+    act: &'a str,
+    mlp: &'a str,
+    pos: &'a str,
+}
+
+impl Axes<'_> {
+    /// Class A: GQA/MHA + RMSNorm + SiLU + SwiGLU + RoPE.
+    /// MHA is a degenerate case of GQA (kv_heads == q_heads), identical kernel dispatch.
+    fn is_a(&self) -> bool {
+        matches!(self.attn, "gqa" | "mha")
+            && self.norm == "rmsnorm"
+            && self.act == "silu"
+            && self.mlp == "swiglu"
+            && self.pos == "rope"
+    }
+
+    /// Class F: RMSNorm + GELU + GatedMlp + RoPE (checked before B/D).
+    fn is_f(&self) -> bool {
+        self.norm == "rmsnorm"
+            && self.act == "gelu"
+            && self.mlp == "gated_mlp"
+            && self.pos == "rope"
+    }
+
+    /// Class B: MHA + LayerNorm + GELU.
+    fn is_b(&self) -> bool {
+        self.attn == "mha" && self.norm == "layernorm" && self.act == "gelu"
+    }
+
+    /// Class C: MQA + LayerNorm + GELU + ALiBi.
+    fn is_c(&self) -> bool {
+        self.attn == "mqa" && self.norm == "layernorm" && self.act == "gelu" && self.pos == "alibi"
+    }
+
+    /// Class D: mixed LayerNorm variants with non-standard combos.
+    fn is_d(&self) -> bool {
+        self.norm == "layernorm" && (self.attn == "gqa" || self.act == "silu")
+    }
+}
+
 /// Derive kernel class from constraints (pure function).
 pub(crate) fn derive_kernel_class(c: &Constraints) -> KernelClass {
-    let attn = c.attention_type.as_str();
-    let norm = c.norm_type.as_str();
-    let act = c.activation.as_str();
-    let mlp = c.mlp_type.as_str();
-    let pos = c.positional_encoding.as_str();
+    let axes = Axes {
+        attn: c.attention_type.as_str(),
+        norm: c.norm_type.as_str(),
+        act: c.activation.as_str(),
+        mlp: c.mlp_type.as_str(),
+        pos: c.positional_encoding.as_str(),
+    };
 
-    // Class A: GQA/MHA + RMSNorm + SiLU + SwiGLU + RoPE
-    // MHA is a degenerate case of GQA (kv_heads == q_heads), identical kernel dispatch
-    if (attn == "gqa" || attn == "mha")
-        && norm == "rmsnorm"
-        && act == "silu"
-        && mlp == "swiglu"
-        && pos == "rope"
-    {
-        return KernelClass::A;
+    // Order matters: F is checked before B/D.
+    if axes.is_a() {
+        KernelClass::A
+    } else if axes.is_f() {
+        KernelClass::F
+    } else if axes.is_b() {
+        KernelClass::B
+    } else if axes.is_c() {
+        KernelClass::C
+    } else if axes.is_d() {
+        KernelClass::D
+    } else if axes.attn == "ssm" {
+        // State Space Models (no attention mechanism)
+        KernelClass::Ssm
+    } else if axes.attn == "linear" {
+        // Linear attention (RWKV WKV recurrence, no softmax)
+        KernelClass::Linear
+    } else {
+        // Class E: MoE would need a num_experts field, not in the current constraints.
+        KernelClass::Unknown
     }
-    // Class F: RMSNorm + GELU + GatedMlp + RoPE (check before B/D)
-    if norm == "rmsnorm" && act == "gelu" && mlp == "gated_mlp" && pos == "rope" {
-        return KernelClass::F;
-    }
-    // Class B: MHA + LayerNorm + GELU
-    if attn == "mha" && norm == "layernorm" && act == "gelu" {
-        return KernelClass::B;
-    }
-    // Class C: MQA + LayerNorm + GELU + ALiBi
-    if attn == "mqa" && norm == "layernorm" && act == "gelu" && pos == "alibi" {
-        return KernelClass::C;
-    }
-    // Class D: mixed LayerNorm variants with non-standard combos
-    if norm == "layernorm" && (attn == "gqa" || act == "silu") {
-        return KernelClass::D;
-    }
-    // SSM: State Space Models (no attention mechanism)
-    if attn == "ssm" {
-        return KernelClass::Ssm;
-    }
-    // Linear: Linear attention (RWKV WKV recurrence, no softmax)
-    if attn == "linear" {
-        return KernelClass::Linear;
-    }
-    // Class E: MoE (would need num_experts field — not in current constraints)
-    // Fall through to Unknown for now
-
-    KernelClass::Unknown
 }
 
 /// Load all family info from embedded YAML.

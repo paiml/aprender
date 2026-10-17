@@ -642,6 +642,48 @@ fn cap_max_seq_len(native: Option<usize>) -> Option<usize> {
 }
 
 #[cfg(all(feature = "training", feature = "cuda"))]
+/// Pick the distill teacher backend from `APR_DISTILL_TEACHER_BACKEND` (PMAT-704).
+/// Returns true for the realizar Q4K teacher, false for the cuBLAS CudaTrainerTeacher.
+fn resolve_teacher_backend(teacher_uses_quantized_weights: bool) -> Result<bool> {
+    let env_backend = std::env::var("APR_DISTILL_TEACHER_BACKEND")
+        .unwrap_or_else(|_| "auto".to_string())
+        .to_lowercase();
+    let use_realizar_q4k = match env_backend.as_str() {
+        "realizar-q4k" | "realizar" => {
+            if !teacher_uses_quantized_weights {
+                return Err(CliError::ValidationFailed(
+                    "APR_DISTILL_TEACHER_BACKEND=realizar-q4k requires a Q4K/Q6K teacher; \
+                     this teacher is F32/F16/BF16 — use CudaTrainerTeacher instead."
+                        .into(),
+                ));
+            }
+            eprintln!(
+                "[PMAT-704] env override: APR_DISTILL_TEACHER_BACKEND=realizar-q4k → RealizarQ4KTeacher"
+            );
+            true
+        }
+        "cudatrainer" | "cublas" => {
+            eprintln!(
+                "[PMAT-704] env override: APR_DISTILL_TEACHER_BACKEND=cudatrainer → CudaTrainerTeacher (cuBLAS)"
+            );
+            false
+        }
+        "auto" | "" => {
+            eprintln!(
+                "[PMAT-704] backend=auto → CudaTrainerTeacher (cuBLAS) [override with APR_DISTILL_TEACHER_BACKEND=realizar-q4k for memory-constrained dGPU]"
+            );
+            false
+        }
+        other => {
+            return Err(CliError::ValidationFailed(format!(
+                "APR_DISTILL_TEACHER_BACKEND={other:?} not recognized. Valid: auto, cudatrainer, realizar-q4k"
+            )));
+        }
+    };
+    Ok(use_realizar_q4k)
+}
+
+#[cfg(all(feature = "training", feature = "cuda"))]
 #[allow(clippy::too_many_arguments)]
 fn run_cuda_backend(
     teacher_path: &Path,
@@ -802,41 +844,7 @@ fn run_cuda_backend(
             .get_tensor(name)
             .is_some_and(|t| matches!(t.dtype, TensorDType::Q4K | TensorDType::Q6K))
     });
-    let env_backend = std::env::var("APR_DISTILL_TEACHER_BACKEND")
-        .unwrap_or_else(|_| "auto".to_string())
-        .to_lowercase();
-    let use_realizar_q4k = match env_backend.as_str() {
-        "realizar-q4k" | "realizar" => {
-            if !teacher_uses_quantized_weights {
-                return Err(CliError::ValidationFailed(
-                    "APR_DISTILL_TEACHER_BACKEND=realizar-q4k requires a Q4K/Q6K teacher; \
-                     this teacher is F32/F16/BF16 — use CudaTrainerTeacher instead."
-                        .into(),
-                ));
-            }
-            eprintln!(
-                "[PMAT-704] env override: APR_DISTILL_TEACHER_BACKEND=realizar-q4k → RealizarQ4KTeacher"
-            );
-            true
-        }
-        "cudatrainer" | "cublas" => {
-            eprintln!(
-                "[PMAT-704] env override: APR_DISTILL_TEACHER_BACKEND=cudatrainer → CudaTrainerTeacher (cuBLAS)"
-            );
-            false
-        }
-        "auto" | "" => {
-            eprintln!(
-                "[PMAT-704] backend=auto → CudaTrainerTeacher (cuBLAS) [override with APR_DISTILL_TEACHER_BACKEND=realizar-q4k for memory-constrained dGPU]"
-            );
-            false
-        }
-        other => {
-            return Err(CliError::ValidationFailed(format!(
-                "APR_DISTILL_TEACHER_BACKEND={other:?} not recognized. Valid: auto, cudatrainer, realizar-q4k"
-            )));
-        }
-    };
+    let use_realizar_q4k = resolve_teacher_backend(teacher_uses_quantized_weights)?;
     // PMAT-703 vocab alignment: applies regardless of which backend we use.
     // When teacher's native vocab > student's, we wrap the teacher in
     // `TruncatingTeacher` (defined below) which truncates each returned
@@ -2451,6 +2459,162 @@ fn format_generate_result(
     }
 }
 
+/// Read a `/generate` response into `(num_generated, text)`.
+fn parse_generate_response(resp: ureq::Response) -> Result<(u64, String)> {
+    let body = resp
+        .into_string()
+        .map_err(|e| CliError::NetworkError(format!("Failed to read response body: {e}")))?;
+    let gen_result: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| CliError::NetworkError(format!("Invalid generate response: {e}")))?;
+    let num_tokens = gen_result
+        .get("num_generated")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let text = gen_result
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok((num_tokens, text))
+}
+
+/// Append one output JSONL record and flush it.
+fn write_generate_record<W: std::io::Write>(
+    writer: &mut W,
+    prompt_json: &serde_json::Value,
+    prompt_text: &str,
+    completion: &str,
+    num_tokens: u64,
+) -> Result<()> {
+    let record = serde_json::json!({
+        "prompt": prompt_text,
+        "completion": completion,
+        "tokens": num_tokens,
+        "source": prompt_json.get("source").and_then(|v| v.as_str()).unwrap_or(""),
+        "kind": prompt_json.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
+    });
+    writeln!(
+        writer,
+        "{}",
+        serde_json::to_string(&record)
+            .map_err(|e| CliError::ValidationFailed(format!("JSON serialize error: {e}")))?
+    )?;
+    writer.flush()?;
+    Ok(())
+}
+
+/// Progress line printed every 10 prompts.
+fn print_generate_progress(
+    done: usize,
+    total: usize,
+    total_tokens: u64,
+    skipped: u64,
+    elapsed_secs: f64,
+) {
+    let tok_per_sec = if elapsed_secs > 0.0 {
+        total_tokens as f64 / elapsed_secs
+    } else {
+        0.0
+    };
+    println!(
+        "  [{done}/{total}] {total_tokens} tokens generated ({tok_per_sec:.0} tok/s), {skipped} skipped",
+    );
+}
+
+/// Start the teacher server and block until its health check passes.
+fn launch_teacher(config: &TextDistillConfig, json_output: bool) -> Result<std::process::Child> {
+    let apr_bin = std::env::current_exe().map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot determine apr binary path: {e}"))
+    })?;
+
+    if !json_output {
+        output::pipeline_stage("Starting teacher server", output::StageStatus::Running);
+        output::kv("  Binary", apr_bin.display().to_string());
+    }
+
+    let mut server = start_teacher_server(&apr_bin, &config.teacher.model)?;
+    wait_for_server_health(&mut server, json_output)?;
+    Ok(server)
+}
+
+/// ALB-111: stderr notice for a prompt skipped as pathologically long.
+fn report_long_prompt_skip(index: usize, len: usize, max: usize, json_output: bool) {
+    if !json_output {
+        eprintln!("  Skipping prompt {index} ({len} chars > {max} max)");
+    }
+}
+
+/// Result of attempting one prompt: tokens written (if a record was appended)
+/// and how many prompts to add to the skipped tally.
+struct PromptStep {
+    tokens: Option<u64>,
+    skipped: u64,
+}
+
+/// Generate and record the completion for prompt `i`.
+fn generate_one<W: std::io::Write>(
+    config: &TextDistillConfig,
+    i: usize,
+    prompt_json: &serde_json::Value,
+    existing_prompts: &std::collections::HashSet<String>,
+    writer: &mut W,
+    generate_url: &str,
+    json_output: bool,
+) -> Result<PromptStep> {
+    let none = |skipped| PromptStep {
+        tokens: None,
+        skipped,
+    };
+    let prompt_text = prompt_json
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            CliError::ValidationFailed(format!("Prompt {} missing 'prompt' field", i))
+        })?;
+
+    if existing_prompts.contains(prompt_text) {
+        return Ok(none(0));
+    }
+
+    // ALB-111: Skip pathologically long prompts (55K char prompt caused hours-long prefill)
+    if prompt_text.len() > config.synthetic_data.max_prompt_chars {
+        report_long_prompt_skip(
+            i,
+            prompt_text.len(),
+            config.synthetic_data.max_prompt_chars,
+            json_output,
+        );
+        return Ok(none(1));
+    }
+
+    let request_body = serde_json::to_string(&serde_json::json!({
+        "prompt": prompt_text,
+        "max_tokens": config.teacher.max_tokens,
+        "temperature": config.teacher.temperature,
+        "strategy": "top_p",
+        "top_p": config.teacher.top_p,
+    }))
+    .expect("JSON serialization cannot fail");
+
+    let (resp, was_skipped) = send_generate_request(generate_url, &request_body, i, json_output);
+    let mut skipped = u64::from(was_skipped);
+    let Some(resp) = resp else {
+        return Ok(none(skipped));
+    };
+
+    let (num_tokens, text) = parse_generate_response(resp)?;
+    if num_tokens < u64::from(config.synthetic_data.min_completion_tokens) {
+        skipped += 1;
+        return Ok(none(skipped));
+    }
+
+    write_generate_record(writer, prompt_json, prompt_text, &text, num_tokens)?;
+    Ok(PromptStep {
+        tokens: Some(num_tokens),
+        skipped,
+    })
+}
+
 fn run_text_generate(
     config: &TextDistillConfig,
     config_path: &Path,
@@ -2464,17 +2628,7 @@ fn run_text_generate(
         print_generate_header(config, config_path);
     }
 
-    let apr_bin = std::env::current_exe().map_err(|e| {
-        CliError::ValidationFailed(format!("Cannot determine apr binary path: {e}"))
-    })?;
-
-    if !json_output {
-        output::pipeline_stage("Starting teacher server", output::StageStatus::Running);
-        output::kv("  Binary", apr_bin.display().to_string());
-    }
-
-    let mut server = start_teacher_server(&apr_bin, &config.teacher.model)?;
-    wait_for_server_health(&mut server, json_output)?;
+    let mut server = launch_teacher(config, json_output)?;
 
     let prompts_path = std::path::Path::new(&config.synthetic_data.prompts);
     let prompts = read_prompts_jsonl(prompts_path)?;
@@ -2511,106 +2665,31 @@ fn run_text_generate(
             break;
         }
 
-        let prompt_text = prompt_json
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                CliError::ValidationFailed(format!("Prompt {} missing 'prompt' field", i))
-            })?;
-
-        if resume.existing_prompts.contains(prompt_text) {
-            continue;
-        }
-
-        // ALB-111: Skip pathologically long prompts (55K char prompt caused hours-long prefill)
-        if prompt_text.len() > config.synthetic_data.max_prompt_chars {
-            if !json_output {
-                eprintln!(
-                    "  Skipping prompt {} ({} chars > {} max)",
-                    i,
-                    prompt_text.len(),
-                    config.synthetic_data.max_prompt_chars,
-                );
-            }
-            skipped_count += 1;
-            continue;
-        }
-
-        let request_body = serde_json::to_string(&serde_json::json!({
-            "prompt": prompt_text,
-            "max_tokens": config.teacher.max_tokens,
-            "temperature": config.teacher.temperature,
-            "strategy": "top_p",
-            "top_p": config.teacher.top_p,
-        }))
-        .expect("JSON serialization cannot fail");
-
-        let (resp, was_skipped) =
-            send_generate_request(&generate_url, &request_body, i, json_output);
-        if was_skipped {
-            skipped_count += 1;
-        }
-        let Some(resp) = resp else {
-            continue;
-        };
-
-        let gen_result: serde_json::Value = {
-            let body = resp.into_string().map_err(|e| {
-                CliError::NetworkError(format!("Failed to read response body: {e}"))
-            })?;
-            serde_json::from_str(&body)
-                .map_err(|e| CliError::NetworkError(format!("Invalid generate response: {e}")))?
-        };
-
-        let num_tokens = gen_result
-            .get("num_generated")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-
-        let text = gen_result
-            .get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        if num_tokens < u64::from(config.synthetic_data.min_completion_tokens) {
-            skipped_count += 1;
-            continue;
-        }
-
-        // Write output JSONL record
-        let record = serde_json::json!({
-            "prompt": prompt_text,
-            "completion": text,
-            "tokens": num_tokens,
-            "source": prompt_json.get("source").and_then(|v| v.as_str()).unwrap_or(""),
-            "kind": prompt_json.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
-        });
-        writeln!(
-            writer,
-            "{}",
-            serde_json::to_string(&record)
-                .map_err(|e| CliError::ValidationFailed(format!("JSON serialize error: {e}")))?
+        let step = generate_one(
+            config,
+            i,
+            prompt_json,
+            &resume.existing_prompts,
+            &mut writer,
+            &generate_url,
+            json_output,
         )?;
-        writer.flush()?;
+        skipped_count += step.skipped;
+        let Some(num_tokens) = step.tokens else {
+            continue;
+        };
 
         resume.total_tokens += num_tokens;
         resume.generated_count += 1;
 
         // Progress every 10 prompts
         if (i + 1) % 10 == 0 && !json_output {
-            let elapsed = start_time.elapsed().as_secs_f64();
-            let tok_per_sec = if elapsed > 0.0 {
-                resume.total_tokens as f64 / elapsed
-            } else {
-                0.0
-            };
-            println!(
-                "  [{}/{}] {} tokens generated ({:.0} tok/s), {} skipped",
+            print_generate_progress(
                 i + 1,
                 prompts.len(),
                 resume.total_tokens,
-                tok_per_sec,
-                skipped_count
+                skipped_count,
+                start_time.elapsed().as_secs_f64(),
             );
         }
     }
