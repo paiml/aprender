@@ -16,10 +16,13 @@
 # queue runs the QUICK tier, FULL only on a tag/release push). A rebase is not new
 # evidence about a PR's diff. This script used to answer `full` for every
 # merge_group, a ~1h full workspace run each time. Now:
-#   merge_group: the same selection a PR gets, over the WHOLE group's diff,
-#     MG_BASE_SHA (github.event.merge_group.base_sha) .. HEAD -- not HEAD^1..HEAD,
-#     which would see only the last entry of a stacked group. MG_BASE_SHA unset or
-#     not a commit, or a failed diff -> full (fail closed).
+#   merge_group: the same selection a PR gets, over the entry's diff,
+#     MG_BASE_SHA (github.event.merge_group.base_sha) .. HEAD. base_sha is the PRIOR
+#     ENTRY's head (main's tip only for the first entry; evidence on #5468), so the
+#     diff is this entry's own change. Not HEAD^1..HEAD: when an entry carries more
+#     than one commit that sees only the last. MG_BASE_SHA unset or not a commit, an
+#     EMPTY diff, or a failed diff -> full (fail closed). Only a non-empty docs-only
+#     diff is none. Renames: diff_into uses --no-renames (#3664), both sides touched.
 #   docs-only: every touched path under docs/roadmaps/ or docs/audits/ and present
 #     at HEAD -> tier=none; workspace-test has nothing to measure (#3658).
 #   push to main: the same, over the push's own diff (HEAD^1..HEAD for a queue
@@ -35,7 +38,8 @@
 #     plus one extra output line, check_workspace=1, which ci.yml turns into a
 #     single `cargo check --workspace --all-targets --locked` — the
 #     compile-level integration of every reverse dependent, in minutes.
-#   reuse  push only (T36, below); a merge_group never reuses a PR head.
+#   reuse  push to main only (T36, below); a merge_group never reuses a PR head, and a
+#          TAG push NEVER reuses the queue's (quick) green: tag => full (#5172).
 #          push (T36): the merge queue tested this very commit and main was
 #          moved to it, so the push run would measure the same sha twice. With
 #          --mg-run/--mg-sha/--mg-conclusion (scripts/ci_mg_workspace_result.sh
@@ -325,9 +329,9 @@ decide() {
         merge_group)
             # Operator 2026-10-17 (cop window), verbatim: "we are not gaiting on night this is a
             # boondoggle, only gating on tags/release". The queue runs the SAME selection a PR
-            # head does, over the WHOLE group's diff: MG_BASE_SHA (the group's base = main's tip,
-            # github.event.merge_group.base_sha) .. HEAD. HEAD^1..HEAD would see only the last
-            # entry of a stacked group. Full is forced by the usual rules (root manifest, lock,
+            # head does, over the entry's diff: MG_BASE_SHA (github.event.merge_group.base_sha =
+            # the PRIOR ENTRY's head, main's tip for the first) .. HEAD. HEAD^1..HEAD would
+            # see only the last commit of a multi-commit entry. Full is forced by the usual rules (root manifest, lock,
             # ci files, foundation crate) and by any diff that cannot be derived. A TAG push is
             # the full gate (push case, #5172). `none` (docs-only) is none here too.
             local df mgb; mgb=$(printenv MG_BASE_SHA || true)
@@ -475,7 +479,7 @@ self_test() {
     row 2 "pull_request with a drifted registry -> ENV (exit 2): no quick tier over a stale list" 'drifted' bash "$T" --event pull_request --diff-from "$td/d-scripts.txt"
     cp "$td/reg.bak" scripts/tree_reader_tests.txt
     # merge_group (operator 2026-10-17: the queue runs the QUICK tier, full only on tag/release).
-    # The queue runs the PR's own selection over the WHOLE group's diff, MG_BASE_SHA..HEAD.
+    # The queue runs the PR's own selection over the entry's diff, MG_BASE_SHA..HEAD.
     mkqueue() { # $1 dir, $2 touched path -> HEAD = merge(main tip, PR head), a queue ref's shape
         local d=$1 f=$2
         git init -q -b main "$d"
@@ -491,7 +495,7 @@ self_test() {
     mkqueue "$td/q-leaf" "crates/$leaf/src/lib.rs"
     mkqueue "$td/q-root" "Cargo.toml"
     mkqueue "$td/q-cap"  "crates/aprender-core/src/lib.rs"
-    mkgroup() { # $1 dir -> base; c1 touches root Cargo.toml; c2 (HEAD) touches only a leaf crate (a stacked group of 2)
+    mkgroup() { # $1 dir -> base; c1 touches root Cargo.toml; c2 (HEAD) touches only a leaf crate (base is TWO commits back, so HEAD^1 != base)
         local d=$1
         git init -q -b main "$d"
         ( cd "$d" \
@@ -510,11 +514,11 @@ self_test() {
     row 0 "  ...the reason names the group diff, so the path taken is auditable" 'group diff .*\.\.HEAD' bash -c "$(replay mg-leaf)"
     row 0 "  ...and no check_workspace line within the cap" '^NO-CHECK-WORKSPACE$' bash -c "if grep -q '^check_workspace=' '$td/mg-leaf.out'; then echo HAS; else echo NO-CHECK-WORKSPACE; fi"
     cap mg-stack mgrun "$(rootc "$td/g-stack")" --repo-root "$td/g-stack"
-    row 0 "merge_group of 2 stacked commits, the FIRST touches a root Cargo.toml and the second a leaf -> tier=full (base..HEAD, not HEAD^1)" '^tier=full$' bash -c "$(replay mg-stack)"
+    row 0 "merge_group whose base is 2 commits back, the FIRST touches a root Cargo.toml and the second a leaf -> tier=full (base..HEAD, not HEAD^1)" '^tier=full$' bash -c "$(replay mg-stack)"
     row 0 "  ...citing the root-manifest rule" 'root Cargo.toml' bash -c "$(replay mg-stack)"
     sed 's|diff_into "\$df" "\$mgb"; then rm -f "\${df:?}"|diff_into "$df" HEAD^1; then rm -f "${df:?}"|' "$T" > "$td/mutant-head1.sh"
     row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-head1.sh'; then echo SAME; else echo DIFFERS; fi"
-    row 0 "MUTANT: a merge_group arm that diffs HEAD^1 instead of MG_BASE_SHA sees only the last entry -> quick, row above goes RED" '^MUTANT-QUICK$' bash -c "if MG_BASE_SHA='$(rootc "$td/g-stack")' bash '$td/mutant-head1.sh' --event merge_group --repo-root '$td/g-stack' | grep -q '^tier=quick$'; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
+    row 0 "MUTANT: a merge_group arm that diffs HEAD^1 instead of MG_BASE_SHA sees only the last commit -> quick, row above goes RED" '^MUTANT-QUICK$' bash -c "if MG_BASE_SHA='$(rootc "$td/g-stack")' bash '$td/mutant-head1.sh' --event merge_group --repo-root '$td/g-stack' | grep -q '^tier=quick$'; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     cap mg-root mgrun "$(rootc "$td/q-root")" --repo-root "$td/q-root"
     row 0 "merge_group, the group touched a ROOT manifest -> tier=full (rule (ii))" '^tier=full$' bash -c "$(replay mg-root)"
     row 0 "  ...exactly tier=full and no quick line leaks" '^OK-FULL-ONLY$' full_only "$(replay mg-root)"
@@ -571,6 +575,12 @@ self_test() {
     row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
     row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" bash "$T" --event push --repo-root "$td/s-leaf"
     row 0 "push of a TAG (#5172) -> ONE tier line, full, over the same squash repo: never the refined diff" '^tier=full 1$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf'); printf '%s %s\\n' \"\$(printf '%s\\n' \"\$o\" | grep '^tier=' | head -n1)\" \"\$(printf '%s\\n' \"\$o\" | grep -c '^tier=')\""
+    MGARGS="--mg-run 123456 --mg-sha \$(git -C '$td/s-leaf' rev-parse HEAD) --mg-conclusion success"
+    row 0 "push of a plain sha WITH a successful merge_group result for HEAD -> reuse (T36 control)" '^tier=reuse$' bash -c "bash '$T' --event push --repo-root '$td/s-leaf' $MGARGS | head -n1"
+    row 0 "TAG push of a sha the queue already tested (quick) green -> tier=full, NEVER reuse (sign-off r2 #5468)" '^tier=full$' bash -c "GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf' $MGARGS | head -n1"
+    sed 's|refs/tags/\*)|refs/tags/NEVER/*)|' "$T" > "$td/mutant-tagreuse.sh"
+    row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-tagreuse.sh'; then echo SAME; else echo DIFFERS; fi"
+    row 0 "MUTANT: a push arm that does not special-case tags reuses the quick MG green on a tag -> the row above goes RED" '^MUTANT-REUSE$' bash -c "if GITHUB_REF=refs/tags/v9.9.9 bash '$td/mutant-tagreuse.sh' --event push --repo-root '$td/s-leaf' $MGARGS | grep -q '^tier=reuse$'; then echo MUTANT-REUSE; else echo SURVIVED; fi"
     # #3658 DOCS-ONLY on a pull_request (paths that exist in this tree).
     printf 'docs/roadmaps/roadmap.yaml\ndocs/audits/pp-066-plan-quorum.md\n' > "$td/d-docs.txt"
     row 0 "pull_request, roadmap + audit only -> tier=none (no Rust test reads those paths)" '^tier=none$' bash "$T" --event pull_request --diff-from "$td/d-docs.txt"

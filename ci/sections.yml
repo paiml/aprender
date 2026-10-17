@@ -347,7 +347,7 @@ jobs:
       # registry-checked (drift is ENV, never a quick tier over a stale list);
       # full on schedule/dispatch/tags; merge_group runs the quick tier over the whole
       # group diff (operator 2026-10-17: full gates only tags/release);
-      # a push to main reuses the queue's full run (T36) or, when it cannot, measures
+      # a push to main reuses the queue's workspace-test green (T36; quick or full, per the queue's own tier -- never on a tag push) or, when it cannot, measures
       # the landed diff.
       # The touched set is the TIP diff against the base (shallow checkout: no
       # merge-base; tip-vs-tip is a superset, the safe direction) and the diff
@@ -372,7 +372,7 @@ jobs:
           # warning below says so instead of the run silently paying the hour.
           case "${GITHUB_EVENT_NAME}" in
             merge_group)
-              # Operator 2026-10-17: the queue runs the quick tier over the WHOLE group diff,
+              # Operator 2026-10-17: the queue runs the quick tier over the entry's diff (base_sha = prior entry's head),
               # MG_BASE_SHA..HEAD. Fetch the base; if that fails the tier falls closed to full.
               bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${GITHUB_SHA}" "${MG_BASE_SHA}" 2>/dev/null \
                 || bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${MG_BASE_SHA}" 2>/dev/null \
