@@ -251,7 +251,7 @@ apr,apr pretrain,6,x86_64-linux,pytorch,yes,1,apr-lint-diag,crates/apr-cli/src/e
 apr,apr profile,3,x86_64-linux;nvidia-cuda,llama.cpp,yes,9,profiling,crates/apr-cli/src/extended_commands.rs:186,high
 apr,apr prometheus-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1138,high
 apr,apr prune,4,x86_64-linux,unsloth,yes,10,apr-core-commands,crates/apr-cli/src/model_ops_commands.rs:113,high
-apr,apr ptx,4,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:387,high
+apr,apr ptx,4,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:407,high
 apr,apr ptx-map,6,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:355,high
 apr,apr publish,6,x86_64-linux,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/tool_commands.rs:46,high
 apr,apr pull,4,x86_64-linux,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:552,high
@@ -453,7 +453,7 @@ apr,apr train sweep,6,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cl
 apr,apr train watch,6,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:172,low
 apr,apr tree,4,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:691,high
 apr,apr tui,9,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:820,medium
-apr,apr tune,4,x86_64-linux,pytorch,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:409,high
+apr,apr tune,4,x86_64-linux,pytorch,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:429,high
 apr,apr typical-p-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1162,high
 apr,apr unified-search-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1215,high
 apr,apr unshard,9,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1254,medium
@@ -472,8 +472,8 @@ apr,mcp:apr.tensors,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprend
 apr,mcp:apr.trace,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/trace.rs:20,high
 apr,mcp:apr.validate,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/validate.rs:18,high
 apr,mcp:apr.version,7,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/version.rs:8,high
-aprender-corpus-ingest,aprender-corpus-ingest plan,6,UNKNOWN,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/bin/apr-corpus-ingest.rs:67,high
-aprender-corpus-ingest,aprender-corpus-ingest validate-contract,6,UNKNOWN,huggingface-transformers,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:79,high
+aprender-corpus-ingest,aprender-corpus-ingest plan,6,UNKNOWN,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/bin/apr-corpus-ingest.rs:75,high
+aprender-corpus-ingest,aprender-corpus-ingest validate-contract,6,UNKNOWN,huggingface-transformers,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:87,high
 apr-qa,apr-qa bootstrap,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:378,high
 apr-qa,apr-qa certify,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:47,high
 apr-qa,apr-qa export-csv,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:326,high
@@ -689,10 +689,10 @@ aprender-orchestrate,aprender-orchestrate pacha stats,6,UNKNOWN,claude-code,no,1
 aprender-orchestrate,aprender-orchestrate pacha unpin,6,UNKNOWN,claude-code,no,13,orchestrate-pacha-secrets,crates/aprender-orchestrate/src/pacha/commands.rs:118,high
 aprender-orchestrate,aprender-orchestrate pacha verify,6,UNKNOWN,claude-code,no,13,orchestrate-pacha-secrets,crates/aprender-orchestrate/src/pacha/commands.rs:190,high
 aprender-orchestrate,aprender-orchestrate parf,6,UNKNOWN,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/main_cli.rs:184,high
-aprender-orchestrate,aprender-orchestrate playbook lock,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:42,high
-aprender-orchestrate,aprender-orchestrate playbook run,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:12,high
-aprender-orchestrate,aprender-orchestrate playbook status,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:36,high
-aprender-orchestrate,aprender-orchestrate playbook validate,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:30,high
+aprender-orchestrate,aprender-orchestrate playbook lock,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:101,high
+aprender-orchestrate,aprender-orchestrate playbook run,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:55,high
+aprender-orchestrate,aprender-orchestrate playbook status,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:100,high
+aprender-orchestrate,aprender-orchestrate playbook validate,6,UNKNOWN,claude-code,no,2,orchestrate-agent-stack,crates/aprender-orchestrate/src/cli/playbook.rs:82,high
 aprender-orchestrate,aprender-orchestrate report,6,UNKNOWN,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/main_cli.rs:163,high
 aprender-orchestrate,aprender-orchestrate reset,6,UNKNOWN,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/main_cli.rs:177,high
 aprender-orchestrate,aprender-orchestrate serve,6,UNKNOWN,claude-code,no,0,entrypoint-and-mcp,crates/aprender-orchestrate/src/main_cli.rs:275,high
@@ -869,7 +869,7 @@ aprender-verify,aprender-verify mutate,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,cr
 aprender-verify,aprender-verify stats,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-verify-ml/src/bin/verificar.rs:56,high
 aprender-verify,aprender-verify train,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-verify-ml/src/bin/verificar.rs:120,high
 aprender-verify,aprender-verify verify,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-verify-ml/src/bin/verificar.rs:105,high
-aprender-corpus-ingest,aprender-corpus-ingest --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:55,high
+aprender-corpus-ingest,aprender-corpus-ingest --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:63,high
 aprender-cbtop,aprender-cbtop --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-cbtop/src/main.rs:21,high
 aprender-cgp,aprender-cgp --version,7,x86_64-linux,NONE,no,9,profiling,crates/aprender-cgp/src/cli.rs:27,high
 aprender-compute-xtask,aprender-compute-xtask --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-compute-xtask/src/main.rs:27,high

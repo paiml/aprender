@@ -5,6 +5,7 @@
 use crate::color::Rgba;
 use crate::error::{Error, Result};
 use crate::framebuffer::Framebuffer;
+use crate::output::{SvgEncoder, TextAnchor};
 use crate::render::{draw_circle, draw_line_aa, draw_rect, draw_rect_outline, i32_px};
 use crate::scale::{LinearScale, Scale};
 
@@ -207,6 +208,8 @@ impl GGPlot {
             width: self.width,
             height: self.height,
             title: self.title,
+            xlab: self.xlab,
+            ylab: self.ylab,
         })
     }
 }
@@ -222,8 +225,9 @@ pub struct BuiltGGPlot {
     theme: Theme,
     width: u32,
     height: u32,
-    #[allow(dead_code)]
     title: Option<String>,
+    xlab: Option<String>,
+    ylab: Option<String>,
 }
 
 /// Where each panel sits in the figure.
@@ -280,6 +284,38 @@ impl BuiltGGPlot {
         }
 
         Ok(fb)
+    }
+
+    /// Render to SVG: the framebuffer as an embedded image, with the title, x label and y label
+    /// drawn as `<text>`. The framebuffer has no font, so [`Self::to_framebuffer`] carries none of
+    /// the three; this is the render that does (#5334, #3590).
+    ///
+    /// # Errors
+    ///
+    /// Everything [`Self::to_framebuffer`] returns, plus PNG-encoding failures.
+    pub fn to_svg(&self) -> Result<String> {
+        let fb = self.to_framebuffer()?;
+        let mut svg = SvgEncoder::from_framebuffer(&fb)?;
+        let (w, h) = (self.width as f32, self.height as f32);
+        let m = self.theme.margin as f32;
+        let ink = self.theme.axis_color;
+        if let Some(t) = &self.title {
+            svg = svg.text_anchored(w / 2.0, (m / 2.0).max(14.0), t, 16.0, ink, TextAnchor::Middle);
+        }
+        if let Some(x) = &self.xlab {
+            svg = svg.text_anchored(
+                w / 2.0,
+                h - (m / 4.0).max(4.0),
+                x,
+                12.0,
+                ink,
+                TextAnchor::Middle,
+            );
+        }
+        if let Some(y) = &self.ylab {
+            svg = svg.text_anchored(m, (m * 0.9).max(12.0), y, 12.0, ink, TextAnchor::Start);
+        }
+        Ok(svg.render())
     }
 
     /// Draw one panel: background, scales, grid, layers, axes, border.
@@ -826,6 +862,24 @@ mod tests {
 
         let fb = plot.to_framebuffer().expect("operation should succeed");
         assert!(fb.width() > 0);
+    }
+
+    /// FALSIFY-VIZ-LABELS-001: a label the caller sets is in the rendered SVG, and a plot
+    /// without one has none (so the test cannot pass on a constant).
+    #[test]
+    fn test_ggplot_svg_draws_title_and_axis_labels() {
+        let build = |labelled: bool| {
+            let mut g = GGPlot::new().data_xy(&[1.0, 2.0], &[3.0, 4.0]).geom(Geom::point());
+            if labelled {
+                g = g.title("My Plot").xlab("X Axis").ylab("Y Axis");
+            }
+            g.build().expect("operation should succeed").to_svg().expect("operation should succeed")
+        };
+        let svg = build(true);
+        for label in ["My Plot", "X Axis", "Y Axis"] {
+            assert!(svg.contains(&format!(">{label}</text>")), "{label} not drawn");
+        }
+        assert!(!build(false).contains("</text>"), "an unlabelled plot drew text");
     }
 
     #[test]

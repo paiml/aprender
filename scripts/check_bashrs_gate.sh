@@ -112,8 +112,10 @@ gate() {
   fi
   expect=$((n + 1))
   bashrs lint --no-ignore --level error --format json "${args[@]}" "$d/clean-sentinel.sh" > "$d/out.json" 2> "$d/out.err" || rc=$?
-  if ! strip_ansi < "$d/out.err" | grep -q "Linted $expect file(s)"; then
-    echo "bashrs-gate: ENV receipt mismatch - expected 'Linted $expect file(s)', bashrs said: $(strip_ansi < "$d/out.err" | grep -m1 Linted || echo '<no receipt>') (exit=$rc)" >&2
+  local receipt
+  receipt=$(strip_ansi < "$d/out.err") || receipt=''
+  if ! grep -q "Linted $expect file(s)" <<<"$receipt"; then
+    echo "bashrs-gate: ENV receipt mismatch - expected 'Linted $expect file(s)', bashrs said: $(grep -m1 Linted <<<"$receipt" || echo '<no receipt>') (exit=$rc)" >&2
     return 2
   fi
   classify "$d/out.json" > "$d/class.txt"
@@ -183,7 +185,7 @@ JSON
   printf '#!/bin/sh\necho fine\n' > "$fx/scripts/good.sh"
   git -C "$fx" add -A && git -C "$fx" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -qm fixture
   rc=0; out=$(gate "$fx" 2>&1) || rc=$?
-  { [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q '^scripts/bad.sh:5 SEC010$'; } && ok "must-RED: fixture repo with a SEC010 -> exit 1, 'scripts/bad.sh:5 SEC010'" || bad "must-RED: exit=$rc out=$(printf '%s' "$out" | tail -n2 | tr '\n' '|')"
+  { [ "$rc" -eq 1 ] && grep -q '^scripts/bad.sh:5 SEC010$' <<<"$out"; } && ok "must-RED: fixture repo with a SEC010 -> exit 1, 'scripts/bad.sh:5 SEC010'" || bad "must-RED: exit=$rc out=$(printf '%s' "$out" | tail -n2 | tr '\n' '|')"
   # the fixed twin carries #3198's validation: absolute and free of '..' before first use
   printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'REPO="${REPO_ROOT:-}"' \
     'while [ $# -gt 0 ]; do case "$1" in --repo) REPO="$2"; shift;; esac; shift; done' \
@@ -191,14 +193,14 @@ JSON
     'rc=0; ( cd "$REPO" && timeout 60 cargo test --no-run ) > out.log 2>&1 || rc=$?' 'echo "$rc"' > "$fx/scripts/bad.sh"
   git -C "$fx" add -A && git -C "$fx" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -qm fixed
   rc=0; out=$(gate "$fx" 2>&1) || rc=$?
-  { [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'bashrs-gate: PASS 2 file(s)'; } && ok "must-GREEN: the validated fixture -> exit 0 over 2 files" || bad "must-GREEN: exit=$rc out=$(printf '%s' "$out" | tail -n1)"
+  { [ "$rc" -eq 0 ] && grep -q 'bashrs-gate: PASS 2 file(s)' <<<"$out"; } && ok "must-GREEN: the validated fixture -> exit 0 over 2 files" || bad "must-GREEN: exit=$rc out=$(printf '%s' "$out" | tail -n1)"
 
   # 5. vacuity: an empty surface is ENV (2), never a pass; a gitignored script is named
   fx2="$d/fx2"; mkdir -p "$fx2"; git init -q "$fx2"
   printf 'hidden.sh\n' > "$fx2/.gitignore"; printf '#!/bin/sh\ncd "$1"\n' > "$fx2/hidden.sh"
   git -C "$fx2" add -A && git -C "$fx2" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -qm v
   rc=0; out=$(gate "$fx2" 2>&1) || rc=$?
-  { [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q 'gitignored: hidden.sh'; } && ok "vacuity: empty surface with a gitignored script -> exit 2, names it" || bad "vacuity: exit=$rc out=$out"
+  { [ "$rc" -eq 2 ] && grep -q 'gitignored: hidden.sh' <<<"$out"; } && ok "vacuity: empty surface with a gitignored script -> exit 2, names it" || bad "vacuity: exit=$rc out=$out"
 
   rm -rf "${d:?}"
   if [ "$fail" -eq 0 ]; then echo "SELF-TEST PASS"; return 0; fi

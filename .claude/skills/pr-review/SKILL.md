@@ -496,7 +496,7 @@ eleven Gemini ids and `gpt-oss-120b-medium`. **`agy` is a harness, not a model.*
 field in the receipt still reads `antigravity`.
 
 ```bash
-AGY_MODEL=gemini-3.1-pro-high     # or any non-Anthropic id `agy models` offers
+AGY_MODEL=gemini-4-argon-high     # or any non-Anthropic id `agy models` offers
 ```
 
 The guard checks it:
@@ -833,7 +833,7 @@ one: a pretty-printed Statement is many lines and is rejected as "holds N JSON r
       "antigravity": { "status": "consulted|unreachable", "attempted": 1,
                     "agy_version": "agy 1.1.22",
                     "binary_path": "<what `command -v agy` resolved to>",
-                    "model_id": "gemini-3.1-pro-high",
+                    "model_id": "gemini-4-argon-high",
                     "model_family": "google/gemini",
                     "exit_code": 0, "duration_seconds": 0,
                     "agy_status": "<.status, a DIAGNOSTIC - measured wrong BOTH ways>",

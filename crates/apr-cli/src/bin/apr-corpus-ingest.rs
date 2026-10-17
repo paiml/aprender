@@ -14,20 +14,28 @@
 //! Hard constraints honored:
 //!   * NO network calls.
 //!   * NO writes outside `./output/`.
-//!   * Only `serde`, `serde_yaml`, `anyhow`, `clap` workspace deps.
+//!   * Only `serde`, `serde-saphyr`, `serde_json`, `anyhow`, `clap` workspace deps.
 //!   * Does NOT touch `crates/aprender-train/` (task #89) or
 //!     `crates/apr-cli/src/commands/tokenize.rs` (task #90).
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
-use serde_yaml::Value;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Default contract path, relative to workspace root.
 const DEFAULT_CONTRACT_PATH: &str = "contracts/dataset-thestack-python-v1.yaml";
+
+/// The standard stage options (#5205).
+fn yaml_from_str<T: serde::de::DeserializeOwned>(s: &str) -> Result<T, serde_saphyr::Error> {
+    serde_saphyr::from_str_with_options(
+        s,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
+}
 
 /// Default output directory for the dry-run manifest.
 const DEFAULT_OUTPUT_DIR: &str = "output";
@@ -85,7 +93,7 @@ enum Command {
 /// Structural view of the corpus contract used by both subcommands.
 /// We do NOT model every field — only the load-bearing structure that the
 /// scaffold must type-check. Everything else is carried through as
-/// `serde_yaml::Value` so we can round-trip unknown fields untouched.
+/// `serde_json::Value` so we can round-trip unknown fields untouched.
 ///
 /// The `source`, `license_whitelist`, `pii_scrub`, `deduplication`, `split`,
 /// and `budget` fields MUST be present on the YAML (a missing field aborts
@@ -169,7 +177,7 @@ fn run_plan(contract_path: &Path, output_dir: &Path) -> Result<()> {
         )
     })?;
     let contract: CorpusContract =
-        serde_yaml::from_str(&yaml).with_context(|| "contract YAML failed to deserialize")?;
+        yaml_from_str(&yaml).with_context(|| "contract YAML failed to deserialize")?;
     assert_structural_minimums(&contract)?;
 
     print_plan_summary(&contract, contract_path);
@@ -178,8 +186,8 @@ fn run_plan(contract_path: &Path, output_dir: &Path) -> Result<()> {
         .with_context(|| format!("failed to create output directory {}", output_dir.display()))?;
     let manifest_path = output_dir.join("dry-run-manifest.yaml");
     let manifest = build_dry_run_manifest(&contract, contract_path);
-    let rendered =
-        serde_yaml::to_string(&manifest).with_context(|| "failed to serialize dry-run manifest")?;
+    let rendered = serde_saphyr::to_string(&manifest)
+        .with_context(|| "failed to serialize dry-run manifest")?;
     fs::write(&manifest_path, rendered)
         .with_context(|| format!("failed to write {}", manifest_path.display()))?;
 
@@ -198,14 +206,13 @@ fn validate_contract(path: &Path) -> Result<ValidationReport> {
     // First pass: assert the raw mapping has the required top-level keys.
     // Using a raw Value here means a missing REQUIRED_TOP_KEYS entry fails
     // with a more pointed error than a serde derive missing-field message.
-    let raw: Value =
-        serde_yaml::from_str(&yaml).with_context(|| "contract YAML is not valid YAML")?;
+    let raw: Value = yaml_from_str(&yaml).with_context(|| "contract YAML is not valid YAML")?;
     let mapping = raw
-        .as_mapping()
+        .as_object()
         .ok_or_else(|| anyhow!("contract root must be a YAML mapping"))?;
     let mut present_top_keys = Vec::new();
     for key in REQUIRED_TOP_KEYS {
-        if mapping.contains_key(Value::String((*key).to_string())) {
+        if mapping.contains_key(*key) {
             present_top_keys.push((*key).to_string());
         } else {
             bail!("contract missing required top-level key: {key}");
@@ -214,7 +221,7 @@ fn validate_contract(path: &Path) -> Result<ValidationReport> {
 
     // Second pass: strong-typed deserialize so invariants[]/falsification[]/
     // gates[] have real `id` fields.
-    let contract: CorpusContract = serde_yaml::from_str(&yaml)
+    let contract: CorpusContract = yaml_from_str(&yaml)
         .with_context(|| "contract YAML failed to deserialize into typed schema")?;
     assert_structural_minimums(&contract)?;
 
@@ -395,7 +402,7 @@ fn placeholder(field: &str) -> String {
 
 /// Minimal, dependency-free ISO-8601 UTC timestamp. Avoids pulling `chrono`
 /// into this binary: the constraints already pre-declare the dep set
-/// (serde, serde_yaml, anyhow, clap) and chrono isn't on the list.
+/// (serde, serde-saphyr, serde_json, anyhow, clap) and chrono isn't on the list.
 fn now_utc_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
@@ -453,7 +460,7 @@ mod tests {
             return;
         };
         let yaml = fs::read_to_string(&path).expect("read real contract");
-        let contract: CorpusContract = serde_yaml::from_str(&yaml).expect("contract deserializes");
+        let contract: CorpusContract = yaml_from_str(&yaml).expect("contract deserializes");
         assert_structural_minimums(&contract).expect("structural minimums hold");
 
         assert!(
