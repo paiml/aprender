@@ -242,7 +242,9 @@ mutant offmode-budget 's/target = min(tok, int(ctx) - budget - 1)/target = min(t
 wait
 n=1
 while [ "$n" -le "$MUT_N" ]; do
-  cat "$WORK/mres.$n"; [ -e "$WORK/mbad.$n" ] && bad=1
+  if [ -s "$WORK/mres.$n" ]; then cat "$WORK/mres.$n"
+  else echo "FAIL  mutant #$n left no result line -- its verdict is unknown"; bad=1; fi
+  [ -e "$WORK/mbad.$n" ] && bad=1
   n=$((n + 1))
 done
 

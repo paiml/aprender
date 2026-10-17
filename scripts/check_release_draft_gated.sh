@@ -397,7 +397,8 @@ nearmiss cascade cascade-comment-names-them '1a\# a hand run: MODEL_LADDER_CRUX_
 
 wait
 for ((n = 1; n <= MUT_N; n++)); do
-  cat "$T/res.$n"
+  if [ -s "$T/res.$n" ]; then cat "$T/res.$n"
+  else printf '  MISSING  mutant #%s left no result line -- its verdict is unknown\n' "$n"; bad=1; continue; fi
   [ -e "$T/out.$n.killed" ] && killed=$((killed + 1))
   [ -e "$T/out.$n.held" ] && held=$((held + 1))
   [ -e "$T/out.$n.bad" ] && bad=1

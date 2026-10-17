@@ -127,7 +127,8 @@ row() { # row <manifest> <engine> <pid> <rc> <stdout> <stderr> [refused]
   # Fast path: the common row (a plain integer or empty rc) is printed here, byte for byte what
   # json.dumps wrote; any other rc takes the python3 writer (row_py) unchanged.
   case "${4-}" in
-    ''|0|[1-9]|[1-9][0-9]*)
+    *[!0-9]*) row_py "$@" ;;
+    ''|0|[1-9]*)
       [ "$#" -ge 6 ] || { row_py "$@"; return; }
       local _rc _o _e _r
       _rc=null; [ -n "$4" ] && _rc=$4
