@@ -65,8 +65,13 @@ pub struct ChatCompletionRequest {
     pub model: String,
     /// Chat messages
     pub messages: Vec<ChatMessage>,
-    /// Maximum tokens to generate
-    #[serde(default)]
+    /// Maximum tokens to generate.
+    ///
+    /// `max_completion_tokens` is accepted as an alias: it is the newer OpenAI
+    /// name for the same cap (sent by OpenAI SDK >= 1.40 clients). A body that
+    /// carries BOTH names is refused by serde with a `duplicate field` error
+    /// rather than silently preferring one.
+    #[serde(default, alias = "max_completion_tokens")]
     pub max_tokens: Option<usize>,
     /// Sampling temperature.
     ///
@@ -181,6 +186,10 @@ pub struct ChatCompletionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_logprobs: Option<TopLogprobs>,
 }
+
+#[cfg(test)]
+#[path = "tests/max_completion_tokens_alias.rs"]
+mod max_completion_tokens_alias_tests;
 
 /// OpenAI's `response_format` (#3568 PR 4).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -333,18 +342,28 @@ pub struct StreamOptions {
 }
 
 /// Chat message
+///
+/// Deserialization goes through [`ChatMessageWire`] (`try_from`) so that the
+/// `content` rule can depend on the sibling `role` field; serialization is the
+/// plain derive and its bytes are a contract (PMAT-801).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(try_from = "ChatMessageWire")]
 pub struct ChatMessage {
     /// Role: "system", "user", "assistant", "tool"
     pub role: String,
     /// Message content.
     ///
-    /// PMAT-801: kept REQUIRED on deserialize (a request message missing
-    /// `content` is rejected 422, preserving the pre-PMAT-801 contract). The
-    /// response-side assistant tool-call message sets `content: String::new()`
-    /// directly in Rust, so it does not need a serde default. (Optional/null
-    /// content for assistant tool-call history on the REQUEST side is a
-    /// follow-up — it would require relaxing this field to Option.)
+    /// PMAT-801 follow-up: on the REQUEST side an ASSISTANT message whose
+    /// `content` key is absent or `null` reads as the empty string. OpenAI-
+    /// compatible clients (e.g. the `pmcp-agent` SDK loop) omit `content` on the
+    /// assistant tool-call turn they echo back, which the OpenAI API itself
+    /// permits; this used to be answered with HTTP 422. Every other role
+    /// (system, user, tool) still REQUIRES `content` (refused with serde's
+    /// "missing field" error as before), and a non-string `content` is still a
+    /// type error.
+    /// The response side is unchanged: the assistant tool-call message sets
+    /// `content: String::new()` directly in Rust and serializes `"content":""`
+    /// exactly as before, so the field stays a plain `String` for every reader.
     pub content: String,
     /// Optional name
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -358,6 +377,45 @@ pub struct ChatMessage {
     /// of the `tool_call` it answers. Lets tool results round-trip through the API.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+}
+
+/// Request-side wire shape of [`ChatMessage`].
+///
+/// `content` is an `Option` under `#[serde(default)]` so an absent key and a
+/// JSON `null` both read as `None` (a number or any other non-string is still a
+/// type error). The `TryFrom` conversion then decides, per role, whether `None`
+/// is acceptable.
+#[derive(Debug, Deserialize)]
+struct ChatMessageWire {
+    role: String,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<ResponseToolCall>>,
+    #[serde(default)]
+    tool_call_id: Option<String>,
+}
+
+impl TryFrom<ChatMessageWire> for ChatMessage {
+    type Error = String;
+
+    fn try_from(wire: ChatMessageWire) -> std::result::Result<Self, Self::Error> {
+        let content = match wire.content {
+            Some(text) => text,
+            // An assistant tool-call history turn legitimately has no text.
+            None if wire.role == "assistant" => String::new(),
+            None => return Err("missing field `content`".to_string()),
+        };
+        Ok(Self {
+            role: wire.role,
+            content,
+            name: wire.name,
+            tool_calls: wire.tool_calls,
+            tool_call_id: wire.tool_call_id,
+        })
+    }
 }
 
 // ============================================================================
@@ -1214,3 +1272,7 @@ pub(crate) fn default_top_k_features() -> usize {
 pub(crate) fn default_explain_method() -> String {
     "shap".to_string()
 }
+
+#[cfg(test)]
+#[path = "tests/chat_message_content_pmat801.rs"]
+mod chat_message_content_tests;
