@@ -111,14 +111,14 @@ cargo run --release --example pytorch_inference_output
 
 ```bash
 # Analyze Python code
-batuta analyze examples/migrations/numpy-data-processing/input.py
+aprender-orchestrate analyze examples/migrations/numpy-data-processing/input.py
 
 # View detected libraries and conversion strategy
-batuta status
+aprender-orchestrate status
 
 # Transpile to Rust
-batuta transpile examples/migrations/numpy-data-processing/input.py \
-  --output examples/migrations/numpy-data-processing/generated.rs \
+aprender-orchestrate transpile examples/migrations/numpy-data-processing/input.py \
+  --output examples/migrations/numpy-data-processing/output.rs \
   --optimize --backend auto
 
 # Build and run
@@ -152,7 +152,7 @@ Standard workflow for migrating Python ML/data code to Rust:
 ### 1. **Analysis Phase**
 
 ```bash
-batuta analyze your_project/
+aprender-orchestrate analyze your_project/
 ```
 
 - Detects Python libraries (NumPy, sklearn, PyTorch, etc.)
@@ -163,7 +163,7 @@ batuta analyze your_project/
 ### 2. **Transpilation Phase**
 
 ```bash
-batuta transpile your_project/ \
+aprender-orchestrate transpile your_project/ \
   --output rust_project/ \
   --optimize \
   --backend auto
@@ -179,7 +179,7 @@ batuta transpile your_project/ \
 ### 3. **Optimization Phase**
 
 ```bash
-batuta optimize rust_project/ \
+aprender-orchestrate optimize rust_project/ \
   --simd --gpu \
   --target-throughput 1000
 ```
@@ -192,7 +192,7 @@ batuta optimize rust_project/ \
 ### 4. **Validation Phase**
 
 ```bash
-batuta validate rust_project/ \
+aprender-orchestrate validate rust_project/ \
   --compare-with your_project/ \
   --trace-syscalls
 ```
@@ -205,7 +205,7 @@ batuta validate rust_project/ \
 ### 5. **Build Phase**
 
 ```bash
-batuta build rust_project/ \
+aprender-orchestrate build rust_project/ \
   --release \
   --target x86_64-unknown-linux-gnu
 ```
@@ -319,7 +319,7 @@ Found a bug or want to add more examples? See [CONTRIBUTING.md](../../CONTRIBUTI
 ## References
 
 - [Batuta Documentation](../../docs/)
-- [Batuta Specification](../../docs/specifications/sovereign-ai-spec.md)
+- [Batuta Specification](../../docs/specifications/archive/sovereign-ai-spec.md)
 - [Trueno Tensor Library](https://github.com/paiml/aprender/tree/main/crates/aprender-compute)
 - [Aprender ML Library](https://github.com/paiml/aprender)
 - [Realizar Inference Engine](https://github.com/paiml/aprender/tree/main/crates/aprender-serve)

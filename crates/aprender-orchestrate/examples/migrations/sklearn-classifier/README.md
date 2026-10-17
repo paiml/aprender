@@ -106,11 +106,11 @@ cargo run --example sklearn_classifier_output
 
 ```bash
 # Analyze the Python code
-batuta analyze examples/migrations/sklearn-classifier/input.py
+aprender-orchestrate analyze examples/migrations/sklearn-classifier/input.py
 
 # Transpile to Rust
-batuta transpile examples/migrations/sklearn-classifier/input.py \
-  --output examples/migrations/sklearn-classifier/generated.rs \
+aprender-orchestrate transpile examples/migrations/sklearn-classifier/input.py \
+  --output examples/migrations/sklearn-classifier/output.rs \
   --optimize --backend auto
 
 # Build optimized binary
@@ -273,5 +273,5 @@ Benchmarks on Iris dataset (scaled to 150K samples for timing):
 
 - [scikit-learn Documentation](https://scikit-learn.org/stable/)
 - [Aprender ML Library](https://github.com/paiml/aprender)
-- [Batuta Specification](../../../docs/specifications/sovereign-ai-spec.md)
+- [Batuta Specification](../../../docs/specifications/archive/sovereign-ai-spec.md)
 - [Production ML in Rust](https://www.arewelearningyet.com/)
