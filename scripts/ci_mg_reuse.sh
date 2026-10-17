@@ -522,25 +522,42 @@ STUB
   wire gate 'MG-REUSE-VERDICT-BEGIN'
   wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test]'
   wire gate '[ "$MST" = success ]'
-  # sign-off r3 item 4: only a pull_request may land on the pr-only pool; every other event
-  # (merge_group, push) takes the else-branch, which must be the clean-room pool. Evaluated per event.
-  lane() { # lane JOB EVENT -> the pool labels the job's runs-on picks for EVENT
-    local ro; ro=$(job "$1" | grep -m1 '^    runs-on:')
+  # #5472 re-quorum 20261017T1430Z: only a merge_group takes the mq pool (the reserved queue
+  # runners); pull_request and push take the else-branch, the shared clean-room pool, never
+  # mq and never the retired pr-only label. Evaluated per event, per job, on any workflow file.
+  lane() { # lane WF JOB EVENT -> the pool labels the job's runs-on picks for EVENT
+    local ro; ro=$(awk -v j="  $2:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null | grep -m1 '^    runs-on:')
     case "$ro" in
-      *"github.event_name == 'pull_request' &&"*)
-        if [ "$2" = pull_request ]; then ro=${ro%%||*}; else ro=${ro#*||}; fi ;;
+      *"github.event_name == 'merge_group' &&"*)
+        if [ "$3" = merge_group ]; then ro=${ro%%||*}; else ro=${ro#*||}; fi ;;
     esac
     printf '%s' "$ro"
   }
-  for j in x86-main x86-main-advisories workspace-test-shard; do
-    for ev in merge_group push; do
-      l=$(lane "$j" "$ev")
-      if grep -qF clean-room <<< "$l" && ! grep -qF pr-only <<< "$l"; then pass=$((pass + 1)); else
-        fail=$((fail + 1)); echo "FAIL wiring: $j on $ev does not land on clean-room (runs-on: $l)"; fi
+  poolrows() { # poolrows WF -> one line per violated pool row
+    local j ev l
+    for j in x86-main x86-main-advisories workspace-test-shard; do
+      l=$(lane "$1" "$j" merge_group)
+      if ! grep -qF '"mq"' <<< "$l" || grep -qF clean-room <<< "$l"; then echo "$j on merge_group does not land on the mq pool (runs-on: $l)"; fi
+      for ev in pull_request push; do
+        l=$(lane "$1" "$j" "$ev")
+        if ! grep -qF clean-room <<< "$l" || grep -qF pr-only <<< "$l" || grep -qF '"mq"' <<< "$l"; then
+          echo "$j on $ev does not land on the clean-room pool (runs-on: $l)"; fi
+      done
     done
-    if grep -qF pr-only <<< "$(lane "$j" pull_request)"; then pass=$((pass + 1)); else
-      fail=$((fail + 1)); echo "FAIL wiring: $j on pull_request no longer takes the pr-only pool"; fi
-  done
+  }
+  pr=$(poolrows "$wf")
+  if [ -z "$pr" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: $pr"; fi
+  poolmut() { # poolmut NAME EXPECTED_VIOLATION SED_EXPR: the mutant must change ci.yml and poolrows must name the violation
+    sed -E "$3" "$wf" > "$T/pool-mut.yml"
+    if [ ! -s "$T/pool-mut.yml" ] || cmp -s "$wf" "$T/pool-mut.yml"; then
+      fail=$((fail + 1)); echo "FAIL mutant $1: the sed did not change ci.yml (a mutant that cannot fail)"; return; fi
+    if grep -qF -- "$2" <<< "$(poolrows "$T/pool-mut.yml")"; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL mutant $1: poolrows did not report '$2'"; fi
+  }
+  poolmut mq-lane-loses-mq "on merge_group does not land on the mq pool" 's/"X64","mq"/"X64","clean-room"/'
+  poolmut pr-lane-loses-clean-room "on pull_request does not land on the clean-room pool" 's/\|\| fromJSON\(.\["self-hosted","Linux","X64","clean-room"\]/|| fromJSON('"'"'["self-hosted","Linux","X64","build"]/'
+  poolmut pr-lane-back-on-pr-only "on push does not land on the clean-room pool" 's/\|\| fromJSON\(.\["self-hosted","Linux","X64","clean-room"\]/|| fromJSON('"'"'["self-hosted","Linux","X64","clean-room","pr-only"]/'
+  poolmut pr-lane-takes-mq "on pull_request does not land on the clean-room pool" 's/\|\| fromJSON\(.\["self-hosted","Linux","X64","clean-room"\]/|| fromJSON('"'"'["self-hosted","Linux","X64","clean-room","mq"]/'
 
   # S1 (20X): mg-reuse runs on push only, so on merge_group it is SKIPPED and every dependent
   # runs only because its own `if:` carries !cancelled()/always() (a skipped need otherwise skips
