@@ -147,13 +147,13 @@ cargo install aprender-test-cli
 
 ```bash
 # Validate playbook state machines
-probador playbook login.yaml --validate
+aprender-test-cli playbook login.yaml --validate
 
 # Run mutation testing
-probador playbook login.yaml --mutate
+aprender-test-cli playbook login.yaml --mutate
 
 # Export state diagrams
-probador playbook login.yaml --export svg -o diagram.svg
+aprender-test-cli playbook login.yaml --export svg -o diagram.svg
 ```
 
 ## Documentation

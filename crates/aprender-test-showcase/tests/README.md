@@ -35,8 +35,8 @@ cargo test -p showcase-calculator --test gui_coverage_tests
 cargo test -p showcase-calculator --test keypad_proptests
 
 # Run probar playbook validation
-probador playbook playbooks/calculator.yaml --validate
-probador playbook playbooks/error_handling.yaml --validate
+aprender-test-cli playbook playbooks/calculator.yaml --validate
+aprender-test-cli playbook playbooks/error_handling.yaml --validate
 ```
 
 ## Test Rationale

@@ -106,10 +106,10 @@ cargo run --example sklearn_classifier_output
 
 ```bash
 # Analyze the Python code
-batuta analyze examples/migrations/sklearn-classifier/input.py
+aprender-orchestrate analyze examples/migrations/sklearn-classifier/input.py
 
 # Transpile to Rust
-batuta transpile examples/migrations/sklearn-classifier/input.py \
+aprender-orchestrate transpile examples/migrations/sklearn-classifier/input.py \
   --output examples/migrations/sklearn-classifier/generated.rs \
   --optimize --backend auto
 

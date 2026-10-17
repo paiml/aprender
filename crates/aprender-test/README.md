@@ -47,16 +47,16 @@ cargo install aprender-test-cli
 
 ```bash
 # Validate a playbook state machine
-probador playbook login.yaml --validate
+aprender-test-cli playbook login.yaml --validate
 
 # Run with mutation testing (M1-M5 falsification)
-probador playbook login.yaml --mutate
+aprender-test-cli playbook login.yaml --mutate
 
 # Export state diagram
-probador playbook login.yaml --export svg -o diagram.svg
+aprender-test-cli playbook login.yaml --export svg -o diagram.svg
 
 # Start dev server for WASM
-probador serve --port 8080
+aprender-test-cli serve --port 8080
 ```
 
 ---
@@ -346,16 +346,16 @@ cargo watch -x test
 
 ```bash
 # Run tests with probador
-probador test
+aprender-test-cli test
 
 # Generate coverage reports
-probador coverage --html
+aprender-test-cli coverage --html
 
 # Watch mode with hot reload
-probador watch tests/
+aprender-test-cli watch tests/
 
 # Serve WASM application
-probador serve --port 8080 --cors
+aprender-test-cli serve --port 8080 --cors
 ```
 
 ### GUI Coverage Example

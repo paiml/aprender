@@ -96,10 +96,10 @@ cargo run --release --example pytorch_inference_output
 
 ```bash
 # Analyze the Python code
-batuta analyze examples/migrations/pytorch-inference/input.py
+aprender-orchestrate analyze examples/migrations/pytorch-inference/input.py
 
 # Transpile to Rust
-batuta transpile examples/migrations/pytorch-inference/input.py \
+aprender-orchestrate transpile examples/migrations/pytorch-inference/input.py \
   --output examples/migrations/pytorch-inference/generated.rs \
   --optimize --backend auto
 

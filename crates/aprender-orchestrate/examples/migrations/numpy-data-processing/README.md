@@ -85,13 +85,13 @@ To transpile this example using Batuta:
 
 ```bash
 # From project root
-batuta analyze examples/migrations/numpy-data-processing/input.py
+aprender-orchestrate analyze examples/migrations/numpy-data-processing/input.py
 
 # View analysis results
-batuta status
+aprender-orchestrate status
 
 # Transpile (requires depyler tool)
-batuta transpile examples/migrations/numpy-data-processing/input.py \
+aprender-orchestrate transpile examples/migrations/numpy-data-processing/input.py \
   --output examples/migrations/numpy-data-processing/generated.rs \
   --optimize --backend auto
 

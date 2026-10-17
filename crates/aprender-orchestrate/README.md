@@ -54,16 +54,16 @@ serving -- with zero Python dependencies.
 
 ```bash
 # Analyze any codebase
-batuta analyze --tdg .
+aprender-orchestrate analyze --tdg .
 
 # Query the stack oracle
-batuta oracle "How do I serve a Llama model locally?"
+aprender-orchestrate oracle "How do I serve a Llama model locally?"
 
 # Serve models (OpenAI-compatible API)
-batuta serve ./model.gguf --port 8080
+aprender-orchestrate serve ./model.gguf --port 8080
 
 # Autonomous coding agent
-batuta code --prompt "Summarize this codebase"
+aprender-orchestrate code --prompt "Summarize this codebase"
 ```
 
 ## Installation
@@ -81,7 +81,7 @@ cargo install aprender-orchestrate --features agents
 ### Analyze a project
 
 ```bash
-batuta analyze --tdg .
+aprender-orchestrate analyze --tdg .
 ```
 
 ```
@@ -94,7 +94,7 @@ Analysis Results
 ### Hunt for bugs
 
 ```bash
-batuta bug-hunter analyze .
+aprender-orchestrate bug-hunter analyze .
 ```
 
 Finds unwraps, panics, unsafe blocks, error swallowing, and 20+ fault
@@ -103,7 +103,7 @@ patterns across your codebase.
 ### Query the stack oracle
 
 ```bash
-batuta oracle "How do I train a random forest?"
+aprender-orchestrate oracle "How do I train a random forest?"
 ```
 
 Returns component recommendations with working code examples and TDD
@@ -112,7 +112,7 @@ test companions.
 ### Serve a model
 
 ```bash
-batuta serve ./model.gguf --port 8080
+aprender-orchestrate serve ./model.gguf --port 8080
 ```
 
 Starts an OpenAI-compatible server at
@@ -142,13 +142,13 @@ LLM inference:
 
 ```bash
 # Single-prompt mode (GPU-accelerated)
-batuta code --prompt "Explain the error handling in this project"
+aprender-orchestrate code --prompt "Explain the error handling in this project"
 
 # Interactive chat
-batuta code
+aprender-orchestrate code
 
 # With explicit model
-batuta code --model ./Qwen3-8B-Q4_K_M.gguf --prompt "Add unit tests"
+aprender-orchestrate code --model ./Qwen3-8B-Q4_K_M.gguf --prompt "Add unit tests"
 ```
 
 Agents are configured via TOML manifests with capability-gated tools
@@ -196,16 +196,16 @@ details.
 ## CLI Reference
 
 ```
-batuta analyze        Analyze project structure, languages, TDG score
-batuta bug-hunter     Proactive bug hunting (fault patterns, mutation targets)
-batuta falsify        Popperian falsification checklist
-batuta oracle         Natural language queries about the Sovereign AI Stack
-batuta serve          ML model serving (OpenAI-compatible API)
-batuta code           Autonomous coding agent (local LLM inference)
-batuta stack          Stack version management, drift detection
-batuta playbook       Deterministic YAML pipeline runner
-batuta transpile      Code transpilation (Python/Shell/C -> Rust)
-batuta hf             HuggingFace Hub integration
+aprender-orchestrate analyze        Analyze project structure, languages, TDG score
+aprender-orchestrate bug-hunter     Proactive bug hunting (fault patterns, mutation targets)
+aprender-orchestrate falsify        Popperian falsification checklist
+aprender-orchestrate oracle         Natural language queries about the Sovereign AI Stack
+aprender-orchestrate serve          ML model serving (OpenAI-compatible API)
+aprender-orchestrate code           Autonomous coding agent (local LLM inference)
+aprender-orchestrate stack          Stack version management, drift detection
+aprender-orchestrate playbook       Deterministic YAML pipeline runner
+aprender-orchestrate transpile      Code transpilation (Python/Shell/C -> Rust)
+aprender-orchestrate hf             HuggingFace Hub integration
 ```
 
 ## Privacy Tiers

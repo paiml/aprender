@@ -60,7 +60,7 @@ cargo install ttop
 ## Command Line Options
 
 ```
-ttop [OPTIONS]
+aprender-viz-ttop [OPTIONS]
 
 Options:
   -r, --refresh <MS>       Refresh interval in milliseconds [default: 1000]
@@ -78,19 +78,19 @@ Options:
 
 ```bash
 # Run with default settings
-ttop
+aprender-viz-ttop
 
 # Fast refresh (500ms)
-ttop -r 500
+aprender-viz-ttop -r 500
 
 # Render single frame for CI/testing
-ttop --deterministic --render-once --width 120 --height 40
+aprender-viz-ttop --deterministic --render-once --width 120 --height 40
 
 # Explode GPU panel fullscreen
-ttop --explode gpu
+aprender-viz-ttop --explode gpu
 
 # Dump default config
-ttop --dump-config > ~/.config/ttop/config.yaml
+aprender-viz-ttop --dump-config > ~/.config/ttop/config.yaml
 ```
 
 ## GPU Support
@@ -105,7 +105,7 @@ GPU panel is always visible. If no GPU is detected, it shows "No GPU detected".
 ## Architecture
 
 ```
-ttop binary (2.5MB)
+aprender-viz-ttop binary (2.5MB)
   └── presentar-terminal::ptop (14 panels, 13 analyzers)
         └── presentar-terminal::direct (CellBuffer, DiffRenderer)
               └── crossterm (terminal I/O)
