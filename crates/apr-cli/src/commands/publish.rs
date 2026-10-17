@@ -400,8 +400,6 @@ fn upload_to_hub(
     Ok(())
 }
 
-/// Execute the publish command
-///
 /// Repo-id / directory checks the manifest path skips in `validate_publish_inputs`.
 fn validate_repo_and_dir(repo_id: &str, directory: &Path) -> Result<(), CliError> {
     if !repo_id.contains('/') || repo_id.split('/').count() != 2 {
@@ -446,6 +444,8 @@ fn file_len(f: &Path) -> u64 {
     fs::metadata(f).map(|m| m.len()).unwrap_or(0)
 }
 
+/// Execute the publish command
+///
 /// F-PUBLISH-EXTRA-001 (contracts/apr-cli-publish-extra-v1.yaml):
 /// When `manifest` is `Some`, validates the publish-manifest-v1.yaml, computes
 /// sha256 of the declared local artifact, aborts before any network I/O on

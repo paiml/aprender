@@ -913,14 +913,6 @@ fn gguf_ftype_name(ftype: u32) -> &'static str {
     }
 }
 
-/// Read the GGUF header + tensor-metadata section, returning:
-///   - optional `general.file_type` (advisory; frequently stale in real files)
-///   - histogram of GGML tensor-type codes → counts (authoritative)
-///
-/// Format: magic(4) + version(u32) + tensor_count(u64) + kv_count(u64) +
-/// kv_entries + tensor_metadata. Each kv: key_len(u64) + key(utf-8) +
-/// value_type(u32) + value. Each tensor_metadata: name_len(u64) + name(utf-8)
-/// + n_dims(u32) + dims(n_dims*u64) + type(u32) + offset(u64).
 fn read_u32_le<R: Read>(f: &mut R, what: &str) -> Result<u32, String> {
     let mut buf = [0u8; 4];
     f.read_exact(&mut buf).map_err(|e| format!("{what}: {e}"))?;
@@ -983,6 +975,14 @@ fn read_tensor_types<R: Read>(f: &mut R, tensor_count: u64) -> Result<HashMap<u3
     Ok(tensor_types)
 }
 
+/// Read the GGUF header + tensor-metadata section, returning:
+///   - optional `general.file_type` (advisory; frequently stale in real files)
+///   - histogram of GGML tensor-type codes → counts (authoritative)
+///
+/// Format: magic(4) + version(u32) + tensor_count(u64) + kv_count(u64) +
+/// kv_entries + tensor_metadata. Each kv: key_len(u64) + key(utf-8) +
+/// value_type(u32) + value. Each tensor_metadata: name_len(u64) + name(utf-8)
+/// + n_dims(u32) + dims(n_dims*u64) + type(u32) + offset(u64).
 fn read_gguf_signature(path: &Path) -> Result<GgufSignature, String> {
     let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut magic = [0u8; 4];
