@@ -272,9 +272,13 @@ want "D8 a refused result on a root commit keeps today's full" "tier=full" "$(gr
 git -C "$T/r" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "queue, same tree"
 P="$(git -C "$T/r" rev-parse HEAD~1)"; Q="$(git -C "$T/r" rev-parse HEAD)"
 OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
-want "D9 merge_group same tree + PR head success -> reuse citing the PR head (unchanged)" "cite=$P" "$(grep '^cite=' <<<"$OUT")"
-OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion failure --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
-hasnt "D10 merge_group ignores --mg-*: a PR-head failure never reuses" "tier=reuse" "$OUT"
+want "D9 merge_group + PR head success, SAME tree (empty queue diff) -> full: the PR green is never reused (RED against the pre-PR script, which answered reuse)" "tier=full" "$(grep '^tier=' <<<"$OUT")"
+OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
+want "D10 merge_group + PR head success + a green --mg-* run, SAME tree -> full: --mg-* is ignored (RED against the pre-PR script)" "tier=full" "$(grep '^tier=' <<<"$OUT")"
+printf "[workspace]\n" > "$T/r/Cargo.toml"; git -C "$T/r" add Cargo.toml; git -C "$T/r" -c user.name=t -c user.email=t@t commit -q -m "queue, root manifest (non-empty diff)"
+P="$(git -C "$T/r" rev-parse HEAD~1)"; Q="$(git -C "$T/r" rev-parse HEAD)"
+OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
+want "D9b merge_group + PR head success, NON-EMPTY diff (root manifest) -> full" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 printf 'docs/audits/a.md\n' >"$T/d.txt"
 OUT="$(cd "$ROOT" && bash "$TIER" --event pull_request --repo-root "$T/r" --diff-from "$T/d.txt" --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
 hasnt "D11 pull_request ignores --mg-*: never reuse" "tier=reuse" "$OUT"
@@ -375,12 +379,23 @@ OUT="$(bash "$MG" resolve-push --event pull_request --ref refs/heads/main --sha 
 has "R5 a non-push event refuses without a call" "x86=0" "$OUT"
 
 # -- X: the ci.yml wiring for the push arm (its verdict and job wiring also run in ci_mg_reuse.sh --self-test)
-want "X1 mg-reuse runs on a push to main" 1 \
-     "$(grep -cF "if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')" "$CI")"
+# X1 is scoped to the job: mg-reuse's own 4-space `if:` key, never a string found anywhere in the file.
+mgif() { awk '/^  [A-Za-z0-9_-]+:$/ {j = $1} j == "mg-reuse:" && /^    if:/ {sub(/^    /, ""); print; exit}' "$1"; }
+X1WANT="if: github.event_name == 'push' && github.ref == 'refs/heads/main'"
+want "X1 mg-reuse's own job-level if is push-to-main only (S1: skipped on merge_group, x86-main asks for its runner at t=0)" "$X1WANT" "$(mgif "$CI")"
+# RED mutants (each must differ from the real answer AND carry the string, so the control is live):
+# the string as a real `if:` of ANOTHER job (what an unanchored grep would count), and the old form.
+X1ESC="${X1WANT//&/\\&}"
+sed "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/d" "$CI" | sed "s|^  x86-main:\$|  x86-main:\n    $X1ESC|" > "$T/x1a.yml"
+want "X1m1 control: the mutant really carries the string" 1 "$(grep -cF "$X1WANT" "$T/x1a.yml")"
+want "X1m1 the string as another job's if: does not satisfy X1" 1 "$([ "$(mgif "$T/x1a.yml")" != "$X1WANT" ] && echo 1 || echo 0)"
+sed "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/" "$CI" > "$T/x1b.yml"
+want "X1m2 the old merge_group form does not satisfy X1" 1 "$([ "$(mgif "$T/x1b.yml")" != "$X1WANT" ] && echo 1 || echo 0)"
 want "X2 the push calls resolve-push with the pushed sha and before" 1 \
      "$(grep -cF 'bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE"' "$CI")"
-want "X3 both verdict copies (ci / gate and gate) accept a push reuse only with the advisories green" 2 \
-     "$(grep -cF 'merge_group:success:1:1:success | push:success:1:1:success) REUSE=1' "$CI")"
+want "X3 both verdict copies (ci / gate and gate) accept a push reuse only, never a merge_group one" 2 \
+     "$(grep -cE '^ +push:success:1:1:success\) REUSE=1' "$CI")"
+want "X3b no verdict copy still names merge_group:success:1:1" 0 "$(grep -cF 'merge_group:success:1:1' "$CI")"
 bash "$ROOT/scripts/ci_mg_reuse.sh" --self-test >"$T/mgst" 2>&1; rc=$?
 want "X4 ci_mg_reuse.sh --self-test (verdict rows incl. push, job wiring) is green" 0 "$rc"
 

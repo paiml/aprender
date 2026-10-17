@@ -1547,34 +1547,17 @@ fn parse_best_ppl(output: &str) -> f64 {
     best
 }
 
-/// Execute one halving round: update configs, run survivors, rank, eliminate worst half.
-/// Returns the surviving indices after elimination.
-fn run_halving_round(
-    apr_path: &std::path::Path,
-    results: &mut [HalvingEntry],
+/// Materialise the per-round trial config as a COPY. Halving used to patch
+/// `max_steps` / `output_dir` into the user's own sweep-*.yaml in place, so
+/// a second run with a different --steps-per-round trained against inputs
+/// the first run had silently rewritten.
+fn materialise_trial_configs(
+    results: &[HalvingEntry],
     survivors: &[usize],
-    round_idx: usize,
     steps: usize,
+    round_idx: usize,
     trials_dir: &std::path::Path,
-    json_output: bool,
-) -> Vec<usize> {
-    use std::process::Command;
-
-    let n_survive = std::cmp::max(1, survivors.len() / 2);
-
-    if !json_output {
-        println!("═══ Round {round_idx} ═══");
-        println!(
-            "  Survivors: {}, steps: {steps}, keep: {n_survive}",
-            survivors.len()
-        );
-        println!();
-    }
-
-    // Materialise the per-round trial config as a COPY. Halving used to patch
-    // `max_steps` / `output_dir` into the user's own sweep-*.yaml in place, so
-    // a second run with a different --steps-per-round trained against inputs
-    // the first run had silently rewritten.
+) -> std::collections::HashMap<usize, std::path::PathBuf> {
     let _ = std::fs::create_dir_all(trials_dir);
     let mut trial_paths: std::collections::HashMap<usize, std::path::PathBuf> =
         std::collections::HashMap::new();
@@ -1594,6 +1577,48 @@ fn run_halving_round(
             }
         }
     }
+    trial_paths
+}
+
+/// Run one trial through `apr train apply` and classify its output.
+fn run_trial(apr_path: &std::path::Path, config_arg: &std::path::Path) -> TrialOutcome {
+    let cmd_output = std::process::Command::new(apr_path)
+        .args(["train", "apply", "--task", "pretrain", "--config"])
+        .arg(config_arg)
+        .output();
+    match cmd_output {
+        Ok(out) => {
+            let combined = String::from_utf8_lossy(&out.stdout).to_string()
+                + &String::from_utf8_lossy(&out.stderr);
+            classify_trial(out.status.success(), out.status.code(), &combined)
+        }
+        Err(e) => TrialOutcome::Failed(format!("could not run trial: {e}")),
+    }
+}
+
+/// Execute one halving round: update configs, run survivors, rank, eliminate worst half.
+/// Returns the surviving indices after elimination.
+fn run_halving_round(
+    apr_path: &std::path::Path,
+    results: &mut [HalvingEntry],
+    survivors: &[usize],
+    round_idx: usize,
+    steps: usize,
+    trials_dir: &std::path::Path,
+    json_output: bool,
+) -> Vec<usize> {
+    let n_survive = std::cmp::max(1, survivors.len() / 2);
+
+    if !json_output {
+        println!("═══ Round {round_idx} ═══");
+        println!(
+            "  Survivors: {}, steps: {steps}, keep: {n_survive}",
+            survivors.len()
+        );
+        println!();
+    }
+
+    let trial_paths = materialise_trial_configs(results, survivors, steps, round_idx, trials_dir);
 
     // Run each survivor and collect scores
     let mut round_scores: Vec<(usize, f64)> = Vec::new();
@@ -1609,20 +1634,8 @@ fn run_halving_round(
         }
 
         let start = std::time::Instant::now();
-        let cmd_output = Command::new(apr_path)
-            .args(["train", "apply", "--task", "pretrain", "--config"])
-            .arg(&config_arg)
-            .output();
-
+        let outcome = run_trial(apr_path, &config_arg);
         let elapsed = start.elapsed().as_secs();
-        let outcome = match cmd_output {
-            Ok(out) => {
-                let combined = String::from_utf8_lossy(&out.stdout).to_string()
-                    + &String::from_utf8_lossy(&out.stderr);
-                classify_trial(out.status.success(), out.status.code(), &combined)
-            }
-            Err(e) => TrialOutcome::Failed(format!("could not run trial: {e}")),
-        };
 
         let best_ppl = match &outcome {
             TrialOutcome::Scored(p) => *p,

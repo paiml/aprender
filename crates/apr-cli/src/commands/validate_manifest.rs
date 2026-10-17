@@ -685,42 +685,61 @@ fn check_gguf_file_type(top: &Mapping, artifact: Option<&Path>) -> FalsifyResult
     // `general.file_type` is advisory and frequently stale in real-world GGUFs —
     // llama.cpp's own quantize tool has shipped artifacts with ftype=0 despite
     // quantized tensors, so tensor types are the source of truth.
-    if let Some(observed) = predominant_quant_type(&sig.tensor_types) {
-        if let Some(exp) = expected_tensor {
-            if observed == exp {
-                let ftype_note = match sig.ftype {
-                    Some(ft) if Some(ft) == expected_ftype_val => String::new(),
-                    Some(ft) => {
-                        format!(
-                            " (note: general.file_type={ft}={} is stale)",
-                            gguf_ftype_name(ft)
-                        )
-                    }
-                    None => String::new(),
-                };
-                return FalsifyResult {
-                    id: "FALSIFY-PM-008",
-                    verdict: "PASS",
-                    detail: format!(
-                        "predominant tensor type = {observed} ({}) matches quantization '{quant}'{ftype_note}",
-                        ggml_type_name(observed)
-                    ),
-                };
-            }
-            return FalsifyResult {
-                id: "FALSIFY-PM-008",
-                verdict: "FAIL",
-                detail: format!(
-                    "manifest declares '{quant}' (ggml type {exp} = {}) but predominant tensor type is {observed} = {}",
-                    ggml_type_name(exp),
-                    ggml_type_name(observed)
-                ),
-            };
-        }
+    if let Some(result) = check_by_tensor_type(&sig, &quant, expected_tensor, expected_ftype_val) {
+        return result;
     }
 
     // Fallback: header-level general.file_type (used when the file has no tensor
     // metadata, e.g. synthetic fixtures in unit tests).
+    check_by_header_ftype(&sig, &quant, expected_ftype_val, path)
+}
+
+/// PM-008 verdict from the predominant tensor type, or `None` when the file has
+/// no tensor types (or the quantization has no tensor mapping) and the header
+/// fallback must decide.
+fn check_by_tensor_type(
+    sig: &GgufSignature,
+    quant: &str,
+    expected_tensor: Option<u32>,
+    expected_ftype_val: Option<u32>,
+) -> Option<FalsifyResult> {
+    let observed = predominant_quant_type(&sig.tensor_types)?;
+    let exp = expected_tensor?;
+    if observed != exp {
+        return Some(FalsifyResult {
+            id: "FALSIFY-PM-008",
+            verdict: "FAIL",
+            detail: format!(
+                "manifest declares '{quant}' (ggml type {exp} = {}) but predominant tensor type is {observed} = {}",
+                ggml_type_name(exp),
+                ggml_type_name(observed)
+            ),
+        });
+    }
+    let ftype_note = match sig.ftype {
+        Some(ft) if Some(ft) != expected_ftype_val => format!(
+            " (note: general.file_type={ft}={} is stale)",
+            gguf_ftype_name(ft)
+        ),
+        _ => String::new(),
+    };
+    Some(FalsifyResult {
+        id: "FALSIFY-PM-008",
+        verdict: "PASS",
+        detail: format!(
+            "predominant tensor type = {observed} ({}) matches quantization '{quant}'{ftype_note}",
+            ggml_type_name(observed)
+        ),
+    })
+}
+
+/// PM-008 fallback: compare the header-level `general.file_type`.
+fn check_by_header_ftype(
+    sig: &GgufSignature,
+    quant: &str,
+    expected_ftype_val: Option<u32>,
+    path: &Path,
+) -> FalsifyResult {
     let Some(expected_ftype) = expected_ftype_val else {
         return FalsifyResult {
             id: "FALSIFY-PM-008",
@@ -894,6 +913,68 @@ fn gguf_ftype_name(ftype: u32) -> &'static str {
     }
 }
 
+fn read_u32_le<R: Read>(f: &mut R, what: &str) -> Result<u32, String> {
+    let mut buf = [0u8; 4];
+    f.read_exact(&mut buf).map_err(|e| format!("{what}: {e}"))?;
+    Ok(u32::from_le_bytes(buf))
+}
+
+fn read_u64_le<R: Read>(f: &mut R, what: &str) -> Result<u64, String> {
+    let mut buf = [0u8; 8];
+    f.read_exact(&mut buf).map_err(|e| format!("{what}: {e}"))?;
+    Ok(u64::from_le_bytes(buf))
+}
+
+/// Read a length-bounded name (`key_len`/`name_len` prefix already consumed).
+fn read_name<R: Read>(f: &mut R, len: u64, what: &str) -> Result<Vec<u8>, String> {
+    let mut buf = vec![0u8; len as usize];
+    f.read_exact(&mut buf).map_err(|e| format!("{what}: {e}"))?;
+    Ok(buf)
+}
+
+/// Walk the metadata KV section, returning `general.file_type` if present.
+fn read_kv_ftype<R: Read + std::io::Seek>(f: &mut R, kv_count: u64) -> Result<Option<u32>, String> {
+    let mut ftype: Option<u32> = None;
+    for _ in 0..kv_count {
+        let key_len = read_u64_le(f, "read key_len")?;
+        if key_len > 1024 {
+            return Err(format!("key_len {key_len} > 1024"));
+        }
+        let key_buf = read_name(f, key_len, "read key")?;
+        let key = String::from_utf8(key_buf).map_err(|e| format!("key utf8: {e}"))?;
+        let value_type = read_u32_le(f, &format!("read value_type for {key}"))?;
+        if key == "general.file_type" && value_type == 4 {
+            ftype = Some(read_u32_le(f, "read file_type u32")?);
+        } else {
+            skip_gguf_value(f, value_type).map_err(|e| format!("skip value for key {key}: {e}"))?;
+        }
+    }
+    Ok(ftype)
+}
+
+/// Walk the tensor-info section, counting tensors per ggml type code.
+fn read_tensor_types<R: Read>(f: &mut R, tensor_count: u64) -> Result<HashMap<u32, usize>, String> {
+    let mut tensor_types: HashMap<u32, usize> = HashMap::new();
+    for _ in 0..tensor_count {
+        let name_len = read_u64_le(f, "read tensor name_len")?;
+        if name_len > 1024 {
+            return Err(format!("tensor name_len {name_len} > 1024"));
+        }
+        read_name(f, name_len, "read tensor name")?;
+        let n_dims = read_u32_le(f, "read tensor n_dims")?;
+        if n_dims > 4 {
+            return Err(format!("tensor n_dims {n_dims} > 4"));
+        }
+        for _ in 0..n_dims {
+            read_u64_le(f, "read tensor dim")?;
+        }
+        let ttype = read_u32_le(f, "read tensor type")?;
+        read_u64_le(f, "read tensor offset")?;
+        *tensor_types.entry(ttype).or_insert(0) += 1;
+    }
+    Ok(tensor_types)
+}
+
 /// Read the GGUF header + tensor-metadata section, returning:
 ///   - optional `general.file_type` (advisory; frequently stale in real files)
 ///   - histogram of GGML tensor-type codes → counts (authoritative)
@@ -910,26 +991,18 @@ fn read_gguf_signature(path: &Path) -> Result<GgufSignature, String> {
     if &magic != b"GGUF" {
         return Err(format!("bad magic: {magic:?} (expected GGUF)"));
     }
-    let mut u32buf = [0u8; 4];
-    let mut u64buf = [0u8; 8];
-    f.read_exact(&mut u32buf)
-        .map_err(|e| format!("read version: {e}"))?;
-    let version = u32::from_le_bytes(u32buf);
+    let version = read_u32_le(&mut f, "read version")?;
     if !(1..=3).contains(&version) {
         return Err(format!("unsupported GGUF version {version}"));
     }
-    f.read_exact(&mut u64buf)
-        .map_err(|e| format!("read tensor_count: {e}"))?;
-    let tensor_count = u64::from_le_bytes(u64buf);
+    let tensor_count = read_u64_le(&mut f, "read tensor_count")?;
     const MAX_TENSOR_COUNT: u64 = 100_000;
     if tensor_count > MAX_TENSOR_COUNT {
         return Err(format!(
             "tensor_count {tensor_count} exceeds sane limit {MAX_TENSOR_COUNT}"
         ));
     }
-    f.read_exact(&mut u64buf)
-        .map_err(|e| format!("read kv_count: {e}"))?;
-    let kv_count = u64::from_le_bytes(u64buf);
+    let kv_count = read_u64_le(&mut f, "read kv_count")?;
     const MAX_KV_COUNT: u64 = 10_000;
     if kv_count > MAX_KV_COUNT {
         return Err(format!(
@@ -937,59 +1010,8 @@ fn read_gguf_signature(path: &Path) -> Result<GgufSignature, String> {
         ));
     }
 
-    let mut ftype: Option<u32> = None;
-    for _ in 0..kv_count {
-        f.read_exact(&mut u64buf)
-            .map_err(|e| format!("read key_len: {e}"))?;
-        let key_len = u64::from_le_bytes(u64buf);
-        if key_len > 1024 {
-            return Err(format!("key_len {key_len} > 1024"));
-        }
-        let mut key_buf = vec![0u8; key_len as usize];
-        f.read_exact(&mut key_buf)
-            .map_err(|e| format!("read key: {e}"))?;
-        let key = String::from_utf8(key_buf).map_err(|e| format!("key utf8: {e}"))?;
-        f.read_exact(&mut u32buf)
-            .map_err(|e| format!("read value_type for {key}: {e}"))?;
-        let value_type = u32::from_le_bytes(u32buf);
-        if key == "general.file_type" && value_type == 4 {
-            f.read_exact(&mut u32buf)
-                .map_err(|e| format!("read file_type u32: {e}"))?;
-            ftype = Some(u32::from_le_bytes(u32buf));
-        } else {
-            skip_gguf_value(&mut f, value_type)
-                .map_err(|e| format!("skip value for key {key}: {e}"))?;
-        }
-    }
-
-    let mut tensor_types: HashMap<u32, usize> = HashMap::new();
-    for _ in 0..tensor_count {
-        f.read_exact(&mut u64buf)
-            .map_err(|e| format!("read tensor name_len: {e}"))?;
-        let name_len = u64::from_le_bytes(u64buf);
-        if name_len > 1024 {
-            return Err(format!("tensor name_len {name_len} > 1024"));
-        }
-        let mut name_buf = vec![0u8; name_len as usize];
-        f.read_exact(&mut name_buf)
-            .map_err(|e| format!("read tensor name: {e}"))?;
-        f.read_exact(&mut u32buf)
-            .map_err(|e| format!("read tensor n_dims: {e}"))?;
-        let n_dims = u32::from_le_bytes(u32buf);
-        if n_dims > 4 {
-            return Err(format!("tensor n_dims {n_dims} > 4"));
-        }
-        for _ in 0..n_dims {
-            f.read_exact(&mut u64buf)
-                .map_err(|e| format!("read tensor dim: {e}"))?;
-        }
-        f.read_exact(&mut u32buf)
-            .map_err(|e| format!("read tensor type: {e}"))?;
-        let ttype = u32::from_le_bytes(u32buf);
-        f.read_exact(&mut u64buf)
-            .map_err(|e| format!("read tensor offset: {e}"))?;
-        *tensor_types.entry(ttype).or_insert(0) += 1;
-    }
+    let ftype = read_kv_ftype(&mut f, kv_count)?;
+    let tensor_types = read_tensor_types(&mut f, tensor_count)?;
 
     Ok(GgufSignature {
         ftype,

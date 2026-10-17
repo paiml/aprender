@@ -345,9 +345,10 @@ jobs:
       # the touched crates + direct reverse dependents (BSE-16's selection, cap
       # -> full) plus EVERY test target that reads the tree, derived and
       # registry-checked (drift is ENV, never a quick tier over a stale list);
-      # full on push/schedule/dispatch and on a merge_group whose tree is not
-      # the tree a green PR head already ran; reuse on a merge_group whose
-      # HEAD^{tree} equals the PR head's and whose workspace-test succeeded.
+      # full on schedule/dispatch/tags and on EVERY merge_group (the queue owes the
+      # full tier; a quick PR green is never reused -- structural-pr-flow-1016 s10);
+      # a push to main reuses the queue's full run (T36) or, when it cannot, measures
+      # the landed diff.
       # The touched set is the TIP diff against the base (shallow checkout: no
       # merge-base; tip-vs-tip is a superset, the safe direction) and the diff
       # command itself must succeed — an empty diff from a failed git would
@@ -390,32 +391,10 @@ jobs:
               args+=(--diff-from "$RUNNER_TEMP/touched.txt")
               ;;
             merge_group)
-              pr=$(printf '%s' "${GITHUB_REF_NAME}" | sed -n 's|^gh-readonly-queue/[^/]*/pr-\([0-9]*\)-.*|\1|p')
-              if [ -n "$pr" ]; then
-                # #5399: a non-JSON GitHub reply (a 5xx or rate-limit body) used to
-                # kill this step under `set -e` and lose a whole merge group. Each
-                # lookup is tried 3 times; a lookup that still fails leaves out
-                # --pr-head, and ci_test_tier.sh answers `full` without a PR head --
-                # the same fall-closed the push arm takes, never a reuse, never a red.
-                gh_try() { # <jq-filter> <gh api path>: prints the value; rc 1 after 3 tries
-                  local n out
-                  for n in 1 2 3; do
-                    if out=$(gh api "$2" --jq "$1" 2>/dev/null) && [ -n "$out" ]; then
-                      printf '%s' "$out"
-                      return 0
-                    fi
-                    sleep "$((n * 5))"
-                  done
-                  return 1
-                }
-                if head=$(gh_try .head.sha "repos/${GITHUB_REPOSITORY}/pulls/${pr}") \
-                  && concl=$(gh_try '[.check_runs[]|select(.status=="completed")]|sort_by(.completed_at)|last|.conclusion // "none"' "repos/${GITHUB_REPOSITORY}/commits/${head}/check-runs?check_name=workspace-test&per_page=20") \
-                  && bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "$head"; then
-                  args+=(--pr-head "$head" --pr-head-conclusion "${concl:-none}")
-                else
-                  printf '::warning::merge_group: the PR head lookup failed after 3 tries -- the tier falls closed to full\n'
-                fi
-              fi
+              # 20X (structural-pr-flow-1016 s10): the PR head ran QUICK, so the queue owes
+              # the FULL tier and reuses nothing from the PR head. ci_test_tier.sh re-derives
+              # the diff from HEAD^1..HEAD (deepened above); no PR-head lookup is made, so
+              # the queue's tier no longer depends on a GitHub reply.
               ;;
             push)
               # T36: the merge queue already tested this very sha. Hand its

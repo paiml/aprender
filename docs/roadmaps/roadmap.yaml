@@ -25285,3 +25285,21 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 4780
+- id: PMAT-5463
+  github_issue: 5463
+  item_type: task
+  title: refactor 5 apr-cli files under pre-commit complexity limits
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-17T03:17:59Z
+  updated: 2026-10-17T03:17:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
