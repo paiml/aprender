@@ -86,7 +86,10 @@ pub enum RecipeError {
 /// - Unknown top-level keys (strict schema)
 /// - Missing or empty `from`
 pub fn parse_recipe(src: &str) -> Result<Recipe, RecipeError> {
-    let r: Recipe = serde_yaml::from_str(src).map_err(|e| RecipeError::Parse(e.to_string()))?;
+    let r: Recipe = serde_saphyr::from_str_with_options(
+        src,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    ).map_err(|e| RecipeError::Parse(e.to_string()))?;
     if r.from.trim().is_empty() {
         return Err(RecipeError::MissingFrom);
     }

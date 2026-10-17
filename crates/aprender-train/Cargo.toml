@@ -131,7 +131,7 @@ dhat = { version = "0.3", optional = true }  # Heap profiling
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hf-hub = { version = "0.4", optional = true }  # HuggingFace Hub API (gated behind hub feature)
 reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }  # HTTP client for HF Hub publishing/leaderboard
-zip = "2.2"  # RO-Crate ZIP export (requires native compression, not available on WASM)
+zip = { version = "9.0", default-features = false, features = ["deflate"] }  # RO-Crate ZIP export (requires native compression, not available on WASM)
 alimentar = { workspace = true, optional = true }  # Dataset loading with parquet/arrow support (gated behind parquet feature)
 
 [build-dependencies]

@@ -272,7 +272,11 @@ in_scope() {
         return 0
     fi
     n=$(changed_names | awk 'END {print NR}')
-    hit=$(changed_names | SCOPE_RE="$SCOPE_RE" awk 'BEGIN {re = ENVIRON["SCOPE_RE"]} !d && $0 ~ re {print; d = 1}')
+    # The judge crate's own laya-named files (pack_laya.rs, src/laya/) are not laya-train
+    # model code: a diff there is judged by its branch name (laya-train/), never by `laya`
+    # in a path. H2 still reds any judge edit on a laya-train/ branch or beside a spec path.
+    hit=$(changed_names | awk '$0 !~ /^crates\/aprender-decide\/.*laya/' \
+        | SCOPE_RE="$SCOPE_RE" awk 'BEGIN {re = ENVIRON["SCOPE_RE"]} !d && $0 ~ re {print; d = 1}')
     if [ -n "$hit" ]; then
         line SCOPE in "path $hit" "$n changed paths scanned"
         return 0
@@ -413,6 +417,10 @@ self_test() {
     # laya model code outside the new crate is in scope on any branch, and judged by H4.
     st_case scope-in-by-laya-crate-path RED H4 sh -c "mkdir -p crates/aprender-train/src/laya && echo 'pub fn f() {}' > crates/aprender-train/src/laya/mod.rs"
     st_case scope-in-by-laya-crate-path-line in SCOPE sh -c "mkdir -p crates/aprender-train/src/laya && echo 'pub fn f() {}' > crates/aprender-train/src/laya/mod.rs"
+    # The judge crate's laya-named files are out of scope on a non-laya-train branch...
+    st_case scope-out-judge-crate-laya-name n/a SCOPE sh -c "mkdir -p crates/aprender-decide/src/laya && echo 'pub fn f() {}' > crates/aprender-decide/src/laya/x.rs"
+    # ...but a spec path beside them still brings the whole diff in, and H2 reds the judge edit.
+    st_case scope-in-judge-crate-plus-spec-path RED H2 sh -c "mkdir -p $NEW_CRATE crates/aprender-decide/src/laya && echo '[package]' > $NEW_CRATE/Cargo.toml && echo 'pub fn f() {}' > crates/aprender-decide/src/laya/x.rs"
     # SCOPE_RE reaches awk through ENVIRON, so its "\." stays a literal dot.
     st_case scope-out-dot-lookalike n/a SCOPE sh -c "mkdir -p scripts && echo x > scripts/check_laya_train_rulesXsh"
     ST_PREFIX=

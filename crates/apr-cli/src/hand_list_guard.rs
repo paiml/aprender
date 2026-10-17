@@ -355,10 +355,18 @@ fn shell_quoted(t: &str) -> Vec<String> {
     out
 }
 
+/// One YAML reader for the guard: the #5209 stage options (yes/no stay strings, `<<` ordinary).
+fn yaml_value(text: &str) -> Result<serde_json::Value, serde_saphyr::Error> {
+    serde_saphyr::from_str_with_options(
+        text,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
+}
+
 fn yaml_lists(text: &str) -> Result<Vec<(String, Vec<String>)>, String> {
-    fn go(v: &serde_yaml::Value, path: &str, out: &mut Vec<(String, Vec<String>)>) {
+    fn go(v: &serde_json::Value, path: &str, out: &mut Vec<(String, Vec<String>)>) {
         match v {
-            serde_yaml::Value::Sequence(s) => {
+            serde_json::Value::Array(s) => {
                 out.push((
                     path.to_string(),
                     s.iter()
@@ -369,9 +377,8 @@ fn yaml_lists(text: &str) -> Result<Vec<(String, Vec<String>)>, String> {
                     go(x, &format!("{path}[{i}]"), out);
                 }
             }
-            serde_yaml::Value::Mapping(m) => {
-                for (k, x) in m {
-                    let key = k.as_str().map_or_else(|| format!("{k:?}"), str::to_string);
+            serde_json::Value::Object(m) => {
+                for (key, x) in m {
                     go(
                         x,
                         &if path.is_empty() {
@@ -383,14 +390,13 @@ fn yaml_lists(text: &str) -> Result<Vec<(String, Vec<String>)>, String> {
                     );
                 }
             }
-            serde_yaml::Value::String(s) => {
+            serde_json::Value::String(s) => {
                 out.push((path.to_string(), vec![format!("{ANY_STRING}{s}")]))
             }
             _ => {}
         }
     }
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(text).map_err(|e| format!("not YAML: {e}"))?;
+    let doc = yaml_value(text).map_err(|e| format!("not YAML: {e}"))?;
     let mut out = Vec::new();
     go(&doc, "", &mut out);
     Ok(out)
@@ -516,13 +522,12 @@ pub(crate) fn ladder_gap(
 
 /// The ladder contract's `ladder.cells.verbs`.
 pub(crate) fn ladder_verbs(text: &str) -> Result<BTreeSet<String>, String> {
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(text).map_err(|e| format!("the ladder contract is not YAML: {e}"))?;
+    let doc = yaml_value(text).map_err(|e| format!("the ladder contract is not YAML: {e}"))?;
     let seq = doc
         .get("ladder")
         .and_then(|l| l.get("cells"))
         .and_then(|c| c.get("verbs"))
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(serde_json::Value::as_array)
         .ok_or("the ladder contract has no `ladder.cells.verbs` sequence")?;
     Ok(seq
         .iter()

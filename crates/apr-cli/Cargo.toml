@@ -271,7 +271,7 @@ aprender-cgp = { workspace = true }
 aprender-contracts-cli = { workspace = true }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
-serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
+serde-saphyr = { workspace = true }
 
 # Unicode normalization (NFC) for BPE corpus preprocessing (MODEL-2).
 unicode-normalization = "0.1"

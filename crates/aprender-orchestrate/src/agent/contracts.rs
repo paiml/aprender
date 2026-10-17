@@ -134,7 +134,7 @@ impl VerificationResult {
 
 /// Parse a contract YAML file.
 pub fn parse_contract(yaml_content: &str) -> Result<ContractFile, String> {
-    serde_yaml_ng::from_str(yaml_content).map_err(|e| format!("YAML parse error: {e}"))
+    crate::yaml::from_str(yaml_content).map_err(|e| format!("YAML parse error: {e}"))
 }
 
 /// Verify contract invariants against a set of known test names.
