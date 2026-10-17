@@ -313,7 +313,9 @@ jobs:
   x86-main-advisories:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    # #5435: cargo-deny reads Cargo.lock and the advisory db, arch-neutral: the
+    # merge_group arm drops X64; the PR arm stays on the pr-only pool (#5396).
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","clean-room"]') }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -329,14 +331,27 @@ jobs:
             export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
           fi
           cargo deny --version
+      - name: Prove cargo-deny runs on this runner's arch (absent or wrong-arch fails, never skips)
+        run: |
+          set -euo pipefail
+          command -v cargo-deny > /dev/null || { echo "::error::cargo-deny is absent after the install step"; exit 1; }
+          arch=$(uname -m)
+          # Executing the binary is the arch proof: a wrong-arch binary dies with "Exec format error" here.
+          echo "cargo-deny $(cargo deny --version) executes on $arch"
       - name: Advisories must pass, with deny.toml exemptions honoured
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          marker=$(mktemp)
+          dbs="${CARGO_HOME:-$HOME/.cargo}/advisory-dbs"
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
           cargo deny check advisories
+          # The check must have read a database fetched by THIS run, not a stale cache.
+          [ -n "$(find "$dbs" -type f -newer "$marker" -print -quit 2> /dev/null)" ] \
+            || { echo "::error::no RustSec advisory-db file under $dbs is newer than this step; the db was not fetched"; exit 1; }
       - name: Every deny.toml exemption must still be live
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -434,7 +449,9 @@ jobs:
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}   # same pool as x86-main
+    # #5432: shard 3 is pinned to the gx10 ARM64 clean-room pool (ARM64 + gx10 labels, so it cannot land on X64)
+    # and shards 1 and 2 stay on X64 (the pr-only pool on pull_request, as on main). The x86_64-gated tests of the shard-3 bucket are not compiled on ARM64: see the arch-parity receipt.
+    runs-on: ${{ matrix.shard == 3 && fromJSON('["self-hosted","Linux","ARM64","gx10","clean-room"]') || (github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]')) }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -524,8 +541,14 @@ jobs:
             j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
             l+=(--log "$d/sigma-shard-$n/section.log")
           done
+          # #5437: shard 2's X64 gap run and shard 3's ARM64 full run of the arch-gated crates
+          j+=(--junit "$d/sigma-shard-2/gap.junit.xml" --junit "$d/sigma-shard-3/arm.junit.xml")
+          # The owed set is the UNION of the X64 registry (shard 1) and the ARM64 registry (shard 3):
+          # a deep merge, so a test only one architecture registers is owed too.
+          jq -s '{"rust-suites": (map(."rust-suites") | reduce .[] as $s ({}; . * $s))}' \
+            "$d/sigma-shard-1/lib.list.json" "$d/sigma-shard-3/lib.arm.list.json" > "$d/lib.union.list.json"
           rc=0
-          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/sigma-shard-1/lib.list.json" || rc=1
+          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/lib.union.list.json" || rc=1
           python3 scripts/ci/sigma_executed.py explicit --kind "explicit (3 shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
           exit "$rc"
 

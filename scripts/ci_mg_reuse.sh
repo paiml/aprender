@@ -526,6 +526,8 @@ STUB
   # (merge_group, push) takes the else-branch, which must be the clean-room pool. Evaluated per event.
   lane() { # lane JOB EVENT -> the pool labels the job's runs-on picks for EVENT
     local ro; ro=$(job "$1" | grep -m1 '^    runs-on:')
+    # #5437: shard 3 is pinned to ARM64 by a leading matrix.shard == 3 arm; the lane checked here is shards 1 and 2.
+    ro=$(sed -E "s/matrix\.shard == 3 && fromJSON\('[^']*'\) \|\| //" <<< "$ro")
     case "$ro" in
       *"github.event_name == 'pull_request' &&"*)
         if [ "$2" = pull_request ]; then ro=${ro%%||*}; else ro=${ro#*||}; fi ;;
