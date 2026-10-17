@@ -14,30 +14,30 @@ cargo install aprender-orchestrate
 
 ```bash
 # Analyze languages and dependencies
-batuta analyze --languages --dependencies
+aprender-orchestrate analyze --languages --dependencies
 
 # Get technical debt grade
-batuta analyze --tdg
+aprender-orchestrate analyze --tdg
 ```
 
 ### 2. Initialize Orchestration
 
 ```bash
-# Initialize batuta configuration
-batuta init
+# Initialize aprender-orchestrate configuration
+aprender-orchestrate init
 ```
 
 ### 3. Use Oracle Mode
 
 ```bash
 # Ask questions about your project
-batuta oracle "How do I convert this Python code to Rust?"
+aprender-orchestrate oracle "How do I convert this Python code to Rust?"
 ```
 
 ## Example Output
 
 ```
-$ batuta analyze --languages
+$ aprender-orchestrate analyze --languages
 
 Language Analysis:
   Python: 45 files (2,340 lines)
