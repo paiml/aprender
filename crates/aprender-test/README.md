@@ -24,7 +24,7 @@
 | Crate | Purpose | Install |
 |-------|---------|---------|
 | **[jugar-probar](https://crates.io/crates/aprender-test-lib)** | Library for writing tests | `cargo add aprender-test-lib --dev` |
-| **[probador](https://crates.io/crates/aprender-test-cli)** | CLI tool for running tests | `cargo install aprender-test-cli` |
+| **[aprender-test-cli](https://crates.io/crates/aprender-test-cli)** | CLI tool for running tests | `cargo install aprender-test-cli` |
 
 ### Library (jugar-probar)
 
@@ -39,7 +39,7 @@ aprender-test-lib = "0.71"
 use jugar_probar::prelude::*;
 ```
 
-### CLI (probador)
+### CLI (aprender-test-cli)
 
 ```bash
 cargo install aprender-test-cli
@@ -342,7 +342,7 @@ cargo llvm-cov --html
 cargo watch -x test
 ```
 
-### Using probador CLI
+### Using aprender-test-cli
 
 ```bash
 # Run tests with aprender-test-cli
@@ -445,7 +445,7 @@ cargo run --example <name> -p jugar-probar
 probar/
 ├── crates/
 │   ├── probar/              # jugar-probar library
-│   ├── probar-cli/          # probador CLI
+│   ├── probar-cli/          # aprender-test-cli
 │   ├── probar-derive/       # Derive macros
 │   └── showcase-calculator/ # 100% coverage demo
 ├── book/                    # mdBook documentation

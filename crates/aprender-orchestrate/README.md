@@ -1,4 +1,4 @@
-<h1 align="center">batuta</h1>
+<h1 align="center">aprender-orchestrate</h1>
 
 <p align="center">
   <strong>Sovereign AI Orchestration -- agents, inference, analysis, and transpilation in pure Rust</strong>
@@ -163,7 +163,7 @@ details.
 
 ```
 +-------------------------------------------------------------+
-|                    batuta (Orchestration)                    |
+|                    aprender-orchestrate                     |
 +-------------------------------------------------------------+
 |  whisper-apr (ASR)  |  realizar (Inference)  | pacha (Reg)  |
 +---------------------+------------------------+--------------+

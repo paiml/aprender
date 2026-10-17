@@ -6,7 +6,7 @@
 
 **jugar-probar** is the Rust library for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
 
-> **Note:** The CLI tool is published separately as [probador](https://crates.io/crates/aprender-test-cli).
+> **Note:** The CLI tool is published separately as [aprender-test-cli](https://crates.io/crates/aprender-test-cli).
 
 ## Installation
 

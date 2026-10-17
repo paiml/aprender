@@ -1,9 +1,9 @@
-# probador
+# aprender-test-cli
 
 [![Crates.io](https://img.shields.io/crates/v/aprender-test-cli.svg)](https://crates.io/crates/aprender-test-cli)
 [![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 
-**probador** (Spanish: "tester") is the CLI tool for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
+**aprender-test-cli** is the CLI tool for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
 
 > **Note:** The library is published separately as [jugar-probar](https://crates.io/crates/aprender-test-lib).
 
@@ -54,7 +54,7 @@ aprender-test-cli serve --port 8080
 
 ## Playbook Testing
 
-probador supports YAML-driven state machine testing with mutation testing:
+aprender-test-cli supports YAML-driven state machine testing with mutation testing:
 
 ```yaml
 # login.yaml

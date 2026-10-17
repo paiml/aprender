@@ -4,7 +4,7 @@
   <img src=".github/renacer-hero.svg" alt="renacer" width="800">
 </p>
 
-<h1 align="center">renacer</h1>
+<h1 align="center">aprender-profile</h1>
 
 <p align="center">
   <b>Pure Rust system call tracer with source-aware correlation for Rust binaries</b>

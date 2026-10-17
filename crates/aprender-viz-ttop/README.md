@@ -1,4 +1,4 @@
-# ttop - Terminal Top
+# aprender-viz-ttop - Terminal Top
 
 **10X Better Than btop** - A pure Rust system monitor with NVIDIA + AMD GPU support, zero-allocation rendering, and sovereign stack architecture.
 
