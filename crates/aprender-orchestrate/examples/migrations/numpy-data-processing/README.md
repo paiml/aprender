@@ -85,14 +85,14 @@ To transpile this example using Batuta:
 
 ```bash
 # From project root
-batuta analyze examples/migrations/numpy-data-processing/input.py
+aprender-orchestrate analyze examples/migrations/numpy-data-processing/input.py
 
 # View analysis results
-batuta status
+aprender-orchestrate status
 
 # Transpile (requires depyler tool)
-batuta transpile examples/migrations/numpy-data-processing/input.py \
-  --output examples/migrations/numpy-data-processing/generated.rs \
+aprender-orchestrate transpile examples/migrations/numpy-data-processing/input.py \
+  --output examples/migrations/numpy-data-processing/output.rs \
   --optimize --backend auto
 
 # Build the Rust output
@@ -168,5 +168,5 @@ Typical performance characteristics (varies by hardware):
 
 - [NumPy Documentation](https://numpy.org/doc/)
 - [Trueno Tensor Library](https://github.com/paiml/aprender/tree/main/crates/aprender-compute)
-- [Batuta Specification](../../../docs/specifications/sovereign-ai-spec.md)
+- [Batuta Specification](../../../docs/specifications/archive/sovereign-ai-spec.md)
 - [Rust Performance Book](https://nnethercote.github.io/perf-book/)

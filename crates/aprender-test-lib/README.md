@@ -1,12 +1,12 @@
-# jugar-probar
+# aprender-test-lib
 
 [![Crates.io](https://img.shields.io/crates/v/aprender-test-lib.svg)](https://crates.io/crates/aprender-test-lib)
 [![Documentation](https://docs.rs/aprender-test-lib/badge.svg)](https://docs.rs/aprender-test-lib)
 [![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 
-**jugar-probar** is the Rust library for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
+**aprender-test-lib** is the Rust library for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
 
-> **Note:** The CLI tool is published separately as [probador](https://crates.io/crates/aprender-test-cli).
+> **Note:** The CLI tool is published separately as [aprender-test-cli](https://crates.io/crates/aprender-test-cli).
 
 ## Installation
 
@@ -66,22 +66,22 @@ fn test_game_starts() {
 |---------|-------------|
 | `browser` | CDP browser automation (chromiumoxide, tokio) |
 | `runtime` | WASM runtime testing (wasmtime) |
-| `derive` | Type-safe derive macros (probar-derive) |
+| `derive` | Type-safe derive macros (aprender-test-derive) |
 
 ## Examples
 
 ```bash
 # Deterministic simulation with replay verification
-cargo run --example pong_simulation -p jugar-probar
+cargo run --example pong_simulation -p aprender-test-lib
 
 # Playwright-style locator API demo
-cargo run --example locator_demo -p jugar-probar
+cargo run --example locator_demo -p aprender-test-lib
 
 # WCAG accessibility checking
-cargo run --example accessibility_demo -p jugar-probar
+cargo run --example accessibility_demo -p aprender-test-lib
 
 # GUI coverage tracking
-cargo run --example gui_coverage -p jugar-probar
+cargo run --example gui_coverage -p aprender-test-lib
 ```
 
 ## API Overview
@@ -147,13 +147,13 @@ cargo install aprender-test-cli
 
 ```bash
 # Validate playbook state machines
-probador playbook login.yaml --validate
+aprender-test-cli playbook login.yaml --validate
 
 # Run mutation testing
-probador playbook login.yaml --mutate
+aprender-test-cli playbook login.yaml --mutate
 
 # Export state diagrams
-probador playbook login.yaml --export svg -o diagram.svg
+aprender-test-cli playbook login.yaml --export svg -o diagram.svg
 ```
 
 ## Documentation
