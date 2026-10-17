@@ -336,6 +336,9 @@ decide() {
             fi
             df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
             if ! diff_into "$df" "$mgb"; then rm -f "${df:?}"; printf 'tier=full\nreason=merge_group: git diff %s..HEAD failed -- fail closed to full\n' "$mgb"; return; fi
+            # The queue never answers none for an EMPTY diff (an empty group lands no path to prove
+            # it is docs-only; sign-off r1 of #5468): only a non-empty docs-only diff is none.
+            if [ ! -s "$df" ]; then rm -f "${df:?}"; printf 'tier=full\nreason=merge_group: group diff %s..HEAD is empty -- fail closed to full, never none\n' "$mgb"; return; fi
             selection "merge_group: group diff $mgb..HEAD (quick tier; full only on tag/release)" "$df" || rc=$?
             rm -f "${df:?}"; return ${rc:-0} ;;
         pull_request)
@@ -523,6 +526,12 @@ self_test() {
     row 0 "  ...exactly tier=full and no quick line" '^OK-FULL-ONLY$' full_only "$(replay mg-badbase)"
     cap mg-emptybase mgrun "" --repo-root "$td/q-leaf"
     row 0 "merge_group with MG_BASE_SHA empty -> tier=full (fail closed)" '^OK-FULL-ONLY$' full_only "$(replay mg-emptybase)"
+    cap mg-empty mgrun "$(git -C "$td/q-leaf" rev-parse HEAD)" --repo-root "$td/q-leaf"
+    row 0 "merge_group with an EMPTY group diff (MG_BASE_SHA == HEAD) -> tier=full, never none (sign-off r1 of #5468)" '^OK-FULL-ONLY$' full_only "$(replay mg-empty)"
+    row 0 "  ...and the reason says the diff is empty" 'is empty' bash -c "$(replay mg-empty)"
+    sed '/group diff %s..HEAD is empty/d' "$T" > "$td/mutant-empty.sh"
+    row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-empty.sh'; then echo SAME; else echo DIFFERS; fi"
+    row 0 "MUTANT: a merge_group arm without the empty-diff guard answers none -> the row above goes RED" '^MUTANT-NONE$' bash -c "if MG_BASE_SHA=\"\$(git -C '$td/q-leaf' rev-parse HEAD)\" bash '$td/mutant-empty.sh' --event merge_group --repo-root '$td/q-leaf' | grep -q '^tier=none$'; then echo MUTANT-NONE; else echo SURVIVED; fi"
     cap mg-cap mgrun "$(rootc "$td/q-cap")" --repo-root "$td/q-cap"
     row 0 "merge_group over the cap -> tier=quick with check_workspace=1, as pull_request does" '^check_workspace=1$' bash -c "$(replay mg-cap)"
     row 0 "  ...tier=quick, not full" '^tier=quick$' bash -c "$(replay mg-cap)"
@@ -592,7 +601,7 @@ self_test() {
     row 0 "  ...and it is quick, not none" '^tier=quick$' bash -c "$(replay sq-rename)"
     sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
     cap push-rename bash "$T" --event push --repo-root "$td/s-rename"
-    row 0 "push, a crate source RENAMED into docs/audits/ -> the crate it left IS selected (--no-renames; the merge_group arm is always full, so the push arm carries this guard)" "^crates=.*$leaf" bash -c "$(replay push-rename)"
+    row 0 "push, a crate source RENAMED into docs/audits/ -> the crate it left IS selected (--no-renames; the push arm carries this guard independently of the merge_group arm)" "^crates=.*$leaf" bash -c "$(replay push-rename)"
     row 0 "mutant without --no-renames on the push arm drops the left crate -- the rename rows go RED" 'MUTANT-DROPPED' bash -c "o=\$(bash '$td/mutant-renames.sh' --event push --repo-root '$td/s-rename' 2>&1); case \"\$o\" in *\"crates=\"*$leaf*) echo MUTANT-KEPT ;; *) echo MUTANT-DROPPED ;; esac"
     row 0 "ci/sections.yml (#4433) lists the pull_request touched paths through pr_touched_paths.sh, which keeps --no-renames" '^ALL-PRESENT$' contains_all "$TREE/ci/sections.yml" 'bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
     row 0 "  ...and the helper diffs with --no-renames" '^ALL-PRESENT$' contains_all "$TREE/scripts/ci/pr_touched_paths.sh" 'git diff --no-renames --name-only "$mb" "$head"'
