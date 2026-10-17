@@ -536,6 +536,46 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/lib.junit.xml"
+      # #5437: shard 3 runs on ARM64, and the tests behind cfg(target_arch = "x86_64") are not
+      # compiled there (measured: 42 of the X64 bucket-3 tests, 6 ARM-only tests in it). The
+      # crates are DERIVED from the source (scripts/ci/arch_gap_crates.sh), never hand-listed.
+      # Shard 2 (X64) runs those crates' bucket-3 tests; shard 3 (ARM64) runs those crates in
+      # full and lists the whole ARM registry. The verdict job then owes the UNION of the X64
+      # and ARM registries and compares it, by id, with everything the four runs executed.
+      - name: "Σ-executed: the arch gap -- X64 runs bucket 3's x86-gated tests, ARM64 its own (#5437)"
+        if: steps.tier.outputs.tier == 'full' && matrix.shards == 3 && (matrix.shard == 2 || matrix.shard == 3)
+        timeout-minutes: 40
+        shell: bash
+        run: |
+          set -euo pipefail
+          sig="$RUNNER_TEMP/sigma"
+          mkdir -p "$sig"
+          mapfile -t pk < <(bash scripts/ci/arch_gap_crates.sh)
+          [ "${#pk[@]}" -gt 0 ] || { echo "::error::arch_gap_crates.sh found no crate: broken wiring"; exit 1; }
+          if [ "$SHARD" = 2 ]; then part='hash:3/3'; out=gap.junit.xml; else part=''; out=arm.junit.xml; fi
+          docker run --rm \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -v "${sig}:/sigma" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e SHARD -e PART="$part" -e OUT="$out" -e PK="${pk[*]}" \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              if [ "$SHARD" = 3 ]; then
+                cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /sigma/lib.arm.list.json
+              fi
+              cargo nextest run --profile ci --lib $PK ${PART:+--partition "$PART"}
+              cp /workspace/target/nextest/ci/junit.xml "/sigma/$OUT"'
       - name: "GPU crates on their default features (per-package resolve, no device needed)"
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         # aprender-gpu + aprender-cuda-edge, un-darked from the required check (T0 of the
@@ -725,6 +765,8 @@ jobs:
           printf '%s\n' "$TIER" > sigma-shard/tier
           if [ "$TIER" = full ]; then
             cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
+            if [ "$SHARD" = 2 ]; then cp "$sig/gap.junit.xml" sigma-shard/; fi
+            if [ "$SHARD" = 3 ]; then cp "$sig/arm.junit.xml" "$sig/lib.arm.list.json" sigma-shard/; fi
             cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
             if [ "$SHARD" = 1 ]; then
               cp "$sig/lib.list.json" "$sig/explicit.list.txt" sigma-shard/

@@ -434,7 +434,9 @@ jobs:
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}   # same pool as x86-main
+    # #5432: shard 3 is pinned to the gx10 ARM64 clean-room pool (ARM64 + gx10 labels, so it cannot land on X64)
+    # and shards 1 and 2 stay on X64 (the pr-only pool on pull_request, as on main). The x86_64-gated tests of the shard-3 bucket are not compiled on ARM64: see the arch-parity receipt.
+    runs-on: ${{ matrix.shard == 3 && fromJSON('["self-hosted","Linux","ARM64","gx10","clean-room"]') || (github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]')) }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -524,8 +526,14 @@ jobs:
             j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
             l+=(--log "$d/sigma-shard-$n/section.log")
           done
+          # #5437: shard 2's X64 gap run and shard 3's ARM64 full run of the arch-gated crates
+          j+=(--junit "$d/sigma-shard-2/gap.junit.xml" --junit "$d/sigma-shard-3/arm.junit.xml")
+          # The owed set is the UNION of the X64 registry (shard 1) and the ARM64 registry (shard 3):
+          # a deep merge, so a test only one architecture registers is owed too.
+          jq -s '{"rust-suites": (map(."rust-suites") | reduce .[] as $s ({}; . * $s))}' \
+            "$d/sigma-shard-1/lib.list.json" "$d/sigma-shard-3/lib.arm.list.json" > "$d/lib.union.list.json"
           rc=0
-          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/sigma-shard-1/lib.list.json" || rc=1
+          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/lib.union.list.json" || rc=1
           python3 scripts/ci/sigma_executed.py explicit --kind "explicit (3 shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
           exit "$rc"
 
