@@ -386,10 +386,10 @@ The repository includes a full showcase calculator demonstrating 100% test cover
 
 ```bash
 # Run GUI coverage report
-cargo run -p showcase-calculator --example gui_coverage_report
+cargo run -p aprender-test-showcase --example gui_coverage_report
 
 # Run TUI version
-cargo run -p showcase-calculator --example calculator_tui
+cargo run -p aprender-test-showcase --example calculator_tui
 
 # View WASM version
 cd crates/showcase-calculator/www && python3 -m http.server 8080

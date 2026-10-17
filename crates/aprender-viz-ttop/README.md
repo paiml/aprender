@@ -4,10 +4,7 @@
 
 ## Installation
 
-```bash
-# From a checkout of the aprender monorepo (this crate is not published to crates.io)
-cargo build --release -p aprender-viz-ttop
-```
+This crate is not published to crates.io. It is excluded from the aprender workspace (`exclude` in the root `Cargo.toml`), so `cargo build -p aprender-viz-ttop` from the repository root does not select it.
 
 ## What's New in v2
 
@@ -113,12 +110,7 @@ No ratatui. No tui-rs. Zero-allocation steady-state rendering via `CompactString
 
 ## Building from Source
 
-```bash
-git clone https://github.com/paiml/aprender
-cd aprender
-cargo build --release -p aprender-viz-ttop
-./target/release/aprender-viz-ttop
-```
+The crate lives in `crates/aprender-viz-ttop` and ships the `aprender-viz-ttop` binary; it is not a member of the root workspace (see Installation).
 
 ## License
 

@@ -1,7 +1,7 @@
 <div align="center">
 
 <p align="center">
-  <img src=".github/renacer-hero.svg" alt="renacer" width="800">
+  <img src=".github/renacer-hero.svg" alt="aprender-profile" width="800">
 </p>
 
 <h1 align="center">aprender-profile</h1>

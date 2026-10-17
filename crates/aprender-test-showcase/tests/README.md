@@ -25,14 +25,14 @@ State machine verification using probar playbooks:
 
 ```bash
 # Run all tests
-cargo test -p showcase-calculator --all-features
+cargo test -p aprender-test-showcase --all-features
 
 # Run with coverage
-cargo tarpaulin -p showcase-calculator
+cargo tarpaulin -p aprender-test-showcase
 
 # Run specific test category
-cargo test -p showcase-calculator --test gui_coverage_tests
-cargo test -p showcase-calculator --test keypad_proptests
+cargo test -p aprender-test-showcase --test gui_coverage_tests
+cargo test -p aprender-test-showcase --test keypad_proptests
 
 # Run probar playbook validation
 aprender-test-cli playbook playbooks/calculator.yaml --validate
