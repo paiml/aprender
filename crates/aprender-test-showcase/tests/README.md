@@ -28,7 +28,7 @@ State machine verification using probar playbooks:
 cargo test -p aprender-test-showcase --all-features
 
 # Run with coverage
-cargo tarpaulin -p aprender-test-showcase
+cargo llvm-cov -p aprender-test-showcase
 
 # Run specific test category
 cargo test -p aprender-test-showcase --test gui_coverage_tests
