@@ -187,7 +187,7 @@ details.
 | [aprender-serve](https://crates.io/crates/aprender-serve) | 0.71 | LLM inference for GGUF/SafeTensors/APR models |
 | [aprender-distribute](https://crates.io/crates/aprender-distribute) | 0.71 | Distributed compute (CPU/GPU/Remote executors) |
 | [whisper-apr](https://crates.io/crates/whisper-apr) | 0.2 | Pure Rust Whisper ASR (WASM-first) |
-| [aprender-viz-ttop](https://crates.io/crates/aprender-viz-ttop) | 0.71 | Sovereign system monitor (14 panels, GPU support) |
+| aprender-viz-ttop (not published) | 0.71 | Sovereign system monitor (14 panels, GPU support) |
 | [aprender-present-terminal](https://crates.io/crates/aprender-present-terminal) | 0.71 | Zero-alloc TUI rendering |
 | [aprender-registry](https://crates.io/crates/aprender-registry) | 0.71 | Model registry with Ed25519 signatures |
 | [aprender-profile](https://crates.io/crates/aprender-profile) | 0.71 | Syscall tracing with semantic validation |

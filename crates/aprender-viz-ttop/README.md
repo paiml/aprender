@@ -4,7 +4,7 @@
 
 ## Installation
 
-This crate is not published to crates.io. It is excluded from the aprender workspace (`exclude` in the root `Cargo.toml`), so `cargo build -p aprender-viz-ttop` from the repository root does not select it.
+This crate is not published to crates.io. It is excluded from the aprender workspace (`exclude` in the root `Cargo.toml`), so `cargo build -p aprender-viz-ttop` from the repository root does not select it. Cargo also refuses to build it standalone from this tree (`--manifest-path` or its own directory: "current package believes it's in a workspace when it's not"), so there is no standalone build command.
 
 ## What's New in v2
 

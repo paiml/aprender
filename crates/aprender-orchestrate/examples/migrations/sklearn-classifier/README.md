@@ -110,7 +110,7 @@ aprender-orchestrate analyze examples/migrations/sklearn-classifier/input.py
 
 # Transpile to Rust
 aprender-orchestrate transpile examples/migrations/sklearn-classifier/input.py \
-  --output examples/migrations/sklearn-classifier/generated.rs \
+  --output examples/migrations/sklearn-classifier/output.rs \
   --optimize --backend auto
 
 # Build optimized binary

@@ -100,7 +100,7 @@ aprender-orchestrate analyze examples/migrations/pytorch-inference/input.py
 
 # Transpile to Rust
 aprender-orchestrate transpile examples/migrations/pytorch-inference/input.py \
-  --output examples/migrations/pytorch-inference/generated.rs \
+  --output examples/migrations/pytorch-inference/output.rs \
   --optimize --backend auto
 
 # Build optimized binary

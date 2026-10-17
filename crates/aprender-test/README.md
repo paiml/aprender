@@ -392,7 +392,7 @@ cargo run -p aprender-test-showcase --example gui_coverage_report
 cargo run -p aprender-test-showcase --example calculator_tui
 
 # View WASM version
-cd crates/showcase-calculator/www && python3 -m http.server 8080
+cd crates/aprender-test-showcase/www && python3 -m http.server 8080
 # Open http://localhost:8080
 ```
 

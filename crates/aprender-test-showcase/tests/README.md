@@ -10,7 +10,7 @@ Located in `src/` modules with inline `#[cfg(test)]` modules.
 - **Core Logic** (`src/core/`): Parser, evaluator, operations, history
 - **TUI Components** (`src/tui/`): App state, input handling, keypad, UI rendering
 - **WASM Bindings** (`src/wasm/`): Browser integration, DOM manipulation, WASM keypad
-- **Probar Integration** (`src/probar_tests.rs`): Page objects, accessibility, fixtures
+- **Probar Integration** (`tests/probar_tests.rs`): Page objects, accessibility, fixtures
 
 ### Integration Tests (`tests/`)
 - `gui_coverage_tests.rs`: GUI element coverage verification

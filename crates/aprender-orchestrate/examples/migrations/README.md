@@ -118,7 +118,7 @@ aprender-orchestrate status
 
 # Transpile to Rust
 aprender-orchestrate transpile examples/migrations/numpy-data-processing/input.py \
-  --output examples/migrations/numpy-data-processing/generated.rs \
+  --output examples/migrations/numpy-data-processing/output.rs \
   --optimize --backend auto
 
 # Build and run

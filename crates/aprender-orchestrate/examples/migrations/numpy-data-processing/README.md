@@ -92,7 +92,7 @@ aprender-orchestrate status
 
 # Transpile (requires depyler tool)
 aprender-orchestrate transpile examples/migrations/numpy-data-processing/input.py \
-  --output examples/migrations/numpy-data-processing/generated.rs \
+  --output examples/migrations/numpy-data-processing/output.rs \
   --optimize --backend auto
 
 # Build the Rust output
