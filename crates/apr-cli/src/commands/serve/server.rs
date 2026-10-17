@@ -423,6 +423,164 @@ mod qwen35_serve_route_tests {
     }
 }
 
+/// FALSIFY-AUTH-001 for the GGUF router: `build_gguf_router` mounts realizar's REAL
+/// router (`/v1/chat/completions`, `/v1/models`, `/health`, ...) behind the Bearer
+/// gate, so these tests drive the same seam `serve_router` serves through. The state
+/// is model-free (`AppState::demo_mock`): auth runs before any handler, so no weights
+/// are needed to prove that a request without the key never reaches one.
+#[cfg(all(test, feature = "inference"))]
+mod gguf_router_auth_tests {
+    #![allow(clippy::unwrap_used, clippy::disallowed_methods)]
+
+    use super::super::auth::AuthGate;
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::{header, HeaderMap, Method, Request, StatusCode};
+    use serde_json::Value;
+    use tower::ServiceExt as _;
+
+    const CHAT_BODY: &str =
+        r#"{"model":"x","messages":[{"role":"user","content":"Hi"}],"max_tokens":1}"#;
+
+    fn router(gate: AuthGate) -> axum::Router {
+        let state = realizar::api::AppState::demo_mock().expect("model-free state");
+        build_gguf_router(state, &ServerConfig::default(), gate)
+    }
+
+    async fn fire(
+        router: axum::Router,
+        method: Method,
+        path: &str,
+        authorization: Option<&str>,
+    ) -> (StatusCode, HeaderMap, Value) {
+        let mut builder = Request::builder().method(method.clone()).uri(path);
+        let body = if method == Method::POST {
+            builder = builder.header(header::CONTENT_TYPE, "application/json");
+            Body::from(CHAT_BODY)
+        } else {
+            Body::empty()
+        };
+        if let Some(value) = authorization {
+            builder = builder.header(header::AUTHORIZATION, value);
+        }
+        let resp = router
+            .oneshot(builder.body(body).expect("request builds"))
+            .await
+            .expect("router answers");
+        let status = resp.status();
+        let headers = resp.headers().clone();
+        let bytes = to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+        let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        (status, headers, json)
+    }
+
+    #[tokio::test]
+    async fn gguf_router_refuses_without_bearer() {
+        for (method, path) in [
+            (Method::POST, "/v1/chat/completions"),
+            (Method::GET, "/health"),
+            (Method::GET, "/v1/models"),
+        ] {
+            let (status, headers, body) = fire(
+                router(AuthGate::from_plain_key("k")),
+                method.clone(),
+                path,
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}: {body}");
+            assert_eq!(
+                body["error"].as_str(),
+                Some("unauthorized"),
+                "{method} {path}: {body}"
+            );
+            assert_eq!(
+                headers
+                    .get(header::WWW_AUTHENTICATE)
+                    .and_then(|v| v.to_str().ok()),
+                Some("Bearer"),
+                "{method} {path}: 401 must carry WWW-Authenticate: Bearer"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn gguf_router_refuses_a_wrong_bearer() {
+        let (status, _, body) = fire(
+            router(AuthGate::from_plain_key("k")),
+            Method::POST,
+            "/v1/chat/completions",
+            Some("Bearer wrong"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+        assert_eq!(body["error"].as_str(), Some("unauthorized"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn gguf_router_admits_the_right_bearer() {
+        // The model-free state answers the chat route with its own "no model"
+        // error; what matters is that the gate let the request through.
+        let (status, _, body) = fire(
+            router(AuthGate::from_plain_key("k")),
+            Method::POST,
+            "/v1/chat/completions",
+            Some("Bearer k"),
+        )
+        .await;
+        assert_ne!(status, StatusCode::UNAUTHORIZED, "{body}");
+        let (status, _, body) = fire(
+            router(AuthGate::from_plain_key("k")),
+            Method::GET,
+            "/health",
+            Some("Bearer k"),
+        )
+        .await;
+        // A model-free state reports itself as still loading (503); the point is that
+        // the health handler answered, not the gate.
+        assert_ne!(status, StatusCode::UNAUTHORIZED, "{body}");
+        assert_eq!(body["status"].as_str(), Some("loading"), "{body}");
+    }
+
+    /// `AuthGate::from_env()` yields a disabled gate when neither env var is set;
+    /// the seam must not change behaviour in that case (documented upstream
+    /// semantics: deployments are expected to refuse to start without a key).
+    #[tokio::test]
+    async fn gguf_router_disabled_gate_is_open() {
+        let (status, _, body) =
+            fire(router(AuthGate::disabled()), Method::GET, "/health", None).await;
+        assert_ne!(status, StatusCode::UNAUTHORIZED, "{body}");
+        assert_eq!(body["status"].as_str(), Some("loading"), "{body}");
+    }
+}
+
+/// Build realizar's full router over `state` behind the Bearer gate.
+///
+/// HELIX-IDEA-009 / FALSIFY-AUTH-001: every route on the returned router is gated
+/// by `auth_gate` via `super::auth::layer`, `/health` included — the auth contract
+/// says health and metrics are NOT exempt. Behind a load balancer or the AWS Lambda
+/// Web Adapter that is still safe: the adapter's readiness check treats any 100-499
+/// status as ready, so a 401 on `/health` flips it to ready. `layer_public_ops` is
+/// the one-word alternative if a k8s-style probe ever needs `/health` open. Pass
+/// `AuthGate::disabled()` to bypass.
+///
+/// This was the one router in `serve/` built straight from
+/// `create_router_with_config` on the CPU GGUF path: `APR_API_KEY_HASH` was set and
+/// ignored, and the server answered 200 without a key (observed on v0.70.3 and
+/// v0.71.4). `serve_router` is a thin wrapper that supplies `AuthGate::from_env()`;
+/// the seam exists so the wiring is testable without a socket or model weights.
+#[cfg(feature = "inference")]
+fn build_gguf_router(
+    state: realizar::api::AppState,
+    config: &ServerConfig,
+    auth_gate: super::auth::AuthGate,
+) -> axum::Router {
+    super::auth::layer(
+        auth_gate,
+        realizar::api::create_router_with_config(state, config.router_config()),
+    )
+}
+
 /// Serve realizar's full router over `state` until Ctrl+C.
 ///
 /// The half of [`run_cpu_server`] that does not depend on which model the
@@ -430,8 +588,6 @@ mod qwen35_serve_route_tests {
 /// served by the same router, banner and shutdown as every other GGUF.
 #[cfg(feature = "inference")]
 fn serve_router(state: realizar::api::AppState, config: &ServerConfig) -> Result<()> {
-    use realizar::api::create_router_with_config;
-
     // aprender#2376(8): the banner is read from the router's own table, not restated.
     // The previous hand-written list named 11 of the 31 mounted routes and omitted
     // /tokenize, /realize/*, /models and the health probes entirely, while a
@@ -441,7 +597,8 @@ fn serve_router(state: realizar::api::AppState, config: &ServerConfig) -> Result
 
     // Create realizar's full inference router (Ollama-parity endpoints).
     // --no-cors / --no-metrics must reach the router, not stop at the banner.
-    let app = create_router_with_config(state, config.router_config());
+    // FALSIFY-AUTH-001: gated by APR_API_KEY_HASH / APR_API_KEY like build_apr_cpu_router.
+    let app = build_gguf_router(state, config, super::auth::AuthGate::from_env());
 
     // Create tokio runtime and run server
     let runtime = tokio::runtime::Runtime::new()
