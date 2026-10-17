@@ -3,6 +3,22 @@
 use super::average::Average;
 use super::confusion::ConfusionMatrix;
 
+/// Average precomputed per-class F1 values over explicit class indices.
+///
+/// Returns `None` for an empty selection, an out-of-range class index, or a
+/// repeated class index (a class would otherwise be weighted twice).
+#[must_use]
+fn f1_average_for_classes(f1: &[f64], classes: &[usize]) -> Option<f64> {
+    if classes.is_empty() || classes.iter().any(|&class| class >= f1.len()) {
+        return None;
+    }
+    if classes.iter().enumerate().any(|(i, class)| classes[..i].contains(class)) {
+        return None;
+    }
+    let total = classes.iter().map(|&class| f1[class]).sum::<f64>();
+    Some(total / classes.len() as f64)
+}
+
 /// Multi-class classification metrics
 #[derive(Clone, Debug)]
 pub struct MultiClassMetrics {
@@ -64,6 +80,15 @@ impl MultiClassMetrics {
     /// Get averaged F1
     pub fn f1_avg(&self, average: Average) -> f64 {
         self.average_metric(&self.f1, average)
+    }
+
+    /// Average F1 over an explicit set of class indices.
+    ///
+    /// Returns `None` for an empty selection, an out-of-range class index, or a
+    /// repeated class index.
+    #[must_use]
+    pub fn f1_avg_for_classes(&self, classes: &[usize]) -> Option<f64> {
+        f1_average_for_classes(&self.f1, classes)
     }
 
     fn average_metric(&self, values: &[f64], average: Average) -> f64 {
