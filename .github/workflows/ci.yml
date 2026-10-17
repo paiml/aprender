@@ -156,7 +156,7 @@ jobs:
   x86-main:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 240
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
@@ -313,7 +313,7 @@ jobs:
   x86-main-advisories:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -434,7 +434,7 @@ jobs:
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
-    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}   # same pool as x86-main
+    runs-on: [self-hosted, Linux, X64, clean-room]   # same pool as x86-main
     timeout-minutes: 180
     strategy:
       fail-fast: false

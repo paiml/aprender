@@ -1,11 +1,11 @@
-# probador
+# aprender-test-cli
 
 [![Crates.io](https://img.shields.io/crates/v/aprender-test-cli.svg)](https://crates.io/crates/aprender-test-cli)
 [![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 
-**probador** (Spanish: "tester") is the CLI tool for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
+**aprender-test-cli** is the CLI tool for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
 
-> **Note:** The library is published separately as [jugar-probar](https://crates.io/crates/aprender-test-lib).
+> **Note:** The library is published separately as [aprender-test-lib](https://crates.io/crates/aprender-test-lib).
 
 ## Installation
 
@@ -17,25 +17,25 @@ cargo install aprender-test-cli
 
 ```bash
 # Validate a playbook state machine
-probador playbook login.yaml --validate
+aprender-test-cli playbook login.yaml --validate
 
 # Run with mutation testing (M1-M5 falsification)
-probador playbook login.yaml --mutate
+aprender-test-cli playbook login.yaml --mutate
 
 # Export state diagram
-probador playbook login.yaml --export svg -o diagram.svg
+aprender-test-cli playbook login.yaml --export svg -o diagram.svg
 
 # Run tests
-probador test
+aprender-test-cli test
 
 # Run tests with coverage
-probador coverage --html
+aprender-test-cli coverage --html
 
 # Watch mode for development
-probador watch tests/
+aprender-test-cli watch tests/
 
 # Start dev server for WASM
-probador serve --port 8080
+aprender-test-cli serve --port 8080
 ```
 
 ## Commands
@@ -54,7 +54,7 @@ probador serve --port 8080
 
 ## Playbook Testing
 
-probador supports YAML-driven state machine testing with mutation testing:
+aprender-test-cli supports YAML-driven state machine testing with mutation testing:
 
 ```yaml
 # login.yaml
@@ -84,13 +84,13 @@ machine:
 
 ```bash
 # Validate
-probador playbook login.yaml --validate
+aprender-test-cli playbook login.yaml --validate
 
 # Export as SVG diagram
-probador playbook login.yaml --export svg -o login.svg
+aprender-test-cli playbook login.yaml --export svg -o login.svg
 
 # Mutation testing (M1-M5 classes)
-probador playbook login.yaml --mutate
+aprender-test-cli playbook login.yaml --mutate
 ```
 
 ### Mutation Classes

@@ -156,12 +156,36 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
         ),
         "release123",
     );
-    // a dev checkout: no vcs file, its own repo -> `git rev-parse --short HEAD` (worktree freshness)
+    // a dev checkout: no vcs file, its own repo -> `git rev-parse --short=9 HEAD`, the string the
+    // release comparators build their want from (`scripts/release/models_t1.sh`, #5256)
     let dev = package(&pkgs, "dev", None);
     git(&dev, &["init", "-q"]);
     git(&dev, &["commit", "-q", "--allow-empty", "-m", "dev"]);
-    let head = git(&dev, &["rev-parse", "--short", "HEAD"]);
+    let head = git(&dev, &["rev-parse", "--short=9", "HEAD"]);
     expect("dev-checkout", run(&bin, &dev, None, &[]), &head);
+    // #5256: a repository above git's auto-abbreviation threshold. core.abbrev=12 makes a bare
+    // `--short` print 12 digits, as the object count made it print 10 at 0.71.2; the stamp must
+    // still equal the comparator's `--short=9` (must-match) ...
+    let big = package(&pkgs, "above-threshold", None);
+    git(&big, &["init", "-q"]);
+    git(&big, &["config", "core.abbrev", "12"]);
+    git(&big, &["commit", "-q", "--allow-empty", "-m", "a"]);
+    assert_eq!(
+        git(&big, &["rev-parse", "--short", "HEAD"]).len(),
+        12,
+        "core.abbrev=12 did not lengthen a bare --short: the above-threshold rows would be vacuous"
+    );
+    let want_a = git(&big, &["rev-parse", "--short=9", "HEAD"]);
+    let stamp_a = run(&bin, &big, None, &[]);
+    expect("above-threshold", stamp_a.clone(), &want_a);
+    // ... and a binary stamped at the previous commit must not read as this one (must-not-match)
+    git(&big, &["commit", "-q", "--allow-empty", "-m", "b"]);
+    let want_b = git(&big, &["rev-parse", "--short=9", "HEAD"]);
+    expect(
+        "above-threshold-old-commit",
+        format!("stamp {stamp_a} == want {want_b}: {}", stamp_a == want_b),
+        &format!("stamp {stamp_a} == want {want_b}: false"),
+    );
     // the release lane: root in a container over the runner-owned checkout. git's own test knob
     // makes it see another owner; the precondition proves plain git really refuses the repo here
     let other_owner = [("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")];
@@ -212,7 +236,20 @@ fn planted_regressions_turn_red() {
         1,
         "the git retry call site moved; re-anchor the plant"
     );
-    let w3 = table(&shipped.replace(retry, ""), "plant_no_retry");
+    // #5256: the `.git` read prints the same --short=9 digits the retry does, so with the retry
+    // gone it answers the foreign-owner row byte-for-byte. Before #5256 this plant went red only
+    // because the two rungs printed different lengths. Remove both, so the row can only be
+    // answered by the retry.
+    let dot_git = "\n        .or_else(read_head_sha_from_dot_git)";
+    assert_eq!(
+        shipped.matches(dot_git).count(),
+        1,
+        "the .git read call site moved; re-anchor the plant"
+    );
+    let w3 = table(
+        &shipped.replace(retry, "").replace(dot_git, ""),
+        "plant_no_retry",
+    );
     assert!(
         w3.iter().any(|r| r.starts_with("foreign-owner:")),
         "no-retry plant survived: {w3:#?}"
@@ -225,5 +262,28 @@ fn planted_regressions_turn_red() {
     assert!(
         !w2.iter().any(|r| r.starts_with("packaged:")),
         "git-first plant should still pass packaged: {w2:#?}"
+    );
+    // #5256: the git rung back on git's auto length, the 0.71.2 NOT-THE-RELEASE build.
+    let fixed = "const SHORT_ARG: &str = \"--short=9\";";
+    assert_eq!(
+        shipped.matches(fixed).count(),
+        1,
+        "the SHORT_ARG declaration moved; re-anchor the plant"
+    );
+    let w4 = table(
+        &shipped.replace(fixed, "const SHORT_ARG: &str = \"--short\";"),
+        "plant_auto_short",
+    );
+    assert!(
+        w4.iter().any(|r| r.starts_with("above-threshold:")),
+        "auto-length plant survived: {w4:#?}"
+    );
+}
+
+#[test]
+fn short_arg_names_short_sha_len() {
+    assert_eq!(
+        super::SHORT_ARG,
+        format!("--short={}", super::SHORT_SHA_LEN)
     );
 }

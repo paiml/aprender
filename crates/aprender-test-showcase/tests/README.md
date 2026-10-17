@@ -10,7 +10,7 @@ Located in `src/` modules with inline `#[cfg(test)]` modules.
 - **Core Logic** (`src/core/`): Parser, evaluator, operations, history
 - **TUI Components** (`src/tui/`): App state, input handling, keypad, UI rendering
 - **WASM Bindings** (`src/wasm/`): Browser integration, DOM manipulation, WASM keypad
-- **Probar Integration** (`src/probar_tests.rs`): Page objects, accessibility, fixtures
+- **Probar Integration** (`tests/probar_tests.rs`): Page objects, accessibility, fixtures
 
 ### Integration Tests (`tests/`)
 - `gui_coverage_tests.rs`: GUI element coverage verification
@@ -25,18 +25,18 @@ State machine verification using probar playbooks:
 
 ```bash
 # Run all tests
-cargo test -p showcase-calculator --all-features
+cargo test -p aprender-test-showcase --all-features
 
 # Run with coverage
-cargo tarpaulin -p showcase-calculator
+cargo llvm-cov -p aprender-test-showcase
 
 # Run specific test category
-cargo test -p showcase-calculator --test gui_coverage_tests
-cargo test -p showcase-calculator --test keypad_proptests
+cargo test -p aprender-test-showcase --test gui_coverage_tests
+cargo test -p aprender-test-showcase --test keypad_proptests
 
 # Run probar playbook validation
-probador playbook playbooks/calculator.yaml --validate
-probador playbook playbooks/error_handling.yaml --validate
+aprender-test-cli playbook playbooks/calculator.yaml --validate
+aprender-test-cli playbook playbooks/error_handling.yaml --validate
 ```
 
 ## Test Rationale

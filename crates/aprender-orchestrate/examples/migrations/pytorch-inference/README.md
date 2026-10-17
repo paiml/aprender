@@ -96,11 +96,11 @@ cargo run --release --example pytorch_inference_output
 
 ```bash
 # Analyze the Python code
-batuta analyze examples/migrations/pytorch-inference/input.py
+aprender-orchestrate analyze examples/migrations/pytorch-inference/input.py
 
 # Transpile to Rust
-batuta transpile examples/migrations/pytorch-inference/input.py \
-  --output examples/migrations/pytorch-inference/generated.rs \
+aprender-orchestrate transpile examples/migrations/pytorch-inference/input.py \
+  --output examples/migrations/pytorch-inference/output.rs \
   --optimize --backend auto
 
 # Build optimized binary
@@ -313,4 +313,4 @@ Current Realizar support (as of BATUTA-010):
 - [Realizar Inference Library](https://github.com/paiml/aprender/tree/main/crates/aprender-serve)
 - [SafeTensors Format](https://github.com/huggingface/safetensors)
 - [ONNX Runtime](https://onnxruntime.ai/)
-- [Batuta Specification](../../../docs/specifications/sovereign-ai-spec.md)
+- [Batuta Specification](../../../docs/specifications/archive/sovereign-ai-spec.md)

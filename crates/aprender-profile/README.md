@@ -1,10 +1,10 @@
 <div align="center">
 
 <p align="center">
-  <img src=".github/renacer-hero.svg" alt="renacer" width="800">
+  <img src=".github/renacer-hero.svg" alt="aprender-profile" width="800">
 </p>
 
-<h1 align="center">renacer</h1>
+<h1 align="center">aprender-profile</h1>
 
 <p align="center">
   <b>Pure Rust system call tracer with source-aware correlation for Rust binaries</b>
@@ -188,7 +188,7 @@ Renacer (Spanish: "to be reborn") is a next-generation binary inspection and tra
 - ✅ **Golden Trace Comparison** - Compare traces for behavioral equivalence
 - ✅ **EquivalenceScore** - Syscall match, timing variance, semantic equivalence metrics
 - ✅ **LCS-Based Matching** - Longest common subsequence algorithm for syscall alignment
-- ✅ **entrenar Integration** - Cross-project support for ML experiment tracking (ENT-EPIC-001)
+- ✅ **aprender-train Integration** - Cross-project support for ML experiment tracking (ENT-EPIC-001)
 
 ### Process-Level Tracing (Sprint 59 - SPEC-057)
 - ✅ **Deep Process Tracing** - ptrace-based syscall collection for ptop integration
@@ -262,130 +262,130 @@ cargo install --path .
 cargo install --git https://github.com/paiml/aprender/tree/main/crates/aprender-profile
 
 # Basic tracing
-renacer -- ls -la
+aprender-profile -- ls -la
 
 # With source correlation (requires debug symbols)
-renacer --source -- cargo test
+aprender-profile --source -- cargo test
 
 # Function profiling with flamegraph
-renacer --function-time --source -- ./my-binary > profile.txt
+aprender-profile --function-time --source -- ./my-binary > profile.txt
 cat profile.txt | flamegraph.pl > flamegraph.svg
 
 # JSON output for scripting
-renacer --format json -- echo "test" > trace.json
+aprender-profile --format json -- echo "test" > trace.json
 
 # CSV output for spreadsheet analysis (Sprint 17)
-renacer --format csv -- echo "test" > trace.csv
-renacer --format csv -T -- ls > trace-with-timing.csv
-renacer --format csv --source -- ./my-binary > trace-with-source.csv
-renacer --format csv -c -- cargo build > stats.csv
+aprender-profile --format csv -- echo "test" > trace.csv
+aprender-profile --format csv -T -- ls > trace-with-timing.csv
+aprender-profile --format csv --source -- ./my-binary > trace-with-source.csv
+aprender-profile --format csv -c -- cargo build > stats.csv
 
 # HTML output for visual reports (Sprint 22)
-renacer --format html -- ls -la > report.html       # Visual trace report
-renacer --format html -c -- cargo build > stats.html # Statistics as HTML
-renacer --format html --source -- ./app > trace.html # With source locations
+aprender-profile --format html -- ls -la > report.html       # Visual trace report
+aprender-profile --format html -c -- cargo build > stats.html # Statistics as HTML
+aprender-profile --format html --source -- ./app > trace.html # With source locations
 
 # Filter syscalls
-renacer -e trace=file -- cat file.txt       # File operations only
-renacer -e trace=open,read,write -- ls      # Specific syscalls
-renacer -e trace=!close -- ls               # All syscalls except close (Sprint 15)
-renacer -e trace=file,!close -- cat file    # File ops except close (Sprint 15)
+aprender-profile -e trace=file -- cat file.txt       # File operations only
+aprender-profile -e trace=open,read,write -- ls      # Specific syscalls
+aprender-profile -e trace=!close -- ls               # All syscalls except close (Sprint 15)
+aprender-profile -e trace=file,!close -- cat file    # File ops except close (Sprint 15)
 
 # Regex patterns (Sprint 16)
-renacer -e 'trace=/^open.*/' -- ls          # All syscalls starting with "open"
-renacer -e 'trace=/.*at$/' -- cat file      # All syscalls ending with "at"
-renacer -e 'trace=/read|write/' -- app      # Syscalls matching read OR write
-renacer -e 'trace=/^open.*/,!/openat/' -- ls  # open* except openat
+aprender-profile -e 'trace=/^open.*/' -- ls          # All syscalls starting with "open"
+aprender-profile -e 'trace=/.*at$/' -- cat file      # All syscalls ending with "at"
+aprender-profile -e 'trace=/read|write/' -- app      # Syscalls matching read OR write
+aprender-profile -e 'trace=/^open.*/,!/openat/' -- ls  # open* except openat
 
 # Multi-process tracing (Sprint 18)
-renacer -f -- bash -c "echo parent && (echo child &)"  # Follow forks
-renacer -f -e trace=file -- make clean      # Follow forks with filtering
-renacer -f -c -- python app.py              # Multi-process statistics
+aprender-profile -f -- bash -c "echo parent && (echo child &)"  # Follow forks
+aprender-profile -f -e trace=file -- make clean      # Follow forks with filtering
+aprender-profile -f -c -- python app.py              # Multi-process statistics
 
 # Statistics summary
-renacer -c -T -- cargo build
+aprender-profile -c -T -- cargo build
 
 # Enhanced statistics with percentiles (Sprint 19)
-renacer -c --stats-extended -- cargo test   # P50/P75/P90/P95/P99 latencies
-renacer -c --stats-extended --anomaly-threshold 2.5 -- ./app  # Custom anomaly threshold
+aprender-profile -c --stats-extended -- cargo test   # P50/P75/P90/P95/P99 latencies
+aprender-profile -c --stats-extended --anomaly-threshold 2.5 -- ./app  # Custom anomaly threshold
 
 # HPU-accelerated analysis (Sprint 21)
-renacer -c --hpu-analysis -- ./heavy-io-app         # Correlation matrix + K-means clustering
-renacer -c --hpu-analysis --hpu-cpu-only -- app     # Force CPU backend
-renacer -c --hpu-analysis -e trace=file -- ls       # HPU with filtering
+aprender-profile -c --hpu-analysis -- ./heavy-io-app         # Correlation matrix + K-means clustering
+aprender-profile -c --hpu-analysis --hpu-cpu-only -- app     # Force CPU backend
+aprender-profile -c --hpu-analysis -e trace=file -- ls       # HPU with filtering
 
 # ML anomaly detection (Sprint 23)
-renacer -c --ml-anomaly -- cargo build              # KMeans clustering of syscall latencies
-renacer -c --ml-anomaly --ml-clusters 5 -- ./app    # Custom cluster count
-renacer -c --ml-anomaly --ml-compare -- ./app       # Compare ML with z-score detection
-renacer --ml-anomaly --format json -- ./app > ml.json  # ML results in JSON
+aprender-profile -c --ml-anomaly -- cargo build              # KMeans clustering of syscall latencies
+aprender-profile -c --ml-anomaly --ml-clusters 5 -- ./app    # Custom cluster count
+aprender-profile -c --ml-anomaly --ml-compare -- ./app       # Compare ML with z-score detection
+aprender-profile --ml-anomaly --format json -- ./app > ml.json  # ML results in JSON
 
 # Real-time anomaly detection (Sprint 20)
-renacer --anomaly-realtime -- ./app         # Live anomaly monitoring
-renacer --anomaly-realtime --anomaly-window-size 200 -- ./app  # Custom window size
-renacer -c --anomaly-realtime -- cargo test # Combine with statistics
-renacer --anomaly-realtime -e trace=file -- find /usr  # Monitor only file operations
+aprender-profile --anomaly-realtime -- ./app         # Live anomaly monitoring
+aprender-profile --anomaly-realtime --anomaly-window-size 200 -- ./app  # Custom window size
+aprender-profile -c --anomaly-realtime -- cargo test # Combine with statistics
+aprender-profile --anomaly-realtime -e trace=file -- find /usr  # Monitor only file operations
 
 # Transpiler source mapping (Sprint 24-28)
-renacer --transpiler-map simulation.rs.sourcemap.json -- ./simulation  # Load Python→Rust source map
-renacer --transpiler-map algorithm.sourcemap.json -- ./algorithm_rs    # Load C→Rust source map (Decy)
-renacer --transpiler-map app.sourcemap.json --source -- ./transpiled-app  # Combine with DWARF
-renacer --transpiler-map map.json --function-time -- ./binary  # Function profiling with source maps
-renacer --transpiler-map map.json -c -- ./binary       # Source mapping with statistics
+aprender-profile --transpiler-map simulation.rs.sourcemap.json -- ./simulation  # Load Python→Rust source map
+aprender-profile --transpiler-map algorithm.sourcemap.json -- ./algorithm_rs    # Load C→Rust source map (Decy)
+aprender-profile --transpiler-map app.sourcemap.json --source -- ./transpiled-app  # Combine with DWARF
+aprender-profile --transpiler-map map.json --function-time -- ./binary  # Function profiling with source maps
+aprender-profile --transpiler-map map.json -c -- ./binary       # Source mapping with statistics
 
 # OpenTelemetry OTLP export (Sprint 30)
 docker-compose -f docker-compose-jaeger.yml up -d  # Start Jaeger
-renacer --otlp-endpoint http://localhost:4317 --otlp-service-name my-app -- ./program
+aprender-profile --otlp-endpoint http://localhost:4317 --otlp-service-name my-app -- ./program
 # Open http://localhost:16686 to view traces in Jaeger UI
 
-renacer -s --otlp-endpoint http://localhost:4317 -- ./program  # With source correlation
-renacer -T --otlp-endpoint http://localhost:4317 -- ./program  # With timing
-renacer -e trace=file --otlp-endpoint http://localhost:4317 -- ./program  # With filtering
+aprender-profile -s --otlp-endpoint http://localhost:4317 -- ./program  # With source correlation
+aprender-profile -T --otlp-endpoint http://localhost:4317 -- ./program  # With timing
+aprender-profile -e trace=file --otlp-endpoint http://localhost:4317 -- ./program  # With filtering
 
 # Unified tracing: OTLP + Transpiler decisions (Sprint 31)
-renacer --otlp-endpoint http://localhost:4317 --trace-transpiler-decisions -- ./transpiled-app
+aprender-profile --otlp-endpoint http://localhost:4317 --trace-transpiler-decisions -- ./transpiled-app
 # See both syscalls and transpiler decisions in Jaeger UI
 
-renacer --otlp-endpoint http://localhost:4317 \
+aprender-profile --otlp-endpoint http://localhost:4317 \
         --trace-transpiler-decisions \
         --transpiler-map app.sourcemap.json \
         -- ./depyler-app  # Full observability: decisions + syscalls + source maps
 
-renacer --otlp-endpoint http://localhost:4317 \
+aprender-profile --otlp-endpoint http://localhost:4317 \
         --trace-transpiler-decisions \
         -T \
         -- ./app  # With timing for decision performance analysis
 
 # Block-level compute tracing (Sprint 32) - Trueno SIMD operations
-renacer --otlp-endpoint http://localhost:4317 \
+aprender-profile --otlp-endpoint http://localhost:4317 \
         --trace-compute \
         -c --stats-extended \
         -- cargo build  # Default: Adaptive sampling (trace blocks >=100μs)
 
-renacer --otlp-endpoint http://localhost:4317 \
+aprender-profile --otlp-endpoint http://localhost:4317 \
         --trace-compute \
         --trace-compute-all \
         -c -- ./app  # Debug mode: Trace ALL compute blocks (bypass sampling)
 
-renacer --otlp-endpoint http://localhost:4317 \
+aprender-profile --otlp-endpoint http://localhost:4317 \
         --trace-compute \
         --trace-compute-threshold 50 \
         -c -- ./app  # Custom threshold: Trace blocks >=50μs
 
-renacer --otlp-endpoint http://localhost:4317 \
+aprender-profile --otlp-endpoint http://localhost:4317 \
         --trace-compute \
         --trace-transpiler-decisions \
         -- ./depyler-app  # Full observability: compute + decisions + syscalls
 
 # Distributed tracing (Sprint 33) - W3C Trace Context propagation
 export TRACEPARENT="00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
-renacer --otlp-endpoint http://localhost:4317 -- ./app  # Auto-detect from env
+aprender-profile --otlp-endpoint http://localhost:4317 -- ./app  # Auto-detect from env
 
-renacer --otlp-endpoint http://localhost:4317 \
+aprender-profile --otlp-endpoint http://localhost:4317 \
         --trace-parent "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00" \
         -- ./app  # Explicit context injection
 
-renacer --otlp-endpoint http://localhost:4317 \
+aprender-profile --otlp-endpoint http://localhost:4317 \
         --trace-parent "00-abc123-def456-01" \
         --trace-compute \
         --trace-transpiler-decisions \
@@ -393,7 +393,7 @@ renacer --otlp-endpoint http://localhost:4317 \
         -- ./app  # Full distributed tracing stack
 
 # Attach to running process
-renacer -p 1234
+aprender-profile -p 1234
 ```
 
 ## Usage
@@ -401,8 +401,8 @@ renacer -p 1234
 ### Command Line Interface
 
 ```bash
-renacer [OPTIONS] [-- <COMMAND> [ARGS...]]
-renacer [OPTIONS] -p <PID>
+aprender-profile [OPTIONS] [-- <COMMAND> [ARGS...]]
+aprender-profile [OPTIONS] -p <PID>
 ```
 
 ### Options
@@ -437,7 +437,7 @@ for event in &result.events {
 
 ### Basic Syscall Tracing
 ```bash
-$ renacer -- echo "Hello"
+$ aprender-profile -- echo "Hello"
 openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
 write(1, "Hello\n", 6) = 6
 exit_group(0) = ?
@@ -445,14 +445,14 @@ exit_group(0) = ?
 
 ### With Source Correlation
 ```bash
-$ renacer --source -- ./my-program
+$ aprender-profile --source -- ./my-program
 read(3, buf, 1024) = 42          [src/main.rs:15 in my_function]
 write(1, "result", 6) = 6        [src/main.rs:20 in my_function]
 ```
 
 ### Function Profiling
 ```bash
-$ renacer --function-time --source -- cargo test
+$ aprender-profile --function-time --source -- cargo test
 
 Function Profiling Summary:
 ========================
@@ -473,7 +473,7 @@ Call Graph:
 
 ### Enhanced Statistics with Percentiles (Sprint 19)
 ```bash
-$ renacer -c --stats-extended -- cargo build
+$ aprender-profile -c --stats-extended -- cargo build
 
 % time     seconds  usecs/call     calls    errors syscall
 ------ ----------- ----------- --------- --------- ----------------
@@ -502,7 +502,7 @@ Post-Hoc Anomaly Detection (threshold: 3.0σ):
 
 ### Real-Time Anomaly Detection (Sprint 20)
 ```bash
-$ renacer --anomaly-realtime -- ./slow-app
+$ aprender-profile --anomaly-realtime -- ./slow-app
 
 openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY) = 3
 read(3, buf, 832) = 832
@@ -533,7 +533,7 @@ Top Anomalies (by Z-score):
 $ docker-compose -f docker-compose-jaeger.yml up -d
 
 # Export syscall traces to Jaeger
-$ renacer -s --otlp-endpoint http://localhost:4317 --otlp-service-name test-app -- ./test
+$ aprender-profile -s --otlp-endpoint http://localhost:4317 --otlp-service-name test-app -- ./test
 [renacer: OTLP export enabled to http://localhost:4317]
 write(1, "Hello, OpenTelemetry!\n", 22) = 22  [src/main.rs:3 in main]
 exit_group(0) = ?
@@ -547,7 +547,7 @@ exit_group(0) = ?
 
 # Export with Grafana Tempo
 $ docker-compose -f docker-compose-tempo.yml up -d
-$ renacer --otlp-endpoint http://localhost:4317 --otlp-service-name my-service -- ./app
+$ aprender-profile --otlp-endpoint http://localhost:4317 --otlp-service-name my-service -- ./app
 
 # Open Grafana at http://localhost:3000
 # Navigate to Explore > Tempo > Search by service name: "my-service"
@@ -674,7 +674,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 - See [CHANGELOG.md](CHANGELOG.md) for details
 
 ### v0.6.6 ✅ (2025-11-30)
-- Experiment Span Tracking - ML experiment integration with entrenar (REN-001)
+- Experiment Span Tracking - ML experiment integration with aprender-train (REN-001)
 - SpanType::Experiment variant for ML training spans
 - ExperimentMetadata struct (model_name, epoch, step, loss, metrics)
 - Golden trace comparison API with EquivalenceScore

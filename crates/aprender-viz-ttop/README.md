@@ -1,15 +1,10 @@
-# ttop - Terminal Top
+# aprender-viz-ttop - Terminal Top
 
 **10X Better Than btop** - A pure Rust system monitor with NVIDIA + AMD GPU support, zero-allocation rendering, and sovereign stack architecture.
 
-[![Crates.io](https://img.shields.io/crates/v/aprender-viz-ttop.svg)](https://crates.io/crates/aprender-viz-ttop)
-[![License](https://img.shields.io/crates/l/ttop.svg)](LICENSE)
-
 ## Installation
 
-```bash
-cargo install ttop
-```
+This crate is not published to crates.io. It is excluded from the aprender workspace (`exclude` in the root `Cargo.toml`), so `cargo build -p aprender-viz-ttop` from the repository root does not select it. Cargo also refuses to build it standalone from this tree (`--manifest-path` or its own directory: "current package believes it's in a workspace when it's not"), so there is no standalone build command.
 
 ## What's New in v2
 
@@ -27,7 +22,7 @@ cargo install ttop
 - **14 Panels**: CPU, Memory, Disk, Network, Process, GPU, Battery, Sensors, PSI, System, Connections, Treemap, Files, Containers
 - **GPU Monitoring**: NVIDIA (nvidia-smi) + AMD (sysfs gpu_busy_percent, hwmon)
 - **Deterministic Mode**: Reproducible rendering for testing and CI
-- **YAML Configuration**: `~/.config/ttop/config.yaml`
+- **YAML Configuration**: `~/.config/ptop/config.yaml`
 
 ## Panels
 
@@ -60,7 +55,7 @@ cargo install ttop
 ## Command Line Options
 
 ```
-ttop [OPTIONS]
+aprender-viz-ttop [OPTIONS]
 
 Options:
   -r, --refresh <MS>       Refresh interval in milliseconds [default: 1000]
@@ -78,19 +73,19 @@ Options:
 
 ```bash
 # Run with default settings
-ttop
+aprender-viz-ttop
 
 # Fast refresh (500ms)
-ttop -r 500
+aprender-viz-ttop -r 500
 
 # Render single frame for CI/testing
-ttop --deterministic --render-once --width 120 --height 40
+aprender-viz-ttop --deterministic --render-once --width 120 --height 40
 
 # Explode GPU panel fullscreen
-ttop --explode gpu
+aprender-viz-ttop --explode gpu
 
 # Dump default config
-ttop --dump-config > ~/.config/ttop/config.yaml
+aprender-viz-ttop --dump-config > ~/.config/ptop/config.yaml
 ```
 
 ## GPU Support
@@ -105,7 +100,7 @@ GPU panel is always visible. If no GPU is detected, it shows "No GPU detected".
 ## Architecture
 
 ```
-ttop binary (2.5MB)
+aprender-viz-ttop binary (2.5MB)
   └── presentar-terminal::ptop (14 panels, 13 analyzers)
         └── presentar-terminal::direct (CellBuffer, DiffRenderer)
               └── crossterm (terminal I/O)
@@ -115,12 +110,7 @@ No ratatui. No tui-rs. Zero-allocation steady-state rendering via `CompactString
 
 ## Building from Source
 
-```bash
-git clone https://github.com/paiml/aprender
-cd aprender
-cargo build --release -p aprender-viz-ttop
-./target/release/aprender-viz-ttop
-```
+The crate lives in `crates/aprender-viz-ttop` and ships the `aprender-viz-ttop` binary; it is not a member of the root workspace (see Installation).
 
 ## License
 
