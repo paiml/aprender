@@ -1124,23 +1124,23 @@ fn falsify_2607_piped_prompt_is_not_refused_as_a_bare_invocation() {
 const MODEL_KINDS: [&str; 2] = ["generative", "embedding"];
 const VERDICTS: [&str; 3] = ["receipt", "refuse", "no-model"];
 
-fn name_of(cmd: &serde_yaml::Value) -> &str {
+fn name_of(cmd: &serde_json::Value) -> &str {
     cmd.get("name")
         .and_then(|n| n.as_str())
         .unwrap_or("<unnamed>")
 }
 
-fn verdict_of(cmd: &serde_yaml::Value, kind: &str) -> Option<String> {
+fn verdict_of(cmd: &serde_json::Value, kind: &str) -> Option<String> {
     cmd.get("kinds")?.get(kind)?.as_str().map(str::to_string)
 }
 
 /// The registry's `commands:` list, or the violation that stops the scan.
-fn registry_commands(yaml: &str) -> Result<Vec<serde_yaml::Value>, String> {
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(yaml).map_err(|e| format!("registry does not parse: {e}"))?;
+fn registry_commands(yaml: &str) -> Result<Vec<serde_json::Value>, String> {
+    let doc: serde_json::Value =
+        serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(|e| format!("registry does not parse: {e}"))?;
     let commands = doc
         .get("commands")
-        .and_then(|c| c.as_sequence())
+        .and_then(|c| c.as_array())
         .ok_or_else(|| "registry has no `commands:` list".to_string())?;
     if commands.is_empty() {
         return Err("0 commands scanned".to_string());
@@ -1151,10 +1151,10 @@ fn registry_commands(yaml: &str) -> Result<Vec<serde_yaml::Value>, String> {
 /// A refusal must name a registered verb that takes the kind; any other verdict
 /// must name none.
 fn use_instead_violation(
-    cmd: &serde_yaml::Value,
+    cmd: &serde_json::Value,
     kind: &str,
     verdict: &str,
-    commands: &[serde_yaml::Value],
+    commands: &[serde_json::Value],
 ) -> Option<String> {
     let name = name_of(cmd);
     let instead = cmd
@@ -1183,9 +1183,9 @@ fn use_instead_violation(
 
 /// Violations for one kind of one command. Returns the verdict when it is valid.
 fn kind_violations(
-    cmd: &serde_yaml::Value,
+    cmd: &serde_json::Value,
     kind: &str,
-    commands: &[serde_yaml::Value],
+    commands: &[serde_json::Value],
     bad: &mut Vec<String>,
 ) -> Option<String> {
     let name = name_of(cmd);
@@ -1211,17 +1211,17 @@ fn kind_violations(
 
 /// Violations for one command across every kind.
 fn command_violations(
-    cmd: &serde_yaml::Value,
-    commands: &[serde_yaml::Value],
+    cmd: &serde_json::Value,
+    commands: &[serde_json::Value],
     bad: &mut Vec<String>,
 ) {
     let name = name_of(cmd);
-    let Some(kinds) = cmd.get("kinds").and_then(|k| k.as_mapping()) else {
+    let Some(kinds) = cmd.get("kinds").and_then(|k| k.as_object()) else {
         bad.push(format!("{name}: no `kinds:` map"));
         return;
     };
     for key in kinds.keys() {
-        let key = key.as_str().unwrap_or("<non-string>");
+        let key = key.as_str();
         if !MODEL_KINDS.contains(&key) {
             bad.push(format!("{name}: unknown model kind `{key}`"));
         }

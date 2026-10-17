@@ -282,25 +282,15 @@ push_reuse_why() {
     [ "$MG_CONCLUSION" = success ] || { echo "merge_group run $MG_RUN's workspace-test concluded ${MG_CONCLUSION:-nothing}, not success"; return; } # R-MGCONCL
 }
 
-# owe_full: the queue's answer over a selection. A PR head runs QUICK, so the queue
-# owes FULL: quick is promoted to full (every other line rides along); full stays; a
-# missing or unrecognised tier falls CLOSED to full. Only a PROVABLY empty diff (the
-# change lands no path) stays none -- a docs-only `none` is a PR-head answer, and the
-# queue measures it in full (sign-off r1, items 1 and 3). $1 = the selection's output.
+# owe_full: the queue's answer over a selection. A PR head runs QUICK, so the queue owes
+# FULL, always: a merge_group is NEVER none and NEVER quick (sign-off r2 item 1 -- an
+# empty-diff `none` matched on reason text was a fail-open). The selection only lends its
+# reason; its crates=/targets=/check_workspace= lines are dropped so a full tier carries
+# nothing for the quick-only steps to read (r2 item 5). $1 = the selection's output.
 owe_full() {
-    local out=$1 tier
-    tier=$(printf '%s\n' "$out" | sed -n 's/^tier=//p' | head -n 1)
-    case "$tier" in
-        full) printf '%s\n' "$out" ;;
-        none)
-            if printf '%s\n' "$out" | grep -q '^reason=.*: empty diff -- the change lands no path'; then
-                printf '%s\n' "$out"
-            else
-                printf 'tier=full\nreason=queue owes FULL (a non-empty diff the PR head called none is measured in full): %s\n' "$(printf '%s\n' "$out" | sed -n 's/^reason=//p')"
-            fi ;;
-        quick) printf '%s\n' "$out" | sed -e 's/^tier=quick$/tier=full/' -e 's/^reason=/reason=queue owes FULL (the PR head ran quick, never reused): /' ;;
-        *) printf 'tier=full\nreason=queue owes FULL (no recognised tier in the selection, fail closed)\n' ;;
-    esac
+    local out=$1 why
+    why=$(printf '%s\n' "$out" | sed -n 's/^reason=//p' | head -n 1)
+    printf 'tier=full\nreason=queue owes FULL (the PR head ran quick or none, never reused): %s\n' "${why:-no selection reason}"
 }
 
 decide() {
@@ -352,7 +342,7 @@ decide() {
             # stand in for the full run (the BSE-17 reuse hole). The queue ref is built on
             # main's tip, so HEAD^1..HEAD IS this PR's diff on the new base (squash queue,
             # #3658); a diff that cannot be derived falls closed to full. `none` (empty or
-            # docs-only) stays none: there is nothing to measure.
+            # docs-only) is full too: the queue never answers none.
             local df sel_out
             df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
             if ! diff_into "$df" 'HEAD^1'; then rm -f "${df:?}"; printf 'tier=full\nreason=merge_group: git diff HEAD^1..HEAD failed, so the PR diff cannot be derived -- fail closed to full\n'; return 0; fi
@@ -421,6 +411,17 @@ self_test() {
     # code. Same output, same rc — the rows are not weakened, only the wall clock.
     cap() { local name=$1 r=0; shift; "$@" > "$td/$name.out" 2>&1 || r=$?; printf '%s' "$r" > "$td/$name.rc"; }
     replay() { printf 'cat "%s/%s.out"; exit "$(cat "%s/%s.rc")"' "$td" "$1" "$td" "$1"; }
+    # r4: "owed FULL" is two facts at once: the tier line is exactly tier=full AND no quick-only line
+    # (crates=/targets=/check_workspace=) rides along. Empty or failed output is NOT a pass: it prints
+    # BAD-EMPTY, never the OK token (the old `| grep -c || true` printed 0 on an empty capture).
+    full_only() { # full_only <capture-name-or-script...> -> prints OK-FULL-ONLY or BAD-*
+        local o r=0
+        o=$(bash -c "$1" 2>&1) || r=$?
+        [ "$r" = 0 ] || { echo "BAD-RC-$r"; return 0; }
+        [ -n "$o" ] || { echo BAD-EMPTY; return 0; }
+        grep -qx 'tier=full' <<< "$o" || { echo BAD-NOT-FULL; return 0; }
+        if grep -qE '^(crates|targets|check_workspace)=' <<< "$o"; then echo BAD-QUICK-LINE-LEAK; else echo OK-FULL-ONLY; fi
+    }
     row() { local want=$1 label=$2 pat=$3; shift 3; n=$((n + 1)); rc=0; out=$("$@" 2>&1) || rc=$?
         if [ "$rc" = "$want" ] && printf '%s\n' "$out" | grep -qE -- "$pat"; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
         else printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc" "$want" "$pat" "$label"; printf '%s\n' "$out" | sed 's/^/        /'; red=1; fi; }
@@ -485,14 +486,14 @@ self_test() {
     # merge_group rows on a throwaway repo: same tree (empty commit) vs different tree
     git init -q "$td/repo"; ( cd "$td/repo" && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m base && printf 'a\n' > f && git add f && git -c user.name=t -c user.email=t@t commit -q -m one && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "queue merge, same tree" )
     same=$(git -C "$td/repo" rev-parse HEAD~1)
-    row 0 "merge_group, same tree + PR head success -> NEVER reused: the queue re-derives from HEAD^1..HEAD (this fixture's queue commit is empty -> none)" '^tier=none$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion success
-    row 0 "merge_group, same tree but PR head conclusion failure -> the conclusion is not read either; same empty diff -> none" '^tier=none$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion failure
+    row 0 "merge_group, same tree + PR head success -> NEVER reused: the queue re-derives from HEAD^1..HEAD (this fixture's queue commit is empty -> full, never none: r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion success
+    row 0 "merge_group, same tree but PR head conclusion failure -> the conclusion is not read either; an empty diff is still FULL (r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion failure
     diff1=$(git -C "$td/repo" rev-parse HEAD~2)
     # #3658: this row USED to want 'not a merge commit' -> full. That was the bug:
     # the queue is SQUASH, so a one-parent queue ref is the NORMAL shape and
     # HEAD^1..HEAD is still the PR's diff. It now re-derives instead of paying the hour.
-    row 0 "merge_group, different tree on a ONE-PARENT (squash-shaped) ref -> re-derived from HEAD^1..HEAD, not full (this fixture's queue commit is empty -> none)" '^tier=none$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
-    row 0 "merge_group without a PR head -> the queue no longer needs one (empty diff -> none)" '^tier=none$' bash "$T" --event merge_group --repo-root "$td/repo"
+    row 0 "merge_group, different tree on a ONE-PARENT (squash-shaped) ref -> FULL owed (this fixture queue commit is empty -> full, never none: r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
+    row 0 "merge_group without a PR head -> the queue no longer needs one (empty diff is FULL too, r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo"
     # PMAT-1098 67-E2 (#3084): THE QUEUE MIRRORS THE PR. A rebase is not new
     # evidence about the PR's diff, it is the same diff on a new base — so a
     # merge_group whose tree moved re-derives the PR's OWN selection from the
@@ -518,16 +519,21 @@ self_test() {
     cap mg-leaf bash "$T" --event merge_group --repo-root "$td/q-leaf" --pr-head "$(qh "$td/q-leaf")" --pr-head-conclusion success
     row 0 "merge_group, different tree, the PR ran quick -> the queue OWES FULL, never a reused quick" '^tier=full$' bash -c "$(replay mg-leaf)"
     row 0 "  ...and the reason says the queue owes full, so the promotion is auditable" 'queue owes FULL' bash -c "$(replay mg-leaf)"
-    row 0 "  ...with the SAME crates the PR ran ($leaf), re-derived from HEAD^1..HEAD on the queue ref" "^crates=.*$leaf" bash -c "$(replay mg-leaf)"
+    row 0 "  ...exactly tier=full and no quick line, whatever crates the PR touched ($leaf)" '^OK-FULL-ONLY$' full_only "$(replay mg-leaf)"
     row 0 "  ...and the reason names the re-derivation, not a guess" 're-derived on the queue ref' bash -c "$(replay mg-leaf)"
-    row 0 "  ...and the tree-reader targets ride along (readme_contract, the reader that bit #3039)" 'aprender-core:--test:readme_contract' bash -c "$(replay mg-leaf)"
+    row 0 "  ...and a full tier carries NO crates= line, so the quick-only steps read nothing (r2 item 5)" '^OK-FULL-ONLY$' full_only "$(replay mg-leaf)"
     cap mg-root bash "$T" --event merge_group --repo-root "$td/q-root" --pr-head "$(qh "$td/q-root")" --pr-head-conclusion success
-    row 0 "merge_group, the PR touched a ROOT manifest -> full at the queue too (rule (ii))" '^tier=full' bash -c "$(replay mg-root)"
+    row 0 "merge_group, the PR touched a ROOT manifest -> full at the queue too (rule (ii))" '^tier=full$' bash -c "$(replay mg-root)"
     row 0 "  ...citing the root-manifest rule, so the escalation is auditable" 'root Cargo.toml' bash -c "$(replay mg-root)"
     cap mg-root-same bash "$T" --event merge_group --repo-root "$td/q-root" --pr-head "$(git -C "$td/q-root" rev-parse HEAD)" --pr-head-conclusion success
     row 0 "merge_group, SAME tree as the PR head, non-empty diff (root manifest), head green -> full, never reuse (sign-off r1 item 4)" "^tier=full$" bash -c "$(replay mg-root-same)"
     cap mg-cap bash "$T" --event merge_group --repo-root "$td/q-cap" --pr-head "$(qh "$td/q-cap")" --pr-head-conclusion success
-    row 0 "merge_group over the cap -> check_workspace=1 rides along (rule (i)); the tier itself is owed FULL" '^check_workspace=1$' bash -c "$(replay mg-cap)"
+    row 0 "merge_group over the cap -> owed FULL; NO quick line (crates=/targets=/check_workspace=) leaks" '^OK-FULL-ONLY$' full_only "$(replay mg-cap)"
+    sed "s|^    printf .tier=full.nreason=queue owes FULL.*|&; printf 'crates=aprender-core\\\\ncheck_workspace=1\\\\n'|" "$T" > "$td/mutant-leak.sh"
+    row 0 "MUTANT: a real owe_full that leaks crates=/check_workspace=1 beside tier=full goes RED (BAD-QUICK-LINE-LEAK)" '^BAD-QUICK-LINE-LEAK$' full_only "bash '$td/mutant-leak.sh' --event merge_group --repo-root '$td/q-cap' --pr-head '$(qh "$td/q-cap")' --pr-head-conclusion success"
+    row 0 "MUTANT: a nonzero replay rc cannot pass full_only (BAD-RC-3)" '^BAD-RC-3$' full_only "echo tier=full; exit 3"
+    row 0 "MUTANT: an empty capture is BAD-EMPTY, never a pass" '^BAD-EMPTY$' full_only "true"
+    row 0 "MUTANT: a quick tier on an over-cap merge_group is BAD-NOT-FULL" '^BAD-NOT-FULL$' full_only "echo tier=quick; echo crates=aprender-core"
     cap push-leaf bash "$T" --event push --repo-root "$td/q-leaf"
     row 0 "push (a queue merge of one PR) -> quick with the PUSH own diff, not the whole workspace" "^crates=.*$leaf" bash -c "$(replay push-leaf)"
     row 0 "  ...and the reason names HEAD^1..HEAD, so the diff is auditable" 'HEAD\^1' bash -c "$(replay push-leaf)"
@@ -556,15 +562,15 @@ self_test() {
     row 0 "  (fixture) the squash queue ref really has ONE parent" '^ONE-PARENT$' bash -c "if git -C '$td/s-leaf' rev-parse -q --verify 'HEAD^2' >/dev/null; then echo TWO; else echo ONE-PARENT; fi"
     cap sq-leaf bash "$T" --event merge_group --repo-root "$td/s-leaf" --pr-head "$(qh "$td/s-leaf")" --pr-head-conclusion success
     row 0 "merge_group on a SQUASH queue ref, leaf crate -> FULL owed, not the PR's quick" '^tier=full$' bash -c "$(replay sq-leaf)"
-    row 0 "  ...with the PR's own crate ($leaf), re-derived from HEAD^1..HEAD" "^crates=.*$leaf" bash -c "$(replay sq-leaf)"
+    row 0 "  ...exactly tier=full and no quick line, for the PR crate ($leaf)" '^OK-FULL-ONLY$' full_only "$(replay sq-leaf)"
     cap sq-docs bash "$T" --event merge_group --repo-root "$td/s-docs" --pr-head "$(qh "$td/s-docs")" --pr-head-conclusion success
-    row 0 "merge_group on a SQUASH queue ref, roadmap entry only -> FULL owed: only a provably EMPTY diff stays none (sign-off r1)" '^tier=full$' bash -c "$(replay sq-docs)"
+    row 0 "merge_group on a SQUASH queue ref, roadmap entry only -> FULL owed, never none (sign-off r1)" '^tier=full$' bash -c "$(replay sq-docs)"
     row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
     row 0 "owe_full on empty or tier-less output falls CLOSED to full (sign-off r1 item 3)" '^tier=full$' bash -c "source <(sed -n '/^owe_full()/,/^}/p' '$T'); owe_full ''"
     row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" bash "$T" --event push --repo-root "$td/s-leaf"
     row 0 "push of a TAG (#5172) -> ONE tier line, full, over the same squash repo: never the refined diff" '^tier=full 1$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf'); printf '%s %s\\n' \"\$(printf '%s\\n' \"\$o\" | grep '^tier=' | head -n1)\" \"\$(printf '%s\\n' \"\$o\" | grep -c '^tier=')\""
     # MUTANT: a queue that lets a docs-only none through (the sign-off r1 item 1 hole) must leak tier=none.
-    sed 's|^        none)$|        none) printf "%s\\n" "$out" ;;\n        MUTNONE)|' "$T" > "$td/mutant-none.sh"
+    sed "s|^    printf .tier=full.nreason=queue owes FULL.*|    printf '%s\\n' \"\$out\"|" "$T" > "$td/mutant-none.sh"
     row 0 "mutant owe_full that passes a docs-only none through leaks tier=none -- the rows discriminate" 'MUTANT-NONE' bash -c "if bash '$td/mutant-none.sh' --event merge_group --repo-root '$td/s-docs' | grep -q '^tier=none$'; then echo MUTANT-NONE; else echo MUTANT-FULL; fi"
     # #3658 DOCS-ONLY on a pull_request (paths that exist in this tree).
     printf 'docs/roadmaps/roadmap.yaml\ndocs/audits/pp-066-plan-quorum.md\n' > "$td/d-docs.txt"
@@ -593,9 +599,11 @@ self_test() {
     row 0 "  (fixture) default git diff --name-only on the rename lists ONLY the new docs path -- the trap is real" '^docs/audits/lib\.rs$' git -C "$td/s-rename" diff --name-only HEAD^1 HEAD
     cap sq-rename bash "$T" --event merge_group --repo-root "$td/s-rename" --pr-head "$(qh "$td/s-rename")" --pr-head-conclusion success
     row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path)" '^tier=full$' bash -c "$(replay sq-rename)"
-    row 0 "  ...and the crate it left is in the selection" "^crates=.*$leaf" bash -c "$(replay sq-rename)"
+    row 0 "  ...exactly tier=full and no quick line (the rename guard itself is the push-arm rows below)" '^OK-FULL-ONLY$' full_only "$(replay sq-rename)"
     sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
-    row 0 "mutant without --no-renames reads the rename as docs-only -- the rows discriminate" 'MUTANT-NONE' bash -c "o=\$(bash '$td/mutant-renames.sh' --event merge_group --repo-root '$td/s-rename' --pr-head '$(qh "$td/s-rename")' --pr-head-conclusion success 2>&1); case \"\$o\" in *docs-only*) echo MUTANT-NONE ;; *) echo MUTANT-NOT-NONE ;; esac"
+    cap push-rename bash "$T" --event push --repo-root "$td/s-rename"
+    row 0 "push, a crate source RENAMED into docs/audits/ -> the crate it left IS selected (--no-renames; the merge_group arm is always full, so the push arm carries this guard)" "^crates=.*$leaf" bash -c "$(replay push-rename)"
+    row 0 "mutant without --no-renames on the push arm drops the left crate -- the rename rows go RED" 'MUTANT-DROPPED' bash -c "o=\$(bash '$td/mutant-renames.sh' --event push --repo-root '$td/s-rename' 2>&1); case \"\$o\" in *\"crates=\"*$leaf*) echo MUTANT-KEPT ;; *) echo MUTANT-DROPPED ;; esac"
     row 0 "ci/sections.yml (#4433) lists the pull_request touched paths through pr_touched_paths.sh, which keeps --no-renames" '^ALL-PRESENT$' contains_all "$TREE/ci/sections.yml" 'bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
     row 0 "  ...and the helper diffs with --no-renames" '^ALL-PRESENT$' contains_all "$TREE/scripts/ci/pr_touched_paths.sh" 'git diff --no-renames --name-only "$mb" "$head"'
     # #5391: main moves AFTER the PR branched. The PR touches crates/<leaf>; main's later commit

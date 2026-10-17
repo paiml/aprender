@@ -61,6 +61,8 @@ mod tools;
 mod types;
 #[cfg(feature = "native")]
 mod viz;
+#[cfg(feature = "native")]
+mod yaml;
 
 // Split modules for QA-002 compliance (<=500 lines per file)
 #[cfg(feature = "native")]

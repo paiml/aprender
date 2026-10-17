@@ -62,6 +62,10 @@ mod output;
 pub mod pipe;
 // #3745 S1: the surface the binary actually has, emitted by the binary.
 pub mod surface;
+// #3745 S3: release surfaces may not hand-list apr's verbs or flags. Test-only; the tree
+// scan is a LAB check that runs in guards-nightly.yml, never on a PR path.
+#[cfg(test)]
+mod hand_list_guard;
 
 pub use error::CliError;
 

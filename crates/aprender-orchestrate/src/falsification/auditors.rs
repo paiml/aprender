@@ -302,7 +302,8 @@ pub fn has_serde_config(project_path: &Path) -> SerdeConfigSupport {
         has_serde: content.contains("serde"),
         has_serde_yaml: content.contains("serde_yaml")
             || content.contains("serde_yml")
-            || content.contains("serde_yaml_ng"),
+            || content.contains("serde_yaml_ng")
+            || content.contains("serde-saphyr"),
         has_serde_json: content.contains("serde_json"),
         has_toml: content.contains("toml"),
         has_validator: content.contains("validator") || content.contains("garde"),

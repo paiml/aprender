@@ -27,8 +27,12 @@ const CAPABILITY_CONTRACT: &str = include_str!("../../contracts/apr-model-capabi
 /// Parsed once per invocation. A parse failure is an error, never a default: an
 /// empty registry rendered as "nothing is supported" would be a confident wrong
 /// answer, which is worse than a refusal.
-fn contract() -> Result<serde_yaml::Value> {
-    serde_yaml::from_str(CAPABILITY_CONTRACT).map_err(|e| {
+fn contract() -> Result<serde_json::Value> {
+    serde_saphyr::from_str_with_options(
+        CAPABILITY_CONTRACT,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
+    .map_err(|e| {
         CliError::ValidationFailed(format!(
             "the embedded capability contract did not parse: {e} \
              (crates/apr-cli/contracts/apr-model-capability-v1.yaml)"
@@ -36,15 +40,15 @@ fn contract() -> Result<serde_yaml::Value> {
     })
 }
 
-fn rows<'a>(doc: &'a serde_yaml::Value, key: &str) -> Result<&'a Vec<serde_yaml::Value>> {
-    doc.get(key).and_then(|v| v.as_sequence()).ok_or_else(|| {
+fn rows<'a>(doc: &'a serde_json::Value, key: &str) -> Result<&'a Vec<serde_json::Value>> {
+    doc.get(key).and_then(|v| v.as_array()).ok_or_else(|| {
         CliError::ValidationFailed(format!(
             "the embedded capability contract has no `{key}` sequence"
         ))
     })
 }
 
-fn str_of(v: &serde_yaml::Value, key: &str) -> String {
+fn str_of(v: &serde_json::Value, key: &str) -> String {
     v.get(key)
         .and_then(|x| x.as_str())
         .unwrap_or_default()
@@ -81,7 +85,7 @@ pub fn run(json: bool) -> Result<()> {
         let name = str_of(r, "op");
         let ok = r
             .get("gpu_supported")
-            .and_then(serde_yaml::Value::as_bool)
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
         let why = str_of(r, "reason");
         if ok {
@@ -96,7 +100,7 @@ pub fn run(json: bool) -> Result<()> {
 
     let (sup, unsup): (Vec<_>, Vec<_>) = quants.iter().partition(|r| {
         r.get("gpu_supported")
-            .and_then(serde_yaml::Value::as_bool)
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false)
     });
 
@@ -106,7 +110,7 @@ pub fn run(json: bool) -> Result<()> {
             "  yes  {:<8} ggml type {}",
             str_of(r, "name"),
             r.get("ggml_type")
-                .and_then(serde_yaml::Value::as_u64)
+                .and_then(serde_json::Value::as_u64)
                 .unwrap_or_default()
         );
     }
@@ -163,7 +167,7 @@ mod tests {
         for r in rows(&doc, "ops").expect("ops") {
             let ok = r
                 .get("gpu_supported")
-                .and_then(serde_yaml::Value::as_bool)
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             if !ok {
                 assert!(

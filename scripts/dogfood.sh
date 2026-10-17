@@ -1834,9 +1834,9 @@ if [ -f scripts/check_model_parity.sh ]; then
     mark model-parity FAIL "C14: this host has a CUDA device but the --features cuda build failed ($WORKLOG/c14-build.log) — claim 2 cannot be measured here"
   else
     if C14_OUT=$(bash scripts/check_model_parity.sh --manifest --apr "$C14_BIN" --out "$C14_DIR" 2>&1); then C14_RC=0; else C14_RC=$?; fi
-    if [ "$C14_RC" -eq 0 ] && printf '%s\n' "$C14_OUT" | grep -q '^PASS '; then
+    if [ "$C14_RC" -eq 0 ] && grep -q '^PASS ' <<<"$C14_OUT"; then
       mark model-parity PASS "C14: $(printf '%s\n' "$C14_OUT" | grep -c '^PASS ') manifest model(s) measured over >= 64 positions on $(hostname -s) with $C14_NOTE"
-    elif printf '%s\n' "$C14_OUT" | grep -q -E '^FAIL |^override:'; then
+    elif grep -q -E '^FAIL |^override:' <<<"$C14_OUT"; then
       mark model-parity FAIL "C14: $(printf '%s\n' "$C14_OUT" | grep -E '^FAIL |^override:' | head -1 | cut -c1-160)"
     else
       mark model-parity REPORT "C14 UNMEASURED on $(hostname -s): $(printf '%s\n' "$C14_OUT" | tail -1 | cut -c1-120) — proven on lambda and gx10 by make fleet-verify ROW=release, never here"

@@ -118,6 +118,13 @@ decide() {
     "K1-K5 hold; x86-main+determinism: $([ "$x" = 1 ] && echo reuse || echo "run ($why)"); mac-check: $([ "$mc" = 1 ] && echo reuse || echo "run ($(concl "$jobs" mac-check))")"
 }
 
+# The queue-entry override, FORCED: drop whatever decide said for these keys (or omitted) and write
+# the values explicitly, so a decide that leaves a key out cannot fail open (r6).
+force_no_reuse() {
+  { grep -v -E '^(x86|det|mac|cite|pr_head)=' || true; }
+  printf 'x86=0\ndet=0\nmac=0\ncite=\npr_head=\n'
+}
+
 resolve() {
   local ev="" ref="" m="" b="" repo="" root="."
   while [ $# -gt 0 ]; do
@@ -149,12 +156,15 @@ resolve() {
   if [ -z "$rid" ] || ! gh api "repos/$repo/actions/runs/$rid/jobs?filter=latest&per_page=100" > "$w/jobs.json" 2> /dev/null; then
     refuse "lookup failed: the jobs of run '${rid:-none}'"; rm -rf "${w:?}"; return 0
   fi
-  # 20X: the PR head ran the QUICK pool, so a queue entry never reuses its green. The key is still
-  # computed (its case table lives here) but x86 and det are clamped to 0 on merge_group.
-  decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" \
-    --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root" \
-    | sed -e 's/^x86=1$/x86=0/' -e 's/^det=1$/det=0/'
+  # 20X sign-off r2: the PR head ran the QUICK pool, so a queue entry never skips x86-main or
+  # determinism on its green and cites nothing: x86=0 det=0 cite= pr_head= whatever decide said.
+  # mac-check is not reused either (mac=0): the queue entry runs it itself. This is the ONE place the override lives (this sed over decide, then pinned by the resolve rows in --self-test).
+  local rc=0 res
+  res=$(decide --event "$ev" --queue-head "$m" --base "$b" --pr-head "$h" \
+    --runs "$w/runs.json" --jobs "$w/jobs.json" --repo-root "$root") || rc=$?
   rm -rf "${w:?}"
+  [ "$rc" -eq 0 ] || return "$rc"
+  force_no_reuse <<< "$res"
 }
 
 # ---------------------------------------------------------------- the push arm
@@ -398,8 +408,38 @@ STUB
       fail=$((fail + 1)); echo "FAIL resolve-$n: want '$want' got '$got' -- $(kv reason "$out")"; fi
   }
   local QREF="refs/heads/gh-readonly-queue/main/pr-4655-${B}"
-  rrow positive          "0 0 1" ""        "$H" "$QREF"
-  rrow short-ref         "0 0 1" ""        "$H" "gh-readonly-queue/main/pr-4655-${B}"
+  rrow positive          "0 0 0" ""        "$H" "$QREF"
+  rrow short-ref         "0 0 0" ""        "$H" "gh-readonly-queue/main/pr-4655-${B}"
+  # r4: "0 0 0" is also what a refusal answers, so the positive rows must prove resolve REACHED decide:
+  # decide's own reason (K1-K5 hold ...) is present and no refusal text ("lookup failed", "refus") is.
+  for ref in "$QREF" "gh-readonly-queue/main/pr-4655-${B}"; do
+    out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$ref" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
+    case "$(kv reason "$out")" in
+      "K1-K5 hold"*) pass=$((pass + 1)) ;;
+      *) fail=$((fail + 1)); echo "FAIL resolve-reached-decide: '$ref' answered 0 0 0 without decide's reason: $(kv reason "$out")" ;;
+    esac
+  done
+  # r7 (a): the override FORCES the five keys, so a decide that omits one cannot fail open.
+  local fo
+  fo=$(force_no_reuse <<< $'reason=kept\nx86=1\ndet=1')
+  if [ "$(kv x86 "$fo")$(kv det "$fo")$(kv mac "$fo")" = "000" ] && [ "$(kv reason "$fo")" = kept ] \
+    && [ "$(grep -c -E '^(x86|det|mac|cite|pr_head)=' <<< "$fo")" = 5 ]; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL force-no-reuse: omitted/over-asserted keys not forced: $fo"; fi
+  # r7 (b): the "K1-K5 hold" prefix the reached-decide rows key on is emitted by decide() itself.
+  local dbody
+  dbody=$(sed -n '/^decide() {/,/^}/p' "${BASH_SOURCE[0]}")
+  case "$dbody" in
+    *'"K1-K5 hold; '*) pass=$((pass + 1)) ;;
+    *) fail=$((fail + 1)); echo "FAIL decide-source: decide() no longer emits the K1-K5 hold prefix" ;;
+  esac
+  # r5: K1-K5 hold is emitted only by decide (above); a refused lookup must NOT carry it.
+  out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="pulls" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$QREF" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
+  case "$(kv reason "$out")" in
+    "K1-K5 hold"*) fail=$((fail + 1)); echo "FAIL refusal carries decide's K1-K5 reason: $(kv reason "$out")" ;;
+    *) pass=$((pass + 1)) ;;
+  esac
+  out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve --event merge_group --ref "$QREF" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
+  if [ -z "$(kv cite "$out")" ] && [ -z "$(kv pr_head "$out")" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL resolve-no-cite: a queue entry cites no PR head (cite=$(kv cite "$out") pr_head=$(kv pr_head "$out"))"; fi
   rrow no-pr-number      "0 0 0" ""        "$H" "refs/heads/main"
   rrow gh-pulls-fails    "0 0 0" "pulls/"  "$H" "$QREF"
   rrow gh-runs-fails     "0 0 0" "head_sha=" "$H" "$QREF"
@@ -482,6 +522,25 @@ STUB
   wire gate 'MG-REUSE-VERDICT-BEGIN'
   wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test]'
   wire gate '[ "$MST" = success ]'
+  # sign-off r3 item 4: only a pull_request may land on the pr-only pool; every other event
+  # (merge_group, push) takes the else-branch, which must be the clean-room pool. Evaluated per event.
+  lane() { # lane JOB EVENT -> the pool labels the job's runs-on picks for EVENT
+    local ro; ro=$(job "$1" | grep -m1 '^    runs-on:')
+    case "$ro" in
+      *"github.event_name == 'pull_request' &&"*)
+        if [ "$2" = pull_request ]; then ro=${ro%%||*}; else ro=${ro#*||}; fi ;;
+    esac
+    printf '%s' "$ro"
+  }
+  for j in x86-main x86-main-advisories workspace-test-shard; do
+    for ev in merge_group push; do
+      l=$(lane "$j" "$ev")
+      if grep -qF clean-room <<< "$l" && ! grep -qF pr-only <<< "$l"; then pass=$((pass + 1)); else
+        fail=$((fail + 1)); echo "FAIL wiring: $j on $ev does not land on clean-room (runs-on: $l)"; fi
+    done
+    if grep -qF pr-only <<< "$(lane "$j" pull_request)"; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL wiring: $j on pull_request no longer takes the pr-only pool"; fi
+  done
 
   # S1 (20X): mg-reuse runs on push only, so on merge_group it is SKIPPED and every dependent
   # runs only because its own `if:` carries !cancelled()/always() (a skipped need otherwise skips

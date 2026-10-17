@@ -3,7 +3,7 @@
 use super::{Constraints, FamilyInfo, KernelClass, FAMILY_YAMLS};
 
 /// Extract a YAML string value for a key from raw YAML text (simple line-based parse).
-/// Avoids needing serde_yaml for the family constraint extraction.
+/// Avoids needing a YAML parser for the family constraint extraction.
 pub(crate) fn yaml_str(text: &str, key: &str) -> Option<String> {
     let search = format!("{key}:");
     for line in text.lines() {

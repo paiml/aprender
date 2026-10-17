@@ -46,12 +46,16 @@ fn the_packaged_mirror_is_byte_identical_to_the_linted_source() {
 /// the table must actually carry the things the gate refuses without.
 #[test]
 fn the_table_declares_a_default_with_a_basis_and_at_least_one_model() {
-    let doc: serde_yaml::Value = serde_yaml::from_str(MIRROR).expect("mirror parses");
+    let doc: serde_json::Value = serde_saphyr::from_str_with_options(
+        MIRROR,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
+    .expect("mirror parses");
     let default = doc.get("default").expect("a `default` section");
     assert!(
         default
             .get("budget")
-            .and_then(serde_yaml::Value::as_u64)
+            .and_then(serde_json::Value::as_u64)
             .is_some(),
         "`default` must declare a budget"
     );
@@ -62,7 +66,7 @@ fn the_table_declares_a_default_with_a_basis_and_at_least_one_model() {
     );
     let models = doc
         .get("models")
-        .and_then(serde_yaml::Value::as_mapping)
+        .and_then(serde_json::Value::as_object)
         .expect("a `models` mapping");
     assert!(
         !models.is_empty(),
@@ -72,10 +76,10 @@ fn the_table_declares_a_default_with_a_basis_and_at_least_one_model() {
     // Every listed model either has a budget WITH a basis, or states why it is unmeasured.
     // A bare entry with neither is a silent refusal nobody can act on.
     for (k, v) in models {
-        let name = k.as_str().unwrap_or("<non-string key>");
+        let name = k.as_str();
         let has_budget = v
             .get("budget")
-            .and_then(serde_yaml::Value::as_u64)
+            .and_then(serde_json::Value::as_u64)
             .is_some();
         let has_basis = v
             .get("basis")

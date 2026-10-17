@@ -45,7 +45,7 @@ chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
 # CLI and configuration (native-only)
 clap = { version = "4.5", features = ["derive", "env"], optional = true }
-serde_yaml_ng = { version = "0.10", optional = true }
+serde-saphyr = { workspace = true, optional = true }
 toml = { version = "0.9", optional = true }
 
 # Async runtime (different for WASM vs native)
@@ -201,7 +201,7 @@ default = ["native", "rag", "agents", "inference"]
 # Native build with core features (lean: ~249 deps)
 native = [
     "clap",
-    "serde_yaml_ng",
+    "serde-saphyr",
     "toml",
     "tokio",
     "tracing",
@@ -320,7 +320,7 @@ sovereign-stack = [
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1", features = ["derive"] }
-serde_yaml_ng = "0.10"
+serde-saphyr = { workspace = true }
 
 [dev-dependencies]
 provable-contracts = { workspace = true }  # #4175: the shared in-tree rule (tree.rs) for tests; versioned, so it survives `cargo package`

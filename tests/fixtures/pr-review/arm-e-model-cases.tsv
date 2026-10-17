@@ -31,7 +31,11 @@ MATCH	opus-4-6	the model without the vendor prefix, which a harness may expose
 MATCH	sonnet-4-6-thinking	same, for sonnet
 MATCH	Claude-Opus-4-6	case must not matter; the check is -i
 MATCH	us.anthropic.claude-opus-4-6-v1:0	a bedrock-style id, still the same family
+MATCH	claude-sonnet-5-5	current quorum lane: the Sonnet 5.5 family
+MATCH	claude-haiku-5-5	current quorum lane: the Haiku 5.5 family
+MATCH	claude-opus-5-5	current cop model: same family as any Claude author
 NO-MATCH	gemini-3.1-pro-high	agy models: a genuinely different vendor and family
+NO-MATCH	gemini-4-argon-high	current quorum lane: a genuinely different vendor and family
 NO-MATCH	gemini-3.1-pro-low	agy models
 NO-MATCH	gemini-3.7-flash-high	agy models
 NO-MATCH	gemini-3.7-flash-medium	agy models

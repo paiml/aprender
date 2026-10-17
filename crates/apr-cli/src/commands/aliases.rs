@@ -21,7 +21,10 @@ const ALIASES_YAML: &str = include_str!("../../configs/aliases.yaml");
 fn aliases() -> &'static BTreeMap<String, String> {
     static MAP: OnceLock<BTreeMap<String, String>> = OnceLock::new();
     MAP.get_or_init(|| {
-        serde_yaml::from_str::<BTreeMap<String, String>>(ALIASES_YAML)
+        serde_saphyr::from_str_with_options::<BTreeMap<String, String>>(
+            ALIASES_YAML,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )
             .expect("CRUX-A-01: embedded configs/aliases.yaml must parse as str→str map")
     })
 }

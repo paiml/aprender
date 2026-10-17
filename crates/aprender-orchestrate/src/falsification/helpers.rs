@@ -215,7 +215,8 @@ fn detect_rust_schema_deps(cargo_content: &str) -> SchemaInfo {
         has_serde: cargo_content.contains("serde"),
         has_serde_yaml: cargo_content.contains("serde_yaml")
             || cargo_content.contains("serde_yml")
-            || cargo_content.contains("serde_yaml_ng"),
+            || cargo_content.contains("serde_yaml_ng")
+            || cargo_content.contains("serde-saphyr"),
         has_validator: cargo_content.contains("validator") || cargo_content.contains("garde"),
     }
 }
