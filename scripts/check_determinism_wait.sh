@@ -95,6 +95,10 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
         { printf 'FAIL  W10 the determinism job still runs on a pull_request head (it competes with the queue head for the ARM64 pool)\n'; bad=1; }
     [ "$(printf '%s\n' "$g" | grep -c -F '[ "$job:$EVT" = "DET:pull_request" ] && continue')" = 1 ] ||   # m:noskip
         { printf 'FAIL  W10 the gate does not skip DET:determinism-compare on pull_request only\n'; bad=1; }
+    # W10b the gate's EVT is the live event, not a literal: a hardcoded `EVT: pull_request` would
+    # exempt DET:determinism-compare on merge_group and tag runs and every check above would still pass.
+    [ "$(printf '%s\n' "$g" | grep -c -F 'EVT: ${{ github.event_name }}')" -ge 1 ] ||   # m:evtlit
+        { printf 'FAIL  W10 the gate step does not set EVT from github.event_name (a literal EVT would exempt determinism everywhere)\n'; bad=1; }
     # W8 the compare section: a continue-on-error would turn a failed download into a pass.
     n_coe=$(awk '/^  determinism-compare:$/{p=1; next} p && /^  [A-Za-z0-9_-]+:/{exit} p' "$secf" |
         grep -v -E '^[[:space:]]*#' | grep -c 'continue-on-error')
@@ -176,6 +180,8 @@ selftest() {
     check "$d/x3.yml" > /dev/null 2>&1; row X3 RED $? "a gate that reads a skipped determinism-compare on a PR (RED on every PR)"
     plant_file "$CI" "$d/x4.yml" '/^  gate:$/,/^    steps:$/!{s/"DET:pull_request" \] && continue/"DET:merge_group" ] \&\& continue/}'
     check "$d/x4.yml" > /dev/null 2>&1; row X4 RED $? "a gate that skips determinism-compare on merge_group instead of pull_request"
+    plant_file "$CI" "$d/x5.yml" '/^  gate:$/,/^    steps:$/!{s/EVT: \$\{\{ github\.event_name \}\}/EVT: pull_request/}'
+    check "$d/x5.yml" > /dev/null 2>&1; row X5 RED $? "a gate whose EVT is the literal pull_request (determinism exempt on every event)"
     plant "$d/w3c.yml" "s/^( +)(.*--sections 'determinism\\[ARM64\\],determinism-compare'.*)\$/\\1\\2\\n          FAT_ARTIFACT_WAIT_S: \"3600\"/"
     check "$d/w3c.yml" > /dev/null 2>&1; row W3c RED $? "a step-level FAT_ARTIFACT_WAIT_S 3600 under the job's \"0\""
     plant "$d/w5b.yml" "s/^( +)(.*)--sections 'determinism\\[ARM64\\],determinism-compare'(.*)\$/\\1# --sections 'determinism[ARM64],determinism-compare'\\n\\1\\2--sections 'determinism[ARM64]'\\3/"
