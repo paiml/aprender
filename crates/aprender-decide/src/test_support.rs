@@ -119,10 +119,10 @@ pub(crate) fn f32_b64(v: &serde_json::Value) -> Vec<f32> {
         .collect()
 }
 
-pub(crate) fn contract_yaml(name: &str) -> serde_yaml::Value {
+pub(crate) fn contract_yaml(name: &str) -> serde_json::Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../contracts/{name}"));
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
-    serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("parse {name}: {e}"))
+    serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_or_else(|e| panic!("parse {name}: {e}"))
 }
 
 /// `equations.<equation>.float_tolerance` from `contracts/laya-parity-v1.yaml`.

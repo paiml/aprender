@@ -76,7 +76,7 @@ fn expected(recipe_id: &str) -> Option<Expected> {
 fn vectors() -> Vec<(String, PathBuf)> {
     let gate = contract("laya-finetune-gate-v1.yaml");
     let entries = gate["demo"]["fail_closed_vectors"]
-        .as_sequence()
+        .as_array()
         .expect("demo.fail_closed_vectors");
     entries
         .iter()

@@ -176,6 +176,53 @@ fn load_path_door() {
     std::fs::remove_dir_all(&dir).expect("clean up");
 }
 
+/// `probe_policy.probe_task.criteria` keys of decide-apr-v1, in DOCUMENT order.
+/// `serde_json::Value` sorts map keys (its `preserve_order` feature is test-only), so the
+/// order check reads the keys through a visitor that keeps them as they appear.
+fn probe_criteria_in_document_order() -> Vec<String> {
+    struct Keys(Vec<String>);
+    impl<'de> serde::Deserialize<'de> for Keys {
+        fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            struct V;
+            impl<'de> serde::de::Visitor<'de> for V {
+                type Value = Keys;
+                fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    f.write_str("a mapping")
+                }
+                fn visit_map<A: serde::de::MapAccess<'de>>(
+                    self,
+                    mut m: A,
+                ) -> Result<Keys, A::Error> {
+                    let mut keys = Vec::new();
+                    while let Some((k, _)) = m.next_entry::<String, serde::de::IgnoredAny>()? {
+                        keys.push(k);
+                    }
+                    Ok(Keys(keys))
+                }
+            }
+            d.deserialize_map(V)
+        }
+    }
+    #[derive(serde::Deserialize)]
+    struct Task {
+        criteria: Keys,
+    }
+    #[derive(serde::Deserialize)]
+    struct Policy {
+        probe_task: Task,
+    }
+    #[derive(serde::Deserialize)]
+    struct Contract {
+        probe_policy: Policy,
+    }
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/decide-apr-v1.yaml");
+    let text = std::fs::read_to_string(&path).expect("read decide-apr-v1.yaml");
+    let c: Contract = serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
+        .expect("parse decide-apr-v1.yaml");
+    c.probe_policy.probe_task.criteria.0
+}
+
 /// Every constant the artifact restates equals `contracts/decide-apr-v1.yaml`.
 #[test]
 fn contract_mirror() {
@@ -218,7 +265,7 @@ fn contract_mirror() {
 
     // Probe inputs verbatim, and the synthetic probe task field by field.
     let inputs: Vec<&str> = c["probe_policy"]["inputs"]
-        .as_sequence()
+        .as_array()
         .expect("probe inputs")
         .iter()
         .map(|v| v.as_str().expect("probe input string"))
@@ -228,21 +275,22 @@ fn contract_mirror() {
     let task = Task::from_slice(PROBE_TASK.as_bytes()).expect("PROBE_TASK parses");
     assert_eq!(pt["type"].as_str(), Some("choice"));
     assert_eq!(pt["instructions"].as_str(), Some(task.instructions()));
-    let criteria = pt["criteria"].as_mapping().expect("probe criteria");
-    let names: Vec<&str> = criteria
-        .iter()
-        .map(|(key, v)| {
-            assert!(v.is_null(), "probe criteria carry no description");
-            key.as_str().expect("criterion name")
-        })
-        .collect();
-    assert_eq!(names, task.labels(), "criteria in document order");
+    let criteria = pt["criteria"].as_object().expect("probe criteria");
+    assert!(
+        criteria.values().all(serde_json::Value::is_null),
+        "probe criteria carry no description"
+    );
+    assert_eq!(
+        probe_criteria_in_document_order(),
+        task.labels(),
+        "criteria in document order"
+    );
     assert!(task.criteria().iter().all(|c| c.description.is_none()));
     assert_eq!(pt["k"].as_u64(), Some(task.labels().len() as u64));
 
     // Blob set, model type, the single key, schema and method.
     let blobs: Vec<&str> = c["blob_tensors"]
-        .as_sequence()
+        .as_array()
         .expect("blob_tensors")
         .iter()
         .map(|v| v.as_str().expect("blob name"))
@@ -266,10 +314,10 @@ fn contract_mirror() {
 
     // The manifest's field SET equals the contract's.
     let mut want: Vec<&str> = fields
-        .as_mapping()
+        .as_object()
         .expect("manifest.fields")
         .keys()
-        .map(|key| key.as_str().expect("field name"))
+        .map(|key| key.as_str())
         .collect();
     want.sort_unstable();
     let packed = super::inspect_manifest(&pack_tiny()).expect("manifest");
