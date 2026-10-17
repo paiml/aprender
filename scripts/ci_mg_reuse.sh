@@ -575,7 +575,6 @@ STUB
     if mgshape "$T/mut.yml" | grep -qF -- "$2"; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL mutant $1: mgshape did not report '$2'"; fi
   }
-  wire mg-reuse '[ "$EVT" != merge_group ] || printf '"'"'x86=0\ndet=0\n'"'"' >> "$GITHUB_OUTPUT"'
   if [ -n "$(mgshape /nonexistent/ci.yml 2>/dev/null)" ]; then pass=$((pass + 1)); else
     fail=$((fail + 1)); echo "FAIL mutant mgshape-unreadable: an unreadable workflow passed green (fails open)"; fi
   mgmut mg-if-old-merge_group "mg-reuse if names merge_group" "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
