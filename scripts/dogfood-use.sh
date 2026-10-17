@@ -49,7 +49,7 @@ printf 'dogfood-use: %s\n  %s\n' "$BIN" "$VERSION_LINE"
 
 # Provenance: the binary must carry the commit under test. A dogfood run against
 # a binary built from something else proves nothing about this release.
-if HEAD_SHA=$(git rev-parse --short HEAD 2>/dev/null); then
+if HEAD_SHA=$(git rev-parse --short=9 HEAD 2>/dev/null); then
     case "$VERSION_LINE" in
         *"$HEAD_SHA"*) ok "binary reports HEAD ($HEAD_SHA)" ;;
         *) bad "binary does NOT report HEAD ($HEAD_SHA) — refusing to dogfood a foreign build: $VERSION_LINE" ;;
