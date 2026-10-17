@@ -188,7 +188,7 @@ Renacer (Spanish: "to be reborn") is a next-generation binary inspection and tra
 - ✅ **Golden Trace Comparison** - Compare traces for behavioral equivalence
 - ✅ **EquivalenceScore** - Syscall match, timing variance, semantic equivalence metrics
 - ✅ **LCS-Based Matching** - Longest common subsequence algorithm for syscall alignment
-- ✅ **entrenar Integration** - Cross-project support for ML experiment tracking (ENT-EPIC-001)
+- ✅ **aprender-train Integration** - Cross-project support for ML experiment tracking (ENT-EPIC-001)
 
 ### Process-Level Tracing (Sprint 59 - SPEC-057)
 - ✅ **Deep Process Tracing** - ptrace-based syscall collection for ptop integration
@@ -674,7 +674,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 - See [CHANGELOG.md](CHANGELOG.md) for details
 
 ### v0.6.6 ✅ (2025-11-30)
-- Experiment Span Tracking - ML experiment integration with entrenar (REN-001)
+- Experiment Span Tracking - ML experiment integration with aprender-train (REN-001)
 - SpanType::Experiment variant for ML training spans
 - ExperimentMetadata struct (model_name, epoch, step, loss, metrics)
 - Golden trace comparison API with EquivalenceScore

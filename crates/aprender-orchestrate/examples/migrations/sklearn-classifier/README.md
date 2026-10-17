@@ -273,5 +273,5 @@ Benchmarks on Iris dataset (scaled to 150K samples for timing):
 
 - [scikit-learn Documentation](https://scikit-learn.org/stable/)
 - [Aprender ML Library](https://github.com/paiml/aprender)
-- [Batuta Specification](../../../docs/specifications/sovereign-ai-spec.md)
+- [Batuta Specification](../../../docs/specifications/archive/sovereign-ai-spec.md)
 - [Production ML in Rust](https://www.arewelearningyet.com/)

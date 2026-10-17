@@ -5,7 +5,7 @@
 
 **aprender-test-cli** is the CLI tool for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
 
-> **Note:** The library is published separately as [jugar-probar](https://crates.io/crates/aprender-test-lib).
+> **Note:** The library is published separately as [aprender-test-lib](https://crates.io/crates/aprender-test-lib).
 
 ## Installation
 

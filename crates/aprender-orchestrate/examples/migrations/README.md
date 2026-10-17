@@ -319,7 +319,7 @@ Found a bug or want to add more examples? See [CONTRIBUTING.md](../../CONTRIBUTI
 ## References
 
 - [Batuta Documentation](../../docs/)
-- [Batuta Specification](../../docs/specifications/sovereign-ai-spec.md)
+- [Batuta Specification](../../docs/specifications/archive/sovereign-ai-spec.md)
 - [Trueno Tensor Library](https://github.com/paiml/aprender/tree/main/crates/aprender-compute)
 - [Aprender ML Library](https://github.com/paiml/aprender)
 - [Realizar Inference Engine](https://github.com/paiml/aprender/tree/main/crates/aprender-serve)

@@ -25,7 +25,7 @@ cargo build --release -p aprender-viz-ttop
 - **14 Panels**: CPU, Memory, Disk, Network, Process, GPU, Battery, Sensors, PSI, System, Connections, Treemap, Files, Containers
 - **GPU Monitoring**: NVIDIA (nvidia-smi) + AMD (sysfs gpu_busy_percent, hwmon)
 - **Deterministic Mode**: Reproducible rendering for testing and CI
-- **YAML Configuration**: `~/.config/ttop/config.yaml`
+- **YAML Configuration**: `~/.config/ptop/config.yaml`
 
 ## Panels
 
@@ -88,7 +88,7 @@ aprender-viz-ttop --deterministic --render-once --width 120 --height 40
 aprender-viz-ttop --explode gpu
 
 # Dump default config
-aprender-viz-ttop --dump-config > ~/.config/ttop/config.yaml
+aprender-viz-ttop --dump-config > ~/.config/ptop/config.yaml
 ```
 
 ## GPU Support

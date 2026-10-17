@@ -165,17 +165,17 @@ details.
 +-------------------------------------------------------------+
 |                    aprender-orchestrate                     |
 +-------------------------------------------------------------+
-|  whisper-apr (ASR)  |  realizar (Inference)  | pacha (Reg)  |
-+---------------------+------------------------+--------------+
-|   aprender (ML)   |  entrenar (Training)  | jugar (Games)  |
-+-------------------+-----------------------+----------------+
-|   simular (Sim)   |   profesor (Edu)      |                |
-+-------------------+-----------------------+----------------+
-|                 repartir (Distributed Compute)              |
+| whisper-apr (ASR) |   aprender-serve   | aprender-registry  |
++-------------------+--------------------+--------------------+
+|   aprender (ML)   |   aprender-train   |   jugar (Games)    |
++-------------------+--------------------+--------------------+
+| aprender-simulate |   profesor (Edu)   |                    |
++-------------------+--------------------+--------------------+
+|          aprender-distribute (Distributed Compute)          |
 +-------------------------------------------------------------+
-|  trueno-zram (Compression)  |  trueno-ublk (Block Device)  |
-+-----------------------------+------------------------------+
-|               trueno (SIMD/GPU Compute Primitives)          |
+| aprender-zram (Compression)  |  trueno-ublk (Block Device)  |
++------------------------------+------------------------------+
+|        aprender-compute (SIMD/GPU Compute Primitives)       |
 +-------------------------------------------------------------+
 ```
 

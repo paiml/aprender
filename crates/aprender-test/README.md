@@ -23,10 +23,10 @@
 
 | Crate | Purpose | Install |
 |-------|---------|---------|
-| **[jugar-probar](https://crates.io/crates/aprender-test-lib)** | Library for writing tests | `cargo add aprender-test-lib --dev` |
+| **[aprender-test-lib](https://crates.io/crates/aprender-test-lib)** | Library for writing tests | `cargo add aprender-test-lib --dev` |
 | **[aprender-test-cli](https://crates.io/crates/aprender-test-cli)** | CLI tool for running tests | `cargo install aprender-test-cli` |
 
-### Library (jugar-probar)
+### Library (aprender-test-lib)
 
 Add to your `Cargo.toml`:
 
@@ -166,7 +166,7 @@ fn test_calculator_gui() {
 | `tui` | TUI testing support (default) | ratatui, crossterm |
 | `browser` | CDP browser automation | chromiumoxide, tokio |
 | `runtime` | WASM runtime testing | wasmtime |
-| `derive` | Type-safe derive macros | probar-derive |
+| `derive` | Type-safe derive macros | aprender-test-derive |
 | `docker` | Docker cross-browser testing | bollard, tokio |
 | `gpu` | GPU compute support | trueno |
 | `brick` | Brick Architecture for widget testing | — |
@@ -267,7 +267,7 @@ dispatcher.dispatch_with_detail(EventDetail::json(&transcript_data))?;
 ### Run the Brick Example
 
 ```bash
-cargo run --example brick_demo -p jugar-probar
+cargo run --example brick_demo -p aprender-test-lib
 ```
 
 ## Visual Regression Testing
@@ -324,7 +324,7 @@ let diff = perceptual_diff(pixel_a, pixel_b);
 ### Run the Visual Regression Example
 
 ```bash
-cargo run --example visual_regression_demo -p jugar-probar
+cargo run --example visual_regression_demo -p aprender-test-lib
 ```
 
 ## Usage
@@ -362,7 +362,7 @@ aprender-test-cli serve --port 8080 --cors
 
 ```bash
 # Run the GUI coverage example
-cargo run --example gui_coverage -p jugar-probar
+cargo run --example gui_coverage -p aprender-test-lib
 ```
 
 Output:
@@ -436,20 +436,19 @@ Probar is built on pragmatic testing principles:
 
 Run any example:
 ```bash
-cargo run --example <name> -p jugar-probar
+cargo run --example <name> -p aprender-test-lib
 ```
 
 ## Project Structure
 
 ```
-probar/
-├── crates/
-│   ├── probar/              # jugar-probar library
-│   ├── probar-cli/          # aprender-test-cli
-│   ├── probar-derive/       # Derive macros
-│   └── showcase-calculator/ # 100% coverage demo
-├── book/                    # mdBook documentation
-└── docs/                    # Specifications
+crates/
+├── aprender-test/            # Probar project docs, book, examples
+├── aprender-test-lib/        # library (lib name jugar_probar)
+├── aprender-test-cli/        # CLI
+├── aprender-test-derive/     # derive macros
+├── aprender-test-js-gen/     # JS generation
+└── aprender-test-showcase/   # 100% coverage demo
 ```
 
 ## Contributing

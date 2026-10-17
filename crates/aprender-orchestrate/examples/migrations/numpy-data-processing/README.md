@@ -168,5 +168,5 @@ Typical performance characteristics (varies by hardware):
 
 - [NumPy Documentation](https://numpy.org/doc/)
 - [Trueno Tensor Library](https://github.com/paiml/aprender/tree/main/crates/aprender-compute)
-- [Batuta Specification](../../../docs/specifications/sovereign-ai-spec.md)
+- [Batuta Specification](../../../docs/specifications/archive/sovereign-ai-spec.md)
 - [Rust Performance Book](https://nnethercote.github.io/perf-book/)
