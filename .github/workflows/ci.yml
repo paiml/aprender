@@ -144,11 +144,15 @@ jobs:
       - uses: actions/checkout@v7
       - name: The reuse key's case table (hermetic)
         run: bash scripts/ci_mg_reuse.sh --self-test
+      - name: The fat wait is cancel-aware and the teardown still runs on cancel
+        run: |
+          setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
+          setsid --wait bash scripts/check_ci_wait_cancel.sh
 
   x86-main:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 240
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
@@ -251,7 +255,9 @@ jobs:
           if-no-files-found: error
       - name: Sections (wait for every one to finish)
         id: wait
-        if: always()
+        # A cancel must stop this poll (orphan queue runs held runners, 2026-10-16);
+        # the teardown below keeps always() and still reaps the containers.
+        if: ${{ !cancelled() }}
         run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
       # #4948: a cancelled run never reaches a section's own container removal,
       # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
@@ -303,7 +309,7 @@ jobs:
   x86-main-advisories:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -380,7 +386,8 @@ jobs:
           if-no-files-found: error
       - name: Sections (wait for the compare)
         id: wait
-        if: always()
+        # Cancel-aware like x86-main (the teardown below still reaps on cancel).
+        if: ${{ !cancelled() }}
         run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
       # #4948: a cancelled run never reaches a section's own container removal,
       # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
@@ -423,7 +430,7 @@ jobs:
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
-    runs-on: [self-hosted, Linux, X64, clean-room]   # same pool as x86-main
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-only"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}   # same pool as x86-main
     timeout-minutes: 180
     strategy:
       fail-fast: false

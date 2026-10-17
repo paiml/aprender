@@ -614,7 +614,10 @@ fn preflight_manifest_guard(
         ))
     })?;
 
-    let parsed: serde_yaml::Value = serde_yaml::from_str(&manifest_src)
+    let parsed: serde_json::Value = serde_saphyr::from_str_with_options(
+        &manifest_src,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
         .map_err(|e| CliError::ValidationFailed(format!("Manifest YAML parse error: {e}")))?;
 
     let declared_sha = parsed
@@ -629,7 +632,7 @@ fn preflight_manifest_guard(
         .ok_or_else(|| {
             CliError::ValidationFailed("Manifest missing required field: artifact_url".into())
         })?;
-    let declared_size = parsed.get("size_bytes").and_then(serde_yaml::Value::as_u64);
+    let declared_size = parsed.get("size_bytes").and_then(serde_json::Value::as_u64);
 
     let artifact_basename = artifact_url
         .rsplit('/')

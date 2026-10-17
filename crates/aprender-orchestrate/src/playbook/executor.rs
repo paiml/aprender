@@ -48,7 +48,7 @@ pub struct RunConfig {
     pub dry_run: bool,
 
     /// Parameter overrides from CLI
-    pub param_overrides: HashMap<String, serde_yaml_ng::Value>,
+    pub param_overrides: HashMap<String, serde_json::Value>,
 }
 
 /// Result of a playbook run

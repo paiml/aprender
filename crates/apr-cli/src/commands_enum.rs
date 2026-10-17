@@ -1067,3 +1067,7 @@ pub enum DebugCommands {
 #[cfg(all(test, feature = "training"))]
 #[path = "code_output_format_help_tests.rs"]
 mod code_output_format_help_tests;
+
+#[cfg(test)]
+#[path = "ptx_help_marker_tests.rs"]
+mod ptx_help_marker_tests;

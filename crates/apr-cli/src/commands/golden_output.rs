@@ -357,11 +357,11 @@ fn thinking_on_budget_override() -> std::result::Result<Option<(usize, String)>,
 /// different model (#3907).
 #[cfg(feature = "inference")]
 fn thinking_on_budget_row(
-    v: &serde_yaml::Value,
+    v: &serde_json::Value,
     pat: &str,
     model_file: &str,
 ) -> std::result::Result<(usize, String), String> {
-    let Some(b) = v.get("budget").and_then(serde_yaml::Value::as_u64) else {
+    let Some(b) = v.get("budget").and_then(serde_json::Value::as_u64) else {
         let why = v
             .get("why_unmeasured")
             .and_then(|x| x.as_str())
@@ -384,27 +384,59 @@ fn thinking_on_budget_row(
     Ok((usize::try_from(b).unwrap_or(0), format!("{pat}: {basis}")))
 }
 
+/// A YAML mapping read in file order. `serde_json::Map` is sorted unless the build turns on `preserve_order` (not relied on here), and
+/// "the first pattern that matches" must mean the first one written (#5209).
+#[cfg(feature = "inference")]
+#[derive(Default)]
+struct InFileOrder(Vec<(String, serde_json::Value)>);
+
+#[cfg(feature = "inference")]
+impl<'de> serde::Deserialize<'de> for InFileOrder {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        struct Rows;
+        impl<'de> serde::de::Visitor<'de> for Rows {
+            type Value = InFileOrder;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a mapping of model patterns")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<InFileOrder, A::Error> {
+                let mut rows = Vec::new();
+                while let Some(row) = map.next_entry()? {
+                    rows.push(row);
+                }
+                Ok(InFileOrder(rows))
+            }
+        }
+        d.deserialize_map(Rows)
+    }
+}
+
+/// The `models` rows of the thinking-budget table, in file order.
+#[cfg(feature = "inference")]
+#[derive(serde::Deserialize)]
+struct ModelRows {
+    #[serde(default)]
+    models: InFileOrder,
+}
+
 /// The first `models` pattern that matches `model_file`, or `None` when the
 /// model is unlisted and the `default` row applies.
 #[cfg(feature = "inference")]
 fn thinking_on_budget_match(
-    doc: &serde_yaml::Value,
+    models: &[(String, serde_json::Value)],
     model_file: &str,
 ) -> Option<std::result::Result<(usize, String), String>> {
-    let models = doc.get("models").and_then(|m| m.as_mapping())?;
-    for (k, v) in models {
-        let Some(pat) = k.as_str() else { continue };
-        if glob_match(pat, model_file) {
-            return Some(thinking_on_budget_row(v, pat, model_file));
-        }
-    }
-    None
+    let (pat, v) = models.iter().find(|(pat, _)| glob_match(pat, model_file))?;
+    Some(thinking_on_budget_row(v, pat, model_file))
 }
 
 /// The `default` row, for a model no pattern names.
 #[cfg(feature = "inference")]
 fn thinking_on_budget_default(
-    doc: &serde_yaml::Value,
+    doc: &serde_json::Value,
 ) -> std::result::Result<(usize, String), String> {
     let d = doc.get("default").ok_or_else(|| {
         "contracts/thinking-budgets-v1.yaml has no `default` and this model is unlisted (#3907)"
@@ -412,7 +444,7 @@ fn thinking_on_budget_default(
     })?;
     let b = d
         .get("budget")
-        .and_then(serde_yaml::Value::as_u64)
+        .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| "`default` declares no `budget` (#3907)".to_string())?;
     let basis = d.get("basis").and_then(|x| x.as_str()).unwrap_or("").trim();
     if basis.is_empty() {
@@ -426,9 +458,17 @@ fn thinking_on_budget_for(model_file: &str) -> std::result::Result<(usize, Strin
     if let Some(over) = thinking_on_budget_override()? {
         return Ok(over);
     }
-    let doc: serde_yaml::Value = serde_yaml::from_str(THINKING_BUDGETS)
-        .map_err(|e| format!("the embedded thinking-budget table did not parse: {e} (#3907)"))?;
-    if let Some(hit) = thinking_on_budget_match(&doc, model_file) {
+    let doc: serde_json::Value = serde_saphyr::from_str_with_options(
+        THINKING_BUDGETS,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
+    .map_err(|e| format!("the embedded thinking-budget table did not parse: {e} (#3907)"))?;
+    let rows: ModelRows = serde_saphyr::from_str_with_options(
+        THINKING_BUDGETS,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
+    .map_err(|e| format!("the embedded thinking-budget table did not parse: {e} (#3907)"))?;
+    if let Some(hit) = thinking_on_budget_match(&rows.models.0, model_file) {
         return hit;
     }
     thinking_on_budget_default(&doc)
@@ -1282,7 +1322,7 @@ fn throughput_apr(
 
 #[cfg(all(test, feature = "inference"))]
 mod thinking_budget_resolution {
-    use super::{glob_match, thinking_on_budget_for};
+    use super::{glob_match, thinking_on_budget_for, thinking_on_budget_match, ModelRows};
 
     /// `APR_THINKING_ON_BUDGET` is process-global and libtest runs these in parallel:
     /// `the_probe_override_is_labelled_as_a_probe` sets it while a sibling resolves a
@@ -1339,6 +1379,20 @@ mod thinking_budget_resolution {
         assert_eq!(budget, 8192);
         assert!(basis.contains("PROBE OVERRIDE"), "{basis}");
         assert!(basis.contains("not a measurement"), "{basis}");
+    }
+
+    /// #5209: overlapping patterns resolve in FILE order; `zeta-*` is written first and
+    /// sorts after `*`, so a sorted map would pick `*`.
+    #[test]
+    fn overlapping_patterns_resolve_in_file_order() {
+        let rows: ModelRows = serde_saphyr::from_str_with_options(
+            "models:\n  \"zeta-*\":\n    budget: 7\n    basis: z\n  \"*\":\n    budget: 9\n    basis: a\n",
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )
+        .expect("parses");
+        let hit =
+            thinking_on_budget_match(&rows.models.0, "zeta-1.gguf").expect("a pattern matches");
+        assert_eq!(hit.expect("budgeted"), (7, "zeta-*: z".to_string()));
     }
 
     #[test]

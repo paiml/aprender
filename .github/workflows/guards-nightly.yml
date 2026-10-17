@@ -77,6 +77,13 @@ jobs:
     # a nightly on a shared 32-core host pays contention a PR job does not and
     # nothing is blocked while it waits.
     timeout-minutes: 60
+    # PP-19: this job runs `--ignored` tests on the shared X64 clean-room host,
+    # so it joins the repo-wide `perf-intel` group (the one nightly-bench's
+    # `measure` and beat-speed-nightly declare) and serialises against them.
+    # Enforced by scripts/check_perf_concurrency_groups.sh.
+    concurrency:
+      group: perf-intel
+      cancel-in-progress: false
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       # Same shape as guard-cargo (ci.yml). On a schedule/dispatch run there is
@@ -173,6 +180,8 @@ jobs:
         run: setsid --wait bash scripts/tests/compute_row_zero_tests_test.sh --mutants
       - name: shared-checkout shallow lock case table and mutants (#5025, LAB)
         run: setsid --wait bash scripts/shared_checkout_no_shallow.sh --mutants
+      - name: nextest list-wrapper case table (#5298, LAB)
+        run: setsid --wait bash scripts/ci/nextest_list_wrapper.sh --self-test
       - name: aprender-core builds for wasm32
         run: setsid --wait bash scripts/check_wasm32_core_builds.sh
       - name: No test may assert about the fd 0 it inherited
@@ -246,6 +255,45 @@ jobs:
           # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
           DR_ENV=()
           dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
+      # The hand-list guard (#3745 S3) and the ladder gap (#5231). LAB, not GATE: they run
+      # here, never on a PR, merge-queue or release path. Their case tables run with the
+      # apr-cli lib tests; these two steps run the #[ignore]d tree scan and ladder-gap
+      # requirement. Each red reaches ONE ticket with ONE owner through its own opener
+      # below (its label; a ticket already carrying it is commented, never duplicated).
+      - name: Release surfaces may not hand-list apr verbs or flags (#3745 S3)
+        id: lab_hand_list
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/hand-list.log") 2>&1
+          cargo test -p apr-cli --lib -- --ignored --exact hand_list_guard::tests::no_release_surface_hand_lists_apr_verbs_or_flags
+      - name: The model ladder owes cells to every model-cell command (#5231)
+        id: lab_ladder_gap
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/ladder-gap.log") 2>&1
+          cargo test -p apr-cli --lib -- --ignored --exact hand_list_guard::tests::the_ladder_owes_every_model_cell_command
+      - name: A red hand-list night opens or updates its one LAB ticket (#3745)
+        if: failure() && steps.lab_hand_list.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-hand-list --title "LAB: a release surface hand-lists apr verbs or flags (#3745)" \
+            --owner rex --log "$RUNNER_TEMP/hand-list.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red ladder-gap night opens or updates its one LAB ticket (#5231)
+        if: failure() && steps.lab_ladder_gap.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-ladder-gap --title "LAB: the model ladder owes cells to model-cell commands (ladder-gap, #3745)" \
+            --owner aprender-a7 --log "$RUNNER_TEMP/ladder-gap.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       # #5182 (GATE/LAB). The two ratchets that left the PR path. On a schedule
       # run HEAD *is* origin/main, so merge-base(HEAD, origin/main) is HEAD and a
       # shrink-only comparison against it can never fail. The comparand is
