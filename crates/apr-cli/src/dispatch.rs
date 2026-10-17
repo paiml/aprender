@@ -806,38 +806,7 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             crate::pipe::with_stdin_support(file, |p| tensors::run(p, s, f.as_deref(), j, l))
         }
 
-        Commands::Diff {
-            file1,
-            file2,
-            weights,
-            values,
-            filter,
-            limit,
-            transpose_aware,
-            json,
-            quant_roundtrip,
-            threshold,
-            no_threshold,
-        } => {
-            let json = *json || cli.json;
-            crate::error::resolve_model_path(file1).and_then(|r1| {
-                let r2 = crate::error::resolve_model_path(file2)?;
-                if *quant_roundtrip {
-                    // CRUX-B-20: per-tensor quant roundtrip error report.
-                    return dispatch_quant_roundtrip(&r1, &r2, *threshold, *no_threshold, json);
-                }
-                diff::run(
-                    &r1,
-                    &r2,
-                    *weights,
-                    *values,
-                    filter.as_deref(),
-                    *limit,
-                    *transpose_aware,
-                    json,
-                )
-            })
-        }
+        Commands::Diff { .. } => return dispatch_diff_command(cli),
 
         _ => return None,
     })
@@ -1272,6 +1241,45 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         _ => return None,
     })
+}
+
+/// `apr diff`: split out of [`dispatch_diagnostic_commands`] to keep it under the
+/// complexity threshold (#5227). `None` when the command is not `diff`.
+fn dispatch_diff_command(cli: &Cli) -> Option<Result<(), CliError>> {
+    let Commands::Diff {
+        file1,
+        file2,
+        weights,
+        values,
+        filter,
+        limit,
+        transpose_aware,
+        json,
+        quant_roundtrip,
+        threshold,
+        no_threshold,
+    } = cli.command.as_ref()
+    else {
+        return None;
+    };
+    Some(crate::error::resolve_model_path(file1).and_then(|r1| {
+        let r2 = crate::error::resolve_model_path(file2)?;
+        if *quant_roundtrip {
+            // CRUX-B-20: per-tensor quant roundtrip error report.
+            dispatch_quant_roundtrip(&r1, &r2, *threshold, *no_threshold, *json || cli.json)
+        } else {
+            diff::run(
+                &r1,
+                &r2,
+                *weights,
+                *values,
+                filter.as_deref(),
+                *limit,
+                *transpose_aware,
+                *json || cli.json,
+            )
+        }
+    }))
 }
 
 #[cfg(all(test, feature = "inference"))]
