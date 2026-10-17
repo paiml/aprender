@@ -507,7 +507,7 @@ STUB
   wire x86-main 'needs: [mg-reuse]'
   wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}"
   wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
-  wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}"
+  wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}"
   # Q6 quorum, C324: mac-check is LAB and left ci.yml (nightly.yml now). The `mac` key is
   # still computed above; ci.yml must neither run the job nor export the key.
   if [ -z "$(job mac-check)" ]; then pass=$((pass + 1)); else
