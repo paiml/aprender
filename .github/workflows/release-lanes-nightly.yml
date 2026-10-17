@@ -64,7 +64,7 @@ jobs:
   # measured, or not_measured (this job fails and every job below is skipped), never github.sha; a dispatch, github.sha.
   pick:
     name: pick C
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]   # #5435: pure shell+gh, arch-neutral
     timeout-minutes: 5
     outputs:
       c: ${{ steps.c.outputs.c }}

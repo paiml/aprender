@@ -465,8 +465,9 @@ STUB
       red) [ "${got##*:}" != 0 ] ;;
     esac && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL verdict-$n: want $want got '$got'"; }
   }
-  vrow reuse-ok             1   merge_group success 1 1 success
+  vrow red-mg-reuse-never   red merge_group success 1 1 success
   vrow live-pull_request    0   pull_request skipped "" "" skipped
+  vrow live-mg-skipped      0   merge_group skipped "" "" skipped
   vrow live-mg-said-run     0   merge_group success 0 0 skipped
   vrow live-mg-job-failed   0   merge_group failure "" "" skipped
   vrow red-advisories-fail  red merge_group success 1 1 failure
@@ -477,6 +478,8 @@ STUB
   vrow red-mg-failed-flag1  red merge_group failure 1 1 success
   vrow red-advisories-ran-live red merge_group success 0 0 success
   vrow reuse-push-ok        1   push success 1 1 success
+  vrow red-push-det-not-1   red push success 1 0 success
+  vrow red-push-x86-not-1   red push success 0 1 success
   vrow live-push-said-run   0   push success 0 0 skipped
   vrow live-push-mg-failed  0   push failure "" "" skipped
   vrow live-push-pre-t43    0   push skipped "" "" skipped
@@ -495,7 +498,7 @@ STUB
     if grep -qF -- "$2" <<<"$t"; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL wiring: job '$1' lacks: $2"; fi
   }
-  wire mg-reuse "if: github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')"
+  wire mg-reuse "if: github.event_name == 'push' && github.ref == 'refs/heads/main'"
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh --self-test'
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF"'
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE"'
@@ -538,6 +541,49 @@ STUB
     if grep -qF pr-only <<< "$(lane "$j" pull_request)"; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL wiring: $j on pull_request no longer takes the pr-only pool"; fi
   done
+
+  # S1 (20X): mg-reuse runs on push only, so on merge_group it is SKIPPED and every dependent
+  # runs only because its own `if:` carries !cancelled()/always() (a skipped need otherwise skips
+  # the job). Scoped to the job: the `if:` is mg-reuse's own 4-space key, never a string found
+  # anywhere in the file; a merge_group in it would let a queue entry reuse. Each check has a
+  # mutant that must go RED (the same-string-in-another-job mutant is the unanchored-grep hole).
+  mgshape() { # mgshape FILE -> one line per violation
+    awk -v tok='(^|[^A-Za-z0-9_-])mg-reuse($|[^A-Za-z0-9_-])' -v want="if: github.event_name == 'push' && github.ref == 'refs/heads/main'" '
+      /^  [A-Za-z0-9_-]+:$/ { j = $1; sub(/:$/, "", j); seen[j] = 1; next }
+      /^    if:/    { jif[j] = $0; sub(/^    /, "", jif[j]) }
+      /^    needs:/ { inn = 1; if ($0 ~ tok) dep[j] = 1; next }
+      inn && /^      / { if ($0 ~ tok) dep[j] = 1; next }
+      /^    [A-Za-z]/ { inn = 0 }
+      END {
+        if (jif["mg-reuse"] != want) print "mg-reuse job-level if is not the push-only key: [" jif["mg-reuse"] "]"
+        if (jif["mg-reuse"] ~ /merge_group/) print "mg-reuse if names merge_group: a queue entry could reuse"
+        n = split("x86-main determinism x86-main-advisories ci-gate gate", must, " ")
+        for (i = 1; i <= n; i++) {
+          if (!(must[i] in seen)) print "job " must[i] " is missing from the workflow"
+          else if (!(must[i] in dep)) print "job " must[i] " no longer needs mg-reuse (its position in the chain is unproven)"
+        }
+        for (k in dep) if (jif[k] !~ /!cancelled\(\)|always\(\)/) print "job " k " needs mg-reuse but its if lacks !cancelled()/always(): skipped with it on merge_group"
+      }' "$1" || echo "mgshape: awk failed on $1 (fail closed)"
+  }
+  local ms; ms=$(mgshape "$wf"); [ -s "$wf" ] || ms="${ms:+$ms; }mgshape: $wf is missing or empty"
+  if [ -z "$ms" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: $ms"; fi
+  mgmut() { # mgmut NAME EXPECTED_VIOLATION SED_EXPR: the mutant must differ from ci.yml and mgshape must name the violation
+    sed -E "$3" "$wf" > "$T/mut.yml"
+    if [ ! -s "$T/mut.yml" ] || cmp -s "$wf" "$T/mut.yml"; then
+      fail=$((fail + 1)); echo "FAIL mutant $1: the sed did not change ci.yml (a mutant that cannot fail)"; return
+    fi
+    if mgshape "$T/mut.yml" | grep -qF -- "$2"; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL mutant $1: mgshape did not report '$2'"; fi
+  }
+  if [ -n "$(mgshape /nonexistent/ci.yml 2>/dev/null)" ]; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL mutant mgshape-unreadable: an unreadable workflow passed green (fails open)"; fi
+  mgmut mg-if-old-merge_group "mg-reuse if names merge_group" "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
+  mgmut mg-if-removed-string-elsewhere "is not the push-only key" "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
+  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
+  mgmut determinism-if-loses-cancelled "job determinism needs mg-reuse but its if lacks" '/^  determinism:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: ${{ /}'
+  mgmut x86-main-needs-lookalike "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{s/^    needs: \[mg-reuse\]$/    needs: [mg-reuse-self-test]/}'
+  mgmut x86-main-drops-needs "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'
+  mgmut gate-if-loses-always "job gate needs mg-reuse but its if lacks" "/^  gate:\$/,/^    steps:/{s/^    if: always\(\)/    if: success()/}"
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
   # wanted line comes first. A pipe from job into grep -q takes SIGPIPE on this every
