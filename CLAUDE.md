@@ -588,7 +588,7 @@ verify-bindings, migrate`.
 (`-G`, `--churn`, `--duplicates`, `--entropy`, `--faults`), search modes (`--regex`, `--literal`) and coverage-gap
 workflow are in the author-local `~/.claude/CLAUDE.md`; the commands every contributor needs are kept here, plus the coverage + contracts rule below.
 
-```bash
+```text
 pmat query "<intent>" --limit 10 --include-source   # semantic search with quality annotations
 pmat query "<intent>" --rank-by pagerank            # most important functions
 pmat query "<intent>" --rank-by indegree          # most-called utilities
