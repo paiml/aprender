@@ -156,7 +156,8 @@ jobs:
   x86-main:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 240
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
@@ -355,7 +356,12 @@ jobs:
 
   determinism:
     needs: [mg-reuse, x86-main]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}
+    # Operator 2026-10-17 (cop window), verbatim: "we are not gaiting on night this is a boondoggle,
+    # only gating on tags/release"; the PR gate is the quick tier. The ARM64 raster + compare leg ran on
+    # PR heads on the same gx10 pool as the queue head (a PR-head determinism queued ahead of the MQ
+    # head's), so it runs on merge_group / push / tag only. x86-main stays on PR heads. The gate skips
+    # DET:determinism-compare on pull_request only (loop below; scripts/check_determinism_wait.sh W10).
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
     # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
@@ -434,7 +440,8 @@ jobs:
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
-    runs-on: [self-hosted, Linux, X64, clean-room]   # same pool as x86-main
+    # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -612,6 +619,8 @@ jobs:
           if [ "$REUSE" = 0 ]; then
             for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
               job="${pair%%:*}" sec="${pair#*:}"
+              # determinism does not run on a PR head (job-level if above): not a failure there.
+              [ "$job:$EVT" = "DET:pull_request" ] && continue
               r=$(res "${!job}" "$sec")
               if [ "$r" != success ]; then
                 echo "$sec failed: $r"

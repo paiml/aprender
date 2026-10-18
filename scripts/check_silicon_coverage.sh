@@ -152,9 +152,18 @@ GH_RETRY_SLEEP="${SILICON_GH_RETRY_SLEEP:-5}"
 # the call CLOBBERED the caller's expectation and every case compared a verdict
 # against a label string. The self-test caught it on the first run, which is the
 # only reason to have one.
+# _lc_lower <text>: the text in _lc_out, ASCII letters lower-cased as `tr 'A-Z' 'a-z'` did. Printable
+# ASCII is lowered in-shell (no fork: this runs thousands of times per run); anything else (control
+# characters, non-ASCII) still goes through tr, so the bytes are the same either way.
+_lc_lower() {
+    case "$1" in
+        *[!\ -~]*) _lc_out="$(printf '%s' "$1" | tr 'A-Z' 'a-z')" ;;
+        *) _lc_out="${1,,}" ;;
+    esac
+}
 labels_contain() {
-    _lc_have=",$(printf '%s' "$1" | tr 'A-Z' 'a-z'),"
-    _lc_want="$(printf '%s' "$2" | tr 'A-Z' 'a-z')"
+    _lc_lower "$1"; _lc_have=",$_lc_out,"
+    _lc_lower "$2"; _lc_want="$_lc_out"
     _lc_ifs="$IFS"; IFS=','
     for _lc_l in $_lc_want; do
         [ -n "$_lc_l" ] || continue

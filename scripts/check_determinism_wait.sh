@@ -88,6 +88,13 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
     n_gate=$(printf '%s\n' "$g" | grep -c -E '^    needs: \[(.*, )?determinism(, .*)?\]$|^    if: always\(\)$|^ +for pair in .*DET:determinism-compare')
     [ "$n_gate" = 3 ] ||   # m:nogate
         { printf 'FAIL  W7 the gate no longer needs determinism under always() and reads DET:determinism-compare\n'; bad=1; }
+    # W10 determinism does not run on a PR head (the ARM64 pool is the queue's), so the job's if: names
+    # pull_request AND the gate skips DET:determinism-compare on pull_request only: a skipped job must
+    # not read as a missing section (RED on every PR), and the skip must not widen to other events.
+    grep -q -E "^    if: .*&& github\.event_name != 'pull_request' \}\}$" <<<"$j" ||   # m:nopr
+        { printf 'FAIL  W10 the determinism job still runs on a pull_request head (it competes with the queue head for the ARM64 pool)\n'; bad=1; }
+    [ "$(printf '%s\n' "$g" | grep -c -F '[ "$job:$EVT" = "DET:pull_request" ] && continue')" = 1 ] ||   # m:noskip
+        { printf 'FAIL  W10 the gate does not skip DET:determinism-compare on pull_request only\n'; bad=1; }
     # W8 the compare section: a continue-on-error would turn a failed download into a pass.
     n_coe=$(awk '/^  determinism-compare:$/{p=1; next} p && /^  [A-Za-z0-9_-]+:/{exit} p' "$secf" |
         grep -v -E '^[[:space:]]*#' | grep -c 'continue-on-error')
@@ -150,9 +157,9 @@ selftest() {
 
     plant "$d/w1.yml" 's/^    needs: \[mg-reuse, x86-main\]$/    needs: [mg-reuse]/'
     check "$d/w1.yml" > /dev/null 2>&1; row W1 RED $? "determinism that does not need x86-main"
-    plant "$d/w2.yml" '/^    if: \$\{\{ !cancelled\(\) && needs\.mg-reuse\.outputs\.det != .1. \}\}$/d'
+    plant "$d/w2.yml" '/^    if: \$\{\{ !cancelled\(\) && needs\.mg-reuse\.outputs\.det != .1. .*\}\}$/d'
     check "$d/w2.yml" > /dev/null 2>&1; row W2 RED $? "no if: (default success()) skips the job when x86-main fails"
-    plant "$d/w2b.yml" 's/^    if: \$\{\{ !cancelled\(\) (&& needs\.mg-reuse\.outputs\.det != .1. )\}\}$/    if: ${{ success() \1}}/'
+    plant "$d/w2b.yml" 's/^    if: \$\{\{ !cancelled\(\) (&& needs\.mg-reuse\.outputs\.det != .1. .*)\}\}$/    if: ${{ success() \1}}/'
     check "$d/w2b.yml" > /dev/null 2>&1; row W2b RED $? "if: success() skips the job when x86-main fails"
     plant "$d/w3.yml" '/^      FAT_ARTIFACT_WAIT_S: "0"$/d'
     check "$d/w3.yml" > /dev/null 2>&1; row W3 RED $? "no FAT_ARTIFACT_WAIT_S: the driver waits its 3600 s default"
@@ -163,6 +170,12 @@ selftest() {
     plant "$d/w5.yml" "s/determinism\\[ARM64\\],determinism-compare/determinism[ARM64]/"
     check "$d/w5.yml" > /dev/null 2>&1; row W5 RED $? "the compare section dropped from the job"
 
+    plant "$d/x1.yml" "s/ && github\\.event_name != 'pull_request' \\}\\}\$/ }}/"
+    check "$d/x1.yml" > /dev/null 2>&1; row X1 RED $? "determinism back on PR heads (the if: loses its pull_request clause)"
+    plant_file "$CI" "$d/x3.yml" '/^  gate:$/,/^    steps:$/!{/DET:pull_request" \] && continue/d}'
+    check "$d/x3.yml" > /dev/null 2>&1; row X3 RED $? "a gate that reads a skipped determinism-compare on a PR (RED on every PR)"
+    plant_file "$CI" "$d/x4.yml" '/^  gate:$/,/^    steps:$/!{s/"DET:pull_request" \] && continue/"DET:merge_group" ] \&\& continue/}'
+    check "$d/x4.yml" > /dev/null 2>&1; row X4 RED $? "a gate that skips determinism-compare on merge_group instead of pull_request"
     plant "$d/w3c.yml" "s/^( +)(.*--sections 'determinism\\[ARM64\\],determinism-compare'.*)\$/\\1\\2\\n          FAT_ARTIFACT_WAIT_S: \"3600\"/"
     check "$d/w3c.yml" > /dev/null 2>&1; row W3c RED $? "a step-level FAT_ARTIFACT_WAIT_S 3600 under the job's \"0\""
     plant "$d/w5b.yml" "s/^( +)(.*)--sections 'determinism\\[ARM64\\],determinism-compare'(.*)\$/\\1# --sections 'determinism[ARM64],determinism-compare'\\n\\1\\2--sections 'determinism[ARM64]'\\3/"
