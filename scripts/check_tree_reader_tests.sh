@@ -175,11 +175,12 @@ derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--l
         # `#[cfg(test)]` and ORACLE (src/); module_of still decides each src file's module.
         while IFS= read -r -d '' f; do
             [ -f "$f" ] || continue
-            c=$(basename "$(dirname "$(dirname "$f")")"); t=$(basename "$f" .rs)
+            # parameter expansion, not 4 forks per file: crates/<c>/tests/<t>.rs -> c, t
+            c=${f%/*}; c=${c%/*}; c=${c##*/}; t=${f##*/}; t=${t%.rs}
             printf '%s\t--test\t%s\n' "$c" "$t"
         done < <(grep -lZE -- "$ORACLE" "$root"/crates/*/tests/*.rs 2>/dev/null)
         while IFS= read -r -d '' f; do
-            c=$(printf '%s' "$f" | sed "s|^$root/crates/||; s|/.*||")
+            c=${f#"$root"/crates/}; c=${c%%/*}
             # `--lib` on a crate with NO library target is a hard error, never a
             # passable gate: `error: no library targets found in package X`.
             # aprender-compute-xtask is bin-only and its src carries a cfg(test)

@@ -345,9 +345,9 @@ jobs:
       # the touched crates + direct reverse dependents (BSE-16's selection, cap
       # -> full) plus EVERY test target that reads the tree, derived and
       # registry-checked (drift is ENV, never a quick tier over a stale list);
-      # full on schedule/dispatch/tags and on EVERY merge_group (the queue owes the
-      # full tier; a quick PR green is never reused -- structural-pr-flow-1016 s10);
-      # a push to main reuses the queue's full run (T36) or, when it cannot, measures
+      # full on schedule/dispatch/tags; merge_group runs the quick tier over the whole
+      # group diff (operator 2026-10-17: full gates only tags/release);
+      # a push to main reuses the queue's workspace-test green (T36; quick or full, per the queue's own tier -- never on a tag push) or, when it cannot, measures
       # the landed diff.
       # The touched set is the TIP diff against the base (shallow checkout: no
       # merge-base; tip-vs-tip is a superset, the safe direction) and the diff
@@ -358,6 +358,7 @@ jobs:
         id: tier
         env:
           GH_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           args=(--event "${GITHUB_EVENT_NAME}")
@@ -370,7 +371,16 @@ jobs:
           # design: if the deepen fails the decision still falls closed, and the
           # warning below says so instead of the run silently paying the hour.
           case "${GITHUB_EVENT_NAME}" in
-            merge_group|push)
+            merge_group)
+              # Operator 2026-10-17: the queue runs the quick tier over the entry's diff (base_sha = prior entry's head),
+              # MG_BASE_SHA..HEAD. Fetch the base; if that fails the tier falls closed to full.
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${GITHUB_SHA}" "${MG_BASE_SHA}" 2>/dev/null \
+                || bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${MG_BASE_SHA}" 2>/dev/null \
+                || true
+              git cat-file -e "${MG_BASE_SHA}^{commit}" 2>/dev/null \
+                || printf '::warning::merge_group base sha unavailable -- the tier falls closed to full\n'
+              ;;
+            push)
               bash scripts/ci/fetch_p6.sh --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
                 || bash scripts/ci/fetch_p6.sh --no-tags --deepen=1 origin 2>/dev/null \
                 || true
@@ -391,10 +401,8 @@ jobs:
               args+=(--diff-from "$RUNNER_TEMP/touched.txt")
               ;;
             merge_group)
-              # 20X (structural-pr-flow-1016 s10): the PR head ran QUICK, so the queue owes
-              # the FULL tier and reuses nothing from the PR head. ci_test_tier.sh re-derives
-              # the diff from HEAD^1..HEAD (deepened above); no PR-head lookup is made, so
-              # the queue's tier no longer depends on a GitHub reply.
+              # Operator 2026-10-17 (cop window), verbatim: "only gating on tags/release".
+              # ci_test_tier.sh diffs MG_BASE_SHA..HEAD (env above) and selects like a PR.
               ;;
             push)
               # T36: the merge queue already tested this very sha. Hand its
@@ -909,6 +917,10 @@ jobs:
                   | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
           printf 'packages built: %s\n' "$(printf '%s' "$pkgs" | grep -o -- '-p ' | wc -l)"
           EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+          # build ONLY the named binaries (was `$pkgs --lib --tests`: 605 linked, 93 run)
+          # the GPU/SIMD crates stay out of a clean-room build even if the registry drifts (same filter as $pkgs above)
+          BUILD_FLAGS="$(printf '%s\n' "${targets[@]}" | grep -vE '^aprender-(gpu|cuda-edge|compute):' | tr '\n' ' ' | bash scripts/ci_test_tier.sh --build-flags)"
+          printf 'build flags: %s\n' "$BUILD_FLAGS"
           printf 'nextest filterset (%s clause(s)):\n' "$(printf '%s' "$EXPR" | tr '|' '\n' | wc -l)"
           printf '%s\n' "$EXPR" | tr '|' '\n' | sed 's/^ *//; s/ *$//; s/^/  + /'
           docker run --rm \
@@ -929,7 +941,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR" --partition "hash:${SHARD}/3"
+            cargo nextest run --profile ci $BUILD_FLAGS -E "$EXPR" --partition "hash:${SHARD}/3"
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate

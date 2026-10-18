@@ -118,7 +118,7 @@ make_fixture() {
     git -C "$dir" -c core.hooksPath=/dev/null commit -qm fixture
 
     local head
-    head=$(git -C "$dir" rev-parse --short HEAD)
+    head=$(git -C "$dir" rev-parse --short=9 HEAD)
 
     mkdir -p "$dir/target/release" "$dir/target/debug"
     stage_binary "$dir/target/release/apr" "$release_ver" "$release_owner" "$head" "$dir"
@@ -321,7 +321,7 @@ row_cargo_install() {
     fi
     make_fixture "$dir" none none >/dev/null
     local head ch
-    head=$(git -C "$dir" rev-parse --short HEAD)
+    head=$(git -C "$dir" rev-parse --short=9 HEAD)
     ch="$dir/cargo-home"
     mkdir -p "$ch/bin"
     printf '#!/usr/bin/env bash\necho "apr 0.63.0 %s"\n' "$head" > "$ch/bin/apr"
@@ -353,7 +353,7 @@ row_cargo_install_from_self() {
     fi
     make_fixture "$dir" none none >/dev/null
     local head ch
-    head=$(git -C "$dir" rev-parse --short HEAD)
+    head=$(git -C "$dir" rev-parse --short=9 HEAD)
     ch="$dir/cargo-home"
     mkdir -p "$ch/bin"
     printf '#!/usr/bin/env bash\necho "apr 0.63.0 %s"\n' "$head" > "$ch/bin/apr"

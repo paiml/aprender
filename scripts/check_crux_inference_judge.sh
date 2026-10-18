@@ -92,9 +92,18 @@ broke(){ printf '  BROKE %s\n' "$1"; FAIL=$((FAIL + 1)); }
 
 # ---- fixture writers: one engine's raw output, in the shape it really prints ---
 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+# jstr <text>: the JSON string json.dumps would print. Plain printable ASCII with no quote or
+# backslash needs no escaping, so it is printed here; anything else goes to python3 as before.
+# (A fixture writer is called hundreds of times per run: one python3 start each was the bill.)
+jstr() {
+  case "$1" in
+    *[!\ -~]*|*\\*|*\"*) python3 -c 'import json,sys; sys.stdout.write(json.dumps(sys.argv[1]))' "$1" ;;
+    *) printf '"%s"' "$1" ;;
+  esac
+}
 apr_out() { # apr_out <dir> <pid> <text> <ran> <fell_back> [ids]
   printf '{"text": %s, "tokens_generated": 3, "tok_per_sec": 9.5, "backend": {"requested": "gpu", "ran": "%s", "fell_back": %s}}\n' \
-    "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$3")" "$4" "$5" > "$1/apr-$2.out"
+    "$(jstr "$3")" "$4" "$5" > "$1/apr-$2.out"
   printf '[DEBUG] formatted_prompt="%s"\n[DEBUG] add_bos=false, encoded %s tokens: [%s]\n' "${APR_RENDER:-<|im_start|>user\\nq<|im_end|>\\n}" \
     "$(printf '%s' "${6:-1,2,3}" | tr ',' '\n' | grep -c .)" "${6:-1,2,3}" > "$1/apr-$2.err"
 }
@@ -115,6 +124,23 @@ ollama_out() { # ollama_out <dir> <pid> <answer>
   printf 'total duration:       1.2s\nprompt %s count:    30 token(s)\n%s count:           8 token(s)\n%s rate:            90.00 tokens/s\n' "$ev" "$ev" "$ev" > "$1/ollama-$2.err"
 }
 row() { # row <manifest> <engine> <pid> <rc> <stdout> <stderr> [refused]
+  # Fast path: the common row (a plain integer or empty rc) is printed here, byte for byte what
+  # json.dumps wrote; any other rc takes the python3 writer (row_py) unchanged.
+  case "${4-}" in
+    *[!0-9]*) row_py "$@" ;;
+    ''|0|[1-9]*)
+      [ "$#" -ge 6 ] || { row_py "$@"; return; }
+      local _rc _o _e _r
+      _rc=null; [ -n "$4" ] && _rc=$4
+      _o=null; [ -n "$5" ] && _o=$(jstr "$5")
+      _e=null; [ -n "$6" ] && _e=$(jstr "$6")
+      _r=null; [ -n "${7-}" ] && _r=$(jstr "$7")
+      printf '{"kind": "gen", "engine": %s, "prompt_id": %s, "rc": %s, "stdout": %s, "stderr": %s, "refused": %s, "model_sha256": "%%s", "host": "fixture", "verb": %s, "thinking": %s, "backend": "gpu"}\n' \
+        "$(jstr "$2")" "$(jstr "$3")" "$_rc" "$_o" "$_e" "$_r" "$(jstr "${ROW_VERB-run}")" "$(jstr "${ROW_THINKING-off}")" >> "$1" ;;
+    *) row_py "$@" ;;
+  esac
+}
+row_py() {
   python3 - "$@" <<'PY'
 import json, os, sys
 m, eng, pid, rc, o, e = sys.argv[1:7]
