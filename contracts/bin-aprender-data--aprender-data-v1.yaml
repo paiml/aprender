@@ -159,3 +159,9 @@ falsification_tests:
     test: 'cargo test -p aprender-data --test cli_surface_gate unusable_input_is_rejected'
     if_fails: 'MEASURED 2026-09-26 (aprender-01): GREEN on an unmutated tree; no source mutation was run for this binary'
     mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'
+  - id: FALSIFY-BIN-ALIMENTAR-007
+    rule: 'class-imbalance helpers hold their edge behaviour (#5578)'
+    prediction: 'sqrt_inverse_weights gives 0 to an empty class and normalises the rest to K; the detector skips null labels and rejects non-string/int columns; resample balances Int64 labels exactly and errors on a missing column'
+    test: 'cargo test -p aprender-data --test imbalance_edges'
+    if_fails: 'a zero-count class gets weight, null labels are grouped, or an unsupported label type is silently accepted'
+    mutation: 'change `if c == 0` in sqrt_inverse_weights; weights_zero_count_class_gets_zero turns RED (measured 2026-10-18)'
