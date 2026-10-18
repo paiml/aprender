@@ -42,7 +42,7 @@ const ENV_ARM: &str = "LAYA_DEMO_RUN";
 struct Declared {
     outcome: String,
     values: Vec<String>,
-    record: serde_yaml::Value,
+    record: serde_json::Value,
     run_dir: PathBuf,
     data_dir: PathBuf,
 }
@@ -60,7 +60,7 @@ fn declared() -> Declared {
     Declared {
         outcome: common::str_at(d, &["outcome"]),
         values: d["outcome_values"]
-            .as_sequence()
+            .as_array()
             .expect("demo_s64.outcome_values")
             .iter()
             .map(|v| v.as_str().expect("an outcome value").to_string())
@@ -180,7 +180,7 @@ fn declared_demo_run_matches_its_outcome_of_record() {
         }
         "gate_fail" => {
             let want: Vec<String> = d.record["failed_clauses"]
-                .as_sequence()
+                .as_array()
                 .expect("demo_s64.outcome_record.failed_clauses")
                 .iter()
                 .map(|c| c.as_str().expect("a clause name").to_string())
@@ -276,7 +276,7 @@ fn demo_s64_block_has_a_decision_rule() {
         ),
         "gate_fail" => assert!(
             d.record["failed_clauses"]
-                .as_sequence()
+                .as_array()
                 .is_some_and(|c| !c.is_empty() && c.iter().all(|x| x.as_str().is_some())),
             "gate_fail needs outcome_record.failed_clauses"
         ),

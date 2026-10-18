@@ -71,7 +71,7 @@ fn contract<T: serde::de::DeserializeOwned>(name: &str) -> Result<T, String> {
         .join("../../contracts")
         .join(name);
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    serde_yaml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+    serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// The verify policy, read from the contracts (never literals) through the library's ONE

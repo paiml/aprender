@@ -882,14 +882,14 @@ struct Binding {
 fn bindings_table() -> BTreeMap<String, Binding> {
     let c = crate::test_support::contract_yaml("decide-apr-v1.yaml");
     c["manifest"]["bindings"]
-        .as_mapping()
+        .as_object()
         .expect("decide-apr-v1 manifest.bindings")
         .iter()
         .map(|(k, row)| {
-            let leaf = k.as_str().expect("binding key").to_string();
+            let leaf = k.clone();
             let rung = row["rung"].as_u64().expect("binding rung");
             let sources = row["sources"]
-                .as_sequence()
+                .as_array()
                 .unwrap_or_else(|| panic!("{leaf}: sources"))
                 .iter()
                 .map(|s| s.as_str().expect("source string").to_string())
@@ -1558,7 +1558,7 @@ fn probe_replay_failure_is_rung_7() {
 
 /// [`artifact_bounds_table_is_swept`]: every row carries its required fields, and the test it
 /// names exists.
-fn bounds_row_fields(row: &serde_yaml::Value, id: &str, failures: &mut Vec<String>) {
+fn bounds_row_fields(row: &serde_json::Value, id: &str, failures: &mut Vec<String>) {
     for key in [
         "bound",
         "checked_by",
@@ -1578,7 +1578,7 @@ fn bounds_row_fields(row: &serde_yaml::Value, id: &str, failures: &mut Vec<Strin
 
 /// [`artifact_bounds_table_is_swept`]: an accepted row has a reason and a
 /// documented-behaviour case.
-fn bounds_row_accepted(row: &serde_yaml::Value, id: &str, failures: &mut Vec<String>) {
+fn bounds_row_accepted(row: &serde_json::Value, id: &str, failures: &mut Vec<String>) {
     if row_text(row, "reason").is_empty() {
         failures.push(format!("{id}: accepted without a reason"));
     }
@@ -1591,13 +1591,13 @@ fn bounds_row_accepted(row: &serde_yaml::Value, id: &str, failures: &mut Vec<Str
 
 /// [`artifact_bounds_table_is_swept`]: an enforced row's hostile case refuses as the row
 /// names. Returns whether the row was swept (it had a hostile case).
-fn bounds_row_enforced(row: &serde_yaml::Value, id: &str, failures: &mut Vec<String>) -> bool {
+fn bounds_row_enforced(row: &serde_json::Value, id: &str, failures: &mut Vec<String>) -> bool {
     let Some(errors) = hostile_case(id) else {
         failures.push(format!("{id}: owned row without a hostile case"));
         return false;
     };
     let refusals: Vec<String> = match &row["refusal"] {
-        serde_yaml::Value::Sequence(v) => v
+        serde_json::Value::Array(v) => v
             .iter()
             .filter_map(|r| r.as_str().map(str::to_string))
             .collect(),
@@ -1642,10 +1642,10 @@ fn bounds_refusal(
 }
 
 /// A row value as text (a YAML string or number).
-fn row_text(row: &serde_yaml::Value, key: &str) -> String {
+fn row_text(row: &serde_json::Value, key: &str) -> String {
     match &row[key] {
-        serde_yaml::Value::String(s) => s.clone(),
-        serde_yaml::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
         _ => String::new(),
     }
 }
@@ -2045,7 +2045,7 @@ fn artifact_bounds_table_is_swept() {
         "see_also points at the request half"
     );
     let rows = table["rows"]
-        .as_sequence()
+        .as_array()
         .expect("untrusted_input_bounds.rows");
     let (mut swept, mut accepted, mut external) = (0usize, 0usize, 0usize);
     let mut ids = BTreeSet::new();
