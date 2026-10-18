@@ -319,23 +319,32 @@ rows=$(grep -c '|' <<< "$CASES")
 # or of cascade-publish.sh), the table must go WRONG. nearmiss, same arguments: a change that keeps the
 # receipts flowing, which every row must still hold (the must-not-match half of the structural case table)
 killed=0 total=0 held=0 near=0
+# Mutants are independent (own mutated copy $T/m-NAME.sh, own run() workdirs), so MUTANT_JOBS of them
+# run at once. Each writes its verdict line to $T/res.N and an outcome file; both are read back in
+# declaration order after the last one, so the printed table and every counter match a serial run.
+MUT_JOBS="${MUTANT_JOBS:-4}" MUT_N=0
 mutant() {
-  local of=autopilot src m out rc ap="$AUTOPILOT" dr="$DRAIN" ca="$CASCADE"
+  local of=autopilot src m ap="$AUTOPILOT" dr="$DRAIN" ca="$CASCADE"
   local kind="${KIND:-mutant}"
   case "$1" in drain|cascade) of=$1; shift ;; esac
   case "$of" in autopilot) src="$AUTOPILOT" ;; drain) src="$DRAIN" ;; cascade) src="$CASCADE" ;; esac
   m="$T/m-$1.sh"
+  MUT_N=$((MUT_N + 1))
   if [ "$kind" = mutant ]; then total=$((total + 1)); else near=$((near + 1)); fi
   sed "$2" "$src" > "$m"
-  if cmp -s "$src" "$m"; then printf '  INCONCLUSIVE %s %s changed nothing\n' "$kind" "$1"; bad=1; return; fi
-  bash -n "$m" || { printf '  BROKEN   %s %s does not parse\n' "$kind" "$1"; bad=1; return; }
+  if cmp -s "$src" "$m"; then printf '  INCONCLUSIVE %s %s changed nothing\n' "$kind" "$1" > "$T/res.$MUT_N"; : > "$T/out.$MUT_N.bad"; return; fi
+  bash -n "$m" || { printf '  BROKEN   %s %s does not parse\n' "$kind" "$1" > "$T/res.$MUT_N"; : > "$T/out.$MUT_N.bad"; return; }
   case "$of" in autopilot) ap="$m" ;; drain) dr="$m" ;; cascade) ca="$m" ;; esac
-  if out=$(DRAIN="$dr" CASCADE="$ca" table "$ap"); then rc=0; else rc=$?; fi
-  if [ "$kind" = nearmiss ]; then
-    if [ "$rc" = 0 ]; then held=$((held + 1)); printf '  held     near-miss %s\n' "$1"
-    else printf '  WRONG    near-miss %s (%s)\n' "$1" "$(grep -m1 -o 'WRONG [a-z0-9_]*' <<< "$out")"; bad=1; fi
-  elif [ "$rc" = 0 ]; then printf '  SURVIVED mutant %s\n' "$1"; bad=1
-  else killed=$((killed + 1)); printf '  killed   mutant %s (%s)\n' "$1" "$(grep -m1 -o 'WRONG [a-z0-9_]*' <<< "$out")"; fi
+  while [ "$(jobs -rp | wc -l)" -ge "$MUT_JOBS" ]; do wait -n || true; done
+  (
+    n=$MUT_N name=$1
+    if out=$(DRAIN="$dr" CASCADE="$ca" table "$ap"); then rc=0; else rc=$?; fi
+    if [ "$kind" = nearmiss ]; then
+      if [ "$rc" = 0 ]; then printf '  held     near-miss %s\n' "$name" > "$T/res.$n"; : > "$T/out.$n.held"
+      else printf '  WRONG    near-miss %s (%s)\n' "$name" "$(grep -m1 -o 'WRONG [a-z0-9_]*' <<< "$out")" > "$T/res.$n"; : > "$T/out.$n.bad"; fi
+    elif [ "$rc" = 0 ]; then printf '  SURVIVED mutant %s\n' "$name" > "$T/res.$n"; : > "$T/out.$n.bad"
+    else printf '  killed   mutant %s (%s)\n' "$name" "$(grep -m1 -o 'WRONG [a-z0-9_]*' <<< "$out")" > "$T/res.$n"; : > "$T/out.$n.killed"; fi
+  ) &
 }
 nearmiss() { local KIND=nearmiss; mutant "$@"; }
 mutant create-public       '/gh release create "\$T"/s/ --draft//'
@@ -386,6 +395,14 @@ nearmiss cascade cascade-env-without-reset '1a\env PATH="$PATH" true'
 nearmiss cascade cascade-echoes-the-cert '1a\[ -z "${CRUX_CERT:-}" ] || echo "crux cert: $CRUX_CERT, env: $(printenv CRUX_CERT)"'
 nearmiss cascade cascade-comment-names-them '1a\# a hand run: MODEL_LADDER_CRUX_DIR=x CRUX_CERT=y bash scripts/cascade-publish.sh, never env -i'
 
+wait
+for ((n = 1; n <= MUT_N; n++)); do
+  if [ -s "$T/res.$n" ]; then cat "$T/res.$n"
+  else printf '  MISSING  mutant #%s left no result line -- its verdict is unknown\n' "$n"; bad=1; continue; fi
+  [ -e "$T/out.$n.killed" ] && killed=$((killed + 1))
+  [ -e "$T/out.$n.held" ] && held=$((held + 1))
+  [ -e "$T/out.$n.bad" ] && bad=1
+done
 printf 'mutants: %s/%s killed, near-misses: %s/%s held\n' "$killed" "$total" "$held" "$near"
 [ "$bad" = 0 ] && printf 'PASS  %s row(s) + 5 structural, every mutant killed and every near-miss held: the GitHub release is a draft until clean-room, assets and preflight are green (#4690), and the cascade'"'"'s own preflight reads the T-1 CRUX receipts (D4)\n' "$rows"
 finish "$bad"

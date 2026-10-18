@@ -136,6 +136,8 @@ while [ $# -gt 0 ]; do
         # optional operand: `--filterset 'a:--lib b:--test:c'`, or nothing and the
         # list comes from stdin (how ci.yml pipes steps.tier.outputs.targets in).
         --filterset) FILTERSET=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
+        # same operand rules as --filterset; prints the cargo BUILD flags for the same tokens
+        --build-flags) BUILDFLAGS=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
         *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--mg-run ID --mg-sha SHA --mg-conclusion C] [--registry FILE] [--repo-root DIR] | --filterset [TARGETS] | --tier-of-record [--tsv FILE] [--union-touched --event pull_request --comparand REF] | --self-test\n' "$0" >&2; exit 2 ;;
     esac
 done
@@ -158,6 +160,27 @@ targets_from_registry() { # -> space list crate:--lib | crate:--lib:module | cra
 
 re_escape() { # regex-escape a module path for a nextest test(/^.../) atom; `::` is not special, so it stays literal
     printf '%s' "$1" | sed 's#[].^$*+?()[{}|\\/]#\\&#g'
+}
+
+build_flags_from_targets() { # <space list of crate:--lib|crate:--bins|crate:--test:NAME> -> cargo flags that build ONLY those binaries
+    # `-p A -p B --lib --tests` linked every integration binary of every named
+    # package (605 built, 93 run, 512 skipped: run 39004459852). A token names
+    # its binary, so the build set is the named packages' lib/bins (if any
+    # token asks) plus exactly the named `--test` targets; nextest's -E still
+    # narrows the run, so this is only ever a superset of what runs.
+    local t pkgs="" lib="" bins="" tests="" c
+    for t in $1; do
+        c=${t%%:*}
+        case " $pkgs " in *" -p $c "*) ;; *) pkgs="$pkgs -p $c" ;; esac
+        case "$t" in
+            *:--lib|*:--lib:*) lib=" --lib" ;;
+            *:--bins)          bins=" --bins" ;;
+            *:--test:*)        case " $tests " in *" --test ${t#*:--test:} "*) ;; *) tests="$tests --test ${t#*:--test:}" ;; esac ;;
+            *) printf 'ENV: unrecognised target token "%s" — expected crate:--lib, crate:--bins or crate:--test:NAME\n' "$t" >&2; return 2 ;;
+        esac
+    done
+    [ -n "$pkgs" ] || { printf 'ENV: no targets given — refusing to emit empty build flags (cargo would build the WHOLE workspace)\n' >&2; return 2; }
+    printf '%s\n' "${pkgs# }$lib$bins$tests"
 }
 
 filterset_from_targets() { # <space list of crate:--lib|crate:--bins|crate:--test:NAME> -> nextest -E expression
@@ -642,6 +665,10 @@ self_test() {
     row 0 "--filterset: a bins token -> (package & kind(bin)); a bin-only crate has NO lib target" '^\(package\(aprender-compute-xtask\) & kind\(bin\)\)$' bash "$T" --filterset 'aprender-compute-xtask:--bins'
     row 0 "--filterset: two tokens are UNIONed with |" 'kind\(lib\)\) \| binary_id\(' bash "$T" --filterset 'apr-cli:--lib aprender-core:--test:readme_contract'
     row 2 "--filterset: an unknown token -> ENV (exit 2), never a silently dropped target" 'unrecognised target token' bash "$T" --filterset 'apr-cli:--doc'
+    row 0 "--build-flags: lib+test tokens -> packages once, --lib once, each --test once (NOT --tests)" '^-p apr-cli -p aprender-core --lib --test readme_contract$' bash "$T" --build-flags 'apr-cli:--lib aprender-core:--lib:foo aprender-core:--test:readme_contract apr-cli:--test:readme_contract'
+    row 0 "--build-flags: a bins token -> --bins" '^-p x --bins$' bash "$T" --build-flags 'x:--bins'
+    row 2 "--build-flags: an unknown token -> ENV (exit 2)" 'unrecognised target token' bash "$T" --build-flags 'apr-cli:--doc'
+    row 2 "--build-flags: no targets -> ENV (exit 2); empty flags would build the WHOLE workspace" 'empty build flags' bash "$T" --build-flags ''
     row 2 "--filterset: no targets -> ENV (exit 2); an empty -E would select the WHOLE workspace" 'empty filterset' bash "$T" --filterset ''
     row 0 "--filterset reads stdin and translates EVERY registry token (no ':--' survives)" '^NONE-LEFT$' all_translated "$td/pr-scripts.out"
     # Per TOKEN, not per registry line: since PMAT-3120 a crate's module rows can
@@ -737,6 +764,10 @@ self_test() {
 }
 
 if [ "${SELF_TEST:-0}" = 1 ]; then self_test; exit $?; fi
+if [ "${BUILDFLAGS:-0}" = 1 ]; then
+    if [ -z "${FS_TARGETS+x}" ]; then FS_TARGETS=$(cat); fi
+    build_flags_from_targets "$FS_TARGETS"; exit $?
+fi
 if [ "${FILTERSET:-0}" = 1 ]; then
     if [ -z "${FS_TARGETS+x}" ]; then FS_TARGETS=$(cat); fi
     filterset_from_targets "$FS_TARGETS"; exit $?
