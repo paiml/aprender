@@ -1234,8 +1234,7 @@ enum Outcome {
 fn load_ladder(path: &str) -> Result<Py, String> {
     let raw = std::fs::read(path).map_err(|e| format!("FileNotFoundError: {path}: {e}"))?;
     let text = String::from_utf8_lossy(&raw);
-    let v: serde_yaml::Value =
-        serde_yaml::from_str(&text).map_err(|e| format!("yaml.YAMLError: {path}: {e}"))?;
+    let v = crate::pyjson::parse_yaml(&text).map_err(|e| format!("yaml.YAMLError: {path}: {e}"))?;
     Ok(subscript(&from_yaml(&v), "ladder")?.clone())
 }
 

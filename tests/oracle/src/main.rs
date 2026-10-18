@@ -84,8 +84,8 @@ fn oracle_pairs(data: &Path, shapes: &Path) -> Result<Vec<Pair>, String> {
 /// The expectation a translation states: `(focus, component)` pairs, expanded with the case's prefix.
 fn expected_pairs(yaml: &Path) -> Result<(String, Vec<Pair>), String> {
     let text = std::fs::read_to_string(yaml).map_err(|e| format!("{}: {e}", yaml.display()))?;
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(&text).map_err(|e| format!("{}: {e}", yaml.display()))?;
+    let doc: serde_json::Value =
+        serde_saphyr::from_str(&text).map_err(|e| format!("{}: {e}", yaml.display()))?;
     let id = doc
         .get("id")
         .and_then(|v| v.as_str())
@@ -99,7 +99,7 @@ fn expected_pairs(yaml: &Path) -> Result<(String, Vec<Pair>), String> {
     if let Some(list) = doc
         .get("expect")
         .and_then(|e| e.get("results"))
-        .and_then(|r| r.as_sequence())
+        .and_then(|r| r.as_array())
     {
         for r in list {
             let focus = r.get("focus").and_then(|v| v.as_str()).unwrap_or_default();

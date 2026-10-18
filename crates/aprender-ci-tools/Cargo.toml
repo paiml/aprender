@@ -14,8 +14,9 @@ publish = false
 clap = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-serde_yaml = { workspace = true }
+# preserve_order: PyYAML keeps mapping order, so the parsed value must too
+serde_json = { workspace = true, features = ["preserve_order"] }
+serde-saphyr = { workspace = true }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
 toml = { workspace = true }

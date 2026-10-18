@@ -687,10 +687,29 @@ pub fn loads(s: &str) -> Result<Py, LoadErr> {
     Ok(v)
 }
 
-/// `yaml.safe_load`'s value, from serde_yaml's. serde_yaml reads YAML 1.2, so `yes`/`no`/`on`/
+/// Parse `s` as YAML into a dynamic value (#5209: serde-saphyr replaces serde_yaml, which pulls
+/// unsafe-libyaml, RUSTSEC-2024-0449). The options keep serde_yaml's YAML 1.2 reading: `yes`/`no`
+/// stay strings, `<<` stays an ordinary key, and `.inf`/`.nan` load in typeless slots.
+///
+/// # Errors
+///
+/// Returns the serde-saphyr error if `s` is not valid YAML.
+pub fn parse_yaml(s: &str) -> Result<serde_json::Value, serde_saphyr::Error> {
+    serde_saphyr::from_str_with_options(
+        s,
+        serde_saphyr::options! {
+            strict_booleans: true,
+            merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary,
+            emit_comments: false,
+            reject_non_finite_typeless_float: false,
+        },
+    )
+}
+
+/// `yaml.safe_load`'s value, from the parsed value. YAML 1.2 is read, so `yes`/`no`/`on`/
 /// `off` stay strings where PyYAML (YAML 1.1) makes them booleans: a known gap.
-pub fn from_yaml(v: &serde_yaml::Value) -> Py {
-    use serde_yaml::Value as Y;
+pub fn from_yaml(v: &serde_json::Value) -> Py {
+    use serde_json::Value as Y;
     match v {
         Y::Null => Py::None,
         Y::Bool(b) => Py::Bool(*b),
@@ -704,19 +723,14 @@ pub fn from_yaml(v: &serde_yaml::Value) -> Py {
             }
         }
         Y::String(s) => Py::Str(s.clone()),
-        Y::Sequence(items) => Py::List(items.iter().map(from_yaml).collect()),
-        Y::Mapping(m) => {
+        Y::Array(items) => Py::List(items.iter().map(from_yaml).collect()),
+        Y::Object(m) => {
             let mut d = Py::dict();
             for (k, val) in m {
-                let key = match k {
-                    Y::String(s) => s.clone(),
-                    other => py_str(&from_yaml(other)),
-                };
-                d.set(&key, from_yaml(val));
+                d.set(k, from_yaml(val));
             }
             d
         }
-        Y::Tagged(t) => from_yaml(&t.value),
     }
 }
 
