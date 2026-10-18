@@ -40,7 +40,7 @@ anyhow = "1.0"
 [build-dependencies]
 provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # #4369 (excluded crate: no workspace deps): build_helper::env_key, the one CONTRACT_* key builder
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml_ng = "0.10"
+serde-saphyr = { workspace = true }
 
 [dev-dependencies]
 # Probar testing (Brick Architecture, version + path for clean-room)
