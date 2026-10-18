@@ -525,8 +525,13 @@ self_test() {
           && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
           && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
           && git commit -q --allow-empty -m base \
-          && printf 'x\n' > Cargo.toml && git add -A && git commit -q -m "group entry 1: root manifest" \
-          && mkdir -p "crates/$leaf/src" && printf 'x\n' > "crates/$leaf/src/lib.rs" && git add -A && git commit -q -m "group entry 2: leaf" )
+          && printf 'x\n' > Cargo.toml && git add -A && git commit -q -m "group entry 1: root manifest" )
+        # bashrs disable-next-line=SEC010
+        mkdir -p "$d/crates/${leaf:?}/src"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+          && printf 'x\n' > "crates/${leaf:?}/src/lib.rs" && git add -A && git commit -q -m "group entry 2: leaf" )
     }
     mkgroup "$td/g-stack"
     rootc() { git -C "$1" rev-list --max-parents=0 HEAD; } # a fixture's first commit = the group's base
@@ -541,7 +546,7 @@ self_test() {
     row 0 "  ...citing the root-manifest rule" 'root Cargo.toml' bash -c "$(replay mg-stack)"
     sed 's|diff_into "\$df" "\$mgb"; then rm -f "\${df:?}"|diff_into "$df" HEAD^1; then rm -f "${df:?}"|' "$T" > "$td/mutant-head1.sh"
     row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-head1.sh'; then echo SAME; else echo DIFFERS; fi"
-    row 0 "MUTANT: a merge_group arm that diffs HEAD^1 instead of MG_BASE_SHA sees only the last commit -> quick, row above goes RED" '^MUTANT-QUICK$' bash -c "if MG_BASE_SHA='$(rootc "$td/g-stack")' bash '$td/mutant-head1.sh' --event merge_group --repo-root '$td/g-stack' | grep -q '^tier=quick$'; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
+    row 0 "MUTANT: a merge_group arm that diffs HEAD^1 instead of MG_BASE_SHA sees only the last commit -> quick, row above goes RED" '^MUTANT-QUICK$' bash -c "o=\$(MG_BASE_SHA='$(rootc "$td/g-stack")' bash '$td/mutant-head1.sh' --event merge_group --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     cap mg-root mgrun "$(rootc "$td/q-root")" --repo-root "$td/q-root"
     row 0 "merge_group, the group touched a ROOT manifest -> tier=full (rule (ii))" '^tier=full$' bash -c "$(replay mg-root)"
     row 0 "  ...exactly tier=full and no quick line leaks" '^OK-FULL-ONLY$' full_only "$(replay mg-root)"
@@ -558,7 +563,7 @@ self_test() {
     row 0 "  ...and the reason says the diff is empty" 'is empty' bash -c "$(replay mg-empty)"
     sed '/group diff %s..HEAD is empty/d' "$T" > "$td/mutant-empty.sh"
     row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-empty.sh'; then echo SAME; else echo DIFFERS; fi"
-    row 0 "MUTANT: a merge_group arm without the empty-diff guard answers none -> the row above goes RED" '^MUTANT-NONE$' bash -c "if MG_BASE_SHA=\"\$(git -C '$td/q-leaf' rev-parse HEAD)\" bash '$td/mutant-empty.sh' --event merge_group --repo-root '$td/q-leaf' | grep -q '^tier=none$'; then echo MUTANT-NONE; else echo SURVIVED; fi"
+    row 0 "MUTANT: a merge_group arm without the empty-diff guard answers none -> the row above goes RED" '^MUTANT-NONE$' bash -c "o=\$(MG_BASE_SHA=\"\$(git -C '$td/q-leaf' rev-parse HEAD)\" bash '$td/mutant-empty.sh' --event merge_group --repo-root '$td/q-leaf'); if grep -q '^tier=none$' <<< \"\$o\"; then echo MUTANT-NONE; else echo SURVIVED; fi"
     cap mg-cap mgrun "$(rootc "$td/q-cap")" --repo-root "$td/q-cap"
     row 0 "merge_group over the cap -> tier=quick with check_workspace=1, as pull_request does" '^check_workspace=1$' bash -c "$(replay mg-cap)"
     row 0 "  ...tier=quick, not full" '^tier=quick$' bash -c "$(replay mg-cap)"
@@ -603,7 +608,7 @@ self_test() {
     row 0 "TAG push of a sha the queue already tested (quick) green -> tier=full, NEVER reuse (sign-off r2 #5468)" '^tier=full$' bash -c "GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf' $MGARGS | head -n1"
     sed 's|refs/tags/\*)|refs/tags/NEVER/*)|' "$T" > "$td/mutant-tagreuse.sh"
     row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-tagreuse.sh'; then echo SAME; else echo DIFFERS; fi"
-    row 0 "MUTANT: a push arm that does not special-case tags reuses the quick MG green on a tag -> the row above goes RED" '^MUTANT-REUSE$' bash -c "if GITHUB_REF=refs/tags/v9.9.9 bash '$td/mutant-tagreuse.sh' --event push --repo-root '$td/s-leaf' $MGARGS | grep -q '^tier=reuse$'; then echo MUTANT-REUSE; else echo SURVIVED; fi"
+    row 0 "MUTANT: a push arm that does not special-case tags reuses the quick MG green on a tag -> the row above goes RED" '^MUTANT-REUSE$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$td/mutant-tagreuse.sh' --event push --repo-root '$td/s-leaf' $MGARGS); if grep -q '^tier=reuse$' <<< \"\$o\"; then echo MUTANT-REUSE; else echo SURVIVED; fi"
     # #3658 DOCS-ONLY on a pull_request (paths that exist in this tree).
     printf 'docs/roadmaps/roadmap.yaml\ndocs/audits/pp-066-plan-quorum.md\n' > "$td/d-docs.txt"
     row 0 "pull_request, roadmap + audit only -> tier=none (no Rust test reads those paths)" '^tier=none$' bash "$T" --event pull_request --diff-from "$td/d-docs.txt"
