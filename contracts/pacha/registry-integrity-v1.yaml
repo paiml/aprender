@@ -89,7 +89,7 @@ falsification_tests:
 - id: FALSIFY-RI-004
   rule: Manifest file round trip
   prediction: ModelManifest::save then load preserves every directive; load and save report Io errors naming the path
-  test: aprender-registry manifest::tests::test_save_then_load_roundtrip and test_load_missing_file_is_io_error_naming_path
+  test: manifest::tests::test_save_then_load_roundtrip
   if_fails: to_modelfile drops or reorders a directive, or load/save lose the Io error context
   mutation: drop the LICENSE push in to_modelfile; the roundtrip test must go RED
 kani_harnesses:
