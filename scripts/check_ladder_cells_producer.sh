@@ -204,19 +204,27 @@ echo "== cases"
 cases "$ROOT/scripts/lib" || bad=1
 
 echo "== mutants (each must turn a case RED)"
+# Mutants are independent (own lib copy under $WORK/mut-NAME, own SEQ range so no case dir is
+# shared), so they run MUTANT_JOBS at a time; verdict lines are printed in declaration order.
+MUT_JOBS="${MUTANT_JOBS:-4}"
+MUT_N=0
 mutant() { # mutant <name> <sed-expr>
-  local md="$WORK/mut-$1"
-  mkdir -p "$md"
-  cp scripts/lib/model_ladder_cells.py "$md/"
-  sed "$2" scripts/lib/model_ladder_cells_produce.py > "$md/model_ladder_cells_produce.py"
-  if cmp -s scripts/lib/model_ladder_cells_produce.py "$md/model_ladder_cells_produce.py"; then
-    echo "FAIL  mutant $1 did not apply -- it proves nothing"; bad=1; return
-  fi
-  if cases "$md" > "$md/out" 2>&1; then
-    echo "FAIL  mutant $1 SURVIVED every case"; bad=1
-  else
-    echo "ok    mutant $1 killed by: $(grep -m1 '^FAIL' "$md/out" | cut -c7-)"
-  fi
+  MUT_N=$((MUT_N + 1))
+  while [ "$(jobs -rp | wc -l)" -ge "$MUT_JOBS" ]; do wait -n || true; done
+  (
+    SEQ=$((MUT_N * 1000)); bad=0
+    md="$WORK/mut-$1"
+    mkdir -p "$md"
+    cp scripts/lib/model_ladder_cells.py "$md/"
+    sed "$2" scripts/lib/model_ladder_cells_produce.py > "$md/model_ladder_cells_produce.py"
+    if cmp -s scripts/lib/model_ladder_cells_produce.py "$md/model_ladder_cells_produce.py"; then
+      echo "FAIL  mutant $1 did not apply -- it proves nothing"; touch "$WORK/mbad.$MUT_N"
+    elif cases "$md" > "$md/out" 2>&1; then
+      echo "FAIL  mutant $1 SURVIVED every case"; touch "$WORK/mbad.$MUT_N"
+    else
+      echo "ok    mutant $1 killed by: $(grep -m1 '^FAIL' "$md/out" | cut -c7-)"
+    fi
+  ) > "$WORK/mres.$MUT_N" 2>&1 &
 }
 mutant needle     's/    if NEEDLE_WORD not in answer:/    if False:/'
 mutant fallback   's/row\["fallback"\] = be.get("fell_back")/row["fallback"] = False/'
@@ -230,6 +238,15 @@ mutant rungs-silent 's/^    if rc:$/    if False:/'
 mutant serve-inline 's/deferred.append((len(rows) - 1, prompt, mode, budget, measured))/a.serve = getattr(a, "serve", None) or Serve(R, path, a.serve_ceiling); rows[-1] = measure_serve(a.serve, prompt, mode, budget, rows[-1], R.timeout)/'
 mutant declaim      's/        if d:  # the judge owes nothing here/        if False:  # the judge owes nothing here/'
 mutant offmode-budget 's/target = min(tok, int(ctx) - budget - 1)/target = min(tok, int(ctx) - a.max_tokens_thinking - 1)/'
+
+wait
+n=1
+while [ "$n" -le "$MUT_N" ]; do
+  if [ -s "$WORK/mres.$n" ]; then cat "$WORK/mres.$n"
+  else echo "FAIL  mutant #$n left no result line -- its verdict is unknown"; bad=1; fi
+  [ -e "$WORK/mbad.$n" ] && bad=1
+  n=$((n + 1))
+done
 
 [ "$bad" = 0 ] && { echo "check_ladder_cells_producer: all cases and mutants as expected"; exit 0; }
 exit 1

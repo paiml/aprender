@@ -12,17 +12,19 @@
 #          67-E2 decision D-1) — plus any event whose diff touches a ROOT
 #          manifest (rule (ii)) or whose own diff cannot be derived.
 #
-# THE QUEUE MIRRORS THE PR (PMAT-1098 67-E2, #3084). A rebase is not new
-# evidence about a PR's diff: it is the same diff on a new base. This script
-# used to answer `full` for every merge_group whose tree had moved and for
-# every push to main, so the queue paid a ~1h full workspace run each time main
-# moved under a PR — the single largest cost in the merge queue. Now:
-#   merge_group, tree moved: the queue ref's first parent is main's tip (or the
-#     previous entry), so HEAD^1..HEAD IS the PR's diff on the new base -- for a
-#     squash queue (one parent, this repo's setting) and a merge queue alike (#3658).
+# THE QUEUE MIRRORS THE PR (PMAT-1098 67-E2, #3084; operator 2026-10-17: the merge
+# queue runs the QUICK tier, FULL only on a tag/release push). A rebase is not new
+# evidence about a PR's diff. This script used to answer `full` for every
+# merge_group, a ~1h full workspace run each time. Now:
+#   merge_group: the same selection a PR gets, over the entry's diff,
+#     MG_BASE_SHA (github.event.merge_group.base_sha) .. HEAD. base_sha is the PRIOR
+#     ENTRY's head (main's tip only for the first entry; evidence on #5468), so the
+#     diff is this entry's own change. Not HEAD^1..HEAD: when an entry carries more
+#     than one commit that sees only the last. MG_BASE_SHA unset or not a commit, an
+#     EMPTY diff, or a failed diff -> full (fail closed). Only a non-empty docs-only
+#     diff is none. Renames: diff_into uses --no-renames (#3664), both sides touched.
 #   docs-only: every touched path under docs/roadmaps/ or docs/audits/ and present
 #     at HEAD -> tier=none; workspace-test has nothing to measure (#3658).
-#     Re-derive the PR's own selection from it and run the tier the PR ran.
 #   push to main: the same, over the push's own diff (HEAD^1..HEAD for a queue
 #     merge; origin/main@{1}..HEAD for a non-merge tip; neither -> full).
 #   rule (ii): a diff touching a ROOT Cargo.toml / Cargo.lock /
@@ -36,8 +38,8 @@
 #     plus one extra output line, check_workspace=1, which ci.yml turns into a
 #     single `cargo check --workspace --all-targets --locked` — the
 #     compile-level integration of every reverse dependent, in minutes.
-#   reuse  push only (T36, below). merge_group NEVER reuses a PR head: the PR runs
-#          quick, so the queue owes FULL (owe_full) -- a quick green is not the full run.
+#   reuse  push to main only (T36, below); a merge_group never reuses a PR head, and a
+#          TAG push NEVER reuses the queue's (quick) green: tag => full (#5172).
 #          push (T36): the merge queue tested this very commit and main was
 #          moved to it, so the push run would measure the same sha twice. With
 #          --mg-run/--mg-sha/--mg-conclusion (scripts/ci_mg_workspace_result.sh
@@ -136,6 +138,8 @@ while [ $# -gt 0 ]; do
         # optional operand: `--filterset 'a:--lib b:--test:c'`, or nothing and the
         # list comes from stdin (how ci.yml pipes steps.tier.outputs.targets in).
         --filterset) FILTERSET=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
+        # same operand rules as --filterset; prints the cargo BUILD flags for the same tokens
+        --build-flags) BUILDFLAGS=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
         *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--mg-run ID --mg-sha SHA --mg-conclusion C] [--registry FILE] [--repo-root DIR] | --filterset [TARGETS] | --tier-of-record [--tsv FILE] [--union-touched --event pull_request --comparand REF] | --self-test\n' "$0" >&2; exit 2 ;;
     esac
 done
@@ -158,6 +162,27 @@ targets_from_registry() { # -> space list crate:--lib | crate:--lib:module | cra
 
 re_escape() { # regex-escape a module path for a nextest test(/^.../) atom; `::` is not special, so it stays literal
     printf '%s' "$1" | sed 's#[].^$*+?()[{}|\\/]#\\&#g'
+}
+
+build_flags_from_targets() { # <space list of crate:--lib|crate:--bins|crate:--test:NAME> -> cargo flags that build ONLY those binaries
+    # `-p A -p B --lib --tests` linked every integration binary of every named
+    # package (605 built, 93 run, 512 skipped: run 39004459852). A token names
+    # its binary, so the build set is the named packages' lib/bins (if any
+    # token asks) plus exactly the named `--test` targets; nextest's -E still
+    # narrows the run, so this is only ever a superset of what runs.
+    local t pkgs="" lib="" bins="" tests="" c
+    for t in $1; do
+        c=${t%%:*}
+        case " $pkgs " in *" -p $c "*) ;; *) pkgs="$pkgs -p $c" ;; esac
+        case "$t" in
+            *:--lib|*:--lib:*) lib=" --lib" ;;
+            *:--bins)          bins=" --bins" ;;
+            *:--test:*)        case " $tests " in *" --test ${t#*:--test:} "*) ;; *) tests="$tests --test ${t#*:--test:}" ;; esac ;;
+            *) printf 'ENV: unrecognised target token "%s" — expected crate:--lib, crate:--bins or crate:--test:NAME\n' "$t" >&2; return 2 ;;
+        esac
+    done
+    [ -n "$pkgs" ] || { printf 'ENV: no targets given — refusing to emit empty build flags (cargo would build the WHOLE workspace)\n' >&2; return 2; }
+    printf '%s\n' "${pkgs# }$lib$bins$tests"
 }
 
 filterset_from_targets() { # <space list of crate:--lib|crate:--bins|crate:--test:NAME> -> nextest -E expression
@@ -282,17 +307,6 @@ push_reuse_why() {
     [ "$MG_CONCLUSION" = success ] || { echo "merge_group run $MG_RUN's workspace-test concluded ${MG_CONCLUSION:-nothing}, not success"; return; } # R-MGCONCL
 }
 
-# owe_full: the queue's answer over a selection. A PR head runs QUICK, so the queue owes
-# FULL, always: a merge_group is NEVER none and NEVER quick (sign-off r2 item 1 -- an
-# empty-diff `none` matched on reason text was a fail-open). The selection only lends its
-# reason; its crates=/targets=/check_workspace= lines are dropped so a full tier carries
-# nothing for the quick-only steps to read (r2 item 5). $1 = the selection's output.
-owe_full() {
-    local out=$1 why
-    why=$(printf '%s\n' "$out" | sed -n 's/^reason=//p' | head -n 1)
-    printf 'tier=full\nreason=queue owes FULL (the PR head ran quick or none, never reused): %s\n' "${why:-no selection reason}"
-}
-
 decide() {
     local df rc=0
     case "$EVENT" in
@@ -336,20 +350,24 @@ decide() {
             selection "push: $how" "$df" || rc=$?
             rm -f "$df"; return $rc ;;
         merge_group)
-            # 20X (structural-pr-flow-1016 s10): the PR head ran QUICK, so the queue OWES
-            # the FULL tier. A PR head's green is never reused here: its recorded tier is
-            # quick or none, never full, and the old same-tree `reuse` let a quick green
-            # stand in for the full run (the BSE-17 reuse hole). The queue ref is built on
-            # main's tip, so HEAD^1..HEAD IS this PR's diff on the new base (squash queue,
-            # #3658); a diff that cannot be derived falls closed to full. `none` (empty or
-            # docs-only) is full too: the queue never answers none.
-            local df sel_out
+            # Operator 2026-10-17 (cop window), verbatim: "we are not gaiting on night this is a
+            # boondoggle, only gating on tags/release". The queue runs the SAME selection a PR
+            # head does, over the entry's diff: MG_BASE_SHA (github.event.merge_group.base_sha =
+            # the PRIOR ENTRY's head, main's tip for the first) .. HEAD. HEAD^1..HEAD would
+            # see only the last commit of a multi-commit entry. Full is forced by the usual rules (root manifest, lock,
+            # ci files, foundation crate) and by any diff that cannot be derived. A TAG push is
+            # the full gate (push case, #5172). `none` (docs-only) is none here too.
+            local df mgb; mgb=$(printenv MG_BASE_SHA || true)
+            if [ -z "$mgb" ] || ! git -C "$ROOT" cat-file -e "$mgb^{commit}" 2>/dev/null; then
+                printf 'tier=full\nreason=merge_group: base sha "%s" unavailable, so the group diff cannot be derived -- fail closed to full\n' "${mgb:-unset}"; return
+            fi
             df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
-            if ! diff_into "$df" 'HEAD^1'; then rm -f "${df:?}"; printf 'tier=full\nreason=merge_group: git diff HEAD^1..HEAD failed, so the PR diff cannot be derived -- fail closed to full\n'; return 0; fi
-            sel_out=$(selection "merge_group: the queue owes the full tier; the PR's own selection re-derived on the queue ref from HEAD^1..HEAD" "$df") || rc=$?
-            rm -f "${df:?}"
-            [ "$rc" = 0 ] || { printf '%s\n' "$sel_out"; return "$rc"; }
-            owe_full "$sel_out" ;;
+            if ! diff_into "$df" "$mgb"; then rm -f "${df:?}"; printf 'tier=full\nreason=merge_group: git diff %s..HEAD failed -- fail closed to full\n' "$mgb"; return; fi
+            # The queue never answers none for an EMPTY diff (an empty group lands no path to prove
+            # it is docs-only; sign-off r1 of #5468): only a non-empty docs-only diff is none.
+            if [ ! -s "$df" ]; then rm -f "${df:?}"; printf 'tier=full\nreason=merge_group: group diff %s..HEAD is empty -- fail closed to full, never none\n' "$mgb"; return; fi
+            selection "merge_group: group diff $mgb..HEAD (quick tier; full only on tag/release)" "$df" || rc=$?
+            rm -f "${df:?}"; return ${rc:-0} ;;
         pull_request)
             selection "pull_request" "$DIFF_FROM" || return $? ;;
         *) printf 'ENV: unknown event "%s" — refusing to guess a tier\n' "$EVENT" >&2; return 2 ;;
@@ -483,23 +501,8 @@ self_test() {
     cp scripts/tree_reader_tests.txt "$td/reg.bak"; printf 'zeta\t--lib\n' >> scripts/tree_reader_tests.txt
     row 2 "pull_request with a drifted registry -> ENV (exit 2): no quick tier over a stale list" 'drifted' bash "$T" --event pull_request --diff-from "$td/d-scripts.txt"
     cp "$td/reg.bak" scripts/tree_reader_tests.txt
-    # merge_group rows on a throwaway repo: same tree (empty commit) vs different tree
-    git init -q "$td/repo"; ( cd "$td/repo" && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m base && printf 'a\n' > f && git add f && git -c user.name=t -c user.email=t@t commit -q -m one && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "queue merge, same tree" )
-    same=$(git -C "$td/repo" rev-parse HEAD~1)
-    row 0 "merge_group, same tree + PR head success -> NEVER reused: the queue re-derives from HEAD^1..HEAD (this fixture's queue commit is empty -> full, never none: r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion success
-    row 0 "merge_group, same tree but PR head conclusion failure -> the conclusion is not read either; an empty diff is still FULL (r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion failure
-    diff1=$(git -C "$td/repo" rev-parse HEAD~2)
-    # #3658: this row USED to want 'not a merge commit' -> full. That was the bug:
-    # the queue is SQUASH, so a one-parent queue ref is the NORMAL shape and
-    # HEAD^1..HEAD is still the PR's diff. It now re-derives instead of paying the hour.
-    row 0 "merge_group, different tree on a ONE-PARENT (squash-shaped) ref -> FULL owed (this fixture queue commit is empty -> full, never none: r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
-    row 0 "merge_group without a PR head -> the queue no longer needs one (empty diff is FULL too, r2)" '^tier=full$' bash "$T" --event merge_group --repo-root "$td/repo"
-    # PMAT-1098 67-E2 (#3084): THE QUEUE MIRRORS THE PR. A rebase is not new
-    # evidence about the PR's diff, it is the same diff on a new base — so a
-    # merge_group whose tree moved re-derives the PR's OWN selection from the
-    # queue ref (first parent = main's tip, second = the PR head, so HEAD^1..HEAD
-    # IS the PR's diff) and runs the tier the PR ran. Same for a push to main.
-    # Both used to cost the full hour every time main moved.
+    # merge_group (operator 2026-10-17: the queue runs the QUICK tier, full only on tag/release).
+    # The queue runs the PR's own selection over the entry's diff, MG_BASE_SHA..HEAD.
     mkqueue() { # $1 dir, $2 touched path -> HEAD = merge(main tip, PR head), a queue ref's shape
         local d=$1 f=$2
         git init -q -b main "$d"
@@ -515,25 +518,59 @@ self_test() {
     mkqueue "$td/q-leaf" "crates/$leaf/src/lib.rs"
     mkqueue "$td/q-root" "Cargo.toml"
     mkqueue "$td/q-cap"  "crates/aprender-core/src/lib.rs"
-    qh() { git -C "$1" rev-parse pr; }
-    cap mg-leaf bash "$T" --event merge_group --repo-root "$td/q-leaf" --pr-head "$(qh "$td/q-leaf")" --pr-head-conclusion success
-    row 0 "merge_group, different tree, the PR ran quick -> the queue OWES FULL, never a reused quick" '^tier=full$' bash -c "$(replay mg-leaf)"
-    row 0 "  ...and the reason says the queue owes full, so the promotion is auditable" 'queue owes FULL' bash -c "$(replay mg-leaf)"
-    row 0 "  ...exactly tier=full and no quick line, whatever crates the PR touched ($leaf)" '^OK-FULL-ONLY$' full_only "$(replay mg-leaf)"
-    row 0 "  ...and the reason names the re-derivation, not a guess" 're-derived on the queue ref' bash -c "$(replay mg-leaf)"
-    row 0 "  ...and a full tier carries NO crates= line, so the quick-only steps read nothing (r2 item 5)" '^OK-FULL-ONLY$' full_only "$(replay mg-leaf)"
-    cap mg-root bash "$T" --event merge_group --repo-root "$td/q-root" --pr-head "$(qh "$td/q-root")" --pr-head-conclusion success
-    row 0 "merge_group, the PR touched a ROOT manifest -> full at the queue too (rule (ii))" '^tier=full$' bash -c "$(replay mg-root)"
-    row 0 "  ...citing the root-manifest rule, so the escalation is auditable" 'root Cargo.toml' bash -c "$(replay mg-root)"
-    cap mg-root-same bash "$T" --event merge_group --repo-root "$td/q-root" --pr-head "$(git -C "$td/q-root" rev-parse HEAD)" --pr-head-conclusion success
-    row 0 "merge_group, SAME tree as the PR head, non-empty diff (root manifest), head green -> full, never reuse (sign-off r1 item 4)" "^tier=full$" bash -c "$(replay mg-root-same)"
-    cap mg-cap bash "$T" --event merge_group --repo-root "$td/q-cap" --pr-head "$(qh "$td/q-cap")" --pr-head-conclusion success
-    row 0 "merge_group over the cap -> owed FULL; NO quick line (crates=/targets=/check_workspace=) leaks" '^OK-FULL-ONLY$' full_only "$(replay mg-cap)"
-    sed "s|^    printf .tier=full.nreason=queue owes FULL.*|&; printf 'crates=aprender-core\\\\ncheck_workspace=1\\\\n'|" "$T" > "$td/mutant-leak.sh"
-    row 0 "MUTANT: a real owe_full that leaks crates=/check_workspace=1 beside tier=full goes RED (BAD-QUICK-LINE-LEAK)" '^BAD-QUICK-LINE-LEAK$' full_only "bash '$td/mutant-leak.sh' --event merge_group --repo-root '$td/q-cap' --pr-head '$(qh "$td/q-cap")' --pr-head-conclusion success"
+    mkgroup() { # $1 dir -> base; c1 touches root Cargo.toml; c2 (HEAD) touches only a leaf crate (base is TWO commits back, so HEAD^1 != base)
+        local d=$1
+        git init -q -b main "$d"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+          && git commit -q --allow-empty -m base \
+          && printf 'x\n' > Cargo.toml && git add -A && git commit -q -m "group entry 1: root manifest" )
+        # bashrs disable-next-line=SEC010
+        mkdir -p "$d/crates/${leaf:?}/src"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+          && printf 'x\n' > "crates/${leaf:?}/src/lib.rs" && git add -A && git commit -q -m "group entry 2: leaf" )
+    }
+    mkgroup "$td/g-stack"
+    rootc() { git -C "$1" rev-list --max-parents=0 HEAD; } # a fixture's first commit = the group's base
+    mgrun() { local b=$1; shift; env MG_BASE_SHA="$b" bash "$T" --event merge_group "$@"; }
+    cap mg-leaf mgrun "$(rootc "$td/q-leaf")" --repo-root "$td/q-leaf"
+    row 0 "merge_group, group diff touches a leaf crate -> tier=quick (the queue runs the quick tier)" '^tier=quick$' bash -c "$(replay mg-leaf)"
+    row 0 "  ...with that crate selected ($leaf)" "^crates=.*$leaf" bash -c "$(replay mg-leaf)"
+    row 0 "  ...the reason names the group diff, so the path taken is auditable" 'group diff .*\.\.HEAD' bash -c "$(replay mg-leaf)"
+    row 0 "  ...and no check_workspace line within the cap" '^NO-CHECK-WORKSPACE$' bash -c "if grep -q '^check_workspace=' '$td/mg-leaf.out'; then echo HAS; else echo NO-CHECK-WORKSPACE; fi"
+    cap mg-stack mgrun "$(rootc "$td/g-stack")" --repo-root "$td/g-stack"
+    row 0 "merge_group whose base is 2 commits back, the FIRST touches a root Cargo.toml and the second a leaf -> tier=full (base..HEAD, not HEAD^1)" '^tier=full$' bash -c "$(replay mg-stack)"
+    row 0 "  ...citing the root-manifest rule" 'root Cargo.toml' bash -c "$(replay mg-stack)"
+    sed 's|diff_into "\$df" "\$mgb"; then rm -f "\${df:?}"|diff_into "$df" HEAD^1; then rm -f "${df:?}"|' "$T" > "$td/mutant-head1.sh"
+    row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-head1.sh'; then echo SAME; else echo DIFFERS; fi"
+    row 0 "MUTANT: a merge_group arm that diffs HEAD^1 instead of MG_BASE_SHA sees only the last commit -> quick, row above goes RED" '^MUTANT-QUICK$' bash -c "o=\$(MG_BASE_SHA='$(rootc "$td/g-stack")' bash '$td/mutant-head1.sh' --event merge_group --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
+    cap mg-root mgrun "$(rootc "$td/q-root")" --repo-root "$td/q-root"
+    row 0 "merge_group, the group touched a ROOT manifest -> tier=full (rule (ii))" '^tier=full$' bash -c "$(replay mg-root)"
+    row 0 "  ...exactly tier=full and no quick line leaks" '^OK-FULL-ONLY$' full_only "$(replay mg-root)"
+    cap mg-nobase env -u MG_BASE_SHA bash "$T" --event merge_group --repo-root "$td/q-leaf"
+    row 0 "merge_group with MG_BASE_SHA unset -> tier=full (fail closed)" '^tier=full$' bash -c "$(replay mg-nobase)"
+    row 0 "  ...exactly tier=full and no quick line, naming the unavailable base" '^OK-FULL-ONLY$' full_only "$(replay mg-nobase)"
+    cap mg-badbase mgrun "0123456789abcdef0123456789abcdef01234567" --repo-root "$td/q-leaf"
+    row 0 "merge_group with MG_BASE_SHA not a commit -> tier=full (fail closed)" '^tier=full$' bash -c "$(replay mg-badbase)"
+    row 0 "  ...exactly tier=full and no quick line" '^OK-FULL-ONLY$' full_only "$(replay mg-badbase)"
+    cap mg-emptybase mgrun "" --repo-root "$td/q-leaf"
+    row 0 "merge_group with MG_BASE_SHA empty -> tier=full (fail closed)" '^OK-FULL-ONLY$' full_only "$(replay mg-emptybase)"
+    cap mg-empty mgrun "$(git -C "$td/q-leaf" rev-parse HEAD)" --repo-root "$td/q-leaf"
+    row 0 "merge_group with an EMPTY group diff (MG_BASE_SHA == HEAD) -> tier=full, never none (sign-off r1 of #5468)" '^OK-FULL-ONLY$' full_only "$(replay mg-empty)"
+    row 0 "  ...and the reason says the diff is empty" 'is empty' bash -c "$(replay mg-empty)"
+    sed '/group diff %s..HEAD is empty/d' "$T" > "$td/mutant-empty.sh"
+    row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-empty.sh'; then echo SAME; else echo DIFFERS; fi"
+    row 0 "MUTANT: a merge_group arm without the empty-diff guard answers none -> the row above goes RED" '^MUTANT-NONE$' bash -c "o=\$(MG_BASE_SHA=\"\$(git -C '$td/q-leaf' rev-parse HEAD)\" bash '$td/mutant-empty.sh' --event merge_group --repo-root '$td/q-leaf'); if grep -q '^tier=none$' <<< \"\$o\"; then echo MUTANT-NONE; else echo SURVIVED; fi"
+    cap mg-cap mgrun "$(rootc "$td/q-cap")" --repo-root "$td/q-cap"
+    row 0 "merge_group over the cap -> tier=quick with check_workspace=1, as pull_request does" '^check_workspace=1$' bash -c "$(replay mg-cap)"
+    row 0 "  ...tier=quick, not full" '^tier=quick$' bash -c "$(replay mg-cap)"
+    row 0 "  ...and the touched crate itself still runs its tests" '^crates=.*aprender-core' bash -c "$(replay mg-cap)"
     row 0 "MUTANT: a nonzero replay rc cannot pass full_only (BAD-RC-3)" '^BAD-RC-3$' full_only "echo tier=full; exit 3"
     row 0 "MUTANT: an empty capture is BAD-EMPTY, never a pass" '^BAD-EMPTY$' full_only "true"
-    row 0 "MUTANT: a quick tier on an over-cap merge_group is BAD-NOT-FULL" '^BAD-NOT-FULL$' full_only "echo tier=quick; echo crates=aprender-core"
+    row 0 "MUTANT: a quick tier is BAD-NOT-FULL under full_only" '^BAD-NOT-FULL$' full_only "echo tier=quick; echo crates=aprender-core"
     cap push-leaf bash "$T" --event push --repo-root "$td/q-leaf"
     row 0 "push (a queue merge of one PR) -> quick with the PUSH own diff, not the whole workspace" "^crates=.*$leaf" bash -c "$(replay push-leaf)"
     row 0 "  ...and the reason names HEAD^1..HEAD, so the diff is auditable" 'HEAD\^1' bash -c "$(replay push-leaf)"
@@ -558,20 +595,20 @@ self_test() {
     }
     mksquash "$td/s-leaf" "crates/$leaf/src/lib.rs"
     mksquash "$td/s-docs" "docs/roadmaps/entries/PMAT-9999.yaml"
-    row 0 "  ...and its reason still names the re-derivation, so the path taken is auditable" 're-derived on the queue ref from HEAD\^1\.\.HEAD: empty diff' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
     row 0 "  (fixture) the squash queue ref really has ONE parent" '^ONE-PARENT$' bash -c "if git -C '$td/s-leaf' rev-parse -q --verify 'HEAD^2' >/dev/null; then echo TWO; else echo ONE-PARENT; fi"
-    cap sq-leaf bash "$T" --event merge_group --repo-root "$td/s-leaf" --pr-head "$(qh "$td/s-leaf")" --pr-head-conclusion success
-    row 0 "merge_group on a SQUASH queue ref, leaf crate -> FULL owed, not the PR's quick" '^tier=full$' bash -c "$(replay sq-leaf)"
-    row 0 "  ...exactly tier=full and no quick line, for the PR crate ($leaf)" '^OK-FULL-ONLY$' full_only "$(replay sq-leaf)"
-    cap sq-docs bash "$T" --event merge_group --repo-root "$td/s-docs" --pr-head "$(qh "$td/s-docs")" --pr-head-conclusion success
-    row 0 "merge_group on a SQUASH queue ref, roadmap entry only -> FULL owed, never none (sign-off r1)" '^tier=full$' bash -c "$(replay sq-docs)"
+    cap sq-leaf mgrun "$(git -C "$td/s-leaf" rev-parse HEAD~1)" --repo-root "$td/s-leaf"
+    row 0 "merge_group on a SQUASH queue ref, leaf crate -> tier=quick with that crate ($leaf)" "^crates=.*$leaf" bash -c "$(replay sq-leaf)"
+    cap sq-docs mgrun "$(git -C "$td/s-docs" rev-parse HEAD~1)" --repo-root "$td/s-docs"
+    row 0 "merge_group, docs-only group (roadmap entry only) -> tier=none" '^tier=none$' bash -c "$(replay sq-docs)"
     row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
-    row 0 "owe_full on empty or tier-less output falls CLOSED to full (sign-off r1 item 3)" '^tier=full$' bash -c "source <(sed -n '/^owe_full()/,/^}/p' '$T'); owe_full ''"
     row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" bash "$T" --event push --repo-root "$td/s-leaf"
     row 0 "push of a TAG (#5172) -> ONE tier line, full, over the same squash repo: never the refined diff" '^tier=full 1$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf'); printf '%s %s\\n' \"\$(printf '%s\\n' \"\$o\" | grep '^tier=' | head -n1)\" \"\$(printf '%s\\n' \"\$o\" | grep -c '^tier=')\""
-    # MUTANT: a queue that lets a docs-only none through (the sign-off r1 item 1 hole) must leak tier=none.
-    sed "s|^    printf .tier=full.nreason=queue owes FULL.*|    printf '%s\\n' \"\$out\"|" "$T" > "$td/mutant-none.sh"
-    row 0 "mutant owe_full that passes a docs-only none through leaks tier=none -- the rows discriminate" 'MUTANT-NONE' bash -c "if bash '$td/mutant-none.sh' --event merge_group --repo-root '$td/s-docs' | grep -q '^tier=none$'; then echo MUTANT-NONE; else echo MUTANT-FULL; fi"
+    MGARGS="--mg-run 123456 --mg-sha \$(git -C '$td/s-leaf' rev-parse HEAD) --mg-conclusion success"
+    row 0 "push of a plain sha WITH a successful merge_group result for HEAD -> reuse (T36 control)" '^tier=reuse$' bash -c "bash '$T' --event push --repo-root '$td/s-leaf' $MGARGS | head -n1"
+    row 0 "TAG push of a sha the queue already tested (quick) green -> tier=full, NEVER reuse (sign-off r2 #5468)" '^tier=full$' bash -c "GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf' $MGARGS | head -n1"
+    sed 's|refs/tags/\*)|refs/tags/NEVER/*)|' "$T" > "$td/mutant-tagreuse.sh"
+    row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-tagreuse.sh'; then echo SAME; else echo DIFFERS; fi"
+    row 0 "MUTANT: a push arm that does not special-case tags reuses the quick MG green on a tag -> the row above goes RED" '^MUTANT-REUSE$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$td/mutant-tagreuse.sh' --event push --repo-root '$td/s-leaf' $MGARGS); if grep -q '^tier=reuse$' <<< \"\$o\"; then echo MUTANT-REUSE; else echo SURVIVED; fi"
     # #3658 DOCS-ONLY on a pull_request (paths that exist in this tree).
     printf 'docs/roadmaps/roadmap.yaml\ndocs/audits/pp-066-plan-quorum.md\n' > "$td/d-docs.txt"
     row 0 "pull_request, roadmap + audit only -> tier=none (no Rust test reads those paths)" '^tier=none$' bash "$T" --event pull_request --diff-from "$td/d-docs.txt"
@@ -597,12 +634,12 @@ self_test() {
     }
     mkrename "$td/s-rename" "crates/$leaf/src/lib.rs" "docs/audits/lib.rs"
     row 0 "  (fixture) default git diff --name-only on the rename lists ONLY the new docs path -- the trap is real" '^docs/audits/lib\.rs$' git -C "$td/s-rename" diff --name-only HEAD^1 HEAD
-    cap sq-rename bash "$T" --event merge_group --repo-root "$td/s-rename" --pr-head "$(qh "$td/s-rename")" --pr-head-conclusion success
-    row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path)" '^tier=full$' bash -c "$(replay sq-rename)"
-    row 0 "  ...exactly tier=full and no quick line (the rename guard itself is the push-arm rows below)" '^OK-FULL-ONLY$' full_only "$(replay sq-rename)"
+    cap sq-rename mgrun "$(git -C "$td/s-rename" rev-parse HEAD~2)" --repo-root "$td/s-rename"
+    row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path): the crate it left IS selected" "^crates=.*$leaf" bash -c "$(replay sq-rename)"
+    row 0 "  ...and it is quick, not none" '^tier=quick$' bash -c "$(replay sq-rename)"
     sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
     cap push-rename bash "$T" --event push --repo-root "$td/s-rename"
-    row 0 "push, a crate source RENAMED into docs/audits/ -> the crate it left IS selected (--no-renames; the merge_group arm is always full, so the push arm carries this guard)" "^crates=.*$leaf" bash -c "$(replay push-rename)"
+    row 0 "push, a crate source RENAMED into docs/audits/ -> the crate it left IS selected (--no-renames; the push arm carries this guard independently of the merge_group arm)" "^crates=.*$leaf" bash -c "$(replay push-rename)"
     row 0 "mutant without --no-renames on the push arm drops the left crate -- the rename rows go RED" 'MUTANT-DROPPED' bash -c "o=\$(bash '$td/mutant-renames.sh' --event push --repo-root '$td/s-rename' 2>&1); case \"\$o\" in *\"crates=\"*$leaf*) echo MUTANT-KEPT ;; *) echo MUTANT-DROPPED ;; esac"
     row 0 "ci/sections.yml (#4433) lists the pull_request touched paths through pr_touched_paths.sh, which keeps --no-renames" '^ALL-PRESENT$' contains_all "$TREE/ci/sections.yml" 'bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
     row 0 "  ...and the helper diffs with --no-renames" '^ALL-PRESENT$' contains_all "$TREE/scripts/ci/pr_touched_paths.sh" 'git diff --no-renames --name-only "$mb" "$head"'
@@ -626,10 +663,6 @@ self_test() {
     row 0 "#5391 ...and a crate only main's later commit touched is NOT listed (own crate present, so not vacuous)" '^NOT-LISTED$' bash -c "cd '$td/s-moved' && o=\$(bash '$PTP' main HEAD 2>/dev/null); case \"\$o\" in *other-crate*) echo LISTED-OR-EMPTY;; *crates/own-crate/*) echo NOT-LISTED;; *) echo LISTED-OR-EMPTY;; esac"
     sed 's|git diff --no-renames --name-only "\$mb" "\$head"|git diff --no-renames --name-only "$base" "$head"|' "$TREE/scripts/ci/pr_touched_paths.sh" > "$td/mutant-tipvstip.sh"
     row 0 "#5391 mutant (tip vs tip, the old behaviour) lists main's crate -- the rows discriminate" '^MUTANT-LISTS-IT$' bash -c "cd '$td/s-moved' && m=\$(bash '$td/mutant-tipvstip.sh' main HEAD 2>/dev/null); case \"\$m\" in *other-crate*) echo MUTANT-LISTS-IT;; *) echo MUTANT-SURVIVES;; esac"
-    # MUTANT: a copy whose queue branch ignores the re-derived diff and always
-    # says full is exactly today's behaviour — the rows above must lose the crates.
-    sed 's|owe_full "\$sel_out" ;;|printf "%s\\n" "\$sel_out" ;;|' "$T" > "$td/mutant-queue.sh"
-    row 0 "mutant queue that reuses the PR's quick (no promotion) leaks tier=quick -- the rows discriminate" 'MUTANT-QUICK' bash -c "if bash '$td/mutant-queue.sh' --event merge_group --repo-root '$td/q-leaf' --pr-head '$(qh "$td/q-leaf")' --pr-head-conclusion success | grep -q '^tier=quick'; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     # --filterset (PMAT-1098, #3084): the quick tier's 26-way `&&` chain of
     # per-crate cargo invocations became ONE build graph + one nextest run over a
     # filterset. These rows pin the token->clause translation in BOTH polarities:
@@ -642,6 +675,10 @@ self_test() {
     row 0 "--filterset: a bins token -> (package & kind(bin)); a bin-only crate has NO lib target" '^\(package\(aprender-compute-xtask\) & kind\(bin\)\)$' bash "$T" --filterset 'aprender-compute-xtask:--bins'
     row 0 "--filterset: two tokens are UNIONed with |" 'kind\(lib\)\) \| binary_id\(' bash "$T" --filterset 'apr-cli:--lib aprender-core:--test:readme_contract'
     row 2 "--filterset: an unknown token -> ENV (exit 2), never a silently dropped target" 'unrecognised target token' bash "$T" --filterset 'apr-cli:--doc'
+    row 0 "--build-flags: lib+test tokens -> packages once, --lib once, each --test once (NOT --tests)" '^-p apr-cli -p aprender-core --lib --test readme_contract$' bash "$T" --build-flags 'apr-cli:--lib aprender-core:--lib:foo aprender-core:--test:readme_contract apr-cli:--test:readme_contract'
+    row 0 "--build-flags: a bins token -> --bins" '^-p x --bins$' bash "$T" --build-flags 'x:--bins'
+    row 2 "--build-flags: an unknown token -> ENV (exit 2)" 'unrecognised target token' bash "$T" --build-flags 'apr-cli:--doc'
+    row 2 "--build-flags: no targets -> ENV (exit 2); empty flags would build the WHOLE workspace" 'empty build flags' bash "$T" --build-flags ''
     row 2 "--filterset: no targets -> ENV (exit 2); an empty -E would select the WHOLE workspace" 'empty filterset' bash "$T" --filterset ''
     row 0 "--filterset reads stdin and translates EVERY registry token (no ':--' survives)" '^NONE-LEFT$' all_translated "$td/pr-scripts.out"
     # Per TOKEN, not per registry line: since PMAT-3120 a crate's module rows can
@@ -737,6 +774,10 @@ self_test() {
 }
 
 if [ "${SELF_TEST:-0}" = 1 ]; then self_test; exit $?; fi
+if [ "${BUILDFLAGS:-0}" = 1 ]; then
+    if [ -z "${FS_TARGETS+x}" ]; then FS_TARGETS=$(cat); fi
+    build_flags_from_targets "$FS_TARGETS"; exit $?
+fi
 if [ "${FILTERSET:-0}" = 1 ]; then
     if [ -z "${FS_TARGETS+x}" ]; then FS_TARGETS=$(cat); fi
     filterset_from_targets "$FS_TARGETS"; exit $?
