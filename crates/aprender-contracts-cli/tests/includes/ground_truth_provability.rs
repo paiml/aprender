@@ -18,16 +18,16 @@ struct ContractFacts {
 
 fn extract_facts(contract: &str) -> ContractFacts {
     let yaml = std::fs::read_to_string(fixture_path(contract)).expect("fixture file is readable");
-    let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).expect("fixture YAML parses");
+    let doc: serde_json::Value = aprender_contracts_cli::yaml::from_str(&yaml).expect("fixture YAML parses");
 
-    let equations = doc["equations"].as_mapping().expect("the node is a YAML mapping");
+    let equations = doc["equations"].as_object().expect("the node is a YAML mapping");
     let mut equation_ids = Vec::new();
     let mut formulas = Vec::new();
     let mut invariants = Vec::new();
     for (id, eq) in equations {
-        equation_ids.push(id.as_str().expect("the node is a YAML string").to_string());
+        equation_ids.push(id.clone());
         formulas.push(eq["formula"].as_str().expect("the node is a YAML string").to_string());
-        if let Some(invs) = eq.get("invariants").and_then(|v| v.as_sequence()) {
+        if let Some(invs) = eq.get("invariants").and_then(|v| v.as_array()) {
             for inv in invs {
                 invariants.push(inv.as_str().expect("the node is a YAML string").to_string());
             }
@@ -36,7 +36,7 @@ fn extract_facts(contract: &str) -> ContractFacts {
 
     let mut phase_names = Vec::new();
     if let Some(ks) = doc.get("kernel_structure") {
-        if let Some(phases) = ks.get("phases").and_then(|v| v.as_sequence()) {
+        if let Some(phases) = ks.get("phases").and_then(|v| v.as_array()) {
             for phase in phases {
                 phase_names.push(phase["name"].as_str().expect("the node is a YAML string").to_string());
             }
@@ -45,7 +45,7 @@ fn extract_facts(contract: &str) -> ContractFacts {
 
     let mut obligation_types = Vec::new();
     let mut obligation_props = Vec::new();
-    if let Some(obs) = doc.get("proof_obligations").and_then(|v| v.as_sequence()) {
+    if let Some(obs) = doc.get("proof_obligations").and_then(|v| v.as_array()) {
         for ob in obs {
             obligation_types.push(ob["type"].as_str().expect("the node is a YAML string").to_string());
             obligation_props.push(ob["property"].as_str().expect("the node is a YAML string").to_string());

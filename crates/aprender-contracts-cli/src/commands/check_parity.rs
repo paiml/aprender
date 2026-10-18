@@ -13,7 +13,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use serde_yaml::Value;
+use serde_json::Value;
 
 #[derive(Debug)]
 pub struct RowResult {
@@ -31,11 +31,11 @@ pub enum Verdict {
 
 pub fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let text = std::fs::read_to_string(path)?;
-    let doc: Value = serde_yaml::from_str(&text)?;
+    let doc: Value = crate::yaml::from_str(&text)?;
 
     let rows = doc
         .get("categories")
-        .and_then(Value::as_sequence)
+        .and_then(Value::as_array)
         .ok_or("contract has no `categories:` sequence — is this a parity matrix?")?;
 
     let mut results: Vec<RowResult> = Vec::with_capacity(rows.len());

@@ -4,21 +4,24 @@ pub fn run(contract: &Path, reason: &str) -> Result<(), Box<dyn std::error::Erro
     let content = std::fs::read_to_string(contract)?;
 
     // Parse to verify it's valid
-    let mut contract_obj: serde_yaml::Value = serde_yaml::from_str(&content)?;
+    let contract_obj: serde_json::Value = crate::yaml::from_str(&content)?;
 
-    // Remove locked_level from metadata
-    if let Some(metadata) = contract_obj.get_mut("metadata") {
-        if let Some(map) = metadata.as_mapping_mut() {
-            let had_lock = map.remove("locked_level");
-            if had_lock.is_none() {
-                println!("Contract has no locked_level -- nothing to unlock.");
-                return Ok(());
-            }
-        }
+    // Only metadata.locked_level is removed
+    let locked = contract_obj
+        .get("metadata")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|m| m.contains_key("locked_level"));
+    if !locked {
+        println!("Contract has no locked_level -- nothing to unlock.");
+        return Ok(());
     }
 
-    // Write back
-    let new_content = serde_yaml::to_string(&contract_obj)?;
+    // Write back: drop the indented `locked_level:` line and keep every other byte, so key
+    // order and comments survive (a Value round trip would re-sort the keys).
+    let new_content: String = content
+        .split_inclusive('\n')
+        .filter(|l| !(l.starts_with([' ', '\t']) && l.trim_start().starts_with("locked_level:")))
+        .collect();
     std::fs::write(contract, &new_content)?;
 
     println!("Unlocked: {}", contract.display());

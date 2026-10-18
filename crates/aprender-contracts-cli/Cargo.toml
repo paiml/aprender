@@ -25,7 +25,7 @@ batuta-common = { workspace = true, features = ["cli-roles"] }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
+serde-saphyr = { workspace = true }
 sha2 = { workspace = true }
 # #4604 C2: optional so the crates.io pv builds from crates that are live there;
 # release binaries and in-tree builds pass `--features update-check,build-sha`.
