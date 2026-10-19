@@ -40,6 +40,8 @@ export CARGO_TARGET_DIR="$build/target"
 # Hermetic registry: a host ~/.cargo/registry may be a symlink into /dev/shm that
 # dangles inside the section containers (guard-cargo m5). Keep the toolchain home
 # where it is and point cargo's registry/cache at the build filesystem.
+# cargo-free guards need user-scope tools (check-jsonschema); a non-login ssh PATH lacks them.
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
 export CARGO_HOME="$build/cargo-home"
 mkdir -p "$CARGO_HOME"
