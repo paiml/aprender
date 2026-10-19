@@ -270,6 +270,11 @@ falsification_tests:
   prediction: output_json_v2 succeeds with and without stats and skips unknown tensor names
   test: commands::hex::tests::output_json_v2_lists_filtered_tensors_with_and_without_stats
   if_fails: hex JSON output errors on a valid APR file or invents tensors
+- id: FALSIFY-OPS-011
+  rule: ptx-map printers cover decode, prefill, hit and miss paths
+  prediction: print_json and print_reverse_lookup complete on every table and report launches/layer x layers
+  test: commands::ptx_map::tests::print_json_and_reverse_lookup_cover_every_branch
+  if_fails: ptx-map JSON or reverse-lookup output panics or miscounts launches
 kani_harnesses:
 - id: KANI-OPS-001
   obligation: ReadOnly commands have no side effects
@@ -324,7 +329,7 @@ qa_gate:
   - progress_reporting
   - concurrent_model_access
   - tokenizer_consistency
-  pass_criteria: All 10 falsification tests pass
+  pass_criteria: All 11 falsification tests pass
   falsification: >
     Run read-only command with filesystem watcher to detect mutations.
     Force inference error and measure GPU memory leak.

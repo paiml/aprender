@@ -573,15 +573,15 @@ mod rr2 {
         let header = "  - id: release-readiness-v2.model-smoke\n    targetClass: release:ModelKernelCell\n    properties:\n";
         let text = contract();
         assert!(text.contains(header), "the model-smoke shape header moved");
-        let (_, twice) = census(&parse(&text.replace(header, "")));
-        assert_eq!(
-            twice.len(),
-            1,
-            "the planted control did not fire: {twice:?}"
-        );
+        // Two `node:` blocks in one shape used to write `<shape>/node` twice (#5501); each is now named by its path.
+        let (n, twice) = census(&parse(&text.replace(header, "")));
         assert!(
-            twice[0].ends_with("shape/release-readiness-v2.model/node>"),
-            "{twice:?}"
+            twice.is_empty(),
+            "two nested nodes in one shape share an IRI: {twice:?}"
+        );
+        assert_eq!(
+            n, 5,
+            "the planted control still merges the smoke into the model shape"
         );
     }
 
