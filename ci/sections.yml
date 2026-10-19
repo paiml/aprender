@@ -418,8 +418,32 @@ jobs:
               fi
               ;;
           esac
+          # PMAT-5737 batch receipt. The batcher pushes a commit holding exactly `receipt` and `receipt.sig` to
+          # refs/receipts/<tree>; the transport is untrusted, the SIGNATURE is the trust. A missing ref, a fetch
+          # that fails, a tag, or any verifier doubt leaves --receipt-ok off: the PR/queue tier is decided as before.
+          # allowed_signers is the COMMITTED one at this checkout, never the one fetched beside the receipt.
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request|merge_group)
+              case "${GITHUB_REF}" in
+                refs/tags/*) printf 'receipt: tag ref -- never honoured\n' ;;
+                *)
+                  rtree=$(git rev-parse 'HEAD^{tree}' 2>/dev/null || true)
+                  rdir="$RUNNER_TEMP/receipt"; rm -rf "${rdir:?}"; mkdir -p "$rdir"
+                  if [ -n "$rtree" ] \
+                    && bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "refs/receipts/${rtree}:refs/receipts/${rtree}" >/dev/null 2>&1 \
+                    && [ "$(git ls-tree --name-only "refs/receipts/${rtree}" | paste -sd' ' -)" = "receipt receipt.sig" ] \
+                    && git show "refs/receipts/${rtree}:receipt" > "$rdir/receipt" 2>/dev/null \
+                    && git show "refs/receipts/${rtree}:receipt.sig" > "$rdir/receipt.sig" 2>/dev/null; then
+                    rv=$(bash scripts/ci_receipt_verify.sh "${GITHUB_REPOSITORY}" "$rdir/receipt" "$rdir/receipt.sig" ci/receipt/allowed_signers scripts/ci/toolchain_id.sh 2>&1) || true
+                    printf 'receipt for tree %s: %s\n' "$rtree" "$rv"
+                    if [ "$rv" = "RECEIPT_OK=1" ]; then args+=(--receipt-ok 1); fi
+                  else
+                    printf 'receipt for tree %s: none (no refs/receipts ref) -- the full path decides\n' "${rtree:-unknown}"
+                  fi ;;
+              esac ;;
+          esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
-          grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+          grep -E '^(tier|crates|targets|check_workspace|reason|cite|receipt)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
       # #4502 row 2: lint_passes_on_real_contracts (aprender-contracts) requires the
       # refinement gate to RUN whenever CI is set, and that gate compares HEAD with
       # merge-base(HEAD, origin/main), else the origin/main tip. This section clones at
@@ -1055,6 +1079,46 @@ jobs:
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
             cargo check --workspace --all-targets --locked
+      # PMAT-5737 receipt reuse: a signed batch receipt covers this exact tree, so the tests are not re-run. What
+      # a receipt does NOT cover is that this merge result still compiles and is clean, so shard 1 runs the three
+      # cheap whole-workspace checks (the same docker invocation as the over-cap step above); the other shards
+      # print the citation. tier=reuse with receipt=ok is only ever a pull_request or a merge_group.
+      - name: "Receipt reuse: cargo check + fmt + clippy over the workspace (PMAT-5737, shard 1)"
+        if: steps.tier.outputs.tier == 'reuse' && steps.tier.outputs.receipt == 'ok' && matrix.shard == 1
+        timeout-minutes: 30
+        env:
+          REASON: ${{ steps.tier.outputs.reason }}
+          CITE: ${{ steps.tier.outputs.cite }}
+        run: |
+          set -euo pipefail
+          printf 'workspace-test REUSED: %s\ncited: %s\n' "$REASON" "$CITE"
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_TERM_COLOR=never \
+            "$IMAGE" \
+            sh -euc 'cargo check --workspace --all-targets --locked
+            cargo fmt --all -- --check
+            cargo clippy --workspace --all-targets -- -D warnings'
+      - name: "Receipt reuse: cite only (PMAT-5737, shards 2+)"
+        if: steps.tier.outputs.tier == 'reuse' && steps.tier.outputs.receipt == 'ok' && matrix.shard != 1
+        env:
+          REASON: ${{ steps.tier.outputs.reason }}
+          CITE: ${{ steps.tier.outputs.cite }}
+        run: |
+          printf 'workspace-test REUSED: %s\ncited: %s\n' "$REASON" "$CITE"
       # BSE-17 reuse: the queue ref's tree is byte-identical to a PR head whose
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the
@@ -1062,7 +1126,7 @@ jobs:
       # T36: on a push the citation is instead the merge_group run that tested
       # this very sha, so the label names what is cited for each event.
       - name: "Reuse: this tree already passed workspace-test (BSE-17 PR head / T36 merge queue)"
-        if: steps.tier.outputs.tier == 'reuse'
+        if: steps.tier.outputs.tier == 'reuse' && steps.tier.outputs.receipt != 'ok'
         run: |
           printf 'workspace-test REUSED: %s\n' "${{ steps.tier.outputs.reason }}"
           case "${{ github.event_name }}" in
