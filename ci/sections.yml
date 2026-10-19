@@ -420,7 +420,7 @@ jobs:
           esac
           # PMAT-5737 batch receipt (FLOW-009 RC-3): the batcher puts the signed receipt in the PR BODY, in a fenced
           # block `flow009.receipt/1`. It is read from the event payload -- no API call, no comment, no ref. The
-          # transport is untrusted, the SIGNATURE is the trust, checked against the COMMITTED .flow009/batcher.pub.
+          # transport is untrusted, the SIGNATURE is the trust, checked against the BASE commit's .flow009/batcher.pub.
           # pull_request ONLY (a merge_group has no PR body; a push and a tag never take it). Any doubt leaves
           # --receipt-ok off and the PR/queue tier is decided as before: PG-3, never red.
           case "${GITHUB_EVENT_NAME}" in
@@ -428,13 +428,31 @@ jobs:
               case "${GITHUB_REF}" in
                 refs/tags/*) printf 'receipt: tag ref -- never honoured\n' ;;
                 *)
-                  # a depth-1 merge checkout hides HEAD^1 and the PR head: fetch both with enough history for the
-                  # merge-base. A failed fetch leaves the verifier to refuse (R-HEADMISSING) -> the full path.
+                  # TRUST BOUNDARY (PMAT-1889): the verifier, its helpers and the pubkey come from the BASE commit
+                  # (pull_request.base.sha), never from this PR's tree -- otherwise a PR commits its own key (or edits the
+                  # verifier), signs its own receipt and skips the tests it is judged by. cwd stays the PR tree, so the
+                  # toolchain and the manifest are still computed over it. Any of them absent on base (true until the PR
+                  # that adds them merges) or the base unfetchable => no receipt, the full gate: fail closed, never red.
                   rhead=$(jq -r '.pull_request.head.sha // ""' "${GITHUB_EVENT_PATH}" 2>/dev/null || true)
-                  if [ -n "$rhead" ] && bash scripts/ci/fetch_p6.sh --no-tags --depth=500 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" "$rhead" >/dev/null 2>&1; then
+                  rbase=$(jq -r '.pull_request.base.sha // ""' "${GITHUB_EVENT_PATH}" 2>/dev/null || true)
+                  # a depth-1 merge checkout hides HEAD^1, the PR head and the base sha: fetch all with enough history for
+                  # the merge-base. A failed fetch leaves the verifier to refuse (R-HEADMISSING) -> the full path.
+                  if [ -n "$rhead" ] && [ -n "$rbase" ] && bash scripts/ci/fetch_p6.sh --no-tags --depth=500 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" "$rhead" "$rbase" >/dev/null 2>&1; then
                     export RECEIPT_BASE="origin/${GITHUB_BASE_REF}"
+                    trusted="$RUNNER_TEMP/flow009-trusted"
+                    rm -rf "${trusted:?}"; mkdir -p "$trusted"
+                    tok=1
+                    for tf in scripts/ci_receipt_verify.sh scripts/ci/toolchain_id.sh scripts/ci/manifest_id.sh .flow009/batcher.pub; do
+                      git show "$rbase:$tf" > "$trusted/$(basename "$tf")" 2>/dev/null || tok=0
+                    done
+                    if [ "$tok" = 1 ]; then
+                      rv=$(FLOW009_PUBKEY="$trusted/batcher.pub" bash "$trusted/ci_receipt_verify.sh" "${GITHUB_REPOSITORY}" "${GITHUB_EVENT_PATH}" "$trusted/batcher.pub" "$trusted/toolchain_id.sh" "$trusted/manifest_id.sh" 2>/dev/null | grep -v '^coverage=') || true
+                    else
+                      rv="RECEIPT_OK=0 reason=verifier or pubkey absent on the base commit -- full gate"
+                    fi
+                  else
+                    rv="RECEIPT_OK=0 reason=base commit not fetchable -- full gate"
                   fi
-                  rv=$(bash scripts/ci_receipt_verify.sh "${GITHUB_REPOSITORY}" "${GITHUB_EVENT_PATH}" .flow009/batcher.pub scripts/ci/toolchain_id.sh scripts/ci/manifest_id.sh 2>&1) || true
                   printf 'receipt: %s\n' "$rv"
                   if [ "$rv" = "RECEIPT_OK=1" ]; then args+=(--receipt-ok 1); fi ;;
               esac ;;
@@ -1470,6 +1488,13 @@ jobs:
       # behaviour rows, structure rows and every mutant (#4672, #4734).
       - name: coverage receipt is sha-keyed and read only by the release gate (#4672)
         run: setsid --wait bash scripts/check_coverage_receipt.sh
+      # PMAT-1889: the receipt step in the tier job must run the BASE commit's verifier and key, never the PR tree's.
+      # This is that rule as a static check on this very file, with a mutant per way of breaking it; it also runs the
+      # verifier's own case table (RC-1..RC-5, FLOW009_PUBKEY, coverage= line).
+      - name: the receipt step judges a PR by the base commit's verifier and key (PMAT-1889)
+        run: |
+          setsid --wait bash scripts/check_receipt_trust_boundary.sh --self-test
+          setsid --wait bash scripts/ci_receipt_verify.sh --self-test
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
       # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED

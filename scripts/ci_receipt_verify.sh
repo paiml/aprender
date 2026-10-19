@@ -8,9 +8,12 @@
 # Run from the checked-out PR MERGE commit. <event.json> is $GITHUB_EVENT_PATH: the receipt is read from
 # .pull_request.body (RC-3: never an API call, never a comment, never a ref) and the PR head from
 # .pull_request.head.sha. Defaults: .flow009/batcher.pub (COMMITTED at this tree), scripts/ci/toolchain_id.sh,
-# scripts/ci/manifest_id.sh. Prints exactly one line on stdout:
+# scripts/ci/manifest_id.sh. Prints on stdout:
 #   RECEIPT_OK=1
 #   RECEIPT_OK=0 reason=<why>
+# On RECEIPT_OK=1 a second stdout line `coverage=<gate_results.coverage>` follows when that value is numeric (sovereign-ci.yml
+# reads it); absent or non-numeric => no such line. FLOW009_PUBKEY (env), when set, is THE pubkey path and overrides the
+# argument and the default: the caller passes the BASE commit's copy so a PR cannot sign with a key it committed itself.
 # exit 0 on RECEIPT_OK=1, 1 otherwise. FAIL CLOSED (PG-3): a missing tool or file, a parse problem or any error is
 # RECEIPT_OK=0 and the caller runs the full gate -- never red. Not a tag and not a push: that is the caller's
 # (ci/sections.yml runs this for pull_request only; ci_test_tier.sh refuses a tag ref again).
@@ -38,7 +41,10 @@ no() { echo "RECEIPT_OK=0 reason=$*"; exit 1; }
 
 verify() {
     local repo=${1:-} event=${2:-} pub=${3:-.flow009/batcher.pub} tcid=${4:-scripts/ci/toolchain_id.sh} manid=${5:-scripts/ci/manifest_id.sh}
-    local td fences rcpt keyline head_tree head_sha base merge_base got i n pid tk sha ok
+    local cov td fences rcpt keyline head_tree head_sha base merge_base got i n pid tk sha ok
+    # FLOW009_PUBKEY (trust boundary, PMAT-1889): when set it IS the pubkey path and wins over the argument and the default,
+    # so a caller can pin the BASE commit's key and a PR can never supply its own. Set but unreadable => refused below.
+    if [ -n "${FLOW009_PUBKEY:-}" ]; then pub=$FLOW009_PUBKEY; fi
     [ -n "$repo" ] && [ -n "$event" ] || no "usage: <owner/repo> <event.json>" # R-USAGE
     [ -f "$event" ] || no "no event file" # R-NOEVENT
     command -v jq >/dev/null 2>&1 || no "jq missing" # R-NOJQ
@@ -131,6 +137,9 @@ verify() {
     [[ $got =~ ^[0-9a-f]{64}$ ]] || no "manifest-id script printed no sha256" # R-MANOUT
     [ "$(jq -r .manifest "$rcpt")" = "$got" ] || no "manifest differs from this checkout's gate definition and test list" # R-MANIFEST
     echo "RECEIPT_OK=1"
+    # sovereign-ci.yml reads ONE `coverage=<float>` stdout line on exit 0; absent or non-numeric => no line (still OK).
+    cov=$(jq -r '.gate_results.coverage // ""' "$rcpt")
+    if [[ $cov =~ ^[0-9]+([.][0-9]+)?$ ]]; then echo "coverage=$cov"; fi
     exit 0
 }
 
@@ -194,11 +203,11 @@ self_test() {
           else printf '```json\n%s\n```\n' "$(cat "$td/$name.json")"; fi; } > "$td/$name.body"
         jq -n --rawfile b "$td/$name.body" --arg h "$head" '{pull_request: {body: $b, head: {sha: $h}}}' > "$td/$name.event"
     }
-    chk() { # chk WANT LABEL NAME [pub] [tcid] [manid]  (runs inside the throwaway repo) -- set `why=<fragment>` before a no-row: the reason must contain it
+    chk() { # (env FP=<path> sets FLOW009_PUBKEY, cov=<v> the expected coverage line) chk WANT LABEL NAME [pub] [tcid] [manid]  (runs inside the throwaway repo) -- set `why=<fragment>` before a no-row: the reason must contain it
         local want=$1 label=$2 name=$3 pub=${4:-$td/pub} tcs=${5:-$td/tcid.sh} mans=${6:-$td/manid.sh}
         n=$((n + 1)); rc=0
-        out=$(cd "$td/r" && bash "$here/$(basename "${BASH_SOURCE[0]}")" paiml/aprender "$td/$name.event" "$pub" "$tcs" "$mans" 2>&1) || rc=$?
-        if { [ "$want" = ok ] && [ "$rc" = 0 ] && [ "$out" = "RECEIPT_OK=1" ]; } || { [ "$want" = no ] && [ "$rc" = 1 ] && [[ $out == "RECEIPT_OK=0 reason="*"${why:-}"* ]]; }; then
+        out=$(cd "$td/r" && env ${FP:+FLOW009_PUBKEY="$FP"} bash "$here/$(basename "${BASH_SOURCE[0]}")" paiml/aprender "$td/$name.event" "$pub" "$tcs" "$mans" 2>&1) || rc=$?
+        if { [ "$want" = ok ] && [ "$rc" = 0 ] && [ "$out" = "RECEIPT_OK=1"$'\n'"coverage=${cov:-95.1}" ]; } || { [ "$want" = no ] && [ "$rc" = 1 ] && [[ $out == "RECEIPT_OK=0 reason="*"${why:-}"* ]]; }; then
             printf 'ok    row %-2s %s\n' "$n" "$label"
         else printf 'FAIL  row %-2s (wanted %s, rc=%s, got "%s")  %s\n' "$n" "$want" "$rc" "$out" "$label"; red=1; fi
     }
@@ -279,6 +288,22 @@ self_test() {
     why='no pull_request' chk no "MUTANT event with no pull_request" nopr
     jq --arg h "$(printf '%040d' 0)" '.pull_request.head.sha=$h' "$td/good.event" > "$td/nohead.event"
     why='not in this checkout' chk no "MUTANT PR head sha not in the checkout" nohead
+    # trust boundary (PMAT-1889): the key comes from the caller (FLOW009_PUBKEY = the BASE commit's copy), never the PR tree
+    mkdir -p "$td/r/.flow009" && cp "$td/other.pub" "$td/r/.flow009/batcher.pub"
+    mk selfsigned . --key "$td/other"
+    FP=$td/pub why='signature does not verify' chk no "MUTANT the PR tree's own batcher.pub holds the attacker key that signed the receipt; FLOW009_PUBKEY pins the real key" selfsigned .flow009/batcher.pub
+    FP=$td/absent.pub why='no committed' chk no "MUTANT FLOW009_PUBKEY points at a missing file (never falls back to the tree copy)" selfsigned .flow009/batcher.pub
+    FP=$td/absent.pub why='no committed' chk no "MUTANT FLOW009_PUBKEY missing beats a valid pubkey argument" good "$td/pub"
+    FP=$td/pub chk ok "the real key pinned by FLOW009_PUBKEY verifies a good receipt although the tree key is the attacker's" good .flow009/batcher.pub
+    # coverage= line: exactly one, the receipt's value; none when absent or non-numeric (still OK)
+    cov=95.1 chk ok "green path prints RECEIPT_OK=1 then exactly one coverage=95.1 line" good
+    out=$(cd "$td/r" && bash "$here/$(basename "${BASH_SOURCE[0]}")" paiml/aprender "$td/good.event" "$td/pub" "$td/tcid.sh" "$td/manid.sh" 2>/dev/null)
+    n=$((n + 1)); if [ "$(printf '%s\n' "$out" | grep -c '^coverage=')" = 1 ]; then printf 'ok    row %-2s exactly one ^coverage= line on stdout\n' "$n"; else printf 'FAIL  row %-2s coverage= line count\n' "$n"; red=1; fi
+    mk cov87 '.gate_results.coverage="87.25"'
+    cov=87.25 chk ok "coverage=87.25 is the receipt's own value" cov87
+    mk covnan '.gate_results.coverage="n/a"'
+    n=$((n + 1)); out=$(cd "$td/r" && bash "$here/$(basename "${BASH_SOURCE[0]}")" paiml/aprender "$td/covnan.event" "$td/pub" "$td/tcid.sh" "$td/manid.sh" 2>/dev/null); rc=$?
+    if [ "$rc" = 0 ] && [ "$out" = "RECEIPT_OK=1" ]; then printf 'ok    row %-2s non-numeric coverage: verify OK, no coverage= line\n' "$n"; else printf 'FAIL  row %-2s non-numeric coverage (rc=%s "%s")\n' "$n" "$rc" "$out"; red=1; fi
     printf '\nthis self-test ran %s checks, %s failed\n' "$n" "$red"; [ "$red" -eq 0 ]
 }
 
