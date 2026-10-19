@@ -112,3 +112,9 @@ falsification_tests:
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
     if_fails: 'a shipped command has no audited row (observed 2026-09-27: 4 of 4 leaves ledgered, plus the root row `aprender-cbtop (interactive TUI; --headless)` added 2026-09-27, GREEN)'
     mutation: 'delete every aprender-cbtop row; must turn RED naming aprender-cbtop'
+  - id: FALSIFY-BIN-APRENDER-CBTOP-006
+    rule: 'analyze_bottlenecks buckets by efficiency (<0.25 critical, <0.50 severe, <0.75 moderate), flags CV>15 as unstable, and format_report names each non-empty section'
+    prediction: 'efficiency 0.25 is severe and 0.75 is healthy; CV exactly 15 is stable; a clean baseline prints the all-clear line'
+    test: 'cargo test -p aprender-cbtop --test bottleneck_analysis_5548'
+    if_fails: 'a slow or noisy kernel is reported healthy, or a healthy one is flagged, in the optimize report (#5548)'
+    mutation: 'change `efficiency < 0.50` to `efficiency <= 0.50` in analyze_bottlenecks; must turn RED'

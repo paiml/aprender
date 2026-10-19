@@ -1915,8 +1915,62 @@ jobs:
       # pv/pmat/apr AND exercises both pins against a poisoned PATH -- presence
       # of `PMAT_BIN` proves nothing about which binary the gate ends up running.
       # It found `pmat analyze reachability` bare in BOTH copies on its first run.
+      # A2 (pace quorums 2026-10-19 23:51Z and 00:10Z, option c, the split): m5 is 1267-1517 s on
+      # x86-main (#5544, #5449 killed at 3563-3567 s) because its pv cargo build ran on the HOST,
+      # outside the sccache the workspace-test containers share. The build moves into the CI image
+      # here; the guard itself (its python3 rows need an interpreter the image lacks) stays on the
+      # host; its own `cargo build -q` then equals a host-only second build (12 compile
+      # commands), and the step FAILs above 12. Same-path mounts: the
+      # workspace and CARGO_HOME are mounted at their HOST paths, so cargo's fingerprints and the
+      # `src_path` that pv.d checks (#2745) are identical inside and outside. rustc stays 1.93.0
+      # (rust-toolchain.toml): the host toolchain is mounted read-only ahead of the image's 1.95.
+      # Cargo.lock is snapshotted BEFORE the container build, so Row 5 cannot pass vacuously, and
+      # a build that moves it fails here. No --locked, no PV_BIN, no prebuilt pv, verifier_pin.sh
+      # untouched. sccache is never installed on the host (it hangs there).
       - name: The release runner must not resolve a verifier through PATH
-        run: setsid --wait bash scripts/check_verifier_pinning.sh
+        run: |
+          set -euo pipefail
+          root=$(git rev-parse --show-toplevel)
+          ru=${RUSTUP_HOME:-$HOME/.rustup}; ca=$HOME/.cargo; tc=$(dirname "$(dirname "$(rustup which rustc --toolchain 1.93.0)")")
+          ch=${CARGO_HOME:-$HOME/.cargo}
+          sc=${SCCACHE_HOST_DIR:-$HOME/.cache/sccache}
+          # pinned by digest, never :stable (pace condition 7); bump with the image
+          img=localhost:5000/sovereign-ci@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36
+          # the digest is the amd64 manifest; any other arch keeps the host build it had before
+          if [ "$(uname -m)" != x86_64 ]; then
+            echo "m5: $(uname -m) runner, no pinned image for it; pv builds on the host"
+            exec setsid --wait bash scripts/check_verifier_pinning.sh
+          fi
+          printf "host build env: RUSTFLAGS=[%s] CARGO_INCREMENTAL=[%s] CARGO_PROFILE=[%s]\n" "${RUSTFLAGS:-}" "${CARGO_INCREMENTAL:-}" "$(env | grep -c ^CARGO_PROFILE_ || true)"
+          mkdir -p "$ch" "$sc"
+          # one mount when CARGO_HOME is ~/.cargo (a second -v of the same target is a docker error)
+          if [ "$ch" = "$ca" ]; then mounts=(-v "$ca:$ca"); else mounts=(-v "$ca:$ca:ro" -v "$ch:$ch"); fi
+          snap=$(mktemp)
+          cp "$root/Cargo.lock" "$snap"
+          printf 'host rustc: %s\n' "$("$tc/bin/rustc" -vV | sed -n 1p)"
+          # toolchain bin first in PATH: the rustup proxy writes settings.toml, and RUSTUP_HOME is mounted read-only
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$root:$root" -w "$root" -v "$ru:$ru:ro" "${mounts[@]}" -v "$sc:/sccache" \
+            -e HOME="$HOME" -e CARGO_HOME="$ch" -e RUSTUP_HOME="$ru" -e RUSTUP_TOOLCHAIN=1.93.0 -e RUSTFLAGS= -e CARGO_INCREMENTAL= \
+            -e PATH="$tc/bin:$ca/bin:/usr/local/cargo/bin:/usr/bin:/bin" \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0="$root" \
+            "$img" bash -c 'set -e; printf "container build env: RUSTFLAGS=[%s] CARGO_INCREMENTAL=[%s]\n" "${RUSTFLAGS:-}" "${CARGO_INCREMENTAL:-}"; printf "container rustc: %s\n" "$(rustc -vV | sed -n 1p)"; t0=$(date +%s); cargo build -q -p aprender-contracts-cli --bin pv --bin pv-sat --features update-check,build-sha; printf "container pv build: %s s\n" "$(( $(date +%s) - t0 ))"; sccache --show-stats'
+          if ! cmp -s "$snap" "$root/Cargo.lock"; then
+            cp "$snap" "$root/Cargo.lock"
+            echo "FAIL  the container build moved Cargo.lock (restored); run scripts/check_lockfile_current.sh"
+            exit 1
+          fi
+          # the proof that the split costs the guard nothing: the host build equals a host-only second build (12)
+          t0=$(date +%s)
+          n=$(cargo build -v -p aprender-contracts-cli --bin pv --bin pv-sat --features update-check,build-sha 2>&1 | grep -c ' Running `' || true)
+          printf 'host cargo build after the container build: %s compile commands, %s s\n' "$n" "$(( $(date +%s) - t0 ))"
+          if [ "$n" -gt 12 ]; then
+            echo "FAIL  the host rebuilt $n units after the container build (host-only second build is 12): env/toolchain mismatch"
+            exit 1
+          fi
+          setsid --wait bash scripts/check_verifier_pinning.sh
       # One runner, one prose, and the user-scope copy stays a <=70-line shim
       # that fails CLOSED. The cap lives here, in the repo on protected main;
       # the file it caps lives at user scope, where it could otherwise raise its

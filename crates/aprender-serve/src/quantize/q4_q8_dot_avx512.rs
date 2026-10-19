@@ -153,4 +153,103 @@ mod tests {
         let has = crate::isa::cpu_feature!("avx512f") && crate::isa::cpu_feature!("avx512bw");
         eprintln!("AVX-512 F+BW: {has}");
     }
+    // FALSIFY-QDOT-001 (AVX-512 lane): scalar reference for one super-block's
+    // per-block Q4 x Q8 integer dots. Chunk c (32 bytes): lo nibbles -> block 2c,
+    // hi nibbles -> block 2c+1.
+    #[cfg(target_arch = "x86_64")]
+    fn scalar_dots_8blocks(qs: &[u8; 128], q8: &[i8; 256]) -> [i32; 8] {
+        let mut dots = [0i32; 8];
+        for chunk in 0..4 {
+            for i in 0..32 {
+                let byte = qs[chunk * 32 + i];
+                let (lo, hi) = (i32::from(byte & 0x0F), i32::from(byte >> 4));
+                dots[2 * chunk] += lo * i32::from(q8[(2 * chunk) * 32 + i]);
+                dots[2 * chunk + 1] += hi * i32::from(q8[(2 * chunk + 1) * 32 + i]);
+            }
+        }
+        dots
+    }
+
+    /// Deterministic LCG fill; returns (qs, q8) with q8 spanning the full i8 range.
+    #[cfg(target_arch = "x86_64")]
+    fn lcg_superblock(seed: u32) -> ([u8; 128], [i8; 256]) {
+        let mut s = seed;
+        let mut next = move || {
+            s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (s >> 16) as u8
+        };
+        let mut qs = [0u8; 128];
+        let mut q8 = [0i8; 256];
+        for b in &mut qs {
+            *b = next();
+        }
+        for v in &mut q8 {
+            *v = next() as i8;
+        }
+        (qs, q8)
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn has_avx512_bw() -> bool {
+        crate::isa::cpu_feature!("avx512f") && crate::isa::cpu_feature!("avx512bw")
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_compute_q4_q8_dots_8blocks_avx512_matches_scalar() {
+        if !has_avx512_bw() {
+            return;
+        }
+        for seed in [1u32, 7, 42, 0xDEAD_BEEF] {
+            let (qs, q8) = lcg_superblock(seed);
+            // SAFETY: avx512f+bw detected; qs has 128 bytes, q8 has 256 values.
+            let got = unsafe { super::compute_q4_q8_dots_8blocks_avx512(qs.as_ptr(), q8.as_ptr()) };
+            assert_eq!(got, scalar_dots_8blocks(&qs, &q8), "seed {seed}");
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_compute_q4_q8_dots_8blocks_avx512_block_routing_and_extremes() {
+        if !has_avx512_bw() {
+            return;
+        }
+        // lo nibble 15, hi nibble 0, q8 = -128 everywhere: every even block is
+        // 32 * 15 * -128, every odd block is exactly 0 (proves lo/hi -> block routing).
+        let (qs, q8) = ([0x0Fu8; 128], [i8::MIN; 256]);
+        // SAFETY: avx512f+bw detected; buffers are 128 / 256 long.
+        let got = unsafe { super::compute_q4_q8_dots_8blocks_avx512(qs.as_ptr(), q8.as_ptr()) };
+        let even = 32 * 15 * -128;
+        assert_eq!(got, [even, 0, even, 0, even, 0, even, 0]);
+
+        // Only q8 block 5 non-zero (all ones), qs all 0xFF: only dots[5] = 32 * 15.
+        let mut q8 = [0i8; 256];
+        q8[5 * 32..6 * 32].fill(1);
+        // SAFETY: as above.
+        let got = unsafe {
+            super::compute_q4_q8_dots_8blocks_avx512([0xFFu8; 128].as_ptr(), q8.as_ptr())
+        };
+        assert_eq!(got, [0, 0, 0, 0, 0, 32 * 15, 0, 0]);
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_compute_q8_sums_avx512_matches_scalar_per_block() {
+        if !has_avx512_bw() {
+            return;
+        }
+        for seed in [3u32, 99] {
+            let (_, q8) = lcg_superblock(seed);
+            let want: [i32; 8] = std::array::from_fn(|b| {
+                q8[b * 32..(b + 1) * 32].iter().map(|&v| i32::from(v)).sum()
+            });
+            // SAFETY: avx512f+bw (hence avx2) detected; q8 has 256 values.
+            let got = unsafe { super::compute_q8_sums_avx512(q8.as_ptr()) };
+            assert_eq!(got, want, "seed {seed}");
+        }
+        let all_min = [i8::MIN; 256];
+        // SAFETY: as above.
+        let got = unsafe { super::compute_q8_sums_avx512(all_min.as_ptr()) };
+        assert_eq!(got, [32 * -128; 8]);
+    }
 }
