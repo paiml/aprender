@@ -234,7 +234,7 @@ mod tests {
     use super::*;
 
     fn row(yaml: &str) -> Value {
-        serde_yaml::from_str(yaml).expect("fixture row is valid YAML")
+        crate::yaml::from_str(yaml).expect("fixture row is valid YAML")
     }
 
     fn pass_hits(r: &RowResult) -> Option<u64> {
