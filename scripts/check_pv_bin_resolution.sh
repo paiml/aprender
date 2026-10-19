@@ -84,9 +84,15 @@ fi
 resolve_rc=0
 (
     set -euo pipefail
-    . scripts/pv_bin.sh || exit 1
+    . scripts/pv_bin.sh || exit "$?"
     test -x "$PV"
 ) >"$TMP/resolve.log" 2>&1 || resolve_rc=$?
+if [ "$resolve_rc" -eq 75 ]; then
+    # #5755: the probe could not answer. Exit 75 so scripts/rerun_on_75.sh reruns the step once.
+    sed 's/^/      /' "$TMP/resolve.log" >&2
+    echo "COULD NOT CHECK: pv_bin.sh exited 75" >&2
+    exit 75
+fi
 if [ "$resolve_rc" -ne 0 ]; then
     bad "pv_bin.sh did not resolve an executable pv under 'set -euo pipefail'"
     sed 's/^/      /' "$TMP/resolve.log" >&2
