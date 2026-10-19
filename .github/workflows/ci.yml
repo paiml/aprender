@@ -344,7 +344,8 @@ jobs:
         run: |
           set -euo pipefail
           marker=$(mktemp)
-          dbs="${CARGO_HOME:-$HOME/.cargo}/advisory-dbs"
+          CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          dbs="$CARGO_HOME/advisory-dbs"
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
@@ -551,7 +552,7 @@ jobs:
           j+=(--junit "$d/sigma-shard-2/gap.junit.xml" --junit "$d/sigma-shard-3/arm.junit.xml")
           # The owed set is the UNION of the X64 registry (shard 1) and the ARM64 registry (shard 3):
           # a deep merge, so a test only one architecture registers is owed too.
-          jq -s '{"rust-suites": (map(."rust-suites") | reduce .[] as $s ({}; . * $s))}' \
+          jq -s '{"rust-suites": (map(."rust-suites") | .[0] * .[1])}' \
             "$d/sigma-shard-1/lib.list.json" "$d/sigma-shard-3/lib.arm.list.json" > "$d/lib.union.list.json"
           rc=0
           python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/lib.union.list.json" || rc=1
