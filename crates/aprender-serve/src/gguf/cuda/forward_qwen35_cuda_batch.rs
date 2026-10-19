@@ -422,3 +422,7 @@ pub(crate) use graph::Qwen35BatchGraphs;
 #[cfg(test)]
 #[path = "forward_qwen35_cuda_batch_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "forward_qwen35_cuda_batch_gemv_tests.rs"]
+mod gemv_tests;

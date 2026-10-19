@@ -889,4 +889,76 @@ mod tests {
         assert_eq!(analysis.total_lines, deserialized.total_lines);
         assert_eq!(analysis.tdg_score, deserialized.tdg_score);
     }
+
+    // =========================================================================
+    // Language::from_str (#5576)
+    // =========================================================================
+
+    fn lang(s: &str) -> Language {
+        s.parse::<Language>().expect("Infallible")
+    }
+
+    #[test]
+    fn test_language_from_str_every_known_alias() {
+        let table = [
+            ("python", Language::Python),
+            ("c", Language::C),
+            ("c++", Language::Cpp),
+            ("cpp", Language::Cpp),
+            ("rust", Language::Rust),
+            ("shell", Language::Shell),
+            ("bash", Language::Shell),
+            ("sh", Language::Shell),
+            ("javascript", Language::JavaScript),
+            ("js", Language::JavaScript),
+            ("typescript", Language::TypeScript),
+            ("ts", Language::TypeScript),
+            ("go", Language::Go),
+            ("golang", Language::Go),
+            ("java", Language::Java),
+        ];
+        for (input, want) in table {
+            assert_eq!(lang(input), want, "alias {input:?}");
+        }
+    }
+
+    #[test]
+    fn test_language_from_str_is_case_insensitive() {
+        assert_eq!(lang("PyThOn"), Language::Python);
+        assert_eq!(lang("C++"), Language::Cpp);
+        assert_eq!(lang("TS"), Language::TypeScript);
+        assert_eq!(lang("GOLANG"), Language::Go);
+    }
+
+    #[test]
+    fn test_language_from_str_unknown_becomes_other_lowercased() {
+        // The payload is the LOWERCASED input: "Kotlin" is stored as "kotlin".
+        assert_eq!(lang("Kotlin"), Language::Other("kotlin".to_string()));
+        assert_eq!(lang("").to_string(), "");
+    }
+
+    #[test]
+    fn test_language_from_str_near_misses_are_not_aliases() {
+        // Exact match only: no trimming, no prefix or substring matching.
+        for s in [" python", "python ", "pyth", "c ++", "jav", "javas", "rust-lang"] {
+            assert_eq!(lang(s), Language::Other(s.to_lowercase()), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn test_language_display_round_trips_for_known_variants() {
+        for l in [
+            Language::Python,
+            Language::C,
+            Language::Cpp,
+            Language::Rust,
+            Language::Shell,
+            Language::JavaScript,
+            Language::TypeScript,
+            Language::Go,
+            Language::Java,
+        ] {
+            assert_eq!(lang(&l.to_string()), l, "round-trip {l}");
+        }
+    }
 }
