@@ -5,6 +5,7 @@
 
 pub mod coverage_report_scope;
 pub mod dag_status;
+pub mod gate_steps;
 pub mod git_patch_id;
 pub mod ladder_cells_io;
 pub mod ladder_cells_judge;

@@ -1,9 +1,9 @@
 //! `aprender-ci-tools`: one binary, one subcommand per ported Python helper.
 
 use aprender_ci_tools::{
-    coverage_report_scope, dag_status, git_patch_id, ladder_cells_produce, llama_fit_verdict,
-    nextest_fail_fast, package_include_diff, publishable_crates, tarball_build_errors,
-    tarball_shrink_report, tarball_workspace,
+    coverage_report_scope, dag_status, gate_steps, git_patch_id, ladder_cells_produce,
+    llama_fit_verdict, nextest_fail_fast, package_include_diff, publishable_crates,
+    tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -70,6 +70,11 @@ enum Cmd {
         /// original, so the count is checked by the port and not by clap (which exits 1).
         #[arg(num_args = 0.., allow_hyphen_values = true, trailing_var_arg = true)]
         log: Vec<PathBuf>,
+    },
+    /// LG-9 step-time table: one JSON line per executed step of a driver `results.json`.
+    GateSteps {
+        /// The driver `results.json`.
+        results: PathBuf,
     },
     /// Each DAG row's status, derived from its receipt, and the D7 lines for a typed
     /// `status:` that disagrees (was scripts/lib/dag_status.py). Reads the rows as a JSON
@@ -210,6 +215,11 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             } else {
                 Err((o.stdout, o.code, o.stderr))
             }
+        }
+        Cmd::GateSteps { results } => {
+            let text = String::from_utf8(read(&results).map_err(nothing_printed)?)
+                .map_err(|e| nothing_printed(format!("{}: {e}", results.display())))?;
+            gate_steps::rows(&text).map_err(nothing_printed)
         }
         Cmd::DagStatus { root } => {
             let mut rows = String::new();
