@@ -47,9 +47,20 @@ if [ -z "${GITHUB_TOKEN:-}" ]; then
 fi
 [ -n "${GITHUB_TOKEN:-}" ] || echo "local_gate: no GITHUB_TOKEN (gh auth token empty); token-reading guards will fail" >&2
 export GITHUB_TOKEN GH_TOKEN="${GH_TOKEN:-$GITHUB_TOKEN}"
-# The base-differential guards need origin/main and its merge-base (no shallow clone).
+# The base-differential guards need origin/main and its merge-base. A linked worktree's
+# .git is a file the section containers cannot follow, so the gate judges the HEAD commit
+# in a full private clone (hermetic: uncommitted edits are not part of the verdict).
 git fetch -q origin main
-if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch -q --unshallow origin; fi
+head_sha="$(git rev-parse HEAD)"
+clone="$build/src"
+rm -rf "${clone:?}"
+git clone -q --no-hardlinks "$root" "$clone"
+git -C "$clone" fetch -q "$root" "refs/remotes/origin/main:refs/remotes/origin/main"
+git -C "$clone" checkout -q --detach "$head_sha"
+cd "$clone"
+# Serialise the shared-state installs the parallel sections would otherwise race on.
+rustup toolchain install stable --profile minimal --target x86_64-pc-windows-gnu >/dev/null 2>&1 || true
+cargo fetch --locked >/dev/null 2>&1 || true
 
 sections="$(sections_of .github/workflows/ci.yml)"
 [ -n "$sections" ] || { echo "local_gate: no --sections found in ci.yml" >&2; exit 2; }
