@@ -14,20 +14,33 @@ PIN_FILE_DEFAULT="ci/advisory-db.pin"
 NEEDED_RE='(^|/)Cargo\.(toml|lock)$|^deny\.toml$'
 
 age_check() {
-    local pin="$1" today="${2:-$(date -u +%F)}" sha d pd td age
+    local pin="$1" today="${2:-$(date -u +%F)}" sha d v pd vd td age
     [ -r "$pin" ] || { echo "advisory_pin: COULD NOT CHECK: no pin file $pin" >&2; return 75; }
     sha=$(sed -n 's/^sha=//p' "$pin")
     d=$(sed -n 's/^date=//p' "$pin")
+    v=$(sed -n 's/^verified=//p' "$pin")
     case "$sha" in *[!0-9a-f]*|"") echo "advisory_pin: COULD NOT CHECK: bad sha in $pin" >&2; return 75 ;; esac
     [ "${#sha}" -eq 40 ] || { echo "advisory_pin: COULD NOT CHECK: sha is not 40 hex" >&2; return 75; }
-    pd=$(date -u -d "$d" +%s 2>/dev/null) || { echo "advisory_pin: COULD NOT CHECK: bad date '$d'" >&2; return 75; }
-    td=$(date -u -d "$today" +%s 2>/dev/null) || { echo "advisory_pin: COULD NOT CHECK: bad today '$today'" >&2; return 75; }
-    age=$(( (td - pd) / 86400 ))
+    # date -d "" is today and date -d tomorrow is a relative date: both would read as fresh, so the
+    # shape is checked before the parser is trusted.
+    for f in "$d" "$v" "$today"; do
+        printf '%s\n' "$f" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' \
+            || { echo "advisory_pin: COULD NOT CHECK: '$f' is not YYYY-MM-DD" >&2; return 75; }
+    done
+    pd=$(date -u -d "$d" +%s 2>/dev/null) && vd=$(date -u -d "$v" +%s 2>/dev/null) && td=$(date -u -d "$today" +%s 2>/dev/null) \
+        || { echo "advisory_pin: COULD NOT CHECK: unparseable date in $pin" >&2; return 75; }
+    # Staleness is the time since the bump job last CONFIRMED the sha (verified=), not the age of the
+    # advisory-db commit: a quiet RustSec week must not turn a current pin red.
+    age=$(( (td - vd) / 86400 ))
+    if [ "$age" -lt 0 ] || [ "$vd" -lt "$pd" ]; then
+        echo "advisory_pin: COULD NOT CHECK: verified=$v is in the future or before date=$d" >&2
+        return 75
+    fi
     if [ "$age" -gt "$MAX_AGE_DAYS" ]; then
-        echo "advisory_pin: RED: pin $d is $age days old (max $MAX_AGE_DAYS); the bump PR did not land" >&2
+        echo "advisory_pin: RED: pin last verified $v, $age days ago (max $MAX_AGE_DAYS); the bump job did not run" >&2
         return 1
     fi
-    echo "advisory_pin: ok: pin $d is $age days old (max $MAX_AGE_DAYS)"
+    echo "advisory_pin: ok: pin verified $v, $age days ago (max $MAX_AGE_DAYS)"
 }
 
 needed() {
@@ -45,6 +58,7 @@ needed() {
 # pinned checkout is placed there and the check runs with --disable-fetch, so a missing or
 # mis-named directory is an error, never a silent live fetch.
 DENY_DB_SUBDIR="advisory-db-3157b0e258782691"
+DENY_VERSION_PIN="0.19"
 
 fetch_db() {
     local sha db
@@ -63,6 +77,10 @@ fetch_db() {
 }
 
 deny_pinned() {
+    case "$(cargo deny --version)" in
+        "cargo-deny $DENY_VERSION_PIN."*) ;;
+        *) echo "advisory_pin: COULD NOT CHECK: cargo-deny is not $DENY_VERSION_PIN.x; DENY_DB_SUBDIR was derived for it" >&2; return 75 ;;
+    esac
     cargo deny check --config "$ADVISORY_DB_DIR/deny.toml" --disable-fetch "$@" advisories
 }
 
@@ -80,8 +98,8 @@ run() {
 self_test() {
     local t fail=0 pin rc pinabs S=999ec89d5d3f10f20be14750ec8c2d8b44e0ac9b p
     t=$(mktemp -d); pin="$t/pin"
-    row() { # name want-rc today sha date
-        printf 'sha=%s\ndate=%s\n' "$4" "$5" > "$pin"
+    row() { # name want-rc today sha date [verified, default = date]
+        printf 'sha=%s\ndate=%s\nverified=%s\n' "$4" "$5" "${6-$5}" > "$pin"
         rc=0; age_check "$pin" "$3" >/dev/null 2>&1 || rc=$?
         if [ "$rc" -eq "$2" ]; then echo "ok   $1"; else echo "FAIL $1: want rc $2 got $rc"; fail=1; fi
     }
@@ -92,22 +110,30 @@ self_test() {
     row "garbled date never passes (75)"    75 2026-10-19 "$S" notadate
     row "short sha never passes (75)"       75 2026-10-19 abc  2026-10-17
     row "empty sha never passes (75)"       75 2026-10-19 ""   2026-10-17
+    row "empty date never passes (75)"      75 2026-10-19 "$S" ""
+    row "relative date never passes (75)"   75 2026-10-19 "$S" tomorrow
+    row "future verified never passes (75)" 75 2026-10-19 "$S" 2026-10-17 2026-10-25
+    row "empty verified never passes (75)"  75 2026-10-19 "$S" 2026-10-17 ""
+    row "quiet RustSec week: old commit date, verified today, passes" 0 2026-10-19 "$S" 2026-10-01 2026-10-19
+    row "verified 8 d ago is RED even if commit is recent" 1 2026-10-27 "$S" 2026-10-17 2026-10-19
     rc=0; age_check "$t/missing" 2026-10-19 >/dev/null 2>&1 || rc=$?
     if [ "$rc" -eq 75 ]; then echo "ok   missing pin file is 75"; else echo "FAIL missing pin file: rc $rc"; fail=1; fi
     # mutation: with the age comparison disabled a 30-day-old pin must pass, proving the stale rows are live
     sed 's/-gt "\$MAX_AGE_DAYS"/-gt 99999/' "${BASH_SOURCE[0]}" > "$t/mut.sh"
-    printf 'sha=%s\ndate=2026-10-17\n' "$S" > "$pin"
+    printf 'sha=%s\ndate=2026-10-17\nverified=2026-10-17\n' "$S" > "$pin"
     rc=0; bash "$t/mut.sh" age "$pin" 2026-11-16 >/dev/null 2>&1 || rc=$?
     if [ "$rc" -eq 0 ]; then echo "ok   mutation (age check disabled) lets a 30-day pin through"; else echo "FAIL mutation not detected (rc $rc)"; fail=1; fi
-    # the invocation itself: cargo-deny 0.19 rejected the old --db-path form, so run the real binary
-    # on a one-crate fixture against the pinned snapshot (fails if the binary or the fetch is missing)
-    local fx="$t/fx"
-    mkdir -p "$fx/src"; printf '[package]\nname = "fx"\nversion = "0.1.0"\nedition = "2021"\n' > "$fx/Cargo.toml"
-    : > "$fx/src/lib.rs"; printf 'version = 4\n\n[[package]]\nname = "fx"\nversion = "0.1.0"\n' > "$fx/Cargo.lock"
-    printf '[advisories]\nignore = []\n' > "$fx/deny.toml"
-    pinabs="$(pwd)/$PIN_FILE_DEFAULT"
-    rc=0; (cd "$fx" && PIN_FILE_DEFAULT="$pinabs" ADVISORY_DB_DIR="$t/db" DENY_TOML="$fx/deny.toml" && fetch_db && deny_pinned) >"$t/deny.out" 2>&1 || rc=$?
-    if [ "$rc" -eq 0 ]; then echo "ok   cargo-deny $(cargo deny --version | cut -d' ' -f2) accepts the pinned invocation"; else echo "FAIL pinned cargo-deny invocation rc $rc"; tail -n 5 "$t/deny.out"; fail=1; fi
+    if [ "${ADVISORY_PIN_LIVE_CASE:-0}" = 1 ]; then
+        # the invocation itself: cargo-deny 0.19 rejected the old --db-path form, so run the real binary
+        # on a one-crate fixture against the pinned snapshot (fails if the binary or the fetch is missing)
+        local fx="$t/fx"
+        mkdir -p "$fx/src"; printf '[package]\nname = "fx"\nversion = "0.1.0"\nedition = "2021"\n' > "$fx/Cargo.toml"
+        : > "$fx/src/lib.rs"; printf 'version = 4\n\n[[package]]\nname = "fx"\nversion = "0.1.0"\n' > "$fx/Cargo.lock"
+        printf '[advisories]\nignore = []\n' > "$fx/deny.toml"
+        pinabs="$(pwd)/$PIN_FILE_DEFAULT"
+        rc=0; (cd "$fx" && PIN_FILE_DEFAULT="$pinabs" ADVISORY_DB_DIR="$t/db" DENY_TOML="$fx/deny.toml" && fetch_db && deny_pinned) >"$t/deny.out" 2>&1 || rc=$?
+        if [ "$rc" -eq 0 ]; then echo "ok   cargo-deny $(cargo deny --version | cut -d' ' -f2) accepts the pinned invocation"; else echo "FAIL pinned cargo-deny invocation rc $rc"; tail -n 5 "$t/deny.out"; fail=1; fi
+    fi
     for p in Cargo.toml Cargo.lock crates/x/Cargo.toml deny.toml; do
         if printf '%s\n' "$p" | grep -qE "$NEEDED_RE"; then echo "ok   needed matches $p"; else echo "FAIL needed misses $p"; fail=1; fi
     done

@@ -34,6 +34,8 @@ jobs:
       issues: write
     steps:
       - uses: actions/checkout@v7
+      - name: Pinned cargo-deny invocation still works (needs network; never on the merge path)
+        run: ADVISORY_PIN_LIVE_CASE=1 bash scripts/advisory_pin.sh --self-test
       - name: cargo deny advisories against the live DB
         id: deny
         env:
