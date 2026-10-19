@@ -189,6 +189,7 @@ resolve_in() {
     fi
     (
         cd "$dir" || exit 1
+        unset CARGO_TARGET_DIR  # hermetic: the gate (LG-2) exports one for the whole run
         APR_BIN_SH_PATH="$APR_BIN_SH" CARGO_HOME="$ch" APR_BIN="" \
         bash -c 'source "$APR_BIN_SH_PATH" && printf "%s" "$APR"'
     ) 2>"$errlog"
