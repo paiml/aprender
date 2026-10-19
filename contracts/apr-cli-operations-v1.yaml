@@ -265,16 +265,16 @@ falsification_tests:
   prediction: The timestamp in a cbtop report matches the UTC date at the moment it was generated, on both headless paths
   test: commands::cbtop::tests::test_chrono_timestamp_is_current_utc_date
   if_fails: Persisted CI provenance is stamped with a stale hardcoded date
-- id: FALSIFY-OPS-012
-  rule: hex --json lists filtered tensors, stats only on request
-  prediction: output_json_v2 succeeds with and without stats and skips unknown tensor names
-  test: commands::hex::tests::output_json_v2_lists_filtered_tensors_with_and_without_stats
-  if_fails: hex JSON output errors on a valid APR file or invents tensors
 - id: FALSIFY-OPS-011
   rule: ptx-map printers cover decode, prefill, hit and miss paths
   prediction: print_json and print_reverse_lookup complete on every table and report launches/layer x layers
   test: commands::ptx_map::tests::print_json_and_reverse_lookup_cover_every_branch
   if_fails: ptx-map JSON or reverse-lookup output panics or miscounts launches
+- id: FALSIFY-OPS-012
+  rule: hex --json lists filtered tensors, stats only on request
+  prediction: output_json_v2 succeeds with and without stats and skips unknown tensor names
+  test: commands::hex::tests::output_json_v2_lists_filtered_tensors_with_and_without_stats
+  if_fails: hex JSON output errors on a valid APR file or invents tensors
 kani_harnesses:
 - id: KANI-OPS-001
   obligation: ReadOnly commands have no side effects
