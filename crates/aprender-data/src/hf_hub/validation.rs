@@ -150,12 +150,24 @@ impl DatasetCardValidator {
             return errors;
         };
 
-        // Parse YAML
-        let Ok(yaml) = serde_saphyr::from_str_with_options::<serde_json::Value>(
+        if yaml_content.trim().is_empty() {
+            return errors;
+        }
+
+        // Parse YAML; front matter that does not parse is an error, not a pass (#5500)
+        let yaml = match serde_saphyr::from_str_with_options::<serde_json::Value>(
             &yaml_content,
             serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
-        ) else {
-            return errors;
+        ) {
+            Ok(yaml) => yaml,
+            Err(e) => {
+                errors.push(ValidationError {
+                    field: "front matter".to_string(),
+                    value: e.to_string(),
+                    suggestions: Vec::new(),
+                });
+                return errors;
+            }
         };
 
         Self::check_field(&yaml, "task_categories", VALID_TASK_CATEGORIES, &mut errors);
