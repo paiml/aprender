@@ -126,3 +126,9 @@ falsification_tests:
     test: 'cargo test -p aprender-ptx-debug --test cli_surface_gate unusable_input_is_rejected'
     if_fails: 'MEASURED 2026-09-27 (aprender-01): before the fix `analyze` on an empty file printed "Score: 97.1/100" with F001–F003 failed and exited 0; with the fix reverted this test is RED; fixed (a module with no .version is refused), GREEN'
     mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'
+  - id: FALSIFY-BIN-APRENDER-PTX-DEBUG-007
+    rule: 'gen-fkr emits one test per failed falsification result and per bug, named from the normalised module'
+    prediction: 'generate_fkr_tests emits fkr_<id>_<module> only for Fail results, fkr_bug_<class>_<module> per bug, and fkr_summary_<module> with score and confidence; "My-Kernel" yields idents my_kernel but keeps My-Kernel in the header'
+    test: 'cargo test -p aprender-ptx-debug --lib fkr_generator'
+    if_fails: 'a generated probar suite would miss a failed check, test a passing one, or carry an ident that does not compile'
+    mutation: 'flip result.is_fail(), drop the replace of - with _, or drop the *100 on confidence in fkr_generator.rs; fkr_generator tests must turn RED (all three shown RED 2026-10-19)'
