@@ -529,7 +529,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e SHARD -e SHARDS \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
@@ -563,7 +563,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
@@ -595,7 +595,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             "$IMAGE" \
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -Eq "test result: ok\. [1-9][0-9]* passed" /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
@@ -667,7 +667,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e SHARD -e SHARDS \
             "$IMAGE" \
             bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
@@ -700,7 +700,7 @@ jobs:
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
@@ -769,7 +769,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e SHARD -e SHARDS \
             "$IMAGE" \
             cargo build --examples --workspace --keep-going
@@ -838,7 +838,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
@@ -936,7 +936,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
@@ -1009,7 +1009,7 @@ jobs:
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e TREE="$tree" -e EXPR="$EXPR" \
@@ -1049,7 +1049,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
@@ -2501,7 +2501,7 @@ jobs:
               -e SCCACHE_DIR=/sccache \
               -e SCCACHE_CACHE_SIZE=50G \
               -e CARGO_INCREMENTAL=0 \
-              -e CARGO_BUILD_JOBS=8 \
+              -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
               -e CARGO_TERM_COLOR=never \
               "${DR_ENV[@]}" \
               "$IMAGE" "$@"
