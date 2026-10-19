@@ -2011,7 +2011,7 @@ jobs:
             -e GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
             -e "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $B64" \
             "$IMAGE" \
-            cargo deny check
+            cargo deny check bans licenses sources
       # check_apr_bin_pinned asserts CALLERS pin the binary; it says nothing
       # about which binary the resolver hands them. apr_bin.sh returned
       # target/release/apr whenever it existed, so a stale release build beside
@@ -2648,7 +2648,11 @@ jobs:
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          cargo deny check advisories
+          # P9 option 4: pinned advisory-db snapshot (ci/advisory-db.pin), run only when
+          # Cargo.toml/Cargo.lock/deny.toml changed; a pin older than 7 d is red (F5).
+          bash scripts/advisory_pin.sh run "origin/${GITHUB_BASE_REF:-main}"
+      - name: Advisory pin case table (F5/F6)
+        run: bash scripts/advisory_pin.sh --self-test
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.
@@ -2659,7 +2663,13 @@ jobs:
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          setsid --wait bash scripts/check_deny_exemptions_live.sh
+          if bash scripts/advisory_pin.sh needed "origin/${GITHUB_BASE_REF:-main}"; then
+            ADVISORY_DB_DIR=$(bash scripts/advisory_pin.sh fetch) || exit $?
+            export ADVISORY_DB_DIR
+            setsid --wait bash scripts/check_deny_exemptions_live.sh
+          else
+            echo "exemption-live: no Cargo.toml/Cargo.lock/deny.toml change; skipped (daily live audit covers)"
+          fi
       # cargo-deny and cargo-audit read ONE database: RustSec. GHSA (what
       # Dependabot reads) is a superset, and when an advisory lives only there
       # every gate above is green while the crate sits in Cargo.lock. #2531:

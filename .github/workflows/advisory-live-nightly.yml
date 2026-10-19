@@ -1,0 +1,86 @@
+# advisory-live-nightly.yml -- P9 option 4, the other half of the pinned-DB merge gate.
+#
+# Operator, verbatim (2026-10-19 14:10 Madrid): "Daily scheduled audit vs live DB; a new
+# advisory files a ticket + pages. Clean-room publish gate keeps the full audit.
+# Falsifier: an advisory >24 h old reaches a release -> restore to merge path."
+#
+# The merge path checks a PINNED snapshot (ci/advisory-db.pin, scripts/advisory_pin.sh).
+# This workflow is what keeps that honest:
+#   audit : cargo deny against the LIVE RustSec DB, daily. Red opens or updates ONE
+#           ticket (no labels, owner in the body). It never blocks a merge: LAB.
+#   bump  : advance ci/advisory-db.pin to the live DB HEAD and open the bump PR. If it
+#           stops landing, the F5 age check goes red on main within 7 days (F7).
+name: advisory-live-nightly
+
+on:
+  schedule:
+    - cron: '17 21 * * *'   # lands overnight; see guards-nightly.yml for the dispatch delay
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: advisory-live-nightly
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: cargo deny advisories against the live DB
+        id: deny
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
+          rc=0
+          cargo deny check advisories > "$RUNNER_TEMP/deny.log" 2>&1 || rc=$?
+          tail -n 40 "$RUNNER_TEMP/deny.log"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+      - name: Red opens or updates the one ticket
+        if: steps.deny.outputs.rc != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="advisory-live-nightly: new advisory against the live RustSec DB"
+          body="$(printf 'Owner: flow (aprender-flow); page: aprender cop.\nRun: %s/%s/actions/runs/%s\nrc=%s\n\nLast lines:\n\n%s\n\nFalsifier (operator 2026-10-19): an advisory older than 24 h reaching a release restores advisories to the merge path.' \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "${{ steps.deny.outputs.rc }}" "$(tail -n 40 "$RUNNER_TEMP/deny.log")")"
+          n=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh issue create --title "$title" --body "$body"; fi
+          echo "::error::new advisory against the live DB: see the ticket"
+          exit 1
+
+  bump:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Advance the pin to the live advisory-db HEAD and open the bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          db="$RUNNER_TEMP/advisory-db-live"
+          git clone -q --depth 1 https://github.com/RustSec/advisory-db.git "$db"
+          sha=$(git -C "$db" rev-parse HEAD)
+          d=$(git -C "$db" log -1 --format=%cs)
+          if grep -q "^sha=$sha\$" ci/advisory-db.pin; then echo "pin already at $sha"; exit 0; fi
+          br="chore/advisory-pin-$d"
+          git switch -c "$br"
+          printf 'sha=%s\ndate=%s\n' "$sha" "$d" > ci/advisory-db.pin
+          git -c user.name=advisory-bump -c user.email=noreply@github.com commit -qam "chore(advisory): bump pinned RustSec snapshot to $d"
+          git push -q origin "$br"
+          gh pr create --base main --head "$br" --title "chore(advisory): bump pinned RustSec snapshot to $d" \
+            --body "Daily pin bump (P9 option 4). Owner: flow. A bump that fails here means a real advisory hit the tree: see the audit ticket."
+          gh pr merge "$br" --squash --auto --delete-branch
