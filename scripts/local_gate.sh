@@ -37,6 +37,12 @@ n="$(threads_for "$(nproc)" "$gates")"
 exec 9>"$build/target.lock"
 flock 9
 export CARGO_TARGET_DIR="$build/target"
+# Hermetic registry: a host ~/.cargo/registry may be a symlink into /dev/shm that
+# dangles inside the section containers (guard-cargo m5). Keep the toolchain home
+# where it is and point cargo's registry/cache at the build filesystem.
+export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+export CARGO_HOME="$build/cargo-home"
+mkdir -p "$CARGO_HOME"
 # LG-3, LG-4.
 export CARGO_BUILD_JOBS="$n" RAYON_NUM_THREADS="$n" NEXTEST_TEST_THREADS="$n"
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
