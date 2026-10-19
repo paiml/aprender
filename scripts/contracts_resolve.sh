@@ -18,7 +18,7 @@ set -euo pipefail
 GENERATED_RE='^contracts/(contracts\.nt|shapes\.ttl|witness/.*\.json)$'
 
 conflicted=$(git diff --name-only --diff-filter=U)
-[ -n "$conflicted" ] || { echo "contracts_resolve: no merge conflict to resolve" >&2; exit 2; }
+[ -n "$conflicted" ] || echo "contracts_resolve: no conflict; regenerating the generated files from the merged sources"
 other=$(printf '%s\n' "$conflicted" | grep -vE "$GENERATED_RE" || true)
 if [ -n "$other" ]; then
     printf 'contracts_resolve: REFUSED, conflicts outside the generated set:\n%s\n' "$other" >&2
@@ -27,6 +27,7 @@ fi
 
 # Drop both sides of every generated path; the regeneration below recreates what the merged sources produce.
 printf '%s\n' "$conflicted" | while IFS= read -r f; do
+    [ -n "$f" ] || continue
     git rm -q --cached --ignore-unmatch -- "$f"
     rm -f -- "${f:?}"
 done
