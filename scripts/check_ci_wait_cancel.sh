@@ -64,7 +64,7 @@ gate_script() { # <file>
 # x86-main/determinism publishes no `results` output, so the gate reads every section as missing.
 # Runs the gate's own script: control (all green) exits 0; each cancelled fat need exits 1.
 gate_probe() { # <file> -> prints ok/FAIL lines, returns 1 on a defect, 2 if the gate cannot be modelled
-    local s g rc=0 r G='{"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' D='{"determinism-compare":{"result":"success"}}'
+    local s g rc=0 r G='{"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"cargo-guards-b":{"result":"success"},"sov.gate":{"result":"success"}}' D='{"determinism-compare":{"result":"success"}}'
     s=$(mktemp "${TMPDIR:-/tmp}/ci-gate.XXXXXX")
     gate_script "$1" > "$s"
     if [ ! -s "$s" ]; then echo "ENV: no gate 'Check required sections' script in $1" >&2; rm -f "${s:?}"; return 2; fi

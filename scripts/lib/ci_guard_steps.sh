@@ -172,6 +172,17 @@ cmd_check() {
     while IFS= read -r f; do # an orphan manifest runs nowhere
         [ -n "$f" ] && { echo "FAIL $f"; rc=1; }
     done < <(jqd -r "$JQDEFS orphans")
+    # #5769: guard-cargo is split in two sections. Each shard runs once, the gate reads shard b, and ci.yml
+    # starts it; drop any of the four and half the guards stop running while every other check stays green.
+    if [ -r ci/guard_cargo_shard_b.txt ]; then
+        for f in "ci_guards.sh --shard a guard-cargo" "ci_guards.sh --shard b guard-cargo"; do
+            n="$(grep -cF -- "$f" "$WORKFLOW" || true)"
+            [ "$n" = 1 ] || { echo "FAIL $WORKFLOW: \`$f\` appears $n times, want 1 (ci/guard_cargo_shard_b.txt splits guard-cargo)"; rc=1; }
+        done
+        for f in "X86:cargo-guards-b" "guard-cargo,cargo-guards-b,"; do
+            grep -qF -- "$f" "$GATE_WORKFLOW" || { echo "FAIL $GATE_WORKFLOW: no \`$f\` -- shard b of guard-cargo is not started or not read by the gate"; rc=1; }
+        done
+    fi
     return "$rc"
 }
 
@@ -285,7 +296,9 @@ cmd_run() {
     # 4800 s per step, not 1200: car's whole `guard_tree.sh --no-cargo` universe is
     # ONE manifest step and took 2481 s on CI (run 36229622731, x86-main, 2026-09-26),
     # so a 1200 s cap would kill it on every run. ~2x the measured worst step.
-    local only="" stream="" timeout="${CI_GUARDS_STEP_TIMEOUT:-4800}" root scratch job
+    local only="" stream="" timeout="${CI_GUARDS_STEP_TIMEOUT:-4800}" root scratch job shard=""
+    local shard_file="${CI_GUARDS_SHARD_FILE:-ci/guard_cargo_shard_b.txt}" sline
+    local -A shard_b=() shard_seen=()
     # A step that outlives the JOB (guard-cargo was killed at 3567 s and 3494 s, #4914 #4917, #4919)
     # dies before its own --step-timeout fires, and the log never said which step it was. Every
     # CI_GUARDS_HEARTBEAT seconds (default 300, 0 = off) the running step is named on stderr.
@@ -295,6 +308,7 @@ cmd_run() {
         case "$1" in
             --only) [ "$#" -ge 2 ] || die "--only needs a value"; only=$2; shift 2 ;;
             --step-timeout) [ "$#" -ge 2 ] || die "--step-timeout needs a value"; timeout=$2; shift 2 ;;
+            --shard) [ "$#" -ge 2 ] || die "--shard needs a value"; shard=$2; shift 2 ;;
             --stream) stream=1; shift ;;
             --no-stream) stream=0; shift ;;
             -*) die "run: unknown flag $1" ;;
@@ -302,6 +316,19 @@ cmd_run() {
         esac
     done
     [[ $timeout =~ ^[0-9]+$ ]] || die "--step-timeout wants whole seconds, got '$timeout'"
+    # --shard a|b (#5769): the steps named in $shard_file are shard b, every other step is shard a, so the
+    # two shards are disjoint and their union is the manifest by construction. A name that matches no step
+    # is a stale row and dies below, so a renamed step cannot silently move to shard a.
+    case "$shard" in
+        "") ;;
+        a|b)
+            [ -r "$shard_file" ] || die "--shard: cannot read $shard_file"
+            while IFS= read -r sline || [ -n "$sline" ]; do
+                case "$sline" in ''|'#'*) continue ;; esac
+                shard_b[$sline]=1
+            done < "$shard_file" ;;
+        *) die "--shard wants a or b, got '$shard'" ;;
+    esac
     [[ $heartbeat =~ ^[0-9]+$ ]] || die "CI_GUARDS_HEARTBEAT wants whole seconds, got '$heartbeat'"
     if [ -z "$stream" ]; then if in_ci; then stream=1; else stream=0; fi; fi
     root="$(git rev-parse --show-toplevel 2> /dev/null)" || true
@@ -309,6 +336,7 @@ cmd_run() {
     load_jobs
     [ "${#names[@]}" -gt 0 ] || mapfile -t names < <(guard_jobs) || exit 2
     [ "${#names[@]}" -gt 0 ] || exit 2
+    { [ -z "$shard" ] || [ "${#names[@]}" -eq 1 ]; } || die "--shard splits ONE job's steps; name that job"
     sha_line "${names[@]}"
     if in_ci; then
         local -a missing=()
@@ -373,6 +401,14 @@ cmd_run() {
                 IFS= read -r -u 3 -d '' k && IFS= read -r -u 3 -d '' v || die "cannot read the steps of $job in $WORKFLOW"
                 ek+=("$k"); ev+=("$v")
             done
+            if [ -n "$shard" ]; then
+                if [ -n "${shard_b[$name]+x}" ]; then
+                    shard_seen[$name]=1
+                    [ "$shard" = b ] || continue
+                else
+                    [ "$shard" = a ] || continue
+                fi
+            fi
             if [ -n "$only" ] && ! [[ $name =~ $only ]]; then continue; fi
             reason=""
             if ! in_ci; then
@@ -462,6 +498,11 @@ cmd_run() {
             emit "$job" "$idx" "$status" "$(awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.3f", b - a }')" "$detail"
         done 3< "$scratch/steps.$job"
     done
+    if [ -n "$shard" ]; then
+        for sline in "${!shard_b[@]}"; do
+            [ -n "${shard_seen[$sline]+x}" ] || die "--shard: $shard_file names a step the manifest does not have: $sline"
+        done
+    fi
 
     local failed=0 ran=0 skipped=0 row
     local -a fl=()

@@ -1,7 +1,7 @@
 # ci_guard_steps.jq -- the jq definitions behind ci_guard_steps.sh (#4415).
 # Prepended to every query; the bash side binds $runner $sfx $status $expr.
 def rx: gsub("(?<c>[.^$*+?()\\[\\]{}|\\\\])"; "\\\(.c)");
-def calls_runner($job): ((.run // "") | tostring) | test("(^|\\s)" + ($runner | rx) + "\\s+" + ($job | rx) + "(\\s|$)");
+def calls_runner($job): ((.run // "") | tostring) | test("(^|\\s)" + ($runner | rx) + "\\s+(--shard\\s+[ab]\\s+)?" + ($job | rx) + "(\\s|$)");
 def setup_end: (map(.id == "guard-setup") | index(true)) // -1;
 def fail_fast: (.if == null) or ((.if | tostring) | test($status) | not);
 def name_of: .name // .uses // "(unnamed)";

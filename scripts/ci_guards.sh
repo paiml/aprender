@@ -18,6 +18,7 @@
 #   bash scripts/ci_guards.sh guard-tree             # one job
 #   bash scripts/ci_guards.sh --only 'bashrs|pinned' guard-cargo
 #   bash scripts/ci_guards.sh --step-timeout 600     # seconds per step (default 4800)
+#   bash scripts/ci_guards.sh --shard b guard-cargo  # half of guard-cargo (ci/guard_cargo_shard_b.txt, #5769)
 #   bash scripts/ci_guards.sh --list | --sha | --check-coverage
 #
 # Exit: 0 all ran steps passed, 1 a step failed or timed out, 2 usage / nothing ran.
@@ -28,7 +29,7 @@ command -v jq > /dev/null 2>&1 || { echo "ci_guards: jq missing" >&2; exit 2; }
 cd "$REPO_ROOT" || exit 2
 
 case "${1:-}" in
-    --help|-h) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help|-h) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --list) shift; exec bash "$LIB" list "$@" ;;
     --sha) shift; exec bash "$LIB" sha "$@" ;;
     --check-coverage) shift; exec bash "$LIB" check-coverage "$@" ;;
@@ -36,7 +37,7 @@ esac
 args=()
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --only|--step-timeout)
+        --only|--step-timeout|--shard)
             [ "$#" -ge 2 ] || { echo "ci_guards: $1 needs a value" >&2; exit 2; }
             args+=("$1" "$2"); shift 2 ;;
         --stream|--no-stream) args+=("$1"); shift ;;

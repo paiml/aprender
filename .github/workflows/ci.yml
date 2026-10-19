@@ -249,7 +249,7 @@ jobs:
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]'
+          --sections 'sov.*,guard-tree,guard-cargo,cargo-guards-b,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]'
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[X64]'
       # Published mid-run: the determinism job's compare section is waiting for it.
@@ -617,7 +617,7 @@ jobs:
           # --- MG-REUSE-VERDICT-END ---
           # x86-main and determinism were skipped when REUSE=1: the cited run's gate passed these on this tree (PR head run on merge_group, merge_group run on push).
           if [ "$REUSE" = 0 ]; then
-            for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+            for pair in X86:guard-tree X86:guard-cargo X86:cargo-guards-b X86:sov.gate DET:determinism-compare; do
               job="${pair%%:*}" sec="${pair#*:}"
               # determinism does not run on a PR head (job-level if above): not a failure there.
               [ "$job:$EVT" = "DET:pull_request" ] && continue
