@@ -70,6 +70,17 @@ git -C "$clone" checkout -q --detach refs/remotes/origin/main
 git -C "$clone" -c user.name=gate -c user.email=gate@localhost merge -q --no-ff -m "gate: merge $head_sha" "$head_sha" ||
     { echo "local_gate: HEAD does not merge cleanly onto origin/main; update the branch" >&2; exit 2; }
 cd "$clone"
+# Pinned fleet tools (m9): install exactly tools.toml's pmat/bashrs into a gate-private root
+# once, put it first on PATH. Never touches the host's copies.
+tools="$build/tools"
+for t in pmat bashrs; do
+    want="$(awk -v w="[$t]" '$0==w{i=1;next} /^\[/{i=0} i&&$1=="version"{v=$0;sub(/^[^"]*"/,"",v);sub(/".*$/,"",v);print v;exit}' tools.toml)"
+    have="$("$tools/bin/$t" --version 2>/dev/null | awk 'NR==1{print $2}')" || have=""
+    if [ -n "$want" ] && [ "$have" != "$want" ]; then
+        cargo install "$t" --version "$want" --locked --quiet --root "$tools" || { echo "local_gate: cannot provision $t $want" >&2; exit 2; }
+    fi
+done
+export PATH="$tools/bin:$PATH"
 # Serialise the shared-state installs the parallel sections would otherwise race on.
 rustup toolchain install stable --profile minimal --target x86_64-pc-windows-gnu >/dev/null 2>&1 || true
 cargo fetch --locked >/dev/null 2>&1 || true
