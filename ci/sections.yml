@@ -1945,12 +1945,20 @@ jobs:
           mkdir -p "$ch" "$sc"
           # one mount when CARGO_HOME is ~/.cargo (a second -v of the same target is a docker error)
           if [ "$ch" = "$ca" ]; then mounts=(-v "$ca:$ca"); else mounts=(-v "$ca:$ca:ro" -v "$ch:$ch"); fi
+          # LG-2/LG-4 (make gate) set a shared target dir and debug=0 on the host; the container build
+          # must use the same ones or the host rebuild below sees a different fingerprint. Unset on
+          # GitHub, so there this adds nothing.
+          lg=()
+          if [ -n "${CARGO_TARGET_DIR:-}" ]; then mkdir -p "$CARGO_TARGET_DIR"; lg+=(-v "$CARGO_TARGET_DIR:$CARGO_TARGET_DIR" -e CARGO_TARGET_DIR); fi
+          for v in CARGO_PROFILE_DEV_DEBUG CARGO_PROFILE_TEST_DEBUG CARGO_BUILD_JOBS; do
+            if [ -n "${!v:-}" ]; then lg+=(-e "$v"); fi
+          done
           snap=$(mktemp)
           cp "$root/Cargo.lock" "$snap"
           printf 'host rustc: %s\n' "$("$tc/bin/rustc" -vV | sed -n 1p)"
           # toolchain bin first in PATH: the rustup proxy writes settings.toml, and RUSTUP_HOME is mounted read-only
           docker run --rm --user "$(id -u):$(id -g)" \
-            -v "$root:$root" -w "$root" -v "$ru:$ru:ro" "${mounts[@]}" -v "$sc:/sccache" \
+            -v "$root:$root" -w "$root" -v "$ru:$ru:ro" "${mounts[@]}" -v "$sc:/sccache" "${lg[@]}" \
             -e HOME="$HOME" -e CARGO_HOME="$ch" -e RUSTUP_HOME="$ru" -e RUSTUP_TOOLCHAIN=1.93.0 -e RUSTFLAGS= -e CARGO_INCREMENTAL= \
             -e PATH="$tc/bin:$ca/bin:/usr/local/cargo/bin:/usr/bin:/bin" \
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache -e SCCACHE_DIR=/sccache \
