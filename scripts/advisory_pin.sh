@@ -40,15 +40,30 @@ needed() {
     return "$rc"
 }
 
+# cargo-deny 0.19 has no --db-path flag: the path is the [advisories] db-path key, and the
+# database is the directory named advisory-db-<hash of the default URL> under it. The
+# pinned checkout is placed there and the check runs with --disable-fetch, so a missing or
+# mis-named directory is an error, never a silent live fetch.
+DENY_DB_SUBDIR="advisory-db-3157b0e258782691"
+
 fetch_db() {
-    local sha
-    sha=$(sed -n "s/^sha=//p" "$PIN_FILE_DEFAULT")
+    local sha db
+    sha=$(sed -n 's/^sha=//p' "$PIN_FILE_DEFAULT")
     ADVISORY_DB_DIR="${ADVISORY_DB_DIR:-${RUNNER_TEMP:-/tmp}/advisory-db-pinned}"
-    rm -rf "${ADVISORY_DB_DIR:?}"; mkdir -p "$ADVISORY_DB_DIR"
-    git -C "$ADVISORY_DB_DIR" init -q
-    git -C "$ADVISORY_DB_DIR" fetch -q --depth 1 https://github.com/RustSec/advisory-db.git "$sha" \
+    rm -rf "${ADVISORY_DB_DIR:?}"
+    db="$ADVISORY_DB_DIR/$DENY_DB_SUBDIR"
+    mkdir -p "$db"
+    git -C "$db" init -q
+    git -C "$db" fetch -q --depth 1 https://github.com/RustSec/advisory-db.git "$sha" \
         || { echo "advisory_pin: COULD NOT CHECK: fetch of pinned $sha failed" >&2; return 75; }
-    git -C "$ADVISORY_DB_DIR" checkout -q FETCH_HEAD
+    git -C "$db" checkout -q FETCH_HEAD
+    sed "s|^\[advisories\]\$|[advisories]\ndb-path = \"$ADVISORY_DB_DIR\"|" "${DENY_TOML:-deny.toml}" > "$ADVISORY_DB_DIR/deny.toml"
+    grep -q '^db-path = ' "$ADVISORY_DB_DIR/deny.toml" \
+        || { echo "advisory_pin: COULD NOT CHECK: no [advisories] table to carry db-path" >&2; return 75; }
+}
+
+deny_pinned() {
+    cargo deny check --config "$ADVISORY_DB_DIR/deny.toml" --disable-fetch "$@" advisories
 }
 
 run() {
@@ -59,11 +74,11 @@ run() {
         return 0
     fi
     fetch_db || return $?
-    cargo deny --disable-fetch --db-path "$ADVISORY_DB_DIR" check advisories
+    deny_pinned
 }
 
 self_test() {
-    local t fail=0 pin rc S=999ec89d5d3f10f20be14750ec8c2d8b44e0ac9b p
+    local t fail=0 pin rc pinabs S=999ec89d5d3f10f20be14750ec8c2d8b44e0ac9b p
     t=$(mktemp -d); pin="$t/pin"
     row() { # name want-rc today sha date
         printf 'sha=%s\ndate=%s\n' "$4" "$5" > "$pin"
@@ -84,6 +99,15 @@ self_test() {
     printf 'sha=%s\ndate=2026-10-17\n' "$S" > "$pin"
     rc=0; bash "$t/mut.sh" age "$pin" 2026-11-16 >/dev/null 2>&1 || rc=$?
     if [ "$rc" -eq 0 ]; then echo "ok   mutation (age check disabled) lets a 30-day pin through"; else echo "FAIL mutation not detected (rc $rc)"; fail=1; fi
+    # the invocation itself: cargo-deny 0.19 rejected the old --db-path form, so run the real binary
+    # on a one-crate fixture against the pinned snapshot (fails if the binary or the fetch is missing)
+    local fx="$t/fx"
+    mkdir -p "$fx/src"; printf '[package]\nname = "fx"\nversion = "0.1.0"\nedition = "2021"\n' > "$fx/Cargo.toml"
+    : > "$fx/src/lib.rs"; printf 'version = 4\n\n[[package]]\nname = "fx"\nversion = "0.1.0"\n' > "$fx/Cargo.lock"
+    printf '[advisories]\nignore = []\n' > "$fx/deny.toml"
+    pinabs="$(pwd)/$PIN_FILE_DEFAULT"
+    rc=0; (cd "$fx" && PIN_FILE_DEFAULT="$pinabs" ADVISORY_DB_DIR="$t/db" DENY_TOML="$fx/deny.toml" && fetch_db && deny_pinned) >"$t/deny.out" 2>&1 || rc=$?
+    if [ "$rc" -eq 0 ]; then echo "ok   cargo-deny $(cargo deny --version | cut -d' ' -f2) accepts the pinned invocation"; else echo "FAIL pinned cargo-deny invocation rc $rc"; tail -n 5 "$t/deny.out"; fail=1; fi
     for p in Cargo.toml Cargo.lock crates/x/Cargo.toml deny.toml; do
         if printf '%s\n' "$p" | grep -qE "$NEEDED_RE"; then echo "ok   needed matches $p"; else echo "FAIL needed misses $p"; fail=1; fi
     done

@@ -36,7 +36,7 @@ trap 'rm -f "${LOG:?}"' EXIT
 # Redirect, never pipe: reading this through a pipe would report the exit status
 # of the last stage instead of cargo-deny's.
 if [ -n "${ADVISORY_DB_DIR:-}" ]; then
-  cargo deny --disable-fetch --db-path "$ADVISORY_DB_DIR" check advisories > "$LOG" 2>&1
+  cargo deny check --config "$ADVISORY_DB_DIR/deny.toml" --disable-fetch advisories > "$LOG" 2>&1
 else
   cargo deny check advisories > "$LOG" 2>&1
 fi
