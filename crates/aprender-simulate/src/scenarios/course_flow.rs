@@ -184,7 +184,12 @@ impl Sim {
         if s == BUILD && !job.short {
             self.build_work[job.id] += d;
         }
-        if job.short != self.trunk_first(s) {
+        let first = if self.trunk_first(s) {
+            !job.short
+        } else {
+            job.short
+        };
+        if first {
             self.st[s].hi.push_back((job, d));
         } else {
             self.st[s].lo.push_back((job, d));
