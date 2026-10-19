@@ -13,6 +13,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SEED="$ROOT/scripts/ci/seed_registry.sh"
 PIN="$ROOT/scripts/ci/pin_build_base.sh"
 TD=$(mktemp -d); trap 'rm -rf "${TD:?}"' EXIT
+export GIT_CEILING_DIRECTORIES="$TD"   # #5025: a slipped -C must fail, not write into the shared checkout
 ok=0; bad=0
 row() { if [ "$2" = "$3" ]; then ok=$((ok+1)); printf 'ok    %s\n' "$1"; else bad=$((bad+1)); printf 'RED   %s (got %s, want %s)\n' "$1" "$2" "$3"; fi; }
 [ -f "$SEED" ] || { printf 'RED   %s is missing\n' "$SEED"; bad=$((bad+1)); }
