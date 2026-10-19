@@ -3,7 +3,7 @@
 #
 #   check [DIR]                 schema of every fragment; exit 1 on a bad one
 #   aggregate [DIR] [CHANGELOG] fold fragments into CHANGELOG [Unreleased], then delete them
-#   --self-test                 plant each falsifier; must PASS/FAIL as named
+#   test                        plant each falsifier; must PASS/FAIL as named
 set -euo pipefail
 
 SECTIONS="Added Changed Fixed Performance Security Removed"
@@ -100,11 +100,11 @@ self_test() {
 
 cmd=${1:-}
 case "$cmd" in
-    --self-test) self_test ;;
+    test) self_test ;;
     check)
         out=$(check_dir "${2:-changelog.d}")
         if [ -n "$out" ]; then printf '%s\n' "$out" >&2; exit 1; fi
         ;;
     aggregate) aggregate "${2:-changelog.d}" "${3:-CHANGELOG.md}" ;;
-    *) echo "usage: $0 check [DIR] | aggregate [DIR] [CHANGELOG] | --self-test" >&2; exit 2 ;;
+    *) echo "usage: $0 check [DIR] | aggregate [DIR] [CHANGELOG] | test" >&2; exit 2 ;;
 esac

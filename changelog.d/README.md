@@ -18,7 +18,7 @@ by one or more `- ` bullets.
 ```
 bash scripts/changelog_fragments.sh check        # schema of every fragment
 bash scripts/changelog_fragments.sh aggregate    # release: fold into CHANGELOG.md [Unreleased], delete fragments
-bash scripts/changelog_fragments.sh --self-test  # case table
+bash scripts/changelog_fragments.sh test  # case table
 ```
 
 Roadmap fragments are `docs/roadmaps/entries/<id>.yaml` (apr-roadmap-fragments-v1);
