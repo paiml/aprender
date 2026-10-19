@@ -127,7 +127,7 @@ pub struct PropertyShape {
 /// A node shape: a target class, an open/closed switch, and its property shapes.
 #[derive(Debug, Clone)]
 pub struct NodeShape {
-    /// The contract that declares it (its stem); nested `node` shapes are `<stem>/node`.
+    /// The contract that declares it (its stem); nested `node` shapes are `<stem>/node/<path local>`.
     pub id: String,
     pub target_class: String,
     pub closed: bool,
@@ -490,7 +490,7 @@ fn parse_property(
     // an IRI still matches an IRI value, because a `sh:in` over `nodeKind: IRI` is a list of IRIs.
     let r#in = parse_in(shape, pm)?;
     let pattern = parse_pattern(shape, pm)?;
-    let node = parse_nested_node(shape, pm, depth)?;
+    let node = parse_nested_node(shape, path, pm, depth)?;
     let severity = parse_severity(
         shape,
         pm.get("severity").and_then(serde_yaml::Value::as_str),
@@ -606,9 +606,25 @@ fn parse_pattern(
     Ok(Some((p.to_string(), re)))
 }
 
-/// `node`: one level of nesting is in the subset, deeper is not.
+/// The part of a property path that names its nested shape: after the last `:`, `/` or `#`, kept to IRI-safe
+/// characters (#5501: two `node:` blocks in one shape must not share an IRI).
+fn path_local(path: &str) -> String {
+    let tail = path.rsplit([':', '/', '#']).next().unwrap_or(path);
+    tail.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// `node`: one level of nesting is in the subset, deeper is not. Named `<shape>/node/<path local>`.
 fn parse_nested_node(
     shape: &str,
+    path: &str,
     pm: &serde_yaml::Mapping,
     depth: usize,
 ) -> Result<Option<Box<NodeShape>>, ShapeError> {
@@ -623,7 +639,7 @@ fn parse_nested_node(
                 .as_mapping()
                 .ok_or_else(|| malformed_in(shape, "`node` is not a mapping".into()))?;
             Ok(Some(Box::new(parse_node_shape(
-                &format!("{shape}/node"),
+                &format!("{shape}/node/{}", path_local(path)),
                 nm,
                 None,
                 depth + 1,
@@ -1383,6 +1399,36 @@ mod tests {
     }
 
     const BASE: &str = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:id, minCount: 1, maxCount: 1, pattern: '^[a-z0-9-]+$'}\n    - {path: ont:kind, maxCount: 1, in: [kernel, pattern]}\n";
+
+    /// #5501: two `node:` blocks in one shape each get their own IRI, so the Turtle export names every node
+    /// shape once (an RDF reader merges two sh:NodeShape of one name into a shape nothing satisfies).
+    #[test]
+    fn two_nested_nodes_in_one_shape_get_distinct_ids() {
+        let yaml = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:a, node: {properties: [{path: ont:id, minCount: 1}]}}\n    - {path: ont:b, node: {properties: [{path: ont:kind, minCount: 1}]}}\n";
+        let s = shape(yaml);
+        let ids: Vec<&str> = s
+            .properties
+            .iter()
+            .filter_map(|p| p.node.as_deref().map(|n| n.id.as_str()))
+            .collect();
+        assert_eq!(ids.len(), 2, "{ids:?}");
+        assert_ne!(ids[0], ids[1], "{ids:?}");
+        let ttl = to_turtle(&[s]);
+        let subjects: Vec<&str> = ttl
+            .lines()
+            .filter(|l| l.ends_with(" a sh:NodeShape ;"))
+            .filter_map(|l| l.split(' ').next())
+            .collect();
+        let mut uniq = subjects.clone();
+        uniq.sort_unstable();
+        uniq.dedup();
+        assert_eq!(
+            subjects.len(),
+            uniq.len(),
+            "a node shape is named twice: {subjects:?}"
+        );
+        assert_eq!(subjects.len(), 3, "{subjects:?}");
+    }
 
     #[test]
     fn allow_empty_carries_its_reason_and_refuses_a_blank_or_nested_one() {
