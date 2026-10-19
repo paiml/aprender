@@ -179,7 +179,7 @@ pub enum Commands {
     },
     /// Run a FLOW-006 course-factory case; --json prints the sim block
     CourseFlow {
-        /// Case: cal-today, design, nine-builders, coursera-24h or render-300.
+        /// Case: cal-today, design, nine-builders, coursera-24h, render-300 or factory-v2.
         #[arg(long)]
         case: String,
         /// JSON file of measured inputs from the ledger; overrides the case.
