@@ -770,6 +770,12 @@ mod tests {
         )
         .unwrap();
         assert!(section_run_lines(&sharded, &["guard-cargo".to_string()]).contains("make m"));
+        // #5771 item 5: the `--shard b` spelling is counted the same way as `--shard a`.
+        let sharded_b: serde_yaml::Value = serde_yaml::from_str(
+            "jobs:\n  guard-cargo:\n    steps:\n      - run: bash scripts/ci_guards.sh --shard b guard-cargo\n  guard-cargo-steps:\n    if: false\n    steps:\n      - run: make m\n",
+        )
+        .unwrap();
+        assert!(section_run_lines(&sharded_b, &["guard-cargo".to_string()]).contains("make m"));
     }
 
     #[test]
