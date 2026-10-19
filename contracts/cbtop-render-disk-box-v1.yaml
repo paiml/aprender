@@ -1,0 +1,42 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  description: "aprender-cbtop CbtopApp::render_disk_box (#5603) — draws a framed Disks box with at most three disk rows (mount truncated to 15 chars, mini bar, used/total, percent), stops adding rows once the height budget is spent, and leaves current_y two lines below the last row."
+  kind: pattern
+  references:
+    - "crates/aprender-cbtop/src/app/render/panels.rs — render_disk_box"
+    - "aprender#5603 — coverage ticket"
+
+equations:
+  disk_box_layout:
+    formula: "rows = min(3, len(disks)) cut when y > height-5; y_out = y_in + 1 + rows + 2"
+    domain: "LoadMetrics.disks, height"
+    codomain: "CellBuffer rows plus advanced current_y"
+    invariants:
+      - "no more than three disks are ever drawn"
+      - "the closing frame row is always drawn, even with zero disks"
+
+proof_obligations:
+  - id: CBTOP-DISK-INV-001
+    type: invariant
+    property: "at most three disk rows are drawn"
+    formal: "cargo test -p aprender-cbtop --lib disk_box_shows_at_most_three_disks exits 0"
+    applies_to: disk_box_layout
+  - id: CBTOP-DISK-INV-002
+    type: invariant
+    property: "row drawing stops when the height budget is spent"
+    formal: "cargo test -p aprender-cbtop --lib disk_box_stops_rows_when_height_is_exhausted exits 0"
+    applies_to: disk_box_layout
+
+falsification_tests:
+  - id: FALSIFY-CBTOP-DISK-001
+    rule: "disk cap raised"
+    prediction: "changing take(3) to take(4) turns disk_box_shows_at_most_three_disks RED"
+    test: "cargo test -p aprender-cbtop --lib disk_box_shows_at_most_three_disks"
+    if_fails: "the three-disk cap is unguarded"
+  - id: FALSIFY-CBTOP-DISK-002
+    rule: "height margin changed"
+    prediction: "changing height - 5.0 to height - 4.0 turns disk_box_stops_rows_when_height_is_exhausted RED"
+    test: "cargo test -p aprender-cbtop --lib disk_box_stops_rows_when_height_is_exhausted"
+    if_fails: "the height cut-off is unguarded"

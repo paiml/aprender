@@ -399,3 +399,107 @@ impl CbtopApp {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use presentar_terminal::direct::CellBuffer;
+
+    const W: u16 = 60;
+
+    fn disk(mount: &str, used: u64, total: u64, pct: f64) -> DiskMetrics {
+        DiskMetrics {
+            mount: mount.to_string(),
+            total_bytes: total,
+            used_bytes: used,
+            usage_percent: pct,
+        }
+    }
+
+    /// Render the disk box into a fresh buffer; returns (rows, final y).
+    fn render(disks: Vec<DiskMetrics>, height: u16) -> (Vec<String>, f32) {
+        let mut buf = CellBuffer::new(W, 12);
+        let metrics = LoadMetrics {
+            disks,
+            ..Default::default()
+        };
+        let mut y = 0.0_f32;
+        {
+            let mut canvas = DirectTerminalCanvas::new(&mut buf);
+            CbtopApp::render_disk_box(
+                &mut canvas,
+                &mut y,
+                height,
+                &metrics,
+                40,
+                50,
+                &Theme::default(),
+                &TextStyle::default(),
+            );
+        }
+        let rows = (0..12)
+            .map(|r| {
+                (0..W)
+                    .filter_map(|c| buf.get(c, r).map(|cell| cell.symbol.to_string()))
+                    .collect::<String>()
+            })
+            .collect();
+        (rows, y)
+    }
+
+    #[test]
+    fn disk_box_draws_frame_row_and_advances_y() {
+        let (rows, y) = render(vec![disk("/data", 5 << 30, 10 << 30, 50.0)], 40);
+        assert!(rows[0].contains("┌─ Disks "), "{:?}", rows[0]);
+        assert!(rows[1].contains("/data"), "{:?}", rows[1]);
+        assert!(rows[1].contains("(50%)"), "{:?}", rows[1]);
+        assert!(rows[1].contains("▓▓▓▓▓░░░░░"), "{:?}", rows[1]);
+        assert!(
+            rows[2].contains('└') && rows[2].contains('┘'),
+            "{:?}",
+            rows[2]
+        );
+        // top 1 + one disk row 1 + bottom 1 + 1 blank line.
+        assert!((y - 4.0).abs() < f32::EPSILON, "y={y}");
+    }
+
+    #[test]
+    fn disk_box_without_disks_is_just_the_frame() {
+        let (rows, y) = render(Vec::new(), 40);
+        assert!(rows[0].contains("Disks"));
+        assert!(rows[1].contains('└'));
+        assert!((y - 3.0).abs() < f32::EPSILON, "y={y}");
+    }
+
+    #[test]
+    fn disk_box_shows_at_most_three_disks() {
+        let disks = (0..5)
+            .map(|i| disk(&format!("/m{i}"), 1 << 30, 2 << 30, 50.0))
+            .collect();
+        let (rows, y) = render(disks, 40);
+        assert!(rows[3].contains("/m2"), "{:?}", rows[3]);
+        assert!(!rows.iter().any(|r| r.contains("/m3")));
+        assert!(rows[4].contains('└'), "{:?}", rows[4]);
+        assert!((y - 6.0).abs() < f32::EPSILON, "y={y}");
+    }
+
+    #[test]
+    fn disk_box_truncates_mount_to_fifteen_chars() {
+        let (rows, _) = render(vec![disk("/abcdefghijklmnopqrst", 1, 2, 50.0)], 40);
+        assert!(rows[1].contains("/abcdefghijklmn"), "{:?}", rows[1]);
+        assert!(!rows[1].contains("/abcdefghijklmno"), "{:?}", rows[1]);
+    }
+
+    #[test]
+    fn disk_box_stops_rows_when_height_is_exhausted() {
+        // height 7 => break once y > 2.0: the second row is the last drawn.
+        let disks = (0..3)
+            .map(|i| disk(&format!("/m{i}"), 1 << 30, 2 << 30, 50.0))
+            .collect();
+        let (rows, y) = render(disks, 7);
+        assert!(rows[2].contains("/m1"), "{:?}", rows[2]);
+        assert!(!rows.iter().any(|r| r.contains("/m2")));
+        assert!(rows[3].contains('└'), "{:?}", rows[3]);
+        assert!((y - 5.0).abs() < f32::EPSILON, "y={y}");
+    }
+}
