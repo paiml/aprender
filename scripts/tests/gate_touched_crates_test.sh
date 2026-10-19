@@ -104,12 +104,12 @@ case "$mutant_out" in
 esac
 
 # --- Mutation 2: appending `|| true` to the gate recipe must trip the
-#     acceptance grep (`grep -cE '\|\| *(true|echo)'` on `make -n gate`).
+#     acceptance grep (`grep -cE '\|\| *(true|echo)'` on `make -n gate-touched`).
 cp Makefile "$tmpdir/Makefile.mutant" || exit 1
 sed -i 's#^\tscripts/gate_touched_crates\.sh$#\tscripts/gate_touched_crates.sh || true#' "$tmpdir/Makefile.mutant" || exit 1
 grep -q 'gate_touched_crates.sh || true' "$tmpdir/Makefile.mutant"
 check "mutation fixture actually inserted || true into the gate recipe" $?
-mutant_lines="$(make -n -f "$tmpdir/Makefile.mutant" gate 2>/dev/null | grep -cE '\|\| *(true|echo)')"
+mutant_lines="$(make -n -f "$tmpdir/Makefile.mutant" gate-touched 2>/dev/null | grep -cE '\|\| *(true|echo)')"
 [ -z "$mutant_lines" ] && mutant_lines=0
 [ "$mutant_lines" -gt 0 ]
 check "mutation (|| true in recipe): acceptance grep trips (RED, as required)" $?
