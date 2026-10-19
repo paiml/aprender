@@ -531,8 +531,8 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             -e SHARD -e SHARDS \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
             bash -c 'cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition "hash:${SHARD}/${SHARDS}"; rc=$?; echo "::group::sccache stats"; sccache --show-stats || true; echo "::endgroup::"; exit "$rc"'
       - name: "Σ-executed: keep the workspace lib junit (the next nextest run overwrites it)"
@@ -564,8 +564,8 @@ jobs:
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
             cargo nextest run --profile ci -p aprender-gpu -p aprender-cuda-edge --lib
       - name: "Σ-executed: keep the GPU crates junit (the next nextest run overwrites it)"
@@ -701,8 +701,8 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
             bash -c 'set -euo pipefail
               cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /sigma/lib.list.json
@@ -839,8 +839,8 @@ jobs:
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
             bash -c "cargo nextest run --profile ci --lib --tests$pkgs" || rc=1
@@ -937,8 +937,8 @@ jobs:
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
             cargo nextest run --profile ci $BUILD_FLAGS -E "$EXPR" --partition "hash:${SHARD}/3"
@@ -1010,8 +1010,8 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e TREE="$tree" -e EXPR="$EXPR" \
             -e SHARD \
             "$IMAGE" \
@@ -1050,8 +1050,8 @@ jobs:
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
             cargo check --workspace --all-targets --locked
