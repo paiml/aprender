@@ -901,8 +901,9 @@ aprender-ci-tools,aprender-ci-tools coverage-report-scope,6,x86_64-linux,NONE,no
 aprender-ci-tools,aprender-ci-tools tarball-shrink-report,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:46,high
 aprender-ci-tools,aprender-ci-tools tarball-workspace,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:55,high
 aprender-ci-tools,aprender-ci-tools tarball-build-errors,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:68,high
-aprender-ci-tools,aprender-ci-tools dag-status,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:77,high
-aprender-ci-tools,aprender-ci-tools git-patch-id,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:84,high
-aprender-ci-tools,aprender-ci-tools llama-fit-verdict,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:93,high
-aprender-ci-tools,aprender-ci-tools ladder-cells-produce,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:102,high
+aprender-ci-tools,aprender-ci-tools dag-status,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:82,high
+aprender-ci-tools,aprender-ci-tools git-patch-id,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:89,high
+aprender-ci-tools,aprender-ci-tools llama-fit-verdict,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:98,high
+aprender-ci-tools,aprender-ci-tools ladder-cells-produce,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:107,high
+aprender-ci-tools,aprender-ci-tools gate-steps,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:75,high
 aprender-ci-tools,aprender-ci-tools --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:16,high

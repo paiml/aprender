@@ -25321,3 +25321,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3998
+- id: PMAT-5759
+  github_issue: 5759
+  item_type: task
+  title: 'FLOW-009 LG: make gate (full local gate on the warm lambda target) + make precheck + LG-9 step-time emitter'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-19T12:51:01Z
+  updated: 2026-10-19T12:51:01Z
+  spec: null
+  acceptance_criteria:
+  - LG-1..LG-4, LG-9, W-3. Branch work/<ticket> only (W-1).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
