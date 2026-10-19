@@ -2,7 +2,7 @@
 //! error rendering, regularisation and prediction guards (coverage ticket, Rule 7).
 //! Contract: FALSIFY-MH-013 in contracts/multinomial-head-v1.yaml.
 
-use aprender::classification::multinomial::{
+use crate::classification::multinomial::{
     HeadFitError, HeadInputError, MultinomialLogisticRegression, Regularization,
 };
 
