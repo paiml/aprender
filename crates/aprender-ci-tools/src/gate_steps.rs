@@ -20,6 +20,7 @@ pub fn category(section: &str, step: &str) -> &'static str {
         "cargo test",
         "test-tier",
         "shard",
+        "run tests",
     ]) {
         "test"
     } else if has(&["build", "compile", "cargo check", "cargo build", "link"]) {
@@ -105,6 +106,7 @@ mod tests {
         assert_eq!(category("guard-cargo", "upload-artifact"), "network");
         assert_eq!(category("guard-cargo", "cargo build --release"), "build");
         assert_eq!(category("guard-tree", "check_foo.sh"), "lint");
+        assert_eq!(category("sov.test", "Run tests"), "test");
     }
 
     #[test]
