@@ -91,7 +91,6 @@ presentar-terminal = { path = "../aprender-present-terminal", package = "aprende
 presentar-core = { path = "../aprender-present-core", package = "aprender-present-core" }
 
 # Deterministic replay
-serde_yaml_ng = "0.10"
 sha2 = "0.10"
 regex = "1.11"
 

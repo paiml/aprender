@@ -29,7 +29,7 @@ pub fn run(
     let binding_registry = binding
         .map(|p| {
             let content = std::fs::read_to_string(p)?;
-            let reg: BindingRegistry = serde_yaml::from_str(&content)?;
+            let reg: BindingRegistry = crate::yaml::from_str(&content)?;
             Ok::<_, Box<dyn std::error::Error>>(reg)
         })
         .transpose()?;

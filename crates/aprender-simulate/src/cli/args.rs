@@ -62,6 +62,7 @@ impl Cli {
 
 /// Available CLI commands.
 #[derive(Debug, Clone, PartialEq, Subcommand)]
+#[allow(clippy::large_enum_variant)] // PrFlow carries the measured-input overrides; parsed once at startup
 pub enum Commands {
     /// Run an experiment
     Run {
@@ -94,6 +95,99 @@ pub enum Commands {
         /// Random seed for deterministic output.
         #[arg(long, default_value_t = 42)]
         seed: u64,
+    },
+    /// Run the aprender PR-flow scenario (FLOW-005) for a named design
+    PrFlow {
+        /// Design: D, A, G or E.
+        #[arg(long, default_value = "D", value_parser = ["D", "A", "G", "E"])]
+        design: String,
+        /// Print the cycle-record "sim" block as one JSON line.
+        #[arg(long)]
+        json: bool,
+        /// Override the PR-check runner pool (measured input).
+        #[arg(long)]
+        r_pr: Option<usize>,
+        /// Override the merge-queue runner pool (measured input).
+        #[arg(long)]
+        r_mq: Option<usize>,
+        /// Override the WIP cap (measured input).
+        #[arg(long)]
+        cap: Option<usize>,
+        /// Override concurrent merge-queue groups (measured input).
+        #[arg(long)]
+        builds: Option<usize>,
+        /// Override the merge-group flake rate (measured input).
+        #[arg(long)]
+        f: Option<f64>,
+        /// Override mean concurrent authors (may be fractional).
+        #[arg(long)]
+        n: Option<f64>,
+        /// Measured PR-check runner-minutes per run.
+        #[arg(long)]
+        pr_min: Option<f64>,
+        /// Measured merge-queue runner-minutes per run.
+        #[arg(long)]
+        mq_min: Option<f64>,
+        /// Measured share of PR runs that go red.
+        #[arg(long)]
+        p_red: Option<f64>,
+        /// Measured queue wait per PR run, minutes.
+        #[arg(long)]
+        pr_setup: Option<f64>,
+        /// Review wait per PR after green checks, minutes (default 0).
+        #[arg(long)]
+        t_rev: Option<f64>,
+        /// Run the review alongside the checks instead of after them.
+        #[arg(long)]
+        rev_concurrent: bool,
+        /// Parallel reviewers (0 = unlimited).
+        #[arg(long)]
+        rev_lanes: Option<usize>,
+        /// Merged PRs in the last 24 h, from git (for drift_pct_24h).
+        #[arg(long)]
+        observed_24h: Option<f64>,
+        /// Comma-separated run ids the measured inputs came from.
+        #[arg(long)]
+        src_runs: Option<String>,
+        /// Arbiter params file for one repo (ARB-SOT-001 §3); prints {actual, one_change, optimum}.
+        #[arg(long)]
+        params: Option<PathBuf>,
+        /// Seeds 1..=N for `--params`.
+        #[arg(long, default_value_t = 5)]
+        seeds: u64,
+        /// Simulated hours per seed for `--params`.
+        #[arg(long, default_value_t = 400.0)]
+        hours: f64,
+        /// Warm-up hours discarded for `--params`.
+        #[arg(long, default_value_t = 20.0)]
+        warmup: f64,
+        /// Commit the sim block is stamped with.
+        #[arg(long, default_value = "unknown")]
+        sha: String,
+    },
+    /// Run a FLOW-006 repo case (conflict step, optional merge queue); --json prints the sim block
+    RepoFlow {
+        /// Case name, for example rmedia-design or infra-rule.
+        #[arg(long)]
+        case: String,
+        /// JSON file of measured inputs from the ledger; overrides the case.
+        #[arg(long)]
+        inputs: Option<std::path::PathBuf>,
+        /// Print the sim block as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run a FLOW-006 course-factory case; --json prints the sim block
+    CourseFlow {
+        /// Case: cal-today, design, nine-builders, coursera-24h or render-300.
+        #[arg(long)]
+        case: String,
+        /// JSON file of measured inputs from the ledger; overrides the case.
+        #[arg(long)]
+        inputs: Option<std::path::PathBuf>,
+        /// Print the sim block as JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Validate experiment YAML against EDD v2 schema
     Validate {

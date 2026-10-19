@@ -1,0 +1,298 @@
+{
+  "witness_version": 3,
+  "probe": "perf041-rs",
+  "host": "lambda-vector",
+  "commit": "8f601caff2eeef7224c3aa58ac3382bb3ab688f0",
+  "binary_sha256": "26073455f1730f84de061ab193949f07b0eafae320c0b7187db5296f734caaa8",
+  "model": {
+    "path": "Qwen3.5-4B-Q4_K_M.gguf",
+    "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"
+  },
+  "prompt_sha256": "3e31578371f85f23c8fa13b7b287e65bad7e0c09584bc79d3064feab3d1ab7e5",
+  "sampler": {
+    "temperature": 0.0,
+    "seed": 0,
+    "ignore_eos": true,
+    "max_tokens": 128,
+    "top_logprobs": 2
+  },
+  "declared_min": 64,
+  "env": {
+    "APR_DECODE_GEMM": null,
+    "BATCHED_PREFILL": null,
+    "CUBLAS_GEMM_THRESHOLD": null,
+    "CUDA_BATCH_WINDOW_MS": "200",
+    "FP8_DECODE": null,
+    "FP8_PREFILL": null,
+    "FUSED_GATE_UP": null,
+    "ITERATION_SCHEDULER": null,
+    "MULTI_PROMPT_PREFILL": null
+  },
+  "reference": {
+    "stable": true,
+    "tokens": 128,
+    "self_divergence_at": 128
+  },
+  "bands": [
+    {
+      "c": 1,
+      "m_formed": 1,
+      "result": "PASS",
+      "divergence_at": 128,
+      "intra_agree_to": 128,
+      "max_constant_run": 1,
+      "declared_min": 64,
+      "max_constant_run_declared": 16,
+      "reason": null,
+      "decode_tok_s": 74.94808449461978,
+      "slots": [
+        {
+          "i": 0,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 74.94808449461978
+        }
+      ]
+    },
+    {
+      "c": 4,
+      "m_formed": 4,
+      "result": "PASS",
+      "divergence_at": 128,
+      "intra_agree_to": 128,
+      "max_constant_run": 1,
+      "declared_min": 64,
+      "max_constant_run_declared": 16,
+      "reason": null,
+      "decode_tok_s": 42.83078260621849,
+      "slots": [
+        {
+          "i": 0,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 42.8308932672928
+        },
+        {
+          "i": 1,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 42.8307862173916
+        },
+        {
+          "i": 2,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 42.83077899504538
+        },
+        {
+          "i": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 42.830703030555426
+        }
+      ]
+    },
+    {
+      "c": 8,
+      "m_formed": 8,
+      "result": "PASS",
+      "divergence_at": 128,
+      "intra_agree_to": 128,
+      "max_constant_run": 1,
+      "declared_min": 64,
+      "max_constant_run_declared": 16,
+      "reason": null,
+      "decode_tok_s": 24.517993601446975,
+      "slots": [
+        {
+          "i": 0,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 24.517961580558453
+        },
+        {
+          "i": 1,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 24.517981299546072
+        },
+        {
+          "i": 2,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 24.517989123723495
+        },
+        {
+          "i": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 24.517998079170454
+        },
+        {
+          "i": 4,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 24.518004909359814
+        },
+        {
+          "i": 5,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 24.51800983675451
+        },
+        {
+          "i": 6,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 24.518013680218406
+        },
+        {
+          "i": 7,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 24.517936503504803
+        }
+      ]
+    },
+    {
+      "c": 16,
+      "m_formed": 16,
+      "result": "PASS",
+      "divergence_at": 128,
+      "intra_agree_to": 128,
+      "max_constant_run": 1,
+      "declared_min": 64,
+      "max_constant_run_declared": 16,
+      "reason": null,
+      "decode_tok_s": 12.664446261625237,
+      "slots": [
+        {
+          "i": 0,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664538707782974
+        },
+        {
+          "i": 1,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664429831326052
+        },
+        {
+          "i": 2,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.66445425451752
+        },
+        {
+          "i": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664458036906543
+        },
+        {
+          "i": 4,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664440733915992
+        },
+        {
+          "i": 5,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664441442401866
+        },
+        {
+          "i": 6,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664440708658029
+        },
+        {
+          "i": 7,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664440418191473
+        },
+        {
+          "i": 8,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664463714914477
+        },
+        {
+          "i": 9,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664463019055134
+        },
+        {
+          "i": 10,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664434448475252
+        },
+        {
+          "i": 11,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664435725264095
+        },
+        {
+          "i": 12,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664436700220735
+        },
+        {
+          "i": 13,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664451750185728
+        },
+        {
+          "i": 14,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664451434460663
+        },
+        {
+          "i": 15,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "refused": null,
+          "decode_tok_s": 12.664451080848606
+        }
+      ]
+    }
+  ],
+  "result": "PASS"
+}

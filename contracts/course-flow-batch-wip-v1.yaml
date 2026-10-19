@@ -1,0 +1,47 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-10-18"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Little, J.D.C. (1961), A Proof for the Queuing Formula L = lambda W."
+    - "flow model spec, internal (eq 1)"
+  description: "course_flow counts the daily human batch gate inside WIP and reports its mean wait"
+
+name: course-flow-batch-wip
+version: "1.0.0"
+scope: "crates/aprender-simulate/src/scenarios/course_flow.rs"
+
+description: |
+  A daily human batch gate holds finished items until its next release. With
+  batch_in_wip set, an item holds its WIP slot while it waits there, so Little's
+  law L = lambda W closes on a window that includes the gate. The mean time an item
+  spends at the gate is reported as mean_batch_wait_h.
+
+equations:
+  little_with_gate:
+    description: "|lambda W - L| / L <= 0.005 with WIP including the batch wait"
+    formula: "|lambda * W - L| / L <= 0.005"
+
+  gate_wait_bounded:
+    description: "mean batch wait lies inside one gate interval"
+    formula: "0 < mean_batch_wait_h < 24"
+
+falsification_tests:
+  - id: FALSIFY-001
+    description: "Little's law holds within 0.5% with the batch wait inside WIP"
+    test: "cargo test -p aprender-simulate --lib littles_law_holds_with_batch_wait_inside_wip"
+    prediction: "the test passes"
+    if_fails: "the batch gate is not counted inside WIP as the contract states"
+
+  - id: FALSIFY-002
+    description: "mean_batch_wait_h is reported and lies inside one day"
+    test: "cargo test -p aprender-simulate --lib mean_batch_wait_is_reported_and_inside_a_day"
+    prediction: "the test passes"
+    if_fails: "the batch gate is not counted inside WIP as the contract states"
+
+  - id: FALSIFY-003
+    description: "counting the batch inside WIP changes the result (not a no-op)"
+    test: "cargo test -p aprender-simulate --lib batch_in_wip_is_not_a_no_op"
+    prediction: "the test passes"
+    if_fails: "the batch gate is not counted inside WIP as the contract states"

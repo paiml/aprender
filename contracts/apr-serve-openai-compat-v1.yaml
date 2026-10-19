@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.23.0"
+  version: "1.24.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -788,3 +788,15 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib embed_kind_eg3_4902'
     expected_output: "test result: ok"
     if_fails: 'An embedding model is refused by `apr serve` or answers with a vector the CLI does not produce; a generative route on it fails with something other than a 4xx naming the kind; or an image reaches the tokenizer as text and comes back as a 200 embedding of its base64 (media dropped, I-7).'
+  - id: FALSIFY-CHAT-CONTENT-OPTIONAL-5411
+    name: chat_message_content_pmat801
+    prediction: 'A chat request whose ASSISTANT message omits `content` or sends `content: null` (the tool-call turn OpenAI SDK loops echo back) parses with content "" and keeps its tool_calls; system, user and tool messages still REQUIRE content (absent or null is refused naming `content`); a non-string content is a type error for every role; ChatMessage serialization bytes are unchanged.'
+    test_harness: 'cargo test -p aprender-serve --lib chat_message_content'
+    expected_output: "test result: ok"
+    if_fails: 'An OpenAI-compatible agent loop gets HTTP 422 "missing field content" on its second turn, or a non-assistant role silently accepts a missing content.'
+  - id: FALSIFY-MAX-COMPLETION-TOKENS-5411
+    name: max_completion_tokens_alias
+    prediction: '`max_completion_tokens` fills `max_tokens` on /v1/chat/completions; `max_tokens` alone still parses; a body carrying both names is refused with serde `duplicate field` rather than silently preferring one.'
+    test_harness: 'cargo test -p aprender-serve --lib max_completion_tokens'
+    expected_output: "test result: ok"
+    if_fails: 'OpenAI SDK >= 1.40 clients lose their generation cap (the unknown key is ignored) and generation runs to the server default.'

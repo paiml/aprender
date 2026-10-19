@@ -908,9 +908,9 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
-        sh:minCount 9 ;
-        sh:maxCount 9 ;
-        sh:in ( "emc-check" "emc-validate" "help" "list-emc" "render" "run" "validate" "verify" "version" ) ;
+        sh:minCount 12 ;
+        sh:maxCount 12 ;
+        sh:in ( "course-flow" "emc-check" "emc-validate" "help" "list-emc" "pr-flow" "render" "repo-flow" "run" "validate" "verify" "version" ) ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/route> ;

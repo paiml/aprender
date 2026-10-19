@@ -416,15 +416,15 @@ apr,apr serve run --no-metrics,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-co
 apr,apr shard,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1239,high
 apr,apr shared-cache-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1217,high
 apr,apr showcase,6,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/tool_commands.rs:5,high
-apr,apr sim emc-check,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:105,low
-apr,apr sim emc-validate,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:110,low
-apr,apr sim help,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:117,low
-apr,apr sim list-emc,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:115,low
-apr,apr sim render,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:71,low
-apr,apr sim run,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:60,low
-apr,apr sim validate,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:92,low
-apr,apr sim verify,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:97,low
-apr,apr sim version,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:119,low
+apr,apr sim emc-check,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:206,low
+apr,apr sim emc-validate,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:211,low
+apr,apr sim help,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:218,low
+apr,apr sim list-emc,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:216,low
+apr,apr sim render,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:79,low
+apr,apr sim run,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:68,low
+apr,apr sim validate,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:193,low
+apr,apr sim verify,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:198,low
+apr,apr sim version,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:220,low
 apr,apr stamp,2,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:638,high
 apr,apr tensors,4,x86_64-linux;nvidia-cuda,safetensors,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:362,high
 apr,apr test llm bench,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1745 (dispatch crates/apr-cli/src/commands/test_llm.rs:482),medium
@@ -832,15 +832,15 @@ aprender-score,aprender-score [PATH] (TUI-crate quality scoring),6,UNKNOWN,NONE,
 aprender-simulate,unserved: GET / (visualization UI; library feature web; no aprender-simulate command starts the server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:88,medium
 aprender-simulate,unserved: GET /health (visualization; library feature web; no aprender-simulate command starts the server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:89,medium
 aprender-simulate,unserved: GET /ws (visualization WebSocket; library feature web; no aprender-simulate command starts the server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-simulate/src/visualization/web.rs:82,medium
-aprender-simulate,aprender-simulate emc-check,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:105,high
-aprender-simulate,aprender-simulate emc-validate,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:110,high
-aprender-simulate,aprender-simulate help,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:117,high
-aprender-simulate,aprender-simulate list-emc,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:115,high
-aprender-simulate,aprender-simulate render,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:71,high
-aprender-simulate,aprender-simulate run,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:60,high
-aprender-simulate,aprender-simulate validate,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:92,high
-aprender-simulate,aprender-simulate verify,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:97,high
-aprender-simulate,aprender-simulate version,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:119,high
+aprender-simulate,aprender-simulate emc-check,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:206,high
+aprender-simulate,aprender-simulate emc-validate,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:211,high
+aprender-simulate,aprender-simulate help,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:218,high
+aprender-simulate,aprender-simulate list-emc,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:216,high
+aprender-simulate,aprender-simulate render,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:79,high
+aprender-simulate,aprender-simulate run,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:68,high
+aprender-simulate,aprender-simulate validate,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:193,high
+aprender-simulate,aprender-simulate verify,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:198,high
+aprender-simulate,aprender-simulate version,6,UNKNOWN,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:220,high
 aprender-rag,aprender-rag demo,6,UNKNOWN,huggingface-transformers,no,8,rag-eval,crates/aprender-rag-cli/src/lib.rs:107,high
 aprender-rag,aprender-rag eval compare,6,UNKNOWN,huggingface-transformers,no,8,rag-eval,crates/aprender-rag-cli/src/lib.rs:455,high
 aprender-rag,aprender-rag eval gate,6,UNKNOWN,huggingface-transformers,no,8,rag-eval,crates/aprender-rag-cli/src/lib.rs:466,high

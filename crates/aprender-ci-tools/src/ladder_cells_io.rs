@@ -401,11 +401,13 @@ impl Serve {
     }
 
     /// `kill -s SIG -- -PGID` on the recorded child's group; a failure is the KILL step's to
-    /// cover, which also kills the child itself.
+    /// cover, which also kills the child itself. Through `sh`'s builtin `kill`: a slim image
+    /// (rust:*-slim, the clean-room) ships no `kill` executable, so `Command::new("kill")` was
+    /// ENOENT and the TERM never reached the group (#5492).
     fn signal_group(&self, sig: &str) {
-        let group = format!("-{}", self.child.id());
-        let _ = Command::new("kill")
-            .args(["-s", sig, "--", &group])
+        let _ = Command::new("sh")
+            .args(["-c", "kill -s \"$1\" -- \"-$2\"", "sh", sig])
+            .arg(self.child.id().to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

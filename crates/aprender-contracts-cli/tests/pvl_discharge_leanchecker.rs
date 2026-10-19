@@ -208,7 +208,7 @@ fn the_real_trees_scope_states_the_non_fresh_limitation() {
     let f = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../aprender-contracts-staging/lean/formalization.yaml");
     let text = std::fs::read_to_string(&f).expect("formalization.yaml");
-    let v: serde_yaml::Value = serde_yaml::from_str(&text).expect("yaml");
+    let v: serde_json::Value = aprender_contracts_cli::yaml::from_str(&text).expect("yaml");
     let scope = v["scope"].as_str().expect("scope: is a string");
     for needle in ["--leanchecker", "--fresh", "F7"] {
         assert!(scope.contains(needle), "scope lacks {needle:?}: {scope}");
