@@ -195,6 +195,7 @@ aprender-rag-cli	--lib	<root>
 aprender-review-experiment	--lib	build_corpus
 aprender-review-experiment	--lib	contamination
 aprender-review-experiment	--lib	prereg
+aprender-rollup	--lib	<root>
 aprender-serve	--lib	capability
 aprender-serve	--lib	cli::cli_tests
 aprender-serve	--lib	gguf::inference::matmul
