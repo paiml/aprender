@@ -16,9 +16,9 @@ Exactly one `### <Section>` heading (Added, Changed, Fixed, Performance, Securit
 by one or more `- ` bullets.
 
 ```
-bash scripts/changelog_fragments.sh check        # schema of every fragment
-bash scripts/changelog_fragments.sh aggregate    # release: fold into CHANGELOG.md [Unreleased], delete fragments
-bash scripts/changelog_fragments.sh --self-test  # case table
+bash scripts/check_changelog_fragments.sh check        # schema of every fragment
+bash scripts/check_changelog_fragments.sh aggregate    # release: fold into CHANGELOG.md [Unreleased], delete fragments
+bash scripts/check_changelog_fragments.sh --self-test  # case table
 ```
 
 Roadmap fragments are `docs/roadmaps/entries/<id>.yaml` (apr-roadmap-fragments-v1);

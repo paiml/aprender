@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# changelog_fragments.sh -- changelog.d/<TICKET>.md fragments (FLOW-009 RH-1/RH-2, #5761).
+# check_changelog_fragments.sh -- changelog.d/<TICKET>.md fragments (FLOW-009 RH-1/RH-2, #5761).
 #
 #   check [DIR]                 schema of every fragment; exit 1 on a bad one
 #   aggregate [DIR] [CHANGELOG] fold fragments into CHANGELOG [Unreleased], then delete them
@@ -98,8 +98,10 @@ self_test() {
     return "$rc"
 }
 
-cmd=${1:-}
+# guard_tree.sh runs this bare, from the repo root: no argument = check changelog.d.
+cmd=${1:-check}
 case "$cmd" in
+    -h|--help) echo "usage: $0 [check [DIR]] | aggregate [DIR] [CHANGELOG] | --self-test" ;;
     --self-test) self_test ;;
     check)
         out=$(check_dir "${2:-changelog.d}")
