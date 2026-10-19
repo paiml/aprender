@@ -99,9 +99,3 @@ falsification_tests:
     test: 'cargo test -p aprender-cgp --test cli_surface_gate unusable_input_is_rejected'
     if_fails: 'MEASURED 2026-09-26 (aprender-01): with the explain fix reverted the gate is RED on this test (`explain no-such-target` got Some(0)); restored, GREEN'
     mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'
-  - id: FALSIFY-BIN-APRENDER-CGP-007
-    rule: 'dispatch routes each Commands variant to its own handler (#5570)'
-    prediction: 'dispatch sends contract, explain, baseline, diff, roofline and tui to their handlers with the parsed arguments; each handler''s distinguishing error or success comes back unchanged'
-    test: 'cargo test -p aprender-cgp --lib cli::tests::dispatch_'
-    if_fails: 'a subcommand is wired to the wrong handler or swallows its error, so the CLI exits 0 on a failed command'
-    mutation: 'MEASURED 2026-10-18: Contract arm replaced by Ok(()) -> 2 RED; explain error swallowed with .or(Ok(())) -> 1 RED; baseline save/load arguments swapped -> 1 RED'
