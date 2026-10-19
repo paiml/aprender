@@ -265,6 +265,11 @@ falsification_tests:
   prediction: The timestamp in a cbtop report matches the UTC date at the moment it was generated, on both headless paths
   test: commands::cbtop::tests::test_chrono_timestamp_is_current_utc_date
   if_fails: Persisted CI provenance is stamped with a stale hardcoded date
+- id: FALSIFY-OPS-013
+  rule: apr run prints every output mode and derives tok/s as documented
+  prediction: print_run_output succeeds for stream, json, benchmark and text; effective_tok_per_sec prefers the reported rate, else tokens/duration, else 0.0
+  test: commands::run::tests::print_run_output_serves_every_mode_and_derives_the_rate
+  if_fails: apr run output errors on a finished run or reports a wrong rate
 kani_harnesses:
 - id: KANI-OPS-001
   obligation: ReadOnly commands have no side effects

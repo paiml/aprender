@@ -423,3 +423,31 @@ mod pmat3826_fell_back_names_a_real_fallback {
         );
     }
 }
+
+/// FALSIFY-OPS-013: every output mode of `print_run_output` completes on a
+/// finished run, and the rate it reports is derived exactly as documented.
+#[test]
+fn print_run_output_serves_every_mode_and_derives_the_rate() {
+    let mut r = gpu_result(Some(true));
+    // stream, json, benchmark (text and json), plain text (cached, then downloaded)
+    for (fmt, bench, stream) in [
+        ("text", false, true),
+        ("json", false, false),
+        ("text", true, false),
+        ("json", true, false),
+        ("text", false, false),
+    ] {
+        assert!(print_run_output(&r, "model.gguf", fmt, 8, bench, stream, false).is_ok());
+    }
+    r.cached = false;
+    assert!(print_run_output(&r, "model.gguf", "text", 8, false, false, true).is_ok());
+
+    // reported rate wins; otherwise tokens / duration; zero duration gives 0.0
+    r.tok_per_sec = Some(7.5);
+    assert!((effective_tok_per_sec(&r, 4) - 7.5).abs() < f64::EPSILON);
+    r.tok_per_sec = None;
+    r.duration_secs = 2.0;
+    assert!((effective_tok_per_sec(&r, 4) - 2.0).abs() < f64::EPSILON);
+    r.duration_secs = 0.0;
+    assert!(effective_tok_per_sec(&r, 4).abs() < f64::EPSILON);
+}
