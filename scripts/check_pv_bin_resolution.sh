@@ -439,6 +439,11 @@ stage_pv() {
     # bashrs reads the parens of "(aprender ...)" as an unescaped test
     # expression (SC1028) when a string holding them shares a line with a test.
     printf '#!/usr/bin/env bash\n' > "$sp_path"
+    if [ "$sp_want" = "flaky" ]; then
+        # Dies on the first probe, answers from the second (a transient kill).
+        printf 'c="$0.n"; n=$(cat "$c" 2>/dev/null || echo 0); echo $((n+1)) > "$c"\n' >> "$sp_path"
+        printf '[ "$n" -ge 1 ] || exit 137\n' >> "$sp_path"
+    fi
     if [ "$sp_want" = "dead" ]; then
         # A probe that dies without answering (SIGKILL under load): no output, rc 137.
         printf 'exit 137\n' >> "$sp_path"
@@ -610,7 +615,21 @@ row '4h foreign good release + own good debug'  good self good other debug
 row '4i foreign good release + own stale debug' stale self good other FAIL 'STALE'
 # #5755: a probe that did not ANSWER is not a stale binary. It must read could-not-check
 # (rc 2, "COULD NOT CHECK"), never STALE -- a runner fault named as a code cause.
-row '4o own debug pv dies without answering' dead self none none FAIL 'COULD NOT CHECK'
+row_probe_rc() {
+    rp_name="$1"; rp_want="$2"; rp_rc_expect="$3"; rp_msg="$4"
+    rp_dir=$(safe_tmpdir) || { bad "mktemp -d gave an unusable path"; return 0; }
+    make_fixture "$rp_dir" "$rp_want" none none none
+    rp_rc=0
+    rp_got=$(resolve_in "$rp_dir" "$rp_dir/stderr.log") || rp_rc=$?
+    if [ "$rp_rc" -ne "$rp_rc_expect" ]; then bad "$rp_name -> rc $rp_rc, expected $rp_rc_expect"; sed 's/^/      /' "$rp_dir/stderr.log" >&2
+    elif [ -n "$rp_msg" ] && ! grep -qF -- "$rp_msg" "$rp_dir/stderr.log"; then bad "$rp_name -> never said '$rp_msg'"
+    elif [ "$rp_rc_expect" -ne 0 ] && grep -q 'STALE' "$rp_dir/stderr.log"; then bad "$rp_name -> a failed probe was called STALE"
+    else note "$rp_name"; fi
+    rm -rf "${rp_dir:?refusing to rm an empty path}"
+}
+row_probe_rc '4o pv dies on every probe -> COULD NOT CHECK, rc 75' dead 75 'COULD NOT CHECK'
+row_probe_rc '4p pv dies once, answers on the retry -> accepted' flaky 0 ''
+row '4q pv answers a stale version -> still STALE (red only on a confirmed stale binary)' stale self none none FAIL 'STALE'
 
 # --- the tree's own target dir ---------------------------------------------
 # `cargo metadata` answers for the shell asking. The dev shell's `cargo`
