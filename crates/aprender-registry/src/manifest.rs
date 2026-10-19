@@ -670,4 +670,113 @@ mod tests {
         assert!(manifest.base_model.is_empty());
         assert!(manifest.system_prompt.is_none());
     }
+
+    // ========================================================================
+    // load / save / to_modelfile (FALSIFY-RI-004)
+    // ========================================================================
+
+    fn full_manifest() -> ModelManifest {
+        let mut m = ModelManifest::default();
+        m.base_model = "llama3:8b".to_string();
+        m.system_prompt = Some("You are terse.".to_string());
+        m.parameters.temperature = Some(0.5);
+        m.parameters.top_p = Some(0.9);
+        m.parameters.top_k = Some(40);
+        m.parameters.max_tokens = Some(256);
+        m.parameters.stop = vec!["</s>".to_string(), "END".to_string()];
+        m.parameters.repeat_penalty = Some(1.1);
+        m.parameters.context_length = Some(4096);
+        m.parameters.seed = Some(7);
+        m.template = Some("{{ .Prompt }}".to_string());
+        m.adapter = Some("lora.bin".to_string());
+        m.license = Some("MIT".to_string());
+        m
+    }
+
+    #[test]
+    fn test_save_then_load_roundtrip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("Modelfile");
+        let original = full_manifest();
+        original.save(&path).expect("save");
+        let loaded = ModelManifest::load(&path).expect("load");
+        assert_eq!(loaded.base_model, original.base_model);
+        assert_eq!(loaded.system_prompt, original.system_prompt);
+        assert_eq!(loaded.parameters.stop, original.parameters.stop);
+        assert_eq!(loaded.parameters.seed, Some(7));
+        assert_eq!(loaded.parameters.context_length, Some(4096));
+        assert_eq!(loaded.template, original.template);
+        assert_eq!(loaded.adapter, original.adapter);
+        assert_eq!(loaded.license, original.license);
+    }
+
+    #[test]
+    fn test_save_writes_to_modelfile_text() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("Modelfile");
+        let m = full_manifest();
+        m.save(&path).expect("save");
+        assert_eq!(std::fs::read_to_string(&path).expect("read"), m.to_modelfile());
+    }
+
+    #[test]
+    fn test_load_missing_file_is_io_error_naming_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("absent");
+        let err = ModelManifest::load(&path).expect_err("missing file must fail");
+        assert!(matches!(err, PachaError::Io(_)));
+        let msg = err.to_string();
+        assert!(msg.contains("Failed to read"), "{msg}");
+        assert!(msg.contains("absent"), "{msg}");
+    }
+
+    #[test]
+    fn test_save_into_missing_dir_is_io_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("no_such_dir").join("Modelfile");
+        let err = full_manifest().save(&path).expect_err("missing dir must fail");
+        assert!(matches!(err, PachaError::Io(_)));
+        assert!(err.to_string().contains("Failed to write"), "{err}");
+    }
+
+    #[test]
+    fn test_load_file_without_from_is_validation_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("Modelfile");
+        std::fs::write(&path, "SYSTEM hi\n").expect("write");
+        let err = ModelManifest::load(&path).expect_err("no FROM must fail");
+        assert!(matches!(err, PachaError::Validation(_)));
+    }
+
+    #[test]
+    fn test_to_modelfile_directive_order() {
+        let text = full_manifest().to_modelfile();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(
+            lines,
+            vec![
+                "FROM llama3:8b",
+                "SYSTEM You are terse.",
+                "PARAMETER temperature 0.5",
+                "PARAMETER top_p 0.9",
+                "PARAMETER top_k 40",
+                "PARAMETER max_tokens 256",
+                "PARAMETER stop \"</s>\"",
+                "PARAMETER stop \"END\"",
+                "PARAMETER repeat_penalty 1.1",
+                "PARAMETER context_length 4096",
+                "PARAMETER seed 7",
+                "TEMPLATE \"{{ .Prompt }}\"",
+                "ADAPTER lora.bin",
+                "LICENSE MIT",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_to_modelfile_minimal_is_only_from() {
+        let mut m = ModelManifest::default();
+        m.base_model = "tiny".to_string();
+        assert_eq!(m.to_modelfile(), "FROM tiny");
+    }
 }
