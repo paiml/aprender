@@ -1,0 +1,60 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  description: "Local gate (FLOW-009 LG-1..LG-4, LG-9): `make gate` runs the same x86-main sections as the GitHub gate, pinned and hermetic, and emits per-step times. A local gate that skips a section, or reads green when a section failed, is worse than none."
+  kind: pattern
+  references:
+    - "scripts/local_gate.sh"
+    - "crates/aprender-ci-tools/src/gate_steps.rs — LG-9 step-time emitter"
+    - "PMAT-5759 (#5759)"
+
+equations:
+  gate_runs_github_sections:
+    formula: "sections(make gate) == sections(ci.yml x86-main fat_driver call)"
+    domain: "the --sections argument of the x86-main driver step in .github/workflows/ci.yml"
+    codomain: "boolean; scripts/local_gate.sh --self-test exit code"
+    invariants:
+      - "No section is dropped by the local gate; there is no skip flag"
+      - "Per-gate threads = floor(cores / concurrent_gates) (LG-3); debug info off (LG-4); shared warm target dir under flock (LG-2)"
+  step_rows_are_measured:
+    formula: "rows(results) = executed steps only, each {step, seconds>0, category in build|test|lint|content|network}"
+    domain: "fat_driver results.json"
+    codomain: "JSON lines on stdout of aprender-ci-tools gate-steps"
+    invariants:
+      - "Skipped steps emit no row, so a skip cannot pad the table"
+
+proof_obligations:
+  - id: LG-INV-001
+    type: invariant
+    property: "The local gate runs exactly the sections the GitHub x86-main job runs"
+    applies_to: gate_runs_github_sections
+  - id: LG-INV-002
+    type: invariant
+    property: "Step rows come only from executed steps and carry a valid category"
+    applies_to: step_rows_are_measured
+
+falsification_tests:
+  - id: FALSIFY-LOCAL-GATE-001
+    rule: "The gate script exists and self-tests"
+    prediction: "bash scripts/local_gate.sh --self-test exits 0"
+    test: "bash scripts/local_gate.sh --self-test"
+    if_fails: "The section list parser or the thread arithmetic drifted from ci.yml / LG-3"
+  - id: FALSIFY-LOCAL-GATE-002
+    rule: "make gate is wired to the script, not a stub"
+    prediction: "the gate recipe calls scripts/local_gate.sh"
+    test: "make -n gate | grep -q 'scripts/local_gate.sh'"
+    if_fails: "`make gate` no longer runs the full section set"
+  - id: FALSIFY-LOCAL-GATE-003
+    rule: "Skipped steps never appear in the step-time table"
+    prediction: "the gate_steps unit tests (incl. the skipped-step mutation row) pass"
+    test: "cargo test -p aprender-ci-tools --lib gate_steps"
+    if_fails: "A skipped step could be reported as time spent, hiding that the gate did not run it"
+
+qa_gate:
+  id: F-LOCAL-GATE-001
+  name: "Local gate runs every GitHub section and reports measured step times"
+  description: "Section parity with ci.yml and measured-only step rows."
+  checks:
+    - "gate_runs_github_sections"
+    - "step_rows_are_measured"
