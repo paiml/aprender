@@ -23,8 +23,10 @@
 # self-test can see WHY a given crate set (or the full-workspace fallback) was
 # chosen.
 #
-# Usage: scripts/gate_touched_crates.sh [--dry-run] [--diff-from FILE]
+# Usage: scripts/gate_touched_crates.sh [--dry-run] [--clippy] [--diff-from FILE]
 #   --dry-run        print the plan, run nothing (used by the self-test)
+#   --clippy         (make precheck, FLOW-009 W-3) lint the selected crates with
+#                    `-D warnings` before testing them
 #   --diff-from FILE read touched paths from FILE (one per line) instead of
 #                    `git diff --name-only <comparand>...HEAD`
 set -euo pipefail
@@ -43,6 +45,10 @@ while [ $# -gt 0 ]; do
       ;;
     --print-selection)
       PRINT_SELECTION=1
+      shift
+      ;;
+    --clippy)
+      CLIPPY=1
       shift
       ;;
     --diff-from)
@@ -173,6 +179,18 @@ case "$action" in
 esac
 
 echo "gate_touched_crates: + ${cmd[*]}"
+
+if [ "${CLIPPY:-0}" -eq 1 ] && [ "$action" = test ]; then
+  lint=(cargo clippy --tests)
+  for c in $(sorted_list "${!selected[@]}"); do
+    lint+=(-p "$c")
+  done
+  lint+=(-- -D warnings)
+  echo "gate_touched_crates: + ${lint[*]}"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    "${lint[@]}"
+  fi
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   exit 0

@@ -913,7 +913,17 @@ ci: tier4
 # swallowed). This local `set -e` is scoped to this recipe's own shell
 # invocation only, not the file-wide .SHELLFLAGS (see that comment for why -e
 # is not applied globally).
-gate: ## Fail-closed, comparand-pinned composite gate (BSE-16)
+gate: ## Local gate: the full GitHub gate's x86-main sections, pinned, hermetic (FLOW-009 LG-1)
+	scripts/local_gate.sh
+
+# W-3: run before marking a work/<ticket> branch ready. fmt, then clippy and unit
+# tests of the touched crates only (the full gate is `make gate`).
+precheck: ## fmt + clippy + unit tests of touched crates (FLOW-009 W-3)
+	@set -e
+	cargo fmt --all -- --check
+	scripts/gate_touched_crates.sh --clippy
+
+gate-touched: ## Fail-closed, comparand-pinned composite gate (BSE-16)
 	@set -e
 	@echo "==> gate comparand: origin/main@$$(git rev-parse origin/main)"
 	pmat verify --format json --skip satd --skip tests
