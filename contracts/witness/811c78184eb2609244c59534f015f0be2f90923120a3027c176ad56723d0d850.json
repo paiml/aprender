@@ -1,7 +1,7 @@
 {
   "census_id_set_sha256": "8313ea19ffbd212b9b2b9f392d48c23dd7c65de3358feae5928b1f8c8f3dc994",
   "relations_sha256": "811c78184eb2609244c59534f015f0be2f90923120a3027c176ad56723d0d850",
-  "reasoner_git_sha": "08d1bca22787f04f5208c1bbd49c6a9f9fdd0375",
+  "reasoner_git_sha": "4010fbb9c77ab3d5dbe9ddfa89ddc58369173763",
   "checkable_n": 87,
   "result": {
     "kind": "model",
