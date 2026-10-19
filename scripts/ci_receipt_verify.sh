@@ -254,7 +254,7 @@ self_test() {
     mk unknownkey . --key "$td/other"
     why='signature does not verify' chk no "MUTANT signed by a key that is not the committed batcher.pub" unknownkey
     why='placeholder' chk no "MUTANT placeholder batcher.pub" good "$td/pub.placeholder"
-    why='placeholder' chk no "the COMMITTED .flow009/batcher.pub fails closed" good "$here/../.flow009/batcher.pub"
+    why='signature does not verify' chk no "a test-key receipt against the COMMITTED .flow009/batcher.pub" good "$here/../.flow009/batcher.pub"
     mk nofence . --nofence
     why='0 flow009.receipt/1' chk no "MUTANT no flow009.receipt/1 fenced block (a plain json fence)" nofence
     mk twofences . --fences 2

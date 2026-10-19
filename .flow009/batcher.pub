@@ -1,5 +1,4 @@
-# PLACEHOLDER (PMAT-5737, FLOW-009 RC-2). This is not a key: `ssh-keygen -Y verify` cannot pass against it,
-# so scripts/ci_receipt_verify.sh answers RECEIPT_OK=0 for every PR and the full gate runs (fail closed).
-# The operator-run forjar apply generates the lambda batcher's ed25519 key and replaces this file with ONE
-# line: `ssh-ed25519 <base64> [comment]`. Replacing it is a separate one-way PR (quorum): it decides who may
-# waive the gate. The verifier reads only the first two fields of that line.
+# FLOW-009 RC-2: the public half of the lambda batcher receipt key. The private half lives only on
+# lambda-labs (~/.config/pmat-batcher/receipt_ed25519, infra forjar resource pmat-batcher-receipt-key)
+# and never enters git. Fingerprint: SHA256:8un1DYXhrsJ0e+6UM3w8KSE9CKBpfDVSRG41yL9wS5o (ED25519).
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINna9SBgvdA0Te1LhyTa6jXbDu8SgJmiDDPhHkLmljw7 flow009-batcher
