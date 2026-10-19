@@ -64,6 +64,9 @@ cargo fetch --locked >/dev/null 2>&1 || true
 
 sections="$(sections_of .github/workflows/ci.yml)"
 [ -n "$sections" ] || { echo "local_gate: no --sections found in ci.yml" >&2; exit 2; }
+# Same filesystem as the clone: the driver hard-links objects into each section tree.
+export RUNNER_TEMP="$build/tmp"
+mkdir -p "$RUNNER_TEMP"
 results="$build/results.json"
 rm -f "${results:?}"
 rc=0
