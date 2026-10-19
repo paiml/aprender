@@ -165,3 +165,9 @@ falsification_tests:
     test: 'cargo test -p aprender-data --test imbalance_edges'
     if_fails: 'a zero-count class gets weight, null labels are grouped, or an unsupported label type is silently accepted'
     mutation: 'change `if c == 0` in sqrt_inverse_weights; weights_zero_count_class_gets_zero turns RED (measured 2026-10-18)'
+  - id: FALSIFY-BIN-ALIMENTAR-008
+    rule: 'the .ald format rejects malformed input and round-trips every compression'
+    prediction: 'dataset-type and compression codes round-trip and unknown codes are None; Header::from_bytes rejects short, bad-magic, unknown-type, unknown-compression and future-major input; save of no batches errors; a bit flip or truncation fails load'
+    test: 'cargo test -p aprender-data --test format_edges'
+    if_fails: 'a corrupt or foreign file is accepted, or a codec silently decodes as another'
+    mutation: 'map compression code 0x03 to ZstdL3 in Compression::from_u8; compression_codes_roundtrip_and_unknown_is_none turns RED (measured 2026-10-18)'

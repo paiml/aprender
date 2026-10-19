@@ -59,3 +59,9 @@ falsification_tests:
     test: "bash scripts/book-gate.sh examples-per-layer-merge --strict"
     prediction: "book-gate exits 0 with G2 (enforced), G3 (page exists), G5 (example compiles), G6 (example runs) and G9 (all contract sections present) PASS"
     if_fails: "The example per_layer_merge stopped compiling or exits non-zero, a listed section heading was dropped or renamed, the page moved off its declared path, or a placeholder crept in"
+
+  - id: FALSIFY-PAGE-EXAMPLES_PER_LAYER_MERGE-002
+    description: "the per-layer merge engine's report accounting, rule-pattern matching, YAML helper parsing and config validation behave as documented"
+    test: "cargo test -p aprender-core --lib per_layer_merge"
+    prediction: "all per_layer_merge tests pass: matched/defaulted counts add up and never underflow, wildcard segments match in order, bad configs are rejected naming the field, unparseable list items are skipped"
+    if_fails: "a merge config the page documents is mis-parsed or mis-validated, or the merge report miscounts defaulted tensors (mutants: wrapping_sub in total_defaulted, parse-or-zero in parse_float_list, both turn RED)"
