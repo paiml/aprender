@@ -408,7 +408,7 @@ mod tests {
         let _ = elapsed;
     }
 
-    // ===== collect_checks (FALSIFY-CGP-DOCTOR-001..004) =====
+    // ===== collect_checks (FALSIFY-CGP-DOCTOR-001..002) =====
 
     fn by_name<'a>(checks: &'a [ToolCheck], name: &str) -> &'a ToolCheck {
         checks
