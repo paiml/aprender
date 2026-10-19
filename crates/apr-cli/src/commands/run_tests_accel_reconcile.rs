@@ -424,7 +424,7 @@ mod pmat3826_fell_back_names_a_real_fallback {
     }
 }
 
-/// FALSIFY-OPS-013: every output mode of `print_run_output` completes on a
+/// FALSIFY-OPS-012: every output mode of `print_run_output` completes on a
 /// finished run, and the rate it reports is derived exactly as documented.
 #[test]
 fn print_run_output_serves_every_mode_and_derives_the_rate() {
