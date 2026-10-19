@@ -1,0 +1,45 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-10-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "FLOW-005 SIM-4 (cop-inbox handoff), issue #5511"
+    - "Little, J.D.C. (1961), A Proof for the Queuing Formula L = lambda W."
+  description: "pr_flow prediction must satisfy the three SIM-4 capacity inequalities, and name the breached one"
+
+name: pr-flow-sim4-bounds
+version: "1.0.0"
+scope: "crates/aprender-simulate/src/scenarios/pr_flow.rs"
+
+description: |
+  Every batch's pr_flow prediction is checked against three inequalities: merged/h
+  <= cap/W, PR runner-min/h <= R_pr * 51, and merge-queue passes/h <= R_mq * 51 /
+  mq_runner_min (51 = 85% of 60 runner-min per runner-hour). sim4_breaches returns the
+  names of the breached ones; a non-empty result is the andon. On the reference
+  designs D, G and E none is breached; design A breaches mq_passes, because its 4
+  merge-queue runners run at about 97%.
+
+equations:
+  cap_bound:
+    description: "throughput cannot exceed the WIP cap over the mean time open"
+    formula: "merged_per_h <= cap / W"
+  pr_runner_bound:
+    description: "PR runner-minutes consumed per hour stay under the usable ceiling"
+    formula: "merged_per_h * pr_runner_min * runs_per_pr <= R_pr * 51"
+  mq_pass_bound:
+    description: "merge-queue passes per hour stay under the usable ceiling"
+    formula: "merged_per_h / prs_per_pass <= R_mq * 51 / mq_runner_min"
+
+falsification_tests:
+  - id: FALSIFY-001
+    description: "D, G and E breach nothing; A breaches exactly mq_passes"
+    test: "cargo test -p aprender-simulate --lib sim4_holds_on_the_proposed_designs_and_flags_the_saturated_merge_queue_of_a"
+    prediction: "the test passes"
+    if_fails: "a bound is mis-stated or the saturated design is no longer flagged"
+
+  - id: FALSIFY-002
+    description: "each inequality is named when, and only when, it is breached"
+    test: "cargo test -p aprender-simulate --lib sim4_names_each_breached_inequality"
+    prediction: "the test passes"
+    if_fails: "a breach is dropped or misattributed, so the andon would stay silent"
