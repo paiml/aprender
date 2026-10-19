@@ -43,3 +43,9 @@ falsification_tests:
     test: "cargo test -p aprender-simulate --lib sim4_names_each_breached_inequality"
     prediction: "the test passes"
     if_fails: "a breach is dropped or misattributed, so the andon would stay silent"
+
+  - id: FALSIFY-003
+    description: "PR runner load scales with runs per PR, so red-and-fix loops count"
+    test: "cargo test -p aprender-simulate --lib sim4_pr_runner_load_scales_with_runs_per_pr"
+    prediction: "the test passes"
+    if_fails: "rework runs are not counted, so the PR pool bound is understated"

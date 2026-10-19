@@ -802,6 +802,22 @@ mod tests {
     }
 
     #[test]
+    fn sim4_pr_runner_load_scales_with_runs_per_pr() {
+        let c = preset("D").expect("preset");
+        let r = run_reference(&c);
+        let one = PrFlowResult {
+            runs_per_pr: 1.0,
+            ..r.clone()
+        };
+        let many = PrFlowResult {
+            runs_per_pr: 1000.0,
+            ..r
+        };
+        assert!(!sim4_breaches(&c, &one).contains(&"pr_runner"));
+        assert!(sim4_breaches(&c, &many).contains(&"pr_runner"));
+    }
+
+    #[test]
     fn six_minutes_of_review_adds_about_two_to_l_at_20_per_hour() {
         let mut c = roomy();
         c.t_author_min = 600.0;
