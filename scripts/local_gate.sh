@@ -78,6 +78,8 @@ sections="$(sections_of .github/workflows/ci.yml)"
 [ -n "$sections" ] || { echo "local_gate: no --sections found in ci.yml" >&2; exit 2; }
 # Same filesystem as the clone: the driver hard-links objects into each section tree.
 export RUNNER_TEMP="$build/tmp"
+export RUNNER_TOOL_CACHE="${RUNNER_TOOL_CACHE:-$build/toolcache}"   # per-runner cargo-audit/deny home (sov.security)
+mkdir -p "$RUNNER_TOOL_CACHE" "$RUNNER_TEMP"
 mkdir -p "$RUNNER_TEMP"
 results="$build/results.json"
 rm -f "${results:?}"
