@@ -38,7 +38,7 @@ if [[ -n "${LATENCY_FILE:-}" ]]; then
     [ .[] | (try ((.enqueued | fromdateiso8601) - (.green | fromdateiso8601)) catch null) ] as $d |
     ($d | map(select(. != null and . >= 0)) | sort | map(. / 60)) as $m |
     if ($d | length) == 0 or ($m | length) != ($d | length) then "latency: n=\($d | length) verdict=not_measured"
-    else ($m[((($m | length) * 0.9) | ceil) - 1]) as $p90 | ($m | max) as $mx |
+    else ($m | .[((($m | length) * 0.9) | ceil) - 1]) as $p90 | ($m | max) as $mx |
       "latency: n=\($m | length) p90_min=\($p90) max_min=\($mx) verdict=\(if $p90 > 30 then "FALSIFIED" elif $p90 > 10 or $mx > 30 then "MISS" else "OK" end)"
     end' "$LATENCY_FILE"
   exit 0
@@ -103,7 +103,7 @@ def q5:
   select(($mq | map(select(.pullRequest.number == $pr)) | length) == 0) |
   ((.commits.nodes // []) | map(select(.commit.oid == $sha))) as $head |
   select(($head | length) == 1) |
-  ($head[0].commit.statusCheckRollup.contexts.nodes // []) as $checks |
+  ($head | .[0].commit.statusCheckRollup.contexts.nodes // []) as $checks |
   ($checks | map({n: (.name // .context), c: (.conclusion // .state // "PENDING")})) as $cs |
   select(($cs | map(select(.n == "ci / gate" and .c == "SUCCESS")) | length) > 0) |
   select(($cs | map(select(.n == "workspace-test" and .c == "SUCCESS")) | length) > 0) |
