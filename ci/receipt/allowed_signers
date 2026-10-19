@@ -1,6 +1,0 @@
-# PMAT-5737 receipt format v1: the ONE key whose signature lets a PR skip the full workspace-test gate.
-# This line is a PLACEHOLDER. It is not a key, so `ssh-keygen -Y verify` fails against it and every
-# PR/merge_group runs the full gate (fail closed). The operator-run forjar apply creates the real key and
-# replaces it. Changing this file is a one-way PR (quorum): it decides who may waive the gate.
-# Format: pmat-5737-batcher namespaces="pmat-5737-receipt" ssh-ed25519 <pubkey>
-pmat-5737-batcher namespaces="pmat-5737-receipt" ssh-ed25519 PLACEHOLDER-NOT-A-KEY-operator-forjar-apply-replaces-this

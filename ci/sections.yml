@@ -418,28 +418,25 @@ jobs:
               fi
               ;;
           esac
-          # PMAT-5737 batch receipt. The batcher pushes a commit holding exactly `receipt` and `receipt.sig` to
-          # refs/receipts/<tree>; the transport is untrusted, the SIGNATURE is the trust. A missing ref, a fetch
-          # that fails, a tag, or any verifier doubt leaves --receipt-ok off: the PR/queue tier is decided as before.
-          # allowed_signers is the COMMITTED one at this checkout, never the one fetched beside the receipt.
+          # PMAT-5737 batch receipt (FLOW-009 RC-3): the batcher puts the signed receipt in the PR BODY, in a fenced
+          # block `flow009.receipt/1`. It is read from the event payload -- no API call, no comment, no ref. The
+          # transport is untrusted, the SIGNATURE is the trust, checked against the COMMITTED .flow009/batcher.pub.
+          # pull_request ONLY (a merge_group has no PR body; a push and a tag never take it). Any doubt leaves
+          # --receipt-ok off and the PR/queue tier is decided as before: PG-3, never red.
           case "${GITHUB_EVENT_NAME}" in
-            pull_request|merge_group)
+            pull_request)
               case "${GITHUB_REF}" in
                 refs/tags/*) printf 'receipt: tag ref -- never honoured\n' ;;
                 *)
-                  rtree=$(git rev-parse 'HEAD^{tree}' 2>/dev/null || true)
-                  rdir="$RUNNER_TEMP/receipt"; rm -rf "${rdir:?}"; mkdir -p "$rdir"
-                  if [ -n "$rtree" ] \
-                    && bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "refs/receipts/${rtree}:refs/receipts/${rtree}" >/dev/null 2>&1 \
-                    && [ "$(git ls-tree --name-only "refs/receipts/${rtree}" | paste -sd' ' -)" = "receipt receipt.sig" ] \
-                    && git show "refs/receipts/${rtree}:receipt" > "$rdir/receipt" 2>/dev/null \
-                    && git show "refs/receipts/${rtree}:receipt.sig" > "$rdir/receipt.sig" 2>/dev/null; then
-                    rv=$(bash scripts/ci_receipt_verify.sh "${GITHUB_REPOSITORY}" "$rdir/receipt" "$rdir/receipt.sig" ci/receipt/allowed_signers scripts/ci/toolchain_id.sh 2>&1) || true
-                    printf 'receipt for tree %s: %s\n' "$rtree" "$rv"
-                    if [ "$rv" = "RECEIPT_OK=1" ]; then args+=(--receipt-ok 1); fi
-                  else
-                    printf 'receipt for tree %s: none (no refs/receipts ref) -- the full path decides\n' "${rtree:-unknown}"
-                  fi ;;
+                  # a depth-1 merge checkout hides HEAD^1 and the PR head: fetch both with enough history for the
+                  # merge-base. A failed fetch leaves the verifier to refuse (R-HEADMISSING) -> the full path.
+                  rhead=$(jq -r '.pull_request.head.sha // ""' "${GITHUB_EVENT_PATH}" 2>/dev/null || true)
+                  if [ -n "$rhead" ] && bash scripts/ci/fetch_p6.sh --no-tags --depth=500 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" "$rhead" >/dev/null 2>&1; then
+                    export RECEIPT_BASE="origin/${GITHUB_BASE_REF}"
+                  fi
+                  rv=$(bash scripts/ci_receipt_verify.sh "${GITHUB_REPOSITORY}" "${GITHUB_EVENT_PATH}" .flow009/batcher.pub scripts/ci/toolchain_id.sh scripts/ci/manifest_id.sh 2>&1) || true
+                  printf 'receipt: %s\n' "$rv"
+                  if [ "$rv" = "RECEIPT_OK=1" ]; then args+=(--receipt-ok 1); fi ;;
               esac ;;
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"

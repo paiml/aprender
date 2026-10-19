@@ -1,0 +1,5 @@
+# PLACEHOLDER (PMAT-5737, FLOW-009 RC-2). This is not a key: `ssh-keygen -Y verify` cannot pass against it,
+# so scripts/ci_receipt_verify.sh answers RECEIPT_OK=0 for every PR and the full gate runs (fail closed).
+# The operator-run forjar apply generates the lambda batcher's ed25519 key and replaces this file with ONE
+# line: `ssh-ed25519 <base64> [comment]`. Replacing it is a separate one-way PR (quorum): it decides who may
+# waive the gate. The verifier reads only the first two fields of that line.

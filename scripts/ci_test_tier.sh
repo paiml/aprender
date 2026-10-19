@@ -49,7 +49,7 @@
 #          reason says why it was not reused. Only workspace-test is reused:
 #          every other push job runs as before.
 #
-#   reuse  pull_request / merge_group, PMAT-5737: `--receipt-ok 1` (the caller's proof that
+#   reuse  pull_request ONLY, PMAT-5737 (FLOW-009 RC-3: the receipt is in the PR body, a merge_group has none): `--receipt-ok 1` (the caller's proof that
 #          scripts/ci_receipt_verify.sh printed RECEIPT_OK=1 for this tree) -> tier=reuse,
 #          cite=receipt:<HEAD tree>, receipt=ok, decided BEFORE any diff selection. Never a push
 #          (its mg-reuse arm is untouched) and never a tag (tier=full). Any other value, or no flag,
@@ -316,17 +316,17 @@ push_reuse_why() {
 decide() {
     local df rc=0
     # PMAT-5737 RECEIPT ARM, before any diff selection. The caller (ci/sections.yml) passes --receipt-ok 1 only
-    # after scripts/ci_receipt_verify.sh printed RECEIPT_OK=1 for THIS tree (signature, repo, tree, toolchain).
-    # Only a pull_request or a merge_group takes it: a push keeps its own mg-reuse arm below, untouched, and a tag
+    # after scripts/ci_receipt_verify.sh printed RECEIPT_OK=1 for THIS tree (flow009.receipt/1: signature, tree, patch-ids, tickets, toolchain, manifest).
+    # Only a pull_request takes it (FLOW-009 RC-3: the receipt lives in the PR body, a merge_group has none): a push keeps its own mg-reuse arm below, untouched, and a tag
     # is full whatever a receipt says. Anything but exactly `1`, or an unreadable tree, falls through unchanged.
     case "$EVENT" in
-        pull_request|merge_group)
+        pull_request)
             if [ "$RECEIPT_OK" = 1 ]; then
                 local rref rtree; rref=$(printenv GITHUB_REF || true)
                 case "$rref" in refs/tags/*) printf 'tier=full\nreason=%s of tag %s: a release tag runs the whole workspace -- a batch receipt is never honoured on a tag (PMAT-5737)\n' "$EVENT" "${rref#refs/tags/}"; return 0 ;; esac # R-RTAG
                 rtree=$(git -C "$ROOT" rev-parse -q --verify 'HEAD^{tree}' 2>/dev/null || true)
                 if [[ $rtree =~ ^[0-9a-f]{40}$ ]]; then
-                    printf 'tier=reuse\ncite=receipt:%s\nreceipt=ok\nreason=%s: a signed batch receipt covers this exact tree (%s) -- signature, repo, tree and toolchain verified by ci_receipt_verify.sh (PMAT-5737)\n' "$rtree" "$EVENT" "${rtree:0:9}"
+                    printf 'tier=reuse\ncite=receipt:%s\nreceipt=ok\nreason=%s: a signed batch receipt covers this exact tree (%s) -- signature, tree, patch-ids, tickets, toolchain and manifest verified by ci_receipt_verify.sh (PMAT-5737)\n' "$rtree" "$EVENT" "${rtree:0:9}"
                     return 0
                 fi
             fi ;;
@@ -796,7 +796,7 @@ self_test() {
     # pull_request or merge_group tier=reuse, evaluated BEFORE diff selection. Never a tag, never a push.
     RTREE=$(git -C "$td/q-leaf" rev-parse 'HEAD^{tree}')
     row 0 "RECEIPT pull_request + --receipt-ok 1 -> tier=reuse, cite=receipt:<tree>, receipt=ok (no diff needed)" "^tier=reuse cite=receipt:$RTREE receipt=ok\$" bash -c "o=\$(bash '$T' --event pull_request --repo-root '$td/q-leaf' --receipt-ok 1); printf '%s %s %s\\n' \"\$(grep '^tier=' <<< \"\$o\")\" \"\$(grep '^cite=' <<< \"\$o\")\" \"\$(grep '^receipt=' <<< \"\$o\")\""
-    row 0 "RECEIPT merge_group + --receipt-ok 1 -> tier=reuse + receipt=ok, even with no MG_BASE_SHA" '^tier=reuse receipt=ok$' bash -c "o=\$(env -u MG_BASE_SHA bash '$T' --event merge_group --repo-root '$td/q-leaf' --receipt-ok 1); printf '%s %s\\n' \"\$(grep '^tier=' <<< \"\$o\")\" \"\$(grep '^receipt=' <<< \"\$o\")\""
+    row 0 "MUTANT merge_group + --receipt-ok 1 -> the receipt arm is pull_request only: no receipt line (a merge_group has no PR body)" '^NO-RECEIPT$' bash -c "o=\$(env -u MG_BASE_SHA bash '$T' --event merge_group --repo-root '$td/q-leaf' --receipt-ok 1 2>/dev/null || true); grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT"
     row 0 "MUTANT --receipt-ok 0 -> the PR's own selection (quick), no receipt line" '^tier=quick NO-RECEIPT$' bash -c "o=\$(bash '$T' --event pull_request --diff-from '$td/d-scripts.txt' --receipt-ok 0); printf '%s %s\\n' \"\$(grep '^tier=' <<< \"\$o\")\" \"\$(grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT)\""
     row 0 "MUTANT --receipt-ok 2 / anything but 1 -> unchanged (quick)" '^tier=quick$' bash -c "bash '$T' --event pull_request --diff-from '$td/d-scripts.txt' --receipt-ok yes | grep '^tier='"
     row 0 "MUTANT no --receipt-ok flag -> unchanged (quick)" '^tier=quick NO-RECEIPT$' bash -c "o=\$(bash '$T' --event pull_request --diff-from '$td/d-scripts.txt'); printf '%s %s\\n' \"\$(grep '^tier=' <<< \"\$o\")\" \"\$(grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT)\""
