@@ -25,11 +25,18 @@ pub fn first_failing_line(path: &Path) -> String {
 
 /// sccache exits 2 when its rustc is killed by a signal (OOM or host kill), so cargo prints
 /// `could not compile` and `(exit status: 2)` with no rustc diagnostic (#5750). Name that,
-/// not a compile error: the first `could not compile` line before an sccache `exit status: 2`.
+/// not a compile error: the first `could not compile` line before an sccache `exit status: 2`. A real error
+/// (`::error`, panic, `error:`) earlier in the log wins instead, so it is never masked.
 fn killed_rustc(lines: &[&str]) -> Option<String> {
     let at = lines
         .iter()
         .position(|l| l.contains("sccache") && l.contains("(exit status: 2)"))?;
+    let real_error_first = lines[..at].iter().any(|l| {
+        l.starts_with("::error") || (is_panic_or_error(l) && !l.contains("could not compile"))
+    });
+    if real_error_first {
+        return None;
+    }
     let krate = lines[..at]
         .iter()
         .rev()
@@ -145,6 +152,26 @@ mod tests {
         let got = first_failing_line(&p);
         assert!(got.starts_with("rustc killed by signal"), "{got}");
         assert!(got.contains("aprender-core"), "{got}");
+    }
+
+    #[test]
+    fn a_real_error_before_the_exit_2_line_stays_the_first_failing_line() {
+        let d = tmp("k2");
+        let p = log(
+            &d,
+            "s.log",
+            "error[E0425]: cannot find value `x`\nerror: could not compile `a` (lib test)\n\nCaused by:\n  process didn't exit successfully: `sccache rustc --crate-name a` (exit status: 2)\n",
+        );
+        assert_eq!(
+            first_failing_line(&p),
+            "error[E0425]: cannot find value `x`"
+        );
+        let q = log(
+            &d,
+            "t.log",
+            "thread 'x' panicked at a.rs:1\nerror: could not compile `a` (lib)\n  process didn't exit successfully: `sccache rustc` (exit status: 2)\n",
+        );
+        assert_eq!(first_failing_line(&q), "thread 'x' panicked at a.rs:1");
     }
 
     #[test]

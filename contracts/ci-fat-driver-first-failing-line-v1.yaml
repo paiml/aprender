@@ -77,7 +77,7 @@ falsification_tests:
     if_fails: >-
       an OOM-killed shard reads as a compile error and nobody looks at the runner
     mutation: >-
-      "(exit status: 2)" -> "(exit status: 3)" fails 1 test; restored GREEN (2026-10-19).
+      "(exit status: 2)" -> "(exit status: 3)" fails 1 test; restored GREEN (2026-10-19). Dropping the real-error-first guard fails 1 test (a real error before the exit-2 line is not masked); restored GREEN.
 
 non_goals:
   - "Changing which sections block, or the per-section log dump."
