@@ -24,7 +24,7 @@ age_check() {
     # date -d "" is today and date -d tomorrow is a relative date: both would read as fresh, so the
     # shape is checked before the parser is trusted.
     for f in "$d" "$v" "$today"; do
-        printf '%s\n' "$f" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' \
+        grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' <<<"$f" \
             || { echo "advisory_pin: COULD NOT CHECK: '$f' is not YYYY-MM-DD" >&2; return 75; }
     done
     pd=$(date -u -d "$d" +%s 2>/dev/null) && vd=$(date -u -d "$v" +%s 2>/dev/null) && td=$(date -u -d "$today" +%s 2>/dev/null) \
@@ -131,14 +131,14 @@ self_test() {
         : > "$fx/src/lib.rs"; printf 'version = 4\n\n[[package]]\nname = "fx"\nversion = "0.1.0"\n' > "$fx/Cargo.lock"
         printf '[advisories]\nignore = []\n' > "$fx/deny.toml"
         pinabs="$(pwd)/$PIN_FILE_DEFAULT"
-        rc=0; (cd "$fx" && PIN_FILE_DEFAULT="$pinabs" ADVISORY_DB_DIR="$t/db" DENY_TOML="$fx/deny.toml" && fetch_db && deny_pinned) >"$t/deny.out" 2>&1 || rc=$?
+        rc=0; (cd "$fx" && GIT_CEILING_DIRECTORIES="$t" PIN_FILE_DEFAULT="$pinabs" ADVISORY_DB_DIR="$t/db" DENY_TOML="$fx/deny.toml" && fetch_db && deny_pinned) >"$t/deny.out" 2>&1 || rc=$?
         if [ "$rc" -eq 0 ]; then echo "ok   cargo-deny $(cargo deny --version | cut -d' ' -f2) accepts the pinned invocation"; else echo "FAIL pinned cargo-deny invocation rc $rc"; tail -n 5 "$t/deny.out"; fail=1; fi
     fi
     for p in Cargo.toml Cargo.lock crates/x/Cargo.toml deny.toml; do
-        if printf '%s\n' "$p" | grep -qE "$NEEDED_RE"; then echo "ok   needed matches $p"; else echo "FAIL needed misses $p"; fail=1; fi
+        if grep -qE "$NEEDED_RE" <<<"$p"; then echo "ok   needed matches $p"; else echo "FAIL needed misses $p"; fail=1; fi
     done
     for p in docs/Cargo.md src/lib.rs crates/x/src/Cargo.tomlx; do
-        if printf '%s\n' "$p" | grep -qE "$NEEDED_RE"; then echo "FAIL needed matches $p"; fail=1; else echo "ok   needed ignores $p"; fi
+        if grep -qE "$NEEDED_RE" <<<"$p"; then echo "FAIL needed matches $p"; fail=1; else echo "ok   needed ignores $p"; fi
     done
     rm -rf "${t:?}"
     return "$fail"
