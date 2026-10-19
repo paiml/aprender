@@ -98,9 +98,9 @@ fn fkr_summary_{module}() {{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bugs::BugRegistry;
-    use crate::falsification::FalsificationRegistry;
-    use crate::parser::Parser;
+    use crate::bugs::{Bug, BugClass, BugPattern, BugRegistry};
+    use crate::falsification::{Category, FalsificationRegistry, FalsificationReport, TestResult};
+    use crate::parser::{Parser, SourceLocation};
 
     #[test]
     fn test_fkr_generation() {
@@ -122,5 +122,114 @@ mod tests {
         assert!(fkr.contains("Auto-generated PTX FKR tests"));
         assert!(fkr.contains("test_kernel"));
         assert!(fkr.contains("fkr_summary_"));
+    }
+
+    fn report_with(
+        results: Vec<(String, Category, String, TestResult)>,
+        score: f64,
+        confidence: f64,
+    ) -> FalsificationReport {
+        FalsificationReport {
+            results,
+            score,
+            earned_points: 0,
+            total_points: 0,
+            confidence,
+        }
+    }
+
+    fn fail(id: &str, desc: &str) -> (String, Category, String, TestResult) {
+        let result = TestResult::Fail {
+            evidence: "e".to_string(),
+            location: None,
+        };
+        (
+            id.to_string(),
+            Category::BarrierSafety,
+            desc.to_string(),
+            result,
+        )
+    }
+
+    fn sample_bug(class: BugClass) -> Bug {
+        Bug {
+            class,
+            location: SourceLocation {
+                line: 7,
+                column: 3,
+                file: None,
+            },
+            pattern: BugPattern::Other("p".to_string()),
+            message: "msg-xyz".to_string(),
+        }
+    }
+
+    #[test]
+    fn only_failed_results_get_a_test() {
+        let results = vec![
+            fail("F036", "barrier missing"),
+            (
+                "F037".to_string(),
+                Category::BarrierSafety,
+                "ok".to_string(),
+                TestResult::Pass,
+            ),
+            (
+                "F038".to_string(),
+                Category::BarrierSafety,
+                "na".to_string(),
+                TestResult::NotApplicable,
+            ),
+        ];
+        let result = AnalysisResult::new("k", report_with(results, 80.0, 0.5), BugRegistry::new());
+        let fkr = generate_fkr_tests(&result);
+        assert!(fkr.contains("fn fkr_f036_k()"));
+        assert!(fkr.contains("/// FKR test for F036: barrier missing"));
+        assert!(fkr.contains("/// Category: BarrierSafety"));
+        assert!(!fkr.contains("fkr_f037"));
+        assert!(!fkr.contains("fkr_f038"));
+    }
+
+    #[test]
+    fn each_bug_gets_a_test_with_severity_and_mitigation() {
+        let mut bugs = BugRegistry::new();
+        bugs.add(sample_bug(BugClass::MissingBarrierSync));
+        let result = AnalysisResult::new("k", report_with(vec![], 80.0, 0.5), bugs);
+        let fkr = generate_fkr_tests(&result);
+        assert!(fkr.contains("fn fkr_bug_missingbarriersync_k()"));
+        assert!(fkr.contains("/// Severity: HIGH"));
+        assert!(fkr.contains("// Issue: msg-xyz"));
+        assert!(fkr.contains(BugClass::MissingBarrierSync.mitigation()));
+    }
+
+    #[test]
+    fn module_name_is_normalised_for_idents_but_not_the_header() {
+        let results = vec![fail("F036", "d")];
+        let result = AnalysisResult::new(
+            "My-Kernel",
+            report_with(results, 80.0, 0.5),
+            BugRegistry::new(),
+        );
+        let fkr = generate_fkr_tests(&result);
+        assert!(fkr.contains("//! Auto-generated PTX FKR tests for My-Kernel"));
+        assert!(fkr.contains("fn fkr_f036_my_kernel()"));
+        assert!(fkr.contains("fn fkr_summary_my_kernel()"));
+    }
+
+    #[test]
+    fn summary_reports_score_confidence_and_critical_flag() {
+        let ok = AnalysisResult::new("k", report_with(vec![], 85.0, 0.5), BugRegistry::new());
+        let fkr = generate_fkr_tests(&ok);
+        assert!(fkr.contains("// Falsification Score: 85.0/100"));
+        assert!(fkr.contains("// Confidence: 50.0%"));
+        assert!(fkr.contains("// Critical bugs absent: true"));
+        assert!(fkr.contains("assert!(85.0 >= 70.0"));
+
+        let bad = AnalysisResult::new(
+            "k",
+            report_with(vec![fail("F082", "critical")], 85.0, 0.5),
+            BugRegistry::new(),
+        );
+        assert!(generate_fkr_tests(&bad).contains("// Critical bugs absent: false"));
     }
 }
