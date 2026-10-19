@@ -1,0 +1,42 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  description: "aprender-explain tui draw_scrollbar (#5623) — paints a one-column scrollbar of `height` rows from top_y: the thumb glyph on row round(position/max(total,1) * (height-1)), the track glyph on every other row, each in its own colour, touching no other cell."
+  kind: pattern
+  references:
+    - "crates/aprender-explain/src/tui/mod.rs — draw_scrollbar"
+    - "aprender#5623 — coverage ticket"
+
+equations:
+  scrollbar_thumb:
+    formula: "thumb_y = round(position / max(total,1) * (height-1)); row y shows thumb iff y == thumb_y, else track; a thumb_y >= height shows no thumb"
+    domain: "height >= 1, position and total usize"
+    codomain: "height cells in one column"
+    invariants:
+      - "at most one thumb cell"
+      - "cells outside the column span are untouched"
+
+proof_obligations:
+  - id: SCROLL-INV-001
+    type: invariant
+    property: "Thumb row is the rounded position ratio"
+    formal: "cargo test -p aprender-explain --lib scrollbar_tests::thumb_row_is_the_rounded_position_ratio exits 0"
+    applies_to: scrollbar_thumb
+  - id: SCROLL-INV-002
+    type: invariant
+    property: "Bar is offset by top_y and paints nothing else"
+    formal: "cargo test -p aprender-explain --lib scrollbar_tests::rows_are_offset_by_top_y_and_nothing_else_is_touched exits 0"
+    applies_to: scrollbar_thumb
+
+falsification_tests:
+  - id: FALSIFY-SCROLL-001
+    rule: "rounding replaced by truncation"
+    prediction: "dropping .round() turns thumb_row_is_the_rounded_position_ratio RED"
+    test: "cargo test -p aprender-explain --lib scrollbar_tests::thumb_row_is_the_rounded_position_ratio"
+    if_fails: "thumb rounding is unguarded"
+  - id: FALSIFY-SCROLL-002
+    rule: "thumb and track colours swapped"
+    prediction: "swapping COLOR_SCROLL_TRACK and COLOR_SCROLL_THUMB turns thumb_and_track_use_their_own_colours RED"
+    test: "cargo test -p aprender-explain --lib scrollbar_tests::thumb_and_track_use_their_own_colours"
+    if_fails: "bar colours are unguarded"
