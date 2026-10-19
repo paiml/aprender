@@ -174,7 +174,8 @@ cmd_check() {
     done < <(jqd -r "$JQDEFS orphans")
     # #5769: guard-cargo is split in two sections. Each shard runs once, the gate reads shard b, and ci.yml
     # starts it; drop any of the four and half the guards stop running while every other check stays green.
-    if [ -r ci/guard_cargo_shard_b.txt ]; then
+    # The shard file is looked up beside the checked sections.yml, so a fixture tree without one is not held to it.
+    if [ -r "$(dirname "$WORKFLOW")/guard_cargo_shard_b.txt" ]; then
         for f in "ci_guards.sh --shard a guard-cargo" "ci_guards.sh --shard b guard-cargo"; do
             n="$(grep -cF -- "$f" "$WORKFLOW" || true)"
             [ "$n" = 1 ] || { echo "FAIL $WORKFLOW: \`$f\` appears $n times, want 1 (ci/guard_cargo_shard_b.txt splits guard-cargo)"; rc=1; }

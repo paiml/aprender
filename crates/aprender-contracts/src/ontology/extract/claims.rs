@@ -511,12 +511,15 @@ fn section_selected(name: &str, part: &str) -> bool {
 pub fn section_run_lines(sections: &serde_yaml::Value, specs: &[String]) -> BTreeSet<String> {
     let selected = |name: &str| specs.iter().any(|p| section_selected(name, p));
     let runs_manifest = |base: &str| {
-        let call = format!("scripts/ci_guards.sh {base}");
+        // `--shard a|b` (#5769) runs one half of the manifest; the other half runs in a section of its own.
+        let calls = [
+            format!("scripts/ci_guards.sh {base}"),
+            format!("scripts/ci_guards.sh --shard a {base}"),
+            format!("scripts/ci_guards.sh --shard b {base}"),
+        ];
         job_runs(sections, |n| n == base).iter().any(|r| {
-            r.split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .contains(&call)
+            let r = r.split_whitespace().collect::<Vec<_>>().join(" ");
+            calls.iter().any(|c| r.contains(c.as_str()))
         })
     };
     job_runs(sections, |name| {
@@ -761,6 +764,12 @@ mod tests {
             "a -steps job with no ci_guards.sh call is not run"
         );
         assert!(!section_run_lines(&sections, &["lone".to_string()]).contains("make m"));
+        // #5769: a sharded call still runs the manifest.
+        let sharded: serde_yaml::Value = serde_yaml::from_str(
+            "jobs:\n  guard-cargo:\n    steps:\n      - run: bash scripts/ci_guards.sh --shard a guard-cargo\n  guard-cargo-steps:\n    if: false\n    steps:\n      - run: make m\n",
+        )
+        .unwrap();
+        assert!(section_run_lines(&sharded, &["guard-cargo".to_string()]).contains("make m"));
     }
 
     #[test]
