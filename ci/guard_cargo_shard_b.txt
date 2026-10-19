@@ -1,11 +1,12 @@
 # Shard b of guard-cargo (#5769): the steps named here run in section cargo-guards-b, every other
 # step of guard-cargo-steps runs in guard-cargo (shard a). One exact step name per line.
 # A name that matches no step makes both shards die (scripts/lib/ci_guard_steps.sh), so a rename
-# cannot silently move a step to shard a. Balanced on run 118226000507 (x86-main, 2026-10-19):
-# these six = 1531 s of the 3018 s serial total, the rest = 1487 s. Re-balance from a fresh log.
+# cannot silently move a step to shard a. Balanced on the mean of two x86-main runs (118226000507,
+# 118253632712, 2026-10-19): these six = 1526 s of 3050 s serial, the rest = 1523 s. Per-step times
+# move run to run (bashrs step 274 s -> 95 s), so re-balance from fresh logs, not from this comment.
 The release runner must not resolve a verifier through PATH
 contracts gate — lint, fail-closed shapes, regenerate + git diff, README, provenance
-bashrs must see every script in scripts/ (shrink-only)
-Tree-reader registry and unwired ledger agree with the sources (BSE-17)
-Tree-reader registry guard case table (BSE-17)
+model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
 Performance claims cite their receipts (PERF-010)
+bashrs must see every script in scripts/ (shrink-only)
+Tree-reader registry guard case table (BSE-17)
