@@ -637,6 +637,13 @@ row_probe_rc '4o pv dies on every probe -> COULD NOT CHECK, rc 75' dead 75 'COUL
 row_probe_rc '4p pv dies once, answers on the retry -> accepted' flaky 0 ''
 row '4q pv answers a stale version -> still STALE (red only on a confirmed stale binary)' stale self none none FAIL 'STALE'
 
+# #5755: the rerun-once-on-75 wrapper rides in this check, not as its own CI step (C324 rule 7: no new gate).
+if rerun_out=$(bash scripts/rerun_on_75.sh --self-test 2>&1); then
+    note "$rerun_out"
+else
+    bad "rerun_on_75.sh self-test: $rerun_out"
+fi
+
 # --- the tree's own target dir ---------------------------------------------
 # `cargo metadata` answers for the shell asking. The dev shell's `cargo`
 # function moves the target dir; a build launched from a plain bash script does
