@@ -140,5 +140,3 @@ docs/audits/quorum-*.json.lanes/
 # PVL-001 EV-8a (#4202): `pv discharge run`'s full log. The tracked summary is its sibling
 # crates/aprender-contracts-staging/discharge-summary.json, outside the tree it hashes.
 crates/aprender-contracts-staging/lean/discharge.json
-.pmat/context.db-shm
-.pmat/context.db-wal
