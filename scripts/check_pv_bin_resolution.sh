@@ -439,6 +439,13 @@ stage_pv() {
     # bashrs reads the parens of "(aprender ...)" as an unescaped test
     # expression (SC1028) when a string holding them shares a line with a test.
     printf '#!/usr/bin/env bash\n' > "$sp_path"
+    if [ "$sp_want" = "dead" ]; then
+        # A probe that dies without answering (SIGKILL under load): no output, rc 137.
+        printf 'exit 137\n' >> "$sp_path"
+        chmod +x "$sp_path"
+        printf '%s: %s/crates/aprender-contracts-cli/src/main.rs\n' "$sp_path" "$sp_dir" > "$sp_path.d"
+        return 0
+    fi
     printf 'printf "pv %s %s\\n"\n' "$sp_ver" "$PV_IDENTITY" >> "$sp_path"
     chmod +x "$sp_path"
 
@@ -601,6 +608,9 @@ row '4h foreign good release + own good debug'  good self good other debug
 # A foreign candidate is skipped even when the only own one is old, and the
 # report is about the own one.
 row '4i foreign good release + own stale debug' stale self good other FAIL 'STALE'
+# #5755: a probe that did not ANSWER is not a stale binary. It must read could-not-check
+# (rc 2, "COULD NOT CHECK"), never STALE -- a runner fault named as a code cause.
+row '4o own debug pv dies without answering' dead self none none FAIL 'COULD NOT CHECK'
 
 # --- the tree's own target dir ---------------------------------------------
 # `cargo metadata` answers for the shell asking. The dev shell's `cargo`
