@@ -2,7 +2,10 @@ use super::*;
 
 #[test]
 fn empty_plan_is_one_line() {
-    assert_eq!(plan_text(&Selection::default()), "rollup 0 []\n");
+    assert_eq!(
+        plan_text(&Config::default(), &Selection::default()),
+        "rollup 0 []\n"
+    );
 }
 
 #[test]
@@ -26,14 +29,14 @@ fn lists_picked_then_each_skip_with_its_reason() {
         ],
     };
     assert_eq!(
-        plan_text(&sel),
+        plan_text(&Config::default(), &sel),
         "rollup 2 [#1 #3]\n\
          skip #2: shares a.rs with #1\n\
          skip #4: 201 lines > 200\n\
          skip #5: checks not all green\n\
          skip #6: not approved\n\
          skip #7: missing label rollup-ok\n\
-         skip #8: touches Cargo.lock (CI, contract or lockfile)\n"
+         skip #8: touches Cargo.lock (forbidden for this repo)\n"
     );
 }
 
@@ -44,5 +47,5 @@ fn over_cap_is_named_in_the_plan() {
         picked: vec![1],
         rejected: vec![(9, Reject::OverCap)],
     };
-    assert!(plan_text(&sel).contains("skip #9: rollup already holds"));
+    assert!(plan_text(&Config::default(), &sel).contains("skip #9: rollup already holds"));
 }

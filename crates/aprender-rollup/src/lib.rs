@@ -6,16 +6,12 @@
 
 pub mod build;
 pub mod close;
+pub mod config;
 pub mod gh_json;
 pub mod mg;
 pub mod report;
 
-/// Largest PR (additions + deletions, from `gh`) that may join a rollup.
-pub const MAX_LINES: u32 = 200;
-/// Most constituents in one rollup (operator: b = 3, only with bisection, until p_red is measured).
-pub const MAX_ENTRIES: usize = 3;
-/// Label a PR owner sets to opt in.
-pub const OPT_IN_LABEL: &str = "rollup-ok";
+pub use config::Config;
 
 /// One open PR as read from GitHub.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,35 +39,29 @@ pub enum Reject {
         with: u64,
         file: String,
     },
-    /// Eligible, but the rollup already holds [`MAX_ENTRIES`].
+    /// Eligible, but the rollup already holds `max_entries`.
     OverCap,
-}
-
-/// Files a rollup never carries: CI workflows, contracts, the lockfile.
-#[must_use]
-pub fn is_forbidden(path: &str) -> bool {
-    path.starts_with(".github/workflows/") || path.starts_with("contracts/") || path == "Cargo.lock"
 }
 
 /// First reason `c` is ineligible on its own, if any.
 #[must_use]
-pub fn check(c: &Candidate) -> Option<Reject> {
+pub fn check(cfg: &Config, c: &Candidate) -> Option<Reject> {
     if !c.green {
         return Some(Reject::NotGreen);
     }
     if !c.approved {
         return Some(Reject::NotApproved);
     }
-    if !c.labels.iter().any(|l| l == OPT_IN_LABEL) {
+    if !c.labels.iter().any(|l| *l == cfg.label) {
         return Some(Reject::NoOptInLabel);
     }
     let lines = c.additions.saturating_add(c.deletions);
-    if lines > MAX_LINES {
+    if lines > cfg.max_lines {
         return Some(Reject::TooLarge(lines));
     }
     c.files
         .iter()
-        .find(|f| is_forbidden(f))
+        .find(|f| cfg.is_forbidden(f))
         .map(|f| Reject::ForbiddenFile(f.clone()))
 }
 
@@ -84,15 +74,15 @@ pub struct Selection {
     pub rejected: Vec<(u64, Reject)>,
 }
 
-/// Pick up to [`MAX_ENTRIES`] eligible PRs, lowest number first, no shared file.
+/// Pick up to `max_entries` eligible PRs, lowest number first, no shared file.
 #[must_use]
-pub fn select(cands: &[Candidate]) -> Selection {
+pub fn select(cfg: &Config, cands: &[Candidate]) -> Selection {
     let mut sorted: Vec<&Candidate> = cands.iter().collect();
     sorted.sort_by_key(|c| c.number);
     let mut sel = Selection::default();
     let mut taken: Vec<(&Candidate, u64)> = Vec::new();
     for c in sorted {
-        if let Some(r) = check(c) {
+        if let Some(r) = check(cfg, c) {
             sel.rejected.push((c.number, r));
             continue;
         }
@@ -105,7 +95,7 @@ pub fn select(cands: &[Candidate]) -> Selection {
         if let Some((with, file)) = clash {
             sel.rejected
                 .push((c.number, Reject::FileOverlap { with, file }));
-        } else if taken.len() < MAX_ENTRIES {
+        } else if taken.len() < cfg.max_entries {
             sel.picked.push(c.number);
             sel.heads.push(c.head.clone());
             taken.push((c, c.number));
