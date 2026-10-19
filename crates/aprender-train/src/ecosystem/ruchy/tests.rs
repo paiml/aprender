@@ -304,3 +304,53 @@ fn test_export_json_roundtrip() {
     assert_eq!(export.metrics.final_loss, Some(0.4));
     assert_eq!(export.metrics.final_accuracy, Some(0.9));
 }
+
+#[test]
+fn test_session_metrics_lr_and_grad_norm_append_independently() {
+    let mut metrics = SessionMetrics::new();
+    metrics.add_lr(1e-3);
+    metrics.add_lr(5e-4);
+    metrics.add_grad_norm(2.5);
+
+    assert_eq!(metrics.lr_history, vec![1e-3, 5e-4]);
+    assert_eq!(metrics.grad_norm_history, vec![2.5]);
+    // lr / grad-norm are diagnostics: they never count as steps or content.
+    assert_eq!(metrics.total_steps(), 0);
+    assert!(metrics.is_empty());
+}
+
+#[test]
+fn test_session_metrics_best_picks_extremes_not_last() {
+    let mut metrics = SessionMetrics::new();
+    for loss in [0.9, 0.2, 0.5] {
+        metrics.add_loss(loss);
+    }
+    for acc in [0.6, 0.95, 0.7] {
+        metrics.add_accuracy(acc);
+    }
+    assert_eq!(metrics.final_loss(), Some(0.5));
+    assert_eq!(metrics.best_loss(), Some(0.2));
+    assert_eq!(metrics.final_accuracy(), Some(0.7));
+    assert_eq!(metrics.best_accuracy(), Some(0.95));
+}
+
+#[test]
+fn test_session_metrics_empty_has_no_final_or_best() {
+    let metrics = SessionMetrics::new();
+    assert_eq!(metrics.final_loss(), None);
+    assert_eq!(metrics.final_accuracy(), None);
+    assert_eq!(metrics.best_loss(), None);
+    assert_eq!(metrics.best_accuracy(), None);
+    assert_eq!(metrics.total_steps(), 0);
+}
+
+#[test]
+fn test_session_metrics_is_empty_false_for_accuracy_or_custom_only() {
+    let mut acc_only = SessionMetrics::new();
+    acc_only.add_accuracy(0.5);
+    assert!(!acc_only.is_empty());
+
+    let mut custom_only = SessionMetrics::new();
+    custom_only.add_custom(String::from("f1"), 0.1);
+    assert!(!custom_only.is_empty());
+}

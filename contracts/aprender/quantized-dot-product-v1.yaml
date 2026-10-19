@@ -242,9 +242,12 @@ falsification_tests:
     on the box whose best CPU feature makes the dispatcher select it
   prediction: fused_q4k_q8k_dot_avx2 and fused_q4k_q8k_dot_with_bsums_avx2 equal fused_q4k_q8k_dot
     within 1e-3 relative on super-blocks whose 8 scales and 8 mins all differ, on any AVX2 box;
-    fused_q4k_q8k_dot_avx512vnni_v2 likewise on any AVX-512 VNNI box
+    fused_q4k_q8k_dot_avx512vnni_v2 likewise on any AVX-512 VNNI box; the 512-bit helpers
+    compute_q4_q8_dots_8blocks_avx512 and compute_q8_sums_avx512 equal a scalar per-block integer
+    reference EXACTLY (lo nibble of chunk c -> block 2c, hi nibble -> block 2c+1) on any AVX-512 BW box
   test: cargo test -p aprender-serve --lib -- test_fused_q4k_q8k_dot_avx2_path_matches_scalar_on_every_avx2_box
     test_fused_q4k_q8k_dot_with_bsums_matches_scalar_on_every_avx2_box test_fused_q4k_q8k_dot_avx512vnni_path_matches_scalar
+    test_compute_q4_q8_dots_8blocks_avx512 test_compute_q8_sums_avx512
   if_fails: A kernel pairs a nibble half with the wrong block scale or drops part of a block's Q8 sum.
     The dispatcher hid both AVX2 defects for as long as every x86 CI box had AVX-512 VNNI
     (found 2026-09-10 when yoga, a Core Ultra 9 185H, joined the pool; reverting the fix gives
