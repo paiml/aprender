@@ -56,7 +56,11 @@ clone="$build/src"
 rm -rf "${clone:?}"
 git clone -q --no-hardlinks "$root" "$clone"
 git -C "$clone" fetch -q "$root" "refs/remotes/origin/main:refs/remotes/origin/main"
-git -C "$clone" checkout -q --detach "$head_sha"
+# What a pull_request job checks out: refs/pull/N/merge, i.e. HEAD merged onto origin/main
+# (the base-differential guards name origin/main as the first parent of that merge).
+git -C "$clone" checkout -q --detach refs/remotes/origin/main
+git -C "$clone" -c user.name=gate -c user.email=gate@localhost merge -q --no-ff -m "gate: merge $head_sha" "$head_sha" ||
+    { echo "local_gate: HEAD does not merge cleanly onto origin/main; update the branch" >&2; exit 2; }
 cd "$clone"
 # Serialise the shared-state installs the parallel sections would otherwise race on.
 rustup toolchain install stable --profile minimal --target x86_64-pc-windows-gnu >/dev/null 2>&1 || true
