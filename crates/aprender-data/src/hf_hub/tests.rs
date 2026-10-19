@@ -1326,8 +1326,10 @@ task_categories: [
 ---
 ";
     let errors = DatasetCardValidator::validate_readme(readme);
-    // Should not crash, just return empty errors (YAML parse fails gracefully)
-    assert!(errors.is_empty());
+    // #5500: unparseable front matter is reported, not silently accepted.
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].field, "front matter");
+    assert!(DatasetCardValidator::validate_readme_strict(readme).is_err());
 }
 
 #[test]
