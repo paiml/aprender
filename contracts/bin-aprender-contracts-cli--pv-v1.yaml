@@ -168,3 +168,9 @@ falsification_tests:
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
     if_fails: 'a pv command ships unaudited (RED 2026-09-26: 11 of 49 paths had no row; GREEN 2026-09-27: 49 of 49)'
     mutation: 'delete every pv row; must turn RED naming pv'
+  - id: FALSIFY-BIN-PV-011
+    rule: '`coverage` prints per-contract rows, totals and the overall percentage; binding totals only with --binding (#5621)'
+    prediction: 'without --binding no Binding lines print; with it, implemented/partial/missing totals and impl=N/M rows appear'
+    test: 'cargo test -p aprender-contracts-cli --test coverage_report_render'
+    if_fails: 'the coverage report renderer drifts without a test noticing'
+    mutation: 'print binding_partial in the Binding implemented line; coverage_with_binding_adds_binding_totals must turn RED (MEASURED 2026-10-19)'
