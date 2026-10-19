@@ -55,7 +55,7 @@ jobs:
           [ "$(gh release view "$RC" --json isPrerelease -q .isPrerelease)" = true ] || { echo "::error::$RC is not a prerelease"; exit 1; }
           if gh release view "$tag" >/dev/null 2>&1; then echo "::error::$tag already released"; exit 1; fi
           sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RC" -q .sha)
-          bash scripts/check_release_assets.sh "$RC"
+          setsid --wait bash scripts/check_release_assets.sh "$RC"
           { echo "version=$ver"; echo "tag=$tag"; echo "sha=$sha"; } >> "$GITHUB_OUTPUT"
           echo "plan: $RC ($sha) -> $tag" >> "$GITHUB_STEP_SUMMARY"
 
