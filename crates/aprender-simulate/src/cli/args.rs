@@ -177,7 +177,7 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Run a FLOW-006 course-factory case; --json prints the sim block
+    /// Run a FLOW-006 course-factory case
     CourseFlow {
         /// Case: cal-today, design, nine-builders, coursera-24h or render-300.
         #[arg(long)]
