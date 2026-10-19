@@ -41,6 +41,16 @@ export CARGO_TARGET_DIR="$build/target"
 export CARGO_BUILD_JOBS="$n" RAYON_NUM_THREADS="$n" NEXTEST_TEST_THREADS="$n"
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
 
+# The guards read GH_TOKEN / GITHUB_TOKEN (cargo-deny advisory clone, gh reads); CI sets them.
+if [ -z "${GITHUB_TOKEN:-}" ]; then
+    GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"
+fi
+[ -n "${GITHUB_TOKEN:-}" ] || echo "local_gate: no GITHUB_TOKEN (gh auth token empty); token-reading guards will fail" >&2
+export GITHUB_TOKEN GH_TOKEN="${GH_TOKEN:-$GITHUB_TOKEN}"
+# The base-differential guards need origin/main and its merge-base (no shallow clone).
+git fetch -q origin main
+if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch -q --unshallow origin; fi
+
 sections="$(sections_of .github/workflows/ci.yml)"
 [ -n "$sections" ] || { echo "local_gate: no --sections found in ci.yml" >&2; exit 2; }
 results="$build/results.json"
