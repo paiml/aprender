@@ -1983,11 +1983,11 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/model/parityReceipt> ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/ladder-green/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/ladder-green/node/parityReceipt> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/ladder-green/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/ladder-green/node/parityReceipt> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/model/cc> ;
         sh:in ( "8.9" "12.1" ) ;
@@ -2067,11 +2067,11 @@
         sh:maxCount 1 ;
         sh:class <https://ont.paiml.dev/v1alpha1/parity/Comparator> ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/parity-receipt-complete/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/parity-receipt-complete/node/comparator> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/parity-receipt-complete/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/parity-receipt-complete/node/comparator> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/parity/kind> ;
         sh:minCount 1 ;
@@ -2084,11 +2084,11 @@
     sh:targetClass <https://ont.paiml.dev/v1alpha1/parity/SelfComparedReceipt> ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/parity/comparator> ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/parity-comparator-self/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/parity-comparator-self/node/comparator> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/parity-comparator-self/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/parity-comparator-self/node/comparator> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/parity/reason> ;
         sh:minCount 1 ;
@@ -2103,11 +2103,11 @@
     sh:targetClass <https://ont.paiml.dev/v1alpha1/parity/OracleComparedReceipt> ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/parity/comparator> ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/parity-comparator-oracle/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/parity-comparator-oracle/node/comparator> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/parity-comparator-oracle/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/parity-comparator-oracle/node/comparator> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/parity/comparatorSha> ;
         sh:minCount 1 ;
@@ -2194,7 +2194,7 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.release/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.release/node/dogfoodReceipt> ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/surface> ;
@@ -2217,7 +2217,7 @@
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.release/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.release/node/dogfoodReceipt> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2239,7 +2239,7 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node/hostReceipt> ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/holds> ;
@@ -2257,7 +2257,7 @@
         sh:path <https://ont.paiml.dev/v1alpha1/release/kernelReceipt> ;
         sh:minCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node/kernelReceipt> ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/dispatchKernel> ;
@@ -2269,7 +2269,7 @@
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node/hostReceipt> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/schema> ;
         sh:minCount 1 ;
@@ -2283,7 +2283,7 @@
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node/kernelReceipt> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
         sh:minCount 1 ;
@@ -2347,11 +2347,11 @@
         sh:path <https://ont.paiml.dev/v1alpha1/release/row> ;
         sh:minCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.tokenizer/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.tokenizer/node/row> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.tokenizer/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.tokenizer/node/row> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2392,11 +2392,11 @@
         sh:path <https://ont.paiml.dev/v1alpha1/release/row> ;
         sh:minCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.kernel/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.kernel/node/row> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.kernel/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.kernel/node/row> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2448,11 +2448,11 @@
         sh:path <https://ont.paiml.dev/v1alpha1/release/cruxCell> ;
         sh:minCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.crux/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.crux/node/cruxCell> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.crux/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.crux/node/cruxCell> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2511,11 +2511,11 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.refusal/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.refusal/node/row> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.refusal/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.refusal/node/row> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2543,11 +2543,11 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.probe/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.probe/node/row> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.probe/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.probe/node/row> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2569,11 +2569,11 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.model-cell/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.model-cell/node/row> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.model-cell/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.model-cell/node/row> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2595,11 +2595,11 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.effect-cell/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.effect-cell/node/row> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.effect-cell/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.effect-cell/node/row> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2626,11 +2626,11 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1/node/row> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1/node/row> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2721,7 +2721,7 @@
         sh:minCount 1 ;
         sh:class <https://ont.paiml.dev/v1alpha1/release/KernelParityCell> ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node/usesKernel> ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/unregisteredQtype> ;
@@ -2733,7 +2733,7 @@
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model/node/usesKernel> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
@@ -2768,11 +2768,11 @@
         sh:maxCount 1 ;
         sh:class <https://ont.paiml.dev/v1alpha1/release/SmokeCell> ;
         sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model-smoke/node> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model-smoke/node/smoke> ;
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model-smoke/node> a sh:NodeShape ;
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v2.model-smoke/node/smoke> a sh:NodeShape ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
         sh:minCount 1 ;
