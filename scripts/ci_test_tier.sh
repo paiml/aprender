@@ -421,6 +421,9 @@ self_test() {
     fi
     # #5172: a tag-push run's own GITHUB_REF would turn every push row below full.
     unset GITHUB_REF
+    # #5782 G3: an Actions run sets GITHUB_SHA to the nightly head; the fixture repos have their own HEAD, so R-GHSHA
+    # refused the reuse rows (54, 57) on every scheduled run while a dev box (no GITHUB_SHA) passed.
+    unset GITHUB_SHA
     export CI_TEST_TIER_SELF_TEST_PID=$$
     td=$(mktemp -d "${TMPDIR:-/tmp}/ci-tier.XXXXXX"); trap 'rm -rf "${td:?}"' RETURN
     # One decision, many rows. Each full decision re-runs check_tree_reader_tests.sh
