@@ -77,11 +77,11 @@ fn resolve_hf_token() -> Option<String> {
 /// `--offline` is enforced. Returning `Result` rather than a bare `Request`
 /// is deliberate: a future call site cannot reach the network without first
 /// acknowledging that the request may be refused.
-fn hf_get(url: &str) -> Result<ureq::Request> {
+fn hf_get(url: &str) -> Result<ureq::RequestBuilder<ureq::typestate::WithoutBody>> {
     crate::commands::offline::guard(&format!("fetch {url}"))?;
     let req = ureq::get(url);
     Ok(if let Some(token) = resolve_hf_token() {
-        req.set("Authorization", &format!("Bearer {token}"))
+        req.header("Authorization", &format!("Bearer {token}"))
     } else {
         req
     })
@@ -111,17 +111,17 @@ fn format_gated_model_error_inner(url: &str, has_token: bool) -> String {
 
 fn download_file(url: &str, path: &Path) -> Result<()> {
     let response = hf_get(url)?.call().map_err(|e| match &e {
-        ureq::Error::Status(404, _) => {
+        ureq::Error::StatusCode(404) => {
             CliError::HttpNotFound(format!("HTTP 404: {url}"))
         }
-        ureq::Error::Status(401, _) => {
+        ureq::Error::StatusCode(401) => {
             CliError::NetworkError(format_gated_model_error(url))
         }
         _ => CliError::NetworkError(format!("Download failed: {e}")),
     })?;
 
     let mut file = std::fs::File::create(path)?;
-    let mut reader = response.into_reader();
+    let mut reader = response.into_body().into_reader();
     std::io::copy(&mut reader, &mut file)?;
 
     Ok(())
@@ -133,19 +133,21 @@ fn download_file(url: &str, path: &Path) -> Result<()> {
 /// Verifies that downloaded bytes match Content-Length when available.
 fn download_file_with_progress(url: &str, path: &Path) -> Result<FileChecksum> {
     let response = hf_get(url)?.call().map_err(|e| match &e {
-        ureq::Error::Status(401, _) => {
+        ureq::Error::StatusCode(401) => {
             CliError::NetworkError(format_gated_model_error(url))
         }
         _ => CliError::NetworkError(format!("Download failed: {e}")),
     })?;
 
     let total = response
-        .header("Content-Length")
+        .headers()
+        .get("Content-Length")
+        .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
 
     let mut file = std::fs::File::create(path)?;
-    let mut reader = response.into_reader();
+    let mut reader = response.into_body().into_reader();
     let mut hasher = blake3::Hasher::new();
     let mut downloaded: u64 = 0;
     let mut buf = vec![0u8; 64 * 1024];
