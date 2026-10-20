@@ -1,0 +1,43 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-18'
+  author: PAIML Engineering
+  description: "pv query diff info — build_diff_info reports the last commit that touched a contract file as a full sha plus a date-only string, and reports nothing for a path git has no history for."
+  kind: pattern
+  references:
+    - "aprender#5580 — coverage-gap ticket for aprender-contracts (build_diff_info was at 0.0%)"
+    - "crates/aprender-contracts/src/query/query_enrich.rs — build_diff_info"
+    - "crates/aprender-contracts/src/query/query_enrich_tests.rs — the falsifiers"
+
+equations:
+  diff_info_is_sha_plus_date_only:
+    formula: "for a tracked path p: len(commit_hash) == 40 AND len(last_modified) == 10 AND days_ago == parse_iso_days_ago(last_modified, now)"
+    domain: "a contract path with at least one commit in git"
+    codomain: "Some(DiffInfo)"
+    invariants:
+      - "The time part of the author date is stripped; a date with a time suffix is a defect"
+      - "A path git has no history for yields None, not an empty DiffInfo"
+
+proof_obligations:
+  - id: PVQDI-INV-001
+    type: invariant
+    property: "A tracked file yields a 40-hex sha and a 10-character Y-M-D date"
+    formal: "∀ tracked p: len(commit_hash(p)) = 40 ∧ len(last_modified(p)) = 10"
+    applies_to: diff_info_is_sha_plus_date_only
+  - id: PVQDI-INV-002
+    type: invariant
+    property: "A path with no git history yields None"
+    formal: "p ∉ git_history ⇒ build_diff_info(p) ≡ None"
+    applies_to: diff_info_is_sha_plus_date_only
+
+falsification_tests:
+  - id: FALSIFY-PVQDI-001
+    rule: "date part keeps the time suffix"
+    prediction: "mutating date_part to the raw %aI string turns the tracked-file test RED"
+    test: "cargo test -p aprender-contracts --lib build_diff_info_reports_the_last_commit_of_a_tracked_file"
+    if_fails: "build_diff_info leaks a time component into last_modified"
+  - id: FALSIFY-PVQDI-002
+    rule: "missing path invents a DiffInfo"
+    prediction: "a nonexistent path returns None"
+    test: "cargo test -p aprender-contracts --lib build_diff_info_is_none_for_a_path_git_has_no_history_for"
+    if_fails: "build_diff_info returns Some for a path without history"
