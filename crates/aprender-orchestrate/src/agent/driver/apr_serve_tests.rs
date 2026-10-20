@@ -634,10 +634,12 @@ async fn f3719_an_unreported_answer_is_not_measured() {
 // up (it blocks on its unread stdout pipe); `/bin/sh serve …` stands in for one that
 // dies at once, because `sh` cannot open a script named `serve`.
 
+#[cfg(unix)]
 fn opts(backend: ServeBackend) -> ServeLaunchOptions {
     ServeLaunchOptions { backend, max_tokens: Some(7), think: Some(false) }
 }
 
+#[cfg(unix)]
 #[test]
 fn f5658_a_missing_binary_is_a_spawn_error() {
     let err = AprServeDriver::launch_binary_on_port(
@@ -652,6 +654,7 @@ fn f5658_a_missing_binary_is_a_spawn_error() {
     assert!(err.to_string().contains("failed to spawn apr serve"), "{err}");
 }
 
+#[cfg(unix)]
 #[test]
 fn f5658_a_child_that_dies_at_startup_reports_exit_and_stderr() {
     let err = AprServeDriver::launch_binary_on_port(
@@ -669,6 +672,7 @@ fn f5658_a_child_that_dies_at_startup_reports_exit_and_stderr() {
     assert!(!is_addr_in_use(&msg), "a missing script is not a port race: {msg}");
 }
 
+#[cfg(unix)]
 #[test]
 fn f5658_a_live_listener_makes_the_driver_ready_with_the_launch_options() {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
@@ -690,6 +694,7 @@ fn f5658_a_live_listener_makes_the_driver_ready_with_the_launch_options() {
     assert_eq!(driver.model_size_bytes, None, "a model path that does not exist has no size");
 }
 
+#[cfg(unix)]
 #[test]
 fn f5658_defaults_and_cpu_backend_when_no_options_are_given() {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
