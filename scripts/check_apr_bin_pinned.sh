@@ -183,8 +183,8 @@ PATHRES_PV='(command[[:space:]]+-v[[:space:]]+pv|which[[:space:]]+pv|type[[:spac
 # rewrote shapes.ttl by 68 lines. ABS_PV: a hardcoded pv path. DEFAULT_PV: a variable whose fallback is
 # the bare name (`PV=pv`, `${PV:-pv}`), which resolves through PATH the moment the pin is unset.
 # Lines naming FLEET_PV_ are the fleet-pv advisory probe (LAB), which looks for a fleet binary on purpose.
-ABS_PV='(^|[[:space:]@"'"'"'=(`]|:-|:=)(/|~/|\$HOME/|\$\(HOME\)/)[A-Za-z0-9_.$/-]*/bin/pv([[:space:]"'"'"'})]|$)'
-DEFAULT_PV='(^|[[:space:];])(export[[:space:]]+)?[A-Za-z_]*PV[A-Za-z_]*=["'"'"']?pv["'"'"']?([[:space:];]|$)|:[-=]pv\}'
+ABS_PV='(^|[[:space:]@"'"'"'=(`]|:-|:=)(/|~|\$(HOME|CARGO_HOME)|\$\{(HOME|CARGO_HOME)\}|\$\((HOME|CARGO_HOME)\))[A-Za-z0-9_.$/{}()-]*/bin/pv([[:space:]"'"'"'})]|$)'
+DEFAULT_PV='(^|[[:space:];@(]|-e[[:space:]])(export[[:space:]]+)?(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV)[[:space:]]*[?:+]?=[[:space:]]*["'"'"']?pv["'"'"']?([[:space:];)]|$)|[:?]?[-=]pv\}'
 
 MIN_EXPECTED="${MIN_EXPECTED:-80}"
 
@@ -402,23 +402,24 @@ check_file() {
         probe_pv=""
         case "$trimmed" in *pv*) probe_pv="$(demessage_pv "$trimmed")" ;; esac
         if [[ $probe_pv =~ $BARE_PV ]]; then
-            report "$f" "$lineno" "BARE-PV" "$trimmed"
+            report "BARE-PV" "$f" "$lineno" "$trimmed"
         fi
         if [[ $probe_pv =~ $PATHRES_PV ]]; then
-            report "$f" "$lineno" "PATHRES-PV" "$trimmed"
+            report "PATHRES-PV" "$f" "$lineno" "$trimmed"
         fi
         if [[ $probe =~ $PATHRES ]]; then
             report 'PATH-APR' "$f" "$lineno" "$trimmed"
         fi
         # CLASS 6/7 (#5776): an absolute pv path, or a variable that falls back to bare `pv`.
+        # A line that only TESTS for the binary (ls/test/stat/...) is a diagnostic, not a run.
         case "$trimmed" in
-            *FLEET_PV_*) : ;;
+            ls\ *|test\ *|stat\ *|file\ *|readlink\ *|echo\ *|printf\ *|\[\ *) : ;;
             *)
                 if [[ $trimmed =~ $ABS_PV ]]; then
-                    report "$f" "$lineno" "ABS-PV" "$trimmed"
+                    report 'ABS-PV' "$f" "$lineno" "$trimmed"
                 fi
                 if [[ $trimmed =~ $DEFAULT_PV ]]; then
-                    report "$f" "$lineno" "DEFAULT-PV" "$trimmed"
+                    report 'DEFAULT-PV' "$f" "$lineno" "$trimmed"
                 fi ;;
         esac
     done < <(emit_lines "$f")
@@ -594,12 +595,12 @@ if [ "${1:-}" = "--self-test" ]; then
     for c in "${must_not_match_pathres_pv[@]}"; do probe_case_pv "$PATHRES_PV" "$c" nomatch pathres-pv; done
 
     # #5776: ~/.cargo/bin/pv (0.71.4) regenerated shapes.ttl in the old form. Hardcoded path / bare fallback.
-    must_match_abs_pv=( '~/.cargo/bin/pv extract contracts' '"$HOME/.cargo/bin/pv" extract contracts'
+    must_match_abs_pv=( '$CARGO_HOME/bin/pv extract x' '"${CARGO_HOME}/bin/pv" x' '$(CARGO_HOME)/bin/pv x' '~/.cargo/bin/pv extract contracts' '"$HOME/.cargo/bin/pv" extract contracts'
         '/usr/local/bin/pv extract contracts' 'PV="${PV:-/home/noah/.cargo/bin/pv}"' $'\t@~/.cargo/bin/pv lint x' )
-    must_not_match_abs_pv=( 'strip "/workspace/target/$T/release/pv"' '"$PV" extract contracts' 'cargo build --bin pv' 'target/release/pv extract x'
+    must_not_match_abs_pv=( 'chmod +x "$rc_ch/bin/pv"' 'cat > "$TMP/bin/pv" <<EOF' 'strip "/workspace/target/$T/release/pv"' '"$PV" extract contracts' 'cargo build --bin pv' 'target/release/pv extract x'
         '. scripts/pv_bin.sh || exit 1' 'cp pv /tmp/pv-copy' 'ls crates/aprender-contracts-cli/src/bin/pv' )
-    must_match_default_pv=( 'PV=pv' 'PV="pv"' 'export PV=pv' 'PV_BIN=pv' 'PV=${PV:-pv}' ': "${PV:=pv}"' '"${PV:-pv}" extract contracts' )
-    must_not_match_default_pv=( 'PV="$ROOT/target/debug/pv"' 'PV=$(resolve_pv)' 'PVC=pvc' 'GPV=pvx' 'echo "set PV to a path"'
+    must_match_default_pv=( 'PV ?= pv' 'PV := pv' 'PV = pv' '@PV=pv ./x' '"${PV-pv}" x' 'PV=pv' 'PV="pv"' 'export PV=pv' 'PV_BIN=pv' 'PV=${PV:-pv}' ': "${PV:=pv}"' '"${PV:-pv}" extract contracts' )
+    must_not_match_default_pv=( 'SKIP_PV=pv' 'PV="$ROOT/target/debug/pv"' 'PV=$(resolve_pv)' 'PVC=pvc' 'GPV=pvx' 'echo "set PV to a path"'
         'CONTRACTS_GATE_PV=${CONTRACTS_GATE_PV:-}' )
     for c in "${must_match_abs_pv[@]}";        do probe_case_raw "$ABS_PV" "$c" match abs-pv; done
     for c in "${must_not_match_abs_pv[@]}";    do probe_case_raw "$ABS_PV" "$c" nomatch abs-pv; done
@@ -702,6 +703,10 @@ APR="${APR:-/home/noah/.cargo/bin/apr}"'
         '#!/usr/bin/env bash
 PV="${PV:-pv}"
 "$PV" extract contracts'
+    surface_probe 'default-pv-makefile' 'Makefile' \
+        'PV ?= pv
+regen:
+	@$(PV) extract contracts'
     surface_probe 'bare-pv-script' 'scripts/regen3.sh' \
         '#!/usr/bin/env bash
 pv extract contracts'
@@ -749,7 +754,7 @@ FIXTURE
         printf '\nself-test FAILED with %s case(s).\n' "$fails" >&2
         exit 1
     fi
-    printf 'self-test OK: %s regex cases and 15 surface probes.\n' \
+    printf 'self-test OK: %s regex cases and 16 surface probes.\n' \
         "$(( ${#must_match_bare[@]} + ${#must_not_match_bare[@]} + ${#must_match_abs[@]} \
              + ${#must_not_match_abs[@]} + ${#must_match_pathres[@]} + ${#must_not_match_pathres[@]} \
              + ${#must_match_pv[@]} + ${#must_not_match_pv[@]} \
