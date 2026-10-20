@@ -182,8 +182,8 @@ PATHRES_PV='(command[[:space:]]+-v[[:space:]]+pv|which[[:space:]]+pv|type[[:spac
 # ~/.cargo/bin/pv was release 0.71.4, older than the shapes/witness format, and a regen through it
 # rewrote shapes.ttl by 68 lines. ABS_PV: a hardcoded pv path. DEFAULT_PV: a variable whose fallback is
 # the bare name (`PV=pv`, `${PV:-pv}`), which resolves through PATH the moment the pin is unset.
-ABS_PV='(^|[[:space:];&|@"'"'"'=(`]|:-|:=)(/|~|\$(HOME|CARGO_HOME)|\$\{(HOME|CARGO_HOME)\}|\$\((HOME|CARGO_HOME)\))[A-Za-z0-9_.$/{}()-]*/bin/pv([[:space:];&|"'"'"'})]|$)'
-DEFAULT_PV='(^|[[:space:];@("'"'"']|-e[[:space:]])(export[[:space:]]+)?(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV|CONTRACTS_PV|PV_EXE|PV_PATH|PV_CMD|pv_bin|FLEET_PV_BIN)[[:space:]]*[?:+]?=[[:space:]]*["'"'"']?pv["'"'"']?([[:space:];)]|$)|\$\{(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV|CONTRACTS_PV|PV_CMD|pv_bin|FLEET_PV_BIN)[:?]?[-=]["'"'"']?pv["'"'"']?\}'
+ABS_PV='(^|[[:space:];&|@"'"'"'=(`]|:-|:=)(/|~|\$\$?(HOME|CARGO_HOME)|\$\$?\{(HOME|CARGO_HOME)\}|\$\$?\((HOME|CARGO_HOME)\))[A-Za-z0-9_.$/{}()-]*/bin/pv([[:space:];&|"'"'"'})]|$)'
+DEFAULT_PV='(^|[[:space:];@("'"'"']|-e[[:space:]])(export[[:space:]]+)?(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV|CONTRACTS_PV|PV_EXE|PV_PATH|PV_CMD|pv_bin|FLEET_PV_BIN)[[:space:]]*[?:+]?=[[:space:]]*["'"'"']?pv["'"'"']?([[:space:];)]|$)|\$\{(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV|CONTRACTS_PV|PV_EXE|PV_PATH|PV_CMD|pv_bin|FLEET_PV_BIN)[:?]?[-=]["'"'"']?pv["'"'"']?\}'
 
 MIN_EXPECTED="${MIN_EXPECTED:-80}"
 
@@ -604,7 +604,7 @@ if [ "${1:-}" = "--self-test" ]; then
         '/usr/local/bin/pv extract contracts' 'PV="${PV:-/home/noah/.cargo/bin/pv}"' $'\t@~/.cargo/bin/pv lint x' )
     must_not_match_abs_pv=( 'chmod +x "$rc_ch/bin/pv"' 'cat > "$TMP/bin/pv" <<EOF' 'strip "/workspace/target/$T/release/pv"' '"$PV" extract contracts' 'cargo build --bin pv' 'target/release/pv extract x'
         '. scripts/pv_bin.sh || exit 1' 'cp pv /tmp/pv-copy' 'ls crates/aprender-contracts-cli/src/bin/pv' )
-    must_match_default_pv=( 'PV ?= pv' 'PV := pv' 'PV = pv' '@PV=pv ./x' '"${PV-pv}" x' 'PV=pv' 'PV="pv"' 'export PV=pv' 'PV_BIN=pv' 'PV=${PV:-pv}' ': "${PV:=pv}"' '"${PV:-pv}" extract contracts' 'PV="${PV:-"pv"}"' "PV=\${PV:-'pv'}" 'CONTRACTS_PV=pv' 'pv_bin=pv' 'FLEET_PV_BIN=pv' 'PV_CMD=pv' 'PV_EXE=pv' 'echo "PV=pv" >> "$GITHUB_ENV"' )
+    must_match_default_pv=( 'PV ?= pv' 'PV := pv' 'PV = pv' '@PV=pv ./x' '"${PV-pv}" x' 'PV=pv' 'PV="pv"' 'export PV=pv' 'PV_BIN=pv' 'PV=${PV:-pv}' ': "${PV:=pv}"' '"${PV:-pv}" extract contracts' 'PV="${PV:-"pv"}"' "PV=\${PV:-'pv'}" 'CONTRACTS_PV=pv' 'pv_bin=pv' 'FLEET_PV_BIN=pv' 'PV_CMD=pv' 'PV_EXE=pv' 'echo "PV=pv" >> "$GITHUB_ENV"' 'PV_PATH=pv' '"${PV_EXE:-pv}" x' '"${PV_PATH:-pv}" x' '"${CONTRACTS_PV:-pv}" x' '"${PV_CMD:-pv}" x' '"${pv_bin:-pv}" x' '"${FLEET_PV_BIN:-pv}" x' )
     must_not_match_default_pv=( 'SKIP_PV=pv' 'PV="$ROOT/target/debug/pv"' 'PV=$(resolve_pv)' 'PVC=pvc' 'GPV=pvx' 'echo "set PV to a path"'
         'CONTRACTS_GATE_PV=${CONTRACTS_GATE_PV:-}' )
     for c in "${must_match_abs_pv[@]}";        do probe_case_raw "$ABS_PV" "$c" match abs-pv; done
@@ -737,6 +737,18 @@ echo "PV=$HOME/.cargo/bin/pv" >> "$GITHUB_ENV"'
     surface_probe 'github-env-default' 'scripts/regen11.sh' \
         '#!/usr/bin/env bash
 echo "PV=pv" >> "$GITHUB_ENV"'
+    surface_probe 'semicolon-behind-test' 'scripts/regen12.sh' \
+        '#!/usr/bin/env bash
+test -f a; ~/.cargo/bin/pv extract contracts'
+    surface_probe 'pipe-behind-echo' 'scripts/regen13.sh' \
+        '#!/usr/bin/env bash
+echo f | ~/.cargo/bin/pv extract contracts'
+    surface_probe 'dollar-paren-behind-echo' 'scripts/regen14.sh' \
+        '#!/usr/bin/env bash
+echo $(~/.cargo/bin/pv extract contracts)'
+    surface_probe 'abs-pv-makefile-dollar2' 'Makefile' \
+        'regen:
+	@$$HOME/.cargo/bin/pv extract contracts'
     surface_probe 'bare-pv-script' 'scripts/regen3.sh' \
         '#!/usr/bin/env bash
 pv extract contracts'
