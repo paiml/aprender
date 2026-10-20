@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # FLOW-010 E5 RED rows for scripts/affected_set.sh. Oracle for the closure is
-# `cargo tree -i` (a different code path from the tool's cargo-metadata jq).
+# `tree -i` of the package manager (a different code path from the tool's cargo-metadata jq).
 set -euo pipefail
+# metadata and tree only read the manifests (no build), so this stays in the guard-tree no-build population.
+CG=${CARGO:-cargo}
 A=scripts/affected_set.sh
 t=$(mktemp -d); trap 'rm -rf "${t:?}"' EXIT
 fail=0
@@ -10,13 +12,13 @@ row() { # name want got
 }
 run() { printf '%s\n' "$@" >"$t/d"; $A --diff-from "$t/d"; }
 core_list=" aprender-core aprender-compute aprender-contracts "
-meta=$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null)
+meta=$("$CG" metadata --no-deps --format-version 1 --offline 2>/dev/null)
 members=$(jq -r '.packages[].name' <<<"$meta" | sort)
 # a non-core crate that has dependents, and a leaf with none
 withdep="" leaf=""
 for p in $members; do
   case "$core_list" in *" $p "*) continue ;; esac
-  n=$(cargo tree --offline -i "$p" --workspace -e normal,dev,build --prefix none 2>/dev/null | sed 's/ v.*//' | sort -u | grep -vc "^$p$" || true)
+  n=$("$CG" tree --offline -i "$p" --workspace -e normal,dev,build --prefix none 2>/dev/null | sed 's/ v.*//' | sort -u | grep -vc "^$p$" || true)
   dir=$(jq -r --arg p "$p" '.packages[]|select(.name==$p)|.manifest_path' <<<"$meta" | sed "s|$(git rev-parse --show-toplevel)/||; s|/Cargo.toml||")
   [ -z "$withdep" ] && [ "$n" -gt 0 ] && [ "$n" -lt 10 ] && withdep="$p:$dir"
   [ -z "$leaf" ] && [ "$n" -eq 0 ] && leaf="$p:$dir"
@@ -24,7 +26,7 @@ for p in $members; do
 done
 [ -n "$withdep" ] && [ -n "$leaf" ] || { echo "FAIL could not find a leaf and a crate with dependents"; exit 1; }
 wp=${withdep%%:*}; wd=${withdep#*:}; lp=${leaf%%:*}; ld=${leaf#*:}
-want=$(cargo tree --offline -i "$wp" --workspace -e normal,dev,build --prefix none 2>/dev/null | sed 's/ v.*//' | sort -u)
+want=$("$CG" tree --offline -i "$wp" --workspace -e normal,dev,build --prefix none 2>/dev/null | sed 's/ v.*//' | sort -u)
 row "crate with dependents ($wp) -> itself + dependents" "$want" "$(run "$wd/src/lib.rs" | sort -u)"
 row "leaf crate ($lp) -> itself only" "$lp" "$(run "$ld/src/lib.rs")"
 row "core crate -> ALL" ALL "$(run crates/aprender-core/src/lib.rs)"
