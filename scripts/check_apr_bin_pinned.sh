@@ -412,7 +412,7 @@ check_file() {
         # CLASS 6/7 (#5776): an absolute pv path, or a variable that falls back to bare `pv`.
         # A line that only TESTS for the binary (ls/test/stat/...) is a diagnostic, not a run.
         case "$trimmed" in
-            *\;*|*\&*|*\|*) _chk=1 ;;   # compound line: a test can sit in front of a real run
+            *\;*|*\&*|*\|*|*\$\(*|*\`*) _chk=1 ;;   # compound line: a test can sit in front of a real run
             ls\ *|test\ *|stat\ *|file\ *|readlink\ *|echo\ *|printf\ *|\[\ *) _chk=0 ;;
             *) _chk=1 ;;
         esac
@@ -714,6 +714,9 @@ regen:
     surface_probe 'compound-skip' 'scripts/regen4.sh' \
         '#!/usr/bin/env bash
 test -f a && ~/.cargo/bin/pv extract contracts'
+    surface_probe 'subst-behind-echo' 'scripts/regen5.sh' \
+        '#!/usr/bin/env bash
+echo "$(~/.cargo/bin/pv extract contracts)" > shapes.ttl'
     surface_probe 'bare-pv-script' 'scripts/regen3.sh' \
         '#!/usr/bin/env bash
 pv extract contracts'
@@ -761,7 +764,7 @@ FIXTURE
         printf '\nself-test FAILED with %s case(s).\n' "$fails" >&2
         exit 1
     fi
-    printf 'self-test OK: %s regex cases and 17 surface probes.\n' \
+    printf 'self-test OK: %s regex cases and 18 surface probes.\n' \
         "$(( ${#must_match_bare[@]} + ${#must_not_match_bare[@]} + ${#must_match_abs[@]} \
              + ${#must_not_match_abs[@]} + ${#must_match_pathres[@]} + ${#must_not_match_pathres[@]} \
              + ${#must_match_pv[@]} + ${#must_not_match_pv[@]} \
