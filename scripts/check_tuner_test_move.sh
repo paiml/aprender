@@ -17,6 +17,7 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CF=crates/aprender-compute/tests/tuner_falsification/training_data_quality.rs
+MAINF=crates/aprender-compute/tests/tuner_falsification/main.rs
 KF=crates/aprender-core/tests/tuner_training_data_quality.rs
 WANT="f041_empty_training_errors f042_single_sample_graceful f043_nan_labels_error f044_negative_labels_handled f045_heuristic_no_training f046_training_improves f047_large_training_no_oom f048_classifier_training f049_training_data_variance f050_feature_correlation f051_to_f060_reserved"
 
@@ -35,6 +36,7 @@ f051_to_f060_reserved fbb8c9ddc4be9944
 fit_throughput_rf 7da5ef57b0d6baeb
 @tail:crates/aprender-core/tests/tuner_training_data_quality.rs e599e682001e6f49
 @tail:crates/aprender-compute/tests/tuner_falsification/training_data_quality.rs 4268c362cc9890b0
+@file:crates/aprender-compute/tests/tuner_falsification/main.rs 2a75089411202f35
 "
 
 # body FILE NAME -> VERBATIM text of `fn NAME(` with its leading `///` and `#[..]` lines, up to its closing `}` at column 0.
@@ -49,7 +51,7 @@ body() {
 tailof() { awk '!t && /^(\/\/\/|#\[test\]|fn )/ { t = 1 } t { print }' "$1"; }
 # header_ok FILE -> rc 0 only when every line before the first item is blank, `//!`, `#![allow(..)]`, `#[allow(unused_imports)]`
 # or ONE single-statement `use trueno|aprender::..;` -- so no macro_rules!, mod, #[path] or fn can hide in the header
-header_ok() { awk '/^(\/\/\/|#\[test\]|fn )/ { exit } { print }' "$1" | /usr/bin/grep -v -E '^$|^//!|^#!\[allow\(|^#\[allow\(unused_imports\)\]$|^use (trueno|aprender)::[^;]*;$' | { ! /usr/bin/grep -q .; }; }
+header_ok() { awk '/^(\/\/\/|#\[test\]|fn )/ { exit } { print }' "$1" | /usr/bin/grep -v -E '^$|^//!|^#!\[allow\([a-z_:, ]*\)\]$|^#\[allow\(unused_imports\)\]$|^use (trueno|aprender)::[^;]*;$' | { ! /usr/bin/grep -q .; }; }
 # listed FILE KIND -> sorted names of the moved tests in a `--list` output (KIND core: every test; comp: training_data_quality:: only)
 listed() {
   awk -v kind="$2" '/: test$/ { n = $0; sub(/: test$/, "", n)
@@ -74,11 +76,17 @@ verdict_static() {
     [ -n "$n" ] || continue
     case $n in
       @tail:*) b=$(tailof "$r/${n#@tail:}") ;;
+      @file:*) b=$(cat "$r/${n#@file:}" 2> /dev/null) ;;
       *) b=$(body "$r/$CF" "$n"); [ -n "$b" ] || b=$(body "$r/$KF" "$n") ;;
     esac
     [ "$(printf '%s\n' "$b" | sha256sum | cut -c1-16)" = "$d" ] || { echo "$n differs from its pinned verbatim digest (empty or edited)"; bad=1; }
   done <<< "$DIGESTS"
   for b in "$CF" "$KF"; do header_ok "$r/$b" || { echo "$b: header before the first item holds more than blank, //!, #![allow], use lines"; bad=1; }; done
+  for b in aprender-compute aprender-core; do # no [[test]] may redirect/disable either moved target, no autotests = false
+    awk '/^autotests[[:space:]]*=/ { print "autotests set"; }
+         /^\[\[test\]\]/ { t = 1; next } /^\[/ { t = 0 }
+         t && /^name[[:space:]]*=[[:space:]]*"(tuner_falsification|tuner_training_data_quality)"/ { print "[[test]] names a moved target" }' "$r/crates/$b/Cargo.toml" | /usr/bin/grep -q . && { echo "crates/$b/Cargo.toml: autotests set or a [[test]] redirects a moved target"; bad=1; }
+  done
   if grep -v '^[[:space:]]*#' "$r/crates/aprender-compute/Cargo.toml" | grep -q 'aprender-core'; then echo "compute Cargo.toml names aprender-core"; bad=1; fi
   if grep -rn --include='*.rs' -E '\baprender::' "$r/crates/aprender-compute/tests" "$r/crates/aprender-compute/examples" 2>/dev/null | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*//' | grep -q .; then
     echo "compute tests/examples call aprender::"; bad=1
@@ -123,7 +131,9 @@ if [ "${1:-}" = "--self-test" ]; then
   mkl i; echo "training_data_quality::f045_heuristic_no_training: test" > "$t/i/pi.txt"; lcase "L8 MUTANT: a compute test is ignored" 1 i
   # static rows run on copies of the real files
   mk() { mkdir -p "$t/$1/crates/aprender-compute/tests/tuner_falsification" "$t/$1/crates/aprender-compute/examples" "$t/$1/crates/aprender-core/tests"
-         cp "$ROOT/$CF" "$t/$1/$CF"; cp "$ROOT/$KF" "$t/$1/$KF"; cp "$ROOT/crates/aprender-compute/Cargo.toml" "$t/$1/crates/aprender-compute/Cargo.toml"; }
+         cp "$ROOT/$CF" "$t/$1/$CF"; cp "$ROOT/$KF" "$t/$1/$KF"; cp "$ROOT/crates/aprender-compute/Cargo.toml" "$t/$1/crates/aprender-compute/Cargo.toml"
+         mkdir -p "$t/$1/crates/aprender-core"; cp "$ROOT/crates/aprender-core/Cargo.toml" "$t/$1/crates/aprender-core/Cargo.toml"
+         cp "$ROOT/$MAINF" "$t/$1/$MAINF"; }
   scase() { ( verdict_static "$t/$3" > /dev/null ); rc=$?
     if { [ "$2" = 0 ] && [ $rc -eq 0 ]; } || { [ "$2" != 0 ] && [ $rc -ne 0 ]; }; then n=$((n+1)); echo "ok   $1"; else f=$((f+1)); echo "FAIL $1 (rc=$rc)"; fi; }
   mk s0;                                                                                 scase "S1 current tree: pins hold, compute has no aprender-core" 0 s0
@@ -137,6 +147,10 @@ if [ "${1:-}" = "--self-test" ]; then
   mk s8; sed -i '/^use trueno::tuner::TunerFeatures;/a #[path = "elsewhere.rs"] mod shadow;' "$t/s8/$KF"; scase "S9 MUTANT: #[path] mod in the header" 1 s8
   mk s9; sed -i 's/F045 FALSIFIED/F045 weakened/' "$t/s9/$CF";                           scase "S10 MUTANT: a compute-resident test body edited" 1 s9
   mk s10; printf '\n#[test]\nfn f099_extra() {}\n' >> "$t/s10/$KF";                    scase "S11 MUTANT: an extra test appended to the moved file (tail digest)" 1 s10
+  mk s11; sed -i '1s/$/ macro_rules! assert { ($($t:tt)*) => {}; }/' "$t/s11/$KF";   scase "S12 MUTANT: code on the #![allow] header line (end-anchor)" 1 s11
+  mk s12; sed -i 's/^mod training_data_quality;/#[path = "elsewhere.rs"] mod training_data_quality;/' "$t/s12/$MAINF"; scase "S13 MUTANT: compute main.rs redirects the module" 1 s12
+  mk s13; printf '\n[[test]]\nname = "tuner_falsification"\npath = "tests/elsewhere.rs"\n' >> "$t/s13/crates/aprender-compute/Cargo.toml"; scase "S14 MUTANT: [[test]] redirects the compute target" 1 s13
+  mk s14; printf '\n[[test]]\nname = "tuner_training_data_quality"\npath = "tests/elsewhere.rs"\n' >> "$t/s14/crates/aprender-core/Cargo.toml"; scase "S15 MUTANT: [[test]] redirects the core target" 1 s14
   echo "tuner test move rows: $n passed, $f failed"; [ $f -eq 0 ]; exit
 fi
 out=$(verdict "${1:-$ROOT}") && { echo "tuner test move: cargo lists the 11 moved tests once each, none ignored; compute has no aprender-core"; exit 0; }

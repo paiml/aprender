@@ -642,7 +642,7 @@ include = [
 gates = [
     # #5803/#5804 — the moved tuner tests must still be listed by cargo exactly once, none ignored
     # (behaviour guard: cargo test -- --list). It invokes cargo, so guard_tree --no-cargo never
-    # runs it; ci/explicit-test-commands.d/297 runs it on the merge path, and this wires it for the
+    # runs it; ci/explicit-test-commands.d/296-298 run it in the full tier (tags/release), and this wires it for the
     # meta-guard (#4005 ruling C).
     "scripts/check_tuner_test_move.sh",
     "scripts/check_multiplatform_dogfood.sh",
