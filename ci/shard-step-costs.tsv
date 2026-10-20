@@ -6,17 +6,17 @@
 #   seconds: ONE number  = the step's cost on whichever shard runs it (a once-only step)
 #            N numbers   = comma-separated, one per shard (a partitioned step)
 # A step not listed here is assumed to cost the same on every shard.
-# NOTE: the "Workspace lib tests" and "Integration tests" rows hold 3-shard measurements; replace them after the first 12-shard full-tier run.
+# NOTE: the "Workspace lib tests" and "Integration tests" rows are 12 equal ESTIMATES derived from the old 3-shard measurements (no 12-shard full-tier run exists yet; PR runs are the quick tier); replace them after the first 12-shard full-tier run.
 #
 # Source of every `measured` row: mean of the fat-driver `##[step N] success (Xs)` lines of
 # the three shard jobs in six full-tier merge_group runs on main, 2026-10-17/18 (attempt 1):
 # 39066656110 39074125746 39078543500 39081943323 39082376647 39088567478.
-Workspace lib tests (25,300+)	1012,1077,1042	measured
+Workspace lib tests (25,300+)	261,261,261,261,261,261,261,261,261,261,261,261	estimate: the 3-shard measured sum (3131 s) / 12; a hash partition is even in expectation. Replace with the measured per-shard values from the first 12-shard full-tier run
 GPU crates on their default features (per-package resolve, no device needed)	49	measured
 Σ-executed: keep the GPU crates junit (the next nextest run overwrites it)	0	measured
 Σ-executed: the GPU crates ran exactly the tests they owe (#4433)	15	estimate: nextest list of two already-built crates, plus one sigma_executed.py call; replace with the measured value from this PR's first full-tier run
 Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)	145	measured
-Integration tests	618,874,861	measured
+Integration tests	196,196,196,196,196,196,196,196,196,196,196,196	estimate: the 3-shard measured sum (2353 s) / 12; same basis. Replace after the first 12-shard full-tier run
 Σ-executed: the tests this job ran are exactly the tests it owes (#4433)	289	measured before #5486, which moved its GPU listing to shard 2 (so an upper bound now)
 Build every example (workspace, keep-going)	199	measured
 Build.rs crate-root escape check (v0.31.1 yank guard)	2	measured

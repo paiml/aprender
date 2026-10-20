@@ -20,6 +20,10 @@ check() { # $1 = sections.yml  $2 = ci.yml ; prints FAIL lines, returns 1 on any
   got="$(awk '/^  workspace-test-shard:/{j=1} j&&/^        shard: \[/{print;exit}' "$ci" | sed -E 's/.*\[(.*)\].*/\1/; s/ //g')"
   [ "$got" = "$want" ] || { echo "FAIL ci.yml matrix shard list ($got) != 1..$n"; bad=1; }
   awk '/^  workspace-test-shard:/{j=1} j&&/^        shards: \[/{print;exit}' "$ci" | grep -q "\[$n\]" || { echo "FAIL ci.yml matrix shards != [$n]"; bad=1; }
+  # the inert jobs matrix in sections.yml (the pins override it, but it is still a third copy of the count)
+  got="$(awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:/{w=1} w&&/^        shard: \[/{print;exit}' "$sec" | sed -E 's/.*\[(.*)\].*/\1/; s/ //g')"
+  [ "$got" = "$want" ] || { echo "FAIL sections.yml jobs matrix shard list ($got) != 1..$n"; bad=1; }
+  awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:/{w=1} w&&/^        shards: \[/{print;exit}' "$sec" | grep -q "\[$n\]" || { echo "FAIL sections.yml jobs matrix shards != [$n]"; bad=1; }
   # any digit typed after $SHARD / ${SHARD} (hash:${SHARD}/3, "$SHARD/3", "$SHARD" 3) is a literal count; the [ "$SHARD" = 1 ] designations are not
   if grep -nE '\$\{?SHARD\}?"?[/ ] *"?[0-9]+' "$sec"; then echo "FAIL literal shard count in $sec"; bad=1; fi
   lit_loop="n in 1 2 3"
@@ -47,7 +51,10 @@ if [ "${1:-}" = --self-test ]; then
   cp ci/sections.yml "$t/s.yml"; sed -E 's/^( +SHARDS=)"\$\(awk[^)]*\)"/\112/' .github/workflows/ci.yml > "$t/c.yml"
   cmp -s .github/workflows/ci.yml "$t/c.yml" && { echo "self-test: SHARDS=12 mutant did not apply"; exit 1; }
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: typed aggregator SHARDS=12 must be RED"; exit 1; }
-  echo "PASS  check_shard_count_single_source self-test: 7 rows"
+  sed -E '0,/^        shards: \[12\]/s//        shards: [11]/' ci/sections.yml > "$t/s.yml"
+  cmp -s ci/sections.yml "$t/s.yml" && { echo "self-test: inert-matrix mutant did not apply"; exit 1; }
+  check "$t/s.yml" .github/workflows/ci.yml >/dev/null && { echo "self-test: sections.yml jobs matrix drift must be RED"; exit 1; }
+  echo "PASS  check_shard_count_single_source self-test: 8 rows"
   exit 0
 fi
 check ci/sections.yml .github/workflows/ci.yml

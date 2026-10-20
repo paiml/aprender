@@ -29,7 +29,10 @@ case "${1:-}" in
     # mutant: the selector drops the last command of the round-robin (a test goes missing)
     sed 's/if \[ "\$sel" -eq "\$n" \]; then mine+=("\$cmd"); fi/if [ "$sel" -eq "$n" ] \&\& [ "$k" -lt "$(\( \${#cmds[@]} \))" ]; then mine+=("$cmd"); fi/' "$RUN" > "$t/mut.sh"
     cmp -s "$RUN" "$t/mut.sh" && { echo "self-test: mutation did not apply"; exit 1; }
-    SHARD_UNION_RUNNER="$t/mut.sh" bash "$0" --fragments >/dev/null 2>&1 && { echo "self-test: dropped command must be RED"; exit 1; }
+    # RED must be THIS guard's own verdict: rc 1 and its count-mismatch line, not any crash of the mutant runner
+    rc=0; out="$(SHARD_UNION_RUNNER="$t/mut.sh" bash "$0" --fragments 2>&1)" || rc=$?
+    [ "$rc" = 1 ] || { echo "self-test: dropped command must exit 1, got $rc"; exit 1; }
+    case "$out" in *"FAIL fragments: count pre-split="*) ;; *) echo "self-test: dropped command must print the count-mismatch FAIL line, got: $out" | head -c 400; echo; exit 1 ;; esac
     fragments ci/explicit-test-commands.d >/dev/null || { echo "self-test: clean must pass"; exit 1; }
     echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED" ;;
   *) echo "usage: $0 [--fragments|--self-test]" >&2; exit 2 ;;
