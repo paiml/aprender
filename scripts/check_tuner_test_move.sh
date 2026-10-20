@@ -10,6 +10,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CF=crates/aprender-compute/tests/tuner_falsification/training_data_quality.rs
 KF=crates/aprender-core/tests/tuner_training_data_quality.rs
+MF=crates/aprender-compute/tests/tuner_falsification/main.rs
 WANT="f041_empty_training_errors f042_single_sample_graceful f043_nan_labels_error f044_negative_labels_handled f045_heuristic_no_training f046_training_improves f047_large_training_no_oom f048_classifier_training f049_training_data_variance f050_feature_correlation f051_to_f060_reserved"
 
 # DIGESTS: sha256[:16] of each test body with whitespace and trailing commas before )]} removed (rustfmt-proof).
@@ -26,6 +27,7 @@ f048_classifier_training bfbae842f8408223
 f049_training_data_variance 7fae71f475e2a6c6
 f050_feature_correlation c302d2faf46ee11a
 f051_to_f060_reserved 4281b7880278d002
+fit_throughput_rf af9870bdcb18403c
 "
 # body FILE NAME -> normalized body of `fn NAME(` up to its closing `}` at column 0
 body() {
@@ -43,7 +45,13 @@ verdict() {
   local r=$1 bad=0 got want
   got=$(names "$r"); want=$(printf '%s\n' $WANT | sort)
   [ "$got" = "$want" ] || { echo "names differ: want 11 once each, got: $(echo $got)"; bad=1; }
-  local n d b
+  local n d b f
+  # Re-gating is how these tests went dark before: no cfg/ignore/cfg_attr attribute (outer or inner) on the
+  # moved files or on the compute `mod training_data_quality;` line's file.
+  for f in "$r/$CF" "$r/$KF" "$r/$MF"; do
+    if [ -f "$f" ] && /usr/bin/grep -qE '^[[:space:]]*#!?\[(cfg|ignore|cfg_attr)\b' "$f"; then echo "$f re-gates a test (cfg/ignore/cfg_attr attribute)"; bad=1; fi
+  done
+  /usr/bin/grep -q '^mod training_data_quality;' "$r/$MF" 2>/dev/null || { echo "$MF no longer declares mod training_data_quality;"; bad=1; }
   while read -r n d; do
     [ -n "$n" ] || continue
     b=$(body "$r/$CF" "$n"); [ -n "$b" ] || b=$(body "$r/$KF" "$n")
@@ -60,7 +68,7 @@ verdict() {
 if [ "${1:-}" = "--self-test" ]; then
   t=$(mktemp -d) || exit 2; trap 'rm -rf "${t:?}"' EXIT
   mk() { mkdir -p "$t/$1/crates/aprender-compute/tests/tuner_falsification" "$t/$1/crates/aprender-compute/examples" "$t/$1/crates/aprender-core/tests"
-         cp "$ROOT/$CF" "$t/$1/$CF"; cp "$ROOT/$KF" "$t/$1/$KF"; cp "$ROOT/crates/aprender-compute/Cargo.toml" "$t/$1/crates/aprender-compute/Cargo.toml"; }
+         cp "$ROOT/$CF" "$t/$1/$CF"; cp "$ROOT/$MF" "$t/$1/$MF"; cp "$ROOT/$KF" "$t/$1/$KF"; cp "$ROOT/crates/aprender-compute/Cargo.toml" "$t/$1/crates/aprender-compute/Cargo.toml"; }
   n=0; f=0
   case_() { # NAME WANT_RC DIR
     ( verdict "$t/$3" >/dev/null ); rc=$?
@@ -72,6 +80,12 @@ if [ "${1:-}" = "--self-test" ]; then
   mk m4; printf 'use aprender::tree::RandomForestRegressor;\n' >"$t/m4/crates/aprender-compute/examples/x.rs"; case_ "T5 MUTANT: compute example calls aprender::" 1 m4
   mk m5; sed -i 's/F046 FALSIFIED/F046 weakened/' "$t/m5/$KF"; case_ "T6 MUTANT: a moved test body edited (assert message)" 1 m5
   mk m6; sed -i '/fn f044_negative_labels_handled/,/^}/{s/\.build()/.build(); let _ = 0/}' "$t/m6/$KF"; case_ "T7 MUTANT: a moved test body changed in logic" 1 m6
+  mk m7; sed -i '0,/^#\[test\]/{s//#[cfg(feature = "ml-tuner")]\n#[test]/}' "$t/m7/$KF";  case_ "T8 MUTANT: #[cfg(feature)] re-gates a moved test" 1 m7
+  mk m8; sed -i '0,/^#\[test\]/{s//#[test]\n#[ignore]/}' "$t/m8/$KF";                     case_ "T9 MUTANT: #[ignore] on a moved test" 1 m8
+  mk m9; sed -i '0,/^#\[test\]/{s//#[test]\n#[cfg(any())]/}' "$t/m9/$KF";                case_ "T10 MUTANT: #[cfg(any())] between #[test] and fn" 1 m9
+  mk m10; sed -i '1i #![cfg(any())]' "$t/m10/$KF";                                          case_ "T11 MUTANT: file-level #![cfg(any())]" 1 m10
+  mk m11; sed -i '/^mod training_data_quality;/d' "$t/m11/$MF";                             case_ "T12 MUTANT: compute mod training_data_quality; removed" 1 m11
+  mk m12; sed -i 's/< 10/< 11/' "$t/m12/$KF";                                                case_ "T13 MUTANT: helper fit_throughput_rf guard changed" 1 m12
   echo "tuner test move rows: $n passed, $f failed"; [ $f -eq 0 ]; exit
 fi
 out=$(verdict "${1:-$ROOT}") && { echo "tuner test move: 11 names, once each; compute has no aprender-core"; exit 0; }
