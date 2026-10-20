@@ -140,6 +140,17 @@ falsification:
       `no_dense_path_for_a_hybrid` and this contract must not claim it twice.
     evidence: "cargo test -p aprender-serve --lib qwen35_serve_tests — PASS 2026-09-22."
 
+  - id: FALSIFY-QWEN35-HYBRID-SERVE-DISPATCH-V1-005
+    description: "The /v1/completions plan tokenizes the raw prompt, caps the budget by the context, and refuses an empty or context-filling prompt with 400"
+    test: |
+      qwen35_completions_backend_tests.rs (qwen35_completion_plan_tests) —
+      one test per branch of qwen35_completion_plan: no session declines, plan
+      carries the raw tokens and min(max_tokens, context - prompt), empty prompt
+      and prompt >= context are 400.
+    evidence: |
+      cargo test -p aprender-serve --lib qwen35_completion_plan_tests — 6 pass.
+      Mutation: `prompt_tokens >= context_length` -> `>` turns the refused-whole test RED.
+
 open_obligations:
   - |
     The GENERATION_ROUTES quantifier is discharged today by three named routes

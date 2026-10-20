@@ -393,3 +393,7 @@ pub(crate) fn try_qwen35_completions_stream(
     };
     Ok(Some(Sse::new(events).into_response()))
 }
+
+#[cfg(test)]
+#[path = "qwen35_completions_backend_tests.rs"]
+mod qwen35_completion_plan_tests;
