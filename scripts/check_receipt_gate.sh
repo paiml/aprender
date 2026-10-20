@@ -126,6 +126,7 @@ mkbase() {
   rm -rf "${d:?}"; git init -q "$d"
   mkdir -p "$d/scripts" "$d/.flow009"
   cp "$V" "$d/scripts/ci_receipt_gate.sh"; cp "$TID" "$d/scripts/receipt_toolchain_id.sh"
+  cp "$repo/rust-toolchain.toml" "$d/rust-toolchain.toml"; files="$files rust-toolchain.toml"
   if [ "$pubf" != - ]; then cp "$pubf" "$d/.flow009/batcher.pub"; files="$files .flow009/batcher.pub"; fi
   for f in $files; do git -C "$d" add "$f"; done
   git -C "$d" -c user.email=t@example.invalid -c user.name=t commit -q -m judge
@@ -224,7 +225,9 @@ wmut "W20b MUTANT: a tier step that runs PR-tree code is caught" sec 'rok=0
 git -C "$repo" -c user.email=t@example.invalid -c user.name=t checkout -q -- . 2>/dev/null
 rep=$(git -C "$repo" commit-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 -m fake)
 git -C "$repo" update-ref "refs/replace/$head" "$rep"
-receipt 4b825dc642cb6eb9a060e54bf8d69288fbee4904 "$tc" >"$td/r.json"
+# the faked HEAD has an empty tree, so its toolchain id has no toml part
+tcE=$({ (cd "$BASE" && rustc -vV); printf 'image=none\n'; } | sha256sum | cut -d' ' -f1)
+receipt 4b825dc642cb6eb9a060e54bf8d69288fbee4904 "$tcE" >"$td/r.json"
 body "$td/b-repl" "$(sign "$td/key" "$td/r.json")"
 wrow "W21 refs/replace on the PR repo cannot make another tree pass -> 0" 0 "$(arg "$td/b-repl")"
 if mutate "$W" 'export GIT_NO_REPLACE_OBJECTS=1' ':' "$td/mut-r.sh"; then
@@ -232,6 +235,36 @@ if mutate "$W" 'export GIT_NO_REPLACE_OBJECTS=1' ':' "$td/mut-r.sh"; then
 else fail=$((fail + 1)); echo "FAIL W22: mutant did not apply"; fi
 git -C "$repo" update-ref -d "refs/replace/$head"
 rm -rf "${repo:?}/.flow009"
+# W23-W26: the rustc/credential hardening (Opus, #5798). A PR toolchain file with an absolute
+# `path =` must not reach rustc; the verifier gets no GH_TOKEN/GITHUB_OUTPUT; rustc runs in the
+# base's dir. repo2's receipt is signed over a toolchain id computed the honest way, so only the
+# path refusal stands between it and ok=1.
+rm -rf "${td:?}/repo2"; cp -r "$repo" "$td/repo2"
+printf '[toolchain]\npath = "/nonexistent/fake-toolchain"\n' >"$td/repo2/rust-toolchain.toml"
+git -C "$td/repo2" -c user.email=t@example.invalid -c user.name=t commit -q -am "path override"
+tree2=$(git -C "$td/repo2" rev-parse 'HEAD^{tree}'); head2=$(git -C "$td/repo2" rev-parse HEAD)
+tc2=$({ cat "$td/repo2/rust-toolchain.toml"; (cd "$BASE" && rustc -vV); printf 'image=none\n'; } | sha256sum | cut -d' ' -f1)
+receipt "$tree2" "$tc2" >"$td/p.json"; body "$td/b-path" "$(sign "$td/key" "$td/p.json")"
+arg2() { (cd "$td/repo2" && bash "${3:-$W}" "$1" "${2:-$BASE}" "$head2" 2>/dev/null | head -n1); }
+wrow "W23 a PR toolchain file with path= is refused -> 0" 0 "$(arg2 "$td/b-path")"
+if mutate "$TID" 'if printf' 'if false && printf' "$td/mut-tid.sh"; then
+  mkbase trust-mut "$td/pub"; cp "$td/mut-tid.sh" "$td/trust-mut/scripts/receipt_toolchain_id.sh"
+  git -C "$td/trust-mut" -c user.email=t@example.invalid -c user.name=t commit -q -am mut
+  wrow "W24 MUTANT: a toolchain id that accepts path= is caught by W23's row" 1 "$(arg2 "$td/b-path" "$td/trust-mut")"
+else fail=$((fail + 1)); echo "FAIL W24: mutant did not apply"; fi
+# probe judge: records what the verifier can see (token/output vars, and the rustc dir's listing)
+mkbase trust-probe "$td/pub"
+cat >"$td/trust-probe/scripts/ci_receipt_gate.sh" <<'PROBE'
+#!/usr/bin/env bash
+printf '%s|%s|%s\n' "${GH_TOKEN:-}${GITHUB_OUTPUT:-}" "${RECEIPT_RUSTC_CWD:-}" "$(ls "${RECEIPT_RUSTC_CWD:-/nonexistent}" 2>/dev/null | tr -d '\n')" >"$PROBEFILE"
+printf 'RECEIPT_OK=0\n'
+PROBE
+git -C "$td/trust-probe" -c user.email=t@example.invalid -c user.name=t commit -q -am probe
+probe() { rm -f "${td:?}/probe.out"; (cd "$repo" && GH_TOKEN=secret GITHUB_OUTPUT=/tmp/x PROBEFILE="$td/probe.out" bash "${1:-$W}" "$td/b-good" "$td/trust-probe" "$head" >/dev/null 2>&1); sed -E 's#\|[^|]*/rc\|#|RC|#' "$td/probe.out" 2>/dev/null; }
+wrow "W25 the verifier sees no token or output file, and runs rustc in the base's dir" "|RC|rust-toolchain.toml" "$(probe)"
+if mutate "$W" '-u GH_TOKEN' '-u XX_TOKEN' "$td/mut-e.sh"; then
+  wrow "W26 MUTANT: a wrapper that leaves GH_TOKEN in the verifier's env is caught by W25" "secret|RC|rust-toolchain.toml" "$(probe "$td/mut-e.sh")"
+else fail=$((fail + 1)); echo "FAIL W26: mutant did not apply"; fi
 tier_of() { (cd "$HERE/.." && bash "$T" --event pull_request --diff-from "$td/touched.txt" --receipt-ok "$1" 2>/dev/null | head -n1); }
 t0=$(tier_of 0); case "$t0" in tier=quick|tier=full) t0=notreuse ;; esac
 wrow "W8 --receipt-ok 0 on a core diff runs quick or full, never reuse" notreuse "$t0"
