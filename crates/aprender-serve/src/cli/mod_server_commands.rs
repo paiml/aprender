@@ -772,3 +772,91 @@ mod server_commands {
 
 #[cfg(feature = "server")]
 pub use server_commands::*;
+
+#[cfg(all(test, feature = "server"))]
+mod serve_model_tests {
+    use super::*;
+    use crate::gguf::test_factory::build_executable_pygmy_gguf_with;
+    use std::io::Write;
+
+    fn pygmy_gguf() -> tempfile::NamedTempFile {
+        let mut f = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp file");
+        let vocab = ["<unk>", "</s>", "a", "b"];
+        let types = [2, 3, 1, 1];
+        let bytes = build_executable_pygmy_gguf_with(|b| {
+            b.add_string("tokenizer.ggml.model", "llama")
+                .add_string_array("tokenizer.ggml.tokens", &vocab)
+                .add_i32_array("tokenizer.ggml.token_type", &types)
+                .add_u32("tokenizer.ggml.eos_token_id", 1)
+        });
+        f.write_all(&bytes).expect("write");
+        f.flush().expect("flush");
+        f
+    }
+
+    async fn serve(host: &str, port: u16, path: &str, batch: bool, trace: bool) -> Result<()> {
+        serve_model(host, port, path, batch, false, true, trace, 4096, false).await
+    }
+
+    #[tokio::test]
+    async fn unsupported_extension_is_rejected_before_anything_binds() {
+        let err = serve("127.0.0.1", 0, "/nonexistent/model.xyz", false, false)
+            .await
+            .expect_err("unknown extension must fail");
+        assert!(err.to_string().contains("Unsupported file extension"));
+    }
+
+    #[tokio::test]
+    async fn missing_files_of_each_format_fail_in_their_own_loader() {
+        for ext in ["gguf", "safetensors", "apr"] {
+            let path = format!("/nonexistent/model.{ext}");
+            let err = serve("127.0.0.1", 0, &path, false, false)
+                .await
+                .expect_err("missing model must fail");
+            assert!(
+                !err.to_string().contains("Unsupported file extension"),
+                ".{ext} must reach its loader, got: {err}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn context_length_is_published_to_the_environment() {
+        std::env::remove_var("REALIZR_CONTEXT_LENGTH");
+        let _ = serve("127.0.0.1", 0, "/nonexistent/m.xyz", false, false).await;
+        assert_eq!(std::env::var("REALIZR_CONTEXT_LENGTH").as_deref(), Ok("4096"));
+    }
+
+    #[tokio::test]
+    async fn no_fp8_cache_flag_sets_the_environment_switch() {
+        let path = "/nonexistent/m.xyz";
+        let _ = serve_model("127.0.0.1", 0, path, false, false, true, false, 4096, true).await;
+        assert_eq!(std::env::var("REALIZR_NO_FP8_CACHE").as_deref(), Ok("1"));
+    }
+
+    #[tokio::test]
+    async fn loaded_model_with_a_bad_host_fails_on_the_address() {
+        let model = pygmy_gguf();
+        let path = model.path().to_str().expect("utf8 path");
+        for trace in [false, true] {
+            let err = serve("not a host", 8080, path, false, trace)
+                .await
+                .expect_err("bad host must fail");
+            assert!(err.to_string().contains("Invalid address"), "got: {err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn loaded_model_on_a_taken_port_fails_to_bind_after_the_banner() {
+        let model = pygmy_gguf();
+        let path = model.path().to_str().expect("utf8 path");
+        let taken = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = taken.local_addr().expect("addr").port();
+        for batch in [false, true] {
+            let err = serve("127.0.0.1", port, path, batch, false)
+                .await
+                .expect_err("taken port must fail");
+            assert!(err.to_string().contains("Failed to bind"), "got: {err}");
+        }
+    }
+}

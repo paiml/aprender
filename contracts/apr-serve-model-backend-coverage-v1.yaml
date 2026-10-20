@@ -290,3 +290,16 @@ falsification_tests:
       rewriting the NDJSON stream into a single application/json {"error":...} object
       with no done field, which is what happened the first time the status was
       propagated).
+  - id: FALSIFY-APR-BACKEND-COVERAGE-2609-007
+    name: serve_model_publishes_flags_and_fails_closed_on_bad_input
+    prediction: >
+      serve_model publishes context_length as REALIZR_CONTEXT_LENGTH and
+      no_fp8_cache as REALIZR_NO_FP8_CACHE=1 before loading; rejects an unknown
+      extension; and, with a loaded model, fails with "Invalid address" for an
+      unparsable host and "Failed to bind" for a taken port, with or without trace
+      and batch mode, rather than returning Ok or panicking.
+    test_harness: 'cargo test -p aprender-serve --lib serve_model_tests'
+    expected_output: "test result: ok"
+    if_fails: >
+      A startup flag is silently dropped, or a bad host or taken port exits 0 or
+      panics instead of surfacing a RealizarError.
