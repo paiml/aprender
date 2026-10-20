@@ -72,7 +72,7 @@ touched="$(printf '%s\n' "$touched" | grep -v '^$' | sort -u || true)"
 [ -n "$touched" ] || exit 0
 mapfile -t out < <(jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" '
   (.packages | map({name, deps: [.dependencies[].name]})) as $p
-  | def grow($s): ($s + [$p[] | select(any(.deps[]; . as $d | $s | index($d))) | .name] | unique);
+  | def grow($s): ($s + [$p|.[] | select(any(.deps[]; . as $d | $s | index($d))) | .name] | unique);
     (.packages | map(.name)) as $m
     | ($t | until(grow(.) == .; grow(.))) | .[] | select(. as $n | $m | index($n))' <<<"$meta")
 emit "${out[@]}"

@@ -3,7 +3,7 @@
 # `cargo tree -i` (a different code path from the tool's cargo-metadata jq).
 set -euo pipefail
 A=scripts/affected_set.sh
-t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+t=$(mktemp -d); trap 'rm -rf -- "${t:?}"' EXIT
 fail=0
 row() { # name want got
   if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1"; echo "  want: $2" | head -c 300; echo; echo "  got:  $3" | head -c 300; echo; fail=1; fi
