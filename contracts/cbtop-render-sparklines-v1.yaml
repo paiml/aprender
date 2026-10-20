@@ -1,0 +1,47 @@
+metadata:
+  id: C-CBTOP-RENDER-SPARKLINES
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins CbtopApp::render_sparklines (#5595): the CPU history box needs
+    y < height - 8, the bricks box needs y < height - 5, empty data skips its
+    box, and y advances 4 rows past the CPU box and 2 past the bricks box.
+  references:
+    - 'crates/aprender-cbtop/src/app/render/panels.rs (render_sparklines)'
+
+equations:
+  sparkline_layout_gates:
+    formula: |
+      cpu drawn iff cpu nonempty and y < height - 8, then y += 4
+      bricks drawn iff bricks nonempty and y < height - 5, then y += 2
+    domain: render_sparklines calls on a fresh cell buffer
+    invariants:
+    - 'a skipped box leaves y unchanged'
+
+proof_obligations:
+- id: CRS-INV-001
+  type: invariant
+  property: each sparkline box is drawn only inside its headroom gate and advances y by its fixed amount
+  formal: 'drawn ≡ gate'
+  applies_to: sparkline_layout_gates
+
+falsification_tests:
+- id: FALSIFY-CBTOP-RENDER-SPARKLINES-001
+  rule: render_sparklines gates and advances exactly
+  prediction: 'boundary starts 21/22 (cpu) and 20/21 (bricks) flip the box; empty inputs draw nothing; final y is 8 for start 2 with both boxes'
+  test: cargo test -p aprender-cbtop --lib sparklines_tests
+  if_fails: the cbtop dashboard overflows its pane or drops a history box
+  ship_blocking: false
+  mutation: 'shift either headroom constant, shorten the +2.0 advance, or invert the bricks emptiness check; each must turn RED'
+
+qa_gate:
+  id: QA-CBTOP-RENDER-SPARKLINES-001
+  name: cbtop sparklines gate
+  description: sparkline box gates and y advance are exact
+  checks:
+  - sparkline_layout_gates
+  pass_criteria: FALSIFY-CBTOP-RENDER-SPARKLINES-001 passes
+  falsification: Any failure fails the gate

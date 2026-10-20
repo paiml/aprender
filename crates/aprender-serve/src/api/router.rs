@@ -710,10 +710,34 @@ fn health_status_code(body: &HealthResponse) -> StatusCode {
     }
 }
 
+/// SHA-256 (lowercase hex) of the running executable, computed once (#5348 R-8:
+/// one gateway per host, pinned by binary sha; consumers refuse a mismatch).
+/// `None` when the executable cannot be read: the field is then omitted, never faked.
+fn binary_sha256() -> Option<&'static str> {
+    static SHA: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    SHA.get_or_init(|| {
+        use sha2::{Digest, Sha256};
+        let bytes = std::fs::read(std::env::current_exe().ok()?).ok()?;
+        Some(format!("{:x}", Sha256::digest(&bytes)))
+    })
+    .as_deref()
+}
+
+/// `/health` body: the contract fields plus the R-8 binary pin.
+#[derive(Serialize)]
+struct PinnedHealthResponse {
+    #[serde(flatten)]
+    health: HealthResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    binary_sha256: Option<&'static str>,
+}
+
 /// `GET /health` — vLLM / llama.cpp-parity liveness probe.
 ///
 /// Discharges FALSIFY-CRUX-C-34-001/002/003.
-async fn health_handler(State(state): State<AppState>) -> (StatusCode, Json<HealthResponse>) {
+async fn health_handler(
+    State(state): State<AppState>,
+) -> (StatusCode, Json<PinnedHealthResponse>) {
     if state.is_verbose() {
         eprintln!("[VERBOSE] GET /health");
     }
@@ -722,7 +746,14 @@ async fn health_handler(State(state): State<AppState>) -> (StatusCode, Json<Heal
     if state.is_verbose() {
         eprintln!("[VERBOSE] GET /health -> {} status={}", code, body.status);
     }
-    (code, Json(body))
+    let binary_sha256 = binary_sha256();
+    (
+        code,
+        Json(PinnedHealthResponse {
+            health: body,
+            binary_sha256,
+        }),
+    )
 }
 
 /// `GET /health/live` — k8s liveness probe.
