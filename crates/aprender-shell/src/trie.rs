@@ -64,7 +64,7 @@ impl Trie {
         self.collect_words_optimized(node, &mut buffer, &mut results, limit);
 
         // Sort by count (descending)
-        results.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        results.sort_unstable_by_key(|a| std::cmp::Reverse(a.1));
 
         // Return just the strings (pre-allocate output)
         let take_count = limit.min(results.len());
