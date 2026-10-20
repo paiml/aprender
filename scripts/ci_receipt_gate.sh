@@ -59,6 +59,11 @@ cmd_verify() {
   jq -r '.sig' "$work/receipt.json" >"$work/sig"
   ssh-keygen -Y verify -f "$work/allowed" -I "$SIGNER_ID" -n "$NS" -s "$work/sig" \
     <"$work/canon" >/dev/null 2>&1 || fail bad-signature
+  # verdict: the signed bytes must say the batch's suite passed. A validly signed receipt for a
+  # red batch must not reduce the gate. gate_results is an object, `tests` is present, and every
+  # value is "pass".
+  jq -e '.gate_results | type == "object" and has("tests") and (to_entries | all(.value == "pass"))' \
+    "$work/receipt.json" >/dev/null 2>&1 || fail not-pass
   # tree
   want_tree=$(git rev-parse 'HEAD^{tree}' 2>/dev/null)
   [ -n "$want_tree" ] || fail no-head-tree
