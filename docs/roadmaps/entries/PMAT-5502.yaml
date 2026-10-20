@@ -1,0 +1,18 @@
+- id: PMAT-5502
+  github_issue: 5502
+  item_type: task
+  title: 'Wire parity_receipt_denominator.sh verify mode into CI (#4425) (GH #5502)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-20T08:55:00Z
+  updated: 2026-10-20T08:55:00Z
+  spec: null
+  acceptance_criteria:
+  - See paiml/aprender#5502
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+  epic: null
