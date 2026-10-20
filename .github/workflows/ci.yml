@@ -19,6 +19,8 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main, master]
+    # D1 (FLOW-010 runner-wait): a draft PR runs no job on a runner; marking it ready re-runs CI.
+    types: [opened, synchronize, reopened, ready_for_review]
   # Merge queue: GitHub dispatches a `merge_group` event for each batch it forms.
   # Both required checks (`ci / gate` via the reusable sovereign-ci call, and the
   # top-level `workspace-test` job) live in THIS workflow, so triggering here makes
@@ -140,6 +142,7 @@ jobs:
   # The same case table on every event, so a change that breaks the key is RED on
   # its own PR, not first in the queue. gate requires it.
   mg-reuse-self-test:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     permissions:
@@ -155,7 +158,7 @@ jobs:
 
   x86-main:
     needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && !(github.event_name == 'pull_request' && github.event.pull_request.draft) }}
     # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 240
@@ -313,7 +316,7 @@ jobs:
   # no evidence for them. ci / gate and gate require this job whenever they reuse.
   x86-main-advisories:
     needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && !(github.event_name == 'pull_request' && github.event.pull_request.draft) }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 30
     permissions:
@@ -440,6 +443,7 @@ jobs:
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
