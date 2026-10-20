@@ -32,8 +32,13 @@ W="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-base-$$"
 trap 'rm -f "${W:?}.pr.ndjson" "${W:?}.base.ndjson"; git worktree remove --force "${W:?}" >/dev/null 2>&1 || true' EXIT
 git worktree add --detach "$W" "$BASE" >/dev/null 2>&1 || { echo "COULD-NOT-CHECK: no worktree for base $BASE (shallow fetch?)" >&2; exit 75; }
 
+# cargo-deny <= 0.19 takes --config on `fetch`/`check` and --disable-fetch on `check`; 0.20 made --config global
+# (before the subcommand) and replaced --disable-fetch with the global --offline. Probe once, never assume the runner's version.
+if cargo deny check --help 2>&1 | grep -q -- '--config'; then DENY_OLD=1; else DENY_OLD=0; fi
+
 # One DB for both scans: fetched with the BASE config (the db-path both scans read), HEAD logged.
-cargo deny fetch --config "$W/deny.toml" db || { echo "COULD-NOT-CHECK: advisory-db fetch failed" >&2; exit 75; }
+if [ "$DENY_OLD" = 1 ]; then cargo deny fetch --config "$W/deny.toml" db; else cargo deny --config "$W/deny.toml" fetch db; fi \
+    || { echo "COULD-NOT-CHECK: advisory-db fetch failed" >&2; exit 75; }
 for d in "$HOME"/.cargo/advisory-dbs/*; do
     [ -d "$d/.git" ] && echo "advisory-db $(basename "$d") HEAD $(git -C "$d" rev-parse --short HEAD 2>/dev/null) $(git -C "$d" log -1 --format=%cI 2>/dev/null)"
 done
@@ -46,8 +51,13 @@ bash "$GATE" ignores-added "$W/deny.toml" deny.toml || exit 1
 
 scan() { # TREE OUT.ndjson -> prints the cargo-deny rc
     local rc=0
-    (cd "$1" && cargo deny --locked --all-features --format json check --config "$W/deny.toml" --disable-fetch advisories) \
-        >/dev/null 2>"$2" || rc=$?
+    if [ "$DENY_OLD" = 1 ]; then
+        (cd "$1" && cargo deny --locked --all-features --format json check --config "$W/deny.toml" --disable-fetch advisories) \
+            >/dev/null 2>"$2" || rc=$?
+    else
+        (cd "$1" && cargo deny --config "$W/deny.toml" --locked --offline --all-features --format json check advisories) \
+            >/dev/null 2>"$2" || rc=$?
+    fi
     echo "$rc"
 }
 PRRC=$(scan "$PWD" "$W.pr.ndjson")

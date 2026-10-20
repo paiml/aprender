@@ -134,5 +134,5 @@ qa_gate:
     - main_resident_advisory
     - one_scanner_of_record
     - auto_rearm
-  pass_criteria: "All 6 falsification tests pass; the scanner script has a must-fail/must-pass case table"
+  pass_criteria: "All 7 falsification tests pass; the scanner script has a must-fail/must-pass case table"
   falsification: "Revert the gate to lock-vs-DB; FALSIFY-ADG-001 must turn RED"
