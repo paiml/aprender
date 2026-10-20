@@ -278,9 +278,7 @@ fn certify_model_loop(
         let playbook_path = std::path::Path::new(&playbook_name);
         if !playbook_path.exists() {
             eprintln!("  Playbook not found, skipping");
-            
             failed_count += 1;
-            
             continue;
         }
 
