@@ -11,9 +11,9 @@
 #   toolchain   the receipt's toolchain == scripts/receipt_toolchain_id.sh here
 # BODY_FILE is the PR body; the receipt is its one fenced block whose info string is
 # exactly the schema id. Prints `RECEIPT_OK=1` or `RECEIPT_OK=0 reason=<code>` as the
-# first line and exits 0 either way: the caller falls through to the full gate on 0.
+# first line and exits 0 either way: on 0 the caller keeps the tier the diff selects (quick or full), as if there were no receipt.
 # Anything missing or malformed fails closed. Never on a tag ref or a push event: that
-# belongs to the caller (the full gate owns those).
+# belongs to the caller (the tier selection owns those).
 # Cases: scripts/check_receipt_gate.sh.
 set -u
 # Absolute tools and a fixed PATH: a PATH entry or a BASH_ENV function must never stand in for

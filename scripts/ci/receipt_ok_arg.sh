@@ -2,7 +2,8 @@
 # receipt_ok_arg.sh BODY_FILE TRUST_DIR PR_HEAD_SHA  (PMAT-5797, #5797)
 # Prints ONE word for the tier step's `--receipt-ok`: 1 only when the receipt in the PR body
 # verified, 0 in every other case (no receipt, a bad one, a missing file, a crashed verifier,
-# a base that has no judge yet). Always exits 0: 0 sends the PR to the full gate.
+# a base that has no judge yet). Always exits 0: 0 leaves the PR on the tier its diff selects (quick or
+# full, scripts/ci_test_tier.sh pull_request case), as if there were no receipt.
 #
 # This does not cover a PR that edits the CI files or this judge: merge_group ignores
 # --receipt-ok but runs only the quick tier (full on tag/release), from the PR's own CI files,

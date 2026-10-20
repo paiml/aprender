@@ -3,6 +3,8 @@
 # absent), the full `rustc -vV`, then the literal line "image=none". Same bytes, same order
 # as the batcher's signing side, so a receipt's toolchain field compares equal here.
 # A missing rustc exits 1 (the verifier fails closed).
+# Parity note (#5805): that the hosted runner's `rustc -vV` equals the batcher's is unproven;
+# a mismatch fails closed (toolchain-mismatch). Close it on the first real batcher-signed run.
 # Hardened (#5798): the toml is read from HEAD's tree (git show), not the working tree; a
 # `path =` key (an override that makes rustc run an arbitrary binary) is refused; and rustc runs
 # in $RECEIPT_RUSTC_CWD when the judge sets it (a dir holding the BASE's toml), never in the PR cwd.
