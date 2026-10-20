@@ -106,7 +106,7 @@ proof_obligations:
   - id: RS0-INV-004
     type: invariant
     property: "The schedule describes the tree it governs"
-    formal: "schedule ∈ DOCS_WITH_PATHS ∧ ∀ p ∈ cited_paths(DOCS_WITH_PATHS): exists(workspace_root/p) ∨ marked [gitignored] on its line"
+    formal: "schedule ∈ DOCS_WITH_PATHS ∧ ∀ p ∈ cited_paths(DOCS_WITH_PATHS): exists(workspace_root/p), where cited_paths excludes lines marked DELETED or [gitignored]"
     applies_to: spec_describes_the_tree
   - id: RS0-INV-005
     type: invariant

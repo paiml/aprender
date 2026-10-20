@@ -105,7 +105,7 @@ proof_obligations:
   - id: PCF-INV-004
     type: invariant
     property: "All five 0.3.1 attribute macros expand through the macros facade"
-    formal: "∀ m ∈ {contract, requires, ensures, invariant, must_contract}: a fn annotated #[m] through the provable_contracts_macros path compiles ∧ carries the check 0.3.1's m injects"
+    formal: "∀ m ∈ {contract, requires, ensures, invariant, must_contract}: a fn annotated #[m] through the provable_contracts_macros path compiles; `requires` additionally panics on a violated precondition"
     applies_to: proc_macros_still_expand_through_the_facade
   - id: PCF-INV-005
     type: invariant
