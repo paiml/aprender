@@ -21,8 +21,8 @@ five_whys:
 
 equations:
   pr_gate_verdict:
-    formula: "fail(PR) iff A(lock_PR, db) \\ A(lock_main, db) != {} ; A(lock, db) = advisories in db that hit a crate@version in lock, minus ignored ids"
-    domain: "lock_PR, lock_main from the PR merge base and head; db is ONE snapshot used for both sides"
+    formula: "fail(PR) iff A(lock_PR, db) \\ A(lock_main, db) != {} ; A(lock, db) = findings keyed code|id|crate@version (yanked included) in db that hit a crate@version in lock, minus ignored ids"
+    domain: "lock_PR at head, lock_main at the PR merge base (merge_group base_sha), scanned from a base-commit worktree with the BASE deny.toml and scripts; db is ONE pinned snapshot for both sides"
     codomain: "pass | fail"
     invariants:
       - "Both sides use the same advisory-db snapshot (otherwise a DB refresh between the runs reads as a PR-introduced advisory)"
@@ -30,7 +30,7 @@ equations:
       - "A PR that removes an advisory-hit crate passes"
   main_resident_advisory:
     formula: "A(lock_main, db) != {} => andon raised AND P0 ticket with due <= 4h AND PR gate unaffected"
-    domain: "scheduled scan of main plus the pr_gate_verdict baseline"
+    domain: "scheduled or push-to-main scan only (never the PR path: C324 rule 6, read-only token, GH-1); due is a label plus created_at"
     codomain: "ticket id + due time, or none"
     invariants:
       - "The andon fires within one scan period of the DB publishing the advisory"
@@ -81,7 +81,7 @@ falsification_tests:
   - id: FALSIFY-ADG-001
     rule: "Main-resident advisory does not block a PR"
     prediction: "with lock_PR == lock_main (wasmtime 48.0.6) and a DB holding 0378/0379, the PR verdict is pass and a main-advisory andon row is emitted"
-    test: "planted-fixture case table of the diff gate script (to be written on the branch): same lock both sides"
+    test: "planted-fixture case table of the diff gate script scripts/ci/advisory_diff.sh --self-test, 11 cases: same lock both sides"
     if_fails: "the gate still compares lock to DB, not PR to main"
     mutation: "compare lock_PR to the empty set; the case must turn RED"
   - id: FALSIFY-ADG-002
