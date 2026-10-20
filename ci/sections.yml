@@ -970,9 +970,9 @@ jobs:
           # second path, C324 item 6). `workspace-test-archive` is in the shard's needs,
           # so a red archive job skips the shards and `workspace-test` goes red.
           arc="$GITHUB_WORKSPACE/ws-archive"
-          bash scripts/ci/archive_bind_check.sh "$arc/bind.json" \
-            sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS" \
-            rustc="$(docker run --rm "$IMAGE" rustc -vV | sha256sum | cut -c1-16)"
+          rustc_vv="$(docker run --rm "$IMAGE" rustc -vV)"
+          bash scripts/ci/archive_bind_check.sh --toolchain "$rustc_vv" "$arc/bind.json" \
+            sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS"
           # --extract-to /workspace puts the binaries back at /workspace/target/debug/..., the path
           # every env!("CARGO_BIN_EXE_*") in the ~100 integration tests baked in at build time.
           printf 'FLOW-010 P1: running shard %s from the prebuilt archive (%s MB)\n' "$SHARD" "$(( $(stat -c %s "$arc/ws.tar.zst") / 1048576 ))"
@@ -1525,13 +1525,16 @@ jobs:
             -e BINS="$(tr '\n' ' ' < "$out/bins.txt")" "$IMAGE" bash -c 'set -euo pipefail
               cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite --message-format json > /dev/null
               n=0; for b in $BINS; do test -x "$b" || { echo "::error::archived binary $b not executable at its build path"; exit 1; }; n=$((n+1)); done
+              [ "$n" -gt 0 ] || { echo "::error::smoke checked 0 binaries -- the archive lists none under target/debug"; exit 1; }
               if [ -x /workspace/target/debug/apr ]; then /workspace/target/debug/apr --version; fi
               echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'
           rm -rf "${smoke:?}" "${out:?}/bins.txt"
           printf 'FLOW-010 P1 timing: archive_build_s=%s list_s=%s archive_mb=%s\n' "$t_build" "$t_list" "$(( $(stat -c %s "$out/ws.tar.zst") / 1048576 ))"
           rm -f "${out:?}/live.json" "${out:?}/arc.json"
+          rustc_vv="$(docker run --rm "$IMAGE" rustc -vV)"
+          rustc_h="$(bash scripts/ci/archive_bind_check.sh --hash-toolchain "$rustc_vv")"
           jq -n --arg b "$t_build" --arg l "$t_list" --arg s "$GITHUB_SHA" --arg e "$EXPR" --arg f "$BUILD_FLAGS" \
-            --arg i "$(docker run --rm "$IMAGE" rustc -vV | sha256sum | cut -c1-16)" \
+            --arg i "$rustc_h" \
             '{tier:"quick",sha:$s,expr:$e,flags:$f,rustc:$i,build_s:($b|tonumber),list_s:($l|tonumber)}' > "$out/bind.json"
           ls -l "$out"
       - uses: actions/upload-artifact@v7
@@ -1539,6 +1542,7 @@ jobs:
           name: ws-archive
           path: ws-archive-out/
           if-no-files-found: error
+          overwrite: true
       - name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |
