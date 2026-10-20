@@ -780,6 +780,30 @@ falsification_tests:
          to confirm forward path is still emitting (not a
          regression in the M32c chain).
 
+- id: FALSIFY-QW3-MOE-FORWARD-005
+  rule: 'expert_swiglu_quantized is exact SwiGLU: down(SiLU(gate(x)) * up(x)), SiLU sign-preserving (#5599)'
+  prediction: |
+    For synthetic Q4_K/Q6_K expert slabs with known weights,
+    `expert_swiglu_quantized` returns the closed-form value within 2%:
+      - a negative gate keeps its sign (SiLU(-2) = -0.238406, so
+        out = 3 * (-0.238406 * 5) = -3.576088 < 0, not clamped to 0 and
+        not |g|);
+      - a zero gate gives exactly 0 whatever `up` holds;
+      - `expert_id` selects that expert's own slab;
+      - gate, up and down each dispatch on their own qtype (Q6_K gate with
+        Q4_K up/down);
+      - hidden.len() != hidden_dim, an out-of-range expert id and an
+        unsupported down qtype are refused, never computed.
+  test: |
+    cargo test -p aprender-serve --lib expert_swiglu_quantized
+    Asserts: 8 tests pass; each fails when its branch is deleted or
+    inverted (SiLU clamp / abs / removed, gate qtype read from up, hidden
+    check removed, expert id forced to 0).
+  if_fails: |
+    The per-expert FFN no longer computes down(SiLU(gate(x)) * up(x)).
+    Every MoE token's output is wrong while shape and finiteness checks
+    (QMF-INV-003/004) still pass - the silent-wrong-answer class.
+
 cross_repo_references:
 - repo: paiml/claude-code-parity-apr
   contract: claude-code-parity-apr-v1
