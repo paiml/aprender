@@ -178,7 +178,8 @@ fn the_legacy_ratchet_rejects_a_rise_and_passes_a_hold() {
 /// R-8: the gate is computed in every `pv lint` run, not only under `--gate`.
 #[test]
 fn the_full_run_computes_the_relations_gate() {
-    let dir = s(&repo_contracts());
+    // A small fixture corpus: the gate list does not depend on the corpus, and the repo tree costs ~27 s in a debug pv (#5446).
+    let dir = s(&fixture("relations-ok"));
     let r = pv(&["lint", &dir, "--format", "json"]);
     let v = json_of(&r);
     let names: Vec<String> = v["gates"]
