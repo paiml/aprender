@@ -12,6 +12,10 @@
 #   docs/, root *.md, ci/ (sections.yml, explicit-test-commands.d/, ...), Cargo.lock, root Cargo.toml,
 #   rust-toolchain.toml, .cargo/, .github/, Makefile, any other path outside a crate
 #                           ALL (tests read README.md, CLAUDE.md, ci/sections.yml and docs/ at run time)
+#   docs/findings/, .claude/, ci/shard-step-costs.tsv, ci/sections.yml
+#                           NO-READER list (#5809): the only run-time readers of these paths (grep of crates/**/*.rs: contracts-cli,
+#                           orchestrate, core, mcp, apr-cli; sections.yml: ci-tools, contracts, core, qa-runner, review-experiment) are all in READERS, so the set is READERS alone. Alone or
+#                           beside crate .rs files; any other path in the diff still decides ALL.
 # Any non-.rs file under crates/<pkg>/ (README.md, *.json, *.toml, ...) is ALL: other crates' tests read them
 # (aprender-core readme_contract.rs reads every crates/*/README.md; aprender-contracts reads aprender-serve/kernel-registry.json).
 # An empty diff, or a diff git cannot compute (bad base: exit 128), is ALL: nothing was
@@ -50,10 +54,11 @@ else meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null |
 root="${AFFECTED_ROOT:-$(git rev-parse --show-toplevel)}"
 dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta")" || { emit ALL; exit 0; }
 [ -n "$dirs" ] || { emit ALL; exit 0; }
-touched=""
+touched="" skipped=0
 while IFS= read -r f; do
   case "$f" in
     '') continue ;;
+    docs/findings/* | .claude/* | ci/shard-step-costs.tsv | ci/sections.yml) skipped=1; continue ;;
     crates/*/build.rs) emit ALL; exit 0 ;;
     crates/*.rs) ;;
     crates/*) emit ALL; exit 0 ;;
@@ -65,7 +70,7 @@ while IFS= read -r f; do
   touched="$touched"$'\n'"$pkg"
 done <<<"$files"
 touched="$(printf '%s\n' "$touched" | grep -v '^$' | sort -u || true)"
-[ -n "$touched" ] || { emit ALL; exit 0; }   # nothing placed in a package: nothing may be skipped
+[ -n "$touched" ] || [ "$skipped" = 1 ] || { emit ALL; exit 0; }   # nothing placed in a package and nothing on the no-reader list: nothing may be skipped
 # The closure, then aprender-core: its falsification_spec_v10 test scans every crate's src, so ANY non-ALL set includes it (and the READERS).
 res="$(jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" --arg rd "$READERS" '
   (.packages | map({name, deps: [.dependencies[].name]})) as $p

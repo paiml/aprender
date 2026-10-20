@@ -43,10 +43,18 @@ row "--diff-from with .. is refused (SEC010)" "2" "$($A --diff-from ../x >/dev/n
 row "Cargo.lock -> ALL" ALL "$(run Cargo.lock)"
 row "unknown path -> ALL" ALL "$(run some/unknown/path.txt)"
 row "unknown path next to a leaf -> ALL" ALL "$(run "$ld/src/lib.rs" scripts/whatever.sh)"
+row "docs/findings ledger alone -> READERS only, not ALL (#5809)" "$(printf '%s\n' $readers | sort -u)" "$(run docs/findings/s1.jsonl | sort -u)"
+row ".claude agent-memory alone -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run .claude/agent-memory/x/MEMORY.md | sort -u)"
+row "shard cost table alone -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run ci/shard-step-costs.tsv | sort -u)"
+row "no-reader path next to a leaf .rs -> leaf + READERS" "$lc" "$(run docs/findings/s1.jsonl "$ld/src/lib.rs" | sort -u)"
+row "no-reader path next to docs/x.md -> ALL" ALL "$(run docs/findings/s1.jsonl docs/x.md)"
+row "no-reader path next to a CORE crate -> ALL" ALL "$(run .claude/x docs/findings/s1.jsonl crates/aprender-core/src/lib.rs)"
+row "docs/findings lookalike (docs/findings-x.md) -> ALL" ALL "$(run docs/findings-x.md)"
 row "docs file -> ALL (tests read docs/ at run time)" ALL "$(run docs/x.md)"
 row "root README.md -> ALL" ALL "$(run README.md)"
 row "root CLAUDE.md -> ALL" ALL "$(run CLAUDE.md)"
-row "ci/sections.yml -> ALL" ALL "$(run ci/sections.yml)"
+row "ci/sections.yml alone -> READERS only (its readers ci-tools, contracts, core, qa-runner, review-experiment are all READERS) (#5809)" "$(printf '%s\n' $readers | sort -u)" "$(run ci/sections.yml | sort -u)"
+row "ci/sections.yml next to ci/explicit-test-commands.d -> ALL" ALL "$(run ci/sections.yml ci/explicit-test-commands.d/815-affected-set-rows.cmd)"
 row "ci/explicit-test-commands.d fragment -> ALL" ALL "$(run ci/explicit-test-commands.d/815-affected-set-rows.cmd)"
 row "a crate's own Cargo.toml -> ALL" ALL "$(run "$ld/Cargo.toml")"
 row "a .md inside a leaf crate -> ALL (aprender-core reads crates/*/README.md)" ALL "$(run "$ld/README.md")"
@@ -98,6 +106,10 @@ else printf '%s\n%s\n' docs/x.md "$ld/src/lib.rs" >"$t/dd"; row "MUTANT: skippin
 sed 's#^    crates/\*) emit ALL.*#    crates/*) continue ;;#' "$A" >"$t/mut-toml.sh"
 if cmp -s "$A" "$t/mut-toml.sh"; then echo "FAIL manifest mutant did not apply"; fail=1
 else printf '%s\n%s\n' "$ld/Cargo.toml" "$ld/src/lib.rs" >"$t/dt"; row "MUTANT: skipping non-.rs crate files is caught by the manifest row" "$lc" "$(bash "$t/mut-toml.sh" --diff-from "$t/dt" | sort -u || true)"; fi
+# mutant: a no-reader arm that also skips docs/* must be seen by the docs-next-to-no-reader row
+sed 's#^    docs\/findings\/\* #    docs/* | docs/findings/* #' "$A" >"$t/mut-nr.sh"
+if cmp -s "$A" "$t/mut-nr.sh"; then echo "FAIL no-reader mutant did not apply"; fail=1
+else printf '%s\n%s\n' docs/findings/s1.jsonl docs/x.md >"$t/dnr"; row "MUTANT: widening the no-reader list to docs/* is caught by the docs-next-to-no-reader row" "not-ALL" "$([ "$(bash "$t/mut-nr.sh" --diff-from "$t/dnr" | head -n1)" != ALL ] && echo not-ALL || echo ALL)"; fi
 # CORE crates: each must give ALL, and dropping each from CORE must be seen (its dependents alone are not the workspace)
 for c in aprender-compute aprender-contracts aprender-quant; do
   cd_=$(jq -r --arg p "$c" '.packages[]|select(.name==$p)|.manifest_path' <<<"$meta" | sed "s|$(git rev-parse --show-toplevel)/||; s|/Cargo.toml||")
