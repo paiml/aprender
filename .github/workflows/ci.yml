@@ -320,6 +320,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Pin origin/main to this run's build base (PMAT-5792)
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: bash scripts/ci/pin_build_base.sh
       - name: Install cargo-deny (if absent)
         env:
           CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-deny
@@ -333,11 +340,12 @@ jobs:
       - name: Advisories must pass, with deny.toml exemptions honoured
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          cargo deny check advisories
+          bash scripts/ci/advisory_gate.sh
       - name: Every deny.toml exemption must still be live
         env:
           GITHUB_TOKEN: ${{ github.token }}

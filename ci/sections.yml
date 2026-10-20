@@ -2019,7 +2019,7 @@ jobs:
       # `ci / security` from the reusable workflow runs `cargo audit`, which does
       # NOT read deny.toml -- so this covers licences, bans and sources, which
       # nothing else does.
-      - name: cargo-deny (licences, bans, sources, advisories)
+      - name: cargo-deny (licences, bans, sources)
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -2672,10 +2672,12 @@ jobs:
       - name: Advisories must pass, with deny.toml exemptions honoured
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
+          bash scripts/ci/advisory_diff.sh --self-test
           bash scripts/ci/advisory_gate.sh
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is

@@ -28,11 +28,15 @@ if [ "$EV" = merge_group ] && [ -n "${MG_BASE_SHA:-}" ] && [ "$BASE" != "$MG_BAS
 fi
 bash "$HERE/advisory_diff.sh" base-ref "$EV" "${MG_BASE_SHA:-}" "$BASE" >/dev/null || exit 75
 
-cargo deny fetch db || { echo "COULD-NOT-CHECK: advisory-db fetch failed" >&2; exit 75; }
-
 W="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-base-$$"
-trap 'git worktree remove --force "${W:?}" >/dev/null 2>&1 || true' EXIT
+trap 'git worktree remove --force "${W:?}" >/dev/null 2>&1 || true; rm -f "${W:?}"/../advgate-pr-$$.ndjson "${W:?}"/../advgate-base-$$.ndjson' EXIT
 git worktree add --detach "$W" "$BASE" >/dev/null 2>&1 || { echo "COULD-NOT-CHECK: no worktree for base $BASE (shallow fetch?)" >&2; exit 75; }
+
+# One DB for both scans: fetched with the BASE config (the db-path both scans read), HEAD logged.
+cargo deny fetch --config "$W/deny.toml" db || { echo "COULD-NOT-CHECK: advisory-db fetch failed" >&2; exit 75; }
+for d in "$HOME"/.cargo/advisory-dbs/*; do
+    [ -d "$d/.git" ] && echo "advisory-db $(basename "$d") HEAD $(git -C "$d" rev-parse --short HEAD 2>/dev/null) $(git -C "$d" log -1 --format=%cI 2>/dev/null)"
+done
 
 # The BASE script when it has one; the PR's copy only to bootstrap the merge that introduces the script.
 GATE="$W/scripts/ci/advisory_diff.sh"
