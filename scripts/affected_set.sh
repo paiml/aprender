@@ -45,7 +45,8 @@ emit() { # $@ = package names, or ALL
 if [ -n "${AFFECTED_META:-}" ]; then meta="$(cat "$AFFECTED_META")"
 else meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null || cargo metadata --no-deps --format-version 1)"; fi
 root="${AFFECTED_ROOT:-$(git rev-parse --show-toplevel)}"
-dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta")"
+dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta")" || { emit ALL; exit 0; }
+[ -n "$dirs" ] || { emit ALL; exit 0; }
 touched=""
 while IFS= read -r f; do
   case "$f" in
@@ -61,10 +62,13 @@ while IFS= read -r f; do
   touched="$touched"$'\n'"$pkg"
 done <<<"$files"
 touched="$(printf '%s\n' "$touched" | grep -v '^$' | sort -u || true)"
-[ -n "$touched" ] || exit 0
-mapfile -t out < <(jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" '
+[ -n "$touched" ] || { emit ALL; exit 0; }   # nothing placed in a package: nothing may be skipped
+# The closure, then aprender-core: its falsification_spec_v10 test scans every crate's src, so ANY non-ALL set includes it.
+res="$(jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" '
   (.packages | map({name, deps: [.dependencies[].name]})) as $p
   | def grow($s): ($s + [$p|.[] | select(any(.deps[]; . as $d | $s | index($d))) | .name] | unique);
     (.packages | map(.name)) as $m
-    | ($t | until(grow(.) == .; grow(.))) | .[] | select(. as $n | $m | index($n))' <<<"$meta")
+    | (($t | until(grow(.) == .; grow(.))) + ["aprender-core"] | unique) | .[] | select(. as $n | $m | index($n))' <<<"$meta")" || { emit ALL; exit 0; }
+[ -n "$res" ] || { emit ALL; exit 0; }
+mapfile -t out <<<"$res"
 emit "${out[@]}"

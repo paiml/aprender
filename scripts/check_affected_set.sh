@@ -27,9 +27,11 @@ for p in $members; do
 done
 [ -n "$withdep" ] && [ -n "$leaf" ] || { echo "FAIL could not find a leaf and a crate with dependents"; exit 1; }
 wp=${withdep%%:*}; wd=${withdep#*:}; lp=${leaf%%:*}; ld=${leaf#*:}
-want=$(cargo tree --offline -i "$wp" --workspace -e normal,dev,build --prefix none 2>/dev/null | sed 's/ v.*//' | sort -u)
-row "crate with dependents ($wp) -> itself + dependents" "$want" "$(run "$wd/src/lib.rs" | sort -u)"
-row "leaf crate ($lp) -> itself only" "$lp" "$(run "$ld/src/lib.rs")"
+# every non-ALL set also carries aprender-core (its falsification_spec_v10 test scans every crate's src)
+want=$( { cargo tree --offline -i "$wp" --workspace -e normal,dev,build --prefix none 2>/dev/null | sed 's/ v.*//'; echo aprender-core; } | sort -u)
+lc="$(printf '%s\n' "$lp" aprender-core | sort -u)"
+row "crate with dependents ($wp) -> itself + dependents + aprender-core" "$want" "$(run "$wd/src/lib.rs" | sort -u)"
+row "leaf crate ($lp) -> itself + aprender-core" "$lc" "$(run "$ld/src/lib.rs" | sort -u)"
 row "core crate -> ALL" ALL "$(run crates/aprender-core/src/lib.rs)"
 row "aprender-quant source -> ALL (aprender-serve capability.rs reads aprender-quant/src/ggml_type.rs)" ALL "$(run crates/aprender-quant/src/ggml_type.rs)"
 row "a crate's build.rs -> ALL (contracts build_helper.rs reads crates/*/build.rs)" ALL "$(run "$ld/build.rs")"
@@ -46,8 +48,8 @@ row "ci/explicit-test-commands.d fragment -> ALL" ALL "$(run ci/explicit-test-co
 row "a crate's own Cargo.toml -> ALL" ALL "$(run "$ld/Cargo.toml")"
 row "a .md inside a leaf crate -> ALL (aprender-core reads crates/*/README.md)" ALL "$(run "$ld/README.md")"
 row "a .json inside a leaf crate -> ALL (kernel-registry.json is read by aprender-contracts)" ALL "$(run "$ld/kernel-registry.json")"
-row "a .rs inside a leaf crate stays scoped" "$lp" "$(run "$ld/src/other.rs")"
-row "--filter names the package" "package($lp)" "$($A --filter --diff-from <(echo "$ld/src/lib.rs"))"
+row "a .rs inside a leaf crate stays scoped (itself + aprender-core)" "$lc" "$(run "$ld/src/other.rs" | sort -u)"
+row "--filter names the package and aprender-core" "$(printf 'package(%s)\n' $lc | paste -sd'|' | sed 's/|/ | /g')" "$($A --filter --diff-from <(echo "$ld/src/lib.rs"))"
 row "--filter ALL -> all()" "all()" "$($A --filter --diff-from <(echo Cargo.lock))"
 # empty diff and a bad base are ALL (nothing measured, nothing skipped)
 : >"$t/empty"
@@ -85,12 +87,49 @@ if cmp -s "$A" "$t/mut-rn.sh"; then echo "FAIL mutant did not apply"; fail=1
 else row "MUTANT: letting git detect renames is caught by the rename row" "c" "$(mv_run "$t/mut-rn.sh")"; fi
 sed '/^    crates\/\*\/build.rs)/d' "$A" >"$t/mut-build.sh"
 if cmp -s "$A" "$t/mut-build.sh"; then echo "FAIL build.rs mutant did not apply"; fail=1
-else printf '%s\n' "$ld/build.rs" >"$t/db"; row "MUTANT: dropping the build.rs arm is caught by the build.rs row" "$lp" "$(bash "$t/mut-build.sh" --diff-from "$t/db" | head -n1 || true)"; fi
+else printf '%s\n' "$ld/build.rs" >"$t/db"; row "MUTANT: dropping the build.rs arm is caught by the build.rs row" "$lc" "$(bash "$t/mut-build.sh" --diff-from "$t/db" | sort -u || true)"; fi
 # mutants: the skip list that used to exist (docs/*, *.md) must be caught by the ALL rows above.
 sed 's#^    crates/\*.rs) ;;#    docs/* | *.md) continue ;;\n    crates/*.rs) ;;#' "$A" >"$t/mut-docs.sh"
 if cmp -s "$A" "$t/mut-docs.sh"; then echo "FAIL docs-skip mutant did not apply"; fail=1
-else printf '%s\n' docs/x.md >"$t/dd"; row "MUTANT: skipping docs/*.md is caught by the docs-ALL row" "" "$(bash "$t/mut-docs.sh" --diff-from "$t/dd" | head -n1 || true)"; fi
+else printf '%s\n%s\n' docs/x.md "$ld/src/lib.rs" >"$t/dd"; row "MUTANT: skipping docs/*.md is caught by the docs-ALL row" "$lc" "$(bash "$t/mut-docs.sh" --diff-from "$t/dd" | sort -u || true)"; fi
 sed 's#^    crates/\*) emit ALL.*#    crates/*) continue ;;#' "$A" >"$t/mut-toml.sh"
 if cmp -s "$A" "$t/mut-toml.sh"; then echo "FAIL manifest mutant did not apply"; fail=1
-else printf '%s\n' "$ld/Cargo.toml" >"$t/dt"; row "MUTANT: skipping non-.rs crate files is caught by the manifest row" "" "$(bash "$t/mut-toml.sh" --diff-from "$t/dt" | head -n1 || true)"; fi
+else printf '%s\n%s\n' "$ld/Cargo.toml" "$ld/src/lib.rs" >"$t/dt"; row "MUTANT: skipping non-.rs crate files is caught by the manifest row" "$lc" "$(bash "$t/mut-toml.sh" --diff-from "$t/dt" | sort -u || true)"; fi
+# CORE crates: each must give ALL, and dropping each from CORE must be seen (its dependents alone are not the workspace)
+for c in aprender-compute aprender-contracts aprender-quant; do
+  cd_=$(jq -r --arg p "$c" '.packages[]|select(.name==$p)|.manifest_path' <<<"$meta" | sed "s|$(git rev-parse --show-toplevel)/||; s|/Cargo.toml||")
+  row "CORE crate $c -> ALL" ALL "$(run "$cd_/src/lib.rs")"
+  sed "s/ $c//" "$A" >"$t/mut-core.sh"
+  if cmp -s "$A" "$t/mut-core.sh"; then echo "FAIL core mutant ($c) did not apply"; fail=1
+  else printf '%s\n' "$cd_/src/lib.rs" >"$t/dcore"; row "MUTANT: dropping $c from CORE is caught" "not-ALL" "$([ "$(bash "$t/mut-core.sh" --diff-from "$t/dcore" | head -n1)" != ALL ] && echo not-ALL || echo ALL)"; fi
+done
+# a 2-hop chain (c -> b -> a) and the multi-package --filter format, on a synthetic graph
+cat >"$t/chain.json" <<'JSON'
+{"packages":[
+ {"name":"a","manifest_path":"/r/crates/a/Cargo.toml","dependencies":[]},
+ {"name":"b","manifest_path":"/r/crates/b/Cargo.toml","dependencies":[{"name":"a","kind":null}]},
+ {"name":"c","manifest_path":"/r/crates/c/Cargo.toml","dependencies":[{"name":"b","kind":null}]},
+ {"name":"aprender-core","manifest_path":"/r/crates/core/Cargo.toml","dependencies":[]}]}
+JSON
+chain() { AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none bash "$1" --diff-from <(echo crates/a/src/lib.rs) | sort -u; }
+row "2-hop chain a<-b<-c: touching a reaches b and c (+ aprender-core)" "a
+aprender-core
+b
+c" "$(chain "$A")"
+sed 's/until(grow(.) == .; grow(.))/grow(.)/' "$A" >"$t/mut-hop.sh"
+if cmp -s "$A" "$t/mut-hop.sh"; then echo "FAIL 1-hop mutant did not apply"; fail=1
+else row "MUTANT: a 1-hop closure is caught by the 2-hop row" "a
+aprender-core
+b" "$(chain "$t/mut-hop.sh")"; fi
+want_f="package(a) | package(aprender-core) | package(b) | package(c)"
+row "multi-package --filter is ' | ' joined" "$want_f" "$(AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none bash "$A" --filter --diff-from <(echo crates/a/src/lib.rs))"
+sed "s/ | sed 's\/|\/ | \/g'//" "$A" >"$t/mut-fmt.sh"
+if cmp -s "$A" "$t/mut-fmt.sh"; then echo "FAIL filter-format mutant did not apply"; fail=1
+else row "MUTANT: an unspaced multi-package filter is caught" "package(a)|package(aprender-core)|package(b)|package(c)" "$(AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none bash "$t/mut-fmt.sh" --filter --diff-from <(echo crates/a/src/lib.rs))"; fi
+# an unreadable cargo metadata is ALL, not an empty answer
+echo 'not json' >"$t/bad.json"
+row "unreadable metadata -> ALL" ALL "$(AFFECTED_META="$t/bad.json" bash "$A" --diff-from <(echo crates/a/src/lib.rs) 2>/dev/null)"
+sed 's/ || { emit ALL; exit 0; }$//' "$A" >"$t/mut-jq.sh"
+if cmp -s "$A" "$t/mut-jq.sh"; then echo "FAIL jq-failure mutant did not apply"; fail=1
+else row "MUTANT: dropping the jq-failure fallback is caught" "" "$(AFFECTED_META="$t/bad.json" bash "$t/mut-jq.sh" --diff-from <(echo crates/a/src/lib.rs) 2>/dev/null || true)"; fi
 exit "$fail"
