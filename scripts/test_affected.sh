@@ -9,16 +9,22 @@ meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null || car
 root="$(git rev-parse --show-toplevel)"
 files="$(git diff --name-only "$base...$head")"
 [ -n "$files" ] || exit 0
-if printf '%s\n' "$files" | grep -qE '^(Cargo\.(toml|lock)|rust-toolchain\.toml|\.cargo/|\.github/|ci/|Makefile$)'; then
+# Derived/data ci files and per-command fragments never widen to ALL; a fragment adds the crates it names with -p.
+wide="$(printf '%s\n' "$files" | grep -vE '^ci/(sections\.yml|shard-step-costs\.tsv|explicit-test-commands\.d/)' || true)"
+if printf '%s\n' "$wide" | grep -qE '^(Cargo\.(toml|lock)|rust-toolchain\.toml|\.cargo/|\.github/|ci/|Makefile$)'; then
   echo ALL
   exit 0
 fi
+frag="$(printf '%s\n' "$files" | grep '^ci/explicit-test-commands\.d/' | while read -r f; do
+  [ -f "$f" ] && { grep -oE -- '-p [A-Za-z0-9_-]+' "$f" | cut -d' ' -f2 || true; }
+done || true)"
 # package -> manifest dir (relative), and package -> workspace deps
 touched="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta" |
   while IFS=$'\t' read -r name dir; do
     [ -n "$dir" ] || continue
     printf '%s\n' "$files" | grep -q "^${dir}/" && echo "$name"
   done || true)"
+touched="$(printf '%s\n%s\n' "$touched" "$frag" | grep . | sort -u || true)"
 [ -n "$touched" ] || exit 0
 jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" '
   (.packages | map({name, deps: [.dependencies[].name]})) as $p
