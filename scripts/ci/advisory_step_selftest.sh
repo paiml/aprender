@@ -44,7 +44,7 @@ run_step() { # SCRIPTFILE REPO -> step exit status
 # $1: gate rc, $2: first self-test rc -- set in the BASE copy (what the step actually runs) and in the tree
 case_() { # name want gate_rc selftest_rc script
     local name=$1 want=$2 got r
-    r="$d/repo-$RANDOM"
+    r=$(mktemp -d "$d/repo-XXXXXX")
     make_repo "$r"
     printf '%s' "$3" >"$r/scripts/ci/advisory_gate.rc"
     printf '%s' "$4" >"$r/scripts/ci/advisory_diff.rc"
