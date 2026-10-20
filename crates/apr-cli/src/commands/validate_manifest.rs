@@ -265,7 +265,7 @@ fn check_url_head_live(top: &Mapping) -> FalsifyResult {
 
     let resp = match ureq::head(&url).call() {
         Ok(r) => r,
-        Err(ureq::Error::Status(code, _)) => {
+        Err(ureq::Error::StatusCode(code)) => {
             return FalsifyResult {
                 id: "FALSIFY-PM-003",
                 verdict: "FAIL",
@@ -280,7 +280,7 @@ fn check_url_head_live(top: &Mapping) -> FalsifyResult {
             };
         }
     };
-    let status = resp.status();
+    let status = resp.status().as_u16();
     if status != 200 {
         return FalsifyResult {
             id: "FALSIFY-PM-003",
@@ -289,7 +289,9 @@ fn check_url_head_live(top: &Mapping) -> FalsifyResult {
         };
     }
     let got_cl = resp
-        .header("content-length")
+        .headers()
+        .get("content-length")
+        .and_then(|s| s.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok());
     match (declared_size, got_cl) {
         (Some(exp), Some(got)) if got == exp => FalsifyResult {
@@ -337,7 +339,7 @@ fn check_sha256_live(top: &Mapping) -> FalsifyResult {
 
     let resp = match ureq::get(&url).call() {
         Ok(r) => r,
-        Err(ureq::Error::Status(code, _)) => {
+        Err(ureq::Error::StatusCode(code)) => {
             return FalsifyResult {
                 id: "FALSIFY-PM-002-live",
                 verdict: "FAIL",
@@ -352,7 +354,7 @@ fn check_sha256_live(top: &Mapping) -> FalsifyResult {
             };
         }
     };
-    let mut reader = resp.into_reader();
+    let mut reader = resp.into_body().into_reader();
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 1 << 20];
     let mut total: u64 = 0;
