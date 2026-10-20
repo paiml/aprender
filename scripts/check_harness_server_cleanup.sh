@@ -30,8 +30,10 @@ mutant() {
 # gone <pid>: wait up to 20 s for it to exit; prints gone|leaked and reaps a leak
 # descendants <pid>: every live descendant, so a row never picks another session's server
 descendants() { local c; for c in $(pgrep -P "$1" 2> /dev/null); do echo "$c"; descendants "$c"; done; }
+# cmdl <pid>: the cmdline with NULs as spaces (read into a variable, so no pipe feeds a grep -q)
+cmdl() { { tr "\0" " " < "/proc/$1/cmdline"; } 2> /dev/null; }
 # reap <pids>: KILL what is left of a row's own fixture servers (checked by cmdline, so a recycled pid is spared)
-reap() { local p; for p in "$@"; do tr "\0" " " < "/proc/$p/cmdline" 2> /dev/null | grep -aqE "stub_server.py|crux_fake_serve|^sleep 300" && kill -KILL "$p" 2> /dev/null; done; return 0; }
+reap() { local p c; for p in "$@"; do c=$(cmdl "$p"); grep -aqE "stub_server.py|crux_fake_serve|^sleep 300" <<< "$c" && kill -KILL "$p" 2> /dev/null; done; return 0; }
 gone() { local i; for i in $(seq 1 100); do kill -0 "$1" 2> /dev/null || { echo gone; return; }; sleep 0.2; done; kill -KILL "$1" 2> /dev/null; echo leaked; }
 verdict() { # <label> <state> <want>
   if [ "$2" = "$3" ]; then ok "$1 (server $2)"; else broke "$1: server $2, wanted $3"; fi
@@ -73,11 +75,11 @@ real_row() {
   bash "$script" > "$T/out.log" 2>&1 < /dev/null &
   h=$!
   s=""
-  for i in $(seq 1 600); do s=$(descendants "$h" | while read -r d; do tr "\0" " " < "/proc/$d/cmdline" 2> /dev/null | grep -aq -- "$pat" && echo "$d"; done | head -1); [ -n "$s" ] && break; kill -0 "$h" 2> /dev/null || break; sleep 0.1; done
+  for i in $(seq 1 600); do s=$(for d in $(descendants "$h"); do grep -aq -- "$pat" <<< "$(cmdl "$d")" && echo "$d"; done | head -1); [ -n "$s" ] && break; kill -0 "$h" 2> /dev/null || break; sleep 0.1; done
   kids=$(descendants "$h")
   [ -n "$s" ] || { broke "$label: harness never started a server matching '$pat'"; kill -KILL "$h" 2> /dev/null; return; }
   # a cancelled job also takes the dogfood child (which would otherwise end its own server): kill it and its timeout
-  for d in $(descendants "$h"); do tr "\0" " " < "/proc/$d/cmdline" 2> /dev/null | grep -aqE "crux_inference_dogfood|^timeout " && kill -KILL "$d" 2> /dev/null; done
+  for d in $(descendants "$h"); do grep -aqE "crux_inference_dogfood|^timeout " <<< "$(cmdl "$d")" && kill -KILL "$d" 2> /dev/null; done
   kill -KILL "$h"; wait "$h" 2> /dev/null
   st=$(gone "$s"); reap $kids
   verdict "$label" "$st" "$want"
