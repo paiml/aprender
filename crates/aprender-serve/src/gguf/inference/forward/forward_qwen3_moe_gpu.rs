@@ -254,6 +254,11 @@ mod tests {
             msg.contains("moe_layers.len() = 0") && msg.contains("1 decoder layers"),
             "{msg}"
         );
+        // The layer check runs before the config checks: with bad dims too, it still wins.
+        for (e, k, i) in [(0, 2, 16), (4, 5, 16)] {
+            let msg = invalid_shape(m.forward_qwen3_moe_gpu(&[1], &[], e, k, i, &[]));
+            assert!(msg.contains("moe_layers.len() = 0"), "({e},{k},{i}): {msg}");
+        }
         let two = [moe_layer(), moe_layer()];
         let msg = invalid_shape(m.forward_qwen3_moe_gpu(&[1], &two, 8, 2, 16, &[]));
         assert!(msg.contains("moe_layers.len() = 2"), "{msg}");
