@@ -94,7 +94,7 @@ clap = { version = "4", features = ["derive"], optional = true }
 presentar-terminal = { workspace = true, optional = true }
 
 # Lambda runtime (lightweight HTTP client)
-ureq = { version = "2", features = ["json"], optional = true }
+ureq = { version = "3.4", features = ["json"], optional = true }
 
 # TUI monitoring (PARITY-107) — presentar-terminal
 crossterm = { version = "0.28", optional = true }

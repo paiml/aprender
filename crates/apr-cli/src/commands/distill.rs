@@ -2263,7 +2263,7 @@ fn wait_for_server_health(server: &mut std::process::Child, json_output: bool) -
             )));
         }
         match ureq::get(health_url).call() {
-            Ok(resp) if resp.status() == 200 => {
+            Ok(resp) if resp.status().as_u16() == 200 => {
                 if !json_output {
                     output::pipeline_stage("Starting teacher server", output::StageStatus::Done);
                     output::kv("  Ready after", format!("{}s", attempt + 1));
@@ -2378,12 +2378,12 @@ fn send_generate_request(
     request_body: &str,
     prompt_index: usize,
     json_output: bool,
-) -> (Option<ureq::Response>, bool) {
+) -> (Option<ureq::http::Response<ureq::Body>>, bool) {
     let mut skipped = false;
     for retry in 0..3 {
         match ureq::post(url)
-            .set("Content-Type", "application/json")
-            .send_string(request_body)
+            .header("Content-Type", "application/json")
+            .send(request_body)
         {
             Ok(r) => return (Some(r), false),
             Err(e) if retry < 2 => {
@@ -2460,9 +2460,10 @@ fn format_generate_result(
 }
 
 /// Read a `/generate` response into `(num_generated, text)`.
-fn parse_generate_response(resp: ureq::Response) -> Result<(u64, String)> {
+fn parse_generate_response(mut resp: ureq::http::Response<ureq::Body>) -> Result<(u64, String)> {
     let body = resp
-        .into_string()
+        .body_mut()
+        .read_to_string()
         .map_err(|e| CliError::NetworkError(format!("Failed to read response body: {e}")))?;
     let gen_result: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| CliError::NetworkError(format!("Invalid generate response: {e}")))?;

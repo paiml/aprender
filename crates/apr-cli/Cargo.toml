@@ -215,7 +215,7 @@ parquet = { version = "59", default-features = false, features = ["arrow", "snap
 arrow-array = "59"
 
 # HTTP client for downloads
-ureq = "2.10"
+ureq = { version = "3.4", features = ["json"] }
 
 # Checksum integrity (GH-213: shard manifest checksums)
 blake3 = "1"
