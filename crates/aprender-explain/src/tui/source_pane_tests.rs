@@ -25,6 +25,10 @@ fn rendered(app: &TuiApp, width: u16, height: u16) -> CellBuffer {
     buf
 }
 
+fn cell(buf: &CellBuffer, x: u16, y: u16) -> String {
+    buf.get(x, y).expect("cell").symbol.to_string()
+}
+
 fn row(buf: &CellBuffer, y: u16) -> String {
     (0..W)
         .map(|x| buf.get(x, y).expect("cell").symbol.to_string())
@@ -47,8 +51,9 @@ fn title_carries_the_report_name_and_corners() {
 #[test]
 fn rows_show_one_based_line_numbers_and_text_between_borders() {
     let buf = rendered(&app_with("a\nb\nc", 0), 20, 5);
-    // the scrollbar thumb (position 0) sits in the column left of the right border
-    assert_eq!(row(&buf, 1), "│   1 a           █│");
+    let r1 = row(&buf, 1);
+    assert!(r1.starts_with("│   1 a"), "{r1}");
+    assert_eq!(cell(&buf, 19, 1), "│", "right border");
     assert!(row(&buf, 2).starts_with("│   2 b"), "{}", row(&buf, 2));
     assert!(row(&buf, 3).starts_with("│   3 c"), "{}", row(&buf, 3));
 }
@@ -68,7 +73,7 @@ fn rows_past_the_end_keep_borders_but_have_no_line_number() {
     let r = row(&buf, 2);
     assert!(r.starts_with('│'), "{r}");
     assert!(!r.chars().any(|c| c.is_ascii_digit()), "{r}");
-    assert!(row(&buf, 2).ends_with('│'), "{r}");
+    assert_eq!(cell(&buf, 19, 2), "│", "right border");
 }
 
 #[test]
@@ -76,9 +81,11 @@ fn long_lines_are_truncated_to_the_inner_width() {
     // width 20 -> inner 18 -> text budget 18 - 6 = 12 chars
     let buf = rendered(&app_with("ABCDEFGHIJKLMNOPQRST", 0), 20, 4);
     let r = row(&buf, 1);
-    assert!(r.contains("ABCDEFGHIJKL"), "{r}");
-    assert!(!r.contains("ABCDEFGHIJKLM"), "{r}");
-    assert!(r.ends_with('│'), "{r}");
+    // text occupies cols 6..=17; col 18 is the scrollbar, col 19 the border
+    assert_eq!(cell(&buf, 6, 1), "A");
+    assert_eq!(cell(&buf, 17, 1), "L");
+    assert_eq!(cell(&buf, 19, 1), "│");
+    assert!((20..W).all(|x| cell(&buf, x, 1) == " "), "{r}");
 }
 
 #[test]
@@ -89,7 +96,12 @@ fn offset_origin_moves_the_whole_pane() {
         let mut canvas = DirectTerminalCanvas::new(&mut buf);
         render_source_pane(&mut canvas, &app, 2.0, 3.0, 20, 4);
     }
-    assert_eq!(buf.get(2, 3).expect("cell").symbol.to_string(), "┌");
-    assert_eq!(buf.get(2, 6).expect("cell").symbol.to_string(), "└");
-    assert_eq!(buf.get(0, 3).expect("cell").symbol.to_string(), " ");
+    assert_eq!(cell(&buf, 2, 3), "┌");
+    assert_eq!(cell(&buf, 2, 6), "└");
+    assert_eq!(cell(&buf, 0, 3), " ");
+    // content row 4: left border at x, number at x+1, text at x+6, right border at x+width-1
+    assert_eq!(cell(&buf, 2, 4), "│");
+    assert_eq!(cell(&buf, 6, 4), "1");
+    assert_eq!(cell(&buf, 8, 4), "a");
+    assert_eq!(cell(&buf, 21, 4), "│");
 }
