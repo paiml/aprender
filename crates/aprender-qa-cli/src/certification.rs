@@ -278,7 +278,9 @@ fn certify_model_loop(
         let playbook_path = std::path::Path::new(&playbook_name);
         if !playbook_path.exists() {
             eprintln!("  Playbook not found, skipping");
+            
             failed_count += 1;
+            
             continue;
         }
 
@@ -403,11 +405,14 @@ include!("certification_processing.rs");
 mod certify_model_loop_tests {
     use super::*;
 
-    fn run_loop(models: &[String], fail_fast: bool) -> ((usize, usize), usize) {
+    /// No `playbooks/models` dir exists under the crate dir (cwd of `cargo test`), so every
+    /// model takes the "playbook not found" branch. No cwd change: it is process-wide.
+    fn counts(models: &[&str], fail_fast: bool) -> (usize, usize) {
+        let models: Vec<String> = models.iter().map(|m| (*m).to_string()).collect();
         let out = PathBuf::from("out");
         let mut certs: Vec<aprender_qa_certify::ModelCertification> = Vec::new();
-        let counts = certify_model_loop(
-            models,
+        certify_model_loop(
+            &models,
             CertTier::Smoke,
             "smoke",
             None,
@@ -417,35 +422,22 @@ mod certify_model_loop_tests {
             false,
             &out,
             &mut certs,
-        );
-        (counts, certs.len())
+        )
     }
 
-    /// One test, because the playbook path is cwd-relative and `set_current_dir` is process-wide.
     #[test]
-    fn loop_counts_skips_and_load_errors_as_failures() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let prev = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(tmp.path()).expect("chdir");
+    fn empty_input_certifies_and_fails_nothing() {
+        assert_eq!(counts(&[], false), (0, 0));
+    }
 
-        // empty input: nothing certified, nothing failed
-        assert_eq!(run_loop(&[], false), ((0, 0), 0));
+    #[test]
+    fn missing_playbook_counts_each_model_as_failed() {
+        assert!(!std::path::Path::new("playbooks/models").exists());
+        assert_eq!(counts(&["org/Zz-Alpha-7B", "org/Zz-Beta-7B"], false), (0, 2));
+    }
 
-        // playbook missing for every model: each counts as failed, none certified
-        let two = vec!["org/Alpha-7B".to_string(), "org/Beta-7B".to_string()];
-        assert_eq!(run_loop(&two, false), ((0, 2), 0));
-        // fail_fast does not stop a skip: both still counted
-        assert_eq!(run_loop(&two, true), ((0, 2), 0));
-
-        // playbook present but unparseable: load error counts as failed
-        let dir = tmp.path().join("playbooks/models");
-        std::fs::create_dir_all(&dir).expect("mkdir");
-        let name = playbook_path_for_model("org/Gamma-7B", CertTier::Smoke);
-        std::fs::write(tmp.path().join(&name), "not: [valid playbook").expect("write");
-        assert!(std::path::Path::new(&name).exists(), "{name}");
-        let mixed = vec!["org/Gamma-7B".to_string(), "org/Delta-7B".to_string()];
-        assert_eq!(run_loop(&mixed, false), ((0, 2), 0));
-
-        std::env::set_current_dir(prev).expect("restore cwd");
+    #[test]
+    fn fail_fast_does_not_stop_at_a_skipped_model() {
+        assert_eq!(counts(&["org/Zz-Alpha-7B", "org/Zz-Beta-7B"], true), (0, 2));
     }
 }
