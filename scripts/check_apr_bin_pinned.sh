@@ -600,11 +600,11 @@ if [ "${1:-}" = "--self-test" ]; then
     for c in "${must_not_match_pathres_pv[@]}"; do probe_case_pv "$PATHRES_PV" "$c" nomatch pathres-pv; done
 
     # #5776: ~/.cargo/bin/pv (0.71.4) regenerated shapes.ttl in the old form. Hardcoded path / bare fallback.
-    must_match_abs_pv=( 'PV=~/.cargo/bin/pv; "$PV" extract c' 'cd x;~/.cargo/bin/pv extract c' '~/.cargo/bin/pv|tee f' '$CARGO_HOME/bin/pv extract x' '"${CARGO_HOME}/bin/pv" x' '$(CARGO_HOME)/bin/pv x' '~/.cargo/bin/pv extract contracts' '"$HOME/.cargo/bin/pv" extract contracts'
+    must_match_abs_pv=( 'PV=~/.cargo/bin/pv; "$PV" extract c' 'cd x;~/.cargo/bin/pv extract c' '~/.cargo/bin/pv|tee f' '$CARGO_HOME/bin/pv extract x' '"${CARGO_HOME}/bin/pv" x' '$(CARGO_HOME)/bin/pv x' '~/.cargo/bin/pv extract contracts' '"$HOME/.cargo/bin/pv" extract contracts' '$$HOME/.cargo/bin/pv x' '"$${HOME}/.cargo/bin/pv" x' '$$(HOME)/.cargo/bin/pv x'
         '/usr/local/bin/pv extract contracts' 'PV="${PV:-/home/noah/.cargo/bin/pv}"' $'\t@~/.cargo/bin/pv lint x' )
     must_not_match_abs_pv=( 'chmod +x "$rc_ch/bin/pv"' 'cat > "$TMP/bin/pv" <<EOF' 'strip "/workspace/target/$T/release/pv"' '"$PV" extract contracts' 'cargo build --bin pv' 'target/release/pv extract x'
         '. scripts/pv_bin.sh || exit 1' 'cp pv /tmp/pv-copy' 'ls crates/aprender-contracts-cli/src/bin/pv' )
-    must_match_default_pv=( 'PV ?= pv' 'PV := pv' 'PV = pv' '@PV=pv ./x' '"${PV-pv}" x' 'PV=pv' 'PV="pv"' 'export PV=pv' 'PV_BIN=pv' 'PV=${PV:-pv}' ': "${PV:=pv}"' '"${PV:-pv}" extract contracts' 'PV="${PV:-"pv"}"' "PV=\${PV:-'pv'}" 'CONTRACTS_PV=pv' 'pv_bin=pv' 'FLEET_PV_BIN=pv' 'PV_CMD=pv' 'PV_EXE=pv' 'echo "PV=pv" >> "$GITHUB_ENV"' 'PV_PATH=pv' '"${PV_EXE:-pv}" x' '"${PV_PATH:-pv}" x' '"${CONTRACTS_PV:-pv}" x' '"${PV_CMD:-pv}" x' '"${pv_bin:-pv}" x' '"${FLEET_PV_BIN:-pv}" x' )
+    must_match_default_pv=( 'PV ?= pv' 'PV := pv' 'PV = pv' '@PV=pv ./x' '"${PV-pv}" x' 'PV=pv' 'PV="pv"' 'export PV=pv' 'PV_BIN=pv' 'PV=${PV:-pv}' ': "${PV:=pv}"' '"${PV:-pv}" extract contracts' 'PV="${PV:-"pv"}"' "PV=\${PV:-'pv'}" 'CONTRACTS_PV=pv' 'pv_bin=pv' 'FLEET_PV_BIN=pv' 'PV_CMD=pv' 'PV_EXE=pv' 'echo "PV=pv" >> "$GITHUB_ENV"' 'PV_PATH=pv' '"${PV_EXE:-pv}" x' '"${PV_PATH:-pv}" x' '"${CONTRACTS_PV:-pv}" x' '"${PV_CMD:-pv}" x' '"${pv_bin:-pv}" x' '"${FLEET_PV_BIN:-pv}" x' "PV='pv'" "PV='pv' x" '"${PV_BIN:-pv}" x' '"${PVBIN:-pv}" x' 'PVBIN=pv' '"${pvbin:-pv}" x' 'pvbin=pv' '"${CONTRACTS_GATE_PV:-pv}" x' 'CONTRACTS_GATE_PV=pv' "printf 'PV=pv' x" )
     must_not_match_default_pv=( 'SKIP_PV=pv' 'PV="$ROOT/target/debug/pv"' 'PV=$(resolve_pv)' 'PVC=pvc' 'GPV=pvx' 'echo "set PV to a path"'
         'CONTRACTS_GATE_PV=${CONTRACTS_GATE_PV:-}' )
     for c in "${must_match_abs_pv[@]}";        do probe_case_raw "$ABS_PV" "$c" match abs-pv; done
