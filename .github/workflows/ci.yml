@@ -436,8 +436,8 @@ jobs:
   # missing from its fat job's results (the job died before writing them) is a
   # failure, never a pass.
   # ==========================================================================
-  # The workspace tests, one shard per job (nextest hash partition N/12 plus the
-  # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
+  # The workspace tests, one shard per job (nextest hash partition N/5 plus the
+  # explicit runner's round-robin N/5), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
@@ -446,8 +446,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        shards: [12]
+        shard: [1, 2, 3, 4, 5]
+        shards: [5]
     outputs:
       results: ${{ steps.run.outputs.results }}
     env:
