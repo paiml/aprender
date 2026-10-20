@@ -317,6 +317,67 @@ mod cdp {
         }
     }
 
+    /// Build a `CoverageReport` from the JSON the coverage snapshot script returns;
+    /// missing or mistyped fields fall back to empty / zero.
+    pub(super) fn coverage_report_from_json(result: &serde_json::Value) -> CoverageReport {
+        let mut report = CoverageReport::new();
+        report.timestamp_ms = result["timestamp_ms"].as_u64().unwrap_or(0);
+
+        if let Some(scripts) = result["scripts"].as_array() {
+            for script in scripts {
+                let mut script_cov = ScriptCoverage {
+                    script_id: script["script_id"].as_str().unwrap_or("").to_string(),
+                    url: script["url"].as_str().unwrap_or("").to_string(),
+                    functions: vec![],
+                };
+
+                if let Some(functions) = script["functions"].as_array() {
+                    for func in functions {
+                        let mut func_cov = FunctionCoverage {
+                            function_name: func["function_name"].as_str().unwrap_or("").to_string(),
+                            ranges: vec![],
+                            is_block_coverage: func["is_block_coverage"].as_bool().unwrap_or(false),
+                        };
+
+                        if let Some(ranges) = func["ranges"].as_array() {
+                            for range in ranges {
+                                func_cov.ranges.push(CoverageRange {
+                                    start_offset: range["start_offset"].as_u64().unwrap_or(0)
+                                        as u32,
+                                    end_offset: range["end_offset"].as_u64().unwrap_or(0) as u32,
+                                    count: range["count"].as_u64().unwrap_or(0) as u32,
+                                });
+                            }
+                        }
+
+                        script_cov.functions.push(func_cov);
+                    }
+                }
+
+                report.add_script(script_cov);
+            }
+        }
+        report
+    }
+
+    /// Number of `TouchMove` events a swipe is split into.
+    pub(super) const SWIPE_STEPS: u8 = 10;
+
+    /// Delay between swipe move events: the duration split evenly over the steps.
+    pub(super) fn swipe_step_delay_ms(duration_ms: u32) -> u32 {
+        duration_ms / u32::from(SWIPE_STEPS)
+    }
+
+    /// Position of the `i`th (1-based) swipe move event: linear from `start` to `end`,
+    /// reaching `end` exactly at `i == SWIPE_STEPS`.
+    pub(super) fn swipe_point(start: (f32, f32), end: (f32, f32), i: u8) -> (f32, f32) {
+        let progress = f32::from(i) / f32::from(SWIPE_STEPS);
+        (
+            start.0 + (end.0 - start.0) * progress,
+            start.1 + (end.1 - start.1) * progress,
+        )
+    }
+
     /// A browser page with real CDP connection
     #[derive(Debug)]
     pub struct Page {
@@ -480,8 +541,7 @@ mod cdp {
                         duration_ms,
                     } => {
                         // Simulate swipe with multiple move events
-                        let steps = 10;
-                        let step_delay = duration_ms / steps;
+                        let step_delay = swipe_step_delay_ms(duration_ms);
 
                         // Touch start
                         let start_params = DispatchTouchEventParams::builder()
@@ -505,10 +565,8 @@ mod cdp {
                             })?;
 
                         // Move events
-                        for i in 1..=steps {
-                            let progress = f32::from(i as u8) / f32::from(steps as u8);
-                            let x = touch.x + (end_x - touch.x) * progress;
-                            let y = touch.y + (end_y - touch.y) * progress;
+                        for i in 1..=SWIPE_STEPS {
+                            let (x, y) = swipe_point((touch.x, touch.y), (end_x, end_y), i);
 
                             let move_params = DispatchTouchEventParams::builder()
                                 .r#type(DispatchTouchEventType::TouchMove)
@@ -1160,53 +1218,7 @@ mod cdp {
                         message: format!("Failed to parse coverage result: {e}"),
                     })?;
 
-                let mut report = CoverageReport::new();
-                report.timestamp_ms = result["timestamp_ms"].as_u64().unwrap_or(0);
-
-                if let Some(scripts) = result["scripts"].as_array() {
-                    for script in scripts {
-                        let mut script_cov = ScriptCoverage {
-                            script_id: script["script_id"].as_str().unwrap_or("").to_string(),
-                            url: script["url"].as_str().unwrap_or("").to_string(),
-                            functions: vec![],
-                        };
-
-                        if let Some(functions) = script["functions"].as_array() {
-                            for func in functions {
-                                let mut func_cov = FunctionCoverage {
-                                    function_name: func["function_name"]
-                                        .as_str()
-                                        .unwrap_or("")
-                                        .to_string(),
-                                    ranges: vec![],
-                                    is_block_coverage: func["is_block_coverage"]
-                                        .as_bool()
-                                        .unwrap_or(false),
-                                };
-
-                                if let Some(ranges) = func["ranges"].as_array() {
-                                    for range in ranges {
-                                        func_cov.ranges.push(CoverageRange {
-                                            start_offset: range["start_offset"]
-                                                .as_u64()
-                                                .unwrap_or(0)
-                                                as u32,
-                                            end_offset: range["end_offset"].as_u64().unwrap_or(0)
-                                                as u32,
-                                            count: range["count"].as_u64().unwrap_or(0) as u32,
-                                        });
-                                    }
-                                }
-
-                                script_cov.functions.push(func_cov);
-                            }
-                        }
-
-                        report.add_script(script_cov);
-                    }
-                }
-
-                return Ok(report);
+                return Ok(coverage_report_from_json(&result));
             }
 
             Ok(CoverageReport::new())
@@ -5094,6 +5106,54 @@ mod tests {
             // Timestamp should be between before and after
             assert!(report.timestamp_ms >= before);
             assert!(report.timestamp_ms <= after);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "browser"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod cdp_touch_tests {
+    use super::cdp::{swipe_point, swipe_step_delay_ms, Page, SWIPE_STEPS};
+    use crate::{Touch, TouchAction};
+
+    #[test]
+    fn swipe_splits_duration_evenly_over_the_steps() {
+        assert_eq!(swipe_step_delay_ms(1000), 100);
+        assert_eq!(swipe_step_delay_ms(0), 0);
+        assert_eq!(swipe_step_delay_ms(9), 0, "integer division truncates");
+    }
+
+    #[test]
+    fn swipe_points_are_linear_and_land_exactly_on_the_end() {
+        let (start, end) = ((10.0, 100.0), (110.0, 0.0));
+        assert_eq!(swipe_point(start, end, 1), (20.0, 90.0));
+        assert_eq!(swipe_point(start, end, 5), (60.0, 50.0));
+        assert_eq!(swipe_point(start, end, SWIPE_STEPS), end);
+    }
+
+    #[test]
+    fn swipe_point_handles_a_degenerate_zero_length_swipe() {
+        assert_eq!(swipe_point((7.0, 7.0), (7.0, 7.0), 3), (7.0, 7.0));
+    }
+
+    #[tokio::test]
+    async fn touch_on_a_page_without_a_cdp_session_is_a_no_op_ok() {
+        let page = Page::new(800, 600);
+        for action in [
+            TouchAction::Tap,
+            TouchAction::Swipe {
+                end_x: 5.0,
+                end_y: 5.0,
+                duration_ms: 0,
+            },
+            TouchAction::Hold { duration_ms: 0 },
+        ] {
+            let touch = Touch {
+                x: 1.0,
+                y: 2.0,
+                action,
+            };
+            assert!(page.touch(touch).await.is_ok(), "{action:?}");
         }
     }
 }
