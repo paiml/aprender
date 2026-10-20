@@ -99,6 +99,7 @@ aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	coverage_enforcement_report
+aprender-contracts-cli	--test	coverage_report_render
 aprender-contracts-cli	--test	ev11_lint_ratchets
 aprender-contracts-cli	--test	ground_truth
 aprender-contracts-cli	--test	lint_run_5688
