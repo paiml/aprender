@@ -1079,9 +1079,9 @@ mod tests {
         }
         let n = 78; // 2 NT chunks + one 8-wide + 6 scalar
         let (a, b) = add_nt_inputs(n);
-        let mut buf = vec![-777.0f32; n + 16];
-        let off = aligned_start(&buf);
-        // SAFETY: as above.
+        let mut buf = vec![-777.0f32; n + 24];
+        let off = 8 + aligned_start(&buf[8..]); // >= 8 leading sentinels, still 32-byte aligned
+                                                // SAFETY: as above.
         unsafe { add_avx2_nt(&a, &b, &mut buf[off..off + n]) };
         assert!(buf[..off].iter().all(|&v| v == -777.0), "wrote before output");
         assert!(buf[off + n..].iter().all(|&v| v == -777.0), "wrote past output");
