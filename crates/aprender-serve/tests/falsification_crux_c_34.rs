@@ -168,8 +168,9 @@ async fn falsify_crux_c_34_003_uptime_monotonic() {
     );
     // #5783: the upper bound is the wall clock measured around the two reads, not a fixed
     // 5.0 s, so host load (the reads can be seconds apart) cannot fail it. A constant or reset
-    // clock fails the lower bound and one running >=3x real time fails this bound (a ~2x clock
-    // still passes: the window is [0.01, wall + 0.05], with the sleep inside it).
+    // clock fails the lower bound. A clock running at rate r fails this bound only when
+    // r * gap > wall_s + 0.05 (gap = real time between the two server samples), i.e. when
+    // r > (wall_s + 0.05) / gap; setup or parse time outside the gap widens the window.
     let delta = u2 - u1;
     assert!(
         (0.01..=wall_s + 0.05).contains(&delta),
