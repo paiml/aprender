@@ -138,8 +138,7 @@ impl HotReloadMessage {
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_millis() as u64);
 
         let diff_summary = match (&event, size_before, size_after) {
             (FileChangeEvent::Created, _, Some(after)) => format!("+{}", format_bytes(after)),
@@ -765,7 +764,7 @@ impl FileWatcher {
     ///
     /// Calls `on_change` with the path of each changed file.
     /// This function blocks until the watcher is stopped.
-    pub async fn watch<F>(&self, mut on_change: F) -> Result<(), notify::Error>
+    pub fn watch<F>(&self, mut on_change: F) -> Result<(), notify::Error>
     where
         F: FnMut(String) + Send + 'static,
     {
