@@ -43,6 +43,9 @@ equations:
     invariants:
       - "The scanner of record sees the whole Cargo.lock (all features), proven on the 48.0.6 lock as the positive control"
       - "Exemptions live in one file"
+      - "Findings are keyed code|advisory-id|crate@version over every graph, so a new crate under an id main already carries, and a yanked crate with no id, are both PR-introduced"
+      - "Both sides are scanned with the BASE deny.toml; a PR that adds an advisories ignore id fails (ignores-added), so a PR cannot hide its own finding"
+      - "The base is pinned: merge_group uses merge_group.base_sha, pull_request uses pull_request.base.sha, anything else (or a non-sha) is COULD-NOT-CHECK rc 75, never a pass"
   auto_rearm:
     formula: "when a gate fix lands, every PR that was ready (green, approved) before the stop is re-armed without a human"
     domain: "PRs with auto-merge armed or ready at the time of the stop"
@@ -89,7 +92,7 @@ falsification_tests:
     prediction: "with lock_main = 48.0.7 and lock_PR = 48.0.6, the verdict is fail naming 0378 and 0379"
     test: "same case table: lock_PR adds the vulnerable version"
     if_fails: "the gate cannot turn RED on a real regression (a gate that cannot fail)"
-    mutation: "make the delta symmetric difference's right side empty; the case must turn RED"
+    mutation: "in scripts/ci/advisory_diff.sh verdict() subtract the PR keys from themselves instead of main keys (comm -23 PR PR); self-test cases PR adds a new id, PR adds a crate under an id main has, and PR adds a yanked crate must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-003
     rule: "Scanner of record sees the optional-feature crate"
     prediction: "on the 48.0.6 lock the scanner of record exits non-zero and names 0378 and 0379"
@@ -108,6 +111,12 @@ falsification_tests:
     test: "case table over the ticket emitter"
     if_fails: "main-resident advisories sit unowned"
     mutation: "set the due time to 8 h; the case must turn RED"
+  - id: FALSIFY-ADG-006
+    rule: "Re-arm never arms a changed head (ADG-INV-005)"
+    prediction: "a ready PR whose head sha moved after approval is not re-armed; one whose head is unchanged is"
+    test: "scripts/ci/rearm_ready.sh --self-test, 2 cases (head unchanged arms, moved or unapproved does not, empty arms nothing)"
+    if_fails: "a gate fix arms an unreviewed head into the queue"
+    mutation: "drop the approved_sha == current_sha test in select_; the moved-head case must turn RED"
 
 qa_gate:
   id: F-ADG-001
@@ -118,5 +127,5 @@ qa_gate:
     - main_resident_advisory
     - one_scanner_of_record
     - auto_rearm
-  pass_criteria: "All 5 falsification tests pass; the scanner script has a must-fail/must-pass case table"
+  pass_criteria: "All 6 falsification tests pass; the scanner script has a must-fail/must-pass case table"
   falsification: "Revert the gate to lock-vs-DB; FALSIFY-ADG-001 must turn RED"

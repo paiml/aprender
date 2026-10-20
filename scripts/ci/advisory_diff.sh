@@ -17,7 +17,7 @@ CANT=75
 keys() { # FILE -> keys on stdout; nonzero when the file does not parse
     jq -R -r 'fromjson? | select(.type == "diagnostic" or has("fields"))
       | .fields | select(.severity == "error" or .code == "yanked")
-      | "\(.code // "?")|\(.advisory.id // "-")|\(.graphs[0].Krate.name // "?")@\(.graphs[0].Krate.version // "?")"' "$1" | LC_ALL=C sort -u
+      | (.code // "?") as $c | (.advisory.id // "-") as $i | ((.graphs // [{}])[] | .Krate? // {}) | "\($c)|\($i)|\(.name // "?")@\(.version // "?")"' "$1" | LC_ALL=C sort -u
 }
 
 parses() { # every non-blank line is JSON
@@ -34,6 +34,21 @@ side() { # JSON RC -> echoes keys; returns CANT when the side cannot be trusted
     if [ "$rc" -eq 1 ] && [ -z "$e" ]; then echo "COULD-NOT-CHECK: rc=1 but no findings parsed" >&2; return "$CANT"; fi
     if [ "$rc" -eq 0 ] && [ -n "$e" ]; then echo "COULD-NOT-CHECK: rc=0 but error findings parsed" >&2; return "$CANT"; fi
     printf '%s\n' "$k"
+}
+
+base_ref() { # EVENT MG_BASE_SHA PR_BASE_SHA -> the pinned base sha; 75 when it cannot be pinned
+    local ev=$1 mg=${2:-} pr=${3:-}
+    case "$ev" in
+        merge_group) [[ "$mg" =~ ^[0-9a-f]{40}$ ]] || { echo "COULD-NOT-CHECK: merge_group base_sha missing" >&2; return "$CANT"; }; echo "$mg" ;;
+        pull_request) [[ "$pr" =~ ^[0-9a-f]{40}$ ]] || { echo "COULD-NOT-CHECK: pull_request base sha missing" >&2; return "$CANT"; }; echo "$pr" ;;
+        *) echo "COULD-NOT-CHECK: event $ev has no merge base (push-to-main runs the full check)" >&2; return "$CANT" ;;
+    esac
+}
+
+ignores_added() { # BASE_deny.toml PR_deny.toml -> ids the PR adds to [advisories] ignore; exit 1 when any
+    local add
+    add=$(comm -13 <(grep -o "RUSTSEC-[0-9]*-[0-9]*" "$1" | sort -u) <(grep -o "RUSTSEC-[0-9]*-[0-9]*" "$2" | sort -u))
+    [ -z "$add" ] || { echo "PR widens exemptions:" >&2; printf "%s\n" "$add" >&2; return 1; }
 }
 
 verdict() {
@@ -80,13 +95,21 @@ self_test() {
     t 'tool error rc 2: cannot check'                75 empty.json 2 empty.json 0
     t 'garbage JSON: cannot check'                   75 bad.json 1 empty.json 0
     t 'main side missing: cannot check'              75 a.json 1 nope.json 1
-    [ "$bad" -eq 0 ] && echo "advisory_diff self-test: 11 cases ok"
+    sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    r() { local w=$1 rc=0; shift; base_ref "$@" >/dev/null 2>&1 || rc=$?; [ "$rc" -eq "$w" ] || { echo "SELF-TEST FAIL: base_ref $* wanted $w got $rc" >&2; bad=1; }; }
+    r 0 merge_group "$sha" ""; r 75 merge_group "" "$sha"; r 75 merge_group "main" ""; r 0 pull_request "" "$sha"; r 75 push "$sha" "$sha"
+    printf "ignore = [\"RUSTSEC-2026-0001\"]\n" >"$d/b.toml"; cp "$d/b.toml" "$d/same.toml"; printf "ignore = [\"RUSTSEC-2026-0001\", \"RUSTSEC-2026-0378\"]\n" >"$d/wide.toml"
+    ignores_added "$d/b.toml" "$d/same.toml" 2>/dev/null || { echo "SELF-TEST FAIL: same ignores must pass" >&2; bad=1; }
+    ! ignores_added "$d/b.toml" "$d/wide.toml" 2>/dev/null || { echo "SELF-TEST FAIL: added ignore must block" >&2; bad=1; }
+    [ "$bad" -eq 0 ] && echo "advisory_diff self-test: (11 verdict + 5 base_ref + 2 ignores) ok"
     return "$bad"
 }
 
 case "${1:-}" in
     --self-test) self_test ;;
     keys) keys "$2" ;;
+    base-ref) base_ref "$2" "${3:-}" "${4:-}" ;;
+    ignores-added) ignores_added "$2" "$3" ;;
     verdict) verdict "$2" "$3" "$4" "$5" ;;
     *) echo "usage: $0 keys F | verdict PR PRRC MAIN MAINRC | --self-test" >&2; exit 2 ;;
 esac
