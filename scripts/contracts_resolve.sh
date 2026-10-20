@@ -25,6 +25,21 @@ if [ -n "$other" ]; then
     exit 1
 fi
 
+# Resolve and prove the verifier BEFORE anything is dropped: a pv that will not build, or one older than the
+# verifier sources of this checkout (a stale pv writes shapes.ttl in an old form; #5776 lost ~25 min), must
+# leave the merge exactly as it was. pv_bin.sh builds pv and pv-sat (PV_SAT), so no build of our own here.
+. scripts/pv_bin.sh || { echo "contracts_resolve: REFUSED, pv_bin.sh could not resolve a pv; the merge is untouched" >&2; exit 1; }
+PV_SAT="$(dirname "$PV")/pv-sat"   # never an inherited PV_SAT: it may be another tree's, or a stale build
+stale_pv=$(for b in "$PV" "$PV_SAT"; do
+    [ -x "$b" ] || { echo "$b (missing)"; continue; }
+    git ls-files -z -- crates/aprender-contracts crates/aprender-contracts-cli Cargo.lock \
+        | while IFS= read -r -d "" f; do [ "$f" -nt "$b" ] && { echo "$b is older than $f"; break; }; done
+done) || true   # set -e: the loops end on a false test
+if [ -n "$stale_pv" ]; then
+    printf 'contracts_resolve: REFUSED, pv is not built from this HEAD:\n%s\nrebuild: cargo build -p aprender-contracts-cli --bin pv --bin pv-sat\n' "$stale_pv" >&2
+    exit 1
+fi
+
 # Drop both sides of every generated path; the regeneration below recreates what the merged sources produce.
 printf '%s\n' "$conflicted" | while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -32,9 +47,8 @@ printf '%s\n' "$conflicted" | while IFS= read -r f; do
     rm -f -- "${f:?}"
 done
 
-. scripts/pv_bin.sh || exit 1
 bash scripts/contracts_gate.sh regen
-"${PV_SAT:-$(dirname "$PV")/pv-sat}" contracts
+"$PV_SAT" contracts
 bash scripts/readme_sync.sh --write   # README.md carries a derived contract count: also stale after a merge
 git add -A -- contracts/contracts.nt contracts/shapes.ttl contracts/witness README.md
 left=$(git diff --name-only --diff-filter=U)
