@@ -1,0 +1,40 @@
+set -euo pipefail
+out="$GITHUB_WORKSPACE/ws-archive-out"
+mkdir -p "$out"
+if [ "$TIER" != quick ]; then
+jq -n --arg t "$TIER" --arg s "$GITHUB_SHA" '{tier:$t,sha:$s}' > "$out/bind.json"
+printf 'FLOW-010 P1: tier is %s, nothing archived\n' "$TIER"
+exit 0
+fi
+read -ra targets <<< "$TARGETS"
+EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+BUILD_FLAGS="$(printf '%s\n' "${targets[@]}" | grep -vE '^aprender-(gpu|cuda-edge|compute):' | tr '\n' ' ' | bash scripts/ci_test_tier.sh --build-flags)"
+tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
+printf 'archive build flags: %s\n' "$BUILD_FLAGS"
+dock() {
+docker run --rm -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW -v "${GITHUB_WORKSPACE}:/workspace" -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" -v "${SCCACHE_HOST_DIR}:/sccache" -w /workspace -e CARGO_TARGET_DIR=/workspace/target -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache -e SCCACHE_DIR=/sccache -e SCCACHE_CACHE_SIZE=50G -e CARGO_INCREMENTAL=0 -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 -e CARGO_PROFILE_TEST_DEBUG=0 -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_TERM_COLOR=never -e EXPR="$EXPR" -e BUILD_FLAGS="$BUILD_FLAGS" -e TREE="$tree" "$IMAGE" bash -c "set -euo pipefail; $1"
+}
+t0=$SECONDS
+dock 'cargo nextest archive --profile ci $BUILD_FLAGS --archive-file /workspace/ws-archive-out/ws.tar.zst'
+t_build=$((SECONDS - t0)); t0=$SECONDS
+dock 'cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /workspace/ws-archive-out/live.json
+for n in 1 2 3; do cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${n}/3" --message-format json > "/workspace/ws-archive-out/tree.${n}.list.json"; done'
+dock 'cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite -E "$EXPR" --message-format json > /workspace/ws-archive-out/arc.json'
+t_list=$((SECONDS - t0))
+bash scripts/ci/archive_list_equal.sh "$out/live.json" "$out/arc.json"
+smoke="$GITHUB_WORKSPACE/ws-smoke-target"
+rm -rf "${smoke:?}"; mkdir -p "$smoke"
+tar --zstd -tf "$out/ws.tar.zst" | grep -E '^target/debug/[^/]+$' | sed 's#^target/#/workspace/target/#' > "$out/bins.txt" || true
+docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace -e BINS="$(tr '\n' ' ' < "$out/bins.txt")" "$IMAGE" bash -c 'set -euo pipefail
+cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite --message-format json > /dev/null
+n=0; for b in $BINS; do test -x "$b" || { echo "::error::archived binary $b not executable at its build path"; exit 1; }; n=$((n+1)); done
+[ "$n" -gt 0 ] || { echo "::error::smoke checked 0 binaries -- the archive lists none under target/debug"; exit 1; }
+if [ -x /workspace/target/debug/apr ]; then /workspace/target/debug/apr --version; fi
+echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'
+rm -rf "${smoke:?}" "${out:?}/bins.txt"
+printf 'FLOW-010 P1 timing: archive_build_s=%s list_s=%s archive_mb=%s\n' "$t_build" "$t_list" "$(( $(stat -c %s "$out/ws.tar.zst") / 1048576 ))"
+rm -f "${out:?}/live.json" "${out:?}/arc.json"
+rustc_vv="$(docker run --rm "$IMAGE" rustc -vV)"
+rustc_h="$(bash scripts/ci/archive_bind_check.sh --hash-toolchain "$rustc_vv")"
+jq -n --arg b "$t_build" --arg l "$t_list" --arg s "$GITHUB_SHA" --arg e "$EXPR" --arg f "$BUILD_FLAGS" --arg i "$rustc_h" '{tier:"quick",sha:$s,expr:$e,flags:$f,rustc:$i,build_s:($b|tonumber),list_s:($l|tonumber)}' > "$out/bind.json"
+ls -l "$out"

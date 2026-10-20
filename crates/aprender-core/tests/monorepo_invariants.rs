@@ -1279,7 +1279,29 @@ mod archive_wiring {
         }
     }
 
-    fn check_shard(shard: &Value, bad: &mut Vec<String>) {
+    /// The step's whole normalized `run:` (comments dropped, continuations joined) must equal
+    /// the pinned snapshot, so an early `exit 0`, a guard around the smoke payload or any
+    /// other edit to a guarded step is a reviewed change. Regenerate with
+    /// `ARCHIVE_WIRING_BLESS=1 cargo test -p aprender-core --test monorepo_invariants archive_wiring`.
+    fn pinned(name: &str, st: &Value, bless: bool, bad: &mut Vec<String>) {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/archive_wiring")
+            .join(format!("{name}.txt"));
+        let actual = run_of(st).join("\n") + "\n";
+        if bless {
+            std::fs::create_dir_all(path.parent().expect("fixture dir")).expect("mkdir");
+            std::fs::write(&path, &actual).expect("write snapshot");
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(want) if want == actual => {}
+            Ok(_) => bad.push(format!(
+                "{name}: run differs from tests/fixtures/archive_wiring/{name}.txt"
+            )),
+            Err(e) => bad.push(format!("{name}: snapshot unreadable: {e}")),
+        }
+    }
+
+    fn check_shard(shard: &Value, bless: bool, bad: &mut Vec<String>) {
         let found = steps_running(shard, "archive_bind_check.sh");
         if found.is_empty() {
             bad.push("shard has no bind step".into());
@@ -1295,6 +1317,7 @@ mod archive_wiring {
             no_third_state("shard bind", st, Some(QUICK_IF), bad);
             strict_shell("shard bind", &lines, bad);
             unconditional("shard bind", &lines, BIND_CALL, bad);
+            pinned("shard_bind_step", st, bless, bad);
         }
     }
 
@@ -1307,7 +1330,7 @@ mod archive_wiring {
         l.starts_with("[ \"$n\" -gt 0 ] || { echo ") && l.ends_with("; exit 1; }")
     }
 
-    fn check_archive_job(arc: &Value, bad: &mut Vec<String>) {
+    fn check_archive_job(arc: &Value, bless: bool, bad: &mut Vec<String>) {
         let smoke = steps_running(arc, "ws-smoke-target");
         if smoke.is_empty() {
             bad.push("archive job has no smoke step".into());
@@ -1328,6 +1351,7 @@ mod archive_wiring {
             no_third_state("archive build", st, None, bad);
             strict_shell("archive build", &lines, bad);
             unconditional("archive build", &lines, SMOKE_CALL, bad);
+            pinned("archive_build_step", st, bless, bad);
         }
         let hashed = steps_running(arc, "--hash-toolchain");
         if hashed.is_empty() {
@@ -1365,7 +1389,7 @@ mod archive_wiring {
     }
 
     /// Every violation of the archive wiring in (sections.yml, ci.yml); empty when sound.
-    pub fn violations(sections: &str, ci: &str) -> Vec<String> {
+    pub fn violations(sections: &str, ci: &str, bless: bool) -> Vec<String> {
         let (s, c) = (parse(sections), parse(ci));
         let (Some(arc), Some(shard)) = (
             find_key(&s, "workspace-test-archive"),
@@ -1376,8 +1400,8 @@ mod archive_wiring {
             ];
         };
         let mut bad = Vec::new();
-        check_shard(shard, &mut bad);
-        check_archive_job(arc, &mut bad);
+        check_shard(shard, bless, &mut bad);
+        check_archive_job(arc, bless, &mut bad);
         check_uploads("sections.yml", arc, &mut bad);
         check_uploads(
             "ci.yml",
@@ -1406,7 +1430,11 @@ fn test_archive_wiring_holds_on_the_real_tree() {
     let root = workspace_root();
     let sec = std::fs::read_to_string(root.join("ci/sections.yml")).expect("ci/sections.yml");
     let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("ci.yml");
-    let v = archive_wiring::violations(&sec, &ci);
+    let v = archive_wiring::violations(
+        &sec,
+        &ci,
+        std::env::var_os("ARCHIVE_WIRING_BLESS").is_some(),
+    );
     assert!(v.is_empty(), "archive wiring violations: {v:#?}");
 }
 
@@ -1418,7 +1446,7 @@ fn test_archive_wiring_mutants_all_die() {
     let sec = std::fs::read_to_string(root.join("ci/sections.yml")).expect("ci/sections.yml");
     let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("ci.yml");
     assert!(
-        violations(&sec, &ci).is_empty(),
+        violations(&sec, &ci, false).is_empty(),
         "baseline must be clean before mutating"
     );
 
@@ -1600,6 +1628,33 @@ fn test_archive_wiring_mutants_all_die() {
             ),
         ),
         (
+            "early exit before the shard bind call",
+            mutate(
+                &sec,
+                r#"rustc_vv="$(docker run --rm"#,
+                r#"rustc_vv="$(docker"#,
+                "[ -f \"$arc/bind.json\" ] || exit 0\n          rustc_vv=\"$(docker",
+            ),
+        ),
+        (
+            "guard inside the smoke payload",
+            mutate(
+                &sec,
+                "smoke checked 0 binaries",
+                "if [ -x /workspace/target/debug/apr ]",
+                "if false; then true; fi\n              if [ -x /workspace/target/debug/apr ]",
+            ),
+        ),
+        (
+            "early exit in the archive build step",
+            mutate(
+                &sec,
+                "- name: \"Build the quick-tier tree-reader set once and archive it",
+                "out=\"$GITHUB_WORKSPACE/ws-archive-out\"",
+                "out=\"$GITHUB_WORKSPACE/ws-archive-out\"\n          [ -f \"$out/x\" ] || exit 0",
+            ),
+        ),
+        (
             "upload overwrite false",
             mutate(
                 &sec,
@@ -1620,11 +1675,14 @@ fn test_archive_wiring_mutants_all_die() {
     ];
     for (name, m) in &sections_mutants {
         assert_ne!(m, &sec, "mutant {name:?} did not change sections.yml");
-        assert!(!violations(m, &ci).is_empty(), "mutant survived: {name}");
+        assert!(
+            !violations(m, &ci, false).is_empty(),
+            "mutant survived: {name}"
+        );
     }
     let ci_m = mutate(&ci, up, "overwrite: true", "overwrite: false");
     assert!(
-        !violations(&sec, &ci_m).is_empty(),
+        !violations(&sec, &ci_m, false).is_empty(),
         "mutant survived: ci.yml overwrite false"
     );
 }
