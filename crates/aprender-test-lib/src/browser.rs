@@ -5113,7 +5113,9 @@ mod tests {
 #[cfg(all(test, feature = "browser"))]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod cdp_touch_tests {
-    use super::cdp::{swipe_point, swipe_step_delay_ms, Page, SWIPE_STEPS};
+    use super::cdp::{
+        coverage_report_from_json, swipe_point, swipe_step_delay_ms, Page, SWIPE_STEPS,
+    };
     use crate::{Touch, TouchAction};
 
     #[test]
@@ -5134,6 +5136,52 @@ mod cdp_touch_tests {
     #[test]
     fn swipe_point_handles_a_degenerate_zero_length_swipe() {
         assert_eq!(swipe_point((7.0, 7.0), (7.0, 7.0), 3), (7.0, 7.0));
+    }
+
+    #[test]
+    fn coverage_json_maps_every_level_and_defaults_missing_fields() {
+        let json = serde_json::json!({
+            "timestamp_ms": 42,
+            "scripts": [{
+                "script_id": "7",
+                "url": "http://x/",
+                "functions": [
+                    {"function_name": "f", "is_block_coverage": true,
+                     "ranges": [{"start_offset": 1, "end_offset": 9, "count": 3}]},
+                    {"ranges": [{}]}
+                ]
+            }]
+        });
+        let report = coverage_report_from_json(&json);
+        assert_eq!(report.timestamp_ms, 42);
+        assert_eq!(report.scripts.len(), 1);
+        let script = &report.scripts[0];
+        assert_eq!(
+            (script.script_id.as_str(), script.url.as_str()),
+            ("7", "http://x/")
+        );
+        let f = &script.functions[0];
+        assert!(f.is_block_coverage);
+        assert_eq!(f.function_name, "f");
+        assert_eq!(
+            (
+                f.ranges[0].start_offset,
+                f.ranges[0].end_offset,
+                f.ranges[0].count
+            ),
+            (1, 9, 3)
+        );
+        let blank = &script.functions[1];
+        assert_eq!(blank.function_name, "");
+        assert!(!blank.is_block_coverage);
+        assert_eq!(blank.ranges[0].count, 0);
+    }
+
+    #[test]
+    fn coverage_json_without_scripts_is_an_empty_report() {
+        let report = coverage_report_from_json(&serde_json::json!({}));
+        assert_eq!(report.timestamp_ms, 0);
+        assert!(report.scripts.is_empty());
     }
 
     #[tokio::test]
