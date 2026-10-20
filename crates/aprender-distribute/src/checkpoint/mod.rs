@@ -225,7 +225,16 @@ impl CheckpointManager {
 
     /// Checkpoint without trueno-db feature (minimal implementation)
     #[cfg(not(feature = "checkpoint"))]
-    pub async fn checkpoint(&self, task_id: Uuid, state: &TaskState) -> Result<CheckpointId> {
+    pub fn checkpoint(
+        &self,
+        task_id: Uuid,
+        state: &TaskState,
+    ) -> impl std::future::Future<Output = Result<CheckpointId>> {
+        std::future::ready(self.checkpoint_sync(task_id, state))
+    }
+
+    #[cfg(not(feature = "checkpoint"))]
+    fn checkpoint_sync(&self, task_id: Uuid, state: &TaskState) -> Result<CheckpointId> {
         let checkpoint_id = Uuid::new_v4();
 
         // Serialize state to JSON
@@ -260,7 +269,14 @@ impl CheckpointManager {
     /// # Errors
     ///
     /// Returns error if checkpoint cannot be read
-    pub async fn restore(&self, task_id: Uuid) -> Result<Option<TaskState>> {
+    pub fn restore(
+        &self,
+        task_id: Uuid,
+    ) -> impl std::future::Future<Output = Result<Option<TaskState>>> {
+        std::future::ready(self.restore_sync(task_id))
+    }
+
+    fn restore_sync(&self, task_id: Uuid) -> Result<Option<TaskState>> {
         let task_dir = self.checkpoint_dir.join(task_id.to_string());
 
         // Check if task has any checkpoints
@@ -400,7 +416,14 @@ impl CheckpointManager {
     /// # Errors
     ///
     /// Returns error if checkpoints cannot be listed
-    pub async fn list_checkpoints(&self, task_id: Uuid) -> Result<Vec<CheckpointMetadata>> {
+    pub fn list_checkpoints(
+        &self,
+        task_id: Uuid,
+    ) -> impl std::future::Future<Output = Result<Vec<CheckpointMetadata>>> {
+        std::future::ready(self.list_checkpoints_sync(task_id))
+    }
+
+    fn list_checkpoints_sync(&self, task_id: Uuid) -> Result<Vec<CheckpointMetadata>> {
         let task_dir = self.checkpoint_dir.join(task_id.to_string());
 
         if !task_dir.exists() {
