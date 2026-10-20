@@ -8,7 +8,7 @@
 #
 # Fail closed (exit 75, never a pass): rc 0 with findings, rc 1 with none, rc other than 0/1, unparsable JSON,
 # a missing file. The key is code|advisory-id|crate@version so a new crate under an id main already carries,
-# and a yanked finding (no id), are both seen. cargo-deny writes NDJSON diagnostics to STDERR; the caller
+# and a no-id finding (yanked at error severity, as deny.toml sets it), are both seen. cargo-deny writes NDJSON diagnostics to STDERR; the caller
 # redirects it to FILE.
 set -euo pipefail
 
@@ -16,7 +16,7 @@ CANT=75
 
 keys() { # FILE -> keys on stdout; nonzero when the file does not parse
     jq -R -r 'fromjson? | select(.type == "diagnostic" or has("fields"))
-      | .fields | select(.severity == "error" or .code == "yanked")
+      | .fields | select(.severity == "error")
       | (.code // "?") as $c | (.advisory.id // "-") as $i | ((.graphs // [{}])[] | .Krate? // {}) | "\($c)|\($i)|\(.name // "?")@\(.version // "?")"' "$1" | LC_ALL=C sort -u
 }
 
@@ -88,7 +88,9 @@ self_test() {
     t 'both clean: pass'                             0  empty.json 0 empty.json 0
     t 'PR adds a new id: block'                      1  a2.json 1 a.json 1
     t 'PR adds a crate under an id main has: block'  1  a3.json 1 a.json 1
-    t 'PR adds a yanked crate: block'                1  yank.json 0 empty.json 0
+    t 'PR adds a yanked crate at warn (deny.toml default): pass' 0  yank.json 0 empty.json 0
+    printf '{"type":"diagnostic","fields":{"code":"yanked","severity":"error","graphs":[{"Krate":{"name":"y","version":"1"}}]}}\n' >"$d/yanke.json"
+    t 'PR adds a yanked crate at error: block'        1  yanke.json 1 empty.json 0
     t 'main has it, PR fixed it: pass'               0  empty.json 0 a.json 1
     t 'rc 0 but findings parsed: cannot check'       75 a.json 0 empty.json 0
     t 'rc 1 but nothing parsed: cannot check'        75 empty.json 1 empty.json 0
@@ -101,7 +103,7 @@ self_test() {
     printf "ignore = [\"RUSTSEC-2026-0001\"]\n" >"$d/b.toml"; cp "$d/b.toml" "$d/same.toml"; printf "ignore = [\"RUSTSEC-2026-0001\", \"RUSTSEC-2026-0378\"]\n" >"$d/wide.toml"
     ignores_added "$d/b.toml" "$d/same.toml" 2>/dev/null || { echo "SELF-TEST FAIL: same ignores must pass" >&2; bad=1; }
     ! ignores_added "$d/b.toml" "$d/wide.toml" 2>/dev/null || { echo "SELF-TEST FAIL: added ignore must block" >&2; bad=1; }
-    [ "$bad" -eq 0 ] && echo "advisory_diff self-test: (11 verdict + 5 base_ref + 2 ignores) ok"
+    [ "$bad" -eq 0 ] && echo "advisory_diff self-test: (12 verdict + 5 base_ref + 2 ignores) ok"
     return "$bad"
 }
 

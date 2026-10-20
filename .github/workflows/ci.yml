@@ -345,7 +345,18 @@ jobs:
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          bash scripts/ci/advisory_gate.sh
+          # The gate runs from the BASE ref, never the PR tree (PMAT-5792): a PR cannot edit its own judge.
+          # Bootstrap only: the merge that introduces the scripts has no base copy, so it uses its own.
+          S="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-scripts-$$"
+          if git cat-file -e refs/remotes/origin/main:scripts/ci/advisory_gate.sh 2>/dev/null; then
+            mkdir -p "$S"
+            git archive refs/remotes/origin/main scripts/ci | tar -x -C "$S"
+            G="$S/scripts/ci"
+          else
+            G=scripts/ci
+          fi
+          bash "$G/advisory_diff.sh" --self-test
+          bash "$G/advisory_gate.sh"
       - name: Every deny.toml exemption must still be live
         env:
           GITHUB_TOKEN: ${{ github.token }}

@@ -1,0 +1,41 @@
+name: advisory-andon
+# PMAT-5792: an advisory already on main is an andon and a P0 issue within 4h; it never blocks a PR.
+# Scheduled and push-to-main only -- never a PR or merge_group job (C324: no third state on that path).
+on:
+  schedule:
+    - cron: '17 */2 * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  andon:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install cargo-deny (if absent)
+        env:
+          CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-deny
+        run: |
+          if ! command -v cargo-deny > /dev/null 2>&1; then
+            cargo install cargo-deny --locked
+            echo "$CARGO_INSTALL_ROOT/bin" >> "$GITHUB_PATH"
+            export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+          fi
+          cargo deny --version
+      - name: Scan main and open or age the P0 issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
+          bash scripts/ci/advisory_andon.sh --self-test
+          out="${RUNNER_TEMP:?}/andon.ndjson"
+          rc=0
+          cargo deny --locked --all-features --format json check advisories >/dev/null 2>"$out" || rc=$?
+          bash scripts/ci/advisory_andon.sh emit "$out" "$rc"
