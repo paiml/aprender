@@ -402,6 +402,8 @@ jobs:
               # lives in the helper.
               bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
               args+=(--diff-from "$RUNNER_TEMP/touched.txt")
+              # FLOW-010 P3: the base the lock-block diff reads (a shallow checkout has no merge-base; the tip over-approximates, safely)
+              args+=(--affected-base "origin/${GITHUB_BASE_REF}")
               ;;
             merge_group)
               # Operator 2026-10-17 (cop window), verbatim: "only gating on tags/release".
