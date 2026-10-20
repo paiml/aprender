@@ -1034,4 +1034,102 @@ mod tests {
         assert_eq!(mul_scalar_alloc(&input, 1.0), before);
         assert_eq!(input, before);
     }
+
+    // ── add_avx2_nt tests ─────────────────────────────────────────────────
+
+    /// Offset into `buf` of the first 32-byte aligned element (`_mm256_stream_ps` needs it).
+    #[cfg(target_arch = "x86_64")]
+    fn aligned_start(buf: &[f32]) -> usize {
+        let off = (buf.as_ptr() as usize).wrapping_neg() % 32 / 4;
+        assert_eq!((buf[off..].as_ptr() as usize) % 32, 0);
+        off
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn add_nt_inputs(n: usize) -> (Vec<f32>, Vec<f32>) {
+        let a = (0..n).map(|i| ((i * 17 + 31) % 1000) as f32 / 500.0 - 1.0).collect();
+        let b = (0..n).map(|i| ((i * 13 + 7) % 1000) as f32 / 500.0 - 1.0).collect();
+        (a, b)
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_add_avx2_nt_matches_scalar_all_tail_shapes() {
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+        // 32-wide NT body, 8-wide tail, scalar tail: every combination around the seams.
+        for n in [0, 1, 7, 8, 31, 32, 33, 39, 40, 63, 64, 65, 71, 72, 100, 1000] {
+            let (a, b) = add_nt_inputs(n);
+            let mut buf = vec![f32::NAN; n + 8];
+            let off = aligned_start(&buf);
+            // SAFETY: avx2 detected above; output slice starts 32-byte aligned and len == n.
+            unsafe { add_avx2_nt(&a, &b, &mut buf[off..off + n]) };
+            for i in 0..n {
+                assert_eq!(buf[off + i], a[i] + b[i], "NT add mismatch at [{i}] n={n}");
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_add_avx2_nt_does_not_write_past_len() {
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let n = 70; // 2 NT chunks + one 8-wide + 6 scalar
+        let (a, b) = add_nt_inputs(n);
+        let mut buf = vec![-777.0f32; n + 16];
+        let off = aligned_start(&buf);
+        // SAFETY: as above.
+        unsafe { add_avx2_nt(&a, &b, &mut buf[off..off + n]) };
+        assert!(buf[..off].iter().all(|&v| v == -777.0), "wrote before output");
+        assert!(buf[off + n..].iter().all(|&v| v == -777.0), "wrote past output");
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_add_avx2_nt_special_values() {
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let n = 48;
+        let mut a = vec![1.0f32; n];
+        let mut b = vec![2.0f32; n];
+        a[0] = f32::INFINITY;
+        b[0] = f32::NEG_INFINITY; // inf + -inf = NaN, inside the NT body
+        a[5] = f32::MAX;
+        b[5] = f32::MAX; // overflow to inf
+        a[40] = f32::NAN; // 8-wide tail lane
+        a[47] = -0.0;
+        b[47] = -0.0; // scalar tail: -0 + -0 = -0
+        let mut buf = vec![0.0f32; n + 8];
+        let off = aligned_start(&buf);
+        // SAFETY: as above.
+        unsafe { add_avx2_nt(&a, &b, &mut buf[off..off + n]) };
+        let out = &buf[off..off + n];
+        assert!(out[0].is_nan());
+        assert_eq!(out[5], f32::INFINITY);
+        assert!(out[40].is_nan());
+        assert!(out[47] == 0.0 && out[47].is_sign_negative());
+        assert_eq!(out[1], 3.0);
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_add_dispatches_to_nt_path_above_threshold() {
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+        // > NT_STORE_THRESHOLD_BYTES of output and 32-byte aligned => add_avx2 takes the NT branch.
+        let n = NT_STORE_THRESHOLD_BYTES / 4 + 37;
+        assert!(n * 4 > NT_STORE_THRESHOLD_BYTES);
+        let (a, b) = add_nt_inputs(n);
+        let mut buf = vec![f32::NAN; n + 8];
+        let off = aligned_start(&buf);
+        add(&a, &b, &mut buf[off..off + n]).unwrap();
+        for i in 0..n {
+            assert_eq!(buf[off + i], a[i] + b[i], "dispatch NT add mismatch at [{i}]");
+        }
+    }
 }
