@@ -53,9 +53,17 @@ self_test() {
   if hash_toolchain "" >/dev/null 2>&1; then echo "FAIL: empty toolchain hashed" >&2; return 1; fi
   if hash_toolchain "error: nope" >/dev/null 2>&1; then echo "FAIL: non-rustc text hashed" >&2; return 1; fi
   [ "$(hash_toolchain "rustc 1.99.0 (abc 2026-01-01)")" != "" ] || { echo "FAIL: real toolchain refused" >&2; return 1; }
+  # the CLI entry points the workflow calls (round 4: --hash-toolchain was never dispatched)
+  local h; h="$(bash "$0" --hash-toolchain "rustc 1.99.0 (abc 2026-01-01)")" || { echo "FAIL: --hash-toolchain CLI failed on real text" >&2; return 1; }
+  [ "${#h}" = 16 ] || { echo "FAIL: --hash-toolchain printed '$h'" >&2; return 1; }
+  if bash "$0" --hash-toolchain "" >/dev/null 2>&1; then echo "FAIL: --hash-toolchain CLI accepted empty" >&2; return 1; fi
+  jq -n --arg r "$h" '{tier:"quick",sha:"abc",rustc:$r}' > "$d/cli.json"
+  bash "$0" --toolchain "rustc 1.99.0 (abc 2026-01-01)" "$d/cli.json" sha=abc >/dev/null || { echo "FAIL: --toolchain CLI did not bind the hash" >&2; return 1; }
+  if bash "$0" --toolchain "rustc 2.0.0" "$d/cli.json" sha=abc >/dev/null 2>&1; then echo "FAIL: --toolchain accepted a different toolchain" >&2; return 1; fi
+  if bash "$0" --toolchain "" "$d/cli.json" sha=abc >/dev/null 2>&1; then echo "FAIL: --toolchain accepted empty text" >&2; return 1; fi
   # mutants of this script itself must each be caught by the cases above
   local mut
-  for mut in 's/\[ -n "\$v" \] && //' 's/\*"rustc "\*) ;;/*) ;;/'; do
+  for mut in 's/--hash-toolchain) hash_toolchain/--hash-toolchain) true/' 's/\[ -n "\$v" \] && //' 's/\*"rustc "\*) ;;/*) ;;/'; do
     sed "$mut" "$0" > "$d/mut.sh"
     if cmp -s "$0" "$d/mut.sh"; then echo "FAIL: mutant did not apply: $mut" >&2; return 1; fi
     if bash "$d/mut.sh" --self-test >/dev/null 2>&1; then echo "FAIL: surviving mutant: $mut" >&2; return 1; fi
@@ -64,4 +72,8 @@ self_test() {
   echo "archive_bind_check self-test: ok (match passes; sha/expr/flags/rustc/empty/tier/missing rejected)"
 }
 
-if [ "${1:-}" = "--self-test" ]; then self_test; else check "$@"; fi
+case "${1:-}" in
+  --self-test) self_test ;;
+  --hash-toolchain) hash_toolchain "${2:-}" ;;
+  *) check "$@" ;;
+esac
