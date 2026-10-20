@@ -1,0 +1,47 @@
+metadata:
+  id: C-REGISTRY-DOWNLOAD-PROGRESS
+  version: 1.0.0
+  created: '2026-10-18'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the human-readable accessors of aprender-registry's DownloadProgress:
+    eta_human formats seconds, minutes and hours; downloaded_human reads the
+    downloaded byte count and total_human reads the total, never each other's.
+  references:
+    - 'crates/aprender-registry/src/cache.rs (DownloadProgress::eta_human, downloaded_human, total_human)'
+
+equations:
+  progress_human_accessors:
+    formula: |
+      eta_human = format_duration(eta_secs); downloaded_human = format_bytes(downloaded_bytes);
+      total_human = format_bytes(total_bytes)
+    domain: DownloadProgress values
+    invariants:
+    - 'downloaded_human depends only on downloaded_bytes; total_human only on total_bytes'
+
+proof_obligations:
+- id: RDP-INV-001
+  type: invariant
+  property: each human accessor reads its own field
+  formal: "∀ t ∈ {progress_human_tests}: exit(t) = 0"
+  applies_to: progress_human_accessors
+
+falsification_tests:
+- id: FALSIFY-REGISTRY-DOWNLOAD-PROGRESS-001
+  rule: eta_human, downloaded_human and total_human render their own fields
+  prediction: 'eta 42.9/125/3725 s -> "42s"/"2m 5s"/"1h 2m"; 1536 B downloaded -> "1.50 KB"; 5 MiB total -> "5.00 MB"'
+  test: cargo test -p aprender-registry --lib cache::progress_human_tests
+  if_fails: progress lines show the wrong size or ETA to users during model pulls
+  ship_blocking: false
+  mutation: 'make downloaded_human format total_bytes; must turn RED'
+
+qa_gate:
+  id: QA-REGISTRY-DOWNLOAD-PROGRESS-001
+  name: Registry download progress accessors gate
+  description: human-readable accessors read their own fields
+  checks:
+  - progress_human_accessors
+  pass_criteria: FALSIFY-REGISTRY-DOWNLOAD-PROGRESS-001 passes
+  falsification: Any failure fails the gate
