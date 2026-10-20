@@ -267,11 +267,16 @@ jobs:
       # Operator 2026-10-19: root cause is no gate time budget. A merge_group entry that is already RED must
       # not keep the other jobs and shards holding mq runners for another ~45 min: the first failed job cancels
       # the run. merge_group only (a PR run keeps every verdict); the teardown below is always() and still reaps.
+      # Only a GATE section (the ones `ci / gate` reads) cancels: a red outside the gate, e.g. vendored-schemas, is
+      # still reported by the wait step above but must not cancel the shards (#5738, scripts/ci/failfast_gate.sh).
       - name: Fail fast, cancel this merge-group run
-        if: ${{ failure() && github.event_name == 'merge_group' }}
+        if: ${{ !cancelled() && github.event_name == 'merge_group' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" || echo "::warning::fail-fast cancel did not take"
+        run: |
+          if bash scripts/ci/failfast_gate.sh "$RUNNER_TEMP/fat/results.json"; then
+            gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" || echo "::warning::fail-fast cancel did not take"
+          fi
       # #4948: a cancelled run never reaches a section's own container removal,
       # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
       # for days. always() runs on cancel too; on the passing path the driver

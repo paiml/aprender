@@ -1609,6 +1609,9 @@ jobs:
         run: setsid --wait bash scripts/check_ci_reusable_workflow_pinned.sh --self-test
       - name: ci.yml must pin sovereign-ci.yml by commit sha, not @main
         run: setsid --wait bash scripts/check_ci_reusable_workflow_pinned.sh
+      # #5738: MG fail-fast cancels only on a GATE section red; the check is mutation-tested (7 mutants).
+      - name: MG fail-fast gate-only cancel guard and case tables
+        run: setsid --wait bash scripts/check_ci_failfast.sh --self-test
       # #2532: the guard above has a universe of crates/**/tests?/**/*.rs, which
       # structurally excludes 100% of the 324 machine-specific paths pmat found
       # in SHIPPED code -- 46 of them inside contracts/ itself. Seventeen crux
