@@ -1077,7 +1077,7 @@ mod tests {
         if !is_x86_feature_detected!("avx2") {
             return;
         }
-        let n = 70; // 2 NT chunks + one 8-wide + 6 scalar
+        let n = 78; // 2 NT chunks + one 8-wide + 6 scalar
         let (a, b) = add_nt_inputs(n);
         let mut buf = vec![-777.0f32; n + 16];
         let off = aligned_start(&buf);
@@ -1093,16 +1093,16 @@ mod tests {
         if !is_x86_feature_detected!("avx2") {
             return;
         }
-        let n = 48;
+        let n = 49;
         let mut a = vec![1.0f32; n];
         let mut b = vec![2.0f32; n];
         a[0] = f32::INFINITY;
         b[0] = f32::NEG_INFINITY; // inf + -inf = NaN, inside the NT body
         a[5] = f32::MAX;
         b[5] = f32::MAX; // overflow to inf
-        a[40] = f32::NAN; // 8-wide tail lane
-        a[47] = -0.0;
-        b[47] = -0.0; // scalar tail: -0 + -0 = -0
+        a[40] = f32::NAN; // 8-wide tail lane (32..40, 40..48)
+        a[48] = -0.0;
+        b[48] = -0.0; // scalar tail: -0 + -0 = -0
         let mut buf = vec![0.0f32; n + 8];
         let off = aligned_start(&buf);
         // SAFETY: as above.
@@ -1111,23 +1111,25 @@ mod tests {
         assert!(out[0].is_nan());
         assert_eq!(out[5], f32::INFINITY);
         assert!(out[40].is_nan());
-        assert!(out[47] == 0.0 && out[47].is_sign_negative());
+        assert!(out[48] == 0.0 && out[48].is_sign_negative());
         assert_eq!(out[1], 3.0);
     }
 
     #[test]
     #[cfg(target_arch = "x86_64")]
-    fn test_add_dispatches_to_nt_path_above_threshold() {
+    fn test_add_avx2_takes_nt_branch_above_threshold() {
         if !is_x86_feature_detected!("avx2") {
             return;
         }
-        // > NT_STORE_THRESHOLD_BYTES of output and 32-byte aligned => add_avx2 takes the NT branch.
+        // add() routes n > 4096 to autovec, so call add_avx2 directly: > NT_STORE_THRESHOLD_BYTES of
+        // output and 32-byte aligned => its NT branch runs.
         let n = NT_STORE_THRESHOLD_BYTES / 4 + 37;
         assert!(n * 4 > NT_STORE_THRESHOLD_BYTES);
         let (a, b) = add_nt_inputs(n);
         let mut buf = vec![f32::NAN; n + 8];
         let off = aligned_start(&buf);
-        add(&a, &b, &mut buf[off..off + n]).unwrap();
+        // SAFETY: avx2 detected above; output is 32-byte aligned and len == n.
+        unsafe { add_avx2(&a, &b, &mut buf[off..off + n]) };
         for i in 0..n {
             assert_eq!(buf[off + i], a[i] + b[i], "dispatch NT add mismatch at [{i}]");
         }
