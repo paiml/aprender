@@ -115,9 +115,9 @@ falsification_tests:
   - id: FALSIFY-ADG-006
     rule: "Re-arm never arms a changed head (ADG-INV-005)"
     prediction: "a ready PR whose head sha moved after approval is not re-armed; one whose head is unchanged is"
-    test: "scripts/ci/rearm_ready.sh --self-test, 2 cases (head unchanged arms, moved or unapproved does not, empty arms nothing)"
+    test: "scripts/ci/rearm_ready.sh --self-test, 3 cases (head unchanged arms, moved or unapproved does not, empty arms nothing, and `run` against a stub gh arms exactly the approved-unchanged PR); .github/workflows/rearm-ready.yml calls `rearm_ready.sh run`"
     if_fails: "a gate fix arms an unreviewed head into the queue"
-    mutation: "drop the approved_sha == current_sha test in select_; the moved-head case must turn RED"
+    mutation: "drop the approved_sha == current_sha test in select_; the moved-head case must turn RED; replace select_ in run_ with cat|cut and the stub-gh case must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-007
     rule: "No second scanner blocks a PR on main's advisories"
     prediction: "sov.lint and sov.security skip plain cargo deny advisories / cargo audit (advisories_diff_only: true in the vendored sovereign-ci)"
