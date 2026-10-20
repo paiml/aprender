@@ -32,7 +32,7 @@ if [ "${1:-}" = --self-test ]; then
   check "$t/s.yml" "$t/c.yml" >/dev/null || { echo "self-test: clean copy must pass"; exit 1; }
   sed 's|hash:${SHARD}/${SHARDS}|hash:${SHARD}/3|' ci/sections.yml > "$t/s.yml"
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: literal /3 must be RED"; exit 1; }
-  cp ci/sections.yml "$t/s.yml"; sed 's/shards: \[12\]/shards: [3]/' .github/workflows/ci.yml > "$t/c.yml"
+  cp ci/sections.yml "$t/s.yml"; sed -E 's/^( +shards: \[)[0-9]+\]/\1999]/' .github/workflows/ci.yml > "$t/c.yml"
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: matrix mismatch must be RED"; exit 1; }
   sed 's/for n in \$(seq 1 "\$SHARDS")/for n in 1 2 3/' .github/workflows/ci.yml > "$t/c.yml"
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: literal loop must be RED"; exit 1; }
