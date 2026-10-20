@@ -1560,3 +1560,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, feature = "browser"))]
+mod validators_partials_5625_tests;
