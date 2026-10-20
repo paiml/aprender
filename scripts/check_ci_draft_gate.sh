@@ -27,6 +27,10 @@ check() {
       [ "$iff" = "always()" ] || { echo "FAIL: aggregator $job must be if: always() (got '$iff')"; bad=1; }
       continue
     fi
+    # merge_group untouched: a draft guard must be qualified by the pull_request event.
+    if [[ "$iff" == *pull_request.draft* && "$iff" != *"event_name == 'pull_request'"* && "$iff" != *"event_name != 'pull_request'"* ]]; then
+      echo "FAIL: job $job draft guard is not scoped to the pull_request event (would skip merge_group)"; bad=1
+    fi
     case "$iff" in
       *pull_request.draft* | *"event_name == 'push'"* | *"event_name != 'pull_request'"*) ;;
       *) echo "FAIL: job $job takes a runner slot on a draft PR (if: '$iff')"; bad=1 ;;
@@ -45,7 +49,10 @@ if [ "${1:-}" = "--self-test" ]; then
   # Mutation 2: drop ready_for_review -> must be RED.
   sed 's/, ready_for_review//' "$src" >"$t/m2.yml"
   if check "$t/m2.yml" >/dev/null; then echo "self-test: mutation 2 (no ready_for_review) not caught"; exit 1; fi
-  echo "check_ci_draft_gate: self-test OK (2 mutations caught)"
+  # Mutation 3: unscope the draft guard (draft is empty on merge_group -> would still run, but the scope rule must fire).
+  sed "s/!(github.event_name == 'pull_request' && github.event.pull_request.draft)/!github.event.pull_request.draft/" "$src" >"$t/m3.yml"
+  if check "$t/m3.yml" >/dev/null; then echo "self-test: mutation 3 (unscoped guard) not caught"; exit 1; fi
+  echo "check_ci_draft_gate: self-test OK (3 mutations caught)"
   exit 0
 fi
 check "${1:-.github/workflows/ci.yml}" && echo "check_ci_draft_gate: OK"
