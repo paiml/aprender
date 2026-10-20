@@ -1303,3 +1303,51 @@ proptest::proptest! {
         );
     }
 }
+
+// --- #5650: batched prefill chunk equals token-by-token decode ------------------------------
+
+/// `prefill_chunk_qwen35` (layer-major, `b` rows at once) must match one `forward_single_qwen35`
+/// per token on the hybrid schedule: last-token logits, every recurrent state and the KV length.
+/// Two chunks, the second at `pos0 = 3`, so the resumed-state path is covered. Runs on the
+/// in-memory F32 model, so unlike the real-GGUF prefill tests it never skips.
+#[test]
+fn prefill_chunk_qwen35_matches_per_token_decode() -> Result<()> {
+    for dims in DIMS {
+        let base = base_model(dims);
+        let m = model(&base, dims, hybrid_layers(dims, 500));
+        let toks = [1u32, 3, 2, 4, 0, 1, 3];
+        let (first, rest) = toks.split_at(3);
+
+        let mut per_token = m.new_state(toks.len() + 1);
+        let mut want = Vec::new();
+        for (pos, &t) in toks.iter().enumerate() {
+            want = m.forward_single_qwen35(t, &mut per_token, pos)?;
+        }
+
+        let mut batched = m.new_state(toks.len() + 1);
+        m.prefill_chunk_qwen35(first, &mut batched, 0)?;
+        let got = m.prefill_chunk_qwen35(rest, &mut batched, first.len())?;
+
+        assert_eq!(got.len(), dims.vocab);
+        assert!(got.iter().all(|v| v.is_finite()), "{got:?}");
+        assert_close(&got, &want, "prefill_chunk last-token logits");
+        assert_eq!(
+            batched.kv_cache.len(),
+            toks.len(),
+            "kv length advanced by b"
+        );
+        for l in 0..m.layers.len() {
+            assert_close(
+                &batched.conv_states[l],
+                &per_token.conv_states[l],
+                "conv state",
+            );
+            assert_close(
+                &batched.ssm_states[l],
+                &per_token.ssm_states[l],
+                "ssm state",
+            );
+        }
+    }
+    Ok(())
+}
