@@ -12,9 +12,11 @@ row() { # name want got
 }
 run() { printf '%s\n' "$@" >"$t/d"; $A --diff-from "$t/d"; }
 core_list=" aprender-core aprender-compute aprender-contracts apr-cli aprender-quant "
-readers="aprender-core aprender-contracts apr-cli aprender-serve aprender-test-lib aprender-orchestrate aprender-present-yaml aprender-decide aprender-cgp aprender-review-experiment aprender-qa-certify"
+readers="$(sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$A")"
 meta=$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null)
 members=$(jq -r '.packages[].name' <<<"$meta" | sort)
+# a READERS entry that is a directory and not a package (e.g. facades) is dropped by the tool; drop it from the oracle too
+readers="$(for r in $readers; do if grep -qx "$r" <<<"$members"; then echo "$r"; fi; done)"
 # a non-core crate that has dependents, and a leaf with none
 withdep="" leaf=""
 for p in $members; do
