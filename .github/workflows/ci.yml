@@ -439,7 +439,45 @@ jobs:
   # The workspace tests, one shard per job (nextest hash partition N/3 plus the
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  # FLOW-010 P1 (amendment 3 item 7): build the quick-tier tree-reader set ONCE
+  # and hand the nextest archive to the shards. Advisory to the shards: if this job
+  # fails or is skipped the shards find no archive and build exactly as before
+  # (same -E filterset, same hash partition). Not a required context, not in `gate`'s needs.
+  workspace-test-archive:
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    timeout-minutes: 90
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: archive_list_equal case table must still turn RED
+        run: setsid --wait bash scripts/ci/archive_list_equal.sh --self-test
+      - name: Sections
+        id: run
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'workspace-test-archive'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - name: Remove this job's section containers (runs on cancel too)
+        if: always()
+        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: ws-archive
+          path: ${{ runner.temp }}/ws-archive-out/
+          if-no-files-found: ignore
+          compression-level: 0
+      - name: Free this job's own cargo target dir
+        if: always()
+        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}-arc" "$GITHUB_RUN_ID"; fi
+
   workspace-test-shard:
+    needs: [workspace-test-archive]
+    if: ${{ !cancelled() }}
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
@@ -459,6 +497,14 @@ jobs:
       # #4596: see the x86-main step of the same name.
       - name: fat_driver case table must still turn RED
         run: setsid --wait bash scripts/ci/fixture_quiet.sh "fat_driver self-test" -- python3 scripts/ci/fat_driver.py self-test
+      # FLOW-010 P1: the archive from workspace-test-archive. continue-on-error: a missing
+      # or failed archive means the section builds in the shard, as it always did.
+      - name: Fetch the prebuilt nextest archive (optional)
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: ws-archive
+          path: ${{ runner.temp }}/ws-archive
       # `?` for the brackets and the comma: --sections splits on commas.
       - name: Sections
         id: run
