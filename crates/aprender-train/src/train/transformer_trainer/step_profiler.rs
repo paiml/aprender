@@ -304,86 +304,95 @@ impl StepProfiler {
         );
         println!("└────────────┴──────────┴────────┴──────────┘");
 
-        // Per-layer breakdown (PMAT-480)
-        if self.num_layers > 0 && self.step_count > 0 {
-            println!(
-                "\n┌─ Per-Layer Profile ({} layers, {} steps) ─┐",
-                self.num_layers, self.step_count
-            );
-            println!(
-                "│ {:>5} │ {:>8} │ {:>8} │ {:>8} │ {:>8} │",
-                "layer", "fwd_ms", "bwd_ms", "fwd_avg", "bwd_avg"
-            );
-            println!("│ {:->5} │ {:->8} │ {:->8} │ {:->8} │ {:->8} │", "", "", "", "", "");
-            let mut fwd_total = Duration::ZERO;
-            let mut bwd_total = Duration::ZERO;
-            for i in 0..self.num_layers {
-                let fwd = self.layer_fwd_totals[i];
-                let bwd = self.layer_bwd_totals[i];
-                fwd_total += fwd;
-                bwd_total += bwd;
-                let fwd_ms = fwd.as_micros() as f64 / 1000.0;
-                let bwd_ms = bwd.as_micros() as f64 / 1000.0;
-                let fwd_avg = fwd_ms / self.step_count as f64;
-                let bwd_avg = bwd_ms / self.step_count as f64;
-                println!(
-                    "│ {i:>5} │ {fwd_ms:>8.1} │ {bwd_ms:>8.1} │ {fwd_avg:>8.2} │ {bwd_avg:>8.2} │"
-                );
-            }
-            let fwd_total_ms = fwd_total.as_micros() as f64 / 1000.0;
-            let bwd_total_ms = bwd_total.as_micros() as f64 / 1000.0;
-            println!(
-                "│ {:>5} │ {:>8.1} │ {:>8.1} │ {:>8.2} │ {:>8.2} │",
-                "TOTAL",
-                fwd_total_ms,
-                bwd_total_ms,
-                fwd_total_ms / self.step_count as f64,
-                bwd_total_ms / self.step_count as f64
-            );
-            println!("└───────┴──────────┴──────────┴──────────┴──────────┘");
+        self.print_layer_profile();
+        self.print_latency_percentiles();
+    }
 
-            // Identify hotspot layers (>1.5x average)
-            let avg_fwd = fwd_total / self.num_layers as u32;
-            let avg_bwd = bwd_total / self.num_layers as u32;
-            let mut hotspots = Vec::new();
-            for i in 0..self.num_layers {
-                let fwd_ratio = if avg_fwd.as_nanos() > 0 {
-                    self.layer_fwd_totals[i].as_nanos() as f64 / avg_fwd.as_nanos() as f64
-                } else {
-                    0.0
-                };
-                let bwd_ratio = if avg_bwd.as_nanos() > 0 {
-                    self.layer_bwd_totals[i].as_nanos() as f64 / avg_bwd.as_nanos() as f64
-                } else {
-                    0.0
-                };
-                if fwd_ratio > 1.5 || bwd_ratio > 1.5 {
-                    hotspots.push((i, fwd_ratio, bwd_ratio));
-                }
-            }
-            if !hotspots.is_empty() {
-                println!("  Hotspot layers (>1.5x average):");
-                for (layer, fwd_r, bwd_r) in &hotspots {
-                    println!("    L{layer}: fwd {fwd_r:.1}x, bwd {bwd_r:.1}x");
-                }
-            }
+    /// Per-layer breakdown and hotspot layers (PMAT-480).
+    fn print_layer_profile(&self) {
+        if self.num_layers == 0 || self.step_count == 0 {
+            return;
         }
-
-        // Percentiles for step wall-clock
-        if self.step_durations.len() >= 10 {
-            let mut sorted: Vec<u128> =
-                self.step_durations.iter().map(std::time::Duration::as_micros).collect();
-            sorted.sort_unstable();
-            let p50 = sorted[sorted.len() / 2];
-            let p95 = sorted[sorted.len() * 95 / 100];
-            let p99 = sorted[sorted.len() * 99 / 100];
+        println!(
+            "\n┌─ Per-Layer Profile ({} layers, {} steps) ─┐",
+            self.num_layers, self.step_count
+        );
+        println!(
+            "│ {:>5} │ {:>8} │ {:>8} │ {:>8} │ {:>8} │",
+            "layer", "fwd_ms", "bwd_ms", "fwd_avg", "bwd_avg"
+        );
+        println!("│ {:->5} │ {:->8} │ {:->8} │ {:->8} │ {:->8} │", "", "", "", "", "");
+        let mut fwd_total = Duration::ZERO;
+        let mut bwd_total = Duration::ZERO;
+        for i in 0..self.num_layers {
+            let fwd = self.layer_fwd_totals[i];
+            let bwd = self.layer_bwd_totals[i];
+            fwd_total += fwd;
+            bwd_total += bwd;
+            let fwd_ms = fwd.as_micros() as f64 / 1000.0;
+            let bwd_ms = bwd.as_micros() as f64 / 1000.0;
+            let fwd_avg = fwd_ms / self.step_count as f64;
+            let bwd_avg = bwd_ms / self.step_count as f64;
             println!(
-                "  Step latency: p50={:.1}ms p95={:.1}ms p99={:.1}ms",
-                p50 as f64 / 1000.0,
-                p95 as f64 / 1000.0,
-                p99 as f64 / 1000.0
+                "│ {i:>5} │ {fwd_ms:>8.1} │ {bwd_ms:>8.1} │ {fwd_avg:>8.2} │ {bwd_avg:>8.2} │"
             );
         }
+        let fwd_total_ms = fwd_total.as_micros() as f64 / 1000.0;
+        let bwd_total_ms = bwd_total.as_micros() as f64 / 1000.0;
+        println!(
+            "│ {:>5} │ {:>8.1} │ {:>8.1} │ {:>8.2} │ {:>8.2} │",
+            "TOTAL",
+            fwd_total_ms,
+            bwd_total_ms,
+            fwd_total_ms / self.step_count as f64,
+            bwd_total_ms / self.step_count as f64
+        );
+        println!("└───────┴──────────┴──────────┴──────────┴──────────┘");
+
+        // Identify hotspot layers (>1.5x average)
+        let avg_fwd = fwd_total / self.num_layers as u32;
+        let avg_bwd = bwd_total / self.num_layers as u32;
+        let mut hotspots = Vec::new();
+        for i in 0..self.num_layers {
+            let fwd_ratio = if avg_fwd.as_nanos() > 0 {
+                self.layer_fwd_totals[i].as_nanos() as f64 / avg_fwd.as_nanos() as f64
+            } else {
+                0.0
+            };
+            let bwd_ratio = if avg_bwd.as_nanos() > 0 {
+                self.layer_bwd_totals[i].as_nanos() as f64 / avg_bwd.as_nanos() as f64
+            } else {
+                0.0
+            };
+            if fwd_ratio > 1.5 || bwd_ratio > 1.5 {
+                hotspots.push((i, fwd_ratio, bwd_ratio));
+            }
+        }
+        if !hotspots.is_empty() {
+            println!("  Hotspot layers (>1.5x average):");
+            for (layer, fwd_r, bwd_r) in &hotspots {
+                println!("    L{layer}: fwd {fwd_r:.1}x, bwd {bwd_r:.1}x");
+            }
+        }
+    }
+
+    /// Print p50/p95/p99 of step wall-clock once at least 10 steps exist.
+    fn print_latency_percentiles(&self) {
+        if self.step_durations.len() < 10 {
+            return;
+        }
+        let mut sorted: Vec<u128> =
+            self.step_durations.iter().map(std::time::Duration::as_micros).collect();
+        sorted.sort_unstable();
+        let p50 = sorted[sorted.len() / 2];
+        let p95 = sorted[sorted.len() * 95 / 100];
+        let p99 = sorted[sorted.len() * 99 / 100];
+        println!(
+            "  Step latency: p50={:.1}ms p95={:.1}ms p99={:.1}ms",
+            p50 as f64 / 1000.0,
+            p95 as f64 / 1000.0,
+            p99 as f64 / 1000.0
+        );
     }
 
     /// PMAT-483/entrenar#328: Start timing a per-operation phase within a layer.

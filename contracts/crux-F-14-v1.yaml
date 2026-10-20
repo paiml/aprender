@@ -131,6 +131,11 @@ falsification_tests:
     scope: "(got, expected) -> HangExitOutcome (pure)"
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: "live `apr train` exiting 124 only on watchdog timeout"
+- id: FALSIFY-CRUX-F-14-004
+  rule: trace-dir listing keeps each file name paired with its own byte size
+  prediction: "TraceDirListing::from_pairs preserves order and pairing, so a zero-byte rank file is reported on the right rank"
+  test: cargo test -p apr-cli --lib hang_trace_classifier::tests::from_pairs
+  if_fails: sizes detach from names, so EmptyFile names the wrong rank (or none) and a dump with an empty rank file can pass the timeout classifier
 proof_obligations:
 - id: CF1A062-EQ-001
   type: equivalence
