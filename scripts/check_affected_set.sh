@@ -3,7 +3,7 @@
 # `cargo tree -i` (a different code path from the tool's cargo-metadata jq).
 set -euo pipefail
 A=scripts/affected_set.sh
-t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+t=$(mktemp -d); trap 'rm -rf "${t:?}"' EXIT
 fail=0
 row() { # name want got
   if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1"; echo "  want: $2" | head -c 300; echo; echo "  got:  $3" | head -c 300; echo; fail=1; fi
@@ -34,4 +34,23 @@ row "unknown path next to a leaf -> ALL" ALL "$(run "$ld/src/lib.rs" scripts/wha
 row "docs only -> nothing" "" "$(run docs/x.md)"
 row "--filter names the package" "package($lp)" "$($A --filter --diff-from <(echo "$ld/src/lib.rs"))"
 row "--filter ALL -> all()" "all()" "$($A --filter --diff-from <(echo Cargo.lock))"
+# FLOW-010 P3: git-mode Cargo.lock narrowing, on a throwaway a <- b, c workspace (b depends on a).
+lk="$t/lk"; abs="$PWD/$A"
+mkdir -p "$lk/a/src" "$lk/b/src" "$lk/c/src"
+: >"$lk/a/src/lib.rs"; : >"$lk/b/src/lib.rs"; : >"$lk/c/src/lib.rs"
+printf '[workspace]\nresolver = "2"\nmembers = ["a", "b", "c"]\n' >"$lk/Cargo.toml"
+printf '[package]\nname = "a"\nversion = "0.1.0"\nedition = "2021"\n' >"$lk/a/Cargo.toml"
+printf '[package]\nname = "b"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\na = { path = "../a" }\n' >"$lk/b/Cargo.toml"
+printf '[package]\nname = "c"\nversion = "0.1.0"\nedition = "2021"\n' >"$lk/c/Cargo.toml"
+printf 'version = 3\n\n[[package]]\nname = "a"\nversion = "0.1.0"\n\n[[package]]\nname = "b"\nversion = "0.1.0"\ndependencies = [\n "a",\n]\n\n[[package]]\nname = "c"\nversion = "0.1.0"\n' >"$lk/Cargo.lock"
+lkgit() { git -C "$lk" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t "$@"; }
+lkgit init -q -b main && lkgit add -A && lkgit commit -q -m base
+sed -i '0,/version = "0.1.0"/s//version = "0.1.1"/' "$lk/Cargo.lock"; lkgit commit -q -am "bump a"
+row "git mode: a lock-only bump of a -> a + its dependent b, not ALL" "a
+b" "$(cd "$lk" && bash "$abs" HEAD~1 HEAD | sort)"
+row "git mode: the same diff via --diff-from has no content -> ALL" ALL "$(cd "$lk" && printf 'Cargo.lock\n' >"$t/dl" && bash "$abs" --diff-from "$t/dl")"
+lkgit commit -q --allow-empty -m noop
+row "git mode: a lock that did not change (empty diff) -> nothing" "" "$(cd "$lk" && bash "$abs" HEAD~1 HEAD)"
+lkgit rm -q Cargo.lock; lkgit commit -q -m "drop the lock"
+row "git mode: a lock unreadable at HEAD -> ALL (cannot place it)" ALL "$(cd "$lk" && bash "$abs" HEAD~1 HEAD)"
 exit "$fail"

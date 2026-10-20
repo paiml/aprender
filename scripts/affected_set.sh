@@ -54,7 +54,7 @@ if [ "$lock" = 1 ]; then
   mb="$(git merge-base "$b" "$h" 2>/dev/null || echo "$b")"
   # one line per [[package]] block: name<TAB>block with newlines as |
   lock_pkgs() { git show "$1:Cargo.lock" 2>/dev/null | awk -v RS='\\[\\[package\\]\\]\n' 'match($0, /name = "[^"]+"/) { n = substr($0, RSTART + 8, RLENGTH - 9); gsub(/\n/, "|"); print n "\t" $0 }'; }
-  old="$(lock_pkgs "$mb" | sort -u)"; new="$(lock_pkgs "$h" | sort -u)"
+  old="$(lock_pkgs "$mb" | sort -u || true)"; new="$(lock_pkgs "$h" | sort -u || true)"
   # unreadable lock on either side, or no changed block: cannot place the change -> ALL
   { [ -n "$old" ] && [ -n "$new" ]; } || { emit ALL; exit 0; }
   changed="$(comm -13 <(printf '%s\n' "$old") <(printf '%s\n' "$new") | cut -f1 | sort -u)"
@@ -71,7 +71,7 @@ touched="$(printf '%s\n' "$touched" | grep -v '^$' | sort -u || true)"
 [ -n "$touched" ] || { [ "$lock" = 1 ] && emit ALL; exit 0; }
 mapfile -t out < <(jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" '
   (.packages | map({name, deps: [.dependencies[].name]})) as $p
-  | def grow($s): ($s + [$p[] | select(any(.deps[]; . as $d | $s | index($d))) | .name] | unique);
+  | def grow($s): ($s + [($p | .[]) | select(any(.deps[]; . as $d | $s | index($d))) | .name] | unique);
     (.packages | map(.name)) as $m
     | ($t | until(grow(.) == .; grow(.))) | .[] | select(. as $n | $m | index($n))' <<<"$meta")
 emit "${out[@]}"

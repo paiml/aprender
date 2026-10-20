@@ -518,6 +518,40 @@ self_test() {
     row 0 "  ...including the lib module whose unit test reads a baseline (aprender-contracts)" 'aprender-contracts:--lib:' bash -c "$(replay pr-scripts)"
     printf 'Cargo.toml\n' > "$td/d-root.txt"
     row 0 "pull_request, root Cargo.toml touched -> full (fail closed)" '^tier=full' bash "$T" --event pull_request --diff-from "$td/d-root.txt"
+    # FLOW-010 P3 (#5799): a root-manifest diff is narrowed to the AFFECTED set U(t,M) by
+    # scripts/test_affected.sh when the base rev is known; a set it cannot name falls back to full.
+    # Fixture workspace: a <- b (b depends on a), c alone. A Cargo.lock edit of `a` affects {a,b}.
+    mkaff() { # $1 dir -> HEAD~3 = base; c1 rust-toolchain.toml; c2 non-member Cargo.toml line; c3 (HEAD) lock edit of a, so HEAD~1 isolates it
+        local d=$1 n
+        git init -q -b main "$d"
+        for n in a b c; do mkdir -p "$d/crates/$n/src"; printf '' > "$d/crates/$n/src/lib.rs"; done
+        printf '[workspace]\nresolver = "2"\nmembers = ["crates/a", "crates/b", "crates/c"]\n' > "$d/Cargo.toml"
+        printf '[package]\nname = "a"\nversion = "0.1.0"\nedition = "2021"\n' > "$d/crates/a/Cargo.toml"
+        printf '[package]\nname = "b"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\na = { path = "../a" }\n' > "$d/crates/b/Cargo.toml"
+        printf '[package]\nname = "c"\nversion = "0.1.0"\nedition = "2021"\n' > "$d/crates/c/Cargo.toml"
+        printf 'version = 3\n\n[[package]]\nname = "a"\nversion = "0.1.0"\n\n[[package]]\nname = "b"\nversion = "0.1.0"\ndependencies = [\n "a",\n]\n\n[[package]]\nname = "c"\nversion = "0.1.0"\n' > "$d/Cargo.lock"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+          && git add -A && git commit -q -m base \
+          && printf '[toolchain]\nchannel = "stable"\n' > rust-toolchain.toml && git add -A && git commit -q -m "toolchain" \
+          && printf '[workspace.metadata]\nx = 1\n' >> Cargo.toml && git commit -q -am "workspace setting" \
+          && sed -i '0,/version = "0.1.0"/s//version = "0.1.1"/' Cargo.lock && git commit -q -am "lock: a bumped" )
+    }
+    mkaff "$td/aff"
+    affbase() { git -C "$td/aff" rev-parse "HEAD~$1"; } # HEAD~3 = base ... HEAD~0 = every change
+    printf 'Cargo.lock\n' > "$td/d-lock.txt"
+    cap aff-lock bash "$T" --event pull_request --diff-from "$td/d-lock.txt" --repo-root "$td/aff" --affected-base "$(affbase 1)"
+    row 0 "FLOW-010 P3: a Cargo.lock diff naming only package a -> quick, not full" '^tier=quick$' bash -c "$(replay aff-lock)"
+    row 0 "  ...the affected set runs: a (changed) and b (depends on a)" '^crates=a b$' bash -c "$(replay aff-lock)"
+    row 0 "  ...the crate outside the set (c) is skipped" '^NOT-SELECTED$' bash -c "if grep '^crates=' '$td/aff-lock.out' | grep -qwE 'c'; then echo SELECTED; else echo NOT-SELECTED; fi"
+    row 0 "  ...with check_workspace=1 so every other crate is still compiled" '^check_workspace=1$' bash -c "$(replay aff-lock)"
+    printf 'rust-toolchain.toml\n' > "$td/d-tc.txt"
+    row 0 "FLOW-010 P3: a rust-toolchain.toml diff has an unknown fan-out -> full" '^tier=full$' bash "$T" --event pull_request --diff-from "$td/d-tc.txt" --repo-root "$td/aff" --affected-base "$(affbase 3)"
+    printf 'Cargo.toml\n' > "$td/d-cm.txt"
+    row 0 "FLOW-010 P3: a Cargo.toml line that is not a member/path entry -> full" '^tier=full$' bash "$T" --event pull_request --diff-from "$td/d-cm.txt" --repo-root "$td/aff" --affected-base "$(affbase 3)"
+    row 0 "FLOW-010 P3: no --affected-base (the base cannot be named) -> full, as before" '^tier=full$' bash "$T" --event pull_request --diff-from "$td/d-lock.txt" --repo-root "$td/aff"
+    row 0 "FLOW-010 P3: a base rev that is not a commit -> full" '^tier=full$' bash "$T" --event pull_request --diff-from "$td/d-lock.txt" --repo-root "$td/aff" --affected-base 0123456789abcdef0123456789abcdef01234567
     printf 'crates/aprender-core/src/lib.rs\n' > "$td/d-core.txt"
     cap pr-cap bash "$T" --event pull_request --diff-from "$td/d-core.txt"
     row 0 "pull_request over the cap (aprender-core) -> quick, NOT an hour of full workspace tests" '^tier=quick' bash -c "$(replay pr-cap)"
