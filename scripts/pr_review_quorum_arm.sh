@@ -901,11 +901,12 @@ if evaluate "$RECEIPT_DIR" "$CONTEXT_FILE"; then
   fi
   command -v "$GH" >/dev/null 2>&1 || die_env "$GH is not on PATH; cannot arm"
   set +e
-  arm_out=$("$GH" pr merge "$PR_NUMBER" --squash --auto 2>&1)
+  # PLAIN `gh pr merge`: the queue owns the method; a method flag + --auto never queued #5789 (2026-10-20).
+  arm_out=$("$GH" pr merge "$PR_NUMBER" 2>&1)
   arm_rc=$?
   set -e
   if [ "$arm_rc" -ne 0 ]; then
-    echo "$PROG: ENV - gh pr merge --auto failed (exit $arm_rc): $arm_out" >&2
+    echo "$PROG: ENV - arming (plain gh pr merge) failed (exit $arm_rc): $arm_out" >&2
     exit 2
   fi
   printf 'ARMED  pr=%s  %s\n' "$PR_NUMBER" "$(printf '%s' "$arm_out" | tr '\n' ' ')"

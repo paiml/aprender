@@ -267,7 +267,9 @@ arm() {
         printf 'WOULD-ARM %s#%s on %s -- %s\n' "$repo" "$pr" "$sha" "${verdict#ARM }"
         return 0
     fi
-    out=$(gh pr merge "$pr" --repo "$repo" --squash --auto 2>&1)
+    # PLAIN `gh pr merge`: on a merge-queue repo a method flag (--squash/--merge/--rebase) with --auto arms
+    # auto-merge by a method the queue does not use, and the PR never queues (#5789, 2026-10-20). The queue owns the method.
+    out=$(gh pr merge "$pr" --repo "$repo" 2>&1)
     rc=$?
     if [ "$rc" -ne 0 ]; then
         printf 'ENV: arming failed (exit %s): %s\n' \
