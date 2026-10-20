@@ -25,11 +25,10 @@ if [ -n "$other" ]; then
     exit 1
 fi
 
-# A stale verifier regenerates shapes.ttl in an old form and the gate then goes red (#5776 lost ~25 min):
-# pv_bin.sh builds `--bin pv` only, so pv-sat stayed whatever an earlier build left. Build BOTH here (cargo's
-# fingerprint is the freshness authority; a no-op when fresh) BEFORE pv_bin.sh snapshots them, and before the
-# conflicted files are dropped, so a failed build leaves the merge as it was. Never an inherited PV_SAT.
-cargo build -q -p aprender-contracts-cli --bin pv --bin pv-sat || { echo "contracts_resolve: REFUSED, pv/pv-sat did not build from this HEAD" >&2; exit 1; }
+# Resolve (and cargo-build, in pv_bin.sh) the verifier BEFORE the conflicted generated files are dropped, so a
+# refusal or a failed build leaves the merge exactly as it was. (A stale verifier regenerated shapes.ttl in an old
+# form on #5776, ~25 min; the cause is not proven to be pv-sat, so no extra build is added here: a bare build would
+# also use a different feature set from pv_bin.sh and thrash the fingerprint.)
 . scripts/pv_bin.sh || exit 1
 PV_SAT=$(dirname "$PV")/pv-sat
 [ -x "$PV_SAT" ] || { echo "contracts_resolve: REFUSED, no pv-sat beside $PV" >&2; exit 1; }
