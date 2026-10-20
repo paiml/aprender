@@ -1244,4 +1244,184 @@ mod tests {
             assert!(!parses(refused), "{refused:?} must be refused");
         }
     }
+
+    // ---- apply_measured_ratchet (#5612): one test per branch of the F-34 application ----
+
+    use provable_contracts::lint::finding::LintFinding;
+    use provable_contracts::lint::{GateDetail, GateExtra, GateResult, MeasuredSet, Ratchets};
+
+    fn shapes_result(readme: &[&str], extra: bool) -> GateResult {
+        let set = |v: &[&str]| MeasuredSet {
+            verified_commands: v.iter().map(|s| (*s).to_string()).collect(),
+        };
+        GateResult {
+            name: "shapes".into(),
+            passed: true,
+            skipped: false,
+            verdict: provable_contracts::ontology::verdict::Verdict::Pass,
+            duration_ms: 0,
+            detail: GateDetail::Validate {
+                contracts: 0,
+                errors: 0,
+                warnings: 0,
+                error_messages: Vec::new(),
+            },
+            extra: extra.then(|| GateExtra::Shapes {
+                shapes_n: 0,
+                focus_nodes_n: 0,
+                pc_shape: "fired".into(),
+                plant_violations: 0,
+                violations: 0,
+                warnings: 0,
+                by_shape: Vec::new(),
+                triples: 0,
+                armed_shapes: Vec::new(),
+                not_armed_shapes: Vec::new(),
+                declines: Vec::new(),
+                unarmed_violations: 0,
+                by_entity_type: Default::default(),
+                controls: Box::new(provable_contracts::lint::ShapesControls {
+                    pc_extract: Default::default(),
+                    pc_shapes: Default::default(),
+                    capability_cells: None,
+                }),
+                receipts: 0,
+                witnesses: 0,
+                hex_mismatches: 0,
+                unmeasured_rows: 0,
+                w3c_cases_passed: 0,
+                w3c_cases_n: 0,
+                counters: Box::default(),
+                release: None,
+                readme: set(readme),
+                claude_md: set(&[]),
+                ratchets: Ratchets::default(),
+            }),
+        }
+    }
+
+    fn measured_sets_of(r: &GateResult) -> &str {
+        match r.extra.as_ref() {
+            Some(GateExtra::Shapes { ratchets, .. }) => &ratchets.measured_sets,
+            other => panic!("not a shapes result: {other:?}"),
+        }
+    }
+
+    fn git_in(dir: &Path, args: &[&str]) {
+        let st = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(args)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .status()
+            .expect("spawn git");
+        assert!(st.success(), "git {args:?}");
+    }
+
+    /// A git work tree whose HEAD commits `baseline` as `lint-baseline.json`.
+    fn repo_with_baseline(baseline: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        git_in(dir.path(), &["init", "-q"]);
+        std::fs::write(dir.path().join("lint-baseline.json"), baseline).expect("write");
+        git_in(dir.path(), &["add", "lint-baseline.json"]);
+        git_in(dir.path(), &["commit", "-q", "-m", "baseline"]);
+        dir
+    }
+
+    fn try_ratchet(
+        dir: &Path,
+        r: Option<&str>,
+        result: &mut GateResult,
+    ) -> Result<Vec<LintFinding>, Box<dyn std::error::Error>> {
+        let mut findings = Vec::new();
+        apply_measured_ratchet(dir, r, result, &mut findings)?;
+        Ok(findings)
+    }
+
+    fn ratchet(dir: &Path, r: &str, result: &mut GateResult) -> Vec<LintFinding> {
+        try_ratchet(dir, Some(r), result).expect("ratchet runs")
+    }
+
+    #[test]
+    fn a_result_without_shapes_extra_is_left_alone() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut result = shapes_result(&[], false);
+        assert!(ratchet(dir.path(), "HEAD", &mut result).is_empty());
+        assert!(result.passed && result.extra.is_none());
+    }
+
+    #[test]
+    fn outside_a_work_tree_the_ratchet_stays_not_checked_and_passes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut result = shapes_result(&["make a"], true);
+        assert!(try_ratchet(dir.path(), None, &mut result)
+            .expect("ratchet runs")
+            .is_empty());
+        assert_eq!(measured_sets_of(&result), "not-checked");
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn a_comparand_that_does_not_resolve_is_red_not_skipped() {
+        let dir = repo_with_baseline("{}");
+        let mut result = shapes_result(&[], true);
+        let refused = try_ratchet(dir.path(), Some("no-such-ref"), &mut result)
+            .expect_err("a named ref that is no commit is refused");
+        assert!(refused.to_string().contains("not a commit"), "{refused}");
+        assert!(result.passed, "a refusal must not touch the result");
+        let findings = try_ratchet(dir.path(), None, &mut result).expect("ratchet runs");
+        assert_eq!(measured_sets_of(&result), "checked");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "PV-ONT-014");
+        assert!(findings[0].message.contains("no comparand"), "{findings:?}");
+        assert!(findings[0].file.ends_with("lint-baseline.json"));
+        assert!(!result.passed);
+        assert_eq!(
+            result.verdict,
+            provable_contracts::ontology::verdict::Verdict::Fail
+        );
+    }
+
+    #[test]
+    fn a_dropped_claim_with_no_withdrawn_entry_fails_the_gate() {
+        let dir = repo_with_baseline(r#"{"readme":{"verified_commands":["make a"]}}"#);
+        let mut result = shapes_result(&[], true);
+        let findings = ratchet(dir.path(), "HEAD", &mut result);
+        assert_eq!(measured_sets_of(&result), "checked");
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].message.contains("`make a` was dropped"));
+        assert!(!result.passed);
+        assert_eq!(
+            result.verdict,
+            provable_contracts::ontology::verdict::Verdict::Fail
+        );
+    }
+
+    #[test]
+    fn a_claim_still_live_or_newly_withdrawn_is_not_a_violation() {
+        let dir = repo_with_baseline(r#"{"readme":{"verified_commands":["make a"]}}"#);
+        let mut result = shapes_result(&["make a"], true);
+        assert!(ratchet(dir.path(), "HEAD", &mut result).is_empty());
+        assert_eq!(measured_sets_of(&result), "checked");
+        assert!(result.passed);
+
+        std::fs::write(
+            dir.path().join("lint-baseline.json"),
+            r#"{"readme":{"verified_commands":[],"withdrawn":["make a"]}}"#,
+        )
+        .expect("write");
+        let mut result = shapes_result(&[], true);
+        assert!(ratchet(dir.path(), "HEAD", &mut result).is_empty());
+        assert!(result.passed);
+    }
 }

@@ -163,6 +163,12 @@ falsification_tests:
   prediction: 'control corpus exit 0 with the armed meet printed; empty armed set exit 2 `decline: NotArmed`; a broken contract exit 1 `reject:`; a dropped committed gate exit 3; an unreadable explicit comparand exit 1'
   test: cargo test -p aprender-contracts-cli --test ont6_lint_verdict
   if_fails: pv lint reports a verdict it did not compute from the armed gates
+- id: FALSIFY-ONT6-007
+  rule: the F-34 measured-set ratchet is applied to the shapes result
+  prediction: a dropped verified claim with no new withdrawn entry turns the shapes result to Fail with a PV-ONT-014 finding; outside a work tree measured_sets stays not-checked and the result passes
+  test: cargo test -p aprender-contracts-cli --lib commands::lint::tests::a_dropped_claim_with_no_withdrawn_entry_fails_the_gate
+  if_fails: apply_measured_ratchet prints a violation and leaves the verdict Pass, or upgrades not-checked to checked outside a git work tree
+  mutation: delete the `result.verdict = Verdict::Fail` assignment in apply_measured_ratchet; the test must go RED
 kani_harnesses_note: >
   EXECUTED 2026-09-17 on lambda-labs, Kani 0.67.0: `cargo kani -p aprender-contracts --harness <name>` for
   each harness below, VERIFICATION SUCCESSFUL x3. Local evidence only — no aprender CI lane runs cargo kani.
@@ -199,5 +205,5 @@ qa_gate:
   - exit_mapping
   - empty_armed_set_declines
   - armed_gates_monotone
-  pass_criteria: All 6 falsification tests pass; the 3 Kani harnesses report VERIFICATION SUCCESSFUL where cargo kani runs
+  pass_criteria: All 7 falsification tests pass; the 3 Kani harnesses report VERIFICATION SUCCESSFUL where cargo kani runs
   falsification: 'arm(Unknown) = true, or meet keeping the left Unknown reason, or check_monotone ignored — each turns a named test RED (measured 2026-09-17)'
