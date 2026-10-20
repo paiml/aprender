@@ -574,4 +574,33 @@ mod parallel_matches_serial {
             );
         }
     }
+
+    /// #5642: the 8960x1536 FFN shape the `--ignored` timing test in `issue_2567_measure` times,
+    /// checked for VALUE (that test only asserts a wall-clock ratio). Rows split across threads,
+    /// 6 super-blocks per row, and 8960 is not a multiple of every thread count, so the short
+    /// final chunk is exercised too.
+    #[test]
+    fn test_q4k_parallel_matches_serial_on_the_ffn_shape() {
+        let (out_dim, in_dim) = (8960usize, 1536usize);
+        let blocks = in_dim.div_ceil(SUPER_BLOCK_SIZE);
+        // bytes <= 0x3F keep every f16 scale finite (same fill as issue_2567_measure).
+        let q4k: Vec<u8> = (0..out_dim * blocks * SUPER_BLOCK_BYTES)
+            .map(|i| ((i * 31 + 7) % 0x40) as u8)
+            .collect();
+        let input: Vec<f32> = (0..in_dim).map(|i| ((i % 17) as f32 - 8.0) * 0.125).collect();
+        let want = scalar::matmul_q4k_f32(&q4k, &input, out_dim, in_dim);
+        let got = matmul_q4k_f32_parallel(&q4k, &input, out_dim, in_dim);
+        assert_eq!(got.len(), out_dim);
+        assert!(
+            want.iter().any(|&w| w != 0.0),
+            "reference is all zeros: the check would be vacuous"
+        );
+        for (row, (g, w)) in got.iter().zip(&want).enumerate() {
+            assert!(g.is_finite() && w.is_finite(), "row {row}: parallel {g}, serial {w}");
+            assert!(
+                (g - w).abs() <= 1e-4 * g.abs().max(w.abs()).max(1.0),
+                "row {row}: parallel {g}, serial {w}"
+            );
+        }
+    }
 }
