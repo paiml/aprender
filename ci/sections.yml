@@ -2690,10 +2690,16 @@ jobs:
           else
             G=scripts/ci
           fi
-          rc=0
-          bash "$G/advisory_diff.sh" --self-test && bash scripts/ci/check_sov_advisories_off.sh --self-test && bash scripts/ci/check_sov_advisories_off.sh && bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh" && bash scripts/ci/rearm_ready.sh --self-test && bash "$G/advisory_gate.sh" || rc=$?
-          rm -rf -- "${S:?}"
-          exit "$rc"
+          # One command per line under -e: the first non-zero exit ends the step with that status (no && chain, no saved rc).
+          trap 'rm -rf -- "${S:?}"' EXIT
+          set -e
+          bash "$G/advisory_diff.sh" --self-test
+          bash scripts/ci/check_sov_advisories_off.sh --self-test
+          bash scripts/ci/check_sov_advisories_off.sh
+          bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh"
+          bash scripts/ci/advisory_step_selftest.sh
+          bash scripts/ci/rearm_ready.sh --self-test
+          bash "$G/advisory_gate.sh"
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.

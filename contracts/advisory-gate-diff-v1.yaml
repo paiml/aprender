@@ -125,6 +125,13 @@ falsification_tests:
     if_fails: "the vendored scans still stop every PR on an advisory already on main (the #5793 REJECT)"
     mutation: "set advisories_diff_only: false in ci/sections.yml, or change the vendored '= true' test; the matching case must turn RED (measured 2026-10-20)"
 
+  - id: FALSIFY-ADG-008
+    rule: "The CI step fails closed on the gate's exit status"
+    prediction: "the 'Advisories must pass' step of ci.yml exits with the gate's (or any earlier self-test's) non-zero status; a step without the gate line does not"
+    test: "scripts/ci/advisory_step_selftest.sh, 4 cases + 1 mutant: the step's run block is extracted from ci.yml and run against stub scripts on a throwaway origin/main; gate rc 75 gives 75, gate rc 1 gives 1, a failing self-test gives its rc, all green gives 0"
+    if_fails: "a red or could-not-check gate leaves the step green and a PR merges on an unjudged advisory"
+    mutation: "delete the advisory_gate.sh invocation from the step; the mutant case must stay green on a failing gate, which the cases above forbid (measured 2026-10-20)"
+
 qa_gate:
   id: F-ADG-001
   name: Advisory gate diff contract
@@ -134,5 +141,5 @@ qa_gate:
     - main_resident_advisory
     - one_scanner_of_record
     - auto_rearm
-  pass_criteria: "All 7 falsification tests pass; the scanner script has a must-fail/must-pass case table"
+  pass_criteria: "All 8 falsification tests pass; the scanner script has a must-fail/must-pass case table"
   falsification: "Revert the gate to lock-vs-DB; FALSIFY-ADG-001 must turn RED"
