@@ -2,6 +2,8 @@
 
 mod registry;
 
+#[cfg(test)]
+pub(crate) use registry::Bug;
 pub use registry::{BugClass, BugPattern, BugRegistry};
 
 /// Severity levels for bugs
