@@ -1655,6 +1655,24 @@ fn test_archive_wiring_mutants_all_die() {
             ),
         ),
         (
+            "literal shard count in the shard run step",
+            mutate(
+                &sec,
+                "- name: \"Quick tier: every test target that reads the tree",
+                "hash:${SHARD}/${SHARDS}",
+                "hash:${SHARD}/3",
+            ),
+        ),
+        (
+            "literal shard list in the archive yardstick",
+            mutate(
+                &sec,
+                "- name: \"Build the quick-tier tree-reader set once and archive it",
+                "for n in $(seq 1 \"$SHARDS\")",
+                "for n in 1 2 3",
+            ),
+        ),
+        (
             "upload overwrite false",
             mutate(
                 &sec,

@@ -993,10 +993,10 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
-            -e EXPR="$EXPR" -e SHARD \
+            -e EXPR="$EXPR" -e SHARD -e SHARDS \
             "$IMAGE" \
             bash -c 'set -euo pipefail
-              cargo nextest run --profile ci --archive-file /workspace/ws-archive/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite -E "$EXPR" --partition "hash:${SHARD}/3"'
+              cargo nextest run --profile ci --archive-file /workspace/ws-archive/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}"'
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -1183,7 +1183,7 @@ jobs:
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
   # FLOW-010 P1 (amendment 3 item 7): ONE job builds the quick-tier tree-reader
-  # binary set and archives it; the 3 shards run their hash partition from the
+  # binary set and archives it; the shards run their hash partition from the
   # archive (workspace-test-shard "Quick tier: every test target that reads the
   # tree"). Same tier decision as a shard; a non-quick tier archives nothing and
   # the shards behave exactly as before. The archive's matching-test ids must equal
@@ -1482,6 +1482,9 @@ jobs:
           tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
                   | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
           printf 'archive build flags: %s\n' "$BUILD_FLAGS"
+          # The shard count has one source: the matrix-pins above (see check_shard_count_single_source.sh).
+          SHARDS="$(awk '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{w=1;next} w&&/^    - \{shard:/{n++;next} w&&!/^    - /{exit} END{print n+0}' ci/sections.yml)"
+          [ "$SHARDS" -gt 0 ] || { echo "no workspace-test-shard pins in ci/sections.yml"; exit 1; }
           dock() {
             docker run --rm \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
@@ -1500,7 +1503,7 @@ jobs:
               -e CARGO_PROFILE_TEST_DEBUG=0 \
               -e CARGO_PROFILE_DEV_DEBUG=0 \
               -e CARGO_TERM_COLOR=never \
-              -e EXPR="$EXPR" -e BUILD_FLAGS="$BUILD_FLAGS" -e TREE="$tree" \
+              -e EXPR="$EXPR" -e BUILD_FLAGS="$BUILD_FLAGS" -e TREE="$tree" -e SHARDS="$SHARDS" \
               "$IMAGE" bash -c "set -euo pipefail; $1"
           }
           t0=$SECONDS
@@ -1510,7 +1513,7 @@ jobs:
           # 2. the INDEPENDENT yardstick, as the shards' Σ-executed step built it: the whole
           #    filterset over every test of the target packages, whole and per shard partition
           dock 'cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /workspace/ws-archive-out/live.json
-                for n in 1 2 3; do cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${n}/3" --message-format json > "/workspace/ws-archive-out/tree.${n}.list.json"; done'
+                for n in $(seq 1 "$SHARDS"); do cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${n}/${SHARDS}" --message-format json > "/workspace/ws-archive-out/tree.${n}.list.json"; done'
           # 3. the same filterset listed FROM the archive; one extract, into a directory that exists
           dock 'cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite -E "$EXPR" --message-format json > /workspace/ws-archive-out/arc.json'
           t_list=$((SECONDS - t0))
