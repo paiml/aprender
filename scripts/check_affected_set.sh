@@ -16,7 +16,7 @@ readers="$(sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$A")"
 meta=$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null)
 members=$(jq -r '.packages[].name' <<<"$meta" | sort)
 # a READERS entry that is a directory and not a package (e.g. facades) is dropped by the tool; drop it from the oracle too
-readers="$(for r in $readers; do if grep -qx "$r" <<<"$members"; then echo "$r"; fi; done)"
+readers="$(printf '%s\n' $readers | grep -Fxf <(printf '%s\n' "$members") || true)"
 # a non-core crate that has dependents, and a leaf with none
 withdep="" leaf=""
 for p in $members; do
