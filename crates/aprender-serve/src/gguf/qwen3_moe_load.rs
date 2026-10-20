@@ -982,6 +982,206 @@ mod tests {
             "expected non-F32 router error, got: {err}"
         );
     }
+
+    // ---- expert_swiglu_quantized (#5599): exact-output branch tests ----
+    //
+    // Fixture: hidden_dim = intermediate = 256 (one super-block per row).
+    // With `hidden` = 1/256 everywhere, gate/up row r evaluates to the row's
+    // constant weight value, so SiLU's argument is known exactly.
+
+    const SW_DIM: usize = 256;
+    const F16_ONE: u16 = 0x3C00;
+    const F16_TWO: u16 = 0x4000;
+
+    /// Q4_K row (144 B): every weight dequantizes to `q - dmin` (d = 1, sc = 1, m = 1).
+    fn q4k_row(q: u8, dmin_f16: u16) -> Vec<u8> {
+        let mut b = vec![0u8; 144];
+        b[0..2].copy_from_slice(&F16_ONE.to_le_bytes());
+        b[2..4].copy_from_slice(&dmin_f16.to_le_bytes());
+        b[4..12].fill(0x01); // j<4: sc = 1, m = 1
+        b[12..16].fill(0x11); // j>=4: sc = 1, m = 1
+        b[16..].fill(q | (q << 4));
+        b
+    }
+
+    fn q6k_finish(ql: &[u8], qh: &[u8]) -> Vec<u8> {
+        let mut b = vec![0u8; 210];
+        b[..128].copy_from_slice(ql);
+        b[128..192].copy_from_slice(qh);
+        b[192..208].fill(1); // i8 scales = 1
+        b[208..210].copy_from_slice(&F16_ONE.to_le_bytes());
+        b
+    }
+
+    /// Q6_K row where every weight is `v` (-32..=31).
+    fn q6k_const(v: i32) -> Vec<u8> {
+        let q = (v + 32) as u8;
+        q6k_finish(&[(q & 0xF) * 0x11; 128], &[(q >> 4) * 0x55; 64])
+    }
+
+    /// Q6_K row with weight `v` at each listed position (< 32); all else -32.
+    fn q6k_points(pts: &[(usize, i32)]) -> Vec<u8> {
+        let (mut ql, mut qh) = ([0u8; 128], [0u8; 64]);
+        for &(l, v) in pts {
+            let q = (v + 32) as u8;
+            ql[l] = q & 0xF;
+            qh[l] = q >> 4;
+        }
+        q6k_finish(&ql, &qh)
+    }
+
+    /// One expert's slab: `SW_DIM` rows of `rows[r]` where given, zero rows elsewhere.
+    fn slab(row_bytes: usize, rows: &[(usize, Vec<u8>)]) -> Vec<u8> {
+        let mut v = vec![0u8; SW_DIM * row_bytes];
+        for (r, b) in rows {
+            v[r * row_bytes..(r + 1) * row_bytes].copy_from_slice(b);
+        }
+        v
+    }
+
+    /// Layer + backing data for `(qtype, stacked bytes)` gate/up/down tensors.
+    fn sw_layer(
+        gate: (u32, Vec<u8>),
+        up: (u32, Vec<u8>),
+        down: (u32, Vec<u8>),
+    ) -> (Qwen3MoeQuantizedLayer, Vec<u8>) {
+        let mut data = Vec::new();
+        let mut put = |(qtype, bytes): (u32, Vec<u8>)| {
+            let t = QuantizedTensorRef {
+                offset: data.len(),
+                byte_size: bytes.len(),
+                num_elements: 0,
+                qtype,
+            };
+            data.extend_from_slice(&bytes);
+            t
+        };
+        let (gate_exps, up_exps, down_exps) = (put(gate), put(up), put(down));
+        let router = gate_exps.clone();
+        let layer = Qwen3MoeQuantizedLayer {
+            router,
+            gate_exps,
+            up_exps,
+            down_exps,
+        };
+        (layer, data)
+    }
+
+    fn run_swiglu(
+        layer: &Qwen3MoeQuantizedLayer,
+        data: &[u8],
+        expert: usize,
+        n_exp: usize,
+    ) -> Result<Vec<f32>> {
+        let hidden = vec![1.0f32 / SW_DIM as f32; SW_DIM];
+        expert_swiglu_quantized(&hidden, layer, expert, n_exp, SW_DIM, SW_DIM, data)
+    }
+
+    /// Down tensor (Q6_K) for one expert: out[r] = 2*ffn[0] + 3*ffn[1] on every row.
+    fn down_2_3() -> Vec<u8> {
+        let rows: Vec<_> = (0..SW_DIM)
+            .map(|r| (r, q6k_points(&[(0, 2), (1, 3)])))
+            .collect();
+        slab(210, &rows)
+    }
+
+    fn assert_all_rows_near(out: &[f32], want: f32, what: &str) {
+        assert_eq!(out.len(), SW_DIM);
+        for (r, &o) in out.iter().enumerate() {
+            assert!(
+                (o - want).abs() <= want.abs() * 0.02,
+                "{what}: row {r} = {o}, want {want}"
+            );
+        }
+    }
+
+    /// Gate +3 / up 2 on unit 0 and gate -2 / up 5 on unit 1. SiLU(-2) =
+    /// -0.238406 keeps its sign: out = 2*(2.857722*2) + 3*(-0.238406*5) = 7.854802.
+    /// A ReLU-style clamp gives 11.43, an |g| variant gives 15.0.
+    #[test]
+    fn expert_swiglu_quantized_silu_keeps_negative_gate_sign() {
+        let gate = slab(144, &[(0, q4k_row(3, 0)), (1, q4k_row(0, F16_TWO))]);
+        let up = slab(144, &[(0, q4k_row(2, 0)), (1, q4k_row(5, 0))]);
+        let (layer, data) = sw_layer((12, gate), (12, up), (14, down_2_3()));
+        let out = run_swiglu(&layer, &data, 0, 1).expect("mixed-sign swiglu");
+        assert_all_rows_near(&out, 7.854_802, "mixed-sign gate");
+    }
+
+    /// Zero gate => SiLU(0) = 0 => exactly zero output, whatever `up` holds.
+    #[test]
+    fn expert_swiglu_quantized_zero_gate_gates_everything_off() {
+        let up = slab(144, &[(0, q4k_row(7, 0)), (1, q4k_row(7, 0))]);
+        let (layer, data) = sw_layer((12, slab(144, &[])), (12, up), (14, down_2_3()));
+        let out = run_swiglu(&layer, &data, 0, 1).expect("zero-gate swiglu");
+        assert!(out.iter().all(|&o| o == 0.0), "zero gate must give exact 0");
+    }
+
+    /// Expert id selects its own slab: expert 1 has gate 1 / up 4 =>
+    /// 2 * SiLU(1) * 4 = 5.848469, distinct from expert 0's 2 * SiLU(3) * 2 = 11.430890.
+    #[test]
+    fn expert_swiglu_quantized_selects_the_requested_expert_slab() {
+        let g = [
+            slab(144, &[(0, q4k_row(3, 0))]),
+            slab(144, &[(0, q4k_row(1, 0))]),
+        ]
+        .concat();
+        let u = [
+            slab(144, &[(0, q4k_row(2, 0))]),
+            slab(144, &[(0, q4k_row(4, 0))]),
+        ]
+        .concat();
+        let d = [down_2_3(), down_2_3()].concat();
+        let (layer, data) = sw_layer((12, g), (12, u), (14, d));
+        let e1 = run_swiglu(&layer, &data, 1, 2).expect("expert 1");
+        assert_all_rows_near(&e1, 5.848_469, "expert 1");
+        let e0 = run_swiglu(&layer, &data, 0, 2).expect("expert 0");
+        assert_all_rows_near(&e0, 11.430_89, "expert 0");
+    }
+
+    /// Per-tensor qtype dispatch: Q6_K gate (3), Q4_K up (2), Q4_K down (all 3):
+    /// out = 3 * (SiLU(3) * 2) = 17.146334.
+    #[test]
+    fn expert_swiglu_quantized_dispatches_each_tensor_by_its_own_qtype() {
+        let gate = slab(210, &[(0, q6k_const(3))]);
+        let up = slab(144, &[(0, q4k_row(2, 0))]);
+        let rows: Vec<_> = (0..SW_DIM).map(|r| (r, q4k_row(3, 0))).collect();
+        let (layer, data) = sw_layer((14, gate), (12, up), (12, slab(144, &rows)));
+        let out = run_swiglu(&layer, &data, 0, 1).expect("mixed-qtype swiglu");
+        assert_all_rows_near(&out, 17.146_334, "mixed qtype");
+    }
+
+    #[test]
+    fn expert_swiglu_quantized_rejects_hidden_length_mismatch() {
+        let (layer, data) = sw_layer((12, slab(144, &[])), (12, slab(144, &[])), (14, down_2_3()));
+        let err = expert_swiglu_quantized(&[0.0; 8], &layer, 0, 1, SW_DIM, SW_DIM, &data)
+            .expect_err("8 != 256 must be refused");
+        assert!(
+            format!("{err}").contains("hidden.len() = 8 but hidden_dim = 256"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn expert_swiglu_quantized_propagates_out_of_range_expert() {
+        let (layer, data) = sw_layer((12, slab(144, &[])), (12, slab(144, &[])), (14, down_2_3()));
+        let err = run_swiglu(&layer, &data, 1, 1).expect_err("expert 1 of 1");
+        assert!(
+            format!("{err}").contains("expert_id 1 out of range"),
+            "{err}"
+        );
+    }
+
+    /// An unsupported down qtype (F32) is refused by the dispatcher, after gate/up ran.
+    #[test]
+    fn expert_swiglu_quantized_refuses_unsupported_down_qtype() {
+        let (layer, data) = sw_layer(
+            (12, slab(144, &[])),
+            (12, slab(144, &[])),
+            (GGUF_TYPE_F32, vec![0u8; SW_DIM * 4]),
+        );
+        let err = run_swiglu(&layer, &data, 0, 1).expect_err("F32 down must be refused");
+        assert!(format!("{err}").contains("moe_expert_matvec"), "{err}");
+    }
 }
 
 // #3341 load-time contract tests (see the module doc in the included file).
