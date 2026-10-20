@@ -74,7 +74,7 @@ self_test() {
     check red "mid-line (arm_pr_automerge shape)" < <(printf 'out=$(gh pr merge "$N" --repo r --squash --auto 2>&1)\n')
     check red "flags before the positional (session_docs_commit shape)" < <(printf 'gh pr merge --squash --auto "$BR" >/dev/null\n')
     check red "backslash continuation" < <(printf 'gh pr merge "$pr" \\\n   --squash --auto\n')
-    check red "flag held in a variable" < <(printf 'M=--squash\ngh pr merge "$pr" $M\n')
+    check red "flag held in a variable" < <(printf 'M=%s\ngh pr merge "$pr" $M\n' '--squash')
     check red "array-held arguments" < <(printf 'gh pr merge "$pr" "${ARGS[@]}"\n')
     mkdir -p "$td/.claude/skills/s"
     printf 'Runs `gh pr merge <N> --squash --auto` on PERMIT\n' > "$td/.claude/skills/s/SKILL.md"
