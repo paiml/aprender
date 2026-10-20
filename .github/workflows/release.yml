@@ -120,4 +120,9 @@ jobs:
           CRATES: ${{ needs.crates.result }}
         run: |
           printf 'plan=%s assets=%s crates=%s\n' "$PLAN" "$ASSETS" "$CRATES" | tee -a "$GITHUB_STEP_SUMMARY"
+          # #5561: a publish that never reached crates.io frees the version claim so a later rc can
+          # run; once crates succeeded the claim stays (the version is spent).
+          if [ "$PLAN" = success ] && [ "$CRATES" != success ]; then
+            bash scripts/release/release_exclusive.sh --release "${{ needs.plan.outputs.tag }}"
+          fi
           [ "$PLAN" = success ] && [ "$ASSETS" = success ] && [ "$CRATES" = success ]
