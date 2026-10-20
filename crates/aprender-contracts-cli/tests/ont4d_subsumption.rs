@@ -187,21 +187,26 @@ fn the_tracked_contracts_nt_carries_the_type_closure() {
 
 #[test]
 fn a_fixture_extract_carries_the_closure_and_is_byte_identical_twice() {
-    let d = tempfile::tempdir().expect("tempdir");
+    // pv extract walks the PARENT of its input dir (aprender#5779): a bare tempdir() sits in /tmp, so nest the
+    // fixture in a dir of its own and the walk sees only the fixture.
+    let outer = tempfile::tempdir().expect("tempdir");
+    let inner = outer.path().join("contracts");
+    std::fs::create_dir(&inner).expect("fixture dir");
+    let d = &inner;
     for f in ["ontology.yaml", "code-shape.yaml", "kernel-noname.yaml"] {
         std::fs::copy(
             repo(&format!("tests/fixtures/ont/subsumption-inherit/{f}")),
-            d.path().join(f),
+            d.join(f),
         )
         .expect("copy");
     }
-    let dir = s(d.path());
+    let dir = s(d);
     let r = pv(&["extract", &dir]);
     assert_eq!(r.code, 0, "{}", show(&r));
-    let first = std::fs::read(d.path().join("contracts.nt")).expect("contracts.nt written");
+    let first = std::fs::read(d.join("contracts.nt")).expect("contracts.nt written");
     let r = pv(&["extract", &dir]);
     assert_eq!(r.code, 0, "{}", show(&r));
-    let second = std::fs::read(d.path().join("contracts.nt")).expect("contracts.nt written");
+    let second = std::fs::read(d.join("contracts.nt")).expect("contracts.nt written");
     assert_eq!(first, second, "export byte-identical across two runs");
     let nt = String::from_utf8(first).expect("utf-8");
     let k = typed(&nt, "Kernel");
