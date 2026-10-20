@@ -22,6 +22,7 @@ ALLOW='scripts/check_release_host_receipts.sh scripts/release/rehearse.sh script
 
 # flagged FILE -> "file:text" per offending command
 flagged() {
+    [ "${QMP_MUTANT:-}" = broken ] && return 0 # test-only: a scanner that flags nothing
     sed -e ':a' -e '/\\$/{N;s/\\\n/ /;ta' -e '}' "$1" 2> /dev/null | awk -v f="$1" '
         /^[[:space:]]*#/ { next }
         {
@@ -64,22 +65,25 @@ self_test() {
         cat > "$td/scripts/x.sh"; got="$(scan "$td")"
         if { [ "$1" = red ] && [ -n "$got" ]; } || { [ "$1" = green ] && [ -z "$got" ]; }; then echo "ok    $1  $2"; else echo "FAIL  $1  $2 (got: ${got:-nothing})"; fails=1; fi
     }
-    printf 'out=$(gh pr merge "$pr" --repo "$repo" 2>&1)\n' | check green "plain with --repo and a redirect"
-    printf 'gh pr merge "$BR" >/dev/null 2>&1 && say armed\n' | check green "plain then &&"
-    printf 'gh pr merge -R o/r 12\n# gh pr merge 1 --squash --auto\n' | check green "-R form and a comment"
+    check green "plain with --repo and a redirect" < <(printf 'out=$(gh pr merge "$pr" --repo "$repo" 2>&1)\n')
+    check green "plain then &&" < <(printf 'gh pr merge "$BR" >/dev/null 2>&1 && say armed\n')
+    check green "-R form and a comment" < <(printf 'gh pr merge -R o/r 12\n# gh pr merge 1 --squash --auto\n')
     for flag in --squash -s --merge -m --rebase -r --auto --squash=1 --delete-branch; do
-        printf 'gh pr merge "$pr" %s\n' "$flag" | check red "method/option flag $flag"
+        check red "method/option flag $flag" < <(printf 'gh pr merge "$pr" %s\n' "$flag")
     done
-    printf 'out=$(gh pr merge "$N" --repo r --squash --auto 2>&1)\n' | check red "mid-line (arm_pr_automerge shape)"
-    printf 'gh pr merge --squash --auto "$BR" >/dev/null\n' | check red "flags before the positional (session_docs_commit shape)"
-    printf 'gh pr merge "$pr" \\\n   --squash --auto\n' | check red "backslash continuation"
-    printf 'M=--squash\ngh pr merge "$pr" $M\n' | check red "flag held in a variable"
-    printf 'gh pr merge "$pr" "${ARGS[@]}"\n' | check red "array-held arguments"
+    check red "mid-line (arm_pr_automerge shape)" < <(printf 'out=$(gh pr merge "$N" --repo r --squash --auto 2>&1)\n')
+    check red "flags before the positional (session_docs_commit shape)" < <(printf 'gh pr merge --squash --auto "$BR" >/dev/null\n')
+    check red "backslash continuation" < <(printf 'gh pr merge "$pr" \\\n   --squash --auto\n')
+    check red "flag held in a variable" < <(printf 'M=--squash\ngh pr merge "$pr" $M\n')
+    check red "array-held arguments" < <(printf 'gh pr merge "$pr" "${ARGS[@]}"\n')
     mkdir -p "$td/.claude/skills/s"
     printf 'Runs `gh pr merge <N> --squash --auto` on PERMIT\n' > "$td/.claude/skills/s/SKILL.md"
     got="$(scan "$td")"
     if [ -n "$got" ]; then echo "ok    red  skill markdown is scanned"; else echo "FAIL  red  markdown not scanned"; fails=1; fi
     rm -rf "${td:?}/.claude"
+    if [ -z "${QMP_MUTANT:-}" ]; then # MUTANT: a scanner that flags nothing must turn --self-test RED
+        if QMP_MUTANT=broken bash "$0" --self-test > /dev/null 2>&1; then echo "FAIL  mutant: --self-test stayed green on a broken scanner"; fails=1; else echo "ok    red  MUTANT: broken scanner turns --self-test RED"; fi
+    fi
     got="$(scan "$(git rev-parse --show-toplevel)")"
     if [ -z "$got" ]; then echo "ok    green the real tree has no method flag on an arming path"; else echo "FAIL  real tree: $got"; fails=1; fi
     return "$fails"
