@@ -605,6 +605,8 @@ falsification_conditions:
       on success, passes a non-cancelled error through unchanged, and rewrites
       an error to `CircuitBreak("cancelled by user")` only when the cancel flag
       is set; a set flag never masks a successful turn.
+    # repl_tests.rs is `#[path]`-included as `mod tests` in agent/repl.rs, so the
+    # test paths below are agent::repl::tests::*, not agent::repl_tests::*.
     test: >
       cargo test -p aprender-orchestrate --lib -- run_turn_streaming_tests
     tests:
