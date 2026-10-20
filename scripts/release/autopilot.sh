@@ -426,6 +426,9 @@ if run_step tag; then
     say "WOULD gh workflow run binary-release.yml --repo $REPO --ref $T -f tag=$T"
     say "REHEARSED the tag step for $T at $MC: WOULD lines only, nothing tagged, drafted or dispatched"
   else
+  # #5561: no tag push or `gh release create` while a release.yml run is queued or in progress, or
+  # while a release or draft $T exists.
+  REPO="$REPO" bash scripts/release/release_exclusive.sh "$T" >> "$LOG" 2>&1 || die "release_exclusive refused $T (a release.yml run is active, or $T already exists) -- no tag"
   cut_tag "$V" "$T" "$MC"
   say "TAGGED $T at $MC"
   gh release create "$T" --repo "$REPO" --verify-tag --draft --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create --draft failed"

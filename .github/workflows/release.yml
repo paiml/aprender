@@ -53,7 +53,9 @@ jobs:
           printf '%s' "$RC" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$' || { echo "::error::rc_tag '$RC' is not vX.Y.Z-rc.N"; exit 1; }
           tag=${RC%-rc.*}; ver=${tag#v}
           [ "$(gh release view "$RC" --json isPrerelease -q .isPrerelease)" = true ] || { echo "::error::$RC is not a prerelease"; exit 1; }
-          if gh release view "$tag" >/dev/null 2>&1; then echo "::error::$tag already released"; exit 1; fi
+          # One release at a time (#5561): refuses on an existing vX.Y.Z release, draft or tag, and on a
+          # lower-id release.yml run still active (the lowest id wins, so exactly one rc proceeds).
+          setsid --wait bash scripts/release/release_exclusive.sh "$tag" "$GITHUB_RUN_ID" || { echo "::error::$tag is not free to release"; exit 1; }
           sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RC" -q .sha)
           setsid --wait bash scripts/check_release_assets.sh "$RC"
           { echo "version=$ver"; echo "tag=$tag"; echo "sha=$sha"; } >> "$GITHUB_OUTPUT"
@@ -61,6 +63,9 @@ jobs:
 
   assets:
     needs: plan
+    concurrency:
+      group: release-${{ needs.plan.outputs.version }}
+      cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     steps:
@@ -75,6 +80,9 @@ jobs:
 
   crates:
     needs: plan
+    concurrency:
+      group: release-${{ needs.plan.outputs.version }}
+      cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 240
     # Publishing a crate is irreversible (yank only): a reviewer approves this environment.
