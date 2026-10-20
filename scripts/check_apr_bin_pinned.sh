@@ -182,9 +182,8 @@ PATHRES_PV='(command[[:space:]]+-v[[:space:]]+pv|which[[:space:]]+pv|type[[:spac
 # ~/.cargo/bin/pv was release 0.71.4, older than the shapes/witness format, and a regen through it
 # rewrote shapes.ttl by 68 lines. ABS_PV: a hardcoded pv path. DEFAULT_PV: a variable whose fallback is
 # the bare name (`PV=pv`, `${PV:-pv}`), which resolves through PATH the moment the pin is unset.
-# Lines naming FLEET_PV_ are the fleet-pv advisory probe (LAB), which looks for a fleet binary on purpose.
 ABS_PV='(^|[[:space:]@"'"'"'=(`]|:-|:=)(/|~|\$(HOME|CARGO_HOME)|\$\{(HOME|CARGO_HOME)\}|\$\((HOME|CARGO_HOME)\))[A-Za-z0-9_.$/{}()-]*/bin/pv([[:space:]"'"'"'})]|$)'
-DEFAULT_PV='(^|[[:space:];@(]|-e[[:space:]])(export[[:space:]]+)?(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV)[[:space:]]*[?:+]?=[[:space:]]*["'"'"']?pv["'"'"']?([[:space:];)]|$)|[:?]?[-=]pv\}'
+DEFAULT_PV='(^|[[:space:];@(]|-e[[:space:]])(export[[:space:]]+)?(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV)[[:space:]]*[?:+]?=[[:space:]]*["'"'"']?pv["'"'"']?([[:space:];)]|$)|\$\{(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV)[:?]?[-=]pv\}'
 
 MIN_EXPECTED="${MIN_EXPECTED:-80}"
 
@@ -413,7 +412,12 @@ check_file() {
         # CLASS 6/7 (#5776): an absolute pv path, or a variable that falls back to bare `pv`.
         # A line that only TESTS for the binary (ls/test/stat/...) is a diagnostic, not a run.
         case "$trimmed" in
-            ls\ *|test\ *|stat\ *|file\ *|readlink\ *|echo\ *|printf\ *|\[\ *) : ;;
+            *\;*|*\&*|*\|*) _chk=1 ;;   # compound line: a test can sit in front of a real run
+            ls\ *|test\ *|stat\ *|file\ *|readlink\ *|echo\ *|printf\ *|\[\ *) _chk=0 ;;
+            *) _chk=1 ;;
+        esac
+        case "$_chk" in
+            0) : ;;
             *)
                 if [[ $trimmed =~ $ABS_PV ]]; then
                     report 'ABS-PV' "$f" "$lineno" "$trimmed"
@@ -707,6 +711,9 @@ PV="${PV:-pv}"
         'PV ?= pv
 regen:
 	@$(PV) extract contracts'
+    surface_probe 'compound-skip' 'scripts/regen4.sh' \
+        '#!/usr/bin/env bash
+test -f a && ~/.cargo/bin/pv extract contracts'
     surface_probe 'bare-pv-script' 'scripts/regen3.sh' \
         '#!/usr/bin/env bash
 pv extract contracts'
@@ -754,11 +761,12 @@ FIXTURE
         printf '\nself-test FAILED with %s case(s).\n' "$fails" >&2
         exit 1
     fi
-    printf 'self-test OK: %s regex cases and 16 surface probes.\n' \
+    printf 'self-test OK: %s regex cases and 17 surface probes.\n' \
         "$(( ${#must_match_bare[@]} + ${#must_not_match_bare[@]} + ${#must_match_abs[@]} \
              + ${#must_not_match_abs[@]} + ${#must_match_pathres[@]} + ${#must_not_match_pathres[@]} \
              + ${#must_match_pv[@]} + ${#must_not_match_pv[@]} \
-             + ${#must_match_pathres_pv[@]} + ${#must_not_match_pathres_pv[@]} ))"
+             + ${#must_match_pathres_pv[@]} + ${#must_not_match_pathres_pv[@]} \
+             + ${#must_match_abs_pv[@]} + ${#must_not_match_abs_pv[@]} + ${#must_match_default_pv[@]} + ${#must_not_match_default_pv[@]} ))"
     exit 0
 fi
 
