@@ -21,7 +21,8 @@ check() { # $1 = sections.yml  $2 = ci.yml ; prints FAIL lines, returns 1 on any
   [ "$got" = "$want" ] || { echo "FAIL ci.yml matrix shard list ($got) != 1..$n"; bad=1; }
   awk '/^  workspace-test-shard:/{j=1} j&&/^        shards: \[/{print;exit}' "$ci" | grep -q "\[$n\]" || { echo "FAIL ci.yml matrix shards != [$n]"; bad=1; }
   if grep -nE 'hash:\$\{SHARD\}/[0-9]+|quick_tier_shard\.sh "\$SHARD" [0-9]+|--shard "\$\{SHARD\}/[0-9]+"' "$sec"; then echo "FAIL literal shard count in $sec"; bad=1; fi
-  if grep -nE "\?[0-9]+\?'|for n in 1 2 3" "$ci"; then echo "FAIL literal shard count in $ci"; bad=1; fi
+  lit_loop="n in 1 2 3"
+  if grep -nE "\?[0-9]+\?'|${lit_loop}" "$ci"; then echo "FAIL literal shard count in $ci"; bad=1; fi
   [ "$bad" = 0 ] && echo "ok    shard count $n: pins, ci.yml matrix, no literals"
   return "$bad"
 }
