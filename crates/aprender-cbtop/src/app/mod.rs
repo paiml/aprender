@@ -189,3 +189,6 @@ impl CbtopApp {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod sparklines_tests;

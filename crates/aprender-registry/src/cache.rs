@@ -1081,3 +1081,34 @@ mod tests {
         assert_eq!(parsed, EvictionPolicy::LRU);
     }
 }
+
+#[cfg(test)]
+mod progress_human_tests {
+    use super::*;
+
+    fn progress(total: u64, downloaded: u64, eta_secs: f64) -> DownloadProgress {
+        let mut p = DownloadProgress::new(total);
+        p.downloaded_bytes = downloaded;
+        p.eta_secs = eta_secs;
+        p
+    }
+
+    #[test]
+    fn eta_human_formats_seconds_minutes_and_hours() {
+        assert_eq!(progress(1, 0, 42.9).eta_human(), "42s");
+        assert_eq!(progress(1, 0, 125.0).eta_human(), "2m 5s");
+        assert_eq!(progress(1, 0, 3725.0).eta_human(), "1h 2m");
+    }
+
+    #[test]
+    fn downloaded_human_reads_downloaded_not_total() {
+        let p = progress(5 * 1024 * 1024, 1536, 0.0);
+        assert_eq!(p.downloaded_human(), "1.50 KB");
+    }
+
+    #[test]
+    fn total_human_reads_total_not_downloaded() {
+        let p = progress(5 * 1024 * 1024, 1536, 0.0);
+        assert_eq!(p.total_human(), "5.00 MB");
+    }
+}
