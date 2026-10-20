@@ -362,6 +362,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
           args=(--event "${GITHUB_EVENT_NAME}")
@@ -402,6 +403,12 @@ jobs:
               # lives in the helper.
               bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
               args+=(--diff-from "$RUNNER_TEMP/touched.txt")
+              # #5797: a signed batch receipt in the PR body (signature, tree hash == this
+              # merge tree, toolchain hash) lets the PR run check/fmt/clippy instead of the
+              # suite. receipt_ok_arg.sh prints 0 on anything else -- no receipt, a bad one,
+              # a missing tool -- and 0 leaves the tier exactly as it was.
+              printf '%s' "${PR_BODY:-}" > "$RUNNER_TEMP/pr-body.md"
+              args+=(--receipt-ok "$(bash scripts/ci/receipt_ok_arg.sh "$RUNNER_TEMP/pr-body.md" .flow009/batcher.pub "${GITHUB_SHA}")")
               ;;
             merge_group)
               # Operator 2026-10-17 (cop window), verbatim: "only gating on tags/release".
@@ -1058,7 +1065,7 @@ jobs:
           python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
           exit "$rc"
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
-        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 2
+        if: ((steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1') || (steps.tier.outputs.tier == 'reuse' && steps.tier.outputs.cite == 'receipt')) && matrix.shard == 2
         timeout-minutes: 20
         env:
           REASON: ${{ steps.tier.outputs.reason }}

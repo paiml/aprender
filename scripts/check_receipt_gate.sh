@@ -101,5 +101,36 @@ printf '[toolchain]\nchannel = "nightly"\n' >"$repo/rust-toolchain.toml"
 row "C2 the checkout's pinned toolchain changed after signing -> toolchain-mismatch" toolchain-mismatch "$td/b-good"
 printf '[toolchain]\nchannel = "stable"\n' >"$repo/rust-toolchain.toml"
 
+# W: the workflow wiring. scripts/ci/receipt_ok_arg.sh prints the ONE word the tier step
+# hands to ci_test_tier.sh as --receipt-ok. Anything but a verified receipt must print 0,
+# and 0 must leave the PR on the quick/full tier, never on reuse.
+W="$HERE/ci/receipt_ok_arg.sh"
+T="$HERE/ci_test_tier.sh"
+printf 'crates/aprender-core/src/lib.rs\n' >"$td/touched.txt"
+arg() { (cd "$repo" && bash "$W" "$1" "${2:-$td/pub}" "$head" 2>/dev/null | head -n1); }
+wrow() {
+  local name=$1 want=$2 got=$3
+  if [ "$got" = "$want" ]; then pass=$((pass + 1)); echo "ok   $name"; else fail=$((fail + 1)); echo "FAIL $name: want '$want' got '$got'"; fi
+}
+wrow "W1 verified receipt -> --receipt-ok 1" 1 "$(arg "$td/b-good")"
+wrow "W2 no receipt in the PR body -> 0 (full gate)" 0 "$(arg "$td/b-none")"
+wrow "W3 tampered receipt -> 0" 0 "$(arg "$td/b-s1")"
+wrow "W4 receipt for another tree -> 0" 0 "$(arg "$td/b-t1")"
+wrow "W5 placeholder pubkey -> 0" 0 "$(arg "$td/b-good" "$td/pub-empty")"
+wrow "W6 PR body file missing -> 0" 0 "$(arg "$td/no-such-body")"
+wrow "W7 no pubkey file -> 0" 0 "$(arg "$td/b-good" "$td/no-such-pub")"
+tier_of() { (cd "$HERE/.." && bash "$T" --event pull_request --diff-from "$td/touched.txt" --receipt-ok "$1" 2>/dev/null | head -n1); }
+t0=$(tier_of 0); case "$t0" in tier=quick|tier=full) t0=notreuse ;; esac
+wrow "W8 --receipt-ok 0 on a core diff runs quick or full, never reuse" notreuse "$t0"
+wrow "W9 --receipt-ok 1 on the same diff is reuse" tier=reuse "$(tier_of 1)"
+# Mutant: a wrapper that prints 1 whatever the verifier said turns W2-W7 RED.
+sed 's|if \[ "\$first" = "RECEIPT_OK=1" \]; then|if true; then|' "$W" >"$td/mut-w.sh"
+if ! cmp -s "$W" "$td/mut-w.sh"; then
+  m=$(cd "$repo" && bash "$td/mut-w.sh" "$td/b-none" "$td/pub" "$head" 2>/dev/null | head -n1)
+  wrow "W10 MUTANT: a wrapper that always prints 1 is caught by the no-receipt row" 1 "$m"
+else
+  fail=$((fail + 1)); echo "FAIL W10: mutant did not apply to $W"
+fi
+
 echo "receipt gate rows: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
