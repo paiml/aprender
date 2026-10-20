@@ -138,7 +138,7 @@ controls() {
     printf 'theorem ok_thm : True := trivial\n' > "$d/Pos.lean"
     for m in Neg Pos; do
         (cd "$d" && elan run "$TC" lean -o "$m.olean" "$m.lean") || notverdict "control $m did not compile"
-        LEAN_PATH="$d:$sr/lib/lean" "$EXPORTER" "$m" > "$d/$m.ndjson" || notverdict "control $m did not export"
+        elan run "$TC" env LEAN_PATH="$d:$sr/lib/lean" "$EXPORTER" "$m" > "$d/$m.ndjson" || notverdict "control $m did not export"
     done
     # The negative control must fail for the PLANTED reason: exit 2 naming escape_ax. A crash (exit 1) or any other
     # RED would also judge 1, and then the control would pass without con-leche ever having seen the axiom.
