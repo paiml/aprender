@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# check_tuner_test_move.sh -- the F041-F060 training-data-quality tests moved from
-# aprender-compute to aprender-core (FLOW-010, #5803) keep their names, count AND bodies
-# (pinned digests), and
-# aprender-compute keeps no dependency on aprender-core, not even a dev one.
-#   union(compute file, core file) == the 11 names below, each exactly once,
-#   compute's Cargo.toml names no aprender-core, and no compute file calls `aprender::`.
-# `--self-test` runs the case table, including mutants that must turn it RED.
+# check_tuner_test_move.sh -- the F041-F060 training-data-quality tests moved from aprender-compute to
+# aprender-core (FLOW-010, #5803) must still be COMPILED, LISTED and NOT IGNORED by the test harness.
+# BEHAVIOUR, not text: it asks cargo what each target would run, so no source-level re-gating trick
+# (#[cfg], #[ignore], macro_rules! shadowing, #[path] mods, code joined onto a // line) can hide a test.
+#   1. `cargo test -p aprender-core --test tuner_training_data_quality -- --list` plus
+#      `cargo test -p aprender-compute --test tuner_falsification -- --list` (only training_data_quality::)
+#      must name exactly the 11 pre-move tests, each once; a cargo failure or empty list is RED (fail closed).
+#   2. the same two targets with `--list --ignored` must name none of them.
+#   3. compute's Cargo.toml names no aprender-core and no compute test/example calls `aprender::`.
+#   4. content pin: a digest of each moved body, so a weakened assert or a changed helper is RED. (This part
+#      is text, and says so: it cannot prove a test runs; parts 1-2 do.) Editing a test means updating its
+#      digest here in the same PR.
+# `--self-test` feeds synthetic cargo listings, so it needs no compile; the mutants must turn it RED.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CF=crates/aprender-compute/tests/tuner_falsification/training_data_quality.rs
 KF=crates/aprender-core/tests/tuner_training_data_quality.rs
-MF=crates/aprender-compute/tests/tuner_falsification/main.rs
 WANT="f041_empty_training_errors f042_single_sample_graceful f043_nan_labels_error f044_negative_labels_handled f045_heuristic_no_training f046_training_improves f047_large_training_no_oom f048_classifier_training f049_training_data_variance f050_feature_correlation f051_to_f060_reserved"
 
-# DIGESTS: sha256[:16] of each test body with whitespace and trailing commas before )]} removed (rustfmt-proof).
-# A moved test whose body changed is RED; editing a test means updating its digest here, in the same PR.
 DIGESTS="
 f041_empty_training_errors 47de75e437653c3e
 f042_single_sample_graceful cbabb3faeb2409c9
@@ -29,64 +32,90 @@ f050_feature_correlation c302d2faf46ee11a
 f051_to_f060_reserved 4281b7880278d002
 fit_throughput_rf af9870bdcb18403c
 "
+
 # body FILE NAME -> normalized body of `fn NAME(` up to its closing `}` at column 0
 body() {
   awk -v n="$2" '$0 ~ "^fn "n"\\(" {p=1} p{print} p&&/^}/{exit}' "$1" | tr -d ' \t\n' | sed -E 's/,([])}])/\1/g'
 }
-# names ROOT -> sorted test fn names of both files, one per line (duplicates kept)
-names() {
-  local f
-  for f in "$1/$CF" "$1/$KF"; do
-    [ -f "$f" ] && awk '/^#\[test\]/{t=1;next} t&&/^fn /{sub(/^fn /,"");sub(/\(.*/,"");print;t=0}' "$f"
-  done | sort
+# listed FILE KIND -> sorted names of the moved tests in a `--list` output (KIND core: every test; comp: training_data_quality:: only)
+listed() {
+  awk -v kind="$2" '/: test$/ { n = $0; sub(/: test$/, "", n)
+      if (kind == "comp") { if (n !~ /^training_data_quality::/) next; sub(/^training_data_quality::/, "", n) }
+      print n }' "$1" 2> /dev/null | sort
 }
-# verdict ROOT -> prints problems; rc 0 only when none
-verdict() {
-  local r=$1 bad=0 got want
-  got=$(names "$r"); want=$(printf '%s\n' $WANT | sort)
-  [ "$got" = "$want" ] || { echo "names differ: want 11 once each, got: $(echo $got)"; bad=1; }
-  local n d b f
-  # Re-gating is how these tests went dark before: no cfg/ignore/cfg_attr attribute (outer or inner) on the
-  # moved files or on the compute `mod training_data_quality;` line's file.
-  for f in "$r/$CF" "$r/$KF" "$r/$MF"; do
-    if [ -f "$f" ] && /usr/bin/grep -qE '^[[:space:]]*#!?\[(cfg|ignore|cfg_attr)\b' "$f"; then echo "$f re-gates a test (cfg/ignore/cfg_attr attribute)"; bad=1; fi
-  done
-  /usr/bin/grep -q '^mod training_data_quality;' "$r/$MF" 2>/dev/null || { echo "$MF no longer declares mod training_data_quality;"; bad=1; }
+# verdict_lists CORE COMP CORE_IGN COMP_IGN -> problems; rc 0 only when none
+verdict_lists() {
+  local bad=0 got want x
+  want=$(printf '%s\n' $WANT | sort)
+  for x in "$1" "$2"; do [ -s "$x" ] || { echo "empty or missing cargo listing ($x): fail closed"; bad=1; }; done
+  got=$({ listed "$1" core; listed "$2" comp; } | sort)
+  [ "$got" = "$want" ] || { echo "listed tests differ from the 11 pre-move names: got: $(echo $got)"; bad=1; }
+  got=$({ listed "$3" core; listed "$4" comp; } | sort)
+  [ -z "$got" ] || { echo "ignored moved tests: $(echo $got)"; bad=1; }
+  return $bad
+}
+# verdict_static ROOT -> Cargo dependency, aprender:: calls, content pin
+verdict_static() {
+  local r=$1 bad=0 n d b
   while read -r n d; do
     [ -n "$n" ] || continue
     b=$(body "$r/$CF" "$n"); [ -n "$b" ] || b=$(body "$r/$KF" "$n")
     [ "$(printf %s "$b" | sha256sum | cut -c1-16)" = "$d" ] || { echo "body of $n differs from its pinned digest (empty or edited)"; bad=1; }
   done <<< "$DIGESTS"
-  if grep -q 'aprender-core' "$r/crates/aprender-compute/Cargo.toml"; then
-    grep -v '^[[:space:]]*#' "$r/crates/aprender-compute/Cargo.toml" | grep -q 'aprender-core' && { echo "compute Cargo.toml names aprender-core"; bad=1; }
-  fi
+  if grep -v '^[[:space:]]*#' "$r/crates/aprender-compute/Cargo.toml" | grep -q 'aprender-core'; then echo "compute Cargo.toml names aprender-core"; bad=1; fi
   if grep -rn --include='*.rs' -E '\baprender::' "$r/crates/aprender-compute/tests" "$r/crates/aprender-compute/examples" 2>/dev/null | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*//' | grep -q .; then
     echo "compute tests/examples call aprender::"; bad=1
   fi
   return $bad
 }
+# cargo_lists ROOT DIR -> writes DIR/{core,comp,core_ign,comp_ign}.txt from cargo; a cargo failure leaves the file empty (RED)
+cargo_lists() {
+  local r=$1 d=$2
+  ( cd "$r" && cargo test --quiet -p aprender-core --test tuner_training_data_quality -- --list 2> /dev/null ) > "$d/core.txt" || : > "$d/core.txt"
+  ( cd "$r" && cargo test --quiet -p aprender-compute --test tuner_falsification -- --list 2> /dev/null ) > "$d/comp.txt" || : > "$d/comp.txt"
+  ( cd "$r" && cargo test --quiet -p aprender-core --test tuner_training_data_quality -- --list --ignored 2> /dev/null ) > "$d/core_ign.txt" || echo FAILED > "$d/core_ign.txt"
+  ( cd "$r" && cargo test --quiet -p aprender-compute --test tuner_falsification -- --list --ignored 2> /dev/null ) > "$d/comp_ign.txt" || echo FAILED > "$d/comp_ign.txt"
+}
+verdict() { # ROOT -> problems; rc 0 only when none
+  local r=$1 d bad=0
+  d=$(mktemp -d) || return 2
+  cargo_lists "$r" "$d"
+  [ "$(cat "$d/core_ign.txt")" = FAILED ] || [ "$(cat "$d/comp_ign.txt")" = FAILED ] && { echo "cargo --list --ignored failed: fail closed"; bad=1; }
+  verdict_lists "$d/core.txt" "$d/comp.txt" "$d/core_ign.txt" "$d/comp_ign.txt" || bad=1
+  verdict_static "$r" || bad=1
+  rm -rf "${d:?}"
+  return $bad
+}
 if [ "${1:-}" = "--self-test" ]; then
   t=$(mktemp -d) || exit 2; trap 'rm -rf "${t:?}"' EXIT
-  mk() { mkdir -p "$t/$1/crates/aprender-compute/tests/tuner_falsification" "$t/$1/crates/aprender-compute/examples" "$t/$1/crates/aprender-core/tests"
-         cp "$ROOT/$CF" "$t/$1/$CF"; cp "$ROOT/$MF" "$t/$1/$MF"; cp "$ROOT/$KF" "$t/$1/$KF"; cp "$ROOT/crates/aprender-compute/Cargo.toml" "$t/$1/crates/aprender-compute/Cargo.toml"; }
   n=0; f=0
-  case_() { # NAME WANT_RC DIR
-    ( verdict "$t/$3" >/dev/null ); rc=$?
+  mkl() { # DIR -> a good set of listings
+    mkdir -p "$t/$1"; : > "$t/$1/core.txt"; : > "$t/$1/comp.txt"; : > "$t/$1/ci.txt"; : > "$t/$1/pi.txt"
+    for w in $WANT; do case $w in f041*|f042*|f043*|f044*|f046*|f047*|f048*) echo "$w: test" >> "$t/$1/core.txt" ;; *) echo "training_data_quality::$w: test" >> "$t/$1/comp.txt" ;; esac; done
+    echo "other::unrelated: test" >> "$t/$1/comp.txt"; echo "0 tests, 0 benchmarks" >> "$t/$1/ci.txt"; echo "0 tests, 0 benchmarks" >> "$t/$1/pi.txt"; }
+  lcase() { # NAME WANT_RC DIR
+    ( verdict_lists "$t/$3/core.txt" "$t/$3/comp.txt" "$t/$3/ci.txt" "$t/$3/pi.txt" > /dev/null ); rc=$?
     if { [ "$2" = 0 ] && [ $rc -eq 0 ]; } || { [ "$2" != 0 ] && [ $rc -ne 0 ]; }; then n=$((n+1)); echo "ok   $1"; else f=$((f+1)); echo "FAIL $1 (rc=$rc)"; fi; }
-  mk good;                                   case_ "T1 current tree holds" 0 good
-  mk m1; sed -i '/fn f046_training_improves/,/^}/d' "$t/m1/$KF";   case_ "T2 MUTANT: a moved test dropped" 1 m1
-  mk m2; cat "$ROOT/$KF" >>"$t/m2/$CF";      case_ "T3 MUTANT: a test duplicated in both files" 1 m2
-  mk m3; printf '[dev-dependencies]\naprender = { path = "../aprender-core", package = "aprender-core" }\n' >>"$t/m3/crates/aprender-compute/Cargo.toml"; case_ "T4 MUTANT: dev-dep on aprender-core back" 1 m3
-  mk m4; printf 'use aprender::tree::RandomForestRegressor;\n' >"$t/m4/crates/aprender-compute/examples/x.rs"; case_ "T5 MUTANT: compute example calls aprender::" 1 m4
-  mk m5; sed -i 's/F046 FALSIFIED/F046 weakened/' "$t/m5/$KF"; case_ "T6 MUTANT: a moved test body edited (assert message)" 1 m5
-  mk m6; sed -i '/fn f044_negative_labels_handled/,/^}/{s/\.build()/.build(); let _ = 0/}' "$t/m6/$KF"; case_ "T7 MUTANT: a moved test body changed in logic" 1 m6
-  mk m7; sed -i '0,/^#\[test\]/{s//#[cfg(feature = "ml-tuner")]\n#[test]/}' "$t/m7/$KF";  case_ "T8 MUTANT: #[cfg(feature)] re-gates a moved test" 1 m7
-  mk m8; sed -i '0,/^#\[test\]/{s//#[test]\n#[ignore]/}' "$t/m8/$KF";                     case_ "T9 MUTANT: #[ignore] on a moved test" 1 m8
-  mk m9; sed -i '0,/^#\[test\]/{s//#[test]\n#[cfg(any())]/}' "$t/m9/$KF";                case_ "T10 MUTANT: #[cfg(any())] between #[test] and fn" 1 m9
-  mk m10; sed -i '1i #![cfg(any())]' "$t/m10/$KF";                                          case_ "T11 MUTANT: file-level #![cfg(any())]" 1 m10
-  mk m11; sed -i '/^mod training_data_quality;/d' "$t/m11/$MF";                             case_ "T12 MUTANT: compute mod training_data_quality; removed" 1 m11
-  mk m12; sed -i 's/< 10/< 11/' "$t/m12/$KF";                                                case_ "T13 MUTANT: helper fit_throughput_rf guard changed" 1 m12
+  mkl g;                                                                                 lcase "L1 good listing: the 11 once each, none ignored" 0 g
+  mkl a; sed -i '/f041_/d' "$t/a/core.txt";                                              lcase "L2 MUTANT: a moved test not listed (cfg'd out / shadowed / #[path]'d)" 1 a
+  mkl b; echo "f041_empty_training_errors: test" >> "$t/b/core.txt";                     lcase "L3 MUTANT: a test listed twice" 1 b
+  mkl c; echo "f046_training_improves: test" > "$t/c/ci.txt";                            lcase "L4 MUTANT: a moved test is #[ignore]d (in --ignored)" 1 c
+  mkl d; : > "$t/d/comp.txt";                                                            lcase "L5 MUTANT: compute listing empty (cargo failed): fail closed" 1 d
+  mkl e; sed -i '/f049_/d' "$t/e/comp.txt";                                              lcase "L6 MUTANT: compute target lost its module (CI step off / mod removed)" 1 e
+  mkl h; echo "training_data_quality::f052_extra: test" >> "$t/h/comp.txt";              lcase "L7 MUTANT: an unaccounted test in the moved module" 1 h
+  mkl i; echo "training_data_quality::f045_heuristic_no_training: test" > "$t/i/pi.txt"; lcase "L8 MUTANT: a compute test is ignored" 1 i
+  # static rows run on copies of the real files
+  mk() { mkdir -p "$t/$1/crates/aprender-compute/tests/tuner_falsification" "$t/$1/crates/aprender-compute/examples" "$t/$1/crates/aprender-core/tests"
+         cp "$ROOT/$CF" "$t/$1/$CF"; cp "$ROOT/$KF" "$t/$1/$KF"; cp "$ROOT/crates/aprender-compute/Cargo.toml" "$t/$1/crates/aprender-compute/Cargo.toml"; }
+  scase() { ( verdict_static "$t/$3" > /dev/null ); rc=$?
+    if { [ "$2" = 0 ] && [ $rc -eq 0 ]; } || { [ "$2" != 0 ] && [ $rc -ne 0 ]; }; then n=$((n+1)); echo "ok   $1"; else f=$((f+1)); echo "FAIL $1 (rc=$rc)"; fi; }
+  mk s0;                                                                                 scase "S1 current tree: pins hold, compute has no aprender-core" 0 s0
+  mk s1; sed -i 's/F046 FALSIFIED/F046 weakened/' "$t/s1/$KF";                           scase "S2 MUTANT: a moved test body edited" 1 s1
+  mk s2; sed -i '/fn f044_negative_labels_handled/,/^}/{s/\.build()/.build(); let _ = 0/}' "$t/s2/$KF"; scase "S3 MUTANT: a moved test body changed in logic" 1 s2
+  mk s3; printf '[dev-dependencies]\naprender = { path = "../aprender-core", package = "aprender-core" }\n' >> "$t/s3/crates/aprender-compute/Cargo.toml"; scase "S4 MUTANT: dev-dep on aprender-core back" 1 s3
+  mk s4; printf 'use aprender::tree::RandomForestRegressor;\n' > "$t/s4/crates/aprender-compute/examples/x.rs"; scase "S5 MUTANT: compute example calls aprender::" 1 s4
+  mk s5; sed -i 's/< 10/< 11/' "$t/s5/$KF";                                              scase "S6 MUTANT: helper fit_throughput_rf guard changed" 1 s5
   echo "tuner test move rows: $n passed, $f failed"; [ $f -eq 0 ]; exit
 fi
-out=$(verdict "${1:-$ROOT}") && { echo "tuner test move: 11 names, once each; compute has no aprender-core"; exit 0; }
+out=$(verdict "${1:-$ROOT}") && { echo "tuner test move: cargo lists the 11 moved tests once each, none ignored; compute has no aprender-core"; exit 0; }
 printf '%s\n' "$out"; exit 1
