@@ -60,7 +60,40 @@
 pub mod benchmark;
 pub mod compat;
 mod error;
-#[cfg(feature = "cuda")]
+// #3179 — the GPU batch path cannot run, and has not compiled since APR-MONO.
+// Three gaps, each verified by reading the tree rather than inferred:
+//
+//   1. `trueno_gpu::driver::PinnedBuffer` and `GpuBuffer::copy_{from,to}_pinned_async`
+//      do not exist and never did in this monorepo (`git log -S PinnedBuffer --
+//      crates/aprender-gpu/` is empty). Only synchronous pageable copies exist.
+//   2. This file launches the entry point `lz4_compress_warp_shuffle` with 32
+//      threads and no shared memory. No kernel of that name exists; the one that
+//      does, `lz4_compress_warp`, wants 128 threads and shared memory.
+//   3. `Lz4WarpDecompressKernel::build_ptx` is a STUB whose whole body is
+//      `ctx.label("L_exit")`. There is no GPU LZ4 decompressor in this workspace.
+//
+// Since the aprender-gpu dependency was cut (FLOW-010: it made every zram change
+// rebuild and retest the GPU stack, for a path that cannot run), the `gpu` module
+// is compiled only with `__cuda-linked`, and closing the gaps below also means
+// re-adding that dependency under the private feature.
+//
+// So this is not one API away from working: it is wired to a kernel ABI removed
+// at consolidation, and its decompressor does not exist. Making it merely
+// COMPILE would hand back a feature that is green in the matrix and dead at
+// runtime — the theater this repo refuses. The refusal names all three gaps and
+// the private `__cuda-linked` feature carries the real gate, so nothing here is
+// deleted and the diagnostic is one line instead of a cascade.
+#[cfg(all(feature = "cuda", not(feature = "__cuda-linked")))]
+compile_error!(
+    "aprender-zram-core's `cuda` feature cannot build: the GPU batch path needs \
+     (1) trueno_gpu::driver::PinnedBuffer + GpuBuffer::copy_{from,to}_pinned_async, \
+     which do not exist; (2) a kernel named `lz4_compress_warp_shuffle`, which does \
+     not exist (aprender-gpu ships `lz4_compress_warp`, 128 threads + shared memory); \
+     and (3) a real LZ4 decompress kernel — Lz4WarpDecompressKernel::build_ptx is a \
+     stub that exits immediately. See #3179. The non-cuda build of this crate is \
+     unaffected."
+);
+#[cfg(all(feature = "cuda", feature = "__cuda-linked"))]
 pub mod gpu;
 pub mod integration;
 pub mod lz4;

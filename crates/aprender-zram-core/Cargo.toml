@@ -17,8 +17,6 @@ name = "trueno_zram_core"
 thiserror.workspace = true
 cudarc = { version = "0.18", optional = true, features = ["cuda-12080", "nvrtc"] }
 rayon = { version = "1.10", optional = true }
-# Pure Rust PTX generation for GPU LZ4 compression
-aprender-gpu = { workspace = true, optional = true, features = ["cuda"] }
 
 [dev-dependencies]
 proptest.workspace = true
@@ -43,7 +41,7 @@ std = []
 # Enable nightly-only SIMD features
 nightly = []
 # Enable CUDA GPU acceleration
-cuda = ["dep:cudarc", "dep:rayon", "dep:aprender-gpu"]
+cuda = ["dep:cudarc", "dep:rayon"]
 # Private. Carries the REAL gate on the GPU batch path in src/gpu/batch/mod.rs,
 # so `--features cuda` reports the one named refusal in that file instead of a
 # cascade of unresolved imports. Set it only once the three gaps that refusal
