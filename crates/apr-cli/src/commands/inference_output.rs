@@ -135,16 +135,16 @@ fn download_file(url: &str, path: &Path) -> Result<()> {
         .call()
         .map_err(|e| CliError::ValidationFailed(format!("Download failed: {e}")))?;
 
-    if response.status() != 200 {
+    if response.status().as_u16() != 200 {
         return Err(CliError::ValidationFailed(format!(
             "Download failed with status {}: {}",
-            response.status(),
+            response.status().as_u16(),
             url
         )));
     }
 
     let mut file = std::fs::File::create(path)?;
-    let mut reader = response.into_reader();
+    let mut reader = response.into_body().into_reader();
     std::io::copy(&mut reader, &mut file)?;
 
     Ok(())
