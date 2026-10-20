@@ -334,11 +334,13 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr shard"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr shared-cache-lint"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr showcase"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim emc-check"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim emc-validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim help"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim list-emc"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim render"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim verify"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -675,6 +677,8 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval retrieve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval sample"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/logprobs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/perplexity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.bench"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -1734,11 +1738,13 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-simulate/aprender-simulate> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate --version"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate emc-check"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate emc-validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate help"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate list-emc"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate render"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate verify"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -1757,6 +1763,8 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/command> "version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "adaaa5979da2b555e584a1ca8e918e8c4859c1bab12c89c3924044a1a002f0ee"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-simulate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-simulate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/sha256> "1d57fceab026705fbcb61e62721b0cbdc4299277f2e4cfd76340981781ccb241"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -2385,11 +2393,13 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr shard"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr shared-cache-lint"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr showcase"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim emc-check"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim emc-validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim help"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim list-emc"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim render"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim verify"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -2726,6 +2736,8 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval retrieve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval sample"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/logprobs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/perplexity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.bench"^^<http://www.w3.org/2001/XMLSchema#string> .
