@@ -1,0 +1,19 @@
+- id: PMAT-5737
+  github_issue: 5737
+  item_type: task
+  title: 'T-rollup: rollup bot (aprender-rollup crate + gh layer + bin)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-19T07:13:22Z
+  updated: 2026-10-19T07:13:22Z
+  spec: null
+  acceptance_criteria:
+  - 'INTAKE refs #5394; step 1 on feat/rollup-bot @138d94c28f'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
