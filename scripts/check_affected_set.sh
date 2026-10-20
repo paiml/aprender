@@ -12,6 +12,7 @@ row() { # name want got
 }
 run() { printf '%s\n' "$@" >"$t/d"; $A --diff-from "$t/d"; }
 core_list=" aprender-core aprender-compute aprender-contracts apr-cli aprender-quant "
+readers="aprender-core aprender-contracts apr-cli aprender-serve aprender-test-lib aprender-orchestrate aprender-present-yaml aprender-decide aprender-cgp aprender-review-experiment aprender-qa-certify"
 meta=$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null)
 members=$(jq -r '.packages[].name' <<<"$meta" | sort)
 # a non-core crate that has dependents, and a leaf with none
@@ -28,8 +29,8 @@ done
 [ -n "$withdep" ] && [ -n "$leaf" ] || { echo "FAIL could not find a leaf and a crate with dependents"; exit 1; }
 wp=${withdep%%:*}; wd=${withdep#*:}; lp=${leaf%%:*}; ld=${leaf#*:}
 # every non-ALL set also carries aprender-core (its falsification_spec_v10 test scans every crate's src)
-want=$( { cargo tree --offline -i "$wp" --workspace -e normal,dev,build --prefix none 2>/dev/null | sed 's/ v.*//'; echo aprender-core; } | sort -u)
-lc="$(printf '%s\n' "$lp" aprender-core | sort -u)"
+want=$( { cargo tree --offline -i "$wp" --workspace -e normal,dev,build --prefix none 2>/dev/null | sed 's/ v.*//'; printf '%s\n' $readers; } | sort -u)
+lc="$(printf '%s\n' "$lp" $readers | sort -u)"
 row "crate with dependents ($wp) -> itself + dependents + aprender-core" "$want" "$(run "$wd/src/lib.rs" | sort -u)"
 row "leaf crate ($lp) -> itself + aprender-core" "$lc" "$(run "$ld/src/lib.rs" | sort -u)"
 row "core crate -> ALL" ALL "$(run crates/aprender-core/src/lib.rs)"
@@ -111,7 +112,7 @@ cat >"$t/chain.json" <<'JSON'
  {"name":"c","manifest_path":"/r/crates/c/Cargo.toml","dependencies":[{"name":"b","kind":null}]},
  {"name":"aprender-core","manifest_path":"/r/crates/core/Cargo.toml","dependencies":[]}]}
 JSON
-chain() { AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none bash "$1" --diff-from <(echo crates/a/src/lib.rs) | sort -u; }
+chain() { AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none AFFECTED_READERS=aprender-core bash "$1" --diff-from <(echo crates/a/src/lib.rs) | sort -u; }
 row "2-hop chain a<-b<-c: touching a reaches b and c (+ aprender-core)" "a
 aprender-core
 b
@@ -122,14 +123,27 @@ else row "MUTANT: a 1-hop closure is caught by the 2-hop row" "a
 aprender-core
 b" "$(chain "$t/mut-hop.sh")"; fi
 want_f="package(a) | package(aprender-core) | package(b) | package(c)"
-row "multi-package --filter is ' | ' joined" "$want_f" "$(AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none bash "$A" --filter --diff-from <(echo crates/a/src/lib.rs))"
+row "multi-package --filter is ' | ' joined" "$want_f" "$(AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none AFFECTED_READERS=aprender-core bash "$A" --filter --diff-from <(echo crates/a/src/lib.rs))"
 sed "s/ | sed 's\/|\/ | \/g'//" "$A" >"$t/mut-fmt.sh"
 if cmp -s "$A" "$t/mut-fmt.sh"; then echo "FAIL filter-format mutant did not apply"; fail=1
-else row "MUTANT: an unspaced multi-package filter is caught" "package(a)|package(aprender-core)|package(b)|package(c)" "$(AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none bash "$t/mut-fmt.sh" --filter --diff-from <(echo crates/a/src/lib.rs))"; fi
+else row "MUTANT: an unspaced multi-package filter is caught" "package(a)|package(aprender-core)|package(b)|package(c)" "$(AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none AFFECTED_READERS=aprender-core bash "$t/mut-fmt.sh" --filter --diff-from <(echo crates/a/src/lib.rs))"; fi
 # an unreadable cargo metadata is ALL, not an empty answer
 echo 'not json' >"$t/bad.json"
 row "unreadable metadata -> ALL" ALL "$(AFFECTED_META="$t/bad.json" bash "$A" --diff-from <(echo crates/a/src/lib.rs) 2>/dev/null)"
 sed 's/ || { emit ALL; exit 0; }$//' "$A" >"$t/mut-jq.sh"
 if cmp -s "$A" "$t/mut-jq.sh"; then echo "FAIL jq-failure mutant did not apply"; fail=1
 else row "MUTANT: dropping the jq-failure fallback is caught" "" "$(AFFECTED_META="$t/bad.json" bash "$t/mut-jq.sh" --diff-from <(echo crates/a/src/lib.rs) 2>/dev/null || true)"; fi
+# READERS: each reader is in every non-ALL set (real tree), and dropping the READERS list is caught
+for r in $readers; do
+  case " $(run "$ld/src/lib.rs" | tr '\n' ' ')" in *" $r "*) echo "ok   reader $r is in a non-ALL set" ;; *) echo "FAIL reader $r missing from a non-ALL set"; fail=1 ;; esac
+done
+sed 's#^READERS=.*#READERS="aprender-core"#' "$A" >"$t/mut-readers.sh"
+if cmp -s "$A" "$t/mut-readers.sh"; then echo "FAIL readers mutant did not apply"; fail=1
+else row "MUTANT: an emptied READERS list is caught" "$(printf '%s\n' aprender-core "$lp" | sort -u)" "$(printf '%s\n' "$ld/src/lib.rs" >"$t/drd"; bash "$t/mut-readers.sh" --diff-from "$t/drd" | sort -u)"; fi
+# the res= jq fallback ALONE: metadata with no `dependencies` key makes that jq fail -> ALL
+echo '{"packages":[{"name":"a","manifest_path":"/r/crates/a/Cargo.toml"}]}' >"$t/nodeps.json"
+row "no dependencies key -> ALL (res= fallback)" ALL "$(AFFECTED_META="$t/nodeps.json" AFFECTED_ROOT=/r bash "$A" --diff-from <(echo crates/a/src/lib.rs) 2>/dev/null)"
+sed '/<<<"$meta")" || { emit ALL; exit 0; }$/s/ || { emit ALL; exit 0; }$//' "$A" >"$t/mut-res.sh"
+if cmp -s "$A" "$t/mut-res.sh"; then echo "FAIL res-fallback mutant did not apply"; fail=1
+else row "MUTANT: dropping only the res= fallback is caught" "" "$(AFFECTED_META="$t/nodeps.json" AFFECTED_ROOT=/r bash "$t/mut-res.sh" --diff-from <(echo crates/a/src/lib.rs) 2>/dev/null || true)"; fi
 exit "$fail"

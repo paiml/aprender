@@ -26,6 +26,9 @@ set -euo pipefail
 # crate whose source another crate reads at run time must be listed (aprender-quant: aprender-serve/capability.rs reads
 # aprender-quant/src/ggml_type.rs). Any crates/*/build.rs is ALL: contracts/build_helper.rs reads crates/*/build.rs.
 CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts apr-cli aprender-quant}"
+# READERS = crates whose tests read OTHER crates' files at run time (CARGO_MANIFEST_DIR/.., crates/, ../<crate>). CORE ones are ALL on touch, but that does not put them in a non-ALL set; every non-ALL set includes them, because the touched crate may be what they read. scripts/check_affected_readers.sh
+# goes RED on a reader this list (or CORE) lacks.
+READERS="${AFFECTED_READERS:-aprender-core aprender-contracts apr-cli aprender-serve aprender-test-lib aprender-orchestrate aprender-present-yaml aprender-decide aprender-cgp aprender-review-experiment aprender-qa-certify}"
 filter=0 from=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -63,12 +66,12 @@ while IFS= read -r f; do
 done <<<"$files"
 touched="$(printf '%s\n' "$touched" | grep -v '^$' | sort -u || true)"
 [ -n "$touched" ] || { emit ALL; exit 0; }   # nothing placed in a package: nothing may be skipped
-# The closure, then aprender-core: its falsification_spec_v10 test scans every crate's src, so ANY non-ALL set includes it.
-res="$(jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" '
+# The closure, then aprender-core: its falsification_spec_v10 test scans every crate's src, so ANY non-ALL set includes it (and the READERS).
+res="$(jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" --arg rd "$READERS" '
   (.packages | map({name, deps: [.dependencies[].name]})) as $p
   | def grow($s): ($s + [$p|.[] | select(any(.deps[]; . as $d | $s | index($d))) | .name] | unique);
     (.packages | map(.name)) as $m
-    | (($t | until(grow(.) == .; grow(.))) + ["aprender-core"] | unique) | .[] | select(. as $n | $m | index($n))' <<<"$meta")" || { emit ALL; exit 0; }
+    | (($t | until(grow(.) == .; grow(.))) + ($rd | split(" ")) | unique) | .[] | select(. as $n | $m | index($n))' <<<"$meta")" || { emit ALL; exit 0; }
 [ -n "$res" ] || { emit ALL; exit 0; }
 mapfile -t out <<<"$res"
 emit "${out[@]}"
