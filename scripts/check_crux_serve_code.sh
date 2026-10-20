@@ -54,6 +54,17 @@ _cleanup() {
   esac
 }
 trap _cleanup EXIT
+# INT and TERM exit so the EXIT handler above runs: a killed harness must not leave its server behind.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# guard_server <pid>: kill that server when this harness dies by ANY signal, SIGKILL included (a runner
+# cancelling a job kills the tree with KILL, which no trap sees; the servers then lived 2-3 days at ppid 1).
+# The watcher is its own process, off the harness's fds so it never holds a CI step's output pipe open.
+guard_server() {
+  local srv="$1" par=$$
+  ( trap - EXIT INT TERM; while kill -0 "$par" 2> /dev/null && kill -0 "$srv" 2> /dev/null; do sleep 2; done
+    kill "$srv" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
+}
 
 FAILS=0
 ROWS=0
@@ -66,7 +77,7 @@ start() { # start <index> <fault>: (re)start the fixture server; sets URL
   local port i
   port=$(free_port)
   python3 "$FAKE" --port "$port" --index "$1" --fault "$2" > /dev/null 2>&1 &
-  SRV=$!
+  SRV=$!; guard_server "$SRV"
   URL="http://127.0.0.1:$port"
   for i in $(seq 1 50); do curl -sf "$URL/health" > /dev/null 2>&1 && return 0; sleep 0.1; done
   printf '%s: ENV - fixture server did not come up\n' "$PROG" >&2

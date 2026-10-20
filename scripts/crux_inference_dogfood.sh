@@ -291,6 +291,17 @@ _cleanup() {
   esac
 }
 trap _cleanup EXIT
+# INT and TERM exit so the EXIT handler above runs: a killed harness must not leave its server behind.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# guard_server <pid>: kill that server when this harness dies by ANY signal, SIGKILL included (a runner
+# cancelling a job kills the tree with KILL, which no trap sees; the servers then lived 2-3 days at ppid 1).
+# The watcher is its own process, off the harness's fds so it never holds a CI step's output pipe open.
+guard_server() {
+  local srv="$1" par=$$
+  ( trap - EXIT INT TERM; while kill -0 "$par" 2> /dev/null && kill -0 "$srv" 2> /dev/null; do sleep 2; done
+    kill "$srv" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
+}
 MANIFEST="$WORK/manifest.jsonl"; : > "$MANIFEST"
 # The plugin engines append their own rows here (row contract v1).
 export CRUX_MANIFEST="$MANIFEST" CRUX_WORK="$WORK"
@@ -470,7 +481,7 @@ llama_tokenize_prompts() { # sets THINKING_CAPABLE; writes tok rows
   # CUDA context. -ngl 0 alone still initialises the device and shows in nvidia-smi.
   choom -n 1000 -- "$LLAMA_SERVER" -m "$M" -ngl 0 -dev none -c 512 --no-warmup --host 127.0.0.1 --port "$port" \
     > "$d/server.log" 2>&1 < /dev/null &
-  SRV_PID=$!
+  SRV_PID=$!; guard_server "$SRV_PID"
   for i in $(seq 1 180); do
     curl -sf "http://127.0.0.1:$port/health" > /dev/null 2>&1 && { ok=1; break; }
     kill -0 "$SRV_PID" 2>/dev/null || break
