@@ -516,8 +516,8 @@ jobs:
           d="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
           # ONE shard count: the pins in ci/sections.yml (check_shard_count_single_source.sh)
-          SHARDS="$(python3 -c "import sys,yaml; print(len(yaml.safe_load(open('ci/sections.yml'))['matrix-pins']['workspace-test-shard']))")"
-          [ "$SHARDS" -ge 1 ] || { echo "::error::Σ: no workspace-test-shard pins"; exit 1; }
+          SHARDS="$(awk '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{w=1;next} w&&/^    - \{shard:/{n++;next} w&&!/^    - /{exit} END{print n+0}' ci/sections.yml)"
+          [ "${SHARDS:-0}" -ge 1 ] 2>/dev/null || { echo "::error::Σ: no workspace-test-shard pins"; exit 1; }
           tiers=""
           for n in $(seq 1 "$SHARDS"); do
             [ -f "$d/sigma-shard-$n/tier" ] || { echo "::error::Σ: shard $n staged no tier file"; exit 1; }
