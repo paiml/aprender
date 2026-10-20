@@ -44,9 +44,14 @@ if [ "${1:-}" = --self-test ]; then
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: matrix mismatch must be RED"; exit 1; }
   sed 's/for n in \$(seq 1 "\$SHARDS")/for n in 1 2 3/' .github/workflows/ci.yml > "$t/c.yml"
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: literal loop must be RED"; exit 1; }
-  cp ci/sections.yml "$t/s.yml"; sed 's|bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS"|bash scripts/ci/quick_tier_shard.sh "$SHARD" 3|' ci/sections.yml > "$t/s.yml"
+  cp .github/workflows/ci.yml "$t/c.yml" # rows 5 and 6 mutate sections.yml only: start from a CLEAN ci.yml, not the RED literal-loop copy above
+  sed 's|bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS"|bash scripts/ci/quick_tier_shard.sh "$SHARD" 3|' ci/sections.yml > "$t/s.yml"
+  cmp -s ci/sections.yml "$t/s.yml" && { echo "self-test: typed quick_tier_shard mutant did not apply"; exit 1; }
+  cmp -s .github/workflows/ci.yml "$t/c.yml" || { echo "self-test: row 5 ci.yml is not the clean copy"; exit 1; }
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: typed quick_tier_shard count must be RED"; exit 1; }
   sed 's|--shard "${SHARD}/${SHARDS}"|--shard "$SHARD/3"|' ci/sections.yml > "$t/s.yml"
+  cmp -s ci/sections.yml "$t/s.yml" && { echo "self-test: unbraced SHARD/3 mutant did not apply"; exit 1; }
+  cmp -s .github/workflows/ci.yml "$t/c.yml" || { echo "self-test: row 6 ci.yml is not the clean copy"; exit 1; }
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: unbraced $SHARD/3 must be RED"; exit 1; }
   cp ci/sections.yml "$t/s.yml"; sed -E 's/^( +SHARDS=)"\$\(awk[^)]*\)"/\112/' .github/workflows/ci.yml > "$t/c.yml"
   cmp -s .github/workflows/ci.yml "$t/c.yml" && { echo "self-test: SHARDS=12 mutant did not apply"; exit 1; }
