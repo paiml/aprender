@@ -800,3 +800,9 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib max_completion_tokens'
     expected_output: "test result: ok"
     if_fails: 'OpenAI SDK >= 1.40 clients lose their generation cap (the unknown key is ignored) and generation runs to the server default.'
+  - id: FALSIFY-REALIZE-RELOAD-5653
+    name: realize_reload_validates_in_fixed_order
+    prediction: 'POST /realize/reload answers 501 without registry mode (naming no nonexistent flag), then 400 for a missing `path` (before the model id is looked up), 404 for an unregistered id, 400 for a file that is not on disk, and 200 with `success: true`, the model id, the path and `reload_time_ms` only when all four hold; an omitted `model` means "default".'
+    test_harness: 'cargo test -p aprender-serve --lib realize_reload_5653'
+    expected_output: "test result: ok"
+    if_fails: 'A reload against a missing file or unregistered model reports success, or the 501 advises a --registry flag that `apr serve run` rejects.'
