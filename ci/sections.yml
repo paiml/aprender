@@ -972,8 +972,10 @@ jobs:
           arc="$GITHUB_WORKSPACE/ws-archive"
           bash scripts/ci/archive_bind_check.sh "$arc/bind.json" \
             sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS" \
-            image="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
-          printf 'FLOW-010 P1: running shard %s from the prebuilt archive\n' "$SHARD"
+            rustc="$(docker run --rm "$IMAGE" rustc -vV | sha256sum | cut -c1-16)"
+          # --extract-to /workspace puts the binaries back at /workspace/target/debug/..., the path
+          # every env!("CARGO_BIN_EXE_*") in the ~100 integration tests baked in at build time.
+          printf 'FLOW-010 P1: running shard %s from the prebuilt archive (%s MB)\n' "$SHARD" "$(( $(stat -c %s "$arc/ws.tar.zst") / 1048576 ))"
           docker run --rm \
           -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -994,8 +996,7 @@ jobs:
             -e EXPR="$EXPR" -e SHARD \
             "$IMAGE" \
             bash -c 'set -euo pipefail
-              mkdir -p /workspace/target/ar
-              cargo nextest run --profile ci --archive-file /workspace/ws-archive/ws.tar.zst --workspace-remap /workspace --extract-to /workspace/target/ar --extract-overwrite -E "$EXPR" --partition "hash:${SHARD}/3"'
+              cargo nextest run --profile ci --archive-file /workspace/ws-archive/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite -E "$EXPR" --partition "hash:${SHARD}/3"'
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -1502,19 +1503,36 @@ jobs:
               -e EXPR="$EXPR" -e BUILD_FLAGS="$BUILD_FLAGS" -e TREE="$tree" \
               "$IMAGE" bash -c "set -euo pipefail; $1"
           }
+          t0=$SECONDS
           # 1. build + archive the binary set (the flags a shard used to build with)
           dock 'cargo nextest archive --profile ci $BUILD_FLAGS --archive-file /workspace/ws-archive-out/ws.tar.zst'
+          t_build=$((SECONDS - t0)); t0=$SECONDS
           # 2. the INDEPENDENT yardstick, as the shards' Σ-executed step built it: the whole
           #    filterset over every test of the target packages, whole and per shard partition
           dock 'cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /workspace/ws-archive-out/live.json
                 for n in 1 2 3; do cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${n}/3" --message-format json > "/workspace/ws-archive-out/tree.${n}.list.json"; done'
           # 3. the same filterset listed FROM the archive; one extract, into a directory that exists
-          dock 'mkdir -p /workspace/target/ar && cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace/target/ar --extract-overwrite -E "$EXPR" --message-format json > /workspace/ws-archive-out/arc.json'
+          dock 'cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite -E "$EXPR" --message-format json > /workspace/ws-archive-out/arc.json'
+          t_list=$((SECONDS - t0))
           bash scripts/ci/archive_list_equal.sh "$out/live.json" "$out/arc.json"
+          # Smoke (round-2 blocker): extract into a FRESH empty target dir and prove every
+          # top-level debug binary, the ones env!("CARGO_BIN_EXE_*") bakes in, is back at
+          # its build-time path and runs. A shard otherwise finds out ~100 tests later.
+          smoke="$GITHUB_WORKSPACE/ws-smoke-target"
+          rm -rf "${smoke:?}"; mkdir -p "$smoke"
+          tar --zstd -tf "$out/ws.tar.zst" | grep -E '^target/debug/[^/]+$' | sed 's#^target/#/workspace/target/#' > "$out/bins.txt" || true
+          docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace \
+            -e BINS="$(tr '\n' ' ' < "$out/bins.txt")" "$IMAGE" bash -c 'set -euo pipefail
+              cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite --message-format json > /dev/null
+              n=0; for b in $BINS; do test -x "$b" || { echo "::error::archived binary $b not executable at its build path"; exit 1; }; n=$((n+1)); done
+              if [ -x /workspace/target/debug/apr ]; then /workspace/target/debug/apr --version; fi
+              echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'
+          rm -rf "${smoke:?}" "${out:?}/bins.txt"
+          printf 'FLOW-010 P1 timing: archive_build_s=%s list_s=%s archive_mb=%s\n' "$t_build" "$t_list" "$(( $(stat -c %s "$out/ws.tar.zst") / 1048576 ))"
           rm -f "${out:?}/live.json" "${out:?}/arc.json"
-          jq -n --arg s "$GITHUB_SHA" --arg e "$EXPR" --arg f "$BUILD_FLAGS" \
-            --arg i "$(docker image inspect --format '{{.Id}}' "$IMAGE")" \
-            '{tier:"quick",sha:$s,expr:$e,flags:$f,image:$i}' > "$out/bind.json"
+          jq -n --arg b "$t_build" --arg l "$t_list" --arg s "$GITHUB_SHA" --arg e "$EXPR" --arg f "$BUILD_FLAGS" \
+            --arg i "$(docker run --rm "$IMAGE" rustc -vV | sha256sum | cut -c1-16)" \
+            '{tier:"quick",sha:$s,expr:$e,flags:$f,rustc:$i,build_s:($b|tonumber),list_s:($l|tonumber)}' > "$out/bind.json"
           ls -l "$out"
       - uses: actions/upload-artifact@v7
         with:
