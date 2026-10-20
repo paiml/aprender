@@ -12,7 +12,10 @@
 #                           contribute nothing (no crate code)
 #   Cargo.lock, Cargo.toml, rust-toolchain.toml, .cargo/, .github/, Makefile, any other path
 #                           ALL
-# An empty diff prints nothing. --diff-from reads the changed paths from FILE (tests).
+# An empty diff, or a diff git cannot compute (bad base: exit 128), is ALL: nothing was
+# measured, so nothing may be skipped. A diff of only no-crate-code paths prints nothing.
+# --diff-from reads the changed paths from FILE (tests). AFFECTED_META / AFFECTED_ROOT
+# replace `cargo metadata` and the checkout root (tests; synthetic graphs).
 set -euo pipefail
 CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts}"
 filter=0 from=""
@@ -23,14 +26,16 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
-if [ -n "$from" ]; then files="$(cat "$from")"; else files="$(git diff --name-only "${1:-origin/main}...${2:-HEAD}")"; fi
+if [ -n "$from" ]; then files="$(cat "$from")"
+else files="$(git diff --name-only "${1:-origin/main}...${2:-HEAD}")" || files=""; fi
 emit() { # $@ = package names, or ALL
   if [ "${1:-}" = ALL ]; then [ "$filter" = 1 ] && echo 'all()' || echo ALL; return; fi
   if [ "$filter" = 1 ]; then printf '%s\n' "$@" | sed 's/.*/package(&)/' | paste -sd'|' | sed 's/|/ | /g'; else printf '%s\n' "$@"; fi
 }
-[ -n "$files" ] || exit 0
-meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null || cargo metadata --no-deps --format-version 1)"
-root="$(git rev-parse --show-toplevel)"
+[ -n "$files" ] || { emit ALL; exit 0; }
+if [ -n "${AFFECTED_META:-}" ]; then meta="$(cat "$AFFECTED_META")"
+else meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null || cargo metadata --no-deps --format-version 1)"; fi
+root="${AFFECTED_ROOT:-$(git rev-parse --show-toplevel)}"
 dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta")"
 touched=""
 while IFS= read -r f; do

@@ -34,4 +34,25 @@ row "unknown path next to a leaf -> ALL" ALL "$(run "$ld/src/lib.rs" scripts/wha
 row "docs only -> nothing" "" "$(run docs/x.md)"
 row "--filter names the package" "package($lp)" "$($A --filter --diff-from <(echo "$ld/src/lib.rs"))"
 row "--filter ALL -> all()" "all()" "$($A --filter --diff-from <(echo Cargo.lock))"
+# empty diff and a bad base are ALL (nothing measured, nothing skipped)
+: >"$t/empty"
+row "empty diff -> ALL" ALL "$($A --diff-from "$t/empty")"
+row "bad base (git exit 128) -> ALL" ALL "$($A no-such-base-ref-5802 HEAD 2>/dev/null)"
+# dev-dep counting: b depends on a ONLY as a dev-dependency; touching a must reach b.
+cat >"$t/meta.json" <<'JSON'
+{"packages":[
+ {"name":"a","manifest_path":"/r/crates/a/Cargo.toml","dependencies":[]},
+ {"name":"b","manifest_path":"/r/crates/b/Cargo.toml","dependencies":[{"name":"a","kind":"dev"}]},
+ {"name":"c","manifest_path":"/r/crates/c/Cargo.toml","dependencies":[]}]}
+JSON
+row "dev-only edge is counted: touching a reaches b" "a
+b" "$(AFFECTED_META="$t/meta.json" AFFECTED_ROOT=/r run crates/a/src/lib.rs | sort -u)"
+row "an unrelated crate is not reached" "c" "$(AFFECTED_META="$t/meta.json" AFFECTED_ROOT=/r run crates/c/src/lib.rs)"
+# mutant: a tool that drops dev edges misses b, and the dev-dep row must see it
+sed 's/\[\.dependencies\[\]\.name\]/[.dependencies[]|select(.kind!="dev")|.name]/' "$A" >"$t/mut.sh"
+if cmp -s "$A" "$t/mut.sh"; then echo "FAIL mutant did not apply"; fail=1
+else
+  got=$(AFFECTED_META="$t/meta.json" AFFECTED_ROOT=/r bash "$t/mut.sh" --diff-from <(echo crates/a/src/lib.rs) | sort -u)
+  row "MUTANT: ignoring dev edges is caught by the dev-dep row" "a" "$got"
+fi
 exit "$fail"
