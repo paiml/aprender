@@ -42,7 +42,7 @@ check() {
 if [ "${1:-}" = "--self-test" ]; then
   src="${CI_YML:-.github/workflows/ci.yml}"
   check "$src" || { echo "self-test: real workflow is not draft-gated"; exit 1; }
-  t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+  t=$(mktemp -d); trap 'rm -rf -- "${t:?}"' EXIT
   # Mutation 1: drop the draft guard from x86-main -> must be RED.
   sed "s/ && !(github.event_name == 'pull_request' \&\& github.event.pull_request.draft)//" "$src" >"$t/m1.yml"
   if check "$t/m1.yml" >/dev/null; then echo "self-test: mutation 1 (no draft guard) not caught"; exit 1; fi

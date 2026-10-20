@@ -2,7 +2,7 @@
 # D2 RED rows for scripts/pr_admit.sh (ranked by first-ready, K cap, fail-open).
 set -uo pipefail
 A=scripts/pr_admit.sh
-t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+t=$(mktemp -d); trap 'rm -rf -- "${t:?}"' EXIT
 fail=0
 row() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: want '$2' got '$3'"; fail=1; fi; }
 # 12 active PRs, number n readyAt hour n (PR 1 oldest); PR 7 pushed again last (pushedAt ignored)
