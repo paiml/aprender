@@ -20,9 +20,12 @@ check() { # $1 = sections.yml  $2 = ci.yml ; prints FAIL lines, returns 1 on any
   got="$(awk '/^  workspace-test-shard:/{j=1} j&&/^        shard: \[/{print;exit}' "$ci" | sed -E 's/.*\[(.*)\].*/\1/; s/ //g')"
   [ "$got" = "$want" ] || { echo "FAIL ci.yml matrix shard list ($got) != 1..$n"; bad=1; }
   awk '/^  workspace-test-shard:/{j=1} j&&/^        shards: \[/{print;exit}' "$ci" | grep -q "\[$n\]" || { echo "FAIL ci.yml matrix shards != [$n]"; bad=1; }
-  if grep -nE 'hash:\$\{SHARD\}/[0-9]+|quick_tier_shard\.sh "\$SHARD" [0-9]+|--shard "\$\{SHARD\}/[0-9]+"' "$sec"; then echo "FAIL literal shard count in $sec"; bad=1; fi
+  # any digit typed after $SHARD / ${SHARD} (hash:${SHARD}/3, "$SHARD/3", "$SHARD" 3) is a literal count; the [ "$SHARD" = 1 ] designations are not
+  if grep -nE '\$\{?SHARD\}?"?[/ ] *"?[0-9]+' "$sec"; then echo "FAIL literal shard count in $sec"; bad=1; fi
   lit_loop="n in 1 2 3"
   if grep -nE "\?[0-9]+\?'|${lit_loop}" "$ci"; then echo "FAIL literal shard count in $ci"; bad=1; fi
+  if grep -nE 'SHARDS=\"?[0-9]' "$ci"; then echo "FAIL typed SHARDS= in $ci"; bad=1; fi
+  grep -qE 'SHARDS="\$\(awk.*ci/sections\.yml' "$ci" || { echo "FAIL the aggregator SHARDS= no longer reads the pins in ci/sections.yml"; bad=1; }
   [ "$bad" = 0 ] && echo "ok    shard count $n: pins, ci.yml matrix, no literals"
   return "$bad"
 }
@@ -37,7 +40,14 @@ if [ "${1:-}" = --self-test ]; then
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: matrix mismatch must be RED"; exit 1; }
   sed 's/for n in \$(seq 1 "\$SHARDS")/for n in 1 2 3/' .github/workflows/ci.yml > "$t/c.yml"
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: literal loop must be RED"; exit 1; }
-  echo "PASS  check_shard_count_single_source self-test: 4 rows"
+  cp ci/sections.yml "$t/s.yml"; sed 's|bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS"|bash scripts/ci/quick_tier_shard.sh "$SHARD" 3|' ci/sections.yml > "$t/s.yml"
+  check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: typed quick_tier_shard count must be RED"; exit 1; }
+  sed 's|--shard "${SHARD}/${SHARDS}"|--shard "$SHARD/3"|' ci/sections.yml > "$t/s.yml"
+  check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: unbraced $SHARD/3 must be RED"; exit 1; }
+  cp ci/sections.yml "$t/s.yml"; sed -E 's/^( +SHARDS=)"\$\(awk[^)]*\)"/\112/' .github/workflows/ci.yml > "$t/c.yml"
+  cmp -s .github/workflows/ci.yml "$t/c.yml" && { echo "self-test: SHARDS=12 mutant did not apply"; exit 1; }
+  check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: typed aggregator SHARDS=12 must be RED"; exit 1; }
+  echo "PASS  check_shard_count_single_source self-test: 7 rows"
   exit 0
 fi
 check ci/sections.yml .github/workflows/ci.yml
