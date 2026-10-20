@@ -106,16 +106,24 @@ pub struct Reply {
 /// # Errors
 /// The serve could not be reached or the body could not be read.
 pub fn post(url: &str, body: &Value) -> Result<Reply, String> {
-    let agent = ureq::AgentBuilder::new().timeout(TIMEOUT).build();
+    // HTTP error statuses are a `Reply`, not a transport error: keep ureq 2 behaviour.
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(TIMEOUT))
+        .http_status_as_error(false)
+        .build()
+        .into();
     let t = Instant::now();
-    let (status, resp) = match agent.post(url).send_json(body) {
-        Ok(r) => (r.status(), r),
-        Err(ureq::Error::Status(code, r)) => (code, r),
-        Err(e) => return Err(e.to_string()),
-    };
+    // ureq 3 `send_json` pretty-prints; send the compact body ureq 2 sent.
+    let payload = serde_json::to_string(body).map_err(|e| e.to_string())?;
+    let resp = agent
+        .post(url)
+        .header("Content-Type", "application/json")
+        .send(payload.as_str())
+        .map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
     // `into_string` refuses bodies over 10 MB; the /tokenize reply for a large
     // candidate diff exceeds that. Read bounded at MAX_BODY instead.
-    let body = read_bounded(resp.into_reader(), MAX_BODY)?;
+    let body = read_bounded(resp.into_body().into_reader(), MAX_BODY)?;
     Ok(Reply {
         status,
         body,
