@@ -1,4 +1,20 @@
-#!/usr/bin/env bash
+. scripts/pv_bin.sh || exit 1
+PV_SAT=$(dirname "$PV")/pv-sat   # never an inherited PV_SAT: it may be another tree's or a stale build
+
+# A stale pv regenerates shapes.ttl in an old form and the gate then goes red (#5776 lost ~25 min). pv_bin.sh
+# proves the tree; this proves the BUILD: pv and pv-sat must be newer than every tracked source of the verifier
+# crates in THIS checkout, so a binary built before the merge just done is refused (same idea as apr_bin.sh).
+stale_pv=$(for b in "$PV" "$PV_SAT"; do
+    [ -x "$b" ] || { echo "$b (missing)"; continue; }
+    git ls-files -z -- crates/aprender-contracts crates/aprender-contracts-cli Cargo.lock | xargs -0 -r find -L -newer "$b" -type f 2>/dev/null | head -1 | sed "s|^|$b older than |"
+done)
+if [ -n "$stale_pv" ]; then
+    printf 'contracts_resolve: REFUSED, pv is not built from this HEAD:\n%s\nrebuild: cargo build -p aprender-contracts-cli --bin pv --bin pv-sat\n' "$stale_pv" >&2
+    exit 1
+fi
+
+bash scripts/contracts_gate.sh regen
+"$PV_SAT" contracts#!/usr/bin/env bash
 # contracts_resolve.sh -- finish a `git merge origin/main` that stopped on the GENERATED contract files.
 #
 # contracts/contracts.nt, contracts/shapes.ttl and contracts/witness/*.json are derived from contracts/*.yaml
@@ -25,6 +41,23 @@ if [ -n "$other" ]; then
     exit 1
 fi
 
+. scripts/pv_bin.sh || exit 1
+PV_SAT=$(dirname "$PV")/pv-sat   # never an inherited PV_SAT: it may be another tree's, or a stale build
+
+# A stale pv regenerates shapes.ttl in an old form and the gate then goes red (#5776 lost ~25 min). pv_bin.sh
+# proves the TREE; this proves the BUILD: pv and pv-sat must be newer than every tracked source of the verifier
+# crates in this checkout, so a binary built before the merge just done is refused (same idea as apr_bin.sh).
+# Checked BEFORE the conflicted files are dropped, so a refusal leaves the merge exactly as it was.
+stale_pv=$(for b in "$PV" "$PV_SAT"; do
+    [ -x "$b" ] || { echo "$b (missing)"; continue; }
+    git ls-files -z -- crates/aprender-contracts crates/aprender-contracts-cli Cargo.lock \
+        | while IFS= read -r -d "" s; do [ "$s" -nt "$b" ] && { echo "$b is older than $s"; break; }; done
+done)
+if [ -n "$stale_pv" ]; then
+    printf 'contracts_resolve: REFUSED, pv is not built from this HEAD:\n%s\nrebuild: cargo build -p aprender-contracts-cli --bin pv --bin pv-sat\n' "$stale_pv" >&2
+    exit 1
+fi
+
 # Drop both sides of every generated path; the regeneration below recreates what the merged sources produce.
 printf '%s\n' "$conflicted" | while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -32,9 +65,8 @@ printf '%s\n' "$conflicted" | while IFS= read -r f; do
     rm -f -- "${f:?}"
 done
 
-. scripts/pv_bin.sh || exit 1
 bash scripts/contracts_gate.sh regen
-"${PV_SAT:-$(dirname "$PV")/pv-sat}" contracts
+"$PV_SAT" contracts
 bash scripts/readme_sync.sh --write   # README.md carries a derived contract count: also stale after a merge
 git add -A -- contracts/contracts.nt contracts/shapes.ttl contracts/witness README.md
 left=$(git diff --name-only --diff-filter=U)
