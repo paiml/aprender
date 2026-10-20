@@ -443,8 +443,10 @@ jobs:
   # and fetches the PR merge commit as data (a --no-checkout worktree that is read, never
   # executed), on a GitHub-hosted ephemeral runner no PR-code job ever shares, and runs the
   # verifier under `env -i` with absolute tools. What it does NOT cover: a PR that edits the CI
-  # files or the judge itself is caught only by merge_group (which ignores --receipt-ok and runs
-  # the full gate) and by CI-edit review. scripts/check_receipt_gate.sh (W16-W32) turns RED if
+  # files or the judge itself. merge_group ignores --receipt-ok but runs only the QUICK tier
+  # (full only on tag/release, scripts/ci_test_tier.sh merge_group case), from the PR's own
+  # CI files, so it does not re-judge such an edit with a trusted copy; CI-edit review is the
+  # only backstop. scripts/check_receipt_gate.sh (W16-W32) turns RED if
   # this job gains a step that runs PR-tree code or checks the PR out as code.
   # It always exits 0; the shard job reads `ok` as 1 only on a literal 1.
   receipt-judge:

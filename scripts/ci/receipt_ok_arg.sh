@@ -4,9 +4,9 @@
 # verified, 0 in every other case (no receipt, a bad one, a missing file, a crashed verifier,
 # a base that has no judge yet). Always exits 0: 0 sends the PR to the full gate.
 #
-# This script is itself a backstop for a PR that carries no CI edits: a PR that edits the CI
-# files or this judge is caught only by merge_group (which ignores --receipt-ok, so it runs the
-# full gate) and by CI-edit review, not by this script.
+# This does not cover a PR that edits the CI files or this judge: merge_group ignores
+# --receipt-ok but runs only the quick tier (full on tag/release), from the PR's own CI files,
+# so it does not re-judge such an edit with a trusted copy. CI-edit review is the only backstop.
 #
 # A PR cannot edit its own judge (the #5793 pattern): the verifier, the toolchain-id recipe
 # and the pinned batcher public key are read from HEAD of TRUST_DIR, the base-branch checkout
