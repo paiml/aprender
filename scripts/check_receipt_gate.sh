@@ -136,6 +136,7 @@ mkbase trust-main "$td/pub"
 mkbase trust-placeholder "$td/pub-empty"
 git init -q "$td/trust-empty"
 git -C "$td/trust-empty" -c user.email=t@example.invalid -c user.name=t commit -q --allow-empty -m none
+  # bashrs disable-next-line=SEC010
 arg() { (cd "$repo" && bash "${3:-$W}" "$1" "${2:-$BASE}" "$head" 2>/dev/null | head -n1); }
 wrow() {
   local name=$1 want=$2 got=$3
@@ -189,7 +190,9 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   printf '%s\n' "$code" | grep -q -E 'GITHUB_PATH|GITHUB_ENV|head_ref|pull_request\.head|github\.sha *$' && return 1
   [ "$(printf '%s\n' "$code" | grep -c '^      - ')" -eq 2 ] || return 1
   printf '%s\n' "$code" | grep -E 'scripts/' | grep -v -E 'git show HEAD:scripts/ci/receipt_ok_arg\.sh' | grep -q . && return 1
-  case "$code" in *'runs-on: ubuntu-latest'*) ;; *) return 1 ;; esac
+  case "$code" in *'runs-on: [self-hosted, Linux, X64, receipt-judge]'*) ;; *) return 1 ;; esac
+  # a judge with no runner must be skipped, never queued: the job is gated on the readiness variable
+  printf '%s\n' "$job" | grep -q -F "vars.RECEIPT_JUDGE_RUNNER_READY == 'true'" || return 1
   case "$code" in *'env -i HOME='*'/usr/bin/bash "$RUNNER_TEMP/rok.sh"'*) ;; *) return 1 ;; esac
   case "$code" in *'worktree add -q --no-checkout'*) ;; *) return 1 ;; esac
   case "$code" in *'core.hooksPath=/dev/null'*) ;; *) return 1 ;; esac
@@ -222,6 +225,8 @@ wmut "W19 MUTANT: an earlier step planting PATH is caught" ci "$CHK" '      - ru
 '"$CHK"
 wmut "W27 MUTANT: a judge whose PR worktree is a full checkout is caught" ci 'worktree add -q --no-checkout' 'worktree add -q'
 wmut "W28 MUTANT: a judge that leaves the git token env set is caught" ci 'unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GH_TOKEN' 'true'
+wmut "W33 MUTANT: a judge not gated on the runner-readiness variable (it would queue forever with no runner) is caught" ci " && vars.RECEIPT_JUDGE_RUNNER_READY == 'true'" ''
+wmut "W34 MUTANT: the judge back on a GitHub-hosted image is caught" ci 'runs-on: [self-hosted, Linux, X64, receipt-judge]' 'runs-on: ubuntu-latest'
 wmut "W20 MUTANT: a shard job that does not wait for the judge is caught" ci 'needs: [receipt-judge]' 'needs: []'
 wmut "W20b MUTANT: a tier step that runs PR-tree code is caught" sec 'rok=0
           if [ "${GITHUB_EVENT_NAME}" = pull_request ]' 'rok=0
@@ -267,6 +272,7 @@ printf '%s|%s|%s\\n' "\${GH_TOKEN:-}\${GITHUB_OUTPUT:-}" "\${RECEIPT_RUSTC_CWD:-
 printf 'RECEIPT_OK=0\\n'
 PROBE
 git -C "$td/trust-probe" -c user.email=t@example.invalid -c user.name=t commit -q -am probe
+  # bashrs disable-next-line=SEC010
 probe() { rm -f "${td:?}/probe.out"; (cd "$repo" && GH_TOKEN=secret GITHUB_OUTPUT=/tmp/x PROBEFILE="$td/probe.out" bash "${1:-$W}" "$td/b-good" "$td/trust-probe" "$head" >/dev/null 2>&1); sed -E 's#\|[^|]*/rc\|#|RC|#' "$td/probe.out" 2>/dev/null; }
 wrow "W25 the verifier sees no token or output file, and runs rustc in the base's dir" "|RC|rust-toolchain.toml" "$(probe)"
 if mutate "$W" 'first=$(env -i ' 'first=$(env ' "$td/mut-e.sh"; then
@@ -279,6 +285,7 @@ mkdir -p "$td/evil"; printf '#!/bin/sh\nexit 0\n' >"$td/evil/ssh-keygen"; chmod 
 printf 'ssh-keygen() { return 0; }\nexport -f ssh-keygen\n' >"$td/evil.env"
 forge() { # WRAPPER BASEDIR -> wrapper output under both forgeries (PATH first, then BASH_ENV)
   local a b
+  # bashrs disable-next-line=SEC010
   a=$(cd "$repo" && PATH="$td/evil:$PATH" bash "$1" "$td/b-s1" "$2" "$head" 2>/dev/null | head -n1)
   b=$(cd "$repo" && BASH_ENV="$td/evil.env" bash "$1" "$td/b-s1" "$2" "$head" 2>/dev/null | head -n1)
   printf '%s%s' "$a" "$b"

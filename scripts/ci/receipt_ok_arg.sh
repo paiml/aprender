@@ -16,7 +16,7 @@
 # rust-toolchain.toml. The caller must itself run THIS script from TRUST_DIR too
 # (`git -C TRUST_DIR show HEAD:scripts/ci/receipt_ok_arg.sh`). Replace refs are off for every
 # git call here, so a PR cannot make its own HEAD^{tree} read as another tree.
-# Cases: scripts/check_receipt_gate.sh (rows W1-W32).
+# Cases: scripts/check_receipt_gate.sh (rows W1-W34).
 set -u
 export GIT_NO_REPLACE_OBJECTS=1
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
