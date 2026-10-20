@@ -1,69 +1,95 @@
 #!/usr/bin/env bash
-# check_queue_merge_plain.sh -- every script that ARMS a pull request on a merge-queue repo calls plain
-# `gh pr merge <pr>`, with no method flag and no --auto. #5794, from the #5789 loss of 2026-10-20.
+# check_queue_merge_plain.sh -- every arming call on a merge-queue repo is plain `gh pr merge <pr> [--repo R]`:
+# no method flag of any spelling, no --auto, no variable-held or extra argument. #5794, from the #5789 loss of 2026-10-20.
 #
-# THE DEFECT. #5789's auto-merge was armed at 12:39Z with method MERGE on a queue repo whose queue method is
-# SQUASH. GitHub accepted the request and the PR never queued; a plain `gh pr merge` queued it at once. A method
-# flag on a queue repo is not a preference, it is a second source of truth that can disagree with the queue.
+# THE DEFECT. #5789's auto-merge was armed at 12:39Z with method MERGE on a queue repo whose queue method is SQUASH.
+# GitHub accepted it and the PR sat un-queued until 14:14Z, when a plain `gh pr merge` queued it. A method flag on a
+# queue repo is a second source of truth that can disagree with the queue; the queue owns the method.
 #
-# Usage:  bash scripts/check_queue_merge_plain.sh            scan scripts/, exit 1 on a flagged line
-#         bash scripts/check_queue_merge_plain.sh --self-test  the case table, including the RED row
+# RULE (after joining backslash continuations): in each non-comment line, the words after `pr merge` up to the end of
+# the command (`;` `|` `&&` `||` `)` or a redirection) may be only: ONE positional (the PR/branch), and `--repo R` /
+# `-R R` / `--repo=R`. Anything else -- --squash/-s/--squash=1/--merge/-m/--rebase/-r/--auto/--delete-branch, a
+# second positional such as a held `$M` -- is flagged.
+#
+# Scope: scripts/**/*.sh, .claude/skills/**/*.md, docs/specifications/*.md. CLAUDE.md is operator-owned and not scanned.
+# Wired: ci/explicit-test-commands.d/814-queue-merge-plain-5794.cmd runs it on the merge path (--self-test, which also
+# scans the real tree), so a restored method flag turns CI RED.
+# Usage:  bash scripts/check_queue_merge_plain.sh [--self-test]
 set -euo pipefail
 
 # Lines that name a method flag on purpose: fixtures that stub gh and classify its calls, not arming paths.
-ALLOW='scripts/check_release_host_receipts.sh scripts/release/rehearse.sh'
+ALLOW='scripts/check_release_host_receipts.sh scripts/release/rehearse.sh scripts/check_queue_merge_plain.sh'
 
-# flagged_lines FILE...  -> "file:line:text" for each non-comment line that runs `pr merge` with a method flag
-flagged_lines() {
-    local f
-    for f in "$@"; do
-        grep -nE 'pr merge' "$f" 2> /dev/null \
-            | grep -vE '^[0-9]+:[[:space:]]*#' \
-            | grep -E -- '(^|[[:space:]])--(squash|merge|rebase|auto)([[:space:]]|$)' \
-            | sed "s|^|$f:|" || true
-    done
+# flagged FILE -> "file:text" per offending command
+flagged() {
+    sed -e ':a' -e '/\\$/{N;s/\\\n/ /;ta' -e '}' "$1" 2> /dev/null | awk -v f="$1" '
+        /^[[:space:]]*#/ { next }
+        {
+            line = $0
+            while (match(line, /(^|[^[:alnum:]_])pr merge/) > 0) {
+                rest = substr(line, RSTART + RLENGTH); line = rest
+                n = split(rest, w, /[[:space:]]+/); pos = 0; bad = 0; skip = 0
+                for (k = 1; k <= n; k++) {
+                    t = w[k]; if (t == "") continue
+                    if (t ~ /^(2?>|&>|&&|\|\||;|\||\)|`)/) break
+                    closing = (t ~ /`$/)
+                    gsub(/[)"`]+$/, "", t)
+                    if (skip) { skip = 0; continue }
+                    if (t == "--repo" || t == "-R") { skip = 1; continue }
+                    if (t ~ /^--repo=/) continue
+                    if (t ~ /^-/) { bad = 1; break }
+                    pos++; if (pos > 1) { bad = 1; break }
+                    if (closing) break
+                }
+                if (bad) { print f ":" $0; break }
+            }
+        }'
 }
 
 scan() {
-    local root="$1" f out="" skip
+    local root="$1" f a skip
     while IFS= read -r f; do
         skip=0
         for a in $ALLOW; do [ "$f" = "$a" ] && skip=1; done
-        [ "$f" = scripts/check_queue_merge_plain.sh ] && skip=1
         [ "$skip" = 1 ] && continue
-        out+="$(cd "$root" && flagged_lines "$f")"$'\n'
-    done < <(cd "$root" && find scripts -name '*.sh' -type f | sort)
-    printf '%s' "$out" | sed '/^$/d'
+        (cd "$root" && flagged "$f")
+    done < <(cd "$root" && { find scripts -name '*.sh' -type f; find .claude/skills -name '*.md' -type f; find docs/specifications -maxdepth 1 -name '*.md' -type f; } 2> /dev/null | sort)
 }
 
 self_test() {
-    local td fails=0 got
+    local td fails=0 got flag
     td="$(mktemp -d)"; trap 'rm -rf "${td:?}"' RETURN
     mkdir -p "$td/scripts"
-    printf 'gh pr merge "$pr" --repo "$repo"\n# gh pr merge --squash --auto is the old way\n' > "$td/scripts/ok.sh"
-    got="$(scan "$td")"
-    if [ -z "$got" ]; then echo "ok    plain merge and a comment are clean"; else echo "FAIL  plain merge flagged: $got"; fails=1; fi
-    for flag in --squash --merge --rebase --auto; do
-        printf 'gh pr merge "$pr" %s\n' "$flag" > "$td/scripts/bad.sh"
-        got="$(scan "$td")"
-        if [ -n "$got" ]; then echo "ok    RED on method flag $flag"; else echo "FAIL  $flag was NOT flagged"; fails=1; fi
+    check() { # WANT(red|green) LABEL  (content on stdin)
+        cat > "$td/scripts/x.sh"; got="$(scan "$td")"
+        if { [ "$1" = red ] && [ -n "$got" ]; } || { [ "$1" = green ] && [ -z "$got" ]; }; then echo "ok    $1  $2"; else echo "FAIL  $1  $2 (got: ${got:-nothing})"; fails=1; fi
+    }
+    printf 'out=$(gh pr merge "$pr" --repo "$repo" 2>&1)\n' | check green "plain with --repo and a redirect"
+    printf 'gh pr merge "$BR" >/dev/null 2>&1 && say armed\n' | check green "plain then &&"
+    printf 'gh pr merge -R o/r 12\n# gh pr merge 1 --squash --auto\n' | check green "-R form and a comment"
+    for flag in --squash -s --merge -m --rebase -r --auto --squash=1 --delete-branch; do
+        printf 'gh pr merge "$pr" %s\n' "$flag" | check red "method/option flag $flag"
     done
-    printf 'out=$(gh pr merge "$N" --repo r --squash --auto 2>&1)\n' > "$td/scripts/bad.sh"
+    printf 'out=$(gh pr merge "$N" --repo r --squash --auto 2>&1)\n' | check red "mid-line (arm_pr_automerge shape)"
+    printf 'gh pr merge --squash --auto "$BR" >/dev/null\n' | check red "flags before the positional (session_docs_commit shape)"
+    printf 'gh pr merge "$pr" \\\n   --squash --auto\n' | check red "backslash continuation"
+    printf 'M=--squash\ngh pr merge "$pr" $M\n' | check red "flag held in a variable"
+    printf 'gh pr merge "$pr" "${ARGS[@]}"\n' | check red "array-held arguments"
+    mkdir -p "$td/.claude/skills/s"
+    printf 'Runs `gh pr merge <N> --squash --auto` on PERMIT\n' > "$td/.claude/skills/s/SKILL.md"
     got="$(scan "$td")"
-    if [ -n "$got" ]; then echo "ok    RED on a flag mid-line (the arm_pr_automerge shape)"; else echo "FAIL  mid-line flag not flagged"; fails=1; fi
+    if [ -n "$got" ]; then echo "ok    red  skill markdown is scanned"; else echo "FAIL  red  markdown not scanned"; fails=1; fi
+    rm -rf "${td:?}/.claude"
     got="$(scan "$(git rev-parse --show-toplevel)")"
-    if [ -z "$got" ]; then echo "ok    the real tree has no method flag on an arming path"; else echo "FAIL  real tree: $got"; fails=1; fi
+    if [ -z "$got" ]; then echo "ok    green the real tree has no method flag on an arming path"; else echo "FAIL  real tree: $got"; fails=1; fi
     return "$fails"
 }
 
 case "${1:-}" in
     --self-test) self_test; exit $? ;;
     "")
-        root="$(git rev-parse --show-toplevel)"
-        bad="$(scan "$root")"
-        if [ -n "$bad" ]; then
-            printf 'FAIL  a script arms with a method flag on a merge-queue repo (#5794):\n%s\n' "$bad"; exit 1
-        fi
-        echo "ok    no arming script passes a method flag to gh pr merge" ;;
+        bad="$(scan "$(git rev-parse --show-toplevel)")"
+        if [ -n "$bad" ]; then printf 'FAIL  an arming call carries a method flag or extra argument (#5794):\n%s\n' "$bad"; exit 1; fi
+        echo "ok    every gh pr merge is plain" ;;
     *) echo "usage: $0 [--self-test]" >&2; exit 2 ;;
 esac

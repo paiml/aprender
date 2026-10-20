@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pr_review_quorum_arm.sh - evaluate S13's autonomous-merge predicate and either arm
-# `gh pr merge --auto` or REFUSE with a named class.
+# plain `gh pr merge` or REFUSE with a named class.
 #
 # PR-REVIEW-SKILL-002 v2 S13. Every refusal names exactly one class Q1..Q10, because a
 # refusal with no name is undiagnosable and an undiagnosable refusal gets routed around.
@@ -891,7 +891,7 @@ if evaluate "$RECEIPT_DIR" "$CONTEXT_FILE"; then
     printf '  --explain: NOT arming. S13.11 rung 1 is shadow mode.\n'
     exit 0
   fi
-  # IDEMPOTENT. `gh pr merge --auto` is safe to repeat, but a second call is a second
+  # IDEMPOTENT. a plain `gh pr merge` is safe to repeat, but a second call is a second
   # audit-log entry and a second chance to fail for an unrelated reason, so the armed
   # state is read first and a no-op says so.
   already=$(jq -r '.auto_merge_armed // false' "$CONTEXT_FILE")
