@@ -136,6 +136,7 @@ mkbase trust-main "$td/pub"
 mkbase trust-placeholder "$td/pub-empty"
 git init -q "$td/trust-empty"
 git -C "$td/trust-empty" -c user.email=t@example.invalid -c user.name=t commit -q --allow-empty -m none
+  # bashrs disable-next-line=SEC010
 arg() { (cd "$repo" && bash "${3:-$W}" "$1" "${2:-$BASE}" "$head" 2>/dev/null | head -n1); }
 wrow() {
   local name=$1 want=$2 got=$3
@@ -267,6 +268,7 @@ printf '%s|%s|%s\\n' "\${GH_TOKEN:-}\${GITHUB_OUTPUT:-}" "\${RECEIPT_RUSTC_CWD:-
 printf 'RECEIPT_OK=0\\n'
 PROBE
 git -C "$td/trust-probe" -c user.email=t@example.invalid -c user.name=t commit -q -am probe
+  # bashrs disable-next-line=SEC010
 probe() { rm -f "${td:?}/probe.out"; (cd "$repo" && GH_TOKEN=secret GITHUB_OUTPUT=/tmp/x PROBEFILE="$td/probe.out" bash "${1:-$W}" "$td/b-good" "$td/trust-probe" "$head" >/dev/null 2>&1); sed -E 's#\|[^|]*/rc\|#|RC|#' "$td/probe.out" 2>/dev/null; }
 wrow "W25 the verifier sees no token or output file, and runs rustc in the base's dir" "|RC|rust-toolchain.toml" "$(probe)"
 if mutate "$W" 'first=$(env -i ' 'first=$(env ' "$td/mut-e.sh"; then
@@ -279,6 +281,7 @@ mkdir -p "$td/evil"; printf '#!/bin/sh\nexit 0\n' >"$td/evil/ssh-keygen"; chmod 
 printf 'ssh-keygen() { return 0; }\nexport -f ssh-keygen\n' >"$td/evil.env"
 forge() { # WRAPPER BASEDIR -> wrapper output under both forgeries (PATH first, then BASH_ENV)
   local a b
+  # bashrs disable-next-line=SEC010
   a=$(cd "$repo" && PATH="$td/evil:$PATH" bash "$1" "$td/b-s1" "$2" "$head" 2>/dev/null | head -n1)
   b=$(cd "$repo" && BASH_ENV="$td/evil.env" bash "$1" "$td/b-s1" "$2" "$head" 2>/dev/null | head -n1)
   printf '%s%s' "$a" "$b"
