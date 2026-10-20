@@ -55,4 +55,34 @@ else
   got=$(AFFECTED_META="$t/meta.json" AFFECTED_ROOT=/r bash "$t/mut.sh" --diff-from <(echo crates/a/src/lib.rs) | sort -u)
   row "MUTANT: ignoring dev edges is caught by the dev-dep row" "a" "$got"
 fi
+# --no-renames: moving a file out of crate a into crate c touches BOTH (git's rename detection would show only c).
+rt="$t/repo"; mkdir -p "$rt/crates/a/src" "$rt/crates/b" "$rt/crates/c/src"; abs="$(cd "$(dirname "$A")" && pwd)/$(basename "$A")"
+sed "s|/r/|$rt/|" "$t/meta.json" >"$t/meta-rt.json"
+printf 'pub fn moved() -> u32 { 1 }\n// padding so git sees a rename, not a delete+add\n// padding\n' >"$rt/crates/a/src/x.rs"
+# plumbing (write-tree/commit-tree) so the scratch repo runs no commit hooks
+(cd "$rt" && git init -q && git add -A && b=$(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git commit-tree "$(git write-tree)" -m base) && git mv crates/a/src/x.rs crates/c/src/x.rs && git update-ref HEAD "$b" && git add -A && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git update-ref HEAD "$(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git commit-tree "$(git write-tree)" -p "$b" -m move)")
+mv_run() { (cd "$rt" && AFFECTED_META="$t/meta-rt.json" AFFECTED_ROOT="$rt" bash "$1" HEAD~1 HEAD | sort -u); }
+row "rename a->c touches both ends (a, its dependent b, and c)" "a
+b
+c" "$(mv_run "$abs")"
+sed 's/--name-only --no-renames/--name-only/' "$A" >"$t/mut-rn.sh"
+if cmp -s "$A" "$t/mut-rn.sh"; then echo "FAIL mutant did not apply"; fail=1
+else row "MUTANT: letting git detect renames is caught by the rename row" "c" "$(mv_run "$t/mut-rn.sh")"; fi
+# include_str!: a docs file a crate embeds is that crate's input (and reaches its dependents); an unembedded one is not.
+it="$t/inc"; mkdir -p "$it/crates/a/src" "$it/docs"
+printf 'pub const D: &str = include_str!("../../../docs/embedded.md");\n' >"$it/crates/a/src/lib.rs"
+sed "s|/r/|$it/|" "$t/meta.json" >"$t/meta-inc.json"
+inc_run() { printf '%s\n' "$2" >"$t/dinc"; AFFECTED_META="$t/meta-inc.json" AFFECTED_ROOT="$it" bash "$1" --diff-from "$t/dinc" | sort -u; }
+row "docs file embedded by crate a -> a and its dependent b" "a
+b" "$(inc_run "$A" docs/embedded.md)"
+row "docs file nobody embeds -> nothing" "" "$(inc_run "$A" docs/other.md)"
+sed "s/'\\\$1 == f'/'0'/" "$A" >"$t/mut-inc.sh"
+if cmp -s "$A" "$t/mut-inc.sh"; then echo "FAIL include mutant did not apply"; fail=1
+else row "MUTANT: ignoring include_str! is caught by the embedded-doc row" "" "$(inc_run "$t/mut-inc.sh" docs/embedded.md)"; fi
+real="$($A --diff-from <(echo docs/audits/prm-001/prereg.lock) | sort -u)"
+case "
+$real
+" in *"
+aprender-review-experiment
+"*) echo "ok   real tree: prereg.lock reaches aprender-review-experiment" ;; *) echo "FAIL real tree: prereg.lock -> '$real'"; fail=1 ;; esac
 exit "$fail"
