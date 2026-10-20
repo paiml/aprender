@@ -386,7 +386,9 @@ cell_add() { # cell_add <cell script> <prefix> cmd... — one engine line: out, 
   # CELL_TMO (#4341): a line that drives MANY requests (a serve sweep) needs its own budget --
   # $TMO bounds one request, and one $TMO over ~285 CPU requests killed a sweep 199 rows in.
   local cell="$1" prefix="$2"; shift 2
-  { printf 'timeout %q ' "${CELL_TMO:-$TMO}"; printf '%q ' "$@"
+  # setsid -w: a cell launched from tmux inherits a controlling tty, and llama-cli then writes
+  # its answer to /dev/tty -- 0 B captured, rc 0, a blank cell. No ctty, no /dev/tty (L2).
+  { printf 'setsid -w timeout %q ' "${CELL_TMO:-$TMO}"; printf '%q ' "$@"
     printf '> %q 2> %q < /dev/null; echo $? > %q\n' "$prefix.out" "$prefix.err" "$prefix.rc"; } >> "$cell"
 }
 cell_add_ollama_unload() { # cell_add_ollama_unload <cell> <prefix> <model name>
@@ -418,12 +420,18 @@ cell_result() { # cell_result <engine> <prompt id> <prefix> [stdout file] [mode]
   if [ -n "$CELL_WHY" ]; then emit_gen "$1" "$2" "" "" "" "$CELL_WHY" "" "${5:-}"; return; fi
   if [ ! -f "$3.rc" ]; then emit_gen "$1" "$2" "" "" "" "the cell ran but this engine's line never finished" "" "${5:-}"; return; fi
   rc=$(cat "$3.rc")
+  # rc 0 with no stdout is a harness fault (e.g. an engine writing to /dev/tty), never a blank cell.
+  if [ "$rc" = 0 ] && [ ! -s "${4:-$3.out}" ]; then
+    emit_gen "$1" "$2" "" "" "" "harness error: rc 0 but 0 B on stdout (${4:-$3.out}); stderr: $(tail -c 200 "$3.err" 2>/dev/null | tr '\n' ' ')" "" "${5:-}"
+    return
+  fi
   [ -f "$3.unloaded" ] && unl=$(cat "$3.unloaded")
   emit_gen "$1" "$2" "$rc" "${4:-$3.out}" "$3.err" "" "$unl" "${5:-}"
 }
 cell_add_stdin() { # cell_add_stdin <cell> <prefix> <stdin file> cmd... — like cell_add, fed a file
+  # setsid -w, as cell_add: no controlling tty for the engine (L2).
   local cell="$1" prefix="$2" input="$3"; shift 3
-  { printf 'timeout %q ' "$TMO"; printf '%q ' "$@"
+  { printf 'setsid -w timeout %q ' "$TMO"; printf '%q ' "$@"
     printf '> %q 2> %q < %q; echo $? > %q\n' "$prefix.out" "$prefix.err" "$input" "$prefix.rc"; } >> "$cell"
 }
 
