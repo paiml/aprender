@@ -315,10 +315,14 @@ mod forward_qwen3_moe_wgpu_runtime_tests {
         let reason = invalid_shape_reason(run(&[1], LAYERS + 1, (0, 0, 0)));
         assert!(reason.contains("moe_layers.len() = 2"), "{reason}");
         assert!(reason.contains("model has 1 decoder layers"), "{reason}");
+        // Fewer MoE layers than decoder layers is a mismatch too (not only more).
+        let reason = invalid_shape_reason(run(&[1], 0, (4, 2, 8)));
+        assert!(reason.contains("moe_layers.len() = 0"), "{reason}");
     }
 
     #[test]
     fn each_zero_moe_config_field_is_rejected_and_named() {
+        // (0, 2, 8) also breaks top_k <= experts, which pins zero-config ahead of it.
         for cfg in [(0, 2, 8), (4, 0, 8), (4, 2, 0)] {
             let reason = invalid_shape_reason(run(&[1], LAYERS, cfg));
             let want = format!(
