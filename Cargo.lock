@@ -426,6 +426,7 @@ name = "aprender-ci-tools"
 version = "0.71.3"
 dependencies = [
  "aprender-build-sha",
+ "aprender-rollup",
  "clap",
  "regex",
  "serde",

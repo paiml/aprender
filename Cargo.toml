@@ -322,6 +322,7 @@ aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.
 aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.71.3" }
 aprender-contracts = { path = "crates/aprender-contracts", version = "0.71.3" }
 aprender-build-sha = { path = "crates/aprender-build-sha", version = "0.71.3" }
+aprender-rollup = { path = "crates/aprender-rollup", version = "0.71.3" }
 aprender-profile = { path = "crates/aprender-profile", version = "0.71.3" }
 aprender-profile-core = { path = "crates/aprender-profile-core", version = "0.71.3" }
 aprender-zram-core = { path = "crates/aprender-zram-core", version = "0.71.3" }
