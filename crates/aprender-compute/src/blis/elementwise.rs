@@ -993,4 +993,45 @@ mod tests {
         // 2*x + 1, then relu: [-3,0] [-1,0] [1] [3] [5]
         assert_eq!(out, vec![0.0, 0.0, 1.0, 3.0, 5.0]);
     }
+
+    // ── relu_inplace / mul_scalar_alloc (#5582) ───────────────────────────
+
+    #[test]
+    fn relu_inplace_clamps_negatives_and_keeps_zero_and_positives() {
+        let mut data = [-2.0f32, -0.0, 0.0, 0.5, 3.0, -1e-9, f32::MIN];
+        relu_inplace(&mut data);
+        assert_eq!(data, [0.0, 0.0, 0.0, 0.5, 3.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn relu_inplace_matches_out_of_place_relu_across_tail_lengths() {
+        for n in [0usize, 1, 7, 8, 9, 31, 33] {
+            let input: Vec<f32> = (0..n).map(|i| ((i * 13 + 5) % 17) as f32 - 8.0).collect();
+            let mut expected = vec![0.0f32; n];
+            if n > 0 {
+                relu(&input, &mut expected).unwrap();
+            }
+            let mut actual = input.clone();
+            relu_inplace(&mut actual);
+            assert_eq!(actual, expected, "n={n}");
+        }
+    }
+
+    #[test]
+    fn mul_scalar_alloc_scales_every_element_and_preserves_length() {
+        let input: Vec<f32> = (0..19).map(|i| i as f32 - 9.0).collect();
+        let out = mul_scalar_alloc(&input, 2.5);
+        assert_eq!(out.len(), input.len());
+        for (o, i) in out.iter().zip(&input) {
+            assert_eq!(*o, i * 2.5);
+        }
+    }
+
+    #[test]
+    fn mul_scalar_alloc_by_one_is_identity_and_input_untouched() {
+        let input = vec![1.5f32, -2.0, 0.0, 7.25, -0.125, 3.0, 9.0, 11.0, -13.0];
+        let before = input.clone();
+        assert_eq!(mul_scalar_alloc(&input, 1.0), before);
+        assert_eq!(input, before);
+    }
 }
