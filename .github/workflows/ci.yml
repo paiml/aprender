@@ -457,8 +457,6 @@ jobs:
         run: setsid --wait bash scripts/ci/archive_list_equal.sh --self-test
       - name: archive_bind_check case table must still turn RED
         run: setsid --wait bash scripts/ci/archive_bind_check.sh --self-test
-      - name: archive job wiring (smoke n>0, toolchain validated, overwrite) and its mutants
-        run: setsid --wait bash scripts/ci/archive_wiring_check.sh && setsid --wait bash scripts/ci/archive_wiring_check.sh --self-test
       - name: Sections
         id: run
         run: >-
