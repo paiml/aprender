@@ -182,7 +182,7 @@ PATHRES_PV='(command[[:space:]]+-v[[:space:]]+pv|which[[:space:]]+pv|type[[:spac
 # ~/.cargo/bin/pv was release 0.71.4, older than the shapes/witness format, and a regen through it
 # rewrote shapes.ttl by 68 lines. ABS_PV: a hardcoded pv path. DEFAULT_PV: a variable whose fallback is
 # the bare name (`PV=pv`, `${PV:-pv}`), which resolves through PATH the moment the pin is unset.
-ABS_PV='(^|[[:space:]@"'"'"'=(`]|:-|:=)(/|~|\$(HOME|CARGO_HOME)|\$\{(HOME|CARGO_HOME)\}|\$\((HOME|CARGO_HOME)\))[A-Za-z0-9_.$/{}()-]*/bin/pv([[:space:]"'"'"'})]|$)'
+ABS_PV='(^|[[:space:];&|@"'"'"'=(`]|:-|:=)(/|~|\$(HOME|CARGO_HOME)|\$\{(HOME|CARGO_HOME)\}|\$\((HOME|CARGO_HOME)\))[A-Za-z0-9_.$/{}()-]*/bin/pv([[:space:];&|"'"'"'})]|$)'
 DEFAULT_PV='(^|[[:space:];@(]|-e[[:space:]])(export[[:space:]]+)?(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV)[[:space:]]*[?:+]?=[[:space:]]*["'"'"']?pv["'"'"']?([[:space:];)]|$)|\$\{(PV|PV_BIN|PVBIN|pvbin|CONTRACTS_GATE_PV)[:?]?[-=]pv\}'
 
 MIN_EXPECTED="${MIN_EXPECTED:-80}"
@@ -599,7 +599,7 @@ if [ "${1:-}" = "--self-test" ]; then
     for c in "${must_not_match_pathres_pv[@]}"; do probe_case_pv "$PATHRES_PV" "$c" nomatch pathres-pv; done
 
     # #5776: ~/.cargo/bin/pv (0.71.4) regenerated shapes.ttl in the old form. Hardcoded path / bare fallback.
-    must_match_abs_pv=( '$CARGO_HOME/bin/pv extract x' '"${CARGO_HOME}/bin/pv" x' '$(CARGO_HOME)/bin/pv x' '~/.cargo/bin/pv extract contracts' '"$HOME/.cargo/bin/pv" extract contracts'
+    must_match_abs_pv=( 'PV=~/.cargo/bin/pv; "$PV" extract c' 'cd x;~/.cargo/bin/pv extract c' '~/.cargo/bin/pv|tee f' '$CARGO_HOME/bin/pv extract x' '"${CARGO_HOME}/bin/pv" x' '$(CARGO_HOME)/bin/pv x' '~/.cargo/bin/pv extract contracts' '"$HOME/.cargo/bin/pv" extract contracts'
         '/usr/local/bin/pv extract contracts' 'PV="${PV:-/home/noah/.cargo/bin/pv}"' $'\t@~/.cargo/bin/pv lint x' )
     must_not_match_abs_pv=( 'chmod +x "$rc_ch/bin/pv"' 'cat > "$TMP/bin/pv" <<EOF' 'strip "/workspace/target/$T/release/pv"' '"$PV" extract contracts' 'cargo build --bin pv' 'target/release/pv extract x'
         '. scripts/pv_bin.sh || exit 1' 'cp pv /tmp/pv-copy' 'ls crates/aprender-contracts-cli/src/bin/pv' )
@@ -717,6 +717,9 @@ test -f a && ~/.cargo/bin/pv extract contracts'
     surface_probe 'subst-behind-echo' 'scripts/regen5.sh' \
         '#!/usr/bin/env bash
 echo "$(~/.cargo/bin/pv extract contracts)" > shapes.ttl'
+    surface_probe 'backtick-behind-echo' 'scripts/regen6.sh' \
+        '#!/usr/bin/env bash
+echo `~/.cargo/bin/pv extract contracts`'
     surface_probe 'bare-pv-script' 'scripts/regen3.sh' \
         '#!/usr/bin/env bash
 pv extract contracts'
@@ -764,7 +767,7 @@ FIXTURE
         printf '\nself-test FAILED with %s case(s).\n' "$fails" >&2
         exit 1
     fi
-    printf 'self-test OK: %s regex cases and 18 surface probes.\n' \
+    printf 'self-test OK: %s regex cases and 19 surface probes.\n' \
         "$(( ${#must_match_bare[@]} + ${#must_not_match_bare[@]} + ${#must_match_abs[@]} \
              + ${#must_not_match_abs[@]} + ${#must_match_pathres[@]} + ${#must_not_match_pathres[@]} \
              + ${#must_match_pv[@]} + ${#must_not_match_pv[@]} \
