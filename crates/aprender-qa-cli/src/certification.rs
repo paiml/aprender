@@ -398,3 +398,54 @@ fn verify_playbook_lock(
 }
 
 include!("certification_processing.rs");
+
+#[cfg(test)]
+mod certify_model_loop_tests {
+    use super::*;
+
+    fn run_loop(models: &[String], fail_fast: bool) -> ((usize, usize), usize) {
+        let out = PathBuf::from("out");
+        let mut certs: Vec<aprender_qa_certify::ModelCertification> = Vec::new();
+        let counts = certify_model_loop(
+            models,
+            CertTier::Smoke,
+            "smoke",
+            None,
+            "apr",
+            true,
+            fail_fast,
+            false,
+            &out,
+            &mut certs,
+        );
+        (counts, certs.len())
+    }
+
+    /// One test, because the playbook path is cwd-relative and `set_current_dir` is process-wide.
+    #[test]
+    fn loop_counts_skips_and_load_errors_as_failures() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let prev = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(tmp.path()).expect("chdir");
+
+        // empty input: nothing certified, nothing failed
+        assert_eq!(run_loop(&[], false), ((0, 0), 0));
+
+        // playbook missing for every model: each counts as failed, none certified
+        let two = vec!["org/Alpha-7B".to_string(), "org/Beta-7B".to_string()];
+        assert_eq!(run_loop(&two, false), ((0, 2), 0));
+        // fail_fast does not stop a skip: both still counted
+        assert_eq!(run_loop(&two, true), ((0, 2), 0));
+
+        // playbook present but unparseable: load error counts as failed
+        let dir = tmp.path().join("playbooks/models");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let name = playbook_path_for_model("org/Gamma-7B", CertTier::Smoke);
+        std::fs::write(tmp.path().join(&name), "not: [valid playbook").expect("write");
+        assert!(std::path::Path::new(&name).exists(), "{name}");
+        let mixed = vec!["org/Gamma-7B".to_string(), "org/Delta-7B".to_string()];
+        assert_eq!(run_loop(&mixed, false), ((0, 2), 0));
+
+        std::env::set_current_dir(prev).expect("restore cwd");
+    }
+}
