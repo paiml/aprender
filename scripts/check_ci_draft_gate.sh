@@ -23,28 +23,35 @@ jobfield() {
     f && index($0, key) == 1 {v = substr($0, length(key) + 1); sub(/^ +/, "", v); print v; exit}' "$1"
 }
 
+# The only two draft-guard forms ci.yml uses; anything else (a flipped polarity, a bare
+# `pull_request.draft`) is RED. G_ALL covers the jobs that run on every event, G_PQ the
+# `!cancelled() && ...` jobs.
+G_ALL="github.event_name != 'pull_request' || !github.event.pull_request.draft"
+G_PQ="!(github.event_name == 'pull_request' && github.event.pull_request.draft)"
+
 check() {
-  local f="$1" bad=0 job runs iff
+  local f="$1" bad=0 job runs iff pool=0 aggs=0
   # no yq on the runner: the pull_request `types:` line is the only 4-space `types:` key in ci.yml
   grep -qE '^    types: \[.*ready_for_review' "$f" \
     || { echo "FAIL: on.pull_request.types lacks ready_for_review"; bad=1; }
   while IFS= read -r job; do
-    runs=$(jobfield "$f" "$job" runs-on)
-    case "$runs" in *clean-room* | *mq*) ;; *) continue ;; esac
     iff=$(jobfield "$f" "$job" if)
     if [[ "$AGGREGATORS" == *" $job "* ]]; then
+      aggs=$((aggs + 1))
       [ "$iff" = "always()" ] || { echo "FAIL: aggregator $job must be if: always() (got '$iff')"; bad=1; }
       continue
     fi
-    # merge_group untouched: a draft guard must be qualified by the pull_request event.
-    if [[ "$iff" == *pull_request.draft* && "$iff" != *"event_name == 'pull_request'"* && "$iff" != *"event_name != 'pull_request'"* ]]; then
-      echo "FAIL: job $job draft guard is not scoped to the pull_request event (would skip merge_group)"; bad=1
-    fi
+    runs=$(jobfield "$f" "$job" runs-on)
+    case "$runs" in *clean-room* | *mq*) ;; *) continue ;; esac
+    pool=$((pool + 1))
     case "$iff" in
-      *pull_request.draft* | *"event_name == 'push'"* | *"event_name != 'pull_request'"*) ;;
-      *) echo "FAIL: job $job takes a runner slot on a draft PR (if: '$iff')"; bad=1 ;;
+      *"$G_ALL"* | *"$G_PQ"* | *"&& github.event_name != 'pull_request' }}"* | *"event_name == 'push'"*) ;;
+      *) echo "FAIL: job $job takes a runner slot on a draft PR, or its draft guard is not one of the two allowed forms (if: '$iff')"; bad=1 ;;
     esac
   done < <(awk '/^jobs:/ {j = 1; next} j && /^[^ #]/ {j = 0} j && /^  [A-Za-z0-9_-]+:[ ]*$/ {sub(/^  /, ""); sub(/:.*/, ""); print}' "$f")
+  # a parse that finds nothing must not pass
+  [ "$aggs" -eq 3 ] || { echo "FAIL: saw $aggs of the 3 aggregators (workspace-test, ci-gate, gate)"; bad=1; }
+  [ "$pool" -ge 1 ] || { echo "FAIL: no clean-room/mq job found — parser saw nothing"; bad=1; }
   return "$bad"
 }
 
@@ -61,7 +68,16 @@ if [ "${1:-}" = "--self-test" ]; then
   # Mutation 3: unscope the draft guard (draft is empty on merge_group -> would still run, but the scope rule must fire).
   sed "s/!(github.event_name == 'pull_request' && github.event.pull_request.draft)/!github.event.pull_request.draft/" "$src" >"$t/m3.yml"
   if check "$t/m3.yml" >/dev/null; then echo "self-test: mutation 3 (unscoped guard) not caught"; exit 1; fi
-  echo "check_ci_draft_gate: self-test OK (3 mutations caught)"
+  # Mutation 4: flip the polarity of the guard (job would run ONLY on drafts) -> must be RED.
+  sed "s/!(github.event_name == 'pull_request' \&\& github.event.pull_request.draft)/(github.event_name == 'pull_request' \&\& github.event.pull_request.draft)/" "$src" >"$t/m4.yml"
+  if check "$t/m4.yml" >/dev/null; then echo "self-test: mutation 4 (flipped polarity) not caught"; exit 1; fi
+  # Mutation 5: an aggregator loses if: always() -> must be RED.
+  awk '/^  gate:$/ {g = 1} g && /^    if: always\(\)/ {sub(/always\(\)/, "success()"); g = 0} {print}' "$src" >"$t/m5.yml"
+  if check "$t/m5.yml" >/dev/null; then echo "self-test: mutation 5 (aggregator not always) not caught"; exit 1; fi
+  # Mutation 6: nothing parses (empty jobs) -> must be RED, not vacuously green.
+  printf 'on:\n  pull_request:\n    types: [ready_for_review]\njobs:\n' >"$t/m6.yml"
+  if check "$t/m6.yml" >/dev/null; then echo "self-test: mutation 6 (empty parse) not caught"; exit 1; fi
+  echo "check_ci_draft_gate: self-test OK (6 mutations caught)"
   exit 0
 fi
 check "${1:-.github/workflows/ci.yml}" && echo "check_ci_draft_gate: OK"
