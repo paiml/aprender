@@ -167,8 +167,9 @@ async fn falsify_crux_c_34_003_uptime_monotonic() {
         "FALSIFY-CRUX-C-34-003: uptime must strictly increase, got u1={u1} u2={u2}"
     );
     // #5783: the upper bound is the wall clock measured around the two reads, not a fixed
-    // 5.0 s, so host load (the reads can be seconds apart) cannot fail it; a server clock
-    // that runs faster than real time still does.
+    // 5.0 s, so host load (the reads can be seconds apart) cannot fail it. A constant or reset
+    // clock fails the lower bound and one running >=3x real time fails this bound (a ~2x clock
+    // still passes: the window is [0.01, wall + 0.05], with the sleep inside it).
     let delta = u2 - u1;
     assert!(
         (0.01..=wall_s + 0.05).contains(&delta),
