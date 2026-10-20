@@ -189,6 +189,8 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   printf '%s\n' "$code" | grep -q -E 'GITHUB_PATH|GITHUB_ENV|head_ref|pull_request\.head|github\.sha *$' && return 1
   [ "$(printf '%s\n' "$code" | grep -c '^      - ')" -eq 2 ] || return 1
   printf '%s\n' "$code" | grep -E 'scripts/' | grep -v -E 'git show HEAD:scripts/ci/receipt_ok_arg\.sh' | grep -q . && return 1
+  case "$code" in *'runs-on: ubuntu-latest'*) ;; *) return 1 ;; esac
+  case "$code" in *'env -i HOME='*'/usr/bin/bash "$RUNNER_TEMP/rok.sh"'*) ;; *) return 1 ;; esac
   case "$code" in *'worktree add -q --no-checkout'*) ;; *) return 1 ;; esac
   case "$code" in *'core.hooksPath=/dev/null'*) ;; *) return 1 ;; esac
   case "$code" in *'unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0'*) ;; *) return 1 ;; esac
@@ -235,7 +237,7 @@ tcE=$({ (cd "$BASE" && rustc -vV); printf 'image=none\n'; } | sha256sum | cut -d
 receipt 4b825dc642cb6eb9a060e54bf8d69288fbee4904 "$tcE" >"$td/r.json"
 body "$td/b-repl" "$(sign "$td/key" "$td/r.json")"
 wrow "W21 refs/replace on the PR repo cannot make another tree pass -> 0" 0 "$(arg "$td/b-repl")"
-if mutate "$W" 'export GIT_NO_REPLACE_OBJECTS=1' ':' "$td/mut-r.sh"; then
+if mutate "$W" 'export GIT_NO_REPLACE_OBJECTS=1' ':' "$td/mut-r.sh" && sed -i 's/ GIT_NO_REPLACE_OBJECTS=1 RECEIPT/ RECEIPT/' "$td/mut-r.sh"; then
   wrow "W22 MUTANT: a wrapper that honours replace refs is caught by W21's row" 1 "$(arg "$td/b-repl" "$BASE" "$td/mut-r.sh")"
 else fail=$((fail + 1)); echo "FAIL W22: mutant did not apply"; fi
 git -C "$repo" update-ref -d "refs/replace/$head"
@@ -259,17 +261,37 @@ if mutate "$TID" 'if printf' 'if false && printf' "$td/mut-tid.sh"; then
 else fail=$((fail + 1)); echo "FAIL W24: mutant did not apply"; fi
 # probe judge: records what the verifier can see (token/output vars, and the rustc dir's listing)
 mkbase trust-probe "$td/pub"
-cat >"$td/trust-probe/scripts/ci_receipt_gate.sh" <<'PROBE'
+cat >"$td/trust-probe/scripts/ci_receipt_gate.sh" <<PROBE
 #!/usr/bin/env bash
-printf '%s|%s|%s\n' "${GH_TOKEN:-}${GITHUB_OUTPUT:-}" "${RECEIPT_RUSTC_CWD:-}" "$(ls "${RECEIPT_RUSTC_CWD:-/nonexistent}" 2>/dev/null | tr -d '\n')" >"$PROBEFILE"
-printf 'RECEIPT_OK=0\n'
+printf '%s|%s|%s\\n' "\${GH_TOKEN:-}\${GITHUB_OUTPUT:-}" "\${RECEIPT_RUSTC_CWD:-}" "\$(ls "\${RECEIPT_RUSTC_CWD:-/nonexistent}" 2>/dev/null | tr -d '\\n')" >"$td/probe.out"
+printf 'RECEIPT_OK=0\\n'
 PROBE
 git -C "$td/trust-probe" -c user.email=t@example.invalid -c user.name=t commit -q -am probe
 probe() { rm -f "${td:?}/probe.out"; (cd "$repo" && GH_TOKEN=secret GITHUB_OUTPUT=/tmp/x PROBEFILE="$td/probe.out" bash "${1:-$W}" "$td/b-good" "$td/trust-probe" "$head" >/dev/null 2>&1); sed -E 's#\|[^|]*/rc\|#|RC|#' "$td/probe.out" 2>/dev/null; }
 wrow "W25 the verifier sees no token or output file, and runs rustc in the base's dir" "|RC|rust-toolchain.toml" "$(probe)"
-if mutate "$W" '-u GH_TOKEN' '-u XX_TOKEN' "$td/mut-e.sh"; then
-  wrow "W26 MUTANT: a wrapper that leaves GH_TOKEN in the verifier's env is caught by W25" "secret|RC|rust-toolchain.toml" "$(probe "$td/mut-e.sh")"
+if mutate "$W" 'first=$(env -i ' 'first=$(env ' "$td/mut-e.sh"; then
+  wrow "W26 MUTANT: a wrapper without env -i leaves GH_TOKEN in the verifier's env is caught by W25" "secret/tmp/x|RC|rust-toolchain.toml" "$(probe "$td/mut-e.sh")"
 else fail=$((fail + 1)); echo "FAIL W26: mutant did not apply"; fi
+# W29-W32: forgery by the environment (Opus, #5798). An always-0 ssh-keygen early in PATH, or a
+# BASH_ENV file defining ssh-keygen(), would turn a tampered receipt (b-s1: valid in every other
+# field) into ok=1. The real wrapper + gate must print 0; a mutant with the defences removed prints 1.
+mkdir -p "$td/evil"; printf '#!/bin/sh\nexit 0\n' >"$td/evil/ssh-keygen"; chmod +x "$td/evil/ssh-keygen"
+printf 'ssh-keygen() { return 0; }\nexport -f ssh-keygen\n' >"$td/evil.env"
+forge() { # WRAPPER BASEDIR -> wrapper output under both forgeries (PATH first, then BASH_ENV)
+  local a b
+  a=$(cd "$repo" && PATH="$td/evil:$PATH" bash "$1" "$td/b-s1" "$2" "$head" 2>/dev/null | head -n1)
+  b=$(cd "$repo" && BASH_ENV="$td/evil.env" bash "$1" "$td/b-s1" "$2" "$head" 2>/dev/null | head -n1)
+  printf '%s%s' "$a" "$b"
+}
+wrow "W29 a planted ssh-keygen in PATH or a BASH_ENV function cannot forge ok -> 00" 00 "$(forge "$W" "$BASE")"
+wrow "W30 sanity: the tampered receipt really is bad without the forgery -> 0" 0 "$(arg "$td/b-s1")"
+if mutate "$W" 'first=$(env -i ' 'first=$(env ' "$td/mut-f.sh" && sed -i 's# PATH=/usr/local/bin:/usr/bin:/bin GIT_NO# GIT_NO#' "$td/mut-f.sh"; then
+  mkbase trust-forge "$td/pub"
+  sed -i -e 's#^PATH=/usr/local/bin.*#:#' -e 's#^unset BASH_ENV ENV#:#' -e 's#^SSHKEYGEN=.*#SSHKEYGEN=ssh-keygen#' -e 's#\[ -x "\$SSHKEYGEN" \]#command -v "$SSHKEYGEN" >/dev/null#' "$td/trust-forge/scripts/ci_receipt_gate.sh"
+  git -C "$td/trust-forge" -c user.email=t@example.invalid -c user.name=t commit -q -am forge
+  wrow "W31 MUTANT: no env -i, no fixed PATH, bare ssh-keygen -> the PATH forgery gets through" 1 "$(forge "$td/mut-f.sh" "$td/trust-forge" | cut -c1)"
+  wrow "W32 MUTANT: same, the BASH_ENV forgery gets through" 1 "$(forge "$td/mut-f.sh" "$td/trust-forge" | cut -c2)"
+else fail=$((fail + 1)); echo "FAIL W31/W32: mutant did not apply"; fi
 tier_of() { (cd "$HERE/.." && bash "$T" --event pull_request --diff-from "$td/touched.txt" --receipt-ok "$1" 2>/dev/null | head -n1); }
 t0=$(tier_of 0); case "$t0" in tier=quick|tier=full) t0=notreuse ;; esac
 wrow "W8 --receipt-ok 0 on a core diff runs quick or full, never reuse" notreuse "$t0"

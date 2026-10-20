@@ -4,15 +4,18 @@
 # verified, 0 in every other case (no receipt, a bad one, a missing file, a crashed verifier,
 # a base that has no judge yet). Always exits 0: 0 sends the PR to the full gate.
 #
+# This script is itself a backstop for a PR that carries no CI edits: a PR that edits the CI
+# files or this judge is caught only by merge_group (which ignores --receipt-ok, so it runs the
+# full gate) and by CI-edit review, not by this script.
+#
 # A PR cannot edit its own judge (the #5793 pattern): the verifier, the toolchain-id recipe
-# and the pinned batcher public key are read from HEAD of TRUST_DIR, a fresh clone of the base
-# branch the caller made BEFORE any code from the PR tree ran (no PR-tree script can have
-# planted a url.insteadOf, a refs/replace entry or a config in it), never from the working
+# and the pinned batcher public key are read from HEAD of TRUST_DIR, the base-branch checkout
+# of a job that never runs PR-tree code, never from the working
 # tree. The working tree supplies only what is being judged: HEAD^{tree} and
 # rust-toolchain.toml. The caller must itself run THIS script from TRUST_DIR too
 # (`git -C TRUST_DIR show HEAD:scripts/ci/receipt_ok_arg.sh`). Replace refs are off for every
 # git call here, so a PR cannot make its own HEAD^{tree} read as another tree.
-# Cases: scripts/check_receipt_gate.sh (rows W1-W26).
+# Cases: scripts/check_receipt_gate.sh (rows W1-W32).
 set -u
 export GIT_NO_REPLACE_OBJECTS=1
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
@@ -29,6 +32,8 @@ tg archive HEAD scripts/ci_receipt_gate.sh scripts/receipt_toolchain_id.sh .flow
 mkdir -p "$j/rc" && { tg show HEAD:rust-toolchain.toml >"$j/rc/rust-toolchain.toml" 2>/dev/null || rm -f "${j:?}/rc/rust-toolchain.toml"; }
 export RECEIPT_RUSTC_CWD="$j/rc"
 # The verifier never sees the job's credentials or its output/env/path files.
-first=$(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_OUTPUT -u GITHUB_ENV -u GITHUB_PATH -u GITHUB_STEP_SUMMARY \
-  bash "$j/scripts/ci_receipt_gate.sh" verify "$body" "$j/.flow009/batcher.pub" "$sha" 2>/dev/null | head -n1) || first=""
+# env -i: no PATH entry, BASH_ENV function, RUSTUP_*/GIT_* variable or credential survives.
+first=$(env -i HOME="${HOME:-/nonexistent}" ${CARGO_HOME:+CARGO_HOME="$CARGO_HOME"} ${RUSTUP_HOME:+RUSTUP_HOME="$RUSTUP_HOME"} \
+  PATH=/usr/local/bin:/usr/bin:/bin GIT_NO_REPLACE_OBJECTS=1 RECEIPT_RUSTC_CWD="$RECEIPT_RUSTC_CWD" \
+  /usr/bin/bash "$j/scripts/ci_receipt_gate.sh" verify "$body" "$j/.flow009/batcher.pub" "$sha" 2>/dev/null | head -n1) || first=""
 if [ "$first" = "RECEIPT_OK=1" ]; then printf '1\n'; else printf '0\n'; fi

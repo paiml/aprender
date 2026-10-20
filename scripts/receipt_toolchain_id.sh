@@ -15,7 +15,8 @@ elif [ -f "$root/rust-toolchain.toml" ]; then
   toml=$(cat "$root/rust-toolchain.toml"; printf x); toml=${toml%x}
 fi
 if printf '%s\n' "$toml" | grep -q -E '^[[:space:]]*path[[:space:]]*='; then exit 1; fi
-rustc_v=$(cd "${RECEIPT_RUSTC_CWD:-.}" && rustc -vV 2>/dev/null) || exit 1
+rustc=rustc; [ -x "${CARGO_HOME:-$HOME/.cargo}/bin/rustc" ] && rustc="${CARGO_HOME:-$HOME/.cargo}/bin/rustc"
+rustc_v=$(cd "${RECEIPT_RUSTC_CWD:-.}" && "$rustc" -vV 2>/dev/null) || exit 1
 [ -n "$rustc_v" ] || exit 1
 {
   printf '%s' "$toml"

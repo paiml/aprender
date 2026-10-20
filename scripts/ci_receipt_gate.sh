@@ -4,7 +4,7 @@
 # The PR gate may run check/fmt/clippy instead of the full suite only for a batch whose
 # signed receipt verifies. Three checks decide it, in this order:
 #   signature   the armored ssh-keygen signature over the canonical bytes
-#               (`jq -S -c 'del(.sig)'` plus LF, namespace below) verifies against the
+#               (`"$JQ" -S -c 'del(.sig)'` plus LF, namespace below) verifies against the
 #               single pinned batcher public key in PUB_FILE
 #   tree        the receipt's tree == HEAD^{tree}, the PR merge tree (run inside the
 #               checked-out merge commit)
@@ -16,6 +16,12 @@
 # belongs to the caller (the full gate owns those).
 # Cases: scripts/check_receipt_gate.sh.
 set -u
+# Absolute tools and a fixed PATH: a PATH entry or a BASH_ENV function must never stand in for
+# ssh-keygen or jq (#5798). Callers also run this under `env -i`.
+PATH=/usr/local/bin:/usr/bin:/bin; export PATH
+unset BASH_ENV ENV
+SSHKEYGEN=/usr/bin/ssh-keygen
+JQ=/usr/bin/jq
 NS="flow009-receipt"
 SIGNER_ID="flow009-batcher"
 SCHEMA="flow009.receipt/1"
@@ -23,7 +29,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 
 fail() { printf 'RECEIPT_OK=0 reason=%s\n' "$1"; exit 0; }
 
-canonical() { jq -S -c 'del(.sig)' "$1"; }
+canonical() { "$JQ" -S -c 'del(.sig)' "$1"; }
 
 # The fenced block's contents on stdout; non-zero unless there is exactly one.
 extract_block() {
@@ -38,8 +44,8 @@ extract_block() {
 cmd_verify() {
   [ $# -eq 3 ] || fail usage
   body=$1; pub=$2
-  command -v ssh-keygen >/dev/null 2>&1 || fail no-ssh-keygen
-  command -v jq >/dev/null 2>&1 || fail no-jq
+  [ -x "$SSHKEYGEN" ] || fail no-ssh-keygen
+  [ -x "$JQ" ] || fail no-jq
   [ -f "$body" ] || fail no-body
   [ -f "$pub" ] || fail no-pubkey
   work=$(mktemp -d) || fail no-tmpdir
@@ -50,28 +56,28 @@ cmd_verify() {
   case "$keyline" in ssh-ed25519\ *) ;; *) fail bad-pubkey ;; esac
   printf '%s namespaces="%s" %s\n' "$SIGNER_ID" "$NS" "$keyline" >"$work/allowed"
   extract_block "$body" >"$work/receipt.json" || fail fenced-block
-  jq -e --arg s "$SCHEMA" '
+  "$JQ" -e --arg s "$SCHEMA" '
     type == "object" and .schema == $s
     and (.sig | type == "string") and (.tree | type == "string") and (.toolchain | type == "string")
   ' "$work/receipt.json" >/dev/null 2>&1 || fail shape
   # signature
   canonical "$work/receipt.json" >"$work/canon" || fail canon
-  jq -r '.sig' "$work/receipt.json" >"$work/sig"
-  ssh-keygen -Y verify -f "$work/allowed" -I "$SIGNER_ID" -n "$NS" -s "$work/sig" \
+  "$JQ" -r '.sig' "$work/receipt.json" >"$work/sig"
+  "$SSHKEYGEN" -Y verify -f "$work/allowed" -I "$SIGNER_ID" -n "$NS" -s "$work/sig" \
     <"$work/canon" >/dev/null 2>&1 || fail bad-signature
   # verdict: the signed bytes must say the batch's suite passed. A validly signed receipt for a
   # red batch must not reduce the gate. gate_results is an object, `tests` is present, and every
   # value is "pass".
-  jq -e '.gate_results | type == "object" and has("tests") and (to_entries | all(.value == "pass"))' \
+  "$JQ" -e '.gate_results | type == "object" and has("tests") and (to_entries | all(.value == "pass"))' \
     "$work/receipt.json" >/dev/null 2>&1 || fail not-pass
   # tree
   want_tree=$(git rev-parse 'HEAD^{tree}' 2>/dev/null)
   [ -n "$want_tree" ] || fail no-head-tree
-  [ "$(jq -r .tree "$work/receipt.json")" = "$want_tree" ] || fail tree-mismatch
+  [ "$("$JQ" -r .tree "$work/receipt.json")" = "$want_tree" ] || fail tree-mismatch
   # toolchain
   want_tc=$(bash "$HERE/receipt_toolchain_id.sh" 2>/dev/null)
   [ -n "$want_tc" ] || fail no-toolchain-id
-  [ "$(jq -r .toolchain "$work/receipt.json")" = "$want_tc" ] || fail toolchain-mismatch
+  [ "$("$JQ" -r .toolchain "$work/receipt.json")" = "$want_tc" ] || fail toolchain-mismatch
   printf 'RECEIPT_OK=1\n'
 }
 

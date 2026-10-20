@@ -439,16 +439,17 @@ jobs:
   # The workspace tests, one shard per job (nextest hash partition N/3 plus the
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
-  # #5798: the receipt judge. A PR cannot judge itself, and no step that runs the PR tree
-  # may run before the verdict: this job checks out the BASE only and fetches the PR merge
-  # commit as data (a detached worktree that is read, never executed). Nothing in it runs a
-  # script from that worktree, so nothing the PR carries can plant PATH, git, a config or a
-  # refs/replace entry before the judge reads. scripts/check_receipt_gate.sh (W16-W20) turns
-  # RED if this job gains a step that runs PR-tree code or checks the PR out as code.
+  # #5798: the receipt judge. A PR cannot forge a receipt: this job checks out the BASE only
+  # and fetches the PR merge commit as data (a --no-checkout worktree that is read, never
+  # executed), on a GitHub-hosted ephemeral runner no PR-code job ever shares, and runs the
+  # verifier under `env -i` with absolute tools. What it does NOT cover: a PR that edits the CI
+  # files or the judge itself is caught only by merge_group (which ignores --receipt-ok and runs
+  # the full gate) and by CI-edit review. scripts/check_receipt_gate.sh (W16-W32) turns RED if
+  # this job gains a step that runs PR-tree code or checks the PR out as code.
   # It always exits 0; the shard job reads `ok` as 1 only on a literal 1.
   receipt-judge:
     if: github.event_name == 'pull_request'
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -479,7 +480,7 @@ jobs:
              git show HEAD:scripts/ci/receipt_ok_arg.sh > "$RUNNER_TEMP/rok.sh"; then
             # --no-checkout: the PR tree has no files, so no PR executable can sit in the verifier's
             # cwd, and no filter or hook runs. The wrapper is read from the base object database.
-            ok="$(cd "$RUNNER_TEMP/prtree" && bash "$RUNNER_TEMP/rok.sh" "$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}")" || ok=0
+            ok="$(cd "$RUNNER_TEMP/prtree" && env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin /usr/bin/bash "$RUNNER_TEMP/rok.sh" "$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}")" || ok=0
           fi
           [ "$ok" = 1 ] || ok=0
           printf 'ok=%s\n' "$ok" >> "$GITHUB_OUTPUT"
