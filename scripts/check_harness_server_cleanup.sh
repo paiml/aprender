@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # check_harness_server_cleanup.sh: a CRUX harness that is TERMed or INTed leaves no server behind.
 # infra-66 found stub_server.py and crux_fake_serve.py servers 2-3 days old (ppid 1) on the intel
-# clean-room runners: the harnesses trapped EXIT only, and a signal-killed bash does not run that trap
-# unless INT and TERM exit. Behavioural: start the real harness, wait for its server, signal the
-# harness, and require the server gone.
+# clean-room runners. bash runs its EXIT trap on TERM but nothing runs on SIGKILL (a cancelled job), so
+# the harnesses now also start a watcher per server (guard_server). Behavioural: start the real harness,
+# wait for its server, signal the harness, and require the server gone.
 # Rows: 1 serve_code + TERM · 2 serve_code + KILL (no trap sees it; the watcher must) · 3 MUTANT without the watcher leaks
 # (INT is not driven: a background job of a non-interactive shell starts with SIGINT ignored, which no trap can undo.)
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.

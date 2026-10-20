@@ -299,8 +299,9 @@ trap 'exit 143' TERM
 # The watcher is its own process, off the harness's fds so it never holds a CI step's output pipe open.
 guard_server() {
   local srv="$1" par=$$
-  ( trap - EXIT INT TERM; while kill -0 "$par" 2> /dev/null && kill -0 "$srv" 2> /dev/null; do sleep 2; done
-    kill "$srv" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
+  # the id is read after the fork has exec'd, so a recycled pid (another cmdline) is left alone
+  ( trap - EXIT INT TERM; sleep 1; id=$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null); while kill -0 "$par" 2> /dev/null && [ "$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null)" = "$id" ]; do sleep 2; done
+    [ "$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null)" = "$id" ] && kill "$srv" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
 }
 MANIFEST="$WORK/manifest.jsonl"; : > "$MANIFEST"
 # The plugin engines append their own rows here (row contract v1).
