@@ -274,6 +274,12 @@ falsification_tests:
   if_fails: The kernel takes a value's fifth bit from the wrong qh byte or bit. Found 2026-09-11
     (#3111, PMAT-1104) - the shipped kernel read byte val_idx/8, bit val_idx%8 instead of byte
     val_idx%32, bit val_idx/32; on the golden block its ramp dot was 2.659 against gguf-py's 0.622
+- id: FALSIFY-QDOT-009
+  rule: The AVX-512 activation quantizer (avx512_quantize_dot) returns the integer dot of the nibbles with activations quantized to i8 over the slice own range
+  prediction: a ramp matches the scalar model exactly, a constant slice returns (0, 1.0), zero nibbles give 0 and a lone max-activation nibble of 15 gives 15*127
+  test: cargo test -p aprender-serve --lib avx512_quantize_dot (self-skips without AVX-512 F/BW/VNNI)
+  if_fails: The range branch or the i8 quantization of the AVX-512 Q4_K path is wrong
+  mutation: invert `act_max > act_min` in avx512_quantize_dot; two of the three tests go RED
 qa_gate:
   id: F-QDOT-001
   name: Quantized Dot Product Contract
@@ -283,7 +289,7 @@ qa_gate:
   - Format registry matches trait implementations
   - Dispatch table covers all formats
   - Cross-format isolation holds
-  pass_criteria: All 8 FALSIFY tests pass
+  pass_criteria: All 9 FALSIFY tests pass
   falsification: Introduce a sign error in nibble extraction — gate must catch it
 equations:
   identity:
