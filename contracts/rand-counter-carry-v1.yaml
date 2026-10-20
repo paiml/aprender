@@ -1,0 +1,47 @@
+metadata:
+  version: 1.0.0
+  kind: pattern
+  created: '2026-10-20'
+  author: PAIML Engineering
+  description: Counter-based RNG carry contract — Philox4x32 and Threefry4x64 counters carry word by word
+  references:
+  - 'Salmon et al. (2011) Parallel Random Numbers: As Easy as 1, 2, 3'
+equations:
+  counter_carry:
+    formula: 'next(counter) = counter + 1 over the 4-word little-endian integer, wrapping at 2^(4w)'
+    domain: counter ∈ [uN; 4] with N ∈ {32, 64}
+    codomain: '[uN; 4]'
+    invariants:
+    - A word that wraps to zero adds one to the next word
+    - The top word wraps without carrying out
+    - Output at call k+1 equals generate_at(key, next(counter_k))
+    preconditions:
+    - key and counter are explicit (with_key_counter)
+    lean_theorem: Theorems.Counter_Carry
+proof_obligations:
+- id: RAND-INV-001
+  type: invariant
+  property: Counter carry
+  formal: '∀ c: stream(c, 2)[1] = generate_at(key, c + 1)'
+  applies_to: counter_carry
+falsification_tests:
+- id: FALSIFY-RAND-CARRY-001
+  rule: Philox counter carry
+  prediction: the second block from a counter at a word boundary equals generate_at of the carried counter
+  test: tests::test_falsify_philox_counter_carries_through_every_word
+  if_fails: increment_counter drops a carry or carries into the wrong word
+  mutation: delete the counter[2] carry in Philox4x32::increment_counter; the test must go RED
+- id: FALSIFY-RAND-CARRY-002
+  rule: Threefry counter carry
+  prediction: the second block from a counter at a word boundary equals generate_at of the carried counter
+  test: tests::test_falsify_threefry_counter_carries_through_every_word
+  if_fails: increment_counter drops a carry or carries into the wrong word
+  mutation: delete the counter[3] carry in Threefry4x64::increment_counter; the test must go RED
+qa_gate:
+  id: F-RAND-001
+  name: RNG Counter Carry Contract
+  description: Counter carry quality gate
+  checks:
+  - counter_carry
+  pass_criteria: All 2 falsification tests pass
+  falsification: Remove any carry step from increment_counter

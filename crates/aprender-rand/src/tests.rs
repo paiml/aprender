@@ -513,3 +513,60 @@ fn test_falsify_normal_no_extreme_outliers() {
         "Got {outliers} values beyond 6σ in 100K samples"
     );
 }
+
+// ============================================================================
+// Counter carry (FALSIFY-RAND-CARRY-001/002)
+// ============================================================================
+
+#[test]
+fn test_falsify_philox_counter_carries_through_every_word() {
+    let key = [0xDEAD_BEEF, 0x1234_5678];
+    let cases: [([u32; 4], [u32; 4]); 4] = [
+        ([u32::MAX, 0, 0, 0], [0, 1, 0, 0]),
+        ([u32::MAX, u32::MAX, 0, 0], [0, 0, 1, 0]),
+        ([u32::MAX, u32::MAX, u32::MAX, 0], [0, 0, 0, 1]),
+        ([u32::MAX; 4], [0; 4]),
+    ];
+    for (before, after) in cases {
+        let mut rng = Philox4x32::with_key_counter(key, before);
+        assert_eq!(rng.next_4u32(), Philox4x32::generate_at(key, before));
+        assert_eq!(
+            rng.next_4u32(),
+            Philox4x32::generate_at(key, after),
+            "carry out of {before:?} must land on {after:?}"
+        );
+    }
+}
+
+#[test]
+fn test_falsify_threefry_counter_carries_through_every_word() {
+    let key = [1, 2, 3, 4];
+    let cases: [([u64; 4], [u64; 4]); 4] = [
+        ([u64::MAX, 0, 0, 0], [0, 1, 0, 0]),
+        ([u64::MAX, u64::MAX, 0, 0], [0, 0, 1, 0]),
+        ([u64::MAX, u64::MAX, u64::MAX, 0], [0, 0, 0, 1]),
+        ([u64::MAX; 4], [0; 4]),
+    ];
+    for (before, after) in cases {
+        let mut rng = Threefry4x64::with_key_counter(key, before);
+        assert_eq!(rng.next_4u64(), Threefry4x64::generate_at(key, before));
+        assert_eq!(
+            rng.next_4u64(),
+            Threefry4x64::generate_at(key, after),
+            "carry out of {before:?} must land on {after:?}"
+        );
+    }
+}
+
+#[test]
+fn test_threefry_fill_uniform_and_normal_stay_in_range_and_are_deterministic() {
+    let (mut a, mut b) = (Threefry4x64::new(7), Threefry4x64::new(7));
+    let (mut u1, mut u2) = ([0.0_f32; 11], [0.0_f32; 11]);
+    a.fill_uniform(&mut u1);
+    b.fill_uniform(&mut u2);
+    assert_eq!(u1, u2);
+    assert!(u1.iter().all(|v| (0.0..1.0).contains(v)));
+    let mut n = [0.0_f32; 7]; // odd length: the last Box-Muller pair is cut
+    a.fill_normal(&mut n);
+    assert!(n.iter().all(|v| v.is_finite()));
+}
