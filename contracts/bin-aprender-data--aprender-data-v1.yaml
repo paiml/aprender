@@ -171,3 +171,9 @@ falsification_tests:
     test: 'cargo test -p aprender-data --test format_edges'
     if_fails: 'a corrupt or foreign file is accepted, or a codec silently decodes as another'
     mutation: 'map compression code 0x03 to ZstdL3 in Compression::from_u8; compression_codes_roundtrip_and_unknown_is_none turns RED (measured 2026-10-18)'
+  - id: FALSIFY-BIN-ALIMENTAR-009
+    rule: 'quality checker severity, thresholds and report helpers hold their boundaries'
+    prediction: 'severity table is pinned (null ratio 0.5 -> 3, >0.5 -> 4); empty schema/dataset reports are single-issue; builders change what is flagged; duplicate and outlier checks are switchable'
+    test: 'cargo test -p aprender-data --test quality_checker_edges'
+    if_fails: 'a boundary moved or a disabled check still reports'
+    mutation: 'change `*null_ratio > 0.5` to `>= 0.5` in QualityIssue::severity; severity_table_is_pinned turns RED (measured 2026-10-18)'

@@ -426,6 +426,7 @@ name = "aprender-ci-tools"
 version = "0.71.3"
 dependencies = [
  "aprender-build-sha",
+ "aprender-rollup",
  "clap",
  "regex",
  "serde",
@@ -1386,6 +1387,13 @@ dependencies = [
  "toml 0.8.23",
  "ureq 2.12.1",
  "zstd",
+]
+
+[[package]]
+name = "aprender-rollup"
+version = "0.71.3"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

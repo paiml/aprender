@@ -1,0 +1,42 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  description: "aprender-cgp doctor::collect_checks (#5614) — returns the eleven tool checks in fixed order; nvcc is reported as CUDA Runtime; CUPTI status tracks the library path found; a check is Ok iff it has a path."
+  kind: pattern
+  references:
+    - "crates/aprender-cgp/src/doctor.rs — collect_checks"
+    - "aprender#5614 — coverage ticket"
+
+equations:
+  collect_checks_shape:
+    formula: "names(collect_checks()) = [nvidia-smi, CUDA Runtime, ncu, nsys, CUPTI, perf, valgrind, renacer, trueno-explain, GPU, CPU]; CUPTI.status = Ok iff CUPTI.path is Some"
+    domain: "any host (checks are host-dependent, shape is not)"
+    codomain: "Vec<ToolCheck>"
+    invariants:
+      - "no check is named nvcc"
+      - "for binary checks, status Ok iff path is Some"
+
+proof_obligations:
+  - id: CGP-DOCTOR-INV-001
+    type: invariant
+    property: "Check list order and names are fixed"
+    formal: "∀ run: cargo test -p aprender-cgp --lib test_collect_checks_names_and_order exits 0"
+    applies_to: collect_checks_shape
+  - id: CGP-DOCTOR-INV-002
+    type: invariant
+    property: "CUPTI status tracks its path"
+    formal: "∀ run: cargo test -p aprender-cgp --lib test_collect_checks_cupti_status_tracks_path exits 0"
+    applies_to: collect_checks_shape
+
+falsification_tests:
+  - id: FALSIFY-CGP-DOCTOR-001
+    rule: "CUDA Runtime rename dropped"
+    prediction: "deleting check.name = \"CUDA Runtime\" turns test_collect_checks_names_and_order RED"
+    test: "cargo test -p aprender-cgp --lib test_collect_checks_names_and_order"
+    if_fails: "check naming is unguarded"
+  - id: FALSIFY-CGP-DOCTOR-002
+    rule: "CUPTI status inverted"
+    prediction: "swapping Ok/Missing for CUPTI turns test_collect_checks_cupti_status_tracks_path RED"
+    test: "cargo test -p aprender-cgp --lib test_collect_checks_cupti_status_tracks_path"
+    if_fails: "CUPTI status is unguarded"

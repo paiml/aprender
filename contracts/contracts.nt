@@ -7,6 +7,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /api/tags"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /api/version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health binary_sha256"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health/live"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health/ready"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -334,11 +335,13 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr shard"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr shared-cache-lint"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr showcase"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim emc-check"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim emc-validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim help"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim list-emc"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim render"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim verify"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -675,6 +678,8 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval retrieve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval sample"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/logprobs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/perplexity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.bench"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -872,6 +877,20 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-ci-tools"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "2ffcc380b81bf4779669ef921b1f2607d68308693adb5fe1cafbd5cc5beb2574"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-ci-tools> <https://ont.paiml.dev/v1alpha1/bin/versionString> "aprender-ci-tools 0.70.0 (8b7d6a04c5)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-ci-tools/aprender-rollup> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "acde1c41ec2a53a4783464a72f12ac097702256c"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/helpFailed> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-rollup"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-ci-tools"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/sha256> "1a8d68713c3c2cdbf8a416eef593606e234d0687eace936e7c23159787c8f312"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/srcPath> "crates/aprender-ci-tools/src/bin/aprender-rollup.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/target> "aprender-rollup"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/versionLacksSha> "acde1c41e"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/versionSha256> "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/versionString> ""^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-compute-xtask/aprender-compute-xtask> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-compute-xtask/aprender-compute-xtask> .
@@ -1734,11 +1753,13 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-simulate/aprender-simulate> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate --version"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate emc-check"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate emc-validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate help"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate list-emc"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate render"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-simulate verify"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -1757,6 +1778,8 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/command> "version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "adaaa5979da2b555e584a1ca8e918e8c4859c1bab12c89c3924044a1a002f0ee"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-simulate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-simulate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-simulate/aprender-simulate> <https://ont.paiml.dev/v1alpha1/bin/sha256> "1d57fceab026705fbcb61e62721b0cbdc4299277f2e4cfd76340981781ccb241"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -2058,6 +2081,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /api/tags"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /api/version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health binary_sha256"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health/live"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health/ready"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -2385,11 +2409,13 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr shard"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr shared-cache-lint"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr showcase"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim emc-check"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim emc-validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim help"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim list-emc"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim render"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr sim verify"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -2726,6 +2752,8 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval retrieve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "rag eval sample"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/logprobs"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/perplexity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.bench"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -8691,6 +8719,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/apr-zero-feature-gate-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-zero-feature-gate-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-zero-feature-gate-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-zero-feature-gate-v1> <https://ont.paiml.dev/v1alpha1/id> "apr-zero-feature-gate-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/aprender-registry-download-progress-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/aprender-registry-download-progress-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/aprender-registry-download-progress-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/aprender-registry-download-progress-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/aprender-registry-download-progress-v1> <https://ont.paiml.dev/v1alpha1/id> "aprender-registry-download-progress-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/aprender-registry-download-progress-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/arch-constraints-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/arch-constraints-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/arch-constraints-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
@@ -9386,6 +9419,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/blake3-state-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
 <https://ont.paiml.dev/v1alpha1/contract/blake3-state-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/forjar/blake3-state-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/blake3-state-v1> <https://ont.paiml.dev/v1alpha1/id> "blake3-state-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/blis-elementwise-inplace-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/blis-elementwise-inplace-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/blis-elementwise-inplace-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/blis-elementwise-inplace-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/blis-elementwise-inplace-v1> <https://ont.paiml.dev/v1alpha1/id> "blis-elementwise-inplace-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/blis-elementwise-inplace-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/blis-gemm-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/blis-gemm-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/blis-gemm-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
@@ -9456,6 +9494,21 @@
 <https://ont.paiml.dev/v1alpha1/contract/canary-score-gate-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
 <https://ont.paiml.dev/v1alpha1/contract/canary-score-gate-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/entrenar/canary-score-gate-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/canary-score-gate-v1> <https://ont.paiml.dev/v1alpha1/id> "canary-score-gate-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-disk-box-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-disk-box-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-disk-box-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/cbtop-render-disk-box-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-disk-box-v1> <https://ont.paiml.dev/v1alpha1/id> "cbtop-render-disk-box-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-disk-box-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-sparklines-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-sparklines-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-sparklines-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/cbtop-render-sparklines-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-sparklines-v1> <https://ont.paiml.dev/v1alpha1/id> "cbtop-render-sparklines-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/cbtop-render-sparklines-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/cgp-doctor-collect-checks-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/cgp-doctor-collect-checks-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/cgp-doctor-collect-checks-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/cgp-doctor-collect-checks-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/cgp-doctor-collect-checks-v1> <https://ont.paiml.dev/v1alpha1/id> "cgp-doctor-collect-checks-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/cgp-doctor-collect-checks-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/cgp-monorepo-build-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/cgp-monorepo-build-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/cgp-monorepo-build-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
@@ -11730,6 +11783,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/execution-safety-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
 <https://ont.paiml.dev/v1alpha1/contract/execution-safety-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/forjar/execution-safety-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/execution-safety-v1> <https://ont.paiml.dev/v1alpha1/id> "execution-safety-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/explain-tui-draw-scrollbar-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/explain-tui-draw-scrollbar-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/explain-tui-draw-scrollbar-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/explain-tui-draw-scrollbar-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/explain-tui-draw-scrollbar-v1> <https://ont.paiml.dev/v1alpha1/id> "explain-tui-draw-scrollbar-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/explain-tui-draw-scrollbar-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/export-user-metadata-roundtrip-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/export-user-metadata-roundtrip-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/export-user-metadata-roundtrip-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
@@ -12989,6 +13047,13 @@
 <https://ont.paiml.dev/v1alpha1/contract/pp-llama-001-spec-conformance-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/pp-llama-001-spec-conformance-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/pp-llama-001-spec-conformance-v1> <https://ont.paiml.dev/v1alpha1/id> "pp-llama-001-spec-conformance-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/pp-llama-001-spec-conformance-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/pr-flow-sim4-bounds-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <https://ont.paiml.dev/v1alpha1/id> "pr-flow-sim4-bounds-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <https://ont.paiml.dev/v1alpha1/name> "pr-flow-sim4-bounds"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/pr-review-skill-v2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/pr-review-skill-v2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/pr-review-skill-v2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
@@ -13014,6 +13079,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/preprocessing-normalization-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
 <https://ont.paiml.dev/v1alpha1/contract/preprocessing-normalization-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/preprocessing-normalization-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/preprocessing-normalization-v1> <https://ont.paiml.dev/v1alpha1/id> "preprocessing-normalization-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/present-widgets-data-card-paint-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/present-widgets-data-card-paint-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/present-widgets-data-card-paint-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/present-widgets-data-card-paint-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/present-widgets-data-card-paint-v1> <https://ont.paiml.dev/v1alpha1/id> "present-widgets-data-card-paint-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/present-widgets-data-card-paint-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/present-yaml-expression-executor-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/present-yaml-expression-executor-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/present-yaml-expression-executor-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/present-yaml-expression-executor-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -13096,6 +13166,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/pv-cli-surface-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/pv-cli-surface-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/pv-cli-surface-v1> <https://ont.paiml.dev/v1alpha1/id> "pv-cli-surface-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/pv-cli-surface-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pv-query-diff-info-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/pv-query-diff-info-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/pv-query-diff-info-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/pv-query-diff-info-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pv-query-diff-info-v1> <https://ont.paiml.dev/v1alpha1/id> "pv-query-diff-info-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pv-query-diff-info-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/pv-version-identity-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/pv-version-identity-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/pv-version-identity-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/pv-version-identity-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -13726,6 +13801,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/simd-scalar-parity-v1> <https://ont.paiml.dev/v1alpha1/id> "simd-scalar-parity-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/simd-scalar-parity-v1> <https://ont.paiml.dev/v1alpha1/name> "simd-scalar-parity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/simd-scalar-parity-v1> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/simulate-edd-verification-tests-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/simulate-edd-verification-tests-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/simulate-edd-verification-tests-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/simulate-edd-verification-tests-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/simulate-edd-verification-tests-v1> <https://ont.paiml.dev/v1alpha1/id> "simulate-edd-verification-tests-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/simulate-edd-verification-tests-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/simulation-determinism-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/simulation-determinism-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/simulation-determinism-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
@@ -13998,6 +14078,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/tracing-observability-v1> <https://ont.paiml.dev/v1alpha1/id> "tracing-observability-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/tracing-observability-v1> <https://ont.paiml.dev/v1alpha1/name> "tracing-observability"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/tracing-observability-v1> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/train-loader-try-load-apr-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/train-loader-try-load-apr-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/train-loader-try-load-apr-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/train-loader-try-load-apr-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/train-loader-try-load-apr-v1> <https://ont.paiml.dev/v1alpha1/id> "train-loader-try-load-apr-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/train-loader-try-load-apr-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/train-test-split-ceil-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/train-test-split-ceil-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/train-test-split-ceil-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
