@@ -205,6 +205,18 @@ impl AprServeDriver {
         port: u16,
     ) -> Result<Self, AgentError> {
         let apr_path = find_apr_binary()?;
+        Self::launch_binary_on_port(&apr_path, model_path, context_window, opts, port)
+    }
+
+    /// [`Self::launch_on_port`] with the `apr` binary already resolved, so the spawn and
+    /// readiness handling is testable without touching `$PATH` or the process environment.
+    fn launch_binary_on_port(
+        apr_path: &std::path::Path,
+        model_path: &std::path::Path,
+        context_window: Option<usize>,
+        opts: &ServeLaunchOptions,
+        port: u16,
+    ) -> Result<Self, AgentError> {
         let base_url = format!("http://127.0.0.1:{port}");
 
         let model_name = model_path
@@ -216,7 +228,7 @@ impl AprServeDriver {
         // wrong output for Qwen3 (Q6K→FP8 requantization bug). Serial prefill uses
         // Q4K/Q6K GEMV kernels which produce correct output. BATCHED_PREFILL=0 disables
         // the FP8 path while keeping CUDA acceleration for decode tokens.
-        let mut cmd = Command::new(&apr_path);
+        let mut cmd = Command::new(apr_path);
         cmd.args(serve_args(model_path, port, opts))
             .env("BATCHED_PREFILL", "0")
             .stdout(Stdio::piped())

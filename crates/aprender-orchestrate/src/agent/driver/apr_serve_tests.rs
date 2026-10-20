@@ -626,3 +626,84 @@ async fn f3719_an_unreported_answer_is_not_measured() {
     let r = observed_after(&[Some(true), None]).await;
     assert_eq!(r, Some(BackendReport { requested: "gpu", ran: None, fell_back: None }));
 }
+
+// ═══ #5658: launch_on_port spawn + readiness handling ═══
+//
+// The resolved binary is injected through `launch_binary_on_port`, so none of these
+// touch `$PATH` or the environment. `/usr/bin/yes` stands in for a server that stays
+// up (it blocks on its unread stdout pipe); `/bin/sh serve …` stands in for one that
+// dies at once, because `sh` cannot open a script named `serve`.
+
+fn opts(backend: ServeBackend) -> ServeLaunchOptions {
+    ServeLaunchOptions { backend, max_tokens: Some(7), think: Some(false) }
+}
+
+#[test]
+fn f5658_a_missing_binary_is_a_spawn_error() {
+    let err = AprServeDriver::launch_binary_on_port(
+        std::path::Path::new("/nonexistent/apr-5658"),
+        std::path::Path::new("/m/x.gguf"),
+        None,
+        &opts(ServeBackend::Cpu),
+        1,
+    )
+    .err()
+    .expect("spawn of a missing binary must fail");
+    assert!(err.to_string().contains("failed to spawn apr serve"), "{err}");
+}
+
+#[test]
+fn f5658_a_child_that_dies_at_startup_reports_exit_and_stderr() {
+    let err = AprServeDriver::launch_binary_on_port(
+        std::path::Path::new("/bin/sh"),
+        std::path::Path::new("/m/x.gguf"),
+        None,
+        &opts(ServeBackend::Gpu),
+        1,
+    )
+    .err()
+    .expect("a child that exits during startup must fail");
+    let msg = err.to_string();
+    assert!(msg.contains("exited with") && msg.contains("during startup"), "{msg}");
+    assert!(msg.contains("subprocess stderr:"), "stderr must be surfaced: {msg}");
+    assert!(!is_addr_in_use(&msg), "a missing script is not a port race: {msg}");
+}
+
+#[test]
+fn f5658_a_live_listener_makes_the_driver_ready_with_the_launch_options() {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let driver = AprServeDriver::launch_binary_on_port(
+        std::path::Path::new("/usr/bin/yes"),
+        std::path::Path::new("/m/qwen3-7b.Q4_K.gguf"),
+        Some(2048),
+        &opts(ServeBackend::Gpu),
+        port,
+    )
+    .expect("ready once something listens on the port");
+    assert_eq!(driver.base_url, format!("http://127.0.0.1:{port}"));
+    assert_eq!(driver.model_name, "qwen3-7b.Q4_K");
+    assert_eq!(driver.context_window_size, 2048);
+    assert_eq!(driver.max_tokens_override, Some(7));
+    assert_eq!(driver.think, Some(false));
+    assert!(driver.requested_gpu);
+    assert_eq!(driver.model_size_bytes, None, "a model path that does not exist has no size");
+}
+
+#[test]
+fn f5658_defaults_and_cpu_backend_when_no_options_are_given() {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let driver = AprServeDriver::launch_binary_on_port(
+        std::path::Path::new("/usr/bin/yes"),
+        std::path::Path::new(""),
+        None,
+        &ServeLaunchOptions { backend: ServeBackend::Cpu, max_tokens: None, think: None },
+        port,
+    )
+    .expect("ready");
+    assert_eq!(driver.model_name, "local", "no file stem falls back to `local`");
+    assert_eq!(driver.context_window_size, 4096);
+    assert!(!driver.requested_gpu);
+    assert_eq!(driver.max_tokens_override, None);
+}
