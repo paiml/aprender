@@ -115,30 +115,26 @@ row "V3 correctly signed receipt with no tests verdict -> not-pass" not-pass "$t
 # W: the workflow wiring. scripts/ci/receipt_ok_arg.sh prints the ONE word the tier step
 # hands to ci_test_tier.sh as --receipt-ok. Anything but a verified receipt must print 0,
 # and 0 must leave the PR on the quick/full tier, never on reuse. The judge (verifier,
-# toolchain recipe, pinned key) comes from the BASE ref, never from the PR's working tree.
+# toolchain recipe, pinned key) comes from the trusted clone of the base, never from the PR's working tree.
 W="$HERE/ci/receipt_ok_arg.sh"
 T="$HERE/ci_test_tier.sh"
 printf 'crates/aprender-core/src/lib.rs\n' >"$td/touched.txt"
-# mkbase REF PUBFILE|- -> a commit under REF holding the judge files (and the key, unless "-")
+# mkbase NAME PUBFILE|- -> a fresh repo $td/NAME whose HEAD holds the judge files (and the key,
+# unless "-"): the shape of the trusted clone the workflow makes before any PR code runs.
 mkbase() {
-  local ref=$1 pubf=$2 idx="$td/idx.$$" t f
-  rm -f "${idx:?}"
-  mkdir -p "$td/bs/scripts" "$td/bs/.flow009"
-  cp "$V" "$td/bs/scripts/ci_receipt_gate.sh"; cp "$TID" "$td/bs/scripts/receipt_toolchain_id.sh"
-  local files="scripts/ci_receipt_gate.sh scripts/receipt_toolchain_id.sh"
-  if [ "$pubf" != - ]; then cp "$pubf" "$td/bs/.flow009/batcher.pub"; files="$files .flow009/batcher.pub"; fi
-  for f in $files; do
-    GIT_INDEX_FILE="$idx" git -C "$repo" update-index --add --cacheinfo \
-      "100644,$(git -C "$repo" hash-object -w "$td/bs/$f"),$f"
-  done
-  t=$(GIT_INDEX_FILE="$idx" git -C "$repo" write-tree)
-  git -C "$repo" update-ref "$ref" "$(git -C "$repo" commit-tree "$t" -m judge)"
-  rm -f "${idx:?}"
+  local d="$td/$1" pubf=$2 files="scripts/ci_receipt_gate.sh scripts/receipt_toolchain_id.sh" f
+  rm -rf "${d:?}"; git init -q "$d"
+  mkdir -p "$d/scripts" "$d/.flow009"
+  cp "$V" "$d/scripts/ci_receipt_gate.sh"; cp "$TID" "$d/scripts/receipt_toolchain_id.sh"
+  if [ "$pubf" != - ]; then cp "$pubf" "$d/.flow009/batcher.pub"; files="$files .flow009/batcher.pub"; fi
+  for f in $files; do git -C "$d" add "$f"; done
+  git -C "$d" -c user.email=t@example.invalid -c user.name=t commit -q -m judge
 }
-BASE=refs/remotes/origin/main
-mkbase "$BASE" "$td/pub"
-mkbase refs/remotes/t/placeholder "$td/pub-empty"
-git -C "$repo" update-ref refs/remotes/t/empty "$(git -C "$repo" commit-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 -m none)"
+BASE="$td/trust-main"
+mkbase trust-main "$td/pub"
+mkbase trust-placeholder "$td/pub-empty"
+git init -q "$td/trust-empty"
+git -C "$td/trust-empty" -c user.email=t@example.invalid -c user.name=t commit -q --allow-empty -m none
 arg() { (cd "$repo" && bash "${3:-$W}" "$1" "${2:-$BASE}" "$head" 2>/dev/null | head -n1); }
 wrow() {
   local name=$1 want=$2 got=$3
@@ -148,10 +144,10 @@ wrow "W1 verified receipt -> --receipt-ok 1" 1 "$(arg "$td/b-good")"
 wrow "W2 no receipt in the PR body -> 0 (full gate)" 0 "$(arg "$td/b-none")"
 wrow "W3 tampered receipt -> 0" 0 "$(arg "$td/b-s1")"
 wrow "W4 receipt for another tree -> 0" 0 "$(arg "$td/b-t1")"
-wrow "W5 placeholder pubkey at the base -> 0" 0 "$(arg "$td/b-good" refs/remotes/t/placeholder)"
+wrow "W5 placeholder pubkey at the base -> 0" 0 "$(arg "$td/b-good" "$td/trust-placeholder")"
 wrow "W6 PR body file missing -> 0" 0 "$(arg "$td/no-such-body")"
-wrow "W7 base has no judge files (bootstrap) -> 0" 0 "$(arg "$td/b-good" refs/remotes/t/empty)"
-wrow "W11 base ref does not exist -> 0" 0 "$(arg "$td/b-good" refs/remotes/t/nope)"
+wrow "W7 base has no judge files (bootstrap) -> 0" 0 "$(arg "$td/b-good" "$td/trust-empty")"
+wrow "W11 base ref does not exist -> 0" 0 "$(arg "$td/b-good" "$td/nope")"
 wrow "W12 signed receipt whose tests failed -> 0" 0 "$(arg "$td/b-v1")"
 wrow "W13 signed receipt with no gate_results -> 0" 0 "$(arg "$td/b-v2")"
 # W14: the forged-receipt repro (wsweep, #5798). The PR swaps in its own key and signs its
@@ -173,24 +169,50 @@ else fail=$((fail + 1)); echo "FAIL W15: mutant did not apply"; fi
 if mutate "$W" 'if [ "$first" = "RECEIPT_OK=1" ]; then' 'if true; then' "$td/mut-w.sh"; then
   wrow "W10 MUTANT: a wrapper that always prints 1 is caught by the no-receipt row" 1 "$(arg "$td/b-none" "$BASE" "$td/mut-w.sh")"
 else fail=$((fail + 1)); echo "FAIL W10: mutant did not apply to $W"; fi
-# W16/W17: the trusted read in the workflow runs no code from the PR tree. The receipt block of
-# ci/sections.yml (from `base_ref=` to `--receipt-ok`) must fetch with inline git and call no
-# scripts/ helper; a block that routes the fetch through a PR-tree script goes RED.
+# W16-W19: the trusted read in the workflow runs FIRST, before any code from the PR tree. The tier
+# step's text up to `--receipt-ok` must clone the base into a fresh dir with replace objects and
+# the global/system git config off, and must call no scripts/ helper before it (a PR-tree script
+# could plant url.insteadOf or refs/replace). Each defect below must turn blk_ok RED.
 SEC="$HERE/../ci/sections.yml"
-blk_ok() { # FILE -> 0 when the receipt block is trustworthy
-  local blk; blk=$(awk '/base_ref="refs\/remotes/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$1")
+blk_ok() { # FILE -> 0 when the step prefix is trustworthy
+  local blk; blk=$(awk '/id: tier$/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$1")
   [ -n "$blk" ] || return 1
-  case "$blk" in *"git fetch "*) ;; *) return 1 ;; esac
-  case "$blk" in *"git show "*) ;; *) return 1 ;; esac
-  printf '%s\n' "$blk" | grep -v -E '^[[:space:]]*#' | grep -E 'scripts/' | grep -v -E 'git show "\$\{base_ref\}:scripts/ci/receipt_ok_arg.sh"' | grep -q . && return 1
+  local code; code=$(printf '%s\n' "$blk" | grep -v -E '^[[:space:]]*#')
+  case "$code" in *"git clone "*) ;; *) return 1 ;; esac
+  case "$code" in *"export GIT_NO_REPLACE_OBJECTS=1"*) ;; *) return 1 ;; esac
+  case "$code" in *"GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null"*) ;; *) return 1 ;; esac
+  case "$code" in *"show HEAD:scripts/ci/receipt_ok_arg.sh"*) ;; *) return 1 ;; esac
+  case "$code" in *" fetch "*) return 1 ;; esac
+  printf '%s\n' "$code" | grep -E 'scripts/' | grep -v -E 'git -C "\$trust" show HEAD:scripts/ci/receipt_ok_arg.sh' | grep -q . && return 1
   return 0
 }
-if blk_ok "$SEC"; then wrow "W16 workflow receipt block fetches with inline git and runs no PR-tree script" ok ok
-else wrow "W16 workflow receipt block fetches with inline git and runs no PR-tree script" ok bad; fi
-if mutate "$SEC" 'git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:${base_ref}"' 'bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:${base_ref}"' "$td/sec-mut.yml"; then
-  if blk_ok "$td/sec-mut.yml"; then r=missed; else r=caught; fi
-  wrow "W17 MUTANT: routing the base fetch through a PR-tree script is caught" caught "$r"
-else fail=$((fail + 1)); echo "FAIL W17: mutant did not apply to ci/sections.yml"; fi
+if blk_ok "$SEC"; then wrow "W16 receipt read runs first: fresh clone, replace off, config off, no PR-tree script" ok ok
+else wrow "W16 receipt read runs first: fresh clone, replace off, config off, no PR-tree script" ok bad; fi
+wmut() { # LABEL FROM TO
+  if mutate "$SEC" "$2" "$3" "$td/sec-mut.yml"; then
+    if blk_ok "$td/sec-mut.yml"; then r=missed; else r=caught; fi
+    wrow "$1" caught "$r"
+  else fail=$((fail + 1)); echo "FAIL ${1%% *}: mutant did not apply to ci/sections.yml"; fi
+}
+wmut "W17 MUTANT: a PR-tree script run before the trusted read is caught" 'rok=0
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ]; then' 'rok=0
+          bash scripts/ci/fetch_p6.sh --no-tags origin
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ]; then'
+wmut "W18 MUTANT: replace objects left on is caught" 'export GIT_NO_REPLACE_OBJECTS=1' ':'
+wmut "W19 MUTANT: global/system git config left on is caught" 'GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0' 'GIT_TERMINAL_PROMPT=0'
+wmut "W20 MUTANT: a fetch into the PR checkout instead of a fresh clone is caught" 'git clone -q --no-tags' 'git fetch -q --no-tags'
+# W21/W22: a refs/replace entry in the PR repo must not let a receipt for another tree pass. The
+# receipt is signed for the empty tree; the replace ref makes HEAD read as a commit with that tree.
+git -C "$repo" -c user.email=t@example.invalid -c user.name=t checkout -q -- . 2>/dev/null
+rep=$(git -C "$repo" commit-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 -m fake)
+git -C "$repo" update-ref "refs/replace/$head" "$rep"
+receipt 4b825dc642cb6eb9a060e54bf8d69288fbee4904 "$tc" >"$td/r.json"
+body "$td/b-repl" "$(sign "$td/key" "$td/r.json")"
+wrow "W21 refs/replace on the PR repo cannot make another tree pass -> 0" 0 "$(arg "$td/b-repl")"
+if mutate "$W" 'export GIT_NO_REPLACE_OBJECTS=1' ':' "$td/mut-r.sh"; then
+  wrow "W22 MUTANT: a wrapper that honours replace refs is caught by W21's row" 1 "$(arg "$td/b-repl" "$BASE" "$td/mut-r.sh")"
+else fail=$((fail + 1)); echo "FAIL W22: mutant did not apply"; fi
+git -C "$repo" update-ref -d "refs/replace/$head"
 rm -rf "${repo:?}/.flow009"
 tier_of() { (cd "$HERE/.." && bash "$T" --event pull_request --diff-from "$td/touched.txt" --receipt-ok "$1" 2>/dev/null | head -n1); }
 t0=$(tier_of 0); case "$t0" in tier=quick|tier=full) t0=notreuse ;; esac
