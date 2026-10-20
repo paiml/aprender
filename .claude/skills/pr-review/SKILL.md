@@ -1272,7 +1272,7 @@ bash scripts/pr_review_quorum_arm.sh --explain --pr 2783 \
      --receipt tests/fixtures/pr-review/q-52-permits-a-clean-quorum \
      --context tests/fixtures/pr-review/q-52-permits-a-clean-quorum/pr-context.json
 
-# THE ARMING VERB. Runs `gh pr merge <N> --squash --auto` on PERMIT and nothing else.
+# THE ARMING VERB. Runs plain `gh pr merge <N>` (no method flag: the queue owns the method, #5794) on PERMIT and nothing else.
 bash scripts/pr_review_quorum_arm.sh --pr 2795
 ```
 
