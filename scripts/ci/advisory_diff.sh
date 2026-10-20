@@ -14,7 +14,7 @@ set -euo pipefail
 
 CANT=75
 
-keys() { # FILE -> keys on stdout; nonzero when the file does not parse
+keys() { # FILE -> keys on stdout (use side/checked-keys to fail closed on unparsable input)
     jq -R -r 'fromjson? | select(.type == "diagnostic" or has("fields"))
       | .fields | select(.severity == "error")
       | (.code // "?") as $c | (.advisory.id // "-") as $i | ((.graphs // [{}])[] | .Krate? // {}) | "\($c)|\($i)|\(.name // "?")@\(.version // "?")"' "$1" | LC_ALL=C sort -u
@@ -110,6 +110,7 @@ self_test() {
 case "${1:-}" in
     --self-test) self_test ;;
     keys) keys "$2" ;;
+    checked-keys) side "$2" "$3" ;;
     base-ref) base_ref "$2" "${3:-}" "${4:-}" ;;
     ignores-added) ignores_added "$2" "$3" ;;
     verdict) verdict "$2" "$3" "$4" "$5" ;;

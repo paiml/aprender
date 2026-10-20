@@ -84,7 +84,7 @@ falsification_tests:
   - id: FALSIFY-ADG-001
     rule: "Main-resident advisory does not block a PR"
     prediction: "with lock_PR == lock_main (wasmtime 48.0.6) and a DB holding 0378/0379, the PR verdict is pass and a main-advisory andon row is emitted"
-    test: "planted-fixture case table of the diff gate script scripts/ci/advisory_diff.sh --self-test, 11 cases: same lock both sides"
+    test: "planted-fixture case table of the diff gate script scripts/ci/advisory_diff.sh --self-test, 12 cases: same lock both sides"
     if_fails: "the gate still compares lock to DB, not PR to main"
     mutation: "compare lock_PR to the empty set; the case must turn RED"
   - id: FALSIFY-ADG-002

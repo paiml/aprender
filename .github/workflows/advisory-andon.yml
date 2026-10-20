@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
   issues: write
+concurrency:
+  group: advisory-andon
+  cancel-in-progress: false
 jobs:
   andon:
     runs-on: [self-hosted, Linux, X64, clean-room]

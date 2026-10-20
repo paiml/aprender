@@ -29,7 +29,7 @@ fi
 bash "$HERE/advisory_diff.sh" base-ref "$EV" "${MG_BASE_SHA:-}" "$BASE" >/dev/null || exit 75
 
 W="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-base-$$"
-trap 'git worktree remove --force "${W:?}" >/dev/null 2>&1 || true; rm -f "${W:?}"/../advgate-pr-$$.ndjson "${W:?}"/../advgate-base-$$.ndjson' EXIT
+trap 'rm -f "${W:?}.pr.ndjson" "${W:?}.base.ndjson"; git worktree remove --force "${W:?}" >/dev/null 2>&1 || true' EXIT
 git worktree add --detach "$W" "$BASE" >/dev/null 2>&1 || { echo "COULD-NOT-CHECK: no worktree for base $BASE (shallow fetch?)" >&2; exit 75; }
 
 # One DB for both scans: fetched with the BASE config (the db-path both scans read), HEAD logged.
@@ -50,6 +50,6 @@ scan() { # TREE OUT.ndjson -> prints the cargo-deny rc
         >/dev/null 2>"$2" || rc=$?
     echo "$rc"
 }
-PRRC=$(scan "$PWD" "$W/../advgate-pr-$$.ndjson")
-BASERC=$(scan "$W" "$W/../advgate-base-$$.ndjson")
-bash "$GATE" verdict "$W/../advgate-pr-$$.ndjson" "$PRRC" "$W/../advgate-base-$$.ndjson" "$BASERC"
+PRRC=$(scan "$PWD" "$W.pr.ndjson")
+BASERC=$(scan "$W" "$W.base.ndjson")
+bash "$GATE" verdict "$W.pr.ndjson" "$PRRC" "$W.base.ndjson" "$BASERC"

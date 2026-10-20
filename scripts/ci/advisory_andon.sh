@@ -21,15 +21,16 @@ GH="${GH:-gh}"
 emit() { # NDJSON-FILE cargo-deny-rc
     case "$2" in 0 | 1) ;; *) echo "COULD-NOT-CHECK: cargo deny rc $2" >&2; return 75 ;; esac
     local keys k found now
-    keys=$(bash "$HERE/advisory_diff.sh" keys "$1") || return 75
+    keys=$(bash "$HERE/advisory_diff.sh" checked-keys "$1" "$2") || return 75
     now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     "$GH" label create advisory-andon --color B60205 2>/dev/null || true
     "$GH" label create P0 --color B60205 2>/dev/null || true
     "$GH" label create p0-overdue --color B60205 2>/dev/null || true
     while IFS= read -r k; do
         [ -n "$k" ] || continue
-        found=$("$GH" issue list --label advisory-andon --state open --search "in:title \"$k\"" --json number,createdAt,labels \
-            --jq '.[0] | if . == null then "" else "\(.number) \(.createdAt) \([.labels[].name] | index("p0-overdue") != null)" end') || return 75
+        found=$("$GH" issue list --label advisory-andon --state open --limit 200 --json number,createdAt,labels,title \
+            | jq -r --arg t "ADVISORY ANDON: $k" 'map(select(.title == $t)) | .[0]
+                | if . == null then "" else "\(.number) \(.createdAt) \([.labels[].name] | index("p0-overdue") != null)" end') || return 75
         if [ -z "$found" ]; then
             "$GH" issue create --label advisory-andon --label P0 --title "ADVISORY ANDON: $k" \
                 --body "Advisory $k is on main. It does not block PRs (PMAT-5792); fix within 4h of this issue's creation." || return 75
@@ -51,7 +52,7 @@ self_test() {
     chk 'over 4h is due' 2026-10-20T10:00:00Z 2026-10-20T14:00:01Z 0
     local d; d=$(mktemp -d)
     # stub gh: logs argv; `issue list` answers from $STUB_LIST
-    printf '#!/usr/bin/env bash\necho "$*" >>"%s/calls"\n[ "$1 $2" = "issue list" ] && printf "%%s" "$STUB_LIST"\nexit 0\n' "$d" >"$d/gh"; chmod +x "$d/gh"
+    printf '#!/usr/bin/env bash\necho "$*" >>"%s/calls"\n[ "$1 $2" = "issue list" ] && printf "%%s" "${STUB_LIST:-[]}"\nexit 0\n' "$d" >"$d/gh"; chmod +x "$d/gh"
     printf '{"type":"diagnostic","fields":{"code":"vulnerability","severity":"error","advisory":{"id":"RUSTSEC-1"},"graphs":[{"Krate":{"name":"c","version":"1"}}]}}\n' >"$d/f.json"
     ec() { # name want-rc want-grep(or -) rc list
         : >"$d/calls"; rc=0; GH="$d/gh" STUB_LIST="$5" emit "$d/f.json" "$4" >/dev/null 2>&1 || rc=$?
@@ -59,13 +60,16 @@ self_test() {
         if [ "$3" != - ]; then grep -q -- "$3" "$d/calls" || { echo "SELF-TEST FAIL: $1 missing call $3" >&2; bad=1; }; fi
     }
     ec 'new finding opens a P0 issue' 0 'issue create' 1 ''
+    ec 'a different open issue does not match' 0 'issue create' 1 '[{"number":9,"createdAt":"2020-01-01T00:00:00Z","labels":[],"title":"ADVISORY ANDON: other"}]'
+    : >"$d/empty.json"; rc=0; GH="$d/gh" emit "$d/empty.json" 1 >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 75 ] || { echo "SELF-TEST FAIL: rc1 with no findings must be 75, got $rc" >&2; bad=1; }
     ec 'tool error is cannot-check' 75 - 2 ''
-    ec 'old open issue gets p0-overdue' 0 'add-label p0-overdue' 1 '7 2020-01-01T00:00:00Z false'
-    ec 'fresh open issue is left alone' 0 - 1 "7 $(date -u +%Y-%m-%dT%H:%M:%SZ) false"
-    : >"$d/calls"; GH="$d/gh" STUB_LIST="7 $(date -u +%Y-%m-%dT%H:%M:%SZ) false" emit "$d/f.json" 1 >/dev/null 2>&1 || true
+    ec 'old open issue gets p0-overdue' 0 'add-label p0-overdue' 1 '[{"number":7,"createdAt":"2020-01-01T00:00:00Z","labels":[],"title":"ADVISORY ANDON: vulnerability|RUSTSEC-1|c@1"}]'
+    ec 'fresh open issue is left alone' 0 - 1 "[{\"number\":7,\"createdAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"labels\":[],\"title\":\"ADVISORY ANDON: vulnerability|RUSTSEC-1|c@1\"}]"
+    : >"$d/calls"; GH="$d/gh" STUB_LIST="[{\"number\":7,\"createdAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"labels\":[],\"title\":\"ADVISORY ANDON: vulnerability|RUSTSEC-1|c@1\"}]" emit "$d/f.json" 1 >/dev/null 2>&1 || true
     if grep -q 'issue create\|add-label' "$d/calls"; then echo "SELF-TEST FAIL: fresh issue was touched" >&2; bad=1; fi
     rm -rf -- "${d:?}"
-    [ "$bad" -eq 0 ] && echo "advisory_andon self-test: 7 cases ok"
+    [ "$bad" -eq 0 ] && echo "advisory_andon self-test: 9 cases ok"
     return "$bad"
 }
 
@@ -74,5 +78,5 @@ case "${1:-}" in
     due) due "$2" "$3" ;;
     emit) emit "$2" "$3" ;;
     --self-test) self_test ;;
-    *) echo "usage: $0 keys FILE | due CREATED NOW | --self-test" >&2; exit 2 ;;
+    *) echo "usage: $0 keys FILE | due CREATED NOW | emit FILE RC | --self-test" >&2; exit 2 ;;
 esac

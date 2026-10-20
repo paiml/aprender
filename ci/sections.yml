@@ -1886,6 +1886,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: bash scripts/ci_guards.sh guard-cargo
 
   guard-cargo-steps:
@@ -2672,11 +2673,11 @@ jobs:
       - name: Advisories must pass, with deny.toml exemptions honoured
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
+          # MG_BASE_SHA comes from the process env of the outer guard-cargo step (the manifest runner resolves no merge_group context).
           # The gate runs from the BASE ref, never the PR tree (PMAT-5792): a PR cannot edit its own judge.
           # Bootstrap only: the merge that introduces the scripts has no base copy, so it uses its own.
           S="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-scripts-$$"
@@ -2688,7 +2689,10 @@ jobs:
             G=scripts/ci
           fi
           bash "$G/advisory_diff.sh" --self-test
-          bash "$G/advisory_gate.sh"
+          rc=0
+          bash "$G/advisory_gate.sh" || rc=$?
+          rm -rf -- "${S:?}"
+          exit "$rc"
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.
