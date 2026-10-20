@@ -242,3 +242,7 @@ mod raw_stream_utf8_tests {
         assert_eq!(text, "caf\u{FFFD}");
     }
 }
+
+#[cfg(test)]
+#[path = "qwen35_raw_generate_tokens_tests.rs"]
+mod qwen35_raw_tokens_tests;
