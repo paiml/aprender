@@ -54,9 +54,6 @@ _cleanup() {
   esac
 }
 trap _cleanup EXIT
-# INT and TERM exit so the EXIT handler above runs: a killed harness must not leave its server behind.
-trap 'exit 130' INT
-trap 'exit 143' TERM
 # guard_server <pid>: kill that server when this harness dies by ANY signal, SIGKILL included (a runner
 # cancelling a job kills the tree with KILL, which no trap sees; the servers then lived 2-3 days at ppid 1).
 # The watcher is its own process, off the harness's fds so it never holds a CI step's output pipe open.

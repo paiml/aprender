@@ -61,9 +61,6 @@ _cleanup() {
   esac
 }
 trap _cleanup EXIT
-# INT and TERM exit so the EXIT handler above runs: a killed harness must not leave its server behind.
-trap 'exit 130' INT
-trap 'exit 143' TERM
 # guard_server <pid>: kill that server when this harness dies by ANY signal, SIGKILL included (a runner
 # cancelling a job kills the tree with KILL, which no trap sees; the servers then lived 2-3 days at ppid 1).
 # The watcher is its own process, off the harness's fds so it never holds a CI step's output pipe open.
@@ -192,7 +189,9 @@ case "${1:-}" in
     # record this pid (exec keeps it) so the harness can kill the server if it dies mid-row
     stub=$$; printf "%s\n" "$stub" > "${STUB_LOCK}.srv"
     # a harness killed with SIGKILL runs no trap: this watcher ends the server when the harness is gone
-    ( while kill -0 "$HARNESS_PID" 2> /dev/null && kill -0 "$stub" 2> /dev/null; do sleep 2; done; kill "$stub" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
+    ( sleep 1; id=$(tr "\0" " " < "/proc/$stub/cmdline" 2> /dev/null)
+      while kill -0 "$HARNESS_PID" 2> /dev/null && [ "$(tr "\0" " " < "/proc/$stub/cmdline" 2> /dev/null)" = "$id" ]; do sleep 2; done
+      [ "$(tr "\0" " " < "/proc/$stub/cmdline" 2> /dev/null)" = "$id" ] && kill "$stub" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
     exec python3 "$(dirname "$0")/stub_server.py" apr "$port" "$STUB_LOCK" "$STUB_LOG" ;;
   *) echo "stub apr: unhandled '$*'" >&2; exit 1 ;;
 esac
