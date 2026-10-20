@@ -17,7 +17,6 @@ equations:
     - Output at call k+1 equals generate_at(key, next(counter_k))
     preconditions:
     - key and counter are explicit (with_key_counter)
-    lean_theorem: Theorems.Counter_Carry
 proof_obligations:
 - id: RAND-INV-001
   type: invariant
