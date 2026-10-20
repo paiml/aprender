@@ -2,6 +2,8 @@
 # FLOW-010 E5 RED rows for scripts/affected_set.sh. Oracle for the closure is
 # `cargo tree -i` (a different code path from the tool's cargo-metadata jq).
 set -euo pipefail
+# the CI container runs as root over a host-owned checkout: git would refuse it (dubious ownership)
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
 A=scripts/affected_set.sh
 t=$(mktemp -d); trap 'rm -rf -- "${t:?}"' EXIT
 fail=0
@@ -31,7 +33,13 @@ row "core crate -> ALL" ALL "$(run crates/aprender-core/src/lib.rs)"
 row "Cargo.lock -> ALL" ALL "$(run Cargo.lock)"
 row "unknown path -> ALL" ALL "$(run some/unknown/path.txt)"
 row "unknown path next to a leaf -> ALL" ALL "$(run "$ld/src/lib.rs" scripts/whatever.sh)"
-row "docs only -> nothing" "" "$(run docs/x.md)"
+row "docs file -> ALL (tests read docs/ at run time)" ALL "$(run docs/x.md)"
+row "root README.md -> ALL" ALL "$(run README.md)"
+row "root CLAUDE.md -> ALL" ALL "$(run CLAUDE.md)"
+row "ci/sections.yml -> ALL" ALL "$(run ci/sections.yml)"
+row "ci/explicit-test-commands.d fragment -> ALL" ALL "$(run ci/explicit-test-commands.d/815-affected-set-rows.cmd)"
+row "a crate's own Cargo.toml -> ALL" ALL "$(run "$ld/Cargo.toml")"
+row "a .md inside a leaf crate -> that crate (not skipped by the *.md glob)" "$lp" "$(run "$ld/playbooks/x.md")"
 row "--filter names the package" "package($lp)" "$($A --filter --diff-from <(echo "$ld/src/lib.rs"))"
 row "--filter ALL -> all()" "all()" "$($A --filter --diff-from <(echo Cargo.lock))"
 # empty diff and a bad base are ALL (nothing measured, nothing skipped)
@@ -68,21 +76,11 @@ c" "$(mv_run "$abs")"
 sed 's/--name-only --no-renames/--name-only/' "$A" >"$t/mut-rn.sh"
 if cmp -s "$A" "$t/mut-rn.sh"; then echo "FAIL mutant did not apply"; fail=1
 else row "MUTANT: letting git detect renames is caught by the rename row" "c" "$(mv_run "$t/mut-rn.sh")"; fi
-# include_str!: a docs file a crate embeds is that crate's input (and reaches its dependents); an unembedded one is not.
-it="$t/inc"; mkdir -p "$it/crates/a/src" "$it/docs"
-printf 'pub const D: &str = include_str!("../../../docs/embedded.md");\n' >"$it/crates/a/src/lib.rs"
-sed "s|/r/|$it/|" "$t/meta.json" >"$t/meta-inc.json"
-inc_run() { printf '%s\n' "$2" >"$t/dinc"; AFFECTED_META="$t/meta-inc.json" AFFECTED_ROOT="$it" bash "$1" --diff-from "$t/dinc" | sort -u; }
-row "docs file embedded by crate a -> a and its dependent b" "a
-b" "$(inc_run "$A" docs/embedded.md)"
-row "docs file nobody embeds -> nothing" "" "$(inc_run "$A" docs/other.md)"
-sed "s/'\\\$1 == f'/'0'/" "$A" >"$t/mut-inc.sh"
-if cmp -s "$A" "$t/mut-inc.sh"; then echo "FAIL include mutant did not apply"; fail=1
-else row "MUTANT: ignoring include_str! is caught by the embedded-doc row" "" "$(inc_run "$t/mut-inc.sh" docs/embedded.md)"; fi
-real="$($A --diff-from <(echo docs/audits/prm-001/prereg.lock) | sort -u)"
-case "
-$real
-" in *"
-aprender-review-experiment
-"*) echo "ok   real tree: prereg.lock reaches aprender-review-experiment" ;; *) echo "FAIL real tree: prereg.lock -> '$real'"; fail=1 ;; esac
+# mutants: the skip list that used to exist (docs/*, *.md) must be caught by the ALL rows above.
+sed 's#^    \*/Cargo.toml)#    docs/* | *.md) continue ;;\n    */Cargo.toml)#' "$A" >"$t/mut-docs.sh"
+if cmp -s "$A" "$t/mut-docs.sh"; then echo "FAIL docs-skip mutant did not apply"; fail=1
+else printf '%s\n' docs/x.md >"$t/dd"; row "MUTANT: skipping docs/*.md is caught by the docs-ALL row" "" "$(bash "$t/mut-docs.sh" --diff-from "$t/dd" | head -n1 || true)"; fi
+sed 's#^    \*/Cargo.toml) case.*#    */Cargo.toml) continue ;;#' "$A" >"$t/mut-toml.sh"
+if cmp -s "$A" "$t/mut-toml.sh"; then echo "FAIL manifest mutant did not apply"; fail=1
+else printf '%s\n' "$ld/Cargo.toml" >"$t/dt"; row "MUTANT: skipping crate Cargo.toml is caught by the manifest row" "" "$(bash "$t/mut-toml.sh" --diff-from "$t/dt" | head -n1 || true)"; fi
 exit "$fail"
