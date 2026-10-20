@@ -35,6 +35,9 @@ fn thumb_row_is_the_rounded_position_ratio() {
         (10, 10, 10, 9), // end of content: last row
         (2, 10, 11, 2),  // 0.2 * 10
         (0, 0, 8, 0),    // total 0 clamps to 1 and position 0
+        (1, 3, 5, 1),    // 1.33 rounds down (a ceil would give row 2)
+        (2, 3, 5, 3),    // 2.67 rounds up (a floor would give row 2)
+        (1, 0, 8, 7),    // total 0 clamps to 1: ratio 1.0, last row (no clamp: inf, no thumb)
     ] {
         let buf = drawn(0, height, pos, total);
         assert_eq!(
