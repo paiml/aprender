@@ -180,7 +180,8 @@ blk_ok() { # FILE -> 0 when the step prefix is trustworthy
   local code; code=$(printf '%s\n' "$blk" | grep -v -E '^[[:space:]]*#')
   case "$code" in *"git clone "*) ;; *) return 1 ;; esac
   case "$code" in *"export GIT_NO_REPLACE_OBJECTS=1"*) ;; *) return 1 ;; esac
-  case "$code" in *"GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null"*) ;; *) return 1 ;; esac
+  # both the clone and the show run with the global/system config off
+  [ "$(printf '%s\n' "$code" | grep -c 'GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null')" -ge 2 ] || return 1
   case "$code" in *"show HEAD:scripts/ci/receipt_ok_arg.sh"*) ;; *) return 1 ;; esac
   case "$code" in *" fetch "*) return 1 ;; esac
   printf '%s\n' "$code" | grep -E 'scripts/' | grep -v -E 'git -C "\$trust" show HEAD:scripts/ci/receipt_ok_arg.sh' | grep -q . && return 1
