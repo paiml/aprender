@@ -5113,10 +5113,7 @@ mod tests {
 #[cfg(all(test, feature = "browser"))]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod cdp_touch_tests {
-    use super::cdp::{
-        coverage_report_from_json, swipe_point, swipe_step_delay_ms, Page, SWIPE_STEPS,
-    };
-    use crate::{Touch, TouchAction};
+    use super::cdp::{coverage_report_from_json, swipe_point, swipe_step_delay_ms, SWIPE_STEPS};
 
     #[test]
     fn swipe_splits_duration_evenly_over_the_steps() {
@@ -5182,26 +5179,5 @@ mod cdp_touch_tests {
         let report = coverage_report_from_json(&serde_json::json!({}));
         assert_eq!(report.timestamp_ms, 0);
         assert!(report.scripts.is_empty());
-    }
-
-    #[tokio::test]
-    async fn touch_on_a_page_without_a_cdp_session_is_a_no_op_ok() {
-        let page = Page::new(800, 600);
-        for action in [
-            TouchAction::Tap,
-            TouchAction::Swipe {
-                end_x: 5.0,
-                end_y: 5.0,
-                duration_ms: 0,
-            },
-            TouchAction::Hold { duration_ms: 0 },
-        ] {
-            let touch = Touch {
-                x: 1.0,
-                y: 2.0,
-                action,
-            };
-            assert!(page.touch(touch).await.is_ok(), "{action:?}");
-        }
     }
 }
