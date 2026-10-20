@@ -7,6 +7,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /api/tags"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /api/version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health binary_sha256"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health/live"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health/ready"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -2080,6 +2081,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /api/tags"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /api/version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health binary_sha256"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health/live"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /health/ready"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "GET /metrics"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -13035,6 +13037,13 @@
 <https://ont.paiml.dev/v1alpha1/contract/pp-llama-001-spec-conformance-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/pp-llama-001-spec-conformance-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/pp-llama-001-spec-conformance-v1> <https://ont.paiml.dev/v1alpha1/id> "pp-llama-001-spec-conformance-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/pp-llama-001-spec-conformance-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/pr-flow-sim4-bounds-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <https://ont.paiml.dev/v1alpha1/id> "pr-flow-sim4-bounds-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <https://ont.paiml.dev/v1alpha1/name> "pr-flow-sim4-bounds"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/pr-flow-sim4-bounds-v1> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/pr-review-skill-v2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/pr-review-skill-v2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/pr-review-skill-v2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
