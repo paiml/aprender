@@ -1294,9 +1294,9 @@ mod tests {
     /// FALSIFY-H4-INIT-STATS-001 verdict on the embedding (mean, std) and final-norm
     /// (mean, std) of a loaded init APR. `Err` carries the failing assertion's message.
     fn check_h4_embed_norm_stats(em: f64, es: f64, nm: f64, ns: f64) -> Result<(), String> {
-        if em.abs() >= 0.05 {
+        if !(0.0..0.05).contains(&em.abs()) {
             return Err(format!(
-                "FALSIFY-H4-INIT-STATS-001: embed mean={em} > 0.05; weights are not centered. \
+                "FALSIFY-H4-INIT-STATS-001: embed mean={em} not within ±0.05; weights are not centered. \
                  Possible f16→f32 sign-bit corruption or wrong byte-order."
             ));
         }
@@ -1313,7 +1313,7 @@ mod tests {
                  load is corrupt. Trained pretrained values are typically near 1.0."
             ));
         }
-        if ns >= 100.0 {
+        if !(f64::NEG_INFINITY..100.0).contains(&ns) {
             return Err(format!(
                 "FALSIFY-H4-INIT-STATS-001: norm std={ns} > 100; RMSNorm has explosive variance. \
                  Tensor load is corrupt."
@@ -1340,15 +1340,18 @@ mod tests {
 
     #[test]
     fn h4_embed_norm_stats_reject_each_corruption_with_its_own_message() {
-        let cases: [([f64; 4], &str); 8] = [
-            ([0.05, 0.02, 1.0, 0.3], "embed mean=0.05 > 0.05"),
-            ([-0.2, 0.02, 1.0, 0.3], "embed mean=-0.2 > 0.05"),
+        let cases: [([f64; 4], &str); 11] = [
+            ([0.05, 0.02, 1.0, 0.3], "embed mean=0.05 not within"),
+            ([-0.2, 0.02, 1.0, 0.3], "embed mean=-0.2 not within"),
             ([0.0, 0.004, 1.0, 0.3], "embed std=0.004 outside"),
             ([0.0, 0.51, 1.0, 0.3], "embed std=0.51 outside"),
             ([0.0, 0.02, 0.01, 0.3], "norm mean=0.01 outside"),
             ([0.0, 0.02, 100.0, 0.3], "norm mean=100 outside"),
             ([0.0, 0.02, 1.0, 100.0], "norm std=100 > 100"),
             ([0.0, f64::NAN, 1.0, 0.3], "embed std=NaN outside"),
+            ([f64::NAN, 0.02, 1.0, 0.3], "embed mean=NaN not within"),
+            ([0.0, 0.02, f64::NAN, 0.3], "norm mean=NaN outside"),
+            ([0.0, 0.02, 1.0, f64::NAN], "norm std=NaN"),
         ];
         for ([em, es, nm, ns], needle) in cases {
             let err = check_h4_embed_norm_stats(em, es, nm, ns)
