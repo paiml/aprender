@@ -54,27 +54,27 @@ proof_obligations:
   - id: ADG-INV-001
     type: invariant
     property: "A PR that adds no advisory passes while main holds one"
-    formal: "A(lock_PR) = A(lock_main) != {} => verdict = pass"
+    formal: "∀ pr: A(lock_PR) = A(lock_main) ∧ A(lock_main) ≠ ∅ ⇒ verdict = pass"
     applies_to: pr_gate_verdict
   - id: ADG-INV-002
     type: invariant
     property: "A PR that introduces an advisory fails"
-    formal: "A(lock_PR) \\ A(lock_main) != {} => verdict = fail"
+    formal: "∀ pr: A(lock_PR) \\ A(lock_main) ≠ ∅ ⇒ verdict = fail"
     applies_to: pr_gate_verdict
   - id: ADG-INV-003
     type: invariant
     property: "A main-resident advisory raises an andon and a <=4h P0 ticket"
-    formal: "A(lock_main) != {} => ticket(P0, due<=4h) exists"
+    formal: "∀ main: A(lock_main) ≠ ∅ ⇒ ticket(P0) ∧ due ≤ 4h"
     applies_to: main_resident_advisory
   - id: ADG-INV-004
     type: invariant
     property: "The scanner of record is blind to nothing the other scanner sees"
-    formal: "A_record(lock_main_48.0.6) contains RUSTSEC-2026-0378 and RUSTSEC-2026-0379"
+    formal: "∀ lock_48_0_6: A_record(lock) ∋ RUSTSEC-2026-0378 ∧ A_record(lock) ∋ RUSTSEC-2026-0379"
     applies_to: one_scanner_of_record
   - id: ADG-INV-005
     type: invariant
     property: "Ready PRs are re-armed after a gate fix"
-    formal: "armed_after >= ready_before for PRs whose head is unchanged"
+    formal: "∀ pr: head_unchanged ⇒ armed_after ≥ armed_before"
     applies_to: auto_rearm
 
 falsification_tests:
