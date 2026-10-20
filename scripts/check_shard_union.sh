@@ -3,10 +3,9 @@
 # RED when a test is dropped (or run twice). Two selectors are shared by every shard:
 #  1. explicit fragments: the runner's own round-robin (EXPLICIT_LIST_SHARD=1 prints a
 #     shard's selection through the REAL code path); union over 1..M must equal --list.
-#  2. nextest: `--partition hash:i/M` over a probe package; union over 1..M must equal
-#     the unpartitioned list (same count, none dropped, none twice).
+#  2. nextest: scripts/shard_union_nextest.sh (kept out of this cargo-free guard).
 # M is read from ci/sections.yml matrix-pins, never typed here.
-# Usage: check_shard_union.sh [--fragments|--nextest|--self-test]
+# Usage: check_shard_union.sh [--fragments|--self-test]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 RUN=${SHARD_UNION_RUNNER:-scripts/ci_run_explicit_test_commands.sh}
@@ -22,19 +21,9 @@ fragments() { # $1 = fragment dir
   echo "ok    fragments: union of $M shards == pre-split list ($(printf '%s\n' "$full" | wc -l) commands)"
 }
 
-nextest() { # $1 = probe package
-  local pkg="$1" full un i
-  full="$(cargo nextest list -p "$pkg" --lib --message-format oneline 2>/dev/null | sort)"
-  [ -n "$full" ] || { echo "FAIL nextest: empty pre-split list for $pkg"; return 1; }
-  un="$(for i in $(seq 1 "$M"); do cargo nextest list -p "$pkg" --lib --message-format oneline --partition "hash:$i/$M" 2>/dev/null; done | sort)"
-  [ "$(printf '%s\n' "$full" | wc -l)" = "$(printf '%s\n' "$un" | wc -l)" ] || { echo "FAIL nextest: count pre-split=$(printf '%s\n' "$full" | wc -l) union=$(printf '%s\n' "$un" | wc -l)"; return 1; }
-  [ "$full" = "$un" ] || { echo "FAIL nextest: union != pre-split list"; return 1; }
-  echo "ok    nextest: union of $M hash shards == pre-split list for $pkg ($(printf '%s\n' "$full" | wc -l) tests)"
-}
 
 case "${1:-}" in
   --fragments|"") fragments ci/explicit-test-commands.d ;;
-  --nextest) nextest "${2:-aprender-contracts}" ;;
   --self-test)
     t="$(mktemp -d)"; trap 'rm -rf "${t:?}"' EXIT
     # mutant: the selector drops the last command of the round-robin (a test goes missing)
@@ -43,5 +32,5 @@ case "${1:-}" in
     SHARD_UNION_RUNNER="$t/mut.sh" bash "$0" --fragments >/dev/null 2>&1 && { echo "self-test: dropped command must be RED"; exit 1; }
     fragments ci/explicit-test-commands.d >/dev/null || { echo "self-test: clean must pass"; exit 1; }
     echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED" ;;
-  *) echo "usage: $0 [--fragments|--nextest [pkg]|--self-test]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--fragments|--self-test]" >&2; exit 2 ;;
 esac
