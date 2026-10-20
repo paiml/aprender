@@ -13,7 +13,7 @@ DUE_SECS=$((4 * 3600))
 
 due() { # ISO created, ISO now
     local c n
-    c=$(date -u -d "$1" +%s) n=$(date -u -d "$2" +%s)
+    c=$(date -u -d "$1" +%s) n=$(date -u -d "$2" +%s)  # bashrs disable-line=DET002 (elapsed-time arithmetic, not a stored timestamp)
     [ $((n - c)) -gt "$DUE_SECS" ]
 }
 
@@ -65,11 +65,11 @@ self_test() {
     [ "$rc" -eq 75 ] || { echo "SELF-TEST FAIL: rc1 with no findings must be 75, got $rc" >&2; bad=1; }
     ec 'tool error is cannot-check' 75 - 2 ''
     ec 'old open issue gets p0-overdue' 0 'add-label p0-overdue' 1 '[{"number":7,"createdAt":"2020-01-01T00:00:00Z","labels":[],"title":"ADVISORY ANDON: vulnerability|RUSTSEC-1|c@1"}]'
-    ec 'fresh open issue is left alone' 0 - 1 "[{\"number\":7,\"createdAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"labels\":[],\"title\":\"ADVISORY ANDON: vulnerability|RUSTSEC-1|c@1\"}]"
-    : >"$d/calls"; GH="$d/gh" STUB_LIST="[{\"number\":7,\"createdAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"labels\":[],\"title\":\"ADVISORY ANDON: vulnerability|RUSTSEC-1|c@1\"}]" emit "$d/f.json" 1 >/dev/null 2>&1 || true
+    ec 'fresh open issue is left alone' 0 - 1 "[{\"number\":7,\"createdAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"labels\":[],\"title\":\"ADVISORY ANDON: vulnerability|RUSTSEC-1|c@1\"}]"  # bashrs disable-line=DET002
+    : >"$d/calls"; GH="$d/gh" STUB_LIST="[{\"number\":7,\"createdAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"labels\":[],\"title\":\"ADVISORY ANDON: vulnerability|RUSTSEC-1|c@1\"}]" emit "$d/f.json" 1 >/dev/null 2>&1 || true  # bashrs disable-line=DET002
     if grep -q 'issue create\|add-label' "$d/calls"; then echo "SELF-TEST FAIL: fresh issue was touched" >&2; bad=1; fi
     rm -rf -- "${d:?}"
-    [ "$bad" -eq 0 ] && echo "advisory_andon self-test: 9 cases ok"
+    [ "$bad" -eq 0 ] && echo "advisory_andon self-test: ok"
     return "$bad"
 }
 

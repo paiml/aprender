@@ -355,9 +355,8 @@ jobs:
           else
             G=scripts/ci
           fi
-          bash "$G/advisory_diff.sh" --self-test
           rc=0
-          bash "$G/advisory_gate.sh" || rc=$?
+          bash "$G/advisory_diff.sh" --self-test && bash "$G/advisory_gate.sh" || rc=$?
           rm -rf -- "${S:?}"
           exit "$rc"
       - name: Every deny.toml exemption must still be live
