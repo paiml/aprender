@@ -406,6 +406,7 @@ mod tests {
     use presentar_terminal::direct::CellBuffer;
 
     const W: u16 = 60;
+    const EXPECTED_ROW: &str = " │ /data          ▓▓▓▓▓░░░░░    5.0G/ 10.0G (50%) │";
 
     fn disk(mount: &str, used: u64, total: u64, pct: f64) -> DiskMetrics {
         DiskMetrics {
@@ -501,5 +502,55 @@ mod tests {
         assert!(!rows.iter().any(|r| r.contains("/m2")));
         assert!(rows[3].contains('└'), "{:?}", rows[3]);
         assert!((y - 5.0).abs() < f32::EPSILON, "y={y}");
+    }
+
+    #[test]
+    fn disk_box_row_layout_is_exact() {
+        // Pins used/total text, bar width (10 cells), the right border column and
+        // the frame width: any drift in one of them changes the whole row.
+        let (rows, _) = render(vec![disk("/data", 5 << 30, 10 << 30, 50.0)], 40);
+        assert_eq!(rows[1].trim_end(), EXPECTED_ROW, "{:?}", rows[1]);
+        assert_eq!(
+            rows[0].trim_end(),
+            format!(" ┌─ Disks {}┐", "─".repeat(30)),
+            "{:?}",
+            rows[0]
+        );
+        assert_eq!(
+            rows[2].trim_end(),
+            format!(" └{}┘", "─".repeat(40)),
+            "{:?}",
+            rows[2]
+        );
+    }
+
+    #[test]
+    fn disk_box_bar_uses_memory_colour_for_usage() {
+        let theme = Theme::default();
+        for pct in [10.0_f64, 95.0] {
+            let mut buf = CellBuffer::new(W, 12);
+            let metrics = LoadMetrics {
+                disks: vec![disk("/d", 1, 2, pct)],
+                ..Default::default()
+            };
+            let mut y = 0.0_f32;
+            {
+                let mut canvas = DirectTerminalCanvas::new(&mut buf);
+                CbtopApp::render_disk_box(
+                    &mut canvas,
+                    &mut y,
+                    40,
+                    &metrics,
+                    40,
+                    50,
+                    &theme,
+                    &TextStyle::default(),
+                );
+            }
+            let want = theme.memory_color(pct);
+            let got = buf.get(19, 1).expect("bar cell").fg;
+            assert_eq!(got, want, "bar colour at {pct}%");
+        }
+        assert_ne!(theme.memory_color(10.0), theme.memory_color(95.0));
     }
 }
