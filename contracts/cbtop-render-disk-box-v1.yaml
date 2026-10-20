@@ -21,12 +21,12 @@ proof_obligations:
   - id: CBTOP-DISK-INV-001
     type: invariant
     property: "at most three disk rows are drawn"
-    formal: "cargo test -p aprender-cbtop --lib disk_box_shows_at_most_three_disks exits 0"
+    formal: "cargo test -p aprender-cbtop --lib disk_box_shows_at_most_three_disks ⇒ exit 0"
     applies_to: disk_box_layout
   - id: CBTOP-DISK-INV-002
     type: invariant
     property: "row drawing stops when the height budget is spent"
-    formal: "cargo test -p aprender-cbtop --lib disk_box_stops_rows_when_height_is_exhausted exits 0"
+    formal: "cargo test -p aprender-cbtop --lib disk_box_stops_rows_when_height_is_exhausted ⇒ exit 0"
     applies_to: disk_box_layout
 
 falsification_tests:
