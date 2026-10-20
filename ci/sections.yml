@@ -2039,7 +2039,7 @@ jobs:
             -e GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
             -e "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $B64" \
             "$IMAGE" \
-            cargo deny check
+            cargo deny check licenses bans sources
       # check_apr_bin_pinned asserts CALLERS pin the binary; it says nothing
       # about which binary the resolver hands them. apr_bin.sh returned
       # target/release/apr whenever it existed, so a stale release build beside
@@ -2676,7 +2676,7 @@ jobs:
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          cargo deny check advisories
+          bash scripts/ci/advisory_gate.sh
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.

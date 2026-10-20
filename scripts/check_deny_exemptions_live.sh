@@ -64,7 +64,10 @@ if [ "$dead" -gt 0 ]; then
   exit 1
 fi
 
-if [ "$rc" -ne 0 ]; then
+if [ "$rc" -ne 0 ] && grep -qE '^error\[(vulnerability|unmaintained|unsound|yanked|notice)\]' "$LOG"; then
+  # PMAT-5792: findings are advisory-diff territory (scripts/ci/advisory_gate.sh), not this guard's.
+  printf '\nNOTE: advisory findings present; judged by advisory_gate.sh, not here.\n'
+elif [ "$rc" -ne 0 ]; then
   printf '\nFAIL: `cargo deny check advisories` exited %s. Its last lines:\n' "$rc"
   tail -n 8 "$LOG" | sed 's/^/      /'
   tail -20 "$LOG" | sed 's|^|  |'
