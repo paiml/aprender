@@ -7,7 +7,7 @@ PV_SAT=$(dirname "$PV")/pv-sat   # never an inherited PV_SAT: it may be another 
 stale_pv=$(for b in "$PV" "$PV_SAT"; do
     [ -x "$b" ] || { echo "$b (missing)"; continue; }
     git ls-files -z -- crates/aprender-contracts crates/aprender-contracts-cli Cargo.lock | xargs -0 -r find -L -newer "$b" -type f 2>/dev/null | head -1 | sed "s|^|$b older than |"
-done)
+done) || true   # set -e: the loops end on a false test
 if [ -n "$stale_pv" ]; then
     printf 'contracts_resolve: REFUSED, pv is not built from this HEAD:\n%s\nrebuild: cargo build -p aprender-contracts-cli --bin pv --bin pv-sat\n' "$stale_pv" >&2
     exit 1
@@ -51,8 +51,8 @@ PV_SAT=$(dirname "$PV")/pv-sat   # never an inherited PV_SAT: it may be another 
 stale_pv=$(for b in "$PV" "$PV_SAT"; do
     [ -x "$b" ] || { echo "$b (missing)"; continue; }
     git ls-files -z -- crates/aprender-contracts crates/aprender-contracts-cli Cargo.lock \
-        | while IFS= read -r -d "" s; do [ "$s" -nt "$b" ] && { echo "$b is older than $s"; break; }; done
-done)
+        | while IFS= read -r -d "" s; do if [ "$s" -nt "$b" ]; then echo "$b is older than $s"; break; fi; done
+done) || true   # set -e: the loops end on a false test
 if [ -n "$stale_pv" ]; then
     printf 'contracts_resolve: REFUSED, pv is not built from this HEAD:\n%s\nrebuild: cargo build -p aprender-contracts-cli --bin pv --bin pv-sat\n' "$stale_pv" >&2
     exit 1
