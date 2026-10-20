@@ -165,7 +165,7 @@ pub enum Commands {
         #[arg(long, default_value = "unknown")]
         sha: String,
     },
-    /// Run a FLOW-006 repo case (conflict step, optional merge queue); --json prints the sim block
+    /// Run a FLOW-006 repo case (conflict step, optional merge queue)
     RepoFlow {
         /// Case name, for example rmedia-design or infra-rule.
         #[arg(long)]
@@ -177,7 +177,7 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Run a FLOW-006 course-factory case; --json prints the sim block
+    /// Run a FLOW-006 course-factory case
     CourseFlow {
         /// Case: cal-today, design, nine-builders, coursera-24h or render-300.
         #[arg(long)]
