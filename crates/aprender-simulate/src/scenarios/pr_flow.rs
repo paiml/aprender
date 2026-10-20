@@ -597,6 +597,33 @@ pub fn bounds(c: &PrFlowConfig, r: &PrFlowResult) -> [(&'static str, f64); 4] {
     ]
 }
 
+/// Usable runner-minutes per runner-hour: the 85% ceiling of FLOW-005 SIM-4.
+pub const RUNNER_MIN_PER_H: f64 = 51.0;
+
+/// FLOW-005 SIM-4: the three inequalities every batch's prediction must satisfy.
+///
+/// Returns the names of the ones that are breached (empty means all hold):
+/// `cap` is merged/h <= cap/W, `pr_runner` is PR runner-min/h <= R_pr * 51, and
+/// `mq_passes` is merge-queue passes/h <= R_mq * 51 / mq_runner_min. `cap` carries the
+/// 0.5% Little's-law tolerance the SIM-3 contract allows.
+#[must_use]
+pub fn sim4_breaches(c: &PrFlowConfig, r: &PrFlowResult) -> Vec<&'static str> {
+    let w_h = (r.w_mean_min / 60.0).max(f64::EPSILON);
+    let pr_min_h = r.merged_per_h * c.pr_runner_min * r.runs_per_pr.max(1.0);
+    let passes_h = r.merged_per_h / r.prs_per_pass.max(1.0);
+    let mut out = Vec::new();
+    if r.merged_per_h > c.cap as f64 / w_h * 1.005 {
+        out.push("cap");
+    }
+    if pr_min_h > c.r_pr as f64 * RUNNER_MIN_PER_H {
+        out.push("pr_runner");
+    }
+    if passes_h > c.r_mq as f64 * RUNNER_MIN_PER_H / c.mq_runner_min {
+        out.push("mq_passes");
+    }
+    out
+}
+
 /// The binding station: argmin of [`bounds`]. No utilisation thresholds.
 #[must_use]
 pub fn binding_station(c: &PrFlowConfig, r: &PrFlowResult) -> &'static str {
@@ -739,6 +766,55 @@ mod tests {
         c.r_mq = 10_000;
         c.builds = 100;
         c
+    }
+
+    #[test]
+    fn sim4_holds_on_the_proposed_designs_and_flags_the_saturated_merge_queue_of_a() {
+        for (d, _) in WANT {
+            let c = preset(d).expect("preset");
+            let r = run_reference(&c);
+            let want: Vec<&str> = if d == "A" { vec!["mq_passes"] } else { vec![] };
+            assert_eq!(sim4_breaches(&c, &r), want, "{d}");
+        }
+    }
+
+    #[test]
+    fn sim4_names_each_breached_inequality() {
+        let c = preset("D").expect("preset");
+        let r = run_reference(&c);
+        let hot = |k: f64| PrFlowResult {
+            merged_per_h: r.merged_per_h * k,
+            ..r.clone()
+        };
+        assert_eq!(
+            sim4_breaches(&c, &hot(1.5)),
+            vec!["cap", "pr_runner", "mq_passes"]
+        );
+        let mut few = c.clone();
+        few.r_pr = 1;
+        assert_eq!(sim4_breaches(&few, &r), vec!["pr_runner"]);
+        let mut mq = c.clone();
+        mq.r_mq = 1;
+        assert_eq!(sim4_breaches(&mq, &r), vec!["mq_passes"]);
+        let mut cap = c.clone();
+        cap.cap = 1;
+        assert_eq!(sim4_breaches(&cap, &r), vec!["cap"]);
+    }
+
+    #[test]
+    fn sim4_pr_runner_load_scales_with_runs_per_pr() {
+        let c = preset("D").expect("preset");
+        let r = run_reference(&c);
+        let one = PrFlowResult {
+            runs_per_pr: 1.0,
+            ..r.clone()
+        };
+        let many = PrFlowResult {
+            runs_per_pr: 1000.0,
+            ..r
+        };
+        assert!(!sim4_breaches(&c, &one).contains(&"pr_runner"));
+        assert!(sim4_breaches(&c, &many).contains(&"pr_runner"));
     }
 
     #[test]
