@@ -144,6 +144,7 @@ async fn falsify_crux_c_34_003_uptime_monotonic() {
     // Two sequential oneshots on the SAME process must see uptime_sec advance.
     // Router is rebuilt each call but the OnceLock<Instant> is process-wide,
     // so start time is shared.
+    let wall = std::time::Instant::now();
     let a = router_with_model()
         .oneshot(get("/health"))
         .await
@@ -159,15 +160,19 @@ async fn falsify_crux_c_34_003_uptime_monotonic() {
         .expect("oneshot 2");
     let json_b = json_body(b).await;
     let u2 = json_b["uptime_sec"].as_f64().expect("u2");
+    let wall_s = wall.elapsed().as_secs_f64();
 
     assert!(
         u2 > u1,
         "FALSIFY-CRUX-C-34-003: uptime must strictly increase, got u1={u1} u2={u2}"
     );
+    // #5783: the upper bound is the wall clock measured around the two reads, not a fixed
+    // 5.0 s, so host load (the reads can be seconds apart) cannot fail it; a server clock
+    // that runs faster than real time still does.
     let delta = u2 - u1;
     assert!(
-        (0.01..=5.0).contains(&delta),
-        "FALSIFY-CRUX-C-34-003: delta {delta}s outside plausible [0.01, 5.0] window"
+        (0.01..=wall_s + 0.05).contains(&delta),
+        "FALSIFY-CRUX-C-34-003: delta {delta}s outside [0.01, measured wall {wall_s}s + 0.05]"
     );
 }
 
