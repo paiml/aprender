@@ -1,0 +1,122 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-20'
+  author: PAIML Engineering
+  description: "Advisory gate: a PR fails only on advisories it introduces; an advisory already on main is an andon with a P0 4 h clock and does not block PRs; one scanner of record. Goal: 0 h total stop on a RustSec publication. DRAFT; gate-accept (one-way door), solo + non-author sign-off + operator yes before arming; any .github/workflows edit goes to a quorum first."
+  kind: pattern
+  references:
+    - "paiml/aprender#5792 (PMAT-5792) -- this ticket"
+    - "paiml/aprender#5791 -- cargo deny advisories is blind to RUSTSEC-2026-0378/0379 on main's lock; only cargo audit sees them"
+    - "paiml/aprender#5789 -- lock-only wasmtime bump that unblocked the queue"
+    - "MG run 39413691864 (#5781) -- P0 red on a publication, not a PR change"
+
+five_whys:
+  symptom: "Every PR in the merge queue went red when RUSTSEC-2026-0378/0379 were published against wasmtime 48.0.6 already on main."
+  why_1: "The security step fails on ANY advisory in the lock, not on advisories the PR adds."
+  why_2: "The gate compares the lock to the advisory DB, never to main's lock, so a new DB entry and a new dependency look identical."
+  why_3: "Two scanners (cargo deny, cargo audit) read different graphs (deny: all-features=false) and disagree; neither is the scanner of record, so the queue's red came from whichever saw it last."
+  why_4: "Nothing routes a main-resident advisory to a fix ticket with a clock; the only response available is to stop merging."
+  why_5: "Gate design treated 'the tree is clean' and 'this PR is safe to merge' as one question."
+  root_cause: "The merge decision is coupled to the global advisory state of main instead of the delta of the PR."
+
+equations:
+  pr_gate_verdict:
+    formula: "fail(PR) iff A(lock_PR, db) \\ A(lock_main, db) != {} ; A(lock, db) = advisories in db that hit a crate@version in lock, minus ignored ids"
+    domain: "lock_PR, lock_main from the PR merge base and head; db is ONE snapshot used for both sides"
+    codomain: "pass | fail"
+    invariants:
+      - "Both sides use the same advisory-db snapshot (otherwise a DB refresh between the runs reads as a PR-introduced advisory)"
+      - "A PR that does not touch Cargo.lock has an empty delta and passes"
+      - "A PR that removes an advisory-hit crate passes"
+  main_resident_advisory:
+    formula: "A(lock_main, db) != {} => andon raised AND P0 ticket with due <= 4h AND PR gate unaffected"
+    domain: "scheduled scan of main plus the pr_gate_verdict baseline"
+    codomain: "ticket id + due time, or none"
+    invariants:
+      - "The andon fires within one scan period of the DB publishing the advisory"
+      - "The ticket carries advisory ids, affected crate@version, and the clock start"
+      - "A main-resident advisory never turns the PR gate or the merge queue red"
+  one_scanner_of_record:
+    formula: "exactly one scanner decides A(); the other is retired or run as a LAB cross-check that cannot block"
+    domain: "cargo deny check advisories, cargo audit"
+    codomain: "the scanner name recorded in deny.toml / the gate script header"
+    invariants:
+      - "The scanner of record sees the whole Cargo.lock (all features), proven on the 48.0.6 lock as the positive control"
+      - "Exemptions live in one file"
+  auto_rearm:
+    formula: "when a gate fix lands, every PR that was ready (green, approved) before the stop is re-armed without a human"
+    domain: "PRs with auto-merge armed or ready at the time of the stop"
+    codomain: "armed set restored"
+    invariants:
+      - "Re-arm never arms a PR whose head changed after its approval"
+
+proof_obligations:
+  - id: ADG-INV-001
+    type: invariant
+    property: "A PR that adds no advisory passes while main holds one"
+    formal: "A(lock_PR) = A(lock_main) != {} => verdict = pass"
+    applies_to: pr_gate_verdict
+  - id: ADG-INV-002
+    type: invariant
+    property: "A PR that introduces an advisory fails"
+    formal: "A(lock_PR) \\ A(lock_main) != {} => verdict = fail"
+    applies_to: pr_gate_verdict
+  - id: ADG-INV-003
+    type: invariant
+    property: "A main-resident advisory raises an andon and a <=4h P0 ticket"
+    formal: "A(lock_main) != {} => ticket(P0, due<=4h) exists"
+    applies_to: main_resident_advisory
+  - id: ADG-INV-004
+    type: invariant
+    property: "The scanner of record is blind to nothing the other scanner sees"
+    formal: "A_record(lock_main_48.0.6) contains RUSTSEC-2026-0378 and RUSTSEC-2026-0379"
+    applies_to: one_scanner_of_record
+  - id: ADG-INV-005
+    type: invariant
+    property: "Ready PRs are re-armed after a gate fix"
+    formal: "armed_after >= ready_before for PRs whose head is unchanged"
+    applies_to: auto_rearm
+
+falsification_tests:
+  - id: FALSIFY-ADG-001
+    rule: "Main-resident advisory does not block a PR"
+    prediction: "with lock_PR == lock_main (wasmtime 48.0.6) and a DB holding 0378/0379, the PR verdict is pass and a main-advisory andon row is emitted"
+    test: "planted-fixture case table of the diff gate script (to be written on the branch): same lock both sides"
+    if_fails: "the gate still compares lock to DB, not PR to main"
+    mutation: "compare lock_PR to the empty set; the case must turn RED"
+  - id: FALSIFY-ADG-002
+    rule: "A PR-introduced advisory blocks"
+    prediction: "with lock_main = 48.0.7 and lock_PR = 48.0.6, the verdict is fail naming 0378 and 0379"
+    test: "same case table: lock_PR adds the vulnerable version"
+    if_fails: "the gate cannot turn RED on a real regression (a gate that cannot fail)"
+    mutation: "make the delta symmetric difference's right side empty; the case must turn RED"
+  - id: FALSIFY-ADG-003
+    rule: "Scanner of record sees the optional-feature crate"
+    prediction: "on the 48.0.6 lock the scanner of record exits non-zero and names 0378 and 0379"
+    test: "run the scanner of record on the 48.0.6 lock fixture"
+    if_fails: "#5791 is not resolved: the record scanner is as blind as deny with all-features=false"
+    mutation: "flip all-features to false in the scanner config; the case must turn RED"
+  - id: FALSIFY-ADG-004
+    rule: "Same DB snapshot on both sides"
+    prediction: "a DB entry published between the main run and the PR run does not appear in the delta"
+    test: "case table: two DB snapshots, delta computed against one"
+    if_fails: "DB refreshes read as PR-introduced advisories and re-create the stop"
+    mutation: "read the DB twice; the case must turn RED"
+  - id: FALSIFY-ADG-005
+    rule: "Andon clock"
+    prediction: "the P0 ticket's due time is <= 4 h after the advisory first appears on main"
+    test: "case table over the ticket emitter"
+    if_fails: "main-resident advisories sit unowned"
+    mutation: "set the due time to 8 h; the case must turn RED"
+
+qa_gate:
+  id: F-ADG-001
+  name: Advisory gate diff contract
+  description: "PR delta gate, main andon, one scanner of record, auto re-arm"
+  checks:
+    - pr_gate_verdict
+    - main_resident_advisory
+    - one_scanner_of_record
+    - auto_rearm
+  pass_criteria: "All 5 falsification tests pass; the scanner script has a must-fail/must-pass case table"
+  falsification: "Revert the gate to lock-vs-DB; FALSIFY-ADG-001 must turn RED"
