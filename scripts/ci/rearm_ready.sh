@@ -28,11 +28,11 @@ plan_() {
 }
 
 # Arms atomically against the reviewed head: enqueuePullRequest(expectedHeadOid) is refused by GitHub if the head moved
-# after the select (the --match-head-commit guard). The queue owns the merge method, so none is passed. If the enqueue is
-# refused for a non-head reason (checks still pending), fall back to the plain `gh pr merge <pr>` that #5794 mandates,
-# but only after re-reading the head and finding it still equals the approved sha.
+# after the select. The queue owns the merge method, so none is passed. There is NO `gh pr merge` fallback: #5794 bans
+# every flag on it (so no --match-head-commit), and a plain merge after a re-read of the head is a check-then-act race that
+# could arm a head nobody reviewed. A refused enqueue (head moved, or checks still pending) is left for the next run.
 run_() {
-    local t n sha id cur
+    local t n sha id
     t=$(mktemp)
     # shellcheck disable=SC2064
     trap "rm -f -- '${t:?}'" RETURN
@@ -42,12 +42,7 @@ run_() {
             -f id="$id" -f h="$sha" >/dev/null 2>&1; then
             continue
         fi
-        cur=$(gh pr view "$n" --json headRefOid --jq .headRefOid 2>/dev/null || true)
-        if [ "$cur" = "$sha" ]; then
-            gh pr merge "$n" --match-head-commit "$sha" || echo "rearm: PR $n not armed" >&2
-        else
-            echo "rearm: PR $n head moved since review; not armed" >&2
-        fi
+        echo "rearm: PR $n enqueue refused at the reviewed head; not armed" >&2
     done < <(select_ "$t")
 }
 
@@ -85,9 +80,8 @@ self_test() {
     cat >"$d/bin/gh" <<STUB
 #!/usr/bin/env bash
 if [ "\$1 \$2" = "pr list" ]; then cat "$d/prs.json"
-elif [ "\$1 \$2" = "pr view" ]; then echo "$a"
 elif [ "\$1" = api ]; then echo "\$*" >>"$d/armed"; [ -z "\${STUB_REFUSE:-}" ]
-elif [ "\$1 \$2" = "pr merge" ]; then echo "merge \$*" >>"$d/merged"
+else echo "\$*" >>"$d/other"; exit 1
 fi
 STUB
     chmod +x "$d/bin/gh"
@@ -96,10 +90,10 @@ STUB
     # 1 ok; 2 head moved; 3 armed; 4/5 later negative; 6 fresh approve after negative -> arms; 7 "NOT APPROVED" is no approval;
     # 8 any later non-approval cancels; 9 reviewer off the allowlist; 10 author self-approval; 11 commit.oid (b) != head (a), so not armed.
     [ "$got" = "id=N1 -f h=$a,id=N6 -f h=$a," ] || { echo "SELF-TEST FAIL: run must enqueue exactly PR 1 and 6 with expectedHeadOid=commit.oid, got: $got" >&2; bad=1; }
-    rm -f "${d:?}/armed" "${d:?}/merged"
+    rm -f "${d:?}/armed" "${d:?}/other"
     REARM_REVIEWERS="s1 s2 au" STUB_REFUSE=1 PATH="$d/bin:$PATH" run_ >/dev/null 2>&1 || true
-    if [ "$(grep -c -- "--match-head-commit $a" "$d/merged" 2>/dev/null)" -ne 2 ] || [ "$(wc -l <"$d/merged")" -ne 2 ]; then
-        echo "SELF-TEST FAIL: the fallback gh pr merge must pass --match-head-commit <approved sha> (PR 1 and 6 only)" >&2; bad=1
+    if [ -e "$d/other" ]; then
+        echo "SELF-TEST FAIL: a refused enqueue must not fall back to any other gh call (the head pin is the mutation only)" >&2; bad=1
     fi
     [ "$bad" -eq 0 ] && echo "rearm_ready self-test: 4 cases ok"
     return "$bad"
