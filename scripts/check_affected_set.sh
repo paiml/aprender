@@ -11,7 +11,7 @@ row() { # name want got
   if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1"; echo "  want: $2" | head -c 300; echo; echo "  got:  $3" | head -c 300; echo; fail=1; fi
 }
 run() { printf '%s\n' "$@" >"$t/d"; $A --diff-from "$t/d"; }
-core_list=" aprender-core aprender-compute aprender-contracts apr-cli "
+core_list=" aprender-core aprender-compute aprender-contracts apr-cli aprender-quant "
 meta=$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null)
 members=$(jq -r '.packages[].name' <<<"$meta" | sort)
 # a non-core crate that has dependents, and a leaf with none
@@ -31,6 +31,8 @@ want=$(cargo tree --offline -i "$wp" --workspace -e normal,dev,build --prefix no
 row "crate with dependents ($wp) -> itself + dependents" "$want" "$(run "$wd/src/lib.rs" | sort -u)"
 row "leaf crate ($lp) -> itself only" "$lp" "$(run "$ld/src/lib.rs")"
 row "core crate -> ALL" ALL "$(run crates/aprender-core/src/lib.rs)"
+row "aprender-quant source -> ALL (aprender-serve capability.rs reads aprender-quant/src/ggml_type.rs)" ALL "$(run crates/aprender-quant/src/ggml_type.rs)"
+row "a crate's build.rs -> ALL (contracts build_helper.rs reads crates/*/build.rs)" ALL "$(run "$ld/build.rs")"
 row "apr-cli source -> ALL (aprender-core tests read apr-cli/src/commands_enum.rs)" ALL "$(run crates/apr-cli/src/commands_enum.rs)"
 row "--diff-from with .. is refused (SEC010)" "2" "$($A --diff-from ../x >/dev/null 2>&1; echo $?)"
 row "Cargo.lock -> ALL" ALL "$(run Cargo.lock)"
@@ -81,6 +83,9 @@ c" "$(mv_run "$abs")"
 sed 's/--name-only --no-renames/--name-only/' "$A" >"$t/mut-rn.sh"
 if cmp -s "$A" "$t/mut-rn.sh"; then echo "FAIL mutant did not apply"; fail=1
 else row "MUTANT: letting git detect renames is caught by the rename row" "c" "$(mv_run "$t/mut-rn.sh")"; fi
+sed '/^    crates\/\*\/build.rs)/d' "$A" >"$t/mut-build.sh"
+if cmp -s "$A" "$t/mut-build.sh"; then echo "FAIL build.rs mutant did not apply"; fail=1
+else printf '%s\n' "$ld/build.rs" >"$t/db"; row "MUTANT: dropping the build.rs arm is caught by the build.rs row" "$lp" "$(bash "$t/mut-build.sh" --diff-from "$t/db" | head -n1 || true)"; fi
 # mutants: the skip list that used to exist (docs/*, *.md) must be caught by the ALL rows above.
 sed 's#^    crates/\*.rs) ;;#    docs/* | *.md) continue ;;\n    crates/*.rs) ;;#' "$A" >"$t/mut-docs.sh"
 if cmp -s "$A" "$t/mut-docs.sh"; then echo "FAIL docs-skip mutant did not apply"; fail=1

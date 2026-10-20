@@ -23,8 +23,9 @@
 set -euo pipefail
 # CORE = ALL on touch. apr-cli is here because other crates' tests read its sources (aprender-core readme_contract.rs reads
 # apr-cli/src/commands_enum.rs; spec_checklist_*, toyota_principles_tests). Reader edges are not in cargo metadata, so a
-# crate whose source another crate reads at run time must be listed.
-CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts apr-cli}"
+# crate whose source another crate reads at run time must be listed (aprender-quant: aprender-serve/capability.rs reads
+# aprender-quant/src/ggml_type.rs). Any crates/*/build.rs is ALL: contracts/build_helper.rs reads crates/*/build.rs.
+CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts apr-cli aprender-quant}"
 filter=0 from=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -49,6 +50,7 @@ touched=""
 while IFS= read -r f; do
   case "$f" in
     '') continue ;;
+    crates/*/build.rs) emit ALL; exit 0 ;;
     crates/*.rs) ;;
     crates/*) emit ALL; exit 0 ;;
   esac
