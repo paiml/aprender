@@ -8,15 +8,27 @@
 # Fail-safe: anything this tool cannot place in a package is ALL.
 #   crates/<pkg>/...        the package + its reverse-dependency closure (cargo metadata)
 #   a CORE crate            ALL (its closure is the workspace; naming it would only hide that)
-#   docs/, *.md, ci/sections.yml, ci/shard-step-costs.tsv, ci/explicit-test-commands.d/
-#                           contribute nothing (no crate code)
-#   Cargo.lock              (git mode only) the packages whose [[package]] block changed, closed over the
-#                           lock graph; unreadable lock / no changed block / --diff-from -> ALL
-#   Cargo.toml, rust-toolchain.toml, .cargo/, .github/, Makefile, any other path
-#                           ALL
-# An empty diff prints nothing. --diff-from reads the changed paths from FILE (tests).
+#   Cargo.toml of a crate   ALL (a manifest edit changes features/deps, which no path can bound)
+#   docs/, root *.md, ci/ (sections.yml, explicit-test-commands.d/, ...), Cargo.lock, root Cargo.toml,
+#   rust-toolchain.toml, .cargo/, .github/, Makefile, any other path outside a crate
+#                           ALL (tests read README.md, CLAUDE.md, ci/sections.yml and docs/ at run time)
+# Any non-.rs file under crates/<pkg>/ (README.md, *.json, *.toml, ...) is ALL: other crates' tests read them
+# (aprender-core readme_contract.rs reads every crates/*/README.md; aprender-contracts reads aprender-serve/kernel-registry.json).
+# An empty diff, or a diff git cannot compute (bad base: exit 128), is ALL: nothing was
+# measured, so nothing may be skipped.
+# git diff runs with --no-renames: a moved file is its old path AND its new path (a rename
+# out of a crate would otherwise show only the destination and the source crate would be skipped).
+# --diff-from reads the changed paths from FILE (tests). AFFECTED_META / AFFECTED_ROOT
+# replace `cargo metadata` and the checkout root (tests; synthetic graphs).
 set -euo pipefail
-CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts}"
+# CORE = ALL on touch. apr-cli is here because other crates' tests read its sources (aprender-core readme_contract.rs reads
+# apr-cli/src/commands_enum.rs; spec_checklist_*, toyota_principles_tests). Reader edges are not in cargo metadata, so a
+# crate whose source another crate reads at run time must be listed (aprender-quant: aprender-serve/capability.rs reads
+# aprender-quant/src/ggml_type.rs). Any crates/*/build.rs is ALL: contracts/build_helper.rs reads crates/*/build.rs.
+CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts apr-cli aprender-quant}"
+# READERS = crates whose tests read OTHER crates' files at run time (CARGO_MANIFEST_DIR/.., crates/, ../<crate>). CORE ones are ALL on touch, but that does not put them in a non-ALL set; every non-ALL set includes them, because the touched crate may be what they read. scripts/check_affected_readers.sh
+# goes RED on a reader this list (or CORE) lacks.
+READERS="${AFFECTED_READERS:-apr-cli aprender-build-sha aprender-cbtop aprender-cgp aprender-ci-tools aprender-compute aprender-compute-xtask aprender-contracts aprender-contracts-cli aprender-contrastive-data aprender-core aprender-data aprender-db aprender-decide aprender-distribute aprender-explain aprender-gpu aprender-mcp aprender-orchestrate aprender-present-cli aprender-present-core aprender-present-lib aprender-present-terminal aprender-present-yaml aprender-profile aprender-qa-certify aprender-qa-cli aprender-qa-gen aprender-qa-report aprender-qa-runner aprender-quant aprender-rag aprender-registry aprender-review-experiment aprender-rollup aprender-serve aprender-shell aprender-simulate aprender-test-cli aprender-test-lib aprender-train aprender-train-distill aprender-train-inspect aprender-train-shell aprender-tsp aprender-update aprender-verify-ml aprender-viz aprender-viz-ttop facades}"
 filter=0 from=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -25,23 +37,26 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
-if [ -n "$from" ]; then files="$(cat "$from")"; else files="$(git diff --name-only "${1:-origin/main}...${2:-HEAD}" 2>/dev/null || git diff --name-only "${1:-origin/main}" "${2:-HEAD}")"; fi
+case "$from" in *..*) echo "affected_set: refusing a --diff-from with \"..\": $from" >&2; exit 2 ;; esac   # bashrs SEC010
+if [ -n "$from" ]; then files="$(cat "$from")"
+else files="$(git diff --name-only --no-renames "${1:-origin/main}...${2:-HEAD}")" || files=""; fi
 emit() { # $@ = package names, or ALL
   if [ "${1:-}" = ALL ]; then [ "$filter" = 1 ] && echo 'all()' || echo ALL; return; fi
   if [ "$filter" = 1 ]; then printf '%s\n' "$@" | sed 's/.*/package(&)/' | paste -sd'|' | sed 's/|/ | /g'; else printf '%s\n' "$@"; fi
 }
-[ -n "$files" ] || exit 0
-meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null || cargo metadata --no-deps --format-version 1)"
-root="$(git rev-parse --show-toplevel)"
-dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta")"
-touched="" lock=0
+[ -n "$files" ] || { emit ALL; exit 0; }
+if [ -n "${AFFECTED_META:-}" ]; then meta="$(cat "$AFFECTED_META")"
+else meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null || cargo metadata --no-deps --format-version 1)"; fi
+root="${AFFECTED_ROOT:-$(git rev-parse --show-toplevel)}"
+dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta")" || { emit ALL; exit 0; }
+[ -n "$dirs" ] || { emit ALL; exit 0; }
+touched=""
 while IFS= read -r f; do
   case "$f" in
     '') continue ;;
-    # FLOW-010 P3: a lock-only change is narrowed by its [[package]] diff, but only when
-    # git can answer (no --diff-from: a bare path list has no content, so it stays ALL).
-    Cargo.lock) if [ -z "$from" ]; then lock=1; continue; fi ;;
-    docs/* | *.md | ci/sections.yml | ci/shard-step-costs.tsv | ci/explicit-test-commands.d/*) continue ;;
+    crates/*/build.rs) emit ALL; exit 0 ;;
+    crates/*.rs) ;;
+    crates/*) emit ALL; exit 0 ;;
   esac
   # longest manifest dir that prefixes the path
   pkg="$(awk -F'\t' -v f="$f" 'index(f, $2 "/") == 1 && length($2) > best { best = length($2); n = $1 } END { print n }' <<<"$dirs")"
@@ -49,29 +64,14 @@ while IFS= read -r f; do
   case " $CORE " in *" $pkg "*) emit ALL; exit 0 ;; esac
   touched="$touched"$'\n'"$pkg"
 done <<<"$files"
-if [ "$lock" = 1 ]; then
-  b="${1:-origin/main}"; h="${2:-HEAD}"
-  mb="$(git merge-base "$b" "$h" 2>/dev/null || echo "$b")"
-  # one line per [[package]] block: name<TAB>block with newlines as |
-  lock_pkgs() { git show "$1:Cargo.lock" 2>/dev/null | awk -v RS='\\[\\[package\\]\\]\n' 'match($0, /name = "[^"]+"/) { n = substr($0, RSTART + 8, RLENGTH - 9); gsub(/\n/, "|"); print n "\t" $0 }'; }
-  old="$(lock_pkgs "$mb" | sort -u || true)"; new="$(lock_pkgs "$h" | sort -u || true)"
-  # unreadable lock on either side, or no changed block: cannot place the change -> ALL
-  { [ -n "$old" ] && [ -n "$new" ]; } || { emit ALL; exit 0; }
-  changed="$(comm -13 <(printf '%s\n' "$old") <(printf '%s\n' "$new") | cut -f1 | sort -u)"
-  [ -n "$changed" ] || { emit ALL; exit 0; }
-  # reverse closure over the lock graph (a changed external crate reaches members through other externals)
-  seeds="$(printf '%s\n' "$new" | awk -F'\t' -v chg="$changed" '
-    BEGIN { n = split(chg, c, "\n"); for (i = 1; i <= n; i++) hit[c[i]] = 1 }
-    { split($2, a, "|"); for (i = 1; i <= length(a); i++) if (a[i] ~ /^ "/) { d = a[i]; gsub(/^ *"|"?,?$/, "", d); sub(/ .*/, "", d); dep[++m] = d; who[m] = $1 } }
-    END { do { g = 0; for (i = 1; i <= m; i++) if ((dep[i] in hit) && !(who[i] in hit)) { hit[who[i]] = 1; g = 1 } } while (g)
-          for (k in hit) print k }')"
-  touched="$touched"$'\n'"$(jq -r --argjson s "$(printf '%s\n' "$seeds" | jq -R . | jq -s .)" '.packages[].name | select(. as $n | $s | index($n))' <<<"$meta")"
-fi
 touched="$(printf '%s\n' "$touched" | grep -v '^$' | sort -u || true)"
-[ -n "$touched" ] || { [ "$lock" = 1 ] && emit ALL; exit 0; }
-mapfile -t out < <(jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" '
+[ -n "$touched" ] || { emit ALL; exit 0; }   # nothing placed in a package: nothing may be skipped
+# The closure, then aprender-core: its falsification_spec_v10 test scans every crate's src, so ANY non-ALL set includes it (and the READERS).
+res="$(jq -r --argjson t "$(printf '%s\n' "$touched" | jq -R . | jq -s .)" --arg rd "$READERS" '
   (.packages | map({name, deps: [.dependencies[].name]})) as $p
-  | def grow($s): ($s + [($p | .[]) | select(any(.deps[]; . as $d | $s | index($d))) | .name] | unique);
+  | def grow($s): ($s + [$p|.[] | select(any(.deps[]; . as $d | $s | index($d))) | .name] | unique);
     (.packages | map(.name)) as $m
-    | ($t | until(grow(.) == .; grow(.))) | .[] | select(. as $n | $m | index($n))' <<<"$meta")
+    | (($t | until(grow(.) == .; grow(.))) + ($rd | split(" ")) | unique) | .[] | select(. as $n | $m | index($n))' <<<"$meta")" || { emit ALL; exit 0; }
+[ -n "$res" ] || { emit ALL; exit 0; }
+mapfile -t out <<<"$res"
 emit "${out[@]}"
