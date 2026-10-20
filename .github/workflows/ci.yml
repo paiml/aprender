@@ -474,9 +474,12 @@ jobs:
           export GIT_CONFIG_VALUE_0
           if git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/merge" &&
              [ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&
-             git worktree add -q --detach "$RUNNER_TEMP/prtree" FETCH_HEAD &&
-             [ -f scripts/ci/receipt_ok_arg.sh ]; then
-            ok="$(cd "$RUNNER_TEMP/prtree" && bash "$GITHUB_WORKSPACE/scripts/ci/receipt_ok_arg.sh" "$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}")" || ok=0
+             unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GH_TOKEN &&
+             git -c core.hooksPath=/dev/null worktree add -q --no-checkout --detach "$RUNNER_TEMP/prtree" FETCH_HEAD &&
+             git show HEAD:scripts/ci/receipt_ok_arg.sh > "$RUNNER_TEMP/rok.sh"; then
+            # --no-checkout: the PR tree has no files, so no PR executable can sit in the verifier's
+            # cwd, and no filter or hook runs. The wrapper is read from the base object database.
+            ok="$(cd "$RUNNER_TEMP/prtree" && bash "$RUNNER_TEMP/rok.sh" "$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}")" || ok=0
           fi
           [ "$ok" = 1 ] || ok=0
           printf 'ok=%s\n' "$ok" >> "$GITHUB_OUTPUT"
