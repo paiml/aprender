@@ -160,7 +160,7 @@ PATHRES='(command[[:space:]]+-v[[:space:]]+apr|which[[:space:]]+apr|type[[:space
 # times and the openers are what keep prose out. Do not hand-tune these; add a
 # case-table row and re-run --self-test.
 #
-# No ABS_PV class: unlike apr there is no hardcoded absolute pv path in the tree,
+# ABS_PV (class 6, below) was added after #5776; the tree had no hardcoded pv path then,
 # and pv_bin.sh asks cargo rather than naming a path. If one ever appears, the
 # apr ABS class is the template.
 # OPEN_PV extends OPEN with shell KEYWORDS. `if pv validate ...; then` is the
@@ -178,6 +178,13 @@ OPEN_PV_KW="${OPEN_PV_KW}|then|do|else"
 OPEN_PV="(${OPEN}|(^|[[:space:];&|(])(${OPEN_PV_KW})[[:space:]]+)"
 BARE_PV="${OPEN_PV}[[:space:]]*@?[[:space:]]*${WRAP}*pv[[:space:]]+[a-z\"'\$/~.-]"
 PATHRES_PV='(command[[:space:]]+-v[[:space:]]+pv|which[[:space:]]+pv|type[[:space:]]+(-[A-Za-z]+[[:space:]]+)?pv|require_tool[[:space:]]+pv)([[:space:]]|[;)&|`]|$)'
+# CLASS 6/7: the two ways a regen escapes the pin without writing a bare `pv` command (#5776).
+# ~/.cargo/bin/pv was release 0.71.4, older than the shapes/witness format, and a regen through it
+# rewrote shapes.ttl by 68 lines. ABS_PV: a hardcoded pv path. DEFAULT_PV: a variable whose fallback is
+# the bare name (`PV=pv`, `${PV:-pv}`), which resolves through PATH the moment the pin is unset.
+# Lines naming FLEET_PV_ are the fleet-pv advisory probe (LAB), which looks for a fleet binary on purpose.
+ABS_PV='(^|[[:space:]@"'"'"'=(`]|:-|:=)(/|~/|\$HOME/|\$\(HOME\)/)[A-Za-z0-9_.$/-]*/bin/pv([[:space:]"'"'"'})]|$)'
+DEFAULT_PV='(^|[[:space:];])(export[[:space:]]+)?[A-Za-z_]*PV[A-Za-z_]*=["'"'"']?pv["'"'"']?([[:space:];]|$)|:[-=]pv\}'
 
 MIN_EXPECTED="${MIN_EXPECTED:-80}"
 
@@ -403,6 +410,17 @@ check_file() {
         if [[ $probe =~ $PATHRES ]]; then
             report 'PATH-APR' "$f" "$lineno" "$trimmed"
         fi
+        # CLASS 6/7 (#5776): an absolute pv path, or a variable that falls back to bare `pv`.
+        case "$trimmed" in
+            *FLEET_PV_*) : ;;
+            *)
+                if [[ $trimmed =~ $ABS_PV ]]; then
+                    report "$f" "$lineno" "ABS-PV" "$trimmed"
+                fi
+                if [[ $trimmed =~ $DEFAULT_PV ]]; then
+                    report "$f" "$lineno" "DEFAULT-PV" "$trimmed"
+                fi ;;
+        esac
     done < <(emit_lines "$f")
 }
 
@@ -515,6 +533,20 @@ if [ "${1:-}" = "--self-test" ]; then
         fi
     }
 
+    # ABS_PV / DEFAULT_PV run on the trimmed raw line in check_file, with no demessage.
+    probe_case_raw() {
+        local re="$1" line="$2" want="$3" label="$4" t
+        ltrim "$line"; t="$LTRIM"
+        case "$t" in '#'*) t='' ;; esac
+        if [ "$want" = match ] && ! [[ $t =~ $re ]]; then
+            printf 'CASE-TABLE FAIL [%s] expected MATCH, got none: %s\n' "$label" "$line" >&2
+            fails=$((fails + 1))
+        elif [ "$want" = nomatch ] && [[ $t =~ $re ]]; then
+            printf 'CASE-TABLE FAIL [%s] expected NO match, got one: %s\n' "$label" "$line" >&2
+            fails=$((fails + 1))
+        fi
+    }
+
     # PV rows. probe_case uses demessage(); check_file uses demessage_pv() for
     # the pv classes, so a pv row driven through probe_case would test a pipeline
     # that does not ship -- the exact trap probe_case's own comment warns about.
@@ -560,6 +592,19 @@ if [ "${1:-}" = "--self-test" ]; then
     for c in "${must_not_match_pv[@]}";      do probe_case_pv "$BARE_PV" "$c" nomatch bare-pv; done
     for c in "${must_match_pathres_pv[@]}";  do probe_case_pv "$PATHRES_PV" "$c" match pathres-pv; done
     for c in "${must_not_match_pathres_pv[@]}"; do probe_case_pv "$PATHRES_PV" "$c" nomatch pathres-pv; done
+
+    # #5776: ~/.cargo/bin/pv (0.71.4) regenerated shapes.ttl in the old form. Hardcoded path / bare fallback.
+    must_match_abs_pv=( '~/.cargo/bin/pv extract contracts' '"$HOME/.cargo/bin/pv" extract contracts'
+        '/usr/local/bin/pv extract contracts' 'PV="${PV:-/home/noah/.cargo/bin/pv}"' $'\t@~/.cargo/bin/pv lint x' )
+    must_not_match_abs_pv=( 'strip "/workspace/target/$T/release/pv"' '"$PV" extract contracts' 'cargo build --bin pv' 'target/release/pv extract x'
+        '. scripts/pv_bin.sh || exit 1' 'cp pv /tmp/pv-copy' 'ls crates/aprender-contracts-cli/src/bin/pv' )
+    must_match_default_pv=( 'PV=pv' 'PV="pv"' 'export PV=pv' 'PV_BIN=pv' 'PV=${PV:-pv}' ': "${PV:=pv}"' '"${PV:-pv}" extract contracts' )
+    must_not_match_default_pv=( 'PV="$ROOT/target/debug/pv"' 'PV=$(resolve_pv)' 'PVC=pvc' 'GPV=pvx' 'echo "set PV to a path"'
+        'CONTRACTS_GATE_PV=${CONTRACTS_GATE_PV:-}' )
+    for c in "${must_match_abs_pv[@]}";        do probe_case_raw "$ABS_PV" "$c" match abs-pv; done
+    for c in "${must_not_match_abs_pv[@]}";    do probe_case_raw "$ABS_PV" "$c" nomatch abs-pv; done
+    for c in "${must_match_default_pv[@]}";    do probe_case_raw "$DEFAULT_PV" "$c" match default-pv; done
+    for c in "${must_not_match_default_pv[@]}"; do probe_case_raw "$DEFAULT_PV" "$c" nomatch default-pv; done
 
     for c in "${must_match_bare[@]}"; do probe_case "$BARE_APR" "$c" match bare; done
     for c in "${must_not_match_bare[@]}"; do
@@ -647,6 +692,20 @@ APR="$(which apr)"
         '#!/usr/bin/env bash
 APR="${APR:-/home/noah/.cargo/bin/apr}"'
 
+    surface_probe 'abs-pv-script' 'scripts/regen.sh' \
+        '#!/usr/bin/env bash
+~/.cargo/bin/pv extract contracts'
+    surface_probe 'abs-pv-makefile' 'Makefile' \
+        'regen:
+	@$(HOME)/.cargo/bin/pv extract contracts'
+    surface_probe 'default-pv-script' 'scripts/regen2.sh' \
+        '#!/usr/bin/env bash
+PV="${PV:-pv}"
+"$PV" extract contracts'
+    surface_probe 'bare-pv-script' 'scripts/regen3.sh' \
+        '#!/usr/bin/env bash
+pv extract contracts'
+
     # A heredoc a shell RUNS is still an execution surface. This is the
     # direction a heredoc filter can LOSE, so it is asserted before the
     # green one: if only the green case existed, deleting the exec_here
@@ -690,7 +749,7 @@ FIXTURE
         printf '\nself-test FAILED with %s case(s).\n' "$fails" >&2
         exit 1
     fi
-    printf 'self-test OK: %s regex cases and 11 surface probes.\n' \
+    printf 'self-test OK: %s regex cases and 15 surface probes.\n' \
         "$(( ${#must_match_bare[@]} + ${#must_not_match_bare[@]} + ${#must_match_abs[@]} \
              + ${#must_not_match_abs[@]} + ${#must_match_pathres[@]} + ${#must_not_match_pathres[@]} \
              + ${#must_match_pv[@]} + ${#must_not_match_pv[@]} \
