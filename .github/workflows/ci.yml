@@ -156,9 +156,26 @@ jobs:
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
           setsid --wait bash scripts/check_ci_wait_cancel.sh
 
+  # D2 (FLOW-010 runner-wait): admission cap. A PR job takes a clean-room slot only when its rank (first-ready,
+  # non-draft, checks in flight) is <= K = pool/3. Runs on a cheap label, never on clean-room; FAIL-OPEN (scripts/pr_admit.sh).
+  admit:
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    runs-on: ${{ fromJSON(vars.ADMIT_RUNS_ON || '["ubuntu-latest"]') }}
+    timeout-minutes: 130
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for an admission slot (fail-open)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash scripts/pr_admit.sh wait --self "${{ github.event.pull_request.number }}" --k "${{ vars.ADMIT_K || 8 }}" --max-min 120 --poll 300
+
   x86-main:
-    needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && !(github.event_name == 'pull_request' && github.event.pull_request.draft) }}
+    needs: [mg-reuse, admit]
+    if: ${{ !cancelled() && (needs.admit.result == 'success' || needs.admit.result == 'skipped') && needs.mg-reuse.outputs.x86 != '1' && !(github.event_name == 'pull_request' && github.event.pull_request.draft) }}
     # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 240
@@ -443,7 +460,8 @@ jobs:
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    needs: [admit]
+    if: ${{ !cancelled() && (needs.admit.result == 'success' || needs.admit.result == 'skipped') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
