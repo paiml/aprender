@@ -133,7 +133,7 @@ fn download_file(url: &str, path: &Path) -> Result<()> {
     // Use ureq for simple HTTP requests (already a dependency via hf-hub)
     let response = ureq::get(url)
         .call()
-        .map_err(|e| CliError::ValidationFailed(format!("Download failed: {e}")))?;
+        .map_err(|e| CliError::ValidationFailed(format!("Download failed ({url}): {e}")))?;
 
     if response.status().as_u16() != 200 {
         return Err(CliError::ValidationFailed(format!(

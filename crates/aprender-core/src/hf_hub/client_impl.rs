@@ -262,9 +262,7 @@ impl HfHubClient {
             // 409 Conflict means repo already exists - that's fine.
             // 400 Bad Request often means repo exists under different settings;
             // continue with the upload attempt.
-            Ok(resp) if !matches!(resp.status().as_u16(), 500..=599 | 401..=408 | 410..=499) => {
-                Ok(())
-            }
+            Ok(resp) if repo_create_status_ok(resp.status().as_u16()) => Ok(()),
             Ok(mut resp) => {
                 let code = resp.status().as_u16();
                 let body = body_text(&mut resp);
@@ -413,6 +411,30 @@ impl HfHubClient {
                 }
             }
             Err(e) => Err(HfHubError::NetworkError(format!("Network error: {e}"))),
+        }
+    }
+}
+
+/// `POST /api/repos/create` outcomes that let the upload proceed: success, 400 (exists with other
+/// settings) and 409 (exists). Every other status — including 1xx/3xx — is an error.
+#[cfg(feature = "hf-hub-integration")]
+fn repo_create_status_ok(code: u16) -> bool {
+    matches!(code, 200..=299 | 400 | 409)
+}
+
+#[cfg(all(test, feature = "hf-hub-integration"))]
+mod repo_create_status_tests {
+    use super::repo_create_status_ok;
+
+    #[test]
+    fn accepts_only_2xx_400_409() {
+        for code in [200, 201, 204, 299, 400, 409] {
+            assert!(repo_create_status_ok(code), "{code} must be accepted");
+        }
+        for code in [
+            100, 101, 301, 302, 304, 399, 401, 403, 404, 408, 410, 429, 500, 503,
+        ] {
+            assert!(!repo_create_status_ok(code), "{code} must be rejected");
         }
     }
 }
