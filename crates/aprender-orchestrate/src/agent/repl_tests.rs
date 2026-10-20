@@ -272,3 +272,70 @@ fn test_auto_compact_triggers_at_80_pct() {
         let _ = std::fs::remove_dir_all(&store.dir);
     }
 }
+
+// ── run_turn_streaming (#5627, FALSIFY-CODE-PARITY-007) ──────────────────────
+
+mod run_turn_streaming_tests {
+    use super::*;
+    use crate::agent::driver::mock::MockDriver;
+    use crate::agent::memory::InMemorySubstrate;
+    use crate::agent::result::AgentError;
+
+    /// Run one streamed turn against `driver`; returns the result and the history.
+    async fn turn(
+        driver: &MockDriver,
+        cancelled: bool,
+    ) -> (Result<AgentLoopResult, AgentError>, Vec<Message>) {
+        let manifest = AgentManifest::default();
+        let tools = ToolRegistry::new();
+        let memory = InMemorySubstrate::new();
+        let mut history = Vec::new();
+        let (tx, rx) = mpsc::channel(16);
+        let cancel = Arc::new(AtomicBool::new(cancelled));
+        let result = run_turn_streaming(
+            &manifest,
+            "hello",
+            driver,
+            &tools,
+            &memory,
+            &mut history,
+            tx,
+            rx,
+            &cancel,
+        )
+        .await;
+        (result, history)
+    }
+
+    #[tokio::test]
+    async fn success_returns_the_reply_and_extends_history() {
+        let (result, history) = turn(&MockDriver::single_response("hi there"), false).await;
+        let result = result.expect("a fitting prompt succeeds");
+        assert_eq!(result.text, "hi there");
+        assert_eq!(result.iterations, 1);
+        assert!(matches!(history.first(), Some(Message::User(p)) if p == "hello"));
+        assert!(matches!(history.last(), Some(Message::Assistant(t)) if t == "hi there"));
+    }
+
+    #[tokio::test]
+    async fn error_without_cancel_is_passed_through_unchanged() {
+        let driver = MockDriver::single_response("x").with_context_window(1);
+        let (result, _) = turn(&driver, false).await;
+        let err = result.expect_err("a 1-token window refuses the prompt");
+        assert!(matches!(err, AgentError::ContextOverflow { .. }), "{err}");
+    }
+
+    #[tokio::test]
+    async fn error_with_cancel_is_reported_as_cancelled_by_user() {
+        let driver = MockDriver::single_response("x").with_context_window(1);
+        let (result, _) = turn(&driver, true).await;
+        let err = result.expect_err("cancelled turn fails");
+        assert!(matches!(&err, AgentError::CircuitBreak(m) if m == "cancelled by user"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn cancel_flag_does_not_mask_a_successful_turn() {
+        let (result, _) = turn(&MockDriver::single_response("done"), true).await;
+        assert_eq!(result.expect("success wins over a late cancel").text, "done");
+    }
+}

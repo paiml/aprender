@@ -597,6 +597,22 @@ falsification_conditions:
       - agent::code::tests::falsify_3775_empty_completion_is_a_failure_document
       - agent::code_envelope::tests::every_agent_error_variant_has_a_snake_case_kind
 
+  - id: FALSIFY-CODE-PARITY-007
+    name: REPL streamed turn reports cancel only on error (#5627)
+    status: ACTIVE
+    description: >
+      `run_turn_streaming` (agent/repl.rs) returns the agent's result unchanged
+      on success, passes a non-cancelled error through unchanged, and rewrites
+      an error to `CircuitBreak("cancelled by user")` only when the cancel flag
+      is set; a set flag never masks a successful turn.
+    test: >
+      cargo test -p aprender-orchestrate --lib -- run_turn_streaming_tests
+    tests:
+      - agent::repl::tests::run_turn_streaming_tests::success_returns_the_reply_and_extends_history
+      - agent::repl::tests::run_turn_streaming_tests::error_without_cancel_is_passed_through_unchanged
+      - agent::repl::tests::run_turn_streaming_tests::error_with_cancel_is_reported_as_cancelled_by_user
+      - agent::repl::tests::run_turn_streaming_tests::cancel_flag_does_not_mask_a_successful_turn
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Priority buckets (flattened from category rows for quick CI grep)
 # ─────────────────────────────────────────────────────────────────────────────
