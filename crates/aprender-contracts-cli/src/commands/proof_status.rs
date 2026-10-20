@@ -21,8 +21,8 @@ pub fn run(
     // nowhere printed its report and exited 0), and `--verify-bindings` downgraded
     // silently. Now every `implemented` binding is looked up with the
     // `pv verify-bindings` resolver; a ghost is downgraded, listed under
-    // `GHOST BINDINGS (n)`, and the command exits 1. `--verify-bindings` is a no-op
-    // alias, kept so existing invocations still parse.
+    // `GHOST BINDINGS (n)`, and the command exits 1. `--verify-bindings <root>` only
+    // scans `root` for Kani proofs (#4531, below).
     let (binding, ghosts) = match binding_path {
         Some(bp) => {
             let (reg, ghosts) = resolve_bindings(bp, parse_binding(bp)?);
@@ -129,15 +129,17 @@ fn scan_kani_proofs(root: &Path) -> HashSet<String> {
     found
 }
 
-/// A `#[kani::proof...]` attribute names the next `fn` line.
+/// A `kani::proof` attribute (also inside `cfg_attr`) names the next `fn`, which may
+/// share its line.
 fn collect_kani_proofs(src: &str, found: &mut HashSet<String>) {
     let mut pending = false;
     for line in src.lines() {
         let t = line.trim();
-        if t.starts_with("#[kani::proof") {
+        if t.starts_with("#[") && t.contains("kani::proof") {
             pending = true;
-        } else if pending {
-            if let Some(rest) = t.split("fn ").nth(1).filter(|_| t.contains("fn ")) {
+        }
+        if pending {
+            if let Some(rest) = t.split_once("fn ").map(|(_, r)| r) {
                 let name: String = rest
                     .chars()
                     .take_while(|c| c.is_alphanumeric() || *c == '_')
@@ -270,10 +272,11 @@ mod tests {
     fn kani_proofs_are_found_by_attribute_not_by_name() {
         let mut found = HashSet::new();
         collect_kani_proofs(
-            "#[kani::proof]\n#[kani::unwind(4)]\nfn verify_a() {}\nfn verify_plain() {}\n#[kani::proof]\npub fn verify_b() {}\n",
+            "#[kani::proof]\n#[kani::unwind(4)]\nfn verify_a() {}\nfn verify_plain() {}\n#[kani::proof]\npub fn verify_b() {}\n#[cfg_attr(kani, kani::proof)]\nfn verify_c() {}\n#[kani::proof] fn verify_d() {}\n",
             &mut found,
         );
         assert!(found.contains("verify_a") && found.contains("verify_b"));
+        assert!(found.contains("verify_c") && found.contains("verify_d"));
         assert!(!found.contains("verify_plain"));
     }
 
