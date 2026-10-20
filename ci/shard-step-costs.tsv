@@ -6,7 +6,7 @@
 #   seconds: ONE number  = the step's cost on whichever shard runs it (a once-only step)
 #            N numbers   = comma-separated, one per shard (a partitioned step)
 # A step not listed here is assumed to cost the same on every shard.
-# NOTE: rows 13 and 18 hold 3-shard measurements; replace them after the first 12-shard full-tier run.
+# NOTE: the "Workspace lib tests" and "Integration tests" rows hold 3-shard measurements; replace them after the first 12-shard full-tier run.
 #
 # Source of every `measured` row: mean of the fat-driver `##[step N] success (Xs)` lines of
 # the three shard jobs in six full-tier merge_group runs on main, 2026-10-17/18 (attempt 1):

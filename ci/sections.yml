@@ -70,8 +70,8 @@ jobs:
   # intel 18, intel worst 51 under contention). This job is now a 12-way matrix (was 3; shard 2 hit the 3600 s cap, 2026-10-20):
   # nextest `--partition hash:N/12` splits the lib tests by stable hash, and the
   # explicit-command runner takes every 12th fragment (`--shard N/12`). The once-only
-  # steps are spread so the shards finish together (#5486): compute, the universe
-  # listing and the over-the-cap check on the last shard; the GPU crates (with their own Σ
+  # steps are spread so the shards finish together (#5486): compute and the universe
+  # listing on shard 1, the over-the-cap check on the last shard; the GPU crates (with their own Σ
   # check) and the two guards on shard 2; the examples build on shard 3. The placement
   # follows the measured per-step costs in ci/shard-step-costs.tsv. Each shard
   # owns its cargo state (registry + target parent keyed by PR_OR_REF-sN, see the
@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # NOTE: the matrix-pins above override this matrix (fat_driver.py); kept in step by check_shard_count_single_source.sh
+        # NOTE: the matrix-pins above override this matrix (fat_driver.py); the guard checks the pins and ci.yml only
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
         shards: [12]
     # PMAT-3138 (#3138): arch-neutral -- intel, yoga OR gx10. Measured 2026-09-12 on
@@ -787,7 +787,7 @@ jobs:
       # on yoga): 489 s of that shard's 794 s integration phase was this ONE
       # command, so round-robin sharding could never balance it -- a shard that
       # drew it was the long pole regardless. It is its own step on shard 3
-      # (whose fragment share is the lightest), so the shards finish
+      # (fragment share not re-measured at 12 shards), so the shards finish
       # together. Not a fragment because it is a build, not a test target, and
       # no wiring reader (check_model_tests_wired, check_beats_gated) names it.
       - name: Build every example (workspace, keep-going)
