@@ -14,7 +14,7 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 EV="${GITHUB_EVENT_NAME:-}"
 case "$EV" in
     pull_request | merge_group) ;;
-    *) exec cargo deny check advisories ;;
+    *) exec cargo deny --all-features check advisories ;;
 esac
 
 base_sha() { # the build base the pin step named

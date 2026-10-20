@@ -35,7 +35,7 @@ trap 'rm -f "${LOG:?}"' EXIT
 
 # Redirect, never pipe: reading this through a pipe would report the exit status
 # of the last stage instead of cargo-deny's.
-cargo deny check advisories > "$LOG" 2>&1
+cargo deny --all-features check advisories > "$LOG" 2>&1
 rc=$?
 
 declared="$(grep -c 'id = "RUSTSEC' deny.toml || true)"

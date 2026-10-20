@@ -62,7 +62,14 @@ main() {
     mutant 'scan without --all-features' 's/ --all-features//' 'ADG-003'
     mutant 'scan reads the net (no --disable-fetch)' 's/ --disable-fetch//' 'ADG-004'
     mutant 'second fetch before the base scan' 's|^BASERC=|cargo deny fetch --config "$W/deny.toml" db; BASERC=|' 'ADG-004'
-    [ "$bad" -eq 0 ] && echo "advisory_gate self-test: 1 real + 3 mutants ok"
+    # ADG-003 on the other two scan sites: the push path and the exemption-liveness guard.
+    local f
+    for f in "$GATE_SRC" "${EXEMPT_SRC:-scripts/check_deny_exemptions_live.sh}"; do
+        if grep -v printf "$f" | grep -E '^[^#]*cargo deny .*check .*advisories' | grep -qv -- '--all-features'; then
+            echo "SELF-TEST FAIL: ADG-003: $f scans advisories without --all-features" >&2; bad=1
+        fi
+    done
+    [ "$bad" -eq 0 ] && echo "advisory_gate self-test: 1 real + 3 mutants + 2 sites ok"
     return "$bad"
 }
 

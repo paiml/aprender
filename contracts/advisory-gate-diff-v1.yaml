@@ -45,6 +45,7 @@ equations:
       - "Exemptions live in one file"
       - "Findings are keyed code|advisory-id|crate@version over every graph, so a new crate under an id main already carries, and a yanked crate with no id, are both PR-introduced"
       - "Both sides are scanned with the BASE deny.toml; a PR that adds an advisories ignore id fails (ignores-added), so a PR cannot hide its own finding"
+      - "deny.toml advisories ignores are id-wide: cargo-deny has no per-crate ignore. They stay bounded, not scoped: ignores-added fails any PR that adds one, and check_deny_exemptions_live.sh (now --all-features, same as the gate) fails a dead one. Per-crate scoping needs an upstream cargo-deny feature and is out of this PR"
       - "The base is pinned: merge_group uses merge_group.base_sha, pull_request uses pull_request.base.sha, anything else (or a non-sha) is COULD-NOT-CHECK rc 75, never a pass"
   auto_rearm:
     formula: "when a gate fix lands, every PR that was ready (green, approved) before the stop is re-armed without a human"
@@ -105,12 +106,6 @@ falsification_tests:
     test: "advisory_gate_selftest.sh: exactly one `cargo deny fetch`, both scans --disable-fetch with one --config"
     if_fails: "DB refreshes read as PR-introduced advisories and re-create the stop"
     mutation: "sed out --disable-fetch, or add a second fetch before the base scan; the two 'ADG-004' mutant cases must turn RED (measured 2026-10-20)"
-  - id: FALSIFY-ADG-007
-    rule: "No second scanner blocks a PR on main's advisories"
-    prediction: "sov.lint and sov.security skip plain cargo deny advisories / cargo audit (advisories_diff_only: true in the vendored sovereign-ci)"
-    test: "scripts/ci/check_sov_advisories_off.sh --self-test, 4 cases, then the real tree"
-    if_fails: "the vendored scans still stop every PR on an advisory already on main (the #5793 REJECT)"
-    mutation: "set advisories_diff_only: false in ci/sections.yml, or change the vendored '= true' test; the matching case must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-005
     rule: "Andon clock"
     prediction: "the P0 ticket's due time is <= 4 h after the advisory first appears on main"
@@ -123,6 +118,12 @@ falsification_tests:
     test: "scripts/ci/rearm_ready.sh --self-test, 2 cases (head unchanged arms, moved or unapproved does not, empty arms nothing)"
     if_fails: "a gate fix arms an unreviewed head into the queue"
     mutation: "drop the approved_sha == current_sha test in select_; the moved-head case must turn RED"
+  - id: FALSIFY-ADG-007
+    rule: "No second scanner blocks a PR on main's advisories"
+    prediction: "sov.lint and sov.security skip plain cargo deny advisories / cargo audit (advisories_diff_only: true in the vendored sovereign-ci)"
+    test: "scripts/ci/check_sov_advisories_off.sh --self-test, 4 cases, then the real tree"
+    if_fails: "the vendored scans still stop every PR on an advisory already on main (the #5793 REJECT)"
+    mutation: "set advisories_diff_only: false in ci/sections.yml, or change the vendored '= true' test; the matching case must turn RED (measured 2026-10-20)"
 
 qa_gate:
   id: F-ADG-001
