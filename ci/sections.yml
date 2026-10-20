@@ -919,6 +919,15 @@ jobs:
           files=("$RUNNER_TEMP"/quick-sel/*.junit.xml)
           # a shard whose share is empty has no junit; one that owes a call and has none fails in the Σ step
           [ "${#files[@]}" -eq 0 ] || cp "${files[@]}" "$RUNNER_TEMP/sigma/quick-sel/"
+      # FLOW-010 P1: the archive from workspace-test-archive (a `needs` of this job),
+      # through the driver's own download-artifact, which fetches this run's artifact
+      # by name into the section workspace. Required in the quick tier.
+      - uses: actions/download-artifact@v7
+        if: steps.tier.outputs.tier == 'quick'
+        with:
+          name: ws-archive
+          path: ws-archive
+          merge-multiple: true
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick'
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
@@ -954,19 +963,17 @@ jobs:
           # FLOW-010 P1 (amendment 3 item 7): every shard used to build this SAME
           # binary set (the registry targets do not depend on the shard; only the
           # hash partition does) -- 8 to 12.5 min of build per shard in run
-          # 39469451292. The workspace-test-archive job builds it once and the
-          # shard runs its partition from the archive. No archive (the job was
-          # skipped, failed, or this section runs outside ci.yml) = the build
-          # below, with the SAME -E filterset and partition.
-          archive_mount=()
-          read -ra run_args <<< "$BUILD_FLAGS"
-          if [ -s "$RUNNER_TEMP/ws-archive/ws.tar.zst" ] && [ -s "$RUNNER_TEMP/ws-archive/owed.json" ]; then
-            archive_mount=(-v "$RUNNER_TEMP/ws-archive:/archive:ro")
-            run_args=(--archive-file /archive/ws.tar.zst --workspace-remap /workspace --extract-to /workspace/target/ar)
-            printf 'FLOW-010 P1: running shard %s from the prebuilt archive\n' "$SHARD"
-          else
-            printf 'FLOW-010 P1: no archive for this run, building in the shard\n'
-          fi
+          # 39469451292. The workspace-test-archive job builds it once; the archive
+          # arrives through the driver's own download-artifact step above. In the
+          # quick tier the archive is REQUIRED: absent, unbound to THIS run's
+          # filterset/flags/commit/image, or unreadable = this step fails (no silent
+          # second path, C324 item 6). `workspace-test-archive` is in the shard's needs,
+          # so a red archive job skips the shards and `workspace-test` goes red.
+          arc="$GITHUB_WORKSPACE/ws-archive"
+          bash scripts/ci/archive_bind_check.sh "$arc/bind.json" \
+            sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS" \
+            image="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+          printf 'FLOW-010 P1: running shard %s from the prebuilt archive\n' "$SHARD"
           docker run --rm \
           -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -974,7 +981,6 @@ jobs:
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "${SCCACHE_HOST_DIR}:/sccache" \
-            "${archive_mount[@]}" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
@@ -985,8 +991,11 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
+            -e EXPR="$EXPR" -e SHARD \
             "$IMAGE" \
-            cargo nextest run --profile ci "${run_args[@]}" -E "$EXPR" --partition "hash:${SHARD}/3"
+            bash -c 'set -euo pipefail
+              mkdir -p /workspace/target/ar
+              cargo nextest run --profile ci --archive-file /workspace/ws-archive/ws.tar.zst --workspace-remap /workspace --extract-to /workspace/target/ar --extract-overwrite -E "$EXPR" --partition "hash:${SHARD}/3"'
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -1039,27 +1048,19 @@ jobs:
             [ -s "$sig/quick-sel.all" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
             bash scripts/ci/quick_tier_shard.sh "$SHARD" 3 < "$sig/quick-sel.all" > "$sig/quick-sel.calls"
           fi
-          read -ra targets <<< "$TARGETS"
-          tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
-                  | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
-          EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
-          # FLOW-010 P1: when this shard ran from the prebuilt archive, the tree-reader
-          # yardstick is listed from that same archive (a live `nextest list` here would
-          # compile the whole set again). The archive job proved archive == the independent
-          # build-time list for this filterset (archive_list_equal.sh); the partition is
-          # nextest's own, so the shard owes exactly what its junit must hold.
-          archive_mount=(); archive_arg=""
-          if [ -s "$RUNNER_TEMP/ws-archive/ws.tar.zst" ] && [ -s "$RUNNER_TEMP/ws-archive/owed.json" ]; then
-            archive_mount=(-v "$RUNNER_TEMP/ws-archive:/archive:ro")
-            archive_arg="--archive-file /archive/ws.tar.zst --workspace-remap /workspace --extract-to /workspace/target/ar"
-          fi
+          # FLOW-010 P1: the tree-reader yardstick is the INDEPENDENT live list the archive
+          # job built from `$TREE --lib --tests` (not from --build-flags, not from the
+          # archive), listed per shard partition there and shipped in the artifact. This
+          # step still writes the filterset out again; archive_bind_check.sh proved the
+          # artifact belongs to this run's commit/EXPR/flags/image, and the archive job
+          # proved archive ids == that live list (archive_list_equal.sh).
+          cp "$GITHUB_WORKSPACE/ws-archive/tree.${SHARD}.list.json" "$sig/quick-tree.list.json"
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -v "${sig}:/sigma" \
-            "${archive_mount[@]}" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
@@ -1068,18 +1069,11 @@ jobs:
             -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
-            -e TREE="$tree" -e EXPR="$EXPR" -e ARCHIVE="$archive_arg" \
-            -e SHARD \
             "$IMAGE" \
             bash -c 'set -euo pipefail
               i=0; while read -r g; do p=""; for c in $g; do p="$p -p $c"; done
                 cargo nextest list --profile ci --lib --tests $p --message-format json > "/sigma/quick-sel/$i.list.json"; i=$((i + 1))
-              done < /sigma/quick-sel.calls
-              if [ -n "$ARCHIVE" ]; then
-                cargo nextest list --profile ci $ARCHIVE -E "$EXPR" --partition "hash:${SHARD}/3" --message-format json > /sigma/quick-tree.list.json
-              else
-                cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${SHARD}/3" --message-format json > /sigma/quick-tree.list.json
-              fi'
+              done < /sigma/quick-sel.calls'
           rc=0
           if [ -n "$CRATES" ]; then
             n="$(wc -l < "$sig/quick-sel.calls")"
@@ -1465,17 +1459,27 @@ jobs:
           bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "$base"
           git update-ref refs/remotes/origin/main "$base"
       - name: "Build the quick-tier tree-reader set once and archive it (FLOW-010 P1)"
-        if: steps.tier.outputs.tier == 'quick'
         timeout-minutes: 45
         env:
+          TIER: ${{ steps.tier.outputs.tier }}
           TARGETS: ${{ steps.tier.outputs.targets }}
         run: |
           set -euo pipefail
+          out="$GITHUB_WORKSPACE/ws-archive-out"
+          mkdir -p "$out"
+          if [ "$TIER" != quick ]; then
+            # Nothing to archive: the shards of a non-quick tier never read the artifact.
+            jq -n --arg t "$TIER" --arg s "$GITHUB_SHA" '{tier:$t,sha:$s}' > "$out/bind.json"
+            printf 'FLOW-010 P1: tier is %s, nothing archived\n' "$TIER"
+            exit 0
+          fi
           read -ra targets <<< "$TARGETS"
           EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
           BUILD_FLAGS="$(printf '%s\n' "${targets[@]}" | grep -vE '^aprender-(gpu|cuda-edge|compute):' | tr '\n' ' ' | bash scripts/ci_test_tier.sh --build-flags)"
-          out="$RUNNER_TEMP/ws-archive-out"
-          rm -rf "${out:?}"; mkdir -p "$out"
+          # The yardstick's package list, derived the way the shards' Σ-executed step always did
+          # (packages of the targets, NOT the --build-flags): a drifted --build-flags cannot hide in it.
+          tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
+                  | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
           printf 'archive build flags: %s\n' "$BUILD_FLAGS"
           dock() {
             docker run --rm \
@@ -1485,7 +1489,6 @@ jobs:
               -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
               -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
               -v "${SCCACHE_HOST_DIR}:/sccache" \
-              -v "${out}:/out" \
               -w /workspace \
               -e CARGO_TARGET_DIR=/workspace/target \
               -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
@@ -1496,19 +1499,28 @@ jobs:
               -e CARGO_PROFILE_TEST_DEBUG=0 \
               -e CARGO_PROFILE_DEV_DEBUG=0 \
               -e CARGO_TERM_COLOR=never \
-              "$IMAGE" "$@"
+              -e EXPR="$EXPR" -e BUILD_FLAGS="$BUILD_FLAGS" -e TREE="$tree" \
+              "$IMAGE" bash -c "set -euo pipefail; $1"
           }
-          # build + archive the binary set (the same flags a shard would have built with)
-          dock bash -c "cargo nextest archive --profile ci $BUILD_FLAGS --archive-file /out/ws.tar.zst"
-          # the independent yardstick: a live list of the same filterset, whole (no partition)
-          dock bash -c "cargo nextest list --profile ci $BUILD_FLAGS -E '$EXPR' --message-format json > /out/live.json"
-          # the same filterset listed FROM the archive
-          dock bash -c "mkdir -p /workspace/target/ar && cargo nextest list --profile ci --archive-file /out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace/target/ar -E '$EXPR' --message-format json > /out/arc.json"
+          # 1. build + archive the binary set (the flags a shard used to build with)
+          dock 'cargo nextest archive --profile ci $BUILD_FLAGS --archive-file /workspace/ws-archive-out/ws.tar.zst'
+          # 2. the INDEPENDENT yardstick, as the shards' Σ-executed step built it: the whole
+          #    filterset over every test of the target packages, whole and per shard partition
+          dock 'cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /workspace/ws-archive-out/live.json
+                for n in 1 2 3; do cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${n}/3" --message-format json > "/workspace/ws-archive-out/tree.${n}.list.json"; done'
+          # 3. the same filterset listed FROM the archive; one extract, into a directory that exists
+          dock 'mkdir -p /workspace/target/ar && cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace/target/ar --extract-overwrite -E "$EXPR" --message-format json > /workspace/ws-archive-out/arc.json'
           bash scripts/ci/archive_list_equal.sh "$out/live.json" "$out/arc.json"
-          # shards read owed.json only as the "archive is vetted" marker
-          mv "$out/live.json" "$out/owed.json"
-          rm -f "${out:?}/arc.json"
+          rm -f "${out:?}/live.json" "${out:?}/arc.json"
+          jq -n --arg s "$GITHUB_SHA" --arg e "$EXPR" --arg f "$BUILD_FLAGS" \
+            --arg i "$(docker image inspect --format '{{.Id}}' "$IMAGE")" \
+            '{tier:"quick",sha:$s,expr:$e,flags:$f,image:$i}' > "$out/bind.json"
           ls -l "$out"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ws-archive
+          path: ws-archive-out/
+          if-no-files-found: error
       - name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |
