@@ -21,7 +21,10 @@
 # --diff-from reads the changed paths from FILE (tests). AFFECTED_META / AFFECTED_ROOT
 # replace `cargo metadata` and the checkout root (tests; synthetic graphs).
 set -euo pipefail
-CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts}"
+# CORE = ALL on touch. apr-cli is here because other crates' tests read its sources (aprender-core readme_contract.rs reads
+# apr-cli/src/commands_enum.rs; spec_checklist_*, toyota_principles_tests). Reader edges are not in cargo metadata, so a
+# crate whose source another crate reads at run time must be listed.
+CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts apr-cli}"
 filter=0 from=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -30,6 +33,7 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
+case "$from" in *..*) echo "affected_set: refusing a --diff-from with \"..\": $from" >&2; exit 2 ;; esac   # bashrs SEC010
 if [ -n "$from" ]; then files="$(cat "$from")"
 else files="$(git diff --name-only --no-renames "${1:-origin/main}...${2:-HEAD}")" || files=""; fi
 emit() { # $@ = package names, or ALL

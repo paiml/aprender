@@ -11,7 +11,7 @@ row() { # name want got
   if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1"; echo "  want: $2" | head -c 300; echo; echo "  got:  $3" | head -c 300; echo; fail=1; fi
 }
 run() { printf '%s\n' "$@" >"$t/d"; $A --diff-from "$t/d"; }
-core_list=" aprender-core aprender-compute aprender-contracts "
+core_list=" aprender-core aprender-compute aprender-contracts apr-cli "
 meta=$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null)
 members=$(jq -r '.packages[].name' <<<"$meta" | sort)
 # a non-core crate that has dependents, and a leaf with none
@@ -20,6 +20,7 @@ for p in $members; do
   case "$core_list" in *" $p "*) continue ;; esac
   n=$(cargo tree --offline -i "$p" --workspace -e normal,dev,build --prefix none 2>/dev/null | sed 's/ v.*//' | sort -u | grep -vc "^$p$" || true)
   dir=$(jq -r --arg p "$p" '.packages[]|select(.name==$p)|.manifest_path' <<<"$meta" | sed "s|$(git rev-parse --show-toplevel)/||; s|/Cargo.toml||")
+  case "$dir" in crates/*) ;; *) continue ;; esac
   [ -z "$withdep" ] && [ "$n" -gt 0 ] && [ "$n" -lt 10 ] && withdep="$p:$dir"
   [ -z "$leaf" ] && [ "$n" -eq 0 ] && leaf="$p:$dir"
   [ -n "$withdep" ] && [ -n "$leaf" ] && break
@@ -30,6 +31,8 @@ want=$(cargo tree --offline -i "$wp" --workspace -e normal,dev,build --prefix no
 row "crate with dependents ($wp) -> itself + dependents" "$want" "$(run "$wd/src/lib.rs" | sort -u)"
 row "leaf crate ($lp) -> itself only" "$lp" "$(run "$ld/src/lib.rs")"
 row "core crate -> ALL" ALL "$(run crates/aprender-core/src/lib.rs)"
+row "apr-cli source -> ALL (aprender-core tests read apr-cli/src/commands_enum.rs)" ALL "$(run crates/apr-cli/src/commands_enum.rs)"
+row "--diff-from with .. is refused (SEC010)" "2" "$($A --diff-from ../x >/dev/null 2>&1; echo $?)"
 row "Cargo.lock -> ALL" ALL "$(run Cargo.lock)"
 row "unknown path -> ALL" ALL "$(run some/unknown/path.txt)"
 row "unknown path next to a leaf -> ALL" ALL "$(run "$ld/src/lib.rs" scripts/whatever.sh)"
