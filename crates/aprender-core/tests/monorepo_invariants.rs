@@ -1143,6 +1143,10 @@ mod archive_wiring {
         r#"rustc_h="$(bash scripts/ci/archive_bind_check.sh --hash-toolchain "$rustc_vv")""#;
     const BIND_CALL: &str = r#"bash scripts/ci/archive_bind_check.sh --toolchain "$rustc_vv" "$arc/bind.json" sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS""#;
 
+    const SMOKE_CALL: &str = r#"docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace -e BINS="$(tr '\n' ' ' < "$out/bins.txt")" "$IMAGE" bash -c 'set -euo pipefail"#;
+    const SMOKE_END: &str = r#"echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'"#;
+    const QUICK_IF: &str = "steps.tier.outputs.tier == 'quick'";
+
     fn parse(text: &str) -> Value {
         serde_saphyr::from_str_with_options::<Value>(
             text,
@@ -1222,6 +1226,59 @@ mod archive_wiring {
         }
     }
 
+    /// C324: no third state. The step may not carry `continue-on-error`, and its `if:` is
+    /// exactly `want` (None = unconditional).
+    fn no_third_state(who: &str, st: &Value, want_if: Option<&str>, bad: &mut Vec<String>) {
+        if !st["continue-on-error"].is_null() {
+            bad.push(format!("{who}: continue-on-error is a third state"));
+        }
+        if st["if"].as_str() != want_if || (want_if.is_none() && !st["if"].is_null()) {
+            bad.push(format!(
+                "{who}: step `if:` is {:?}, expected {want_if:?}",
+                st["if"]
+            ));
+        }
+    }
+
+    /// First line is `set -euo pipefail`, and nothing turns errexit back off.
+    fn strict_shell(who: &str, lines: &[String], bad: &mut Vec<String>) {
+        if lines.first().map(String::as_str) != Some("set -euo pipefail") {
+            bad.push(format!("{who}: run does not open with set -euo pipefail"));
+        }
+        if lines
+            .iter()
+            .any(|l| l.starts_with("set +") || l.contains("set +e") || l.starts_with("trap "))
+        {
+            bad.push(format!("{who}: run turns errexit off or traps"));
+        }
+    }
+
+    /// Net change in compound-command depth made by one logical line.
+    fn depth_delta(l: &str) -> i32 {
+        if matches!(l, "fi" | "done" | "esac" | "}") {
+            return -1;
+        }
+        let closes_inline = ["; fi", "; done", "; esac"].iter().any(|c| l.contains(c));
+        let opens = ["if ", "for ", "while ", "case "]
+            .iter()
+            .any(|o| l.starts_with(o))
+            || l.ends_with('{');
+        i32::from(opens && !closes_inline)
+    }
+
+    /// The line is at compound-command depth 0, so no `if false; then ... fi` can guard it.
+    fn unconditional(who: &str, lines: &[String], want: &str, bad: &mut Vec<String>) {
+        let Some(at) = lines.iter().position(|l| l == want) else {
+            return;
+        };
+        let depth: i32 = lines[..at].iter().map(|l| depth_delta(l)).sum();
+        if depth != 0 {
+            bad.push(format!(
+                "{who}: `{want:.40}` sits inside a compound command"
+            ));
+        }
+    }
+
     fn check_shard(shard: &Value, bad: &mut Vec<String>) {
         let found = steps_running(shard, "archive_bind_check.sh");
         if found.is_empty() {
@@ -1234,6 +1291,10 @@ mod archive_wiring {
                 &[("bind call", BIND_CALL), ("rustc capture", RUSTC_CAPTURE)],
                 bad,
             );
+            let lines = run_of(st);
+            no_third_state("shard bind", st, Some(QUICK_IF), bad);
+            strict_shell("shard bind", &lines, bad);
+            unconditional("shard bind", &lines, BIND_CALL, bad);
         }
     }
 
@@ -1259,6 +1320,14 @@ mod archive_wiring {
             if !lines.iter().any(|l| smoke_refuses_zero(l)) {
                 bad.push("smoke does not exit 1 on n=0".into());
             }
+            for (what, want) in [("smoke call", SMOKE_CALL), ("smoke end", SMOKE_END)] {
+                if !lines.iter().any(|l| l == want) {
+                    bad.push(format!("smoke step lacks the exact {what} line"));
+                }
+            }
+            no_third_state("archive build", st, None, bad);
+            strict_shell("archive build", &lines, bad);
+            unconditional("archive build", &lines, SMOKE_CALL, bad);
         }
         let hashed = steps_running(arc, "--hash-toolchain");
         if hashed.is_empty() {
@@ -1271,6 +1340,7 @@ mod archive_wiring {
                 &[("hash call", HASH_CALL), ("rustc capture", RUSTC_CAPTURE)],
                 bad,
             );
+            unconditional("archive hash", &run_of(st), HASH_CALL, bad);
         }
     }
 
@@ -1283,6 +1353,11 @@ mod archive_wiring {
             bad.push(format!("{file}: no ws-archive upload step"));
         }
         for st in ups {
+            if !st["continue-on-error"].is_null() || !st["if"].is_null() && file == "sections.yml" {
+                bad.push(format!(
+                    "{file}: the ws-archive upload is conditional or continue-on-error"
+                ));
+            }
             if st["with"]["overwrite"].as_bool() != Some(true) {
                 bad.push(format!("{file}: a ws-archive upload lacks overwrite: true"));
             }
@@ -1445,6 +1520,83 @@ fn test_archive_wiring_mutants_all_die() {
                 "smoke checked 0 binaries",
                 "rustc -vV)\"",
                 "rustc -vV | head -1)\"",
+            ),
+        ),
+        (
+            "shard step if: false",
+            mutate(
+                &sec,
+                "- name: \"Quick tier: every test target that reads the tree",
+                "if: steps.tier.outputs.tier == 'quick'",
+                "if: false",
+            ),
+        ),
+        (
+            "shard step continue-on-error",
+            mutate(
+                &sec,
+                "- name: \"Quick tier: every test target that reads the tree",
+                "timeout-minutes: 45",
+                "continue-on-error: true\n        timeout-minutes: 45",
+            ),
+        ),
+        (
+            "archive step if: false",
+            mutate(
+                &sec,
+                "- name: \"Build the quick-tier tree-reader set once and archive it",
+                "timeout-minutes: 45",
+                "if: false\n        timeout-minutes: 45",
+            ),
+        ),
+        (
+            "archive step continue-on-error",
+            mutate(
+                &sec,
+                "- name: \"Build the quick-tier tree-reader set once and archive it",
+                "timeout-minutes: 45",
+                "continue-on-error: true\n        timeout-minutes: 45",
+            ),
+        ),
+        (
+            "set +e before the bind call",
+            mutate(
+                &sec,
+                r#"rustc_vv="$(docker run --rm"#,
+                r#"rustc_vv="$(docker"#,
+                "set +e\n          rustc_vv=\"$(docker",
+            ),
+        ),
+        (
+            "if false wraps the bind call",
+            mutate(
+                &mutate(
+                    &sec,
+                    r#"rustc_vv="$(docker run --rm"#,
+                    r#"rustc_vv="$(docker"#,
+                    "if false; then\n          rustc_vv=\"$(docker",
+                ),
+                bind_anchor,
+                bind,
+                &format!("{bind}\n          fi"),
+            ),
+        ),
+        (
+            "or-true after the smoke bash -c",
+            mutate(
+                &sec,
+                "smoke checked 0 binaries",
+                "chown -R 1000:1000 /workspace/target'",
+                "chown -R 1000:1000 /workspace/target' || true",
+            ),
+        ),
+        (
+            "smoke call neutered",
+            mutate(
+                &sec,
+                r#"smoke="$GITHUB_WORKSPACE/ws-smoke-target""#,
+                "-w /workspace \\\n",
+                "-w /workspace \\\n            -e X=1 \\\n",
             ),
         ),
         (
