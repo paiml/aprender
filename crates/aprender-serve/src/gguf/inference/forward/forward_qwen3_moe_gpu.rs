@@ -191,4 +191,122 @@ mod tests {
         // (This test will fail to compile if the function signature
         // drifts, which is the actual drift gate we want here.)
     }
+
+    fn fixture_model() -> OwnedQuantizedModel {
+        use crate::gguf::{ArchConstraints, GGUFConfig};
+        let config = GGUFConfig {
+            architecture: "qwen3moe".to_string(),
+            constraints: ArchConstraints::from_architecture("qwen3moe"),
+            hidden_dim: 64,
+            intermediate_dim: 128,
+            num_layers: 1,
+            num_heads: 4,
+            num_kv_heads: 4,
+            vocab_size: 256,
+            context_length: 128,
+            rope_theta: 10000.0,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        };
+        crate::api::test_helpers::create_test_quantized_model(&config)
+    }
+
+    fn moe_layer() -> Qwen3MoeQuantizedLayer {
+        let t = crate::gguf::QuantizedTensorRef {
+            offset: 0,
+            byte_size: 0,
+            num_elements: 0,
+            qtype: 12,
+        };
+        Qwen3MoeQuantizedLayer {
+            router: t.clone(),
+            gate_exps: t.clone(),
+            up_exps: t.clone(),
+            down_exps: t,
+        }
+    }
+
+    /// Message of the `InvalidShape` a bad call must return (anything else fails the test).
+    fn invalid_shape(r: Result<Vec<f32>>) -> String {
+        match r {
+            Err(RealizarError::InvalidShape { reason }) => reason,
+            other => panic!("expected InvalidShape, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_token_ids_are_refused_before_anything_else() {
+        let m = fixture_model();
+        // Every other argument is also bad: the token check must win.
+        let msg = invalid_shape(m.forward_qwen3_moe_gpu(&[], &[], 0, 0, 0, &[]));
+        assert!(msg.contains("token_ids must not be empty"), "{msg}");
+    }
+
+    #[test]
+    fn a_layer_count_mismatch_names_both_counts() {
+        let m = fixture_model();
+        let msg = invalid_shape(m.forward_qwen3_moe_gpu(&[1], &[], 8, 2, 16, &[]));
+        assert!(
+            msg.contains("moe_layers.len() = 0") && msg.contains("1 decoder layers"),
+            "{msg}"
+        );
+        let two = [moe_layer(), moe_layer()];
+        let msg = invalid_shape(m.forward_qwen3_moe_gpu(&[1], &two, 8, 2, 16, &[]));
+        assert!(msg.contains("moe_layers.len() = 2"), "{msg}");
+    }
+
+    #[test]
+    fn each_zero_moe_dimension_is_an_incomplete_config() {
+        let m = fixture_model();
+        let layers = [moe_layer()];
+        for (e, k, i) in [(0, 2, 16), (8, 0, 16), (8, 2, 0)] {
+            let msg = invalid_shape(m.forward_qwen3_moe_gpu(&[1], &layers, e, k, i, &[]));
+            assert!(
+                msg.contains("incomplete MoE config"),
+                "({e},{k},{i}): {msg}"
+            );
+            let want = format!("num_experts={e}, num_experts_per_tok={k}, moe_intermediate={i}");
+            assert!(msg.contains(&want), "must echo the config: {msg}");
+        }
+    }
+
+    #[test]
+    fn top_k_above_num_experts_is_refused_but_equal_is_not() {
+        let m = fixture_model();
+        let layers = [moe_layer()];
+        let msg = invalid_shape(m.forward_qwen3_moe_gpu(&[1], &layers, 4, 5, 16, &[]));
+        assert!(
+            msg.contains("num_experts_per_tok (5) exceeds num_experts (4)"),
+            "{msg}"
+        );
+        let equal = m.forward_qwen3_moe_gpu(&[1], &layers, 4, 4, 16, &[]);
+        assert!(
+            matches!(equal, Err(RealizarError::UnsupportedOperation { .. })),
+            "{equal:?}"
+        );
+    }
+
+    #[test]
+    fn valid_preconditions_reach_the_stub_error_naming_the_contract() {
+        let m = fixture_model();
+        let err = m
+            .forward_qwen3_moe_gpu(&[1, 2, 3], &[moe_layer()], 8, 2, 16, &[])
+            .unwrap_err();
+        let RealizarError::UnsupportedOperation { operation, reason } = &err else {
+            panic!("expected UnsupportedOperation, got {err:?}");
+        };
+        assert_eq!(operation, "forward_qwen3_moe_gpu");
+        assert!(
+            reason.contains("contracts/qwen3-moe-forward-gpu-v1.yaml"),
+            "{reason}"
+        );
+        assert!(
+            reason.contains("num_experts=8, num_experts_per_tok=2, moe_intermediate=16, layers=1"),
+            "{reason}"
+        );
+    }
 }
