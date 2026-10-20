@@ -17,7 +17,7 @@ CANT=75
 keys() { # FILE -> keys on stdout (use side/checked-keys to fail closed on unparsable input)
     jq -R -r 'fromjson? | select(.type == "diagnostic" or has("fields"))
       | .fields | select(.severity == "error")
-      | (.code // "?") as $c | (.advisory.id // "-") as $i | ((.graphs // [{}])[] | .Krate? // {}) | "\($c)|\($i)|\(.name // "?")@\(.version // "?")"' "$1" | LC_ALL=C sort -u
+      | (.code // "?") as $c | (.advisory.id // "-") as $i | (((.graphs // []) | if length == 0 then [{}] else . end)[] | .Krate? // {}) | "\($c)|\($i)|\(.name // "?")@\(.version // "?")"' "$1" | LC_ALL=C sort -u
 }
 
 parses() { # every non-blank line is JSON
@@ -97,13 +97,16 @@ self_test() {
     t 'tool error rc 2: cannot check'                75 empty.json 2 empty.json 0
     t 'garbage JSON: cannot check'                   75 bad.json 1 empty.json 0
     t 'main side missing: cannot check'              75 a.json 1 nope.json 1
+    printf '{"type":"diagnostic","fields":{"code":"vulnerability","severity":"error","advisory":{"id":"RUSTSEC-2026-0999"},"graphs":[]}}\n' >"$d/nog.json"
+    t 'error finding with empty graphs[] is still a finding: block'  1  nog.json 1 empty.json 0
+    t 'same empty-graphs finding on both sides: pass'               0  nog.json 1 nog.json 1
     sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     r() { local w=$1 rc=0; shift; base_ref "$@" >/dev/null 2>&1 || rc=$?; [ "$rc" -eq "$w" ] || { echo "SELF-TEST FAIL: base_ref $* wanted $w got $rc" >&2; bad=1; }; }
     r 0 merge_group "$sha" ""; r 75 merge_group "" "$sha"; r 75 merge_group "main" ""; r 0 pull_request "" "$sha"; r 75 push "$sha" "$sha"
     printf "ignore = [\"RUSTSEC-2026-0001\"]\n" >"$d/b.toml"; cp "$d/b.toml" "$d/same.toml"; printf "ignore = [\"RUSTSEC-2026-0001\", \"RUSTSEC-2026-0378\"]\n" >"$d/wide.toml"
     ignores_added "$d/b.toml" "$d/same.toml" 2>/dev/null || { echo "SELF-TEST FAIL: same ignores must pass" >&2; bad=1; }
     ! ignores_added "$d/b.toml" "$d/wide.toml" 2>/dev/null || { echo "SELF-TEST FAIL: added ignore must block" >&2; bad=1; }
-    [ "$bad" -eq 0 ] && echo "advisory_diff self-test: (12 verdict + 5 base_ref + 2 ignores) ok"
+    [ "$bad" -eq 0 ] && echo "advisory_diff self-test: (14 verdict + 5 base_ref + 2 ignores) ok"
     return "$bad"
 }
 

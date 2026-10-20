@@ -93,7 +93,7 @@ falsification_tests:
     prediction: "with lock_main = 48.0.7 and lock_PR = 48.0.6, the verdict is fail naming 0378 and 0379"
     test: "same case table: lock_PR adds the vulnerable version"
     if_fails: "the gate cannot turn RED on a real regression (a gate that cannot fail)"
-    mutation: "in scripts/ci/advisory_diff.sh verdict() subtract the PR keys from themselves instead of main keys (comm -23 PR PR); self-test cases PR adds a new id, PR adds a crate under an id main has, and PR adds a yanked crate must turn RED (measured 2026-10-20)"
+    mutation: "in scripts/ci/advisory_diff.sh verdict() subtract the PR keys from themselves instead of main keys (comm -23 PR PR); self-test cases (incl. an error finding with graphs:[] must still block; a mutant yielding no key for it turns RED) PR adds a new id, PR adds a crate under an id main has, and PR adds a yanked crate must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-003
     rule: "Scanner of record sees the optional-feature crate"
     prediction: "on the 48.0.6 lock the scanner of record exits non-zero and names 0378 and 0379"
@@ -115,7 +115,7 @@ falsification_tests:
   - id: FALSIFY-ADG-006
     rule: "Re-arm never arms a changed head (ADG-INV-005)"
     prediction: "a ready PR whose head sha moved after approval is not re-armed; one whose head is unchanged is"
-    test: "scripts/ci/rearm_ready.sh --self-test, 3 cases (head unchanged arms, moved or unapproved does not, empty arms nothing, and `run` against a stub gh enqueues exactly the PRs whose LATEST review is an APPROVE, each with expectedHeadOid = the approved sha; a later HOLD/CHANGES-NEEDED cancels an earlier APPROVE, and a mutant without expectedHeadOid or without the cancel turns it RED); .github/workflows/rearm-ready.yml calls `rearm_ready.sh run`"
+    test: "scripts/ci/rearm_ready.sh --self-test, 4 cases (head unchanged arms, moved or unapproved does not, empty arms nothing, and `run` against a stub gh enqueues exactly the PRs whose LATEST review is an anchored APPROVE (not `NOT APPROVED`) by an allowlisted reviewer other than the PR author, each with expectedHeadOid = the review's commit.oid; any later non-approval review cancels it; the fallback gh pr merge carries --match-head-commit <sha>; a mutant without expectedHeadOid, the anchor, the allowlist, the author exclusion, the cancel, commit.oid or --match-head-commit turns it RED); .github/workflows/rearm-ready.yml calls `rearm_ready.sh run`"
     if_fails: "a gate fix arms an unreviewed head into the queue"
     mutation: "drop the approved_sha == current_sha test in select_; the moved-head case must turn RED; replace select_ in run_ with cat|cut and the stub-gh case must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-007

@@ -11,17 +11,19 @@ select_() {
     awk -F'\t' 'NF >= 3 && $1 != "" && $2 ~ /^[0-9a-f]{40}$/ && $2 == $3 { print $1 "\t" $3 "\t" $4 }' "$1"
 }
 
-# stdin: `gh pr list --json id,number,headRefOid,autoMergeRequest,reviews`; stdout: TSV "pr  approved_sha  current_sha  node_id"
-# approved_sha = the full sha named in the latest APPROVE review, unless a LATER review is negative
-# (HOLD, CHANGES-NEEDED, REQUEST_CHANGES, state CHANGES_REQUESTED): a later negative review cancels the approval.
+# stdin: `gh pr list --json id,number,author,headRefOid,autoMergeRequest,reviews`; stdout: TSV "pr  approved_sha  current_sha  node_id"
+# approved_sha = commit.oid of the latest anchored APPROVE review by an allowlisted reviewer (REARM_REVIEWERS, never the PR author);
+# ANY later review that is not such an approval (negative or a plain comment) cancels it.
 plan_() {
-    jq -r '.[] | select(.autoMergeRequest == null) | . as $p
+    jq -r --arg ok "${REARM_REVIEWERS:-}" '($ok | split(" ") | map(select(. != ""))) as $allow
+        | .[] | select(.autoMergeRequest == null) | . as $p
         | def neg: (.state == "CHANGES_REQUESTED") or (.body | test("HOLD|CHANGES-NEEDED|REQUEST_CHANGES"));
-          def pos: ((neg | not) and (.body | test("APPROVE")));
+          def tok: (.body | test("(^|\\n|: |- )APPROVE([^A-Za-z]|$)"));
+          def pos: (neg | not) and tok and (.author.login as $l | ($allow | index($l)) != null and $l != $p.author.login);
           [.reviews | to_entries[]] as $r
         | ([$r[] | select(.value | pos) | .key] | last) as $ai
-        | (if $ai == null or any($r[]; .key > $ai and (.value | neg)) then ""
-           else ($r[] | select(.key == $ai) | .value.body | capture("(?<s>[0-9a-f]{40})").s // "") end) as $sha
+        | (if $ai == null or any($r[]; .key > $ai and (.value | pos | not)) then ""
+           else ($r[] | select(.key == $ai) | .value.commit.oid // "") end) as $sha
         | [$p.number, $sha, $p.headRefOid, $p.id] | @tsv'
 }
 
@@ -34,7 +36,7 @@ run_() {
     t=$(mktemp)
     # shellcheck disable=SC2064
     trap "rm -f -- '${t:?}'" RETURN
-    gh pr list --state open --limit 100 --json id,number,headRefOid,autoMergeRequest,reviews | plan_ >"$t"
+    gh pr list --state open --limit 100 --json id,number,author,headRefOid,autoMergeRequest,reviews | plan_ >"$t"
     while IFS=$'\t' read -r n sha id; do
         if gh api graphql -f query='mutation($id:ID!,$h:GitObjectID!){enqueuePullRequest(input:{pullRequestId:$id,expectedHeadOid:$h}){clientMutationId}}' \
             -f id="$id" -f h="$sha" >/dev/null 2>&1; then
@@ -42,7 +44,7 @@ run_() {
         fi
         cur=$(gh pr view "$n" --json headRefOid --jq .headRefOid 2>/dev/null || true)
         if [ "$cur" = "$sha" ]; then
-            gh pr merge "$n" || echo "rearm: PR $n not armed" >&2
+            gh pr merge "$n" --match-head-commit "$sha" || echo "rearm: PR $n not armed" >&2
         else
             echo "rearm: PR $n head moved since review; not armed" >&2
         fi
@@ -62,19 +64,44 @@ self_test() {
     # run_ end to end with a stub gh. PRs: 1 approved+unchanged; 2 head moved; 3 already armed;
     # 4 APPROVE then a later CHANGES-NEEDED; 5 APPROVE then a later HOLD; 6 CHANGES-NEEDED then a fresh APPROVE.
     mkdir -p "$d/bin"
+    # rv LOGIN BODY OID -> one review object; pr N HEAD AUTOMERGE REVIEWS -> one PR object
+    rv() { printf '{"author":{"login":"%s"},"state":"COMMENTED","body":"%s","commit":{"oid":"%s"}}' "$1" "$2" "$3"; }
+    pr() { printf '{"id":"N%s","number":%s,"author":{"login":"au"},"headRefOid":"%s","autoMergeRequest":%s,"reviews":[%s]}' "$1" "$1" "$2" "$3" "$4"; }
+    {
+        printf '['
+        pr 1 "$a" null "$(rv s1 'seat 1: APPROVE' "$a")"; printf ,
+        pr 2 "$b" null "$(rv s1 'seat 1: APPROVE' "$a")"; printf ,
+        pr 3 "$a" '{"x":1}' "$(rv s1 'seat 1: APPROVE' "$a")"; printf ,
+        pr 4 "$a" null "$(rv s1 'seat 1: APPROVE' "$a"),$(rv s2 'seat 2: CHANGES-NEEDED' "$a")"; printf ,
+        pr 5 "$a" null "$(rv s1 'seat 1: APPROVE' "$a"),$(rv s2 'HOLD' "$a")"; printf ,
+        pr 6 "$a" null "$(rv s2 'CHANGES-NEEDED' "$a"),$(rv s1 'seat 1: APPROVE' "$a")"; printf ,
+        pr 7 "$a" null "$(rv s1 'seat 1: NOT APPROVED' "$a")"; printf ,
+        pr 8 "$a" null "$(rv s1 'seat 1: APPROVE' "$a"),$(rv s2 'just a comment' "$a")"; printf ,
+        pr 9 "$a" null "$(rv rando 'seat 1: APPROVE' "$a")"; printf ,
+        pr 10 "$a" null "$(rv au 'seat 1: APPROVE' "$a")"; printf ,
+        pr 11 "$a" null "$(rv s1 'seat 1: APPROVE' "$b")"
+        printf ']'
+    } >"$d/prs.json"
     cat >"$d/bin/gh" <<STUB
 #!/usr/bin/env bash
-if [ "\$1 \$2" = "pr list" ]; then
-  printf '[{"id":"N1","number":1,"headRefOid":"$a","autoMergeRequest":null,"reviews":[{"body":"seat APPROVE @$a"}]},{"id":"N2","number":2,"headRefOid":"$b","autoMergeRequest":null,"reviews":[{"body":"seat APPROVE @$a"}]},{"id":"N3","number":3,"headRefOid":"$a","autoMergeRequest":{"x":1},"reviews":[{"body":"APPROVE @$a"}]},{"id":"N4","number":4,"headRefOid":"$a","autoMergeRequest":null,"reviews":[{"body":"seat APPROVE @$a"},{"body":"seat CHANGES-NEEDED @$a"}]},{"id":"N5","number":5,"headRefOid":"$a","autoMergeRequest":null,"reviews":[{"body":"seat APPROVE @$a"},{"body":"HOLD @$a"}]},{"id":"N6","number":6,"headRefOid":"$a","autoMergeRequest":null,"reviews":[{"body":"CHANGES-NEEDED @$a"},{"body":"seat APPROVE @$a"}]}]'
-elif [ "\$1" = api ]; then
-  echo "\$*" >>"$d/armed"
+if [ "\$1 \$2" = "pr list" ]; then cat "$d/prs.json"
+elif [ "\$1 \$2" = "pr view" ]; then echo "$a"
+elif [ "\$1" = api ]; then echo "\$*" >>"$d/armed"; [ -z "\${STUB_REFUSE:-}" ]
+elif [ "\$1 \$2" = "pr merge" ]; then echo "merge \$*" >>"$d/merged"
 fi
 STUB
     chmod +x "$d/bin/gh"
-    PATH="$d/bin:$PATH" run_ >/dev/null 2>&1 || true
+    REARM_REVIEWERS="s1 s2 au" PATH="$d/bin:$PATH" run_ >/dev/null 2>&1 || true
     got=$(grep 'expectedHeadOid:\$h' "$d/armed" 2>/dev/null | grep -o 'id=N[0-9]* -f h=[0-9a-f]*' | tr '\n' ',')
-    [ "$got" = "id=N1 -f h=$a,id=N6 -f h=$a," ] || { echo "SELF-TEST FAIL: run must enqueue exactly PR 1 and 6, each with expectedHeadOid=its approved sha (a later HOLD/CHANGES-NEEDED cancels), got: $got" >&2; bad=1; }
-    [ "$bad" -eq 0 ] && echo "rearm_ready self-test: 3 cases ok"
+    # 1 ok; 2 head moved; 3 armed; 4/5 later negative; 6 fresh approve after negative -> arms; 7 "NOT APPROVED" is no approval;
+    # 8 any later non-approval cancels; 9 reviewer off the allowlist; 10 author self-approval; 11 commit.oid (b) != head (a), so not armed.
+    [ "$got" = "id=N1 -f h=$a,id=N6 -f h=$a," ] || { echo "SELF-TEST FAIL: run must enqueue exactly PR 1 and 6 with expectedHeadOid=commit.oid, got: $got" >&2; bad=1; }
+    rm -f "${d:?}/armed" "${d:?}/merged"
+    REARM_REVIEWERS="s1 s2 au" STUB_REFUSE=1 PATH="$d/bin:$PATH" run_ >/dev/null 2>&1 || true
+    if [ "$(grep -c -- "--match-head-commit $a" "$d/merged" 2>/dev/null)" -ne 2 ] || [ "$(wc -l <"$d/merged")" -ne 2 ]; then
+        echo "SELF-TEST FAIL: the fallback gh pr merge must pass --match-head-commit <approved sha> (PR 1 and 6 only)" >&2; bad=1
+    fi
+    [ "$bad" -eq 0 ] && echo "rearm_ready self-test: 4 cases ok"
     return "$bad"
 }
 

@@ -22,6 +22,7 @@ jobs:
       - name: Self-test, then re-arm approved un-armed PRs
         env:
           GH_TOKEN: ${{ github.token }}
+          REARM_REVIEWERS: ${{ vars.REARM_REVIEWERS }}
         run: |
           set -euo pipefail
           bash scripts/ci/rearm_ready.sh --self-test
