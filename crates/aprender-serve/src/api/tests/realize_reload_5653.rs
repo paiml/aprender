@@ -36,6 +36,10 @@ fn model_file() -> tempfile::NamedTempFile {
     tempfile::NamedTempFile::new().expect("temp model file")
 }
 
+fn body_with(model: Option<&str>, path: &std::path::Path) -> String {
+    serde_json::json!({ "model": model, "path": path }).to_string()
+}
+
 async fn reload(state: AppState, json: &str) -> (StatusCode, String) {
     post(state, "/realize/reload", json).await
 }
@@ -43,10 +47,11 @@ async fn reload(state: AppState, json: &str) -> (StatusCode, String) {
 #[tokio::test]
 async fn without_registry_mode_it_is_501_and_names_no_dead_flag() {
     let state = AppState::demo().expect("demo state");
-    let (status, body) = reload(state, r#"{"path":"/x"}"#).await;
+    let (status, body) = reload(state, "{}").await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "body: {body}");
     assert!(body.contains("multi-model registry mode"), "body: {body}");
-    assert!(!body.contains("Start server with"), "must not advise a remedy: {body}");
+    assert!(body.contains("there is no --registry flag"), "body: {body}");
+    assert!(!body.contains("Start server with"), "old dead advice returned: {body}");
 }
 
 #[tokio::test]
@@ -59,7 +64,7 @@ async fn missing_path_is_400_before_the_model_id_is_looked_up() {
 #[tokio::test]
 async fn unregistered_model_id_is_404() {
     let file = model_file();
-    let json = format!(r#"{{"model":"nope","path":{:?}}}"#, file.path());
+    let json = body_with(Some("nope"), file.path());
     let (status, body) = reload(registry_state(), &json).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "body: {body}");
     assert!(body.contains("'nope' not found in registry"), "body: {body}");
@@ -76,7 +81,7 @@ async fn model_file_that_does_not_exist_is_400() {
 #[tokio::test]
 async fn registered_model_and_existing_file_is_200_with_timing() {
     let file = model_file();
-    let json = format!(r#"{{"model":"known","path":{:?}}}"#, file.path());
+    let json = body_with(Some("known"), file.path());
     let (status, body) = reload(registry_state(), &json).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let v: serde_json::Value = serde_json::from_str(&body).expect("json body");
@@ -90,8 +95,15 @@ async fn registered_model_and_existing_file_is_200_with_timing() {
 #[tokio::test]
 async fn omitted_model_id_reloads_the_default_model() {
     let file = model_file();
-    let json = format!(r#"{{"path":{:?}}}"#, file.path());
+    let json = body_with(None, file.path());
     let (status, body) = reload(registry_state(), &json).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert!(body.contains("Model 'default' reload validated"), "body: {body}");
+}
+
+#[tokio::test]
+async fn unregistered_id_is_404_even_when_the_file_is_also_missing() {
+    let (status, body) =
+        reload(registry_state(), r#"{"model":"nope","path":"/nonexistent/m.gguf"}"#).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "id is checked before the file: {body}");
 }
