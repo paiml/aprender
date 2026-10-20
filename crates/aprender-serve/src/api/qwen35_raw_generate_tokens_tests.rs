@@ -86,7 +86,7 @@ fn an_empty_prompt_is_400() {
 }
 
 #[test]
-fn a_prompt_that_fills_the_context_is_refused_whole_with_both_numbers() {
+fn a_prompt_that_fills_the_context_is_refused_whole() {
     let Some(mut state) = state_or_skip() else { return };
     let n = state
         .mapped_gguf_model()

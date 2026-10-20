@@ -145,11 +145,12 @@ falsification:
     description: "The raw /api/generate arm tokenizes the prompt untemplated, refuses an empty prompt and a prompt that fills the context (whole, never truncated), and bounds the output by max_tokens"
     test: |
       qwen35_raw_generate_tokens_tests.rs:: the_result_is_the_raw_prompt_ids_then_at_most_max_tokens_generated,
-      an_empty_prompt_is_400, a_prompt_that_fills_the_context_is_refused_whole_with_both_numbers,
+      an_empty_prompt_is_400, a_prompt_that_fills_the_context_is_refused_whole,
+      greedy_decoding_is_deterministic_and_never_ends_on_a_stop_token,
       a_state_without_a_session_declines_directly.
     evidence: |
       cargo test -p aprender-serve --lib qwen35_raw_tokens_tests — 5 passed. Falsifier: `>=` to `>` on the
-      context check turns a_prompt_that_fills_the_context_is_refused_whole_with_both_numbers RED.
+      context check turns a_prompt_that_fills_the_context_is_refused_whole RED.
 
 open_obligations:
   - |
