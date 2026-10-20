@@ -1218,18 +1218,7 @@ mod tests {
 
         let stats = |name: &str, data: &[f32]| -> (f64, f64, f32, f32) {
             let n = data.len() as f64;
-            let mean = data.iter().map(|&v| v as f64).sum::<f64>() / n;
-            let var = data
-                .iter()
-                .map(|&v| {
-                    let d = v as f64 - mean;
-                    d * d
-                })
-                .sum::<f64>()
-                / n;
-            let std = var.sqrt();
-            let min = data.iter().copied().fold(f32::INFINITY, f32::min);
-            let max = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let (mean, std, min, max) = h4_tensor_stats(data);
             eprintln!(
                 "[h4-init-stats] {name}: n={n} mean={mean:.5} std={std:.5} min={min:.4} max={max:.4}"
             );
@@ -1278,31 +1267,94 @@ mod tests {
 
         // Embedding init bound: HF LLaMA init normal(0, 0.02). After
         // pretraining the std grows but typically stays in [0.01, 0.1].
-        // mean should be near 0 (well-centered).
-        assert!(
-            em.abs() < 0.05,
-            "FALSIFY-H4-INIT-STATS-001: embed mean={em} > 0.05; weights are not centered. \
-             Possible f16→f32 sign-bit corruption or wrong byte-order."
-        );
-        assert!(
-            (0.005..=0.5).contains(&es),
-            "FALSIFY-H4-INIT-STATS-001: embed std={es} outside [0.005, 0.5]; weights are not \
-             distributed like trained transformer init. Possible f16 mantissa misread or \
-             scale corruption."
-        );
-
         // RMSNorm init: weights are ~1.0 (sqrt(2)≈1.41 in some configs).
         // After training they stay close to 1, sometimes drifting up to ~10.
-        assert!(
-            nm > 0.01 && nm < 100.0,
-            "FALSIFY-H4-INIT-STATS-001: norm mean={nm} outside [0.01, 100]; RMSNorm scale \
-             load is corrupt. Trained pretrained values are typically near 1.0."
-        );
-        assert!(
-            ns < 100.0,
-            "FALSIFY-H4-INIT-STATS-001: norm std={ns} > 100; RMSNorm has explosive variance. \
-             Tensor load is corrupt."
-        );
+        if let Err(msg) = check_h4_embed_norm_stats(em, es, nm, ns) {
+            panic!("{msg}");
+        }
+    }
+
+    /// Population mean, std, min and max of one tensor, as the H4 probe reports them.
+    fn h4_tensor_stats(data: &[f32]) -> (f64, f64, f32, f32) {
+        let n = data.len() as f64;
+        let mean = data.iter().map(|&v| v as f64).sum::<f64>() / n;
+        let var = data
+            .iter()
+            .map(|&v| {
+                let d = v as f64 - mean;
+                d * d
+            })
+            .sum::<f64>()
+            / n;
+        let min = data.iter().copied().fold(f32::INFINITY, f32::min);
+        let max = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        (mean, var.sqrt(), min, max)
+    }
+
+    /// FALSIFY-H4-INIT-STATS-001 verdict on the embedding (mean, std) and final-norm
+    /// (mean, std) of a loaded init APR. `Err` carries the failing assertion's message.
+    fn check_h4_embed_norm_stats(em: f64, es: f64, nm: f64, ns: f64) -> Result<(), String> {
+        if em.abs() >= 0.05 {
+            return Err(format!(
+                "FALSIFY-H4-INIT-STATS-001: embed mean={em} > 0.05; weights are not centered. \
+                 Possible f16→f32 sign-bit corruption or wrong byte-order."
+            ));
+        }
+        if !(0.005..=0.5).contains(&es) {
+            return Err(format!(
+                "FALSIFY-H4-INIT-STATS-001: embed std={es} outside [0.005, 0.5]; weights are not \
+                 distributed like trained transformer init. Possible f16 mantissa misread or \
+                 scale corruption."
+            ));
+        }
+        if !(nm > 0.01 && nm < 100.0) {
+            return Err(format!(
+                "FALSIFY-H4-INIT-STATS-001: norm mean={nm} outside [0.01, 100]; RMSNorm scale \
+                 load is corrupt. Trained pretrained values are typically near 1.0."
+            ));
+        }
+        if ns >= 100.0 {
+            return Err(format!(
+                "FALSIFY-H4-INIT-STATS-001: norm std={ns} > 100; RMSNorm has explosive variance. \
+                 Tensor load is corrupt."
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn h4_tensor_stats_are_population_mean_std_min_max() {
+        let (mean, std, min, max) = h4_tensor_stats(&[1.0, 3.0]);
+        assert_eq!((mean, std, min, max), (2.0, 1.0, 1.0, 3.0));
+        let (mean, std, min, max) = h4_tensor_stats(&[-2.0, -2.0, -2.0]);
+        assert_eq!((mean, std, min, max), (-2.0, 0.0, -2.0, -2.0));
+    }
+
+    #[test]
+    fn h4_embed_norm_stats_accept_a_healthy_qwen_load() {
+        assert_eq!(check_h4_embed_norm_stats(0.001, 0.02, 1.0, 0.3), Ok(()));
+        // Boundaries: std 0.005 and 0.5 are inside; norm mean just above 0.01 is inside.
+        assert_eq!(check_h4_embed_norm_stats(0.0, 0.005, 0.011, 0.0), Ok(()));
+        assert_eq!(check_h4_embed_norm_stats(-0.049, 0.5, 99.9, 99.9), Ok(()));
+    }
+
+    #[test]
+    fn h4_embed_norm_stats_reject_each_corruption_with_its_own_message() {
+        let cases: [([f64; 4], &str); 8] = [
+            ([0.05, 0.02, 1.0, 0.3], "embed mean=0.05 > 0.05"),
+            ([-0.2, 0.02, 1.0, 0.3], "embed mean=-0.2 > 0.05"),
+            ([0.0, 0.004, 1.0, 0.3], "embed std=0.004 outside"),
+            ([0.0, 0.51, 1.0, 0.3], "embed std=0.51 outside"),
+            ([0.0, 0.02, 0.01, 0.3], "norm mean=0.01 outside"),
+            ([0.0, 0.02, 100.0, 0.3], "norm mean=100 outside"),
+            ([0.0, 0.02, 1.0, 100.0], "norm std=100 > 100"),
+            ([0.0, f64::NAN, 1.0, 0.3], "embed std=NaN outside"),
+        ];
+        for ([em, es, nm, ns], needle) in cases {
+            let err = check_h4_embed_norm_stats(em, es, nm, ns)
+                .expect_err("corrupt stats must be rejected");
+            assert!(err.contains(needle), "wanted {needle:?} in {err:?}");
+        }
     }
 
     /// FALSIFY-H4-CPU-FORWARD-001 (H4 residual cascade — bisect to CPU vs CUDA):
