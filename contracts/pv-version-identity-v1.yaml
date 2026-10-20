@@ -62,7 +62,7 @@ proof_obligations:
   - id: PVI-INV-001
     type: invariant
     property: "`pv --version` is not the bare `<name> <semver>` form that every other `pv` also prints"
-    formal: "cargo test -p aprender-contracts-cli --lib version_identity_unit exits 0"
+    formal: "first_line(render_long_version) ≠ `pv <semver>` ∧ len(lines(render_version)) = 1 ∧ first_line(render_long_version) ≡ first_line(render_version)"
     applies_to: version_output_identifies_this_tool_and_not_another
   - id: PVI-INV-002
     type: invariant

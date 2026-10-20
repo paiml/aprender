@@ -92,5 +92,6 @@ proof_obligations:
 - id: WU-INV-002
   type: invariant
   property: "WasmRuntime public API unchanged"
-  formal: "cargo check && cargo test"
+  formal: "every in-tree caller of WasmRuntime compiles and its tests pass unchanged against the upgraded wasmtime"
+  prose: true
   applies_to: api_compatibility

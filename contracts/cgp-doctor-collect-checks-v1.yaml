@@ -21,12 +21,12 @@ proof_obligations:
   - id: CGP-DOCTOR-INV-001
     type: invariant
     property: "Check list order and names are fixed"
-    formal: "∀ run: cargo test -p aprender-cgp --lib test_collect_checks_names_and_order exits 0"
+    formal: "names(collect_checks()) ≡ [nvidia-smi, CUDA Runtime, ncu, nsys, CUPTI, perf, valgrind, renacer, trueno-explain, GPU, CPU], in that order"
     applies_to: collect_checks_shape
   - id: CGP-DOCTOR-INV-002
     type: invariant
     property: "CUPTI status tracks its path"
-    formal: "∀ run: cargo test -p aprender-cgp --lib test_collect_checks_cupti_status_tracks_path exits 0"
+    formal: "∀ c = check(CUPTI): (c.path = Some(p) ⇒ c.status = Ok ∧ c.version = p ∧ exists(p)) ∧ (c.path = None ⇒ c.status = Missing ∧ c.version = None)"
     applies_to: collect_checks_shape
 
 falsification_tests:

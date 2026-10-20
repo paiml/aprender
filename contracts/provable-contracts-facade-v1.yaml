@@ -105,7 +105,7 @@ proof_obligations:
   - id: PCF-INV-004
     type: invariant
     property: "All five 0.3.1 attribute macros expand through the macros facade"
-    formal: "cargo test -p provable-contracts-macros --test compat_invoke exits 0"
+    formal: "∀ m ∈ {contract, requires, ensures, invariant, must_contract}: a fn annotated #[m] through the provable_contracts_macros path compiles ∧ carries the check 0.3.1's m injects"
     applies_to: proc_macros_still_expand_through_the_facade
   - id: PCF-INV-005
     type: invariant
