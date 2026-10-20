@@ -18,12 +18,14 @@
 # The old `ci:` job, verbatim: `uses:` is the pin ci/vendor/sovereign-ci.yml was
 # copied from (scripts/check_ci_reusable_workflow_pinned.sh checks both agree).
 sovereign-ci:
-  uses: paiml/.github/.github/workflows/sovereign-ci.yml@f713290c86fcd70d6f26a0faab14e67e6713586f
+  uses: paiml/.github/.github/workflows/sovereign-ci.yml@9078879912d106237a38137dee06be6ac6c04ac7
   with:
     repo: ${{ github.event.repository.name }}
     enable_sccache: true
     use_nextest: true
     coverage_on: 'tag'
+    # PMAT-5792: the guard-cargo diff gate is the scanner of record (check_sov_advisories_off.sh)
+    advisories_diff_only: true
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
 # runs as THREE shards, each its own ci.yml job on its own runner: as one shard
@@ -2689,7 +2691,7 @@ jobs:
             G=scripts/ci
           fi
           rc=0
-          bash "$G/advisory_diff.sh" --self-test && bash "$G/advisory_gate.sh" || rc=$?
+          bash "$G/advisory_diff.sh" --self-test && bash scripts/ci/check_sov_advisories_off.sh --self-test && bash scripts/ci/check_sov_advisories_off.sh && bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh" && bash "$G/advisory_gate.sh" || rc=$?
           rm -rf -- "${S:?}"
           exit "$rc"
       # Separate from the check above on purpose: a newly-FIXED upstream must

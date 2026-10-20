@@ -96,15 +96,21 @@ falsification_tests:
   - id: FALSIFY-ADG-003
     rule: "Scanner of record sees the optional-feature crate"
     prediction: "on the 48.0.6 lock the scanner of record exits non-zero and names 0378 and 0379"
-    test: "run the scanner of record on the 48.0.6 lock fixture"
+    test: "scripts/ci/advisory_gate_selftest.sh runs advisory_gate.sh against a stub cargo; every advisories scan must carry --all-features (the 48.0.6 lock fixture is covered by ADG-001 verdicts)"
     if_fails: "#5791 is not resolved: the record scanner is as blind as deny with all-features=false"
-    mutation: "flip all-features to false in the scanner config; the case must turn RED"
+    mutation: "sed out --all-features from advisory_gate.sh scan(); the 'ADG-003' mutant case in advisory_gate_selftest.sh must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-004
     rule: "Same DB snapshot on both sides"
     prediction: "a DB entry published between the main run and the PR run does not appear in the delta"
-    test: "case table: two DB snapshots, delta computed against one"
+    test: "advisory_gate_selftest.sh: exactly one `cargo deny fetch`, both scans --disable-fetch with one --config"
     if_fails: "DB refreshes read as PR-introduced advisories and re-create the stop"
-    mutation: "read the DB twice; the case must turn RED"
+    mutation: "sed out --disable-fetch, or add a second fetch before the base scan; the two 'ADG-004' mutant cases must turn RED (measured 2026-10-20)"
+  - id: FALSIFY-ADG-007
+    rule: "No second scanner blocks a PR on main's advisories"
+    prediction: "sov.lint and sov.security skip plain cargo deny advisories / cargo audit (advisories_diff_only: true in the vendored sovereign-ci)"
+    test: "scripts/ci/check_sov_advisories_off.sh --self-test, 4 cases, then the real tree"
+    if_fails: "the vendored scans still stop every PR on an advisory already on main (the #5793 REJECT)"
+    mutation: "set advisories_diff_only: false in ci/sections.yml, or change the vendored '= true' test; the matching case must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-005
     rule: "Andon clock"
     prediction: "the P0 ticket's due time is <= 4 h after the advisory first appears on main"
