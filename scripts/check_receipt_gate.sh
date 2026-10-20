@@ -169,39 +169,56 @@ else fail=$((fail + 1)); echo "FAIL W15: mutant did not apply"; fi
 if mutate "$W" 'if [ "$first" = "RECEIPT_OK=1" ]; then' 'if true; then' "$td/mut-w.sh"; then
   wrow "W10 MUTANT: a wrapper that always prints 1 is caught by the no-receipt row" 1 "$(arg "$td/b-none" "$BASE" "$td/mut-w.sh")"
 else fail=$((fail + 1)); echo "FAIL W10: mutant did not apply to $W"; fi
-# W16-W19: the trusted read in the workflow runs FIRST, before any code from the PR tree. The tier
-# step's text up to `--receipt-ok` must clone the base into a fresh dir with replace objects and
-# the global/system git config off, and must call no scripts/ helper before it (a PR-tree script
-# could plant url.insteadOf or refs/replace). Each defect below must turn blk_ok RED.
+# W16-W20: the judge is its own job and no PR-tree code can run before it reads. ci.yml's
+# `receipt-judge` job checks out the BASE (ref: github.base_ref), fetches the PR merge commit as
+# a data worktree, and runs no script from anywhere but the base checkout; the shard job needs it
+# and takes its verdict as RECEIPT_OK; the tier step in ci/sections.yml only reads that env. Each
+# defect below must turn judge_ok RED: a PR checkout as code, a PR-tree script step, a step that
+# plants PATH or the env, a shard job that does not wait for the judge, a tier step that runs code.
+CI="$HERE/../.github/workflows/ci.yml"
 SEC="$HERE/../ci/sections.yml"
-blk_ok() { # FILE -> 0 when the step prefix is trustworthy
-  local blk; blk=$(awk '/id: tier$/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$1")
-  [ -n "$blk" ] || return 1
-  local code; code=$(printf '%s\n' "$blk" | grep -v -E '^[[:space:]]*#')
-  case "$code" in *"git clone "*) ;; *) return 1 ;; esac
-  case "$code" in *"export GIT_NO_REPLACE_OBJECTS=1"*) ;; *) return 1 ;; esac
-  # both the clone and the show run with the global/system config off
-  [ "$(printf '%s\n' "$code" | grep -c 'GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null')" -ge 2 ] || return 1
-  case "$code" in *"show HEAD:scripts/ci/receipt_ok_arg.sh"*) ;; *) return 1 ;; esac
-  case "$code" in *" fetch "*) return 1 ;; esac
-  printf '%s\n' "$code" | grep -E 'scripts/' | grep -v -E 'git -C "\$trust" show HEAD:scripts/ci/receipt_ok_arg.sh' | grep -q . && return 1
+judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
+  local job code shard tier
+  job=$(awk '/^  receipt-judge:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1")
+  [ -n "$job" ] || return 1
+  code=$(printf '%s\n' "$job" | grep -v -E '^[[:space:]]*#')
+  case "$code" in *'ref: ${{ github.base_ref }}'*) ;; *) return 1 ;; esac
+  [ "$(printf '%s\n' "$code" | grep -c 'uses:')" -eq 1 ] || return 1
+  printf '%s\n' "$code" | grep -q 'uses: actions/checkout@' || return 1
+  printf '%s\n' "$code" | grep -q -E 'GITHUB_PATH|GITHUB_ENV|head_ref|pull_request\.head|github\.sha *$' && return 1
+  [ "$(printf '%s\n' "$code" | grep -c '^      - ')" -eq 2 ] || return 1
+  printf '%s\n' "$code" | grep -E 'scripts/' | grep -v -E 'GITHUB_WORKSPACE/scripts/ci/receipt_ok_arg\.sh|-f scripts/ci/receipt_ok_arg\.sh' | grep -q . && return 1
+  shard=$(awk '/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1")
+  case "$shard" in *'needs: [receipt-judge]'*) ;; *) return 1 ;; esac
+  case "$shard" in *'RECEIPT_OK: ${{ needs.receipt-judge.outputs.ok'*) ;; *) return 1 ;; esac
+  tier=$(awk '/id: tier$/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$2" | grep -v -E '^[[:space:]]*#')
+  case "$tier" in *'"${RECEIPT_OK:-0}" = 1'*) ;; *) return 1 ;; esac
+  printf '%s\n' "$tier" | grep -E 'scripts/|git (fetch|clone)' | grep -q . && return 1
   return 0
 }
-if blk_ok "$SEC"; then wrow "W16 receipt read runs first: fresh clone, replace off, config off, no PR-tree script" ok ok
-else wrow "W16 receipt read runs first: fresh clone, replace off, config off, no PR-tree script" ok bad; fi
-wmut() { # LABEL FROM TO
-  if mutate "$SEC" "$2" "$3" "$td/sec-mut.yml"; then
-    if blk_ok "$td/sec-mut.yml"; then r=missed; else r=caught; fi
+if judge_ok "$CI" "$SEC"; then wrow "W16 receipt judge is its own job: base checkout only, no PR-tree code, shard waits for it" ok ok
+else wrow "W16 receipt judge is its own job: base checkout only, no PR-tree code, shard waits for it" ok bad; fi
+CHK='      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.base_ref }}'
+wmut() { # LABEL FILE(ci|sec) FROM TO
+  local src=$CI; [ "$2" = sec ] && src=$SEC
+  if mutate "$src" "$3" "$4" "$td/mut.yml"; then
+    if [ "$2" = sec ]; then judge_ok "$CI" "$td/mut.yml" && r=missed || r=caught
+    else judge_ok "$td/mut.yml" "$SEC" && r=missed || r=caught; fi
     wrow "$1" caught "$r"
-  else fail=$((fail + 1)); echo "FAIL ${1%% *}: mutant did not apply to ci/sections.yml"; fi
+  else fail=$((fail + 1)); echo "FAIL ${1%% *}: mutant did not apply"; fi
 }
-wmut "W17 MUTANT: a PR-tree script run before the trusted read is caught" 'rok=0
-          if [ "${GITHUB_EVENT_NAME}" = pull_request ]; then' 'rok=0
-          bash scripts/ci/fetch_p6.sh --no-tags origin
-          if [ "${GITHUB_EVENT_NAME}" = pull_request ]; then'
-wmut "W18 MUTANT: replace objects left on is caught" 'export GIT_NO_REPLACE_OBJECTS=1' ':'
-wmut "W19 MUTANT: global/system git config left on is caught" 'GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0' 'GIT_TERMINAL_PROMPT=0'
-wmut "W20 MUTANT: a fetch into the PR checkout instead of a fresh clone is caught" 'git clone -q --no-tags' 'git fetch -q --no-tags'
+wmut "W17 MUTANT: the judge job checking out the PR merge as code is caught" ci 'ref: ${{ github.base_ref }}' 'ref: ${{ github.sha }}'
+wmut "W18 MUTANT: a PR-tree script step before the judge is caught" ci "$CHK" '      - run: bash scripts/ci/pre.sh
+'"$CHK"
+wmut "W19 MUTANT: an earlier step planting PATH is caught" ci "$CHK" '      - run: echo "$PWD/bin" >> "$GITHUB_PATH"
+'"$CHK"
+wmut "W20 MUTANT: a shard job that does not wait for the judge is caught" ci 'needs: [receipt-judge]' 'needs: []'
+wmut "W20b MUTANT: a tier step that runs PR-tree code is caught" sec 'rok=0
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ]' 'rok=0
+          bash scripts/ci/pre.sh
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ]'
 # W21/W22: a refs/replace entry in the PR repo must not let a receipt for another tree pass. The
 # receipt is signed for the empty tree; the replace ref makes HEAD read as a commit with that tree.
 git -C "$repo" -c user.email=t@example.invalid -c user.name=t checkout -q -- . 2>/dev/null

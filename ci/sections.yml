@@ -368,32 +368,13 @@ jobs:
           args=(--event "${GITHUB_EVENT_NAME}")
           # #5797: a signed batch receipt in the PR body (signature, tree hash == this
           # merge tree, toolchain hash) lets the PR run check/fmt/clippy instead of the
-          # suite. receipt_ok_arg.sh prints 0 on anything else -- no receipt, a bad one,
-          # a missing tool -- and 0 leaves the tier exactly as it was.
-          # The judge is the BASE's, never this PR's tree (the #5793 pattern), and the read
-          # of it runs FIRST in this step: no script from the PR tree (fetch_p6.sh,
-          # pr_touched_paths.sh, ...) has run yet, so none can have planted a url.insteadOf
-          # or a refs/replace entry. The base is cloned into a fresh directory with the
-          # global and system git config off, replace objects off, and the job token passed
-          # through per-process GIT_CONFIG_* only. A failed clone, a base with no wrapper
-          # yet (bootstrap) or a failed read is 0. `git clone` is not a fetch of this
-          # checkout; the P6 re-read helper lives in the PR tree and may not run here.
+          # suite. The verdict is NOT computed here: the `receipt-judge` job in ci.yml
+          # computes it in a job that never checks out or runs the PR tree (it checks out
+          # the base, reads the PR merge commit as data), and the shard job hands it in as
+          # RECEIPT_OK. Anything but a literal 1 -- unset, 0, a skipped or failed judge -- is
+          # 0, and 0 leaves the tier exactly as it was. Only a pull_request can carry one.
           rok=0
-          if [ "${GITHUB_EVENT_NAME}" = pull_request ]; then
-            export GIT_NO_REPLACE_OBJECTS=1
-            printf '%s' "${PR_BODY:-}" > "$RUNNER_TEMP/pr-body.md"
-            trust="$RUNNER_TEMP/trusted-base"
-            rm -rf "${trust:?}"
-            if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 \
-                 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
-                 GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')" \
-                 git clone -q --no-tags --depth=1 --branch "${GITHUB_BASE_REF}" \
-                   "https://github.com/${GITHUB_REPOSITORY}.git" "$trust" 2>/dev/null &&
-               GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
-                 git -C "$trust" show HEAD:scripts/ci/receipt_ok_arg.sh > "$RUNNER_TEMP/receipt_ok_arg.sh" 2>/dev/null; then
-              rok="$(bash "$RUNNER_TEMP/receipt_ok_arg.sh" "$RUNNER_TEMP/pr-body.md" "$trust" "${GITHUB_SHA}")" || rok=0
-            fi
-          fi
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ] && [ "${RECEIPT_OK:-0}" = 1 ]; then rok=1; fi
           args+=(--receipt-ok "${rok:-0}")
           # PMAT-1098 67-E2: the queue and a push to main re-derive their own
           # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the

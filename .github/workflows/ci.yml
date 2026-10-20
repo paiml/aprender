@@ -439,10 +439,56 @@ jobs:
   # The workspace tests, one shard per job (nextest hash partition N/3 plus the
   # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  # #5798: the receipt judge. A PR cannot judge itself, and no step that runs the PR tree
+  # may run before the verdict: this job checks out the BASE only and fetches the PR merge
+  # commit as data (a detached worktree that is read, never executed). Nothing in it runs a
+  # script from that worktree, so nothing the PR carries can plant PATH, git, a config or a
+  # refs/replace entry before the judge reads. scripts/check_receipt_gate.sh (W16-W20) turns
+  # RED if this job gains a step that runs PR-tree code or checks the PR out as code.
+  # It always exits 0; the shard job reads `ok` as 1 only on a literal 1.
+  receipt-judge:
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      ok: ${{ steps.judge.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.base_ref }}
+          persist-credentials: false
+      - name: Judge the receipt in the PR body
+        id: judge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          export GIT_NO_REPLACE_OBJECTS=1
+          ok=0
+          printf '%s' "${PR_BODY:-}" > "$RUNNER_TEMP/pr-body.md"
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
+          if git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/merge" &&
+             [ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&
+             git worktree add -q --detach "$RUNNER_TEMP/prtree" FETCH_HEAD &&
+             [ -f scripts/ci/receipt_ok_arg.sh ]; then
+            ok="$(cd "$RUNNER_TEMP/prtree" && bash "$GITHUB_WORKSPACE/scripts/ci/receipt_ok_arg.sh" "$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}")" || ok=0
+          fi
+          [ "$ok" = 1 ] || ok=0
+          printf 'ok=%s\n' "$ok" >> "$GITHUB_OUTPUT"
+
   workspace-test-shard:
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
+    # The judge is skipped off a pull_request and fails closed: !cancelled() runs the shard
+    # whatever the judge did, and RECEIPT_OK is 1 only on the judge's literal 1.
+    needs: [receipt-judge]
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
@@ -450,6 +496,7 @@ jobs:
     outputs:
       results: ${{ steps.run.outputs.results }}
     env:
+      RECEIPT_OK: ${{ needs.receipt-judge.outputs.ok || '0' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
     steps:
