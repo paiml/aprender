@@ -28,6 +28,10 @@ mutant() {
   if cmp -s "$src" "$out"; then broke "mutant of $(basename "$src") changed nothing (vacuous)"; return 1; fi
 }
 # gone <pid>: wait up to 20 s for it to exit; prints gone|leaked and reaps a leak
+# descendants <pid>: every live descendant, so a row never picks another session's server
+descendants() { local c; for c in $(pgrep -P "$1" 2> /dev/null); do echo "$c"; descendants "$c"; done; }
+# reap <pids>: KILL what is left of a row's own fixture servers (checked by cmdline, so a recycled pid is spared)
+reap() { local p; for p in "$@"; do tr "\0" " " < "/proc/$p/cmdline" 2> /dev/null | grep -aqE "stub_server.py|crux_fake_serve|^sleep 300" && kill -KILL "$p" 2> /dev/null; done; return 0; }
 gone() { local i; for i in $(seq 1 100); do kill -0 "$1" 2> /dev/null || { echo gone; return; }; sleep 0.2; done; kill -KILL "$1" 2> /dev/null; echo leaked; }
 verdict() { # <label> <state> <want>
   if [ "$2" = "$3" ]; then ok "$1 (server $2)"; else broke "$1: server $2, wanted $3"; fi
@@ -43,8 +47,8 @@ fn_row() { # <label> <launcher file> <want>
   for _ in $(seq 1 50); do [ -s "$T/srv.pid" ] && break; sleep 0.1; done
   s=$(cat "$T/srv.pid" 2> /dev/null)
   [ -n "$s" ] || { broke "$1: harness never started its server"; kill -KILL "$h" 2> /dev/null; return; }
-  kill -KILL "$h"; wait "$h" 2> /dev/null
-  st=$(gone "$s"); pkill -KILL -P "$h" 2> /dev/null
+  kids=$(descendants "$h"); kill -KILL "$h"; wait "$h" 2> /dev/null
+  st=$(gone "$s"); reap $kids
   verdict "$1" "$st" "$3"
 }
 for l in $LAUNCHERS; do
@@ -63,8 +67,6 @@ for l in $LAUNCHERS; do
     if [ "$n" -eq 0 ]; then ok "S MUTANT $l: call removed -> the row goes red"; else broke "S MUTANT $l still has $n call(s)"; fi
   fi
 done
-# descendants <pid>: every live descendant, so a row never picks another session's server
-descendants() { local c; for c in $(pgrep -P "$1" 2> /dev/null); do echo "$c"; descendants "$c"; done; }
 # R: the real harness, KILLed. <label> <script> <process pattern of the server> <want>
 real_row() {
   local label="$1" script="$2" pat="$3" want="$4" h s i st
@@ -72,14 +74,15 @@ real_row() {
   h=$!
   s=""
   for i in $(seq 1 600); do s=$(descendants "$h" | while read -r d; do tr "\0" " " < "/proc/$d/cmdline" 2> /dev/null | grep -aq -- "$pat" && echo "$d"; done | head -1); [ -n "$s" ] && break; kill -0 "$h" 2> /dev/null || break; sleep 0.1; done
+  kids=$(descendants "$h")
   [ -n "$s" ] || { broke "$label: harness never started a server matching '$pat'"; kill -KILL "$h" 2> /dev/null; return; }
   # a cancelled job also takes the dogfood child (which would otherwise end its own server): kill it and its timeout
   for d in $(descendants "$h"); do tr "\0" " " < "/proc/$d/cmdline" 2> /dev/null | grep -aqE "crux_inference_dogfood|^timeout " && kill -KILL "$d" 2> /dev/null; done
   kill -KILL "$h"; wait "$h" 2> /dev/null
-  st=$(gone "$s")
+  st=$(gone "$s"); reap $kids
   verdict "$label" "$st" "$want"
   # the harness dies, but its other children may not: reap what this row started
-  pkill -KILL -f "$T/" 2> /dev/null; sleep 0.3
+  sleep 0.3
 }
 S1="$ROOT/scripts/check_crux_serve_code.sh"
 real_row "R serve_code KILLed: the watcher ends the fake serve" "$S1" 'crux_fake_serve.py --port' gone
