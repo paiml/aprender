@@ -15,14 +15,23 @@ set -euo pipefail
 
 AGGREGATORS=" workspace-test ci-gate gate "
 
+# jobfield FILE JOB KEY -> the single-line value of `    KEY:` inside job JOB (empty if absent)
+jobfield() {
+  awk -v job="  $2:" -v key="    $3:" '
+    $0 == job {f = 1; next}
+    f && /^  [A-Za-z0-9_-]+:[ ]*$/ {exit}
+    f && index($0, key) == 1 {v = substr($0, length(key) + 1); sub(/^ +/, "", v); print v; exit}' "$1"
+}
+
 check() {
   local f="$1" bad=0 job runs iff
-  yq -e '.on.pull_request.types | contains(["ready_for_review"])' "$f" >/dev/null 2>&1 \
+  # no yq on the runner: the pull_request `types:` line is the only 4-space `types:` key in ci.yml
+  grep -qE '^    types: \[.*ready_for_review' "$f" \
     || { echo "FAIL: on.pull_request.types lacks ready_for_review"; bad=1; }
   while IFS= read -r job; do
-    runs=$(yq -r ".jobs.\"$job\".\"runs-on\" | tostring" "$f")
+    runs=$(jobfield "$f" "$job" runs-on)
     case "$runs" in *clean-room* | *mq*) ;; *) continue ;; esac
-    iff=$(yq -r ".jobs.\"$job\".if // \"\"" "$f")
+    iff=$(jobfield "$f" "$job" if)
     if [[ "$AGGREGATORS" == *" $job "* ]]; then
       [ "$iff" = "always()" ] || { echo "FAIL: aggregator $job must be if: always() (got '$iff')"; bad=1; }
       continue
@@ -35,7 +44,7 @@ check() {
       *pull_request.draft* | *"event_name == 'push'"* | *"event_name != 'pull_request'"*) ;;
       *) echo "FAIL: job $job takes a runner slot on a draft PR (if: '$iff')"; bad=1 ;;
     esac
-  done < <(yq -r '.jobs | keys | .[]' "$f")
+  done < <(awk '/^jobs:/ {j = 1; next} j && /^[^ #]/ {j = 0} j && /^  [A-Za-z0-9_-]+:[ ]*$/ {sub(/^  /, ""); sub(/:.*/, ""); print}' "$f")
   return "$bad"
 }
 
