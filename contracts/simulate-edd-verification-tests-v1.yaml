@@ -1,0 +1,38 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-18'
+  author: PAIML Engineering
+  description: "EDD-07 — EddValidator::validate_verification_tests reports each failing EMC verification test as a critical EDD-07 violation, passes silently when all hold, and records failures in the validator."
+  kind: pattern
+  references:
+    - "crates/aprender-simulate/src/edd/validation.rs — validate_verification_tests and its tests"
+    - "docs/findings/aprender-w5032.jsonl — coverage-gaps ranking that selected this function"
+
+equations:
+  edd07_reports_exactly_the_failing_tests:
+    formula: "errors == { t in emc.tests : |eval(t.inputs) - t.expected| > t.tolerance }, each code EDD-07 and severity Critical; validator.violations grows by |errors|"
+    domain: "an EquationModelCard with >= 1 verification test and an evaluator closure"
+    codomain: "Result<(), Vec<EddViolation>>"
+    invariants:
+      - "A passing run leaves the validator's violations untouched"
+      - "A failing run appends to, never replaces, earlier violations"
+      - "The violation context carries the FAIL line with expected, actual and tolerance"
+
+proof_obligations:
+  - id: SEV-INV-001
+    type: invariant
+    property: "Only failing tests are reported, as EDD-07 Critical with FAIL context"
+    formal: "∀ t ∈ {test_validate_verification_tests_failure_is_edd07_critical_with_context}: exit(t) = 0"
+    applies_to: edd07_reports_exactly_the_failing_tests
+  - id: SEV-INV-002
+    type: invariant
+    property: "Failures accumulate in the validator across runs"
+    formal: "∀ t ∈ {test_validate_verification_tests_failures_accumulate_in_validator}: exit(t) = 0"
+    applies_to: edd07_reports_exactly_the_failing_tests
+
+falsification_tests:
+  - id: FALSIFY-SEV-001
+    rule: "failures not recorded"
+    prediction: "deleting the self.violations.extend call turns the accumulate test RED"
+    test: "cargo test -p aprender-simulate --lib test_validate_verification_tests_failures_accumulate_in_validator"
+    if_fails: "a failed verification leaves no trace in the validator"
