@@ -1,9 +1,9 @@
 name: Workflow Security Lint (LAB)
 
 # LAB check (C324, #5786): nightly/dispatch only, never in a PR, merge-queue or release job,
-# not a required check, no continue-on-error. A red opens or updates #5786, then stays silent.
-# Owner: aprender-flow (proposed). Becoming a gate needs the operator's yes.
-# Runs on the idle non-clean-room mini-builder, never on the clean-room runners.
+# not a required check, no continue-on-error. A red opens or updates the one ticket (#5786's
+# label), then stays silent. Owner: aprender-cd. Becoming a gate needs the operator's yes.
+# Runs on a LAB macOS runner, never on the clean-room or release (mini-builder) runners.
 on:
   schedule:
     - cron: '30 3 * * *'
@@ -18,15 +18,35 @@ concurrency:
 
 jobs:
   zizmor:
-    runs-on: [self-hosted, macOS, ARM64, mini-builder]
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
     timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write   # #5786: a red night opens or updates the one LAB ticket
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
       - name: Lint every workflow (unpinned-uses is the finding this check exists for)
+        id: lint
         env:
           CARGO_INSTALL_ROOT: ${{ runner.temp }}/zizmor
         run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/zizmor.log") 2>&1
           cargo install --locked zizmor --version 1.31.1
           export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
           zizmor --config .github/zizmor.yml --format plain .github/workflows
+      # The GATE/LAB rule: a red opens or updates ONE ticket with ONE owner, then stays silent.
+      # Only a red lint step calls this; a green night never does.
+      - name: A red night opens or updates the one LAB ticket (#5786)
+        if: failure() && steps.lint.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-zizmor --title "LAB: nightly zizmor workflow lint red (#5786)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/zizmor.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
