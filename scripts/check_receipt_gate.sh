@@ -161,14 +161,36 @@ printf '%s\n' "$good" >"$td/f.json"
 body "$td/b-forged" "$(sign "$td/other" "$td/f.json")"
 wrow "W14 FORGED: receipt signed by a key the PR planted in its own tree -> 0" 0 "$(arg "$td/b-forged")"
 # W15/W10 mutants: a wrapper that trusts the PR tree's key, or prints 1 regardless, is caught.
-sed 's|"\$j/.flow009/batcher.pub"|.flow009/batcher.pub|' "$W" >"$td/mut-k.sh"
-if ! cmp -s "$W" "$td/mut-k.sh"; then
+# mutate FILE FROM TO OUT -> OUT is FILE with the literal FROM replaced by TO; non-zero if FROM is absent
+mutate() {
+  local c; c=$(cat "$1"; printf x); c=${c%x}
+  case "$c" in *"$2"*) ;; *) return 1 ;; esac
+  printf '%s' "${c//"$2"/$3}" >"$4"
+}
+if mutate "$W" '"$j/.flow009/batcher.pub"' '.flow009/batcher.pub' "$td/mut-k.sh"; then
   wrow "W15 MUTANT: wrapper reading the key from the PR tree is caught by the forged row" 1 "$(arg "$td/b-forged" "$BASE" "$td/mut-k.sh")"
 else fail=$((fail + 1)); echo "FAIL W15: mutant did not apply"; fi
-sed 's|if \[ "\$first" = "RECEIPT_OK=1" \]; then|if true; then|' "$W" >"$td/mut-w.sh"
-if ! cmp -s "$W" "$td/mut-w.sh"; then
+if mutate "$W" 'if [ "$first" = "RECEIPT_OK=1" ]; then' 'if true; then' "$td/mut-w.sh"; then
   wrow "W10 MUTANT: a wrapper that always prints 1 is caught by the no-receipt row" 1 "$(arg "$td/b-none" "$BASE" "$td/mut-w.sh")"
 else fail=$((fail + 1)); echo "FAIL W10: mutant did not apply to $W"; fi
+# W16/W17: the trusted read in the workflow runs no code from the PR tree. The receipt block of
+# ci/sections.yml (from `base_ref=` to `--receipt-ok`) must fetch with inline git and call no
+# scripts/ helper; a block that routes the fetch through a PR-tree script goes RED.
+SEC="$HERE/../ci/sections.yml"
+blk_ok() { # FILE -> 0 when the receipt block is trustworthy
+  local blk; blk=$(awk '/base_ref="refs\/remotes/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$1")
+  [ -n "$blk" ] || return 1
+  case "$blk" in *"git fetch "*) ;; *) return 1 ;; esac
+  case "$blk" in *"git show "*) ;; *) return 1 ;; esac
+  printf '%s\n' "$blk" | grep -v -E '^[[:space:]]*#' | grep -E 'scripts/' | grep -v -E 'git show "\$\{base_ref\}:scripts/ci/receipt_ok_arg.sh"' | grep -q . && return 1
+  return 0
+}
+if blk_ok "$SEC"; then wrow "W16 workflow receipt block fetches with inline git and runs no PR-tree script" ok ok
+else wrow "W16 workflow receipt block fetches with inline git and runs no PR-tree script" ok bad; fi
+if mutate "$SEC" 'git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:${base_ref}"' 'bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:${base_ref}"' "$td/sec-mut.yml"; then
+  if blk_ok "$td/sec-mut.yml"; then r=missed; else r=caught; fi
+  wrow "W17 MUTANT: routing the base fetch through a PR-tree script is caught" caught "$r"
+else fail=$((fail + 1)); echo "FAIL W17: mutant did not apply to ci/sections.yml"; fi
 rm -rf "${repo:?}/.flow009"
 tier_of() { (cd "$HERE/.." && bash "$T" --event pull_request --diff-from "$td/touched.txt" --receipt-ok "$1" 2>/dev/null | head -n1); }
 t0=$(tier_of 0); case "$t0" in tier=quick|tier=full) t0=notreuse ;; esac

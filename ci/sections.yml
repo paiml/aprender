@@ -412,8 +412,12 @@ jobs:
               # plants its own key and verifier must not pass itself): the wrapper, the
               # verifier and the pinned key all come from the base ref fetched above. A base
               # that has no wrapper yet (bootstrap) or a failed read is 0.
+              # The fetch is inline git, not a scripts/ helper: a helper in the PR tree
+              # could rewrite it to point the base ref at the PR's own commit. Nothing
+              # between here and the `git show` below runs code from this tree.
               base_ref="refs/remotes/origin/${GITHUB_BASE_REF}"
-              if git show "${base_ref}:scripts/ci/receipt_ok_arg.sh" > "$RUNNER_TEMP/receipt_ok_arg.sh" 2>/dev/null; then
+              if git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:${base_ref}" 2>/dev/null &&
+                 git show "${base_ref}:scripts/ci/receipt_ok_arg.sh" > "$RUNNER_TEMP/receipt_ok_arg.sh" 2>/dev/null; then
                 rok="$(bash "$RUNNER_TEMP/receipt_ok_arg.sh" "$RUNNER_TEMP/pr-body.md" "$base_ref" "${GITHUB_SHA}")" || rok=0
               else
                 rok=0
