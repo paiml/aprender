@@ -72,7 +72,7 @@ jobs:
   # container/outputs exactly as the Actions runner did. The workspace tests
   # are the exception: as one shard inside x86-main they took 5358 s of it and
   # were the release critical path, so ci/sections.yml `matrix-pins` splits
-  # them into three shards and each runs as its own `workspace-test-shard` job
+  # them into shards (12, ONE count in ci/sections.yml matrix-pins) and each runs as its own `workspace-test-shard` job
   # below, in parallel. The `workspace-test` verdict job compares the UNION of
   # the shards' executed test ids with the owed universe, by id (#4433).
   #
@@ -528,6 +528,7 @@ jobs:
           # skips the lib/explicit Σ; a split (full full quick) is RED, since
           # the full shards' partitions would otherwise go unchecked.
           set -- $tiers
+          [ "$#" -eq "$SHARDS" ] || { echo "::error::Σ: $# tier files for $SHARDS shards:$tiers"; exit 1; }
           for t in "$@"; do [ "$t" = "$1" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }; done
           [ "$1" = full ] || { echo "every shard ran tier '$1': the lib/explicit Σ is not owed"; exit 0; }
           j=() l=()
