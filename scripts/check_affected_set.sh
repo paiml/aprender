@@ -39,7 +39,9 @@ row "root CLAUDE.md -> ALL" ALL "$(run CLAUDE.md)"
 row "ci/sections.yml -> ALL" ALL "$(run ci/sections.yml)"
 row "ci/explicit-test-commands.d fragment -> ALL" ALL "$(run ci/explicit-test-commands.d/815-affected-set-rows.cmd)"
 row "a crate's own Cargo.toml -> ALL" ALL "$(run "$ld/Cargo.toml")"
-row "a .md inside a leaf crate -> that crate (not skipped by the *.md glob)" "$lp" "$(run "$ld/playbooks/x.md")"
+row "a .md inside a leaf crate -> ALL (aprender-core reads crates/*/README.md)" ALL "$(run "$ld/README.md")"
+row "a .json inside a leaf crate -> ALL (kernel-registry.json is read by aprender-contracts)" ALL "$(run "$ld/kernel-registry.json")"
+row "a .rs inside a leaf crate stays scoped" "$lp" "$(run "$ld/src/other.rs")"
 row "--filter names the package" "package($lp)" "$($A --filter --diff-from <(echo "$ld/src/lib.rs"))"
 row "--filter ALL -> all()" "all()" "$($A --filter --diff-from <(echo Cargo.lock))"
 # empty diff and a bad base are ALL (nothing measured, nothing skipped)
@@ -77,10 +79,10 @@ sed 's/--name-only --no-renames/--name-only/' "$A" >"$t/mut-rn.sh"
 if cmp -s "$A" "$t/mut-rn.sh"; then echo "FAIL mutant did not apply"; fail=1
 else row "MUTANT: letting git detect renames is caught by the rename row" "c" "$(mv_run "$t/mut-rn.sh")"; fi
 # mutants: the skip list that used to exist (docs/*, *.md) must be caught by the ALL rows above.
-sed 's#^    \*/Cargo.toml)#    docs/* | *.md) continue ;;\n    */Cargo.toml)#' "$A" >"$t/mut-docs.sh"
+sed 's#^    crates/\*.rs) ;;#    docs/* | *.md) continue ;;\n    crates/*.rs) ;;#' "$A" >"$t/mut-docs.sh"
 if cmp -s "$A" "$t/mut-docs.sh"; then echo "FAIL docs-skip mutant did not apply"; fail=1
 else printf '%s\n' docs/x.md >"$t/dd"; row "MUTANT: skipping docs/*.md is caught by the docs-ALL row" "" "$(bash "$t/mut-docs.sh" --diff-from "$t/dd" | head -n1 || true)"; fi
-sed 's#^    \*/Cargo.toml) case.*#    */Cargo.toml) continue ;;#' "$A" >"$t/mut-toml.sh"
+sed 's#^    crates/\*) emit ALL.*#    crates/*) continue ;;#' "$A" >"$t/mut-toml.sh"
 if cmp -s "$A" "$t/mut-toml.sh"; then echo "FAIL manifest mutant did not apply"; fail=1
-else printf '%s\n' "$ld/Cargo.toml" >"$t/dt"; row "MUTANT: skipping crate Cargo.toml is caught by the manifest row" "" "$(bash "$t/mut-toml.sh" --diff-from "$t/dt" | head -n1 || true)"; fi
+else printf '%s\n' "$ld/Cargo.toml" >"$t/dt"; row "MUTANT: skipping non-.rs crate files is caught by the manifest row" "" "$(bash "$t/mut-toml.sh" --diff-from "$t/dt" | head -n1 || true)"; fi
 exit "$fail"

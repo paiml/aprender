@@ -12,7 +12,8 @@
 #   docs/, root *.md, ci/ (sections.yml, explicit-test-commands.d/, ...), Cargo.lock, root Cargo.toml,
 #   rust-toolchain.toml, .cargo/, .github/, Makefile, any other path outside a crate
 #                           ALL (tests read README.md, CLAUDE.md, ci/sections.yml and docs/ at run time)
-# A *.md under crates/<pkg>/ is that crate's input like any file there.
+# Any non-.rs file under crates/<pkg>/ (README.md, *.json, *.toml, ...) is ALL: other crates' tests read them
+# (aprender-core readme_contract.rs reads every crates/*/README.md; aprender-contracts reads aprender-serve/kernel-registry.json).
 # An empty diff, or a diff git cannot compute (bad base: exit 128), is ALL: nothing was
 # measured, so nothing may be skipped.
 # git diff runs with --no-renames: a moved file is its old path AND its new path (a rename
@@ -44,7 +45,8 @@ touched=""
 while IFS= read -r f; do
   case "$f" in
     '') continue ;;
-    */Cargo.toml) case "$f" in crates/*) emit ALL; exit 0 ;; esac ;;
+    crates/*.rs) ;;
+    crates/*) emit ALL; exit 0 ;;
   esac
   # longest manifest dir that prefixes the path
   pkg="$(awk -F'\t' -v f="$f" 'index(f, $2 "/") == 1 && length($2) > best { best = length($2); n = $1 } END { print n }' <<<"$dirs")"

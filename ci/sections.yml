@@ -1698,8 +1698,6 @@ jobs:
       # a secrets.<NAME> read reaches it only through ci.yml's FAT_SECRET_<NAME>. Case table first.
       - name: "Fat-job secret pass-through case table (6 rows)"
         run: setsid --wait bash scripts/check_fat_secrets_passed.sh --self-test
-      - name: "Affected-set tool case table (FLOW-010 E5, RED rows and mutants)"
-        run: setsid --wait bash scripts/check_affected_set.sh
       - name: Every secret a section reads is passed to the fat job under its own name
         run: setsid --wait bash scripts/check_fat_secrets_passed.sh
       # PRQ-013 (PP-066 C0-5, #2982): the job that judges a PR's OWN receipt must be
@@ -1938,6 +1936,9 @@ jobs:
         run: setsid --wait bash scripts/check_lockfile_current.sh
       - name: "lockfile guard must still turn RED (case table)"
         run: setsid --wait bash scripts/check_lockfile_current.sh --self-test
+      # FLOW-010 E5: runs cargo metadata/tree, so it lives in the cargo job, not guard-tree-steps.
+      - name: "Affected-set tool case table (FLOW-010 E5, RED rows and mutants)"
+        run: setsid --wait bash scripts/check_affected_set.sh
       # #2640: the SAME defect class as the two steps above, one level up. The
       # dogfood release runner existed as two 1170-line copies whose divergence
       # was, in every hunk, a pin for a release verifier that one copy had and
