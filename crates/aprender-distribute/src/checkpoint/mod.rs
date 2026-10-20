@@ -513,34 +513,8 @@ impl CheckpointManager {
 
                     for checkpoint in checkpoints {
                         if checkpoint.created_at < cutoff_time {
-                            // Delete old checkpoint (try both .parquet and .json)
                             let task_path = self.checkpoint_dir.join(task_id.to_string());
-
-                            let parquet_path =
-                                task_path.join(format!("{}.parquet", checkpoint.checkpoint_id));
-                            let json_path =
-                                task_path.join(format!("{}.json", checkpoint.checkpoint_id));
-
-                            // Try to delete parquet first, fall back to json
-                            let deleted = if parquet_path.exists() {
-                                std::fs::remove_file(&parquet_path).map_err(|e| {
-                                    RepartirError::InvalidTask {
-                                        reason: format!("Failed to delete parquet checkpoint: {e}"),
-                                    }
-                                })?;
-                                true
-                            } else if json_path.exists() {
-                                std::fs::remove_file(&json_path).map_err(|e| {
-                                    RepartirError::InvalidTask {
-                                        reason: format!("Failed to delete json checkpoint: {e}"),
-                                    }
-                                })?;
-                                true
-                            } else {
-                                false
-                            };
-
-                            if deleted {
+                            if Self::remove_checkpoint_file(&task_path, checkpoint.checkpoint_id)? {
                                 deleted_count += 1;
                             }
                         }
@@ -550,6 +524,21 @@ impl CheckpointManager {
         }
 
         Ok(deleted_count)
+    }
+
+    /// Delete one checkpoint file, preferring `.parquet` over `.json`.
+    /// Returns whether a file was removed.
+    fn remove_checkpoint_file(task_path: &std::path::Path, id: Uuid) -> Result<bool> {
+        for ext in ["parquet", "json"] {
+            let path = task_path.join(format!("{id}.{ext}"));
+            if path.exists() {
+                std::fs::remove_file(&path).map_err(|e| RepartirError::InvalidTask {
+                    reason: format!("Failed to delete {ext} checkpoint: {e}"),
+                })?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
