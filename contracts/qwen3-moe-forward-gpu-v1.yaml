@@ -1681,6 +1681,22 @@ falsification_tests:
       - The `is_moe` lookup at `build_indexed_weights` returns
         false for qwen3_moe (check arch-constraints-v1.yaml)
 
+- id: FALSIFY-QW3-MOE-GPU-WGPU-PRECOND-001
+  rule: 'M-GPU-MOE-2.0 wgpu stub validates its preconditions in a fixed order before reporting UnsupportedOperation'
+  prediction: |
+    `OwnedQuantizedModelWgpu::forward_qwen3_moe_wgpu` rejects, in this order,
+    with `InvalidShape`: empty token_ids; moe_layers.len() != model layers;
+    any of num_experts / num_experts_per_tok / moe_intermediate equal to 0;
+    num_experts_per_tok > num_experts. Inputs that clear all four reach
+    `UnsupportedOperation { operation: "forward_qwen3_moe_wgpu" }` naming
+    qwen3-moe-forward-gpu-v1 (num_experts_per_tok == num_experts is allowed).
+  test: |
+    cargo test -p aprender-serve --lib --features gpu forward_qwen3_moe_wgpu
+  if_fails: |
+    A precondition was reordered, dropped or loosened in
+    `crates/aprender-serve/src/gguf/wgpu_backend/mod.rs`, or the stub
+    stopped reporting UnsupportedOperation before M-GPU-MOE-2.2 landed.
+
 qa_gate:
   id: F-QW3-MOE-GPU-001
   name: Qwen3-MoE GPU Forward Contract

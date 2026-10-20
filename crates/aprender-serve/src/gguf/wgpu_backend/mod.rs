@@ -234,3 +234,133 @@ mod owned_quantized_model_wgpu_tests {
         ) -> Result<Vec<f32>> = OwnedQuantizedModelWgpu::forward_qwen3_moe_wgpu;
     }
 }
+
+/// Runtime coverage of the `forward_qwen3_moe_wgpu` precondition ladder and
+/// the M-GPU-MOE-2.0 stub (#5629). The wrapper is built from the shared
+/// `create_test_model_with_config` fixture, so no GPU or GGUF file is needed.
+#[cfg(test)]
+mod forward_qwen3_moe_wgpu_runtime_tests {
+    use super::*;
+    use crate::gguf::qwen3_moe_load::Qwen3MoeQuantizedLayer;
+    use crate::gguf::test_helpers::create_test_model_with_config;
+    use crate::gguf::{ArchConstraints, GGUFConfig, QuantizedTensorRef};
+
+    // `create_test_model_with_config` always builds exactly one decoder layer.
+    const LAYERS: usize = 1;
+
+    fn tensor_ref() -> QuantizedTensorRef {
+        QuantizedTensorRef {
+            offset: 0,
+            byte_size: 0,
+            num_elements: 0,
+            qtype: 12,
+        }
+    }
+
+    fn moe_layers(n: usize) -> Vec<Qwen3MoeQuantizedLayer> {
+        (0..n)
+            .map(|_| Qwen3MoeQuantizedLayer {
+                router: tensor_ref(),
+                gate_exps: tensor_ref(),
+                up_exps: tensor_ref(),
+                down_exps: tensor_ref(),
+            })
+            .collect()
+    }
+
+    fn wrapper() -> OwnedQuantizedModelWgpu {
+        let config = GGUFConfig {
+            architecture: "test".to_string(),
+            constraints: ArchConstraints::from_architecture("test"),
+            hidden_dim: 64,
+            intermediate_dim: 128,
+            num_heads: 4,
+            num_kv_heads: 4,
+            num_layers: 1,
+            vocab_size: 100,
+            rope_theta: 10000.0,
+            context_length: 512,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        };
+        OwnedQuantizedModelWgpu::new(create_test_model_with_config(&config))
+            .expect("wrapper construction never errors at M-GPU-MOE-2.0")
+    }
+
+    /// Run the forward with the given tokens, layer count and MoE config.
+    fn run(tokens: &[u32], layers: usize, cfg: (usize, usize, usize)) -> Result<Vec<f32>> {
+        wrapper().forward_qwen3_moe_wgpu(tokens, &moe_layers(layers), cfg.0, cfg.1, cfg.2, &[])
+    }
+
+    fn invalid_shape_reason(r: Result<Vec<f32>>) -> String {
+        match r {
+            Err(RealizarError::InvalidShape { reason }) => reason,
+            other => panic!("expected InvalidShape, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_tokens_are_rejected_before_any_other_check() {
+        // Layer count AND config are also wrong: only the token check may fire.
+        let reason = invalid_shape_reason(run(&[], LAYERS + 1, (0, 0, 0)));
+        assert!(reason.contains("token_ids must not be empty"), "{reason}");
+    }
+
+    #[test]
+    fn layer_count_mismatch_names_both_counts_and_beats_config_check() {
+        let reason = invalid_shape_reason(run(&[1], LAYERS + 1, (0, 0, 0)));
+        assert!(reason.contains("moe_layers.len() = 2"), "{reason}");
+        assert!(reason.contains("model has 1 decoder layers"), "{reason}");
+    }
+
+    #[test]
+    fn each_zero_moe_config_field_is_rejected_and_named() {
+        for cfg in [(0, 2, 8), (4, 0, 8), (4, 2, 0)] {
+            let reason = invalid_shape_reason(run(&[1], LAYERS, cfg));
+            let want = format!(
+                "num_experts={}, num_experts_per_tok={}, moe_intermediate={}",
+                cfg.0, cfg.1, cfg.2
+            );
+            assert!(
+                reason.contains("incomplete MoE config"),
+                "{cfg:?}: {reason}"
+            );
+            assert!(reason.contains(&want), "{cfg:?}: {reason}");
+        }
+    }
+
+    #[test]
+    fn top_k_above_expert_count_is_rejected_but_equal_is_allowed() {
+        let reason = invalid_shape_reason(run(&[1], LAYERS, (4, 5, 8)));
+        assert!(
+            reason.contains("num_experts_per_tok (5) exceeds num_experts (4)"),
+            "{reason}"
+        );
+        // k == num_experts passes the ladder and reaches the stub.
+        assert!(matches!(
+            run(&[1], LAYERS, (4, 4, 8)),
+            Err(RealizarError::UnsupportedOperation { .. })
+        ));
+    }
+
+    #[test]
+    fn valid_inputs_reach_the_stub_with_its_contract_pointer() {
+        match run(&[1, 2, 3], LAYERS, (4, 2, 8)) {
+            Err(RealizarError::UnsupportedOperation { operation, reason }) => {
+                assert_eq!(operation, "forward_qwen3_moe_wgpu");
+                assert!(reason.contains("qwen3-moe-forward-gpu-v1"), "{reason}");
+                assert!(reason.contains("forward_qwen3_moe"), "{reason}");
+            },
+            other => panic!("expected UnsupportedOperation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_wraps_the_model_without_touching_it() {
+        assert_eq!(wrapper().model.layers.len(), LAYERS);
+    }
+}
