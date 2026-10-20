@@ -1,77 +1,65 @@
 #!/usr/bin/env bash
 # D1 (FLOW-010 runner-wait): a DRAFT pull request takes no runner slot.
 #
-# Every job of ci.yml that asks for the clean-room or mq pool must either
-#   - carry `pull_request.draft` in its `if:` (skipped on a draft), or
-#   - never run on a pull_request (`push`-only, or `event_name != 'pull_request'`), or
-#   - be one of the AGGREGATORS below, which stay `if: always()` so the three
-#     required check names exist and FAIL on a draft (a skipped required check
-#     counts as passing on GitHub, so skipping them would let an armed draft merge).
-# The workflow must also re-run on `ready_for_review`, or a draft flipped to
-# ready would never get CI.
+# EQUALITY, not pattern matching. Three rounds of "the pattern accepts X" ended here: each job
+# of ci.yml has exactly one canonical `if:` below, and the check is string equality with that
+# value (a trailing ` # comment` stripped), byte for byte. The set of jobs in ci.yml must equal
+# the CANON list, so a new job is RED until it is added here on purpose with its draft behaviour.
+#   - jobs that ask for a clean-room/mq runner on a pull_request carry the draft guard in their `if:`;
+#   - the three AGGREGATORS (workspace-test, ci-gate, gate) stay `if: always()`: they must exist and
+#     FAIL on a draft (a skipped required check counts as passing on GitHub);
+#   - on.pull_request.types must be exactly the canonical list, which includes ready_for_review.
 #
 # Usage: check_ci_draft_gate.sh [ci.yml]   |   check_ci_draft_gate.sh --self-test
 set -euo pipefail
 
-AGGREGATORS=" workspace-test ci-gate gate "
+TYPES='types: [opened, synchronize, reopened, ready_for_review]'
 
-# jobfield FILE JOB KEY -> the single-line value of `    KEY:` inside job JOB (empty if absent)
-jobfield() {
-  awk -v job="  $2:" -v key="    $3:" '
-    $0 == job {f = 1; next}
-    f && /^  [A-Za-z0-9_-]+:[ ]*$/ {exit}
-    f && index($0, key) == 1 {v = substr($0, length(key) + 1); sub(/^ +/, "", v); print v; exit}' "$1"
+# canon JOB -> the one allowed `if:` value (empty output = job not in the list)
+canon() {
+  case "$1" in
+    mg-reuse) printf '%s' "github.event_name == 'push' && github.ref == 'refs/heads/main'" ;;
+    mg-reuse-self-test | workspace-test-shard) printf '%s' '${{ github.event_name != '"'pull_request'"' || !github.event.pull_request.draft }}' ;;
+    x86-main) printf '%s' '${{ !cancelled() && needs.mg-reuse.outputs.x86 != '"'1'"' && !(github.event_name == '"'pull_request'"' && github.event.pull_request.draft) }}' ;;
+    x86-main-advisories) printf '%s' '${{ !cancelled() && needs.mg-reuse.outputs.x86 == '"'1'"' && !(github.event_name == '"'pull_request'"' && github.event.pull_request.draft) }}' ;;
+    determinism) printf '%s' '${{ !cancelled() && needs.mg-reuse.outputs.det != '"'1'"' && github.event_name != '"'pull_request'"' }}' ;;
+    workspace-test | ci-gate | gate) printf '%s' 'always()' ;;
+  esac
+}
+JOBS="mg-reuse mg-reuse-self-test x86-main x86-main-advisories determinism workspace-test-shard workspace-test ci-gate gate"
+
+# strip a trailing ` # comment` and trailing blanks
+nocomment() { sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//'; }
+
+# jobs_of FILE -> every 2-space key under `jobs:` (a trailing comment on the header is allowed)
+jobs_of() {
+  awk '/^jobs:/ {j = 1; next} j && /^[^ #]/ {j = 0} j && /^  [^ #][^:]*:/ {sub(/^  /, ""); sub(/:.*/, ""); print}' "$1"
 }
 
-# The only two draft-guard forms ci.yml uses; anything else (a flipped polarity, a bare
-# `pull_request.draft`) is RED. G_ALL covers the jobs that run on every event, G_PQ the
-# `!cancelled() && ...` jobs.
-G_ALL="github.event_name != 'pull_request' || !github.event.pull_request.draft"
-G_PQ="!(github.event_name == 'pull_request' && github.event.pull_request.draft)"
-
-# draft_guard_ok IF -> 0 when the whole `if:` value is an allowed form. The comparison is on the WHOLE
-# expression (the `${{ }}` wrapper stripped), never a substring: a padded `... || true`, a trailing
-# `# comment` or `push || true` must not pass. A form is the exact guard, or a conjunction that adds
-# only `&&`-ed terms (no `||`, no `#`) in front of it, so extra terms can only narrow when the job runs.
-draft_guard_ok() {
-  local e="$1"
-  e="${e#\$\{\{ }"; e="${e% \}\}}"
-  [[ "$e" == *"||"* && "$e" != "$G_ALL" ]] && return 1
-  [[ "$e" == *"#"* || "$e" == *"!!"* ]] && return 1
-  [ "$e" = "$G_ALL" ] && return 0
-  [[ "$e" == *"$G_PQ" ]] && return 0
-  [[ "$e" == *" && github.event_name != 'pull_request'" ]] && return 0
-  [[ "$e" == "github.event_name == 'push' && "* ]] && return 0
-  return 1
+# ifof FILE JOB -> the job's `    if:` value (comment stripped), or nothing
+ifof() {
+  awk -v job="$2" '
+    /^  [^ #][^:]*:/ { n = $0; sub(/^  /, "", n); sub(/:.*/, "", n); f = (n == job); next }
+    f && index($0, "    if: ") == 1 { v = substr($0, 9); print v; exit }' "$1" | nocomment
 }
 
 check() {
-  local f="$1" bad=0 job runs iff pool=0 aggs=0
-  # no yq on the runner: the pull_request `types:` line is the only 4-space `types:` key in ci.yml
-  grep -qE '^    types: \[([^]]*, ?)?ready_for_review(,[^]]*)?\]' "$f" \
-    || { echo "FAIL: on.pull_request.types lacks ready_for_review"; bad=1; }
+  local f="$1" bad=0 job want got seen=0
+  # the pull_request `types:` line is the only 4-space `types:` key in ci.yml
+  got=$(/usr/bin/grep -E '^    types: ' "$f" | nocomment | sed -E 's/^ +//' || true)
+  [ "$got" = "$TYPES" ] || { echo "FAIL: on.pull_request.types is '$got', want '$TYPES'"; bad=1; }
   while IFS= read -r job; do
-    iff=$(jobfield "$f" "$job" if)
-    if [[ "$AGGREGATORS" == *" $job "* ]]; then
-      aggs=$((aggs + 1))
-      [ "$iff" = "always()" ] || { echo "FAIL: aggregator $job must be if: always() (got '$iff')"; bad=1; }
-      continue
-    fi
-    runs=$(jobfield "$f" "$job" runs-on)
-    # a runs-on the single-line parser cannot read (block list) on a job that is not a reusable call
-    # would be skipped silently, so it is RED, not "not a pool job"
-    if [ -z "$runs" ] && [ -z "$(jobfield "$f" "$job" uses)" ]; then
-      echo "FAIL: job $job has no single-line runs-on and no uses: — the draft gate cannot read it"; bad=1; continue
-    fi
-    case "$runs" in *clean-room* | *mq*) ;; *) continue ;; esac
-    pool=$((pool + 1))
-    if ! draft_guard_ok "$iff"; then
-      echo "FAIL: job $job takes a runner slot on a draft PR, or its draft guard is not one of the allowed exact forms (if: '$iff')"; bad=1
-    fi
-  done < <(awk '/^jobs:/ {j = 1; next} j && /^[^ #]/ {j = 0} j && /^  [A-Za-z0-9_-]+:[ ]*$/ {sub(/^  /, ""); sub(/:.*/, ""); print}' "$f")
-  # a parse that finds nothing must not pass
-  [ "$aggs" -eq 3 ] || { echo "FAIL: saw $aggs of the 3 aggregators (workspace-test, ci-gate, gate)"; bad=1; }
-  [ "$pool" -ge 1 ] || { echo "FAIL: no clean-room/mq job found — parser saw nothing"; bad=1; }
+    seen=$((seen + 1))
+    want=$(canon "$job")
+    [ -n "$want" ] || { echo "FAIL: job $job is not in the CANON list of check_ci_draft_gate.sh (add it with its draft behaviour)"; bad=1; continue; }
+    got=$(ifof "$f" "$job")
+    [ "$got" = "$want" ] || { echo "FAIL: job $job: if: '$got' != canonical '$want'"; bad=1; }
+  done < <(jobs_of "$f")
+  # every listed job must exist: a parse that finds fewer must not pass
+  for job in $JOBS; do
+    jobs_of "$f" | /usr/bin/grep -qx "$job" || { echo "FAIL: listed job $job not found in $f"; bad=1; }
+  done
+  [ "$seen" -ge 1 ] || { echo "FAIL: parser saw no jobs"; bad=1; }
   return "$bad"
 }
 
@@ -105,13 +93,25 @@ if [ "${1:-}" = "--self-test" ]; then
   # Mutation 9: a near-miss ready_for_review token -> must be RED.
   sed 's/ready_for_review\]/ready_for_review_x]/' "$src" >"$t/m9.yml"
   if check "$t/m9.yml" >/dev/null; then echo "self-test: mutation 9 (ready_for_review_x) not caught"; exit 1; fi
-  # Mutation 10: a job whose runs-on is a block list the parser cannot read -> must be RED.
-  awk '/^  mg-reuse-self-test:/ {g = 1} g && /^    runs-on:/ {print "    runs-on:"; print "      - self-hosted"; print "      - clean-room"; g = 0; next} {print}' "$src" >"$t/m10.yml"
-  if check "$t/m10.yml" >/dev/null; then echo "self-test: mutation 10 (block-list runs-on) not caught"; exit 1; fi
+  # Mutation 11: `&& true != !(...)` — a comparison that makes the guard vacuous -> must be RED.
+  sed "s/ && !(github.event_name == 'pull_request'/ \&\& true != !(github.event_name == 'pull_request'/" "$src" >"$t/m11.yml"
+  if check "$t/m11.yml" >/dev/null; then echo "self-test: mutation 11 (true != !(...)) not caught"; exit 1; fi
+  # Mutation 12: a double negation `! !(...)` -> must be RED.
+  sed "s/ && !(github.event_name == 'pull_request'/ \&\& ! !(github.event_name == 'pull_request'/" "$src" >"$t/m12.yml"
+  if check "$t/m12.yml" >/dev/null; then echo "self-test: mutation 12 (! !(...)) not caught"; exit 1; fi
+  # Mutation 13: a job whose header carries a comment suffix and has lost its `if:` -> must be RED.
+  awk '/^  workspace-test-shard:/ {print "  workspace-test-shard: # no guard here"; g = 1; next} g && /^    if:/ {g = 0; next} {print}' "$src" >"$t/m13.yml"
+  if check "$t/m13.yml" >/dev/null; then echo "self-test: mutation 13 (comment-suffixed unguarded job) not caught"; exit 1; fi
+  # Mutation 14: a brand-new unguarded pool job (not in CANON), header with a comment -> must be RED.
+  awk '{print} /^jobs:/ {print "  extra-job: # unguarded"; print "    runs-on: [self-hosted, Linux, clean-room]"; print "    steps: []"}' "$src" >"$t/m14.yml"
+  if check "$t/m14.yml" >/dev/null; then echo "self-test: mutation 14 (new job outside CANON) not caught"; exit 1; fi
+  # Mutation 15: a trailing comment is stripped, but a comment hiding a padded guard must not help -> RED.
+  sed "s/draft) }}\$/draft) || true }} # fine/" "$src" >"$t/m15.yml"
+  if check "$t/m15.yml" >/dev/null; then echo "self-test: mutation 15 (|| true then comment) not caught"; exit 1; fi
   # Mutation 6: nothing parses (empty jobs) -> must be RED, not vacuously green.
   printf 'on:\n  pull_request:\n    types: [ready_for_review]\njobs:\n' >"$t/m6.yml"
   if check "$t/m6.yml" >/dev/null; then echo "self-test: mutation 6 (empty parse) not caught"; exit 1; fi
-  echo "check_ci_draft_gate: self-test OK (10 mutations caught)"
+  echo "check_ci_draft_gate: self-test OK (15 mutations caught)"
   exit 0
 fi
 check "${1:-.github/workflows/ci.yml}" && echo "check_ci_draft_gate: OK"
