@@ -69,15 +69,15 @@ for l in $LAUNCHERS; do
     if [ "$n" -eq 0 ]; then ok "S MUTANT $l: call removed -> the row goes red"; else broke "S MUTANT $l still has $n call(s)"; fi
   fi
 done
-# R: the real harness, KILLed. <label> <script> <process pattern of the server> <want>
+# R: the real harness, KILLed. The wait for the server is 240 s (HSC_WAIT_TICKS x 0.1 s): a loaded merge-queue runner took >60 s to reach the apr stub (#5806 MG 39522624253). <label> <script> <process pattern of the server> <want>
 real_row() {
   local label="$1" script="$2" pat="$3" want="$4" h s i st
   bash "$script" > "$T/out.log" 2>&1 < /dev/null &
   h=$!
   s=""
-  for i in $(seq 1 600); do s=$(for d in $(descendants "$h"); do grep -aq -- "$pat" <<< "$(cmdl "$d")" && echo "$d"; done | head -1); [ -n "$s" ] && break; kill -0 "$h" 2> /dev/null || break; sleep 0.1; done
+  for i in $(seq 1 "${HSC_WAIT_TICKS:-2400}"); do s=$(for d in $(descendants "$h"); do grep -aq -- "$pat" <<< "$(cmdl "$d")" && echo "$d"; done | head -1); [ -n "$s" ] && break; kill -0 "$h" 2> /dev/null || break; sleep 0.1; done
   kids=$(descendants "$h")
-  [ -n "$s" ] || { broke "$label: harness never started a server matching '$pat'"; kill -KILL "$h" 2> /dev/null; return; }
+  [ -n "$s" ] || { broke "$label: harness never started a server matching '$pat' (waited up to $(( ${HSC_WAIT_TICKS:-2400} / 10 )) s; harness log: $(tail -n 2 "$T/out.log" 2> /dev/null | tr '\n' ' '))"; kill -KILL "$h" 2> /dev/null; return; }
   # a cancelled job also takes the dogfood child (which would otherwise end its own server): kill it and its timeout
   for d in $(descendants "$h"); do grep -aqE "crux_inference_dogfood|^timeout " <<< "$(cmdl "$d")" && kill -KILL "$d" 2> /dev/null; done
   kill -KILL "$h"; wait "$h" 2> /dev/null
