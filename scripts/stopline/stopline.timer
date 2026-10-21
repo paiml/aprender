@@ -1,0 +1,9 @@
+[Unit]
+Description=STOPLINE report at :05 every hour (PMAT-5836)
+
+[Timer]
+OnCalendar=*:05:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
