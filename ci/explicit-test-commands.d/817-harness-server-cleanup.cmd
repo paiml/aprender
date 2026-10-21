@@ -1,1 +1,0 @@
-bash scripts/check_harness_server_cleanup.sh
