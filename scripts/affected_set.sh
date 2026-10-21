@@ -51,9 +51,49 @@ root="${AFFECTED_ROOT:-$(git rev-parse --show-toplevel)}"
 dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta")" || { emit ALL; exit 0; }
 [ -n "$dirs" ] || { emit ALL; exit 0; }
 touched=""
+# FLOW-010 P3 (#5799): Cargo.lock narrowed by its [[package]] blocks. Prints every lock package that changed between
+# the two revisions or depends (transitively, in the head lock) on one that did; fails (-> ALL) on anything unreadable.
+lock_closure() { # $1 base $2 head
+  local b h
+  b="$(git merge-base "$1" "$2" 2>/dev/null)" || return 1
+  h="$(git rev-parse -q --verify "$2" 2>/dev/null)" || return 1
+  { git show "$b:Cargo.lock" 2>/dev/null | awk -v side=B -f <(lock_awk); git show "$h:Cargo.lock" 2>/dev/null | awk -v side=H -f <(lock_awk); } \
+    | awk -F'\t' '
+        $1 == "B" { bl[$2 "\t" $3 "\t" $4] = 1; next }
+        $1 == "H" { hl[$2 "\t" $3 "\t" $4] = 1; nm[$2] = 1; n = split($4, d, ","); for (i = 1; i <= n; i++) if (d[i] != "") rev[d[i]] = rev[d[i]] " " $2; next }
+        END {
+          for (k in bl) if (!(k in hl)) { split(k, p, "\t"); ch[p[1]] = 1 }
+          for (k in hl) if (!(k in bl)) { split(k, p, "\t"); ch[p[1]] = 1 }
+          for (c in ch) q[++qn] = c
+          for (i = 1; i <= qn; i++) { m = split(rev[q[i]], r, " "); for (j = 1; j <= m; j++) if (!(r[j] in ch)) { ch[r[j]] = 1; q[++qn] = r[j] } }
+          for (c in ch) print c
+        }' | sort -u
+}
+lock_awk() { # one TSV row per [[package]]: side, name, version, sorted dep names
+  cat <<'AWK'
+function flush() { if (name != "") { n = split(deps, d, ","); asort(d); s = ""; for (i = 1; i <= n; i++) s = s (i > 1 ? "," : "") d[i]; print side "\t" name "\t" ver "\t" s } name = ""; ver = ""; deps = ""; ind = 0 }
+/^\[\[package\]\]/ { flush(); next }
+/^name = / { gsub(/^name = "|"$/, ""); name = $0; next }
+/^version = / { v = $0; gsub(/^version = "|"$/, "", v); ver = v; next }
+/^dependencies = \[/ { ind = 1; next }
+ind && /^\]/ { ind = 0; next }
+ind { x = $0; gsub(/^ *"|",? *$/, "", x); sub(/ .*/, "", x); deps = deps (deps == "" ? "" : ",") x; next }
+END { flush() }
+AWK
+}
 while IFS= read -r f; do
   case "$f" in
     '') continue ;;
+    Cargo.lock)
+      [ -z "$from" ] || { emit ALL; exit 0; }   # --diff-from carries no revisions: nothing to compare, so ALL
+      lk="$(lock_closure "${1:-origin/main}" "${2:-HEAD}")" || { emit ALL; exit 0; }
+      [ -n "$lk" ] || { emit ALL; exit 0; }
+      while IFS= read -r l; do
+        cut -f1 <<<"$dirs" | grep -qxF -- "$l" || continue   # an external package: only the members it reaches matter
+        case " $CORE " in *" $l "*) emit ALL; exit 0 ;; esac
+        touched="$touched"$'\n'"$l"
+      done <<<"$lk"
+      continue ;;
     crates/*/build.rs) emit ALL; exit 0 ;;
     crates/*.rs) ;;
     crates/*) emit ALL; exit 0 ;;
