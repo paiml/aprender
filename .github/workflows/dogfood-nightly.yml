@@ -28,7 +28,7 @@ on:
     # The train judges the head of THAT night's scheduled nightly.yml run (C); the `night` job
     # below resolves C and the dogfood job checks it out, so a merge after 21:00 no longer
     # leaves the lane measuring some other commit (#5079).
-    - cron: '5 23 * * *'
+    - cron: '5 21 * * *'
   workflow_dispatch:
     inputs:
       plant:
