@@ -13,10 +13,14 @@ SET="${AFFECTED_SET_SH:-scripts/affected_set.sh}"
 ALLOW="${AFFECTED_READERS_ALLOW:-crates/aprender-bench-tokenizer/src/lib.rs:50}"   # joins ../.. only for <root>/tokenizer.json and <root>/models/
 # crates/ dirs outside the workspace (excluded): a change there is unplaceable -> ALL, so they need no READERS entry
 NONMEMBER="${AFFECTED_NONMEMBER:-facades}"
-PAT='"\.\."|"[^"]*(\.\./|/\.\.)[^"]*"|\bparent[[:space:]]*\(|Path::parent\(|Component::ParentDir|show-toplevel|\.pop\(\);[^;]*\.push\(|let mut [A-Za-z_0-9]+[^=]*= *(std::path::)?PathBuf::from\(env!\("CARGO_MANIFEST_DIR"\)\)|ancestors\(\)|current_dir|"[^"]*crates/|"crates"|CARGO_WORKSPACE_DIR|workspace_path_or_skip|read_dir\([^)]*(MANIFEST|crates|root|workspace)|format!\([^)]*(MANIFEST_DIR|crates/)'
+PAT='"\.\."|"[^"]*(\.\./|/\.\.)[^"]*"|\bparent[[:space:]]*\(|Path::parent\(|Component::ParentDir|show-toplevel|\.pop\(\);[^;]*\.push\(|ancestors\(\)|current_dir|"[^"]*crates/|"crates"|CARGO_WORKSPACE_DIR|workspace_path_or_skip|read_dir\([^)]*(MANIFEST|crates|root|workspace)|format!\([^)]*(MANIFEST_DIR|crates/)'
 listed() { sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sort -u; }
 hits() { # $1 = crates dir; prints crate names
-  { grep -rEn --include='*.rs' "$PAT" "$1" 2>/dev/null || true; } \
+  { grep -rEn --include='*.rs' "$PAT" "$1" 2>/dev/null || true
+    # file-level: CARGO_MANIFEST_DIR and .pop( anywhere in one file (rustfmt may wrap the let or split pop/push across lines)
+    for f in $(grep -rlE --include='*.rs' 'CARGO_MANIFEST_DIR' "$1" 2>/dev/null || true); do
+      grep -qE '\.pop[[:space:]]*\(' "$f" && echo "$f:0:pop-with-MANIFEST_DIR"
+    done; } \
     | grep -vE '^[^:]*/target/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
     | awk -F: -v allow=" $ALLOW " -v nm=" $NONMEMBER " '{ k = $1 ":" $2; if (index(allow, " " k " ")) next; n = split($1, a, "/"); if (index(nm, " " a[2] " ")) next; print a[2] }' | sort -u
 }
@@ -66,7 +70,7 @@ if [ "${1:-}" = "--self-test" ]; then
   expect_red 'Path::parent(x)' zz-s 'let _ = Path::parent(&here);'
   expect_red '.parent ()' zz-t 'let _ = here.parent ();'
   expect_red 'a non-member dir is only exempt when named' facades-x 'let _ = here.ancestors();'
-  expect_red 'rustfmt-split PathBuf pop/push' zz-u $'let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));\n    p.pop();\n    p.push("aprender-core");'
+  expect_red 'rustfmt-wrapped let + split pop/push' zz-u $'let mut m =\n        PathBuf::from(env!("CARGO_MANIFEST_DIR"));\n    m.pop();\n    m.push("aprender-core");'
   printf '{"packages":[{"manifest_path":"/x/crates/facades/zz-evil/Cargo.toml"}]}' >"$t/meta.json"; fresh zz-v
   if (AFFECTED_META_JSON="$t/meta.json" check crates >/dev/null 2>&1); then echo "FAIL self-test: a NONMEMBER dir listed by cargo metadata passed"; fail=1; fi
   # the bench-tokenizer exemption is the one line, not the crate

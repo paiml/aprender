@@ -53,7 +53,7 @@ row "a crate's own Cargo.toml -> ALL" ALL "$(run "$ld/Cargo.toml")"
 row "a .md inside a leaf crate -> ALL (aprender-core reads crates/*/README.md)" ALL "$(run "$ld/README.md")"
 row "a .json inside a leaf crate -> ALL (kernel-registry.json is read by aprender-contracts)" ALL "$(run "$ld/kernel-registry.json")"
 row "a .rs inside a leaf crate stays scoped (itself + aprender-core)" "$lc" "$(run "$ld/src/other.rs" | sort -u)"
-row "--filter names the package and aprender-core" "$(printf 'package(%s)\n' $lc | paste -sd'|' | sed 's/|/ | /g')" "$($A --filter --diff-from <(echo "$ld/src/lib.rs"))"
+row "--filter names the package and aprender-core" "$(printf 'package(%s)\n' $lc | LC_ALL=C sort | paste -sd'|' | sed 's/|/ | /g')" "$($A --filter --diff-from <(echo "$ld/src/lib.rs"))"
 row "--filter ALL -> all()" "all()" "$($A --filter --diff-from <(echo Cargo.lock))"
 # empty diff and a bad base are ALL (nothing measured, nothing skipped)
 : >"$t/empty"
