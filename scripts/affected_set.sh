@@ -42,14 +42,14 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
-case "$from" in *..*) echo "affected_set: refusing a --diff-from with \"..\": $from" >&2; exit 2 ;; esac   # bashrs SEC010
-if [ -n "$from" ]; then files="$(cat "$from")" || files=""
-else files="$(git diff --name-only --no-renames "${1:-origin/main}...${2:-HEAD}")" || files=""; fi
 emit() { # $@ = package names, or ALL
   if [ "${1:-}" = ALL ]; then [ "$filter" = 1 ] && echo 'all()' || echo ALL; return; fi
   if [ "$filter" = 1 ]; then printf '%s\n' "$@" | sed 's/.*/package(&)/' | paste -sd'|' | sed 's/|/ | /g'; else printf '%s\n' "$@"; fi
 }
 [ "$bad" = 0 ] || { emit ALL; exit 0; }   # --diff-from with no FILE
+case "$from" in *..*) echo "affected_set: refusing a --diff-from with \"..\": $from" >&2; emit ALL; exit 0 ;; esac   # bashrs SEC010: refuse the path (never read it), fail closed with ALL
+if [ -n "$from" ]; then files="$(cat "$from")" || files=""
+else files="$(git diff --name-only --no-renames "${1:-origin/main}...${2:-HEAD}")" || files=""; fi
 [ -n "$files" ] || { emit ALL; exit 0; }
 if [ -n "${AFFECTED_META:-}" ]; then meta="$(cat "$AFFECTED_META")" || meta=""
 else meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null || cargo metadata --no-deps --format-version 1)" || meta=""; fi
