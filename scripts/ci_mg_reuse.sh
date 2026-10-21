@@ -67,6 +67,13 @@ concl() {
     | if length == 1 then (.[0].conclusion // "none") else "count=\(length)" end' "$1" 2> /dev/null
 }
 
+# The matrix jobs `workspace-test-shard (N)` in jobs file $1: prints "<count> <not-success count>". A draft PR run (or a
+# reused one) has green `workspace-test` and NO such jobs; that green says no test ran, so it is never reusable (#5885 lane-b).
+shards() {
+  jq -r '[.jobs[]? | select(.name | test("^workspace-test-shard \\([0-9]+\\)$"))]
+    | "\(length) \([.[] | select(.conclusion != "success")] | length)"' "$1" 2> /dev/null || echo "0 1"
+}
+
 decide() {
   local ev="" m="" b="" h="" runs="" jobs="" root="."
   while [ $# -gt 0 ]; do
@@ -116,7 +123,9 @@ decide() {
   # the head's run tested; reuse that run's `workspace-test` verdict (it is the Σ-executed fan-in over every shard).
   # Not tied to x86-main/determinism: a red x86-main on the head does not make a green workspace-test stale.
   wt=0
-  [ "$(concl "$jobs" workspace-test)" = success ] && wt=1 # R:k6-wt
+  # wt=1 needs the verdict green AND >=1 shard job, all success: a draft run is green with zero shards (#5885 lane-b).
+  read -r nsh nbad <<< "$(shards "$jobs")"
+  [ "$(concl "$jobs" workspace-test)" = success ] && [ "${nsh:-0}" -ge 1 ] 2> /dev/null && [ "${nbad:-1}" = 0 ] && wt=1 # R:k6-wt
   mc=1
   [ "$(concl "$jobs" mac-check)" = success ] || mc=0 # R:k6-mac
   emit "$x" "$x" "$mc" "run $rid attempt $att on ${h:0:10}" "$h" \
@@ -397,6 +406,10 @@ self_test() {
 
   # T43b (#5884, Noah 16:28Z #3): workspace-test reuse. RED->GREEN falsifier: a changed main must run, an identical tree may skip.
   sed '/^workspace-test	/d' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.no-wt"
+  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard (1)\tsuccess\nworkspace-test-shard (2)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-ok"
+  sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; printf 'workspace-test-shard (1)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
+  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard (1)\tsuccess\nworkspace-test-shard (2)\tfailure\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-shard-failed"
+  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard\tskipped\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-draft"
   sed 's|^workspace-test	success$|workspace-test	failure|' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.fail-wt"
   wrow() { # wrow NAME WANT decide-args...
     local n="$1" want="$2" out; shift 2
@@ -406,14 +419,17 @@ self_test() {
   }
   wd() { local n="$1" want="$2" m="$3" b="$4" h="$5" r="$6" j="$7"
     wrow "$n" "$want" --event merge_group --queue-head "$m" --base "$b" --pr-head "$h" --runs "$F/$r" --jobs "$F/$j"; }
-  wd identical-tree-skips       1 "$M" "$B" "$H" runs.ok jobs.ok
+  wd identical-tree-skips       1 "$M" "$B" "$H" runs.ok jobs.wt-ok
+  wd draft-run-no-shards-runs   0 "$M" "$B" "$H" runs.ok jobs.wt-draft
+  wd greenverdict-zero-shards   0 "$M" "$B" "$H" runs.ok jobs.ok
+  wd one-shard-failed-runs      0 "$M" "$B" "$H" runs.ok jobs.wt-shard-failed
   wd changed-tree-runs          0 "$M_TREE" "$B" "$H" runs.ok jobs.ok
   wd changed-main-not-ancestor  0 "$M_K3" "$B2" "$H" runs.ok jobs.ok
   wd base-is-a-merge-runs       0 "$M_K2" "$BM" "$H2" runs.h2 jobs.h2
   wd head-wt-failed-runs        0 "$M" "$B" "$H" runs.ok jobs.fail-wt
   wd head-wt-missing-runs       0 "$M" "$B" "$H" runs.ok jobs.no-wt
   wd run-in-progress-runs       0 "$M" "$B" "$H" runs.newer-running jobs.ok
-  wd head-x86-failed-still-skips 1 "$M" "$B" "$H" runs.ok jobs.fail-determinism
+  wd head-x86-failed-still-skips 1 "$M" "$B" "$H" runs.ok jobs.wt-x86fail
   wrow push-never-skips         0 --event push --queue-head "$M" --base "$B" --pr-head "$H" --runs "$F/runs.ok" --jobs "$F/jobs.ok"
   # the override passes wt only as exactly 1, with its citation
   local wo
