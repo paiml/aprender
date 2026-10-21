@@ -19,6 +19,7 @@ CAP=${SL_CAP:-7}
 INBOX=${SL_INBOX:-/mnt/nvme-raid0/cop-inbox/inbox.md}
 HERE=$(cd "$(dirname "$0")" && pwd)
 FIXES=${SL_FIXES:-$HERE/stopline/fixes.tsv}
+FLOW010=${SL_FLOW010:-$HERE/stopline/flow010.tsv}
 P95=${SL_P95:-/mnt/nvme-raid0/cop-inbox/handoff/aprender-flow-p95.sh}
 
 # count_q <search-qualifiers> -> issueCount, or "nm" when the read fails
@@ -55,6 +56,40 @@ fixes_part() {
   echo "${out:-no fixes}"
 }
 
+# cpu_part -> latest "cpu-min/batch ..." from flow's :02 gate line in the inbox, or not_measured
+cpu_part() {
+  local l
+  l=$(grep -h "gate | aprender-flow" "$INBOX" 2>/dev/null | grep -o "cpu-min/batch [^;]*" | tail -n1)
+  echo "${l:-cpu-min/batch not_measured}"
+}
+
+# flow010_part <file> -> one row per phase: owner, due, state, exit test
+flow010_part() {
+  local p o d s e
+  [ -f "$1" ] || { echo "FLOW-010 (design): no phase ledger"; return; }
+  while IFS=$'\t' read -r p o d s e; do
+    case "$p" in "" | \#*) continue ;; esac
+    printf 'FLOW-010 (design) %s | owner %s | due %s | state %s | exit %s\n' "$p" "$o" "$d" "$s" "$e"
+  done <"$1"
+}
+
+# cpu_part -> latest "cpu-min/batch ..." from flow's :02 gate line in the inbox, or not_measured
+cpu_part() {
+  local l
+  l=$(grep -h "gate | aprender-flow" "$INBOX" 2>/dev/null | grep -o 'cpu-min/batch [^;]*' | tail -n1)
+  echo "${l:-cpu-min/batch not_measured}"
+}
+
+# flow010_part <file> -> one row per phase: owner, due, state, exit test
+flow010_part() {
+  local p o d s e
+  [ -f "$1" ] || { echo "FLOW-010 (design): no phase ledger"; return; }
+  while IFS=$'\t' read -r p o d s e; do
+    case "$p" in "" | \#*) continue ;; esac
+    printf 'FLOW-010 (design) %s | owner %s | due %s | state %s | exit %s\n' "$p" "$o" "$d" "$s" "$e"
+  done <"$1"
+}
+
 # line <merged1h> <merged2h> <p95> <open> <nondraft> <fixes>
 line() {
   local m1=$1 m2=$2 p95=$3 op=$4 nd=$5 fx=$6 rate cap
@@ -81,7 +116,13 @@ cases() {
   chk F1 "$(fixes_part "$t")" "a: merges/h pred 2, meas 1 MISS | b: p95 pred 15, meas 22 MISS | c: x pred 1, meas not_measured MEASURING [n]"
   chk F2 "$(fixes_part /nonexistent)" "no fixes ledger"
   printf '# only\n' >"$t"; chk F3 "$(fixes_part "$t")" "no fixes"
-  rm -f "$t"
+  printf '# h\nP9\to\td\ts\te\n' >"$t"
+  chk P1 "$(flow010_part "$t")" "FLOW-010 (design) P9 | owner o | due d | state s | exit e"
+  chk P2 "$(flow010_part /nonexistent)" "FLOW-010 (design): no phase ledger"
+  printf 'x gate | aprender-flow | wall p95; cpu-min/batch mean=178 med=180 n=13 window=24h; reuse 0%%\n' >"$t"
+  chk C1 "$(INBOX=$t cpu_part)" "cpu-min/batch mean=178 med=180 n=13 window=24h"
+  chk C2 "$(INBOX=/nonexistent cpu_part)" "cpu-min/batch not_measured"
+  rm -f "${t:?}"
   chk L1 "$(line 1 2 'p95=98min' 45 8 x | cut -d'|' -f4-)" " merges/h 1h=1 2h-avg=1.0 | gate p95 p95=98min | open 45, non-draft 8 vs 7 (OVER) | fixes: x"
   chk L2 "$(line nm nm '' nm nm x | cut -d'|' -f5,6)" " gate p95 not_measured | open not_measured, non-draft not_measured vs 7 (not_measured) "
   chk L3 "$(line 3 4 p 9 7 x | grep -o '(ok)')" "(ok)"
@@ -107,5 +148,7 @@ if [ -x "$P95" ] || [ -f "$P95" ]; then
   p95=$(bash "$P95" 24 2>/dev/null | head -n1)
 fi
 out=$(line "$m1" "$m2" "$p95" "$op" "$nd" "$(fixes_part "$FIXES")")
+out="$out | $(cpu_part)
+$(flow010_part "$FLOW010" | sed "s/^/$(date -u +%H:%M)Z | aprender-stopline | /")"
 printf '%s\n' "$out"
 [ "${1:-}" = "--print" ] || printf '%s\n' "$out" | cut -c1-600 >>"$INBOX"

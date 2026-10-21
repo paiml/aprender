@@ -1,0 +1,7 @@
+# phase<TAB>owner<TAB>due<TAB>state<TAB>exit test   (spec: FLOW-010 v1.4 frozen, section 7; never leave a column empty)
+# State is hand-kept by the cop from the inbox; no evidence = "no evidence (not_measured)". FLOW-010 stays "design" until P4 passes F10-7.
+P0	infra-cop	10-22	no evidence (not_measured)	F10-12, F10-22
+P1	infra-cop	10-23	no evidence (not_measured); harnessd not live	F10-1,-2,-3,-8,-9,-20,-21
+P2	each cop	10-24	PR #5758 receipts in review; receipt coverage 0/44 open heads (flow 08:02Z)	coverage 100% for 24 h
+P3	infra-cop (w5404 builds)	10-25	PR-A #5835 draft, quorum+seats pending; PR-B..D open	F10-4,-5,-6,-11,-18,-19,-23
+P4	infra-cop	10-25	no evidence (not_measured)	F10-7
