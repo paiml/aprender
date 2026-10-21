@@ -32,10 +32,10 @@ W="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-base-$$"
 trap 'rm -f "${W:?}.pr.ndjson" "${W:?}.base.ndjson"; git worktree remove --force "${W:?}" >/dev/null 2>&1 || true' EXIT
 git worktree add --detach "$W" "$BASE" >/dev/null 2>&1 || { echo "COULD-NOT-CHECK: no worktree for base $BASE (shallow fetch?)" >&2; exit 75; }
 
-# cargo-deny <= 0.19 takes --config on `fetch`/`check` and --disable-fetch on `check`; 0.20 made --config global
-# (before the subcommand); 0.20 has no --disable-fetch and `check` never fetches the db. No --offline on 0.20: its cargo metadata then
-# needs every crate in the registry cache, and a cold runner (or a base tree with other deps) fails "no matching package" with rc=1 and no
-# diagnostics (measured 2026-10-21, cargo-deny 0.20.2, empty CARGO_HOME). Probe once, never assume the runner's version.
+# (before the subcommand) and replaced --disable-fetch with the global --offline, which `check` needs so both scans read the ONE advisory-db
+# fetched above (without it 0.20 `check` may re-fetch the db and the two scans see different heads). --offline also makes cargo metadata need
+# every crate in the registry cache (a cold runner exits rc=1 with log lines only, m70 #5793, measured 2026-10-21 on 0.20.2 with an empty
+# CARGO_HOME), so `cargo fetch --locked` warms the cache for BOTH trees before either scan. Probe once, never assume the runner's version.
 if cargo deny check --help 2>&1 | grep -q -- '--config'; then DENY_OLD=1; else DENY_OLD=0; fi
 
 # One DB for both scans: fetched with the BASE config (the db-path both scans read), HEAD logged.
@@ -57,11 +57,13 @@ scan() { # TREE OUT.ndjson -> prints the cargo-deny rc
         (cd "$1" && cargo deny --locked --all-features --format json check --config "$W/deny.toml" --disable-fetch advisories) \
             >/dev/null 2>"$2" || rc=$?
     else
-        (cd "$1" && cargo deny --config "$W/deny.toml" --locked --all-features --format json check advisories) \
+        (cd "$1" && cargo deny --config "$W/deny.toml" --locked --offline --all-features --format json check advisories) \
             >/dev/null 2>"$2" || rc=$?
     fi
     echo "$rc"
 }
+# warm the registry cache for both trees (network allowed here, nothing else reads it); the scans then run offline
+for t in "$PWD" "$W"; do (cd "$t" && cargo fetch --locked) >/dev/null 2>&1 || { echo "COULD-NOT-CHECK: cargo fetch --locked failed in $t" >&2; exit 75; }; done
 PRRC=$(scan "$PWD" "$W.pr.ndjson")
 BASERC=$(scan "$W" "$W.base.ndjson")
 bash "$GATE" verdict "$W.pr.ndjson" "$PRRC" "$W.base.ndjson" "$BASERC"

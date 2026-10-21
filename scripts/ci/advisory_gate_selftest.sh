@@ -43,8 +43,13 @@ verdict_of() { # [old|new] (cargo-deny flavour the stub played); stdin: stub log
     [ "$nall" -eq 2 ] || { echo "ADG-003: $nall of 2 scans carry --all-features"; return; }
     [ "$fetch" -eq 1 ] || { echo "ADG-004: $fetch advisory-db fetches, want 1"; return; }
     if [ "${1:-new}" = old ]; then [ "$nfd" -eq 2 ] || { echo "ADG-004: $nfd of 2 scans carry --disable-fetch"; return; }; fi
-    # 0.20: --offline makes cargo metadata need a warm registry cache; a cold runner then exits rc=1 with no diagnostics (m70, #5793)
-    [ "$(grep -c -- '--offline' <<<"$log")" -eq 0 ] || { echo "ADG-005: a scan carries --offline"; return; }
+    # 0.20 (m70, #5793): both scans run --offline (one advisory-db head), and `cargo fetch --locked` runs on BOTH trees BEFORE the first scan,
+    # else --offline on a cold registry cache exits rc=1 with no diagnostics. The stub log is in call order.
+    if [ "${1:-new}" != old ]; then
+        [ "$(grep -c -- '--offline' <<<"$log")" -eq 2 ] || { echo "ADG-005: not both scans carry --offline"; return; }
+        [ "$(grep -c '^fetch --locked$' <<<"$log")" -eq 2 ] || { echo "ADG-005: cargo fetch --locked is not run once per tree"; return; }
+        [ "$(grep -n '^fetch --locked$' <<<"$log" | tail -1 | cut -d: -f1)" -lt "$(grep -n -- '--offline' <<<"$log" | head -1 | cut -d: -f1)" ] || { echo "ADG-005: cargo fetch --locked runs after a scan"; return; }
+    fi
     [ "$ncfg" -eq 1 ] || { echo "ADG-004: scans use $ncfg different --config files"; return; }
     echo ok
 }
@@ -66,7 +71,8 @@ main() {
     }
     mutant 'scan without --all-features' 's/ --all-features//' 'ADG-003'
     mutant 'scan reads the net (no --disable-fetch)' 's/ --disable-fetch//' 'ADG-004' old 1
-    mutant 'scan runs --offline (0.20)' 's/--locked --all-features/--locked --offline --all-features/' 'ADG-005'
+    mutant 'scan not offline (0.20)' 's/--locked --offline --all-features/--locked --all-features/' 'ADG-005'
+    mutant 'no cargo fetch --locked before the scans (0.20)' 's/cargo fetch --locked)/true)/' 'ADG-005'
     mutant 'second fetch before the base scan' 's|^BASERC=|cargo deny fetch --config "$W/deny.toml" db; BASERC=|' 'ADG-004'
     # ADG-003 on the other two scan sites: the push path and the exemption-liveness guard.
     local f
@@ -75,7 +81,7 @@ main() {
             echo "SELF-TEST FAIL: ADG-003: $f scans advisories without --all-features" >&2; bad=1
         fi
     done
-    [ "$bad" -eq 0 ] && echo "advisory_gate self-test: 2 real (cargo-deny 0.19 and 0.20 flags) + 4 mutants + 2 sites ok"
+    [ "$bad" -eq 0 ] && echo "advisory_gate self-test: 2 real (cargo-deny 0.19 and 0.20 flags) + 5 mutants + 2 sites ok"
     return "$bad"
 }
 
