@@ -444,7 +444,7 @@ jobs:
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   # FLOW-010 P1 (amendment 3 item 7): build the quick-tier tree-reader set ONCE
   # and hand the nextest archive to the shards. It is a `needs` of every shard, so a
-  # red or skipped archive job skips the shards and `workspace-test` goes red: part of
+  # red or skipped archive job skips the shards and `workspace-test` goes red (drafts excepted: both skip and the verdict reports green): part of
   # the gate, no second path. In a non-quick tier it uploads only a bind.json saying so.
   workspace-test-archive:
     if: ${{ github.event.pull_request.draft != true }}
