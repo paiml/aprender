@@ -187,13 +187,16 @@ print(" ".join(str(e.get("id")) if isinstance(e,dict) else "?" for e in d) if is
     done
     # G5 every fragment added or changed carries a `Pmat-Ticket: <ID>` trailer on a commit of base..head
     # (sov.roadmap-fragment-parity demands it once the aggregate is untracked; fail here with the remedy, not there).
-    local msgs
-    msgs=$(git -C "$repo" log --no-merges --format=%B "$base..$head" 2>/dev/null)
+    # Judged exactly as sov does: git's own trailer parser (LAST paragraph only), same command. A merge_group
+    # commit is the queue's squash of the PR, whose message the queue composes, so G5 is a PR-time check only.
+    local trailers
+    trailers=$(git -C "$repo" log --format='%(trailers:key=Pmat-Ticket,valueonly)' "$base..$head" 2>/dev/null | tr -d ' ' | grep -v '^$' | sort -u || true)
     while IFS= read -r name; do
+        [ "${GITHUB_EVENT_NAME:-}" = merge_group ] && break
         [[ "$name" =~ ^$ENTRIES_DIR/([^/]+)\.yaml$ ]] || continue
-        if ! grep -qE "^Pmat-Ticket:[[:space:]]*${BASH_REMATCH[1]}[[:space:]]*$" <<<"$msgs"; then
+        if ! printf '%s\n' "$trailers" | grep -qFx -- "${BASH_REMATCH[1]}"; then
             violations=$((violations + 1))
-            printf 'FAIL  G5  %s changes with no `Pmat-Ticket: %s` trailer on any commit of the range — add one (e.g. git commit --allow-empty -m "chore: ticket trailer" -m "Pmat-Ticket: %s")\n' "$name" "${BASH_REMATCH[1]}" "${BASH_REMATCH[1]}"
+            printf 'FAIL  G5  %s changes with no `Pmat-Ticket: %s` trailer in the LAST paragraph of a commit in the range (git trailers, as sov reads them) — e.g. git commit --allow-empty -m "chore: ticket trailer" -m "Pmat-Ticket: %s"\n' "$name" "${BASH_REMATCH[1]}" "${BASH_REMATCH[1]}"
         fi
     done < <(git -C "$repo" diff --no-renames --name-only --diff-filter=AM "$base" "$head" -- "$ENTRIES_DIR")
     if ! git -C "$repo" show "$head:$BASE_FILE" >"$td/base.yaml" 2>/dev/null; then
@@ -541,6 +544,8 @@ PY
     }
     g_fragment_only() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-200"; }
     g_fragment_no_trailer() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    g_trailer_mid() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; git -C "$1" add -A && git -C "$1" commit -qm head -m "Pmat-Ticket: PMAT-200" -m "Co-Authored-By: T <t@e.com>"; }
+    g_trailer_wrong() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-999"; }
     g_two_entries() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n- id: PMAT-201\n  title: smuggled\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-200"; }
     g_readd_aggregate() { cp "$1/$BASE_FILE" "$1/$ROADMAP_FILE"; commit_all "$1"; }
     g_edit_base() { printf -- '- id: PMAT-400\n  title: sneaked\n  status: planned\n' >>"$1/$BASE_FILE"; commit_all "$1"; }
@@ -559,6 +564,8 @@ PY
     grow 'generated: the frozen base edited -> REFUSE G2' 1 'FAIL  G2' g_edit_base
     grow 'generated: a duplicate id across fragments -> REFUSE G3' 1 'FAIL  G3' g_dup_fragment
     grow 'generated: a fragment with no Pmat-Ticket trailer -> REFUSE G5' 1 'FAIL  G5' g_fragment_no_trailer
+    grow 'generated: trailer present but NOT in the last paragraph -> REFUSE G5' 1 'FAIL  G5' g_trailer_mid
+    grow 'generated: trailer names another ticket -> REFUSE G5' 1 'FAIL  G5' g_trailer_wrong
     grow 'generated: a second entry inside one fragment -> REFUSE G3' 1 'FAIL  G3' g_two_entries
     grow 'generated: a fragment deleted -> REFUSE G4' 1 'FAIL  G4' g_delete_fragment
     grow 'generated: a fragment renamed with its id edited -> REFUSE G4' 1 'FAIL  G4' g_rename_fragment
