@@ -473,8 +473,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        shards: [12]
+        shard: ${{ fromJSON(github.event_name == 'merge_group' && '[1,2,3,4]' || '[1,2,3,4,5,6,7,8,9,10,11,12]') }}
+        shards: ${{ fromJSON(github.event_name == 'merge_group' && '[4]' || '[12]') }}
     outputs:
       results: ${{ steps.run.outputs.results }}
     env:
@@ -543,7 +543,7 @@ jobs:
           d="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
           # ONE shard count: the pins in ci/sections.yml (check_shard_count_single_source.sh)
-          SHARDS="$(awk '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{w=1;next} w&&/^    - \{shard:/{n++;next} w&&!/^    - /{exit} END{print n+0}' ci/sections.yml)"
+          SHARDS="$(awk -v ev="$GITHUB_EVENT_NAME" '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{k="pr";next} p&&/^  workspace-test-shard-merge_group:/{k="mg";next} p&&/^  [a-z]/{k=""} k&&/^    - \{shard:/{c[k]++} END{print (ev=="merge_group"&&c["mg"]?c["mg"]:c["pr"])+0}' ci/sections.yml)"
           [ "${SHARDS:-0}" -ge 1 ] 2>/dev/null || { echo "::error::Σ: no workspace-test-shard pins"; exit 1; }
           tiers=""
           for n in $(seq 1 "$SHARDS"); do
