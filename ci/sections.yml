@@ -46,6 +46,7 @@ matrix-pins:
     - {shard: 10, shards: 12}
     - {shard: 11, shards: 12}
     - {shard: 12, shards: 12}
+  workspace-test-shard-merge_group:
     - {shard: 1, shards: 4}
     - {shard: 2, shards: 4}
     - {shard: 3, shards: 4}
