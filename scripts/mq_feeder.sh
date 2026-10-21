@@ -68,9 +68,9 @@ n=0 why=""
 for pr in $cands; do
   grep -qx "$pr" "$STATE/kicked" 2>/dev/null && continue   # kicked by the queue once: the owner must push a fix and clear it
   n=$((n + 1)); [ "$n" -le "$TRIES" ] || break
-  if [ "$dry" = 1 ]; then echo "would arm #$pr"; exit 0; fi
   head=$(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null || true)
   if [ -n "$head" ] && r=$(needs_seats "$pr" "$head"); then why="$why #$pr: $r;"; printf '%s skip #%s %s\n' "$(date +%s)" "$pr" "$r" >> "$STATE/acts.log"; continue; fi
+  if [ "$dry" = 1 ]; then echo "would arm #$pr"; exit 0; fi
   out=$(bash "$ARM" "$pr" 2>&1); rc=$?
   if [ "$rc" -eq 0 ]; then
     sleep "${MQ_FEEDER_RECHECK:-30}"
