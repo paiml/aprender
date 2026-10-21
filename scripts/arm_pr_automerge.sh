@@ -273,6 +273,16 @@ STUB
     _eq 'A17 arm(): base main, guard-tree green -> armed (1 merge)' 'rc=0 merges=1' "$( _arm_run main )"
     _eq 'A18 arm(): stacked base -> rc 3, 0 merges' 'rc=3 merges=0' "$( _arm_run batch-cand/affected-set-noread )"
     _eq 'A19 arm(): unreadable base -> rc 3, 0 merges' 'rc=3 merges=0' "$( _arm_run '' )"
+    # A20: --dry-run must refuse a stacked base too, or a dry run reports WOULD-ARM for a PR the live run refuses.
+    _dry_run() { # _dry_run BASE -> "rc=N would_arm=M"
+        local out rc
+        : > "$td/gh.log"
+        out=$(PATH="$td/bin:$PATH" STUB_LOG="$td/gh.log" STUB_SHA="$sha_new" STUB_BASE="$1" arm paiml/aprender 1 1 2>&1)
+        rc=$?
+        printf 'rc=%s would_arm=%s' "$rc" "$( printf '%s\n' "$out" | grep -c '^WOULD-ARM' )"
+    }
+    _eq 'A20 arm() --dry-run, stacked base -> rc 3, no WOULD-ARM' 'rc=3 would_arm=0' "$( _dry_run batch-cand/affected-set-noread )"
+    _eq 'A20b arm() --dry-run, base main -> rc 0, WOULD-ARM (positive control)' 'rc=0 would_arm=1' "$( _dry_run main )"
 
     rm -rf "${td:?}"
     printf '\n%s row(s), %s\n' "$rows" \
