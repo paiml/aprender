@@ -70,6 +70,8 @@ for pr in $cands; do
   n=$((n + 1)); [ "$n" -le "$TRIES" ] || break
   head=$(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null || true)
   if [ -n "$head" ] && r=$(needs_seats "$pr" "$head"); then why="$why #$pr: $r;"; printf '%s skip #%s %s\n' "$(date +%s)" "$pr" "$r" >> "$STATE/acts.log"; continue; fi
+  mc=$(gh api "repos/$REPO/pulls/$pr/commits" --paginate --jq '[.[]|select((.parents|length)>1)]|length' 2>/dev/null | paste -sd+ | bc 2>/dev/null || true)
+  if [ "${mc:-0}" -gt 0 ] 2>/dev/null; then r="has $mc merge commit(s); REBASE needs clean commits (operator 07:57Z)"; why="$why #$pr: $r;"; printf '%s skip #%s %s\n' "$(date +%s)" "$pr" "$r" >> "$STATE/acts.log"; continue; fi
   if [ "$dry" = 1 ]; then echo "would arm #$pr"; exit 0; fi
   out=$(bash "$ARM" "$pr" 2>&1); rc=$?
   if [ "$rc" -eq 0 ]; then
