@@ -521,3 +521,55 @@ fn test_code_example_none_for_unknown() {
         "fallback component should not produce a code example"
     );
 }
+
+// =========================================================================
+// generate_code_example (#5693)
+// =========================================================================
+
+fn example_for(component: &str, path: Option<&str>) -> Option<String> {
+    let primary = match path {
+        Some(p) => ComponentRecommendation::with_path(component, 0.9, "r", p.to_string()),
+        None => ComponentRecommendation::new(component, 0.9, "r"),
+    };
+    let parsed = QueryEngine::new().parse("train a random forest");
+    Recommender::new().generate_code_example(&primary, &[], &parsed)
+}
+
+#[test]
+fn code_example_names_the_recommended_aprender_path_or_the_default() {
+    let custom = example_for("aprender", Some("aprender::linear::LinearRegression"))
+        .expect("aprender always has an example");
+    assert!(custom.contains("use aprender::linear::LinearRegression;"));
+    assert!(custom.contains("LinearRegression::new()"));
+    let default = example_for("aprender", None).expect("default path");
+    assert!(default.contains("use aprender::tree::RandomForestClassifier;"));
+    assert!(default.contains("RandomForestClassifier::new()"));
+}
+
+#[test]
+fn code_example_exists_for_every_stack_component_and_is_distinct() {
+    let components = [
+        "trueno",
+        "depyler",
+        "realizar",
+        "whisper-apr",
+        "provable-contracts",
+        "tiny-model-ground-truth",
+        "rmedia",
+        "repartir",
+    ];
+    let mut seen = std::collections::HashSet::new();
+    for c in components {
+        let code = example_for(c, None).unwrap_or_else(|| panic!("no example for {c}"));
+        assert!(!code.trim().is_empty(), "{c} example is empty");
+        assert!(seen.insert(code), "{c} shares an example with another component");
+    }
+    assert!(example_for("trueno", None).expect("trueno").contains("trueno::prelude"));
+    assert!(example_for("rmedia", None).expect("rmedia").contains("rmedia::prelude"));
+}
+
+#[test]
+fn code_example_is_none_for_an_unknown_component() {
+    assert!(example_for("not-a-component", None).is_none());
+    assert!(example_for("", None).is_none());
+}
