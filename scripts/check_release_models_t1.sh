@@ -174,6 +174,9 @@ TMP=$(mktemp -d) || exit 2
 # SEC011: validate before rm -rf. An empty or '/' value must never reach it.
 cleanup() { case "${TMP:-}" in ''|/) return 0 ;; *) [ -d "$TMP" ] && rm -rf -- "$TMP" ;; esac; }
 trap cleanup EXIT
+# hermeticity: an exported CARGO_TARGET_DIR must come out of the table exactly as it went in (the fixtures' stub toolchain writes an apr)
+inh_state() { [ -n "${CARGO_TARGET_DIR:-}" ] && ls -l --time-style=+%s -- "$CARGO_TARGET_DIR/release/apr" "$CARGO_TARGET_DIR/BUILT_FROM" 2> /dev/null; echo "state-rc-ignored"; }
+inh_before=$(inh_state)
 
 # Hermetic git: no global hooks, signing or identity from the operator's config.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
@@ -541,7 +544,9 @@ measure_bogus() { # models_t1.sh's own refusal: autopilot never hands it a mode 
     local d="$TMP/bogus-$1" mc rc
     fixture "bogus-$1" "$2" "$3" || return 2
     : > "$d/wrap.log"; mc=$(cat "$d/mc")
-    ( cd "$d/repo" && export CARGO_HOME="$TMP/cargo-home" PATH="$TMP/bin:$PATH" FX_MC="$mc" FX_GX10_HOME="$d/gx10" \
+    # CARGO_TARGET_DIR is the fixture's own: models_t1.sh run directly (no autopilot to set one) would otherwise let the
+    # stub build step write its "apr 9.9.9" into a target dir the host exports (guard-cargo#m8 WRONG-TREE on kfocus)
+    ( cd "$d/repo" && export CARGO_HOME="$TMP/cargo-home" CARGO_TARGET_DIR="$d/target" PATH="$TMP/bin:$PATH" FX_MC="$mc" FX_GX10_HOME="$d/gx10" \
           MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_MEASURE=bogus MODELS_T1_LOCK="$d/t1.lock"
       bash scripts/release/models_t1.sh 9.9.9 "$mc" "$d/ap/models-t1" ) > "$d/ap/models-t1.log" 2>&1; rc=$?
     [ "$rc" = 2 ] || { printf 'models_t1.sh exited %s, not 2\n' "$rc"; return 1; }
@@ -703,6 +708,10 @@ mutant crux-judge-ladder    "$MODELS" "$C_JCRUX" 'CRUX_CERT="$CERT" bash scripts
 mutant crux-no-cut-commit   "$MODELS" "$C_CUT" '--crux "$out"' crux_green
 mutant crux-ladder-wording  "$MODELS" "$C_NAME" '    MEASURER=model_ladder.sh' crux_missing
 mutant crux-remote-rcpt-name "$MODELS" "$C_RRCPT" 'if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then' crux_green
+
+# HERMETIC: no fixture may write into a CARGO_TARGET_DIR the host exports (guard-cargo#m8 WRONG-TREE, PMAT-5817)
+rows=$((rows + 1))
+if [ "$(inh_state)" != "$inh_before" ]; then printf 'FAIL  hermetic: the table changed the exported CARGO_TARGET_DIR (%s)\n' "${CARGO_TARGET_DIR:-}" >&2; fails=$((fails + 1)); fi
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
 [ "$rows" -ge 60 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 60 declared\n' "$rows" >&2; exit 1; }
