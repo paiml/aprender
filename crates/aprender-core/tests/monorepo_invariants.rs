@@ -1359,6 +1359,27 @@ mod archive_wiring {
         }
     }
 
+    /// ci.yml's archive job must drive exactly the archive section, never a stand-in job.
+    fn check_ci_sections(c: &Value, bad: &mut Vec<String>) {
+        let job = c["jobs"]
+            .get("workspace-test-archive")
+            .unwrap_or(&Value::Null);
+        let drivers: Vec<String> = steps(job)
+            .into_iter()
+            .filter_map(|st| st["run"].as_str())
+            .filter(|r| r.contains("fat_driver.py") && r.contains(" run"))
+            .map(|r| r.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect();
+        let ok = drivers.len() == 1
+            && drivers[0].matches("--sections").count() == 1
+            && drivers[0].contains("--sections 'workspace-test-archive' ");
+        if !ok {
+            bad.push(format!(
+                "ci.yml: the archive job must run fat_driver.py once with --sections 'workspace-test-archive' only, found {drivers:?}"
+            ));
+        }
+    }
+
     fn check_uploads(file: &str, job: &Value, bad: &mut Vec<String>) {
         let ups: Vec<_> = steps(job)
             .into_iter()
@@ -1394,6 +1415,7 @@ mod archive_wiring {
         check_shard(shard, bless, &mut bad);
         check_archive_job(arc, bless, &mut bad);
         check_uploads("sections.yml", arc, &mut bad);
+        check_ci_sections(&c, &mut bad);
         check_uploads(
             "ci.yml",
             c["jobs"]
@@ -1694,6 +1716,18 @@ fn test_archive_wiring_mutants_all_die() {
             "mutant survived: {name}"
         );
     }
+    // A weakened copy as another job, with the archive job's --sections pointed at it.
+    let ci_pt = mutate(
+        &ci,
+        "--sections 'workspace-test-archive'",
+        "workspace-test-archive",
+        "zz-weak-archive",
+    );
+    assert_ne!(ci_pt, ci);
+    assert!(
+        !violations(&sec, &ci_pt, false).is_empty(),
+        "mutant survived: ci.yml --sections repointed"
+    );
     let ci_m = mutate(&ci, up, "overwrite: true", "overwrite: false");
     assert!(
         !violations(&sec, &ci_m, false).is_empty(),
