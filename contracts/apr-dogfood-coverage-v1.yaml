@@ -201,7 +201,7 @@ metadata:
 
     hardware_provenance:
       command: "python3 scripts/dogfood_baseline.py  # section: totals"
-      unknown: 427
+      unknown: 425
       direction: "may only DECREASE -- 427 is a ceiling"
       note: >
         Hardware is never inferred from a feature's name. A CUDA kernel with no
