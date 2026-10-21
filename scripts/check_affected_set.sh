@@ -2,6 +2,7 @@
 # FLOW-010 E5 RED rows for scripts/affected_set.sh. Oracle for the closure is
 # `cargo tree -i` (a different code path from the tool's cargo-metadata jq).
 set -euo pipefail
+export LC_ALL=C   # sort order must match jq's codepoint order (apr-format vs aprender-*)
 # the CI container runs as root over a host-owned checkout: git would refuse it (dubious ownership)
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
 A=scripts/affected_set.sh
@@ -47,12 +48,21 @@ row "docs/findings ledger alone -> READERS only, not ALL (#5809)" "$(printf '%s\
 row ".claude agent-memory alone -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run .claude/agent-memory/x/MEMORY.md | sort -u)"
 row "shard cost table alone -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run ci/shard-step-costs.tsv | sort -u)"
 row "no-reader path next to a leaf .rs -> leaf + READERS" "$lc" "$(run docs/findings/s1.jsonl "$ld/src/lib.rs" | sort -u)"
-row "no-reader path next to docs/x.md -> ALL" ALL "$(run docs/findings/s1.jsonl docs/x.md)"
+row "no-reader path next to docs/x.md -> READERS only (FLOW-010 b)" "$(printf '%s\n' $readers | sort -u)" "$(run docs/findings/s1.jsonl docs/x.md | sort -u)"
 row "no-reader path next to a CORE crate -> ALL" ALL "$(run .claude/x docs/findings/s1.jsonl crates/aprender-core/src/lib.rs)"
-row "docs/findings lookalike (docs/findings-x.md) -> ALL" ALL "$(run docs/findings-x.md)"
-row "docs file -> ALL (tests read docs/ at run time)" ALL "$(run docs/x.md)"
-row "root README.md -> ALL" ALL "$(run README.md)"
-row "root CLAUDE.md -> ALL" ALL "$(run CLAUDE.md)"
+row "docs/findings lookalike (docs/findings-x.md) -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run docs/findings-x.md | sort -u)"
+row "docs file -> READERS only (their run-time readers are in READERS)" "$(printf '%s\n' $readers | sort -u)" "$(run docs/x.md | sort -u)"
+row "contracts yaml -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run contracts/foo-v1.yaml | sort -u)"
+row "contracts/<x>/binding.yaml -> ALL (build input of core/compute/contracts/simulate/train)" ALL "$(run contracts/aprender/binding.yaml)"
+row "serve build.rs input contracts/tensor-names-v1.yaml -> ALL" ALL "$(run contracts/tensor-names-v1.yaml)"
+row "serve build.rs input contracts/architecture-requirements-v1.yaml -> ALL" ALL "$(run contracts/architecture-requirements-v1.yaml)"
+row "serve build.rs input contracts/arch-constraints-v1.yaml -> ALL" ALL "$(run contracts/arch-constraints-v1.yaml)"
+row "BUILD_CONTRACTS file next to a leaf .rs -> ALL" ALL "$(run contracts/tensor-names-v1.yaml "$ld/src/lib.rs")"
+row "contracts/binding.yaml -> ALL" ALL "$(run contracts/binding.yaml)"
+row "contracts/model-families -> ALL (aprender-core build.rs generates code from it)" ALL "$(run contracts/model-families/q.yaml)"
+row "contracts yaml next to a leaf .rs -> leaf + READERS" "$lc" "$(run contracts/foo-v1.yaml "$ld/src/lib.rs" | sort -u)"
+row "root README.md -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run README.md | sort -u)"
+row "root CLAUDE.md -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run CLAUDE.md | sort -u)"
 row "ci/sections.yml -> ALL (it holds the CI job bodies: editing it changes what CI runs, not only what tests read)" ALL "$(run ci/sections.yml)"
 row "ci/explicit-test-commands.d fragment -> ALL" ALL "$(run ci/explicit-test-commands.d/815-affected-set-rows.cmd)"
 row "a crate's own Cargo.toml -> ALL" ALL "$(run "$ld/Cargo.toml")"
@@ -98,17 +108,22 @@ else row "MUTANT: letting git detect renames is caught by the rename row" "c" "$
 sed '/^    crates\/\*\/build.rs)/d' "$A" >"$t/mut-build.sh"
 if cmp -s "$A" "$t/mut-build.sh"; then echo "FAIL build.rs mutant did not apply"; fail=1
 else printf '%s\n' "$ld/build.rs" >"$t/db"; row "MUTANT: dropping the build.rs arm is caught by the build.rs row" "$lc" "$(bash "$t/mut-build.sh" --diff-from "$t/db" | sort -u || true)"; fi
-# mutants: the skip list that used to exist (docs/*, *.md) must be caught by the ALL rows above.
-sed 's#^    crates/\*.rs) ;;#    docs/* | *.md) continue ;;\n    crates/*.rs) ;;#' "$A" >"$t/mut-docs.sh"
-if cmp -s "$A" "$t/mut-docs.sh"; then echo "FAIL docs-skip mutant did not apply"; fail=1
-else printf '%s\n%s\n' docs/x.md "$ld/src/lib.rs" >"$t/dd"; row "MUTANT: skipping docs/*.md is caught by the docs-ALL row" "$lc" "$(bash "$t/mut-docs.sh" --diff-from "$t/dd" | sort -u || true)"; fi
+# mutant: dropping the contracts build-input arm must be caught by the binding/model-families ALL rows
+sed '/^    contracts\/binding.yaml /d' "$A" >"$t/mut-bind.sh"
+if cmp -s "$A" "$t/mut-bind.sh"; then echo "FAIL binding mutant did not apply"; fail=1
+else printf '%s\n' contracts/aprender/binding.yaml >"$t/db2"; row "MUTANT: dropping the binding/model-families ALL arm is caught" "$(printf '%s\n' $readers | sort -u)" "$(bash "$t/mut-bind.sh" --diff-from "$t/db2" | sort -u)"; fi
+# mutant: the checker must go RED when a build.rs-read root contract is missing from BUILD_CONTRACTS
+sed 's/ tensor-names-v1.yaml//' "$A" >"$t/mut-bc.sh"
+if cmp -s "$A" "$t/mut-bc.sh"; then echo "FAIL build-contracts mutant did not apply"; fail=1
+elif AFFECTED_SET_SH="$t/mut-bc.sh" bash scripts/check_affected_readers.sh >/dev/null 2>&1; then echo "FAIL MUTANT: a build.rs-read contract missing from BUILD_CONTRACTS is not caught"; fail=1
+else echo "ok   MUTANT: a build.rs-read contract missing from BUILD_CONTRACTS is caught by check_affected_readers.sh"; fi
+# mutant: root-md arm that also skips crate-level .md must be caught by the leaf README row
+sed 's#case "\$f" in \*/\*) ;; \*.md)#case "\$f" in *.md)#' "$A" >"$t/mut-md.sh"
+if cmp -s "$A" "$t/mut-md.sh"; then echo "FAIL md mutant did not apply"; fail=1
+else printf '%s\n%s\n' "$ld/README.md" "$ld/src/lib.rs" >"$t/dmd"; row "MUTANT: skipping crate-level .md is caught by the leaf README row" "$lc" "$(bash "$t/mut-md.sh" --diff-from "$t/dmd" | sort -u)"; fi
 sed 's#^    crates/\*) emit ALL.*#    crates/*) continue ;;#' "$A" >"$t/mut-toml.sh"
 if cmp -s "$A" "$t/mut-toml.sh"; then echo "FAIL manifest mutant did not apply"; fail=1
 else printf '%s\n%s\n' "$ld/Cargo.toml" "$ld/src/lib.rs" >"$t/dt"; row "MUTANT: skipping non-.rs crate files is caught by the manifest row" "$lc" "$(bash "$t/mut-toml.sh" --diff-from "$t/dt" | sort -u || true)"; fi
-# mutant: a no-reader arm that also skips docs/* must be seen by the docs-next-to-no-reader row
-sed 's#^    docs\/findings\/\* #    docs/* | docs/findings/* #' "$A" >"$t/mut-nr.sh"
-if cmp -s "$A" "$t/mut-nr.sh"; then echo "FAIL no-reader mutant did not apply"; fail=1
-else printf '%s\n%s\n' docs/findings/s1.jsonl docs/x.md >"$t/dnr"; row "MUTANT: widening the no-reader list to docs/* is caught by the docs-next-to-no-reader row" "not-ALL" "$([ "$(bash "$t/mut-nr.sh" --diff-from "$t/dnr" | head -n1)" != ALL ] && echo not-ALL || echo ALL)"; fi
 # CORE crates: each must give ALL, and dropping each from CORE must be seen (its dependents alone are not the workspace)
 for c in aprender-compute aprender-contracts aprender-quant; do
   cd_=$(jq -r --arg p "$c" '.packages[]|select(.name==$p)|.manifest_path' <<<"$meta" | sed "s|$(git rev-parse --show-toplevel)/||; s|/Cargo.toml||")
