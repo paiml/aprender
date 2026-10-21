@@ -174,7 +174,7 @@ TMP=$(mktemp -d) || exit 2
 # SEC011: validate before rm -rf. An empty or '/' value must never reach it.
 cleanup() { case "${TMP:-}" in ''|/) return 0 ;; *) [ -d "$TMP" ] && rm -rf -- "$TMP" ;; esac; }
 trap cleanup EXIT
-# hermeticity: an exported CARGO_TARGET_DIR must come out of the table exactly as it went in (the fixtures' stub cargo writes an apr)
+# hermeticity: an exported CARGO_TARGET_DIR must come out of the table exactly as it went in (the fixtures' stub toolchain writes an apr)
 inh_state() { [ -n "${CARGO_TARGET_DIR:-}" ] && ls -l --time-style=+%s -- "$CARGO_TARGET_DIR/release/apr" "$CARGO_TARGET_DIR/BUILT_FROM" 2> /dev/null; echo "state-rc-ignored"; }
 inh_before=$(inh_state)
 
@@ -545,7 +545,7 @@ measure_bogus() { # models_t1.sh's own refusal: autopilot never hands it a mode 
     fixture "bogus-$1" "$2" "$3" || return 2
     : > "$d/wrap.log"; mc=$(cat "$d/mc")
     # CARGO_TARGET_DIR is the fixture's own: models_t1.sh run directly (no autopilot to set one) would otherwise let the
-    # stub `cargo build` write its "apr 9.9.9" into a target dir the host exports (guard-cargo#m8 WRONG-TREE on kfocus)
+    # stub build step write its "apr 9.9.9" into a target dir the host exports (guard-cargo#m8 WRONG-TREE on kfocus)
     ( cd "$d/repo" && export CARGO_HOME="$TMP/cargo-home" CARGO_TARGET_DIR="$d/target" PATH="$TMP/bin:$PATH" FX_MC="$mc" FX_GX10_HOME="$d/gx10" \
           MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_MEASURE=bogus MODELS_T1_LOCK="$d/t1.lock"
       bash scripts/release/models_t1.sh 9.9.9 "$mc" "$d/ap/models-t1" ) > "$d/ap/models-t1.log" 2>&1; rc=$?
