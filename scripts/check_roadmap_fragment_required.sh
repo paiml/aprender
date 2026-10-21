@@ -166,9 +166,9 @@ judge_generated() {
     fi
     # G4b the generator reads only the top-level entries/*.yaml; anything else there is invisible to it.
     while IFS=$'\t' read -r meta name; do
-        if ! [[ "$name" =~ ^$ENTRIES_DIR/[^/]+\.yaml$ ]] || [ "${meta%% *}" = 120000 ]; then
+        if ! [[ "$name" =~ ^$ENTRIES_DIR/[^/]+\.yaml$ ]] || [ "${meta%% *}" != 100644 ]; then
             violations=$((violations + 1))
-            printf 'FAIL  G4  %s: only regular top-level %s/<ID>.yaml files are fragments (no subdirs, no symlinks)\n' "$name" "$ENTRIES_DIR"
+            printf 'FAIL  G4  %s: only regular top-level %s/<ID>.yaml files are fragments (mode 100644; no subdirs, symlinks or gitlinks)\n' "$name" "$ENTRIES_DIR"
         fi
     done < <(git -C "$repo" ls-tree -r "$head" -- "$ENTRIES_DIR" 2>/dev/null)
     # G3b one fragment = one YAML list holding ONE mapping whose id is its filename (loaded, not grepped,
@@ -554,6 +554,8 @@ PY
     g_rename_fragment() { git -C "$1" mv "$ENTRIES_DIR/PMAT-100.yaml" "$ENTRIES_DIR/PMAT-199.yaml"; sed -i 's/PMAT-100/PMAT-199/' "$1/$ENTRIES_DIR/PMAT-199.yaml"; commit_all "$1"; }
     g_nested_fragment() { mkdir -p "$1/$ENTRIES_DIR/sub"; printf -- '- id: PMAT-600\n  title: hidden\n  status: planned\n' >"$1/$ENTRIES_DIR/sub/PMAT-600.yaml"; commit_all "$1"; }
     g_symlink_fragment() { ln -s ../../README.md "$1/$ENTRIES_DIR/PMAT-700.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-700"; }
+    g_gitlink_fragment() { git -C "$1" update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,"$ENTRIES_DIR/PMAT-701.yaml"; git -C "$1" commit -qm head -m "Pmat-Ticket: PMAT-701"; }
+    g_exec_fragment() { printf -- "- id: PMAT-702\n  title: x\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-702.yaml"; chmod +x "$1/$ENTRIES_DIR/PMAT-702.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-702"; }
     g_delete_base() { git -C "$1" rm -q "$BASE_FILE"; commit_all "$1"; }
     g_rename_base() { git -C "$1" mv "$BASE_FILE" "$1/docs/roadmaps/moved.yaml"; commit_all "$1"; }
     g_dup_fragment() { printf -- '- id: PMAT-300\n  title: dup\n  status: planned\n' | tee "$1/$ENTRIES_DIR/PMAT-300.yaml" >"$1/$ENTRIES_DIR/PMAT-301.yaml"; commit_all "$1"; }
@@ -573,6 +575,8 @@ PY
     grow 'generated: a fragment renamed with its id edited -> REFUSE G4' 1 'FAIL  G4' g_rename_fragment
     grow 'generated: a nested fragment the generator never reads -> REFUSE G4' 1 'FAIL  G4' g_nested_fragment
     grow 'generated: a symlink fragment (target can change unseen) -> REFUSE G4' 1 'FAIL  G4' g_symlink_fragment
+    grow "generated: a gitlink fragment -> REFUSE G4" 1 "FAIL  G4" g_gitlink_fragment
+    grow "generated: an executable-mode fragment (allowlist is 100644 only) -> REFUSE G4" 1 "FAIL  G4" g_exec_fragment
     grow 'generated: the frozen base deleted -> REFUSE G2 (not the legacy judge)' 1 'FAIL  G2' g_delete_base
     grow 'generated: the frozen base renamed -> REFUSE G2' 1 'FAIL  G2' g_rename_base
 
