@@ -1,0 +1,19 @@
+- id: PMAT-5837
+  github_issue: 5837
+  item_type: task
+  title: 'Cross-compile spike: gx10 builds the x86_64 workspace and nextest archive (go/no-go)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T08:12:45Z
+  updated: 2026-10-21T08:12:45Z
+  spec: null
+  acceptance_criteria:
+  - 'See #5837. One day; no gate/ci.yml change; clean-room never cross-builds; go/no-go by 2026-10-22 08:00Z.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:measurement
+  notes: null
+  epic: 3998
