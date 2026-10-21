@@ -140,4 +140,4 @@ falsification_tests:
     prediction: 'check_profiling_assertions records a failed assertion exactly when a measured tok/s is below the resolved minimum, and records nothing when profile_ci is absent'
     test: 'cargo test -p aprender-qa-cli --lib profiling_assertion_tests'
     if_fails: 'a throughput regression passes certification, or a legacy min_throughput stops applying'
-    mutation: 'change unwrap_or(5.0) to unwrap_or(6.0) in check_profiling_assertions; defaults_are_5_cpu_and_50_gpu must turn RED (run 2026-10-20)'
+    mutation: 'change unwrap_or(5.0) to unwrap_or(6.0) in check_profiling_assertions; defaults_are_5_cpu_and_50_gpu must turn RED (run 2026-10-21T10:15Z on lambda-labs: mutant rc=101, 2 of 5 RED incl. defaults_are_5_cpu_and_50_gpu; restored rc=0, 5 passed)'
