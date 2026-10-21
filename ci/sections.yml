@@ -882,7 +882,7 @@ jobs:
       - uses: actions/download-artifact@v7
         if: steps.tier.outputs.tier == 'quick'
         with:
-          name: ws-archive
+          name: ws-archive-${{ runner.arch }}
           path: ws-archive
           merge-multiple: true
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
@@ -1442,7 +1442,7 @@ jobs:
           ls -l "$out"
       - uses: actions/upload-artifact@v7
         with:
-          name: ws-archive
+          name: ws-archive-${{ runner.arch }}
           path: ws-archive-out/
           if-no-files-found: error
           overwrite: true

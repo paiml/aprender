@@ -469,7 +469,13 @@ jobs:
   # the gate, no second path. In a non-quick tier it uploads only a bind.json saying so.
   workspace-test-archive:
     if: ${{ github.event.pull_request.draft != true }}
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    # one archive per arch (C314 quorum 2026-10-22: opus x2 chose this): a quick-tier shard is arch-neutral (operator 14:18Z) and
+    # downloads ws-archive-<its own runner.arch>. merge_group is X64 only (no ARM64 runner carries the mq label), PR/push build both.
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(github.event_name == 'merge_group' && '["X64"]' || '["X64","ARM64"]') }}
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON(format('["self-hosted","Linux","{0}","clean-room"]', matrix.arch)) }}
     timeout-minutes: 90
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -494,7 +500,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: success()
         with:
-          name: ws-archive
+          name: ws-archive-${{ runner.arch }}
           path: ${{ runner.temp }}/fat/artifacts/ws-archive/
           if-no-files-found: error
           overwrite: true
@@ -508,8 +514,7 @@ jobs:
     if: ${{ github.event.pull_request.draft != true }}
     # arch-neutral (operator 2026-10-21 14:18Z) EXCEPT the full tier, which needs one arch for the Σ (#5882, workspace-test-arch)
     # clean-room for pull_request/push, mq for a merge_group entry
-    # KNOWN (#5854 hold): this shard extracts workspace-test-archive's X64 archive; on a PR run a clean-room shard may land
-    # on an ARM64 gx10 runner (no gx10 runner has the mq label, so merge_group is X64-only). archive_bind_check fails closed.
+    # the shard downloads ws-archive-<runner.arch>, built by workspace-test-archive on the same arch (matrix there).
     runs-on: ${{ needs.workspace-test-arch.outputs.tier == 'full' && (github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]')) || (github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","mq"]') || fromJSON('["self-hosted","Linux","clean-room"]')) }}
     timeout-minutes: 180
     strategy:
