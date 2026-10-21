@@ -46,6 +46,10 @@ matrix-pins:
     - {shard: 10, shards: 12}
     - {shard: 11, shards: 12}
     - {shard: 12, shards: 12}
+    - {shard: 1, shards: 4}
+    - {shard: 2, shards: 4}
+    - {shard: 3, shards: 4}
+    - {shard: 4, shards: 4}
   determinism:
     - {arch: X64}
     - {arch: ARM64}
