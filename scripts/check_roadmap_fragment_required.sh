@@ -156,10 +156,9 @@ judge_generated() {
         violations=$((violations + 1))
         printf 'FAIL  G2  migration: %s is not byte-equal to base'"'"'s %s\n' "$BASE_FILE" "$ROADMAP_FILE"
     fi
-    mkdir -p "$td/entries"
-    while IFS= read -r name; do
-        case "$name" in *.yaml) git -C "$repo" show "$head:$name" >"$td/entries/${name##*/}" || { rm -rf -- "${td:?}"; return 2; } ;; esac
-    done < <(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null)
+    if git -C "$repo" cat-file -e "$head:$ENTRIES_DIR" 2>/dev/null; then
+        git -C "$repo" archive "$head" -- "$ENTRIES_DIR" | tar -x -C "$td" || { rm -rf -- "${td:?}"; return 2; }
+    fi
     # G4 entries/ is append-only: deleting a fragment drops a ticket (or un-supersedes a base entry).
     if [ -n "$(git -C "$repo" diff --no-renames --name-only --diff-filter=D "$base" "$head" -- "$ENTRIES_DIR")" ]; then
         violations=$((violations + 1))
@@ -175,7 +174,7 @@ judge_generated() {
     # G3b one fragment = one YAML list holding ONE mapping whose id is its filename (loaded, not grepped,
     # so a second entry cannot hide behind an indented or quoted line).
     local f ids
-    for f in "$td"/entries/*.yaml; do
+    for f in "$td/$ENTRIES_DIR"/*.yaml; do
         [ -e "$f" ] || continue
         ids=$(python3 "$PY_LIB" fragment-ids "$f" 2>/dev/null) || ids="(unparseable)"
         if [ "$ids" != "$(basename "$f" .yaml)" ]; then
@@ -203,7 +202,7 @@ judge_generated() {
         printf '%s: %s violation(s)\n' "$PROG" "$((violations + 1))"
         return 1
     fi
-    out=$(python3 "$PY_LIB" aggregate --check --base-file "$td/base.yaml" --roadmap "$td/absent.yaml" --entries "$td/entries" 2>&1)
+    out=$(python3 "$PY_LIB" aggregate --check --base-file "$td/base.yaml" --roadmap "$td/absent.yaml" --entries "$td/$ENTRIES_DIR" 2>&1)
     rc=$?
     rm -rf -- "${td:?}"
     if [ "$rc" = 0 ]; then
@@ -408,7 +407,10 @@ self_test() {
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     }
 
-    commit_all() { git -C "$1" add -A && git -C "$1" commit -qm head ${2:+-m "$2"}; }
+    commit_all() {
+        git -C "$1" add -A || return
+        if [ -n "${2:-}" ]; then git -C "$1" commit -qm head -m "$2"; else git -C "$1" commit -qm head; fi
+    }
 
     # ---- builders -------------------------------------------------------
     # THE MEASURED SHAPE: `pmat work add` appends an entry to the monolith and
