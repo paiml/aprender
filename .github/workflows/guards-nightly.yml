@@ -294,6 +294,26 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-ladder-gap --title "LAB: the model ladder owes cells to model-cell commands (ladder-gap, #3745)" \
             --owner aprender-a7 --log "$RUNNER_TEMP/ladder-gap.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      # PMAT-5861 (GATE/LAB). The 34.36 GB KV-cache bound left the PR build lane:
+      # it is #[ignore]d in crates/aprender-serve/src/gpu/tests/streaming.rs and runs
+      # only here. LAB, never a PR, merge-queue or release job.
+      - name: 32768-position KV cache memory bound (34 GB, PMAT-5861)
+        id: lab_mega_ctx_mem
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/mega-ctx-mem.log") 2>&1
+          cargo test -p aprender-serve --lib -- --ignored test_mega_long_context_memory_bound
+      - name: A red mega-context-memory night opens or updates its one LAB ticket (PMAT-5861)
+        if: failure() && steps.lab_mega_ctx_mem.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-mega-ctx-mem --title "LAB: 32768-position KV cache memory bound red (PMAT-5861)" \
+            --owner aprender-a7 --log "$RUNNER_TEMP/mega-ctx-mem.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       # #5182 (GATE/LAB). The two ratchets that left the PR path. On a schedule
       # run HEAD *is* origin/main, so merge-base(HEAD, origin/main) is HEAD and a
       # shrink-only comparison against it can never fail. The comparand is

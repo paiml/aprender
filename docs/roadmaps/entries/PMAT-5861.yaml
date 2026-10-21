@@ -1,0 +1,19 @@
+- id: PMAT-5861
+  github_issue: 5861
+  item_type: task
+  title: Move test_mega_long_context_memory_bound to nightly LAB lane
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-21T13:02:14Z
+  updated: 2026-10-21T13:02:24.253766041+00:00
+  spec: null
+  acceptance_criteria:
+  - 'IMG-001 spike 2c: #[ignore] the 34GB KV-cache test, run in guards-nightly with --ignored'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

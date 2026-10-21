@@ -32,7 +32,11 @@ fn test_streaming_kv_cache_32768_positions() {
     assert_eq!(cache.len(), max_positions);
 }
 
+// LAB, not GATE (PMAT-5861): this allocates a 34.36 GB StreamingKVCache, which
+// is the PR build lane's memory peak. It runs nightly in guards-nightly.yml
+// (`-- --ignored --exact`), never in a PR, merge-queue or release job.
 #[test]
+#[ignore = "LAB: allocates 34.36 GB; runs nightly via guards-nightly.yml --ignored"]
 fn test_mega_long_context_memory_bound() {
     // Verify 32768 context memory stays bounded
     let num_layers = 32;
