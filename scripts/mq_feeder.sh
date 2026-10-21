@@ -12,6 +12,8 @@ REPO="${MQ_FEEDER_REPO:-paiml/aprender}"
 STATE="${MQ_FEEDER_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/mq-feeder}"
 INBOX="${MQ_FEEDER_INBOX:-/mnt/nvme-raid0/cop-inbox/inbox.md}"
 ARM="${MQ_FEEDER_ARM:-$(dirname "$0")/arm_pr_automerge.sh}"
+# guard-tree is a section inside x86-main, not a check run on PR heads (arm_pr_automerge.sh refused every PR as "absent"): judge x86-main
+export GUARD_CHECK_NAME="${GUARD_CHECK_NAME:-x86-main}"
 TRIES="${MQ_FEEDER_TRIES:-3}"
 dry=0
 Q='query($o:String!,$n:String!){repository(owner:$o,name:$n){mergeQueue(branch:"main"){entries(first:1){totalCount}} pullRequests(states:OPEN,first:100,orderBy:{field:CREATED_AT,direction:ASC}){nodes{number isDraft baseRefName mergeStateStatus autoMergeRequest{enabledAt} mergeQueueEntry{position}}}}}'
@@ -20,6 +22,15 @@ pick() {
   jq -r '.data.repository as $r
     | if ($r.mergeQueue.entries.totalCount // 0) > 0 then "QUEUE_BUSY"
       else $r.pullRequests.nodes[] | select(.isDraft==false and .baseRefName=="main" and .mergeStateStatus=="CLEAN" and .autoMergeRequest==null and .mergeQueueEntry==null) | .number end' <<<"$1"
+}
+# gate_paths FILES -> 0 when any path is gate content (a gate change needs 2 non-author seats bound to the head)
+gate_paths() { grep -qE '^(\.github/workflows/|ci/sections\.yml|scripts/(check_|arm_pr_automerge))' <<<"$1"; }
+needs_seats() { # PR HEAD -> prints reason and returns 0 when a gate-content PR lacks 2 seats bound to HEAD
+  local f s; f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[].filename' 2>/dev/null) || return 1
+  gate_paths "$f" || return 1
+  s=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq "[.[]|select(.body|test(\"APPROVE @'$2'\"))]|length" 2>/dev/null || echo 0)
+  [ "${s:-0}" -ge 2 ] && return 1
+  echo "needs seats (gate content, ${s:-0}/2 APPROVE bound to ${2:0:10})"
 }
 inbox() { mkdir -p "$STATE"; printf '%s %s\n' "$(date +%s)" "$1" >> "$STATE/acts.log"; printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
 if [ "${1:-}" = --self-test ]; then
@@ -34,6 +45,8 @@ if [ "${1:-}" = --self-test ]; then
   eq 'non-main base skipped' "$(pick "$(mk 0 "$(pr 4 false feat CLEAN null)")")" ''
   eq 'already armed skipped' "$(pick "$(mk 0 "$(pr 5 false main CLEAN '{"enabledAt":"x"}')")")" ''
   eq 'no PRs' "$(pick "$(mk 0 '')")" ''
+  gate_paths $'docs/x.md\nscripts/check_foo.sh' || { echo "FAIL gate_paths check_"; fail=1; }
+  gate_paths $'docs/x.md\ncrates/a/src/lib.rs' && { echo "FAIL gate_paths non-gate"; fail=1; }
   [ "$fail" -eq 0 ] && echo "ok: self-test"; exit "$fail"
 fi
 [ "${1:-}" = --dry-run ] && dry=1
@@ -51,11 +64,13 @@ json=$(gh api graphql -f query="$Q" -f o="${REPO%/*}" -f n="${REPO#*/}" 2>/dev/n
 cands=$(pick "$json") || exit 2
 [ "$cands" = QUEUE_BUSY ] && exit 0
 [ -n "$cands" ] || exit 0
-n=0
+n=0 why=""
 for pr in $cands; do
   grep -qx "$pr" "$STATE/kicked" 2>/dev/null && continue   # kicked by the queue once: the owner must push a fix and clear it
   n=$((n + 1)); [ "$n" -le "$TRIES" ] || break
   if [ "$dry" = 1 ]; then echo "would arm #$pr"; exit 0; fi
+  head=$(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null || true)
+  if [ -n "$head" ] && r=$(needs_seats "$pr" "$head"); then why="$why #$pr: $r;"; printf '%s skip #%s %s\n' "$(date +%s)" "$pr" "$r" >> "$STATE/acts.log"; continue; fi
   out=$(bash "$ARM" "$pr" 2>&1); rc=$?
   if [ "$rc" -eq 0 ]; then
     sleep "${MQ_FEEDER_RECHECK:-30}"
@@ -63,8 +78,8 @@ for pr in $cands; do
     case "$st" in KICKED*) echo "$pr" >> "$STATE/kicked"; inbox "queue was empty: enqueued #$pr, then $st within ${MQ_FEEDER_RECHECK:-30}s; skipped until removed from $STATE/kicked" ;; *) inbox "queue was empty: enqueued oldest green PR #$pr ($st)" ;; esac
     exit 0
   fi
-  [ "$rc" -eq 3 ] && continue   # refused on that PR (guard-tree not green on its head): try the next
+  if [ "$rc" -eq 3 ]; then why="$why #$pr: $(printf '%s' "$out" | grep -m1 -E "^refuse" | cut -c1-110);"; printf '%s skip #%s %s\n' "$(date +%s)" "$pr" "$(printf '%s' "$out" | grep -m1 -E "^refuse" | cut -c1-110)" >> "$STATE/acts.log"; continue; fi
   inbox "queue empty, arm of #$pr failed rc=$rc: $(printf '%s' "$out" | tail -n 1 | cut -c1-120)"; exit 0
 done
-inbox "queue empty, no PR enqueued: $((n > TRIES ? TRIES : n)) CLEAN candidate(s) refused by arm_pr_automerge.sh"
+inbox "queue empty, no PR enqueued: $((n > TRIES ? TRIES : n)) CLEAN candidate(s) refused:$why"
 exit 0
