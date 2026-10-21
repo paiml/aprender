@@ -1209,7 +1209,6 @@ jobs:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 60
     env:
-      SCCACHE_HOST_DIR: /home/noah/data/sccache
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}-arc
     steps:
@@ -1500,6 +1499,9 @@ jobs:
           # The shard count has one source: the matrix-pins above, keyed by event (PR 12, merge_group 4); same awk as the aggregator in ci.yml.
           SHARDS="$(awk -v ev="$GITHUB_EVENT_NAME" '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{k="pr";next} p&&/^  workspace-test-shard-merge_group:/{k="mg";next} p&&/^  [a-z]/{k=""} k&&/^    - \{shard:/{c[k]++} END{print (ev=="merge_group"&&c["mg"]?c["mg"]:c["pr"])+0}' ci/sections.yml)"
           [ "$SHARDS" -gt 0 ] || { echo "no workspace-test-shard pins in ci/sections.yml"; exit 1; }
+          # The shards' sccache host dir, derived from $HOME so this job adds no machine-specific
+          # path literal (the whole-tree ratchet, m36, counts each one).
+          SCCACHE_HOST_DIR="${HOME}/data/sccache"
           dock() {
             docker run --rm \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
