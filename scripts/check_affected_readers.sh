@@ -71,6 +71,7 @@ if [ "${1:-}" = "--self-test" ]; then
   expect_red '.parent ()' zz-t 'let _ = here.parent ();'
   expect_red 'a non-member dir is only exempt when named' facades-x 'let _ = here.ancestors();'
   expect_red 'rustfmt-wrapped let + split pop/push' zz-u $'let mut m =\n        PathBuf::from(env!("CARGO_MANIFEST_DIR"));\n    m.pop();\n    m.push("aprender-core");'
+  expect_red 'spaced .pop (' zz-w $'let mut m = PathBuf::from(env!("CARGO_MANIFEST_DIR"));\n    m.pop ();'
   printf '{"packages":[{"manifest_path":"/x/crates/facades/zz-evil/Cargo.toml"}]}' >"$t/meta.json"; fresh zz-v
   if (AFFECTED_META_JSON="$t/meta.json" check crates >/dev/null 2>&1); then echo "FAIL self-test: a NONMEMBER dir listed by cargo metadata passed"; fail=1; fi
   # the bench-tokenizer exemption is the one line, not the crate
