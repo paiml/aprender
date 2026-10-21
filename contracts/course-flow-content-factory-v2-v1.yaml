@@ -60,7 +60,7 @@ falsification_tests:
     if_fails: "the GPU priority rule is dead"
 
   - id: FALSIFY-006
-    description: "alpha is a probability below 1 (1 or more would repeat a build forever)"
+    description: "alpha is a probability below 1 (1 or more would repeat a build forever) and li_k is bounded to [0, 64] (li_k + 4 renders per master)"
     test: "cargo test -p aprender-simulate --lib alpha_must_be_below_one"
     prediction: "the test passes"
     if_fails: "apply_course_inputs accepts an alpha that never terminates"

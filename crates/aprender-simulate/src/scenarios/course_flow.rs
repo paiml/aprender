@@ -613,7 +613,12 @@ pub fn apply_course_inputs(c: &mut CourseFlowConfig, v: &serde_json::Value) -> R
                 c.alpha = f;
             }
             "trunk_first_w_d" => c.trunk_first_w_d = f,
-            "li_k" => c.li_k = f as usize,
+            "li_k" => {
+                if !(0.0..=64.0).contains(&f) {
+                    return Err(format!("li_k must be in [0, 64], got {f}"));
+                }
+                c.li_k = f as usize;
+            }
             "li_render_min" => c.li_render_min = f,
             _ => return Err(format!("unknown input: {k}")),
         }
@@ -894,6 +899,8 @@ mod tests {
             let e = apply_course_inputs(&mut c, &serde_json::json!({ "alpha": bad }));
             assert!(e.is_err(), "alpha {bad} accepted");
         }
+        let e = apply_course_inputs(&mut c, &serde_json::json!({ "li_k": 1.0e30 }));
+        assert!(e.is_err(), "li_k 1e30 accepted");
         apply_course_inputs(&mut c, &serde_json::json!({ "alpha": 0.5 })).expect("0.5 is valid");
         assert!((c.alpha - 0.5).abs() < 1e-12);
     }
