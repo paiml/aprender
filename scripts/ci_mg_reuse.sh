@@ -67,10 +67,10 @@ concl() {
     | if length == 1 then (.[0].conclusion // "none") else "count=\(length)" end' "$1" 2> /dev/null
 }
 
-# The matrix jobs `workspace-test-shard (N)` in jobs file $1: prints "<count> <not-success count>". A draft PR run (or a
+# The matrix jobs `workspace-test-shard (N, M)` in jobs file $1: prints "<count> <not-success count>". A draft PR run (or a
 # reused one) has green `workspace-test` and NO such jobs; that green says no test ran, so it is never reusable (#5885 lane-b).
 shards() {
-  jq -r '[.jobs[]? | select(.name | test("^workspace-test-shard \\([0-9]+\\)$"))]
+  jq -r '[.jobs[]? | select(.name | test("^workspace-test-shard \\([0-9]+, [0-9]+\\)$"))]
     | "\(length) \([.[] | select(.conclusion != "success")] | length)"' "$1" 2> /dev/null || echo "0 1"
 }
 
@@ -293,7 +293,7 @@ resolve_push() {
 # The jobs of run 37040341824, #4655's only PR-head run (db86acf021), verbatim
 # from the API (two GPU-host leg job names replaced; the key never reads them):
 # x86-main failed while gate and ci / gate passed.
-PLANTED_4655_JOBS=$'gpu-touched\tsuccess\nmutants-table-scope\tsuccess\ndeterminism\tsuccess\nworkspace-test-shard (1)\tsuccess\nmac-check\tsuccess\nworkspace-test-shard (3)\tsuccess\nworkspace-test-shard (2)\tsuccess\nx86-main\tfailure\nmutants-table\tskipped\nmutants-shard\tskipped\ngpu-host-leg-a\tsuccess\ngpu-host-leg-b\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
+PLANTED_4655_JOBS=$'gpu-touched\tsuccess\nmutants-table-scope\tsuccess\ndeterminism\tsuccess\nworkspace-test-shard (1, 4)\tsuccess\nmac-check\tsuccess\nworkspace-test-shard (3, 4)\tsuccess\nworkspace-test-shard (2, 4)\tsuccess\nx86-main\tfailure\nmutants-table\tskipped\nmutants-shard\tskipped\ngpu-host-leg-a\tsuccess\ngpu-host-leg-b\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
 GREEN_JOBS=$'x86-main\tsuccess\ndeterminism\tsuccess\nmac-check\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
 
 # jobs_json HEAD RUN_ID EXTRA_TOTAL < "name<TAB>conclusion" lines
@@ -406,9 +406,9 @@ self_test() {
 
   # T43b (#5884, Noah 16:28Z #3): workspace-test reuse. RED->GREEN falsifier: a changed main must run, an identical tree may skip.
   sed '/^workspace-test	/d' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.no-wt"
-  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard (1)\tsuccess\nworkspace-test-shard (2)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-ok"
-  sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; printf 'workspace-test-shard (1)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
-  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard (1)\tsuccess\nworkspace-test-shard (2)\tfailure\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-shard-failed"
+  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard (1, 4)\tsuccess\nworkspace-test-shard (2, 4)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-ok"
+  sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; printf 'workspace-test-shard (1, 4)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
+  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard (1, 4)\tsuccess\nworkspace-test-shard (2, 4)\tfailure\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-shard-failed"
   { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard\tskipped\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-draft"
   sed 's|^workspace-test	success$|workspace-test	failure|' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.fail-wt"
   wrow() { # wrow NAME WANT decide-args...
