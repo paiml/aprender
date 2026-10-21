@@ -1,7 +1,7 @@
 //! Scenario "course-flow": the FLOW-006 course factory and Shorts line (SIM-7, #5511).
 //!
-//! Stations are multi-server queues with a factory WIP limit over stations 1-6. edX and Shorts
-//! launch with no human step; Coursera courses wait for the daily 07:00 UTC submission batch.
+//! Stations are multi-server queues with a factory WIP limit over stations 1-6. Most courses and
+//! Shorts launch with no human step; the rest pass a daily human batch gate (flow model eq 1).
 //! Shorts take priority over courses on the shared stations (render GPU, Chrome lane). Service
 //! times are Erlang-4 (gamma, coefficient of variation 0.5). Time is minutes from 00:00 UTC.
 
