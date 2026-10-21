@@ -26,17 +26,31 @@ sovereign-ci:
     coverage_on: 'tag'
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
-# runs as THREE shards, each its own ci.yml job on its own runner: as one shard
+# runs as TWELVE shards (ONE count: the `shards:` pins below; ci.yml's matrix lists must match, check_shard_count_single_source.sh), each its own ci.yml job on its own runner: as one shard
 # it took 5358 s of x86-main and was the release critical path. nextest's hash
-# partition N/3 and the explicit runner's round-robin N/3 each cover their list
+# partition N/12 and the explicit runner's round-robin N/12 each cover their list
 # exactly once between the shards; the cross-shard Σ fan-in in the workspace-test
 # verdict job checks that by id. determinism keeps both arches; x86-main runs
 # [X64], the determinism fat job runs [ARM64] + the compare.
 matrix-pins:
   workspace-test-shard:
-    - {shard: 1, shards: 3}
-    - {shard: 2, shards: 3}
-    - {shard: 3, shards: 3}
+    - {shard: 1, shards: 12}
+    - {shard: 2, shards: 12}
+    - {shard: 3, shards: 12}
+    - {shard: 4, shards: 12}
+    - {shard: 5, shards: 12}
+    - {shard: 6, shards: 12}
+    - {shard: 7, shards: 12}
+    - {shard: 8, shards: 12}
+    - {shard: 9, shards: 12}
+    - {shard: 10, shards: 12}
+    - {shard: 11, shards: 12}
+    - {shard: 12, shards: 12}
+  workspace-test-shard-merge_group:
+    - {shard: 1, shards: 4}
+    - {shard: 2, shards: 4}
+    - {shard: 3, shards: 4}
+    - {shard: 4, shards: 4}
   determinism:
     - {arch: X64}
     - {arch: ARM64}
@@ -58,17 +72,17 @@ jobs:
   # integration list were ONE serial job, so five gx10 + three yoga clean-room
   # runners sat idle while a merge-queue entry waited on a single box (measured
   # over 24 h: intel 15 / gx10 6 / yoga 5 of 27 workspace-tests; gx10 mean 16 min,
-  # intel 18, intel worst 51 under contention). This job is now a 3-way matrix:
-  # nextest `--partition hash:N/3` splits the lib tests by stable hash, and the
-  # explicit-command runner takes every 3rd fragment (`--shard N/3`). The once-only
-  # steps are spread so the shards finish together (#5486): compute, the universe
-  # listing and the over-the-cap check on shard 1; the GPU crates (with their own Σ
+  # intel 18, intel worst 51 under contention). This job is now a 12-way matrix (was 3; shard 2 hit the 3600 s cap, 2026-10-20):
+  # nextest `--partition hash:N/12` splits the lib tests by stable hash, and the
+  # explicit-command runner takes every 12th fragment (`--shard N/12`). The once-only
+  # steps are spread so the shards finish together (#5486): compute and the universe
+  # listing on shard 1, the over-the-cap check on the last shard; the GPU crates (with their own Σ
   # check) and the two guards on shard 2; the examples build on shard 3. The placement
   # follows the measured per-step costs in ci/shard-step-costs.tsv. Each shard
   # owns its cargo state (registry + target parent keyed by PR_OR_REF-sN, see the
   # env below): the test-binary compile is therefore repeated per shard, and it is
   # cheap because codegen comes from the shared sccache (measured ~1 min on a warm
-  # cache vs 13 min of test execution, which is the part that now runs 3-wide).
+  # cache vs 13 min of test execution, which is the part that now runs 12-wide).
   # The check-run every consumer reads -- branch protection, `gate`, the BSE-17
   # reuse lookup by check_name -- is the fan-in job `workspace-test` below, which
   # fails unless every shard passed.
@@ -77,8 +91,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
-        shards: [3]
+        # NOTE: the matrix-pins above override this matrix (fat_driver.py); the guard checks the pins and ci.yml only
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shards: [12]
     # PMAT-3138 (#3138): arch-neutral -- intel, yoga OR gx10. Measured 2026-09-12 on
     # gx10 with this image and env, --no-fail-fast: step 1 (59k tests) 10.6 min vs
     # 34.5 on intel, step 2 (102 tree readers) 6.7 vs 27.4, the over-the-cap
@@ -712,7 +727,7 @@ jobs:
         # lists the universes and checks the shard-1-only compute step (the GPU
         # crates run and are checked on shard 2, #5486);
         # the lib and explicit universes go to the workspace-test verdict job,
-        # which compares them with the UNION of the three shards' executed ids.
+        # which compares them with the UNION of the shards' executed ids.
         shell: bash
         run: |
           set -euo pipefail
@@ -777,7 +792,7 @@ jobs:
       # on yoga): 489 s of that shard's 794 s integration phase was this ONE
       # command, so round-robin sharding could never balance it -- a shard that
       # drew it was the long pole regardless. It is its own step on shard 3
-      # (whose fragment share is the lightest), so the three shards finish
+      # (fragment share not re-measured at 12 shards), so the shards finish
       # together. Not a fragment because it is a build, not a test target, and
       # no wiring reader (check_model_tests_wired, check_beats_gated) names it.
       - name: Build every example (workspace, keep-going)
@@ -842,7 +857,7 @@ jobs:
           # CRATES is set here (the step's if:), so zero calls would run zero tests green
           [ -s "$RUNNER_TEMP/quick-calls-all.txt" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
           # this shard's share of the calls: every crate on exactly one shard (quick_tier_shard.sh)
-          bash scripts/ci/quick_tier_shard.sh "$SHARD" 3 < "$RUNNER_TEMP/quick-calls-all.txt" > "$RUNNER_TEMP/quick-calls.txt"
+          bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS" < "$RUNNER_TEMP/quick-calls-all.txt" > "$RUNNER_TEMP/quick-calls.txt"
           mapfile -t calls < "$RUNNER_TEMP/quick-calls.txt"
           printf 'nextest calls: %s\n' "${#calls[@]}"
           mkdir -p "$RUNNER_TEMP/quick-sel"
@@ -1047,7 +1062,7 @@ jobs:
               -w /workspace "$IMAGE" cargo metadata --no-deps --format-version 1 > "$sig/quick-meta.json"
             bash scripts/ci/quick_tier_groups.sh --metadata "$sig/quick-meta.json" "${crates[@]}" > "$sig/quick-sel.all"
             [ -s "$sig/quick-sel.all" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
-            bash scripts/ci/quick_tier_shard.sh "$SHARD" 3 < "$sig/quick-sel.all" > "$sig/quick-sel.calls"
+            bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS" < "$sig/quick-sel.all" > "$sig/quick-sel.calls"
           fi
           # FLOW-010 P1: the tree-reader yardstick is the INDEPENDENT live list the archive
           # job built from `$TREE --lib --tests` (not from --build-flags, not from the
@@ -1085,7 +1100,7 @@ jobs:
           python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
           exit "$rc"
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
-        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 2
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == matrix.shards
         timeout-minutes: 20
         env:
           REASON: ${{ steps.tier.outputs.reason }}
@@ -1482,8 +1497,8 @@ jobs:
           tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
                   | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
           printf 'archive build flags: %s\n' "$BUILD_FLAGS"
-          # The shard count has one source: the matrix-pins above (see check_shard_count_single_source.sh).
-          SHARDS="$(awk '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{w=1;next} w&&/^    - \{shard:/{n++;next} w&&!/^    - /{exit} END{print n+0}' ci/sections.yml)"
+          # The shard count has one source: the matrix-pins above, keyed by event (PR 12, merge_group 4); same awk as the aggregator in ci.yml.
+          SHARDS="$(awk -v ev="$GITHUB_EVENT_NAME" '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{k="pr";next} p&&/^  workspace-test-shard-merge_group:/{k="mg";next} p&&/^  [a-z]/{k=""} k&&/^    - \{shard:/{c[k]++} END{print (ev=="merge_group"&&c["mg"]?c["mg"]:c["pr"])+0}' ci/sections.yml)"
           [ "$SHARDS" -gt 0 ] || { echo "no workspace-test-shard pins in ci/sections.yml"; exit 1; }
           dock() {
             docker run --rm \

@@ -132,6 +132,25 @@ def to_str(v) -> str:
     return str(v)
 
 
+def _loose_str_num(x: str):
+    try:
+        return float(x) if x.strip() else 0
+    except ValueError:
+        return float("nan")
+
+
+def _loose_num(x):
+    if x is None:
+        return 0
+    if isinstance(x, bool):
+        return int(x)
+    if isinstance(x, (int, float)):
+        return x
+    if isinstance(x, str):
+        return _loose_str_num(x)
+    return float("nan")
+
+
 def loose_eq(a, b) -> bool:
     if isinstance(a, AnyShard) or isinstance(b, AnyShard):
         return True
@@ -139,22 +158,7 @@ def loose_eq(a, b) -> bool:
         return a == b
     if isinstance(a, str) and isinstance(b, str):
         return a.lower() == b.lower()
-
-    def num(x):
-        if x is None:
-            return 0
-        if isinstance(x, bool):
-            return int(x)
-        if isinstance(x, (int, float)):
-            return x
-        if isinstance(x, str):
-            try:
-                return float(x) if x.strip() else 0
-            except ValueError:
-                return float("nan")
-        return float("nan")
-
-    return num(a) == num(b)
+    return _loose_num(a) == _loose_num(b)
 
 
 class Evaluator:
@@ -217,69 +221,87 @@ class Evaluator:
         return self.postfix()
 
     def postfix(self):
+        done, v = self._pf_atom()
+        if done:
+            return v
+        while self.peek()[1] in (".", "["):
+            v = self._pf_step(v)
+        return v
+
+    def _pf_atom(self):
+        """(done, value): done=True is an early return (literal word or call)."""
         kind, val = self.peek()
         if kind == "num":
             self.take()
-            v = float(val) if "." in val else int(val)
-        elif kind == "str":
+            return False, (float(val) if "." in val else int(val))
+        if kind == "str":
             self.take()
-            v = val[1:-1].replace("''", "'")
-        elif val == "(":
+            return False, val[1:-1].replace("''", "'")
+        if val == "(":
             self.take()
             v = self.or_()
             self.take(")")
-        elif kind == "id":
-            self.take()
-            if val in ("true", "false"):
-                return val == "true"
-            if val == "null":
-                return None
-            if self.peek()[1] == "(":
+            return False, v
+        if kind == "id":
+            return self._pf_id(val)
+        raise ExprError(f"unexpected token {val!r}")
+
+    def _pf_id(self, val):
+        self.take()
+        if val in ("true", "false"):
+            return True, val == "true"
+        if val == "null":
+            return True, None
+        if self.peek()[1] == "(":
+            return True, self._pf_call(val)
+        if val not in self.ctx:
+            raise ExprError(f"unsupported context {val!r}")
+        return False, self.ctx[val]
+
+    def _pf_call(self, val):
+        self.take()
+        args = []
+        if self.peek()[1] != ")":
+            args.append(self.or_())
+            while self.peek()[1] == ",":
                 self.take()
-                args = []
-                if self.peek()[1] != ")":
-                    args.append(self.or_())
-                    while self.peek()[1] == ",":
-                        self.take()
-                        args.append(self.or_())
-                self.take(")")
-                fn = self.funcs.get(val.lower())
-                if fn is None:
-                    raise ExprError(f"unsupported function {val}()")
-                return fn(*args)
-            if val not in self.ctx:
-                raise ExprError(f"unsupported context {val!r}")
-            v = self.ctx[val]
-        else:
-            raise ExprError(f"unexpected token {val!r}")
-        while self.peek()[1] in (".", "["):
-            if self.take()[1] == ".":
-                t = self.take()
-                if t[1] == "*":
-                    v = list(v.values()) if isinstance(v, dict) else (v or [])
-                    # `a.*.b` projects over the list
-                    if self.peek()[1] == ".":
-                        self.take()
-                        k = self.take()[1]
-                        v = [x.get(k) if isinstance(x, dict) else None for x in v]
-                    continue
-                v = index(v, t[1])
-            else:
-                k = self.or_()
-                self.take("]")
-                v = index(v, k)
+                args.append(self.or_())
+        self.take(")")
+        fn = self.funcs.get(val.lower())
+        if fn is None:
+            raise ExprError(f"unsupported function {val}()")
+        return fn(*args)
+
+    def _pf_step(self, v):
+        if self.take()[1] != ".":
+            k = self.or_()
+            self.take("]")
+            return index(v, k)
+        t = self.take()
+        if t[1] != "*":
+            return index(v, t[1])
+        v = list(v.values()) if isinstance(v, dict) else (v or [])
+        # `a.*.b` projects over the list
+        if self.peek()[1] == ".":
+            self.take()
+            k = self.take()[1]
+            v = [x.get(k) if isinstance(x, dict) else None for x in v]
         return v
+
+
+def _index_dict(v, k):
+    if k in v:
+        return v[k]
+    if isinstance(k, str):
+        for kk in v:
+            if isinstance(kk, str) and kk.lower() == k.lower():
+                return v[kk]
+    return None
 
 
 def index(v, k):
     if isinstance(v, dict):
-        if k in v:
-            return v[k]
-        if isinstance(k, str):
-            for kk in v:
-                if isinstance(kk, str) and kk.lower() == k.lower():
-                    return v[kk]
-        return None
+        return _index_dict(v, k)
     if isinstance(v, list) and isinstance(k, (int, float)):
         k = int(k)
         return v[k] if 0 <= k < len(v) else None
@@ -387,33 +409,51 @@ def secret_wiring_gaps(ci_text: str, section_texts) -> list:
     return gaps
 
 
+def _as_list(needs) -> list:
+    needs = needs or []
+    return [needs] if isinstance(needs, str) else needs
+
+
+def _sov_inputs(sov: dict, sov_call: dict) -> dict:
+    sov_inputs = {}
+    for k, spec in sov[True]["workflow_call"]["inputs"].items():
+        sov_inputs[k] = spec.get("default", "" if spec.get("type") == "string" else False)
+    sov_inputs.update(sov_call.get("with") or {})
+    return sov_inputs
+
+
+def _section_matrix_needs(job: dict) -> tuple:
+    nmap = {n: ("sov.gate" if n == "ci" else n) for n in _as_list(job.get("needs"))}
+    matrix = (job.get("strategy") or {}).get("matrix") or {}
+    return matrix, nmap
+
+
+def _matrix_combos(matrix: dict, pins: dict, name: str) -> list:
+    # `<job>-merge_group` pins add the merge queue's combos (e.g. 4 shards of 4) beside the pull_request ones
+    combos = expand_matrix(matrix, pins.get(name))
+    if f"{name}-merge_group" in pins:
+        combos += expand_matrix(matrix, pins[f"{name}-merge_group"])
+    return combos
+
+
 def section_catalogue() -> dict:
     """name -> {job, source, inputs, matrix, needs_map}. The ONE plan."""
     ci = load_yaml(CI_FILE)
     sec = load_yaml(SECTIONS_FILE)
     sov = yaml.safe_load(resolve_vendored(SOV_FILE.read_text(), sccache_host_dir(sec)))
     wf_env = sov.get("env") or {}
-    sov_call = sec["sovereign-ci"]
-    sov_inputs = {}
-    for k, spec in sov[True]["workflow_call"]["inputs"].items():
-        sov_inputs[k] = spec.get("default", "" if spec.get("type") == "string" else False)
-    sov_inputs.update(sov_call.get("with") or {})
+    sov_inputs = _sov_inputs(sov, sec["sovereign-ci"])
     cat = {}
     for name, job in sov["jobs"].items():
-        needs = job.get("needs") or []
-        needs = [needs] if isinstance(needs, str) else needs
         cat[f"sov.{name}"] = dict(
             job=job, source="ci/vendor/sovereign-ci.yml", inputs=sov_inputs,
-            wf_env=wf_env, matrix={}, needs={n: f"sov.{n}" for n in needs},
+            wf_env=wf_env, matrix={}, needs={n: f"sov.{n}" for n in _as_list(job.get("needs"))},
         )
     for name, job in sec["jobs"].items():
-        needs = job.get("needs") or []
-        needs = [needs] if isinstance(needs, str) else needs
         # `ci` is the old reusable-workflow call; its result is sov.gate's.
-        nmap = {n: ("sov.gate" if n == "ci" else n) for n in needs}
-        matrix = (job.get("strategy") or {}).get("matrix") or {}
+        matrix, nmap = _section_matrix_needs(job)
         if matrix:
-            for combo in expand_matrix(matrix, sec["matrix-pins"].get(name)):
+            for combo in _matrix_combos(matrix, sec["matrix-pins"], name):
                 label = ",".join(str(v) for v in combo.values())
                 cat[f"{name}[{label}]"] = dict(
                     job=job, source="ci/sections.yml", inputs={}, wf_env={},
@@ -644,40 +684,25 @@ class Section:
             self.ended = time.time()
             self.log.close()
 
-    def _run(self):
-        job = self.job
-        # job-level if (implicit success() over needs)
-        needs_ok = all(self.ctx.need_result(v) == "success"
-                       for v in self.spec["needs"].values())
-        ev = self.evaluator()
-        cond = job.get("if")
+    def _job_runs(self, ev, needs_ok, cond) -> bool:
         if cond is None:
-            run_it = needs_ok
-        else:
-            s = str(cond)
-            status = re.search(r"\b(always|success|failure|cancelled)\s*\(", s)
-            ev.funcs["success"] = lambda: needs_ok and not CANCELLED.is_set()
-            ev.funcs["failure"] = lambda: any(
-                self.ctx.need_result(v) == "failure" for v in self.spec["needs"].values())
-            run_it = eval_if(cond, ev, default_status=False) and (needs_ok or bool(status))
-        if not run_it:
-            self.result = "skipped"
-            self.log.write(f"section skipped by job if: {cond!r} (needs_ok={needs_ok})\n")
-            return
-        self.setup_workspace()
+            return needs_ok
+        s = str(cond)
+        status = re.search(r"\b(always|success|failure|cancelled)\s*\(", s)
+        ev.funcs["success"] = lambda: needs_ok and not CANCELLED.is_set()
+        ev.funcs["failure"] = lambda: any(
+            self.ctx.need_result(v) == "failure" for v in self.spec["needs"].values())
+        return eval_if(cond, ev, default_status=False) and (needs_ok or bool(status))
+
+    def _init_env(self, job):
         base_env = {}
         for k, v in (self.spec["wf_env"] or {}).items():
             base_env[k] = to_str(interpolate(to_str(v), self.evaluator()))
         self.env = dict(base_env)
         for k, v in (job.get("env") or {}).items():
             self.env[k] = to_str(interpolate(to_str(v), self.evaluator()))
-        if "container" in job:
-            self.start_container(job["container"])
-        timeout = timeout_seconds(job.get("timeout-minutes"), 360)
-        deadline = self.started + timeout
-        for idx, step in enumerate(job.get("steps") or []):
-            self.run_step(idx, step, deadline)
-        # outputs
+
+    def _finish_job(self, job):
         ev = self.evaluator()
         for k, v in (job.get("outputs") or {}).items():
             self.outputs[k] = to_str(interpolate(to_str(v), ev))
@@ -685,6 +710,27 @@ class Section:
             self.result = "cancelled"
         else:
             self.result = "failure" if self.failed else "success"
+
+    def _run(self):
+        job = self.job
+        # job-level if (implicit success() over needs)
+        needs_ok = all(self.ctx.need_result(v) == "success"
+                       for v in self.spec["needs"].values())
+        ev = self.evaluator()
+        cond = job.get("if")
+        if not self._job_runs(ev, needs_ok, cond):
+            self.result = "skipped"
+            self.log.write(f"section skipped by job if: {cond!r} (needs_ok={needs_ok})\n")
+            return
+        self.setup_workspace()
+        self._init_env(job)
+        if "container" in job:
+            self.start_container(job["container"])
+        timeout = timeout_seconds(job.get("timeout-minutes"), 360)
+        deadline = self.started + timeout
+        for idx, step in enumerate(job.get("steps") or []):
+            self.run_step(idx, step, deadline)
+        self._finish_job(job)
 
     def setup_workspace(self):
         make_section_dirs(self.dir, self.log)
@@ -741,37 +787,47 @@ class Section:
             self.container = None
 
     # -- steps ---------------------------------------------------------------
+    def _step_runs(self, step, ev, label) -> bool:
+        try:
+            return eval_if(step.get("if"), ev, default_status=True)
+        except ExprError as e:
+            self.log.write(f"::error::step {label!r}: if: {e}\n")
+            self.failed = True
+            return False
+
+    def _step_conclusion(self, step, ev, ok) -> str:
+        coe = step.get("continue-on-error")
+        if isinstance(coe, str):
+            coe = truthy(ev.eval(EXPR_RE.sub(lambda m: m.group(1), coe)))
+        return "success" if (ok or coe) else "failure"
+
+    def _record_skipped(self, sid, row):
+        row.update(outcome="skipped", conclusion="skipped", seconds=0)
+        self.steps_ctx[sid] = {"outputs": {}, "outcome": "skipped", "conclusion": "skipped"}
+        self.step_rows.append(row)
+
+    def _run_body(self, step, ev, label, deadline):
+        try:
+            if "uses" in step:
+                return self.run_uses(step, ev)
+            return self.run_script(step, ev, deadline)
+        except ExprError as e:
+            self.log.write(f"::error::step {label!r}: {e}\n")
+            return False, {}
+
     def run_step(self, idx: int, step: dict, deadline: float):
         sid = step.get("id") or f"__step{idx}"
         label = step.get("name") or step.get("uses") or (step.get("run") or "").split("\n")[0]
         ev = self.evaluator(step.get("env"))
         row = {"index": idx, "name": label, "id": step.get("id")}
-        try:
-            run_it = eval_if(step.get("if"), ev, default_status=True)
-        except ExprError as e:
-            self.log.write(f"::error::step {label!r}: if: {e}\n")
-            run_it, self.failed = False, True
-        if not run_it:
-            row.update(outcome="skipped", conclusion="skipped", seconds=0)
-            self.steps_ctx[sid] = {"outputs": {}, "outcome": "skipped", "conclusion": "skipped"}
-            self.step_rows.append(row)
+        if not self._step_runs(step, ev, label):
+            self._record_skipped(sid, row)
             return
         t0 = time.time()
         self.log.write(f"\n##[step {idx}] {label}\n")
-        outputs = {}
-        try:
-            if "uses" in step:
-                ok, outputs = self.run_uses(step, ev)
-            else:
-                ok, outputs = self.run_script(step, ev, deadline)
-        except ExprError as e:
-            self.log.write(f"::error::step {label!r}: {e}\n")
-            ok = False
+        ok, outputs = self._run_body(step, ev, label, deadline)
         outcome = "success" if ok else "failure"
-        coe = step.get("continue-on-error")
-        if isinstance(coe, str):
-            coe = truthy(ev.eval(EXPR_RE.sub(lambda m: m.group(1), coe)))
-        conclusion = "success" if (ok or coe) else "failure"
+        conclusion = self._step_conclusion(step, ev, ok)
         if conclusion == "failure":
             self.failed = True
         self.steps_ctx[sid] = {"outputs": outputs, "outcome": outcome, "conclusion": conclusion}
@@ -802,50 +858,39 @@ class Section:
             env["PATH"] = ":".join(reversed(self.path_prepend)) + ":" + env.get("PATH", "")
         return env
 
-    def run_script(self, step, ev, deadline):
-        script = interpolate(step["run"], ev)
-        env = self.step_env(step, ev)
+    def _file_command_paths(self, env) -> dict:
         files = {}
         for k in ("GITHUB_OUTPUT", "GITHUB_ENV", "GITHUB_PATH", "GITHUB_STEP_SUMMARY", "GITHUB_STATE"):
             p = self.temp / f"_{k.lower()}_{len(self.step_rows)}"
             p.write_text("")
             env[k] = str(p)
             files[k] = p
-        spath = self.temp / f"_step_{len(self.step_rows)}.sh"
-        spath.write_text(script)
-        shell = step.get("shell")
-        if shell in (None, "") and self.container:
-            argv = ["sh", "-e", str(spath)]  # the Actions default inside a job container
-        elif shell in (None, ""):
-            argv = ["bash", "-e", str(spath)]
-        elif shell == "bash":
-            argv = ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(spath)]
-        elif shell == "sh":
-            argv = ["sh", "-e", str(spath)]
-        elif shell == "python":
-            argv = ["python3", str(spath)]
-        elif "{0}" in shell:
-            argv = shell.replace("{0}", str(spath)).split()
-        else:
-            raise ExprError(f"unsupported shell {shell!r}")
-        wd = step.get("working-directory")
-        cwd = str((self.workspace / interpolate(wd, ev)) if wd else self.workspace)
-        tmo = timeout_seconds(step.get("timeout-minutes"), 0) or None
-        remain = deadline - time.time()
-        tmo = min(t for t in (tmo, remain) if t is not None)
-        if self.container:
-            execv = ["docker", "exec", "-i", "-w", cwd]
-            for k, v in env.items():
-                # Actions hands a container step the job/step env and the runner's
-                # GITHUB_*/RUNNER_* set -- never the host's PATH, HOME or shell env.
-                keep = (k in self.env or k in (step.get("env") or {})
-                        or k.startswith(("GITHUB_", "RUNNER_", "ACTIONS_")) or k in ("CI", "HOME"))
-                if keep and k != "PATH":
-                    execv += ["-e", f"{k}={v}"]
-            argv = execv + [self.container] + argv
-            cwd = None
-        rc = self.spawn(argv, env if not self.container else None, cwd, tmo)
-        # file commands
+        return files
+
+    def _shell_argv(self, shell, spath) -> list:
+        if shell in (None, ""):
+            # the Actions default inside a job container is sh
+            return ["sh" if self.container else "bash", "-e", str(spath)]
+        fixed = {"bash": ["bash", "--noprofile", "--norc", "-eo", "pipefail"],
+                 "sh": ["sh", "-e"], "python": ["python3"]}
+        if shell in fixed:
+            return fixed[shell] + [str(spath)]
+        if "{0}" in shell:
+            return shell.replace("{0}", str(spath)).split()
+        raise ExprError(f"unsupported shell {shell!r}")
+
+    def _container_argv(self, argv, env, step, cwd) -> list:
+        execv = ["docker", "exec", "-i", "-w", cwd]
+        for k, v in env.items():
+            # Actions hands a container step the job/step env and the runner's
+            # GITHUB_*/RUNNER_* set -- never the host's PATH, HOME or shell env.
+            keep = (k in self.env or k in (step.get("env") or {})
+                    or k.startswith(("GITHUB_", "RUNNER_", "ACTIONS_")) or k in ("CI", "HOME"))
+            if keep and k != "PATH":
+                execv += ["-e", f"{k}={v}"]
+        return execv + [self.container] + argv
+
+    def _apply_file_commands(self, files) -> dict:
         outputs = parse_file_command(files["GITHUB_OUTPUT"])
         for k, v in parse_file_command(files["GITHUB_ENV"]).items():
             self.env[k] = v
@@ -856,6 +901,25 @@ class Section:
         if summ.strip():
             with open(self.ctx.base / "step-summary.md", "a") as f:
                 f.write(f"\n### {self.name}\n{summ}\n")
+        return outputs
+
+    def run_script(self, step, ev, deadline):
+        script = interpolate(step["run"], ev)
+        env = self.step_env(step, ev)
+        files = self._file_command_paths(env)
+        spath = self.temp / f"_step_{len(self.step_rows)}.sh"
+        spath.write_text(script)
+        argv = self._shell_argv(step.get("shell"), spath)
+        wd = step.get("working-directory")
+        cwd = str((self.workspace / interpolate(wd, ev)) if wd else self.workspace)
+        tmo = timeout_seconds(step.get("timeout-minutes"), 0) or None
+        remain = deadline - time.time()
+        tmo = min(t for t in (tmo, remain) if t is not None)
+        if self.container:
+            argv = self._container_argv(argv, env, step, cwd)
+            cwd = None
+        rc = self.spawn(argv, env if not self.container else None, cwd, tmo)
+        outputs = self._apply_file_commands(files)
         return rc == 0, outputs
 
     def spawn(self, argv, env, cwd, timeout) -> int:
@@ -948,6 +1012,15 @@ def uses_cache(sec: Section, w, ev):
     return True, {"cache-hit": "false"}
 
 
+def _upload_hit(hp: Path, roots: list, files: list):
+    if hp.is_dir():
+        roots.append(hp)
+        files += [f for f in sorted(hp.rglob("*")) if f.is_file()]
+    elif hp.is_file():
+        roots.append(hp.parent)
+        files.append(hp)
+
+
 def upload_plan(ws: Path, path_spec: str) -> tuple:
     """(root, [files]) the way actions/upload-artifact lays out an artifact.
 
@@ -963,13 +1036,7 @@ def upload_plan(ws: Path, path_spec: str) -> tuple:
             continue
         full = pat if os.path.isabs(pat) else str(ws / pat)
         for hit in sorted(glob.glob(full, recursive=True)):
-            hp = Path(hit)
-            if hp.is_dir():
-                roots.append(hp)
-                files += [f for f in sorted(hp.rglob("*")) if f.is_file()]
-            elif hp.is_file():
-                roots.append(hp.parent)
-                files.append(hp)
+            _upload_hit(Path(hit), roots, files)
     if not roots:
         return None, []
     root = Path(os.path.commonpath([str(r) for r in roots]))
@@ -1016,25 +1083,14 @@ def fetch_artifact_zip(url: str, token: str, out: Path, timeout: int = 300):
         shutil.copyfileobj(r, f)
 
 
-def uses_download(sec: Section, w, ev):
-    """Poll this run's artifacts (the X64 half is uploaded by another job)."""
-    pattern = w.get("pattern") or w.get("name")
-    dest = sec.workspace / (w.get("path") or ".")
-    dest.mkdir(parents=True, exist_ok=True)
-    want = [p.strip() for p in os.environ.get("FAT_EXPECT_ARTIFACTS", "").split(",") if p.strip()]
-    deadline = time.time() + float(os.environ.get("FAT_ARTIFACT_WAIT_S", "3600"))
-    api = f"{sec.ctx.api}/repos/{sec.ctx.repo}/actions/runs/{sec.ctx.run_id}/artifacts?per_page=100"
-    while True:
-        arts = gh_json(api, sec.ctx.token).get("artifacts", [])
-        hits = [a for a in arts if fnmatch.fnmatch(a["name"], pattern)]
-        local = sorted(p.name for p in sec.ctx.stage.glob(pattern)) if sec.ctx.stage.exists() else []
-        names = {a["name"] for a in hits} | set(local)
-        if not want or all(x in names for x in want):
-            break
-        if CANCELLED.is_set() or time.time() > deadline:
-            sec.log.write(f"::error::download-artifact: waited for {want}, have {sorted(names)}\n")
-            return False, {}
-        time.sleep(20)
+def _artifact_state(sec: Section, api: str, pattern: str) -> tuple:
+    arts = gh_json(api, sec.ctx.token).get("artifacts", [])
+    hits = [a for a in arts if fnmatch.fnmatch(a["name"], pattern)]
+    local = sorted(p.name for p in sec.ctx.stage.glob(pattern)) if sec.ctx.stage.exists() else []
+    return hits, local, {a["name"] for a in hits} | set(local)
+
+
+def _fetch_artifacts(sec: Section, w, dest: Path, hits: list, local: list):
     for a in hits:
         z = sec.temp / f"{a['name']}.zip"
         fetch_artifact_zip(a["archive_download_url"], sec.ctx.token, z)
@@ -1046,6 +1102,25 @@ def uses_download(sec: Section, w, ev):
             continue
         out = dest if w.get("merge-multiple") else dest / name
         shutil.copytree(sec.ctx.stage / name, out, dirs_exist_ok=True)
+
+
+def uses_download(sec: Section, w, ev):
+    """Poll this run's artifacts (the X64 half is uploaded by another job)."""
+    pattern = w.get("pattern") or w.get("name")
+    dest = sec.workspace / (w.get("path") or ".")
+    dest.mkdir(parents=True, exist_ok=True)
+    want = [p.strip() for p in os.environ.get("FAT_EXPECT_ARTIFACTS", "").split(",") if p.strip()]
+    deadline = time.time() + float(os.environ.get("FAT_ARTIFACT_WAIT_S", "3600"))
+    api = f"{sec.ctx.api}/repos/{sec.ctx.repo}/actions/runs/{sec.ctx.run_id}/artifacts?per_page=100"
+    while True:
+        hits, local, names = _artifact_state(sec, api, pattern)
+        if not want or all(x in names for x in want):
+            break
+        if CANCELLED.is_set() or time.time() > deadline:
+            sec.log.write(f"::error::download-artifact: waited for {want}, have {sorted(names)}\n")
+            return False, {}
+        time.sleep(20)
+    _fetch_artifacts(sec, w, dest, hits, local)
     sec.log.write(f"download-artifact {pattern!r}: {sorted(names)} -> {dest}\n")
     return True, {}
 
@@ -1155,11 +1230,7 @@ class RunCtx:
         js = [j for j in self._jobs if j.get("name") == need]
         if not js or any(j.get("status") != "completed" for j in js):
             return None
-        cs = [j.get("conclusion") for j in js]
-        for bad, r in (("failure", "failure"), ("timed_out", "failure"), ("cancelled", "cancelled")):
-            if bad in cs:
-                return r
-        return "success" if all(c == "success" for c in cs) else "skipped"
+        return _external_conclusion([j.get("conclusion") for j in js])
 
     def members(self, need: str) -> list:
         """A need names a job; a matrix job is every expansion present HERE.
@@ -1206,6 +1277,13 @@ class RunCtx:
         }
 
 
+def _external_conclusion(cs: list) -> str:
+    for bad, r in (("failure", "failure"), ("timed_out", "failure"), ("cancelled", "cancelled")):
+        if bad in cs:
+            return r
+    return "success" if all(c == "success" for c in cs) else "skipped"
+
+
 DEFAULT_TIMEOUT_SCALE = 2.0
 EXTERNAL_POLL_S = 60.0
 # The shard jobs' own timeout (180 min) plus the verdict job's (10), plus queue.
@@ -1231,28 +1309,36 @@ def timeout_seconds(minutes, default_minutes=0) -> float:
     return float(minutes if minutes is not None else default_minutes) * 60 * scale
 
 
+def _start_ready(ctx: RunCtx, pending: list, running: dict):
+    for n in list(pending):
+        deps = ctx.sections[n].spec["needs"].values()
+        missing = [d for d in deps if not ctx.members(d)]
+        if missing:
+            raise SystemExit(f"fat_driver: section {n} needs {missing}, not in this run")
+        if all(ctx.need_result(d) is not None for d in deps):
+            pending.remove(n)
+            t = threading.Thread(target=ctx.sections[n].run, name=n, daemon=True)
+            t.start()
+            running[n] = t
+            say(f"::notice::section {n} started")
+
+
+def _reap_done(ctx: RunCtx, running: dict, early, early_done: threading.Event):
+    for n, t in list(running.items()):
+        if not t.is_alive():
+            del running[n]
+            s = ctx.sections[n]
+            say(f"section {n}: {s.result} in {s.ended - s.started:.0f}s")
+            if n == early:
+                early_done.set()
+
+
 def schedule(ctx: RunCtx, names: list, early: str | None, early_done: threading.Event):
     pending = list(names)
     running: dict = {}
     while pending or running:
-        for n in list(pending):
-            deps = ctx.sections[n].spec["needs"].values()
-            missing = [d for d in deps if not ctx.members(d)]
-            if missing:
-                raise SystemExit(f"fat_driver: section {n} needs {missing}, not in this run")
-            if all(ctx.need_result(d) is not None for d in deps):
-                pending.remove(n)
-                t = threading.Thread(target=ctx.sections[n].run, name=n, daemon=True)
-                t.start()
-                running[n] = t
-                say(f"::notice::section {n} started")
-        for n, t in list(running.items()):
-            if not t.is_alive():
-                del running[n]
-                s = ctx.sections[n]
-                say(f"section {n}: {s.result} in {s.ended - s.started:.0f}s")
-                if n == early:
-                    early_done.set()
+        _start_ready(ctx, pending, running)
+        _reap_done(ctx, running, early, early_done)
         time.sleep(1)
     early_done.set()
 
@@ -1324,7 +1410,24 @@ def on_signal(signum, frame):
             pass
 
 
-def cmd_run(a):
+def _parent_after_fork(a, base: Path, marker: Path, pid: int) -> int:
+    (base / "driver.pid").write_text(str(pid))
+    while not marker.exists():
+        try:
+            wpid, _ = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            wpid = pid
+        if wpid == pid:
+            break
+        time.sleep(2)
+    say(f"fat_driver: {a.background_until} finished; the rest continue in pid {pid}")
+    if marker.exists():
+        r = json.loads(marker.read_text())
+        return 0 if r.get("result") == "success" else 1
+    return 1
+
+
+def _setup_run(a) -> tuple:
     cat = section_catalogue()
     names = resolve_section_names(cat, a.sections)
     base = Path(a.base or Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "fat")
@@ -1333,6 +1436,11 @@ def cmd_run(a):
     ctx.external = dict.fromkeys(a.external_job or [])
     for n in names:
         ctx.sections[n] = Section(n, cat[n], ctx)
+    return ctx, names, base
+
+
+def cmd_run(a):
+    ctx, names, base = _setup_run(a)
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
     results = Path(a.results)
@@ -1343,20 +1451,7 @@ def cmd_run(a):
         marker = base / "early.json"
         pid = os.fork()
         if pid:
-            (base / "driver.pid").write_text(str(pid))
-            while not marker.exists():
-                try:
-                    wpid, _ = os.waitpid(pid, os.WNOHANG)
-                except ChildProcessError:
-                    wpid = pid
-                if wpid == pid:
-                    break
-                time.sleep(2)
-            say(f"fat_driver: {a.background_until} finished; the rest continue in pid {pid}")
-            if marker.exists():
-                r = json.loads(marker.read_text())
-                return 0 if r.get("result") == "success" else 1
-            return 1
+            return _parent_after_fork(a, base, marker, pid)
         os.setsid()
         sys.stdout = open(base / "driver.out", "w", buffering=1)
         sys.stderr = sys.stdout
@@ -1573,83 +1668,103 @@ def _st_checkout(row):
         row("checkout fetch-depth 2 refuses (not emulated)", ok, False)
 
 
+# #4507: a leftover section tree the runner user cannot delete (root-owned files
+# from a container section). `_stubborn` is rmtree on such a tree, whoever runs the
+# self-test: it deletes all but the `rootowned` dir, then raises EACCES as the real
+# one does -- or, with ignore_errors, says nothing, which was the bug.
+def _stubborn(p, ignore_errors=False):
+    p = Path(p)
+    keep = list(p.rglob("rootowned")) + ([p] if p.name == "rootowned" else [])
+    if not keep:
+        return shutil.rmtree(p, ignore_errors=ignore_errors)
+    for c in p.iterdir():
+        if not any(k == c or c in k.parents for k in keep):
+            shutil.rmtree(c) if c.is_dir() else c.unlink()
+    if not ignore_errors:
+        raise PermissionError(13, "Permission denied", str(keep[0]))
+
+
+def _plant(d):
+    (d / "ws" / "rootowned").mkdir(parents=True)
+    (d / "ws" / "rootowned" / "f").write_text("x")
+    (d / "home").mkdir()
+
+
+def _st_aside_moved(row, base, d, log):
+    try:  # a raise here is this row's RED, not the end of the table
+        make_section_dirs(d, log, rmtree=_stubborn)
+        asides = list((base / ".aside" / d.name).iterdir())
+        got = (len(asides), (asides[0] / "ws" / "rootowned" / "f").exists(),
+               sorted(c.name for c in d.iterdir()))
+    except OSError as e:
+        got = repr(e)
+    row("#4507 leftover undeletable ws: moved aside, fresh section tree made",
+        got, (1, True, ["_temp", "home", "ws"]))
+    if not isinstance(got, tuple):
+        shutil.rmtree(base / ".aside", ignore_errors=True)
+        _stubborn(d, ignore_errors=True)
+        shutil.move(str(d), str(base / "mutant-leftover"))
+    row("#4507 the move aside is in the section log",
+        "moved aside to" in (base / "log").read_text(), True)
+
+
+def _st_aside_mutant(row, base, log):
+    d2 = base / "fresh"
+    _plant(d2)
+    try:
+        make_section_dirs(d2, log, rmtree=lambda p: _stubborn(p, ignore_errors=True))
+        got = "mkdir ok"
+    except FileExistsError:
+        got = "FileExistsError"
+    row("#4507 MUTANT rmtree(ignore_errors)+mkdir on the same leftover dies", got, "FileExistsError")
+
+
+def _st_aside_keep(row, base, d, log):
+    bucket = base / ".aside" / d.name
+    bucket.mkdir(parents=True, exist_ok=True)
+    (bucket / "1").mkdir()  # an older aside that has since become deletable
+    try:
+        shutil.rmtree(d)
+        for _ in range(ASIDE_KEEP):
+            _plant(d)
+            clear_dir(d, log, rmtree=_stubborn)
+        got = ((bucket / "1").exists(), len(list(bucket.iterdir())),
+               "::warning::" in (base / "log").read_text())
+    except OSError as e:
+        got = (repr(e),) * 3
+    row("#4507 an older deletable aside is removed", got[0], False)
+    row("#4507 undeletable asides past ASIDE_KEEP warn", got[1:], (ASIDE_KEEP + 1, True))
+    row("#4507 an absent dir is a no-op", clear_dir(base / "absent", log, rmtree=_stubborn), None)
+
+
+def _st_aside_real(row):
+    # The same on a real filesystem: a dir without its write bit is what a
+    # root-owned one is to the runner user.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td) / "sec"
+        _plant(d)
+        os.chmod(d / "ws" / "rootowned", 0o500)
+        with open(os.devnull, "w") as log:
+            aside = clear_dir(d, log)
+        ok = aside is not None and not d.exists()
+        os.chmod((aside or d) / "ws" / "rootowned", 0o700)  # so the tempdir can go
+        row("#4507 real EACCES tree (non-root): moved aside, dir free", ok, True)
+
+
 def _st_aside(row):
     import tempfile
-    # #4507: a leftover section tree the runner user cannot delete (root-owned files
-    # from a container section). `stubborn` is rmtree on such a tree, whoever runs the
-    # self-test: it deletes all but the `rootowned` dir, then raises EACCES as the real
-    # one does -- or, with ignore_errors, says nothing, which was the bug.
-    def stubborn(p, ignore_errors=False):
-        p = Path(p)
-        keep = list(p.rglob("rootowned")) + ([p] if p.name == "rootowned" else [])
-        if not keep:
-            return shutil.rmtree(p, ignore_errors=ignore_errors)
-        for c in p.iterdir():
-            if not any(k == c or c in k.parents for k in keep):
-                shutil.rmtree(c) if c.is_dir() else c.unlink()
-        if not ignore_errors:
-            raise PermissionError(13, "Permission denied", str(keep[0]))
-
-    def plant(d):
-        (d / "ws" / "rootowned").mkdir(parents=True)
-        (d / "ws" / "rootowned" / "f").write_text("x")
-        (d / "home").mkdir()
     with tempfile.TemporaryDirectory() as td:
         base = Path(td)
         d = base / "workspace-test-shard_1_3_"
-        plant(d)
+        _plant(d)
         log = open(Path(td) / "log", "w", buffering=1)
-        try:  # a raise here is this row's RED, not the end of the table
-            make_section_dirs(d, log, rmtree=stubborn)
-            asides = list((base / ".aside" / d.name).iterdir())
-            got = (len(asides), (asides[0] / "ws" / "rootowned" / "f").exists(),
-                   sorted(c.name for c in d.iterdir()))
-        except OSError as e:
-            got = repr(e)
-        row("#4507 leftover undeletable ws: moved aside, fresh section tree made",
-            got, (1, True, ["_temp", "home", "ws"]))
-        if not isinstance(got, tuple):
-            shutil.rmtree(base / ".aside", ignore_errors=True)
-            stubborn(d, ignore_errors=True)
-            shutil.move(str(d), str(base / "mutant-leftover"))
-        row("#4507 the move aside is in the section log",
-            "moved aside to" in (Path(td) / "log").read_text(), True)
-        d2 = base / "fresh"
-        plant(d2)
-        try:
-            make_section_dirs(d2, log, rmtree=lambda p: stubborn(p, ignore_errors=True))
-            got = "mkdir ok"
-        except FileExistsError:
-            got = "FileExistsError"
-        row("#4507 MUTANT rmtree(ignore_errors)+mkdir on the same leftover dies", got, "FileExistsError")
-        bucket = base / ".aside" / d.name
-        bucket.mkdir(parents=True, exist_ok=True)
-        (bucket / "1").mkdir()  # an older aside that has since become deletable
-        try:
-            shutil.rmtree(d)
-            for _ in range(ASIDE_KEEP):
-                plant(d)
-                clear_dir(d, log, rmtree=stubborn)
-            got = ((bucket / "1").exists(), len(list(bucket.iterdir())),
-                   "::warning::" in (Path(td) / "log").read_text())
-        except OSError as e:
-            got = (repr(e),) * 3
-        row("#4507 an older deletable aside is removed", got[0], False)
-        row("#4507 undeletable asides past ASIDE_KEEP warn", got[1:], (ASIDE_KEEP + 1, True))
-        row("#4507 an absent dir is a no-op", clear_dir(base / "absent", log, rmtree=stubborn), None)
+        _st_aside_moved(row, base, d, log)
+        _st_aside_mutant(row, base, log)
+        _st_aside_keep(row, base, d, log)
         log.close()
     if os.geteuid() != 0:
-        # The same on a real filesystem: a dir without its write bit is what a
-        # root-owned one is to the runner user.
-        with tempfile.TemporaryDirectory() as td:
-            d = Path(td) / "sec"
-            plant(d)
-            os.chmod(d / "ws" / "rootowned", 0o500)
-            with open(os.devnull, "w") as log:
-                aside = clear_dir(d, log)
-            ok = aside is not None and not d.exists()
-            os.chmod((aside or d) / "ws" / "rootowned", 0o700)  # so the tempdir can go
-            row("#4507 real EACCES tree (non-root): moved aside, dir free", ok, True)
+        _st_aside_real(row)
 
 
 def _st_external(row):
