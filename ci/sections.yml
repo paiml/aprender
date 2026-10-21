@@ -18,12 +18,14 @@
 # The old `ci:` job, verbatim: `uses:` is the pin ci/vendor/sovereign-ci.yml was
 # copied from (scripts/check_ci_reusable_workflow_pinned.sh checks both agree).
 sovereign-ci:
-  uses: paiml/.github/.github/workflows/sovereign-ci.yml@f713290c86fcd70d6f26a0faab14e67e6713586f
+  uses: paiml/.github/.github/workflows/sovereign-ci.yml@9078879912d106237a38137dee06be6ac6c04ac7
   with:
     repo: ${{ github.event.repository.name }}
     enable_sccache: true
     use_nextest: true
     coverage_on: 'tag'
+    # PMAT-5792: the guard-cargo diff gate is the scanner of record (check_sov_advisories_off.sh)
+    advisories_diff_only: true
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
 # runs as TWELVE shards (ONE count: the `shards:` pins below; ci.yml's matrix lists must match, check_shard_count_single_source.sh), each its own ci.yml job on its own runner: as one shard
@@ -1901,6 +1903,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: bash scripts/ci_guards.sh guard-cargo
 
   guard-cargo-steps:
@@ -2034,7 +2037,7 @@ jobs:
       # `ci / security` from the reusable workflow runs `cargo audit`, which does
       # NOT read deny.toml -- so this covers licences, bans and sources, which
       # nothing else does.
-      - name: cargo-deny (licences, bans, sources, advisories)
+      - name: cargo-deny (licences, bans, sources)
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -2054,7 +2057,7 @@ jobs:
             -e GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
             -e "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $B64" \
             "$IMAGE" \
-            cargo deny check
+            cargo deny check licenses bans sources
       # check_apr_bin_pinned asserts CALLERS pin the binary; it says nothing
       # about which binary the resolver hands them. apr_bin.sh returned
       # target/release/apr whenever it existed, so a stale release build beside
@@ -2691,7 +2694,27 @@ jobs:
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          cargo deny check advisories
+          # MG_BASE_SHA comes from the process env of the outer guard-cargo step (the manifest runner resolves no merge_group context).
+          # The gate runs from the BASE ref, never the PR tree (PMAT-5792): a PR cannot edit its own judge.
+          # Bootstrap only: the merge that introduces the scripts has no base copy, so it uses its own.
+          S="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-scripts-$$"
+          if git cat-file -e refs/remotes/origin/main:scripts/ci/advisory_gate.sh 2>/dev/null; then
+            mkdir -p "$S"
+            git archive refs/remotes/origin/main scripts/ci | tar -x -C "$S"
+            G="$S/scripts/ci"
+          else
+            G=scripts/ci
+          fi
+          # One command per line under -e: the first non-zero exit ends the step with that status (no && chain, no saved rc).
+          trap 'rm -rf -- "${S:?}"' EXIT
+          set -e
+          bash "$G/advisory_diff.sh" --self-test
+          bash scripts/ci/check_sov_advisories_off.sh --self-test
+          bash scripts/ci/check_sov_advisories_off.sh
+          bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh"
+          bash scripts/ci/advisory_step_selftest.sh
+          bash scripts/ci/rearm_ready.sh --self-test
+          bash "$G/advisory_gate.sh"
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.
