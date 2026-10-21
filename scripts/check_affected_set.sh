@@ -15,7 +15,7 @@ core_list=" aprender-core aprender-compute aprender-contracts apr-cli aprender-q
 readers="$(sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$A")"
 meta=$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null)
 members=$(jq -r '.packages[].name' <<<"$meta" | sort)
-# a READERS entry that is a directory and not a package (e.g. facades) is dropped by the tool; drop it from the oracle too
+# a READERS entry that is not a workspace package is dropped by the tool; drop it from the oracle too
 readers="$(printf '%s\n' $readers | grep -Fxf <(printf '%s\n' "$members") || true)"
 # a non-core crate that has dependents, and a leaf with none
 withdep="" leaf=""
@@ -42,6 +42,7 @@ row "apr-cli source -> ALL (aprender-core tests read apr-cli/src/commands_enum.r
 row "--diff-from with .. is refused (SEC010)" "2" "$($A --diff-from ../x >/dev/null 2>&1; echo $?)"
 row "Cargo.lock -> ALL" ALL "$(run Cargo.lock)"
 row "unknown path -> ALL" ALL "$(run some/unknown/path.txt)"
+row "a path whose dir only prefixes a crate dir (crates/aprender-train-old/) -> ALL (awk prefix needs the trailing /)" ALL "$(run crates/aprender-train-old/src/lib.rs)"
 row "unknown path next to a leaf -> ALL" ALL "$(run "$ld/src/lib.rs" scripts/whatever.sh)"
 row "docs file -> ALL (tests read docs/ at run time)" ALL "$(run docs/x.md)"
 row "root README.md -> ALL" ALL "$(run README.md)"

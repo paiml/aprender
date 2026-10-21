@@ -11,12 +11,14 @@ set -euo pipefail
 SET="${AFFECTED_SET_SH:-scripts/affected_set.sh}"
 # the exact file:line exemptions (a crate-wide exemption hides a later reader in the same crate)
 ALLOW="${AFFECTED_READERS_ALLOW:-crates/aprender-bench-tokenizer/src/lib.rs:50}"   # joins ../.. only for <root>/tokenizer.json and <root>/models/
-PAT='"\.\."|"[^"]*(\.\./|/\.\.)[^"]*"|\bparent\(\)|ancestors\(\)|current_dir|"[^"]*crates/|"crates"|CARGO_WORKSPACE_DIR|workspace_path_or_skip|read_dir\([^)]*(MANIFEST|crates|root|workspace)|format!\([^)]*(MANIFEST_DIR|crates/)'
+# crates/ dirs outside the workspace (excluded): a change there is unplaceable -> ALL, so they need no READERS entry
+NONMEMBER="${AFFECTED_NONMEMBER:-facades}"
+PAT='"\.\."|"[^"]*(\.\./|/\.\.)[^"]*"|\bparent[[:space:]]*\(|Path::parent\(|Component::ParentDir|show-toplevel|\.pop\(\);[^;]*\.push\(|ancestors\(\)|current_dir|"[^"]*crates/|"crates"|CARGO_WORKSPACE_DIR|workspace_path_or_skip|read_dir\([^)]*(MANIFEST|crates|root|workspace)|format!\([^)]*(MANIFEST_DIR|crates/)'
 listed() { sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sort -u; }
 hits() { # $1 = crates dir; prints crate names
   { grep -rEn --include='*.rs' "$PAT" "$1" 2>/dev/null || true; } \
     | grep -vE '^[^:]*/target/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
-    | awk -F: -v allow=" $ALLOW " '{ k = $1 ":" $2; if (index(allow, " " k " ")) next; n = split($1, a, "/"); print a[2] }' | sort -u
+    | awk -F: -v allow=" $ALLOW " -v nm=" $NONMEMBER " '{ k = $1 ":" $2; if (index(allow, " " k " ")) next; n = split($1, a, "/"); if (index(nm, " " a[2] " ")) next; print a[2] }' | sort -u
 }
 check() {
   local bad="" l c; l="$(listed)"
@@ -49,6 +51,12 @@ if [ "${1:-}" = "--self-test" ]; then
   expect_red 'format! with MANIFEST_DIR' zz-m 'let _ = format!("{}/x", env!("CARGO_MANIFEST_DIR"));'
   expect_red 'a *contracts*/*target* crate name' zz-contracts-target-new 'let _ = root.join("crates");'
   expect_red 'a line that mentions target/contracts' zz-n 'let _ = root.join("crates"); /* target contracts docs/ */'
+  expect_red 'PathBuf pop then push' zz-p 'let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR")); p.pop(); p.push("aprender-core");'
+  expect_red 'Component::ParentDir' zz-q 'let _ = Component::ParentDir;'
+  expect_red 'git rev-parse --show-toplevel' zz-r 'let _ = Command::new("git").args(["rev-parse", "--show-toplevel"]);'
+  expect_red 'Path::parent(x)' zz-s 'let _ = Path::parent(&here);'
+  expect_red '.parent ()' zz-t 'let _ = here.parent ();'
+  expect_red 'a non-member dir is only exempt when named' facades-x 'let _ = here.ancestors();'
   # the bench-tokenizer exemption is the one line, not the crate
   fresh aprender-bench-tokenizer; printf 'fn f() {}\nfn g() { let _ = root.join("crates"); }\n' >"$t/crates/aprender-bench-tokenizer/src/lib.rs"
   if (AFFECTED_READERS_ALLOW="crates/aprender-bench-tokenizer/src/lib.rs:1" check crates >/dev/null 2>&1); then echo "FAIL self-test: an allow entry exempted a different line"; fail=1; fi
