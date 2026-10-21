@@ -285,10 +285,13 @@ hasnt "D11 pull_request ignores --mg-*: never reuse" "tier=reuse" "$OUT"
 
 # -- W: the CI wiring ------------------------------------------------------------------------------
 SEC="$ROOT/ci/sections.yml"
+DT="$ROOT/scripts/ci/decide_tier.sh" # the tier step body lives in one script (#5882): the section step and workspace-test-arch both run it
+want "W0 the section step runs the shared decide_tier.sh" 1 \
+     "$(grep -cF "bash scripts/ci/decide_tier.sh" "$SEC")"
 want "W1 the tier step's push arm calls the lookup for GITHUB_SHA" 1 \
-     "$(grep -cF 'bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}"' "$SEC")"
+     "$(grep -cF 'bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}"' "$DT")"
 want "W2 a failed lookup is not fatal to the step (it falls to today's tier)" 1 \
-     "$(grep -cF '"${GITHUB_SHA}") || mg=""' "$SEC")"
+     "$(grep -cF '"${GITHUB_SHA}") || mg=""' "$DT")"
 W3PAT="push) printf 'cited merge_group run: %s"
 if grep -qF "$W3PAT" "$SEC"; then w3=1; else w3=0; fi
 want "W3 the reuse step labels a push citation as a merge_group run, not a PR head" 1 "$w3"
