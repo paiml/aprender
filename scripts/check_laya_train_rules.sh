@@ -301,7 +301,7 @@ event_base() {
     if [ "$key" = base_sha ]; then
         sed -n 's/.*"base_sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' "$ev" | head -n 1
     else
-        tr -d '\n' <"$ev" | sed -n 's/.*"base"[[:space:]]*:[[:space:]]*{[^}]*"sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' | head -n 1
+        awk '{ s = s $0 } END { if (!match(s, /"base"[ \t]*:[ \t]*\{/)) exit; s = substr(s, RSTART + RLENGTH); if (!match(s, /"sha"[ \t]*:[ \t]*"[0-9a-f]+"/)) exit; s = substr(s, RSTART, RLENGTH); sub(/^"sha"[ \t]*:[ \t]*"/, "", s); sub(/"$/, "", s); if (length(s) == 40) print s }' "$ev"
     fi
 }
 
@@ -419,7 +419,7 @@ st_chain() {
     # moved main (the merge queue under REBASE): the head's first parent is the previous
     # replayed commit, never the base, and the shallow clone has no merge base. The event
     # file names the base, as merge_group.base_sha does; no --base is given.
-    local name=$1 expect=$2 setup=$3 out rc=0 got sc mt i
+    local name=$1 expect=$2 setup=$3 ev=${4:-merge_group} out rc=0 got sc mt i
     ST_ROW=$name
     git -C "$ST" checkout -q -B "laya-train/$name-pr" base
     for i in 1 2; do echo "doc $i" >"$ST/n$i.md"; git -C "$ST" add -A; st_commit "$name pr$i"; done
@@ -433,10 +433,14 @@ st_chain() {
     git -C "$ST" -c user.name=t -c user.email=t@t cherry-pick "laya-train/$name-pr~2" "laya-train/$name-pr~1" "laya-train/$name-pr" >/dev/null
     sc="$ST/shallow-$name"
     git clone -q --no-local --depth 1 --branch "laya-train/$name-main" "$ST" "$sc"
-    printf '{"merge_group":{"head_sha":"x","base_sha":"%s"}}\n' "$mt" >"$ST/event-$name.json"
+    if [ "$ev" = pull_request ]; then # the real payload shape (#5859): base is {label, ref, repo{...}, sha, user{...}} and head, with its own sha, comes first
+        printf '{"action":"synchronize","pull_request":{"head":{"label":"o:b","ref":"b","sha":"%s","user":{"login":"a"},"repo":{"id":3,"owner":{"login":"o"}}},"base":{"label":"o:main","ref":"main","repo":{"id":3,"owner":{"login":"o"},"license":{"key":"mit"}},"sha":"%s","user":{"login":"o"}}}}\n' "$(git -C "$ST" rev-parse HEAD)" "$mt" >"$ST/event-$name.json"
+    else
+        printf '{"merge_group":{"head_sha":"x","base_sha":"%s"}}\n' "$mt" >"$ST/event-$name.json"
+    fi
     git -C "$sc" config uploadpack.allowReachableSHA1InWant true
     git -C "$ST" config uploadpack.allowReachableSHA1InWant true
-    out=$(GITHUB_EVENT_NAME=merge_group GITHUB_EVENT_PATH="$ST/event-$name.json" "$SELF" --repo "$sc" --head HEAD) || rc=$?
+    out=$(GITHUB_EVENT_NAME=$ev GITHUB_EVENT_PATH="$ST/event-$name.json" "$SELF" --repo "$sc" --head HEAD) || rc=$?
     got=$(printf '%s\n' "$out" | awk '!d && $1 == "H1" {print $2; d = 1}')
     if [ "$got" = "$expect" ] && printf '%s\n' "$out" | awk '/diff event-base/ {f=1} END {exit !f}'; then
         printf 'ok   %-22s %s %s\n' "$name" H1 "$got"
@@ -538,6 +542,8 @@ self_test() {
     st_shallow clean-squash PASS squash 'echo "# docs" > notes.md'
     st_chain plant-py-chain RED 'echo "x = 1" > x.py'
     st_chain clean-chain PASS 'echo "# docs" > notes.md'
+    st_chain plant-py-chain-pr RED 'echo "x = 1" > x.py' pull_request
+    st_chain clean-chain-pr PASS 'echo "# docs" > notes.md' pull_request
 
     # H5 and H10 need LT-1's receipt and LT-9's declaration on the base.
     git -C "$ST" checkout -q base
