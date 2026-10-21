@@ -19,6 +19,8 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main, master]
+    # Drafts skip the heavy jobs (x86-main, workspace-test-shard); ready_for_review fires the full run.
+    types: [opened, synchronize, reopened, ready_for_review]
   # Merge queue: GitHub dispatches a `merge_group` event for each batch it forms.
   # Both required checks (`ci / gate` via the reusable sovereign-ci call, and the
   # top-level `workspace-test` job) live in THIS workflow, so triggering here makes
@@ -100,7 +102,7 @@ jobs:
     # its own. It runs on push only; on merge_group it is skipped at t=0, which the verdict blocks
     # below read as `skipped:::skipped` = "x86-main + determinism ran".
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     permissions:
       contents: read
@@ -155,7 +157,7 @@ jobs:
 
   x86-main:
     needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}
     # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 240
@@ -314,7 +316,7 @@ jobs:
   x86-main-advisories:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -437,7 +439,7 @@ jobs:
   # failure, never a pass.
   # ==========================================================================
   # The workspace tests, one shard per job (nextest hash partition N/12 plus the
-  # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
+  # explicit runner's round-robin N/12), in parallel on the clean-room pool (arch-neutral, PMAT-3138).
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   # #5798: the receipt judge. A PR cannot forge a receipt: this job checks out the BASE only
   # and fetches the PR merge commit as data (a --no-checkout worktree that is read, never
@@ -490,14 +492,37 @@ jobs:
           [ "$ok" = 1 ] || ok=0
           printf 'ok=%s\n' "$ok" >> "$GITHUB_OUTPUT"
 
+
+  # #5882: which tier this run owes decides WHERE the shards may run. The full tier's Σ-executed fan-in
+  # compares every shard with ONE universe list, and arch-gated tests (target_arch cfgs) differ per
+  # arch, so a full tier needs one architecture: X64. The quick/PR tier owes no Σ and stays
+  # arch-neutral. The tier is only knowable from the diff, so it is decided HERE, by the same script
+  # the shards run (scripts/ci/decide_tier.sh), and workspace-test-shard reads it in its runs-on.
+  # scripts/ci/sigma_arch_uniform.sh in the fan-in is the backstop: a mixed full tier is RED.
+  workspace-test-arch:
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 15
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Decide the test tier (the shards' own step, one script)
+        id: tier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: bash scripts/ci/decide_tier.sh
   workspace-test-shard:
-    # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
-    timeout-minutes: 180
-    # The judge is skipped off a pull_request and fails closed: !cancelled() runs the shard
+    needs: [workspace-test-arch, receipt-judge]
+    # draft PRs skip; the judge is skipped off a pull_request and fails closed: !cancelled() runs the shard
     # whatever the judge did, and RECEIPT_OK is 1 only on the judge's literal 1.
-    needs: [receipt-judge]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.event.pull_request.draft != true }}
+    # arch-neutral (operator 2026-10-21 14:18Z) EXCEPT the full tier, which needs one arch for the Σ (#5882, workspace-test-arch)
+    # clean-room for pull_request/push, mq for a merge_group entry
+    runs-on: ${{ needs.workspace-test-arch.outputs.tier == 'full' && (github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]')) || (github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","mq"]') || fromJSON('["self-hosted","Linux","clean-room"]')) }}
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -553,12 +578,16 @@ jobs:
       - name: Every shard passed
         env:
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
+          DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
+          [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
           echo "workspace-test-shard matrix result: $SHARD_RESULT"
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
       - uses: actions/checkout@v7
+        if: ${{ github.event.pull_request.draft != true }}
       - uses: actions/download-artifact@v4
+        if: ${{ github.event.pull_request.draft != true }}
         with:
           pattern: sigma-shard-*
           path: ${{ runner.temp }}/sigma
@@ -567,10 +596,12 @@ jobs:
       # ids is compared with the universe shard 1 listed. A shard whose ids did
       # not arrive is RED, never a smaller universe.
       - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
+        if: ${{ github.event.pull_request.draft != true }}
         run: |
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
+          bash scripts/ci/sigma_arch_uniform.sh --self-test
           # ONE shard count: the pins in ci/sections.yml (check_shard_count_single_source.sh)
           SHARDS="$(awk -v ev="$GITHUB_EVENT_NAME" '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{k="pr";next} p&&/^  workspace-test-shard-merge_group:/{k="mg";next} p&&/^  [a-z]/{k=""} k&&/^    - \{shard:/{c[k]++} END{print (ev=="merge_group"&&c["mg"]?c["mg"]:c["pr"])+0}' ci/sections.yml)"
           [ "${SHARDS:-0}" -ge 1 ] 2>/dev/null || { echo "::error::Σ: no workspace-test-shard pins"; exit 1; }
@@ -587,6 +618,8 @@ jobs:
           [ "$#" -eq "$SHARDS" ] || { echo "::error::Σ: $# tier files for $SHARDS shards:$tiers"; exit 1; }
           for t in "$@"; do [ "$t" = "$1" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }; done
           [ "$1" = full ] || { echo "every shard ran tier '$1': the lib/explicit Σ is not owed"; exit 0; }
+          # #5882: a full tier on two architectures is RED (arch-gated tests, one universe): placement is workspace-test-arch's, this is the backstop
+          bash scripts/ci/sigma_arch_uniform.sh "$d" "$SHARDS"
           j=() l=()
           for n in $(seq 1 "$SHARDS"); do
             j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
@@ -613,8 +646,10 @@ jobs:
           MG_DET: ${{ needs.mg-reuse.outputs.det }}
           MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
           ADV: ${{ needs.x86-main-advisories.result }}
+          DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
+          [ "${DRAFT:-}" != true ] || { echo "ci / gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
           # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
@@ -652,8 +687,10 @@ jobs:
           MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
           ADV: ${{ needs.x86-main-advisories.result }}
           MST: ${{ needs.mg-reuse-self-test.result }}
+          DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
+          [ "${DRAFT:-}" != true ] || { echo "gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
