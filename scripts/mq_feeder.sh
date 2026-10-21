@@ -25,7 +25,7 @@ pick() {
 }
 # gate_paths FILES -> 0 when any path is gate content (a gate change needs 2 non-author seats bound to the head).
 # Wide on purpose: every path under scripts/, ci/ and .github/ (the explicit-test fragments run arbitrary scripts) plus root build/lint config.
-gate_paths() { grep -qE '^(\.github/|ci/|scripts/|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
+gate_paths() { grep -qE '(^|/)(Cargo\.toml$|build\.rs$|\.?rustfmt\.toml$|\.gitignore$|\.?codecov\.yml$)|^(\.github/|ci/|scripts/|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
 # Review format the feeder accepts (a quorum receipt only; seats are not read). Positive anchors AT THE START OF THE BODY:
 #   quorum:  "quorum 3/3 [AGREED] PASS"    (or APPROVE/APPROVED); PASS/APPROVE is the verdict direction
 # followed ONLY by optional punctuation and an optional " @<sha>" up to the end of the body. A body with a quote mark, a negation/deferral/failure word or a
@@ -43,12 +43,12 @@ quorum_receipts() {
 needs_seats() {
   local f rv rc q
   [ -n "$2" ] || { echo "skip (head unreadable)"; return 0; }
-  f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[].filename' 2>/dev/null) || { echo "skip (files unreadable)"; return 0; }
+  f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[]|.filename, (.previous_filename // empty)' 2>/dev/null) || { echo "skip (files unreadable)"; return 0; }
   [ -n "$f" ] || { echo "skip (file list empty)"; return 0; }
   gate_paths "$f" && { echo "skip (gate content: the feeder never enqueues a gate change)"; return 0; }
   # reviews bound to HEAD (commit_id); one body per line, newlines folded
   rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,(.body|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
-  rc=$(grep -ciE '^CHANGES_REQUESTED|REQUEST[-_ ]?CHANGES|\bFAIL|\bREJECT|\bBLOCKING\b' <<<"$rv")
+  rc=$(grep -ciE '^CHANGES_REQUESTED|REQUEST[-_ ]?CHANGES|\bFAIL|\bREJECT|\bBLOCKING\b|\bBLOCKER|\bBLOCKS\b|NO-GO|DO NOT MERGE' <<<"$rv")
   q=$(quorum_receipts "$rv")
   { [ "${rc:-0}" -eq 0 ] && [ "${q:-0}" -ge 1 ]; } && return 1
   echo "skip (no quorum receipt at ${2:0:10}: quorum 3/3 PASS receipts $q/1, $rc request-changes)"
@@ -72,7 +72,10 @@ if [ "${1:-}" = --self-test ]; then
   # gate_paths: scripts the explicit-test fragments run are gate content (triage 38b290a66f)
   for p in scripts/contracts_gate.sh scripts/mutate_foo_guard.sh scripts/lib_baseline_ratchet.sh scripts/pv_bin.sh scripts/pmat_bin.sh scripts/tests/x.sh; do gate_paths "$p" || { echo "FAIL gate_paths $p"; fail=1; }; done
   # needs_seats with a stubbed gh: REVIEWS is "STATE<TAB>body" lines, FILES the PR file list
-  gh() { case "$2" in */files) [ "${CASE:-}" = filefail ] && return 1; printf '%s\n' "${FILES:-docs/x.md}";; */reviews) printf '%b' "${REVIEWS:-}";; esac; }
+  # FILES lines are "name" or "name<TAB>previous_name"; the stub feeds them through the REAL --jq filter, so the filter is under test
+  gh() { case "$2" in */files) [ "${CASE:-}" = filefail ] && return 1; local flt=; while [ $# -gt 0 ]; do [ "$1" = --jq ] && flt=$2; shift; done
+      printf '%s\n' "${FILES:-docs/x.md}" | jq -Rn '[inputs|split("\t")|{filename:.[0]}+(if length>1 then {previous_filename:.[1]} else {} end)]' | jq -r "$flt";;
+    */reviews) printf '%b' "${REVIEWS:-}";; esac; }
   ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
   Q3='COMMENTED\tquorum 3/3 AGREED PASS\n'
   eq 'receipt on a non-gate PR -> armable' "$(REVIEWS="$Q3" ns)" 1
@@ -83,6 +86,14 @@ if [ "${1:-}" = --self-test ]; then
   eq 'files unreadable -> skip (fail closed)' "$(CASE=filefail REVIEWS="$Q3" ns)" 0
   eq 'receipt + request-changes at head -> skip' "$(REVIEWS="${Q3}CHANGES_REQUESTED\tseat w3 RC\n" ns)" 0
   eq 'receipt + FAIL review at head -> skip' "$(REVIEWS="${Q3}COMMENTED\tseat w3 FAIL\n" ns)" 0
+  eq 'rename OUT of a gate path + receipt -> skip (previous_filename)' "$(FILES=$'docs/old_guard.sh\tscripts/check_guard.sh' REVIEWS="$Q3" ns)" 0
+  eq 'plain non-gate rename + receipt -> armable' "$(FILES=$'docs/b.md\tdocs/a.md' REVIEWS="$Q3" ns)" 1
+  for p in rustfmt.toml .rustfmt.toml .gitignore codecov.yml build.rs crates/foo/Cargo.toml crates/foo/build.rs; do
+    eq "gate path $p + receipt -> skip" "$(FILES=$p REVIEWS="$Q3" ns)" 0
+  done
+  for r in 'seat w3 BLOCKER' 'NO-GO' 'seat w3 BLOCKS' 'DO NOT MERGE'; do
+    eq "review '$r' at head -> skip" "$(REVIEWS="${Q3}COMMENTED\t$r\n" ns)" 0
+  done
   eq 'receipt "quorum 3/3 APPROVED" -> armable' "$(REVIEWS='COMMENTED\tquorum 3/3 APPROVED\n' ns)" 1
   eq 'receipt with trailing @sha -> armable' "$(REVIEWS='COMMENTED\tquorum 3/3 AGREED PASS @abcdef1234\n' ns)" 1
   eq 'receipt with punctuation -> armable' "$(REVIEWS='COMMENTED\tquorum 3/3 AGREED PASS.\n' ns)" 1
