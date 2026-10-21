@@ -160,7 +160,27 @@ judge_generated() {
     while IFS= read -r name; do
         case "$name" in *.yaml) git -C "$repo" show "$head:$name" >"$td/entries/${name##*/}" || { rm -rf -- "${td:?}"; return 2; } ;; esac
     done < <(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null)
-    git -C "$repo" show "$head:$BASE_FILE" >"$td/base.yaml" || { rm -rf -- "${td:?}"; return 2; }
+    # G4 entries/ is append-only: deleting a fragment drops a ticket (or un-supersedes a base entry).
+    if [ -n "$(git -C "$repo" diff --name-only --diff-filter=D "$base" "$head" -- "$ENTRIES_DIR")" ]; then
+        violations=$((violations + 1))
+        printf 'FAIL  G4  a fragment under %s/ is deleted — fragments are never removed; set the ticket status instead\n' "$ENTRIES_DIR"
+    fi
+    # G3b one fragment = one id = its filename, so two files can never carry the same ticket.
+    local f ids
+    for f in "$td"/entries/*.yaml; do
+        [ -e "$f" ] || continue
+        ids=$(grep -E '^- id: ' "$f" | sed -E "s/^- id: *['\"]?([^'\"]*)['\"]?.*/\1/")
+        if [ "$ids" != "$(basename "$f" .yaml)" ]; then
+            violations=$((violations + 1))
+            printf 'FAIL  G3  %s/%s must hold exactly one entry whose id is its filename (found: %s)\n' "$ENTRIES_DIR" "$(basename "$f")" "$(printf '%s' "$ids" | tr '\n' ' ')"
+        fi
+    done
+    if ! git -C "$repo" show "$head:$BASE_FILE" >"$td/base.yaml" 2>/dev/null; then
+        rm -rf -- "${td:?}"
+        printf 'FAIL  G2  %s is missing at head — the frozen base cannot be deleted or renamed\n' "$BASE_FILE"
+        printf '%s: %s violation(s)\n' "$PROG" "$((violations + 1))"
+        return 1
+    fi
     out=$(python3 "$PY_LIB" aggregate --check --base-file "$td/base.yaml" --roadmap "$td/absent.yaml" --entries "$td/entries" 2>&1)
     rc=$?
     rm -rf -- "${td:?}"
@@ -195,7 +215,8 @@ judge() {
         return 2
     }
 
-    if git -C "$repo" cat-file -e "$head:$BASE_FILE" 2>/dev/null; then
+    if git -C "$repo" cat-file -e "$head:$BASE_FILE" 2>/dev/null \
+        || git -C "$repo" cat-file -e "$base:$BASE_FILE" 2>/dev/null; then
         judge_generated "$repo" "$base" "$head"
         return $?
     fi
@@ -500,10 +521,21 @@ PY
     g_fragment_only() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
     g_readd_aggregate() { cp "$1/$BASE_FILE" "$1/$ROADMAP_FILE"; commit_all "$1"; }
     g_edit_base() { printf -- '- id: PMAT-400\n  title: sneaked\n  status: planned\n' >>"$1/$BASE_FILE"; commit_all "$1"; }
-    g_dup_fragment() { printf -- '- id: PMAT-300\n  title: dup\n  status: planned\n- id: PMAT-300\n  title: dup2\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-300.yaml"; commit_all "$1"; }
+    g_delete_fragment() { git -C "$1" rm -q "$ENTRIES_DIR/PMAT-100.yaml"; commit_all "$1"; }
+    g_delete_base() { git -C "$1" rm -q "$BASE_FILE"; commit_all "$1"; }
+    g_rename_base() { git -C "$1" mv "$BASE_FILE" "$1/docs/roadmaps/moved.yaml"; commit_all "$1"; }
+    g_dup_fragment() { printf -- '- id: PMAT-300\n  title: dup\n  status: planned\n' | tee "$1/$ENTRIES_DIR/PMAT-300.yaml" >"$1/$ENTRIES_DIR/PMAT-301.yaml"; commit_all "$1"; }
+    m_migrate() { git -C "$1" mv "$ROADMAP_FILE" "$BASE_FILE"; commit_all "$1"; }
+    m_migrate_edit() { git -C "$1" mv "$ROADMAP_FILE" "$BASE_FILE"; printf -- '- id: PMAT-500\n  title: x\n  status: planned\n' >>"$1/$BASE_FILE"; commit_all "$1"; }
+    row 'migration: roadmap.yaml renamed byte-identically to the base -> PASS' 0 'PASS  check_roadmap_fragment_required.sh: generated aggregate' m_migrate
+    row 'migration: the renamed base is not byte-equal -> REFUSE G2' 1 'FAIL  G2' m_migrate_edit
     grow 'generated: a fragment alone (no aggregate to regenerate) -> PASS' 0 'PASS  check_roadmap_fragment_required.sh: generated aggregate' g_fragment_only
     grow 'generated: roadmap.yaml re-added and tracked -> REFUSE G1' 1 'FAIL  G1' g_readd_aggregate
     grow 'generated: the frozen base edited -> REFUSE G2' 1 'FAIL  G2' g_edit_base
+    grow 'generated: a duplicate id across fragments -> REFUSE G3' 1 'FAIL  G3' g_dup_fragment
+    grow 'generated: a fragment deleted -> REFUSE G4' 1 'FAIL  G4' g_delete_fragment
+    grow 'generated: the frozen base deleted -> REFUSE G2 (not the legacy judge)' 1 'FAIL  G2' g_delete_base
+    grow 'generated: the frozen base renamed -> REFUSE G2' 1 'FAIL  G2' g_rename_base
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))
