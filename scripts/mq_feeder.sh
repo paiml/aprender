@@ -28,7 +28,7 @@ gate_paths() { grep -qE '^(\.github/workflows/|ci/sections\.yml|scripts/(check_|
 needs_seats() { # PR HEAD -> prints reason and returns 0 when a gate-content PR lacks 2 seats bound to HEAD
   local f s; f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[].filename' 2>/dev/null) || return 1
   gate_paths "$f" || return 1
-  s=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq "[.[]|select(.body|test(\"[Ss]eat\"))|select(.body|contains(\"$2\"))]|length" 2>/dev/null || echo 0)
+  s=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq "[.[]|select(.body|test(\"[Ss]eat\"))|select(.commit_id==\"$2\")]|length" 2>/dev/null || echo 0)
   [ "${s:-0}" -ge 2 ] && return 1
   echo "needs seats (gate content, ${s:-0}/2 seat reviews bound to ${2:0:10})"
 }
