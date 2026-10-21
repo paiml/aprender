@@ -100,7 +100,7 @@ jobs:
     # its own. It runs on push only; on merge_group it is skipped at t=0, which the verdict blocks
     # below read as `skipped:::skipped` = "x86-main + determinism ran".
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     permissions:
       contents: read
@@ -314,7 +314,7 @@ jobs:
   x86-main-advisories:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -437,11 +437,11 @@ jobs:
   # failure, never a pass.
   # ==========================================================================
   # The workspace tests, one shard per job (nextest hash partition N/12 plus the
-  # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
+  # explicit runner's round-robin N/12), in parallel on the clean-room pool (arch-neutral, PMAT-3138).
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
-    # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    # clean-room for pull_request/push, mq for a merge_group entry; no X64 pin (operator 2026-10-21 14:18Z)
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","mq"]') || fromJSON('["self-hosted","Linux","clean-room"]') }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
