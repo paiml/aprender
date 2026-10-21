@@ -13,7 +13,7 @@
 #   any other path outside a crate            ALL
 #   docs/, contracts/, root *.md              READERS only (FLOW-010 b): their run-time readers are all in READERS. Exceptions, ALL:
 #                           contracts binding.yaml, contracts model-families and the BUILD_CONTRACTS files (compiled into a crate)
-#   docs/findings/, .claude/, ci/shard-step-costs.tsv
+#   .claude/, ci/shard-step-costs.tsv
 #                           NO-READER list (#5809): the only run-time readers of these paths (grep of crates/**/*.rs: contracts-cli,
 #                           orchestrate, core, mcp, apr-cli) are all in READERS, so the set is READERS alone. Alone or
 #                           beside crate .rs files; any other path in the diff still decides ALL.
@@ -69,7 +69,7 @@ while IFS= read -r f; do
     '') continue ;;
     contracts/binding.yaml | contracts/*/binding.yaml | contracts/model-families/* | contracts/*/model-families/*) emit ALL; exit 0 ;;   # build inputs of core/compute/contracts/simulate/train: their generated code reaches dependents
     contracts/* | docs/*) skipped=1; continue ;;   # FLOW-010(b): run-time readers are in READERS
-    docs/findings/* | .claude/* | ci/shard-step-costs.tsv) skipped=1; continue ;;
+    .claude/* | ci/shard-step-costs.tsv) skipped=1; continue ;;
     crates/*/build.rs) emit ALL; exit 0 ;;
     crates/*.rs) ;;
     crates/*) emit ALL; exit 0 ;;
