@@ -7,8 +7,8 @@
 //! Run with default (heuristic models):
 //!   cargo run --example ml_tuner_demo
 //!
-//! Run with RandomForest models (requires ml-tuner feature):
-//!   cargo run --example ml_tuner_demo --features ml-tuner
+//! The RandomForest showcase lives in aprender-core (it needs aprender):
+//!   cargo run -p aprender-core --example ml_tuner_rf_demo
 
 use trueno::tuner::{BrickTuner, KernelClassifier, QuantType, ThroughputRegressor, TunerFeatures};
 
@@ -163,103 +163,6 @@ fn demo_full_tuner(features: &TunerFeatures) {
     println!();
 }
 
-/// Section 6: RandomForest models (ml-tuner showcase, SHOWCASE-BRICK-001).
-///
-/// The SIMD `trueno` tuner produces `TunerFeatures` vectors; this section feeds them
-/// directly into `aprender::RandomForestRegressor`/`RandomForestClassifier`. aprender is
-/// a **dev-dependency** of `aprender-compute`, so the compute lib itself never depends on
-/// the ML layer — the showcase lives entirely here at the example layer, above both.
-fn demo_random_forest(features: &TunerFeatures) {
-    #[cfg(feature = "ml-tuner")]
-    {
-        use aprender::primitives::{Matrix, Vector};
-        use aprender::tree::{RandomForestClassifier, RandomForestRegressor};
-
-        println!("6. RandomForest Models (ml-tuner showcase)");
-        println!("   --------------------------------------");
-
-        let dim = TunerFeatures::DIM;
-        let n = 100usize;
-
-        // Regressor: trueno features -> predicted throughput (tok/s).
-        let mut xr = Vec::with_capacity(n * dim);
-        let mut yr = Vec::with_capacity(n);
-        for i in 0..n {
-            let batch = 1 + (i % 8) as u32;
-            let f = TunerFeatures::builder()
-                .model_params_b(1.5)
-                .batch_size(batch)
-                .quant_type(QuantType::Q4K)
-                .gpu_mem_bw_gbs(1000.0)
-                .cuda_graphs(batch == 1)
-                .build();
-            xr.extend(f.to_vector());
-            yr.push(200.0 + (batch as f32) * 80.0 + (i as f32 * 0.5));
-        }
-        println!("   Generated {n} regression samples");
-        match Matrix::from_vec(n, dim, xr) {
-            Ok(x_mat) => {
-                let mut rf = RandomForestRegressor::new(100);
-                match rf.fit(&x_mat, &Vector::from_vec(yr)) {
-                    Ok(()) => {
-                        let fx = Matrix::from_vec(1, dim, features.to_vector().to_vec())
-                            .expect("single-row feature matrix");
-                        let pred = rf.predict(&fx);
-                        println!(
-                            "   RF regressor: SUCCESS — M=4 prediction {:.1} tok/s",
-                            pred.as_slice()[0]
-                        );
-                    }
-                    Err(e) => println!("   RF regressor: FAILED - {e}"),
-                }
-            }
-            Err(e) => println!("   RF regressor matrix: FAILED - {e}"),
-        }
-
-        // Classifier: trueno features -> kernel-type label (3=Batched, 2=Vectorized).
-        let mut xc = Vec::with_capacity(n * dim);
-        let mut yc: Vec<usize> = Vec::with_capacity(n);
-        for i in 0..n {
-            let batch = 1 + (i % 8) as u32;
-            let f = TunerFeatures::builder()
-                .model_params_b(1.5)
-                .batch_size(batch)
-                .quant_type(QuantType::Q4K)
-                .build();
-            xc.extend(f.to_vector());
-            yc.push(if batch >= 4 { 3 } else { 2 });
-        }
-        match Matrix::from_vec(n, dim, xc) {
-            Ok(xc_mat) => {
-                let mut rf = RandomForestClassifier::new(50);
-                match rf.fit(&xc_mat, &yc) {
-                    Ok(()) => {
-                        let preds = rf.predict(&xc_mat);
-                        let correct =
-                            yc.iter().zip(preds.iter()).filter(|(a, b)| **a == **b).count();
-                        println!(
-                            "   RF classifier: SUCCESS — train accuracy {:.1}%",
-                            correct as f32 / n as f32 * 100.0
-                        );
-                    }
-                    Err(e) => println!("   RF classifier: FAILED - {e}"),
-                }
-            }
-            Err(e) => println!("   RF classifier matrix: FAILED - {e}"),
-        }
-        println!();
-    }
-
-    #[cfg(not(feature = "ml-tuner"))]
-    {
-        let _ = features;
-        println!("6. RandomForest Models");
-        println!("   --------------------");
-        println!("   [Disabled - enable with: --features ml-tuner]");
-        println!();
-    }
-}
-
 fn main() {
     println!("=== ML Tuner Demo ===\n");
     println!("ComputeBrick kernel selection and throughput prediction");
@@ -272,14 +175,13 @@ fn main() {
     demo_kernel_selection(&features);
     demo_roofline_model();
     demo_full_tuner(&features);
-    demo_random_forest(&features);
 
     println!("=== Demo Complete ===\n");
     println!("Key takeaways:");
     println!("  - TunerFeatures: 42-dimension vector for ML models");
     println!("  - Throughput prediction with roofline clamping (v1.1.0)");
     println!("  - Kernel selection: BatchedQ4K for M>=4, VectorizedQ4K otherwise");
-    println!("  - RandomForest available with --features ml-tuner");
+    println!("  - RandomForest showcase: cargo run -p aprender-core --example ml_tuner_rf_demo");
     println!();
     println!("Next steps:");
     println!("  cargo run --example quickstart              # Basic trueno usage");
