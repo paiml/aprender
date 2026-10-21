@@ -5,7 +5,15 @@
 # Usage: mq_feeder_install.sh [DEST]
 set -euo pipefail
 src="$(cd "$(dirname "$0")" && pwd)"
-dest="${1:-$HOME/.local/libexec/mq-feeder}"
+dest="${1-$HOME/.local/libexec/mq-feeder}"
+# SEC010 (bashrs): the install target is an argument, so it must be absolute (so an explicit empty arg is refused too) and free of `..`.
+case "$dest" in
+  /*) ;;
+  *) echo "mq_feeder_install: DEST must be an absolute path, got '$dest'" >&2; exit 2 ;;
+esac
+case "/$dest/" in
+  */../*) echo "mq_feeder_install: DEST must not contain '..': $dest" >&2; exit 2 ;;
+esac
 mkdir -p "$dest"
 for s in mq_feeder.sh arm_pr_automerge.sh; do
   install -m 0755 "$src/$s" "$dest/$s"
