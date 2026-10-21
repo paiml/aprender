@@ -239,6 +239,9 @@ impl Sim {
     }
 
     /// B5c: on the GPU, courses go first while the running mean lead exceeds the threshold.
+    /// The mean runs from t = 0 over every finished course (warm-up included) and never forgets, so
+    /// once it is above the threshold it stays there; a windowed mean is a follow-up (the model has
+    /// no recovery behaviour yet).
     fn trunk_first(&self, s: usize) -> bool {
         s == RENDER
             && self.c.trunk_first_w_d > 0.0
@@ -601,7 +604,12 @@ pub fn apply_course_inputs(c: &mut CourseFlowConfig, v: &serde_json::Value) -> R
             "shorts_per_day" => c.shorts_per_day = f,
             "batch_in_wip" => c.batch_in_wip = f != 0.0,
             "fanout" => c.fanout = f != 0.0,
-            "alpha" => c.alpha = f,
+            "alpha" => {
+                if !(0.0..1.0).contains(&f) {
+                    return Err(format!("alpha must be in [0, 1), got {f}"));
+                }
+                c.alpha = f;
+            }
             "trunk_first_w_d" => c.trunk_first_w_d = f,
             "li_k" => c.li_k = f as usize,
             "li_render_min" => c.li_render_min = f,
@@ -781,11 +789,18 @@ mod tests {
         );
     }
 
-    /// B5 falsifier: at alpha = 0.16 the build stage runs at B/(1-alpha) and stays at or under 95% busy.
+    /// B5 falsifier: at alpha = 0.16 the build stage runs at the law's B/(1-alpha) load (94.7% busy),
+    /// within two points. The bound is the law with a tolerance, not a bare 95% cap: the preset sits
+    /// 0.3 points under 95%, so a cap flips on any change to the random draw order.
     #[test]
     fn build_busy_at_alpha_016_is_at_most_95_percent() {
         let r = v2();
-        assert!(r.util[BUILD] <= 0.95, "build busy {:.3}", r.util[BUILD]);
+        let law = 2520.0 / 0.84 * 5.0 / (11.0 * 1440.0);
+        assert!(
+            (r.util[BUILD] - law).abs() <= 0.02,
+            "build busy {:.3} vs law {law:.3}",
+            r.util[BUILD]
+        );
         assert!(
             r.util[BUILD] > 0.85,
             "rework not applied: {:.3}",
@@ -843,17 +858,44 @@ mod tests {
         );
     }
 
-    /// B5c: with trunk first while W > 4.8 d the shorts wait longer than with shorts first.
+    /// B5c: with trunk first while W exceeds the threshold, courses go ahead of Shorts on the GPU:
+    /// course lead time falls and the Shorts wait longer, so fewer finish. A threshold of 0.5 d is
+    /// under the steady lead (3.7 d), so the rule is on throughout the run, not only while it warms up.
     #[test]
     fn trunk_first_rule_changes_the_outcome() {
-        let mut c = course_preset("factory-v2").expect("case");
-        c.trunk_first_w_d = 0.0;
-        let a = run_course_reference(&c);
-        let b = v2();
+        let run_w = |w: f64| {
+            let mut c = course_preset("factory-v2").expect("case");
+            c.trunk_first_w_d = w;
+            run_course_reference(&c)
+        };
+        let off = run_w(0.0);
+        let on = run_w(0.5);
         assert!(
-            (a.lead_days - b.lead_days).abs() > 1e-6
-                || (a.shorts_per_day - b.shorts_per_day).abs() > 1e-6
+            on.lead_days < off.lead_days - 0.05,
+            "lead {:.3} vs {:.3}",
+            on.lead_days,
+            off.lead_days
         );
+        assert!(
+            on.shorts_per_day < off.shorts_per_day - 0.01,
+            "shorts {:.3} vs {:.3}",
+            on.shorts_per_day,
+            off.shorts_per_day
+        );
+        // the 4.8 d preset only engages while the lead is still ramping up: still not a no-op
+        assert!(v2().lead_days < off.lead_days - 1e-3);
+    }
+
+    /// alpha is a probability below 1: at 1 or more a build repeats forever.
+    #[test]
+    fn alpha_must_be_below_one() {
+        let mut c = course_preset("factory-v2").expect("case");
+        for bad in [1.0, 1.5, -0.1] {
+            let e = apply_course_inputs(&mut c, &serde_json::json!({ "alpha": bad }));
+            assert!(e.is_err(), "alpha {bad} accepted");
+        }
+        apply_course_inputs(&mut c, &serde_json::json!({ "alpha": 0.5 })).expect("0.5 is valid");
+        assert!((c.alpha - 0.5).abs() < 1e-12);
     }
 
     #[test]

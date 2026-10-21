@@ -21,8 +21,8 @@ description: |
 
 equations:
   coursera_stage_load:
-    description: "Coursera stage busy fraction when every master takes the stage"
-    formula: "busy = starts_per_day * stage_min / (chrome_lanes * 1440) = 0.625"
+    description: "Coursera stage busy fraction when every master takes the stage (the Chrome lanes also carry the Shorts stage, which the test adds, about 0.87 points)"
+    formula: "busy = starts_per_day * stage_min / (chrome_lanes * 1440) = 0.625, plus the Shorts stage load"
 
   rework_build_work:
     description: "mean build work per course under the rework loop"
@@ -36,7 +36,7 @@ falsification_tests:
     if_fails: "the fan-out does not send every master to the Coursera stage"
 
   - id: FALSIFY-002
-    description: "at alpha 0.16 the build stage is busy at most 95%"
+    description: "at alpha 0.16 the build stage is busy at the law's 94.7% within two points"
     test: "cargo test -p aprender-simulate --lib build_busy_at_alpha_016_is_at_most_95_percent"
     prediction: "the test passes"
     if_fails: "the rework loop is missing or mis-sized"
@@ -54,7 +54,13 @@ falsification_tests:
     if_fails: "work and elapsed build time are conflated"
 
   - id: FALSIFY-005
-    description: "LinkedIn renders and the trunk-first rule change the outcome (not no-ops)"
+    description: "the trunk-first rule is not a no-op: with the threshold under the steady lead, course lead falls and Shorts finish fewer (LinkedIn renders are covered by linkedin_renders_load_the_gpu, not by this test)"
     test: "cargo test -p aprender-simulate --lib trunk_first_rule_changes_the_outcome"
     prediction: "the test passes"
     if_fails: "the GPU priority rule is dead"
+
+  - id: FALSIFY-006
+    description: "alpha is a probability below 1 (1 or more would repeat a build forever)"
+    test: "cargo test -p aprender-simulate --lib alpha_must_be_below_one"
+    prediction: "the test passes"
+    if_fails: "apply_course_inputs accepts an alpha that never terminates"
