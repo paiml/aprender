@@ -349,6 +349,15 @@ jobs:
           exec > >(tee -a "$RUNNER_TEMP/census.log") 2>&1
           setsid --wait bash scripts/census_ratchet.sh --self-test
           CENSUS_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/census_ratchet.sh
+      # #5809 (FLOW-010 E5): the affected-set tool's case tables. LAB, never on a PR path (C324 rules 5/7):
+      # the tool is not consumed by any gate yet, so a red here opens nothing that can block a merge.
+      - name: Affected-set tool and readers guards (FLOW-010 E5, #5809)
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/check_affected_set.sh
+          setsid --wait bash scripts/check_affected_readers.sh
+          setsid --wait bash scripts/check_affected_readers.sh --self-test
       - name: A red census night opens or updates the one LAB ticket (#4709)
         if: failure() && steps.ratchet_census.outcome == 'failure'
         env:

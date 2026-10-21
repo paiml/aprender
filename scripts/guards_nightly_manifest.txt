@@ -49,3 +49,5 @@
 # #4709 (C303): the pv census ratchet, LAB from its first night (never on a PR path, C324).
 # Seconds are a local wall-clock sample (2026-10-14, pv prebuilt); the first nightly replaces them.
 6	The pv census bound share may only rise (#4709)
+# #5809 (FLOW-010 E5): affected-set tool case tables, LAB from the first night (never on a PR path, C324). Seconds are a local sample.
+40	Affected-set tool and readers guards (FLOW-010 E5, #5809)
