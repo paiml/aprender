@@ -350,14 +350,26 @@ jobs:
           setsid --wait bash scripts/census_ratchet.sh --self-test
           CENSUS_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/census_ratchet.sh
       # #5809 (FLOW-010 E5): the affected-set tool's case tables. LAB, never on a PR path (C324 rules 5/7):
-      # the tool is not consumed by any gate yet, so a red here opens nothing that can block a merge.
+      # the tool is not consumed by any gate yet; a red opens or updates the one LAB ticket below, never a block.
       - name: Affected-set tool and readers guards (FLOW-010 E5, #5809)
+        id: affected_set
         if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/affected.log") 2>&1
           setsid --wait bash scripts/check_affected_set.sh
           setsid --wait bash scripts/check_affected_readers.sh
           setsid --wait bash scripts/check_affected_readers.sh --self-test
+      - name: A red affected-set night opens or updates the one LAB ticket (#5809)
+        if: failure() && steps.affected_set.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-affected-set --title "LAB: nightly affected-set guards red (#5809)" \
+            --owner aprender-w5018 --log "$RUNNER_TEMP/affected.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: A red census night opens or updates the one LAB ticket (#4709)
         if: failure() && steps.ratchet_census.outcome == 'failure'
         env:
