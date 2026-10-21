@@ -481,7 +481,8 @@ def _read(path, what):
 
 
 def _cmd_aggregate(a, roadmap, entries_dir):
-    base = _read(roadmap, roadmap)
+    src = a.base_file or roadmap
+    base = _read(src, src)
     if base is None:
         return 2
     frags = read_fragments(entries_dir)
@@ -490,6 +491,24 @@ def _cmd_aggregate(a, roadmap, entries_dir):
     except ValueError as e:
         sys.stderr.write("FAIL %s\n" % e)
         return 1
+    if a.base_file:
+        return _emit_generated(a, base, out, frags, roadmap)
+    return _emit(a, base, out, frags, roadmap)
+
+
+def _emit_generated(a, base, out, frags, roadmap):
+    """GENERATED mode: roadmap.yaml is untracked output of (base-file, entries/).
+    --check proves idempotence, and that a generated file already on disk is not
+    stale; an absent one is fine (it is generated on demand, never committed)."""
+    if a.check:
+        if aggregate(out, frags) != out:
+            sys.stderr.write("FAIL aggregate is not idempotent on this input\n")
+            return 1
+        if os.path.exists(roadmap) and _read(roadmap, roadmap) != out:
+            sys.stderr.write("FAIL %s is stale against entries/ -- run `make roadmap-aggregate`\n" % roadmap)
+            return 1
+        sys.stderr.write("ok  base + %d fragment(s) aggregates idempotently\n" % len(frags))
+        return 0
     return _emit(a, base, out, frags, roadmap)
 
 
@@ -541,6 +560,9 @@ def _parser():
     ap.add_argument("--check", action="store_true",
                     help="fail if roadmap.yaml is not what the aggregator produces")
     ap.add_argument("--roadmap", help="judge this roadmap.yaml instead of the repo's")
+    ap.add_argument("--base-file", help="GENERATED mode: the committed, frozen base "
+                    "(docs/roadmaps/roadmap-base.yaml). The aggregate is base + entries/, "
+                    "written to --roadmap (untracked) and never read back as its own base")
     ap.add_argument("--entries", help="read fragments from here instead of docs/roadmaps/entries/")
     ap.add_argument("--base", help="changed: the roadmap.yaml to compare FROM")
     ap.add_argument("--head", help="changed: the roadmap.yaml to compare TO")

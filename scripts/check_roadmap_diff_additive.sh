@@ -53,6 +53,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PY_LIB="${REPO_ROOT}/scripts/lib/roadmap_diff.py"
 PY_TRIM="${REPO_ROOT}/scripts/roadmap_trim.py"
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
+BASE_FILE="docs/roadmaps/roadmap-base.yaml" # present = roadmap.yaml is GENERATED, not committed
 
 # ---------------------------------------------------------------------------
 # run_check <base> <head> [<file>] -> roadmap_diff.py's stdout+exit code.
@@ -608,6 +609,10 @@ if [ "${1:-}" = "--staged" ]; then
         exit 0
     fi
     if ! git -C "$REPO_ROOT" ls-files --cached --error-unmatch -- "$ROADMAP_FILE" >/dev/null 2>&1; then
+        if git -C "$REPO_ROOT" ls-files --cached --error-unmatch -- "$BASE_FILE" >/dev/null 2>&1; then
+            printf '%s: %s is generated (untracked) and %s is staged — the frozen base is judged by check_roadmap_fragment_required.sh (G2).\n' "$PROG" "$ROADMAP_FILE" "$BASE_FILE"
+            exit 0
+        fi
         printf '%s: %s is staged for DELETION — the id set may only grow.\n' "$PROG" "$ROADMAP_FILE" >&2
         exit 1
     fi
@@ -662,6 +667,10 @@ fi
 printf '=== roadmap.yaml diff is additive: base=%s (%s) head=%s (%s) ===\n' "$BASE_REF" "$BASE_HOW" "$HEAD_REF" "$PROG"
 if [ "$(git -C "$REPO_ROOT" rev-parse "$BASE_REF^{commit}")" = "$(git -C "$REPO_ROOT" rev-parse "$HEAD_REF^{commit}")" ]; then
     printf 'PASS  base and head are the same commit (a push/workflow_dispatch run on the branch tip): there is no PR diff to judge here; the judgement happened on the pull_request and merge_group runs\n'
+    exit 0
+fi
+if git -C "$REPO_ROOT" cat-file -e "$HEAD_REF:$BASE_FILE" 2>/dev/null; then
+    printf 'PASS  %s is generated at head; the frozen base is judged by check_roadmap_fragment_required.sh (G2), so there is no committed aggregate to diff\n' "$ROADMAP_FILE"
     exit 0
 fi
 if out=$(run_check "$BASE_REF" "$HEAD_REF" 2>&1); then

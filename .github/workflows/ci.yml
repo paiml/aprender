@@ -248,6 +248,13 @@ jobs:
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh --self-test
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      # docs/roadmaps/roadmap.yaml is generated (gitignored): roadmap-base.yaml plus
+      # entries/. sov.roadmap-valid reports NOT-RUN when the file is absent, so build
+      # it before any section reads it. Checks the generated file is idempotent too.
+      - name: generate docs/roadmaps/roadmap.yaml (base + entries)
+        run: |
+          python3 scripts/lib/roadmap_fragments.py aggregate --base-file docs/roadmaps/roadmap-base.yaml --write
+          python3 scripts/lib/roadmap_fragments.py aggregate --base-file docs/roadmaps/roadmap-base.yaml --check
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run

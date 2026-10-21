@@ -140,7 +140,7 @@ regen() { # regenerate the generated set once, assert the fixed points, commit i
             | grep -vxE 'docs/roadmaps/roadmap\.yaml|contracts/contracts\.nt|contracts/shapes\.ttl|README\.md' || true)
     [ -z "$extra" ] || die "regen: wrote outside the generated set: $(printf '%s ' $extra)"
     if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-        git add -- docs/roadmaps/roadmap.yaml contracts/contracts.nt contracts/shapes.ttl README.md 2>/dev/null
+        git add -- $(git ls-files --error-unmatch docs/roadmaps/roadmap.yaml 2>/dev/null) contracts/contracts.nt contracts/shapes.ttl README.md 2>/dev/null
         git -c commit.gpgsign=false commit -q -m "batch: regenerate the generated set once (batch_fold.sh --regen)
 
 roadmap aggregate, pv extract (contracts.nt + shapes.ttl) and the

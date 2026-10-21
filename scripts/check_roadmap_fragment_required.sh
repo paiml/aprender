@@ -93,6 +93,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PY_LIB="$REPO_ROOT/scripts/lib/roadmap_fragments.py"
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
 ENTRIES_DIR="docs/roadmaps/entries"
+BASE_FILE="docs/roadmaps/roadmap-base.yaml"
 
 # shellcheck source=scripts/lib/resolve_base.sh
 . "$REPO_ROOT/scripts/lib/resolve_base.sh" || exit 1
@@ -129,6 +130,55 @@ remedy() {
 }
 
 # ---------------------------------------------------------------------------
+# GENERATED mode: roadmap.yaml is not committed at all. It is built on demand
+# by `make roadmap-aggregate` from the frozen $BASE_FILE plus entries/, so two
+# PRs can never contend on it and it cannot go stale after a main merge.
+# Active once head carries $BASE_FILE. Three rules over base..head:
+#   G1 $ROADMAP_FILE is not tracked at head (a re-added aggregate is refused).
+#   G2 $BASE_FILE is frozen: unchanged from base. The migration PR (base has no
+#      $BASE_FILE) is allowed only if it is byte-equal to base's roadmap.yaml.
+#   G3 base + entries/ aggregates idempotently, with no duplicate ids.
+# ---------------------------------------------------------------------------
+judge_generated() {
+    local repo=$1 base=$2 head=$3 td violations=0 name out rc
+    td=$(mktemp -d "${TMPDIR:-/tmp}/rmfraggen.XXXXXX") || return 2
+    printf '=== %s (generated aggregate): base=%s head=%s ===\n' "$PROG" "$base" "$head"
+    if git -C "$repo" cat-file -e "$head:$ROADMAP_FILE" 2>/dev/null; then
+        violations=$((violations + 1))
+        printf 'FAIL  G1  %s is tracked at head — it is GENERATED (make roadmap-aggregate), never committed\n' "$ROADMAP_FILE"
+    fi
+    if git -C "$repo" cat-file -e "$base:$BASE_FILE" 2>/dev/null; then
+        if [ -n "$(git -C "$repo" diff --name-only "$base" "$head" -- "$BASE_FILE")" ]; then
+            violations=$((violations + 1))
+            printf 'FAIL  G2  %s changed — the base is frozen; change a ticket through docs/roadmaps/entries/<ID>.yaml (a fragment supersedes the base entry)\n' "$BASE_FILE"
+        fi
+    elif ! git -C "$repo" show "$base:$ROADMAP_FILE" 2>/dev/null | cmp -s - <(git -C "$repo" show "$head:$BASE_FILE"); then
+        violations=$((violations + 1))
+        printf 'FAIL  G2  migration: %s is not byte-equal to base'"'"'s %s\n' "$BASE_FILE" "$ROADMAP_FILE"
+    fi
+    mkdir -p "$td/entries"
+    while IFS= read -r name; do
+        case "$name" in *.yaml) git -C "$repo" show "$head:$name" >"$td/entries/${name##*/}" || { rm -rf -- "${td:?}"; return 2; } ;; esac
+    done < <(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null)
+    git -C "$repo" show "$head:$BASE_FILE" >"$td/base.yaml" || { rm -rf -- "${td:?}"; return 2; }
+    out=$(python3 "$PY_LIB" aggregate --check --base-file "$td/base.yaml" --roadmap "$td/absent.yaml" --entries "$td/entries" 2>&1)
+    rc=$?
+    rm -rf -- "${td:?}"
+    if [ "$rc" = 0 ]; then
+        printf 'ok    G3  base + entries/ aggregates idempotently\n'
+    else
+        violations=$((violations + 1))
+        printf 'FAIL  G3  base + entries/ does not aggregate cleanly:\n%s\n' "$out"
+    fi
+    if [ "$violations" != 0 ]; then
+        printf '%s: %s violation(s)\n' "$PROG" "$violations"
+        return 1
+    fi
+    printf 'PASS  %s: generated aggregate untracked, base frozen, fragments aggregate\n' "$PROG"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # judge <repo> <base-ref> <head-ref> -> 0 clean · 1 violation · 2 cannot judge
 # ---------------------------------------------------------------------------
 judge() {
@@ -144,6 +194,11 @@ judge() {
         printf 'ENV   %s: head ref %s is not a commit here — refusing to judge (never a pass)\n' "$PROG" "$head" >&2
         return 2
     }
+
+    if git -C "$repo" cat-file -e "$head:$BASE_FILE" 2>/dev/null; then
+        judge_generated "$repo" "$base" "$head"
+        return $?
+    fi
 
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq.XXXXXX") || return 2
 
@@ -424,6 +479,31 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_wrong_fragment
     row 'supersession through the fragment, regenerated -> PASS' \
         0 'ok    CHANGED  PMAT-100 — docs/roadmaps/entries/PMAT-100.yaml changes in the same diff' b_supersede
+
+    # ---- GENERATED mode (roadmap.yaml untracked, roadmap-base.yaml frozen) ----
+    grow() { # LABEL WANT PATTERN BUILDER -- fixture: migrated tree, then BUILDER commits a change
+        local label=$1 want=$2 pat=$3 builder=$4 d out rc
+        n=$((n + 1)); d="$td/g$n"
+        mkdir -p "$d/$ENTRIES_DIR" && git -C "$d" init -q --template="$TEMPLATE" \
+            && git -C "$d" config user.email t@e.com && git -C "$d" config user.name t \
+            && printf '%s' "$BASE_ROADMAP" >"$d/$BASE_FILE" \
+            && printf -- '- id: PMAT-100\n  title: first\n  status: planned\n' >"$d/$ENTRIES_DIR/PMAT-100.yaml" \
+            && git -C "$d" add -A && git -C "$d" commit -qm base && "$builder" "$d" \
+            || { printf 'FAIL  row %-2s %s: fixture/builder failed\n' "$n" "$label"; red=$((red + 1)); return; }
+        out=$(judge "$d" HEAD~1 HEAD 2>&1); rc=$?
+        if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out"; then
+            printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
+            printf '%s\n' "$out" | sed 's/^/        /'; red=$((red + 1)); return
+        fi
+        printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
+    }
+    g_fragment_only() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    g_readd_aggregate() { cp "$1/$BASE_FILE" "$1/$ROADMAP_FILE"; commit_all "$1"; }
+    g_edit_base() { printf -- '- id: PMAT-400\n  title: sneaked\n  status: planned\n' >>"$1/$BASE_FILE"; commit_all "$1"; }
+    g_dup_fragment() { printf -- '- id: PMAT-300\n  title: dup\n  status: planned\n- id: PMAT-300\n  title: dup2\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-300.yaml"; commit_all "$1"; }
+    grow 'generated: a fragment alone (no aggregate to regenerate) -> PASS' 0 'PASS  check_roadmap_fragment_required.sh: generated aggregate' g_fragment_only
+    grow 'generated: roadmap.yaml re-added and tracked -> REFUSE G1' 1 'FAIL  G1' g_readd_aggregate
+    grow 'generated: the frozen base edited -> REFUSE G2' 1 'FAIL  G2' g_edit_base
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))
