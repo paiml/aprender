@@ -25378,6 +25378,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5831
+  github_issue: 5831
+  item_type: task
+  title: 'CUDA e2e for PP-LLAMA-001 row 8: .apr Q4K GPU serve enters the pool-allocator path under --features cuda'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T06:46:22Z
+  updated: 2026-10-21T06:46:22Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
 - id: PMAT-5843
   github_issue: 5843
   item_type: task
