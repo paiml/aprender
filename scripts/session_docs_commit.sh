@@ -111,4 +111,4 @@ PY
 rm -f "$BLOCK"
 git -C "$ROOT" add docs/roadmaps/roadmap.yaml README.md "docs/audits/pp-066-status-$DATE.md" docs/specifications/PP-066-release-spec.md docs/audits/driver-kaizen.md 2>/dev/null || true
 git -C "$ROOT" commit -q -m "docs(PP-066): session docs commit $DATE — tickets minted/completed from the DAG and the receipts, README counts exact, status doc, kaizen" -m "Pmat-Ticket: PMAT-966" && say "committed $(git -C "$ROOT" rev-parse --short HEAD)"
-if [ "$ARM" = 1 ]; then git -C "$ROOT" push -q -u origin "$BR" && gh pr create --fill --base main --head "$BR" >/dev/null 2>&1 && gh pr merge --squash --auto "$BR" >/dev/null 2>&1 && say "armed"; fi
+if [ "$ARM" = 1 ]; then git -C "$ROOT" push -q -u origin "$BR" && gh pr create --fill --base main --head "$BR" >/dev/null 2>&1 && gh pr merge "$BR" >/dev/null 2>&1 && say "armed"; fi

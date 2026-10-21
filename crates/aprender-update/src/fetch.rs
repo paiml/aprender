@@ -20,10 +20,11 @@ pub struct Http {
 impl Http {
     #[must_use]
     pub fn new(timeout: std::time::Duration, user_agent: &str) -> Self {
-        let agent = ureq::AgentBuilder::new()
-            .timeout(timeout)
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(timeout))
             .user_agent(user_agent)
-            .build();
+            .build()
+            .into();
         Self { agent }
     }
 }
@@ -33,11 +34,11 @@ impl Net for Http {
         match self.agent.get(url).call() {
             Ok(r) => {
                 let mut buf = Vec::new();
-                std::io::Read::read_to_end(&mut r.into_reader(), &mut buf)
+                std::io::Read::read_to_end(&mut r.into_body().into_reader(), &mut buf)
                     .map_err(|e| format!("{url}: {e}"))?;
                 Ok(Some(buf))
             }
-            Err(ureq::Error::Status(404, _)) => Ok(None),
+            Err(ureq::Error::StatusCode(404)) => Ok(None),
             Err(e) => Err(format!("{url}: {e}")),
         }
     }

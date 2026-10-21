@@ -261,7 +261,7 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
         match hf_get(&url)?.call() {
             Ok(response) => {
                 let mut body = Vec::new();
-                response.into_reader().read_to_end(&mut body).map_err(|e| {
+                response.into_body().into_reader().read_to_end(&mut body).map_err(|e| {
                     CliError::NetworkError(format!("Failed to read {filename}: {e}"))
                 })?;
                 std::fs::write(&sibling_path, &body).map_err(|e| {
@@ -277,7 +277,7 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
                     format_bytes(body.len() as u64).dimmed()
                 );
             }
-            Err(ureq::Error::Status(404, _)) => {
+            Err(ureq::Error::StatusCode(404)) => {
                 // File doesn't exist in repo — not fatal for any companion
                 println!(
                     "  {} {} (not found in repo)",
@@ -285,7 +285,7 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
                     prefixed_filename.dimmed()
                 );
             }
-            Err(ureq::Error::Status(401, _)) => {
+            Err(ureq::Error::StatusCode(401)) => {
                 eprintln!(
                     "  {} {} (access denied — set HF_TOKEN for gated models)",
                     "⚠".yellow(),
@@ -437,7 +437,7 @@ fn resolve_sharded_safetensors(org: &str, repo: &str) -> Result<ResolvedModel> {
 
     let mut index_body = Vec::new();
     index_response
-        .into_reader()
+        .into_body().into_reader()
         .read_to_end(&mut index_body)
         .map_err(|e| CliError::NetworkError(format!("Failed to read model index: {e}")))?;
 
@@ -508,15 +508,15 @@ pub(crate) fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
     let repo = parts[1];
 
     let api_url = format!("https://huggingface.co/api/models/{org}/{repo}");
-    let response = hf_get(&api_url)?.call().map_err(|e| match &e {
-        ureq::Error::Status(401, _) => {
+    let mut response = hf_get(&api_url)?.call().map_err(|e| match &e {
+        ureq::Error::StatusCode(401) => {
             CliError::NetworkError(format_gated_model_error(&api_url))
         }
         _ => CliError::NetworkError(format!("Failed to query HuggingFace API: {e}")),
     })?;
 
     let body: serde_json::Value = {
-        let text = response.into_string().map_err(|e| {
+        let text = response.body_mut().read_to_string().map_err(|e| {
             CliError::ValidationFailed(format!("Failed to read HuggingFace response: {e}"))
         })?;
         serde_json::from_str(&text).map_err(|e| {
