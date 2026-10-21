@@ -793,7 +793,29 @@ pv_bin_assert_fresh() {
     # in scripts/check_pv_version_parse.sh.
     # ONE invocation, then both reads off the SAME captured text -- the semver
     # and the identity must describe the same binary and the same run.
-    pv_bin_vers=$("$pv_bin_b" --version 2>&1) || pv_bin_vers=""
+    # Up to 3 probes: a transient kill under load must not decide the gate.
+    pv_bin_vers_rc=0
+    pv_bin_try=1
+    while :; do
+        pv_bin_vers_rc=0
+        pv_bin_vers=$("$pv_bin_b" --version 2>&1) || pv_bin_vers_rc=$?
+        [ "$pv_bin_vers_rc" -eq 0 ] && break
+        [ "$pv_bin_try" -ge 3 ] && break
+        pv_bin_try=$((pv_bin_try + 1))
+    done
+    # #5755: a probe that did not ANSWER (killed under load, ETXTBSY) is a failed
+    # measurement, not a stale binary. Reading its empty output as a version made
+    # a runner fault look like a code cause. Still failing after 3 probes = rc 75 (EX_TEMPFAIL), the distinct infra code the
+    # step runner reruns once; it never passes.
+    if [ "$pv_bin_vers_rc" -ne 0 ]; then
+        {
+            printf 'COULD NOT CHECK pv VERSION\n'
+            printf '  resolved : %s\n  ' "$pv_bin_b"
+            printf '"pv --version" exited %s on 3 probes, no usable answer; this is a failed probe (runner\n' "$pv_bin_vers_rc"
+            printf '  load, kill or exec race), not evidence the binary is stale. Re-run; no verdict.\n'
+        } >&2
+        return 75
+    fi
     pv_bin_actual=$(printf '%s\n' "$pv_bin_vers" | awk 'NR==1{print $2; exit}') || pv_bin_actual=""
     pv_bin_first=$(printf '%s\n' "$pv_bin_vers" | awk 'NR==1{print}') || pv_bin_first=""
     if [ "$pv_bin_actual" != "$pv_bin_declared" ]; then
@@ -910,7 +932,11 @@ fi
 if [ "$PV_BIN_RC" -ne 0 ]; then
     return 1 2>/dev/null || exit 1
 fi
-pv_bin_assert_fresh "$PV" || return 1 2>/dev/null || exit 1
+PV_BIN_AF_RC=0
+pv_bin_assert_fresh "$PV" || PV_BIN_AF_RC=$?
+if [ "$PV_BIN_AF_RC" -ne 0 ]; then
+    return "$PV_BIN_AF_RC" 2>/dev/null || exit "$PV_BIN_AF_RC"
+fi
 export PV
 
 # ONT-5: pv-sat, the untrusted reasoner, is a second bin of the same package, built by the same
