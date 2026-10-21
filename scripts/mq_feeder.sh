@@ -26,39 +26,32 @@ pick() {
 # gate_paths FILES -> 0 when any path is gate content (a gate change needs 2 non-author seats bound to the head).
 # Wide on purpose: every path under scripts/, ci/ and .github/ (the explicit-test fragments run arbitrary scripts) plus root build/lint config.
 gate_paths() { grep -qE '^(\.github/|ci/|scripts/|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
-# Review format the feeder accepts. Positive anchors AT THE START OF THE BODY; one review = one seat OR one receipt:
-#   seat:    "seat <name> APPROVE"         (<name> a word that is not APPROVE/APPROVED)
+# Review format the feeder accepts (a quorum receipt only; seats are not read). Positive anchors AT THE START OF THE BODY:
 #   quorum:  "quorum 3/3 [AGREED] PASS"    (or APPROVE/APPROVED); PASS/APPROVE is the verdict direction
-# followed by end of body, punctuation, or " @<sha>". A body with a quote mark, a negation/deferral/failure word or a
+# followed ONLY by optional punctuation and an optional " @<sha>" up to the end of the body. A body with a quote mark, a negation/deferral/failure word or a
 # carried-over marker anywhere is rejected, so quoted evidence and "APPROVE once X lands" never count.
 NEG='\b(NOT|NO|NEED|NEEDS|PENDING|REQUIRED|MISSING|AWAITING|WITHOUT|UNTIL|IF|ONCE|AFTER|WHEN|UNLESS|CANNOT|FAIL|FAILS|FAILED|REJECT|REJECTED|BLOCK|BLOCKS|BLOCKING|CARRIED|PREVIOUS|EARLIER|PRIOR)\b|REQUEST[-_ ]?CHANGES|[0-2]/3|"'"'"'`'
-END='([.;:,!]|[[:space:]]+@[0-9a-f]{7,40}|[[:space:]]*$)'
-# seat_names REVIEWS -> distinct seat names (one per line); dedupes by NAME, so a repost of one seat counts once.
-seat_names() {
-  grep -iE "^(COMMENTED|APPROVED)"$'\t'"seat[: ]+[A-Za-z0-9_.@-]+[ :,;-]+APPROVED?${END}" <<<"$1" | grep -viE "$NEG" \
-    | sed -nE 's/^[A-Z]+\t[Ss][Ee][Aa][Tt][: ]+([A-Za-z0-9_.@-]+)[ :,;-]+[Aa][Pp][Pp].*/\1/p' \
-    | tr 'A-Z' 'a-z' | grep -vxE 'approve|approved' | sort -u
-}
+END='[.;:,!]?([[:space:]]+@[0-9a-f]{7,40})?[.;:,!]?[[:space:]]*$'
 # quorum_receipts REVIEWS -> count of reviews that are exactly a "quorum 3/3 [AGREED] PASS|APPROVE(D)" receipt (see above)
 quorum_receipts() {
   grep -iE "^(COMMENTED|APPROVED)"$'\t'"quorum[: ]+3/3[ :,;-]+(AGREED[ :,;-]+)?(PASS|APPROVED?)${END}" <<<"$1" | grep -viE "$NEG" | wc -l
 }
-# needs_seats PR HEAD -> prints the reason and returns 0 unless the PR is non-gate OR holds a verified 3/3 quorum
-# receipt plus 2 distinct APPROVE seat reviews bound to HEAD and no REQUEST-CHANGES bound to HEAD. FAILS CLOSED:
-# an unreadable file list or review list, or an empty HEAD, means "needs seats".
+# needs_seats PR HEAD -> prints the skip reason and returns 0 (skip) unless the PR is NON-gate content AND holds a
+# "quorum 3/3 [AGREED] PASS" receipt review bound to HEAD with no request-changes/FAIL/BLOCKING bound to HEAD.
+# Gate-content PRs are never enqueued by the feeder (operator/arbiter arms them; 16:18Z #5849 was enqueued
+# without a receipt). FAILS CLOSED: unreadable file list or review list, or an empty HEAD, means skip.
 needs_seats() {
-  local f rv a rc q
-  [ -n "$2" ] || { echo "needs seats (head unreadable)"; return 0; }
-  f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[].filename' 2>/dev/null) || { echo "needs seats (files unreadable)"; return 0; }
-  [ -n "$f" ] || { echo "needs seats (file list empty)"; return 0; }
-  gate_paths "$f" || return 1
-  # reviews bound to HEAD (commit_id), COMMENTED/APPROVED only; one body per line, newlines folded
+  local f rv rc q
+  [ -n "$2" ] || { echo "skip (head unreadable)"; return 0; }
+  f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[].filename' 2>/dev/null) || { echo "skip (files unreadable)"; return 0; }
+  [ -n "$f" ] || { echo "skip (file list empty)"; return 0; }
+  gate_paths "$f" && { echo "skip (gate content: the feeder never enqueues a gate change)"; return 0; }
+  # reviews bound to HEAD (commit_id); one body per line, newlines folded
   rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,(.body|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
   rc=$(grep -ciE '^CHANGES_REQUESTED|REQUEST[-_ ]?CHANGES|\bFAIL|\bREJECT|\bBLOCKING\b' <<<"$rv")
-  a=$(seat_names "$rv" | wc -l)
   q=$(quorum_receipts "$rv")
-  { [ "${rc:-0}" -eq 0 ] && [ "${a:-0}" -ge 2 ] && [ "${q:-0}" -ge 1 ]; } && return 1
-  echo "needs seats (gate content; bound to ${2:0:10}: $a/2 distinct named APPROVE seats, quorum 3/3 receipt $q/1, $rc request-changes)"
+  { [ "${rc:-0}" -eq 0 ] && [ "${q:-0}" -ge 1 ]; } && return 1
+  echo "skip (no quorum receipt at ${2:0:10}: quorum 3/3 PASS receipts $q/1, $rc request-changes)"
 }
 inbox() { mkdir -p "$STATE"; printf '%s %s\n' "$(date +%s)" "$1" >> "$STATE/acts.log"; printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
 if [ "${1:-}" = --self-test ]; then
@@ -79,44 +72,54 @@ if [ "${1:-}" = --self-test ]; then
   # gate_paths: scripts the explicit-test fragments run are gate content (triage 38b290a66f)
   for p in scripts/contracts_gate.sh scripts/mutate_foo_guard.sh scripts/lib_baseline_ratchet.sh scripts/pv_bin.sh scripts/pmat_bin.sh scripts/tests/x.sh; do gate_paths "$p" || { echo "FAIL gate_paths $p"; fail=1; }; done
   # needs_seats with a stubbed gh: REVIEWS is "STATE<TAB>body" lines, FILES the PR file list
-  gh() { case "$2" in */files) [ "${CASE:-}" = filefail ] && return 1; printf '%s\n' "${FILES:-scripts/ci_x.sh}";; */reviews) printf '%b' "${REVIEWS:-}";; esac; }
-  ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = needs seats (not armable), 1 = armable
+  gh() { case "$2" in */files) [ "${CASE:-}" = filefail ] && return 1; printf '%s\n' "${FILES:-docs/x.md}";; */reviews) printf '%b' "${REVIEWS:-}";; esac; }
+  ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
   Q3='COMMENTED\tquorum 3/3 AGREED PASS\n'
-  eq 'seats: two named + 3/3 -> armable' "$(REVIEWS="COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n$Q3" ns)" 1
-  eq 'seats: repost of one seat (same name, different text) -> needs' "$(REVIEWS="COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w1 APPROVE again\n$Q3" ns)" 0
-  eq 'seats: negated quorum "NOT 3/3" + repost -> needs' "$(REVIEWS='COMMENTED\tSeat (a) APPROVE; quorum NOT 3/3\nCOMMENTED\tSeat (a) APPROVE; quorum NOT 3/3 \nCOMMENTED\tSeat (b) APPROVE\n' ns)" 0
-  eq 'seats: two seats + only a negated quorum receipt -> needs' "$(REVIEWS='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\nCOMMENTED\tquorum NOT 3/3\n' ns)" 0
-  eq 'seats: quorum 2/3 -> needs' "$(REVIEWS='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\nCOMMENTED\tquorum 2/3 AGREED\n' ns)" 0
-  eq 'seats: request-changes bound to head -> needs' "$(REVIEWS="COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n${Q3}CHANGES_REQUESTED\tseat w3 RC\n" ns)" 0
-  eq 'seats: no 3/3 receipt -> needs' "$(REVIEWS='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n' ns)" 0
-  eq 'seats: files unreadable -> needs (fail closed)' "$(CASE=filefail ns)" 0
-  eq 'seats: non-gate PR -> armable' "$(FILES=docs/x.md ns)" 1
-  # round 3 (a1b0efc624): positive anchors; each row fails under the matching mutation
-  S2='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n'
-  for q in 'quorum 3/3 pending' 'quorum 3/3 required' 'quorum 3/3 missing' 'need quorum 3/3' 'AGREED 3/3' 'quorum 3/3' 'quorum NOT 3/3'; do
-    eq "quorum row '$q' is not a receipt" "$(REVIEWS="${S2}COMMENTED\t$q\n" ns)" 0
+  eq 'receipt on a non-gate PR -> armable' "$(REVIEWS="$Q3" ns)" 1
+  eq 'no receipt (non-gate PR) -> skip' "$(REVIEWS='' ns)" 0
+  eq 'two seats but no receipt -> skip' "$(REVIEWS='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n' ns)" 0
+  eq 'gate content + receipt -> skip (never enqueued by the feeder)' "$(FILES=scripts/x.sh REVIEWS="$Q3" ns)" 0
+  eq 'gate content among docs + receipt -> skip' "$(FILES=$'docs/x.md\n.github/workflows/ci.yml' REVIEWS="$Q3" ns)" 0
+  eq 'files unreadable -> skip (fail closed)' "$(CASE=filefail REVIEWS="$Q3" ns)" 0
+  eq 'receipt + request-changes at head -> skip' "$(REVIEWS="${Q3}CHANGES_REQUESTED\tseat w3 RC\n" ns)" 0
+  eq 'receipt + FAIL review at head -> skip' "$(REVIEWS="${Q3}COMMENTED\tseat w3 FAIL\n" ns)" 0
+  eq 'receipt "quorum 3/3 APPROVED" -> armable' "$(REVIEWS='COMMENTED\tquorum 3/3 APPROVED\n' ns)" 1
+  eq 'receipt with trailing @sha -> armable' "$(REVIEWS='COMMENTED\tquorum 3/3 AGREED PASS @abcdef1234\n' ns)" 1
+  eq 'receipt with punctuation -> armable' "$(REVIEWS='COMMENTED\tquorum 3/3 AGREED PASS.\n' ns)" 1
+  eq 'receipt with punctuation then @sha -> armable' "$(REVIEWS='COMMENTED\tquorum 3/3 AGREED PASS. @abcdef1234\n' ns)" 1
+  for q in 'quorum 3/3 pending' 'quorum 3/3 required' 'quorum 3/3 missing' 'need quorum 3/3' 'AGREED 3/3' 'quorum 3/3' 'quorum NOT 3/3' 'quorum 2/3 AGREED PASS' \
+      'quorum 3/3 AGREED: FAIL (B1 blocks)' 'quorum 3/3 AGREED to reject' 'quorum 3/3 AGREED on 2 BLOCKING findings' 'quorum 3/3 AGREED?' 'quorum 3/3 AGREED cannot arm yet' \
+      'quorum 3/3 REJECT' 'quorum 3/3 PASS, if seats' 'quorum 3/3 PASS; cannot arm' 'quorum 3/3 PASS the following' 'quorum 3/3 PASS. Nothing was verified by me' \
+      'quorum 3/3 PASS @abcdef1234 (RC on a later head)' 'carried from round 3: quorum 3/3 PASS' 'quorum 3/3 PASS once B1 lands' 'see quorum 3/3 PASS above' 'on "quorum 3/3 PASS" pasted evidence' 'quorum 3/3 PASS but FAIL'; do
+    eq "row '$q' is not a receipt" "$(REVIEWS="COMMENTED\t$q\n" ns)" 0
   done
-  eq 'quorum row "quorum 3/3 APPROVED" is a receipt' "$(REVIEWS="${S2}COMMENTED\tquorum 3/3 APPROVED\n" ns)" 1
-  eq 'seat "Seat APPROVE" (no name) x2 -> needs' "$(REVIEWS="COMMENTED\tSeat APPROVE\nCOMMENTED\tSeat APPROVE\n$Q3" ns)" 0
-  eq 'seat "Seat (a) APPROVE" x2 (no name) -> needs' "$(REVIEWS="COMMENTED\tSeat (a) APPROVE\nCOMMENTED\tSeat (b) APPROVE\n$Q3" ns)" 0
-  eq 'seat "seat w1 APPROVE" twice with NOT 3/3 repost -> needs (named seat, not vacuous)' "$(REVIEWS='COMMENTED\tseat w1 APPROVE; quorum NOT 3/3\nCOMMENTED\tseat w1 APPROVE; quorum NOT 3/3 \n' ns)" 0
-  eq 'seat names: two named' "$(seat_names "$(printf 'COMMENTED\tseat w1 APPROVE\nCOMMENTED\tSeat: W2 APPROVE\nCOMMENTED\tseat w1 APPROVE again')" | tr '\n' ,)" w1,w2,
-  eq 'seat "seat APPROVE APPROVE" yields no name' "$(seat_names "$(printf 'COMMENTED\tseat APPROVE APPROVE')")" ''
-  eq 'seat "seat w1 reviewing APPROVE" (no direct anchor) yields no name' "$(seat_names "$(printf 'COMMENTED\tseat w1 reviewing APPROVE')")" ''
-  # round 4 (1539bf88d6): verdict direction (B1) and quoted/carried-over text (B2) must not count. Each row: two real
-  # seats plus ONLY the bad quorum line -> needs; or ONE real seat plus the bad seat line + a real receipt -> needs.
-  for q in 'quorum 3/3 AGREED: FAIL (B1 blocks)' 'quorum 3/3 AGREED to reject' 'quorum 3/3 AGREED on 2 BLOCKING findings' 'quorum 3/3 AGREED?' 'quorum 3/3 AGREED cannot arm yet' 'quorum 3/3 REJECT' 'quorum 3/3 AGREED' 'quorum 3/3 AGREED PASS once B1 lands' 'on "quorum 3/3 AGREED PASS" quoted' 'carried from round 3: quorum 3/3 AGREED PASS'; do
-    eq "B1/B2 receipt row '$q' is not a receipt" "$(REVIEWS="${S2}COMMENTED\t$q\n" ns)" 0
-  done
-  eq 'receipt row with IF is not a receipt' "$(REVIEWS="${S2}COMMENTED\tquorum 3/3 PASS, if seats\n" ns)" 0
-  eq 'receipt row with CANNOT is not a receipt' "$(REVIEWS="${S2}COMMENTED\tquorum 3/3 PASS; cannot arm\n" ns)" 0
-  eq 'receipt row with trailing prose (END anchor) is not a receipt' "$(REVIEWS="${S2}COMMENTED\tquorum 3/3 PASS the following\n" ns)" 0
-  eq 'seat row with trailing prose (END anchor) is not a seat' "$(REVIEWS="COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w9 APPROVE the following\n$Q3" ns)" 0
-  for s in 'carried from round 3: seat w9 APPROVE' 'seat w9 APPROVE once B1 lands' 'seat w9 approved round 3, round 4 BLOCKING' 'on "seat w9 APPROVE" pasted evidence' 'see seat w9 APPROVE above' 'seat w9 APPROVE but FAIL'; do
-    eq "B2 seat row '$s' is not a seat" "$(REVIEWS="COMMENTED\tseat w1 APPROVE\nCOMMENTED\t$s\n$Q3" ns)" 0
-  done
-  eq 'positive: seat with trailing @sha and receipt with PASS -> armable' "$(REVIEWS='COMMENTED\tseat w1 APPROVE @abcdef1234\nCOMMENTED\tseat w2 APPROVE.\nCOMMENTED\tquorum 3/3 PASS\n' ns)" 1
   unset -f gh
+  # subprocess: the whole feeder against a stub gh and a stub ARM. REFUSE (rc 3), a missing receipt and gate content must NEVER
+  # call ARM or post "enqueued"; an ARM rc 0 control with a receipt does enqueue (proves the harness can see an enqueue).
+  d=$(mktemp -d) || exit 2
+  cat > "$d/gh" <<'GHEOF'
+#!/usr/bin/env bash
+case "$*" in
+  *rate_limit*) echo 5000;;
+  *"mergeQueue(branch"*) printf '{"data":{"repository":{"mergeQueue":{"entries":{"totalCount":0}},"pullRequests":{"nodes":[{"number":7,"isDraft":false,"baseRefName":"main","mergeStateStatus":"CLEAN","autoMergeRequest":null,"mergeQueueEntry":null}]}}}}';;
+  *graphql*) echo QUEUED;;
+  "pr view"*) echo deadbeefdeadbeef;;
+  */files*) printf '%s\n' "$T_FILES";;
+  */reviews*) printf '%b' "$T_REVIEWS";;
+  */commits*) echo 0;;
+esac
+GHEOF
+  printf '#!/usr/bin/env bash\necho "$1" >> "$T_MARK"\n[ "$T_ARMRC" = 3 ] && echo "refuse: guard check not green"\nexit "$T_ARMRC"\n' > "$d/arm"
+  chmod +x "$d/gh" "$d/arm"
+  run_feeder() { rm -f "${d:?}/mark" "${d:?}/inbox" "${d:?}/st/kicked"; : > "$d/inbox"
+    T_FILES=$1 T_REVIEWS=$2 T_ARMRC=$3 T_MARK="$d/mark" PATH="$d:$PATH" MQ_FEEDER_STATE="$d/st" MQ_FEEDER_INBOX="$d/inbox" MQ_FEEDER_ARM="$d/arm" MQ_FEEDER_RECHECK=0 bash "$0" >/dev/null 2>&1
+    echo "armed=$([ -e "$d/mark" ] && echo yes || echo no) enq=$(grep -c 'enqueued oldest' "$d/inbox")"; }
+  eq 'feeder: REFUSE (arm rc 3) with a receipt never enqueues' "$(run_feeder docs/x.md "$Q3" 3)" 'armed=yes enq=0'
+  eq 'feeder: no receipt never calls ARM' "$(run_feeder docs/x.md '' 0)" 'armed=no enq=0'
+  eq 'feeder: gate content with a receipt never calls ARM' "$(run_feeder scripts/x.sh "$Q3" 0)" 'armed=no enq=0'
+  eq 'feeder: request-changes at head never calls ARM' "$(run_feeder docs/x.md "${Q3}CHANGES_REQUESTED\tx\n" 0)" 'armed=no enq=0'
+  eq 'feeder control: receipt + ARM rc 0 enqueues' "$(run_feeder docs/x.md "$Q3" 0)" 'armed=yes enq=1'
+  rm -rf "${d:?}"
   [ "$fail" -eq 0 ] && echo "ok: self-test"; exit "$fail"
 fi
 [ "${1:-}" = --dry-run ] && dry=1
