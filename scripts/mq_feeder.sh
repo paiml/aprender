@@ -26,15 +26,20 @@ pick() {
 # gate_paths FILES -> 0 when any path is gate content (a gate change needs 2 non-author seats bound to the head).
 # Wide on purpose: every path under scripts/, ci/ and .github/ (the explicit-test fragments run arbitrary scripts) plus root build/lint config.
 gate_paths() { grep -qE '^(\.github/|ci/|scripts/|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
-# seat_names REVIEWS -> distinct seat names (one per line) of COMMENTED/APPROVED reviews that read "seat <name> ... APPROVE"
-# and carry no REQUEST-CHANGES / NOT AGREED / NOT text. Dedupes by seat NAME, so a repost of one seat counts once.
+# Review format the feeder accepts (positive anchors only; anything else = no seat / no receipt):
+#   seat:    "seat <name> APPROVE"      (<name> a word that is not APPROVE/APPROVED)
+#   quorum:  "quorum 3/3 AGREED"        (or APPROVED); no negation word in the same body
+# seat_names REVIEWS -> distinct seat names (one per line); dedupes by NAME, so a repost of one seat counts once.
 seat_names() {
-  grep -iE '^(COMMENTED|APPROVED)' <<<"$1" | grep -iE 'seat' | grep -iE 'APPROVE' | grep -viE 'REQUEST-?[ _]?CHANGES|NOT[ -]+(AGREED|APPROVE)|\bNOT\b' \
-    | sed -nE 's/.*[Ss][Ee][Aa][Tt][: ]+([A-Za-z0-9_.@-]+).*/\1/p' | tr 'A-Z' 'a-z' | sort -u
+  grep -iE '^(COMMENTED|APPROVED)' <<<"$1" \
+    | grep -viE '\b(NOT|NO|NEED|NEEDS|PENDING|REQUIRED|MISSING|AWAITING|WITHOUT|UNTIL|IF)\b|REQUEST-?[ _]?CHANGES' \
+    | sed -nE 's/.*[Ss][Ee][Aa][Tt][: ]+([A-Za-z0-9_.@-]+)[ :,;-]+[Aa][Pp][Pp][Rr][Oo][Vv][Ee].*/\1/p' \
+    | tr 'A-Z' 'a-z' | grep -vxE 'approve|approved' | sort -u
 }
-# quorum_receipts REVIEWS -> count of reviews stating "quorum 3/3" / "AGREED 3/3" with no negation and no other n/3 figure
+# quorum_receipts REVIEWS -> count of reviews with the positive anchor "quorum 3/3 AGREED|APPROVED" and no negation/other n/3
 quorum_receipts() {
-  grep -iE '^(COMMENTED|APPROVED)' <<<"$1" | grep -iE 'quorum[^0-9]{0,12}3/3|AGREED 3/3' | grep -viE '\bNOT\b|REQUEST-?[ _]?CHANGES|[0-2]/3' | wc -l
+  grep -iE '^(COMMENTED|APPROVED)' <<<"$1" | grep -iE 'quorum[: ]+3/3[ :,;-]+(AGREED|APPROVED?)' \
+    | grep -viE '\b(NOT|NO|NEED|NEEDS|PENDING|REQUIRED|MISSING|AWAITING|WITHOUT|UNTIL|IF)\b|REQUEST-?[ _]?CHANGES|[0-2]/3' | wc -l
 }
 # needs_seats PR HEAD -> prints the reason and returns 0 unless the PR is non-gate OR holds a verified 3/3 quorum
 # receipt plus 2 distinct APPROVE seat reviews bound to HEAD and no REQUEST-CHANGES bound to HEAD. FAILS CLOSED:
@@ -84,6 +89,18 @@ if [ "${1:-}" = --self-test ]; then
   eq 'seats: no 3/3 receipt -> needs' "$(REVIEWS='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n' ns)" 0
   eq 'seats: files unreadable -> needs (fail closed)' "$(CASE=filefail ns)" 0
   eq 'seats: non-gate PR -> armable' "$(FILES=docs/x.md ns)" 1
+  # round 3 (a1b0efc624): positive anchors; each row fails under the matching mutation
+  S2='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n'
+  for q in 'quorum 3/3 pending' 'quorum 3/3 required' 'quorum 3/3 missing' 'need quorum 3/3' 'AGREED 3/3' 'quorum 3/3' 'quorum NOT 3/3' 'quorum 3/3 AGREED if seats'; do
+    eq "quorum row '$q' is not a receipt" "$(REVIEWS="${S2}COMMENTED\t$q\n" ns)" 0
+  done
+  eq 'quorum row "quorum 3/3 APPROVED" is a receipt' "$(REVIEWS="${S2}COMMENTED\tquorum 3/3 APPROVED\n" ns)" 1
+  eq 'seat "Seat APPROVE" (no name) x2 -> needs' "$(REVIEWS="COMMENTED\tSeat APPROVE\nCOMMENTED\tSeat APPROVE\n$Q3" ns)" 0
+  eq 'seat "Seat (a) APPROVE" x2 (no name) -> needs' "$(REVIEWS="COMMENTED\tSeat (a) APPROVE\nCOMMENTED\tSeat (b) APPROVE\n$Q3" ns)" 0
+  eq 'seat "seat w1 APPROVE" twice with NOT 3/3 repost -> needs (named seat, not vacuous)' "$(REVIEWS='COMMENTED\tseat w1 APPROVE; quorum NOT 3/3\nCOMMENTED\tseat w1 APPROVE; quorum NOT 3/3 \n' ns)" 0
+  eq 'seat names: two named' "$(seat_names "$(printf 'COMMENTED\tseat w1 APPROVE\nCOMMENTED\tSeat: W2 APPROVE\nCOMMENTED\tseat w1 APPROVE again')" | tr '\n' ,)" w1,w2,
+  eq 'seat "seat APPROVE APPROVE" yields no name' "$(seat_names "$(printf 'COMMENTED\tseat APPROVE APPROVE')")" ''
+  eq 'seat "seat w1 reviewing APPROVE" (no direct anchor) yields no name' "$(seat_names "$(printf 'COMMENTED\tseat w1 reviewing APPROVE')")" ''
   unset -f gh
   [ "$fail" -eq 0 ] && echo "ok: self-test"; exit "$fail"
 fi
