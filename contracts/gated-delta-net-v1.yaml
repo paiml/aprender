@@ -198,6 +198,11 @@ falsification_tests:
   prediction: SIMD and scalar give same result within ULP
   test: proptest comparing backends
   if_fails: SIMD reduction order differs
+- id: FALSIFY-GDN-006
+  rule: Projection size fails closed
+  prediction: A GDN layer whose in_proj_qkvz or in_proj_qkv has the wrong element count is refused with a size-mismatch error, never truncated or padded
+  test: extract_linear_combined_qkvz_size_mismatch_is_refused and extract_linear_separate_layout_size_mismatch_is_refused in aprender-serve safetensors_infer_extract_linear.rs
+  if_fails: A mis-sized checkpoint loads silently and the recurrence reads shifted weights
 kani_harnesses:
 - id: KANI-GDN-001
   obligation: GDN-BND-001
@@ -247,7 +252,7 @@ qa_gate:
   - state_shape
   - causal_conv
   - l2_direction
-  pass_criteria: All 5 falsification tests pass
+  pass_criteria: All 6 falsification tests pass
   falsification: Set A_log to extreme value to trigger sigmoid saturation
 simd_dispatch:
   gated_delta_net:
