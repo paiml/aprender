@@ -25358,3 +25358,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5817
+  github_issue: 5817
+  item_type: task
+  title: 'check_release_models_t1: measure_bogus fixture is hermetic (own CARGO_TARGET_DIR)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-20T23:55:53Z
+  updated: 2026-10-20T23:55:53Z
+  spec: null
+  acceptance_criteria:
+  - measure_bogus runs models_t1.sh directly; the stub cargo build writes apr 9.9.9 into an inherited CARGO_TARGET_DIR. Own target dir per fixture.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
