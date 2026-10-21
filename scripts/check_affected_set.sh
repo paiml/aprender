@@ -155,6 +155,22 @@ row "multi-package --filter is ' | ' joined" "$want_f" "$(AFFECTED_META="$t/chai
 sed "s/ | sed 's\/|\/ | \/g'//" "$A" >"$t/mut-fmt.sh"
 if cmp -s "$A" "$t/mut-fmt.sh"; then echo "FAIL filter-format mutant did not apply"; fail=1
 else row "MUTANT: an unspaced multi-package filter is caught" "package(a)|package(aprender-core)|package(b)|package(c)" "$(AFFECTED_META="$t/chain.json" AFFECTED_ROOT=/r AFFECTED_CORE=none AFFECTED_READERS=aprender-core bash "$t/mut-fmt.sh" --filter --diff-from <(echo crates/a/src/lib.rs))"; fi
+# fail-closed: every error path prints ALL (never nothing) -- a silent exit would read as "no tests affected" (#5815 quorum)
+abs_a="$(cd "$(dirname "$A")" && pwd)/$(basename "$A")"
+row "missing --diff-from file -> ALL" ALL "$($A --diff-from "$t/no-such-file" 2>/dev/null || true)"
+row "--diff-from with no FILE -> ALL" ALL "$($A --diff-from 2>/dev/null || true)"
+row "--filter, missing --diff-from file -> all()" "all()" "$($A --filter --diff-from "$t/no-such-file" 2>/dev/null || true)"
+mkdir -p "$t/nocargo"; for b in cat git jq sed awk paste grep sort head dirname basename mktemp; do ln -sf "$(command -v $b)" "$t/nocargo/$b"; done
+printf 'crates/a/src/lib.rs\n' >"$t/one"
+row "no cargo on PATH (rc 127) -> ALL" ALL "$(PATH="$t/nocargo" "$(command -v bash)" "$abs_a" --diff-from "$t/one" 2>/dev/null || true)"
+mkdir -p "$t/notgit"
+row "git rev-parse fails (not a checkout, rc 128) -> ALL" ALL "$(cd "$t/notgit" && AFFECTED_META="$t/meta.json" bash "$abs_a" --diff-from "$t/one" 2>/dev/null || true)"
+sed 's/ || root=""$//' "$A" >"$t/mut-root.sh"
+if cmp -s "$A" "$t/mut-root.sh"; then echo "FAIL root-fallback mutant did not apply"; fail=1
+else row "MUTANT: dropping the rev-parse fallback is caught (prints nothing)" "" "$(cd "$t/notgit" && AFFECTED_META="$t/meta.json" bash "$t/mut-root.sh" --diff-from "$t/one" 2>/dev/null || true)"; fi
+sed 's/files="\$(cat "\$from")" || files=""/files="$(cat "$from")"/' "$A" >"$t/mut-cat.sh"
+if cmp -s "$A" "$t/mut-cat.sh"; then echo "FAIL cat-fallback mutant did not apply"; fail=1
+else row "MUTANT: dropping the missing-file fallback is caught (prints nothing)" "" "$(bash "$t/mut-cat.sh" --diff-from "$t/no-such-file" 2>/dev/null || true)"; fi
 # an unreadable cargo metadata is ALL, not an empty answer
 echo 'not json' >"$t/bad.json"
 row "unreadable metadata -> ALL" ALL "$(AFFECTED_META="$t/bad.json" bash "$A" --diff-from <(echo crates/a/src/lib.rs) 2>/dev/null)"

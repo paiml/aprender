@@ -34,25 +34,27 @@ CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts apr-cli
 # READERS = crates whose tests read OTHER crates' files at run time (CARGO_MANIFEST_DIR/.., crates/, ../<crate>). CORE ones are ALL on touch, but that does not put them in a non-ALL set; every non-ALL set includes them, because the touched crate may be what they read. scripts/check_affected_readers.sh
 # goes RED on a reader this list (or CORE) lacks.
 READERS="${AFFECTED_READERS:-apr-cli apr-format aprender-build-sha aprender-cbtop aprender-cgp aprender-ci-tools aprender-compute aprender-compute-xtask aprender-contracts aprender-contracts-cli aprender-contracts-macros aprender-contrastive-data aprender-core aprender-data aprender-db aprender-decide aprender-distribute aprender-explain aprender-gpu aprender-graph aprender-mcp aprender-orchestrate aprender-present-cli aprender-present-core aprender-present-layout aprender-present-lib aprender-present-terminal aprender-present-widgets aprender-present-yaml aprender-profile aprender-ptx-debug aprender-qa-certify aprender-qa-cli aprender-qa-gen aprender-qa-report aprender-qa-runner aprender-quant aprender-rag aprender-rag-cli aprender-registry aprender-review-experiment aprender-rollup aprender-serve aprender-shell aprender-simulate aprender-test-cli aprender-test-lib aprender-train aprender-train-bench aprender-train-distill aprender-train-inspect aprender-train-lora aprender-train-shell aprender-tsp aprender-update aprender-verify-ml aprender-viz aprender-viz-ttop aprender-zram aprender-zram-cli aprender-zram-generator facades}"
-filter=0 from=""
+filter=0 from="" bad=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --filter) filter=1; shift ;;
-    --diff-from) from="$2"; shift 2 ;;
+    --diff-from) [ $# -ge 2 ] || { bad=1; break; }; from="$2"; shift 2 ;;
     *) break ;;
   esac
 done
 case "$from" in *..*) echo "affected_set: refusing a --diff-from with \"..\": $from" >&2; exit 2 ;; esac   # bashrs SEC010
-if [ -n "$from" ]; then files="$(cat "$from")"
+if [ -n "$from" ]; then files="$(cat "$from")" || files=""
 else files="$(git diff --name-only --no-renames "${1:-origin/main}...${2:-HEAD}")" || files=""; fi
 emit() { # $@ = package names, or ALL
   if [ "${1:-}" = ALL ]; then [ "$filter" = 1 ] && echo 'all()' || echo ALL; return; fi
   if [ "$filter" = 1 ]; then printf '%s\n' "$@" | sed 's/.*/package(&)/' | paste -sd'|' | sed 's/|/ | /g'; else printf '%s\n' "$@"; fi
 }
+[ "$bad" = 0 ] || { emit ALL; exit 0; }   # --diff-from with no FILE
 [ -n "$files" ] || { emit ALL; exit 0; }
-if [ -n "${AFFECTED_META:-}" ]; then meta="$(cat "$AFFECTED_META")"
-else meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null || cargo metadata --no-deps --format-version 1)"; fi
-root="${AFFECTED_ROOT:-$(git rev-parse --show-toplevel)}"
+if [ -n "${AFFECTED_META:-}" ]; then meta="$(cat "$AFFECTED_META")" || meta=""
+else meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null || cargo metadata --no-deps --format-version 1)" || meta=""; fi
+root="${AFFECTED_ROOT:-$(git rev-parse --show-toplevel)}" || root=""
+[ -n "$meta" ] && [ -n "$root" ] || { emit ALL; exit 0; }   # no metadata, no checkout root: nothing measured
 dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta")" || { emit ALL; exit 0; }
 [ -n "$dirs" ] || { emit ALL; exit 0; }
 # Root contracts/ files that build.rs or include_str!/include! turn into compiled code or constants (aprender-serve build.rs generates
