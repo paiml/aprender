@@ -151,7 +151,8 @@ jobs:
       - name: The fat wait is cancel-aware and the teardown still runs on cancel
         run: |
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
-          setsid --wait bash scripts/check_ci_wait_cancel.sh
+          # 4 teardowns: x86-main, determinism, ARM64 determinism, workspace-test-archive
+          CI_TEARDOWN_STEPS=4 setsid --wait bash scripts/check_ci_wait_cancel.sh
 
   x86-main:
     needs: [mg-reuse]
