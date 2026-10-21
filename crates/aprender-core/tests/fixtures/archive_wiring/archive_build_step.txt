@@ -13,6 +13,7 @@ tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u | grep -vxE 'apren
 printf 'archive build flags: %s\n' "$BUILD_FLAGS"
 SHARDS="$(awk -v ev="$GITHUB_EVENT_NAME" '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{k="pr";next} p&&/^  workspace-test-shard-merge_group:/{k="mg";next} p&&/^  [a-z]/{k=""} k&&/^    - \{shard:/{c[k]++} END{print (ev=="merge_group"&&c["mg"]?c["mg"]:c["pr"])+0}' ci/sections.yml)"
 [ "$SHARDS" -gt 0 ] || { echo "no workspace-test-shard pins in ci/sections.yml"; exit 1; }
+SCCACHE_HOST_DIR="${HOME}/data/sccache"
 dock() {
 docker run --rm -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW -v "${GITHUB_WORKSPACE}:/workspace" -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" -v "${SCCACHE_HOST_DIR}:/sccache" -w /workspace -e CARGO_TARGET_DIR=/workspace/target -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache -e SCCACHE_DIR=/sccache -e SCCACHE_CACHE_SIZE=50G -e CARGO_INCREMENTAL=0 -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 -e CARGO_PROFILE_TEST_DEBUG=0 -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_TERM_COLOR=never -e EXPR="$EXPR" -e BUILD_FLAGS="$BUILD_FLAGS" -e TREE="$tree" -e SHARDS="$SHARDS" "$IMAGE" bash -c "set -euo pipefail; $1"
 }
