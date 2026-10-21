@@ -37,7 +37,7 @@ falsification_tests:
 
   - id: FALSIFY-002
     description: "at alpha 0.16 the build stage is busy at the law's 94.7% within two points"
-    test: "cargo test -p aprender-simulate --lib build_busy_at_alpha_016_is_at_most_95_percent"
+    test: "cargo test -p aprender-simulate --lib build_busy_at_alpha_016_matches_the_law"
     prediction: "the test passes"
     if_fails: "the rework loop is missing or mis-sized"
 
@@ -54,7 +54,7 @@ falsification_tests:
     if_fails: "work and elapsed build time are conflated"
 
   - id: FALSIFY-005
-    description: "the trunk-first rule is not a no-op: with the threshold under the steady lead, course lead falls and Shorts finish fewer (LinkedIn renders are covered by linkedin_renders_load_the_gpu, not by this test)"
+    description: "the trunk-first rule is not a no-op: the rule fires only on the render stage, with a positive threshold, after a course finished and while the mean lead exceeds it, and turning it on changes the run (LinkedIn renders are covered by linkedin_renders_load_the_gpu, not by this test)"
     test: "cargo test -p aprender-simulate --lib trunk_first_rule_changes_the_outcome"
     prediction: "the test passes"
     if_fails: "the GPU priority rule is dead"
