@@ -1,0 +1,6 @@
+# name<TAB>metric<TAB>predicted<TAB>dir (le|ge|none)<TAB>measure-cmd (stdout: one number; empty = not_measured)
+# Add one row per fix when it goes live; delete it when it is graded KEEP/REVERT. The cop owns the rows.
+# "dir": le = measured must be <= predicted, ge = measured must be >= predicted.
+shard-split-5820	max-shard-min	15	le
+jobserver-thread-cap	intel-load-per-core	1.0	le
+ruleset-rebase	tickets-per-run	7	ge

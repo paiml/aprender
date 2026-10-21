@@ -1,0 +1,8 @@
+[Unit]
+Description=STOPLINE hourly report line (PMAT-5836)
+
+[Service]
+Type=oneshot
+Environment=TMPDIR=/mnt/nvme-raid0/tmp
+ExecStart=/usr/bin/bash %h/.local/libexec/stopline_report.sh
+TimeoutStartSec=180
