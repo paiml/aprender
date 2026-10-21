@@ -832,4 +832,33 @@ mod tests {
             assert!(exited(server), "{sig}: server {server} outlived the run");
         }
     }
+
+    #[test]
+    fn stat_summary_computes_mean_stddev_and_t_interval() {
+        let empty = stat_summary(&[]);
+        assert_eq!(
+            (empty.mean, empty.stddev, empty.ci_95_lower),
+            (0.0, 0.0, 0.0)
+        );
+        assert!(empty.values.is_empty());
+
+        // one sample: no spread, and t_critical_95(1) = 0 so the interval collapses
+        let one = stat_summary(&[7.0]);
+        assert_eq!((one.mean, one.stddev), (7.0, 0.0));
+        assert_eq!((one.ci_95_lower, one.ci_95_upper), (7.0, 7.0));
+
+        // [2,4,6]: mean 4, sample variance 4, so stddev 2; margin = t(3) * 2 / sqrt(3)
+        let s = stat_summary(&[2.0, 4.0, 6.0]);
+        let margin = 4.303 * 2.0 / 3.0_f64.sqrt();
+        assert!((s.mean - 4.0).abs() < 1e-12 && (s.stddev - 2.0).abs() < 1e-12);
+        assert!((s.ci_95_lower - (4.0 - margin)).abs() < 1e-9);
+        assert!((s.ci_95_upper - (4.0 + margin)).abs() < 1e-9);
+        assert_eq!(s.values, vec![2.0, 4.0, 6.0]);
+
+        // the table's bucket edges
+        assert_eq!(t_critical_95(10), 2.262);
+        assert_eq!(t_critical_95(11), 2.145);
+        assert_eq!(t_critical_95(30), 2.042);
+        assert_eq!(t_critical_95(31), 1.96);
+    }
 }
