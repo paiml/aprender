@@ -40,17 +40,17 @@ verdict() {
 }
 
 # fixes_part <file> -> "name metric pred X, meas Y VERDICT | ..." (no network when no cmd is set)
-# columns: name<TAB>metric<TAB>predicted<TAB>dir<TAB>measure-cmd (stdout = one number)
+# columns: name<TAB>metric<TAB>predicted<TAB>dir<TAB>measure-cmd (stdout = one number)<TAB>note (optional)
 fixes_part() {
-  local out="" name metric pred dir cmd meas v
+  local out="" name metric pred dir cmd note meas v
   [ -f "$1" ] || { echo "no fixes ledger"; return; }
-  while IFS=$'\t' read -r name metric pred dir cmd; do
+  while IFS=$'\t' read -r name metric pred dir cmd note; do
     case "$name" in "" | \#*) continue ;; esac
     meas=nm
-    [ -n "${cmd:-}" ] && meas=$(timeout 60 bash -c "$cmd" 2>/dev/null | head -n1)
+    [ -n "${cmd:-}" ] && [ "$cmd" != - ] && meas=$(timeout 60 bash -c "$cmd" 2>/dev/null | head -n1)
     [ -n "$meas" ] || meas=nm
     v=$(verdict "$pred" "$meas" "$dir")
-    out="${out:+$out | }$name: $metric pred $pred, meas ${meas/nm/not_measured} $v"
+    out="${out:+$out | }$name: $metric pred $pred, meas ${meas/nm/not_measured} $v${note:+ [$note]}"
   done <"$1"
   echo "${out:-no fixes}"
 }
@@ -77,8 +77,8 @@ cases() {
   chk V6 "$(verdict 15 not_measured le)" MEASURING
   chk V7 "$(verdict 15 3 none)" -
   t=$(mktemp)
-  printf '# c\na\tmerges/h\t2\tge\techo 1\nb\tp95\t15\tle\techo 22\nc\tx\t1\tle\n' >"$t"
-  chk F1 "$(fixes_part "$t")" "a: merges/h pred 2, meas 1 MISS | b: p95 pred 15, meas 22 MISS | c: x pred 1, meas not_measured MEASURING"
+  printf '# c\na\tmerges/h\t2\tge\techo 1\nb\tp95\t15\tle\techo 22\nc\tx\t1\tle\t-\tn\n' >"$t"
+  chk F1 "$(fixes_part "$t")" "a: merges/h pred 2, meas 1 MISS | b: p95 pred 15, meas 22 MISS | c: x pred 1, meas not_measured MEASURING [n]"
   chk F2 "$(fixes_part /nonexistent)" "no fixes ledger"
   printf '# only\n' >"$t"; chk F3 "$(fixes_part "$t")" "no fixes"
   rm -f "$t"

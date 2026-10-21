@@ -1,6 +1,7 @@
-# name<TAB>metric<TAB>predicted<TAB>dir (le|ge|none)<TAB>measure-cmd (stdout: one number; empty = not_measured)
-# Add one row per fix when it goes live; delete it when it is graded KEEP/REVERT. The cop owns the rows.
-# "dir": le = measured must be <= predicted, ge = measured must be >= predicted.
-shard-split-5820	max-shard-min	15	le
-jobserver-thread-cap	intel-load-per-core	1.0	le
-ruleset-rebase	tickets-per-run	7	ge
+# name<TAB>metric<TAB>predicted<TAB>dir (le|ge|none)<TAB>measure-cmd (stdout: one number)<TAB>note (optional)
+# Add one row per fix when it goes live; delete it when graded KEEP/REVERT. The cop owns the rows.
+# dir: le = measured must be <= predicted, ge = >= predicted. "-" cmd = not_measured; never leave a column empty (tab is IFS whitespace).
+draft-run cancels	queued-jobs	idle	none	echo 9	baseline 18, KEEP
+jobserver thread cap	intel-load	40	le	-	pending
+ruleset REBASE	tickets/run	7	ge	-	pending
+build-once (#5812)	shard-runner-min	47	le	-	baseline 77, pending
