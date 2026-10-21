@@ -53,6 +53,8 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PY_LIB="${REPO_ROOT}/scripts/lib/roadmap_diff.py"
 PY_TRIM="${REPO_ROOT}/scripts/roadmap_trim.py"
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
+ENTRIES_DIR="docs/roadmaps/entries"
+PY_AGG="${REPO_ROOT}/scripts/lib/roadmap_fragments.py"
 BASE_FILE="docs/roadmaps/roadmap-base.yaml" # present = roadmap.yaml is GENERATED, not committed
 
 # ---------------------------------------------------------------------------
@@ -93,7 +95,7 @@ if [ "${1:-}" = "--self-test" ]; then
     not_measured=0
     # The case table has exactly this many rows; a run that reaches fewer, or more, is RED, never "n/n"
     # (#5047). Raise it with every row added. The two summary rows at the end are not counted.
-    SELFTEST_MIN_ROWS=27
+    SELFTEST_MIN_ROWS=29
 
     # selftest_verdict ROWS FAILS NOT_MEASURED MIN -> prints the summary; rc 0 all rows ran and
     # passed, 1 a row failed or other than MIN ran, 2 every row that ran passed but one was not measured.
@@ -552,10 +554,37 @@ EOF
         *) printf 'FAIL  row %-2s --staged: wanted rc=0 with base=%s, got rc=%s\n%s\n' "$row" "$tip" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
     esac
 
+    # Rows 28-29: GENERATED mode (roadmap.yaml untracked, roadmap-base.yaml + entries/).
+    # The aggregates at both refs are judged, so a fragment that rewrites a base
+    # entry's title is refused and a fragment that adds a ticket passes.
+    GR="$TD/gen"; mkdir -p "$GR/scripts/lib" "$GR/docs/roadmaps/entries"
+    cp "$REPO_ROOT/scripts/check_roadmap_diff_additive.sh" "$GR/scripts/"
+    cp "$REPO_ROOT"/scripts/lib/roadmap_*.py "$REPO_ROOT/scripts/lib/resolve_base.sh" "$GR/scripts/lib/"
+    ( cd "$GR" && git init -q -b main . && git config user.email t@t && git config user.name t \
+        && git config core.hooksPath /dev/null \
+        && cp "$TD/base.yaml" docs/roadmaps/roadmap-base.yaml && git add -A && git commit -qm base \
+        && git update-ref refs/remotes/origin/main "$(git rev-parse main)" )
+    gen_run() { ( cd "$GR" && git add -A && git commit -qm c && bash scripts/check_roadmap_diff_additive.sh HEAD~1 HEAD 2>&1 ); }
+    row=$((row + 1))
+    printf -- "- id: A-1\n  title: 'REWRITTEN'\n  status: planned\n  notes: null\n" >"$GR/docs/roadmaps/entries/A-1.yaml"
+    out=$(gen_run); rc=$?
+    case "$rc" in
+        1) printf 'ok    row %-2s generated: a fragment rewriting a base entry title is REFUSED (rc=1)\n' "$row" ;;
+        *) printf 'FAIL  row %-2s generated: wanted rc=1 for a title rewrite, got rc=%s\n%s\n' "$row" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
+    esac
+    row=$((row + 1))
+    ( cd "$GR" && git reset -q --hard HEAD~1 ) && mkdir -p "$GR/docs/roadmaps/entries"
+    printf -- "- id: A-9\n  title: 'brand new'\n  status: planned\n  notes: null\n" >"$GR/docs/roadmaps/entries/A-9.yaml"
+    out=$(gen_run); rc=$?
+    case "$rc:$out" in
+        0:*added=1*) printf 'ok    row %-2s generated: a fragment adding a ticket PASSes (added=1)\n' "$row" ;;
+        *) printf 'FAIL  row %-2s generated: wanted rc=0 added=1, got rc=%s\n%s\n' "$row" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
+    esac
+
     # The summary's own rows (#5047). A nested run, which the second row starts, skips both.
     if [ -z "${ROADMAP_DIFF_SELFTEST_NESTED:-}" ]; then
         got=""
-        for c in "27 0 0 27:0" "26 0 0 27:1" "27 0 1 27:2" "27 1 1 27:1" "28 0 0 27:1"; do
+        for c in "29 0 0 29:0" "28 0 0 29:1" "29 0 1 29:2" "29 1 1 29:1" "30 0 0 29:1"; do
             # shellcheck disable=SC2086 # the four numbers are meant to split
             rc=0; selftest_verdict ${c%%:*} >/dev/null || rc=$?
             got="$got${got:+ }$rc"
@@ -669,9 +698,46 @@ if [ "$(git -C "$REPO_ROOT" rev-parse "$BASE_REF^{commit}")" = "$(git -C "$REPO_
     printf 'PASS  base and head are the same commit (a push/workflow_dispatch run on the branch tip): there is no PR diff to judge here; the judgement happened on the pull_request and merge_group runs\n'
     exit 0
 fi
-if git -C "$REPO_ROOT" cat-file -e "$HEAD_REF:$BASE_FILE" 2>/dev/null; then
-    printf 'PASS  %s is generated at head; the frozen base is judged by check_roadmap_fragment_required.sh (G2), so there is no committed aggregate to diff\n' "$ROADMAP_FILE"
-    exit 0
+# GENERATED mode: judge the AGGREGATES (base file + entries/) at both refs, so a
+# fragment that rewrites a base entry's title or criteria is as visible as an
+# edit to the old committed roadmap.yaml was. A ref with no base file is the
+# pre-migration tree: its committed roadmap.yaml is the aggregate.
+if git -C "$REPO_ROOT" cat-file -e "$HEAD_REF:$BASE_FILE" 2>/dev/null \
+    || git -C "$REPO_ROOT" cat-file -e "$BASE_REF:$BASE_FILE" 2>/dev/null; then
+    GTD=$(mktemp -d "${TMPDIR:-/tmp}/rmdiffgen.XXXXXX") || exit 2
+    # agg_at <ref> <out> -> the aggregate of base file + top-level entries/*.yaml at <ref>
+    agg_at() {
+        local ref="$1" out="$2" name
+        if git -C "$REPO_ROOT" cat-file -e "$ref:$BASE_FILE" 2>/dev/null; then
+            mkdir -p "$out.d/entries"
+            git -C "$REPO_ROOT" show "$ref:$BASE_FILE" >"$out.d/base.yaml" || return 2
+            while IFS= read -r name; do
+                case "$name" in
+                    "$ENTRIES_DIR"/*.yaml) git -C "$REPO_ROOT" show "$ref:$name" >"$out.d/entries/${name##*/}" || return 2 ;;
+                esac
+            done < <(git -C "$REPO_ROOT" ls-tree --name-only "$ref" -- "$ENTRIES_DIR/")
+            python3 "$PY_AGG" aggregate --base-file "$out.d/base.yaml" --entries "$out.d/entries" --roadmap "$out" --write >/dev/null || return 2
+        else
+            git -C "$REPO_ROOT" show "$ref:$ROADMAP_FILE" >"$out" || return 2
+        fi
+    }
+    if ! agg_at "$BASE_REF" "$GTD/base-agg.yaml" || ! agg_at "$HEAD_REF" "$GTD/head-agg.yaml"; then
+        rm -rf -- "${GTD:?}"
+        printf '%s: could not build the aggregate at %s or %s\n' "$PROG" "$BASE_REF" "$HEAD_REF" >&2
+        exit 2
+    fi
+    if out=$(run_check "$GTD/base-agg.yaml" "$GTD/head-agg.yaml" 2>&1); then
+        rm -rf -- "${GTD:?}"
+        printf '%s\n' "$out"
+        printf 'PASS  (generated mode: aggregates judged)\n'
+        exit 0
+    fi
+    rc=$?
+    rm -rf -- "${GTD:?}"
+    printf '%s\n' "$out"
+    [ "$rc" -eq 2 ] && exit 2
+    printf '\nA fragment may add a ticket or edit its lifecycle fields; it may not rewrite another field of an existing entry (PMAT-980).\n'
+    exit 1
 fi
 if out=$(run_check "$BASE_REF" "$HEAD_REF" 2>&1); then
     printf '%s\n' "$out"

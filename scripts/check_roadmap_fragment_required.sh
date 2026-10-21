@@ -161,10 +161,17 @@ judge_generated() {
         case "$name" in *.yaml) git -C "$repo" show "$head:$name" >"$td/entries/${name##*/}" || { rm -rf -- "${td:?}"; return 2; } ;; esac
     done < <(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null)
     # G4 entries/ is append-only: deleting a fragment drops a ticket (or un-supersedes a base entry).
-    if [ -n "$(git -C "$repo" diff --name-only --diff-filter=D "$base" "$head" -- "$ENTRIES_DIR")" ]; then
+    if [ -n "$(git -C "$repo" diff --no-renames --name-only --diff-filter=D "$base" "$head" -- "$ENTRIES_DIR")" ]; then
         violations=$((violations + 1))
         printf 'FAIL  G4  a fragment under %s/ is deleted — fragments are never removed; set the ticket status instead\n' "$ENTRIES_DIR"
     fi
+    # G4b the generator reads only the top-level entries/*.yaml; anything else there is invisible to it.
+    while IFS= read -r name; do
+        if ! [[ "$name" =~ ^$ENTRIES_DIR/[^/]+\.yaml$ ]]; then
+            violations=$((violations + 1))
+            printf 'FAIL  G4  %s: only top-level %s/<ID>.yaml files are fragments — the generator ignores anything else\n' "$name" "$ENTRIES_DIR"
+        fi
+    done < <(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null)
     # G3b one fragment = one id = its filename, so two files can never carry the same ticket.
     local f ids
     for f in "$td"/entries/*.yaml; do
@@ -522,6 +529,8 @@ PY
     g_readd_aggregate() { cp "$1/$BASE_FILE" "$1/$ROADMAP_FILE"; commit_all "$1"; }
     g_edit_base() { printf -- '- id: PMAT-400\n  title: sneaked\n  status: planned\n' >>"$1/$BASE_FILE"; commit_all "$1"; }
     g_delete_fragment() { git -C "$1" rm -q "$ENTRIES_DIR/PMAT-100.yaml"; commit_all "$1"; }
+    g_rename_fragment() { git -C "$1" mv "$ENTRIES_DIR/PMAT-100.yaml" "$ENTRIES_DIR/PMAT-199.yaml"; sed -i 's/PMAT-100/PMAT-199/' "$1/$ENTRIES_DIR/PMAT-199.yaml"; commit_all "$1"; }
+    g_nested_fragment() { mkdir -p "$1/$ENTRIES_DIR/sub"; printf -- '- id: PMAT-600\n  title: hidden\n  status: planned\n' >"$1/$ENTRIES_DIR/sub/PMAT-600.yaml"; commit_all "$1"; }
     g_delete_base() { git -C "$1" rm -q "$BASE_FILE"; commit_all "$1"; }
     g_rename_base() { git -C "$1" mv "$BASE_FILE" "$1/docs/roadmaps/moved.yaml"; commit_all "$1"; }
     g_dup_fragment() { printf -- '- id: PMAT-300\n  title: dup\n  status: planned\n' | tee "$1/$ENTRIES_DIR/PMAT-300.yaml" >"$1/$ENTRIES_DIR/PMAT-301.yaml"; commit_all "$1"; }
@@ -534,6 +543,8 @@ PY
     grow 'generated: the frozen base edited -> REFUSE G2' 1 'FAIL  G2' g_edit_base
     grow 'generated: a duplicate id across fragments -> REFUSE G3' 1 'FAIL  G3' g_dup_fragment
     grow 'generated: a fragment deleted -> REFUSE G4' 1 'FAIL  G4' g_delete_fragment
+    grow 'generated: a fragment renamed with its id edited -> REFUSE G4' 1 'FAIL  G4' g_rename_fragment
+    grow 'generated: a nested fragment the generator never reads -> REFUSE G4' 1 'FAIL  G4' g_nested_fragment
     grow 'generated: the frozen base deleted -> REFUSE G2 (not the legacy judge)' 1 'FAIL  G2' g_delete_base
     grow 'generated: the frozen base renamed -> REFUSE G2' 1 'FAIL  G2' g_rename_base
 
