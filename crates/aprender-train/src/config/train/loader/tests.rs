@@ -2096,3 +2096,78 @@ fn test_tabular_shapes_name_the_offending_batch_index() {
     let err = validate_tabular_batch_shapes(&batches, 8).expect_err("batch 2 must be rejected");
     assert!(err.to_string().contains("batch 2"), "error must name the batch: {err}");
 }
+
+// ── try_load_apr (via try_load_apr_for_inference) ────────────────────────
+
+/// Write `model` as an APR file at `path` with the given extra metadata.
+fn write_tiny_apr(path: &std::path::Path, model: &Transformer, meta: &[(&str, &str)]) {
+    use aprender::serialization::apr::AprWriter;
+    let mut w = AprWriter::new();
+    for (k, v) in meta {
+        w.set_metadata(k.to_string(), serde_json::json!(v));
+    }
+    for (name, t) in model.named_parameters() {
+        let data = t.data();
+        w.add_tensor_f32(name, vec![data.len()], data.as_slice().expect("contiguous"));
+    }
+    w.write(path).expect("write apr");
+}
+
+#[test]
+fn test_try_load_apr_rejects_missing_path_and_corrupt_file() {
+    let cfg = TransformerConfig::tiny();
+    let dir = tempfile::tempdir().expect("tempdir");
+    assert!(try_load_apr_for_inference(&dir.path().join("absent.apr"), &cfg).is_none());
+    let bad = dir.path().join("bad.apr");
+    std::fs::write(&bad, b"not an apr file").expect("write");
+    assert!(try_load_apr_for_inference(&bad, &cfg).is_none());
+    // Empty directory: no checkpoint to pick.
+    assert!(try_load_apr_for_inference(dir.path(), &cfg).is_none());
+}
+
+#[test]
+fn test_try_load_apr_reads_step_from_metadata_over_filename() {
+    let cfg = TransformerConfig::tiny();
+    let model = Transformer::new(&cfg);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let p = dir.path().join("model-step-5.apr");
+    write_tiny_apr(&p, &model, &[("checkpoint_step", "42")]);
+    let (loaded, step) = try_load_apr_for_inference(&p, &cfg).expect("loads");
+    assert_eq!(step, 42, "metadata step wins over filename step");
+    assert_eq!(loaded.expect("model").named_parameters().len(), model.named_parameters().len());
+}
+
+#[test]
+fn test_try_load_apr_directory_picks_latest_step_from_filename() {
+    let cfg = TransformerConfig::tiny();
+    let model = Transformer::new(&cfg);
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_tiny_apr(&dir.path().join("model-step-3.apr"), &model, &[]);
+    write_tiny_apr(&dir.path().join("model-step-12.apr"), &model, &[]);
+    let (_, step) = try_load_apr_for_inference(dir.path(), &cfg).expect("loads");
+    assert_eq!(step, 12, "no metadata: step parsed from the newest file name");
+}
+
+#[test]
+fn test_try_load_apr_round_trips_weights_with_training_tensor_present() {
+    let cfg = TransformerConfig::tiny();
+    let model = Transformer::new(&cfg);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let p = dir.path().join("model.apr");
+    {
+        use aprender::serialization::apr::AprWriter;
+        let mut w = AprWriter::new();
+        for (name, t) in model.named_parameters() {
+            let d = t.data();
+            w.add_tensor_f32(name, vec![d.len()], d.as_slice().expect("contiguous"));
+        }
+        w.add_tensor_f32("__training__.opt_state", vec![2], &[1.0, 2.0]);
+        w.write(&p).expect("write");
+    }
+    let (loaded, step) = try_load_apr_for_inference(&p, &cfg).expect("loads");
+    assert_eq!(step, 0, "model.apr carries no step");
+    let loaded = loaded.expect("model");
+    let a = model.embed_tokens.weight.data();
+    let b = loaded.embed_tokens.weight.data();
+    assert_eq!(a.as_slice(), b.as_slice(), "embedding weights round-trip");
+}

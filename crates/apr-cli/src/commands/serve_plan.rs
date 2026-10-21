@@ -399,10 +399,10 @@ fn resolve_hf_token() -> Option<String> {
 }
 
 /// Build an authenticated ureq request if HF token is available.
-fn hf_get(url: &str) -> ureq::Request {
+fn hf_get(url: &str) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
     let req = ureq::get(url);
     if let Some(token) = resolve_hf_token() {
-        req.set("Authorization", &format!("Bearer {token}"))
+        req.header("Authorization", &format!("Bearer {token}"))
     } else {
         req
     }
@@ -412,8 +412,8 @@ fn hf_get(url: &str) -> ureq::Request {
 fn fetch_config_json_from_hf(repo_id: &str) -> Result<serde_json::Value, CliError> {
     let url = format!("https://huggingface.co/{repo_id}/raw/main/config.json");
 
-    let response = hf_get(&url).call().map_err(|e| match &e {
-        ureq::Error::Status(401 | 403, _) => {
+    let mut response = hf_get(&url).call().map_err(|e| match &e {
+        ureq::Error::StatusCode(401 | 403) => {
             let has_token = resolve_hf_token().is_some();
             if has_token {
                 CliError::NetworkError(format!(
@@ -429,7 +429,7 @@ fn fetch_config_json_from_hf(repo_id: &str) -> Result<serde_json::Value, CliErro
                 ))
             }
         }
-        ureq::Error::Status(404, _) => CliError::HttpNotFound(format!(
+        ureq::Error::StatusCode(404) => CliError::HttpNotFound(format!(
             "config.json not found for '{repo_id}'. \
              Verify the repo exists at https://huggingface.co/{repo_id}"
         )),
@@ -437,7 +437,8 @@ fn fetch_config_json_from_hf(repo_id: &str) -> Result<serde_json::Value, CliErro
     })?;
 
     let body = response
-        .into_string()
+        .body_mut()
+        .read_to_string()
         .map_err(|e| CliError::NetworkError(format!("Failed to read config.json response: {e}")))?;
 
     let sanitized = sanitize_hf_json(&body);

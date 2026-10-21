@@ -11,6 +11,7 @@ authors = ["PAIML Engineering"]
 publish = false
 
 [dependencies]
+aprender-rollup = { workspace = true }
 clap = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
@@ -26,3 +27,13 @@ aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [lints]
 workspace = true
+
+# The rollup CLI ships here, not as a bin of aprender-rollup (FALSIFY-MONO-011: the
+# [[bin]] allowlist is shrink-only, and this package is already on it).
+[[bin]]
+name = "aprender-ci-tools"
+path = "src/main.rs"
+
+[[bin]]
+name = "aprender-rollup"
+path = "src/bin/aprender-rollup.rs"
