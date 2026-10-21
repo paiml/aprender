@@ -36,12 +36,13 @@ check() { # $1 = sections.yml  $2 = ci.yml ; prints FAIL lines, returns 1 on any
   got="$(printf '%s\n' "$ml" | sed -E "s/.*&& '\[([0-9, ]*)\]' \|\|.*/\1/; s/ //g")"
   [ -z "${m:-}" ] || [ "$got" = "$(seq -s, 1 "$m")" ] || { echo "FAIL ci.yml merge_group shard list ($got) != 1..$m"; bad=1; }
   ml="$(awk '/^  workspace-test-shard:/{j=1} j&&/^        shards: /{print;exit}' "$ci")"
-  printf '%s\n' "$ml" | grep -q "|| '\[$n\]'" || { echo "FAIL ci.yml matrix shards != [$n]"; bad=1; }
-  [ -z "${m:-}" ] || printf '%s\n' "$ml" | grep -q "&& '\[$m\]'" || { echo "FAIL ci.yml merge_group shards != [$m]"; bad=1; }
+  grep -q "|| '\[$n\]'" <<<"$ml" || { echo "FAIL ci.yml matrix shards != [$n]"; bad=1; }
+  [ -z "${m:-}" ] || grep -q "&& '\[$m\]'" <<<"$ml" || { echo "FAIL ci.yml merge_group shards != [$m]"; bad=1; }
   # the inert jobs matrix in sections.yml (the pins override it, but it is still a third copy of the count)
   got="$(awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:/{w=1} w&&/^        shard: \[/{print;exit}' "$sec" | sed -E 's/.*\[(.*)\].*/\1/; s/ //g')"
   [ "$got" = "$want" ] || { echo "FAIL sections.yml jobs matrix shard list ($got) != 1..$n"; bad=1; }
-  awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:/{w=1} w&&/^        shards: \[/{print;exit}' "$sec" | grep -q "\[$n\]" || { echo "FAIL sections.yml jobs matrix shards != [$n]"; bad=1; }
+  sh_line="$(awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:/{w=1} w&&/^        shards: \[/{print;exit}' "$sec")"
+  grep -q "\[$n\]" <<<"$sh_line" || { echo "FAIL sections.yml jobs matrix shards != [$n]"; bad=1; }
   # any digit typed after $SHARD / ${SHARD} (hash:${SHARD}/3, "$SHARD/3", "$SHARD" 3) is a literal count; the [ "$SHARD" = 1 ] designations are not
   if grep -nE '\$\{?SHARD\}?"?[/ ] *"?[0-9]+' "$sec"; then echo "FAIL literal shard count in $sec"; bad=1; fi
   lit_loop="n in 1 2 3"
