@@ -93,6 +93,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PY_LIB="$REPO_ROOT/scripts/lib/roadmap_fragments.py"
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
 ENTRIES_DIR="docs/roadmaps/entries"
+BASE_FILE="docs/roadmaps/roadmap-base.yaml"
 
 # shellcheck source=scripts/lib/resolve_base.sh
 . "$REPO_ROOT/scripts/lib/resolve_base.sh" || exit 1
@@ -129,6 +130,99 @@ remedy() {
 }
 
 # ---------------------------------------------------------------------------
+# GENERATED mode: roadmap.yaml is not committed at all. It is built on demand
+# by `make roadmap-aggregate` from the frozen $BASE_FILE plus entries/, so two
+# PRs can never contend on it and it cannot go stale after a main merge.
+# Active once head carries $BASE_FILE. Three rules over base..head:
+#   G1 $ROADMAP_FILE is not tracked at head (a re-added aggregate is refused).
+#   G2 $BASE_FILE is frozen: unchanged from base. The migration PR (base has no
+#      $BASE_FILE) is allowed only if it is byte-equal to base's roadmap.yaml.
+#   G3 base + entries/ aggregates idempotently, with no duplicate ids.
+# ---------------------------------------------------------------------------
+judge_generated() {
+    local repo=$1 base=$2 head=$3 td violations=0 name out rc
+    td=$(mktemp -d "${TMPDIR:-/tmp}/rmfraggen.XXXXXX") || return 2
+    printf '=== %s (generated aggregate): base=%s head=%s ===\n' "$PROG" "$base" "$head"
+    if git -C "$repo" cat-file -e "$head:$ROADMAP_FILE" 2>/dev/null; then
+        violations=$((violations + 1))
+        printf 'FAIL  G1  %s is tracked at head — it is GENERATED (make roadmap-aggregate), never committed\n' "$ROADMAP_FILE"
+    fi
+    if git -C "$repo" cat-file -e "$base:$BASE_FILE" 2>/dev/null; then
+        if [ -n "$(git -C "$repo" diff --name-only "$base" "$head" -- "$BASE_FILE")" ]; then
+            violations=$((violations + 1))
+            printf 'FAIL  G2  %s changed — the base is frozen; change a ticket through docs/roadmaps/entries/<ID>.yaml (a fragment supersedes the base entry)\n' "$BASE_FILE"
+        fi
+    elif ! git -C "$repo" show "$base:$ROADMAP_FILE" 2>/dev/null | cmp -s - <(git -C "$repo" show "$head:$BASE_FILE"); then
+        violations=$((violations + 1))
+        printf 'FAIL  G2  migration: %s is not byte-equal to base'"'"'s %s\n' "$BASE_FILE" "$ROADMAP_FILE"
+    fi
+    mkdir -p "$td/entries"
+    while IFS= read -r name; do
+        case "$name" in *.yaml) git -C "$repo" show "$head:$name" >"$td/entries/${name##*/}" || { rm -rf -- "${td:?}"; return 2; } ;; esac
+    done < <(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null)
+    # G4 entries/ is append-only: deleting a fragment drops a ticket (or un-supersedes a base entry).
+    if [ -n "$(git -C "$repo" diff --no-renames --name-only --diff-filter=D "$base" "$head" -- "$ENTRIES_DIR")" ]; then
+        violations=$((violations + 1))
+        printf 'FAIL  G4  a fragment under %s/ is deleted — fragments are never removed; set the ticket status instead\n' "$ENTRIES_DIR"
+    fi
+    # G4b the generator reads only the top-level entries/*.yaml; anything else there is invisible to it.
+    while IFS= read -r name; do
+        if ! [[ "$name" =~ ^$ENTRIES_DIR/[^/]+\.yaml$ ]]; then
+            violations=$((violations + 1))
+            printf 'FAIL  G4  %s: only top-level %s/<ID>.yaml files are fragments — the generator ignores anything else\n' "$name" "$ENTRIES_DIR"
+        fi
+    done < <(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null)
+    # G3b one fragment = one YAML list holding ONE mapping whose id is its filename (loaded, not grepped,
+    # so a second entry cannot hide behind an indented or quoted line).
+    local f ids
+    for f in "$td"/entries/*.yaml; do
+        [ -e "$f" ] || continue
+        ids=$(python3 -c 'import sys,yaml
+d=yaml.safe_load(open(sys.argv[1]))
+print(" ".join(str(e.get("id")) if isinstance(e,dict) else "?" for e in d) if isinstance(d,list) else "?")' "$f" 2>/dev/null) || ids="(unparseable)"
+        if [ "$ids" != "$(basename "$f" .yaml)" ]; then
+            violations=$((violations + 1))
+            printf 'FAIL  G3  %s/%s must hold exactly one entry whose id is its filename (found: %s)\n' "$ENTRIES_DIR" "$(basename "$f")" "$ids"
+        fi
+    done
+    # G5 every fragment added or changed carries a `Pmat-Ticket: <ID>` trailer on a commit of base..head
+    # (sov.roadmap-fragment-parity demands it once the aggregate is untracked; fail here with the remedy, not there).
+    # Judged exactly as sov does: git's own trailer parser (LAST paragraph only), same command. A merge_group
+    # commit is the queue's squash of the PR, whose message the queue composes, so G5 is a PR-time check only.
+    local trailers
+    trailers=$(git -C "$repo" log --format='%(trailers:key=Pmat-Ticket,valueonly)' "$base..$head" 2>/dev/null | tr -d ' ' | grep -v '^$' | sort -u || true)
+    while IFS= read -r name; do
+        [ "${GITHUB_EVENT_NAME:-}" = merge_group ] && break
+        [[ "$name" =~ ^$ENTRIES_DIR/([^/]+)\.yaml$ ]] || continue
+        if ! printf '%s\n' "$trailers" | grep -qFx -- "${BASH_REMATCH[1]}"; then
+            violations=$((violations + 1))
+            printf 'FAIL  G5  %s changes with no `Pmat-Ticket: %s` trailer in the LAST paragraph of a commit in the range (git trailers, as sov reads them) — e.g. git commit --allow-empty -m "chore: ticket trailer" -m "Pmat-Ticket: %s"\n' "$name" "${BASH_REMATCH[1]}" "${BASH_REMATCH[1]}"
+        fi
+    done < <(git -C "$repo" diff --no-renames --name-only --diff-filter=AM "$base" "$head" -- "$ENTRIES_DIR")
+    if ! git -C "$repo" show "$head:$BASE_FILE" >"$td/base.yaml" 2>/dev/null; then
+        rm -rf -- "${td:?}"
+        printf 'FAIL  G2  %s is missing at head — the frozen base cannot be deleted or renamed\n' "$BASE_FILE"
+        printf '%s: %s violation(s)\n' "$PROG" "$((violations + 1))"
+        return 1
+    fi
+    out=$(python3 "$PY_LIB" aggregate --check --base-file "$td/base.yaml" --roadmap "$td/absent.yaml" --entries "$td/entries" 2>&1)
+    rc=$?
+    rm -rf -- "${td:?}"
+    if [ "$rc" = 0 ]; then
+        printf 'ok    G3  base + entries/ aggregates idempotently\n'
+    else
+        violations=$((violations + 1))
+        printf 'FAIL  G3  base + entries/ does not aggregate cleanly:\n%s\n' "$out"
+    fi
+    if [ "$violations" != 0 ]; then
+        printf '%s: %s violation(s)\n' "$PROG" "$violations"
+        return 1
+    fi
+    printf 'PASS  %s: generated aggregate untracked, base frozen, fragments aggregate\n' "$PROG"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # judge <repo> <base-ref> <head-ref> -> 0 clean · 1 violation · 2 cannot judge
 # ---------------------------------------------------------------------------
 judge() {
@@ -144,6 +238,12 @@ judge() {
         printf 'ENV   %s: head ref %s is not a commit here — refusing to judge (never a pass)\n' "$PROG" "$head" >&2
         return 2
     }
+
+    if git -C "$repo" cat-file -e "$head:$BASE_FILE" 2>/dev/null \
+        || git -C "$repo" cat-file -e "$base:$BASE_FILE" 2>/dev/null; then
+        judge_generated "$repo" "$base" "$head"
+        return $?
+    fi
 
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq.XXXXXX") || return 2
 
@@ -309,7 +409,7 @@ self_test() {
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     }
 
-    commit_all() { git -C "$1" add -A && git -C "$1" commit -qm head; }
+    commit_all() { git -C "$1" add -A && git -C "$1" commit -qm head ${2:+-m "$2"}; }
 
     # ---- builders -------------------------------------------------------
     # THE MEASURED SHAPE: `pmat work add` appends an entry to the monolith and
@@ -424,6 +524,54 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_wrong_fragment
     row 'supersession through the fragment, regenerated -> PASS' \
         0 'ok    CHANGED  PMAT-100 — docs/roadmaps/entries/PMAT-100.yaml changes in the same diff' b_supersede
+
+    # ---- GENERATED mode (roadmap.yaml untracked, roadmap-base.yaml frozen) ----
+    grow() { # LABEL WANT PATTERN BUILDER -- fixture: migrated tree, then BUILDER commits a change
+        local label=$1 want=$2 pat=$3 builder=$4 d out rc
+        n=$((n + 1)); d="$td/g$n"
+        mkdir -p "$d/$ENTRIES_DIR" && git -C "$d" init -q --template="$TEMPLATE" \
+            && git -C "$d" config user.email t@e.com && git -C "$d" config user.name t \
+            && printf '%s' "$BASE_ROADMAP" >"$d/$BASE_FILE" \
+            && printf -- '- id: PMAT-100\n  title: first\n  status: planned\n' >"$d/$ENTRIES_DIR/PMAT-100.yaml" \
+            && git -C "$d" add -A && git -C "$d" commit -qm base && "$builder" "$d" \
+            || { printf 'FAIL  row %-2s %s: fixture/builder failed\n' "$n" "$label"; red=$((red + 1)); return; }
+        out=$(judge "$d" HEAD~1 HEAD 2>&1); rc=$?
+        if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out"; then
+            printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
+            printf '%s\n' "$out" | sed 's/^/        /'; red=$((red + 1)); return
+        fi
+        printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
+    }
+    g_fragment_only() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-200"; }
+    g_fragment_no_trailer() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    g_trailer_mid() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; git -C "$1" add -A && git -C "$1" commit -qm head -m "Pmat-Ticket: PMAT-200" -m "Co-Authored-By: T <t@e.com>"; }
+    g_trailer_wrong() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-999"; }
+    g_two_entries() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n- id: PMAT-201\n  title: smuggled\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-200"; }
+    g_readd_aggregate() { cp "$1/$BASE_FILE" "$1/$ROADMAP_FILE"; commit_all "$1"; }
+    g_edit_base() { printf -- '- id: PMAT-400\n  title: sneaked\n  status: planned\n' >>"$1/$BASE_FILE"; commit_all "$1"; }
+    g_delete_fragment() { git -C "$1" rm -q "$ENTRIES_DIR/PMAT-100.yaml"; commit_all "$1"; }
+    g_rename_fragment() { git -C "$1" mv "$ENTRIES_DIR/PMAT-100.yaml" "$ENTRIES_DIR/PMAT-199.yaml"; sed -i 's/PMAT-100/PMAT-199/' "$1/$ENTRIES_DIR/PMAT-199.yaml"; commit_all "$1"; }
+    g_nested_fragment() { mkdir -p "$1/$ENTRIES_DIR/sub"; printf -- '- id: PMAT-600\n  title: hidden\n  status: planned\n' >"$1/$ENTRIES_DIR/sub/PMAT-600.yaml"; commit_all "$1"; }
+    g_delete_base() { git -C "$1" rm -q "$BASE_FILE"; commit_all "$1"; }
+    g_rename_base() { git -C "$1" mv "$BASE_FILE" "$1/docs/roadmaps/moved.yaml"; commit_all "$1"; }
+    g_dup_fragment() { printf -- '- id: PMAT-300\n  title: dup\n  status: planned\n' | tee "$1/$ENTRIES_DIR/PMAT-300.yaml" >"$1/$ENTRIES_DIR/PMAT-301.yaml"; commit_all "$1"; }
+    m_migrate() { git -C "$1" mv "$ROADMAP_FILE" "$BASE_FILE"; commit_all "$1"; }
+    m_migrate_edit() { git -C "$1" mv "$ROADMAP_FILE" "$BASE_FILE"; printf -- '- id: PMAT-500\n  title: x\n  status: planned\n' >>"$1/$BASE_FILE"; commit_all "$1"; }
+    row 'migration: roadmap.yaml renamed byte-identically to the base -> PASS' 0 'PASS  check_roadmap_fragment_required.sh: generated aggregate' m_migrate
+    row 'migration: the renamed base is not byte-equal -> REFUSE G2' 1 'FAIL  G2' m_migrate_edit
+    grow 'generated: a fragment alone (no aggregate to regenerate) -> PASS' 0 'PASS  check_roadmap_fragment_required.sh: generated aggregate' g_fragment_only
+    grow 'generated: roadmap.yaml re-added and tracked -> REFUSE G1' 1 'FAIL  G1' g_readd_aggregate
+    grow 'generated: the frozen base edited -> REFUSE G2' 1 'FAIL  G2' g_edit_base
+    grow 'generated: a duplicate id across fragments -> REFUSE G3' 1 'FAIL  G3' g_dup_fragment
+    grow 'generated: a fragment with no Pmat-Ticket trailer -> REFUSE G5' 1 'FAIL  G5' g_fragment_no_trailer
+    grow 'generated: trailer present but NOT in the last paragraph -> REFUSE G5' 1 'FAIL  G5' g_trailer_mid
+    grow 'generated: trailer names another ticket -> REFUSE G5' 1 'FAIL  G5' g_trailer_wrong
+    grow 'generated: a second entry inside one fragment -> REFUSE G3' 1 'FAIL  G3' g_two_entries
+    grow 'generated: a fragment deleted -> REFUSE G4' 1 'FAIL  G4' g_delete_fragment
+    grow 'generated: a fragment renamed with its id edited -> REFUSE G4' 1 'FAIL  G4' g_rename_fragment
+    grow 'generated: a nested fragment the generator never reads -> REFUSE G4' 1 'FAIL  G4' g_nested_fragment
+    grow 'generated: the frozen base deleted -> REFUSE G2 (not the legacy judge)' 1 'FAIL  G2' g_delete_base
+    grow 'generated: the frozen base renamed -> REFUSE G2' 1 'FAIL  G2' g_rename_base
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))

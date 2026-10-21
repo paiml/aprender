@@ -1,0 +1,22 @@
+- id: PMAT-5897
+  github_issue: 5897
+  item_type: task
+  title: 'roadmap.yaml aggregate goes stale vs entries/: freeze roadmap-base.yaml, generate roadmap.yaml, do not commit it'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5018
+  created: 2026-10-21T21:30:00Z
+  updated: 2026-10-21T21:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'docs/roadmaps/roadmap.yaml is gitignored and produced by make roadmap-aggregate from roadmap-base.yaml plus entries/'
+  - 'check_roadmap_fragment_required.sh judges generated mode (G1 no re-added aggregate, G2 no base edit, G3 fragment-only change) and its self-test stays green'
+  - 'x86-main generates the aggregate before any section, so sov.roadmap-valid never reports NOT-RUN'
+  - 'readers of roadmap.yaml that cannot work on an untracked file are listed as follow-up tickets (pmat work add/complete shim, session_docs_commit.sh)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
