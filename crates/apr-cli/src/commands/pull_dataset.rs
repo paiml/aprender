@@ -118,6 +118,38 @@ fn default_dataset_cache_dir(repo: &str) -> Result<PathBuf> {
     Ok(base.join("aprender").join("datasets").join(repo))
 }
 
+/// One page of the dataset tree listing: the `Link` header and the JSON body.
+fn fetch_listing_page(url: &str, repo: &str, revision: &str) -> Result<(Option<String>, String)> {
+    let mut response = hf_get(url)?.call().map_err(|e| match &e {
+        ureq::Error::StatusCode(404) => CliError::HttpNotFound(format!(
+            "Dataset {repo} not found at revision {revision}"
+        )),
+        ureq::Error::StatusCode(401) => CliError::NetworkError(format_gated_model_error(url)),
+        _ => CliError::NetworkError(format!("Dataset listing failed: {e}")),
+    })?;
+    let link_header = response
+        .headers()
+        .get("Link")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let body = response
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| CliError::NetworkError(format!("Read body: {e}")))?;
+    Ok((link_header, body))
+}
+
+/// Push the `path` of every `type == "file"` entry of a tree-listing page.
+fn collect_file_paths(page: &serde_json::Value, paths: &mut Vec<String>) {
+    let items = page.as_array().map(Vec::as_slice).unwrap_or_default();
+    for it in items {
+        let is_file = it.get("type").and_then(|x| x.as_str()) == Some("file");
+        if let (true, Some(p)) = (is_file, it.get("path").and_then(|x| x.as_str())) {
+            paths.push(p.to_string());
+        }
+    }
+}
+
 /// HF API: list all files in a dataset repo, following pagination.
 ///
 /// Issue #1410 / FALSIFY-PULL-DATASET-010: HF's `tree?recursive=1` endpoint
@@ -131,32 +163,12 @@ fn list_dataset_repo_files(repo: &str, revision: &str) -> Result<Vec<String>> {
     let initial_url =
         format!("https://huggingface.co/api/datasets/{repo}/tree/{revision}?recursive=1");
     let mut paths = Vec::new();
-    let mut next_url: Option<String> = Some(initial_url.clone());
+    let mut next_url: Option<String> = Some(initial_url);
     while let Some(url) = next_url.take() {
-        let response = hf_get(&url)?.call().map_err(|e| match &e {
-            ureq::Error::Status(404, _) => CliError::HttpNotFound(format!(
-                "Dataset {repo} not found at revision {revision}"
-            )),
-            ureq::Error::Status(401, _) => CliError::NetworkError(format_gated_model_error(&url)),
-            _ => CliError::NetworkError(format!("Dataset listing failed: {e}")),
-        })?;
-        let link_header = response.header("Link").map(str::to_string);
-        let body = response
-            .into_string()
-            .map_err(|e| CliError::NetworkError(format!("Read body: {e}")))?;
+        let (link_header, body) = fetch_listing_page(&url, repo, revision)?;
         let v: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| CliError::ValidationFailed(format!("HF API JSON parse: {e}")))?;
-        if let Some(items) = v.as_array() {
-            for it in items {
-                if let Some(t) = it.get("type").and_then(|x| x.as_str()) {
-                    if t == "file" {
-                        if let Some(p) = it.get("path").and_then(|x| x.as_str()) {
-                            paths.push(p.to_string());
-                        }
-                    }
-                }
-            }
-        }
+        collect_file_paths(&v, &mut paths);
         next_url = link_header.and_then(|h| parse_link_next_url(&h));
     }
     Ok(paths)
