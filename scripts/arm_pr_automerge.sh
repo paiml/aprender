@@ -42,7 +42,7 @@
 # Exit codes
 #   0  armed (or --dry-run would arm)
 #   2  ENV: bad usage, gh missing, the pull request or its checks unreadable
-#   3  REFUSED: guard-tree is not green on the current head
+#   3  REFUSED: guard-tree is not green on the current head, or the base is not main
 set -uo pipefail
 
 REPO_DEFAULT="paiml/aprender"
@@ -130,6 +130,14 @@ refusal_line() {
     local sha="${1:-}" verdict="${2:-}" state
     state="$( printf '%s' "$verdict" | cut -d' ' -f2 )"
     printf 'refuse: %s is %s on %s\n' "$GUARD_CHECK_NAME" "$state" "$sha"
+}
+
+# base_verdict BASE -> "ARM" only for main. A PR into any other branch (a stacked PR) merges the
+# instant it is armed -- no queue, no CI -- and lands in the other PR's branch (#5823 into #5815's
+# at 02:37Z, 2026-10-21). An unreadable base is a refusal too: not known to be main is not main.
+base_verdict() {
+    if [ "${1:-}" = main ]; then printf 'ARM base is main\n'
+    else printf 'REFUSE base %s: arming is for PRs into main only\n' "'${1:-<unreadable>}'"; fi
 }
 
 # fetch_check_runs REPO SHA OUTFILE -> 0 on success. The endpoint is keyed on the
@@ -226,6 +234,11 @@ self_test() {
     _eq 'A11 the refusal line names the state AND the sha' \
         "refuse: guard-tree is failure on $sha_new" \
         "$( refusal_line "$sha_new" "$( guard_tree_verdict "$sha_new" "$td/failure.json" )" )"
+    _eq 'A13 base main -> arm (positive control)' 'ARM' "$( base_verdict main | cut -d' ' -f1 )"
+    _eq 'A14 a stacked PR (base is another PR branch) -> refuse' \
+        'REFUSE' "$( base_verdict batch-cand/affected-set-noread | cut -d' ' -f1 )"
+    _eq 'A15 an unreadable base -> refuse' 'REFUSE' "$( base_verdict '' | cut -d' ' -f1 )"
+    _eq 'A16 a base that only starts with main is not main' 'REFUSE' "$( base_verdict main-2 | cut -d' ' -f1 )"
     # A12: the fetch normalises `--paginate -q` NDJSON back into one document. The
     # predicate is fed that shape and nothing else, so the shape is a row.
     printf '%s\n' '{"name":"guard-tree","status":"completed","conclusion":"success","head_sha":"'"$sha_new"'","completed_at":"2026-09-16T14:40:00Z"}' > "$td/pages.ndjson"
@@ -240,7 +253,7 @@ self_test() {
 }
 
 arm() {
-    local repo="$1" pr="$2" dry="$3" tmp sha verdict out rc
+    local repo="$1" pr="$2" dry="$3" tmp sha base verdict out rc
     command -v gh > /dev/null 2>&1 || { printf 'ENV: gh is not on PATH\n' >&2; return 2; }
     command -v jq > /dev/null 2>&1 || { printf 'ENV: jq is not on PATH\n' >&2; return 2; }
     tmp="$(mktemp -d)" || return 2
@@ -252,6 +265,11 @@ arm() {
         printf 'ENV: could not read the current head of %s#%s\n' "$repo" "$pr" >&2
         return 2
     fi
+    base=$(gh pr view "$pr" --repo "$repo" --json baseRefName -q '.baseRefName' 2>/dev/null) || base=""
+    verdict="$( base_verdict "$base" )"
+    case "$verdict" in
+        REFUSE*) printf 'refuse: %s#%s %s\n' "$repo" "$pr" "${verdict#REFUSE }"; return 3 ;;
+    esac
     if ! fetch_check_runs "$repo" "$sha" "$tmp/checks.json"; then
         printf 'ENV: could not read the check runs for %s\n' "$sha" >&2
         return 2
