@@ -31,7 +31,11 @@ side() { # JSON RC -> echoes keys; returns CANT when the side cannot be trusted
     parses "$f" || { echo "COULD-NOT-CHECK: $f is not NDJSON" >&2; return "$CANT"; }
     k=$(keys "$f")
     local e; e=$(jq -R -r 'fromjson? | .fields? | select(.severity == "error") | .code' "$f" | head -c1)
-    if [ "$rc" -eq 1 ] && [ -z "$e" ]; then echo "COULD-NOT-CHECK: rc=1 but no findings parsed" >&2; return "$CANT"; fi
+    if [ "$rc" -eq 1 ] && [ -z "$e" ]; then
+        echo "COULD-NOT-CHECK: rc=1 but no findings parsed; cargo-deny stderr (first 20 lines of $f):" >&2
+        head -n 20 "$f" | cut -c1-300 >&2
+        return "$CANT"
+    fi
     if [ "$rc" -eq 0 ] && [ -n "$e" ]; then echo "COULD-NOT-CHECK: rc=0 but error findings parsed" >&2; return "$CANT"; fi
     printf '%s\n' "$k"
 }
