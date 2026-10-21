@@ -151,7 +151,8 @@ jobs:
       - name: The fat wait is cancel-aware and the teardown still runs on cancel
         run: |
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
-          setsid --wait bash scripts/check_ci_wait_cancel.sh
+          # 4 teardowns: x86-main, determinism, ARM64 determinism, workspace-test-archive
+          CI_TEARDOWN_STEPS=4 setsid --wait bash scripts/check_ci_wait_cancel.sh
 
   x86-main:
     needs: [mg-reuse]
@@ -439,7 +440,47 @@ jobs:
   # The workspace tests, one shard per job (nextest hash partition N/12 plus the
   # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  # FLOW-010 P1 (amendment 3 item 7): build the quick-tier tree-reader set ONCE
+  # and hand the nextest archive to the shards. It is a `needs` of every shard, so a
+  # red or skipped archive job skips the shards and `workspace-test` goes red: part of
+  # the gate, no second path. In a non-quick tier it uploads only a bind.json saying so.
+  workspace-test-archive:
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    timeout-minutes: 90
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: archive_list_equal case table must still turn RED
+        run: setsid --wait bash scripts/ci/archive_list_equal.sh --self-test
+      - name: archive_bind_check case table must still turn RED
+        run: setsid --wait bash scripts/ci/archive_bind_check.sh --self-test
+      - name: Sections
+        id: run
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'workspace-test-archive'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - name: Remove this job's section containers (runs on cancel too)
+        if: always()
+        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: ws-archive
+          path: ${{ runner.temp }}/fat/artifacts/ws-archive/
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0
+      - name: Free this job's own cargo target dir
+        if: always()
+        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}-arc" "$GITHUB_RUN_ID"; fi
+
   workspace-test-shard:
+    needs: [workspace-test-archive]
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
