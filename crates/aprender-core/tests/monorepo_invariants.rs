@@ -1143,7 +1143,7 @@ mod archive_wiring {
         r#"rustc_h="$(bash scripts/ci/archive_bind_check.sh --hash-toolchain "$rustc_vv")""#;
     const BIND_CALL: &str = r#"bash scripts/ci/archive_bind_check.sh --toolchain "$rustc_vv" "$arc/bind.json" sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS""#;
 
-    const SMOKE_CALL: &str = r#"docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace -e BINS="$(tr '\n' ' ' < "$out/bins.txt")" "$IMAGE" bash -c 'set -euo pipefail"#;
+    const SMOKE_CALL: &str = r#"docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace "$IMAGE" bash -c 'set -euo pipefail"#;
     const SMOKE_END: &str = r#"echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'"#;
     const QUICK_IF: &str = "steps.tier.outputs.tier == 'quick'";
 
@@ -1313,7 +1313,7 @@ mod archive_wiring {
     }
 
     fn smoke_counts_from_zero(l: &str) -> bool {
-        l.starts_with("n=0; for b in $BINS; do test -x \"$b\" || { echo ")
+        l.starts_with("n=0; for b in $(find /workspace/target/debug -maxdepth 1 -type f -perm -u+x); do test -x \"$b\" || { echo ")
             && l.ends_with("; exit 1; }; n=$((n+1)); done")
     }
 

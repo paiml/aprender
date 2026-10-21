@@ -27,14 +27,13 @@ t_list=$((SECONDS - t0))
 bash scripts/ci/archive_list_equal.sh "$out/live.json" "$out/arc.json"
 smoke="$GITHUB_WORKSPACE/ws-smoke-target"
 rm -rf "${smoke:?}"; mkdir -p "$smoke"
-tar --zstd -tf "$out/ws.tar.zst" | grep -E '^target/debug/[^/]+$' | sed 's#^target/#/workspace/target/#' > "$out/bins.txt" || true
-docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace -e BINS="$(tr '\n' ' ' < "$out/bins.txt")" "$IMAGE" bash -c 'set -euo pipefail
+docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace "$IMAGE" bash -c 'set -euo pipefail
 cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite --message-format json > /dev/null
-n=0; for b in $BINS; do test -x "$b" || { echo "::error::archived binary $b not executable at its build path"; exit 1; }; n=$((n+1)); done
+n=0; for b in $(find /workspace/target/debug -maxdepth 1 -type f -perm -u+x); do test -x "$b" || { echo "::error::archived binary $b not executable at its build path"; exit 1; }; n=$((n+1)); done
 [ "$n" -gt 0 ] || { echo "::error::smoke checked 0 binaries -- the archive lists none under target/debug"; exit 1; }
 if [ -x /workspace/target/debug/apr ]; then /workspace/target/debug/apr --version; fi
 echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'
-rm -rf "${smoke:?}" "${out:?}/bins.txt"
+rm -rf "${smoke:?}"
 printf 'FLOW-010 P1 timing: archive_build_s=%s list_s=%s archive_mb=%s\n' "$t_build" "$t_list" "$(( $(stat -c %s "$out/ws.tar.zst") / 1048576 ))"
 rm -f "${out:?}/live.json" "${out:?}/arc.json"
 rustc_vv="$(docker run --rm "$IMAGE" rustc -vV)"
