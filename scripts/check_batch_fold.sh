@@ -165,8 +165,8 @@ if [ "${1:-}" = "--self-test" ]; then
         else printf 'ok    mutant RED: %-58s (%s)\n' "$1" "$(grep -m1 '^FAIL  row' "$m/out" | cut -c7-90)"; fi
     }
     mutant "README treated as wholly generated (the draft's rule)"  's#^GENERATED_WHOLE="#GENERATED_WHOLE="README.md #'
-    mutant "every conflict taken, as if generated"                   's#^        if is_generated_whole "\$f"; then$#        if true; then#'
-    mutant "a clean fold never marks the set stale"                  's#^        \[ -z "\$gen" \] \|\| STALE=1$#        :#'
+    mutant "every conflict taken, as if generated"                   's#^            if is_generated_whole "\$f"; then$#            if true; then#'
+    mutant "a clean fold never marks the set stale"                  's#^    \[ -z "\$gen" \] \|\| STALE=1$#    :#'
     mutant "a failed fixed-point check ignored"                      's#^(    "\$PV" extract contracts --check >/dev/null 2>&1 +)\|\| die .*$#\1|| true#'
     mutant "per-branch merge --no-ff instead of squash"              's#git merge --squash "\$br"#git merge --no-ff --no-edit "$br"#'
     mutant "no 7-branch cap"                                         's#-le 7 #-le 700 #'
