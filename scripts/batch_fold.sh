@@ -100,7 +100,7 @@ fold_one() { # BRANCH[:N[:TITLE]] -> one verdict line; 0 folded, 1 skipped, 2 gi
     before=$(git rev-parse HEAD) || return 2
     git rev-parse -q --verify "$br^{commit}" >/dev/null 2>&1 \
         || { printf 'ERROR %s: no such branch\n' "$br"; return 2; }
-    [ -n "$title" ] || title=$(git log -1 --format=%s "$br")
+    [ -n "$title" ] || title=$(git log -1 --no-merges --format=%s "$br")
     if [ -n "$num" ]; then case "$title" in *"(#$num)") ;; *) title="$title (#$num)" ;; esac; fi
     author=$(git log -1 --format='%an <%ae>' "$br")
     if ! git merge --squash "$br" >/dev/null 2>&1; then
