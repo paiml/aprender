@@ -31,7 +31,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 5.5.0
+  version: 5.6.0
   created: '2026-04-18'
   last_modified: '2026-05-07'
   author: PAIML Engineering
@@ -596,6 +596,16 @@ falsification_conditions:
       - agent::code::tests::falsify_3775_tool_error_writes_one_json_document
       - agent::code::tests::falsify_3775_empty_completion_is_a_failure_document
       - agent::code_envelope::tests::every_agent_error_variant_has_a_snake_case_kind
+  - id: FALSIFY-CODE-PARITY-007
+    name: Slash commands mutate or preserve history exactly (#5540)
+    status: ACTIVE
+    description: >
+      `handle_slash_command` leaves history untouched for read-only commands,
+      /clear empties it, /compact strips only old tool messages, and /context
+      counts tool messages; the near-limit and zero-budget cost branches do not
+      panic.
+    test: >
+      cargo test -p aprender-orchestrate --lib handle_slash
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Priority buckets (flattened from category rows for quick CI grep)

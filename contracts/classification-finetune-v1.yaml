@@ -146,6 +146,12 @@ falsification_tests:
   prediction: 'pass + warn + fail equals the number of pre-flight checks, so none is counted twice or dropped'
   test: 'aprender-train finetune::training_plan::tests::check_counts_partitions_every_preflight_check'
   if_fails: 'A status bucket was dropped or a filter loosened; the displayed summary and the verdict would then disagree about the same checks. MUTANT: fail = 0 turns 2 rows RED.'
+- id: FALSIFY-CLASS-010
+  rule: Evaluation restores the checkpoint's weights
+  prediction: 'evaluate_checkpoint on an adapter checkpoint evaluates with the classifier head stored in model.safetensors, so a bias of +50 on class k puts every sample in confusion-matrix column k'
+  test: 'aprender-train finetune::classify_trainer::tests::test_evaluate_checkpoint_uses_restored_weights'
+  if_fails: 'The report would describe a randomly initialised model, not the trained checkpoint, and look plausible. MUTANT: skip restore_checkpoint_weights turns 2 rows RED.'
+
 kani_harnesses:
 - id: KANI-FT-001
   obligation: FT-INV-001
@@ -204,5 +210,5 @@ qa_gate:
   - softmax_sum_invariant
   - nan_inf_rejection
   - config_factory_contract_sync
-  pass_criteria: All 9 falsification tests pass
+  pass_criteria: All 10 falsification tests pass
   falsification: Bypass ValidatedClassLogits::new() with unsafe or wrong constructor
