@@ -246,6 +246,34 @@ self_test() {
     _eq 'A12 the paginated NDJSON, slurped, is the document the predicate reads' \
         'ARM' "$( guard_tree_verdict "$sha_new" "$td/slurped.json" | head -1 | cut -d' ' -f1 )"
 
+    # A17-A19: arm() itself, with a stub gh first on PATH. base_verdict alone cannot show that
+    # arm() CALLS it; these rows drive the real call site and count the merges the stub saw.
+    mkdir -p "$td/bin"
+    cat > "$td/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$STUB_LOG"
+case "$1 $2" in
+    "pr view") case "$*" in
+                   *baseRefName*) [ -n "${STUB_BASE-x}" ] && printf '%s\n' "$STUB_BASE" ;;
+                   *) printf '%s\n' "$STUB_SHA" ;;
+               esac ;;
+    "api repos/"*) printf '{"name":"guard-tree","status":"completed","conclusion":"success","head_sha":"%s","completed_at":"2026-10-21T02:00:00Z"}\n' "$STUB_SHA" ;;
+    "pr "*) echo ARMCALL >> "$STUB_LOG"; echo merged ;;   # any pr verb but view is the arming call
+esac
+STUB
+    chmod +x "$td/bin/gh"
+    _arm_run() { # _arm_run BASE -> "rc=N merges=M"
+        local rc
+        : > "$td/gh.log"
+        PATH="$td/bin:$PATH" STUB_LOG="$td/gh.log" STUB_SHA="$sha_new" STUB_BASE="$1" \
+            arm paiml/aprender 1 0 > /dev/null 2>&1
+        rc=$?
+        printf 'rc=%s merges=%s' "$rc" "$( grep -c '^ARMCALL$' "$td/gh.log" )"
+    }
+    _eq 'A17 arm(): base main, guard-tree green -> armed (1 merge)' 'rc=0 merges=1' "$( _arm_run main )"
+    _eq 'A18 arm(): stacked base -> rc 3, 0 merges' 'rc=3 merges=0' "$( _arm_run batch-cand/affected-set-noread )"
+    _eq 'A19 arm(): unreadable base -> rc 3, 0 merges' 'rc=3 merges=0' "$( _arm_run '' )"
+
     rm -rf "${td:?}"
     printf '\n%s row(s), %s\n' "$rows" \
         "$( [ "$fails" -eq 0 ] && echo '0 red / FALSIFIER GREEN' || echo 'RED' )"
@@ -257,7 +285,7 @@ arm() {
     command -v gh > /dev/null 2>&1 || { printf 'ENV: gh is not on PATH\n' >&2; return 2; }
     command -v jq > /dev/null 2>&1 || { printf 'ENV: jq is not on PATH\n' >&2; return 2; }
     tmp="$(mktemp -d)" || return 2
-    trap 'rm -rf "${tmp:?}"' RETURN
+    trap 'rm -rf "${tmp:?}"; trap - RETURN' RETURN
 
     # THE HEAD SHA IS READ FIRST, AND EVERYTHING AFTER IT IS ABOUT THAT SHA.
     sha=$(gh pr view "$pr" --repo "$repo" --json headRefOid -q '.headRefOid' 2>/dev/null) || sha=""
