@@ -1155,15 +1155,6 @@ mod archive_wiring {
         .expect("workflow YAML must parse")
     }
 
-    fn find_key<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
-        match v {
-            Value::Object(m) => m
-                .get(key)
-                .or_else(|| m.values().find_map(|c| find_key(c, key))),
-            _ => None,
-        }
-    }
-
     fn steps<'a>(job: &'a Value) -> Vec<&'a Value> {
         job["steps"]
             .as_array()
@@ -1392,8 +1383,8 @@ mod archive_wiring {
     pub fn violations(sections: &str, ci: &str, bless: bool) -> Vec<String> {
         let (s, c) = (parse(sections), parse(ci));
         let (Some(arc), Some(shard)) = (
-            find_key(&s["jobs"], "workspace-test-archive"),
-            find_key(&s["jobs"], "workspace-test-shard"),
+            s["jobs"].get("workspace-test-archive"),
+            s["jobs"].get("workspace-test-shard"),
         ) else {
             return vec![
                 "sections.yml lacks workspace-test-archive or workspace-test-shard".into(),
@@ -1405,7 +1396,9 @@ mod archive_wiring {
         check_uploads("sections.yml", arc, &mut bad);
         check_uploads(
             "ci.yml",
-            find_key(&c["jobs"], "workspace-test-archive").unwrap_or(&Value::Null),
+            c["jobs"]
+                .get("workspace-test-archive")
+                .unwrap_or(&Value::Null),
             &mut bad,
         );
         bad
@@ -1453,7 +1446,8 @@ fn test_archive_wiring_mutants_all_die() {
     let bind = r#"sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS""#;
     let bind_anchor = "archive_bind_check.sh --toolchain";
     let up = "name: ws-archive\n";
-    let sections_mutants: Vec<(&str, String)> = vec![
+    let sections_mutants: Vec<(&str, String)> =
+        vec![
         (
             "or-true on the bind call",
             mutate(&sec, bind_anchor, bind, &format!("{bind} || true")),
@@ -1681,33 +1675,8 @@ fn test_archive_wiring_mutants_all_die() {
                 "overwrite: false",
             ),
         ),
-        ("decoy workspace-test-archive outside jobs", {
-            // A conforming copy of the job at the top level, the real one renamed away.
-            let key = "  workspace-test-archive:\n";
-            let start = sec.find(key).expect("archive job");
-            let rest = &sec[start + key.len()..];
-            let end = rest
-                .lines()
-                .scan(0, |o, l| {
-                    let at = *o;
-                    *o += l.len() + 1;
-                    Some((at, l))
-                })
-                .find(|(_, l)| {
-                    l.starts_with("  ")
-                        && !l.starts_with("   ")
-                        && !l.trim().is_empty()
-                        && !l.trim_start().starts_with('#')
-                })
-                .map_or(rest.len(), |(at, _)| at);
-            let block = &sec[start..start + key.len() + end];
-            let decoy: String = block
-                .lines()
-                .map(|l| format!("{}\n", l.strip_prefix("  ").unwrap_or(l)))
-                .collect();
-            let renamed = sec.replacen(key, "  workspace-test-archive-gone:\n", 1);
-            format!("{renamed}\n{decoy}")
-        }),
+        ("decoy workspace-test-archive outside jobs", decoy(&sec, false)),
+        ("decoy workspace-test-archive nested under another job", decoy(&sec, true)),
         (
             "upload overwrite removed",
             mutate(
@@ -1730,4 +1699,43 @@ fn test_archive_wiring_mutants_all_die() {
         !violations(&sec, &ci_m, false).is_empty(),
         "mutant survived: ci.yml overwrite false"
     );
+}
+
+/// A conforming copy of the archive job with the real one renamed away: at the top level
+/// of the document, or (`nested`) under a `zz-holder:` key inside `jobs:`.
+fn decoy(sec: &str, nested: bool) -> String {
+    let key = "  workspace-test-archive:\n";
+    let start = sec.find(key).expect("archive job");
+    let rest = &sec[start + key.len()..];
+    let end = rest
+        .lines()
+        .scan(0, |o, l| {
+            let at = *o;
+            *o += l.len() + 1;
+            Some((at, l))
+        })
+        .find(|(_, l)| {
+            l.starts_with("  ")
+                && !l.starts_with("   ")
+                && !l.trim().is_empty()
+                && !l.trim_start().starts_with('#')
+        })
+        .map_or(rest.len(), |(at, _)| at);
+    let block = &sec[start..start + key.len() + end];
+    let renamed = sec.replacen(key, "  workspace-test-archive-gone:\n", 1);
+    if nested {
+        let inner: String = block.lines().map(|l| format!("  {l}\n")).collect();
+        let holder = "  zz-holder:\n";
+        let at = renamed
+            .find("\n  workspace-test-archive-gone:\n")
+            .expect("renamed")
+            + 1;
+        format!("{}{holder}{inner}{}", &renamed[..at], &renamed[at..])
+    } else {
+        let decoy: String = block
+            .lines()
+            .map(|l| format!("{}\n", l.strip_prefix("  ").unwrap_or(l)))
+            .collect();
+        format!("{renamed}\n{decoy}")
+    }
 }
