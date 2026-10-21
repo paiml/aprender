@@ -49,7 +49,7 @@ set -uo pipefail
 CI_WORKFLOW_PATH=".github/workflows/ci.yml"
 PRH=""
 
-emit() { printf 'x86=%s\ndet=%s\nmac=%s\ncite=%s\npr_head=%s\nreason=%s\n' "$1" "$2" "$3" "$4" "$5" "$6"; }
+emit() { printf 'x86=%s\ndet=%s\nmac=%s\ncite=%s\npr_head=%s\nreason=%s\nwt=%s\nwt_cite=%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "${7:-0}" "${8:-}"; }
 refuse() { emit 0 0 0 "" "$PRH" "$1"; }
 usage() { echo "usage: ci_mg_reuse.sh decide|resolve|decide-push|resolve-push [opts] | --self-test [--workflow FILE]" >&2; exit 2; }
 
@@ -112,17 +112,30 @@ decide() {
   [ "$(concl "$jobs" 'ci / gate')" = success ] || why="${why:+$why; }ci / gate is $(concl "$jobs" 'ci / gate')" # R:k6-cigate
   x=1
   [ -z "$why" ] || x=0
+  # T43b (#5884, operator 16:28Z #3): workspace-test is its own unit. K1-K5 held, so the queue entry's tree IS the tree
+  # the head's run tested; reuse that run's `workspace-test` verdict (it is the Σ-executed fan-in over every shard).
+  # Not tied to x86-main/determinism: a red x86-main on the head does not make a green workspace-test stale.
+  wt=0
+  [ "$(concl "$jobs" workspace-test)" = success ] && wt=1 # R:k6-wt
   mc=1
   [ "$(concl "$jobs" mac-check)" = success ] || mc=0 # R:k6-mac
   emit "$x" "$x" "$mc" "run $rid attempt $att on ${h:0:10}" "$h" \
-    "K1-K5 hold; x86-main+determinism: $([ "$x" = 1 ] && echo reuse || echo "run ($why)"); mac-check: $([ "$mc" = 1 ] && echo reuse || echo "run ($(concl "$jobs" mac-check))")"
+    "K1-K5 hold; x86-main+determinism: $([ "$x" = 1 ] && echo reuse || echo "run ($why)"); mac-check: $([ "$mc" = 1 ] && echo reuse || echo "run ($(concl "$jobs" mac-check))"); workspace-test: $([ "$wt" = 1 ] && echo reuse || echo "run ($(concl "$jobs" workspace-test))")" \
+    "$wt" "$([ "$wt" = 1 ] && echo "run $rid attempt $att on ${h:0:10}")"
 }
 
 # The queue-entry override, FORCED: drop whatever decide said for these keys (or omitted) and write
 # the values explicitly, so a decide that leaves a key out cannot fail open (r6).
 force_no_reuse() {
-  { grep -v -E '^(x86|det|mac|cite|pr_head)=' || true; }
-  printf 'x86=0\ndet=0\nmac=0\ncite=\npr_head=\n'
+  local in wt=0 wc=""
+  in=$(cat)
+  # T43b (#5884): workspace-test reuse crosses the override ONLY as exactly wt=1 with its citation; anything else is 0.
+  if [ "$(printf '%s\n' "$in" | sed -n 's/^wt=//p' | tail -n 1)" = 1 ]; then
+    wt=1
+    wc=$(printf '%s\n' "$in" | sed -n 's/^wt_cite=//p' | tail -n 1)
+  fi
+  { printf '%s\n' "$in" | grep -v -E '^(x86|det|mac|cite|pr_head|wt|wt_cite)=' || true; }
+  printf 'x86=0\ndet=0\nmac=0\ncite=\npr_head=\nwt=%s\nwt_cite=%s\n' "$wt" "$wc"
 }
 
 resolve() {
@@ -381,6 +394,35 @@ self_test() {
   dr k6-head-ci-gate-failed     "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.fail-ci___gate
   dr k6-x86-main-twice          "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.dup-x86
   dr k6-mac-failed              "1 1 0" merge_group "$M" "$B" "$H" runs.ok jobs.fail-mac-check
+
+  # T43b (#5884, Noah 16:28Z #3): workspace-test reuse. RED->GREEN falsifier: a changed main must run, an identical tree may skip.
+  sed '/^workspace-test	/d' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.no-wt"
+  sed 's|^workspace-test	success$|workspace-test	failure|' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.fail-wt"
+  wrow() { # wrow NAME WANT decide-args...
+    local n="$1" want="$2" out; shift 2
+    out=$(decide "$@" --repo-root "$R")
+    if [ "$(kv wt "$out")" = "$want" ]; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL wt-$n: want wt=$want got '$(kv wt "$out")' -- $(kv reason "$out")"; fi
+  }
+  wd() { local n="$1" want="$2" m="$3" b="$4" h="$5" r="$6" j="$7"
+    wrow "$n" "$want" --event merge_group --queue-head "$m" --base "$b" --pr-head "$h" --runs "$F/$r" --jobs "$F/$j"; }
+  wd identical-tree-skips       1 "$M" "$B" "$H" runs.ok jobs.ok
+  wd changed-tree-runs          0 "$M_TREE" "$B" "$H" runs.ok jobs.ok
+  wd changed-main-not-ancestor  0 "$M_K3" "$B2" "$H" runs.ok jobs.ok
+  wd base-is-a-merge-runs       0 "$M_K2" "$BM" "$H2" runs.h2 jobs.h2
+  wd head-wt-failed-runs        0 "$M" "$B" "$H" runs.ok jobs.fail-wt
+  wd head-wt-missing-runs       0 "$M" "$B" "$H" runs.ok jobs.no-wt
+  wd run-in-progress-runs       0 "$M" "$B" "$H" runs.newer-running jobs.ok
+  wd head-x86-failed-still-skips 1 "$M" "$B" "$H" runs.ok jobs.fail-determinism
+  wrow push-never-skips         0 --event push --queue-head "$M" --base "$B" --pr-head "$H" --runs "$F/runs.ok" --jobs "$F/jobs.ok"
+  # the override passes wt only as exactly 1, with its citation
+  local wo
+  wo=$(force_no_reuse <<< $'wt=1\nwt_cite=run 7\nx86=1')
+  [ "$(kv wt "$wo")|$(kv wt_cite "$wo")|$(kv x86 "$wo")" = "1|run 7|0" ] && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL wt-override-pass: $wo"; }
+  for wo in $'wt=2' $'wt=' $'wt=0\nwt_cite=run 7' $'reason=x'; do
+    wo=$(force_no_reuse <<< "$wo")
+    [ "$(kv wt "$wo")|$(kv wt_cite "$wo")" = "0|" ] && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL wt-override-closed: $wo"; }
+  done
 
   # resolve, end to end, through a stub gh serving canned JSON. A failed lookup never reuses.
   local SB="$T/bin"; mkdir -p "$SB"

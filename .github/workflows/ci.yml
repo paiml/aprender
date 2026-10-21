@@ -137,6 +137,41 @@ jobs:
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -E '^(x86|det|cite|pr_head)=' >> "$GITHUB_OUTPUT"
 
+  # T43b (#5884, Noah 16:28Z #3, extends mg-reuse): on merge_group, workspace-test-shard is skipped ONLY when the queue
+  # entry's tree sha == the tree sha of a green PR run's head (K1-K5: queue head has one parent, the base; the base
+  # has one parent; the base is an ancestor of the head; M^{tree} == H^{tree}; the head's newest ci.yml pull_request
+  # run is complete and every job is that run's) AND that run's `workspace-test` verdict succeeded. Any difference
+  # (changed main, another tree, a lookup that failed) leaves wt=0 and the full shards run. x86-main and determinism
+  # are NOT read here: they stay un-reused on the queue (20X r2), so x86-main still never waits for this job.
+  mg-reuse-wt:
+    if: github.event_name == 'merge_group'
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      wt: ${{ steps.key.outputs.wt }}
+      wt_cite: ${{ steps.key.outputs.wt_cite }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Read the workspace-test reuse key for this queue entry (3 API calls)
+        id: key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QREF: ${{ github.event.merge_group.head_ref }}
+          QHEAD: ${{ github.event.merge_group.head_sha }}
+          QBASE: ${{ github.event.merge_group.base_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          out=$(bash scripts/ci_mg_reuse.sh resolve --event merge_group --ref "$QREF" --queue-head "$QHEAD" --base "$QBASE" --repo "$REPO")
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -E '^(wt|wt_cite)=' >> "$GITHUB_OUTPUT"
+
   # The same case table on every event, so a change that breaks the key is RED on
   # its own PR, not first in the queue. gate requires it.
   mg-reuse-self-test:
@@ -440,6 +475,9 @@ jobs:
   # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
+    # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
+    needs: [mg-reuse-wt]
+    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' }}
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
@@ -491,18 +529,28 @@ jobs:
   workspace-test:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [workspace-test-shard]
+    needs: [workspace-test-shard, mg-reuse-wt]
     if: always()
     steps:
-      - name: Every shard passed
+      - name: Every shard passed (or the whole set was reused from an identical-tree green PR run)
         env:
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
+          WT_REUSE: ${{ needs.mg-reuse-wt.outputs.wt }}
+          WT_CITE: ${{ needs.mg-reuse-wt.outputs.wt_cite }}
         run: |
           set -euo pipefail
-          echo "workspace-test-shard matrix result: $SHARD_RESULT"
+          echo "workspace-test-shard matrix result: $SHARD_RESULT (reuse key wt='${WT_REUSE:-}')"
+          if [ "${WT_REUSE:-}" = 1 ]; then
+            # T43b: the shards are skipped ONLY under the key; a shard that ran anyway is a contradiction, never a pass
+            [ "$SHARD_RESULT" = skipped ] || { echo "::error::workspace-test: reuse key wt=1 but the shard matrix result is '$SHARD_RESULT'"; exit 1; }
+            [ -n "${WT_CITE:-}" ] || { echo "::error::workspace-test: reuse key wt=1 without a citation"; exit 1; }
+            echo "workspace-test reused: merge-group tree == tree of a green PR run (${WT_CITE})"
+            exit 0
+          fi
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
+        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' }}
         with:
           pattern: sigma-shard-*
           path: ${{ runner.temp }}/sigma
@@ -511,6 +559,7 @@ jobs:
       # ids is compared with the universe shard 1 listed. A shard whose ids did
       # not arrive is RED, never a smaller universe.
       - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
+        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' }}
         run: |
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"
