@@ -439,13 +439,36 @@ impl StepProfiler {
     /// PMAT-483: Emit structured JSON profiling report to stderr.
     /// Parseable by canary scripts for scientific analysis.
     pub fn print_json_report(&self) {
-        if self.step_count == 0 {
-            return;
+        if let Some(json) = self.json_report() {
+            eprintln!("{json}");
         }
+    }
 
+    /// PMAT-483: The structured JSON profiling report, or `None` before any step finished.
+    pub fn json_report(&self) -> Option<String> {
+        if self.step_count == 0 {
+            return None;
+        }
         let total_us = self.total_wall.as_micros() as f64;
         let avg_step_ms = total_us / self.step_count as f64 / 1000.0;
+        let (phases, accounted_us) = self.phases_json(total_us);
+        let wall_coverage = if total_us > 0.0 { accounted_us as f64 / total_us } else { 0.0 };
+        let (ops_json, gemm_pct) = self.ops_json();
+        Some(format!(
+            "{{\"_profiler\":\"step_profiler_v2\",\"steps\":{},\"avg_step_ms\":{:.2},\"wall_coverage\":{:.3},\"bottleneck\":\"{}\",\"gemm_pct\":{:.1},\"phases\":{{{}}},\"per_layer\":[{}],\"ops\":{{{}}}}}",
+            self.step_count,
+            avg_step_ms,
+            wall_coverage,
+            self.bottleneck(total_us),
+            gemm_pct,
+            phases.join(","),
+            self.layers_json().join(","),
+            ops_json.join(","),
+        ))
+    }
 
+    /// Per-phase JSON entries and the microseconds they account for.
+    fn phases_json(&self, total_us: f64) -> (Vec<String>, u128) {
         let mut accounted_us = 0u128;
         let mut phases = Vec::new();
         for i in 0..NUM_PHASES {
@@ -459,73 +482,59 @@ impl StepProfiler {
                 PHASE_NAMES[i], ms, pct, avg
             ));
         }
+        (phases, accounted_us)
+    }
 
-        let wall_coverage = if total_us > 0.0 { accounted_us as f64 / total_us } else { 0.0 };
+    fn layers_json(&self) -> Vec<String> {
+        (0..self.num_layers)
+            .map(|i| {
+                let fwd_ms = self.layer_fwd_totals[i].as_micros() as f64 / 1000.0;
+                let bwd_ms = self.layer_bwd_totals[i].as_micros() as f64 / 1000.0;
+                format!("{{\"layer\":{i},\"fwd_ms\":{fwd_ms:.1},\"bwd_ms\":{bwd_ms:.1}}}")
+            })
+            .collect()
+    }
 
-        let mut layers_json = Vec::new();
-        for i in 0..self.num_layers {
-            let fwd_ms = self.layer_fwd_totals[i].as_micros() as f64 / 1000.0;
-            let bwd_ms = self.layer_bwd_totals[i].as_micros() as f64 / 1000.0;
-            layers_json
-                .push(format!("{{\"layer\":{i},\"fwd_ms\":{fwd_ms:.1},\"bwd_ms\":{bwd_ms:.1}}}"));
+    /// Classify the bottleneck from the phase distribution.
+    fn bottleneck(&self, total_us: f64) -> &'static str {
+        if total_us <= 0.0 {
+            return "launch";
         }
-
-        // Classify bottleneck based on phase distribution
-        let forward_pct = if total_us > 0.0 {
-            self.totals[FORWARD].as_micros() as f64 / total_us * 100.0
-        } else {
-            0.0
-        };
-        let transfer_pct = if total_us > 0.0 {
+        let forward_pct = self.totals[FORWARD].as_micros() as f64 / total_us * 100.0;
+        let transfer_pct =
             (self.totals[H2D].as_micros() + self.totals[GRAD_H2D].as_micros()) as f64 / total_us
-                * 100.0
-        } else {
-            0.0
-        };
-        let bottleneck = if transfer_pct > 30.0 {
+                * 100.0;
+        if transfer_pct > 30.0 {
             "transfer"
         } else if forward_pct < 20.0 {
             "launch"
         } else {
             "memory_bw"
-        };
+        }
+    }
 
-        // PMAT-483: Per-operation breakdown
+    /// Non-zero per-operation JSON entries and the GEMM share of operation time.
+    fn ops_json(&self) -> (Vec<String>, f64) {
         let mut ops_json = Vec::new();
         let mut total_op_us = 0u128;
         for i in 0..NUM_OPS {
-            let t = self.op_totals[i];
-            let us = t.as_micros();
+            let us = self.op_totals[i].as_micros();
             total_op_us += us;
             if us > 0 {
-                let ms = us as f64 / 1000.0;
-                ops_json.push(format!("\"{}\":{:.1}", OP_NAMES[i], ms));
+                ops_json.push(format!("\"{}\":{:.1}", OP_NAMES[i], us as f64 / 1000.0));
             }
         }
-
-        // Classify which operation type dominates
-        let gemm_us = self.op_totals[OP_QKV_GEMM].as_micros()
-            + self.op_totals[OP_O_PROJ].as_micros()
-            + self.op_totals[OP_GATE_UP_GEMM].as_micros()
-            + self.op_totals[OP_DOWN_GEMM].as_micros();
-        let gemm_bwd_us = self.op_totals[OP_QKV_BWD].as_micros()
-            + self.op_totals[OP_GATE_UP_BWD].as_micros()
-            + self.op_totals[OP_DOWN_BWD].as_micros();
-        let total_gemm_us = gemm_us + gemm_bwd_us;
+        let us = |op: usize| self.op_totals[op].as_micros();
+        let total_gemm_us = us(OP_QKV_GEMM)
+            + us(OP_O_PROJ)
+            + us(OP_GATE_UP_GEMM)
+            + us(OP_DOWN_GEMM)
+            + us(OP_QKV_BWD)
+            + us(OP_GATE_UP_BWD)
+            + us(OP_DOWN_BWD);
         let gemm_pct =
             if total_op_us > 0 { total_gemm_us as f64 / total_op_us as f64 * 100.0 } else { 0.0 };
-
-        eprintln!(
-            "{{\"_profiler\":\"step_profiler_v2\",\"steps\":{},\"avg_step_ms\":{:.2},\"wall_coverage\":{:.3},\"bottleneck\":\"{}\",\"gemm_pct\":{:.1},\"phases\":{{{}}},\"per_layer\":[{}],\"ops\":{{{}}}}}",
-            self.step_count,
-            avg_step_ms,
-            wall_coverage,
-            bottleneck,
-            gemm_pct,
-            phases.join(","),
-            layers_json.join(","),
-            ops_json.join(","),
-        );
+        (ops_json, gemm_pct)
     }
 
     /// PMAT-483: Feed per-layer timing data from InstructGpuTrainingState.
@@ -900,5 +909,72 @@ mod tests {
         // Should print per-layer breakdown without panic
         p.print_report();
         assert_eq!(p.num_layers, 3);
+    }
+
+    fn profiler_with_wall(steps: usize, wall_ms: u64) -> StepProfiler {
+        let mut p = StepProfiler::new(true, 0);
+        p.step_count = steps;
+        p.total_wall = Duration::from_millis(wall_ms);
+        p
+    }
+
+    #[test]
+    fn test_json_report_is_none_before_any_step() {
+        assert!(StepProfiler::new(true, 0).json_report().is_none());
+    }
+
+    #[test]
+    fn test_json_report_header_steps_avg_and_coverage() {
+        let mut p = profiler_with_wall(4, 400);
+        p.totals[FORWARD] = Duration::from_millis(200);
+        let j = p.json_report().unwrap();
+        assert!(j.starts_with("{\"_profiler\":\"step_profiler_v2\",\"steps\":4,"));
+        assert!(j.contains("\"avg_step_ms\":100.00"), "{j}");
+        assert!(j.contains("\"wall_coverage\":0.500"), "{j}");
+        assert!(j.contains("\"forward\":{\"total_ms\":200.0,\"pct\":50.0,\"avg_ms\":50.00}"));
+    }
+
+    #[test]
+    fn test_json_report_bottleneck_classification() {
+        let mut p = profiler_with_wall(1, 100);
+        p.totals[H2D] = Duration::from_millis(20);
+        p.totals[GRAD_H2D] = Duration::from_millis(15);
+        assert!(p.json_report().unwrap().contains("\"bottleneck\":\"transfer\""));
+
+        let mut p = profiler_with_wall(1, 100);
+        p.totals[FORWARD] = Duration::from_millis(10);
+        assert!(p.json_report().unwrap().contains("\"bottleneck\":\"launch\""));
+
+        let mut p = profiler_with_wall(1, 100);
+        p.totals[FORWARD] = Duration::from_millis(60);
+        assert!(p.json_report().unwrap().contains("\"bottleneck\":\"memory_bw\""));
+    }
+
+    #[test]
+    fn test_json_report_gemm_pct_and_nonzero_ops_only() {
+        let mut p = profiler_with_wall(1, 100);
+        p.op_totals[OP_QKV_GEMM] = Duration::from_millis(30);
+        p.op_totals[OP_QKV_BWD] = Duration::from_millis(10);
+        p.op_totals[OP_ATTENTION] = Duration::from_millis(60);
+        let j = p.json_report().unwrap();
+        assert!(j.contains("\"gemm_pct\":40.0"), "{j}");
+        assert!(j.contains(&format!("\"{}\":30.0", OP_NAMES[OP_QKV_GEMM])));
+        assert!(!j.contains(&format!("\"{}\":", OP_NAMES[OP_SILU])), "zero ops omitted");
+    }
+
+    #[test]
+    fn test_json_report_per_layer_rows_from_recorded_times() {
+        let mut p = profiler_with_wall(1, 100);
+        p.record_layer_times(&[2_000, 4_000], &[0, 6_000]);
+        let j = p.json_report().unwrap();
+        assert!(j.contains("\"per_layer\":[{\"layer\":0,\"fwd_ms\":2.0,\"bwd_ms\":0.0},{\"layer\":1,\"fwd_ms\":4.0,\"bwd_ms\":6.0}]"), "{j}");
+    }
+
+    #[test]
+    fn test_json_report_zero_wall_does_not_divide_by_zero() {
+        let mut p = profiler_with_wall(1, 0);
+        p.totals[FORWARD] = Duration::from_millis(5);
+        let j = p.json_report().unwrap();
+        assert!(j.contains("\"wall_coverage\":0.000") && j.contains("\"gemm_pct\":0.0"), "{j}");
     }
 }
