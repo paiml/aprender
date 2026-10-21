@@ -21,7 +21,7 @@ pick() {
     | if ($r.mergeQueue.entries.totalCount // 0) > 0 then "QUEUE_BUSY"
       else $r.pullRequests.nodes[] | select(.isDraft==false and .baseRefName=="main" and .mergeStateStatus=="CLEAN" and .autoMergeRequest==null and .mergeQueueEntry==null) | .number end' <<<"$1"
 }
-inbox() { printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
+inbox() { mkdir -p "$STATE"; printf '%s %s\n' "$(date +%s)" "$1" >> "$STATE/acts.log"; printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
 if [ "${1:-}" = --self-test ]; then
   fail=0
   mk() { printf '{"data":{"repository":{"mergeQueue":{"entries":{"totalCount":%s}},"pullRequests":{"nodes":[%s]}}}}' "$1" "$2"; }
@@ -37,8 +37,14 @@ if [ "${1:-}" = --self-test ]; then
   [ "$fail" -eq 0 ] && echo "ok: self-test"; exit "$fail"
 fi
 [ "${1:-}" = --dry-run ] && dry=1
+if [ "${1:-}" = --summary ]; then
+  mkdir -p "$STATE"; since=$(($(date +%s) - 3600))
+  t=$(awk -v s="$since" '$1>=s' "$STATE/ticks.log" 2>/dev/null | wc -l); e=$(awk -v s="$since" '$1>=s && /enqueued oldest/' "$STATE/acts.log" 2>/dev/null | wc -l); k=$(awk -v s="$since" '$1>=s && /KICKED/' "$STATE/acts.log" 2>/dev/null | wc -l)
+  inbox "summary 1h: $t ticks, $e enqueued, $k kicked"; exit 0
+fi
 mkdir -p "$STATE" || exit 2
 [ -e "$STATE/disabled" ] && exit 0
+date +%s >> "$STATE/ticks.log"
 rem=$(gh api rate_limit --jq .resources.graphql.remaining 2>/dev/null) || exit 2
 [ "${rem:-0}" -ge 500 ] || exit 0
 json=$(gh api graphql -f query="$Q" -f o="${REPO%/*}" -f n="${REPO#*/}" 2>/dev/null) || exit 2
