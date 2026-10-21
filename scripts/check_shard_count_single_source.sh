@@ -17,6 +17,18 @@ check() { # $1 = sections.yml  $2 = ci.yml ; prints FAIL lines, returns 1 on any
   got="$(printf '%s\n' "$pins" | sed -E 's/^ *- \{shard: ([0-9]+), shards: ([0-9]+)\}.*/\1/' | paste -sd, -)"
   [ "$got" = "$want" ] || { echo "FAIL pins are not shard 1..$n ($got)"; bad=1; }
   [ "$(printf '%s\n' "$pins" | grep -c "shards: $n}")" = "$n" ] || { echo "FAIL a pin's shards != the pin count $n"; bad=1; }
+  # The count is keyed by event: `workspace-test-shard` pins are pull_request, the optional
+  # `workspace-test-shard-merge_group` pins are the merge queue's (fewer shards, each a bigger partition).
+  # Each event's pins must be shard 1..m of m; a merge-queue count above the PR count has no matrix row to run on.
+  mg="$(awk '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard-merge_group:/{w=1;next} w&&/^    - \{shard:/{print;next} w&&!/^    - /{exit}' "$sec")"
+  if [ -n "$mg" ]; then
+    m="$(printf '%s\n' "$mg" | grep -c 'shard:' || true)"
+    got="$(printf '%s\n' "$mg" | sed -E 's/^ *- \{shard: ([0-9]+), shards: ([0-9]+)\}.*/\1/' | paste -sd, -)"
+    [ "$got" = "$(seq -s, 1 "$m")" ] || { echo "FAIL merge_group pins are not shard 1..$m ($got)"; bad=1; }
+    [ "$(printf '%s\n' "$mg" | grep -c "shards: $m}")" = "$m" ] || { echo "FAIL a merge_group pin's shards != the pin count $m"; bad=1; }
+    [ "$m" -le "$n" ] || { echo "FAIL merge_group count $m exceeds the pull_request count $n"; bad=1; }
+  fi
+  # the matrix is the superset: it carries the pull_request shards, and a merge_group run uses the first m of them
   got="$(awk '/^  workspace-test-shard:/{j=1} j&&/^        shard: \[/{print;exit}' "$ci" | sed -E 's/.*\[(.*)\].*/\1/; s/ //g')"
   [ "$got" = "$want" ] || { echo "FAIL ci.yml matrix shard list ($got) != 1..$n"; bad=1; }
   awk '/^  workspace-test-shard:/{j=1} j&&/^        shards: \[/{print;exit}' "$ci" | grep -q "\[$n\]" || { echo "FAIL ci.yml matrix shards != [$n]"; bad=1; }
@@ -59,7 +71,13 @@ if [ "${1:-}" = --self-test ]; then
   sed -E '0,/^        shards: \[12\]/s//        shards: [11]/' ci/sections.yml > "$t/s.yml"
   cmp -s ci/sections.yml "$t/s.yml" && { echo "self-test: inert-matrix mutant did not apply"; exit 1; }
   check "$t/s.yml" .github/workflows/ci.yml >/dev/null && { echo "self-test: sections.yml jobs matrix drift must be RED"; exit 1; }
-  echo "PASS  check_shard_count_single_source self-test: 8 rows"
+  cp .github/workflows/ci.yml "$t/c.yml"
+  sed -E '/^  workspace-test-shard-merge_group:/,/^  determinism:/s/\{shard: 4, shards: 4\}/{shard: 4, shards: 3}/' ci/sections.yml > "$t/s.yml"
+  cmp -s ci/sections.yml "$t/s.yml" && { echo "self-test: merge_group pin mutant did not apply"; exit 1; }
+  check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: a merge_group pin with the wrong shards must be RED"; exit 1; }
+  awk '/^  workspace-test-shard-merge_group:/{print; for(i=1;i<=13;i++) printf "    - {shard: %d, shards: 13}\n", i; skip=1; next} skip&&/^    - /{next} {skip=0; print}' ci/sections.yml > "$t/s.yml"
+  check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: a merge_group count above the pull_request count must be RED"; exit 1; }
+  echo "PASS  check_shard_count_single_source self-test: 10 rows"
   exit 0
 fi
 check ci/sections.yml .github/workflows/ci.yml

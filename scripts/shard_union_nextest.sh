@@ -10,9 +10,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 M="$(grep -c '^    - {shard:' <(awk '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{w=1;next} w&&/^    - \{shard:/{print;next} w&&!/^    - /{exit}' ci/sections.yml))"
 [ "$M" -ge 1 ] || { echo "FAIL cannot read the shard count from ci/sections.yml"; exit 1; }
+MG="$(awk '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard-merge_group:/{w=1;next} w&&/^    - \{shard:/{n++;next} w&&!/^    - /{exit} END{print n+0}' ci/sections.yml)"  # the merge queue's count, 0 when unpinned
 
-nextest() { # $1 = probe package
-  local pkg="$1" full un i sel=(-p "$1")
+nextest() { # $1 = probe package  $2 = shard count M
+  local pkg="$1" M="$2" full un i sel=(-p "$1")
   [ "$1" = --workspace ] && sel=(--workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute)
   full="$(cargo nextest list "${sel[@]}" --lib --message-format oneline 2>/dev/null | sort)"
   [ -n "$full" ] || { echo "FAIL nextest: empty pre-split list for $pkg"; return 1; }
@@ -24,5 +25,8 @@ nextest() { # $1 = probe package
 
 pkgs=("$@"); [ "${#pkgs[@]}" -gt 0 ] || pkgs=(aprender-contracts aprender-cgp)
 rc=0
-for p in "${pkgs[@]}"; do nextest "$p" || rc=1; done
+for p in "${pkgs[@]}"; do
+  nextest "$p" "$M" || rc=1
+  if [ "$MG" -ge 1 ]; then nextest "$p" "$MG" || rc=1; fi
+done
 exit "$rc"
