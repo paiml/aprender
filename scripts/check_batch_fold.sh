@@ -15,7 +15,7 @@
 # guard_tree.sh --no-cargo, so the table runs on every PR with no workflow edit.
 #
 #   check_batch_fold.sh              the case table
-#   check_batch_fold.sh --self-test  the mutants: four wrong folders, each must turn a row RED
+#   check_batch_fold.sh --self-test  the mutants: six wrong folders, each must turn a row RED
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 SUBJECT="${BATCH_FOLD_SUBJECT:-$ROOT/scripts/batch_fold.sh}"
@@ -126,11 +126,21 @@ table() {
     fold "$d/r" "$subj" no-such-branch
     [ "$RC" = 2 ] && has '^ERROR no-such-branch';                        row "a branch that does not exist is ERROR, exit 2 (rc=$RC)" $?
 
-    fold "$d/r" "$subj" --regen gen1 gen2 rc1 rc2
+    fold "$d/r" "$subj" --regen plain:12:"Plain ticket" gen1 gen2 rc1 rc2
     [ "$RC" = 0 ] && has '^regenerated the generated set and committed it'; row "--regen regenerates once, asserts the fixed points, commits (rc=$RC)" $?
-    v=$(git -C "$d/r" log -1 --format=%s);  [ "${v#batch: regenerate}" != "$v" ]; row "  ...the last commit is the regeneration ($v)" $?
+    v=$(git -C "$d/r" log -1 --format=%s);  [ "${v#batch: regenerate}" != "$v" ]; row "  ...the tip commit is the regeneration ($v)" $?
     v=$(cat "$d/r/docs/roadmaps/roadmap.yaml"); [ "$v" = aggregated ] && grep -q -- '-->7<!--' "$d/r/README.md"; row "  ...roadmap aggregated and README counts rewritten" $?
     v=$(git -C "$d/r" status --porcelain | wc -l | tr -d ' '); [ "$v" = 0 ]; row "  ...and the tree is clean after it (dirty=$v)" $?
+
+    v=$(git -C "$d/r" log --merges --format=%h main..HEAD | wc -l | tr -d ' '); [ "$v" = 0 ]; row "  ...the batch has NO merge commits (merges=$v)" $?
+    v=$(git -C "$d/r" log --format=%s main..HEAD | grep -c .); [ "$v" = 6 ]; row "  ...5 squashed tickets + 1 regenerate commit (commits=$v)" $?
+    v=$(git -C "$d/r" log --format=%s main..HEAD | grep -n '^batch: regenerate' | cut -d: -f1); [ "$v" = 1 ]; row "  ...and the regenerate commit is the LAST one (position from tip=$v)" $?
+    v=$(git -C "$d/r" log --format=%s main..HEAD | grep -c '^Plain ticket (#12)$'); [ "$v" = 1 ]; row "  ...a ticket commit is titled '<title> (#N)'" $?
+    git -C "$d/r" log --format=%B -1 HEAD~1 | grep -q 'Co-Authored-By: Claude Sonnet 5.5'; row "  ...and carries the Co-Authored-By trailer" $?
+
+    fold "$d/r" "$subj" plain gen1 gen2 rc1 rc2 rp1 rp2 cen
+    [ "$RC" = 2 ] && has 'at most 7'; row "an 8th branch is refused before anything folds (rc=$RC)" $?
+    v=$(git -C "$d/r" rev-parse HEAD); [ "$v" = "$(git -C "$d/r" rev-parse main)" ]; row "  ...and nothing was folded" $?
 
     BATCH_FOLD_PV="$d/r.pv-badcheck" fold "$d/r" "$subj" --regen gen1
     [ "$RC" = 2 ] && has 'fixed point FAILED -- pv extract contracts --check'; row "a failed fixed-point check is exit 2 and names the check (rc=$RC)" $?
@@ -158,8 +168,10 @@ if [ "${1:-}" = "--self-test" ]; then
     mutant "every conflict taken, as if generated"                   's#^        if is_generated_whole "\$f"; then$#        if true; then#'
     mutant "a clean fold never marks the set stale"                  's#^        \[ -z "\$gen" \] \|\| STALE=1$#        :#'
     mutant "a failed fixed-point check ignored"                      's#^(    "\$PV" extract contracts --check >/dev/null 2>&1 +)\|\| die .*$#\1|| true#'
+    mutant "per-branch merge --no-ff instead of squash"              's#git merge --squash "\$br"#git merge --no-ff --no-edit "$br"#'
+    mutant "no 7-branch cap"                                         's#-le 7 #-le 700 #'
     rmtree "$m"
-    [ "$bad" = 0 ] && { echo "SELF-TEST PASSED: 4 mutants, all RED"; exit 0; }
+    [ "$bad" = 0 ] && { echo "SELF-TEST PASSED: 6 mutants, all RED"; exit 0; }
     echo "SELF-TEST FAILED" >&2; exit 1
 fi
 

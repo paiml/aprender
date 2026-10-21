@@ -4,7 +4,13 @@
 # because each PR adds time, but in most cases 80% of PR can be batched").
 #
 # Run INSIDE the batch worktree (release/<train>-batch, cut from origin/main).
-# Each branch is merged --no-ff, in the order given (cut-blockers first).
+# Each branch is SQUASHED (`git merge --squash`) into ONE commit on top of HEAD,
+# in the order given (cut-blockers first), so the batch is LINEAR: no merge
+# commits, which the merge queue's REBASE method cannot carry (PRB-001 §5, BS-2).
+# Result: N ticket commits `<PR title> (#N)` (original author kept) plus ONE
+# trailing `batch: regenerate` commit (--regen). At most 7 branches per run.
+# A BRANCH argument is `BRANCH[:N[:TITLE]]`; the title defaults to the branch tip's
+# subject, and `(#N)` is appended when N is given and the title lacks it.
 #
 # THE GENERATED SET is the only thing this script ever resolves by itself:
 #   docs/roadmaps/roadmap.yaml   aggregate of docs/roadmaps/entries/
@@ -25,12 +31,13 @@
 # THIS tree (scripts/pv_bin.sh), asserts the three fixed points, and commits the
 # regeneration; without --regen the run ends `REGEN REQUIRED` and exits 3.
 #
-#   bash scripts/batch_fold.sh [--regen] BRANCH...
+#   bash scripts/batch_fold.sh [--regen] BRANCH[:N[:TITLE]]...   (max 7)
 #   bash scripts/batch_fold.sh --regen                 regenerate only
 #
 # Output, one line per branch:
-#   folded <branch> generated=[<paths>]      merged; <paths> were taken for regeneration
-#   SKIP <branch>: conflict in <paths>       merge aborted, branch left out
+#   folded <branch> generated=[<paths>]      squashed in; <paths> were taken for regeneration
+#   SKIP <branch>: conflict in <paths>       squash undone, branch left out
+#   SKIP <branch>: nothing to commit         its diff is already in the tree
 #   ERROR <branch>: <why>                    git could not merge it at all
 # Exit: 0 every branch folded and the generated set is consistent; 1 any SKIP;
 #       2 a usage, git or regeneration failure (including a failed fixed-point
@@ -81,41 +88,57 @@ readme_counts_only() {
     return "$rc"
 }
 
-fold_one() { # BRANCH -> one verdict line; 0 folded, 1 skipped, 2 git failure
-    local br=$1 f real="" gen="" conf before
+abort_squash() { git reset -q --hard HEAD >/dev/null 2>&1; }   # the tree was proven clean on entry
+
+fold_one() { # BRANCH[:N[:TITLE]] -> one verdict line; 0 folded, 1 skipped, 2 git failure
+    local spec=$1 br num="" title="" f real="" gen="" conf before author
+    br=${spec%%:*}
+    if [ "$br" != "$spec" ]; then
+        num=${spec#*:}; title=""
+        case "$num" in *:*) title=${num#*:}; num=${num%%:*} ;; esac
+    fi
     before=$(git rev-parse HEAD) || return 2
-    if git merge --no-ff --no-edit "$br" >/dev/null 2>&1; then
-        gen=$(touches_generated "$before" HEAD | tr '\n' ' ')
-        [ -z "$gen" ] || STALE=1
-        printf 'folded %s generated=[%s]\n' "$br" "${gen% }"; return 0
-    fi
-    if ! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
-        printf 'ERROR %s: git merge failed without a conflict state\n' "$br"; return 2
-    fi
-    conf=$(git diff --name-only --diff-filter=U)
-    while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        if is_generated_whole "$f"; then
-            gen="$gen $f"
-        elif [ "$f" = README.md ] && readme_counts_only; then
-            gen="$gen README.md"
-        else
-            real="$real $f"
+    git rev-parse -q --verify "$br^{commit}" >/dev/null 2>&1 \
+        || { printf 'ERROR %s: no such branch\n' "$br"; return 2; }
+    [ -n "$title" ] || title=$(git log -1 --format=%s "$br")
+    if [ -n "$num" ]; then case "$title" in *"(#$num)") ;; *) title="$title (#$num)" ;; esac; fi
+    author=$(git log -1 --format='%an <%ae>' "$br")
+    if ! git merge --squash "$br" >/dev/null 2>&1; then
+        conf=$(git diff --name-only --diff-filter=U)
+        if [ -z "$conf" ]; then
+            abort_squash; printf 'ERROR %s: git squash failed without a conflict state\n' "$br"; return 2
         fi
-    done <<< "$conf"
-    if [ -n "$real" ]; then
-        git merge --abort >/dev/null 2>&1
-        printf 'SKIP %s: conflict in%s\n' "$br" "$real"; return 1
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            if is_generated_whole "$f"; then
+                gen="$gen $f"
+            elif [ "$f" = README.md ] && readme_counts_only; then
+                gen="$gen README.md"
+            else
+                real="$real $f"
+            fi
+        done <<< "$conf"
+        if [ -n "$real" ]; then
+            abort_squash
+            printf 'SKIP %s: conflict in%s\n' "$br" "$real"; return 1
+        fi
+        for f in $gen; do
+            [ "$f" = README.md ] && continue           # already merged and staged above
+            { git checkout --theirs -- "$f" && git add -- "$f"; } >/dev/null 2>&1 \
+                || { abort_squash; printf 'ERROR %s: cannot take %s\n' "$br" "$f"; return 2; }
+        done
     fi
-    for f in $gen; do
-        [ "$f" = README.md ] && continue           # already merged and staged above
-        { git checkout --theirs -- "$f" && git add -- "$f"; } >/dev/null 2>&1 \
-            || { git merge --abort >/dev/null 2>&1; printf 'ERROR %s: cannot take %s\n' "$br" "$f"; return 2; }
-    done
-    git -c commit.gpgsign=false commit -q --no-edit >/dev/null 2>&1 \
-        || { git merge --abort >/dev/null 2>&1; printf 'ERROR %s: commit failed\n' "$br"; return 2; }
-    STALE=1
-    printf 'folded %s generated=[%s]\n' "$br" "${gen# }"; return 0
+    if git diff --cached --quiet; then
+        abort_squash; printf 'SKIP %s: nothing to commit (its diff is already in the tree)\n' "$br"; return 1
+    fi
+    git -c commit.gpgsign=false commit -q --author="$author" \
+        -m "$title" -m "Squashed from $br by batch_fold.sh.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" >/dev/null 2>&1 \
+        || { abort_squash; printf 'ERROR %s: commit failed\n' "$br"; return 2; }
+    gen=$(touches_generated "$before" HEAD | tr '\n' ' ')
+    [ -z "$gen" ] || STALE=1
+    printf 'folded %s generated=[%s]\n' "$br" "${gen% }"; return 0
 }
 
 regen() { # regenerate the generated set once, assert the fixed points, commit it
@@ -141,19 +164,21 @@ regen() { # regenerate the generated set once, assert the fixed points, commit i
     [ -z "$extra" ] || die "regen: wrote outside the generated set: $(printf '%s ' $extra)"
     if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
         git add -- docs/roadmaps/roadmap.yaml contracts/contracts.nt contracts/shapes.ttl README.md 2>/dev/null
-        git -c commit.gpgsign=false commit -q -m "batch: regenerate the generated set once (batch_fold.sh --regen)
+        git -c commit.gpgsign=false commit -q -m "batch: regenerate
 
-roadmap aggregate, pv extract (contracts.nt + shapes.ttl) and the
+The generated set, once (batch_fold.sh --regen): roadmap aggregate, pv extract (contracts.nt + shapes.ttl) and the
 README CONTRACT_COUNT blocks, regenerated with the pv built from this tree;
 fixed points asserted: make roadmap-aggregate-check, pv extract --check,
-readme_sync.sh --check." >/dev/null 2>&1 || die "regen: commit failed"
+readme_sync.sh --check.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" >/dev/null 2>&1 || die "regen: commit failed"
         printf 'regenerated the generated set and committed it (fixed points asserted)\n'
     else
         printf 'regenerated the generated set: already consistent (fixed points asserted)\n'
     fi
 }
 
-case "${1:-}" in -h|--help) sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
 
 REGEN=0; branches=()
 while [ $# -gt 0 ]; do
@@ -165,6 +190,8 @@ while [ $# -gt 0 ]; do
 done
 [ "${#branches[@]}" -gt 0 ] || [ "$REGEN" = 1 ] \
     || { printf 'usage: bash scripts/batch_fold.sh [--regen] BRANCH... | --regen\n' >&2; exit 2; }
+[ "${#branches[@]}" -le 7 ] \
+    || { printf 'ERROR batch_fold.sh: %s branches given, at most 7 per batch (split it)\n' "${#branches[@]}" >&2; exit 2; }
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not inside a git work tree"
 [ -z "$(git status --porcelain --untracked-files=no)" ] \
     || die "the batch worktree has uncommitted changes; fold into a clean tree only"
