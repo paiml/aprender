@@ -20,6 +20,7 @@ INBOX=${SL_INBOX:-/mnt/nvme-raid0/cop-inbox/inbox.md}
 HERE=$(cd "$(dirname "$0")" && pwd)
 FIXES=${SL_FIXES:-$HERE/stopline/fixes.tsv}
 FLOW010=${SL_FLOW010:-$HERE/stopline/flow010.tsv}
+RED_AFTER=${SL_RED_AFTER:-2026-10-21T09:00:00Z}
 P95=${SL_P95:-/mnt/nvme-raid0/cop-inbox/handoff/aprender-flow-p95.sh}
 
 # count_q <search-qualifiers> -> issueCount, or "nm" when the read fails
@@ -59,34 +60,21 @@ fixes_part() {
 # cpu_part -> latest "cpu-min/batch ..." from flow's :02 gate line in the inbox, or not_measured
 cpu_part() {
   local l
-  l=$(grep -h "gate | aprender-flow" "$INBOX" 2>/dev/null | grep -o "cpu-min/batch [^;]*" | tail -n1)
-  echo "${l:-cpu-min/batch not_measured}"
-}
-
-# flow010_part <file> -> one row per phase: owner, due, state, exit test
-flow010_part() {
-  local p o d s e
-  [ -f "$1" ] || { echo "FLOW-010 (design): no phase ledger"; return; }
-  while IFS=$'\t' read -r p o d s e; do
-    case "$p" in "" | \#*) continue ;; esac
-    printf 'FLOW-010 (design) %s | owner %s | due %s | state %s | exit %s\n' "$p" "$o" "$d" "$s" "$e"
-  done <"$1"
-}
-
-# cpu_part -> latest "cpu-min/batch ..." from flow's :02 gate line in the inbox, or not_measured
-cpu_part() {
-  local l
   l=$(grep -h "gate | aprender-flow" "$INBOX" 2>/dev/null | grep -o 'cpu-min/batch [^;]*' | tail -n1)
   echo "${l:-cpu-min/batch not_measured}"
 }
 
-# flow010_part <file> -> one row per phase: owner, due, state, exit test
+# flow010_part <file> [now_epoch] -> one row per phase: owner, due, state, exit test, delta, evidence.
+# A row whose evidence is "-" prints RED once now >= RED_AFTER (operator 08:22Z: no evidence after 09:00Z).
 flow010_part() {
-  local p o d s e
+  local p o d s e dl ev red now=${2:-$(date -u +%s)}
   [ -f "$1" ] || { echo "FLOW-010 (design): no phase ledger"; return; }
-  while IFS=$'\t' read -r p o d s e; do
+  while IFS=$'\t' read -r p o d s e dl ev; do
     case "$p" in "" | \#*) continue ;; esac
-    printf 'FLOW-010 (design) %s | owner %s | due %s | state %s | exit %s\n' "$p" "$o" "$d" "$s" "$e"
+    red=""
+    if [ "${ev:--}" = - ] && [ "$now" -ge "$(date -u -d "$RED_AFTER" +%s)" ]; then red="RED "; fi
+    printf '%sFLOW-010 (design) %s | owner %s | due %s | state %s | exit %s | delta %s | evidence %s\n' \
+      "$red" "$p" "$o" "$d" "$s" "$e" "${dl:--}" "${ev:--}"
   done <"$1"
 }
 
@@ -116,8 +104,10 @@ cases() {
   chk F1 "$(fixes_part "$t")" "a: merges/h pred 2, meas 1 MISS | b: p95 pred 15, meas 22 MISS | c: x pred 1, meas not_measured MEASURING [n]"
   chk F2 "$(fixes_part /nonexistent)" "no fixes ledger"
   printf '# only\n' >"$t"; chk F3 "$(fixes_part "$t")" "no fixes"
-  printf '# h\nP9\to\td\ts\te\n' >"$t"
-  chk P1 "$(flow010_part "$t")" "FLOW-010 (design) P9 | owner o | due d | state s | exit e"
+  printf '# h\nP9\to\td\ts\te\tdl\t-\nP8\to\td\ts\te\tdl\tev\n' >"$t"
+  before=$(date -u -d 2026-10-21T08:00:00Z +%s); after=$(date -u -d 2026-10-21T09:00:00Z +%s)
+  chk P1 "$(flow010_part "$t" "$before")" "$(printf 'FLOW-010 (design) P9 | owner o | due d | state s | exit e | delta dl | evidence -\nFLOW-010 (design) P8 | owner o | due d | state s | exit e | delta dl | evidence ev')"
+  chk P3 "$(flow010_part "$t" "$after" | cut -c1-4 | tr '\n' ,)" "RED ,FLOW,"
   chk P2 "$(flow010_part /nonexistent)" "FLOW-010 (design): no phase ledger"
   printf 'x gate | aprender-flow | wall p95; cpu-min/batch mean=178 med=180 n=13 window=24h; reuse 0%%\n' >"$t"
   chk C1 "$(INBOX=$t cpu_part)" "cpu-min/batch mean=178 med=180 n=13 window=24h"
