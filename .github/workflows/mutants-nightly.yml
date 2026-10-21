@@ -12,7 +12,7 @@ name: Mutants Nightly
 
 on:
   schedule:
-    - cron: '0 2 * * 0'   # Sunday 02:00 UTC (ends by 05:00Z, timeout 180): the quietest PR hours (03-05Z, 10 of 300 PR CI runs 2026-09-29..10-06) on the quietest day
+    - cron: '0 1 * * 0'   # Sunday 01:00 UTC (mutants 180 + stop 5 ends 04:05Z): the quietest PR hours (03-05Z, 10 of 300 PR CI runs 2026-09-29..10-06) on the quietest day
   workflow_dispatch: {}
 
 permissions:

@@ -9,7 +9,7 @@
   updated: 2026-10-21T11:30:00Z
   spec: null
   acceptance_criteria:
-  - 'scripts/check_lab_timeouts.sh is RED on the pre-fix tree (24 findings) and GREEN after; --self-test 6 rows'
+  - 'scripts/check_lab_timeouts.sh is RED on the pre-fix tree (22 findings on the merge-base) and GREEN after; --self-test 6 rows'
   - 'reaper catching queued + schedule runs is a separate change to the deployed pr-run-reaper.sh'
   phases: []
   subtasks: []

@@ -48,7 +48,7 @@ on:
     # This is CALIBRATION AGAINST A MOVING TARGET: the delay varies by
     # ~3h and is growing. The durable fix is a fleet-side timer calling
     # `gh workflow run` (#3292); until then, re-measure before trusting.
-    - cron: '0 23 * * *'   # 23:00 UTC -> lands ~04:00 UTC
+    - cron: '0 20 * * *'   # 20:00 UTC: gate+build+publish chain is 420 min, so it ends by 03:00Z (PMAT-5847: end by 05:00Z)
   workflow_dispatch:
 
 permissions:
