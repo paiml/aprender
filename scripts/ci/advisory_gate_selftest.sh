@@ -30,19 +30,21 @@ run_gate() { # prints the stub's argv log
     cat "$log"
 }
 
-verdict_of() { # stdin: stub log -> "ok" or the first defect
+verdict_of() { # [old|new] (cargo-deny flavour the stub played); stdin: stub log -> "ok" or the first defect
     local log fetch checks nall nfd ncfg
     log=$(cat)
     [ "$log" != gate-did-not-pass ] || { echo "gate did not pass against the stub"; return; }
     fetch=$(grep -cE '^deny (--config [^ ]+ )?fetch' <<<"$log" || true)
     checks=$(grep -c 'check' <<<"$(grep -vE '^deny (--config [^ ]+ )?fetch' <<<"$log")" || true)
     nall=$(grep -c -- '--all-features' <<<"$(grep -vE '^deny (--config [^ ]+ )?fetch' <<<"$log")" || true)
-    nfd=$(grep -cE -- '--disable-fetch|--offline' <<<"$(grep -vE '^deny (--config [^ ]+ )?fetch' <<<"$log")" || true)
+    nfd=$(grep -cE -- '--disable-fetch' <<<"$(grep -vE '^deny (--config [^ ]+ )?fetch' <<<"$log")" || true)
     ncfg=$(grep -vE '^deny (--config [^ ]+ )?fetch' <<<"$log" | grep -o -- '--config [^ ]*' | sort -u | wc -l)
     [ "$checks" -eq 2 ] || { echo "expected 2 scans, saw $checks"; return; }
     [ "$nall" -eq 2 ] || { echo "ADG-003: $nall of 2 scans carry --all-features"; return; }
     [ "$fetch" -eq 1 ] || { echo "ADG-004: $fetch advisory-db fetches, want 1"; return; }
-    [ "$nfd" -eq 2 ] || { echo "ADG-004: $nfd of 2 scans carry --disable-fetch/--offline"; return; }
+    if [ "${1:-new}" = old ]; then [ "$nfd" -eq 2 ] || { echo "ADG-004: $nfd of 2 scans carry --disable-fetch"; return; }; fi
+    # 0.20: --offline makes cargo metadata need a warm registry cache; a cold runner then exits rc=1 with no diagnostics (m70, #5793)
+    [ "$(grep -c -- '--offline' <<<"$log")" -eq 0 ] || { echo "ADG-005: a scan carries --offline"; return; }
     [ "$ncfg" -eq 1 ] || { echo "ADG-004: scans use $ncfg different --config files"; return; }
     echo ok
 }
@@ -54,16 +56,17 @@ main() {
     trap "rm -rf -- '${d:?}'" EXIT
     got=$(run_gate | verdict_of)
     [ "$got" = ok ] || { echo "SELF-TEST FAIL: real gate: $got" >&2; bad=1; }
-    got=$(STUB_OLD=1 run_gate | verdict_of)
+    got=$(STUB_OLD=1 run_gate | verdict_of old)
     [ "$got" = ok ] || { echo "SELF-TEST FAIL: real gate vs cargo-deny <= 0.19 flags: $got" >&2; bad=1; }
     mutant() { # name sed-expr want-substring
         sed -e "$2" "$GATE_SRC" >"$d/m.sh"
         cmp -s "$d/m.sh" "$GATE_SRC" && { echo "SELF-TEST FAIL: mutant '$1' changed nothing" >&2; bad=1; return; }
-        m=$(run_gate_with "$d/m.sh" | verdict_of)
+        m=$(STUB_OLD="${5:-0}" run_gate_with "$d/m.sh" | verdict_of "${4:-new}")
         [[ "$m" == *"$3"* ]] || { echo "SELF-TEST FAIL: mutant '$1' stayed green: $m" >&2; bad=1; }
     }
     mutant 'scan without --all-features' 's/ --all-features//' 'ADG-003'
-    mutant 'scan reads the net (no --disable-fetch)' 's/ --disable-fetch//;s/ --offline//' 'ADG-004'
+    mutant 'scan reads the net (no --disable-fetch)' 's/ --disable-fetch//' 'ADG-004' old 1
+    mutant 'scan runs --offline (0.20)' 's/--locked --all-features/--locked --offline --all-features/' 'ADG-005'
     mutant 'second fetch before the base scan' 's|^BASERC=|cargo deny fetch --config "$W/deny.toml" db; BASERC=|' 'ADG-004'
     # ADG-003 on the other two scan sites: the push path and the exemption-liveness guard.
     local f
@@ -72,7 +75,7 @@ main() {
             echo "SELF-TEST FAIL: ADG-003: $f scans advisories without --all-features" >&2; bad=1
         fi
     done
-    [ "$bad" -eq 0 ] && echo "advisory_gate self-test: 2 real (cargo-deny 0.19 and 0.20 flags) + 3 mutants + 2 sites ok"
+    [ "$bad" -eq 0 ] && echo "advisory_gate self-test: 2 real (cargo-deny 0.19 and 0.20 flags) + 4 mutants + 2 sites ok"
     return "$bad"
 }
 
