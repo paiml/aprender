@@ -49,3 +49,5 @@
 # #4709 (C303): the pv census ratchet, LAB from its first night (never on a PR path, C324).
 # Seconds are a local wall-clock sample (2026-10-14, pv prebuilt); the first nightly replaces them.
 6	The pv census bound share may only rise (#4709)
+# #5879: LAB, nightly only (C324); seconds are a guess until the first night.
+5	Coverage scan files no per-function ticket (LAB, #5879)
