@@ -458,6 +458,8 @@ jobs:
         run: setsid --wait bash scripts/ci/archive_list_equal.sh --self-test
       - name: archive_bind_check case table must still turn RED
         run: setsid --wait bash scripts/ci/archive_bind_check.sh --self-test
+      - name: archive_fetch (LAN cache) case table must still turn RED
+        run: setsid --wait bash scripts/ci/archive_fetch.sh --self-test
       - name: Sections
         id: run
         run: >-

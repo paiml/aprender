@@ -940,6 +940,15 @@ jobs:
       - uses: actions/download-artifact@v7
         if: steps.tier.outputs.tier == 'quick'
         with:
+          name: ws-archive-ptr
+          path: ws-archive-ptr
+      - name: Fetch the archive over the LAN (a miss falls back to the artifact below)
+        id: lan
+        if: steps.tier.outputs.tier == 'quick'
+        run: bash scripts/ci/archive_fetch.sh fetch ws-archive-ptr/ptr.json ws-archive
+      - uses: actions/download-artifact@v7
+        if: steps.tier.outputs.tier == 'quick' && steps.lan.outputs.hit != '1'
+        with:
           name: ws-archive
           path: ws-archive
           merge-multiple: true
@@ -1557,6 +1566,21 @@ jobs:
             --arg i "$rustc_h" \
             '{tier:"quick",sha:$s,expr:$e,flags:$f,rustc:$i,build_s:($b|tonumber),list_s:($l|tonumber)}' > "$out/bind.json"
           ls -l "$out"
+      # LAN cache (archive_fetch.sh): the same bytes on this host, served over http to the shards; the artifact
+      # below stays as the fallback. WS_ARCHIVE_CACHE_ROOT unset = disabled (pointer says so).
+      - name: Publish the archive to the LAN cache
+        env:
+          CACHE_ROOT: ${{ vars.WS_ARCHIVE_CACHE_ROOT }}
+          CACHE_PORT: ${{ vars.WS_ARCHIVE_CACHE_PORT }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci/archive_fetch.sh publish "${CACHE_ROOT:-}" "${CACHE_PORT:-8080}" "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ws-archive-out ws-archive-ptr
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ws-archive-ptr
+          path: ws-archive-ptr/
+          if-no-files-found: error
+          overwrite: true
       - uses: actions/upload-artifact@v7
         with:
           name: ws-archive
