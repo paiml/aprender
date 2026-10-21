@@ -2,4 +2,4 @@
 Description=mq-feeder hourly summary line (PMAT-5843)
 [Service]
 Type=oneshot
-ExecStart=/mnt/nvme-raid0/wt/w5382-mqf/scripts/mq_feeder.sh --summary
+ExecStart=%h/.local/libexec/mq-feeder/mq_feeder.sh --summary

@@ -2,4 +2,4 @@
 Description=mq-feeder: enqueue the oldest green PR when the merge queue is empty (PMAT-5843)
 [Service]
 Type=oneshot
-ExecStart=/mnt/nvme-raid0/wt/w5382-mqf/scripts/mq_feeder.sh
+ExecStart=%h/.local/libexec/mq-feeder/mq_feeder.sh
