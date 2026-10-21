@@ -177,9 +177,7 @@ judge_generated() {
     local f ids
     for f in "$td"/entries/*.yaml; do
         [ -e "$f" ] || continue
-        ids=$(python3 -c 'import sys,yaml
-d=yaml.safe_load(open(sys.argv[1]))
-print(" ".join(str(e.get("id")) if isinstance(e,dict) else "?" for e in d) if isinstance(d,list) else "?")' "$f" 2>/dev/null) || ids="(unparseable)"
+        ids=$(python3 "$PY_LIB" fragment-ids "$f" 2>/dev/null) || ids="(unparseable)"
         if [ "$ids" != "$(basename "$f" .yaml)" ]; then
             violations=$((violations + 1))
             printf 'FAIL  G3  %s/%s must hold exactly one entry whose id is its filename (found: %s)\n' "$ENTRIES_DIR" "$(basename "$f")" "$ids"
@@ -372,6 +370,7 @@ mkrepo() {
 }
 
 self_test() {
+    unset GITHUB_EVENT_NAME   # the rows judge PR-shape ranges; a merge_group env would skip G5
     local td n=0 red=0 TEMPLATE
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq-selftest.XXXXXX") || return 2
     cleanup() {

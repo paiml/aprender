@@ -512,6 +512,30 @@ def _emit_generated(a, base, out, frags, roadmap):
     return _emit(a, base, out, frags, roadmap)
 
 
+def _fragment_ids_of(path):
+    """The ids one fragment holds (space-joined), `?` if it is not a list of
+    mappings, None if it does not load."""
+    import yaml
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = yaml.safe_load(fh)
+    except (OSError, yaml.YAMLError):
+        return None
+    if not isinstance(doc, list):
+        return "?"
+    return " ".join(str(e["id"]) if isinstance(e, dict) and "id" in e else "?" for e in doc)
+
+
+def _cmd_fragment_ids(a):
+    """`fragment-ids FILE...` -> one line per file with the ids it holds, or
+    `(unparseable)` (rc 1). check_roadmap_fragment_required.sh G3b compares the
+    line to the filename."""
+    got = [_fragment_ids_of(path) for path in a.ids]
+    for line in got:
+        print("(unparseable)" if line is None else line)
+    return 1 if None in got else 0
+
+
 def _cmd_changed(a):
     """`changed --base A --head B` -> one `VERDICT<TAB>ID` line per entry whose
     BYTES differ, plus `PREAMBLE` if the header did. The consumer decides
@@ -554,8 +578,8 @@ def _cmd_adopt(a, roadmap, entries_dir):
 
 def _parser():
     ap = argparse.ArgumentParser(prog="roadmap_fragments.py")
-    ap.add_argument("cmd", nargs="?", choices=["aggregate", "changed", "adopt"])
-    ap.add_argument("ids", nargs="*", help="adopt: the entry id(s) to move into entries/")
+    ap.add_argument("cmd", nargs="?", choices=["aggregate", "changed", "adopt", "fragment-ids"])
+    ap.add_argument("ids", nargs="*", help="adopt: the entry id(s) to move into entries/; fragment-ids: the fragment file(s) to read")
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--check", action="store_true",
                     help="fail if roadmap.yaml is not what the aggregator produces")
@@ -575,15 +599,17 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
-    roadmap, entries_dir = _paths(a)
+    if a.cmd == "fragment-ids":
+        return _cmd_fragment_ids(a)
     if a.cmd == "changed":
         return _cmd_changed(a)
+    roadmap, entries_dir = _paths(a)
     if a.cmd == "adopt":
         return _cmd_adopt(a, roadmap, entries_dir)
-    if a.cmd != "aggregate":
-        ap.print_usage(sys.stderr)
-        return 2
-    return _cmd_aggregate(a, roadmap, entries_dir)
+    if a.cmd == "aggregate":
+        return _cmd_aggregate(a, roadmap, entries_dir)
+    ap.print_usage(sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
