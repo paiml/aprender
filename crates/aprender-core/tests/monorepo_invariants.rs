@@ -1392,7 +1392,7 @@ mod archive_wiring {
     pub fn violations(sections: &str, ci: &str, bless: bool) -> Vec<String> {
         let (s, c) = (parse(sections), parse(ci));
         let (Some(arc), Some(shard)) = (
-            find_key(&s, "workspace-test-archive"),
+            find_key(&s["jobs"], "workspace-test-archive"),
             find_key(&s["jobs"], "workspace-test-shard"),
         ) else {
             return vec![
@@ -1681,6 +1681,33 @@ fn test_archive_wiring_mutants_all_die() {
                 "overwrite: false",
             ),
         ),
+        ("decoy workspace-test-archive outside jobs", {
+            // A conforming copy of the job at the top level, the real one renamed away.
+            let key = "  workspace-test-archive:\n";
+            let start = sec.find(key).expect("archive job");
+            let rest = &sec[start + key.len()..];
+            let end = rest
+                .lines()
+                .scan(0, |o, l| {
+                    let at = *o;
+                    *o += l.len() + 1;
+                    Some((at, l))
+                })
+                .find(|(_, l)| {
+                    l.starts_with("  ")
+                        && !l.starts_with("   ")
+                        && !l.trim().is_empty()
+                        && !l.trim_start().starts_with('#')
+                })
+                .map_or(rest.len(), |(at, _)| at);
+            let block = &sec[start..start + key.len() + end];
+            let decoy: String = block
+                .lines()
+                .map(|l| format!("{}\n", l.strip_prefix("  ").unwrap_or(l)))
+                .collect();
+            let renamed = sec.replacen(key, "  workspace-test-archive-gone:\n", 1);
+            format!("{renamed}\n{decoy}")
+        }),
         (
             "upload overwrite removed",
             mutate(
