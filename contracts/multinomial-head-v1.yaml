@@ -330,6 +330,11 @@ falsification_tests:
   prediction: Two identical fits produce bitwise-identical stored f32 coefficients and byte-identical canonical JSON
   test: cargo test -p aprender-core --features setfit --lib two_identical_fits_produce_bitwise_identical_f32_weights
   if_fails: Randomness or a wall-clock field entered the fit path, breaking the reproducibility record
+- id: FALSIFY-MH-013
+  rule: A head loaded from stored coefficients validates its shape, and its error text and lambda relation are exact
+  prediction: from_stored_coefficients rejects every malformed shape with the matching HeadInputError; SklearnEquivalentC resolves to 1/(2*C*n); predict guards NotFitted and FeatureDimMismatch
+  test: cargo test -p aprender-core --lib tests_multinomial_head_edges
+  if_fails: A corrupt stored head loads silently, or the C-to-lambda relation drifts from sklearn
 kani_harnesses_note: >
   NOT EXECUTED. No #[kani::proof] harness exists anywhere in crates/ and cargo-kani is
   not installed repo-wide, so every entry below is a DECLARED obligation, not a
@@ -386,5 +391,5 @@ qa_gate:
   - intercept_penalty_exclusion
   - convergence_error_mapping
   - logit_finiteness
-  pass_criteria: All 12 falsification tests pass, including the two in-band negative controls (FALSIFY-MH-002, FALSIFY-MH-006)
+  pass_criteria: All 13 falsification tests pass, including the two in-band negative controls (FALSIFY-MH-002, FALSIFY-MH-006)
   falsification: Substitute lambda*W for 2*lambda*W in the gradient, or 1/(C*n) for 1/(2*C*n) in the relation
