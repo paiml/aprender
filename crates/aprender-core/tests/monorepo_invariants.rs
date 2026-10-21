@@ -1370,12 +1370,11 @@ mod archive_wiring {
             .filter(|r| r.contains("fat_driver.py") && r.contains(" run"))
             .map(|r| r.split_whitespace().collect::<Vec<_>>().join(" "))
             .collect();
-        let ok = drivers.len() == 1
-            && drivers[0].matches("--sections").count() == 1
-            && drivers[0].contains("--sections 'workspace-test-archive' ");
+        let want = "python3 scripts/ci/fat_driver.py run --sections 'workspace-test-archive' --results \"$RUNNER_TEMP/fat/results.json\"";
+        let ok = drivers.len() == 1 && drivers[0] == want;
         if !ok {
             bad.push(format!(
-                "ci.yml: the archive job must run fat_driver.py once with --sections 'workspace-test-archive' only, found {drivers:?}"
+                "ci.yml: the archive job must run exactly `{want}` (argparse abbreviations make any extra flag unsafe), found {drivers:?}"
             ));
         }
     }
@@ -1724,6 +1723,18 @@ fn test_archive_wiring_mutants_all_die() {
         "zz-weak-archive",
     );
     assert_ne!(ci_pt, ci);
+    // argparse accepts abbreviations and the last wins: an appended --sect must not pass.
+    let ci_ab = mutate(
+        &ci,
+        "--sections 'workspace-test-archive'",
+        "'workspace-test-archive'",
+        "'workspace-test-archive' --sect zz-weak-archive",
+    );
+    assert_ne!(ci_ab, ci);
+    assert!(
+        !violations(&sec, &ci_ab, false).is_empty(),
+        "mutant survived: ci.yml appended --sect"
+    );
     assert!(
         !violations(&sec, &ci_pt, false).is_empty(),
         "mutant survived: ci.yml --sections repointed"
