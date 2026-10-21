@@ -377,9 +377,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
           args=(--event "${GITHUB_EVENT_NAME}")
+          # #5797: a signed batch receipt in the PR body (signature, tree hash == this
+          # merge tree, toolchain hash) lets the PR run check/fmt/clippy instead of the
+          # suite. The verdict is NOT computed here: the `receipt-judge` job in ci.yml
+          # computes it in a job that never checks out or runs the PR tree (it checks out
+          # the base, reads the PR merge commit as data), and the shard job hands it in as
+          # RECEIPT_OK. Anything but a literal 1 -- unset, 0, a skipped or failed judge -- is
+          # 0, and 0 leaves the tier exactly as it was. Only a pull_request can carry one.
+          rok=0
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ] && [ "${RECEIPT_OK:-0}" = 1 ]; then rok=1; fi
+          args+=(--receipt-ok "${rok:-0}")
           # PMAT-1098 67-E2: the queue and a push to main re-derive their own
           # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the
           # new base). actions/checkout is shallow, so that parent is not in the
@@ -1073,7 +1084,7 @@ jobs:
           python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
           exit "$rc"
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
-        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == matrix.shards
+        if: ((steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1') || (steps.tier.outputs.tier == 'reuse' && steps.tier.outputs.cite == 'receipt')) && matrix.shard == matrix.shards
         timeout-minutes: 20
         env:
           REASON: ${{ steps.tier.outputs.reason }}
