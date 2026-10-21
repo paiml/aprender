@@ -9,9 +9,10 @@
 #   crates/<pkg>/...        the package + its reverse-dependency closure (cargo metadata)
 #   a CORE crate            ALL (its closure is the workspace; naming it would only hide that)
 #   Cargo.toml of a crate   ALL (a manifest edit changes features/deps, which no path can bound)
-#   docs/, root *.md, ci/ (sections.yml, explicit-test-commands.d/, ...), Cargo.lock, root Cargo.toml,
-#   rust-toolchain.toml, .cargo/, .github/, Makefile, any other path outside a crate
-#                           ALL (tests read README.md, CLAUDE.md, ci/sections.yml and docs/ at run time)
+#   ci/ (sections.yml, explicit-test-commands.d/, ...), Cargo.lock, root Cargo.toml, rust-toolchain.toml, .cargo/, .github/, Makefile,
+#   any other path outside a crate            ALL
+#   docs/, contracts/, root *.md              READERS only (FLOW-010 b): their run-time readers are all in READERS. Exceptions, ALL:
+#                           contracts binding.yaml, contracts model-families and the BUILD_CONTRACTS files (compiled into a crate)
 #   docs/findings/, .claude/, ci/shard-step-costs.tsv
 #                           NO-READER list (#5809): the only run-time readers of these paths (grep of crates/**/*.rs: contracts-cli,
 #                           orchestrate, core, mcp, apr-cli) are all in READERS, so the set is READERS alone. Alone or
@@ -54,9 +55,14 @@ else meta="$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null |
 root="${AFFECTED_ROOT:-$(git rev-parse --show-toplevel)}"
 dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($root;"") | sub("/?Cargo.toml$";""))] | @tsv' <<<"$meta")" || { emit ALL; exit 0; }
 [ -n "$dirs" ] || { emit ALL; exit 0; }
+# Root contracts/ files that build.rs or include_str!/include! turn into compiled code or constants (aprender-serve build.rs generates
+# arch/tensor-name code from three of them; apr-cli and mcp embed others). A change reaches dependents of the compiling crate, so these are ALL.
+# check_affected_readers.sh derives this list from the tree and is RED on a file it omits.
+BUILD_CONTRACTS="${AFFECTED_BUILD_CONTRACTS:-apr-mcp-tool-schemas-v1.yaml apr-model-capability-v1.yaml arch-constraints-v1.yaml architecture-requirements-v1.yaml kernel-fusion-v1.yaml layer-parity-v1.yaml softmax-kernel-v1.yaml tensor-names-v1.yaml thinking-budgets-v1.yaml}"
 touched="" skipped=0
 while IFS= read -r f; do
   case "$f" in */*) ;; *.md) skipped=1; continue ;; esac   # root *.md: its run-time readers are in READERS
+  case "$f" in contracts/*) case " $BUILD_CONTRACTS " in *" ${f#contracts/} "*) emit ALL; exit 0 ;; esac ;; esac
   case "$f" in
     '') continue ;;
     contracts/binding.yaml | contracts/*/binding.yaml | contracts/model-families/* | contracts/*/model-families/*) emit ALL; exit 0 ;;   # build inputs of core/compute/contracts/simulate/train: their generated code reaches dependents

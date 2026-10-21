@@ -54,6 +54,10 @@ row "docs/findings lookalike (docs/findings-x.md) -> READERS only" "$(printf '%s
 row "docs file -> READERS only (their run-time readers are in READERS)" "$(printf '%s\n' $readers | sort -u)" "$(run docs/x.md | sort -u)"
 row "contracts yaml -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run contracts/foo-v1.yaml | sort -u)"
 row "contracts/<x>/binding.yaml -> ALL (build input of core/compute/contracts/simulate/train)" ALL "$(run contracts/aprender/binding.yaml)"
+row "serve build.rs input contracts/tensor-names-v1.yaml -> ALL" ALL "$(run contracts/tensor-names-v1.yaml)"
+row "serve build.rs input contracts/architecture-requirements-v1.yaml -> ALL" ALL "$(run contracts/architecture-requirements-v1.yaml)"
+row "serve build.rs input contracts/arch-constraints-v1.yaml -> ALL" ALL "$(run contracts/arch-constraints-v1.yaml)"
+row "BUILD_CONTRACTS file next to a leaf .rs -> ALL" ALL "$(run contracts/tensor-names-v1.yaml "$ld/src/lib.rs")"
 row "contracts/binding.yaml -> ALL" ALL "$(run contracts/binding.yaml)"
 row "contracts/model-families -> ALL (aprender-core build.rs generates code from it)" ALL "$(run contracts/model-families/q.yaml)"
 row "contracts yaml next to a leaf .rs -> leaf + READERS" "$lc" "$(run contracts/foo-v1.yaml "$ld/src/lib.rs" | sort -u)"
@@ -108,6 +112,11 @@ else printf '%s\n' "$ld/build.rs" >"$t/db"; row "MUTANT: dropping the build.rs a
 sed '/^    contracts\/binding.yaml /d' "$A" >"$t/mut-bind.sh"
 if cmp -s "$A" "$t/mut-bind.sh"; then echo "FAIL binding mutant did not apply"; fail=1
 else printf '%s\n' contracts/aprender/binding.yaml >"$t/db2"; row "MUTANT: dropping the binding/model-families ALL arm is caught" "$(printf '%s\n' $readers | sort -u)" "$(bash "$t/mut-bind.sh" --diff-from "$t/db2" | sort -u)"; fi
+# mutant: the checker must go RED when a build.rs-read root contract is missing from BUILD_CONTRACTS
+sed 's/ tensor-names-v1.yaml//' "$A" >"$t/mut-bc.sh"
+if cmp -s "$A" "$t/mut-bc.sh"; then echo "FAIL build-contracts mutant did not apply"; fail=1
+elif AFFECTED_SET_SH="$t/mut-bc.sh" bash scripts/check_affected_readers.sh >/dev/null 2>&1; then echo "FAIL MUTANT: a build.rs-read contract missing from BUILD_CONTRACTS is not caught"; fail=1
+else echo "ok   MUTANT: a build.rs-read contract missing from BUILD_CONTRACTS is caught by check_affected_readers.sh"; fi
 # mutant: root-md arm that also skips crate-level .md must be caught by the leaf README row
 sed 's#case "\$f" in \*/\*) ;; \*.md)#case "\$f" in *.md)#' "$A" >"$t/mut-md.sh"
 if cmp -s "$A" "$t/mut-md.sh"; then echo "FAIL md mutant did not apply"; fail=1

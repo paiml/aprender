@@ -18,9 +18,18 @@ hits() { # $1 = crates dir; prints crate names
     | grep -vE '^[^:]*/target/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
     | awk -F: -v allow=" $ALLOW " '{ k = $1 ":" $2; if (index(allow, " " k " ")) next; n = split($1, a, "/"); print a[2] }' | sort -u
 }
+build_listed() { sed -n 's/^BUILD_CONTRACTS="\${AFFECTED_BUILD_CONTRACTS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sort -u; }
+# Root contracts/<file> that a build.rs names (any quoted *-vN.yaml) or an include*! macro embeds: compiled into a crate, so ALL.
+build_inputs() { # $1 = crates dir; root contracts dir = ${CONTRACTS_DIR:-contracts}
+  { grep -rhE --include=build.rs '[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null | grep -vE '^\s*//' | grep -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"'
+    grep -rhE --include='*.rs' 'include(_str|_bytes)?!' "$1" 2>/dev/null | grep -vE '^\s*//' | grep -oE 'contracts/[A-Za-z0-9_-]+\.yaml' | sed 's#contracts/##'
+  } | sort -u | while read -r f; do [ -f "${CONTRACTS_DIR:-contracts}/$f" ] && echo "$f"; done | grep -v 'binding\.yaml$' || true
+}
 check() {
   local bad="" l c; l="$(listed)"
   for c in $(hits "$1"); do printf '%s\n' "$l" | grep -qx "$c" || bad="$bad $c"; done
+  local bl; bl="$(build_listed)"
+  for c in $(build_inputs "$1"); do printf '%s\n' "$bl" | grep -qx "$c" || bad="$bad contracts/$c(BUILD_CONTRACTS)"; done
   if [ -n "$bad" ]; then echo "RED: crates can reach other crates' files but are not in READERS (scripts/affected_set.sh):$bad"; return 1; fi
   echo "ok: every crate with a path-escape form is in READERS"
 }
