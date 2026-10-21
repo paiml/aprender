@@ -133,6 +133,9 @@ run() {
             printf 'REFUSE shard %s selects 0 of %s command(s) -- more shards than commands is not a pass\n' "$shard" "$total" >&2; return 2
         fi
         printf 'shard %s: %s of %s command(s)\n' "$shard" "${#mine[@]}" "$total"
+        # EXPLICIT_LIST_SHARD=1: print this shard's selection and stop (the union test,
+        # scripts/check_shard_union.sh, reads the REAL selector instead of re-deriving it).
+        if [ "${EXPLICIT_LIST_SHARD:-0}" = 1 ]; then printf '%s\n' "${mine[@]}"; return 0; fi
         cmds=("${mine[@]}"); total=${#cmds[@]}
     fi
     for cmd in "${cmds[@]}"; do
