@@ -67,11 +67,12 @@ concl() {
     | if length == 1 then (.[0].conclusion // "none") else "count=\(length)" end' "$1" 2> /dev/null
 }
 
-# The matrix jobs `workspace-test-shard (N, M)` in jobs file $1: prints "<count> <not-success count>". A draft PR run (or a
-# reused one) has green `workspace-test` and NO such jobs; that green says no test ran, so it is never reusable (#5885 lane-b).
+# The matrix jobs `workspace-test-shard (N, M)` in jobs file $1: prints "<count> <not-success count> <M>", M = the shard total every
+# name agrees on (0 if they disagree). A draft PR run (or a reused one) has green `workspace-test` and NO such jobs (#5885 lane-b).
 shards() {
-  jq -r '[.jobs[]? | select(.name | test("^workspace-test-shard \\([0-9]+, [0-9]+\\)$"))]
-    | "\(length) \([.[] | select(.conclusion != "success")] | length)"' "$1" 2> /dev/null || echo "0 1"
+  jq -r '[.jobs[]? | select(.name | test("^workspace-test-shard \\([0-9]+, [0-9]+\\)$"))] as $s
+    | ([$s[].name | capture(", (?<m>[0-9]+)\\)$").m | tonumber] | unique) as $m
+    | "\($s | map(.name) | unique | length) \([$s[] | select(.conclusion != "success")] | length) \(if ($m | length) == 1 then $m[0] else 0 end)"' "$1" 2> /dev/null || echo "0 1 0"
 }
 
 decide() {
@@ -124,13 +125,17 @@ decide() {
   # Not tied to x86-main/determinism: a red x86-main on the head does not make a green workspace-test stale.
   wt=0
   # wt=1 needs the verdict green AND >=1 shard job, all success: a draft run is green with zero shards (#5885 lane-b).
-  read -r nsh nbad <<< "$(shards "$jobs")"
-  [ "$(concl "$jobs" workspace-test)" = success ] && [ "${nsh:-0}" -ge 1 ] 2> /dev/null && [ "${nbad:-1}" = 0 ] && wt=1 # R:k6-wt
+  read -r nsh nbad msh <<< "$(shards "$jobs")"
+  wcite="run $rid attempt $att on ${h:0:10}"
+  # ...and EVERY shard of the matrix is present: (N, M) names must agree on M and number M (a partial list is not a run).
+  [ "$(concl "$jobs" workspace-test)" = success ] && [ "${msh:-0}" -ge 1 ] 2> /dev/null && [ "${nsh:-0}" = "${msh:-0}" ] && [ "${nbad:-1}" = 0 ] && wt=1 # R:k6-wt-all-shards
+  # a reuse with nothing to cite is not a reuse
+  [[ "$wcite" =~ ^run\ [0-9]+\ attempt\ [0-9]+\ on\ [0-9a-f]{10}$ ]] || wt=0 # R:k6-wt-cite
   mc=1
   [ "$(concl "$jobs" mac-check)" = success ] || mc=0 # R:k6-mac
   emit "$x" "$x" "$mc" "run $rid attempt $att on ${h:0:10}" "$h" \
     "K1-K5 hold; x86-main+determinism: $([ "$x" = 1 ] && echo reuse || echo "run ($why)"); mac-check: $([ "$mc" = 1 ] && echo reuse || echo "run ($(concl "$jobs" mac-check))"); workspace-test: $([ "$wt" = 1 ] && echo reuse || echo "run ($(concl "$jobs" workspace-test))")" \
-    "$wt" "$([ "$wt" = 1 ] && echo "run $rid attempt $att on ${h:0:10}")"
+    "$wt" "$([ "$wt" = 1 ] && echo "$wcite")"
 }
 
 # The queue-entry override, FORCED: drop whatever decide said for these keys (or omitted) and write
@@ -406,9 +411,14 @@ self_test() {
 
   # T43b (#5884, Noah 16:28Z #3): workspace-test reuse. RED->GREEN falsifier: a changed main must run, an identical tree may skip.
   sed '/^workspace-test	/d' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.no-wt"
-  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard (1, 4)\tsuccess\nworkspace-test-shard (2, 4)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-ok"
-  sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; printf 'workspace-test-shard (1, 4)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
-  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard (1, 4)\tsuccess\nworkspace-test-shard (2, 4)\tfailure\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-shard-failed"
+  # shard job names are the real matrix names, "workspace-test-shard (N, M)" (MG run 39666213701); sh4 N... = those N of 4, success
+  sh4() { local n; for n in "$@"; do printf 'workspace-test-shard (%s, 4)\tsuccess\n' "$n"; done; }
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-ok"
+  sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; sh4 1 2 3 4; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
+  { cat <<< "$GREEN_JOBS"; sh4 1 3 4; printf 'workspace-test-shard (2, 4)\tfailure\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-shard-failed"
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-partial"
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; printf 'workspace-test-shard (5, 12)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-mixed-m"
+  run_obj 1001 "$H" completed | jq '.run_attempt = ""' | runs_json 0 > "$F/runs.no-attempt"
   { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard\tskipped\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-draft"
   sed 's|^workspace-test	success$|workspace-test	failure|' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.fail-wt"
   wrow() { # wrow NAME WANT decide-args...
@@ -423,6 +433,9 @@ self_test() {
   wd draft-run-no-shards-runs   0 "$M" "$B" "$H" runs.ok jobs.wt-draft
   wd greenverdict-zero-shards   0 "$M" "$B" "$H" runs.ok jobs.ok
   wd one-shard-failed-runs      0 "$M" "$B" "$H" runs.ok jobs.wt-shard-failed
+  wd partial-shards-runs        0 "$M" "$B" "$H" runs.ok jobs.wt-partial
+  wd mixed-shard-totals-runs    0 "$M" "$B" "$H" runs.ok jobs.wt-mixed-m
+  wd empty-attempt-no-cite-runs 0 "$M" "$B" "$H" runs.no-attempt jobs.wt-ok
   wd changed-tree-runs          0 "$M_TREE" "$B" "$H" runs.ok jobs.ok
   wd changed-main-not-ancestor  0 "$M_K3" "$B2" "$H" runs.ok jobs.ok
   wd base-is-a-merge-runs       0 "$M_K2" "$BM" "$H2" runs.h2 jobs.h2
