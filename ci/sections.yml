@@ -2288,6 +2288,171 @@ jobs:
         run: setsid --wait bash scripts/contracts_gate.sh --self-test
       - name: contracts gate — lint, fail-closed shapes, regenerate + git diff, README, provenance
         run: setsid --wait bash scripts/contracts_gate.sh
+
+  # SPLIT (x86-main wall, run 39550177100): guard-cargo ran 77 steps serially = 2129 s and bound the 39 min
+  # x86-main job. Steps from 'Every contract cites a test that exists' on run here, in parallel, in their
+  # own target dir. Same steps, same scripts: no check added, removed or loosened.
+  guard-cargo-b:
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    # 20: the operator's hard PR budget (rule E, 2026-09-10), and it OVERRIDES
+    # the BSE-05 formula rather than being derived from it.
+    #
+    # Measured basis, run 34449608126 (PR #3074, `gh api .../jobs` step
+    # timestamps): 43.8 min over 80 steps, 13 of them over 60 s. The seven
+    # tree-universe steps listed in scripts/guards_nightly_manifest.txt were
+    # 1607 s = 26.8 min of that, and they now run in guards-nightly.yml.
+    # Projected job: 43.8 - 26.8 = 17.0 min, three minutes of headroom.
+    #
+    # BSE-05 would say T = max(15, ceil(1.5*p99), p99+20) = 37 against a p99
+    # of 17. The 20-minute budget is SMALLER than the formula's answer, and it
+    # is the number the operator set (rule E). A run that exceeds it is meant
+    # to fail: the remedy is to move the next tree-universe step to the
+    # nightly, never to widen this number.
+    # 30, not 20 (67-E3 merge onto #3115 main, 2026-09-11): the fleet ledger measured p90 25 min for
+    # guard-tree and 45 min for guard-cargo BEFORE the seven moved steps (~23 min) left it; 30 is the
+    # measured remainder with a 1.3x margin under train load. Re-tighten from evidence/fleet/history.jsonl.
+    timeout-minutes: 30
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
+      # This job's OWN per-run target dir. The `-guards` suffix is the whole
+      # point: workspace-test mounts `run-<RUN_ID>` and this job must never
+      # resolve to the same path. Reaped by the same `run-*` sweep on intel.
+      GUARD_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/run-${{ github.run_id }}-guards-b
+      # PMAT-238 (paiml/infra#435): the CARGO_HOME mount is the WHOLE cargo
+      # home, not `registry/` alone. `.package-cache` and
+      # `.package-cache-mutate` are cargo's flock files and they live beside
+      # `registry/` in $CARGO_HOME. Mounting only `registry/` gives every
+      # container its own private lock while they all share one registry —
+      # which is infra#77 (16 private locks over one shared registry), and it
+      # corrupts the registry rather than serialising access to it.
+      GUARD_CARGO_HOME: /mnt/nvme-raid0/cargo-ci/home/${{ github.event.pull_request.number || github.ref_name }}
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Same guard as workspace-test (:92) and mutants (:435). This job was
+        # the ONLY clean-room job missing it, and that asymmetry took main red
+        # on 2026-07-06 (run 28776891625): a hard-killed docker job left
+        # root-owned target/.rustc_info.json + target/package/ in the runner
+        # checkout, so this job's actions/checkout `git clean -ffdx` failed
+        # with EACCES before a single step ran. Because `gate` hard-requires
+        # guard-tree (:379), a checkout-level EACCES here reads as a
+        # required-check failure and blocks every merge — the andon stays red
+        # until someone manually `ssh intel sudo rm`s the leftovers.
+        # Cached-image gate is sound: leftovers can only exist if a previous
+        # docker job ran on this runner, which implies the image is already in
+        # the local cache. So "image not cached ⟹ no leftovers" and skipping is
+        # safe (and keeps this step tolerant of a registry outage).
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      # THE COMPARAND, FETCHED ONCE, BEFORE ANY GUARD THAT NEEDS IT.
+      #
+      # Every shrink-only baseline in scripts/ is now compared against a ref a
+      # pull request cannot rewrite, because twelve of them were compared
+      # against nothing: appending one entry -- cloned from that file's own last
+      # real entry -- returned rc=0 from all twelve, and on two of them the
+      # appended entry laundered a violation created in the same commit.
+      #
+      # This step used to sit ~180 lines down, next to the one guard that
+      # needed it. Three ratcheted guards (shell lint, hand-rolled parsers,
+      # assertion exclusion) run BEFORE that point and would have had an
+      # unresolvable comparand -- which those guards treat as a hard failure,
+      # never as "no growth", so the mistake would have been loud rather than
+      # silent. It is still a mistake. One fetch, before all of them.
+      #
+      # #4861 + #4983: origin/main is pinned to the commit this tree was BUILT
+      # on, not fetched at its tip -- the same pin, for the same reason, as
+      # guard-tree's guard-setup (which also runs the pin's self-test; this job
+      # only pins). m17's complexity ratchet is the #4983 case: a re-run of an
+      # unchanged PR judged against main's moved tip went red.
+      - name: Pin origin/main to this run's build base, the comparand for every ratchet in this job (#4861)
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: bash scripts/ci/pin_build_base.sh
+      # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
+      # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
+      # container that mounts it and drops to the runner's uid cannot write
+      # the directory the daemon just made for it. Create both host paths
+      # FIRST, from the runner user, in a plain step — then the mount source
+      # already exists and is already owned by the uid the container runs as.
+      # `registry/` is created here too so the first container to use the
+      # cargo home finds it, and the two lock files (.package-cache,
+      # .package-cache-mutate) are created by cargo itself INSIDE this same
+      # directory — which is the entire reason the mount is $CARGO_HOME and
+      # not $CARGO_HOME/registry.
+      - id: guard-setup
+        name: Create this job's own target dir and CARGO_HOME (before any bind mount)
+        run: |
+          # A root-owned parent (created by the docker daemon for another job's
+          # bind mount, #3039) is chowned through the image before the mkdir;
+          # that one directory only, never its contents.
+          # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
+          # ref (gh-readonly-queue/main/pr-N-<sha>), so the per-ref dir is NESTED
+          # and an ancestor may already be root-owned from a build whose bind
+          # mount let the docker daemon create it (#3037's queue build: mkdir
+          # EACCES on .../aprender-ci/gh-readonly-queue/...). Walk every
+          # component from ROOT down; chown each existing unwritable one through
+          # the image (that directory only, never its contents); then mkdir -p.
+          heal_path() {
+            local root=$1 path=$2 cur=$1 rel part
+            rel=${path#"$root"/}
+            IFS=/ read -ra parts <<< "$rel"
+            for part in "${parts[@]}"; do
+              cur="$cur/$part"
+              if [ -d "$cur" ] && [ ! -w "$cur" ]; then
+                docker run --rm -v "$(dirname "$cur"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$cur")"
+              fi
+            done
+            mkdir -p "$path"
+          }
+          # infra#1059: admit this target unit against gx10's disk budget BEFORE creating it
+          # (free >= 50G + 25G x (live+1), live < 2; waits <=20m, then exit 1). The admit
+          # record is what the runner's JOB_COMPLETED hook reaps, and nothing else. Hosts
+          # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
+          # gate there is red, never a silent skip.
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            CI_TARGET_ADMIT_WAIT_S=300 ci-target-admit "$GUARD_TARGET_DIR" || exit 1   # 5 min, not 20: the 30 min job budget is rule E and is never widened; gx10 guard-cargo max 23 min (46 runs, 2026-09-24)
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
+          heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
+          heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
+          printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
+          printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
+      # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-cargo-steps
+      # below, keeps going past a red one, and reports every failure. GitHub would
+      # stop this job at its first red step, and the others would never be seen.
+      # `make guards-local` and the pre-push hook run this same script and print
+      # the same `ci_guards: sha256` line.
+      - name: Every guard step runs, and every failure is reported (scripts/ci_guards.sh, #4415)
+        if: ${{ !cancelled() && steps.guard-setup.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci_guards.sh guard-cargo-b
+
+  guard-cargo-b-steps:
+    # MANIFEST, never run by GitHub (`if: false`). These are guard-cargo-b's guard steps,
+    # executed by the single `scripts/ci_guards.sh guard-cargo-b` step of guard-cargo-b above, and by
+    # `make guards-local` (#4415). They live here, verbatim, so every guard that
+    # reads this file for an invocation (check_guards_are_wired.sh, guard_tree.sh,
+    # the contracts' `test:` greps) still finds it. A step here is name/run/env
+    # only; scripts/check_guard_steps_run_all.sh refuses anything else.
+    if: false
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    steps:
+      - name: Cargo.lock must match the manifests
+        run: setsid --wait bash scripts/check_lockfile_current.sh
+      - name: "lockfile guard must still turn RED (case table)"
+        run: setsid --wait bash scripts/check_lockfile_current.sh --self-test
       - name: Every contract cites a test that exists (strict-test-binding)
         run: setsid --wait bash scripts/check_contract_test_binding.sh
       # Poka-yoke (#2551): `cargo test -p aprender-contracts --test

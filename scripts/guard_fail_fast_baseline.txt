@@ -5,4 +5,5 @@
 # The workflow half (steps get `if: ${{ !cancelled() && steps.guard-setup.outcome == 'success' }}`)
 # takes both rows to 0. Counted by: bash scripts/lib/ci_guard_steps.sh check-run-all
 guard-cargo	0
+guard-cargo-b	0
 guard-tree	0
