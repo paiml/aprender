@@ -168,7 +168,7 @@ row "git rev-parse fails (not a checkout, rc 128) -> ALL" ALL "$(cd "$t/notgit" 
 sed 's/ || root=""$//' "$A" >"$t/mut-root.sh"
 if cmp -s "$A" "$t/mut-root.sh"; then echo "FAIL root-fallback mutant did not apply"; fail=1
 else row "MUTANT: dropping the rev-parse fallback is caught (prints nothing)" "" "$(cd "$t/notgit" && AFFECTED_META="$t/meta.json" bash "$t/mut-root.sh" --diff-from "$t/one" 2>/dev/null || true)"; fi
-sed 's/files="\$(cat "\$from")" || files=""/files="$(cat "$from")"/' "$A" >"$t/mut-cat.sh"
+sed 's/ || files=""$//' "$A" >"$t/mut-cat.sh"
 if cmp -s "$A" "$t/mut-cat.sh"; then echo "FAIL cat-fallback mutant did not apply"; fail=1
 else row "MUTANT: dropping the missing-file fallback is caught (prints nothing)" "" "$(bash "$t/mut-cat.sh" --diff-from "$t/no-such-file" 2>/dev/null || true)"; fi
 # an unreadable cargo metadata is ALL, not an empty answer

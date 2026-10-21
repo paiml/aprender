@@ -27,9 +27,9 @@ build_inputs() { # $1 = crates dir; root contracts dir = ${CONTRACTS_DIR:-contra
 }
 check() {
   local bad="" l c; l="$(listed)"
-  for c in $(hits "$1"); do printf '%s\n' "$l" | grep -qx "$c" || bad="$bad $c"; done
+  for c in $(hits "$1"); do grep -qx "$c" <<<"$l" || bad="$bad $c"; done
   local bl; bl="$(build_listed)"
-  for c in $(build_inputs "$1"); do printf '%s\n' "$bl" | grep -qx "$c" || bad="$bad contracts/$c(BUILD_CONTRACTS)"; done
+  for c in $(build_inputs "$1"); do grep -qx "$c" <<<"$bl" || bad="$bad contracts/$c(BUILD_CONTRACTS)"; done
   if [ -n "$bad" ]; then echo "RED: crates can reach other crates' files but are not in READERS (scripts/affected_set.sh):$bad"; return 1; fi
   echo "ok: every crate with a path-escape form is in READERS"
 }

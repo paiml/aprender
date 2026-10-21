@@ -1950,7 +1950,7 @@ jobs:
       - name: "Affected-set tool case table (FLOW-010 E5, RED rows and mutants)"
         run: setsid --wait bash scripts/check_affected_set.sh
       - name: "Affected-set readers guard (every crate that reads other crates' files is listed; RED on a new one)"
-        run: setsid --wait bash scripts/check_affected_readers.sh && bash scripts/check_affected_readers.sh --self-test
+        run: setsid --wait bash -c 'bash scripts/check_affected_readers.sh && bash scripts/check_affected_readers.sh --self-test'
       # #2640: the SAME defect class as the two steps above, one level up. The
       # dogfood release runner existed as two 1170-line copies whose divergence
       # was, in every hunk, a pin for a release verifier that one copy had and
