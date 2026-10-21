@@ -34,7 +34,7 @@ _resolve_event_base() {
     [ "${ROADMAP_DIFF_NO_EVENT_BASE:-0}" != 1 ] && [ -n "$ev" ] && [ -r "$ev" ] || return 0
     case "${GITHUB_EVENT_NAME:-}" in
         merge_group) sha=$(sed -n 's/.*"base_sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' "$ev" | head -n 1) ;;
-        pull_request|pull_request_target) sha=$(tr -d '\n' <"$ev" | sed -n 's/.*"base"[[:space:]]*:[[:space:]]*{[^}]*"sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' | head -n 1) ;;
+        pull_request|pull_request_target) sha=$(awk '{ s = s $0 } END { if (!match(s, /"base"[ \t]*:[ \t]*\{/)) exit; s = substr(s, RSTART + RLENGTH); if (!match(s, /"sha"[ \t]*:[ \t]*"[0-9a-f]+"/)) exit; s = substr(s, RSTART, RLENGTH); sub(/^"sha"[ \t]*:[ \t]*"/, "", s); sub(/"$/, "", s); if (length(s) == 40) print s }' "$ev") ;;
     esac
     [ -n "$sha" ] || return 0
     git -C "$REPO_ROOT" cat-file -e "$sha^{commit}" 2>/dev/null \
