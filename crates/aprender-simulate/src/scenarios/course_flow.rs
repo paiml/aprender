@@ -870,7 +870,7 @@ mod tests {
         assert!(!trunk_first_rule(RENDER, 4.0, 30.0 * d, 10));
         // off at 0, off before any course finished, and only the render stage is reordered
         assert!(!trunk_first_rule(RENDER, 0.0, 30.0 * d, 10));
-        assert!(!trunk_first_rule(RENDER, 2.0, 0.0, 0));
+        assert!(!trunk_first_rule(RENDER, 2.0, 30.0 * d, 0));
         assert!(!trunk_first_rule(BUILD, 2.0, 30.0 * d, 10));
         // the rule is wired into the run: some threshold engages it and changes the result
         let run_w = |w: f64| {
