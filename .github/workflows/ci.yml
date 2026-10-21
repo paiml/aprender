@@ -458,6 +458,8 @@ jobs:
         run: setsid --wait bash scripts/ci/archive_list_equal.sh --self-test
       - name: archive_bind_check case table must still turn RED
         run: setsid --wait bash scripts/ci/archive_bind_check.sh --self-test
+      - name: archive_fetch (LAN cache) case table must still turn RED
+        run: setsid --wait bash scripts/ci/archive_fetch.sh --self-test
       - name: Sections
         id: run
         run: >-
@@ -475,6 +477,13 @@ jobs:
           if-no-files-found: error
           overwrite: true
           compression-level: 0
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: ws-archive-ptr
+          path: ${{ runner.temp }}/fat/artifacts/ws-archive-ptr/
+          if-no-files-found: error
+          overwrite: true
       - name: Free this job's own cargo target dir
         if: always()
         run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}-arc" "$GITHUB_RUN_ID"; fi
