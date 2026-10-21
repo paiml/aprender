@@ -172,16 +172,30 @@ judge_generated() {
             printf 'FAIL  G4  %s: only top-level %s/<ID>.yaml files are fragments — the generator ignores anything else\n' "$name" "$ENTRIES_DIR"
         fi
     done < <(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null)
-    # G3b one fragment = one id = its filename, so two files can never carry the same ticket.
+    # G3b one fragment = one YAML list holding ONE mapping whose id is its filename (loaded, not grepped,
+    # so a second entry cannot hide behind an indented or quoted line).
     local f ids
     for f in "$td"/entries/*.yaml; do
         [ -e "$f" ] || continue
-        ids=$(grep -E '^- id: ' "$f" | sed -E "s/^- id: *['\"]?([^'\"]*)['\"]?.*/\1/")
+        ids=$(python3 -c 'import sys,yaml
+d=yaml.safe_load(open(sys.argv[1]))
+print(" ".join(str(e.get("id")) if isinstance(e,dict) else "?" for e in d) if isinstance(d,list) else "?")' "$f" 2>/dev/null) || ids="(unparseable)"
         if [ "$ids" != "$(basename "$f" .yaml)" ]; then
             violations=$((violations + 1))
-            printf 'FAIL  G3  %s/%s must hold exactly one entry whose id is its filename (found: %s)\n' "$ENTRIES_DIR" "$(basename "$f")" "$(printf '%s' "$ids" | tr '\n' ' ')"
+            printf 'FAIL  G3  %s/%s must hold exactly one entry whose id is its filename (found: %s)\n' "$ENTRIES_DIR" "$(basename "$f")" "$ids"
         fi
     done
+    # G5 every fragment added or changed carries a `Pmat-Ticket: <ID>` trailer on a commit of base..head
+    # (sov.roadmap-fragment-parity demands it once the aggregate is untracked; fail here with the remedy, not there).
+    local msgs
+    msgs=$(git -C "$repo" log --no-merges --format=%B "$base..$head" 2>/dev/null)
+    while IFS= read -r name; do
+        [[ "$name" =~ ^$ENTRIES_DIR/([^/]+)\.yaml$ ]] || continue
+        if ! grep -qE "^Pmat-Ticket:[[:space:]]*${BASH_REMATCH[1]}[[:space:]]*$" <<<"$msgs"; then
+            violations=$((violations + 1))
+            printf 'FAIL  G5  %s changes with no `Pmat-Ticket: %s` trailer on any commit of the range — add one (e.g. git commit --allow-empty -m "chore: ticket trailer" -m "Pmat-Ticket: %s")\n' "$name" "${BASH_REMATCH[1]}" "${BASH_REMATCH[1]}"
+        fi
+    done < <(git -C "$repo" diff --no-renames --name-only --diff-filter=AM "$base" "$head" -- "$ENTRIES_DIR")
     if ! git -C "$repo" show "$head:$BASE_FILE" >"$td/base.yaml" 2>/dev/null; then
         rm -rf -- "${td:?}"
         printf 'FAIL  G2  %s is missing at head — the frozen base cannot be deleted or renamed\n' "$BASE_FILE"
@@ -392,7 +406,7 @@ self_test() {
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     }
 
-    commit_all() { git -C "$1" add -A && git -C "$1" commit -qm head; }
+    commit_all() { git -C "$1" add -A && git -C "$1" commit -qm head ${2:+-m "$2"}; }
 
     # ---- builders -------------------------------------------------------
     # THE MEASURED SHAPE: `pmat work add` appends an entry to the monolith and
@@ -525,7 +539,9 @@ PY
         fi
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     }
-    g_fragment_only() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    g_fragment_only() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-200"; }
+    g_fragment_no_trailer() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    g_two_entries() { printf -- '- id: PMAT-200\n  title: new\n  status: planned\n- id: PMAT-201\n  title: smuggled\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-200"; }
     g_readd_aggregate() { cp "$1/$BASE_FILE" "$1/$ROADMAP_FILE"; commit_all "$1"; }
     g_edit_base() { printf -- '- id: PMAT-400\n  title: sneaked\n  status: planned\n' >>"$1/$BASE_FILE"; commit_all "$1"; }
     g_delete_fragment() { git -C "$1" rm -q "$ENTRIES_DIR/PMAT-100.yaml"; commit_all "$1"; }
@@ -542,6 +558,8 @@ PY
     grow 'generated: roadmap.yaml re-added and tracked -> REFUSE G1' 1 'FAIL  G1' g_readd_aggregate
     grow 'generated: the frozen base edited -> REFUSE G2' 1 'FAIL  G2' g_edit_base
     grow 'generated: a duplicate id across fragments -> REFUSE G3' 1 'FAIL  G3' g_dup_fragment
+    grow 'generated: a fragment with no Pmat-Ticket trailer -> REFUSE G5' 1 'FAIL  G5' g_fragment_no_trailer
+    grow 'generated: a second entry inside one fragment -> REFUSE G3' 1 'FAIL  G3' g_two_entries
     grow 'generated: a fragment deleted -> REFUSE G4' 1 'FAIL  G4' g_delete_fragment
     grow 'generated: a fragment renamed with its id edited -> REFUSE G4' 1 'FAIL  G4' g_rename_fragment
     grow 'generated: a nested fragment the generator never reads -> REFUSE G4' 1 'FAIL  G4' g_nested_fragment
