@@ -24,8 +24,18 @@ pick() {
       else $r.pullRequests.nodes[] | select(.isDraft==false and .baseRefName=="main" and .mergeStateStatus=="CLEAN" and .autoMergeRequest==null and .mergeQueueEntry==null) | .number end' <<<"$1"
 }
 # gate_paths FILES -> 0 when any path is gate content (a gate change needs 2 non-author seats bound to the head).
-# Wide on purpose: anything the PR gate, merge queue, guard sweep or this feeder runs or reads.
-gate_paths() { grep -qE '^(\.github/|ci/|scripts/(check_|ci_|ci/|lib/|guard_tree|arm_pr_automerge|mq_feeder|systemd/)|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
+# Wide on purpose: every path under scripts/, ci/ and .github/ (the explicit-test fragments run arbitrary scripts) plus root build/lint config.
+gate_paths() { grep -qE '^(\.github/|ci/|scripts/|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
+# seat_names REVIEWS -> distinct seat names (one per line) of COMMENTED/APPROVED reviews that read "seat <name> ... APPROVE"
+# and carry no REQUEST-CHANGES / NOT AGREED / NOT text. Dedupes by seat NAME, so a repost of one seat counts once.
+seat_names() {
+  grep -iE '^(COMMENTED|APPROVED)' <<<"$1" | grep -iE 'seat' | grep -iE 'APPROVE' | grep -viE 'REQUEST-?[ _]?CHANGES|NOT[ -]+(AGREED|APPROVE)|\bNOT\b' \
+    | sed -nE 's/.*[Ss][Ee][Aa][Tt][: ]+([A-Za-z0-9_.@-]+).*/\1/p' | tr 'A-Z' 'a-z' | sort -u
+}
+# quorum_receipts REVIEWS -> count of reviews stating "quorum 3/3" / "AGREED 3/3" with no negation and no other n/3 figure
+quorum_receipts() {
+  grep -iE '^(COMMENTED|APPROVED)' <<<"$1" | grep -iE 'quorum[^0-9]{0,12}3/3|AGREED 3/3' | grep -viE '\bNOT\b|REQUEST-?[ _]?CHANGES|[0-2]/3' | wc -l
+}
 # needs_seats PR HEAD -> prints the reason and returns 0 unless the PR is non-gate OR holds a verified 3/3 quorum
 # receipt plus 2 distinct APPROVE seat reviews bound to HEAD and no REQUEST-CHANGES bound to HEAD. FAILS CLOSED:
 # an unreadable file list or review list, or an empty HEAD, means "needs seats".
@@ -38,10 +48,10 @@ needs_seats() {
   # reviews bound to HEAD (commit_id), COMMENTED/APPROVED only; one body per line, newlines folded
   rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,(.body|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
   rc=$(grep -ciE '^CHANGES_REQUESTED|REQUEST-CHANGES|REQUEST CHANGES' <<<"$rv")
-  a=$(grep -iE '^(COMMENTED|APPROVED)' <<<"$rv" | grep -iE '[Ss]eat' | grep -iE 'APPROVE' | grep -viE 'REQUEST-?[ _]?CHANGES|NOT AGREED' | sort -u | wc -l)
-  q=$(grep -ciE 'quorum[^0-9]*3/3|3/3[^a-z]*quorum|AGREED 3/3' <<<"$rv")
+  a=$(seat_names "$rv" | wc -l)
+  q=$(quorum_receipts "$rv")
   { [ "${rc:-0}" -eq 0 ] && [ "${a:-0}" -ge 2 ] && [ "${q:-0}" -ge 1 ]; } && return 1
-  echo "needs seats (gate content; bound to ${2:0:10}: $a/2 distinct APPROVE seats, quorum 3/3 receipt $q/1, $rc request-changes)"
+  echo "needs seats (gate content; bound to ${2:0:10}: $a/2 distinct named APPROVE seats, quorum 3/3 receipt $q/1, $rc request-changes)"
 }
 inbox() { mkdir -p "$STATE"; printf '%s %s\n' "$(date +%s)" "$1" >> "$STATE/acts.log"; printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
 if [ "${1:-}" = --self-test ]; then
@@ -59,11 +69,27 @@ if [ "${1:-}" = --self-test ]; then
   gate_paths $'docs/x.md\nscripts/check_foo.sh' || { echo "FAIL gate_paths check_"; fail=1; }
   gate_paths $'docs/x.md\ncrates/a/src/lib.rs' && { echo "FAIL gate_paths non-gate"; fail=1; }
   for p in ci/explicit-test-commands.d/1.cmd scripts/guard_tree.sh scripts/ci_mg_reuse.sh scripts/lib/x.sh scripts/ci/x.sh scripts/mq_feeder.sh scripts/systemd/mq-feeder.service Cargo.toml Makefile ci/vendor/sovereign-ci.yml; do gate_paths "$p" || { echo "FAIL gate_paths $p"; fail=1; }; done
+  # gate_paths: scripts the explicit-test fragments run are gate content (triage 38b290a66f)
+  for p in scripts/contracts_gate.sh scripts/mutate_foo_guard.sh scripts/lib_baseline_ratchet.sh scripts/pv_bin.sh scripts/pmat_bin.sh scripts/tests/x.sh; do gate_paths "$p" || { echo "FAIL gate_paths $p"; fail=1; }; done
+  # needs_seats with a stubbed gh: REVIEWS is "STATE<TAB>body" lines, FILES the PR file list
+  gh() { case "$2" in */files) [ "${CASE:-}" = filefail ] && return 1; printf '%s\n' "${FILES:-scripts/ci_x.sh}";; */reviews) printf '%b' "${REVIEWS:-}";; esac; }
+  ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = needs seats (not armable), 1 = armable
+  Q3='COMMENTED\tquorum 3/3 AGREED\n'
+  eq 'seats: two named + 3/3 -> armable' "$(REVIEWS="COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n$Q3" ns)" 1
+  eq 'seats: repost of one seat (same name, different text) -> needs' "$(REVIEWS="COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w1 APPROVE again\n$Q3" ns)" 0
+  eq 'seats: negated quorum "NOT 3/3" + repost -> needs' "$(REVIEWS='COMMENTED\tSeat (a) APPROVE; quorum NOT 3/3\nCOMMENTED\tSeat (a) APPROVE; quorum NOT 3/3 \nCOMMENTED\tSeat (b) APPROVE\n' ns)" 0
+  eq 'seats: two seats + only a negated quorum receipt -> needs' "$(REVIEWS='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\nCOMMENTED\tquorum NOT 3/3\n' ns)" 0
+  eq 'seats: quorum 2/3 -> needs' "$(REVIEWS='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\nCOMMENTED\tquorum 2/3 AGREED\n' ns)" 0
+  eq 'seats: request-changes bound to head -> needs' "$(REVIEWS="COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n${Q3}CHANGES_REQUESTED\tseat w3 RC\n" ns)" 0
+  eq 'seats: no 3/3 receipt -> needs' "$(REVIEWS='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n' ns)" 0
+  eq 'seats: files unreadable -> needs (fail closed)' "$(CASE=filefail ns)" 0
+  eq 'seats: non-gate PR -> armable' "$(FILES=docs/x.md ns)" 1
+  unset -f gh
   [ "$fail" -eq 0 ] && echo "ok: self-test"; exit "$fail"
 fi
 [ "${1:-}" = --dry-run ] && dry=1
 if [ "${1:-}" = --summary ]; then
-  mkdir -p "$STATE"; since=$(($(date +%s) - 3600))
+  mkdir -p "$STATE"; since=$(($(date +%s) - 3600))  # bashrs disable-line=DET002 (runtime window, not a build stamp)
   t=$(awk -v s="$since" '$1>=s' "$STATE/ticks.log" 2>/dev/null | wc -l); e=$(awk -v s="$since" '$1>=s && /enqueued oldest/' "$STATE/acts.log" 2>/dev/null | wc -l); k=$(awk -v s="$since" '$1>=s && /KICKED/' "$STATE/acts.log" 2>/dev/null | wc -l)
   inbox "summary 1h: $t ticks, $e enqueued, $k kicked"; exit 0
 fi
