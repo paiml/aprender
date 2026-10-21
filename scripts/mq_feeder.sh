@@ -23,14 +23,25 @@ pick() {
     | if ($r.mergeQueue.entries.totalCount // 0) > 0 then "QUEUE_BUSY"
       else $r.pullRequests.nodes[] | select(.isDraft==false and .baseRefName=="main" and .mergeStateStatus=="CLEAN" and .autoMergeRequest==null and .mergeQueueEntry==null) | .number end' <<<"$1"
 }
-# gate_paths FILES -> 0 when any path is gate content (a gate change needs 2 non-author seats bound to the head)
-gate_paths() { grep -qE '^(\.github/workflows/|ci/sections\.yml|scripts/(check_|arm_pr_automerge))' <<<"$1"; }
-needs_seats() { # PR HEAD -> prints reason and returns 0 when a gate-content PR lacks 2 seats bound to HEAD
-  local f s; f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[].filename' 2>/dev/null) || return 1
+# gate_paths FILES -> 0 when any path is gate content (a gate change needs 2 non-author seats bound to the head).
+# Wide on purpose: anything the PR gate, merge queue, guard sweep or this feeder runs or reads.
+gate_paths() { grep -qE '^(\.github/|ci/|scripts/(check_|ci_|ci/|lib/|guard_tree|arm_pr_automerge|mq_feeder|systemd/)|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
+# needs_seats PR HEAD -> prints the reason and returns 0 unless the PR is non-gate OR holds a verified 3/3 quorum
+# receipt plus 2 distinct APPROVE seat reviews bound to HEAD and no REQUEST-CHANGES bound to HEAD. FAILS CLOSED:
+# an unreadable file list or review list, or an empty HEAD, means "needs seats".
+needs_seats() {
+  local f rv a rc q
+  [ -n "$2" ] || { echo "needs seats (head unreadable)"; return 0; }
+  f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[].filename' 2>/dev/null) || { echo "needs seats (files unreadable)"; return 0; }
+  [ -n "$f" ] || { echo "needs seats (file list empty)"; return 0; }
   gate_paths "$f" || return 1
-  s=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq "[.[]|select(.body|test(\"[Ss]eat\"))|select(.commit_id==\"$2\")]|length" 2>/dev/null || echo 0)
-  [ "${s:-0}" -ge 2 ] && return 1
-  echo "needs seats (gate content, ${s:-0}/2 seat reviews bound to ${2:0:10})"
+  # reviews bound to HEAD (commit_id), COMMENTED/APPROVED only; one body per line, newlines folded
+  rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,(.body|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
+  rc=$(grep -ciE '^CHANGES_REQUESTED|REQUEST-CHANGES|REQUEST CHANGES' <<<"$rv")
+  a=$(grep -iE '^(COMMENTED|APPROVED)' <<<"$rv" | grep -iE '[Ss]eat' | grep -iE 'APPROVE' | grep -viE 'REQUEST-?[ _]?CHANGES|NOT AGREED' | sort -u | wc -l)
+  q=$(grep -ciE 'quorum[^0-9]*3/3|3/3[^a-z]*quorum|AGREED 3/3' <<<"$rv")
+  { [ "${rc:-0}" -eq 0 ] && [ "${a:-0}" -ge 2 ] && [ "${q:-0}" -ge 1 ]; } && return 1
+  echo "needs seats (gate content; bound to ${2:0:10}: $a/2 distinct APPROVE seats, quorum 3/3 receipt $q/1, $rc request-changes)"
 }
 inbox() { mkdir -p "$STATE"; printf '%s %s\n' "$(date +%s)" "$1" >> "$STATE/acts.log"; printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
 if [ "${1:-}" = --self-test ]; then
@@ -47,6 +58,7 @@ if [ "${1:-}" = --self-test ]; then
   eq 'no PRs' "$(pick "$(mk 0 '')")" ''
   gate_paths $'docs/x.md\nscripts/check_foo.sh' || { echo "FAIL gate_paths check_"; fail=1; }
   gate_paths $'docs/x.md\ncrates/a/src/lib.rs' && { echo "FAIL gate_paths non-gate"; fail=1; }
+  for p in ci/explicit-test-commands.d/1.cmd scripts/guard_tree.sh scripts/ci_mg_reuse.sh scripts/lib/x.sh scripts/ci/x.sh scripts/mq_feeder.sh scripts/systemd/mq-feeder.service Cargo.toml Makefile ci/vendor/sovereign-ci.yml; do gate_paths "$p" || { echo "FAIL gate_paths $p"; fail=1; }; done
   [ "$fail" -eq 0 ] && echo "ok: self-test"; exit "$fail"
 fi
 [ "${1:-}" = --dry-run ] && dry=1
@@ -56,6 +68,7 @@ if [ "${1:-}" = --summary ]; then
   inbox "summary 1h: $t ticks, $e enqueued, $k kicked"; exit 0
 fi
 mkdir -p "$STATE" || exit 2
+[ -x "$ARM" ] || { inbox "mq-feeder: arm script $ARM missing or not executable (install both scripts with scripts/mq_feeder_install.sh)"; exit 2; }
 [ -e "$STATE/disabled" ] && exit 0
 date +%s >> "$STATE/ticks.log"
 rem=$(gh api rate_limit --jq .resources.graphql.remaining 2>/dev/null) || exit 2
@@ -66,10 +79,10 @@ cands=$(pick "$json") || exit 2
 [ -n "$cands" ] || exit 0
 n=0 why=""
 for pr in $cands; do
-  grep -qx "$pr" "$STATE/kicked" 2>/dev/null && continue   # kicked by the queue once: the owner must push a fix and clear it
-  n=$((n + 1)); [ "$n" -le "$TRIES" ] || break
   head=$(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null || true)
-  if [ -n "$head" ] && r=$(needs_seats "$pr" "$head"); then why="$why #$pr: $r;"; printf '%s skip #%s %s\n' "$(date +%s)" "$pr" "$r" >> "$STATE/acts.log"; continue; fi
+  grep -qx "$pr $head" "$STATE/kicked" 2>/dev/null && continue   # kicked at THIS head: a pushed fix is a new head and clears it
+  n=$((n + 1)); [ "$n" -le "$TRIES" ] || break
+  if r=$(needs_seats "$pr" "$head"); then why="$why #$pr: $r;"; printf '%s skip #%s %s\n' "$(date +%s)" "$pr" "$r" >> "$STATE/acts.log"; continue; fi
   mc=$(gh api "repos/$REPO/pulls/$pr/commits" --paginate --jq '[.[]|select((.parents|length)>1)]|length' 2>/dev/null | paste -sd+ | bc 2>/dev/null || true)
   if [ "${mc:-0}" -gt 0 ] 2>/dev/null; then r="has $mc merge commit(s); REBASE needs clean commits (operator 07:57Z)"; why="$why #$pr: $r;"; printf '%s skip #%s %s\n' "$(date +%s)" "$pr" "$r" >> "$STATE/acts.log"; continue; fi
   if [ "$dry" = 1 ]; then echo "would arm #$pr"; exit 0; fi
@@ -77,7 +90,7 @@ for pr in $cands; do
   if [ "$rc" -eq 0 ]; then
     sleep "${MQ_FEEDER_RECHECK:-30}"
     st=$(gh api graphql -f query='query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){state mergeQueueEntry{position} timelineItems(last:3,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){nodes{... on RemovedFromMergeQueueEvent{reason createdAt}}}}}}' -f o="${REPO%/*}" -f n="${REPO#*/}" -F p="$pr" --jq '.data.repository.pullRequest | if .state=="MERGED" then "merged" elif .mergeQueueEntry then "queued pos \(.mergeQueueEntry.position)" else "KICKED: \(.timelineItems.nodes[-1].reason // "unknown")" end' 2>/dev/null || echo unread)
-    case "$st" in KICKED*) echo "$pr" >> "$STATE/kicked"; inbox "queue was empty: enqueued #$pr, then $st within ${MQ_FEEDER_RECHECK:-30}s; skipped until removed from $STATE/kicked" ;; *) inbox "queue was empty: enqueued oldest green PR #$pr ($st)" ;; esac
+    case "$st" in KICKED*) echo "$pr $head" >> "$STATE/kicked"; inbox "queue was empty: enqueued #$pr, then $st within ${MQ_FEEDER_RECHECK:-30}s; skipped at this head until a new push" ;; *) inbox "queue was empty: enqueued oldest green PR #$pr ($st)" ;; esac
     exit 0
   fi
   if [ "$rc" -eq 3 ]; then why="$why #$pr: $(printf '%s' "$out" | grep -m1 -E "^refuse" | cut -c1-110);"; printf '%s skip #%s %s\n' "$(date +%s)" "$pr" "$(printf '%s' "$out" | grep -m1 -E "^refuse" | cut -c1-110)" >> "$STATE/acts.log"; continue; fi
