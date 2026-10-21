@@ -25378,3 +25378,23 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5873
+  github_issue: 5873
+  item_type: task
+  title: 'LAB: check_harness_server_cleanup apr-stub row races; quarantine to guards-nightly, then fix'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5382
+  created: 2026-10-21T15:20:00Z
+  updated: 2026-10-21T15:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the check runs in guards-nightly (LAB), not in ci/explicit-test-commands.d'
+  - 'the apr-stub row no longer races (second PR)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
