@@ -793,7 +793,12 @@ pv_bin_assert_fresh() {
     # in scripts/check_pv_version_parse.sh.
     # ONE invocation, then both reads off the SAME captured text -- the semver
     # and the identity must describe the same binary and the same run.
-    pv_bin_vers=$("$pv_bin_b" --version 2>&1) || pv_bin_vers=""
+    # Keep the exit status and raw text of a failed run (#5894): a blank "reports"
+    # must say WHY. The verdict is unchanged: a failed run is still an empty version.
+    pv_bin_vrc=0
+    pv_bin_raw=$("$pv_bin_b" --version 2>&1) || pv_bin_vrc=$?
+    pv_bin_vers="$pv_bin_raw"
+    [ "$pv_bin_vrc" -eq 0 ] || pv_bin_vers=""
     pv_bin_actual=$(printf '%s\n' "$pv_bin_vers" | awk 'NR==1{print $2; exit}') || pv_bin_actual=""
     pv_bin_first=$(printf '%s\n' "$pv_bin_vers" | awk 'NR==1{print}') || pv_bin_first=""
     if [ "$pv_bin_actual" != "$pv_bin_declared" ]; then
@@ -801,6 +806,9 @@ pv_bin_assert_fresh() {
             printf 'STALE pv BINARY\n'
             printf '  resolved : %s\n' "$pv_bin_b"
             printf '  reports  : %s\n' "$pv_bin_actual"
+            if [ -z "$pv_bin_actual" ]; then
+                printf '  --version: exit status %s, raw output: [%s]\n' "$pv_bin_vrc" "$pv_bin_raw"
+            fi
             printf '  declares : %s\n' "$pv_bin_declared"
             printf '  It reports a version this tree does not declare, so what\n'
             printf '  it says about these contracts is about other code.\n'
