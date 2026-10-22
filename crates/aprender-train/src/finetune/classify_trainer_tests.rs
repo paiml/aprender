@@ -5099,3 +5099,44 @@ fn test_coverage_card_confusion_raw_formatting() {
     assert!(out.contains("```"));
     assert!(out.contains("Predicted"));
 }
+
+// =========================================================================
+// FALSIFY-OPS-017: resume restores the saved epoch and refuses a foreign dataset
+// =========================================================================
+
+#[test]
+fn test_resume_rejects_data_hash_mismatch() {
+    let num_classes = 2;
+    let dir = std::env::temp_dir().join("entrenar_test_resume_hash_mismatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = || TrainingConfig { checkpoint_dir: dir.clone(), ..TrainingConfig::default() };
+    let saved =
+        ClassifyTrainer::new(tiny_pipeline(num_classes), make_corpus(20, num_classes), config())
+            .expect("config should be valid");
+    let metrics = EpochMetrics {
+        epoch: 3,
+        train_loss: 0.5,
+        train_accuracy: 0.9,
+        val_loss: 0.6,
+        val_accuracy: 0.85,
+        learning_rate: 1e-3,
+        epoch_time_ms: 1,
+        samples_per_sec: 1.0,
+    };
+    saved.save_apr_checkpoint(&dir, 3, &metrics).unwrap();
+    let ckpt = dir.join("model.apr");
+
+    // Same corpus: the saved epoch comes back.
+    let mut same =
+        ClassifyTrainer::new(tiny_pipeline(num_classes), make_corpus(20, num_classes), config())
+            .expect("config should be valid");
+    assert_eq!(same.resume_from_apr_checkpoint(&ckpt).unwrap(), 3);
+
+    // Different corpus: refused with F-CKPT-006 before any weight is touched.
+    let mut foreign =
+        ClassifyTrainer::new(tiny_pipeline(num_classes), make_corpus(21, num_classes), config())
+            .expect("config should be valid");
+    let err = foreign.resume_from_apr_checkpoint(&ckpt).unwrap_err().to_string();
+    assert!(err.contains("F-CKPT-006"), "wrong error: {err}");
+    std::fs::remove_dir_all(&dir).ok();
+}
