@@ -180,7 +180,7 @@ else fail=$((fail + 1)); echo "FAIL W10: mutant did not apply to $W"; fi
 CI="$HERE/../.github/workflows/ci.yml"
 SEC="$HERE/../ci/sections.yml"
 judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
-  local job code shard tier
+  local job code shard tier step ciall secall n
   job=$(awk '/^  receipt-judge:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1")
   [ -n "$job" ] || return 1
   code=$(printf '%s\n' "$job" | grep -v -E '^[[:space:]]*#')
@@ -212,6 +212,15 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   tier=$(awk '/id: tier$/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$2" | grep -v -E '^[[:space:]]*#')
   case "$tier" in *'"${RECEIPT_OK:-0}" = 1'*) ;; *) return 1 ;; esac
   printf '%s\n' "$tier" | grep -E 'scripts/|git (fetch|clone)' | grep -q . && return 1
+  # the consumer chain (tier step: RECEIPT_OK -> rok -> --receipt-ok -> ci_test_tier.sh) is hash-pinned whole; edit it -> update this sha256 (gate content, quorum)
+  step=$(awk '/- name: Decide the test tier/{on=1;print;next} on&&/^      - name:/{exit} on{print}' "$2" | grep -v -E '^[[:space:]]*#')
+  [ "$(printf '%s\n' "$step" | sha256sum | cut -d' ' -f1)" = "0d3225cbff907f20208c821901c72e70a4c66cef603d5aa5b100144beec45d50" ] || return 1
+  # nothing outside the pinned lines may set the verdict, the shell or the environment
+  ciall=$(grep -v -E '^[[:space:]]*#' "$1"); secall=$(grep -v -E '^[[:space:]]*#' "$2")
+  n=$(grep -c -E 'RECEIPT_OK|receipt-ok|BASH_ENV|GITHUB_ENV|^defaults:|^env:' <<< "$ciall" || true); [ "$n" = 1 ] || return 1
+  n=$(grep -c -E 'RECEIPT_OK|receipt-ok' <<< "$secall" || true); [ "$n" = 2 ] || return 1
+  n=$(grep -c -E 'BASH_ENV|^defaults:|^env:' <<< "$secall" || true); [ "$n" = 0 ] || return 1
+  n=$(grep -c 'GITHUB_ENV' <<< "$secall" || true); [ "$n" = 3 ] || return 1
   return 0
 }
 if judge_ok "$CI" "$SEC"; then wrow "W16 receipt judge is its own job: base checkout only, no PR-tree code, shard waits for it" ok ok
@@ -248,6 +257,23 @@ wmut "W20i MUTANT (E3): the FETCH_HEAD compare joined with || instead of && is c
 wmut "W20j MUTANT (E4): the verifier run from the trusted workspace, not the PR tree, is caught" ci 'ok="$(cd "$RUNNER_TEMP/prtree" &&' 'ok="$(cd "$GITHUB_WORKSPACE" &&'
 wmut "W20k MUTANT (E5): the judge's output line hard-coded to ok=1 is caught" ci "printf 'ok=%s\\n' \"\$ok\" >> \"\$GITHUB_OUTPUT\"" 'printf "ok=1\n" >> "$GITHUB_OUTPUT"'
 wmut "W20l MUTANT (E6): the judge's initial ok=0 set to ok=1 is caught" ci '          ok=0' '          ok=1'
+wmut "W40a MUTANT: tier step env RECEIPT_OK: 1 is caught" sec '          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          args=(--event' '          PR_BODY: ${{ github.event.pull_request.body }}
+          RECEIPT_OK: "1"
+        run: |
+          set -euo pipefail
+          args=(--event'
+wmut "W40b MUTANT: the tier gate && turned into || is caught" sec '[ "${GITHUB_EVENT_NAME}" = pull_request ] && [ "${RECEIPT_OK:-0}" = 1 ]' '[ "${GITHUB_EVENT_NAME}" = pull_request ] || [ "${RECEIPT_OK:-0}" = 1 ]'
+wmut "W40c MUTANT: hard-coded --receipt-ok 1 is caught" sec 'args+=(--receipt-ok "${rok:-0}")' 'args+=(--receipt-ok 1)'
+wmut "W40d MUTANT: workflow-level defaults: run: shell is caught" ci $'\njobs:\n' $'\ndefaults:\n  run:\n    shell: bash -c "export RECEIPT_OK=1; . {0}"\njobs:\n'
+wmut "W40e MUTANT: workflow-level env BASH_ENV is caught" ci $'\njobs:\n' $'\nenv:\n  BASH_ENV: /tmp/x\njobs:\n'
+wmut "W40f MUTANT: a GITHUB_ENV write of RECEIPT_OK in a shard step is caught" ci '      - name: Judge the receipt in the PR body' '      - run: echo RECEIPT_OK=1 >> "$GITHUB_ENV"
+      - name: Judge the receipt in the PR body'
+wmut "W40g MUTANT: a second RECEIPT_OK override in a shard step env is caught" ci "      RECEIPT_OK: \${{ needs.receipt-judge.outputs.ok || '0' }}" "      RECEIPT_OK: \${{ needs.receipt-judge.outputs.ok || '0' }}
+      RECEIPT_OK_X: 1
+      RECEIPT_OK: 1"
 wmut "W20b MUTANT: a tier step that runs PR-tree code is caught" sec 'rok=0
           if [ "${GITHUB_EVENT_NAME}" = pull_request ]' 'rok=0
           bash scripts/ci/pre.sh
