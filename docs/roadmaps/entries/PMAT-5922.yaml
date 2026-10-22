@@ -1,0 +1,20 @@
+- id: PMAT-5922
+  github_issue: 5922
+  item_type: task
+  title: 'ci: quick-tier Σ-executed step lists with the run step''s build flags (no recompile)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T10:55:00Z
+  updated: 2026-10-22T10:55:00Z
+  spec: null
+  acceptance_criteria:
+  - The Σ-executed list step builds nothing the run step did not build (same -p/--lib/--bins/--test set)
+  - The listed test ids equal the old listing's ids for the same filterset and partition
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: null
+  epic: 3998
