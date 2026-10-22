@@ -481,7 +481,8 @@ def _read(path, what):
 
 
 def _cmd_aggregate(a, roadmap, entries_dir):
-    base = _read(roadmap, roadmap)
+    src = a.base_file or roadmap
+    base = _read(src, src)
     if base is None:
         return 2
     frags = read_fragments(entries_dir)
@@ -490,7 +491,49 @@ def _cmd_aggregate(a, roadmap, entries_dir):
     except ValueError as e:
         sys.stderr.write("FAIL %s\n" % e)
         return 1
+    if a.base_file:
+        return _emit_generated(a, base, out, frags, roadmap)
     return _emit(a, base, out, frags, roadmap)
+
+
+def _emit_generated(a, base, out, frags, roadmap):
+    """GENERATED mode: roadmap.yaml is untracked output of (base-file, entries/).
+    --check proves idempotence, and that a generated file already on disk is not
+    stale; an absent one is fine (it is generated on demand, never committed)."""
+    if a.check:
+        if aggregate(out, frags) != out:
+            sys.stderr.write("FAIL aggregate is not idempotent on this input\n")
+            return 1
+        if os.path.exists(roadmap) and _read(roadmap, roadmap) != out:
+            sys.stderr.write("FAIL %s is stale against entries/ -- run `make roadmap-aggregate`\n" % roadmap)
+            return 1
+        sys.stderr.write("ok  base + %d fragment(s) aggregates idempotently\n" % len(frags))
+        return 0
+    return _emit(a, base, out, frags, roadmap)
+
+
+def _fragment_ids_of(path):
+    """The ids one fragment holds (space-joined), `?` if it is not a list of
+    mappings, None if it does not load."""
+    import yaml
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = yaml.safe_load(fh)
+    except (OSError, yaml.YAMLError):
+        return None
+    if not isinstance(doc, list):
+        return "?"
+    return " ".join(str(e["id"]) if isinstance(e, dict) and "id" in e else "?" for e in doc)
+
+
+def _cmd_fragment_ids(a):
+    """`fragment-ids FILE...` -> one line per file with the ids it holds, or
+    `(unparseable)` (rc 1). check_roadmap_fragment_required.sh G3b compares the
+    line to the filename."""
+    got = [_fragment_ids_of(path) for path in a.ids]
+    for line in got:
+        print("(unparseable)" if line is None else line)
+    return 1 if None in got else 0
 
 
 def _cmd_changed(a):
@@ -535,12 +578,15 @@ def _cmd_adopt(a, roadmap, entries_dir):
 
 def _parser():
     ap = argparse.ArgumentParser(prog="roadmap_fragments.py")
-    ap.add_argument("cmd", nargs="?", choices=["aggregate", "changed", "adopt"])
-    ap.add_argument("ids", nargs="*", help="adopt: the entry id(s) to move into entries/")
+    ap.add_argument("cmd", nargs="?", choices=["aggregate", "changed", "adopt", "fragment-ids"])
+    ap.add_argument("ids", nargs="*", help="adopt: the entry id(s) to move into entries/; fragment-ids: the fragment file(s) to read")
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--check", action="store_true",
                     help="fail if roadmap.yaml is not what the aggregator produces")
     ap.add_argument("--roadmap", help="judge this roadmap.yaml instead of the repo's")
+    ap.add_argument("--base-file", help="GENERATED mode: the committed, frozen base "
+                    "(docs/roadmaps/roadmap-base.yaml). The aggregate is base + entries/, "
+                    "written to --roadmap (untracked) and never read back as its own base")
     ap.add_argument("--entries", help="read fragments from here instead of docs/roadmaps/entries/")
     ap.add_argument("--base", help="changed: the roadmap.yaml to compare FROM")
     ap.add_argument("--head", help="changed: the roadmap.yaml to compare TO")
@@ -553,15 +599,17 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
-    roadmap, entries_dir = _paths(a)
+    if a.cmd == "fragment-ids":
+        return _cmd_fragment_ids(a)
     if a.cmd == "changed":
         return _cmd_changed(a)
+    roadmap, entries_dir = _paths(a)
     if a.cmd == "adopt":
         return _cmd_adopt(a, roadmap, entries_dir)
-    if a.cmd != "aggregate":
-        ap.print_usage(sys.stderr)
-        return 2
-    return _cmd_aggregate(a, roadmap, entries_dir)
+    if a.cmd == "aggregate":
+        return _cmd_aggregate(a, roadmap, entries_dir)
+    ap.print_usage(sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
