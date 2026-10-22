@@ -201,9 +201,19 @@ jobs:
         run: setsid --wait bash scripts/check_book_examples_compile.sh
       - name: Harness fixture servers die with their harness (LAB, quarantined from the merge path, #5873)
         run: setsid --wait bash scripts/check_harness_server_cleanup.sh
+      - name: Coverage scan files no per-function ticket (LAB, #5879)
+        id: lab_cov_scan
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          { setsid --wait bash scripts/check_coverage_single_report.sh --self-test && setsid --wait bash scripts/check_coverage_single_report.sh; } 2>&1 | tee "$RUNNER_TEMP/cov-scan.log"
       - name: aprender-profile lib tests (was gated by nothing)
+        if: ${{ !cancelled() }}
         run: cargo test -p aprender-profile --lib
       - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           # The warm sccache lives under the runner user's data dir on the persistent intel
@@ -303,6 +313,16 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-ladder-gap --title "LAB: the model ladder owes cells to model-cell commands (ladder-gap, #3745)" \
             --owner aprender-a7 --log "$RUNNER_TEMP/ladder-gap.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red coverage-scan night opens or updates its one LAB ticket (#5879)
+        if: failure() && steps.lab_cov_scan.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-cov-scan --title "LAB: an open per-function coverage ticket is not rolled into epic #5875 (#5879)" \
+            --owner aprender-flow --log "$RUNNER_TEMP/cov-scan.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       # #5182 (GATE/LAB). The two ratchets that left the PR path. On a schedule
       # run HEAD *is* origin/main, so merge-base(HEAD, origin/main) is HEAD and a
       # shrink-only comparison against it can never fail. The comparand is
