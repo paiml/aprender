@@ -33,3 +33,8 @@ falsification:
     description: "loss(distributed, N) ≈ loss(single, N) within ε"
     test: "Related tests in crates/aprender-distribute/src/"
     evidence: "cargo test --lib"
+
+  - id: FALSIFY-DISTRIBUTED_TRAINING_V1_003
+    description: "run_worker clamps an out-of-range shard to the training split and fails closed on a bad coordinator (Shutdown mid-AllReduce, non-shard message, refused connect)"
+    test: "crates/aprender-train/src/finetune/classify_trainer_tests.rs::run_worker_tests"
+    evidence: "cargo test -p aprender-train --lib run_worker_tests"
