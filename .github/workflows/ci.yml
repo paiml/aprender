@@ -142,6 +142,7 @@ jobs:
   # The same case table on every event, so a change that breaks the key is RED on
   # its own PR, not first in the queue. gate requires it.
   mg-reuse-self-test:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     permissions:
@@ -315,7 +316,7 @@ jobs:
   # no evidence for them. ci / gate and gate require this job whenever they reuse.
   x86-main-advisories:
     needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 30
     permissions:
