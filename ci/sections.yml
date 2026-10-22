@@ -1480,6 +1480,9 @@ jobs:
       # Cargo-free: pv, cargo and the sibling scripts are stubs.
       - name: "make contracts propagates pv's exit (PVL-001 EV-4, aprender#4168)"
         run: bash scripts/tests/make_contracts_propagates.sh
+      # PMAT-5851: ci_run_ctl.sh cancel/rerun helper; its case table (incl. the read-back mutants) is cargo-free.
+      - name: "ci_run_ctl.sh case table (PMAT-5851)"
+        run: bash scripts/ci_run_ctl.sh --self-test
       # Fleet hygiene case tables (docs/specifications/ci-fleet-hygiene.md §6): the queue
       # steward, the packing/history ledgers, the tier ledger and the roadmap resolve-dirty
       # runner each ship a hermetic --selftest; check_guards_are_wired.sh refuses a script
