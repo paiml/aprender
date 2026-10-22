@@ -95,11 +95,7 @@ impl CbtopApp {
     /// Create new application with config
     pub fn new(config: Config) -> Result<Self, CbtopError> {
         let (width, height) = crossterm::terminal::size()?;
-        Ok(Self::with_size(config, width, height))
-    }
 
-    /// Create the application for an explicit terminal size (no tty needed).
-    pub(crate) fn with_size(config: Config, width: u16, height: u16) -> Self {
         // Detect hardware at startup
         let hardware = HardwareInfo::detect();
 
@@ -107,7 +103,7 @@ impl CbtopApp {
         let mut simd_generator = SimdLoadBrick::new(config.problem_size);
         simd_generator.set_intensity(config.load_profile.intensity());
 
-        Self {
+        Ok(Self {
             config: config.clone(),
             active_panel: ActivePanel::Overview,
             is_running: false,
@@ -138,7 +134,7 @@ impl CbtopApp {
             last_frame: Instant::now(),
             frame_count: 0,
             should_quit: false,
-        }
+        })
     }
 
     /// Run the application main loop
