@@ -25356,6 +25356,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5761
+  github_issue: 5761
+  item_type: task
+  title: 'FLOW-009 RH-1/RH-2: changelog.d/ fragments and scripts/check_changelog_fragments.sh guard'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T22:00:00Z
+  updated: 2026-10-25T22:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/check_changelog_fragments.sh --self-test passes and the guard validates changelog.d/ fragment schema; Door unit 7/8 of handoff door-queue-2123Z (same diff as #5943 d12de367fd and #5934 c887b3c132, squashed once)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-5792
   github_issue: 5792
   item_type: task
