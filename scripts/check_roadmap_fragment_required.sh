@@ -199,7 +199,7 @@ judge_generated() {
     while IFS= read -r name; do
         [ "${GITHUB_EVENT_NAME:-}" = merge_group ] && break
         [[ "$name" =~ ^$ENTRIES_DIR/([^/]+)\.yaml$ ]] || continue
-        if ! printf '%s\n' "$trailers" | grep -qFx -- "${BASH_REMATCH[1]}"; then
+        if ! grep -qFx -- "${BASH_REMATCH[1]}" <<< "$trailers"; then
             violations=$((violations + 1))
             printf 'FAIL  G5  %s changes with no `Pmat-Ticket: %s` trailer in the LAST paragraph of a commit in the range (git trailers, as sov reads them) — e.g. git commit --allow-empty -m "chore: ticket trailer" -m "Pmat-Ticket: %s"\n' "$name" "${BASH_REMATCH[1]}" "${BASH_REMATCH[1]}"
         fi
