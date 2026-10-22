@@ -2,6 +2,7 @@
 # FLOW-010 E5: the diff -> the set of workspace packages whose tests it can change.
 #
 #   scripts/affected_set.sh [--filter] [--diff-from FILE] [BASE [HEAD]]
+#   scripts/affected_set.sh --self-test
 #
 # Prints one package per line, or the single word ALL. With --filter it prints the
 # nextest filterset instead (`package(a) | package(b)`, or `all()` for ALL).
@@ -26,17 +27,45 @@ set -euo pipefail
 # crate whose source another crate reads at run time must be listed (aprender-quant: aprender-serve/capability.rs reads
 # aprender-quant/src/ggml_type.rs). Any crates/*/build.rs is ALL: contracts/build_helper.rs reads crates/*/build.rs.
 CORE="${AFFECTED_CORE:-aprender-core aprender-compute aprender-contracts apr-cli aprender-quant}"
-# READERS = crates whose tests read OTHER crates' files at run time (CARGO_MANIFEST_DIR/.., crates/, ../<crate>). CORE ones are ALL on touch, but that does not put them in a non-ALL set; every non-ALL set includes them, because the touched crate may be what they read. scripts/check_affected_readers.sh
-# goes RED on a reader this list (or CORE) lacks.
+# READERS = crates whose tests read OTHER crates' files at run time (CARGO_MANIFEST_DIR/.., crates/, ../<crate>). CORE ones are ALL on touch, but that does not put them in a non-ALL set; every non-ALL set includes them, because the touched crate may be what they read.
+# A crate missing from this list is skipped silently (fail-open): add a crate here when its tests read another crate's files.
 READERS="${AFFECTED_READERS:-apr-cli apr-format aprender-build-sha aprender-cbtop aprender-cgp aprender-ci-tools aprender-compute aprender-compute-xtask aprender-contracts aprender-contracts-cli aprender-contrastive-data aprender-core aprender-data aprender-db aprender-decide aprender-distribute aprender-explain aprender-gpu aprender-mcp aprender-orchestrate aprender-present-cli aprender-present-core aprender-present-lib aprender-present-terminal aprender-present-yaml aprender-profile aprender-qa-certify aprender-qa-cli aprender-qa-gen aprender-qa-report aprender-qa-runner aprender-quant aprender-rag aprender-registry aprender-review-experiment aprender-rollup aprender-serve aprender-shell aprender-simulate aprender-test-cli aprender-test-lib aprender-train aprender-train-distill aprender-train-inspect aprender-train-shell aprender-tsp aprender-update aprender-verify-ml aprender-viz aprender-viz-ttop}"
-filter=0 from=""
+filter=0 from="" self_test=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --filter) filter=1; shift ;;
     --diff-from) from="$2"; shift 2 ;;
+    --self-test) self_test=1; shift ;;
     *) break ;;
   esac
 done
+if [ "$self_test" = 1 ]; then # case table: synthetic graph c(core) <- a <- b ; d standalone; r = reader
+  t="$(mktemp -d)"; trap 'rm -rf -- "${t:?}"' EXIT; fail=0
+  pk() { printf '{"name":"%s","manifest_path":"/w/crates/%s/Cargo.toml","dependencies":[%s]}' "$1" "$1" "$2"; }
+  dp() { printf '{"name":"%s"}' "$1"; }
+  printf '{"packages":[%s,%s,%s,%s,%s]}' "$(pk c '')" "$(pk a "$(dp c)")" "$(pk b "$(dp a)")" "$(pk d '')" "$(pk r '')" > "$t/meta.json"
+  row() { # name want paths...
+    n="$1" want="$2"; shift 2; printf '%s\n' "$@" > "$t/diff"
+    got="$(AFFECTED_META="$t/meta.json" AFFECTED_ROOT=/w AFFECTED_CORE=c AFFECTED_READERS=r bash "$0" --diff-from "$t/diff" | paste -sd' ')"
+    [ "$got" = "$want" ] || { echo "FAIL $n: want [$want] got [$got]"; fail=1; }
+  }
+  : > "$t/diff"; got="$(AFFECTED_META="$t/meta.json" AFFECTED_ROOT=/w bash "$0" --diff-from "$t/diff")"
+  [ "$got" = ALL ] || { echo "FAIL empty diff: want ALL got [$got]"; fail=1; }
+  row 'closure plus reader' 'a b r' crates/a/src/lib.rs
+  row 'leaf plus reader' 'b r' crates/b/src/lib.rs
+  row 'standalone plus reader' 'd r' crates/d/src/x.rs
+  row 'core crate is ALL' ALL crates/c/src/lib.rs
+  row 'non-rs under crates is ALL' ALL crates/d/README.md
+  row 'build.rs is ALL' ALL crates/d/build.rs
+  row 'unplaced path is ALL' ALL scripts/foo.sh
+  row 'docs is ALL' ALL docs/x.md
+  row 'ALL wins over a placed path' ALL crates/d/src/x.rs Cargo.lock
+  printf 'crates/d/src/x.rs\nCargo.lock\n' > "$t/diff"
+  [ "$(AFFECTED_META="$t/meta.json" AFFECTED_ROOT=/w bash "$0" --filter --diff-from "$t/diff")" = 'all()' ] || { echo "FAIL --filter ALL is all()"; fail=1; }
+  echo 'crates/d/src/x.rs' > "$t/diff"
+  [ "$(AFFECTED_META="$t/meta.json" AFFECTED_ROOT=/w AFFECTED_CORE=c AFFECTED_READERS=r bash "$0" --filter --diff-from "$t/diff")" = 'package(d) | package(r)' ] || { echo "FAIL --filter set"; fail=1; }
+  [ "$fail" -eq 0 ] && echo "ok: affected_set self-test (12 rows)"; exit "$fail"
+fi
 case "$from" in *..*) echo "affected_set: refusing a --diff-from with \"..\": $from" >&2; exit 2 ;; esac   # bashrs SEC010
 if [ -n "$from" ]; then files="$(cat "$from")"
 else files="$(git diff --name-only --no-renames "${1:-origin/main}...${2:-HEAD}")" || files=""; fi
