@@ -25474,6 +25474,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5889
+  github_issue: 5889
+  item_type: task
+  title: 'LAB kfocus-shadow-lab.yml: dispatch-only x86-main shadow on kfocus (OP 17:15Z parity)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T17:44:17Z
+  updated: 2026-10-21T17:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Dispatch-only LAB workflow (C324) running x86-main at a given sha on kfocus, to compare verdicts with intel. PR #5887.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:measurement
+  notes: null
+  epic: 5510
 - id: PMAT-5914
   github_issue: 5914
   item_type: task
