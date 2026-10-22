@@ -453,7 +453,6 @@ dependencies = [
  "anyhow",
  "aprender-contracts-key",
  "aprender-contracts-macros",
- "aprender-core",
  "aprender-cuda-edge",
  "aprender-gemm-codegen",
  "aprender-gpu",
