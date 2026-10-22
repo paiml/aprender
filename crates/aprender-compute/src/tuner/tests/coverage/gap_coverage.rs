@@ -90,13 +90,13 @@ mod calibrate_tests {
 }
 
 // ============================================================================
-// 2-3. ml-tuner RandomForest showcase (RELOCATED — SHOWCASE-BRICK-001)
+// 2-3. RandomForest showcase (RELOCATED — SHOWCASE-BRICK-001)
 // ============================================================================
 // The `ThroughputRegressor::with_random_forest` / `train_random_forest` and
 // `KernelClassifier::train` wrappers were removed: the SIMD compute lib must not
 // depend on the ML layer (aprender). The aprender RandomForest showcase now lives in
-// examples/ml_tuner_demo.rs + tests/tuner_falsification/training_data_quality.rs,
-// which consume aprender as a dev-dependency. No lib coverage target remains here.
+// crates/aprender-core/tests/tuner_training_data_quality.rs (FLOW-010, #5803),
+// which tests it from the aprender-core side. No lib coverage target remains here.
 
 // ============================================================================
 // 4. crc32_table (helpers.rs, line 10) — const fn coverage
