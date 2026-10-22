@@ -518,7 +518,7 @@ jobs:
     needs: [workspace-test-arch, receipt-judge]
     # draft PRs skip; the judge is skipped off a pull_request and fails closed: !cancelled() runs the shard
     # whatever the judge did, and RECEIPT_OK is 1 only on the judge's literal 1.
-    if: ${{ !cancelled() && github.event.pull_request.draft != true }}
+    if: ${{ !cancelled() && needs.workspace-test-arch.result == 'success' && github.event.pull_request.draft != true }}
     # arch-neutral (operator 2026-10-21 14:18Z) EXCEPT the full tier, which needs one arch for the Σ (#5882, workspace-test-arch)
     # clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ needs.workspace-test-arch.outputs.tier == 'full' && (github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]')) || (github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","mq"]') || fromJSON('["self-hosted","Linux","clean-room"]')) }}

@@ -377,7 +377,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           bash scripts/ci/decide_tier.sh
       # #4502 row 2: lint_passes_on_real_contracts (aprender-contracts) requires the
