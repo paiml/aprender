@@ -25570,3 +25570,23 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3863
+- id: PMAT-5990
+  github_issue: 5990
+  item_type: task
+  title: 'affected_set.sh fail-open: add --self-test, drop citation of a check that does not exist'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-22T20:00:00Z
+  updated: 2026-10-22T20:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/affected_set.sh --self-test runs a 12-row case table; removing the build.rs case turns it RED'
+  - 'the comment no longer cites scripts/check_affected_readers.sh (absent from the tree)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5965
