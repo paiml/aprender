@@ -554,3 +554,95 @@ mod tests {
         assert_ne!(theme.memory_color(10.0), theme.memory_color(95.0));
     }
 }
+
+#[cfg(test)]
+mod hardware_box_tests {
+    use super::*;
+    use presentar_terminal::direct::CellBuffer;
+
+    const W: u16 = 60;
+
+    fn hw(gpu: Option<&str>, cpu: &str) -> HardwareInfo {
+        HardwareInfo {
+            cpu_model: cpu.to_string(),
+            cpu_cores: 8,
+            simd_type: "AVX2",
+            gpu_name: gpu.map(str::to_string),
+            memory_gb: 31.5,
+        }
+    }
+
+    /// Draw the box into a fresh buffer; returns its rows (trailing blanks trimmed) and the final y.
+    fn draw(hardware: &HardwareInfo, inner: usize) -> (Vec<String>, f32) {
+        let mut buf = CellBuffer::new(W, 12);
+        let mut y = 0.0_f32;
+        {
+            let mut canvas = DirectTerminalCanvas::new(&mut buf);
+            CbtopApp::render_hardware_box(
+                &mut canvas,
+                &mut y,
+                hardware,
+                inner,
+                inner + 2,
+                &Theme::tokyo_night(),
+                &TextStyle::default(),
+            );
+        }
+        let rows = (0..12u16)
+            .map(|r| {
+                let line: String = (0..W)
+                    .map(|c| {
+                        buf.get(c, r)
+                            .map_or(" ", |cell| cell.symbol.as_str())
+                            .to_string()
+                    })
+                    .collect();
+                line.trim_end().to_string()
+            })
+            .collect();
+        (rows, y)
+    }
+
+    #[test]
+    fn box_rows_with_gpu_and_cursor_advance() {
+        let (rows, y) = draw(&hw(Some("RTX 4090"), "Test CPU"), 40);
+        assert!(
+            rows[0].trim_start().starts_with("┌─ Hardware ") && rows[0].ends_with('┐'),
+            "{:?}",
+            rows[0]
+        );
+        assert!(rows[1].contains("CPU:  Test CPU") && rows[1].ends_with('│'));
+        assert!(rows[2].contains("Cores: 8 │ SIMD: AVX2"));
+        assert!(rows[3].contains("GPU:  RTX 4090") && !rows[3].contains("Not detected"));
+        assert!(rows[4].contains("RAM:  31.5 GB"));
+        assert!(rows[5].trim_start().starts_with('└') && rows[5].ends_with('┘'));
+        // 5 content rows plus 2 trailing blank rows
+        assert_eq!(y, 7.0);
+    }
+
+    #[test]
+    fn missing_gpu_prints_not_detected_with_closing_bar_at_box_width() {
+        let (rows, _) = draw(&hw(None, "Test CPU"), 40);
+        assert!(rows[3].contains("GPU:  Not detected"));
+        assert!(!rows[3].contains("RTX"));
+        // the closing bar sits at x = box_width (42)
+        assert_eq!(rows[3].chars().nth(42), Some('│'), "{:?}", rows[3]);
+    }
+
+    #[test]
+    fn long_cpu_and_gpu_names_are_truncated_to_inner_width() {
+        let long = "X".repeat(100);
+        let (rows, _) = draw(&hw(Some(&long), &long), 30);
+        assert_eq!(rows[1].matches('X').count(), 20);
+        assert_eq!(rows[3].matches('X').count(), 20);
+    }
+
+    #[test]
+    fn tiny_inner_width_saturates_instead_of_underflowing() {
+        let (rows, y) = draw(&hw(Some("GPU"), "CPU"), 3);
+        assert!(rows[0].trim_start().starts_with("┌─ Hardware "));
+        // take(0): only the "CPU:" label survives, the model name is dropped
+        assert_eq!(rows[1].matches("CPU").count(), 1);
+        assert_eq!(y, 7.0);
+    }
+}

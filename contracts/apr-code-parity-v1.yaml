@@ -597,6 +597,22 @@ falsification_conditions:
       - agent::code::tests::falsify_3775_empty_completion_is_a_failure_document
       - agent::code_envelope::tests::every_agent_error_variant_has_a_snake_case_kind
 
+  - id: FALSIFY-CODE-PARITY-007
+    name: check_row verdicts follow the declared hit bounds (#5549)
+    status: ACTIVE
+    description: >
+      `pv check-parity` row check: a row with no cross_check_command is
+      skipped, non-numeric output is skipped, hits below expected_min or
+      above expected_max fail, bounds are inclusive, and the
+      expected_variant_count_* keys are the fallback for the hits keys.
+    test: >
+      cargo test -p aprender-contracts-cli --lib -- check_parity::tests
+    tests:
+      - commands::check_parity::tests::check_row_below_min_fails
+      - commands::check_parity::tests::check_row_above_max_fails
+      - commands::check_parity::tests::check_row_bounds_are_inclusive
+      - commands::check_parity::tests::check_row_falls_back_to_variant_count_bounds
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Priority buckets (flattened from category rows for quick CI grep)
 # ─────────────────────────────────────────────────────────────────────────────
