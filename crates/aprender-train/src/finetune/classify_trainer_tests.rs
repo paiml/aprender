@@ -5099,3 +5099,54 @@ fn test_coverage_card_confusion_raw_formatting() {
     assert!(out.contains("```"));
     assert!(out.contains("Predicted"));
 }
+
+// =========================================================================
+// resume_from_apr_checkpoint: F-CKPT-006 data-hash verification (FALSIFY-OPS-017)
+// =========================================================================
+
+#[test]
+fn test_resume_rejects_data_hash_mismatch() {
+    let num_classes = 3;
+    let config = TrainingConfig { epochs: 1, val_split: 0.2, ..TrainingConfig::default() };
+    let metrics = EpochMetrics {
+        epoch: 4,
+        train_loss: 0.5,
+        train_accuracy: 0.5,
+        val_loss: 0.6,
+        val_accuracy: 0.5,
+        learning_rate: 1e-2,
+        epoch_time_ms: 1,
+        samples_per_sec: 1.0,
+    };
+    let dir =
+        std::env::temp_dir().join(format!("aprender_test_resume_hash_{}", std::process::id()));
+
+    let mut saver = ClassifyTrainer::new(
+        tiny_pipeline(num_classes),
+        make_corpus(20, num_classes),
+        config.clone(),
+    )
+    .expect("config should be valid");
+    saver.save_checkpoint(&dir, 4, &metrics).expect("checkpoint should save");
+    let apr = dir.join("model.apr");
+
+    // Same corpus: the saved epoch comes back.
+    let mut same = ClassifyTrainer::new(
+        tiny_pipeline(num_classes),
+        make_corpus(20, num_classes),
+        config.clone(),
+    )
+    .expect("config should be valid");
+    assert_eq!(same.resume_from_apr_checkpoint(&apr).expect("matching corpus resumes"), 4);
+
+    // Different corpus: refused with F-CKPT-006 before any weight is touched.
+    let mut foreign =
+        ClassifyTrainer::new(tiny_pipeline(num_classes), make_corpus(21, num_classes), config)
+            .expect("config should be valid");
+    let before = foreign.pipeline.classifier.weight.data().to_vec();
+    let err = foreign.resume_from_apr_checkpoint(&apr).expect_err("foreign corpus must be refused");
+    assert!(err.to_string().contains("F-CKPT-006"), "unexpected error: {err}");
+    assert_eq!(foreign.pipeline.classifier.weight.data().to_vec(), before);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
