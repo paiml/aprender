@@ -924,7 +924,6 @@ fn run_watch(args: &probador::WatchArgs) -> CliResult<()> {
                     *in_progress = false;
                 });
             })
-            .await
             .map_err(|e| probador::CliError::test_execution(format!("Watch error: {e}")))
     })
 }
