@@ -206,6 +206,9 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   hasl "$code" '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&' || return 1
   hasl "$code" 'ok="$(cd "$RUNNER_TEMP/prtree" && env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin /usr/bin/bash "$RUNNER_TEMP/rok.sh" "$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}")" || ok=0' || return 1
   hasl "$code" "printf 'ok=%s\\n' \"\$ok\" >> \"\$GITHUB_OUTPUT\"" || return 1
+  hasl "$code" 'ok=0' || return 1
+  # the whole comment-stripped judge job is hash-pinned: a line-by-line pin chase never ends (E1-E6). Edit the job -> update this sha256 (gate content, quorum).
+  [ "$(printf '%s\n' "$code" | sha256sum | cut -d' ' -f1)" = "ee14f458b0d4a68335ae1d1560777b42c97a11be4ebfd9af3320cc3b1d161ca4" ] || return 1
   tier=$(awk '/id: tier$/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$2" | grep -v -E '^[[:space:]]*#')
   case "$tier" in *'"${RECEIPT_OK:-0}" = 1'*) ;; *) return 1 ;; esac
   printf '%s\n' "$tier" | grep -E 'scripts/|git (fetch|clone)' | grep -q . && return 1
@@ -244,6 +247,7 @@ wmut "W20h MUTANT (E2): the ok=0 guard kept but followed by ; ok=1 is caught" ci
 wmut "W20i MUTANT (E3): the FETCH_HEAD compare joined with || instead of && is caught" ci '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&' '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] ||'
 wmut "W20j MUTANT (E4): the verifier run from the trusted workspace, not the PR tree, is caught" ci 'ok="$(cd "$RUNNER_TEMP/prtree" &&' 'ok="$(cd "$GITHUB_WORKSPACE" &&'
 wmut "W20k MUTANT (E5): the judge's output line hard-coded to ok=1 is caught" ci "printf 'ok=%s\\n' \"\$ok\" >> \"\$GITHUB_OUTPUT\"" 'printf "ok=1\n" >> "$GITHUB_OUTPUT"'
+wmut "W20l MUTANT (E6): the judge's initial ok=0 set to ok=1 is caught" ci '          ok=0' '          ok=1'
 wmut "W20b MUTANT: a tier step that runs PR-tree code is caught" sec 'rok=0
           if [ "${GITHUB_EVENT_NAME}" = pull_request ]' 'rok=0
           bash scripts/ci/pre.sh
@@ -320,5 +324,37 @@ t0=$(tier_of 0); case "$t0" in tier=quick|tier=full) t0=notreuse ;; esac
 wrow "W8 --receipt-ok 0 on a core diff runs quick or full, never reuse" notreuse "$t0"
 wrow "W9 --receipt-ok 1 on the same diff is reuse" tier=reuse "$(tier_of 1)"
 
+
+# W23: BEHAVIOURAL. Run the judge's real `run:` script (extracted from ci.yml) against a local origin, so a
+# fail-closed property is measured, not pattern-matched: a failed fetch, a failed verifier and a garbage verifier
+# answer must each leave ok=0; only a verifier that exits 0 printing a literal 1 may give ok=1.
+judge_run() { # CI_FILE SCENARIO(good|nofetch|vfail|vgarbage|vfail1) -> prints the ok= value the judge wrote
+  local ci=$1 sc=$2 d="$td/jo-$2-$RANDOM" pr=7 out
+  mkdir -p "$d/w/scripts/ci" "$d/rt" && : > "$d/out"
+  awk '/id: judge$/{s=1} s&&/^        run: \|$/{r=1;next} r&&/^          /{sub(/^          /,"");print;next} r&&!/^[[:space:]]*$/{exit} r{print}' "$ci" > "$d/judge.sh"
+  [ -s "$d/judge.sh" ] || { echo "noscript"; return; }
+  case "$sc" in
+    good) printf 'echo 1\n' ;; vfail) printf 'exit 1\n' ;; vfail1) printf 'echo 1\nexit 1\n' ;; vgarbage) printf 'echo 2\n' ;; *) printf 'echo 1\n' ;;
+  esac > "$d/w/scripts/ci/receipt_ok_arg.sh"
+  (
+    unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_COMMON_DIR
+    export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+    git init -q --bare "$d/origin.git" && cd "$d/w" && git init -q -b main . &&
+      git add -A && git commit -q -m base && git remote add origin "file://$d/origin.git" &&
+      git commit -q --allow-empty -m merge && git push -q origin "HEAD:refs/pull/$pr/merge" && git reset -q --hard HEAD~1
+  ) > /dev/null 2>&1 || { echo "setup"; return; }
+  local sha; sha=$(git -C "$d/origin.git" rev-parse "refs/pull/$pr/merge")
+  local prn=$pr; [ "$sc" = nofetch ] && prn=99
+  (cd "$d/w" && env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE GH_TOKEN=x PR_BODY= PR_NUMBER=$prn GITHUB_SHA="$sha" \
+     GITHUB_WORKSPACE="$d/w" RUNNER_TEMP="$d/rt" GITHUB_OUTPUT="$d/out" bash -e "$d/judge.sh") > "$d/log" 2>&1
+  out=$(sed -n 's/^ok=//p' "$d/out" | tail -n1); echo "${out:-none}"
+}
+wrow "W23a judge run: verifier prints 1 and exits 0 -> ok=1 (the mechanism engages)" 1 "$(judge_run "$CI" good)"
+wrow "W23b judge run: forced fetch failure -> ok=0" 0 "$(judge_run "$CI" nofetch)"
+wrow "W23c judge run: forced verifier failure (exit 1) -> ok=0" 0 "$(judge_run "$CI" vfail)"
+wrow "W23d judge run: verifier prints 1 then exits 1 -> ok=0" 0 "$(judge_run "$CI" vfail1)"
+wrow "W23e judge run: verifier prints 2 -> ok=0" 0 "$(judge_run "$CI" vgarbage)"
+if mutate "$CI" '          ok=0' '          ok=1' "$td/b6.yml"; then wrow "W23f MUTANT (E6): initial ok=1 leaves ok=1 on a failed fetch, behaviourally" 1 "$(judge_run "$td/b6.yml" nofetch)"; else fail=$((fail + 1)); echo "FAIL W21f: mutant did not apply"; fi
+if mutate "$CI" '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=1' "$td/b7.yml"; then wrow "W23g MUTANT (E2): a dead guard passes the garbage verifier answer, behaviourally" 2 "$(judge_run "$td/b7.yml" vgarbage | sed 's/^1$/2/')"; else fail=$((fail + 1)); echo "FAIL W21g: mutant did not apply"; fi
 echo "receipt gate rows: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
