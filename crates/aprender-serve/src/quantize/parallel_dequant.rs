@@ -203,7 +203,9 @@ unsafe fn dequantize_q4_k_avx2_parallel(data: &[u8]) -> Result<Vec<f32>> {
         .zip(data.par_chunks(CHUNK_BYTES))
         .for_each(|(out, chunk)| {
             for (dst, sb_data) in out
-                .chunks_exact_mut(QK_K)
+                .as_chunks_mut::<QK_K>()
+                .0
+                .iter_mut()
                 .zip(chunk.as_chunks::<SUPER_BLOCK_BYTES>().0)
             {
                 // SAFETY: AVX2 availability verified by caller
