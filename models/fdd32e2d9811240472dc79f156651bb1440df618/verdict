@@ -1,0 +1,8 @@
+commit=fdd32e2d9811240472dc79f156651bb1440df618
+sha9=fdd32e2d9
+version=0.71.3
+entry=scripts/release/models_t1.sh@34a24b64b805fdfc613b575d63f0d0505517b0c2
+measure=ladder
+t1_rc=124
+state=not_measured
+reason=models_t1 timed out (rc 124)
