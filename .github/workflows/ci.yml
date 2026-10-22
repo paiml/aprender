@@ -254,8 +254,8 @@ jobs:
       # it before any section reads it. Checks the generated file is idempotent too.
       - name: generate docs/roadmaps/roadmap.yaml (base + entries)
         run: |
-          python3 scripts/lib/roadmap_fragments.py aggregate --base-file docs/roadmaps/roadmap-base.yaml --write
-          python3 scripts/lib/roadmap_fragments.py aggregate --base-file docs/roadmaps/roadmap-base.yaml --check
+          make roadmap-aggregate
+          make roadmap-aggregate-check
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
