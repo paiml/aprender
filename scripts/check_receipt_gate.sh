@@ -237,6 +237,14 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   [ "$(sha256sum < "$pr/scripts/ci_reclaim_target_dirs.sh" | cut -d' ' -f1)" = "454aec9194c8d90aa0587e469fca9c8d801fa211c0a4aacdf9c2dc5a820c5449" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci/fixture_quiet.sh" | cut -d' ' -f1)" = "0571ef87e0859c9dc9299c6cb57b1d3ed11991fb5e3c890cf56c76e385df730c" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci/pr_touched_paths.sh" | cut -d' ' -f1)" = "eed39751351685073888dd9e1ae9e993a30cdc933f97eb8e92aa8f01b36e42a4" ] || return 1
+  # helpers the tier step (and ci_test_tier.sh) run: byte-pinned, because a same-uid helper can reach the real GITHUB_OUTPUT via /proc/$PPID/environ (#5850)
+  [ "$(sha256sum < "$pr/scripts/ci/fetch_p6.sh" | cut -d' ' -f1)" = "5addde69a85a4d6996f89a1af85a04abaebed3a4c27b447e254171d97205580b" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci_mg_workspace_result.sh" | cut -d' ' -f1)" = "560bb59288305511978fc8a674bda2d7b62dfb6dcb887fcbf189a3ae8b7d5296" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/check_ci_push_reuse.sh" | cut -d' ' -f1)" = "3cf51081840c4dcc03743ca165af58f654b1cb61020d41bf081eb2370b5a948a" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/check_tree_reader_tests.sh" | cut -d' ' -f1)" = "4f4f0e892b1b4c65e1dd9dcc46f0edc0e5deac2f1b5dc7883fc124f6b4c6f0aa" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/gate_touched_crates.sh" | cut -d' ' -f1)" = "00f73732cbe0c39c9ff0867d1cb416ef0e7e0d00dc5b01f300cee645fe444bfe" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/lib/test_tier.py" | cut -d' ' -f1)" = "63e4b091c7a6c56b45c8da5ceb241ba2a6f991cef55bb3802ffa6458b786dd52" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci_mg_reuse.sh" | cut -d' ' -f1)" = "c48c4c49a48a5f57c4876465bf72a74776694e48cd59b2bffb25237d352f279b" ] || return 1
   # structure pins: the top-level keys and the job keys of both files, in any spelling (quoted, ? keys, duplicates). A new top-level key or job, or a second shard block, moves the hash.
   [ "$(tl "$1" | h)" = "7b45344e526135d0ab4f5c04ca82ba2d1112f6286b1ba2024a18017536446ce5" ] || return 1
   [ "$(jl "$1" | h)" = "1d370235776861592b57ff7c935a327fbf70d28427ac084baa4392f5b70d8250" ] || return 1
@@ -407,9 +415,9 @@ wmut "W41a MUTANT (M1): an escaped RECEIPT\x5FOK env key in the ci.yml shard env
 sc='      SCCACHE_HOST_DIR: /home/noah/data/sccache'
 wmut "W41b MUTANT (M2): an escaped RECEIPT\x5FOK env key in the sections.yml shard env is caught" sec "$sc" "$sc"$'\n''      "RECEIPT\x5FOK": "1"'
 # a byte change in any verdict script is RED unless its pin moves (PIN_ROOT = a copy of the tree with one file mutated)
-for rel in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_ok_arg.sh scripts/ci_reclaim_target_dirs.sh scripts/ci/fixture_quiet.sh scripts/ci/pr_touched_paths.sh; do
-  pr="$td/pin-$(basename "$rel")"; mkdir -p "$pr/scripts/ci"
-  for g in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_ok_arg.sh scripts/ci_reclaim_target_dirs.sh scripts/ci/fixture_quiet.sh scripts/ci/pr_touched_paths.sh; do cp "$HERE/../$g" "$pr/$g"; done
+for rel in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_ok_arg.sh scripts/ci_reclaim_target_dirs.sh scripts/ci/fixture_quiet.sh scripts/ci/pr_touched_paths.sh scripts/ci/fetch_p6.sh scripts/ci_mg_workspace_result.sh scripts/check_ci_push_reuse.sh scripts/check_tree_reader_tests.sh scripts/gate_touched_crates.sh scripts/lib/test_tier.py scripts/ci_mg_reuse.sh; do
+  pr="$td/pin-$(basename "$rel")"; mkdir -p "$pr/scripts/ci" "$pr/scripts/lib"
+  for g in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_ok_arg.sh scripts/ci_reclaim_target_dirs.sh scripts/ci/fixture_quiet.sh scripts/ci/pr_touched_paths.sh scripts/ci/fetch_p6.sh scripts/ci_mg_workspace_result.sh scripts/check_ci_push_reuse.sh scripts/check_tree_reader_tests.sh scripts/gate_touched_crates.sh scripts/lib/test_tier.py scripts/ci_mg_reuse.sh; do cp "$HERE/../$g" "$pr/$g"; done
   printf '\n# touched\n' >> "$pr/$rel"
   if PIN_ROOT="$pr" judge_ok "$CI" "$SEC"; then r=missed; else r=caught; fi
   wrow "W41c MUTANT: a byte appended to $rel is caught by the hash pin" caught "$r"
@@ -420,9 +428,9 @@ wmut "W42a MUTANT: a quoted top-level \"env\" key with BASH\x5FENV in ci.yml is 
 wmut "W42b MUTANT: a ? top-level defaults key in ci.yml is caught" ci $'\njobs:\n' $'\n? defaults\n: {run: {shell: bash}}\njobs:\n'
 wmut "W42c MUTANT: a duplicate workspace-test-shard job after the first in ci.yml is caught" ci $'\n  workspace-test-shard:\n' $'\n  workspace-test-shard:\n    runs-on: x\n  workspace-test-shard:\n'
 # W42d/e: a shard script that writes the runner env/output files is a pinned-byte change, so it is RED
-for rel in scripts/ci_test_tier.sh scripts/ci_reclaim_target_dirs.sh scripts/ci/fixture_quiet.sh scripts/ci/pr_touched_paths.sh; do for w in 'echo RECEIPT_OK=1 >> "$GITHUB_ENV"' 'echo ok=1 >> "$GITHUB_OUTPUT"'; do
-  pr="$td/pin-w"; rm -rf -- "${pr:?}"; mkdir -p "$pr/scripts/ci"
-  for g in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_ok_arg.sh scripts/ci_reclaim_target_dirs.sh scripts/ci/fixture_quiet.sh scripts/ci/pr_touched_paths.sh; do cp "$HERE/../$g" "$pr/$g"; done
+for rel in scripts/ci/fetch_p6.sh scripts/ci_mg_workspace_result.sh scripts/check_ci_push_reuse.sh scripts/check_tree_reader_tests.sh scripts/gate_touched_crates.sh scripts/lib/test_tier.py scripts/ci_mg_reuse.sh scripts/ci_test_tier.sh scripts/ci_reclaim_target_dirs.sh scripts/ci/fixture_quiet.sh scripts/ci/pr_touched_paths.sh scripts/ci/fetch_p6.sh scripts/ci_mg_workspace_result.sh scripts/check_ci_push_reuse.sh scripts/check_tree_reader_tests.sh scripts/gate_touched_crates.sh scripts/lib/test_tier.py scripts/ci_mg_reuse.sh; do for w in 'echo RECEIPT_OK=1 >> "$GITHUB_ENV"' 'echo ok=1 >> "$GITHUB_OUTPUT"'; do
+  pr="$td/pin-w"; rm -rf -- "${pr:?}"; mkdir -p "$pr/scripts/ci" "$pr/scripts/lib"
+  for g in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_ok_arg.sh scripts/ci_reclaim_target_dirs.sh scripts/ci/fixture_quiet.sh scripts/ci/pr_touched_paths.sh scripts/ci/fetch_p6.sh scripts/ci_mg_workspace_result.sh scripts/check_ci_push_reuse.sh scripts/check_tree_reader_tests.sh scripts/gate_touched_crates.sh scripts/lib/test_tier.py scripts/ci_mg_reuse.sh; do cp "$HERE/../$g" "$pr/$g"; done
   printf "\n%s\n" "$w" >> "$pr/$rel"
   if PIN_ROOT="$pr" judge_ok "$CI" "$SEC"; then r=missed; else r=caught; fi
   wrow "W42d MUTANT: $rel writing ${w##* } is caught" caught "$r"
