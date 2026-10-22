@@ -67,24 +67,31 @@ self_test() {
     t "prefix lookalike" "skip=0 reason=full" false docs/images-x/a.png
     t "empty diff is full" "skip=0 reason=full" false
     local wf="$REPO_ROOT/.github/workflows/ci.yml" bad="" n
-    if ! command -v yq > /dev/null 2>&1 || ! yq '.jobs' "$wf" > /dev/null 2>&1; then
-        echo "FAIL wiring: cannot read ci.yml (yq missing or file unparsable)"; fail=1
+    # No yq on the clean-room runner (run 39721317355): read the YAML with awk. Full-line comments are
+    # stripped first (the ci.yml comments name `paths`). blk KEY INDENT = body of the top-level (INDENT 0)
+    # or second-level (INDENT 2) key KEY, up to the next key at the same or lower indent.
+    if [ ! -r "$wf" ] || ! grep -q '^jobs:' "$wf"; then
+        echo "FAIL wiring: cannot read ci.yml"; fail=1
     else
-        y() { yq -r "$1" "$wf"; }
-        [ "$(y '.on.pull_request | (has("paths") or has("paths-ignore"))')" = false ] || bad="$bad; pull_request has a paths filter (stuck required checks)"
-        [ "$(y '.on.pull_request.types // [] | contains(["ready_for_review"])')" = true ] || bad="$bad; pull_request types lack ready_for_review"
+        nc() { grep -vE '^[[:space:]]*#' "$wf"; }
+        top() { nc | awk -v k="$1" '$0 ~ "^"k":" {f=1; next} f && /^[^ ]/ {f=0} f'; }
+        job() { top jobs | awk -v k="$1" '$0 == "  "k":" || $0 == "  \""k"\":" {f=1; next} f && /^  [^ ]/ {f=0} f'; }
+        ev() { top on | awk -v k="$1" '$0 ~ "^  "k":" {f=1; next} f && /^  [^ ]/ {f=0} f'; }
+        top on | grep -qE '^  pull_request:' || bad="$bad; no pull_request trigger"
+        ev pull_request | grep -qE '^    paths(-ignore)?:' && bad="$bad; pull_request has a paths filter (stuck required checks)"
+        ev pull_request | grep -qE '^    types:.*ready_for_review' || bad="$bad; pull_request types lack ready_for_review"
         for n in push merge_group; do
-            [ "$(y ".on.$n // {} | (has(\"paths\") or has(\"paths-ignore\"))")" = false ] || bad="$bad; $n has a paths filter"
+            ev "$n" | grep -qE '^    paths(-ignore)?:' && bad="$bad; $n has a paths filter"
         done
-        [ "$(y '.jobs.scope.if')" = "\${{ github.event_name == 'pull_request' }}" ] || bad="$bad; scope job missing or not pull_request-only"
+        job scope | grep -qF "if: \${{ github.event_name == 'pull_request' }}" || bad="$bad; scope job missing or not pull_request-only"
         for n in x86-main workspace-test-shard; do
-            [ "$(y ".jobs.\"$n\".needs // [] | contains([\"scope\"])")" = true ] && y ".jobs.\"$n\".if" | grep -qF "needs.scope.outputs.skip != '1'" || bad="$bad; $n does not honour scope"
+            job "$n" | grep -E '^    needs:' | grep -qF scope && job "$n" | grep -E '^    if:' | grep -qF "needs.scope.outputs.skip != '1'" || bad="$bad; $n does not honour scope"
         done
         for n in ci-gate gate workspace-test; do
-            [ "$(y ".jobs.\"$n\".needs // [] | contains([\"scope\"])")" = true ] || bad="$bad; $n does not need scope"
-            y ".jobs.\"$n\"" | grep -qF 'needs.scope.outputs.skip' || bad="$bad; $n does not read scope"
+            job "$n" | grep -E '^    needs:' | grep -qF scope || bad="$bad; $n does not need scope"
+            job "$n" | grep -qF 'needs.scope.outputs.skip' || bad="$bad; $n does not read scope"
         done
-        y '.concurrency."cancel-in-progress"' | grep -qF pull_request || bad="$bad; concurrency no longer cancels superseded PR runs"
+        top concurrency | grep -E '^  cancel-in-progress:' | grep -qF pull_request || bad="$bad; concurrency no longer cancels superseded PR runs"
         grep -qF 'git diff --no-renames --name-only' "$wf" || bad="$bad; scope diff may report renames by new path only (fails open)"
     fi
     [ -z "$bad" ] || { printf 'FAIL wiring: %s\n' "${bad#; }"; fail=1; }
