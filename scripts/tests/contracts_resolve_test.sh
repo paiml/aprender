@@ -10,10 +10,10 @@ chk() { [ "$2" = "$3" ] || { fail=1; echo "FAIL: $1: got '$2', want '$3'"; }; }
 
 # mk <name> [src]: a repo whose merge conflicts on contracts/contracts.nt (and on a.txt when "src").
 mk() {
-    local d=$W/$1; mkdir -p "$d/scripts" "$d/contracts" "$d/crates/aprender-contracts" "$d/bin"
+    local d=$W/$1; mkdir -p "$d/scripts" "$d/contracts" "$d/crates/aprender-contracts/src" "$d/bin"
     cd "$d"; git init -q -b main; git config user.email t@t; git config user.name t; git config core.hooksPath "$d/.nohooks"
     cp "$src" scripts/contracts_resolve.sh
-    printf 'x\n' > crates/aprender-contracts/lib.rs; printf 'base\n' > contracts/contracts.nt; printf 'base\n' > a.txt; mkdir contracts/witness; printf 's\n' > contracts/shapes.ttl; printf '{}\n' > contracts/witness/w.json; printf 'r\n' > README.md
+    printf 'x\n' > crates/aprender-contracts/src/lib.rs; printf "d\n" > crates/aprender-contracts/README.md; printf 'base\n' > contracts/contracts.nt; printf 'base\n' > a.txt; mkdir contracts/witness; printf 's\n' > contracts/shapes.ttl; printf '{}\n' > contracts/witness/w.json; printf 'r\n' > README.md
     printf '#!/bin/sh\n' > bin/pv; chmod +x bin/pv
     printf '#!/bin/sh\necho sat >> %s/calls\n' "$d" > bin/pv-sat; chmod +x bin/pv-sat
     printf '[ -z "${PVFAIL:-}" ] || return 1\nPV=%s/bin/pv; export PV\n' "$d" > scripts/pv_bin.sh
@@ -45,6 +45,9 @@ mk stale; touch -d 2000-01-01 bin/pv bin/pv-sat
 chk "stale pv refuses" "$(run)" 1
 chk "stale: conflict file intact" "$(grep -c '<<<<<<<' contracts/contracts.nt)" 1
 chk "stale: nothing regenerated" "$([ -f calls ] && echo ran || echo none)" none
+
+mk docs; touch -d 1999-01-01 crates/aprender-contracts/src/lib.rs; touch -d 2000-01-01 bin/pv bin/pv-sat; touch crates/aprender-contracts/README.md   # a doc newer than pv is not a verifier source
+chk "doc-only change newer than pv still resolves" "$(run)" 0
 
 mk outside src; touch bin/pv bin/pv-sat
 chk "conflict outside the generated set refuses" "$(run)" 1

@@ -764,7 +764,8 @@ impl FileWatcher {
     ///
     /// Calls `on_change` with the path of each changed file.
     /// This function blocks until the watcher is stopped.
-    pub fn watch<F>(&self, mut on_change: F) -> Result<(), notify::Error>
+    #[allow(clippy::unused_async)] // public async API kept: callers .await it
+    pub async fn watch<F>(&self, mut on_change: F) -> Result<(), notify::Error>
     where
         F: FnMut(String) + Send + 'static,
     {
