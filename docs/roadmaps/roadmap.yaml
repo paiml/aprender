@@ -25493,3 +25493,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5924
+  github_issue: 5924
+  item_type: task
+  title: 'EMG-001 C1: workspace-test-shard single shard, threads 4 to 16'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T10:55:00Z
+  updated: 2026-10-22T10:55:00Z
+  spec: null
+  acceptance_criteria:
+  - handoff/emg-001/EMG-001.md C1+C2; EMG-9 proof in PR body
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
