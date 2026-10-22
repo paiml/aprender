@@ -1139,6 +1139,8 @@ fn falsify_mono_014_path_pins_name_their_target_version() {
 // ---------------------------------------------------------------------------
 
 const PQ: &str = "!(github.event_name == 'pull_request' && github.event.pull_request.draft)";
+/// The form main already uses for `x86-main` and `workspace-test-shard`.
+const DF: &str = "github.event.pull_request.draft != true";
 const G_ALL: &str =
     "${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}";
 const CI_TYPES: [&str; 4] = ["opened", "synchronize", "reopened", "ready_for_review"];
@@ -1148,10 +1150,10 @@ fn draft_gate_canon() -> Vec<(&'static str, String)> {
     vec![
         ("mg-reuse", "github.event_name == 'push' && github.ref == 'refs/heads/main'".into()),
         ("mg-reuse-self-test", G_ALL.into()),
-        ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {PQ} }}}}")),
+        ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} }}}}")),
         ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {PQ} }}}}")),
         ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}".into()),
-        ("workspace-test-shard", G_ALL.into()),
+        ("workspace-test-shard", format!("${{{{ {DF} }}}}")),
         ("workspace-test", "always()".into()),
         ("ci-gate", "always()".into()),
         ("gate", "always()".into()),
@@ -1239,7 +1241,7 @@ fn rewrite_if(src: &str, job: &str, new: Option<&str>) -> String {
 /// The 18 planted mutants: (label, mutated ci.yml). Each must be RED.
 fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
     let x86_if =
-        format!("    if: ${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {PQ} }}}}");
+        format!("    if: ${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} }}}}");
     let gate_tail = src.split_once("\n  gate:\n").expect("gate job").1;
     let gate_mut = src.replacen(
         gate_tail,
