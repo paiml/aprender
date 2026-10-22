@@ -25340,6 +25340,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5740
+  github_issue: 5740
+  item_type: task
+  title: 'ci: fat_driver prints the first failing line of a failed section into the job log'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-19T10:08:50Z
+  updated: 2026-10-19T10:08:50Z
+  spec: null
+  acceptance_criteria:
+  - 'Print the first ::error:: / failing-step line of a failed section next to the result line and in the verdict (GH #5740).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-5792
   github_issue: 5792
   item_type: task
@@ -25416,6 +25435,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5851
+  github_issue: 5851
+  item_type: task
+  title: 'ci: run cancel/rerun helper reads each run''s final state back, exits non-zero on any miss'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T11:38:41Z
+  updated: 2026-10-21T11:38:41Z
+  spec: null
+  acceptance_criteria:
+  - Noah 11:37Z item 2. Unsplit zsh id list cancelled 0 of 7 silently at 11:29Z.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-5873
   github_issue: 5873
   item_type: task
@@ -25465,6 +25503,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   assigned_to: null
   created: 2026-10-21T17:43:16Z
   updated: 2026-10-21T17:43:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5899
+  github_issue: 5899
+  item_type: task
+  title: 'FLOW-007 B1: repo_flow binding_station argmin of bounds'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T21:55:20Z
+  updated: 2026-10-21T21:55:20Z
   spec: null
   acceptance_criteria: []
   phases: []
