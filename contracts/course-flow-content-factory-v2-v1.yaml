@@ -1,0 +1,66 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-10-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "flow model spec, internal (eqs 1 and 2)"
+    - "FLOW-007 row B5 (#5557)"
+  description: "course_flow models Content Factory v2: three-platform fan-out, rework loop, trunk-first GPU rule, LinkedIn renders, work vs elapsed build time"
+
+name: course-flow-content-factory-v2
+version: "1.0.0"
+scope: "crates/aprender-simulate/src/scenarios/course_flow.rs"
+
+description: |
+  The factory-v2 case sends every master to edX, Coursera and LinkedIn with no split.
+  A build repeats with probability alpha, so the mean build work is B/(1-alpha). While the
+  running mean lead exceeds trunk_first_w_d days the GPU serves courses before Shorts.
+  LinkedIn adds li_k + 4 renders per master on the GPU. The result keeps build work
+  (sizing, eq 2) apart from build elapsed time (lead time, eq 1).
+
+equations:
+  coursera_stage_load:
+    description: "Coursera stage busy fraction when every master takes the stage (the Chrome lanes also carry the Shorts stage, which the test adds, about 0.87 points)"
+    formula: "busy = starts_per_day * stage_min / (chrome_lanes * 1440) = 0.625, plus the Shorts stage load"
+
+  rework_build_work:
+    description: "mean build work per course under the rework loop"
+    formula: "B' = B / (1 - alpha)"
+
+falsification_tests:
+  - id: FALSIFY-001
+    description: "Coursera stage busy matches the law within 2 points"
+    test: "cargo test -p aprender-simulate --lib coursera_stage_matches_the_law_within_two_points"
+    prediction: "the test passes"
+    if_fails: "the fan-out does not send every master to the Coursera stage"
+
+  - id: FALSIFY-002
+    description: "at alpha 0.16 the build stage is busy at the law's 94.7% within two points"
+    test: "cargo test -p aprender-simulate --lib build_busy_at_alpha_016_matches_the_law"
+    prediction: "the test passes"
+    if_fails: "the rework loop is missing or mis-sized"
+
+  - id: FALSIFY-003
+    description: "mean build work is B/(1-alpha)"
+    test: "cargo test -p aprender-simulate --lib rework_loop_scales_build_work_by_one_over_one_minus_alpha"
+    prediction: "the test passes"
+    if_fails: "the rework loop does not scale build work by 1/(1-alpha)"
+
+  - id: FALSIFY-004
+    description: "build elapsed time exceeds build work (they are reported apart)"
+    test: "cargo test -p aprender-simulate --lib build_elapsed_is_not_the_build_work"
+    prediction: "the test passes"
+    if_fails: "work and elapsed build time are conflated"
+
+  - id: FALSIFY-005
+    description: "the trunk-first rule is not a no-op: the rule fires only on the render stage, with a positive threshold, after a course finished and while the mean lead exceeds it, and turning it on changes the run (LinkedIn renders are covered by linkedin_renders_load_the_gpu, not by this test)"
+    test: "cargo test -p aprender-simulate --lib trunk_first_rule_changes_the_outcome"
+    prediction: "the test passes"
+    if_fails: "the GPU priority rule is dead"
+
+  - id: FALSIFY-006
+    description: "alpha is a probability below 1 (1 or more would repeat a build forever) and li_k is bounded to [0, 64] (li_k + 4 renders per master)"
+    test: "cargo test -p aprender-simulate --lib alpha_must_be_below_one"
+    prediction: "the test passes"
+    if_fails: "apply_course_inputs accepts an alpha that never terminates"
