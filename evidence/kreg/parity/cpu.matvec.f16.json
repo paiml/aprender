@@ -33,6 +33,15 @@
   },
   "oracle": "le_decode_half_f64",
   "oracle_independent": true,
+  "per_arch": {
+    "aarch64": {
+      "host": "gx10-pool1",
+      "max_rel_err": 3.920968817889049e-07,
+      "source": "CI job 119289824035 (PR #5871 shard 1), same seed and workload",
+      "tolerance_rel": 8e-7,
+      "ts": "2026-10-21T14:51:19Z"
+    }
+  },
   "quantized_activation_oracle": null,
   "registry_precision": "f32",
   "schema": "kernel-parity-receipt/v1",

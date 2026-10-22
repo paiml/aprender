@@ -1,0 +1,19 @@
+- id: PMAT-5846
+  github_issue: 5846
+  item_type: task
+  title: 'arm_pr_automerge.sh: stale guard-tree check name (default must be x86-main)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T10:13:29Z
+  updated: 2026-10-21T10:13:29Z
+  spec: null
+  acceptance_criteria:
+  - 'default GUARD_CHECK_NAME names a check run that exists on PR heads; --self-test fixtures updated'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

@@ -43,6 +43,7 @@ SIZE_CAP=1048576
 
 REPO=""
 BASE="origin/main"
+BASE_GIVEN=0   # 1 once --base names the base: the event base never overrides it
 HEAD_REF="HEAD"
 RANGE=""   # set by run_rules: base...head, or base..head for a shallow merge head
 RED=0
@@ -285,7 +286,37 @@ in_scope() {
     return 1
 }
 
+# event_base: the base sha the CI event itself names, empty when there is none. A merge
+# queue run names merge_group.base_sha (the main tip the group was cut on); a pull request
+# run names pull_request.base.sha. Read with sed so the explicit-test container needs no jq.
+event_base() {
+    local ev=${GITHUB_EVENT_PATH:-} key
+    [ -n "$ev" ] && [ -r "$ev" ] || return 0
+    case "${GITHUB_EVENT_NAME:-}" in
+        merge_group) key=base_sha ;;
+        pull_request|pull_request_target) key=sha ;;
+        *) return 0 ;;
+    esac
+    # merge_group.base_sha is a flat key; pull_request.base.sha is the first "sha" after "base".
+    if [ "$key" = base_sha ]; then
+        sed -n 's/.*"base_sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' "$ev" | head -n 1
+    else
+        awk '{ s = s $0 } END { if (!match(s, /"base"[ \t]*:[ \t]*\{/)) exit; s = substr(s, RSTART + RLENGTH); if (!match(s, /"sha"[ \t]*:[ \t]*"[0-9a-f]+"/)) exit; s = substr(s, RSTART, RLENGTH); sub(/^"sha"[ \t]*:[ \t]*"/, "", s); sub(/"$/, "", s); if (length(s) == 40) print s }' "$ev"
+    fi
+}
+
 run_rules() {
+    local ev_base=""
+    # Under REBASE the merge queue replays a multi-commit pull request as N commits on the
+    # main tip: the head's first parent is the previous replayed commit, never the base, and a
+    # shallow clone has no merge base. The event names the base, so judge base..head.
+    if [ "$BASE_GIVEN" -eq 0 ]; then
+        ev_base=$(event_base)
+        if [ -n "$ev_base" ]; then
+            g rev-parse -q --verify "$ev_base^{commit}" >/dev/null 2>&1 || g fetch -q --depth 1 origin "$ev_base" >/dev/null 2>&1 || true
+            if g rev-parse -q --verify "$ev_base^{commit}" >/dev/null 2>&1; then BASE=$ev_base; else ev_base=""; fi
+        fi
+    fi
     g rev-parse -q --verify "$BASE^{commit}" >/dev/null || { echo "base $BASE not found" >&2; exit 2; }
     g rev-parse -q --verify "$HEAD_REF^{commit}" >/dev/null || { echo "head $HEAD_REF not found" >&2; exit 2; }
     # A pull request's CI clone is shallow: HEAD is the merge commit (or, in the merge
@@ -298,7 +329,10 @@ run_rules() {
     RANGE="$BASE...$HEAD_REF"
     if ! g merge-base "$BASE" "$HEAD_REF" >/dev/null 2>&1; then
         p1=$(g cat-file -p "$(g rev-parse "$HEAD_REF")" | awk '!h && /^parent /{n++; if (n == 1) p = $2} /^$/{h = 1} END{if (n >= 1) print p}')
-        if [ -n "$p1" ] && [ "$p1" = "$(g rev-parse "$BASE^{commit}")" ]; then
+        if [ -n "$ev_base" ]; then
+            RANGE="$BASE..$HEAD_REF"
+            how=event-base
+        elif [ -n "$p1" ] && [ "$p1" = "$(g rev-parse "$BASE^{commit}")" ]; then
             RANGE="$BASE..$HEAD_REF"
             how=first-parent
         else
@@ -372,6 +406,43 @@ st_shallow() {
     out=$("$SELF" --repo "$sc" --base "$p1" --head HEAD) || rc=$?
     got=$(printf '%s\n' "$out" | awk '!d && $1 == "H1" {print $2; d = 1}')
     if [ "$got" = "$expect" ] && printf '%s\n' "$out" | awk '/diff first-parent/ {f=1} END {exit !f}'; then
+        printf 'ok   %-22s %s %s\n' "$name" H1 "$got"
+    else
+        printf 'FAIL %-22s %s want %s got %s rc=%s\n%s\n' "$name" H1 "$expect" "${got:-none}" "$rc" "$out"
+        ST_FAIL=1
+    fi
+    git -C "$ST" checkout -q base
+}
+
+st_chain() {
+    # st_chain <name> <expect> <last-commit-setup>: a 3-commit pull request replayed onto a
+    # moved main (the merge queue under REBASE): the head's first parent is the previous
+    # replayed commit, never the base, and the shallow clone has no merge base. The event
+    # file names the base, as merge_group.base_sha does; no --base is given.
+    local name=$1 expect=$2 setup=$3 ev=${4:-merge_group} out rc=0 got sc mt i
+    ST_ROW=$name
+    git -C "$ST" checkout -q -B "laya-train/$name-pr" base
+    for i in 1 2; do echo "doc $i" >"$ST/n$i.md"; git -C "$ST" add -A; st_commit "$name pr$i"; done
+    (cd "$ST" && sh -c "$setup")
+    echo "doc 3" >"$ST/n3.md"
+    git -C "$ST" add -A; st_commit "$name pr3"
+    git -C "$ST" checkout -q -B "laya-train/$name-main" base
+    echo "y = 1" >"$ST/main_only.py"
+    git -C "$ST" add -A; st_commit "$name main"
+    mt=$(git -C "$ST" rev-parse HEAD)
+    git -C "$ST" -c user.name=t -c user.email=t@t cherry-pick "laya-train/$name-pr~2" "laya-train/$name-pr~1" "laya-train/$name-pr" >/dev/null
+    sc="$ST/shallow-$name"
+    git clone -q --no-local --depth 1 --branch "laya-train/$name-main" "$ST" "$sc"
+    if [ "$ev" = pull_request ]; then # the real payload shape (#5859): base is {label, ref, repo{...}, sha, user{...}} and head, with its own sha, comes first
+        printf '{"action":"synchronize","pull_request":{"head":{"label":"o:b","ref":"b","sha":"%s","user":{"login":"a"},"repo":{"id":3,"owner":{"login":"o"}}},"base":{"label":"o:main","ref":"main","repo":{"id":3,"owner":{"login":"o"},"license":{"key":"mit"}},"sha":"%s","user":{"login":"o"}}}}\n' "$(git -C "$ST" rev-parse HEAD)" "$mt" >"$ST/event-$name.json"
+    else
+        printf '{"merge_group":{"head_sha":"x","base_sha":"%s"}}\n' "$mt" >"$ST/event-$name.json"
+    fi
+    git -C "$sc" config uploadpack.allowReachableSHA1InWant true
+    git -C "$ST" config uploadpack.allowReachableSHA1InWant true
+    out=$(GITHUB_EVENT_NAME=$ev GITHUB_EVENT_PATH="$ST/event-$name.json" "$SELF" --repo "$sc" --head HEAD) || rc=$?
+    got=$(printf '%s\n' "$out" | awk '!d && $1 == "H1" {print $2; d = 1}')
+    if [ "$got" = "$expect" ] && printf '%s\n' "$out" | awk '/diff event-base/ {f=1} END {exit !f}'; then
         printf 'ok   %-22s %s %s\n' "$name" H1 "$got"
     else
         printf 'FAIL %-22s %s want %s got %s rc=%s\n%s\n' "$name" H1 "$expect" "${got:-none}" "$rc" "$out"
@@ -469,6 +540,10 @@ self_test() {
     st_shallow clean-shallow PASS merge 'echo "# docs" > notes.md'
     st_shallow plant-py-squash RED squash 'echo "x = 1" > x.py'
     st_shallow clean-squash PASS squash 'echo "# docs" > notes.md'
+    st_chain plant-py-chain RED 'echo "x = 1" > x.py'
+    st_chain clean-chain PASS 'echo "# docs" > notes.md'
+    st_chain plant-py-chain-pr RED 'echo "x = 1" > x.py' pull_request
+    st_chain clean-chain-pr PASS 'echo "# docs" > notes.md' pull_request
 
     # H5 and H10 need LT-1's receipt and LT-9's declaration on the base.
     git -C "$ST" checkout -q base
@@ -495,7 +570,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --self-test) self_test; exit 0 ;;
         --repo) [ $# -ge 2 ] || usage; REPO=$2; shift 2 ;;
-        --base) [ $# -ge 2 ] || usage; BASE=$2; shift 2 ;;
+        --base) [ $# -ge 2 ] || usage; BASE=$2; BASE_GIVEN=1; shift 2 ;;
         --head) [ $# -ge 2 ] || usage; HEAD_REF=$2; shift 2 ;;
         *) usage ;;
     esac
