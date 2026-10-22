@@ -112,7 +112,7 @@ set -euo pipefail
 # `unset` also drops the export attribute, so no child can inherit them.
 unset SELF_TEST FILTERSET FS_TARGETS
 SELF_TEST=0; FILTERSET=0
-EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; MG_RUN=""; MG_SHA=""; MG_CONCLUSION=""; MG_GIVEN=0; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
+EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; MG_RUN=""; MG_SHA=""; MG_CONCLUSION=""; RECEIPT_OK=0; MG_GIVEN=0; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
 # The sibling scripts and the registry always come from the checkout this script
 # runs in (cwd = repo root, in ci.yml and in the case table alike); --repo-root
 # re-points only the GIT queries — HEAD, its parents, their trees — which is how
@@ -129,6 +129,7 @@ while [ $# -gt 0 ]; do
         --mg-run) MG_RUN=$2; MG_GIVEN=1; shift 2 ;;
         --mg-sha) MG_SHA=$2; MG_GIVEN=1; shift 2 ;;
         --mg-conclusion) MG_CONCLUSION=$2; MG_GIVEN=1; shift 2 ;;
+        --receipt-ok) RECEIPT_OK=$2; shift 2 ;;
         --registry) REGISTRY=$2; shift 2 ;;
         --repo-root) ROOT=$2; shift 2 ;;
         --tsv) TSV=$2; shift 2 ;;
@@ -140,7 +141,7 @@ while [ $# -gt 0 ]; do
         --filterset) FILTERSET=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
         # same operand rules as --filterset; prints the cargo BUILD flags for the same tokens
         --build-flags) BUILDFLAGS=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
-        *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--mg-run ID --mg-sha SHA --mg-conclusion C] [--registry FILE] [--repo-root DIR] | --filterset [TARGETS] | --tier-of-record [--tsv FILE] [--union-touched --event pull_request --comparand REF] | --self-test\n' "$0" >&2; exit 2 ;;
+        *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--mg-run ID --mg-sha SHA --mg-conclusion C] [--receipt-ok 1] [--registry FILE] [--repo-root DIR] | --filterset [TARGETS] | --tier-of-record [--tsv FILE] [--union-touched --event pull_request --comparand REF] | --self-test\n' "$0" >&2; exit 2 ;;
     esac
 done
 
@@ -369,6 +370,13 @@ decide() {
             selection "merge_group: group diff $mgb..HEAD (quick tier; full only on tag/release)" "$df" || rc=$?
             rm -f "${df:?}"; return ${rc:-0} ;;
         pull_request)
+            # Signed batch receipt (#5797): scripts/ci_receipt_gate.sh verified signature, tree and
+            # toolchain for THIS merge tree, so the PR owes check/fmt/clippy and no test suite. The
+            # flag is honoured on pull_request only: push, merge_group and tags never read it.
+            if [ "$RECEIPT_OK" = 1 ]; then
+                printf 'tier=reuse\ncite=receipt\ncheck_workspace=1\nreceipt_gates=check,fmt,clippy\nreason=pull_request: a signed batch receipt verified for this merge tree and toolchain -- cargo check --workspace, fmt and clippy only; the batcher already ran the suite\n'
+                return 0
+            fi
             selection "pull_request" "$DIFF_FROM" || return $? ;;
         *) printf 'ENV: unknown event "%s" — refusing to guess a tier\n' "$EVENT" >&2; return 2 ;;
     esac
@@ -497,6 +505,17 @@ self_test() {
     leaf=$(cargo metadata --no-deps --format-version 1 2>/dev/null | jq -r '[.packages[]|select(.manifest_path|test("/crates/"))] | (map(.name) - (map(.dependencies[]?.name)|unique)) | sort | .[0]')
     printf 'crates/%s/src/lib.rs\n' "$leaf" > "$td/d-leaf.txt"
     row 0 "pull_request, a leaf crate ($leaf) touched -> quick with that crate" "^crates=.*$leaf" bash "$T" --event pull_request --diff-from "$td/d-leaf.txt"
+    # Signed batch receipt (#5797): the verdict of scripts/ci_receipt_gate.sh arrives as --receipt-ok 1.
+    row 0 "pull_request with a verified receipt -> tier=reuse, cite=receipt" '^tier=reuse$' bash -c "bash '$T' --event pull_request --diff-from '$td/d-core.txt' --receipt-ok 1 | head -n1"
+    row 0 "  ...owing check_workspace=1 and exactly check,fmt,clippy (no test suite)" '^check_workspace=1 receipt_gates=check,fmt,clippy$' bash -c "o=\$(bash '$T' --event pull_request --diff-from '$td/d-core.txt' --receipt-ok 1); printf '%s %s\\n' \"\$(grep '^check_workspace=' <<< \"\$o\")\" \"\$(grep '^receipt_gates=' <<< \"\$o\")\""
+    row 0 "  ...even when the diff touches a root manifest (the receipt vouches for the whole tree)" '^tier=reuse$' bash -c "bash '$T' --event pull_request --diff-from '$td/d-root.txt' --receipt-ok 1 | head -n1"
+    row 0 "pull_request with --receipt-ok 0 is unchanged: still the quick selection" '^tier=quick$' bash -c "bash '$T' --event pull_request --diff-from '$td/d-leaf.txt' --receipt-ok 0 | head -n1"
+    row 0 "schedule ignores --receipt-ok: tier=full" '^tier=full$' bash -c "bash '$T' --event schedule --receipt-ok 1 | head -n1"
+    row 0 "push ignores --receipt-ok: never reuse without a merge_group result" '^NOT-RECEIPT$' bash -c "o=\$(bash '$T' --event push --repo-root '$td/q-leaf' --receipt-ok 1); if grep -q '^cite=receipt' <<< \"\$o\"; then echo RECEIPT; else echo NOT-RECEIPT; fi"
+    row 0 "merge_group ignores --receipt-ok: the queue still owes its own tier" '^NOT-RECEIPT$' bash -c "o=\$(env -u MG_BASE_SHA bash '$T' --event merge_group --repo-root '$td/q-leaf' --receipt-ok 1); if grep -q '^cite=receipt' <<< \"\$o\"; then echo RECEIPT; else echo NOT-RECEIPT; fi"
+    sed 's|if \[ "\$RECEIPT_OK" = 1 \]; then|if [ "$RECEIPT_OK" != 7 ]; then|' "$T" > "$td/mutant-receipt.sh"
+    row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-receipt.sh'; then echo SAME; else echo DIFFERS; fi"
+    row 0 "MUTANT: a pull_request arm that reuses without a verified receipt -> the --receipt-ok 0 row goes RED" '^MUTANT-REUSE$' bash -c "o=\$(bash '$td/mutant-receipt.sh' --event pull_request --diff-from '$td/d-leaf.txt' --receipt-ok 0 | head -n1); if [ \"\$o\" = tier=reuse ]; then echo MUTANT-REUSE; else echo SURVIVED; fi"
     # registry drift is ENV for the quick tier
     cp scripts/tree_reader_tests.txt "$td/reg.bak"; printf 'zeta\t--lib\n' >> scripts/tree_reader_tests.txt
     row 2 "pull_request with a drifted registry -> ENV (exit 2): no quick tier over a stale list" 'drifted' bash "$T" --event pull_request --diff-from "$td/d-scripts.txt"
