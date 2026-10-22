@@ -35,7 +35,7 @@ trap 'rm -f "${LOG:?}"' EXIT
 
 # Redirect, never pipe: reading this through a pipe would report the exit status
 # of the last stage instead of cargo-deny's.
-cargo deny --all-features check advisories > "$LOG" 2>&1
+cargo-deny --all-features check advisories > "$LOG" 2>&1
 rc=$?
 
 declared="$(grep -c 'id = "RUSTSEC' deny.toml || true)"
@@ -64,7 +64,7 @@ if [ "$dead" -gt 0 ]; then
   exit 1
 fi
 
-if [ "$rc" -ne 0 ] && grep -qE '^error\[(vulnerability|unmaintained|unsound|yanked|notice)\]' "$LOG"; then
+if [ "$rc" -eq 1 ] && grep -qE '^error\[(vulnerability|unmaintained|unsound|yanked|notice)\]' "$LOG"; then
   # PMAT-5792: findings are advisory-diff territory (scripts/ci/advisory_gate.sh), not this guard's.
   printf '\nNOTE: advisory findings present; judged by advisory_gate.sh, not here.\n'
 elif [ "$rc" -ne 0 ]; then
