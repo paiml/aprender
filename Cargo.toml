@@ -37,6 +37,7 @@ members = [
     # --- APR-MONO Phase 2b: was provable-contracts ---
     "crates/aprender-contracts",
     "crates/aprender-contracts-macros",
+    "crates/aprender-contracts-key",
     "crates/aprender-contracts-cli",
     # EPIC #4232: shared update check + `<bin> update` for every sovereign binary.
     "crates/aprender-update",
@@ -321,6 +322,7 @@ aprender-train-common = { path = "crates/aprender-train-common", version = "0.71
 aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.71.3" }
 aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.71.3" }
 aprender-contracts = { path = "crates/aprender-contracts", version = "0.71.3" }
+aprender-contracts-key = { path = "crates/aprender-contracts-key", version = "0.71.3" }
 aprender-build-sha = { path = "crates/aprender-build-sha", version = "0.71.3" }
 aprender-rollup = { path = "crates/aprender-rollup", version = "0.71.3" }
 aprender-profile = { path = "crates/aprender-profile", version = "0.71.3" }

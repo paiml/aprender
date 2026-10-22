@@ -34,7 +34,7 @@ fn process_contract(path: &std::path::Path) -> (usize, usize) {
 
     let (mut pre, mut post) = (0, 0);
     for (name, eq) in &yaml.equations {
-        let key = provable_contracts::build_helper::env_key(&stem, name);
+        let key = aprender_contracts_key::env_key(&stem, name);
         if !eq.preconditions.is_empty() {
             println!("cargo:rustc-env={key}_PRE_COUNT={}", eq.preconditions.len());
             pre += eq.preconditions.len();
