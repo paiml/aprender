@@ -2378,4 +2378,79 @@ mod tests {
         assert_eq!(tail.jitter.spike_count, 0);
         assert!(!tail.drift.degradation_detected);
     }
+
+    // ===== run_phase_max (FALSIFY-LOADTEST-MAX-001..003) =====
+
+    /// Serve `body` to every connection until the returned handle is aborted.
+    async fn spawn_json_server(body: &'static str) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let _ = sock.read(&mut buf).await;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        (url, handle)
+    }
+
+    const CANNED: &str = r#"{"id":"x","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"4"},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#;
+
+    fn max_config(concurrency: usize) -> LoadTestConfig {
+        LoadTestConfig {
+            concurrency,
+            ..LoadTestConfig::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_run_phase_max_records_server_token_counts() {
+        let (url, server) = spawn_json_server(CANNED).await;
+        let lt = LoadTest::new(LlmClient::new(url, "m"), max_config(2));
+        let records = lt.run_phase_max(Duration::from_millis(200)).await.unwrap();
+        server.abort();
+        assert!(records.len() >= 2, "each worker sends at least once");
+        for r in &records {
+            assert!(r.success);
+            assert_eq!(r.tokens, 3);
+            assert_eq!(r.prompt_tokens, 7);
+            assert_eq!(r.finish_reason.as_deref(), Some("stop"));
+            assert!(
+                r.response_content.is_none(),
+                "content not captured by default"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_run_phase_max_unreachable_server_yields_failed_records() {
+        // Bind then drop so the port is closed.
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        drop(l);
+        let lt = LoadTest::new(LlmClient::new(url, "m"), max_config(1));
+        let records = lt.run_phase_max(Duration::from_millis(100)).await.unwrap();
+        assert!(!records.is_empty());
+        assert!(records.iter().all(|r| !r.success && r.tokens == 0));
+    }
+
+    #[tokio::test]
+    async fn test_run_phase_max_zero_duration_sends_nothing() {
+        let (url, server) = spawn_json_server(CANNED).await;
+        let lt = LoadTest::new(LlmClient::new(url, "m"), max_config(3));
+        let records = lt.run_phase_max(Duration::ZERO).await.unwrap();
+        server.abort();
+        assert!(records.is_empty());
+    }
 }
