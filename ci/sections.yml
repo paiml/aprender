@@ -382,6 +382,10 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
+          # #5850: every helper below runs with a SCRATCH GITHUB_OUTPUT/GITHUB_ENV; only the last line of this step writes
+          # the real file, so no helper can plant tier=/cite= lines or a heredoc in front of ours.
+          real_out="$GITHUB_OUTPUT"
+          GITHUB_OUTPUT="$(mktemp)"; GITHUB_ENV="$(mktemp)"; export GITHUB_OUTPUT GITHUB_ENV
           args=(--event "${GITHUB_EVENT_NAME}")
           # #5797: a signed batch receipt in the PR body (signature, tree hash == this
           # merge tree, toolchain hash) lets the PR run check/fmt/clippy instead of the
@@ -450,7 +454,7 @@ jobs:
               ;;
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
-          grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+          grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$real_out"
       # #4502 row 2: lint_passes_on_real_contracts (aprender-contracts) requires the
       # refinement gate to RUN whenever CI is set, and that gate compares HEAD with
       # merge-base(HEAD, origin/main), else the origin/main tip. This section clones at

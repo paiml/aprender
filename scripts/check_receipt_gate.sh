@@ -217,20 +217,20 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   printf '%s\n' "$tier" | grep -E 'scripts/|git (fetch|clone)' | grep -q . && return 1
   # the consumer chain (tier step: RECEIPT_OK -> rok -> --receipt-ok -> ci_test_tier.sh) is hash-pinned whole; edit it -> update this sha256 (gate content, quorum)
   step=$(awk '/- name: Decide the test tier/{on=1;print;next} on&&/^      - name:/{exit} on{print}' "$2" | grep -v -E '^[[:space:]]*#')
-  [ "$(printf '%s\n' "$step" | sha256sum | cut -d' ' -f1)" = "0d3225cbff907f20208c821901c72e70a4c66cef603d5aa5b100144beec45d50" ] || return 1
+  [ "$(printf '%s\n' "$step" | sha256sum | cut -d' ' -f1)" = "a6c4a1aa70c61821a7118c191b810093cf31021b686e2cc6e9eb138b602729a2" ] || return 1
   # nothing outside the pinned lines may set the verdict, the shell or the environment
   ciall=$(grep -v -E '^[[:space:]]*#' "$1"); secall=$(grep -v -E '^[[:space:]]*#' "$2")
   n=$(grep -c -E 'RECEIPT_OK|receipt-ok|BASH_ENV|GITHUB_ENV|^defaults:|^env:' <<< "$ciall" || true); [ "$n" = 1 ] || return 1
   n=$(grep -c -E 'RECEIPT_OK|receipt-ok' <<< "$secall" || true); [ "$n" = 2 ] || return 1
   n=$(grep -c -E 'BASH_ENV|^defaults:|^env:' <<< "$secall" || true); [ "$n" = 0 ] || return 1
-  n=$(grep -c 'GITHUB_ENV' <<< "$secall" || true); [ "$n" = 3 ] || return 1
+  n=$(grep -c 'GITHUB_ENV' <<< "$secall" || true); [ "$n" = 4 ] || return 1
   # hash pins (E7, escaped keys and every other spelling): the shard job in ci.yml, its block in sections.yml and the three scripts the verdict flows through.
   # Any byte change is RED unless the pin moves in the same diff (gate content, quorum). PIN_ROOT lets the case table pin a mutated copy.
   local pr=${PIN_ROOT:-$HERE/..} blk
   [ "$(printf '%s\n' "$shard" | sha256sum | cut -d' ' -f1)" = "6c7c538c950899c60f7436868ee80a003f904e3ed3a4286877976964f4ddc216" ] || return 1
   blk=$(awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$2" | grep -v -E '^[[:space:]]*#')
-  [ "$(printf '%s\n' "$blk" | sha256sum | cut -d' ' -f1)" = "e44b8057e38d6d7eaf6b45e1d3e184e4396d329582e7cb3cd5f6790bb29e552c" ] || return 1
-  [ "$(sha256sum < "$pr/scripts/ci/fat_driver.py" | cut -d' ' -f1)" = "ed63b68c671497c70607ddc07613dac956b56df9da2e557410cd14900171be27" ] || return 1
+  [ "$(printf '%s\n' "$blk" | sha256sum | cut -d' ' -f1)" = "b27698ea49d1149e98cb8fca78d45c48a0f58322b89f9b99a87b6224d415d460" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci/fat_driver.py" | cut -d' ' -f1)" = "81662d808e4672b41b481f44361c10aaae308661f492b1aaaff47f87ffb27cfc" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci_test_tier.sh" | cut -d' ' -f1)" = "1680bab97243fb7b5ce6907daf3c8a00db4968a2e892095260152a09cc127866" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci/receipt_ok_arg.sh" | cut -d' ' -f1)" = "1795d4df36fa1c3f223dd054d93392aff7584bb5063bed1d7a11bd3f18144820" ] || return 1
   # scripts that run before the tier step in the shard (they could append RECEIPT_OK to $GITHUB_ENV): byte-pinned too
@@ -280,12 +280,10 @@ wmut "W20k MUTANT (E5): the judge's output line hard-coded to ok=1 is caught" ci
 wmut "W20l MUTANT (E6): the judge's initial ok=0 set to ok=1 is caught" ci '          ok=0' '          ok=1'
 wmut "W40a MUTANT: tier step env RECEIPT_OK: 1 is caught" sec '          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          set -euo pipefail
-          args=(--event' '          PR_BODY: ${{ github.event.pull_request.body }}
+          set -euo pipefail' '          PR_BODY: ${{ github.event.pull_request.body }}
           RECEIPT_OK: "1"
         run: |
-          set -euo pipefail
-          args=(--event'
+          set -euo pipefail'
 wmut "W40b MUTANT: the tier gate && turned into || is caught" sec '[ "${GITHUB_EVENT_NAME}" = pull_request ] && [ "${RECEIPT_OK:-0}" = 1 ]' '[ "${GITHUB_EVENT_NAME}" = pull_request ] || [ "${RECEIPT_OK:-0}" = 1 ]'
 wmut "W40c MUTANT: hard-coded --receipt-ok 1 is caught" sec 'args+=(--receipt-ok "${rok:-0}")' 'args+=(--receipt-ok 1)'
 wmut "W40d MUTANT: workflow-level defaults: run: shell is caught" ci $'\njobs:\n' $'\ndefaults:\n  run:\n    shell: bash -c "export RECEIPT_OK=1; . {0}"\njobs:\n'
@@ -429,6 +427,35 @@ for rel in scripts/ci_test_tier.sh scripts/ci_reclaim_target_dirs.sh scripts/ci/
   if PIN_ROOT="$pr" judge_ok "$CI" "$SEC"; then r=missed; else r=caught; fi
   wrow "W42d MUTANT: $rel writing ${w##* } is caught" caught "$r"
 done; done
+
+# W43: parse_file_command (the driver's GITHUB_OUTPUT/GITHUB_ENV reader) fails closed (#5850); the real function is run, no PyYAML needed
+pfc_run() { # $1 = driver source, $2 = file body; prints reject|accept
+  local src="$td/pfc.py" o="$td/pfc.out"
+  sed -n '/^def _fc_put/,/^    return out$/p' "$1" > "$src"; printf '%b' "$2" > "$o"
+  if python3 -I -c 'import re,sys
+from pathlib import Path
+exec(open(sys.argv[1]).read())
+parse_file_command(Path(sys.argv[2]))' "$src" "$o" > /dev/null 2>&1 < /dev/null; then echo accept; else echo reject; fi
+}
+FD="$HERE/ci/fat_driver.py"
+wrow "W43a an unterminated heredoc planted ahead of the real tier lines is rejected" reject "$(pfc_run "$FD" 'tier=reuse\ncite=receipt\nignore<<EOF\ntier=quick\n')"
+wrow "W43b a duplicate tier= key is rejected" reject "$(pfc_run "$FD" 'tier=reuse\ntier=quick\n')"
+wrow "W43c a duplicate heredoc key is rejected" reject "$(pfc_run "$FD" 'k<<E\na\nE\nk=b\n')"
+wrow "W43d positive control: distinct keys and a terminated heredoc parse" accept "$(pfc_run "$FD" 'tier=quick\nk<<EOF\na\nEOF\n')"
+sed -e 's/raise SystemExit(.*)/pass/' "$FD" > "$td/fd-mut.py"
+wrow "W43e MUTANT: the fail-closed raises removed accepts the planted heredoc (the test is sensitive)" accept "$(pfc_run "$td/fd-mut.py" 'tier=reuse\ncite=receipt\nignore<<EOF\ntier=quick\n')"
+
+# W44: the tier step isolates its helpers (scratch GITHUB_OUTPUT/GITHUB_ENV) and writes the real file only at the end
+wmut "W44a MUTANT: the scratch GITHUB_OUTPUT/GITHUB_ENV removed from the tier step is caught" sec 'GITHUB_OUTPUT="$(mktemp)"; GITHUB_ENV="$(mktemp)"; export GITHUB_OUTPUT GITHUB_ENV' ':'
+wmut "W44b MUTANT: the tier step writing the real GITHUB_OUTPUT is caught" sec '"$RUNNER_TEMP/tier.txt" >> "$real_out"' '"$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"'
+
+# W45: every file the tier step runs, marked pinned (hash) or isolated (runs under the scratch env). A new one is RED until it is classified here.
+tier_exec() { awk '/- name: Decide the test tier/{on=1;print;next} on&&/^      - name:/{exit} on{print}' "$1" | grep -v -E '^[[:space:]]*#' | grep -oE 'scripts/[A-Za-z0-9_./-]+' | LC_ALL=C sort -u | tr '\n' ' '; }
+# pinned: ci_test_tier.sh.  isolated (scratch env): fetch_p6.sh, pr_touched_paths.sh, ci_mg_workspace_result.sh.
+# ci_test_tier.sh itself runs (pinned parent, scratch env): check_ci_push_reuse.sh check_tree_reader_tests.sh gate_touched_crates.sh lib/test_tier.py
+want="scripts/ci/fetch_p6.sh scripts/ci/pr_touched_paths.sh scripts/ci_mg_workspace_result.sh scripts/ci_test_tier.sh "
+wrow "W45a the tier step runs exactly the classified files" "$want" "$(tier_exec "$SEC")"
+mutate "$SEC" 'bash scripts/ci_test_tier.sh' 'bash scripts/ci_test_tier.sh; bash scripts/new_helper.sh' "$td/exec.yml" && { [ "$(tier_exec "$td/exec.yml")" = "$want" ] && r=missed || r=caught; wrow "W45b MUTANT: an unclassified helper in the tier step turns the list RED" caught "$r"; } || { fail=$((fail + 1)); echo "FAIL W45b: mutant did not apply"; }
 if mutate "$CI" '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=1' "$td/b7.yml"; then wrow "W23g MUTANT (E2): a dead guard passes the garbage verifier answer, behaviourally" 2 "$(judge_run "$td/b7.yml" vgarbage | sed 's/^1$/2/')"; else fail=$((fail + 1)); echo "FAIL W21g: mutant did not apply"; fi
 echo "receipt gate rows: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
