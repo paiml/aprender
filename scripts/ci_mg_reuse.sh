@@ -688,10 +688,10 @@ STUB
   mgmut x86-main-needs-lookalike "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{s/^    needs: \[mg-reuse\]$/    needs: [mg-reuse-self-test]/}'
   mgmut x86-main-drops-needs "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'
   mgmut gate-if-loses-always "job gate needs mg-reuse but its if lacks" "/^  gate:\$/,/^    steps:/{s/^    if: always\(\)/    if: success()/}"
-  # once a receipt-judge job exists (#5850), the marker must need it and key its if on the verdict
-  mgmut ran-marker-ignores-receipt-judge "workspace-test-ran ignores receipt-judge" 's#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:#'
-  mgmut ran-marker-needs-judge-but-if-ignores-it "workspace-test-ran ignores receipt-judge" 's#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:\n    needs: [receipt-judge]#'
-  mgmut ran-marker-drops-shard-needs "workspace-test-ran does not need workspace-test-shard" '/^  workspace-test-ran:$/,/^    runs-on:/{/^    needs: \[workspace-test-shard\]$/d}'
+  # with #5850's receipt-judge job in the file, the marker must need it and key its if on the verdict
+  mgmut ran-marker-ignores-receipt-judge "workspace-test-ran ignores receipt-judge" 's/^    needs: \[workspace-test-shard, receipt-judge\]$/    needs: [workspace-test-shard]/'
+  mgmut ran-marker-needs-judge-but-if-ignores-it "workspace-test-ran ignores receipt-judge" "/^  workspace-test-ran:\$/,/^    runs-on:/{s/ && needs.receipt-judge.outputs.ok != '1'//}"
+  mgmut ran-marker-drops-shard-needs "workspace-test-ran does not need workspace-test-shard" 's/^    needs: \[workspace-test-shard, receipt-judge\]$/    needs: [receipt-judge]/'
   mgmut ran-marker-if-drops-shard-result "workspace-test-ran if lacks the shard success clause" "/^  workspace-test-ran:\$/,/^    runs-on:/{s/ \&\& needs.workspace-test-shard.result == 'success'//}"
   mgmut mg-reuse-wt-leaves-mq-lane "mg-reuse-wt is not on the mq lane" '/^  mg-reuse-wt:$/,/^    timeout-minutes:/{s/,"mq"\]/,"clean-room"]/}'
 
