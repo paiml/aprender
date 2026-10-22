@@ -524,4 +524,29 @@ mod tests {
         }
         assert_eq!(report.present_top_keys.len(), REQUIRED_TOP_KEYS.len());
     }
+
+    #[test]
+    fn civil_from_days_epoch_and_leap_boundaries() {
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        assert_eq!(civil_from_days(59), (1970, 3, 1));
+        // 2000-02-29 (divisible-by-400 leap day) is day 11_016.
+        assert_eq!(civil_from_days(11_016), (2000, 2, 29));
+        assert_eq!(civil_from_days(11_017), (2000, 3, 1));
+        // 1900 is not a leap year; the day before the epoch is 1969-12-31.
+        assert_eq!(civil_from_days(-1), (1969, 12, 31));
+        assert_eq!(civil_from_days(-25_508), (1900, 3, 1));
+        assert_eq!(civil_from_days(-25_509), (1900, 2, 28));
+    }
+
+    #[test]
+    fn now_utc_iso8601_has_fixed_shape() {
+        let s = now_utc_iso8601();
+        let b = s.as_bytes();
+        assert_eq!(b.len(), 20, "got {s}");
+        assert_eq!(
+            (b[4], b[7], b[10], b[13], b[16], b[19]),
+            (b'-', b'-', b'T', b':', b':', b'Z')
+        );
+        assert!(s.starts_with("20"), "year after 2000, got {s}");
+    }
 }
