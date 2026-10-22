@@ -49,6 +49,8 @@
 # #4709 (C303): the pv census ratchet, LAB from its first night (never on a PR path, C324).
 # Seconds are a local wall-clock sample (2026-10-14, pv prebuilt); the first nightly replaces them.
 6	The pv census bound share may only rise (#4709)
+# #5502: parity-receipt count vs EXPECTED_RECEIPTS (verify mode), LAB, nightly only (C324); seconds are a guess until the first night.
+5	Parity-receipt count equals EXPECTED_RECEIPTS (verify mode, #5502, LAB)
 # #5873: the harness fixture-server cleanup check, quarantined from ci/explicit-test-commands.d/817 (its apr-stub row races); LAB, never on a PR path (C324).
 60	Harness fixture servers die with their harness (LAB, quarantined from the merge path, #5873)
 1	affected_set.sh case table and mutants (FLOW-010 E5, LAB)
