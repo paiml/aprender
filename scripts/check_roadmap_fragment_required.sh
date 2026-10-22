@@ -490,7 +490,7 @@ PY
 
 # ---------------------------------------------------------------------------
 case "${1:-}" in
-    --self-test|--selftest) self_test; exit $? ;;
+    --self-test|--selftest) unset GITHUB_EVENT_NAME GITHUB_EVENT_PATH; self_test; exit $? ;;
     --help|-h) usage ;;
     --*) usage ;;
 esac
