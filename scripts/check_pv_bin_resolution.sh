@@ -861,6 +861,28 @@ row_sat_relinked
 
 
 
+# 4v. An empty --version must say why (#5894). A pv that dies silently (here exit 139) reads
+#     as an empty version; the diagnostics must carry its exit status, and the verdict stays STALE (rc=1).
+row_empty_version_names_status() {
+    ev_name='4v empty --version names its exit status'
+    ev_dir="$TMP/emptyver"
+    mkdir -p "$ev_dir"
+    printf '#!/bin/sh\nexit 139\n' > "$ev_dir/pv"
+    chmod +x "$ev_dir/pv"
+    ev_rc=0
+    ev_out=$(bash -c '. "$1" || exit 9; pv_bin_assert_fresh "$2"' _ "$PV_BIN_SH" "$ev_dir/pv" 2>&1) || ev_rc=$?
+    if [ "$ev_rc" -ne 1 ]; then
+        bad "$ev_name -> verdict changed (rc=$ev_rc, want 1)"
+    elif ! printf '%s\n' "$ev_out" | grep -q 'STALE pv BINARY'; then
+        bad "$ev_name -> no STALE report"
+    elif ! printf '%s\n' "$ev_out" | grep -q -- '--version: exit status 139'; then
+        bad "$ev_name -> the exit status is not in the diagnostics"
+    else
+        note "$ev_name"
+    fi
+}
+row_empty_version_names_status
+
 printf '\n'
 if [ "$fails" -gt 0 ]; then
     printf '%s assertion(s) failed.\n' "$fails" >&2
