@@ -65,6 +65,7 @@ jobs:
     name: pv ${{ matrix.target }} on ${{ matrix.host }}
     needs: assets
     runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -393,6 +394,7 @@ jobs:
     name: apr (cuda) ${{ matrix.target }} on ${{ matrix.host }}
     needs: assets
     runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -545,6 +547,7 @@ jobs:
     name: apr (cpu) ${{ matrix.target }} on ${{ matrix.host }}
     needs: assets
     runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -710,6 +713,7 @@ jobs:
     name: apr (cpu) aarch64-apple-darwin on mini
     needs: assets
     runs-on: [self-hosted, macOS, ARM64, mini-builder]
+    timeout-minutes: 120
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
