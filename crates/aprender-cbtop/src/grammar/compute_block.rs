@@ -40,7 +40,7 @@ impl BuiltComputeBlock {
 
         // Select strategy (in order of priority)
         let mut strategies = self.inner.strategies.clone();
-        strategies.sort_by(|a, b| b.priority.cmp(&a.priority));
+        strategies.sort_by_key(|a| std::cmp::Reverse(a.priority));
 
         let strategy_used = if let Some(layer) = strategies.first() {
             format!("{:?}", layer.strategy)

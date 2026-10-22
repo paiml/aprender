@@ -27,7 +27,7 @@ pub const DECODING: Decoding = Decoding {
 };
 
 /// Per-request timeout. A review that takes longer is a `ServeError`.
-pub const TIMEOUT: Duration = Duration::from_secs(900);
+pub const TIMEOUT: Duration = Duration::from_mins(15);
 
 /// The user message: the prompt file verbatim, a blank line, then the diff
 /// in a fenced block. Fixed; its sha is part of `request_sha256`.

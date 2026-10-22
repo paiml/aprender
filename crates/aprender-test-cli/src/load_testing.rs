@@ -736,7 +736,9 @@ impl LatencyHistogram {
             self.buckets[bucket] += 1;
         } else {
             // Overflow bucket (last)
-            *self.buckets.last_mut().unwrap() += 1;
+            if let Some(last) = self.buckets.last_mut() {
+                *last += 1;
+            }
         }
         self.count += 1;
         self.sum += latency_ms;
@@ -765,11 +767,7 @@ impl LatencyHistogram {
 
     /// Get mean latency
     pub fn mean(&self) -> u64 {
-        if self.count == 0 {
-            0
-        } else {
-            self.sum / self.count
-        }
+        self.sum.checked_div(self.count).unwrap_or(0)
     }
 
     /// Get sample count
