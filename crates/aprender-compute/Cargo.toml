@@ -63,11 +63,9 @@ anyhow = "1.0.100"
 # Hardware capability detection (PMAT-447)
 chrono = "0.4"
 toml = "0.8"
-# ML tuner integration (SHOWCASE-BRICK-001, Section 12) — aprender RandomForest is a
-# DEV-dependency only: the SIMD foundation must not depend on the ML layer (layer
-# inversion). The `ml-tuner` showcase lives in examples/ml_tuner_demo.rs + the tuner
-# falsification tests, which consume aprender directly. Dev-dep path cycles are legal
-# in cargo and dropped on publish, keeping the workspace a self-contained DAG (APR-MONO).
+# ML tuner integration (SHOWCASE-BRICK-001, Section 12) — the SIMD foundation takes no
+# dependency, not even a dev one, on the ML layer. The aprender RandomForest tests live in
+# crates/aprender-core/tests/tuner_training_data_quality.rs (FLOW-010, #5803).
 # NOTE: trueno-graph (=aprender-graph) removed (APR-MONO self-containment): aprender-graph
 # depends on trueno, so compute→graph closed a cycle. The `execution-graph` feature's only
 # trueno-graph use was the thin `to_csr()`/`graph_to_csr()` CsrGraph exporters; CSR export
@@ -106,9 +104,6 @@ trueno-cuda-edge = { workspace = true }
 # Sparse and solver crates for contract tests
 trueno-sparse = { workspace = true }
 trueno-solve = { workspace = true }
-# ML-tuner showcase (SHOWCASE-BRICK-001): aprender RandomForest, DEV-only to avoid the
-# compute→core layer inversion. Path dev-dep cycle is legal + dropped on publish.
-aprender = { path = "../aprender-core", package = "aprender-core", default-features = false }
 ndarray = "0.17.2"
 faer = "0.24"  # For GEMM benchmark comparison (fastest pure-Rust BLAS)
 matrixmultiply = "0.3"  # Direct matrixmultiply crate benchmark (engine behind ndarray)
@@ -139,10 +134,6 @@ hardware-detect = ["dep:dirs"]
 tui-monitor = ["presentar-core", "presentar-terminal", "crossterm", "trueno-gpu", "dep:tracing", "tracing-subscriber", "tracing-appender", "dep:dirs"]
 # CUDA support for TUI (real hardware monitoring)
 cuda = ["trueno-gpu/cuda"]
-# ML-based kernel selection and throughput prediction (SHOWCASE-BRICK-001)
-# Showcase: feed trueno tuner features into aprender RandomForest (example + tests only;
-# aprender is a dev-dependency, so this feature activates no lib dependency).
-ml-tuner = []
 # NOTE: `execution-graph` feature removed (APR-MONO self-containment) — its only purpose
 # was the trueno-graph CsrGraph exporters (see above). The exec-graph profiler itself
 # (to_dot/to_ascii_tree, slowest-path) is always available, no graph crate needed.
