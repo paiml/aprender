@@ -92,7 +92,7 @@ falsification_tests:
   - id: FALSIFY-ADG-004
     rule: "Same DB snapshot on both sides"
     prediction: "a DB entry published between the main run and the PR run does not appear in the delta"
-    test: "advisory_gate_selftest.sh: exactly one `cargo deny fetch`, both scans --offline (0.20) or --disable-fetch (older cargo-deny) with one --config"
+    test: "advisory_gate_selftest.sh: exactly one `cargo deny fetch`, both scans --offline (0.20) or --disable-fetch (older cargo-deny) with one --config; behavioural rows: a PR-introduced advisory makes the gate exit 1, a PR-added ignore exits 1, merge_group without base_sha exits 75, and replacing the verdict / ignores-added / base-ref call with `true` turns the matching row RED"
     if_fails: "DB refreshes read as PR-introduced advisories and re-create the stop"
     mutation: "sed out --offline, or add a second fetch before the base scan; the two 'ADG-004' mutant cases must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-005

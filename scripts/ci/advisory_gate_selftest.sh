@@ -30,6 +30,49 @@ run_gate() { # prints the stub's argv log
     cat "$log"
 }
 
+gate_rc() { # prints the gate's EXIT CODE under a scenario: STUB_PR_FIND=1 (the PR tree's scan reports an error finding, rc 1),
+    # WIDEN=1 (the PR adds an advisory id to deny.toml ignore), EV=<event>, MG=<MG_BASE_SHA>
+    local d repo rc=0
+    d=$(mktemp -d)
+    # shellcheck disable=SC2064
+    trap "rm -rf -- '${d:?}'" RETURN
+    repo="$d/repo"; mkdir -p "$repo" "$d/bin" "$d/home" "$d/scripts"
+    cp "$GATE_SRC" "$d/scripts/advisory_gate.sh"; cp "$HERE/advisory_diff.sh" "$d/scripts/advisory_diff.sh"
+    cat >"$d/bin/cargo" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in *--help*) exit 0;; esac
+case "$* " in
+    *" check "*)
+        if [ "${STUB_PR_FIND:-0}" = 1 ] && [[ "$PWD" != *advgate-base-* ]]; then
+            echo '{"type":"diagnostic","fields":{"code":"vulnerability","severity":"error","advisory":{"id":"RUSTSEC-2026-0378"},"graphs":[{"Krate":{"name":"wasmtime","version":"48.0.6"}}]}}' >&2
+            exit 1
+        fi ;;
+esac
+exit 0
+STUB
+    chmod +x "$d/bin/cargo"
+    (
+        cd "$repo"
+        git init -q . && printf '[advisories]\n' >deny.toml && git add deny.toml
+        git update-ref refs/remotes/origin/main "$(git -c user.name=t -c user.email=t@t commit-tree -m base "$(git write-tree)")"
+        git update-ref HEAD refs/remotes/origin/main
+        if [ "${WIDEN:-0}" = 1 ]; then printf 'ignore = ["RUSTSEC-2026-0378"]\n' >>deny.toml; fi
+        PATH="$d/bin:$PATH" HOME="$d/home" TMPDIR="$d" GITHUB_EVENT_NAME="${EV:-pull_request}" MG_BASE_SHA="${MG:-}" \
+            STUB_PR_FIND="${STUB_PR_FIND:-0}" bash "$d/scripts/advisory_gate.sh" >/dev/null 2>&1
+    ) || rc=$?
+    echo "$rc"
+}
+
+# scenario table: name, wanted exit code, env assignments. Each row also names the advisory_diff.sh call that decides it.
+scenarios() { # prints the first defect, or ok
+    local got
+    got=$(gate_rc); [ "$got" = 0 ] || { echo "clean PR: gate exit $got, want 0"; return; }
+    got=$(STUB_PR_FIND=1 gate_rc); [ "$got" = 1 ] || { echo "verdict: PR-introduced advisory: gate exit $got, want 1"; return; }
+    got=$(WIDEN=1 gate_rc); [ "$got" = 1 ] || { echo "ignores-added: PR widens deny.toml ignore: gate exit $got, want 1"; return; }
+    got=$(EV=merge_group MG='' gate_rc); [ "$got" = 75 ] || { echo "base-ref: merge_group without base_sha: gate exit $got, want 75"; return; }
+    echo ok
+}
+
 verdict_of() { # [old|new] (cargo-deny flavour the stub played); stdin: stub log -> "ok" or the first defect
     local log fetch checks nall nfd ncfg
     log=$(cat)
@@ -74,6 +117,17 @@ main() {
     mutant 'scan not offline (0.20)' 's/--locked --offline --all-features/--locked --all-features/' 'ADG-004'
     mutant 'no cargo fetch --locked before the scans (0.20)' 's/cargo fetch --locked)/true)/' 'ADG-004'
     mutant 'second fetch before the base scan' 's|^BASERC=|cargo deny fetch --config "$W/deny.toml" db; BASERC=|' 'ADG-004'
+    # The gate's three advisory_diff.sh calls (base-ref, ignores-added, verdict) each decide a scenario: replaced by `true`, each must go red.
+    got=$(scenarios); [ "$got" = ok ] || { echo "SELF-TEST FAIL: real gate scenarios: $got" >&2; bad=1; }
+    smut() { # name sed-expr want-substring
+        sed -e "$2" "$GATE_SRC" >"$d/s.sh"
+        cmp -s "$d/s.sh" "$GATE_SRC" && { echo "SELF-TEST FAIL: mutant '$1' changed nothing" >&2; bad=1; return; }
+        m=$(GATE_SRC="$d/s.sh" scenarios)
+        [[ "$m" == *"$3"* ]] || { echo "SELF-TEST FAIL: mutant '$1' stayed green: $m" >&2; bad=1; }
+    }
+    smut 'verdict call replaced by true' 's|^bash "\$GATE" verdict .*|true|' 'verdict:'
+    smut 'ignores-added call replaced by true' 's|^bash "\$GATE" ignores-added .*|true|' 'ignores-added:'
+    smut 'base-ref call replaced by true' 's|^bash "\$HERE/advisory_diff.sh" base-ref .*|true|' 'base-ref:'
     # ADG-003 on the other two scan sites: the push path and the exemption-liveness guard.
     local f
     for f in "$GATE_SRC" "${EXEMPT_SRC:-scripts/check_deny_exemptions_live.sh}"; do
@@ -83,7 +137,7 @@ main() {
             echo "SELF-TEST FAIL: ADG-003: $f scans advisories without --all-features" >&2; bad=1
         fi
     done
-    [ "$bad" -eq 0 ] && echo "advisory_gate self-test: 2 real (cargo-deny 0.19 and 0.20 flags) + 5 mutants + 2 sites ok"
+    [ "$bad" -eq 0 ] && echo "advisory_gate self-test: 2 real (cargo-deny 0.19 and 0.20 flags) + 4 scenarios + 8 mutants + 2 sites ok"
     return "$bad"
 }
 
