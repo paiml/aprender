@@ -14,8 +14,8 @@
 # ignored; `- name:`, `- run:` and `- if:` layouts and `run: |` blocks all parse).
 #   - EXACTLY 2 steps run `fat_driver.py wait` (x86-main, determinism) and each `if:` is
 #     exactly `${{ !cancelled() }}`;
-#   - EXACTLY 3 steps run `fat_teardown.sh` (x86-main, determinism, ARM64 determinism)
-#     and each `if:` is exactly `always()`;
+#   - EXACTLY 4 steps run `fat_teardown.sh` (x86-main, determinism, ARM64 determinism,
+#     workspace-test-archive) and each `if:` is exactly `always()`;
 #   - a kind with no step at all is exit 2 (the file cannot be modelled).
 # Override the counts with CI_WAIT_STEPS / CI_TEARDOWN_STEPS when a job is added.
 #
@@ -150,7 +150,7 @@ check() { # <file>
     local f=$1 rc=0 spec pat want label want_n k row ln cond flg
     for spec in 'fat_driver.py wait|!cancelled()|wait|WAITS' 'fat_teardown.sh|always()|teardown|TEARDOWNS'; do
         IFS='|' read -r pat want label want_n <<< "$spec"
-        case "$want_n" in WAITS) want_n=${CI_WAIT_STEPS-2} ;; *) want_n=${CI_TEARDOWN_STEPS-3} ;; esac
+        case "$want_n" in WAITS) want_n=${CI_WAIT_STEPS-2} ;; *) want_n=${CI_TEARDOWN_STEPS-4} ;; esac
         case "$want_n" in ''|*[!0-9]*|0|???*) echo "ENV: the expected $label step count '$want_n' is not a positive integer (CI_WAIT_STEPS/CI_TEARDOWN_STEPS): refusing to run the check without one" >&2; return 2 ;; esac
         k=0
         while IFS= read -r row; do
@@ -211,19 +211,19 @@ self_test() {
     row 1 "a '- if:' first-key layout with always() is caught" x x iffirst "$A" "$C" "$A" "$A"
     row 0 "a 'run: |' block layout parses and passes" x x block "$C" "$C" "$A" "$A"
     row 1 "a 'run: |' block layout with always() is caught" x x block "$A" "$C" "$A" "$A"
-    # sign-off r2 fixes: neutered steps, the real 3-teardown count, the job boundary
+    # sign-off r2 fixes: neutered steps, the real 4-teardown count, the job boundary
     fx() { # <want-rc> <label> <wait-extra-line> <teardown-extra-line> <third-teardown-if|NONE-STEP> [<env CI_TEARDOWN_STEPS unset>]
         { printf '    steps:\n'
           printf '      - name: W1\n        if: %s\n        run: %s\n%s' "$C" "$W" "$3"
           printf '      - name: W2\n        if: %s\n        run: %s\n' "$C" "$W"
           printf '      - name: T1\n        if: %s\n        run: %s\n%s' "$A" "$T" "$4"
           printf '      - name: T2\n        if: %s\n        run: %s\n' "$A" "$T"
-          [ "$5" = NONE-STEP ] || printf '      - name: T3\n        if: %s\n        run: %s\n' "$5" "$T"; } > "$td/f.yml"
+          [ "$5" = NONE-STEP ] || { printf '      - name: T3\n        if: %s\n        run: %s\n' "$5" "$T"; printf '      - name: T4\n        if: %s\n        run: %s\n' "$A" "$T"; }; } > "$td/f.yml"
         r=0; out=$( (unset CI_TEARDOWN_STEPS CI_WAIT_STEPS; check "$td/f.yml") 2>&1) || r=$?
         if [ "$r" = "$1" ]; then echo "ok   self-test: $2"; else echo "FAIL self-test: $2 (rc $r, wanted $1): $out"; rc=1; fi
     }
-    fx 0 "the real shape: 2 waits + 3 teardowns under the DEFAULT counts passes" "" "" "$A"
-    fx 1 "MUTANT: only 2 teardowns under the default count of 3 is caught" "" "" NONE-STEP
+    fx 0 "the real shape: 2 waits + 4 teardowns under the DEFAULT counts passes" "" "" "$A"
+    fx 1 "MUTANT: only 2 teardowns under the default count of 4 is caught" "" "" NONE-STEP
     fx 1 "MUTANT: the THIRD teardown (ARM64 determinism) loses always() is caught" "" "" "$C"
     fx 1 "MUTANT: continue-on-error: true on a wait is caught" "        continue-on-error: true
 " "" "$A"
