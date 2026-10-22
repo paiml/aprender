@@ -189,6 +189,13 @@ jobs:
           set -euo pipefail
           exec > >(tee -a "$RUNNER_TEMP/affected-set.log") 2>&1
           setsid --wait bash scripts/affected_set.sh --self-test
+      - name: ci_guards cargo-free lane self-test (#5920, LAB)
+        id: lab_guard_lane
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/guard-lane.log") 2>&1
+          setsid --wait bash scripts/check_guard_lane.sh
       - name: aprender-core builds for wasm32
         run: setsid --wait bash scripts/check_wasm32_core_builds.sh
       - name: No test may assert about the fd 0 it inherited
@@ -393,6 +400,16 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-affected-set --title "LAB: affected_set.sh case table red (FLOW-010 E5)" \
             --owner aprender-cd --log "$RUNNER_TEMP/affected-set.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red guard-lane night opens or updates its one LAB ticket (#5920)
+        if: failure() && steps.lab_guard_lane.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-guard-lane --title "LAB: ci_guards cargo-free lane self-test red (#5920)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/guard-lane.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: Summary
         if: always()
         run: |

@@ -1,0 +1,19 @@
+- id: PMAT-5920
+  github_issue: 5920
+  item_type: task
+  title: 'guard-cargo: parallel cargo-free lane in ci_guards.sh (merge-queue x86-main 29.3 min)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T10:40:00Z
+  updated: 2026-10-22T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - See ci/guard-lane-steps.txt; CI_GUARDS_LANE=0 is the all-serial baseline
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
