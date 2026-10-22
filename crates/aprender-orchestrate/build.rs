@@ -80,10 +80,8 @@ fn emit_bindings(bindings: &BindingFile) {
     let total = bindings.bindings.len() as u32;
 
     for b in &bindings.bindings {
-        let var = provable_contracts::build_helper::env_key(
-            b.contract.trim_end_matches(".yaml"),
-            &b.equation,
-        );
+        let var =
+            aprender_contracts_key::env_key(b.contract.trim_end_matches(".yaml"), &b.equation);
         println!("cargo:rustc-env={var}={}", b.status);
         if b.status == "implemented" {
             implemented += 1;
@@ -117,7 +115,7 @@ fn emit_contract_assertions(cdir: &Path) {
             continue;
         };
         for (n, eq) in &y.equations {
-            let k = provable_contracts::build_helper::env_key(&s, n);
+            let k = aprender_contracts_key::env_key(&s, n);
             tp += emit_conditions(&k, "PRE", &eq.preconditions);
             tq += emit_conditions(&k, "POST", &eq.postconditions);
         }
