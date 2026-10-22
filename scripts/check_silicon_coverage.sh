@@ -142,6 +142,7 @@ retry_calls=0
 # A 5xx read is retried up to this many reads in all, this many seconds apart (#5212).
 GH_READ_TRIES="${SILICON_GH_TRIES:-3}"
 GH_RETRY_SLEEP="${SILICON_GH_RETRY_SLEEP:-5}"
+EMPTY_REREAD_SLEEP="${SILICON_EMPTY_REREAD_SLEEP:-20}"
 
 # labels_contain <runner-label-csv> <required-label-csv>
 # 0 when every required label is present in the runner's set. Case-insensitive:
@@ -393,6 +394,19 @@ list_window() {
     return 0
 }
 
+# read_ids <label> <workflow> <event>
+# One line with the response headers of a SEPARATE request for the same first
+# created>= page, issued right after the listing read. Its request id names that
+# neighbouring request, not the empty listing response itself: it is a lead for
+# GitHub support, not proof of which request lied (PMAT-5974 B). Never fatal,
+# never scored: a failed header read prints "unread".
+read_ids() {
+    api_calls=$((api_calls + 1)); probe_calls=$((probe_calls + 1))
+    _ri_h="$(gh api -i "repos/$REPO/actions/workflows/${2}/runs?event=${3}&created=%3E%3D${_bj_since}&per_page=${PAGE_SIZE}&page=1" 2>/dev/null \
+        | tr -d '\r' | awk -F': ' 'tolower($1) ~ /^(x-github-request-id|x-ratelimit-remaining|x-ratelimit-resource|date)$/ { printf "%s=%s ", tolower($1), $2 }')" || _ri_h=""
+    printf 'empty-read ids (%s) %s %s: %s\n' "$1" "$2" "$3" "${_ri_h:-unread}"
+}
+
 # listing_is_short <listing tsv> <unfiltered newest created_at> <cut epoch>
 # rc 0 when the unfiltered newest run is inside the lookback AND newer than
 # every run the filtered listing held (an empty listing holds none). ISO-8601 Z
@@ -491,6 +505,23 @@ build_jobs() {
                         _bj_state=inconsistent; _bj_pnewest="${_bj_third%%"$TAB"*}"
                     fi
                 fi
+                # EMPTY LISTING, EVERY READ AGREES, THIRD READ INCLUDED (PMAT-5978): print the request ids, wait, read once more: a second
+                # empty is the verdict, a second non-empty is the proof it lied.
+                # No listing_is_short check follows the re-read, on purpose: this block is
+                # only reached when the probe above found no run inside the lookback (a
+                # probe newest that is inside it and newer than an empty listing already
+                # set state=inconsistent, so state is no longer ok here). The probe
+                # therefore holds nothing a short re-read could be compared with, and
+                # listing_is_short would return 1 for every input; a re-read that comes
+                # back short is judged by the normal path like any other listing.
+                if [ "$_bj_state" = ok ] && [ "$_bj_read" = 0 ]; then
+                    read_ids first "$_bj_wf" "$_bj_ev"
+                    sleep "$EMPTY_REREAD_SLEEP"
+                    reread_calls=$((reread_calls + 1))
+                    list_window "$_bj_wf" "$_bj_ev" "$_bj_one" || { rm -f "${_bj_one:?}" "${_bj_runs:?}"; return 1; }
+                    read_ids second "$_bj_wf" "$_bj_ev"
+                    [ "$_bj_read" = 0 ] || printf 'empty-read RECOVERED: %s %s read 0 first, %s on the re-read\n' "$_bj_wf" "$_bj_ev" "$_bj_read"
+                fi
                 [ -n "$_bj_pnewest" ] || _bj_pnewest="none"
             fi
             cat "$_bj_one" >> "$_bj_runs"; rm -f "${_bj_one:?}"
@@ -587,10 +618,11 @@ unmodelled() {
 }
 [ "${1:-}" = api ] || unmodelled "$@"
 shift
-path=""; expr="."
+path=""; expr="."; inc=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --paginate) ;;
+        -i|--include) inc=1 ;;
         --jq) [ $# -ge 2 ] || unmodelled "--jq without an expression"; expr="$2"; shift ;;
         -*) unmodelled "flag $1" ;;
         *) [ -z "$path" ] || unmodelled "second path $1"; path="$1" ;;
@@ -616,6 +648,9 @@ if [ "$f" = "@E403" ]; then
     printf '{"message":"Resource not accessible by integration","status":"403"}'
     printf 'gh: Resource not accessible by integration (HTTP 403)\n' >&2
     exit 1
+fi
+if [ "$inc" = 1 ]; then
+    printf "HTTP/2.0 200 OK\r\nx-github-request-id: SHIM-REQ-ID\r\nx-ratelimit-remaining: 4999\r\n\r\n"; cat "$d/$f"; exit 0
 fi
 jq -r "$expr" "$d/$f"
 SHIM
@@ -650,7 +685,7 @@ st_reset() {
     rm -rf "${ST:?}/u"
     mkdir -p "$ST/u/pages" "$ST/u/workflows" || return 1
     : > "$ST/u/routes.tsv"; : > "$ST/u/runs.tsv"; : > "$ST/u/calls.log"
-    ST_PAGE_SIZE=100; ST_PAGE_CAP=10; ST_RUN_CAP=60; ST_ERROR=0; ST_HIDE_FILTERED=""; ST_HIDE_PROBE=""; ST_HIDE_THIRD=""
+    ST_PAGE_SIZE=100; ST_PAGE_CAP=10; ST_RUN_CAP=60; ST_ERROR=0; ST_HIDE_FILTERED=""; ST_HIDE_PROBE=""; ST_HIDE_THIRD=""; ST_EMPTY_ONCE=""; ST_REREAD_ERROR=""
     ST_SHORT_WF=""; ST_SHORT_N=0; ST_SHORT_READS=0
     printf '%s\n' \
         '# self-test policy' \
@@ -789,6 +824,12 @@ st_finish() {
                         fi
                         _sf_pg="$_sf_seq"
                     fi
+                    # Two empty answers (the listing, its header read), then the real page.
+                    if [ "$_sf_wf" = "$ST_EMPTY_ONCE" ] && [ "$_sf_p" = 1 ]; then
+                        : > "$ST/u/e.tsv"; st_page "$ST/u/e.tsv" 0 "$ST/u/pages/empty-$_sf_wf-$_sf_ev.json"
+                        _sf_pg="@SEQ:pages/empty-$_sf_wf-$_sf_ev.json,pages/empty-$_sf_wf-$_sf_ev.json,$_sf_pg"
+                        [ -z "$ST_REREAD_ERROR" ] || _sf_pg="@SEQ:pages/empty-$_sf_wf-$_sf_ev.json,pages/empty-$_sf_wf-$_sf_ev.json,@ERROR"
+                    fi
                     st_route "$_sf_key" "$_sf_pg"
                 fi
                 [ $(( _sf_p * ST_PAGE_SIZE )) -ge "$_sf_total" ] && break
@@ -807,7 +848,7 @@ st_check() {
         SILICON_WORKFLOWS_DIR="$ST/u/workflows" SILICON_NOW="$ST_NOW" \
         SILICON_LOOKBACK_DAYS=30 SILICON_STALE_DAYS=3 \
         SILICON_PAGE_SIZE="$ST_PAGE_SIZE" SILICON_PAGE_CAP="$ST_PAGE_CAP" \
-        SILICON_RUN_CAP="$ST_RUN_CAP" SILICON_GH_RETRY_SLEEP=0 \
+        SILICON_RUN_CAP="$ST_RUN_CAP" SILICON_GH_RETRY_SLEEP=0 SILICON_EMPTY_REREAD_SLEEP=0 \
         GITHUB_EVENT_NAME="${ST_EVENT:-schedule}" \
         bash "$ST_SUBJECT" > "$_sc_out" 2>&1
     _sc_got=$?
@@ -925,6 +966,7 @@ selftest_rows() {
     # (f2) PMAT-5974: the filtered listing AND the event probe both come back
     # EMPTY (0 of 0, the 2026-10-22 queue shape) while runs exist: the event-less
     # third read exposes it. NO-GO (rc 2), never MISSING.
+    # (f5..f7) PMAT-5978: the third read is empty too (ST_HIDE_THIRD), so the only evidence is the listing itself.
     st_reset; ST_HIDE_FILTERED=gpu.yml; ST_HIDE_PROBE=gpu.yml
     st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
     st_finish
@@ -939,6 +981,30 @@ selftest_rows() {
     st_finish
     _rows=$((_rows + 1))
     st_check f3-agreeing-empty 1 '^  UNCOVERED +gpu-axis' || _rows_bad=$((_rows_bad + 1))
+
+    # (f5) PMAT-5978: listing, probe AND third read empty; the guard prints both reads' request ids, waits, reads again; still empty = UNCOVERED.
+    st_reset; ST_HIDE_FILTERED=gpu.yml; ST_HIDE_PROBE=gpu.yml; ST_HIDE_THIRD=gpu.yml
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check f5-empty-twice 1 '^empty-read ids \(second\) gpu.yml schedule: .*x-github-request-id=SHIM-REQ-ID' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (f6) the first read lies, the re-read tells the truth: RECOVERED, axis green.
+    st_reset; ST_EMPTY_ONCE=gpu.yml; ST_HIDE_PROBE=gpu.yml; ST_HIDE_THIRD=gpu.yml
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check f6-empty-once 0 '^empty-read RECOVERED: gpu.yml schedule read 0 first, 1 on the re-read' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (f7) the first read is empty and the RE-READ fails: not a pass and not a verdict, rc 2.
+    st_reset; ST_EMPTY_ONCE=gpu.yml; ST_REREAD_ERROR=1; ST_HIDE_PROBE=gpu.yml; ST_HIDE_THIRD=gpu.yml
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check f7-reread-error 2 '^listing FAILED: gpu.yml schedule page 1: .*HTTP 502' \
+        || _rows_bad=$((_rows_bad + 1))
 
     # (g) run 36364433328's real jobs, fresh: both silicon-nightly axes GREEN.
     st_reset; st_real || return 2; st_real_nightlies 10 13; st_finish
