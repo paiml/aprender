@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use provable_contracts::binding::{parse_binding, BindingRegistry, ImplStatus};
@@ -20,9 +21,8 @@ pub fn run(
     // nowhere printed its report and exited 0), and `--verify-bindings` downgraded
     // silently. Now every `implemented` binding is looked up with the
     // `pv verify-bindings` resolver; a ghost is downgraded, listed under
-    // `GHOST BINDINGS (n)`, and the command exits 1. `--verify-bindings` is a no-op
-    // alias, kept so existing invocations still parse.
-    let _ = verify_root;
+    // `GHOST BINDINGS (n)`, and the command exits 1. `--verify-bindings <root>` only
+    // scans `root` for Kani proofs (#4531, below).
     let (binding, ghosts) = match binding_path {
         Some(bp) => {
             let (reg, ghosts) = resolve_bindings(bp, parse_binding(bp)?);
@@ -43,6 +43,11 @@ pub fn run(
     }
 
     contracts.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // #4531: with `--verify-bindings <root>`, a `kani_harnesses[].harness` name counts
+    // toward L3 only if a `#[kani::proof]` fn of that name exists under the root.
+    let phantoms =
+        verify_root.map_or_else(Vec::new, |root| drop_phantom_kani(&mut contracts, root));
 
     let refs: Vec<(String, &provable_contracts::schema::Contract)> =
         contracts.iter().map(|(s, c)| (s.clone(), c)).collect();
@@ -66,6 +71,14 @@ pub fn run(
         print!("{}", format_obligation_table(&matrices));
     }
 
+    if !phantoms.is_empty() {
+        let block = phantom_block(&phantoms);
+        if format == "json" {
+            eprint!("{block}");
+        } else {
+            print!("{block}");
+        }
+    }
     if ghosts.is_empty() {
         return Ok(());
     }
@@ -82,6 +95,91 @@ pub fn run(
         ghosts.len()
     )
     .into())
+}
+
+/// A declared Kani harness with no `#[kani::proof]` fn of that name under the scanned root.
+struct Phantom {
+    contract: String,
+    harness: String,
+}
+
+/// Names of every `#[kani::proof]` fn under `root` (skipping `target/` and dot dirs).
+fn scan_kani_proofs(root: &Path) -> HashSet<String> {
+    let mut found = HashSet::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if path.is_dir() {
+                if name != "target" && !name.starts_with('.') {
+                    stack.push(path);
+                }
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                if let Ok(src) = std::fs::read_to_string(&path) {
+                    collect_kani_proofs(&src, &mut found);
+                }
+            }
+        }
+    }
+    found
+}
+
+/// A `kani::proof` attribute (also inside `cfg_attr`) names the next `fn`, which may
+/// share its line.
+fn collect_kani_proofs(src: &str, found: &mut HashSet<String>) {
+    let mut pending = false;
+    for line in src.lines() {
+        let t = line.trim();
+        if t.starts_with("#[") && t.contains("kani::proof") {
+            pending = true;
+        }
+        if pending {
+            if let Some(rest) = t.split_once("fn ").map(|(_, r)| r) {
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                found.insert(name);
+                pending = false;
+            }
+        }
+    }
+}
+
+/// Remove every declared harness the source does not define, so the L3 credit is honest.
+fn drop_phantom_kani(
+    contracts: &mut [(String, provable_contracts::schema::Contract)],
+    root: &Path,
+) -> Vec<Phantom> {
+    let found = scan_kani_proofs(root);
+    let mut phantoms = Vec::new();
+    for (name, contract) in contracts.iter_mut() {
+        contract.kani_harnesses.retain(|h| {
+            let phantom = h.harness.as_ref().is_some_and(|n| !found.contains(n));
+            if phantom {
+                phantoms.push(Phantom {
+                    contract: name.clone(),
+                    harness: h.harness.clone().unwrap_or_default(),
+                });
+            }
+            !phantom
+        });
+    }
+    phantoms
+}
+
+/// `PHANTOM KANI HARNESSES (n)`, then one line per harness that cannot run.
+fn phantom_block(phantoms: &[Phantom]) -> String {
+    let mut out = format!("\nPHANTOM KANI HARNESSES ({})\n", phantoms.len());
+    for p in phantoms {
+        out.push_str(&format!("  {}: {}\n", p.contract, p.harness));
+    }
+    out
 }
 
 /// One binding that claims `implemented` for a function the resolver cannot find.
@@ -163,5 +261,35 @@ fn parse_kind(s: &str) -> Result<ContractKind, Box<dyn std::error::Error>> {
              kernel, registry, model-family, pattern, schema"
         )
         .into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kani_proofs_are_found_by_attribute_not_by_name() {
+        let mut found = HashSet::new();
+        collect_kani_proofs(
+            "#[kani::proof]\n#[kani::unwind(4)]\nfn verify_a() {}\nfn verify_plain() {}\n#[kani::proof]\npub fn verify_b() {}\n#[cfg_attr(kani, kani::proof)]\nfn verify_c() {}\n#[kani::proof] fn verify_d() {}\n",
+            &mut found,
+        );
+        assert!(found.contains("verify_a") && found.contains("verify_b"));
+        assert!(found.contains("verify_c") && found.contains("verify_d"));
+        assert!(!found.contains("verify_plain"));
+    }
+
+    #[test]
+    fn declared_harness_without_proof_fn_is_dropped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("k.rs"), "#[kani::proof]\nfn real() {}\n").expect("write");
+        let yaml = "metadata: {version: \"1.0.0\", description: d}\nequations: {}\nkani_harnesses:\n  - {id: K1, obligation: O, harness: real}\n  - {id: K2, obligation: O, harness: ghost}\n";
+        let c = provable_contracts::schema::parse_contract_str(yaml).expect("parse");
+        let mut contracts = vec![("c.yaml".to_string(), c)];
+        let phantoms = drop_phantom_kani(&mut contracts, dir.path());
+        assert_eq!(phantoms.len(), 1);
+        assert_eq!(phantoms[0].harness, "ghost");
+        assert_eq!(contracts[0].1.kani_harnesses.len(), 1);
     }
 }
