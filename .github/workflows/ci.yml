@@ -490,7 +490,7 @@ jobs:
         if: success()
         with:
           name: ws-archive-ptr-${{ runner.arch }}
-          path: ${{ runner.temp }}/fat/artifacts/ws-archive-ptr/
+          path: ${{ runner.temp }}/fat/artifacts/ws-archive-ptr-${{ runner.arch }}/
           if-no-files-found: error
           overwrite: true
       - name: Free this job's own cargo target dir

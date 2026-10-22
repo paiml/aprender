@@ -84,10 +84,12 @@ fetch() {
 # The pointer must actually travel from the archive job to the shards (B4). Prints FAIL lines; rc 1 when any.
 wiring() { # CI_YML SECTIONS_YML
     local ci="$1" sec="$2" bad=0
-    # fat_driver stages section uploads under fat/artifacts/<name>/; only a real ci.yml upload step reaches other jobs
-    if ! /usr/bin/grep -q 'fat/artifacts/ws-archive-ptr/' "$ci"; then echo "FAIL  ci.yml never uploads fat/artifacts/ws-archive-ptr/"; bad=1; fi
-    # without merge-multiple the pointer lands at ws-archive-ptr/ws-archive-ptr/ptr.json and every fetch is a no-pointer miss
-    if ! awk '/name: ws-archive-ptr/{f=1} f&&/merge-multiple: true/{ok=1} END{exit !ok}' "$sec"; then echo "FAIL  the shard's ws-archive-ptr download lacks merge-multiple: true"; bad=1; fi
+    # fat_driver stages a section upload at fat/artifacts/<expanded name>/, so the job-level upload path must be the
+    # per-arch directory of the pointer step (a path without the arch suffix uploads nothing and `error` fails the job)
+    if ! awk '/name: ws-archive-ptr-/{s=1} s&&/path:/{ok=index($0, "fat/artifacts/ws-archive-ptr-${{ runner.arch }}/")>0; exit} END{exit !ok}' "$ci"; then echo "FAIL  ci.yml's ws-archive-ptr upload path is not fat/artifacts/ws-archive-ptr-\${{ runner.arch }}/"; bad=1; fi
+    # without merge-multiple the pointer lands at ws-archive-ptr/ws-archive-ptr/ptr.json and every fetch is a no-pointer miss;
+    # scoped to the pointer download's own step (a step header resets it) so another download's merge-multiple cannot satisfy it
+    if ! awk '/^ *- /{s=0} /name: ws-archive-ptr-/{s=1} s&&/merge-multiple: true/{ok=1} END{exit !ok}' "$sec"; then echo "FAIL  the shard's ws-archive-ptr download lacks merge-multiple: true"; bad=1; fi
     return "$bad"
 }
 
@@ -143,9 +145,12 @@ self_test() {
     if m="$(wiring "$root/.github/workflows/ci.yml" "$root/ci/sections.yml")"; then
         echo "ok    wiring: the pointer is uploaded and downloaded merge-multiple"
     else echo "FAIL  wiring as committed: $m"; fails=1; fi
-    sed 's#fat/artifacts/ws-archive-ptr/#fat/artifacts/ws-archive/#' "$root/.github/workflows/ci.yml" > "$td/ci.mut"
+    sed 's#fat/artifacts/ws-archive-ptr-${{ runner.arch }}/#fat/artifacts/ws-archive-ptr/#' "$root/.github/workflows/ci.yml" > "$td/ci.mut"
+    if cmp -s "$td/ci.mut" "$root/.github/workflows/ci.yml"; then echo "FAIL  wiring mutant (ptr path) did not change ci.yml"; fails=1; fi
     if wiring "$td/ci.mut" "$root/ci/sections.yml" > /dev/null; then echo "FAIL  wiring mutant (no ptr upload) stayed GREEN"; fails=1; else echo "ok    red   wiring MUTANT: ci.yml without the pointer upload"; fi
-    sed '/merge-multiple: true/d' "$root/ci/sections.yml" > "$td/sec.mut"
+    # delete ONLY the pointer download's own merge-multiple line: the other downloads keep theirs
+    awk '/name: ws-archive-ptr-/&&!d{s=1} s&&/merge-multiple: true/&&!d{d=1; next} {print}' "$root/ci/sections.yml" > "$td/sec.mut"
+    if cmp -s "$td/sec.mut" "$root/ci/sections.yml"; then echo "FAIL  wiring mutant (single merge-multiple) did not change sections.yml"; fails=1; fi
     if wiring "$root/.github/workflows/ci.yml" "$td/sec.mut" > /dev/null; then echo "FAIL  wiring mutant (no merge-multiple) stayed GREEN"; fails=1; else echo "ok    red   wiring MUTANT: pointer download without merge-multiple"; fi
     # each behaviour mutant must turn this self-test RED (nosum: B-sum, notier: B2, notree: B3)
     if [ -z "${AF_MUTANT:-}" ]; then
