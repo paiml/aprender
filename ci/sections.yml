@@ -2721,6 +2721,7 @@ jobs:
           bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh"
           bash scripts/ci/advisory_step_selftest.sh
           bash scripts/ci/advisory_positive_control.sh
+          bash scripts/ci/rearm_ready.sh --self-test
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.

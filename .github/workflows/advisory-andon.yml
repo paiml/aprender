@@ -38,6 +38,7 @@ jobs:
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
           bash scripts/ci/advisory_andon.sh --self-test
+          bash scripts/ci/rearm_ready.sh --self-test
           out="${RUNNER_TEMP:?}/andon.ndjson"
           rc=0
           cargo deny --locked --all-features --format json check advisories >/dev/null 2>"$out" || rc=$?
