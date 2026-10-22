@@ -330,7 +330,16 @@ decide() {
                     return 0
                 fi
             fi
-            if git -C "$ROOT" rev-parse -q --verify 'HEAD^2' >/dev/null 2>&1; then
+            # The queue REBASE-merges now, so one push to main carries N commits and
+            # HEAD^1..HEAD sees only the last (operator ruling 2026-10-22 14:57Z). The
+            # push's own range is github.event.before..github.event.after (PUSH_BEFORE..HEAD).
+            # An all-zero or absent before (new ref, force-push) or one that is not a
+            # commit here falls through to the older derivations below.
+            local pb; pb=$(printenv PUSH_BEFORE || true)
+            if [[ $pb =~ ^[0-9a-f]{40}$ ]] && [ "$pb" != 0000000000000000000000000000000000000000 ] \
+                && git -C "$ROOT" cat-file -e "$pb^{commit}" 2>/dev/null; then
+                base="$pb"; how="the push's own range, github.event.before..after (${pb:0:9}..HEAD)" # R-PUSHBEFORE
+            elif git -C "$ROOT" rev-parse -q --verify 'HEAD^2' >/dev/null 2>&1; then
                 base='HEAD^1'; how="the merge commit's own diff, HEAD^1..HEAD"
             elif git -C "$ROOT" rev-parse -q --verify 'origin/main@{1}' >/dev/null 2>&1; then
                 base='origin/main@{1}'; how='a non-merge tip diffed against the previous main, origin/main@{1}..HEAD'
@@ -547,6 +556,15 @@ self_test() {
     sed 's|diff_into "\$df" "\$mgb"; then rm -f "\${df:?}"|diff_into "$df" HEAD^1; then rm -f "${df:?}"|' "$T" > "$td/mutant-head1.sh"
     row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-head1.sh'; then echo SAME; else echo DIFFERS; fi"
     row 0 "MUTANT: a merge_group arm that diffs HEAD^1 instead of MG_BASE_SHA sees only the last commit -> quick, row above goes RED" '^MUTANT-QUICK$' bash -c "o=\$(MG_BASE_SHA='$(rootc "$td/g-stack")' bash '$td/mutant-head1.sh' --event merge_group --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
+    # Rebase-merge: one push carries N commits; the range is github.event.before..after, not HEAD^1..HEAD.
+    pbrun() { local b=$1; shift; env PUSH_BEFORE="$b" bash "$T" --event push --repo-root "$td/g-stack" "$@"; }
+    row 0 "push of a 2-commit rebase landing, before = the old tip, the FIRST commit touches a root Cargo.toml -> tier=full (before..HEAD, not HEAD^1)" '^tier=full$' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun '$(rootc "$td/g-stack")' | head -n1"
+    row 0 "  ...the reason names before..after" 'github.event.before' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun '$(rootc "$td/g-stack")'"
+    row 0 "push with an all-zero before (new ref / force-push) -> falls back to HEAD^1..HEAD, guarded, no crash" '^tier=quick$' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun 0000000000000000000000000000000000000000 | head -n1"
+    row 0 "push with a before that is not a commit here -> falls back, never an error" '^tier=quick$' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun 0123456789abcdef0123456789abcdef01234567 | head -n1"
+    sed 's|pb=\$(printenv PUSH_BEFORE \|\| true)|pb=|' "$T" > "$td/mutant-nopb.sh"
+    row 0 "  (push mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-nopb.sh'; then echo SAME; else echo DIFFERS; fi"
+    row 0 "MUTANT: a push arm that ignores PUSH_BEFORE sees only the last commit -> quick, the before..after row goes RED" '^MUTANT-QUICK$' bash -c "o=\$(PUSH_BEFORE='$(rootc "$td/g-stack")' bash '$td/mutant-nopb.sh' --event push --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     cap mg-root mgrun "$(rootc "$td/q-root")" --repo-root "$td/q-root"
     row 0 "merge_group, the group touched a ROOT manifest -> tier=full (rule (ii))" '^tier=full$' bash -c "$(replay mg-root)"
     row 0 "  ...exactly tier=full and no quick line leaks" '^OK-FULL-ONLY$' full_only "$(replay mg-root)"
