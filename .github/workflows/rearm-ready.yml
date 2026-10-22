@@ -1,0 +1,29 @@
+name: rearm-ready
+# PMAT-5793 (ADG-INV-005): after main moves or on a timer, re-arm ready PRs whose head is the one that was approved.
+# Never a PR or merge_group job. A PR whose head moved after approval is left alone (needs a fresh review).
+on:
+  schedule:
+    - cron: '41 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: rearm-ready
+  cancel-in-progress: false
+jobs:
+  rearm:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Self-test, then re-arm approved un-armed PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REARM_REVIEWERS: ${{ vars.REARM_REVIEWERS }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci/rearm_ready.sh --self-test
+          bash scripts/ci/rearm_ready.sh run
