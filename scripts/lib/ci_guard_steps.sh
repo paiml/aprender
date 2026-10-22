@@ -85,7 +85,7 @@ guard_jobs() {
     local read_by_gate out
     [ -r "$GATE_WORKFLOW" ] || die "cannot read $GATE_WORKFLOW: no such file"
     read_by_gate="$(awk '/^  gate:[ \t]*$/ { g = 1; next } g && /^  [^ #]/ { g = 0 } g' "$GATE_WORKFLOW" \
-        | grep -oE '(X86:|res "\$X86" )guard-[A-Za-z0-9_-]+' | sed -E 's/^(X86:|res "\$X86" )//' | LC_ALL=C sort -u)" || true
+        | grep -oE '(X86:|GRD:|\$G:|res "\$X86" )guard-[A-Za-z0-9_-]+' | sed -E 's/^(X86:|GRD:|\$G:|res "\$X86" )//' | LC_ALL=C sort -u)" || true
     [ -n "$read_by_gate" ] || die "the gate job in $GATE_WORKFLOW reads no guard-* section"
     out="$(jqj -r --arg n "$read_by_gate" '($n | split("\n")) as $n
         | keys_unsorted[] | select(startswith("guard-") and (. as $j | $n | index([$j]) != null))')"
