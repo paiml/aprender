@@ -186,7 +186,7 @@ judge_generated() {
     # (sov.roadmap-fragment-parity demands it once the aggregate is untracked; fail here with the remedy, not there).
     # Judged exactly as sov does: git's own trailer parser (LAST paragraph only), same command. A merge_group
     # commit is the queue's squash of the PR, whose message the queue composes, so G5 is a PR-time check only.
-    local trailers tgit=(-C "$repo") bsha hsha
+    local trailers raw unreadable= tgit=(-C "$repo") bsha hsha
     # A shallow checkout hides history by a .git/shallow file, not by deleting objects (fat_driver.py emulates depth 1
     # that way). Read the PR range through a scratch gitdir that borrows the objects and has no shallow file: nothing
     # in the section clone changes, and if the objects really are absent the log is empty and G5 FAILs.
@@ -195,12 +195,17 @@ judge_generated() {
         tgit=(--git-dir "$td/tg")
     fi
     bsha=$(git -C "$repo" rev-parse "$base^{commit}") && hsha=$(git -C "$repo" rev-parse "$head^{commit}") || { rm -rf -- "${td:?}"; return 2; }
-    trailers=$(git "${tgit[@]}" log --format='%(trailers:key=Pmat-Ticket,valueonly)' "$bsha..$hsha" 2>/dev/null | tr -d ' ' | grep -v '^$' | sort -u || true)
+    raw=$(git "${tgit[@]}" log --format='%(trailers:key=Pmat-Ticket,valueonly)' "$bsha..$hsha" 2>/dev/null) || unreadable=1
+    trailers=$(printf '%s\n' "$raw" | tr -d ' ' | grep -v '^$' | sort -u || true)
     while IFS= read -r name; do
         [ "${GITHUB_EVENT_NAME:-}" = merge_group ] && break
         [[ "$name" =~ ^$ENTRIES_DIR/([^/]+)\.yaml$ ]] || continue
         if ! grep -qFx -- "${BASH_REMATCH[1]}" <<<"$trailers"; then
             violations=$((violations + 1))
+            if [ -n "$unreadable" ]; then
+                printf 'FAIL  G5  %s: the PR range %s..%s is unreadable (git log failed; missing objects?), so its trailers cannot be judged\n' "$name" "$bsha" "$hsha"
+                continue
+            fi
             printf 'FAIL  G5  %s changes with no `Pmat-Ticket: %s` trailer in the LAST paragraph of a commit in the range (git trailers, as sov reads them) — e.g. git commit --allow-empty -m "chore: ticket trailer" -m "Pmat-Ticket: %s"\n' "$name" "${BASH_REMATCH[1]}" "${BASH_REMATCH[1]}"
         fi
     done < <(git -C "$repo" diff --no-renames --name-only --diff-filter=AM "$base" "$head" -- "$ENTRIES_DIR")
@@ -544,7 +549,8 @@ PY
             && printf -- '- id: PMAT-100\n  title: first\n  status: planned\n' >"$d/$ENTRIES_DIR/PMAT-100.yaml" \
             && git -C "$d" add -A && git -C "$d" commit -qm base && "$builder" "$d" \
             || { printf 'FAIL  row %-2s %s: fixture/builder failed\n' "$n" "$label"; red=$((red + 1)); return; }
-        out=$(judge "$d" HEAD~1 HEAD 2>&1); rc=$?
+        local b=HEAD~1; [ -f "$d/.git/base-sha" ] && b=$(<"$d/.git/base-sha")
+        out=$(judge "$d" "$b" HEAD 2>&1); rc=$?
         if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out"; then
             printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
             printf '%s\n' "$out" | sed 's/^/        /'; red=$((red + 1)); return
@@ -563,6 +569,16 @@ PY
     g_nested_fragment() { mkdir -p "$1/$ENTRIES_DIR/sub"; printf -- '- id: PMAT-600\n  title: hidden\n  status: planned\n' >"$1/$ENTRIES_DIR/sub/PMAT-600.yaml"; commit_all "$1"; }
     g_symlink_fragment() { ln -s ../../README.md "$1/$ENTRIES_DIR/PMAT-700.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-700"; }
     g_shallow_no_trailer() { printf -- "- id: PMAT-200\n  title: new\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" && git -C "$1" rev-parse HEAD~1 >"$1/.git/shallow"; }
+    # Trailer commit BELOW the shallow boundary: a shallow file at HEAD hides it from a plain log of base..head.
+    g_shallow_trailer_below() {
+        git -C "$1" rev-parse HEAD >"$1/.git/base-sha" && printf -- "- id: PMAT-200\n  title: new\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-200.yaml" \
+            && commit_all "$1" "Pmat-Ticket: PMAT-200" && printf x >"$1/other.txt" && commit_all "$1" \
+            && git -C "$1" rev-parse HEAD >"$1/.git/shallow"
+    }
+    # Same range with the trailer commit's object deleted: git log fails, G5 must say unreadable, not give the trailer remedy.
+    g_unreadable_range() {
+        local a gone; g_shallow_trailer_below "$1" && a=$(git -C "$1" cat-file -p HEAD | awk '/^parent /{print $2; exit}') && gone="$1/.git/objects/${a:0:2}/${a:2}" && rm -f -- "${gone:?}"
+    }
     g_shallow_with_trailer() { printf -- "- id: PMAT-200\n  title: new\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-200" && git -C "$1" rev-parse HEAD~1 >"$1/.git/shallow"; }
     g_gitlink_fragment() { git -C "$1" update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,"$ENTRIES_DIR/PMAT-701.yaml"; git -C "$1" commit -qm head -m "Pmat-Ticket: PMAT-701"; }
     g_exec_fragment() { printf -- "- id: PMAT-702\n  title: x\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-702.yaml"; chmod +x "$1/$ENTRIES_DIR/PMAT-702.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-702"; }
@@ -586,6 +602,8 @@ PY
     grow 'generated: a nested fragment the generator never reads -> REFUSE G4' 1 'FAIL  G4' g_nested_fragment
     grow 'generated: a symlink fragment (target can change unseen) -> REFUSE G4' 1 'FAIL  G4' g_symlink_fragment
     grow "generated: shallow checkout, fragment-less -> REFUSE G5 (the range is read past .git/shallow, never skipped)" 1 "FAIL  G5" g_shallow_no_trailer
+    grow "generated: shallow, trailer commit below the boundary -> PASS (only the objects-borrowing read sees it)" 0 "ok    G3" g_shallow_trailer_below
+    grow "generated: unreadable PR range -> FAIL G5 saying unreadable, not the trailer remedy" 1 "is unreadable" g_unreadable_range
     grow "generated: shallow checkout, trailer in the PR commit -> PASS (the trailer is read past .git/shallow)" 0 "ok    G3" g_shallow_with_trailer
     grow "generated: a gitlink fragment -> REFUSE G4" 1 "FAIL  G4" g_gitlink_fragment
     grow "generated: an executable-mode fragment (allowlist is 100644 only) -> REFUSE G4" 1 "FAIL  G4" g_exec_fragment
