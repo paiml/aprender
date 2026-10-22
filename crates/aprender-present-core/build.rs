@@ -84,7 +84,7 @@ fn emit_contract_file_pre_post(path: &PathBuf, total_pre: &mut usize, total_post
         return;
     };
     for (eq_name, eq) in &parsed.equations {
-        let key = provable_contracts::build_helper::env_key(&stem, eq_name);
+        let key = aprender_contracts_key::env_key(&stem, eq_name);
         emit_pre_post_lists(&key, eq, total_pre, total_post);
     }
 }
@@ -178,7 +178,7 @@ fn emit_binding_counts_and_vars(bf: &BindingFile) {
 }
 
 fn env_var_name(contract: &str, equation: &str) -> String {
-    provable_contracts::build_helper::env_key(
+    aprender_contracts_key::env_key(
         contract.trim_end_matches(".yaml").trim_end_matches(".yml"),
         equation,
     )
