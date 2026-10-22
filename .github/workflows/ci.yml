@@ -534,8 +534,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(github.event_name == 'merge_group' && '[1,2,3,4]' || '[1,2,3,4,5,6,7,8,9,10,11,12]') }}
-        shards: ${{ fromJSON(github.event_name == 'merge_group' && '[4]' || '[12]') }}
+        shard: ${{ fromJSON(github.event_name == 'merge_group' && '[1]' || '[1]') }}
+        shards: ${{ fromJSON(github.event_name == 'merge_group' && '[1]' || '[1]') }}
     outputs:
       results: ${{ steps.run.outputs.results }}
     env:
