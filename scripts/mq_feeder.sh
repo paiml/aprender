@@ -12,8 +12,9 @@ REPO="${MQ_FEEDER_REPO:-paiml/aprender}"
 STATE="${MQ_FEEDER_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/mq-feeder}"
 INBOX="${MQ_FEEDER_INBOX:-/mnt/nvme-raid0/cop-inbox/inbox.md}"
 ARM="${MQ_FEEDER_ARM:-$(dirname "$0")/arm_pr_automerge.sh}"
-# guard-tree is a section inside x86-main, not a check run on PR heads (arm_pr_automerge.sh refused every PR as "absent"): judge x86-main
-export GUARD_CHECK_NAME="${GUARD_CHECK_NAME:-x86-main}"
+# guard-tree is a section, not a check run on PR heads (arm_pr_automerge.sh refused every PR as "absent"). A PR no longer runs
+# x86-main (Noah 15:09Z, #5955): pr-light runs guard-tree and the other PR-only sections, so judge pr-light
+export GUARD_CHECK_NAME="${GUARD_CHECK_NAME:-pr-light}"
 TRIES="${MQ_FEEDER_TRIES:-3}"
 dry=0
 Q='query($o:String!,$n:String!){repository(owner:$o,name:$n){mergeQueue(branch:"main"){entries(first:1){totalCount}} pullRequests(states:OPEN,first:100,orderBy:{field:CREATED_AT,direction:ASC}){nodes{number isDraft baseRefName mergeStateStatus autoMergeRequest{enabledAt} mergeQueueEntry{position}}}}}'

@@ -623,6 +623,14 @@ STUB
   # pr-light is the ONLY runner of the PR path: no heavy label (X64, mq) may sit on it.
   if grep -qE 'X64|"mq"|\bmq\b' <<< "$(job pr-light | grep -m1 '^    runs-on:')"; then
     fail=$((fail + 1)); echo "FAIL pr-light: runs-on carries a heavy label"; else pass=$((pass + 1)); fi
+  # Opus-A on #5964: the sections that run only for a PR (guard-tree incl. R-2 / 11.1, pr-review-shadow, pr-review-sign)
+  # ran inside x86-main, which a PR no longer runs. pr-light must run all three, and the feeder must judge pr-light.
+  for sec in guard-tree pr-review-shadow pr-review-sign; do
+    if job pr-light | grep -q -- "--sections '[^']*\b$sec\b"; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL pr-light: does not run the PR-only section $sec"; fi
+  done
+  if grep -q '^export GUARD_CHECK_NAME="${GUARD_CHECK_NAME:-pr-light}"' "${BASH_SOURCE[0]%/*}/mq_feeder.sh"; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL mq_feeder: GUARD_CHECK_NAME is not pr-light, so it judges a check a PR no longer runs"; fi
   prlrow() { # prlrow WF NAME JOB WANT(0|red) EVT PRL [extra env...]
     local f="$1" n="$2" j="$3" want="$4" ev="$5" prl="$6" rc scr; shift 6
     scr=$(stepscript "$f" "$j")

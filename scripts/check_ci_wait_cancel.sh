@@ -151,7 +151,7 @@ check() { # <file>
     local f=$1 rc=0 spec pat want label want_n k row ln cond flg
     for spec in 'fat_driver.py wait|!cancelled()|wait|WAITS' 'fat_teardown.sh|always()|teardown|TEARDOWNS'; do
         IFS='|' read -r pat want label want_n <<< "$spec"
-        case "$want_n" in WAITS) want_n=${CI_WAIT_STEPS-2} ;; *) want_n=${CI_TEARDOWN_STEPS-3} ;; esac
+        case "$want_n" in WAITS) want_n=${CI_WAIT_STEPS-3} ;; *) want_n=${CI_TEARDOWN_STEPS-4} ;; esac
         case "$want_n" in ''|*[!0-9]*|0|???*) echo "ENV: the expected $label step count '$want_n' is not a positive integer (CI_WAIT_STEPS/CI_TEARDOWN_STEPS): refusing to run the check without one" >&2; return 2 ;; esac
         k=0
         while IFS= read -r row; do
@@ -220,7 +220,7 @@ self_test() {
           printf '      - name: T1\n        if: %s\n        run: %s\n%s' "$A" "$T" "$4"
           printf '      - name: T2\n        if: %s\n        run: %s\n' "$A" "$T"
           [ "$5" = NONE-STEP ] || printf '      - name: T3\n        if: %s\n        run: %s\n' "$5" "$T"; } > "$td/f.yml"
-        r=0; out=$( (unset CI_TEARDOWN_STEPS CI_WAIT_STEPS; check "$td/f.yml") 2>&1) || r=$?
+        r=0; out=$( (export CI_WAIT_STEPS=2 CI_TEARDOWN_STEPS=3; check "$td/f.yml") 2>&1) || r=$?
         if [ "$r" = "$1" ]; then echo "ok   self-test: $2"; else echo "FAIL self-test: $2 (rc $r, wanted $1): $out"; rc=1; fi
     }
     fx 0 "the real shape: 2 waits + 3 teardowns under the DEFAULT counts passes" "" "" "$A"
@@ -243,7 +243,7 @@ self_test() {
       printf '      - name: W2\n        if: %s\n        run: %s\n' "$C" "$W"
       printf '      - name: T1\n        if: %s\n        run: %s\n      - name: T2\n        if: %s\n        run: %s\n' "$A" "$T" "$A" "$T"
       printf '      - name: T3\n        if: %s\n        run: %s\n' "$A" "$T"; } > "$td/f.yml"
-    r=0; out=$( (unset CI_TEARDOWN_STEPS CI_WAIT_STEPS; check "$td/f.yml") 2>&1) || r=$?
+    r=0; out=$( (export CI_WAIT_STEPS=2 CI_TEARDOWN_STEPS=3; check "$td/f.yml") 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT: a step record ends at the job boundary (next job's if: is not its own)"; else echo "FAIL self-test: job boundary (rc $r, wanted 1): $out"; rc=1; fi
     # r3 item 1: an invalid expected count fails closed (exit 2), never silently skips the count check
     for v in abc 0 "-1" "2x" " 2" "" 100 99999999999999999999; do

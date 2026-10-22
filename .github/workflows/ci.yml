@@ -198,9 +198,13 @@ jobs:
   pr-light:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room]
-    timeout-minutes: 15
-    permissions:
-      contents: read
+    timeout-minutes: 60
+    # The PR-only sections (guard-tree, pr-review-shadow, pr-review-sign) carry their own permissions blocks; one job token covers all.
+    permissions: write-all
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
       # The pin is the x86 binary; a non-x86 runner uses its host jq (guard_tree_test needs 1.8.x, see x86-main).
       - name: Pin jq 1.8.2 (x86 runners; sha256-verified, fail closed)
@@ -242,6 +246,29 @@ jobs:
         run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
       - name: every section secret is plumbed under its full name
         run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
+      - name: install the toolchain rust-toolchain.toml pins
+        run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      # Noah 15:09Z (#5955), Opus-A on #5964: the sections that exist ONLY for a pull request (guard-tree with its
+      # R-2 and 11.1 steps, pr-review-shadow, pr-review-sign) ran inside x86-main, which a PR no longer runs.
+      # They run here, on a PR only, so arming still sees guard-tree and the receipt signed.
+      - name: PR-only sections (guard-tree, pr-review-shadow, pr-review-sign)
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'guard-tree,pr-review-shadow,pr-review-sign'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - name: PR-only sections (wait for every one to finish)
+        if: ${{ !cancelled() }}
+        run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
+      - name: Remove this job's section containers (runs on cancel too)
+        if: always()
+        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr-review-shadow-sample
+          path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
+          retention-days: 90
+          if-no-files-found: ignore
 
   x86-main:
     needs: [mg-reuse]
