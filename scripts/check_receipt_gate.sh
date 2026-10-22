@@ -197,13 +197,14 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   case "$code" in *'worktree add -q --no-checkout'*) ;; *) return 1 ;; esac
   case "$code" in *'core.hooksPath=/dev/null'*) ;; *) return 1 ;; esac
   case "$code" in *'unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0'*) ;; *) return 1 ;; esac
-  shard=$(awk '/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1")
+  shard=$(awk '/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1" | grep -v -E '^[[:space:]]*#')
   case "$shard" in *'needs: [receipt-judge]'*) ;; *) return 1 ;; esac
-  case "$shard" in *'RECEIPT_OK: ${{ needs.receipt-judge.outputs.ok'*) ;; *) return 1 ;; esac
-  case "$shard" in *"outputs.ok || '0' }}"*) ;; *) return 1 ;; esac
-  case "$code" in *'"$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}"'*) ;; *) return 1 ;; esac
-  case "$code" in *'[ "$ok" = 1 ] || ok=0'*) ;; *) return 1 ;; esac
-  case "$code" in *'[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ]'*) ;; *) return 1 ;; esac
+  # whole-line pins: a substring pin lets "; ok=1", a flipped "&&" or another cd target ride along
+  hasl() { local t; t=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$1"); grep -qxF -- "$2" <<< "$t"; }
+  hasl "$shard" "RECEIPT_OK: \${{ needs.receipt-judge.outputs.ok || '0' }}" || return 1
+  hasl "$code" '[ "$ok" = 1 ] || ok=0' || return 1
+  hasl "$code" '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&' || return 1
+  hasl "$code" 'ok="$(cd "$RUNNER_TEMP/prtree" && env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin /usr/bin/bash "$RUNNER_TEMP/rok.sh" "$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}")" || ok=0' || return 1
   tier=$(awk '/id: tier$/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$2" | grep -v -E '^[[:space:]]*#')
   case "$tier" in *'"${RECEIPT_OK:-0}" = 1'*) ;; *) return 1 ;; esac
   printf '%s\n' "$tier" | grep -E 'scripts/|git (fetch|clone)' | grep -q . && return 1
@@ -236,6 +237,11 @@ wmut "W20c MUTANT (MA): the shard RECEIPT_OK fallback flipped to 1 is caught" ci
 wmut "W20d MUTANT (MB): the verifier trusting \$GITHUB_WORKSPACE no longer, but the PR tree, is caught" ci '"$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE"' '"$RUNNER_TEMP/pr-body.md" "$RUNNER_TEMP/prtree"'
 wmut "W20e MUTANT (MC): the ok=0 guard turned into ok=1 is caught" ci '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=1'
 wmut "W20f MUTANT (MD): the FETCH_HEAD == GITHUB_SHA compare dropped is caught" ci '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&' 'true &&'
+wmut "W20g MUTANT (E1): a comment-only RECEIPT_OK in the shard does not satisfy the pin" ci "      RECEIPT_OK: \${{ needs.receipt-judge.outputs.ok || '0' }}" "      RECEIPT_OK: \${{ needs.receipt-judge.outputs.ok || '1' }}
+      # RECEIPT_OK: \${{ needs.receipt-judge.outputs.ok || '0' }}"
+wmut "W20h MUTANT (E2): the ok=0 guard kept but followed by ; ok=1 is caught" ci '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=0; ok=1'
+wmut "W20i MUTANT (E3): the FETCH_HEAD compare joined with || instead of && is caught" ci '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&' '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] ||'
+wmut "W20j MUTANT (E4): the verifier run from the trusted workspace, not the PR tree, is caught" ci 'ok="$(cd "$RUNNER_TEMP/prtree" &&' 'ok="$(cd "$GITHUB_WORKSPACE" &&'
 wmut "W20b MUTANT: a tier step that runs PR-tree code is caught" sec 'rok=0
           if [ "${GITHUB_EVENT_NAME}" = pull_request ]' 'rok=0
           bash scripts/ci/pre.sh
