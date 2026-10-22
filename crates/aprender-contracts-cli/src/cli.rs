@@ -202,11 +202,10 @@ pub enum Commands {
         /// Path to binding registry YAML (adds binding coverage)
         #[arg(long)]
         binding: Option<PathBuf>,
-        /// `--binding` ALWAYS resolves every `implemented` binding against source
-        /// (PVL-001 EV-2): ghosts are listed under `GHOST BINDINGS (n)` and exit 1.
-        /// This flag's root argument additionally scans for `#[kani::proof]` fns
-        /// (#4531): a `kani_harnesses[].harness` with no such fn earns no L3 and is
-        /// listed under `PHANTOM KANI HARNESSES (n)` (exit 0).
+        /// No-op alias (PVL-001 EV-2): `--binding` now ALWAYS resolves every
+        /// `implemented` binding against source with the `pv verify-bindings`
+        /// resolver, lists ghosts under `GHOST BINDINGS (n)` and exits 1. Kept so
+        /// existing invocations still parse; its root argument is ignored.
         #[arg(long, num_args = 0..=1, default_missing_value = ".")]
         verify_bindings: Option<PathBuf>,
         /// Output format: text (default) or json
