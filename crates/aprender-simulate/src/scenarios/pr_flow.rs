@@ -41,6 +41,9 @@ pub struct PrFlowConfig {
     pub rev_lanes: usize,
     /// Per-tier review minutes, handed out to PRs round-robin; empty = `t_rev_min` for all.
     pub rev_tiers: Vec<f64>,
+    /// Review lanes per lineage (reviewer model family), PRs dealt round-robin; each lineage is its own
+    /// pool and queue. Empty = one global pool of `rev_lanes`. A 0 entry is an unlimited lineage.
+    pub rev_lineages: Vec<usize>,
     pub r_mq: usize,
     pub mq_runner_min: f64,
     pub mq_jobs: usize,
@@ -190,8 +193,8 @@ struct Sim {
     timer_at: f64,
     sojourn: Vec<f64>,
     l_area: f64,
-    rev_free: usize,
-    rev_wait: VecDeque<usize>,
+    rev_free: Vec<usize>,
+    rev_wait: Vec<VecDeque<usize>>,
     green: Vec<bool>,
     rev_ok: Vec<bool>,
     green_at: Vec<f64>,
@@ -327,6 +330,11 @@ impl Sim {
         self.form_groups();
     }
 
+    /// The review pool `pr` is dealt to: its lineage, round-robin.
+    fn pool(&self, pr: usize) -> usize {
+        pr % self.rev_free.len()
+    }
+
     /// Review minutes of `pr`: its round-robin tier, else the flat `t_rev_min`.
     fn review_min(&self, pr: usize) -> f64 {
         self.c
@@ -340,11 +348,13 @@ impl Sim {
     fn request_review(&mut self, pr: usize) {
         if self.review_min(pr) <= 0.0 {
             self.reviewed(pr);
-        } else if self.rev_free > 0 {
-            self.rev_free -= 1;
+        } else if self.rev_free[self.pool(pr)] > 0 {
+            let p = self.pool(pr);
+            self.rev_free[p] -= 1;
             self.at(self.review_min(pr), Ev::Reviewed(pr));
         } else {
-            self.rev_wait.push_back(pr);
+            let p = self.pool(pr);
+            self.rev_wait[p].push_back(pr);
         }
     }
 
@@ -374,9 +384,10 @@ impl Sim {
     fn reviewed(&mut self, pr: usize) {
         self.rev_ok[pr] = true;
         if self.review_min(pr) > 0.0 {
-            self.rev_free = self.rev_free.saturating_add(1);
-            if let Some(next) = self.rev_wait.pop_front() {
-                self.rev_free -= 1;
+            let p = self.pool(pr);
+            self.rev_free[p] = self.rev_free[p].saturating_add(1);
+            if let Some(next) = self.rev_wait[p].pop_front() {
+                self.rev_free[p] -= 1;
                 self.at(self.review_min(next), Ev::Reviewed(next));
             }
         }
@@ -469,12 +480,8 @@ pub fn run_pr_flow(c: &PrFlowConfig, seed: u64, hours: f64, warmup_h: f64) -> Pr
         sojourn: Vec::new(),
         l_area: 0.0,
         blocked_area: 0.0,
-        rev_free: if c.rev_lanes == 0 {
-            usize::MAX
-        } else {
-            c.rev_lanes
-        },
-        rev_wait: VecDeque::new(),
+        rev_free: review_pools(c),
+        rev_wait: vec![VecDeque::new(); review_pools(c).len()],
         green: Vec::new(),
         rev_ok: Vec::new(),
         green_at: Vec::new(),
@@ -540,6 +547,16 @@ impl Sim {
     }
 }
 
+/// Free review lanes per pool: one per lineage, else one global pool of `rev_lanes` (0 = unlimited).
+fn review_pools(c: &PrFlowConfig) -> Vec<usize> {
+    let lanes = |n: usize| if n == 0 { usize::MAX } else { n };
+    if c.rev_lineages.is_empty() {
+        vec![lanes(c.rev_lanes)]
+    } else {
+        c.rev_lineages.iter().map(|&n| lanes(n)).collect()
+    }
+}
+
 /// Named FLOW-005 designs. `rm` is runner-minutes per run; the fast tier (24) has a shorter
 /// wall. Setup minutes are the overheads the spec leaves open, calibrated to the reference.
 #[must_use]
@@ -567,6 +584,7 @@ pub fn preset(name: &str) -> Option<PrFlowConfig> {
         rev_mode: ReviewMode::Serial,
         rev_lanes: 0,
         rev_tiers: Vec::new(),
+        rev_lineages: Vec::new(),
         r_mq,
         mq_runner_min: rm,
         mq_jobs: 4,
@@ -887,6 +905,48 @@ mod tests {
         t.rev_tiers = vec![2.0, 10.0];
         let tiered = run_reference(&t).w_mean_min - run_reference(&open_line()).w_mean_min;
         assert!(within(tiered, 6.0, 0.1), "mean of tiers adds {tiered}");
+    }
+
+    #[test]
+    fn lineage_pools_queue_apart_while_a_global_pool_shares_lanes() {
+        let mut g = open_line();
+        g.t_rev_min = 12.0;
+        g.rev_lanes = 4;
+        let global = run_reference(&g).w_mean_min;
+        // The same 4 lanes dealt 1 + 3 to two lineages that each take half the PRs, so PRs wait longer.
+        let mut split = g.clone();
+        split.rev_lineages = vec![1, 3];
+        let lineaged = run_reference(&split).w_mean_min;
+        assert!(
+            lineaged > global + 0.5,
+            "split pools {lineaged} vs global {global}"
+        );
+    }
+
+    #[test]
+    fn lineages_deal_prs_round_robin_so_an_unlimited_lineage_takes_half() {
+        let mut c = open_line();
+        c.t_rev_min = 12.0;
+        c.rev_lineages = vec![1];
+        let all_in_one_lane = run_reference(&c).w_mean_min;
+        c.rev_lineages = vec![1, 0];
+        let half = run_reference(&c).w_mean_min;
+        c.rev_lineages = vec![0];
+        let none = run_reference(&c).w_mean_min;
+        assert!(
+            none < half && half < all_in_one_lane,
+            "{none} {half} {all_in_one_lane}"
+        );
+    }
+
+    #[test]
+    fn empty_lineages_is_the_global_pool() {
+        let mut c = open_line();
+        c.t_rev_min = 6.0;
+        c.rev_lanes = 1;
+        let a = run_reference(&c);
+        c.rev_lineages = vec![1];
+        assert_eq!(a, run_reference(&c));
     }
 
     #[test]

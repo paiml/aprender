@@ -1,0 +1,44 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-10-19"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "FLOW-007 B7, issue #5772"
+    - "quorum receipt quorum/quorum-flow-b7-lineage.json (2026-10-19)"
+  description: "pr_flow review lanes are pooled per lineage (reviewer model family), not one global pool"
+
+name: pr-flow-review-lineage
+version: "1.0.0"
+scope: "crates/aprender-simulate/src/scenarios/pr_flow.rs"
+
+description: |
+  A lineage is a reviewer model family. rev_lineages gives the review lanes of each
+  lineage; PRs are dealt to lineages round-robin and each lineage has its own lanes
+  and queue. Empty rev_lineages is the old single global pool of rev_lanes, so
+  existing results do not move. A 0 entry is an unlimited lineage. Author exclusion
+  is not modelled (quorum: the rule is the model id, not the family).
+
+equations:
+  per_lineage_pool:
+    description: "lanes are not shared across lineages"
+    formula: "PR p waits only for lanes of lineage p mod K"
+
+falsification_tests:
+  - id: FALSIFY-001
+    description: "empty rev_lineages equals one global pool"
+    test: "cargo test -p aprender-simulate --lib empty_lineages_is_the_global_pool"
+    prediction: "the test passes"
+    if_fails: "the default path changed, so existing predictions move"
+
+  - id: FALSIFY-002
+    description: "the same lanes split unevenly across lineages wait longer than one shared pool"
+    test: "cargo test -p aprender-simulate --lib lineage_pools_queue_apart_while_a_global_pool_shares_lanes"
+    prediction: "the test passes"
+    if_fails: "lineages still share lanes"
+
+  - id: FALSIFY-003
+    description: "PRs are dealt round-robin: an unlimited lineage takes half"
+    test: "cargo test -p aprender-simulate --lib lineages_deal_prs_round_robin_so_an_unlimited_lineage_takes_half"
+    prediction: "the test passes"
+    if_fails: "the dealing rule changed"
