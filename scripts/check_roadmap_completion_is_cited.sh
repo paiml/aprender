@@ -248,6 +248,11 @@ def is_candidate(rel):
     d, fn = os.path.split(rel)
     if not fn.lower().endswith(".yaml"):
         return False
+    # roadmap-base.yaml is the frozen half of the GENERATED roadmap.yaml (#5897):
+    # the aggregate is scanned and baselined, so scanning the base too would
+    # report every entry a second time under a path the baseline is not keyed on.
+    if rel.replace(os.sep, "/") == "docs/roadmaps/roadmap-base.yaml":
+        return False
     if re.fullmatch(r"(?i)roadmap.*\.yaml", fn):
         return True
     return d.replace(os.sep, "/").endswith("docs/roadmaps")
@@ -277,6 +282,12 @@ except Exception:
     pass
 
 in_scope, out_scope, unparsed = [], [], []
+# The base is not scanned itself; without the generated aggregate nothing of it
+# would be, which is a silent pass. Make that loud.
+if (os.path.isfile(os.path.join(root, "docs/roadmaps/roadmap-base.yaml"))
+        and "docs/roadmaps/roadmap.yaml" not in cand):
+    unparsed.append(("docs/roadmaps/roadmap.yaml",
+                     "generated aggregate absent -- run `make roadmap-aggregate`"))
 for rel in sorted(cand):
     p = os.path.join(root, rel)
     if not os.path.isfile(p):
@@ -622,6 +633,19 @@ YAML
     scan_roadmaps "$TD" >"$TD/scan3.out" 2>"$TD/scan3.err" || true
     n_lane=$(grep -c 'lane-deadbeef' "$TD/scan3.out" "$TD/scan3.err" 2>/dev/null | awk -F: '{t+=$2} END {print t+0}')
     row 'lane scratch contributes no records'  0 "$n_lane"
+
+    # GENERATED mode (#5897): roadmap-base.yaml is the frozen half of the generated
+    # roadmap.yaml and is never scanned as a second copy of its entries.
+    mk docs/roadmaps/roadmap-base.yaml <<'YAML'
+roadmap:
+- id: R-BASE-HALF
+  status: completed
+  notes: null
+YAML
+    scan_roadmaps "$TD" >"$TD/scan4.out" 2>"$TD/scan4.err" || true
+    n_base=$(grep -c 'roadmap-base.yaml' "$TD/scan4.out" "$TD/scan4.err" 2>/dev/null | awk -F: '{t+=$2} END {print t+0}')
+    row 'roadmap-base.yaml contributes no records (the aggregate is the unit)' 0 "$n_base"
+    rm -f "${TD:?}/docs/roadmaps/roadmap-base.yaml"
 
     n_out=$(grep -c '^SCOPE out  crates/other/roadmap.yaml' "$TD/scan.err" || true)
     row 'foreign schema is reported out of scope, not skipped' 1 "$n_out"

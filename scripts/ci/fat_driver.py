@@ -751,6 +751,14 @@ class Section:
             k, _, v = line.partition(" ")
             subprocess.run(g + ["config", k, v], check=True)
         subprocess.run(g + ["checkout", "-q", "--detach", self.ctx.head], check=True)
+        # docs/roadmaps/roadmap.yaml is generated and gitignored, so a clone of HEAD
+        # never has it: build it here, or every roadmap guard and sov.roadmap-valid
+        # in this section runs against an absent file (#5897).
+        ws = self.workspace
+        if (ws / "docs/roadmaps/roadmap-base.yaml").is_file():
+            subprocess.run(["python3", str(ws / "scripts/lib/roadmap_fragments.py"), "aggregate",
+                            "--base-file", str(ws / "docs/roadmaps/roadmap-base.yaml"), "--write"],
+                           cwd=str(ws), check=True, stdout=self.log, stderr=subprocess.STDOUT)
 
     def start_container(self, spec):
         if isinstance(spec, str):
