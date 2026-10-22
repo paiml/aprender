@@ -63,33 +63,27 @@ self_test() {
     t "hidden file under docs" "skip=0 reason=full" false docs/archive/.hidden
     t "prefix lookalike" "skip=0 reason=full" false docs/archive-x/a.md
     t "empty diff is full" "skip=0 reason=full" false
-    local wf="$REPO_ROOT/.github/workflows/ci.yml" py
-    py=$(python3 - "$wf" <<'PY'
-import sys, yaml
-w = yaml.safe_load(open(sys.argv[1]))
-on = w.get(True, w.get("on"))
-bad = []
-pr = on.get("pull_request") or {}
-if "paths-ignore" in pr or "paths" in pr: bad.append("pull_request has a paths filter (stuck required checks)")
-if "ready_for_review" not in (pr.get("types") or []): bad.append("pull_request types lack ready_for_review")
-for k in ("push", "merge_group"):
-    v = on.get(k) or {}
-    if "paths-ignore" in v or "paths" in v: bad.append(k + " has a paths filter")
-j = w["jobs"]
-sc = j.get("scope")
-if not sc or sc.get("if") != "${{ github.event_name == 'pull_request' }}": bad.append("scope job missing or not pull_request-only")
-for name in ("x86-main", "workspace-test-shard"):
-    if "scope" not in (j[name].get("needs") or []) or "needs.scope.outputs.skip != '1'" not in str(j[name].get("if")): bad.append(name + " does not honour scope")
-for name in ("ci-gate", "gate", "workspace-test"):
-    if "scope" not in (j[name].get("needs") or []): bad.append(name + " does not need scope")
-    if name != "workspace-test" and "needs.scope.outputs.skip" not in str(j[name]): bad.append(name + " does not read scope")
-if "needs.scope.outputs.skip" not in str(j["workspace-test"]): bad.append("workspace-test does not read scope")
-c = w.get("concurrency") or {}
-if "pull_request" not in str(c.get("cancel-in-progress")): bad.append("concurrency no longer cancels superseded PR runs")
-print("\n".join(bad))
-PY
-    ) || { echo "FAIL wiring: cannot read ci.yml"; fail=1; }
-    [ -z "$py" ] || { printf 'FAIL wiring: %s\n' "$py"; fail=1; }
+    local wf="$REPO_ROOT/.github/workflows/ci.yml" bad="" n
+    if ! command -v yq > /dev/null 2>&1 || ! yq '.jobs' "$wf" > /dev/null 2>&1; then
+        echo "FAIL wiring: cannot read ci.yml (yq missing or file unparsable)"; fail=1
+    else
+        y() { yq -r "$1" "$wf"; }
+        [ "$(y '.on.pull_request | has("paths") or has("paths-ignore")')" = false ] || bad="$bad; pull_request has a paths filter (stuck required checks)"
+        [ "$(y '.on.pull_request.types // [] | contains(["ready_for_review"])')" = true ] || bad="$bad; pull_request types lack ready_for_review"
+        for n in push merge_group; do
+            [ "$(y ".on.$n // {} | has(\"paths\") or has(\"paths-ignore\")")" = false ] || bad="$bad; $n has a paths filter"
+        done
+        [ "$(y '.jobs.scope.if')" = "\${{ github.event_name == 'pull_request' }}" ] || bad="$bad; scope job missing or not pull_request-only"
+        for n in x86-main workspace-test-shard; do
+            [ "$(y ".jobs.\"$n\".needs // [] | contains([\"scope\"])")" = true ] && y ".jobs.\"$n\".if" | grep -qF "needs.scope.outputs.skip != '1'" || bad="$bad; $n does not honour scope"
+        done
+        for n in ci-gate gate workspace-test; do
+            [ "$(y ".jobs.\"$n\".needs // [] | contains([\"scope\"])")" = true ] || bad="$bad; $n does not need scope"
+            y ".jobs.\"$n\"" | grep -qF 'needs.scope.outputs.skip' || bad="$bad; $n does not read scope"
+        done
+        y '.concurrency."cancel-in-progress"' | grep -qF pull_request || bad="$bad; concurrency no longer cancels superseded PR runs"
+    fi
+    [ -z "$bad" ] || { printf 'FAIL wiring: %s\n' "${bad#; }"; fail=1; }
     [ "$fail" -eq 0 ] && echo "ci_scope: self-test ok"
     return "$fail"
 }
