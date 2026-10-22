@@ -1313,7 +1313,7 @@ mod archive_wiring {
     }
 
     fn smoke_counts_from_zero(l: &str) -> bool {
-        l.starts_with("n=0; for b in $(find /workspace/target/debug -maxdepth 1 -type f -perm -u+x); do test -x \"$b\" || { echo ")
+        l.starts_with("n=0; for b in $exp; do test -x \"$b\" || { echo ")
             && l.ends_with("; exit 1; }; n=$((n+1)); done")
     }
 
