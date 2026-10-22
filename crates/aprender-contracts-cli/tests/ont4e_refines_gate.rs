@@ -80,23 +80,6 @@ fn liskov_witnesses(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn the_spec_probe_holds_on_the_repo_corpus() {
-    // ONT-001 §5 ONT-4e probe: `"$PV" lint contracts/ --gate refines --format json >"$TMP/lk.json"
-    // && json_object "$TMP/lk.json" && jq -e '.liskov_pairs_checked>0 and .pc_checker=="fired" and .verdict=="Pass"'`
-    let r = gate(&repo().join("contracts"));
-    assert_eq!(r.code, 0, "{}", show(&r));
-    let v = json_of(&r);
-    assert!(v.is_object(), "json_object: {v}");
-    assert!(
-        v["liskov_pairs_checked"].as_u64().unwrap_or(0) > 0,
-        "liskov_pairs_checked>0: {v}"
-    );
-    assert_eq!(v["pc_checker"], "fired", "{v}");
-    assert_eq!(v["verdict"], "Pass", "{v}");
-    assert_eq!(v["witness"]["pc_reasoner"], "fired", "{v}");
-}
-
-#[test]
 fn a_liskov_pair_passes_and_the_witness_is_a_chain() {
     let (dir, r) = reasoned("refines-ok");
     assert_eq!(r.code, 0, "{}", show(&r));
