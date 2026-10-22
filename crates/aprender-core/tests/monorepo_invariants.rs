@@ -1138,8 +1138,7 @@ fn falsify_mono_014_path_pins_name_their_target_version() {
 // (a skipped required check counts as passing on GitHub).
 // ---------------------------------------------------------------------------
 
-const PQ: &str = "!(github.event_name == 'pull_request' && github.event.pull_request.draft)";
-/// The form main already uses for `x86-main` and `workspace-test-shard`.
+/// The one draft form the PR-only jobs use (main already has it on `x86-main` and the shard).
 const DF: &str = "github.event.pull_request.draft != true";
 const G_ALL: &str =
     "${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}";
@@ -1151,7 +1150,7 @@ fn draft_gate_canon() -> Vec<(&'static str, String)> {
         ("mg-reuse", "github.event_name == 'push' && github.ref == 'refs/heads/main'".into()),
         ("mg-reuse-self-test", G_ALL.into()),
         ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} }}}}")),
-        ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {PQ} }}}}")),
+        ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} }}}}")),
         ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}".into()),
         ("workspace-test-shard", format!("${{{{ {DF} }}}}")),
         ("workspace-test", "always()".into()),
@@ -1249,21 +1248,21 @@ fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
         1,
     );
     vec![
-        ("m1 draft guard dropped", mutate(src, &format!(" && {PQ}"), "")),
+        ("m1 draft guard dropped", mutate(src, &format!(" && {DF}"), "")),
         ("m2 ready_for_review dropped", mutate(src, ", ready_for_review", "")),
-        ("m3 guard unscoped", mutate(src, PQ, "!github.event.pull_request.draft")),
-        ("m4 guard polarity flipped", mutate(src, "&& !(github.event_name == 'pull_request' &&", "&& (github.event_name == 'pull_request' &&")),
+        ("m3 guard unscoped", mutate(src, DF, "true")),
+        ("m4 guard polarity flipped", mutate(src, &format!(" && {DF}"), " && github.event.pull_request.draft == true")),
         ("m5 aggregator not always()", gate_mut),
         ("m6 empty parse", "on:\n  pull_request:\n    types: [ready_for_review]\njobs:\n".to_string()),
-        ("m7 PQ guard padded with || true", mutate(src, "draft) }}", "draft) || true }}")),
+        ("m7 DF guard padded with || true", mutate(src, "draft != true }}", "draft != true || true }}")),
         ("m7b G_ALL padded with || true", mutate(src, "!github.event.pull_request.draft }}", "!github.event.pull_request.draft || true }}")),
         ("m8 shard if = push || true", rewrite_if(src, "workspace-test-shard", Some("    if: ${{ github.event_name == 'push' || true }}"))),
         ("m9 ready_for_review_x", mutate(src, "ready_for_review]", "ready_for_review_x]")),
-        ("m11 && true != !(...)", mutate(src, " && !(github.event_name == 'pull_request'", " && true != !(github.event_name == 'pull_request'")),
-        ("m12 && ! !(...)", mutate(src, " && !(github.event_name == 'pull_request'", " && ! !(github.event_name == 'pull_request'")),
+        ("m11 && true == DF", mutate(src, &format!(" && {DF}"), &format!(" && true == {DF}"))),
+        ("m12 && !DF", mutate(src, &format!(" && {DF}"), &format!(" && !{DF}"))),
         ("m13 comment-suffixed header, no if", mutate(&rewrite_if(src, "workspace-test-shard", None), "  workspace-test-shard:\n", "  workspace-test-shard: # no guard\n")),
         ("m14 new job outside CANON", mutate(src, "\njobs:\n", "\njobs:\n  extra-job: # unguarded\n    runs-on: [self-hosted, Linux, clean-room]\n    steps: []\n")),
-        ("m15 || true then a comment", mutate(src, "draft) }}\n", "draft) || true }} # fine\n")),
+        ("m15 || true then a comment", mutate(src, "draft != true }}\n", "draft != true || true }} # fine\n")),
         ("m16 more-indented || true line folds into the scalar", mutate(src, &format!("{x86_if}\n"), &format!("{x86_if}\n      || true\n"))),
         ("m17 decoy types line, real list lacks ready_for_review", mutate(src, "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, synchronize, reopened]") + "# types: [ready_for_review]\n"),
         ("m18 G_ALL polarity flipped", mutate(src, "|| !github.event.pull_request.draft", "|| github.event.pull_request.draft")),
