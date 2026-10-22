@@ -2,7 +2,7 @@
 # rearm_ready.sh -- which ready PRs a gate fix may re-arm (contract advisory-gate-diff-v1, ADG-INV-005).
 #
 #   rearm_ready.sh select FILE     FILE = TSV "pr  approved_sha  current_sha"; prints PRs to arm
-#   rearm_ready.sh run             list open un-armed PRs (one gh call), select, arm each with plain `gh pr merge`
+#   rearm_ready.sh run             list open un-armed PRs (one gh call), select, enqueue each at its reviewed head (enqueuePullRequest with expectedHeadOid; no plain `gh pr merge`)
 #   rearm_ready.sh --self-test     case table, plus `run` against a stub gh (RED when select_ is not called)
 # A PR whose head moved after its approval is NOT re-armed (a changed head needs a fresh review).
 set -euo pipefail

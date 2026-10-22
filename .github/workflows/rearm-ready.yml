@@ -1,5 +1,5 @@
 name: rearm-ready
-# PMAT-5792 (ADG-INV-005): after main moves or on a timer, re-arm ready PRs whose head is the one that was approved.
+# PMAT-5793 (ADG-INV-005): after main moves or on a timer, re-arm ready PRs whose head is the one that was approved.
 # Never a PR or merge_group job. A PR whose head moved after approval is left alone (needs a fresh review).
 on:
   schedule:
