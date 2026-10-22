@@ -396,37 +396,8 @@ impl RichTerminalHeatmap {
         for r in 0..rows {
             for c in 0..cols {
                 if !visited[r][c] && self.cells[r][c].coverage <= 0.0 {
-                    // BFS to find contiguous gap region
-                    let mut min_row = r;
-                    let mut max_row = r;
-                    let mut min_col = c;
-                    let mut max_col = c;
-                    let mut gap_cells = 0;
-
-                    let mut queue = vec![(r, c)];
-                    visited[r][c] = true;
-
-                    while let Some((row, col)) = queue.pop() {
-                        gap_cells += 1;
-                        min_row = min_row.min(row);
-                        max_row = max_row.max(row);
-                        min_col = min_col.min(col);
-                        max_col = max_col.max(col);
-
-                        // Check neighbors
-                        for (dr, dc) in &[(0, 1), (1, 0), (0, -1), (-1, 0)] {
-                            let nr = row as i32 + dr;
-                            let nc = col as i32 + dc;
-                            if nr >= 0 && nr < rows as i32 && nc >= 0 && nc < cols as i32 {
-                                let nr = nr as usize;
-                                let nc = nc as usize;
-                                if !visited[nr][nc] && self.cells[nr][nc].coverage <= 0.0 {
-                                    visited[nr][nc] = true;
-                                    queue.push((nr, nc));
-                                }
-                            }
-                        }
-                    }
+                    let ((min_row, max_row, min_col, max_col), gap_cells) =
+                        self.flood_gap(&mut visited, r, c);
 
                     let percent = gap_cells as f32 / total_cells;
                     if percent >= 0.01 {
@@ -449,6 +420,49 @@ impl RichTerminalHeatmap {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         gaps
+    }
+
+    /// Flood-fill the zero-coverage region containing `(r, c)`.
+    ///
+    /// Marks every cell it reaches in `visited` and returns the region's
+    /// bounding box `(min_row, max_row, min_col, max_col)` and its cell count.
+    fn flood_gap(
+        &self,
+        visited: &mut [Vec<bool>],
+        r: usize,
+        c: usize,
+    ) -> ((usize, usize, usize, usize), usize) {
+        let rows = self.cells.len();
+        let cols = self.cells.first().map_or(0, Vec::len);
+        let (mut min_row, mut max_row, mut min_col, mut max_col) = (r, r, c, c);
+        let mut gap_cells = 0;
+
+        let mut queue = vec![(r, c)];
+        visited[r][c] = true;
+
+        while let Some((row, col)) = queue.pop() {
+            gap_cells += 1;
+            min_row = min_row.min(row);
+            max_row = max_row.max(row);
+            min_col = min_col.min(col);
+            max_col = max_col.max(col);
+
+            // Check neighbors
+            for (dr, dc) in &[(0, 1), (1, 0), (0, -1), (-1, 0)] {
+                let nr = row as i32 + dr;
+                let nc = col as i32 + dc;
+                if nr >= 0 && nr < rows as i32 && nc >= 0 && nc < cols as i32 {
+                    let nr = nr as usize;
+                    let nc = nc as usize;
+                    if !visited[nr][nc] && self.cells[nr][nc].coverage <= 0.0 {
+                        visited[nr][nc] = true;
+                        queue.push((nr, nc));
+                    }
+                }
+            }
+        }
+
+        ((min_row, max_row, min_col, max_col), gap_cells)
     }
 
     /// Render the heatmap grid
@@ -683,7 +697,7 @@ impl RichTerminalHeatmap {
             let padding = (68 - title.len()) / 2;
             output.push_str(&format!(
                 "\u{2551}{:^70}\u{2551}\n",
-                format!("{}{}", " ".repeat(padding.max(0)), title)
+                format!("{}{}", " ".repeat(padding), title)
             ));
         } else {
             output.push_str(&format!(
