@@ -32,9 +32,9 @@ reap_work() {
 trap reap_work EXIT
 # EXIT does not run on SIGKILL (a cancelled or timed-out job): a detached watcher repeats the sweep once this shell is gone
 # (8 fake serves leaked on lambda, 2026-10-21). The dir is removed by the same name, never by a pattern.
-setsid bash -c 'while kill -0 "$1" 2>/dev/null; do sleep 2; done
+( setsid bash -c 'while kill -0 "$1" 2>/dev/null; do sleep 2; done
   for p in /proc/[0-9]*; do c=$(tr "\0" " " 2>/dev/null < "$p/cmdline") || continue; case "$c" in *"$2/"*) kill -TERM "${p#/proc/}" 2>/dev/null ;; esac; done
-  rm -rf -- "${2:?}"' _ "$$" "$WORK" < /dev/null > /dev/null 2>&1 &
+  rm -rf -- "${2:?}"' _ "$$" "$WORK" < /dev/null > /dev/null 2>&1 & )
 FAKE="$ROOT/scripts/lib/model_ladder_cells_produce_cases/fake_apr.py"
 
 cat > "$WORK/ladder.yaml" <<'EOF'
