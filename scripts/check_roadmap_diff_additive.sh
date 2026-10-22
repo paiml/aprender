@@ -92,7 +92,7 @@ if [ "${1:-}" = "--self-test" ]; then
     not_measured=0
     # The case table has exactly this many rows; a run that reaches fewer, or more, is RED, never "n/n"
     # (#5047). Raise it with every row added. The two summary rows at the end are not counted.
-    SELFTEST_MIN_ROWS=27
+    SELFTEST_MIN_ROWS=30
 
     # selftest_verdict ROWS FAILS NOT_MEASURED MIN -> prints the summary; rc 0 all rows ran and
     # passed, 1 a row failed or other than MIN ran, 2 every row that ran passed but one was not measured.
@@ -443,7 +443,36 @@ EOF
         *"is not a merge commit nor a commit on the origin/main tip"*) printf 'ok    row %-2s stacked entry with deepening disabled (mutation): refused by name\n' "$row" ;;
         *) printf 'FAIL  row %-2s stacked entry with deepening disabled: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc7" "$err7"; fails=1 ;;
     esac
+    # Rows: a REBASE-replayed 3-commit pull request (#5855). The queue replays the PR as c2,c3,c4 on the
+    # main tip c1; the head's single parent is c3, so every parent rule above names c3 and judges ONLY the
+    # last commit. The event names the real base (merge_group.base_sha = c1); with the event base ignored
+    # (the mutation) the stacked rule answers c3, which is the defect.
+    row=$((row + 1))
+    QR="$TD/rebase-src"; rm -rf "${QR:?}"; ( git init -q -b main "$QR" && cd "$QR" && git config user.email t@t && git config user.name t \
+        && cp "$TD/base.yaml" r.yaml && git add r.yaml && git commit -qm c1 && git branch -q queue-base \
+        && printf 'a\n' > a.txt && git add a.txt && git commit -qm c2 \
+        && printf 'b\n' > b.txt && git add b.txt && git commit -qm c3 \
+        && printf 'c\n' > c.txt && git add c.txt && git commit -qm c4 ) 2>/dev/null
+    rm -rf "${QR:?}.clone"; git clone -q --depth=1 -b main "file://$QR" "$QR.clone" 2>/dev/null; git -C "$QR.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    git -C "$QR" config uploadpack.allowReachableSHA1InWant true
+    wantr=$( git -C "$QR" rev-parse queue-base )
+    printf '{"merge_group":{"base_sha":"%s"}}\n' "$wantr" > "$TD/rebase-event.json"
+    gotr=$( GITHUB_EVENT_NAME=merge_group GITHUB_EVENT_PATH="$TD/rebase-event.json" bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$QR.clone" "$QR.clone" 2>/dev/null ) || true
+    case "$gotr" in "$wantr|merge_group.base_sha"*) printf 'ok    row %-2s REBASE-replayed 3-commit entry -> base = merge_group.base_sha, not the previous commit\n' "$row" ;;
+        *) printf 'FAIL  row %-2s REBASE-replayed entry: wanted %s|merge_group.base_sha..., got %s\n' "$row" "$wantr" "$gotr"; fails=1 ;; esac
+    row=$((row + 1))
+    gotr=$( GITHUB_EVENT_NAME=merge_group GITHUB_EVENT_PATH="$TD/rebase-event.json" ROADMAP_DIFF_NO_EVENT_BASE=1 bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$QR.clone" "$QR.clone" 2>/dev/null ) || true
+    case "$gotr" in "$wantr|"*) printf 'FAIL  row %-2s REBASE-replayed entry with the event base ignored: still named the real base — the mutation did not bite\n' "$row"; fails=1 ;;
+        *) printf 'ok    row %-2s REBASE-replayed entry with the event base ignored (mutation): base is the previous commit, not %s\n' "$row" "${wantr:0:9}" ;; esac
     # #4936 (P6): the same stacked entry with the deepen's first read dead (curl 92). fetch_p6.sh reads the
+    # The pull_request fallback on a REAL payload shape (#5859): base is {label, ref, repo{...}, sha, user{...}},
+    # so a sed that stops at the first `}` returned nothing. Head's sha comes first and must not be taken.
+    row=$((row + 1))
+    rm -rf "${QR:?}.clone"; git clone -q --depth=1 -b main "file://$QR" "$QR.clone" 2>/dev/null; git -C "$QR.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    printf '{"action":"synchronize","pull_request":{"head":{"label":"o:b","ref":"b","sha":"%s","user":{"login":"a"},"repo":{"id":3,"owner":{"login":"o"}}},"base":{"label":"o:main","ref":"main","repo":{"id":3,"owner":{"login":"o"},"license":{"key":"mit"}},"sha":"%s","user":{"login":"o"}}}}\n' "$(git -C "$QR" rev-parse HEAD)" "$wantr" > "$TD/pr-event.json"
+    gotr=$( GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$TD/pr-event.json" bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$QR.clone" "$QR.clone" 2>/dev/null ) || true
+    case "$gotr" in "$wantr|pull_request.base.sha"*) printf 'ok    row %-2s pull_request fallback on a real nested payload -> base = base.sha, not head.sha\n' "$row" ;;
+        *) printf 'FAIL  row %-2s pull_request fallback: wanted %s|pull_request.base.sha..., got %s\n' "$row" "$wantr" "$gotr"; fails=1 ;; esac
     # deepen again and the base still resolves. A planted git logs every fetch read; both must be the
     # deepen, so a deepen that is one bare read (it dies, and the by-sha fetch after it answers) is RED.
     # It runs from a cwd outside REPO_ROOT (the shim's own dir), as check_ont_ratchet.sh may (it never cds),
