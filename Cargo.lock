@@ -451,9 +451,8 @@ name = "aprender-compute"
 version = "0.71.3"
 dependencies = [
  "anyhow",
- "aprender-contracts",
+ "aprender-contracts-key",
  "aprender-contracts-macros",
- "aprender-core",
  "aprender-cuda-edge",
  "aprender-gemm-codegen",
  "aprender-gpu",
@@ -514,6 +513,7 @@ dependencies = [
 name = "aprender-contracts"
 version = "0.71.3"
 dependencies = [
+ "aprender-contracts-key",
  "aprender-contracts-macros",
  "blake3",
  "criterion 0.5.1",
@@ -545,6 +545,10 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
 ]
+
+[[package]]
+name = "aprender-contracts-key"
+version = "0.71.3"
 
 [[package]]
 name = "aprender-contracts-macros"
@@ -581,6 +585,7 @@ dependencies = [
  "aprender-common",
  "aprender-compute",
  "aprender-contracts",
+ "aprender-contracts-key",
  "aprender-contracts-macros",
  "aprender-data",
  "aprender-profile",
@@ -707,7 +712,7 @@ dependencies = [
  "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
- "aprender-contracts",
+ "aprender-contracts-key",
  "arrow 59.2.0",
  "axum 0.7.9",
  "bytemuck",
@@ -920,6 +925,7 @@ dependencies = [
  "aprender-common",
  "aprender-compute",
  "aprender-contracts",
+ "aprender-contracts-key",
  "aprender-contracts-macros",
  "aprender-core",
  "aprender-cuda-edge",
@@ -986,7 +992,7 @@ name = "aprender-present-cli"
 version = "0.71.3"
 dependencies = [
  "aprender-build-sha",
- "aprender-contracts",
+ "aprender-contracts-key",
  "aprender-present-yaml",
  "clap",
  "notify",
@@ -1000,7 +1006,7 @@ dependencies = [
 name = "aprender-present-core"
 version = "0.71.3"
 dependencies = [
- "aprender-contracts",
+ "aprender-contracts-key",
  "aprender-contracts-macros",
  "criterion 0.7.0",
  "proptest",
@@ -1293,7 +1299,7 @@ version = "0.71.3"
 dependencies = [
  "aprender-common",
  "aprender-compute",
- "aprender-contracts",
+ "aprender-contracts-key",
  "aprender-serve",
  "async-trait",
  "bincode",
@@ -1489,6 +1495,7 @@ version = "0.71.3"
 dependencies = [
  "aprender-build-sha",
  "aprender-contracts",
+ "aprender-contracts-key",
  "aprender-contracts-macros",
  "aprender-present-core",
  "aprender-present-terminal",
@@ -1679,6 +1686,7 @@ dependencies = [
  "aprender-common",
  "aprender-compute",
  "aprender-contracts",
+ "aprender-contracts-key",
  "aprender-contracts-macros",
  "aprender-core",
  "aprender-data",
