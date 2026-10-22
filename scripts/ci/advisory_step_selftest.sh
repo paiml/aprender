@@ -23,7 +23,7 @@ extract() { # WORKFLOW -> the run block, de-indented
 make_repo() { # DIR -> repo with scripts/ci stubs committed on refs/remotes/origin/main
     local r=$1 f
     mkdir -p "$r/scripts/ci"
-    for f in advisory_diff advisory_gate advisory_gate_selftest advisory_step_selftest check_sov_advisories_off rearm_ready; do
+    for f in advisory_diff advisory_gate advisory_gate_selftest advisory_step_selftest check_sov_advisories_off; do
         printf '#!/usr/bin/env bash\nexit "$(cat "$(dirname "$0")/%s.rc" 2>/dev/null || echo 0)"\n' "$f" >"$r/scripts/ci/$f.sh"
     done
     git -C "$r" init -q
