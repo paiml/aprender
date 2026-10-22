@@ -69,3 +69,6 @@ pub use validate::validate_csr_invariants;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod bsr_new_5632_tests;
