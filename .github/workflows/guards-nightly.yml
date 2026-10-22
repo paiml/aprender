@@ -194,6 +194,10 @@ jobs:
         run: setsid --wait bash scripts/check_book_examples_compile.sh
       - name: Harness fixture servers die with their harness (LAB, quarantined from the merge path, #5873)
         run: setsid --wait bash scripts/check_harness_server_cleanup.sh
+      - name: Coverage scan files no per-function ticket (LAB, #5879)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: setsid --wait bash scripts/check_coverage_single_report.sh --self-test && setsid --wait bash scripts/check_coverage_single_report.sh
       - name: aprender-profile lib tests (was gated by nothing)
         run: cargo test -p aprender-profile --lib
       - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
