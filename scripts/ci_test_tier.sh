@@ -641,7 +641,7 @@ self_test() {
     cap push-rename bash "$T" --event push --repo-root "$td/s-rename"
     row 0 "push, a crate source RENAMED into docs/audits/ -> the crate it left IS selected (--no-renames; the push arm carries this guard independently of the merge_group arm)" "^crates=.*$leaf" bash -c "$(replay push-rename)"
     row 0 "mutant without --no-renames on the push arm drops the left crate -- the rename rows go RED" 'MUTANT-DROPPED' bash -c "o=\$(bash '$td/mutant-renames.sh' --event push --repo-root '$td/s-rename' 2>&1); case \"\$o\" in *\"crates=\"*$leaf*) echo MUTANT-KEPT ;; *) echo MUTANT-DROPPED ;; esac"
-    row 0 "ci/sections.yml (#4433) lists the pull_request touched paths through pr_touched_paths.sh, which keeps --no-renames" '^ALL-PRESENT$' contains_all "$TREE/ci/sections.yml" 'bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
+    row 0 "scripts/ci/decide_tier.sh (#4433; moved from ci/sections.yml by #5891) lists the pull_request touched paths through pr_touched_paths.sh, which keeps --no-renames" '^ALL-PRESENT$' contains_all "$TREE/scripts/ci/decide_tier.sh" 'bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
     row 0 "  ...and the helper diffs with --no-renames" '^ALL-PRESENT$' contains_all "$TREE/scripts/ci/pr_touched_paths.sh" 'git diff --no-renames --name-only "$mb" "$head"'
     # #5391: main moves AFTER the PR branched. The PR touches crates/<leaf>; main's later commit
     # touches crates/other-crate. The PR's touched list must hold the first and never the second.
