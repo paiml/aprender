@@ -3,6 +3,7 @@ aprender-update
 apr-format
 aprender-common
 aprender-contracts-macros
+aprender-contracts-key
 aprender-cupti
 aprender-data
 aprender-fft
