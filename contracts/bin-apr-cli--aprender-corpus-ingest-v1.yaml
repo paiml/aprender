@@ -114,3 +114,9 @@ falsification_tests:
     if_fails: "GREEN 2026-09-26: 2 rows, set-equal to the 2 commands"
     mutation: 'delete every aprender-corpus-ingest row; must turn RED naming aprender-corpus-ingest'
 
+  - id: FALSIFY-BIN-APR_CORPUS_INGEST-006
+    rule: 'civil_from_days and now_utc_iso8601 produce correct civil dates and a fixed-shape stamp'
+    prediction: 'epoch is 1970-01-01, 2000-02-29 exists, 1900 has no Feb 29, day -1 is 1969-12-31, and the stamp is 20 bytes ending in Z'
+    test: 'cargo test -p apr-cli --bin aprender-corpus-ingest -- civil_from_days now_utc'
+    if_fails: 'ingest manifests carry a wrong date or a malformed timestamp'
+    mutation: 'change the 719_468 epoch offset by one; must turn RED'
