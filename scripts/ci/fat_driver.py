@@ -893,6 +893,8 @@ class Section:
     def _apply_file_commands(self, files) -> dict:
         outputs = parse_file_command(files["GITHUB_OUTPUT"])
         for k, v in parse_file_command(files["GITHUB_ENV"]).items():
+            if k.upper() == "RECEIPT_OK":
+                continue  # the receipt verdict comes only from the judge job (#5850); a step cannot write it
             self.env[k] = v
         for line in files["GITHUB_PATH"].read_text().splitlines():
             if line.strip():
