@@ -429,6 +429,26 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-affected-readers --title "LAB: nightly affected-set guards red (#5809)" \
             --owner aprender-w5018 --log "$RUNNER_TEMP/affected.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      # #5803/#5804: the moved tuner tests must still be listed by cargo exactly once, none ignored. LAB, never on a PR path (C324):
+      # it invokes cargo, so it runs only in this night job; the moved tests themselves run from ci/explicit-test-commands.d 295 and 298.
+      - name: Tuner test-move guard (#5803)
+        id: lab_tuner_test_move
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/tuner-move.log") 2>&1
+          setsid --wait bash scripts/check_tuner_test_move.sh --self-test
+          setsid --wait bash scripts/check_tuner_test_move.sh
+      - name: A red tuner-test-move night opens or updates its one LAB ticket (#5803)
+        if: failure() && steps.lab_tuner_test_move.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-tuner-test-move --title "LAB: nightly tuner test-move guard red (#5803)" \
+            --owner aprender-w5018 --log "$RUNNER_TEMP/tuner-move.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: A red census night opens or updates the one LAB ticket (#4709)
         if: failure() && steps.ratchet_census.outcome == 'failure'
         env:
