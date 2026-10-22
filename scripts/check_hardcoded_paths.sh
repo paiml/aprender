@@ -141,6 +141,8 @@ count_files() {
 # fixture_path_selftest_*.rs.txt were moved out of line).
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--self-test" ]; then
+    # Hermetic: the rows build their own repos; the runner's event payload must not name a base for them.
+    unset GITHUB_EVENT_NAME GITHUB_EVENT_PATH
     TD="$(mktemp -d)" || { printf 'FAIL: no temp dir\n' >&2; exit 1; }
     trap 'rm -rf "${TD:?}"' EXIT
     mkdir -p "$TD/contracts"

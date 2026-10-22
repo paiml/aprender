@@ -182,6 +182,13 @@ jobs:
         run: setsid --wait bash scripts/shared_checkout_no_shallow.sh --mutants
       - name: nextest list-wrapper case table (#5298, LAB)
         run: setsid --wait bash scripts/ci/nextest_list_wrapper.sh --self-test
+      - name: affected_set.sh case table and mutants (FLOW-010 E5, LAB)
+        id: lab_affected_set
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/affected-set.log") 2>&1
+          setsid --wait bash scripts/affected_set.sh --self-test
       - name: aprender-core builds for wasm32
         run: setsid --wait bash scripts/check_wasm32_core_builds.sh
       - name: No test may assert about the fd 0 it inherited
@@ -376,6 +383,16 @@ jobs:
           bash scripts/lab_ticket.sh --self-test
           bash scripts/lab_ticket.sh --label lab-nightly-ratchets --title "LAB: nightly shrink-only ratchets red (#5182)" \
             --owner aprender-cd --log "$RUNNER_TEMP/ratchets.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red affected_set night opens or updates its one LAB ticket (FLOW-010 E5)
+        if: failure() && steps.lab_affected_set.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-affected-set --title "LAB: affected_set.sh case table red (FLOW-010 E5)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/affected-set.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: Summary
         if: always()
         run: |
