@@ -1,0 +1,196 @@
+# kfocus shadow parity vs intel -- LAB (C324), dispatch only.
+#
+# Operator ruling 2026-10-21 17:15Z: run the SAME x86-main job as ci.yml on the kfocus
+# host and compare the verdict with intel's. This is a LAB check: it never runs inside
+# a PR, merge-queue or release job, so the only trigger is workflow_dispatch. Do not add
+# pull_request, push, merge_group or schedule here.
+#
+# FULL TIER, never reuse (the 13:35Z parity run was "all tier=reuse, so no tests ran"):
+# the tier is decided inside the guard-cargo/sov sections by ci/sections.yml's
+# "Decide the test tier" step -> scripts/ci_test_tier.sh, which answers tier=full for
+# event workflow_dispatch (scripts/ci_test_tier.sh, the `schedule|workflow_dispatch` arm).
+# Reuse needs a `push` event plus a merge_group result and the mg-reuse job, which this
+# workflow does not have. The "Pin the tier" step below asserts that arm still says full,
+# so a future edit that gives dispatch a quick/reuse tier turns this lane red instead of
+# silently running nothing.
+name: kfocus-shadow-lab
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit to test (full 40-char sha)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kfocus-shadow-${{ inputs.sha }}
+  cancel-in-progress: false
+
+jobs:
+  x86-main-shadow:
+    runs-on: [self-hosted, Linux, X64, kfocus]
+    timeout-minutes: 240
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+    steps:
+      # inputs.sha is attacker-shaped text and this job holds secrets in env, so no step may
+      # check it out (or run anything from it) until it is proven to be a commit already on main.
+      # compare main...sha is "behind" (sha is an ancestor of main) or "identical"; any other
+      # answer, a non-40-hex value, or an API error stops the job before the checkout.
+      - name: Guard inputs.sha (40-hex and an ancestor of main)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHADOW_SHA: ${{ inputs.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$SHADOW_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::inputs.sha is not a full 40-char lowercase sha"; exit 1; }
+          st=$(gh api "repos/${REPO}/compare/main...${SHADOW_SHA}" --jq .status) || { echo "::error::compare main...${SHADOW_SHA} failed; not checking out an unverified sha"; exit 1; }
+          case "$st" in
+            behind|identical) echo "inputs.sha is an ancestor of main (compare status: $st)" ;;
+            *) echo "::error::inputs.sha is not an ancestor of main (compare status: $st)"; exit 1 ;;
+          esac
+      # The fleet pins jq 1.8.2. Runners in this clean-room pool whose image ships jq 1.6
+      # print a number literal such as 90.00 as 90, so the guard-tree section turns RED
+      # (scripts/release/tag_coverage_gate.sh --self-test, run by check_tag_coverage_gated.sh).
+      # This step puts the pinned jq first on PATH for every later step, and through it for
+      # every section fat_driver runs on the host (step_env copies the driver's PATH; a
+      # section with a job container gets the image's PATH, and none of those calls jq).
+      # Fail closed: a checksum, version or behaviour mismatch stops the job. The sha256 is
+      # the one in the upstream release's sha256sum.txt for jq-linux-amd64.
+      - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        env:
+          JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+          JQ_SHA256: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          v=$("$d/jq" --version)
+          [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
+          rc=0; "$d/jq" -e . < /dev/null > /dev/null || rc=$?
+          [ "$rc" = 4 ] || { echo "::error::the pinned jq exits $rc on empty input with -e, not 4"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - name: jq on PATH is the pinned one
+        run: |
+          set -euo pipefail
+          command -v jq; jq --version
+          [ "$(command -v jq)" = "$RUNNER_TEMP/jq-1.8.2/jq" ] || { echo "::error::jq on PATH is $(command -v jq), not the pinned one"; exit 1; }
+          [ "$(jq --version)" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports $(jq --version)"; exit 1; }
+      # Full history: a section whose own checkout asked for depth 1 (the default)
+      # is cut back to exactly that by the driver; one asking for 0 needs it all.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+      # Fail fast: the reds car#4429 took four fat runs to see, in ~2 min, before
+      # any section starts. rustfmt runs in the image sov.lint uses (same digest,
+      # so the same verdict); the ID-order rule is contract_data_integrity's,
+      # without cargo; the case tables are guard-tree's cheapest.
+      - name: Cheap checks (fmt, falsification-ID order, guard case tables)
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/fail_fast.py self-test
+          python3 scripts/ci/fail_fast.py ids --base origin/main
+          docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" -w /w \
+            localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 \
+            cargo fmt --all -- --check
+          bash scripts/tests/guard_tree_test.sh
+          bash scripts/bump-version.sh --self-test
+          setsid --wait bash scripts/check_no_claim_literals.sh --selftest
+          setsid --wait bash scripts/check_hardcoded_paths.sh --self-test
+          setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
+          setsid --wait bash scripts/ci/fixture_quiet.sh --self-test
+          setsid --wait bash scripts/ci/fetch_p6.sh --self-test
+          setsid --wait bash scripts/ci/fetch_p6.sh --check-wiring
+      # The driver decides what every section's if:/matrix/needs means and whether
+      # the vendored workflow is the upstream one; its case table must go RED on
+      # each planted defect before it is trusted to report a section green.
+      # #4596: its fixture rows print real ::error:: lines; fixture_quiet.sh shows
+      # them as labelled text, never as job annotations, and keeps the exit status.
+      - name: fat_driver case table must still turn RED
+        run: setsid --wait bash scripts/ci/fixture_quiet.sh "fat_driver self-test" -- python3 scripts/ci/fat_driver.py self-test
+      # PMAT-4510: every secrets.<NAME> a section reads must be plumbed above as
+      # FAT_SECRET_<NAME> under its full name; #4441 cut one short and the
+      # receipt signer ran with an empty key on every PR. Text-only, no build.
+      - name: FAT_SECRET plumbing guard case table
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
+      - name: every section secret is plumbed under its full name
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
+      # #5403: the toolchain step installs `stable`; guard-cargo#m60 runs cargo without
+      # RUSTUP_TOOLCHAIN, so cargo read rust-toolchain.toml and downloaded the pinned
+      # release at test time (one network blip failed a merge group). Install the pin first.
+      - name: install the toolchain rust-toolchain.toml pins (case table)
+        run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh --self-test
+      - name: install the toolchain rust-toolchain.toml pins
+        run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      # LAB: pin the FULL tier. The dispatch arm of ci_test_tier.sh must say full (never reuse, never quick).
+      - name: Pin the tier to full (dispatch must never reuse or skip)
+        run: |
+          set -euo pipefail
+          out=$(bash scripts/ci_test_tier.sh --event workflow_dispatch)
+          printf "%s\n" "$out"
+          printf "%s\n" "$out" | grep -qx "tier=full" || { echo "::error::workflow_dispatch no longer yields tier=full; this shadow run would test nothing"; exit 1; }
+      - name: Sections (the determinism raster returns first; the rest keep running)
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]'
+          --results "$RUNNER_TEMP/fat/results.json"
+          --background-until 'determinism[X64]'
+      # Published mid-run: the determinism job's compare section is waiting for it.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: determinism-X64
+          path: ${{ runner.temp }}/fat/artifacts/determinism-X64/
+          if-no-files-found: error
+      - name: Sections (wait for every one to finish)
+        id: wait
+        # A cancel must stop this poll (orphan queue runs held runners, 2026-10-16);
+        # the teardown below keeps always() and still reaps the containers.
+        if: ${{ !cancelled() }}
+        run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
+      # #4948: a cancelled run never reaches a section's own container removal,
+      # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
+      # for days. always() runs on cancel too; on the passing path the driver
+      # has already removed every container and this finds none. Cancelled
+      # before the checkout, no driver ran and there is no script to call.
+      - name: Remove this job's section containers (runs on cancel too)
+        if: always()
+        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr-review-shadow-sample
+          path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
+          retention-days: 90
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bench-${{ github.event.repository.name }}
+          path: ${{ runner.temp }}/fat/artifacts/bench-${{ github.event.repository.name }}/
+          retention-days: 90
+          if-no-files-found: ignore
+      # #5397: free this job's own target dir (`<PR>/run-<id>`), never the PR parent.
+      # Last step, so nothing after it reads the dir; always() so a failed or
+      # cancelled run frees it too.
+      - name: Free this job's own cargo target dir
+        if: always()
+        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}" "$GITHUB_RUN_ID"; fi
+      - name: Shadow verdict
+        if: always()
+        env:
+          SHADOW_SHA: ${{ inputs.sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          result=failure; [ "$JOB_STATUS" = success ] && result=success
+          echo "SHADOW-VERDICT sha=${SHADOW_SHA} runner=${RUNNER_NAME} result=${result}"
