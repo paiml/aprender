@@ -5614,3 +5614,78 @@ mod run_worker_tests {
         coordinator.join().expect("coordinator thread");
     }
 }
+
+// #5686: ClassifyTrainer::train, single-process path.
+fn train_5686(epochs: usize, patience: usize, tag: &str) -> (TrainResult, PathBuf) {
+    let dir = std::env::temp_dir().join(format!("aprender_5686_{tag}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let config = TrainingConfig {
+        epochs,
+        val_split: 0.3,
+        early_stopping_patience: patience,
+        checkpoint_dir: dir.clone(),
+        warmup_fraction: 0.0,
+        ..TrainingConfig::default()
+    };
+    let mut trainer =
+        ClassifyTrainer::new(tiny_pipeline(2), make_corpus(20, 2), config).expect("valid");
+    (trainer.train(), dir)
+}
+
+#[test]
+fn train_zero_patience_stops_after_first_epoch_5686() {
+    let (result, dir) = train_5686(4, 0, "patience0");
+    assert!(result.stopped_early, "patience 0 must stop at once");
+    assert_eq!(result.epoch_metrics.len(), 1);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn train_runs_every_epoch_when_patience_is_not_reached_5686() {
+    let (result, dir) = train_5686(2, 100, "full");
+    assert!(!result.stopped_early);
+    assert_eq!(result.epoch_metrics.len(), 2);
+    let want = result
+        .epoch_metrics
+        .iter()
+        .filter(|m| m.val_loss.is_finite())
+        .min_by(|a, b| a.val_loss.total_cmp(&b.val_loss))
+        .expect("a finite epoch");
+    assert_eq!(result.best_epoch, want.epoch, "best_epoch is the lowest val_loss");
+    assert_eq!(result.best_val_loss, want.val_loss);
+    for (i, m) in result.epoch_metrics.iter().enumerate() {
+        assert_eq!(m.epoch, i, "metrics are recorded in epoch order");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn train_saves_best_and_periodic_checkpoints_5686() {
+    // epochs (2) <= save_every (5) => a checkpoint every epoch, plus `best`.
+    let (_result, dir) = train_5686(2, 100, "ckpt");
+    assert!(dir.join("best").join("metadata.json").exists(), "best checkpoint");
+    assert!(dir.join("epoch-0").join("metadata.json").exists(), "epoch-0 checkpoint");
+    assert!(dir.join("epoch-1").join("metadata.json").exists(), "epoch-1 checkpoint");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn train_with_monitor_writer_completes_the_state_file_5686() {
+    let dir = std::env::temp_dir().join(format!("aprender_5686_mon_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let config =
+        TrainingConfig { epochs: 1, checkpoint_dir: dir.join("ckpt"), ..TrainingConfig::default() };
+    let mut trainer =
+        ClassifyTrainer::new(tiny_pipeline(2), make_corpus(20, 2), config).expect("valid");
+    let writer = crate::monitor::tui::TrainingStateWriter::new(&dir, "exp-5686", "tiny");
+    trainer.set_monitor_writer(writer);
+    let result = trainer.train();
+    assert_eq!(result.epoch_metrics.len(), 1);
+    let state: Vec<_> = std::fs::read_dir(&dir)
+        .expect("monitor dir")
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+        .collect();
+    assert!(!state.is_empty(), "the monitor wrote a state file");
+    let _ = std::fs::remove_dir_all(dir);
+}
