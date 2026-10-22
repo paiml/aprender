@@ -26,5 +26,15 @@ fi
 cd "$(dirname "$0")/.."
 t="$(mktemp -d)"; trap 'rm -rf -- "${t:?}"' EXIT
 gh issue view "$EPIC" --json body --jq .body > "$t/epic"
-gh issue list --state open --limit 500 --json number,title --jq '.[]|"\(.number)\t\(.title)"' > "$t/open"
+# Reads go through GraphQL (GH-2), 100 an page, so a repo past 500 open issues is read whole, not cut off.
+repo="${GH_REPO:-${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}}"
+cursor=""; : > "$t/open"
+while :; do
+  gh api graphql -F owner="${repo%%/*}" -F name="${repo##*/}" ${cursor:+-F cursor="$cursor"} -f query='
+    query($owner:String!,$name:String!,$cursor:String){repository(owner:$owner,name:$name){
+      issues(states:OPEN,first:100,after:$cursor){nodes{number title} pageInfo{hasNextPage endCursor}}}}' > "$t/page"
+  jq -r '.data.repository.issues.nodes[]|"\(.number)\t\(.title)"' "$t/page" >> "$t/open"
+  [ "$(jq -r '.data.repository.issues.pageInfo.hasNextPage' "$t/page")" = true ] || break
+  cursor="$(jq -r '.data.repository.issues.pageInfo.endCursor' "$t/page")"
+done
 check "$t/open" "$t/epic"
