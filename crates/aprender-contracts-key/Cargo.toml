@@ -1,0 +1,14 @@
+[package]
+name = "aprender-contracts-key"
+description = "The one CONTRACT_* env-var key builder shared by build.rs scripts and aprender-contracts (no dependencies, so build-depending on it does not mark the contract engine affected)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["verification", "contracts"]
+categories = ["development-tools::build-utils"]
+
+[lints]
+workspace = true
