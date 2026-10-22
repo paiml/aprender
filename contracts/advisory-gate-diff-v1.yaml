@@ -44,7 +44,7 @@ equations:
       - "The scanner of record sees the whole Cargo.lock (all features), proven on the 48.0.6 lock as the positive control"
       - "Exemptions live in one file"
       - "Findings are keyed code|advisory-id|crate@version over every graph, so a new crate under an id main already carries, and a yanked crate with no id, are both PR-introduced"
-      - "Both sides are scanned with the BASE deny.toml; a PR that adds an advisories ignore id fails (ignores-added), so a PR cannot hide its own finding"
+      - "Both sides are scanned with the BASE deny.toml; a PR that adds an advisories ignore id fails (ignores-added), so the one bypass through deny.toml is closed. This is NOT a claim that a PR cannot edit its own judge: the gate scripts, ci/sections.yml and cargo config (a .cargo alias can shadow cargo-deny) run from the PR tree, so a PR that edits them is judged by its own edit. Those paths are gate content and need the arbiter sign-off (non-author quorum); pinning the judge to main is out of this PR"
       - "deny.toml advisories ignores are id-wide: cargo-deny has no per-crate ignore. They stay bounded, not scoped: ignores-added fails any PR that adds one, and check_deny_exemptions_live.sh (now --all-features, same as the gate) fails a dead one. Per-crate scoping needs an upstream cargo-deny feature and is out of this PR"
       - "The base is pinned: merge_group uses merge_group.base_sha, pull_request uses pull_request.base.sha, anything else (or a non-sha) is COULD-NOT-CHECK rc 75, never a pass"
 
