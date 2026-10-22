@@ -401,6 +401,94 @@ impl CbtopApp {
 }
 
 #[cfg(test)]
+mod render_sparklines_tests {
+    use super::*;
+    use presentar_terminal::direct::CellBuffer;
+
+    const W: u16 = 80;
+    const H: u16 = 40;
+
+    fn row_text(buf: &CellBuffer, y: u16) -> String {
+        (0..W)
+            .map(|x| buf.get(x, y).map_or(" ", |c| c.symbol.as_str()))
+            .collect()
+    }
+
+    /// Run `render_sparklines` on a blank buffer; returns (buffer, final current_y).
+    fn run(start_y: f32, height: u16, cpu: &[f64], bricks: &[f64]) -> (CellBuffer, f32) {
+        let mut buf = CellBuffer::new(W, H);
+        let theme = Theme::default();
+        let style = TextStyle::default();
+        let mut y = start_y;
+        {
+            let mut canvas = DirectTerminalCanvas::new(&mut buf);
+            CbtopApp::render_sparklines(
+                &mut canvas,
+                &mut y,
+                height,
+                cpu,
+                bricks,
+                60,
+                62,
+                40,
+                &theme,
+                &style,
+                &style,
+            );
+        }
+        (buf, y)
+    }
+
+    #[test]
+    fn empty_data_draws_nothing_and_keeps_y() {
+        let (buf, y) = run(2.0, H, &[], &[]);
+        assert_eq!(y, 2.0);
+        for row in 0..H {
+            assert!(!row_text(&buf, row).contains('┌'), "row {row} drew a box");
+        }
+    }
+
+    #[test]
+    fn cpu_box_draws_header_and_advances_four() {
+        let (buf, y) = run(2.0, H, &[0.5, 0.9], &[]);
+        assert_eq!(y, 6.0);
+        assert!(row_text(&buf, 2).contains("CPU History (braille)"));
+        assert!(row_text(&buf, 3).contains('│'));
+        assert!(row_text(&buf, 4).contains('└'));
+        assert!(!row_text(&buf, 6).contains("Bricks"));
+    }
+
+    #[test]
+    fn cpu_box_skipped_when_too_close_to_bottom() {
+        // threshold is current_y < height - 8
+        let (_, y) = run(32.0, H, &[0.5], &[]);
+        assert_eq!(y, 32.0);
+        let (buf, y) = run(31.0, H, &[0.5], &[]);
+        assert_eq!(y, 35.0);
+        assert!(row_text(&buf, 31).contains("CPU History"));
+    }
+
+    #[test]
+    fn bricks_box_has_own_threshold_and_no_trailing_advance() {
+        // threshold is current_y < height - 5
+        let (_, y) = run(35.0, H, &[], &[1.0]);
+        assert_eq!(y, 35.0);
+        let (buf, y) = run(34.0, H, &[], &[1.0]);
+        assert_eq!(y, 36.0);
+        assert!(row_text(&buf, 34).contains("Bricks/sec (braille)"));
+        assert!(row_text(&buf, 36).contains('└'));
+    }
+
+    #[test]
+    fn both_boxes_stack_cpu_then_bricks() {
+        let (buf, y) = run(2.0, H, &[0.5], &[2.0]);
+        assert!(row_text(&buf, 2).contains("CPU History"));
+        assert!(row_text(&buf, 6).contains("Bricks/sec"));
+        assert_eq!(y, 8.0);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use presentar_terminal::direct::CellBuffer;

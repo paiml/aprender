@@ -236,3 +236,5 @@ fn f028_sync_scroll_source_asm() {
     app.handle_key(KeyCode::PageUp);
     assert_eq!(app.source_scroll, 0, "Should scroll back to top");
 }
+
+include!("tests_register_panel.rs");
