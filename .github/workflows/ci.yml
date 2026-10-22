@@ -147,8 +147,9 @@ jobs:
   # are NOT read here: they stay un-reused on the queue (20X r2), so x86-main still never waits for this job.
   mg-reuse-wt:
     if: github.event_name == 'merge_group'
-    runs-on: [self-hosted, Linux, X64, clean-room]
-    timeout-minutes: 10
+    # same lane as the shards it gates (mq on a queue entry); the job only runs on merge_group, the clean-room arm just names the pool for the label guard
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
@@ -159,6 +160,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # full history: K3 (merge-base --is-ancestor) walks the PR head back to the base; the mq runner keeps a warm clone
           fetch-depth: 0
       - name: Read the workspace-test reuse key for this queue entry (3 API calls)
         id: key
@@ -510,11 +512,13 @@ jobs:
   # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   # mg-reuse-wt may cite a PR run only if that run really tested the tree. A receipt-reuse run (#5850, tier=reuse)
-  # runs no test step, so its shards are green over zero tests: this marker is skipped there, and ci_mg_reuse.sh
-  # refuses wt=1 unless it succeeded (R:k6-wt-ran). Once #5850's receipt-judge job exists, ci_mg_reuse.sh --self-test
+  # runs no test step, so its shards are green over zero tests. This marker needs the shards and runs only after
+  # they SUCCEEDED, so a run whose shards were skipped or failed never has it; ci_mg_reuse.sh refuses wt=1 unless it
+  # succeeded (R:k6-wt-ran). Once #5850's receipt-judge job exists, ci_mg_reuse.sh --self-test
   # (mgshape) is RED until this job needs it and keys its if on receipt-judge.outputs.ok.
   workspace-test-ran:
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
+    needs: [workspace-test-shard]
+    if: ${{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 5
     steps:

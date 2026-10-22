@@ -298,9 +298,10 @@ resolve_push() {
 }
 
 # ---------------------------------------------------------------- case table
-# The jobs of run 37040341824, #4655's only PR-head run (db86acf021), verbatim
-# from the API (two GPU-host leg job names replaced; the key never reads them):
-# x86-main failed while gate and ci / gate passed.
+# The jobs of run 37040341824, #4655's only PR-head run (db86acf021), from the API: two GPU-host leg job names
+# replaced (the key never reads them), and the workspace-test-shard names rewritten from the run's old names to the
+# live matrix form "workspace-test-shard (N, M)" (MG run 39666213701), so this is NOT verbatim. The verdict shape is
+# the planted one: x86-main failed while gate and ci / gate passed.
 PLANTED_4655_JOBS=$'gpu-touched\tsuccess\nmutants-table-scope\tsuccess\ndeterminism\tsuccess\nworkspace-test-shard (1, 4)\tsuccess\nmac-check\tsuccess\nworkspace-test-shard (3, 4)\tsuccess\nworkspace-test-shard (2, 4)\tsuccess\nx86-main\tfailure\nmutants-table\tskipped\nmutants-shard\tskipped\ngpu-host-leg-a\tsuccess\ngpu-host-leg-b\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
 GREEN_JOBS=$'x86-main\tsuccess\ndeterminism\tsuccess\nmac-check\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
 
@@ -418,6 +419,8 @@ self_test() {
   sh4() { local n; for n in "$@"; do printf 'workspace-test-shard (%s, 4)\tsuccess\n' "$n"; done; }
   ran() { printf 'workspace-test-ran\t%s\n' "$1"; }
   { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-ok"
+  # the same fully-tested jobs on the other head, so a row whose reason is the K1-K5 key reaches wt=0 for that reason alone
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; ran success; } | jobs_json "$H2" 1001 0 > "$F/jobs.wt-ok-h2"
   { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; ran skipped; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-receipt"
   { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-noran"
   sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; sh4 1 2 3 4; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
@@ -444,12 +447,12 @@ self_test() {
   wd partial-shards-runs        0 "$M" "$B" "$H" runs.ok jobs.wt-partial
   wd mixed-shard-totals-runs    0 "$M" "$B" "$H" runs.ok jobs.wt-mixed-m
   wd empty-attempt-no-cite-runs 0 "$M" "$B" "$H" runs.no-attempt jobs.wt-ok
-  wd changed-tree-runs          0 "$M_TREE" "$B" "$H" runs.ok jobs.ok
-  wd changed-main-not-ancestor  0 "$M_K3" "$B2" "$H" runs.ok jobs.ok
-  wd base-is-a-merge-runs       0 "$M_K2" "$BM" "$H2" runs.h2 jobs.h2
+  wd changed-tree-runs          0 "$M_TREE" "$B" "$H" runs.ok jobs.wt-ok
+  wd changed-main-not-ancestor  0 "$M_K3" "$B2" "$H" runs.ok jobs.wt-ok
+  wd base-is-a-merge-runs       0 "$M_K2" "$BM" "$H2" runs.h2 jobs.wt-ok-h2
   wd head-wt-failed-runs        0 "$M" "$B" "$H" runs.ok jobs.fail-wt
   wd head-wt-missing-runs       0 "$M" "$B" "$H" runs.ok jobs.no-wt
-  wd run-in-progress-runs       0 "$M" "$B" "$H" runs.newer-running jobs.ok
+  wd run-in-progress-runs       0 "$M" "$B" "$H" runs.newer-running jobs.wt-ok
   wd head-x86-failed-still-skips 1 "$M" "$B" "$H" runs.ok jobs.wt-x86fail
   wrow push-never-skips         0 --event push --queue-head "$M" --base "$B" --pr-head "$H" --runs "$F/runs.ok" --jobs "$F/jobs.ok"
   # the override passes wt only as exactly 1, with its citation
