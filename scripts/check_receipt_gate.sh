@@ -205,6 +205,7 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   hasl "$code" '[ "$ok" = 1 ] || ok=0' || return 1
   hasl "$code" '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&' || return 1
   hasl "$code" 'ok="$(cd "$RUNNER_TEMP/prtree" && env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin /usr/bin/bash "$RUNNER_TEMP/rok.sh" "$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}")" || ok=0' || return 1
+  hasl "$code" "printf 'ok=%s\\n' \"\$ok\" >> \"\$GITHUB_OUTPUT\"" || return 1
   tier=$(awk '/id: tier$/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$2" | grep -v -E '^[[:space:]]*#')
   case "$tier" in *'"${RECEIPT_OK:-0}" = 1'*) ;; *) return 1 ;; esac
   printf '%s\n' "$tier" | grep -E 'scripts/|git (fetch|clone)' | grep -q . && return 1
@@ -242,6 +243,7 @@ wmut "W20g MUTANT (E1): a comment-only RECEIPT_OK in the shard does not satisfy 
 wmut "W20h MUTANT (E2): the ok=0 guard kept but followed by ; ok=1 is caught" ci '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=0; ok=1'
 wmut "W20i MUTANT (E3): the FETCH_HEAD compare joined with || instead of && is caught" ci '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&' '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] ||'
 wmut "W20j MUTANT (E4): the verifier run from the trusted workspace, not the PR tree, is caught" ci 'ok="$(cd "$RUNNER_TEMP/prtree" &&' 'ok="$(cd "$GITHUB_WORKSPACE" &&'
+wmut "W20k MUTANT (E5): the judge's output line hard-coded to ok=1 is caught" ci "printf 'ok=%s\\n' \"\$ok\" >> \"\$GITHUB_OUTPUT\"" 'printf "ok=1\n" >> "$GITHUB_OUTPUT"'
 wmut "W20b MUTANT: a tier step that runs PR-tree code is caught" sec 'rok=0
           if [ "${GITHUB_EVENT_NAME}" = pull_request ]' 'rok=0
           bash scripts/ci/pre.sh
