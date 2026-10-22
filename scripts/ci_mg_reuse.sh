@@ -594,7 +594,7 @@ STUB
   if grep -qF 'outputs.mac' <<<"$(job mg-reuse)"; then
     fail=$((fail + 1)); echo "FAIL wiring: mg-reuse still exports mac, which no ci.yml job reads"; else pass=$((pass + 1)); fi
   wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}"
-  wire x86-main-advisories 'cargo deny check advisories'
+  wire x86-main-advisories 'advisory_gate.sh"'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'
   wire ci-gate 'MG-REUSE-VERDICT-BEGIN'
   wire ci-gate 'needs: [x86-main, mg-reuse, x86-main-advisories]'
