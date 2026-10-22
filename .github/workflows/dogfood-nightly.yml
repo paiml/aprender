@@ -24,11 +24,11 @@ name: dogfood-nightly
 
 on:
   schedule:
-    # 23:05 UTC: five minutes after nightly.yml's 23:00, so both land in the same late dispatch.
+    # 20:05 UTC: five minutes after nightly.yml's 20:00 (night 75 + dogfood 420 ends 04:20Z), so both land in the same late dispatch.
     # The train judges the head of THAT night's scheduled nightly.yml run (C); the `night` job
     # below resolves C and the dogfood job checks it out, so a merge after 21:00 no longer
     # leaves the lane measuring some other commit (#5079).
-    - cron: '5 23 * * *'
+    - cron: '5 20 * * *'
   workflow_dispatch:
     inputs:
       plant:
