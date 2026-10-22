@@ -515,7 +515,7 @@ STUB
   if grep -qF 'outputs.mac' <<<"$(job mg-reuse)"; then
     fail=$((fail + 1)); echo "FAIL wiring: mg-reuse still exports mac, which no ci.yml job reads"; else pass=$((pass + 1)); fi
   wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}"
-  wire x86-main-advisories 'cargo deny check advisories'
+  wire x86-main-advisories 'advisory_gate.sh"'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'
   wire ci-gate 'MG-REUSE-VERDICT-BEGIN'
   wire ci-gate 'needs: [x86-main, mg-reuse, x86-main-advisories]'
@@ -528,13 +528,11 @@ STUB
   # Each row is compared as the EXACT line (trailing comment stripped), so a third state cannot slip in.
   poolrows() { # poolrows WF -> one line per violated pool row
     local j l want
-    local plain="runs-on: [self-hosted, Linux, clean-room]" # arch-neutral job: cargo-deny, no X64 pin
+    local plain="runs-on: [self-hosted, Linux, X64, clean-room]"
     local lane="runs-on: \${{ github.event_name == 'merge_group' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"mq\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
-    # #5882: the full tier is pinned X64 (one universe for the Σ), every other tier stays arch-neutral
-    local nlane="runs-on: \${{ needs.workspace-test-arch.outputs.tier == 'full' && (github.event_name == 'merge_group' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"mq\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]')) || (github.event_name == 'merge_group' && fromJSON('[\"self-hosted\",\"Linux\",\"mq\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"clean-room\"]')) }}"
-    for j in x86-main x86-main-advisories workspace-test-arch workspace-test-shard; do
+    for j in x86-main x86-main-advisories workspace-test-shard; do
       l=$(awk -v j="  $j:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null | grep -m1 '^    runs-on:' | sed -E 's/^ +//; s/ +#.*$//')
-      want=$plain; case $j in x86-main) want=$lane ;; workspace-test-shard) want=$nlane ;; esac
+      want=$plain; case $j in x86-main | workspace-test-shard) want=$lane ;; esac
       if [ "$l" != "$want" ]; then
         echo "$j does not land on the clean-room pool (mq on merge_group for x86-main/workspace-test-shard) (runs-on: $l)"; fi
     done
@@ -554,11 +552,8 @@ STUB
   poolmut pool-advisories-event-conditional "does not land on the clean-room pool" '/^  x86-main-advisories:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: ${{ github.event_name == '"'"'merge_group'"'"' \&\& fromJSON('"'"'["clean-room"]'"'"') || fromJSON('"'"'["clean-room"]'"'"') }}/}'
   poolmut mq-lane-lost-on-x86-main "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"mq"/"clean-room"/}'
   poolmut mq-lane-dropped-on-shard "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: [self-hosted, Linux, X64, clean-room]/}'
-  poolmut pr-path-takes-mq "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/\|\| fromJSON\(.\["self-hosted","Linux","clean-room"\].\)/|| fromJSON('"'"'["self-hosted","Linux","mq"]'"'"')/}'
+  poolmut pr-path-takes-mq "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/\|\| fromJSON\(.\["self-hosted","Linux","X64","clean-room"\].\)/|| fromJSON('"'"'["self-hosted","Linux","X64","mq"]'"'"')/}'
   poolmut mq-lane-third-label "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"X64","mq"/"X64","mq","pr-only"/}'
-  poolmut full-tier-loses-x64-pin "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/"Linux","X64",/"Linux",/g}'
-  poolmut every-tier-pinned-x64 "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: ${{ github.event_name == '"'"'merge_group'"'"' \&\& fromJSON('"'"'["self-hosted","Linux","X64","mq"]'"'"') || fromJSON('"'"'["self-hosted","Linux","X64","clean-room"]'"'"') }}/}'
-  poolmut tier-job-off-the-pool "does not land on the clean-room pool" '/^  workspace-test-arch:$/,/^    steps:/{s/clean-room/build/}'
 
   # S1 (20X): mg-reuse runs on push only, so on merge_group it is SKIPPED and every dependent
   # runs only because its own `if:` carries !cancelled()/always() (a skipped need otherwise skips

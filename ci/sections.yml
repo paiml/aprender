@@ -18,12 +18,14 @@
 # The old `ci:` job, verbatim: `uses:` is the pin ci/vendor/sovereign-ci.yml was
 # copied from (scripts/check_ci_reusable_workflow_pinned.sh checks both agree).
 sovereign-ci:
-  uses: paiml/.github/.github/workflows/sovereign-ci.yml@f713290c86fcd70d6f26a0faab14e67e6713586f
+  uses: paiml/.github/.github/workflows/sovereign-ci.yml@dbd0488efe2463161b34b2f75002baee5e308d2a
   with:
     repo: ${{ github.event.repository.name }}
     enable_sccache: true
     use_nextest: true
     coverage_on: 'tag'
+    # PMAT-5792: the guard-cargo diff gate is the scanner of record (check_sov_advisories_off.sh)
+    advisories_diff_only: true
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
 # runs as TWELVE shards (ONE count: the `shards:` pins below; ci.yml's matrix lists must match, check_shard_count_single_source.sh), each its own ci.yml job on its own runner: as one shard
@@ -378,7 +380,66 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          bash scripts/ci/decide_tier.sh
+          set -euo pipefail
+          args=(--event "${GITHUB_EVENT_NAME}")
+          # PMAT-1098 67-E2: the queue and a push to main re-derive their own
+          # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the
+          # new base). actions/checkout is shallow, so that parent is not in the
+          # object store until we deepen -- and without it ci_test_tier.sh falls
+          # closed to `full` every single time, which would make the whole
+          # optimisation inert while looking like it worked. Best effort by
+          # design: if the deepen fails the decision still falls closed, and the
+          # warning below says so instead of the run silently paying the hour.
+          case "${GITHUB_EVENT_NAME}" in
+            merge_group)
+              # Operator 2026-10-17: the queue runs the quick tier over the entry's diff (base_sha = prior entry's head),
+              # MG_BASE_SHA..HEAD. Fetch the base; if that fails the tier falls closed to full.
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${GITHUB_SHA}" "${MG_BASE_SHA}" 2>/dev/null \
+                || bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${MG_BASE_SHA}" 2>/dev/null \
+                || true
+              git cat-file -e "${MG_BASE_SHA}^{commit}" 2>/dev/null \
+                || printf '::warning::merge_group base sha unavailable -- the tier falls closed to full\n'
+              ;;
+            push)
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
+                || bash scripts/ci/fetch_p6.sh --no-tags --deepen=1 origin 2>/dev/null \
+                || true
+              if git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
+                printf 'first parent available: %s\n' "$(git rev-parse HEAD^1)"
+              else
+                printf '::warning::first parent unavailable after deepen -- the tier falls closed to full\n'
+              fi
+              ;;
+          esac
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request)
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+              # #5391: the PR's change is the diff from merge-base(base, HEAD), not the
+              # base tip -- main's later commits are not the PR's. --no-renames (#3664)
+              # lives in the helper.
+              bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
+              args+=(--diff-from "$RUNNER_TEMP/touched.txt")
+              ;;
+            merge_group)
+              # Operator 2026-10-17 (cop window), verbatim: "only gating on tags/release".
+              # ci_test_tier.sh diffs MG_BASE_SHA..HEAD (env above) and selects like a PR.
+              ;;
+            push)
+              # T36: the merge queue already tested this very sha. Hand its
+              # workspace-test result to the tier script, which reuses it only
+              # on a success for HEAD itself. A failed lookup is the push's own
+              # tier, as before -- never a reuse, never a red step.
+              mg=$(bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}") || mg=""
+              if [ -n "$mg" ]; then
+                mapfile -t mgargs <<<"$mg"
+                args+=("${mgargs[@]}")
+              else
+                printf 'no merge_group workspace-test result for %s: the tier is decided from the push diff\n' "${GITHUB_SHA}"
+              fi
+              ;;
+          esac
+          bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
+          grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
       # #4502 row 2: lint_passes_on_real_contracts (aprender-contracts) requires the
       # refinement gate to RUN whenever CI is set, and that gate compares HEAD with
       # merge-base(HEAD, origin/main), else the origin/main tip. This section clones at
@@ -715,7 +776,6 @@ jobs:
           sig="$RUNNER_TEMP/sigma"
           mkdir -p sigma-shard
           printf '%s\n' "$TIER" > sigma-shard/tier
-          uname -m > sigma-shard/arch
           if [ "$TIER" = full ]; then
             cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
             cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
@@ -1843,6 +1903,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: bash scripts/ci_guards.sh guard-cargo
 
   guard-cargo-steps:
@@ -1976,7 +2037,7 @@ jobs:
       # `ci / security` from the reusable workflow runs `cargo audit`, which does
       # NOT read deny.toml -- so this covers licences, bans and sources, which
       # nothing else does.
-      - name: cargo-deny (licences, bans, sources, advisories)
+      - name: cargo-deny (licences, bans, sources)
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -1996,7 +2057,7 @@ jobs:
             -e GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
             -e "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $B64" \
             "$IMAGE" \
-            cargo deny check
+            cargo deny check licenses bans sources
       # check_apr_bin_pinned asserts CALLERS pin the binary; it says nothing
       # about which binary the resolver hands them. apr_bin.sh returned
       # target/release/apr whenever it existed, so a stale release build beside
@@ -2633,7 +2694,33 @@ jobs:
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          cargo deny check advisories
+          # MG_BASE_SHA comes from the process env of the outer guard-cargo step (the manifest runner resolves no merge_group context).
+          # The gate SCRIPTS run from the BASE ref copy (PMAT-5792); the workflow yaml and cargo config still come from the PR tree, so this is gate-content-reviewed, not self-judging-proof.
+          # Bootstrap only: the merge that introduces the scripts has no base copy, so it uses its own.
+          S="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-scripts-$$"
+          # merge_group: the base copy is taken only from the ref the merge queue named; a ref the PR tree re-pointed is refused, never used.
+          if [ -n "${MG_BASE_SHA:-}" ] && [ "$(git rev-parse -q --verify "refs/remotes/origin/main^{commit}" || true)" != "$MG_BASE_SHA" ]; then
+            echo "COULD-NOT-CHECK: refs/remotes/origin/main is not merge_group.base_sha $MG_BASE_SHA; the base gate is not taken from it" >&2
+            exit 75
+          fi
+          if git cat-file -e refs/remotes/origin/main:scripts/ci/advisory_gate.sh 2>/dev/null; then
+            mkdir -p "$S"
+            git archive refs/remotes/origin/main scripts/ci | tar -x -C "$S"
+            G="$S/scripts/ci"
+          else
+            G=scripts/ci
+          fi
+          # One command per line under -e: the first non-zero exit ends the step with that status (no && chain, no saved rc).
+          trap 'rm -rf -- "${S:?}"' EXIT
+          set -e
+          # The base gate runs FIRST: a PR-tree self-test below can write into $S, so none may run before it.
+          bash "$G/advisory_gate.sh"
+          bash "$G/advisory_diff.sh" --self-test
+          bash scripts/ci/check_sov_advisories_off.sh --self-test
+          bash scripts/ci/check_sov_advisories_off.sh
+          bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh"
+          bash scripts/ci/advisory_step_selftest.sh
+          bash scripts/ci/advisory_positive_control.sh
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.

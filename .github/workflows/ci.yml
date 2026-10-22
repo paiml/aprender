@@ -102,7 +102,7 @@ jobs:
     # its own. It runs on push only; on merge_group it is skipped at t=0, which the verdict blocks
     # below read as `skipped:::skipped` = "x86-main + determinism ran".
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     permissions:
       contents: read
@@ -316,12 +316,19 @@ jobs:
   x86-main-advisories:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Pin origin/main to this run's build base (PMAT-5792)
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: bash scripts/ci/pin_build_base.sh
       - name: Install cargo-deny (if absent)
         env:
           CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-deny
@@ -335,11 +342,37 @@ jobs:
       - name: Advisories must pass, with deny.toml exemptions honoured
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          cargo deny check advisories
+          # The gate SCRIPTS run from the BASE ref copy (PMAT-5792); the workflow yaml and cargo config still come from the PR tree, so this is gate-content-reviewed, not self-judging-proof.
+          # Bootstrap only: the merge that introduces the scripts has no base copy, so it uses its own.
+          S="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-scripts-$$"
+          # merge_group: the base copy is taken only from the ref the merge queue named; a ref the PR tree re-pointed is refused, never used.
+          if [ -n "${MG_BASE_SHA:-}" ] && [ "$(git rev-parse -q --verify "refs/remotes/origin/main^{commit}" || true)" != "$MG_BASE_SHA" ]; then
+            echo "COULD-NOT-CHECK: refs/remotes/origin/main is not merge_group.base_sha $MG_BASE_SHA; the base gate is not taken from it" >&2
+            exit 75
+          fi
+          if git cat-file -e refs/remotes/origin/main:scripts/ci/advisory_gate.sh 2>/dev/null; then
+            mkdir -p "$S"
+            git archive refs/remotes/origin/main scripts/ci | tar -x -C "$S"
+            G="$S/scripts/ci"
+          else
+            G=scripts/ci
+          fi
+          # One command per line under -e: the first non-zero exit ends the step with that status (no && chain, no saved rc).
+          trap 'rm -rf -- "${S:?}"' EXIT
+          set -e
+          # The base gate runs FIRST: a PR-tree self-test below can write into $S, so none may run before it.
+          bash "$G/advisory_gate.sh"
+          bash "$G/advisory_diff.sh" --self-test
+          bash scripts/ci/check_sov_advisories_off.sh --self-test
+          bash scripts/ci/check_sov_advisories_off.sh
+          bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh"
+          bash scripts/ci/advisory_step_selftest.sh
+          bash scripts/ci/advisory_positive_control.sh
       - name: Every deny.toml exemption must still be live
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -439,35 +472,12 @@ jobs:
   # failure, never a pass.
   # ==========================================================================
   # The workspace tests, one shard per job (nextest hash partition N/12 plus the
-  # explicit runner's round-robin N/12), in parallel on the clean-room pool (arch-neutral, PMAT-3138).
+  # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
-  # #5882: which tier this run owes decides WHERE the shards may run. The full tier's Σ-executed fan-in
-  # compares every shard with ONE universe list, and arch-gated tests (target_arch cfgs) differ per
-  # arch, so a full tier needs one architecture: X64. The quick/PR tier owes no Σ and stays
-  # arch-neutral. The tier is only knowable from the diff, so it is decided HERE, by the same script
-  # the shards run (scripts/ci/decide_tier.sh), and workspace-test-shard reads it in its runs-on.
-  # scripts/ci/sigma_arch_uniform.sh in the fan-in is the backstop: a mixed full tier is RED.
-  workspace-test-arch:
-    runs-on: [self-hosted, Linux, clean-room]
-    timeout-minutes: 15
-    outputs:
-      tier: ${{ steps.tier.outputs.tier }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Decide the test tier (the shards' own step, one script)
-        id: tier
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-        run: bash scripts/ci/decide_tier.sh
   workspace-test-shard:
-    needs: [workspace-test-arch]
     if: ${{ github.event.pull_request.draft != true }}
-    # arch-neutral (operator 2026-10-21 14:18Z) EXCEPT the full tier, which needs one arch for the Σ (#5882, workspace-test-arch)
-    # clean-room for pull_request/push, mq for a merge_group entry
-    runs-on: ${{ needs.workspace-test-arch.outputs.tier == 'full' && (github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]')) || (github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","mq"]') || fromJSON('["self-hosted","Linux","clean-room"]')) }}
+    # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -546,7 +556,6 @@ jobs:
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
-          bash scripts/ci/sigma_arch_uniform.sh --self-test
           # ONE shard count: the pins in ci/sections.yml (check_shard_count_single_source.sh)
           SHARDS="$(awk -v ev="$GITHUB_EVENT_NAME" '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{k="pr";next} p&&/^  workspace-test-shard-merge_group:/{k="mg";next} p&&/^  [a-z]/{k=""} k&&/^    - \{shard:/{c[k]++} END{print (ev=="merge_group"&&c["mg"]?c["mg"]:c["pr"])+0}' ci/sections.yml)"
           [ "${SHARDS:-0}" -ge 1 ] 2>/dev/null || { echo "::error::Σ: no workspace-test-shard pins"; exit 1; }
@@ -563,8 +572,6 @@ jobs:
           [ "$#" -eq "$SHARDS" ] || { echo "::error::Σ: $# tier files for $SHARDS shards:$tiers"; exit 1; }
           for t in "$@"; do [ "$t" = "$1" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }; done
           [ "$1" = full ] || { echo "every shard ran tier '$1': the lib/explicit Σ is not owed"; exit 0; }
-          # #5882: a full tier on two architectures is RED (arch-gated tests, one universe): placement is workspace-test-arch's, this is the backstop
-          bash scripts/ci/sigma_arch_uniform.sh "$d" "$SHARDS"
           j=() l=()
           for n in $(seq 1 "$SHARDS"); do
             j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
