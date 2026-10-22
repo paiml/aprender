@@ -475,8 +475,62 @@ jobs:
   # The workspace tests, one shard per job (nextest hash partition N/12 plus the
   # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  # #5798: the receipt judge. A PR cannot forge a receipt: this job checks out the BASE only
+  # and fetches the PR merge commit as data (a --no-checkout worktree that is read, never
+  # executed), on a dedicated self-hosted ephemeral runner (label receipt-judge) that no PR-code job ever shares, and runs the
+  # verifier under `env -i` with absolute tools. What it does NOT cover: a PR that edits the CI
+  # files or the judge itself. merge_group ignores --receipt-ok but runs only the QUICK tier
+  # (full only on tag/release, scripts/ci_test_tier.sh merge_group case), from the PR's own
+  # CI files, so it does not re-judge such an edit with a trusted copy; CI-edit review is the
+  # only backstop. scripts/check_receipt_gate.sh (W16-W32) turns RED if
+  # this job gains a step that runs PR-tree code or checks the PR out as code.
+  # Fail closed: the job runs only once the repo variable RECEIPT_JUDGE_RUNNER_READY is 'true' (set
+  # after the label has a runner). Until then it is skipped, the shard gets ok=0 and the PR runs the
+  # tier its diff selects, so a judge with no runner never queues and never blocks a PR.
+  # It always exits 0; the shard job reads `ok` as 1 only on a literal 1.
+  receipt-judge:
+    if: github.event_name == 'pull_request' && vars.RECEIPT_JUDGE_RUNNER_READY == 'true'
+    runs-on: [self-hosted, Linux, X64, receipt-judge]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      ok: ${{ steps.judge.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.base_ref }}
+          persist-credentials: false
+      - name: Judge the receipt in the PR body
+        id: judge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          export GIT_NO_REPLACE_OBJECTS=1
+          ok=0
+          printf '%s' "${PR_BODY:-}" > "$RUNNER_TEMP/pr-body.md"
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
+          if git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/merge" &&
+             [ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&
+             unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GH_TOKEN &&
+             git -c core.hooksPath=/dev/null worktree add -q --no-checkout --detach "$RUNNER_TEMP/prtree" FETCH_HEAD &&
+             git show HEAD:scripts/ci/receipt_ok_arg.sh > "$RUNNER_TEMP/rok.sh"; then
+            # --no-checkout: the PR tree has no files, so no PR executable can sit in the verifier's
+            # cwd, and no filter or hook runs. The wrapper is read from the base object database.
+            ok="$(cd "$RUNNER_TEMP/prtree" && env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin /usr/bin/bash "$RUNNER_TEMP/rok.sh" "$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}")" || ok=0
+          fi
+          [ "$ok" = 1 ] || ok=0
+          printf 'ok=%s\n' "$ok" >> "$GITHUB_OUTPUT"
+
   workspace-test-shard:
-    if: ${{ github.event.pull_request.draft != true }}
+    needs: [receipt-judge]
+    # draft PRs skip; the judge is skipped off a pull_request and fails closed: !cancelled() runs the shard
+    # whatever the judge did, and RECEIPT_OK is 1 only on the judge's literal 1.
+    if: ${{ !cancelled() && github.event.pull_request.draft != true }}
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
@@ -488,6 +542,7 @@ jobs:
     outputs:
       results: ${{ steps.run.outputs.results }}
     env:
+      RECEIPT_OK: ${{ needs.receipt-judge.outputs.ok || '0' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
     steps:

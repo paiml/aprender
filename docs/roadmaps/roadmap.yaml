@@ -25359,6 +25359,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3863
+- id: PMAT-5797
+  github_issue: 5797
+  item_type: task
+  title: 'PR gate: signed batch receipt verify (sig, tree, toolchain) as tier=reuse extension'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-20T14:55:28Z
+  updated: 2026-10-20T14:55:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-5817
   github_issue: 5817
   item_type: task
@@ -25445,6 +25463,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   assigned_to: null
   created: 2026-10-21T17:43:16Z
   updated: 2026-10-21T17:43:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5917
+  github_issue: 5917
+  item_type: task
+  title: 'GH-5917: gc.auto=0 in fat_driver section clones'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T07:46:41Z
+  updated: 2026-10-22T07:46:41Z
   spec: null
   acceptance_criteria: []
   phases: []

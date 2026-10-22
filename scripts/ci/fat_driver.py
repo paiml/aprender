@@ -562,6 +562,24 @@ def make_section_dirs(d: Path, log, rmtree=shutil.rmtree):
     (d / "ws").mkdir()
 
 
+def _fc_put(out: dict, k: str, v: str, path: Path) -> None:
+    # #5850: a repeated key would let a helper's line shadow the real tier= line; fail closed
+    if k in out:
+        raise SystemExit(f"fat_driver: duplicate key {k} in {path}")
+    out[k] = v
+
+
+def _fc_heredoc(lines, i: int, key: str, delim: str, path: Path):
+    buf = []
+    while i < len(lines) and lines[i] != delim:
+        buf.append(lines[i])
+        i += 1
+    if i >= len(lines):
+        # an unterminated heredoc would swallow every later line (the real tier= lines); fail closed
+        raise SystemExit(f"fat_driver: unterminated heredoc {key}<<{delim} in {path}")
+    return "\n".join(buf), i
+
+
 def parse_file_command(path: Path) -> dict:
     out = {}
     if not path.exists():
@@ -572,16 +590,11 @@ def parse_file_command(path: Path) -> dict:
         line = lines[i]
         m = re.match(r"^([^=<]+)<<(.+)$", line)
         if m:
-            key, delim = m.group(1), m.group(2)
-            buf = []
-            i += 1
-            while i < len(lines) and lines[i] != delim:
-                buf.append(lines[i])
-                i += 1
-            out[key] = "\n".join(buf)
+            text, i = _fc_heredoc(lines, i + 1, m.group(1), m.group(2), path)
+            _fc_put(out, m.group(1), text, path)
         elif "=" in line:
             k, v = line.split("=", 1)
-            out[k] = v
+            _fc_put(out, k, v, path)
         i += 1
     return out
 
@@ -744,6 +757,12 @@ class Section:
         subprocess.run(["git", "clone", "-q", "--local", "--no-checkout", str(src),
                         str(self.workspace)], check=True)
         g = ["git", "-C", str(self.workspace)]
+        # A throwaway checkout has nothing to gc. The hardlinked clone inherits the source's pack
+        # count (299 packs, 26k loose objects on intel), which trips `git gc --auto` on the first
+        # fetch/commit and burns ~95% of a core beside the test shards (#5917). The source repo is
+        # packed nightly instead.
+        subprocess.run(g + ["config", "gc.auto", "0"], check=True)
+        subprocess.run(g + ["config", "gc.autoDetach", "false"], check=True)
         subprocess.run(g + ["remote", "set-url", "origin", self.ctx.origin_url], check=True)
         hdr = subprocess.run(["git", "-C", str(src), "config", "--get-regexp",
                               r"^http\..*\.extraheader$"], capture_output=True, text=True)
@@ -893,6 +912,8 @@ class Section:
     def _apply_file_commands(self, files) -> dict:
         outputs = parse_file_command(files["GITHUB_OUTPUT"])
         for k, v in parse_file_command(files["GITHUB_ENV"]).items():
+            if k.upper() == "RECEIPT_OK":
+                continue  # the receipt verdict comes only from the judge job (#5850); a step cannot write it
             self.env[k] = v
         for line in files["GITHUB_PATH"].read_text().splitlines():
             if line.strip():
