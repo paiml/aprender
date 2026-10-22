@@ -10,7 +10,7 @@ name: Edge fast-verbs LAB nightly
 
 on:
   schedule:
-    - cron: '30 2 * * *'
+    - cron: '30 0 * * *'
   workflow_dispatch:
     inputs:
       model:
