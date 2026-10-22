@@ -2,8 +2,8 @@
 
 use aprender_ci_tools::{
     coverage_report_scope, dag_status, git_patch_id, ladder_cells_produce, llama_fit_verdict,
-    nextest_fail_fast, package_include_diff, publishable_crates, tarball_build_errors,
-    tarball_shrink_report, tarball_workspace,
+    nextest_fail_fast, package_include_diff, publishable_crates, section_first_fail,
+    tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -113,6 +113,17 @@ enum Cmd {
         /// The nextest config, e.g. .config/nextest.toml.
         toml: PathBuf,
     },
+    /// `::error::section <stem> first failing line: <line>` for every section log that has
+    /// one (PMAT-5740): the first `::error` line, else the first panic or `error:` line.
+    /// Always exits 0; a log with no failing line prints nothing.
+    SectionFirstFail {
+        /// The driver's results.json: read only its failed, blocking sections' logs, which sit
+        /// beside it. Exit 1 when it cannot be read.
+        #[arg(long)]
+        results: Option<PathBuf>,
+        /// Section logs, e.g. "$RUNNER_TEMP"/fat/*.log.
+        logs: Vec<PathBuf>,
+    },
 }
 
 fn cargo_metadata() -> Result<String, String> {
@@ -221,6 +232,13 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
         Cmd::LlamaFitVerdict { args } => llama_fit_verdict::run(&args).map_err(nothing_printed),
         Cmd::LadderCellsProduce { cmd } => {
             ladder_cells_produce::run(&cmd).map_err(|(code, reason)| (String::new(), code, reason))
+        }
+        Cmd::SectionFirstFail { results, logs } => {
+            let mut out = section_first_fail::report(&logs);
+            if let Some(r) = results {
+                out.push_str(&section_first_fail::report_results(&r).map_err(nothing_printed)?);
+            }
+            Ok(out)
         }
         Cmd::NextestFailFast { reader, toml } => {
             // clap's value_parser admits only the two names parse() knows.
