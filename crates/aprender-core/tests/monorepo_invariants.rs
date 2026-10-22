@@ -1143,7 +1143,7 @@ mod archive_wiring {
         r#"rustc_h="$(bash scripts/ci/archive_bind_check.sh --hash-toolchain "$rustc_vv")""#;
     const BIND_CALL: &str = r#"bash scripts/ci/archive_bind_check.sh --toolchain "$rustc_vv" "$arc/bind.json" sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS""#;
 
-    const SMOKE_CALL: &str = r#"docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace -e BINS="$(tr '\n' ' ' < "$out/bins.txt")" "$IMAGE" bash -c 'set -euo pipefail"#;
+    const SMOKE_CALL: &str = r#"docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace "$IMAGE" bash -c 'set -euo pipefail"#;
     const SMOKE_END: &str = r#"echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'"#;
     const QUICK_IF: &str = "steps.tier.outputs.tier == 'quick'";
 
@@ -1190,7 +1190,7 @@ mod archive_wiring {
         step["uses"]
             .as_str()
             .is_some_and(|u| u.starts_with("actions/upload-artifact"))
-            && step["with"]["name"].as_str() == Some("ws-archive")
+            && step["with"]["name"].as_str() == Some("ws-archive-${{ runner.arch }}")
     }
 
     /// Steps of `job` having a non-comment `run:` line that contains `needle`.
@@ -1313,7 +1313,7 @@ mod archive_wiring {
     }
 
     fn smoke_counts_from_zero(l: &str) -> bool {
-        l.starts_with("n=0; for b in $BINS; do test -x \"$b\" || { echo ")
+        l.starts_with("n=0; for b in $exp; do test -x \"$b\" || { echo ")
             && l.ends_with("; exit 1; }; n=$((n+1)); done")
     }
 
@@ -1466,7 +1466,7 @@ fn test_archive_wiring_mutants_all_die() {
 
     let bind = r#"sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS""#;
     let bind_anchor = "archive_bind_check.sh --toolchain";
-    let up = "name: ws-archive\n";
+    let up = "name: ws-archive-${{ runner.arch }}\n";
     let sections_mutants: Vec<(&str, String)> =
         vec![
         (
@@ -1691,7 +1691,7 @@ fn test_archive_wiring_mutants_all_die() {
             "upload overwrite false",
             mutate(
                 &sec,
-                "name: ws-archive\n          path: ws-archive-out/",
+                "name: ws-archive-${{ runner.arch }}\n          path: ws-archive-out/",
                 "overwrite: true",
                 "overwrite: false",
             ),
@@ -1702,7 +1702,7 @@ fn test_archive_wiring_mutants_all_die() {
             "upload overwrite removed",
             mutate(
                 &sec,
-                "name: ws-archive\n          path: ws-archive-out/",
+                "name: ws-archive-${{ runner.arch }}\n          path: ws-archive-out/",
                 "overwrite: true",
                 "retention-days: 1",
             ),
@@ -1783,4 +1783,24 @@ fn decoy(sec: &str, nested: bool) -> String {
             .collect();
         format!("{renamed}\n{decoy}")
     }
+}
+
+/// #5854 arch binding: the shard downloads the archive built on its OWN arch. A fixed-name download
+/// would hand an X64 archive to an ARM64 shard (red on bind), and a matrix-less archive job would
+/// leave the ARM64 name unproduced.
+#[test]
+fn archive_is_keyed_by_runner_arch() {
+    let root = workspace_root();
+    let sec = std::fs::read_to_string(root.join("ci/sections.yml")).expect("ci/sections.yml");
+    let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("ci.yml");
+    let key = "name: ws-archive-${{ runner.arch }}\n          path: ws-archive\n";
+    assert!(sec.contains(key), "shard download must be arch-keyed");
+    assert!(
+        !sec.contains("name: ws-archive\n"),
+        "an un-keyed ws-archive name survives in ci/sections.yml"
+    );
+    assert!(
+        ci.contains("arch: ${{ fromJSON(github.event_name == 'merge_group' && '[\"X64\"]' || '[\"X64\",\"ARM64\"]') }}"),
+        "workspace-test-archive must matrix on arch (merge_group X64 only)"
+    );
 }

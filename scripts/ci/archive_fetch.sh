@@ -87,7 +87,7 @@ wiring() { # CI_YML SECTIONS_YML
     # fat_driver stages section uploads under fat/artifacts/<name>/; only a real ci.yml upload step reaches other jobs
     if ! /usr/bin/grep -q 'fat/artifacts/ws-archive-ptr/' "$ci"; then echo "FAIL  ci.yml never uploads fat/artifacts/ws-archive-ptr/"; bad=1; fi
     # without merge-multiple the pointer lands at ws-archive-ptr/ws-archive-ptr/ptr.json and every fetch is a no-pointer miss
-    if ! awk '/name: ws-archive-ptr$/{f=1} f&&/merge-multiple: true/{ok=1} END{exit !ok}' "$sec"; then echo "FAIL  the shard's ws-archive-ptr download lacks merge-multiple: true"; bad=1; fi
+    if ! awk '/name: ws-archive-ptr/{f=1} f&&/merge-multiple: true/{ok=1} END{exit !ok}' "$sec"; then echo "FAIL  the shard's ws-archive-ptr download lacks merge-multiple: true"; bad=1; fi
     return "$bad"
 }
 

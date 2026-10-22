@@ -3,7 +3,7 @@
 #
 # THE RULE (operator, via arbiter-cop, 2026-10-21 ~13:52Z: "yes to all three", item 3). On a draft pull_request:
 #   1. `on.pull_request.types` is [opened, synchronize, reopened, ready_for_review], so marking a PR ready fires the full run.
-#   2. the heavy jobs x86-main and workspace-test-shard carry `github.event.pull_request.draft != true` in their `if:`.
+#   2. the heavy jobs x86-main, workspace-test-archive and workspace-test-shard carry `github.event.pull_request.draft != true` in their `if:`.
 #   3. the three verdict jobs (workspace-test, ci-gate, gate) read `DRAFT: ${{ github.event.pull_request.draft }}` and
 #      exit 0 on `true`, so `workspace-test`, `ci / gate` and `gate` still REPORT (a draft cannot be queued or merged).
 #   4. workspace-test's checkout / download-artifact / sigma steps are skipped on a draft (they would fail with no shards).
@@ -27,7 +27,7 @@ check() { # FILE -> prints one FAIL line per violated condition; rc 1 when any
         | /usr/bin/grep -q 'opened.*synchronize.*reopened.*ready_for_review'; then
         echo "FAIL  on.pull_request.types lacks opened, synchronize, reopened, ready_for_review"; bad=1
     fi
-    for j in x86-main workspace-test-shard; do
+    for j in x86-main workspace-test-archive workspace-test-shard; do
         blk="$(job_block "$f" "$j")"
         if [ -z "$blk" ]; then echo "FAIL  job $j not found"; bad=1; continue; fi
         if ! printf '%s\n' "$blk" | /usr/bin/grep -E '^    if:' | /usr/bin/grep -q 'github.event.pull_request.draft != true'; then
@@ -66,6 +66,7 @@ self_test() {
     mutant no-ready-for-review 's/, ready_for_review\]/]/'
     mutant x86-main-unguarded 's/ && github\.event\.pull_request\.draft != true \}\}/ }}/'
     mutant shard-unguarded '/^  workspace-test-shard:$/,/runs-on:/{/draft != true/d;}'
+    mutant archive-unguarded '/^  workspace-test-archive:$/,/runs-on:/{/draft != true/d;}'
     mutant gate-no-draft-exit '/echo "gate: draft PR/d'
     mutant ci-gate-no-draft-flag '/^  ci-gate:/,/^  gate:/{/DRAFT: \$/d}'
     mutant sigma-step-runs-on-draft '/Σ-executed/{n;d}'

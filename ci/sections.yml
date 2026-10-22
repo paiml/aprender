@@ -940,7 +940,7 @@ jobs:
       - uses: actions/download-artifact@v7
         if: steps.tier.outputs.tier == 'quick'
         with:
-          name: ws-archive-ptr
+          name: ws-archive-ptr-${{ runner.arch }}
           path: ws-archive-ptr
           merge-multiple: true
       - name: Fetch the archive over the LAN (a miss falls back to the artifact below)
@@ -950,7 +950,7 @@ jobs:
       - uses: actions/download-artifact@v7
         if: steps.tier.outputs.tier == 'quick' && steps.lan.outputs.hit != '1'
         with:
-          name: ws-archive
+          name: ws-archive-${{ runner.arch }}
           path: ws-archive
           merge-multiple: true
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
@@ -1550,15 +1550,15 @@ jobs:
           # its build-time path and runs. A shard otherwise finds out ~100 tests later.
           smoke="$GITHUB_WORKSPACE/ws-smoke-target"
           rm -rf "${smoke:?}"; mkdir -p "$smoke"
-          tar --zstd -tf "$out/ws.tar.zst" | grep -E '^target/debug/[^/]+$' | sed 's#^target/#/workspace/target/#' > "$out/bins.txt" || true
           docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace \
-            -e BINS="$(tr '\n' ' ' < "$out/bins.txt")" "$IMAGE" bash -c 'set -euo pipefail
-              cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite --message-format json > /dev/null
-              n=0; for b in $BINS; do test -x "$b" || { echo "::error::archived binary $b not executable at its build path"; exit 1; }; n=$((n+1)); done
+            "$IMAGE" bash -c 'set -euo pipefail
+              cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite --message-format json > /workspace/target/smoke.json
+              exp=$(sed "s/.*\"non-test-binaries\":\({.*}\),\"build-script-out-dirs\".*/\1/" /workspace/target/smoke.json | grep -o "\"path\":\"debug/[^/\"]*\"" | sed "s#\"path\":\"#/workspace/target/#; s#\"\$##" | sort -u)
+              n=0; for b in $exp; do test -x "$b" || { echo "::error::archived binary $b not executable at its build path"; exit 1; }; n=$((n+1)); done
               [ "$n" -gt 0 ] || { echo "::error::smoke checked 0 binaries -- the archive lists none under target/debug"; exit 1; }
               if [ -x /workspace/target/debug/apr ]; then /workspace/target/debug/apr --version; fi
               echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'
-          rm -rf "${smoke:?}" "${out:?}/bins.txt"
+          rm -rf "${smoke:?}"
           printf 'FLOW-010 P1 timing: archive_build_s=%s list_s=%s archive_mb=%s\n' "$t_build" "$t_list" "$(( $(stat -c %s "$out/ws.tar.zst") / 1048576 ))"
           rm -f "${out:?}/live.json" "${out:?}/arc.json"
           rustc_vv="$(docker run --rm "$IMAGE" rustc -vV)"
@@ -1575,16 +1575,16 @@ jobs:
           CACHE_PORT: ${{ vars.WS_ARCHIVE_CACHE_PORT }}
         run: |
           set -euo pipefail
-          bash scripts/ci/archive_fetch.sh publish "${CACHE_ROOT:-}" "${CACHE_PORT:-8080}" "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ws-archive-out ws-archive-ptr
+          bash scripts/ci/archive_fetch.sh publish "${CACHE_ROOT:-}" "${CACHE_PORT:-8080}" "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${{ runner.arch }}" ws-archive-out ws-archive-ptr
       - uses: actions/upload-artifact@v7
         with:
-          name: ws-archive-ptr
+          name: ws-archive-ptr-${{ runner.arch }}
           path: ws-archive-ptr/
           if-no-files-found: error
           overwrite: true
       - uses: actions/upload-artifact@v7
         with:
-          name: ws-archive
+          name: ws-archive-${{ runner.arch }}
           path: ws-archive-out/
           if-no-files-found: error
           overwrite: true

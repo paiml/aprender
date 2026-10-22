@@ -444,11 +444,17 @@ jobs:
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   # FLOW-010 P1 (amendment 3 item 7): build the quick-tier tree-reader set ONCE
   # and hand the nextest archive to the shards. It is a `needs` of every shard, so a
-  # red or skipped archive job skips the shards and `workspace-test` goes red: part of
+  # red or skipped archive job skips the shards and `workspace-test` goes red (drafts excepted: both skip and the verdict reports green): part of
   # the gate, no second path. In a non-quick tier it uploads only a bind.json saying so.
   workspace-test-archive:
     if: ${{ github.event.pull_request.draft != true }}
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    # one archive per arch (C314 quorum 2026-10-22: opus x2 chose this): a quick-tier shard is arch-neutral (operator 14:18Z) and
+    # downloads ws-archive-<its own runner.arch>. merge_group is X64 only (no ARM64 runner carries the mq label), PR/push build both.
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(github.event_name == 'merge_group' && '["X64"]' || '["X64","ARM64"]') }}
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON(format('["self-hosted","Linux","{0}","clean-room"]', matrix.arch)) }}
     timeout-minutes: 90
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -475,15 +481,15 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: success()
         with:
-          name: ws-archive
-          path: ${{ runner.temp }}/fat/artifacts/ws-archive/
+          name: ws-archive-${{ runner.arch }}
+          path: ${{ runner.temp }}/fat/artifacts/ws-archive-${{ runner.arch }}/
           if-no-files-found: error
           overwrite: true
           compression-level: 0
       - uses: actions/upload-artifact@v7
         if: success()
         with:
-          name: ws-archive-ptr
+          name: ws-archive-ptr-${{ runner.arch }}
           path: ${{ runner.temp }}/fat/artifacts/ws-archive-ptr/
           if-no-files-found: error
           overwrite: true
@@ -495,6 +501,7 @@ jobs:
     needs: [workspace-test-archive]
     if: ${{ github.event.pull_request.draft != true }}
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
+    # the shard downloads ws-archive-X64, built by workspace-test-archive (matrix: per-arch archives, the quorum design; the X64-pinned shards use ws-archive-X64)
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
     strategy:
