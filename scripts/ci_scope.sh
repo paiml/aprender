@@ -83,7 +83,7 @@ self_test() {
         has_scope() { [[ "$1" =~ [\[,][[:space:]]*scope[[:space:]]*[],] ]]; }
         [ "$(nc | grep -cE '^on:$')" = 1 ] || bad="$bad; on: is not a block mapping"
         for n in push pull_request merge_group; do
-            [ "$(top on | grep -cE "^  $n:$")" = 1 ] || bad="$bad; trigger $n is not a plain block key"
+            [ "$(top on | awk -v k="$n" '$0 == "  "k":" {c++} END {print c+0}')" = 1 ] || bad="$bad; trigger $n is not a plain block key"
             body="$(ev "$n")"
             [[ "$body" =~ (^|[^A-Za-z_-])paths(-ignore)?[[:space:]]*: ]] && bad="$bad; $n has a paths filter (stuck required checks)"
         done
