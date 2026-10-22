@@ -1,5 +1,6 @@
 // Advanced merge strategy tests (GH-442)
 
+use super::{apr_merge, load_model_tensors, tempdir, MergeOptions, MergeStrategy};
 use std::collections::BTreeMap;
 
 fn make_tensor_map(
@@ -501,4 +502,144 @@ fn falsify_passthrough_001_data_preservation() {
             assert_eq!(rs, shape, "Non-layer tensor {} shape mismatch", name);
         }
     }
+}
+
+// ============================================================================
+// TIES / DARE tests (coverage of ties_merge.rs; Refs #5530)
+// ============================================================================
+
+fn ties_fixture() -> (
+    BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    Vec<BTreeMap<String, (Vec<f32>, Vec<usize>)>>,
+) {
+    let base = make_tensor_map("w", vec![0.0; 4], vec![4]);
+    let a = make_tensor_map("w", vec![1.0, -1.0, 0.05, 2.0], vec![4]);
+    let b = make_tensor_map("w", vec![1.0, 1.0, 0.05, -2.0], vec![4]);
+    (base, vec![a, b])
+}
+
+#[test]
+fn test_ties_trim_zeroes_below_density_threshold() {
+    let trimmed = super::ties_trim(&[1.0, -0.4, 0.5, -2.0], 0.5);
+    // threshold = 0.5 * 2.0 = 1.0; only |x| >= 1.0 survive
+    assert_eq!(trimmed, vec![1.0, 0.0, 0.0, -2.0]);
+    // all-zero delta stays all-zero (no division by max)
+    assert_eq!(super::ties_trim(&[0.0, 0.0], 0.5), vec![0.0, 0.0]);
+}
+
+#[test]
+fn test_ties_merge_elects_sign_and_scales_by_model_count() {
+    let (base, models) = ties_fixture();
+    let result = super::ties_merge(&base, &models, 0.5);
+    let (data, shape) = result.get("w").unwrap();
+    assert_eq!(shape, &vec![4]);
+    // [0] both +1 agree: 2/2; [1] tie elects positive, only b agrees: 1/2;
+    // [2] trimmed by both: 0; [3] tie elects positive, only a agrees: 2/2
+    assert_eq!(data, &[1.0, 0.5, 0.0, 1.0]);
+}
+
+#[test]
+fn test_ties_merge_majority_sign_discards_minority() {
+    let base = make_tensor_map("w", vec![10.0], vec![1]);
+    let models = vec![
+        make_tensor_map("w", vec![12.0], vec![1]),
+        make_tensor_map("w", vec![13.0], vec![1]),
+        make_tensor_map("w", vec![9.0], vec![1]),
+    ];
+    let result = super::ties_merge(&base, &models, 0.0);
+    let (data, _) = result.get("w").unwrap();
+    // elected +, agreeing deltas 2 and 3, scaled by 3 models: 10 + 5/3
+    assert!((data[0] - (10.0 + 5.0 / 3.0)).abs() < 1e-6, "{:?}", data);
+}
+
+#[test]
+fn test_dare_merge_zero_drop_is_weighted_mean_of_deltas() {
+    let base = make_tensor_map("w", vec![0.0, 0.0], vec![2]);
+    let models = vec![
+        make_tensor_map("w", vec![1.0, 2.0], vec![2]),
+        make_tensor_map("w", vec![3.0, 4.0], vec![2]),
+    ];
+    let result = super::dare_merge(&base, &models, 0.0, 7, None);
+    assert_eq!(result.get("w").unwrap().0, vec![2.0, 3.0]);
+    let weighted = super::dare_merge(&base, &models, 0.0, 7, Some(&[1.0, 0.0]));
+    assert_eq!(weighted.get("w").unwrap().0, vec![1.0, 2.0]);
+}
+
+#[test]
+fn test_dare_merge_is_seed_deterministic_and_rescales_kept_deltas() {
+    let base = make_tensor_map("w", vec![0.0; 64], vec![64]);
+    let models = vec![make_tensor_map("w", vec![1.0; 64], vec![64])];
+    let r1 = super::dare_merge(&base, &models, 0.5, 42, Some(&[1.0]));
+    let r2 = super::dare_merge(&base, &models, 0.5, 42, Some(&[1.0]));
+    assert_eq!(r1, r2, "same seed must reproduce the same drop mask");
+    let data = &r1.get("w").unwrap().0;
+    // kept elements are rescaled by 1/(1-0.5) = 2; dropped are 0
+    assert!(data.iter().all(|&v| v == 0.0 || v == 2.0), "{:?}", data);
+    assert!(data.contains(&0.0) && data.contains(&2.0));
+}
+
+fn merge_end_to_end(
+    strategy: MergeStrategy,
+    configure: impl FnOnce(&mut MergeOptions),
+) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    let dir = tempdir().expect("tempdir");
+    let (base, models) = ties_fixture();
+    let base_path = dir.path().join("base.safetensors");
+    let a_path = dir.path().join("a.safetensors");
+    let b_path = dir.path().join("b.safetensors");
+    let out_path = dir.path().join("out.safetensors");
+    super::create_test_model(&base_path, &base).expect("base");
+    super::create_test_model(&a_path, &models[0]).expect("a");
+    super::create_test_model(&b_path, &models[1]).expect("b");
+    let mut options = MergeOptions {
+        strategy,
+        base_model: Some(base_path),
+        ..MergeOptions::default()
+    };
+    configure(&mut options);
+    let report = apr_merge(&[a_path, b_path], out_path.clone(), options).expect("merge");
+    assert_eq!(report.model_count, 2);
+    assert_eq!(report.tensor_count, 1);
+    assert!(report.output_size > 0);
+    load_model_tensors(&out_path).expect("load merged")
+}
+
+#[test]
+fn test_apr_merge_ties_end_to_end() {
+    let merged = merge_end_to_end(MergeStrategy::Ties, |o| o.density = 0.5);
+    assert_eq!(merged.get("w").unwrap().0, vec![1.0, 0.5, 0.0, 1.0]);
+}
+
+#[test]
+fn test_apr_merge_dare_end_to_end() {
+    let run = || merge_end_to_end(MergeStrategy::Dare, |o| o.drop_rate = 0.5);
+    let merged = run();
+    assert_eq!(merged, run(), "fixed seed must reproduce the merge");
+    let data = &merged.get("w").unwrap().0;
+    // each model keeps a delta with p=0.5, rescaled x2, then weighted 1/2:
+    // element 0 (deltas 1, 1) is a sum of {0, 1} contributions
+    assert!([0.0f32, 1.0, 2.0].contains(&data[0]), "{:?}", data);
+    // element 3 (deltas 2, -2) is a sum of {0, 2} and {0, -2}
+    assert!([-2.0f32, 0.0, 2.0].contains(&data[3]), "{:?}", data);
+}
+
+#[test]
+fn test_apr_merge_dare_rejects_zero_drop_rate() {
+    let dir = tempdir().expect("tempdir");
+    let (base, models) = ties_fixture();
+    let paths: Vec<_> = ["base", "a", "b"]
+        .iter()
+        .map(|n| dir.path().join(format!("{n}.safetensors")))
+        .collect();
+    super::create_test_model(&paths[0], &base).expect("base");
+    super::create_test_model(&paths[1], &models[0]).expect("a");
+    super::create_test_model(&paths[2], &models[1]).expect("b");
+    let options = MergeOptions {
+        strategy: MergeStrategy::Dare,
+        base_model: Some(paths[0].clone()),
+        drop_rate: 0.0,
+        ..MergeOptions::default()
+    };
+    let err = apr_merge(&paths[1..], dir.path().join("o.safetensors"), options).unwrap_err();
+    assert!(err.to_string().contains("drop_rate"), "{err}");
 }

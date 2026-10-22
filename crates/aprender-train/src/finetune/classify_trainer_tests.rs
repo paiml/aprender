@@ -1,6 +1,7 @@
 use super::*;
 use crate::finetune::classify_eval_report::{
-    restore_class_weights_from_metadata, ClassifyEvalReport, SSC_LABELS,
+    evaluate_checkpoint, restore_checkpoint_weights, restore_class_weights_from_metadata,
+    ClassifyEvalReport, SSC_LABELS,
 };
 use crate::finetune::{ClassifyConfig, ClassifyPipeline};
 use crate::transformer::TransformerConfig;
@@ -5160,4 +5161,333 @@ fn test_resume_rejects_data_hash_mismatch() {
     assert_ne!(before, saved_weights, "a restore would have changed the foreign head");
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// =========================================================================
+// save_apr_checkpoint (Refs #5536)
+// =========================================================================
+
+fn ckpt_trainer(num_classes: usize) -> ClassifyTrainer {
+    let config = TrainingConfig {
+        epochs: 1,
+        val_split: 0.2,
+        checkpoint_dir: PathBuf::from("/tmp/unused_ckpt_5536"),
+        ..TrainingConfig::default()
+    };
+    ClassifyTrainer::new(tiny_pipeline(num_classes), make_corpus(20, num_classes), config)
+        .expect("valid trainer")
+}
+
+fn ckpt_metrics() -> EpochMetrics {
+    EpochMetrics {
+        epoch: 3,
+        train_loss: 0.5,
+        train_accuracy: 0.75,
+        val_loss: 0.6,
+        val_accuracy: 0.7,
+        learning_rate: 2.5e-3,
+        epoch_time_ms: 10,
+        samples_per_sec: 1.0,
+    }
+}
+
+#[test]
+fn test_save_apr_checkpoint_roundtrips_metadata_and_tensors() {
+    use aprender::serialization::apr::AprReader;
+    let trainer = ckpt_trainer(3);
+    let dir = tempfile::tempdir().expect("tempdir");
+    trainer.save_apr_checkpoint(dir.path(), 3, &ckpt_metrics()).expect("save");
+
+    let reader = AprReader::open(dir.path().join("model.apr")).expect("open model.apr");
+    let meta = |k: &str| reader.get_metadata(k).unwrap_or_else(|| panic!("missing {k}")).clone();
+    assert_eq!(meta("__checkpoint__.schema_version"), serde_json::json!("1.2.0"));
+    assert_eq!(meta("epoch"), serde_json::json!(3));
+    assert_eq!(meta("num_classes"), serde_json::json!(3));
+    assert_eq!(meta("lora_rank"), serde_json::json!(4));
+    assert_eq!(meta("architecture"), serde_json::json!("qwen2_classify"));
+
+    let weight = reader.read_tensor_f32("classifier.weight").expect("weight");
+    let expected = trainer.pipeline.classifier.weight.data().to_vec();
+    assert_eq!(weight, expected, "classifier weights must round-trip exactly");
+    assert_eq!(reader.read_tensor_f32("classifier.bias").expect("bias").len(), 3);
+    assert_eq!(reader.read_tensor_f32("__training__.epoch").expect("epoch"), vec![3.0]);
+    let lr = reader.read_tensor_f32("__training__.learning_rate").expect("lr");
+    assert!((lr[0] - 2.5e-3).abs() < 1e-9);
+    assert_eq!(reader.read_tensor_f32("__training__.optimizer.step").expect("step").len(), 1);
+    // F-CKPT-001: every LoRA pair is present
+    assert!(reader.read_tensor_f32("lora.0.q_proj.lora_a").is_ok());
+    assert!(reader.read_tensor_f32("lora.0.v_proj.lora_b").is_ok());
+}
+
+#[test]
+fn test_save_apr_checkpoint_rejects_nan_classifier_weight() {
+    let mut trainer = ckpt_trainer(3);
+    trainer.pipeline.classifier.weight.data_mut()[0] = f32::NAN;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let err = trainer.save_apr_checkpoint(dir.path(), 0, &ckpt_metrics()).unwrap_err();
+    assert!(err.to_string().contains("F-CKPT-007"), "{err}");
+    assert!(err.to_string().contains("classifier.weight"), "{err}");
+    assert!(!dir.path().join("model.apr").exists(), "no file may be written on NaN");
+}
+
+#[test]
+fn test_save_apr_checkpoint_rejects_inf_classifier_bias() {
+    let mut trainer = ckpt_trainer(3);
+    trainer.pipeline.classifier.bias.data_mut()[0] = f32::INFINITY;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let err = trainer.save_apr_checkpoint(dir.path(), 0, &ckpt_metrics()).unwrap_err();
+    assert!(err.to_string().contains("classifier.bias"), "{err}");
+    assert!(!dir.path().join("model.apr").exists());
+}
+
+// =========================================================================
+// ClassifyTrainer::save_checkpoint (C-CKPT-001) — the files it writes
+// =========================================================================
+
+fn ckpt_metrics_s() -> EpochMetrics {
+    EpochMetrics {
+        epoch: 2,
+        train_loss: 0.5,
+        train_accuracy: 0.75,
+        val_loss: 0.25,
+        val_accuracy: 0.5,
+        learning_rate: 0.01,
+        epoch_time_ms: 1234,
+        samples_per_sec: 42.0,
+    }
+}
+
+fn ckpt_trainer_s() -> ClassifyTrainer {
+    let cfg = TrainingConfig { epochs: 1, val_split: 0.2, ..TrainingConfig::default() };
+    ClassifyTrainer::new(tiny_pipeline(3), make_corpus(20, 3), cfg).expect("valid")
+}
+
+#[test]
+fn test_save_checkpoint_writes_metadata_json_with_the_epoch_metrics() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(dir.path(), 2, &ckpt_metrics_s()).expect("save");
+    let meta: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("metadata.json")).expect("metadata.json"),
+    )
+    .expect("valid json");
+    assert_eq!(meta["epoch"], 2);
+    assert_eq!(meta["epoch_time_ms"], 1234);
+    assert_eq!(meta["train_loss"].as_f64(), Some(0.5));
+    assert_eq!(meta["val_loss"].as_f64(), Some(0.25));
+    assert_eq!(meta["val_accuracy"].as_f64(), Some(0.5));
+    assert!(meta.get("class_weights").is_some(), "class_weights key is always written");
+}
+
+#[test]
+fn test_save_checkpoint_safetensors_carries_head_and_lora_tensors() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(dir.path(), 2, &ckpt_metrics_s()).expect("save");
+    let bytes = std::fs::read(dir.path().join("model.safetensors")).expect("model.safetensors");
+    let (_, st_meta) = safetensors::SafeTensors::read_metadata(&bytes).expect("valid safetensors");
+    let meta = st_meta.metadata().as_ref().expect("header metadata");
+    assert_eq!(meta.get("epoch").map(String::as_str), Some("2"));
+    assert_eq!(meta.get("val_loss").map(String::as_str), Some("0.250000"));
+    let st = safetensors::SafeTensors::deserialize(&bytes).expect("deserialize");
+    let names: Vec<String> = st.names().iter().map(|n| n.to_string()).collect();
+    // F-CLASS-008: Q (even) and V (odd) adapters per layer, A and B each.
+    for name in [
+        "lora.0.q_proj.lora_a",
+        "lora.0.q_proj.lora_b",
+        "lora.0.v_proj.lora_a",
+        "lora.0.v_proj.lora_b",
+    ] {
+        assert!(names.iter().any(|n| n == name), "{name} missing from {names:?}");
+    }
+    let a = st.tensor("lora.0.q_proj.lora_a").expect("lora_a");
+    assert_eq!(a.shape()[0], 4, "lora_a is [rank, d_in] with rank 4");
+    assert_eq!(a.dtype(), safetensors::tensor::Dtype::F32);
+}
+
+#[test]
+fn test_save_checkpoint_writes_hf_config_and_peft_adapter_config() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(dir.path(), 0, &ckpt_metrics_s()).expect("save");
+    let cfg: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("config.json")).expect("config.json"),
+    )
+    .expect("valid json");
+    assert_eq!(cfg["architectures"][0], "Qwen2ForSequenceClassification");
+    assert_eq!(cfg["model_type"], "qwen2");
+    assert_eq!(cfg["num_labels"], 3);
+    assert_eq!(cfg["problem_type"], "single_label_classification");
+    assert_eq!(cfg["hidden_size"], TransformerConfig::tiny().hidden_size);
+    let adapter: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("adapter_config.json"))
+            .expect("adapter_config.json"),
+    )
+    .expect("valid json");
+    assert_eq!(adapter["task_type"], "SEQ_CLS");
+    assert_eq!(adapter["r"], 4);
+}
+
+#[test]
+fn test_save_checkpoint_without_a_model_dir_writes_no_tokenizer_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(dir.path(), 0, &ckpt_metrics_s()).expect("save");
+    assert!(!dir.path().join("tokenizer.json").exists());
+}
+
+#[test]
+fn test_save_checkpoint_creates_missing_parent_directories() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let nested = dir.path().join("a").join("b").join("epoch-0");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(&nested, 0, &ckpt_metrics_s()).expect("save");
+    assert!(nested.join("metadata.json").is_file());
+    assert!(nested.join("model.safetensors").is_file());
+}
+
+#[test]
+fn test_save_checkpoint_under_a_regular_file_is_an_io_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let blocker = dir.path().join("not_a_dir");
+    std::fs::write(&blocker, b"x").expect("write blocker");
+    let mut t = ckpt_trainer_s();
+    let err = t.save_checkpoint(&blocker.join("ckpt"), 0, &ckpt_metrics_s()).unwrap_err();
+    assert!(err.to_string().contains("Failed to create checkpoint dir"), "unexpected error: {err}");
+}
+
+// =========================================================================
+// restore_checkpoint_weights / evaluate_checkpoint (#5537)
+// =========================================================================
+
+/// Write a classifier-only safetensors checkpoint whose bias strongly favours `class`.
+fn write_biased_checkpoint(dir: &std::path::Path, pipe: &ClassifyPipeline, class: usize) {
+    std::fs::create_dir_all(dir).unwrap();
+    let w = pipe.classifier.weight.data().len();
+    let nc = pipe.config.num_classes;
+    let weight = vec![0.0f32; w];
+    let mut bias = vec![0.0f32; nc];
+    bias[class] = 50.0;
+    let wb: &[u8] = bytemuck::cast_slice(&weight);
+    let bb: &[u8] = bytemuck::cast_slice(&bias);
+    let views = vec![
+        (
+            "classifier.weight",
+            safetensors::tensor::TensorView::new(safetensors::tensor::Dtype::F32, vec![w], wb)
+                .unwrap(),
+        ),
+        (
+            "classifier.bias",
+            safetensors::tensor::TensorView::new(safetensors::tensor::Dtype::F32, vec![nc], bb)
+                .unwrap(),
+        ),
+    ];
+    std::fs::write(dir.join("model.safetensors"), safetensors::serialize(views, None).unwrap())
+        .unwrap();
+}
+
+#[test]
+fn test_restore_checkpoint_weights_overwrites_classifier() {
+    let dir = std::env::temp_dir().join("entrenar_test_rcw_ok");
+    let mut pipe = tiny_pipeline(2);
+    write_biased_checkpoint(&dir, &pipe, 1);
+    restore_checkpoint_weights(&mut pipe, &dir).unwrap();
+    let bias = pipe.classifier.bias.data();
+    assert_eq!(bias.as_slice().unwrap(), &[0.0, 50.0]);
+    assert!(pipe.classifier.weight.data().iter().all(|&v| v == 0.0));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_restore_checkpoint_weights_missing_file_is_io_error() {
+    let dir = std::env::temp_dir().join("entrenar_test_rcw_missing");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut pipe = tiny_pipeline(2);
+    let err = restore_checkpoint_weights(&mut pipe, &dir).unwrap_err();
+    assert!(matches!(err, crate::Error::Io(_)), "{err:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_restore_checkpoint_weights_corrupt_file_is_serialization_error() {
+    let dir = std::env::temp_dir().join("entrenar_test_rcw_corrupt");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("model.safetensors"), b"not safetensors").unwrap();
+    let mut pipe = tiny_pipeline(2);
+    let err = restore_checkpoint_weights(&mut pipe, &dir).unwrap_err();
+    assert!(matches!(err, crate::Error::Serialization(_)), "{err:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+fn eval_fixture(name: &str, class: usize) -> (std::path::PathBuf, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("entrenar_test_evalckpt_{name}"));
+    std::fs::remove_dir_all(&dir).ok();
+    let pipe = tiny_pipeline(2);
+    write_biased_checkpoint(&dir, &pipe, class);
+    std::fs::write(
+        dir.join("adapter_config.json"),
+        r#"{"peft_type":"LORA","r":4,"lora_alpha":4.0,"target_modules":["q_proj","v_proj"],"lora_dropout":0.0,"bias":"none"}"#,
+    )
+    .unwrap();
+    let data = dir.join("test.jsonl");
+    std::fs::write(
+        &data,
+        "{\"input\":\"alpha\",\"label\":0}\n{\"input\":\"beta\",\"label\":1}\n{\"input\":\"gamma\",\"label\":1}\n",
+    )
+    .unwrap();
+    (dir, data)
+}
+
+fn eval_config() -> ClassifyConfig {
+    ClassifyConfig { num_classes: 2, lora_rank: 4, lora_alpha: 4.0, ..ClassifyConfig::default() }
+}
+
+#[test]
+fn test_evaluate_checkpoint_uses_restored_weights() {
+    let (dir, data) = eval_fixture("ok", 1);
+    let labels = vec!["a".to_string(), "b".to_string()];
+    let report =
+        evaluate_checkpoint(&dir, &data, &TransformerConfig::tiny(), eval_config(), &labels)
+            .unwrap();
+    assert_eq!(report.total_samples, 3);
+    // bias +50 on class 1 forces every prediction to class 1: column 0 is empty.
+    assert_eq!(report.confusion_matrix, vec![vec![0, 1], vec![0, 2]]);
+    assert!((report.accuracy - 2.0 / 3.0).abs() < 1e-9);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_evaluate_checkpoint_follows_checkpoint_not_defaults() {
+    let (dir, data) = eval_fixture("flip", 0);
+    let labels = vec!["a".to_string(), "b".to_string()];
+    let report =
+        evaluate_checkpoint(&dir, &data, &TransformerConfig::tiny(), eval_config(), &labels)
+            .unwrap();
+    assert_eq!(report.confusion_matrix, vec![vec![1, 0], vec![2, 0]]);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_evaluate_checkpoint_invalid_adapter_config_is_serialization_error() {
+    let (dir, data) = eval_fixture("badcfg", 1);
+    std::fs::write(dir.join("adapter_config.json"), "{ nope").unwrap();
+    let err = evaluate_checkpoint(&dir, &data, &TransformerConfig::tiny(), eval_config(), &[])
+        .unwrap_err();
+    assert!(matches!(err, crate::Error::Serialization(_)), "{err:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_evaluate_checkpoint_missing_test_data_errors() {
+    let (dir, _) = eval_fixture("nodata", 1);
+    let err = evaluate_checkpoint(
+        &dir,
+        &dir.join("absent.jsonl"),
+        &TransformerConfig::tiny(),
+        eval_config(),
+        &[],
+    )
+    .unwrap_err();
+    assert!(matches!(err, crate::Error::Io(_)), "{err:?}");
+    std::fs::remove_dir_all(&dir).ok();
 }

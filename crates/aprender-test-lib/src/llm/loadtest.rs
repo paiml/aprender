@@ -2378,4 +2378,207 @@ mod tests {
         assert_eq!(tail.jitter.spike_count, 0);
         assert!(!tail.drift.degradation_detected);
     }
+
+    // ---- run_phase_rate (#5569): open-loop scheduler against a loopback server ----
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    const OK_BODY: &str = concat!(
+        r#"{"id":"c","object":"chat.completion","created":0,"model":"m","#,
+        r#""choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"#,
+        r#""finish_reason":"stop"}],"#,
+        r#""usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#
+    );
+
+    /// Server-side observations: peak simultaneous requests and each request body.
+    struct Seen {
+        peak: Arc<AtomicUsize>,
+        prompts: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    /// Read one request (head + body) and return the body text.
+    async fn read_body(sock: &mut tokio::net::TcpStream) -> String {
+        let mut seen = Vec::new();
+        let mut buf = vec![0_u8; 8192];
+        loop {
+            let n = sock.read(&mut buf).await.unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            seen.extend_from_slice(&buf[..n]);
+            let text = String::from_utf8_lossy(&seen).to_string();
+            if let Some(end) = text.find("\r\n\r\n") {
+                let want = text
+                    .to_lowercase()
+                    .split("content-length:")
+                    .nth(1)
+                    .and_then(|r| r.split("\r\n").next().and_then(|v| v.trim().parse().ok()))
+                    .unwrap_or(0_usize);
+                if seen.len() >= end + 4 + want {
+                    return text[end + 4..].to_string();
+                }
+            }
+        }
+        String::new()
+    }
+
+    /// Loopback chat server: answers `status`, holding each request `hold_ms`.
+    async fn spawn_server(status: u16, hold_ms: u64) -> (String, Seen) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let url = format!("http://{}", listener.local_addr().expect("local addr"));
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let seen = Seen {
+            peak: Arc::new(AtomicUsize::new(0)),
+            prompts: Arc::new(std::sync::Mutex::new(Vec::new())),
+        };
+        let (peak, prompts) = (Arc::clone(&seen.peak), Arc::clone(&seen.prompts));
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let (in_flight, peak, prompts) = (
+                    Arc::clone(&in_flight),
+                    Arc::clone(&peak),
+                    Arc::clone(&prompts),
+                );
+                tokio::spawn(async move {
+                    let body = read_body(&mut sock).await;
+                    prompts.lock().expect("prompts lock").push(body);
+                    let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(now, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(hold_ms)).await;
+                    in_flight.fetch_sub(1, Ordering::SeqCst);
+                    let payload = if status == 200 { OK_BODY } else { "{}" };
+                    let head = format!(
+                        "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n\
+                         Content-Length: {}\r\nConnection: close\r\n\r\n",
+                        payload.len()
+                    );
+                    let _ = sock.write_all((head + payload).as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        (url, seen)
+    }
+
+    fn prompt(text: &str) -> ChatRequest {
+        let mut p = default_prompt();
+        p.messages[0].content = text.to_string();
+        p
+    }
+
+    fn rate_test(url: &str, concurrency: usize, prompts: Vec<ChatRequest>) -> LoadTest {
+        LoadTest::new(
+            LlmClient::new(url, "m"),
+            LoadTestConfig {
+                concurrency,
+                prompts,
+                ..LoadTestConfig::default()
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn run_phase_rate_constant_paces_dispatch_at_the_configured_interval() {
+        let (url, _) = spawn_server(200, 0).await;
+        let t = rate_test(&url, 8, vec![default_prompt()]);
+        let recs = t
+            .run_phase_rate(Duration::from_millis(500), 10.0, false)
+            .await
+            .expect("phase");
+        // 10/s for 0.5 s dispatches at 0, 100, ... 400 ms: 5 requests, never a burst.
+        assert!((4..=6).contains(&recs.len()), "got {}", recs.len());
+        assert!(recs.iter().all(|r| r.success && r.tokens == 3));
+        assert!(recs.iter().all(|r| r.prompt_tokens == 7));
+        assert!(recs
+            .iter()
+            .all(|r| r.finish_reason.as_deref() == Some("stop")));
+    }
+
+    #[tokio::test]
+    async fn run_phase_rate_poisson_dispatches_and_stays_under_the_rate_ceiling() {
+        let (url, _) = spawn_server(200, 0).await;
+        let t = rate_test(&url, 8, vec![default_prompt()]);
+        let recs = t
+            .run_phase_rate(Duration::from_millis(500), 20.0, true)
+            .await
+            .expect("phase");
+        // Mean 10 arrivals; exponential gaps make the count vary but never unbounded.
+        assert!(!recs.is_empty(), "poisson phase sent nothing");
+        assert!(recs.len() <= 60, "got {}", recs.len());
+        assert!(recs.iter().all(|r| r.success));
+    }
+
+    #[tokio::test]
+    async fn run_phase_rate_semaphore_bounds_in_flight_requests() {
+        let (url, seen) = spawn_server(200, 150).await;
+        let t = rate_test(&url, 1, vec![default_prompt()]);
+        let recs = t
+            .run_phase_rate(Duration::from_millis(500), 100.0, false)
+            .await
+            .expect("phase");
+        assert_eq!(seen.peak.load(Ordering::SeqCst), 1, "concurrency 1 held");
+        // 150 ms service, one slot, 500 ms window: at most 4 can start in time.
+        assert!((1..=4).contains(&recs.len()), "got {}", recs.len());
+        assert!(recs.iter().all(|r| r.success));
+    }
+
+    #[tokio::test]
+    async fn run_phase_rate_server_errors_become_failed_records() {
+        let (url, _) = spawn_server(500, 0).await;
+        let t = rate_test(&url, 4, vec![default_prompt()]);
+        let recs = t
+            .run_phase_rate(Duration::from_millis(300), 10.0, false)
+            .await
+            .expect("phase returns Ok even when every request fails");
+        assert!(!recs.is_empty());
+        assert!(recs
+            .iter()
+            .all(|r| !r.success && r.tokens == 0 && r.latency == Duration::ZERO));
+    }
+
+    #[tokio::test]
+    async fn run_phase_rate_cycles_prompts_in_order_of_dispatch() {
+        let (url, seen) = spawn_server(200, 0).await;
+        let t = rate_test(&url, 8, vec![prompt("alpha-prompt"), prompt("beta-prompt")]);
+        let recs = t
+            .run_phase_rate(Duration::from_millis(450), 10.0, false)
+            .await
+            .expect("phase");
+        let bodies = seen.prompts.lock().expect("prompts lock").clone();
+        assert_eq!(bodies.len(), recs.len());
+        let alpha = bodies.iter().filter(|b| b.contains("alpha-prompt")).count();
+        let beta = bodies.iter().filter(|b| b.contains("beta-prompt")).count();
+        assert!(alpha >= 1 && beta >= 1, "both prompts used");
+        assert!(alpha.abs_diff(beta) <= 1, "round robin: {alpha} vs {beta}");
+    }
+
+    #[tokio::test]
+    async fn run_phase_rate_zero_duration_sends_nothing() {
+        let (url, seen) = spawn_server(200, 0).await;
+        let t = rate_test(&url, 2, vec![default_prompt()]);
+        let recs = t
+            .run_phase_rate(Duration::ZERO, 10.0, false)
+            .await
+            .expect("phase");
+        assert!(recs.is_empty());
+        assert!(seen.prompts.lock().expect("prompts lock").is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_phase_routes_poisson_and_constant_through_run_phase_rate() {
+        let (url, _) = spawn_server(200, 0).await;
+        for rate in [RequestRate::Poisson(20.0), RequestRate::Constant(20.0)] {
+            let mut t = rate_test(&url, 4, vec![default_prompt()]);
+            t.config.rate = rate;
+            let recs = t
+                .run_phase(Duration::from_millis(300))
+                .await
+                .expect("phase");
+            assert!(!recs.is_empty());
+            assert!(recs.iter().all(|r| r.success));
+        }
+    }
 }

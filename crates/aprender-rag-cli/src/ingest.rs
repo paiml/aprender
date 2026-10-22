@@ -512,3 +512,171 @@ pub(crate) fn build_index_manifest(
         "files": file_entries,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn index_in(
+        src: &Path,
+        out: &Path,
+        exclude: &[String],
+        dedup: bool,
+        manifest: bool,
+    ) -> Result<()> {
+        run_index(
+            &src.to_string_lossy(),
+            &out.to_string_lossy(),
+            200,
+            20,
+            64,
+            EmbedderType::Tfidf,
+            SemanticModel::MiniLm,
+            true,
+            ChunkStrategy::Recursive,
+            1,
+            manifest,
+            exclude,
+            dedup,
+            false,
+        )
+    }
+
+    fn read_index(out: &Path) -> serde_json::Value {
+        let raw = fs::read_to_string(out.join("index.json")).expect("index.json written");
+        serde_json::from_str(&raw).expect("index.json parses")
+    }
+
+    #[test]
+    fn run_index_missing_path_errors_and_writes_nothing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let out = tmp.path().join("out");
+        let err = index_in(&tmp.path().join("nope"), &out, &[], false, false).expect_err("bails");
+        assert!(err.to_string().contains("Path not found"), "{err}");
+        assert!(!out.exists(), "no output dir on early bail");
+    }
+
+    #[test]
+    fn run_index_bad_exclude_glob_errors_before_loading() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(tmp.path().join("a.txt"), "hello world").expect("write");
+        let out = tmp.path().join("out");
+        let bad = vec!["[".to_string()];
+        let err = index_in(tmp.path(), &out, &bad, false, false).expect_err("bad glob");
+        assert!(err.to_string().contains("Invalid exclude glob"), "{err}");
+        assert!(!out.exists());
+    }
+
+    #[test]
+    fn run_index_no_supported_files_errors() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(tmp.path().join("blob.zzz"), "x").expect("write");
+        let out = tmp.path().join("out");
+        let err = index_in(tmp.path(), &out, &[], false, false).expect_err("nothing to index");
+        assert!(err.to_string().contains("No supported files"), "{err}");
+    }
+
+    #[test]
+    fn run_index_writes_index_with_tfidf_metadata_and_no_manifest() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).expect("mkdir");
+        fs::write(src.join("a.txt"), "rust ownership and borrowing rules").expect("write");
+        fs::write(src.join("b.txt"), "python decorators and generators").expect("write");
+        let out = tmp.path().join("out");
+        index_in(&src, &out, &[], false, false).expect("index");
+        let idx = read_index(&out);
+        assert_eq!(idx["embedder_type"], "tfidf");
+        assert_eq!(idx["dimension"], 64);
+        let chunks = idx["chunks"].as_array().expect("chunks");
+        assert!(chunks.len() >= 2);
+        assert_eq!(
+            idx["embeddings"].as_array().expect("emb").len(),
+            chunks.len()
+        );
+        assert!(
+            !out.join("manifest.json").exists(),
+            "manifest off by default"
+        );
+    }
+
+    #[test]
+    fn run_index_manifest_flag_writes_counts() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).expect("mkdir");
+        fs::write(src.join("a.txt"), "alpha beta gamma").expect("write");
+        let out = tmp.path().join("out");
+        index_in(&src, &out, &[], false, true).expect("index");
+        let raw = fs::read_to_string(out.join("manifest.json")).expect("manifest");
+        let m: serde_json::Value = serde_json::from_str(&raw).expect("json");
+        assert_eq!(m["file_count"], 1);
+        assert_eq!(
+            m["chunk_count"],
+            read_index(&out)["chunks"].as_array().expect("c").len()
+        );
+    }
+
+    #[test]
+    fn run_index_exclude_pattern_drops_matching_files() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).expect("mkdir");
+        fs::write(src.join("keep.txt"), "keepable unique words here").expect("write");
+        fs::write(src.join("skip.txt"), "skippable distinct phrase there").expect("write");
+        let out = tmp.path().join("out");
+        index_in(&src, &out, &["**/skip.txt".to_string()], false, false).expect("index");
+        let text = fs::read_to_string(out.join("index.json")).expect("read");
+        assert!(text.contains("keepable"));
+        assert!(
+            !text.contains("skippable"),
+            "excluded file leaked into index"
+        );
+    }
+
+    #[test]
+    fn run_index_dedup_removes_identical_chunks_across_files() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).expect("mkdir");
+        fs::write(src.join("a.txt"), "the very same sentence").expect("write");
+        fs::write(src.join("b.txt"), "the very same sentence").expect("write");
+        let (plain, deduped) = (tmp.path().join("plain"), tmp.path().join("deduped"));
+        index_in(&src, &plain, &[], false, false).expect("plain");
+        index_in(&src, &deduped, &[], true, false).expect("dedup");
+        let n = |o: &Path| read_index(o)["chunks"].as_array().expect("c").len();
+        assert_eq!(n(&plain), 2);
+        assert_eq!(n(&deduped), 1);
+    }
+
+    #[test]
+    fn run_index_sqlite_flag_without_feature_errors_after_saving_json() {
+        if cfg!(feature = "sqlite") {
+            return;
+        }
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).expect("mkdir");
+        fs::write(src.join("a.txt"), "some content").expect("write");
+        let out = tmp.path().join("out");
+        let err = run_index(
+            &src.to_string_lossy(),
+            &out.to_string_lossy(),
+            200,
+            20,
+            64,
+            EmbedderType::Tfidf,
+            SemanticModel::MiniLm,
+            true,
+            ChunkStrategy::Recursive,
+            1,
+            false,
+            &[],
+            false,
+            true,
+        )
+        .expect_err("sqlite feature off");
+        assert!(err.to_string().contains("'sqlite' feature"), "{err}");
+        assert!(out.join("index.json").exists());
+    }
+}

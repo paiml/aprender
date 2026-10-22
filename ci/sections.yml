@@ -28,7 +28,7 @@ sovereign-ci:
     advisories_diff_only: true
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
-# runs as TWELVE shards (ONE count: the `shards:` pins below; ci.yml's matrix lists must match, check_shard_count_single_source.sh), each its own ci.yml job on its own runner: as one shard
+# runs as ONE shard (EMG-001 C1; was twelve) (ONE count: the `shards:` pins below; ci.yml's matrix lists must match, check_shard_count_single_source.sh), each its own ci.yml job on its own runner: as one shard
 # it took 5358 s of x86-main and was the release critical path. nextest's hash
 # partition N/12 and the explicit runner's round-robin N/12 each cover their list
 # exactly once between the shards; the cross-shard Σ fan-in in the workspace-test
@@ -36,23 +36,9 @@ sovereign-ci:
 # [X64], the determinism fat job runs [ARM64] + the compare.
 matrix-pins:
   workspace-test-shard:
-    - {shard: 1, shards: 12}
-    - {shard: 2, shards: 12}
-    - {shard: 3, shards: 12}
-    - {shard: 4, shards: 12}
-    - {shard: 5, shards: 12}
-    - {shard: 6, shards: 12}
-    - {shard: 7, shards: 12}
-    - {shard: 8, shards: 12}
-    - {shard: 9, shards: 12}
-    - {shard: 10, shards: 12}
-    - {shard: 11, shards: 12}
-    - {shard: 12, shards: 12}
+    - {shard: 1, shards: 1}
   workspace-test-shard-merge_group:
-    - {shard: 1, shards: 4}
-    - {shard: 2, shards: 4}
-    - {shard: 3, shards: 4}
-    - {shard: 4, shards: 4}
+    - {shard: 1, shards: 1}
   determinism:
     - {arch: X64}
     - {arch: ARM64}
@@ -94,8 +80,8 @@ jobs:
       fail-fast: false
       matrix:
         # NOTE: the matrix-pins above override this matrix (fat_driver.py); the guard checks the pins and ci.yml only
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        shards: [12]
+        shard: [1]
+        shards: [1]
     # PMAT-3138 (#3138): arch-neutral -- intel, yoga OR gx10. Measured 2026-09-12 on
     # gx10 with this image and env, --no-fail-fast: step 1 (59k tests) 10.6 min vs
     # 34.5 on intel, step 2 (102 tree readers) 6.7 vs 27.4, the over-the-cap
@@ -549,7 +535,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e SHARD -e SHARDS \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
@@ -565,7 +551,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/lib.junit.xml"
       - name: "GPU crates on their default features (per-package resolve, no device needed)"
-        if: steps.tier.outputs.tier == 'full' && matrix.shard == 2
+        if: steps.tier.outputs.tier == 'full' && (matrix.shard == 2 || matrix.shards == 1)
         # aprender-gpu + aprender-cuda-edge, un-darked from the required check (T0 of the
         # NVIDIA CUDA Rust spec, #3062). A per-package resolve keeps `cuda` OFF (see the
         # comment on the workspace line above); the `driver`/`kernels`/`memory`/`ptx` tests
@@ -583,13 +569,13 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
             cargo nextest run --profile ci -p aprender-gpu -p aprender-cuda-edge --lib
       - name: "Σ-executed: keep the GPU crates junit (the next nextest run overwrites it)"
-        if: steps.tier.outputs.tier == 'full' && matrix.shard == 2
+        if: steps.tier.outputs.tier == 'full' && (matrix.shard == 2 || matrix.shards == 1)
         # #4433: nextest writes <target>/nextest/ci/junit.xml and every invocation
         # overwrites it, so each run's report is copied out before the next one.
         shell: bash
@@ -601,7 +587,7 @@ jobs:
       # their Σ check runs here, on the shard that built and ran them. The universe is
       # listed here with the filters written out again, as in the shard-1 Σ step below.
       - name: "Σ-executed: the GPU crates ran exactly the tests they owe (#4433)"
-        if: steps.tier.outputs.tier == 'full' && matrix.shard == 2
+        if: steps.tier.outputs.tier == 'full' && (matrix.shard == 2 || matrix.shards == 1)
         shell: bash
         run: |
           set -euo pipefail
@@ -641,7 +627,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             "$IMAGE" \
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -Eq "test result: ok\. [1-9][0-9]* passed" /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
@@ -713,7 +699,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e SHARD -e SHARDS \
             "$IMAGE" \
             bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
@@ -747,7 +733,7 @@ jobs:
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
@@ -767,7 +753,6 @@ jobs:
       # on every tier, so the verdict job can tell "not a full run" from "a
       # shard's ids never arrived" -- a missing file there is RED, not a skip.
       - name: "Σ-executed: stage this shard's executed ids for the fan-in (#4433)"
-        if: matrix.shards != 1
         shell: bash
         env:
           TIER: ${{ steps.tier.outputs.tier }}
@@ -784,7 +769,6 @@ jobs:
             fi
           fi
       - uses: actions/upload-artifact@v7
-        if: matrix.shards != 1
         with:
           name: sigma-shard-${{ matrix.shard }}
           path: sigma-shard/
@@ -798,7 +782,7 @@ jobs:
       # together. Not a fragment because it is a build, not a test target, and
       # no wiring reader (check_model_tests_wired, check_beats_gated) names it.
       - name: Build every example (workspace, keep-going)
-        if: steps.tier.outputs.tier == 'full' && matrix.shard == 3
+        if: steps.tier.outputs.tier == 'full' && (matrix.shard == 3 || matrix.shards == 1)
         timeout-minutes: 40
         run: |
           set -euo pipefail
@@ -814,7 +798,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e SHARD -e SHARDS \
             "$IMAGE" \
             cargo build --examples --workspace --keep-going
@@ -883,7 +867,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
@@ -981,7 +965,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
@@ -1054,7 +1038,7 @@ jobs:
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e TREE="$tree" -e EXPR="$EXPR" \
@@ -1094,7 +1078,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
@@ -1126,7 +1110,7 @@ jobs:
         run: |
           printf 'workspace-test NOT RUN: %s\n' "$REASON"
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
-        if: matrix.shard == 2
+        if: (matrix.shard == 2 || matrix.shards == 1)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
         # See scripts/check_build_rs_paths.sh for the full rationale.
@@ -1138,7 +1122,7 @@ jobs:
             "$IMAGE" \
             setsid --wait bash scripts/check_build_rs_paths.sh
       - name: apr-format leaf sovereignty guard (#2231)
-        if: matrix.shard == 2
+        if: (matrix.shard == 2 || matrix.shards == 1)
         # Poka-Yoke: prove the extracted `apr-format` leaf pulls no ML/GPU/
         # tokenizer/framework crate (so consumers `cargo add apr-format` without
         # aprender-core + trueno/wgpu). Discriminating: PASSES on apr-format +
