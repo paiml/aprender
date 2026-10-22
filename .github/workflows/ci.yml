@@ -523,6 +523,22 @@ jobs:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 5
     steps:
+      # A receipt-reuse run (tier=reuse, PMAT-5737) runs no test step; the shards stage the tier they decided, so a
+      # reuse shard fails this marker and mg-reuse-wt never cites that run on the merge queue or main (R:k6-wt-ran).
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sigma-shard-*
+          path: ${{ runner.temp }}/sigma
+      - name: no shard ran tier reuse
+        run: |
+          set -euo pipefail
+          n=0
+          for f in "$RUNNER_TEMP"/sigma/sigma-shard-*/tier; do
+            [ -f "$f" ] || { echo "::error::a shard staged no tier file"; exit 1; }
+            n=$((n+1))
+            [ "$(cat "$f")" != reuse ] || { echo "::error::$f is tier reuse: this run did not test the tree"; exit 1; }
+          done
+          [ "$n" -ge 1 ] || { echo "::error::no shard tier files"; exit 1; }
       - run: echo "this run owes and runs the test suite"
   workspace-test-shard:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them

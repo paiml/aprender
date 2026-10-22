@@ -645,6 +645,7 @@ STUB
   mgshape() { # mgshape FILE -> one line per violation
     awk -v tok='(^|[^A-Za-z0-9_-])mg-reuse($|[^A-Za-z0-9_-])' -v want="if: github.event_name == 'push' && github.ref == 'refs/heads/main'" '
       /^  [A-Za-z0-9_-]+:$/ { j = $1; sub(/:$/, "", j); seen[j] = 1; next }
+      { jbody[j] = jbody[j] "\n" $0 }
       /^    if:/    { jif[j] = $0; sub(/^    /, "", jif[j]) }
       /^    runs-on:/ { jrun[j] = $0 }
       /^    needs:/ || (inn && /^      /) { jneeds[j] = jneeds[j] $0 }
@@ -656,6 +657,8 @@ STUB
         if (jif["mg-reuse"] ~ /merge_group/) print "mg-reuse if names merge_group: a queue entry could reuse"
         # once the receipt judge exists, the test-ran marker must be keyed on its verdict, else a receipt run reads as tested
         if (("receipt-judge" in seen) && (jneeds["workspace-test-ran"] !~ /receipt-judge/ || jif["workspace-test-ran"] !~ /receipt-judge\.outputs\.ok/)) print "workspace-test-ran ignores receipt-judge: a receipt-reuse run would read as tested"
+        # a receipt-reuse run (tier=reuse) runs no tests: the marker must read the staged shard tier and refuse reuse (#5944)
+        if (jbody["workspace-test-ran"] !~ /sigma-shard/ || jbody["workspace-test-ran"] !~ /!= reuse/) print "workspace-test-ran does not refuse tier reuse: a receipt-reuse run would read as tested"
         # the marker must prove the shards ran: it needs them and its if requires their success (else a run with skipped shards owns it)
         if (jneeds["workspace-test-ran"] !~ /workspace-test-shard/) print "workspace-test-ran does not need workspace-test-shard: the marker no longer proves the shards ran"
         if (jif["workspace-test-ran"] !~ /needs\.workspace-test-shard\.result == .success./) print "workspace-test-ran if lacks the shard success clause: skipped or failed shards would still own the marker"
@@ -693,6 +696,7 @@ STUB
   mgmut ran-marker-needs-judge-but-if-ignores-it "workspace-test-ran ignores receipt-judge" 's#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:\n    needs: [receipt-judge]#'
   mgmut ran-marker-drops-shard-needs "workspace-test-ran does not need workspace-test-shard" '/^  workspace-test-ran:$/,/^    runs-on:/{/^    needs: \[workspace-test-shard\]$/d}'
   mgmut ran-marker-if-drops-shard-result "workspace-test-ran if lacks the shard success clause" "/^  workspace-test-ran:\$/,/^    runs-on:/{s/ \&\& needs.workspace-test-shard.result == 'success'//}"
+  mgmut ran-marker-ignores-reuse-tier "workspace-test-ran does not refuse tier reuse" '/^  workspace-test-ran:$/,/^  workspace-test-shard:$/{/!= reuse/d}'
   mgmut mg-reuse-wt-leaves-mq-lane "mg-reuse-wt is not on the mq lane" '/^  mg-reuse-wt:$/,/^    timeout-minutes:/{s/,"mq"\]/,"clean-room"]/}'
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
