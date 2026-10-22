@@ -411,6 +411,7 @@ jobs:
           bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh"
           bash scripts/ci/advisory_step_selftest.sh
           bash scripts/ci/advisory_positive_control.sh
+          bash scripts/ci/rearm_ready.sh --self-test
       - name: Every deny.toml exemption must still be live
         env:
           GITHUB_TOKEN: ${{ github.token }}
