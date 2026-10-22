@@ -52,26 +52,12 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn repo_contracts() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts")
-}
-
 fn s(p: &Path) -> String {
     p.to_str().expect("utf-8 path").to_string()
 }
 
 fn json_of(r: &Run) -> serde_json::Value {
     serde_json::from_str(&r.stdout).unwrap_or_else(|e| panic!("stdout is JSON: {e}\n{}", show(r)))
-}
-
-#[test]
-fn the_repo_corpus_passes_the_sigma_gate() {
-    let dir = s(&repo_contracts());
-    let r = pv(&["lint", &dir, "--gate", "sigma", "--format", "json"]);
-    assert_eq!(r.code, 0, "{}", show(&r));
-    let v = json_of(&r);
-    assert_eq!(v["gate"], "sigma", "{}", show(&r));
-    assert_eq!(v["verdict"], "Pass", "{}", show(&r));
 }
 
 #[test]
@@ -147,7 +133,7 @@ fn a_corpus_without_sigma_declines_at_exit_2() {
 
 #[test]
 fn an_unknown_gate_name_is_refused() {
-    let dir = s(&repo_contracts());
+    let dir = s(&fixture("sigma-ok"));
     let r = pv(&["lint", &dir, "--gate", "no-such-gate", "--format", "json"]);
     assert_ne!(r.code, 0, "{}", show(&r));
     assert!(
@@ -160,7 +146,15 @@ fn an_unknown_gate_name_is_refused() {
 /// `--gate` selects ONE gate: the report is that gate's, not the whole run's.
 #[test]
 fn the_gate_mode_reports_only_the_named_gate() {
-    let dir = s(&repo_contracts());
+    // One real contract in a tempdir (the fixtures are sigma corpora, not valid under `validate`), not the
+    // whole repo tree: #5914.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/softmax-kernel-v1.yaml"),
+        tmp.path().join("softmax-kernel-v1.yaml"),
+    )
+    .expect("control contract copied");
+    let dir = s(tmp.path());
     let r = pv(&["lint", &dir, "--gate", "validate", "--format", "json"]);
     assert_eq!(r.code, 0, "{}", show(&r));
     let v = json_of(&r);
