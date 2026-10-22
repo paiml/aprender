@@ -224,7 +224,7 @@ if [ "${1:-}" = "--self-test" ]; then
   printf 'const C: &str = include_str!("../../f_out/data.yaml");\n' > "$TD/f/src/lib_tests.rs"
   got="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/f" --escapes)"
   n="$(printf '%s\n' "$got" | grep -c . || true)"
-  if [ "$n" = "1" ] && printf '%s' "$got" | grep -q 'src/lib.rs$'; then
+  if [ "$n" = "1" ] && grep -q 'src/lib.rs$' <<< "$got"; then
     printf 'ok    row 5 an include_str! escaping the crate is reported once (non-test code only)\n'
   else
     printf 'FAIL  row 5 expected exactly one escape from src/lib.rs, got: %s\n' "$got"; fails=1
@@ -252,7 +252,7 @@ if [ "${1:-}" = "--self-test" ]; then
   printf 'use wasm_bindgen::prelude::*;\npub const F: &[u8] = include_bytes!("../../../../gone.apr");\n' > "$TD/i/src/lib.rs"
   out="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/i" --escapes 2>/dev/null)"
   err="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/i" --escapes 2>&1 >/dev/null)"
-  if [ -z "$out" ] && printf '%s' "$err" | grep -q 'SKIPPED (wasm32-only'; then
+  if [ -z "$out" ] && grep -q 'SKIPPED (wasm32-only' <<< "$err"; then
     printf 'ok    row 8 a wasm32-only escaping include is skipped visibly, not reported\n'
   else
     printf 'FAIL  row 8 wasm32-only handling: out=[%s] err=[%s]\n' "$out" "$err"; fails=1
@@ -294,7 +294,7 @@ if [ "${1:-}" = "--self-test" ]; then
   mkdir -p "$TD/n/src"
   printf '#[cfg(all(test, feature = "x"))]\nmod tests { const K: &str = include_str!("../../../../gone.yaml"); }\n#[cfg(any(test, feature = "y"))]\nmod maybe { const L: &str = include_str!("../../../../gone2.yaml"); }\n' > "$TD/n/src/lib.rs"
   got="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/n" --escapes)"
-  if [ "$(printf '%s\n' "$got" | grep -c .)" = "1" ] && printf '%s' "$got" | grep -q 'gone2'; then
+  if [ "$(printf '%s\n' "$got" | grep -c .)" = "1" ] && grep -q 'gone2' <<< "$got"; then
     printf 'ok    row 13 all(test, …) is test-only; any(test, …) is still judged\n'
   else
     printf 'FAIL  row 13 cfg(all/any(test)) handling, got: %s\n' "$got"; fails=1
