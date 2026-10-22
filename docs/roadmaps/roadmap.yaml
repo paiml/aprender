@@ -25321,6 +25321,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3998
+- id: PMAT-5502
+  github_issue: 5502
+  item_type: task
+  title: Wire parity_receipt_denominator.sh verify mode into CI (#5502)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-18T10:18:08Z
+  updated: 2026-10-18T10:18:08Z
+  spec: null
+  acceptance_criteria:
+  - 'Slice of #5309 (debt ratchet)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3997
 - id: PMAT-5737
   github_issue: 5737
   item_type: task
@@ -25333,6 +25352,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   spec: null
   acceptance_criteria:
   - 'INTAKE refs #5394; step 1 on feat/rollup-bot @138d94c28f'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5751
+  github_issue: 5751
+  item_type: task
+  title: 'aprender#5751: brownout-proof merge path: seed per-PR cargo registry from host-local seed; pin_build_base local-first'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-19T11:16:46Z
+  updated: 2026-10-19T11:16:46Z
+  spec: null
+  acceptance_criteria:
+  - Registry keyed per PR x shard so every new ref cold-fetches crates.io; pin_build_base refetches a base the checkout can hold.
   phases: []
   subtasks: []
   estimated_effort: null
