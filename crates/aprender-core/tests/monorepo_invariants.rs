@@ -1140,6 +1140,7 @@ fn falsify_mono_014_path_pins_name_their_target_version() {
 
 /// The one draft form the PR-only jobs use (main already has it on `x86-main` and the shard).
 const DF: &str = "github.event.pull_request.draft != true";
+const NOT_PR: &str = "github.event_name != 'pull_request'";
 const G_ALL: &str =
     "${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}";
 const CI_TYPES: [&str; 4] = ["opened", "synchronize", "reopened", "ready_for_review"];
@@ -1149,12 +1150,13 @@ fn draft_gate_canon() -> Vec<(&'static str, String)> {
     vec![
         ("mg-reuse", "github.event_name == 'push' && github.ref == 'refs/heads/main'".into()),
         ("mg-reuse-self-test", G_ALL.into()),
-        ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} }}}}")),
-        ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} }}}}")),
+        ("pr-light", format!("${{{{ github.event_name == 'pull_request' && {DF} }}}}")),
+        ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}")),
+        ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} && {NOT_PR} }}}}")),
         ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}".into()),
         // merge_group-only: a draft never reaches the queue, so there is nothing to skip.
         ("mg-reuse-wt", "github.event_name == 'merge_group'".into()),
-        ("workspace-test-shard", format!("${{{{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && {DF} }}}}")),
+        ("workspace-test-shard", format!("${{{{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && {DF} && {NOT_PR} }}}}")),
         ("workspace-test-ran", format!("${{{{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && {DF} }}}}")),
         ("workspace-test", "always()".into()),
         ("ci-gate", "always()".into()),
@@ -1242,8 +1244,9 @@ fn rewrite_if(src: &str, job: &str, new: Option<&str>) -> String {
 
 /// The 18 planted mutants: (label, mutated ci.yml). Each must be RED.
 fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
-    let x86_if =
-        format!("    if: ${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} }}}}");
+    let x86_if = format!(
+        "    if: ${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}"
+    );
     let gate_tail = src.split_once("\n  gate:\n").expect("gate job").1;
     let gate_mut = src.replacen(
         gate_tail,
