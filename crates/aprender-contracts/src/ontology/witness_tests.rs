@@ -263,3 +263,39 @@ fn implication_adjacency_groups_targets_by_source() {
     assert_eq!(adj["B"], vec!["C"]);
     assert!(implication_adjacency(&ClauseSet::default()).is_empty());
 }
+
+fn volatile_witness(sha: Option<&str>, cpu_ms: u64) -> Witness {
+    Witness {
+        census_id_set_sha256: "0".repeat(64),
+        relations_sha256: "1".repeat(64),
+        reasoner_git_sha: sha.map(str::to_string),
+        checkable_n: 3,
+        result: good_core(),
+        pc_reasoner: FIRED.into(),
+        cpu_ms,
+    }
+}
+
+/// P5: a regen at another HEAD or with another timing must leave the committed file byte-identical,
+/// or every PR that regenerates conflicts with every other on the shared witness.
+#[test]
+fn volatile_fields_are_never_written() {
+    let a = serde_json::to_string_pretty(&volatile_witness(Some("aaaa"), 1)).expect("serializes");
+    let b = serde_json::to_string_pretty(&volatile_witness(Some("bbbb"), 2)).expect("serializes");
+    assert_eq!(a, b);
+    assert!(
+        !a.contains("cpu_ms") && !a.contains("reasoner_git_sha"),
+        "{a}"
+    );
+}
+
+/// Witnesses already on disk carry the two fields; they must still be read.
+#[test]
+fn a_witness_with_the_old_volatile_fields_still_parses() {
+    let mut v = serde_json::to_value(volatile_witness(None, 0)).expect("serializes");
+    v["cpu_ms"] = serde_json::json!(7);
+    v["reasoner_git_sha"] = serde_json::json!("abc");
+    let w: Witness = serde_json::from_value(v).expect("old shape parses");
+    assert_eq!(w.cpu_ms, 7);
+    assert_eq!(w.reasoner_git_sha.as_deref(), Some("abc"));
+}

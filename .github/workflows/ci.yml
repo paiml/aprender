@@ -107,7 +107,7 @@ jobs:
   # container/outputs exactly as the Actions runner did. The workspace tests
   # are the exception: as one shard inside x86-main they took 5358 s of it and
   # were the release critical path, so ci/sections.yml `matrix-pins` splits
-  # them into three shards and each runs as its own `workspace-test-shard` job
+  # them into shards (12, ONE count in ci/sections.yml matrix-pins) and each runs as its own `workspace-test-shard` job
   # below, in parallel. The `workspace-test` verdict job compares the UNION of
   # the shards' executed test ids with the owed universe, by id (#4433).
   #
@@ -473,8 +473,8 @@ jobs:
   # missing from its fat job's results (the job died before writing them) is a
   # failure, never a pass.
   # ==========================================================================
-  # The workspace tests, one shard per job (nextest hash partition N/3 plus the
-  # explicit runner's round-robin N/3), in parallel on the X64 clean-room pool.
+  # The workspace tests, one shard per job (nextest hash partition N/12 plus the
+  # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
     needs: [scope]
@@ -485,7 +485,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: ${{ fromJSON(github.event_name == 'merge_group' && '[1,2,3,4]' || '[1,2,3,4,5,6,7,8,9,10,11,12]') }}
+        shards: ${{ fromJSON(github.event_name == 'merge_group' && '[4]' || '[12]') }}
     outputs:
       results: ${{ steps.run.outputs.results }}
     env:
@@ -503,7 +504,7 @@ jobs:
         id: run
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'workspace-test-shard?${{ matrix.shard }}?3?'
+          --sections 'workspace-test-shard?${{ matrix.shard }}?${{ matrix.shards }}?'
           --results "$RUNNER_TEMP/fat/results.json"
       # #4948: a cancelled run never reaches a section's own container removal,
       # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
@@ -558,8 +559,11 @@ jobs:
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
+          # ONE shard count: the pins in ci/sections.yml (check_shard_count_single_source.sh)
+          SHARDS="$(awk -v ev="$GITHUB_EVENT_NAME" '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{k="pr";next} p&&/^  workspace-test-shard-merge_group:/{k="mg";next} p&&/^  [a-z]/{k=""} k&&/^    - \{shard:/{c[k]++} END{print (ev=="merge_group"&&c["mg"]?c["mg"]:c["pr"])+0}' ci/sections.yml)"
+          [ "${SHARDS:-0}" -ge 1 ] 2>/dev/null || { echo "::error::Σ: no workspace-test-shard pins"; exit 1; }
           tiers=""
-          for n in 1 2 3; do
+          for n in $(seq 1 "$SHARDS"); do
             [ -f "$d/sigma-shard-$n/tier" ] || { echo "::error::Σ: shard $n staged no tier file"; exit 1; }
             tiers="$tiers $(cat "$d/sigma-shard-$n/tier")"
           done
@@ -568,16 +572,17 @@ jobs:
           # skips the lib/explicit Σ; a split (full full quick) is RED, since
           # the full shards' partitions would otherwise go unchecked.
           set -- $tiers
-          [ "$1" = "$2" ] && [ "$2" = "$3" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }
+          [ "$#" -eq "$SHARDS" ] || { echo "::error::Σ: $# tier files for $SHARDS shards:$tiers"; exit 1; }
+          for t in "$@"; do [ "$t" = "$1" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }; done
           [ "$1" = full ] || { echo "every shard ran tier '$1': the lib/explicit Σ is not owed"; exit 0; }
           j=() l=()
-          for n in 1 2 3; do
+          for n in $(seq 1 "$SHARDS"); do
             j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
             l+=(--log "$d/sigma-shard-$n/section.log")
           done
           rc=0
-          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib (3 shards)" "${j[@]}" --list-json "$d/sigma-shard-1/lib.list.json" || rc=1
-          python3 scripts/ci/sigma_executed.py explicit --kind "explicit (3 shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
+          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib ($SHARDS shards)" "${j[@]}" --list-json "$d/sigma-shard-1/lib.list.json" || rc=1
+          python3 scripts/ci/sigma_executed.py explicit --kind "explicit ($SHARDS shards)" "${l[@]}" --step "Integration tests" --list "$d/sigma-shard-1/explicit.list.txt" || rc=1
           exit "$rc"
 
   ci-gate:

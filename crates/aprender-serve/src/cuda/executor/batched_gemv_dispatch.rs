@@ -1,4 +1,11 @@
 impl CudaExecutor {
+    /// Forget the cached Q8_1 activation quantization: a caller that rewrote an
+    /// input buffer from the host (a test, a probe) must call this before a GEMV on it.
+    #[cfg(test)]
+    pub(crate) fn invalidate_q8_activation(&mut self) {
+        self.q8_activation_valid = false;
+    }
+
     /// #5303: [`Self::gemv_dispatch`] over `m` stacked activation rows:
     /// `output[r] = W · input[r]`, `input` `m × k` and `output` `m × n`.
     ///
