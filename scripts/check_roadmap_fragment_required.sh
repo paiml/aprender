@@ -158,7 +158,14 @@ judge_generated() {
     fi
     mkdir -p "$td/entries"
     while IFS= read -r name; do
-        case "$name" in *.yaml) fname="${name##*/}"; git -C "$repo" show "$head:$name" >"$td/entries/$fname" || { rm -rf -- "${td:?}"; return 2; } ;; esac
+        case "$name" in
+            *.yaml)
+                fname="${name##*/}"
+                if ! git -C "$repo" show "$head:$name" >"$td/entries/$fname"; then
+                    rm -rf -- "${td:?}"
+                    return 2
+                fi ;;
+        esac
     done < <(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null)
     # G4 entries/ is append-only: deleting a fragment drops a ticket (or un-supersedes a base entry).
     if [ -n "$(git -C "$repo" diff --no-renames --name-only --diff-filter=D "$base" "$head" -- "$ENTRIES_DIR")" ]; then

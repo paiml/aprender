@@ -709,7 +709,7 @@ if git -C "$REPO_ROOT" cat-file -e "$HEAD_REF:$BASE_FILE" 2>/dev/null \
     agg_at() {
         local ref="$1" out="$2" name
         if git -C "$REPO_ROOT" cat-file -e "$ref:$BASE_FILE" 2>/dev/null; then
-            mkdir -p "$out.d/entries"
+            install -d "$out.d/entries"
             git -C "$REPO_ROOT" show "$ref:$BASE_FILE" >"$out.d/base.yaml" || return 2
             while IFS= read -r name; do
                 case "$name" in
