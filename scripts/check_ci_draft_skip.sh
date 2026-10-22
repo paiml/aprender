@@ -65,7 +65,7 @@ self_test() {
     }
     mutant no-ready-for-review 's/, ready_for_review\]/]/'
     mutant x86-main-unguarded 's/ && github\.event\.pull_request\.draft != true \}\}/ }}/'
-    mutant shard-unguarded '/^  workspace-test-shard:/{n;/draft/d}'
+    mutant shard-unguarded '/^  workspace-test-shard:$/,/runs-on:/{/draft != true/d;}'
     mutant gate-no-draft-exit '/echo "gate: draft PR/d'
     mutant ci-gate-no-draft-flag '/^  ci-gate:/,/^  gate:/{/DRAFT: \$/d}'
     mutant sigma-step-runs-on-draft '/Σ-executed/{n;d}'
