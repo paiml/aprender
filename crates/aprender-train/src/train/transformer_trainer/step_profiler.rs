@@ -927,7 +927,7 @@ mod tests {
     fn test_json_report_header_steps_avg_and_coverage() {
         let mut p = profiler_with_wall(4, 400);
         p.totals[FORWARD] = Duration::from_millis(200);
-        let j = p.json_report().unwrap();
+        let j = p.json_report().expect("report");
         assert!(j.starts_with("{\"_profiler\":\"step_profiler_v2\",\"steps\":4,"));
         assert!(j.contains("\"avg_step_ms\":100.00"), "{j}");
         assert!(j.contains("\"wall_coverage\":0.500"), "{j}");
@@ -939,15 +939,15 @@ mod tests {
         let mut p = profiler_with_wall(1, 100);
         p.totals[H2D] = Duration::from_millis(20);
         p.totals[GRAD_H2D] = Duration::from_millis(15);
-        assert!(p.json_report().unwrap().contains("\"bottleneck\":\"transfer\""));
+        assert!(p.json_report().expect("report").contains("\"bottleneck\":\"transfer\""));
 
         let mut p = profiler_with_wall(1, 100);
         p.totals[FORWARD] = Duration::from_millis(10);
-        assert!(p.json_report().unwrap().contains("\"bottleneck\":\"launch\""));
+        assert!(p.json_report().expect("report").contains("\"bottleneck\":\"launch\""));
 
         let mut p = profiler_with_wall(1, 100);
         p.totals[FORWARD] = Duration::from_millis(60);
-        assert!(p.json_report().unwrap().contains("\"bottleneck\":\"memory_bw\""));
+        assert!(p.json_report().expect("report").contains("\"bottleneck\":\"memory_bw\""));
     }
 
     #[test]
@@ -956,7 +956,7 @@ mod tests {
         p.op_totals[OP_QKV_GEMM] = Duration::from_millis(30);
         p.op_totals[OP_QKV_BWD] = Duration::from_millis(10);
         p.op_totals[OP_ATTENTION] = Duration::from_millis(60);
-        let j = p.json_report().unwrap();
+        let j = p.json_report().expect("report");
         assert!(j.contains("\"gemm_pct\":40.0"), "{j}");
         assert!(j.contains(&format!("\"{}\":30.0", OP_NAMES[OP_QKV_GEMM])));
         assert!(!j.contains(&format!("\"{}\":", OP_NAMES[OP_SILU])), "zero ops omitted");
@@ -966,7 +966,7 @@ mod tests {
     fn test_json_report_per_layer_rows_from_recorded_times() {
         let mut p = profiler_with_wall(1, 100);
         p.record_layer_times(&[2_000, 4_000], &[0, 6_000]);
-        let j = p.json_report().unwrap();
+        let j = p.json_report().expect("report");
         assert!(j.contains("\"per_layer\":[{\"layer\":0,\"fwd_ms\":2.0,\"bwd_ms\":0.0},{\"layer\":1,\"fwd_ms\":4.0,\"bwd_ms\":6.0}]"), "{j}");
     }
 
@@ -974,7 +974,7 @@ mod tests {
     fn test_json_report_zero_wall_does_not_divide_by_zero() {
         let mut p = profiler_with_wall(1, 0);
         p.totals[FORWARD] = Duration::from_millis(5);
-        let j = p.json_report().unwrap();
+        let j = p.json_report().expect("report");
         assert!(j.contains("\"wall_coverage\":0.000") && j.contains("\"gemm_pct\":0.0"), "{j}");
     }
 }
