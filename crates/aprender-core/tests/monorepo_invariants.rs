@@ -1800,7 +1800,7 @@ fn archive_is_keyed_by_runner_arch() {
         "an un-keyed ws-archive name survives in ci/sections.yml"
     );
     assert!(
-        ci.contains("arch: ${{ fromJSON(github.event_name == 'merge_group' && '[\"X64\"]' || '[\"X64\",\"ARM64\"]') }}"),
-        "workspace-test-archive must matrix on arch (merge_group X64 only)"
+        ci.contains("        arch: [X64]\n    runs-on: ${{ github.event_name == 'merge_group'"),
+        "workspace-test-archive must matrix on arch: X64 only, every event (an unconsumed ARM64 leg blocks the shards)"
     );
 }

@@ -448,12 +448,12 @@ jobs:
   # the gate, no second path. In a non-quick tier it uploads only a bind.json saying so.
   workspace-test-archive:
     if: ${{ github.event.pull_request.draft != true }}
-    # one archive per arch (C314 quorum 2026-10-22: opus x2 chose this): a quick-tier shard is arch-neutral (operator 14:18Z) and
-    # downloads ws-archive-<its own runner.arch>. merge_group is X64 only (no ARM64 runner carries the mq label), PR/push build both.
+    # one archive per runner arch: the shard downloads ws-archive-<its own runner.arch>. X64 only for every event: no shard runs on ARM64,
+    # so an ARM64 leg would be unconsumed yet still block the required check on fail/cancel/queue (triage 5854 quorum). Add ARM64 with its consumer.
     strategy:
       fail-fast: false
       matrix:
-        arch: ${{ fromJSON(github.event_name == 'merge_group' && '["X64"]' || '["X64","ARM64"]') }}
+        arch: [X64]
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON(format('["self-hosted","Linux","{0}","clean-room"]', matrix.arch)) }}
     timeout-minutes: 90
     env:
