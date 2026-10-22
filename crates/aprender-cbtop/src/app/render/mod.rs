@@ -16,10 +16,24 @@ impl CbtopApp {
     /// Render the UI
     #[allow(clippy::wildcard_enum_match_arm)]
     pub(super) fn render(&mut self) -> Result<(), CbtopError> {
+        let (width, height) = crossterm::terminal::size()?;
+        self.render_frame(width, height);
+
+        // Flush to terminal
+        let mut output = Vec::with_capacity(16384);
+        self.renderer
+            .flush(&mut self.buffer, &mut output)
+            .map_err(|e| CbtopError::Render(e.to_string()))?;
+        std::io::Write::write_all(&mut std::io::stdout(), &output)?;
+
+        Ok(())
+    }
+
+    /// Draw one frame into the cell buffer at the given terminal size.
+    pub(super) fn render_frame(&mut self, width: u16, height: u16) {
         use presentar_terminal::direct::CellBuffer;
 
         // Resize buffer if needed
-        let (width, height) = crossterm::terminal::size()?;
         if self.buffer.width() != width || self.buffer.height() != height {
             self.buffer = CellBuffer::new(width, height);
         }
@@ -80,15 +94,6 @@ impl CbtopApp {
                 &self.theme,
             );
         }
-
-        // Flush to terminal
-        let mut output = Vec::with_capacity(16384);
-        self.renderer
-            .flush(&mut self.buffer, &mut output)
-            .map_err(|e| CbtopError::Render(e.to_string()))?;
-        std::io::Write::write_all(&mut std::io::stdout(), &output)?;
-
-        Ok(())
     }
 
     pub(super) fn render_title_bar(
@@ -441,5 +446,97 @@ impl CbtopApp {
                 &dim_style,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn app() -> CbtopApp {
+        let mut app = CbtopApp::with_size(Config::default(), 120, 40);
+        app.hardware = HardwareInfo {
+            cpu_model: "Test CPU 9000".to_string(),
+            cpu_cores: 12,
+            simd_type: "AVX2",
+            gpu_name: None,
+            memory_gb: 64.0,
+        };
+        app
+    }
+
+    fn row(app: &CbtopApp, y: u16) -> String {
+        (0..app.buffer.width())
+            .map(|x| app.buffer.get(x, y).map_or(" ", |c| c.symbol.as_str()))
+            .collect()
+    }
+
+    fn screen(app: &CbtopApp) -> String {
+        (0..app.buffer.height())
+            .map(|y| row(app, y))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// FALSIFY-CBTOP-RENDER-001: the buffer is resized to the requested size.
+    #[test]
+    fn test_render_frame_resizes_buffer() {
+        let mut app = app();
+        app.render_frame(80, 24);
+        assert_eq!((app.buffer.width(), app.buffer.height()), (80, 24));
+    }
+
+    /// FALSIFY-CBTOP-RENDER-002: row 0 carries the title with hardware facts.
+    #[test]
+    fn test_render_frame_title_row_shows_hardware() {
+        let mut app = app();
+        app.render_frame(120, 40);
+        let title = row(&app, 0);
+        assert!(title.contains("cbtop"), "{title}");
+        assert!(title.contains("Test CPU 9000 (12 cores, AVX2)"), "{title}");
+        assert!(title.contains("64GB RAM"), "{title}");
+        assert!(!title.contains("GPU:"), "{title}");
+    }
+
+    /// FALSIFY-CBTOP-RENDER-003: a GPU name appears on the title row only
+    /// when the hardware has one.
+    #[test]
+    fn test_render_frame_gpu_name_only_when_present() {
+        let mut app = app();
+        app.hardware.gpu_name = Some("Test GPU X".to_string());
+        app.render_frame(120, 40);
+        assert!(row(&app, 0).contains("GPU: Test GPU X"));
+    }
+
+    /// FALSIFY-CBTOP-RENDER-004: the background fill reaches the corner cell.
+    #[test]
+    fn test_render_frame_fills_background() {
+        let mut app = app();
+        app.render_frame(120, 40);
+        let corner = app.buffer.get(119, 39).expect("corner cell");
+        assert_eq!(corner.bg, app.theme.background);
+    }
+
+    /// FALSIFY-CBTOP-RENDER-005: the run state reaches the screen.
+    #[test]
+    fn test_render_frame_reflects_run_state() {
+        let mut app = app();
+        app.is_running = false;
+        app.render_frame(120, 40);
+        let stopped = screen(&app);
+        app.is_running = true;
+        app.render_frame(120, 40);
+        let running = screen(&app);
+        assert!(stopped.contains("○OFF") && !stopped.contains("●RUN"));
+        assert!(running.contains("●RUN") && !running.contains("○OFF"));
+    }
+
+    /// FALSIFY-CBTOP-RENDER-006: `with_size` builds a buffer of that size.
+    #[test]
+    fn test_with_size_allocates_buffer() {
+        let app = CbtopApp::with_size(Config::default(), 90, 30);
+        assert_eq!((app.buffer.width(), app.buffer.height()), (90, 30));
+        assert!(!app.is_running && !app.should_quit);
     }
 }

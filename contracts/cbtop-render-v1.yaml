@@ -1,0 +1,48 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  description: "aprender-cbtop CbtopApp::render (#5715) — the tty-free half render_frame sizes the cell buffer, fills the theme background, draws hardware facts (and the GPU name only when present) on the title row, and shows the run state in the status bar; render only adds terminal size lookup and the stdout flush."
+  kind: pattern
+  references:
+    - "crates/aprender-cbtop/src/app/render/mod.rs — render, render_frame"
+    - "crates/aprender-cbtop/src/app/mod.rs — new, with_size"
+    - "aprender#5715 — coverage ticket"
+
+equations:
+  render_frame_draws_state:
+    formula: "after render_frame(w,h): buffer is w x h; every cell background is theme.background; row 0 contains cpu_model, cores, simd and RAM; 'GPU:' appears iff gpu_name is Some; status bar shows RUN iff is_running"
+    domain: "a CbtopApp built by with_size and a terminal size"
+    codomain: "the CellBuffer contents"
+    invariants:
+      - "render_frame never touches the terminal or stdout"
+      - "with_size and new build the same app apart from the size lookup"
+
+proof_obligations:
+  - id: CBTOP-RENDER-INV-001
+    type: invariant
+    property: "Buffer follows the requested size"
+    formal: "∀ run: cargo test -p aprender-cbtop --lib test_render_frame_resizes_buffer exits 0"
+    applies_to: render_frame_draws_state
+  - id: CBTOP-RENDER-INV-002
+    type: invariant
+    property: "Run state is shown in the status bar"
+    formal: "∀ run: cargo test -p aprender-cbtop --lib test_render_frame_reflects_run_state exits 0"
+    applies_to: render_frame_draws_state
+
+falsification_tests:
+  - id: FALSIFY-CBTOP-RENDER-001
+    rule: "resize condition inverted"
+    prediction: "flipping the != size check turns test_render_frame_resizes_buffer RED"
+    test: "cargo test -p aprender-cbtop --lib test_render_frame_resizes_buffer"
+    if_fails: "buffer resizing is unguarded"
+  - id: FALSIFY-CBTOP-RENDER-002
+    rule: "background colour swapped"
+    prediction: "filling with theme.foreground turns test_render_frame_fills_background RED"
+    test: "cargo test -p aprender-cbtop --lib test_render_frame_fills_background"
+    if_fails: "background fill is unguarded"
+  - id: FALSIFY-CBTOP-RENDER-003
+    rule: "run state inverted"
+    prediction: "swapping RUN/OFF turns test_render_frame_reflects_run_state RED"
+    test: "cargo test -p aprender-cbtop --lib test_render_frame_reflects_run_state"
+    if_fails: "status bar run state is unguarded"

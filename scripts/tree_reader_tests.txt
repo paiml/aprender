@@ -98,9 +98,11 @@ aprender-contracts-cli	--lib	commands::obligations
 aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
+aprender-contracts-cli	--test	coverage_enforcement_report
 aprender-contracts-cli	--test	coverage_report_render
 aprender-contracts-cli	--test	ev11_lint_ratchets
 aprender-contracts-cli	--test	ground_truth
+aprender-contracts-cli	--test	lint_run_5688
 aprender-contracts-cli	--test	ont2b_sigma_gate
 aprender-contracts-cli	--test	ont2c_owl_tbox
 aprender-contracts-cli	--test	ont4_relations_gate
@@ -192,6 +194,7 @@ aprender-present-terminal	--lib	<root>
 aprender-present-terminal	--lib	ptop
 aprender-profile	--lib	cluster::registry
 aprender-qa-certify	--lib	<root>
+aprender-qa-cli	--test	certify_run_5690
 aprender-rag	--lib	loader::text
 aprender-rag-cli	--lib	<root>
 aprender-review-experiment	--lib	build_corpus

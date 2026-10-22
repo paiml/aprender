@@ -45,4 +45,5 @@ mod tests {
     }
 include!("tests_trace_step_tensor.rs");
 include!("tests_cov_format.rs");
+include!("tests_observability_contracts.rs");
 }
