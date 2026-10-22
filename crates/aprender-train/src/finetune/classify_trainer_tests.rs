@@ -5127,6 +5127,13 @@ fn test_resume_rejects_data_hash_mismatch() {
         config.clone(),
     )
     .expect("config should be valid");
+    // Seed 42 gives every trainer the same initial weights, so perturb the saver's
+    // before the save: only then can a restore be told apart from an untouched head.
+    for w in saver.pipeline.classifier.weight.data_mut().as_slice_mut().expect("contiguous weight")
+    {
+        *w += 0.5;
+    }
+    let saved_weights = saver.pipeline.classifier.weight.data().to_vec();
     saver.save_checkpoint(&dir, 4, &metrics).expect("checkpoint should save");
     let apr = dir.join("model.apr");
 
@@ -5137,7 +5144,10 @@ fn test_resume_rejects_data_hash_mismatch() {
         config.clone(),
     )
     .expect("config should be valid");
+    let fresh = same.pipeline.classifier.weight.data().to_vec();
+    assert_ne!(fresh, saved_weights, "the perturbation must be visible to a restore");
     assert_eq!(same.resume_from_apr_checkpoint(&apr).expect("matching corpus resumes"), 4);
+    assert_eq!(same.pipeline.classifier.weight.data().to_vec(), saved_weights);
 
     // Different corpus: refused with F-CKPT-006 before any weight is touched.
     let mut foreign =
@@ -5147,6 +5157,7 @@ fn test_resume_rejects_data_hash_mismatch() {
     let err = foreign.resume_from_apr_checkpoint(&apr).expect_err("foreign corpus must be refused");
     assert!(err.to_string().contains("F-CKPT-006"), "unexpected error: {err}");
     assert_eq!(foreign.pipeline.classifier.weight.data().to_vec(), before);
+    assert_ne!(before, saved_weights, "a restore would have changed the foreign head");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
