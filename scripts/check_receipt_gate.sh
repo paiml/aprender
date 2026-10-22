@@ -244,7 +244,7 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   [ "$(sha256sum < "$pr/scripts/check_tree_reader_tests.sh" | cut -d' ' -f1)" = "4f4f0e892b1b4c65e1dd9dcc46f0edc0e5deac2f1b5dc7883fc124f6b4c6f0aa" ] || return 1
   [ "$(sha256sum < "$pr/scripts/gate_touched_crates.sh" | cut -d' ' -f1)" = "00f73732cbe0c39c9ff0867d1cb416ef0e7e0d00dc5b01f300cee645fe444bfe" ] || return 1
   [ "$(sha256sum < "$pr/scripts/lib/test_tier.py" | cut -d' ' -f1)" = "63e4b091c7a6c56b45c8da5ceb241ba2a6f991cef55bb3802ffa6458b786dd52" ] || return 1
-  [ "$(sha256sum < "$pr/scripts/ci_mg_reuse.sh" | cut -d' ' -f1)" = "c48c4c49a48a5f57c4876465bf72a74776694e48cd59b2bffb25237d352f279b" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci_mg_reuse.sh" | cut -d' ' -f1)" = "03b3bdf6ebe3bcbab2d67af559d3e33224a19fc5e938d0d4f5b9862508362fa4" ] || return 1
   # structure pins: the top-level keys and the job keys of both files, in any spelling (quoted, ? keys, duplicates). A new top-level key or job, or a second shard block, moves the hash.
   [ "$(tl "$1" | h)" = "7b45344e526135d0ab4f5c04ca82ba2d1112f6286b1ba2024a18017536446ce5" ] || return 1
   [ "$(jl "$1" | h)" = "1d370235776861592b57ff7c935a327fbf70d28427ac084baa4392f5b70d8250" ] || return 1
