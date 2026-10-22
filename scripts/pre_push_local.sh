@@ -82,19 +82,46 @@ step_preflight() {
   git rev-parse --verify -q "$base" > /dev/null || { echo "preflight: base $base not found (git fetch origin main)"; miss=1; }
   return "$miss"
 }
-step_guard_tree() { rm -rf "${ROOT:?}/target/ci-guards-local"; bash scripts/ci/pin_build_base.sh || return 1; bash scripts/ci_guards.sh guard-tree; }
+# Cache key: sha(Cargo.lock + the pinned toolchain's rustc -vV). Target dir and CARGO_HOME are keyed by it and shared by
+# every worktree, so a second worktree on the same lock starts warm instead of cold (#5983).
+cache_key() { { cat "$ROOT/Cargo.lock"; rustc -vV; } | sha256sum | cut -c1-12; }
+PREPUSH_CACHE="${PREPUSH_CACHE:-/mnt/nvme-raid0/targets/pre-push-cache}"
+
+step_guard_tree() {
+  # pin_build_base moves origin/main to the tip with depth 1; on a shallow checkout (lambda) the branch's merge-base
+  # is then unresolvable and m20/m36 refuse. Pin first, then deepen until a merge-base exists.
+  bash scripts/ci/pin_build_base.sh || return 1
+  git merge-base "$base" HEAD > /dev/null 2>&1 || git fetch --deepen=400 origin main > /dev/null 2>&1
+  bash scripts/ci_guards.sh guard-tree
+}
+
 step_guard_cargo() {
-  # m5 runs cargo in a container that mounts ~/.cargo; a registry symlink to a path the container lacks
-  # (lambda: ~/.cargo/registry -> /dev/shm/cargo-ram) makes it die "File exists". Use a real CARGO_HOME then.
-  # The step runs in the runner's build env: no CARGO_TARGET_DIR / CARGO_INCREMENTAL / CARGO_PROFILE_* / RUSTFLAGS (a dev shell sets them;
-  # m5 then sees the host rebuild 157 units instead of 12 after the container build).
-  if [ -L "$HOME/.cargo/registry" ] || [ -L "$HOME/.cargo/git" ]; then
-    echo "guard-cargo: ~/.cargo/registry is a symlink; using CARGO_HOME=$CARGO_TARGET_DIR/cargo-home (first run downloads crates)"
-    mkdir -p "$CARGO_TARGET_DIR/cargo-home"
-    (export CARGO_HOME="$CARGO_TARGET_DIR/cargo-home"; unset CARGO_TARGET_DIR CARGO_INCREMENTAL CARGO_BUILD_STRATEGY RUSTFLAGS $(compgen -e | grep "^CARGO_PROFILE_"); bash scripts/ci_guards.sh guard-cargo)
-  else
-    (unset CARGO_TARGET_DIR CARGO_INCREMENTAL CARGO_BUILD_STRATEGY RUSTFLAGS $(compgen -e | grep "^CARGO_PROFILE_"); bash scripts/ci_guards.sh guard-cargo)
+  # m5 runs cargo in a container that mounts ~/.cargo, then compares with a host build; so the step runs in the runner's
+  # build env (no CARGO_TARGET_DIR / CARGO_INCREMENTAL / CARGO_PROFILE_* / RUSTFLAGS: a dev shell sets them and m5 then
+  # sees 157 units rebuilt instead of 12) and builds into <repo>/target. That target is seeded from, and saved back to,
+  # the keyed cache; CARGO_HOME is the keyed cache's (a ~/.cargo/registry symlink to /dev/shm is invisible to the container).
+  local key cache t0 dl_s rc seed_s run_s units comp_s
+  key="$(cache_key)" || return 1
+  cache="$PREPUSH_CACHE/$key"; mkdir -p "$cache/target" "$cache/cargo-home" "$ROOT/target"
+  echo "guard-cargo: cache key $key ($cache)"
+  t0=$SECONDS
+  if [ -f "$cache/target/.warm" ]; then
+    cp -a --reflink=auto -n "$cache/target/." "$ROOT/target/" 2> /dev/null; echo "guard-cargo: target seeded from cache"
+  else echo "guard-cargo: cold cache for key $key"; fi
+  seed_s=$((SECONDS - t0)); t0=$SECONDS
+  (export CARGO_HOME="$cache/cargo-home"; unset CARGO_TARGET_DIR CARGO_INCREMENTAL CARGO_BUILD_STRATEGY RUSTFLAGS $(compgen -e | grep "^CARGO_PROFILE_"); cargo fetch --locked > /dev/null 2>&1)
+  dl_s=$((SECONDS - t0)); t0=$SECONDS
+  (export CARGO_HOME="$cache/cargo-home"; unset CARGO_TARGET_DIR CARGO_INCREMENTAL CARGO_BUILD_STRATEGY RUSTFLAGS $(compgen -e | grep "^CARGO_PROFILE_"); bash scripts/ci_guards.sh guard-cargo)
+  rc=$?
+  run_s=$((SECONDS - t0))
+  units="$(sed -n 's/^host cargo build after the container build: \([0-9]*\) compile commands.*/\1/p' target/ci-guards-local/guard-cargo.m5.log 2> /dev/null | tail -1)"
+  comp_s="$(sed -n 's/^host cargo build after the container build: [0-9]* compile commands, \([0-9]*\) s.*/\1/p' target/ci-guards-local/guard-cargo.m5.log 2> /dev/null | tail -1)"
+  echo "guard-cargo split: seed ${seed_s}s, download(cargo fetch) ${dl_s}s, guards ${run_s}s of which m5 host compile ${comp_s:-n/a}s for ${units:-n/a} units (CI shape: 12), rc=$rc"
+  if [ "$rc" = 0 ]; then
+    t0=$SECONDS; cp -a --reflink=auto "$ROOT/target/." "$cache/target/" 2> /dev/null; rm -rf "${cache:?}/target/ci-guards-local"
+    touch "$cache/target/.warm"; echo "guard-cargo: cache saved ($((SECONDS - t0))s)"
   fi
+  return "$rc"
 }
 step_vendored() { bash scripts/check_vendored_schemas.sh; }
 
@@ -138,8 +165,17 @@ run_step preflight step_preflight
 if [ "${results[0]:-0}" != 0 ] && want preflight; then
   echo "pre_push_local: preflight failed, later steps would only report rc 127"
 else
-  run_step guard-tree step_guard_tree
+  # guard-tree (no cargo) runs beside guard-cargo (container + cargo build): independent, so wall time is the max, not the sum (#5983)
+  rm -rf "${ROOT:?}/target/ci-guards-local"; mkdir -p "$ROOT/target"
+  gt_log="$(mktemp)"; gt_t0=$SECONDS
+  if want guard-tree; then ( step_guard_tree > "$gt_log" 2>&1; echo $? > "$gt_log.rc" ) & gt_pid=$!; fi
   run_step guard-cargo step_guard_cargo
+  if [ -n "${gt_pid:-}" ]; then
+    wait "$gt_pid"; echo "=== guard-tree (ran in parallel with guard-cargo)"; tail -n 40 "$gt_log"
+    gt_rc="$(cat "$gt_log.rc" 2> /dev/null || echo 1)"
+    names+=(guard-tree); results+=("$gt_rc"); secs+=("$((SECONDS - gt_t0))"); echo "=== guard-tree rc=$gt_rc"
+    rm -f "${gt_log:?}" "${gt_log:?}.rc"
+  fi
   run_step vendored-schemas step_vendored
   run_step quick-tier step_quick
   run_step ont-witness step_witness
