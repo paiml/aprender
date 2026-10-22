@@ -137,10 +137,14 @@ OTHER=2222222222222222222222222222222222222222
 QUEUE=gh-readonly-queue/main/pr-4700-0000000000000000000000000000000000000000
 suite() { printf '{"id":%s,"head_branch":"%s","app":{"slug":"%s"}}' "$1" "$2" "${3:-github-actions}"; }
 crun()  { printf '{"status":"%s","conclusion":%s,"head_sha":"%s","completed_at":"%s","check_suite":{"id":%s},"details_url":"https://github.com/o/r/actions/runs/%s/job/9"}' "$1" "$2" "$3" "$4" "$5" "$6"; }
+sjobs() { # sjobs <n>... -> a jobs body whose workspace-test-shard (n, 4) jobs all succeeded (the queue run really tested)
+  local n; { for n in "$@"; do printf '{"name":"workspace-test-shard (%s, 4)","conclusion":"success"}\n' "$n"; done; printf '{"name":"gate","conclusion":"success"}\n'; } | jq -s '{jobs: .}'
+}
 canned() { # canned <suites-json-list> <runs-json-list>
-  rm -f "${T:?}/canned/suites.FAIL" "${T:?}/canned/runs.FAIL" "${T:?}/canned/calls"
+  rm -f "${T:?}/canned/suites.FAIL" "${T:?}/canned/runs.FAIL" "${T:?}/canned/mgjobs.FAIL" "${T:?}/canned/calls"
   printf '{"check_suites":[%s]}' "$1" >"$T/canned/suites.json"
   printf '{"check_runs":[%s]}' "$2" >"$T/canned/runs.json"
+  sjobs 1 2 3 4 >"$T/canned/mgjobs.json"
 }
 look() { OUT="$(bash "$LOOKUP" o/r "${1:-$SHA}" 2>"$T/err")"; RC=$?; ERR="$(cat "$T/err")"; }
 flat() { tr '\n' ' ' <<<"$1" | sed 's/ $//'; }
@@ -154,7 +158,7 @@ look
 want "L1 a merge-queue workspace-test success on the sha -> found, exit 0" 0 "$RC"
 want "L1 prints the run, the sha the API reports, the conclusion (the push suite's later failure is not the queue's)" \
      "--mg-run 7001 --mg-sha $SHA --mg-conclusion success" "$(flat "$OUT")"
-want "L1 costs exactly 2 API calls" 2 "$(wc -l <"$T/canned/calls" | tr -d ' ')"
+want "L1 costs exactly 3 API calls (suites, check-runs, the run's jobs)" 3 "$(wc -l <"$T/canned/calls" | tr -d ' ')"
 
 canned "$(suite 50 "$QUEUE")" "$(crun completed '"failure"' $SHA 2026-10-04T10:00:00Z 50 7003)"
 look
@@ -212,6 +216,36 @@ want "L12 and no API call was made" 0 "$( [ -f "$T/canned/calls" ] && wc -l <"$T
 canned "$(suite 50 "$QUEUE")" "$(crun completed '"success"' abc 2026-10-04T10:00:00Z 50 7014)"
 look
 want "L13 the check run reports a head_sha that is not a sha -> nothing, exit 1" "1:" "$RC:$OUT"
+
+# L14-L18: a queue run whose green `workspace-test` did not run its own shards is a citation, not a measurement (finding: transitive reuse)
+canned "$(suite 50 "$QUEUE")" "$(crun completed '"success"' $SHA 2026-10-04T10:00:00Z 50 7015)"
+sjobs 1 2 | jq '.jobs += [{"name":"workspace-test-shard (3, 4)","conclusion":"skipped"},{"name":"workspace-test-shard (4, 4)","conclusion":"skipped"}]' >"$T/canned/mgjobs.json"
+look
+want "L14 the queue run skipped its shards (it cited a PR run) -> nothing, exit 1" "1:" "$RC:$OUT"
+has "L14 says why" "did not run and pass its own workspace-test shards" "$ERR"
+
+canned "$(suite 50 "$QUEUE")" "$(crun completed '"success"' $SHA 2026-10-04T10:00:00Z 50 7016)"
+sjobs 1 2 3 | jq '.jobs += [{"name":"workspace-test-shard (4, 4)","conclusion":"failure"}]' >"$T/canned/mgjobs.json"
+look
+want "L15 one shard failed under a green verdict -> nothing, exit 1" "1:" "$RC:$OUT"
+
+canned "$(suite 50 "$QUEUE")" "$(crun completed '"success"' $SHA 2026-10-04T10:00:00Z 50 7017)"
+sjobs >"$T/canned/mgjobs.json"
+look
+want "L16 the queue run has no shard job at all -> nothing, exit 1" "1:" "$RC:$OUT"
+
+canned "$(suite 50 "$QUEUE")" "$(crun completed '"success"' $SHA 2026-10-04T10:00:00Z 50 7018)"
+: >"$T/canned/mgjobs.FAIL"
+look
+want "L17 the jobs call fails -> nothing, exit 1" "1:" "$RC:$OUT"
+has "L17 names the failed call" "jobs lookup failed" "$ERR"
+
+canned "$(suite 50 "$QUEUE")" "$(crun completed '"failure"' $SHA 2026-10-04T10:00:00Z 50 7019)"
+sjobs >"$T/canned/mgjobs.json"
+look
+want "L18 a failed verdict is still printed without a jobs call (only a success is checked for citation)" \
+     "--mg-run 7019 --mg-sha $SHA --mg-conclusion failure" "$(flat "$OUT")"
+want "L18 and it cost 2 API calls" 2 "$(wc -l <"$T/canned/calls" | tr -d ' ')"
 
 # -- D: the decision -------------------------------------------------------------------------------
 mkrepo() { # mkrepo <dir> -> a two-commit repo whose push diff is docs-only (today's tier: none, no cargo)

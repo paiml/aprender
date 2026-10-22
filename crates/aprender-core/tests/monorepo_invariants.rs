@@ -1152,7 +1152,10 @@ fn draft_gate_canon() -> Vec<(&'static str, String)> {
         ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} }}}}")),
         ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} }}}}")),
         ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}".into()),
-        ("workspace-test-shard", format!("${{{{ {DF} }}}}")),
+        // merge_group-only: a draft never reaches the queue, so there is nothing to skip.
+        ("mg-reuse-wt", "github.event_name == 'merge_group'".into()),
+        ("workspace-test-shard", format!("${{{{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && {DF} }}}}")),
+        ("workspace-test-ran", format!("${{{{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && {DF} }}}}")),
         ("workspace-test", "always()".into()),
         ("ci-gate", "always()".into()),
         ("gate", "always()".into()),
