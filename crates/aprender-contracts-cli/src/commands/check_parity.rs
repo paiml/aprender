@@ -228,3 +228,111 @@ fn print_report(results: &[RowResult]) {
         results.len()
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(yaml: &str) -> Value {
+        crate::yaml::from_str(yaml).expect("fixture row is valid YAML")
+    }
+
+    fn pass_hits(r: &RowResult) -> Option<u64> {
+        match r.verdict {
+            Verdict::Pass { hits } => Some(hits),
+            _ => None,
+        }
+    }
+
+    fn fail_reason(r: &RowResult) -> Option<&str> {
+        match &r.verdict {
+            Verdict::Fail { reason } => Some(reason),
+            _ => None,
+        }
+    }
+
+    fn skip_reason(r: &RowResult) -> Option<&str> {
+        match &r.verdict {
+            Verdict::Skipped { reason } => Some(reason),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn check_row_without_command_is_skipped_with_defaults() {
+        let r = check_row(&row("{}"));
+        assert_eq!(r.id, "<unnamed>");
+        assert_eq!(r.status, "UNKNOWN");
+        assert_eq!(skip_reason(&r), Some("no cross_check_command"));
+    }
+
+    #[test]
+    fn check_row_carries_id_and_status() {
+        let r = check_row(&row(
+            "{id: MCP, status: SHIPPED, cross_check_command: 'echo 3'}",
+        ));
+        assert_eq!(r.id, "MCP");
+        assert_eq!(r.status, "SHIPPED");
+        assert_eq!(pass_hits(&r), Some(3));
+    }
+
+    #[test]
+    fn check_row_non_numeric_output_is_skipped() {
+        let r = check_row(&row("{id: X, cross_check_command: 'echo abc'}"));
+        assert_eq!(skip_reason(&r), Some("non-numeric output: \"abc\""));
+    }
+
+    #[test]
+    fn check_row_below_min_fails() {
+        let r = check_row(&row(
+            "{id: X, cross_check_command: 'echo 2', expected_min_hits: 5}",
+        ));
+        assert_eq!(fail_reason(&r), Some("hits 2 < expected_min 5"));
+    }
+
+    #[test]
+    fn check_row_above_max_fails() {
+        let r = check_row(&row(
+            "{id: X, cross_check_command: 'echo 9', expected_max_hits: 4}",
+        ));
+        assert_eq!(fail_reason(&r), Some("hits 9 > expected_max 4"));
+    }
+
+    #[test]
+    fn check_row_bounds_are_inclusive() {
+        let lo = check_row(&row(
+            "{cross_check_command: 'echo 5', expected_min_hits: 5, expected_max_hits: 7}",
+        ));
+        let hi = check_row(&row(
+            "{cross_check_command: 'echo 7', expected_min_hits: 5, expected_max_hits: 7}",
+        ));
+        assert_eq!(pass_hits(&lo), Some(5));
+        assert_eq!(pass_hits(&hi), Some(7));
+    }
+
+    #[test]
+    fn check_row_falls_back_to_variant_count_bounds() {
+        let low = check_row(&row(
+            "{cross_check_command: 'echo 1', expected_variant_count_min: 2}",
+        ));
+        let high = check_row(&row(
+            "{cross_check_command: 'echo 8', expected_variant_count_max: 3}",
+        ));
+        assert_eq!(fail_reason(&low), Some("hits 1 < expected_min 2"));
+        assert_eq!(fail_reason(&high), Some("hits 8 > expected_max 3"));
+    }
+
+    #[test]
+    fn check_row_hits_bound_wins_over_variant_bound() {
+        let r = check_row(&row(
+            "{cross_check_command: 'echo 4', expected_min_hits: 4, expected_variant_count_min: 9}",
+        ));
+        assert_eq!(pass_hits(&r), Some(4));
+    }
+
+    #[test]
+    fn check_row_unbounded_row_passes_any_count() {
+        let r = check_row(&row("{cross_check_command: '  echo 0  '}"));
+        assert_eq!(pass_hits(&r), Some(0));
+    }
+}
