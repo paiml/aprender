@@ -40,6 +40,16 @@ pub struct CourseFlowConfig {
     pub verify_min: f64,
     /// Count a finished course as WIP until the daily batch releases it (flow model B6).
     pub batch_in_wip: bool,
+    /// Content Factory v2 (B5a): every master fans out to edX, Coursera and LinkedIn; `coursera_share` is ignored.
+    pub fanout: bool,
+    /// Rework probability after a build (B5b): a build repeats with this probability, so B' = B/(1-alpha).
+    pub alpha: f64,
+    /// Trunk-first GPU rule (B5c): while the running mean lead exceeds this many days the GPU serves
+    /// courses before Shorts. 0 keeps Shorts first always.
+    pub trunk_first_w_d: f64,
+    /// LinkedIn renders per master are `li_k + 4` on the GPU (B5d).
+    pub li_k: usize,
+    pub li_render_min: f64,
 }
 
 /// What one seeded run measured after the warm-up.
@@ -52,6 +62,10 @@ pub struct CourseFlowResult {
     pub util: [f64; 6],
     /// Mean hours a built course waits for the daily batch (courses that take the batch path).
     pub mean_batch_wait_h: f64,
+    /// Mean build service hours per course, rework included: the sizing figure (flow model eq 2).
+    pub t_b_work_h: f64,
+    /// Mean hours from first build queueing to last build exit: the lead-time figure (eq 1).
+    pub t_b_elapsed_h: f64,
 }
 
 impl CourseFlowResult {
@@ -142,6 +156,16 @@ struct Sim {
     in_system: usize,
     l_area: f64,
     last_t: f64,
+    left_wip: Vec<u8>,
+    left_launch: Vec<u8>,
+    li_left: Vec<usize>,
+    build_in: Vec<f64>,
+    build_work: Vec<f64>,
+    tb_work: f64,
+    tb_elapsed: f64,
+    tb_n: u64,
+    lead_sum: f64,
+    lead_n: u64,
 }
 
 impl Sim {
@@ -157,7 +181,15 @@ impl Sim {
 
     fn enqueue(&mut self, s: usize, job: Job, mean: f64) {
         let d = self.erlang4(mean);
-        if job.short {
+        if s == BUILD && !job.short {
+            self.build_work[job.id] += d;
+        }
+        let first = if self.trunk_first(s) {
+            !job.short
+        } else {
+            job.short
+        };
+        if first {
             self.st[s].hi.push_back((job, d));
         } else {
             self.st[s].lo.push_back((job, d));
@@ -187,6 +219,11 @@ impl Sim {
         self.started_at.push(self.now);
         let cs = self.rng.gen_f64() < self.c.coursera_share;
         self.coursera.push(cs);
+        self.left_wip.push(0);
+        self.left_launch.push(0);
+        self.li_left.push(0);
+        self.build_in.push(0.0);
+        self.build_work.push(0.0);
         self.wip += 1;
         self.in_system += 1;
         let m = self.c.outline_min;
@@ -201,11 +238,58 @@ impl Sim {
         );
     }
 
+    /// B5c: on the GPU, courses go first while the running mean lead exceeds the threshold.
+    /// The mean runs from t = 0 over every finished course (warm-up included). It is cumulative, so
+    /// it moves slowly and can fall below the threshold again; a windowed mean is a follow-up.
+    fn trunk_first(&self, s: usize) -> bool {
+        trunk_first_rule(s, self.c.trunk_first_w_d, self.lead_sum, self.lead_n)
+    }
+
+    /// A branch of master `id` is done with its WIP slot; the slot frees when every branch is.
+    fn wip_done(&mut self, id: usize) {
+        if !self.c.fanout {
+            return self.leave_wip();
+        }
+        self.left_wip[id] -= 1;
+        if self.left_wip[id] == 0 {
+            self.leave_wip();
+        }
+    }
+
+    /// A branch of master `id` is live; the master launches when every branch is.
+    fn launch_done(&mut self, id: usize) {
+        if !self.c.fanout {
+            return self.launch(id);
+        }
+        self.left_launch[id] -= 1;
+        if self.left_launch[id] == 0 {
+            self.launch(id);
+        }
+    }
+
+    /// B5a: after verify, one branch per platform: edX (no human step), Coursera (stage, then batch),
+    /// LinkedIn (k + 4 renders on the GPU).
+    fn fan_out(&mut self, j: Job) {
+        let c = self.c.clone();
+        let nj = |step| Job { step, ..j };
+        let renders = c.li_k + 4;
+        self.left_wip[j.id] = 3;
+        self.left_launch[j.id] = 3;
+        self.li_left[j.id] = renders;
+        self.at(15.0, &Ev::Delay(nj(6)));
+        self.enqueue(CHROME, nj(5), c.stage_min);
+        for _ in 0..renders {
+            self.enqueue(RENDER, nj(7), c.li_render_min);
+        }
+    }
+
     fn launch(&mut self, id: usize) {
         self.in_system -= 1;
         if self.now >= self.warm {
             self.sojourn.push(self.now - self.started_at[id]);
         }
+        self.lead_sum += self.now - self.started_at[id];
+        self.lead_n += 1;
     }
 
     fn leave_wip(&mut self) {
@@ -220,21 +304,42 @@ impl Sim {
         let c = self.c.clone();
         let nj = |step| Job { step, ..j };
         match j.step {
-            0 => self.enqueue(BUILD, nj(1), c.build_min),
-            1 => self.enqueue(DESIGN, nj(2), c.design_min),
+            0 => {
+                self.build_in[j.id] = self.now;
+                self.enqueue(BUILD, nj(1), c.build_min);
+            }
+            1 if c.alpha > 0.0 && self.rng.gen_f64() < c.alpha => {
+                self.enqueue(BUILD, nj(1), c.build_min);
+            }
+            1 => {
+                if self.now >= self.warm {
+                    self.tb_work += self.build_work[j.id];
+                    self.tb_elapsed += self.now - self.build_in[j.id];
+                    self.tb_n += 1;
+                }
+                self.enqueue(DESIGN, nj(2), c.design_min);
+            }
             2 => self.enqueue(RENDER, nj(3), c.render_min),
             3 => self.enqueue(VERIFY, nj(4), c.verify_min),
+            4 if c.fanout => self.fan_out(j),
             4 if self.coursera[j.id] => self.enqueue(CHROME, nj(5), c.stage_min),
             4 => self.at(15.0, &Ev::Delay(nj(6))),
+            7 => {
+                self.li_left[j.id] -= 1;
+                if self.li_left[j.id] == 0 {
+                    self.wip_done(j.id);
+                    self.launch_done(j.id);
+                }
+            }
             5 => {
                 if !self.c.batch_in_wip {
-                    self.leave_wip();
+                    self.wip_done(j.id);
                 }
                 self.batch_wait.push((j.id, self.now));
             }
             _ => {
-                self.leave_wip();
-                self.launch(j.id);
+                self.wip_done(j.id);
+                self.launch_done(j.id);
             }
         }
     }
@@ -247,9 +352,9 @@ impl Sim {
                 self.bw_n += 1;
             }
             if self.c.batch_in_wip {
-                self.leave_wip();
+                self.wip_done(id);
             }
-            self.launch(id);
+            self.launch_done(id);
         }
     }
 
@@ -308,6 +413,12 @@ impl Sim {
     }
 }
 
+/// The trunk-first predicate: only the render stage, only with a positive threshold, only once a
+/// course has finished, and only while the mean lead (days) is above the threshold.
+fn trunk_first_rule(stage: usize, w_d: f64, lead_sum: f64, lead_n: u64) -> bool {
+    stage == RENDER && w_d > 0.0 && lead_n > 0 && lead_sum / lead_n as f64 / DAY > w_d
+}
+
 /// Run one seed for `days`, discarding the first `warmup_d`.
 #[must_use]
 pub fn run_course_flow(
@@ -345,6 +456,16 @@ pub fn run_course_flow(
         in_system: 0,
         l_area: 0.0,
         last_t: 0.0,
+        left_wip: Vec::new(),
+        left_launch: Vec::new(),
+        li_left: Vec::new(),
+        build_in: Vec::new(),
+        build_work: Vec::new(),
+        tb_work: 0.0,
+        tb_elapsed: 0.0,
+        tb_n: 0,
+        lead_sum: 0.0,
+        lead_n: 0,
     };
     s.at(0.0, &Ev::Start);
     s.at(0.0, &Ev::ShortTick);
@@ -378,6 +499,8 @@ pub fn run_course_flow(
         l: s.l_area / span,
         util,
         mean_batch_wait_h: s.bw_sum / (s.bw_n.max(1) as f64) / 60.0,
+        t_b_work_h: s.tb_work / (s.tb_n.max(1) as f64) / 60.0,
+        t_b_elapsed_h: s.tb_elapsed / (s.tb_n.max(1) as f64) / 60.0,
     }
 }
 
@@ -400,6 +523,11 @@ pub fn course_preset(name: &str) -> Option<CourseFlowConfig> {
         outline_min: 90.0,
         verify_min: 15.0,
         batch_in_wip: false,
+        fanout: false,
+        alpha: 0.0,
+        trunk_first_w_d: 0.0,
+        li_k: 0,
+        li_render_min: 20.0,
     };
     match name {
         "cal-today" => {
@@ -411,6 +539,12 @@ pub fn course_preset(name: &str) -> Option<CourseFlowConfig> {
         "nine-builders" => c.builders = 9,
         "coursera-24h" => c.stage_min = 1440.0,
         "render-300" => c.render_min = 300.0,
+        "factory-v2" => {
+            c.fanout = true;
+            c.alpha = 0.16;
+            c.trunk_first_w_d = 4.8;
+            c.li_k = 2;
+        }
         _ => return None,
     }
     Some(c)
@@ -418,13 +552,14 @@ pub fn course_preset(name: &str) -> Option<CourseFlowConfig> {
 
 /// Names of the FLOW-006 factory cases.
 #[must_use]
-pub fn course_cases() -> [&'static str; 5] {
+pub fn course_cases() -> [&'static str; 6] {
     [
         "cal-today",
         "design",
         "nine-builders",
         "coursera-24h",
         "render-300",
+        "factory-v2",
     ]
 }
 
@@ -439,6 +574,8 @@ pub fn run_course_reference(c: &CourseFlowConfig) -> CourseFlowResult {
         a.lead_days += r.lead_days / 5.0;
         a.l += r.l / 5.0;
         a.mean_batch_wait_h += r.mean_batch_wait_h / 5.0;
+        a.t_b_work_h += r.t_b_work_h / 5.0;
+        a.t_b_elapsed_h += r.t_b_elapsed_h / 5.0;
         for i in 0..6 {
             a.util[i] += r.util[i] / 5.0;
         }
@@ -468,6 +605,21 @@ pub fn apply_course_inputs(c: &mut CourseFlowConfig, v: &serde_json::Value) -> R
             "starts_per_day" => c.starts_per_day = f,
             "shorts_per_day" => c.shorts_per_day = f,
             "batch_in_wip" => c.batch_in_wip = f != 0.0,
+            "fanout" => c.fanout = f != 0.0,
+            "alpha" => {
+                if !(0.0..1.0).contains(&f) {
+                    return Err(format!("alpha must be in [0, 1), got {f}"));
+                }
+                c.alpha = f;
+            }
+            "trunk_first_w_d" => c.trunk_first_w_d = f,
+            "li_k" => {
+                if !(0.0..=64.0).contains(&f) {
+                    return Err(format!("li_k must be in [0, 64], got {f}"));
+                }
+                c.li_k = f as usize;
+            }
+            "li_render_min" => c.li_render_min = f,
             _ => return Err(format!("unknown input: {k}")),
         }
     }
@@ -491,10 +643,14 @@ pub fn course_sim_block(
             "chrome_lanes": c.chrome_lanes, "stage_min": c.stage_min,
             "coursera_share": c.coursera_share, "wip": c.wip,
             "starts_per_day": c.starts_per_day, "shorts_per_day": c.shorts_per_day, "batch_in_wip": c.batch_in_wip,
+            "fanout": c.fanout, "alpha": c.alpha, "trunk_first_w_d": c.trunk_first_w_d,
+            "li_k": c.li_k, "li_render_min": c.li_render_min,
         },
         "predicted": {
             "courses_day": r.courses_per_day, "shorts_day": r.shorts_per_day,
-            "lead_days": r.lead_days, "L": r.l, "mean_batch_wait_h": r.mean_batch_wait_h, "busiest_util_pct": util * 100.0,
+            "lead_days": r.lead_days, "L": r.l, "mean_batch_wait_h": r.mean_batch_wait_h,
+            "t_b_work_h": r.t_b_work_h, "t_b_elapsed_h": r.t_b_elapsed_h,
+            "busiest_util_pct": util * 100.0,
         },
         "binding_station": station,
     })
@@ -623,6 +779,130 @@ mod tests {
         let a = got("coursera-24h");
         let b = run_course_reference(&with_batch_in_wip("coursera-24h"));
         assert!((a.courses_per_day - b.courses_per_day).abs() > 1e-6 || (a.l - b.l).abs() > 1e-6);
+    }
+
+    fn v2() -> CourseFlowResult {
+        got("factory-v2")
+    }
+
+    /// B5 falsifier: the Coursera stage at R = 3 carries every master, so busy = 5 x 360 / (2 x 1440) = 62.5%.
+    #[test]
+    fn coursera_stage_matches_the_law_within_two_points() {
+        let r = v2();
+        assert!(
+            (r.util[CHROME] - (0.625 + 25.0 / 2880.0)).abs() <= 0.02,
+            "chrome busy {:.3} vs law 0.625 plus the Shorts stage",
+            r.util[CHROME]
+        );
+    }
+
+    /// B5 falsifier: at alpha = 0.16 the build stage runs at the law's B/(1-alpha) load (94.7% busy),
+    /// within two points. The bound is the law with a tolerance, not a bare 95% cap: the preset sits
+    /// 0.3 points under 95%, so a cap flips on any change to the random draw order.
+    #[test]
+    fn build_busy_at_alpha_016_matches_the_law() {
+        let r = v2();
+        let law = 2520.0 / 0.84 * 5.0 / (11.0 * 1440.0);
+        assert!(
+            (r.util[BUILD] - law).abs() <= 0.02,
+            "build busy {:.3} vs law {law:.3}",
+            r.util[BUILD]
+        );
+        assert!(
+            r.util[BUILD] > 0.85,
+            "rework not applied: {:.3}",
+            r.util[BUILD]
+        );
+    }
+
+    /// B5b: mean build work per course is B/(1-alpha) = 2520/0.84 min = 50 h.
+    #[test]
+    fn rework_loop_scales_build_work_by_one_over_one_minus_alpha() {
+        let r = v2();
+        let want = 2520.0 / 0.84 / 60.0;
+        assert!(
+            (r.t_b_work_h - want).abs() <= want * 0.04,
+            "t_b_work_h {:.2} vs {want:.2}",
+            r.t_b_work_h
+        );
+    }
+
+    /// B5e: elapsed build time includes queueing, so it can only exceed the work.
+    #[test]
+    fn build_elapsed_is_not_the_build_work() {
+        let r = v2();
+        assert!(
+            r.t_b_elapsed_h > r.t_b_work_h + 1e-6,
+            "{:.2} vs {:.2}",
+            r.t_b_elapsed_h,
+            r.t_b_work_h
+        );
+    }
+
+    /// B5a: fan-out to three platforms puts a Coursera batch wait on every master, so the wait is reported.
+    #[test]
+    fn every_master_fans_out_to_all_three_platforms() {
+        let mut c = course_preset("factory-v2").expect("case");
+        c.fanout = false;
+        let split = run_course_reference(&c);
+        assert!(
+            v2().util[CHROME] > split.util[CHROME] + 0.2,
+            "fan-out did not raise chrome load"
+        );
+    }
+
+    /// B5d: LinkedIn adds k + 4 renders per master to the GPU.
+    #[test]
+    fn linkedin_renders_load_the_gpu() {
+        let mut c = course_preset("factory-v2").expect("case");
+        c.li_k = 0;
+        let lo = run_course_reference(&c);
+        assert!(
+            v2().util[RENDER] > lo.util[RENDER] + 0.05,
+            "{:.3} vs {:.3}",
+            v2().util[RENDER],
+            lo.util[RENDER]
+        );
+    }
+
+    /// B5c: the trunk-first predicate, tested directly: the simulated outcome of the rule is within
+    /// seed noise (Shorts barely move), so the falsifier pins the rule and not a noisy delta.
+    #[test]
+    fn trunk_first_rule_changes_the_outcome() {
+        let d = DAY;
+        // mean lead 3 d: above a 2 d threshold, below a 4 d one
+        assert!(trunk_first_rule(RENDER, 2.0, 30.0 * d, 10));
+        assert!(!trunk_first_rule(RENDER, 4.0, 30.0 * d, 10));
+        // off at 0, off before any course finished, and only the render stage is reordered
+        assert!(!trunk_first_rule(RENDER, 0.0, 30.0 * d, 10));
+        assert!(!trunk_first_rule(RENDER, 2.0, 30.0 * d, 0));
+        assert!(!trunk_first_rule(BUILD, 2.0, 30.0 * d, 10));
+        // the rule is wired into the run: some threshold engages it and changes the result
+        let run_w = |w: f64| {
+            let mut c = course_preset("factory-v2").expect("case");
+            c.trunk_first_w_d = w;
+            run_course_reference(&c)
+        };
+        let off = run_w(0.0);
+        let on = run_w(0.5);
+        assert!(
+            (on.lead_days - off.lead_days).abs() > 1e-6
+                || (on.shorts_per_day - off.shorts_per_day).abs() > 1e-6
+        );
+    }
+
+    /// alpha is a probability below 1: at 1 or more a build repeats forever.
+    #[test]
+    fn alpha_must_be_below_one() {
+        let mut c = course_preset("factory-v2").expect("case");
+        for bad in [1.0, 1.5, -0.1] {
+            let e = apply_course_inputs(&mut c, &serde_json::json!({ "alpha": bad }));
+            assert!(e.is_err(), "alpha {bad} accepted");
+        }
+        let e = apply_course_inputs(&mut c, &serde_json::json!({ "li_k": 1.0e30 }));
+        assert!(e.is_err(), "li_k 1e30 accepted");
+        apply_course_inputs(&mut c, &serde_json::json!({ "alpha": 0.5 })).expect("0.5 is valid");
+        assert!((c.alpha - 0.5).abs() < 1e-12);
     }
 
     #[test]
