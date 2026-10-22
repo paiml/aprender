@@ -132,7 +132,7 @@ run_text_of_job_block() {
 # The fat job's --sections list names guard-tree as a whole item (quoted,
 # comma-separated), and gate's required list names X86:guard-tree.
 export SECTIONS_RE="--sections '([^']*,)?guard-tree(,[^']*)?'"
-export GATE_RE="(^|[[:space:]])X86:guard-tree([[:space:]]|$)"
+export GATE_RE="(^|[[:space:]\"])(X86|\\\$G):guard-tree(\"|[[:space:]]|$)"
 
 # assertions_yq CI SECT -- prints "true" or "false"
 # NOTE: `yq` and its subcommand are split across lines on purpose -- bashrs
@@ -281,7 +281,7 @@ mutant_row "cargo step in the guard-tree-steps manifest" "$CI_YML" "$m2b" differ
 # 3. Mutant: guard-tree dropped from gate's required-section list.
 # ---------------------------------------------------------------------------
 m3="$WORK/gate-drops-guard-tree.yml"
-sed -E 's/ X86:guard-tree / /' "$CI_YML" > "$m3"
+sed -E -e 's/ X86:guard-tree / /' -e 's/ "\$G:guard-tree" / /' "$CI_YML" > "$m3"
 mutant_row "guard-tree dropped from gate's required sections" "$m3" "$SECT_YML" differs "$CI_YML" "$m3"
 
 # ---------------------------------------------------------------------------
