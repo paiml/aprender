@@ -1,0 +1,48 @@
+metadata:
+  id: C-CONTRACTS-CLI-LINT-RUN
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the dispatch of pv lint run (#5688): a missing or empty corpus is
+    declined with exit 2 before any report, --show-trend prints history
+    without linting, --coverage below --min-coverage is refused naming both
+    figures, --gate runs only the named gate and refuses an unknown one, and a
+    single file under --strict-test-binding is refused before any lint.
+  references:
+    - 'crates/aprender-contracts-cli/src/commands/lint.rs (run)'
+
+equations:
+  lint_run_dispatch:
+    formula: |
+      run(args) refuses before it lints when the corpus or the flag combination cannot be judged
+    domain: pv lint invocations over a scratch corpus
+    invariants:
+    - 'a refusal never prints Result: PASS'
+
+proof_obligations:
+- id: LRN-INV-001
+  type: invariant
+  property: preconditions refuse before any lint runs
+  formal: 'refused ⇒ ¬linted'
+  applies_to: lint_run_dispatch
+
+falsification_tests:
+- id: FALSIFY-CONTRACTS-CLI-LINT-RUN-001
+  rule: lint run dispatches each flag branch as documented
+  prediction: 'missing and empty corpus exit 2, show-trend exits 0 without a report, coverage below minimum exits 1 with both figures, unknown gate and single-file strict binding are refused'
+  test: cargo test -p aprender-contracts-cli --test lint_run_5688
+  if_fails: pv lint passes vacuously over nothing or runs the wrong mode
+  ship_blocking: false
+  mutation: 'flip the coverage threshold comparison in report_coverage; both coverage tests must turn RED'
+
+qa_gate:
+  id: QA-CONTRACTS-CLI-LINT-RUN-001
+  name: pv lint run dispatch gate
+  description: every lint run flag branch behaves as documented
+  checks:
+  - lint_run_dispatch
+  pass_criteria: FALSIFY-CONTRACTS-CLI-LINT-RUN-001 passes
+  falsification: Any failure fails the gate

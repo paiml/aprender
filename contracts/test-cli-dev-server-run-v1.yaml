@@ -1,0 +1,48 @@
+metadata:
+  id: C-TEST-CLI-DEV-SERVER-RUN
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins DevServer::run over real TCP (#5718): it broadcasts ServerReady,
+    serves the index, static files with their MIME type, directory indexes
+    and 404s, adds CORS and COOP/COEP headers only when configured, gzips
+    for clients that accept it, and returns the bind error when the port is
+    taken.
+  references:
+    - 'crates/aprender-test-cli/src/dev_server.rs (DevServer::run)'
+
+equations:
+  dev_server_run_behaviour:
+    formula: |
+      run(config) serves directory over HTTP with only the configured headers, or fails with the bind error
+    domain: DevServer instances on a free local port
+    invariants:
+    - 'headers absent from the config are absent from the response'
+
+proof_obligations:
+- id: DSR-INV-001
+  type: invariant
+  property: optional headers appear only when configured
+  formal: 'header ⇒ configured'
+  applies_to: dev_server_run_behaviour
+
+falsification_tests:
+- id: FALSIFY-TEST-CLI-DEV-SERVER-RUN-001
+  rule: DevServer::run serves and configures as documented
+  prediction: 'index, wasm MIME, directory index, 404s, CORS, COOP/COEP, gzip and AddrInUse all behave as specified'
+  test: cargo test -p aprender-test-cli --test dev_server_run_5718
+  if_fails: the dev server serves wrong content types or leaks isolation headers into a non-isolated run
+  ship_blocking: false
+  mutation: 'invert the cors or cross_origin_isolated branch, or disable gzip; each must turn RED'
+
+qa_gate:
+  id: QA-TEST-CLI-DEV-SERVER-RUN-001
+  name: dev server run gate
+  description: DevServer::run behaves as documented over TCP
+  checks:
+  - dev_server_run_behaviour
+  pass_criteria: FALSIFY-TEST-CLI-DEV-SERVER-RUN-001 passes
+  falsification: Any failure fails the gate

@@ -1,0 +1,48 @@
+metadata:
+  id: C-QA-CLI-RUN-CERTIFICATION
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins run_certification as driven by apr-qa certify (#5690): the dry run
+    lists each selected model with its tier-suffixed playbook and stops, an
+    unknown tier or kernel class, a missing or malformed models.csv, a filter
+    that matches nothing, and an unwritable output directory each exit 1 with
+    a specific message.
+  references:
+    - 'crates/aprender-qa-cli/src/certification.rs (run_certification)'
+
+equations:
+  run_certification_branches:
+    formula: |
+      run_certification(args) exits 1 on any input it cannot certify, and a dry run returns after listing
+    domain: apr-qa certify invocations over a scratch models.csv
+    invariants:
+    - 'a dry run never creates the output directory'
+
+proof_obligations:
+- id: RCE-INV-001
+  type: invariant
+  property: a dry run lists models and returns before touching the output directory
+  formal: 'dry_run ⇒ ¬wrote'
+  applies_to: run_certification_branches
+
+falsification_tests:
+- id: FALSIFY-QA-CLI-RUN-CERTIFICATION-001
+  rule: run_certification takes each documented branch
+  prediction: 'dry run prints Would certify and the tiered playbook path; unknown tier, kernel class, absent or malformed csv, empty filter and unwritable output exit 1 with their messages'
+  test: cargo test -p aprender-qa-cli --test certify_run_5690
+  if_fails: certify silently runs on bad input or a dry run writes to disk
+  ship_blocking: false
+  mutation: 'invert the dry_run branch; four tests must turn RED'
+
+qa_gate:
+  id: QA-QA-CLI-RUN-CERTIFICATION-001
+  name: apr-qa certify branch gate
+  description: every run_certification branch exits as documented
+  checks:
+  - run_certification_branches
+  pass_criteria: FALSIFY-QA-CLI-RUN-CERTIFICATION-001 passes
+  falsification: Any failure fails the gate

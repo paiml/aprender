@@ -1,0 +1,48 @@
+metadata:
+  id: C-SERVE-TRACE-OBSERVABILITY-VALIDATE
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins InferenceTracer::validate_observability_contracts (#5717): an empty
+    or well-paired increasing trace is clean, a non-increasing event id gives
+    exactly one MONOTONIC_COUNTER error, an exit linked to an entry that does
+    not exist gives an ORPHAN_SPAN error, an unlinked exit is not an orphan,
+    and an entry never exited gives a DANGLING_ENTRY warning.
+  references:
+    - 'crates/aprender-serve/src/inference_trace/tracer_contracts.rs (validate_observability_contracts)'
+
+equations:
+  validate_observability_branches:
+    formula: |
+      violations(events) classifies each broken span or counter invariant by severity
+    domain: InferenceTracer event lists
+    invariants:
+    - 'a paired, strictly increasing trace has no violation'
+
+proof_obligations:
+- id: SOV-INV-001
+  type: invariant
+  property: a well-formed trace yields no violation
+  formal: 'wellformed ⇒ ¬violation'
+  applies_to: validate_observability_branches
+
+falsification_tests:
+- id: FALSIFY-SERVE-TRACE-OBSERVABILITY-VALIDATE-001
+  rule: each observability invariant is reported with its severity
+  prediction: 'monotonic and orphan findings are Error, dangling is Warning, clean traces are empty'
+  test: cargo test -p aprender-serve --lib observability_
+  if_fails: a corrupt trace is accepted or a clean trace is flagged
+  ship_blocking: false
+  mutation: 'drop the negation on the orphan lookup, change <= to < on the id check, or drop the negation on the dangling lookup; each must turn RED'
+
+qa_gate:
+  id: QA-SERVE-TRACE-OBSERVABILITY-VALIDATE-001
+  name: trace observability validator gate
+  description: validate_observability_contracts classifies each invariant correctly
+  checks:
+  - validate_observability_branches
+  pass_criteria: FALSIFY-SERVE-TRACE-OBSERVABILITY-VALIDATE-001 passes
+  falsification: Any failure fails the gate
