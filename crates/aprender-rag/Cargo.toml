@@ -72,7 +72,7 @@ sha2 = { version = "0.10", optional = true }
 rand = { version = "0.9", optional = true }
 
 [build-dependencies]
-provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
+aprender-contracts-key = { workspace = true }  # #4369, #5909: the one CONTRACT_* key builder (no engine dependency)
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = { workspace = true }
 
