@@ -1,0 +1,13 @@
+# ci/guard-lane-steps.txt -- guard steps that run in the PARALLEL CARGO-FREE LANE of scripts/ci_guards.sh (#5920).
+# Row = job<TAB>exact manifest step name. A listed step must not invoke cargo/rustc/rustup (a shim fails it, rc 97),
+# must not write GITHUB_ENV/PATH/OUTPUT, and runs in its own git worktree of HEAD. Not sure? leave it out.
+# CI_GUARDS_LANE=0 runs every step serially (the before-count in the PR).
+guard-cargo	Every execution-surface `apr` reference must be pinned
+guard-cargo	bashrs must see every script in scripts/ (shrink-only)
+guard-cargo	Self-hosted jobs must install cargo tools into a private root
+guard-cargo	Performance claims cite their receipts (PERF-010)
+guard-cargo	Tree-reader registry and unwired ledger agree with the sources (BSE-17)
+guard-cargo	Explicit test commands stay fragments: wired, one command per file, no && mega-line (PMAT-3313)
+guard-cargo	Tree-reader registry guard case table (BSE-17)
+guard-cargo	No claim literals on user-facing surfaces
+guard-cargo	One dogfood runner, and the user-scope copy is a gated shim
