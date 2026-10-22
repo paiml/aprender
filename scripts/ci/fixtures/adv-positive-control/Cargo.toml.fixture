@@ -1,0 +1,6 @@
+[package]
+name="pc"
+version="0.0.0"
+edition="2021"
+[dependencies]
+wasmtime={version="=48.0.6",default-features=false}

@@ -2637,7 +2637,7 @@ jobs:
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
           # MG_BASE_SHA comes from the process env of the outer guard-cargo step (the manifest runner resolves no merge_group context).
-          # The gate runs from the BASE ref, never the PR tree (PMAT-5792): a PR cannot edit its own judge.
+          # The gate SCRIPTS run from the BASE ref copy (PMAT-5792); the workflow yaml and cargo config still come from the PR tree, so this is gate-content-reviewed, not self-judging-proof.
           # Bootstrap only: the merge that introduces the scripts has no base copy, so it uses its own.
           S="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-scripts-$$"
           if git cat-file -e refs/remotes/origin/main:scripts/ci/advisory_gate.sh 2>/dev/null; then
@@ -2655,6 +2655,7 @@ jobs:
           bash scripts/ci/check_sov_advisories_off.sh
           bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh"
           bash scripts/ci/advisory_step_selftest.sh
+          bash scripts/ci/advisory_positive_control.sh
           bash "$G/advisory_gate.sh"
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is

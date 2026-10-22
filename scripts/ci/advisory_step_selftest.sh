@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # advisory_step_selftest.sh -- the CI step "Advisories must pass" must go RED when the gate (or any
-# self-test before it) exits non-zero (PMAT-5792, ADG-INV-004). Extracts the step's run block from
+# self-test before it) exits non-zero (PMAT-5792, ADG-008). Extracts the step's run block from
 # .github/workflows/ci.yml, runs it in a throwaway repo whose origin/main holds stub scripts, and
 # requires the step's exit status to equal the stub's. A mutant (gate line removed) must NOT be red.
 #
@@ -23,7 +23,7 @@ extract() { # WORKFLOW -> the run block, de-indented
 make_repo() { # DIR -> repo with scripts/ci stubs committed on refs/remotes/origin/main
     local r=$1 f
     mkdir -p "$r/scripts/ci"
-    for f in advisory_diff advisory_gate advisory_gate_selftest advisory_step_selftest check_sov_advisories_off; do
+    for f in advisory_diff advisory_gate advisory_gate_selftest advisory_step_selftest advisory_positive_control check_sov_advisories_off; do
         printf '#!/usr/bin/env bash\nexit "$(cat "$(dirname "$0")/%s.rc" 2>/dev/null || echo 0)"\n' "$f" >"$r/scripts/ci/$f.sh"
     done
     git -C "$r" init -q

@@ -74,7 +74,7 @@ falsification_tests:
   - id: FALSIFY-ADG-001
     rule: "Main-resident advisory does not block a PR"
     prediction: "with lock_PR == lock_main (wasmtime 48.0.6) and a DB holding 0378/0379, the PR verdict is pass and a main-advisory andon row is emitted"
-    test: "planted-fixture case table of the diff gate script scripts/ci/advisory_diff.sh --self-test, 12 cases: same lock both sides"
+    test: "planted-fixture case table of the diff gate script scripts/ci/advisory_diff.sh --self-test, 14 cases: same lock both sides"
     if_fails: "the gate still compares lock to DB, not PR to main"
     mutation: "compare lock_PR to the empty set; the case must turn RED"
   - id: FALSIFY-ADG-002
@@ -86,15 +86,15 @@ falsification_tests:
   - id: FALSIFY-ADG-003
     rule: "Scanner of record sees the optional-feature crate"
     prediction: "on the 48.0.6 lock the scanner of record exits non-zero and names 0378 and 0379"
-    test: "scripts/ci/advisory_gate_selftest.sh runs advisory_gate.sh against a stub cargo; every advisories scan must carry --all-features (the 48.0.6 lock fixture is covered by ADG-001 verdicts)"
+    test: "scripts/ci/advisory_gate_selftest.sh runs advisory_gate.sh against a stub cargo; every advisories scan must carry --all-features ; scripts/ci/advisory_positive_control.sh runs a REAL cargo deny --all-features on the committed wasmtime 48.0.6 lock fixture and fails unless 0378 and 0379 are both reported (the positive control that replaces cargo audit)"
     if_fails: "#5791 is not resolved: the record scanner is as blind as deny with all-features=false"
     mutation: "sed out --all-features from advisory_gate.sh scan(); the 'ADG-003' mutant case in advisory_gate_selftest.sh must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-004
     rule: "Same DB snapshot on both sides"
     prediction: "a DB entry published between the main run and the PR run does not appear in the delta"
-    test: "advisory_gate_selftest.sh: exactly one `cargo deny fetch`, both scans --disable-fetch with one --config"
+    test: "advisory_gate_selftest.sh: exactly one `cargo deny fetch`, both scans --offline (0.20) or --disable-fetch (older cargo-deny) with one --config"
     if_fails: "DB refreshes read as PR-introduced advisories and re-create the stop"
-    mutation: "sed out --disable-fetch, or add a second fetch before the base scan; the two 'ADG-004' mutant cases must turn RED (measured 2026-10-20)"
+    mutation: "sed out --offline, or add a second fetch before the base scan; the two 'ADG-004' mutant cases must turn RED (measured 2026-10-20)"
   - id: FALSIFY-ADG-005
     rule: "Andon clock"
     prediction: "the P0 ticket's due time is <= 4 h after the advisory first appears on main"
