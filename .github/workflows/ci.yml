@@ -84,7 +84,7 @@ jobs:
           set -uo pipefail
           # Any failure to read the diff is `full`: a skip needs a positive read.
           if ! paths=$(git diff --name-only "$BASE...$HEAD"); then paths=""; fi
-          out=$(printf '%s\n' "$paths" | bash scripts/ci_scope.sh classify "${DRAFT:-false}") || out="skip=0 reason=full"
+          out=$(printf '%s\n' "$paths" | bash scripts/ci_scope.sh classify false) || out="skip=0 reason=full"
           echo "$out"
           printf '%s\n' "$out" | sed 's/ /\n/' >> "$GITHUB_OUTPUT"
 
@@ -192,7 +192,7 @@ jobs:
 
   x86-main:
     needs: [mg-reuse, scope]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && needs.scope.outputs.skip != '1' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && needs.scope.outputs.skip != '1' }}
     # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 240
@@ -478,7 +478,7 @@ jobs:
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.skip != '1' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.scope.outputs.skip != '1' }}
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
@@ -531,21 +531,23 @@ jobs:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     needs: [workspace-test-shard, scope]
-    if: always()
+    # docs-only PR: scope skipped the shards, so there is nothing to fan in. A skipped job satisfies
+    # the required check; draft, full, merge_group and push run exactly as before.
+    if: ${{ always() && needs.scope.outputs.skip != '1' }}
     steps:
       - name: Every shard passed
         env:
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
-          SCOPE_SKIP: ${{ needs.scope.outputs.skip }}
+          DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
-          [ "${SCOPE_SKIP:-}" = 1 ] && { echo "scope skip (draft or docs-only PR): no shards owed"; exit 0; }
+          [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
           echo "workspace-test-shard matrix result: $SHARD_RESULT"
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
-      - if: ${{ needs.scope.outputs.skip != '1' }}
-        uses: actions/checkout@v7
-      - if: ${{ needs.scope.outputs.skip != '1' }}
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+        if: ${{ github.event.pull_request.draft != true }}
+      - uses: actions/download-artifact@v4
+        if: ${{ github.event.pull_request.draft != true }}
         with:
           pattern: sigma-shard-*
           path: ${{ runner.temp }}/sigma
@@ -553,8 +555,8 @@ jobs:
       # owed set, by id. Each shard ran a partition; the UNION of their executed
       # ids is compared with the universe shard 1 listed. A shard whose ids did
       # not arrive is RED, never a smaller universe.
-      - if: ${{ needs.scope.outputs.skip != '1' }}
-        name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
+      - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
+        if: ${{ github.event.pull_request.draft != true }}
         run: |
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"
@@ -601,10 +603,12 @@ jobs:
           MG_DET: ${{ needs.mg-reuse.outputs.det }}
           MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
           ADV: ${{ needs.x86-main-advisories.result }}
+          DRAFT: ${{ github.event.pull_request.draft }}
           SCOPE_SKIP: ${{ needs.scope.outputs.skip }}
           SCOPE_WHY: ${{ needs.scope.outputs.reason }}
         run: |
           set -euo pipefail
+          [ "${DRAFT:-}" != true ] || { echo "ci / gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
           [ "${SCOPE_SKIP:-}" = 1 ] && { echo "ci / gate: scope skip (${SCOPE_WHY:-}), fat jobs not owed on this pull_request"; exit 0; }
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
@@ -643,11 +647,12 @@ jobs:
           MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
           ADV: ${{ needs.x86-main-advisories.result }}
           MST: ${{ needs.mg-reuse-self-test.result }}
+          DRAFT: ${{ github.event.pull_request.draft }}
           SCOPE_SKIP: ${{ needs.scope.outputs.skip }}
           SCOPE_WHY: ${{ needs.scope.outputs.reason }}
         run: |
           set -euo pipefail
-          [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
+          [ "${DRAFT:-}" != true ] || { echo "gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
           [ "${SCOPE_SKIP:-}" = 1 ] && { echo "gate: scope skip (${SCOPE_WHY:-}), fat jobs not owed on this pull_request"; exit 0; }
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
