@@ -54,3 +54,5 @@
 1	affected_set.sh case table and mutants (FLOW-010 E5, LAB)
 # #5803: tuner test-move guard (cargo -- --list), LAB from the first night, moved off ci/explicit-test-commands.d 296/297 (never on a PR path, C324). Seconds are a local sample.
 60	Tuner test-move guard (#5803)
+# #5809 (FLOW-010 E5): affected-set tool case tables, LAB from the first night (never on a PR path, C324). Seconds are a local sample.
+40	Affected-set tool and readers guards (FLOW-010 E5, #5809)
