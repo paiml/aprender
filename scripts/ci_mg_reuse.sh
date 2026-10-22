@@ -648,12 +648,15 @@ STUB
     awk -v tok='(^|[^A-Za-z0-9_-])mg-reuse($|[^A-Za-z0-9_-])' -v want="if: github.event_name == 'push' && github.ref == 'refs/heads/main'" '
       /^  [A-Za-z0-9_-]+:$/ { j = $1; sub(/:$/, "", j); seen[j] = 1; next }
       /^    if:/    { jif[j] = $0; sub(/^    /, "", jif[j]) }
+      /^    needs:/ || (inn && /^      /) { jneeds[j] = jneeds[j] $0 }
       /^    needs:/ { inn = 1; if ($0 ~ tok) dep[j] = 1; next }
       inn && /^      / { if ($0 ~ tok) dep[j] = 1; next }
       /^    [A-Za-z]/ { inn = 0 }
       END {
         if (jif["mg-reuse"] != want) print "mg-reuse job-level if is not the push-only key: [" jif["mg-reuse"] "]"
         if (jif["mg-reuse"] ~ /merge_group/) print "mg-reuse if names merge_group: a queue entry could reuse"
+        # once the receipt judge exists, the test-ran marker must be keyed on its verdict, else a receipt run reads as tested
+        if (("receipt-judge" in seen) && (jneeds["workspace-test-ran"] !~ /receipt-judge/ || jif["workspace-test-ran"] !~ /receipt-judge\.outputs\.ok/)) print "workspace-test-ran ignores receipt-judge: a receipt-reuse run would read as tested"
         n = split("x86-main determinism x86-main-advisories ci-gate gate", must, " ")
         for (i = 1; i <= n; i++) {
           if (!(must[i] in seen)) print "job " must[i] " is missing from the workflow"
@@ -681,6 +684,9 @@ STUB
   mgmut x86-main-needs-lookalike "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{s/^    needs: \[mg-reuse\]$/    needs: [mg-reuse-self-test]/}'
   mgmut x86-main-drops-needs "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'
   mgmut gate-if-loses-always "job gate needs mg-reuse but its if lacks" "/^  gate:\$/,/^    steps:/{s/^    if: always\(\)/    if: success()/}"
+  # once a receipt-judge job exists (#5850), the marker must need it and key its if on the verdict
+  mgmut ran-marker-ignores-receipt-judge "workspace-test-ran ignores receipt-judge" 's#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:#'
+  mgmut ran-marker-needs-judge-but-if-ignores-it "workspace-test-ran ignores receipt-judge" '/^  workspace-test-ran:$/,/^    runs-on:/{s#^    needs: \[workspace-test-arch\]$#    needs: [workspace-test-arch, receipt-judge]#};s#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:#'
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
   # wanted line comes first. A pipe from job into grep -q takes SIGPIPE on this every
