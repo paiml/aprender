@@ -66,35 +66,68 @@ self_test() {
     t "hidden file under docs" "skip=0 reason=full" false docs/images/.hidden
     t "prefix lookalike" "skip=0 reason=full" false docs/images-x/a.png
     t "empty diff is full" "skip=0 reason=full" false
-    local wf="$REPO_ROOT/.github/workflows/ci.yml" bad="" n
-    # No yq on the clean-room runner (run 39721317355): read the YAML with awk. Full-line comments are
-    # stripped first (the ci.yml comments name `paths`). blk KEY INDENT = body of the top-level (INDENT 0)
-    # or second-level (INDENT 2) key KEY, up to the next key at the same or lower indent.
+    local wf="${CI_SCOPE_WF:-$REPO_ROOT/.github/workflows/ci.yml}" bad="" n body line
+    # No yq on the clean-room runner (run 39721317355): read the YAML with awk. Full-line and trailing
+    # ` #` comments are stripped first (ci.yml comments name `paths`, and a trailing comment must not
+    # satisfy a check). Results are captured and matched with [[ ]], never piped into `grep -q`.
+    # top KEY = body of top-level KEY; job J / ev E = body of that job / trigger; jl J KEY = the job-level
+    # (4-space) KEY line only, so a step-level `if:` or `needs:` cannot stand in for it.
     if [ ! -r "$wf" ] || ! grep -q '^jobs:' "$wf"; then
         echo "FAIL wiring: cannot read ci.yml"; fail=1
     else
-        nc() { grep -vE '^[[:space:]]*#' "$wf"; }
-        top() { nc | awk -v k="$1" '$0 ~ "^"k":" {f=1; next} f && /^[^ ]/ {f=0} f'; }
+        nc() { sed -E -e '/^[[:space:]]*#/d' -e 's/[[:space:]]+#.*$//' -e 's/[[:space:]]+$//' "$wf"; }
+        top() { nc | awk -v k="$1" '$0 == k":" {f=1; next} f && /^[^ ]/ {f=0} f'; }
         job() { top jobs | awk -v k="$1" '$0 == "  "k":" || $0 == "  \""k"\":" {f=1; next} f && /^  [^ ]/ {f=0} f'; }
-        ev() { top on | awk -v k="$1" '$0 ~ "^  "k":" {f=1; next} f && /^  [^ ]/ {f=0} f'; }
-        top on | grep -qE '^  pull_request:' || bad="$bad; no pull_request trigger"
-        ev pull_request | grep -qE '^    paths(-ignore)?:' && bad="$bad; pull_request has a paths filter (stuck required checks)"
-        ev pull_request | grep -qE '^    types:.*ready_for_review' || bad="$bad; pull_request types lack ready_for_review"
-        for n in push merge_group; do
-            ev "$n" | grep -qE '^    paths(-ignore)?:' && bad="$bad; $n has a paths filter"
+        ev() { top on | awk -v k="$1" '$0 == "  "k":" {f=1; next} f && /^  [^ ]/ {f=0} f'; }
+        jl() { job "$1" | awk -v k="$2" 'index($0, "    "k": ") == 1 {print; exit}'; }
+        has_scope() { [[ "$1" =~ [\[,][[:space:]]*scope[[:space:]]*[],] ]]; }
+        [ "$(nc | grep -cE '^on:$')" = 1 ] || bad="$bad; on: is not a block mapping"
+        for n in push pull_request merge_group; do
+            [ "$(top on | grep -cE "^  $n:$")" = 1 ] || bad="$bad; trigger $n is not a plain block key"
+            body="$(ev "$n")"
+            [[ "$body" =~ (^|[^A-Za-z_-])paths(-ignore)?[[:space:]]*: ]] && bad="$bad; $n has a paths filter (stuck required checks)"
         done
-        job scope | grep -qF "if: \${{ github.event_name == 'pull_request' }}" || bad="$bad; scope job missing or not pull_request-only"
+        line="$(ev pull_request | awk '/^    types:/ {print; exit}')"
+        [[ "$line" =~ ^[[:space:]]+types:[[:space:]]*\[.*ready_for_review.*\]$ ]] || bad="$bad; pull_request types lack ready_for_review"
+        [ "$(jl scope if)" = "    if: \${{ github.event_name == 'pull_request' }}" ] || bad="$bad; scope job missing or not pull_request-only"
         for n in x86-main workspace-test-shard; do
-            job "$n" | grep -E '^    needs:' | grep -qF scope && job "$n" | grep -E '^    if:' | grep -qF "needs.scope.outputs.skip != '1'" || bad="$bad; $n does not honour scope"
+            has_scope "$(jl "$n" needs)" && [[ "$(jl "$n" if)" == *"needs.scope.outputs.skip != '1'"* ]] || bad="$bad; $n does not honour scope"
         done
-        for n in ci-gate gate workspace-test; do
-            job "$n" | grep -E '^    needs:' | grep -qF scope || bad="$bad; $n does not need scope"
-            job "$n" | grep -qF 'needs.scope.outputs.skip' || bad="$bad; $n does not read scope"
+        has_scope "$(jl workspace-test needs)" && [[ "$(jl workspace-test if)" == *"needs.scope.outputs.skip != '1'"* ]] || bad="$bad; workspace-test does not honour scope"
+        for n in ci-gate gate; do
+            has_scope "$(jl "$n" needs)" || bad="$bad; $n does not need scope"
+            body="$(job "$n")"
+            [[ "$body" == *'SCOPE_SKIP: ${{ needs.scope.outputs.skip }}'* && "$body" == *'"${SCOPE_SKIP:-}" = 1'* ]] || bad="$bad; $n does not read scope"
         done
-        top concurrency | grep -E '^  cancel-in-progress:' | grep -qF pull_request || bad="$bad; concurrency no longer cancels superseded PR runs"
+        [ "$(top concurrency | awk '/^  cancel-in-progress:/ {print; exit}')" = "  cancel-in-progress: \${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}" ] || bad="$bad; concurrency no longer cancels superseded PR runs (exact expression pinned)"
         grep -qF 'git diff --no-renames --name-only' "$wf" || bad="$bad; scope diff may report renames by new path only (fails open)"
     fi
     [ -z "$bad" ] || { printf 'FAIL wiring: %s\n' "${bad#; }"; fail=1; }
+    # MUTANTS: each slip-through of a weaker reader must turn the wiring RED on a mutated copy of ci.yml.
+    if [ -z "${CI_SCOPE_WF:-}" ]; then
+        local md mn mexp
+        md="$(mktemp -d)"
+        mutant() { # LABEL SED-EXPR
+            sed -E "$2" "$wf" > "$md/ci.yml"
+            if cmp -s "$wf" "$md/ci.yml"; then echo "FAIL mutant $1: sed changed nothing"; fail=1
+            elif CI_SCOPE_WF="$md/ci.yml" bash "${BASH_SOURCE[0]}" --self-test > /dev/null 2>&1; then echo "FAIL mutant $1: self-test stayed green"; fail=1
+            else echo "ok    red  mutant $1"; fi
+        }
+        mutant paths-filter-pr '0,/^    types:/s//    paths-ignore: [docs\/**]\n    types:/'
+        mutant paths-oneline-push 's/^  push:$/  push: {paths: [x]}/'
+        mutant paths-flow-under-push '/^  push:$/{n;s/^(    branches:.*)$/\1\n    paths: [x]/}'
+        mutant no-ready_for_review 's/, ready_for_review//'
+        mutant scope-if "s/^(    if: .\{\{ github.event_name == 'pull_request') \}\}/\1 || true }}/"
+        mutant cancel-false-trailing-comment 's/^  cancel-in-progress: .*/  cancel-in-progress: false # pull_request/'
+        mutant cancel-true 's/^  cancel-in-progress: .*/  cancel-in-progress: true/'
+        mutant no-renames 's/git diff --no-renames --name-only/git diff --name-only/'
+        mutant x86-main-no-scope-clause "/^  x86-main:\$/,/^  [a-z]/s/ && needs.scope.outputs.skip != '1'//"
+        mutant shard-needs-comment 's/^(  workspace-test-shard:)$/\1/;/^  workspace-test-shard:$/,/^  [a-z]/s/^    needs: \[scope\]/    needs: [mg-reuse] # [scope]/'
+        mutant gate-needs-scope-dropped '/^  gate:$/,/^  [a-z]/s/, scope\]/]/'
+        mutant ci-gate-reads-scope-dropped '/^  ci-gate:$/,/^  [a-z]/s/SCOPE_SKIP: .*/SCOPE_SKIP: ""/'
+        mutant workspace-test-if-dropped "/^  workspace-test:\$/,/^  [a-z]/s/ && needs.scope.outputs.skip != '1'//"
+        rm -rf "${md:?}"
+    fi
     [ "$fail" -eq 0 ] && echo "ci_scope: self-test ok"
     return "$fail"
 }
