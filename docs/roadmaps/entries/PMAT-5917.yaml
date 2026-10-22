@@ -1,0 +1,18 @@
+- id: PMAT-5917
+  github_issue: 5917
+  item_type: task
+  title: 'GH-5917: gc.auto=0 in fat_driver section clones'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T07:46:41Z
+  updated: 2026-10-22T07:46:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

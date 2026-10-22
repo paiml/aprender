@@ -757,6 +757,12 @@ class Section:
         subprocess.run(["git", "clone", "-q", "--local", "--no-checkout", str(src),
                         str(self.workspace)], check=True)
         g = ["git", "-C", str(self.workspace)]
+        # A throwaway checkout has nothing to gc. The hardlinked clone inherits the source's pack
+        # count (299 packs, 26k loose objects on intel), which trips `git gc --auto` on the first
+        # fetch/commit and burns ~95% of a core beside the test shards (#5917). The source repo is
+        # packed nightly instead.
+        subprocess.run(g + ["config", "gc.auto", "0"], check=True)
+        subprocess.run(g + ["config", "gc.autoDetach", "false"], check=True)
         subprocess.run(g + ["remote", "set-url", "origin", self.ctx.origin_url], check=True)
         hdr = subprocess.run(["git", "-C", str(src), "config", "--get-regexp",
                               r"^http\..*\.extraheader$"], capture_output=True, text=True)

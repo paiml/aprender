@@ -230,7 +230,7 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   [ "$(printf '%s\n' "$shard" | sha256sum | cut -d' ' -f1)" = "6c7c538c950899c60f7436868ee80a003f904e3ed3a4286877976964f4ddc216" ] || return 1
   blk=$(awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$2" | grep -v -E '^[[:space:]]*#')
   [ "$(printf '%s\n' "$blk" | sha256sum | cut -d' ' -f1)" = "b27698ea49d1149e98cb8fca78d45c48a0f58322b89f9b99a87b6224d415d460" ] || return 1
-  [ "$(sha256sum < "$pr/scripts/ci/fat_driver.py" | cut -d' ' -f1)" = "81662d808e4672b41b481f44361c10aaae308661f492b1aaaff47f87ffb27cfc" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci/fat_driver.py" | cut -d' ' -f1)" = "c583bbe03dbac7c94b9c9b90a405592c89c7d578cb6253ca442c889e91b39b70" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci_test_tier.sh" | cut -d' ' -f1)" = "1680bab97243fb7b5ce6907daf3c8a00db4968a2e892095260152a09cc127866" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci/receipt_ok_arg.sh" | cut -d' ' -f1)" = "1795d4df36fa1c3f223dd054d93392aff7584bb5063bed1d7a11bd3f18144820" ] || return 1
   # scripts that run before the tier step in the shard (they could append RECEIPT_OK to $GITHUB_ENV): byte-pinned too
