@@ -174,11 +174,11 @@ else fail=$((fail + 1)); echo "FAIL W10: mutant did not apply to $W"; fi
 # W16-W20: the judge is its own job and no PR-tree code can run before it reads. ci.yml's
 # `receipt-judge` job checks out the BASE (ref: github.base_ref), fetches the PR merge commit as
 # a data worktree, and runs no script from anywhere but the base checkout; the shard job needs it
-# and takes its verdict as RECEIPT_OK; the tier step (scripts/ci/decide_tier.sh) only reads that env. Each
+# and takes its verdict as RECEIPT_OK; the tier step in ci/sections.yml only reads that env. Each
 # defect below must turn judge_ok RED: a PR checkout as code, a PR-tree script step, a step that
 # plants PATH or the env, a shard job that does not wait for the judge, a tier step that runs code.
 CI="$HERE/../.github/workflows/ci.yml"
-SEC="$HERE/../scripts/ci/decide_tier.sh"   # the tier step body moved out of ci/sections.yml (#5882)
+SEC="$HERE/../ci/sections.yml"
 judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   local job code shard tier
   job=$(awk '/^  receipt-judge:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1")
@@ -198,9 +198,9 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   case "$code" in *'core.hooksPath=/dev/null'*) ;; *) return 1 ;; esac
   case "$code" in *'unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0'*) ;; *) return 1 ;; esac
   shard=$(awk '/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1")
-  printf '%s\n' "$shard" | grep -q -E '^    needs: \[.*receipt-judge' || return 1
+  case "$shard" in *'needs: [receipt-judge]'*) ;; *) return 1 ;; esac
   case "$shard" in *'RECEIPT_OK: ${{ needs.receipt-judge.outputs.ok'*) ;; *) return 1 ;; esac
-  tier=$(awk '/^args=\(/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$2" | grep -v -E '^[[:space:]]*#')
+  tier=$(awk '/id: tier$/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$2" | grep -v -E '^[[:space:]]*#')
   case "$tier" in *'"${RECEIPT_OK:-0}" = 1'*) ;; *) return 1 ;; esac
   printf '%s\n' "$tier" | grep -E 'scripts/|git (fetch|clone)' | grep -q . && return 1
   return 0
@@ -227,11 +227,11 @@ wmut "W27 MUTANT: a judge whose PR worktree is a full checkout is caught" ci 'wo
 wmut "W28 MUTANT: a judge that leaves the git token env set is caught" ci 'unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GH_TOKEN' 'true'
 wmut "W33 MUTANT: a judge not gated on the runner-readiness variable (it would queue forever with no runner) is caught" ci " && vars.RECEIPT_JUDGE_RUNNER_READY == 'true'" ''
 wmut "W34 MUTANT: the judge back on a GitHub-hosted image is caught" ci 'runs-on: [self-hosted, Linux, X64, receipt-judge]' 'runs-on: ubuntu-latest'
-wmut "W20 MUTANT: a shard job that does not wait for the judge is caught" ci 'needs: [workspace-test-arch, receipt-judge]' 'needs: [workspace-test-arch]'
+wmut "W20 MUTANT: a shard job that does not wait for the judge is caught" ci 'needs: [receipt-judge]' 'needs: []'
 wmut "W20b MUTANT: a tier step that runs PR-tree code is caught" sec 'rok=0
-if [ "${GITHUB_EVENT_NAME}" = pull_request ]' 'rok=0
-bash scripts/ci/pre.sh
-if [ "${GITHUB_EVENT_NAME}" = pull_request ]'
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ]' 'rok=0
+          bash scripts/ci/pre.sh
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ]'
 # W21/W22: a refs/replace entry in the PR repo must not let a receipt for another tree pass. The
 # receipt is signed for the empty tree; the replace ref makes HEAD read as a commit with that tree.
 git -C "$repo" -c user.email=t@example.invalid -c user.name=t checkout -q -- . 2>/dev/null
