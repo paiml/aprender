@@ -120,7 +120,7 @@ fn emit_contract_file(path: &Path, total_pre: &mut usize, total_post: &mut usize
         return;
     };
     for (eq_name, equation) in &contract.equations {
-        let key = provable_contracts::build_helper::env_key(stem, eq_name);
+        let key = aprender_contracts_key::env_key(stem, eq_name);
         emit_pre_post(&key, equation, total_pre, total_post);
     }
 }
@@ -185,10 +185,8 @@ fn enforce_provable_binding() {
 fn emit_binding_vars(bf: &BindingFile) -> Vec<String> {
     let mut gaps = Vec::new();
     for b in &bf.bindings {
-        let var = provable_contracts::build_helper::env_key(
-            b.contract.trim_end_matches(".yaml"),
-            &b.equation,
-        );
+        let var =
+            aprender_contracts_key::env_key(b.contract.trim_end_matches(".yaml"), &b.equation);
         println!("cargo:rustc-env={var}={}", b.status);
         if b.status != "implemented" {
             gaps.push(var);
