@@ -1,4 +1,4 @@
-# VENDORED (#4433): paiml/.github .github/workflows/sovereign-ci.yml @ 9078879912d106237a38137dee06be6ac6c04ac7
+# VENDORED (#4433): paiml/.github .github/workflows/sovereign-ci.yml @ dbd0488efe2463161b34b2f75002baee5e308d2a
 # sha256 of the upstream file: 40ab5f65bfe48630b475d124b1a492a7fcbaa4a9181b4af151889579ceb19c30
 # Not a workflow here: scripts/ci/fat_driver.py runs its jobs as sections sov.<job> of
 # the x86-main fat job. Do not edit by hand -- re-vendor from a new pin, and move the

@@ -18,7 +18,7 @@
 # The old `ci:` job, verbatim: `uses:` is the pin ci/vendor/sovereign-ci.yml was
 # copied from (scripts/check_ci_reusable_workflow_pinned.sh checks both agree).
 sovereign-ci:
-  uses: paiml/.github/.github/workflows/sovereign-ci.yml@9078879912d106237a38137dee06be6ac6c04ac7
+  uses: paiml/.github/.github/workflows/sovereign-ci.yml@dbd0488efe2463161b34b2f75002baee5e308d2a
   with:
     repo: ${{ github.event.repository.name }}
     enable_sccache: true
