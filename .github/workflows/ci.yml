@@ -83,7 +83,7 @@ jobs:
         run: |
           set -uo pipefail
           # Any failure to read the diff is `full`: a skip needs a positive read.
-          if ! paths=$(git diff --name-only "$BASE...$HEAD"); then paths=""; fi
+          if ! paths=$(git diff --no-renames --name-only "$BASE...$HEAD"); then paths=""; fi
           out=$(printf '%s\n' "$paths" | bash scripts/ci_scope.sh classify false) || out="skip=0 reason=full"
           echo "$out"
           printf '%s\n' "$out" | sed 's/ /\n/' >> "$GITHUB_OUTPUT"

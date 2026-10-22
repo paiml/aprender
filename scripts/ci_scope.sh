@@ -18,12 +18,13 @@
 #
 # DOCS-ONLY is an ALLOWLIST of trees no test or gate reads, found by searching the
 # repo for readers (docs/audits, docs/roadmaps, docs/specifications, docs/findings,
-# docs/BEATS.md, README.md, CLAUDE.md are READ by gates and are therefore NOT here).
+# docs/BEATS.md, README.md, CLAUDE.md are READ by gates and are therefore NOT here; neither is any
+# docs/**/*.md, which check_no_claim_literals.sh and check_perf_claims_cite_receipts.sh scan).
 # Every changed path must match; any other path, an empty list or a `..` is `full`.
 # Growing the list is a gate-content change: prove no reader first.
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 2
-DOCS_ONLY_RE='^docs/(archive|postmortems|reports|qa-reports|images)/[^.][^[:space:]]*$'
+DOCS_ONLY_RE='^docs/images/[^.][^[:space:]]*\.(png|jpg|jpeg|gif|svg|webp)$'
 
 classify() { # classify <draft> ; paths on stdin
     local draft=${1:-false} n=0 p
@@ -46,10 +47,12 @@ self_test() {
     }
     t "draft skips" "skip=1 reason=draft" true crates/a/src/lib.rs
     t "draft, no paths" "skip=1 reason=draft" true
-    t "docs archive only" "skip=1 reason=docs-only" false docs/archive/a.md docs/images/x.png
-    t "postmortem only" "skip=1 reason=docs-only" false docs/postmortems/2026-10-19.md
+    t "images only" "skip=1 reason=docs-only" false docs/images/x.png docs/images/y.svg
+    t "docs archive md is gated" "skip=0 reason=full" false docs/archive/a.md
+    t "images md is gated" "skip=0 reason=full" false docs/images/README.md
+    t "postmortem md is gated" "skip=0 reason=full" false docs/postmortems/2026-10-19.md
     t "code" "skip=0 reason=full" false crates/a/src/lib.rs
-    t "docs + code" "skip=0 reason=full" false docs/archive/a.md crates/a/src/lib.rs
+    t "images + code" "skip=0 reason=full" false docs/images/a.png crates/a/src/lib.rs
     t "README is gated" "skip=0 reason=full" false README.md
     t "CLAUDE.md is gated" "skip=0 reason=full" false CLAUDE.md
     t "BEATS is gated" "skip=0 reason=full" false docs/BEATS.md
@@ -59,19 +62,19 @@ self_test() {
     t "findings ledger is gated" "skip=0 reason=full" false docs/findings/w1.jsonl
     t "workflow file" "skip=0 reason=full" false .github/workflows/ci.yml
     t "contracts" "skip=0 reason=full" false contracts/a-v1.yaml
-    t "dot-dot escape" "skip=0 reason=full" false docs/archive/../../Cargo.toml
-    t "hidden file under docs" "skip=0 reason=full" false docs/archive/.hidden
-    t "prefix lookalike" "skip=0 reason=full" false docs/archive-x/a.md
+    t "dot-dot escape" "skip=0 reason=full" false docs/images/../../Cargo.toml
+    t "hidden file under docs" "skip=0 reason=full" false docs/images/.hidden
+    t "prefix lookalike" "skip=0 reason=full" false docs/images-x/a.png
     t "empty diff is full" "skip=0 reason=full" false
     local wf="$REPO_ROOT/.github/workflows/ci.yml" bad="" n
     if ! command -v yq > /dev/null 2>&1 || ! yq '.jobs' "$wf" > /dev/null 2>&1; then
         echo "FAIL wiring: cannot read ci.yml (yq missing or file unparsable)"; fail=1
     else
         y() { yq -r "$1" "$wf"; }
-        [ "$(y '.on.pull_request | has("paths") or has("paths-ignore")')" = false ] || bad="$bad; pull_request has a paths filter (stuck required checks)"
+        [ "$(y '.on.pull_request | (has("paths") or has("paths-ignore"))')" = false ] || bad="$bad; pull_request has a paths filter (stuck required checks)"
         [ "$(y '.on.pull_request.types // [] | contains(["ready_for_review"])')" = true ] || bad="$bad; pull_request types lack ready_for_review"
         for n in push merge_group; do
-            [ "$(y ".on.$n // {} | has(\"paths\") or has(\"paths-ignore\")")" = false ] || bad="$bad; $n has a paths filter"
+            [ "$(y ".on.$n // {} | (has(\"paths\") or has(\"paths-ignore\"))")" = false ] || bad="$bad; $n has a paths filter"
         done
         [ "$(y '.jobs.scope.if')" = "\${{ github.event_name == 'pull_request' }}" ] || bad="$bad; scope job missing or not pull_request-only"
         for n in x86-main workspace-test-shard; do
@@ -82,6 +85,7 @@ self_test() {
             y ".jobs.\"$n\"" | grep -qF 'needs.scope.outputs.skip' || bad="$bad; $n does not read scope"
         done
         y '.concurrency."cancel-in-progress"' | grep -qF pull_request || bad="$bad; concurrency no longer cancels superseded PR runs"
+        grep -qF 'git diff --no-renames --name-only' "$wf" || bad="$bad; scope diff may report renames by new path only (fails open)"
     fi
     [ -z "$bad" ] || { printf 'FAIL wiring: %s\n' "${bad#; }"; fail=1; }
     [ "$fail" -eq 0 ] && echo "ci_scope: self-test ok"
