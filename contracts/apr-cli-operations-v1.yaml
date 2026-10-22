@@ -275,6 +275,51 @@ falsification_tests:
   prediction: print_run_output succeeds for stream, json, benchmark and text; effective_tok_per_sec prefers the reported rate, else tokens/duration, else 0.0
   test: commands::run::tests::print_run_output_serves_every_mode_and_derives_the_rate
   if_fails: apr run output errors on a finished run or reports a wrong rate
+- id: FALSIFY-OPS-014
+  rule: benchmark summaries use the sample standard deviation and the t interval
+  prediction: stat_summary of [2,4,6] has mean 4, stddev 2 and a 95% margin of t(3)*2/sqrt(3); one sample collapses the interval; an empty slice yields zeros
+  test: llm::benchmark::tests::stat_summary_computes_mean_stddev_and_t_interval
+  if_fails: benchmark confidence intervals are wrong, so a speed claim rests on a wrong error bar
+- id: FALSIFY-OPS-015
+  rule: pv lint layers CLI flags over the config file
+  prediction: build_config takes scalars from the flag when set else the file, merges suppression lists, and lets a CLI rule override beat the file; a missing config yields defaults
+  test: commands::lint::tests::build_config_merges_cli_flags_over_the_config_file
+  if_fails: pv lint silently ignores a flag or a config setting
+- id: FALSIFY-OPS-016
+  rule: Mock page coverage cannot be read before it is started, and stopping ends collection
+  prediction: take_coverage before start_coverage is an InvalidState error; after start it returns the page url and added functions; stop_coverage returns the final report and later takes fail
+  test: mock_page_take_coverage_5695::stop_coverage_returns_final_report_then_disables
+  if_fails: Coverage reads succeed on a page that never enabled collection, or keep succeeding after stop
+- id: FALSIFY-OPS-017
+  rule: Resuming a classifier checkpoint restores what was saved and refuses a foreign dataset
+  prediction: resume_from_apr_checkpoint returns the saved epoch and the saved classifier weights, and a checkpoint from a different corpus is rejected with F-CKPT-006 before any weight is touched
+  test: finetune::classify_trainer::tests::test_resume_rejects_data_hash_mismatch
+  if_fails: A resume silently continues from weights trained on different data, or loses the epoch
+- id: FALSIFY-OPS-018
+  rule: batch inference never aborts on a failing prompt
+  prediction: run_batch_loop emits one JSONL error row and counts one failure per bad-JSON, encode-failed or model-less prompt, skips blank lines, and returns an IoError when the sink is unwritable
+  test: infer::tests_batch_loop_5691::bad_json_encode_failure_and_missing_model_each_emit_one_error_row_5691
+  if_fails: a bad prompt aborts or silently vanishes from a batch run
+- id: FALSIFY-OPS-019
+  rule: oracle recommender emits a distinct code example per stack component
+  prediction: generate_code_example returns Some for every known component with a distinct non-empty body, honours a recommended aprender path, and returns None for an unknown component
+  test: oracle::recommender::tests::code_example_exists_for_every_stack_component_and_is_distinct
+  if_fails: the oracle shows the wrong or no example for a recommended component
+- id: FALSIFY-OPS-020
+  rule: extract-frames fails loudly and dry-runs without side effects
+  prediction: run_extract_frames rejects a missing path and a video-less or fully excluded directory with distinct errors, rejects a malformed exclude glob, lists videos on dry-run without creating frame dirs, and leaves a populated frames dir untouched under skip-existing
+  test: extract::tests::skip_existing_treats_a_populated_frames_dir_as_done_but_an_empty_one_as_pending
+  if_fails: extract-frames re-extracts finished videos or hides why nothing was processed
+- id: FALSIFY-OPS-021
+  rule: /v1/predict computes from the loaded tensor and refuses what it cannot compute
+  prediction: apr_predict_handler rejects empty features with 400, reports a missing weights/output tensor as 400, returns the dot product for matching-length weights, and argmax class plus ranked top-k for logits
+  test: api::tests::apr_predict_5698::predict_classification_takes_argmax_and_ranks_top_k
+  if_fails: The predict endpoint returns a plausible number or class that is not derived from the loaded model
+- id: FALSIFY-OPS-022
+  rule: The MoE FFN layer refuses malformed router input and routes k=1 to exactly one expert
+  prediction: moe_ffn_forward_layer rejects a wrong hidden length, a quantized router and a short router byte_size, and with top-k 1 returns the favoured expert's SwiGLU output unchanged
+  test: gguf::qwen3_moe_load::moe_ffn_layer_5699_tests::moe_ffn_layer_5699_k1_output_is_the_routed_experts_swiglu
+  if_fails: A mis-sized router or hidden vector reads past its tensor, or routing mixes experts that top-k 1 should exclude
 kani_harnesses:
 - id: KANI-OPS-001
   obligation: ReadOnly commands have no side effects
@@ -329,7 +374,7 @@ qa_gate:
   - progress_reporting
   - concurrent_model_access
   - tokenizer_consistency
-  pass_criteria: All 12 falsification tests pass
+  pass_criteria: All 21 falsification tests pass
   falsification: >
     Run read-only command with filesystem watcher to detect mutations.
     Force inference error and measure GPU memory leak.

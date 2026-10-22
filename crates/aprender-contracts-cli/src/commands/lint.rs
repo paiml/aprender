@@ -1244,4 +1244,96 @@ mod tests {
             assert!(!parses(refused), "{refused:?} must be refused");
         }
     }
+
+    /// FALSIFY-OPS-016: `build_config` layers CLI flags over the config file —
+    /// flags win for scalars, lists are merged, and a CLI rule override beats the file's.
+    #[test]
+    fn build_config_merges_cli_flags_over_the_config_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = dir.path().join("pv.toml");
+        std::fs::write(
+            &cfg,
+            "[lint]\nmin_score = 0.5\nseverity = \"warn\"\nstrict = true\n\
+             [lint.rules]\nPV-A = \"error\"\nPV-B = \"info\"\n\
+             [lint.suppress]\nfindings = [\"f1\"]\nrules = [\"r1\"]\nfiles = [\"x.yaml\"]\n",
+        )
+        .expect("write config");
+        let overrides = vec!["PV-A=off".to_string(), "bad-no-equals".to_string()];
+        let lc = build_config(
+            dir.path(),
+            None,
+            0.0,
+            None,
+            None,
+            false,
+            Some("f2, ,f3"),
+            Some("r2"),
+            None,
+            &overrides,
+            Some(&cfg),
+            true,
+            true,
+            None,
+            Some("STRICT"),
+            true,
+        );
+        // file supplies what the flags leave unset
+        assert!((lc.min_score - 0.5).abs() < f64::EPSILON && lc.strict);
+        assert_eq!(lc.severity_filter, RuleSeverity::from_str_opt("warn"));
+        // lists: CLI entries first (blanks dropped), then the file's
+        assert_eq!(lc.suppressed_findings, ["f2", "f3", "f1"]);
+        assert_eq!(lc.suppressed_rules, ["r2", "r1"]);
+        assert_eq!(lc.suppressed_files, ["x.yaml"]);
+        // CLI override beats the file for PV-A; the file's PV-B survives; malformed ignored
+        assert_eq!(lc.severity_overrides["PV-A"], RuleSeverity::Off);
+        assert_eq!(lc.severity_overrides["PV-B"], RuleSeverity::Info);
+        assert_eq!(lc.severity_overrides.len(), 2);
+        assert!(lc.no_cache && lc.cache_stats && lc.strict_test_binding);
+        assert!(!lc.strict_test_binding_only);
+        assert!(lc.min_level.is_some());
+
+        // a CLI score and severity beat the file; a missing config falls back to defaults
+        let lc = build_config(
+            dir.path(),
+            None,
+            0.9,
+            None,
+            Some("error"),
+            false,
+            None,
+            None,
+            None,
+            &[],
+            Some(&cfg),
+            false,
+            false,
+            None,
+            Some("nonsense"),
+            false,
+        );
+        assert!((lc.min_score - 0.9).abs() < f64::EPSILON);
+        assert_eq!(lc.severity_filter, RuleSeverity::from_str_opt("error"));
+        assert!(lc.min_level.is_none());
+        let bare = tempfile::tempdir().expect("tempdir");
+        let lc = build_config(
+            bare.path(),
+            None,
+            0.0,
+            None,
+            None,
+            false,
+            None,
+            None,
+            None,
+            &[],
+            Some(&bare.path().join("missing.toml")),
+            false,
+            false,
+            None,
+            None,
+            false,
+        );
+        assert!(lc.min_score.abs() < f64::EPSILON && !lc.strict);
+        assert!(lc.severity_overrides.is_empty() && lc.severity_filter.is_none());
+    }
 }
