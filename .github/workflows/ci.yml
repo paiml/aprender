@@ -304,6 +304,11 @@ jobs:
         # the teardown below keeps always() and still reaps the containers.
         if: ${{ !cancelled() }}
         run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
+      # PMAT-5740 (#5740): a red section names its first failing line in this job log;
+      # the driver prints only the result, its cause sits in a ::group a cut-off log loses.
+      - name: First failing line of each failed section
+        if: ${{ failure() }}
+        run: cargo run -q -p aprender-ci-tools -- section-first-fail --results "$RUNNER_TEMP/fat/results.json"
       # #4948: a cancelled run never reaches a section's own container removal,
       # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
       # for days. always() runs on cancel too; on the passing path the driver
