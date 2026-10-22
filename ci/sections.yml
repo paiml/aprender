@@ -936,6 +936,25 @@ jobs:
           files=("$RUNNER_TEMP"/quick-sel/*.junit.xml)
           # a shard whose share is empty has no junit; one that owes a call and has none fails in the Σ step
           [ "${#files[@]}" -eq 0 ] || cp "${files[@]}" "$RUNNER_TEMP/sigma/quick-sel/"
+      # FLOW-010 P1: the archive from workspace-test-archive (a `needs` of this job),
+      # through the driver's own download-artifact, which fetches this run's artifact
+      # by name into the section workspace. Required in the quick tier.
+      - uses: actions/download-artifact@v7
+        if: steps.tier.outputs.tier == 'quick'
+        with:
+          name: ws-archive-ptr-${{ runner.arch }}
+          path: ws-archive-ptr
+          merge-multiple: true
+      - name: Fetch the archive over the LAN (a miss falls back to the artifact below)
+        id: lan
+        if: steps.tier.outputs.tier == 'quick'
+        run: bash scripts/ci/archive_fetch.sh fetch ws-archive-ptr/ptr.json ws-archive
+      - uses: actions/download-artifact@v7
+        if: steps.tier.outputs.tier == 'quick' && steps.lan.outputs.hit != '1'
+        with:
+          name: ws-archive-${{ runner.arch }}
+          path: ws-archive
+          merge-multiple: true
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick'
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
@@ -968,6 +987,22 @@ jobs:
           printf 'build flags: %s\n' "$BUILD_FLAGS"
           printf 'nextest filterset (%s clause(s)):\n' "$(printf '%s' "$EXPR" | tr '|' '\n' | wc -l)"
           printf '%s\n' "$EXPR" | tr '|' '\n' | sed 's/^ *//; s/ *$//; s/^/  + /'
+          # FLOW-010 P1 (amendment 3 item 7): every shard used to build this SAME
+          # binary set (the registry targets do not depend on the shard; only the
+          # hash partition does) -- 8 to 12.5 min of build per shard in run
+          # 39469451292. The workspace-test-archive job builds it once; the archive
+          # arrives through the driver's own download-artifact step above. In the
+          # quick tier the archive is REQUIRED: absent, unbound to THIS run's
+          # filterset/flags/commit/image, or unreadable = this step fails (no silent
+          # second path, C324 item 6). `workspace-test-archive` is in the shard's needs,
+          # so a red archive job skips the shards and `workspace-test` goes red.
+          arc="$GITHUB_WORKSPACE/ws-archive"
+          rustc_vv="$(docker run --rm "$IMAGE" rustc -vV)"
+          bash scripts/ci/archive_bind_check.sh --toolchain "$rustc_vv" "$arc/bind.json" \
+            sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS"
+          # --extract-to /workspace puts the binaries back at /workspace/target/debug/..., the path
+          # every env!("CARGO_BIN_EXE_*") in the ~100 integration tests baked in at build time.
+          printf 'FLOW-010 P1: running shard %s from the prebuilt archive (%s MB)\n' "$SHARD" "$(( $(stat -c %s "$arc/ws.tar.zst") / 1048576 ))"
           docker run --rm \
           -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -985,8 +1020,10 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
+            -e EXPR="$EXPR" -e SHARD -e SHARDS \
             "$IMAGE" \
-            cargo nextest run --profile ci $BUILD_FLAGS -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}"
+            bash -c 'set -euo pipefail
+              cargo nextest run --profile ci --archive-file /workspace/ws-archive/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}"'
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -1039,10 +1076,13 @@ jobs:
             [ -s "$sig/quick-sel.all" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
             bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS" < "$sig/quick-sel.all" > "$sig/quick-sel.calls"
           fi
-          read -ra targets <<< "$TARGETS"
-          tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
-                  | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
-          EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+          # FLOW-010 P1: the tree-reader yardstick is the INDEPENDENT live list the archive
+          # job built from `$TREE --lib --tests` (not from --build-flags, not from the
+          # archive), listed per shard partition there and shipped in the artifact. This
+          # step still writes the filterset out again; archive_bind_check.sh proved the
+          # artifact belongs to this run's commit/EXPR/flags/image, and the archive job
+          # proved archive ids == that live list (archive_list_equal.sh).
+          cp "$GITHUB_WORKSPACE/ws-archive/tree.${SHARD}.list.json" "$sig/quick-tree.list.json"
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
@@ -1057,14 +1097,11 @@ jobs:
             -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
-            -e TREE="$tree" -e EXPR="$EXPR" \
-            -e SHARD -e SHARDS \
             "$IMAGE" \
             bash -c 'set -euo pipefail
               i=0; while read -r g; do p=""; for c in $g; do p="$p -p $c"; done
                 cargo nextest list --profile ci --lib --tests $p --message-format json > "/sigma/quick-sel/$i.list.json"; i=$((i + 1))
-              done < /sigma/quick-sel.calls
-              cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}" --message-format json > /sigma/quick-tree.list.json'
+              done < /sigma/quick-sel.calls'
           rc=0
           if [ -n "$CRATES" ]; then
             n="$(wc -l < "$sig/quick-sel.calls")"
@@ -1151,6 +1188,408 @@ jobs:
             -w /workspace \
             "$IMAGE" \
             setsid --wait bash scripts/check_format_sovereignty.sh
+      - name: Fix file ownership (container runs as root, runner as noah:1000)
+        if: always()
+        run: |
+          # Five-whys: Docker container creates files as root on bind-mounted
+          # workspace. Runner (noah:1000) can't git-clean them on next run
+          # → checkout fails → CI breaks. This runs inside the container
+          # (as root) restoring host ownership for subsequent bare-metal jobs.
+          # infra#1059: mount the target unit only if it exists. When the disk
+          # admit gate refused it, a bind mount here would make docker create the
+          # refused unit as root, unrecorded, so the reap hook would never free it.
+          unit="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          target_mount=()
+          if [ -d "$unit" ]; then target_mount=(-v "${unit}:/workspace/target"); fi
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            "${target_mount[@]}" \
+            "$IMAGE" \
+            bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
+
+  # FLOW-010 P1 (amendment 3 item 7): ONE job builds the quick-tier tree-reader
+  # binary set and archives it; the shards run their hash partition from the
+  # archive (workspace-test-shard "Quick tier: every test target that reads the
+  # tree"). Same tier decision as a shard; a non-quick tier archives nothing and
+  # the shards behave exactly as before. The archive's matching-test ids must equal
+  # an independent live `nextest list` of the same filterset (archive_list_equal.sh)
+  # or the job fails -- no archive is ever offered that owes a different set.
+  workspace-test-archive:
+    name: workspace-test-archive
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 60
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}-arc
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Five-whys: the end-of-job "Fix file ownership" step is
+        # `if: always()`, but a hard-killed job (runner death, forced
+        # cancel) skips even always() steps → root-owned
+        # target/.rustc_info.json + target/package/ survive in the runner
+        # checkout → the NEXT run's actions/checkout `git clean -ffdx`
+        # fails with EACCES (observed 2026-07-02: 4 jobs across PRs
+        # #2257/#2258 on runners 10/14/16, each needing a manual
+        # `ssh intel sudo rm` sweep). Restoring ownership BEFORE checkout
+        # makes every run self-healing instead of depending on the
+        # previous run's clean exit.
+        # Soundness of the cached-image gate: leftovers can only exist if
+        # a previous docker job ran on this runner — which implies the
+        # image is already in the local cache. So "image not cached ⟹ no
+        # leftovers" and skipping is safe (also keeps this step
+        # registry-outage-tolerant).
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+      - name: Pull sovereign-ci image (with retry + local-cache fallback)
+        # Self-hosted runner's local Docker registry at localhost:5000 is
+        # occasionally restarting OR experiencing extended outages
+        # (paiml/infra ops). Two layers of resilience:
+        #   1. Check the local Docker daemon cache first — the image was
+        #      successfully pulled on a prior run, so it's almost certainly
+        #      still in the cache (Docker doesn't GC images unless `prune`
+        #      is run). If present, skip the pull entirely; this makes the
+        #      workflow registry-outage-tolerant.
+        #   2. Otherwise, try to pull with 15-attempt linear-backoff retry
+        #      (~13min total) — plenty for any normal restart cycle.
+        # The local-cache path accepts slight staleness as the price of
+        # registry-outage tolerance. paiml/infra:machines/intel/sovereign-
+        # ci/rebuild.sh rebuilds the stable tag nightly so any drift gets
+        # corrected within 24h on the next successful pull.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image $IMAGE already cached locally — skipping pull"
+            echo "(local cache is registry-outage-tolerant; nightly rebuild keeps it fresh)"
+            exit 0
+          fi
+          max_attempts=15
+          delay=4
+          for i in $(seq 1 $max_attempts); do
+            if docker pull "$IMAGE"; then
+              echo "Image pulled successfully on attempt $i"
+              exit 0
+            fi
+            if [ "$i" -eq "$max_attempts" ]; then
+              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts (~13min) AND image not in local cache"
+              echo "::error::Suggests paiml/infra runner-side registry restart + initial image seed needed"
+              exit 1
+            fi
+            echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
+            sleep "$delay"
+            delay=$((delay + 6))  # linear backoff: 4,10,16,22,28,34,...
+          done
+      - name: Create this run's target dir and registry on the host (before any bind mount)
+        run: |
+          set -euo pipefail
+          # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
+          # ref (gh-readonly-queue/main/pr-N-<sha>), so the per-ref dir is NESTED
+          # and an ancestor may already be root-owned from a build whose bind
+          # mount let the docker daemon create it (#3037's queue build: mkdir
+          # EACCES on .../aprender-ci/gh-readonly-queue/...). Walk every
+          # component from ROOT down; chown each existing unwritable one through
+          # the image (that directory only, never its contents); then mkdir -p.
+          heal_path() {
+            local root=$1 path=$2 cur=$1 rel part
+            rel=${path#"$root"/}
+            IFS=/ read -ra parts <<< "$rel"
+            for part in "${parts[@]}"; do
+              cur="$cur/$part"
+              if [ -d "$cur" ] && [ ! -w "$cur" ]; then
+                docker run --rm -v "$(dirname "$cur"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$cur")"
+              fi
+            done
+            mkdir -p "$path"
+          }
+          parent="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
+          reg="/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}"
+          # infra#1059: admit this target unit against gx10's disk budget BEFORE creating it
+          # (free >= 50G + 25G x (live+1), live < 2; waits <=20m, then exit 1). The admit
+          # record is what the runner's JOB_COMPLETED hook reaps, and nothing else. Hosts
+          # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
+          # gate there is red, never a silent skip.
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            ci-target-admit "${parent}/run-${GITHUB_RUN_ID}" || exit 1
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
+          heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
+          heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
+          ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
+      - name: Pre-build chown — fix per-RUN root ownership
+        # Root cause (five-whys):
+        #   1. Why do fresh runs sometimes fail with "failed to create
+        #      /workspace/target/debug" / "No such file or directory"?
+        #      Cargo (running as user 1000 inside the container) can't
+        #      write to /workspace/target/debug.
+        #   2. Why can't it write? The bind-mount source dir on the host
+        #      (/mnt/nvme-raid0/targets/aprender-ci/<PR>/run-<RUN_ID>) is
+        #      owned by root:root.
+        #   3. Why is it root-owned? Docker's bind-mount creates missing
+        #      host directories with the daemon's uid (root). Per-RUN
+        #      paths are always fresh, so this fires every run.
+        #   4. Why didn't this happen before? Pre-#1693 the per-PR (not
+        #      per-RUN) path persisted across runs, and the downstream
+        #      "post-job cleanup" docker chown step fixed ownership for
+        #      the NEXT run's git-clean. Per-RUN paths invalidate that —
+        #      each run gets a brand-new root-owned dir.
+        #   5. Root cause: the chown step runs AFTER cargo, not BEFORE.
+        #      First-runs always fail; reruns appear to work only when
+        #      the previous run's belated chown fixed the now-stale dir.
+        # Fix (this step): docker run as root, chown the per-RUN target
+        # dir + cargo registry to noah:1000 BEFORE the cargo step.
+        # Idempotent — `|| true` tolerates dirs that are already
+        # noah-owned (e.g. a rerun of the same run-id).
+        run: |
+          docker run --rm \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            "$IMAGE" \
+            bash -c 'chown -R 1000:1000 /workspace/target /usr/local/cargo/registry 2>/dev/null || true'
+      # BSE-17 (PMAT-1077): which tier this run owes. quick on pull_request —
+      # the touched crates + direct reverse dependents (BSE-16's selection, cap
+      # -> full) plus EVERY test target that reads the tree, derived and
+      # registry-checked (drift is ENV, never a quick tier over a stale list);
+      # full on schedule/dispatch/tags; merge_group runs the quick tier over the whole
+      # group diff (operator 2026-10-17: full gates only tags/release);
+      # a push to main reuses the queue's workspace-test green (T36; quick or full, per the queue's own tier -- never on a tag push) or, when it cannot, measures
+      # the landed diff.
+      # The touched set is the TIP diff against the base (shallow checkout: no
+      # merge-base; tip-vs-tip is a superset, the safe direction) and the diff
+      # command itself must succeed — an empty diff from a failed git would
+      # read as "nothing touched", the fail-open shape. Feature-gated suites
+      # (model-tests, setfit) stay in the full tier.
+      - name: Decide the test tier (BSE-17, PMAT-1077)
+        id: tier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          args=(--event "${GITHUB_EVENT_NAME}")
+          # PMAT-1098 67-E2: the queue and a push to main re-derive their own
+          # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the
+          # new base). actions/checkout is shallow, so that parent is not in the
+          # object store until we deepen -- and without it ci_test_tier.sh falls
+          # closed to `full` every single time, which would make the whole
+          # optimisation inert while looking like it worked. Best effort by
+          # design: if the deepen fails the decision still falls closed, and the
+          # warning below says so instead of the run silently paying the hour.
+          case "${GITHUB_EVENT_NAME}" in
+            merge_group)
+              # Operator 2026-10-17: the queue runs the quick tier over the entry's diff (base_sha = prior entry's head),
+              # MG_BASE_SHA..HEAD. Fetch the base; if that fails the tier falls closed to full.
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${GITHUB_SHA}" "${MG_BASE_SHA}" 2>/dev/null \
+                || bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${MG_BASE_SHA}" 2>/dev/null \
+                || true
+              git cat-file -e "${MG_BASE_SHA}^{commit}" 2>/dev/null \
+                || printf '::warning::merge_group base sha unavailable -- the tier falls closed to full\n'
+              ;;
+            push)
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
+                || bash scripts/ci/fetch_p6.sh --no-tags --deepen=1 origin 2>/dev/null \
+                || true
+              if git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
+                printf 'first parent available: %s\n' "$(git rev-parse HEAD^1)"
+              else
+                printf '::warning::first parent unavailable after deepen -- the tier falls closed to full\n'
+              fi
+              ;;
+          esac
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request)
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+              # #5391: the PR's change is the diff from merge-base(base, HEAD), not the
+              # base tip -- main's later commits are not the PR's. --no-renames (#3664)
+              # lives in the helper.
+              bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
+              args+=(--diff-from "$RUNNER_TEMP/touched.txt")
+              ;;
+            merge_group)
+              # Operator 2026-10-17 (cop window), verbatim: "only gating on tags/release".
+              # ci_test_tier.sh diffs MG_BASE_SHA..HEAD (env above) and selects like a PR.
+              ;;
+            push)
+              # T36: the merge queue already tested this very sha. Hand its
+              # workspace-test result to the tier script, which reuses it only
+              # on a success for HEAD itself. A failed lookup is the push's own
+              # tier, as before -- never a reuse, never a red step.
+              mg=$(bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}") || mg=""
+              if [ -n "$mg" ]; then
+                mapfile -t mgargs <<<"$mg"
+                args+=("${mgargs[@]}")
+              else
+                printf 'no merge_group workspace-test result for %s: the tier is decided from the push diff\n' "${GITHUB_SHA}"
+              fi
+              ;;
+          esac
+          bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
+          grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+      # #4502 row 2: lint_passes_on_real_contracts (aprender-contracts) requires the
+      # refinement gate to RUN whenever CI is set, and that gate compares HEAD with
+      # merge-base(HEAD, origin/main), else the origin/main tip. This section clones at
+      # depth 1 and only the tier step's pull_request arm fetched a main, so a
+      # workflow_dispatch / merge_group / push shard had no base and the test panicked
+      # "the refinement gate declined". Operator ruling (2026-09-28 09:41): compare HEAD
+      # with the EVENT's base commit -- pull_request.base.sha, merge_group.base_sha,
+      # push's `before` (a tag push: the tagged commit's first parent, #5172) -- and
+      # fall back to the origin/main tip only for
+      # workflow_dispatch. That commit is pinned as refs/remotes/origin/main, so at
+      # depth 1 (no merge-base) the gate's tip fallback compares against exactly it.
+      # AFTER the tier step: its pull_request arm fetches main's CURRENT tip into
+      # origin/main, which would replace the base. A missing base fails the step here,
+      # loudly, instead of reaching the test as a skipped gate.
+      - name: Pin the event's base commit as origin/main (refinement gate comparand, aprender-4502)
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request) base="${PR_BASE_SHA:-}" ;;
+            merge_group) base="${MG_BASE_SHA:-}" ;;
+            push)
+              base="${PUSH_BEFORE:-}"
+              # #5172: a push that CREATES a ref carries before=0000..., and a release tag
+              # push always does, so v0.71.0's tag run failed here. A tag push's base is
+              # ALWAYS the tagged commit's first parent, never `before` (on a moved tag that
+              # is the old target, not this commit's base). The tier step's merge_group|push
+              # arm deepened to depth 2, best effort; if that missed, fetch it here. A
+              # branch push with a zero `before` still fails below.
+              case "${GITHUB_REF:-}" in
+                refs/tags/*)
+                  git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1 \
+                    || bash scripts/ci/fetch_p6.sh --no-tags --depth=2 origin "${GITHUB_SHA}"
+                  base="$(git rev-parse -q --verify 'HEAD^1^{commit}' || true)"
+                  printf 'refinement base: tag push %s (before %s); using its first parent %s\n' "${GITHUB_REF#refs/tags/}" "${PUSH_BEFORE:-<none>}" "${base:-<none>}"
+                  ;;
+              esac
+              ;;
+            workflow_dispatch)
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+              printf 'refinement base: origin/main tip %s (workflow_dispatch has no event base)\n' "$(git rev-parse origin/main)"
+              exit 0
+              ;;
+            *) printf '::error::refinement base: event %s has no base rule\n' "${GITHUB_EVENT_NAME}"; exit 1 ;;
+          esac
+          if ! printf '%s' "$base" | grep -Eq '^[0-9a-f]{40}$' || [ "$base" = 0000000000000000000000000000000000000000 ]; then
+            printf '::error::refinement base: %s event carries no base sha (got "%s")\n' "${GITHUB_EVENT_NAME}" "$base"
+            exit 1
+          fi
+          bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "$base"
+          git update-ref refs/remotes/origin/main "$base"
+      - name: "Build the quick-tier tree-reader set once and archive it (FLOW-010 P1)"
+        timeout-minutes: 45
+        env:
+          TIER: ${{ steps.tier.outputs.tier }}
+          TARGETS: ${{ steps.tier.outputs.targets }}
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/ws-archive-out"
+          mkdir -p "$out"
+          if [ "$TIER" != quick ]; then
+            # Nothing to archive: the shards of a non-quick tier never read the artifact.
+            jq -n --arg t "$TIER" --arg s "$GITHUB_SHA" '{tier:$t,sha:$s}' > "$out/bind.json"
+            printf 'FLOW-010 P1: tier is %s, nothing archived\n' "$TIER"
+            exit 0
+          fi
+          read -ra targets <<< "$TARGETS"
+          EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+          BUILD_FLAGS="$(printf '%s\n' "${targets[@]}" | grep -vE '^aprender-(gpu|cuda-edge|compute):' | tr '\n' ' ' | bash scripts/ci_test_tier.sh --build-flags)"
+          # The yardstick's package list, derived the way the shards' Σ-executed step always did
+          # (packages of the targets, NOT the --build-flags): a drifted --build-flags cannot hide in it.
+          tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
+                  | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
+          printf 'archive build flags: %s\n' "$BUILD_FLAGS"
+          # The shard count has one source: the matrix-pins above, keyed by event (PR 12, merge_group 4); same awk as the aggregator in ci.yml.
+          SHARDS="$(awk -v ev="$GITHUB_EVENT_NAME" '/^matrix-pins:/{p=1;next} p&&/^  workspace-test-shard:/{k="pr";next} p&&/^  workspace-test-shard-merge_group:/{k="mg";next} p&&/^  [a-z]/{k=""} k&&/^    - \{shard:/{c[k]++} END{print (ev=="merge_group"&&c["mg"]?c["mg"]:c["pr"])+0}' ci/sections.yml)"
+          [ "$SHARDS" -gt 0 ] || { echo "no workspace-test-shard pins in ci/sections.yml"; exit 1; }
+          # The shards' sccache host dir, derived from $HOME so this job adds no machine-specific
+          # path literal (the whole-tree ratchet, m36, counts each one).
+          SCCACHE_HOST_DIR="${HOME}/data/sccache"
+          dock() {
+            docker run --rm \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
+            -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+              -v "${GITHUB_WORKSPACE}:/workspace" \
+              -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+              -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+              -v "${SCCACHE_HOST_DIR}:/sccache" \
+              -w /workspace \
+              -e CARGO_TARGET_DIR=/workspace/target \
+              -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+              -e SCCACHE_DIR=/sccache \
+              -e SCCACHE_CACHE_SIZE=50G \
+              -e CARGO_INCREMENTAL=0 \
+              -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+              -e CARGO_PROFILE_TEST_DEBUG=0 \
+              -e CARGO_PROFILE_DEV_DEBUG=0 \
+              -e CARGO_TERM_COLOR=never \
+              -e EXPR="$EXPR" -e BUILD_FLAGS="$BUILD_FLAGS" -e TREE="$tree" -e SHARDS="$SHARDS" \
+              "$IMAGE" bash -c "set -euo pipefail; $1"
+          }
+          t0=$SECONDS
+          # 1. build + archive the binary set (the flags a shard used to build with)
+          dock 'cargo nextest archive --profile ci $BUILD_FLAGS --archive-file /workspace/ws-archive-out/ws.tar.zst'
+          t_build=$((SECONDS - t0)); t0=$SECONDS
+          # 2. the INDEPENDENT yardstick, as the shards' Σ-executed step built it: the whole
+          #    filterset over every test of the target packages, whole and per shard partition
+          dock 'cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /workspace/ws-archive-out/live.json
+                for n in $(seq 1 "$SHARDS"); do cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${n}/${SHARDS}" --message-format json > "/workspace/ws-archive-out/tree.${n}.list.json"; done'
+          # 3. the same filterset listed FROM the archive; one extract, into a directory that exists
+          dock 'cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite -E "$EXPR" --message-format json > /workspace/ws-archive-out/arc.json'
+          t_list=$((SECONDS - t0))
+          bash scripts/ci/archive_list_equal.sh "$out/live.json" "$out/arc.json"
+          # Smoke (round-2 blocker): extract into a FRESH empty target dir and prove every
+          # top-level debug binary, the ones env!("CARGO_BIN_EXE_*") bakes in, is back at
+          # its build-time path and runs. A shard otherwise finds out ~100 tests later.
+          smoke="$GITHUB_WORKSPACE/ws-smoke-target"
+          rm -rf "${smoke:?}"; mkdir -p "$smoke"
+          docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace \
+            "$IMAGE" bash -c 'set -euo pipefail
+              cargo nextest list --profile ci --archive-file /workspace/ws-archive-out/ws.tar.zst --workspace-remap /workspace --extract-to /workspace --extract-overwrite --message-format json > /workspace/target/smoke.json
+              exp=$(sed "s/.*\"non-test-binaries\":\({.*}\),\"build-script-out-dirs\".*/\1/" /workspace/target/smoke.json | grep -o "\"path\":\"debug/[^/\"]*\"" | sed "s#\"path\":\"#/workspace/target/#; s#\"\$##" | sort -u)
+              n=0; for b in $exp; do test -x "$b" || { echo "::error::archived binary $b not executable at its build path"; exit 1; }; n=$((n+1)); done
+              [ "$n" -gt 0 ] || { echo "::error::smoke checked 0 binaries -- the archive lists none under target/debug"; exit 1; }
+              if [ -x /workspace/target/debug/apr ]; then /workspace/target/debug/apr --version; fi
+              echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'
+          rm -rf "${smoke:?}"
+          printf 'FLOW-010 P1 timing: archive_build_s=%s list_s=%s archive_mb=%s\n' "$t_build" "$t_list" "$(( $(stat -c %s "$out/ws.tar.zst") / 1048576 ))"
+          rm -f "${out:?}/live.json" "${out:?}/arc.json"
+          rustc_vv="$(docker run --rm "$IMAGE" rustc -vV)"
+          rustc_h="$(bash scripts/ci/archive_bind_check.sh --hash-toolchain "$rustc_vv")"
+          jq -n --arg b "$t_build" --arg l "$t_list" --arg s "$GITHUB_SHA" --arg e "$EXPR" --arg f "$BUILD_FLAGS" \
+            --arg i "$rustc_h" \
+            '{tier:"quick",sha:$s,expr:$e,flags:$f,rustc:$i,build_s:($b|tonumber),list_s:($l|tonumber)}' > "$out/bind.json"
+          ls -l "$out"
+      # LAN cache (archive_fetch.sh): the same bytes on this host, served over http to the shards; the artifact
+      # below stays as the fallback. WS_ARCHIVE_CACHE_ROOT unset = disabled (pointer says so).
+      - name: Publish the archive to the LAN cache
+        env:
+          CACHE_ROOT: ${{ vars.WS_ARCHIVE_CACHE_ROOT }}
+          CACHE_PORT: ${{ vars.WS_ARCHIVE_CACHE_PORT }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci/archive_fetch.sh publish "${CACHE_ROOT:-}" "${CACHE_PORT:-8080}" "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${{ runner.arch }}" ws-archive-out ws-archive-ptr
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ws-archive-ptr-${{ runner.arch }}
+          path: ws-archive-ptr/
+          if-no-files-found: error
+          overwrite: true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ws-archive-${{ runner.arch }}
+          path: ws-archive-out/
+          if-no-files-found: error
+          overwrite: true
       - name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |

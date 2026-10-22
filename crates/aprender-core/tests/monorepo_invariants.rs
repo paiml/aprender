@@ -1125,3 +1125,682 @@ fn falsify_mono_014_path_pins_name_their_target_version() {
          [workspace.dependencies] entry instead): {stale:#?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FLOW-010 P1: the nextest-archive job's wiring (workspace-test-archive -> shards)
+//
+// Parsed with serde-saphyr and asserted on each guarded step's `run:` scalar, not
+// grepped as text: a commented-out line, a property moved to another step, a `|| true`
+// or a no-op prefix cannot satisfy a whole-line check scoped to its own step. Every
+// mutant below is a fixture that must turn the check RED.
+// ---------------------------------------------------------------------------
+
+mod archive_wiring {
+    use serde_json::Value;
+
+    const RUSTC_CAPTURE: &str = r#"rustc_vv="$(docker run --rm "$IMAGE" rustc -vV)""#;
+    const HASH_CALL: &str =
+        r#"rustc_h="$(bash scripts/ci/archive_bind_check.sh --hash-toolchain "$rustc_vv")""#;
+    const BIND_CALL: &str = r#"bash scripts/ci/archive_bind_check.sh --toolchain "$rustc_vv" "$arc/bind.json" sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS""#;
+
+    const SMOKE_CALL: &str = r#"docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" -v "${smoke}:/workspace/target" -w /workspace "$IMAGE" bash -c 'set -euo pipefail"#;
+    const SMOKE_END: &str = r#"echo "smoke: $n debug binaries back at /workspace/target/debug"; chown -R 1000:1000 /workspace/target'"#;
+    const QUICK_IF: &str = "steps.tier.outputs.tier == 'quick'";
+
+    fn parse(text: &str) -> Value {
+        serde_saphyr::from_str_with_options::<Value>(
+            text,
+            serde_saphyr::options! { emit_comments: false },
+        )
+        .expect("workflow YAML must parse")
+    }
+
+    fn steps<'a>(job: &'a Value) -> Vec<&'a Value> {
+        job["steps"]
+            .as_array()
+            .map(|a| a.iter().collect())
+            .unwrap_or_default()
+    }
+
+    /// The `run:` scalar as logical lines: comments dropped, `\` continuations joined.
+    fn logical_lines(run: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cur = String::new();
+        for raw in run.lines() {
+            let t = raw.trim();
+            if t.starts_with('#') {
+                continue;
+            }
+            if let Some(head) = t.strip_suffix('\\') {
+                cur.push_str(head.trim_end());
+                cur.push(' ');
+            } else {
+                cur.push_str(t);
+                out.push(std::mem::take(&mut cur));
+            }
+        }
+        out
+    }
+
+    fn run_of(step: &Value) -> Vec<String> {
+        step["run"].as_str().map(logical_lines).unwrap_or_default()
+    }
+
+    fn uploads_ws_archive(step: &Value) -> bool {
+        step["uses"]
+            .as_str()
+            .is_some_and(|u| u.starts_with("actions/upload-artifact"))
+            && step["with"]["name"].as_str() == Some("ws-archive-${{ runner.arch }}")
+    }
+
+    /// Steps of `job` having a non-comment `run:` line that contains `needle`.
+    fn steps_running<'a>(job: &'a Value, needle: &str) -> Vec<&'a Value> {
+        steps(job)
+            .into_iter()
+            .filter(|st| run_of(st).iter().any(|l| l.contains(needle)))
+            .collect()
+    }
+
+    /// The step must carry each exact line, and no other `rustc -vV` use.
+    fn exact_lines(who: &str, st: &Value, wants: &[(&str, &str)], bad: &mut Vec<String>) {
+        let lines = run_of(st);
+        for (what, want) in wants {
+            if !lines.iter().any(|l| l == want) {
+                bad.push(format!("{who} step lacks the exact {what} line"));
+            }
+        }
+        if lines
+            .iter()
+            .any(|l| l.contains("rustc -vV") && l != RUSTC_CAPTURE)
+        {
+            bad.push(format!("{who} rustc -vV is piped or has a fallback"));
+        }
+    }
+
+    /// C324: no third state. The step may not carry `continue-on-error`, and its `if:` is
+    /// exactly `want` (None = unconditional).
+    fn no_third_state(who: &str, st: &Value, want_if: Option<&str>, bad: &mut Vec<String>) {
+        if !st["continue-on-error"].is_null() {
+            bad.push(format!("{who}: continue-on-error is a third state"));
+        }
+        if st["if"].as_str() != want_if || (want_if.is_none() && !st["if"].is_null()) {
+            bad.push(format!(
+                "{who}: step `if:` is {:?}, expected {want_if:?}",
+                st["if"]
+            ));
+        }
+    }
+
+    /// First line is `set -euo pipefail`, and nothing turns errexit back off.
+    fn strict_shell(who: &str, lines: &[String], bad: &mut Vec<String>) {
+        if lines.first().map(String::as_str) != Some("set -euo pipefail") {
+            bad.push(format!("{who}: run does not open with set -euo pipefail"));
+        }
+        if lines
+            .iter()
+            .any(|l| l.starts_with("set +") || l.contains("set +e") || l.starts_with("trap "))
+        {
+            bad.push(format!("{who}: run turns errexit off or traps"));
+        }
+    }
+
+    /// Net change in compound-command depth made by one logical line.
+    fn depth_delta(l: &str) -> i32 {
+        if matches!(l, "fi" | "done" | "esac" | "}") {
+            return -1;
+        }
+        let closes_inline = ["; fi", "; done", "; esac"].iter().any(|c| l.contains(c));
+        let opens = ["if ", "for ", "while ", "case "]
+            .iter()
+            .any(|o| l.starts_with(o))
+            || l.ends_with('{');
+        i32::from(opens && !closes_inline)
+    }
+
+    /// The line is at compound-command depth 0, so no `if false; then ... fi` can guard it.
+    fn unconditional(who: &str, lines: &[String], want: &str, bad: &mut Vec<String>) {
+        let Some(at) = lines.iter().position(|l| l == want) else {
+            return;
+        };
+        let depth: i32 = lines[..at].iter().map(|l| depth_delta(l)).sum();
+        if depth != 0 {
+            bad.push(format!(
+                "{who}: `{want:.40}` sits inside a compound command"
+            ));
+        }
+    }
+
+    /// The step's whole normalized `run:` (comments dropped, continuations joined) must equal
+    /// the pinned snapshot, so an early `exit 0`, a guard around the smoke payload or any
+    /// other edit to a guarded step is a reviewed change. Regenerate with
+    /// `ARCHIVE_WIRING_BLESS=1 cargo test -p aprender-core --test monorepo_invariants archive_wiring`.
+    fn pinned(name: &str, st: &Value, bless: bool, bad: &mut Vec<String>) {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/archive_wiring")
+            .join(format!("{name}.txt"));
+        let actual = run_of(st).join("\n") + "\n";
+        if bless {
+            std::fs::create_dir_all(path.parent().expect("fixture dir")).expect("mkdir");
+            std::fs::write(&path, &actual).expect("write snapshot");
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(want) if want == actual => {}
+            Ok(_) => bad.push(format!(
+                "{name}: run differs from tests/fixtures/archive_wiring/{name}.txt"
+            )),
+            Err(e) => bad.push(format!("{name}: snapshot unreadable: {e}")),
+        }
+    }
+
+    fn check_shard(shard: &Value, bless: bool, bad: &mut Vec<String>) {
+        let found = steps_running(shard, "archive_bind_check.sh");
+        if found.is_empty() {
+            bad.push("shard has no bind step".into());
+        }
+        for st in found {
+            exact_lines(
+                "shard bind",
+                st,
+                &[("bind call", BIND_CALL), ("rustc capture", RUSTC_CAPTURE)],
+                bad,
+            );
+            let lines = run_of(st);
+            no_third_state("shard bind", st, Some(QUICK_IF), bad);
+            strict_shell("shard bind", &lines, bad);
+            unconditional("shard bind", &lines, BIND_CALL, bad);
+            pinned("shard_bind_step", st, bless, bad);
+        }
+    }
+
+    fn smoke_counts_from_zero(l: &str) -> bool {
+        l.starts_with("n=0; for b in $exp; do test -x \"$b\" || { echo ")
+            && l.ends_with("; exit 1; }; n=$((n+1)); done")
+    }
+
+    fn smoke_refuses_zero(l: &str) -> bool {
+        l.starts_with("[ \"$n\" -gt 0 ] || { echo ") && l.ends_with("; exit 1; }")
+    }
+
+    fn check_archive_job(arc: &Value, bless: bool, bad: &mut Vec<String>) {
+        let smoke = steps_running(arc, "ws-smoke-target");
+        if smoke.is_empty() {
+            bad.push("archive job has no smoke step".into());
+        }
+        for st in smoke {
+            let lines = run_of(st);
+            if !lines.iter().any(|l| smoke_counts_from_zero(l)) {
+                bad.push("smoke does not count binaries from n=0 with exit 1 on a bad one".into());
+            }
+            if !lines.iter().any(|l| smoke_refuses_zero(l)) {
+                bad.push("smoke does not exit 1 on n=0".into());
+            }
+            for (what, want) in [("smoke call", SMOKE_CALL), ("smoke end", SMOKE_END)] {
+                if !lines.iter().any(|l| l == want) {
+                    bad.push(format!("smoke step lacks the exact {what} line"));
+                }
+            }
+            no_third_state("archive build", st, None, bad);
+            strict_shell("archive build", &lines, bad);
+            unconditional("archive build", &lines, SMOKE_CALL, bad);
+            pinned("archive_build_step", st, bless, bad);
+        }
+        let hashed = steps_running(arc, "--hash-toolchain");
+        if hashed.is_empty() {
+            bad.push("archive job has no toolchain-hash step".into());
+        }
+        for st in hashed {
+            exact_lines(
+                "archive",
+                st,
+                &[("hash call", HASH_CALL), ("rustc capture", RUSTC_CAPTURE)],
+                bad,
+            );
+            unconditional("archive hash", &run_of(st), HASH_CALL, bad);
+        }
+    }
+
+    /// ci.yml's archive job must drive exactly the archive section, never a stand-in job.
+    fn check_ci_sections(c: &Value, bad: &mut Vec<String>) {
+        let job = c["jobs"]
+            .get("workspace-test-archive")
+            .unwrap_or(&Value::Null);
+        let drivers: Vec<String> = steps(job)
+            .into_iter()
+            .filter_map(|st| st["run"].as_str())
+            .filter(|r| r.contains("fat_driver.py") && r.contains(" run"))
+            .map(|r| r.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect();
+        let want = "python3 scripts/ci/fat_driver.py run --sections 'workspace-test-archive' --results \"$RUNNER_TEMP/fat/results.json\"";
+        let ok = drivers.len() == 1 && drivers[0] == want;
+        if !ok {
+            bad.push(format!(
+                "ci.yml: the archive job must run exactly `{want}` (argparse abbreviations make any extra flag unsafe), found {drivers:?}"
+            ));
+        }
+    }
+
+    fn check_uploads(file: &str, job: &Value, bad: &mut Vec<String>) {
+        let ups: Vec<_> = steps(job)
+            .into_iter()
+            .filter(|st| uploads_ws_archive(st))
+            .collect();
+        if ups.is_empty() {
+            bad.push(format!("{file}: no ws-archive upload step"));
+        }
+        for st in ups {
+            if !st["continue-on-error"].is_null() || !st["if"].is_null() && file == "sections.yml" {
+                bad.push(format!(
+                    "{file}: the ws-archive upload is conditional or continue-on-error"
+                ));
+            }
+            if st["with"]["overwrite"].as_bool() != Some(true) {
+                bad.push(format!("{file}: a ws-archive upload lacks overwrite: true"));
+            }
+        }
+    }
+
+    /// Every violation of the archive wiring in (sections.yml, ci.yml); empty when sound.
+    pub fn violations(sections: &str, ci: &str, bless: bool) -> Vec<String> {
+        let (s, c) = (parse(sections), parse(ci));
+        let (Some(arc), Some(shard)) = (
+            s["jobs"].get("workspace-test-archive"),
+            s["jobs"].get("workspace-test-shard"),
+        ) else {
+            return vec![
+                "sections.yml lacks workspace-test-archive or workspace-test-shard".into(),
+            ];
+        };
+        let mut bad = Vec::new();
+        check_shard(shard, bless, &mut bad);
+        check_archive_job(arc, bless, &mut bad);
+        check_uploads("sections.yml", arc, &mut bad);
+        check_ci_sections(&c, &mut bad);
+        check_uploads(
+            "ci.yml",
+            c["jobs"]
+                .get("workspace-test-archive")
+                .unwrap_or(&Value::Null),
+            &mut bad,
+        );
+        bad
+    }
+
+    /// Replace the first `from` after `anchor` (so a same-text line elsewhere cannot absorb it).
+    pub fn mutate(text: &str, anchor: &str, from: &str, to: &str) -> String {
+        let a = text
+            .find(anchor)
+            .unwrap_or_else(|| panic!("anchor {anchor:?} not found"));
+        let off = text[a..]
+            .find(from)
+            .unwrap_or_else(|| panic!("{from:?} not found after {anchor:?}"));
+        let at = a + off;
+        format!("{}{}{}", &text[..at], to, &text[at + from.len()..])
+    }
+}
+
+/// FALSIFY-FLOW010-WIRING-001: the real tree keeps the archive wiring.
+#[test]
+fn test_archive_wiring_holds_on_the_real_tree() {
+    let root = workspace_root();
+    let sec = std::fs::read_to_string(root.join("ci/sections.yml")).expect("ci/sections.yml");
+    let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("ci.yml");
+    let v = archive_wiring::violations(
+        &sec,
+        &ci,
+        std::env::var_os("ARCHIVE_WIRING_BLESS").is_some(),
+    );
+    assert!(v.is_empty(), "archive wiring violations: {v:#?}");
+}
+
+/// FALSIFY-FLOW010-WIRING-002: each way of defanging a guarded step turns the check RED.
+#[test]
+fn test_archive_wiring_mutants_all_die() {
+    use archive_wiring::{mutate, violations};
+    let root = workspace_root();
+    let sec = std::fs::read_to_string(root.join("ci/sections.yml")).expect("ci/sections.yml");
+    let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("ci.yml");
+    assert!(
+        violations(&sec, &ci, false).is_empty(),
+        "baseline must be clean before mutating"
+    );
+
+    let bind = r#"sha="${GITHUB_SHA}" expr="$EXPR" flags="$BUILD_FLAGS""#;
+    let bind_anchor = "archive_bind_check.sh --toolchain";
+    let up = "name: ws-archive-${{ runner.arch }}\n";
+    let sections_mutants: Vec<(&str, String)> =
+        vec![
+        (
+            "or-true on the bind call",
+            mutate(&sec, bind_anchor, bind, &format!("{bind} || true")),
+        ),
+        (
+            "no-op colon before the bind call",
+            mutate(
+                &sec,
+                r#"rustc_vv="$(docker run --rm"#,
+                "bash scripts/ci/archive_bind_check.sh --toolchain",
+                ": bash scripts/ci/archive_bind_check.sh --toolchain",
+            ),
+        ),
+        (
+            "sha= dropped",
+            mutate(&sec, bind_anchor, r#" sha="${GITHUB_SHA}""#, ""),
+        ),
+        (
+            "expr= dropped",
+            mutate(&sec, bind_anchor, r#" expr="$EXPR""#, ""),
+        ),
+        (
+            "flags= dropped",
+            mutate(&sec, bind_anchor, r#" flags="$BUILD_FLAGS""#, ""),
+        ),
+        (
+            "trailing comment on the bind call",
+            mutate(&sec, bind_anchor, bind, &format!("{bind} # ok")),
+        ),
+        (
+            "smoke n starts at 1",
+            mutate(&sec, "ws-smoke-target", "n=0; for b in", "n=1; for b in"),
+        ),
+        (
+            "smoke n>0 is or-true",
+            mutate(
+                &sec,
+                "ws-smoke-target",
+                r#"[ "$n" -gt 0 ] || { echo"#,
+                r#"[ "$n" -gt 0 ] || true; { echo"#,
+            ),
+        ),
+        (
+            "smoke n>0 commented out",
+            mutate(
+                &sec,
+                "ws-smoke-target",
+                r#"[ "$n" -gt 0 ] || { echo"#,
+                r#"# [ "$n" -gt 0 ] || { echo"#,
+            ),
+        ),
+        (
+            "hash call neutered",
+            mutate(
+                &sec,
+                "--hash-toolchain",
+                r#"--hash-toolchain "$rustc_vv""#,
+                r#"--hash-toolchain "x""#,
+            ),
+        ),
+        (
+            "hash call or-fallback",
+            mutate(
+                &sec,
+                "rustc_h=",
+                r#"--hash-toolchain "$rustc_vv")""#,
+                r#"--hash-toolchain "$rustc_vv" || echo x)""#,
+            ),
+        ),
+        (
+            "rustc capture falls back",
+            mutate(
+                &sec,
+                "smoke checked 0 binaries",
+                "rustc -vV)\"",
+                "rustc -vV || echo x)\"",
+            ),
+        ),
+        (
+            "shard rustc capture falls back",
+            mutate(
+                &sec,
+                r#"rustc_vv="$(docker run --rm"#,
+                "rustc -vV)\"",
+                "rustc -vV || echo x)\"",
+            ),
+        ),
+        (
+            "rustc capture piped",
+            mutate(
+                &sec,
+                "smoke checked 0 binaries",
+                "rustc -vV)\"",
+                "rustc -vV | head -1)\"",
+            ),
+        ),
+        (
+            "shard step if: false",
+            mutate(
+                &sec,
+                "- name: \"Quick tier: every test target that reads the tree",
+                "if: steps.tier.outputs.tier == 'quick'",
+                "if: false",
+            ),
+        ),
+        (
+            "shard step continue-on-error",
+            mutate(
+                &sec,
+                "- name: \"Quick tier: every test target that reads the tree",
+                "timeout-minutes: 45",
+                "continue-on-error: true\n        timeout-minutes: 45",
+            ),
+        ),
+        (
+            "archive step if: false",
+            mutate(
+                &sec,
+                "- name: \"Build the quick-tier tree-reader set once and archive it",
+                "timeout-minutes: 45",
+                "if: false\n        timeout-minutes: 45",
+            ),
+        ),
+        (
+            "archive step continue-on-error",
+            mutate(
+                &sec,
+                "- name: \"Build the quick-tier tree-reader set once and archive it",
+                "timeout-minutes: 45",
+                "continue-on-error: true\n        timeout-minutes: 45",
+            ),
+        ),
+        (
+            "set +e before the bind call",
+            mutate(
+                &sec,
+                r#"rustc_vv="$(docker run --rm"#,
+                r#"rustc_vv="$(docker"#,
+                "set +e\n          rustc_vv=\"$(docker",
+            ),
+        ),
+        (
+            "if false wraps the bind call",
+            mutate(
+                &mutate(
+                    &sec,
+                    r#"rustc_vv="$(docker run --rm"#,
+                    r#"rustc_vv="$(docker"#,
+                    "if false; then\n          rustc_vv=\"$(docker",
+                ),
+                bind_anchor,
+                bind,
+                &format!("{bind}\n          fi"),
+            ),
+        ),
+        (
+            "or-true after the smoke bash -c",
+            mutate(
+                &sec,
+                "smoke checked 0 binaries",
+                "chown -R 1000:1000 /workspace/target'",
+                "chown -R 1000:1000 /workspace/target' || true",
+            ),
+        ),
+        (
+            "smoke call neutered",
+            mutate(
+                &sec,
+                r#"smoke="$GITHUB_WORKSPACE/ws-smoke-target""#,
+                "-w /workspace \\\n",
+                "-w /workspace \\\n            -e X=1 \\\n",
+            ),
+        ),
+        (
+            "early exit before the shard bind call",
+            mutate(
+                &sec,
+                r#"rustc_vv="$(docker run --rm"#,
+                r#"rustc_vv="$(docker"#,
+                "[ -f \"$arc/bind.json\" ] || exit 0\n          rustc_vv=\"$(docker",
+            ),
+        ),
+        (
+            "guard inside the smoke payload",
+            mutate(
+                &sec,
+                "smoke checked 0 binaries",
+                "if [ -x /workspace/target/debug/apr ]",
+                "if false; then true; fi\n              if [ -x /workspace/target/debug/apr ]",
+            ),
+        ),
+        (
+            "early exit in the archive build step",
+            mutate(
+                &sec,
+                "- name: \"Build the quick-tier tree-reader set once and archive it",
+                "out=\"$GITHUB_WORKSPACE/ws-archive-out\"",
+                "out=\"$GITHUB_WORKSPACE/ws-archive-out\"\n          [ -f \"$out/x\" ] || exit 0",
+            ),
+        ),
+        (
+            "literal shard count in the shard run step",
+            mutate(
+                &sec,
+                "- name: \"Quick tier: every test target that reads the tree",
+                "hash:${SHARD}/${SHARDS}",
+                "hash:${SHARD}/3",
+            ),
+        ),
+        (
+            "literal shard list in the archive yardstick",
+            mutate(
+                &sec,
+                "- name: \"Build the quick-tier tree-reader set once and archive it",
+                "for n in $(seq 1 \"$SHARDS\")",
+                "for n in 1 2 3",
+            ),
+        ),
+        (
+            "upload overwrite false",
+            mutate(
+                &sec,
+                "name: ws-archive-${{ runner.arch }}\n          path: ws-archive-out/",
+                "overwrite: true",
+                "overwrite: false",
+            ),
+        ),
+        ("decoy workspace-test-archive outside jobs", decoy(&sec, false)),
+        ("decoy workspace-test-archive nested under another job", decoy(&sec, true)),
+        (
+            "upload overwrite removed",
+            mutate(
+                &sec,
+                "name: ws-archive-${{ runner.arch }}\n          path: ws-archive-out/",
+                "overwrite: true",
+                "retention-days: 1",
+            ),
+        ),
+    ];
+    for (name, m) in &sections_mutants {
+        assert_ne!(m, &sec, "mutant {name:?} did not change sections.yml");
+        assert!(
+            !violations(m, &ci, false).is_empty(),
+            "mutant survived: {name}"
+        );
+    }
+    // A weakened copy as another job, with the archive job's --sections pointed at it.
+    let ci_pt = mutate(
+        &ci,
+        "--sections 'workspace-test-archive'",
+        "workspace-test-archive",
+        "zz-weak-archive",
+    );
+    assert_ne!(ci_pt, ci);
+    // argparse accepts abbreviations and the last wins: an appended --sect must not pass.
+    let ci_ab = mutate(
+        &ci,
+        "--sections 'workspace-test-archive'",
+        "'workspace-test-archive'",
+        "'workspace-test-archive' --sect zz-weak-archive",
+    );
+    assert_ne!(ci_ab, ci);
+    assert!(
+        !violations(&sec, &ci_ab, false).is_empty(),
+        "mutant survived: ci.yml appended --sect"
+    );
+    assert!(
+        !violations(&sec, &ci_pt, false).is_empty(),
+        "mutant survived: ci.yml --sections repointed"
+    );
+    let ci_m = mutate(&ci, up, "overwrite: true", "overwrite: false");
+    assert!(
+        !violations(&sec, &ci_m, false).is_empty(),
+        "mutant survived: ci.yml overwrite false"
+    );
+}
+
+/// A conforming copy of the archive job with the real one renamed away: at the top level
+/// of the document, or (`nested`) under a `zz-holder:` key inside `jobs:`.
+fn decoy(sec: &str, nested: bool) -> String {
+    let key = "  workspace-test-archive:\n";
+    let start = sec.find(key).expect("archive job");
+    let rest = &sec[start + key.len()..];
+    let end = rest
+        .lines()
+        .scan(0, |o, l| {
+            let at = *o;
+            *o += l.len() + 1;
+            Some((at, l))
+        })
+        .find(|(_, l)| {
+            l.starts_with("  ")
+                && !l.starts_with("   ")
+                && !l.trim().is_empty()
+                && !l.trim_start().starts_with('#')
+        })
+        .map_or(rest.len(), |(at, _)| at);
+    let block = &sec[start..start + key.len() + end];
+    let renamed = sec.replacen(key, "  workspace-test-archive-gone:\n", 1);
+    if nested {
+        let inner: String = block.lines().map(|l| format!("  {l}\n")).collect();
+        let holder = "  zz-holder:\n";
+        let at = renamed
+            .find("\n  workspace-test-archive-gone:\n")
+            .expect("renamed")
+            + 1;
+        format!("{}{holder}{inner}{}", &renamed[..at], &renamed[at..])
+    } else {
+        let decoy: String = block
+            .lines()
+            .map(|l| format!("{}\n", l.strip_prefix("  ").unwrap_or(l)))
+            .collect();
+        format!("{renamed}\n{decoy}")
+    }
+}
+
+/// #5854 arch binding: the shard downloads the archive built on its OWN arch. A fixed-name download
+/// would hand an X64 archive to an ARM64 shard (red on bind), and a matrix-less archive job would
+/// leave the ARM64 name unproduced.
+#[test]
+fn archive_is_keyed_by_runner_arch() {
+    let root = workspace_root();
+    let sec = std::fs::read_to_string(root.join("ci/sections.yml")).expect("ci/sections.yml");
+    let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("ci.yml");
+    let key = "name: ws-archive-${{ runner.arch }}\n          path: ws-archive\n";
+    assert!(sec.contains(key), "shard download must be arch-keyed");
+    assert!(
+        !sec.contains("name: ws-archive\n"),
+        "an un-keyed ws-archive name survives in ci/sections.yml"
+    );
+    assert!(
+        ci.contains("        arch: [X64]\n    runs-on: ${{ github.event_name == 'merge_group'"),
+        "workspace-test-archive must matrix on arch: X64 only, every event (an unconsumed ARM64 leg blocks the shards)"
+    );
+}
