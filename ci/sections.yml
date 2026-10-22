@@ -1621,6 +1621,10 @@ jobs:
       # a precondition. Its 4-case self-test is cargo-free and model-free, so it runs here.
       - name: Parity-receipt denominator case table (#3577)
         run: bash scripts/parity_receipt_denominator.sh --self-test
+      # #5502 (slice of #5309, #4425): the case table above proves the reader CAN refuse; this runs
+      # verify mode on the real tree, so EXPECTED_RECEIPTS drifting from the receipts it counts is RED.
+      - name: Parity-receipt count equals EXPECTED_RECEIPTS (verify mode, #5502)
+        run: bash scripts/parity_receipt_denominator.sh
       # F-1 (#3022, #3024): a model file the user NAMED is the model that answers, or
       # the command refuses — `apr chat` silently loaded its toy demo model for a
       # `model.safetensors.index.json` (exit 0, zero tokens, the real path in the banner)
