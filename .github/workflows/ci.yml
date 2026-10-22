@@ -501,7 +501,7 @@ jobs:
         if: success()
         with:
           name: ws-archive-${{ runner.arch }}
-          path: ${{ runner.temp }}/fat/artifacts/ws-archive/
+          path: ${{ runner.temp }}/fat/artifacts/ws-archive-${{ runner.arch }}/
           if-no-files-found: error
           overwrite: true
           compression-level: 0
