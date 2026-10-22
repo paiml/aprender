@@ -179,6 +179,9 @@ else fail=$((fail + 1)); echo "FAIL W10: mutant did not apply to $W"; fi
 # plants PATH or the env, a shard job that does not wait for the judge, a tier step that runs code.
 CI="$HERE/../.github/workflows/ci.yml"
 SEC="$HERE/../ci/sections.yml"
+tl() { grep -v -E '^[[:space:]]*#' "$1" | grep -E '^[^[:space:]-]'; }
+jl() { grep -v -E '^[[:space:]]*#' "$1" | awk '/^jobs:/{j=1;next} j&&/^[^[:space:]]/{j=0} j&&/^  [^ ]/{print}'; }
+h() { { printf '%s\n' "$(cat)"; } | sha256sum | cut -d' ' -f1; }
 judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   local job code shard tier step ciall secall n
   job=$(awk '/^  receipt-judge:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1")
@@ -230,6 +233,11 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   [ "$(sha256sum < "$pr/scripts/ci/fat_driver.py" | cut -d' ' -f1)" = "cc268073ff250d9bfb0048a480126b7e45051413f6505fe46e814a4ecb3ef282" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci_test_tier.sh" | cut -d' ' -f1)" = "1680bab97243fb7b5ce6907daf3c8a00db4968a2e892095260152a09cc127866" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci/receipt_ok_arg.sh" | cut -d' ' -f1)" = "1795d4df36fa1c3f223dd054d93392aff7584bb5063bed1d7a11bd3f18144820" ] || return 1
+  # structure pins: the top-level keys and the job keys of both files, in any spelling (quoted, ? keys, duplicates). A new top-level key or job, or a second shard block, moves the hash.
+  [ "$(tl "$1" | h)" = "7b45344e526135d0ab4f5c04ca82ba2d1112f6286b1ba2024a18017536446ce5" ] || return 1
+  [ "$(jl "$1" | h)" = "1d370235776861592b57ff7c935a327fbf70d28427ac084baa4392f5b70d8250" ] || return 1
+  [ "$(tl "$2" | h)" = "e90e5a61fd66429fec4eab76974c56bcdd3f253610a6fe9c1f63b7fd8959b18f" ] || return 1
+  [ "$(jl "$2" | h)" = "c988f167ca3654fa20a9df52cea6196fb7032606c2a7a32425ad2740f14c5925" ] || return 1
   return 0
 }
 if judge_ok "$CI" "$SEC"; then wrow "W16 receipt judge is its own job: base checkout only, no PR-tree code, shard waits for it" ok ok
@@ -403,6 +411,19 @@ for rel in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_o
   printf '\n# touched\n' >> "$pr/$rel"
   if PIN_ROOT="$pr" judge_ok "$CI" "$SEC"; then r=missed; else r=caught; fi
   wrow "W41c MUTANT: a byte appended to $rel is caught by the hash pin" caught "$r"
+done
+
+# W42: spelling-proof structure rows (quoted / ? top-level keys, a duplicate shard block)
+wmut "W42a MUTANT: a quoted top-level \"env\" key with BASH\x5FENV in ci.yml is caught" ci $'\njobs:\n' $'\n"env":\n  "BASH\\x5FENV": /tmp/x\njobs:\n'
+wmut "W42b MUTANT: a ? top-level defaults key in ci.yml is caught" ci $'\njobs:\n' $'\n? defaults\n: {run: {shell: bash}}\njobs:\n'
+wmut "W42c MUTANT: a duplicate workspace-test-shard job after the first in ci.yml is caught" ci $'\n  workspace-test-shard:\n' $'\n  workspace-test-shard:\n    runs-on: x\n  workspace-test-shard:\n'
+# W42d/e: a shard script that writes the runner env/output files is a pinned-byte change, so it is RED
+for w in 'echo RECEIPT_OK=1 >> "$GITHUB_ENV"' 'echo ok=1 >> "$GITHUB_OUTPUT"'; do
+  pr="$td/pin-w"; rm -rf -- "${pr:?}"; mkdir -p "$pr/scripts/ci"
+  for g in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_ok_arg.sh; do cp "$HERE/../$g" "$pr/$g"; done
+  printf '\n%s\n' "$w" >> "$pr/scripts/ci_test_tier.sh"
+  if PIN_ROOT="$pr" judge_ok "$CI" "$SEC"; then r=missed; else r=caught; fi
+  wrow "W42d MUTANT: ci_test_tier.sh writing ${w##* } is caught" caught "$r"
 done
 if mutate "$CI" '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=1' "$td/b7.yml"; then wrow "W23g MUTANT (E2): a dead guard passes the garbage verifier answer, behaviourally" 2 "$(judge_run "$td/b7.yml" vgarbage | sed 's/^1$/2/')"; else fail=$((fail + 1)); echo "FAIL W21g: mutant did not apply"; fi
 echo "receipt gate rows: $pass passed, $fail failed"
