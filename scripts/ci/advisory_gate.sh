@@ -36,7 +36,8 @@ git worktree add --detach "$W" "$BASE" >/dev/null 2>&1 || { echo "COULD-NOT-CHEC
 # fetched above (without it 0.20 `check` may re-fetch the db and the two scans see different heads). --offline also makes cargo metadata need
 # every crate in the registry cache (a cold runner exits rc=1 with log lines only, m70 #5793, measured 2026-10-21 on 0.20.2 with an empty
 # CARGO_HOME), so `cargo fetch --locked` warms the cache for BOTH trees before either scan. Probe once, never assume the runner's version.
-if cargo deny check --help 2>&1 | grep -q -- '--config'; then DENY_OLD=1; else DENY_OLD=0; fi
+deny_help=$(cargo deny check --help 2>&1 || true)
+if grep -qF -- '--config' <<<"$deny_help"; then DENY_OLD=1; else DENY_OLD=0; fi
 
 # One DB for both scans: fetched with the BASE config (the db-path both scans read), HEAD logged.
 if [ "$DENY_OLD" = 1 ]; then cargo deny fetch --config "$W/deny.toml" db; else cargo deny --config "$W/deny.toml" fetch db; fi \

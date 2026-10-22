@@ -18,7 +18,7 @@
 # The old `ci:` job, verbatim: `uses:` is the pin ci/vendor/sovereign-ci.yml was
 # copied from (scripts/check_ci_reusable_workflow_pinned.sh checks both agree).
 sovereign-ci:
-  uses: paiml/.github/.github/workflows/sovereign-ci.yml@9078879912d106237a38137dee06be6ac6c04ac7
+  uses: paiml/.github/.github/workflows/sovereign-ci.yml@dbd0488efe2463161b34b2f75002baee5e308d2a
   with:
     repo: ${{ github.event.repository.name }}
     enable_sccache: true
@@ -2695,9 +2695,14 @@ jobs:
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
           # MG_BASE_SHA comes from the process env of the outer guard-cargo step (the manifest runner resolves no merge_group context).
-          # The gate runs from the BASE ref, never the PR tree (PMAT-5792): a PR cannot edit its own judge.
+          # The gate SCRIPTS run from the BASE ref copy (PMAT-5792); the workflow yaml and cargo config still come from the PR tree, so this is gate-content-reviewed, not self-judging-proof.
           # Bootstrap only: the merge that introduces the scripts has no base copy, so it uses its own.
           S="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-scripts-$$"
+          # merge_group: the base copy is taken only from the ref the merge queue named; a ref the PR tree re-pointed is refused, never used.
+          if [ -n "${MG_BASE_SHA:-}" ] && [ "$(git rev-parse -q --verify "refs/remotes/origin/main^{commit}" || true)" != "$MG_BASE_SHA" ]; then
+            echo "COULD-NOT-CHECK: refs/remotes/origin/main is not merge_group.base_sha $MG_BASE_SHA; the base gate is not taken from it" >&2
+            exit 75
+          fi
           if git cat-file -e refs/remotes/origin/main:scripts/ci/advisory_gate.sh 2>/dev/null; then
             mkdir -p "$S"
             git archive refs/remotes/origin/main scripts/ci | tar -x -C "$S"
@@ -2708,13 +2713,14 @@ jobs:
           # One command per line under -e: the first non-zero exit ends the step with that status (no && chain, no saved rc).
           trap 'rm -rf -- "${S:?}"' EXIT
           set -e
+          # The base gate runs FIRST: a PR-tree self-test below can write into $S, so none may run before it.
+          bash "$G/advisory_gate.sh"
           bash "$G/advisory_diff.sh" --self-test
           bash scripts/ci/check_sov_advisories_off.sh --self-test
           bash scripts/ci/check_sov_advisories_off.sh
           bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh"
           bash scripts/ci/advisory_step_selftest.sh
-          bash scripts/ci/rearm_ready.sh --self-test
-          bash "$G/advisory_gate.sh"
+          bash scripts/ci/advisory_positive_control.sh
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.
