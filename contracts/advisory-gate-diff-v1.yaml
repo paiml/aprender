@@ -47,6 +47,12 @@ equations:
       - "Both sides are scanned with the BASE deny.toml; a PR that adds an advisories ignore id fails (ignores-added), so the one bypass through deny.toml is closed. This is NOT a claim that a PR cannot edit its own judge: the gate scripts, ci/sections.yml and cargo config (a .cargo alias can shadow cargo-deny) run from the PR tree, so a PR that edits them is judged by its own edit. Those paths are gate content and need the arbiter sign-off (non-author quorum); pinning the judge to main is out of this PR"
       - "deny.toml advisories ignores are id-wide: cargo-deny has no per-crate ignore. They stay bounded, not scoped: ignores-added fails any PR that adds one, and check_deny_exemptions_live.sh (now --all-features, same as the gate) fails a dead one. Per-crate scoping needs an upstream cargo-deny feature and is out of this PR"
       - "The base is pinned: merge_group uses merge_group.base_sha, pull_request uses pull_request.base.sha, anything else (or a non-sha) is COULD-NOT-CHECK rc 75, never a pass"
+  auto_rearm:
+    formula: "when a gate fix lands, every PR that was ready (green, approved) before the stop is re-armed without a human"
+    domain: "open PRs with no auto-merge armed whose latest review is an anchored APPROVE by an allowlisted reviewer other than the author"
+    codomain: "armed set restored"
+    invariants:
+      - "Re-arm never arms a PR whose head changed after its approval"
 
 proof_obligations:
   - id: ADG-INV-001
@@ -69,6 +75,12 @@ proof_obligations:
     property: "The scanner of record is blind to nothing the other scanner sees"
     formal: "∀ lock_48_0_6: A_record(lock) ∋ RUSTSEC-2026-0378 ∧ A_record(lock) ∋ RUSTSEC-2026-0379"
     applies_to: one_scanner_of_record
+
+  - id: ADG-INV-005
+    type: invariant
+    property: "Ready PRs are re-armed after a gate fix"
+    formal: "∀ pr: head_unchanged ⇒ armed_after ≥ armed_before"
+    applies_to: auto_rearm
 
 falsification_tests:
   - id: FALSIFY-ADG-001
@@ -114,14 +126,22 @@ falsification_tests:
     test: "scripts/ci/advisory_step_selftest.sh, 4 cases + 1 mutant: the step's run block is extracted from ci.yml and run against stub scripts on a throwaway origin/main; gate rc 75 gives 75, gate rc 1 gives 1, a failing self-test gives its rc, all green gives 0"
     if_fails: "a red or could-not-check gate leaves the step green and a PR merges on an unjudged advisory"
     mutation: "delete the advisory_gate.sh invocation from the step; the mutant case must stay green on a failing gate, which the cases above forbid (measured 2026-10-20)"
+  - id: FALSIFY-ADG-008
+    rule: "Re-arm never arms a changed head (ADG-INV-005)"
+    prediction: "a ready PR whose head sha moved after approval is not re-armed; one whose head is unchanged is"
+    test: "scripts/ci/rearm_ready.sh --self-test: select cases (head unchanged arms; moved or unapproved does not; empty arms nothing) and run against a stub gh, which enqueues exactly the PRs whose LATEST review is an anchored APPROVE by an allowlisted reviewer other than the author, with expectedHeadOid = the review's commit.oid; any later non-approval review cancels it; there is no gh pr merge fallback; .github/workflows/rearm-ready.yml calls rearm_ready.sh run"
+    if_fails: "a gate fix arms an unreviewed head into the queue"
+    mutation: "drop the approved_sha == current_sha test in select_, or the expectedHeadOid, anchor, allowlist, author exclusion or cancel; the matching case must turn RED"
+
 
 qa_gate:
   id: F-ADG-001
   name: Advisory gate diff contract
-  description: "PR delta gate, main andon, one scanner of record"
+  description: "PR delta gate, main andon, one scanner of record, auto re-arm"
   checks:
     - pr_gate_verdict
     - main_resident_advisory
     - one_scanner_of_record
-  pass_criteria: "All 7 falsification tests pass; the scanner script has a must-fail/must-pass case table"
+    - auto_rearm
+  pass_criteria: "All 8 falsification tests pass; the scanner script has a must-fail/must-pass case table"
   falsification: "Revert the gate to lock-vs-DB; FALSIFY-ADG-001 must turn RED"
