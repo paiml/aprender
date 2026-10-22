@@ -49,6 +49,11 @@
 #          reason says why it was not reused. Only workspace-test is reused:
 #          every other push job runs as before.
 #
+#   reuse  pull_request ONLY, PMAT-5737 (FLOW-009 RC-3: the receipt is in the PR body, a merge_group has none): `--receipt-ok 1` (the caller's proof that
+#          scripts/ci_receipt_verify.sh printed RECEIPT_OK=1 for this tree) -> tier=reuse,
+#          cite=receipt:<HEAD tree>, receipt=ok, decided BEFORE any diff selection. Never a push
+#          (its mg-reuse arm is untouched) and never a tag (tier=full). Any other value, or no flag,
+#          falls through to the selection above, unchanged.
 # Output: KEY=VALUE lines — tier, crates (space list), targets (crate:--lib,
 # crate:--lib:module, crate:--bins or crate:--test:name; space list),
 # check_workspace (1, only under rule (i)), reason, cite (on reuse: the PR head
@@ -112,7 +117,7 @@ set -euo pipefail
 # `unset` also drops the export attribute, so no child can inherit them.
 unset SELF_TEST FILTERSET FS_TARGETS
 SELF_TEST=0; FILTERSET=0
-EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; MG_RUN=""; MG_SHA=""; MG_CONCLUSION=""; MG_GIVEN=0; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
+EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; MG_RUN=""; MG_SHA=""; MG_CONCLUSION=""; MG_GIVEN=0; RECEIPT_OK=0; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
 # The sibling scripts and the registry always come from the checkout this script
 # runs in (cwd = repo root, in ci.yml and in the case table alike); --repo-root
 # re-points only the GIT queries — HEAD, its parents, their trees — which is how
@@ -129,6 +134,7 @@ while [ $# -gt 0 ]; do
         --mg-run) MG_RUN=$2; MG_GIVEN=1; shift 2 ;;
         --mg-sha) MG_SHA=$2; MG_GIVEN=1; shift 2 ;;
         --mg-conclusion) MG_CONCLUSION=$2; MG_GIVEN=1; shift 2 ;;
+        --receipt-ok) RECEIPT_OK=$2; shift 2 ;;
         --registry) REGISTRY=$2; shift 2 ;;
         --repo-root) ROOT=$2; shift 2 ;;
         --tsv) TSV=$2; shift 2 ;;
@@ -140,7 +146,7 @@ while [ $# -gt 0 ]; do
         --filterset) FILTERSET=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
         # same operand rules as --filterset; prints the cargo BUILD flags for the same tokens
         --build-flags) BUILDFLAGS=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
-        *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--mg-run ID --mg-sha SHA --mg-conclusion C] [--registry FILE] [--repo-root DIR] | --filterset [TARGETS] | --tier-of-record [--tsv FILE] [--union-touched --event pull_request --comparand REF] | --self-test\n' "$0" >&2; exit 2 ;;
+        *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--mg-run ID --mg-sha SHA --mg-conclusion C] [--receipt-ok 1] [--registry FILE] [--repo-root DIR] | --filterset [TARGETS] | --tier-of-record [--tsv FILE] [--union-touched --event pull_request --comparand REF] | --self-test\n' "$0" >&2; exit 2 ;;
     esac
 done
 
@@ -309,6 +315,22 @@ push_reuse_why() {
 
 decide() {
     local df rc=0
+    # PMAT-5737 RECEIPT ARM, before any diff selection. The caller (ci/sections.yml) passes --receipt-ok 1 only
+    # after scripts/ci_receipt_verify.sh printed RECEIPT_OK=1 for THIS tree (flow009.receipt/1: signature, tree, patch-ids, tickets, toolchain, manifest).
+    # Only a pull_request takes it (FLOW-009 RC-3: the receipt lives in the PR body, a merge_group has none): a push keeps its own mg-reuse arm below, untouched, and a tag
+    # is full whatever a receipt says. Anything but exactly `1`, or an unreadable tree, falls through unchanged.
+    case "$EVENT" in
+        pull_request)
+            if [ "$RECEIPT_OK" = 1 ]; then
+                local rref rtree; rref=$(printenv GITHUB_REF || true)
+                case "$rref" in refs/tags/*) printf 'tier=full\nreason=%s of tag %s: a release tag runs the whole workspace -- a batch receipt is never honoured on a tag (PMAT-5737)\n' "$EVENT" "${rref#refs/tags/}"; return 0 ;; esac # R-RTAG
+                rtree=$(git -C "$ROOT" rev-parse -q --verify 'HEAD^{tree}' 2>/dev/null || true)
+                if [[ $rtree =~ ^[0-9a-f]{40}$ ]]; then
+                    printf 'tier=reuse\ncite=receipt:%s\nreceipt=ok\nreason=%s: a signed batch receipt covers this exact tree (%s) -- signature, tree, patch-ids, tickets, toolchain and manifest verified by ci_receipt_verify.sh (PMAT-5737)\n' "$rtree" "$EVENT" "${rtree:0:9}"
+                    return 0
+                fi
+            fi ;;
+    esac
     case "$EVENT" in
         schedule|workflow_dispatch)
             printf 'tier=full\nreason=%s event: the whole workspace, every feature-gated suite -- FULL lives here (coverage-nightly, full-nightly, the pre-publish dogfood; 67-E2 decision D-1)\n' "$EVENT" ;;
@@ -770,6 +792,22 @@ self_test() {
     row 0 "  ...while apr-cli, whose registry carries an UNRESOLVED whole-lib row, still runs its WHOLE lib (fail open)" '^ALL-PRESENT$' \
         contains_all "$td/real-fs.txt" "(package(apr-cli) & kind(lib))"
     row 0 "  ...with no narrower apr-cli module atom beside it" '^ABSENT$' lacks "$td/real-fs.txt" "package(apr-cli) & kind(lib) & test"
+    # PMAT-5737 receipt arm: a verified signed batch receipt (ci_receipt_verify.sh -> --receipt-ok 1) makes a
+    # pull_request or merge_group tier=reuse, evaluated BEFORE diff selection. Never a tag, never a push.
+    RTREE=$(git -C "$td/q-leaf" rev-parse 'HEAD^{tree}')
+    row 0 "RECEIPT pull_request + --receipt-ok 1 -> tier=reuse, cite=receipt:<tree>, receipt=ok (no diff needed)" "^tier=reuse cite=receipt:$RTREE receipt=ok\$" bash -c "o=\$(bash '$T' --event pull_request --repo-root '$td/q-leaf' --receipt-ok 1); printf '%s %s %s\\n' \"\$(grep '^tier=' <<< \"\$o\")\" \"\$(grep '^cite=' <<< \"\$o\")\" \"\$(grep '^receipt=' <<< \"\$o\")\""
+    row 0 "MUTANT merge_group + --receipt-ok 1 -> the receipt arm is pull_request only: no receipt line (a merge_group has no PR body)" '^NO-RECEIPT$' bash -c "o=\$(env -u MG_BASE_SHA bash '$T' --event merge_group --repo-root '$td/q-leaf' --receipt-ok 1 2>/dev/null || true); grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT"
+    row 0 "MUTANT --receipt-ok 0 -> the PR's own selection (quick), no receipt line" '^tier=quick NO-RECEIPT$' bash -c "o=\$(bash '$T' --event pull_request --diff-from '$td/d-scripts.txt' --receipt-ok 0); printf '%s %s\\n' \"\$(grep '^tier=' <<< \"\$o\")\" \"\$(grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT)\""
+    row 0 "MUTANT --receipt-ok 2 / anything but 1 -> unchanged (quick)" '^tier=quick$' bash -c "bash '$T' --event pull_request --diff-from '$td/d-scripts.txt' --receipt-ok yes | grep '^tier='"
+    row 0 "MUTANT no --receipt-ok flag -> unchanged (quick)" '^tier=quick NO-RECEIPT$' bash -c "o=\$(bash '$T' --event pull_request --diff-from '$td/d-scripts.txt'); printf '%s %s\\n' \"\$(grep '^tier=' <<< \"\$o\")\" \"\$(grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT)\""
+    row 0 "MUTANT a root-manifest diff with --receipt-ok 0 stays full (the receipt arm does not widen anything)" '^tier=full$' bash -c "bash '$T' --event pull_request --diff-from '$td/d-root.txt' --receipt-ok 0 | grep '^tier='"
+    row 0 "MUTANT TAG ref + pull_request + --receipt-ok 1 -> tier=full, no receipt line" '^tier=full NO-RECEIPT$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event pull_request --repo-root '$td/q-leaf' --receipt-ok 1); printf '%s %s\\n' \"\$(grep '^tier=' <<< \"\$o\")\" \"\$(grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT)\""
+    row 0 "MUTANT TAG push + --receipt-ok 1 -> tier=full, no receipt line" '^tier=full NO-RECEIPT$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf' --receipt-ok 1); printf '%s %s\\n' \"\$(grep '^tier=' <<< \"\$o\" | head -n1)\" \"\$(grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT)\""
+    row 0 "MUTANT a push never takes the receipt arm: --receipt-ok 1 with no mg result -> the push's own tier, no receipt line" '^NO-RECEIPT$' bash -c "o=\$(bash '$T' --event push --repo-root '$td/s-leaf' --receipt-ok 1); grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT"
+    row 0 "  ...and a push WITH the mg result still reuses on the mg arm, cite = the run id, no receipt line" '^tier=reuse cite=123456 NO-RECEIPT$' bash -c "o=\$(bash '$T' --event push --repo-root '$td/s-leaf' $MGARGS --receipt-ok 1); printf '%s %s %s\\n' \"\$(grep '^tier=' <<< \"\$o\")\" \"\$(grep '^cite=' <<< \"\$o\")\" \"\$(grep -q '^receipt=' <<< \"\$o\" && echo HAS-RECEIPT || echo NO-RECEIPT)\""
+    sed 's|"\$RECEIPT_OK" = 1|"$RECEIPT_OK" != 1|' "$T" > "$td/mutant-receipt.sh"
+    row 0 "  (receipt mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-receipt.sh'; then echo SAME; else echo DIFFERS; fi"
+    row 0 "MUTANT: an inverted receipt test makes --receipt-ok 0 reuse -> the rows above go RED" '^MUTANT-REUSE$' bash -c "o=\$(bash '$td/mutant-receipt.sh' --event pull_request --repo-root '$td/q-leaf' --diff-from '$td/d-scripts.txt' --receipt-ok 0); if grep -q '^receipt=ok' <<< \"\$o\"; then echo MUTANT-REUSE; else echo SURVIVED; fi"
     printf '\n%s checks, %s failed\n' "$n" "$red"; [ "$red" -eq 0 ]
 }
 
