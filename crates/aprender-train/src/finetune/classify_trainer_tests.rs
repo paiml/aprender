@@ -5102,6 +5102,68 @@ fn test_coverage_card_confusion_raw_formatting() {
 }
 
 // =========================================================================
+// FALSIFY-OPS-017: resume restores the saved epoch and refuses a foreign dataset
+// =========================================================================
+
+#[test]
+fn test_resume_rejects_data_hash_mismatch() {
+    let num_classes = 3;
+    let config = TrainingConfig { epochs: 1, val_split: 0.2, ..TrainingConfig::default() };
+    let metrics = EpochMetrics {
+        epoch: 4,
+        train_loss: 0.5,
+        train_accuracy: 0.5,
+        val_loss: 0.6,
+        val_accuracy: 0.5,
+        learning_rate: 1e-2,
+        epoch_time_ms: 1,
+        samples_per_sec: 1.0,
+    };
+    let dir =
+        std::env::temp_dir().join(format!("aprender_test_resume_hash_{}", std::process::id()));
+
+    let mut saver = ClassifyTrainer::new(
+        tiny_pipeline(num_classes),
+        make_corpus(20, num_classes),
+        config.clone(),
+    )
+    .expect("config should be valid");
+    // Seed 42 gives every trainer the same initial weights, so perturb the saver's
+    // before the save: only then can a restore be told apart from an untouched head.
+    for w in saver.pipeline.classifier.weight.data_mut().as_slice_mut().expect("contiguous weight")
+    {
+        *w += 0.5;
+    }
+    let saved_weights = saver.pipeline.classifier.weight.data().to_vec();
+    saver.save_checkpoint(&dir, 4, &metrics).expect("checkpoint should save");
+    let apr = dir.join("model.apr");
+
+    // Same corpus: the saved epoch comes back.
+    let mut same = ClassifyTrainer::new(
+        tiny_pipeline(num_classes),
+        make_corpus(20, num_classes),
+        config.clone(),
+    )
+    .expect("config should be valid");
+    let fresh = same.pipeline.classifier.weight.data().to_vec();
+    assert_ne!(fresh, saved_weights, "the perturbation must be visible to a restore");
+    assert_eq!(same.resume_from_apr_checkpoint(&apr).expect("matching corpus resumes"), 4);
+    assert_eq!(same.pipeline.classifier.weight.data().to_vec(), saved_weights);
+
+    // Different corpus: refused with F-CKPT-006 before any weight is touched.
+    let mut foreign =
+        ClassifyTrainer::new(tiny_pipeline(num_classes), make_corpus(21, num_classes), config)
+            .expect("config should be valid");
+    let before = foreign.pipeline.classifier.weight.data().to_vec();
+    let err = foreign.resume_from_apr_checkpoint(&apr).expect_err("foreign corpus must be refused");
+    assert!(err.to_string().contains("F-CKPT-006"), "unexpected error: {err}");
+    assert_eq!(foreign.pipeline.classifier.weight.data().to_vec(), before);
+    assert_ne!(before, saved_weights, "a restore would have changed the foreign head");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// =========================================================================
 // save_apr_checkpoint (Refs #5536)
 // =========================================================================
 
