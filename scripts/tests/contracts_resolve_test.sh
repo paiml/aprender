@@ -49,6 +49,12 @@ chk "stale: nothing regenerated" "$([ -f calls ] && echo ran || echo none)" none
 mk docs; touch -d 1999-01-01 crates/aprender-contracts/src/lib.rs; touch -d 2000-01-01 bin/pv bin/pv-sat; touch crates/aprender-contracts/README.md   # a doc newer than pv is not a verifier source
 chk "doc-only change newer than pv still resolves" "$(run)" 0
 
+for p in build.rs w3c/x.yaml fixtures/w.json src/lint/plant.yaml; do
+    mk "pin-${p//\//_}"; mkdir -p "crates/aprender-contracts/$(dirname "$p")"; printf "d\n" > "crates/aprender-contracts/$p"; git add -A
+    touch -d 1999-01-01 crates/aprender-contracts/src/lib.rs "crates/aprender-contracts/$p"; touch -d 2000-01-01 bin/pv bin/pv-sat; touch "crates/aprender-contracts/$p"
+    chk "newer $p than pv refuses (include_str!/build input)" "$(run)" 1
+done
+
 mk outside src; touch bin/pv bin/pv-sat
 chk "conflict outside the generated set refuses" "$(run)" 1
 chk "outside: nothing regenerated" "$([ -f calls ] && echo ran || echo none)" none

@@ -33,7 +33,7 @@ PV_SAT="$(dirname "$PV")/pv-sat"   # never an inherited PV_SAT: it may be anothe
 stale_pv=$(for b in "$PV" "$PV_SAT"; do
     [ -x "$b" ] || { echo "$b (missing)"; continue; }
     git ls-files -z -- crates/aprender-contracts crates/aprender-contracts-cli Cargo.lock \
-        | while IFS= read -r -d "" f; do case "$f" in */src/*.rs|*/Cargo.toml|Cargo.lock) ;; *) continue ;; esac; [ "$f" -nt "$b" ] && { echo "$b is older than $f"; break; }; done
+        | while IFS= read -r -d "" f; do case "$f" in *.md|*/docs/*|*/tests/*|*/benches/*|*/examples/*|*/proptest-regressions/*) continue ;; esac; [ "$f" -nt "$b" ] && { echo "$b is older than $f"; break; }; done
 done) || true   # set -e: the loops end on a false test
 if [ -n "$stale_pv" ]; then
     printf 'contracts_resolve: REFUSED, pv is not built from this HEAD:\n%s\nrebuild: cargo build -p aprender-contracts-cli --bin pv --bin pv-sat\n' "$stale_pv" >&2
