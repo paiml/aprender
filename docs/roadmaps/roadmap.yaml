@@ -25430,6 +25430,17 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   acceptance_criteria:
   - 'merge_group skips workspace-test-shard only when K1-K5 hold and the PR head run workspace-test succeeded; any difference runs the full shards'
   - 'ci_mg_reuse.sh --self-test falsifier: changed main/tree -> wt=0, identical tree -> wt=1, override carries wt only when exactly 1'
+- id: PMAT-5888
+  github_issue: 5888
+  item_type: task
+  title: aprender-rollup --version (nightly version-failed)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T17:43:16Z
+  updated: 2026-10-21T17:43:16Z
+  spec: null
+  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
