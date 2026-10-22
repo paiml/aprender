@@ -54,3 +54,5 @@
 1	affected_set.sh case table and mutants (FLOW-010 E5, LAB)
 # #5879: LAB, nightly only (C324); seconds are a guess until the first night.
 5	Coverage scan files no per-function ticket (LAB, #5879)
+# #5803: tuner test-move guard (cargo -- --list), LAB from the first night, moved off ci/explicit-test-commands.d 296/297 (never on a PR path, C324). Seconds are a local sample.
+60	Tuner test-move guard (#5803)

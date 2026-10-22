@@ -8,10 +8,10 @@ use super::ThroughputPrediction;
 
 /// Simple linear regression model for throughput prediction.
 ///
-/// Uses closed-form solution: w = (X^T X)^-1 X^T y. The `ml-tuner` showcase
+/// Uses closed-form solution: w = (X^T X)^-1 X^T y. The RandomForest showcase
 /// (SHOWCASE-BRICK-001) feeds these features into `aprender::RandomForestRegressor`
-/// from `examples/ml_tuner_demo.rs` (aprender is a dev-dependency — the SIMD foundation
-/// must not depend on the ML layer).
+/// from `crates/aprender-core/tests/tuner_training_data_quality.rs` (compute has no
+/// aprender-core dependency — the SIMD foundation must not depend on the ML layer).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThroughputRegressor {
     /// Model weights (one per feature + bias)

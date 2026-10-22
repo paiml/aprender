@@ -10,51 +10,12 @@ The integration provides:
 - **RandomForestClassifier** for kernel selection
 - Training on benchmark data for hardware-specific optimization
 
-## Enabling the Integration
+## Where the Integration Lives
 
-Add the `ml-tuner` feature to your `Cargo.toml`:
-
-```toml
-[dependencies]
-trueno = { version = "0.13", features = ["ml-tuner"] }
-```
-
-## Feature Matrix
-
-| Feature | Default | ml-tuner |
-|---------|---------|----------|
-| TunerFeatures (42-dim) | Yes | Yes |
-| Heuristic prediction | Yes | Yes |
-| Roofline clamping | Yes | Yes |
-| RandomForest regressor | No | Yes |
-| RandomForest classifier | No | Yes |
-| Custom model training | No | Yes |
-
-## Usage Example
-
-```rust
-use trueno::tuner::{ThroughputRegressor, TunerFeatures, QuantType};
-
-// Create RF-backed regressor
-let mut regressor = ThroughputRegressor::with_random_forest(100);
-
-// Collect benchmark data
-let training_data: Vec<(TunerFeatures, f32)> = collect_benchmarks();
-
-// Train the model
-regressor.train_random_forest(&training_data)?;
-
-// Use trained model for predictions
-let features = TunerFeatures::builder()
-    .model_params_b(7.0)
-    .batch_size(4)
-    .quant_type(QuantType::Q4K)
-    .gpu_mem_bw_gbs(1000.0)
-    .build();
-
-let pred = regressor.predict(&features);
-println!("Predicted throughput: {:.1} tok/s", pred.predicted_tps);
-```
+The `ml-tuner` feature was removed (FLOW-010, #5803): trueno has no dependency on
+aprender, so the SIMD foundation stays below the ML layer. The RandomForest showcase
+runs from aprender-core's tests (`crates/aprender-core/tests/tuner_training_data_quality.rs`),
+which depend on trueno, not the reverse. trueno keeps the heuristic models.
 
 ## Why aprender?
 
@@ -119,7 +80,6 @@ let model_json = fs::read_to_string("throughput_model.json")?;
 let regressor: ThroughputRegressor = serde_json::from_str(&model_json)?;
 ```
 
-**Note:** RandomForest models are not serialized (marked `#[serde(skip)]`). After loading, you must retrain or use heuristic fallback.
 
 ## Further Reading
 
