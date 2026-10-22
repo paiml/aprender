@@ -5429,3 +5429,126 @@ fn test_evaluate_checkpoint_missing_test_data_errors() {
     assert!(matches!(err, crate::Error::Io(_)), "{err:?}");
     std::fs::remove_dir_all(&dir).ok();
 }
+// run_worker: distributed worker loop (#5636)
+// =========================================================================
+
+mod run_worker_tests {
+    use super::*;
+    use crate::finetune::distributed::{DistributedConfig, WireMessage};
+    use crate::finetune::gradient_server::{read_wire_message, send_wire_message};
+    use std::net::TcpListener;
+
+    fn worker_trainer(addr: Option<std::net::SocketAddr>) -> ClassifyTrainer {
+        let config = TrainingConfig {
+            distributed: addr.map(DistributedConfig::worker),
+            ..TrainingConfig::default()
+        };
+        ClassifyTrainer::new(tiny_pipeline(3), make_corpus(8, 3), config)
+            .expect("config should be valid")
+    }
+
+    fn expect_config_error(result: crate::Result<TrainResult>, needle: &str) {
+        match result {
+            Err(crate::Error::ConfigError(msg)) => {
+                assert!(msg.contains(needle), "expected {needle:?} in {msg:?}");
+            }
+            other => panic!("expected ConfigError containing {needle:?}, got {other:?}"),
+        }
+    }
+
+    /// Accept one worker, answer its join, then play `script` against the stream.
+    fn fake_coordinator<T: Send + 'static>(
+        script: impl FnOnce(&std::net::TcpStream) -> T + Send + 'static,
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<T>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let join = read_wire_message(&stream).expect("join request");
+            assert!(matches!(join, WireMessage::JoinRequest { gpu_count: 1, .. }));
+            let accepted = WireMessage::JoinAccepted { worker_id: 7, total_workers: 2 };
+            send_wire_message(&stream, &accepted).expect("join accepted");
+            script(&stream)
+        });
+        (addr, handle)
+    }
+
+    #[test]
+    fn missing_distributed_config_is_a_config_error() {
+        let mut trainer = worker_trainer(None);
+        expect_config_error(trainer.run_worker(), "distributed config required");
+    }
+
+    #[test]
+    fn unreachable_coordinator_is_a_connect_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        drop(listener);
+        let mut trainer = worker_trainer(Some(addr));
+        expect_config_error(trainer.run_worker(), "worker connect failed");
+    }
+
+    #[test]
+    fn immediate_shutdown_returns_an_empty_result() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            send_wire_message(s, &WireMessage::Shutdown).expect("shutdown");
+        });
+        let result = worker_trainer(Some(addr)).run_worker().expect("clean shutdown");
+        coordinator.join().expect("coordinator thread");
+        assert!(result.epoch_metrics.is_empty());
+        assert_eq!(result.best_epoch, 0);
+        assert!(result.best_val_loss.is_infinite());
+        assert!(!result.stopped_early);
+    }
+
+    #[test]
+    fn one_step_round_trips_shard_gradients_and_averaged_update() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            // Shard end past the training split must be clamped to its length.
+            let shard = WireMessage::ShardAssignment { step: 3, shard_start: 2, shard_end: 99 };
+            send_wire_message(s, &shard).expect("shard");
+            let payload = read_wire_message(s).expect("gradient payload");
+            let WireMessage::GradientPayload { step, worker_id, gradients, total, .. } = payload
+            else {
+                panic!("expected GradientPayload, got {payload:?}");
+            };
+            let averaged = WireMessage::AveragedGradient {
+                step,
+                gradients: gradients.clone(),
+                global_loss: 0.5,
+            };
+            send_wire_message(s, &averaged).expect("averaged");
+            send_wire_message(s, &WireMessage::Shutdown).expect("shutdown");
+            (step, worker_id, gradients.len(), total)
+        });
+        let mut trainer = worker_trainer(Some(addr));
+        let expected_total = trainer.train_data.len() - 2;
+        let result = trainer.run_worker().expect("one step then shutdown");
+        let (step, worker_id, grad_len, total) = coordinator.join().expect("coordinator thread");
+        assert_eq!((step, worker_id, total), (3, 7, expected_total), "shard 2..len");
+        assert!(grad_len > 0, "worker must send its LoRA gradients");
+        assert!(result.epoch_metrics.is_empty());
+    }
+
+    #[test]
+    fn shutdown_during_allreduce_is_an_averaged_receive_error() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            let shard = WireMessage::ShardAssignment { step: 0, shard_start: 0, shard_end: 2 };
+            send_wire_message(s, &shard).expect("shard");
+            read_wire_message(s).expect("gradient payload");
+            send_wire_message(s, &WireMessage::Shutdown).expect("shutdown");
+        });
+        expect_config_error(worker_trainer(Some(addr)).run_worker(), "averaged receive failed");
+        coordinator.join().expect("coordinator thread");
+    }
+
+    #[test]
+    fn unexpected_message_instead_of_shard_is_a_shard_receive_error() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            let hb = WireMessage::Heartbeat { node_id: "x".into(), timestamp_ms: 1 };
+            send_wire_message(s, &hb).expect("heartbeat");
+        });
+        expect_config_error(worker_trainer(Some(addr)).run_worker(), "shard receive failed");
+        coordinator.join().expect("coordinator thread");
+    }
+}
