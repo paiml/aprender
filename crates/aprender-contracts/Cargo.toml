@@ -36,8 +36,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 thiserror = { workspace = true }
+aprender-contracts-key = { path = "../aprender-contracts-key", version = "0.71.3" }
 
 [build-dependencies]
+aprender-contracts-key = { path = "../aprender-contracts-key", version = "0.71.3" }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 
