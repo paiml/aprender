@@ -51,3 +51,4 @@
 6	The pv census bound share may only rise (#4709)
 # #5873: the harness fixture-server cleanup check, quarantined from ci/explicit-test-commands.d/817 (its apr-stub row races); LAB, never on a PR path (C324).
 60	Harness fixture servers die with their harness (LAB, quarantined from the merge path, #5873)
+1	affected_set.sh case table and mutants (FLOW-010 E5, LAB)
