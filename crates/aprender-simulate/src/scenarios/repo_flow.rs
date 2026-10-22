@@ -5,7 +5,7 @@
 //! dirty with `p_dirty` and waits `t_rebase_min` for a rebase and a rerun. One parameter file per
 //! repo; inputs come from the KPI report, never typed.
 
-use super::pr_flow::{run_pr_flow, PrFlowConfig, PrFlowResult, ReviewMode};
+use super::pr_flow::{binding_station, run_pr_flow, PrFlowConfig, PrFlowResult, ReviewMode};
 
 /// A named repo case: `(name, supply N, t_author, cap, R_pr, runner-min, jobs, setup, p_red, p_dirty, t_rebase)`.
 type Case = (
@@ -150,13 +150,7 @@ pub fn apply_inputs(c: &mut PrFlowConfig, v: &serde_json::Value) -> Result<(), S
 /// The `sim` block fields this scenario owns: scenario, seeds, hours, inputs, predicted, binding.
 #[must_use]
 pub fn sim_block(case: &str, c: &PrFlowConfig, r: &PrFlowResult) -> serde_json::Value {
-    let binding = if r.pr_util > 0.85 {
-        "ci_pool"
-    } else if r.l >= c.cap as f64 * 0.95 {
-        "cap"
-    } else {
-        "supply"
-    };
+    let binding = binding_station(c, r);
     serde_json::json!({
         "scenario": format!("repo-flow:{case}"),
         "seeds": 5, "hours": 400, "warmup_h": 20,
@@ -249,5 +243,43 @@ mod tests {
     #[test]
     fn unknown_case_is_none() {
         assert!(repo_preset("nope").is_none());
+    }
+    /// FLOW-007 B1: the binding station is the argmin of the bounds, whatever the utilisation.
+    #[test]
+    fn binding_station_is_the_smallest_bound() {
+        for name in [
+            "rmedia-design",
+            "infra-today",
+            "infra-rule",
+            "infra-33",
+            "small-10",
+        ] {
+            let c = repo_preset(name).expect("case");
+            let r = run_repo_reference(&c);
+            let want = super::super::pr_flow::bounds(&c, &r)
+                .into_iter()
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|b| b.0)
+                .expect("four bounds");
+            assert_eq!(sim_block(name, &c, &r)["binding_station"], want, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_cap_bound_scenario_reports_cap() {
+        let mut c = repo_preset("small-15").expect("case");
+        c.cap = 1;
+        c.n = 1000.0;
+        let r = run_repo_reference(&c);
+        assert_eq!(sim_block("capped", &c, &r)["binding_station"], "cap");
+    }
+
+    #[test]
+    fn an_author_starved_scenario_reports_supply() {
+        let mut c = repo_preset("small-15").expect("case");
+        c.n = 0.5;
+        c.cap = 1000;
+        let r = run_repo_reference(&c);
+        assert_eq!(sim_block("starved", &c, &r)["binding_station"], "supply");
     }
 }
