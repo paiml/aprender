@@ -1354,4 +1354,130 @@ mod tests {
         let card = ModelCard::new("test").parameters(1_000_000_000);
         assert_eq!(card.formatted_parameters(), Some("1.0B".to_string()));
     }
+
+    // ===== paint (FALSIFY-MODELCARD-PAINT-001..006) =====
+
+    use presentar_core::draw::DrawCommand;
+    use presentar_core::RecordingCanvas;
+
+    fn painted(card: &mut ModelCard) -> Vec<DrawCommand> {
+        card.layout(Rect::new(10.0, 20.0, 400.0, 300.0));
+        let mut canvas = RecordingCanvas::new();
+        card.paint(&mut canvas);
+        canvas.take_commands()
+    }
+
+    fn texts(cmds: &[DrawCommand]) -> Vec<String> {
+        cmds.iter()
+            .filter_map(|c| match c {
+                DrawCommand::Text { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn rect_count(cmds: &[DrawCommand]) -> usize {
+        cmds.iter()
+            .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+            .count()
+    }
+
+    #[test]
+    fn test_paint_bare_card_draws_chrome_badge_title_version() {
+        let mut card = ModelCard::new("bert")
+            .version("2.1")
+            .status(ModelStatus::Published);
+        let cmds = painted(&mut card);
+        // background + border + badge rect, then 3 texts
+        assert_eq!(rect_count(&cmds), 3);
+        assert_eq!(texts(&cmds), vec!["Published", "bert", "v2.1"]);
+    }
+
+    #[test]
+    fn test_paint_badge_is_anchored_right_with_status_color() {
+        let mut card = ModelCard::new("m").status(ModelStatus::Review);
+        let cmds = painted(&mut card);
+        match &cmds[2] {
+            DrawCommand::Rect { bounds, style, .. } => {
+                assert_eq!(bounds.x, 10.0 + 400.0 - 80.0);
+                assert_eq!(bounds.y, 20.0 + 16.0);
+                assert_eq!(style.fill, Some(ModelStatus::Review.color()));
+            }
+            other => panic!("expected badge rect, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_paint_description_shifts_following_rows_by_24() {
+        let y_of = |cmds: &[DrawCommand], want: &str| {
+            cmds.iter().find_map(|c| match c {
+                DrawCommand::Text {
+                    content, position, ..
+                } if content == want => Some(position.y),
+                _ => None,
+            })
+        };
+        let mut plain = ModelCard::new("m").framework("pt");
+        let mut described = ModelCard::new("m").framework("pt").description("hello");
+        let a = y_of(&painted(&mut plain), "pt").unwrap();
+        let b_cmds = painted(&mut described);
+        let b = y_of(&b_cmds, "pt").unwrap();
+        assert!(texts(&b_cmds).contains(&"hello".to_string()));
+        assert_eq!(b - a, 24.0);
+    }
+
+    #[test]
+    fn test_paint_framework_task_join_variants() {
+        let mut both = ModelCard::new("m").framework("pytorch").task("nlp");
+        assert!(texts(&painted(&mut both)).contains(&"pytorch • nlp".to_string()));
+        let mut f = ModelCard::new("m").framework("pytorch");
+        assert!(texts(&painted(&mut f)).contains(&"pytorch".to_string()));
+        let mut t = ModelCard::new("m").task("nlp");
+        assert!(texts(&painted(&mut t)).contains(&"nlp".to_string()));
+        let mut none = ModelCard::new("m");
+        assert_eq!(texts(&painted(&mut none)).len(), 3);
+    }
+
+    #[test]
+    fn test_paint_parameters_row() {
+        let mut card = ModelCard::new("m").parameters(1_500_000);
+        assert!(texts(&painted(&mut card)).contains(&"Parameters: 1.5M".to_string()));
+    }
+
+    #[test]
+    fn test_paint_metrics_cap_at_four_and_toggle() {
+        let metrics: Vec<ModelMetric> = (0..6)
+            .map(|i| ModelMetric::new(format!("m{i}"), 0.5))
+            .collect();
+        let mut card = ModelCard::new("x").metrics(metrics.clone());
+        let t = texts(&painted(&mut card));
+        assert!(t.contains(&"m3".to_string()));
+        assert!(!t.contains(&"m4".to_string()));
+        assert_eq!(t.iter().filter(|s| *s == "50.00%").count(), 4);
+
+        let mut off = ModelCard::new("x")
+            .metrics(metrics)
+            .show_metrics_chart(false);
+        assert!(!texts(&painted(&mut off)).contains(&"m0".to_string()));
+    }
+
+    #[test]
+    fn test_paint_tags_cap_at_five_with_width_from_len() {
+        let mut card = ModelCard::new("x").tags(["aa", "bbbb", "c", "d", "e", "f"]);
+        let cmds = painted(&mut card);
+        let t = texts(&cmds);
+        assert!(t.contains(&"e".to_string()));
+        assert!(!t.contains(&"f".to_string()));
+        // chrome (3) + 5 tag backgrounds
+        assert_eq!(rect_count(&cmds), 8);
+        let widths: Vec<f32> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Rect { bounds, .. } if bounds.height == 18.0 => Some(bounds.width),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(widths[0], 2.0 * 6.0 + 12.0);
+        assert_eq!(widths[1], 4.0 * 6.0 + 12.0);
+    }
 }
