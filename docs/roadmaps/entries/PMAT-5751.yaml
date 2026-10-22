@@ -1,0 +1,19 @@
+- id: PMAT-5751
+  github_issue: 5751
+  item_type: task
+  title: 'aprender#5751: brownout-proof merge path: seed per-PR cargo registry from host-local seed; pin_build_base local-first'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-19T11:16:46Z
+  updated: 2026-10-19T11:16:46Z
+  spec: null
+  acceptance_criteria:
+  - Registry keyed per PR x shard so every new ref cold-fetches crates.io; pin_build_base refetches a base the checkout can hold.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
