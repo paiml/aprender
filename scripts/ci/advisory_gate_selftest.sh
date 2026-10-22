@@ -2,7 +2,7 @@
 # advisory_gate_selftest.sh -- FALSIFY-ADG-003/004 (contracts/advisory-gate-diff-v1.yaml): run
 # advisory_gate.sh against a stub `cargo` and read what it asked cargo to do.
 #   ADG-003  every advisories scan carries --all-features (the optional-feature crate is in scope)
-#   ADG-004  ONE advisory-db fetch; both scans read it with --disable-fetch and the same --config
+#   ADG-004  ONE advisory-db fetch; both scans read it (--disable-fetch on cargo-deny <= 0.19, --offline on 0.20) with the same --config
 # usage: advisory_gate_selftest.sh [GATE_SCRIPT]   (default: the sibling advisory_gate.sh)
 set -euo pipefail
 

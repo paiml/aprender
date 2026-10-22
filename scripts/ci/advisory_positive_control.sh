@@ -18,7 +18,13 @@ cp "$fx/Cargo.lock.fixture" "$d/Cargo.lock"
 : >"$d/src/lib.rs"
 printf '[advisories]\nversion = 2\n' >"$d/deny.toml"
 
-out=$(cd "$d" && cargo deny --locked --all-features --format json check --config "$d/deny.toml" advisories 2>&1) || true
+# Same probe as advisory_gate.sh: cargo-deny <= 0.19 takes --config after `check`, 0.20 takes it before the subcommand.
+help=$(cargo deny check --help 2>&1 || true)
+if grep -qF -- '--config' <<<"$help"; then
+    out=$(cd "$d" && cargo deny --locked --all-features --format json check --config "$d/deny.toml" advisories 2>&1) || true
+else
+    out=$(cd "$d" && cargo deny --config "$d/deny.toml" --locked --all-features --format json check advisories 2>&1) || true
+fi
 for id in RUSTSEC-2026-0378 RUSTSEC-2026-0379; do
     if ! grep -qF -- "$id" <<<"$out"; then
         echo "advisory_positive_control: FAIL -- cargo deny on the wasmtime 48.0.6 lock did not report $id" >&2
