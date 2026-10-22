@@ -103,6 +103,7 @@ pub fn repo_preset(name: &str) -> Option<PrFlowConfig> {
         rev_mode: ReviewMode::Serial,
         rev_lanes: 0,
         rev_tiers: Vec::new(),
+        rev_lineages: Vec::new(),
     })
 }
 
