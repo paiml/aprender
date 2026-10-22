@@ -1,0 +1,19 @@
+- id: PMAT-5792
+  github_issue: 5792
+  item_type: task
+  title: 'Advisory gate: PR fails only on advisories it introduces; main-resident advisory = andon, not a block (0h stop)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-20T12:27:03Z
+  updated: 2026-10-20T12:27:03Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract contracts/advisory-gate-diff-v1.yaml. Refs #5791. Gate-accept: solo + non-author sign-off + Noah''s yes; workflows edits go to quorum first.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
