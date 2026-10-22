@@ -161,6 +161,7 @@ fn the_spec_probe_holds_on_the_repo_corpus() {
         "liskov_pairs_checked>0: {g}"
     );
     assert_eq!(x["pc_checker"], "fired", "{g}");
+    assert_eq!(x["witness"]["pc_reasoner"], "fired", "{g}");
 }
 
 /// PVL-001 EV-11's probe on the real corpus: both ratchets Pass at the recorded baseline, and no gate writes it.
@@ -191,4 +192,5 @@ fn the_tracked_repo_graph_is_fresh() {
     assert_eq!(r.code, 0, "{}", show(&r));
     let v: serde_json::Value = serde_json::from_str(&r.stdout).expect("stdout is JSON");
     assert!(v["triples"].as_u64().unwrap_or(0) > 5000, "{}", show(&r));
+    assert_eq!(v["shapes_n"], 73, "{}", show(&r));
 }
