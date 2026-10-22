@@ -607,13 +607,11 @@ STUB
   # Each row is compared as the EXACT line (trailing comment stripped), so a third state cannot slip in.
   poolrows() { # poolrows WF -> one line per violated pool row
     local j l want
-    local plain="runs-on: [self-hosted, Linux, clean-room]" # arch-neutral job: cargo-deny, no X64 pin
+    local plain="runs-on: [self-hosted, Linux, X64, clean-room]"
     local lane="runs-on: \${{ github.event_name == 'merge_group' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"mq\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
-    # #5882: the full tier is pinned X64 (one universe for the Σ), every other tier stays arch-neutral
-    local nlane="runs-on: \${{ needs.workspace-test-arch.outputs.tier == 'full' && (github.event_name == 'merge_group' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"mq\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]')) || (github.event_name == 'merge_group' && fromJSON('[\"self-hosted\",\"Linux\",\"mq\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"clean-room\"]')) }}"
-    for j in x86-main x86-main-advisories workspace-test-arch workspace-test-shard; do
+    for j in x86-main x86-main-advisories workspace-test-shard; do
       l=$(awk -v j="  $j:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null | grep -m1 '^    runs-on:' | sed -E 's/^ +//; s/ +#.*$//')
-      want=$plain; case $j in x86-main) want=$lane ;; workspace-test-shard) want=$nlane ;; esac
+      want=$plain; case $j in x86-main | workspace-test-shard) want=$lane ;; esac
       if [ "$l" != "$want" ]; then
         echo "$j does not land on the clean-room pool (mq on merge_group for x86-main/workspace-test-shard) (runs-on: $l)"; fi
     done
@@ -633,11 +631,8 @@ STUB
   poolmut pool-advisories-event-conditional "does not land on the clean-room pool" '/^  x86-main-advisories:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: ${{ github.event_name == '"'"'merge_group'"'"' \&\& fromJSON('"'"'["clean-room"]'"'"') || fromJSON('"'"'["clean-room"]'"'"') }}/}'
   poolmut mq-lane-lost-on-x86-main "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"mq"/"clean-room"/}'
   poolmut mq-lane-dropped-on-shard "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: [self-hosted, Linux, X64, clean-room]/}'
-  poolmut pr-path-takes-mq "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/\|\| fromJSON\(.\["self-hosted","Linux","clean-room"\].\)/|| fromJSON('"'"'["self-hosted","Linux","mq"]'"'"')/}'
+  poolmut pr-path-takes-mq "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/\|\| fromJSON\(.\["self-hosted","Linux","X64","clean-room"\].\)/|| fromJSON('"'"'["self-hosted","Linux","X64","mq"]'"'"')/}'
   poolmut mq-lane-third-label "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"X64","mq"/"X64","mq","pr-only"/}'
-  poolmut full-tier-loses-x64-pin "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/"Linux","X64",/"Linux",/g}'
-  poolmut every-tier-pinned-x64 "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: ${{ github.event_name == '"'"'merge_group'"'"' \&\& fromJSON('"'"'["self-hosted","Linux","X64","mq"]'"'"') || fromJSON('"'"'["self-hosted","Linux","X64","clean-room"]'"'"') }}/}'
-  poolmut tier-job-off-the-pool "does not land on the clean-room pool" '/^  workspace-test-arch:$/,/^    steps:/{s/clean-room/build/}'
 
   # S1 (20X): mg-reuse runs on push only, so on merge_group it is SKIPPED and every dependent
   # runs only because its own `if:` carries !cancelled()/always() (a skipped need otherwise skips
@@ -686,7 +681,7 @@ STUB
   mgmut gate-if-loses-always "job gate needs mg-reuse but its if lacks" "/^  gate:\$/,/^    steps:/{s/^    if: always\(\)/    if: success()/}"
   # once a receipt-judge job exists (#5850), the marker must need it and key its if on the verdict
   mgmut ran-marker-ignores-receipt-judge "workspace-test-ran ignores receipt-judge" 's#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:#'
-  mgmut ran-marker-needs-judge-but-if-ignores-it "workspace-test-ran ignores receipt-judge" '/^  workspace-test-ran:$/,/^    runs-on:/{s#^    needs: \[workspace-test-arch\]$#    needs: [workspace-test-arch, receipt-judge]#};s#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:#'
+  mgmut ran-marker-needs-judge-but-if-ignores-it "workspace-test-ran ignores receipt-judge" 's#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:\n    needs: [receipt-judge]#'
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
   # wanted line comes first. A pipe from job into grep -q takes SIGPIPE on this every
